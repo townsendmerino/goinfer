@@ -53,3 +53,23 @@ The ratio and the swap clear their bars. **Two clauses fail, so the verdict is F
 - **Not read:** the one-slot control ran this branch's binary. That reuse differs from cold on main's binary too is by reading, since the one-slot path did not change, and was not run.
 
 **Next, if wanted:** a checkpoint per slot, then this reading again, registered against each client alone on one slot.
+
+## The served reading again, against each client alone, registered 2026-11-03 15:00 PST before any run (nobara-sb01)
+
+Francis's answer of 14:58 PST, relayed by the coordinator: keep the FAIL above on record, give each slot its own checkpoint, and register the corrected comparison before rerunning. **This does not replace the FAIL above.** It is a new reading, of a new build.
+
+- **What is corrected.** A two-slot client's replies are compared with **that client's alone on one slot**, the control of the reading above, not with the cold one-slot arm. Alone is what a reused prompt should give; cold is another kernel class on this path (`docs/measurements/kv8a-2026-10/README.md`).
+- **Tier and instrument:** as above, with serve built at this slice's pushed head, named in the record. `~/models/Qwen3.5-9B-Q4_K_M.gguf` from local NVMe, `--ctx 8192`, greedy, 24 tokens per reply, the exclusive timing lock.
+- **Design:** one slot two clients, two slots two clients, each client alone on one slot, two slots two clients, one slot two clients. The same prompts' script as above, with 3 turns each in turn and then both at once. Alone, the at-once round is each client's fourth turn, sent on its own, so that round is compared too.
+
+**The decision, worst of the two pairs:**
+
+| | |
+|---|---|
+| **PASS** | follow-up median first token, two slots over one, at most 0.5; **every** follow-up on two slots reuses rows, the turn that restores its checkpoint included; **every** turn of a two-slot client, the at-once round included, has the reply that client gets alone; peak `VmSwap` at most 512 MB |
+| **PARKED** | ratio above 0.5 and at most 0.7, the others holding |
+| **FAIL** | ratio above 0.7, a follow-up that reuses nothing, a reply that differs from that client's alone, or `VmSwap` over 512 MB |
+
+- **Reported, not graded:** each turn against the cold one-slot arm, and the first token of a restore.
+- **Void cell, fit check, stopping rule and void conditions:** as above. The fit check also reads the copies kept.
+- **Cost:** the fit check about 1 minute, the five cells about 4. The start and finish times go in the record from `date` when it runs.

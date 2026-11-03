@@ -1344,6 +1344,23 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
     - **Added beyond the plan:** a marked speculative row folds into the slot that marked it when another is bound (`TestRecurrentSlots_markedRowsFoldIntoTheirSlot`), and a graph
       capture is refused on a DeltaNet build of several slots, because a segment holds one slot's pair. The second has no test: graphs need EXCLUSIVE_PROCESS or MPS here.
 
+- **Second slice, registered 2026-11-03 15:00 PST before any code (nobara-sb01; Francis's answer of 14:58 PST, relayed by the coordinator): a recurrent checkpoint per KV slot.** The served reading's FAIL
+  named it: with two clients, the one copy belongs to whoever saved last, so the other prefills from 0 (`docs/measurements/kv8-2026-11/README.md`).
+  - **What changes, on CUDA only.** The build keeps a store of checkpoint copies, one per slot when they fit. A slot saves into its own copy. If fewer copies fit than slots, a save takes a free copy and then the least recently saved, and a slot whose copy was taken has its restore refused, so the decoder prefills from 0, as today. **One copy is today's behaviour, so a default load does not change.** The decoder does not change: `kvmgr.Seq` already records each sequence's position.
+  - **Memory.** Each copy is one slot's state. The build allocates as many as the free VRAM holds beside the reserve; the memory plan decides the same over its derived figure and prices them. On Qwen3.5-9B a copy is 50.2 MiB.
+  - **The memory gate.** The state line reads slots x state plus copies x state. The table's `checkpoint` rows bound what the row kept, so a row with two copies is bounded by two. #645 prices one checkpoint in the plan (`Plan.CheckpointBytes`); whichever of it and this lands second reconciles them: the gate then needs the copies the build kept.
+  - **Gates, red first.**
+    - **C-1, each slot's own.** Two sequences on two slots each save. Each restores its own and continues bit-identically to its solo run, on `qwen35-tiny`, `olmo_hybrid-tiny` and `nemotron-tiny`. **Red first on main:** the restore on the slot that saved first is refused.
+    - **C-2, through `Generate`.** Two conversations in turn, each follow-up diverging inside the reply. Each reports a restore at its own prompt's end, and each reply equals that client's alone on one slot. **Red first on main.** Plant: every slot saving into one copy.
+    - **C-3, room for fewer.** With free VRAM for one copy, the build keeps one, a save takes it, and the other slot's restore is refused and changes nothing. With none, it keeps none and says why, as today. The memory plan agrees with the build (`TestMemPlan`'s and the census's comparisons).
+    - **C-4, the state line.** Exact at 1, 2 and 4 slots, and `TestMemGate_cuda`. A copy not priced is red.
+    - **C-5, U1.** `gate identity -backend cuda`: every family that ran stays IDENTICAL.
+    - **C-6, the censuses.** Their diffs touch only recurrent families at an explicit slot count.
+    - **C-7, the served reading again,** registered on its own in the measurement README before it runs.
+  - **Not in this slice.** The message-boundary position and admission; Metal, which keeps one copy; `--kv-share` on hybrids.
+  - **Card:** tiny fixtures and the push checks, about 25 minutes; the served reading about 5.
+  - **Void if:** a card run outside the timing lock; a NOT RUN counted as a pass; a bar moved after a reading.
+
 ### KV8a — An end-of-prompt checkpoint on today's single slot (added 2026-10-20)
 
 - **Why (KV0-H, `docs/measurements/kv0h-hybrid-traffic-2026-10.md` §2).** On Qwen3.5-9B under opencode and Codex (CUDA,
