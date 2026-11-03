@@ -98,3 +98,105 @@ ok  	github.com/townsendmerino/goinfer/gpu/internal/kernels	150.064s
     --- PASS: TestQwen35ResidentParity/qwen3_5_moe-tiny (0.63s)
 ok  	github.com/townsendmerino/goinfer/gpu	22.948s
 87 PASS
+
+
+# After Gemini on #627: GQA whole-vector QK-norm, Olmo Hybrid at quantized KV, the NoPE plant at a fixed drop.
+== red first: the new cells on the build before the change
+    qwen35_resident_parity_test.go:266: ../testdata/olmo_hybrid-tiny did not go resident (BuildResident refused)
+    qwen35_resident_parity_test.go:266: ../testdata/olmo_hybrid-tiny did not go resident (BuildResident refused)
+    qwen35_resident_parity_test.go:266: ../testdata/olmo_hybrid-tiny did not go resident (BuildResident refused)
+--- FAIL: TestOlmoHybridResidentParityWebGPU (17.77s)
+    --- FAIL: TestOlmoHybridResidentParityWebGPU/olmo_hybrid-tiny (7.89s)
+        --- FAIL: TestOlmoHybridResidentParityWebGPU/olmo_hybrid-tiny/int4_kv_f16 (0.01s)
+        --- FAIL: TestOlmoHybridResidentParityWebGPU/olmo_hybrid-tiny/int4_kv_i8 (0.01s)
+        --- FAIL: TestOlmoHybridResidentParityWebGPU/olmo_hybrid-tiny/int4_kv_i8_on_two_slots (0.01s)
+    qwen35_resident_parity_test.go:378: /tmp/TestOlmo3GQAResidentParityWebGPU337042759/001 did not go resident (BuildResident refused)
+    qwen35_resident_parity_test.go:378: /tmp/TestOlmo3GQAResidentParityWebGPU337042759/001 did not go resident (BuildResident refused)
+    qwen35_resident_parity_test.go:378: /tmp/TestOlmo3GQAResidentParityWebGPU337042759/001 did not go resident (BuildResident refused)
+--- FAIL: TestOlmo3GQAResidentParityWebGPU (0.65s)
+    --- FAIL: TestOlmo3GQAResidentParityWebGPU/int4/ (0.01s)
+    --- FAIL: TestOlmo3GQAResidentParityWebGPU/int8int8/ (0.01s)
+    --- FAIL: TestOlmo3GQAResidentParityWebGPU/int4/i8 (0.01s)
+
+== at the code: all three families with their plants, GQA olmo3 (generated in the test), and the prompt route
+    qwen35_resident_parity_test.go:267: olmo_hybrid-tiny int4: worst 0.999502588, drift 0.0003, replay 1.000000000
+    qwen35_resident_parity_test.go:267: olmo_hybrid-tiny int8int8: worst 0.999527049, drift 0.0003, replay 1.000000000
+    qwen35_resident_parity_test.go:267: olmo_hybrid-tiny f32: worst 0.999324682, drift 0.0005, replay 1.000000000
+    qwen35_resident_parity_test.go:267: olmo_hybrid-tiny int4 on two slots: worst 0.999502588, drift 0.0003, replay 1.000000000
+    qwen35_resident_parity_test.go:267: olmo_hybrid-tiny int4 kv f16: worst 0.999527438, drift 0.0003, replay 1.000000000
+    qwen35_resident_parity_test.go:267: olmo_hybrid-tiny int4 kv i8: worst 0.999382472, drift 0.0004, replay 1.000000000
+    qwen35_resident_parity_test.go:267: olmo_hybrid-tiny int4 kv i8 on two slots: worst 0.999382472, drift 0.0004, replay 1.000000000
+    qwen35_resident_parity_test.go:279: planted (NegEigval dropped): worst 0.923217408 against the clean run's 0.999502588, drift 0.0756, replay 1.000000000
+    qwen35_resident_parity_test.go:279: planted (ONormEps dropped): worst 0.542498943 against the clean run's 0.999502588, drift 0.4413, replay 1.000000000
+    qwen35_resident_parity_test.go:267: olmo3-tiny int4: worst 1.000000000, drift 0.0000, replay 1.000000000
+    qwen35_resident_parity_test.go:267: olmo3-tiny int8int8: worst 1.000000000, drift 0.0000, replay 1.000000000
+    qwen35_resident_parity_test.go:267: olmo3-tiny f32: worst 0.997738873, drift 0.0013, replay 1.000000000
+    qwen35_resident_parity_test.go:267: olmo3-tiny int4 on two slots: worst 1.000000000, drift 0.0000, replay 1.000000000
+    qwen35_resident_parity_test.go:267: olmo3-tiny int4 kv f16: worst 0.998135307, drift 0.0017, replay 1.000000000
+    qwen35_resident_parity_test.go:267: olmo3-tiny int4 kv i8: worst 0.997051703, drift 0.0007, replay 1.000000000
+    qwen35_resident_parity_test.go:279: planted (whole-vector QK-norm dropped): worst 0.655776649 against the clean run's 1.000000000, drift 0.3442, replay 1.000000000
+    qwen35_resident_parity_test.go:279: planted (post-only norm dropped): worst -0.315619340 against the clean run's 1.000000000, drift 0.3133, replay 1.000000000
+    qwen35_resident_parity_test.go:267: smollm3-tiny int4: worst 1.000000000, drift 0.0000, replay 1.000000000
+    qwen35_resident_parity_test.go:267: smollm3-tiny int8int8: worst 0.999986959, drift 0.0000, replay 1.000000000
+    qwen35_resident_parity_test.go:267: smollm3-tiny f32: worst 0.999832976, drift 0.0000, replay 1.000000000
+    qwen35_resident_parity_test.go:267: smollm3-tiny int4 on two slots: worst 1.000000000, drift 0.0000, replay 1.000000000
+    qwen35_resident_parity_test.go:267: smollm3-tiny int4 kv f16: worst 0.999908396, drift 0.0001, replay 1.000000000
+    qwen35_resident_parity_test.go:267: smollm3-tiny int4 kv i8: worst 0.999863681, drift 0.0000, replay 1.000000000
+    qwen35_resident_parity_test.go:279: planted (NoPE dropped): worst 0.999935119 against the clean run's 1.000000000, drift 0.0001, replay 1.000000000
+--- PASS: TestOlmoHybridResidentParityWebGPU (20.16s)
+    --- PASS: TestOlmoHybridResidentParityWebGPU/olmo_hybrid-tiny (10.11s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo_hybrid-tiny/int4 (2.31s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo_hybrid-tiny/int8int8 (2.21s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo_hybrid-tiny/f32 (0.61s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo_hybrid-tiny/int4_on_two_slots (0.59s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo_hybrid-tiny/int4_kv_f16 (0.68s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo_hybrid-tiny/int4_kv_i8 (0.71s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo_hybrid-tiny/int4_kv_i8_on_two_slots (0.66s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo_hybrid-tiny/NegEigval_dropped (1.17s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo_hybrid-tiny/ONormEps_dropped (1.16s)
+    --- PASS: TestOlmoHybridResidentParityWebGPU/olmo3-tiny (5.85s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo3-tiny/int4 (0.57s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo3-tiny/int8int8 (0.55s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo3-tiny/f32 (0.52s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo3-tiny/int4_on_two_slots (0.58s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo3-tiny/int4_kv_f16 (0.65s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo3-tiny/int4_kv_i8 (0.68s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo3-tiny/whole-vector_QK-norm_dropped (1.18s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/olmo3-tiny/post-only_norm_dropped (1.12s)
+    --- PASS: TestOlmoHybridResidentParityWebGPU/smollm3-tiny (4.18s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/smollm3-tiny/int4 (0.49s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/smollm3-tiny/int8int8 (0.45s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/smollm3-tiny/f32 (0.52s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/smollm3-tiny/int4_on_two_slots (0.39s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/smollm3-tiny/int4_kv_f16 (0.78s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/smollm3-tiny/int4_kv_i8 (0.81s)
+        --- PASS: TestOlmoHybridResidentParityWebGPU/smollm3-tiny/NoPE_dropped (0.73s)
+    qwen35_resident_parity_test.go:379: GQA olmo3 int4 : worst 0.999537199, drift 0.0005, replay 1.000000000
+    qwen35_resident_parity_test.go:379: GQA olmo3 int8int8 : worst 0.999993117, drift 0.0000, replay 1.000000000
+    qwen35_resident_parity_test.go:379: GQA olmo3 int4 i8: worst 0.996685212, drift 0.0030, replay 1.000000000
+    qwen35_resident_parity_test.go:389: planted: worst 0.739258241, drift 0.2607
+--- PASS: TestOlmo3GQAResidentParityWebGPU (2.22s)
+    --- PASS: TestOlmo3GQAResidentParityWebGPU/int4/ (0.41s)
+    --- PASS: TestOlmo3GQAResidentParityWebGPU/int8int8/ (0.55s)
+    --- PASS: TestOlmo3GQAResidentParityWebGPU/int4/i8 (0.71s)
+    --- PASS: TestOlmo3GQAResidentParityWebGPU/whole-vector_QK-norm_dropped (0.54s)
+    qwen35_resident_parity_test.go:468: last row against the sequential decode: cosine 1.00000000, maxAbs 0.000e+00
+    qwen35_resident_parity_test.go:468: last row against the sequential decode: cosine 1.00000000, maxAbs 0.000e+00
+--- PASS: TestOlmoPromptRouteWebGPU (0.33s)
+    --- PASS: TestOlmoPromptRouteWebGPU/olmo_hybrid-tiny (0.07s)
+    --- PASS: TestOlmoPromptRouteWebGPU/olmo3-tiny (0.04s)
+    --- PASS: TestOlmoPromptRouteWebGPU/smollm3-tiny/int4 (0.12s)
+    --- PASS: TestOlmoPromptRouteWebGPU/smollm3-tiny/int8int8 (0.10s)
+ok  	github.com/townsendmerino/goinfer/gpu	23.210s
+
+== the planner: TestPlanAgreesWithLoad_webgpu, red on the --kv change until decoder/fitplan.go:planIneligible matched
+testdata/olmo_hybrid-tiny int4/kv-f16: Plan places=false (webgpu: qwen3_5 does not implement --kv-f16 KV), the load goes resident=true (static ok)
+testdata/olmo_hybrid-tiny int4/kv=i8: Plan places=false (webgpu: qwen3_5 does not implement --kv-i8 KV), the load goes resident=true (static ok)
+
+== at the code: the gpu package whole
+ok  	github.com/townsendmerino/goinfer/gpu	82.784s
+254 PASS
+
+== the parity refresh
+    forward goldens: 43 passed, 0 failed, 21 skipped
+    staleness gate green; 0 deps_hash line(s) refreshed, nothing else.

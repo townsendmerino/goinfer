@@ -100,6 +100,10 @@ file it.** The shape: a kernel with a fixed bound declares it beside the kernel,
 request against the declaration and declines by name, and, if it can be made mechanical, a test fails when a bound-carrying
 kernel has no declaration. Start from the 19 B findings, which name most of the kernels. Either box, M.
 
+**G53 · Metal and CUDA: admission claims whole-vector QK-norm, and the build refuses it on a GQA model** — `metal`, `cuda`, **filed 2026-11-03 (mac-sb11m, from Gemini's review of #627); not started**
+- `metal/model.go:buildResident` and `cuda/backend.go` decline a layer with `QKNormWhole` at `nH != nKV`, while `residentBackendFeatures` claims `FeatQKNormWhole` for any KV heads. So `Admit` says resident and the load runs on the CPU. The review says real Olmo 3 checkpoints are GQA; no checkpoint here could confirm that, so read one's `num_key_value_heads` first.
+- WebGPU's restriction came off on #627, with a generated GQA tiny case (`olmo3GQAFixture`). The same check for these two needs their QK-norm dispatches to take Q's and K's widths apart: Metal's whole-vector launch sizes its grid from a single head dimension, so it is real work there. Either box, M.
+
 **G52 · WebGPU: `Model.PrefillPath` says "batched" for models the batched pass declines** — `gpu`, **filed 2026-11-03 (mac-sb11m, verifying OW); not started**
 - `residentDecoder` implements `decoder.Prefiller` but not `PrefillPathReporter`, so `PrefillPath` answers "batched (backend reports no load-time declines; a per-prompt fallback is still possible)" on every WebGPU model. `kernels.RunModelToPrefill` then declines DeltaNet, MoE, MLA, post-only and whole-vector QK-norm models on every prompt, so what the path reports is wrong for them. Outputs are unaffected: the decline falls back to the per-token loop, and `warnPrefillDeclined` says so once.
 - The fix is a reporter on `residentDecoder` reading `RunModelToPrefill`'s answer, with a table test. `TestOlmoPromptRouteWebGPU` asks the pass directly in the meantime.

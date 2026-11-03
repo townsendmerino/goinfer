@@ -1,12 +1,38 @@
-# at 0dac3ee2, two gitignored non-golden fixtures moved aside
+# at be23e42b plus the planner's fix, two gitignored non-golden fixtures moved aside. touched's one red is TestPlan_, which fails the same way at main on this Mac; this diff selects it by touching decoder/fitplan.go.
 == touched.py
-touched: 8 .go file(s), 18 changed path(s), 2 module(s), base 89b2aaac
+touched: 9 .go file(s), 24 changed path(s), 2 module(s), base c1671c24
   ok   gofmt (0.0s)
-  ok   build root (1.9s)
-  ok   vet root (1 pkg) (0.3s)
-  ok   test cmd/gate -run ^(TestGateRunFilter_narrowsTheRealckptPa (1.8s)
+  ok   build root (2.7s)
+  ok   vet root (1 pkg) (0.9s)
+  ok   test cmd/gate -run ^(TestGateRunFilter_narrowsTheRealckptPa (1.5s)
   ok   test cmd/lint -run ^(TestCgoTargets_noPlatformFiles)$ (0.5s)
-  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (7.2s)
+  FAIL test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (50.4s)
+          --- FAIL: TestPlan_tableDriven/moe/cuda/below_topk_declines (0.00s)
+              fitplan_test.go:146: Placement = resident, want decline (not even top-k slots fit): dense 0.01 GB + experts 0.00 GB + KV@7936 0.06 GB fits 0.07 GB free
+      --- FAIL: TestPlan_extraBytesReservedAheadOfExperts (0.00s)
+          fitplan_test.go:267: with ExtraBytes=393216 reserved: Placement = resident, want NOT resident — the extra term must be priced ahead of the elastic expert slots, not ignored
+      census: D1: 9533 groups in 1.6s
+      census: D2: 4452 groups in 6.3s
+      census: loads: 1 groups in 0.3s
+      census: D3: 13776 groups in 8.2s
+      census: D4: 2706 groups in 2.0s
+      census: D5: 3198 groups in 0.6s
+      decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+      census: D6: 2 groups in 0.0s
+      census: D7: 523 groups in 0.0s
+      census: D1: 9533 groups in 1.5s
+      census: D2: 4452 groups in 6.0s
+      census: loads: 1 groups in 0.1s
+      census: D3: 13776 groups in 8.7s
+      census: D4: 2706 groups in 2.1s
+      census: D5: 3198 groups in 0.6s
+      decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+      census: D6: 2 groups in 0.0s
+      census: D7: 523 groups in 0.0s
+      FAIL
+      FAIL	github.com/townsendmerino/goinfer/decoder	44.876s
+      FAIL
+
   ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.7s)
   ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (2.5s)
   ok   test internal/layout -run ^(TestArchitecture_importAppendix|TestBa (1.1s)
@@ -14,12 +40,12 @@ touched: 8 .go file(s), 18 changed path(s), 2 module(s), base 89b2aaac
   ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.7s)
   ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.6s)
   ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.7s)
-  ok   build gpu (2.4s)
-  ok   vet gpu (2 pkg) (2.0s)
-  ok   test gpu (80.6s)
-  ok   test gpu/internal/kernels (186.1s)
-touched: green (CI runs the rest on push)
-VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push)
+  ok   build gpu (3.0s)
+  ok   vet gpu (2 pkg) (0.5s)
+  ok   test gpu (87.4s)
+  ok   test gpu/internal/kernels (183.8s)
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 1 of 17 checks failed
 
 == go run ./cmd/lint
 ok            staticcheck version version=staticcheck 2026.2.1 (0.8.1)
@@ -30,6 +56,3 @@ ok            staticcheck/gpu args=-tags 'gpu goinfer_testhooks' ./gpu/... goos=
 ok            staticcheck/demo/agent args=./demo/agent/...
 ok            staticcheck/cuda args=-tags 'cuda goinfer_testhooks' ./cuda/...
 VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
-
-== citation lint
-VERDICT: PASS — citation lint: every citation resolves
