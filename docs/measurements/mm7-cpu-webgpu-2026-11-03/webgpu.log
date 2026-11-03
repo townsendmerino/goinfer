@@ -212,7 +212,7 @@
     sb2_census_test.go:870: known gap (MM8, int8 KV's scale): testdata/voxtral-tiny int4/kvprecision-i8: line "kv": built: leased 40960 bytes against a plan of 36864: 4096 over, after 0 forgiven by "Vulkan's power-of-two blocks"
     sb2_census_test.go:870: known gap (MM8, int8 KV's scale): testdata/voxtral-tiny int4/kvprecision-i8: line "kv": generated: leased 40960 bytes against a plan of 36864: 4096 over, after 0 forgiven by "Vulkan's power-of-two blocks"
     sb2_census_test.go:893: 254 builds held, 38 options declined by WebGPU's own build
---- PASS: TestMemGate_webgpu (109.32s)
+--- PASS: TestMemGate_webgpu (87.90s)
 === RUN   TestMemGate_webgpuPlantsThroughTheTable
 === RUN   TestMemGate_webgpuPlantsThroughTheTable/dense
 === RUN   TestMemGate_webgpuPlantsThroughTheTable/kv
@@ -220,9 +220,9 @@
 === RUN   TestMemGate_webgpuPlantsThroughTheTable/experts
 --- PASS: TestMemGate_webgpuPlantsThroughTheTable (0.49s)
     --- PASS: TestMemGate_webgpuPlantsThroughTheTable/dense (0.09s)
-    --- PASS: TestMemGate_webgpuPlantsThroughTheTable/kv (0.09s)
+    --- PASS: TestMemGate_webgpuPlantsThroughTheTable/kv (0.10s)
     --- PASS: TestMemGate_webgpuPlantsThroughTheTable/state (0.09s)
     --- PASS: TestMemGate_webgpuPlantsThroughTheTable/experts (0.09s)
 PASS
 ledger: 311 Context(s) closed in this run
-ok  	github.com/townsendmerino/goinfer/gpu	109.834s
+ok  	github.com/townsendmerino/goinfer/gpu	88.434s

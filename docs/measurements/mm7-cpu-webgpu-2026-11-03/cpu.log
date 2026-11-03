@@ -528,9 +528,9 @@
     cpu_test.go:162: known gap (MM8, int8 KV's scale): testdata/voxtral-tiny int4/kv-i8: line "kv": generated: leased 10240 bytes against a plan of 9216: 1024 over, after 0 forgiven by "none: the walk leases each array's own bytes"
     cpu_test.go:167: known gap (MM8, dense vectors): testdata/voxtral-tiny int4/kvquant-f16: line "dense": generated: leased 44160 bytes against a plan of 43200: 960 over, after 0 forgiven by "none: the walk leases each array's own bytes"
     cpu_test.go:170: 382 rows held, 134 option cells refused at load
---- PASS: TestMemGate_cpu (4.36s)
+--- PASS: TestMemGate_cpu (8.11s)
 === RUN   TestMemGate_cpuPlantsThroughTheTable
---- PASS: TestMemGate_cpuPlantsThroughTheTable (0.09s)
+--- PASS: TestMemGate_cpuPlantsThroughTheTable (0.90s)
 === RUN   TestCheck_lines
 === RUN   TestCheck_lines/every_line_at_its_figure
 === RUN   TestCheck_lines/a_line_under_its_figure
@@ -588,6 +588,11 @@
 === RUN   TestGate_table/a_gap_that_no_longer_fires
 === RUN   TestGate_table/the_table_above_its_pin
 === RUN   TestGate_table/the_table_below_its_pin
+=== RUN   TestGate_table/gaps_on_a_line_add_up
+=== RUN   TestGate_table/past_their_sum_stays_red
+=== RUN   TestGate_table/a_gap_the_finding_did_not_need_goes_stale
+=== RUN   TestGate_table/a_row's_own_gap_goes_before_a_wildcard's
+=== RUN   TestGate_table/a_wildcard_that_covers_alone_leaves_a_row's_own_gap_stale
 === RUN   TestGate_table/a_gap_with_no_bound
 === RUN   TestGate_table/an_unpriced_gap_does_not_cover_a_line_over_plan
 === RUN   TestGate_table/a_line's_gap_does_not_cover_something_unpriced
@@ -601,6 +606,11 @@
     --- PASS: TestGate_table/a_gap_that_no_longer_fires (0.00s)
     --- PASS: TestGate_table/the_table_above_its_pin (0.00s)
     --- PASS: TestGate_table/the_table_below_its_pin (0.00s)
+    --- PASS: TestGate_table/gaps_on_a_line_add_up (0.00s)
+    --- PASS: TestGate_table/past_their_sum_stays_red (0.00s)
+    --- PASS: TestGate_table/a_gap_the_finding_did_not_need_goes_stale (0.00s)
+    --- PASS: TestGate_table/a_row's_own_gap_goes_before_a_wildcard's (0.00s)
+    --- PASS: TestGate_table/a_wildcard_that_covers_alone_leaves_a_row's_own_gap_stale (0.00s)
     --- PASS: TestGate_table/a_gap_with_no_bound (0.00s)
     --- PASS: TestGate_table/an_unpriced_gap_does_not_cover_a_line_over_plan (0.00s)
     --- PASS: TestGate_table/a_line's_gap_does_not_cover_something_unpriced (0.00s)
@@ -608,4 +618,4 @@
 === RUN   TestCheck_exactLines
 --- PASS: TestCheck_exactLines (0.00s)
 PASS
-ok  	github.com/townsendmerino/goinfer/internal/memgate	4.457s
+ok  	github.com/townsendmerino/goinfer/internal/memgate	9.026s

@@ -6,7 +6,7 @@ queue_citation_lint: SKIPPED 2 citation(s) — the repo they resolved in is not 
     ada417e  (recorded in: aikit)
     be049df  (recorded in: aikit)
 queue_citation_lint: 860 symbol citation(s) (path.go:Name) across 144 live document(s), each checked against the declarations the file has now; 41 PINNED record(s) checked at their commits (citations-at), never against HEAD and never rewritten.
-queue_citation_lint: EXAMINED 900 live markdown document(s) of 1068 in the tree (145 excluded as docs/completed/ by the archival rule below; 0 excluded as docs/internal/, which is gitignored and so resolves on this machine only). A document that leaves this denominator leaves the lint silently.
+queue_citation_lint: EXAMINED 902 live markdown document(s) of 1070 in the tree (145 excluded as docs/completed/ by the archival rule below; 0 excluded as docs/internal/, which is gitignored and so resolves on this machine only). A document that leaves this denominator leaves the lint silently.
 queue_citation_lint: VALIDATED 43 commit citation(s) in docs/QUEUE.md, 1 path:line citation(s) across 1 live document(s), and 29 bare file reference(s) in the queue (existence only).
   CROSS-REPO RESOLUTION: 22 path lookup(s) answered from the MODULE CACHE at the version go.mod requires, 801 from a checkout.
     github.com/townsendmerino/aikit -> module cache @ v1.76.0
