@@ -3,10 +3,13 @@
 package gpu
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -229,9 +232,9 @@ func TestOlmoHybridResidentParityWebGPU(t *testing.T) {
 	type plant struct {
 		name string
 		on   *bool
-		// againstClean holds the plant to the clean int4 run, not the bar: its distance from the CPU must be ten times the clean run's.
+		// minDrop, when set, holds the plant to a clean int4 run read beside it, not the bar: its worst cosine must fall by at least this.
 		// NoPE moves a tiny random model's logits too little for the bar to see.
-		againstClean bool
+		minDrop float64
 	}
 	type cell struct {
 		name string
@@ -240,36 +243,24 @@ func TestOlmoHybridResidentParityWebGPU(t *testing.T) {
 	int4, int8 := cell{"int4", decoder.Options{Quant: "int4"}}, cell{"int8int8", decoder.Options{Quant: "int8int8"}}
 	f32, slots := cell{"f32", decoder.Options{Quant: "f32"}}, cell{"int4 on two slots", decoder.Options{Quant: "int4", ResidentKVSlots: 2}}
 	kvF16, kvI8 := cell{"int4 kv f16", decoder.Options{Quant: "int4", KVPrecision: "f16"}}, cell{"int4 kv i8", decoder.Options{Quant: "int4", KVPrecision: "i8"}}
+	slotsKVI8 := cell{"int4 kv i8 on two slots", decoder.Options{Quant: "int4", KVPrecision: "i8", ResidentKVSlots: 2}}
 	for _, c := range []struct {
 		fx     string
 		cells  []cell
 		plants []plant
 	}{
-		{"olmo_hybrid-tiny", []cell{int4, int8, f32, slots},
+		{"olmo_hybrid-tiny", []cell{int4, int8, f32, slots, kvF16, kvI8, slotsKVI8},
 			[]plant{{name: "NegEigval dropped", on: &dnetNegEigvalOffForTest}, {name: "ONormEps dropped", on: &dnetONormEpsOffForTest}}},
 		{"olmo3-tiny", []cell{int4, int8, f32, slots, kvF16, kvI8},
 			[]plant{{name: "whole-vector QK-norm dropped", on: &qkNormWholeOffForTest}, {name: "post-only norm dropped", on: &postOnlyNormOffForTest}}},
 		{"smollm3-tiny", []cell{int4, int8, f32, slots, kvF16, kvI8},
-			[]plant{{name: "NoPE dropped", on: &noPEOffForTest, againstClean: true}}},
+			[]plant{{name: "NoPE dropped", on: &noPEOffForTest, minDrop: 5e-5}}},
 	} {
 		fx := "../testdata/" + c.fx
 		t.Run(c.fx, func(t *testing.T) {
 			if _, err := os.Stat(fx + "/model.safetensors"); err != nil {
 				t.Skipf("no %s weights: %v", c.fx, err)
 			}
-			if c.fx == "olmo_hybrid-tiny" { // its layers' caches are f32 whatever is asked, so the flag declines
-				for _, cl := range []cell{kvF16, kvI8} {
-					m, err := decoder.Load(fx, func() decoder.Options { o := cl.o; o.Backend = "webgpu"; return o }())
-					if err != nil {
-						t.Fatal(err)
-					}
-					if m.ResidentForwardForTest() != nil || !strings.Contains(m.ResidentDecline(), "olmo_hybrid does not implement --kv") {
-						t.Errorf("%s: resident %v, decline %q; want the decline naming the family", cl.name, m.ResidentForwardForTest() != nil, m.ResidentDecline())
-					}
-					m.Close()
-				}
-			}
-			var clean deltaNetParity
 			for _, cl := range c.cells {
 				t.Run(cl.name, func(t *testing.T) {
 					p := residentParityWebGPU(t, fx, cl.o)
@@ -277,20 +268,18 @@ func TestOlmoHybridResidentParityWebGPU(t *testing.T) {
 					if p.failsBar() {
 						t.Errorf("%s at %s is outside the bar: worst %.6f, drift %.4f, replay %.9f", c.fx, cl.name, p.worst, p.first-p.worst, p.replay)
 					}
-					if cl.name == int4.name {
-						clean = p
-					}
 				})
 			}
 			for _, pl := range c.plants {
 				t.Run(pl.name, func(t *testing.T) {
+					clean := residentParityWebGPU(t, fx, decoder.Options{Quant: "int4"})
 					*pl.on = true
 					defer func() { *pl.on = false }()
 					p := residentParityWebGPU(t, fx, decoder.Options{Quant: "int4"})
-					t.Logf("planted (%s): worst %.9f, drift %.4f, replay %.9f", pl.name, p.worst, p.first-p.worst, p.replay)
-					if pl.againstClean {
-						if 1-p.worst < 10*(1-clean.worst) {
-							t.Errorf("with %s, %s's worst is %.9f against the clean run's %.9f: the gate does not see the setting", pl.name, c.fx, p.worst, clean.worst)
+					t.Logf("planted (%s): worst %.9f against the clean run's %.9f, drift %.4f, replay %.9f", pl.name, p.worst, clean.worst, p.first-p.worst, p.replay)
+					if pl.minDrop > 0 {
+						if drop := clean.worst - p.worst; drop < pl.minDrop {
+							t.Errorf("with %s, %s's worst falls by %.9f, under %g: the gate does not see the setting", pl.name, c.fx, drop, pl.minDrop)
 						}
 						return
 					}
@@ -301,6 +290,107 @@ func TestOlmoHybridResidentParityWebGPU(t *testing.T) {
 			}
 		})
 	}
+}
+
+// olmo3GQAFixture writes olmo3-tiny with half its KV heads: num_key_value_heads, k_proj, v_proj and k_norm cut to their first rows.
+// Real Olmo 3 checkpoints are GQA, and whole-vector QK-norm then normalizes Q and K at different widths.
+func olmo3GQAFixture(t *testing.T) string {
+	t.Helper()
+	const src = "../testdata/olmo3-tiny"
+	blob, err := os.ReadFile(src + "/model.safetensors")
+	if err != nil {
+		t.Skipf("no olmo3-tiny weights: %v", err)
+	}
+	n := binary.LittleEndian.Uint64(blob)
+	body := blob[8+n:]
+	var header map[string]json.RawMessage
+	if err := json.Unmarshal(blob[8:8+n], &header); err != nil {
+		t.Fatal(err)
+	}
+	type tensor struct {
+		DType   string   `json:"dtype"`
+		Shape   []int    `json:"shape"`
+		Offsets [2]int64 `json:"data_offsets"`
+	}
+	names := make([]string, 0, len(header))
+	for name := range header {
+		if name != "__metadata__" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	out := map[string]any{}
+	var data []byte
+	for _, name := range names {
+		var ts tensor
+		if err := json.Unmarshal(header[name], &ts); err != nil {
+			t.Fatal(err)
+		}
+		raw := body[ts.Offsets[0]:ts.Offsets[1]]
+		if strings.Contains(name, "self_attn.k_proj") || strings.Contains(name, "self_attn.v_proj") || strings.Contains(name, "self_attn.k_norm") {
+			ts.Shape = slices.Clone(ts.Shape)
+			ts.Shape[0] /= 2
+			raw = raw[:len(raw)/2]
+		}
+		ts.Offsets = [2]int64{int64(len(data)), int64(len(data) + len(raw))}
+		data = append(data, raw...)
+		out[name] = ts
+	}
+	head, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	st := binary.LittleEndian.AppendUint64(nil, uint64(len(head)))
+	if err := os.WriteFile(dir+"/model.safetensors", slices.Concat(st, head, data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfgBlob, err := os.ReadFile(src + "/config.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(cfgBlob, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg["num_key_value_heads"] = cfg["num_attention_heads"].(float64) / 2
+	cfgOut, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir+"/config.json", cfgOut, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// TestOlmo3GQAResidentParityWebGPU: admission claims whole-vector QK-norm whatever the model's KV heads, so a GQA Olmo 3 holds the same
+// bar as the MHA fixture, and dropping the whole-vector form is red on it.
+func TestOlmo3GQAResidentParityWebGPU(t *testing.T) {
+	if _, err := New(); err != nil {
+		t.Skipf("no webgpu: %v", err)
+	}
+	minCtxCapForTest = 128
+	defer func() { minCtxCapForTest = 0 }()
+	fx := olmo3GQAFixture(t)
+	for _, o := range []decoder.Options{{Quant: "int4"}, {Quant: "int8int8"}, {Quant: "int4", KVPrecision: "i8"}} {
+		t.Run(o.Quant+"/"+o.KVPrecision, func(t *testing.T) {
+			p := residentParityWebGPU(t, fx, o)
+			t.Logf("GQA olmo3 %s %s: worst %.9f, drift %.4f, replay %.9f", o.Quant, o.KVPrecision, p.worst, p.first-p.worst, p.replay)
+			if p.failsBar() {
+				t.Errorf("outside the bar: worst %.6f, drift %.4f, replay %.9f", p.worst, p.first-p.worst, p.replay)
+			}
+		})
+	}
+	t.Run("whole-vector QK-norm dropped", func(t *testing.T) {
+		qkNormWholeOffForTest = true
+		defer func() { qkNormWholeOffForTest = false }()
+		p := residentParityWebGPU(t, fx, decoder.Options{Quant: "int4"})
+		t.Logf("planted: worst %.9f, drift %.4f", p.worst, p.first-p.worst)
+		if !p.failsBar() {
+			t.Error("with the whole-vector form dropped, the GQA model still holds the bar")
+		}
+	})
 }
 
 // TestOlmoPromptRouteWebGPU: the batched pass takes no post-only or whole-vector QK-norm model, so Olmo's prompts run the sequential

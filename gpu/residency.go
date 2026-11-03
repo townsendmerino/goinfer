@@ -170,7 +170,7 @@ func staticResidentDecline(m *decoder.Model) error {
 	if m.HasGemma4MoEResident() && !m.Gemma4MoEOK("webgpu") {
 		return decoder.DeclineResident("Gemma 4's parallel dense+MoE FFN is not implemented on webgpu")
 	}
-	// Only the generic GQA branch honours the KV precision flag: the Nemotron, Qwen3.5 and MLA branches always allocate f32
+	// Only the generic GQA branch honours the KV precision flag: the Nemotron, gated Qwen3.5 and MLA branches always allocate f32
 	// caches, while ctxCap below is raised by the flag and the kernel selection is model-wide. With --kv i8 the missing scale
 	// buffers would surface as "device allocation failed (VRAM exhausted?)" and the model would silently run on CPU for a false
 	// reason; with --kv f16 each cache would be ctxCap×kvDim×4 bytes at the RAISED cap, twice the intended footprint. Decline,
@@ -180,8 +180,7 @@ func staticResidentDecline(m *decoder.Model) error {
 	if kvI8, kvF16 := kvDelivered == "i8", kvDelivered == "f16"; kvI8 || kvF16 {
 		_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
 		_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
-		dnet := map[bool]string{true: "qwen3_5", false: "olmo_hybrid"}[attnGate]
-		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: dnet}[dnetOK] +
+		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetOK && attnGate] +
 			map[bool]string{true: "mla"}[mlaOK]; family != "" && !quantKVDeclineOffForTest {
 			flag := map[bool]string{true: "--kv i8"}[kvI8] + map[bool]string{true: "--kv f16"}[kvF16]
 			return decoder.DeclineResident("%s does not implement %s KV on webgpu (only the generic GQA path does); "+
@@ -388,8 +387,8 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		if len(invf) == 0 {
 			return nil, nil
 		}
-		if noPEOffForTest && !slices.ContainsFunc(invf, func(v float32) bool { return v != 0 }) {
-			invf = m.RopeInvFreq()
+		if nonzero := m.RopeInvFreq(); noPEOffForTest && len(nonzero) > 0 && !slices.ContainsFunc(invf, func(v float32) bool { return v != 0 }) {
+			invf = nonzero
 		}
 		for _, ent := range ropeInvCache {
 			if slices.Equal(ent.invf, invf) {
@@ -1185,9 +1184,6 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		}
 		if len(lw.QNorm) > 0 { // Qwen3/GLM per-head QK-norm, or Olmo 3/Olmo Hybrid whole-vector QK-norm (applied before RoPE)
 			if qkNormWhole {
-				if nH != lnKV {
-					return fail(fmt.Errorf("gpu: layer %d: arch claims QKNormWhole but nH=%d != nKV=%d — whole-vector QK-norm requires MHA", i, nH, lnKV))
-				}
 				if len(lw.QNorm) != nH*lhd || (!rl.KvShared && len(lw.KNorm) != lnKV*lhd) {
 					return fail(fmt.Errorf("gpu: layer %d: QKNormWhole weights len(QNorm)=%d len(KNorm)=%d, want %d/%d",
 						i, len(lw.QNorm), len(lw.KNorm), nH*lhd, lnKV*lhd))
