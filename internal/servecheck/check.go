@@ -28,6 +28,7 @@ import (
 	"image/png"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -207,9 +208,13 @@ func (c *Client) Chat(ctx context.Context, model, prompt string, maxTokens int, 
 	return res
 }
 
-// sharedPreamble is the long system preamble SharedPreamble sends from two conversations: long enough to span several KV blocks.
-var sharedPreamble = "You are the build assistant for a large Go repository. " + strings.Repeat(
-	"Follow the repository's conventions, keep each change small, name the test that covers it, and report what you ran. ", 40)
+// sharedPreamble is the long system preamble SharedPreamble sends from two conversations: long enough to span several KV blocks. It
+// opens with this run's nonce, so no slot holds it before the run: a slot an earlier run left already holds an unchanging preamble, and a
+// conversation landing there has nothing to take from another (docs/measurements/kv4-observability-2026-11/r2-review.log).
+func sharedPreamble(nonce string) string {
+	return "Session " + nonce + ". You are the build assistant for a large Go repository. " + strings.Repeat(
+		"Follow the repository's conventions, keep each change small, name the test that covers it, and report what you ran. ", 40)
+}
 
 // sharedTail is a user message long enough that a request giving it up cannot be taken for a rollback of the conversation that sent it
 // (kvmgr.PickSlotWithin's allowance): the next conversation has to take another slot, and copy the preamble across.
@@ -238,6 +243,7 @@ func (c *Client) SharedPreamble(ctx context.Context, model string) Result {
 		res.Skip, res.Detail = true, "this load cannot share rows across conversations: "+info.KVShare
 		return res
 	}
+	nonce := strconv.FormatInt(time.Now().UnixNano(), 36)
 	type reuseUsage struct {
 		PromptTokens        int            `json:"prompt_tokens"`
 		PrefillReusedTokens int            `json:"prefill_reused_tokens"`
@@ -245,7 +251,7 @@ func (c *Client) SharedPreamble(ctx context.Context, model string) Result {
 	}
 	ask := func(topic string) (reuseUsage, error) {
 		body := map[string]any{"model": model, "temperature": 0, "max_tokens": 4, "messages": []map[string]string{
-			{"role": "system", "content": sharedPreamble}, {"role": "user", "content": sharedTail(topic)}}}
+			{"role": "system", "content": sharedPreamble(nonce)}, {"role": "user", "content": sharedTail(topic)}}}
 		resp, err := c.do(ctx, http.MethodPost, "/v1/chat/completions", body)
 		if err != nil {
 			return reuseUsage{}, err

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A checker that cannot go red is not a checker. These drive the client against servers that are deliberately wrong in
@@ -536,5 +537,39 @@ func TestSharedPreamble(t *testing.T) {
 			}
 			t.Logf("%s: %s", res.Name, res.Detail)
 		})
+	}
+}
+
+// TestSharedPreamble_eachRunHasItsOwnPreamble: the preamble carries a per-run nonce, so no slot an earlier run left already holds it. The
+// two conversations of one run send the same preamble and different tails; two runs send different preambles.
+func TestSharedPreamble_eachRunHasItsOwnPreamble(t *testing.T) {
+	var systems, users []string
+	c := newFake(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "m", "decode_path": "cuda-resident (int4)", "kv_share": "on"}}})
+			return
+		}
+		var body struct {
+			Messages []struct{ Role, Content string } `json:"messages"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		systems, users = append(systems, body.Messages[0].Content), append(users, body.Messages[1].Content)
+		json.NewEncoder(w).Encode(map[string]any{"usage": map[string]any{"prompt_tokens": 1900, "prefill_reused_tokens": 960, "prefill_reuse": map[string]int{"shared_tokens": 960}}})
+	})
+	for range 2 {
+		c.SharedPreamble(context.Background(), "m")
+		time.Sleep(time.Millisecond)
+	}
+	if len(systems) != 4 {
+		t.Fatalf("%d requests, want 4", len(systems))
+	}
+	if systems[0] != systems[1] || systems[2] != systems[3] {
+		t.Error("the two conversations of a run do not share their preamble")
+	}
+	if systems[0] == systems[2] {
+		t.Error("two runs send the same preamble: a slot the first left would already hold the second's")
+	}
+	if users[0] == users[1] {
+		t.Error("the two conversations of a run send the same tail")
 	}
 }

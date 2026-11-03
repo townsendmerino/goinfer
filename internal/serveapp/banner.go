@@ -445,27 +445,40 @@ func kvPlanLine(f bannerFacts, cfg config) string {
 }
 
 // kvPoolBannerLine names a resident's shared KV pool (docs/tasks/task-kv-architecture-2026-10.md §5.16): its tokens and block
-// size, precision and device bytes, the layer groups that hold pools, the sharing scope, and how much of it one conversation can
-// use. "" without a pool.
+// size, precision and device bytes, the layer groups that hold pools and what a window group keeps, the sharing scope, and how much of
+// it one conversation can use. A sliding-window layer keeps only a conversation's newest rows, so a windowed pool never reads as all
+// one conversation's. "" without a pool.
 func kvPoolBannerLine(f bannerFacts) string {
 	d := f.kvPoolDetail
 	if d.Positions <= 0 || d.BlockRows <= 0 {
 		return ""
 	}
-	groups := "one group"
+	groups := "group: "
 	if len(d.Groups) > 1 {
-		groups = "groups: " + strings.Join(d.Groups, ", ")
+		groups = "groups: "
+	}
+	groups += strings.Join(d.Groups, ", ")
+	if d.WindowRows > 0 {
+		groups += fmt.Sprintf(", whose sliding-window layers keep a conversation's newest %s rows", commaInt(d.WindowRows))
 	}
 	scope := "a prompt can take another conversation's KV rows"
 	if f.kvShareState != "on" {
 		scope = "no conversation takes another's KV rows (" + f.kvShareWhy + ")"
 	}
 	use := "one conversation can use all of it"
-	if f.ctxWindow > 0 && f.ctxWindow < d.Positions {
+	if f.ctxWindow > 0 && (f.ctxWindow < d.Positions || d.WindowRows > 0) {
 		use = fmt.Sprintf("one conversation can use up to %s of them", commaInt(f.ctxWindow))
 	}
-	return fmt.Sprintf("KV pool: %s tokens in blocks of %d (%s, %.1f GB; %s); %s; %s.", commaInt(d.Positions), d.BlockRows, d.Precision,
-		float64(d.Bytes)/(1<<30), groups, scope, use)
+	return fmt.Sprintf("KV pool: %s tokens in blocks of %d (%s, %s; %s); %s; %s.", commaInt(d.Positions), d.BlockRows, d.Precision,
+		kvPoolBytes(d.Bytes), groups, scope, use)
+}
+
+// kvPoolBytes is n as the banner prints a pool: GB from 1 GiB up, MB below it.
+func kvPoolBytes(n int64) string {
+	if n >= 1<<30 {
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	}
+	return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
 }
 
 // commaInt is n with thousands separators.
