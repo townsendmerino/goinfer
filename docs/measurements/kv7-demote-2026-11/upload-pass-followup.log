@@ -120,3 +120,17 @@ FAIL
 ok  	github.com/townsendmerino/goinfer/cuda	57.570s
 
 # the real decoder path, residentUploadPrefill with a CPU cache: TestGemma4VLResident_bidirParity PASS
+
+# gate identity -backend cuda cc105d892 1a903072c, 2026-11-03 09:03:52 PST
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  wall     5m29s (09:03:52 → 09:09:20): builds 3s, runs 5m26s
+  [32mGREEN — every family that ran is IDENTICAL[0m
+# push checks at 1a903072c, origin/main cc105d892
+VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
+touched.py exit 0
+OK
+test_touched exit 0
+c.go:5:16: field deadField is unused (U1000)
+staticcheck cuda exit 0
+citation lint exit 0
+# fail=0
