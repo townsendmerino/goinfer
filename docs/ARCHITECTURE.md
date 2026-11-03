@@ -1102,7 +1102,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `examples/embed` | `chat`, `decoder`, `tokenizer` |  |
 | `examples/invoice` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
 | `examples/structured` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
-| `gpu` | `decoder`, `gpu/internal/kernels`, `internal/cost`, `internal/mem` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/sb2census`, `internal/towerid`, `internal/vision`, `multimodal`, `tokenizer` |
+| `gpu` | `decoder`, `gpu/internal/kernels`, `internal/cost`, `internal/mem` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/memgate`, `internal/sb2census`, `internal/towerid`, `internal/vision`, `multimodal`, `tokenizer` |
 | `gpu/cmd/chat` | `gpu`, `internal/chatapp` |  |
 | `gpu/cmd/serve` | `gpu`, `internal/serveapp` |  |
 | `gpu/internal/kernels` | `internal/adapter`, `internal/cost`, `internal/mem`, `internal/vision`, `multimodal` | `internal/hybridattn`, `internal/sampling` |
@@ -1117,7 +1117,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/hwreport` | `decoder`, `internal/fitcmd` |  |
 | `internal/loadflags` | `decoder`, `internal/cliutil`, `internal/config` |  |
 | `internal/mamba2` | `internal/hybridattn` |  |
-| `internal/memgate` | `decoder`, `internal/mem` |  |
+| `internal/memgate` | `decoder`, `internal/mem` | `internal/sb2census` |
 | `internal/modelload` | `decoder`, `internal/giw`, `internal/mem`, `internal/prequant`, `internal/swapguard`, `pull`, `tokenizer` |  |
 | `internal/prequant` | `decoder` |  |
 | `internal/pullcmd` | `pull` |  |
