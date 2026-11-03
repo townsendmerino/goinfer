@@ -2140,6 +2140,7 @@ var cudaRounding = memgate.PerLease("cuMemAlloc's 2 MiB quantum", 2<<20)
 // the vectors, and cudaCheckpointFixtures those that keep a recurrent checkpoint, each by name: a fixture added later has no gap.
 var (
 	cudaKVTableFixtures = []string{
+		memCensusExpertVariant,
 		"internal/vision/testdata/qwen25vl-vision-tiny",
 		"selftestdata/gemma3-vl-tiny",
 		"selftestdata/llama-tiny",
@@ -2187,6 +2188,9 @@ var (
 		"testdata/voxtral-tiny",
 	}
 	cudaDenseVectorFixtures = []string{
+		"testdata/mistral-tiny-window@window32768",
+		memCensusWindowVariant,
+		memCensusExpertVariant,
 		"internal/vision/testdata/qwen25vl-vision-tiny",
 		"selftestdata/gemma3-vl-tiny",
 		"selftestdata/llama-tiny",
@@ -2250,15 +2254,31 @@ var cudaMemGaps = slices.Concat(
 	cudaGapRows(cudaKVTableFixtures, mem.LineKV, "kvTables", "the plan's KV figure is the pools: each slot's block tables and their staging ring are leased on the line too", "MM8 CUDA, KV block tables"),
 	cudaGapRows(cudaDenseVectorFixtures, mem.LineDense, "denseVectors", "the plan's dense figure sums weight matrices: norms, biases, rotation tables and sinks are leased on the line too", "MM8 CUDA, dense vectors"),
 	cudaGapRows([]string{"testdata/gptoss_tiny.gguf", "testdata/gemma4-moe-kv-tiny32"}, mem.LineDense, "moeVectors", "as the dense vectors, and per-expert vectors past them on the dense line: gpt-oss's biases and sinks; Gemma 4's are not diagnosed", "MM8 CUDA, dense vectors"),
+	cudaGapRows([]string{"testdata/mistral-tiny-window@window32768"}, mem.LineKV, "windowGrant", "the plan prices the windowed slack it planned; the build then grants more rollback from free VRAM (kvGrantRollback), which the context plan subtracts and the plan's KV figure does not show", "MM8 CUDA, windowed rollback grant"),
 	cudaGapRows(cudaCheckpointFixtures, mem.LineState, "checkpoint", "the recurrent checkpoint leases on the state line, and the plan prices one slot's state and no checkpoint", "MM8 CUDA, recurrent checkpoint"),
 )
 
-const cudaMemGapsPin = 90
+const cudaMemGapsPin = 95
 
 // cudaMoEVectorBytes is cudaDenseVectorBytes with, per layer, each expert's vectors of the hidden and expert widths and the router's bias.
 func cudaMoEVectorBytes(m *decoder.Model, nE int) int64 {
 	d, layers, _, _, _, inter, _ := m.Dims()
 	return cudaDenseVectorBytes(m) + 4*int64(layers*nE*(d+inter+1))
+}
+
+// cudaWindowGrantBytes is the block tables and the most rollback the build can grant a windowed model, from the windowed layers' shape.
+func cudaWindowGrantBytes(r *cudaResident) int64 {
+	var perPos int64
+	for l := range r.layers {
+		if Ly := &r.layers[l]; Ly.kvWin && !Ly.kvShared {
+			elem := int64(4)
+			if Ly.kvHalf {
+				elem = 2
+			}
+			perPos += int64(max(1, r.KVSlots())) * 2 * int64(Ly.kvDim) * elem
+		}
+	}
+	return cudaKVTableBytes(r) + perPos*int64(kvWindowRollbackMax)
 }
 
 // cudaKVTableBytes is every slot's block tables and their staging ring, from the slots and the longest context one conversation can reach.
@@ -2306,7 +2326,7 @@ func cudaGateRow(t testing.TB, row, path string, o decoder.Options) (memgate.Rea
 	read := memgate.Reading{Row: row, KVSlots: r.KVSlots()}
 	read.Plan = m.Plan("cuda", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, Slots: gateSlots(r)})
 	facts := func() map[string]int64 {
-		return map[string]int64{"kvTables": cudaKVTableBytes(r), "denseVectors": cudaDenseVectorBytes(m), "moeVectors": cudaMoEVectorBytes(m, r.nE), "checkpoint": r.recurrentLiveBytes()}
+		return map[string]int64{"kvTables": cudaKVTableBytes(r), "denseVectors": cudaDenseVectorBytes(m), "moeVectors": cudaMoEVectorBytes(m, r.nE), "windowGrant": cudaWindowGrantBytes(r), "checkpoint": r.recurrentLiveBytes()}
 	}
 	read.Open = append(read.Open, memgate.Snap("built", &l.Ledger, facts()))
 	genCtx := context.Background()
@@ -2568,6 +2588,26 @@ func TestMemGate_cuda(t *testing.T) {
 			}
 			run(f+" int4/slots2", path, decoder.Options{Quant: "int4", ResidentKVSlots: 2})
 		}
+	}
+	// The census's own shapes, past the tiny context above: a window the context reaches, whose rollback the build may grant from free VRAM; one
+	// conversation's cap growing past the per-slot context; expert slots whose buffers cross the allocation quantum.
+	defer stubKVGrantFree(8 << 30)() // the grant reads free VRAM: fixed here, so the row does not move with what else holds the card
+	for _, c := range []struct {
+		row, path string
+		o         decoder.Options
+	}{
+		{"testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192", windowVariantFixture(t, "../testdata/mistral-tiny-window", 32768), decoder.Options{Quant: "int4", ResidentWindowedKV: true, ResidentContext: 8192}},
+		{memCensusWindowVariant + " int4/slots4/ctx8192", windowVariantFixture(t, "../testdata/llama-tiny", 32768), decoder.Options{Quant: "int4", ResidentKVSlots: 4, ResidentContext: 8192}},
+		{memCensusExpertVariant + " int4/expert-cache", expertVariantFixture(t, "../testdata/glm-tiny", 16384), decoder.Options{Quant: "int4", MoECacheExperts: true, ResidentContext: 4096}},
+	} {
+		c.o.Backend = "cuda"
+		read, ok := cudaGateRow(t, c.row, c.path, c.o)
+		if !ok {
+			t.Errorf("%s did not build resident: a shape the gate must read", c.row)
+			continue
+		}
+		built++
+		g.Check(t, read)
 	}
 	t.Logf("%d builds held, %d options declined by CUDA's own build", built, declined)
 	if built < 50 {
