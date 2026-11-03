@@ -84,15 +84,16 @@ func TestPlan_pricesRecurrentState(t *testing.T) {
 	}
 }
 
-// TestPlan_pricesRecurrentCheckpoint: the plan shows the checkpoint on a backend that keeps one, as one copy of the DeltaNet or Mamba-2 state, and
-// not on one that does not; and it stays out of the need, so a load with no room for it plans the same.
+// TestPlan_pricesRecurrentCheckpoint: each backend's report prices the checkpoint at one copy of the DeltaNet or Mamba-2 state where it keeps one
+// and at none elsewhere, whether or not this host links the backend. On a plan: every fixture that keeps one reaches an accepted CUDA plan, which
+// shows it; a declined plan and a plan with no room beside its need show none, at the same placement, since it stays out of the need.
 func TestPlan_pricesRecurrentCheckpoint(t *testing.T) {
 	for _, fx := range []struct {
 		dir  string
 		kept bool
 	}{{"qwen35-tiny", true}, {"olmo_hybrid-tiny", true}, {"nemotron-tiny", true}, {"lfm2-tiny", false}, {"bailing_hybrid-tiny", false}, {"llama-tiny", false}} {
 		t.Run(fx.dir, func(t *testing.T) {
-			m, err := Load("../testdata/"+fx.dir, Options{Backend: "cpu", DirectLoad: true})
+			m, err := Load("../testdata/"+fx.dir, Options{Backend: "cpu", Quant: "int4", DirectLoad: true}) // CUDA's Mamba-2 takes int4, not f32
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -105,18 +106,63 @@ func TestPlan_pricesRecurrentCheckpoint(t *testing.T) {
 						t.Fatalf("VOID: %s holds no state on %s", fx.dir, b)
 					}
 				}
+				if got := m.checkpointBytes(b); got != want {
+					t.Errorf("%s: the report's checkpoint is %d bytes, want %d", b, got, want)
+				}
 				p := m.Plan(b, 1<<40, PlanRequest{Ctx: 64, CtxPinned: true})
 				if p.Placement == PlacementDecline {
+					if p.CheckpointBytes != 0 {
+						t.Errorf("%s: a declined plan shows a checkpoint of %d bytes", b, p.CheckpointBytes)
+					}
+					if fx.kept && b == "cuda" {
+						t.Fatalf("VOID: CUDA declines %s, so no plan shows its checkpoint: %s", fx.dir, p.Reason)
+					}
 					continue
 				}
 				if p.CheckpointBytes != want {
 					t.Errorf("%s: the plan's checkpoint is %d bytes, want %d", b, p.CheckpointBytes, want)
 				}
-				if tight := m.Plan(b, p.NeedBytes(), PlanRequest{Ctx: 64, CtxPinned: true}); tight.Placement != p.Placement {
-					t.Errorf("%s: at exactly its need, without the checkpoint's bytes, the plan reads %v: %s", b, tight.Placement, tight.Reason)
+				tight := m.Plan(b, p.NeedBytes(), PlanRequest{Ctx: 64, CtxPinned: true})
+				if tight.Placement != p.Placement {
+					t.Errorf("%s: at exactly its need, the plan reads %v: %s", b, tight.Placement, tight.Reason)
+				}
+				if tight.CheckpointBytes != 0 {
+					t.Errorf("%s: with no room beside its need, the plan shows a checkpoint of %d bytes", b, tight.CheckpointBytes)
 				}
 			}
 		})
+	}
+}
+
+// TestPlan_expertBiasesOnTheLineThatHoldsThem: gpt-oss's bias tables are fixed bytes on the line each backend leases them on, so an expert cap does not
+// scale them; and the CPU's need agrees with its plan on an MoE model.
+func TestPlan_expertBiasesOnTheLineThatHoldsThem(t *testing.T) {
+	m, err := Load("testdata/gptoss_tiny.gguf", Options{Backend: "cpu", Quant: "int4", DirectLoad: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	bias := m.expertBiasBytes()
+	if bias == 0 {
+		t.Fatal("VOID: gptoss_tiny holds no expert biases")
+	}
+	full := m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes() - bias
+	for _, b := range []string{"cuda", "webgpu", "metal", "cpu"} {
+		l := m.deviceLoad(b, false, false, true)
+		if l.ExpertBytesFull != full {
+			t.Errorf("%s: the scaled expert figure is %d, the experts alone %d", b, l.ExpertBytesFull, full)
+		}
+		onDense := b == "cuda" || b == "webgpu"
+		if onDense == (l.ExpertBytesFixed >= bias) {
+			t.Errorf("%s: %d fixed on experts with %d of biases", b, l.ExpertBytesFixed, bias)
+		}
+	}
+	if got, want := m.ResidentDenseWeightBytesFor("webgpu")-m.ResidentDenseWeightBytes(), bias-m.kquantSavings("webgpu")-m.mambaProjSavings("webgpu"); got != want {
+		t.Errorf("webgpu's dense figure holds %d past the tensors, want %d", got, want)
+	}
+	p := m.Plan("cpu", 1<<40, PlanRequest{Ctx: 64, CtxPinned: true})
+	if got, want := m.ResidentNeedBytes("cpu", 0, p.Ctx, false, false), p.NeedBytes(); got != want {
+		t.Errorf("ResidentNeedBytes %d, Plan.NeedBytes %d", got, want)
 	}
 }
 

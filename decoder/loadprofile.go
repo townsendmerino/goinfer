@@ -5,7 +5,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
 )
 
 // Load-time instrumentation: how long a model load takes and where the time goes.
@@ -39,20 +38,6 @@ type LoadProfile struct {
 	mu     sync.Mutex
 	phases []LoadPhase
 	bytes  int64 // source bytes the load read, when known
-}
-
-// heldBytes is what p holds. Safe on a nil receiver.
-func (p *LoadProfile) heldBytes() int64 {
-	if p == nil {
-		return 0
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	n := int64(unsafe.Sizeof(*p)) + int64(cap(p.phases))*int64(unsafe.Sizeof(LoadPhase{}))
-	for i := range p.phases {
-		n += int64(len(p.phases[i].Name))
-	}
-	return n
 }
 
 // record adds a phase. Safe on a nil receiver.

@@ -115,7 +115,7 @@ func TestResidentDense_mambaProjectionsAsUploaded(t *testing.T) {
 		}
 	}
 	if a, b := m.ResidentNeedBytes("cpu", 0, 64, false, false)-m.ResidentKVBytes("cpu", 64, false, false),
-		m.ResidentNeedBytes("webgpu", 0, 64, false, false)-m.ResidentKVBytes("webgpu", 64, false, false); a-b != want {
-		t.Errorf("WebGPU's need is %d under the CPU's beside KV, want %d", a-b, want)
+		m.ResidentNeedBytes("webgpu", 0, 64, false, false)-m.ResidentKVBytes("webgpu", 64, false, false); a-b != want+structs {
+		t.Errorf("WebGPU's need is %d under the CPU's beside KV, want %d", a-b, want+structs)
 	}
 }

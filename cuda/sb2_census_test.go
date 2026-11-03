@@ -2143,8 +2143,8 @@ var cudaGapItems = map[string]struct {
 	fact, what, item string
 }{
 	"kv-ring":   {mem.LineKV, "kvRing", "the plan's KV figure has the pools and the block tables; the tables' staging ring leases on the line too", "MM8 CUDA, KV staging ring"},
-	"dense":     {mem.LineDense, "denseVectors", "the plan's dense figure sums the tensors: rotation tables lease on the line too (the bound also holds the norms and biases, which the plan now prices)", "MM8 CUDA, dense vectors"},
-	"dense-moe": {mem.LineDense, "moeVectors", "as the dense vectors, and per-expert vectors past them: gpt-oss's biases and sinks; Gemma 4's are not diagnosed", "MM8 CUDA, dense vectors"},
+	"dense":     {mem.LineDense, "denseVectors", "the plan's dense figure sums the tensors: rotation tables lease on the line too", "MM8 CUDA, dense vectors"},
+	"dense-moe": {mem.LineDense, "moeVectors", "as the dense row, and what per-expert uploads lease past the plan's tensors: Gemma 4's are not diagnosed", "MM8 CUDA, dense vectors"},
 	"grant":     {mem.LineKV, "windowGrant", "the plan prices the windowed slack it planned; the build then grants more rollback from free VRAM (kvGrantRollback), which the context plan subtracts and the plan's KV figure does not show", "MM8 CUDA, windowed rollback grant"},
 }
 
@@ -2257,7 +2257,8 @@ func cudaGateRow(t testing.TB, row, path string, o decoder.Options) (memgate.Rea
 	read := memgate.Reading{Row: row, KVSlots: r.KVSlots()}
 	read.Plan = m.Plan("cuda", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, Slots: gateSlots(r)})
 	facts := func() map[string]int64 {
-		return map[string]int64{"kvRing": cudaKVRingBytes(r), "denseVectors": cudaDenseVectorBytes(m), "moeVectors": cudaMoEVectorBytes(m, r.nE), "windowGrant": cudaWindowGrantBytes(r)}
+		priced := m.PricedDenseVectorBytesForTest("cuda")
+		return map[string]int64{"kvRing": cudaKVRingBytes(r), "denseVectors": max(cudaDenseVectorBytes(m)-priced, 0), "moeVectors": max(cudaMoEVectorBytes(m, r.nE)-priced, 0), "windowGrant": cudaWindowGrantBytes(r)}
 	}
 	read.Open = append(read.Open, memgate.Snap("built", &l.Ledger, facts()))
 	genCtx := context.Background()

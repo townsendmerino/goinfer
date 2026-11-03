@@ -29,7 +29,7 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 	}
 	for i := range w.NumField() {
 		switch f := w.Type().Field(i); f.Name {
-		case "Cfg", "arch", "schema", "backing", "st", "bakedQuant": // a load's config and label, package-level tables, and what the file maps
+		case "Cfg", "arch", "schema", "backing", "st", "bakedQuant", "ggufPath", "prof": // a load's config, label, path and timings, package-level tables, and what the file maps
 		default:
 			h.root(weights, f.Name, w.Field(i))
 		}
@@ -239,3 +239,13 @@ var cpuCacheLines = map[string]mem.LineID{"keys": mem.LineKV, "vals": mem.LineKV
 
 // cpuCacheIgnored is what KVCache points at and does not own: a request's counter, the adapter the model holds, and a predicate.
 var cpuCacheIgnored = map[string]bool{"cost": true, "costPhase": true, "lora": true, "skipAppend": true}
+
+// PricedDenseVectorBytesForTest is what the plan's dense figure now holds of what a backend's gap table once bounded as vectors, so a table can
+// bound only what is left.
+func (m *Model) PricedDenseVectorBytesForTest(backend string) int64 {
+	n := m.denseVectorBytes()
+	if backend == "cuda" || backend == "webgpu" {
+		n += m.expertBiasBytes()
+	}
+	return n
+}

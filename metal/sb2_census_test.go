@@ -298,7 +298,7 @@ var metalRounding = memgate.PerLease("Metal's 16 KiB sub-allocation", 16<<10)
 var metalMemGaps = []memgate.Gap{
 	{Row: "*", Line: mem.LineScratch, What: "decode's own scratch and uniforms lease on the scratch line, and nothing prices them",
 		Item: "MM5, decode's buffer list", Bytes: func(f map[string]int64) int64 { return f["decode"] }},
-	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums the tensors: rotation tables and other derived buffers are leased on dense and priced nowhere (the bound also holds the norms and biases, which the plan now prices)",
+	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums the tensors: rotation tables and other derived buffers are leased on dense and priced nowhere",
 		Item: "MM8 Metal, dense vectors", Bytes: func(f map[string]int64) int64 { return f["tables"] }},
 	{Row: "testdata/gemma4-moe-kv-tiny32 *", Line: mem.LineDense, What: "Gemma 4's MoE leases 21,128 bytes on dense past the row above: not diagnosed",
 		Item: "MM8 Metal, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return 21128 }},
@@ -338,7 +338,7 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount()}
 	read.Plan = m.Plan("metal", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
 	facts := func() map[string]int64 {
-		return map[string]int64{"tables": metalDenseVectorBytes(m, r), "decode": metalDecodeScratchBytes(m, r)}
+		return map[string]int64{"tables": max(metalDenseVectorBytes(m, r)-m.PricedDenseVectorBytesForTest("metal"), 0), "decode": metalDecodeScratchBytes(m, r)}
 	}
 	read.Open = append(read.Open, memgate.Snap("built", l, facts()))
 	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})

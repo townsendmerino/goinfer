@@ -25,7 +25,10 @@ type DeviceLoad struct {
 	// the host copy with every expert unpaged, asked only when the plan tries it. Both 0 off Metal.
 	HostFixed int64
 	HostAll   func() int64
-	KV        KVCurve // the backend's KV allocation at a context
+	// ExpertBytesFixed is what the experts line holds whatever the slots (gpt-oss's bias tables; the CPU's expert structs). It is priced wherever
+	// the dense weights are, and in DevicePlan.ExpertBytesUsed on an MoE placement.
+	ExpertBytesFixed int64
+	KV               KVCurve // the backend's KV allocation at a context
 	// FixedSlack is what the backend's allocator adds over the buffers of the fixed terms (CUDA rounds every buffer of 2 MiB or
 	// more up to 2 MiB); it is priced wherever the dense weights are.
 	FixedSlack int64
@@ -97,6 +100,7 @@ func SolvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy) Device
 func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withReserve bool) DevicePlan {
 	free := m.Available(l.Tier)
 	p := DevicePlan{StateBytes: l.StateBytes}
+	fixed := l.DenseBytes + l.ExpertBytesFixed
 	decline := func(format string, args ...any) DevicePlan {
 		p.Reason = fmt.Sprintf(format, args...)
 		if l.Backend == "cpu" {
@@ -117,7 +121,7 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 	var reserve int64
 	tryCtx := func(ctx int) (kv int64, fits bool) {
 		kv = l.KV(ctx)
-		fits = l.DenseBytes+l.StateBytes+l.FixedSlack+l.HostFixed+reserve+kv+req.ExtraBytes <= free
+		fits = fixed+l.StateBytes+l.FixedSlack+l.HostFixed+reserve+kv+req.ExtraBytes <= free
 		if l.CtxCeiling > 0 && ctx > l.CtxCeiling {
 			fits = false
 		}
@@ -153,7 +157,7 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 		if perPos <= 0 {
 			return req.Ctx, 0, false
 		}
-		budget := free - l.DenseBytes - l.StateBytes - l.FixedSlack - l.HostFixed - reserve - req.ExtraBytes
+		budget := free - fixed - l.StateBytes - l.FixedSlack - l.HostFixed - reserve - req.ExtraBytes
 		fitCtx := int(budget/perPos) / step * step
 		if l.CtxCeiling > 0 && fitCtx > l.CtxCeiling {
 			fitCtx = l.CtxCeiling // a fixed cap, not a byte budget: never grow past it either
@@ -177,7 +181,7 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 		reserve = l.ExpertBytesFull + max(hostAll-l.HostFixed, 0)
 		if ctx, kv, ok := chooseCtx(); ok {
 			p.Placement, p.Ctx, p.KVBytes = Resident, ctx, kv
-			p.ExpertBytesUsed, p.HostCopyBytes = l.ExpertBytesFull, hostAll
+			p.ExpertBytesUsed, p.HostCopyBytes = l.ExpertBytesFull+l.ExpertBytesFixed, hostAll
 			p.Reason = fmt.Sprintf("dense %.2f GB + experts %.2f GB%s + KV@%d %.2f GB fits %.2f GB free",
 				gbf(l.DenseBytes), gbf(l.ExpertBytesFull), stateNote(l.StateBytes)+slackNote(l.FixedSlack)+hostCopyNote(hostAll), ctx, gbf(kv), gbf(free))
 			return p
@@ -207,16 +211,16 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 		return p
 	}
 	// Every expert resident, at the context just chosen.
-	if l.DenseBytes+l.StateBytes+l.FixedSlack+l.ExpertBytesFull+hostAll+kv+req.ExtraBytes <= free {
+	if fixed+l.StateBytes+l.FixedSlack+l.ExpertBytesFull+hostAll+kv+req.ExtraBytes <= free {
 		p.Placement = Resident
-		p.ExpertBytesUsed = l.ExpertBytesFull
+		p.ExpertBytesUsed = l.ExpertBytesFull + l.ExpertBytesFixed
 		p.HostCopyBytes = hostAll
 		p.Reason = fmt.Sprintf("dense %.2f GB + experts %.2f GB%s + KV@%d %.2f GB fits %.2f GB free",
 			gbf(l.DenseBytes), gbf(l.ExpertBytesFull), stateNote(l.StateBytes)+slackNote(l.FixedSlack)+hostCopyNote(hostAll), ctx, gbf(kv), gbf(free))
 		return p
 	}
 	// The largest slot count whose bytes fit beside the fixed terms. A layer's experts are uniform in shape, so this is arithmetic.
-	remaining := free - l.DenseBytes - l.StateBytes - l.FixedSlack - l.HostFixed - kv - req.ExtraBytes
+	remaining := free - fixed - l.StateBytes - l.FixedSlack - l.HostFixed - kv - req.ExtraBytes
 	if remaining <= 0 {
 		return decline("dense %.2f GB%s + KV@%d %.2f GB alone exceeds %.2f GB free — no room left for any expert cache",
 			gbf(l.DenseBytes), stateNote(l.StateBytes)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
@@ -235,7 +239,7 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 	}
 	p.Placement = ExpertCached
 	p.Slots = slots
-	p.ExpertBytesUsed = int64(slots) * perExpert
+	p.ExpertBytesUsed = int64(slots)*perExpert + l.ExpertBytesFixed
 	p.HostCopyBytes = l.HostFixed
 	p.Reason = fmt.Sprintf("dense %.2f GB%s + %d/%d experts %.2f GB + KV@%d %.2f GB fits %.2f GB free",
 		gbf(l.DenseBytes), stateNote(l.StateBytes)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), slots, l.NExperts, gbf(p.ExpertBytesUsed), ctx, gbf(kv), gbf(free))

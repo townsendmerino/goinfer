@@ -404,7 +404,7 @@ func autoMoESlots(m *decoder.Model) int {
 	if err != nil || ram == 0 {
 		return max(topK, autoMoESlotsMax)
 	}
-	needFixed := m.ResidentDenseWeightBytes() + m.ResidentHostCopyBytes(1) + residentKVBytes(m) // ResidentHostCopyBytes(>0) is dense-only (paged)
+	needFixed := m.ResidentWeightBytesPaged(1) - perSlot + m.ResidentHostCopyBytes(1) + residentKVBytes(m) // ResidentHostCopyBytes(>0) leaves paged experts out
 	return autoMoESlotsForBudget(topK, perSlot, needFixed, metalMemoryCeiling(ram))
 }
 
