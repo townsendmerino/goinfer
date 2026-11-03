@@ -1,21 +1,21 @@
-touched: 5 .go file(s), 16 changed path(s), 2 module(s), base 89b2aaac
+touched: 6 .go file(s), 18 changed path(s), 2 module(s), base 89b2aaac
   ok   gofmt (0.0s)
-  ok   build root (2.1s)
+  ok   build root (1.5s)
   ok   vet root (3 pkg) (0.3s)
   ok   test cmd/gate -run ^(TestQuick_slowPatternsNameRealTests|Te (0.3s)
   ok   test cmd/lint -run ^(TestCgoTargets_noPlatformFiles)$ (0.2s)
-  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (59.1s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (352.0s)
   ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.4s)
   ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (2.5s)
   ok   test internal/layout -run ^(TestArchitecture_importAppendix|TestBa (0.7s)
-  ok   test internal/mem (24.1s)
+  ok   test internal/mem (89.3s)
   ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.5s)
-  ok   test internal/memgate (5.7s)
+  ok   test internal/memgate (43.7s)
   ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
   ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.5s)
-  ok   build gpu (2.6s)
-  ok   vet gpu (1 pkg) (1.5s)
-  FAIL test gpu (108.6s)
+  ok   build gpu (2.9s)
+  ok   vet gpu (1 pkg) (0.7s)
+  FAIL test gpu (288.9s)
           tower_identity_test.go:37: qwen3              [[1 6 8]]                    device=true  values=768     00fd9808404adb6b265767b0fff3767755fb4da73576f92f591a346377615465
           tower_identity_test.go:37: qwen3              [[1 10 6]]                   device=true  values=960     13b84a4acaa933f2492c1e58c3b9e987e2d4a4152be465dd88a3ba7de4a6552b
           tower_identity_test.go:37: qwen3              [[1 4 4] [1 6 4]]            device=true  values=640     a49237677969c9109b3029296b526e394560acb6d1ff5f7d8193b40ebbe36993
@@ -28,8 +28,8 @@ touched: 5 .go file(s), 16 changed path(s), 2 module(s), base 89b2aaac
           tower_identity_test.go:37: gemma4-vision      2x3 pooled                   device=true  values=144     3a13958c4f576537563989367b487c25136d18512b0c7c84229ea53f60bb8293
           tower_identity_test.go:37: gemma4-vision      3x2 pooled                   device=true  values=144     20f34e5548483f5736f682ebcb0813aa882c171616ae78b076394c27349a4f91
           tower_identity_test.go:38: ../internal/towerid/testdata/towers.webgpu-linux-amd64.json is anchored to "webgpu vulkan NVIDIA GeForce RTX 2070 SUPER (595.112.07)"; this machine is "webgpu vulkan Intel(R) Iris(R) Plus Graphics 645 (CFL GT3) (Mesa 26.0.8-1ubuntu0.3)": re-anchor it deliberately (-towerid.update, reviewed), never carry it forward
-      --- FAIL: TestUploadKV_gemma4MoE (1.14s)
-          --- FAIL: TestUploadKV_gemma4MoE/kv-f32/past-the-window (0.36s)
+      --- FAIL: TestUploadKV_gemma4MoE (1.18s)
+          --- FAIL: TestUploadKV_gemma4MoE/kv-f32/past-the-window (0.37s)
               uploadkv_geom_test.go:131: decode step 0: cosine(sequential, uploaded) = 0.99996568, max |diff| 0.00387
               uploadkv_geom_test.go:135: decode step 0: cosine 0.99996568, want at least 0.999999
               uploadkv_geom_test.go:131: decode step 1: cosine(sequential, uploaded) = 0.99997257, max |diff| 0.003109
@@ -38,8 +38,8 @@ touched: 5 .go file(s), 16 changed path(s), 2 module(s), base 89b2aaac
               uploadkv_geom_test.go:131: decode step 3: cosine(sequential, uploaded) = 0.99987322, max |diff| 0.008124
               uploadkv_geom_test.go:135: decode step 3: cosine 0.99987322, want at least 0.999999
       FAIL
-      ledger: 525 Context(s) closed in this run
-      FAIL	github.com/townsendmerino/goinfer/gpu	107.098s
+      ledger: 564 Context(s) closed in this run
+      FAIL	github.com/townsendmerino/goinfer/gpu	285.921s
       FAIL
 
 touched: RED (CI runs the rest on push)

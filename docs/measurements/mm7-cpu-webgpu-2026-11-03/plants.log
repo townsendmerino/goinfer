@@ -18,3 +18,10 @@ the plan under-prices DeltaNet state [webgpu]: exit 1; red rows by line {'state'
 the plan's dense figure loses DeltaNet's six small weights [cpu]: exit 1; red rows by line {'dense': 72} of 466
 the plan's dense figure loses DeltaNet's six small weights [webgpu]: exit 0; red rows by line {} of 228
 a new KVCache field holding bytes [cpu]: exit 1; 466 findings; first: cpu_test.go:158: internal/vision/testdata/qwen25vl-vision-tiny int4: line "cache field plantedField": generated: 64 bytes leased on an unknown line
+# after each backend gained a row for its own f16 and int8
+the plan prices int8 K/V as f32 [cpu]: exit 1; 26 of 492 rows red on kv
+the plan prices int8 K/V as f32 [webgpu]: exit 1; 26 of 254 rows red on kv
+the plan prices f16 K/V as f32 [cpu]: exit 1; 21 of 492 rows red on kv
+the plan prices f16 K/V as f32 [webgpu]: exit 1; 26 of 254 rows red on kv
+the plan halves KV [cpu]: exit 1; 452 of 492 rows red on kv
+the plan halves KV [webgpu]: exit 1; 249 of 254 rows red on kv
