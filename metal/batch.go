@@ -123,7 +123,7 @@ type stepInputs struct {
 
 // stepInputs reads this build.
 func (r *resident) stepInputs() *stepInputs {
-	in := &stepInputs{prog: r.prog, H: r.H, V: r.V, I: r.I, nH: r.nH, faPartial: r.attnFAPartialLen, moeStep: r.moeStep, recurrentStep: r.recurrentStep,
+	in := &stepInputs{prog: r.prog, stepsErr: stepsErrOf(r.prog), H: r.H, V: r.V, I: r.I, nH: r.nH, faPartial: r.attnFAPartialLen, moeStep: r.moeStep, recurrentStep: r.recurrentStep,
 		gemma4Step: r.gemma4Step, recurrentBlocks: r.recurrentBlocks(), q4k: r.q4kLane, oneKVAllocation: len(r.kvSlotBufs) > 0 && r.kvContig,
 		w4f16Lane: r.decodeLaneW4F16, attnSink: r.attnSink, pagedMoE: r.moe != nil && r.moe.paged}
 	if r.pleP > 0 {
@@ -144,7 +144,7 @@ func (r *resident) stepInputs() *stepInputs {
 func metalStepInputs(m *decoder.Model) *stepInputs {
 	H, nL, nH, _, _, I, V := m.Dims()
 	p := m.Program()
-	in := &stepInputs{prog: p, H: H, V: V, I: I, nH: nH, moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStep(),
+	in := &stepInputs{prog: p, stepsErr: stepsErrOf(p), H: H, V: V, I: I, nH: nH, moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStep(),
 		gemma4Step: m.ResidentGemma4Step(), q4k: m.Quant() == "q4k"}
 	in.w4f16Lane = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16" && m.Quant() == "int4"
 	_, _, in.attnSink = m.GptOssActResident()
@@ -161,11 +161,7 @@ func metalStepInputs(m *decoder.Model) *stepInputs {
 	}
 	recurrent := false
 	for l, ops := range p.Layers {
-		spans, err := layerStepsOf(ops)
-		if err != nil {
-			in.stepsErr = fmt.Sprintf("layer %d: %v", l, err)
-			return in
-		}
+		spans, _ := layerStepsOf(ops) // stepsErr holds the error, and a layer without steps reads as having none
 		info := stepLayerInfo{whole: in.gemma4Step && has(ops, program.OpGemma4Attn), qGate: has(ops, program.OpGatedAttn), ffnI: I}
 		for _, sp := range spans {
 			info.steps = append(info.steps, sp.Kind)
@@ -185,6 +181,19 @@ func metalStepInputs(m *decoder.Model) *stepInputs {
 	}
 	in.recurrentBlocks = in.recurrentStep && recurrent
 	return in
+}
+
+// stepsErrOf is why a layer of p has no steps, "" if every layer has them.
+func stepsErrOf(p *program.Program) string {
+	if p == nil {
+		return ""
+	}
+	for l, ops := range p.Layers {
+		if _, err := layerStepsOf(ops); err != nil {
+			return fmt.Sprintf("layer %d: %v", l, err)
+		}
+	}
+	return ""
 }
 
 // ineligible is why these inputs run no batched step, "" if they can.
