@@ -2089,3 +2089,83 @@ func TestWrappedUpload_turns(t *testing.T) {
 	requireCUDADevice(t)
 	wrappedupload.Turns(t, "cuda")
 }
+
+// TestKV7_demoteRefusesAWrappedUpload is the guard release v0.24.0 asks of demotion: a slot holding a wrapped upload holds no sliding-layer rows below its base, so a host
+// copy from position 0 would keep zeros (docs/measurements/kv7-demote-2026-11/README.md, item 1). Its release keeps no copy and the conversation re-prefills. The same
+// slot holding rows from position 0 keeps its copy, so the guard is not what stops every demotion here.
+func TestKV7_demoteRefusesAWrappedUpload(t *testing.T) {
+	requireCUDADevice(t)
+	const base, end = 2 * kvBlock, 6 * kvBlock
+	m, err := decoder.Load(windowVariantFixture(t, "../testdata/gemma2-tiny", 32768), decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentKVSlots: 2, KVHostBytes: 1 << 30, KVDemote: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	r := mustResident(t, m)
+	if r.kvHost == nil || r.kvWin {
+		t.Fatalf("the rig reads nothing: a host budget %v, windowed KV %v", r.kvHost != nil, r.kvWin)
+	}
+	upload := func(from int) {
+		t.Helper()
+		if err := r.UseKVSlot(1); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.BeginKVUpload(); err != nil {
+			t.Fatal(err)
+		}
+		for l := range r.layers {
+			Ly := &r.layers[l]
+			if Ly.kvShared || Ly.noKV() || Ly.kvDim == 0 {
+				continue
+			}
+			lo := 0
+			if Ly.window > 0 {
+				lo = from
+			}
+			k := make([]float32, (end-lo)*Ly.kvDim)
+			for i := range k {
+				k[i] = 1
+			}
+			if err := r.UploadKV(l, lo, k, k); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := r.EndKVUpload(false); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.UseKVSlot(0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	release := func() (bool, int) {
+		t.Helper()
+		var kept bool
+		var floor int
+		if err := r.do(func() error {
+			if !r.kvEvictIdle(0) {
+				return fmt.Errorf("nothing to release")
+			}
+			kept, floor = r.kvDemoted[1] != nil, r.kvFloor[1]
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return kept, floor
+	}
+	upload(0)
+	if kept, floor := release(); !kept || floor != 0 {
+		t.Fatalf("a slot holding rows from position 0: copy kept %v, floor %d; want a copy and no floor", kept, floor)
+	}
+	upload(base)
+	kept, floor := release()
+	t.Logf("a wrapped upload: floor %d, copy kept %v", floor, kept)
+	if floor <= 0 {
+		t.Fatal("the upload set no floor: the test reads nothing")
+	}
+	if kept {
+		t.Errorf("a slot with a floor of %d was demoted: its host copy holds zeros below the sliding layers' base", floor)
+	}
+	if got := r.ReusableKVSlot(1, end); got != 0 {
+		t.Errorf("the released slot answers %d for %d rows; with no copy, want 0", got, end)
+	}
+}

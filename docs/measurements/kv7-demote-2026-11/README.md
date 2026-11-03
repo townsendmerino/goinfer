@@ -175,7 +175,7 @@ Demotion ships off (`Options.KVDemote`). This list must be closed before it can 
 
 **Slot state around `kvFloor`:**
 
-1. A copy or a demotion reads from position 0 on a slot with a floor. On a sliding-only model on a non-windowed resident, whose blocks below the lowest `base` are unmapped, `copyKVSlots` zero-fills those rows and `kvDemote` copies zeros. `SnapshotKV` declines such a slot; these two do not.
+1. *(The demotion half is closed for v0.24.0: `kvDemote` refuses a slot with a floor, `TestKV7_demoteRefusesAWrappedUpload`, `wrapped-guard.log`. The copy half stands.)* A copy or a demotion reads from position 0 on a slot with a floor. On a sliding-only model on a non-windowed resident, whose blocks below the lowest `base` are unmapped, `copyKVSlots` zero-fills those rows and `kvDemote` copies zeros. `SnapshotKV` declines such a slot; these two do not.
 2. A write or upload starting between 0 and the floor is not refused, though the slot answers 0 there.
 3. A write or partial copy ending below the floor leaves `kvFloor` above `kvValid`, so the slot answers 0 for every prefix until a write from position 0.
 4. `CopyKV` with `0 < start < base` of a source with a floor copies rows that were never uploaded, while `kvReleasedLost(src, end)` passes.

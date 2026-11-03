@@ -1,0 +1,17 @@
+# Red first, main 0f5cb935a, 2026-11-03 15:11:24 PST
+    kv4_capacity_test.go:2161: a wrapped upload: floor 131, copy kept true
+    kv4_capacity_test.go:2166: a slot with a floor of 131 was demoted: its host copy holds zeros below the sliding layers' base
+    kv4_capacity_test.go:2169: the released slot answers 384 for 384 rows; with no copy, want 0
+--- FAIL: TestKV7_demoteRefusesAWrappedUpload (2.08s)
+FAIL	github.com/townsendmerino/goinfer/cuda	2.144s
+
+# With the guard, 15:11:55 PST
+exit 1
+--- FAIL: TestKV7_uploadPassLayers (6.20s)
+=== RUN   TestKV7_demoteRefusesAWrappedUpload
+--- PASS: TestKV7_demoteRefusesAWrappedUpload (0.45s)
+FAIL	github.com/townsendmerino/goinfer/cuda	98.143s
+PASS 44
+    kv4_capacity_test.go:2161: a wrapped upload: floor 131, copy kept false
+cuda: KV pool: slot 1's rows not kept in host memory: its upload holds rows only for prefixes of at least 67
+citation lint 0
