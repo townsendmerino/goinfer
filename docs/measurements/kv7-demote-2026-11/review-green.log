@@ -1,0 +1,508 @@
+# the review round's tests at f5ca174f5, 2026-11-02 21:50:00 PST, load 0.34
+--- PASS: TestKV2_recordedClass_tiny (1.96s)
+--- SKIP: TestKV2_recordedClass_real1p5B (0.00s)
+--- PASS: TestKV2_hitCap_tiny (1.04s)
+    --- PASS: TestKV2_hitCap_tiny/f32 (0.52s)
+    --- PASS: TestKV2_hitCap_tiny/f16 (0.52s)
+--- SKIP: TestKV2_hitCap_real1p5B (0.00s)
+--- PASS: TestKV2_inPlaceCap_tiny (1.02s)
+    --- PASS: TestKV2_inPlaceCap_tiny/f32 (0.50s)
+    --- PASS: TestKV2_inPlaceCap_tiny/f16 (0.52s)
+--- PASS: TestKV2_windowedUnalignedNotShared (0.53s)
+--- PASS: TestKV2_exactPrefillIsDecode_tiny (0.61s)
+    --- PASS: TestKV2_exactPrefillIsDecode_tiny/f32 (0.32s)
+    --- PASS: TestKV2_exactPrefillIsDecode_tiny/f16 (0.30s)
+--- SKIP: TestKV2_exactPrefillIsDecode_real1p5B (0.00s)
+--- PASS: TestKV2_copyExact_tiny (0.71s)
+    --- PASS: TestKV2_copyExact_tiny/f32 (0.37s)
+    --- PASS: TestKV2_copyExact_tiny/f16 (0.35s)
+--- PASS: TestKV2_copyExact_otherLayouts (8.07s)
+    --- PASS: TestKV2_copyExact_otherLayouts/deepseek-tiny (3.28s)
+    --- PASS: TestKV2_copyExact_otherLayouts/gemma4-emodel-tiny (4.79s)
+--- SKIP: TestKV2_copyExact_real1p5B (0.00s)
+--- PASS: TestKV2_copyWindowed (2.56s)
+    --- PASS: TestKV2_copyWindowed/mistral-tiny-window (0.74s)
+    --- PASS: TestKV2_copyWindowed/gemma3-vl-tiny (0.77s)
+    --- PASS: TestKV2_copyWindowed/cohere2-tiny (1.05s)
+--- PASS: TestKV2_copyArgs (0.47s)
+    --- PASS: TestKV2_copyArgs/f32 (0.23s)
+    --- PASS: TestKV2_copyArgs/f16 (0.24s)
+--- PASS: TestKV2_copyAllocatesNothing_tiny (0.25s)
+--- SKIP: TestKV2_copyCost_real (0.00s)
+--- PASS: TestKV2_inertOnExpertCaching (0.23s)
+--- PASS: TestKV2_optionKVShareOff_resident (1.04s)
+--- PASS: TestKV2_scheduleIndependence_tiny (10.68s)
+    --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f32 (3.63s)
+    --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f16 (3.52s)
+    --- PASS: TestKV2_scheduleIndependence_tiny/sampled-f16 (3.53s)
+--- SKIP: TestKV2_scheduleIndependence_real1p5B (0.00s)
+--- PASS: TestKV2_scheduleWindowedDecline (1.32s)
+    --- PASS: TestKV2_scheduleWindowedDecline/mistral-tiny-window (0.41s)
+    --- PASS: TestKV2_scheduleWindowedDecline/gemma3-vl-tiny (0.43s)
+    --- PASS: TestKV2_scheduleWindowedDecline/cohere2-tiny (0.49s)
+    kv4_capacity_test.go:50: share 16384 positions, pool 65536, one conversation's cap 65536
+    kv4_capacity_test.go:65: reached 65536 positions (100.0% of the pool), budget 2048 clamped true
+--- PASS: TestKV4_oneConversationUsesThePool (9.01s)
+    kv4_capacity_test.go:155: share 16384 positions; the borrower held 784 blocks when the conversation within its share arrived
+--- PASS: TestKV4_pressureFollowsD5 (1.71s)
+--- PASS: TestKV7_demoteAndPromote (1.99s)
+--- PASS: TestKV7_budgetAndNewSequence (1.64s)
+    kv4_capacity_test.go:316: a host budget: reused 15360 of 15616, promoted 240 blocks (15360 rows)
+    kv4_capacity_test.go:316: no host budget: reused 0 of 15616, promoted 0 blocks (0 rows)
+--- PASS: TestKV7_generationReportsThePromotion (1.74s)
+    kv4_capacity_test.go:387: the copy failed: cuda: KV pool: slot 1 holds 257 blocks, its share is 256, and no block is free for it (4 slots, 1024 blocks): decoder: resident KV pool is full
+--- PASS: TestKV7_copyFailureKeepsDemotedDst (1.07s)
+--- PASS: TestKV7_copySourceHeldDuringCopy (1.05s)
+--- PASS: TestKV7_promoteCountsAsUse (1.22s)
+--- PASS: TestKV7_demoteKeepsValidRows (1.08s)
+--- PASS: TestKV7_demoteFailureCountsNothing (1.03s)
+    kv4_capacity_test.go:523: the promotion failed: cuda: KV pool: slot 1 holds 255 blocks, its share is 256, and no block is free for it (4 slots, 1024 blocks): decoder: resident KV pool is full
+--- PASS: TestKV7_promoteFailureLeavesTheCopy (0.68s)
+    kv4_capacity_test.go:556: reused 1024, shared 1024, promoted 241 blocks (0 rows); declined ""; stats promoted 1, 241 blocks
+--- PASS: TestKV7_copyFromDemoted (1.27s)
+--- PASS: TestKV7_copyFromDemotedIsBitExact (2.28s)
+    kv4_capacity_test.go:639: slot 1: reused 6144, shared 6144, promoted 0 blocks (0 rows); declined ""; 147849216 host bytes charged
+--- PASS: TestKV7_copyOntoDemoted (1.03s)
+--- PASS: TestKV7_demoteIsOffWithoutItsOption (0.99s)
+--- PASS: TestKV7_olderCopyYieldsToANewerOne (1.83s)
+    kv4_capacity_test.go:724: declined map[budget:1 demote budget:1], held 1, used 62914560 of 94371840, copy false
+--- PASS: TestKV7_snapshotTakesRoomFromACopy (1.23s)
+--- PASS: TestKV4_scrambledTables (18.19s)
+    --- PASS: TestKV4_scrambledTables/llama-tiny/kv=f32 (0.34s)
+    --- PASS: TestKV4_scrambledTables/llama-tiny/kv=f16 (0.55s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny/kv=f32 (0.34s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny/kv=f16 (0.58s)
+    --- PASS: TestKV4_scrambledTables/mistral-tiny-window/kv=f32 (0.34s)
+    --- PASS: TestKV4_scrambledTables/mistral-tiny-window/kv=f16 (0.61s)
+    --- PASS: TestKV4_scrambledTables/gemma3-vl-tiny/kv=f32 (0.36s)
+    --- PASS: TestKV4_scrambledTables/gemma3-vl-tiny/kv=f16 (0.60s)
+    --- PASS: TestKV4_scrambledTables/cohere2-tiny/kv=f32 (0.39s)
+    --- PASS: TestKV4_scrambledTables/cohere2-tiny/kv=f16 (0.61s)
+    --- PASS: TestKV4_scrambledTables/gemma2-tiny/kv=f32 (0.40s)
+    --- PASS: TestKV4_scrambledTables/gemma2-tiny/kv=f16 (0.64s)
+    --- PASS: TestKV4_scrambledTables/cohere-tiny/kv=f32 (0.35s)
+    --- PASS: TestKV4_scrambledTables/cohere-tiny/kv=f16 (0.59s)
+    --- PASS: TestKV4_scrambledTables/qwen25vl-tiny/kv=f32 (0.31s)
+    --- PASS: TestKV4_scrambledTables/qwen25vl-tiny/kv=f16 (0.55s)
+    --- PASS: TestKV4_scrambledTables/qwen3moe-tiny/kv=f32 (0.53s)
+    --- PASS: TestKV4_scrambledTables/qwen3moe-tiny/kv=f16 (0.76s)
+    --- PASS: TestKV4_scrambledTables/deepseek-tiny/kv=f32 (0.96s)
+    --- PASS: TestKV4_scrambledTables/deepseek-tiny/kv=f16 (1.20s)
+    --- PASS: TestKV4_scrambledTables/qwen35-tiny/kv=f32 (0.55s)
+    --- PASS: TestKV4_scrambledTables/qwen35-tiny/kv=f16 (0.80s)
+    --- PASS: TestKV4_scrambledTables/gemma4-moe-kv-tiny32/kv=f32 (0.62s)
+    --- PASS: TestKV4_scrambledTables/gemma4-moe-kv-tiny32/kv=f16 (0.87s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny+flash/kv=f32 (0.38s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny+flash/kv=f16 (0.61s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny+splitkv/kv=f32 (0.35s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny+splitkv/kv=f16 (0.57s)
+    --- PASS: TestKV4_scrambledTables/mixtral-tiny/kv=f32 (0.56s)
+    --- PASS: TestKV4_scrambledTables/mixtral-tiny/kv=f16 (0.79s)
+    --- PASS: TestKV4_scrambledTables/qwen3moe-tiny+experts/kv=f32 (0.43s)
+    --- PASS: TestKV4_scrambledTables/qwen3moe-tiny+experts/kv=f16 (0.66s)
+--- PASS: TestKV4_scrambledTablesCanFail (0.30s)
+--- PASS: TestKV4_windowedFlashAndSplitKV (2.36s)
+    --- PASS: TestKV4_windowedFlashAndSplitKV/f32/flash (0.59s)
+    --- PASS: TestKV4_windowedFlashAndSplitKV/f32/splitkv (0.59s)
+    --- PASS: TestKV4_windowedFlashAndSplitKV/f16/flash (0.59s)
+    --- PASS: TestKV4_windowedFlashAndSplitKV/f16/splitkv (0.59s)
+--- PASS: TestKV4_sharedPreambleStoredOnce (1.03s)
+--- PASS: TestKV7_restoreMatchesColdAtPassBoundaries (0.77s)
+    --- PASS: TestKV7_restoreMatchesColdAtPassBoundaries/f32 (0.40s)
+    --- PASS: TestKV7_restoreMatchesColdAtPassBoundaries/f16 (0.37s)
+--- PASS: TestKV7_restoreWindowed (1.91s)
+    --- PASS: TestKV7_restoreWindowed/mistral-tiny-window (0.57s)
+    --- PASS: TestKV7_restoreWindowed/gemma3-vl-tiny (0.57s)
+    --- PASS: TestKV7_restoreWindowed/cohere2-tiny (0.77s)
+--- PASS: TestKV7_restoreFull (1.15s)
+    --- PASS: TestKV7_restoreFull/f32 (0.59s)
+    --- PASS: TestKV7_restoreFull/f16 (0.57s)
+--- PASS: TestKV7_declines (1.25s)
+    --- PASS: TestKV7_declines/mistral-tiny-window (0.39s)
+    --- PASS: TestKV7_declines/gemma3-vl-tiny (0.37s)
+    --- PASS: TestKV7_declines/cohere2-tiny (0.48s)
+--- PASS: TestKV7_optionKVHostBytes_resident (2.54s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/full/f32 (0.39s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/full/f16 (0.40s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/windowed/mistral-tiny-window (0.63s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/windowed/gemma3-vl-tiny (0.53s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/windowed/cohere2-tiny (0.59s)
+ok  	github.com/townsendmerino/goinfer/cuda	90.956s
+--- PASS: TestKVSnapshot_restoreIsTheComputedPrefix (0.03s)
+--- PASS: TestKVSnapshot_namespaceIsolation (0.04s)
+--- PASS: TestKVSnapshot_budgetEvictionAndReplace (0.02s)
+--- PASS: TestKVSnapshot_unqualifiedIsCounted (0.01s)
+--- PASS: TestKVSnapshot_admission (0.01s)
+--- PASS: TestKVSnapshot_statsJSON (0.01s)
+--- PASS: TestKVSnapshot_aRestoreDoesNotHoldTheFamilyTwice (0.02s)
+--- PASS: TestKVSnapStore_reserveHoldsTheBudget (0.17s)
+--- PASS: TestOptionStateGrid_fresh (0.00s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.321s
+--- FAIL: TestOptions_golden (0.01s)
+    resolve_test.go:115: chat: -accept-slow:
+         got {"AcceptSlowMoE":true,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+        want {"AcceptSlowMoE":true,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+    resolve_test.go:115: chat: -exact-prefill:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":true,"
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":true,"
+    resolve_test.go:115: chat: -moe-step=false:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: -quant int8:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -embed-int4=false:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":false
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":false
+    resolve_test.go:115: serve: auto metal:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fal
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fal
+    resolve_test.go:115: chat: -embed-int4=false:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":false
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":false
+    resolve_test.go:115: chat: -gemma4-step:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -fit=off:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":true,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":true,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+    resolve_test.go:115: serve: -kv f16:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -moe-cache-experts:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: -cpu-exact-prefill:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: metal:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fa
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fa
+    resolve_test.go:115: chat: -windowed-kv=false:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -ctx 8192:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: auto cuda:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cuda","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cuda","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+    resolve_test.go:115: chat: -lora /x:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: metal embed-int4:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fal
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fal
+    resolve_test.go:115: chat: auto metal embed-int4:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fals
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fals
+    resolve_test.go:115: serve: -exact-prefill:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":true,"
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":true,"
+    resolve_test.go:115: serve: -recurrent-step:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -windowed-kv=false:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: -backend cpu:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+    resolve_test.go:115: serve: auto metal embed-int4:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fals
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fals
+    resolve_test.go:115: chat: -kv f16:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: -moe-pager pool:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: auto cpu skipped:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -backend cpu:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+    resolve_test.go:115: serve: -moe-pager pool:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -stream-weights:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: auto cpu skipped:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: auto metal:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fal
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fal
+    resolve_test.go:115: chat: -moe-cache-experts:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: -moe-pager mmap:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -lora /x:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -moe-cache-slots 8:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -direct-load:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: -weight-cache 2.5:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -kv i8:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -weight-cache 2.5:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: defaults:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: -ctx 8192:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: metal:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fa
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fa
+    resolve_test.go:115: chat: defaults:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: -direct-load:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: -kv i8:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: metal embed-int4:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fal
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fal
+    resolve_test.go:115: serve: -gemma4-step:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: -fit=off:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":true,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":true,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+    resolve_test.go:115: chat: -recurrent-step:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: auto cuda:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cuda","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cuda","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+    resolve_test.go:115: serve: -accept-slow:
+         got {"AcceptSlowMoE":true,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+        want {"AcceptSlowMoE":true,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+    resolve_test.go:115: chat: -moe-cache-slots 8:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: chat: -stream-weights:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -cpu-exact-prefill:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -moe-pager mmap:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -moe-step=false:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:115: serve: -quant int8:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+--- FAIL: TestResolve_pure (0.01s)
+    resolve_test.go:143: chat: defaults:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: auto cuda:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cuda","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cuda","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+    resolve_test.go:143: chat: auto metal:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fal
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fal
+    resolve_test.go:143: chat: auto cpu skipped:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: auto metal embed-int4:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fals
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fals
+    resolve_test.go:143: chat: metal:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fa
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fa
+    resolve_test.go:143: chat: metal embed-int4:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fal
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fal
+    resolve_test.go:143: chat: -backend cpu:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+    resolve_test.go:143: chat: -quant int8:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -lora /x:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -kv f16:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -kv i8:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -ctx 8192:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -stream-weights:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -weight-cache 2.5:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -moe-cache-experts:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -moe-cache-slots 8:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -moe-pager pool:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -moe-pager mmap:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -accept-slow:
+         got {"AcceptSlowMoE":true,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+        want {"AcceptSlowMoE":true,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+    resolve_test.go:143: chat: -embed-int4=false:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":false
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":false
+    resolve_test.go:143: chat: -direct-load:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -fit=off:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":true,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":true,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+    resolve_test.go:143: chat: -exact-prefill:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":true,"
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":true,"
+    resolve_test.go:143: chat: -cpu-exact-prefill:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -windowed-kv=false:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -moe-step=false:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -recurrent-step:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: chat: -gemma4-step:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: defaults:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: auto cuda:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cuda","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cuda","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+    resolve_test.go:143: serve: auto metal:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fal
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fal
+    resolve_test.go:143: serve: auto cpu skipped:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: auto metal embed-int4:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fals
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fals
+    resolve_test.go:143: serve: metal:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fa
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":fa
+    resolve_test.go:143: serve: metal embed-int4:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fal
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"metal","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":fal
+    resolve_test.go:143: serve: -backend cpu:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":false,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false
+    resolve_test.go:143: serve: -quant int8:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -lora /x:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -kv f16:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -kv i8:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -ctx 8192:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -stream-weights:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -weight-cache 2.5:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -moe-cache-experts:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -moe-cache-slots 8:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -moe-pager pool:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -moe-pager mmap:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -accept-slow:
+         got {"AcceptSlowMoE":true,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+        want {"AcceptSlowMoE":true,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+    resolve_test.go:143: serve: -embed-int4=false:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":false
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":false,"ExactPrefill":false
+    resolve_test.go:143: serve: -direct-load:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -fit=off:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":true,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":true,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,"
+    resolve_test.go:143: serve: -exact-prefill:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":true,"
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":true,"
+    resolve_test.go:143: serve: -cpu-exact-prefill:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -windowed-kv=false:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -moe-step=false:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -recurrent-step:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+    resolve_test.go:143: serve: -gemma4-step:
+         got {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+        want {"AcceptSlowMoE":false,"ActQuantGroup":0,"Backend":"cpu","BackendAuto":true,"CPUBatchDecode":0,"DirectLoad":false,"DisableFit":false,"Drafter":false,"EmbedInt4":true,"ExactPrefill":false,
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/loadflags	0.028s
+--- FAIL: TestInventory (0.00s)
+    config_test.go:183: decoder.Options.KVDemote is in no setting
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/config	0.010s
+FAIL
+--- PASS: TestFlagsDoc (0.00s)
+--- PASS: TestKVHostBytes_parseAndResolve (0.00s)
+--- PASS: TestKVHostBytes_bannerAndLog (0.00s)
+--- PASS: TestKVDemoteAsked (0.00s)
+--- PASS: TestSpecOptions_golden (0.01s)
+--- PASS: TestUsage_prefillReuseSources (0.01s)
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.030s
+
+# 2026-11-02 22:01:52 PST: internal/loadflags and internal/config after the golden and the inventory row
+ok  	github.com/townsendmerino/goinfer/internal/config	0.010s
+ok  	github.com/townsendmerino/goinfer/internal/loadflags	0.024s
