@@ -594,7 +594,7 @@ func (r *cudaResident) kvTryAllocPools(slots int) (ok bool, err error) {
 		r.kvBases = make([]int, slots)
 	}
 	r.kvSlotBusy, r.kvEvicted, r.kvStopped, r.kvSlotUse = make([]bool, slots), make([]bool, slots), make([]bool, slots), make([]uint64, slots)
-	r.kvValid, r.kvCopySrc = make([]int, slots), -1
+	r.kvValid, r.kvFloor, r.kvCopySrc = make([]int, slots), make([]int, slots), -1
 	for s := range r.kvDemoted {
 		r.kvDropDemoted(s)
 	}

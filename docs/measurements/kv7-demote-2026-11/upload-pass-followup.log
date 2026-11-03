@@ -134,3 +134,45 @@ c.go:5:16: field deadField is unused (U1000)
 staticcheck cuda exit 0
 citation lint exit 0
 # fail=0
+
+# 2026-11-03 09:46:02 PST: the third review of #635, red, at bb751fa99 plus the tests
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it still released, no blocks, no rows
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it still released, no blocks, no rows
+the pass went through: {released:false stopped:false copied:false valid:0 held:0}
+{released:false stopped:false copied:false valid:0 held:0}; want it still released, no blocks, no rows
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it still released, no blocks, no rows
+answers 64
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it still released, no blocks, no rows
+answers 64
+the pass went through: {released:false stopped:false copied:false valid:0 held:0}
+{released:false stopped:false copied:false valid:0 held:0}; want it still released, no blocks, no rows
+after the pass: slot 1 answers 66 for 66 rows, want 0 (the window's rows start at 64)
+a snapshot of rows that do not hold every prefix was taken
+the copy: slot 2 answers 66 for 66 rows, want 0 (the window's rows start at 64)
+demoted: slot 1 answers 66 for 66 rows, want 0 (the window's rows start at 64)
+promoted: slot 1 answers 66 for 66 rows, want 0 (the window's rows start at 64)
+the copy from a demoted slot: slot 0 answers 0 for 67 rows, want 67 (the window's rows start at 64)
+the copy from a demoted slot: slot 0 answers 0 for 320 rows, want 320 (the window's rows start at 64)
+--- FAIL: TestKV7_uploadPassLayers (7.81s)
+  FAIL: windowed=true/a_sliding_layer_whose_span_does_not_cover_its_window (0.23s)
+  FAIL: windowed=true/a_sliding_layer_uploaded_twice (0.25s)
+  FAIL: windowed=true/nothing_uploaded (0.23s)
+  FAIL: windowed=false/a_sliding_layer_whose_span_does_not_cover_its_window (0.23s)
+  FAIL: windowed=false/a_sliding_layer_uploaded_twice (0.25s)
+  FAIL: windowed=false/nothing_uploaded (0.23s)
+  FAIL: a_wrapped_upload_answers_only_for_prefixes_it_covers (0.25s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	7.889s
+FAIL
+
+# 2026-11-03 09:46:50 PST: the third review, after the fix
+--- PASS: TestGemma4VLResident_bidirParity (2.92s)
+--- PASS: TestKV7_uploadPastZeroOnAReleasedSlot (1.06s)
+--- PASS: TestKV7_slotWriteTable (28.72s)
+--- PASS: TestKV7_uploadPass (1.80s)
+--- PASS: TestKV7_uploadPassLayers (6.04s)
+ok  	github.com/townsendmerino/goinfer/cuda	178.912s

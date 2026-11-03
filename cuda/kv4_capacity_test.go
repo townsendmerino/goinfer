@@ -1792,6 +1792,27 @@ func TestKV7_uploadPassLayers(t *testing.T) {
 		{"a sliding layer first, then a full-attention layer past position 0", func(sl, fu []int) []span {
 			return []span{{sl[0], later, end}, {fu[0], later, end}}
 		}},
+		{"a sliding layer whose span does not cover its window", func(sl, fu []int) []span {
+			out := []span{{sl[0], end - 1, end}}
+			for _, l := range sl[1:] {
+				out = append(out, span{l, later, end})
+			}
+			for _, l := range fu {
+				out = append(out, span{l, 0, end})
+			}
+			return out
+		}},
+		{"a sliding layer uploaded twice", func(sl, fu []int) []span {
+			out := []span{{sl[0], 0, kvBlock}}
+			for _, l := range sl {
+				out = append(out, span{l, later, end})
+			}
+			for _, l := range fu {
+				out = append(out, span{l, 0, end})
+			}
+			return out
+		}},
+		{"nothing uploaded", func(sl, fu []int) []span { return nil }},
 		{"a sliding layer short of the end", func(sl, fu []int) []span {
 			out := []span{}
 			for _, l := range sl {
@@ -1853,6 +1874,86 @@ func TestKV7_uploadPassLayers(t *testing.T) {
 			}
 		})
 	}
+	// A sliding layer's rows below its base were never uploaded, so the slot answers only for prefixes whose window starts at or past that base: at a shorter
+	// prefix the layer would read rows nothing wrote. The floor follows the rows through a copy and a demotion, and such rows make no snapshot.
+	t.Run("a wrapped upload answers only for prefixes it covers", func(t *testing.T) {
+		requireCUDADevice(t)
+		m, err := decoder.Load(windowVariantFixture(t, "../testdata/gemma2-tiny", 32768), decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentContext: 8192, ResidentKVSlots: 3, KVHostBytes: 1 << 30, KVDemote: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = m.Close() })
+		r := mustResident(t, m)
+		var spans []span
+		floor := 0
+		for l := range r.layers {
+			switch Ly := &r.layers[l]; {
+			case Ly.kvShared || Ly.noKV() || Ly.kvDim == 0:
+			case Ly.window > 0:
+				spans = append(spans, span{l, later, end})
+				floor = max(floor, later+int(Ly.window)-1)
+			default:
+				spans = append(spans, span{l, 0, end})
+			}
+		}
+		if err := r.UseKVSlot(1); err != nil {
+			t.Fatal(err)
+		}
+		if err := pass(r, spans); err != nil {
+			t.Fatalf("the pass: %v", err)
+		}
+		holds := func(what string, s int) {
+			t.Helper()
+			for _, c := range []struct{ prefix, want int }{{floor - 1, 0}, {floor, floor}, {end, end}} {
+				if a := r.ReusableKVSlot(s, c.prefix); a != c.want {
+					t.Errorf("%s: slot %d answers %d for %d rows, want %d (the window's rows start at %d)", what, s, a, c.prefix, c.want, later)
+				}
+			}
+		}
+		holds("after the pass", 1)
+		if _, err := r.SnapshotKV(1, end/kvBlock*kvBlock); err == nil {
+			t.Errorf("a snapshot of rows that do not hold every prefix was taken")
+		}
+		if err := r.UseKVSlot(0); err != nil {
+			t.Fatal(err)
+		}
+		const copied = end
+		if err := r.CopyKV(1, 2, 0, copied); err != nil {
+			t.Fatalf("the copy: %v", err)
+		}
+		holds("the copy", 2)
+		if err := r.do(func() error {
+			if !r.kvEvictIdle(0) {
+				return fmt.Errorf("nothing to release")
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if r.kvDemoted[1] == nil {
+			t.Fatalf("slot 1 not demoted: %+v", kvStateOf(r, 1))
+		}
+		holds("demoted", 1)
+		if _, err := r.PromoteKV(1, end); err != nil {
+			t.Fatalf("the promotion: %v", err)
+		}
+		holds("promoted", 1)
+		if _, _, err := func() (int, bool, error) {
+			if err := r.do(func() error { r.kvEvictIdle(0); return nil }); err != nil {
+				return 0, false, err
+			}
+			return r.CopyDemotedKV(2, 0, 0, end) // slot 1 was just promoted, so the release takes slot 2
+		}(); err != nil {
+			t.Fatalf("the copy from a demoted slot: %v", err)
+		}
+		holds("the copy from a demoted slot", 0)
+		if err := r.do(func() error { return r.kvEnsureSlot(0, 0, end) }); err != nil {
+			t.Fatal(err)
+		}
+		if a := r.ReusableKVSlot(0, floor-1); a != floor-1 {
+			t.Errorf("a new sequence from position 0 answers %d for %d rows", a, floor-1)
+		}
+	})
 	// A windowed build's cap is its share, so nothing there is reclaimed: a stopped slot is read on a fixture with a pool to borrow from.
 	t.Run("a full-attention layer on a stopped slot", func(t *testing.T) {
 		m, r := kv7Load(t, 4, 1<<30)

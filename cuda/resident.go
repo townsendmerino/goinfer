@@ -923,6 +923,7 @@ type cudaResident struct {
 	kvDemoted   []*cudaKVSnapshot
 	kvHost      decoder.KVHostBudget
 	kvValid     []int
+	kvFloor     []int         // per slot, the shortest prefix it answers for: a wrapped upload holds no sliding-layer rows below its base, so a shorter prefix's window has none (0: any)
 	kvCopySrc   int           // the slot a copy is reading, out of a reclaim's reach and its host copy not droppable; -1 when none
 	kvUpload    *kvUploadPass // the upload in progress, nil when none
 	kvStopped   []bool        // a borrower whose blocks past its share were taken back (kvReclaim): its next write fails
@@ -2624,9 +2625,16 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 		var w kvSlotWrite
 		if pass != nil {
 			w = pass.w // one write with the other layers: EndKVUpload ends it
-			// A sliding layer's ring can have wrapped, so it starts where it starts. A full-attention layer's rows run from position 0.
-			if base > 0 && r.layers[layer].window <= 0 {
+			// A sliding layer's ring can have wrapped, so it may start late, as long as its rows cover its window. A full-attention layer's run from position 0.
+			end, window := base+len(keys)/kvDim, int(r.layers[layer].window)
+			if _, again := pass.reached[layer]; again {
+				return fmt.Errorf("cuda: upload pass: layer %d uploaded twice", layer)
+			}
+			if base > 0 && window <= 0 {
 				return fmt.Errorf("cuda: upload pass: full-attention layer %d starts at %d, not position 0", layer, base)
+			}
+			if base > 0 && !kvWindowReusable(base, end, window) {
+				return fmt.Errorf("cuda: upload pass: layer %d's rows [%d, %d) do not cover its %d-row window", layer, base, end, window)
 			}
 		} else {
 			if e := r.kvWriteRefused(r.kvSlot, base); e != nil {
@@ -2693,6 +2701,9 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 		if pass != nil {
 			pass.end = max(pass.end, hi)
 			pass.reached[layer] = hi
+			if base > 0 {
+				pass.floor = max(pass.floor, base+int(r.layers[layer].window)-1)
+			}
 		} else {
 			r.kvWriteDone(w, hi)
 		}

@@ -85,6 +85,7 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
 		switch {
 		case err == nil:
 			r.kvWriteDone(w, end)
+			r.kvFloor[dst] = max(r.kvFloor[dst], r.kvFloor[src])
 		default:
 			r.kvWriteFailed(w, start)
 			var d *decoder.KVCopyDecline

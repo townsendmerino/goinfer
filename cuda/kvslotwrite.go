@@ -22,6 +22,7 @@ type kvUploadPass struct {
 	w       kvSlotWrite
 	end     int
 	reached map[int]int // the end each layer has landed, by layer
+	floor   int         // the shortest prefix whose windows its rows cover
 }
 
 // BeginKVUpload implements decoder.ResidentKVUploadPass.
@@ -34,8 +35,9 @@ func (r *cudaResident) BeginKVUpload() error {
 	})
 }
 
-// EndKVUpload implements decoder.ResidentKVUploadPass. The slot holds the rows only if every layer with a KV cache reached the same end; UploadKV has already
-// refused a full-attention layer that did not start at position 0. Anything else fails the pass, whatever order the layers came in.
+// EndKVUpload implements decoder.ResidentKVUploadPass. The slot holds the rows only if some landed and every layer with a KV cache reached the same end; UploadKV
+// has already refused a layer that uploaded twice, a full-attention layer that did not start at position 0, and a sliding layer whose rows do not cover its window.
+// Anything else fails the pass, whatever order the layers came in.
 func (r *cudaResident) EndKVUpload(failed bool) error {
 	return r.do(func() error {
 		p := r.kvUpload
@@ -47,6 +49,10 @@ func (r *cudaResident) EndKVUpload(failed bool) error {
 			r.kvWriteFailed(p.w, 0)
 			return nil
 		}
+		if p.end == 0 {
+			r.kvWriteFailed(p.w, 0)
+			return fmt.Errorf("cuda: upload pass: no layer uploaded any rows")
+		}
 		for l := range r.layers {
 			if Ly := &r.layers[l]; !Ly.kvShared && !Ly.noKV() && Ly.kvDim > 0 && p.reached[l] != p.end {
 				r.kvWriteFailed(p.w, 0)
@@ -54,6 +60,7 @@ func (r *cudaResident) EndKVUpload(failed bool) error {
 			}
 		}
 		r.kvWriteDone(p.w, p.end)
+		r.kvFloor[p.w.s] = p.floor
 		return nil
 	})
 }
@@ -96,6 +103,9 @@ func (r *cudaResident) kvWriteForget(w kvSlotWrite) {
 func (r *cudaResident) kvWriteDone(w kvSlotWrite, end int) {
 	r.kvClearReleased(w.s)
 	r.kvValid[w.s], r.kvStopped[w.s] = end, false
+	if w.from == 0 {
+		r.kvFloor[w.s] = 0
+	}
 }
 
 // kvWriteFailed ends a write that did not finish. A released or stopped slot stays so and holds none of the blocks mapped for it, and with no host copy it
