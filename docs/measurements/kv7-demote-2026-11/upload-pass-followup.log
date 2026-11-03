@@ -56,3 +56,9 @@ citation lint exit 0
 # fail=1
 
 # the touched failure above was the windowed case's own setup: its two layers ended at different rows (320 and 256). Corrected; the production change did not move, so the identity above stands.
+# push checks at 19116a731, origin/main 6f8f171f1, 2026-11-03 08:27:18 PST
+touched.py exit 0
+VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
+test_touched exit 0
+citation lint exit 0
+staticcheck cuda exit 0
