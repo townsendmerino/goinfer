@@ -1589,6 +1589,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		g.PrefillReused, g.PrefillSlot, g.PrefillMatch = acq.reuse, acq.slotLen, acq.match
 		g.PrefillShared, g.KVCopy, g.KVCopyDeclined = acq.shared, acq.copyDur, acq.declined
 		g.KVSnapRestored, g.KVSnapRestore = acq.snapRows, acq.snapDur
+		g.KVPromotedBlocks, g.KVPromotedRows = acq.promotedBlocks, acq.promotedRows
 		g.CheckpointRestored, g.CheckpointRestore, g.CheckpointDeclined = acq.ckptRestored, acq.ckptDur, acq.ckptDeclined
 		gpuPos = len(prompt)
 	} else {
@@ -2114,6 +2115,9 @@ type Generation struct {
 	// restore's wall time. 0 when none did.
 	KVSnapRestored int
 	KVSnapRestore  time.Duration
+	// KVPromotedBlocks is how many blocks of the slot's own rows came back from host memory after the pool released them (ResidentKVDemoter),
+	// and KVPromotedRows how many of the PrefillReused rows they serve. 0 when none did.
+	KVPromotedBlocks, KVPromotedRows int
 	// CheckpointRestored is the position a recurrent checkpoint was restored at for this prefill (0: none), CheckpointRestore its
 	// copy's time, CheckpointDeclined why a checkpoint hit prefilled cold instead; CheckpointSaved reports whether the state at the
 	// end of this prompt was saved for the next request, CheckpointSave that copy's time (KV8a, residentCheckpointSave).

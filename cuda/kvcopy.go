@@ -61,10 +61,14 @@ func (r *cudaResident) CopyKV(src, dst, start, end int) error {
 // copyKVSlots is CopyKV's job. Executor thread only.
 func (r *cudaResident) copyKVSlots(src, dst, start, end int) error {
 	if r.kvReleased(src) {
-		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's blocks were released to make room", src)}
+		// A demoted source comes back to be copied from. r.kvPromote leaves it released on a failure, and it declines as one with no copy.
+		if _, err := r.kvPromote(src); err != nil || r.kvReleased(src) {
+			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's blocks were released to make room", src)}
+		}
 	}
 	if r.kvReleased(dst) {
-		start, r.kvEvicted[dst] = 0, false // dst holds nothing below start any more: take the whole range
+		start = 0 // dst holds nothing below start any more: take the whole range
+		r.kvClearReleased(dst)
 	}
 	lo := 0 // the first row a windowed layer of dst holds afterwards
 	if r.kvWin {
@@ -146,7 +150,7 @@ func (r *cudaResident) ReusableKVSlot(slot, prefix int) int {
 	out := prefix
 	// the bases and the released marks are executor state: read them where they are written
 	if err := r.do(func() error {
-		if r.kvReleased(slot) {
+		if r.kvReleasedLost(slot, prefix) {
 			out = 0
 			return nil
 		}

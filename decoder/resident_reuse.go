@@ -319,6 +319,35 @@ type ResidentReusableKVSlot interface {
 	ReusableKVSlot(slot, prefix int) int
 }
 
+// ResidentKVDemoter is the optional capability of a resident to keep a released slot's rows in host memory (the slot still answers
+// ResidentReusableKVSlot for them) and put them back when a request reuses it. SetKVHostBudget gives it the host budget it charges them
+// to: reserve refuses what does not fit, release returns bytes. PromoteKV puts slot's demoted rows back and reports the blocks; 0 when
+// it holds none (docs/measurements/kv7-demote-2026-11/README.md).
+type ResidentKVDemoter interface {
+	SetKVHostBudget(reserve func(int64) bool, release func(int64))
+	PromoteKV(slot int) (blocks int, err error)
+}
+
+// residentPromote brings the bound slot's demoted rows back when this request reuses them. A failure leaves nothing of the slot's to
+// trust, so the request prefills cold.
+func (m *Model) residentPromote(acq *kvAcquired) {
+	d, ok := m.resident.(ResidentKVDemoter)
+	if !ok || acq.slot < 0 || acq.reuse <= 0 {
+		return
+	}
+	blocks, err := d.PromoteKV(acq.slot)
+	if err != nil {
+		acq.declined, acq.reuse = err.Error(), 0
+		m.residentForgetIDs()
+		return
+	}
+	if blocks > 0 {
+		acq.promotedBlocks, acq.promotedRows = blocks, acq.reuse
+		m.kvSnaps.promoted(blocks)
+		fmt.Fprintf(stderrKV, "kv host: promoted %d blocks into slot %d; the request reuses %d rows\n", blocks, acq.slot, acq.reuse)
+	}
+}
+
 // ResidentReusableKV is implemented by a resident whose KV for some layers holds only a recent window of positions (Options.ResidentWindowedKV).
 // ReusableKV(prefix) is how many of the first prefix positions of the bound slot's sequence it can serve to a forward that continues at
 // position prefix: prefix itself, or 0 when the window that forward attends to has already been dropped, in which case the caller prefills
@@ -384,6 +413,9 @@ type kvAcquired struct {
 	shared, src int
 	copyDur     time.Duration
 	declined    string
+	// promotedBlocks is how many blocks of the slot's own rows came back from host memory, and promotedRows how many rows the request
+	// reuses from them (residentPromote).
+	promotedBlocks, promotedRows int
 	// snapRows is how many rows a host snapshot restored into the slot (residentRestoreSnapshot), snapDur that restore's wall time.
 	snapRows int
 	snapDur  time.Duration
@@ -412,6 +444,7 @@ func (m *Model) residentAcquireIn(prompt []int, imgs []residentImageClaim, lora 
 	if acq.reuse < acq.shared { // the bound slot's window cannot serve the copied rows: none of them count
 		acq.shared = 0
 	}
+	m.residentPromote(&acq)
 	if acq.slot >= 0 {
 		a := m.kvSlots()
 		if sq := a.Seq(a.Bound()); sq != nil {

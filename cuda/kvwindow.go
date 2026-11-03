@@ -245,7 +245,7 @@ func (r *cudaResident) kvEnsureSlot(s, p0, n int) error {
 		if p0 > 0 {
 			return fmt.Errorf("cuda: KV slot %d's blocks were released to make room; a write at %d must start from position 0 (ReusableKV answers 0)", s, p0)
 		}
-		r.kvEvicted[s] = false
+		r.kvClearReleased(s)
 	}
 	if s < len(r.kvStopped) && r.kvStopped[s] {
 		if p0 > 0 {
@@ -317,7 +317,7 @@ func (r *cudaResident) ReusableKV(prefix int) int {
 	out := prefix
 	// the base and the released marks are executor state: read them where they are written
 	if err := r.do(func() error {
-		if r.kvReleased(r.kvSlot) || (r.kvWin && !kvWindowReusable(r.kvBases[r.kvSlot], prefix, r.kvWindow)) {
+		if r.kvReleasedLost(r.kvSlot, prefix) || (r.kvWin && !kvWindowReusable(r.kvBases[r.kvSlot], prefix, r.kvWindow)) {
 			out = 0
 		}
 		return nil

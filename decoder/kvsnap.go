@@ -96,14 +96,17 @@ type ResidentPrefillMarked interface {
 
 // KVSnapshotStats is a model's host snapshots, for /admin/status and the request log.
 type KVSnapshotStats struct {
-	Budget        int64 `json:"budget_bytes"` // host bytes allowed
-	Used          int64 `json:"used_bytes"`   // and held
-	Held          int   `json:"held"`
-	Taken         int   `json:"taken"`    // snapshots taken
-	Restored      int   `json:"restored"` // requests that restored one
-	RestoredRows  int64 `json:"restored_rows"`
-	Evicted       int   `json:"evicted"`        // snapshots dropped for room or replaced by a longer one
-	EvictedUnused int   `json:"evicted_unused"` // of those, ones never restored
+	Budget         int64 `json:"budget_bytes"` // host bytes allowed
+	Used           int64 `json:"used_bytes"`   // and held
+	Held           int   `json:"held"`
+	Taken          int   `json:"taken"`    // snapshots taken
+	Restored       int   `json:"restored"` // requests that restored one
+	RestoredRows   int64 `json:"restored_rows"`
+	Demoted        int   `json:"demoted"`  // released slots whose rows were kept in host memory
+	Promoted       int   `json:"promoted"` // of those, requests that brought them back
+	PromotedBlocks int64 `json:"promoted_blocks"`
+	Evicted        int   `json:"evicted"`        // snapshots dropped for room or replaced by a longer one
+	EvictedUnused  int   `json:"evicted_unused"` // of those, ones never restored
 	// Unqualified counts requests that shared at least kvSnapMinShared ids with a held snapshot that its window could not serve:
 	// the snapshot's prompt went on more than the rollback past the shared prefix.
 	Unqualified  int   `json:"unqualified"`
@@ -282,6 +285,38 @@ func (s *kvSnapStore) room(need int64, keep *kvSnap) bool {
 		s.removeLocked(victim)
 	}
 	return true
+}
+
+// reserve holds n bytes of the budget for a released slot's rows (ResidentKVDemoter), making room as a snapshot does. False, counted, when
+// they cannot fit.
+func (s *kvSnapStore) reserve(n int64) bool {
+	if !s.room(n, nil) {
+		s.decline("demote budget")
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.used += n
+	s.st.Demoted++
+	return true
+}
+
+// unreserve returns n bytes reserve held.
+func (s *kvSnapStore) unreserve(n int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.used -= n
+}
+
+// promoted counts blocks a released slot took back from host memory. Nil-safe: a resident promotes only what a budget let it keep.
+func (s *kvSnapStore) promoted(blocks int) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.st.Promoted++
+	s.st.PromotedBlocks += int64(blocks)
 }
 
 // drop removes x and frees its host memory.

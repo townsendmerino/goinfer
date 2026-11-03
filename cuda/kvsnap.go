@@ -337,6 +337,6 @@ func (r *cudaResident) restoreKV(s *cudaKVSnapshot, slot, end int) error {
 	if r.kvWin {
 		r.kvBases[slot] = lo
 	}
-	r.kvEvicted[slot] = false
+	r.kvClearReleased(slot)
 	return r.stream.Sync()
 }

@@ -43,6 +43,8 @@ func TestUsage_prefillReuseSources(t *testing.T) {
 			"own_tokens": 16, "shared_tokens": 24, "host_tokens": 0, "disk_tokens": 0, "promoted_blocks": 0}},
 		{"a host restore", engine.Report{PrefillReused: 30, KVSnapRestored: 30}, map[string]float64{
 			"own_tokens": 0, "shared_tokens": 0, "host_tokens": 30, "disk_tokens": 0, "promoted_blocks": 0}},
+		{"a slot's own rows promoted from host memory", engine.Report{PrefillReused: 640, KVPromotedRows: 640, KVPromotedBlocks: 12}, map[string]float64{
+			"own_tokens": 0, "shared_tokens": 0, "host_tokens": 640, "disk_tokens": 0, "promoted_blocks": 12}},
 		{"cold", engine.Report{}, nil},
 	} {
 		s := &server{}

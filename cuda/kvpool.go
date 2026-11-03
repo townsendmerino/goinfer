@@ -213,6 +213,7 @@ func (r *cudaResident) kvEvictIdle(s int) bool {
 		return false
 	}
 	n := r.kvHeld(best)
+	r.kvDemote(best)
 	r.kvReleaseAll(best, kvGroupFull)
 	r.kvReleaseAll(best, kvGroupWin)
 	r.kvEvicted[best] = true
@@ -586,12 +587,19 @@ func (r *cudaResident) kvTryAllocPools(slots int) (ok bool, err error) {
 		r.kvBases = make([]int, slots)
 	}
 	r.kvSlotBusy, r.kvEvicted, r.kvStopped, r.kvSlotUse = make([]bool, slots), make([]bool, slots), make([]bool, slots), make([]uint64, slots)
+	for s := range r.kvDemoted {
+		r.kvDropDemoted(s)
+	}
+	r.kvDemoted = make([]*cudaKVSnapshot, slots)
 	r.ctxCap = r.kvCapFor(slots)
 	return true, r.kvAllocPools(slots)
 }
 
 // kvReleasePools releases every pool and table buffer kvAllocPools made, leaving none bound.
 func (r *cudaResident) kvReleasePools() {
+	for s := range r.kvDemoted {
+		r.kvDropDemoted(s)
+	}
 	for l := range r.layers {
 		if r.layers[l].kvShared {
 			r.kc[l], r.vc[l] = Buffer{}, Buffer{}

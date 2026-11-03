@@ -917,10 +917,15 @@ type cudaResident struct {
 	kvRaise                   bool
 	modelCtx                  int
 	kvSlotBusy, kvEvicted     []bool
-	kvStopped                 []bool // a borrower whose blocks past its share were taken back (kvReclaim): its next write fails
-	kvStepAbort               bool   // a reclaim happened while a batched step mapped its rows: the step must not launch
-	kvSlotUse                 []uint64
-	kvUseTick                 uint64
+	// kvDemoted holds, per slot, the rows kvEvictIdle kept in host memory for a released slot (kvdemote.go); kvHostReserve and
+	// kvHostRelease charge them to the host budget, nil when there is none.
+	kvDemoted     []*cudaKVSnapshot
+	kvHostReserve func(int64) bool
+	kvHostRelease func(int64)
+	kvStopped     []bool // a borrower whose blocks past its share were taken back (kvReclaim): its next write fails
+	kvStepAbort   bool   // a reclaim happened while a batched step mapped its rows: the step must not launch
+	kvSlotUse     []uint64
+	kvUseTick     uint64
 
 	// Windowed KV (kvwindow.go): kvWin is set when some layers hold window+slack positions. kvBases[s] is the first position slot s's
 	// windowed layers hold.
@@ -2613,7 +2618,7 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 	return r.do(func() error {
 		lo, k, v := base, keys, vals
 		if base == 0 && r.kvReleased(r.kvSlot) {
-			r.kvEvicted[r.kvSlot] = false // a sequence written from position 0
+			r.kvClearReleased(r.kvSlot) // a sequence written from position 0
 		}
 		if r.layers[layer].kvWin {
 			// a windowed layer keeps only the last window-1 positions (kvwindow.go)
