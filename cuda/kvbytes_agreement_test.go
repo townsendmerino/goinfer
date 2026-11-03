@@ -129,51 +129,68 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 }
 
 // TestKVPool_detailNamesThePool is the CUDA half of KV4's §5.16 pool banner (docs/tasks/task-kv-architecture-2026-10.md): the pool's
-// detail (decoder.KVPoolDetail) names its tokens, 64-row blocks, groups and precision, and its bytes are what the plan charges for
-// the pools and tables (kvChargedBytes, which TestKSH6C_marginPriced holds to the device buffers) on a full-attention fixture; on a
-// sliding-window one (windowed KV is opt-in, ResidentWindowedKV) it names the window group and logs the bytes. At f32 and f16.
+// detail (decoder.KVPoolDetail) names the groups its layers use, the positions of the pool that bounds a conversation, its 64-row
+// blocks and its precision, and its bytes are what the plan charges for the pools and tables (kvChargedBytes at the guaranteed share,
+// which TestKSH6C_marginPriced holds to the device buffers). A windowed pool also holds what kvGrantRollback added from free VRAM after
+// the fit: with no headroom it is exactly the plan's bytes, and with a grant the plan's plus the grant's.
 func TestKVPool_detailNamesThePool(t *testing.T) {
 	requireCUDADevice(t)
 	ran := 0
-	for _, c := range []struct {
-		fixture, kv string
-		window      bool
-	}{{"llama-tiny", "f32", false}, {"llama-tiny", "f16", false}, {"mistral-tiny-window", "f32", true}} {
-		p := filepath.Join("..", "testdata", c.fixture)
-		if _, err := os.Stat(filepath.Join(p, "config.json")); err != nil {
-			t.Logf("NOT RUN: no fixture at %s", p)
-			continue
-		}
-		m, err := decoder.Load(p, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2, KVPrecision: c.kv, ResidentWindowedKV: c.window})
+	load := func(fixture, kv string, window bool) (*decoder.Model, *cudaResident) {
+		m, err := decoder.Load(filepath.Join("..", "testdata", fixture), decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2, KVPrecision: kv, ResidentWindowedKV: window})
 		if err != nil {
-			t.Fatalf("%s at %s: load: %v", c.fixture, c.kv, err)
+			t.Fatalf("%s at %s: load: %v", fixture, kv, err)
 		}
 		r, ok := m.ResidentForwardForTest().(*cudaResident)
 		if !ok {
 			m.Close()
-			t.Fatalf("%s at %s: not CUDA-resident: %s", c.fixture, c.kv, m.ResidentDecline())
+			t.Fatalf("%s at %s: not CUDA-resident: %s", fixture, kv, m.ResidentDecline())
+		}
+		return m, r
+	}
+	for _, c := range []struct {
+		fixture, kv string
+		window      bool
+	}{{"llama-tiny", "f32", false}, {"llama-tiny", "f16", false}, {"mistral-tiny-window", "f32", true}} {
+		if _, err := os.Stat(filepath.Join("..", "testdata", c.fixture, "config.json")); err != nil {
+			t.Logf("NOT RUN: no fixture %s", c.fixture)
+			continue
 		}
 		ran++
+		m, r := load(c.fixture, c.kv, c.window)
 		d := m.ResidentKVPool()
-		want := decoder.KVPoolDetail{Positions: r.KVSlots() * r.kvShareBlocks * kvBlock, Guaranteed: r.kvShareCtx, BlockRows: kvBlock,
-			Precision: c.kv, Bytes: kvChargedBytes(r.ctxCap, r.kvSlotsN, r.layers)}
-		groups := []string{"full"}
+		group, groups := kvGroupFull, []string{"full"}
 		if c.window {
-			groups = append(groups, "sliding window")
+			group, groups = kvGroupWin, []string{"sliding window"}
 		}
-		t.Logf("%s at %s: %+v", c.fixture, c.kv, d)
-		if d.Positions != want.Positions || d.Guaranteed != want.Guaranteed || d.BlockRows != want.BlockRows || d.Precision != want.Precision ||
-			!slices.Equal(d.Groups, groups) {
-			t.Errorf("%s at %s: pool %+v, want %+v with groups %v", c.fixture, c.kv, d, want, groups)
+		t.Logf("%s at %s: %+v (slack %d, planned %d)", c.fixture, c.kv, d, r.kvSlack, kvWindowSlack)
+		if want := (r.kvPools[group].blocks - 1) * kvBlock; d.Positions != want || d.Guaranteed != r.kvShareCtx || d.BlockRows != kvBlock || d.Precision != c.kv || !slices.Equal(d.Groups, groups) {
+			t.Errorf("%s at %s: pool %+v, want %d positions, share %d, groups %v", c.fixture, c.kv, d, want, r.kvShareCtx, groups)
 		}
-		switch {
-		case c.window:
-			// The window pools are sized with the build's kvSlack, which kvChargedBytes does not read (it prices kvWindowSlack): a
-			// pricing gap for windowed KV, recorded as an MM8 CUDA item, not this test's. The detail reports what was allocated.
-			t.Logf("%s at %s: the pools hold %d bytes; kvChargedBytes prices %d (window slack %d, priced %d)", c.fixture, c.kv, d.Bytes,
-				want.Bytes, r.kvSlack, kvWindowSlack)
-		case r.ctxCap == r.kvShareCtx && d.Bytes != want.Bytes:
-			t.Errorf("%s at %s: pool bytes %d, the plan charges %d", c.fixture, c.kv, d.Bytes, want.Bytes)
+		want := kvChargedBytes(r.kvShareCtx, r.kvSlotsN, r.layers)
+		if c.window {
+			// The grant's bytes, beside the plan's: the slack the fit priced, and the one the grant raised it to.
+			want += r.windowedPoolCharged(r.kvSlack, r.kvSlotsN) - r.windowedPoolCharged(kvWindowSlack, r.kvSlotsN)
+			if r.kvSlack <= kvWindowSlack {
+				t.Errorf("%s: slack %d: no grant ran, so this case reads nothing of it", c.fixture, r.kvSlack)
+			}
+		}
+		if d.Bytes != want {
+			t.Errorf("%s at %s: pool bytes %d, the plan and any grant charge %d", c.fixture, c.kv, d.Bytes, want)
+		}
+		m.Close()
+		if !c.window {
+			continue
+		}
+		// No headroom: no grant, so the pools are exactly what the fit priced.
+		old := kvGrantFreeVRAM
+		kvGrantFreeVRAM = func(*cudaResident) (uint64, error) { return 0, nil }
+		m, r = load(c.fixture, c.kv, c.window)
+		kvGrantFreeVRAM = old
+		if b, p := m.ResidentKVPool().Bytes, kvChargedBytes(r.kvShareCtx, r.kvSlotsN, r.layers); r.kvSlack != kvWindowSlack || b != p {
+			t.Errorf("%s with no headroom: slack %d (planned %d), pool bytes %d, the plan charges %d", c.fixture, r.kvSlack, kvWindowSlack, b, p)
+		} else {
+			t.Logf("%s with no headroom: slack %d, pool bytes %d, equal to the plan's", c.fixture, r.kvSlack, b)
 		}
 		m.Close()
 	}

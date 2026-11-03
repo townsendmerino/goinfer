@@ -1,0 +1,22 @@
+# #617 review: the plants on a real CUDA server, qwen2.5-coder-0.5b q4_k_m, 2026-11-02 18:53:54 PST, load 0.28
+
+# serve -kv-sessions 4
+server up: 1
+  KV pool: 65,536 tokens in blocks of 64 (f16, 0.8 GB; one group); a prompt can take another conversation's KV rows; one conversation can use up to 32,768 of them.
+models list ...............  ok    1 model · cuda-resident (int4)
+shared preamble reused ....  ok    reused 960 of 1755 prompt tokens (own 0, shared 960, host 0); kv_share "on"
+1 of 10 checks FAILED
+
+# serve -kv-sessions 4 -kv-share off
+server up: 1
+  KV pool: 65,536 tokens in blocks of 64 (f16, 0.8 GB; one group); no conversation takes another's KV rows (--kv-share off); one conversation can use up to 32,768 of them.
+models list ...............  ok    1 model · cuda-resident (int4)
+shared preamble reused ....  FAIL  reused 0 of 1755 prompt tokens (own 0, shared 0, host 0); kv_share "off: --kv-share off"; the second conversation did not take the preamble it shares with the first from the first's KV
+2 of 10 checks FAILED
+
+# serve -kv-sessions 1
+server up: 1
+  KV pool: 16,384 tokens in blocks of 64 (f16, 0.3 GB; one group); no conversation takes another's KV rows (one KV slot); one conversation can use all of it.
+models list ...............  ok    1 model · cuda-resident (int4)
+shared preamble reused ....  skip  this load cannot share rows across conversations: none: one KV slot
+1 of 10 checks FAILED

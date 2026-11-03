@@ -544,6 +544,15 @@ func (s *server) modelByName(name string) *loadedModel {
 // pathFields returns the resolved decode/prefill path fields for one served model, or nil when the
 // name has no decoder (an embedding-only entry). ONE source for both /v1/models and /health, so the
 // vendor extension and the operator surface can never disagree about what the server resolved to.
+// kvShareField is /v1/models' kv_share vendor field: decoder.Model.KVShareState as "on", or "off: why" and "none: why".
+func kvShareField(m modelHandle) string {
+	state, why := m.KVShareState()
+	if why == "" {
+		return state
+	}
+	return state + ": " + why
+}
+
 func (s *server) pathFields(name string) map[string]any {
 	lm := s.modelByName(name)
 	if lm == nil || lm.model == nil {
@@ -552,6 +561,7 @@ func (s *server) pathFields(name string) map[string]any {
 	batched, why := lm.mdl().PrefillPath()
 	f := map[string]any{
 		"decode_path":     lm.mdl().DecodePath(),
+		"kv_share":        kvShareField(lm.mdl()),
 		"prefill_batched": batched,
 		"prefill_path":    why,
 		// Quant and resident size, so the web UI's Models tab can list what is resident (and size an Unload button)

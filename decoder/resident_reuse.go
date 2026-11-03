@@ -283,6 +283,30 @@ func (m *Model) ResidentKVPool() KVPoolDetail {
 	return KVPoolDetail{}
 }
 
+// KVShareState says whether a request on this resident can take KV rows another conversation computed, by residentShare's own tests:
+// "on"; "off" when the operator turned it off (--kv-share off, GOINFER_NO_RESIDENT_REUSE), with why; or "none" when this load cannot
+// share at all (off the resident path, one KV slot, a backend that copies no rows, recurrent state), with why.
+func (m *Model) KVShareState() (state, why string) {
+	switch {
+	case !m.ResidentActive():
+		return "none", "not resident"
+	case m.residentSlotCount() <= 1:
+		return "none", "one KV slot"
+	case m.hasRecurrentState():
+		return "none", "recurrent state cannot be copied"
+	}
+	if _, ok := m.resident.(ResidentKVCopier); !ok {
+		return "none", "this backend copies no KV rows"
+	}
+	switch {
+	case m.kvShareOff:
+		return "off", "--kv-share off"
+	case m.residentReuseDisabled():
+		return "off", "GOINFER_NO_RESIDENT_REUSE"
+	}
+	return "on", ""
+}
+
 // KVCopyDecline is CopyKV's refusal of a range, with the reason; dst is untouched.
 type KVCopyDecline struct{ Reason string }
 

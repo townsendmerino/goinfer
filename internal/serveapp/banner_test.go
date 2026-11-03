@@ -581,9 +581,13 @@ func TestBanner_kvPoolLine(t *testing.T) {
 		f    bannerFacts
 		want string
 	}{
-		{"one conversation can use all of it", bannerFacts{resident: true, kvSlots: 4, ctxWindow: 58000, kvPoolDetail: pool, decodePath: "cuda-resident (int4)"},
-			"KV pool: 58,000 tokens in blocks of 64 (f16, 3.3 GB; one group); a prompt can take another conversation's KV rows (--kv-share on); one conversation can use all of it."},
-		{"a cap below the pool, sharing off, a window group", bannerFacts{resident: true, kvSlots: 4, ctxWindow: 32768, kvShareOff: true, decodePath: "cuda-resident (int4)",
+		{"one conversation can use all of it", bannerFacts{resident: true, kvSlots: 4, ctxWindow: 58000, kvPoolDetail: pool, kvShareState: "on", decodePath: "cuda-resident (int4)"},
+			"KV pool: 58,000 tokens in blocks of 64 (f16, 3.3 GB; one group); a prompt can take another conversation's KV rows; one conversation can use all of it."},
+		{"one slot: nothing to share with", bannerFacts{resident: true, kvSlots: 1, ctxWindow: 58000, kvPoolDetail: pool, kvShareState: "none", kvShareWhy: "one KV slot", decodePath: "cuda-resident (int4)"},
+			"KV pool: 58,000 tokens in blocks of 64 (f16, 3.3 GB; one group); no conversation takes another's KV rows (one KV slot); one conversation can use all of it."},
+		{"resident reuse off", bannerFacts{resident: true, kvSlots: 4, ctxWindow: 58000, kvPoolDetail: pool, kvShareState: "off", kvShareWhy: "GOINFER_NO_RESIDENT_REUSE", decodePath: "cuda-resident (int4)"},
+			"KV pool: 58,000 tokens in blocks of 64 (f16, 3.3 GB; one group); no conversation takes another's KV rows (GOINFER_NO_RESIDENT_REUSE); one conversation can use all of it."},
+		{"a cap below the pool, sharing off, a window group", bannerFacts{resident: true, kvSlots: 4, ctxWindow: 32768, kvShareState: "off", kvShareWhy: "--kv-share off", decodePath: "cuda-resident (int4)",
 			kvPoolDetail: decoder.KVPoolDetail{Positions: 48128, Guaranteed: 12032, BlockRows: 64, Groups: []string{"full", "sliding window"}, Precision: "f32", Bytes: 1 << 30}},
 			"KV pool: 48,128 tokens in blocks of 64 (f32, 1.0 GB; groups: full, sliding window); no conversation takes another's KV rows (--kv-share off); one conversation can use up to 32,768 of them."},
 		{"no pool: no line", bannerFacts{resident: true, kvSlots: 1, ctxWindow: 4096, decodePath: "metal-resident (int4)"}, ""},

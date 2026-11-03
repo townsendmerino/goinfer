@@ -490,31 +490,43 @@ func TestToolsHarnessMessages_unusableBlocksFail(t *testing.T) {
 	}
 }
 
-// TestSharedPreamble is KV4's §5.16 serve check row: the second of two conversations sharing a preamble passes when it reports reuse
-// covering at least half its prompt, fails when it re-prefilled, and skips on a model whose decode path is not resident.
+// TestSharedPreamble is KV4's §5.16 serve check row: the second of two conversations sharing a preamble passes only when it reports
+// shared tokens, so a reuse of the first's slot in place fails; a server that cannot share skips; one turned off by its operator fails;
+// and a /v1/models failure fails rather than skips.
 func TestSharedPreamble(t *testing.T) {
+	type reuse = map[string]int
 	for _, tc := range []struct {
 		name         string
-		path         string
+		models       int // /v1/models' status; 0: 200 with the row below
+		id, path, kv string
 		reused       int
+		src          reuse
 		wantOK, skip bool
 	}{
-		{"reused", "cuda-resident (int4)", 640, true, false},
-		{"re-prefilled", "cuda-resident (int4)", 0, false, false},
-		{"not resident", "cpu (int4)", 0, false, true},
+		{name: "shared", id: "m", path: "cuda-resident (int4)", kv: "on", reused: 960, src: reuse{"shared_tokens": 960}, wantOK: true},
+		{name: "the first's slot taken in place", id: "m", path: "cuda-resident (int4)", kv: "on", reused: 980, src: reuse{"own_tokens": 980}},
+		{name: "a small share", id: "m", path: "cuda-resident (int4)", kv: "on", reused: 64, src: reuse{"shared_tokens": 64}},
+		{name: "re-prefilled, sharing off", id: "m", path: "cuda-resident (int4)", kv: "off: --kv-share off"},
+		{name: "one slot", id: "m", path: "cuda-resident (int4)", kv: "none: one KV slot", skip: true},
+		{name: "not resident", id: "m", path: "cpu (int4)", kv: "none: not resident", skip: true},
+		{name: "/v1/models fails", models: http.StatusInternalServerError},
+		{name: "/v1/models does not list it", id: "other", path: "cuda-resident (int4)", kv: "on"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
 			c := newFake(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/v1/models" {
-					json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "m", "decode_path": tc.path}}})
+					if tc.models != 0 {
+						w.WriteHeader(tc.models)
+						return
+					}
+					json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": tc.id, "decode_path": tc.path, "kv_share": tc.kv}}})
 					return
 				}
 				calls++
-				u := map[string]any{"prompt_tokens": 700, "completion_tokens": 4, "total_tokens": 704, "prefill_reused_tokens": 0}
+				u := map[string]any{"prompt_tokens": 1900, "completion_tokens": 4, "total_tokens": 1904, "prefill_reused_tokens": 0}
 				if calls == 2 && tc.reused > 0 {
-					u["prefill_reused_tokens"] = tc.reused
-					u["prefill_reuse"] = map[string]int{"own_tokens": 0, "shared_tokens": tc.reused, "host_tokens": 0}
+					u["prefill_reused_tokens"], u["prefill_reuse"] = tc.reused, tc.src
 				}
 				json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": "x"}}}, "usage": u})
 			})

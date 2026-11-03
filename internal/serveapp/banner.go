@@ -70,11 +70,11 @@ type bannerFacts struct {
 	// a backend or family without them, 0 off the resident path.
 	kvSlots int
 	// kvPool and kvShare: the positions a resident's shared KV pool holds and each conversation's guaranteed share
-	// (decoder.Model.ResidentKVPool); zeros without a pool. kvPoolDetail is the rest of that pool, and kvShareOff whether
-	// requests may take another conversation's KV rows (--kv-share).
-	kvPool, kvShare int
-	kvPoolDetail    decoder.KVPoolDetail
-	kvShareOff      bool
+	// (decoder.Model.ResidentKVPool); zeros without a pool. kvPoolDetail is the rest of that pool, and kvShareState and kvShareWhy
+	// whether a request can take another conversation's KV rows (decoder.Model.KVShareState).
+	kvPool, kvShare          int
+	kvPoolDetail             decoder.KVPoolDetail
+	kvShareState, kvShareWhy string
 
 	// towerReserve: the VRAM held back for this model's CUDA vision tower when the resident plan was made (towerReserve; 0 when there is none or it is not CUDA).
 	towerReserve int64
@@ -115,7 +115,8 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.ctxNote = lm.mdl().ResidentContextNote()
 	f.harnessKVBytes = lm.mdl().ResidentContextKVBytes(harnessCtx)
 	f.kvSlots = lm.mdl().ResidentKVSlots()
-	f.kvPoolDetail, f.kvShareOff = lm.mdl().ResidentKVPool(), lm.mdl().KVShareOff()
+	f.kvPoolDetail = lm.mdl().ResidentKVPool()
+	f.kvShareState, f.kvShareWhy = lm.mdl().KVShareState()
 	f.kvPool, f.kvShare = f.kvPoolDetail.Positions, f.kvPoolDetail.Guaranteed
 	// A decline is only a decline when a GPU backend was built and then did not go resident (EffectiveBackend is that backend, not "cpu"). ResidentDecline is
 	// also set, with its own "the CPU backend" reason, for an ordinary CPU load or one that -backend auto sent to the CPU — where nothing was declined, the CPU was the choice.
@@ -455,9 +456,9 @@ func kvPoolBannerLine(f bannerFacts) string {
 	if len(d.Groups) > 1 {
 		groups = "groups: " + strings.Join(d.Groups, ", ")
 	}
-	scope := "a prompt can take another conversation's KV rows (--kv-share on)"
-	if f.kvShareOff {
-		scope = "no conversation takes another's KV rows (--kv-share off)"
+	scope := "a prompt can take another conversation's KV rows"
+	if f.kvShareState != "on" {
+		scope = "no conversation takes another's KV rows (" + f.kvShareWhy + ")"
 	}
 	use := "one conversation can use all of it"
 	if f.ctxWindow > 0 && f.ctxWindow < d.Positions {

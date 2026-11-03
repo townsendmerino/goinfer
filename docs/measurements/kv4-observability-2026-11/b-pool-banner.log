@@ -33,3 +33,5 @@ FAIL
     kvbytes_agreement_test.go:173: mistral-tiny-window at f32: the pools hold 3834880 bytes; kvChargedBytes prices 2065408 (window slack 1088, priced 512)
 --- PASS: TestKVPool_detailNamesThePool (0.71s)
 ok  	github.com/townsendmerino/goinfer/cuda	10.484s
+
+# RETRACTED 2026-11-02 (#617's review): the 'pricing gap' this log's commit and the first PR text named is not one. The KV fit prices the planned slack (kvWindowSlack, 512); kvGrantRollback then raises the slack from VRAM nothing else will use, and deriveMemory subtracts the grant. b-review-pool-detail.log proves it to the byte: with no headroom the pools are the plan's 2,065,408 bytes, and with the grant the plan's plus the grant's, 3,834,880. Nothing is underpriced, and the fit's price stays.
