@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -15,7 +16,8 @@ import (
 // KV8a's recurrent checkpoint on CUDA (decoder.ResidentRecurrentCheckpoint; docs/measurements/kv8a-2026-10/README.md, "Where the
 // checkpoint lives on CUDA"): one device copy of every recurrent layer's state and conv window, DeltaNet (dnWin, dnState) and
 // Mamba-2 (mbWin, mbSSM). It lives in device memory because the save runs on every request, and a device-to-device copy keeps
-// that cheap; there is no host fallback. A load whose free VRAM cannot hold it keeps none, and the slot behaves as before KV8a.
+// that cheap; there is no host fallback. A load whose free VRAM cannot hold it keeps none, and the slot behaves as before KV8a. With
+// several KV slots it is still one copy, the bound slot's when it is saved: a restore on another slot is refused.
 
 var _ decoder.ResidentRecurrentCheckpoint = (*cudaResident)(nil)
 
@@ -60,7 +62,7 @@ func (r *cudaResident) allocRecurrentCheckpoint() {
 		fmt.Fprintf(os.Stderr, "cuda: recurrent checkpoint: none kept (%s)\n", r.ckptDeclined)
 		return
 	}
-	r.ckptSave, r.ckptRestore, r.ckptBytes = copies, nil, bytes
+	r.ckptSave, r.ckptRestore, r.ckptBytes, r.ckptSlot = copies, nil, bytes, -1
 	for _, c := range copies {
 		r.ckptRestore = append(r.ckptRestore, gpu.DeviceCopy{Dst: c.Src, Src: c.Dst, Bytes: c.Bytes})
 	}
@@ -168,21 +170,70 @@ func mib(b int64) float64 { return float64(b) / (1 << 20) }
 // RecurrentCheckpointBytes (decoder.ResidentRecurrentCheckpoint) is the checkpoint's device bytes, 0 when the load kept none.
 func (r *cudaResident) RecurrentCheckpointBytes() int64 { return r.ckptBytes }
 
-// SaveRecurrentCheckpoint copies every recurrent layer's live state and conv window into the checkpoint, after the stream's queued
-// work, so it holds what the last prefill left.
-func (r *cudaResident) SaveRecurrentCheckpoint() error { return r.copyCheckpoint(r.ckptSave) }
+// bindCheckpoint points the save and restore copies at the bound slot's live state, in the order allocRecurrentCheckpoint made them.
+// Runs on the executor.
+func (r *cudaResident) bindCheckpoint() {
+	i := 0
+	for l := range r.layers {
+		L := &r.layers[l]
+		if !L.isRecurrent() {
+			continue
+		}
+		p := L.recurrentLive()
+		r.ckptSave[i].Src, r.ckptRestore[i].Dst = p.win, p.win
+		r.ckptSave[i+1].Src, r.ckptRestore[i+1].Dst = p.state, p.state
+		i += 2
+	}
+}
 
-// RestoreRecurrentCheckpoint copies the checkpoint back into the live state; the next prefill continues from it.
-func (r *cudaResident) RestoreRecurrentCheckpoint() error { return r.copyCheckpoint(r.ckptRestore) }
+// SaveRecurrentCheckpoint copies every recurrent layer's live state and conv window, the bound slot's, into the checkpoint, after the
+// stream's queued work, so it holds what the last prefill left. The checkpoint then belongs to that slot.
+func (r *cudaResident) SaveRecurrentCheckpoint() error {
+	if len(r.ckptSave) == 0 {
+		return errNoCheckpoint
+	}
+	return r.do(func() error {
+		r.bindCheckpoint()
+		if e := r.copyCheckpointNow(r.ckptSave); e != nil {
+			r.ckptSlot = -1 // a partial copy holds no slot's state
+			return e
+		}
+		r.ckptSlot = r.kvSlot
+		return nil
+	})
+}
+
+// RestoreRecurrentCheckpoint copies the checkpoint back into the live state; the next prefill continues from it. It refuses before
+// any save, and when another slot is bound than the one saved; the decoder then prefills from the start.
+func (r *cudaResident) RestoreRecurrentCheckpoint() error {
+	if len(r.ckptRestore) == 0 {
+		return errNoCheckpoint
+	}
+	return r.do(func() error {
+		if r.ckptSlot < 0 {
+			return fmt.Errorf("cuda: no recurrent checkpoint saved")
+		}
+		if r.ckptSlot != r.kvSlot {
+			return fmt.Errorf("cuda: the recurrent checkpoint holds KV slot %d's state, and slot %d is bound", r.ckptSlot, r.kvSlot)
+		}
+		r.bindCheckpoint()
+		return r.copyCheckpointNow(r.ckptRestore)
+	})
+}
+
+var errNoCheckpoint = errors.New("cuda: no recurrent checkpoint kept")
 
 func (r *cudaResident) copyCheckpoint(copies []gpu.DeviceCopy) error {
 	if len(copies) == 0 {
-		return fmt.Errorf("cuda: no recurrent checkpoint kept")
+		return errNoCheckpoint
 	}
-	return r.do(func() error {
-		if e := r.stream.Sync(); e != nil {
-			return e
-		}
-		return gpu.CopyDeviceBatch(copies)
-	})
+	return r.do(func() error { return r.copyCheckpointNow(copies) })
+}
+
+// copyCheckpointNow is copyCheckpoint on the executor.
+func (r *cudaResident) copyCheckpointNow(copies []gpu.DeviceCopy) error {
+	if e := r.stream.Sync(); e != nil {
+		return e
+	}
+	return gpu.CopyDeviceBatch(copies)
 }

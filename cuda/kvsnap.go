@@ -254,11 +254,12 @@ func (r *cudaResident) snapshotKV(slot, end int) (*cudaKVSnapshot, error) {
 	}
 	for _, d := range dn {
 		Ly := &r.layers[d.layer]
-		if err := gpu.Download(Ly.dnWin, buf[d.winOff:d.winOff+d.winWords]); err != nil {
+		pair := Ly.recurrentOf(slot)
+		if err := gpu.Download(pair.win, buf[d.winOff:d.winOff+d.winWords]); err != nil {
 			s.Release()
 			return nil, err
 		}
-		if err := gpu.Download(Ly.dnState, buf[d.stOff:d.stOff+d.stW]); err != nil {
+		if err := gpu.Download(pair.state, buf[d.stOff:d.stOff+d.stW]); err != nil {
 			s.Release()
 			return nil, err
 		}
@@ -363,10 +364,11 @@ func (r *cudaResident) restoreKVRows(s *cudaKVSnapshot, slot, from, end int) (ma
 		if Ly.dnWin.Len() != d.winWords || Ly.dnState.Len() != d.stW {
 			return true, fmt.Errorf("cuda: RestoreKV: layer %d's DeltaNet state is %d+%d words, the snapshot's %d+%d", d.layer, Ly.dnWin.Len(), Ly.dnState.Len(), d.winWords, d.stW)
 		}
-		if err := gpu.Upload(Ly.dnWin, buf[d.winOff:d.winOff+d.winWords]); err != nil {
+		pair := Ly.recurrentOf(slot)
+		if err := gpu.Upload(pair.win, buf[d.winOff:d.winOff+d.winWords]); err != nil {
 			return true, err
 		}
-		if err := gpu.Upload(Ly.dnState, buf[d.stOff:d.stOff+d.stW]); err != nil {
+		if err := gpu.Upload(pair.state, buf[d.stOff:d.stOff+d.stW]); err != nil {
 			return true, err
 		}
 	}

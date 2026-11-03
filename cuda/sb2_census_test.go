@@ -2151,7 +2151,7 @@ var cudaGapItems = map[string]struct {
 
 // cudaMemGapsPin is the number of rows in cuda/testdata/memgate_gaps.txt. CUDA's table of known reds (MM7) may only shrink: the fix that removes
 // rows deletes them and lowers this. Nothing writes that file, so a new red has to be added by hand and argued.
-const cudaMemGapsPin = 843
+const cudaMemGapsPin = 823
 
 // cudaMemGaps reads the table: one exact row per line, after its item's key and a tab. Each gap's bytes come from the model's shape, and gaps on
 // one row and line add up (Gate's match), so each states only its own.
@@ -2314,6 +2314,7 @@ func TestMemGate_cudaPlantsThroughTheTable(t *testing.T) {
 		{llama, "int4", mem.LineDense, 3 << 20, decoder.Options{}},
 		{llama, "int4", mem.LineKV, 3 << 20, decoder.Options{}},
 		{"testdata/qwen3_5-tiny", "int4", mem.LineState, 3 << 20, decoder.Options{}},
+		{"testdata/qwen3_5-tiny", "int4/slots2", mem.LineState, 3 << 20, decoder.Options{ResidentKVSlots: 2}},
 		{"testdata/glm-tiny", "int4", mem.LineExperts, 3 << 20, decoder.Options{}},
 		{"testdata/glm-tiny", "int4/expert-cache", mem.LinePinnedExperts, 3 << 20, decoder.Options{MoECacheExperts: true}},
 		{llama, "int4", mem.LineSlack, 3 << 20, decoder.Options{}},

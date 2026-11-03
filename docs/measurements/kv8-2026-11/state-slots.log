@@ -1,0 +1,138 @@
+# S-1, red first: program.CUDA claims RecurrentSlots and the request reads it, with one shared state. f6f6a9ec6 plus the claim, 2026-11-03 12:11:11 PST
+    mamba_guards_test.go:301: interleaved on two slots: 5632 logits differ from each sequence's solo run
+    mamba_guards_test.go:301: interleaved on two slots: 11264 logits differ from each sequence's solo run
+    mamba_guards_test.go:301: interleaved on two slots: 5632 logits differ from each sequence's solo run
+--- FAIL: TestRecurrentSlots_sequencesKeepTheirOwnState (2.60s)
+    --- FAIL: TestRecurrentSlots_sequencesKeepTheirOwnState/qwen35-tiny (2.01s)
+    --- FAIL: TestRecurrentSlots_sequencesKeepTheirOwnState/olmo_hybrid-tiny (0.30s)
+    --- FAIL: TestRecurrentSlots_sequencesKeepTheirOwnState/nemotron-tiny (0.29s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	2.653s
+FAIL
+# With the state slots: every S gate, the censuses and the memory gate. 2026-11-03 12:18:04 PST
+exit 0
+--- PASS: TestKernelLocalMemoryCensus (0.46s)
+--- PASS: TestKV8a_checkpointBitExact (2.07s)
+    --- PASS: TestKV8a_checkpointBitExact/qwen3next-tiny (1.77s)
+    --- PASS: TestKV8a_checkpointBitExact/nemotron-tiny (0.31s)
+--- PASS: TestKV8a_restoreEqualsColdPrefill (3.38s)
+    --- PASS: TestKV8a_restoreEqualsColdPrefill/qwen3next-tiny/under_the_fast_floor (0.74s)
+    --- PASS: TestKV8a_restoreEqualsColdPrefill/qwen3next-tiny/over_the_fast_floor (1.12s)
+    --- PASS: TestKV8a_restoreEqualsColdPrefill/nemotron-tiny/under_the_fast_floor (0.62s)
+    --- PASS: TestKV8a_restoreEqualsColdPrefill/nemotron-tiny/over_the_fast_floor (0.90s)
+--- PASS: TestKV8a_noRoomKeepsNone (0.25s)
+--- PASS: TestRecurrentStatePlanned_matchesTheBuild (0.32s)
+--- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState (0.89s)
+    --- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState/qwen35-tiny (0.33s)
+    --- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState/olmo_hybrid-tiny (0.28s)
+    --- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState/nemotron-tiny (0.29s)
+--- PASS: TestRecurrentSlots_sharedStateGoesRed (0.89s)
+    --- PASS: TestRecurrentSlots_sharedStateGoesRed/qwen35-tiny (0.31s)
+    --- PASS: TestRecurrentSlots_sharedStateGoesRed/olmo_hybrid-tiny (0.28s)
+    --- PASS: TestRecurrentSlots_sharedStateGoesRed/nemotron-tiny (0.29s)
+--- PASS: TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest (0.31s)
+--- PASS: TestRecurrentSlots_resetIsTheSlotsOwn (0.97s)
+    --- PASS: TestRecurrentSlots_resetIsTheSlotsOwn/qwen35-tiny (0.35s)
+    --- PASS: TestRecurrentSlots_resetIsTheSlotsOwn/olmo_hybrid-tiny (0.33s)
+    --- PASS: TestRecurrentSlots_resetIsTheSlotsOwn/nemotron-tiny (0.30s)
+--- PASS: TestRecurrentSlots_stateLinePerSlot (0.58s)
+--- PASS: TestRecurrentSlots_fitPricesTheState (0.00s)
+--- PASS: TestRecurrentSlots_checkpointStaysWithItsSlot (0.87s)
+    --- PASS: TestRecurrentSlots_checkpointStaysWithItsSlot/qwen35-tiny (0.31s)
+    --- PASS: TestRecurrentSlots_checkpointStaysWithItsSlot/olmo_hybrid-tiny (0.30s)
+    --- PASS: TestRecurrentSlots_checkpointStaysWithItsSlot/nemotron-tiny (0.27s)
+--- PASS: TestRecurrentSlots_decoderChoosesAmongSlots (1.02s)
+    --- PASS: TestRecurrentSlots_decoderChoosesAmongSlots/qwen35-tiny (0.37s)
+    --- PASS: TestRecurrentSlots_decoderChoosesAmongSlots/olmo_hybrid-tiny (0.32s)
+    --- PASS: TestRecurrentSlots_decoderChoosesAmongSlots/nemotron-tiny (0.33s)
+--- PASS: TestRecurrentSlots_snapshotHoldsTheSlotItNames (0.36s)
+--- PASS: TestBackendAdmissionCensus_cuda (1.86s)
+--- PASS: TestBackendMemoryCensus_cuda (7.31s)
+--- PASS: TestMemGate_cuda (113.87s)
+ok  	github.com/townsendmerino/goinfer/cuda	135.537s
+    mamba_guards_test.go:194: qwen35-tiny: the plan priced 16896 bytes of recurrent state, the build charges 16896 over 3 recurrent layers, the ledger's state line holds 16896 at the KV fit
+    mamba_guards_test.go:194: nemotron-tiny: the plan priced 10496 bytes of recurrent state, the build charges 10496 over 2 recurrent layers, the ledger's state line holds 10496 at the KV fit
+    mamba_guards_test.go:194: olmo_hybrid-tiny: the plan priced 10752 bytes of recurrent state, the build charges 10752 over 3 recurrent layers, the ledger's state line holds 10752 at the KV fit
+    mamba_guards_test.go:330: planted: 5632 logits differ
+    mamba_guards_test.go:330: planted: 11264 logits differ
+    mamba_guards_test.go:330: planted: 5632 logits differ
+    mamba_guards_test.go:434: planted: [a reset with slot 1 bound changed slot 0: 0 non-zero elements, 4224 before slot 0's sequence at position 6: 256 logits differ from its solo run]
+    mamba_guards_test.go:434: planted: [a reset with slot 1 bound changed slot 0: 0 non-zero elements, 2688 before slot 0's sequence at position 6: 512 logits differ from its solo run]
+    mamba_guards_test.go:434: planted: [a reset with slot 1 bound changed slot 0: 0 non-zero elements, 2624 before slot 0's sequence at position 6: 256 logits differ from its solo run]
+    sb2_census_test.go:2603: 474 builds held, 155 options declined by CUDA's own build
+    mamba_guards_test.go:467: qwen35-tiny at 1 slots: 33792 bytes on the state line, one slot's 16896
+    mamba_guards_test.go:467: qwen35-tiny at 2 slots: 50688 bytes on the state line, one slot's 16896
+    mamba_guards_test.go:467: qwen35-tiny at 4 slots: 84480 bytes on the state line, one slot's 16896
+    mamba_guards_test.go:467: olmo_hybrid-tiny at 1 slots: 21504 bytes on the state line, one slot's 10752
+    mamba_guards_test.go:467: olmo_hybrid-tiny at 2 slots: 32256 bytes on the state line, one slot's 10752
+    mamba_guards_test.go:467: olmo_hybrid-tiny at 4 slots: 53760 bytes on the state line, one slot's 10752
+    mamba_guards_test.go:467: nemotron-tiny at 1 slots: 20992 bytes on the state line, one slot's 10496
+    mamba_guards_test.go:467: nemotron-tiny at 2 slots: 31488 bytes on the state line, one slot's 10496
+    mamba_guards_test.go:467: nemotron-tiny at 4 slots: 52480 bytes on the state line, one slot's 10496
+    mamba_guards_test.go:599: P, 24 tokens: reused 0; reply [252 181 93 120 215 6], cold [252 181 93 120 215 6]
+    mamba_guards_test.go:599: Q, 24 tokens: reused 0; reply [41 64 107 251 106 176], cold [41 64 107 251 106 176]
+    mamba_guards_test.go:599: P, 32 tokens: reused 30; reply [139 46 255 70 112 159], cold [139 46 255 70 112 159]
+    mamba_guards_test.go:599: Q, 32 tokens: reused 30; reply [139 109 30 166 61 60], cold [139 109 30 166 61 60]
+    mamba_guards_test.go:599: P, 40 tokens: reused 38; reply [219 129 207 122 105 133], cold [219 129 207 122 105 133]
+    mamba_guards_test.go:599: P, 24 tokens: reused 0; reply [247 175 237 496 263 10], cold [247 175 237 496 263 10]
+    mamba_guards_test.go:599: Q, 24 tokens: reused 0; reply [208 45 461 32 404 275], cold [208 45 461 32 404 275]
+    mamba_guards_test.go:599: P, 32 tokens: reused 30; reply [26 485 413 237 47 57], cold [26 485 413 237 47 57]
+    mamba_guards_test.go:599: Q, 32 tokens: reused 30; reply [32 404 275 261 32 73], cold [32 404 275 261 32 73]
+    mamba_guards_test.go:599: P, 40 tokens: reused 38; reply [399 237 404 393 270 404], cold [399 237 404 393 270 404]
+    mamba_guards_test.go:599: P, 24 tokens: reused 0; reply [157 122 213 180 182 243], cold [157 122 213 180 182 243]
+    mamba_guards_test.go:599: Q, 24 tokens: reused 0; reply [139 63 224 128 108 117], cold [139 63 224 128 108 117]
+    mamba_guards_test.go:599: P, 32 tokens: reused 30; reply [44 119 8 29 60 174], cold [44 119 8 29 60 174]
+    mamba_guards_test.go:599: Q, 32 tokens: reused 30; reply [44 119 8 29 60 174], cold [44 119 8 29 60 174]
+    mamba_guards_test.go:599: P, 40 tokens: reused 38; reply [4 23 13 62 245 212], cold [4 23 13 62 245 212]
+# S-5's plant: the snapshot reads the bound slot's pair
+    mamba_guards_test.go:659: after the restore, position 64: 256 logits differ from the sequence's solo run
+--- FAIL: TestRecurrentSlots_snapshotHoldsTheSlotItNames (2.02s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	2.083s
+FAIL
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+# The memory census's diff against main: the lines added and changed
+> selftestdata/qwen35-tiny int4/slots4 nobara-desktop
+> selftestdata/qwen35-tiny int4/slots4 nobara-no-desktop
+> selftestdata/qwen35vl-tiny int4/slots4 nobara-desktop
+> selftestdata/qwen35vl-tiny int4/slots4 nobara-no-desktop
+> testdata/nemotron-tiny int4/slots4 nobara-desktop
+> testdata/nemotron-tiny int4/slots4 nobara-no-desktop
+> testdata/olmo_hybrid-tiny int4/slots4 nobara-desktop
+> testdata/olmo_hybrid-tiny int4/slots4 nobara-no-desktop
+> testdata/qwen35-tiny int4/slots4 nobara-desktop
+> testdata/qwen35-tiny int4/slots4 nobara-no-desktop
+> testdata/qwen35vl-tiny int4/slots4 nobara-desktop
+> testdata/qwen35vl-tiny int4/slots4 nobara-no-desktop
+> testdata/qwen3_5-tiny int4/slots4 nobara-desktop
+> testdata/qwen3_5-tiny int4/slots4 nobara-no-desktop
+> testdata/qwen3_5-tiny-normw int4/slots4 nobara-desktop
+> testdata/qwen3_5-tiny-normw int4/slots4 nobara-no-desktop
+> testdata/qwen3_5_moe-tiny int4/slots4 nobara-desktop
+> testdata/qwen3_5_moe-tiny int4/slots4 nobara-no-desktop
+> testdata/qwen3next-tiny int4/slots4 nobara-desktop
+> testdata/qwen3next-tiny int4/slots4 nobara-no-desktop
+DONE
+# The fold across a slot switch, and the state-line plant on a slots2 row, 12:21:21 PST
+--- PASS: TestRecurrentSlots_markedRowsFoldIntoTheirSlot (1.92s)
+    sb2_census_test.go:2339: red: testdata/qwen3_5-tiny int4: line "state": generated: leased 4228096 bytes against a plan of 16896: 3162624 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2339: red: testdata/qwen3_5-tiny int4/slots2: line "state": generated: leased 4244992 bytes against a plan of 33792: 3162624 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+--- PASS: TestMemGate_cudaPlantsThroughTheTable (2.28s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/dense (0.25s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/kv (0.25s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/state (0.30s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/state#01 (0.26s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/experts (0.25s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/pinned-experts (0.24s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/slack (0.25s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/companion (0.23s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/scratch (0.24s)
+ok  	github.com/townsendmerino/goinfer/cuda	4.284s
+# Its plant: UseKVSlot does not flush
+    mamba_guards_test.go:704: 2 marked rows still wait after another slot was bound
+    mamba_guards_test.go:712: after the slot switch, 256 logits differ from one slot's
+--- FAIL: TestRecurrentSlots_markedRowsFoldIntoTheirSlot (1.98s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	2.031s
+FAIL
+0

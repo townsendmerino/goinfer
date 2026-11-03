@@ -203,8 +203,9 @@ var planFreeSeenForTest func(free int64)
 // binary search finds the edge. Plan's weight figure is conservative, so the result can land lower than the build
 // would allow (docs/code-notes/cuda.md#ctxForSlots).
 func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slots, floor int) int {
+	stateBytes := m.Plan("cuda", 1<<40, decoder.PlanRequest{Ctx: 1}).StateBytes // the plan's own line is one slot's
 	fits := func(ctx int) bool {
-		more := int64(slots-1) * m.CUDAKVSlotBytes(ctx, m.KVCacheF16()) // each further slot, at the load's own KV precision (decoder/kv16_cuda.go)
+		more := int64(slots-1) * (m.CUDAKVSlotBytes(ctx, m.KVCacheF16()) + stateBytes) // each further slot, at the load's own KV precision (decoder/kv16_cuda.go), with its recurrent state
 		p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extraBytes + more})
 		return p.Placement != decoder.PlacementDecline
 	}
@@ -458,6 +459,9 @@ type cudaLayer struct {
 	mbIn, mbOut               cudaWQ
 	mbConvW, mbConvB, mbHeadP Buffer
 	mbNormW, mbWin, mbSSM     Buffer
+	// recSlots is each KV slot's conv window and state, on a recurrent layer of a build with several slots. UseKVSlot points the
+	// layer's dnWin and dnState, or mbWin and mbSSM, at the bound slot's pair.
+	recSlots []recurrentPair
 	// qGate marks a SOFTMAX layer of the same family: q_proj is double width ([query ‖ gate] per
 	// head) and the context is scaled by sigmoid(gate) before o_proj. The weight stays fused
 	// because it is quantized; the split happens on the activation.
@@ -874,6 +878,7 @@ type cudaResident struct {
 	ckptBytes             int64
 	ckptSave, ckptRestore []gpu.DeviceCopy
 	ckptDeclined          string
+	ckptSlot              int   // the KV slot whose state the checkpoint holds, -1 before a save
 	extraBytes            int64 // decoder.Model.ExtraResidentBytes() at construction — a companion allocation (--drafter) reserved out of every free-VRAM check this resident makes after it (checkWeightsFit, checkKVFits, allocSlots)
 	lmW                   cudaWQ
 	finalNorm             Buffer
@@ -2325,7 +2330,7 @@ func (r *cudaResident) checkKVFits() error {
 		memReadSeenForTest("kv", int64(free), err == nil)
 	}
 	d := kvFitDecision(kvFitIn{ctxCap: r.ctxCap, explicit: r.ctxExplicit, slotsReq: r.kvSlotsReq, layers: r.layers,
-		extraBytes: r.extraBytes, margin: r.ctxMargin()}, free, err == nil)
+		extraBytes: r.extraBytes, margin: r.ctxMargin(), slotState: r.recurrentStateCharged()}, free, err == nil)
 	for _, l := range d.logs {
 		fmt.Fprint(os.Stderr, l)
 	}
@@ -2334,7 +2339,7 @@ func (r *cudaResident) checkKVFits() error {
 }
 
 // kvFitIn is what checkKVFits decides from besides the free VRAM: the planned context and whether it was asked for, the KV
-// slots requested, the layers the pools are priced over, the companion reserve and the context margin.
+// slots requested, the layers the pools are priced over, the companion reserve, the context margin and a further slot's recurrent state.
 type kvFitIn struct {
 	ctxCap     int
 	explicit   bool
@@ -2342,6 +2347,7 @@ type kvFitIn struct {
 	layers     []cudaLayer
 	extraBytes int64
 	margin     int64
+	slotState  int64 // each KV slot past the first's recurrent state (recurrentStateCharged); 0 for a model with none
 }
 
 // kvFitOut is checkKVFits' decision: the context the pools are sized for, the slots granted (>= 1), the lines the build logs
@@ -2386,14 +2392,14 @@ func kvFitDecision(in kvFitIn, free uint64, ok bool) kvFitOut {
 	}
 	if need+reserve <= int64(free) {
 		// MC1: as many of the requested KV slots as fit the same budget; the slots share each layer's pool buffer.
-		out.slots = kvChargedSlotsFit(in.slotsReq, int64(free), out.ctxCap, in.layers, reserve)
+		out.slots = kvChargedSlotsFit(in.slotsReq, int64(free), out.ctxCap, in.layers, reserve, in.slotState)
 		if out.slots < in.slotsReq && !in.explicit && out.ctxCap > cudaCtxCapDefault {
 			// Slots before context (owner decision): an unpinned context gives up positions, never below cudaCtxCapDefault,
 			// until every requested slot fits. ctxForSlots planned this with Plan, which prices the KV linearly, so its choice can
 			// be a few positions long; this trims it against the real free VRAM, before any KV exists. Nothing allocated so far
 			// depends on ctxCap exactly: the split-KV score scratch is indexed by the attended span, so a smaller cap uses less of it.
 			c := cudaCtxCapDefault
-			if cc, fits := kvChargedCapForBytes(int64(free)-reserve, in.slotsReq, cudaCtxCapDefault, out.ctxCap, in.layers); fits {
+			if cc, fits := kvChargedCapForBytes(int64(free)-reserve-int64(in.slotsReq-1)*in.slotState, in.slotsReq, cudaCtxCapDefault, out.ctxCap, in.layers); fits {
 				c = cc
 			}
 			if c < out.ctxCap {
@@ -2401,7 +2407,7 @@ func kvFitDecision(in kvFitIn, free uint64, ok bool) kvFitOut {
 					"fit beside the weights (%.0f MB free, less %.0f MB reserved)\n",
 					c, out.ctxCap, in.slotsReq, float64(free)/(1<<20), float64(reserve)/(1<<20)))
 				out.ctxCap, need = c, kvChargedBytes(c, 1, in.layers)
-				out.slots = kvChargedSlotsFit(in.slotsReq, int64(free), out.ctxCap, in.layers, reserve)
+				out.slots = kvChargedSlotsFit(in.slotsReq, int64(free), out.ctxCap, in.layers, reserve, in.slotState)
 			}
 		}
 		if out.slots < in.slotsReq {
@@ -2722,7 +2728,8 @@ func (r *cudaResident) TruncateTo(pos int) {}
 // the whole switch because nothing holds a slot's tables across calls: every launch that reads or writes KV (rope_kv,
 // the attention kernels, the batched prefill, the MLA latent store) takes kvT(l) when it is issued, and the CUDA
 // graphs (GOINFER_CUDA_GRAPHS) capture only segA/B/C, which touch no KV: rope_kv and attention run live in the gap
-// between them. A recurrent family's state is not part of a slot, which is why it is allocated one (kvSlotsReq).
+// between them. A recurrent layer's window and state are the slot's own (allocRecurrentSlots): a launch takes them when it is
+// issued, so binding points the layer at them, and marked rows fold into the slot that marked them first.
 func (r *cudaResident) KVSlots() int { return max(1, len(r.kvTabs)) }
 
 func (r *cudaResident) UseKVSlot(i int) error {
@@ -2732,8 +2739,19 @@ func (r *cudaResident) UseKVSlot(i int) error {
 	if i == r.kvSlot {
 		return nil
 	}
+	if e := r.FlushFold(); e != nil {
+		return e
+	}
 	return r.do(func() error {
 		r.kvSlot, r.kvTabSlot = i, i
+		for l := range r.layers {
+			if L := &r.layers[l]; i < len(L.recSlots) {
+				L.bindRecurrent(L.recSlots[i])
+			}
+		}
+		if a := r.dnSpec; a != nil {
+			a.avail = 0 // the last verify's rows are the slot's being left
+		}
 		return nil
 	})
 }
