@@ -1,0 +1,8 @@
+# O-3 fit check: serve's own plan for ~/models/olmo-hybrid-7b at int4, --kv i8, -require-backend, at 374f1654e + working tree, 2026-11-02 07:03:00 PST, load 1.42, MemAvailable 59.6 GB
+1864, /usr/bin/kwin_wayland
+# github.com/townsendmerino/goinfer/cmd/serve
+cmd/serve/backendtag_guard_cuda.go:12:11: invalid operation: "goinfer: `-tags cuda` does nothing on the root cmd/serve since v0.10.0 (it builds no backend). Build the submodule entrypoint instead: CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve" + 1 (mismatched types untyped string and untyped int)
+BUILD FAILED
+1864, /usr/bin/kwin_wayland
+/home/francis/.claude/jobs/56f43f8e/tmp/olmo-gates.sh: line 21: /home/francis/.claude/jobs/56f43f8e/tmp/serve-olmo: No such file or directory
+# server up: 0

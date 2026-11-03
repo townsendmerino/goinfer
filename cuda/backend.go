@@ -124,6 +124,7 @@ type hlayer struct {
 	qGate                                 bool
 	dnQKV, dnZ, dnOut, dnB, dnA           hostW
 	dnConvW, dnDtBias, dnNegExpA, dnNormW []float32
+	dnBetaScale, dnONormEps               float32 // deltaNetGateSettings
 
 	// MLA (DeepSeek / Kimi, FeatMLA)
 	mlaQA, mlaQB, mlaQ, mlaKVA hostW
@@ -406,6 +407,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			// here — the one place this port is knowingly coarser than the reference.
 			qkv, z, outP, inB, inA, cW, dtB, negA, nW := m.Qwen35DeltaWeights(l)
 			hl.dnConvW, hl.dnDtBias, hl.dnNegExpA, hl.dnNormW = cW, dtB, negA, nW
+			hl.dnBetaScale, hl.dnONormEps = deltaNetGateSettings(m.Program().Layers[l])
 			// Name the missing tensor. Every one of these becomes a device up32, and an empty
 			// slice there is a 0-byte allocation — which this driver reports as "invalid length"
 			// with no hint at WHICH of the four (or which loader) produced it. Two different
@@ -1599,6 +1601,10 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				L.dnB, L.dnA = r.upW(h.dnB), r.upW(h.dnA)
 				L.dnConvW, L.dnDtBias = r.up32(h.dnConvW), r.up32(h.dnDtBias)
 				L.dnNegExpA, L.dnNormW = r.up32(h.dnNegExpA), r.up32(h.dnNormW)
+				L.dnBetaScale, L.dnGNormEps = h.dnBetaScale, r.eps
+				if h.dnONormEps != 0 {
+					L.dnGNormEps = h.dnONormEps
+				}
 				L.dnWin = r.upOn(mem.LineState, make([]float32, dp.winFloats()))
 				L.dnState = r.upOn(mem.LineState, make([]float32, dp.stateElems))
 			} else if h.mixer == decoder.MixerMamba {

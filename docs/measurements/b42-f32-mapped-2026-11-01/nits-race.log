@@ -1,0 +1,35 @@
+race=False the branch: 32 families, exit 0; allocs 6..15, top [('llama4-tiny', 15, 1760), ('smollm3-tiny', 13, 1728), ('qwen25vl-tiny', 12, 1712)]; bytes 1568..1904, lowest cohere-tiny
+race=False plant: one matrix: 32 families, exit 0; allocs 7..16, top [('llama4-tiny', 16, 34528), ('smollm3-tiny', 14, 132800), ('qwen25vl-tiny', 13, 83632)]; bytes 18096..525864, lowest qwen3asr-tiny
+race=False plant: the whole walk: 32 families, exit 0; allocs 114..561, top [('qwen3next-tiny', 561, 1202304), ('qwen3vlmoe-tiny', 498, 1126176), ('qwen3moe-tiny', 488, 1290600)]; bytes 95008..10516096, lowest qwen3asr-tiny
+race=True the branch: 32 families, exit 0; allocs 7..17, top [('gemma3-vl-tiny', 17, 1712), ('llama4-tiny', 17, 1776), ('qwen25vl-tiny', 17, 1728)]; bytes 1568..1904, lowest cohere-tiny
+race=True plant: one matrix: 32 families, exit 0; allocs 8..22, top [('llama4-tiny', 22, 34664), ('bailing_hybrid-tiny', 19, 67320), ('qwen3next-tiny', 18, 67328)]; bytes 18096..525864, lowest qwen3asr-tiny
+race=True plant: the whole walk: 32 families, exit 0; allocs 147..729, top [('qwen3next-tiny', 729, 1219320), ('qwen3vlmoe-tiny', 665, 1136864), ('qwen3moe-tiny', 662, 1299848)]; bytes 97176..10518552, lowest qwen3asr-tiny
+# TestGIWCopiedF32_everyFamily under -race, repeated: the count and bytes before the refusal, per run
+run 0: exit 0; allocs max 19, llama4 [19], olmo_hybrid [10]; bytes max 6800
+run 1: exit 0; allocs max 18, llama4 [17], olmo_hybrid [18]; bytes max 1904
+run 2: exit 0; allocs max 19, llama4 [19], olmo_hybrid [15]; bytes max 6752
+run 3: exit 0; allocs max 18, llama4 [18], olmo_hybrid [13]; bytes max 6864
+run 4: exit 0; allocs max 18, llama4 [17], olmo_hybrid [15]; bytes max 1904
+run 5: exit 0; allocs max 20, llama4 [20], olmo_hybrid [13]; bytes max 6864
+run 6: exit 0; allocs max 21, llama4 [21], olmo_hybrid [12]; bytes max 1984
+run 7: exit 0; allocs max 19, llama4 [19], olmo_hybrid [13]; bytes max 6936
+32 of 32 families vary in count across the runs; bytes vary in 30
+# the fixed test: bound 32 allocations and 4 KiB
+no plant, no race: exit 0; 0 count failures, 0 byte failures; passed line True
+no plant, -race: exit 1; 0 count failures, 1 byte failures; passed line True
+plant: one matrix, no race: exit 1; 0 count failures, 32 byte failures; passed line True
+plant: one matrix, -race: exit 1; 0 count failures, 32 byte failures; passed line True
+plant: the whole walk, no race: exit 1; 32 count failures, 32 byte failures; passed line True
+plant: the whole walk, -race: exit 1; 32 count failures, 32 byte failures; passed line True
+no plant, -race, repeat 0: exit 1; 0 count failures, 1 byte failures; passed line True
+no plant, -race, repeat 1: exit 1; 0 count failures, 2 byte failures; passed line True
+no plant, -race, repeat 2: exit 1; 0 count failures, 1 byte failures; passed line True
+no plant, -race, repeat 3: exit 0; 0 count failures, 0 byte failures; passed line True
+no plant, -race, repeat 4: exit 1; 0 count failures, 2 byte failures; passed line True
+# the bound after the -race repeats: 32 allocations and 12 KiB
+plant: one matrix, no race: exit 1; 0 count failures, 32 byte failures
+plant: one matrix, -race: exit 1; 0 count failures, 32 byte failures
+plant: the whole walk, no race: exit 1; 32 count failures, 32 byte failures
+plant: the whole walk, -race: exit 1; 32 count failures, 32 byte failures
+no plant, no race: exit 0; 0 count failures, 0 byte failures
+no plant, -race, 30 repeats: 0 failed
