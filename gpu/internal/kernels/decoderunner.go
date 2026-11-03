@@ -286,6 +286,9 @@ type RunModel struct {
 	// QKNormWhole (FeatQKNormWhole, Olmo 3 / Olmo Hybrid) reduces QK-norm over the whole projected Q/K vector
 	// (1 block of width nH*hd for Q and 1 block of width nKV*hd for K) instead of per head.
 	QKNormWhole bool
+	// PostOnlyNorm (FeatPostOnlyNorm) is a model whose attention and FFN layers carry no pre-norm: AttnNorm and MlpNorm are nil there,
+	// and the sublayer's input is quantized as it is.
+	PostOnlyNorm bool
 }
 
 // mlaRunParams carries the model-level MLA geometry (uniform across layers). Per-layer

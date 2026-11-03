@@ -501,7 +501,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	sandwichOK := m.SandwichNormResident()
 	postOnlyOK := m.PostOnlyNormResident()
 	qkNormWhole := m.QKNormWholeResident() && !qkNormWholeOffForTest
-	rd.rm.QKNormWhole = qkNormWhole
+	rd.rm.QKNormWhole, rd.rm.PostOnlyNorm = qkNormWhole, postOnlyOK
 	g4MoE := m.HasGemma4MoEResident() // some layers' feed-forward is Gemma 4's parallel dense and MoE block, which carries its own norms
 	if sandwichOK {
 		for i := range w.Layers {

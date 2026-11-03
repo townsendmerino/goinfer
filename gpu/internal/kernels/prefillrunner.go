@@ -485,7 +485,7 @@ func runModelToModelW(rm *RunModel, hd int) (ModelW, bool) {
 
 // runModelToPrefill narrows a resident runModel to the dense shapes the batched pass accepts, returning ok=false if
 // the model uses anything outside them: MoE (Gemma 4's parallel block included), MLA, SSM, DeltaNet, int8 KV,
-// whole-vector QK-norm, post-only norms (nil AttnNorm/MlpNorm), partial RoPE, a rope scale, an attention sink, an
+// whole-vector QK-norm, post-only norms, partial RoPE, a rope scale, an attention sink, an
 // o-proj bias. Each projection may be int8 or int4; the ModelW's own
 // projection fields are set for the int8 ones only. The Gemma shape (prefillLayerProj's own fields) is accepted.
 //
@@ -498,7 +498,7 @@ func runModelToModelW(rm *RunModel, hd int) (ModelW, bool) {
 // hd is the model's head dimension, used to tell genuine partial RoPE (declined) from a half set explicitly to hd/2.
 func RunModelToPrefill(rm *RunModel, hd int) (ModelW, prefillProjs, bool) {
 	none := func() (ModelW, prefillProjs, bool) { return ModelW{}, prefillProjs{}, false }
-	if rm.Moe != nil || rm.G4moe || rm.Mla != nil || rm.Mamba != nil || rm.Dnet != nil || rm.KvI8 || rm.QKNormWhole {
+	if rm.Moe != nil || rm.G4moe || rm.Mla != nil || rm.Mamba != nil || rm.Dnet != nil || rm.KvI8 || rm.QKNormWhole || rm.PostOnlyNorm {
 		return none()
 	}
 	view := func(b *wgpu.Buffer) *DeviceBuffer {
@@ -515,8 +515,7 @@ func RunModelToPrefill(rm *RunModel, hd int) (ModelW, prefillProjs, bool) {
 	}
 	for i := range rm.Layers {
 		l := &rm.Layers[i]
-		if l.AttnNorm == nil || l.MlpNorm == nil ||
-			l.OBias != nil || l.HasSink || (l.RopeScale != 0 && l.RopeScale != 1) ||
+		if l.OBias != nil || l.HasSink || (l.RopeScale != 0 && l.RopeScale != 1) ||
 			l.IsMoE || l.G4moe != nil || l.ShGate != nil ||
 			l.MlaQA != nil || l.MlaQB != nil || l.MlaQ != nil || l.MlaKVA != nil || l.MlaO != nil ||
 			l.IsMamba || l.NemoKind != nemoNone || l.IsDeltaNet {
