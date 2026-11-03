@@ -1,0 +1,8 @@
+# plants on TestMemGate_cpu, each restored after: rows red on the named line, of 382. The first three put bytes where the walker used to miss them or send them to scratch.
+no plant: exit 0; 0 red
+an inline [64]float32 in a DeltaNet layer's state: exit 1; 54 rows red on state
+a slice of structs in a DeltaNet layer's state: exit 1; 54 rows red on state
+a pointer to a struct in a DeltaNet layer's state: exit 1; 54 rows red on state
+the plan doubles KV: exit 1; 370 rows red on kv
+the plan doubles state: exit 1; 78 rows red on state
+the plan's dense figure loses DeltaNet's six small weights: exit 1; 54 rows red on dense
