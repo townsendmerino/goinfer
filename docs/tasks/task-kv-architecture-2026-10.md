@@ -1179,6 +1179,22 @@ KV2 merges when every arm on both boxes is read.
   - file permissions;
   - never-swap.
 - **Size:** M–L. **Closes:** R-04's resident half.
+- **Next concrete step (planned 2026-11-02 for the day, nobara-sb01; no code yet): KV7-rest's first slice, a block host pool on CUDA.**
+  - **What it builds:** KV4's full-group blocks demote to pinned host memory by block, not KV7-s1's whole-slot row snapshots.
+    A release (D-KV4-2's D5 step 3, idle and least recently used, `cuda/kvpool.go`) copies the slot's referenced blocks to host
+    before the device ids return to the pool. The host blocks are keyed by the prefix index's block hashes (§5.5), with the
+    fingerprint and numerics epoch KV7's build list names. A later prompt that hits them promotes them back into free device
+    blocks and rewrites its table, and `usage.prefill_reuse.promoted_blocks` counts them (§5.16 added the field at 0).
+  - **Where it starts:** `cuda/kvsnap.go` (`SnapshotKV`, `RestoreKV`: the pinned staging and the restore copy), the pools' take and
+    release, and `decoder/kvsnap.go`'s store and admission. The window group stays device-only in this slice.
+  - **Gates, red first:**
+    - a promoted prefix is bit-exact against the same prompt prefilled cold, logits compared;
+    - `promoted_blocks` equals the blocks the restore copied;
+    - the host pool's bytes stay inside `Options.KVHostBytes`;
+    - never-swap;
+    - R-04's rule: the speed reading is against the fallback today's release takes (a re-prefill), not against a cold prefill.
+  - **Card:** tier 0 and tiny-fixture identity, minutes. One served timing on the 7B, ABBA, about 20 minutes, registered first.
+  - **After it:** the disk tier behind the same keys, then persistence across a restart, with file permissions gated.
 
 ### KV8 — Recurrent state pool and checkpoints
 
@@ -1195,6 +1211,24 @@ KV2 merges when every arm on both boxes is read.
   thread), **2 of the 8 D divergences sat 3 tokens into a new user message**, 25 tokens before the end of the previous prompt. **A message-boundary checkpoint would serve them; an
   end-of-prompt checkpoint would not.** The other 6 sat 1.5k to 3.6k tokens before the end (a rewritten history). It is two requests, under that study's bar of three, and it bears on
   where the checkpoint is taken, not only on whether.
+
+- **Next concrete step on CUDA (planned 2026-11-02 for the day, nobara-sb01; no code yet): state slots for the hybrids.**
+  - **Today:** CUDA forces one KV slot for a recurrent model (`cuda/backend.go:cudaKVSlotsRequest`), because a Gated-DeltaNet or
+    Mamba-2 layer mutates one state in place. Metal already keeps each slot's own windows and states (`program.Metal`'s
+    `RecurrentSlots`, `metal`'s `useKVSlot`), so CUDA is the gap.
+  - **The slice:** each DeltaNet and Mamba layer holds `slots` copies of its window and state (`dnWin`, `dnState`, `mbWin`, `mbSSM`).
+    Binding a slot points the layer's launches at that slot's copy, as KV4's tables do for KV. The plan prices the copies as
+    MM8's `deltaNetStateBytes` and `mambaStateBytes` times the slots. `program.CUDA` then claims `RecurrentSlots`, and
+    `cudaKVSlotsRequest` stops forcing 1 for them.
+  - **Gates, red first:**
+    - MC3 identity: two hybrid sequences interleaved equal each run alone, bit for bit, on qwen35-tiny, olmo_hybrid-tiny and
+      nemotron-tiny;
+    - MM8's planned-equals-charged gate, extended per slot;
+    - a slot's reset zeroes only its own state (the replay check of `TestQwen35ResidentParityCUDA`, per slot);
+    - KV8a's checkpoint keyed per slot.
+  - **Card:** tier 0 and tiny fixtures, minutes. A served MC3 reading on Qwen3.5-9B at two clients, registered, about 20 minutes.
+  - **After it:** the checkpoint store at the message boundary as well as the end of the prompt (the KV0-H note above: 2 of 8
+    divergences sat 3 tokens into a new user message), then Marconi-style admission.
 
 ### KV8a — An end-of-prompt checkpoint on today's single slot (added 2026-10-20)
 
