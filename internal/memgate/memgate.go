@@ -165,6 +165,13 @@ func sortedLines(m map[mem.LineID]int64) []mem.LineID {
 	return lines
 }
 
+// DenseVectorBound is the most a model of this geometry holds as bare f32 vectors on the dense line, which the plan's dense figure, a
+// sum of weight matrices, does not count: five hidden-width vectors a layer (norms and biases), and the final norm and its bias. It reads
+// the config, so a gap it bounds cannot grow with what it bounds, and a family that holds more goes red.
+func DenseVectorBound(cfg *decoder.Config) int64 {
+	return int64(5*cfg.NumLayers+2) * int64(cfg.HiddenDim) * 4
+}
+
 // Gap is a known red: the rows it holds on, the line, the fix that removes it, and how many bytes it accounts for. A finding
 // outside the bytes it names stays red, so a gap cannot hide a second one on the same line.
 type Gap struct {
