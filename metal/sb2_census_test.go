@@ -459,17 +459,18 @@ func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 
 // TestStepBuffers_listIsWhatBuilds: the step's scratch is one list. Across buildBatch, the ledger gains exactly the list's buffers,
 // to the byte and the lease, on each model shape the step takes, so a buffer allocated outside the list is red, and the price, which
-// sums the same list, cannot drift from it. Recurrent state is held the same way by TestRecurrentSlots_eachSlotPricesItsState.
+// sums the same list, cannot drift from it. The q4k lane has no tiny fixture, so its row reads the 0.5B GGUF in ~/models and skips
+// without it. Recurrent state is held the same way by TestRecurrentSlots_eachSlotPricesItsState.
 func TestStepBuffers_listIsWhatBuilds(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
 	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
+	home, _ := os.UserHomeDir()
 	for _, c := range []struct {
 		dir   string
 		quant string
 		o     decoder.Options
-		q4k   bool
 	}{
 		{dir: "../testdata/llama-tiny", quant: "int4"},
 		{dir: "../testdata/llama-tiny", quant: "int8int8"},
@@ -477,8 +478,12 @@ func TestStepBuffers_listIsWhatBuilds(t *testing.T) {
 		{dir: "../testdata/qwen35-tiny", quant: "int4", o: decoder.Options{ResidentMoEStep: true, ResidentRecurrentStep: true}},
 		{dir: "../testdata/nemotron-tiny", quant: "int4", o: decoder.Options{ResidentRecurrentStep: true}},
 		{dir: "../testdata/gemma4-emodel-tiny", quant: "int4", o: decoder.Options{ResidentGemma4Step: true}},
+		{dir: filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), quant: "q4k"},
 	} {
 		t.Run(filepath.Base(c.dir)+"/"+c.quant, func(t *testing.T) {
+			if _, err := os.Stat(c.dir); err != nil {
+				t.Skipf("no model at %s", c.dir)
+			}
 			o := c.o
 			o.Quant, o.ResidentContext, o.ResidentKVSlots = c.quant, 256, 2
 			m, err := decoder.Load(c.dir, o)
