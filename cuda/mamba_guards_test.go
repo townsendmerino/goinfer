@@ -172,7 +172,7 @@ func TestNemotronResidentCUDA_pricing(t *testing.T) {
 
 // TestRecurrentStatePlanned_matchesTheBuild is MM8's CUDA gate (docs/tasks/task-subsystems-2026-10.md, MM8): the recurrent state the
 // pre-build context plan prices (each layer's conv window and state, at the driver's allocation quantum) equals what the build charges
-// for it, on a Gated-DeltaNet and a Mamba-2 fixture; and it is all on the device, on the ledger's state line, before checkKVFits reads
+// for it, on Gated-DeltaNet, Mamba-2 and Olmo Hybrid fixtures; and it is all on the device, on the ledger's state line, before checkKVFits reads
 // free VRAM.
 func TestRecurrentStatePlanned_matchesTheBuild(t *testing.T) {
 	requireCUDADevice(t)
@@ -181,7 +181,7 @@ func TestRecurrentStatePlanned_matchesTheBuild(t *testing.T) {
 	recurrentStatePlannedForTest = func(p int64) { planned = p }
 	recurrentStateAtKVFitForTest = func(c int64) { atKVFit = c }
 	t.Cleanup(func() { recurrentStatePlannedForTest, recurrentStateAtKVFitForTest = nil, nil })
-	for _, c := range []guardCase{{"qwen35-tiny", "int4"}, {"nemotron-tiny", "int4"}} {
+	for _, c := range []guardCase{{"qwen35-tiny", "int4"}, {"nemotron-tiny", "int4"}, {"olmo_hybrid-tiny", "int4"}} {
 		planned, atKVFit = -1, -1
 		_, r := loadGuardResident(t, c)
 		charged := r.recurrentStateCharged()
