@@ -59,17 +59,25 @@ func (r *cudaResident) CopyKV(src, dst, start, end int) error {
 	return r.do(func() error { return r.copyKVSlots(src, dst, start, end) })
 }
 
-// copyKVSlots is CopyKV's job. A released source declines; the decoder takes a demoted one's rows through CopyDemotedKV. A released dst has
-// nothing below start, so it takes the whole range, and it stays released, with any host copy, until the copy has succeeded: any failure is a
-// decline. The source counts
+// copyKVSlots is CopyKV's job. A released source declines; the decoder takes a demoted one's rows through CopyDemotedKV. A released or stopped dst
+// answers for nothing below start, so it takes the whole range, and it stays as it was, with any host copy, until the copy has succeeded: any
+// failure is a decline. The source counts
 // as busy for the copy and is out of a reclaim's reach, so a block dst must allocate can neither release it nor unmap rows yet to be read.
 // Executor thread only.
 func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
 	if r.kvReleased(src) {
 		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's blocks were released to make room", src)}
 	}
-	released := r.kvReleased(dst)
-	if released {
+	lo := 0 // the first row a windowed layer of dst holds afterwards
+	if r.kvWin {
+		if !kvWindowReusable(r.kvBases[src], end, r.kvWindow) {
+			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's windowed layers hold rows from %d; continuing at %d needs them from %d; %s",
+				src, r.kvBases[src], end, end-(r.kvWindow-1), r.kvBudgetText())}
+		}
+		lo = max(0, r.kvBases[src], end-(r.kvWindow-1)-r.kvRollback())
+	}
+	fresh := r.kvReleased(dst) || r.kvStopped[dst] // it answers for no rows of its own
+	if fresh {
 		start = 0
 	}
 	busy := r.kvSlotBusy[src]
@@ -78,11 +86,9 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
 		r.kvSlotBusy[src], r.kvCopySrc = busy, -1
 		switch {
 		case err == nil:
-			if released {
-				r.kvClearReleased(dst)
-			}
-			r.kvValid[dst] = end
-		case released:
+			r.kvClearReleased(dst)
+			r.kvValid[dst], r.kvStopped[dst] = end, false
+		case fresh:
 			r.kvReleaseAll(dst, kvGroupFull)
 			r.kvReleaseAll(dst, kvGroupWin)
 			var d *decoder.KVCopyDecline
@@ -93,14 +99,6 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
 			r.kvValid[dst] = min(r.kvValid[dst], start)
 		}
 	}()
-	lo := 0 // the first row a windowed layer of dst holds afterwards
-	if r.kvWin {
-		if !kvWindowReusable(r.kvBases[src], end, r.kvWindow) {
-			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's windowed layers hold rows from %d; continuing at %d needs them from %d; %s",
-				src, r.kvBases[src], end, end-(r.kvWindow-1), r.kvBudgetText())}
-		}
-		lo = max(0, r.kvBases[src], end-(r.kvWindow-1)-r.kvRollback())
-	}
 	if e := r.kvShare(src, dst, start, end); e != nil {
 		return e
 	}

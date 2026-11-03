@@ -278,16 +278,16 @@ func (r *cudaResident) RestoreKV(h decoder.ResidentKVSnapshot, slot, end int) er
 	return r.do(func() error { return r.restoreKV(s, slot, 0, end) })
 }
 
-// restoreKV is RestoreKV's job, for rows [from, end): rows below from are the slot's own, and stay. A released slot takes every row, and when it
-// fails it stays released and holds none of the blocks mapped for it, so the caller may go on with whatever else it had: a *decoder.KVCopyDecline.
-// A live slot that fails has lost its rows from from on. Executor thread only.
+// restoreKV is RestoreKV's job, for rows [from, end): rows below from are the slot's own, and stay. A released or stopped slot answers for no rows
+// of its own, so it takes every row, and when it fails it holds none of the blocks mapped for it and is as it was, and the caller may go on with
+// whatever else it had: a *decoder.KVCopyDecline. A live slot that fails has lost its rows from from on. Executor thread only.
 func (r *cudaResident) restoreKV(s *cudaKVSnapshot, slot, from, end int) error {
-	released := r.kvReleased(slot)
-	if released {
+	fresh := r.kvReleased(slot) || r.kvStopped[slot]
+	if fresh {
 		from = 0
 	}
 	if err := r.restoreKVRows(s, slot, from, end); err != nil {
-		if released {
+		if fresh {
 			r.kvReleaseAll(slot, kvGroupFull)
 			r.kvReleaseAll(slot, kvGroupWin)
 			return &decoder.KVCopyDecline{Reason: err.Error()}
@@ -296,7 +296,7 @@ func (r *cudaResident) restoreKV(s *cudaKVSnapshot, slot, from, end int) error {
 		return err
 	}
 	r.kvUseTick++
-	r.kvSlotUse[slot], r.kvValid[slot] = r.kvUseTick, end
+	r.kvSlotUse[slot], r.kvValid[slot], r.kvStopped[slot] = r.kvUseTick, end, false
 	r.kvClearReleased(slot)
 	return nil
 }

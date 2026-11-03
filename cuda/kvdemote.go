@@ -125,10 +125,11 @@ func (r *cudaResident) kvClearReleased(s int) {
 	r.kvDropDemoted(s)
 }
 
-// kvReleasedLost reports whether slot s's first prefix rows are gone: past what its sequence wrote, or released with no demoted copy.
-// kvValid holds through a release, so a copy answers for the rows that were written and not the rest of their block. Executor thread only.
+// kvReleasedLost reports whether slot s's first prefix rows are gone: past what its sequence wrote, released with no demoted copy, or stopped, whose
+// next write must start from position 0. kvValid holds through a release, so a copy answers for the rows that were written and not the rest of
+// their block. Executor thread only.
 func (r *cudaResident) kvReleasedLost(s, prefix int) bool {
-	if prefix > r.kvValid[s] {
+	if prefix > r.kvValid[s] || r.kvStopped[s] {
 		return true
 	}
 	return r.kvReleased(s) && (s >= len(r.kvDemoted) || r.kvDemoted[s] == nil)
@@ -179,7 +180,7 @@ func (r *cudaResident) CopyDemotedKV(src, dst, start, end int) (blocks int, held
 			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's rows are no longer held in host memory", src)}
 		}
 		from := start
-		if r.kvReleased(dst) {
+		if r.kvReleased(dst) || r.kvStopped[dst] {
 			from = 0
 		}
 		r.kvCopySrc = src

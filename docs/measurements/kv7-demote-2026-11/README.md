@@ -124,3 +124,15 @@ The test for point 5 first asked for less than a reclaim could free, so it did n
 | 4. A promotion holds its own bytes while it evicts | True by design, not changed: the copy has to outlive the upload, or a failure loses it. Two conversations taking turns need room for both copies, not the larger. It goes in what the served reading must look at. | None. |
 | 5. The continuation test | It could skip and asserted little. | It fails on a load or a decline, and asserts the whole continuation, 3,076 rows. |
 
+## The sixth round, 2026-11-03 04:20 PST (`review6-red.log`, `review6-green.log`, `identity-review6.log`, `push-checks-review6.log`)
+
+| point | reading on the code as pushed | what changed |
+|---|---|---|
+| 1. Stopped slots | Red: `a stopped slot answers 64 for a block it holds`; rows copied onto a stopped slot left it stopped, and the suffix's write failed with `decoder: resident KV pool is full`. The first half predates this slice: since KV4 a stopped slot's own rows could be scored and then refused. | A stopped slot answers 0, so its next request prefills from position 0. A copy or restore onto one takes every row, clears the mark on success, and declines on failure. This runs with demotion off, so identity was re-run. |
+| 2a. A decline lowering a live `dst`'s rows | Red, and my regression: `after a decline that touched nothing, dst answers 0 for its 80 rows`. The `defer` that lowers `kvValid` was installed before the window check. | The window check runs before the `defer`, so a decline that touches nothing changes nothing. |
+| 2b. A failed copy onto a live `dst` "zeroes reuse and forgets the slot" | **Not what the code does.** On a non-decline error `residentShare` keeps `min(reuse, start)`, the rows below where the copy began, and `kvValid` agrees. Rows from `start` on are lost, because the copy may have replaced them. | None. |
+| 3. `kvValid` ahead of an aborted batched step | True, not changed: a demotion can copy and charge at most the step's unwritten rows, and the decoder's record, which a failed step does not extend, is what a request is scored against. | None. Noted for the served reading. |
+| 4. `UploadKV` past position 0 on a released slot | Red: the upload went through and mapped a block. | Refused, as `kvEnsureSlot` refuses a write there. |
+
+The decline test took three tries to bite, because the fixture's window is 16 rows: inside the window no base can refuse a copy, and a base below the copy's end still allows it. `review6-red.log` records each.
+

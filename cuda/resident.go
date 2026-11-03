@@ -2619,7 +2619,10 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 	}
 	return r.do(func() error {
 		lo, k, v := base, keys, vals
-		released := base == 0 && r.kvReleased(r.kvSlot)
+		released := r.kvReleased(r.kvSlot)
+		if released && base > 0 {
+			return fmt.Errorf("cuda: KV slot %d's blocks were released to make room; an upload at %d must start from position 0 (ReusableKV answers 0)", r.kvSlot, base)
+		}
 		if released {
 			r.kvDropDemoted(r.kvSlot) // a sequence written from position 0: the decoder has already forgotten the old one
 		}

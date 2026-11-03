@@ -1204,3 +1204,122 @@ func TestKV7_copyFromDemotedKeepsWhatDstHolds(t *testing.T) {
 		t.Errorf("reused %d, %d blocks written from the copy; want %d reused and %d blocks", g.PrefillReused, g.KVPromotedBlocks, len(lead), want)
 	}
 }
+
+// kv7StopSlot leaves slot 2 stopped: past its share, its blocks past the share taken back for slot 0 within its own. Slot 1 waits in host memory
+// with conv rows. It returns conv.
+func kv7StopSlot(t *testing.T, m *decoder.Model, r *cudaResident) int {
+	t.Helper()
+	conv, _ := kv7Release(t, m, r)
+	if err := r.do(func() error { return r.kvMap(2, kvGroupFull, 0, r.kvShareBlocks*kvBlock+kvBlock) }); err != nil {
+		t.Fatal(err)
+	}
+	r.kvValid[2] = r.kvShareBlocks*kvBlock + kvBlock
+	r.SetKVSlotBusy(0, false)
+	var ok bool
+	if err := r.do(func() error {
+		r.kvStopped[0] = true // slot 0, the larger borrower, is not the one under test
+		ok = r.kvReclaim(3)
+		r.kvStopped[0] = false
+		return nil
+	}); err != nil || !ok || !r.kvStopped[2] {
+		t.Fatalf("the reclaim: %v, %v; slot 2 stopped: %v", ok, err, r.kvStopped[2])
+	}
+	return conv
+}
+
+// TestKV7_stoppedSlotAnswersNothing: a stopped slot's next write must start from position 0, so it answers 0 for the rows it still holds, and a
+// request prefills it cold; it does not reuse them and then fail its first write.
+func TestKV7_stoppedSlotAnswersNothing(t *testing.T) {
+	m, r := kv7Load(t, 4, 1<<30)
+	kv7StopSlot(t, m, r)
+	if got := r.ReusableKVSlot(2, kvBlock); got != 0 {
+		t.Errorf("a stopped slot answers %d for a block it holds", got)
+	}
+	if err := r.UseKVSlot(2); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.ReusableKV(kvBlock); got != 0 {
+		t.Errorf("a stopped bound slot answers %d for a block it holds", got)
+	}
+}
+
+// TestKV7_writeOntoAStoppedSlot: rows copied or restored onto a stopped slot start it again from position 0, whatever it held, so the suffix's
+// write at a later position succeeds.
+func TestKV7_writeOntoAStoppedSlot(t *testing.T) {
+	const end = 2048
+	for _, c := range []struct {
+		name  string
+		write func(r *cudaResident) error
+	}{
+		{"from a live slot", func(r *cudaResident) error { return r.CopyKV(3, 2, kvBlock, end) }},
+		{"from a demoted slot", func(r *cudaResident) error {
+			_, held, err := r.CopyDemotedKV(1, 2, kvBlock, end)
+			if !held {
+				t.Fatal("the source was not released")
+			}
+			return err
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m, r := kv7Load(t, 4, 1<<30)
+			kv7StopSlot(t, m, r)
+			if err := c.write(r); err != nil {
+				t.Fatalf("the write: %v", err)
+			}
+			if r.kvStopped[2] {
+				t.Error("the slot is still stopped")
+			}
+			if err := r.do(func() error { return r.kvEnsureSlot(2, end, kvBlock) }); err != nil {
+				t.Errorf("the suffix's write: %v", err)
+			}
+		})
+	}
+}
+
+// TestKV7_declineLeavesALiveDstAlone: a copy declined before it touches a live dst leaves dst answering for all its own rows.
+func TestKV7_declineLeavesALiveDstAlone(t *testing.T) {
+	requireCUDADevice(t)
+	m, err := decoder.Load(windowVariantFixture(t, "../testdata/mistral-tiny-window", 32768), decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentWindowedKV: true, ResidentContext: 8192, ResidentKVSlots: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	r := mustResident(t, m)
+	if !r.kvWin {
+		t.Fatal("not windowed: the test reads nothing")
+	}
+	_, _, _, _, _, _, vocab := m.Dims()
+	own := r.kvWindow + 64 // past the window, or no base can refuse a copy; within the slack, so dst answers for all of it
+	for _, s := range []int{1, 0} {
+		if _, err := kv4Prefill(m, r, s, kv4Ids(own, 1, vocab), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := r.ReusableKVSlot(1, own); got != own {
+		t.Fatalf("dst answers %d for its %d rows before the copy", got, own)
+	}
+	r.kvBases[0] = own // the source's window has moved past anything the copy could continue from
+	var d *decoder.KVCopyDecline
+	if err := r.CopyKV(0, 1, 0, own/kvBlock*kvBlock); !errors.As(err, &d) {
+		t.Fatalf("the copy: %v, want a decline", err)
+	}
+	if got := r.ReusableKVSlot(1, own); got != own {
+		t.Errorf("after a decline that touched nothing, dst answers %d for its %d rows", got, own)
+	}
+}
+
+// TestKV7_uploadPastZeroOnAReleasedSlot: as a write past position 0 on a released slot, an upload there is refused and leaves the slot as it was.
+func TestKV7_uploadPastZeroOnAReleasedSlot(t *testing.T) {
+	m, r := kv7Load(t, 4, 1<<30)
+	conv, _ := kv7Release(t, m, r)
+	if err := r.UseKVSlot(1); err != nil {
+		t.Fatal(err)
+	}
+	n := kvBlock * r.layers[0].kvDim
+	if err := r.UploadKV(0, kvBlock, make([]float32, n), make([]float32, n)); err == nil {
+		t.Error("an upload at a later position on a released slot went through")
+	}
+	if !r.kvReleased(1) || r.kvHeld(1) != 0 || r.kvDemoted[1] == nil || r.ReusableKVSlot(1, conv) != conv {
+		t.Errorf("after the upload: released %v, %d blocks held, copy %v, answers %d", r.kvReleased(1), r.kvHeld(1), r.kvDemoted[1] != nil, r.ReusableKVSlot(1, conv))
+	}
+}
