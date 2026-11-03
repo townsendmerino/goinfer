@@ -96,6 +96,8 @@ func (h *holdsWalker) root(line func(path string) mem.LineID, path string, v ref
 // What it cannot see: padding between fields; a map's buckets and spare slots, and a map entry's header words, which lease with the entry on its line;
 // the array before the first address a slice names, so a view into a longer array counts only its tail; the allocator's size classes; what a func
 // closes over; and anything reached only through a field CPUHoldsForTest skips. A box two interfaces share has no address to compare, so it counts twice.
+// Inside an interface's box, a map counts its entries twice, by size and again as each key and value leases, and a box nested in another reads the
+// same way, so the same holds of any map under it.
 func (h *holdsWalker) walk(line func(string) mem.LineID, path string, v reflect.Value) {
 	inline := func(ln mem.LineID) { // v's own bytes. A map's values have no address and their entry is leased with the map; an interface's box has none and is leased here
 		switch {
