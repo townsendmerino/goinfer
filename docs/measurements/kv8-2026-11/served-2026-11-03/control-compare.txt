@@ -1,0 +1,20 @@
+B1 A round 0 two slots reused 0 alone reused 0 equal
+B1 A round 1 two slots reused 0 alone reused 1907 equal
+B1 A round 2 two slots reused 1966 alone reused 1966 equal
+B1 B round 0 two slots reused 0 alone reused 0 equal
+B1 B round 1 two slots reused 2071 alone reused 2071 equal
+B1 B round 2 two slots reused 2107 alone reused 2107 equal
+B2 A round 0 two slots reused 0 alone reused 0 equal
+B2 A round 1 two slots reused 0 alone reused 1907 equal
+B2 A round 2 two slots reused 1966 alone reused 1966 equal
+B2 B round 0 two slots reused 0 alone reused 0 equal
+B2 B round 1 two slots reused 2071 alone reused 2071 equal
+B2 B round 2 two slots reused 2107 alone reused 2107 equal
+B1 vs B2, every turn equal: True
+A1 vs A2, every turn equal: True
+one slot (cold) vs alone: A 0 reused 0 equal
+one slot (cold) vs alone: B 0 reused 0 equal
+one slot (cold) vs alone: A 1 reused 1907 equal
+one slot (cold) vs alone: B 1 reused 2071 DIFFER
+one slot (cold) vs alone: A 2 reused 1966 equal
+one slot (cold) vs alone: B 2 reused 2107 DIFFER

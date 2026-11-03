@@ -28,3 +28,28 @@ Replies are compared turn by turn up to a conversation's first difference, becau
 - **Cost:** the fit check about 1 minute. Cold about 11 s a turn by KV0-H's rate, so about 2.5 minutes for a one-slot cell, about 1 for two slots: about 7 minutes in all. Started by 14:23 PST, finished by about 14:34 PST.
 - **Driver:** 595.112.07 on this box today, not the `595.91.07` of KV0-H's rows, so KV0-H's times are not compared.
 - **Void if:** a cell outside the lock, the model read from `/srv/models`, a NOT RUN counted as a pass, a bar moved after a reading.
+
+### The reading, 2026-11-03 14:21 to 14:25 PST: FAIL by the registered rule
+
+`served-2026-11-03/run.log`, `turns.jsonl`. Serve at `214878e5c`, driver 595.112.07, load at most 1.14 at a cell's start, about 61 GB available, no void cell, and the fit check in `fit-check.log`. A first attempt timed nothing: the script named the wrong model (`attempts.txt`).
+
+| | one slot | two slots |
+|---|---|---|
+| follow-up median first token, each pair | 6.93 s | 0.05 s (ratio **0.008**) |
+| on the card once loaded | 5,606 MiB | 6,168 MiB (+562) |
+| peak `VmSwap` | 0 MB | 0 MB |
+| follow-ups that reused rows | 0 of 8 | **6 of 8** |
+| conversations whose replies equal the one-slot arm's | | **2 of 4** |
+
+The ratio and the swap clear their bars. **Two clauses fail, so the verdict is FAIL, and no bar moves.** Both causes were found after the run, by a control that was not registered: each client alone on one slot, the same binary and prompts (`control.json`, `control-compare.txt`).
+
+**1. Two follow-ups reused nothing: the one checkpoint copy.** Client A's first reply does not re-tokenize as generated (the record says 1,931 rows, a divergence at 1,930), so its follow-up is a restore from the checkpoint at its prompt's end, not a strict extension. Alone, it restores 1,907 rows and starts in 0.14 s. With two clients, B saved last, so the checkpoint belongs to B's slot, the restore is refused, and A prefills from 0 in 6.58 s. This is the limit #646 names, measured: **a checkpoint per slot is what would serve it,** at 50.2 MiB each on this model.
+
+**2. Two conversations' replies differ: reuse against cold, not the slots.** Client B's follow-up reuses 2,071 rows on two slots and is prefilled whole on one, and the replies differ (` 10` against ` 0`). **Alone on one slot it reuses the same rows and gives the same ` 10`.** Every one of the 12 turns on two slots, in both pairs, equals the same client's alone on one slot, including client A's turn where the rows reused differ. So the registered comparison, against the one-slot arm's cold prefill, was the wrong one for what it meant to test: it reads the strict-extension path's known kernel-class difference (`docs/measurements/kv8a-2026-10/README.md`), which the first turn after a reuse shows with no second slot at all. That is my registration's flaw, recorded here. It does not change this verdict.
+
+**What this does and does not show.**
+- **Shown, on a real model:** the second slot gives a client's own conversation back at 0.05 s against 6.93 s, without swap, for 562 MiB of card, and its replies are the ones that client gets alone.
+- **Not shown:** the both-at-once round was compared only through the arms' script, which stopped at the first difference, so at-once replies were checked only between the two two-slot cells, where they match, and against no alone run, since the control ran no such round.
+- **Not read:** the one-slot control ran this branch's binary. That reuse differs from cold on main's binary too is by reading, since the one-slot path did not change, and was not run.
+
+**Next, if wanted:** a checkpoint per slot, then this reading again, registered against each client alone on one slot.
