@@ -290,19 +290,22 @@ func TestCensusProfile_restores(t *testing.T) {
 var metalRounding = memgate.PerLease("Metal's 16 KiB sub-allocation", 16<<10)
 
 // metalMemGaps is Metal's table of known reds (MM7). It may only shrink: the fix that removes a row lowers metalMemGapsPin. Each
-// row is bounded, so a second gap on the same line stays red.
+// row is bounded by the build's own shape, so a second gap on the same line stays red.
 var metalMemGaps = []memgate.Gap{
 	{Row: "*", Line: mem.LineState, What: "the recurrent checkpoint leases on the state line, and the plan prices one slot's state and no checkpoint",
-		Item: "MM8 Metal, recurrent checkpoint", Bytes: func(r memgate.Reading) int64 { return r.Facts["checkpoint"] }},
+		Item: "MM8 Metal, recurrent checkpoint", Bytes: func(f map[string]int64) int64 { return f["checkpoint"] }},
 	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums weight matrices: norms, biases, sinks, rotation tables and the greedy chain's embedding table are leased on dense and priced nowhere",
-		Item: "MM8 Metal, dense vectors and the chain table", Bytes: func(r memgate.Reading) int64 { return r.Facts["tables"] + r.Facts["chain"] }},
+		Item: "MM8 Metal, dense vectors and the chain table", Bytes: func(f map[string]int64) int64 { return f["tables"] + f["chain"] }},
 	{Row: "testdata/gemma4-moe-kv-tiny32 *", Line: mem.LineDense, What: "Gemma 4's MoE leases 21,128 bytes on dense past the row above: not diagnosed",
-		Item: "MM8 Metal, Gemma 4 MoE dense", Bytes: func(r memgate.Reading) int64 { return r.Facts["tables"] + r.Facts["chain"] + 21128 }},
+		Item: "MM8 Metal, Gemma 4 MoE dense", Bytes: func(f map[string]int64) int64 { return f["tables"] + f["chain"] + 21128 }},
 	{Row: "testdata/gptoss_tiny.gguf *", Line: mem.LineExperts, What: "gpt-oss's experts lease 8,192 bytes over the plan's expert figure: not diagnosed",
-		Item: "MM8 Metal, gpt-oss experts", Bytes: func(memgate.Reading) int64 { return 8192 }},
+		Item: "MM8 Metal, gpt-oss experts", Bytes: func(map[string]int64) int64 { return 8192 }},
 }
 
 const metalMemGapsPin = 4
+
+// metalGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read.
+var metalGatePlantForTest func(r *resident)
 
 // metalGateRow loads fixture path at options o, runs it, and returns the row: the build's ledger after the build and after a short
 // generation, the plan for the same load, and the ledger after Close. ok is false when Metal's own build declines, which has no
@@ -329,19 +332,22 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 		t.Errorf("%s: the build's device has no ledger", row)
 		return memgate.Reading{}, false
 	}
-	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount(), Facts: map[string]int64{"checkpoint": r.ckptBytes, "tables": metalDenseTableBytes(r)}}
+	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount()}
 	read.Plan = m.Plan("metal", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
-	read.Open = append(read.Open, memgate.Snapshot{Label: "built", Usage: l.Usage()})
+	facts := func() map[string]int64 {
+		return map[string]int64{"checkpoint": r.ckptBytes, "tables": metalDenseTableBytes(r), "chain": metalChainTableBytes(r)}
+	}
+	read.Open = append(read.Open, memgate.Snap("built", l, facts()))
 	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
 	for range ch {
 	}
-	if err := g.Err(); err != nil {
-		t.Logf("%s: generation: %v; the row holds the build alone", row, err)
-	} else {
-		u := l.Usage()
-		read.Open = append(read.Open, memgate.Snapshot{Label: "generated", Usage: u})
-		read.Facts["chain"] = u.ByLine[mem.LineDense] - read.Open[0].Usage.ByLine[mem.LineDense] // the greedy chain's table, built on first use
+	if metalGatePlantForTest != nil {
+		metalGatePlantForTest(r)
 	}
+	if err := g.Err(); err != nil {
+		t.Errorf("%s: generation: %v", row, err)
+	}
+	read.Open = append(read.Open, memgate.Snap("generated", l, facts()))
 	// Scratch has no plan line: it is the margin the Metal fit leaves under its budget, and what the build charges for the step.
 	scratch := int64(mem.MetalFitMargin)
 	if r.batch != nil {
@@ -389,6 +395,50 @@ func TestMemGate_metalPlantGoesRed(t *testing.T) {
 	if !builtRed(planted) {
 		t.Error("a mebibyte over plan on the dense line is not red")
 	}
+}
+
+// TestMemGate_metalPlantsThroughTheTable: a buffer really allocated over plan after the generation, unrounded, stays red through
+// Metal's allowance and its table of known gaps, on a line each of those would forgive part of.
+func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	o := decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 256}
+	g := memgate.Gate{Allowance: metalRounding, Gaps: metalMemGaps, GapsPin: metalMemGapsPin}
+	for _, line := range []mem.LineID{mem.LineDense, mem.LineState} {
+		t.Run(string(line), func(t *testing.T) {
+			var extra Buffer
+			metalGatePlantForTest = func(r *resident) { extra = r.d.NewBufferLenOn(string(line), 1<<20) }
+			defer func() { metalGatePlantForTest = nil }()
+			read, ok := metalGateRow(t, "testdata/llama-tiny int4", "../testdata/llama-tiny", o, false)
+			if !ok {
+				t.Fatal("llama-tiny did not build resident")
+			}
+			if extra == (Buffer{}) {
+				t.Fatal("the plant did not run")
+			}
+			red := false
+			for _, f := range g.Unknown(read) {
+				red = red || f.Line == line
+			}
+			if !red {
+				t.Errorf("4 MiB leased on %q during a row is not red through the table: %v", line, g.Unknown(read))
+			}
+		})
+	}
+}
+
+// metalChainTableBytes is the greedy chain's embedding table, from the embedding table's shape as buildChainEmbed prices it: 0 until
+// a chain builds it, and always 0 on a tied head, whose LM-head buffers are the table.
+func metalChainTableBytes(r *resident) int64 {
+	if r.lmTied || r.chainEmbW == (Buffer{}) {
+		return 0
+	}
+	q8, sc, _, ok := r.embed.Int8()
+	if !ok {
+		return 0
+	}
+	return int64(len(q8) + 4*len(sc))
 }
 
 // metalDenseTableBytes is what the build leases on the dense line that the plan's dense figure, a sum of weight matrices, does not

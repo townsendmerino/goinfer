@@ -14,27 +14,35 @@ import (
 	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
-// Allowance is one allocator's rounding. A line may exceed its plan figure only by what the allocator actually rounded on it,
-// and only up to Limit, so a generous allowance cannot hide a line that was requested over plan.
+// Allowance is one allocator's rounding: how much of one allocation's charge over its request it forgives. A line may exceed its
+// plan figure only by the sum of that over its own leases, so an allocation that rounded nothing lends nothing to one that
+// rounded past its limit, and an allowance cannot hide a line that was requested over plan.
 type Allowance struct {
-	Name  string
-	Limit func(leases int, requested int64) int64
+	Name    string
+	Forgive func(requested, charged int64) int64
 }
 
 // PerLease is an allocator that rounds each allocation up by less than quantum.
 func PerLease(name string, quantum int64) Allowance {
-	return Allowance{Name: name, Limit: func(leases int, _ int64) int64 { return int64(leases) * quantum }}
+	return Allowance{Name: name, Forgive: func(requested, charged int64) int64 { return max(min(charged-requested, quantum), 0) }}
 }
 
-// PowerOfTwo is an allocator that rounds each allocation up to a power of two, so by less than the request.
+// PowerOfTwo is an allocator that rounds each allocation up to a power of two, so by less than its request.
 func PowerOfTwo(name string) Allowance {
-	return Allowance{Name: name, Limit: func(_ int, requested int64) int64 { return requested }}
+	return Allowance{Name: name, Forgive: func(requested, charged int64) int64 { return max(min(charged-requested, requested), 0) }}
 }
 
-// Snapshot is the ledger's open account at one named point in a row's life.
+// Snapshot is a ledger's open account at one named point in a row's life, and the facts a Gap's Bytes may read there.
 type Snapshot struct {
-	Label string
-	Usage mem.Usage
+	Label  string
+	Usage  mem.Usage
+	Leases []mem.OpenLease
+	Facts  map[string]int64
+}
+
+// Snap reads l now.
+func Snap(label string, l *mem.Ledger, facts map[string]int64) Snapshot {
+	return Snapshot{Label: label, Usage: l.Usage(), Leases: l.OpenLeases(), Facts: facts}
 }
 
 // Reading is one row: a build's ledger, and the plan for the same load.
@@ -51,8 +59,6 @@ type Reading struct {
 	Named map[mem.LineID]int64
 	// Unpriced names what a build holds that no line's total can show: a buffer set built without being charged.
 	Unpriced []Unpriced
-	// Facts is what a Gap's Bytes reads from the build, by a name the backend's table chooses.
-	Facts map[string]int64
 }
 
 // Unpriced is one thing a backend knows it built without charging, on line.
@@ -62,11 +68,22 @@ type Unpriced struct {
 	Excess int64
 }
 
+// Kind is what a finding is. Only an over-plan or an unpriced finding can be a known gap: the ledger's own invariants have none.
+type Kind int
+
+const (
+	Invariant Kind = iota // an unknown line, a line with no figure, a lease open after Close, a plan that declines the build
+	OverPlan              // a line over its figure, past the allowance
+	Built                 // something built without being charged (Reading.Unpriced)
+)
+
 // Finding is one way a row is red.
 type Finding struct {
 	Row, What string
+	Kind      Kind
 	Line      mem.LineID
-	Excess    int64 // bytes over plan, past the allowance
+	Excess    int64            // bytes over plan, past the allowance
+	Facts     map[string]int64 // the snapshot's, for a Gap's Bytes
 }
 
 func (f Finding) String() string {
@@ -89,45 +106,52 @@ func Planned(p decoder.Plan, kvSlots int) map[mem.LineID]int64 {
 // Check is every way r is red under a.
 func Check(r Reading, a Allowance) []Finding {
 	var out []Finding
-	add := func(line mem.LineID, excess int64, format string, args ...any) {
-		out = append(out, Finding{Row: r.Row, Line: line, Excess: excess, What: fmt.Sprintf(format, args...)})
+	add := func(kind Kind, line mem.LineID, excess int64, facts map[string]int64, format string, args ...any) {
+		out = append(out, Finding{Row: r.Row, Kind: kind, Line: line, Excess: excess, Facts: facts, What: fmt.Sprintf(format, args...)})
 	}
 	if r.Plan.Placement == decoder.PlacementDecline {
-		add("", 0, "the build went resident, and the plan declines it: %s", r.Plan.Reason)
+		add(Invariant, "", 0, nil, "the build went resident, and the plan declines it: %s", r.Plan.Reason)
 	}
 	planned := Planned(r.Plan, r.KVSlots)
 	for line, b := range r.Named {
 		planned[line] = b
 	}
+	var reserved int
 	for _, s := range r.Open {
+		reserved = max(reserved, s.Usage.Reserved)
+		forgiven := map[mem.LineID]int64{}
+		for _, l := range s.Leases {
+			forgiven[l.Line] += a.Forgive(l.Requested, l.Charged)
+		}
 		for _, line := range sortedLines(s.Usage.ByLine) {
 			charged := s.Usage.ByLine[line]
 			want, ok := planned[line]
 			switch {
 			case !line.Known():
-				add(line, charged, "%s: %d bytes leased on an unknown line", s.Label, charged)
+				add(Invariant, line, charged, s.Facts, "%s: %d bytes leased on an unknown line", s.Label, charged)
 				continue
 			case !ok:
-				add(line, charged, "%s: %d bytes leased on a line with no figure in the plan or from the backend", s.Label, charged)
+				add(Invariant, line, charged, s.Facts, "%s: %d bytes leased on a line with no figure in the plan or from the backend", s.Label, charged)
 				continue
 			}
-			requested, leases := s.Usage.RequestedByLine[line], s.Usage.LeasesByLine[line]
-			rounded := charged - requested
-			forgiven := min(max(rounded, 0), a.Limit(leases, requested))
-			if excess := charged - want - forgiven; excess > 0 {
-				add(line, excess, "%s: leased %d bytes over %d leases against a plan of %d: %d over, after %d of the %d rounded forgiven by %q",
-					s.Label, charged, leases, want, excess, forgiven, rounded, a.Name)
+			if excess := charged - want - forgiven[line]; excess > 0 {
+				add(OverPlan, line, excess, s.Facts, "%s: leased %d bytes against a plan of %d: %d over, after %d forgiven by %q",
+					s.Label, charged, want, excess, forgiven[line], a.Name)
 			}
 		}
 	}
 	for _, u := range r.Unpriced {
-		add(u.Line, u.Excess, "built without being charged: %s", u.What)
+		add(Built, u.Line, u.Excess, nil, "built without being charged: %s", u.What)
 	}
-	if u := r.Closed; u.PeakUnplannedCharged > 0 {
-		add("", u.PeakUnplannedCharged, "the ledger peaked at %d bytes on no known line", u.PeakUnplannedCharged)
+	u := r.Closed
+	if reserved > 0 && u.Reserved < reserved {
+		add(Invariant, "", 0, nil, "the ledger was not read after Close: %d leases ever reserved there, %d while open", u.Reserved, reserved)
 	}
-	if u := r.Closed; u.Leases > 0 {
-		add("", u.Charged, "%d leases (%d bytes) open after Close, by line %v", u.Leases, u.Charged, u.ByLine)
+	if u.PeakUnplannedCharged > 0 {
+		add(Invariant, "", u.PeakUnplannedCharged, nil, "the ledger peaked at %d bytes on no known line", u.PeakUnplannedCharged)
+	}
+	if u.Leases > 0 {
+		add(Invariant, "", u.Charged, nil, "%d leases (%d bytes) open after Close, by line %v", u.Leases, u.Charged, u.ByLine)
 	}
 	return out
 }
@@ -144,12 +168,16 @@ func sortedLines(m map[mem.LineID]int64) []mem.LineID {
 // Gap is a known red: the rows it holds on, the line, the fix that removes it, and how many bytes it accounts for. A finding
 // outside the bytes it names stays red, so a gap cannot hide a second one on the same line.
 type Gap struct {
-	Row  string // a Reading.Row, or a prefix of it ending in *
+	Row  string // a Reading.Row, where * matches any run of characters
 	Line mem.LineID
-	What string // the gap, in a sentence
-	Item string // the MM8 item, or the row of docs/tasks/task-subsystems-2026-10.md, that removes it
-	// Bytes is the most this gap accounts for on a row; nil is any amount, for a finding that is no amount of a line.
-	Bytes func(Reading) int64
+	// Built is a gap on something built without being charged (Reading.Unpriced); otherwise it is a line over its figure. One never
+	// accounts for the other.
+	Built bool
+	What  string // the gap, in a sentence
+	Item  string // the MM8 item, or the row of docs/tasks/task-subsystems-2026-10.md, that removes it
+	// Bytes is the most this gap accounts for at a snapshot, from that snapshot's facts. It must come from the build's shape, not from
+	// the ledger it is checked against. A gap without one forgives nothing and fails Finish.
+	Bytes func(facts map[string]int64) int64
 }
 
 // Gate runs a backend's rows against its table of known gaps.
@@ -170,7 +198,7 @@ func (g *Gate) Check(t testing.TB, r Reading) {
 	}
 	g.rows++
 	for _, f := range Check(r, g.Allowance) {
-		if i := g.match(f, r); i >= 0 {
+		if i := g.match(f); i >= 0 {
 			g.used[i] = true
 			t.Logf("known gap (%s): %s", g.Gaps[i].Item, f)
 			continue
@@ -179,19 +207,50 @@ func (g *Gate) Check(t testing.TB, r Reading) {
 	}
 }
 
-func (g *Gate) match(f Finding, r Reading) int {
+// Unknown is every finding on r the table does not account for: what Check would fail a test on.
+func (g *Gate) Unknown(r Reading) []Finding {
+	var out []Finding
+	for _, f := range Check(r, g.Allowance) {
+		if g.match(f) < 0 {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func (g *Gate) match(f Finding) int {
+	if f.Kind == Invariant {
+		return -1
+	}
 	for i, gap := range g.Gaps {
-		if gap.Line != f.Line {
+		if gap.Line != f.Line || gap.Built != (f.Kind == Built) || gap.Bytes == nil || !globMatch(gap.Row, f.Row) {
 			continue
 		}
-		if p, ok := strings.CutSuffix(gap.Row, "*"); ok && !strings.HasPrefix(f.Row, p) || !ok && gap.Row != f.Row {
-			continue
-		}
-		if gap.Bytes == nil || f.Excess <= gap.Bytes(r) {
+		if f.Excess <= gap.Bytes(f.Facts) {
 			return i
 		}
 	}
 	return -1
+}
+
+// globMatch reports whether s matches pattern, where * matches any run of characters, slashes included.
+func globMatch(pattern, s string) bool {
+	parts := strings.Split(pattern, "*")
+	if len(parts) == 1 {
+		return pattern == s
+	}
+	if !strings.HasPrefix(s, parts[0]) {
+		return false
+	}
+	s = s[len(parts[0]):]
+	for _, p := range parts[1 : len(parts)-1] {
+		i := strings.Index(s, p)
+		if i < 0 {
+			return false
+		}
+		s = s[i+len(p):]
+	}
+	return strings.HasSuffix(s, parts[len(parts)-1])
 }
 
 // Finish holds the table itself: every gap must still fire, and the table must be the pinned size. Call it once, after the last
@@ -205,6 +264,9 @@ func (g *Gate) Finish(t testing.TB) {
 		t.Errorf("%d known gaps against a pin of %d: the table may only shrink, and a fix lowers the pin with the row it removes", len(g.Gaps), g.GapsPin)
 	}
 	for i, gap := range g.Gaps {
+		if gap.Bytes == nil {
+			t.Errorf("known gap on line %q (%s) names no bytes: every gap is bounded", gap.Line, gap.Item)
+		}
 		if !g.used[i] {
 			t.Errorf("known gap on line %q (%s, %s) no longer fires on any row: remove it from the table and lower the pin", gap.Line, gap.Item, gap.What)
 		}
