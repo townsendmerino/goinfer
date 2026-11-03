@@ -1642,10 +1642,8 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 			case err != nil:
 				state, errMsg = jobFailed, err.Error()
 			}
-			jobs.finishTurn(j, state, &usage{
-				PromptTokens: len(gr.promptIDs), CompletionTokens: nComp,
-				TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused.Tokens, PrefillReuse: prefillReused.sources(),
-			}, gr.clock, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
+			u := newUsage(len(gr.promptIDs), nComp, prefillReused)
+			jobs.finishTurn(j, state, &u, gr.clock, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
 		}()
 	}
 	ctx, cancel := context.WithCancel(parent)
@@ -1715,10 +1713,8 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 			case err != nil:
 				state, errMsg = jobFailed, err.Error()
 			}
-			jobs.finishTurn(j, state, &usage{
-				PromptTokens: len(gr.promptIDs), CompletionTokens: nComp,
-				TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused.Tokens, PrefillReuse: prefillReused.sources(),
-			}, gr.clock, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
+			u := newUsage(len(gr.promptIDs), nComp, prefillReused)
+			jobs.finishTurn(j, state, &u, gr.clock, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
 		}()
 	}
 	ctx, cancel := context.WithCancel(parent)
