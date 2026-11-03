@@ -489,3 +489,40 @@ func TestToolsHarnessMessages_unusableBlocksFail(t *testing.T) {
 		t.Errorf("an OpenAI-shaped reply on the Messages row: %+v; want a FAIL", res)
 	}
 }
+
+// TestSharedPreamble is KV4's §5.16 serve check row: the second of two conversations sharing a preamble passes when it reports reuse
+// covering at least half its prompt, fails when it re-prefilled, and skips on a model whose decode path is not resident.
+func TestSharedPreamble(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		path         string
+		reused       int
+		wantOK, skip bool
+	}{
+		{"reused", "cuda-resident (int4)", 640, true, false},
+		{"re-prefilled", "cuda-resident (int4)", 0, false, false},
+		{"not resident", "cpu (int4)", 0, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			c := newFake(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/models" {
+					json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "m", "decode_path": tc.path}}})
+					return
+				}
+				calls++
+				u := map[string]any{"prompt_tokens": 700, "completion_tokens": 4, "total_tokens": 704, "prefill_reused_tokens": 0}
+				if calls == 2 && tc.reused > 0 {
+					u["prefill_reused_tokens"] = tc.reused
+					u["prefill_reuse"] = map[string]int{"own_tokens": 0, "shared_tokens": tc.reused, "host_tokens": 0}
+				}
+				json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": "x"}}}, "usage": u})
+			})
+			res := c.SharedPreamble(context.Background(), "m")
+			if res.OK != tc.wantOK || res.Skip != tc.skip || res.Detail == "" {
+				t.Errorf("got OK %v, skip %v, %q; want OK %v, skip %v", res.OK, res.Skip, res.Detail, tc.wantOK, tc.skip)
+			}
+			t.Logf("%s: %s", res.Name, res.Detail)
+		})
+	}
+}

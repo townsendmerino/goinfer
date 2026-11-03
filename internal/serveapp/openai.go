@@ -821,9 +821,9 @@ type usage struct {
 	PrefillReuse *prefillReuseSources `json:"prefill_reuse,omitempty"`
 }
 
-// prefillReuseSources splits prefill_reused_tokens by source. own_tokens are this conversation's own continuation, shared_tokens came
-// from another conversation's KV (a copy or a shared block), host_tokens a host snapshot restored onto the device, disk_tokens the
-// disk tier. promoted_blocks counts host-tier blocks promoted onto the device. The disk tier and the block host pool are KV7-rest's,
+// prefillReuseSources splits prefill_reused_tokens by source. own_tokens were already in the KV record the request ran on (its own
+// continuation, or a previous conversation's matching prefix left in that slot), shared_tokens came from another slot's KV (a copy or a
+// shared block), host_tokens a host snapshot restored onto the device, disk_tokens the disk tier. promoted_blocks counts host-tier blocks promoted onto the device. The disk tier and the block host pool are KV7-rest's,
 // so disk_tokens and promoted_blocks are 0 until it lands; a host snapshot today restores rows, counted in host_tokens.
 type prefillReuseSources struct {
 	OwnTokens      int `json:"own_tokens"`

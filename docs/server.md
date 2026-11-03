@@ -649,9 +649,9 @@ fast/exact split exists on this backend, so there is nothing to opt out of.
 
 **Where a reuse came from.** Beside `prefill_reused_tokens`, an OpenAI chat or completions `usage` block carries
 `prefill_reuse` whenever the count is above zero (another vendor extension; standard clients ignore it):
-`{"own_tokens", "shared_tokens", "host_tokens", "disk_tokens", "promoted_blocks"}`. Own tokens are this
-conversation's own continuation; shared tokens came from another conversation's KV; host tokens a host snapshot
-restored onto the device. The disk tier and the block host pool are not built yet, so `disk_tokens` and
+`{"own_tokens", "shared_tokens", "host_tokens", "disk_tokens", "promoted_blocks"}`. Own tokens were already in the
+KV record the request ran on (its own continuation, or a previous conversation's matching prefix left in that slot);
+shared tokens came from another slot's KV; host tokens a host snapshot restored onto the device. The disk tier and the block host pool are not built yet, so `disk_tokens` and
 `promoted_blocks` read 0.
 
 **On Metal, CUDA and WebGPU, several conversations stay resident** (MC1 of `docs/tasks/parked/task-concurrency-2026-09.md`:

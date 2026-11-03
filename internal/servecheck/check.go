@@ -207,6 +207,92 @@ func (c *Client) Chat(ctx context.Context, model, prompt string, maxTokens int, 
 	return res
 }
 
+// sharedPreamble is the long system preamble SharedPreamble sends from two conversations: long enough to span several KV blocks.
+var sharedPreamble = "You are the build assistant for a large Go repository. " + strings.Repeat(
+	"Follow the repository's conventions, keep each change small, name the test that covers it, and report what you ran. ", 40)
+
+// SharedPreamble is KV4's §5.16 row (docs/tasks/task-kv-architecture-2026-10.md): a second conversation that opens with the first's
+// preamble reuses it. Two chat requests share a long system message and differ in the question; the second must report
+// usage.prefill_reused_tokens covering at least half its prompt. Cross-conversation reuse is the resident KV's (KV2, KV4), so a model
+// whose decode path is not resident is a skip.
+func (c *Client) SharedPreamble(ctx context.Context, model string) Result {
+	res := Result{Name: "shared preamble reused"}
+	if p := c.decodePath(ctx, model); !strings.Contains(p, "resident") {
+		res.Skip, res.Detail = true, fmt.Sprintf("decode path %q is not resident: only the resident KV shares rows across conversations", p)
+		return res
+	}
+	type reuseUsage struct {
+		PromptTokens        int            `json:"prompt_tokens"`
+		PrefillReusedTokens int            `json:"prefill_reused_tokens"`
+		PrefillReuse        map[string]int `json:"prefill_reuse"`
+	}
+	ask := func(question string) (reuseUsage, error) {
+		body := map[string]any{"model": model, "temperature": 0, "max_tokens": 4, "messages": []map[string]string{
+			{"role": "system", "content": sharedPreamble}, {"role": "user", "content": question}}}
+		resp, err := c.do(ctx, http.MethodPost, "/v1/chat/completions", body)
+		if err != nil {
+			return reuseUsage{}, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return reuseUsage{}, fmt.Errorf("%s", errBody(resp))
+		}
+		var out struct {
+			Usage *reuseUsage `json:"usage"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			return reuseUsage{}, err
+		}
+		if out.Usage == nil {
+			return reuseUsage{}, fmt.Errorf("no usage block")
+		}
+		return *out.Usage, nil
+	}
+	if _, err := ask("Which file holds the main entry point? Answer in one word."); err != nil {
+		res.Detail = "first conversation: " + err.Error()
+		return res
+	}
+	u, err := ask("How many tests should a change name? Answer with a number.")
+	if err != nil {
+		res.Detail = "second conversation: " + err.Error()
+		return res
+	}
+	res.Detail = fmt.Sprintf("reused %d of %d prompt tokens", u.PrefillReusedTokens, u.PromptTokens)
+	if u.PrefillReuse != nil {
+		res.Detail += fmt.Sprintf(" (own %d, shared %d, host %d)", u.PrefillReuse["own_tokens"], u.PrefillReuse["shared_tokens"], u.PrefillReuse["host_tokens"])
+	}
+	if 2*u.PrefillReusedTokens < u.PromptTokens {
+		res.Detail += "; the second conversation re-prefilled the preamble it shares with the first"
+		return res
+	}
+	res.OK = true
+	return res
+}
+
+// decodePath is /v1/models' decode_path for model ("" when the list does not name it).
+func (c *Client) decodePath(ctx context.Context, model string) string {
+	resp, err := c.do(ctx, http.MethodGet, "/v1/models", nil)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Data []struct {
+			ID         string `json:"id"`
+			DecodePath string `json:"decode_path"`
+		} `json:"data"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&out) != nil {
+		return ""
+	}
+	for _, m := range out.Data {
+		if m.ID == model {
+			return m.DecodePath
+		}
+	}
+	return ""
+}
+
 // Structured checks the promise the README makes: a schema the model cannot violate. Uses a
 // top-level integer on purpose — that is M-27's shape, where StopWhenComplete used to truncate
 // at the first complete document and return a single digit.

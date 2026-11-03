@@ -76,6 +76,7 @@ func Run(args []string, self string) int {
 			c.Structured(ctx, target),
 			c.Stop(ctx, target),
 			c.CountTokens(ctx, target),
+			c.SharedPreamble(ctx, target),
 			c.Vision(ctx, target),
 		)
 		if *longPrompt > 0 {
