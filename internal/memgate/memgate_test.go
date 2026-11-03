@@ -239,3 +239,25 @@ func TestGate_table(t *testing.T) {
 		})
 	}
 }
+
+// A line of Reading.Exact priced over what it holds is red past ExactWithin, in either direction a one-way read would miss, and a line
+// not named stays one-way.
+func TestCheck_exactLines(t *testing.T) {
+	r := reading(usage([3]any{mem.LineKV, 200, 200}))
+	if f := Check(r, rounding); len(f) != 0 {
+		t.Fatalf("a line not named Exact is red under plan: %v", f)
+	}
+	r.Exact = []mem.LineID{mem.LineKV}
+	f := Check(r, rounding)
+	if len(f) != 1 || f[0].Kind != OverPriced || f[0].Excess != 300 {
+		t.Fatalf("an Exact line 300 under its plan: %v", f)
+	}
+	r.ExactWithin = 300
+	if f := Check(r, rounding); len(f) != 0 {
+		t.Errorf("300 under, within 300: %v", f)
+	}
+	r.ExactWithin = 0
+	if u := (&Gate{Allowance: rounding, Gaps: []Gap{{Row: "fx *", Line: mem.LineKV, Bytes: func(map[string]int64) int64 { return 1 << 20 }}}}).Unknown(r); len(u) != 1 {
+		t.Errorf("a gap on the line over plan accounts for the line priced over it: %v", u)
+	}
+}

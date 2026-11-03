@@ -59,6 +59,10 @@ type Reading struct {
 	Named map[mem.LineID]int64
 	// Unpriced names what a build holds that no line's total can show: a buffer set built without being charged.
 	Unpriced []Unpriced
+	// Exact names lines whose plan figure must also not exceed what the last Open snapshot holds, by more than ExactWithin: a line read
+	// only one way passes a plan priced for the wrong precision.
+	Exact       []mem.LineID
+	ExactWithin int64
 }
 
 // Unpriced is one thing a backend knows it built without charging, on line.
@@ -72,9 +76,10 @@ type Unpriced struct {
 type Kind int
 
 const (
-	Invariant Kind = iota // an unknown line, a line with no figure, a lease open after Close, a plan that declines the build
-	OverPlan              // a line over its figure, past the allowance
-	Built                 // something built without being charged (Reading.Unpriced)
+	Invariant  Kind = iota // an unknown line, a line with no figure, a lease open after Close, a plan that declines the build
+	OverPlan               // a line over its figure, past the allowance
+	Built                  // something built without being charged (Reading.Unpriced)
+	OverPriced             // a line of Reading.Exact holding less than its figure, past Reading.ExactWithin
 )
 
 // Finding is one way a row is red.
@@ -140,6 +145,15 @@ func Check(r Reading, a Allowance) []Finding {
 			}
 		}
 	}
+	if n := len(r.Open); n > 0 {
+		s := r.Open[n-1]
+		for _, line := range r.Exact {
+			if excess := planned[line] - s.Usage.ByLine[line] - r.ExactWithin; excess > 0 {
+				add(OverPriced, line, excess, s.Facts, "%s: leased %d bytes against a plan of %d: priced %d over, past the %d allowed",
+					s.Label, s.Usage.ByLine[line], planned[line], excess, r.ExactWithin)
+			}
+		}
+	}
 	for _, u := range r.Unpriced {
 		add(Built, u.Line, u.Excess, nil, "built without being charged: %s", u.What)
 	}
@@ -177,11 +191,11 @@ func DenseVectorBound(cfg *decoder.Config) int64 {
 type Gap struct {
 	Row  string // a Reading.Row, where * matches any run of characters
 	Line mem.LineID
-	// Built is a gap on something built without being charged (Reading.Unpriced); otherwise it is a line over its figure. One never
-	// accounts for the other.
-	Built bool
-	What  string // the gap, in a sentence
-	Item  string // the MM8 item, or the row of docs/tasks/task-subsystems-2026-10.md, that removes it
+	// Built is a gap on something built without being charged (Reading.Unpriced), and OverPriced one on a line of Reading.Exact priced
+	// over what it holds; otherwise it is a line over its figure. None accounts for another.
+	Built, OverPriced bool
+	What              string // the gap, in a sentence
+	Item              string // the MM8 item, or the row of docs/tasks/task-subsystems-2026-10.md, that removes it
 	// Bytes is the most this gap accounts for at a snapshot, from that snapshot's facts. It must come from the build's shape, not from
 	// the ledger it is checked against. A gap without one forgives nothing and fails Finish.
 	Bytes func(facts map[string]int64) int64
@@ -230,7 +244,7 @@ func (g *Gate) match(f Finding) int {
 		return -1
 	}
 	for i, gap := range g.Gaps {
-		if gap.Line != f.Line || gap.Built != (f.Kind == Built) || gap.Bytes == nil || !globMatch(gap.Row, f.Row) {
+		if gap.Line != f.Line || gap.Built != (f.Kind == Built) || gap.OverPriced != (f.Kind == OverPriced) || gap.Bytes == nil || !globMatch(gap.Row, f.Row) {
 			continue
 		}
 		if f.Excess <= gap.Bytes(f.Facts) {

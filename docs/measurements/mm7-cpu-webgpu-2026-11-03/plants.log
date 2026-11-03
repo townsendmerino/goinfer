@@ -1,12 +1,20 @@
-# plants on what the gate reads: each row is the test with one change, restored after. exit 1 is the gate seeing it
-no plant [cpu]: exit 0; 0 findings
-no plant [webgpu]: exit 0; 0 findings
-the plan under-prices Mamba-2 state [cpu]: exit 1; 16 findings on lines ['state']; first: cpu_test.go:129: testdata/nemotron-tiny int4: line "state": generated: leased 10496 bytes against a plan of 2304: 8192 over, after 0 forgiven by "none: the walk leases ea
-the plan under-prices Mamba-2 state [webgpu]: exit 1; 16 findings on lines ['state']; first: memgate_test.go:116: testdata/nemotron-tiny int4: line "state": built: leased 10496 bytes against a plan of 2304: 8192 over, after 0 forgiven by "Vulkan's power-of-two bl
-the plan under-prices DeltaNet state [cpu]: exit 1; 72 findings on lines ['state']; first: cpu_test.go:129: selftestdata/qwen35-tiny int4: line "state": generated: leased 16896 bytes against a plan of 4608: 12288 over, after 0 forgiven by "none: the walk leases
-the plan under-prices DeltaNet state [webgpu]: exit 1; 88 findings on lines ['state']; first: memgate_test.go:116: selftestdata/qwen35-tiny int4: line "state": built: leased 16896 bytes against a plan of 4608: 12288 over, after 0 forgiven by "Vulkan's power-of-two
-the plan halves KV [cpu]: exit 1; 429 findings on lines ['kv']; first: cpu_test.go:129: internal/vision/testdata/qwen25vl-vision-tiny int4: line "kv": generated: leased 32768 bytes against a plan of 16384: 16384 over, after 0 forgiven by "no
-the plan halves KV [webgpu]: exit 1; 446 findings on lines ['kv']; first: memgate_test.go:116: internal/vision/testdata/qwen25vl-vision-tiny int4: line "kv": built: leased 65536 bytes against a plan of 32768: 32768 over, after 0 forgiven by "Vu
-the CPU table loses its last row [cpu]: exit 1; 1 findings on lines []; first: cpu_test.go:136: 58 known gaps against a pin of 57: the table may only shrink, and a fix lowers the pin with the row it removes
-the plan's dense figure loses DeltaNet's six small weights [cpu]: exit 1; 81 findings; fixtures ['known', 'selftestdata/qwen35-tiny', 'selftestdata/qwen35vl-tiny', 'testdata/olmo_hybrid-tiny', 'testdata/qwen35-tiny', 'testdata/qwen35vl-tiny', 'testdata/qwen3_5-tiny', 'testdata/qwen3_5-tiny-normw']; first: cpu_test.go:129: selftestdata/qwen35-tiny int4: line "dense": generated: leased 105632 bytes against a plan of 90624: 15008 over, after 0 forgiven by "none: the walk leas
-the plan's dense figure loses DeltaNet's six small weights [webgpu]: exit 0; 0 findings; fixtures []; first: 
+# plants on what the gate reads, each row the test with one change, restored after. Rows counted are those red on that line, of the rows the test holds.
+no plant [cpu]: exit 0; red rows by line {} of 466
+no plant [webgpu]: exit 0; red rows by line {} of 228
+the plan halves KV [cpu]: exit 1; red rows by line {'kv': 430} of 466
+the plan halves KV [webgpu]: exit 1; red rows by line {'kv': 223} of 228
+the plan doubles KV [cpu]: exit 1; red rows by line {'kv': 373} of 466
+the plan doubles KV [webgpu]: exit 1; red rows by line {'kv': 228} of 228
+the plan prices int8 K/V as f32 [cpu]: exit 1; red rows by line {'kv': 26} of 466
+the plan prices int8 K/V as f32 [webgpu]: exit 0; red rows by line {} of 228
+the plan prices f16 K/V as f32 [cpu]: exit 0; red rows by line {} of 466
+the plan prices f16 K/V as f32 [webgpu]: exit 1; red rows by line {'kv': 26} of 228
+the plan under-prices Mamba-2 state [cpu]: exit 1; red rows by line {'state': 16} of 466
+the plan under-prices Mamba-2 state [webgpu]: exit 1; red rows by line {'state': 8} of 228
+the plan over-prices Mamba-2 state [cpu]: exit 1; red rows by line {'state': 16} of 466
+the plan over-prices Mamba-2 state [webgpu]: exit 1; red rows by line {'state': 8} of 228
+the plan under-prices DeltaNet state [cpu]: exit 1; red rows by line {'state': 72} of 466
+the plan under-prices DeltaNet state [webgpu]: exit 1; red rows by line {'state': 44} of 228
+the plan's dense figure loses DeltaNet's six small weights [cpu]: exit 1; red rows by line {'dense': 72} of 466
+the plan's dense figure loses DeltaNet's six small weights [webgpu]: exit 0; red rows by line {} of 228
+a new KVCache field holding bytes [cpu]: exit 1; 466 findings; first: cpu_test.go:158: internal/vision/testdata/qwen25vl-vision-tiny int4: line "cache field plantedField": generated: 64 bytes leased on an unknown line

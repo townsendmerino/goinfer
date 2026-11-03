@@ -53,7 +53,34 @@ var cpuMemGaps = append(denseVectorGaps(cpuDenseVectorFixtures), []Gap{
 		Item: "MM8 CPU, gpt-oss experts", Bytes: func(f map[string]int64) int64 { return f["expertsFull"] / 3 }},
 }...)
 
-const cpuMemGapsPin = 58
+func init() { cpuMemGaps = append(cpuMemGaps, cpuKVGaps...) }
+
+const cpuMemGapsPin = 88
+
+// cpuKVGaps are the CPU plan's KV figures that a row reads wrong, each in MM8's row. The plan prices ctx positions of K and V on every layer.
+var cpuKVGaps = func() []Gap {
+	var out []Gap
+	over := func(fixtures []string, what, item string, share func(kvPlan int64) int64) {
+		for _, f := range fixtures {
+			out = append(out, Gap{Row: f + " *", Line: mem.LineKV, OverPriced: true, What: what, Item: item, Bytes: func(fs map[string]int64) int64 { return share(fs["kvPlan"]) }})
+		}
+	}
+	over([]string{"testdata/cohere2-tiny", "testdata/gemma2-hd-tiny", "testdata/gemma2-hd-tiny.gguf", "testdata/gemma2-tiny", "selftestdata/gemma3-vl-tiny", "testdata/gemma3-vl-tiny",
+		"testdata/gptoss_tiny.gguf", "testdata/laguna-xs2-tiny", "testdata/laguna-xs21-tiny", "testdata/mistral-tiny-window", "testdata/olmo3-tiny", "testdata/spark2-5-tiny"},
+		"a sliding layer's ring holds its window, and the plan prices the whole context", "MM8 CPU, KV of a sliding window", func(kv int64) int64 { return kv * 3 / 4 })
+	over([]string{"testdata/bailing_hybrid-tiny", "testdata/deepseek-tiny"}, "an MLA layer holds one latent row, and the plan prices K and V", "MM8, MLA KV counted twice", func(kv int64) int64 { return kv / 2 })
+	over([]string{"testdata/llama-attnfa-tiny"}, "int8 K/V holds one scale a head, and the plan prices 1/8 of a byte an element, which over-prices a wide head", "MM8, int8 KV's scale", func(kv int64) int64 { return kv / 8 })
+	for _, f := range []string{"testdata/cohere-tiny", "testdata/granite-dense-tiny", "testdata/internlm2-tiny", "testdata/internlm3-tiny", "selftestdata/llama-tiny", "testdata/llama-tiny",
+		"testdata/ministral3-tiny", "testdata/phi3-tiny", "testdata/qwen25vl-tiny", "internal/vision/testdata/qwen25vl-vision-tiny", "testdata/qwen3asr-tiny", "testdata/smollm3-tiny", "testdata/voxtral-tiny"} {
+		out = append(out, Gap{Row: f + " int4/kv-i8", Line: mem.LineKV, What: "int8 K/V holds one scale a head, and the plan prices 1/8 of a byte an element, which under-prices a narrow head",
+			Item: "MM8, int8 KV's scale", Bytes: func(fs map[string]int64) int64 { return fs["kvPlan"] / 3 }})
+	}
+	for _, f := range []string{"testdata/nemotron-tiny", "testdata/nemotron3nano-tiny"} {
+		out = append(out, Gap{Row: f + " *", Line: mem.LineState, What: "a Mamba-2 conv window row is a view into the projection's output, whose tail it keeps alive",
+			Item: "MM8 CPU, Mamba window views", Bytes: func(fs map[string]int64) int64 { return fs["statePlan"] / 32 }})
+	}
+	return out
+}()
 
 // gemma4MoEDenseGap is Gemma 4's MoE block on the dense line, past the bare vectors every family holds: its router's and experts' small
 // tables, which a share of the expert figure bounds. Not diagnosed further.
@@ -74,8 +101,8 @@ func denseVectorGaps(fixtures []string) []Gap {
 }
 
 // cpuGateRow loads fixture path on the CPU, writes cpuGateCtx positions, and returns the row. The CPU has no allocator to account, so its
-// ledger is filled by walking what the model and the cache hold (Model.CPUHoldsForTest), and Closed reads that ledger after those leases
-// are released. plant, when set, runs on the ledger before it is read. ok is false when the load is refused, which has nothing to hold.
+// ledger is filled by walking what the model and the cache hold (Model.CPUHoldsForTest). Closed reads that ledger after the model closed and
+// those leases are released, so it holds a plant's lease and not the model's own freeing, which no ledger sees here. plant, when set, runs on the ledger before it is read. ok is false when the load is refused, which has nothing to hold.
 func cpuGateRow(t *testing.T, row, path string, o decoder.Options, plant func(*mem.Ledger)) (Reading, bool) {
 	t.Helper()
 	o.Backend, o.DirectLoad = "cpu", true
@@ -97,9 +124,11 @@ func cpuGateRow(t *testing.T, row, path string, o decoder.Options, plant func(*m
 	if plant != nil {
 		plant(&l)
 	}
-	p := m.Plan("cpu", math.MaxInt64/4, decoder.PlanRequest{Ctx: cpuGateCtx, CtxPinned: true, KVF16: o.KVQuant == "f16", KVI8: o.KVQuant == "i8"})
-	read := Reading{Row: row, KVSlots: 1, Plan: p}
-	read.Open = append(read.Open, Snap("generated", &l, map[string]int64{"vectors": DenseVectorBound(cfg), "expertsFull": p.ExpertBytesFull, "kvPlan": p.KVBytes}))
+	kv := m.KVDeliveredFor("cpu") // what the cache really is: Options.KVPrecision is the GPU's, and a family can refuse what was asked
+	p := m.Plan("cpu", math.MaxInt64/4, decoder.PlanRequest{Ctx: cpuGateCtx, CtxPinned: true, KVF16: kv == mem.KVF16, KVI8: kv == mem.KVI8})
+	read := Reading{Row: row, KVSlots: 1, Plan: p, Exact: []mem.LineID{mem.LineKV, mem.LineState}}
+	read.Open = append(read.Open, Snap("generated", &l, map[string]int64{"vectors": DenseVectorBound(cfg), "expertsFull": p.ExpertBytesFull, "kvPlan": p.KVBytes, "statePlan": p.StateBytes}))
+	m.Close()
 	release()
 	read.Closed = l.Usage()
 	return read, true
@@ -125,6 +154,11 @@ func TestMemGate_cpu(t *testing.T) {
 				refused++
 				continue
 			}
+			built++
+			g.Check(t, read)
+		}
+		// The census's cells ask the GPU's KVPrecision for f16 and the CPU's KVQuant for int8: this is the CPU's own f16.
+		if read, ok := cpuGateRow(t, f+" int4/kvquant-f16", path, decoder.Options{Quant: "int4", KVQuant: "f16"}, nil); ok {
 			built++
 			g.Check(t, read)
 		}
