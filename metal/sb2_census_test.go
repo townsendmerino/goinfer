@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/mem"
 	"github.com/townsendmerino/goinfer/internal/memgate"
+	"github.com/townsendmerino/goinfer/internal/program"
 	"github.com/townsendmerino/goinfer/internal/sb2census"
 )
 
@@ -364,12 +366,23 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	var scratch int64
 	if r.batch != nil {
 		scratch = r.stepShape().listBytes()
-		if price, reserve := r.stepScratchBytes(), metalStepScratchReserve(m); reserve < price {
-			t.Errorf("%s: the step's scratch is priced at %d bytes, and the reserve an unpinned slot count leaves for it is %d", row, price, reserve)
-		}
 	}
-	if why, reserve := r.batchIneligible(), metalStepScratchReserve(m); why != "" && reserve > 0 {
-		t.Errorf("%s: the step cannot build (%s), and an unpinned slot count would give up %d bytes for it", row, why, reserve)
+	// The reserve is the build's own answer read before the build: every input to it agrees, so it is the step's price where
+	// batchIneligible admits it and 0 where not, on shapes no fixture has as well as on these.
+	built, before := r.stepInputs(), metalStepInputs(m)
+	if r.mla != nil { // MLA's slots are one allocation only above one slot, which a reading before the build cannot know; the step's tables refuse it
+		before.oneKVAllocation = built.oneKVAllocation
+	}
+	if !reflect.DeepEqual(built, before) {
+		t.Errorf("%s: what the step reads differs between the build and the model:\nbuilt  %+v\nbefore %+v", row, *built, *before)
+	}
+	var price int64
+	why := r.batchIneligible()
+	if why == "" {
+		price = r.stepScratchBytes()
+	}
+	if reserve := metalStepScratchReserve(m); reserve != price {
+		t.Errorf("%s: the reserve before the build is %d bytes, and the build prices the step at %d (batchIneligible %q)", row, reserve, price, why)
 	}
 	read.Named = map[mem.LineID]int64{mem.LineScratch: scratch}
 	closed = true
@@ -525,13 +538,15 @@ func TestStepBuffers_listIsWhatBuilds(t *testing.T) {
 			if r.stepScratchBytes() < requested {
 				t.Errorf("the price %d is under the list's %d bytes", r.stepScratchBytes(), requested)
 			}
+			if got, want := metalStepScratchReserve(m), r.stepScratchBytes(); got != want {
+				t.Errorf("the reserve before the build is %d bytes, and the build prices the step at %d", got, want)
+			}
 		})
 	}
 }
 
 // TestStepBuffers_q4kWidths holds the q4k lane's part of the list on a synthetic shape, since no tiny fixture builds that lane: one
-// uniform per distinct width, each reachable at its width, and a reserve at the widest layer's widths not under the price at the
-// geometry layer's, where the widest layer's coincide and the geometry layer's do not.
+// uniform per distinct width, each reachable at its width.
 func TestStepBuffers_q4kWidths(t *testing.T) {
 	distinct := stepShape{H: 64, V: 256, I: 32, nHhd: 48, kvDim: 48, ffnWidth: 32, q4k: true}
 	collapsed := distinct
@@ -553,21 +568,49 @@ func TestStepBuffers_q4kWidths(t *testing.T) {
 			t.Errorf("%+v: uniforms at %v, want %v", c.s, got, c.want)
 		}
 	}
-	five := distinct
-	five.I = 40 // H, nHhd, I, 2I and the qkv rows all differ
-	wide := five
-	wide.nHhd = 64
-	if got := len(five.uLdWidths()); got != 5 {
-		t.Fatalf("%d distinct widths; this case needs five", got)
+}
+
+// TestStepInputs_reserveOnShapesNoFixtureHas: the census's fixtures have uniform geometry, so these shapes are built by hand. A model
+// the step declines reserves nothing, and one with layers of two widths reserves at the geometry layer's, as stepShape prices it, not
+// at its widest.
+func TestStepInputs_reserveOnShapesNoFixtureHas(t *testing.T) {
+	attn := func(hd int) stepLayerInfo {
+		return stepLayerInfo{steps: []layerStep{stepAttention, stepDenseFFN}, hasGeom: true, hd: hd, nKV: 4, ffnI: 128}
 	}
-	if len(wide.uLdWidths()) >= 5 {
-		t.Fatalf("the widest layer's widths do not coincide: %v", wide.uLdWidths())
+	base := func(layers ...stepLayerInfo) *stepInputs {
+		return &stepInputs{prog: &program.Program{}, H: 64, V: 256, I: 128, nH: 4, oneKVAllocation: true, layers: layers}
 	}
-	if r, p := wide.reserveBytes(), five.scratchBytes(); r < p {
-		t.Errorf("the reserve %d is under the price %d", r, p)
+	if base(attn(16), attn(16)).reserve() == 0 {
+		t.Fatal("a plain uniform model reserves nothing: the cases below would pass for no reason")
 	}
-	if plainS := plain(wide); plainS.reserveBytes() != plainS.scratchBytes() {
-		t.Errorf("off the lane the reserve %d is not the price %d", plainS.reserveBytes(), plainS.scratchBytes())
+	noAttn := base(stepLayerInfo{steps: []layerStep{stepDeltaNet, stepNonGatedFFN}, ffnI: 128})
+	noAttn.recurrentBlocks = true
+	notReproduced := base(attn(16), attn(32))
+	kEqV := attn(16)
+	kEqV.kEqV = true
+	for name, in := range map[string]*stepInputs{
+		"no attention layer":                      noAttn,
+		"a layer of another width":                notReproduced,
+		"a layer the batched kernels do not hold": base(attn(16), kEqV),
+		"an attention sink":                       func() *stepInputs { in := base(attn(16)); in.attnSink = true; return in }(),
+		"a paged MoE":                             func() *stepInputs { in := base(attn(16)); in.pagedMoE = true; return in }(),
+		"the w4f16 lane":                          func() *stepInputs { in := base(attn(16)); in.w4f16Lane = true; return in }(),
+		"an untiled width":                        func() *stepInputs { in := base(attn(16)); in.V = 255; return in }(),
+	} {
+		if why, got := in.ineligible(), in.reserve(); why == "" || got != 0 {
+			t.Errorf("%s: declined for %q and reserves %d; want a decline and 0", name, why, got)
+		}
+	}
+	wholeWide := attn(32)
+	wholeWide.whole = true
+	mixed := base(attn(16), wholeWide)
+	if why := mixed.ineligible(); why != "" {
+		t.Fatalf("a whole wide layer beside a narrow batched one declines: %s", why)
+	}
+	narrow := base(attn(16), attn(16))
+	narrow.layers[1].whole = true
+	if got, want := mixed.reserve(), narrow.reserve(); got != want {
+		t.Errorf("a whole wide layer reserves %d bytes and the narrow geometry layer's price is %d", got, want)
 	}
 }
 
@@ -623,7 +666,9 @@ func metalDecodeScratchBytes(m *decoder.Model, r *resident) int64 {
 	for l := range nL {
 		hd := m.HeadDimAtResident(l)
 		nHhd, kvDim = max(nHhd, nH*hd), max(kvDim, m.KVHeadsAtResident(l)*hd)
-		faPartial = max(faPartial, attnFAPartialFloats(hd, nH, m.KVHeadsAtResident(l)))
+		if r.layers[l].geom != nil {
+			faPartial = max(faPartial, attnFAPartialFloats(hd, nH, m.KVHeadsAtResident(l)))
+		}
 	}
 	gu := I
 	for _, lw := range m.Weights().Layers {

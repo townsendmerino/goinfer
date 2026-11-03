@@ -190,7 +190,7 @@ func TestGate_table(t *testing.T) {
 	over := func() Reading { return reading(usage([3]any{mem.LineState, 150, 150})) } // 50 over
 	fifty := func(map[string]int64) int64 { return 50 }
 	thirty, twenty, nineteen := func(map[string]int64) int64 { return 30 }, func(map[string]int64) int64 { return 20 }, func(map[string]int64) int64 { return 19 }
-	sixty := func(map[string]int64) int64 { return 60 }
+	sixty, forty, ten := func(map[string]int64) int64 { return 60 }, func(map[string]int64) int64 { return 40 }, func(map[string]int64) int64 { return 10 }
 	gap := Gap{Row: "fx *", Line: mem.LineState, What: "a test gap", Item: "MM8 test", Bytes: fifty}
 	for _, c := range []struct {
 		name string
@@ -220,6 +220,10 @@ func TestGate_table(t *testing.T) {
 			func() []Reading { return []Reading{over()} }, "(wildcard, ) no longer fires"},
 		{"a wildcard that covers alone leaves a row's own gap stale", []Gap{{Row: "*", Line: mem.LineState, Item: "wildcard", Bytes: sixty}, {Row: "fx *", Line: mem.LineState, Item: "own", Bytes: twenty}}, 2,
 			func() []Reading { return []Reading{over()} }, "(own, ) no longer fires"},
+		{"pruning keeps the most specific", []Gap{{Row: "*", Line: mem.LineState, Item: "wildcard", Bytes: forty}, {Row: "fx int*", Line: mem.LineState, Item: "own", Bytes: thirty}, {Row: "fx *", Line: mem.LineState, Item: "broader", Bytes: ten}}, 3,
+			func() []Reading { return []Reading{over()} }, "(broader, ) no longer fires"},
+		{"a fixed gap on a row goes stale, though the row's other still fires", []Gap{{Row: "fx int4", Line: mem.LineState, Item: "fixed", Bytes: thirty}, {Row: "fx int4", Line: mem.LineState, Item: "left", Bytes: twenty}}, 2,
+			func() []Reading { return []Reading{reading(usage([3]any{mem.LineState, 120, 120}))} }, "(fixed, ) no longer fires"},
 		{"a gap with no bound", []Gap{{Row: "fx *", Line: mem.LineState, Item: "x"}}, 1, func() []Reading { return []Reading{over()} }, "every gap is bounded"},
 		{"an unpriced gap does not cover a line over plan", []Gap{{Row: "fx *", Line: mem.LineState, Built: true, Item: "x", Bytes: fifty}}, 1,
 			func() []Reading { return []Reading{over()} }, "50 over"},

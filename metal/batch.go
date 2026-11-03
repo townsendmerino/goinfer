@@ -88,52 +88,216 @@ type batchSeq struct {
 // path — the family flags every per-row kernel in forwardMulti assumes — with each layer's KV slots in one f16
 // allocation. One slot is enough to prefill a prompt on the step (one sequence's consecutive rows); batched decode and the
 // step verify need two, which BatchStepRange, BatchGreedyDraw and VerifyCost check.
-func (r *resident) batchIneligible() string {
-	switch {
-	case len(r.kvSlotBufs) == 0 || !r.kvContig:
-		return "KV slots that are not one allocation per layer"
-	case r.decodeLaneW4F16:
-		return "the w4f16 decode lane, whose kernels the step does not have"
-	case r.attnSink: // gpt-oss's learned sink is set from the weights at the call, not in the program
-		return "an attention sink"
-	}
-	if why := stepProgramIneligible(r.prog, r.moeStep, r.recurrentStep, r.gemma4Step); why != "" {
-		return why
-	}
-	if r.moe != nil && r.moe.paged {
-		return "a paged MoE, whose experts are staged between command buffers"
+func (r *resident) batchIneligible() string { return r.stepInputs().ineligible() }
+
+// stepLayerInfo is what the step's limits and scratch read from one layer.
+type stepLayerInfo struct {
+	steps   []layerStep
+	whole   bool // the step runs it whole, per row, on decode's own layer encoder
+	qGate   bool
+	hasGeom bool // it has attention geometry
+	hd, nKV int
+	kEqV    bool
+	ffnI    int
+}
+
+// batchesAttn reports whether this layer's attention runs on the step's batched attention kernels.
+func (l *stepLayerInfo) batchesAttn() bool {
+	return len(l.steps) > 0 && l.steps[0] == stepAttention && !l.qGate && !l.whole
+}
+
+// stepInputs is everything the step's limits and its scratch read, so a build and a reading before any build take one answer: the
+// build's own (resident.stepInputs) and the model's (metalStepInputs), which TestMemGate_metal holds equal on every build. Compiling
+// the kernels and the simd_sum check can still turn a step off, and neither is knowable before the device runs them.
+type stepInputs struct {
+	prog                          *program.Program
+	stepsErr                      string // why the program's layers have no steps
+	H, V, I, nH, pleIn, faPartial int
+	moeStep, recurrentStep        bool
+	gemma4Step, recurrentBlocks   bool
+	q4k                           bool
+	oneKVAllocation, w4f16Lane    bool
+	attnSink, pagedMoE            bool
+	layers                        []stepLayerInfo
+}
+
+// stepInputs reads this build.
+func (r *resident) stepInputs() *stepInputs {
+	in := &stepInputs{prog: r.prog, H: r.H, V: r.V, I: r.I, nH: r.nH, faPartial: r.attnFAPartialLen, moeStep: r.moeStep, recurrentStep: r.recurrentStep,
+		gemma4Step: r.gemma4Step, recurrentBlocks: r.recurrentBlocks(), q4k: r.q4kLane, oneKVAllocation: len(r.kvSlotBufs) > 0 && r.kvContig,
+		w4f16Lane: r.decodeLaneW4F16, attnSink: r.attnSink, pagedMoE: r.moe != nil && r.moe.paged}
+	if r.pleP > 0 {
+		in.pleIn = r.pleIn.Len()
 	}
 	for l := range r.layers {
 		L := &r.layers[l]
-		s := L.steps
-		if r.stepWholeLayer(l) {
+		info := stepLayerInfo{steps: L.steps, whole: r.stepWholeLayer(l), qGate: L.qGate, ffnI: L.ffnI}
+		if g := L.geom; g != nil {
+			info.hasGeom, info.hd, info.nKV, info.kEqV = g.hd > 0, g.hd, g.nKV, g.kEqV
+		}
+		in.layers = append(in.layers, info)
+	}
+	return in
+}
+
+// metalStepInputs reads m before any build, as buildResident will decide each of them.
+func metalStepInputs(m *decoder.Model) *stepInputs {
+	H, nL, nH, _, _, I, V := m.Dims()
+	p := m.Program()
+	in := &stepInputs{prog: p, H: H, V: V, I: I, nH: nH, moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStep(),
+		gemma4Step: m.ResidentGemma4Step(), q4k: m.Quant() == "q4k"}
+	in.w4f16Lane = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16" && m.Quant() == "int4"
+	_, _, in.attnSink = m.GptOssActResident()
+	if nE, _, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams(); ok {
+		n := metalMoESlotsFromEnv(m)
+		in.pagedMoE = n > 0 && (n < nE || moePagedAllSlotsForTest)
+	}
+	if P := m.Gemma4PLEDimResident(); P > 0 {
+		in.pleIn = nL * P
+	}
+	w := m.Weights()
+	has := func(ops []program.Op, k program.OpKind) bool {
+		return slices.ContainsFunc(ops, func(o program.Op) bool { return o.Kind == k })
+	}
+	recurrent := false
+	for l, ops := range p.Layers {
+		spans, err := layerStepsOf(ops)
+		if err != nil {
+			in.stepsErr = fmt.Sprintf("layer %d: %v", l, err)
+			return in
+		}
+		info := stepLayerInfo{whole: in.gemma4Step && has(ops, program.OpGemma4Attn), qGate: has(ops, program.OpGatedAttn), ffnI: I}
+		for _, sp := range spans {
+			info.steps = append(info.steps, sp.Kind)
+			recurrent = recurrent || sp.Kind == stepDeltaNet || sp.Kind == stepMamba
+		}
+		recurrent = recurrent || info.qGate
+		if r := w.Layers[l].GateProj.Rows(); r > 0 {
+			info.ffnI = r
+		}
+		if mixer, _ := m.ResidentLayerOps(l); mixer == decoder.MixerAttention {
+			info.hd, info.nKV = m.HeadDimAtResident(l), m.KVHeadsAtResident(l)
+			info.hasGeom, info.kEqV = info.hd > 0, m.VFromKResident(l) && m.KVSrcAtResident(l) == l
+			in.oneKVAllocation = true
+			in.faPartial = max(in.faPartial, attnFAPartialFloats(info.hd, nH, info.nKV))
+		}
+		in.layers = append(in.layers, info)
+	}
+	in.recurrentBlocks = in.recurrentStep && recurrent
+	return in
+}
+
+// ineligible is why these inputs run no batched step, "" if they can.
+func (in *stepInputs) ineligible() string {
+	switch {
+	case in.stepsErr != "":
+		return in.stepsErr
+	case !in.oneKVAllocation:
+		return "KV slots that are not one allocation per layer"
+	case in.w4f16Lane:
+		return "the w4f16 decode lane, whose kernels the step does not have"
+	case in.attnSink: // gpt-oss's learned sink is set from the weights at the call, not in the program
+		return "an attention sink"
+	}
+	if why := stepProgramIneligible(in.prog, in.moeStep, in.recurrentStep, in.gemma4Step); why != "" {
+		return why
+	}
+	if in.pagedMoE {
+		return "a paged MoE, whose experts are staged between command buffers"
+	}
+	for l := range in.layers {
+		L := &in.layers[l]
+		if L.whole {
 			continue // the whole layer runs per row on decode's encoder, whatever its steps
 		}
-		if !r.stepLayerShapeOK(s) {
+		if !in.layerShapeOK(L.steps) {
 			return fmt.Sprintf("layer %d's steps are %v, and the step runs a mixer step (attention; with its recurrent blocks on, DeltaNet or Mamba-2), "+
-				"an FFN step (dense; with its MoE block on, MoE; with its recurrent blocks on, non-gated), or a mixer then an FFN", l, s)
+				"an FFN step (dense; with its MoE block on, MoE; with its recurrent blocks on, non-gated), or a mixer then an FFN", l, L.steps)
 		}
-		if L.qGate && !r.recurrentStep {
+		if L.qGate && !in.recurrentStep {
 			return fmt.Sprintf("layer %d's gated attention, whose block runs only with the step's recurrent blocks on", l)
 		}
 	}
-	if r.stepGeomLayer() < 0 {
+	if in.geomLayer() < 0 {
 		return "no attention layer, whose geometry the step's attention scratch is sized from"
 	}
-	la := r.stepAttnLayer()
+	la := in.attnLayer()
 	if la < 0 {
 		return "" // every mixer runs per row on decode's kernels, at any width they take
 	}
-	g0 := r.layers[la].geom
-	for l := range r.layers {
-		if L := &r.layers[l]; r.stepBatchesAttn(l) && (L.geom.kEqV || L.geom.hd != g0.hd || L.geom.kvDim != g0.kvDim || L.geom.nKV != g0.nKV) {
+	g0 := &in.layers[la]
+	for l := range in.layers {
+		if L := &in.layers[l]; L.batchesAttn() && (L.kEqV || L.hd != g0.hd || L.nKV != g0.nKV) {
 			return "a layer the batched step does not reproduce"
 		}
 	}
-	if r.q4kLane { // its rows GEMVs take any width its decode GEMVs take, and its head runs decode's kernel per row
+	if in.q4k { // its rows GEMVs take any width its decode GEMVs take, and its head runs decode's kernel per row
 		return ""
 	}
-	return stepWidthsIneligible(r.H, r.I, r.V, r.nH*g0.hd, g0.kvDim)
+	return stepWidthsIneligible(in.H, in.I, in.V, in.nH*g0.hd, g0.nKV*g0.hd)
+}
+
+// layerShapeOK reports whether the step has a block for a layer of steps s: a mixer then an FFN, of the kinds its switched-on blocks
+// run. The recurrent hybrids' shapes (a DeltaNet or Mamba-2 mixer, the non-gated FFN, and a layer of one step) are admitted only where
+// recurrentBlocks holds, since the step's pricing and prompt route follow it.
+func (in *stepInputs) layerShapeOK(s []layerStep) bool {
+	rb := in.recurrentBlocks
+	mixer := func(st layerStep) bool {
+		return st == stepAttention || (rb && (st == stepDeltaNet || st == stepMamba))
+	}
+	ffn := func(st layerStep) bool {
+		return st == stepDenseFFN || (in.moeStep && st == stepMoE) || (rb && st == stepNonGatedFFN)
+	}
+	switch len(s) {
+	case 1:
+		return rb && (mixer(s[0]) || ffn(s[0]))
+	case 2:
+		return mixer(s[0]) && ffn(s[1])
+	}
+	return false
+}
+
+// attnLayer is the first layer whose attention the step batches, -1 if none.
+func (in *stepInputs) attnLayer() int {
+	for l := range in.layers {
+		if in.layers[l].batchesAttn() {
+			return l
+		}
+	}
+	return -1
+}
+
+// geomLayer is the layer whose geometry sizes the step's attention scratch: the first batched-attention layer, else the first with any
+// attention, else -1, which ineligible declines.
+func (in *stepInputs) geomLayer() int {
+	if la := in.attnLayer(); la >= 0 {
+		return la
+	}
+	for l := range in.layers {
+		if in.layers[l].hasGeom {
+			return l
+		}
+	}
+	return -1
+}
+
+// shape is the step's stepShape. The caller has checked geomLayer.
+func (in *stepInputs) shape() stepShape {
+	g0 := &in.layers[in.geomLayer()]
+	s := stepShape{H: in.H, V: in.V, I: in.I, nHhd: in.nH * g0.hd, kvDim: g0.nKV * g0.hd, ffnWidth: max(in.I, 1), faPartial: in.faPartial, q4k: in.q4k}
+	widths, whole := map[int]bool{}, false
+	for l := range in.layers {
+		L := &in.layers[l]
+		s.ffnWidth, whole = max(s.ffnWidth, L.ffnI), whole || L.whole
+		if L.ffnI > 0 {
+			widths[L.ffnI] = true
+		}
+	}
+	if whole {
+		s.gemma4FFNWidths = slices.Sorted(maps.Keys(widths))
+		s.pleIn = in.pleIn
+	}
+	return s
 }
 
 // stepProgramIneligible is why the step's tables refuse p at the blocks a build has on ("" if they admit it). A layer the step
@@ -192,26 +356,6 @@ var stepPLERow0PlantForTest = false
 // stepMambaSlot0PlantForTest and stepNonGatedRow0PlantForTest are OP4m-d6b's planted defects: every row's Mamba-2 on slot
 // 0's state, and every row's non-gated FFN activation from row 0's up projection.
 var stepMambaSlot0PlantForTest, stepNonGatedRow0PlantForTest = false, false
-
-// stepLayerShapeOK reports whether the step has a block for a layer of steps s: a mixer then an FFN, of the kinds its
-// switched-on blocks run. The recurrent hybrids' shapes (a DeltaNet or Mamba-2 mixer, the non-gated FFN, and a layer of one
-// step) are admitted only where recurrentBlocks holds, since the step's pricing and prompt route follow it.
-func (r *resident) stepLayerShapeOK(s []layerStep) bool {
-	rb := r.recurrentBlocks()
-	mixer := func(st layerStep) bool {
-		return st == stepAttention || (rb && (st == stepDeltaNet || st == stepMamba))
-	}
-	ffn := func(st layerStep) bool {
-		return st == stepDenseFFN || (r.moeStep && st == stepMoE) || (rb && st == stepNonGatedFFN)
-	}
-	switch len(s) {
-	case 1:
-		return rb && (mixer(s[0]) || ffn(s[0]))
-	case 2:
-		return mixer(s[0]) && ffn(s[1])
-	}
-	return false
-}
 
 // stepBatchesAttn reports whether layer l's attention runs on the step's batched attention kernels, as opposed to its
 // per-row gated-attention block or no attention at all.
@@ -428,23 +572,7 @@ func (r *resident) buildBatch() {
 func (r *resident) stepScratchBytes() int64 { return r.stepShape().scratchBytes() }
 
 // stepShape is this resident's: what its step's buffers are sized from.
-func (r *resident) stepShape() stepShape {
-	g0 := r.layers[r.stepGeomLayer()].geom
-	s := stepShape{H: r.H, V: r.V, I: r.I, nHhd: r.nH * g0.hd, kvDim: g0.kvDim, ffnWidth: r.stepFFNWidth(), faPartial: r.attnFAPartialLen, q4k: r.q4kLane}
-	if r.gemma4Blocks() {
-		widths := map[int]bool{}
-		for l := range r.layers {
-			if w := r.layers[l].ffnI; w > 0 {
-				widths[w] = true
-			}
-		}
-		s.gemma4FFNWidths = slices.Sorted(maps.Keys(widths))
-		if r.pleP > 0 {
-			s.pleIn = r.pleIn.Len()
-		}
-	}
-	return s
-}
+func (r *resident) stepShape() stepShape { return r.stepInputs().shape() }
 
 // attnFAPartialSplits is the most splits the fused attention's partial buffer holds per element.
 const attnFAPartialSplits = 32
@@ -619,16 +747,6 @@ func (s stepShape) uLdWidths() []int {
 	return slices.Compact(widths)
 }
 
-// reserveBytes is scratchBytes before a build, whose widths are each layer's widest: those can coincide where the geometry layer's
-// do not, so it counts every one of the q4k lane's uniforms as distinct.
-func (s stepShape) reserveBytes() int64 {
-	n := s.scratchBytes()
-	if s.q4k {
-		n += int64(5-len(s.uLdWidths())) * int64(os.Getpagesize())
-	}
-	return n
-}
-
 // listBytes is what the list asks the device for, before any rounding.
 func (s stepShape) listBytes() int64 {
 	var n int64
@@ -657,50 +775,16 @@ func attnFAPartialFloats(hd, nH, nKV int) int {
 	return nH * (hd + 2) * attnFAPartialSplits
 }
 
-// metalStepScratchReserve is, before a build, the most the step's scratch can take on m, or 0 where one of the step's limits a
-// model can show declines it: its tables, an attention sink, a paged MoE or an untiled width. It takes each width at its widest
-// layer, so it is not below stepScratchBytes, and TestMemGate_metal holds it to that and to 0 on a build batchIneligible refuses.
-func metalStepScratchReserve(m *decoder.Model) int64 {
-	p := m.Program()
-	gemma4 := m.ResidentGemma4Step() && hasGemma4Attn(p)
-	if stepProgramIneligible(p, m.ResidentMoEStep(), m.ResidentRecurrentStep(), m.ResidentGemma4Step()) != "" {
+// metalStepScratchReserve is what the step's scratch takes on m, read before a build: the price the build will set, or 0 where the
+// step cannot build.
+func metalStepScratchReserve(m *decoder.Model) int64 { return metalStepInputs(m).reserve() }
+
+// reserve is the step's price at these inputs, 0 where it cannot build.
+func (in *stepInputs) reserve() int64 {
+	if in.ineligible() != "" {
 		return 0
 	}
-	if _, _, sink := m.GptOssActResident(); sink {
-		return 0
-	}
-	if nE, _, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams(); ok {
-		if n := metalMoESlotsFromEnv(m); n > 0 && n < nE {
-			return 0
-		}
-	}
-	H, nL, nH, _, _, I, V := m.Dims()
-	s := stepShape{H: H, V: V, I: I, ffnWidth: max(I, 1), q4k: m.Quant() == "q4k"}
-	if l := slices.IndexFunc(p.Layers, func(layer []program.Op) bool {
-		return slices.ContainsFunc(layer, func(o program.Op) bool { return o.Kind == program.OpAttention })
-	}); l >= 0 && !s.q4k {
-		hd := m.HeadDimAtResident(l)
-		if stepWidthsIneligible(H, I, V, nH*hd, m.KVHeadsAtResident(l)*hd) != "" {
-			return 0
-		}
-	}
-	widths := map[int]bool{}
-	for l := range nL {
-		hd := m.HeadDimAtResident(l)
-		s.nHhd, s.kvDim = max(s.nHhd, nH*hd), max(s.kvDim, m.KVHeadsAtResident(l)*hd)
-		s.faPartial = max(s.faPartial, attnFAPartialFloats(hd, nH, m.KVHeadsAtResident(l)))
-	}
-	for _, lw := range m.Weights().Layers {
-		if w := lw.GateProj.Rows(); w > 0 {
-			s.ffnWidth = max(s.ffnWidth, w)
-			widths[w] = true
-		}
-	}
-	if gemma4 {
-		s.gemma4FFNWidths = slices.Sorted(maps.Keys(widths))
-		s.pleIn = nL * m.Gemma4PLEDimResident()
-	}
-	return s.reserveBytes()
+	return in.shape().scratchBytes()
 }
 
 // mc3W8RowsOn runs a native int8 resident's step projections as mc3_gemv_w8a8_rows (each weight row read once for all

@@ -293,13 +293,13 @@ func recurrentSlotPrice(t *testing.T, dir string) {
 }
 
 // TestRecurrentState_everyBufferReadsTheList: slot 0, every further slot and the checkpoint are all sized from the one list. Moving
-// the list moves all of them, so the state line holds exactly three copies of it on a two-slot build with a checkpoint.
+// both of its entries moves every buffer of each copy, and the state line then holds exactly those three copies.
 func TestRecurrentState_everyBufferReadsTheList(t *testing.T) {
 	const extra = 8
 	stateSpecsOf = func(m *decoder.Model, l int) []decoder.StateSpec {
 		specs := slices.Clone(m.StateSpecs(l))
-		if len(specs) > 0 {
-			specs[len(specs)-1].Floats += extra
+		for i := range specs {
+			specs[i].Floats += extra * (i + 1) // unequal, so a window sized as a state would show
 		}
 		return specs
 	}
@@ -310,6 +310,26 @@ func TestRecurrentState_everyBufferReadsTheList(t *testing.T) {
 			a := recurrentSlotsBuild(t, m)
 			if a.r.ckptBytes == 0 || a.r.kvSlotCount() != 2 {
 				t.Fatalf("checkpoint %d bytes on %d slots; this case needs a checkpoint on two slots", a.r.ckptBytes, a.r.kvSlotCount())
+			}
+			var want []int
+			for l := range a.r.layers {
+				if a.r.layers[l].delta != nil || a.r.layers[l].mamba != nil {
+					for _, spec := range stateSpecsOf(m, l) {
+						want = append(want, spec.Floats)
+					}
+				}
+			}
+			lens := func(bufs []Buffer) []int {
+				var out []int
+				for _, b := range bufs {
+					out = append(out, b.Len())
+				}
+				return out
+			}
+			for name, bufs := range map[string][]Buffer{"slot 0": slotState(a.r, 0), "slot 1": slotState(a.r, 1), "the checkpoint": a.r.ckptBufs} {
+				if got := lens(bufs); !slices.Equal(got, want) {
+					t.Errorf("%s's buffers are %v floats; the moved list holds %v", name, got, want)
+				}
 			}
 			var leased int64
 			for _, le := range metalLedgerOf(a.r.d).OpenLeases() {
