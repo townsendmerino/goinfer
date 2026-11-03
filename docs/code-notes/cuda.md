@@ -793,10 +793,9 @@ Moved from `cuda/backend.go` (the comment above `cudaKVSlotsRequest`) on 2026-10
 
 ```text
 cudaKVSlotsRequest is how many resident KV slots a build asks checkKVFits for (MC1,
-docs/tasks/task-concurrency-2026-09.md): the model's request (decoder.Model.ResidentKVSlotsRequest, already 1 for a
-family with recurrent state), and 1 in two cases the decoder cannot see:
-  - a Gated-DeltaNet resident (recurrent): its state is mutated in place and is not part of a slot. The decoder's
-    hasRecurrentState already keeps these at one; this refuses to allocate for a second slot anyway;
+docs/tasks/task-concurrency-2026-09.md): the model's request on this backend (decoder.Model.ResidentKVSlotsRequestFor: a
+recurrent family gets more than one only when the caller asked, since each slot holds its own state), and 1 in one case the
+decoder cannot see:
   - expert streaming (MoECacheExperts): that cache takes whatever VRAM is left after everything pinned, so every
     extra KV slot is expert-cache slots lost — the trade resolveCtxCapFit already declines to make with the context
     (48% decode lost on gemma4-26b when KV grew into the cache's share).

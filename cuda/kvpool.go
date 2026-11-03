@@ -600,11 +600,16 @@ func (r *cudaResident) kvTryAllocPools(slots int) (ok bool, err error) {
 	}
 	r.kvDemoted = make([]*cudaKVSnapshot, slots)
 	r.ctxCap = r.kvCapFor(slots)
-	return true, r.kvAllocPools(slots)
+	if err := r.kvAllocPools(slots); err != nil {
+		return true, err
+	}
+	r.allocRecurrentSlots(slots)
+	return true, nil
 }
 
 // kvReleasePools releases every pool and table buffer kvAllocPools made, leaving none bound.
 func (r *cudaResident) kvReleasePools() {
+	r.releaseRecurrentSlots()
 	for s := range r.kvDemoted {
 		r.kvDropDemoted(s)
 	}

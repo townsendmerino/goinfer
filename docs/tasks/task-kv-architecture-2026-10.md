@@ -55,7 +55,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV6 | done | — (WebGPU keeps slots, D3) | §8 |
 | KV7-s1, KV7-s2 | done | — | 60cfcba7 (#57); 671b54bb (#86) |
 | KV7-rest | active | First slice built on CUDA (nobara-sb01, `docs/measurements/kv7-demote-2026-11/`), off by default (`Options.KVDemote`, set when `--kv-host-bytes` names a budget) until a timed reading exists: a released idle conversation's rows go to pinned host memory and come back on return, bit-identical; on the 0.5B its next turn took 0.66 s against 2.63 s (one run each, not a timed reading). Per slot, not the block host pool §6 planned, which stays planned should a reading ask for it. **Demotion stays off until the list in `docs/measurements/kv7-demote-2026-11/README.md`, "Before demotion can be turned on", is closed, with its gate: `TestKV7_slotWriteTable` extended to a slot holding a wrapped upload (`kvFloor`), and the served reading** (coordinator, 2026-11-03). Also open: windowed KV; the disk tier; and D5's step 3, releasing a running conversation so it re-admits through the index (moved here from KV4 by D-KV4-2, owner, 2026-10-21) | §6; `docs/measurements/kv4-cuda-2026-10-21.md` §5 |
-| KV8 | open | KV4 is done (2026-11-02). Next on CUDA: state slots for the hybrids, so `cudaKVSlotsRequest` stops forcing one (§6, KV8's next step, written 2026-11-02); Metal's checkpoints wait on KV5 | §6 |
+| KV8 | active | CUDA's state slots for the hybrids: built, read on tiny fixtures (§6, KV8's plan of 2026-11-03; `docs/measurements/kv8-2026-11/state-slots.log`). Next on CUDA: the served reading at two clients, then the message-boundary checkpoint; Metal's checkpoints wait on KV5 | §6 |
 | KV8a-CUDA | done | — | fac209c2 (#115) |
 | KV8a-CUDA-cc28k | done | — | the 28K Claude Code chain on CUDA at main `799b98df`: PASS, 1 tested, 0 of 7 differ (`docs/measurements/kv8a-2026-10/README.md`, "The 28K Claude Code chain on CUDA") |
 | KV8a-Metal | done | — (owner, 2026-10-22: M2(b) graded on its 20K cells; the 28K chain is past a 16 GB Mac's swap guard and ran on CUDA instead, KV8a-CUDA-cc28k) | branch `kv8a-metal-2026-10`; M1–M5 PASS, `docs/measurements/kv8a-metal-2026-10/README.md` § "The grade" |
@@ -1305,6 +1305,44 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
   - **Card:** tier 0 and tiny fixtures, minutes. A served MC3 reading on Qwen3.5-9B at two clients, registered, about 20 minutes.
   - **After it:** the checkpoint store at the message boundary as well as the end of the prompt (the KV0-H note above: 2 of 8
     divergences sat 3 tokens into a new user message), then Marconi-style admission.
+
+- **Plan and first slice, registered 2026-11-03 12:08 PST before any code (nobara-sb01; coordinator's item of 12:00 PST; card about 1 h by day).**
+  - **What pools.** Not a shared pool of blocks: a recurrent state is compound, so it does not page. One conv window and one state per layer per KV slot, as Metal already keeps
+    (`metal/deltanet.go:resident.allocRecurrentSlots`). Binding a slot points the layer's launches at that slot's pair. The checkpoint stays one copy, which belongs to the slot that last saved
+    it, as on Metal: a restore on another slot is refused and the decoder prefills from 0. A checkpoint per slot, the message-boundary position and admission are later slices.
+  - **Who gets it.** `program.CUDA` claims `RecurrentSlots` for `OpDeltaNet` and `OpMamba2`, so `cudaKVSlotsRequest` reads `ResidentKVSlotsRequestFor("cuda")`. A hybrid still gets
+    one slot unless the caller asked for slots (`ResidentKVSlotsIsDefault`), so a default load keeps its bytes. An expert-cache load stays at one, as it is today.
+  - **Left as refusals.** Copying between slots (`--kv-share`) still declines on a hybrid: the copy carries KV only. A snapshot holds the slot it names, not the bound one.
+  - **MM8's state line.** Today `DevicePlan.StateBytes` and `recurrentStateCharged` are one slot's, and the state is allocated at upload, before the KV fit. Slot 0's pair stays there.
+    The further slots' pairs are allocated with the KV pools, because the slot count is decided there. They are priced in three places, one figure each: `ctxForSlots`'s plan
+    (as `ExtraBytes`, beside each further slot's KV), `kvChargedSlotsFit` (a slot that cannot hold its state is not granted) and `postPoolBytes`' caller in the memory plan.
+    On the state line the build then leases `StateBytes` x slots.
+  - **The memory gate.** `TestMemGate_cuda` already has `qwen35-tiny` at `slots2` and `slots4`, which build one slot on main. After this they build what they ask for, so the state
+    line's figure has to be per slot: the row's figure is `StateBytes` x the built slots. `cuda/testdata/memgate_gaps.txt` gains no row for it.
+  - **Gates, red first.** All tier 0 or tiny fixtures on the card, minutes.
+    - **S-1, MC3 identity.** Two sequences interleaved token by token on two slots each equal the same sequence alone, bit for bit (logits), on `qwen35-tiny` (DeltaNet),
+      `olmo_hybrid-tiny` (DeltaNet with its settings) and `nemotron-tiny` (Mamba-2). **Red first:** the claim made with one shared state must fail this test.
+    - **S-2, a reset is the slot's own.** Resetting slot 1 leaves slot 0's next logits bit-identical. **Red first:** a plant that zeroes every slot's pair.
+    - **S-3, planned equals charged, per slot.** `recurrentStatePlannedForTest` and the state line at 1, 2 and 4 slots, and `TestMemGate_cuda`. A plant leasing one more state buffer
+      is red. A card too small for a further slot's state grants fewer slots, by the fit's own reading.
+    - **S-4, the checkpoint's slot.** A save on slot 0 then a restore on slot 1 is refused, the reply equals a cold prefill's, and the same on slot 0 restores bit-exactly.
+    - **S-5, a snapshot's slot.** A snapshot of an unbound slot holds that slot's state, not the bound one's. DeltaNet only: a Mamba-2 snapshot stays refused.
+    - **S-6, U1.** `gate identity -backend cuda`: every family that ran stays IDENTICAL, since a default load has one slot.
+    - **S-7, the censuses.** Their diffs touch only recurrent families' lines at an explicit slot count.
+  - **Not in the first slice.** The served MC3 reading on Qwen3.5-9B at two clients, registered on its own (about 20 minutes); `--kv-share` on hybrids; the other checkpoint positions.
+  - **Void if:** a card run outside the timing lock; a NOT RUN counted as a pass; a bar moved after a reading.
+  - **Readings, 2026-11-03 (nobara-sb01; `docs/measurements/kv8-2026-11/state-slots.log`).**
+    - **S-1 to S-5 pass.** S-1's red first, the claim on one shared state: 5,632, 11,264 and 5,632 logits differ. With the slots, 0 of every position's logits, on all three fixtures.
+    - **S-2's plant zeroes every slot's pair on a reset,** held through that one reset, because a forward from position 0 resets too. Red on all three, in the state and in the logits: 256 to 512 logits differ. A reset that does nothing is red on Mamba-2's seam. A first version of this plant shared one pair between the slots, which went red before the reset ran (#646's review).
+    - **S-3:** the state line reads one slot's bytes x slots, plus the checkpoint's one copy, at 1, 2 and 4 slots: 33,792, 50,688 and 84,480 on `qwen35-tiny`. A plant on the state line of a
+      `slots2` row is red through the gate's table.
+    - **S-5's plant,** the snapshot reading the bound pair, is red: 256 logits differ at the first position past the restore.
+    - **The memory gate:** 474 rows hold. **The table loses 20 rows, 843 to 823**, where this plan said it would gain none: at two and four slots the plan's null block per slot now
+      covers the staging ring on the recurrent rows, as it already did on the others, so `kv-ring` no longer fires there. No new row.
+      That cover is the plan's null block per slot, where the build allocates one, so tightening that pricing turns these 20 rows red until `kv-ring` is priced (MM8 CUDA, KV staging ring). They cannot stay in the table meanwhile: the gate reds a gap that no longer fires.
+    - **S-7:** the memory census gains 20 lines, every one a recurrent family's `int4/slots4`, two profiles each. The admission census does not change.
+    - **Added beyond the plan:** a marked speculative row folds into the slot that marked it when another is bound (`TestRecurrentSlots_markedRowsFoldIntoTheirSlot`), and a graph
+      capture is refused on a DeltaNet build of several slots, because a segment holds one slot's pair. The second has no test: graphs need EXCLUSIVE_PROCESS or MPS here.
 
 ### KV8a — An end-of-prompt checkpoint on today's single slot (added 2026-10-20)
 

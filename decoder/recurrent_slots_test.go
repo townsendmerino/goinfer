@@ -20,7 +20,7 @@ func TestResidentKVSlotsRequestFor_recurrentSlotsByTable(t *testing.T) {
 	}
 	for _, c := range []struct{ name, dir string }{{"Gated-DeltaNet", "../testdata/qwen35-tiny"}, {"the Mamba-2 hybrid", "../testdata/nemotron-tiny"}} {
 		rec := load(c.dir, Options{ResidentKVSlots: 3})
-		for be, want := range map[string]int{"metal": 3, "cuda": 1, "webgpu": 1, "": 1} {
+		for be, want := range map[string]int{"metal": 3, "cuda": 3, "webgpu": 1, "": 1} {
 			if got := rec.ResidentKVSlotsRequestFor(be); got != want {
 				t.Errorf("%s on %q: %d slots, want %d", c.name, be, got, want)
 			}
