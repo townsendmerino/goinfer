@@ -91,6 +91,9 @@ type Plan struct {
 	KVBytes         int64 // at Ctx, as this backend allocates it (ResidentKVBytes)
 	HostCopyBytes   int64 // Metal only: the host copy of the resident weights unified memory also holds (ResidentHostCopyBytes; 0 when aliased from a .giw)
 	StateBytes      int64 // one KV slot's recurrent and conv state as this backend allocates it (BuildDemand.StateBytes); 0 for a model with none
+	// CheckpointBytes is the one recurrent checkpoint a load on this backend keeps when it fits (BuildDemand.CheckpointBytes). It is not
+	// in NeedBytes and moves no decision here: a load with no room for it keeps none and still runs.
+	CheckpointBytes int64
 	AllocSlackBytes int64 // the backend's allocator rounding over the weight buffers (PlanSlack): CUDA's 2 MiB granularity
 	ExtraBytes      int64 // PlanRequest.ExtraBytes, carried through for NeedBytes()/reporting
 
@@ -196,7 +199,7 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 // plan is Plan, pricing the backend's allocation rounding (PlanSlack) only when slack is set: a test's before side passes false
 // per call, so no other Plan sees it.
 func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack bool) Plan {
-	p := Plan{Backend: backend, FreeBytes: freeBytes, ExtraBytes: req.ExtraBytes}
+	p := Plan{Backend: backend, FreeBytes: freeBytes, ExtraBytes: req.ExtraBytes, CheckpointBytes: m.checkpointBytes(backend)}
 	if reason := m.planIneligible(backend, req); reason != "" {
 		p.Placement = PlacementDecline
 		p.Reason = reason
@@ -268,6 +271,10 @@ func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceL
 		FixedSlack: m.planSlack(backend), StateBytes: m.stateBytes(backend)}
 	if nExperts, topK, isMoE := m.moeGeometry(); isMoE {
 		l.ExpertBytesFull = m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes()
+		if backend == "cpu" {
+			_, experts := m.cpuStructBytes()
+			l.ExpertBytesFull += experts
+		}
 		l.NExperts, l.TopK = nExperts, topK
 	}
 	l.HostFixed = m.residentHostCopyFor(backend, 1)

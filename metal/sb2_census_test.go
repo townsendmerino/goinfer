@@ -298,17 +298,13 @@ var metalRounding = memgate.PerLease("Metal's 16 KiB sub-allocation", 16<<10)
 var metalMemGaps = []memgate.Gap{
 	{Row: "*", Line: mem.LineScratch, What: "decode's own scratch and uniforms lease on the scratch line, and nothing prices them",
 		Item: "MM5, decode's buffer list", Bytes: func(f map[string]int64) int64 { return f["decode"] }},
-	{Row: "*", Line: mem.LineState, What: "the recurrent checkpoint leases on the state line, and the plan prices one slot's state and no checkpoint",
-		Item: "MM8 Metal, recurrent checkpoint", Bytes: func(f map[string]int64) int64 { return f["checkpoint"] }},
-	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums weight matrices: norms, biases, sinks and rotation tables are leased on dense and priced nowhere",
+	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums the tensors: rotation tables and other derived buffers are leased on dense and priced nowhere (the bound also holds the norms and biases, which the plan now prices)",
 		Item: "MM8 Metal, dense vectors", Bytes: func(f map[string]int64) int64 { return f["tables"] }},
 	{Row: "testdata/gemma4-moe-kv-tiny32 *", Line: mem.LineDense, What: "Gemma 4's MoE leases 21,128 bytes on dense past the row above: not diagnosed",
 		Item: "MM8 Metal, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return 21128 }},
-	{Row: "testdata/gptoss_tiny.gguf *", Line: mem.LineExperts, What: "gpt-oss's experts lease 8,192 bytes over the plan's expert figure: not diagnosed",
-		Item: "MM8 Metal, gpt-oss experts", Bytes: func(map[string]int64) int64 { return 8192 }},
 }
 
-const metalMemGapsPin = 5
+const metalMemGapsPin = 3
 
 // metalGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; what it returns
 // runs after that read, before Close.
@@ -342,11 +338,7 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount()}
 	read.Plan = m.Plan("metal", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
 	facts := func() map[string]int64 {
-		f := map[string]int64{"tables": metalDenseVectorBytes(m, r), "decode": metalDecodeScratchBytes(m, r)}
-		if r.ckptBytes > 0 { // whether the load kept one is the build's; its size is one slot's list
-			f["checkpoint"] = metalRecurrentSlotBytes(m)
-		}
-		return f
+		return map[string]int64{"tables": metalDenseVectorBytes(m, r), "decode": metalDecodeScratchBytes(m, r)}
 	}
 	read.Open = append(read.Open, memgate.Snap("built", l, facts()))
 	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
@@ -427,7 +419,7 @@ func TestMemGate_metalPlantGoesRed(t *testing.T) {
 
 // TestMemGate_metalPlantsThroughTheTable: a buffer really allocated over plan during a row stays red through Metal's allowance and
 // its table of known gaps. It is 4 MiB and 4 bytes, so Metal rounds it and the allowance has something to forgive; the fixtures are
-// a dense model and a recurrent one, whose state gap is live. The buffer is freed before Close, so what is red is the plan.
+// a dense model and a recurrent one. The buffer is freed before Close, so what is red is the plan.
 func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)

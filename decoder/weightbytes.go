@@ -40,9 +40,15 @@ func mmapAliasedBytes(m *Model, w *linalg.WeightMat) int64 {
 	return n
 }
 
-// f32SliceBytes is wmBytes' counterpart for the families that keep a projection as a plain []float32 (MLA, Mamba-2, LFM2's
-// short conv). These are real matrices, not norms/biases, so they belong in the same sum as wmBytes' callers build.
-func f32SliceBytes(s []float32) int64 { return 4 * int64(len(s)) }
+// f32SliceBytes is wmBytes' counterpart for a tensor kept as a plain []float32: a norm, a bias, or a family's projection (MLA,
+// Mamba-2, LFM2's short conv).
+func f32SliceBytes(s ...[]float32) int64 {
+	var n int64
+	for _, v := range s {
+		n += 4 * int64(len(v))
+	}
+	return n
+}
 
 // ResidentWeightBytes is the total byte footprint of this model's weight matrices: what a resident backend must hold to
 // run the whole model on-device, assuming every routed MoE expert is resident. See ResidentWeightBytesPaged for the
@@ -51,9 +57,8 @@ func f32SliceBytes(s []float32) int64 { return 4 * int64(len(s)) }
 // It exists so a backend can ask "will this model fit?" before allocating. Dims() does not expose the expert count, so a
 // shape-derived estimate under-reports a sparse MoE by the factor that matters most.
 //
-// It sums the matrices, where the bytes are; elementwise norms/biases are [hidden]-sized and round to nothing. That makes
-// this a lower bound, the safe direction for a guard: it can fail to refuse a marginal model but cannot refuse one that
-// would have fit.
+// It sums every tensor the load holds, the matrices and the norms, biases and small f32 tables beside them. What a backend
+// builds on top (rotation tables, constants) is the backend's.
 //
 // This is a quantity we compute, deliberately, not the OS's account of free memory: Darwin's UBC reclaims under
 // pressure, so "available" reports what survived rather than what can be asked for. Do not key a memory guard on RSS or
@@ -71,9 +76,9 @@ func (m *Model) ResidentWeightBytesPaged(slots int) int64 {
 	return dense + expertBytesAt(slots)
 }
 
-// ResidentDenseWeightBytes is ResidentWeightBytesPaged's non-expert term alone: every matrix a routed-MoE cap cannot
-// shrink (projections, the mixer/MLA/Mamba/shortConv fields, PLE, embeddings and head; everything except l.Experts and
-// gemma4moe's fused experts). A guard that must check whether the fixed part of the model fits before an elastic expert
+// ResidentDenseWeightBytes is ResidentWeightBytesPaged's non-expert term alone: every tensor a routed-MoE cap cannot
+// shrink (projections, norms and biases, the mixer/MLA/Mamba/shortConv fields, PLE, embeddings and head; everything except
+// l.Experts and gemma4moe's fused experts). A guard that must check whether the fixed part of the model fits before an elastic expert
 // cache sizes itself against live free memory (e.g. CUDA's capSlots) wants this, not ResidentWeightBytesPaged(0), which
 // would decline a model whose experts are about to be sized down to fit.
 func (m *Model) ResidentDenseWeightBytes() int64 {
@@ -88,10 +93,44 @@ func (m *Model) ResidentDenseWeightBytes() int64 {
 // token embeddings on the host and never uploads the learned position table or Gemma 4's per-layer embedding tables, so
 // an untied model's token-embedding table must not be priced as device memory; pricing it makes the slot-aware context
 // plan land too low. The Metal and CUDA q4k lanes upload the file's Q5_K and Q6_K blocks for their int8 copies (kquantSavings).
-// Every other backend gets ResidentDenseWeightBytes unchanged.
+// The CPU also holds the weights' own structs (cpuStructBytes).
 // Measurement: docs/code-notes/decoder.md#Model.ResidentDenseWeightBytesFor.
 func (m *Model) ResidentDenseWeightBytesFor(backend string) int64 {
-	return m.ResidentDenseWeightBytes() - m.residentHostSideBytes(backend) - m.kquantSavings(backend) - m.mambaProjSavings(backend)
+	n := m.ResidentDenseWeightBytes() - m.residentHostSideBytes(backend) - m.kquantSavings(backend) - m.mambaProjSavings(backend)
+	if backend == "cpu" {
+		dense, _ := m.cpuStructBytes()
+		n += dense
+	}
+	return n
+}
+
+// cpuStructBytes is what the weights' structs and the load's bookkeeping take beside the tensors, split as the plan splits them: on
+// the CPU they sit with the tensors in host memory, and a resident backend's device holds none of them. Each struct is its whole
+// size, the words that name its arrays included.
+func (m *Model) cpuStructBytes() (dense, experts int64) {
+	if m == nil || m.w == nil {
+		return 0, 0
+	}
+	w := m.w
+	dense = int64(unsafe.Sizeof(*w)) + int64(cap(w.Layers))*int64(unsafe.Sizeof(LayerWeights{})) + int64(len(w.ggufPath)) +
+		int64(len(w.kquant))*int64(unsafe.Sizeof((*int8)(nil))+unsafe.Sizeof(kquantSrc{})) + w.prof.heldBytes()
+	for i := range w.Layers {
+		l := &w.Layers[i]
+		dense += ptrSize(l.delta) + ptrSize(l.qattn) + ptrSize(l.shortConv) + ptrSize(l.mamba) + ptrSize(l.mla) + ptrSize(l.kda) + ptrSize(l.gemma4moe)
+		experts += int64(cap(l.Experts)) * int64(unsafe.Sizeof(expertWeights{}))
+		if mo := l.gemma4moe; mo != nil {
+			experts += int64(cap(mo.expertsGateUp)+cap(mo.expertsDown)) * int64(unsafe.Sizeof(linalg.WeightMat{}))
+		}
+	}
+	return dense, experts
+}
+
+// ptrSize is the size of what p points at, 0 for nil.
+func ptrSize[T any](p *T) int64 {
+	if p == nil {
+		return 0
+	}
+	return int64(unsafe.Sizeof(*p))
 }
 
 // mambaProjSavings is what a backend's upload saves on the Mamba-2 projections a load holds as f32: every resident backend uploads them as
@@ -165,6 +204,7 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 	// Gemma 4's model-level PLE tables; empty WeightMats (a no-op sum) on every other family.
 	count(&w.PerLayerTokenEmbed)
 	count(&w.PerLayerModelProj)
+	dense += f32SliceBytes(w.FinalNorm, w.FinalNormBias, w.PerLayerProjNorm)
 	var fullExpertBytes, mmapExpertBytes []int64 // one entry per (layer, expert-kind) — generic l.Experts and gemma4moe's fused set are both "kinds"
 	var expertCounts []int
 	for i := range w.Layers {
@@ -176,11 +216,13 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 		} {
 			count(mat)
 		}
+		dense += f32SliceBytes(l.QBias, l.KBias, l.VBias, l.OBias, l.QNorm, l.KNorm, l.PreAttnNorm, l.PreAttnNormBias, l.PostAttnNorm,
+			l.UpBias, l.DownBias, l.PreMLPNorm, l.PreMLPNormBias, l.PostMLPNorm, l.RouterBias, l.AttnSinks, l.PostPLENorm)
 		// The routed experts are most of a sparse MoE: omitting them is the under-report this accessor exists to prevent.
 		var expertBytes, mmapEBytes int64
 		for j := range l.Experts {
 			e := &l.Experts[j]
-			expertBytes += wmBytes(&e.Gate) + wmBytes(&e.Up) + wmBytes(&e.Down)
+			expertBytes += wmBytes(&e.Gate) + wmBytes(&e.Up) + wmBytes(&e.Down) + f32SliceBytes(e.GateBias, e.UpBias, e.DownBias)
 			mmapEBytes += mmapAliasedBytes(m, &e.Gate) + mmapAliasedBytes(m, &e.Up) + mmapAliasedBytes(m, &e.Down)
 		}
 		fullExpertBytes = append(fullExpertBytes, expertBytes)
@@ -189,6 +231,7 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 		count(&l.SharedExpert.Gate)
 		count(&l.SharedExpert.Up)
 		count(&l.SharedExpert.Down)
+		dense += f32SliceBytes(l.SharedExpert.GateBias, l.SharedExpert.UpBias, l.SharedExpert.DownBias)
 
 		// qwen3_5_moe's per-layer mixer (DeltaNet or gated-softmax attention): the three dominant projections are WeightMats, and the
 		// rest are f32. At most one of these is non-nil.
@@ -196,22 +239,20 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 			count(&d.inProjQKV)
 			count(&d.inProjZ)
 			count(&d.outProj)
-			dense += f32SliceBytes(d.inProjB) + f32SliceBytes(d.inProjA) + f32SliceBytes(d.convW) + f32SliceBytes(d.dtBias) +
-				f32SliceBytes(d.negExpA) + f32SliceBytes(d.normW)
+			dense += f32SliceBytes(d.inProjB, d.inProjA, d.convW, d.dtBias, d.negExpA, d.normW)
 		}
 		if q := l.qattn; q != nil {
 			count(&q.qProj)
 			count(&q.kProj)
 			count(&q.vProj)
 			count(&q.oProj)
+			dense += f32SliceBytes(q.qNorm, q.kNorm)
 		}
 		// MLA (DeepSeek, Kimi) projections are kept as f32 slices. f32 slices are never mmap-aliased (LoadSerializedWeights
 		// copies float arrays), so there is no mmap counterpart.
 		if mla := l.mla; mla != nil {
-			dense += f32SliceBytes(mla.qAProj) + f32SliceBytes(mla.qBProj) + f32SliceBytes(mla.qProj) +
-				f32SliceBytes(mla.kvAProj) + f32SliceBytes(mla.kvBProj) + f32SliceBytes(mla.oProj) +
-				wmBytes(&mla.qAQ) + wmBytes(&mla.qBQ) + wmBytes(&mla.qQ) + wmBytes(&mla.kvAQ) + wmBytes(&mla.oQ) +
-				f32SliceBytes(mla.gProj)
+			dense += f32SliceBytes(mla.qAProj, mla.qBProj, mla.qProj, mla.kvAProj, mla.kvBProj, mla.oProj, mla.gProj, mla.qALayernorm, mla.kvALayernorm) +
+				wmBytes(&mla.qAQ) + wmBytes(&mla.qBQ) + wmBytes(&mla.qQ) + wmBytes(&mla.kvAQ) + wmBytes(&mla.oQ)
 		}
 		// Kimi Delta Attention (Bailing Hybrid's linear layers): six quantized projections, the three depthwise conv kernels and
 		// the small f32 gates.
@@ -219,12 +260,11 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 			for _, w := range []*linalg.WeightMat{&k.qProj, &k.kProj, &k.vProj, &k.fProj, &k.gProj, &k.oProj} {
 				count(w)
 			}
-			dense += f32SliceBytes(k.qConvW) + f32SliceBytes(k.kConvW) + f32SliceBytes(k.vConvW) + f32SliceBytes(k.bProj) +
-				f32SliceBytes(k.dtBias) + f32SliceBytes(k.aLog) + f32SliceBytes(k.oNormW)
+			dense += f32SliceBytes(k.qConvW, k.kConvW, k.vConvW, k.bProj, k.dtBias, k.aLog, k.oNormW)
 		}
 		// Mamba-2 (Granite, Nemotron) is kept as f32. The recurrent state is per-sequence and never counted here.
 		if mb := l.mamba; mb != nil {
-			dense += f32SliceBytes(mb.inProj) + f32SliceBytes(mb.convW) + f32SliceBytes(mb.outProj) + wmBytes(&mb.inQ) + wmBytes(&mb.outQ)
+			dense += f32SliceBytes(mb.inProj, mb.convW, mb.convB, mb.aLog, mb.d, mb.dtBias, mb.normW, mb.outProj) + wmBytes(&mb.inQ) + wmBytes(&mb.outQ)
 		}
 		// LFM2's gated short-convolution mixer: its projections bf16 or f32 (islandMat), its depthwise kernel f32.
 		if sc := l.shortConv; sc != nil {
@@ -233,10 +273,11 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 			dense += f32SliceBytes(sc.convW)
 		}
 		// Gemma 4's MoE sub-block. mlpGate/mlpUp/mlpDown alias l.GateProj/UpProj/DownProj (the gemma4Layer comment in
-		// serialize.go) and are already counted above; only routerProj and the fused experts are new tensors. The fused experts
-		// page the same way as l.Experts.
+		// serialize.go), and preFFNNorm/postFFNNorm alias l.PreMLPNorm/PostMLPNorm, all counted above. The fused experts page the
+		// same way as l.Experts.
 		if mo := l.gemma4moe; mo != nil {
 			count(&mo.routerProj)
+			dense += f32SliceBytes(mo.postFFNNorm1, mo.preFFNNorm2, mo.postFFNNorm2, mo.routerScale, mo.perExpertScale)
 			var fusedBytes, mmapFusedBytes int64
 			for e := range mo.expertsGateUp {
 				fusedBytes += wmBytes(&mo.expertsGateUp[e]) + wmBytes(&mo.expertsDown[e])

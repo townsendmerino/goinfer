@@ -9,7 +9,6 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
@@ -30,7 +29,7 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 	}
 	for i := range w.NumField() {
 		switch f := w.Type().Field(i); f.Name {
-		case "Cfg", "arch", "backing", "st", "bakedQuant":
+		case "Cfg", "arch", "schema", "backing", "st", "bakedQuant": // a load's config and label, package-level tables, and what the file maps
 		default:
 			h.root(weights, f.Name, w.Field(i))
 		}
@@ -240,15 +239,3 @@ var cpuCacheLines = map[string]mem.LineID{"keys": mem.LineKV, "vals": mem.LineKV
 
 // cpuCacheIgnored is what KVCache points at and does not own: a request's counter, the adapter the model holds, and a predicate.
 var cpuCacheIgnored = map[string]bool{"cost": true, "costPhase": true, "lora": true, "skipAppend": true}
-
-// WeightMatScalarBytesForTest is what one weight matrix holds in its own scalar fields, beyond its arrays: read by the walker, on an empty matrix.
-func WeightMatScalarBytesForTest() int64 {
-	var (
-		w linalg.WeightMat
-		l mem.Ledger
-	)
-	h := &holdsWalker{l: &l}
-	h.root(func(string) mem.LineID { return mem.LineDense }, "w", reflect.ValueOf(&w).Elem())
-	defer h.finish()()
-	return l.Usage().ByLine[mem.LineDense]
-}

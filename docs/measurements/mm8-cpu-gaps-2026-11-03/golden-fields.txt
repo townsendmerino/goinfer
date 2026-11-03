@@ -1,0 +1,2 @@
+cuda/testdata/sb2_cuda_mem_census.amd64.txt.gz: 729 lines; 728 differ; 0 differ in a slot, context, expert or grant field
+gpu/testdata/sb2_webgpu_slot_census.amd64.txt.gz: 1046 lines; 1045 differ; 0 differ in a slot, context, expert or grant field

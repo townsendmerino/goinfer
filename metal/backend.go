@@ -422,7 +422,7 @@ func metalMoESlotsFromEnv(m *decoder.Model) int {
 // residentKVBytes is the resident KV cache's footprint at the resolved ctx cap. It runs before buildResident, so it resolves the
 // cap itself; on an error (an explicit ctx above metalCtxCapMax) it takes metalCtxCapMax, a safe over-estimate for a guard whose
 // job is not to under-count, since BuildResident reports that error on its own, earlier. The small per-model buffers (mq, gu,
-// logits, ...) are a few hundred KB each and round to nothing beside KV, the exemption ResidentWeightBytes gives norms and biases.
+// logits, ...) are a few hundred KB each and round to nothing beside KV.
 func residentKVBytes(m *decoder.Model) int64 {
 	ctxCap, err := resolveMetalCtxCap(m)
 	if err != nil {

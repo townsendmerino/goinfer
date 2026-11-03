@@ -84,6 +84,42 @@ func TestPlan_pricesRecurrentState(t *testing.T) {
 	}
 }
 
+// TestPlan_pricesRecurrentCheckpoint: the plan shows the checkpoint on a backend that keeps one, as one copy of the DeltaNet or Mamba-2 state, and
+// not on one that does not; and it stays out of the need, so a load with no room for it plans the same.
+func TestPlan_pricesRecurrentCheckpoint(t *testing.T) {
+	for _, fx := range []struct {
+		dir  string
+		kept bool
+	}{{"qwen35-tiny", true}, {"olmo_hybrid-tiny", true}, {"nemotron-tiny", true}, {"lfm2-tiny", false}, {"bailing_hybrid-tiny", false}, {"llama-tiny", false}} {
+		t.Run(fx.dir, func(t *testing.T) {
+			m, err := Load("../testdata/"+fx.dir, Options{Backend: "cpu", DirectLoad: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			for _, b := range []string{"metal", "cuda", "webgpu", "cpu"} {
+				want := int64(0)
+				if fx.kept && (b == "metal" || b == "cuda") {
+					want = m.stateBytes(b)
+					if want == 0 {
+						t.Fatalf("VOID: %s holds no state on %s", fx.dir, b)
+					}
+				}
+				p := m.Plan(b, 1<<40, PlanRequest{Ctx: 64, CtxPinned: true})
+				if p.Placement == PlacementDecline {
+					continue
+				}
+				if p.CheckpointBytes != want {
+					t.Errorf("%s: the plan's checkpoint is %d bytes, want %d", b, p.CheckpointBytes, want)
+				}
+				if tight := m.Plan(b, p.NeedBytes(), PlanRequest{Ctx: 64, CtxPinned: true}); tight.Placement != p.Placement {
+					t.Errorf("%s: at exactly its need, without the checkpoint's bytes, the plan reads %v: %s", b, tight.Placement, tight.Reason)
+				}
+			}
+		})
+	}
+}
+
 // TestDeviceLoad_stateOnEachBackend: the resident backends hold the two hybrids' state as the CPU does, and a dense model has no state line
 // anywhere. Every tiny buffer is under CUDA's quantum, so this reads no rounding: TestCUDAStateBytes_roundsEachBuffer does.
 func TestDeviceLoad_stateOnEachBackend(t *testing.T) {
