@@ -1,0 +1,65 @@
+KV5-2: attention_fa, attention_fa_blk, attention_fa_blk64 and their rows through the block tables.
+MacBookPro18,3, 16 GB, macOS 26.6.2, 2026-11-03, PST. Build against 02d743aa, tiny fixtures. Greedy where it generates.
+
+== G1b, identity, 02d743aa -> ed9fa5ef (only test files move after it)
+== verdict ==
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+
+== G1a, as far as this slice reaches (decoding past attnFADepthFloor one token at a time; prefill's depth is KV5-3's)
+TestKVPages_fusedKernelsReadTheTable: attention_fa, _blk_g2, _blk_g7, _blk64_g7: scrambled blocks bit-identical to in-order; a table one block off moves the partials.
+TestKVPages_fusedAttentionDepthThroughTheTable: 1,032 keys on llama-attnfa-tiny, 2 slots, attention_fa and _blk, the step's rows one at a time and as one: bit-identical, and each step row bit-equal to a decode on its own slot.
+TestAttentionKernels_tiledPathReadsTheTable: attention, _f32, _i8 at 8,193 keys, the tiled loop: bit-identical; a table wrong at the last tile's block moves the output.
+TestKVPages_tiledRowsPastTheTileBound: decode and the step's rows at 4,100 keys at f16, i8 and f32: bit-identical, and each step row bit-equal to a decode on its own slot.
+TestAttnFABlkIsTheGradedKernel: the graded text's SHA is unchanged with the table reads taken out.
+
+== plants: one table read out at a time; subtests that went red
+  fa-key     TestKVPages_fusedKernelsReadTheTable/attention_fa, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_rows
+  fa-val     TestKVPages_fusedKernelsReadTheTable/attention_fa, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_rows
+  blk-key    TestKVPages_fusedKernelsReadTheTable/attention_fa_blk_g2, TestKVPages_fusedKernelsReadTheTable/attention_fa_blk_g7, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_blk, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_blk_rows
+  blk-val    TestKVPages_fusedKernelsReadTheTable/attention_fa_blk_g2, TestKVPages_fusedKernelsReadTheTable/attention_fa_blk_g7, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_blk, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_blk_rows
+  blk64-key  TestKVPages_fusedKernelsReadTheTable/attention_fa_blk64_g7
+  rows-tab   TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_rows, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_blk_rows
+  perrow-tab TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_blk
+  tiled-key  TestAttentionKernels_tiledPathReadsTheTable/attention, TestAttentionKernels_tiledPathReadsTheTable/attention_f32, TestKVPages_tiledRowsPastTheTileBound/kv=, TestKVPages_tiledRowsPastTheTileBound/kv=f32
+  tiled-val  TestAttentionKernels_tiledPathReadsTheTable/attention, TestAttentionKernels_tiledPathReadsTheTable/attention_f32, TestKVPages_tiledRowsPastTheTileBound/kv=, TestKVPages_tiledRowsPastTheTileBound/kv=f32
+  i8         TestAttentionKernels_tiledPathReadsTheTable/attention_i8, TestKVPages_tiledRowsPastTheTileBound/kv=i8
+
+The slot plants (rows-tab, perrow-tab) passed the scrambled comparison until each row was held to a decode on its own slot, as both arms share them.
+
+attention_fa_blk64's value read is not planted separately; KV5-4's G1a carries a plant on every reader.
+
+== the Metal package at ed9fa5ef
+423 top-level passes, 218 skips.
+--- FAIL: TestMEM6_prefillHostBytes/batched: red on this Mac at 02d743aa, c1671c24 and 89b2aaac too, with the same hash. Not from this slice; undiagnosed.
+
+== G2, speed: NOT READ. G4 stopped it, as registered.
+Fit check at e9a8e805, -require-backend: 1.5B and the 7B at -ctx 8192, gemma3-1b at 4096: all resident, 2 slots, no refusal.
+First try 07:50: the harness's idle gate refused after 603 s, 30.3% of CPUs busy against a 10% cap (another project's stress script). No cell started.
+Second try 09:17, at e5e19cd5, load 1.9, on AC:
+# cell VOID: swap-ins of 36.5 MB during the cell (> 0 MB): void; 1 in a row
+# cell VOID: swap-ins of 35.5 MB during the cell (> 0 MB): void; 2 in a row
+# cell VOID: swap-ins of 1.4 MB during the cell (> 0 MB): void; 3 in a row
+STOPPED: 3 swap voids in a row (BENCH_SWAP_VOID_STOP=3); the last: swap-ins of 1.4 MB during the cell (> 0 MB): void
+No cell timed. Nothing here says anything about speed.
+Swap with nothing of this session's running, 30 s windows, right after:
+09:18:51 load 1.77 in 11.8 MB out 0.0 MB
+09:19:21 load 2.28 in 6.3 MB out 0.0 MB
+09:19:51 load 2.36 in 2.9 MB out 0.0 MB
+09:20:21 load 1.96 in 3.8 MB out 0.0 MB
+09:20:51 load 1.64 in 1.7 MB out 0.0 MB
+09:21:21 load 1.59 in 1.3 MB out 0.0 MB
+09:21:51 load 1.48 in 16.6 MB out 0.0 MB
+09:22:21 load 1.91 in 19.4 MB out 0.0 MB
+09:22:51 load 2.46 in 69.4 MB out 0.0 MB
+09:23:21 load 2.95 in 44.5 MB out 0.0 MB
+09:23:51 load 3.11 in 5.7 MB out 0.0 MB
+09:24:21 load 2.63 in 1.2 MB out 0.0 MB
+total = 7168.00M  used = 5696.06M  free = 1471.94M  (encrypted)
+System-wide memory free percentage: 77%
+vm_stat counts the whole system. Swap-ins fire in every idle window and swap-outs in none, so "any swap-in voids" cannot pass by day on this box whatever the build does. Taken to Francis with the coordinator; G2 waits for his word.
+
+== closing checks
+Parity: 43 passed, 0 failed, 21 skipped; 0 deps_hash lines refreshed (at ed9fa5ef).
+Touched at ed9fa5ef: 2 of 16 red. TestPlan_tableDriven and TestPlan_extraBytesReservedAheadOfExperts are red on this Mac at main too. TestBackendTests_decoderImportsOnlyFall was this slice's, fixed by moving the new tests beside the fused kernels' (internal/layout passes).
+VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
+THIS RECORD ENDS WITH G2 OPEN: the slice is bit-identical, and its speed is unread.
