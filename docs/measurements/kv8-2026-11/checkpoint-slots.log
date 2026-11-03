@@ -91,3 +91,16 @@ memgate with the table's bound one copy: exit 1
  cuda/recurrent_checkpoint.go | 160 +++++++++++++++++++++++++++-------
  cuda/sb2_census_test.go      |   2 +-
  3 files changed, 107 insertions(+), 62 deletions(-)
+
+# Tier 0, no device (CI reads it): TestKV8_severalSlotsRestoreTheirCheckpoints, and its plant, 15:25 PST
+    kv8a_generate_test.go:310: A: restored at 40 on slot 0, declined ""
+    kv8a_generate_test.go:310: B: restored at 40 on slot 1, declined ""
+--- PASS: TestKV8_severalSlotsRestoreTheirCheckpoints (0.01s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.015s
+# plant: the acquire scores no checkpoint on a load of several slots
+--- FAIL: TestKV8_severalSlotsRestoreTheirCheckpoints (0.01s)
+    kv8a_generate_test.go:310: A: restored at 0 on slot 0, declined ""
+    kv8a_generate_test.go:312: A: restored at 0 (declined ""), want its prompt's end, 40
+    kv8a_generate_test.go:310: B: restored at 0 on slot 1, declined ""
+    kv8a_generate_test.go:312: B: restored at 0 (declined ""), want its prompt's end, 40
+FAIL	github.com/townsendmerino/goinfer/decoder	0.016s

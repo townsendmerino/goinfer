@@ -228,3 +228,100 @@ func TestKV8a_saveBeforeTheFirstDecodeStep(t *testing.T) {
 		}
 	}
 }
+
+// slottedRecurrentFake is recurrentFake with a state and a checkpoint per KV slot, as a resident that keeps both.
+type slottedRecurrentFake struct {
+	*recurrentFake
+	bound        int
+	states, ckpt []uint64
+}
+
+func (f *slottedRecurrentFake) KVSlots() int { return len(f.states) }
+func (f *slottedRecurrentFake) UseKVSlot(i int) error {
+	f.states[f.bound], f.bound = f.st, i
+	f.st = f.states[i]
+	return nil
+}
+func (f *slottedRecurrentFake) SaveRecurrentCheckpoint() error {
+	f.ckpt[f.bound] = f.st
+	return nil
+}
+func (f *slottedRecurrentFake) RestoreRecurrentCheckpoint() error {
+	f.restores++
+	f.st = f.ckpt[f.bound]
+	return nil
+}
+
+type slottedRecurrentBackend struct {
+	Backend
+	rf *slottedRecurrentFake
+}
+
+func (b *slottedRecurrentBackend) Name() string { return "cuda" } // a table that keeps recurrent state per slot
+func (b *slottedRecurrentBackend) BuildResident(m *Model) (ResidentForward, bool, error) {
+	_, _, _, _, _, _, vocab := m.Dims()
+	b.rf = &slottedRecurrentFake{recurrentFake: &recurrentFake{fakeResident: &fakeResident{vocab: vocab}, keeps: true}, states: make([]uint64, 2), ckpt: make([]uint64, 2)}
+	return b.rf, true, nil
+}
+func (b *slottedRecurrentBackend) Close() error { return nil }
+
+// TestKV8_severalSlotsRestoreTheirCheckpoints: on a load of several slots, a follow-up that diverges at its prompt's end scores its slot's checkpoint, so it keeps that
+// slot and restores it, for each of two conversations in turn. Each reply equals that conversation's alone on one slot. It reads the decoder's half with no device; on the
+// card the same is cuda's TestRecurrentSlots_restoreThroughGenerate.
+func TestKV8_severalSlotsRestoreTheirCheckpoints(t *testing.T) {
+	be := &slottedRecurrentBackend{}
+	name := fmt.Sprintf("fake-kv8-%d", recurrentFakeBackends.Add(1))
+	RegisterBackend(name, func() (Backend, error) {
+		cpu, err := NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be.Backend = cpu
+		return be, nil
+	})
+	m, err := Load("../testdata/qwen35-tiny", Options{Backend: name, ResidentKVSlots: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	if got := m.ResidentKVSlots(); got != 2 {
+		t.Fatalf("%d slots, want 2", got)
+	}
+	vocab := m.w.arch.VocabSize
+	PA, _ := kv8aTurns(m, nil)
+	PB := make([]int, len(PA))
+	for i := range PB {
+		PB[i] = (i*17 + 101) % vocab
+	}
+	follow := func(p, reply []int) []int {
+		re := slices.Clone(reply)
+		re[0] = (re[0] + 1) % vocab // diverges right at the prompt's end
+		return append(append(slices.Clone(p), re...), 5, 9, 2, 7, 3, 8, 1, 6, 4, 10, 12, 14)
+	}
+	ra, _ := kv8aRun(t, m, PA)
+	rb, _ := kv8aRun(t, m, PB)
+	fa, fb := follow(PA, ra), follow(PB, rb)
+	got := map[string][]int{}
+	for _, c := range []struct {
+		name   string
+		prompt []int
+	}{{"A", fa}, {"B", fb}} {
+		reply, g := kv8aRun(t, m, c.prompt)
+		t.Logf("%s: restored at %d on slot %d, declined %q", c.name, g.CheckpointRestored, m.kv.Bound(), g.CheckpointDeclined)
+		if g.CheckpointRestored != len(PA) {
+			t.Errorf("%s: restored at %d (declined %q), want its prompt's end, %d", c.name, g.CheckpointRestored, g.CheckpointDeclined, len(PA))
+		}
+		got[c.name] = reply
+	}
+	for name, c := range map[string][2][]int{"A": {PA, fa}, "B": {PB, fb}} {
+		alone, _ := loadRecurrentFake(t, true, false)
+		kv8aRun(t, alone, c[0])
+		want, g := kv8aRun(t, alone, c[1])
+		if g.CheckpointRestored != len(PA) {
+			t.Errorf("%s alone restored at %d: the comparison reads something else", name, g.CheckpointRestored)
+		}
+		if !slices.Equal(got[name], want) {
+			t.Errorf("%s: the reply %v differs from that conversation's alone on one slot, %v", name, got[name], want)
+		}
+	}
+}
