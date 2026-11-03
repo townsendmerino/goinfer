@@ -125,3 +125,11 @@ Metal package: red only on TestMEM6_prefillHostBytes/batched, red on this Mac at
 TestBackendAdmissionCensus_metal passes without an update. decoder/ is unchanged by this fix, so the decision census's expected diff stands.
 Touched: 15 of 16; its one red is TestPlan_tableDriven/moe/cuda/below_topk_declines and TestPlan_extraBytesReservedAheadOfExperts, both red on this Mac at main.
 VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
+
+== the Linux decision census, regenerated on nobara at 70e76720 by the coordinator, checked here against the expected list
+Its host class holds 29,637 groups, before and after: 4,718 changed, 0 gone, 0 added (D3 2,408, D4 2,310), none outside Metal, and every one on kv5-1-decision-groups.txt.gz.
+The list's other 844 entries are groups of fixtures nobara does not have, absent from the census on both sides; none is present and unchanged.
+Its hashes against this Mac's dump under Rosetta at 362f7f60: 29,636 of 29,637 groups agree, and all 4,718 changed ones. The other is "loads", not a decision group.
+Only test files and the Metal package moved after 362f7f60, so that dump still speaks for this head.
+CI at 45afacc9, before this census: its one failed test is TestDecisionCensus on root-windows, which this file answers.
+VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
