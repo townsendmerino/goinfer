@@ -1,0 +1,27 @@
+# C-1 and C-2, red first: the code as it stands, one checkpoint copy, 08945082e, 2026-11-03 15:01:18 PST
+    mamba_guards_test.go:808: slot 0 restoring its own checkpoint: cuda: the recurrent checkpoint holds KV slot 1's state, and slot 0 is bound
+    mamba_guards_test.go:808: slot 0 restoring its own checkpoint: cuda: the recurrent checkpoint holds KV slot 1's state, and slot 0 is bound
+    mamba_guards_test.go:808: slot 0 restoring its own checkpoint: cuda: the recurrent checkpoint holds KV slot 1's state, and slot 0 is bound
+--- FAIL: TestRecurrentSlots_eachSlotKeepsItsCheckpoint (2.52s)
+    --- FAIL: TestRecurrentSlots_eachSlotKeepsItsCheckpoint/qwen35-tiny (1.92s)
+    --- FAIL: TestRecurrentSlots_eachSlotKeepsItsCheckpoint/olmo_hybrid-tiny (0.31s)
+    --- FAIL: TestRecurrentSlots_eachSlotKeepsItsCheckpoint/nemotron-tiny (0.28s)
+    mamba_guards_test.go:874: P: restored at 0, reused 0, declined ""; reply [234 82 5 189 15 58]
+    mamba_guards_test.go:876: P: restored at 0 (declined ""), want its prompt's end, 32
+    mamba_guards_test.go:874: Q: restored at 0, reused 0, declined ""; reply [162 127 211 250 127 211]
+    mamba_guards_test.go:876: Q: restored at 0 (declined ""), want its prompt's end, 32
+    mamba_guards_test.go:874: P: restored at 0, reused 0, declined ""; reply [160 263 200 294 265 263]
+    mamba_guards_test.go:876: P: restored at 0 (declined ""), want its prompt's end, 32
+    mamba_guards_test.go:874: Q: restored at 0, reused 0, declined ""; reply [217 28 75 508 217 492]
+    mamba_guards_test.go:876: Q: restored at 0 (declined ""), want its prompt's end, 32
+    mamba_guards_test.go:874: P: restored at 0, reused 0, declined ""; reply [186 32 32 15 13 207]
+    mamba_guards_test.go:876: P: restored at 0 (declined ""), want its prompt's end, 32
+    mamba_guards_test.go:874: Q: restored at 0, reused 0, declined ""; reply [154 70 79 128 174 244]
+    mamba_guards_test.go:876: Q: restored at 0 (declined ""), want its prompt's end, 32
+--- FAIL: TestRecurrentSlots_restoreThroughGenerate (1.18s)
+    --- FAIL: TestRecurrentSlots_restoreThroughGenerate/qwen35-tiny (0.44s)
+    --- FAIL: TestRecurrentSlots_restoreThroughGenerate/olmo_hybrid-tiny (0.36s)
+    --- FAIL: TestRecurrentSlots_restoreThroughGenerate/nemotron-tiny (0.38s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	3.764s
+FAIL

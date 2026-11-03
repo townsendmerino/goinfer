@@ -770,3 +770,124 @@ func TestRecurrentSlots_markedRowsFoldIntoTheirSlot(t *testing.T) {
 		t.Errorf("after the slot switch, %d logits differ from one slot's", d)
 	}
 }
+
+// TestRecurrentSlots_eachSlotKeepsItsCheckpoint is KV8's C-1: two sequences on two slots each save, move on, and restore their own, and each then continues as its solo
+// run, bit for bit.
+func TestRecurrentSlots_eachSlotKeepsItsCheckpoint(t *testing.T) {
+	for _, fixture := range recurrentSlotFixtures {
+		t.Run(fixture, func(t *testing.T) {
+			m, r := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
+			_, one := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 1})
+			A, B := recurrentSlotSeqs(m, 12)
+			refs := [][][]float32{recurrentSlotSolo(t, one, A), recurrentSlotSolo(t, one, B)}
+			seqs := [][][]float32{A, B}
+			const half = 6
+			forward := func(emb [][]float32, from, to int) {
+				t.Helper()
+				for i := from; i < to; i++ {
+					if _, err := r.Forward(emb[i], i); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			for s := range seqs {
+				recurrentSlotBind(t, r, s)
+				r.Reset()
+				forward(seqs[s], 0, half)
+				if err := r.SaveRecurrentCheckpoint(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for s := range seqs { // each slot's state moves past its save, on the other's rows, so a restore has something to undo
+				recurrentSlotBind(t, r, s)
+				forward(seqs[1-s], half, half+2)
+			}
+			for s := range seqs {
+				recurrentSlotBind(t, r, s)
+				if err := r.RestoreRecurrentCheckpoint(); err != nil {
+					t.Fatalf("slot %d restoring its own checkpoint: %v", s, err)
+				}
+				for i := half; i < len(seqs[s]); i++ {
+					l, err := r.Forward(seqs[s][i], i)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if d := logitsDiffer(l, refs[s][i]); d != 0 {
+						t.Fatalf("slot %d after its restore, position %d: %d logits differ from the sequence's solo run", s, i, d)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestRecurrentSlots_restoreThroughGenerate is KV8's C-2: two conversations in turn through Generate, each follow-up diverging at its prompt's end, as a reply rendered
+// back differently does. Each restores at its own prompt's end, and each reply equals that client's alone on one slot.
+func TestRecurrentSlots_restoreThroughGenerate(t *testing.T) {
+	for _, fixture := range recurrentSlotFixtures {
+		t.Run(fixture, func(t *testing.T) {
+			m, _ := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
+			_, _, _, _, _, _, vocab := m.Dims()
+			gen := func(md *decoder.Model, prompt []int) ([]int, *decoder.Generation) {
+				t.Helper()
+				ch, g := md.Generate(context.Background(), prompt, 6, decoder.SamplingParams{})
+				var toks []int
+				for tok := range ch {
+					toks = append(toks, tok)
+				}
+				if err := g.Err(); err != nil {
+					t.Fatal(err)
+				}
+				return toks, g
+			}
+			seq := func(n, a, b int) []int {
+				s := make([]int, n)
+				for i := range s {
+					s[i] = (i*a + b) % vocab
+				}
+				return s
+			}
+			const first, more = 32, 32
+			P, Q := seq(first, 31, 7), seq(first, 17, 101)
+			follow := func(p []int, reply []int, seed int) []int {
+				out := slices.Clone(p)
+				for i := range more {
+					v := (i*13 + seed) % vocab
+					if i == 0 && v == reply[0] { // it must diverge at the prompt's end
+						v = (v + 1) % vocab
+					}
+					out = append(out, v)
+				}
+				return out
+			}
+			type turn struct {
+				name    string
+				prompt  []int
+				restore int
+			}
+			replies := map[string][]int{}
+			rp, _ := gen(m, P)
+			rq, _ := gen(m, Q)
+			fp, fq := follow(P, rp, 3), follow(Q, rq, 5)
+			for _, c := range []turn{{"P", fp, first}, {"Q", fq, first}} {
+				got, g := gen(m, c.prompt)
+				t.Logf("%s: restored at %d, reused %d, declined %q; reply %v", c.name, g.CheckpointRestored, g.PrefillReused, g.CheckpointDeclined, got)
+				if g.CheckpointRestored != c.restore {
+					t.Errorf("%s: restored at %d (declined %q), want its prompt's end, %d", c.name, g.CheckpointRestored, g.CheckpointDeclined, c.restore)
+				}
+				replies[c.name] = got
+			}
+			for name, c := range map[string][2][]int{"P": {P, fp}, "Q": {Q, fq}} {
+				alone, _ := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 1})
+				gen(alone, c[0])
+				want, g := gen(alone, c[1])
+				if g.CheckpointRestored != first {
+					t.Errorf("%s alone restored at %d, want %d: the comparison reads something else", name, g.CheckpointRestored, first)
+				}
+				if !slices.Equal(replies[name], want) {
+					t.Errorf("%s: the reply %v differs from that client's alone on one slot, %v", name, replies[name], want)
+				}
+			}
+		})
+	}
+}
