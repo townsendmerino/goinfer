@@ -7,6 +7,8 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/kvmgr"
@@ -388,5 +390,66 @@ func TestKVSnapshot_aRestoreDoesNotHoldTheFamilyTwice(t *testing.T) {
 	st, _ = m.KVSnapshotStats()
 	if st.Held != 1 || st.Taken != 2 || st.Snapshots[0].Rows != 2176 {
 		t.Errorf("a longer prompt of the held family: held %d, taken %d, snapshots %v", st.Held, st.Taken, st.Snapshots)
+	}
+}
+
+// TestKVSnapStore_reserveHoldsTheBudget: reservations racing for the last room never charge past the budget; room and charge are one step.
+func TestKVSnapStore_reserveHoldsTheBudget(t *testing.T) {
+	const n = 1 << 20
+	st := newKVSnapStore(n)
+	var over atomic.Int64
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 200000 {
+				if st.Reserve(n, true) {
+					st.mu.Lock()
+					if st.used > st.budget {
+						over.Add(1)
+					}
+					st.mu.Unlock()
+					st.Release(n)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if c := over.Load(); c != 0 {
+		t.Errorf("%d reservations charged past the budget", c)
+	}
+	if st.used != 0 {
+		t.Errorf("%d bytes left charged", st.used)
+	}
+}
+
+// fixedSizeSnap is a held snapshot of a size, with no device behind it.
+type fixedSizeSnap struct{ bytes int64 }
+
+func (f fixedSizeSnap) Rows() int       { return 64 }
+func (f fixedSizeSnap) Bytes() int64    { return f.bytes }
+func (f fixedSizeSnap) Serves(int) bool { return true }
+func (f fixedSizeSnap) Release()        {}
+
+// TestKVSnapStore_noEvictionForWhatCannotFit: bytes reserved outside the list cannot be dropped, so a reservation that would not fit even with
+// every snapshot gone drops none of them.
+func TestKVSnapStore_noEvictionForWhatCannotFit(t *testing.T) {
+	st := newKVSnapStore(100)
+	st.add(&kvSnap{h: fixedSizeSnap{40}}, nil, 0, 0)
+	if !st.Reserve(40, false) { // a copy another caller holds
+		t.Fatal("the first reservation")
+	}
+	if st.Reserve(70, true) {
+		t.Fatal("70 bytes fit beside 40 reserved under a budget of 100")
+	}
+	if len(st.list) != 1 || st.used != 80 {
+		t.Errorf("after the refusal: %d snapshots held, %d bytes used; want the one snapshot, 80", len(st.list), st.used)
+	}
+	if !st.Reserve(60, true) {
+		t.Fatal("60 bytes fit beside 40 reserved once the snapshot goes")
+	}
+	if len(st.list) != 0 || st.used != 100 {
+		t.Errorf("after making room: %d snapshots held, %d bytes used", len(st.list), st.used)
 	}
 }

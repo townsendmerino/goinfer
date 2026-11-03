@@ -651,8 +651,9 @@ fast/exact split exists on this backend, so there is nothing to opt out of.
 `prefill_reuse` whenever the count is above zero (another vendor extension; standard clients ignore it):
 `{"own_tokens", "shared_tokens", "host_tokens", "disk_tokens", "promoted_blocks"}`. Own tokens were already in the
 KV record the request ran on (its own continuation, or a previous conversation's matching prefix left in that slot);
-shared tokens came from another slot's KV; host tokens a host snapshot restored onto the device. The disk tier and the block host pool are not built yet, so `disk_tokens` and
-`promoted_blocks` read 0. `/v1/models` says whether a request can take another conversation's rows at all, as
+shared tokens came from another slot's KV; host tokens a host snapshot restored onto the device, or a conversation's own rows brought back from host memory after the pool released them, counted in
+`promoted_blocks`. A released idle conversation's rows are kept that way on CUDA, under `--kv-host-bytes`. The disk tier is not
+built yet, so `disk_tokens` reads 0. `/v1/models` says whether a request can take another conversation's rows at all, as
 `kv_share`: `on`, `off: why` (the operator turned it off), or `none: why` (one KV slot, recurrent state, a backend
 that copies no rows, or a model off the resident path).
 

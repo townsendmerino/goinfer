@@ -2507,7 +2507,6 @@ func (r *gateFailRecorder) Errorf(format string, args ...any) {
 func cudaGateRowsHold(t testing.TB, built []string) {
 	t.Helper()
 	const path = cudaGateRowsPath
-	sort.Strings(built)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -2602,12 +2601,14 @@ func TestMemGate_cuda(t *testing.T) {
 		t.Logf("%s: %d slots, kv leased %d against a plan of %d", c.row, read.KVSlots, read.Open[0].Usage.ByLine[mem.LineKV], memgate.Planned(read.Plan, read.KVSlots)[mem.LineKV])
 	}
 	t.Logf("%d builds held, %d options declined by CUDA's own build", len(builtRows), declined)
+	if !*cudaGateRowsUpdate {
+		cudaGateRowsHold(t, builtRows)
+	}
+	g.Finish(t)
 	if *cudaGateRowsUpdate {
 		sort.Strings(builtRows)
 		if err := os.WriteFile(cudaGateRowsPath, []byte(strings.Join(builtRows, "\n")+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	cudaGateRowsHold(t, builtRows)
-	g.Finish(t)
 }

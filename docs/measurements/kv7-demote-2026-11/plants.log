@@ -1,0 +1,8 @@
+# gate 3's plant: a demote that charges nothing (reserve leaves used alone), 086ed52dd, 20:26:45 PST
+--- FAIL: TestKV7_demoteAndPromote (2.75s)
+    kv4_capacity_test.go:208: stats after the release: demoted 1, used 0; the copy is 62914560 bytes
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	2.808s
+# kvsnap.go restored
+--- PASS: TestUsage_prefillReuseSources (0.01s)
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.011s

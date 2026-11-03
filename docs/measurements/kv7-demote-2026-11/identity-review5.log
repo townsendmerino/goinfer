@@ -1,0 +1,17 @@
+# gate identity -backend cuda 008ebe589 b432e212a, 2026-11-03 03:16:44 PST, load 1.49
+   ... identity: 36s elapsed (started 03:16:44), running gemma3 (5/39 families, 4 done)
+   ... identity: 1m6s elapsed (started 03:16:44), running glm4_moe (7/39 families, 6 done)
+   ... identity: 1m36s elapsed (started 03:16:44), running gpt-oss (9/39 families, 8 done)
+   ... identity: 2m6s elapsed (started 03:16:44), running internlm2 (13/39 families, 12 done)
+   ... identity: 2m36s elapsed (started 03:16:44), running llama (17/39 families, 16 done)
+   ... identity: 3m6s elapsed (started 03:16:44), running mixtral (21/39 families, 20 done)
+   ... identity: 3m36s elapsed (started 03:16:44), running gemma (24/39 families, 23 done)
+   ... identity: 4m6s elapsed (started 03:16:44), running qwen2 (28/39 families, 27 done)
+   ... identity: 4m36s elapsed (started 03:16:44), running qwen2_5_vl (29/39 families, 28 done)
+   ... identity: 5m6s elapsed (started 03:16:44), running qwen3 (31/39 families, 30 done)
+   ... identity: 5m36s elapsed (started 03:16:44), running qwen3_5_moe (33/39 families, 32 done)
+   ... identity: 6m6s elapsed (started 03:16:44), running qwen3_next (35/39 families, 34 done)
+   ... identity: 6m36s elapsed (started 03:16:44), running qwen3_vl_moe (37/39 families, 36 done)
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  wall     6m48s (03:16:44 → 03:23:32): builds 6s, runs 6m42s
+  [32mGREEN — every family that ran is IDENTICAL[0m

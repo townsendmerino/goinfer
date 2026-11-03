@@ -1,0 +1,14 @@
+# the sixth round's push checks at 2011b9066, origin/main be4e94e0f, 2026-11-03 04:28:19 PST, load 3.73
+ok  	github.com/townsendmerino/goinfer/decoder	0.807s
+parity exit 0
+touched: 23 .go file(s), 55 changed path(s), 2 module(s), base be4e94e0
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 21 checks passed (CI runs the rest on push)
+touched.py exit 0
+OK
+test_touched exit 0
+c.go:5:16: field deadField is unused (U1000)
+staticcheck -tags cuda,goinfer_testhooks ./cuda/... exit 0
+staticcheck ./decoder/ ./internal/serveapp/ exit 0
+citation lint exit 0
+# fail=0

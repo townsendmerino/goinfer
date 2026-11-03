@@ -1,0 +1,42 @@
+# a released conversation returning on a real model, CUDA, qwen2.5-coder-0.5b q4_k_m, -kv-sessions 2, one run each: reported, not a timed reading, at f5ca174f5, 21:51:54 PST, load 3.18
+
+# --kv-host-bytes auto
+  KV plan: a 32768-position pool for 2 conversations; each is guaranteed 16384, and one can use up to 32768
+  KV pool: 32,768 tokens in blocks of 64 (f16, 480.0 MB; group: full); a prompt can take another conversation's KV rows; one conversation can use all of it.
+  prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more
+share 16384, cap 32768
+A cold: 15331 prompt tokens, reused 0, 2.60 s
+B, past its share: 31705 prompt tokens, 9.49 s
+A returns: 15571 prompt tokens, reused 0, None, 2.82 s, reply ' w1x446 w1'
+cuda: KV pool: released slot 1's 240 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: released slot 0's 496 blocks (idle, the least recently used) for slot 1, which is past its share of 256
+
+# --kv-host-bytes 1G
+  KV plan: a 32768-position pool for 2 conversations; each is guaranteed 16384, and one can use up to 32768
+  KV pool: 32,768 tokens in blocks of 64 (f16, 480.0 MB; group: full); a prompt can take another conversation's KV rows; one conversation can use all of it.
+  prefix snapshots: budget 1.0 GiB (-kv-host-bytes 1G), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more; /admin/status reports the u
+  released conversations: kept in that budget where the backend can, and brought back when they return
+share 16384, cap 32768
+A cold: 15331 prompt tokens, reused 0, 2.64 s
+B, past its share: 31705 prompt tokens, 9.60 s
+A returns: 15571 prompt tokens, reused 15334, {'own_tokens': 0, 'shared_tokens': 0, 'host_tokens': 15334, 'disk_tokens': 0, 'promoted_blocks': 240}, 0.69 s, reply ' w1x446 w1'
+cuda: KV pool: kept slot 1's 15360 rows in host memory (180 MiB)
+cuda: KV pool: released slot 1's 240 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 0's 31744 rows in host memory (372 MiB)
+cuda: KV pool: released slot 0's 496 blocks (idle, the least recently used) for slot 1, which is past its share of 256
+kv host: promoted 240 blocks into slot 1; the request reuses 15334 rows
+
+# --kv-host-bytes 0
+  KV plan: a 32768-position pool for 2 conversations; each is guaranteed 16384, and one can use up to 32768
+  KV pool: 32,768 tokens in blocks of 64 (f16, 480.0 MB; group: full); a prompt can take another conversation's KV rows; one conversation can use all of it.
+  prefix snapshots: OFF (-kv-host-bytes 0)
+share 16384, cap 32768
+A cold: 15331 prompt tokens, reused 0, 2.50 s
+B, past its share: 31705 prompt tokens, 9.09 s
+A returns: 15571 prompt tokens, reused 0, None, 2.62 s, reply ' w1x446 w1'
+cuda: KV pool: released slot 1's 240 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: released slot 0's 496 blocks (idle, the least recently used) for slot 1, which is past its share of 256
+
+# --kv-host-bytes auto, again with /admin/status read after A returned (the same three turns, one run):
+# restored 0, taken 4, declined {}, held 3
+{"m": {"budget_bytes": 6735798681, "used_bytes": 651952128, "held": 3, "taken": 4, "restored": 0, "restored_rows": 0, "demoted": 0, "demote_dropped": 0, "promoted": 0, "promoted_blocks": 0, "evicted": 1, "evicted_unused": 1, "unqualified": 0, "take_ns": 737668021, "restore_ns": 0, "declined": {}, "snapshots": [{"rows": 15552, "bytes": 191102976, "restores": 0, "age_s": 0}, {"rows": 31680, "bytes": 389283840, "restores": 0, "age_s": 2}, {"rows": 5824, "bytes": 71565312, "restores": 0, "age_s": 14}]}}

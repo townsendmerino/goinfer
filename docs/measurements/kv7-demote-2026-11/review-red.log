@@ -1,0 +1,97 @@
+# 2026-11-02 21:28:38 PST: the review round read red, before any fix, HEAD 654c766f9 plus the tests and the kvDemoteFailForTest seam
+ 21:28:38 up 3 days, 15:50,  4 users,  load average: 0.08, 0.05, 0.07
+=== RUN   TestKV7_demoteAndPromote
+--- PASS: TestKV7_demoteAndPromote (3.61s)
+=== RUN   TestKV7_budgetAndNewSequence
+--- PASS: TestKV7_budgetAndNewSequence (1.64s)
+=== RUN   TestKV7_generationReportsThePromotion
+    kv4_capacity_test.go:316: a host budget: reused 15360 of 15616, promoted 241 blocks (15360 rows)
+    kv4_capacity_test.go:318: a host budget: reused 15360, promoted 241 blocks and 15360 rows of a 15360-token conversation
+    kv4_capacity_test.go:316: no host budget: reused 0 of 15616, promoted 0 blocks (0 rows)
+--- FAIL: TestKV7_generationReportsThePromotion (1.78s)
+=== RUN   TestKV7_copyFailureKeepsDemotedDst
+    kv4_capacity_test.go:387: the copy failed: cuda: KV pool: slot 1 holds 257 blocks, its share is 256, and no block is free for it (4 slots, 1024 blocks): decoder: resident KV pool is full
+    kv4_capacity_test.go:390: after the failed copy: released false, copy kept false, 257 blocks held, 0 host bytes charged (was 62914560)
+--- FAIL: TestKV7_copyFailureKeepsDemotedDst (1.05s)
+=== RUN   TestKV7_copySourceHeldDuringCopy
+    kv4_capacity_test.go:428: the copy released its own source
+--- FAIL: TestKV7_copySourceHeldDuringCopy (1.16s)
+=== RUN   TestKV7_promoteCountsAsUse
+    kv4_capacity_test.go:450: the next release took slot 1 true, slot 2 false; want slot 2
+--- FAIL: TestKV7_promoteCountsAsUse (1.22s)
+=== RUN   TestKV7_demoteKeepsValidRows
+    kv4_capacity_test.go:463: the copy holds 15360 rows of a 1024-row sequence
+--- FAIL: TestKV7_demoteKeepsValidRows (1.10s)
+=== RUN   TestKV7_demoteFailureCountsNothing
+    kv4_capacity_test.go:475: after a failed copy: demoted 1, 0 host bytes charged, copy false
+--- FAIL: TestKV7_demoteFailureCountsNothing (1.08s)
+=== RUN   TestKV7_promoteFailureLeavesTheCopy
+    kv4_capacity_test.go:523: the promotion failed: cuda: KV pool: slot 1 holds 255 blocks, its share is 256, and no block is free for it (4 slots, 1024 blocks): decoder: resident KV pool is full
+    kv4_capacity_test.go:526: after the failed promotion: released true, 255 blocks held, copy kept false, 0 host bytes charged (was 83886080)
+--- FAIL: TestKV7_promoteFailureLeavesTheCopy (0.68s)
+=== RUN   TestKV7_copyFromDemoted
+    kv4_capacity_test.go:556: reused 1024, shared 1024, promoted 0 blocks (0 rows); declined ""; stats promoted 0, 0 blocks
+    kv4_capacity_test.go:562: promoted: the generation 0 blocks, the stats 0 times, 0 blocks; want 241 blocks once
+--- FAIL: TestKV7_copyFromDemoted (1.26s)
+=== RUN   TestKV7_olderCopyYieldsToANewerOne
+    kv4_capacity_test.go:594: after the second release: slot 3 released true, its copy false; slot 1's copy true; 62914560 host bytes charged, one copy is 62914560
+    kv4_capacity_test.go:598: slot 1, its copy gone, answers 15360
+--- FAIL: TestKV7_olderCopyYieldsToANewerOne (1.70s)
+=== RUN   TestKV7_snapshotTakesRoomFromACopy
+    kv4_capacity_test.go:629: declined map[budget:2 demote budget:1], held 0, used 63176704 of 94371840, copy true
+    kv4_capacity_test.go:631: after the third prompt: copy kept true, 0 snapshots held, budget declines 2 (was 1), 63176704 of 94371840 bytes
+--- FAIL: TestKV7_snapshotTakesRoomFromACopy (1.12s)
+=== RUN   TestKV7_restoreMatchesColdAtPassBoundaries
+=== RUN   TestKV7_restoreMatchesColdAtPassBoundaries/f32
+=== RUN   TestKV7_restoreMatchesColdAtPassBoundaries/f16
+--- PASS: TestKV7_restoreMatchesColdAtPassBoundaries (0.75s)
+    --- PASS: TestKV7_restoreMatchesColdAtPassBoundaries/f32 (0.38s)
+    --- PASS: TestKV7_restoreMatchesColdAtPassBoundaries/f16 (0.37s)
+=== RUN   TestKV7_restoreWindowed
+=== RUN   TestKV7_restoreWindowed/mistral-tiny-window
+=== RUN   TestKV7_restoreWindowed/gemma3-vl-tiny
+=== RUN   TestKV7_restoreWindowed/cohere2-tiny
+--- PASS: TestKV7_restoreWindowed (1.86s)
+    --- PASS: TestKV7_restoreWindowed/mistral-tiny-window (0.56s)
+    --- PASS: TestKV7_restoreWindowed/gemma3-vl-tiny (0.57s)
+    --- PASS: TestKV7_restoreWindowed/cohere2-tiny (0.72s)
+=== RUN   TestKV7_restoreFull
+=== RUN   TestKV7_restoreFull/f32
+=== RUN   TestKV7_restoreFull/f16
+--- PASS: TestKV7_restoreFull (1.09s)
+    --- PASS: TestKV7_restoreFull/f32 (0.54s)
+    --- PASS: TestKV7_restoreFull/f16 (0.55s)
+=== RUN   TestKV7_declines
+=== RUN   TestKV7_declines/mistral-tiny-window
+=== RUN   TestKV7_declines/gemma3-vl-tiny
+=== RUN   TestKV7_declines/cohere2-tiny
+--- PASS: TestKV7_declines (1.30s)
+    --- PASS: TestKV7_declines/mistral-tiny-window (0.39s)
+    --- PASS: TestKV7_declines/gemma3-vl-tiny (0.41s)
+    --- PASS: TestKV7_declines/cohere2-tiny (0.49s)
+=== RUN   TestKV7_optionKVHostBytes_resident
+=== RUN   TestKV7_optionKVHostBytes_resident/full/f32
+=== RUN   TestKV7_optionKVHostBytes_resident/full/f16
+=== RUN   TestKV7_optionKVHostBytes_resident/windowed/mistral-tiny-window
+=== RUN   TestKV7_optionKVHostBytes_resident/windowed/gemma3-vl-tiny
+=== RUN   TestKV7_optionKVHostBytes_resident/windowed/cohere2-tiny
+--- PASS: TestKV7_optionKVHostBytes_resident (2.61s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/full/f32 (0.40s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/full/f16 (0.40s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/windowed/mistral-tiny-window (0.60s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/windowed/gemma3-vl-tiny (0.57s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/windowed/cohere2-tiny (0.64s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	25.101s
+FAIL
+# 2026-11-02 21:36:57 PST: the store test on the code as pushed (a detached worktree of HEAD), plain then -race
+--- FAIL: TestKVSnapStore_reserveHoldsTheBudget (0.16s)
+    kvsnap_test.go:420: 21264 reservations charged past the budget
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.169s
+FAIL
+--- FAIL: TestKVSnapStore_reserveHoldsTheBudget (2.99s)
+    kvsnap_test.go:420: 2676 reservations charged past the budget
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	3.015s
+FAIL

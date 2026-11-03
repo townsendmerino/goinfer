@@ -1,0 +1,50 @@
+# KV7-rest first slice on the tiny fixture, 2026-11-02 20:25 PST
+vet-ok
+    kv4_capacity_test.go:49: share 16384 positions, pool 65536, one conversation's cap 65536
+    kv4_capacity_test.go:64: reached 65536 positions (100.0% of the pool), budget 2048 clamped true
+--- PASS: TestKV4_oneConversationUsesThePool (10.63s)
+    kv4_capacity_test.go:154: share 16384 positions; the borrower held 784 blocks when the conversation within its share arrived
+--- PASS: TestKV4_pressureFollowsD5 (1.70s)
+cuda: KV pool: kept slot 1's 15360 rows in host memory (60 MiB)
+cuda: KV pool: kept slot 2's 15360 rows in host memory (60 MiB)
+    kv4_capacity_test.go:223: after the promotion 62914560 host bytes are still charged
+    kv4_capacity_test.go:231: slot 2 continuing: cuda: KV slot 2's blocks were released to make room; a write at 15360 must start from position 0 (ReusableKV answers 0)
+--- FAIL: TestKV7_demoteAndPromote (1.17s)
+cuda: KV pool: kept slot 1's 15360 rows in host memory (60 MiB)
+--- PASS: TestKV7_budgetAndNewSequence (1.66s)
+cuda: KV pool: kept slot 0's 15424 rows in host memory (60 MiB)
+cuda: KV pool: kept slot 1's 32320 rows in host memory (126 MiB)
+kv host: promoted 241 blocks into slot 0; the request reuses 15360 rows
+    kv4_capacity_test.go:295: a host budget: reused 15360 of 15616, promoted 241 blocks (15360 rows)
+    kv4_capacity_test.go:295: no host budget: reused 0 of 15616, promoted 0 blocks (0 rows)
+--- PASS: TestKV7_generationReportsThePromotion (1.77s)
+--- PASS: TestKV7_restoreMatchesColdAtPassBoundaries (0.81s)
+    --- PASS: TestKV7_restoreMatchesColdAtPassBoundaries/f32 (0.40s)
+    --- PASS: TestKV7_restoreMatchesColdAtPassBoundaries/f16 (0.41s)
+--- PASS: TestKV7_restoreWindowed (1.93s)
+    --- PASS: TestKV7_restoreWindowed/mistral-tiny-window (0.57s)
+    --- PASS: TestKV7_restoreWindowed/gemma3-vl-tiny (0.59s)
+    --- PASS: TestKV7_restoreWindowed/cohere2-tiny (0.77s)
+--- PASS: TestKV7_restoreFull (1.14s)
+    --- PASS: TestKV7_restoreFull/f32 (0.56s)
+    --- PASS: TestKV7_restoreFull/f16 (0.58s)
+--- PASS: TestKV7_declines (1.28s)
+    --- PASS: TestKV7_declines/mistral-tiny-window (0.40s)
+    --- PASS: TestKV7_declines/gemma3-vl-tiny (0.40s)
+    --- PASS: TestKV7_declines/cohere2-tiny (0.48s)
+--- PASS: TestKV7_optionKVHostBytes_resident (2.47s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/full/f32 (0.38s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/full/f16 (0.39s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/windowed/mistral-tiny-window (0.56s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/windowed/gemma3-vl-tiny (0.55s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/windowed/cohere2-tiny (0.59s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	24.653s
+
+# with the test's control slot kept out of the release, 2026-11-02 20:26 PST
+--- PASS: TestKV7_demoteAndPromote (3.61s)
+--- PASS: TestKV7_budgetAndNewSequence (1.66s)
+    kv4_capacity_test.go:303: a host budget: reused 15360 of 15616, promoted 241 blocks (15360 rows)
+    kv4_capacity_test.go:303: no host budget: reused 0 of 15616, promoted 0 blocks (0 rows)
+--- PASS: TestKV7_generationReportsThePromotion (1.75s)
+ok  	github.com/townsendmerino/goinfer/cuda	7.083s
