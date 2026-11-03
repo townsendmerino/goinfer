@@ -188,14 +188,15 @@ type Geometry struct {
 	VectorUnit, VectorBase int64
 	// DenseTables is what a resident build uploads on dense beside the vectors: a rotation table a layer and a few constants.
 	DenseTables int64
-	// KVFormula is the figure the plan's formula gives: K and V at ctx positions on each layer that owns a cache, 1/8 of a byte a scale at int8.
+	// KVFormula is the figure the plan's formula gives: K and V at ctx positions on each layer that owns a cache, 1/8 of a byte a scale at int8, or
+	// an MLA layer's one f32 latent row.
 	KVFormula int64
-	// KVHeld is what those layers hold: KVFormula less KVWindowOver and KVLatentOver, plus KVScaleUnder.
+	// KVHeld is what those layers hold: KVFormula less KVWindowOver, plus KVScaleUnder.
 	KVHeld int64
 	// KVWindowOver is what the formula prices past a sliding layer's window on a backend with rings (twice the window where an f32 ring keeps
-	// its mirror), and KVLatentOver what it prices past an MLA layer's one latent row. KVScaleUnder is what one scale a head adds over the
-	// formula's 1/8 of a byte an element at int8: negative on a wide head. They can net within one row, so each is its own figure.
-	KVWindowOver, KVLatentOver, KVScaleUnder int64
+	// its mirror). KVScaleUnder is what one scale a head adds over the formula's 1/8 of a byte an element at int8: negative on a wide head. They
+	// can net within one row, so each is its own figure.
+	KVWindowOver, KVScaleUnder int64
 	// MambaTail is what a Mamba-2 CPU window keeps past its rows: a view into the projection's output, whose last NHeads floats follow each row.
 	MambaTail int64
 }
@@ -215,10 +216,14 @@ func GeometryOf(m *decoder.Model, ctx, slots int, kv string, rings bool) Geometr
 	if kv == mem.KVI8 {
 		formula = 1.125
 	}
-	var f, window, latent, scale float64
+	var f, window, scale float64
 	for _, grp := range m.KVGeometry().Groups {
 		for _, l := range grp.Layers {
 			width := float64(grp.RowWidth)
+			if grp.Latent {
+				f += 4 * width * float64(ctx)
+				continue
+			}
 			f += 2 * width * formula * float64(ctx)
 			rows := float64(ctx)
 			if rings && grp.Retention == decoder.KVRetainWindow && grp.Span < ctx {
@@ -228,17 +233,14 @@ func GeometryOf(m *decoder.Model, ctx, slots int, kv string, rings bool) Geometr
 				}
 			}
 			window += 2 * width * formula * (float64(ctx) - rows)
-			switch {
-			case grp.Latent:
-				latent += 2*width*formula*rows - rows*width*4
-			case kv == mem.KVI8:
+			if kv == mem.KVI8 {
 				scale += 2 * rows * (width*elem + 4*float64(m.KVHeadsAtResident(l)) - width*formula)
 			}
 		}
 	}
 	n := int64(max(slots, 1))
-	g.KVFormula, g.KVWindowOver, g.KVLatentOver, g.KVScaleUnder = int64(f)*n, int64(window)*n, int64(latent)*n, int64(scale)*n
-	g.KVHeld = g.KVFormula - g.KVWindowOver - g.KVLatentOver + g.KVScaleUnder
+	g.KVFormula, g.KVWindowOver, g.KVScaleUnder = int64(f)*n, int64(window)*n, int64(scale)*n
+	g.KVHeld = g.KVFormula - g.KVWindowOver + g.KVScaleUnder
 	if nh, _, _, _, k, _, _, ok := m.NemotronResidentParams(); ok {
 		for l := range layers {
 			if m.NemotronBlockKind(l) == 0 {
