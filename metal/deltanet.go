@@ -77,15 +77,17 @@ type deltaNetLayer struct {
 // allocRecurrentSlots gives every recurrent layer, Gated-DeltaNet and Mamba-2, its own conv window and state for each of n KV
 // slots, zeroed. Slot 0's are the pair the layer was built with. The decoder asks for more than one slot only where
 // program.Metal.RecurrentSlots lists every recurrent kind the model has, and metalSlotBytes prices each further slot's pairs.
-func (r *resident) allocRecurrentSlots(n int) {
-	r.allocDeltaNetSlots(n)
-	r.allocMambaSlots(n)
+func (r *resident) allocRecurrentSlots(m *decoder.Model, n int) error {
+	if err := r.allocDeltaNetSlots(m, n); err != nil {
+		return err
+	}
+	return r.allocMambaSlots(m, n)
 }
 
 // allocDeltaNetSlots is allocRecurrentSlots for the Gated-DeltaNet layers.
-func (r *resident) allocDeltaNetSlots(n int) {
+func (r *resident) allocDeltaNetSlots(m *decoder.Model, n int) error {
 	if r.dnet == nil || n < 2 {
-		return
+		return nil
 	}
 	for i := range r.layers {
 		D := r.layers[i].delta
@@ -94,10 +96,14 @@ func (r *resident) allocDeltaNetSlots(n int) {
 		}
 		D.slotWin, D.slotState = []Buffer{D.win}, []Buffer{D.state}
 		for range n - 1 {
-			D.slotWin = append(D.slotWin, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, D.win.Len())))
-			D.slotState = append(D.slotState, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, D.state.Len())))
+			win, state, err := stateBuffersOn(r.d, m, i)
+			if err != nil {
+				return err
+			}
+			D.slotWin, D.slotState = append(D.slotWin, win), append(D.slotState, state)
 		}
 	}
+	return nil
 }
 
 // resetDeltaNetSlot zeroes every Gated-DeltaNet layer's conv window and state for KV slot s: the slot's own pair, or the
@@ -120,28 +126,29 @@ func (r *resident) resetDeltaNetSlot(s int) {
 	}
 }
 
-// metalRecurrentSlotBytes is one KV slot's recurrent state on m: every Gated-DeltaNet layer's conv window and matrix state, as
-// buildDeltaNetLayer sizes them, and every Mamba-2 layer's (metalMambaSlotBytes). Zero for a model with neither mixer.
-func metalRecurrentSlotBytes(m *decoder.Model) int64 {
-	return metalDeltaNetSlotBytes(m) + metalMambaSlotBytes(m)
-}
+// stateSpecsOf is the list every recurrent buffer on Metal is sized from and priced from. A variable so a test can move the list and
+// see which buffers follow it.
+var stateSpecsOf = (*decoder.Model).StateSpecs
 
-// metalDeltaNetSlotBytes is metalRecurrentSlotBytes for the Gated-DeltaNet layers.
-func metalDeltaNetSlotBytes(m *decoder.Model) int64 {
-	convK, hk, hv, nk, nv, _, ok := m.Qwen35ResidentParams()
-	if !ok {
-		return 0
-	}
-	layers := 0
-	for _, ops := range m.Program().Layers {
-		for i := range ops {
-			if ops[i].Kind == program.OpDeltaNet {
-				layers++
-			}
+// metalRecurrentSlotBytes is one KV slot's recurrent state on m, from the list its layers allocate from.
+func metalRecurrentSlotBytes(m *decoder.Model) int64 {
+	_, nL, _, _, _, _, _ := m.Dims()
+	var n int64
+	for l := range nL {
+		for _, s := range stateSpecsOf(m, l) {
+			n += 4 * int64(s.Floats)
 		}
 	}
-	convDim := 2*nk*hk + nv*hv
-	return int64(layers) * 4 * int64((convK-1)*convDim+nv*hv*hk)
+	return n
+}
+
+// stateBuffersOn allocates layer l's state from its specs, zeroed: its window and its matrix state.
+func stateBuffersOn(d *Device, m *decoder.Model, l int) (win, state Buffer, err error) {
+	specs := stateSpecsOf(m, l)
+	if len(specs) != 2 || specs[0].Name != "window" || specs[1].Name != "state" {
+		return Buffer{}, Buffer{}, fmt.Errorf("metal: layer %d's recurrent state is %v, and the block holds a window and a state", l, specs)
+	}
+	return NewBufferFloatsOn(mem.LineState, d, make([]float32, specs[0].Floats)), NewBufferFloatsOn(mem.LineState, d, make([]float32, specs[1].Floats)), nil
 }
 
 // buildDeltaNet compiles the mixer's pipelines and derives its model-level geometry. Returns
@@ -233,8 +240,10 @@ func buildDeltaNetLayer(d *Device, m *decoder.Model, l int, dnet *dnetParams, mk
 	L.negExpA = NewBufferFloatsOn(mem.LineDense, d, negExpA)
 	L.normW = NewBufferFloatsOn(mem.LineDense, d, normW)
 	// PERSISTENT, zeroed — matching newDeltaState (decoder/deltanet.go) and cuda's up(make(...)).
-	L.win = NewBufferFloatsOn(mem.LineState, d, make([]float32, (dnet.convK-1)*dnet.convDim))
-	L.state = NewBufferFloatsOn(mem.LineState, d, make([]float32, dnet.stateElems))
+	var err error
+	if L.win, L.state, err = stateBuffersOn(d, m, l); err != nil {
+		return nil, err
+	}
 	return L, nil
 }
 
