@@ -36,8 +36,8 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Mistral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Mixtral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Nemotron-H | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| Olmo 3 | ✅ | CPU | ✅ resident | ✅ resident |
-| Olmo Hybrid | ✅ | CPU | ✅ resident | ✅ resident |
+| Olmo 3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
+| Olmo Hybrid | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Phi-3 / Phi-4 | ✅ | CPU | CPU | CPU |
 | Qwen2 / Qwen2.5 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen2-MoE | ✅ | ✅ resident | ✅ resident | ✅ resident |
@@ -50,7 +50,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Qwen3-VL MoE | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen3.5-MoE | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen3.8 | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| SmolLM3 | ✅ | CPU | ✅ resident | ✅ resident |
+| SmolLM3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Spark-X2.5 | ✅ | CPU | CPU | CPU |
 | Voxtral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | gpt-oss | ✅ | ✅ resident | ✅ resident | ✅ resident |
@@ -103,7 +103,7 @@ admission runs.
 | Family | CPU on | Why |
 |---|---|---|
 | Command-R | WebGPU | missing: `layer-norm`, `pairwise-rope`, `parallel-block` |
-| Command-R7B | WebGPU | missing: `layer-norm`, `nope`, `pairwise-rope`, `parallel-block` |
+| Command-R7B | WebGPU | missing: `layer-norm`, `pairwise-rope`, `parallel-block` |
 | GLM-OCR | WebGPU | missing: `pairwise-mrope`, `pairwise-rope` |
 | GPT-2 | WebGPU | missing: `layer-norm`, `learned-pos`, `non-gated-gelu-tanh` |
 | GPT-2 | CUDA | the embedding stage: cuda does not implement learned position embeddings; layer 0: operation 6 (ffn): cuda has no GELU-tanh activation in its non-gated block |
@@ -125,10 +125,7 @@ admission runs.
 | Llama 4 | CUDA | runner shape: own forward, not bridged; layer 0: operation 2 (rope): cuda does not implement the de-interleaving (mlaRope) rotation; layer 0: operation 3 (qk-norm): cuda does not implement the parameter-free L2 QK-norm; layer 1: operation 8 (ffn): cuda has no block for the FFN form Llama 4 MoE |
 | Llama 4 | Metal | runner shape: own forward, not bridged; layer 0: operation 2 (rope): metal does not implement the de-interleaving (mlaRope) rotation; layer 0: operation 3 (qk-norm): metal does not implement the parameter-free L2 QK-norm; layer 1: operation 8 (ffn): metal has no block for the FFN form Llama 4 MoE |
 | Ministral 3 | WebGPU | missing: `attn-temp` |
-| Olmo 3 | WebGPU | missing: `post-only-norm`, `qk-norm-whole` |
-| Olmo Hybrid | WebGPU | missing: `nope`, `post-only-norm`, `qk-norm-whole` |
 | Phi-3 / Phi-4 | WebGPU, CUDA, Metal | activation hazard: int8 activations, per row (see the note) |
-| SmolLM3 | WebGPU | missing: `nope` |
 | Spark-X2.5 | WebGPU | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate-sigmoid`, `gated-gelu-erf` |
 | Spark-X2.5 | CUDA | runner shape: local and global RoPE tables differ in length; layer 0: operation 4 (out-gate): cuda has no step for it; layer 0: operation 8 (ffn): cuda has no GELU activation in its gated block |
 | Spark-X2.5 | Metal | runner shape: local and global RoPE tables differ in length; layer 0: operation 4 (out-gate): metal has no step for it; layer 0: operation 8 (ffn): metal has no GELU activation in its gated block |

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/program"
 	"math"
 	"slices"
 
@@ -169,7 +170,7 @@ func staticResidentDecline(m *decoder.Model) error {
 	if m.HasGemma4MoEResident() && !m.Gemma4MoEOK("webgpu") {
 		return decoder.DeclineResident("Gemma 4's parallel dense+MoE FFN is not implemented on webgpu")
 	}
-	// Only the generic GQA branch honours the KV precision flag: the Nemotron, Qwen3.5 and MLA branches always allocate f32
+	// Only the generic GQA branch honours the KV precision flag: the Nemotron, gated Qwen3.5 and MLA branches always allocate f32
 	// caches, while ctxCap below is raised by the flag and the kernel selection is model-wide. With --kv i8 the missing scale
 	// buffers would surface as "device allocation failed (VRAM exhausted?)" and the model would silently run on CPU for a false
 	// reason; with --kv f16 each cache would be ctxCap×kvDim×4 bytes at the RAISED cap, twice the intended footprint. Decline,
@@ -178,8 +179,8 @@ func staticResidentDecline(m *decoder.Model) error {
 	kvDelivered := m.KVDeliveredFor("webgpu")
 	if kvI8, kvF16 := kvDelivered == "i8", kvDelivered == "f16"; kvI8 || kvF16 {
 		_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
-		_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
-		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetOK] +
+		_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
+		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetOK && attnGate] +
 			map[bool]string{true: "mla"}[mlaOK]; family != "" && !quantKVDeclineOffForTest {
 			flag := map[bool]string{true: "--kv i8"}[kvI8] + map[bool]string{true: "--kv f16"}[kvF16]
 			return decoder.DeclineResident("%s does not implement %s KV on webgpu (only the generic GQA path does); "+
@@ -191,6 +192,43 @@ func staticResidentDecline(m *decoder.Model) error {
 		return decoder.DeclineResident("the routed experts are %s, and webgpu's MoE kernels take int8 or int4 (load with Quant int4 or int8int8)", k)
 	}
 	return nil
+}
+
+// The plants of the Olmo and SmolLM3 parity tests: each drops one setting at the build while the CPU reference keeps the true
+// program. minCtxCapForTest raises webgpuCtxBeforeSlots' clamp to the model's positions, so a 128-token run fits on a tiny fixture
+// with fewer. Never set outside tests.
+var (
+	dnetNegEigvalOffForTest, dnetONormEpsOffForTest               bool
+	qkNormWholeOffForTest, postOnlyNormOffForTest, noPEOffForTest bool
+	minCtxCapForTest                                              int
+)
+
+// deltaNetOpParams reads the DeltaNet recurrence parameters from m's compiled program.
+// The runner's DeltaNet block holds one set of uniforms (BetaScale, Eps), so if two
+// OpDeltaNet layers in the program disagree, the build declines naming the layer.
+func deltaNetOpParams(m *decoder.Model) (betaScale, oNormEps float32, err error) {
+	var p program.DeltaNetOpParams
+	seen := false
+	for l, ops := range m.Program().Layers {
+		for i := range ops {
+			if ops[i].Kind != program.OpDeltaNet {
+				continue
+			}
+			if seen && ops[i].Delta != p {
+				return 0, 0, fmt.Errorf("gpu: layer %d's DeltaNet parameters %+v differ from an earlier layer's %+v; the block holds one set", l, ops[i].Delta, p)
+			}
+			p, seen = ops[i].Delta, true
+		}
+	}
+	betaScale = 1
+	if p.NegEigval && !dnetNegEigvalOffForTest {
+		betaScale = 2
+	}
+	oNormEps = m.NormEps()
+	if p.ONormEps != 0 && p.ONormEps != p.Eps && !dnetONormEpsOffForTest {
+		oNormEps = float32(p.ONormEps)
+	}
+	return betaScale, oNormEps, nil
 }
 
 // BuildResident builds a resident DecodeRunner from m, or (nil,false,nil) when
@@ -336,8 +374,9 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	fail := func(err error) (decoder.ResidentForward, bool, error) { rd.release(); return nil, false, err }
 
 	// Per-layer RoPE: bind each layer the global or local invFreq table. Most models share one (the cache is keyed on table
-	// equality); a family with local/global RoPE has two.
-	invFreq := m.RopeInvFreq()
+	// equality); a family with local/global RoPE has two. Use RopeInvFreqLayerResident(0) so a NoPE or NoPositionEncoding
+	// layer 0 (SmolLM3, Olmo Hybrid) resolves to the rotaryDim/2 zero table rather than an empty slice.
+	invFreq := m.RopeInvFreqLayerResident(0)
 	type ropeEntry struct {
 		invf []float32
 		buf  *wgpu.Buffer
@@ -347,6 +386,9 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		invf := m.RopeInvFreqLayerResident(layer)
 		if len(invf) == 0 {
 			return nil, nil
+		}
+		if nonzero := m.RopeInvFreq(); noPEOffForTest && len(nonzero) > 0 && !slices.ContainsFunc(invf, func(v float32) bool { return v != 0 }) {
+			invf = nonzero
 		}
 		for _, ent := range ropeInvCache {
 			if slices.Equal(ent.invf, invf) {
@@ -434,25 +476,31 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	}
 	// Gated-DeltaNet hybrid. Two things make this family its own branch rather than a flag on the generic one: most layers are
 	// the recurrent delta rule instead of attention, and its FULL-attention layers carry a per-head output gate fused into a
-	// double-width q_proj. Its attention weights also live off lw.QProj (the family's own forward keeps them in its own
-	// struct), so the generic q/k/v/o build below cannot see them.
+	// double-width q_proj (when dnAttnGate is true; Olmo Hybrid's full-attention layer uses the plain scheme).
 	dnConvK, dnHK, dnHV, dnNK, dnNV, dnAttnGate, dnetOK := m.Qwen35ResidentParams()
 	var dnZeroConvB *wgpu.Buffer // DeltaNet's causal conv is bias-free; mambaConv binds a bias
 	if dnetOK {
+		dnBetaScale, dnONormEps, dnErr := deltaNetOpParams(m)
+		if dnErr != nil {
+			return fail(dnErr)
+		}
 		keyDim, valueDim := dnNK*dnHK, dnNV*dnHV
 		rd.rm.Dnet = &kernels.DnetRunParams{
 			ConvK: dnConvK, Hk: dnHK, Hv: dnHV, Nk: dnNK, Nv: dnNV, Rep: dnNV / dnNK,
 			KeyDim: keyDim, ValueDim: valueDim, ConvDim: 2*keyDim + valueDim,
-			StateElems: dnNV * dnHV * dnHK, Eps: float32(eps),
+			StateElems: dnNV * dnHV * dnHK, Eps: dnONormEps, BetaScale: dnBetaScale,
 		}
 		var ze error
 		if dnZeroConvB, ze = up32(make([]float32, rd.rm.Dnet.ConvDim)); ze != nil {
 			return fail(ze)
 		}
 	}
-	// Gemma's NormSandwich4 (FeatSandwichNorm): extra norms on each sublayer OUTPUT, applied before the residual add. Required
-	// on every layer when the arch declares it (a silently missing one would DROP the norm, not error).
+	// Gemma's NormSandwich4 (FeatSandwichNorm) and Olmo 3 / Olmo Hybrid's NormPostOnly (FeatPostOnlyNorm): norms on each
+	// sublayer OUTPUT, applied before the residual add.
 	sandwichOK := m.SandwichNormResident()
+	postOnlyOK := m.PostOnlyNormResident()
+	qkNormWhole := m.QKNormWholeResident() && !qkNormWholeOffForTest
+	rd.rm.QKNormWhole, rd.rm.PostOnlyNorm = qkNormWhole, postOnlyOK
 	g4MoE := m.HasGemma4MoEResident() // some layers' feed-forward is Gemma 4's parallel dense and MoE block, which carries its own norms
 	if sandwichOK {
 		for i := range w.Layers {
@@ -463,14 +511,14 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 					i, hidden, len(lw.PostAttnNorm), len(lw.PostMLPNorm)))
 			}
 		}
-		// Sandwich norms + the generic MoE branch is refused: decoderunner.go's MoE FFN branch writes the expert-down output and
+	}
+	if (sandwichOK || postOnlyOK) && moeOK && !g4MoE {
+		// Sandwich / post-only norms + the generic MoE branch is refused: decoderunner.go's MoE FFN branch writes the expert-down output and
 		// the shared-expert add straight into r.xd with no postMLPNorm step (the dense FFN branch applies it before the residual
 		// add), so admitting the combination would give silently wrong logits. Gemma 4's own MoE block is a different branch with
 		// its norms inside (runLayer.g4moe); refuse any other family loudly so the gap cannot ship silently.
-		if moeOK && !g4MoE {
-			return fail(fmt.Errorf("gpu: sandwich norms (FeatSandwichNorm) + MoE is not supported — " +
-				"the MoE FFN dispatch has no postMLPNorm step (N-89, docs/audit-2026-09-10.md)"))
-		}
+		return fail(fmt.Errorf("gpu: sandwich norms (FeatSandwichNorm) + MoE is not supported — " +
+			"the MoE FFN dispatch has no postMLPNorm step (N-89, docs/audit-2026-09-10.md)"))
 	}
 	// buildStacked packs one projection (gate/up/down) across all nE experts into a resident stacked buffer (int8 or int4; a
 	// mixed set is an error) that the indexed expert GEMV reads. mult folds Granite's ResidMul into the scales.
@@ -708,19 +756,25 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			rd.rm.Layers = append(rd.rm.Layers, rl)
 			continue
 		}
-		if rl.AttnNorm, e = up32(lw.PreAttnNorm); e != nil {
-			return fail(e)
-		}
+		isDelta := dnetOK && m.Qwen35LinearLayer(i)
+		// postOnlyOK (Olmo 3, Olmo Hybrid) is model-level, but Olmo Hybrid's DeltaNet layers reach NormPre2 through
+		// NormPlacementLinear and carry real pre-norm weights regardless; gate on the per-layer truth.
+		postOnlyHere := postOnlyOK && !isDelta
 		g4b, isG4MoE := m.Gemma4MoEResidentLayer(i)
-		if !isG4MoE { // a Gemma 4 MoE layer's feed-forward norms are its block's own
-			if rl.MlpNorm, e = up32(lw.PreMLPNorm); e != nil {
+		if !postOnlyHere {
+			if rl.AttnNorm, e = up32(lw.PreAttnNorm); e != nil {
 				return fail(e)
+			}
+			if !isG4MoE { // a Gemma 4 MoE layer's feed-forward norms are its block's own
+				if rl.MlpNorm, e = up32(lw.PreMLPNorm); e != nil {
+					return fail(e)
+				}
 			}
 		}
 		if rl.InvFreq, e = ropeInvBuf(i); e != nil {
 			return fail(e)
 		}
-		if dnetOK && m.Qwen35LinearLayer(i) {
+		if isDelta {
 			// Gated-DeltaNet mixer layer. No KV cache and no q/k/v/o: the recurrence's state is the whole history, fixed-size and NOT
 			// position-truncatable (which is why this family declines prefix reuse and batched ForwardN). The conv reuses the Mamba-2
 			// ring window; DeltaNet's conv is bias-free, so every layer binds one shared zeroed convB rather than allocating an
@@ -766,11 +820,12 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			if rl.DnState, e = stateBuf(dp.StateElems); e != nil {
 				return fail(e)
 			}
-		} else if dnetOK {
-			// Gated SOFTMAX attention layer of the same family: ordinary GQA + per-head QK-norm
-			// + partial RoPE, plus the output gate. q_proj stays fused at double width because it
-			// is quantized; the runner splits the activation (runLayer.qGate).
-			rl.QGate = dnAttnGate
+		} else if dnetOK && dnAttnGate {
+			// Gated SOFTMAX attention layer of the same family (qwen3_5, qwen3_5_moe, qwen3_next): ordinary GQA + per-head QK-norm
+			// + partial RoPE, plus the output gate. q_proj stays fused at double width because it is quantized; the runner splits
+			// the activation (runLayer.qGate). Olmo Hybrid's full-attention layer is plain (dnAttnGate=false) and takes the
+			// generic branch below.
+			rl.QGate = true
 			kc, e1 := c.NewKVCache(nil, ctxCap*kvDim)
 			vc, e2 := c.NewKVCache(nil, ctxCap*kvDim)
 			if e1 != nil || e2 != nil {
@@ -1127,7 +1182,13 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				return fail(e)
 			}
 		}
-		if len(lw.QNorm) > 0 { // Qwen3/GLM per-head QK-norm (applied before RoPE)
+		if len(lw.QNorm) > 0 { // Qwen3/GLM per-head QK-norm, or Olmo 3/Olmo Hybrid whole-vector QK-norm (applied before RoPE)
+			if qkNormWhole {
+				if len(lw.QNorm) != nH*lhd || (!rl.KvShared && len(lw.KNorm) != lnKV*lhd) {
+					return fail(fmt.Errorf("gpu: layer %d: QKNormWhole weights len(QNorm)=%d len(KNorm)=%d, want %d/%d",
+						i, len(lw.QNorm), len(lw.KNorm), nH*lhd, lnKV*lhd))
+				}
+			}
 			if rl.QNorm, e = up32(lw.QNorm); e != nil {
 				return fail(e)
 			}
@@ -1135,14 +1196,18 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				return fail(e)
 			}
 		}
-		// FeatOutBias (gpt-oss o_proj bias) and FeatSandwichNorm (Gemma's post-sublayer norms): the same "len>0, else leave nil"
-		// gate as QBias/QNorm above.
+		// FeatOutBias (gpt-oss o_proj bias) and FeatSandwichNorm / FeatPostOnlyNorm (Gemma's / Olmo 3's / Olmo Hybrid's
+		// post-sublayer norms): the same "len>0, else leave nil" gate as QBias/QNorm above.
 		if len(lw.OBias) > 0 {
 			if rl.OBias, e = up32(lw.OBias); e != nil {
 				return fail(e)
 			}
 		}
-		if sandwichOK { // both present together (SandwichNormResident requires both non-empty)
+		if sandwichOK || postOnlyHere { // both present together when the layer uses sandwich or post-only norms
+			if len(lw.PostAttnNorm) != hidden || (!isG4MoE && len(lw.PostMLPNorm) != hidden) {
+				return fail(fmt.Errorf("gpu: layer %d: arch declares sandwich/postOnly norms but PostAttnNorm/PostMLPNorm are not len==hidden(%d) (got %d/%d)",
+					i, hidden, len(lw.PostAttnNorm), len(lw.PostMLPNorm)))
+			}
 			if rl.PostAttnNorm, e = up32(lw.PostAttnNorm); e != nil {
 				return fail(e)
 			}
@@ -1150,6 +1215,9 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				if rl.PostMLPNorm, e = up32(lw.PostMLPNorm); e != nil {
 					return fail(e)
 				}
+			}
+			if postOnlyNormOffForTest {
+				rl.PostAttnNorm, rl.PostMLPNorm = nil, nil
 			}
 		}
 		// FeatAttnSink (gpt-oss): attnSinks is ALWAYS bound (a one-element dummy when the layer has none) because WGSL bind groups
@@ -1625,6 +1693,9 @@ func webgpuCtxBeforeSlots(m *decoder.Model, kvF16, kvI8 bool) int {
 	// ceilings and honouring a LARGER request would trade a clear checkCap refusal for an OOM.
 	if req := m.ResidentContextRequest(); req > 0 && req < ctxCap {
 		ctxCap = req
+	}
+	if minCtxCapForTest > ctxCap {
+		ctxCap = minCtxCapForTest
 	}
 	return ctxCap
 }
