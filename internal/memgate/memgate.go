@@ -5,6 +5,7 @@
 package memgate
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -220,25 +221,39 @@ func (g *Gate) Unknown(r Reading) []Finding {
 	return out
 }
 
-// match is the gaps that together account for f, in table order, or nil if they do not. Gaps on one line add up, so each states
-// only its own bytes, and fixing one leaves no slack for what another covers. A gap is used only if f needed it.
+// match is the gaps that together account for f, or nil if they do not. Gaps on one line add up, so each states only its own bytes,
+// and fixing one leaves no slack for what another covers. It takes the most specific row patterns first, so a wildcard's bound does
+// not stand in for a row's own gap, and a gap is used only if f needed it: one the others cover without it is left out.
 func (g *Gate) match(f Finding) []int {
 	if f.Kind == Invariant {
 		return nil
 	}
-	var used []int
-	var sum int64
+	bytes := map[int]int64{}
+	var fit []int
 	for i, gap := range g.Gaps {
 		if gap.Line != f.Line || gap.Built != (f.Kind == Built) || gap.Bytes == nil || !globMatch(gap.Row, f.Row) {
 			continue
 		}
-		b := gap.Bytes(f.Facts)
-		if b <= 0 {
-			continue
+		if b := gap.Bytes(f.Facts); b > 0 {
+			bytes[i] = b
+			fit = append(fit, i)
 		}
+	}
+	slices.SortStableFunc(fit, func(a, b int) int {
+		return cmp.Compare(len(g.Gaps[b].Row)-strings.Count(g.Gaps[b].Row, "*"), len(g.Gaps[a].Row)-strings.Count(g.Gaps[a].Row, "*"))
+	})
+	var used []int
+	var sum int64
+	for _, i := range fit {
 		used = append(used, i)
-		if sum += b; f.Excess <= sum {
-			return used
+		if sum += bytes[i]; f.Excess <= sum {
+			return slices.DeleteFunc(used, func(i int) bool {
+				if sum-bytes[i] < f.Excess {
+					return false
+				}
+				sum -= bytes[i]
+				return true
+			})
 		}
 	}
 	return nil

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // TestResidentKVBytes_excludesDeltaNetLayers gates N-36 (docs/audit-metal-2026-09-12.md): residentKVBytes must not charge every
@@ -288,6 +289,38 @@ func recurrentSlotPrice(t *testing.T, dir string) {
 	metalMemoryCeilingForTest = residentNeedBytes(m2) + metalSlotBytes(m2) - 1
 	if n := metalKVSlots(m2); n != 1 {
 		t.Errorf("a ceiling one byte short of a second slot's price: %d slots; want 1", n)
+	}
+}
+
+// TestRecurrentState_everyBufferReadsTheList: slot 0, every further slot and the checkpoint are all sized from the one list. Moving
+// the list moves all of them, so the state line holds exactly three copies of it on a two-slot build with a checkpoint.
+func TestRecurrentState_everyBufferReadsTheList(t *testing.T) {
+	const extra = 8
+	stateSpecsOf = func(m *decoder.Model, l int) []decoder.StateSpec {
+		specs := slices.Clone(m.StateSpecs(l))
+		if len(specs) > 0 {
+			specs[len(specs)-1].Floats += extra
+		}
+		return specs
+	}
+	t.Cleanup(func() { stateSpecsOf = (*decoder.Model).StateSpecs })
+	for _, dir := range []string{deltaNetSlotFixtures[0], mambaSlotFixture} {
+		t.Run(filepath.Base(dir), func(t *testing.T) {
+			m := recurrentSlotsLoad(t, dir, decoder.Options{ResidentKVSlots: 2})
+			a := recurrentSlotsBuild(t, m)
+			if a.r.ckptBytes == 0 || a.r.kvSlotCount() != 2 {
+				t.Fatalf("checkpoint %d bytes on %d slots; this case needs a checkpoint on two slots", a.r.ckptBytes, a.r.kvSlotCount())
+			}
+			var leased int64
+			for _, le := range metalLedgerOf(a.r.d).OpenLeases() {
+				if le.Line == mem.LineState {
+					leased += le.Requested
+				}
+			}
+			if want := 3 * metalRecurrentSlotBytes(m); leased != want {
+				t.Errorf("the state line leased %d bytes; three copies of the moved list are %d", leased, want)
+			}
+		})
 	}
 }
 

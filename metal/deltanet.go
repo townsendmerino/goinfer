@@ -77,15 +77,17 @@ type deltaNetLayer struct {
 // allocRecurrentSlots gives every recurrent layer, Gated-DeltaNet and Mamba-2, its own conv window and state for each of n KV
 // slots, zeroed. Slot 0's are the pair the layer was built with. The decoder asks for more than one slot only where
 // program.Metal.RecurrentSlots lists every recurrent kind the model has, and metalSlotBytes prices each further slot's pairs.
-func (r *resident) allocRecurrentSlots(n int) {
-	r.allocDeltaNetSlots(n)
-	r.allocMambaSlots(n)
+func (r *resident) allocRecurrentSlots(m *decoder.Model, n int) error {
+	if err := r.allocDeltaNetSlots(m, n); err != nil {
+		return err
+	}
+	return r.allocMambaSlots(m, n)
 }
 
 // allocDeltaNetSlots is allocRecurrentSlots for the Gated-DeltaNet layers.
-func (r *resident) allocDeltaNetSlots(n int) {
+func (r *resident) allocDeltaNetSlots(m *decoder.Model, n int) error {
 	if r.dnet == nil || n < 2 {
-		return
+		return nil
 	}
 	for i := range r.layers {
 		D := r.layers[i].delta
@@ -94,10 +96,14 @@ func (r *resident) allocDeltaNetSlots(n int) {
 		}
 		D.slotWin, D.slotState = []Buffer{D.win}, []Buffer{D.state}
 		for range n - 1 {
-			D.slotWin = append(D.slotWin, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, D.win.Len())))
-			D.slotState = append(D.slotState, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, D.state.Len())))
+			win, state, err := stateBuffersOn(r.d, m, i)
+			if err != nil {
+				return err
+			}
+			D.slotWin, D.slotState = append(D.slotWin, win), append(D.slotState, state)
 		}
 	}
+	return nil
 }
 
 // resetDeltaNetSlot zeroes every Gated-DeltaNet layer's conv window and state for KV slot s: the slot's own pair, or the
@@ -120,12 +126,16 @@ func (r *resident) resetDeltaNetSlot(s int) {
 	}
 }
 
-// metalRecurrentSlotBytes is one KV slot's recurrent state on m, from the list its layers allocate from (decoder.Model.StateSpecs).
+// stateSpecsOf is the list every recurrent buffer on Metal is sized from and priced from. A variable so a test can move the list and
+// see which buffers follow it.
+var stateSpecsOf = (*decoder.Model).StateSpecs
+
+// metalRecurrentSlotBytes is one KV slot's recurrent state on m, from the list its layers allocate from.
 func metalRecurrentSlotBytes(m *decoder.Model) int64 {
 	_, nL, _, _, _, _, _ := m.Dims()
 	var n int64
 	for l := range nL {
-		for _, s := range m.StateSpecs(l) {
+		for _, s := range stateSpecsOf(m, l) {
 			n += 4 * int64(s.Floats)
 		}
 	}
@@ -134,7 +144,7 @@ func metalRecurrentSlotBytes(m *decoder.Model) int64 {
 
 // stateBuffersOn allocates layer l's state from its specs, zeroed: its window and its matrix state.
 func stateBuffersOn(d *Device, m *decoder.Model, l int) (win, state Buffer, err error) {
-	specs := m.StateSpecs(l)
+	specs := stateSpecsOf(m, l)
 	if len(specs) != 2 || specs[0].Name != "window" || specs[1].Name != "state" {
 		return Buffer{}, Buffer{}, fmt.Errorf("metal: layer %d's recurrent state is %v, and the block holds a window and a state", l, specs)
 	}

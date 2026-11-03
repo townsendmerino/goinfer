@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -297,8 +298,8 @@ var metalMemGaps = []memgate.Gap{
 		Item: "MM5, decode's buffer list", Bytes: func(f map[string]int64) int64 { return f["decode"] }},
 	{Row: "*", Line: mem.LineState, What: "the recurrent checkpoint leases on the state line, and the plan prices one slot's state and no checkpoint",
 		Item: "MM8 Metal, recurrent checkpoint", Bytes: func(f map[string]int64) int64 { return f["checkpoint"] }},
-	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums weight matrices: norms, biases, sinks, rotation tables and the greedy chain's embedding table are leased on dense and priced nowhere",
-		Item: "MM8 Metal, dense vectors and the chain table", Bytes: func(f map[string]int64) int64 { return f["tables"] + f["chain"] }},
+	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums weight matrices: norms, biases, sinks and rotation tables are leased on dense and priced nowhere",
+		Item: "MM8 Metal, dense vectors", Bytes: func(f map[string]int64) int64 { return f["tables"] }},
 	{Row: "testdata/gemma4-moe-kv-tiny32 *", Line: mem.LineDense, What: "Gemma 4's MoE leases 21,128 bytes on dense past the row above: not diagnosed",
 		Item: "MM8 Metal, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return 21128 }},
 	{Row: "testdata/gptoss_tiny.gguf *", Line: mem.LineExperts, What: "gpt-oss's experts lease 8,192 bytes over the plan's expert figure: not diagnosed",
@@ -338,10 +339,11 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	}
 	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount()}
 	read.Plan = m.Plan("metal", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
-	shape := map[string]int64{"checkpoint": metalRecurrentSlotBytes(m), "tables": metalDenseVectorBytes(m), "decode": metalDecodeScratchBytes(m)}
 	facts := func() map[string]int64 {
-		f := maps.Clone(shape)
-		f["chain"] = metalChainTableBytes(r)
+		f := map[string]int64{"tables": metalDenseVectorBytes(m, r), "decode": metalDecodeScratchBytes(m, r)}
+		if r.ckptBytes > 0 { // whether the load kept one is the build's; its size is one slot's list
+			f["checkpoint"] = metalRecurrentSlotBytes(m)
+		}
 		return f
 	}
 	read.Open = append(read.Open, memgate.Snap("built", l, facts()))
@@ -365,6 +367,9 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 		if price, reserve := r.stepScratchBytes(), metalStepScratchReserve(m); reserve < price {
 			t.Errorf("%s: the step's scratch is priced at %d bytes, and the reserve an unpinned slot count leaves for it is %d", row, price, reserve)
 		}
+	}
+	if why, reserve := r.batchIneligible(), metalStepScratchReserve(m); why != "" && reserve > 0 {
+		t.Errorf("%s: the step cannot build (%s), and an unpinned slot count would give up %d bytes for it", row, why, reserve)
 	}
 	read.Named = map[mem.LineID]int64{mem.LineScratch: scratch}
 	closed = true
@@ -524,8 +529,50 @@ func TestStepBuffers_listIsWhatBuilds(t *testing.T) {
 	}
 }
 
+// TestStepBuffers_q4kWidths holds the q4k lane's part of the list on a synthetic shape, since no tiny fixture builds that lane: one
+// uniform per distinct width, each reachable at its width, and a reserve at the widest layer's widths not under the price at the
+// geometry layer's, where the widest layer's coincide and the geometry layer's do not.
+func TestStepBuffers_q4kWidths(t *testing.T) {
+	distinct := stepShape{H: 64, V: 256, I: 32, nHhd: 48, kvDim: 48, ffnWidth: 32, q4k: true}
+	collapsed := distinct
+	collapsed.nHhd, collapsed.kvDim = 64, 64
+	plain := func(s stepShape) stepShape { s.q4k = false; return s }
+	for _, c := range []struct {
+		s    stepShape
+		want []int
+	}{{distinct, []int{32, 48, 64, 144}}, {collapsed, []int{32, 64, 192}}} {
+		b := &batchState{}
+		list := c.s.buffers(b)
+		if got, want := len(list)-len(plain(c.s).buffers(&batchState{})), 2+len(c.want); got != want {
+			t.Errorf("%+v: the lane adds %d buffers, want axB, swB and %d uniforms", c.s, got, len(c.want))
+		}
+		for _, sb := range list {
+			sb.set(Buffer{})
+		}
+		if got := slices.Sorted(maps.Keys(b.uLd)); !slices.Equal(got, c.want) {
+			t.Errorf("%+v: uniforms at %v, want %v", c.s, got, c.want)
+		}
+	}
+	five := distinct
+	five.I = 40 // H, nHhd, I, 2I and the qkv rows all differ
+	wide := five
+	wide.nHhd = 64
+	if got := len(five.uLdWidths()); got != 5 {
+		t.Fatalf("%d distinct widths; this case needs five", got)
+	}
+	if len(wide.uLdWidths()) >= 5 {
+		t.Fatalf("the widest layer's widths do not coincide: %v", wide.uLdWidths())
+	}
+	if r, p := wide.reserveBytes(), five.scratchBytes(); r < p {
+		t.Errorf("the reserve %d is under the price %d", r, p)
+	}
+	if plainS := plain(wide); plainS.reserveBytes() != plainS.scratchBytes() {
+		t.Errorf("off the lane the reserve %d is not the price %d", plainS.reserveBytes(), plainS.scratchBytes())
+	}
+}
+
 // TestMetalKVSlots_defaultLeavesRoomForTheStep: an unpinned slot count gives up a slot to keep the batched step's scratch in the
-// budget, and a count the caller asked for keeps its slots and loses the step.
+// budget where that makes the step fit, and a count the caller asked for keeps its slots and loses the step.
 func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -556,60 +603,127 @@ func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
 	if a := build(false, twoSlots); len(a.r.kvSlotBufs) != 2 || a.r.batch != nil {
 		t.Errorf("pinned at two, no room for the scratch: %d slots, step built %v; want two slots and no step", len(a.r.kvSlotBufs), a.r.batch != nil)
 	}
+	// One slot's KV is smaller than the scratch here, so giving it up would still leave no room for the step, and the load would lose both.
+	if a := build(true, func(m *decoder.Model) int64 {
+		if metalSlotBytes(m) >= metalStepScratchReserve(m) {
+			t.Fatalf("a slot of %d bytes is not under the reserve of %d: this case needs a smaller slot", metalSlotBytes(m), metalStepScratchReserve(m))
+		}
+		return twoSlots(m)
+	}); len(a.r.kvSlotBufs) != 2 || a.r.batch != nil {
+		t.Errorf("unpinned, giving up a slot would not make room for the step: %d slots, step built %v; want two slots and no step", len(a.r.kvSlotBufs), a.r.batch != nil)
+	}
 }
 
-// metalChainTableBytes is the greedy chain's embedding table, from the embedding table's shape as buildChainEmbed prices it: 0 until
-// a chain builds it, and always 0 on a tied head, whose LM-head buffers are the table.
-func metalChainTableBytes(r *resident) int64 {
-	if r.lmTied || r.chainEmbW == (Buffer{}) {
-		return 0
-	}
-	q8, sc, _, ok := r.embed.Int8()
-	if !ok {
-		return 0
-	}
-	return int64(len(q8) + 4*len(sc))
-}
-
-// metalDecodeScratchBytes bounds, from the model's widths, what a build leases on the scratch line for decode itself: the buffers of
-// each width decode's dispatches hold, and a fixed set of uniforms per model and per layer. Nothing prices these. It holds on every
-// census fixture (worst 0.97 of it), and MM5's buffer list for decode replaces it.
-func metalDecodeScratchBytes(m *decoder.Model) int64 {
+// metalDecodeScratchBytes is, from the model's widths and the blocks this build has on, what a build leases on the scratch line for
+// decode itself. Nothing prices these. Its buffers are sized as the build sizes them, and its one allowance is a fixed count of small
+// uniforms, so it holds a leak in any width-sized buffer to well under a buffer. MM5's list for decode replaces it.
+func metalDecodeScratchBytes(m *decoder.Model, r *resident) int64 {
 	H, nL, nH, _, _, I, V := m.Dims()
-	var nHhd, kvDim, ffn, faPartial int
+	var nHhd, kvDim, faPartial int
 	for l := range nL {
 		hd := m.HeadDimAtResident(l)
 		nHhd, kvDim = max(nHhd, nH*hd), max(kvDim, m.KVHeadsAtResident(l)*hd)
 		faPartial = max(faPartial, attnFAPartialFloats(hd, nH, m.KVHeadsAtResident(l)))
 	}
-	ffn = I
+	gu := I
 	for _, lw := range m.Weights().Layers {
-		ffn = max(ffn, lw.GateProj.Rows())
+		gu = max(gu, lw.GateProj.Rows())
 	}
-	return 4*int64(2*V+12*H+8*nHhd+4*kvDim+6*ffn+faPartial) + 2*16384 + int64(nL)*512
-}
-
-// metalDenseVectorBytes is, from the model's weights and geometry, what a build leases on the dense line that the plan's dense
-// figure, a sum of weight matrices, does not count: every norm's weights, the biases, the attention sinks, the layer scale, the
-// rotation tables and the m-RoPE axis map. It takes a vector a family may not upload as uploaded, so it bounds them from above.
-func metalDenseVectorBytes(m *decoder.Model) int64 {
-	w := m.Weights()
-	_, _, nH, _, _, _, _ := m.Dims()
-	var n, maxHd int
-	for l := range w.Layers {
-		lw := &w.Layers[l]
-		hd := m.HeadDimAtResident(l)
-		maxHd = max(maxHd, hd)
-		n += len(lw.PreAttnNorm) + len(lw.PreMLPNorm) + len(lw.PreAttnNormBias) + len(lw.PreMLPNormBias) + len(lw.PostAttnNorm) + len(lw.PostMLPNorm) +
-			len(lw.PostPLENorm) + len(lw.QNorm) + len(lw.KNorm) + len(lw.OBias) + len(lw.AttnSinks)
-		n += max(len(lw.UpBias), lw.UpProj.Rows()) + max(len(lw.DownBias), lw.DownProj.Rows())
-		n += max(len(lw.QBias)+len(lw.KBias)+len(lw.VBias), nH*hd+2*m.KVHeadsAtResident(l)*hd)
-		n += len(m.RopeInvFreqLayerResident(l)) + 3 // the sink's placeholder, the rotation's mscale, the layer scale
-		if _, _, _, _, qN, kN := m.Qwen35AttnWeights(l); len(qN)+len(kN) > 0 {
-			n += len(qN) + len(kN)
+	floats, bytes := 0, 0
+	if mo := r.moe; mo != nil {
+		gu = max(gu, mo.inter, mo.sharedInter)
+		floats += mo.nE + 2*mo.k + H // the router's logits, indices and weights, and the shared expert's down
+		if mo.guK != (Buffer{}) {    // allocated before an int8 build turns those kernels off
+			floats += mo.k*2*mo.inter + mo.k + mo.k*H
+			bytes += mo.k * mo.inter
 		}
 	}
-	n += len(w.FinalNorm) + len(w.FinalNormBias) + len(m.RopeInvFreq()) + maxHd + len(m.MRopeAxisResident(maxHd/2))
+	if g := r.g4moe; g != nil {
+		gu = max(gu, g.denseInter, g.moeInter)
+		floats += 2*(g.nE+2*g.topK) + 4*H
+	}
+	if dp := r.dnet; dp != nil {
+		floats += 2*dp.convDim + 4*dp.nv + 2*dp.keyDim + 3*dp.valueDim + 3*nHhd // its mixer, and gated attention's rows
+		bytes += dp.valueDim
+	}
+	if p := r.mamba; p != nil {
+		floats += p.projDim + p.convDim + 2*p.dInner
+		bytes += p.dInner
+	}
+	if p := r.mla; p != nil {
+		floats += max(p.qLoRA, 1) + p.nH*p.qkHead + p.latDim + p.nH*p.latDim + p.nH*p.rank + p.nH*p.vHead
+		bytes += max(p.qLoRA, 4) + p.nH*p.vHead
+	}
+	if P := r.pleP; P > 0 {
+		floats += nL*P + P
+		bytes += P
+	}
+	floats += 3*H + nHhd + 2*kvDim + 2*gu + nHhd + V + 2*((V+7)/8) + faPartial // x, oO, dO; qkv; gu; ctx; logits; part; the fused partial
+	floats += r.batchCap * (H + V)                                             // ensureBatchCap's rows, once a call has asked for them
+	floats += 2 * r.gumbelNB
+	bytes += 6*H + 3*nHhd + gu // aq, mq, the f16 twins of a and m; cq and its twin; dq
+	const uniforms = 450       // each a few bytes: the model's, the chain's and the families'
+	return 4*int64(floats) + int64(bytes) + 4*int64(uniforms+8*nL)
+}
+
+// metalDenseVectorBytes is what a build leases on the dense line that the plan's dense figure, a sum of weight matrices, does not
+// count: the norms' weights, the biases, the attention sinks, the layer scale, the rotation tables and the m-RoPE axis map. Which of
+// them this build holds is read from its buffers, and each one's size from the model's weights and geometry, so a buffer that grows
+// does not raise its own allowance. Where the build uploads zeros in place of a family's missing bias, the zeros are counted.
+func metalDenseVectorBytes(m *decoder.Model, r *resident) int64 {
+	w := m.Weights()
+	_, _, nH, _, _, _, _ := m.Dims()
+	has := func(b Buffer) bool { return b != (Buffer{}) }
+	var n, maxHd int
+	add := func(b Buffer, floats int) {
+		if has(b) {
+			n += floats
+		}
+	}
+	for l := range w.Layers {
+		lw, L := &w.Layers[l], &r.layers[l]
+		hd, kvDim := m.HeadDimAtResident(l), m.KVHeadsAtResident(l)*m.HeadDimAtResident(l)
+		maxHd = max(maxHd, hd)
+		add(L.preNorm, len(lw.PreAttnNorm))
+		if L.postNorm != L.preNorm {
+			add(L.postNorm, len(lw.PreMLPNorm))
+		}
+		add(L.preNormBias, len(lw.PreAttnNormBias))
+		add(L.postNormBias, len(lw.PreMLPNormBias))
+		add(L.postAttnNorm, len(lw.PostAttnNorm))
+		add(L.postMLPNorm, len(lw.PostMLPNorm))
+		add(L.postPLENorm, len(lw.PostPLENorm))
+		qN, kN := lw.QNorm, lw.KNorm
+		if _, _, _, _, gq, gk := m.Qwen35AttnWeights(l); L.qGate {
+			qN, kN = gq, gk
+		}
+		add(L.qNorm, len(qN))
+		if L.kNorm != L.qNorm {
+			add(L.kNorm, len(kN))
+		}
+		add(L.oBias, len(lw.OBias))
+		if r.attnSink {
+			add(L.attnSinks, len(lw.AttnSinks))
+		} else {
+			add(L.attnSinks, 1)
+		}
+		add(L.upBias, max(len(lw.UpBias), lw.UpProj.Rows()))
+		add(L.downBias, max(len(lw.DownBias), lw.DownProj.Rows()))
+		add(L.qkvBias, max(len(lw.QBias)+len(lw.KBias)+len(lw.VBias), nH*hd+2*kvDim))
+		add(L.invf, len(m.RopeInvFreqLayerResident(l)))
+		add(L.mscale, 1)
+		add(L.uLayerScalar, 1)
+		if L.moe != nil {
+			add(L.moe.routerBias, max(len(lw.RouterBias), r.moe.nE))
+		}
+	}
+	add(r.finalNorm, len(w.FinalNorm))
+	add(r.finalNormBias, len(w.FinalNormBias))
+	add(r.invf, len(m.RopeInvFreq()))
+	add(r.vNormUnit, maxHd)
+	if g := r.prefillGeom(); g != nil {
+		add(r.mropeAxis, len(m.MRopeAxisResident(g.half)))
+	}
 	return 4 * int64(n)
 }
 

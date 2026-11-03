@@ -1620,7 +1620,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// the shared per-token scratch to the widest layer (== the model shape for a uniform family).
 	geomCache := map[[4]int]*attnGeom{}
 	var maxNHhd, maxKvDim, maxHd int
-	var maxAttnFAPartialElems int // R2: max over layers of nKV*G*(hd+2), G=nH/nKV — see attnFAPartial's own comment
+	var maxAttnFAPartial int // R2: attnFAPartialFloats at its widest layer; see attnFAPartial's own comment
 	_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
 	for l := range nL {
 		lw := &w.Layers[l]
@@ -1879,11 +1879,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			if r.nH*L.geom.hd > maxNHhd {
 				maxNHhd = r.nH * L.geom.hd
 			}
-			if attnFAHeadDimOK(L.geom.hd, r.nH, L.geom.nKV) && attnFAGroupOK(r.nH, L.geom.nKV) {
-				g := r.nH / L.geom.nKV
-				if e := L.geom.nKV * g * (L.geom.hd + 2); e > maxAttnFAPartialElems {
-					maxAttnFAPartialElems = e
-				}
+			if e := attnFAPartialFloats(L.geom.hd, r.nH, L.geom.nKV); e > 0 {
+				maxAttnFAPartial = max(maxAttnFAPartial, e)
 				// Cache nKV here: attention_fa is dense-GQA-only, so every eligible layer shares one nKV (canUseAttnFA's own
 				// gate is this same condition), and setPos can compute G and nSplit once per decode step instead of the
 				// per-layer dispatch site doing it during encode-ahead (see uAttnFAG/uAttnFANSplit's field comment for the
@@ -1985,7 +1982,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	} else if r.kvContig {
 		r.kvSlotBufs = []kvSlotBuf{{r.kc, r.vc, r.ks, r.vs}}
 	}
-	r.allocRecurrentSlots(kvSlots)
+	if err := r.allocRecurrentSlots(m, kvSlots); err != nil {
+		return nil, err
+	}
 	r.finalNorm = NewBufferFloatsOn(mem.LineDense, d, w.FinalNorm)
 	if r.layerNorm && r.layerNormBias {
 		r.finalNormBias = NewBufferFloatsOn(mem.LineDense, d, w.FinalNormBias)
@@ -2204,8 +2203,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			r.attnFABlkSplit = attnFABlkSplit
 		}
 	}
-	if maxAttnFAPartialElems > 0 {
-		r.attnFAPartialLen = maxAttnFAPartialElems * r.attnFAMaxSplit
+	if maxAttnFAPartial > 0 {
+		r.attnFAPartialLen = maxAttnFAPartial
 		r.attnFAPartial = d.NewBufferLenOn(mem.LineScratch, r.attnFAPartialLen)
 		r.uAttnFAG, r.uAttnFANSplit = NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 0)
 	}

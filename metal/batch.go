@@ -97,21 +97,8 @@ func (r *resident) batchIneligible() string {
 	case r.attnSink: // gpt-oss's learned sink is set from the weights at the call, not in the program
 		return "an attention sink"
 	}
-	table := stepTable(r.moeStep, r.recurrentStep)
-	if r.gemma4Step && r.gemma4Blocks() {
-		// A layer the step does not run whole runs on its batched blocks, so it is held to the table they implement: the
-		// Gemma 4 table's extra operations and parameters are admitted only inside a whole layer.
-		for l := range r.layers {
-			if !r.stepWholeLayer(l) && l < len(r.prog.Layers) {
-				if err := table.CheckLayer(r.prog.Layers[l]); err != nil {
-					return fmt.Sprintf("layer %d, which the step does not run whole: %v", l, err)
-				}
-			}
-		}
-		table = program.MetalStepGemma4
-	}
-	if err := table.Check(r.prog); err != nil {
-		return err.Error()
+	if why := stepProgramIneligible(r.prog, r.moeStep, r.recurrentStep, r.gemma4Step); why != "" {
+		return why
 	}
 	if r.moe != nil && r.moe.paged {
 		return "a paged MoE, whose experts are staged between command buffers"
@@ -143,12 +130,38 @@ func (r *resident) batchIneligible() string {
 			return "a layer the batched step does not reproduce"
 		}
 	}
-	qkvRows := r.nH*g0.hd + 2*g0.kvDim
 	if r.q4kLane { // its rows GEMVs take any width its decode GEMVs take, and its head runs decode's kernel per row
 		return ""
 	}
-	for _, c := range []struct{ n, by int }{{qkvRows, 16}, {r.H, 16}, {2 * r.I, 16}, {r.V, 128}, {r.H, 32},
-		{r.nH * g0.hd, 32}, {r.I, 32}} {
+	return stepWidthsIneligible(r.H, r.I, r.V, r.nH*g0.hd, g0.kvDim)
+}
+
+// stepProgramIneligible is why the step's tables refuse p at the blocks a build has on ("" if they admit it). A layer the step
+// does not run whole runs on its batched blocks, so it is held to the table they implement: the Gemma 4 table's extra operations
+// and parameters are admitted only inside a whole layer.
+func stepProgramIneligible(p *program.Program, moeStep, recurrentStep, gemma4Step bool) string {
+	table := stepTable(moeStep, recurrentStep)
+	if gemma4Step && hasGemma4Attn(p) {
+		for l, layer := range p.Layers {
+			whole := slices.ContainsFunc(layer, func(o program.Op) bool { return o.Kind == program.OpGemma4Attn })
+			if !whole {
+				if err := table.CheckLayer(layer); err != nil {
+					return fmt.Sprintf("layer %d, which the step does not run whole: %v", l, err)
+				}
+			}
+		}
+		table = program.MetalStepGemma4
+	}
+	if err := table.Check(p); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+// stepWidthsIneligible is why the batched kernels cannot tile these widths ("" if they can), at the geometry of the step's batched
+// attention.
+func stepWidthsIneligible(H, I, V, nHhd, kvDim int) string {
+	for _, c := range []struct{ n, by int }{{nHhd + 2*kvDim, 16}, {H, 16}, {2 * I, 16}, {V, 128}, {H, 32}, {nHhd, 32}, {I, 32}} {
 		if c.n%c.by != 0 {
 			return fmt.Sprintf("a width (%d) the batched kernels do not tile (%% %d)", c.n, c.by)
 		}
@@ -592,15 +605,28 @@ func (s stepShape) buffers(b *batchState) []stepBuf {
 		floats(&b.axB, B*s.H)
 		floats(&b.swB, B*s.ffnWidth)
 		b.uLd = map[int]Buffer{}
-		seen := map[int]bool{}
-		for _, n := range []int{s.H, s.nHhd, s.I, 2 * s.I, qkvRows} {
-			if !seen[n] {
-				seen[n] = true
-				out = append(out, stepBuf{kind: stepU32, n: 1, u: uint32(n), set: func(x Buffer) { b.uLd[n] = x }})
-			}
+		for _, n := range s.uLdWidths() {
+			out = append(out, stepBuf{kind: stepU32, n: 1, u: uint32(n), set: func(x Buffer) { b.uLd[n] = x }})
 		}
 	}
 	return out
+}
+
+// uLdWidths is the q4k lane's distinct load widths, one uniform each.
+func (s stepShape) uLdWidths() []int {
+	widths := []int{s.H, s.nHhd, s.I, 2 * s.I, s.nHhd + 2*s.kvDim}
+	slices.Sort(widths)
+	return slices.Compact(widths)
+}
+
+// reserveBytes is scratchBytes before a build, whose widths are each layer's widest: those can coincide where the geometry layer's
+// do not, so it counts every one of the q4k lane's uniforms as distinct.
+func (s stepShape) reserveBytes() int64 {
+	n := s.scratchBytes()
+	if s.q4k {
+		n += int64(5-len(s.uLdWidths())) * int64(os.Getpagesize())
+	}
+	return n
 }
 
 // listBytes is what the list asks the device for, before any rounding.
@@ -628,24 +654,36 @@ func attnFAPartialFloats(hd, nH, nKV int) int {
 	if !attnFAHeadDimOK(hd, nH, nKV) || !attnFAGroupOK(nH, nKV) {
 		return 0
 	}
-	return nH / nKV * nKV * (hd + 2) * attnFAPartialSplits
+	return nH * (hd + 2) * attnFAPartialSplits
 }
 
-// metalStepScratchReserve is, before a build, the most the step's scratch can take on m, or 0 where the step's table refuses m's
-// program. It takes each width at its widest layer, so it is not below stepScratchBytes (TestMemGate_metal holds that on every
-// build). Where another of the step's limits declines it, the reserve is unneeded and only costs a default slot on a tight load.
+// metalStepScratchReserve is, before a build, the most the step's scratch can take on m, or 0 where one of the step's limits a
+// model can show declines it: its tables, an attention sink, a paged MoE or an untiled width. It takes each width at its widest
+// layer, so it is not below stepScratchBytes, and TestMemGate_metal holds it to that and to 0 on a build batchIneligible refuses.
 func metalStepScratchReserve(m *decoder.Model) int64 {
 	p := m.Program()
 	gemma4 := m.ResidentGemma4Step() && hasGemma4Attn(p)
-	table := stepTable(m.ResidentMoEStep(), m.ResidentRecurrentStep())
-	if gemma4 {
-		table = program.MetalStepGemma4
-	}
-	if err := table.Check(p); err != nil {
+	if stepProgramIneligible(p, m.ResidentMoEStep(), m.ResidentRecurrentStep(), m.ResidentGemma4Step()) != "" {
 		return 0
+	}
+	if _, _, sink := m.GptOssActResident(); sink {
+		return 0
+	}
+	if nE, _, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams(); ok {
+		if n := metalMoESlotsFromEnv(m); n > 0 && n < nE {
+			return 0
+		}
 	}
 	H, nL, nH, _, _, I, V := m.Dims()
 	s := stepShape{H: H, V: V, I: I, ffnWidth: max(I, 1), q4k: m.Quant() == "q4k"}
+	if l := slices.IndexFunc(p.Layers, func(layer []program.Op) bool {
+		return slices.ContainsFunc(layer, func(o program.Op) bool { return o.Kind == program.OpAttention })
+	}); l >= 0 && !s.q4k {
+		hd := m.HeadDimAtResident(l)
+		if stepWidthsIneligible(H, I, V, nH*hd, m.KVHeadsAtResident(l)*hd) != "" {
+			return 0
+		}
+	}
 	widths := map[int]bool{}
 	for l := range nL {
 		hd := m.HeadDimAtResident(l)
@@ -662,7 +700,7 @@ func metalStepScratchReserve(m *decoder.Model) int64 {
 		s.gemma4FFNWidths = slices.Sorted(maps.Keys(widths))
 		s.pleIn = nL * m.Gemma4PLEDimResident()
 	}
-	return s.scratchBytes()
+	return s.reserveBytes()
 }
 
 // mc3W8RowsOn runs a native int8 resident's step projections as mc3_gemv_w8a8_rows (each weight row read once for all

@@ -171,9 +171,9 @@ func (r *resident) resetMamba() {
 
 // allocMambaSlots is allocRecurrentSlots for the Mamba-2 layers: each gets its own conv window and SSM state for each of n KV
 // slots, zeroed, slot 0's the pair it was built with.
-func (r *resident) allocMambaSlots(n int) {
+func (r *resident) allocMambaSlots(m *decoder.Model, n int) error {
 	if r.mamba == nil || n < 2 {
-		return
+		return nil
 	}
 	for i := range r.layers {
 		M := r.layers[i].mamba
@@ -182,10 +182,14 @@ func (r *resident) allocMambaSlots(n int) {
 		}
 		M.slotWin, M.slotSSM = []Buffer{M.win}, []Buffer{M.ssm}
 		for range n - 1 {
-			M.slotWin = append(M.slotWin, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, M.win.Len())))
-			M.slotSSM = append(M.slotSSM, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, M.ssm.Len())))
+			win, ssm, err := stateBuffersOn(r.d, m, i)
+			if err != nil {
+				return err
+			}
+			M.slotWin, M.slotSSM = append(M.slotWin, win), append(M.slotSSM, ssm)
 		}
 	}
+	return nil
 }
 
 // orZeros is v, or n zeros when v is empty: a bias buffer for a family without that bias (an empty upload is an error).

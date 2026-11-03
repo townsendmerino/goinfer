@@ -476,13 +476,17 @@ func metalKVSlots(m *decoder.Model) int {
 	if err != nil || ram == 0 {
 		return 1
 	}
-	budget := metalMemoryCeiling(ram)
-	if m.ResidentKVSlotsIsDefault() {
-		// An unpinned slot count leaves room for the batched step's scratch: a default slot is worth less than batched prefill. A
-		// count the caller asked for keeps its slots, and the step declines if it no longer fits.
-		budget -= metalStepScratchReserve(m)
+	budget, need := metalMemoryCeiling(ram), residentNeedBytes(m)
+	got := kvSlotsWithin(n, budget, need, metalSlotBytes(m))
+	// An unpinned slot count gives up a slot for the batched step's scratch, since a default slot is worth less than batched prefill,
+	// but only where the step then fits. A count the caller asked for keeps its slots, and the step declines if it no longer fits.
+	if reserve := metalStepScratchReserve(m); m.ResidentKVSlotsIsDefault() && reserve > 0 && need+reserve <= budget {
+		if within := kvSlotsWithin(n, budget-reserve, need, metalSlotBytes(m)); within < got {
+			fmt.Fprintf(os.Stderr, "metal: %d resident KV slots of %d by default, which leaves room for the batched step's %.1f MB of scratch; -kv-sessions N keeps N if memory allows\n",
+				within, n, float64(reserve)/(1<<20))
+			return within
+		}
 	}
-	got := kvSlotsWithin(n, budget, residentNeedBytes(m), metalSlotBytes(m))
 	if got < n {
 		fmt.Fprintf(os.Stderr, "metal: %d resident KV slots of %d requested — each costs %.0f MB (KV at the resident context, and any recurrent state), and the memory guard allows %d\n",
 			got, n, float64(metalSlotBytes(m))/(1<<20), got)
