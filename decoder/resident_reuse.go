@@ -644,7 +644,7 @@ func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *lor
 		}
 		return
 	}
-	a.Copied(src, dst, hit)
+	a.Copied(src, dst, start, hit)
 	s := a.Seq(dst)
 	m.resIDs, m.resIDsLora, m.resImgBlocks = s.Tokens(), lora, nil
 	for _, sp := range s.Images() {

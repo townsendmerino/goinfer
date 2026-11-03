@@ -22,11 +22,22 @@ import (
 // every resident backend takes.
 func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
 	floor := 0
-	defer func() {
-		if err == nil {
-			a := m.kvSlots()
-			a.SetFloor(a.Bound(), floor)
+	for l := 0; l < m.w.arch.NumLayers; l++ {
+		if r := cache.rings[l]; r != nil && m.w.arch.gemma4KVSrcAt(l) == l {
+			if _, _, base := cache.LayerKV(l); base > 0 {
+				floor = max(floor, base+r.w-1)
+			}
 		}
+	}
+	defer func() {
+		a := m.kvSlots()
+		if err == nil {
+			a.SetFloor(a.Bound(), floor)
+			return
+		}
+		// Some rows are written and the rest are what they were, so nothing the record says holds, and nothing the slot already lacked came back.
+		m.residentForgetIDs()
+		a.RaiseFloor(a.Bound(), floor)
 	}()
 	if pass, ok := m.resident.(ResidentKVUploadPass); ok {
 		if err := pass.BeginKVUpload(); err != nil {
@@ -48,9 +59,6 @@ func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
 		}
 		if err := m.resident.UploadKV(l, base, k, v); err != nil {
 			return fmt.Errorf("decoder: resident prefill upload layer %d (base=%d): %w", l, base, err)
-		}
-		if r := cache.rings[l]; r != nil && base > 0 {
-			floor = max(floor, base+r.w-1)
 		}
 	}
 	return nil

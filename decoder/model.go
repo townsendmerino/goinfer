@@ -1353,9 +1353,6 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 	if from < 0 || from >= len(prompt) {
 		from = 0 // never skip the seed token (residentPrefillSeed's own rule)
 	}
-	if from == 0 {
-		m.kvSlots().SetFloor(slot, 0) // as residentWritesFromZero, for the slot this generation holds
-	}
 	pf, ok := m.resident.(Prefiller)
 	C := m.prefillChunk
 	// A chunk below the resident's kernel-class floor would put the first chunk on the other class from the
@@ -1556,6 +1553,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				}
 				mc3.markSlot(mc3Slot, true)
 				m.residentForgetIDs()
+				if acq.reuse <= 0 {
+					m.residentWritesFromZero()
+				}
 			})
 			if mc3Slot >= 0 {
 				defer mc3.markSlot(mc3Slot, false) // after the commit below: the slot is free again once it holds our ids

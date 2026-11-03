@@ -214,3 +214,51 @@ FAIL	github.com/townsendmerino/goinfer/internal/kvmgr	0.002s
     resident_reuse_test.go:403: after a continuation, a prefix of 16 below the floor reuses 16: those rows are still missing
     resident_reuse_test.go:407: a prompt below the floor reused 16
 FAIL	github.com/townsendmerino/goinfer/decoder	0.019s
+
+# #644 round 3: Copied names its first row; a failed upload only restricts. 2026-11-03 13:25:00 PST
+ok  	github.com/townsendmerino/goinfer/internal/kvmgr	11.375s
+ok  	github.com/townsendmerino/goinfer/decoder	7.698s
+# plant: Copied always takes the source's floor
+--- FAIL: TestSlots_floor (0.00s)
+    slots_test.go:373: after a copy past the slot's own floor, a prefix below it scores 64
+--- FAIL: TestKV2_copyIntoASlotWithAFloor (0.00s)
+    kv2_share_test.go:487: preamble 327, prompts 455, source slot 0
+    kv2_share_test.go:497: after a copy from row 320, a prefix of 32 below the slot's floor of 64 scores 32: those rows are still missing
+# plant: Copied always keeps the higher floor (round 2's)
+--- FAIL: TestSlots_floor (0.00s)
+    slots_test.go:368: after a whole copy from a slot with no floor, a short prefix scores 0, want 64
+--- FAIL: TestKV2_copyIntoASlotWithAFloor (0.01s)
+    kv2_share_test.go:487: preamble 327, prompts 455, source slot 0
+    kv2_share_test.go:511: after a copy from row 0, a prefix of 32 scores 0: the slot kept the floor of what the copy replaced
+# plant: residentShare names row 0 for every copy
+ok  	github.com/townsendmerino/goinfer/internal/kvmgr	0.003s
+--- FAIL: TestKV2_copyIntoASlotWithAFloor (0.01s)
+    kv2_share_test.go:487: preamble 327, prompts 455, source slot 0
+    kv2_share_test.go:497: after a copy from row 320, a prefix of 32 below the slot's floor of 64 scores 32: those rows are still missing
+# plant: a failed upload sets the floor outright
+ok  	github.com/townsendmerino/goinfer/internal/kvmgr	0.002s
+--- FAIL: TestResidentUploadPrefill_failedPass (0.01s)
+    resident_reuse_test.go:493: a failed upload that did not wrap cleared the floor: a prefix of 8 scores 8
+# plant: a failed upload leaves the floor alone
+ok  	github.com/townsendmerino/goinfer/internal/kvmgr	0.002s
+--- FAIL: TestResidentUploadPrefill_failedPass (0.02s)
+    resident_reuse_test.go:481: after a failed wrapped upload and a commit, a prefix of 8 scores 8
+# plant: a failed upload keeps the record
+ok  	github.com/townsendmerino/goinfer/internal/kvmgr	0.002s
+--- FAIL: TestResidentUploadPrefill_failedPass (0.02s)
+    resident_reuse_test.go:477: a failed upload left the slot's sequence in place, over rows it half wrote
+# WebGPU
+--- PASS: TestWrappedUpload_rows (9.98s)
+--- PASS: TestWrappedUpload_reuse (7.64s)
+--- PASS: TestWrappedUpload_turns (2.58s)
+ok  	github.com/townsendmerino/goinfer/gpu	20.414s
+# CUDA
+--- PASS: TestKV2_copyExact_tiny (2.41s)
+--- PASS: TestKV2_copyExact_otherLayouts (8.22s)
+--- SKIP: TestKV2_copyExact_real1p5B (0.00s)
+--- PASS: TestKV7_partialCopyFromAWrappedUpload (0.25s)
+--- PASS: TestWrappedUpload_rows (1.29s)
+--- PASS: TestWrappedUpload_reuse (1.29s)
+--- PASS: TestWrappedUpload_turns (0.70s)
+ok  	github.com/townsendmerino/goinfer/cuda	14.234s
+darwin vet 0

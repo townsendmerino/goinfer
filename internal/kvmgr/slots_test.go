@@ -292,8 +292,8 @@ func benchRequest(b *testing.B, n int) {
 func BenchmarkRequest_20000(b *testing.B) { benchRequest(b, 20000) }
 func BenchmarkRequest_512(b *testing.B)   { benchRequest(b, 512) }
 
-// TestSlots_floor: a slot with a floor serves no shorter prefix, by its own score or as a copy's source. The floor holds through a commit, follows a copy, and goes
-// with a forget or a restore.
+// TestSlots_floor: a slot with a floor serves no shorter prefix, by its own score or as a copy's source. The floor holds through a forget and a commit, follows a
+// copy, and goes with a write from position 0 or a restore.
 func TestSlots_floor(t *testing.T) {
 	root := Root{Model: "m", Precision: "f16"}
 	cm := metalClasses
@@ -330,7 +330,7 @@ func TestSlots_floor(t *testing.T) {
 	if got := a.Score(0, short, false); got != 0 {
 		t.Errorf("after a commit, below the floor, a prefix scores %d", got)
 	}
-	a.Copied(0, 1, len(toks))
+	a.Copied(0, 1, 0, len(toks))
 	if got := a.Score(1, short, false); got != 0 {
 		t.Errorf("a copy serves %d rows below its source's floor", got)
 	}
@@ -353,10 +353,30 @@ func TestSlots_floor(t *testing.T) {
 	a.Commit(1, root, toks, nil, len(toks), cm)
 	a.SetFloor(1, 0)
 	a.SetFloor(2, floor) // a slot holding nothing gives a copy nothing, and no floor
-	a.Copied(2, 1, len(toks))
+	a.Copied(2, 1, 0, len(toks))
 	a.Commit(1, root, toks, nil, len(toks), cm)
 	if got := a.Score(1, short, false); got != BlockRows {
 		t.Errorf("after a copy from an empty slot, a short prefix scores %d, want %d", got, BlockRows)
+	}
+	// A copy into a slot that holds a floor: from row 0 every row is the source's, so the slot's own floor goes; from further on, the rows below
+	// the copy are still the slot's own, and its floor stays.
+	a.Commit(0, root, toks, nil, len(toks), cm)
+	a.SetFloor(0, 0)
+	a.SetFloor(1, floor)
+	a.Copied(0, 1, 0, len(toks))
+	if got := a.Score(1, short, false); got != BlockRows {
+		t.Errorf("after a whole copy from a slot with no floor, a short prefix scores %d, want %d", got, BlockRows)
+	}
+	a.SetFloor(1, floor)
+	a.Copied(0, 1, floor, len(toks))
+	if got := a.Score(1, short, false); got != 0 {
+		t.Errorf("after a copy past the slot's own floor, a prefix below it scores %d", got)
+	}
+	a.SetFloor(1, 0)
+	a.RaiseFloor(1, floor)
+	a.RaiseFloor(1, 0)
+	if got := a.Score(1, short, false); got != 0 {
+		t.Errorf("a raise lowered the floor: a prefix below it scores %d", got)
 	}
 	a.SetFloor(a.Bound(), floor)
 	a.Resize(2)

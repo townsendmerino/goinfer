@@ -411,38 +411,93 @@ func TestResidentUploadPrefill_wrappedFloor(t *testing.T) {
 	}
 }
 
-// uploadPassFails is a resident whose upload pass fails as it ends.
-type uploadPassFails struct{ *fakeResident }
-
-func (uploadPassFails) BeginKVUpload() error { return nil }
-func (uploadPassFails) EndKVUpload(failed bool) error {
-	return errors.New("the pass did not cover the layer")
+// uploadPassFails is a resident whose upload pass fails as it ends, while fail is set.
+type uploadPassFails struct {
+	*fakeResident
+	fail *bool
 }
 
-// TestResidentUploadPrefill_failedPassSetsNoFloor: a floor is the record of an upload that completed.
-func TestResidentUploadPrefill_failedPassSetsNoFloor(t *testing.T) {
+func (uploadPassFails) BeginKVUpload() error { return nil }
+func (u uploadPassFails) EndKVUpload(failed bool) error {
+	if *u.fail {
+		return errors.New("the pass did not cover the layer")
+	}
+	return nil
+}
+
+// TestResidentUploadPrefill_failedPass: a failed upload leaves rows missing and the rest half-written, so it may only restrict. Wrapped, on a slot holding a
+// sequence, it forgets the sequence and raises the floor, so nothing below that floor is granted even if a commit follows. Unwrapped, it clears no floor the slot
+// already had, though its own figure is 0: only a completed upload sets the floor outright.
+func TestResidentUploadPrefill_failedPass(t *testing.T) {
 	m, err := Load("../testdata/mistral-tiny-window", Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = m.Close() })
-	m.resident = uploadPassFails{&fakeResident{vocab: m.w.arch.VocabSize}}
-	n := 4 * m.w.arch.SlidingWindow
-	ids := make([]int, n)
-	cache := m.NewCache(n)
-	for i := range ids {
-		ids[i] = (i*31 + 7) % m.w.arch.VocabSize
-		if _, err := m.forward(ids[i], cache); err != nil {
-			t.Fatal(err)
+	fail := false
+	m.resident = uploadPassFails{&fakeResident{vocab: m.w.arch.VocabSize}, &fail}
+	vocab, w := m.w.arch.VocabSize, m.w.arch.SlidingWindow
+	seq := func(n int) []int {
+		ids := make([]int, n)
+		for i := range ids {
+			ids[i] = (i*31 + 7) % vocab
 		}
+		return ids
 	}
-	if err := m.residentUploadPrefill(cache); err == nil {
-		t.Fatal("the failed pass was not reported")
+	upload := func(ids []int) error {
+		t.Helper()
+		cache := m.NewCache(len(ids))
+		for _, id := range ids {
+			if _, err := m.forward(id, cache); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return m.residentUploadPrefill(cache)
 	}
 	a := m.kvSlots()
-	a.Commit(a.Bound(), m.kvRootIn(nil, ""), ids, nil, n, m.kvClassMap())
-	req := kvmgr.Request{Root: m.kvRootIn(nil, ""), Tokens: append(slices.Clone(ids[:8]), (ids[8]+1)%m.w.arch.VocabSize)}
-	if got := a.Score(a.Bound(), req, false); got != 8 {
-		t.Errorf("after a failed upload, a slot's prefix of 8 scores %d: the failed upload set a floor", got)
+	score := func(ids []int, prefix int) int {
+		t.Helper()
+		req := kvmgr.Request{Root: m.kvRootIn(nil, ""), Tokens: append(slices.Clone(ids[:prefix]), (ids[prefix]+1)%vocab)}
+		return a.Score(a.Bound(), req, false)
+	}
+	short := seq(w / 2)
+	if err := upload(short); err != nil {
+		t.Fatal(err)
+	}
+	m.residentCommitIDs(short, nil, nil, nil)
+	if got := score(short, w/4); got != w/4 {
+		t.Fatalf("after an upload that did not wrap, a prefix of %d scores %d", w/4, got)
+	}
+	long := seq(4 * w)
+	fail = true
+	if upload(long) == nil {
+		t.Fatal("the failed pass was not reported")
+	}
+	if a.Seq(a.Bound()) != nil {
+		t.Error("a failed upload left the slot's sequence in place, over rows it half wrote")
+	}
+	a.Commit(a.Bound(), m.kvRootIn(nil, ""), long, nil, len(long), m.kvClassMap())
+	if got := score(long, 8); got != 0 {
+		t.Errorf("after a failed wrapped upload and a commit, a prefix of 8 scores %d", got)
+	}
+	fail = false
+	if err := upload(long); err != nil { // a completed one, so the slot's floor is this upload's
+		t.Fatal(err)
+	}
+	fail = true
+	if upload(short) == nil {
+		t.Fatal("the failed pass was not reported")
+	}
+	m.residentCommitIDs(long, nil, nil, nil)
+	if got := score(long, 8); got != 0 {
+		t.Errorf("a failed upload that did not wrap cleared the floor: a prefix of 8 scores %d", got)
+	}
+	fail = false
+	if err := upload(short); err != nil { // a completed upload that did not wrap wrote every row
+		t.Fatal(err)
+	}
+	m.residentCommitIDs(short, nil, nil, nil)
+	if got := score(short, w/4); got != w/4 {
+		t.Errorf("after a completed upload that did not wrap, a prefix of %d scores %d", w/4, got)
 	}
 }

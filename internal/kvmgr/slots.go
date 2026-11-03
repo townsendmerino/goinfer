@@ -335,8 +335,11 @@ func (a *Slots) Forget(slot int) {
 // SetFloor records the shortest prefix slot's device rows can serve: a wrapped upload holds no rows below its ring's base, so a
 // prefix below floor is scored 0. The floor follows the device, not the record: it holds through Forget and Commit, because a
 // generation that continues past it leaves those rows missing, and it goes when a write starts from position 0 (SetFloor 0) or a
-// snapshot restores the rows (Restored). Copied raises the copy's to its source's.
+// snapshot restores the rows (Restored). Copied gives the copy its source's.
 func (a *Slots) SetFloor(slot, floor int) { a.floors[slot] = floor }
+
+// RaiseFloor is SetFloor that never lowers it, for a write that did not finish: what it left missing joins what already was.
+func (a *Slots) RaiseFloor(slot, floor int) { a.floors[slot] = max(a.floors[slot], floor) }
 
 // SetCheckpoint records that the resident holds a recurrent checkpoint for slot's sequence at position c, the end of the
 // prompt the sequence's last generation prefilled. c outside (0, Len] records none. A later Commit or Forget drops it.
