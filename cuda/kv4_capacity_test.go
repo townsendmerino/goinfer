@@ -1753,16 +1753,17 @@ func TestKV7_uploadPassLaterPositions(t *testing.T) {
 	t.Run("a windowed layer", func(t *testing.T) {
 		r, win, full := setup(t)
 		err := pass(r, func() error {
-			if e := upload(r, win, kvBlock); e != nil {
+			if e := upload(r, win, kvBlock); e != nil { // rows up to kvBlock+rows, from a ring that has wrapped
 				return e
 			}
-			return upload(r, full, 0)
+			n := (kvBlock + rows) * r.layers[full].kvDim // the same end, from position 0
+			return r.UploadKV(full, 0, make([]float32, n), make([]float32, n))
 		})
 		if err != nil {
 			t.Fatalf("the pass: %v", err)
 		}
-		if got := kvStateOf(r, 1); got.released || got.stopped || got.valid != rows {
-			t.Errorf("%+v; want it live, %d rows", got, rows)
+		if got := kvStateOf(r, 1); got.released || got.stopped || got.valid != kvBlock+rows {
+			t.Errorf("%+v; want it live, %d rows", got, kvBlock+rows)
 		}
 	})
 	t.Run("a full-attention layer", func(t *testing.T) {
