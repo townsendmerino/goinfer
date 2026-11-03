@@ -26,7 +26,10 @@ TestAttnFABlkIsTheGradedKernel: the graded text's SHA is unchanged with the tabl
 
 The slot plants (rows-tab, perrow-tab) passed the scrambled comparison until each row was held to a decode on its own slot, as both arms share them.
 
-attention_fa_blk64's value read is not planted separately; KV5-4's G1a carries a plant on every reader.
+The plants above took every read of a kind at once. Taken out one at a time on TestKVPages_fusedKernelsReadTheTable alone, after the review (read 0 and 1 the keys, 2 and 3 the values; 0 and 2 the whole-run branch):
+  attention_fa_blk read 0, 1, 2, 3: attention_fa_blk_g2, attention_fa_blk_g7 red each time
+  attention_fa_blk64 read 0, 1, 2, 3: attention_fa_blk64_g7 red each time
+That pass found a hole: at the full split count, 300 keys gave every chunk under 32 keys, so the kernel test never ran the whole-run branch, and a single read reverted there stayed green. The test now splits in two, which runs both branches. With a shipped read reverted, TestAttnFABlkIsTheGradedKernel goes red too.
 
 == the Metal package at ed9fa5ef
 423 top-level passes, 218 skips.
@@ -62,4 +65,5 @@ vm_stat counts the whole system. Swap-ins fire in every idle window and swap-out
 Parity: 43 passed, 0 failed, 21 skipped; 0 deps_hash lines refreshed (at ed9fa5ef).
 Touched at ed9fa5ef: 2 of 16 red. TestPlan_tableDriven and TestPlan_extraBytesReservedAheadOfExperts are red on this Mac at main too. TestBackendTests_decoderImportsOnlyFall was this slice's, fixed by moving the new tests beside the fused kernels' (internal/layout passes).
 VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
+After the review, at the merged head: the swap void rule's tests (scripts/test_bench_peer_swap.py) 10 of 10, and the TestKVPages_ tests pass.
 THIS RECORD ENDS WITH G2 OPEN: the slice is bit-identical, and its speed is unread.
