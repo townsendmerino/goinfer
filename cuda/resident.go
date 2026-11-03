@@ -96,18 +96,17 @@ const fitDefaultCtx = 16384
 // margin is the context margin at a context (cudaResident.ctxMarginFor): the plan subtracts it at the widest context it asks for,
 // and the figure at the context returned is returned beside it, for checkKVFits to keep.
 func resolveCtxCapFit(m *decoder.Model, request, modelCtx, slots int, margin func(ctx int) int64) (int, int64) {
-	return resolveCtxCapFitSlack(m, request, modelCtx, slots, 0, margin, 0)
+	return resolveCtxCapFitSlack(m, request, modelCtx, slots, margin, 0)
 }
 
-// resolveCtxCapFitSlack is resolveCtxCapFit for a build that allocates device state beside its weights before the plan runs:
-// stateBytes (the Mamba layers' conv window and SSM state) is priced as ExtraBytes here and NOT in checkKVFits, whose probe is
-// read after it is allocated. The driver's rounding over the weight buffers is not an argument: Plan prices it itself
-// (decoder.Model.PlanSlack, planslack.go). 0 for a caller with no such state.
+// resolveCtxCapFitSlack is resolveCtxCapFit with the KV pools' rounding bound. The recurrent state and the driver's rounding over the
+// weight buffers are not arguments: Plan prices both itself (decoder.BuildDemand.StateBytes, decoder.Model.PlanSlack, planslack.go). The
+// state is not in checkKVFits: DeltaNet's and Mamba-2's are allocated at upload, so its probe reads free memory after them.
 //
 // kvRound bounds what the device's rounding of the KV pools adds to Plan's linear KV figure (kvRoundingBound): the plan reserves
 // it beside the margin, so the context it picks fits the build's exact, charged figure (checkKVFits).
-func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, stateBytes int64, margin func(ctx int) int64, kvRound int64) (int, int64) {
-	return resolveCtxCapFitFree(m, request, modelCtx, slots, stateBytes, margin, kvRound, liveCtxFree)
+func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, margin func(ctx int) int64, kvRound int64) (int, int64) {
+	return resolveCtxCapFitFree(m, request, modelCtx, slots, margin, kvRound, liveCtxFree)
 }
 
 // liveCtxFree is the context plan's live free-VRAM reading, the device probe; it reports the reading to the test hooks, which
@@ -125,7 +124,7 @@ func liveCtxFree() (int64, bool) {
 
 // resolveCtxCapFitFree is resolveCtxCapFitSlack with the free-VRAM reading taken from readFree, which is called only when the
 // context is planned: the build passes the device probe, the memory plan (cudaBackend.planMemory) a supplied figure.
-func resolveCtxCapFitFree(m *decoder.Model, request, modelCtx, slots int, stateBytes int64, margin func(ctx int) int64, kvRound int64, readFree func() (int64, bool)) (int, int64) {
+func resolveCtxCapFitFree(m *decoder.Model, request, modelCtx, slots int, margin func(ctx int) int64, kvRound int64, readFree func() (int64, bool)) (int, int64) {
 	candidate, floor, plans := ctxPlanRange(m, request, modelCtx)
 	if !plans {
 		c := floor
@@ -149,7 +148,7 @@ func resolveCtxCapFitFree(m *decoder.Model, request, modelCtx, slots int, stateB
 	// chooses leaves it room; zero when nothing attaches. The drafter's device K/V is priced at candidate, the widest
 	// ctx this call asks of Plan: Plan only shrinks from the value it is given (fitplan.go, "never GROW past what was
 	// asked"), so that can over-estimate the real cost but never under-price it.
-	extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate) + stateBytes
+	extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate)
 	p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: candidate, ExtraBytes: extraBytes})
 	if p.Placement == decoder.PlacementDecline || p.Ctx < floor {
 		return floor, margin(floor) // Plan could not confidently improve on the floor
@@ -4382,18 +4381,6 @@ type dnetParams struct {
 	convDim    int
 	stateElems int
 	qScale     float32
-}
-
-// deltaNetStateBytes is the device memory the Gated-DeltaNet layers' conv window and recurrent state take, each buffer at the
-// driver's allocation quantum: what the build charges for them (recurrentStateCharged), priced by the context plan beside the
-// Mamba layers' (mambaStateBytes).
-func deltaNetStateBytes(dp *dnetParams, layers int) int64 {
-	if dp == nil || layers <= 0 {
-		return 0
-	}
-	win := int64(dp.winFloats()) * 4
-	state := int64(dp.stateElems) * 4
-	return int64(layers) * (win + allocRoundSlack(win) + state + allocRoundSlack(state))
 }
 
 // deltaNetGateSettings reads a DeltaNet layer's two settings from its operation: the write gate's scale (2 where NegEigval

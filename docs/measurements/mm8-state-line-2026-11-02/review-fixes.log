@@ -1,0 +1,12 @@
+# the new cases on #614 as reviewed: exit 1
+plan_state_test.go:145: KDA's state buffers: [384 512], want [128 128 128 512]
+--- FAIL: TestStateBuffers_kdaPerStream (0.00s)
+# after the KDA fix: exit 0
+
+granite: NGroups and NHeads swapped: exit 1 (want 1); ["plan_state_test.go:136: Granite's state buffers: [624 480 624 480], want [552 192 552 192]"]
+granite: DState read as HeadDim: exit 1 (want 1); ["plan_state_test.go:136: Granite's state buffers: [1152 512 1152 512], want [552 192 552 192]"]
+granite: branch reads every layer: exit 1 (want 1); ["plan_state_test.go:136: Granite's state buffers: [552 192 552 192 552 192], want [552 192 552 192]"]
+KDA: one buffer again: exit 1 (want 1); ["plan_state_test.go:145: KDA's state buffers: [384 512], want [128 128 128 512]"]
+cuda TestBuildDemand_matchesDecoderDefault: exit 0
+CUDA: decoder's copy stops rounding, the registered report does not: exit 1 (want 1); ["resident_cap_test.go:521: the registered cuda report differs from decoder's default on 1 of 6913 queries", "resident_cap_test.go:550: 36 configs, 6913 queries, 19 families' rounding compared"]
+CUDA: the registered report stops rounding, decoder's copy does not: exit 1 (want 1); ["resident_cap_test.go:521: the registered cuda report differs from decoder's default on 1 of 6913 queries"]

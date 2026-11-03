@@ -90,6 +90,7 @@ type Plan struct {
 	ExpertBytesUsed int64 // what Slots actually keeps resident (equals ExpertBytesFull when Slots==0/unpaged/dense)
 	KVBytes         int64 // at Ctx, as this backend allocates it (ResidentKVBytes)
 	HostCopyBytes   int64 // Metal only: the host copy of the resident weights unified memory also holds (ResidentHostCopyBytes; 0 when aliased from a .giw)
+	StateBytes      int64 // one KV slot's recurrent and conv state as this backend allocates it (BuildDemand.StateBytes); 0 for a model with none
 	AllocSlackBytes int64 // the backend's allocator rounding over the weight buffers (PlanSlack): CUDA's 2 MiB granularity
 	ExtraBytes      int64 // PlanRequest.ExtraBytes, carried through for NeedBytes()/reporting
 
@@ -99,11 +100,11 @@ type Plan struct {
 
 // NeedBytes is the total this Plan actually asks the device to hold — DenseBytes + whatever the
 // chosen Slots keeps of the experts + KV at the chosen Ctx + (Metal) the host copy + the caller's own
-// extra terms. Never ExpertBytesFull: that field exists for reporting what was capped, not what is
-// resident. Without ExtraBytes it equals Model.ResidentNeedBytes at the same Slots and Ctx — the
+// extra terms and the recurrent state. Never ExpertBytesFull: that field exists for reporting what was capped, not what is
+// resident. Without ExtraBytes and StateBytes it equals Model.ResidentNeedBytes at the same Slots and Ctx — the
 // number Metal's resident guard judges — which TestPlan_metalAgreesWithResidentNeedBytes pins.
 func (p Plan) NeedBytes() int64 {
-	return p.DenseBytes + p.AllocSlackBytes + p.ExpertBytesUsed + p.KVBytes + p.HostCopyBytes + p.ExtraBytes
+	return p.DenseBytes + p.StateBytes + p.AllocSlackBytes + p.ExpertBytesUsed + p.KVBytes + p.HostCopyBytes + p.ExtraBytes
 }
 
 // kvBytesPerPositionAllLayers is Plan's KV-cost rate: per layer (a per-layer-varying family like Gemma 4 is not approximated by one
@@ -202,7 +203,7 @@ func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack boo
 	if !slack {
 		l.FixedSlack = 0
 	}
-	p.DenseBytes, p.ExpertBytesFull, p.AllocSlackBytes = l.DenseBytes, l.ExpertBytesFull, l.FixedSlack
+	p.DenseBytes, p.ExpertBytesFull, p.AllocSlackBytes, p.StateBytes = l.DenseBytes, l.ExpertBytesFull, l.FixedSlack, l.StateBytes
 	d := mem.SolvePlacement(l, mem.PlanRequest{Ctx: req.Ctx, CtxPinned: req.CtxPinned, Slots: req.Slots, ExtraBytes: req.ExtraBytes},
 		mem.Machine{Free: map[mem.Tier]int64{l.Tier: freeBytes}}, mem.DefaultPolicy())
 	p.Placement, p.Ctx, p.Slots = Placement(d.Placement), d.Ctx, d.Slots
@@ -256,12 +257,12 @@ func (m *Model) planIneligible(backend string, req PlanRequest) string {
 }
 
 // deviceLoad is this model on backend as internal/mem's planner prices it: the dense weights less what the backend keeps on the
-// host, the routed experts, Metal's host copies, the backend's KV at a context (CUDA at the load's own KV precision, not a flag
+// host, one slot's recurrent state (BuildDemand.StateBytes), the routed experts, Metal's host copies, the backend's KV at a context (CUDA at the load's own KV precision, not a flag
 // the planner is handed), and the backend's context grid and ceiling: Metal's is MetalCtxCeiling for a pinned request and
 // MetalFitDefaultCtx for an unpinned one (MetalFitCtx), WebGPU's its fixed per-precision cap.
 func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceLoad {
 	l := mem.DeviceLoad{Backend: backend, Tier: planTier(backend), DenseBytes: m.ResidentDenseWeightBytesFor(backend), CtxStep: 1,
-		FixedSlack: m.planSlack(backend)}
+		FixedSlack: m.planSlack(backend), StateBytes: m.stateBytes(backend)}
 	if nExperts, topK, isMoE := m.moeGeometry(); isMoE {
 		l.ExpertBytesFull = m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes()
 		l.NExperts, l.TopK = nExperts, topK

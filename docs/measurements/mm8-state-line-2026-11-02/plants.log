@@ -1,0 +1,12 @@
+# plants on the state line; each restored after its run
+tryCtx leaves state out: exit 1 (want 1); ['placement_state_test.go:27: state 1262494378: held {Placement:0 Ctx:129856 Slots:0 ExpertBytesUsed:136404992 KVBytes:18642676339 HostCopyBytes:0 State']
+the linear search leaves state out: exit 1 (want 1); ['placement_state_test.go:27: state 2421506717: held {Placement:0 Ctx:4096 Slots:0 ExpertBytesUsed:0 KVBytes:1009979392 HostCopyBytes:0 StateBytes:0 Rea']
+every expert resident leaves state out: exit 1 (want 1); ['placement_state_test.go:27: state 3194022145: held {Placement:0 Ctx:4096 Slots:0 ExpertBytesUsed:6156208128 KVBytes:981135360 HostCopyBytes:0 StateByt']
+the expert cache leaves state out: exit 1 (want 1); ['placement_state_test.go:27: state 3317242623: held {Placement:1 Ctx:14016 Slots:71 ExpertBytesUsed:3734869871 KVBytes:1854681216 HostCopyBytes:1661059']
+NeedBytes leaves state out: exit 1 (want 1); ['plan_state_test.go:74: NeedBytes 906240, its lines sum to 923136', 'plan_state_test.go:74: NeedBytes 1121792, its lines sum to 1130752']
+DeltaNet window off by one: exit 1 (want 1); ["plan_state_test.go:71: Gated DeltaNet: the plan's state line is 18432 bytes, the forward holds 16896", "plan_state_test.go:71: Gated DeltaNet: the plan's state line is 10240 bytes, the forward holds 8960"]
+KDA drops a stream: exit 1 (want 1); ["plan_state_test.go:71: KDA: the plan's state line is 10752 bytes, the forward holds 13056"]
+ShortConv full kernel: exit 1 (want 1); ["plan_state_test.go:71: ShortConv: the plan's state line is 2304 bytes, the forward holds 1536"]
+Mamba SSM dropped: exit 1 (want 1); ["plan_state_test.go:71: Mamba-2: the plan's state line is 2304 bytes, the forward holds 10496", "plan_state_test.go:71: Mamba-2: the plan's state line is 3456 bytes, the forward holds 15744"]
+CUDA report does not round: exit 1 (want 1); ['plan_state_test.go:123: state on CUDA: 10485761, want 13631488']
+webgpu reports nothing: exit 1 (want 1); ['plan_state_test.go:102: qwen3next-tiny on webgpu: state line 0, the forward holds 8960', 'plan_state_test.go:102: nemotron-tiny on webgpu: state line 0, the forward holds 10496']

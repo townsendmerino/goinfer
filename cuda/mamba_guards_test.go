@@ -164,8 +164,8 @@ func TestNemotronResidentCUDA_pricing(t *testing.T) {
 	if got, w := m.ResidentKVBytes("cuda", ctx, r.kvF16, false), want+tabs+kvPoolNullBytes(r.layers); got != w {
 		t.Errorf("the decoder's ResidentKVBytes(cuda, %d) = %d, want %d", ctx, got, w)
 	}
-	if got := mambaStateBytes(r.mamba, nMamba); got != stateBytes {
-		t.Errorf("mambaStateBytes = %d, the %d Mamba layers' state buffers are %d bytes", got, nMamba, stateBytes)
+	if got := m.Plan("cuda", 1<<40, decoder.PlanRequest{Ctx: ctx}).StateBytes; got != stateBytes {
+		t.Errorf("the plan's state line is %d, the %d Mamba layers' state buffers are %d bytes", got, nMamba, stateBytes)
 	}
 	t.Logf("nemotron-tiny: %d attention layers of %d price %d KV bytes at %d positions; %d Mamba layers' state is %d bytes", attn, len(r.layers), want, ctx, nMamba, stateBytes)
 }
