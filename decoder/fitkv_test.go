@@ -178,3 +178,38 @@ func TestFitGuard_slidingWindowFlattensPastTheWindow(t *testing.T) {
 	t.Logf("ctx=%d (window=%d): flat(pre-M-28)=%d bytes, fixed(post-M-28)=%d bytes, ratio=%.2fx",
 		ctx, arch.SlidingWindow, flat, fixed, float64(flat)/float64(fixed))
 }
+
+// TestKVBytes_mlaHoldsOneLatentRow: the host fit's figure and Plan's rate read what an MLA cache holds after a forward, spare capacity included, at
+// every precision asked for, since the latent stays f32 whichever K/V precision the load names.
+func TestKVBytes_mlaHoldsOneLatentRow(t *testing.T) {
+	const ctx = 16
+	m, err := Load("../testdata/deepseek-tiny", Options{Backend: "cpu", DirectLoad: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	c := m.NewCache(ctx)
+	for i := range ctx {
+		if _, err := m.forward(i%m.Config().VocabSize, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var held int64
+	for _, l := range c.mlaLatent {
+		held += 4 * int64(cap(l))
+	}
+	if held == 0 {
+		t.Fatal("VOID: deepseek-tiny holds no latent after a forward")
+	}
+	for _, p := range []struct {
+		name    string
+		f16, i8 bool
+	}{{"f32", false, false}, {"f16", true, false}, {"i8", false, true}} {
+		if got := kvBytesForCtx(m.w.arch, ctx, p.f16, p.i8); got != held {
+			t.Errorf("%s: kvBytesForCtx %d, the cache holds %d", p.name, got, held)
+		}
+		if got := m.kvBytesPerPositionAllLayers(p.f16, p.i8) * ctx; got != held {
+			t.Errorf("%s: Plan's rate at %d positions is %d, the cache holds %d", p.name, ctx, got, held)
+		}
+	}
+}
