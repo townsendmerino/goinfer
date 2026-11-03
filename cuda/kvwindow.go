@@ -241,11 +241,9 @@ func (r *cudaResident) kvEnsure(p0, n int) error { return r.kvEnsureSlot(r.kvSlo
 
 // kvEnsureSlot is kvEnsure for slot s, whether or not it is the bound one (an MC3 step prepares every row's slot before its layer loops).
 func (r *cudaResident) kvEnsureSlot(s, p0, n int) error {
-	if r.kvReleased(s) {
-		if p0 > 0 {
-			return fmt.Errorf("cuda: KV slot %d's blocks were released to make room; a write at %d must start from position 0 (ReusableKV answers 0)", s, p0)
-		}
-		r.kvClearReleased(s)
+	released := r.kvReleased(s)
+	if released && p0 > 0 {
+		return fmt.Errorf("cuda: KV slot %d's blocks were released to make room; a write at %d must start from position 0 (ReusableKV answers 0)", s, p0)
 	}
 	if s < len(r.kvStopped) && r.kvStopped[s] {
 		if p0 > 0 {
@@ -267,7 +265,14 @@ func (r *cudaResident) kvEnsureSlot(s, p0, n int) error {
 	}
 	r.kvValid[s] = p0
 	if e := r.kvMapWrite(s, p0, n, base); e != nil {
+		if released { // still released, with any host copy: it holds none of the blocks mapped for this write
+			r.kvReleaseAll(s, kvGroupFull)
+			r.kvReleaseAll(s, kvGroupWin)
+		}
 		return e
+	}
+	if released {
+		r.kvClearReleased(s) // a sequence written from position 0: the host copy of the old one is stale
 	}
 	r.kvValid[s] = p0 + n
 	return nil

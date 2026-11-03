@@ -265,15 +265,17 @@ func (s *kvSnapStore) removeLocked(x *kvSnap) {
 	}
 }
 
-// roomLocked makes need bytes free by dropping the least recently used snapshots, and reports whether it could.
+// roomLocked makes need bytes free by dropping the least recently used snapshots, and reports whether it could. Bytes reserved outside the
+// list cannot be dropped, so when they alone leave no room it drops nothing.
 func (s *kvSnapStore) roomLocked(need int64) bool {
-	if need > s.budget {
+	var droppable int64
+	for _, x := range s.list {
+		droppable += x.h.Bytes()
+	}
+	if s.used-droppable+need > s.budget {
 		return false
 	}
 	for s.used+need > s.budget {
-		if len(s.list) == 0 {
-			return false
-		}
 		s.removeLocked(s.list[len(s.list)-1])
 	}
 	return true

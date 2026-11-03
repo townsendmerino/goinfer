@@ -1,0 +1,34 @@
+# 2026-11-02 23:30:28 PST: the third review round read red, before any fix, HEAD 7b38ed9f5 plus the tests
+ 23:30:28 up 3 days, 17:52,  4 users,  load average: 0.02, 0.04, 0.15
+    kv4_capacity_test.go:759: slot 1: reused 6144, shared 6144, promoted 0 blocks (0 rows); declined ""
+--- PASS: TestKV7_copyOntoDemotedWithItsOwnPrefix (2.75s)
+    kv4_capacity_test.go:794: slot 3's copy was dropped for a reservation that could not fit beside the taker's
+--- FAIL: TestKV7_noEvictionForWhatCannotFit (1.79s)
+    kv4_capacity_test.go:811: slot 1 answers 15360 for 15360 rows, holding 1024
+    kv4_capacity_test.go:817: the bound slot answers 15360 for 15360 rows, holding 1024
+--- FAIL: TestKV7_partialPromotionAnswersWhatItHolds (1.07s)
+    kv4_capacity_test.go:848: reserved true; the bound slot's copy kept: false
+--- FAIL: TestKV7_promotingASourceKeepsTheBoundSlotsCopy (1.82s)
+    kv4_capacity_test.go:865: the write did not fail: the test reads nothing
+--- FAIL: TestKV7_failedWriteFromZeroKeepsTheCopy (1.07s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	8.553s
+FAIL
+--- FAIL: TestKVSnapStore_noEvictionForWhatCannotFit (0.00s)
+    kvsnap_test.go:447: after the refusal: 0 snapshots held, 40 bytes used; want the one snapshot, 80
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.004s
+FAIL
+
+# 2026-11-02 23:34:45 PST: the failed write, on the code as pushed with the test corrected (it first asked less than a reclaim frees), and the source going back
+    kv4_capacity_test.go:883: the write failed: cuda: KV pool: slot 1 holds 288 blocks, its share is 256, and no block is free for it (4 slots, 1024 blocks): decoder: resident KV pool is full
+    kv4_capacity_test.go:886: after the failed write: released false, 288 blocks held, copy kept false, 0 host bytes charged (was 62914560)
+    kv4_capacity_test.go:883: the write failed: cuda: KV pool: slot 1 holds 288 blocks, its share is 256, and no block is free for it (4 slots, 1024 blocks): decoder: resident KV pool is full
+    kv4_capacity_test.go:886: after the failed write: released false, 288 blocks held, copy kept false, 0 host bytes charged (was 62914560)
+--- FAIL: TestKV7_failedWriteFromZeroKeepsTheCopy (3.63s)
+    --- FAIL: TestKV7_failedWriteFromZeroKeepsTheCopy/prefill (2.59s)
+    --- FAIL: TestKV7_failedWriteFromZeroKeepsTheCopy/upload (1.04s)
+--- PASS: TestKV7_promotedSourceGoesBackToHostMemory (0.80s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	4.503s
+FAIL

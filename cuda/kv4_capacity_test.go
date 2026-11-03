@@ -726,3 +726,203 @@ func TestKV7_snapshotTakesRoomFromACopy(t *testing.T) {
 		t.Errorf("after the third prompt: copy kept %v, %d snapshots held, budget declines %d (was %d), %d of %d bytes", r.kvDemoted[0] != nil, st.Held, st.Declined["budget"], before, st.Used, st.Budget)
 	}
 }
+
+// TestKV7_copyOntoDemotedWithItsOwnPrefix: as TestKV7_copyOntoDemoted, with a demoted slot short enough that its own prefix passes the in-place
+// cap, so the slot's own rows answer the request's score and the published hit on it is above zero. The copy still takes the whole run from the
+// source, and every row reports as shared.
+func TestKV7_copyOntoDemotedWithItsOwnPrefix(t *testing.T) {
+	gen := func(m *decoder.Model, ids []int) *decoder.Generation {
+		out, g := m.Generate(context.Background(), ids, 1, decoder.SamplingParams{LogitBias: map[int]float32{2: -1e9}})
+		for range out {
+		}
+		if err := g.Err(); err != nil {
+			t.Fatalf("generation: %v", err)
+		}
+		return g
+	}
+	m, r := kv7Load(t, 3, 1<<30)
+	_, _, _, _, _, _, vocab := m.Dims()
+	p, q := kv4Ids(2048, 1, vocab), kv4Ids(4096, 2, vocab)
+	lead := append(append([]int(nil), p...), q...)
+	long := append(append([]int(nil), lead...), kv4Ids(8000, 4, vocab)...)
+	gen(m, long)                                                         // slot 0: holds the longer run, and gives up too much to be taken in place
+	gen(m, append(append([]int(nil), p...), kv4Ids(1024, 3, vocab)...))  // slot 1: 3,072 tokens sharing 2,048
+	gen(m, append(append([]int(nil), long...), kv4Ids(64, 7, vocab)...)) // slot 0 again, so slot 1 is the least recently used
+	gen(m, kv4Ids(34500, 5, vocab))                                      // slot 2: releases slot 1 and no more
+	if r.kvDemoted[1] == nil || r.kvReleased(0) {
+		t.Fatalf("slot 1's copy %v, slot 0 released %v; want only slot 1 released", r.kvDemoted[1] != nil, r.kvReleased(0))
+	}
+	if got := r.ReusableKVSlot(1, len(p)); got != len(p) {
+		t.Fatalf("slot 1 answers %d for its %d shared rows: the test reads nothing", got, len(p))
+	}
+	g := gen(m, append(append([]int(nil), lead...), kv4Ids(1024, 6, vocab)...))
+	t.Logf("slot %d: reused %d, shared %d, promoted %d blocks (%d rows); declined %q", r.kvSlot, g.PrefillReused, g.PrefillShared, g.KVPromotedBlocks, g.KVPromotedRows, g.KVCopyDeclined)
+	if r.kvSlot != 1 {
+		t.Fatalf("the request bound slot %d: the test reads nothing", r.kvSlot)
+	}
+	if g.PrefillReused != len(lead) || g.PrefillShared != len(lead) || g.KVPromotedRows != 0 {
+		t.Errorf("reused %d, shared %d, %d rows from host memory; want %d reused and shared, so none own", g.PrefillReused, g.PrefillShared, g.KVPromotedRows, len(lead))
+	}
+}
+
+// TestKV7_noEvictionForWhatCannotFit: a copy that cannot fit beside the copy a promotion still holds drops nothing to try.
+func TestKV7_noEvictionForWhatCannotFit(t *testing.T) {
+	m0, r0 := kv7Load(t, 4, 1<<30)
+	kv7Release(t, m0, r0)
+	one := r0.kvDemoted[1].Bytes()
+	m, r := kv7Load(t, 4, 2*one+one/5) // holds two copies, not three
+	kv7Release(t, m, r)
+	if err := r.do(func() error {
+		if !r.kvEvictIdle(0) {
+			return fmt.Errorf("nothing to release")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if r.kvDemoted[1] == nil || r.kvDemoted[3] == nil {
+		t.Fatalf("copies: slot 1 %v, slot 3 %v; want both", r.kvDemoted[1] != nil, r.kvDemoted[3] != nil)
+	}
+	var ok bool
+	if err := r.do(func() error { ok = r.kvHostReserve(2*one, 2, 1); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("twice a copy fit beside the taker's copy under a budget of 2.2 copies")
+	}
+	if r.kvDemoted[3] == nil {
+		t.Error("slot 3's copy was dropped for a reservation that could not fit beside the taker's")
+	}
+}
+
+// TestKV7_partialPromotionAnswersWhatItHolds: a promotion of some of a copy's rows leaves the slot holding those. A request that then ended
+// before it wrote leaves the record longer than the rows, and the slot answers 0 past them, not rows no block holds.
+func TestKV7_partialPromotionAnswersWhatItHolds(t *testing.T) {
+	m, r := kv7Load(t, 4, 1<<30)
+	conv, _ := kv7Release(t, m, r)
+	const rows = 1024
+	if blocks, err := r.PromoteKV(1, rows); err != nil || blocks != rows/kvBlock {
+		t.Fatalf("promoting %d rows: %d blocks, %v", rows, blocks, err)
+	}
+	if got := r.ReusableKVSlot(1, rows); got != rows {
+		t.Errorf("slot 1 answers %d for the %d rows it holds", got, rows)
+	}
+	if got := r.ReusableKVSlot(1, conv); got != 0 {
+		t.Errorf("slot 1 answers %d for %d rows, holding %d", got, conv, rows)
+	}
+	if err := r.UseKVSlot(1); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.ReusableKV(conv); got != 0 {
+		t.Errorf("the bound slot answers %d for %d rows, holding %d", got, conv, rows)
+	}
+}
+
+// TestKV7_promotingASourceKeepsTheBoundSlotsCopy: room for a copy made while a source is promoted does not come from the bound slot's own
+// copy, which its request is about to use.
+func TestKV7_promotingASourceKeepsTheBoundSlotsCopy(t *testing.T) {
+	m0, r0 := kv7Load(t, 4, 1<<30)
+	kv7Release(t, m0, r0)
+	one := r0.kvDemoted[1].Bytes()
+	m, r := kv7Load(t, 4, 2*one+one/5) // holds two copies
+	kv7Release(t, m, r)
+	if err := r.UseKVSlot(1); err != nil { // slot 1, demoted, is bound; slot 3 is the next release, and slot 2 the one after
+		t.Fatal(err)
+	}
+	if err := r.do(func() error {
+		if !r.kvEvictIdle(1) {
+			return fmt.Errorf("nothing to release")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if r.kvDemoted[1] == nil || r.kvDemoted[3] == nil {
+		t.Fatalf("copies: slot 1 %v, slot 3 %v; want both", r.kvDemoted[1] != nil, r.kvDemoted[3] != nil)
+	}
+	var ok bool
+	if err := r.do(func() error { ok = r.kvHostReserve(one, 2, 3); return nil }); err != nil { // slot 3 promoting as a source, slot 2's copy on its way
+		t.Fatal(err)
+	}
+	if ok || r.kvDemoted[1] == nil {
+		t.Errorf("reserved %v; the bound slot's copy kept: %v", ok, r.kvDemoted[1] != nil)
+	}
+}
+
+// TestKV7_failedWriteFromZeroKeepsTheCopy: a new sequence on a demoted slot takes the copy's place only once its blocks are mapped. A write the
+// pool refuses leaves the slot released, unmapped, with its copy.
+func TestKV7_failedWriteFromZeroKeepsTheCopy(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		write func(r *cudaResident) error
+	}{
+		{"prefill", func(r *cudaResident) error {
+			return r.do(func() error { return r.kvEnsureSlot(1, 0, r.kvMaxBlocks()*kvBlock) }) // the whole table: more than a reclaim can free
+		}},
+		{"upload", func(r *cudaResident) error {
+			n := r.kvMaxBlocks() * kvBlock * r.layers[0].kvDim
+			if err := r.UseKVSlot(1); err != nil {
+				t.Fatal(err)
+			}
+			return r.UploadKV(0, 0, make([]float32, n), make([]float32, n))
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m, r := kv7Load(t, 4, 1<<30)
+			kv7Release(t, m, r)
+			r.SetKVSlotBusy(2, true)
+			r.SetKVSlotBusy(3, true)
+			t.Cleanup(func() { r.SetKVSlotBusy(2, false); r.SetKVSlotBusy(3, false) })
+			kv7FillPool(t, r, 0, r.kvHeld(0)*kvBlock)
+			st, _ := m.KVSnapshotStats()
+			used := st.Used
+			err := c.write(r)
+			if err == nil {
+				t.Fatal("the write did not fail: the test reads nothing")
+			}
+			t.Logf("the write failed: %v", err)
+			st, _ = m.KVSnapshotStats()
+			if !r.kvReleased(1) || r.kvHeld(1) != 0 || r.kvDemoted[1] == nil || st.Used != used {
+				t.Errorf("after the failed write: released %v, %d blocks held, copy kept %v, %d host bytes charged (was %d)",
+					r.kvReleased(1), r.kvHeld(1), r.kvDemoted[1] != nil, st.Used, used)
+			}
+		})
+	}
+}
+
+// TestKV7_promotedSourceGoesBackToHostMemory: a slot promoted to be copied from, past its share and idle again, is released with a new copy
+// when a slot within its share needs its blocks. A reclaim, which would lose its rows past the share, is only for a slot no release can take.
+func TestKV7_promotedSourceGoesBackToHostMemory(t *testing.T) {
+	m, r := kv7Load(t, 4, 1<<30)
+	_, _, _, _, _, _, vocab := m.Dims()
+	share := r.kvShareBlocks * kvBlock
+	conv := share + share/4
+	if _, err := kv4Prefill(m, r, 1, kv4Ids(conv, 1, vocab), 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []int{0, 2} {
+		r.SetKVSlotBusy(s, true)
+	}
+	t.Cleanup(func() { r.SetKVSlotBusy(0, false); r.SetKVSlotBusy(2, false) })
+	if err := r.UseKVSlot(3); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.do(func() error {
+		if !r.kvEvictIdle(3) {
+			return fmt.Errorf("nothing to release")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if blocks, err := r.PromoteKV(1, 0); err != nil || blocks != conv/kvBlock {
+		t.Fatalf("promoting the source: %d blocks, %v", blocks, err)
+	}
+	kv7FillPool(t, r, 0, 0)
+	if err := r.do(func() error { return r.kvEnsureSlot(3, 0, kvBlock) }); err != nil {
+		t.Fatal(err)
+	}
+	if r.kvStopped[1] || !r.kvReleased(1) || r.kvDemoted[1] == nil || r.kvDemoted[1].rows != conv {
+		t.Errorf("the source: stopped %v, released %v, copy %v", r.kvStopped[1], r.kvReleased(1), r.kvDemoted[1] != nil)
+	}
+}

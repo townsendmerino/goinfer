@@ -2120,8 +2120,9 @@ type Generation struct {
 	// restore's wall time. 0 when none did.
 	KVSnapRestored int
 	KVSnapRestore  time.Duration
-	// KVPromotedBlocks is how many blocks of the slot's own rows came back from host memory after the pool released them (ResidentKVDemoter),
-	// and KVPromotedRows how many of the PrefillReused rows they serve. 0 when none did.
+	// KVPromotedBlocks is how many blocks came back from host memory after the pool released them (ResidentKVDemoter): the bound slot's own, or
+	// those of the slot a copy read from. KVPromotedRows is how many of the PrefillReused rows the bound slot's serve; rows that reached it
+	// through a copy count in PrefillShared. 0 when none did.
 	KVPromotedBlocks, KVPromotedRows int
 	// CheckpointRestored is the position a recurrent checkpoint was restored at for this prefill (0: none), CheckpointRestore its
 	// copy's time, CheckpointDeclined why a checkpoint hit prefilled cold instead; CheckpointSaved reports whether the state at the

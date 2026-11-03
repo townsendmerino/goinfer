@@ -58,9 +58,14 @@ func (r *cudaResident) kvDemote(s, taker int) {
 	fmt.Fprintf(os.Stderr, "cuda: KV pool: kept slot %d's %d rows in host memory (%d MiB)\n", s, end, bytes>>20)
 }
 
-// kvHostReserve charges bytes for slot s's copy: the longest idle copies go first, never taker's, and then held snapshots. Executor thread only.
+// kvHostReserve charges bytes for slot s's copy: the longest idle copies go first, never the bound slot's or taker's, which a request is about
+// to use, and then held snapshots. When those two copies alone leave no room it drops nothing. Executor thread only.
 func (r *cudaResident) kvHostReserve(bytes int64, s, taker int) bool {
-	if bytes > r.kvHost.Limit() {
+	kept := r.kvDemotedBytes(taker)
+	if r.kvSlot != taker {
+		kept += r.kvDemotedBytes(r.kvSlot)
+	}
+	if bytes+kept > r.kvHost.Limit() {
 		return false
 	}
 	for !r.kvHost.Reserve(bytes, false) {
@@ -74,11 +79,20 @@ func (r *cudaResident) kvHostReserve(bytes int64, s, taker int) bool {
 	return true
 }
 
-// kvOldestDemoted is the slot, other than a and b, whose demoted copy has been idle longest; -1 when there is none. Executor thread only.
+// kvDemotedBytes is slot s's demoted copy's bytes, 0 when it holds none. Executor thread only.
+func (r *cudaResident) kvDemotedBytes(s int) int64 {
+	if s < 0 || s >= len(r.kvDemoted) || r.kvDemoted[s] == nil {
+		return 0
+	}
+	return r.kvDemoted[s].Bytes()
+}
+
+// kvOldestDemoted is the slot, other than a, b and the bound one, whose demoted copy has been idle longest; -1 when there is none. Executor
+// thread only.
 func (r *cudaResident) kvOldestDemoted(a, b int) int {
 	best := -1
 	for s, d := range r.kvDemoted {
-		if d != nil && s != a && s != b && (best < 0 || r.kvSlotUse[s] < r.kvSlotUse[best]) {
+		if d != nil && s != a && s != b && s != r.kvSlot && (best < 0 || r.kvSlotUse[s] < r.kvSlotUse[best]) {
 			best = s
 		}
 	}
@@ -118,11 +132,15 @@ func (r *cudaResident) kvClearReleased(s int) {
 	r.kvDropDemoted(s)
 }
 
-// kvReleasedLost reports whether slot s's first prefix rows are gone: its blocks were released with no demoted copy that holds them.
-// Executor thread only.
+// kvReleasedLost reports whether slot s's first prefix rows are gone: its blocks were released with no demoted copy that holds them, or a
+// promotion of fewer rows, or a request that ended before writing them, left no block at the end of the prefix. Executor thread only.
 func (r *cudaResident) kvReleasedLost(s, prefix int) bool {
 	if !r.kvReleased(s) {
-		return false
+		if r.kvWin || prefix <= 0 {
+			return false
+		}
+		ids, b := r.kvTabs[s].ids[kvGroupFull], kvBlocksFor(prefix)-1
+		return b >= len(ids) || ids[b] == 0
 	}
 	return s >= len(r.kvDemoted) || r.kvDemoted[s] == nil || prefix > r.kvDemoted[s].rows
 }

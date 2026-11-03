@@ -833,8 +833,8 @@ type usage struct {
 
 // prefillReuseSources splits prefill_reused_tokens by source. own_tokens were already in the KV record the request ran on (its own
 // continuation, or a previous conversation's matching prefix left in that slot), shared_tokens came from another slot's KV (a copy or a
-// shared block), host_tokens a host snapshot restored onto the device, disk_tokens the disk tier. promoted_blocks counts blocks of the slot's own rows that came back from host memory after the pool released them, and their rows
-// count in host_tokens with a host snapshot's. The disk tier is KV7-rest's, so disk_tokens is 0 until it lands.
+// shared block), host_tokens a host snapshot restored onto the device, disk_tokens the disk tier. promoted_blocks counts blocks that came back from host memory, the slot's own or a copy's source; the
+// slot's own rows count in host_tokens with a host snapshot's, and rows that came through a copy in shared_tokens. The disk tier is KV7-rest's, so disk_tokens is 0 until it lands.
 type prefillReuseSources struct {
 	OwnTokens      int `json:"own_tokens"`
 	SharedTokens   int `json:"shared_tokens"`

@@ -2618,9 +2618,7 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 	}
 	return r.do(func() error {
 		lo, k, v := base, keys, vals
-		if base == 0 && r.kvReleased(r.kvSlot) {
-			r.kvClearReleased(r.kvSlot) // a sequence written from position 0
-		}
+		released := base == 0 && r.kvReleased(r.kvSlot)
 		if r.layers[layer].kvWin {
 			// a windowed layer keeps only the last window-1 positions (kvwindow.go)
 			k, v = r.uploadKVWindowed(layer, base, keys, vals)
@@ -2629,10 +2627,17 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 		hi := base + len(keys)/kvDim
 		s, g := r.kvSlot, r.kvGroupOf(layer)
 		if e := r.kvMap(s, g, lo, hi); e != nil {
+			if released {
+				r.kvReleaseAll(s, kvGroupFull)
+				r.kvReleaseAll(s, kvGroupWin)
+			}
 			return e
 		}
 		if e := r.kvFlushTabs(s); e != nil {
 			return e
+		}
+		if released {
+			r.kvClearReleased(s) // a sequence written from position 0
 		}
 		r.kvValid[s] = hi
 		elem := r.kvElem(layer)
