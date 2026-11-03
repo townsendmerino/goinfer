@@ -1,0 +1,16 @@
+# the night of 2026-11-02: origin/main 9278339, red on four tests in cuda/kernels (~/goinfer-logs/night/runs/2026-11-02/cuda-device-suite.log)
+
+# the four alone on main 02d743aa8, exclusive lock, twice, 2026-11-03 07:0x PST: all pass
+#   TestAllocGranularity: 5 MiB -> 6.00, 6 MiB -> 6.00, 9 MiB -> 10.00 MiB/alloc, as the 2 MiB quantum predicts
+#   TestSmallAllocPool: 512 allocs of 371712 B -> 421888 B/alloc amortised
+#   (the night read 6.50, 5.75, 9.38 MiB/alloc and 303104 B/alloc)
+
+# the same four with package cuda's TestKV4_ and TestKV2_copy tests looping on the card beside them, 6 runs, main 02d743aa8, 07:08:42 PST
+#   TestAllocGranularity: 5 of 6 failed; TestMoERouteFirstLaunchReservation: 4 of 6 failed; TestQuantVecBatched_scaleIsExactMaxabs: 0 of 6; TestSmallAllocPool: 0 of 6
+
+# TestQuantVecBatched_scaleIsExactMaxabs under the same load, 3 x 300 reps, main 02d743aa8, 07:10:08 PST: 123 of 900 failed
+#   67, 40 and 16 of 300; row 5 read 0.139308 every time, the night's own wrong value; rows 6 and 7 read 0
+# the whole cuda/kernels package alone, as -p 1 runs it: PASS, 65 tests
+
+# after the fix, under the same load, 3 x 300 reps, 07:13:38 PST: 0 of 900 failed
+# the whole package alone: PASS, 65 tests
