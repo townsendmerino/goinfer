@@ -176,3 +176,37 @@ FAIL
 --- PASS: TestKV7_uploadPass (1.80s)
 --- PASS: TestKV7_uploadPassLayers (6.04s)
 ok  	github.com/townsendmerino/goinfer/cuda	178.912s
+
+# gate identity -backend cuda 836872b45 3d8ffb5aa, 2026-11-03 09:50:14 PST
+# push checks at 3d8ffb5aa, origin/main 836872b45
+  FAIL test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (0.0s)
+  FAIL test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (0.0s)
+  FAIL test internal/fitcmd -run ^(TestDefaultCtx_agreesWithTheCudaPlanne (0.0s)
+  FAIL test internal/hwcensus -run ^(TestHardwareCensus)$ (0.0s)
+  FAIL test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (0.0s)
+  FAIL test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (0.0s)
+  FAIL test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.0s)
+  FAIL test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.0s)
+  FAIL test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.0s)
+  FAIL test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.0s)
+  FAIL build cuda (0.0s)
+  FAIL vet cuda (1 pkg) (0.0s)
+  FAIL test cuda -run ^(TestKV4_oneConversationUsesThePool|Tes (0.0s)
+VERDICT: FAIL — touched: 13 of 14 checks failed
+touched.py exit 1
+OK
+test_touched exit 0
+c.go:5:16: field deadField is unused (U1000)
+err: exit status 1: stderr: go: cannot load module sdktest listed in go.work file: open sdktest/go.mod: no such file or directory
+
+staticcheck cuda exit 1
+citation lint exit 0
+# fail=1
+
+# the checks above failed on this worktree's gitignored go.work, which still named ./sdktest: main moved it to apps/sdktest (e84328ccd). Corrected and re-run at 3d8ffb5aa, 2026-11-03 09:50:51 PST
+touched.py exit 0
+VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
+test_touched exit 0
+c.go:5:16: field deadField is unused (U1000)
+staticcheck cuda exit 0
+citation lint exit 0
