@@ -17,4 +17,4 @@ the plan's dense figure loses DeltaNet's six small weights [cpu]: exit 1; 54 of 
 the plan's dense figure loses DeltaNet's six small weights [webgpu]: exit 0; 0 of 238 rows red on dense
 a map of scalar arrays nested in a DeltaNet layer's state [cpu]: exit 1; 54 of 382 rows red on state
 a new KVCache scalar field [cpu]: exit 1; 382 of 382 rows red on its line
-every load with KVQuant f16 refused [cpu]: exit 0; 0 of 382 rows red on kv
+every load with KVQuant f16 refused, at decoder.Load [cpu]: exit 1; 26 named rows did not build
