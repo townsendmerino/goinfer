@@ -1177,11 +1177,16 @@ pools. The tables are one more binding on the steps the program already walks (`
 - `attention_fa_blk`'s 32 keys straddle block edges, as `b0` is unaligned. It translates per key first, and it is the speed risk. Its
   text is pinned by `TestAttnFABlkIsTheGradedKernel`, so the pin moves in that slice.
 - int8 prefill: `kv_dequant_i8_f16` reads through the table and still writes its contiguous scratch, and the prefill attention kernels
-  read that scratch through an identity table.
+  read that scratch through an identity table, built per pass with the rest of that scratch and priced with it (`prefillScratchBytes`).
 
 **How the other layer kinds fit.**
 - **Sliding-window layers:** Metal has no shifted view today, and they hold every position. They stay in the full group, bit-identical,
   until KV5-7 gives them a window group. Only then do released entries point at block 0, for the reads below a window's start (§5.3).
+  **A release waits for in-flight work.** Tables live in shared memory and encoded-ahead command buffers read them when they run, so
+  repointing an entry or recycling its block under a buffer already encoded could make it read block 0 or another sequence's rows. A
+  block behind the window goes on a retired list, tagged with the last command buffer encoded when it left, and its entry is repointed
+  and its block freed only once that buffer has completed. This defers the free and does not drain: it does not stop the executor every
+  64 tokens, and it does not rely on the window's slack to keep readers away. A device chain's queued forwards count as encoded.
 - **Recurrent layers:** no group. Their state stays per slot and `metalSlotBytes` keeps charging it, until KV8. A hybrid's attention
   layers go in the full group. `CopyKV` declines recurrent and MLA models as it does today, so they gain capacity and no sharing.
 - **KV-shared layers** read their source's pool through its table, and store nothing.
@@ -1192,33 +1197,34 @@ command buffers read a table when they run, so the executor maps a new block bef
 chain maps one block ahead (§5.13). A copy on write stops the executor, as `useKVSlot` does.
 
 **Capacity (KV4a-3's rule; D-KV4-1 (a) carried over).** The pool takes the bytes `main` gives KV at the same flags, and blocks are taken on
-demand. Each slot keeps a guaranteed share of today's per-slot context. A slot's cap is `min(model window, -ctx, the pool's tokens)`.
+demand. Each slot keeps a guaranteed share of today's per-slot context. A slot's cap is `min(model window, an explicit -ctx, the pool's
+tokens)`: only a `-ctx` the operator gave caps it, and the fit's per-slot figure sizes the pool and the share, not the cap.
 Under pressure, idle slots release least recently used first, and a borrower that finds no block stops with `finish_reason: length`.
 Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner and `serve check`'s row work as on CUDA.
 
 **Slices, each its own PR, red first, each priced in the same PR.**
 | Slice | What | Its test |
 |---|---|---|
-| KV5-1 | Tables, priced. Decode's stores and readers and their `mc3_*` rows through them, with in-order tables, so the layout is today's | Scrambled tables on a decode-only run (prefill off) |
+| KV5-1 | The pool's layout, priced: block 0, 64-row blocks, tables. Decode's stores and readers and their `mc3_*` rows through the tables, with in-order tables, so a kernel not yet converted still reads a slot's rows as consecutive through its view | Scrambled tables on decode and the batched step, past a block edge and under `attnFADepthFloor` (no prefill) |
 | KV5-2 | `attention_fa`, `_blk`, `_blk64` and their rows. **First speed reading, for the kill rule** | G1a, as far as it reaches; G2's decode cells |
 | KV5-3 | Prefill's stores and readers, MLA, `UploadKV`, `kvRows`, the test hooks | G1a on prefill |
-| KV5-4 | Block 0 and rounding to 64 rows, so nothing can still read the old layout | G1a whole, its plants, G1b |
+| KV5-4 | Scrambled tables everywhere: the slot views go, the K and V buffers bind as the pool, and a slot is only its table | G1a whole, its plants, G1b |
 | KV5-5 | Sharing by reference | G3b, G1a's second slot |
 | KV5-6 | Capacity, the pool banner, `serve check` | G3a, G3c, G3d; G2 and G4 whole |
 | KV5-7 | The window group, with `kvWindowNextBase`'s retention. Its `ReusableKV` answer changes, so it has its own identity reading | G1c's Mac form |
 | KV5-8 | I7, below. **To the coordinator before merge** | The memory table |
 
 **Gates: KV4's (`docs/measurements/kv4-cuda-2026-10-21.md` §2), with Mac numbers.** A bar moves only with Francis's word, as an amendment dated beside it.
-- **G1a, tier 0, hard.** Free blocks handed out reversed and interleaved across slots, against in-order tables, on every Metal tiny fixture that goes resident: a prompt, 64 decoded tokens, a second turn, a 4-row verify, 2 slots bound in turn, and a batched step of 3 sequences. **Every logit bit-identical.** Plants, each must go red: the lookup off by a block in `attention`, `attention_fa_blk` and `attention_prefill_fused`.
+- **G1a, tier 0, hard.** Free blocks handed out reversed and interleaved across slots, against in-order tables, on every Metal tiny fixture that goes resident: a prompt of at least 256 tokens, so the prefill crosses block edges and takes its multi-row kernels, 64 decoded tokens, a second turn, a 4-row verify, 2 slots bound in turn, and a batched step of 3 sequences. A depth case past `attnFADepthFloor` on the fused attention's fixtures reaches `attention_fa`, `_blk` and `_blk64`. **Every logit bit-identical,** and each case asserts by the kernel's launch that it ran what it claims. Plants, each must go red: the lookup off by a block in each of `attention`, `attention_fa`, `attention_fa_blk`, `attention_fa_blk64`, `attention_prefill_fused`, `attention_prefill_steel`, `kv_dequant_i8_f16`, and in each store.
 - **G1b, identity, hard.** `gate identity -backend metal <merge base> <build>` at each slice: every family IDENTICAL, or NOT RUN for a reason that also holds on `main`.
 - **G2, speed.** `goinfer_old` from the merge base against this build, A B B A, exclusive lock, on AC power; a fit check first, with any refused cell named. Decode: `bench_peer.py`, `BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=metal BENCH_DEPTHS=128,2048,3900,8000 BENCH_MODELS=1.5B,7B`, and `gemma3-1b` at 128, 2,048 and 3,900.
   - **Decode, new/old median per cell: PASS at 0.98 or more, AMBIGUOUS from 0.97 to 0.98, FAIL under 0.97.**
   - **Prefill TTFT at K = 512 and 3,900, old/new, 1.5B and 7B: PASS at 0.97 or more, AMBIGUOUS from 0.96 to 0.97, FAIL under 0.96.**
   - **MC3 at 4 clients, 1.5B, 6 turns of 128 greedy tokens, cells old new new old old new: decode's bands, median of 3 pairs, and every turn's `content_sha` equal.** KV4 read 0.973 and shipped on its capacity arm by Francis's D-KV4-3 (b). That was his call on a reading, and it does not pass this one: AMBIGUOUS goes to him.
   - **Kill:** decode at depth 2,048 or more under 0.98 on the KV5-2 build gets two tuning rounds within a working day, the first being one base per 32-key block with the block edge found once. Still under, KV5 parks with its measurement, and slots and KV2's copies stay.
-- **G3, capacity.** G3a: one sequence reaches at least 90% of the pool's tokens and stops with `finish_reason: length`. G3b: four conversations sharing a 16,384-token preamble hold it once, read from the pool's own counter, with each reply byte-identical to that conversation run alone. G3d: pressure in D5's order, with its plant. **G3c: at serve's defaults on this 16 GB Mac, on the 1.5B and the 7B, one conversation's cap is at least twice `main`'s planned per-slot context, from both banners in one session, and a request of that length completes on Metal with no CPU fallback and no 413.**
-- **G4, never-swap, every timed cell.** The harness's process-group RSS and swap-ins, since macOS has no per-process `VmSwap`: **peak RSS within 64 MB of `main`'s, cell by cell, and swap-ins no more than `main`'s.**
-- **The memory gate, every slice.** `TestMemGate_metal` stays green on every build with **no new row in `metalMemGaps`**: the `kv` line stays exact to the plan, tables and block 0 included, on a scrambled build too. Sharing frees blocks, not bytes, so G3b reads the pool's counter, not the ledger. Each slice that moves `ResidentKVBytes` names the Linux census it needs, with its expected diff measured here first.
+- **G3, capacity.** G3a: one sequence reaches at least 90% of the pool's tokens and stops with `finish_reason: length`. G3b: four conversations sharing a 16,384-token preamble hold it once, read from the pool's own counter, with each reply byte-identical to that conversation run alone. G3d: pressure in D5's order, with its plant. **G3c: at serve's defaults on this 16 GB Mac, on the 1.5B and the 7B, one conversation's cap is at least twice `main`'s planned per-slot context, from both banners in one session, and a request of that length completes on Metal with no CPU fallback and no 413.** I7's night refused a 20,954-token prompt with a 413 before I8 cut the prefill's scratch to a block, so that refusal is not assumed gone: a 413 here fails G3c at KV5-6 and is that slice's to fix, whatever KV5-8 then decides.
+- **G4, never-swap, every timed cell, absolute.** macOS has no per-process swap counter, so this reads the system's: `vm_stat`'s swapins and swapouts before and after each cell, on both arms. **Any swap-in or swap-out during a timed cell makes that cell VOID,** re-run in its order and listed, never averaged. Three voids in a row stops the run and reports it, since that box state answers nothing. The harness's process-group RSS is held too: **peak within 64 MB of `main`'s, cell by cell.** Compressed memory is recorded as context. The harness reads swap-ins alone today, so reading swap-outs is added before the first graded cell.
+- **The memory gate, every slice.** `TestMemGate_metal` stays green on every build with **no new row in `metalMemGaps`**: the `kv` line stays exact to the plan, tables and block 0 included, on a scrambled build too. Sharing frees blocks, not bytes, so G3b reads the pool's counter, not the ledger. Each slice that moves `ResidentKVBytes` names the Linux census it needs, with its expected diff measured here first: KV5-1 (the layout) and KV5-7 (the window group's second table and block counts) do, and any other is named when it is read.
 
 **I7 (KV5-8).** With a pool, `MetalFitDefaultCtx` no longer has to be per slot: two default slots of 16,384 are already 32,768 tokens for one conversation. So the question for that PR is whether the candidate moves at all, and it brings a table for the 1.5B and the 7B at 32,768 on 16 GB: KV bytes, what is left for the prefill of a 20,954-token request (I7's night refused one, 413), and speed at depth 128. I7's own gates, G-I7-speed's rule, apply. It changes a default, so it goes to the coordinator before merge.
 
