@@ -1,5 +1,16 @@
---- FAIL: TestHostFitKV_sharedLayersOwnNone (0.00s)
-    audit_items_test.go:48: the host fit prices 65536 bytes of KV at 8 positions, the plan 32768
+== NewCache without the widths or the shared skip
+--- FAIL: TestNewCache_reservesEachLayersWidth (0.00s)
+    audit_items_test.go:105: f32: layer 1 reserves 2048 and 2048 floats, want 32768
+    audit_items_test.go:111: f32: a forward grew layer 1 to 2048 floats, past its 32768
+    audit_items_test.go:128: a shared layer reserves 2048 and 2048 floats
 FAIL
-FAIL	github.com/townsendmerino/goinfer/decoder	0.008s
+FAIL	github.com/townsendmerino/goinfer/decoder	0.012s
+FAIL
+
+== kvBytesForCtx counting shared layers
+--- FAIL: TestHostFitKV_sharedLayersOwnNone (0.00s)
+    audit_items_test.go:51: the host fit prices 24576 bytes of KV at 3 positions, the plan 12288
+    audit_items_test.go:84: the last two layers shared: the fit prices 26112, want 13056
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.010s
 FAIL

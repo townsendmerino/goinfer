@@ -1,0 +1,17 @@
+--- FAIL: TestMemGate_cpu (4.63s)
+    cpu_test.go:244: testdata/gemma4-moe-kv-tiny int4: line "kv": generated: leased 1081344 bytes against a plan of 278528: 802816 over, after 0 forgiven by "none: the walk leases each array's own bytes"
+    cpu_test.go:244: testdata/gemma4-moe-kv-tiny int4/g32: line "kv": generated: leased 1081344 bytes against a plan of 278528: 802816 over, after 0 forgiven by "none: the walk leases each array's own bytes"
+    cpu_test.go:244: testdata/gemma4-moe-kv-tiny int8int8: line "kv": generated: leased 1081344 bytes against a plan of 278528: 802816 over, after 0 forgiven by "none: the walk leases each array's own bytes"
+    cpu_test.go:244: testdata/gemma4-moe-kv-tiny int8int8/g32: line "kv": generated: leased 1081344 bytes against a plan of 278528: 802816 over, after 0 forgiven by "none: the walk leases each array's own bytes"
+    cpu_test.go:244: testdata/gemma4-moe-kv-tiny f32: line "kv": generated: leased 1081344 bytes against a plan of 278528: 802816 over, after 0 forgiven by "none: the walk leases each array's own bytes"
+    cpu_test.go:244: testdata/gemma4-moe-kv-tiny f32/g32: line "kv": generated: leased 1081344 bytes against a plan of 278528: 802816 over, after 0 forgiven by "none: the walk leases each array's own bytes"
+    cpu_test.go:244: testdata/gemma4-moe-kv-tiny32 int4: line "kv": generated: leased 1081344 bytes against a plan of 278528: 802816 over, after 0 forgiven by "none: the walk leases each array's own bytes"
+    cpu_test.go:244: testdata/gemma4-moe-kv-tiny32 int4/g32: line "kv": generated: leased 1081344 bytes against a plan of 278528: 802816 over, after 0 forgiven by "none: the walk leases each array's own bytes"
+    cpu_test.go:244: testdata/gemma4-moe-kv-tiny32 int8int8: line "kv": generated: leased 1081344 bytes against a plan of 278528: 802816 over, after 0 forgiven by "none: the walk leases each array's own bytes"
+    cpu_test.go:244: testdata/gemma4-moe-kv-tiny32 int8int8/g32: line "kv": generated: leased 1081344 bytes against a plan of 278528: 802816 over, after 0 forgiven by "none: the walk leases each array's own bytes"
+    cpu_test.go:244: testdata/gemma4-moe-kv-tiny32 f32: line "kv": generated: leased 1081344 bytes against a plan of 278528: 802816 over, after 0 forgiven by "none: the walk leases each array's own bytes"
+    cpu_test.go:244: testdata/gemma4-moe-kv-tiny32 f32/g32: line "kv": generated: leased 1081344 bytes against a plan of 278528: 802816 over, after 0 forgiven by "none: the walk leases each array's own bytes"
+    cpu_test.go:254: 382 rows held, 178 option cells refused at load
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/memgate	4.634s
+FAIL

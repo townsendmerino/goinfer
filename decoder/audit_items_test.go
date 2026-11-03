@@ -1,6 +1,9 @@
 package decoder
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -39,13 +42,90 @@ func TestResidentKV_sharedLayersOwnNone(t *testing.T) {
 	}
 }
 
-// TestHostFitKV_sharedLayersOwnNone: an E-model's KV at the host fit is the plan's figure, since a shared layer holds no cache of its own. It reads the
-// arch directly: the fixture plants the sharing on the loaded architecture, and estimateKVBytes resolves a new one from the config.
+// TestHostFitKV_sharedLayersOwnNone: an E-model's KV at the host fit is the plan's figure on the planted fixture, which loads; and, through what the fit
+// guard calls, a config that names shared layers prices only the layers that own a cache.
 func TestHostFitKV_sharedLayersOwnNone(t *testing.T) {
 	m := loadSharedKVFixture(t)
-	const ctx = 8
+	const ctx = 3 // under the fixture's window, so a sliding layer holds ctx rows and no mirror
 	if got, want := kvBytesForCtx(m.w.arch, ctx, false, false), m.ResidentKVBytes("cpu", ctx, false, false); got != want {
 		t.Errorf("the host fit prices %d bytes of KV at %d positions, the plan %d", got, ctx, want)
+	}
+	raw, err := os.ReadFile("../testdata/gemma4-moe-kv-tiny/config.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	doc["num_hidden_layers"] = 4
+	doc["layer_types"] = []string{"sliding_attention", "full_attention", "sliding_attention", "full_attention"}
+	estimate := func(shared int) int64 {
+		doc["num_kv_shared_layers"] = shared
+		out, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.json"), out, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := censusConfig(dir, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return estimateKVBytes(cfg, ctx, false, false)
+	}
+	const sliding, global = 2 * 16, 1 * 512 // the config's KV heads times head_dim on each kind of layer
+	if got, want := estimate(0), int64(2*4*ctx*2*(sliding+global)); got != want {
+		t.Errorf("no layer shared: the fit prices %d, want %d", got, want)
+	}
+	if got, want := estimate(2), int64(2*4*ctx*(sliding+global)); got != want {
+		t.Errorf("the last two layers shared: the fit prices %d, want %d", got, want)
+	}
+}
+
+// TestNewCache_reservesEachLayersWidth: a cache reserves each append-forever layer at its own K/V width, at f32 and at f16 and int8, so a wider layer
+// holds its context with no growth, and a layer that shares another's cache reserves nothing.
+func TestNewCache_reservesEachLayersWidth(t *testing.T) {
+	const ctx = 64
+	m, err := Load("../testdata/gemma4-moe-kv-tiny", Options{Backend: "cpu", DirectLoad: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a := m.w.arch
+	const wide = 1 // the fixture's full-attention layer, wider than the model's kvDim
+	if a.ringLayerAt(wide) || a.kvDimAt(wide) == a.NumKVHeads*a.HeadDim {
+		t.Fatalf("VOID: layer %d is a ring, or no wider than the model's kvDim", wide)
+	}
+	c := m.NewCache(ctx)
+	want := ctx * a.kvDimAt(wide)
+	if cap(c.keys[wide]) != want || cap(c.vals[wide]) != want {
+		t.Errorf("f32: layer %d reserves %d and %d floats, want %d", wide, cap(c.keys[wide]), cap(c.vals[wide]), want)
+	}
+	if _, err := m.forward(1, c); err != nil {
+		t.Fatal(err)
+	}
+	if cap(c.keys[wide]) != want {
+		t.Errorf("f32: a forward grew layer %d to %d floats, past its %d", wide, cap(c.keys[wide]), want)
+	}
+	for _, q := range []kvQuant{kvqF16, kvI8} {
+		c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, 0, nil)
+		c.setQuantWidths(q, ctx, a.kvDimAt)
+		got := 0
+		if q == kvqF16 {
+			got = cap(c.keysH[wide])
+		} else {
+			got = cap(c.keysQ[wide])
+		}
+		if got != want {
+			t.Errorf("quant %v: layer %d reserves %d, want %d", q, wide, got, want)
+		}
+	}
+	shared := loadSharedKVFixture(t)
+	if c := shared.NewCache(ctx); cap(c.keys[1]) != 0 || cap(c.vals[1]) != 0 {
+		t.Errorf("a shared layer reserves %d and %d floats", cap(c.keys[1]), cap(c.vals[1]))
 	}
 }
 
