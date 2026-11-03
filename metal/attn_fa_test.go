@@ -154,7 +154,7 @@ func runAttnFACase(t *testing.T, d *Device, pFA, pCombine Pipeline, nH, nKV, hd,
 
 	cq := d.NewCommandQueue()
 	enc := cq.Begin()
-	enc.DispatchTG(pFA, nKV*nSplit*128, 128, shmBytes, qB, kc, vc, partial, uNKV, uG, uNKeys, uScale, uWin, uNSplit)
+	enc.DispatchTG(pFA, nKV*nSplit*128, 128, shmBytes, qB, kc, vc, partial, uNKV, uG, uNKeys, uScale, uWin, uNSplit, kvIdentityTable(d))
 	enc.Dispatch(pCombine, nH*hd, hd, partial, out, uG, uHd, uNSplit)
 	enc.End()
 

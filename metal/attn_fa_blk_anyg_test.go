@@ -58,7 +58,7 @@ func TestAttnFABlk_anyGMatchesG7(t *testing.T) {
 		qb := NewBufferFloats(r.d, q8[:G*hd])
 		part := r.d.NewBufferLen(nSplit * G * (hd + 2))
 		e := r.q.Begin()
-		e.DispatchTG(p, nSplit*128, 128, 128*6*G*4, qb, kc, vc, part, uNKV, NewBufferU32(r.d, uint32(G)), uNKeys, uScale, uWin, uSplit)
+		e.DispatchTG(p, nSplit*128, 128, 128*6*G*4, qb, kc, vc, part, uNKV, NewBufferU32(r.d, uint32(G)), uNKeys, uScale, uWin, uSplit, kvIdentityTable(r.d))
 		e.End()
 		if err := e.Err(); err != nil {
 			t.Fatalf("g%d: %v", G, err)

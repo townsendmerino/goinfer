@@ -38,8 +38,6 @@ kv-ring	selftestdata/qwen35-tiny int4
 kv-ring	selftestdata/qwen35-tiny int4/expert-cache
 kv-ring	selftestdata/qwen35-tiny int4/kv-f16
 kv-ring	selftestdata/qwen35-tiny int4/kv-i8
-kv-ring	selftestdata/qwen35-tiny int4/slots2
-kv-ring	selftestdata/qwen35-tiny int4/slots4
 kv-ring	selftestdata/qwen35-tiny int4/ssm
 kv-ring	selftestdata/qwen35-tiny int4/windowed
 kv-ring	selftestdata/qwen35-tiny int4/windowed+expert-cache
@@ -48,8 +46,6 @@ kv-ring	selftestdata/qwen35vl-tiny int4
 kv-ring	selftestdata/qwen35vl-tiny int4/expert-cache
 kv-ring	selftestdata/qwen35vl-tiny int4/kv-f16
 kv-ring	selftestdata/qwen35vl-tiny int4/kv-i8
-kv-ring	selftestdata/qwen35vl-tiny int4/slots2
-kv-ring	selftestdata/qwen35vl-tiny int4/slots4
 kv-ring	selftestdata/qwen35vl-tiny int4/ssm
 kv-ring	selftestdata/qwen35vl-tiny int4/windowed
 kv-ring	selftestdata/qwen35vl-tiny int4/windowed+expert-cache
@@ -284,8 +280,6 @@ kv-ring	testdata/nemotron-tiny int4
 kv-ring	testdata/nemotron-tiny int4/expert-cache
 kv-ring	testdata/nemotron-tiny int4/g32
 kv-ring	testdata/nemotron-tiny int4/kv-i8
-kv-ring	testdata/nemotron-tiny int4/slots2
-kv-ring	testdata/nemotron-tiny int4/slots4
 kv-ring	testdata/nemotron-tiny int4/ssm
 kv-ring	testdata/nemotron-tiny int4/windowed
 kv-ring	testdata/nemotron-tiny int4/windowed+expert-cache
@@ -301,8 +295,6 @@ kv-ring	testdata/olmo_hybrid-tiny f32
 kv-ring	testdata/olmo_hybrid-tiny int4
 kv-ring	testdata/olmo_hybrid-tiny int4/expert-cache
 kv-ring	testdata/olmo_hybrid-tiny int4/kv-i8
-kv-ring	testdata/olmo_hybrid-tiny int4/slots2
-kv-ring	testdata/olmo_hybrid-tiny int4/slots4
 kv-ring	testdata/olmo_hybrid-tiny int4/ssm
 kv-ring	testdata/olmo_hybrid-tiny int4/windowed
 kv-ring	testdata/olmo_hybrid-tiny int4/windowed+expert-cache
@@ -325,8 +317,6 @@ kv-ring	testdata/qwen35-tiny int4
 kv-ring	testdata/qwen35-tiny int4/expert-cache
 kv-ring	testdata/qwen35-tiny int4/kv-f16
 kv-ring	testdata/qwen35-tiny int4/kv-i8
-kv-ring	testdata/qwen35-tiny int4/slots2
-kv-ring	testdata/qwen35-tiny int4/slots4
 kv-ring	testdata/qwen35-tiny int4/ssm
 kv-ring	testdata/qwen35-tiny int4/windowed
 kv-ring	testdata/qwen35-tiny int4/windowed+expert-cache
@@ -335,8 +325,6 @@ kv-ring	testdata/qwen35vl-tiny int4
 kv-ring	testdata/qwen35vl-tiny int4/expert-cache
 kv-ring	testdata/qwen35vl-tiny int4/kv-f16
 kv-ring	testdata/qwen35vl-tiny int4/kv-i8
-kv-ring	testdata/qwen35vl-tiny int4/slots2
-kv-ring	testdata/qwen35vl-tiny int4/slots4
 kv-ring	testdata/qwen35vl-tiny int4/ssm
 kv-ring	testdata/qwen35vl-tiny int4/windowed
 kv-ring	testdata/qwen35vl-tiny int4/windowed+expert-cache
@@ -346,8 +334,6 @@ kv-ring	testdata/qwen3_5-tiny int4
 kv-ring	testdata/qwen3_5-tiny int4/expert-cache
 kv-ring	testdata/qwen3_5-tiny int4/kv-f16
 kv-ring	testdata/qwen3_5-tiny int4/kv-i8
-kv-ring	testdata/qwen3_5-tiny int4/slots2
-kv-ring	testdata/qwen3_5-tiny int4/slots4
 kv-ring	testdata/qwen3_5-tiny int4/ssm
 kv-ring	testdata/qwen3_5-tiny int4/windowed
 kv-ring	testdata/qwen3_5-tiny int4/windowed+expert-cache
@@ -357,8 +343,6 @@ kv-ring	testdata/qwen3_5-tiny-normw int4
 kv-ring	testdata/qwen3_5-tiny-normw int4/expert-cache
 kv-ring	testdata/qwen3_5-tiny-normw int4/kv-f16
 kv-ring	testdata/qwen3_5-tiny-normw int4/kv-i8
-kv-ring	testdata/qwen3_5-tiny-normw int4/slots2
-kv-ring	testdata/qwen3_5-tiny-normw int4/slots4
 kv-ring	testdata/qwen3_5-tiny-normw int4/ssm
 kv-ring	testdata/qwen3_5-tiny-normw int4/windowed
 kv-ring	testdata/qwen3_5-tiny-normw int4/windowed+expert-cache
@@ -367,8 +351,6 @@ kv-ring	testdata/qwen3_5_moe-tiny int4
 kv-ring	testdata/qwen3_5_moe-tiny int4/expert-cache
 kv-ring	testdata/qwen3_5_moe-tiny int4/kv-f16
 kv-ring	testdata/qwen3_5_moe-tiny int4/kv-i8
-kv-ring	testdata/qwen3_5_moe-tiny int4/slots2
-kv-ring	testdata/qwen3_5_moe-tiny int4/slots4
 kv-ring	testdata/qwen3_5_moe-tiny int4/ssm
 kv-ring	testdata/qwen3_5_moe-tiny int4/windowed
 kv-ring	testdata/qwen3_5_moe-tiny int4/windowed+expert-cache
@@ -392,8 +374,6 @@ kv-ring	testdata/qwen3next-tiny int4
 kv-ring	testdata/qwen3next-tiny int4/expert-cache
 kv-ring	testdata/qwen3next-tiny int4/kv-f16
 kv-ring	testdata/qwen3next-tiny int4/kv-i8
-kv-ring	testdata/qwen3next-tiny int4/slots2
-kv-ring	testdata/qwen3next-tiny int4/slots4
 kv-ring	testdata/qwen3next-tiny int4/ssm
 kv-ring	testdata/qwen3next-tiny int4/windowed
 kv-ring	testdata/qwen3next-tiny int4/windowed+expert-cache

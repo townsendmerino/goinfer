@@ -1225,6 +1225,9 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 	if from < 0 || from >= len(prompt) {
 		from = 0 // never skip the seed token, whose logits start decode
 	}
+	if from == 0 {
+		m.residentWritesFromZero()
+	}
 	suffix := prompt[from:]
 	// Offer the batched path suffixes of 8 tokens or more (a shorter one is cheaper token by token) -- and, when
 	// the backend's short continuation is exact (PrefillTailExact), any suffix of a prompt the cold run would have
@@ -1329,6 +1332,9 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, mrope ResidentMRoPE, prompt []int, from, mropeDelta int) ([]float32, error) {
 	if from < 0 || from >= len(prompt) {
 		from = 0
+	}
+	if from == 0 {
+		m.residentWritesFromZero()
 	}
 	var logits []float32
 	var err error
@@ -1552,6 +1558,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				}
 				mc3.markSlot(mc3Slot, true)
 				m.residentForgetIDs()
+				if acq.reuse <= 0 {
+					m.residentWritesFromZero()
+				}
 			})
 			if mc3Slot >= 0 {
 				defer mc3.markSlot(mc3Slot, false) // after the commit below: the slot is free again once it holds our ids

@@ -154,7 +154,7 @@ func (r *cudaResident) finishMemPlan(m *decoder.Model, hls []hlayer, planned []c
 		mp.in.KV += mp.skew
 	}
 	d := kvFitDecision(kvFitIn{ctxCap: r.ctxCap, explicit: r.ctxExplicit, slotsReq: r.kvSlotsReq, layers: r.layers,
-		extraBytes: r.extraBytes, margin: r.ctxMargin()}, uint64(max(mp.in.KV, 0)), mp.in.KVOK)
+		extraBytes: r.extraBytes, margin: r.ctxMargin(), slotState: r.recurrentStateCharged()}, uint64(max(mp.in.KV, 0)), mp.in.KVOK)
 	mp.out.CtxCap, mp.out.KVSlots, mp.out.Logs = d.ctxCap, d.slots, d.logs
 	mp.done = true
 	if d.err != nil {
@@ -179,7 +179,7 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 	}
 	// left is the derived free VRAM as the post-allocation sites go: after the KV pools and the post-pool allocations, then less each
 	// grant as it is made.
-	left := in.KV - kvChargedBytes(r.ctxCap, r.kvSlotsN, r.layers) - r.postPoolBytes()
+	left := in.KV - kvChargedBytes(r.ctxCap, r.kvSlotsN, r.layers) - r.recurrentSlotBytes(r.kvSlotsN) - r.postPoolBytes()
 	// The pools hold the per-slot context; as kvAllocPoolsFit, one conversation's cap may then grow to the whole pool (kvCapFor).
 	r.kvShareCtx, r.kvShareBlocks = r.ctxCap, kvBlocksFor(r.ctxCap)
 	r.ctxCap = r.kvCapFor(max(1, r.kvSlotsN))

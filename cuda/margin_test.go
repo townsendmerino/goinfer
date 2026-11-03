@@ -89,13 +89,13 @@ func TestKSH6C_chargedKVArithmetic(t *testing.T) {
 	if c, ok := kvChargedCapForBytes(want-1, 1, 64, cap, layers); !ok || c >= cap {
 		t.Errorf("kvChargedCapForBytes(one byte short) = %d, %v; want below %d", c, ok, cap)
 	}
-	if n := kvChargedSlotsFit(4, want2+1, cap, layers, 1); n != 2 {
+	if n := kvChargedSlotsFit(4, want2+1, cap, layers, 1, 0); n != 2 {
 		t.Errorf("kvChargedSlotsFit = %d with room for exactly two slots, want 2", n)
 	}
-	if n := kvChargedSlotsFit(0, 1<<40, cap, layers, 0); n != 1 {
+	if n := kvChargedSlotsFit(0, 1<<40, cap, layers, 0, 0); n != 1 {
 		t.Errorf("kvChargedSlotsFit of a request for 0 slots = %d, want 1", n)
 	}
-	if n := kvChargedSlotsFit(4, 1, cap, layers, 0); n != 1 {
+	if n := kvChargedSlotsFit(4, 1, cap, layers, 0, 0); n != 1 {
 		t.Errorf("kvChargedSlotsFit with no room = %d, want 1 (the refusal is checkKVFits')", n)
 	}
 }

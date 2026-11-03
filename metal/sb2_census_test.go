@@ -24,6 +24,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/memgate"
 	"github.com/townsendmerino/goinfer/internal/program"
 	"github.com/townsendmerino/goinfer/internal/sb2census"
+	"github.com/townsendmerino/goinfer/internal/wrappedupload"
 )
 
 // Layer B-metal of the admission and routing census (docs/tasks/task-subsystems-2026-10.md, "SB2 step 2"): Metal's decisions
@@ -878,4 +879,26 @@ func TestMemGate_metal(t *testing.T) {
 		t.Errorf("only %d builds held: a gate that read little covers little", built)
 	}
 	g.Finish(t)
+}
+
+// A wrapped upload on the shared bridge: the same tests every resident backend runs (internal/wrappedupload).
+func TestWrappedUpload_rows(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	wrappedupload.Rows(t, "metal")
+}
+
+func TestWrappedUpload_reuse(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	wrappedupload.Reuse(t, "metal")
+}
+
+func TestWrappedUpload_turns(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	wrappedupload.Turns(t, "metal")
 }

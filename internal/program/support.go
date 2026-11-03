@@ -259,6 +259,7 @@ var CUDA = &Support{
 	AttnWindow:   true, AttnSoftcap: true, QKNormWhole: true,
 	SandwichNorm: true, PostOnlyNorm: true, ParallelBlock: true, LayerNorm: true, OutBias: true,
 	DeltaNegEigval: true, DeltaONormEps: true,
+	RecurrentSlots: []OpKind{OpDeltaNet, OpMamba2}, // UseKVSlot binds each slot's own Gated-DeltaNet and Mamba-2 window and state
 }
 
 // CUDAStep is the table of CUDA's multi-sequence step (cuda/batchstep.go, MC3's batched decode): what its rows run through

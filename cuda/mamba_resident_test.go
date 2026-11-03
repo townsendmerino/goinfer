@@ -144,8 +144,8 @@ func greedyReplyCUDA(t *testing.T, rf decoder.ResidentForward, m *decoder.Model,
 	return out
 }
 
-// TestNemotronResidentCUDA_slots is OP2b's gate S on CUDA: a recurrent family gets one KV slot and the batched step declines it, and two conversations taking
-// turns on that one slot, its state reset at each one's position 0, each give the reply they give alone. With the reset planted to leave the Mamba-2
+// TestNemotronResidentCUDA_slots is OP2b's gate S on CUDA: a recurrent family gets the KV slots it asks for and the batched step declines it, and two conversations
+// taking turns on one slot, its state reset at each one's position 0, each give the reply they give alone. With the reset planted to leave the Mamba-2
 // state alone (mambaResetSkipForTest), the turns must differ.
 func TestNemotronResidentCUDA_slots(t *testing.T) {
 	requireCUDADevice(t)
@@ -164,11 +164,11 @@ func TestNemotronResidentCUDA_slots(t *testing.T) {
 		return m, r
 	}
 	m, a := load()
-	if got := m.ResidentKVSlotsRequest(); got != 1 {
-		t.Errorf("Nemotron-H asks for %d resident KV slots, want 1: a recurrent family's state is not part of a slot", got)
+	if got := m.ResidentKVSlotsRequestFor("cuda"); got != 4 {
+		t.Errorf("Nemotron-H asks for %d resident KV slots on CUDA, want the 4 it was given", got)
 	}
-	if n := a.KVSlots(); n != 1 {
-		t.Errorf("the resident built %d KV slots, want 1", n)
+	if n := a.KVSlots(); n != 4 {
+		t.Errorf("the resident built %d KV slots, want 4", n)
 	}
 	if lo, hi := a.BatchStepRange(); hi != 0 {
 		t.Errorf("the batched step admits Nemotron-H (range %d..%d)", lo, hi)

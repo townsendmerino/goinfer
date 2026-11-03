@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/wrappedupload"
 )
 
 // agxClient is one GPU client of another process: its process and the GPU time it has accumulated, in nanoseconds.
@@ -253,4 +254,31 @@ func gpuOthersLoad(t *testing.T) (run func(d time.Duration), done func()) {
 		}
 	}
 	return run, func() { m.Close() }
+}
+
+func requireWebGPUAdapter(t *testing.T) {
+	t.Helper()
+	c, err := New()
+	if err != nil {
+		t.Skipf("no WebGPU adapter: %v", err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A wrapped upload on the shared bridge: the same tests every resident backend runs (internal/wrappedupload).
+func TestWrappedUpload_rows(t *testing.T) {
+	requireWebGPUAdapter(t)
+	wrappedupload.Rows(t, "webgpu")
+}
+
+func TestWrappedUpload_reuse(t *testing.T) {
+	requireWebGPUAdapter(t)
+	wrappedupload.Reuse(t, "webgpu")
+}
+
+func TestWrappedUpload_turns(t *testing.T) {
+	requireWebGPUAdapter(t)
+	wrappedupload.Turns(t, "webgpu")
 }
