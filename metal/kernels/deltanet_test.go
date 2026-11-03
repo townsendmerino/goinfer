@@ -116,6 +116,7 @@ func deltaNetChainDrift(t *testing.T, src string) (worst []stage, skip bool) {
 
 	uConvDim, uK := NewBufferU32(d, uint32(convDim)), NewBufferU32(d, uint32(convK))
 	uNv, uNk, uHk, uHv := NewBufferU32(d, uint32(nv)), NewBufferU32(d, uint32(nk)), NewBufferU32(d, uint32(hk)), NewBufferU32(d, uint32(hv))
+	uBeta1 := NewBufferFloats(d, []float32{1}) // delta_gates' betaScale: the plain write gate
 	uKeyDim, uQScale := NewBufferU32(d, uint32(keyDim)), NewBufferFloats(d, []float32{qScale})
 	uRep, uVBase := NewBufferU32(d, uint32(rep)), NewBufferU32(d, uint32(2*keyDim))
 	uEps := NewBufferFloats(d, []float32{eps})
@@ -137,7 +138,7 @@ func deltaNetChainDrift(t *testing.T, src string) (worst []stage, skip bool) {
 
 		e := q_.Begin()
 		e.Dispatch(pConv, convDim, 256, dMixed, dConvW, dWin, dConv, uConvDim, uK)
-		e.Dispatch(pGates, nv, 64, dBt, dAt, dDt, dNegA, dHeadP, uNv)
+		e.Dispatch(pGates, nv, 64, dBt, dAt, dDt, dNegA, dHeadP, uNv, uBeta1)
 		e.Dispatch(pNorm, nk*128, 128, dConv, dQn, dKn, uNk, uHk, uKeyDim, uQScale)
 		e.Dispatch(pRule, nv*hv, 128, dQn, dKn, dConv, dHeadP, dState, dCore, uNv, uHk, uHv, uRep, uVBase)
 		e.Dispatch(pGNorm, nv*128, 128, dCore, dZ, dNormW, dGated, uNv, uHv, uEps)

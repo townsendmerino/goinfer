@@ -3,10 +3,14 @@
 package metal
 
 import (
+	"context"
+	"math"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 // TestOlmo3ResidentSmokeMetal is the smoke gate for FeatPostOnlyNorm + FeatQKNormWhole (docs/tasks/task-gpu-paths-2026-09.md,
@@ -21,20 +25,179 @@ func TestOlmo3ResidentSmokeMetal(t *testing.T) {
 	testOlmoFamilyResidentSmoke(t, "../testdata/olmo3-tiny", "int8int8")
 }
 
-// TestOlmoHybridDeclinesOnMetal: Olmo Hybrid's DeltaNet widens its write gate (NegEigval) and sets its own output-norm epsilon,
-// which Metal's DeltaNet block does not implement (program.Metal), so the int4 load runs on the CPU and the decline names the
-// parameter (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-c1).
-func TestOlmoHybridDeclinesOnMetal(t *testing.T) {
-	m, err := decoder.Load("../testdata/olmo_hybrid-tiny", decoder.Options{Backend: "metal", Quant: "int4"})
+// TestOlmoHybridResidentParityMetal is OM-1 (docs/tasks/task-olmo-hybrid-metal-webgpu-2026-11.md): Olmo Hybrid's DeltaNet
+// widens its write gate (NegEigval) and runs its output norm at an epsilon of its own (ONormEps). olmo_hybrid-tiny goes
+// resident on Metal at int4, the one quant its build takes (TestOlmoHybridBuildDeclinesOtherQuants), and holds
+// TestQwen35ResidentParityMetal's bar against the CPU at int4. With either setting dropped at the build, it falls outside the bar.
+func TestOlmoHybridResidentParityMetal(t *testing.T) {
+	const fx = "../testdata/olmo_hybrid-tiny"
+	if _, err := os.Stat(fx + "/model.safetensors"); err != nil {
+		t.Skipf("no olmo_hybrid-tiny weights: %v", err)
+	}
+	t.Run("prompts take the sequential loop", func(t *testing.T) { // OM-2: so the as-built run covers them
+		m, err := decoder.Load(fx, decoder.Options{Backend: "metal", Quant: "int4"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		decoder.SetKnobEnvForTest(t, m, "GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
+		if m.ResidentForwardForTest() == nil {
+			t.Fatalf("not resident: %s", m.ResidentDecline())
+		}
+		if batched, why := m.PrefillPath(); batched {
+			t.Errorf("olmo_hybrid-tiny's prefill is batched on Metal; OM-1 no longer covers its prompts (%s)", why)
+		}
+	})
+	t.Run("as built", func(t *testing.T) { qwen35ResidentParityMetal(t, fx, "int4") })
+	for _, plant := range []struct {
+		name string
+		on   *bool
+	}{{"NegEigval dropped", &dnetNegEigvalOffForTest}, {"ONormEps dropped", &dnetONormEpsOffForTest}} {
+		t.Run(plant.name, func(t *testing.T) {
+			*plant.on = true
+			defer func() { *plant.on = false }()
+			p := deltaNetParityMetal(t, fx, "int4")
+			t.Logf("planted (%s): worst %.6f, drift %.4f, replay %.9f", plant.name, p.worst, p.first-p.worst, p.replay)
+			if !p.failsBar() {
+				t.Errorf("with %s, olmo_hybrid-tiny still holds the bar: the gate does not see the setting", plant.name)
+			}
+		})
+	}
+}
+
+// TestOlmoHybridBuildDeclinesOtherQuants: admission passes olmo_hybrid-tiny at f32 and int8int8 on Metal, as it does every Metal
+// family at f32 and every Gated-DeltaNet family at int8int8 (the census's rows record admission, not the build), and the build
+// refuses both, so the load runs on the CPU and no resident path exists at either quant for OM-1 to hold.
+func TestOlmoHybridBuildDeclinesOtherQuants(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	for _, c := range []struct{ quant, why string }{{"f32", "weights loaded at f32"}, {"int8int8", "int4 only"}} {
+		m, err := decoder.Load("../testdata/olmo_hybrid-tiny", decoder.Options{Backend: "metal", Quant: c.quant})
+		if err != nil {
+			t.Fatalf("%s: %v", c.quant, err)
+		}
+		if m.ResidentForwardForTest() != nil {
+			t.Errorf("%s: went resident on Metal (%s)", c.quant, m.DecodePath())
+		}
+		if !strings.Contains(m.DecodePath(), "running on cpu") || !strings.Contains(m.DecodePath(), c.why) {
+			t.Errorf("%s: decode path %q does not run on the CPU naming %q", c.quant, m.DecodePath(), c.why)
+		}
+		t.Logf("%s: %s", c.quant, m.DecodePath())
+		m.Close()
+	}
+}
+
+// TestDeltaNetOpParams_layersMustAgree: the block holds one set of DeltaNet parameters, so a model whose DeltaNet layers disagree
+// on one declines at the build, naming the layer. qwen35-tiny's program is rewritten on one DeltaNet layer, one parameter at a time.
+func TestDeltaNetOpParams_layersMustAgree(t *testing.T) {
+	m, err := decoder.Load("../testdata/qwen35-tiny", decoder.Options{Quant: "int4"})
 	if err != nil {
-		t.Fatalf("load metal: %v", err)
+		t.Fatal(err)
 	}
 	defer m.Close()
-	if m.ResidentForwardForTest() != nil {
-		t.Fatalf("Olmo Hybrid went resident on Metal (%s); want the NegEigval decline", m.DecodePath())
+	if _, err := deltaNetOpParams(m); err != nil {
+		t.Fatalf("the unmodified model's layers disagree: %v", err)
 	}
-	if d := m.ResidentDecline(); !strings.Contains(d, "NegEigval") {
-		t.Fatalf("decline %q does not name DeltaNet's widened write gate (NegEigval)", d)
+	last := func() *program.Op {
+		var op *program.Op
+		for _, ops := range m.Program().Layers {
+			for i := range ops {
+				if ops[i].Kind == program.OpDeltaNet {
+					op = &ops[i]
+				}
+			}
+		}
+		return op
+	}
+	op := last()
+	if op == nil {
+		t.Fatal("no DeltaNet layer")
+	}
+	saved := op.Delta
+	defer func() { op.Delta = saved }()
+	for _, c := range []struct {
+		name   string
+		change func(p *program.DeltaNetOpParams)
+	}{
+		{"NegEigval", func(p *program.DeltaNetOpParams) { p.NegEigval = !p.NegEigval }},
+		{"ONormEps", func(p *program.DeltaNetOpParams) { p.ONormEps = 1e-3 }},
+	} {
+		op.Delta = saved
+		c.change(&op.Delta)
+		if _, err := deltaNetOpParams(m); err == nil || !strings.Contains(err.Error(), "differ") {
+			t.Errorf("%s disagreeing: %v, want the decline", c.name, err)
+		}
+		if r, err := buildResident(m); err == nil {
+			_ = r.Close()
+			t.Errorf("%s disagreeing: the build went through", c.name)
+		} else if !strings.Contains(err.Error(), "differ") {
+			t.Errorf("%s disagreeing: the build declined for another reason: %v", c.name, err)
+		}
+	}
+}
+
+// TestDeltaNetPrefill_readsBothParameters: the batched prefill's mixer (encodePrefillDeltaMixer) binds the write gate's scale and
+// the output norm's epsilon. Olmo Hybrid's prefill is not batched, so the check sets them on qwen35-tiny's resident: each changes
+// the prefill's last logits from the as-built run, and from the other.
+func TestDeltaNetPrefill_readsBothParameters(t *testing.T) {
+	m, err := decoder.Load("../testdata/qwen35-tiny", decoder.Options{Backend: "metal", Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	decoder.SetKnobEnvForTest(t, m, "GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
+	rf := m.ResidentForwardForTest()
+	if rf == nil {
+		t.Fatalf("not resident: %s", m.ResidentDecline())
+	}
+	if batched, why := m.PrefillPath(); !batched {
+		t.Fatalf("qwen35-tiny's prefill is not batched: %s", why)
+	}
+	r := rf.(*metalResident).r
+	pf := rf.(decoder.Prefiller)
+	_, _, _, _, _, _, vocab := m.Dims()
+	embs := make([][]float32, 40)
+	for i := range embs {
+		embs[i] = m.EmbedResidentForTest((i*37 + 11) % vocab)
+	}
+	run := func() []float32 {
+		rf.Reset()
+		lg, err := pf.PrefillLast(context.Background(), embs, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return append([]float32(nil), lg...)
+	}
+	differ := func(a, b []float32) int {
+		n := 0
+		for i := range a {
+			if math.Float32bits(a[i]) != math.Float32bits(b[i]) {
+				n++
+			}
+		}
+		return n
+	}
+	base := run()
+	if d := differ(base, run()); d != 0 {
+		t.Fatalf("two as-built prefills differ in %d logits", d)
+	}
+	beta, eps := r.uDnBetaScale, r.uDnONormEps
+	defer func() { r.uDnBetaScale, r.uDnONormEps = beta, eps }()
+	r.uDnBetaScale = NewBufferFloats(r.d, []float32{2})
+	betaRun := run()
+	r.uDnBetaScale = beta
+	r.uDnONormEps = NewBufferFloats(r.d, []float32{1})
+	epsRun := run()
+	t.Logf("logits differing from the as-built prefill of %d: betaScale 2 %d, a distinct epsilon %d", len(base), differ(base, betaRun), differ(base, epsRun))
+	if differ(base, betaRun) == 0 {
+		t.Error("with betaScale 2 the prefill's logits are unchanged: its gates do not read the scale")
+	}
+	if differ(base, epsRun) == 0 {
+		t.Error("with a distinct epsilon the prefill's logits are unchanged: its gated norm does not read it")
+	}
+	if differ(betaRun, epsRun) == 0 {
+		t.Error("the two settings give the same logits")
 	}
 }
 

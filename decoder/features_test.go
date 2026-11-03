@@ -244,7 +244,7 @@ var admissionGolden = map[string][]string{
 	// remaining requirement. Its full-attention layer uses a plain q projection, not qwen3.5's double-width q-gate
 	// (Architecture.qwen35.AttnGate).
 	"olmo3":       {"cuda", "metal"},
-	"olmo_hybrid": {"cuda"}, // CUDA's table claims DeltaNet's widened write gate (NegEigval) and its own output-norm epsilon (docs/tasks/task-olmo-hybrid-cuda-2026-11.md); Metal's does not yet (§4.9 OP4m-c1)
+	"olmo_hybrid": {"cuda", "metal"}, // both tables claim DeltaNet's widened write gate (NegEigval) and its own output-norm epsilon (docs/tasks/task-olmo-hybrid-cuda-2026-11.md, docs/tasks/task-olmo-hybrid-metal-webgpu-2026-11.md)
 	"internlm2":   {"cuda", "metal", "webgpu"},
 	"internlm3":   {"cuda", "metal", "webgpu"},
 	// Dense Granite 4.2: empty feature profile (see archFeatureProfile's note), so it is
@@ -395,9 +395,11 @@ func TestMetalTable_noOverclaim(t *testing.T) {
 		s.DeltaONormEps || s.SandwichNorm || s.PostOnlyNorm || s.ParallelBlock || s.LayerNorm || s.OutBias || s.LearnedPos {
 		t.Errorf("metal's step table claims a parameter its per-row kernels do not run: %+v", *s)
 	}
-	if m.AttnChunk || m.ResidualScale || m.DeltaNegEigval || m.DeltaONormEps {
-		t.Errorf("metal claims a chunked attention %v, a residual scale %v, DeltaNet's widened write gate %v or its own output-norm epsilon %v; none has a kernel",
-			m.AttnChunk, m.ResidualScale, m.DeltaNegEigval, m.DeltaONormEps)
+	if m.AttnChunk || m.ResidualScale {
+		t.Errorf("metal claims a chunked attention %v or a residual scale %v; neither has a kernel", m.AttnChunk, m.ResidualScale)
+	}
+	if !m.DeltaNegEigval || !m.DeltaONormEps { // delta_gates' betaScale and the gated norm's own epsilon
+		t.Errorf("metal claims DeltaNet's widened write gate %v and its own output-norm epsilon %v; both have kernels", m.DeltaNegEigval, m.DeltaONormEps)
 	}
 	if residentBackendTables["metal"] != m {
 		t.Errorf("Metal's admission does not read program.Metal")

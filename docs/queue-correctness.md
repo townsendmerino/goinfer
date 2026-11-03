@@ -100,6 +100,11 @@ file it.** The shape: a kernel with a fixed bound declares it beside the kernel,
 request against the declaration and declines by name, and, if it can be made mechanical, a test fails when a bound-carrying
 kernel has no declaration. Start from the 19 B findings, which name most of the kernels. Either box, M.
 
+**G51 · Metal: the admission census says `resident=true` for loads the build then refuses** — `metal`, **filed 2026-11-02 (mac-sb11m, from Gemini's review of #611); not started**
+- **The gap.** `Admit` passes, and `sb2_admission_census` records `resident=true`, for every Metal family at f32 (45 rows, path `metal-resident (native)`) and every Gated-DeltaNet family at int8int8. Metal's build refuses both (`buildResident`: "weights loaded at f32"; `buildDeltaNet`: "runs resident at int4 only", G44), so those loads run on the CPU. The user sees the true path, since `DecodePath` names the refusal. The census and any reader of `Admit` overstate it, and the decision census carries memory decisions for those loads.
+- **The fix, if wanted:** move both refusals into admission, beside `actGroupResidentDecline`. It moves every family's f32 Metal rows and the Gated-DeltaNet int8int8 rows in both admission censuses and `mm1_census` (from Linux), so it takes its own PR. `TestOlmoHybridBuildDeclinesOtherQuants` holds the build's behavior on Olmo Hybrid meanwhile.
+- Either box, S.
+
 **G44 · Metal re-quantizes a Gated-DeltaNet model's int8 weights to int4 instead of declining** — `metal`, **filed 2026-10-15
 (owner); built 2026-10-16 (branch `g44-deltanet-int8-decline-2026-10`)**
 

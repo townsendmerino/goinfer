@@ -170,6 +170,7 @@ var Metal = &Support{
 	PairwiseRope: true,
 	AttnWindow:   true, AttnSoftcap: true, QKNormWhole: true,
 	SandwichNorm: true, PostOnlyNorm: true, ParallelBlock: true, LayerNorm: true, OutBias: true, LearnedPos: true,
+	DeltaNegEigval: true, DeltaONormEps: true, // delta_gates' betaScale and the gated norm's own epsilon (uDnBetaScale, uDnONormEps)
 	RecurrentSlots: []OpKind{OpDeltaNet, OpMamba2}, // metal's useKVSlot binds each slot's own Gated-DeltaNet and Mamba-2 windows and states
 }
 

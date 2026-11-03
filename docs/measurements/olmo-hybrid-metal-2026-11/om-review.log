@@ -1,0 +1,53 @@
+# Gemini on #611, 2026-11-02, the Mac, shared lock. Tests at c5eb655f.
+== the first form, f32 in OM-1 (before the rework): it could not run, the build refuses f32
+[resident] BuildResident declined (ok=false err=resident path declined: metal: weights loaded at f32 (layer 0 up_proj); metal runs int4 or int8 weights: load with -quant int4 or int8int8 to use the GPU) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: metal: weights loaded at f32 (layer 0 up_proj); metal runs int4 or int8 weights: load with -quant int4 or int8int8 to use the GPU) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: metal: weights loaded at f32 (layer 0 up_proj); me
+== green
+    g44_deltanet_int8_test.go:51: int8int8 through the backend: cpu (int8int8) — requested metal → running on cpu: metal: metal: a Gated-DeltaNet model runs resident at int4 only; its int8 projections would be re-quantized to int4 here, so it runs on the CPU, and metal has no staged decode path
+--- PASS: TestG44_deltaNetInt8Declines (1.91s)
+    olmo3_resident_smoke_test.go:60: planted (NegEigval dropped): worst 0.923217, drift 0.0756, replay 1.000000000
+    olmo3_resident_smoke_test.go:60: planted (ONormEps dropped): worst 0.540932, drift 0.4428, replay 1.000000000
+--- PASS: TestOlmoHybridResidentParityMetal (0.81s)
+    --- PASS: TestOlmoHybridResidentParityMetal/prompts_take_the_sequential_loop (0.47s)
+    --- PASS: TestOlmoHybridResidentParityMetal/as_built (0.12s)
+    --- PASS: TestOlmoHybridResidentParityMetal/NegEigval_dropped (0.11s)
+    --- PASS: TestOlmoHybridResidentParityMetal/ONormEps_dropped (0.11s)
+    olmo3_resident_smoke_test.go:86: f32: cpu (native) — requested metal → running on cpu: metal: weights loaded at f32 (layer 0 up_proj); metal runs int4 or int8 weights: load with -quant int4 or int8int8 to use the GPU, and metal has no staged decode path
+    olmo3_resident_smoke_test.go:86: int8int8: cpu (int8int8) — requested metal → running on cpu: metal: metal: a Gated-DeltaNet model runs resident at int4 only; its int8 projections would be re-quantized to int4 here, so it runs on the CPU, and metal has no staged decode path
+--- PASS: TestOlmoHybridBuildDeclinesOtherQuants (0.02s)
+--- PASS: TestDeltaNetOpParams_layersMustAgree (0.01s)
+    olmo3_resident_smoke_test.go:192: logits differing from the as-built prefill of 256: betaScale 2 256, a distinct epsilon 256
+--- PASS: TestDeltaNetPrefill_readsBothParameters (0.04s)
+ok  	github.com/townsendmerino/goinfer/metal	3.277s
+--- PASS: TestDeltaNetSeqKernels_matchDecodeBitwise (0.79s)
+    --- PASS: TestDeltaNetSeqKernels_matchDecodeBitwise/qwen3.5/delta_rule_seq (0.64s)
+    --- PASS: TestDeltaNetSeqKernels_matchDecodeBitwise/qwen3.5/delta_rule_seq_tg (0.05s)
+    --- PASS: TestDeltaNetSeqKernels_matchDecodeBitwise/qwen35-tiny/delta_rule_seq (0.02s)
+    --- PASS: TestDeltaNetSeqKernels_matchDecodeBitwise/qwen35-tiny/delta_rule_seq_tg (0.02s)
+    --- PASS: TestDeltaNetSeqKernels_matchDecodeBitwise/olmo_hybrid-tiny/delta_rule_seq (0.02s)
+    --- PASS: TestDeltaNetSeqKernels_matchDecodeBitwise/olmo_hybrid-tiny/delta_rule_seq_tg (0.02s)
+    --- PASS: TestDeltaNetSeqKernels_matchDecodeBitwise/olmo_hybrid-tiny_settings/delta_rule_seq (0.02s)
+    --- PASS: TestDeltaNetSeqKernels_matchDecodeBitwise/olmo_hybrid-tiny_settings/delta_rule_seq_tg (0.02s)
+--- PASS: TestDeltaNetKernels_cpuParity (0.13s)
+--- PASS: TestDeltaNetKernels_mutations (2.52s)
+    --- PASS: TestDeltaNetKernels_mutations/invert_GVA_head_map_(headV/rep_->_headV%rep) (0.63s)
+    --- PASS: TestDeltaNetKernels_mutations/drop_the_v-slice_offset_(vBase_dropped_from_the_v_read) (0.64s)
+    --- PASS: TestDeltaNetKernels_mutations/collapse_the_state_row_(vd_dropped_from_the_address,_threads_alias) (0.62s)
+    --- PASS: TestDeltaNetKernels_mutations/drop_the_conv_ring_slide_(win_never_advances) (0.64s)
+ok  	github.com/townsendmerino/goinfer/metal/kernels	(cached)
+
+== plant: delta_gates_rows ignoring betaScale
+--- FAIL: TestDeltaNetSeqKernels_matchDecodeBitwise (0.81s)
+    --- FAIL: TestDeltaNetSeqKernels_matchDecodeBitwise/olmo_hybrid-tiny_settings/delta_rule_seq (0.02s)
+    --- FAIL: TestDeltaNetSeqKernels_matchDecodeBitwise/olmo_hybrid-tiny_settings/delta_rule_seq_tg (0.02s)
+
+== plant: the disagreement guard removed
+    olmo3_resident_smoke_test.go:129: NegEigval disagreeing: <nil>, want the decline
+    olmo3_resident_smoke_test.go:133: NegEigval disagreeing: the build went through
+    olmo3_resident_smoke_test.go:129: ONormEps disagreeing: <nil>, want the decline
+    olmo3_resident_smoke_test.go:133: ONormEps disagreeing: the build went through
+--- FAIL: TestDeltaNetOpParams_layersMustAgree (0.07s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.559s
+FAIL
