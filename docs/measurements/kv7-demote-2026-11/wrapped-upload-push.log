@@ -90,3 +90,14 @@ vet exit 0
 ok  	github.com/townsendmerino/goinfer/cuda	4.426s
 exit 0
 citation lint exit 0
+# #644's gpu-darwin was red: the test step timed out at Go's default 10m (it took 8m17s and 8m52s on main's two runs before), and these tests were new in it. They now skip under -short. 12:26:41 PST
+vet exit 0
+# with -short, WebGPU
+--- SKIP: TestWrappedUpload_rows (0.22s)
+--- SKIP: TestWrappedUpload_reuse (0.16s)
+ok  	github.com/townsendmerino/goinfer/gpu	0.470s
+# without it, WebGPU
+--- PASS: TestWrappedUpload_rows (18.68s)
+--- PASS: TestWrappedUpload_reuse (14.17s)
+ok  	github.com/townsendmerino/goinfer/gpu	33.052s
+citation lint exit 0

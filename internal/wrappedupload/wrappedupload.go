@@ -30,6 +30,15 @@ const (
 // fixtures: gemma3-vl-tiny mixes sliding and global layers, mistral-tiny-window has sliding layers only.
 var fixtures = []string{"gemma3-vl-tiny", "mistral-tiny-window"}
 
+// skipShort skips under -short: each test loads the fixtures ten times, too slow for a CI runner's GPU inside its step's timeout.
+// With no device, decoder's TestResidentUploadPrefill_wrappedFloor and kvmgr's TestSlots_floor read the floor.
+func skipShort(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("device tests of the wrapped upload: run without -short on a real device")
+	}
+}
+
 func options(backend string) decoder.Options {
 	return decoder.Options{Backend: backend, Quant: "int4", KVPrecision: "f32", ResidentContext: 512}
 }
@@ -130,6 +139,7 @@ func gap(a, b []float32) float64 {
 // row short of the floor it does not, because it attends to a row nothing uploaded. So the floor is exact, and it is
 // the decoder's grant that keeps a request off those rows.
 func Rows(t *testing.T, backend string) {
+	skipShort(t)
 	for _, fixture := range fixtures {
 		t.Run(fixture, func(t *testing.T) {
 			cold := load(t, backend, fixture)
@@ -172,6 +182,7 @@ func Rows(t *testing.T, backend string) {
 // cold prefill's. The replies are short and the weights random, so the grant is the sharper reading; Rows reads the
 // logits.
 func Reuse(t *testing.T, backend string) {
+	skipShort(t)
 	gen := func(m *decoder.Model, prompt []int) ([]int, *decoder.Generation) {
 		t.Helper()
 		ch, g := m.Generate(context.Background(), prompt, 8, decoder.SamplingParams{})
