@@ -19,3 +19,11 @@ citation lint 0
 # TestKV7_uploadPassLayers pinned a wrapped slot's demotion and promotion, which the guard refuses. It now reads the refusal. 15:16:42 PST
 ok  	github.com/townsendmerino/goinfer/cuda	97.773s
 PASS 45, exit 0
+
+# The push record at 4c91643b3, main 0f5cb935a merged, 15:18:26 PST
+touched 0
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
+test_touched 0
+staticcheck done, canary hits: 1
+citation lint 0
