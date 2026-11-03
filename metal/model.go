@@ -1669,13 +1669,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			L.mla = ML
 			r.kvNullBytes[l] = decoder.KVBlockRows * r.mla.latDim * 4
 			kvBytes := kvBlocksFor(r.ctxCap) * r.kvNullBytes[l]
-			allocSlots := 1
-			if kvSlots > 1 {
-				allocSlots = kvSlots
-				r.kvContig = true
-			}
+			r.kvContig = true
 			r.kvSlotBytes[l] = kvBytes
-			r.kc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*allocSlots).At(r.kvNullBytes[l])
+			r.kc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*kvSlots).At(r.kvNullBytes[l])
 			r.vc[l] = r.kc[l]
 		} else if mixer == decoder.MixerNone {
 			// A feed-forward-only block (Nemotron-H's MLP): no mixer to build.
@@ -1969,11 +1965,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 					}
 					continue
 				}
-				if r.kc[l] != (Buffer{}) && r.kvContig {
+				if r.kc[l] != (Buffer{}) {
 					off := r.kvNullBytes[l] + s*r.kvSlotBytes[l]
 					b.kc[l], b.vc[l] = r.kc[l].At(off), r.vc[l].At(off)
-				} else if r.kc[l] != (Buffer{}) {
-					b.kc[l], b.vc[l] = byteBufOn(mem.LineKV, d, r.kc[l].Len()), byteBufOn(mem.LineKV, d, r.vc[l].Len())
 				}
 				if r.ks != nil && r.ks[l] != (Buffer{}) {
 					b.ks[l], b.vs[l] = r.ks[l].At(4*r.kvScaleOff(s, l)), r.vs[l].At(4*r.kvScaleOff(s, l))

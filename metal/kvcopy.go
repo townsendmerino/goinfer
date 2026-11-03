@@ -64,17 +64,12 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 	return gpu.CopyDeviceBatch(copies)
 }
 
-// kvRows is slot s's K (v false) or V cache of layer l at byte off within the slot. Buffer.At sets an absolute offset,
-// so a contiguous layer is addressed from its allocation (slot 0's view, at offset 0).
+// kvRows is slot s's K (v false) or V cache of layer l at byte off within the slot. Buffer.At sets an absolute offset, so the layer is
+// addressed from its pool's base, past the null block.
 func (r *resident) kvRows(s, l int, v bool, off int) Buffer {
-	pick := func(b kvSlotBuf) Buffer {
-		if v {
-			return b.vc[l]
-		}
-		return b.kc[l]
+	b := r.kvSlotBufs[0].kc[l]
+	if v {
+		b = r.kvSlotBufs[0].vc[l]
 	}
-	if r.kvContig {
-		return pick(r.kvSlotBufs[0]).At(r.kvNullBytes[l] + s*r.kvSlotBytes[l] + off)
-	}
-	return pick(r.kvSlotBufs[s]).At(off)
+	return b.At(r.kvNullBytes[l] + s*r.kvSlotBytes[l] + off)
 }
