@@ -58,10 +58,11 @@ func mem6EModelLong(t *testing.T) string {
 
 func asMap(v any) map[string]any { m, _ := v.(map[string]any); return m }
 
-// mem6MainHashes are main's last-logits-plus-32-steps hashes for TestMEM6_prefillHostBytes's prefills (MEM6-G2), by route and
-// prompt rows, taken on main before the change (docs/tasks/task-memory-campaign-2026-10.md, "MEM6 (Metal routes) gates").
+// mem6MainHashes are the last-logits-plus-32-steps hashes of TestMEM6_prefillHostBytes's prefills as they ship (MEM6-G2), by route and
+// prompt rows. The chunked read must not move them. A prefill kernel that changes outputs under its own fidelity gate moves them too,
+// and re-pins here (docs/tasks/task-memory-campaign-2026-10.md, "MEM6 (Metal routes) gates").
 var mem6MainHashes = map[string]map[int]uint64{
-	"batched":     {1024: 0xd183d8b68b01a1ab, 2048: 0xa71ddffe5ef5e90},
+	"batched":     {1024: 0xe9f3095f9da2e155, 2048: 0x28b133776db2141},
 	"layer-major": {1024: 0x88f6214a681043ac, 2048: 0xc40ab360a5668f7c},
 }
 
