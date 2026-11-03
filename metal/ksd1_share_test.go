@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -270,20 +271,26 @@ func TestKSD1_gemma3LongCells(t *testing.T) {
 			if err != nil {
 				t.Fatalf("prefill declined: %v", err)
 			}
-			hit, n := 0, 1
-			if argmaxF(lg) == argmaxF(cpuL[np-1]) {
-				hit++
+			hit, n, klSum := 0, 0, 0.0
+			score := func(l []float32, i int) {
+				n++
+				klSum += ksd1KL(cpuL[i], l)
+				if argmaxF(l) == argmaxF(cpuL[i]) {
+					hit++
+					return
+				}
+				fmt.Fprintf(os.Stderr, "[KSD1-G3] K=%d exact=%v position %d misses: CPU's top two %.3f apart, the arm's choice %.3f under CPU's top\n",
+					np, exact, i-np+1, ksd1TopGap(cpuL[i]), cpuL[i][argmaxF(cpuL[i])]-cpuL[i][argmaxF(l)])
 			}
+			score(lg, np-1)
 			for i := np; i < np+gen-1; i++ {
 				l, err := a.Forward(m.EmbedResidentForTest(seq[i]), i)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if argmaxF(l) == argmaxF(cpuL[i]) {
-					hit++
-				}
-				n++
+				score(l, i)
 			}
+			fmt.Fprintf(os.Stderr, "[KSD1-G3] K=%d exact=%v: mean KL against the CPU %.5f\n", np, exact, klSum/float64(n))
 			return hit, n
 		}
 		eh, en := agree(true)
@@ -300,6 +307,43 @@ func TestKSD1_gemma3LongCells(t *testing.T) {
 	if verdict != "PASS" {
 		t.Errorf("split %.2f%% against exact %.2f%%", ps, pe)
 	}
+}
+
+// ksd1KL is KL(p || q) over two logit vectors' softmaxes.
+func ksd1KL(p, q []float32) float64 {
+	soft := func(l []float32) []float64 {
+		mx := float64(l[argmaxF(l)])
+		out, sum := make([]float64, len(l)), 0.0
+		for i, x := range l {
+			out[i] = math.Exp(float64(x) - mx)
+			sum += out[i]
+		}
+		for i := range out {
+			out[i] /= sum
+		}
+		return out
+	}
+	a, b := soft(p), soft(q)
+	kl := 0.0
+	for i := range a {
+		if a[i] > 0 && b[i] > 0 {
+			kl += a[i] * math.Log(a[i]/b[i])
+		}
+	}
+	return kl
+}
+
+// ksd1TopGap is how far a logit vector's largest value stands above its second largest.
+func ksd1TopGap(l []float32) float32 {
+	first, second := float32(math.Inf(-1)), float32(math.Inf(-1))
+	for _, x := range l {
+		if x > first {
+			first, second = x, first
+		} else if x > second {
+			second = x
+		}
+	}
+	return first - second
 }
 
 // TestKSD1_speed is D1-G3: E2B, PrefillLast on 4,096 rows through the batched pass, the split kernel against the exact one

@@ -167,3 +167,14 @@ check; each is admitted after a model at that head dim passes set A (Phi-3 at in
 **Stopping rule:** one pass, untimed, shared lock. 96 positions a side, so one position is about 1 point.
 **What each outcome means:** PASS: the split kernel stays Gemma 3's default for v0.24.0. FAIL: it goes to Francis before the release, with keeping Gemma 3 on the exact kernel as the option to weigh against its speed.
 
+**Read 2026-11-03: FAIL by the registered rule, and it goes to Francis** (`ks-d1-gemma3-2026-11-03.log`). The test is deterministic: a second pass, with misses and KL printed, read the same counts. The verdict is the first pass's.
+
+| Prompt | Exact, agreement | Split, agreement | Exact, mean KL | Split, mean KL |
+|---|---|---|---|---|
+| 512 | 31/32 | 30/32 | 0.03526 | 0.04159 |
+| 2,048 | 32/32 | 31/32 | 0.03241 | 0.03026 |
+| 3,900 | 28/32 | 27/32 | 0.03164 | 0.03899 |
+| Pooled | 91/96, 94.79% | 88/96, 91.67% | 0.03310 | 0.03695 |
+
+Split is 3.12 points under exact, over the 2.0 allowed, and one position behind in each cell. All 8 of its misses are near-ties: the CPU's top two stand 0.015 to 0.404 logits apart, and each time split chose a token within 0.404 of the CPU's top. Three of them, positions 4, 11 and 15 at 3,900, exact misses too. The bar is two positions at this N, and split missed by three, so this reading can't tell a small real loss from noise. Its speed on Gemma 3 is unmeasured; on E2B it was 4.61× at 4,096 rows.
+

@@ -1,0 +1,35 @@
+# TestKSD1_gemma3LongCells, MacBookPro18,3, 16 GB, 2026-11-03, ~/models/gemma3-1b-q4_k_m.gguf, int4, untimed, shared lock, at 8784bebf.
+== the registered pass
+[KSD1-G3] docs/benchmarks.md sha256 d706d14504ad451eab5e8f388f830cb44d140c25948d4a1106c5a9eae23d7ac0
+[KSD1-G3] K=512: exact 31/32, split 30/32 (12 s)
+[KSD1-G3] K=2048: exact 32/32, split 31/32 (46 s)
+[KSD1-G3] K=3900: exact 28/32, split 27/32 (89 s)
+[KSD1-G3] pooled: exact 91/96 (94.79%), split 88/96 (91.67%): FAIL
+--- FAIL: TestKSD1_gemma3LongCells
+== the diagnostic pass, the same test printing each miss and the mean KL; the verdict is the first pass's
+[KSD1-G3] docs/benchmarks.md sha256 d706d14504ad451eab5e8f388f830cb44d140c25948d4a1106c5a9eae23d7ac0
+[KSD1-G3] K=512 exact=true position 30 misses: CPU's top two 0.260 apart, the arm's choice 0.319 under CPU's top
+[KSD1-G3] K=512 exact=true: mean KL against the CPU 0.03526
+[KSD1-G3] K=512 exact=false position 16 misses: CPU's top two 0.404 apart, the arm's choice 0.404 under CPU's top
+[KSD1-G3] K=512 exact=false position 18 misses: CPU's top two 0.120 apart, the arm's choice 0.129 under CPU's top
+[KSD1-G3] K=512 exact=false: mean KL against the CPU 0.04159
+[KSD1-G3] K=512: exact 31/32, split 30/32 (12 s)
+[KSD1-G3] K=2048 exact=true: mean KL against the CPU 0.03241
+[KSD1-G3] K=2048 exact=false position 23 misses: CPU's top two 0.049 apart, the arm's choice 0.049 under CPU's top
+[KSD1-G3] K=2048 exact=false: mean KL against the CPU 0.03026
+[KSD1-G3] K=2048: exact 32/32, split 31/32 (46 s)
+[KSD1-G3] K=3900 exact=true position 4 misses: CPU's top two 0.024 apart, the arm's choice 0.223 under CPU's top
+[KSD1-G3] K=3900 exact=true position 11 misses: CPU's top two 0.232 apart, the arm's choice 0.232 under CPU's top
+[KSD1-G3] K=3900 exact=true position 15 misses: CPU's top two 0.015 apart, the arm's choice 0.015 under CPU's top
+[KSD1-G3] K=3900 exact=true position 22 misses: CPU's top two 0.108 apart, the arm's choice 0.108 under CPU's top
+[KSD1-G3] K=3900 exact=true: mean KL against the CPU 0.03164
+[KSD1-G3] K=3900 exact=false position 4 misses: CPU's top two 0.024 apart, the arm's choice 0.024 under CPU's top
+[KSD1-G3] K=3900 exact=false position 5 misses: CPU's top two 0.293 apart, the arm's choice 0.293 under CPU's top
+[KSD1-G3] K=3900 exact=false position 11 misses: CPU's top two 0.232 apart, the arm's choice 0.232 under CPU's top
+[KSD1-G3] K=3900 exact=false position 14 misses: CPU's top two 0.194 apart, the arm's choice 0.194 under CPU's top
+[KSD1-G3] K=3900 exact=false position 15 misses: CPU's top two 0.015 apart, the arm's choice 0.015 under CPU's top
+[KSD1-G3] K=3900 exact=false: mean KL against the CPU 0.03899
+[KSD1-G3] K=3900: exact 28/32, split 27/32 (91 s)
+[KSD1-G3] pooled: exact 91/96 (94.79%), split 88/96 (91.67%): FAIL
+--- FAIL: TestKSD1_gemma3LongCells
+THIS RECORD ENDS RED: split misses the registered bar by 1.12 points. Francis's decision, README.md, "KS-D1 on Gemma 3".
