@@ -1333,12 +1333,13 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
   - **Void if:** a card run outside the timing lock; a NOT RUN counted as a pass; a bar moved after a reading.
   - **Readings, 2026-11-03 (nobara-sb01; `docs/measurements/kv8-2026-11/state-slots.log`).**
     - **S-1 to S-5 pass.** S-1's red first, the claim on one shared state: 5,632, 11,264 and 5,632 logits differ. With the slots, 0 of every position's logits, on all three fixtures.
-    - **S-2's plant is one pair shared by both slots**, which is what zeroing every slot's pair comes to, with no seam in the build for it. Red on all three.
+    - **S-2's plant zeroes every slot's pair on a reset,** held through that one reset, because a forward from position 0 resets too. Red on all three, in the state and in the logits: 256 to 512 logits differ. A reset that does nothing is red on Mamba-2's seam. A first version of this plant shared one pair between the slots, which went red before the reset ran (#646's review).
     - **S-3:** the state line reads one slot's bytes x slots, plus the checkpoint's one copy, at 1, 2 and 4 slots: 33,792, 50,688 and 84,480 on `qwen35-tiny`. A plant on the state line of a
       `slots2` row is red through the gate's table.
     - **S-5's plant,** the snapshot reading the bound pair, is red: 256 logits differ at the first position past the restore.
     - **The memory gate:** 474 rows hold. **The table loses 20 rows, 843 to 823**, where this plan said it would gain none: at two and four slots the plan's null block per slot now
       covers the staging ring on the recurrent rows, as it already did on the others, so `kv-ring` no longer fires there. No new row.
+      That cover is the plan's null block per slot, where the build allocates one, so tightening that pricing turns these 20 rows red until `kv-ring` is priced (MM8 CUDA, KV staging ring). They cannot stay in the table meanwhile: the gate reds a gap that no longer fires.
     - **S-7:** the memory census gains 20 lines, every one a recurrent family's `int4/slots4`, two profiles each. The admission census does not change.
     - **Added beyond the plan:** a marked speculative row folds into the slot that marked it when another is bound (`TestRecurrentSlots_markedRowsFoldIntoTheirSlot`), and a graph
       capture is refused on a DeltaNet build of several slots, because a segment holds one slot's pair. The second has no test: graphs need EXCLUSIVE_PROCESS or MPS here.

@@ -136,3 +136,25 @@ FAIL
 FAIL	github.com/townsendmerino/goinfer/cuda	2.031s
 FAIL
 0
+
+# #646 round 1: S-2's own plant, a reset zeroing every slot, held through that reset alone; expert streaming's one slot. 2026-11-03 13:29:44 PST
+--- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState (2.93s)
+--- PASS: TestRecurrentSlots_sharedStateGoesRed (1.16s)
+--- PASS: TestRecurrentSlots_expertCacheKeepsOne (0.38s)
+--- PASS: TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest (0.37s)
+    mamba_guards_test.go:471: planted, a reset zeroes every slot: [a reset with slot 1 bound changed slot 0: 0 non-zero elements, 4224 before slot 0's sequence at position 6: 256 logits differ from its solo run]
+    mamba_guards_test.go:471: planted, a reset zeroes every slot: [a reset with slot 1 bound changed slot 0: 0 non-zero elements, 2688 before slot 0's sequence at position 6: 512 logits differ from its solo run]
+    mamba_guards_test.go:471: planted, a reset zeroes every slot: [a reset with slot 1 bound changed slot 0: 0 non-zero elements, 2624 before slot 0's sequence at position 6: 256 logits differ from its solo run]
+    mamba_guards_test.go:487: planted: [a reset left 2624 of the bound slot's state elements non-zero]
+--- PASS: TestRecurrentSlots_resetIsTheSlotsOwn (1.78s)
+--- PASS: TestRecurrentSlots_stateLinePerSlot (0.83s)
+--- PASS: TestRecurrentSlots_fitPricesTheState (0.00s)
+--- PASS: TestRecurrentSlots_checkpointStaysWithItsSlot (1.17s)
+--- PASS: TestRecurrentSlots_decoderChoosesAmongSlots (1.79s)
+--- PASS: TestRecurrentSlots_snapshotHoldsTheSlotItNames (0.91s)
+--- PASS: TestRecurrentSlots_markedRowsFoldIntoTheirSlot (0.36s)
+ok  	github.com/townsendmerino/goinfer/cuda	11.725s
+# Plant: expert streaming no longer forces one slot
+    mamba_guards_test.go:357: a recurrent model with expert streaming that asked for 2 has 2 KV slots; want 1
+--- FAIL: TestRecurrentSlots_expertCacheKeepsOne (2.54s)
+FAIL	github.com/townsendmerino/goinfer/cuda	2.564s

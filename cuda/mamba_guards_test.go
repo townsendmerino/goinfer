@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -217,7 +218,11 @@ func recurrentSlotsLoad(t *testing.T, fixture string, o decoder.Options) (*decod
 	requireCUDADevice(t)
 	defer nemotronFeaturesForTest()()
 	o.Backend, o.Quant = "cuda", "int4"
-	m, err := decoder.Load("../testdata/"+fixture, o)
+	path := fixture
+	if !strings.HasPrefix(path, "..") {
+		path = "../testdata/" + fixture
+	}
+	m, err := decoder.Load(path, o)
 	if err != nil {
 		t.Fatalf("load %s: %v", fixture, err)
 	}
@@ -336,8 +341,28 @@ func TestRecurrentSlots_sharedStateGoesRed(t *testing.T) {
 	}
 }
 
-// TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest: a recurrent model whose slot count is only the caller's default keeps one slot,
-// so a default load keeps its bytes; expert streaming keeps one as well.
+// TestRecurrentSlots_expertCacheKeepsOne: expert streaming takes what VRAM is left, so an extra slot is expert slots lost, and a recurrent model keeps one slot under
+// it though the caller asked for more. The same model without it gets what it asked for.
+func TestRecurrentSlots_expertCacheKeepsOne(t *testing.T) {
+	requireCUDADevice(t)
+	const fixture = "../decoder/testdata/qwen3_5_moe-tiny"
+	if _, err := os.Stat(filepath.Join(fixture, "model.safetensors")); err != nil {
+		t.Skipf("no weights at %s (gitignored; scripts/worktree_fixtures.sh places them)", fixture)
+	}
+	_, c := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2, MoECacheExperts: true})
+	if !c.cacheExperts {
+		t.Fatal("the load built no expert cache: this test reads nothing")
+	}
+	if n := c.KVSlots(); n != 1 {
+		t.Errorf("a recurrent model with expert streaming that asked for 2 has %d KV slots; want 1", n)
+	}
+	_, u := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
+	if n := u.KVSlots(); n != 2 {
+		t.Errorf("the same model without expert streaming has %d KV slots; want 2", n)
+	}
+}
+
+// TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest: a recurrent model whose slot count is only the caller's default keeps one slot, so a default load keeps its bytes.
 func TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest(t *testing.T) {
 	for _, fixture := range recurrentSlotFixtures {
 		_, r := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 4, ResidentKVSlotsDefault: true})
@@ -380,8 +405,8 @@ func recurrentSlotDirty(t *testing.T, r *cudaResident, s int) int {
 }
 
 // recurrentSlotReset is S-2 on r: after each sequence dirties its slot, a reset with slot 1 bound zeroes slot 1 and changes nothing of
-// slot 0, whose sequence then continues as if alone. It returns what it found wrong.
-func recurrentSlotReset(t *testing.T, r *cudaResident, A, B, refA [][]float32) (wrong []string) {
+// slot 0, whose sequence then continues as if alone. It returns what it found wrong. duringReset, if not nil, is a plant to hold through that reset.
+func recurrentSlotReset(t *testing.T, r *cudaResident, A, B, refA [][]float32, duringReset *bool) (wrong []string) {
 	t.Helper()
 	half := len(A) / 2
 	recurrentSlotBind(t, r, 0)
@@ -392,12 +417,23 @@ func recurrentSlotReset(t *testing.T, r *cudaResident, A, B, refA [][]float32) (
 		}
 	}
 	recurrentSlotBind(t, r, 1)
-	recurrentSlotSolo(t, r, B)
+	for i, emb := range B { // the slot is fresh, so no reset comes before the one under test
+		if _, err := r.Forward(emb, i); err != nil {
+			t.Fatal(err)
+		}
+	}
 	before0 := recurrentSlotDirty(t, r, 0)
 	if before0 == 0 || recurrentSlotDirty(t, r, 1) == 0 {
 		t.Fatalf("after their sequences, slot 0 has %d and slot 1 %d non-zero state elements; want both dirty", before0, recurrentSlotDirty(t, r, 1))
 	}
+	if duringReset != nil { // a forward from position 0 resets too, so a plant holds for this reset alone
+		*duringReset = true
+		defer func() { *duringReset = false }()
+	}
 	r.Reset() // slot 1 is bound
+	if duringReset != nil {
+		*duringReset = false
+	}
 	if n := recurrentSlotDirty(t, r, 1); n != 0 {
 		wrong = append(wrong, fmt.Sprintf("a reset left %d of the bound slot's state elements non-zero", n))
 	}
@@ -418,7 +454,8 @@ func recurrentSlotReset(t *testing.T, r *cudaResident, A, B, refA [][]float32) (
 	return wrong
 }
 
-// TestRecurrentSlots_resetIsTheSlotsOwn is S-2. The plant is one pair shared by both slots, so a reset of slot 1 zeroes slot 0's.
+// TestRecurrentSlots_resetIsTheSlotsOwn is S-2. Its plant zeroes every slot's pair on a reset, with the slots otherwise apart, so only the reset can be what goes red.
+// Mamba-2's own reset seam leaves the bound slot dirty: the check that the reset does anything.
 func TestRecurrentSlots_resetIsTheSlotsOwn(t *testing.T) {
 	for _, fixture := range recurrentSlotFixtures {
 		t.Run(fixture, func(t *testing.T) {
@@ -426,18 +463,32 @@ func TestRecurrentSlots_resetIsTheSlotsOwn(t *testing.T) {
 			A, B := recurrentSlotSeqs(m, 12)
 			_, one := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 1})
 			refA := recurrentSlotSolo(t, one, A)
-			for _, w := range recurrentSlotReset(t, r, A, B, refA) {
+			for _, w := range recurrentSlotReset(t, r, A, B, refA, nil) {
 				t.Error(w)
 			}
 			_, planted := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
-			recurrentSlotPlantShared(planted)
-			wrong := recurrentSlotReset(t, planted, A, B, refA)
-			t.Logf("planted: %v", wrong)
-			if len(wrong) == 0 {
-				t.Error("with one pair shared by both slots, the reset check found nothing")
+			every := recurrentSlotReset(t, planted, A, B, refA, &recurrentResetEverySlotForTest)
+			t.Logf("planted, a reset zeroes every slot: %v", every)
+			logits := false
+			for _, w := range every {
+				logits = logits || strings.Contains(w, "logits differ")
+			}
+			if !logits {
+				t.Error("with a reset that zeroes every slot, slot 0's sequence still equals its solo run: the logit check does not see it")
 			}
 		})
 	}
+	t.Run("a reset that does nothing", func(t *testing.T) {
+		m, r := recurrentSlotsLoad(t, "nemotron-tiny", decoder.Options{ResidentKVSlots: 2})
+		A, B := recurrentSlotSeqs(m, 12)
+		_, one := recurrentSlotsLoad(t, "nemotron-tiny", decoder.Options{ResidentKVSlots: 1})
+		refA := recurrentSlotSolo(t, one, A)
+		wrong := recurrentSlotReset(t, r, A, B, refA, &mambaResetSkipForTest)
+		t.Logf("planted: %v", wrong)
+		if len(wrong) == 0 {
+			t.Error("with a reset that leaves the Mamba-2 state, the check found nothing")
+		}
+	})
 }
 
 // TestRecurrentSlots_stateLinePerSlot is S-3: the ledger's state line holds the plan's one slot's state once per slot, plus the
@@ -470,9 +521,12 @@ func TestRecurrentSlots_stateLinePerSlot(t *testing.T) {
 				t.Errorf("%s at %d slots: the state line holds %d bytes, want %d", fixture, slots, got, want)
 			}
 		}
-		recurrentSlotAllocFailForTest = true
-		_, r := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
-		recurrentSlotAllocFailForTest = false
+		r := func() *cudaResident {
+			recurrentSlotAllocFailForTest = true
+			defer func() { recurrentSlotAllocFailForTest = false }()
+			_, r := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
+			return r
+		}()
 		if n := r.KVSlots(); n != 1 {
 			t.Errorf("%s: a further slot's state failed to allocate, and the build kept %d slots", fixture, n)
 		}
@@ -481,8 +535,11 @@ func TestRecurrentSlots_stateLinePerSlot(t *testing.T) {
 				t.Errorf("%s: layer %d kept %d pairs after its further slot was given up", fixture, l, len(r.layers[l].recSlots))
 			}
 		}
-		if got, one := stateLine(r), 2*r.recurrentStateCharged(); r.RecurrentCheckpointBytes() > 0 && got != one {
-			t.Errorf("%s: after the further slot was given up, the state line holds %d bytes, want %d", fixture, got, one)
+		if r.RecurrentCheckpointBytes() <= 0 {
+			t.Errorf("%s: the load kept no checkpoint (%s), so the state line below reads less than this test means", fixture, r.ckptDeclined)
+		}
+		if got, want := stateLine(r), 2*r.recurrentStateCharged(); got != want {
+			t.Errorf("%s: after the further slot was given up, the state line holds %d bytes, want %d, one slot's and the checkpoint's", fixture, got, want)
 		}
 	}
 }

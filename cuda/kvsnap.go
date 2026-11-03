@@ -361,10 +361,10 @@ func (r *cudaResident) restoreKVRows(s *cudaKVSnapshot, slot, from, end int) (ma
 	}
 	for _, d := range s.dn {
 		Ly := &r.layers[d.layer]
-		if Ly.dnWin.Len() != d.winWords || Ly.dnState.Len() != d.stW {
-			return true, fmt.Errorf("cuda: RestoreKV: layer %d's DeltaNet state is %d+%d words, the snapshot's %d+%d", d.layer, Ly.dnWin.Len(), Ly.dnState.Len(), d.winWords, d.stW)
-		}
 		pair := Ly.recurrentOf(slot)
+		if pair.win.Len() != d.winWords || pair.state.Len() != d.stW {
+			return true, fmt.Errorf("cuda: RestoreKV: layer %d's DeltaNet state is %d+%d words, the snapshot's %d+%d", d.layer, pair.win.Len(), pair.state.Len(), d.winWords, d.stW)
+		}
 		if err := gpu.Upload(pair.win, buf[d.winOff:d.winOff+d.winWords]); err != nil {
 			return true, err
 		}

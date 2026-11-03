@@ -2780,6 +2780,11 @@ func (r *cudaResident) resetState() error {
 	if e := r.resetMambaState(); e != nil {
 		return e
 	}
+	if recurrentResetEverySlotForTest {
+		if e := r.resetEverySlotForTest(); e != nil {
+			return e
+		}
+	}
 	r.DropFold() // rows marked against the state being zeroed must never fold into the new sequence
 	if r.dnet == nil {
 		return nil

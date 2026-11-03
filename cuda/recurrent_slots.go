@@ -1,6 +1,7 @@
 package cuda
 
 import (
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/mem"
 )
@@ -32,6 +33,23 @@ func (L *cudaLayer) recurrentOf(s int) recurrentPair {
 		return L.recSlots[s]
 	}
 	return L.recurrentLive()
+}
+
+// recurrentResetEverySlotForTest, when set, makes a reset zero every slot's pair, not the bound one's: the plant of KV8's S-2. Only a test sets it.
+var recurrentResetEverySlotForTest bool
+
+// resetEverySlotForTest is that plant's body.
+func (r *cudaResident) resetEverySlotForTest() error {
+	for l := range r.layers {
+		for _, p := range r.layers[l].recSlots {
+			for _, b := range []Buffer{p.win, p.state} {
+				if e := gpu.Upload(b, make([]float32, b.Len())); e != nil {
+					return e
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // recurrentSlotAllocFailForTest, when set, fails allocRecurrentSlots's first state as a full device would. Only a test sets it.
