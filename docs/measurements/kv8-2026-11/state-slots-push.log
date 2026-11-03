@@ -96,3 +96,21 @@ ok  	github.com/townsendmerino/goinfer/decoder	0.830s
 staticcheck cuda exit 0
 citation lint exit 0
 # fail=0, 12:46:30 PST
+
+# #646 round 1's push record at 138d0ac5f, main 937cfe8fb merged, 2026-11-03 13:35:50 PST
+ok  	github.com/townsendmerino/goinfer/cuda	144.826s
+PASS: 31, SKIP: 2, FAIL: 0
+--- SKIP: TestNemotronResidentCUDA_fitPlan (0.00s)
+--- SKIP: TestNemotronResidentCUDA_tier1 (0.00s)
+exit 0
+# touched.py in a clean worktree, 13:38:17 PST
+  ok   test cuda -run ^(TestB26Verdict_bands|TestBackendAdmiss (135.6s)
+  skip metal: builds on darwin only
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push); did not run: metal
+exit 0
+test_touched exit 0
+1
+staticcheck cuda exit 0
+citation lint exit 0
+# fail=0, 13:41:17 PST
