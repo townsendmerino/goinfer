@@ -976,7 +976,7 @@ type multiOut int
 // for the test that compares the two and the A/B that times them. Tests only.
 var stepPrefillAllHeads = false
 
-// stepSlotOffsetPlantForTest shifts every step row's table by this many entries: the planted defect that the one-slot
+// stepSlotOffsetPlantForTest shifts every row's entry in tabOffB by this many table entries: the planted defect that the one-slot
 // step-prefill identity check must catch. Zero in production.
 var stepSlotOffsetPlantForTest = 0
 

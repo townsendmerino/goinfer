@@ -59,6 +59,10 @@ func r17WithoutTable(source string) string {
 // TestAttnFABlkIsTheGradedKernel fails if the shipped attention_fa_blk kernel is edited: a change to it needs the
 // R17 grading (fidelity gate, kernel accuracy, speed) re-run — then update the pin with the new record's commit.
 func TestAttnFABlkIsTheGradedKernel(t *testing.T) {
+	// r17WithoutTable would hide a lookup already gone from the shipped text, so the shipped text has no contiguous read left.
+	if src := r17GradedKernelSource(); strings.Contains(src, "(b0 + j)*kvDim") || !strings.Contains(src, "device const uint* kt[[buffer(10)]],") {
+		t.Fatal("shipped attention_fa_blk reads a key or value without the block table, or takes no table")
+	}
 	sum := sha256.Sum256([]byte(r17Kernels))
 	if got := hex.EncodeToString(sum[:]); got != r17GradedKernelSourceSHA256 {
 		t.Fatalf("shipped attention_fa_blk differs from the kernel graded 2026-09-25 (sha256 %s, graded %s) — re-grade before changing the pin", got, r17GradedKernelSourceSHA256)
@@ -274,7 +278,8 @@ func TestAttnFABlkSelection(t *testing.T) {
 
 // TestKVPages_fusedKernelsReadTheTable: every first pass of the fused attention reads a key through its block table. Rows laid out
 // block by block in a scrambled order, with the table that names them, give the partials of the contiguous layout bit for bit, and a
-// table one block off does not. 300 keys cross several block edges, and the block kernels' unaligned 32-key runs straddle them.
+// table one block off does not. 300 keys cross several block edges. Split in two, the block kernels take both their branches, whole
+// 32-key runs and the shorter one at a chunk's end, and the second chunk's runs, starting at key 150, straddle a block edge.
 func TestKVPages_fusedKernelsReadTheTable(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -291,9 +296,9 @@ func TestKVPages_fusedKernelsReadTheTable(t *testing.T) {
 		nKV, G, hd, nSp int
 	}{
 		{"attention_fa", 2, 2, 128, 4},
-		{"attention_fa_blk_g2", 2, 2, 128, attnFABlkSplit},
-		{"attention_fa_blk_g7", 1, 7, 128, attnFABlkSplit},
-		{"attention_fa_blk64_g7", 1, 7, 64, attnFABlkSplit},
+		{"attention_fa_blk_g2", 2, 2, 128, 2},
+		{"attention_fa_blk_g7", 1, 7, 128, 2},
+		{"attention_fa_blk64_g7", 1, 7, 64, 2},
 	} {
 		t.Run(c.kernel, func(t *testing.T) {
 			pipe, err := d.NewComputePipeline(lib, c.kernel)
@@ -352,7 +357,7 @@ func TestKVPages_fusedKernelsReadTheTable(t *testing.T) {
 			if n := differ(want, run(scrambled, 0)); n != 0 {
 				t.Errorf("%d of %d partial values differ between scrambled and in-order blocks", n, len(want))
 			}
-			if n := differ(want, run([]uint32{1, 2, 3, 4, 5, 5}, 1)); n == 0 {
+			if n := differ(want, run(inOrder, 1)); n == 0 { // the same pool as want's, each table entry one block on
 				t.Error("a table one block off moved no partial value: the kernel does not read the table")
 			}
 		})

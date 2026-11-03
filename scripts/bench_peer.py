@@ -628,11 +628,12 @@ class SwapWatch:
             self._thread.join(timeout=5)
         now_in, now_out = swap_io_mb()
         if self.base_in is not None and now_in is not None:
-            self.swapin = round(now_in - self.base_in, 1)
+            self.swapin = now_in - self.base_in
         if self.base_out is not None and now_out is not None:
-            self.swapout = round(now_out - self.base_out, 1)
+            self.swapout = now_out - self.base_out
         return {"swap_base_mb": self.base, "swap_growth_mb": round(self.peak, 1), "swap_killed": self.killed,
-                "swapin_mb": self.swapin, "swapout_mb": self.swapout, "swap_void": self.void_reason()}
+                "swapin_mb": None if self.swapin is None else round(self.swapin, 1),
+                "swapout_mb": None if self.swapout is None else round(self.swapout, 1), "swap_void": self.void_reason()}
 
     def void_reason(self):
         """BENCH_SWAP_VOID_MB voids on swap GROWTH over it (0: any growth; the Mac's rule). BENCH_SWAPIN_VOID_MB and
@@ -647,9 +648,9 @@ class SwapWatch:
         if lim and self.peak > float(lim):
             return f"swap grew +{self.peak:.1f} MB during the cell (> {float(lim):.0f} MB): void"
         if inlim and self.swapin is not None and self.swapin > float(inlim):
-            return f"swap-ins of {self.swapin:.1f} MB during the cell (> {float(inlim):.0f} MB): void"
+            return f"swap-ins of {self.swapin:.2f} MB during the cell (> {float(inlim):.0f} MB): void"
         if outlim and self.swapout is not None and self.swapout > float(outlim):
-            return f"swap-outs of {self.swapout:.1f} MB during the cell (> {float(outlim):.0f} MB): void"
+            return f"swap-outs of {self.swapout:.2f} MB during the cell (> {float(outlim):.0f} MB): void"
         return None
 
 
@@ -2209,7 +2210,6 @@ def main():
             sys.exit(f"REFUSED: the arms do not share a quant class: {why}. Match goinfer's quant to the peer's "
                      f"(BENCH_QUANT_OVERRIDE), or set BENCH_UNMATCHED=1 to run and mark every cell unmatched.")
         print(f"# quant {mk}: " + (why or "the arms share a quant class (or goinfer's is chosen at load: checked per cell)"), flush=True)
-    swap_streak = [0]
     for phase, engine, backend, mk, depth, cfg, block in plan:
         key = (phase, engine, backend, mk, depth, cfg, block)
         if key in done:
@@ -2225,7 +2225,7 @@ def main():
                 return run_vision_cell(engine)
             return run_cell(engine, mk, depth, cfg, backend)
         t0 = time.time()
-        ((rates, err, counts), machine, void_starts), swap_voids = run_with_swap_voids(lambda: start_clean(machine_state, need, _run), swap_streak)
+        ((rates, err, counts), machine, void_starts), swap_voids = run_with_swap_voids(lambda: start_clean(machine_state, need, _run))
         machine["gate"] = gate
         machine["fit_need_mb"], machine["fit_need_source"] = need, need_src
         # prompt_tokens(depth, mk) only resolves for phases A/B/C -- "embed"/"vision" aren't real
@@ -2283,23 +2283,21 @@ def main():
             sys.exit(f"REFUSED after this cell: goinfer loaded a quant the peers do not share: {unmatched}. The cell is "
                      f"recorded with quant_matched false; match the quants, or set BENCH_UNMATCHED=1.")
 
-def run_with_swap_voids(run, streak):
+def run_with_swap_voids(run):
     """run() as a cell, under BENCH_SWAP_VOID_STOP=<n> (unset: one attempt, the old behavior): a cell a swap reading voids re-runs in
-    place, its attempts listed and never averaged, and n voids in a row, counted across cells in streak[0], stop the run, since that
-    box state answers nothing. Returns run()'s result and the void attempts' reasons."""
+    place, its attempts listed and never averaged, and n voids in a row stop the run, since that box state answers nothing. Because a
+    void re-runs in place, the voids in a row are always one cell's. Returns run()'s result and the void attempts' reasons."""
     stop = int(os.environ.get("BENCH_SWAP_VOID_STOP", "0") or 0)
     voids = []
     while True:
         result = run()
         why = ((result[0][2] or {}).get("swap") or {}).get("swap_void")
         if not stop or not why:
-            streak[0] = 0 if stop else streak[0]
             return result, voids
         voids.append(why)
-        streak[0] += 1
-        print(f"# cell VOID: {why}; {streak[0]} in a row", flush=True)
-        if streak[0] >= stop:
-            sys.exit(f"STOPPED: {streak[0]} swap voids in a row (BENCH_SWAP_VOID_STOP={stop}); the last: {why}")
+        print(f"# cell VOID: {why}; {len(voids)} in a row", flush=True)
+        if len(voids) >= stop:
+            sys.exit(f"STOPPED: {len(voids)} swap voids in a row (BENCH_SWAP_VOID_STOP={stop}); the last: {why}")
 
 
 def _child_setup():
