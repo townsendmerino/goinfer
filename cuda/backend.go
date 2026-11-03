@@ -776,7 +776,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	attnTempBeta, attnTempOrigMaxPos := m.AttnTempParams() // Ministral 3, FeatAttnTemp; 0 for every other family
 	// Computed once: both ctxCap and extraBytes below need it, and a struct literal cannot read a sibling field set in the
 	// same literal.
-	kvSlotsReq := cudaKVSlotsRequest(m, dnetP != nil || mambaP != nil)
+	kvSlotsReq := cudaKVSlotsRequest(m)
 	// The driver's 2 MiB rounding over the weight buffers is the plan's figure (decoder.Model.PlanSlack, this package's
 	// report): the plan prices it as a fixed term, so the context it picks already leaves room for it, and the build adds no
 	// copy of its own. Plan-only, it is computed here, over the buffers just planned.
@@ -2068,7 +2068,8 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	// EXCLUSIVE_PROCESS tenancy or MPS, so a shared-GPU box under DEFAULT declines to the live path
 	// (docs/cuda-graphs-investigation.md).
 	// A windowed layer's K/V pointer moves with its base, so a captured graph would replay a stale one: graphs decline under windowed KV.
-	r.graphs = os.Getenv("GOINFER_CUDA_GRAPHS") != "" && !r.g4cap && !r.isMLA && !r.kvWin && r.mamba == nil
+	r.graphs = os.Getenv("GOINFER_CUDA_GRAPHS") != "" && !r.g4cap && !r.isMLA && !r.kvWin && r.mamba == nil &&
+		!(r.dnet != nil && r.KVSlots() > 1) // a captured segment holds one slot's window and state
 	r.graphsSync = os.Getenv("GOINFER_CUDA_GRAPHS_SYNC") != "" // debug: serialize replays (bisect ordering hazards)
 	r.graphMask = os.Getenv("GOINFER_CUDA_GRAPHS_ONLY")        // debug: replay only these segments (A/B/C), rest live
 	if e := r.admitGraphs(); e != nil {
@@ -2200,16 +2201,14 @@ func (r *cudaResident) openForPlan(m *decoder.Model) error {
 // fit check, after the plan has read free VRAM.
 var prePlanPoolOffForTest bool
 
-// cudaKVSlotsRequest is how many resident KV slots a build asks checkKVFits for: the model's request
-// (decoder.Model.ResidentKVSlotsRequest, already 1 for a family with recurrent state), forced to 1 in two cases the
-// decoder cannot see. A Gated-DeltaNet resident mutates its state in place, outside any slot. Expert streaming
-// (MoECacheExperts) takes whatever VRAM is left, so every extra KV slot is an expert-cache slot lost
-// (docs/tasks/task-concurrency-2026-09.md).
-func cudaKVSlotsRequest(m *decoder.Model, recurrent bool) int {
-	if recurrent || m.MoECacheExperts() {
+// cudaKVSlotsRequest is how many resident KV slots a build asks checkKVFits for: the model's request on this backend
+// (decoder.Model.ResidentKVSlotsRequestFor), forced to 1 on expert streaming (MoECacheExperts), which takes whatever VRAM is
+// left, so every extra KV slot is an expert-cache slot lost (docs/tasks/task-concurrency-2026-09.md).
+func cudaKVSlotsRequest(m *decoder.Model) int {
+	if m.MoECacheExperts() {
 		return 1
 	}
-	return m.ResidentKVSlotsRequest()
+	return m.ResidentKVSlotsRequestFor("cuda")
 }
 
 // cudaBackend and cudaResident implement Close() error and io.Closer, the same spelling of "free this GPU resource" as

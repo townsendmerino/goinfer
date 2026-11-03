@@ -106,7 +106,7 @@ func TestCopied(t *testing.T) {
 	a := NewSlots(3)
 	commitPrompt(a, 0, root, append(slices.Clone(pre), seqOf(30, 2)...), seqOf(20, 3), metalClasses)
 	use0 := a.Use(0)
-	a.Copied(0, 2, 192)
+	a.Copied(0, 2, 0, 192)
 	s := a.Seq(2)
 	if s == nil || s.Len() != 192 || s.Published() != 3 || !slices.Equal(s.Tokens(), pre[:192]) {
 		t.Fatalf("slot 2 after the copy: %+v", s)
@@ -243,7 +243,7 @@ func TestOracle_share(t *testing.T) {
 							continue
 						}
 						rows := (1 + rng.Intn(a.Seq(src).Published())) * BlockRows
-						a.Copied(src, sl, rows)
+						a.Copied(src, sl, 0, rows)
 						model[sl] = rec{root: model[src].root, tokens: slices.Clone(model[src].tokens[:rows]), classes: slices.Clone(model[src].classes[:rows])}
 					default:
 						a.Forget(sl)

@@ -291,3 +291,96 @@ func benchRequest(b *testing.B, n int) {
 
 func BenchmarkRequest_20000(b *testing.B) { benchRequest(b, 20000) }
 func BenchmarkRequest_512(b *testing.B)   { benchRequest(b, 512) }
+
+// TestSlots_floor: a slot with a floor serves no shorter prefix, by its own score or as a copy's source. The floor holds through a forget and a commit, follows a
+// copy, and goes with a write from position 0 or a restore.
+func TestSlots_floor(t *testing.T) {
+	root := Root{Model: "m", Precision: "f16"}
+	cm := metalClasses
+	toks := make([]int, 4*BlockRows)
+	for i := range toks {
+		toks[i] = i + 1
+	}
+	short := Request{Root: root, Tokens: append(slices.Clone(toks[:BlockRows]), -1)}
+	long := Request{Root: root, Tokens: append(slices.Clone(toks), -1)}
+	floor := 2 * BlockRows
+	a := NewSlots(3)
+	commitPrompt(a, 0, root, toks, nil, cm)
+	if got := a.Score(0, short, false); got != BlockRows {
+		t.Fatalf("with no floor, a short prefix scores %d, want %d", got, BlockRows)
+	}
+	hit := func(req Request, s int) int {
+		t.Helper()
+		return a.Hits(req, cm.ColdClasses(len(req.Tokens)))[s]
+	}
+	if got := hit(short, 0); got != BlockRows {
+		t.Fatalf("with no floor, a short prefix hits %d rows, want %d", got, BlockRows)
+	}
+	a.SetFloor(0, floor)
+	if got := a.Score(0, short, false); got != 0 {
+		t.Errorf("below the floor, a prefix scores %d", got)
+	}
+	if got := hit(short, 0); got != 0 {
+		t.Errorf("below the floor, a prefix hits %d rows", got)
+	}
+	if got := a.Score(0, long, false); got != len(toks) {
+		t.Errorf("past the floor, a prefix scores %d, want %d", got, len(toks))
+	}
+	a.Commit(0, root, toks, nil, len(toks), cm)
+	if got := a.Score(0, short, false); got != 0 {
+		t.Errorf("after a commit, below the floor, a prefix scores %d", got)
+	}
+	a.Copied(0, 1, 0, len(toks))
+	if got := a.Score(1, short, false); got != 0 {
+		t.Errorf("a copy serves %d rows below its source's floor", got)
+	}
+	if got := a.Score(1, long, false); got != len(toks) {
+		t.Errorf("a copy serves %d rows past the floor, want %d", got, len(toks))
+	}
+	a.Restored(1, root, toks, nil)
+	if got := a.Score(1, short, false); got != BlockRows {
+		t.Errorf("after a restore, a short prefix scores %d, want %d", got, BlockRows)
+	}
+	a.Forget(0) // a continuation forgets before it writes, and those rows stay missing
+	a.Commit(0, root, toks, nil, len(toks), cm)
+	if got := a.Score(0, short, false); got != 0 {
+		t.Errorf("after a forget and a commit, below the floor, a prefix scores %d", got)
+	}
+	a.SetFloor(0, 0) // a write from position 0
+	if got := a.Score(0, short, false); got != BlockRows {
+		t.Errorf("after a write from position 0, a short prefix scores %d, want %d", got, BlockRows)
+	}
+	a.Commit(1, root, toks, nil, len(toks), cm)
+	a.SetFloor(1, 0)
+	a.SetFloor(2, floor) // a slot holding nothing gives a copy nothing, and no floor
+	a.Copied(2, 1, 0, len(toks))
+	a.Commit(1, root, toks, nil, len(toks), cm)
+	if got := a.Score(1, short, false); got != BlockRows {
+		t.Errorf("after a copy from an empty slot, a short prefix scores %d, want %d", got, BlockRows)
+	}
+	// A copy into a slot that holds a floor: from row 0 every row is the source's, so the slot's own floor goes; from further on, the rows below
+	// the copy are still the slot's own, and its floor stays.
+	a.Commit(0, root, toks, nil, len(toks), cm)
+	a.SetFloor(0, 0)
+	a.SetFloor(1, floor)
+	a.Copied(0, 1, 0, len(toks))
+	if got := a.Score(1, short, false); got != BlockRows {
+		t.Errorf("after a whole copy from a slot with no floor, a short prefix scores %d, want %d", got, BlockRows)
+	}
+	a.SetFloor(1, floor)
+	a.Copied(0, 1, floor, len(toks))
+	if got := a.Score(1, short, false); got != 0 {
+		t.Errorf("after a copy past the slot's own floor, a prefix below it scores %d", got)
+	}
+	a.SetFloor(1, 0)
+	a.RaiseFloor(1, floor)
+	a.RaiseFloor(1, 0)
+	if got := a.Score(1, short, false); got != 0 {
+		t.Errorf("a raise lowered the floor: a prefix below it scores %d", got)
+	}
+	a.SetFloor(a.Bound(), floor)
+	a.Resize(2)
+	if got := a.Score(0, short, false); got != 0 {
+		t.Errorf("after a resize, below the floor of the slot it kept, a prefix scores %d", got)
+	}
+}

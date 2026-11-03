@@ -176,29 +176,6 @@ func TestCUDAKVSlots_graphs(t *testing.T) {
 	kvSlotsScenario(t, dir, decoder.Options{Quant: "int4"}, 8, 0)
 }
 
-// TestCUDAKVSlots_recurrentKeepsOne confirms nothing on CUDA bypasses the decoder's one-slot rule for a family with
-// recurrent state: a Gated-DeltaNet hybrid asked for 4 slots allocates 1, and generations choose among 1.
-func TestCUDAKVSlots_recurrentKeepsOne(t *testing.T) {
-	dir := filepath.Join("..", "testdata", "qwen35-tiny")
-	requireDeviceAndFixture(t, dir)
-	m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 4})
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	defer m.Close()
-	r, ok := m.ResidentForwardForTest().(*cudaResident)
-	if !ok {
-		t.Skipf("not CUDA-resident: %s", m.ResidentDecline())
-	}
-	if r.dnet == nil {
-		t.Fatal("qwen35-tiny built without DeltaNet layers — this test no longer covers a recurrent family")
-	}
-	if len(r.kvTabs) != 1 || r.KVSlots() != 1 || m.ResidentKVSlots() != 1 {
-		t.Errorf("recurrent resident: %d slot tables, KVSlots %d, model reports %d — want one slot",
-			len(r.kvTabs), r.KVSlots(), m.ResidentKVSlots())
-	}
-}
-
 // kvSlotsProbe is one armed cudaFreeVRAM stub of TestCUDAKVSlots_pricedAgainstWhatIsLeft: it reports live minus
 // the real bytes the device has allocated since it was armed (or the real free figure, live == 0), and records what
 // it saw at the build's first read, checkKVFits'. A later read (the prefill width, after the KV) is answered the same

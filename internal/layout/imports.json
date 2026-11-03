@@ -390,6 +390,9 @@
       "internal/audio",
       "tokenizer"
     ],
+    "internal/wrappedupload": [
+      "decoder"
+    ],
     "metal": [
       "decoder",
       "embeddinggemma2",
@@ -485,6 +488,7 @@
       "internal/towerid",
       "internal/vision",
       "internal/whisper",
+      "internal/wrappedupload",
       "multimodal",
       "tokenizer"
     ],
@@ -556,6 +560,7 @@
       "internal/sb2census",
       "internal/towerid",
       "internal/vision",
+      "internal/wrappedupload",
       "multimodal",
       "tokenizer"
     ],
@@ -672,6 +677,7 @@
       "internal/sb2census",
       "internal/towerid",
       "internal/vision",
+      "internal/wrappedupload",
       "metal/internal/gpudev",
       "metal/kernels",
       "multimodal",

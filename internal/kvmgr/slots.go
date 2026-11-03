@@ -15,8 +15,10 @@ type Slots struct {
 	uses []uint64
 	pend []pending
 	live []bool
-	cur  int
-	tick uint64
+	// floors is, per slot, the shortest prefix its rows serve (SetFloor).
+	floors []int
+	cur    int
+	tick   uint64
 }
 
 // pending is what Acquired recorded for a slot, for the Commit that ends the same generation.
@@ -32,7 +34,7 @@ type pending struct {
 // NewSlots returns the adapter for n slots (at least one).
 func NewSlots(n int) *Slots {
 	n = max(n, 1)
-	return &Slots{m: New(0), seqs: make([]*Seq, n), uses: make([]uint64, n), pend: make([]pending, n), live: make([]bool, n)}
+	return &Slots{m: New(0), seqs: make([]*Seq, n), uses: make([]uint64, n), pend: make([]pending, n), live: make([]bool, n), floors: make([]int, n)}
 }
 
 // Manager is the block manager under the adapter.
@@ -48,14 +50,15 @@ func (a *Slots) Resize(n int) {
 	if n == len(a.seqs) {
 		return
 	}
-	keep, kept, live := a.seqs[a.cur], a.pend[a.cur], a.live[a.cur]
+	keep, kept, live, floor := a.seqs[a.cur], a.pend[a.cur], a.live[a.cur], a.floors[a.cur]
 	for i := range a.seqs {
 		if i != a.cur {
 			a.drop(i)
 		}
 	}
 	a.seqs, a.uses, a.pend, a.live, a.cur = make([]*Seq, n), make([]uint64, n), make([]pending, n), make([]bool, n), 0
-	a.seqs[0], a.pend[0], a.live[0] = keep, kept, live
+	a.floors = make([]int, n)
+	a.seqs[0], a.pend[0], a.live[0], a.floors[0] = keep, kept, live, floor
 	if keep != nil {
 		keep.slot = 0
 		for i, id := range keep.table {
@@ -125,6 +128,13 @@ type Request struct {
 // The producer class is not compared here: a sequence continuing in its own slot keeps the rows it wrote, as
 // resident reuse always has (the task doc's §5.6, property 3). DeclineShortLead is the one class rule on this path.
 func (a *Slots) Score(slot int, req Request, recurrent bool) int {
+	if n := a.score(slot, req, recurrent); n >= a.floors[slot] {
+		return n
+	}
+	return 0
+}
+
+func (a *Slots) score(slot int, req Request, recurrent bool) int {
 	s := a.seqs[slot]
 	if s == nil || len(s.tokens) == 0 || len(req.Tokens) == 0 {
 		return 0
@@ -318,7 +328,18 @@ func fingerprint(tokens []int) uint64 {
 
 // Forget empties slot: its rows are no longer known to be any sequence's. Its blocks leave the index at once, since
 // a block that may have been overwritten must never be found.
-func (a *Slots) Forget(slot int) { a.drop(slot) }
+func (a *Slots) Forget(slot int) {
+	a.drop(slot)
+}
+
+// SetFloor records the shortest prefix slot's device rows can serve: a wrapped upload holds no rows below its ring's base, so a
+// prefix below floor is scored 0. The floor follows the device, not the record: it holds through Forget and Commit, because a
+// generation that continues past it leaves those rows missing, and it goes when a write starts from position 0 (SetFloor 0) or a
+// snapshot restores the rows (Restored). Copied gives the copy its source's.
+func (a *Slots) SetFloor(slot, floor int) { a.floors[slot] = floor }
+
+// RaiseFloor is SetFloor that never lowers it, for a write that did not finish: what it left missing joins what already was.
+func (a *Slots) RaiseFloor(slot, floor int) { a.floors[slot] = max(a.floors[slot], floor) }
 
 // SetCheckpoint records that the resident holds a recurrent checkpoint for slot's sequence at position c, the end of the
 // prompt the sequence's last generation prefilled. c outside (0, Len] records none. A later Commit or Forget drops it.

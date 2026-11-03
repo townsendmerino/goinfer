@@ -264,6 +264,7 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 		return false
 	}
 	m.residentForgetIDsIn(kvScopeOf(ctx)) // the prefill overwrites the resident cache from position 0
+	m.residentWritesFromZero()
 	logits, err := prefill(rows)
 	if err != nil {
 		atomic.StoreInt32(&m.resBusy, 0)
