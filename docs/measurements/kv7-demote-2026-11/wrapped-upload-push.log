@@ -1,0 +1,84 @@
+# push record at 3f5541f10, origin/main 6710260de merged, 2026-11-03 11:44:54 PST
+# the floor's tests on WebGPU, 11:44:54 PST
+--- PASS: TestWrappedUpload_rows (9.57s)
+    --- PASS: TestWrappedUpload_rows/gemma3-vl-tiny (4.98s)
+    --- PASS: TestWrappedUpload_rows/mistral-tiny-window (4.26s)
+--- PASS: TestWrappedUpload_reuse (7.61s)
+    --- PASS: TestWrappedUpload_reuse/gemma3-vl-tiny (3.44s)
+    --- PASS: TestWrappedUpload_reuse/mistral-tiny-window (4.01s)
+ok  	github.com/townsendmerino/goinfer/gpu	17.381s
+exit 0
+# CUDA: the floor's tests and the KV tests, 11:45:13 PST
+--- SKIP: TestKV2_recordedClass_real1p5B (0.00s)
+--- SKIP: TestKV2_hitCap_real1p5B (0.00s)
+--- SKIP: TestKV2_exactPrefillIsDecode_real1p5B (0.00s)
+--- SKIP: TestKV2_copyExact_real1p5B (0.00s)
+--- SKIP: TestKV2_copyCost_real (0.00s)
+--- SKIP: TestKV2_scheduleIndependence_real1p5B (0.00s)
+--- SKIP: TestWindowedKV_offsetsFastClass_real1p5B (0.00s)
+ok  	github.com/townsendmerino/goinfer/cuda	181.471s
+PASS: 86, SKIP: 7, FAIL: 0
+exit 0
+# WebGPU: reuse, upload and image-turn tests, 11:48:15 PST
+ok  	github.com/townsendmerino/goinfer/gpu	46.777s
+PASS: 17, SKIP: 15, FAIL: 0
+exit 0
+# gate identity -backend cuda 6710260de 3f5541f10, 11:49:03 PST
+
+[1m== verdict ==[0m
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  wall     5m33s (11:49:03 → 11:54:36): builds 5s, runs 5m27s
+  logs     /tmp/gate-identity-20261103-114903-2448617853/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+IDENTICAL: 86, DIFFERENT: 1
+exit 0
+# gate identity -backend webgpu 6710260de 3f5541f10, 11:54:36 PST
+
+[1m== verdict ==[0m
+  families 43: 39 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 4 NOT RUN (a skip is not a pass)
+  wall     3m14s (11:54:36 → 11:57:51): builds 7s, runs 3m7s
+  logs     /tmp/gate-identity-20261103-115436-1575527381/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+IDENTICAL: 90, DIFFERENT: 1
+exit 0
+# the parity manifest, 11:57:51 PST
+    parity_manifest_test.go:420: staleness: 43/43 families enforced (the rest are validated_at:null and carry no hash to check)
+--- PASS: TestParityManifest_fresh (0.81s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.819s
+exit 0
+# touched.py --base origin/main in a clean worktree, 11:57:54 PST
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.7s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.7s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.7s)
+  ok   test internal/wrappedupload (0.4s)
+  ok   build cuda (2.3s)
+  ok   vet cuda (1 pkg) (1.4s)
+  ok   test cuda -run ^(TestKV4_oneConversationUsesThePool|Tes (107.6s)
+  ok   build gpu (3.7s)
+  ok   vet gpu (1 pkg) (1.3s)
+  ok   test gpu (238.6s)
+  skip metal: builds on darwin only
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 21 checks passed (CI runs the rest on push); did not run: metal
+exit 0
+# test_touched.py, 12:04:34 PST
+
+OK
+exit 0
+# staticcheck: the canary must report U1000, 12:04:36 PST
+c.go:5:16: field deadField is unused (U1000)
+# staticcheck -tags cuda,goinfer_testhooks ./cuda/
+exit 0
+# staticcheck -tags gpu,goinfer_testhooks ./gpu/
+exit 0
+# staticcheck ./decoder/ ./internal/kvmgr/
+exit 0
+# staticcheck -tags goinfer_testhooks ./decoder/ ./internal/kvmgr/ ./internal/wrappedupload/
+exit 0
+# GOOS=darwin vet ./metal/, tagged and not, 12:05:00 PST
+exit 0
+exit 0
+# citation lint, 12:05:03 PST
+exit 0
+# fail=0, 12:05:08 PST
