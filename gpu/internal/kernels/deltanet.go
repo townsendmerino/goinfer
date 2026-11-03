@@ -149,8 +149,7 @@ func (c *Context) ensureDeltaNorm() error {
 }
 
 // deltaGates turns the two small per-value-head projections into the pair the delta rule consumes: beta = betaScale·sigmoid(b)
-// (betaScale in {1, 2}; 2 widens the write gate to (0, 2) for Olmo Hybrid's allow_neg_eigval, and 0 defaults to 1) and the
-// decay gt = exp(negExpA·softplus(a + dt_bias)). Trivial work, but it has to happen ON DEVICE: the alternative is a
+// (betaScale is 1, or 2 for a write gate widened to [0, 2); multiplying by either is exact) and the decay gt = exp(negExpA·softplus(a + dt_bias)). Trivial work, but it has to happen ON DEVICE: the alternative is a
 // round-trip per layer per token.
 //
 // softplus carries torch's threshold=20 linear branch. Without it exp(a) overflows to +inf for large a and the decay becomes
@@ -171,8 +170,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let x = at[h] + dtBias[h];
     var sp = x;
     if (x <= 20.0) { sp = log(1.0 + exp(x)); }
-    let bs = select(p.betaScale, 1.0, p.betaScale == 0.0);
-    headP[h * 2u + 0u] = (1.0 / (1.0 + exp(-bt[h]))) * bs;
+    headP[h * 2u + 0u] = (1.0 / (1.0 + exp(-bt[h]))) * p.betaScale;
     headP[h * 2u + 1u] = exp(negExpA[h] * sp);
 }
 `

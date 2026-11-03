@@ -111,3 +111,7 @@ Olmo Hybrid has never been resident on WebGPU: the census reads `webgpu does not
 
 **Void if:** a GPU run outside the timing lock; a NOT RUN counted as a pass; a bar moved after a reading.
 **Stopping rule:** one reading per fix. **GPU time:** minutes, under the shared lock.
+
+**Amended after the first reading, the bar unchanged.**
+- **The NoPE plant was not red at the bar:** worst 0.999935 on `smollm3-tiny`, where the clean run reads 1.000000. As registered, that bar cannot see NoPE on this fixture. So the plant is held to the clean int4 run: its distance from the CPU must be at least ten times the clean run's. OW-3's plant is the second check: NoPE dropped, the pass's last row leaves the clean decode's bar of cosine 0.999999.
+- **Cells added, none read yet:** the claim also admits f32, two KV slots, and `--kv f16` and `--kv i8` on `olmo3` and `smollm3`, so each is read at the same bar. `olmo_hybrid` declines those two KV settings.

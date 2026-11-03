@@ -112,6 +112,12 @@ func (p deltaNetParity) failsBar() bool {
 // build went resident.
 func deltaNetParityWebGPU(t *testing.T, ckpt, quant string) deltaNetParity {
 	t.Helper()
+	return residentParityWebGPU(t, ckpt, decoder.Options{Quant: quant})
+}
+
+// residentParityWebGPU is one such run at options o on both sides.
+func residentParityWebGPU(t *testing.T, ckpt string, o decoder.Options) deltaNetParity {
+	t.Helper()
 	if _, err := os.Stat(ckpt + "/model.safetensors"); err != nil {
 		// stat the WEIGHTS, not the directory: the fixture's config.json is committed while
 		// model.safetensors is gitignored, so a dir-existence guard would flip this skip into a
@@ -119,7 +125,8 @@ func deltaNetParityWebGPU(t *testing.T, ckpt, quant string) deltaNetParity {
 		t.Skipf("no fixture at %s: %v", ckpt, err)
 	}
 
-	mRes, err := decoder.Load(ckpt, decoder.Options{Backend: "webgpu", Quant: quant})
+	o.Backend = "webgpu"
+	mRes, err := decoder.Load(ckpt, o)
 	if err != nil {
 		t.Fatalf("load webgpu: %v", err)
 	}
@@ -135,7 +142,8 @@ func deltaNetParityWebGPU(t *testing.T, ckpt, quant string) deltaNetParity {
 	// The CPU arm runs at the SAME weight quant, so what is being measured is WIRING, not the
 	// int8 gap. The resident path still quantizes activations the CPU keeps in f32, which is the
 	// floor this cosine sits on — it should be flat, not decaying.
-	mCPU, err := decoder.Load(ckpt, decoder.Options{Backend: "cpu", Quant: quant})
+	o.Backend = "cpu"
+	mCPU, err := decoder.Load(ckpt, o)
 	if err != nil {
 		t.Fatalf("load cpu: %v", err)
 	}
@@ -209,47 +217,180 @@ func deltaNetParityWebGPU(t *testing.T, ckpt, quant string) deltaNetParity {
 	return deltaNetParity{worst: worst, first: first, replay: worstReplay}
 }
 
-// TestOlmoHybridResidentParityWebGPU tests Olmo Hybrid resident decode parity on WebGPU against the CPU at int4 over 128 tokens
-// (FeatNoPE + FeatPostOnlyNorm + FeatQKNormWhole + DeltaNet NegEigval + ONormEps). With either DeltaNet setting dropped at the
-// build, it falls outside the parity bar.
+// TestOlmoHybridResidentParityWebGPU holds the three families the claims admit (FeatNoPE, FeatPostOnlyNorm, FeatQKNormWhole, and
+// Olmo Hybrid's NegEigval and ONormEps) to the CPU at the same options over 128 tokens, and requires a plant on each setting to fall
+// outside the bar on a fixture that uses it (docs/tasks/task-olmo-hybrid-metal-webgpu-2026-11.md, § WebGPU).
 func TestOlmoHybridResidentParityWebGPU(t *testing.T) {
-	const fx = "../testdata/olmo_hybrid-tiny"
-	if _, err := os.Stat(fx + "/model.safetensors"); err != nil {
-		t.Skipf("no olmo_hybrid-tiny weights: %v", err)
-	}
 	if _, err := New(); err != nil {
 		t.Skipf("no webgpu: %v", err)
 	}
-	// olmo_hybrid-tiny's config.json sets max_position_embeddings: 64, which webgpuCtxBeforeSlots clamps ctxCap to.
-	// Raise the test floor to 128 so the 128-token recurrent drift run fits the KV cache.
-	minCtxCapForTest = 128
+	minCtxCapForTest = 128 // these fixtures' max_position_embeddings is 64
 	defer func() { minCtxCapForTest = 0 }()
+	type plant struct {
+		name string
+		on   *bool
+		// againstClean holds the plant to the clean int4 run, not the bar: its distance from the CPU must be ten times the clean run's.
+		// NoPE moves a tiny random model's logits too little for the bar to see.
+		againstClean bool
+	}
+	type cell struct {
+		name string
+		o    decoder.Options
+	}
+	int4, int8 := cell{"int4", decoder.Options{Quant: "int4"}}, cell{"int8int8", decoder.Options{Quant: "int8int8"}}
+	f32, slots := cell{"f32", decoder.Options{Quant: "f32"}}, cell{"int4 on two slots", decoder.Options{Quant: "int4", ResidentKVSlots: 2}}
+	kvF16, kvI8 := cell{"int4 kv f16", decoder.Options{Quant: "int4", KVPrecision: "f16"}}, cell{"int4 kv i8", decoder.Options{Quant: "int4", KVPrecision: "i8"}}
+	for _, c := range []struct {
+		fx     string
+		cells  []cell
+		plants []plant
+	}{
+		{"olmo_hybrid-tiny", []cell{int4, int8, f32, slots},
+			[]plant{{name: "NegEigval dropped", on: &dnetNegEigvalOffForTest}, {name: "ONormEps dropped", on: &dnetONormEpsOffForTest}}},
+		{"olmo3-tiny", []cell{int4, int8, f32, slots, kvF16, kvI8},
+			[]plant{{name: "whole-vector QK-norm dropped", on: &qkNormWholeOffForTest}, {name: "post-only norm dropped", on: &postOnlyNormOffForTest}}},
+		{"smollm3-tiny", []cell{int4, int8, f32, slots, kvF16, kvI8},
+			[]plant{{name: "NoPE dropped", on: &noPEOffForTest, againstClean: true}}},
+	} {
+		fx := "../testdata/" + c.fx
+		t.Run(c.fx, func(t *testing.T) {
+			if _, err := os.Stat(fx + "/model.safetensors"); err != nil {
+				t.Skipf("no %s weights: %v", c.fx, err)
+			}
+			if c.fx == "olmo_hybrid-tiny" { // its layers' caches are f32 whatever is asked, so the flag declines
+				for _, cl := range []cell{kvF16, kvI8} {
+					m, err := decoder.Load(fx, func() decoder.Options { o := cl.o; o.Backend = "webgpu"; return o }())
+					if err != nil {
+						t.Fatal(err)
+					}
+					if m.ResidentForwardForTest() != nil || !strings.Contains(m.ResidentDecline(), "olmo_hybrid does not implement --kv") {
+						t.Errorf("%s: resident %v, decline %q; want the decline naming the family", cl.name, m.ResidentForwardForTest() != nil, m.ResidentDecline())
+					}
+					m.Close()
+				}
+			}
+			var clean deltaNetParity
+			for _, cl := range c.cells {
+				t.Run(cl.name, func(t *testing.T) {
+					p := residentParityWebGPU(t, fx, cl.o)
+					t.Logf("%s %s: worst %.9f, drift %.4f, replay %.9f", c.fx, cl.name, p.worst, p.first-p.worst, p.replay)
+					if p.failsBar() {
+						t.Errorf("%s at %s is outside the bar: worst %.6f, drift %.4f, replay %.9f", c.fx, cl.name, p.worst, p.first-p.worst, p.replay)
+					}
+					if cl.name == int4.name {
+						clean = p
+					}
+				})
+			}
+			for _, pl := range c.plants {
+				t.Run(pl.name, func(t *testing.T) {
+					*pl.on = true
+					defer func() { *pl.on = false }()
+					p := residentParityWebGPU(t, fx, decoder.Options{Quant: "int4"})
+					t.Logf("planted (%s): worst %.9f, drift %.4f, replay %.9f", pl.name, p.worst, p.first-p.worst, p.replay)
+					if pl.againstClean {
+						if 1-p.worst < 10*(1-clean.worst) {
+							t.Errorf("with %s, %s's worst is %.9f against the clean run's %.9f: the gate does not see the setting", pl.name, c.fx, p.worst, clean.worst)
+						}
+						return
+					}
+					if !p.failsBar() {
+						t.Errorf("with %s, %s still holds the bar: the gate does not see the setting", pl.name, c.fx)
+					}
+				})
+			}
+		})
+	}
+}
 
-	t.Run("prompts take the sequential loop", func(t *testing.T) {
-		m, err := decoder.Load(fx, decoder.Options{Backend: "webgpu", Quant: "int4"})
+// TestOlmoPromptRouteWebGPU: the batched pass takes no post-only or whole-vector QK-norm model, so Olmo's prompts run the sequential
+// loop, which the parity test measures. SmolLM3 takes the pass, whose last row must equal the sequential decode's at the bar of
+// prefillrunner_test.go, and which must read its NoPE layers' table. Every family generates through its route.
+func TestOlmoPromptRouteWebGPU(t *testing.T) {
+	if _, err := New(); err != nil {
+		t.Skipf("no webgpu: %v", err)
+	}
+	const rows = 24
+	load := func(t *testing.T, fx, quant string) (*decoder.Model, *residentDecoder, [][]float32) {
+		t.Helper()
+		if _, err := os.Stat(fx + "/model.safetensors"); err != nil {
+			t.Skipf("no weights at %s: %v", fx, err)
+		}
+		m, err := decoder.Load(fx, decoder.Options{Backend: "webgpu", Quant: quant})
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer m.Close()
-		if m.ResidentForwardForTest() == nil {
-			t.Fatalf("not resident: %s", m.ResidentDecline())
+		t.Cleanup(func() { m.Close() })
+		rf := m.ResidentForwardForTest()
+		if rf == nil {
+			t.Fatalf("%s: not resident: %s", fx, m.ResidentDecline())
 		}
-		if batched, why := m.PrefillPath(); batched {
-			t.Errorf("olmo_hybrid-tiny's prefill is batched on WebGPU; parity run no longer covers its prompts (%s)", why)
+		_, _, _, _, _, _, V := m.Dims()
+		embs := make([][]float32, rows)
+		for i := range embs {
+			embs[i] = m.EmbedResidentForTest((i*131 + 7) % V)
 		}
-	})
-	t.Run("as built", func(t *testing.T) { qwen35ResidentParityQuant(t, fx, "int4") })
-	for _, plant := range []struct {
-		name string
-		on   *bool
-	}{{"NegEigval dropped", &dnetNegEigvalOffForTest}, {"ONormEps dropped", &dnetONormEpsOffForTest}} {
-		t.Run(plant.name, func(t *testing.T) {
-			*plant.on = true
-			defer func() { *plant.on = false }()
-			p := deltaNetParityWebGPU(t, fx, "int4")
-			t.Logf("planted (%s): worst %.6f, drift %.4f, replay %.9f", plant.name, p.worst, p.first-p.worst, p.replay)
-			if !p.failsBar() {
-				t.Errorf("with %s, olmo_hybrid-tiny still holds the bar: the gate does not see the setting", plant.name)
+		return m, rf.(*residentDecoder), embs
+	}
+	generates := func(t *testing.T, m *decoder.Model, V int) {
+		t.Helper()
+		prompt := make([]int, rows)
+		for i := range prompt {
+			prompt[i] = (i*131 + 7) % V
+		}
+		ch, g := m.Generate(t.Context(), prompt, 4, decoder.SamplingParams{})
+		n := 0
+		for range ch {
+			n++
+		}
+		if err := g.Err(); err != nil || n == 0 {
+			t.Errorf("generate: %d tokens, %v", n, err)
+		}
+	}
+	for _, fx := range []string{"olmo_hybrid-tiny", "olmo3-tiny"} {
+		t.Run(fx, func(t *testing.T) {
+			m, rd, embs := load(t, "../testdata/"+fx, "int4")
+			if _, err := rd.PrefillLast(t.Context(), embs, 0); err == nil || !strings.Contains(err.Error(), "declines") {
+				t.Errorf("the batched pass took %s (%v): the parity test no longer covers its prompts", fx, err)
+			}
+			_, _, _, _, _, _, V := m.Dims()
+			generates(t, m, V)
+		})
+	}
+	for _, quant := range []string{"int4", "int8int8"} {
+		t.Run("smollm3-tiny/"+quant, func(t *testing.T) {
+			const fx = "../testdata/smollm3-tiny"
+			m, rd, embs := load(t, fx, quant)
+			rd.Reset()
+			var seq []float32
+			for i, e := range embs {
+				l, err := rd.Forward(e, i)
+				if err != nil {
+					t.Fatal(err)
+				}
+				seq = append(seq[:0], l...)
+			}
+			got, err := rd.PrefillLast(t.Context(), embs, 0)
+			if err != nil {
+				t.Fatalf("the batched pass: %v", err)
+			}
+			cos, maxAbs := cosSim(seq, got)
+			t.Logf("last row against the sequential decode: cosine %.8f, maxAbs %.3e", cos, maxAbs)
+			if cos < 0.999999 || maxAbs > 1e-3 {
+				t.Errorf("the batched pass diverges from the sequential decode: cosine %.8f, maxAbs %.3e", cos, maxAbs)
+			}
+			_, _, _, _, _, _, V := m.Dims()
+			generates(t, m, V)
+
+			noPEOffForTest = true
+			defer func() { noPEOffForTest = false }()
+			_, planted, plantedEmbs := load(t, fx, quant)
+			pl, err := planted.PrefillLast(t.Context(), plantedEmbs, 0)
+			if err != nil {
+				t.Fatalf("the batched pass with NoPE dropped: %v", err)
+			}
+			if pcos, pAbs := cosSim(seq, pl); pcos >= 0.999999 && pAbs <= 1e-3 {
+				t.Errorf("with NoPE dropped the pass still matches (cosine %.8f, maxAbs %.3e): it does not read the NoPE layers' table", pcos, pAbs)
 			}
 		})
 	}

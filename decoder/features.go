@@ -550,7 +550,7 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// per-layer property that the geometry-cached P uniform's geomFor dedup cannot carry. Declared after a real gpt-oss forward ran
 		// resident end to end (TestGptOssResidentParityWebGPU).
 		FeatAttnSink: true,
-		// FeatNoPE, FeatPostOnlyNorm, FeatQKNormWhole: Olmo Hybrid / Olmo 3 / SmolLM3 (gpu/residency.go, gpu/internal/kernels/decoderunner.go).
+		// Declared after each ran resident against the CPU, with a plant on each red (TestOlmoHybridResidentParityWebGPU).
 		FeatNoPE:         true,
 		FeatPostOnlyNorm: true,
 		FeatQKNormWhole:  true,

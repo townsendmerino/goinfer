@@ -127,7 +127,7 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 	}
 	normDims := uni("ndims", []uint32{nk, hk, keyDim, 0, math.Float32bits(qScale), 0, 0, 0})
 	ruleDims := uni("rdims", []uint32{nv, nk, hk, hv, rep, 0, 0, 0})
-	gateDims := uni("gdims", []uint32{nv, 0, 0, 0})
+	gateDims := uni("gdims", []uint32{nv, math.Float32bits(1), 0, 0})
 	gnDims := uni("gndims", []uint32{nv, hv, 0, 0, math.Float32bits(eps), 0, 0, 0})
 
 	bgOf := func(layout *wgpu.BindGroupLayout, bufs ...*wgpu.Buffer) *wgpu.BindGroup {
@@ -433,26 +433,17 @@ func TestDeltaRule_cpuParity_olmoHybrid(t *testing.T) {
 		for i := range normW {
 			normW[i] += 1.0
 		}
-		cw := &hybridattn.DeltaWeights{
-			KeyHeads: nk, ValueHeads: nv, KeyHeadDim: hk, ValueHeadDim: hv, ConvKernel: convK,
-			InProjQKV: rnd(convDim*hidden, 0.1),
-			InProjZ:   rnd(valueDim*hidden, 0.1),
-			InProjB:   rnd(nv*hidden, 0.2),
-			InProjA:   rnd(nv*hidden, 0.2),
-			ConvW:     rnd(convDim*convK, 0.2),
-			DtBias:    dtBias, NegExpA: negExpA, NormW: normW,
-			OutProj:   rnd(hidden*valueDim, 0.05),
-			NegEigval: true,
-			ONormEps:  oNormEps,
-		}
-		cst := hybridattn.NewDeltaState(cw)
+		cw, cst := hybridattn.NewDeltaNet(convK, hk, hv, nk, nv, hidden,
+			rnd(convDim*hidden, 0.1), rnd(valueDim*hidden, 0.1), rnd(nv*hidden, 0.2), rnd(nv*hidden, 0.2), rnd(convDim*convK, 0.2),
+			dtBias, negExpA, normW, rnd(hidden*valueDim, 0.05))
+		cw.Params.NegEigval, cw.Params.ONormEps = true, float64(oNormEps)
 
 		var capGateIn, capConv, capZ, capBG, capPre, capGated []float32
-		hybridattn.CaptureHook = func(gateIn, conv, z, bg, preNorm, gated []float32) {
+		hybridattn.SetDeltaCapHook(func(_, conv, gateIn, bg, preNorm, gated, z []float32) {
 			cp := func(s []float32) []float32 { return append([]float32(nil), s...) }
 			capGateIn, capConv, capZ, capBG, capPre, capGated = cp(gateIn), cp(conv), cp(z), cp(bg), cp(preNorm), cp(gated)
-		}
-		defer func() { hybridattn.CaptureHook = nil }()
+		})
+		defer hybridattn.SetDeltaCapHook(nil)
 
 		mk := func(label string, n int, usage wgpu.BufferUsage) *wgpu.Buffer {
 			b, e := ctx.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: label, Size: uint64(n * 4), Usage: usage})
@@ -542,7 +533,7 @@ func TestDeltaRule_cpuParity_olmoHybrid(t *testing.T) {
 
 		ruleWorstCos = 1
 		for range steps {
-			hybridattn.DeltaNetStep(rnd(hidden, inputScale), cw, hidden, normEps, cst)
+			hybridattn.DeltaNetStep(rnd(hidden, inputScale), cw, hidden, float64(normEps), cst)
 			if capPre == nil {
 				t.Fatal("capture hook never fired — the gate would be vacuous")
 			}

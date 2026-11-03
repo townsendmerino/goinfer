@@ -179,8 +179,9 @@ func staticResidentDecline(m *decoder.Model) error {
 	kvDelivered := m.KVDeliveredFor("webgpu")
 	if kvI8, kvF16 := kvDelivered == "i8", kvDelivered == "f16"; kvI8 || kvF16 {
 		_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
-		_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
-		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetOK] +
+		_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
+		dnet := map[bool]string{true: "qwen3_5", false: "olmo_hybrid"}[attnGate]
+		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: dnet}[dnetOK] +
 			map[bool]string{true: "mla"}[mlaOK]; family != "" && !quantKVDeclineOffForTest {
 			flag := map[bool]string{true: "--kv i8"}[kvI8] + map[bool]string{true: "--kv f16"}[kvF16]
 			return decoder.DeclineResident("%s does not implement %s KV on webgpu (only the generic GQA path does); "+
@@ -194,16 +195,13 @@ func staticResidentDecline(m *decoder.Model) error {
 	return nil
 }
 
-// dnetNegEigvalOffForTest and dnetONormEpsOffForTest are the two test-only plants
-// for TestOlmoHybridResidentParityWebGPU: each drops one of the two Olmo Hybrid
-// DeltaNet parameters back to the Qwen 3.5 value while the CPU reference keeps
-// the true program. minCtxCapForTest raises webgpuCtxBeforeSlots' MaxPositions
-// clamp so the 128-token parity run fits on olmo_hybrid-tiny (MaxPositions=64).
-// Never set outside tests.
+// The plants of the Olmo and SmolLM3 parity tests: each drops one setting at the build while the CPU reference keeps the true
+// program. minCtxCapForTest raises webgpuCtxBeforeSlots' clamp to the model's positions, so a 128-token run fits on a tiny fixture
+// with fewer. Never set outside tests.
 var (
-	dnetNegEigvalOffForTest bool
-	dnetONormEpsOffForTest  bool
-	minCtxCapForTest        int
+	dnetNegEigvalOffForTest, dnetONormEpsOffForTest               bool
+	qkNormWholeOffForTest, postOnlyNormOffForTest, noPEOffForTest bool
+	minCtxCapForTest                                              int
 )
 
 // deltaNetOpParams reads the DeltaNet recurrence parameters from m's compiled program.
@@ -390,6 +388,9 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		if len(invf) == 0 {
 			return nil, nil
 		}
+		if noPEOffForTest && !slices.ContainsFunc(invf, func(v float32) bool { return v != 0 }) {
+			invf = m.RopeInvFreq()
+		}
 		for _, ent := range ropeInvCache {
 			if slices.Equal(ent.invf, invf) {
 				return ent.buf, nil
@@ -499,7 +500,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// sublayer OUTPUT, applied before the residual add.
 	sandwichOK := m.SandwichNormResident()
 	postOnlyOK := m.PostOnlyNormResident()
-	qkNormWhole := m.QKNormWholeResident()
+	qkNormWhole := m.QKNormWholeResident() && !qkNormWholeOffForTest
 	rd.rm.QKNormWhole = qkNormWhole
 	g4MoE := m.HasGemma4MoEResident() // some layers' feed-forward is Gemma 4's parallel dense and MoE block, which carries its own norms
 	if sandwichOK {
@@ -825,7 +826,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			// + partial RoPE, plus the output gate. q_proj stays fused at double width because it is quantized; the runner splits
 			// the activation (runLayer.qGate). Olmo Hybrid's full-attention layer is plain (dnAttnGate=false) and takes the
 			// generic branch below.
-			rl.QGate = dnAttnGate
+			rl.QGate = true
 			kc, e1 := c.NewKVCache(nil, ctxCap*kvDim)
 			vc, e2 := c.NewKVCache(nil, ctxCap*kvDim)
 			if e1 != nil || e2 != nil {
@@ -1195,10 +1196,8 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			if rl.QNorm, e = up32(lw.QNorm); e != nil {
 				return fail(e)
 			}
-			if !rl.KvShared {
-				if rl.KNorm, e = up32(lw.KNorm); e != nil {
-					return fail(e)
-				}
+			if rl.KNorm, e = up32(lw.KNorm); e != nil {
+				return fail(e)
 			}
 		}
 		// FeatOutBias (gpt-oss o_proj bias) and FeatSandwichNorm / FeatPostOnlyNorm (Gemma's / Olmo 3's / Olmo Hybrid's
@@ -1220,6 +1219,9 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				if rl.PostMLPNorm, e = up32(lw.PostMLPNorm); e != nil {
 					return fail(e)
 				}
+			}
+			if postOnlyNormOffForTest {
+				rl.PostAttnNorm, rl.PostMLPNorm = nil, nil
 			}
 		}
 		// FeatAttnSink (gpt-oss): attnSinks is ALWAYS bound (a one-element dummy when the layer has none) because WGSL bind groups
