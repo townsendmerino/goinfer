@@ -33,9 +33,15 @@ fail=0
 	bash scripts/worktree_fixtures.sh "${FIXTURE_SRC:-$HOME/mycode/goinfer}" "$PWD" > "$tmp/fixtures.log" 2>&1
 	rc=$?; tail -2 "$tmp/fixtures.log"; echo "exit $rc"; [ $rc = 0 ] || fail=1
 	echo "# TestLoadedSublayers_matchTheProgram, D1-1 (both halves), D1-2 and D2-1 with those fixtures required (OP4CU_REQUIRE_FIXTURES=1)"
-	OP4CU_REQUIRE_FIXTURES=1 go test -tags 'cuda goinfer_testhooks' -run '^(TestLoadedSublayers_matchTheProgram|TestPrefillSteps_equalTheFlags|TestPrefillSteps_buildDeclinesAStepLessLayer|TestPrefillWalk_plantsGoRed|TestCUDAStep_tableEqualsTheFlagList)$' -count=1 -v ./cuda/ 2>&1 |
-		grep -E '^(--- |ok|FAIL)|NOT RUN|plant |sb2_census_test.go:'
-	rc=${PIPESTATUS[0]}; echo "exit $rc"; [ $rc = 0 ] || fail=1
+	OP4CU_REQUIRE_FIXTURES=1 go test -tags 'cuda goinfer_testhooks' -run '^(TestLoadedSublayers_matchTheProgram|TestPrefillSteps_equalTheFlags|TestPrefillSteps_buildDeclinesAStepLessLayer|TestPrefillWalk_plantsGoRed|TestCUDAStep_tableEqualsTheFlagList)$' -count=1 -v ./cuda/ > "$tmp/required.out" 2>&1
+	rc=$?
+	grep -E '^(--- |    --- |ok|FAIL)|NOT RUN|plant |sb2_census_test.go:' "$tmp/required.out"
+	echo "exit $rc"; [ $rc = 0 ] || fail=1
+	# With the fixtures required, a skipped test or a NOT RUN fixture is a hole in the record, not a pass.
+	if grep -qE -- '--- SKIP|NOT RUN' "$tmp/required.out"; then echo "SKIP or NOT RUN with the fixtures required: the record is incomplete"; fail=1; fi
+	for want in TestLoadedSublayers_matchTheProgram TestPrefillSteps_equalTheFlags TestPrefillSteps_buildDeclinesAStepLessLayer TestPrefillWalk_plantsGoRed TestCUDAStep_tableEqualsTheFlagList; do
+		grep -q -- "--- PASS: $want " "$tmp/required.out" || { echo "$want did not PASS"; fail=1; }
+	done
 	mkdir "$tmp/canary"
 	printf 'module canary\n\ngo 1.27\n' > "$tmp/canary/go.mod"
 	printf 'package canary\n\nimport "strings"\n\ntype s struct{ deadField int }\n\nfunc F() string { _ = s{}; return strings.ToUpper("x") }\n' > "$tmp/canary/c.go"
