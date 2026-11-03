@@ -29,3 +29,10 @@ FAIL
 FAIL	github.com/townsendmerino/goinfer/decoder	0.004s
 FAIL
 # TestMemGate_cpu with the walker changed and the table not: exit 1; red rows by line: dense 374, experts 132, across 50 and 21 fixtures. KV and state stayed exact. Each row's excess is what struct scalars add, which the table then names
+# the interface and two-line cases, on the walker as merged in #638: exit 1
+memgate_walker_test.go:59: state: 0 bytes, want 16
+memgate_walker_test.go:62: scratch: 16 bytes, want 40
+memgate_walker_test.go:59: state: 0 bytes, want 8
+memgate_walker_test.go:98: "overlap of dense and experts" holds 0 bytes, want 32: map[dense:32 scratch:16]
+memgate_walker_test.go:98: "overlap of experts and dense" holds 0 bytes, want 32: map[experts:32 scratch:16]
+memgate_walker_test.go:98: "state" holds 0 bytes, want 32: map[scratch:48]

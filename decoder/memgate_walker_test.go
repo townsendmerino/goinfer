@@ -4,6 +4,7 @@ package decoder
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/mem"
@@ -42,6 +43,10 @@ func TestHoldsWalker_chargesItsLine(t *testing.T) {
 		{"a slice inside spare capacity", &struct{ S []withSlice }{spare}, 16, 3 * header},
 		{"map[int][64]float32", &struct{ M map[int][64]float32 }{map[int][64]float32{0: {}}}, 264, word},
 		{"[2][4]float32", &struct{ A [2][4]float32 }{}, 32, 0},
+		{"an array held by value in an interface", &struct{ I any }{[4]float32{}}, 16, 16},
+		{"a struct held by value in an interface", &struct{ I any }{withSlice{make([]float32, 4)}}, 16, 16 + header},
+		{"a scalar held by value in an interface", &struct{ I any }{int64(0)}, 8, 16},
+		{"a pointer held in an interface", &struct{ I any }{&target{}}, 40, 16},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var l mem.Ledger
@@ -55,6 +60,42 @@ func TestHoldsWalker_chargesItsLine(t *testing.T) {
 			}
 			if got := u.ByLine[mem.LineScratch]; got != c.scratch {
 				t.Errorf("scratch: %d bytes, want %d", got, c.scratch)
+			}
+		})
+	}
+}
+
+// TestHoldsWalker_seesAPointerOnEachLine: a pointer two lines name within one root is read from both, so the bytes are an overlap, red, and a line
+// reaching it after scratch still holds them. The walk goes each way round, since the first to reach it used to keep it.
+func TestHoldsWalker_seesAPointerOnEachLine(t *testing.T) {
+	type target struct{ A [8]float32 }
+	shared := &target{}
+	for _, c := range []struct {
+		name string
+		a, b mem.LineID
+		want mem.LineID
+	}{
+		{"dense then experts", mem.LineDense, mem.LineExperts, "overlap of dense and experts"},
+		{"experts then dense", mem.LineExperts, mem.LineDense, "overlap of experts and dense"},
+		{"scratch then state", mem.LineScratch, mem.LineState, mem.LineState},
+		{"state then scratch", mem.LineState, mem.LineScratch, mem.LineState},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var l mem.Ledger
+			h := &holdsWalker{l: &l}
+			v := &struct {
+				First, Second *target
+			}{shared, shared}
+			h.root(func(path string) mem.LineID {
+				if strings.Contains(path, ".First") {
+					return c.a
+				}
+				return c.b
+			}, "f", reflect.ValueOf(v).Elem())
+			release := h.finish()
+			defer release()
+			if got := l.Usage().ByLine[c.want]; got != 32 {
+				t.Errorf("%q holds %d bytes, want 32: %v", c.want, got, l.Usage().ByLine)
 			}
 		})
 	}
