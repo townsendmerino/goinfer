@@ -167,3 +167,27 @@ The decline test took three tries to bite, because the fixture's window is 16 ro
 | 3. `kvWriteFailed` on a windowed live slot | By reading, not tested: mapping a window also drops its old rows, so a failed restore could call itself a decline with rows gone. | Blocks past `kvValid` are unmapped in both groups, and a windowed live restore that fails is an error, not a decline. Windowed KV does not demote; this is the restore and copy paths it shares. |
 | 4. A stopped slot's rows after a failed write | Red: `valid:16384 held:0`. | A released or stopped slot with no host copy records no rows. |
 
+## Before demotion can be turned on (coordinator, 2026-11-03; from #635's fourth review, and the rounds before it)
+
+Demotion ships off (`Options.KVDemote`). This list must be closed before it can default on. None of it has been read red: these are from review and from reading the code, unless a line says otherwise.
+
+**The gate.** `TestKV7_slotWriteTable` (4 states x 5 writes x 3 endings) extended with a fifth state, a slot holding a wrapped upload (`kvFloor` above 0), and a copy from such a slot, with each item below red first. And the served reading on a larger model under R-04's rule, which this slice never ran.
+
+**Slot state around `kvFloor`:**
+
+1. A copy or a demotion reads from position 0 on a slot with a floor. On a sliding-only model on a non-windowed resident, whose blocks below the lowest `base` are unmapped, `copyKVSlots` zero-fills those rows and `kvDemote` copies zeros. `SnapshotKV` declines such a slot; these two do not.
+2. A write or upload starting between 0 and the floor is not refused, though the slot answers 0 there.
+3. A write or partial copy ending below the floor leaves `kvFloor` above `kvValid`, so the slot answers 0 for every prefix until a write from position 0.
+4. `CopyKV` with `0 < start < base` of a source with a floor copies rows that were never uploaded, while `kvReleasedLost(src, end)` passes.
+5. A single `UploadKV` outside a pass takes none of the pass's checks and sets no floor.
+
+**Which of these run with demotion off.** Item 1's demotion half is behind `KVDemote`. The rest are not: `copyKVSlots` runs under `--kv-share`, on by default, and the upload pass runs on the CPU bridge. From reading the code they cost a cold prefill rather than wrong output, because the floor is inherited by a copy and a slot answers only at or above it. That is a reading, not a test, so the extended table should settle it, and any item that does read wrong with demotion off is a bug on main, not an item on this list.
+
+**Known and left, from earlier rounds:**
+
+6. A promotion holds its own copy's bytes while it evicts, so two conversations taking turns need room for both copies, not the larger. The served reading has to look at this.
+7. `kvValid` runs ahead of an aborted batched step, so a demotion can copy and charge at most that step's unwritten rows.
+8. A copy onto a released slot holds that slot's copy until it succeeds, so a release during the copy can find less room.
+9. A failed restore that lost rows sends the request cold in the decoder, on every backend, rather than keeping what the slot still holds. It costs work only.
+10. A snapshot test checks for an error and not for a `KVCopyDecline` (`TestKV7_uploadPassLayers`).
+
