@@ -53,11 +53,9 @@ type Usage struct {
 	PeakCharged          int64
 	Unplanned            int64
 	ByLine               map[LineID]int64 // charged
-	RequestedByLine      map[LineID]int64 // what was asked for, before the allocator's rounding
-	LeasesByLine         map[LineID]int
-	ByTier               map[Tier]int64 // charged
-	Reserved, Released   int            // leases ever reserved and released
-	ReservedRequested    int64          // the requested bytes of every lease ever reserved
+	ByTier               map[Tier]int64   // charged
+	Reserved, Released   int              // leases ever reserved and released
+	ReservedRequested    int64            // the requested bytes of every lease ever reserved
 	PeakUnplannedCharged int64
 }
 
@@ -69,7 +67,6 @@ func (l *Ledger) Reserve(tier Tier, line LineID, requested, charged int64) *Leas
 	if l.open == nil {
 		l.open = map[*Lease]struct{}{}
 		l.usage.ByLine, l.usage.ByTier = map[LineID]int64{}, map[Tier]int64{}
-		l.usage.RequestedByLine, l.usage.LeasesByLine = map[LineID]int64{}, map[LineID]int{}
 	}
 	l.open[ls] = struct{}{}
 	u := &l.usage
@@ -79,8 +76,6 @@ func (l *Ledger) Reserve(tier Tier, line LineID, requested, charged int64) *Leas
 	u.Requested += requested
 	u.Charged += charged
 	u.ByLine[line] += charged
-	u.RequestedByLine[line] += requested
-	u.LeasesByLine[line]++
 	u.ByTier[tier] += charged
 	if !line.Known() {
 		u.Unplanned += charged
@@ -110,12 +105,6 @@ func (ls *Lease) Release() {
 	if u.ByLine[ls.line] -= ls.charged; u.ByLine[ls.line] == 0 {
 		delete(u.ByLine, ls.line)
 	}
-	if u.RequestedByLine[ls.line] -= ls.requested; u.RequestedByLine[ls.line] == 0 {
-		delete(u.RequestedByLine, ls.line)
-	}
-	if u.LeasesByLine[ls.line]--; u.LeasesByLine[ls.line] == 0 {
-		delete(u.LeasesByLine, ls.line)
-	}
 	if u.ByTier[ls.tier] -= ls.charged; u.ByTier[ls.tier] == 0 {
 		delete(u.ByTier, ls.tier)
 	}
@@ -127,21 +116,31 @@ func (ls *Lease) Release() {
 // Line is the lease's plan line.
 func (ls *Lease) Line() LineID { return ls.line }
 
+// OpenLease is one lease still open: what its allocation asked for, and what the allocator took.
+type OpenLease struct {
+	Line               LineID
+	Requested, Charged int64
+}
+
+// OpenLeases is every lease open now, in no order.
+func (l *Ledger) OpenLeases() []OpenLease {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]OpenLease, 0, len(l.open))
+	for ls := range l.open {
+		out = append(out, OpenLease{ls.line, ls.requested, ls.charged})
+	}
+	return out
+}
+
 // Usage is a copy of the ledger's account now.
 func (l *Ledger) Usage() Usage {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	u := l.usage
 	u.ByLine, u.ByTier = make(map[LineID]int64, len(l.usage.ByLine)), make(map[Tier]int64, len(l.usage.ByTier))
-	u.RequestedByLine, u.LeasesByLine = make(map[LineID]int64, len(l.usage.RequestedByLine)), make(map[LineID]int, len(l.usage.LeasesByLine))
 	for k, v := range l.usage.ByLine {
 		u.ByLine[k] = v
-	}
-	for k, v := range l.usage.RequestedByLine {
-		u.RequestedByLine[k] = v
-	}
-	for k, v := range l.usage.LeasesByLine {
-		u.LeasesByLine[k] = v
 	}
 	for k, v := range l.usage.ByTier {
 		u.ByTier[k] = v

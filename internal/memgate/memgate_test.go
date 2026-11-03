@@ -11,18 +11,19 @@ import (
 
 var rounding = PerLease("a 16 KiB test allocator", 16<<10)
 
-// usage is the ledger's account after leases of {line, requested, charged}.
-func usage(leases ...[3]any) mem.Usage {
+// usage is a snapshot of a ledger after leases of {line, requested, charged}.
+func usage(leases ...[3]any) Snapshot {
 	var l mem.Ledger
 	for _, x := range leases {
 		l.Reserve(mem.Unified, mem.LineID(x[0].(string)), int64(x[1].(int)), int64(x[2].(int)))
 	}
-	return l.Usage()
+	return Snap("built", &l, nil)
 }
 
-func reading(open mem.Usage) Reading {
+// reading is a row of that one snapshot, closed cleanly.
+func reading(open Snapshot) Reading {
 	return Reading{Row: "fx int4", KVSlots: 1, Plan: decoder.Plan{DenseBytes: 1000, KVBytes: 500, StateBytes: 100},
-		Open: []Snapshot{{"built", open}}}
+		Open: []Snapshot{open}, Closed: mem.Usage{Reserved: open.Usage.Reserved}}
 }
 
 func lines(fs []Finding) string { return fmt.Sprint(fs) }
@@ -71,7 +72,7 @@ func TestCheck_lines(t *testing.T) {
 		}, "1 over"},
 		{"open after Close", func() Reading {
 			r := reading(usage())
-			r.Closed = usage([3]any{mem.LineDense, 5, 5})
+			r.Closed = usage([3]any{mem.LineDense, 5, 5}).Usage
 			return r
 		}, "open after Close"},
 		{"unplanned at any point", func() Reading {
@@ -93,7 +94,10 @@ func TestCheck_lines(t *testing.T) {
 		}, "a step's scratch"},
 		{"a later snapshot over plan", func() Reading {
 			r := reading(usage())
-			r.Open = append(r.Open, Snapshot{"generated", usage([3]any{mem.LineDense, 1001, 1001})})
+			s := usage([3]any{mem.LineDense, 1001, 1001})
+			s.Label = "generated"
+			r.Open = append(r.Open, s)
+			r.Closed.Reserved = 1
 			return r
 		}, "generated: leased"},
 	} {
@@ -109,6 +113,52 @@ func TestCheck_lines(t *testing.T) {
 				t.Errorf("want one finding naming %q, got %s", c.want, lines(got))
 			}
 		})
+	}
+}
+
+// TestCheck_roundingIsPerLease: one lease's unused rounding is not another's. Two leases that rounded nothing lend no quota to a
+// third charged 20,000 bytes over its request, whose own allowance is 16 KiB.
+func TestCheck_roundingIsPerLease(t *testing.T) {
+	r := reading(usage([3]any{mem.LineDense, 100, 100}, [3]any{mem.LineDense, 100, 100}, [3]any{mem.LineDense, 800, 800 + 20000}))
+	got := Check(r, rounding)
+	if len(got) != 1 || got[0].Excess != 20000-16<<10 {
+		t.Errorf("want one finding of %d bytes over, got %s", 20000-16<<10, lines(got))
+	}
+}
+
+// TestCheck_closedMustBeCaptured: a row that leased and never read the ledger after Close is red, rather than passing on a zero
+// account.
+func TestCheck_closedMustBeCaptured(t *testing.T) {
+	r := reading(usage([3]any{mem.LineDense, 10, 10}))
+	r.Closed = mem.Usage{}
+	got := Check(r, rounding)
+	if len(got) != 1 || !strings.Contains(got[0].String(), "after Close") {
+		t.Errorf("want one finding that the account after Close was not read, got %s", lines(got))
+	}
+}
+
+// TestGate_gapWithoutABoundForgivesNothing: a gap with no byte bound would silence its whole line, so it matches nothing and the
+// table is red.
+func TestGate_gapWithoutABoundForgivesNothing(t *testing.T) {
+	r := reading(usage([3]any{mem.LineScratch, 8, 8}))
+	r.Named = map[mem.LineID]int64{mem.LineScratch: 7}
+	g := Gate{Allowance: rounding, Gaps: []Gap{{Row: "*", Line: mem.LineScratch, Item: "x"}}, GapsPin: 1}
+	if len(g.Unknown(r)) == 0 {
+		t.Error("a scratch line over its figure passed on a gap with no bound")
+	}
+}
+
+// TestGlobMatch holds the table's row patterns.
+func TestGlobMatch(t *testing.T) {
+	for _, c := range []struct {
+		p, s string
+		want bool
+	}{{"*", "testdata/x int4/slots2", true}, {"testdata/x *", "testdata/x int4/slots2", true}, {"testdata/x *", "testdata/y int4", false},
+		{"* int4/slots2*", "testdata/x int4/slots2/blocks", true}, {"* int4/slots2*", "testdata/x int4", false},
+		{"exact", "exact", true}, {"exact", "exact2", false}} {
+		if got := globMatch(c.p, c.s); got != c.want {
+			t.Errorf("globMatch(%q, %q) = %v, want %v", c.p, c.s, got, c.want)
+		}
 	}
 }
 
@@ -138,7 +188,8 @@ func (r *recorder) Fatal(a ...any)            { r.errs = append(r.errs, fmt.Spri
 // longer fires is red; a table that is not the pinned size is red.
 func TestGate_table(t *testing.T) {
 	over := func() Reading { return reading(usage([3]any{mem.LineState, 150, 150})) } // 50 over
-	gap := Gap{Row: "fx *", Line: mem.LineState, What: "a test gap", Item: "MM8 test", Bytes: func(Reading) int64 { return 50 }}
+	fifty := func(map[string]int64) int64 { return 50 }
+	gap := Gap{Row: "fx *", Line: mem.LineState, What: "a test gap", Item: "MM8 test", Bytes: fifty}
 	for _, c := range []struct {
 		name string
 		gaps []Gap
@@ -150,13 +201,26 @@ func TestGate_table(t *testing.T) {
 		{"no table, red", nil, 0, func() []Reading { return []Reading{over()} }, "50 over"},
 		{"another line stays red", []Gap{gap}, 1,
 			func() []Reading { return []Reading{over(), reading(usage([3]any{mem.LineKV, 501, 501}))} }, "1 over"},
-		{"another row stays red", []Gap{{Row: "other *", Line: gap.Line, Item: "x", Bytes: gap.Bytes}}, 1,
+		{"another row stays red", []Gap{{Row: "other *", Line: gap.Line, Item: "x", Bytes: fifty}}, 1,
 			func() []Reading { return []Reading{over()} }, "50 over"},
-		{"past the gap's bytes stays red", []Gap{{Row: gap.Row, Line: gap.Line, Item: "x", Bytes: func(Reading) int64 { return 49 }}}, 1,
+		{"past the gap's bytes stays red", []Gap{{Row: gap.Row, Line: gap.Line, Item: "x", Bytes: func(map[string]int64) int64 { return 49 }}}, 1,
 			func() []Reading { return []Reading{over()} }, "50 over"},
 		{"a gap that no longer fires", []Gap{gap}, 1, func() []Reading { return []Reading{reading(usage())} }, "no longer fires"},
 		{"the table above its pin", []Gap{gap}, 0, func() []Reading { return []Reading{over()} }, "may only shrink"},
 		{"the table below its pin", []Gap{gap}, 2, func() []Reading { return []Reading{over()} }, "may only shrink"},
+		{"a gap with no bound", []Gap{{Row: "fx *", Line: mem.LineState, Item: "x"}}, 1, func() []Reading { return []Reading{over()} }, "every gap is bounded"},
+		{"an unpriced gap does not cover a line over plan", []Gap{{Row: "fx *", Line: mem.LineState, Built: true, Item: "x", Bytes: fifty}}, 1,
+			func() []Reading { return []Reading{over()} }, "50 over"},
+		{"a line's gap does not cover something unpriced", []Gap{gap}, 1, func() []Reading {
+			r := over()
+			r.Unpriced = []Unpriced{{mem.LineState, "a buffer", 1}}
+			return []Reading{r}
+		}, "built without being charged"},
+		{"an invariant is never a known gap", []Gap{gap, {Row: "*", Line: "", Item: "x", Bytes: func(map[string]int64) int64 { return 1 << 40 }}}, 2, func() []Reading {
+			r := over()
+			r.Closed = usage([3]any{mem.LineDense, 5, 5}).Usage
+			return []Reading{r}
+		}, "open after Close"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			rec := &recorder{TB: t}
