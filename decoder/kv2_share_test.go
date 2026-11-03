@@ -440,3 +440,74 @@ func TestKV2_ownRollbackStaysInPlace(t *testing.T) {
 		t.Errorf("a new conversation sharing 900 tokens of the first prompt: reused %d, copied %d, want a copy", g.PrefillReused, g.PrefillShared)
 	}
 }
+
+// TestKV2_copyIntoASlotWithAFloor goes through residentShare, which names the copy's first row: from row 0 the slot's own floor goes, and from further on it stays,
+// because the rows below the copy are still the slot's own.
+func TestKV2_copyIntoASlotWithAFloor(t *testing.T) {
+	m, rf := loadWithCopyFake(t, 2, "")
+	vocab := m.w.arch.VocabSize
+	gen := func(prompt []int) {
+		t.Helper()
+		ch, g := m.Generate(context.Background(), prompt, 2, SamplingParams{})
+		for range ch {
+		}
+		if err := g.Err(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pre := kv2Preamble(vocab)
+	long := func(seed int) []int {
+		out := slices.Clone(pre)
+		for i := range 2 * kvmgr.BlockRows {
+			out = append(out, (i*7+seed)%vocab)
+		}
+		return out
+	}
+	A, B := long(1), long(2)
+	gen(A)
+	src := m.kv.Bound()
+	dst := 1 - src
+	if err := m.residentBind(dst); err != nil {
+		t.Fatal(err)
+	}
+	m.kv.Acquired(dst, 0, B)
+	m.kv.Commit(dst, m.kvRootIn(nil, ""), slices.Clone(B), nil, len(B), m.kvClassMap())
+	share := func(prompt []int, reuse int) (int, int) {
+		t.Helper()
+		acq := kvAcquired{reuse: reuse, slot: dst, src: -1}
+		before := rf.copies
+		m.residentShare(prompt, nil, nil, KVScope{}, &acq)
+		return rf.copies - before, acq.shared
+	}
+	score := func(prompt []int, prefix int) int {
+		t.Helper()
+		req := kvmgr.Request{Root: m.kvRootIn(nil, ""), Tokens: append(slices.Clone(prompt[:prefix]), (prompt[prefix]+1)%vocab)}
+		return m.kv.Score(dst, req, false)
+	}
+	t.Logf("preamble %d, prompts %d, source slot %d", len(pre), len(A), src)
+	// Slot dst holds the preamble's blocks at or past its floor, so the copy starts after them, and the rows below its floor stay missing.
+	const low = kvmgr.BlockRows
+	own := len(pre) / kvmgr.BlockRows * kvmgr.BlockRows
+	m.kv.SetFloor(dst, low)
+	rf.hist[dst] = slices.Clone(rf.hist[src][:own])
+	if n, shared := share(A, own); n != 1 || shared <= own {
+		t.Fatalf("the copy past the slot's own rows did not happen: %d copies, %d rows shared, %d its own", n, shared, own)
+	}
+	if got := score(A, low/2); got != 0 {
+		t.Errorf("after a copy from row %d, a prefix of %d below the slot's floor of %d scores %d: those rows are still missing", own, low/2, low, got)
+	}
+	if got := score(A, low); got != low {
+		t.Errorf("after a copy from row %d, a prefix at the slot's floor scores %d, want %d", own, got, low)
+	}
+	m.kv.Acquired(dst, 0, B)
+	m.kv.Commit(dst, m.kvRootIn(nil, ""), slices.Clone(B), nil, len(B), m.kvClassMap())
+	// A floor past every hit the slot has, so the copy starts at row 0 and every row is the source's.
+	m.kv.SetFloor(dst, 8*kvmgr.BlockRows)
+	rf.hist[dst] = nil
+	if n, shared := share(A, 0); n != 1 || shared == 0 {
+		t.Fatalf("the whole copy did not happen: %d copies, %d rows shared", n, shared)
+	}
+	if got := score(A, 32); got != 32 {
+		t.Errorf("after a copy from row 0, a prefix of 32 scores %d: the slot kept the floor of what the copy replaced", got)
+	}
+}

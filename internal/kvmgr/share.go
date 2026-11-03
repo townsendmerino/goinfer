@@ -93,21 +93,28 @@ func (a *Slots) Hits(req Request, cold []ClassRun) []int {
 		for k < len(chain) && k < len(s.hashes) && s.hashes[k] == chain[k] {
 			k++
 		}
-		out[sl] = offImages(req.Images, k) * BlockRows
+		if hit := offImages(req.Images, k) * BlockRows; hit >= a.floors[sl] {
+			out[sl] = hit
+		}
 	}
 	return out
 }
 
-// Copied records that the backend copied the first rows rows of src's sequence into dst: dst now holds that prefix,
-// under the same root, with the same images and classes, and its full blocks are published. rows is a multiple of
-// BlockRows no longer than src's published rows. Using src as a source counts as a use of it.
-func (a *Slots) Copied(src, dst, rows int) {
+// Copied records that the backend copied rows [start, rows) of src's sequence into dst, whose rows below start already were that
+// prefix: dst now holds the prefix, under the same root, with the same images and classes, and its full blocks are published. rows is
+// a multiple of BlockRows no longer than src's published rows. Using src as a source counts as a use of it. dst's floor becomes src's
+// on a copy from row 0; past that, dst's own missing rows stay missing, so it takes the higher of the two.
+func (a *Slots) Copied(src, dst, start, rows int) {
 	s := a.seqs[src]
 	a.drop(dst)
 	a.pend[dst] = pending{}
 	if s == nil || rows <= 0 {
 		return
 	}
+	if start == 0 {
+		a.floors[dst] = 0
+	}
+	a.floors[dst] = max(a.floors[dst], a.floors[src])
 	rows = min(rows, len(s.hashes)*BlockRows)
 	t := &Seq{m: a.m, root: s.root, rootHash: s.rootHash, slot: int32(dst), tokens: append([]int(nil), s.tokens[:rows]...),
 		classes: clipClasses(s.classes, rows)}
@@ -135,6 +142,7 @@ func (a *Slots) Copied(src, dst, rows int) {
 func (a *Slots) Restored(dst int, root Root, tokens []int, classes []ClassRun) {
 	a.drop(dst)
 	a.pend[dst] = pending{}
+	a.floors[dst] = 0
 	rows := len(tokens) / BlockRows * BlockRows
 	if rows <= 0 {
 		return
