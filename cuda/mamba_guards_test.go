@@ -85,7 +85,8 @@ func TestNemotronResidentCUDA_guards(t *testing.T) {
 		return r, res
 	}
 	_, ctrl := probe(guardCase{fixture: "llama-tiny", quant: "int4"})
-	if ctrl.batchHi < 2 || ctrl.copyDecl != "" || ctrl.snapDecl != "" || !ctrl.verifyBatched {
+	// The control has written nothing, so past the recurrent case the copy's only decline is the rows check.
+	if ctrl.batchHi < 2 || !strings.Contains(ctrl.copyDecl, "no longer holds") || ctrl.snapDecl != "" || !ctrl.verifyBatched {
 		t.Fatalf("VOID: the control llama-tiny is not admitted where the recurrent check decides (batch hi %d, copy decline %q (err %v), snapshot decline %q, batched verify %v)",
 			ctrl.batchHi, ctrl.copyDecl, ctrl.copyErr, ctrl.snapDecl, ctrl.verifyBatched)
 	}

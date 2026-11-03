@@ -1308,7 +1308,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
 
 - **Plan and first slice, registered 2026-11-03 12:08 PST before any code (nobara-sb01; coordinator's item of 12:00 PST; card about 1 h by day).**
   - **What pools.** Not a shared pool of blocks: a recurrent state is compound, so it does not page. One conv window and one state per layer per KV slot, as Metal already keeps
-    (`metal/deltanet.go:allocRecurrentSlots`). Binding a slot points the layer's launches at that slot's pair. The checkpoint stays one copy, which belongs to the slot that last saved
+    (`metal/deltanet.go:resident.allocRecurrentSlots`). Binding a slot points the layer's launches at that slot's pair. The checkpoint stays one copy, which belongs to the slot that last saved
     it, as on Metal: a restore on another slot is refused and the decoder prefills from 0. A checkpoint per slot, the message-boundary position and admission are later slices.
   - **Who gets it.** `program.CUDA` claims `RecurrentSlots` for `OpDeltaNet` and `OpMamba2`, so `cudaKVSlotsRequest` reads `ResidentKVSlotsRequestFor("cuda")`. A hybrid still gets
     one slot unless the caller asked for slots (`ResidentKVSlotsIsDefault`), so a default load keeps its bytes. An expert-cache load stays at one, as it is today.
