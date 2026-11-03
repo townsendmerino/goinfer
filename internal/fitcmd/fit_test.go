@@ -332,13 +332,14 @@ func TestPlanFor_metalPlansAtTheLoadsOwnContext(t *testing.T) {
 	if base.Placement != decoder.PlacementResident {
 		t.Fatalf("llama-tiny does not plan resident on metal: %s", base.Reason)
 	}
-	perPos := m.ResidentKVBytes("metal", 8, false, false) / 8
+	perBlock := m.MetalKVSlotBytes(decoder.KVBlockRows)
+	null := m.ResidentKVBytes("metal", decoder.KVBlockRows, false, false) - perBlock // the pools' null blocks, once per load
 	budget := func(positions int) int64 {
-		return decoder.MetalFitMarginBytes + base.DenseBytes + base.HostCopyBytes + perPos*int64(positions)
+		return decoder.MetalFitMarginBytes + base.DenseBytes + base.HostCopyBytes + null + perBlock*int64(positions)/decoder.KVBlockRows
 	}
 	for _, c := range []struct {
 		positions, want int
-	}{{80000, decoder.MetalFitDefaultCtx}, {20000, 10000}, {5000, decoder.MetalCtxDefault}} {
+	}{{80000, decoder.MetalFitDefaultCtx}, {20000, 9984}, {5000, decoder.MetalCtxDefault}} {
 		free := budget(c.positions)
 		p := planFor(m, "metal", free, decoder.PlanRequest{Ctx: defaultCtx})
 		load := m.MetalFitCtx(decoder.MetalFitInput{FreeBytes: free, FreeKnown: true, KVSlots: decoder.MetalDefaultKVSlots})
