@@ -1,0 +1,10 @@
+# KV4 §5.16 (a): TestUsage_prefillReuseSources, red with sources() returning nil, then green, 2026-11-02 17:21 PST
+# red (sources() returns nil):
+--- FAIL: TestUsage_prefillReuseSources (0.00s)
+    prefill_reuse_test.go:81: own and shared, stream false: no prefill_reuse beside prefill_reused_tokens: map[completion_tokens:5 prefill_reused_tokens:40 prompt_tokens:23 total_tokens:28]
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/serveapp	0.006s
+FAIL
+# green:
+--- PASS: TestUsage_prefillReuseSources (0.01s)
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.011s

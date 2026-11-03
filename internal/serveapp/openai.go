@@ -816,6 +816,47 @@ type usage struct {
 	// prefill, on a path that does not track reuse, or when nothing was reused; the number alone cannot tell those
 	// apart. An unrecognised JSON key, so any standard OpenAI client ignores it.
 	PrefillReusedTokens int `json:"prefill_reused_tokens"`
+	// PrefillReuse is the vendor extension beside it that says where those tokens came from
+	// (docs/tasks/task-kv-architecture-2026-10.md §5.16); absent when nothing was reused.
+	PrefillReuse *prefillReuseSources `json:"prefill_reuse,omitempty"`
+}
+
+// prefillReuseSources splits prefill_reused_tokens by source. own_tokens are this conversation's own continuation, shared_tokens came
+// from another conversation's KV (a copy or a shared block), host_tokens a host snapshot restored onto the device, disk_tokens the
+// disk tier. promoted_blocks counts host-tier blocks promoted onto the device. The disk tier and the block host pool are KV7-rest's,
+// so disk_tokens and promoted_blocks are 0 until it lands; a host snapshot today restores rows, counted in host_tokens.
+type prefillReuseSources struct {
+	OwnTokens      int `json:"own_tokens"`
+	SharedTokens   int `json:"shared_tokens"`
+	HostTokens     int `json:"host_tokens"`
+	DiskTokens     int `json:"disk_tokens"`
+	PromotedBlocks int `json:"promoted_blocks"`
+}
+
+// prefillReuse is how many leading prompt tokens a generation's prefill skipped, and from which source (engine.Report's PrefillReused,
+// PrefillShared and KVSnapRestored).
+type prefillReuse struct {
+	Tokens, Shared, Host int
+}
+
+func reuseOf(rep *engine.Report) prefillReuse {
+	if rep == nil {
+		return prefillReuse{}
+	}
+	return prefillReuse{Tokens: rep.PrefillReused, Shared: rep.PrefillShared, Host: rep.KVSnapRestored}
+}
+
+// sources is the vendor extension for r, or nil when nothing was reused.
+func (r prefillReuse) sources() *prefillReuseSources {
+	if r.Tokens <= 0 {
+		return nil
+	}
+	return &prefillReuseSources{OwnTokens: max(r.Tokens-r.Shared-r.Host, 0), SharedTokens: r.Shared, HostTokens: r.Host}
+}
+
+// newUsage is the OpenAI usage block for a generation of nComp tokens over prompt tokens, with r's reuse.
+func newUsage(prompt, nComp int, r prefillReuse) usage {
+	return usage{PromptTokens: prompt, CompletionTokens: nComp, TotalTokens: prompt + nComp, PrefillReusedTokens: r.Tokens, PrefillReuse: r.sources()}
 }
 
 // handleModels reports the served model(s) — the decoder and/or the embedding
@@ -998,7 +1039,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
 		}
 		sendUsage(ss, gr.clock, req.StreamOptions, id, created, lm.name,
-			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
+			newUsage(len(gr.promptIDs), nComp, reused))
 		sseDone(ss)
 		return
 	}
@@ -1032,7 +1073,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	resp := map[string]any{
 		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{choice},
-		"usage":   usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
+		"usage":   newUsage(len(gr.promptIDs), nComp, reused),
 	}
 	if gr.conf != nil {
 		resp["goinfer_confidence"] = gr.conf.payload()
@@ -1121,7 +1162,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
 		}
 		sendUsage(ss, gr.clock, req.StreamOptions, id, created, lm.name,
-			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
+			newUsage(len(gr.promptIDs), nComp, reused))
 		sseDone(ss)
 		return
 	}
@@ -1138,7 +1179,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 	resp := map[string]any{
 		"id": id, "object": "text_completion", "created": created, "model": lm.name,
 		"choices": []any{map[string]any{"index": 0, "text": sb.String(), "finish_reason": finish}},
-		"usage":   usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
+		"usage":   newUsage(len(gr.promptIDs), nComp, reused),
 	}
 	if gr.conf != nil {
 		resp["goinfer_confidence"] = gr.conf.payload()
@@ -1553,7 +1594,7 @@ func genErr(err error) error {
 // through here or driveVL, so that bookkeeping lives here and not at each call site (see generations.go). jobs is the
 // job store, nil only in a unit test calling drive directly; it is gated on the same gr.id != "" and shares the id,
 // so the job and registry records join by id.
-func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
+func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused prefillReuse, cancelReason string, err error) {
 	defer lm.logExpertCache(lm.expertCacheNow())
 	var g *generation
 	if gens != nil && gr.id != "" {
@@ -1593,7 +1634,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 			}
 			jobs.finishTurn(j, state, &usage{
 				PromptTokens: len(gr.promptIDs), CompletionTokens: nComp,
-				TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused,
+				TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused.Tokens, PrefillReuse: prefillReused.sources(),
 			}, gr.clock, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
 		}()
 	}
@@ -1609,14 +1650,14 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	gr.clock.end()
 	rep := st.Report()
 	if rep == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
-		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
+		return finish, n, nil, stopHit, prefillReuse{}, cancelledReason(g, parent, stopHit), nil
 	}
 	cr := cancelledReason(g, parent, stopHit)
 	if cr != "" {
 		finish = "cancelled"
 	}
 	logKVCopy(rep)
-	return finish, n, rep.Logprobs, stopHit, rep.PrefillReused, cr, genErr(rep.Err)
+	return finish, n, rep.Logprobs, stopHit, reuseOf(rep), cr, genErr(rep.Err)
 }
 
 // cancelledReason reports the admin-cancel reason for this generation's finish, or "" if it was not an admin cancel.
@@ -1637,7 +1678,7 @@ func cancelledReason(g *generation, parent context.Context, stopHit string) stri
 // prefix reuse), but on a resident backend GenerateVL and GenerateQwenVL reuse the resident GPU KV when the same
 // image is resent, and vi.features is then never invoked. Its results and its gens and jobs parameters are drive's;
 // see drive.
-func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
+func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused prefillReuse, cancelReason string, err error) {
 	defer lm.logExpertCache(lm.expertCacheNow())
 	var g *generation
 	if gens != nil && gr.id != "" {
@@ -1666,7 +1707,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 			}
 			jobs.finishTurn(j, state, &usage{
 				PromptTokens: len(gr.promptIDs), CompletionTokens: nComp,
-				TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused,
+				TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused.Tokens, PrefillReuse: prefillReused.sources(),
 			}, gr.clock, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
 		}()
 	}
@@ -1690,7 +1731,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	gr.clock.end()
 	rep := st.Report()
 	if rep == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
-		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
+		return finish, n, nil, stopHit, prefillReuse{}, cancelledReason(g, parent, stopHit), nil
 	}
 	if len(spans) > 1 && rep.ImgPrefillDecline != "" { // say why a multi-span turn prefilled on the CPU
 		fmt.Fprintf(os.Stderr, "vision: %d image(s), %d spans; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", max(vi.images, 1), len(spans), rep.ImgPrefillDecline)
@@ -1711,7 +1752,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		finish = "cancelled"
 	}
 	logKVCopy(rep)
-	return finish, n, rep.Logprobs, stopHit, rep.PrefillReused, cr, genErr(rep.Err)
+	return finish, n, rep.Logprobs, stopHit, reuseOf(rep), cr, genErr(rep.Err)
 }
 
 // media is vi as the engine's Media over spans and grids (driveVL's, with the one-media fallback), the kind chosen by

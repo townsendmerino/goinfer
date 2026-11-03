@@ -794,11 +794,13 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		// The shared tool turn (tool_turn.go) — buffered here: nothing to stream on this path.
 		var t toolTurn
 		t, gerr = s.runToolTurn(r.Context(), lm, gr, tools, nil, nil)
-		text, calls, lead, finish, stopSeq, cancelReason, nComp, reused = t.raw, t.calls, t.lead, t.finish, t.stopSeq, t.cancelReason, t.nComp, t.reused
+		text, calls, lead, finish, stopSeq, cancelReason, nComp, reused = t.raw, t.calls, t.lead, t.finish, t.stopSeq, t.cancelReason, t.nComp, t.reused.Tokens
 		fromReasoning = t.fromReasoning && len(t.calls) > 0
 	} else {
 		var sb strings.Builder
-		finish, nComp, _, stopSeq, reused, cancelReason, gerr = lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+		var ru prefillReuse
+		finish, nComp, _, stopSeq, ru, cancelReason, gerr = lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+		reused = ru.Tokens
 		text = sb.String()
 	}
 	if gerr != nil {

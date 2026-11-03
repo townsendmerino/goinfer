@@ -20,7 +20,8 @@ type toolTurn struct {
 	// prose and emitting the calls. On a family that cannot stream prose safely it is all of lead.
 	rest                          string
 	finish, stopSeq, cancelReason string
-	nComp, reused                 int
+	nComp                         int
+	reused                        prefillReuse
 	// fromReasoning: calls were read from the reasoning block, not the answer (settleCalls). Every route marks such a turn
 	// with goinfer_tool_calls_from_reasoning.
 	fromReasoning bool

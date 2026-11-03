@@ -156,7 +156,7 @@ func TestServe_maxConcurrentMatchesAlone(t *testing.T) {
 				t.Errorf("conversation %d turn %d: %v", c, tn, derr)
 				return out
 			}
-			out = append(out, turn{sb.String(), reused})
+			out = append(out, turn{sb.String(), reused.Tokens})
 			next, _ := tk.Encode(sb.String()+" And then?", false)
 			prompt = append(slices.Clone(prompt), next...)
 		}

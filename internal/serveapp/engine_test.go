@@ -27,7 +27,7 @@ func (e nilReportEngine) Start(context.Context, engine.Request) *engine.Stream {
 func TestDrive_engineWithNoReportFunc(t *testing.T) {
 	lm := &loadedModel{tk: &tokenizer.Tokenizer{}, fakeEngine: nilReportEngine{}}
 	finish, n, lps, stopHit, reused, cancelReason, err := lm.drive(context.Background(), genRequest{maxTokens: 4}, nil, nil, func(string) {})
-	if finish != "stop" || n != 0 || lps != nil || stopHit != "" || reused != 0 || cancelReason != "" || err != nil {
+	if finish != "stop" || n != 0 || lps != nil || stopHit != "" || reused != (prefillReuse{}) || cancelReason != "" || err != nil {
 		t.Fatalf("drive on a nil-report engine = (%q, %d, %v, %q, %d, %q, %v), want a clean stop and nothing else",
 			finish, n, lps, stopHit, reused, cancelReason, err)
 	}
@@ -74,7 +74,7 @@ func TestDriveVL_mediaRequest(t *testing.T) {
 		gr := genRequest{promptIDs: []int{1, 2, 3}, maxTokens: 4}
 		gr.sp.Temperature, gr.sp.TopK = 0.7, 5
 		finish, n, lps, stopHit, reused, cancelReason, err := lm.driveVL(context.Background(), gr, c.vi, nil, nil, func(string) {})
-		if finish != "stop" || n != 0 || lps != nil || stopHit != "" || reused != 0 || cancelReason != "" || err != nil {
+		if finish != "stop" || n != 0 || lps != nil || stopHit != "" || reused != (prefillReuse{}) || cancelReason != "" || err != nil {
 			t.Errorf("%s: driveVL on a no-report engine = (%q, %d, %v, %q, %d, %q, %v), want a clean stop", c.name, finish, n, lps, stopHit, reused, cancelReason, err)
 		}
 		md := got.Media
