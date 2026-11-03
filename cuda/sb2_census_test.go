@@ -2024,19 +2024,19 @@ func TestPrefillSteps_equalTheFlags(t *testing.T) {
 	}
 	t.Logf("%d fixtures built resident (%d of them again with the build's step checks on), %d batched by the flags' guards, "+
 		"%d with a batched prefill, %d layers with batched steps checked", built, resident, byFlags, batched, layers)
-	// 43 is D1-1's reading with the gitignored fixtures placed, once Olmo Hybrid batches (#616's push record); a clean tree has
-	// fewer, and OP4CU_REQUIRE_FIXTURES=1 (the push record's run) asks for all of them. The declined fixtures with block-less layers
-	// are deepseek-tiny and nemotron-tiny (tracked) and kimi-tiny (gitignored).
-	floor, declinedFloor := 1, 2
+	// The floors are D1-1's readings: a clean tree builds 31 tracked fixtures and batches 29; with the gitignored fixtures placed and
+	// required (OP4CU_REQUIRE_FIXTURES=1, the push record's run) it builds 46 and batches 43. The declined fixtures with block-less
+	// layers are deepseek-tiny and nemotron-tiny (tracked) and kimi-tiny (gitignored).
+	builtFloor, floor, declinedFloor := 31, 29, 2
 	if os.Getenv("OP4CU_REQUIRE_FIXTURES") != "" {
-		floor, declinedFloor = 43, 3
+		builtFloor, floor, declinedFloor = 46, 43, 3
 	}
 	if declinedStepless < declinedFloor {
 		t.Errorf("%d declined fixtures with block-less layers checked, want at least %d", declinedStepless, declinedFloor)
 	}
-	if built < 30 || byFlags < floor || batched != byFlags || resident != built || !emptied {
-		t.Fatalf("%d built, %d resident with the checks on (want all), %d batched by the flags, %d batched (want all of them, and at least %d)",
-			built, resident, byFlags, batched, floor)
+	if built < builtFloor || byFlags < floor || batched != byFlags || resident != built || !emptied {
+		t.Fatalf("%d built (want at least %d), %d resident with the checks on (want all), %d batched by the flags, %d batched (want all of them, and at least %d)",
+			built, builtFloor, resident, byFlags, batched, floor)
 	}
 }
 
