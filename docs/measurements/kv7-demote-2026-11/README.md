@@ -181,7 +181,21 @@ Demotion ships off (`Options.KVDemote`). This list must be closed before it can 
 4. `CopyKV` with `0 < start < base` of a source with a floor copies rows that were never uploaded, while `kvReleasedLost(src, end)` passes.
 5. A single `UploadKV` outside a pass takes none of the pass's checks and sets no floor.
 
-**Which of these run with demotion off.** Item 1's demotion half is behind `KVDemote`. The rest are not: `copyKVSlots` runs under `--kv-share`, on by default, and the upload pass runs on the CPU bridge. From reading the code they cost a cold prefill rather than wrong output, because the floor is inherited by a copy and a slot answers only at or above it. That is a reading, not a test, so the extended table should settle it, and any item that does read wrong with demotion off is a bug on main, not an item on this list.
+**Which of these could give wrong output with demotion off** (corrected 2026-11-03; `floor-reading.log`). Only item 1's demotion half is behind `KVDemote`. `copyKVSlots` runs under `--kv-share`, on by default, and the upload pass on the CPU bridge. On CUDA, none of them gives wrong output on any path production reaches; two would if something reached them.
+
+| item | with demotion off | evidence |
+|---|---|---|
+| 1. A copy from a slot with a floor | No: the rows below the floor are zero-filled in `dst`, and `dst` takes the floor, so it never answers for them. | The floor by `TestKV7_partialCopyFromAWrappedUpload`. The zero-fill by reading: that fixture has full-attention layers, which map the blocks, and a sliding-only model is not tested. |
+| 2. A write between 0 and the floor | Not reached: a request writes from a reuse the slot answered for, or from 0, or past the prompt's end, and the pass refuses a span that does not cover its window, so the floor is at or below that end. **Wrong if it were reached: there is no guard.** | reading |
+| 3. A write ending below the floor | No: the slot answers 0 for every prefix until a write from 0, which costs a cold prefill. | reading |
+| 4. A partial copy with `0 < start < base` | No: `copyKVSlots` raises `dst`'s floor on every successful copy, so `dst` answers only at or above it, and continues bit-identically with the source. A plant that drops the inheritance goes red (`answers 130 for 130 rows, want 0`). | `TestKV7_partialCopyFromAWrappedUpload` |
+| 5. A lone `UploadKV` outside a pass | Not reached: its one production caller, `residentUploadPrefill`, always opens a pass on CUDA, and only tests call it alone. **Wrong if it were reached: it sets no floor.** | `git grep` in the log |
+
+The earlier wording here, that items 1-5 "cost a cold prefill rather than wrong output", was too broad: items 2 and 5 are safe because nothing reaches them, not because of what they do.
+
+**For a fix, on main, not behind demotion:**
+- **Guards on CUDA, for items 2 and 5:** refuse a write between 0 and the floor, and set the floor on a lone upload. Neither is reachable today, so they are low priority, and each is a line or two.
+- **To check on Metal and WebGPU (not checked; no device here):** they share `residentUploadPrefill` and have no `kvFloor`. After a wrapped upload, a request that reuses a shorter prefix could read a sliding layer's rows nothing uploaded, as CUDA could before #635. **From reading alone, that could be wrong output on main.** It needs a Gemma-shaped fixture, a prompt past the window on the upload bridge, and then a shorter prefix.
 
 **Known and left, from earlier rounds:**
 

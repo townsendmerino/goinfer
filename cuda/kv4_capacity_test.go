@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -1975,6 +1976,86 @@ func TestKV7_uploadPassLayers(t *testing.T) {
 			t.Errorf("%+v; want it still stopped, no blocks, no rows", got)
 		}
 	})
+}
+
+// TestKV7_partialCopyFromAWrappedUpload is item 4 of docs/measurements/kv7-demote-2026-11/README.md, "Before demotion can be turned on", with demotion off: a partial
+// copy starting below the source's base carries rows nothing uploaded, so the destination takes the source's floor, answers only where a window has
+// rows, and continues there bit-identically with the source.
+func TestKV7_partialCopyFromAWrappedUpload(t *testing.T) {
+	requireCUDADevice(t)
+	const base, end = 2 * kvBlock, 6 * kvBlock
+	m, err := decoder.Load(windowVariantFixture(t, "../testdata/gemma2-tiny", 32768), decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentContext: 8192, ResidentKVSlots: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	r := mustResident(t, m)
+	_, _, _, _, _, _, vocab := m.Dims()
+	ids := kv4Ids(end+64, 1, vocab)
+	if err := r.UseKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	// The same rows wherever a slot holds them, as two slots that computed the same tokens hold them.
+	rng := rand.New(rand.NewSource(1))
+	rows := map[int][2][]float32{}
+	layers := []int{}
+	floor := 0
+	for l := range r.layers {
+		Ly := &r.layers[l]
+		if Ly.kvShared || Ly.noKV() || Ly.kvDim == 0 {
+			continue
+		}
+		k, v := make([]float32, end*Ly.kvDim), make([]float32, end*Ly.kvDim)
+		for i := range k {
+			k[i], v[i] = rng.Float32(), rng.Float32()
+		}
+		rows[l], layers = [2][]float32{k, v}, append(layers, l)
+		if Ly.window > 0 {
+			floor = max(floor, base+int(Ly.window)-1)
+		}
+	}
+	upload := func(s, hi, late int) {
+		t.Helper()
+		if err := r.UseKVSlot(s); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.BeginKVUpload(); err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range layers {
+			from, d := 0, r.layers[l].kvDim
+			if r.layers[l].window > 0 {
+				from = late
+			}
+			if err := r.UploadKV(l, from, rows[l][0][from*d:hi*d], rows[l][1][from*d:hi*d]); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := r.EndKVUpload(false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	upload(1, kvBlock, 0)                                // dst holds the first block itself, so the copy below is partial
+	upload(0, end, base)                                 // the source: a wrapped upload, its sliding rows from base
+	if err := r.CopyKV(0, 1, kvBlock, end); err != nil { // start < base
+		t.Fatalf("the partial copy: %v", err)
+	}
+	for _, c := range []struct{ prefix, want int }{{kvBlock, 0}, {floor - 1, 0}, {floor, floor}, {end, end}} {
+		if a := r.ReusableKVSlot(1, c.prefix); a != c.want {
+			t.Errorf("after a partial copy, the destination answers %d for %d rows, want %d (the source's rows start at %d, its floor is %d)", a, c.prefix, c.want, base, floor)
+		}
+	}
+	got, err := kv4Prefill(m, r, 1, ids[end:], end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := kv4Prefill(m, r, 0, ids[end:], end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j, same := sameBits(got, want); !same {
+		t.Errorf("continuing at %d, the destination differs from the source at %d", end, j)
+	}
 }
 
 // TestKV7_failureOnAFreshSlotLeavesNoRows: a released or stopped slot with no host copy that fails part way answers for nothing and records nothing.
