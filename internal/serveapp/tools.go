@@ -119,7 +119,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		if ss != nil {
 			if errors.Is(gerr, errNoForcedCall) { // the post-check ran on a finished generation: its tokens are real, so they are counted
 				sendUsage(ss, gr.clock, req.StreamOptions, id, created, lm.name,
-					usage{PromptTokens: len(gr.promptIDs), CompletionTokens: t.nComp, TotalTokens: len(gr.promptIDs) + t.nComp, PrefillReusedTokens: t.reused})
+					newUsage(len(gr.promptIDs), t.nComp, t.reused))
 			}
 			sseErr(ss, "generation failed: "+gerr.Error())
 			sseDone(ss)
@@ -136,7 +136,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		if ss != nil {
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": t.cancelReason}})
 			sendUsage(ss, gr.clock, req.StreamOptions, id, created, lm.name,
-				usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
+				newUsage(len(gr.promptIDs), nComp, reused))
 			sseDone(ss)
 			return
 		}
@@ -166,7 +166,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	if t.fromReasoning && len(t.calls) > 0 {
 		choice[fromReasoningField] = true
 	}
-	usagev := usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused}
+	usagev := newUsage(len(gr.promptIDs), nComp, reused)
 
 	if req.Stream {
 		// Whatever prose already left as deltas is not sent twice: only t.rest, the part of the parsed prose still held back.

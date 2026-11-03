@@ -259,18 +259,53 @@ type ResidentKVSlotActivity interface {
 	SetKVSlotBusy(slot int, busy bool)
 }
 
-// ResidentKVPoolInfo is the optional capability of a resident whose slots share one block pool to say what it holds: the pool's
-// positions across every slot, and the positions each slot is guaranteed. One conversation's cap (ResidentCapped) may exceed the share.
-type ResidentKVPoolInfo interface {
-	KVPool() (positions, guaranteed int)
+// KVPoolDetail is a resident's shared KV block pool as the load banner names it (docs/tasks/task-kv-architecture-2026-10.md
+// §5.16): the context positions it serves across every slot, the positions each slot is guaranteed (one conversation's cap,
+// ResidentCapped, may exceed it), the rows in a block, the layer groups that hold pools, the precision the rows are stored at, and the
+// device bytes the pools and block tables take. WindowRows is how many rows a sliding-window layer keeps for one conversation, its
+// newest (0 when no layer has a window group): such a layer serves every position of Positions while holding only these.
+type KVPoolDetail struct {
+	Positions, Guaranteed, BlockRows, WindowRows int
+	Groups                                       []string
+	Precision                                    string
+	Bytes                                        int64
 }
 
-// ResidentKVPool reports the resident's KV pool (ResidentKVPoolInfo), zeros when it has none.
-func (m *Model) ResidentKVPool() (positions, guaranteed int) {
+// ResidentKVPoolInfo is the optional capability of a resident whose slots share one block pool to say what it holds.
+type ResidentKVPoolInfo interface {
+	KVPool() KVPoolDetail
+}
+
+// ResidentKVPool reports the resident's KV pool (ResidentKVPoolInfo), the zero value when it has none.
+func (m *Model) ResidentKVPool() KVPoolDetail {
 	if p, ok := m.resident.(ResidentKVPoolInfo); ok {
 		return p.KVPool()
 	}
-	return 0, 0
+	return KVPoolDetail{}
+}
+
+// KVShareState says whether a request on this resident can take KV rows another conversation computed, by residentShare's own tests:
+// "on"; "off" when the operator turned it off (--kv-share off, GOINFER_NO_RESIDENT_REUSE), with why; or "none" when this load cannot
+// share at all (off the resident path, one KV slot, a backend that copies no rows, recurrent state), with why.
+func (m *Model) KVShareState() (state, why string) {
+	switch {
+	case !m.ResidentActive():
+		return "none", "not resident"
+	case m.residentSlotCount() <= 1:
+		return "none", "one KV slot"
+	case m.hasRecurrentState():
+		return "none", "recurrent state cannot be copied"
+	}
+	if _, ok := m.resident.(ResidentKVCopier); !ok {
+		return "none", "this backend copies no KV rows"
+	}
+	switch {
+	case m.kvShareOff:
+		return "off", "--kv-share off"
+	case m.residentReuseDisabled():
+		return "off", "GOINFER_NO_RESIDENT_REUSE"
+	}
+	return "on", ""
 }
 
 // KVCopyDecline is CopyKV's refusal of a range, with the reason; dst is untouched.

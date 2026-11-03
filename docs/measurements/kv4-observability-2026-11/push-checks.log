@@ -1,0 +1,13 @@
+# KV4 §5.16 push checks after #617's second review, at cddd26d7e, 2026-11-02 19:38:23 PST
+ok  	github.com/townsendmerino/goinfer/decoder	0.870s
+# touched.py --base origin/main in a clean worktree
+  ok   build cuda (1.9s)
+  ok   vet cuda (1 pkg) (1.2s)
+  ok   test cuda -run ^(TestKVPool_detailNamesThePool|TestLedg (16.0s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 18 checks passed (CI runs the rest on push)
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	212.557s
+# staticcheck
+sc-ok
+c.go:5:16: field deadField is unused (U1000)
+lint exit 0

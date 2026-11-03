@@ -7,4 +7,4 @@ POST /v1/chat/completions
 HTTP 200
 Content-Type: application/json
 
-{"choices":[{"finish_reason":"length","index":0,"message":{"content":"aaaa","role":"assistant"}}],"created":0,"id":"chatcmpl-<1>","model":"tiny","object":"chat.completion","timings":{"queue_wait_ms":"<ms>","prefill_ms":"<ms>","decode_ms":"<ms>","ttft_ms":"<ms>"},"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24,"prefill_reused_tokens":19}}
+{"choices":[{"finish_reason":"length","index":0,"message":{"content":"aaaa","role":"assistant"}}],"created":0,"id":"chatcmpl-<1>","model":"tiny","object":"chat.completion","timings":{"queue_wait_ms":"<ms>","prefill_ms":"<ms>","decode_ms":"<ms>","ttft_ms":"<ms>"},"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24,"prefill_reused_tokens":19,"prefill_reuse":{"own_tokens":19,"shared_tokens":0,"host_tokens":0,"disk_tokens":0,"promoted_blocks":0}}}

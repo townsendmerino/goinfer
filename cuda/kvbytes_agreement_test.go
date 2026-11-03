@@ -3,9 +3,11 @@
 package cuda
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -125,5 +127,122 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 	}
 	if ran == 0 {
 		t.Skip("no fixture built a CUDA resident here")
+	}
+}
+
+// TestKVPool_detailNamesThePool is the CUDA half of KV4's §5.16 pool banner (docs/tasks/task-kv-architecture-2026-10.md): the pool's
+// detail (decoder.KVPoolDetail) names the groups its layers use, the context positions kvPoolLine names, what a window group keeps per
+// conversation, its 64-row blocks and its precision, and its bytes are what the plan charges for the pools and tables (kvChargedBytes at the guaranteed share,
+// which TestKSH6C_marginPriced holds to the device buffers). A windowed pool also holds what kvGrantRollback added from free VRAM after
+// the fit: on a stubbed card with no headroom it is exactly the plan's bytes, and with known headroom the plan's plus the grant's. The
+// cases are one full group, one window group, and both (cohere2's sliding layers beside its full one).
+
+func TestKVPool_detailNamesThePool(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	load := func(fixture, kv string, window bool) (*decoder.Model, *cudaResident) {
+		m, err := decoder.Load(filepath.Join("..", "testdata", fixture), decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2, KVPrecision: kv, ResidentWindowedKV: window})
+		if err != nil {
+			t.Fatalf("%s at %s: load: %v", fixture, kv, err)
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			m.Close()
+			t.Fatalf("%s at %s: not CUDA-resident: %s", fixture, kv, m.ResidentDecline())
+		}
+		return m, r
+	}
+	for _, c := range []struct {
+		fixture, kv string
+		window      bool
+		groups      []string
+	}{
+		{"llama-tiny", "f32", false, []string{"full"}},
+		{"llama-tiny", "f16", false, []string{"full"}},
+		{"mistral-tiny-window", "f32", true, []string{"sliding window"}},
+		{"cohere2-tiny", "f32", true, []string{"full", "sliding window"}},
+	} {
+		// Known headroom, far past the grant's cap: the case does not read this card's free memory.
+		restore := stubKVGrantFree(4 << 30)
+		defer restore()
+		m, r := load(c.fixture, c.kv, c.window)
+		restore()
+		d := m.ResidentKVPool()
+		groups, windowRows := c.groups, 0
+		if c.window {
+			windowRows = r.kvSlotBlocks(kvGroupWin) * kvBlock
+		}
+		t.Logf("%s at %s: %+v (slack %d, planned %d)", c.fixture, c.kv, d, r.kvSlack, kvWindowSlack)
+		want := r.kvSlotsN * r.kvShareBlocks * kvBlock
+		if d.Positions != want || d.Guaranteed != r.kvShareCtx || d.BlockRows != kvBlock || d.WindowRows != windowRows || d.Precision != c.kv || !slices.Equal(d.Groups, groups) {
+			t.Errorf("%s at %s: pool %+v, want %d positions, share %d, %d window rows, groups %v", c.fixture, c.kv, d, want, r.kvShareCtx, windowRows, groups)
+		}
+		if d.Positions < d.Guaranteed {
+			t.Errorf("%s at %s: a pool of %d positions is smaller than one conversation's share of %d", c.fixture, c.kv, d.Positions, d.Guaranteed)
+		}
+		if line := fmt.Sprintf("KV pool: %d positions", d.Positions); !strings.Contains(r.kvPoolLine(), line) {
+			t.Errorf("%s at %s: the build's line %q does not say %q", c.fixture, c.kv, r.kvPoolLine(), line)
+		}
+		bytes := kvChargedBytes(r.kvShareCtx, r.kvSlotsN, r.layers)
+		if c.window {
+			// The grant's bytes, beside the plan's: the slack the fit priced, and the one the grant raised it to.
+			bytes += r.windowedPoolCharged(r.kvSlack, r.kvSlotsN) - r.windowedPoolCharged(kvWindowSlack, r.kvSlotsN)
+			if r.kvSlack <= kvWindowSlack {
+				t.Errorf("%s: slack %d: no grant ran, so this case reads nothing of it", c.fixture, r.kvSlack)
+			}
+		}
+		if d.Bytes != bytes {
+			t.Errorf("%s at %s: pool bytes %d, the plan and any grant charge %d", c.fixture, c.kv, d.Bytes, bytes)
+		}
+		m.Close()
+		if !c.window {
+			continue
+		}
+		// No headroom: no grant, so the pools are exactly what the fit priced.
+		restore = stubKVGrantFree(0)
+		defer restore()
+		m, r = load(c.fixture, c.kv, c.window)
+		restore()
+		if b, p := m.ResidentKVPool().Bytes, kvChargedBytes(r.kvShareCtx, r.kvSlotsN, r.layers); r.kvSlack != kvWindowSlack || b != p {
+			t.Errorf("%s with no headroom: slack %d (planned %d), pool bytes %d, the plan charges %d", c.fixture, r.kvSlack, kvWindowSlack, b, p)
+		} else {
+			t.Logf("%s with no headroom: slack %d, pool bytes %d, equal to the plan's", c.fixture, r.kvSlack, b)
+		}
+		m.Close()
+	}
+}
+
+// stubKVGrantFree makes kvGrantRollback read free bytes of VRAM until restore runs.
+func stubKVGrantFree(free uint64) (restore func()) {
+	old := kvGrantFreeVRAM
+	kvGrantFreeVRAM = func(*cudaResident) (uint64, error) { return free, nil }
+	return func() { kvGrantFreeVRAM = old }
+}
+
+// TestKVPool_mixedGroupsAndPrecision reads KVPool's naming on a resident built by hand, with no device: the precision of pools at f16 and
+// f32 together, the groups the owning layers use (a layer with no KV and a KV-shared one name none), and what a window group keeps.
+func TestKVPool_mixedGroupsAndPrecision(t *testing.T) {
+	r := &cudaResident{ctxCap: 4096, kvShareCtx: 4096, kvShareBlocks: 64, kvWin: true, kvWindow: 16, kvSlack: 512,
+		layers: []cudaLayer{
+			{kvDim: 8, kvHalf: true},                 // full, f16
+			{kvDim: 8, kvWin: true},                  // window, f32
+			{kvDim: 8, kvShared: true, kvWin: false}, // KV-shared: owns nothing
+			{mixer: decoder.MixerNone},               // no KV
+		}}
+	r.kc, r.vc = make([]Buffer, len(r.layers)), make([]Buffer, len(r.layers))
+	d := r.KVPool()
+	if d.Precision != "f16 and f32" || !slices.Equal(d.Groups, []string{"full", "sliding window"}) || d.WindowRows != kvWindowBlocks(4096, 16+512)*kvBlock {
+		t.Errorf("mixed: %+v", d)
+	}
+	r.layers[1].kvHalf = true
+	if d := r.KVPool(); d.Precision != "f16" {
+		t.Errorf("all f16: %+v", d)
+	}
+	r.layers[0].kvWin = true
+	if d := r.KVPool(); !slices.Equal(d.Groups, []string{"sliding window"}) {
+		t.Errorf("window only: %+v", d)
+	}
+	r.layers[0].kvHalf, r.layers[1].kvHalf, r.layers[0].kvWin, r.layers[1].kvWin = false, false, false, false
+	if d := r.KVPool(); d.Precision != "f32" || !slices.Equal(d.Groups, []string{"full"}) || d.WindowRows != 0 {
+		t.Errorf("all f32, full: %+v", d)
 	}
 }

@@ -78,7 +78,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	if wantThinking {
 		streamMessagesThinking(ss, th, gr, func(onText func(string)) (string, int, string, int, string, error) {
 			finish, nComp, _, stopSeq, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, onText)
-			return finish, nComp, stopSeq, reused, cancelReason, gerr
+			return finish, nComp, stopSeq, reused.Tokens, cancelReason, gerr
 		})
 		return
 	}
@@ -105,7 +105,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	}
 	anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 	reason, seq := anthropicStopReason(finish, stopSeq)
-	anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), reused, nComp), cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
+	anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), reused.Tokens, nComp), cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
 }
 
 // streamMessagesTools runs a tool-bearing turn on /v1/messages: prose streams as a text content block while the model
@@ -131,14 +131,14 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 		// so the stream stays well-formed.
 		ts.close()
 		reason, seq := anthropicStopReason(t.finish, t.stopSeq)
-		anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), t.reused, t.nComp), t.cancelReason, nil, false)
+		anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), t.reused.Tokens, t.nComp), t.cancelReason, nil, false)
 		return
 	}
 
 	if len(t.calls) == 0 { // model declined to call: one text block with the output
 		ts.finish(t.rest, true)
 		reason, seq := anthropicStopReason(t.finish, t.stopSeq)
-		anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), t.reused, t.nComp), "", emptyAnswerOf(gr, t.finish, t.stopSeq, 0, t.nComp), false)
+		anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), t.reused.Tokens, t.nComp), "", emptyAnswerOf(gr, t.finish, t.stopSeq, 0, t.nComp), false)
 		return
 	}
 
@@ -160,7 +160,7 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 		anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": idx})
 		idx++
 	}
-	anthropicMessageEnd(ss, gr.clock, "tool_use", nil, anthropicUsage(len(gr.promptIDs), t.reused, t.nComp), "", nil, t.fromReasoning)
+	anthropicMessageEnd(ss, gr.clock, "tool_use", nil, anthropicUsage(len(gr.promptIDs), t.reused.Tokens, t.nComp), "", nil, t.fromReasoning)
 }
 
 // anthropicTextStream is the prose half of a streamed tool turn: text content block 0, opened lazily. Whitespace-only

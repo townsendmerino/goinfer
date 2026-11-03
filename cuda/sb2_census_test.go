@@ -1931,7 +1931,8 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 // TestPrefillSteps_equalTheFlags is OP4cu-d1's D1-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked tiny
 // fixture that builds a CUDA resident at int4, each layer's batched prefill steps, where it has any, are the blocks the former
 // branches chose, a model the flags' guards batch (prefillFlagsDecline) has steps on every layer, and the batched pass serves
-// exactly the models those guards batch.
+// exactly the models those guards batch. On a model they decline, a layer with no batched block (MLA, Mamba-2, an attention-only or
+// FFN-only block) carries no steps.
 func TestPrefillSteps_equalTheFlags(t *testing.T) {
 	requireDeviceAndFixture(t, "../testdata/llama-tiny")
 	// The build's own step checks are off for the comparison, so a regression meets these branches instead of a declined build
@@ -1939,6 +1940,7 @@ func TestPrefillSteps_equalTheFlags(t *testing.T) {
 	prefillStepsBuildChecksOffForTest = true
 	t.Cleanup(func() { prefillStepsBuildChecksOffForTest = false })
 	built, byFlags, batched, layers, resident := 0, 0, 0, 0, 0
+	declinedStepless := 0 // fixtures the flags' guards decline whose block-less layers carry no steps
 	emptied := false
 	for _, dir := range walkFixtures(t) {
 		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
@@ -1985,10 +1987,27 @@ func TestPrefillSteps_equalTheFlags(t *testing.T) {
 			r.layers[0].prefillSteps = saved
 			emptied = true
 		}
-		m.Close()
+		// Read before Close, which frees the layers.
 		if !flagsServe {
-			continue
+			// A layer the batched pass has no block for (MLA, Mamba-2, an attention-only or FFN-only block) carries no steps.
+			stepless := 0
+			for l := range r.layers {
+				L := &r.layers[l]
+				if L.mixer == decoder.MixerMLA || L.mixer == decoder.MixerMamba || L.mixer == decoder.MixerNone || !L.ffn {
+					if len(L.prefillSteps) != 0 {
+						t.Errorf("%s layer %d: no batched block for it, and steps %v", filepath.Base(dir), l, L.prefillSteps)
+					} else {
+						stepless++
+					}
+				}
+			}
+			if stepless > 0 {
+				declinedStepless++
+				t.Logf("%s: declined by the flags' guards, %d block-less layers with no steps", filepath.Base(dir), stepless)
+			}
 		}
+		m.Close()
+		// Every fixture, the declined ones too, must build resident with the build's step checks on (production's build).
 		prefillStepsBuildChecksOffForTest = false
 		m2, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
 		prefillStepsBuildChecksOffForTest = true
@@ -1999,21 +2018,25 @@ func TestPrefillSteps_equalTheFlags(t *testing.T) {
 		if _, ok := m2.ResidentForwardForTest().(*cudaResident); ok {
 			resident++
 		} else {
-			t.Errorf("%s: the flags' guards batch it, and with the build's step checks on it is not resident: %s", filepath.Base(dir), m2.ResidentDecline())
+			t.Errorf("%s: with the build's step checks on it is not resident (the flags' guards batch it: %v): %s", filepath.Base(dir), flagsServe, m2.ResidentDecline())
 		}
 		m2.Close()
 	}
-	t.Logf("%d fixtures built resident, %d batched by the flags' guards (%d of them resident with the build's step checks on), "+
-		"%d with a batched prefill, %d layers with batched steps checked", built, byFlags, resident, batched, layers)
-	// 42 is D1-1's reading with the gitignored fixtures placed (docs/tasks/task-forward-architecture-2026-10.md §4.9a, OP4cu-d1);
-	// a clean tree has fewer, and OP4CU_REQUIRE_FIXTURES=1 (the push record's run) asks for all of them.
-	floor := 1
+	t.Logf("%d fixtures built resident (%d of them again with the build's step checks on), %d batched by the flags' guards, "+
+		"%d with a batched prefill, %d layers with batched steps checked", built, resident, byFlags, batched, layers)
+	// The floors are D1-1's readings: a clean tree builds 31 tracked fixtures and batches 29; with the gitignored fixtures placed and
+	// required (OP4CU_REQUIRE_FIXTURES=1, the push record's run) it builds 46 and batches 43. The declined fixtures with block-less
+	// layers are deepseek-tiny and nemotron-tiny (tracked) and kimi-tiny (gitignored).
+	builtFloor, floor, declinedFloor := 31, 29, 2
 	if os.Getenv("OP4CU_REQUIRE_FIXTURES") != "" {
-		floor = 42
+		builtFloor, floor, declinedFloor = 46, 43, 3
 	}
-	if built < 30 || byFlags < floor || batched != byFlags || resident != byFlags || !emptied {
-		t.Fatalf("%d built, %d batched by the flags, %d batched, %d resident with the checks on (want all of them, and at least %d)",
-			built, byFlags, batched, resident, floor)
+	if declinedStepless < declinedFloor {
+		t.Errorf("%d declined fixtures with block-less layers checked, want at least %d", declinedStepless, declinedFloor)
+	}
+	if built < builtFloor || byFlags < floor || batched != byFlags || resident != built || !emptied {
+		t.Fatalf("%d built (want at least %d), %d resident with the checks on (want all), %d batched by the flags, %d batched (want all of them, and at least %d)",
+			built, builtFloor, resident, byFlags, batched, floor)
 	}
 }
 

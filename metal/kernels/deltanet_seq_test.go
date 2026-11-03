@@ -16,12 +16,14 @@ import (
 // that arrive as half on the batched lane (the projection GEMMs' outputs: mixed and z) are given to both sides as the same
 // halves. Both scan forms run: the device-memory kernels and the on-chip ones the prefill takes (delta_conv_seq_reg,
 // delta_rule_seq_tg). Real Qwen3.5 geometry (nk = 16, nv = 48, hk = hv = 128, K = 4) and the tiny fixtures' (qwen35-tiny,
-// olmo_hybrid-tiny), at M = 1, 7 and 33.
+// olmo_hybrid-tiny), at M = 1, 7 and 33. The Olmo geometry also runs its own settings, betaScale 2 and the output norm's epsilon
+// of 1e-5, where some write gate must exceed 1.
 func TestDeltaNetSeqKernels_matchDecodeBitwise(t *testing.T) {
 	for _, g := range []deltaSeqGeom{
-		{"qwen3.5", 128, 128, 16, 48, 4},
-		{"qwen35-tiny", 16, 16, 2, 4, 4},
-		{"olmo_hybrid-tiny", 8, 16, 4, 4, 4},
+		{"qwen3.5", 128, 128, 16, 48, 4, 1, 1e-6},
+		{"qwen35-tiny", 16, 16, 2, 4, 4, 1, 1e-6},
+		{"olmo_hybrid-tiny", 8, 16, 4, 4, 4, 1, 1e-6},
+		{"olmo_hybrid-tiny settings", 8, 16, 4, 4, 4, 2, 1e-5},
 	} {
 		for _, v := range []struct {
 			conv, rule string
@@ -37,6 +39,8 @@ type deltaSeqGeom struct {
 	name           string
 	hk, hv, nk, nv int
 	convK          int
+	betaScale      float32 // delta_gates' scale on the write gate
+	eps            float32 // the gated output norm's epsilon
 }
 
 // deltaSeqBitwise is TestDeltaNetSeqKernels_matchDecodeBitwise for one geometry, with the batched lane's scan kernels convSeq
@@ -64,7 +68,7 @@ func deltaSeqBitwise(t *testing.T, g deltaSeqGeom, convSeq, ruleSeq string, rule
 	rep := nv / nk
 	keyDim, valueDim := nk*hk, nv*hv
 	convDim := 2*keyDim + valueDim
-	const eps = 1e-6
+	eps := g.eps
 	rng := rand.New(rand.NewSource(7))
 	rnd := func(n int, scale float64) []float32 {
 		s := make([]float32, n)
@@ -97,6 +101,7 @@ func deltaSeqBitwise(t *testing.T, g deltaSeqGeom, convSeq, ruleSeq string, rule
 	uConvDim, uK, uNv, uNk, uHk, uHv := u(convDim), u(convK), u(nv), u(nk), u(hk), u(hv)
 	uKeyDim, uRep, uVBase := u(keyDim), u(rep), u(2*keyDim)
 	uQScale, uEps := NewBufferFloats(d, []float32{float32(1 / math.Sqrt(float64(hk)))}), NewBufferFloats(d, []float32{eps})
+	uBeta := NewBufferFloats(d, []float32{g.betaScale})
 	dConvW, dDt, dNegA, dNormW := NewBufferFloats(d, convW), NewBufferFloats(d, dtBias), NewBufferFloats(d, negExpA), NewBufferFloats(d, normW)
 	q := d.NewCommandQueue()
 
@@ -118,7 +123,7 @@ func deltaSeqBitwise(t *testing.T, g deltaSeqGeom, convSeq, ruleSeq string, rule
 			copy(dZ.Floats(), z[r*valueDim:(r+1)*valueDim])
 			e := q.Begin()
 			e.Dispatch(pConv, convDim, 256, dMixed, dConvW, dWin, dConv, uConvDim, uK)
-			e.Dispatch(pGates, nv, 64, dBt, dAt, dDt, dNegA, dHeadP, uNv)
+			e.Dispatch(pGates, nv, 64, dBt, dAt, dDt, dNegA, dHeadP, uNv, uBeta)
 			e.Dispatch(pNorm, nk*128, 128, dConv, dQn, dKn, uNk, uHk, uKeyDim, uQScale)
 			e.Dispatch(pRule, nv*hv, 128, dQn, dKn, dConv, dHeadP, dState, dCore, uNv, uHk, uHv, uRep, uVBase)
 			e.Dispatch(pGNorm, nv*128, 128, dCore, dZ, dNormW, dOut, uNv, uHv, uEps)
@@ -140,12 +145,21 @@ func deltaSeqBitwise(t *testing.T, g deltaSeqGeom, convSeq, ruleSeq string, rule
 		uM := u(M)
 		e := q.Begin()
 		e.Dispatch(sConv, convDim, 256, sMixed, dConvW, sWin, sConvOut, uConvDim, uK, uM)
-		e.Dispatch(sGates, M*nv, 64, sBt, sAt, dDt, dNegA, sHeadP, uNv, uM)
+		e.Dispatch(sGates, M*nv, 64, sBt, sAt, dDt, dNegA, sHeadP, uNv, uM, uBeta)
 		e.Dispatch(sNorm, M*nk*128, 128, sConvOut, sQn, sKn, uNk, uHk, uKeyDim, uQScale, uConvDim, uM)
 		e.Dispatch(sRule, nv*hv, ruleTG, sQn, sKn, sConvOut, sHeadP, sState, sCore, uNv, uHk, uHv, uRep, uVBase, uKeyDim, uConvDim, uM)
 		e.Dispatch(sGNorm, M*nv*128, 128, sCore, sZ, dNormW, sOut, uNv, uHv, uEps, uM)
 		e.End()
 
+		if g.betaScale == 2 {
+			widened := false
+			for h := 0; h < M*nv; h++ {
+				widened = widened || wHeadP[h*2] > 1
+			}
+			if !widened {
+				t.Errorf("M=%d: betaScale 2, and no write gate exceeds 1: the case does not reach the widened range", M)
+			}
+		}
 		for _, c := range []struct {
 			name      string
 			want, got []float32

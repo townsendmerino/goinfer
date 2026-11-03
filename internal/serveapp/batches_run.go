@@ -138,10 +138,7 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 			"message":       bmsg,
 			"finish_reason": finish,
 		}},
-		"usage": usage{
-			PromptTokens: len(gr.promptIDs), CompletionTokens: nComp,
-			TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused,
-		},
+		"usage": newUsage(len(gr.promptIDs), nComp, prefillReused),
 	}
 	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.addTurn(body)})
 }
@@ -264,7 +261,7 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 		"content":       content,
 		"stop_reason":   reason,
 		"stop_sequence": seq,
-		"usage":         anthropicUsage(len(gr.promptIDs), reused, nComp),
+		"usage":         anthropicUsage(len(gr.promptIDs), reused.Tokens, nComp),
 	}
 	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.addTurn(body)})
 }

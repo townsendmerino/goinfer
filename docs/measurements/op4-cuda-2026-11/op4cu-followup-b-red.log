@@ -1,0 +1,10 @@
+# OP4 on CUDA follow-up (b): D1-1 with the gitignored fixtures placed and required, at 0230594e2, 2026-11-02 17:10:08 PST, load 0.08
+vet-ok
+    sb2_census_test.go:2023: 46 fixtures built resident, 43 batched by the flags' guards (43 of them resident with the build's step checks on), 43 with a batched prefill, 218 layers with batched steps checked
+    sb2_census_test.go:2032: 0 declined fixtures with block-less layers checked, want at least 3
+--- FAIL: TestPrefillSteps_equalTheFlags (57.45s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	57.546s
+FAIL
+exit 1
+sc-ok

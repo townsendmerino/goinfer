@@ -1,0 +1,24 @@
+# #617 review, items 1 and 2, red by mutation then green, 2026-11-02 18:53 PST
+# red: the row accepts any reuse (the old rule)
+    --- FAIL: TestSharedPreamble/the_first's_slot_taken_in_place (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/servecheck	0.008s
+FAIL
+# red: a /v1/models failure is a skip (the old decodePath)
+    --- FAIL: TestSharedPreamble//v1/models_fails (0.00s)
+    --- FAIL: TestSharedPreamble//v1/models_does_not_list_it (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/servecheck	0.010s
+FAIL
+# green
+--- PASS: TestSharedPreamble (0.00s)
+    --- PASS: TestSharedPreamble/shared (0.00s)
+    --- PASS: TestSharedPreamble/the_first's_slot_taken_in_place (0.00s)
+    --- PASS: TestSharedPreamble/a_small_share (0.00s)
+    --- PASS: TestSharedPreamble/re-prefilled,_sharing_off (0.00s)
+    --- PASS: TestSharedPreamble/one_slot (0.00s)
+    --- PASS: TestSharedPreamble/not_resident (0.00s)
+    --- PASS: TestSharedPreamble//v1/models_fails (0.00s)
+    --- PASS: TestSharedPreamble//v1/models_does_not_list_it (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/servecheck	0.009s
+# check.go as committed tree + the fix (restored)

@@ -487,6 +487,8 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 			}
 		}
 	}
+	// No fixture has a state buffer at the 2 MiB quantum, so these reach the rounding: under it, on it, just over, and well over.
+	queries = append(queries, decoder.BuildQuery{Options: decoder.Options{Backend: "cuda"}, StateBuffers: []int64{1 << 20, 2 << 20, 2<<20 + 1, 5 << 20}})
 	differs := func(f func(decoder.BuildQuery) decoder.BuildDemand) int {
 		n := 0
 		for _, q := range queries {
@@ -504,6 +506,7 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 		"HostPackBytes":     func(d *decoder.BuildDemand) { d.HostPackBytes *= 2 },
 		"HostBuildPeak":     func(d *decoder.BuildDemand) { d.HostBuildPeak *= 2 },
 		"PinnedExpertBytes": func(d *decoder.BuildDemand) { d.PinnedExpertBytes *= 2 },
+		"StateBytes":        func(d *decoder.BuildDemand) { d.StateBytes *= 2 },
 	} {
 		planted := func(q decoder.BuildQuery) decoder.BuildDemand {
 			d := buildDemand(q)

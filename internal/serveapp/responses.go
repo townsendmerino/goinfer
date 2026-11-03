@@ -240,7 +240,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			return
 		}
 		out := withCarrier(rs, mint, req.Include, id, withReasoning(rs, gr.think, id, mint, []any{rs.closeMessage(sb.String())}))
-		rs.emit("response.completed", map[string]any{"response": withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused)})
+		rs.emit("response.completed", map[string]any{"response": withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused.Tokens)})
 		if cancelReason != "" {
 			rs.emit("response.cancelled", map[string]any{"reason": cancelReason})
 		}
@@ -260,7 +260,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 	out := withCarrier(nil, mint, req.Include, id, withReasoning(nil, gr.think, id, mint, []any{outputMessage(id+"-msg", sb.String())}))
-	writeJSON(w, http.StatusOK, withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused))
+	writeJSON(w, http.StatusOK, withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused.Tokens))
 	s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.reasoningText(), nil)
 }
 
@@ -509,7 +509,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	}
 	// Reflect the real finish, like the non-tools paths: a tool turn cut off by max_output_tokens is "incomplete",
 	// not "completed".
-	resp := withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, t.stopSeq, len(calls), nComp)), t.reused)
+	resp := withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, t.stopSeq, len(calls), nComp)), t.reused.Tokens)
 	if t.fromReasoning && len(calls) > 0 {
 		resp[fromReasoningField] = true
 	}

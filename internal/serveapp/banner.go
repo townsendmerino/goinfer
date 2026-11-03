@@ -70,8 +70,11 @@ type bannerFacts struct {
 	// a backend or family without them, 0 off the resident path.
 	kvSlots int
 	// kvPool and kvShare: the positions a resident's shared KV pool holds and each conversation's guaranteed share
-	// (decoder.Model.ResidentKVPool); zeros without a pool.
-	kvPool, kvShare int
+	// (decoder.Model.ResidentKVPool); zeros without a pool. kvPoolDetail is the rest of that pool, and kvShareState and kvShareWhy
+	// whether a request can take another conversation's KV rows (decoder.Model.KVShareState).
+	kvPool, kvShare          int
+	kvPoolDetail             decoder.KVPoolDetail
+	kvShareState, kvShareWhy string
 
 	// towerReserve: the VRAM held back for this model's CUDA vision tower when the resident plan was made (towerReserve; 0 when there is none or it is not CUDA).
 	towerReserve int64
@@ -112,7 +115,9 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.ctxNote = lm.mdl().ResidentContextNote()
 	f.harnessKVBytes = lm.mdl().ResidentContextKVBytes(harnessCtx)
 	f.kvSlots = lm.mdl().ResidentKVSlots()
-	f.kvPool, f.kvShare = lm.mdl().ResidentKVPool()
+	f.kvPoolDetail = lm.mdl().ResidentKVPool()
+	f.kvShareState, f.kvShareWhy = lm.mdl().KVShareState()
+	f.kvPool, f.kvShare = f.kvPoolDetail.Positions, f.kvPoolDetail.Guaranteed
 	// A decline is only a decline when a GPU backend was built and then did not go resident (EffectiveBackend is that backend, not "cpu"). ResidentDecline is
 	// also set, with its own "the CPU backend" reason, for an ordinary CPU load or one that -backend auto sent to the CPU — where nothing was declined, the CPU was the choice.
 	if lm.mdl().EffectiveBackend() != "cpu" {
@@ -224,6 +229,9 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	// conversation re-prefills in full.
 	if f.resident && f.kvSlots > 0 && f.ctxWindow > 0 {
 		out = append(out, kvPlanLine(f, cfg))
+		if l := kvPoolBannerLine(f); l != "" {
+			out = append(out, l)
+		}
 	}
 	switch {
 	case f.resident && f.residentReuseOff:
@@ -434,6 +442,52 @@ func kvPlanLine(f bannerFacts, cfg config) string {
 		line += " (" + strings.Join(why, "; ") + ")"
 	}
 	return line
+}
+
+// kvPoolBannerLine names a resident's shared KV pool (docs/tasks/task-kv-architecture-2026-10.md §5.16): its tokens and block
+// size, precision and device bytes, the layer groups that hold pools and what a window group keeps, the sharing scope, and how much of
+// it one conversation can use. A sliding-window layer keeps only a conversation's newest rows, so a windowed pool never reads as all
+// one conversation's. "" without a pool.
+func kvPoolBannerLine(f bannerFacts) string {
+	d := f.kvPoolDetail
+	if d.Positions <= 0 || d.BlockRows <= 0 {
+		return ""
+	}
+	groups := "group: "
+	if len(d.Groups) > 1 {
+		groups = "groups: "
+	}
+	groups += strings.Join(d.Groups, ", ")
+	if d.WindowRows > 0 {
+		groups += fmt.Sprintf(", whose sliding-window layers keep a conversation's newest %s rows", commaInt(d.WindowRows))
+	}
+	scope := "a prompt can take another conversation's KV rows"
+	if f.kvShareState != "on" {
+		scope = "no conversation takes another's KV rows (" + f.kvShareWhy + ")"
+	}
+	use := "one conversation can use all of it"
+	if f.ctxWindow > 0 && (f.ctxWindow < d.Positions || d.WindowRows > 0) {
+		use = fmt.Sprintf("one conversation can use up to %s of them", commaInt(f.ctxWindow))
+	}
+	return fmt.Sprintf("KV pool: %s tokens in blocks of %d (%s, %s; %s); %s; %s.", commaInt(d.Positions), d.BlockRows, d.Precision,
+		kvPoolBytes(d.Bytes), groups, scope, use)
+}
+
+// kvPoolBytes is n as the banner prints a pool: GB from 1 GiB up, MB below it.
+func kvPoolBytes(n int64) string {
+	if n >= 1<<30 {
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	}
+	return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+}
+
+// commaInt is n with thousands separators.
+func commaInt(n int) string {
+	s := strconv.Itoa(n)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
 }
 
 // samplingLine says which sampling a request that leaves fields out gets: the checkpoint's recommended values and where

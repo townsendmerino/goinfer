@@ -488,7 +488,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
 		}
 		sendUsage(ss, gr.clock, req.StreamOptions, id, created, lm.name,
-			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
+			newUsage(len(gr.promptIDs), nComp, reused))
 		sseDone(ss)
 		return
 	}
@@ -514,7 +514,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			"message":       vmsg,
 			"finish_reason": finish,
 		}},
-		"usage": usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
+		"usage": newUsage(len(gr.promptIDs), nComp, reused),
 	}
 	if e := emptyAnswerOf(gr, finish, stopHit, 0, nComp); e != nil {
 		vresp["choices"].([]any)[0].(map[string]any)["goinfer_empty_answer"] = e
@@ -612,7 +612,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		if th.want {
 			streamMessagesThinking(ss, th, gr, func(onText func(string)) (string, int, string, int, string, error) {
 				finish, nComp, _, stopSeq, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, onText)
-				return finish, nComp, stopSeq, reused, cancelReason, gerr
+				return finish, nComp, stopSeq, reused.Tokens, cancelReason, gerr
 			})
 			return
 		}
@@ -637,7 +637,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		}
 		anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 		reason, seq := anthropicStopReason(finish, stopSeq)
-		anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), reused, nComp), cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
+		anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), reused.Tokens, nComp), cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
 		return
 	}
 	var sb, rb strings.Builder
@@ -664,7 +664,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		"content":       vcontent,
 		"stop_reason":   reason,
 		"stop_sequence": seq,
-		"usage":         anthropicUsage(len(gr.promptIDs), reused, nComp),
+		"usage":         anthropicUsage(len(gr.promptIDs), reused.Tokens, nComp),
 	}
 	if e := emptyAnswerOf(gr, finish, stopSeq, 0, nComp); e != nil {
 		vmsg["goinfer_empty_answer"] = e

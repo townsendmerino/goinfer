@@ -28,6 +28,7 @@ import (
 	"image/png"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -205,6 +206,115 @@ func (c *Client) Chat(ctx context.Context, model, prompt string, maxTokens int, 
 	res.OK = usage
 	res.Detail = d
 	return res
+}
+
+// sharedPreamble is the long system preamble SharedPreamble sends from two conversations: long enough to span several KV blocks. It
+// opens with this run's nonce, so no slot holds it before the run: a slot an earlier run left already holds an unchanging preamble, and a
+// conversation landing there has nothing to take from another (docs/measurements/kv4-observability-2026-11/r2-review.log).
+func sharedPreamble(nonce string) string {
+	return "Session " + nonce + ". You are the build assistant for a large Go repository. " + strings.Repeat(
+		"Follow the repository's conventions, keep each change small, name the test that covers it, and report what you ran. ", 40)
+}
+
+// sharedTail is a user message long enough that a request giving it up cannot be taken for a rollback of the conversation that sent it
+// (kvmgr.PickSlotWithin's allowance): the next conversation has to take another slot, and copy the preamble across.
+func sharedTail(topic string) string {
+	return strings.Repeat("Here is a note about "+topic+" that the answer should take into account before it says anything. ", 40) +
+		"In one word, what is the note about?"
+}
+
+// SharedPreamble is KV4's §5.16 row (docs/tasks/task-kv-architecture-2026-10.md): a second conversation that opens with the first's
+// preamble takes it from the first's KV. Each conversation sends the shared system message and a long message of its own, so the second
+// must run on another slot, and it must report shared_tokens above zero, covering at least a third of its prompt. A server that cannot
+// share at all (kv_share "none": off the resident path, one KV slot, recurrent state) is a skip; one turned off by its operator is
+// red, because this row exists to say so. A failure reading /v1/models fails the row.
+func (c *Client) SharedPreamble(ctx context.Context, model string) Result {
+	res := Result{Name: "shared preamble reused"}
+	info, err := c.modelInfo(ctx, model)
+	if err != nil {
+		res.Detail = err.Error()
+		return res
+	}
+	if strings.HasPrefix(info.KVShare, "none") {
+		res.Skip, res.Detail = true, "this load cannot share rows across conversations: "+info.KVShare
+		return res
+	}
+	nonce := strconv.FormatInt(time.Now().UnixNano(), 36)
+	type reuseUsage struct {
+		PromptTokens        int            `json:"prompt_tokens"`
+		PrefillReusedTokens int            `json:"prefill_reused_tokens"`
+		PrefillReuse        map[string]int `json:"prefill_reuse"`
+	}
+	ask := func(topic string) (reuseUsage, error) {
+		body := map[string]any{"model": model, "temperature": 0, "max_tokens": 4, "messages": []map[string]string{
+			{"role": "system", "content": sharedPreamble(nonce)}, {"role": "user", "content": sharedTail(topic)}}}
+		resp, err := c.do(ctx, http.MethodPost, "/v1/chat/completions", body)
+		if err != nil {
+			return reuseUsage{}, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return reuseUsage{}, fmt.Errorf("%s", errBody(resp))
+		}
+		var out struct {
+			Usage *reuseUsage `json:"usage"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			return reuseUsage{}, err
+		}
+		if out.Usage == nil {
+			return reuseUsage{}, fmt.Errorf("no usage block")
+		}
+		return *out.Usage, nil
+	}
+	if _, err := ask("rate limiters"); err != nil {
+		res.Detail = "first conversation: " + err.Error()
+		return res
+	}
+	u, err := ask("garbage collectors")
+	if err != nil {
+		res.Detail = "second conversation: " + err.Error()
+		return res
+	}
+	shared := u.PrefillReuse["shared_tokens"]
+	res.Detail = fmt.Sprintf("reused %d of %d prompt tokens (own %d, shared %d, host %d); kv_share %q", u.PrefillReusedTokens, u.PromptTokens,
+		u.PrefillReuse["own_tokens"], shared, u.PrefillReuse["host_tokens"], info.KVShare)
+	if shared <= 0 || 3*shared < u.PromptTokens {
+		res.Detail += "; the second conversation did not take the preamble it shares with the first from the first's KV"
+		return res
+	}
+	res.OK = true
+	return res
+}
+
+// modelEntry is what SharedPreamble reads of a /v1/models row.
+type modelEntry struct {
+	ID      string `json:"id"`
+	KVShare string `json:"kv_share"`
+}
+
+// modelInfo is /v1/models' row for model; a failed request or a list that does not name it is an error.
+func (c *Client) modelInfo(ctx context.Context, model string) (modelEntry, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/v1/models", nil)
+	if err != nil {
+		return modelEntry{}, fmt.Errorf("/v1/models: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return modelEntry{}, fmt.Errorf("/v1/models: %s", errBody(resp))
+	}
+	var out struct {
+		Data []modelEntry `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return modelEntry{}, fmt.Errorf("/v1/models: unparseable: %w", err)
+	}
+	for _, m := range out.Data {
+		if m.ID == model {
+			return m, nil
+		}
+	}
+	return modelEntry{}, fmt.Errorf("/v1/models does not list %q", model)
 }
 
 // Structured checks the promise the README makes: a schema the model cannot violate. Uses a

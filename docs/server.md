@@ -647,6 +647,15 @@ ordinary cold prefill uses, so it inherits that path's own exactness knob, not
 (`GOINFER_METAL_FAST_PREFILL=0`/`GOINFER_CUDA_FAST_PREFILL=0`). **WebGPU** — no
 fast/exact split exists on this backend, so there is nothing to opt out of.
 
+**Where a reuse came from.** Beside `prefill_reused_tokens`, an OpenAI chat or completions `usage` block carries
+`prefill_reuse` whenever the count is above zero (another vendor extension; standard clients ignore it):
+`{"own_tokens", "shared_tokens", "host_tokens", "disk_tokens", "promoted_blocks"}`. Own tokens were already in the
+KV record the request ran on (its own continuation, or a previous conversation's matching prefix left in that slot);
+shared tokens came from another slot's KV; host tokens a host snapshot restored onto the device. The disk tier and the block host pool are not built yet, so `disk_tokens` and
+`promoted_blocks` read 0. `/v1/models` says whether a request can take another conversation's rows at all, as
+`kv_share`: `on`, `off: why` (the operator turned it off), or `none: why` (one KV slot, recurrent state, a backend
+that copies no rows, or a model off the resident path).
+
 **On Metal, CUDA and WebGPU, several conversations stay resident** (MC1 of `docs/tasks/parked/task-concurrency-2026-09.md`:
 Metal 2026-09-26, CUDA and WebGPU 2026-09-27). `--kv-sessions N` also asks the resident for N GPU KV slots, one
 conversation each. Each generation binds the slot that already holds its prompt's prefix; a new conversation

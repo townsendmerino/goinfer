@@ -1,0 +1,37 @@
+# KV4 §5.16 (b): the pool banner, 2026-11-02 17:30 PST
+# red (kvPoolBannerLine returns nothing):
+--- FAIL: TestBanner_kvPoolLine (0.00s)
+    --- FAIL: TestBanner_kvPoolLine/one_conversation_can_use_all_of_it (0.00s)
+    --- FAIL: TestBanner_kvPoolLine/a_cap_below_the_pool,_sharing_off,_a_window_group (0.00s)
+FAIL
+# green:
+--- PASS: TestBanner_kvPoolLine (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.004s
+# cuda: the pool detail on the card
+    kvbytes_agreement_test.go:164: llama-tiny at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 Groups:[full] Precision:f32 Bytes:8455168}
+    kvbytes_agreement_test.go:164: llama-tiny at f16: {Positions:8192 Guaranteed:4096 BlockRows:64 Groups:[full] Precision:f16 Bytes:4228096}
+    kvbytes_agreement_test.go:164: mistral-tiny-window at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 Groups:[full] Precision:f32 Bytes:25166848}
+    kvbytes_agreement_test.go:167: mistral-tiny-window at f32: pool {Positions:8192 Guaranteed:4096 BlockRows:64 Groups:[full] Precision:f32 Bytes:25166848}, want {Positions:8192 Guaranteed:4096 BlockRows:64 Groups:[] Precision:f32 Bytes:25166848} with groups [full sliding window]
+--- FAIL: TestKVPool_detailNamesThePool (2.34s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	2.383s
+FAIL
+# cuda, the window case loaded with ResidentWindowedKV:
+    kvbytes_agreement_test.go:164: llama-tiny at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 Groups:[full] Precision:f32 Bytes:8455168}
+    kvbytes_agreement_test.go:164: llama-tiny at f16: {Positions:8192 Guaranteed:4096 BlockRows:64 Groups:[full] Precision:f16 Bytes:4228096}
+    kvbytes_agreement_test.go:164: mistral-tiny-window at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 Groups:[full sliding window] Precision:f32 Bytes:3834880}
+    kvbytes_agreement_test.go:170: mistral-tiny-window at f32: pool bytes 3834880, the plan charges 2065408
+--- FAIL: TestKVPool_detailNamesThePool (2.32s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	2.372s
+FAIL
+# cuda, final: the window case logged, not asserted (the plan underprices windowed pools: an MM8 CUDA item)
+--- PASS: TestResidentKVBytes_matchesCUDAAllocation (9.70s)
+    kvbytes_agreement_test.go:164: llama-tiny at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 Groups:[full] Precision:f32 Bytes:8455168}
+    kvbytes_agreement_test.go:164: llama-tiny at f16: {Positions:8192 Guaranteed:4096 BlockRows:64 Groups:[full] Precision:f16 Bytes:4228096}
+    kvbytes_agreement_test.go:164: mistral-tiny-window at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 Groups:[full sliding window] Precision:f32 Bytes:3834880}
+    kvbytes_agreement_test.go:173: mistral-tiny-window at f32: the pools hold 3834880 bytes; kvChargedBytes prices 2065408 (window slack 1088, priced 512)
+--- PASS: TestKVPool_detailNamesThePool (0.71s)
+ok  	github.com/townsendmerino/goinfer/cuda	10.484s
+
+# RETRACTED 2026-11-02 (#617's review): the 'pricing gap' this log's commit and the first PR text named is not one. The KV fit prices the planned slack (kvWindowSlack, 512); kvGrantRollback then raises the slack from VRAM nothing else will use, and deriveMemory subtracts the grant. b-review-pool-detail.log proves it to the byte: with no headroom the pools are the plan's 2,065,408 bytes, and with the grant the plan's plus the grant's, 3,834,880. Nothing is underpriced, and the fit's price stays.

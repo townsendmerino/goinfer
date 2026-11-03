@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A checker that cannot go red is not a checker. These drive the client against servers that are deliberately wrong in
@@ -487,5 +488,88 @@ func TestToolsHarnessMessages_unusableBlocksFail(t *testing.T) {
 	// toolServer speaks only the OpenAI shape: its reply has no content blocks, which is a broken route and not a model declining.
 	if res := toolServer(t, goodCall()).ToolsHarnessMessages(context.Background(), "m"); res.OK || res.Skip || !strings.Contains(res.Detail, "not a Messages reply") {
 		t.Errorf("an OpenAI-shaped reply on the Messages row: %+v; want a FAIL", res)
+	}
+}
+
+// TestSharedPreamble is KV4's §5.16 serve check row: the second of two conversations sharing a preamble passes only when it reports
+// shared tokens, so a reuse of the first's slot in place fails; a server that cannot share skips; one turned off by its operator fails;
+// and a /v1/models failure fails rather than skips.
+func TestSharedPreamble(t *testing.T) {
+	type reuse = map[string]int
+	for _, tc := range []struct {
+		name         string
+		models       int // /v1/models' status; 0: 200 with the row below
+		id, path, kv string
+		reused       int
+		src          reuse
+		wantOK, skip bool
+	}{
+		{name: "shared", id: "m", path: "cuda-resident (int4)", kv: "on", reused: 960, src: reuse{"shared_tokens": 960}, wantOK: true},
+		{name: "the first's slot taken in place", id: "m", path: "cuda-resident (int4)", kv: "on", reused: 980, src: reuse{"own_tokens": 980}},
+		{name: "a small share", id: "m", path: "cuda-resident (int4)", kv: "on", reused: 64, src: reuse{"shared_tokens": 64}},
+		{name: "re-prefilled, sharing off", id: "m", path: "cuda-resident (int4)", kv: "off: --kv-share off"},
+		{name: "one slot", id: "m", path: "cuda-resident (int4)", kv: "none: one KV slot", skip: true},
+		{name: "not resident", id: "m", path: "cpu (int4)", kv: "none: not resident", skip: true},
+		{name: "/v1/models fails", models: http.StatusInternalServerError},
+		{name: "/v1/models does not list it", id: "other", path: "cuda-resident (int4)", kv: "on"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			c := newFake(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/models" {
+					if tc.models != 0 {
+						w.WriteHeader(tc.models)
+						return
+					}
+					json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": tc.id, "decode_path": tc.path, "kv_share": tc.kv}}})
+					return
+				}
+				calls++
+				u := map[string]any{"prompt_tokens": 1900, "completion_tokens": 4, "total_tokens": 1904, "prefill_reused_tokens": 0}
+				if calls == 2 && tc.reused > 0 {
+					u["prefill_reused_tokens"], u["prefill_reuse"] = tc.reused, tc.src
+				}
+				json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": "x"}}}, "usage": u})
+			})
+			res := c.SharedPreamble(context.Background(), "m")
+			if res.OK != tc.wantOK || res.Skip != tc.skip || res.Detail == "" {
+				t.Errorf("got OK %v, skip %v, %q; want OK %v, skip %v", res.OK, res.Skip, res.Detail, tc.wantOK, tc.skip)
+			}
+			t.Logf("%s: %s", res.Name, res.Detail)
+		})
+	}
+}
+
+// TestSharedPreamble_eachRunHasItsOwnPreamble: the preamble carries a per-run nonce, so no slot an earlier run left already holds it. The
+// two conversations of one run send the same preamble and different tails; two runs send different preambles.
+func TestSharedPreamble_eachRunHasItsOwnPreamble(t *testing.T) {
+	var systems, users []string
+	c := newFake(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "m", "decode_path": "cuda-resident (int4)", "kv_share": "on"}}})
+			return
+		}
+		var body struct {
+			Messages []struct{ Role, Content string } `json:"messages"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		systems, users = append(systems, body.Messages[0].Content), append(users, body.Messages[1].Content)
+		json.NewEncoder(w).Encode(map[string]any{"usage": map[string]any{"prompt_tokens": 1900, "prefill_reused_tokens": 960, "prefill_reuse": map[string]int{"shared_tokens": 960}}})
+	})
+	for range 2 {
+		c.SharedPreamble(context.Background(), "m")
+		time.Sleep(time.Millisecond)
+	}
+	if len(systems) != 4 {
+		t.Fatalf("%d requests, want 4", len(systems))
+	}
+	if systems[0] != systems[1] || systems[2] != systems[3] {
+		t.Error("the two conversations of a run do not share their preamble")
+	}
+	if systems[0] == systems[2] {
+		t.Error("two runs send the same preamble: a slot the first left would already hold the second's")
+	}
+	if users[0] == users[1] {
+		t.Error("the two conversations of a run send the same tail")
 	}
 }

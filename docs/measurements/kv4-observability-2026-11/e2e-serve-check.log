@@ -1,0 +1,23 @@
+# KV4 §5.16 end to end: serve (CUDA, qwen2.5-coder-0.5b q4_k_m, 4 KV sessions) at 311d18739 + working tree, then serve check against it, 2026-11-02 17:33:35 PST, load 0.22
+# server up: 1
+# the banner's KV lines:
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+  KV plan: a 65536-position pool for 4 conversations; each is guaranteed 16384, and one can use up to 32768
+  KV pool: 65,536 tokens in blocks of 64 (f16, 0.8 GB; one group); a prompt can take another conversation's KV rows (--kv-share on); one conversation can use up to 32,768 of them.
+# serve check:
+goinfer check → http://127.0.0.1:18874
+
+models list ...............  ok    1 model · cuda-resident (int4)
+chat, streamed ............  ok    TTFT 0.05s · 518.4 tok/s · usage present
+tools, OpenAI .............  FAIL  turn two asked for the tool again instead of answering — the agent-livelock shape (M-18)
+tools, harness-scale ......  ok    call get_weather({"city": "Paris"}) among 12 tools
+tools, harness, Messages ..  ok    call get_weather({"city":"Paris"}) among 12 tools
+structured output .........  ok    {"type":"integer"} → 366
+stop sequences ............  ok    not leaked · finish_reason="stop"
+count_tokens ..............  ok    44 tokens, matches usage
+shared preamble reused ....  ok    reused 980 of 998 prompt tokens (own 980, shared 0, host 0)
+vision ....................  skip  no vision tower loaded (start the server with --vision <dir> to check this row)
+
+1 of 10 checks FAILED
+exit 0
+# the tools, OpenAI row's FAIL is the 0.5B model asking for the tool again on turn two (M-18's shape), a model-quality row unrelated to KV4; every other row passes

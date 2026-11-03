@@ -633,7 +633,46 @@ func (r *cudaResident) kvPoolLine() string {
 		r.kvSlotsN*r.kvShareBlocks*kvBlock, r.kvSlotsN*r.kvShareBlocks, kvBlock, r.kvSlotsN, r.ctxCap, r.kvShareCtx)
 }
 
-// KVPool implements decoder.ResidentKVPoolInfo: the full group's positions across every slot, and each slot's guaranteed share.
-func (r *cudaResident) KVPool() (positions, guaranteed int) {
-	return r.KVSlots() * r.kvShareBlocks * kvBlock, r.kvShareCtx
+// KVPool implements decoder.ResidentKVPoolInfo: the context positions across every slot (the figure kvPoolLine and the plan name, a
+// windowed layer serving them from fewer rows), each slot's guaranteed share, the groups the owning layers use, the rows a window
+// group keeps per conversation, the pools' precision and their device bytes (each owning layer's K and V pools and the block tables,
+// at the driver's charge).
+func (r *cudaResident) KVPool() decoder.KVPoolDetail {
+	d := decoder.KVPoolDetail{Positions: r.KVSlots() * r.kvShareBlocks * kvBlock, Guaranteed: r.kvShareCtx, BlockRows: kvBlock}
+	half, single := false, false
+	var inGroup [kvGroups]bool
+	for l := range r.layers {
+		Ly := &r.layers[l]
+		if Ly.noKV() || Ly.kvShared || Ly.kvDim == 0 {
+			continue
+		}
+		inGroup[r.kvGroupOf(l)] = true
+		elem := int64(4)
+		if Ly.kvHalf {
+			elem, half = 2, true
+		} else {
+			single = true
+		}
+		d.Bytes += chargedBytes(int64(r.kc[l].Len()) * elem)
+		if r.vc[l].Len() > 0 {
+			d.Bytes += chargedBytes(int64(r.vc[l].Len()) * elem)
+		}
+	}
+	d.Bytes += chargedBytes(int64(r.kvTabDev.Len()) * 4)
+	if inGroup[kvGroupFull] {
+		d.Groups = append(d.Groups, "full")
+	}
+	if inGroup[kvGroupWin] {
+		d.Groups = append(d.Groups, "sliding window")
+		d.WindowRows = r.kvSlotBlocks(kvGroupWin) * kvBlock
+	}
+	switch {
+	case half && single:
+		d.Precision = "f16 and f32"
+	case half:
+		d.Precision = "f16"
+	default:
+		d.Precision = "f32"
+	}
+	return d
 }

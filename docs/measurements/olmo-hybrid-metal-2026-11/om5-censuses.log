@@ -1,0 +1,148 @@
+# OM-5: the censuses. Lines are the goldens' diffs; every changed line names olmo_hybrid.
+
+== metal/testdata/sb2_metal_census.arm64.txt.gz: 0 lines left, 18 lines came, 0 not naming olmo_hybrid
+> B testdata/olmo_hybrid-tiny int4 metal m1pro-2026-10-20 "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny int8int8 metal m1pro-2026-10-20 "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny f32 metal m1pro-2026-10-20 "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny int4/ssm metal m1pro-2026-10-20 "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny int4/kv-f16 metal m1pro-2026-10-20 "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny int4/kv-i8 metal m1pro-2026-10-20 "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny int4 metal m1pro-apps-open "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny int8int8 metal m1pro-apps-open "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny f32 metal m1pro-apps-open "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny int4/ssm metal m1pro-apps-open "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny int4/kv-f16 metal m1pro-apps-open "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny int4/kv-i8 metal m1pro-apps-open "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny int4 metal m1pro-near-idle "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny int8int8 metal m1pro-near-idle "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny f32 metal m1pro-near-idle "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny int4/ssm metal m1pro-near-idle "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny int4/kv-f16 metal m1pro-near-idle "ok ctx=4096 fit=4096 from=4096 why=the default"
+> B testdata/olmo_hybrid-tiny int4/kv-i8 metal m1pro-near-idle "ok ctx=4096 fit=4096 from=4096 why=the default"
+
+== testdata/sb2_admission_census.arm64.txt.gz: 7 lines left, 7 lines came, 0 not naming olmo_hybrid
+< F olmo_hybrid metal eligible=false shape="" gates="operations: layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet): met
+< L testdata/olmo_hybrid-tiny int4 metal resident=false decline="layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet): met
+< L testdata/olmo_hybrid-tiny int8int8 metal resident=false decline="layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet):
+< L testdata/olmo_hybrid-tiny f32 metal resident=false decline="layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet): meta
+< L testdata/olmo_hybrid-tiny int4/ssm metal resident=false decline="layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet):
+< L testdata/olmo_hybrid-tiny int4/kv-f16 metal resident=false decline="layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltane
+< L testdata/olmo_hybrid-tiny int4/kv-i8 metal load-error="--kv i8 cannot be delivered on the cpu KV cache: this family's own forward loop keeps an f32 CPU cache until phase 4"
+> F olmo_hybrid metal eligible=true shape="" gates="" gates-per32=""
+> L testdata/olmo_hybrid-tiny int4 metal resident=true decline="" path="metal-resident (int4)" kv="resident:auto->f16(auto is f16 on Metal)"
+> L testdata/olmo_hybrid-tiny int8int8 metal resident=true decline="" path="metal-resident (int8int8→int4, no Metal int8 GEMV kernel)" kv="resident:auto->f16(auto is f16 on Metal)"
+> L testdata/olmo_hybrid-tiny f32 metal resident=true decline="" path="metal-resident (native)" kv="resident:auto->f16(auto is f16 on Metal)"
+> L testdata/olmo_hybrid-tiny int4/ssm metal resident=true decline="" path="metal-resident (int4)" kv="resident:auto->f16(auto is f16 on Metal)"
+> L testdata/olmo_hybrid-tiny int4/kv-f16 metal resident=true decline="" path="metal-resident (int4)" kv="resident:f16->f16()"
+> L testdata/olmo_hybrid-tiny int4/kv-i8 metal resident=true decline="" path="metal-resident (int4)" kv="resident:auto->f16(auto is f16 on Metal)"
+
+== testdata/sb2_admission_census.amd64.txt.gz (regenerated under Rosetta; every other line already matched): 7 lines left, 7 lines came, 0 not naming olmo_hybrid
+< F olmo_hybrid metal eligible=false shape="" gates="operations: layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet): met
+< L testdata/olmo_hybrid-tiny int4 metal resident=false decline="layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet): met
+< L testdata/olmo_hybrid-tiny int8int8 metal resident=false decline="layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet):
+< L testdata/olmo_hybrid-tiny f32 metal resident=false decline="layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet): meta
+< L testdata/olmo_hybrid-tiny int4/ssm metal resident=false decline="layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet):
+< L testdata/olmo_hybrid-tiny int4/kv-f16 metal resident=false decline="layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltane
+< L testdata/olmo_hybrid-tiny int4/kv-i8 metal load-error="--kv i8 cannot be delivered on the cpu KV cache: this family's own forward loop keeps an f32 CPU cache until phase 4"
+> F olmo_hybrid metal eligible=true shape="" gates="" gates-per32=""
+> L testdata/olmo_hybrid-tiny int4 metal resident=true decline="" path="metal-resident (int4)" kv="resident:auto->f16(auto is f16 on Metal)"
+> L testdata/olmo_hybrid-tiny int8int8 metal resident=true decline="" path="metal-resident (int8int8→int4, no Metal int8 GEMV kernel)" kv="resident:auto->f16(auto is f16 on Metal)"
+> L testdata/olmo_hybrid-tiny f32 metal resident=true decline="" path="metal-resident (native)" kv="resident:auto->f16(auto is f16 on Metal)"
+> L testdata/olmo_hybrid-tiny int4/ssm metal resident=true decline="" path="metal-resident (int4)" kv="resident:auto->f16(auto is f16 on Metal)"
+> L testdata/olmo_hybrid-tiny int4/kv-f16 metal resident=true decline="" path="metal-resident (int4)" kv="resident:f16->f16()"
+> L testdata/olmo_hybrid-tiny int4/kv-i8 metal resident=true decline="" path="metal-resident (int4)" kv="resident:auto->f16(auto is f16 on Metal)"
+
+== decision census (testdata/mm1_census.json.gz, amd64 class, TestDecisionCensus): NOT regenerated here
+Rosetta, with the claims: 4641 groups differ from the Linux golden
+Rosetta, without the claims: 4555 groups differ from the Linux golden
+The claims move exactly these groups (one process, the table flipped, under Rosetta):
+D1 testdata/olmo_hybrid-tiny | metal q=f32 ctx=0 kv= stream=false moecache=false
+D1 testdata/olmo_hybrid-tiny | metal q=f32 ctx=32768 kv= stream=false moecache=false
+D1 testdata/olmo_hybrid-tiny | metal q=int4 ctx=0 kv= stream=false moecache=false
+D1 testdata/olmo_hybrid-tiny | metal q=int4 ctx=32768 kv= stream=false moecache=false
+D1 testdata/olmo_hybrid-tiny@131072 | metal q=f32 ctx=0 kv= stream=false moecache=false
+D1 testdata/olmo_hybrid-tiny@131072 | metal q=f32 ctx=0 kv=f16 stream=false moecache=false
+D1 testdata/olmo_hybrid-tiny@131072 | metal q=f32 ctx=0 kv=i8 stream=false moecache=false
+D1 testdata/olmo_hybrid-tiny@131072 | metal q=f32 ctx=32768 kv= stream=false moecache=false
+D1 testdata/olmo_hybrid-tiny@131072 | metal q=int4 ctx=0 kv= stream=false moecache=false
+D1 testdata/olmo_hybrid-tiny@131072 | metal q=int4 ctx=0 kv=f16 stream=false moecache=false
+D1 testdata/olmo_hybrid-tiny@131072 | metal q=int4 ctx=0 kv=i8 stream=false moecache=false
+D1 testdata/olmo_hybrid-tiny@131072 | metal q=int4 ctx=32768 kv= stream=false moecache=false
+D2 testdata/olmo_hybrid-tiny | metal ctx=0 kv= moecache=false
+D2 testdata/olmo_hybrid-tiny | metal ctx=32768 kv= moecache=false
+D2 testdata/olmo_hybrid-tiny@131072 | metal ctx=0 kv= moecache=false
+D2 testdata/olmo_hybrid-tiny@131072 | metal ctx=0 kv=f16 moecache=false
+D2 testdata/olmo_hybrid-tiny@131072 | metal ctx=0 kv=i8 moecache=false
+D2 testdata/olmo_hybrid-tiny@131072 | metal ctx=32768 kv= moecache=false
+D3 testdata/olmo_hybrid-tiny q=f32 | metal ctx=32768 pinned=false kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny q=f32 | metal ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny q=f32 | metal ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny q=f32 | metal ctx=32768 pinned=false kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny q=f32 | metal ctx=32768 pinned=true kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny q=f32 | metal ctx=32768 pinned=true kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny q=f32 | metal ctx=32768 pinned=true kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny q=f32 | metal ctx=4096 pinned=false kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny q=f32 | metal ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny q=f32 | metal ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny q=f32 | metal ctx=4096 pinned=false kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny q=f32 | metal ctx=4096 pinned=true kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny q=f32 | metal ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny q=f32 | metal ctx=4096 pinned=true kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | metal ctx=32768 pinned=false kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | metal ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | metal ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny q=int4 | metal ctx=32768 pinned=false kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | metal ctx=32768 pinned=true kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | metal ctx=32768 pinned=true kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | metal ctx=32768 pinned=true kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | metal ctx=4096 pinned=false kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | metal ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | metal ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny q=int4 | metal ctx=4096 pinned=false kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | metal ctx=4096 pinned=true kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | metal ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | metal ctx=4096 pinned=true kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | metal ctx=32768 pinned=false kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | metal ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | metal ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | metal ctx=32768 pinned=false kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | metal ctx=32768 pinned=true kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | metal ctx=32768 pinned=true kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | metal ctx=32768 pinned=true kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | metal ctx=4096 pinned=false kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | metal ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | metal ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | metal ctx=4096 pinned=false kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | metal ctx=4096 pinned=true kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | metal ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | metal ctx=4096 pinned=true kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | metal ctx=32768 pinned=false kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | metal ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | metal ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | metal ctx=32768 pinned=false kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | metal ctx=32768 pinned=true kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | metal ctx=32768 pinned=true kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | metal ctx=32768 pinned=true kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | metal ctx=4096 pinned=false kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | metal ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | metal ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | metal ctx=4096 pinned=false kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | metal ctx=4096 pinned=true kv=f16 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | metal ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | metal ctx=4096 pinned=true kv=i8 extra=0
+D4 testdata/olmo_hybrid-tiny@131072 q=f32 | slots=1 lower=0 paged=false known=true
+D4 testdata/olmo_hybrid-tiny@131072 q=f32 | slots=1 lower=8192 paged=false known=true
+D4 testdata/olmo_hybrid-tiny@131072 q=f32 | slots=2 lower=0 paged=false known=true
+D4 testdata/olmo_hybrid-tiny@131072 q=f32 | slots=2 lower=8192 paged=false known=true
+D4 testdata/olmo_hybrid-tiny@131072 q=f32 | slots=4 lower=0 paged=false known=true
+D4 testdata/olmo_hybrid-tiny@131072 q=f32 | slots=4 lower=8192 paged=false known=true
+D4 testdata/olmo_hybrid-tiny@131072 q=int4 | slots=1 lower=0 paged=false known=true
+D4 testdata/olmo_hybrid-tiny@131072 q=int4 | slots=1 lower=8192 paged=false known=true
+D4 testdata/olmo_hybrid-tiny@131072 q=int4 | slots=2 lower=0 paged=false known=true
+D4 testdata/olmo_hybrid-tiny@131072 q=int4 | slots=2 lower=8192 paged=false known=true
+D4 testdata/olmo_hybrid-tiny@131072 q=int4 | slots=4 lower=0 paged=false known=true
+D4 testdata/olmo_hybrid-tiny@131072 q=int4 | slots=4 lower=8192 paged=false known=true
+total 86, not olmo_hybrid 0
+
+== after merging main a9a88b1b: the flip, the same way
+total 86, not olmo_hybrid 0
