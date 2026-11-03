@@ -17,3 +17,10 @@ FAIL
 # the test on the code as it stands
 --- PASS: TestKV7_partialCopyFromAWrappedUpload (1.91s)
 ok  	github.com/townsendmerino/goinfer/cuda	1.961s
+
+# push checks at 991c33395, origin/main 94d1882d7, 2026-11-03 11:12:58 PST
+touched.py exit 0
+VERDICT: PASS — touched: 8 checks passed (CI runs the rest on push)
+test_touched exit 0
+staticcheck cuda exit 0
+citation lint exit 0

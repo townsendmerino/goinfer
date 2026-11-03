@@ -185,7 +185,7 @@ Demotion ships off (`Options.KVDemote`). This list must be closed before it can 
 
 | item | with demotion off | evidence |
 |---|---|---|
-| 1. A copy from a slot with a floor | No: the rows below the floor are zero-filled in `dst`, and `dst` takes the floor, so it never answers for them. | `TestKV7_partialCopyFromAWrappedUpload` |
+| 1. A copy from a slot with a floor | No: the rows below the floor are zero-filled in `dst`, and `dst` takes the floor, so it never answers for them. | The floor by `TestKV7_partialCopyFromAWrappedUpload`. The zero-fill by reading: that fixture has full-attention layers, which map the blocks, and a sliding-only model is not tested. |
 | 2. A write between 0 and the floor | Not reached: a request writes from a reuse the slot answered for, or from 0, or past the prompt's end, and the pass refuses a span that does not cover its window, so the floor is at or below that end. **Wrong if it were reached: there is no guard.** | reading |
 | 3. A write ending below the floor | No: the slot answers 0 for every prefix until a write from 0, which costs a cold prefill. | reading |
 | 4. A partial copy with `0 < start < base` | No: `copyKVSlots` raises `dst`'s floor on every successful copy, so `dst` answers only at or above it, and continues bit-identically with the source. A plant that drops the inheritance goes red (`answers 130 for 130 rows, want 0`). | `TestKV7_partialCopyFromAWrappedUpload` |
