@@ -54,7 +54,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV5 | open | KV4 is done (2026-11-02); takes I7, the default context toward 32,768 (owner, 2026-10-21) | §6 |
 | KV6 | done | — (WebGPU keeps slots, D3) | §8 |
 | KV7-s1, KV7-s2 | done | — | 60cfcba7 (#57); 671b54bb (#86) |
-| KV7-rest | open | KV4 is done (2026-11-02): the disk tier, promotion, the block host pool; and D5's step 3, releasing a running conversation so it re-admits through the index (moved here from KV4 by D-KV4-2, owner, 2026-10-21) | §6; `docs/measurements/kv4-cuda-2026-10-21.md` §5 |
+| KV7-rest | active | First slice built on CUDA (nobara-sb01, `docs/measurements/kv7-demote-2026-11/`): a released idle conversation's rows go to pinned host memory under `KVHostBytes` and come back on return, bit-identical; on the 0.5B its next turn took 0.66 s against 2.63 s (one run each, not a timed reading). Per slot, not the index-keyed pool the plan named; not on windowed KV. Left: KV4 is done (2026-11-02): the disk tier, promotion, the block host pool; and D5's step 3, releasing a running conversation so it re-admits through the index (moved here from KV4 by D-KV4-2, owner, 2026-10-21) | §6; `docs/measurements/kv4-cuda-2026-10-21.md` §5 |
 | KV8 | open | CUDA open since KV4 is done (2026-11-02); Metal waits on KV5 | §6 |
 | KV8a-CUDA | done | — | fac209c2 (#115) |
 | KV8a-CUDA-cc28k | done | — | the 28K Claude Code chain on CUDA at main `799b98df`: PASS, 1 tested, 0 of 7 differ (`docs/measurements/kv8a-2026-10/README.md`, "The 28K Claude Code chain on CUDA") |
@@ -1183,7 +1183,8 @@ KV2 merges when every arm on both boxes is read.
   - file permissions;
   - never-swap.
 - **Size:** M–L. **Closes:** R-04's resident half.
-- **Next concrete step (planned 2026-11-02 for the day, nobara-sb01; no code yet): KV7-rest's first slice, a block host pool on CUDA.**
+- **A first slice is built instead of this plan's (2026-11-02, `docs/measurements/kv7-demote-2026-11/`): per slot, demoted on release, because KV7-s1's snapshots already serve a preamble across conversations and the release was the uncovered gap.** The plan below stays for the index-keyed pool, should a reading ask for it.
+- **The plan (written 2026-11-02 for the day, nobara-sb01; no code yet): KV7-rest's first slice, a block host pool on CUDA.**
   - **What it builds:** KV4's full-group blocks demote to pinned host memory by block, not KV7-s1's whole-slot row snapshots.
     A release (D-KV4-2's D5 step 3, idle and least recently used, `cuda/kvpool.go`) copies the slot's referenced blocks to host
     before the device ids return to the pool. The host blocks are keyed by the prefix index's block hashes (§5.5), with the
