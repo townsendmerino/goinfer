@@ -17,13 +17,13 @@ The cold-user runs (`docs/measurements/cold-user-protocol.md`) tested the librar
 printing one completion. That found the bare-module `go get` failure; it never exercised constrained output, tool
 calls, embeddings, concurrency or a GPU backend.
 
-**Friction already seen, while writing `docs/use-from-go.md` and `examples/structured` (2026-09-30).** These are
+**Friction already seen, while writing `docs/use-from-go.md` and `apps/examples/structured` (2026-09-30).** These are
 leads for the run, not findings of it:
 
 - **Defaults differ by surface.** The zero `decoder.Options{}` loads f32, while `goinfer-chat` and `goinfer-serve`
-  default to int4; the first run of `examples/structured` hit the fit guard's "tight" warning for that reason.
+  default to int4; the first run of `apps/examples/structured` hit the fit guard's "tight" warning for that reason.
   `--embed-int4` is on by default in the CLIs and off in the zero `Options`.
-- **Constrained output needs boilerplate.** `examples/structured` and `examples/confidence` each repeat the same
+- **Constrained output needs boilerplate.** `apps/examples/structured` and `apps/examples/confidence` each repeat the same
   dozen lines collecting stop ids (`Special().EOS`, `Special().EndOfTurn`, every `Template.Stops()` string) before
   they can build a `constrain.Masker`. A user has to know to do it.
 - **The tiers do not cover what the README leads with.** `constrain.GrammarFromStruct`, `constrain.JSONSchema`, the

@@ -14,13 +14,13 @@ Seven modules are developed together; an eighth `go.mod`, `.github/actions/stati
 | `cuda/` | `.../goinfer/cuda` | tagged `cuda/vX.Y.Z` |
 | `metal/` | `.../goinfer/metal` | tagged `metal/vX.Y.Z` |
 | `demo/agent/` | `.../goinfer/demo/agent` | tagged `demo/agent/vX.Y.Z` |
-| `sdktest/` | `.../goinfer/sdktest` | never tagged; tests only |
-| `site/` | `.../goinfer/site` | never tagged; the website generator |
+| `apps/sdktest/` | `.../goinfer/sdktest` | never tagged; tests only |
+| `apps/site/` | `.../goinfer/site` | never tagged; the website generator |
 
 **`go.work` is gitignored and required for cross-module work.** The submodule `go.mod` files carry no `replace`, so a
 submodule built without a workspace resolves the root from the proxy at its last published tag (`RELEASING.md`). Create it
 with `scripts/make_work.sh` (copies `go.work.example`, which lists all seven modules, to `go.work` when absent) and it builds
-from a clean clone. A local aikit checkout is an optional extra `use` line, commented in the example.
+from a clean clone. Without a `go.work` in the repo, Go walks up and uses one in a parent directory, and a `GOWORK` environment variable overrides both; `make_work.sh` warns about the second and fixes the first. A local aikit checkout is an optional extra `use` line, commented in the example.
 
 Untagged, `cuda/` does not build on its own (`cuda/internal/gpudev` needs the `cuda` build tag); see CLAUDE.md for the tags.
 
@@ -59,19 +59,19 @@ Untagged, `cuda/` does not build on its own (`cuda/internal/gpudev` needs the `c
 | `demo/chat/` | `goinfer-chat`, the single-shot chat binary (`build-embed.sh` bakes a model in) | root |
 | `{gpu,cuda,metal}/cmd/{chat,serve}/` | the same two programs built with a backend | the backend module |
 | `demo/agent/cmd/` | `agent-web`, `stdlib-agent`, `ken-stub` | `demo/agent` |
-| `site/cmd/build/` | the website generator (`site.yml` builds and deploys it) | `site` |
+| `apps/site/cmd/build/` | the website generator (`site.yml` builds and deploys it) | `site` |
 
 ## Satellites
 
-Not part of the library; nothing in the root imports them.
+Not part of the library; nothing in the root imports them. `sdktest/`, `site/` and `examples/` live under `apps/`. `demo/` stays at the root on purpose: `demo/agent` is published (tags `demo/agent/vX.Y.Z`), and a subdirectory module's tag prefix must equal its directory, so moving it would break its tags; `demo/chat` stays beside it.
 
 | Path | What it is | Module |
 |---|---|---|
 | `demo/agent/` | MCP-SDK agent demo (kept separate so the SDK stays out of the root `go.mod`) | `demo/agent` |
 | `demo/demo.tape`, `demo/mellum2-gpu.tape` | VHS recordings for the README demo | none |
-| `sdktest/` | the official OpenAI and Anthropic SDKs against the in-process server | `sdktest` |
-| `site/` | goinfer.dev source and generator | `site` |
-| `examples/{confidence,embed,invoice,structured}/` | runnable library examples, each with a test | root |
+| `apps/sdktest/` | the official OpenAI and Anthropic SDKs against the in-process server | `sdktest` |
+| `apps/site/` | goinfer.dev source and generator | `site` |
+| `apps/examples/{confidence,embed,invoice,structured}/` | runnable library examples, each with a test | root |
 
 ## Test assets
 

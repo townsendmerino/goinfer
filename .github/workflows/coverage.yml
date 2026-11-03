@@ -8,7 +8,7 @@ name: coverage
 # workspace stitched; the coverage-probe run, 2026-10-08):
 #   gpu/   3.2% of statements, 34 top-level tests passed, 168 skipped (no adapter), 29 s
 #   cuda/ 12.2% of statements, 87 passed, 329 skipped (no device), 23 s
-# metal/ needs a macOS runner and is a separate decision; site/ (the website generator) is out of scope.
+# metal/ needs a macOS runner and is a separate decision; apps/site/ (the website generator) is out of scope.
 #
 # The root run stays in module mode (no go.work in the checkout): in workspace mode `./...` from the root would also
 # match the nested workspace modules and change what the root number measures. demo/agent resolves the root from this

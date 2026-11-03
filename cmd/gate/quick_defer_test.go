@@ -219,7 +219,7 @@ func TestQuickRecord_whatVoidsARun(t *testing.T) {
 	for path, want := range map[string]bool{
 		"decoder/model.go": true, "metal/prefill.go": true, "go.mod": true, "testdata/prefill-gate-prose-a/README.md": true,
 		"scripts/night.py": true, "CHANGELOG.md": false, "changelog.d/2026-10-27-x.md": false, "RELEASING.md": false, "docs/benchmarks.md": false,
-		"docs/measurements/quick-full/darwin-arm64-x.json": false, "site/main.go": false, ".github/workflows/ci.yml": false,
+		"docs/measurements/quick-full/darwin-arm64-x.json": false, "apps/site/main.go": false, ".github/workflows/ci.yml": false,
 	} {
 		if got := quickRecordVoidedBy(path); got != want {
 			t.Errorf("quickRecordVoidedBy(%q) = %v, want %v", path, got, want)

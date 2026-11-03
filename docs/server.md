@@ -614,7 +614,7 @@ PY
 ```
 
 The same flow in the terminal: `goinfer-chat --model ~/models/glm-ocr --image invoice.png --schema invoice.schema.json`
-(one image, one answer, then exit). In Go: [`examples/invoice`](../examples/invoice/main.go).
+(one image, one answer, then exit). In Go: [`apps/examples/invoice`](../apps/examples/invoice/main.go).
 
 **Prompt-prefix KV caching.** Across requests the server reuses the KV cache of a
 warm session **whose entire token history is a prefix of the new prompt** —

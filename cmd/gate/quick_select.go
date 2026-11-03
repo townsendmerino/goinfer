@@ -197,10 +197,10 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			},
 		},
 		{
-			Name: "sdktest", Dir: "sdktest", Work: []string{".", "sdktest"},
+			Name: "apps/sdktest", Dir: "apps/sdktest", Work: []string{".", "apps/sdktest"},
 			Lint: []lintSpec{
-				{"build", nil, "", "affected", "sdktest: go build ./sdktest/..."},
-				{"vet", nil, "", "affected", "sdktest: go vet ./sdktest/..."},
+				{"build", nil, "", "affected", "sdktest: go build ./apps/sdktest/..."},
+				{"vet", nil, "", "affected", "sdktest: go vet ./apps/sdktest/..."},
 			},
 		},
 		{
