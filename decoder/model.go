@@ -1030,8 +1030,9 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// A ring layer (ringLayerAt, which also decides enableRings below) never reads or grows its append-forever arrays
 	// either, so it reserves none.
 	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, func(l int) bool {
-		return a.hasNoAttentionKVAt(l) || a.ringLayerAt(l)
+		return a.hasNoAttentionKVAt(l) || a.ringLayerAt(l) || a.gemma4KVSrcAt(l) != l // a Gemma 4 shared layer reads its source's cache
 	})
+	c.reserveWidths(kvCapHint, a.kvDimAt)
 	c.scr = newDecodeScratch(a)
 	// Must precede enableRings so local layers inherit the mode.
 	if quant != kvqF32 {
@@ -1096,6 +1097,11 @@ func (m *Model) NewCache(capHint int) *KVCache {
 		// Append) and advances pos once per token after the full layer sweep.
 		c.manualPos = true
 		c.mlaLatent = make([][]float32, a.NumLayers)
+		for l := range c.mlaLatent {
+			if d := a.kvDimAt(l); d > 0 && capHint > 0 { // reserved as K/V are, so a cache at its context holds what the plan prices and no growth past it
+				c.mlaLatent[l] = make([]float32, 0, capHint*d)
+			}
+		}
 	}
 	if a.kda != nil {
 		// Bailing Hybrid (Ling 3.0): a third hybrid-cache shape. The MLA layers' latent cache is handled by the a.mla block above

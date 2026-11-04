@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -189,6 +190,160 @@ func TestKSD1_longCell(t *testing.T) {
 	if verdict != "PASS" {
 		t.Errorf("D1-G2b: split %.2f%% against exact %.2f%%", ps, pe)
 	}
+}
+
+// TestKSD1_gemma3LongCells is KS-D1's model-level check at head dim 256 (docs/measurements/ks-night-2026-10/README.md, "KS-D1 on Gemma 3"):
+// Gemma 3 1B at int4, prompts of 512, 2,048 and 3,900 tokens cut from docs/benchmarks.md, the CPU int4 reference's logits at the last
+// prompt row and 31 teacher-forced positions after it; argmax agreement of a Metal prefill with the split kernel against the same
+// prefill with the exact one (prefillSteelAttnOff), each followed by Metal decode over the CPU's sequence. PASS iff split, pooled, is
+// at least exact minus 2.0 points.
+func TestKSD1_gemma3LongCells(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
+	}
+	home, _ := os.UserHomeDir()
+	gguf := filepath.Join(home, "models", "gemma3-1b-q4_k_m.gguf")
+	if _, err := os.Stat(gguf); err != nil {
+		t.Skipf("no checkpoint: %v", err)
+	}
+	const gen = 32
+	cells := []int{512, 2048, 3900}
+	m, err := decoder.Load(gguf, decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: cells[len(cells)-1] + gen + 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	decoder.SetKnobEnvForTest(t, m, "GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		t.Fatalf("not Metal-resident: %s", m.ResidentDecline())
+	}
+	tk, err := tokenizer.LoadGGUF(gguf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, err := os.ReadFile("../docs/benchmarks.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := tk.Encode(string(text), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) < cells[len(cells)-1] {
+		t.Fatalf("docs/benchmarks.md is %d tokens, under %d", len(all), cells[len(cells)-1])
+	}
+	fmt.Fprintf(os.Stderr, "[KSD1-G3] docs/benchmarks.md sha256 %x\n", sha256.Sum256(text))
+	var pooledExact, pooledSplit, pooledN int
+	for _, np := range cells {
+		ids := all[:np]
+		t0 := time.Now()
+		cc := m.NewCache(np + gen)
+		seq := slices.Clone(ids)
+		cpuL := map[int][]float32{}
+		for i := 0; i < np+gen-1; i++ {
+			l, err := m.ForwardForTest(seq[i], cc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if i >= np-1 {
+				cpuL[i] = slices.Clone(l)
+				if len(seq) == i+1 {
+					seq = append(seq, argmaxF(l))
+				}
+			}
+			if i%512 == 0 {
+				fmt.Fprintf(os.Stderr, "[KSD1-G3] K=%d CPU reference %d/%d (%.0f s)\n", np, i, np+gen-1, time.Since(t0).Seconds())
+			}
+		}
+		rows := make([][]float32, np)
+		for i, id := range ids {
+			rows[i] = m.EmbedResidentForTest(id)
+		}
+		agree := func(exact bool) (int, int) {
+			prefillSteelAttnOff = exact
+			defer func() { prefillSteelAttnOff = false }()
+			if got := a.r.prefillExactAttn(); got != exact {
+				t.Fatalf("exact attention %v, want %v: the arm would not run the kernel it names", got, exact)
+			}
+			a.Reset()
+			lg, err := a.PrefillLast(context.Background(), rows, 0)
+			if err != nil {
+				t.Fatalf("prefill declined: %v", err)
+			}
+			hit, n, klSum := 0, 0, 0.0
+			score := func(l []float32, i int) {
+				n++
+				klSum += ksd1KL(cpuL[i], l)
+				if argmaxF(l) == argmaxF(cpuL[i]) {
+					hit++
+					return
+				}
+				fmt.Fprintf(os.Stderr, "[KSD1-G3] K=%d exact=%v position %d misses: CPU's top two %.3f apart, the arm's choice %.3f under CPU's top\n",
+					np, exact, i-np+1, ksd1TopGap(cpuL[i]), cpuL[i][argmaxF(cpuL[i])]-cpuL[i][argmaxF(l)])
+			}
+			score(lg, np-1)
+			for i := np; i < np+gen-1; i++ {
+				l, err := a.Forward(m.EmbedResidentForTest(seq[i]), i)
+				if err != nil {
+					t.Fatal(err)
+				}
+				score(l, i)
+			}
+			fmt.Fprintf(os.Stderr, "[KSD1-G3] K=%d exact=%v: mean KL against the CPU %.5f\n", np, exact, klSum/float64(n))
+			return hit, n
+		}
+		eh, en := agree(true)
+		sh, _ := agree(false)
+		pooledExact, pooledSplit, pooledN = pooledExact+eh, pooledSplit+sh, pooledN+en
+		fmt.Fprintf(os.Stderr, "[KSD1-G3] K=%d: exact %d/%d, split %d/%d (%.0f s)\n", np, eh, en, sh, en, time.Since(t0).Seconds())
+	}
+	pe, ps := 100*float64(pooledExact)/float64(pooledN), 100*float64(pooledSplit)/float64(pooledN)
+	verdict := "PASS"
+	if ps < pe-2.0 {
+		verdict = "FAIL"
+	}
+	fmt.Fprintf(os.Stderr, "[KSD1-G3] pooled: exact %d/%d (%.2f%%), split %d/%d (%.2f%%): %s\n", pooledExact, pooledN, pe, pooledSplit, pooledN, ps, verdict)
+	if verdict != "PASS" {
+		t.Errorf("split %.2f%% against exact %.2f%%", ps, pe)
+	}
+}
+
+// ksd1KL is KL(p || q) over two logit vectors' softmaxes.
+func ksd1KL(p, q []float32) float64 {
+	soft := func(l []float32) []float64 {
+		mx := float64(l[argmaxF(l)])
+		out, sum := make([]float64, len(l)), 0.0
+		for i, x := range l {
+			out[i] = math.Exp(float64(x) - mx)
+			sum += out[i]
+		}
+		for i := range out {
+			out[i] /= sum
+		}
+		return out
+	}
+	a, b := soft(p), soft(q)
+	kl := 0.0
+	for i := range a {
+		if a[i] > 0 && b[i] > 0 {
+			kl += a[i] * math.Log(a[i]/b[i])
+		}
+	}
+	return kl
+}
+
+// ksd1TopGap is how far a logit vector's largest value stands above its second largest.
+func ksd1TopGap(l []float32) float32 {
+	first, second := float32(math.Inf(-1)), float32(math.Inf(-1))
+	for _, x := range l {
+		if x > first {
+			first, second = x, first
+		} else if x > second {
+			second = x
+		}
+	}
+	return first - second
 }
 
 // TestKSD1_speed is D1-G3: E2B, PrefillLast on 4,096 rows through the batched pass, the split kernel against the exact one

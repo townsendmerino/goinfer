@@ -196,6 +196,7 @@ The earlier wording here, that items 1-5 "cost a cold prefill rather than wrong 
 **For a fix, on main, not behind demotion:**
 - **Guards on CUDA, for items 2 and 5:** refuse a write between 0 and the floor, and set the floor on a lone upload. Neither is reachable today, so they are low priority, and each is a line or two.
 - **Metal and WebGPU, the same bug, fixed on main in the shared path** (`wrapped-upload-shared.log`). They share `residentUploadPrefill` and have no `kvFloor`. After a wrapped upload the decoder granted a shorter prefix, which read a sliding layer's rows nothing uploaded: red on WebGPU, the logits off a cold prefill by 0.54 and 0.74, and with the floor planted away the reply differs too. The floor now lives in `kvmgr.Slots`, set by the bridge, so every backend declines below it. Read on WebGPU and CUDA; **Metal is vetted, not run**: `go test -tags goinfer_testhooks -count=1 -v -run '^TestWrappedUpload_' ./metal/`.
+- **Metal's run of that fix, 2026-11-03, on `main` at `ae3b7493`** (`wrapped-upload-metal.log`): `TestWrappedUpload_rows`, `_reuse` and `_turns` pass on `gemma3-vl-tiny` and `mistral-tiny-window`, with the floor at 255 on both. With the floor planted to 0, `_reuse` and `_turns` go red on both fixtures, and `_rows` stays green, since it reads the rows and not the grant.
 
 **Known and left, from earlier rounds:**
 

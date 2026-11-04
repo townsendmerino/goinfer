@@ -1,0 +1,3 @@
+# python3 scripts/book_link_lint.py, 2026-11-01, branch mm8-mla-kv-2026-11-03: exit 0
+VERDICT: PASS
+book_link_lint: 175 links out of docs/book/, all resolve

@@ -1,0 +1,7 @@
+go test -count=1 ./decoder -run ^(TestHostFitKV_sharedLayersOwnNone|TestNewCache_reservesEachLayersWidth)$ -v
+=== RUN   TestHostFitKV_sharedLayersOwnNone
+--- PASS: TestHostFitKV_sharedLayersOwnNone (0.01s)
+=== RUN   TestNewCache_reservesEachLayersWidth
+--- PASS: TestNewCache_reservesEachLayersWidth (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.014s
