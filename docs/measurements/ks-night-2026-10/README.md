@@ -159,3 +159,24 @@ Steel at head dim 64 is at least as close to the CPU reference as the fused kern
 prefill 2.88× faster (3.58 → 1.24 s) and its 512-row prefill 1.33× faster. Head dims 80 and 96 are built and pass the tier-0
 check; each is admitted after a model at that head dim passes set A (Phi-3 at int4 for 96).
 
+## KS-D1 on Gemma 3, registered 2026-11-03 before the run (release v0.24.0, item 3c)
+
+**Question:** every model with head dim 256 and no softcap takes `attention_prefill_steel_split`, and only E2B, at 256 and 512, was graded at model level. Does Gemma 3's prefill hold up on it?
+**Metric:** `TestKSD1_gemma3LongCells`: Gemma 3 1B (heads 256 wide, 4 heads, 1 KV head, window 512), int4, prompts of 512, 2,048 and 3,900 tokens cut from `docs/benchmarks.md`. Argmax agreement with the CPU int4 reference at the last prompt row and 31 teacher-forced positions, split kernel against exact (`prefillSteelAttnOff`).
+**Threshold:** split, pooled over the three cells, at least exact minus 2.0 points, D1-G2 (b)'s rule. Each cell is reported.
+**Stopping rule:** one pass, untimed, shared lock. 96 positions a side, so one position is about 1 point.
+**What each outcome means:** PASS: the split kernel stays Gemma 3's default for v0.24.0. FAIL: it goes to Francis before the release, with keeping Gemma 3 on the exact kernel as the option to weigh against its speed.
+
+**Read 2026-11-03: FAIL by the registered rule, and it goes to Francis** (`ks-d1-gemma3-2026-11-03.log`). The test is deterministic: a second pass, with misses and KL printed, read the same counts. The verdict is the first pass's.
+
+| Prompt | Exact, agreement | Split, agreement | Exact, mean KL | Split, mean KL |
+|---|---|---|---|---|
+| 512 | 31/32 | 30/32 | 0.03526 | 0.04159 |
+| 2,048 | 32/32 | 31/32 | 0.03241 | 0.03026 |
+| 3,900 | 28/32 | 27/32 | 0.03164 | 0.03899 |
+| Pooled | 91/96, 94.79% | 88/96, 91.67% | 0.03310 | 0.03695 |
+
+Split is 3.12 points under exact, over the 2.0 allowed, and one position behind in each cell. All 8 of its misses are near-ties: the CPU's top two stand 0.015 to 0.404 logits apart, and each time split chose a token within 0.404 of the CPU's top. Three of them, positions 4, 11 and 15 at 3,900, exact misses too. The bar is two positions at this N, and split missed by three, so this reading can't tell a small real loss from noise. Its speed on Gemma 3 is unmeasured; on E2B it was 4.61× at 4,096 rows.
+
+**Francis's decision, 2026-11-03 15:30, relayed by the coordinator: option (a).** The split kernel stays Gemma 3's default on Metal for v0.24.0, and he accepts this reading: split 88/96 against exact's 91/96 on top-1 agreement with the CPU, all 8 of split's misses near-ties (the CPU's top two 0.015 to 0.404 logits apart, 3 of them exact's misses too), and mean KL 0.03695 against 0.03310. `changelog.d/2026-11-03-gemma3-split-prefill.md` carries the line for the release.
+

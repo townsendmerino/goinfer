@@ -472,6 +472,10 @@ func kvBytesForCtx(arch *Architecture, ctx int, kvF16, kvI8 bool) int64 {
 		if !kvI8 && arch.SlidingWindow > 0 && !arch.isGlobalLayer(l) && ctx > arch.SlidingWindow {
 			positions += arch.SlidingWindow
 		}
+		if arch.mla != nil { // one latent row, f32 whatever K/V precision the load names
+			total += 4 * float64(dim) * float64(positions)
+			continue
+		}
 		total += 2 * perElem * float64(dim) * float64(positions) // ×2 for K and V
 	}
 	return int64(total)

@@ -1,0 +1,57 @@
+# KV8 on CUDA (2026-11)
+
+The plan, its gates and the first slice's readings are in `docs/tasks/task-kv-architecture-2026-10.md`, KV8. The logs are `state-slots.log` and `state-slots-push.log`.
+
+## The served reading: two clients on Qwen3.5-9B, registered 2026-11-03 14:20 PST before any run (nobara-sb01)
+
+**The question:** when two clients take turns on a hybrid, does a second KV slot give each its own conversation back? On one slot each turn evicts the other client's state, so every turn prefills from 0.
+
+- **Tier:** tier 1 on the card, by day. Tiers 0 and 1 on tiny fixtures show the state is kept apart; they cannot show the time saved on a real prompt.
+- **Instrument:** `served_two_clients.py`, under the exclusive timing lock, with serve built at `214878e5c` (#646's head), `~/models/Qwen3.5-9B-Q4_K_M.gguf` from local NVMe, `--ctx 8192`, greedy, 24 tokens per reply.
+- **Design:** one slot (`--kv-sessions 1`) against two (`--kv-sessions 2`), A B B A, one server per cell. Each cell: two clients with about 2,000 tokens of their own text take 3 turns each in turn, on `/v1/completions`, each follow-up being its whole prompt, its reply and a new question. Then both send at once. One slot is the do-nothing arm.
+- **The numbers:** the follow-ups' (rounds 1 and 2) median time to first token, two slots over one, in each A B pair.
+
+**The decision, worst of the two pairs:**
+
+| | |
+|---|---|
+| **PASS** | ratio at most 0.5, every follow-up on two slots reuses rows, each conversation's replies equal the one-slot arm's, and peak `VmSwap` of the server process at most 512 MB |
+| **PARKED** | ratio above 0.5 and at most 0.7, the others holding |
+| **FAIL** | ratio above 0.7, a follow-up that reuses nothing, a reply that differs, or `VmSwap` over 512 MB |
+
+Replies are compared turn by turn up to a conversation's first difference, because past it the prompts differ. A reply that differs is a FAIL to look into, not a verdict on the state: a reused prompt prefills in two parts and a cold one in one.
+
+- **Not the question:** batching. CUDA's batched step declines a recurrent mixer, so at once means in turn. No peer, and no row for `docs/benchmarks.md`.
+- **Void cell:** one-minute load above 8.0 at its start. It is re-run once in order and listed. The free-memory term is read from `MemAvailable`, and the fit check below is the load's own.
+- **Fit check first:** the same binary's banner at one and two slots. A refusal is NOT RUN, named.
+- **Stopping rule:** the four cells, no early stop.
+- **Cost:** the fit check about 1 minute. Cold about 11 s a turn by KV0-H's rate, so about 2.5 minutes for a one-slot cell, about 1 for two slots: about 7 minutes in all. Started by 14:23 PST, finished by about 14:34 PST.
+- **Driver:** 595.112.07 on this box today, not the `595.91.07` of KV0-H's rows, so KV0-H's times are not compared.
+- **Void if:** a cell outside the lock, the model read from `/srv/models`, a NOT RUN counted as a pass, a bar moved after a reading.
+
+### The reading, 2026-11-03 14:21 to 14:25 PST: FAIL by the registered rule
+
+`served-2026-11-03/run.log`, `turns.jsonl`. Serve at `214878e5c`, driver 595.112.07, load at most 1.14 at a cell's start, about 61 GB available, no void cell, and the fit check in `fit-check.log`. A first attempt timed nothing: the script named the wrong model (`attempts.txt`).
+
+| | one slot | two slots |
+|---|---|---|
+| follow-up median first token, each pair | 6.93 s | 0.05 s (ratio **0.008**) |
+| on the card once loaded | 5,606 MiB | 6,168 MiB (+562) |
+| peak `VmSwap` | 0 MB | 0 MB |
+| follow-ups that reused rows | 0 of 8 | **6 of 8** |
+| conversations whose replies equal the one-slot arm's | | **2 of 4** |
+
+The ratio and the swap clear their bars. **Two clauses fail, so the verdict is FAIL, and no bar moves.** Both causes were found after the run, by a control that was not registered: each client alone on one slot, the same binary and prompts (`control.json`, `control-compare.txt`).
+
+**1. Two follow-ups reused nothing: a load of several slots never scores a checkpoint.** Client A's first reply does not re-tokenize as generated (the record says 1,931 rows, a divergence at 1,930), so its follow-up is a restore from the checkpoint at its prompt's end, not a strict extension. Alone, on one slot, it restores 1,907 rows and starts in 0.14 s. With two slots, `decoder/resident_reuse.go:Model.residentAcquireSlotAll` asks every slot's score without the checkpoint, so the request scores 0 and no restore is attempted, and A prefills from 0 in 6.58 s. **The one checkpoint copy would have refused it next** if it belonged to the other client, so **serving it takes both: the score and a checkpoint per slot.**
+
+*Corrected the same day, before this record merged, by reading that code while building the next slice: this paragraph first said the restore was refused because B saved last. No restore was attempted; the request log records no decline, and I had not checked it. The control and the numbers stand.*
+
+**2. Two conversations' replies differ: reuse against cold, not the slots.** Client B's follow-up reuses 2,071 rows on two slots and is prefilled whole on one, and the replies differ (` 10` against ` 0`). **Alone on one slot it reuses the same rows and gives the same ` 10`.** Every one of the 12 turns on two slots, in both pairs, equals the same client's alone on one slot, including client A's turn where the rows reused differ. So the registered comparison, against the one-slot arm's cold prefill, was the wrong one for what it meant to test: it reads the strict-extension path's known kernel-class difference (`docs/measurements/kv8a-2026-10/README.md`), which the first turn after a reuse shows with no second slot at all. That is my registration's flaw, recorded here. It does not change this verdict.
+
+**What this does and does not show.**
+- **Shown, on a real model:** the second slot gives a client's own conversation back at 0.05 s against 6.93 s, without swap, for 562 MiB of card, and its replies are the ones that client gets alone.
+- **Not shown:** the both-at-once round was compared only through the arms' script, which stopped at the first difference, so at-once replies were checked only between the two two-slot cells, where they match, and against no alone run, since the control ran no such round.
+- **Not read:** the one-slot control ran this branch's binary. That reuse differs from cold on main's binary too is by reading, since the one-slot path did not change, and was not run.
+
+**Next, if wanted:** a checkpoint per slot, then this reading again, registered against each client alone on one slot.

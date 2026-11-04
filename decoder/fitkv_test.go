@@ -178,3 +178,42 @@ func TestFitGuard_slidingWindowFlattensPastTheWindow(t *testing.T) {
 	t.Logf("ctx=%d (window=%d): flat(pre-M-28)=%d bytes, fixed(post-M-28)=%d bytes, ratio=%.2fx",
 		ctx, arch.SlidingWindow, flat, fixed, float64(flat)/float64(fixed))
 }
+
+// TestKVBytes_mlaHoldsOneLatentRow: the host fit's figure and Plan's rate read what an MLA cache holds after one forward, spare capacity included, since
+// the latent is reserved at its context. They read the same at each precision a caller can ask them for: the latent stays f32. No cache exists at f16
+// or int8 to compare: the CPU refuses those on an MoE family, and every MLA fixture is one, which the load below holds.
+func TestKVBytes_mlaHoldsOneLatentRow(t *testing.T) {
+	const ctx = 64
+	m, err := Load("../testdata/deepseek-tiny", Options{Backend: "cpu", DirectLoad: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	c := m.NewCache(ctx)
+	if _, err := m.forward(1, c); err != nil {
+		t.Fatal(err)
+	}
+	var held int64
+	for _, l := range c.mlaLatent {
+		if len(l) == 0 {
+			t.Fatal("VOID: a layer holds no latent after a forward")
+		}
+		held += 4 * int64(cap(l))
+	}
+	for _, p := range []struct {
+		name    string
+		f16, i8 bool
+	}{{"f32", false, false}, {"f16", true, false}, {"i8", false, true}} {
+		if got := kvBytesForCtx(m.w.arch, ctx, p.f16, p.i8); got != held {
+			t.Errorf("%s: kvBytesForCtx %d, the cache holds %d", p.name, got, held)
+		}
+		if got := m.kvBytesPerPositionAllLayers(p.f16, p.i8) * ctx; got != held {
+			t.Errorf("%s: Plan's rate at %d positions is %d, the cache holds %d", p.name, ctx, got, held)
+		}
+	}
+	for _, kv := range []string{"f16", "i8"} {
+		if _, err := Load("../testdata/deepseek-tiny", Options{Backend: "cpu", DirectLoad: true, KVQuant: kv}); err == nil {
+			t.Errorf("deepseek-tiny loads at KV %s on the CPU: read a cache at that precision here", kv)
+		}
+	}
+}

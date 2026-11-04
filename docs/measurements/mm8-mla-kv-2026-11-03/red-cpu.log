@@ -1,0 +1,17 @@
+--- FAIL: TestMemGate_cpu (4.58s)
+    cpu_test.go:250: testdata/bailing_hybrid-tiny int4: line "kv": generated: leased 18432 bytes against a plan of 28672: priced 10240 over, past the 0 allowed
+    cpu_test.go:250: testdata/bailing_hybrid-tiny int4/g32: line "kv": generated: leased 18432 bytes against a plan of 28672: priced 10240 over, past the 0 allowed
+    cpu_test.go:250: testdata/bailing_hybrid-tiny int8int8: line "kv": generated: leased 18432 bytes against a plan of 28672: priced 10240 over, past the 0 allowed
+    cpu_test.go:250: testdata/bailing_hybrid-tiny int8int8/g32: line "kv": generated: leased 18432 bytes against a plan of 28672: priced 10240 over, past the 0 allowed
+    cpu_test.go:250: testdata/bailing_hybrid-tiny f32: line "kv": generated: leased 18432 bytes against a plan of 28672: priced 10240 over, past the 0 allowed
+    cpu_test.go:250: testdata/bailing_hybrid-tiny f32/g32: line "kv": generated: leased 18432 bytes against a plan of 28672: priced 10240 over, past the 0 allowed
+    cpu_test.go:250: testdata/deepseek-tiny int4: line "kv": generated: leased 27648 bytes against a plan of 49152: priced 21504 over, past the 0 allowed
+    cpu_test.go:250: testdata/deepseek-tiny int4/g32: line "kv": generated: leased 27648 bytes against a plan of 49152: priced 21504 over, past the 0 allowed
+    cpu_test.go:250: testdata/deepseek-tiny int8int8: line "kv": generated: leased 27648 bytes against a plan of 49152: priced 21504 over, past the 0 allowed
+    cpu_test.go:250: testdata/deepseek-tiny int8int8/g32: line "kv": generated: leased 27648 bytes against a plan of 49152: priced 21504 over, past the 0 allowed
+    cpu_test.go:250: testdata/deepseek-tiny f32: line "kv": generated: leased 27648 bytes against a plan of 49152: priced 21504 over, past the 0 allowed
+    cpu_test.go:250: testdata/deepseek-tiny f32/g32: line "kv": generated: leased 27648 bytes against a plan of 49152: priced 21504 over, past the 0 allowed
+    cpu_test.go:260: 382 rows held, 178 option cells refused at load
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/memgate	4.586s
+FAIL

@@ -86,9 +86,11 @@ func TestHostFitKV_sharedLayersOwnNone(t *testing.T) {
 }
 
 // TestNewCache_reservesEachLayersWidth: a cache reserves each append-forever layer at its own K/V width, at f32 and at f16 and int8, so a wider layer
-// holds its context with no growth, and a layer that shares another's cache reserves nothing.
+// holds its context with no growth, past where the model's kvDim would have run out; a quantized cache keeps no f32 capacity; and a layer that shares
+// another's cache reserves nothing. Gemma 4's MoE keeps f32 on the CPU, so the quantized cases clear MoE on the loaded architecture: they read a
+// reservation and run nothing.
 func TestNewCache_reservesEachLayersWidth(t *testing.T) {
-	const ctx = 64
+	const ctx, tokens = 64, 8
 	m, err := Load("../testdata/gemma4-moe-kv-tiny", Options{Backend: "cpu", DirectLoad: true})
 	if err != nil {
 		t.Fatal(err)
@@ -96,37 +98,76 @@ func TestNewCache_reservesEachLayersWidth(t *testing.T) {
 	defer m.Close()
 	a := m.w.arch
 	const wide = 1 // the fixture's full-attention layer, wider than the model's kvDim
-	if a.ringLayerAt(wide) || a.kvDimAt(wide) == a.NumKVHeads*a.HeadDim {
+	kvDim := a.NumKVHeads * a.HeadDim
+	if a.ringLayerAt(wide) || a.kvDimAt(wide) == kvDim {
 		t.Fatalf("VOID: layer %d is a ring, or no wider than the model's kvDim", wide)
+	}
+	if tokens*a.kvDimAt(wide) <= ctx*kvDim {
+		t.Fatalf("VOID: %d tokens fit the %d floats a kvDim reservation holds", tokens, ctx*kvDim)
 	}
 	c := m.NewCache(ctx)
 	want := ctx * a.kvDimAt(wide)
 	if cap(c.keys[wide]) != want || cap(c.vals[wide]) != want {
 		t.Errorf("f32: layer %d reserves %d and %d floats, want %d", wide, cap(c.keys[wide]), cap(c.vals[wide]), want)
 	}
-	if _, err := m.forward(1, c); err != nil {
-		t.Fatal(err)
-	}
-	if cap(c.keys[wide]) != want {
-		t.Errorf("f32: a forward grew layer %d to %d floats, past its %d", wide, cap(c.keys[wide]), want)
-	}
-	for _, q := range []kvQuant{kvqF16, kvI8} {
-		c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, 0, nil)
-		c.setQuantWidths(q, ctx, a.kvDimAt)
-		got := 0
-		if q == kvqF16 {
-			got = cap(c.keysH[wide])
-		} else {
-			got = cap(c.keysQ[wide])
-		}
-		if got != want {
-			t.Errorf("quant %v: layer %d reserves %d, want %d", q, wide, got, want)
+	for i := range tokens {
+		if _, err := m.forward(i+1, c); err != nil {
+			t.Fatal(err)
 		}
 	}
-	shared := loadSharedKVFixture(t)
-	if c := shared.NewCache(ctx); cap(c.keys[1]) != 0 || cap(c.vals[1]) != 0 {
-		t.Errorf("a shared layer reserves %d and %d floats", cap(c.keys[1]), cap(c.vals[1]))
+	if len(c.keys[wide]) != tokens*a.kvDimAt(wide) {
+		t.Fatalf("VOID: layer %d holds %d floats after %d tokens", wide, len(c.keys[wide]), tokens)
 	}
+	if cap(c.keys[wide]) != want || cap(c.vals[wide]) != want {
+		t.Errorf("f32: %d forwards left layer %d at %d and %d floats, not its %d", tokens, wide, cap(c.keys[wide]), cap(c.vals[wide]), want)
+	}
+
+	shared := loadSharedKVFixture(t) // a separate load: it marks layer 1 shared, and the checks above read it owning
+	sa := shared.w.arch
+	sharedC := shared.NewCache(ctx)
+	if cap(sharedC.keys[1]) != 0 || cap(sharedC.vals[1]) != 0 {
+		t.Errorf("f32: a shared layer reserves %d and %d floats", cap(sharedC.keys[1]), cap(sharedC.vals[1]))
+	}
+	for _, mo := range []*Model{m, shared} {
+		mo.w.arch.MoE = nil
+	}
+	if !a.kvF16OK() || !a.kvInt8OK() {
+		t.Fatal("VOID: the architecture without MoE takes neither quantized cache")
+	}
+	floats := func(c *KVCache, l int) int { return cap(c.keys[l]) + cap(c.vals[l]) }
+	m.kvH = true
+	q := m.NewCache(ctx)
+	m.kvH = false
+	if q.quant != kvqF16 {
+		t.Fatalf("VOID: the cache's quant is %v, want f16", q.quant)
+	}
+	if cap(q.keysH[wide]) != want || cap(q.valsH[wide]) != want || floats(q, wide) != 0 {
+		t.Errorf("f16: layer %d reserves %d and %d, want %d, and %d f32", wide, cap(q.keysH[wide]), cap(q.valsH[wide]), want, floats(q, wide))
+	}
+	m.kvI8 = true
+	q = m.NewCache(ctx)
+	m.kvI8 = false
+	if q.quant != kvI8 {
+		t.Fatalf("VOID: the cache's quant is %v, want int8", q.quant)
+	}
+	if cap(q.keysQ[wide]) != want || cap(q.valsQ[wide]) != want || floats(q, wide) != 0 {
+		t.Errorf("int8: layer %d reserves %d and %d, want %d, and %d f32", wide, cap(q.keysQ[wide]), cap(q.valsQ[wide]), want, floats(q, wide))
+	}
+	if heads := ctx * a.kvHeadsAt(wide); cap(q.keyScale[wide]) < heads || cap(q.valScale[wide]) < heads {
+		t.Errorf("int8: layer %d reserves %d and %d scales, under one a head at %d", wide, cap(q.keyScale[wide]), cap(q.valScale[wide]), heads)
+	}
+	if !sa.kvF16OK() {
+		t.Fatal("VOID: the shared fixture takes no quantized cache")
+	}
+	shared.kvH = true
+	if q := shared.NewCache(ctx); cap(q.keysH[1]) != 0 || cap(q.valsH[1]) != 0 {
+		t.Errorf("f16: a shared layer reserves %d and %d", cap(q.keysH[1]), cap(q.valsH[1]))
+	}
+	shared.kvH, shared.kvI8 = false, true
+	if q := shared.NewCache(ctx); cap(q.keysQ[1]) != 0 || cap(q.valsQ[1]) != 0 || cap(q.keyScale[1]) != 0 || cap(q.valScale[1]) != 0 {
+		t.Errorf("int8: a shared layer reserves %d, %d, %d and %d", cap(q.keysQ[1]), cap(q.valsQ[1]), cap(q.keyScale[1]), cap(q.valScale[1]))
+	}
+	shared.kvI8 = false
 }
 
 // TestResidentDense_countsEveryDeltaNetTensor: every f32 tensor of a DeltaNet layer is in the dense figure, since every one is uploaded on

@@ -127,7 +127,7 @@ func init() {
 	}
 }
 
-const cpuMemGapsPin = 108
+const cpuMemGapsPin = 106
 
 // cpuKVGaps are the CPU plan's KV figures that a row reads wrong, each in MM8's row. The plan prices ctx positions of K and V on every layer.
 var cpuKVGaps = func() []Gap {
@@ -140,7 +140,6 @@ var cpuKVGaps = func() []Gap {
 	over([]string{"testdata/cohere2-tiny", "testdata/gemma2-hd-tiny", "testdata/gemma2-hd-tiny.gguf", "testdata/gemma2-tiny", "selftestdata/gemma3-vl-tiny", "testdata/gemma3-vl-tiny",
 		"testdata/gptoss_tiny.gguf", "testdata/laguna-xs2-tiny", "testdata/laguna-xs21-tiny", "testdata/mistral-tiny-window", "testdata/olmo3-tiny", "testdata/spark2-5-tiny"},
 		"a sliding layer's ring holds its window, and the plan prices the whole context (at int8, int8's scale error nets inside this row's figure: Geometry names it apart)", "MM8 CPU, KV of a sliding window")
-	over([]string{"testdata/bailing_hybrid-tiny", "testdata/deepseek-tiny"}, "an MLA layer holds one latent row, and the plan prices K and V", "MM8, MLA KV counted twice")
 	over([]string{"testdata/llama-attnfa-tiny"}, "int8 K/V holds one scale a head, and the plan prices 1/8 of a byte an element, which over-prices a wide head", "MM8, int8 KV's scale")
 	for _, f := range []string{"testdata/cohere-tiny", "testdata/granite-dense-tiny", "testdata/internlm2-tiny", "testdata/internlm3-tiny", "selftestdata/llama-tiny", "testdata/llama-tiny",
 		"testdata/ministral3-tiny", "testdata/phi3-tiny", "testdata/qwen25vl-tiny", "internal/vision/testdata/qwen25vl-vision-tiny", "testdata/qwen3asr-tiny", "testdata/smollm3-tiny", "testdata/voxtral-tiny"} {
@@ -306,7 +305,7 @@ func TestGeometry_namesEachCause(t *testing.T) {
 	if g.KVWindowOver <= 0 || g.KVScaleUnder == 0 {
 		t.Fatalf("olmo3-tiny at int8: window %d, scale %d: want both", g.KVWindowOver, g.KVScaleUnder)
 	}
-	if got, want := g.KVHeld, g.KVFormula-g.KVWindowOver-g.KVLatentOver+g.KVScaleUnder; got != want {
+	if got, want := g.KVHeld, g.KVFormula-g.KVWindowOver+g.KVScaleUnder; got != want {
 		t.Errorf("held %d, the formula less and plus its causes %d", got, want)
 	}
 }

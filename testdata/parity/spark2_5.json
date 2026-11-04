@@ -11,7 +11,7 @@
     "scripts/pin_spark2_5_real.py",
     "decoder/arch_spark2_5.go"
   ],
-  "deps_hash": "sha256:ffc9f37751c8195a633cf98b7ad21ac099066dfd3ad6ba38e8a3dd8829e2cc18",
+  "deps_hash": "sha256:cc0f20f3aee05a63fdd84b2653bb16c9c22bd74f3797db3aa25ed16c03ece23d",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-06",

@@ -12,7 +12,7 @@
     "testdata/qwen3moe-tiny",
     "testdata/qwen3moe-tiny-k3"
   ],
-  "deps_hash": "sha256:d27ee421ec492e8d9bb01a67f8d8b9a703b47ad02326504fabf937f5022889e5",
+  "deps_hash": "sha256:380ef88acbb57fb75ac3149884bed63549bade1087806805000f32e77a565f5c",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-06",
