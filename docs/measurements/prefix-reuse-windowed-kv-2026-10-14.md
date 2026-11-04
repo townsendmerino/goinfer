@@ -19,7 +19,7 @@ prefill takes): 77% of the cell's 3,151 s of run wall time, 27% of job B's 150 m
 **Classification: a guard declines the reuse (class c), triggered by a client-side divergence late in the prompt (class a). The prompt
 does not differ early, and the cache is not evicted.**
 
-1. **The client drops the previous reply.** `/v1/responses` returns no reasoning items (`internal/serveapp/responses.go:responseReq`: "reasoning
+1. **The client drops the previous reply.** `/v1/responses` returns no reasoning items (`internal/app/serveapp/responses.go:responseReq`: "reasoning
    items are out of scope"), so Codex has nothing to send back: its session file holds only the function call and its output for each turn.
    The KV slot holds the prompt plus every generated token, `<think>` block included. The next prompt therefore diverges at the previous
    prompt's end, and reusing the cache means rolling back the whole previous reply. The sizes show it: a 6,116-token prompt and 319 generated

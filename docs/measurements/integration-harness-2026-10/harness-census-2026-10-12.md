@@ -27,7 +27,7 @@ Sizes are under the Qwen2.5 tokenizer and move by a few percent on another famil
 - **Codex sends no `instructions` field.** Its input is two `developer` messages (17.0 KB of agent instructions,
   then 2.3 KB about skills) and two `user` messages (an environment block, then the prompt).
   - **goinfer kept only the last `developer` message**, so the instructions were dropped and the request counted
-    **2,297 tokens**. Fixed on this branch (`internal/serveapp/openai.go:messagesToTurns`); 5,850 is with the fix.
+    **2,297 tokens**. Fixed on this branch (`internal/app/serveapp/openai.go:messagesToTurns`); 5,850 is with the fix.
   - Its tools: `exec_command`, `write_stdin`, `request_user_input`, `view_image`, `get_goal`, `create_goal`,
     `update_goal` (functions), a `namespace` tool `multi_agent_v1` and `web_search`. goinfer drops the last two and
     names them in `X-Goinfer-Tools-Dropped`. **There is no `apply_patch` and no `custom` tool** in this version's

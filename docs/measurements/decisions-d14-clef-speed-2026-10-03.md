@@ -86,7 +86,7 @@ resident on nobara's GPU. This measures the CPU path on purpose, because that is
 
 ## 5. To be completed on the Mac before queueing
 
-1. **Pull `main`** (the Clef serve route is `internal/serveapp/systemone_clef.go`) and build `goinfer-serve` for darwin/arm64 from a committed revision; record its sha256 here.
+1. **Pull `main`** (the Clef serve route is `internal/app/serveapp/systemone_clef.go`) and build `goinfer-serve` for darwin/arm64 from a committed revision; record its sha256 here.
 2. **Get both models onto the internal SSD**: `models-pull clef-flash` (the archive has it); JEV-9B if it is not there already. Check `free` memory and that the Metal memory guard does not interfere with a CPU load.
 3. **Smoke, by day, exploratory and not quotable** (`--smoke`: K = 256, one state, one pass): confirms the machinery on the Mac and gives the Mac's per-token rate for both models. From it, compute the job's estimate: tokens per pass (above) times the rate, times 2 passes; shrink N (and drop K = 4,096) until it is at most 3 hours, as the run budget in `CLAUDE.md` requires. Record the smoke's numbers, the chosen N and Ks, and the estimate here.
 4. **Commit this file with those fields filled in, then queue** (`python3 scripts/night.py add d14-clef-speed --est <min> -- env SERVE=... SERVE_SHA=... D14_STATES=<N> D14_KS=<ks> bash docs/measurements/decisions-d14-clef-speed-2026-10/run-d14.sh`). Do not start the queue; the owner does.

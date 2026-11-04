@@ -1,7 +1,7 @@
 # Vision-tower int8 vs f32, on the real checkpoints (2026-10-02)
 
 **A record, not a gate.** It exists to decide one thing: whether serve should keep forcing an int8 tower for the CPU-only towers under `--backend cuda|webgpu`
-(it did, for Qwen2.5-VL, Qwen3.5+ and Gemma 4, until this date). It decided no: see `towerInt8` in `internal/serveapp/main.go`.
+(it did, for Qwen2.5-VL, Qwen3.5+ and Gemma 4, until this date). It decided no: see `towerInt8` in `internal/app/serveapp/main.go`.
 
 ## What was measured
 

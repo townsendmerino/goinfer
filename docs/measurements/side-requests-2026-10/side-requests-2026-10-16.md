@@ -18,7 +18,7 @@ direction "a short request does not evict a long cached prefix", and report befo
 Serve `2a0d11bb`, `--ctx 16384 --moe-cache-experts`, one GPU KV slot, windowed KV (window 1024 + 512 slack), f32 KV, the C′ expert
 cache. Tasks read, search, edit, one run each, all passed. 25 requests. Plan: `ids-carried-tier2/plan-cc-opencode.json`; output in
 `~/goinfer-bench/ids-cc-2026-10/out` on nobara. Read with `TestSideRequests_evictionCounterfactual`
-(`internal/serveapp/side_requests_replay_test.go`, `SIDE_OUT=... SIDE_CONFIG=cc-opencode-mellum`).
+(`internal/app/serveapp/side_requests_replay_test.go`, `SIDE_OUT=... SIDE_CONFIG=cc-opencode-mellum`).
 
 **The side requests** (no tools, a different system prompt, sharing at most the first 5 prompt ids with the main conversation):
 

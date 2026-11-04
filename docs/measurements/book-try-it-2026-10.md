@@ -53,7 +53,7 @@ Chapter 5 quotes the int8int8 line's 1.66 GB.
 
 **Not quoted: the int4 dense figure, because `fit` reports it from whichever sidecar is cached.** `fit` reads a fresh
 sidecar if one exists, trying the backend's default head precision first and then the other
-(`internal/fitcmd/fit.go`, `sidecarIfFresh`). Before this session's chapter-9 run wrote
+(`internal/app/fitcmd/fit.go`, `sidecarIfFresh`). Before this session's chapter-9 run wrote
 `…int4.e4h.cpu-arm64.giw` at 10:02 (the int4-embedding sidecar every default CPU load writes since 2026-09-28), the
 same command read the older plain-head sidecar and printed `dense 1.12 GB`; after it, `dense 0.93 GB`. So a reader's int4
 figure depends on what they ran before. Reported to the owner; not changed here. The rest of each line ("fits N GB

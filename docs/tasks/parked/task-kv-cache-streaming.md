@@ -170,7 +170,7 @@ underlying byte count).
 
 **Park the pager.** Three cheap, unrelated fixes this investigation surfaced — done:
 
-1. **Fixed** the `-ctx` flag help text (`internal/serveapp/main.go`) — it asserted a per-request
+1. **Fixed** the `-ctx` flag help text (`internal/app/serveapp/main.go`) — it asserted a per-request
    staged fallback that `audit R-10` deliberately removed in favor of a clean 400. Also fixed the
    same stale claim in `docs/cuda-backend.md`, which had it too.
 2. **Filed** the `int8int8`-on-non-VNNI finding where quant guidance actually lives:

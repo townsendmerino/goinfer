@@ -26,14 +26,14 @@ code in full, then the MLX analog, and each carried forward its share of the Sep
 premise looks stale the finding is filed as a REVISIT with the premise named and the cheapest probe. The consolidation
 (§0–§3 and §10–§13) read all six reports in full, removed duplicates, and re-read the source behind the two Criticals,
 three Majors (B-P01's `hd == 128` guard, C-P01's scale cache, E-P01's floor check) and the `--embed-int4` question
-(E-X01, settled against the working repo's `internal/app/loadflags`, §3). The six area reports are Part II, edited only for
+(E-X01, settled against the working repo's `internal/loadflags`, §3). The six area reports are Part II, edited only for
 scratch path names and cross-references.
 
 **Limitations:** static only. No Metal device, no Go toolchain; nothing was built, run or timed. Every number is one of
 (rec) a figure the repo recorded, with doc and line; (cnt) counted from the code's shape, with the count shown; (mlx) MLX
 source, file and line; (proj) a projection, carrying its band and basis. A projection is not a measurement and nothing
 here should be quoted as one. MLX's `*_nax*` kernels (Metal 4 tensor ops, M5 only) are out of reach on the M1 Pro and
-appear only as notes. `testdata/`, `scripts/`, `cmd/`, `internal/runtime/prequant`, `decoder/*_test.go`, `docs/completed/` and
+appear only as notes. `testdata/`, `scripts/`, `cmd/`, `internal/prequant`, `decoder/*_test.go`, `docs/completed/` and
 most of `docs/tasks/` were not in the audited snapshot; findings that lean on them say so.
 
 **Status, 2026-10-01.** The findings describe the tree at `844700f8`. Commits since then under `metal/`,
@@ -141,7 +141,7 @@ asserts two constants (F-G03); and expert-major MoE prefill is default ON on a g
 tests that are a tiny-fixture cosine bar (D-G01).
 
 **One question resolved.** Reviewer E flagged a 2026-09-28 record saying the `--embed-int4` default makes the Metal
-resident decline to CPU. The working repo settles it: `internal/app/loadflags/loadflags.go:130-139` defaults it on except
+resident decline to CPU. The working repo settles it: `internal/loadflags/loadflags.go:130-139` defaults it on except
 with `-backend metal`, where it stays off so the resident path survives; an explicit `--embed-int4` on Metal runs on the
 CPU as asked. The default Metal path is intact (§3, note 1).
 
@@ -221,7 +221,7 @@ Full entries are in Part II. "Bits" is the bit-identity class of the proposed ch
 
 1. **E-X01 is resolved; the default Metal path is intact.** E found `mc3-prefill-attr-2026-09-28.md:27` saying "since
    9ccf7fb1 the int4-embedding default makes the Metal resident decline to the CPU" and could not read `loadflags`. In
-   the working repo `internal/app/loadflags/loadflags.go:62-74` registers `-backend` with default `cpu` (`auto` since R17, 2026-10-01) and sets
+   the working repo `internal/loadflags/loadflags.go:62-74` registers `-backend` with default `cpu` (`auto` since R17, 2026-10-01) and sets
    `EmbedInt4 = true`, and `:122-131` (`embedInt4()`) returns false for `Backend == "metal"` unless `--embed-int4` was
    given on the command line; the comment there records the same fault (found 2026-09-28, reproduced 2026-09-30 on the
    0.5B, `docs/quantization.md` "Known issue"). So a plain `-backend metal` load keeps the int8 head and stays resident.
@@ -1115,7 +1115,7 @@ about 307 MB (S0 `:50,55` give the int8 sizes). Saving 102 MB (1.5B, at the head
 deliberate (`decoder/weightmat.go:78-94`, N-40 in the Sep 12 audit); I do not propose changing the default. The point is only that
 MLX's 4-bit checkpoints carry a 4-bit head, so the byte share of the MLX gap (about 5.6% of the 7B token) is a chosen
 precision difference, and that the opt-in has no Metal kernel.
-**Consolidation note.** `internal/app/loadflags/loadflags.go:130-139` already documents this gap and keeps the Metal default off; whether Metal should take an
+**Consolidation note.** `internal/loadflags/loadflags.go:130-139` already documents this gap and keeps the Metal default off; whether Metal should take an
 int4 head is owner decision O3 (§10), not a defect.
 **Probe, if wanted.** The int4 head would use the existing SA rows kernel at N=V (V % 8 == 0 for the Qwen vocab 151,936);
 gate with the teacher-forced top-1 check that produced the 2.3-point figure.
@@ -1244,8 +1244,8 @@ Sep 12 M-16 entry is the below-floor count). One-line comment fix.
    converter, not of the library source read here; B-N01 and the 5.6% byte share assume they do.
 8. **Record against code for the int4 embedding default.** `docs/measurements/mc3-prefill-attr-2026-09-28.md:27` says "since
    9ccf7fb1 the int4-embedding default makes the Metal resident decline to the CPU"; at HEAD `embeddingWith` defaults to the
-   int8 pin (`decoder/weightmat.go:96-106`) and I found no int4 default in `internal/app/serveapp/main.go`. Either the default
-   was reverted or the line is stale; area C/D. **Resolved at consolidation:** `internal/app/loadflags/loadflags.go:130-139` defaults
+   int8 pin (`decoder/weightmat.go:96-106`) and I found no int4 default in `internal/serveapp/main.go`. Either the default
+   was reverted or the line is stale; area C/D. **Resolved at consolidation:** `internal/loadflags/loadflags.go:130-139` defaults
    `--embed-int4` on except with `-backend metal`, where it stays off so the resident path survives; the 2026-09-28 line describes the
    state before that guard (§3 note 1).
 9. **Cross-session MLX figure.** The 0.82x and 0.75x ratios in (a) pair goinfer's R18b e2e numbers (89.3 and 29.4 tok/s,
@@ -2175,7 +2175,7 @@ projection with its band and basis.
 
 | ID | Sev | Claim | Evidence | MLX analog | Band | Probe |
 |---|---|---|---|---|---|---|
-| E-X01 | **Resolved at consolidation** (was: Major if confirmed, cross-area) | Default `-embed-int4` was suspected of making the Metal resident decline to CPU on a default serve; `internal/app/loadflags/loadflags.go:130-139` defaults it off on `-backend metal` (§3 note 1) | mc3-prefill-attr-2026-09-28.md:27; metal/model.go:652-658,1706-1716; decoder/model.go:387-393 (comment says default off); task-never-swap-2026-09.md:281-283 | none | all-or-nothing | `goinfer serve` on the Mac; read the `decode path:` banner line (internal/app/serveapp/banner.go:119) |
+| E-X01 | **Resolved at consolidation** (was: Major if confirmed, cross-area) | Default `-embed-int4` was suspected of making the Metal resident decline to CPU on a default serve; `internal/loadflags/loadflags.go:130-139` defaults it off on `-backend metal` (§3 note 1) | mc3-prefill-attr-2026-09-28.md:27; metal/model.go:652-658,1706-1716; decoder/model.go:387-393 (comment says default off); task-never-swap-2026-09.md:281-283 | none | all-or-nothing | `goinfer serve` on the Mac; read the `decode path:` banner line (internal/serveapp/banner.go:119) |
 | E-P01 | Major | Prompts below the 64-token floor, and short reuse suffixes, run sequentially or in a >=96 ms batched pass; the bit-identical 8-row step does them at ~2.3 ms/token | metal/backend.go:695,897-900; decoder/model.go:1596-1617; metal/batch.go:956-987; metal-spec-step-verify-2026-09-27.md:35-41 | quantized.cpp:89-130 (qmv to M<14 on M1 Pro) | K=32 TTFT 305 -> ~74 ms [proj]; 7B ~1.06 s -> ~0.28 s [proj] | prefill a 32-token prompt via `forwardMultiInto` pieces; compare bytes and time |
 | E-P02 | Minor (Major if probe lands) | 7B at B=2 runs per-row GEMVs that each stream the whole gate\|up weight; MLX launches the M rows adjacent so they share weight reads | metal/batch.go:701-715,739-758; quantized.cpp:495-496; kernels/quantized.h:787-794 | qmv grid (M, N/bn) | 0-15% of the 7B B=2 step [proj], ceiling 22% | standalone 2-row gate\|up on the 7B shape |
 | E-P03 | Minor (7B) | FB=2 shipped for `mc3_bt`/`mc3_btd`; S0 recorded FB=4 best on the 7B for gate\|up and down, 49 of ~66 ms | metal/batch.go:140,205,375; metal/gemm_mma8_mc3_test.go:223-224; concurrency-mc3-s0:92-103 | none (register-resident fragments) | 0-8% of the 7B B>=3 step [proj] | instantiate fb4, run `TestMC3Step_throughput` on the 7B |
@@ -2187,7 +2187,7 @@ projection with its band and basis.
 | E-G01 | Minor (Major if CI lacks the env) | MC3/MC5/spec-step identity gates are opt-in: env var plus a real checkpoint | gemm_mma8_mc3_test.go, mc3_step_test.go, mc5_chunk_test.go, spec_verify_identity_test.go (skip lines) | n/a | n/a | read CI config (absent from snapshot) |
 | E-C01 | Minor, latent | MC3 solo path hands out `r.logitsHost`, a buffer the next generation's solo step rewrites | metal/backend.go:619-621; metal/model.go:2398-2413; decoder/model.go:2202-2209 | n/a | no output change today | two generations, one with a 30 ms `LogitProcessor` |
 | E-C02 | Minor, default-off | `fp contract(fast)` restore after the Gumbel block also covers `mc3RowsKernels` under `GOINFER_PRECISE_MATH` | metal/gumbel.go:49,164; metal/model.go:1084-1121 | n/a | n/a | `GOINFER_PRECISE_MATH=1` with `TestMC3Step_bitIdentical` |
-| E-X01 | **Resolved at consolidation** (was: Major if confirmed, cross-area) | Default `-embed-int4` was suspected of making the Metal resident decline to CPU on a default serve; `internal/app/loadflags/loadflags.go:130-139` defaults it off on `-backend metal` (§3 note 1) | mc3-prefill-attr-2026-09-28.md:27; metal/model.go:652-658,1706-1716; decoder/model.go:387-393 (comment says default off); task-never-swap-2026-09.md:281-283 | none | all-or-nothing | `goinfer serve` on the Mac; read the `decode path:` banner line (internal/app/serveapp/banner.go:119) |
+| E-X01 | **Resolved at consolidation** (was: Major if confirmed, cross-area) | Default `-embed-int4` was suspected of making the Metal resident decline to CPU on a default serve; `internal/loadflags/loadflags.go:130-139` defaults it off on `-backend metal` (§3 note 1) | mc3-prefill-attr-2026-09-28.md:27; metal/model.go:652-658,1706-1716; decoder/model.go:387-393 (comment says default off); task-never-swap-2026-09.md:281-283 | none | all-or-nothing | `goinfer serve` on the Mac; read the `decode path:` banner line (internal/serveapp/banner.go:119) |
 | E-P01 | Major | Prompts below the 64-token floor, and short reuse suffixes, run sequentially or in a >=96 ms batched pass; the bit-identical 8-row step does them at ~2.3 ms/token | metal/backend.go:695,897-900; decoder/model.go:1596-1617; metal/batch.go:956-987; metal-spec-step-verify-2026-09-27.md:35-41 | quantized.cpp:89-130 (qmv to M<14 on M1 Pro) | K=32 TTFT 305 -> ~74 ms [proj]; 7B ~1.06 s -> ~0.28 s [proj] | prefill a 32-token prompt via `forwardMultiInto` pieces; compare bytes and time |
 | E-P02 | Minor (Major if probe lands) | 7B at B=2 runs per-row GEMVs that each stream the whole gate\|up weight; MLX launches the M rows adjacent so they share weight reads | metal/batch.go:701-715,739-758; quantized.cpp:495-496; kernels/quantized.h:787-794 | qmv grid (M, N/bn) | 0-15% of the 7B B=2 step [proj], ceiling 22% | standalone 2-row gate\|up on the 7B shape |
 | E-P03 | Minor (7B) | FB=2 shipped for `mc3_bt`/`mc3_btd`; S0 recorded FB=4 best on the 7B for gate\|up and down, 49 of ~66 ms | metal/batch.go:140,205,375; metal/gemm_mma8_mc3_test.go:223-224; concurrency-mc3-s0:92-103 | none (register-resident fragments) | 0-8% of the 7B B>=3 step [proj] | instantiate fb4, run `TestMC3Step_throughput` on the 7B |
@@ -2199,16 +2199,16 @@ projection with its band and basis.
 | E-G01 | Minor (Major if CI lacks the env) | MC3/MC5/spec-step identity gates are opt-in: env var plus a real checkpoint | gemm_mma8_mc3_test.go, mc3_step_test.go, mc5_chunk_test.go, spec_verify_identity_test.go (skip lines) | n/a | n/a | read CI config (absent from snapshot) |
 | E-C01 | Minor, latent | MC3 solo path hands out `r.logitsHost`, a buffer the next generation's solo step rewrites | metal/backend.go:619-621; metal/model.go:2398-2413; decoder/model.go:2202-2209 | n/a | no output change today | two generations, one with a 30 ms `LogitProcessor` |
 | E-C02 | Minor, default-off | `fp contract(fast)` restore after the Gumbel block also covers `mc3RowsKernels` under `GOINFER_PRECISE_MATH` | metal/gumbel.go:49,164; metal/model.go:1084-1121 | n/a | n/a | `GOINFER_PRECISE_MATH=1` with `TestMC3Step_bitIdentical` |
-| E-P09 | Minor (Major on the 7B if pages count) | Default 4 KV slots at 4096: 3 extra slots are ~351 MB (1.5B) and ~705 MB (7B) | decoder/fitplan.go:184; internal/app/serveapp/main.go:443; metal/backend.go:439-479; concurrency-mc1:24 | n/a | memory only | resident-set after load, 1 vs 4 slots |
+| E-P09 | Minor (Major on the 7B if pages count) | Default 4 KV slots at 4096: 3 extra slots are ~351 MB (1.5B) and ~705 MB (7B) | decoder/fitplan.go:184; internal/serveapp/main.go:443; metal/backend.go:439-479; concurrency-mc1:24 | n/a | memory only | resident-set after load, 1 vs 4 slots |
 | E-P10 | Minor, opt-in | `kv_store_i8` is nKV one-thread threadgroups with a serial 128-iteration loop; `--kv i8` forfeits MC1/MC3/spec verify | metal/kernels.go:1114-1136; metal/model.go:3541-3393; metal/batch.go:322 | n/a | ~1% [cnt, unmeasured] | micro-bench |
 | E-N01 | Minor | 112 `pack` dispatches per step could be fused into their producers | metal/batch.go:705,758,754 | n/a | <=0.9% [cnt] | none worth running first |
-| E-D01 | Minor | `--spec` help says "on the CPU backend"; `Options.EmbedInt4` comment says default off | internal/app/serveapp/main.go:465; decoder/model.go:387-393 | n/a | n/a | edit text |
+| E-D01 | Minor | `--spec` help says "on the CPU backend"; `Options.EmbedInt4` comment says default off | internal/serveapp/main.go:465; decoder/model.go:387-393 | n/a | n/a | edit text |
 
 ### (c) Full entries
 
 #### E-X01 [resolved] Default `-embed-int4` and the Metal resident (cross-area)
 
-**Resolved at consolidation (2026-09-30).** `internal/app/loadflags/loadflags.go:62-74` registers `-backend` with default `cpu` (`auto` since R17, 2026-10-01) and sets
+**Resolved at consolidation (2026-09-30).** `internal/loadflags/loadflags.go:62-74` registers `-backend` with default `cpu` (`auto` since R17, 2026-10-01) and sets
 `EmbedInt4 = true`; `:122-131` (`embedInt4()`) returns false when `Backend == "metal"` and `--embed-int4` was not given on the command
 line, with a comment recording the same fault (found 2026-09-28, reproduced 2026-09-30 on the 0.5B). An explicit `--embed-int4` on Metal
 is honoured and runs on the CPU as asked. The text below is the reviewer's original reasoning, from before `loadflags` could be read.
@@ -2219,7 +2219,7 @@ bit-exact int8 pin" (decoder/model.go:387-393) and `embeddingWith` agrees (decod
 task-never-swap-2026-09.md:281-283 records an owner decision of 2026-09-28 "to make `--embed-int4` the default", and
 mc3-prefill-attr-2026-09-28.md:27 reads: "Since 9ccf7fb1 the int4-embedding default makes the Metal resident decline to the
 CPU; a cell whose log does not show `decode path: metal-resident` is void." That run passed `-embed-int4=false`
-explicitly. The default itself lives in `loadflags` (internal/app/serveapp/main.go:182 reads `cfg.load.Options()`), which is not in the
+explicitly. The default itself lives in `loadflags` (internal/serveapp/main.go:182 reads `cfg.load.Options()`), which is not in the
 snapshot. B-N01 reads the same error as "Metal cannot load an `-embed-int4` bundle" and rates it Minor; if the default is
 now on, the same fact is a default-path fallback to CPU for every Metal user.
 Probe: run plain `goinfer serve` on the Mac and read the banner's `decode path:` line. Not settleable statically.
@@ -2472,7 +2472,7 @@ compiler's precise mode defaults contraction to off is not settleable statically
 
 #### E-P09 [P, Minor; possibly Major on the 7B] Default KV slots
 
-`--kv-sessions` defaults to 4 (internal/app/serveapp/main.go:444), the resident context to 4096 (decoder/fitplan.go:184). A slot is ~117 MB on the 1.5B
+`--kv-sessions` defaults to 4 (internal/serveapp/main.go:444), the resident context to 4096 (decoder/fitplan.go:184). A slot is ~117 MB on the 1.5B
 (concurrency-mc1:24 [rec]); on the 7B it is 28 x 4096 x 512 x 2 x 2 B = 235 MB [cnt], so three extra slots are ~705 MB. `metalKVSlots` clamps the
 count to the memory guard's budget and prints a banner when it does (metal/backend.go:439-479); MC1's clamp path was never exercised
 (concurrency-mc1:58 [rec]). Whether untouched pages of a freshly allocated shared buffer count against resident memory is not settleable
@@ -2509,7 +2509,7 @@ the producing rows kernel is bit-identical. At ~1.3 us each (S3) that is ~0.15 m
 
 #### E-D01 [D, Minor] Stale text
 
-`--spec` help ends "Wins ... on the CPU backend" (internal/app/serveapp/main.go:466); the Metal step-kernel verify shipped 2026-09-27 (2.08x on copy
+`--spec` help ends "Wins ... on the CPU backend" (internal/serveapp/main.go:466); the Metal step-kernel verify shipped 2026-09-27 (2.08x on copy
 traffic, 1.07x on chat, 1.5B). `Options.EmbedInt4`'s comment says "default off" (decoder/model.go:387-393) against the owner decision recorded at
 task-never-swap-2026-09.md:281-283. `attnFACoreCount = 14` (metal/model.go:3220) is dead on the shipped path because `attnFABlkSplit > 0` overrides it
 (metal/model.go:3411-3421); area B owns that.
@@ -2568,7 +2568,7 @@ task-never-swap-2026-09.md:281-283. `attnFACoreCount = 14` (metal/model.go:3220)
 
 ## 9. Area F — Correctness of recently changed code, gates and tests, stale claims
 
-Reviewer F. Static review of goinfer HEAD 844700f8, aikit v1.51.0 and MLX 9c3d355. Nothing was built or run. Counts are from `grep`/`wc` over the snapshot; every figure that is not a count cites the doc line it comes from. The snapshot has no `testdata/`, `scripts/`, `cmd/`, `internal/runtime/prequant`, `decoder/*_test.go`, `docs/completed/`, `docs/hardware-matrix.md`, or most of `docs/tasks/`; items that depend on those are listed in section (f).
+Reviewer F. Static review of goinfer HEAD 844700f8, aikit v1.51.0 and MLX 9c3d355. Nothing was built or run. Counts are from `grep`/`wc` over the snapshot; every figure that is not a count cites the doc line it comes from. The snapshot has no `testdata/`, `scripts/`, `cmd/`, `internal/prequant`, `decoder/*_test.go`, `docs/completed/`, `docs/hardware-matrix.md`, or most of `docs/tasks/`; items that depend on those are listed in section (f).
 
 ### (a) Summary
 
@@ -2606,7 +2606,7 @@ Severity qualifier "(non-default option)" means the condition is an explicit fla
 
 #### F-C01. `PrefillLast` writes f16 KV into an int8 KV cache (Critical, non-default option; the same defect as A-C01)
 
-- **What.** With `--kv i8` (`decoder.Options.KVPrecision == "i8"`, `decoder/model.go:521,232`; plumbed from `internal/app/serveapp/main.go:187`), `buildResident` sets `r.kvI8 = m.KVCacheI8()` (`metal/model.go:1191`) and allocates each layer's K and V as `paddedCtxCap*kvDim*1` bytes plus separate f32 scale buffers (`metal/model.go:1661-1665`, `byteBuf(d, kvBytes*allocSlots)` at `:1162-1163`). `PrefillLast` (`metal/backend.go:869-1043`) checks: fast prefill enabled, the floor, `prefillOK`, and `startPos+len <= ctxCap`. `prefillOK` (`metal/model.go:1321-1323`) is a function of model features, geometry, MoE and DeltaNet; it does not read `kvI8`. The batched pass then dispatches `kv_store_f16` over `r.kc[l]`/`r.vc[l]` (`metal/prefill.go:1772`), a kernel that does `kc[pos*kvDim + i] = qkv[...]` on a `device half*` (`metal/prefill.go:866-873`).
+- **What.** With `--kv i8` (`decoder.Options.KVPrecision == "i8"`, `decoder/model.go:521,232`; plumbed from `internal/serveapp/main.go:187`), `buildResident` sets `r.kvI8 = m.KVCacheI8()` (`metal/model.go:1191`) and allocates each layer's K and V as `paddedCtxCap*kvDim*1` bytes plus separate f32 scale buffers (`metal/model.go:1661-1665`, `byteBuf(d, kvBytes*allocSlots)` at `:1162-1163`). `PrefillLast` (`metal/backend.go:869-1043`) checks: fast prefill enabled, the floor, `prefillOK`, and `startPos+len <= ctxCap`. `prefillOK` (`metal/model.go:1321-1323`) is a function of model features, geometry, MoE and DeltaNet; it does not read `kvI8`. The batched pass then dispatches `kv_store_f16` over `r.kc[l]`/`r.vc[l]` (`metal/prefill.go:1772`), a kernel that does `kc[pos*kvDim + i] = qkv[...]` on a `device half*` (`metal/prefill.go:866-873`).
 - **Failure.** Every prompt of at least 64 tokens (floor, `metal/backend.go:1025`) with a suffix of at least 8 tokens (`decoder/model.go:1578`, `residentPrefillSeed`) takes this path by default. The K/V rows land as f16 bit patterns in an int8-typed cache and the scale buffers are never written, so decode's `attention_i8` reads wrong K/V for the whole prompt. Once `pos*kvDim*2` bytes exceeds the buffer (position >= paddedCtxCap/2, i.e. a prompt over about 2048 tokens at the 4096 default) the write runs past the end of the MTLBuffer; `checkCap`'s own comment (`metal/backend.go:578-584`) says such writes corrupt adjacent buffers on unified memory.
 - **Why it is plausible nobody saw it.** The int8-KV tests drive only sequential `Forward` and `UploadKV`: `metal/kv_i8_test.go:255-330` steps 5 tokens through `Forward`; `metal/uploadkv_parity_test.go:235` covers `UploadKV`. No test calls `PrefillLast` with `kvI8` set (`grep` for `KVPrecision` in `metal/*_test.go` returns only `metal/kv_i8_test.go:270` and `metal/residentkv_alloc_test.go:38,78`). The other batched paths exclude `kvI8` explicitly (`metal/batch.go:322,539`, `metal/model.go:3392`); prefill is the one that does not.
 - **Why this is not already closed.** I checked `docs/audit-metal-2026-09-12.md` (no entry mentions kvI8 and prefill together; C-01 is about the fused kernel's tail read), `metal/backend.go:558-563` (`fastPrefill` keys on `exact` and two env knobs only), and `decoder/model.go:1567-1609` (no KV-precision condition on the `Prefiller` call).
@@ -2710,7 +2710,7 @@ Severity qualifier "(non-default option)" means the condition is an explicit fla
 
 #### F-N02. S6 file-change policy is one comment (Minor)
 
-- `decoder/giwmap_darwin.go:24-25` says a `.giw` "is replaced by temp+rename, never rewritten in place, so a shared mapping cannot observe a concurrent rewrite". That depends on `cmd/prequant` and `internal/runtime/prequant` (not in the snapshot) and does not cover other tools. A truncated file under a `MAP_SHARED` mapping gives a SIGBUS on the next page touch (CPU or wired GPU read); an in-place rewrite changes live weights with no error. `MAP_PRIVATE` shares the first exposure. No size/mtime check at `Close` or at request time. Report as a policy statement that needs a test or a sentence in the user docs.
+- `decoder/giwmap_darwin.go:24-25` says a `.giw` "is replaced by temp+rename, never rewritten in place, so a shared mapping cannot observe a concurrent rewrite". That depends on `cmd/prequant` and `internal/prequant` (not in the snapshot) and does not cover other tools. A truncated file under a `MAP_SHARED` mapping gives a SIGBUS on the next page touch (CPU or wired GPU read); an in-place rewrite changes live weights with no error. `MAP_PRIVATE` shares the first exposure. No size/mtime check at `Close` or at request time. Report as a policy statement that needs a test or a sentence in the user docs.
 
 #### F-B01. P is rounded to half in steel (Minor, MLX analog)
 
@@ -2804,7 +2804,7 @@ Status uses the five values from the brief. "Record only" means the cited target
 5. Whether a plain `go test ./metal/` is green. The 98 default files depend on `testdata/` fixtures that are gitignored; some tests `Fatalf` when a fixture is missing (for example `metal/gemma1_resident_parity_test.go:21-23`) and others `Skip` (`metal/forwardmrope_parity_test.go:51`), so the result on a clean checkout is red for one reason and green-by-skip for another, as the v0.18.0 record shows (`c3-metal-consumer-window-v0.18.0.md:123-133`). Also unclear whether `testdata/gemma1-tiny` and `gemma2-tiny` are generated or committed: the name appears only in the test files in this snapshot.
 6. `cmd/gate gpu` wiring (no `cmd/` in the snapshot): which tests it names, and whether it sets `GOINFER_METAL_MC3=1` or `GOINFER_HEAVY_TESTS=1`.
 7. What happened to `TestBatchedVerifyKernelParity` (F-G04).
-8. Whether `prequant`'s default `-target` writes the kind-7 form, which decides whether the v15 aliasing gap (F-D02) is common (`internal/runtime/prequant` not in the snapshot).
+8. Whether `prequant`'s default `-target` writes the kind-7 form, which decides whether the v15 aliasing gap (F-D02) is common (`internal/prequant` not in the snapshot).
 9. Whether `.giw` replacement is always temp+rename (F-N02).
 10. Whether any registry architecture has hd=128 with nH/nKV > 8 and a dense layer (F-C03).
 11. Whether the R17/R18 end-to-end numbers survive a pre-registered re-run; the headline sentences rest on same-session A/Bs by the row's own description (`benchmarks.md:47`).
@@ -3091,7 +3091,7 @@ them. Everything here needs the Mac or a file the audited snapshot did not carry
 | Real gpt-oss requantisation error; cost of an E2M1 unpack against `UNP8` | D-B03 | T1.13 |
 | Recurrence share of a resident hybrid token; `delta_rule` gain from lane-per-Dk | D-B01, D-B05 | A resident-hybrid decomposition |
 | Whether CI exports `GOINFER_METAL_MC3` and `GOINFER_HEAVY_TESTS`; what `cmd/gate gpu` names; where `TestBatchedVerifyKernelParity` went | E-G01, F-G02, F-G04 | Read the CI configuration and `cmd/gate` in the working repo |
-| Whether `.giw` replacement is always temp+rename; what `prequant`'s default `-target` writes | F-N02, F-D02 | Read `internal/runtime/prequant` in the working repo |
+| Whether `.giw` replacement is always temp+rename; what `prequant`'s default `-target` writes | F-N02, F-D02 | Read `internal/prequant` in the working repo |
 | Whether any registry architecture has hd=128 with nH/nKV > 8 and a dense layer | F-C03 | Enumerate the registry |
 | Whether any checkpoint beyond Qwen2.5-1.5B/7B overflows the f16 residual | A-C02 | The finite-check in T0.3 counts it in the field |
 | Prompt-length distribution of real first turns | A-P02 | Not recorded anywhere; log it |

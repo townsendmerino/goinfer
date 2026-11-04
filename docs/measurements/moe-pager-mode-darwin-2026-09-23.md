@@ -53,7 +53,7 @@ warming cancel across arms; 20 s settle between runs. n = 3 per arm.
   cache or a slower disk.
 
 **Decision (as registered): pool ships as the darwin default.** `--moe-pager` now defaults to `pool`
-on darwin and `mmap` elsewhere (`moePagerDefault`, `internal/serveapp/main.go`); the banner already
+on darwin and `mmap` elsewhere (`moePagerDefault`, `internal/app/serveapp/main.go`); the banner already
 names the mode (`expert paging (pread)`), and the real binary was confirmed to select it with no
 flag. Reversible with `--moe-pager=mmap`.
 

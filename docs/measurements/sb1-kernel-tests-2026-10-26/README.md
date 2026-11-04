@@ -241,7 +241,7 @@ nothing timed.
 - **What moved out of `decoder`:** the CPU reference functions for Gated DeltaNet (`GatedDeltaNetStep`, `DeltaNetCore`,
   `DeltaNetRecurrence`, `L2NormScaledInto`, `L2NormScaled`, `NegExpAFromLog`, `SetDeltaCapHook`, `HasDeltaCapHook`) and the
   Qwen 3.5 interleaved query/gate split and sigmoid gate (`SplitQGate`, `SplitQGateAlloc`, `QGateContext`) moved to
-  `internal/hybridattn` (`internal/hybridattn/deltanet.go`, importing only the standard library and `aikit/linalg`).
+  `internal/hybridattn` (`internal/runtime/hybridattn/deltanet.go`, importing only the standard library and `aikit/linalg`).
   `decoder/deltanet.go`, `decoder/deltanet_n.go`, `decoder/forward_qwen35.go`, and `decoder/testhooks.go`
   call `internal/hybridattn` so there is one implementation; `decoder`'s `*ForTest` hooks stay for `cuda` and `gpu`.
 - **What moved to `metal/kernels`:** `backend/metal/deltanet_test.go` (`TestDeltaNetKernels_cpuParity`, `TestDeltaNorm_zeroHead`,

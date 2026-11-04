@@ -12,7 +12,7 @@ The tree is `origin/main` at `98858151a`.
 1. On gpt-oss a must-call `tool_choice` is post-checked, not constrained. `forcedCallEnforcement` returns "post-check" for
    a template with no JSON call form, which harmony is. The reply runs free, and `runToolTurn` returns `errNoForcedCall`
    when it holds no parsed call.
-2. serve's reasoning budget (`internal/serveapp/budget.go:server.applyBudget`, the room rule) gives the analysis channel at
+2. serve's reasoning budget (`internal/app/serveapp/budget.go:server.applyBudget`, the room rule) gives the analysis channel at
    most three quarters of `max_tokens`, so 96 of 128.
 3. On harmony the budget's forced close (`chat/budget.go:harmonyBudgetFor`) is `<|end|><|start|>assistant<|channel|>final<|message|>`.
    That is the final channel, a prose answer. A harmony call goes on the commentary channel

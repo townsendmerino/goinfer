@@ -60,7 +60,7 @@ not a whole number of 64-row blocks, and the footprint did not move:
 - the 0.5B went from 1,030 to 1,057 across eight sessions;
 - the 1.5B went from 2,050 to 2,051.
 
-KV2's copy path never ran. `internal/serveapp/sessions.go:pickSession` gives a new conversation the only idle session
+KV2's copy path never ran. `internal/app/serveapp/sessions.go:pickSession` gives a new conversation the only idle session
 holding the preamble, rewound in place, whenever the prompt keeps more of that session than it discards. Each
 conversation took over the previous one's session.
 

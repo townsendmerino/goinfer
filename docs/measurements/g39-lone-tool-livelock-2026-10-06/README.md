@@ -19,7 +19,7 @@ Qwen2.5-7B-Instruct passed everything. G39 asked which part was the model, the t
 
 ## Cause
 
-`forcedTool` (`internal/serveapp/tools.go`) returned the request's only tool as FORCED whenever exactly one tool was supplied and `tool_choice` was `auto` or absent, so the call was constrained to that tool's grammar from the first token of
+`forcedTool` (`internal/app/serveapp/tools.go`) returned the request's only tool as FORCED whenever exactly one tool was supplied and `tool_choice` was `auto` or absent, so the call was constrained to that tool's grammar from the first token of
 EVERY turn, including the one after the tool's own result. A client with a single tool could never get an answer: the check's name for it, the agent-livelock shape, is exactly this. The comment on the function said the model was "still
 free to answer in prose"; it was not. (The Anthropic route was already right: `anthropicForcedTool` never forces under `auto`.)
 

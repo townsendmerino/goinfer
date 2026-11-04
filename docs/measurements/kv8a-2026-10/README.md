@@ -108,7 +108,7 @@ decode are another kernel class, as they are on today's strict-extension path, a
 S–M on CUDA, about a day of session time:
 - the save after prefill and before the first decode;
 - the restore, which copies the checkpoint in, truncates the attention KV to `c`, and prefills from `c`;
-- `internal/kvmgr/slots.go:scoreRecurrent` returning `c` (it returns 0 today whenever the request is not a strict extension of the
+- `internal/runtime/kvmgr/slots.go:scoreRecurrent` returning `c` (it returns 0 today whenever the request is not a strict extension of the
   committed sequence);
 - the plan charge and the decline;
 - the grid cells;
@@ -140,7 +140,7 @@ Graded against the registration above; records stay on nobara under `~/goinfer-b
 ## B35's case on the KV8a build (a measurement, registered 2026-10-21 before it runs)
 
 Asked 2026-10-21: does KV8a's checkpoint at the end of the prompt cover B35's case, Qwen3.5's chat template dropping the empty think block
-when it renders turn 1's reply, so turn 2 diverges before turn 1's prompt ends? **From the code, no:** `internal/kvmgr/slots.go:scoreRecurrent`
+when it renders turn 1's reply, so turn 2 diverges before turn 1's prompt ends? **From the code, no:** `internal/runtime/kvmgr/slots.go:scoreRecurrent`
 restores the checkpoint at `c` only for a request that matches the sequence through `c`, and "a divergence before c … stay[s] cold". So
 turns 2 and 3 are expected to prefill from 0. The measurement checks that on the real model: B35's own scenario (`docs/measurements/b35-e2e-2026-10-20`
 on its branch: `gate.py` and `grade.py` at `fbae3175`, 4k and 8k system prompts, `/v1/chat/completions`, greedy, 24 new tokens) with
@@ -172,7 +172,7 @@ Asked 2026-10-22 (Francis, through the coordinator): the Metal gate M2(b) is gra
 
 **Prior reading, cited rather than assumed current:** gate 2(b)'s third run (`gate2b-2026-10-20-2248/`, pin `466aa167`) already ran
 the chain: 7 pairs at `-ctx 32768`, 1 tested (#0, restored at turn 1's 17,960 tokens), 6 diverging before turn 1's end (cold by
-design), all 7 equal to cold. The arm has changed since: KV2-FU1 (`e59788c2`, `83e45f9e`) touched `internal/kvmgr/slots.go` and
+design), all 7 equal to cold. The arm has changed since: KV2-FU1 (`e59788c2`, `83e45f9e`) touched `internal/runtime/kvmgr/slots.go` and
 `decoder/resident_reuse.go`, the paths the restore goes through. So it is measured again rather than carried forward.
 
 | | |

@@ -12,7 +12,7 @@ data.
   through `host_statistics64(mach_host_self(), HOST_VM_INFO64)` (`mach/vm_statistics.h`, `struct vm_statistics64`: `internal_page_count`,
   `purgeable_count`, `wire_count`, `compressor_page_count`), page size from `host_page_size`, physical from `hw.memsize`; called without cgo
   through `purego`, which aikit's GPU module already uses. No `vm_stat` text and no fork.
-- **Linux:** `/proc/meminfo` `MemAvailable`, the kernel's own estimate, which counts reclaimable cache. `internal/mem/probe/read_linux.go:read`
+- **Linux:** `/proc/meminfo` `MemAvailable`, the kernel's own estimate, which counts reclaimable cache. `internal/runtime/mem/probe/read_linux.go:read`
   already reads it; it does not change.
 - **Today, for the record:** macOS reads `vm_stat` text: free + inactive + speculative + purgeable (`decoder.HostRAMAvailableBytes` then).
   Active file cache counts as used: after a 9B load exited the reading was 8.13 GB and 11.38 GB after a purge
