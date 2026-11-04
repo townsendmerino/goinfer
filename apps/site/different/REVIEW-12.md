@@ -8,9 +8,9 @@
 | No C compiler / CUDA toolkit / Python to build or run | README lines 5 and 364-365; docs/cuda-backend.md lines 1-5, 25 |
 | Five modules, backends separate, WebGPU is the only cgo one | docs/ARCHITECTURE.md "Modules" table |
 | CI cleanliness guard: `go list -deps` and `go list -m all` must not mention webgpu, gocudrv, purego, aikit/gpu, backend modules | .github/workflows/ci.yml lines ~213-241; ARCHITECTURE section 6 |
-| CUDA: gocudrv + purego dlopen libcuda.so.1; embedded PTX, driver JIT; NVRTC only offline | ARCHITECTURE "CUDA" section; cuda/doc.go; cuda/build_ptx.sh header |
+| CUDA: gocudrv + purego dlopen libcuda.so.1; embedded PTX, driver JIT; NVRTC only offline | ARCHITECTURE "CUDA" section; backend/cuda/doc.go; backend/cuda/build_ptx.sh header |
 | 932 KB embedded PTX, 14.6 MB binary, JIT 4.94 s cold / 4.09 s warm on driver 595.58.03 | docs/cuda-backend.md "What ships" (pre-2026-08-25 driver, the doc says re-measure) |
-| Metal: purego + Obj-C, MSL compiled at run time, every file `//go:build darwin`, no tag | ARCHITECTURE "Metal"; metal/backend.go line 1 |
+| Metal: purego + Obj-C, MSL compiled at run time, every file `//go:build darwin`, no tag | ARCHITECTURE "Metal"; backend/metal/backend.go line 1 |
 | WebGPU: oliverbestmann/webgpu, cgo, -tags gpu, own module, not in release assets, Vulkan/Metal/DX12; prebuilt libs come as Go modules | ARCHITECTURE "WebGPU"; docs/webgpu-primer.md layer 4; gpu/go.mod (libs-* entries); release-assets.yml comment "needs cgo, so it cannot be in a static release asset" |
 | Cold-user timings 12.97 / 6.19 / 2.05 s, machine, driver 595.91.07, Go 1.27.0, v0.18.0, empty GOMODCACHE | docs/measurements/cold-user-2026-09-18-nobara-pc.md, Scenario A Numbers table and contamination item 3 |
 | That run had CUDA 13.2 toolkit installed but unused | same record, contamination item 5 |
@@ -18,7 +18,7 @@
 | Missing driver: falls back to CPU with a one-line stderr note | docs/cuda-backend.md "No NVIDIA driver / dlopen fails" |
 | Go 1.27+ to build from source | README line 27 |
 | Commands: cmd/serve, metal/cmd/serve, `-tags cuda` cuda/cmd/serve, Pi cross-compile, `--version` prints backends, `-tags gpu` gpu/cmd/serve, root -tags cuda fails the build | README Install and Small devices; docs/cuda-backend.md lines 11-14, 265-290 |
-| NVRTC pinned 12.6.85 for audited PTX; regen uses a venv with NVRTC wheels | cuda/doc.go; cuda/testdata/REGEN.md header |
+| NVRTC pinned 12.6.85 for audited PTX; regen uses a venv with NVRTC wheels | backend/cuda/doc.go; cuda/testdata/REGEN.md header |
 | Repo benchmark scripts are Python | scripts/bench_peer.py exists |
 
 ## Conflicts and how I resolved them

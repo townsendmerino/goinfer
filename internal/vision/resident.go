@@ -3,7 +3,7 @@ package vision
 import "fmt"
 
 // ResidentEncoder is a device-resident SigLIP forward — the GPU path in
-// goinfer/gpu (vision_encoder.go), which uploads the tower once and runs every
+// goinfer/backend/webgpu (vision_encoder.go), which uploads the tower once and runs every
 // op on-device. vision stays pure-Go: it delegates Forward here when a resident
 // backend is attached (EnableResident), and the gpu module plugs the factory in
 // from its init() under -tags gpu. ForwardPatches consumes GridPatches output.

@@ -492,7 +492,7 @@ A resident backend keeps its own cache on the device, one fixed reservation per 
 | | K/V precision | MLA | sliding-window layers | context when not pinned |
 |---|---|---|---|---|
 | CPU | f32, or int8 (`--kv i8`) | the latent | a ring the size of the window | the model's maximum, unless the fit guard lowers it; allocated per request |
-| CUDA | f16 by default for dense llama, mistral, qwen2, qwen3 and phi3 (`--kv f32` for exact); f32 for every other family | one latent buffer | the window plus 512 positions, compacted as the sequence grows (`cuda/kvwindow.go`; `--windowed-kv=false` for the whole context) | the largest that fits, up to 16384 and never under 4096 |
+| CUDA | f16 by default for dense llama, mistral, qwen2, qwen3 and phi3 (`--kv f32` for exact); f32 for every other family | one latent buffer | the window plus 512 positions, compacted as the sequence grows (`backend/cuda/kvwindow.go`; `--windowed-kv=false` for the whole context) | the largest that fits, up to 16384 and never under 4096 |
 | Metal | f16, or int8 (`--kv i8`); padded to 8 positions | not resident | the whole context, masked | the largest that fits beside the weights and its slots, up to 16384 and never under 4096 (`-ctx` up to 32768) |
 | WebGPU | f32, f16 or int8 (`--kv`) | resident | the whole context, masked | a ceiling of 16k / 32k / 64k by precision |
 
@@ -623,7 +623,7 @@ The dependency therefore points from the backend into the core, and no GPU libra
 module.
 
 **Getting a backend into a binary.** A binary gets a backend by importing it.
-`{cuda,metal,gpu}/cmd/{chat,serve}` each blank-import their own. The root `cmd/serve` and
+`backend/{cuda,metal,webgpu}/cmd/{chat,serve}` each blank-import their own. The root `cmd/serve` and
 `demo/chat` refuse to build with a backend tag.
 
 At run time, `--backend` picks one by name. A name the binary was not built with falls back to
@@ -697,12 +697,12 @@ weight matmuls on the device. `Model.DecodePath()` and serve's banner say which 
 
 ### CUDA
 
-The `cuda/` module, built with `-tags cuda` and `CGO_ENABLED=0`.
+The `backend/cuda/` module, built with `-tags cuda` and `CGO_ENABLED=0`.
 
 - **No cgo, and no CUDA toolkit at run time.** The device layer is `aikit/gpu`. It reaches the
   driver through `eitamring/gocudrv`, which uses `purego` to `dlopen` `libcuda.so.1`. The kernels
   ship as prebuilt PTX modules embedded in the binary, and the driver JIT-compiles them. NVRTC is
-  used only offline, to regenerate the PTX (`cuda/build_ptx.sh`).
+  used only offline, to regenerate the PTX (`backend/cuda/build_ptx.sh`).
 - **Prefill** is batched from 8 tokens for int4 projections. An int8int8 model takes the per-token
   path, and `PrefillPath` says so at load.
   - Two fast kernels, fused attention and a tensor-core int4 GEMM, switch on at **512** prompt tokens
@@ -731,7 +731,7 @@ The `cuda/` module, built with `-tags cuda` and `CGO_ENABLED=0`.
 
 ### Metal
 
-The `metal/` module, darwin only, with no build tag.
+The `backend/metal/` module, darwin only, with no build tag.
 
 - **No cgo.** `aikit/gpu`'s Metal layer calls the Objective-C runtime through `purego`, and
   compiles the MSL kernels at run time. Every file is `//go:build darwin`, so a darwin build
@@ -755,12 +755,12 @@ The `metal/` module, darwin only, with no build tag.
 
 ### WebGPU
 
-The `gpu/` module, built with `-tags gpu`, and cgo.
+The `backend/webgpu/` module (`package webgpu`), built with `-tags gpu`, and cgo.
 
 - **The one cgo dependency** is `oliverbestmann/webgpu`, a cgo binding over prebuilt wgpu-native
   libraries, which drive Vulkan, Metal or DX12. It replaced the unmaintained `cogentcore/webgpu` on
   2026-09-12 (`a16a537d`). Because it needs cgo, WebGPU is not in the release binaries.
-- **The resident runner** is `gpu.DecodeRunner`, with WGSL kernels.
+- **The resident runner** is `webgpu.DecodeRunner`, with WGSL kernels.
   - WebGPU is the only backend that runs a Mamba-2 hybrid resident: Nemotron-H (`FeatSSM`),
     including Nemotron 3 Nano's MoE block.
   - It also runs MLA and the DeltaNet hybrids resident.
@@ -944,13 +944,13 @@ flowchart TB
   subgraph AIKITGPU["github.com/townsendmerino/aikit/gpu  (cgo-free device layer)"]
     AG["CUDA via gocudrv (purego dlopen) · Metal via purego + Obj-C"]
   end
-  subgraph CUDA["goinfer/cuda  (-tags cuda · cgo-free)"]
+  subgraph CUDA["goinfer/backend/cuda  (-tags cuda · cgo-free)"]
     CU["resident runner · embedded PTX · C′ expert streaming<br/>cmd/chat · cmd/serve"]
   end
-  subgraph METAL["goinfer/metal  (darwin · cgo-free)"]
+  subgraph METAL["goinfer/backend/metal  (darwin · cgo-free)"]
     MT["resident runner · MSL compiled at run time · expert streaming<br/>cmd/chat · cmd/serve"]
   end
-  subgraph GPU["goinfer/gpu  (-tags gpu · the one cgo module)"]
+  subgraph GPU["goinfer/backend/webgpu  (-tags gpu · the one cgo module)"]
     WG["oliverbestmann/webgpu → wgpu-native<br/>DecodeRunner · staged path · SSM residency<br/>cmd/chat · cmd/serve"]
   end
   DEC --> AK
@@ -987,10 +987,10 @@ of the root's `go.mod`.
 | Module | Contents | Requires beyond the root and `aikit` |
 |---|---|---|
 | `github.com/townsendmerino/goinfer` | everything in the Packages table below except the three backends | `golang.org/x/text` |
-| `github.com/townsendmerino/goinfer/gpu` | the WebGPU backend (`-tags gpu`), `gpu/cmd/chat`, `gpu/cmd/serve` | `oliverbestmann/webgpu` (cgo) |
-| `github.com/townsendmerino/goinfer/cuda` | the CUDA backend (`-tags cuda`), `cuda/cmd/chat`, `cuda/cmd/serve` | `aikit/gpu`, `eitamring/gocudrv` |
-| `github.com/townsendmerino/goinfer/metal` | the Metal backend (darwin), `metal/cmd/chat`, `metal/cmd/serve` | `aikit/gpu` (which brings `purego`), `golang.org/x/sys` |
-| `github.com/townsendmerino/goinfer/demo/agent` | a local RAG coding agent over MCP | the MCP Go SDK; `goinfer/gpu` for its WebGPU web build |
+| `github.com/townsendmerino/goinfer/backend/webgpu` | the WebGPU backend (`-tags gpu`), `backend/webgpu/cmd/chat`, `backend/webgpu/cmd/serve` | `oliverbestmann/webgpu` (cgo) |
+| `github.com/townsendmerino/goinfer/backend/cuda` | the CUDA backend (`-tags cuda`), `backend/cuda/cmd/chat`, `backend/cuda/cmd/serve` | `aikit/gpu`, `eitamring/gocudrv` |
+| `github.com/townsendmerino/goinfer/backend/metal` | the Metal backend (darwin), `backend/metal/cmd/chat`, `backend/metal/cmd/serve` | `aikit/gpu` (which brings `purego`), `golang.org/x/sys` |
+| `github.com/townsendmerino/goinfer/demo/agent` | a local RAG coding agent over MCP | the MCP Go SDK; `goinfer/backend/webgpu` for its WebGPU web build |
 
 **Four of the five are the ones you build against**; `demo/agent` is a demo.
 [api-tiers.md](api-tiers.md) lists all four submodules as Experimental.
@@ -1004,12 +1004,12 @@ proves that every module builds without one at each tag.
 module named explicitly. Name a backend module to build against it, or to pin, vendor or audit it:
 
 ```bash
-go get github.com/townsendmerino/goinfer/cuda@latest
+go get github.com/townsendmerino/goinfer/backend/cuda@latest
 ```
 
 **Releases tag all five modules together.** [RELEASING.md](../RELEASING.md) is the authority: tag the
 root, then point each submodule at that tag and tag it. Submodule tags carry the module path as a
-prefix (`cuda/vX.Y.Z`, `gpu/vX.Y.Z`, `metal/vX.Y.Z`, `demo/agent/vX.Y.Z`), which is how the module
+prefix (`backend/cuda/vX.Y.Z`, `backend/webgpu/vX.Y.Z`, `backend/metal/vX.Y.Z`, `demo/agent/vX.Y.Z`), which is how the module
 proxy resolves a submodule. Bare `vX.Y.Z` tags are the root's. The
 [releases page](https://github.com/townsendmerino/goinfer/releases) has what is current.
 
@@ -1017,8 +1017,8 @@ proxy resolves a submodule. Bare `vX.Y.Z` tags are the root's. The
 
 | binary | main package | notes |
 |---|---|---|
-| `goinfer-chat` | `demo/chat` (CPU only); `cuda/cmd/chat`, `metal/cmd/chat`, `gpu/cmd/chat` | the release builds darwin from `metal/cmd/chat`, Linux from `cuda/cmd/chat` and Windows from `demo/chat`, all `CGO_ENABLED=0`, plus the baked-in-model builds (§2) |
-| `goinfer-serve` | `cmd/serve` (CPU only); `cuda/cmd/serve`, `metal/cmd/serve`, `gpu/cmd/serve` | the same split |
+| `goinfer-chat` | `demo/chat` (CPU only); `backend/cuda/cmd/chat`, `backend/metal/cmd/chat`, `backend/webgpu/cmd/chat` | the release builds darwin from `backend/metal/cmd/chat`, Linux from `backend/cuda/cmd/chat` and Windows from `demo/chat`, all `CGO_ENABLED=0`, plus the baked-in-model builds (§2) |
+| `goinfer-serve` | `cmd/serve` (CPU only); `backend/cuda/cmd/serve`, `backend/metal/cmd/serve`, `backend/webgpu/cmd/serve` | the same split |
 | `prequant` | `cmd/prequant` | builds `.giw` bundles |
 | `gate` | `cmd/gate` | the gate runner over `go test -json`: `census`, `heavy`, `parity`, `composition`, `selector`, `gpu`, `mutation` |
 
@@ -1047,9 +1047,9 @@ file, held against the tree by `TestLayout_arrows` and against this file by `Tes
 | `internal/chatapp`, `internal/serveapp` | the logic of the two binaries |
 | `internal/fitcmd`, `internal/pullcmd`, `internal/servecheck`, `internal/swapguard` | `fit`; `pull`; `serve check`; the swap tripwire |
 | `internal/diskfree` | a filesystem's free space, for the checks that refuse a large write up front |
-| `gpu` (`-tags gpu`) | the WebGPU backend |
-| `cuda` (`-tags cuda`) | the CUDA backend |
-| `metal` (darwin) | the Metal backend |
+| `backend/webgpu` (`-tags gpu`) | the WebGPU backend |
+| `backend/cuda` (`-tags cuda`) | the CUDA backend |
+| `backend/metal` (darwin) | the Metal backend |
 
 ## The contract
 
@@ -1083,31 +1083,37 @@ Every import from one goinfer package to another, by repository-relative directo
 | `apps/examples/structured` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
 | `apps/sdktest` |  | `server` |
 | `apps/site/cmd/build` | `site/internal/site` |  |
+| `backend/cuda` | `backend/cuda/internal/gpudev`, `backend/cuda/internal/launchgeom`, `backend/cuda/internal/wpack`, `decoder`, `internal/audio`, `internal/cost`, `internal/mem`, `internal/program`, `internal/sampling`, `internal/vision`, `multimodal` | `chat`, `embeddinggemma2`, `internal/clef`, `internal/giw`, `internal/loadflags`, `internal/mem/probe`, `internal/memgate`, `internal/modelload`, `internal/sb2census`, `internal/towerid`, `internal/whisper`, `internal/wrappedupload`, `tokenizer` |
+| `backend/cuda/cmd/chat` | `backend/cuda`, `internal/chatapp` |  |
+| `backend/cuda/cmd/serve` | `backend/cuda`, `internal/serveapp` |  |
+| `backend/cuda/internal/qwencuda` | `backend/cuda/internal/gpudev`, `internal/mem`, `internal/vision` |  |
+| `backend/cuda/internal/visioncuda` | `backend/cuda/internal/gpudev`, `internal/mem`, `internal/vision` |  |
+| `backend/cuda/kernels` |  | `backend/cuda/internal/gpudev`, `backend/cuda/internal/launchgeom`, `backend/cuda/internal/wpack`, `internal/hybridattn`, `internal/mamba2`, `internal/sampling` |
+| `backend/cuda/s4siglip` |  | `backend/cuda/internal/visioncuda`, `internal/vision` |
+| `backend/metal` | `backend/metal/internal/gpudev`, `backend/metal/kernels`, `decoder`, `embeddinggemma2`, `internal/audio`, `internal/cost`, `internal/f16`, `internal/mem`, `internal/mem/probe`, `internal/program`, `internal/vision`, `multimodal` | `chat`, `constrain`, `internal/confidence`, `internal/fidelity`, `internal/giw`, `internal/loadflags`, `internal/memgate`, `internal/modelload`, `internal/prequant`, `internal/sb2census`, `internal/towerid`, `internal/wrappedupload`, `tokenizer` |
+| `backend/metal/cmd/chat` | `backend/metal`, `internal/chatapp` |  |
+| `backend/metal/cmd/serve` | `backend/metal`, `internal/serveapp` |  |
+| `backend/metal/internal/qwenmetal` | `backend/metal/internal/gpudev`, `internal/mem`, `internal/vision` |  |
+| `backend/metal/internal/visionmetal` | `backend/metal/internal/gpudev`, `internal/mem`, `internal/vision` |  |
+| `backend/metal/kernels` | `internal/f16` | `backend/metal/internal/gpudev`, `internal/hybridattn`, `internal/mamba2`, `internal/sampling` |
+| `backend/webgpu` | `backend/webgpu/internal/kernels`, `decoder`, `internal/cost`, `internal/mem`, `internal/program` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/memgate`, `internal/sb2census`, `internal/towerid`, `internal/vision`, `internal/wrappedupload`, `multimodal`, `tokenizer` |
+| `backend/webgpu/cmd/chat` | `backend/webgpu`, `internal/chatapp` |  |
+| `backend/webgpu/cmd/serve` | `backend/webgpu`, `internal/serveapp` |  |
+| `backend/webgpu/internal/kernels` | `internal/adapter`, `internal/cost`, `internal/mem`, `internal/vision`, `multimodal` | `internal/hybridattn`, `internal/sampling` |
 | `chat` | `tokenizer` | `internal/codec`, `multimodal` |
 | `cmd/gate` | `internal/mem/probe`, `internal/paritykey`, `tokenizer` |  |
 | `cmd/hostmem` | `internal/mem/probe` |  |
 | `cmd/prequant` | `decoder`, `internal/prequant` |  |
 | `cmd/serve` | `internal/serveapp` |  |
 | `constrain` |  | `tokenizer` |
-| `cuda` | `cuda/internal/gpudev`, `cuda/internal/launchgeom`, `cuda/internal/wpack`, `decoder`, `internal/audio`, `internal/cost`, `internal/mem`, `internal/program`, `internal/sampling`, `internal/vision`, `multimodal` | `chat`, `embeddinggemma2`, `internal/clef`, `internal/giw`, `internal/loadflags`, `internal/mem/probe`, `internal/memgate`, `internal/modelload`, `internal/sb2census`, `internal/towerid`, `internal/whisper`, `internal/wrappedupload`, `tokenizer` |
-| `cuda/cmd/chat` | `cuda`, `internal/chatapp` |  |
-| `cuda/cmd/serve` | `cuda`, `internal/serveapp` |  |
-| `cuda/internal/qwencuda` | `cuda/internal/gpudev`, `internal/mem`, `internal/vision` |  |
-| `cuda/internal/visioncuda` | `cuda/internal/gpudev`, `internal/mem`, `internal/vision` |  |
-| `cuda/kernels` |  | `cuda/internal/gpudev`, `cuda/internal/launchgeom`, `cuda/internal/wpack`, `internal/hybridattn`, `internal/mamba2`, `internal/sampling` |
-| `cuda/s4siglip` |  | `cuda/internal/visioncuda`, `internal/vision` |
 | `decoder` | `chat`, `constrain`, `internal/adapter`, `internal/cost`, `internal/diskfree`, `internal/f16`, `internal/giw`, `internal/hybridattn`, `internal/kvmgr`, `internal/mamba2`, `internal/mem`, `internal/mem/probe`, `internal/program`, `internal/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/paritykey`, `internal/vision`, `multimodal` |
 | `demo/agent/agent` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
-| `demo/agent/cmd/agent-web` | `demo/agent/agent`, `demo/agent/internal/embedmodel`, `gpu` |  |
+| `demo/agent/cmd/agent-web` | `backend/webgpu`, `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |
 | `demo/agent/cmd/stdlib-agent` | `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |
 | `demo/chat` | `internal/chatapp` |  |
 | `embeddinggemma2` | `internal/audio`, `internal/vision`, `multimodal`, `tokenizer` |  |
 | `engine` | `constrain`, `decoder`, `internal/cost` |  |
 | `engine/enginetest` | `engine` |  |
-| `gpu` | `decoder`, `gpu/internal/kernels`, `internal/cost`, `internal/mem`, `internal/program` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/memgate`, `internal/sb2census`, `internal/towerid`, `internal/vision`, `internal/wrappedupload`, `multimodal`, `tokenizer` |
-| `gpu/cmd/chat` | `gpu`, `internal/chatapp` |  |
-| `gpu/cmd/serve` | `gpu`, `internal/serveapp` |  |
-| `gpu/internal/kernels` | `internal/adapter`, `internal/cost`, `internal/mem`, `internal/vision`, `multimodal` | `internal/hybridattn`, `internal/sampling` |
 | `internal/audio` | `internal/vision` |  |
 | `internal/chatapp` | `chat`, `constrain`, `decoder`, `internal/batchio`, `internal/cliutil`, `internal/codec`, `internal/decidecmd`, `internal/fitcmd`, `internal/giw`, `internal/hwreport`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/vision`, `multimodal`, `pull`, `tokenizer` |  |
 | `internal/clef` | `decoder`, `tokenizer` | `internal/modelload` |
@@ -1129,12 +1135,6 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/towerid` | `embeddinggemma2`, `internal/audio`, `internal/kernelprint`, `internal/vision`, `multimodal` |  |
 | `internal/whisper` | `internal/audio`, `tokenizer` | `multimodal` |
 | `internal/wrappedupload` | `decoder` |  |
-| `metal` | `decoder`, `embeddinggemma2`, `internal/audio`, `internal/cost`, `internal/f16`, `internal/mem`, `internal/mem/probe`, `internal/program`, `internal/vision`, `metal/internal/gpudev`, `metal/kernels`, `multimodal` | `chat`, `constrain`, `internal/confidence`, `internal/fidelity`, `internal/giw`, `internal/loadflags`, `internal/memgate`, `internal/modelload`, `internal/prequant`, `internal/sb2census`, `internal/towerid`, `internal/wrappedupload`, `tokenizer` |
-| `metal/cmd/chat` | `internal/chatapp`, `metal` |  |
-| `metal/cmd/serve` | `internal/serveapp`, `metal` |  |
-| `metal/internal/qwenmetal` | `internal/mem`, `internal/vision`, `metal/internal/gpudev` |  |
-| `metal/internal/visionmetal` | `internal/mem`, `internal/vision`, `metal/internal/gpudev` |  |
-| `metal/kernels` | `internal/f16` | `internal/hybridattn`, `internal/mamba2`, `internal/sampling`, `metal/internal/gpudev` |
 | `multimodal` | `internal/audio`, `internal/vision`, `tokenizer` |  |
 | `pull` | `internal/diskfree` | `decoder`, `tokenizer` |
 | `server` | `internal/inproc`, `internal/serveapp` |  |
@@ -1146,10 +1146,10 @@ No import, made or recorded, may break one; they are edited by hand in `imports.
 | rule | packages | may not import | why |
 |---|---|---|---|
 | towers-standalone | `internal/vision`, `internal/audio`, tests included | any goinfer package; (`internal/audio` may import `internal/vision`); anything outside the standard library but `github.com/townsendmerino/aikit/linalg`, `github.com/townsendmerino/aikit/embed` | The towers moved from aikit (AX) as model semantics over aikit's kernels: no goinfer package, and from outside the standard library only aikit's linalg and embed. One exception: internal/audio may import internal/vision, whose tower program type the audio towers walk (Francis, 2026-10-29). |
-| gpudev-standalone | `cuda/internal/gpudev`, `metal/internal/gpudev`, tests included | any goinfer package | The device substrate (AX) sits under every backend package and imports none of them, nor anything else of goinfer's. |
-| kernels-free-of-decoder | `cuda/kernels`, `metal/kernels`, `gpu/internal/kernels`, tests included | `decoder` | Backend kernel tests left the packages that import decoder (SB1 step 1) so a decoder edit stops re-running them. |
+| gpudev-standalone | `backend/cuda/internal/gpudev`, `backend/metal/internal/gpudev`, tests included | any goinfer package | The device substrate (AX) sits under every backend package and imports none of them, nor anything else of goinfer's. |
+| kernels-free-of-decoder | `backend/cuda/kernels`, `backend/metal/kernels`, `backend/webgpu/internal/kernels`, tests included | `decoder` | Backend kernel tests left the packages that import decoder (SB1 step 1) so a decoder edit stops re-running them. |
 | probe-standalone | `internal/mem/probe`, tests included | any goinfer package | The one reader of the OS's memory account (MM0) imports no goinfer package; that it is the only reader is TestOnlyProbeReadsOSMemory. |
-| root-free-of-backends | `module:root`, tests included | `cuda`; `metal`; `gpu`; `github.com/townsendmerino/aikit/gpu`; `github.com/ebitengine/purego`; `github.com/eitamring/gocudrv`; (the root go.mod requires none of them) | The root module builds without a GPU toolchain or binding: the backends are their own modules, which import the root, never the reverse. |
+| root-free-of-backends | `module:root`, tests included | `backend/cuda`; `backend/metal`; `backend/webgpu`; `github.com/townsendmerino/aikit/gpu`; `github.com/ebitengine/purego`; `github.com/eitamring/gocudrv`; (the root go.mod requires none of them) | The root module builds without a GPU toolchain or binding: the backends are their own modules, which import the root, never the reverse. |
 | scheduler-standard-library | `internal/scheduler`, tests included | any goinfer package | The scheduling policy (SB6) is decisions over plain values: no goinfer package and nothing outside the standard library, so it can be tested on a virtual clock with nothing loaded. |
 | engine-below-the-shell | `engine`, `engine/enginetest`, tests included | `internal/serveapp`; `internal/chatapp`; `cmd` | The engine package (SB7) is what the serving shell asks of a model; the shell imports it and its fakes, never the reverse, so a fake engine needs no server. |
 

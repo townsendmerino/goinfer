@@ -15,7 +15,7 @@ differing — chunked prefill no longer matched a single pass, because chunks 0.
 A second, smaller defect sat beside it: the fast-prefill floor (512) is judged on `passPromptLen = startPos + M`, the prompt SO FAR, so a first chunk narrower than 512 (the OOM-halving path, or `GOINFER_PREFILL_CHUNK`)
 ran exact while its later chunks ran fast — mixed numerics inside one prompt, contradicting the field's own comment ("a property of the PROMPT, not of the chunk").
 
-## The fix (`cuda/prefill.go`, `cuda/resident.go`)
+## The fix (`backend/cuda/prefill.go`, `backend/cuda/resident.go`)
 
 `prefillChunked` records two facts for the duration of a multi-chunk prefill: `chunkOrdinary` (the FINAL tail is the ordinary `tailLastLogits`, so its non-final passes take the kernels the final pass takes) and
 `chunkPromptLen` (the whole prompt's length, so the floor is judged on the prompt). `forceExactKernels` is now `tail != tailLastLogits && !(tail == tailKVOnly && chunkOrdinary)`. **A HiddenLast (embedding) prefill leaves

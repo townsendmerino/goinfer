@@ -21,13 +21,13 @@
   The rows live in `docs/tasks/task-memory-campaign-2026-10.md`'s ledger, which stays the record; this entry only puts
   them in a queue. Take them from the ledger: MEM6 (the CUDA cells and the `RssAnon` gate), MEM10 (a pre-permuted
   `cuda` target registered from the mapping), D8b-cuda (after D8b-build merges) and MEM13-copies-CUDA (the whole-tensor
-  host packing in `cuda/resident.go:packWeight`). Close a row there, in the same commit as the work, and strike it here.
+  host packing in `backend/cuda/resident.go:packWeight`). Close a row there, in the same commit as the work, and strike it here.
 
 - **P35 · Gemma-4 prefill falls back to one token at a time past about 12k attended keys on a 48 KB shared-memory card
   (sm_75) — SUPERSEDED 2026-10-18: branch `kv3-tiled-2026-10` already covers it, and nobara is bringing that branch onto
   main. Option A is dropped (owner).** `linux`.
 
-  - **The branch covers it:** its row-batched split-KV prefill kernels (`cuda/prefill_splitkv.cu` on that branch) take the
+  - **The branch covers it:** its row-batched split-KV prefill kernels (`backend/cuda/prefill_splitkv.cu` on that branch) take the
     head dim per layer. `TestPrefillSplitKV_rowsEqualAttnBatched` holds them bit-equal to `attn_batched` for head dims 20 to
     512. Its record (`docs/measurements/kv3-tiled-exact-2026-10-13.md` on that branch) has Gemma-4-E4B at 12,400 tokens, and
     a served smoke of 12,215 tokens ran in 55.9 s with no decline.
@@ -39,8 +39,8 @@
     logged `prefill_fallback=sequential`. Time to first token was 48–128 s on 11–26k-token prompts: batched ran about
     227 tok/s, the fallback about 52.
   - **Cause:** the exact batched attention keeps a whole row of scores in shared memory (`(nWin+128)*4` bytes,
-    `cuda/resident.go:attnShmemBytes`), so it cannot run past about 12,160 keys on 48 KB. The fused attention, whose
-    shared memory does not grow with the span, serves only head dims 64 and 128 (`cuda/prefill.go:cudaResident.checkPrefillShmem`).
+    `backend/cuda/resident.go:attnShmemBytes`), so it cannot run past about 12,160 keys on 48 KB. The fused attention, whose
+    shared memory does not grow with the span, serves only head dims 64 and 128 (`backend/cuda/prefill.go:cudaResident.checkPrefillShmem`).
   - **Scoped options (none built):**
     - A, a tiled exact kernel: one pass for the max, a second tile by tile for the exponent sum and the value sum, in the
       original order. Bit-identical by construction, about 1 day.
@@ -68,7 +68,7 @@
     (`docs/measurements/p34-mellum-rollback-2026-10-19/README.md`: at `-ctx 8192` a 600-token edit re-prefilled on the old build,
     17.4 s, and reused 6,412 tokens on the new one, 1.9 s; the load is granted 576 positions and a follow-up may diverge 1,024
     back). The reading below is as filed, before the fix.
-    - `cuda/kvwindow.go:cudaResident.kvGrantRollback` returns at once when `cacheExperts` is set ("its cache was sized to what
+    - `backend/cuda/kvwindow.go:cudaResident.kvGrantRollback` returns at once when `cacheExperts` is set ("its cache was sized to what
       was free"). The rollback stays at the base slack less the step: 448 positions, up to 512 at the best point of the
       compaction cycle.
     - E0's reused cell resends the previous prompt with its last 512 tokens changed. With the template's end-of-turn and
@@ -116,7 +116,7 @@
   - **The gap** (`docs/measurements/p28-gemma4-metal-ttft-2026-10/README.md`, steps 1 and 2): under 4,096 prompt tokens
     E2B's batched prefill runs at 143.5 tok/s, against Qwen2.5-Coder-1.5B's 900 on the same Mac.
   - **Why the kernel is the suspect:** E2B's head dims are 256 and 512, above `attention_prefill_fused`'s 128
-    (`metal/prefill.go:resident.prefillAttnKernels`). So every attention layer runs the exact kernel, `attention_prefill`:
+    (`backend/metal/prefill.go:resident.prefillAttnKernels`). So every attention layer runs the exact kernel, `attention_prefill`:
     one threadgroup per row and head, a scalar dot per key, and a serial P·V scan.
   - **The work:** raise the fused (flash) kernel's `ATTN_MAXHD` to 512. That means a threadgroup and register budget per
     head dim, and tuning. Its online-softmax rescale is not bit-identical to the exact kernel (the P19 category, as the
@@ -193,7 +193,7 @@
     - `q4k` has no `.giw` form that would take the mapped file out of the fit guard's price.
     - Not re-queued: it is back with the owner for options (owner, 2026-10-17).
   - **The A/B on the 0.5B, forced to one slot: registered 2026-10-18, before it runs (owner: queue it on the 0.5B).**
-    - **Counter test first** (`metal/p29_route_test.go`, by day, the 0.5B q4_k_m):
+    - **Counter test first** (`backend/metal/p29_route_test.go`, by day, the 0.5B q4_k_m):
       - main reads the sequential loop at one resident KV slot (1 row per step) and the batched step at two (8);
       - the lift branch `p29-one-slot-step-2026-10` (88a08574) reads the step at both.
       The batched step does not apply on main, so P29 stays open.
@@ -218,7 +218,7 @@
         192 tok/s, the step about 438 tok/s over the 512-token prompt.
       - The desktop's load cannot move a paired ratio that far from 1.02.
       - The lift fast-forwarded to main as registered, rebased on main with its tier 0 re-run. Its Phi-3 A/B moved to
-        `metal/one_slot_step_phi3_test.go` so the asset registry resolves the file.
+        `backend/metal/one_slot_step_phi3_test.go` so the asset registry resolves the file.
       - Log: `~/goinfer-logs/night/runs/2026-10-18/p29-ab-qwen05-one-slot.log` on the Mac.
 
   - **What was seen** (peer-vetted M1's fit check, 2026-10-16 23:21, the pinned `serve-metal` at 42d72319, `-quant q4k
@@ -227,28 +227,28 @@
     `docs/measurements/peer-vetted-2026-10-07-macbook.md`, "Amendment, 2026-10-17", on branch
     `m1-phi3-q4k-cell-2026-10` until that branch merges.
   - **The cause, from the source at that commit, is not geometry:**
-    - The q4k lane never takes the f16 MMA pass: `metal/model.go`'s `prefillOK` excludes `q4kLane` outright.
+    - The q4k lane never takes the f16 MMA pass: `backend/metal/model.go`'s `prefillOK` excludes `q4kLane` outright.
     - The fallback is OP6's batched step ("decode rows on the batched step kernels"). It needs at least two resident KV
-      slots: `metal/batch.go:resident.batchIneligible` returns "one resident KV slot". At `-ctx 2048` each slot cost
+      slots: `backend/metal/batch.go:resident.batchIneligible` returns "one resident KV slot". At `-ctx 2048` each slot cost
       768 MB, and the memory guard allowed one ("1 resident KV slots of 2 requested").
-    - `metal/backend.go:metalResident.PrefillPath` reports both cases with the same "arch/geometry" text.
+    - `backend/metal/backend.go:metalResident.PrefillPath` reports both cases with the same "arch/geometry" text.
   - **First, from the code (owner, 2026-10-17): why does OP6's batched step need two resident KV slots, and can a single-slot
     load use it for its own prompt (one sequence, 8 rows per step)?** Answered from main at 3c845917:
     - **The minimum belongs to MC3, not to the step's arithmetic.** The step was built for concurrent decode, one sequence
-      per slot. Its eligibility says so ("on at least two resident KV slots": `metal/batch.go:resident.batchIneligible`).
-      OP6 then reused it for one sequence's prompt and inherited the gate. `metal/batch.go:resident.forwardMultiOut`
+      per slot. Its eligibility says so ("on at least two resident KV slots": `backend/metal/batch.go:resident.batchIneligible`).
+      OP6 then reused it for one sequence's prompt and inherited the gate. `backend/metal/batch.go:resident.forwardMultiOut`
       already accepts several rows on one slot when they are one sequence's consecutive positions (the speculative verify's
       shape). That is exactly a prompt's prefill.
-    - **One slot fails on construction, not semantics.** `metal/model.go:buildResident` fills `kvSlotBufs` and sets `kvContig`
+    - **One slot fails on construction, not semantics.** `backend/metal/model.go:buildResident` fills `kvSlotBufs` and sets `kvContig`
       only when `kvSlots > 1`. The step reaches every row's KV as `kvSlotBufs[0]`'s buffer plus a per-row offset (one
       allocation per layer, because a dispatch binds at most 16 buffers). With one slot, `kvSlotBufs` is empty, so
-      `metal/batch.go:metalResident.VerifyCost` returns nil and the prompt routes in
-      `metal/backend.go:metalResident.PrefillPath` and `metal/backend.go:metalResident.PrefillKernelFloor` fall back to
+      `backend/metal/batch.go:metalResident.VerifyCost` returns nil and the prompt routes in
+      `backend/metal/backend.go:metalResident.PrefillPath` and `backend/metal/backend.go:metalResident.PrefillKernelFloor` fall back to
       sequential. Yet a one-slot resident's `kc`/`vc` already have the step's layout: slot 0 at offset 0 of a one-slot
       allocation.
     - **What lifting it would take:**
       1. At one slot without int8 KV, build `kvSlotBufs` with that one entry and mark it contiguous. Already correct at
-         one slot: `resident.useKVSlot` (a no-op), `resident.kvHostOff` (offset 0) and `metal/kvcopy.go`'s CopyKV, which
+         one slot: `resident.useKVSlot` (a no-op), `resident.kvHostOff` (offset 0) and `backend/metal/kvcopy.go`'s CopyKV, which
          keeps its "one KV slot" decline.
       2. Let `batchIneligible` take one slot.
       3. Price the step's scratch (8 rows' buffers) in the one-slot fit plan, since the one-slot load is the tight one.
@@ -256,7 +256,7 @@
          (`decoder/spec_adaptive.go`). Either accept that and gate it, or split "prefills on the step" from "verifies on
          the step".
       - **Nothing in the decoder needs changing for concurrency:** `decoder/mc3_batch.go:Model.EnableResidentConcurrency`
-        and the batcher already require two slots. `metal/batch.go:metalResident.BatchStepRange` should still report
+        and the batcher already require two slots. `backend/metal/batch.go:metalResident.BatchStepRange` should still report
         (0, 0) under two slots.
       - **The gates would be:** tier 0 bit-identity of a one-slot step prefill against sequential, on both sides of the floor;
         the same-slot verify test at one slot; and a planted defect.
@@ -275,7 +275,7 @@
       verify cost on one slot stays nil.
     - **The step's scratch is priced** against the headroom the memory guard leaves beside a one-slot build. A miss declines
       the step for that load, logged, and never the load.
-    - **Tier 0 is in `metal/one_slot_step_test.go`:**
+    - **Tier 0 is in `backend/metal/one_slot_step_test.go`:**
       - bit-identity against sequential (last-row logits, every K/V byte, a continuation), on the MC3 fixture at 2-64
         tokens and on the q4k 0.5B;
       - a planted row offset, which goes red;
@@ -474,13 +474,13 @@
   (`docs/measurements/theta-per-backend-2026-09-01.md`, `theta-cuda-ab-2026-09-01.md`); WebGPU did
   not — `gpu.residentDecoder` implemented neither `VerifyPathReporter` nor `PrefillPathReporter`,
   so `decoder.verifyTheta()` fell all the way through to the unmeasured 0.5 default. Measured
-  (`gpu/theta_probe_test.go`, new): **Theta 0.978–1.028** across four real configurations —
+  (`backend/webgpu/theta_probe_test.go`, new): **Theta 0.978–1.028** across four real configurations —
   `ForwardN` records every row into one command-buffer submit, but that removes Go-side dispatch
   overhead only, not GPU-side compute, so the marginal wall-clock cost of an extra verify row
   stays ~1×, same shape as Metal's own defect. Fixed by wiring `VerifyPath()` on
   `gpu.residentDecoder` (returns `false`, routing to the shared `sequentialVerifyTheta = 1.02`
   constant — no new per-backend value needed). **Confirmed with a real A/B, not asserted from the
-  probe alone** (`gpu/theta_ab_test.go`, mirrors Metal's own): under the old 0.5 default,
+  probe alone** (`backend/webgpu/theta_ab_test.go`, mirrors Metal's own): under the old 0.5 default,
   speculative decode measured **1.22× SLOWER than not speculating at all** on real hardware; wired
   correctly, it lands within noise of plain generation (0.95×) and **1.28× faster than the broken
   default**. Full method: `docs/measurements/theta-webgpu-2026-09-23.md`.
@@ -496,7 +496,7 @@
   re-measured and replaced. Note `ResidentForward`'s interface doc already claims `ForwardN` runs
   "K tokens in ONE command buffer (one Submit/Poll)": Metal satisfies the bit-identity half of
   that contract and the batching half not at all, so the doc is currently writing a cheque the
-  implementation doesn't honour. `metal/backend.go` is where the CUDA/Metal split lives.
+  implementation doesn't honour. `backend/metal/backend.go` is where the CUDA/Metal split lives.
 
 - **P20 · CUDA batched prefill for the MoE families — CLOSED 2026-09-21, both paths BUILT AND
   SHIPPED DEFAULT ON.** The body below is kept in full as the reasoning trail (the ~8%/1.085×
@@ -526,7 +526,7 @@
   | M26 @ 8000 | **384.3 s** | 85.4 s | 67.0 s |
   | D7 @ 8000 | 200.7 s | 34.0 s | 22.8 s |
 
-  **~~`cuda/prefill.go`'s `prefillStaticDecline` refuses `r.moe || r.gemma4Moe` outright~~ — removed
+  **~~`backend/cuda/prefill.go`'s `prefillStaticDecline` refuses `r.moe || r.gemma4Moe` outright~~ — removed
   2026-09-04.** A MoE layer's FFN now runs row by row off the batched residual, so the attention
   half batches while the routed experts keep decode's exact per-token sequence.
 
@@ -538,7 +538,7 @@
   both sides of the machine, not what it is worth here.
 
   **M26's blockers are now MEASURED, not read off the source** (probe:
-  `cuda/prefill_longprompt_test.go` against `~/models/gemma4-26b-int4.giw` with
+  `backend/cuda/prefill_longprompt_test.go` against `~/models/gemma4-26b-int4.giw` with
   `-moe-cache-experts`, `-ctx 8192`; log `docs/measurements/prefill-chunking-2026-09-04/m26-guards.log`).
   Loading it takes 2m11s and the C′ cache self-caps to 12 slots/layer:
 
@@ -624,7 +624,7 @@
      **RESIDUAL, still open:** `PrefillSeedArgmax` (block-spec prompt seed) ingests a whole prompt
      and remains uncancellable — `decoder.ResidentSeedArgmax` carries no context. It is a second
      interface on a different seam, deliberately not changed as a side effect of this one, and
-     `cuda/prefill.go`'s `context.Background()` there points at this paragraph.
+     `backend/cuda/prefill.go`'s `context.Background()` there points at this paragraph.
 
      **~~A trap that goes LIVE the moment the `r.moe` decline is removed.~~ FIXED in the same
      change**, as this said it must be. For the record, because the shape recurs: `nonBatchableKind` returned
@@ -643,7 +643,7 @@
   **(3) has a no-new-kernel route that the tree's own comment says does not exist.**
   `resident.go` states "gocudrv exposes no buffer view/offset, so the split is the kernel's
   gOff/uOff rather than Go-side pointer arithmetic" — but `aikit/gpu.Buffer.At(byteOff)` returns a
-  zero-copy sub-view, is already used for the C′ expert-slot DMA (`cuda/resident.go:cudaResident.appendExpertSlot`), and its
+  zero-copy sub-view, is already used for the C′ expert-slot DMA (`backend/cuda/resident.go:cudaResident.appendExpertSlot`), and its
   `arg()` binds the offset as a raw device pointer. So the existing per-row MoE kernels can be fed
   row *m* of a batched residual as `xB.At(m*hidden*4)`, and the first slice — batch the attention
   half, loop the FFN per row — becomes a Go refactor (thread the residual buffer through
@@ -692,7 +692,7 @@
   real checkpoint on this box that reaches the built path is Mellum2 (a much looser 51-slot / 98.1%-hit-rate
   cache than M26's), where it measures a real but small 3.5-4.3%.
 
-  **BUILT AND SHIPPED 2026-09-21** (`cuda/moe_expert_major_gemma4.go`, `docs/measurements/p20-expert-major-m26-2026-09-21.md`):
+  **BUILT AND SHIPPED 2026-09-21** (`backend/cuda/moe_expert_major_gemma4.go`, `docs/measurements/p20-expert-major-m26-2026-09-21.md`):
   the gemma4-specific extension, same mechanism against `gemma4MoeMLPPre/Post`'s parallel dense‖MoE shape. Measured
   on the real 26B: **2.66x / 2.50x / 2.39x / 2.26x at M=512/2048/4096/8012** — the ~2.32x/~20ms projection held, and
   every cell clears the ships band by a wide margin. Sequential control unmoved. `GOINFER_CUDA_MOE_EXPERT_MAJOR`
@@ -797,7 +797,7 @@
 
   **The design record already exists — do NOT write a second one.**
   `docs/tasks/task-decode-splitkv-attention.md` is this problem, written up and cited from
-  `cuda/resident.go`, `cuda/kernels.go` and `cuda/splitkv_bitident_test.go`: decode attention at M=1
+  `backend/cuda/resident.go`, `backend/cuda/kernels.go` and `backend/cuda/splitkv_bitident_test.go`: decode attention at M=1
   launches one block per query head, 11.9% achieved occupancy on a 40-SM card, "latency-bound purely
   because there are too few blocks to hide memory latency", against Ollama's flash attention. Its
   P6a section also records the threshold's own history, including that a constant characterized on

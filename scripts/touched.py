@@ -23,8 +23,8 @@ os.chdir(ROOT)
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import timing_lock  # noqa: E402  (a build and test run loads the box, so it must not run under a timed one: TE9)
 import touched_scans  # noqa: E402
-SLOW = {"decoder", "internal/sampling", "cuda", "internal/serveapp"}  # packages whose cold `go test` takes minutes; their ten-second tests call slowTest and are skipped by -short
-TAGS = {"cuda": "cuda goinfer_testhooks", "gpu": "gpu goinfer_testhooks", "": "goinfer_testhooks"}
+SLOW = {"decoder", "internal/sampling", "backend/cuda", "internal/serveapp"}  # packages whose cold `go test` takes minutes; their ten-second tests call slowTest and are skipped by -short
+TAGS = {"backend/cuda": "cuda goinfer_testhooks", "backend/webgpu": "gpu goinfer_testhooks", "": "goinfer_testhooks"}
 
 
 def sh(*a, **k):
@@ -166,11 +166,11 @@ def run(args, run_for):
             continue
         tag = TAGS.get(mod, "")
         tagarg = ["-tags", tag] if tag else []
-        if mod == "metal" and sys.platform != "darwin":
+        if mod == "backend/metal" and sys.platform != "darwin":
             print("  skip metal: builds on darwin only")
             skips.append("metal")
             continue
-        env = dict(os.environ, CGO_ENABLED="0") if mod == "cuda" else dict(os.environ)
+        env = dict(os.environ, CGO_ENABLED="0") if mod == "backend/cuda" else dict(os.environ)
         mrun = lambda *c: (lambda r: (r.returncode == 0, r.stdout + r.stderr))(sh(*c, cwd=mod or ".", env=env))
         pkgs = sorted({os.path.dirname(f) for f in files})
         rel = lambda d: "./" + os.path.relpath(d, mod or ".") if d != (mod or "") and d else "."

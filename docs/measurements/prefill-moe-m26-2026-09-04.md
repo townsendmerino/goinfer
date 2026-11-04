@@ -19,7 +19,7 @@ is a relocated bottleneck: ~92% of M26's prefill is somewhere batching does not 
 | config | `MoECacheExperts: true, ResidentContext: 8192` — what `scripts/bench_peer.py` launches as `-moe-cache-experts -ctx 8192`. C′ self-caps to **12 slots/layer** (64 would need 6.5 GB against 1.8 GB free) |
 | geometry | 30 layers, all MoE; 5 non-uniform vs layer 0 and the same 5 K=V; hidden 2816, inter 2112, 128 experts, moe_inter 704 |
 | free VRAM after load | 0.44 GB |
-| harness | `cuda/prefill_longprompt_test.go`, `GOINFER_HEAVY_TESTS=1` |
+| harness | `backend/cuda/prefill_longprompt_test.go`, `GOINFER_HEAVY_TESTS=1` |
 | versions | go1.27.0, `aikit/gpu v0.32.0`, goinfer at `4ee59e15` + this change |
 | method | **both arms in ONE process**, cache `Reset()` between them, batched arm first then sequential; single timed run per cell |
 | logs | `docs/measurements/prefill-chunking-2026-09-04/` — `m26-paired.log`, `m26-parity.log`, `m26-attribution.log` |

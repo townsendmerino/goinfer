@@ -4,7 +4,7 @@ Registered in `docs/tasks/task-subsystems-2026-10.md`, "SB2 step 2", before the 
 
 ## Layer B-cuda
 
-`cuda/sb2_census_test.go:TestBackendAdmissionCensus_cuda`, golden `cuda/testdata/sb2_cuda_census.amd64.txt.gz`.
+`backend/cuda/sb2_census_test.go:TestBackendAdmissionCensus_cuda`, golden `backend/cuda/testdata/sb2_cuda_census.amd64.txt.gz`.
 
 - 412 cells reach CUDA's build, on layer D's 70 fixtures × 9 option cells. Every cell layer D builds resident on cuda (396) is among
   them. The other 16 are `int4/kv-f16` cells whose layer D load fails after the build, on the KV it asked for.
@@ -17,9 +17,9 @@ Registered in `docs/tasks/task-subsystems-2026-10.md`, "SB2 step 2", before the 
 
 ## Layer B-webgpu
 
-`gpu/sb2_census_test.go:TestBackendAdmissionCensus_webgpu`, golden `gpu/testdata/sb2_webgpu_census.<goarch>.txt.gz`.
+`backend/webgpu/sb2_census_test.go:TestBackendAdmissionCensus_webgpu`, golden `gpu/testdata/sb2_webgpu_census.<goarch>.txt.gz`.
 
-- The refactor moves WebGPU's static gates into `gpu/residency.go:staticResidentDecline`, in their order. These are the five checks
+- The refactor moves WebGPU's static gates into `backend/webgpu/residency.go:staticResidentDecline`, in their order. These are the five checks
   before the build's lock, plus the quantized-KV layout decline, which read the model alone. `BuildResident` calls it first.
 - 218 cells reach the build. 207 pass the static gates, and 11 take the quantized-KV decline (qwen3_5, nemotron, mla at `--kv f16`).
 - Plant: `quantKVDeclineOffForTest` turns those 11 red, and no other cell changes.
@@ -50,7 +50,7 @@ Both fall back to the CPU, and the other 202 answers are byte-identical. Layer B
 
 ## Layer B-metal (mac-vk01, 2026-10-27)
 
-`metal/sb2_census_test.go:TestBackendAdmissionCensus_metal`, golden `metal/testdata/sb2_metal_census.arm64.txt.gz`.
+`backend/metal/sb2_census_test.go:TestBackendAdmissionCensus_metal`, golden `backend/metal/testdata/sb2_metal_census.arm64.txt.gz`.
 
 - **What the census records.** A fake backend named metal runs `residentPreBuild` (the feature taxonomy, an explicit
   `-ctx` cap, the fit choice and the memory guard with its context shrink), records the answer, and declines. No device is
@@ -79,7 +79,7 @@ Both fall back to the CPU, and the other 202 answers are byte-identical. Layer B
   a fixture-free table test of `residentMemoryDecline` and `shrinkCtxToFit` over the profiles' figures. It needs
   registering before it is written.
 - **The ratchet.** Francis exempted the census files by name (his answer 1, 2026-10-27), so
-  `internal/layout:TestBackendTests_decoderImportsOnlyFall` is green with `metal/sb2_census_test.go` named beside the cuda
+  `internal/layout:TestBackendTests_decoderImportsOnlyFall` is green with `backend/metal/sb2_census_test.go` named beside the cuda
   and webgpu ones. This layer was rebuilt on main after that landed, and the census matches the golden it was written
   with: no admission answer changed in between.
 

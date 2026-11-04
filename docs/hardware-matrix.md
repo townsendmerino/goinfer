@@ -69,7 +69,7 @@ features). Two load-time notes the taxonomy does not encode:
   off by default — this table's generator pins it empty, so every column reads CPU regardless of
   backend capability. WebGPU and Metal already declare `FeatSSM`; the gap here is the gate not yet being
   lifted, not a missing kernel. Set the env var non-empty to see what each backend actually admits
-  (Metal's builder still declines Granite-4.0-H, metal/mamba.go:buildMamba, until its own resident gate).
+  (Metal's builder still declines Granite-4.0-H, backend/metal/mamba.go:buildMamba, until its own resident gate).
 - **Nemotron-H's row is generated from a DENSE representative config.** Real, downloadable
   Nemotron 3 Nano and 3.5 Lightning checkpoints add a fourth per-layer block kind (MoE
   FFN) this representative config never exercises — WebGPU implements it (G7 part 2,
@@ -87,7 +87,7 @@ features). Two load-time notes the taxonomy does not encode:
   (d, d+half), so it does not declare `pairwise-rope` / `pairwise-mrope`. Running them on the NeoX
   kernels is exact at position 0 and wrong from position 1 with no error (measured 2026-10-01 on the
   CUDA resident before its pairwise kernels existed: real Command-R7B and Aya-expanse-8B at int4, worst
-  per-position cosine -0.075 / -0.041 against the CPU). CUDA has `cuda/rope_pairwise.cu` and Metal its
+  per-position cosine -0.075 / -0.041 against the CPU). CUDA has `backend/cuda/rope_pairwise.cu` and Metal its
   twins since 2026-10-09 (docs/tasks/task-metal-pairwise-rope-2026-10.md); a WebGPU row returns once it
   has pairwise rope kernels and a resident-vs-CPU gate on peaked attention.
 

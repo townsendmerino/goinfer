@@ -211,8 +211,8 @@ That is the CPU server. Each GPU backend has its own entrypoint (`-tags metal` o
 fails the build and says so):
 
 ```bash
-go install github.com/townsendmerino/goinfer/metal/cmd/serve@latest              # macOS
-go install -tags cuda  github.com/townsendmerino/goinfer/cuda/cmd/serve@latest    # Linux + NVIDIA
+go install github.com/townsendmerino/goinfer/backend/metal/cmd/serve@latest              # macOS
+go install -tags cuda  github.com/townsendmerino/goinfer/backend/cuda/cmd/serve@latest    # Linux + NVIDIA
 ```
 
 The released `goinfer-serve` and `goinfer-chat` assets include Metal on macOS and CUDA on Linux,

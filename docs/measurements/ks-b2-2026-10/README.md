@@ -6,7 +6,7 @@ The build for `docs/tasks/task-kernel-survey-2026-10.md` KS-B2. Its first measur
 - the tensor pipe active 8.8% of the time;
 - every staging load a scalar 32-bit word (4.03 bytes a load).
 
-**The change** (`cuda/attn_fused_bm.cu`, both PTX twins regenerated):
+**The change** (`backend/cuda/attn_fused_bm.cu`, both PTX twins regenerated):
 - A full key tile (`nk == BN`) whose K and V caches are 16-byte aligned stages through `stage_tile_vec`, with 16-byte
   loads (4 f32 or 8 f16 elements). Each batch of up to 8 K loads, or 4 V load pairs, is issued before any of them is
   converted or stored.

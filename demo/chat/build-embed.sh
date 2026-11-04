@@ -115,8 +115,8 @@ for t in "${TARGETS[@]}"; do
   # hand (README.md, RELEASE_TEMPLATE.md), not just from the release workflow's throwaway checkout.
   moduledir="$ROOT"; entry="$DIR"; buildtags="$TAGS"
   case "$os" in
-    darwin) moduledir="$ROOT/metal"; entry="./cmd/chat"; buildtags="$TAGS,metal" ;;
-    linux)  moduledir="$ROOT/cuda";  entry="./cmd/chat"; buildtags="$TAGS,cuda" ;;
+    darwin) moduledir="$ROOT/backend/metal"; entry="./cmd/chat"; buildtags="$TAGS,metal" ;;
+    linux)  moduledir="$ROOT/backend/cuda";  entry="./cmd/chat"; buildtags="$TAGS,cuda" ;;
   esac
   need_replace=false
   if [ "$moduledir" != "$ROOT" ] && ! $goworkspace_active; then need_replace=true; fi

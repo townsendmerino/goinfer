@@ -95,7 +95,7 @@ The decoder tail shard ran 1,205 top-level tests in 249 s under `-race`; its slo
 - **Most-touched files** (non-merge commits): `docs/tasks/task-multimodal-support-2026-10.md` 315,
   `docs/citation-index.md` 241, `CHANGELOG.md` 229, `testdata/parity_manifest.json` 225,
   `docs/tasks/task-kernel-survey-2026-10.md` 170, `docs/queue-engineering.md` 162, `internal/serveapp/main.go` 116,
-  `docs/README.md` 106, `metal/model.go` 99, `decoder/model.go` 86.
+  `docs/README.md` 106, `backend/metal/model.go` 99, `decoder/model.go` 86.
 - **The parity manifest:** 43 families; the `core` set (11 files) is used by 42, `loaders` by 42, `quant` by 41.
   `decoder/model.go` (2,577 lines) took 86 commits, `decoder/registry.go` (2,996 lines, 40 family adapters) 20,
   `decoder/weights.go` 27, `decoder/gguf.go` 22.

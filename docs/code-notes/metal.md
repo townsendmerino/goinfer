@@ -7,7 +7,7 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 
 ## batchMaxSeqs
 
-Moved from `metal/batch.go` (the comment opening the file, above `batchMaxSeqs`) on 2026-10-09.
+Moved from `backend/metal/batch.go` (the comment opening the file, above `batchMaxSeqs`) on 2026-10-09.
 
 ```text
 MC3 (docs/tasks/task-concurrency-2026-09.md): batched decode — one decode token for up to batchMaxSeqs sequences in
@@ -28,7 +28,7 @@ B = 4 at 1.73–1.84x one stream's aggregate; B = 1 loses, so the decoder calls 
 
 ## batchMinSeqs
 
-Moved from `metal/batch.go` (the comment above `batchMinSeqs`) on 2026-10-09.
+Moved from `backend/metal/batch.go` (the comment above `batchMinSeqs`) on 2026-10-09.
 
 ```text
 batchMinSeqs is the smallest batch the decoder should send here. At B = 1 the step costs 1.6–1.95x a production
@@ -38,7 +38,7 @@ spares the per-token KV-slot rebinding two interleaved single-token decodes woul
 
 ## mc3FARowsOn
 
-Moved from `metal/batch.go` (the comment above `mc3FARowsOn`) on 2026-10-09.
+Moved from `backend/metal/batch.go` (the comment above `mc3FARowsOn`) on 2026-10-09.
 
 ```text
 mc3FARowsOn runs the batched step's rows at attention_fa depth through one multi-row dispatch pair (E-P05,
@@ -49,7 +49,7 @@ every cell measured, 1.016x at 2 rows (serve's default slot count) to 1.06x at 8
 
 ## mc3AdjRowsOn
 
-Moved from `metal/batch.go` (the comment above `mc3AdjRowsOn`) on 2026-10-09.
+Moved from `backend/metal/batch.go` (the comment above `mc3AdjRowsOn`) on 2026-10-09.
 
 ```text
 mc3AdjRowsOn runs the batched step's per-row qkv and gate|up GEMVs (the sizes calibrateRows gives to per-row) as one
@@ -60,7 +60,7 @@ gate|up at B = 2-4 and 1.01-1.04x on the 1.5B's.
 
 ## calibrateRows
 
-Moved from `metal/batch.go` (the comment above `calibrateRows`) on 2026-10-09.
+Moved from `backend/metal/batch.go` (the comment above `calibrateRows`) on 2026-10-09.
 
 ```text
 calibrateRows decides, once, at which batch sizes qkv and gate|up are cheaper as B per-row production GEMVs than as
@@ -73,7 +73,7 @@ changes speed only: the per-row path is production's own kernel on each row.
 
 ## stepVerifyCost
 
-Moved from `metal/batch.go` (the comment above `stepVerifyCost`) on 2026-10-09.
+Moved from `backend/metal/batch.go` (the comment above `stepVerifyCost`) on 2026-10-09.
 
 ```text
 stepVerifyCost is the step-kernel verify's measured cost in single-token steps, indexed by rows verified: the
@@ -84,7 +84,7 @@ interpolated; 9 rows are an 8-row step plus one Forward. docs/tasks/task-concurr
 
 ## promptStepMaxAboveFloor
 
-Moved from `metal/batch.go` (the comment above `promptStepMaxAboveFloor`) on 2026-10-09.
+Moved from `backend/metal/batch.go` (the comment above `promptStepMaxAboveFloor`) on 2026-10-09.
 
 ```text
 promptStepMaxAboveFloor is the longest suffix the above-floor half of the step route takes (promptStepAboveFloor).
@@ -94,7 +94,7 @@ T1.10 measured the step at 0.40× / 0.80× / 1.56× the pass at K = 16 / 32 / 64
 
 ## promptStepOK
 
-Moved from `metal/batch.go` (the comment above `promptStepOK`) on 2026-10-09.
+Moved from `backend/metal/batch.go` (the comment above `promptStepOK`) on 2026-10-09.
 
 ```text
 promptStepOK reports whether PrefillLast takes the step route for n tokens at startPos (E-P01, audit-metal-2026-09-30):
@@ -109,7 +109,7 @@ from the whole pass the chunks must equal (TestMC5_prefillChunkInvariance's C = 
 
 ## prefillByStep
 
-Moved from `metal/batch.go` (the comment above `prefillByStep`) on 2026-10-09.
+Moved from `backend/metal/batch.go` (the comment above `prefillByStep`) on 2026-10-09.
 
 ```text
 prefillByStep is PrefillLast on the step kernels (E-P01): the prompt's positions run as consecutive rows of the bound
@@ -123,7 +123,7 @@ Cancellation is checked between pieces.
 
 ## expertPool
 
-Moved from `metal/expertpool.go` (the comment above `expertSlot` (it described the pool and the slot view together)) on 2026-10-09.
+Moved from `backend/metal/expertpool.go` (the comment above `expertSlot` (it described the pool and the slot view together)) on 2026-10-09.
 
 ```text
 expertPool is a bounded per-layer LRU pool of N expert slots for SYNCHRONOUS Metal MoE paging.
@@ -154,7 +154,7 @@ comment for why the pread path does its own offset arithmetic instead of relying
 
 ## copyBytesToU32Buf
 
-Moved from `metal/expertpool.go` (the comment above `copyBytesToU32Buf`) on 2026-10-09.
+Moved from `backend/metal/expertpool.go` (the comment above `copyBytesToU32Buf`) on 2026-10-09.
 
 ```text
 copyBytesToU32Buf memcpys little-endian nibble bytes into a uint32 slot buffer's shared contents,
@@ -171,7 +171,7 @@ recover from.
 
 ## distinctExperts
 
-Moved from `metal/expertpool.go` (the comment above `distinctExperts`) on 2026-10-09.
+Moved from `backend/metal/expertpool.go` (the comment above `distinctExperts`) on 2026-10-09.
 
 ```text
 distinctExperts is every expert id this pool has EVER staged, across its whole lifetime —
@@ -185,7 +185,7 @@ always-on telemetry, same as the counters above.
 
 ## stagePread
 
-Moved from `metal/expertpool.go` (the comment above `stagePread`) on 2026-10-09.
+Moved from `backend/metal/expertpool.go` (the comment above `stagePread`) on 2026-10-09.
 
 ```text
 stagePread, when set (GOINFER_MOE_PREAD=1 on a .giw-mmap'd model), REPLACES the mmap byte-copy:
@@ -196,7 +196,7 @@ large sequential read, zero page faults (cold pread measured 3687 MB/s vs the mm
 
 ## ensureResidentBatch
 
-Moved from `metal/expertpool.go` (the comment above `ensureResidentBatch`) on 2026-10-09.
+Moved from `backend/metal/expertpool.go` (the comment above `ensureResidentBatch`) on 2026-10-09.
 
 ```text
 ensureResidentBatch is ensureResident generalized over a whole layer's routed top-k at once
@@ -220,7 +220,7 @@ the I/O WITHIN one call, on the single host goroutine that already owns this poo
 
 ## mc3RowsKernels
 
-Moved from `metal/batch_rows.go` (the comment opening the file, above `mc3RowsKernels`) on 2026-10-09.
+Moved from `backend/metal/batch_rows.go` (the comment opening the file, above `mc3RowsKernels`) on 2026-10-09.
 
 ```text
 MC3 S3 (docs/tasks/task-concurrency-2026-09.md): multi-row forms of the per-row kernels a batched step runs once per
@@ -238,10 +238,10 @@ the resident's main library (same fast-math setting as the originals).
 
 ## buildDeltaNetLayer
 
-Moved from `metal/deltanet.go` (the comment above `buildDeltaNetLayer`) on 2026-10-09.
+Moved from `backend/metal/deltanet.go` (the comment above `buildDeltaNetLayer`) on 2026-10-09.
 
 ```text
-Name the missing tensor — see cuda/backend.go's identical check and comment: an empty slice
+Name the missing tensor — see backend/cuda/backend.go's identical check and comment: an empty slice
 here becomes a 0-byte device upload, which fails as "invalid length" with no indication of
 which of the four small tensors was the culprit. Two different checkpoints have already
 failed exactly that way during the CUDA bring-up.
@@ -249,11 +249,11 @@ failed exactly that way during the CUDA bring-up.
 
 ## deltaNetKernels
 
-Moved from `metal/deltanet_kernels.go` (the comment above `deltaNetKernels`) on 2026-10-09.
+Moved from `backend/metal/deltanet_kernels.go` (the comment above `deltaNetKernels`) on 2026-10-09.
 
 ```text
 deltaNetKernels — the Gated-DeltaNet decode mixer (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8),
-ported verbatim from cuda/deltanet.cu (read its header comment first; this file mirrors it
+ported verbatim from backend/cuda/deltanet.cu (read its header comment first; this file mirrors it
 kernel-for-kernel and keeps the same five-stage split so the CPU capture hook
 (decoder.deltaCapHook) gates each stage the same way on both backends).
 
@@ -279,7 +279,7 @@ normal magnitudes) — TestDeltaNorm_zeroHead exists specifically to catch it.
 
 FMA DISCIPLINE. Metal has no per-operation explicit-rounding intrinsics the way CUDA's
 __fmaf_rn/__fmul_rn/__fadd_rn does; the whole kernel library compiles under one library-wide
-fast-math setting (metal/model.go's preciseMathCompile). fma() below is used ONLY where the
+fast-math setting (backend/metal/model.go's preciseMathCompile). fma() below is used ONLY where the
 CUDA reference explicitly fuses (__fmaf_rn); every site the CUDA reference deliberately leaves
 unfused (__fmul_rn followed by a separate __fadd_rn) is written here as two separate
 expressions, mirroring the CUDA source's literal shape rather than a mathematically-equivalent
@@ -289,7 +289,7 @@ arithmetic equivalence, is what fast-math contraction keys off.
 
 ## Device
 
-Moved from `metal/device.go` (the comment above `package metal`) on 2026-10-09.
+Moved from `backend/metal/device.go` (the comment above `package metal`) on 2026-10-09.
 
 ```text
 Metal device layer — now aikit's native-GPU substrate (github.com/townsendmerino/aikit/gpu),
@@ -301,7 +301,7 @@ the device TYPES moved; nothing about the decode path changed, so it must stay b
 
 ## NewBufferFloats
 
-Moved from `metal/device.go` (the comment above `NewBufferFloats`) on 2026-10-09.
+Moved from `backend/metal/device.go` (the comment above `NewBufferFloats`) on 2026-10-09.
 
 ```text
 Thin re-wraps of aikit gpu v0.29.0's type-suffixed-Buffer-API collapse (NewBufferFloats/
@@ -314,7 +314,7 @@ one's argument list.
 
 ## attnGeom
 
-Moved from `metal/geom.go` (the comment above `attnGeom`) on 2026-10-09.
+Moved from `backend/metal/geom.go` (the comment above `attnGeom`) on 2026-10-09.
 
 ```text
 attnGeom is one distinct per-layer attention geometry, shared by every layer that has it.
@@ -341,7 +341,7 @@ geometry object per distinct {hd, nKV, half, kEqV}, shared across the layers tha
 
 ## chainDrainEvery
 
-Moved from `metal/greedy_chain.go` (the comment above `chainDrainEvery`) on 2026-10-09.
+Moved from `backend/metal/greedy_chain.go` (the comment above `chainDrainEvery`) on 2026-10-09.
 
 ```text
 The greedy chain: C-B01 of docs/audit-metal-2026-09-30.md (Phase 3 item 5 of docs/tasks/task-metal-audit-2026-10.md).
@@ -370,7 +370,7 @@ past it; the K/V it wrote sits past the generation's end and is overwritten befo
 
 ## pagedFenceOn
 
-Moved from `metal/paged_fence.go` (the comment above `pagedFenceOn`) on 2026-10-09.
+Moved from `backend/metal/paged_fence.go` (the comment above `pagedFenceOn`) on 2026-10-09.
 
 ```text
 pagedFenceOn: a paged MoE layer's phase 1 ends with paged_fence, and the host spins on its word instead of sleeping in
@@ -384,10 +384,10 @@ publishing a whole decode layer's writes, which the probe's one word never price
 
 ## pagedFenceSrc
 
-Moved from `metal/paged_fence.go` (the comment above `pagedFenceSrc`) on 2026-10-09.
+Moved from `backend/metal/paged_fence.go` (the comment above `pagedFenceSrc`) on 2026-10-09.
 
 ```text
-pagedFenceSrc follows aikit's C-B03 probe (gpu/metal_fence_probe_test.go, after MLX's kernels/fence.metal): the system
+pagedFenceSrc follows aikit's C-B03 probe (backend/webgpu/metal_fence_probe_test.go, after MLX's kernels/fence.metal): the system
 thread scope is not public MSL, so it is built from the compiler's __METAL_MEMORY_SCOPE_SYSTEM__. The router wrote its
 ids with plain stores in an earlier dispatch of the same serial encoder; a system-scope fence does not publish
 non-coherent stores (the probe saw such a payload stale on 47 of 50 boundaries), so this kernel copies the ids through
@@ -396,7 +396,7 @@ coherent(system) stores into a mirror the host reads, fences, then stores the se
 
 ## dnetPrefillOn
 
-Moved from `metal/prefill_deltanet.go` (the comment above `dnetPrefillOn`) on 2026-10-09.
+Moved from `backend/metal/prefill_deltanet.go` (the comment above `dnetPrefillOn`) on 2026-10-09.
 
 ```text
 dnetPrefillOn admits Gated-DeltaNet models to the batched prefill pass. ON since D-B01's grade (2026-10-04,
@@ -406,7 +406,7 @@ K = 512); tests turn it off for the sequential arm.
 
 ## emodelLayerMajorOn
 
-Moved from `metal/prefill_emodel.go` (the comment above `emodelLayerMajorOn`) on 2026-10-09.
+Moved from `backend/metal/prefill_emodel.go` (the comment above `emodelLayerMajorOn`) on 2026-10-09.
 
 ```text
 emodelLayerMajorOn routes a Gemma 4 E-model's prompt (E2B, E4B: per-layer embeddings, KV-shared layers) through
@@ -419,7 +419,7 @@ below 1.00x.
 
 ## emodelBatchedOn
 
-Moved from `metal/prefill_emodel.go` (the comment above `emodelBatchedOn`) on 2026-10-09.
+Moved from `backend/metal/prefill_emodel.go` (the comment above `emodelBatchedOn`) on 2026-10-09.
 
 ```text
 emodelBatchedOn routes a Gemma 4 E-model's prompt through the f16 batched pass (S9 step 2,
@@ -431,7 +431,7 @@ layer-major pass (bit-identical to sequential) keeps the route.
 
 ## g4ExpertBatchOn
 
-Moved from `metal/prefill_g4batch.go` (the comment above `g4ExpertBatchOn`) on 2026-10-09.
+Moved from `backend/metal/prefill_g4batch.go` (the comment above `g4ExpertBatchOn`) on 2026-10-09.
 
 ```text
 D-P01's batched expert GEMM (docs/audit-metal-2026-09-30.md; docs/tasks/task-m26-mac-2026-10.md, "D-P01"): a
@@ -450,7 +450,7 @@ g4ExpertBatchOn picks it in g4LayerMajorRows. ON once its gate passes and its sp
 
 ## g4LayerMajorOn
 
-Moved from `metal/prefill_g4paged.go` (the comment above `g4LayerMajorOn`) on 2026-10-09.
+Moved from `backend/metal/prefill_g4paged.go` (the comment above `g4LayerMajorOn`) on 2026-10-09.
 
 ```text
 g4LayerMajorOn routes a paged Gemma 4 MoE's prompt through prefillG4Paged (docs/tasks/task-m26-mac-2026-10.md, 4b)
@@ -460,7 +460,7 @@ on M26 read 1.42x); the night grade at M = 128 and 512 turns it off if it reads 
 
 ## loraQGateGap
 
-Moved from `metal/lora.go` (the file comment opening the file) on 2026-10-09.
+Moved from `backend/metal/lora.go` (the file comment opening the file) on 2026-10-09.
 
 ```text
 Compute-time LoRA on the resident path (G3, docs/tasks/task-gpu-paths-2026-09.md).
@@ -486,7 +486,7 @@ the gap to close first.
 
 ## loadEmbedRow
 
-Moved from `metal/model.go` (the comment above `loadEmbedRow`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `loadEmbedRow`) on 2026-10-09.
 
 ```text
 loadEmbedRow dequantizes token `id`'s embedding into the shared input buffer and applies the
@@ -505,7 +505,7 @@ The scale is a no-op (≤1) for every non-Gemma family, so this is inert on the 
 
 ## resident.ForwardEmb
 
-Moved from `metal/model.go` (the comment above `ForwardEmb`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `ForwardEmb`) on 2026-10-09.
 
 ```text
 ForwardEmb is Forward given a precomputed embedding[H] (the decoder.ResidentForward shape)
@@ -522,7 +522,7 @@ admitted gemma3/gemma4, and Forward carried on ignoring the scale. Forward now a
 
 ## softcapParallel
 
-Moved from `metal/model.go` (the comment above `softcapParallel`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `softcapParallel`) on 2026-10-09.
 
 ```text
 softcapParallel applies Gemma's final-logit softcap sc·tanh(x/sc) in place, across cores. Every
@@ -544,7 +544,7 @@ GOMAXPROCS. Serial below the goroutine-spawn threshold (mirrors parallelF32ToF16
 
 ## resident.execLoop
 
-Moved from `metal/model.go` (the comment above `execLoop`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `execLoop`) on 2026-10-09.
 
 ```text
 execLoop is the pinned executor: pipeline commit(t) → pre-encode(t+1) → wait(t). One shared
@@ -561,7 +561,7 @@ new request, the attnFADepthFloor crossing, or a toggle can never run another po
 
 ## resident.stopExec
 
-Moved from `metal/model.go` (the comment above `stopExec`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `stopExec`) on 2026-10-09.
 
 ```text
 stopExec shuts down the executor goroutine (if started) and BLOCKS until it has returned —
@@ -572,7 +572,7 @@ use-after-free. (CUDA hit the mirror-image ordering constraint in d8e81cb.)
 
 ## resident.slotBuffers
 
-Moved from `metal/model.go` (the comment above `slotBuffers`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `slotBuffers`) on 2026-10-09.
 
 ```text
 slotBuffers returns the paged MoE slot-pool buffers — GPU-READ-ONLY (phase 2 reads them; the pread
@@ -588,7 +588,7 @@ extends the SAME category to a second architecture family rather than adding a n
 
 ## resident.Close
 
-Moved from `metal/model.go` (the comment above `Close` (it sat above `kvSlotBuf`)) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `Close` (it sat above `kvSlotBuf`)) on 2026-10-09.
 
 ```text
 Close stops the executor, waits for it, then releases every MTLBuffer this resident allocated.
@@ -616,7 +616,7 @@ kvSlotBuf is one resident KV slot's per-layer buffers (MC1).
 
 ## resident.ForwardArgmax
 
-Moved from `metal/model.go` (the comment above `ForwardArgmax`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `ForwardArgmax`) on 2026-10-09.
 
 ```text
 ForwardArgmax runs the identical trunk but replaces the full lm head + 608KB readback with
@@ -634,7 +634,7 @@ future wiring, not a claim about what production calls.
 
 ## attnFACoreCount
 
-Moved from `metal/model.go` (the comment above `attnFACoreCount`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `attnFACoreCount`) on 2026-10-09.
 
 ```text
 attnFACoreCount is the M1 Pro's GPU core count attention_fa's split count targets ("kvHead x S
@@ -649,7 +649,7 @@ GPU core counts) would need this read from the device, not assumed.
 
 ## attnFABlkSplit
 
-Moved from `metal/model.go` (the comment above `attnFABlkSplit`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `attnFABlkSplit`) on 2026-10-09.
 
 ```text
 attnFABlkSplit is the split count the R17 block kernel (attention_fa_blk) runs at. Its split response is not
@@ -661,7 +661,7 @@ monotone and not the legacy kernel's: measured 2026-09-25 on the 1.5B at 3900 ke
 
 ## attnFADepthFloor
 
-Moved from `metal/model.go` (the comment above `attnFADepthFloor`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `attnFADepthFloor`) on 2026-10-09.
 
 ```text
 attnFADepthFloor is where attention_fa takes over from the shipped kernel. It is 1024 since B-P03
@@ -686,7 +686,7 @@ speed probe surfaced, recorded here rather than silently overriding the brief's 
 
 ## gemvExtOn
 
-Moved from `metal/model.go` (the comment above `gemvExtOn`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `gemvExtOn`) on 2026-10-09.
 
 ```text
 gemvExtOn routes the int4 GEMVs R18 never reached through its rows-per-simdgroup kernels (D-B04): DeltaNet's qkv and
@@ -698,7 +698,7 @@ z projections, and a shared expert's gate|up and down. Each rows kernel is bit-i
 
 ## attnFABlkAnyG
 
-Moved from `metal/model.go` (the comment above `attnFABlkAnyG`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `attnFABlkAnyG`) on 2026-10-09.
 
 ```text
 attnFABlkAnyG selects the block kernel for the dense group sizes other than the graded 6 and 7 (G = 2, 3, 4, 5 and
@@ -710,7 +710,7 @@ g7 head for head (TestAttnFABlk_anyGMatchesG7).
 
 ## attnFABlk64On
 
-Moved from `metal/model.go` (the comment above `attnFABlk64On`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `attnFABlk64On`) on 2026-10-09.
 
 ```text
 attnFABlk64On admits hd = 64 layers to attention_fa through the block kernel's hd = 64 twin (B-P01). ON since its
@@ -722,7 +722,7 @@ at 3900 (>= 1.5). The twin is not bit-identical to the per-query-head kernel, wh
 
 ## canUseAttnFA
 
-Moved from `metal/model.go` (the comment above `canUseAttnFA`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `canUseAttnFA`) on 2026-10-09.
 
 ```text
 canUseAttnFA reports whether attention_fa may replace the shipped kernel for layer l in the command
@@ -734,7 +734,7 @@ brief's own text), same reasoning as canUseF16Lane's family exclusions above it.
 
 ## buildResident.qGateLayer
 
-Moved from `metal/model.go` (the comment in `buildResident`, above the gated softmax layer branch) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `buildResident`, above the gated softmax layer branch) on 2026-10-09.
 
 ```text
 The same family's GATED softmax layer (qwen3_5/qwen3_5_moe/qwen3_next — NOT every
@@ -756,7 +756,7 @@ is real surgery.
 
 ## buildResident.lmHead
 
-Moved from `metal/model.go` (the comment in `buildResident`, above the LM head upload) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `buildResident`, above the LM head upload) on 2026-10-09.
 
 ```text
 The LM head is LOGIT-CRITICAL and must stay int8. decoder/weightmat.go: "at int4 they flip
@@ -768,7 +768,7 @@ so every one of 262k logits is dotted against int4-mangled embedding rows.
 
 ## buildResident.sa8
 
-Moved from `metal/model.go` (the comment in `buildResident`, above `bad8`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `buildResident`, above `bad8`) on 2026-10-09.
 
 ```text
 C-10: the SA-GEMV decode kernels (gemv_w4a8_sa / _sa_bias / _sa_resid and the MoE variants)
@@ -795,7 +795,7 @@ the first family this reaches.
 
 ## buildResident.attnFABlk
 
-Moved from `metal/model.go` (the comment in `buildResident`, above the `attnFANKV` block-kernel selection) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `buildResident`, above the `attnFANKV` block-kernel selection) on 2026-10-09.
 
 ```text
 R17: for the GQA group sizes it was graded at (G = 6, Qwen2.5-1.5B; G = 7, Qwen2.5-7B), attention_fa's first
@@ -806,7 +806,7 @@ instantiated, measured and fidelity-gated only for these two.
 
 ## buildResident.residencySet
 
-Moved from `metal/model.go` (the comment in `buildResident`, above `paged :=`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `buildResident`, above `paged :=`) on 2026-10-09.
 
 ```text
 Residency set (default ON when supported + paged; GOINFER_MOE_RESIDENCY=0 opts out). The paged
@@ -827,7 +827,7 @@ built at all, regardless of what slotBuffers() enumerated.
 
 ## buildResident.residencyAttach
 
-Moved from `metal/model.go` (the comment in `buildResident`, above `r.residency = rs`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `buildResident`, above `r.residency = rs`) on 2026-10-09.
 
 ```text
 M-14 (audit-metal-2026-09-12.md): attaching the set at the QUEUE (r.q.AddResidencySet)
@@ -840,7 +840,7 @@ aikit gpu/v0.33.1+), which is the buffer category that actually reads it.
 
 ## Package.model
 
-Moved from `metal/model.go` (the comment opening the file (the package comment)) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment opening the file (the package comment)) on 2026-10-09.
 
 ```text
 Real-model resident Metal decoder — the final GO/NO-GO piece of the spike. Loads a
@@ -851,11 +851,11 @@ requirement). cgo-free throughout (purego-objc + dlopen Metal).
 
 ## resolveMetalCtxCap
 
-Moved from `metal/model.go` (the comment above `resolveMetalCtxCap`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `resolveMetalCtxCap`) on 2026-10-09.
 
 ```text
 resolveMetalCtxCap turns a request into the effective resident KV capacity, mirroring
-cuda/resident.go's resolveCtxCap[Fit] in SHAPE: an unpinned load (req <= 0) gets metalCtxCapDefault (4096);
+backend/cuda/resident.go's resolveCtxCap[Fit] in SHAPE: an unpinned load (req <= 0) gets metalCtxCapDefault (4096);
 an explicit request up to metalCtxCapMax (32768) is honored (optionally clamped to the model's window);
 and a request ABOVE metalCtxCapMax is REFUSED with the numbers. A context the load-time fit guard auto-pinned
 (R13; the caller did not choose it) is a ceiling, not a request: it may lower the default, never raise it.
@@ -868,8 +868,8 @@ Since M2 (docs/tasks/task-minimax-code-compat-2026-09.md) an unpinned load no lo
 
 ## PrefillBlockRows
 
-How Metal bounds a long prompt's prefill memory (`metal/backend.go:metalResident.PrefillBlockRows`,
-`metal/prefill.go:resident.prefillScratchBytes`, `decoder/residency.go:Model.prefillBlockRows`). The gates and readings
+How Metal bounds a long prompt's prefill memory (`backend/metal/backend.go:metalResident.PrefillBlockRows`,
+`backend/metal/prefill.go:resident.prefillScratchBytes`, `decoder/residency.go:Model.prefillBlockRows`). The gates and readings
 are in `docs/tasks/task-integration-harness-2026-10.md`, "I8".
 
 - **Why a block.** The batched pass allocates its scratch for every row it is handed: two residual-width buffers, the
@@ -890,7 +890,7 @@ are in `docs/tasks/task-integration-harness-2026-10.md`, "I8".
 
 ## metalFitFor
 
-The fit-by-default context of an unpinned Metal load (`metal/backend.go:metalFitFor`, `metal/backend.go:metalFitNow`,
+The fit-by-default context of an unpinned Metal load (`backend/metal/backend.go:metalFitFor`, `backend/metal/backend.go:metalFitNow`,
 `decoder/metal_fitctx.go:Model.MetalFitCtx`). The design, and why each piece is there:
 
 - **One function for the load and for `fit`.** `MetalFitCtx` lives in `decoder` so `internal/fitcmd/fit.go:planFor` can
@@ -922,7 +922,7 @@ The fit-by-default context of an unpinned Metal load (`metal/backend.go:metalFit
 
 ## tgReduceNorm
 
-Moved from `metal/model.go` (the comment above the `tgReduceNorm`/`tgReduceAttn` constants) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above the `tgReduceNorm`/`tgReduceAttn` constants) on 2026-10-09.
 
 ```text
 Threadgroup widths for the kernels that contain a CROSS-THREAD FLOAT SUM reduction (a
@@ -947,7 +947,7 @@ See docs/ollama-chase.md §2 (ground rules) and §A2-Metal.
 
 ## prefillFeatures
 
-Moved from `metal/model.go` (the comment above `prefillFeatures`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `prefillFeatures`) on 2026-10-09.
 
 ```text
 prefillFeatures is what the f16 MMA prefill kernels (prefill.go) actually implement: a dense
@@ -966,10 +966,10 @@ SAME encodeMoESharedExpert dispatch decode already uses, gated/ungated branch an
 
 ## residLayer.delta
 
-Moved from `metal/model.go` (the comment in `residLayer`, above `delta`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `residLayer`, above `delta`) on 2026-10-09.
 
 ```text
-Gated-DeltaNet mixer layer (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8; see metal/deltanet.go).
+Gated-DeltaNet mixer layer (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8; see backend/metal/deltanet.go).
 delta non-nil marks this layer's sequence mixer as the recurrent delta rule instead of
 attention: no KV cache, no q/k/v/o, no geom (a DeltaNet layer has no attention geometry —
 r.kc[l]/r.vc[l] are left as their zero Buffer for these layers, saving real memory on 3 of
@@ -978,7 +978,7 @@ every 4 layers this family has, and encodeLayer never dispatches pKv/pAttn for t
 
 ## resident.decodeLaneW4F16
 
-Moved from `metal/model.go` (the comment in `resident`, above `pRmsF16`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `resident`, above `pRmsF16`) on 2026-10-09.
 
 ```text
 R1 (docs/tasks/red-october.md): the W4F16 decode lane — f16 activations, no int8
@@ -991,7 +991,7 @@ parallelBlock, qGate, outBias, DeltaNet, nonGatedMLP) stay on the shipped W4A8 k
 
 ## resident.pAttnFA
 
-Moved from `metal/model.go` (the comment in `resident`, above `pAttnFA`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `resident`, above `pAttnFA`) on 2026-10-09.
 
 ```text
 R2 (docs/tasks/red-october.md): the split-KV decode-attention lane, gridded by (kvHead,
@@ -1008,7 +1008,7 @@ measured crossover" text).
 
 ## resident.attnFASplitOverride
 
-Moved from `metal/model.go` (the comment in `resident`, above `attnFASplitOverride`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `resident`, above `attnFASplitOverride`) on 2026-10-09.
 
 ```text
 attnFASplitOverride, when > 0, replaces attnFASplitFor's split-count rule (the nKeys/32 and
@@ -1020,7 +1020,7 @@ one function both the dispatch grid and setPos's uAttnFANSplit use — and both 
 
 ## resident.attnFAFloorOverride
 
-Moved from `metal/model.go` (the comment in `resident`, above `attnFAFloorOverride`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `resident`, above `attnFAFloorOverride`) on 2026-10-09.
 
 ```text
 attnFAFloorOverride, when > 0, replaces attnFADepthFloor as the key count at which attention_fa takes over.
@@ -1031,7 +1031,7 @@ step and the batched step plan alike.
 
 ## resident.uAttnFAG
 
-Moved from `metal/model.go` (the comment in `resident`, continuing the trailing comment of `uAttnFAG`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `resident`, continuing the trailing comment of `uAttnFAG`) on 2026-10-09.
 
 ```text
 per-layer dispatch site: a prior version SetU32'd these once per LAYER, i.e. during encodeTrunkCB's
@@ -1047,7 +1047,7 @@ logic bug. Root cause of the divergence r2-attn-fa-2026-09-19.md left unexplaine
 
 ## resident.pLoraDelta
 
-Moved from `metal/model.go` (the comment in `resident`, above `pLoraDelta`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `resident`, above `pLoraDelta`) on 2026-10-09.
 
 ```text
 Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md — see lora.go). pLoraDelta is
@@ -1061,7 +1061,7 @@ no-op per projection when it is nil or the targeted projection's delta is nil.
 
 ## resident.loraCacheSrc
 
-Moved from `metal/model.go` (the comment in `resident`, above `loraCacheSrc`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `resident`, above `loraCacheSrc`) on 2026-10-09.
 
 ```text
 loraCacheSrc/loraCached are P-10's single-adapter device cache (audit-2026-09-10): the
@@ -1074,7 +1074,7 @@ paying it on every generation. See SetAdapter's own comment for the identity che
 
 ## resident.embedScale
 
-Moved from `metal/model.go` (the comment in `resident`, above `embedScale`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `resident`, above `embedScale`) on 2026-10-09.
 
 ```text
 embedScale is Gemma's √hidden token-embedding multiplier (FeatEmbedScale); 0/1 ⇒ none.
@@ -1086,7 +1086,7 @@ silently ran Gemma unscaled; see Forward.
 
 ## resident.execReq
 
-Moved from `metal/model.go` (the comment in `resident`, above `execReq`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `resident`, above `execReq`) on 2026-10-09.
 
 ```text
 pipelined logits executor (encode-ahead): a persistent OS-thread-pinned goroutine that
@@ -1102,7 +1102,7 @@ extra lock.
 
 ## resident.pfErr
 
-Moved from `metal/model.go` (the comment in `resident`, above `pfErr`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `resident`, above `pfErr`) on 2026-10-09.
 
 ```text
 pfErr latches a compile/pipeline-creation failure from ensurePrefill (N-47,
@@ -1113,7 +1113,7 @@ wasted work on every request for the rest of the process's life, not just the fi
 
 ## int4DirectWords
 
-Moved from `metal/model.go` (the comment above `int4DirectWords`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `int4DirectWords`) on 2026-10-09.
 
 ```text
 int4DirectWords converts a decoder int4 WeightMat's packed nibbles + f32 group scales straight
@@ -1124,14 +1124,14 @@ scales narrow f32→f16. Returns ok=false if the weight is not group-32 int4.
 
 This is the fix for Gemma's dormant residual: BuildResident's default path double-quantizes
 (f32→int8→int4), and Gemma's low-magnitude attention contexts amplify that int8-intermediate
-drift into a catastrophic context error (metal/gemma_sublayer_test.go: L1 cosine craters to
+drift into a catastrophic context error (backend/metal/gemma_sublayer_test.go: L1 cosine craters to
 0.649 vs the direct-int4 reference's ~0.93). Consuming the decoder's int4 directly — exactly
 what CUDA/WebGPU do — removes the int8 step. Qwen is insensitive to it (ships clean either way).
 ```
 
 ## bytesToU32
 
-Moved from `metal/model.go` (the comment above `bytesToU32`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `bytesToU32`) on 2026-10-09.
 
 ```text
 bytesToU32 reinterprets a little-endian byte slice as uint32 words (len must be a multiple of 4).
@@ -1144,7 +1144,7 @@ exactly as safe as manual shifts and orders of magnitude fewer instructions.
 
 ## int4DirectBytesOnly
 
-Moved from `metal/model.go` (the comment above `int4DirectBytesOnly`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `int4DirectBytesOnly`) on 2026-10-09.
 
 ```text
 int4DirectBytesOnly returns a canonical group-32 int4 WeightMat's packed nibble bytes ALIASED straight from the
@@ -1159,7 +1159,7 @@ already holds (C-P01, audit-metal-2026-09-30.md).
 
 ## parallelF32ToF16
 
-Moved from `metal/model.go` (the comment above `parallelF32ToF16`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `parallelF32ToF16`) on 2026-10-09.
 
 ```text
 parallelF32ToF16 converts src (f32 group scales) to dst (f16 bits) across up to 8 workers. In the
@@ -1172,7 +1172,7 @@ inputs (the non-paged one-time build, where goroutine spawn would not pay).
 
 ## maxThreadgroupStageBytes
 
-Moved from `metal/model.go` (the comment above `maxThreadgroupStageBytes` (the comment also held `int4Buf`'s first lines)) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `maxThreadgroupStageBytes` (the comment also held `int4Buf`'s first lines)) on 2026-10-09.
 
 ```text
 int4Buf uploads a WeightMat as W4A8 (int4, group=32) + f16 group scales. If the weight is
@@ -1192,7 +1192,7 @@ passes on a configuration that then exceeds the device limit at dispatch.
 
 ## int4BufA.K32
 
-Moved from `metal/model.go` (the comment in `int4BufA`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `int4BufA`) on 2026-10-09.
 
 ```text
 The W4A8 layout and every GEMV kernel hard-assume K is a multiple of the group (32): rows are
@@ -1203,7 +1203,7 @@ with — silently wrong, or a panic at K<32. Decline so BuildResident falls back
 
 ## int4Concat.presize
 
-Moved from `metal/model.go` (the comment in `int4Concat`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `int4Concat`) on 2026-10-09.
 
 ```text
 N-29 (audit-metal-2026-09-12.md): pre-size from the known final shape (N*K/8 words, N*K/32
@@ -1214,7 +1214,7 @@ on every capacity doubling across a fused tensor's weights.
 
 ## int4Concat.noCanonical
 
-Moved from `metal/model.go` (the comment in `int4Concat`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `int4Concat`) on 2026-10-09.
 
 ```text
 int4DirectWords already declined above (its own w.Int4() check failed), and this is
@@ -1232,7 +1232,7 @@ more generic one.
 
 ## nativeInt8
 
-Moved from `metal/model.go` (the comment above `nativeInt8`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `nativeInt8`) on 2026-10-09.
 
 ```text
 nativeInt8 turns the native int8 path on (w8Eligible). ON since 2026-10-04: F3′, F2 (read as hard flips, owner
@@ -1242,7 +1242,7 @@ re-quant arm; it is not an option or an environment variable.
 
 ## nativeInt4Mix
 
-Moved from `metal/model.go` (the comment above `nativeInt4Mix`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `nativeInt4Mix`) on 2026-10-09.
 
 ```text
 nativeInt4Mix turns on int4mix's native path (w8AttnEligible: attention W8A8, FFN int4). ON since 2026-10-04: M1 and
@@ -1252,7 +1252,7 @@ prefill confirmation (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: int4mix")
 
 ## nativeInt8MoE
 
-Moved from `metal/model.go` (the comment above `nativeInt8MoE`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `nativeInt8MoE`) on 2026-10-09.
 
 ```text
 nativeInt8MoE admits a generic resident MoE to the native int8 path (w8Eligible; int8 expert GEMVs gemv_w8a8_moe*).
@@ -1261,7 +1261,7 @@ ON since 2026-10-04: X1-X4 passed (docs/tasks/task-metal-int8-2026-10.md, "Slice
 
 ## w8PreciseMath
 
-Moved from `metal/model.go` (the comment above `w8PreciseMath`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `w8PreciseMath`) on 2026-10-09.
 
 ```text
 w8PreciseMath compiles the library of a model headed for the native int8 path without fast math (owner decision,
@@ -1273,7 +1273,7 @@ passes w8Weights but is MoE (Gemma 4's parallel dense‖MoE) is excluded here to
 
 ## buildResident
 
-Moved from `metal/model.go` (the comment above `buildResident`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment above `buildResident`) on 2026-10-09.
 
 ```text
 BuildResident builds a Metal resident decoder from an int8-loaded dense Qwen2/Llama
@@ -1283,7 +1283,7 @@ Model. Handles Qwen2 q/k/v bias; assumes no QK-norm / sliding-window / embed-sca
 
 ## buildResident.kvSlots
 
-Moved from `metal/model.go` (the comment in `buildResident`, above `kvSlots`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `buildResident`, above `kvSlots`) on 2026-10-09.
 
 ```text
 MC1's slot count is priced BEFORE any buffer below exists. Its budget, metalMemoryCeiling, reads the live
@@ -1295,7 +1295,7 @@ granted (28 MB each) with a base of 4,044 MB against 5,531 MB live before the bu
 
 ## buildResident.preciseMath
 
-Moved from `metal/model.go` (the comment in `buildResident`, above `compile`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `buildResident`, above `compile`) on 2026-10-09.
 
 ```text
 preciseMathCompile (test/measurement toggle, Task 3): fast-math OFF removes the compiler's
@@ -1309,7 +1309,7 @@ drift, which is the cheaper path we chose.
 
 ## buildResident.kvF32
 
-Moved from `metal/model.go` (the comment in `buildResident`, above `r.kvF32 = false`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `buildResident`, above `r.kvF32 = false`) on 2026-10-09.
 
 ```text
 f32 KV path (kv_store_f32/attention_f32) exists but is DISABLED: the matched-input confirmer
@@ -1321,7 +1321,7 @@ bug is the position-0/attention-sink K/V compute. Kept off until that's fixed.
 
 ## buildResident.prefillOK
 
-Moved from `metal/model.go` (the comment in `buildResident`, above `missing := m.MissingResidentFeatures`) on 2026-10-09.
+Moved from `backend/metal/model.go` (the comment in `buildResident`, above `missing := m.MissingResidentFeatures`) on 2026-10-09.
 
 ```text
 prefillOK, derived rather than hand-listed: the f16 prefill kernels implement exactly the
@@ -1361,7 +1361,7 @@ sequential.
 
 ## prefillKernels
 
-Moved from `metal/prefill.go` (the comment above `prefillKernels`) on 2026-10-09.
+Moved from `backend/metal/prefill.go` (the comment above `prefillKernels`) on 2026-10-09.
 
 ```text
 Prefill kernels — the f16 simdgroup_matrix (MMA) path for fast prompt ingestion. Unlike the
@@ -1373,7 +1373,7 @@ a SEPARATE library from allKernels so the decode path is unchanged and prefill i
 
 ## gemmTile
 
-Moved from `metal/prefill.go` (the comment above `gemmTile`) on 2026-10-09.
+Moved from `backend/metal/prefill.go` (the comment above `gemmTile`) on 2026-10-09.
 
 ```text
 gemmTile is the tile selector for a rows × N prefill GEMM. Every choice is bit-identical (gemm_w4f16_tile's comment,
@@ -1393,7 +1393,7 @@ A-P01's rule ("a01"): 32 tokens when the pass has at most 32 rows, 32 features w
 
 ## prefillState.pGemm
 
-Moved from `metal/prefill.go` (the comment in `prefillState`, above `pGemmStore`) on 2026-10-09.
+Moved from `backend/metal/prefill.go` (the comment in `prefillState`, above `pGemmStore`) on 2026-10-09.
 
 ```text
 pGemm (gemm_w4f16, no store epilogue) was created but never dispatched — the prefill LM head
@@ -1402,7 +1402,7 @@ moved to pRmsQ + pGemvW8, and every GEMM here uses pGemmStore. Removed (audit R-
 
 ## parallelEmbedsF32ToF16
 
-Moved from `metal/prefill.go` (the comment above `parallelEmbedsF32ToF16`) on 2026-10-09.
+Moved from `backend/metal/prefill.go` (the comment above `parallelEmbedsF32ToF16`) on 2026-10-09.
 
 ```text
 parallelEmbedsF32ToF16 converts M rows of embs (each H wide) into dst[m*H:(m+1)*H] as f16 bits,
@@ -1418,7 +1418,7 @@ rather than a flat index range, but is otherwise the same threshold/worker shape
 
 ## prefillExactAttnMaxKeys
 
-Moved from `metal/prefill.go` (the comment above `prefillExactAttnMaxKeys` (the comment also held `PrefillLast`'s opening)) on 2026-10-09.
+Moved from `backend/metal/prefill.go` (the comment above `prefillExactAttnMaxKeys` (the comment also held `PrefillLast`'s opening)) on 2026-10-09.
 
 ```text
 PrefillLast ingests M prompt embeddings at positions startPos..startPos+M-1 in ONE command
@@ -1436,7 +1436,7 @@ kernel source.
 
 ## gemmaPrefillResidScale
 
-Moved from `metal/prefill.go` (the comment above `gemmaPrefillResidScale`) on 2026-10-09.
+Moved from `backend/metal/prefill.go` (the comment above `gemmaPrefillResidScale`) on 2026-10-09.
 
 ```text
 gemmaPrefillResidScale is s for the families prefillResidScale applies to: the smallest power of two leaving 4x headroom
@@ -1446,7 +1446,7 @@ of 31 to 3,094 tokens and an image turn; S17's G-RS2 record).
 
 ## prefillLastImg.release
 
-Moved from `metal/prefill.go` (the comment in `prefillLastImg`, above `scratch :=`) on 2026-10-09.
+Moved from `backend/metal/prefill.go` (the comment in `prefillLastImg`, above `scratch :=`) on 2026-10-09.
 
 ```text
 C5: every buffer above is per-call scratch/uniform allocated onto the device ledger, which
@@ -1460,7 +1460,7 @@ this list; releasing them would corrupt the decode path.)
 
 ## prefillLastImg.qkNormShared
 
-Moved from `metal/prefill.go` (the comment in `prefillLastImg`, the qk_norm block) on 2026-10-09.
+Moved from `backend/metal/prefill.go` (the comment in `prefillLastImg`, the qk_norm block) on 2026-10-09.
 
 ```text
 Q heads only: a shared layer projects no K. The kernel maps a threadgroup to (row, head) by nH+nKV, so
@@ -1469,7 +1469,7 @@ nKV must be 0 here too, or rows shift and the "K" head normalizes the next row's
 
 ## prefillLastImg.rope
 
-Moved from `metal/prefill.go` (the comment in `prefillLastImg`, above the rope dispatches) on 2026-10-09.
+Moved from `backend/metal/prefill.go` (the comment in `prefillLastImg`, above the rope dispatches) on 2026-10-09.
 
 ```text
 rope q, k (per-row positions) — bind the PER-LAYER RoPE table and window, exactly as decode
@@ -1482,7 +1482,7 @@ r.invf there — this is behaviour-neutral for them and correct for the mixed-wi
 
 ## prefillScratchU16
 
-Moved from `metal/prefill.go` (the comment above `prefillScratchU16`) on 2026-10-09.
+Moved from `backend/metal/prefill.go` (the comment above `prefillScratchU16`) on 2026-10-09.
 
 ```text
 prefillScratchU16 allocates one of a pass's f16 scratch buffers, n halves, zero-filled. Metal fills a new buffer with
@@ -1498,7 +1498,7 @@ TestPrefillScratch_zeroFilled pins the property on this backend.
 
 ## prefillScratch
 
-Moved from `metal/prefill.go` (the comment above `prefillScratch`) on 2026-10-09.
+Moved from `backend/metal/prefill.go` (the comment above `prefillScratch`) on 2026-10-09.
 
 ```text
 prefillScratch is prefillScratchU16 for any element type (R-20, docs/tasks/task-recompute-audit.md): the pass's f32
@@ -1510,7 +1510,7 @@ apart from the scratch ecafa0ae already moved.
 
 ## moeLayer.pool
 
-Moved from `metal/moe.go` (the comment in `moeLayer`, above `pool`) on 2026-10-09.
+Moved from `backend/metal/moe.go` (the comment in `moeLayer`, above `pool`) on 2026-10-09.
 
 ```text
 pool is non-nil when mo.paged: a bounded LRU slot pool + on-demand staging (expertpool.go),
@@ -1522,7 +1522,7 @@ expGuW/expGuS/expDW/expDS stay zero-value when paged (the stacked all-E buffer i
 
 ## moeResident.paged
 
-Moved from `metal/moe.go` (the comment in `moeResident`, above `paged`) on 2026-10-09.
+Moved from `backend/metal/moe.go` (the comment in `moeResident`, above `paged`) on 2026-10-09.
 
 ```text
 Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging to this
@@ -1538,17 +1538,17 @@ Buffer object; see gemma4_moe.go's gemma4MoeResident.slotIdx doc comment for the
 
 ## moeResident.indexSpaces
 
-Moved from `metal/moe.go` (the comment in `moeResident`, above the two-index-spaces table) on 2026-10-09.
+Moved from `backend/metal/moe.go` (the comment in `moeResident`, above the two-index-spaces table) on 2026-10-09.
 
 ```text
-TWO INDEX SPACES, DIVERGING ONLY WHEN PAGING IS ON — the same doctrine as cuda/resident.go's
+TWO INDEX SPACES, DIVERGING ONLY WHEN PAGING IS ON — the same doctrine as backend/cuda/resident.go's
 expIdx / expertBiasIdx pair, and adopted here because Metal had the defect that pair exists
 to prevent (C-09).
 ```
 
 ## moeResident.indexSpaces.shipped
 
-Moved from `metal/moe.go` (the comment in `moeResident`, below the two-index-spaces table) on 2026-10-09.
+Moved from `backend/metal/moe.go` (the comment in `moeResident`, below the two-index-spaces table) on 2026-10-09.
 
 ```text
 With paging off the two are the same buffer, so a site that binds the wrong one is correct in
@@ -1560,7 +1560,7 @@ zero and every routed expert got expert 0's bias.
 
 ## errPagedExpertsNotInt4
 
-Moved from `metal/moe.go` (the comment above `errPagedExpertsNotInt4` (the comment also held `buildMoE`'s opening)) on 2026-10-09.
+Moved from `backend/metal/moe.go` (the comment above `errPagedExpertsNotInt4` (the comment also held `buildMoE`'s opening)) on 2026-10-09.
 
 ```text
 buildMoE builds the resident-level MoE state (pipelines, config, uniforms, scratch) from a
@@ -1576,7 +1576,7 @@ recovered "metal build panicked").
 
 ## buildMoE.gemma4
 
-Moved from `metal/moe.go` (the comment in `buildMoE`, above the `HasGemma4MoEResident` check) on 2026-10-09.
+Moved from `backend/metal/moe.go` (the comment in `buildMoE`, above the `HasGemma4MoEResident` check) on 2026-10-09.
 
 ```text
 Gemma 4's enable_moe_block (gemma4_text, 26B-A4B) sets arch.MoE, so MoEResidentParams reports
@@ -1585,13 +1585,13 @@ dense‖MoE FFN with gelu-tanh experts (gemv_w4a8_moe's epilogue is SiLU), a wei
 pre-norm + learned [hidden] scale + per_expert_scale, and seven norms. Building it here would
 run a wrong (SiLU, plain-router) MoE. Decline until the Metal gemma4MoeMLP path lands (9c
 Step 5) so gemma4_text falls back to CPU rather than mis-running — same discipline as CUDA's
-isG4MoE split (cuda/backend.go). Dense Gemma 4 has no MoE, so it returns nil,nil above and
+isG4MoE split (backend/cuda/backend.go). Dense Gemma 4 has no MoE, so it returns nil,nil above and
 admits normally; this only gates the MoE variant.
 ```
 
 ## buildMoE.pread
 
-Moved from `metal/moe.go` (the comment in `buildMoE`, above the `GOINFER_MOE_PREAD` branch) on 2026-10-09.
+Moved from `backend/metal/moe.go` (the comment in `buildMoE`, above the `GOINFER_MOE_PREAD` branch) on 2026-10-09.
 
 ```text
 Stage experts by pread'ing their nibbles straight into the slot buffers instead of byte-copying
@@ -1608,7 +1608,7 @@ declined flag would re-open a settled question.
 
 ## buildMoELayer.paged
 
-Moved from `metal/moe.go` (the comment in `buildMoELayer`, above the paged branch's `gw0`) on 2026-10-09.
+Moved from `backend/metal/moe.go` (the comment in `buildMoELayer`, above the paged branch's `gw0`) on 2026-10-09.
 
 ```text
 Paged: don't stack the experts (that is the multi-GB set this exists to avoid). Build a
@@ -1620,7 +1620,7 @@ that was a later, separately-measured refinement on top of a working paged basel
 
 ## buildMoELayer.scales
 
-Moved from `metal/moe.go` (the comment in `buildMoELayer`, above the paged `stage` func) on 2026-10-09.
+Moved from `backend/metal/moe.go` (the comment in `buildMoELayer`, above the paged `stage` func) on 2026-10-09.
 
 ```text
 C-P01 (audit-metal-2026-09-30.md): each expert's f16 scales are read from its own WeightMats
@@ -1631,7 +1631,7 @@ same bits again (1361 MB on the Gemma 4 26B, measured 2026-10-02, T1.8).
 
 ## encodeMoEFFNWithX
 
-Moved from `metal/moe.go` (the comment above `encodeMoEFFNWithX`) on 2026-10-09.
+Moved from `backend/metal/moe.go` (the comment above `encodeMoEFFNWithX`) on 2026-10-09.
 
 ```text
 encodeMoEFFNWithX records the MoE FFN for one layer, replacing the dense gate/up/swiglu/down
@@ -1659,7 +1659,7 @@ partial work cleanly with no GPU execution and no side effect on r.x.
 
 ## moeKSlotsOn
 
-Moved from `metal/moe.go` (the comment above `moeKSlotsOn` (the comment also held `encodeMoEExperts`'s doc)) on 2026-10-09.
+Moved from `backend/metal/moe.go` (the comment above `moeKSlotsOn` (the comment also held `encodeMoEExperts`'s doc)) on 2026-10-09.
 
 ```text
 encodeMoEExperts runs the k selected experts out of the STACKED all-E buffer (ml.expGuW/expDW,
@@ -1667,7 +1667,7 @@ indexed by rIdx at kernel-execution time) plus the optional shared expert. The n
 
 dst is the down-projection's accumulate target — decode's own caller (encodeMoEFFN) always
 passes r.x (the shared F32 residual stream), but G8's batched-prefill MoE row loop
-(metal/prefill.go, docs/tasks/task-gpu-paths-2026-09.md) needs the SAME expert-loop math to
+(backend/metal/prefill.go, docs/tasks/task-gpu-paths-2026-09.md) needs the SAME expert-loop math to
 accumulate into an isolated F32 scratch buffer instead, since prefill's own residual (xF) is
 F16 and these kernels are F32-only — added into xF's row by a SEPARATE small kernel afterward,
 not by pointing these dispatches at xF directly (a type mismatch: `device float*` vs `half*`).
@@ -1678,7 +1678,7 @@ but 1.019x on the Qwen1.5-MoE slice's token (21.5 us per MoE layer at k = 4), th
 
 ## metalBackend.memoryProbe
 
-Moved from `metal/backend.go` (the comment in `init`, above the memory-probe registration) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment in `init`, above the memory-probe registration) on 2026-10-09.
 
 ```text
 residentFitsMemory's own budget, exposed to decoder.Model.Plan (docs/tasks/task-fit-to-hardware.md
@@ -1690,7 +1690,7 @@ real guard would judge it against, so the two can never disagree.
 
 ## metalBackend.BuildResident.guard
 
-Moved from `metal/backend.go` (the comment above the memory-guard checks in `BuildResident`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above the memory-guard checks in `BuildResident`) on 2026-10-09.
 
 ```text
 FITS-IN-MEMORY GUARD. Metal's unified memory IS host RAM, and it WIRES the mmap pages a
@@ -1711,14 +1711,14 @@ above metalCtxCapMax cannot be honoured (a fixed-size kernel score buffer, not a
 budget) and must be a NAMED refusal, not folded into the generic "BuildResident declined"
 swallow below (buildResident itself also calls resolveMetalCtxCap and would hit the exact
 same error, but by then it's just another opaque build failure) — mirrors CUDA's own
-errKVWontFit precedent (cuda/backend.go): an operator's explicit request that cannot be
+errKVWontFit precedent (backend/cuda/backend.go): an operator's explicit request that cannot be
 honoured gets a specific, propagated error naming the numbers, not a silent CPU fallback
 indistinguishable from "this arch doesn't fit here at all".
 ```
 
 ## residentMemFraction
 
-Moved from `metal/backend.go` (the comment above `residentMemFraction`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `residentMemFraction`) on 2026-10-09.
 
 ```text
 residentMemFraction is the share of physical RAM the WEIGHTS alone may occupy. The remainder
@@ -1734,7 +1734,7 @@ for, which is why the bar sits just below that measurement rather than at a roun
 
 ## metalMemoryCeiling
 
-Moved from `metal/backend.go` (the comment above `metalMemoryCeiling`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `metalMemoryCeiling`) on 2026-10-09.
 
 ```text
 metalMemoryCeiling is S4 item 3 (task-never-swap-2026-09.md): the SINGLE arithmetic both
@@ -1760,7 +1760,7 @@ as "unknown", unchanged.
 
 ## metalMoESlotsRequest.cacheExperts
 
-Moved from `metal/backend.go` (the comment inside `metalMoESlotsRequest`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment inside `metalMoESlotsRequest`) on 2026-10-09.
 
 ```text
 M-13 (audit-metal-2026-09-12.md): --moe-cache-experts alone (no explicit --moe-cache-slots)
@@ -1773,16 +1773,16 @@ is Metal's twin.
 
 ## residentKVBytes
 
-Moved from `metal/backend.go` (the comment above `residentKVBytes`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `residentKVBytes`) on 2026-10-09.
 
 ```text
 residentKVBytes is the resident KV cache's footprint: the resolved ctx cap × kvDim × 2 bytes
 (f16 KV — the only path this backend ships; the f32 KV kernels exist but are compiled out,
-metal/model.go's kvF32 hardcoded false since the Gemma "crater" traced to BOS K/V, not
+backend/metal/model.go's kvF32 hardcoded false since the Gemma "crater" traced to BOS K/V, not
 precision) × 2 buffers (K and V), summed per layer since a per-layer geometry family (Gemma 4)
 varies kvDim between local and global layers — a single model-level figure would misprice
 whichever shape isn't the majority. This is the dominant "scratch" term M-02 named as missing;
-the many small per-model buffers (r.mq/r.gu/r.logits/etc, metal/model.go) are each at most a
+the many small per-model buffers (r.mq/r.gu/r.logits/etc, backend/metal/model.go) are each at most a
 few hundred KB — elementwise or vocab/hidden-sized — and round to nothing beside it, the same
 exemption ResidentWeightBytes' own doc comment already gives norms/biases.
 
@@ -1796,7 +1796,7 @@ job is "don't under-count", never the thing that actually explains the refusal t
 
 ## residentNeedBytes
 
-Moved from `metal/backend.go` (the comment above `residentNeedBytes`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `residentNeedBytes`) on 2026-10-09.
 
 ```text
 residentNeedBytes is the byte count residentFitsMemory judges against — split out from
@@ -1821,7 +1821,7 @@ weight term. KV was entirely absent; residentKVBytes above closes that.
 
 ## metalDefaultKVSlots
 
-Moved from `metal/backend.go` (the comment above `metalDefaultKVSlots`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `metalDefaultKVSlots`) on 2026-10-09.
 
 ```text
 metalDefaultKVSlots is how many resident KV slots Metal keeps when the count asked is the caller's default
@@ -1834,7 +1834,7 @@ lose their own slot and their batching. -kv-sessions N still asks for N.
 
 ## residentMemoryDecline.moeHint
 
-Moved from `metal/backend.go` (the comment above `moeHint` in `residentMemoryDecline`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `moeHint` in `residentMemoryDecline`) on 2026-10-09.
 
 ```text
 M-13: name the actual escape hatch for an MoE model, not just the guard override — a model
@@ -1844,7 +1844,7 @@ used to say nothing about how to reach that path.
 
 ## metalResident.checkCap
 
-Moved from `metal/backend.go` (the comment above `metalResident.checkCap`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `metalResident.checkCap`) on 2026-10-09.
 
 ```text
 checkCap guards the resident KV allocation (C3). Every layer's cache is r.kc[l]/r.vc[l], sized
@@ -1858,7 +1858,7 @@ decode loop surfaces the error (model.go) and the caller can fall back to the st
 
 ## metalResident.ForwardNoLogits
 
-Moved from `metal/backend.go` (the comment above `metalResident.ForwardNoLogits`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `metalResident.ForwardNoLogits`) on 2026-10-09.
 
 ```text
 ForwardNoLogits (decoder.ResidentPrefillKV) runs the token's forward to build ONLY its
@@ -1880,7 +1880,7 @@ ForwardEmbNoLogitsPipe runs the synchronous paged forward with its final norm an
 
 ## metalFastPrefillFloor
 
-Moved from `metal/backend.go` (the comment above `metalFastPrefillFloor`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `metalFastPrefillFloor`) on 2026-10-09.
 
 ```text
 metalFastPrefillFloor is the PROMPT-LENGTH floor (whole prompt = startPos+M) below which
@@ -1902,7 +1902,7 @@ below metalStepPrefillCeiling instead (promptStepOK).
 
 ## metalStepPrefillCeiling
 
-Moved from `metal/backend.go` (the comment above `metalStepPrefillCeiling`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `metalStepPrefillCeiling`) on 2026-10-09.
 
 ```text
 metalStepPrefillCeiling (A-P02's step bound): a resident with the batched step runs a prompt that ends below this many
@@ -1915,7 +1915,7 @@ different route from the cold one (fixed: decoder.PrefillTailExact); released to
 
 ## metalFastPrefillEnabled
 
-Moved from `metal/backend.go` (the comment above `metalFastPrefillEnabled`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `metalFastPrefillEnabled`) on 2026-10-09.
 
 ```text
 metalFastPrefillEnabled reports whether the batched f16-MMA prefill path is selected.
@@ -1933,7 +1933,7 @@ The old GOINFER_METAL_BATCHED_PREFILL continues to work: =1 forces on, =0 forces
 
 ## metalAttnFAEnabled
 
-Moved from `metal/backend.go` (the comment above `metalAttnFAEnabled`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `metalAttnFAEnabled`) on 2026-10-09.
 
 ```text
 metalAttnFAEnabled reports whether decode attention defaults to attention_fa (R2,
@@ -1962,7 +1962,7 @@ so; nothing here newly breaks a path that was shippable before.
 
 ## metalFusedAttentionEnabled
 
-Moved from `metal/backend.go` (the comment above `metalFusedAttentionEnabled`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `metalFusedAttentionEnabled`) on 2026-10-09.
 
 ```text
 metalFusedAttentionEnabled reports whether attention_prefill_fused (the simdgroup_matrix
@@ -1971,7 +1971,7 @@ place of the exact scalar kernel. Default ON since §3 gate passed 2026-09-10 (S
 decision cells K=256/512/1024 + K=3900 confirm; fused beat exact on all three pooled criteria —
 see docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md §5). GOINFER_METAL_FUSED_ATTENTION=0
 or --exact-prefill (which also covers metalFastPrefillEnabled) opts back to the exact kernel.
-attention_prefill_fused also requires hd%8==0 && hd<=128 (ATTN_MAXHD in metal/prefill.go) —
+attention_prefill_fused also requires hd%8==0 && hd<=128 (ATTN_MAXHD in backend/metal/prefill.go) —
 PrefillLast falls back to the exact kernel outside that range regardless of this flag.
 
 	GOINFER_METAL_FUSED_ATTENTION  1 | true | on   on
@@ -1980,7 +1980,7 @@ PrefillLast falls back to the exact kernel outside that range regardless of this
 
 ## metalResident.PrefillPath
 
-Moved from `metal/backend.go` (the comment above `ResidentQuant`, where it was glued to the wrong declaration) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `ResidentQuant`, where it was glued to the wrong declaration) on 2026-10-09.
 
 ```text
 PrefillPath (decoder.PrefillPathReporter) reports at load time whether this resident will use
@@ -1994,7 +1994,7 @@ re-quantized. "" leaves the decoder's label.
 
 ## metalResident.PrefillLast.cancel
 
-Moved from `metal/backend.go` (the comment inside `PrefillLast`, above its context check) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment inside `PrefillLast`, above its context check) on 2026-10-09.
 
 ```text
 One pass, so one check: this backend ingests the prompt in a single command buffer and has no
@@ -2006,7 +2006,7 @@ chunking inside PrefillLast, as cuda's prefillChunked does (A-D02, audit-metal-2
 
 ## metalResident.PrefillLast.default
 
-Moved from `metal/backend.go` (the comment inside `PrefillLast`, above the fast-prefill check) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment inside `PrefillLast`, above the fast-prefill check) on 2026-10-09.
 
 ```text
 Default on since the §3.2 gate passed on 2026-09-09 (S cells K=256/512/1024), above metalFastPrefillFloor: 16
@@ -2016,11 +2016,11 @@ out.
 
 ## resident.prefillUnaligned
 
-Moved from `metal/backend.go` (the comment above `resident.prefillUnaligned`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `resident.prefillUnaligned`) on 2026-10-09.
 
 ```text
 prefillUnaligned names the first reduction length the batched pass's GEMMs cannot take, or "" when every one is a multiple
-of 32. gemm_w4f16_tile and its int8 twin stage K in slabs of 32 with no partial-slab handling (metal/prefill.go). An int4
+of 32. gemm_w4f16_tile and its int8 twin stage K in slabs of 32 with no partial-slab handling (backend/metal/prefill.go). An int4
 resident cannot violate it (int4Buf refuses K%32 != 0 at build), but a native int8 one can: glm-ocr-tiny (hidden 48, FFN
 144) was admitted and read cosine 0.22 against the CPU (docs/tasks/task-metal-pairwise-followups-2026-10.md, Part A).
 Real checkpoints are 32-aligned; this keeps a model that is not on the sequential path instead of computing garbage.
@@ -2028,7 +2028,7 @@ Real checkpoints are 32-aligned; this keeps a model that is not on the sequentia
 
 ## metalMRoPEPrefillOn
 
-Moved from `metal/backend.go` (the comment above `metalMRoPEPrefillOn`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `metalMRoPEPrefillOn`) on 2026-10-09.
 
 ```text
 metalMRoPEPrefillOn and metalDeepstackPrefillOn turn S16's resident m-RoPE prefill on, for a turn without DeepStack sets
@@ -2045,7 +2045,7 @@ Tests set them.
 
 ## metalResident.HiddenLast
 
-Moved from `metal/backend.go` (the comment above `metalResident.HiddenLast`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `metalResident.HiddenLast`) on 2026-10-09.
 
 ```text
 HiddenLast (decoder.ResidentHiddenLast) ingests a whole sequence starting at startPos and
@@ -2073,7 +2073,7 @@ than a same-sitting fix; left as follow-up work.
 
 ## metalResident.PrefillTailExact
 
-Moved from `metal/backend.go` (the comment above `metalResident.PrefillTailExact`) on 2026-10-09.
+Moved from `backend/metal/backend.go` (the comment above `metalResident.PrefillTailExact`) on 2026-10-09.
 
 ```text
 PrefillTailExact (decoder.PrefillTailExact): a short PrefillLast continuing a prefix the pass prefilled reproduces the
@@ -2087,7 +2087,7 @@ TestDB01_chunkedPrefillMatchesWhole) and, since 2026-10-04, for the generic resi
 
 ## allKernels
 
-Moved from `metal/kernels.go` (the comment above `allKernels`) on 2026-10-09.
+Moved from `backend/metal/kernels.go` (the comment above `allKernels`) on 2026-10-09.
 
 ```text
 allKernels is the full dense-decode-layer MSL kernel set in one library (W8A8 path —
@@ -2101,13 +2101,13 @@ gemv_w4a8_sa_amax has no reference anywhere and is the one genuinely dead surviv
 list — kept rather than deleted alongside it so its own history stays visible next to the
 others, not because anything still needs it). None of these is "safe to delete because nothing
 production calls it" — deleting one breaks the test that keeps its measurement/negative result
-honest. A seventh, gemm_w4f16 (metal/prefill.go, a genuinely dead duplicate of
+honest. A seventh, gemm_w4f16 (backend/metal/prefill.go, a genuinely dead duplicate of
 gemm_w4f16_store with no reference anywhere, test included), was deleted outright.
 ```
 
 ## pagedProfile
 
-Moved from `metal/gemma4_moe.go` (the comment above `pagedProfile`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above `pagedProfile`) on 2026-10-09.
 
 ```text
 pagedProfile decomposes the paged forward's per-token cost into ACTUAL GPU-busy time (per phase,
@@ -2119,7 +2119,7 @@ total-minus-staging — so the ~70%-of-budget bucket is split into GPU execution
 
 ## gemma4MoeKernels
 
-Moved from `metal/gemma4_moe.go` (the comment above `gemma4MoeKernels`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above `gemma4MoeKernels`) on 2026-10-09.
 
 ```text
 Gemma-4 enable_moe_block (26B-A4B) MSL kernels — the parallel dense‖MoE FFN that the generic
@@ -2134,7 +2134,7 @@ composition is wired (gemma4_moekernels_test.go), the same 2b→2c→2d order CU
 
 ## gemma4MoeResident.paged
 
-Moved from `metal/gemma4_moe.go` (the comment above `gemma4MoeResident.paged`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above `gemma4MoeResident.paged`) on 2026-10-09.
 
 ```text
 Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): the full expert set doesn't fit resident, so
@@ -2153,7 +2153,7 @@ value-independent (the actual point of this change: see expertpool.go's own doc 
 
 ## buildGemma4MoE.slots
 
-Moved from `metal/gemma4_moe.go` (the comment above the slot request in `buildGemma4MoE`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above the slot request in `buildGemma4MoE`) on 2026-10-09.
 
 ```text
 Synchronous paging: --moe-cache-slots / GOINFER_METAL_MOE_SLOTS (deprecated fallback,
@@ -2167,7 +2167,7 @@ pool's contiguous buffer while rWgt is still indexed by the selection slot (byte
 
 ## buildGemma4MoE.pread
 
-Moved from `metal/gemma4_moe.go` (the comment above the pread-staging setup in `buildGemma4MoE`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above the pread-staging setup in `buildGemma4MoE`) on 2026-10-09.
 
 ```text
 Stage experts by pread'ing their nibbles straight into the slot buffers instead of a byte-copy
@@ -2180,7 +2180,7 @@ buildGemma4MoELayer falls back to the byte-copy.
 
 ## buildGemma4MoE.nocache
 
-Moved from `metal/gemma4_moe.go` (the comment above the `GOINFER_MOE_NOCACHE` check in `buildGemma4MoE`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above the `GOINFER_MOE_NOCACHE` check in `buildGemma4MoE`) on 2026-10-09.
 
 ```text
 GOINFER_MOE_NOCACHE=1: F_NOCACHE on the pread fd — reads bypass the unified buffer
@@ -2195,7 +2195,7 @@ remains UNEXPLAINED. Kept off by default, wired, so it isn't re-proposed.
 
 ## buildGemma4MoELayer.paged
 
-Moved from `metal/gemma4_moe.go` (the comment above the paged branch of `buildGemma4MoELayer`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above the paged branch of `buildGemma4MoELayer`) on 2026-10-09.
 
 ```text
 Paged: DON'T stack the experts (that is the 11.96 GB we can't afford). Build a bounded LRU
@@ -2206,7 +2206,7 @@ expert 0. The .giw expert weights MUST be int4-direct (group-32) for this zero-i
 
 ## buildGemma4MoELayer.scales
 
-Moved from `metal/gemma4_moe.go` (the comment above the `stage` closure in `buildGemma4MoELayer`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above the `stage` closure in `buildGemma4MoELayer`) on 2026-10-09.
 
 ```text
 C-P01 (audit-metal-2026-09-30.md): each expert's f16 scales are read from its own WeightMat
@@ -2217,7 +2217,7 @@ same bits again: 1361 MB on the 26B, measured 2026-10-02 (T1.8).
 
 ## buildGemma4MoELayer.willneed
 
-Moved from `metal/gemma4_moe.go` (the comment above the pread-staging block in `buildGemma4MoELayer`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above the pread-staging block in `buildGemma4MoELayer`) on 2026-10-09.
 
 ```text
 MADV_WILLNEED over the routed experts' nibble spans before staging (was GOINFER_MOE_WILLNEED=1;
@@ -2245,7 +2245,7 @@ requantized HF load) — the offsets must all resolve for pread to be correct.
 
 ## buildGemma4MoELayer.stagePread
 
-Moved from `metal/gemma4_moe.go` (the comment above the `stagePread` closure body in `buildGemma4MoELayer`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above the `stagePread` closure body in `buildGemma4MoELayer`) on 2026-10-09.
 
 ```text
 M-12 (audit-metal-2026-09-12.md), second half: gate|up and down are separate
@@ -2261,14 +2261,14 @@ Buffer.At()-offset VIEW, and preadIntoU32Buf's U32s() call ignores that offset
 
 ## encodeGemma4MoEFFN
 
-Moved from `metal/gemma4_moe.go` (the comment above `encodeGemma4MoEFFN`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above `encodeGemma4MoEFFN`) on 2026-10-09.
 
 ```text
 encodeGemma4MoEFFN records Gemma-4's parallel dense‖MoE FFN for one layer, replacing the dense
 gate/up/swiglu/down block. Unlike the generic encodeMoEFFN (one branch, wacc straight into the
 residual), TWO branches run off the SAME post-attention residual h through THREE independent
 normalizations, then join under a shared post-norm with a per-layer scalar. Mirrors
-decoder/forward_gemma4_moe.go and cuda/resident.go gemma4MoeMLP exactly:
+decoder/forward_gemma4_moe.go and backend/cuda/resident.go gemma4MoeMLP exactly:
 
 	x1 = postFFN1( mlpDown( geluTanh(mlpGate·xd)·(mlpUp·xd) ) )   xd = preFFN(h)    [dense]
 	rn = rmsnorm_nw(h); logits = RouterProjScaled·rn; idx,wgt = route; wgt *= perExpertScale[idx]
@@ -2287,14 +2287,14 @@ encodeLayer (Forward, ForwardArgmax, forwardHiddenNoHead's encodeTrunkInto) reac
 through the non-paged encoder and silently computing off zero-value weights instead of failing
 (audit-metal-2026-09-12.md C-02).
 
-FinishEncoding before the panic — see encodeMoEFFN's twin comment (metal/moe.go): e already has
+FinishEncoding before the panic — see encodeMoEFFN's twin comment (backend/metal/moe.go): e already has
 this layer's attention dispatches recorded, and Metal asserts on a command encoder released
 without endEncoding.
 ```
 
 ## encodeG4Phase1
 
-Moved from `metal/gemma4_moe.go` (the comment above `encodeG4Phase1`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above `encodeG4Phase1`) on 2026-10-09.
 
 ```text
 encodeG4Phase1 is the value-INDEPENDENT head of the FFN: the dense branch (→g4x1) and the router
@@ -2305,7 +2305,7 @@ experts before phase 2. Byte-identical to the old inline head (same dispatches, 
 
 ## forwardLogitsPaged
 
-Moved from `metal/gemma4_moe.go` (the comment above `forwardLogitsPaged`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above `forwardLogitsPaged`) on 2026-10-09.
 
 ```text
 forwardLogitsPaged is the SYNCHRONOUS expert-paging decode: the reference implementation that lets
@@ -2318,7 +2318,7 @@ with the embedding and holds the OS thread (ForwardEmb does both).
 
 ## forwardLogitsPaged.recover
 
-Moved from `metal/gemma4_moe.go` (the comment above the deferred recover in `forwardLogitsPaged`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above the deferred recover in `forwardLogitsPaged`) on 2026-10-09.
 
 ```text
 The pread staging closure (stagePread) and the per-token MustBuf allocations panic on a
@@ -2331,7 +2331,7 @@ crashing the process (audit R-02; same runtime-abort discipline as C-09).
 
 ## forwardLogitsPaged.abort
 
-Moved from `metal/gemma4_moe.go` (the comment inside the deferred recover in `forwardLogitsPaged`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment inside the deferred recover in `forwardLogitsPaged`) on 2026-10-09.
 
 ```text
 Accepted bounded side-effects on this rare abort path (audit F-06): the in-flight
@@ -2344,7 +2344,7 @@ DrainPool/End would nil-panic or commit a half-encoded command buffer — worse 
 
 ## forwardLogitsPaged.split
 
-Moved from `metal/gemma4_moe.go` (the comment above the `GOINFER_MOE_PROF_SPLIT` read in `forwardLogitsPaged`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above the `GOINFER_MOE_PROF_SPLIT` read in `forwardLogitsPaged`) on 2026-10-09.
 
 ```text
 GOINFER_MOE_PROF_SPLIT: split each End() into commit() vs waitUntilCompleted() to locate the
@@ -2356,7 +2356,7 @@ path's per-boundary cost is much lower than the default End() path, the per-CB p
 
 ## g4PrefetchOn
 
-Moved from `metal/gemma4_moe.go` (the comment above `g4PrefetchOn`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe.go` (the comment above `g4PrefetchOn`) on 2026-10-09.
 
 ```text
 g4PrefetchOn guesses a paged Gemma 4 MoE layer's experts from the layer before it and reads the misses in the
@@ -2370,7 +2370,7 @@ of 9 reps above 1 each: the extra reads compete with demand reads on the SSD (do
 
 ## weightAlias
 
-Moved from `metal/alias.go` (the comment above `weightAlias`) on 2026-10-09.
+Moved from `backend/metal/alias.go` (the comment above `weightAlias`) on 2026-10-09.
 
 ```text
 S6 (docs/tasks/task-never-swap-2026-09.md): a dense int4 weight is copied twice at build — the
@@ -2405,7 +2405,7 @@ then nil and int4Buf is byte-for-byte the copy path.
 
 ## newWeightAlias
 
-Moved from `metal/alias.go` (the comment above `newWeightAlias`) on 2026-10-09.
+Moved from `backend/metal/alias.go` (the comment above `newWeightAlias`) on 2026-10-09.
 
 ```text
 newWeightAlias returns an aliaser for any model backed by a .giw mapping unless GOINFER_METAL_ALIAS=0.
@@ -2422,7 +2422,7 @@ swap flat (docs/measurements/m26-alias-fork-collapse-2026-09-24.md).
 
 ## weightAlias.int8Codes
 
-Moved from `metal/alias.go` (the comment above `weightAlias.int8Codes`) on 2026-10-09.
+Moved from `backend/metal/alias.go` (the comment above `weightAlias.int8Codes`) on 2026-10-09.
 
 ```text
 int8Codes is nibbles for an int8 (W8A8) matrix: its codes are one contiguous array in the .giw, 16-byte
@@ -2433,17 +2433,17 @@ still copied after int4 aliasing (measured with a per-caller buffer ledger, 2026
 
 ## gumbelMSLKernels
 
-Moved from `metal/gumbel.go` (the comment above `gumbelMSLKernels`) on 2026-10-09.
+Moved from `backend/metal/gumbel.go` (the comment above `gumbelMSLKernels`) on 2026-10-09.
 
 ```text
 gumbelMSLKernels — device-side temperature-only sampling by Gumbel-max, the Mac half of R7b
-(docs/tasks/red-october.md). Port of cuda/gumbel.cu and gpu/gumbel.go (WGSL) — read either
+(docs/tasks/red-october.md). Port of backend/cuda/gumbel.cu and backend/webgpu/gumbel.go (WGSL) — read either
 first; this mirrors their structure kernel-for-kernel over MSL's own constraints, checked
 directly against the Metal Shading Language Specification (2026-06-04 rev), not assumed:
 
   - MSL HAS NO log1p. It does not appear anywhere in Table 8.1 or 8.2's function lists (the
     complete standard math function set), unlike CUDA's log1pf. So the small-w branch below
-    uses the SAME 12-term Taylor polynomial gpu/gumbel.go's WGSL kernel already uses (w < 0.25:
+    uses the SAME 12-term Taylor polynomial backend/webgpu/gumbel.go's WGSL kernel already uses (w < 0.25:
     -w*p(w), computed directly from w, never forming 1-w) — for the same reason WGSL needed it:
     computing 1.0-w in f32 for w below ~6e-8 rounds EXACTLY to 1.0 (below f32's representable
     ULP spacing near 1), losing the input entirely regardless of which log variant runs on the
@@ -2454,7 +2454,7 @@ directly against the Metal Shading Language Specification (2026-06-04 rev), not 
     the same computation decoder.philox4x32 does in Go — not WGSL's 16-bit-limb reconstruction.
   - precise::log is used for the w >= 0.25 branch and the h >= 2^31 branch. Table 8.1 (accuracy
     with fast math off, i.e. what metal::precise selects) gives log <= 4 ulp for any x > 0;
-    Table 8.2 (fast math, the library-wide default here — metal/model.go's preciseMathCompile
+    Table 8.2 (fast math, the library-wide default here — backend/metal/model.go's preciseMathCompile
     defaults to false / CompileLibrary, not CompileLibraryPrecise) gives only "absolute error <=
     2^-21 near x=1, else <= 3 ulp" — the same weak near-1 guarantee WGSL's own comment already
     flags. Verified against the spec's actual tables, not assumed to match WGSL's.
@@ -2465,7 +2465,7 @@ directly against the Metal Shading Language Specification (2026-06-04 rev), not 
     the way decoder.gumbelKey's explicit float32(...) casts do on the host, is NOT on its own
     sufficient here. The pragma is the documented mechanism to forbid contraction at exactly
     this kernel's scope without recompiling the whole allKernels library under
-    CompileLibraryPrecise (metal/model.go), which would also change every other kernel's bits
+    CompileLibraryPrecise (backend/metal/model.go), which would also change every other kernel's bits
     and timing — not what a two-kernel addition should do. Restored to `fast` immediately after
     the second kernel so nothing else in allKernels is affected.
 
@@ -2483,10 +2483,10 @@ as_type<float> at shm[2t+1] — the same bit-reinterpretation WGSL's own kernel 
 
 ## Removed tracker labels and short history (metal-wM2)
 
-Comment lines the diet cut down to their contract (a tracker id, a date or a one-clause history), from `metal/backend.go`, `metal/gemma4_moe.go` and `metal/alias.go`, on 2026-10-10. Each is the old text at its old line, verbatim; the surviving comment says what the code does.
+Comment lines the diet cut down to their contract (a tracker id, a date or a one-clause history), from `backend/metal/backend.go`, `backend/metal/gemma4_moe.go` and `backend/metal/alias.go`, on 2026-10-10. Each is the old text at its old line, verbatim; the surviving comment says what the code does.
 
 
-### metal/backend.go, before `var metalCtxCeiling sync.Map // *decoder.Model -> int`
+### backend/metal/backend.go, before `var metalCtxCeiling sync.Map // *decoder.Model -> int`
 
 ```text
 metalCtxCeiling is S18's context ceiling per model (docs/tasks/task-multimodal-support-2026-10.md, "S18 on the Mac"):
@@ -2495,7 +2495,7 @@ the decoder keeps no backend state.
 ```
 
 
-### metal/backend.go, before `budget := metalMemoryCeiling(ram)`
+### backend/metal/backend.go, before `budget := metalMemoryCeiling(ram)`
 
 ```text
 S4 item 3: the SAME combined ceiling the registered "metal" memory probe reports to
@@ -2503,7 +2503,7 @@ decoder.Model.Plan, so the two can never disagree.
 ```
 
 
-### metal/backend.go, before `fastOnce sync.Once`
+### backend/metal/backend.go, before `fastOnce sync.Once`
 
 ```text
 fast is the batched-prefill decision, made ONCE per resident on first use: the
@@ -2513,11 +2513,11 @@ build) so a resident built as a struct literal in a test gets the same default a
 ```
 
 
-### metal/backend.go, before `func (a *metalResident) ctxCap() int {`
+### backend/metal/backend.go, before `func (a *metalResident) ctxCap() int {`
 
 ```text
 ctxCap is this resident's resolved KV capacity — a.r.ctxCap when a real *resident exists, else
-metalCtxCapDefault. The fallback matters for TestMetalResidentCheckCap (metal/resident_cap_test.go),
+metalCtxCapDefault. The fallback matters for TestMetalResidentCheckCap (backend/metal/resident_cap_test.go),
 which deliberately constructs a zero-value &metalResident{} (r == nil) to test checkCap/ContextCap as
 pure logic with no Metal device — that test predates G6's per-build ctxCap and is meant to keep
 working unmodified against "the historical constant" semantics, so a nil/zero r reads as "no
@@ -2525,7 +2525,7 @@ explicit request was ever resolved here", not as 0.
 ```
 
 
-### metal/backend.go, before `a.Reset()`
+### backend/metal/backend.go, before `a.Reset()`
 
 ```text
 Fresh sequence: re-zero any Gated-DeltaNet state before it carries over from a prior
@@ -2533,14 +2533,14 @@ Generate on this resident (audit C-01's CUDA analogue). No-op for every other fa
 ```
 
 
-### metal/backend.go, before `}`
+### backend/metal/backend.go, before `}`
 
 ```text
 return nil, err // C-09: a command buffer aborted — surface it, do NOT return stale logits
 ```
 
 
-### metal/backend.go, before `func (a *metalResident) SampleAvailable() bool { return a.r != nil && a.r.Sample`
+### backend/metal/backend.go, before `func (a *metalResident) SampleAvailable() bool { return a.r != nil && a.r.Sample`
 
 ```text
 SampleAvailable/ForwardSample (decoder.ResidentSample, R7b Mac half — gumbel_sample.go) delegate
@@ -2551,35 +2551,35 @@ struct's own field comment and every other delegating method below it.
 ```
 
 
-### metal/backend.go, before `}`
+### backend/metal/backend.go, before `}`
 
 ```text
 return a.r.takeExecErr() // C-09: a command buffer aborted — surface it
 ```
 
 
-### metal/backend.go, before `}`
+### backend/metal/backend.go, before `}`
 
 ```text
 return true // §3.2 gate passed 2026-09-09 (S cells K=256/512/1024); floor lowered to 64 2026-09-20 (R3)
 ```
 
 
-### metal/backend.go, before `}`
+### backend/metal/backend.go, before `}`
 
 ```text
 return true // default ON 2026-09-21 (R2) — see the doc comment above
 ```
 
 
-### metal/backend.go, before `}`
+### backend/metal/backend.go, before `}`
 
 ```text
 return true // §3 gate passed 2026-09-10 (S set B decision cells K=256/512/1024 + K=3900 confirm)
 ```
 
 
-### metal/backend.go, before `if a.emodelBatched() && a.fastPrefill() && startPos+len(embeddings) >= metalFast`
+### backend/metal/backend.go, before `if a.emodelBatched() && a.fastPrefill() && startPos+len(embeddings) >= metalFast`
 
 ```text
 4b (docs/tasks/task-m26-mac-2026-10.md): a paged Gemma 4 MoE (M26) takes no batched pass; its prompt runs layer by
@@ -2590,7 +2590,7 @@ decline, the layer-major pass below runs it as before.
 ```
 
 
-### metal/backend.go, before `promptLen := startPos + len(embeddings)`
+### backend/metal/backend.go, before `promptLen := startPos + len(embeddings)`
 
 ```text
 FLOOR: below metalFastPrefillFloor no decision cell has passed, so the batched pass declines there; the lowest that
@@ -2600,7 +2600,7 @@ than the pass there (promptStepOK).
 ```
 
 
-### metal/backend.go, before `func (a *metalResident) PrefillImageLast(ctx context.Context, embeddings [][]flo`
+### backend/metal/backend.go, before `func (a *metalResident) PrefillImageLast(ctx context.Context, embeddings [][]flo`
 
 ```text
 PrefillImageLast (decoder.ResidentImagePrefill; S17's Metal image prefill, docs/tasks/task-multimodal-support-2026-10.md) is
@@ -2612,7 +2612,7 @@ CPU-prefill and upload bridge, unchanged.
 ```
 
 
-### metal/backend.go, before `if a.r.kvI8 {`
+### backend/metal/backend.go, before `if a.r.kvI8 {`
 
 ```text
 The f16 MMA prefill kernels implement a dense gated FFN (SiLU or GeGLU, G8) out of
@@ -2620,14 +2620,14 @@ L.guW/L.dW with per-layer rope/window, per-head QK-norm, and Gemma's sandwich no
 (G8 MoE half) a generically-shaped gated-SwiGLU MoE FFN — expert-major by default, the
 per-token decode MoE chain row by row with GOINFER_MOE_EXPERT_MAJOR=0 (prefill.go) — but
 NOT per-layer-varying attention geometry (dense Gemma 4's local/global head_dim split;
-prefillOK's own per-layer-geometry guard, metal/model.go) or Gemma 4's enable_moe_block
+prefillOK's own per-layer-geometry guard, backend/metal/model.go) or Gemma 4's enable_moe_block
 variant (residLayer.g4moe, a third FFN shape this path never reads; explicitly excluded
 via HasGemma4MoEResident regardless of per-layer geometry). Any of these declines here,
 and the caller re-runs the prompt through the (correct) sequential Forward loop.
 ```
 
 
-### metal/backend.go, before `if startPos < 0 || len(embeddings) == 0 || startPos+len(embeddings) > a.ctxCap()`
+### backend/metal/backend.go, before `if startPos < 0 || len(embeddings) == 0 || startPos+len(embeddings) > a.ctxCap()`
 
 ```text
 startPos < 0 would wrap to a huge uint32 and make kv_store_f16 write far out of bounds — on
@@ -2636,7 +2636,7 @@ a reused prefix's length, or a chunk's offset; F-G01), but the guard is cheap.
 ```
 
 
-### metal/backend.go, before `if a.r.prefillExactAttn() && startPos+len(embeddings) > prefillExactAttnMaxKeys `
+### backend/metal/backend.go, before `if a.r.prefillExactAttn() && startPos+len(embeddings) > prefillExactAttnMaxKeys `
 
 ```text
 F-C02: the exact attention kernel (no fused kernel for this head dim, or fused attention off) holds at most
@@ -2644,7 +2644,7 @@ prefillExactAttnMaxKeys scores; the sequential path's decode kernels tile theirs
 ```
 
 
-### metal/backend.go, before `if startPos == 0 {`
+### backend/metal/backend.go, before `if startPos == 0 {`
 
 ```text
 A fresh sequence (startPos 0) starts a Gated-DeltaNet hybrid's recurrent state from zero, as Forward(pos 0) does: the
@@ -2653,7 +2653,7 @@ for a new prompt would be the previous sequence's. A no-op for every other famil
 ```
 
 
-### metal/backend.go, before `var logits []float32`
+### backend/metal/backend.go, before `var logits []float32`
 
 ```text
 ensurePrefill's compile panic and the ~24 per-call MustBuf OOM panics fire HERE, at request
@@ -2663,7 +2663,7 @@ decode (audit R-23; B-10 class).
 ```
 
 
-### metal/backend.go, before `if a.r.prefillResidNonFinite {`
+### backend/metal/backend.go, before `if a.r.prefillResidNonFinite {`
 
 ```text
 S17 (docs/tasks/task-multimodal-support-2026-10.md): the f16 residual overflowed. The head reads the NaN row as
@@ -2671,7 +2671,7 @@ finite zeros, so the logit check below cannot see it.
 ```
 
 
-### metal/backend.go, before `if i := firstNonFinite(logits); i >= 0 {`
+### backend/metal/backend.go, before `if i := firstNonFinite(logits); i >= 0 {`
 
 ```text
 A-C02 (docs/audit-metal-2026-09-30.md): the batched pass carries f16 activations, which a checkpoint the
@@ -2681,7 +2681,7 @@ scan is about 0.05 ms at a 152k vocabulary.
 ```
 
 
-### metal/backend.go, before `if (a.r.g4moe != nil && a.r.g4moe.paged) || (a.r.moe != nil && a.r.moe.paged) {`
+### backend/metal/backend.go, before `if (a.r.g4moe != nil && a.r.g4moe.paged) || (a.r.moe != nil && a.r.moe.paged) {`
 
 ```text
 forwardHiddenNoHead's trunk encoder (encodeTrunkInto → encodeLayer) has no paged branch — only
@@ -2693,7 +2693,7 @@ exactly like an OOM or cap decline does (decoder/embed.go:Model.HiddenLast).
 ```
 
 
-### metal/backend.go, before `if err := ctx.Err(); err != nil {`
+### backend/metal/backend.go, before `if err := ctx.Err(); err != nil {`
 
 ```text
 G18: an abandoned client otherwise leaves the whole sequence streaming through the
@@ -2701,71 +2701,71 @@ device with nothing watching — same discipline as residentPrefillSeed's sequen
 ```
 
 
-### metal/backend.go, before `}`
+### backend/metal/backend.go, before `}`
 
 ```text
 return nil, err // C-09: a command buffer aborted — surface it, do NOT return a stale/zero vector
 ```
 
 
-### metal/backend.go, before `}`
+### backend/metal/backend.go, before `}`
 
 ```text
 return nil, err // C-09: a command buffer aborted; never return a stale residual
 ```
 
 
-### metal/backend.go, before `}`
+### backend/metal/backend.go, before `}`
 
 ```text
 return nil, err // C-09: a command buffer aborted — surface it
 ```
 
 
-### metal/gemma4_moe.go, before `paged   bool`
+### backend/metal/gemma4_moe.go, before `paged   bool`
 
 ```text
 fence                         *pagedFence // M-11 / C-B03 (paged_fence.go); nil unpaged or where MSL 3.2 does not compile
 ```
 
 
-### metal/gemma4_moe.go, before `wg.Add(2)`
+### backend/metal/gemma4_moe.go, before `wg.Add(2)`
 
 ```text
 if scalesInFile { // C-P01: the scales are four more disjoint destinations' worth of the same argument
 ```
 
 
-### metal/gemma4_moe.go, before `rp := pos`
+### backend/metal/gemma4_moe.go, before `rp := pos`
 
 ```text
 N-48 (docs/audit-2026-09-10.md): setPos, not a direct uPos/uNKeys write — same gap as
-metal/moe.go's paged path, see its own comment there.
+backend/metal/moe.go's paged path, see its own comment there.
 ```
 
 
-### metal/gemma4_moe.go, before `var arp ARPool`
+### backend/metal/gemma4_moe.go, before `var arp ARPool`
 
 ```text
 async := pagedAsyncPhase2On && !split // M-11: phase 2 committed, not waited (pagedAsyncPhase2On)
 ```
 
 
-### metal/gemma4_moe.go, before `return`
+### backend/metal/gemma4_moe.go, before `return`
 
 ```text
 r.recordExecErr(e.Err()) // C-09: catch an abort in any paged per-layer submit
 ```
 
 
-### metal/gemma4_moe.go, before `var seq uint32`
+### backend/metal/gemma4_moe.go, before `var seq uint32`
 
 ```text
 fenced := g.fence != nil && async // M-11 / C-B03: the route mirrored and fenced, the host spins (paged_fence.go)
 ```
 
 
-### metal/gemma4_moe.go, before `slots := L.g4moe.pool.ensureResidentBatch(ids)`
+### backend/metal/gemma4_moe.go, before `slots := L.g4moe.pool.ensureResidentBatch(ids)`
 
 ```text
 M-12 (audit-metal-2026-09-12.md): stage every miss in this token's top-k concurrently
@@ -2774,7 +2774,7 @@ comment for why this is safe.
 ```
 
 
-### metal/gemma4_moe.go, before `gIdx := g.slotIdx.U32s()`
+### backend/metal/gemma4_moe.go, before `gIdx := g.slotIdx.U32s()`
 
 ```text
 M-11: tell the GPU which pool row holds each routed expert — a small host→device write,
@@ -2782,21 +2782,21 @@ not a re-encode. slotIdx replaces the old idxZeros (see gemma4MoeResident's doc 
 ```
 
 
-### metal/gemma4_moe.go, before `e2.UseResidencySet(r.residency)`
+### backend/metal/gemma4_moe.go, before `e2.UseResidencySet(r.residency)`
 
 ```text
 if r.residency != (ResidencySet{}) { // M-14: per-encoder attach, phase 2 only
 ```
 
 
-### metal/alias.go, before `return int4Concat(d, wms...)`
+### backend/metal/alias.go, before `return int4Concat(d, wms...)`
 
 ```text
 if w.Cols()%32 != 0 { // int4Concat owns the K%32 panic (audit M-10)
 ```
 
 
-### metal/alias.go, before `func (a *weightAlias) summary() string {`
+### backend/metal/alias.go, before `func (a *weightAlias) summary() string {`
 
 ```text
 summary is the banner line S6 asks for: the number a user would otherwise never see — how much of the
@@ -2808,14 +2808,14 @@ so a v15 file for another target is converted too (F-D02, audit-metal-2026-09-30
 
 ## TestAttentionPrefillFused_ctxCapNotMultipleOf8
 
-Moved from `metal/attention_prefill_fused_cachepad_test.go` (the comment above `TestAttentionPrefillFused_ctxCapNotMultipleOf8`) on 2026-10-09.
+Moved from `backend/metal/attention_prefill_fused_cachepad_test.go` (the comment above `TestAttentionPrefillFused_ctxCapNotMultipleOf8`) on 2026-10-09.
 
 ```text
 TestAttentionPrefillFused_ctxCapNotMultipleOf8 gates C-01 (audit-metal-2026-09-12.md):
 attention_prefill_fused's key loop reads whole 8-row simdgroup tiles and masks the ragged
 remainder AFTER the load, so a resident cache built for a ctxCap that is NOT a multiple of 8
 can have its last, ragged tile read past kc/vc's actual allocated end when nKeysMax reaches
-that cap exactly. The fix (metal/model.go buildResident) rounds the kc/vc ALLOCATION up to a
+that cap exactly. The fix (backend/metal/model.go buildResident) rounds the kc/vc ALLOCATION up to a
 multiple of 8 rows while leaving r.ctxCap itself (the checked, user-visible capacity) alone.
 
 This asserts the allocated BYTE LENGTH directly (Buffer.Len(), the logical size passed to the
@@ -2832,7 +2832,7 @@ gates are held to (CLAUDE.md).
 
 ## TestOlmo3ResidentSmokeMetal
 
-Moved from `metal/olmo3_resident_smoke_test.go` (the comment above `TestOlmo3ResidentSmokeMetal`) on 2026-10-09.
+Moved from `backend/metal/olmo3_resident_smoke_test.go` (the comment above `TestOlmo3ResidentSmokeMetal`) on 2026-10-09.
 
 ```text
 TestOlmo3ResidentSmokeMetal and TestOlmoHybridResidentSmokeMetal are G5's FeatPostOnlyNorm +
@@ -2853,7 +2853,7 @@ existing coverage plus this smoke test's admission-and-no-NaN check.
 
 ## TestPrefillLast_startPosGreaterThanZero
 
-Moved from `metal/prefill_startpos_test.go` (the comment above `TestPrefillLast_startPosGreaterThanZero`) on 2026-10-09.
+Moved from `backend/metal/prefill_startpos_test.go` (the comment above `TestPrefillLast_startPosGreaterThanZero`) on 2026-10-09.
 
 ```text
 TestPrefillLast_startPosGreaterThanZero gates G-08 (audit-metal-2026-09-12.md): the §3.2 pooled
@@ -2878,7 +2878,7 @@ attention_prefill_steel, which TestAttentionPrefillSteelMatchesFloat64 checks at
 
 ## TestResidentNeedBytes_honorsPagingSlots
 
-Moved from `metal/resident_memguard_test.go` (the comment above `TestResidentNeedBytes_honorsPagingSlots`) on 2026-10-09.
+Moved from `backend/metal/resident_memguard_test.go` (the comment above `TestResidentNeedBytes_honorsPagingSlots`) on 2026-10-09.
 
 ```text
 TestResidentNeedBytes_honorsPagingSlots is M-02's gate for the actual wiring gap: reverting
@@ -2899,7 +2899,7 @@ time another additive term is found.
 
 ## TestSmolLM3ResidentSmokeMetal
 
-Moved from `metal/smollm3_resident_parity_test.go` (the comment above `TestSmolLM3ResidentSmokeMetal`) on 2026-10-09.
+Moved from `backend/metal/smollm3_resident_parity_test.go` (the comment above `TestSmolLM3ResidentSmokeMetal`) on 2026-10-09.
 
 ```text
 TestSmolLM3ResidentSmokeMetal is G5's FeatNoPE row (docs/tasks/task-gpu-paths-2026-09.md) smoke
@@ -2920,14 +2920,14 @@ finding this codebase already recorded for Mellum-on-Metal (features.go's FeatRo
 The actual correctness gate is decoder.TestRopeInvFreqLayer_NoPEIsZero — a pure, backend-
 agnostic unit test of RopeInvFreqLayer itself (exact zero/non-zero per layer, no GPU, no
 quantization noise), plus the shipped rope2 kernel math being exact identity at invFreq==0 by
-construction (metal/kernels.go, metal/rope_test.go's TestRope_mscale family already exercises
+construction (backend/metal/kernels.go, backend/metal/rope_test.go's TestRope_mscale family already exercises
 that kernel directly). This test's only job is: does declaring FeatNoPE actually let the model
 go resident and run without error/NaN.
 ```
 
 ## TestPhiloxGumbelMSL_mutationDetectsAConstantChange
 
-Moved from `metal/gumbel_test.go` (the comment above `TestPhiloxGumbelMSL_mutationDetectsAConstantChange`) on 2026-10-09.
+Moved from `backend/metal/gumbel_test.go` (the comment above `TestPhiloxGumbelMSL_mutationDetectsAConstantChange`) on 2026-10-09.
 
 ```text
 TestPhiloxGumbelMSL_mutationDetectsAConstantChange applies R7b's own registered mutation check
@@ -2941,7 +2941,7 @@ source afterward and confirms the restoration is byte-identical.
 
 ## TestSampledDecodeLadder_speed
 
-Moved from `metal/sampled_gumbel_speed_test.go` (the comment above `TestSampledDecodeLadder_speed`) on 2026-10-09.
+Moved from `backend/metal/sampled_gumbel_speed_test.go` (the comment above `TestSampledDecodeLadder_speed`) on 2026-10-09.
 
 ```text
 TestSampledDecodeLadder_speed is R7b Mac's speed measurement (docs/tasks/red-october.md),
@@ -2969,7 +2969,7 @@ real decode-bound workload) doesn't dilute the per-token rate.
 Run: GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./metal/ -run TestSampledDecodeLadder_speed -v -timeout 30m
 ```
 
-### metal/attention_prefill_fused_cachepad_test.go, on `const ctxCap = 37`
+### backend/metal/attention_prefill_fused_cachepad_test.go, on `const ctxCap = 37`
 
 ```text
 const ctxCap = 37                                 // NOT a multiple of 8 — the exact shape C-01 describes
@@ -2977,10 +2977,10 @@ const ctxCap = 37                                 // NOT a multiple of 8 — the
 
 ## Test files (metal-wM2): tracker labels and short history removed
 
-Comment lines of the test files `metal/resident_memguard_test.go`, `metal/gumbel_test.go` and `metal/moe_expert_major_prefill_test.go` that the diet cut down to what the test pins, verbatim, on 2026-10-10. The test names are unchanged; the larger stories are under their own `## Test...` headings above.
+Comment lines of the test files `backend/metal/resident_memguard_test.go`, `backend/metal/gumbel_test.go` and `backend/metal/moe_expert_major_prefill_test.go` that the diet cut down to what the test pins, verbatim, on 2026-10-10. The test names are unchanged; the larger stories are under their own `## Test...` headings above.
 
 
-### metal/resident_memguard_test.go, before `{"gptoss20b_on_16gb", 11280 * gb / 1000, 16 * uint64(gb), false},`
+### backend/metal/resident_memguard_test.go, before `{"gptoss20b_on_16gb", 11280 * gb / 1000, 16 * uint64(gb), false},`
 
 ```text
 THE MEASURED CASE. gpt-oss-20b's 11.28 GB of weights on a 16 GB MacBook drove swap to
@@ -2988,7 +2988,7 @@ THE MEASURED CASE. gpt-oss-20b's 11.28 GB of weights on a 16 GB MacBook drove sw
 ```
 
 
-### metal/resident_memguard_test.go, before `func TestMetalMemoryCeiling_takesTheStricterBound(t *testing.T) {`
+### backend/metal/resident_memguard_test.go, before `func TestMetalMemoryCeiling_takesTheStricterBound(t *testing.T) {`
 
 ```text
 TestMetalMemoryCeiling_takesTheStricterBound is S4 item 3's own gate (task-never-swap-2026-09.md):
@@ -3000,7 +3000,7 @@ on metalMemoryCeiling explains.
 ```
 
 
-### metal/resident_memguard_test.go, before `func TestResidentFitsMemory_honorsLiveCeiling(t *testing.T) {`
+### backend/metal/resident_memguard_test.go, before `func TestResidentFitsMemory_honorsLiveCeiling(t *testing.T) {`
 
 ```text
 TestResidentFitsMemory_honorsLiveCeiling is S4 item 3's own WIRING gate:
@@ -3013,12 +3013,12 @@ exactly the wiring gap this guards against.
 ```
 
 
-### metal/resident_memguard_test.go, before `func TestMetalMoESlotsFromEnv(t *testing.T) {`
+### backend/metal/resident_memguard_test.go, before `func TestMetalMoESlotsFromEnv(t *testing.T) {`
 
 ```text
 TestMetalMoESlotsFromEnv is M-02's gate for the guard's half of the ordering fix:
-residentFitsMemory must ask ResidentWeightBytesPaged for the SAME N that metal/moe.go and
-metal/gemma4_moe.go are about to honor, not silently fall back to the unpaged number on
+residentFitsMemory must ask ResidentWeightBytesPaged for the SAME N that backend/metal/moe.go and
+backend/metal/gemma4_moe.go are about to honor, not silently fall back to the unpaged number on
 anything it cannot parse cleanly. Mirrors those two files' resolution exactly (metalMoESlotsRequest),
 except an invalid/unset value means "assume unpaged" here (safe: buildResident still validates
 and declines on a bad value) rather than a hard error.
@@ -3031,7 +3031,7 @@ are set).
 ```
 
 
-### metal/resident_memguard_test.go, before `if hc0, hc1 := m.ResidentHostCopyBytes(0), m.ResidentHostCopyBytes(1); hc1 >= hc`
+### backend/metal/resident_memguard_test.go, before `if hc0, hc1 := m.ResidentHostCopyBytes(0), m.ResidentHostCopyBytes(1); hc1 >= hc`
 
 ```text
 The host-copy addend must ITSELF shrink under paging (that's the whole point of M-02's
@@ -3040,11 +3040,11 @@ than ResidentHostCopyBytes(0) whenever paging actually caps anything on this fix
 ```
 
 
-### metal/gumbel_test.go, before `func TestGumbelDeviceAgreesWithHost(t *testing.T) {`
+### backend/metal/gumbel_test.go, before `func TestGumbelDeviceAgreesWithHost(t *testing.T) {`
 
 ```text
 TestGumbelDeviceAgreesWithHost is the kernel gate for gumbel_stage1/2 (R7b Mac half), a direct
-port of cuda's TestGumbelDeviceAgreesWithHost (cuda/gumbel_test.go) — read its header first;
+port of cuda's TestGumbelDeviceAgreesWithHost (backend/cuda/gumbel_test.go) — read its header first;
 this uses the exact same pre-registered rule, rows and seeds.
 
 PRE-REGISTERED RULE (written before the first run, matching the CUDA gate). The host draw
@@ -3063,7 +3063,7 @@ seeds and draw indices that exercise the high words of both.
 ```
 
 
-### metal/moe_expert_major_prefill_test.go, before `func TestMoEExpertMajor_ParityVsRowByRow(t *testing.T) {`
+### backend/metal/moe_expert_major_prefill_test.go, before `func TestMoEExpertMajor_ParityVsRowByRow(t *testing.T) {`
 
 ```text
 TestMoEExpertMajor_ParityVsRowByRow verifies that the expert-major batched prefill
@@ -3076,7 +3076,7 @@ Moved from the comments of the package's `_test.go` files (CC5); same convention
 
 ## TestWeightAlias_olderBundleTakesCopyPath
 
-Moved from `metal/alias_fixtures_test.go` (the comment above `TestWeightAlias_olderBundleTakesCopyPath`) on 2026-10-09.
+Moved from `backend/metal/alias_fixtures_test.go` (the comment above `TestWeightAlias_olderBundleTakesCopyPath`) on 2026-10-09.
 
 ```text
 A bundle for a target other than Metal must still load with aliasing on: its 16-aligned singles alias, its fused groups
@@ -3092,7 +3092,7 @@ a new buffer. The test now reads the version from each file's header and asserts
 
 ## TestAliasForkProbe
 
-Moved from `metal/alias_forkprobe_test.go` (the comment above `TestAliasForkProbe`) on 2026-10-09.
+Moved from `backend/metal/alias_forkprobe_test.go` (the comment above `TestAliasForkProbe`) on 2026-10-09.
 
 ```text
 TestAliasForkProbe is the decisive experiment for the M26 alias collapse
@@ -3120,7 +3120,7 @@ M26 collapse needs another explanation. t3 ≈ t0 closes the loop: the wired buf
 
 ## TestAliasForkProbe.p2
 
-Moved from `metal/alias_forkprobe_test.go` (the comment at the P2 step) on 2026-10-09.
+Moved from `backend/metal/alias_forkprobe_test.go` (the comment at the P2 step) on 2026-10-09.
 
 ```text
 P2: the GPU touches one float per page of the window only. NOTHING forks between the touch and the
@@ -3130,10 +3130,10 @@ after the touch and that untimed fork paged in the whole file; see the record).
 
 ## BenchmarkAttention
 
-Moved from `metal/attention_bench_test.go` (the comment above `BenchmarkAttention`) on 2026-10-09.
+Moved from `backend/metal/attention_bench_test.go` (the comment above `BenchmarkAttention`) on 2026-10-09.
 
 ```text
-BenchmarkAttention isolates decode's attention kernel (metal/kernels.go, model.go: r.pAttn,
+BenchmarkAttention isolates decode's attention kernel (backend/metal/kernels.go, model.go: r.pAttn,
 launch shape (nH*128, 128) one threadgroup per Q head) at a realistic long-context depth --
 the V-read loop (`for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d])`) is the
 per-token cost this isolates; qk-scoring/softmax are the same kernel but the V-read dominates
@@ -3142,7 +3142,7 @@ at depth (docs/legacy-benchmarks.md §B2: attention ~56% of a token at 2048 ctx)
 
 ## TestAttentionPrefillSteelMatchesFloat64
 
-Moved from `metal/attention_prefill_steel_test.go` (the comment above `TestAttentionPrefillSteelMatchesFloat64`) on 2026-10-09.
+Moved from `backend/metal/attention_prefill_steel_test.go` (the comment above `TestAttentionPrefillSteelMatchesFloat64`) on 2026-10-09.
 
 ```text
 TestAttentionPrefillSteelMatchesFloat64 (F-G01, docs/audit-metal-2026-09-30.md) runs attention_prefill_steel, the
@@ -3157,7 +3157,7 @@ worth.
 
 ## TestAttentionPrefillSteelMatchesFloat64.maxAbs
 
-Moved from `metal/attention_prefill_steel_test.go` (the comment above `maxAbs`) on 2026-10-09.
+Moved from `backend/metal/attention_prefill_steel_test.go` (the comment above `maxAbs`) on 2026-10-09.
 
 ```text
 maxAbs is the audit's 0.05 (the fused kernel's bar) tightened to what this kernel measures: 4.1e-4 at worst, about
@@ -3166,7 +3166,7 @@ two f16 rounding steps of a unit-scale output (2026-10-01).
 
 ## TestLayerB_attentionParity
 
-Moved from `metal/attention_test.go` (the comment above `TestLayerB_attentionParity`) on 2026-10-09.
+Moved from `backend/metal/attention_test.go` (the comment above `TestLayerB_attentionParity`) on 2026-10-09.
 
 ```text
 TestLayerB_attentionParity — Layer B: the non-trivial kernel. GQA causal attention with
@@ -3178,7 +3178,7 @@ threadgroup parallelism is the tuning step). Validated vs a plain CPU softmax.
 
 ## r17Kernels
 
-Moved from `metal/attn_fa_blk_test.go` (the comment above `r17Kernels`) on 2026-10-09.
+Moved from `backend/metal/attn_fa_blk_test.go` (the comment above `r17Kernels`) on 2026-10-09.
 
 ```text
 r17Kernels is R17's step-2 prototype (docs/tasks/red-october.md; docs/measurements/metal-decode-attn-r17-2026-09-25.md)
@@ -3191,7 +3191,7 @@ TestAttnFABlkIsTheGradedKernel pins the rebuilt text to the SHA-256 of the sourc
 
 ## r17GradedKernelSourceSHA256
 
-Moved from `metal/attn_fa_blk_test.go` (the comment above `r17GradedKernelSourceSHA256`) on 2026-10-09.
+Moved from `backend/metal/attn_fa_blk_test.go` (the comment above `r17GradedKernelSourceSHA256`) on 2026-10-09.
 
 ```text
 r17GradedKernelSourceSHA256 is the SHA-256 of the prototype source graded 2026-09-25 (r17Kernels as committed in
@@ -3200,7 +3200,7 @@ r17GradedKernelSourceSHA256 is the SHA-256 of the prototype source graded 2026-0
 
 ## TestAttnFABlkMatchesFloat64
 
-Moved from `metal/attn_fa_blk_test.go` (the comment above `TestAttnFABlkMatchesFloat64`) on 2026-10-09.
+Moved from `backend/metal/attn_fa_blk_test.go` (the comment above `TestAttnFABlkMatchesFloat64`) on 2026-10-09.
 
 ```text
 TestAttnFABlkMatchesFloat64 checks the SHIPPED attention_fa_blk (both instantiations, at the production split
@@ -3213,7 +3213,7 @@ scale, rescale or merge gives relative errors of 1e-3 and up. The kernel's measu
 
 ## TestAttnFABlkSelection
 
-Moved from `metal/attn_fa_blk_test.go` (the comment above `TestAttnFABlkSelection`) on 2026-10-09.
+Moved from `backend/metal/attn_fa_blk_test.go` (the comment above `TestAttnFABlkSelection`) on 2026-10-09.
 
 ```text
 TestAttnFABlkSelection pins which kernel production dispatches as attention_fa's first pass. On the committed
@@ -3226,7 +3226,7 @@ on synthetic inputs and requiring output BIT-IDENTICAL to the graded kernel sour
 
 ## TestAttentionFA_positionSweep
 
-Moved from `metal/attn_fa_confound_test.go` (the comment above `TestAttentionFA_positionSweep`) on 2026-10-09.
+Moved from `backend/metal/attn_fa_confound_test.go` (the comment above `TestAttentionFA_positionSweep`) on 2026-10-09.
 
 ```text
 RESOLVED 2026-09-21 (docs/measurements/r2-attn-fa-rootcause-2026-09-21.md): both diagnostics
@@ -3258,7 +3258,7 @@ depth-to-depth (since prefillLen+step's residue mod 4 shifts as prefillLen shift
 
 ## TestAttentionFA_ulpPerturbationControl
 
-Moved from `metal/attn_fa_confound_test.go` (the comment above `TestAttentionFA_ulpPerturbationControl`) on 2026-10-09.
+Moved from `backend/metal/attn_fa_confound_test.go` (the comment above `TestAttentionFA_ulpPerturbationControl`) on 2026-10-09.
 
 ```text
 TestAttentionFA_ulpPerturbationControl tests the OTHER sharp alternative to "attention_fa has a
@@ -3281,7 +3281,7 @@ and the search for a state-carrying mechanism in attention_fa specifically shoul
 
 ## TestAttentionFA_endToEndReproductionDepth2200
 
-Moved from `metal/attn_fa_e2e_depth_test.go` (the comment above `TestAttentionFA_endToEndReproductionDepth2200`) on 2026-10-09.
+Moved from `backend/metal/attn_fa_e2e_depth_test.go` (the comment above `TestAttentionFA_endToEndReproductionDepth2200`) on 2026-10-09.
 
 ```text
 TestAttentionFA_endToEndReproductionDepth2200 is the depth-2200 twin of attn_fa_e2e_test.go's
@@ -3318,7 +3318,7 @@ calls, unlike the shipped kernel's own per-call-safe buffer usage.
 
 ## TestAttentionFA_endToEndReproduction
 
-Moved from `metal/attn_fa_e2e_test.go` (the comment above `TestAttentionFA_endToEndReproduction`) on 2026-10-09.
+Moved from `backend/metal/attn_fa_e2e_test.go` (the comment above `TestAttentionFA_endToEndReproduction`) on 2026-10-09.
 
 ```text
 TestAttentionFA_endToEndReproduction is the KEEPER reproducer of the end-to-end signature that
@@ -3360,13 +3360,13 @@ calls, unlike the shipped kernel's own per-call-safe buffer usage.
 
 ## TestAttentionFA_pipelinedEncodeRace
 
-Moved from `metal/attn_fa_pipeline_race_test.go` (the comment above `TestAttentionFA_pipelinedEncodeRace`) on 2026-10-09.
+Moved from `backend/metal/attn_fa_pipeline_race_test.go` (the comment above `TestAttentionFA_pipelinedEncodeRace`) on 2026-10-09.
 
 ```text
 TestAttentionFA_pipelinedEncodeRace is R2's own suggested next step
 (r2-attn-fa-2026-09-19.md): a minimal, isolated repro chaining several
 command buffers under the REAL production pipelining pattern (encode
-buffer N+1 while buffer N is still executing — metal/model.go's execLoop,
+buffer N+1 while buffer N is still executing — backend/metal/model.go's execLoop,
 Commit()/FinishEncoding()/WaitDone(), NOT the synchronous Begin()/End()
 attn_fa_test.go's gate (1) uses) instead of a full 28-layer real model.
 
@@ -3384,7 +3384,7 @@ than inferred from a 28-layer model's stably-wrong logits.
 
 ## TestAttentionFA_vsReference
 
-Moved from `metal/attn_fa_test.go` (the comment above `TestAttentionFA_vsReference`) on 2026-10-09.
+Moved from `backend/metal/attn_fa_test.go` (the comment above `TestAttentionFA_vsReference`) on 2026-10-09.
 
 ```text
 TestAttentionFA_vsReference is R2's (docs/tasks/red-october.md) gate (1), basic form: the new
@@ -3398,7 +3398,7 @@ adversarial inputs.
 
 ## TestZZ_attnKVWidthProbe
 
-Moved from `metal/attn_kvwidth_probe_test.go` (the comment above `TestZZ_attnKVWidthProbe`) on 2026-10-09.
+Moved from `backend/metal/attn_kvwidth_probe_test.go` (the comment above `TestZZ_attnKVWidthProbe`) on 2026-10-09.
 
 ```text
 TestZZ_attnKVWidthProbe — the P4 deciding measurement (docs/plan-still-slow.md §P4). Re-runs the
@@ -3423,7 +3423,7 @@ not a gate.
 
 ## TestZZ_attnKVWidthProbe.selfcheck
 
-Moved from `metal/attn_kvwidth_probe_test.go` (the comment at the pin0 self-check) on 2026-10-09.
+Moved from `backend/metal/attn_kvwidth_probe_test.go` (the comment at the pin0 self-check) on 2026-10-09.
 
 ```text
 Harness self-check: pin0 must collapse (~4× off full), matching the 2026-08-04 21.5→5.3 ms.
@@ -3431,7 +3431,7 @@ Harness self-check: pin0 must collapse (~4× off full), matching the 2026-08-04 
 
 ## TestZZ_attnM3ThreadWidth
 
-Moved from `metal/attn_m3_probe_test.go` (the comment above `TestZZ_attnM3ThreadWidth`) on 2026-10-09.
+Moved from `backend/metal/attn_m3_probe_test.go` (the comment above `TestZZ_attnM3ThreadWidth`) on 2026-10-09.
 
 ```text
 TestZZ_attnM3ThreadWidth — plan §M3 first data point: the Metal FA go/no-go. On M=1 decode the
@@ -3450,7 +3450,7 @@ Opt-in timing diagnostic, not a gate.
 
 ## TestAttention_ShippedKernelShapes
 
-Moved from `metal/attn_shape_test.go` (the comment above `TestAttention_ShippedKernelShapes`) on 2026-10-09.
+Moved from `backend/metal/attn_shape_test.go` (the comment above `TestAttention_ShippedKernelShapes`) on 2026-10-09.
 
 ```text
 TestAttention_ShippedKernelShapes drives the SHIPPED attention kernel (allKernels, the one
@@ -3458,7 +3458,7 @@ model.go dispatches) at Gemma 3's exact attention shape and at the control's, on
 attention patterns — the case the existing coverage structurally cannot reach.
 
 Why this gap exists. Metal's gemma3 parity carries a Gemma-only residual of -0.104 against its
-own CPU-int4 twin (metal/quantbar_test.go) that the weights do not explain (the double
+own CPU-int4 twin (backend/metal/quantbar_test.go) that the weights do not explain (the double
 quantization measured free — decoder/requant_test.go), so a Gemma-specific kernel is wrong. The
 shape of the residual points here: 9 gaps >3% with a worst near-tie of 40.8% is not what a
 per-layer precision delta compounding over 34 layers looks like (that is a smooth droop) — it
@@ -3480,7 +3480,7 @@ near-zero-norm sink at key 0.
 
 ## TestAttention_ShippedKernelShapes.gemma4
 
-Moved from `metal/attn_shape_test.go` (the comment at the gemma4 global rows) on 2026-10-09.
+Moved from `backend/metal/attn_shape_test.go` (the comment at the gemma4 global rows) on 2026-10-09.
 
 ```text
 Gemma 4's global layers run at hd=512 (g4.GlobalHeadDim), and NOTHING on Metal has ever
@@ -3495,7 +3495,7 @@ window) at short and long ctx — the shape 9c will actually dispatch.
 
 ## TestAttention_ShippedKernelShapes.norm
 
-Moved from `metal/attn_shape_test.go` (the comment at the norm log line) on 2026-10-09.
+Moved from `backend/metal/attn_shape_test.go` (the comment at the norm log line) on 2026-10-09.
 
 ```text
 Norm is reported next to cosine deliberately: the sink hunt burned a week on a
@@ -3505,7 +3505,7 @@ read one without the other.
 
 ## TestAuditAP02_shortPromptTiming
 
-Moved from `metal/audit_ap02_test.go` (the comment above `TestAuditAP02_shortPromptTiming`) on 2026-10-09.
+Moved from `backend/metal/audit_ap02_test.go` (the comment above `TestAuditAP02_shortPromptTiming`) on 2026-10-09.
 
 ```text
 pre-registration"): a fresh K-token prompt's wall time three ways, as T1.10 timed it, but on the build A-P01 changed
@@ -3514,7 +3514,7 @@ pre-registration"): a fresh K-token prompt's wall time three ways, as T1.10 time
 
 ## TestAuditM26_pagedProbe.scalecache
 
-Moved from `metal/audit_m26_test.go` (the comment above the build heartbeat) on 2026-10-09.
+Moved from `backend/metal/audit_m26_test.go` (the comment above the build heartbeat) on 2026-10-09.
 
 ```text
 C-P01 (2026-10-02): the pager stages scales from the mapping, so there is no scale cache to size. The old
@@ -3524,7 +3524,7 @@ measurement now.
 
 ## TestGemmaBisect_PerLayer
 
-Moved from `metal/bisect_test.go` (the comment above `TestGemmaBisect_PerLayer`) on 2026-10-09.
+Moved from `backend/metal/bisect_test.go` (the comment above `TestGemmaBisect_PerLayer`) on 2026-10-09.
 
 ```text
 TestGemmaBisect_PerLayer walks the residual stream layer by layer, Metal vs CPU, to locate
@@ -3559,7 +3559,7 @@ carrier is attention/window/per-layer-RoPE; if it is uniform, it is a per-layer 
 
 ## TestGemmaBisect_PerLayer.reconcile
 
-Moved from `metal/bisect_test.go` (the comment at the cross-backend reconciliation) on 2026-10-09.
+Moved from `backend/metal/bisect_test.go` (the comment at the cross-backend reconciliation) on 2026-10-09.
 
 ```text
 Cross-backend reconciliation with the CUDA box. Three references at each target channel +
@@ -3576,7 +3576,7 @@ one that flipped. (Off-by-one is ruled out: the 443 spike sits at index 443 on b
 
 ## TestGemmaBisect_Head
 
-Moved from `metal/bisect_test.go` (the comment above `TestGemmaBisect_Head`) on 2026-10-09.
+Moved from `backend/metal/bisect_test.go` (the comment above `TestGemmaBisect_Head`) on 2026-10-09.
 
 ```text
 TestGemmaBisect_Head splits the ONE step the per-layer bisect leaves whole: final-norm → LM
@@ -3587,7 +3587,7 @@ HERE, not in the 34 layers. This test says which of the two sub-steps:
 
 ## TestGemmaTraceDims
 
-Moved from `metal/bisect_test.go` (the comment above `TestGemmaTraceDims`) on 2026-10-09.
+Moved from `backend/metal/bisect_test.go` (the comment above `TestGemmaTraceDims`) on 2026-10-09.
 
 ```text
 TestGemmaTraceDims follows Gemma's massive-activation dims down the layer stack to find WHERE
@@ -3598,7 +3598,7 @@ bad channels in 2560, so this prints those channels explicitly at every layer, M
 
 ## TestBytesToU32_matchesManualLE
 
-Moved from `metal/bytestou32_test.go` (the comment above `TestBytesToU32_matchesManualLE`) on 2026-10-09.
+Moved from `backend/metal/bytestou32_test.go` (the comment above `TestBytesToU32_matchesManualLE`) on 2026-10-09.
 
 ```text
 TestBytesToU32_matchesManualLE gates N-29 (audit-metal-2026-09-12.md): bytesToU32 used to
@@ -3611,7 +3611,7 @@ re-deriving the same shift expression bytesToU32 itself uses.
 
 ## TestCB01ChainAB.warm
 
-Moved from `metal/cb01_grade_test.go` (the comment at the discarded cold generation) on 2026-10-09.
+Moved from `backend/metal/cb01_grade_test.go` (the comment at the discarded cold generation) on 2026-10-09.
 
 ```text
 The first Generate prefills the prompt cold; every later one reuses 63 of its 64 tokens and re-forwards the last on
@@ -3622,7 +3622,7 @@ chain-off arms, cold then warm, part at token 18). So one cold generation is dis
 
 ## TestMetal_CloseFreesMemory
 
-Moved from `metal/close_leak_test.go` (the comment above `TestMetal_CloseFreesMemory`) on 2026-10-09.
+Moved from `backend/metal/close_leak_test.go` (the comment above `TestMetal_CloseFreesMemory`) on 2026-10-09.
 
 ```text
 Why this matters: purego has no ARC and Metal has no context-destroy to reclaim in bulk, so
@@ -3635,7 +3635,7 @@ exactly why it survived.
 
 ## TestMetal_CloseFreesMemory.device
 
-Moved from `metal/close_leak_test.go` (the comment at the device-reported gate) on 2026-10-09.
+Moved from `backend/metal/close_leak_test.go` (the comment at the device-reported gate) on 2026-10-09.
 
 ```text
 The device-reported gate (C-G01, docs/audit-metal-2026-09-30.md): on UMA a leaked MTLBuffer need not show in RSS
@@ -3646,7 +3646,7 @@ every cycle. The slack is far below one resident's buffers.
 
 ## TestMetal_CloseFreesMemory.cycle
 
-Moved from `metal/close_leak_test.go` (the comment at the growth bound) on 2026-10-09.
+Moved from `backend/metal/close_leak_test.go` (the comment at the growth bound) on 2026-10-09.
 
 ```text
 Each cycle allocates ~0.4 GB of Metal buffers (int8 weights re-quantized to int4 + KV; 401 MB by
@@ -3655,7 +3655,7 @@ CurrentAllocatedSize, 2026-10-01). If Close frees, growth across 4 cycles stays 
 
 ## TestMetal_PrefillScratchDoesNotLeak
 
-Moved from `metal/close_leak_test.go` (the comment above `TestMetal_PrefillScratchDoesNotLeak`) on 2026-10-09.
+Moved from `backend/metal/close_leak_test.go` (the comment above `TestMetal_PrefillScratchDoesNotLeak`) on 2026-10-09.
 
 ```text
 TestMetal_PrefillScratchDoesNotLeak is the C5 gate: PrefillLast used to allocate ~24 per-call
@@ -3671,7 +3671,7 @@ watch the trajectory. Per-call release → flat; the old leak → a staircase of
 
 ## TestMetal_CloseWithSecondModelAlive
 
-Moved from `metal/close_leak_test.go` (the comment above `TestMetal_CloseWithSecondModelAlive`) on 2026-10-09.
+Moved from `backend/metal/close_leak_test.go` (the comment above `TestMetal_CloseWithSecondModelAlive`) on 2026-10-09.
 
 ```text
 TestMetal_CloseWithSecondModelAlive is the condition the Linux box warned about: their first
@@ -3681,7 +3681,7 @@ a second context/model alive. Two hazards it covers that a sequential test canno
 
 ## TestMetal_CloseWithSecondModelAlive.rss
 
-Moved from `metal/close_leak_test.go` (the comment at the ledger assertion) on 2026-10-09.
+Moved from `backend/metal/close_leak_test.go` (the comment at the ledger assertion) on 2026-10-09.
 
 ```text
 RSS cannot answer this on a loaded machine: an earlier version loaded a C after closing A and
@@ -3694,7 +3694,7 @@ compressed straight back out. RSS is unreliable in both directions here.
 
 ## TestMetalResident_C11_argmaxEqualsFullLogits
 
-Moved from `metal/cmdbuf_status_test.go` (the comment above `TestMetalResident_C11_argmaxEqualsFullLogits`) on 2026-10-09.
+Moved from `backend/metal/cmdbuf_status_test.go` (the comment above `TestMetalResident_C11_argmaxEqualsFullLogits`) on 2026-10-09.
 
 ```text
 
@@ -3708,7 +3708,7 @@ and not built.
 
 ## TestCohereResidentSmokeMetal.pairwise
 
-Moved from `metal/cohere_resident_smoke_test.go` (the comment at the pairwise-RoPE decline) on 2026-10-09.
+Moved from `backend/metal/cohere_resident_smoke_test.go` (the comment at the pairwise-RoPE decline) on 2026-10-09.
 
 ```text
 CORRECTION 2026-10-01 (written on the CUDA box, NOT run on a Mac): Cohere/Cohere2 rotate
@@ -3720,12 +3720,12 @@ Command-R7B / Aya wrong that way, worst per-position cosine -0.075 / -0.041). Un
 pairwise rope kernels, a decline naming the feature is the PASS; when it declares the
 feature this test falls through to the original admission + no-NaN smoke below, and the
 session that ports the kernels must add a peaked-attention resident-vs-CPU gate beside it
-(cuda/pairwise_rope_resident_parity_test.go is the template).
+(backend/cuda/pairwise_rope_resident_parity_test.go is the template).
 ```
 
 ## TestCopyBytesToU32Buf_oversizedSrcPanics
 
-Moved from `metal/copybytes_bounds_test.go` (the comment above `TestCopyBytesToU32Buf_oversizedSrcPanics`) on 2026-10-09.
+Moved from `backend/metal/copybytes_bounds_test.go` (the comment above `TestCopyBytesToU32Buf_oversizedSrcPanics`) on 2026-10-09.
 
 ```text
 TestCopyBytesToU32Buf_oversizedSrcPanics gates N-33 (audit-metal-2026-09-12.md):
@@ -3737,7 +3737,7 @@ src (truncating it into dst) instead of panicking.
 
 ## TestDB01_prefillFromZeroResetsState
 
-Moved from `metal/db01_prefill_test.go` (the comment above `TestDB01_prefillFromZeroResetsState`) on 2026-10-09.
+Moved from `backend/metal/db01_prefill_test.go` (the comment above `TestDB01_prefillFromZeroResetsState`) on 2026-10-09.
 
 ```text
 TestDB01_prefillFromZeroResetsState (D-B01): PrefillLast from position 0 is a fresh sequence, so a hybrid's DeltaNet
@@ -3750,7 +3750,7 @@ call: prompt B after prompt A must equal prompt B on a reset resident, logits an
 
 ## TestEnsurePrefill_latchesFailure
 
-Moved from `metal/ensureprefill_latch_test.go` (the comment above `TestEnsurePrefill_latchesFailure`) on 2026-10-09.
+Moved from `backend/metal/ensureprefill_latch_test.go` (the comment above `TestEnsurePrefill_latchesFailure`) on 2026-10-09.
 
 ```text
 TestEnsurePrefill_latchesFailure gates N-47 (audit-2026-09-10.md): a failed ensurePrefill used
@@ -3768,7 +3768,7 @@ the expensive compile path — no Metal device needed for this half of the fix.
 
 ## TestDeltaNetKernels_mutations.collapse
 
-Moved from `metal/deltanet_test.go` (the comment at the collapse-the-state-row case) on 2026-10-09.
+Moved from `backend/metal/deltanet_test.go` (the comment at the collapse-the-state-row case) on 2026-10-09.
 
 ```text
 A first attempt swapped hv/hk in the offset formula, but at this test's REAL geometry
@@ -3785,7 +3785,7 @@ header calls out ("no cross-thread sharing") is exactly what breaks.
 
 ## TestExecutorAttnPlan
 
-Moved from `metal/exec_plan_test.go` (the comment above `TestExecutorAttnPlan`) on 2026-10-09.
+Moved from `backend/metal/exec_plan_test.go` (the comment above `TestExecutorAttnPlan`) on 2026-10-09.
 
 ```text
 TestExecutorAttnPlan pins the pipelined executor's attention plan to each job's OWN key count.
@@ -3812,7 +3812,7 @@ engages on; see snapshot_golden_test.go). A few seconds; no heavy assets.
 
 ## mc3MMAKernels
 
-Moved from `metal/gemm_mma8_mc3_test.go` (the comment above `mc3MMAKernels`) on 2026-10-09.
+Moved from `backend/metal/gemm_mma8_mc3_test.go` (the comment above `mc3MMAKernels`) on 2026-10-09.
 
 ```text
 mc3MMAKernels is MC3's matrix-unit prototype (docs/tasks/task-concurrency-2026-09.md), TEST-ONLY: a W4A8 GEMM for
@@ -3823,13 +3823,13 @@ is a single 8x8 fragment column: C^T[feature][token] = W[feature][k] . A^T[k][to
 
 ## TestGemma4_26B_autoPagedRuns
 
-Moved from `metal/gemma4_26b_autopaged_test.go` (the comment above `TestGemma4_26B_autoPagedRuns`) on 2026-10-09.
+Moved from `backend/metal/gemma4_26b_autopaged_test.go` (the comment above `TestGemma4_26B_autoPagedRuns`) on 2026-10-09.
 
 ```text
 TestGemma4_26B_autoPagedRuns is R11(c) (docs/tasks/red-october.md): the M26 row re-run against
 the AUTO-SIZED pager (decoder.Options.MoECacheExperts with MoECacheSlots left at 0), not a
 hand-picked N the way TestGemma4_26B_pagedRuns (GOINFER_METAL_MOE_SLOTS, N=32 default) exercises.
-metalMoESlotsRequest (metal/backend.go) only calls the real autoMoESlots formula when
+metalMoESlotsRequest (backend/metal/backend.go) only calls the real autoMoESlots formula when
 MoECacheExperts is set and no explicit slot count is given — GOINFER_METAL_MOE_SLOTS bypasses
 that path entirely, so the existing test does not answer this brief's question.
 
@@ -3856,7 +3856,7 @@ like and why the in-process guards alone were not enough here.
 
 ## TestGemma4_26B_pagedRuns.informational
 
-Moved from `metal/gemma4_26b_paged_test.go` (the comment at the INFORMATIONAL argmax log) on 2026-10-09.
+Moved from `backend/metal/gemma4_26b_paged_test.go` (the comment at the INFORMATIONAL argmax log) on 2026-10-09.
 
 ```text
 absolute character — that was a 2-layer tiny-fixture number, the WRONG bar (box finding f93bda1:
@@ -3866,11 +3866,11 @@ scaled-dense fixture (TestGemma4DenseScaled_metalParity: pos-0 0.982, mean withi
 
 ## TestGemma4DenseScaled_metalParity
 
-Moved from `metal/gemma4_dense_scaled_test.go` (the comment above `TestGemma4DenseScaled_metalParity`) on 2026-10-09.
+Moved from `backend/metal/gemma4_dense_scaled_test.go` (the comment above `TestGemma4DenseScaled_metalParity`) on 2026-10-09.
 
 ```text
 TestGemma4DenseScaled_metalParity is the Metal mirror of the box's CUDA scaled-dense gate
-(cuda/gemma4_dense_scaled_test.go, f93bda1) — the DEPTH/REAL-GEOMETRY control the 26B needed and
+(backend/cuda/gemma4_dense_scaled_test.go, f93bda1) — the DEPTH/REAL-GEOMETRY control the 26B needed and
 the tiny fixtures lacked. Scaled dense Gemma 4: hidden 1024, 12 layers, 5:1 sliding/full, REAL head
 dims 256 local / 512 global, K=V globals, sandwich, softcap 30 — fits non-paged (~55 MB int4).
 
@@ -3886,7 +3886,7 @@ If Metal passes here at hd=256/512, the 26B "divergence" is int4 conditioning at
 
 ## TestGemma4DenseScaled_metalParity.pos0
 
-Moved from `metal/gemma4_dense_scaled_test.go` (the comment at the pos-0 floor) on 2026-10-09.
+Moved from `backend/metal/gemma4_dense_scaled_test.go` (the comment at the pos-0 floor) on 2026-10-09.
 
 ```text
 pos-0 kernel correctness (no KV accumulation): the 256-local/512-global geometry must compose.
@@ -3895,7 +3895,7 @@ pos-0 kernel correctness (no KV accumulation): the 256-local/512-global geometry
 
 ## TestGemma4DenseScaled_metalParity.meanfloor
 
-Moved from `metal/gemma4_dense_scaled_test.go` (the comment at the mean floor) on 2026-10-09.
+Moved from `backend/metal/gemma4_dense_scaled_test.go` (the comment at the mean floor) on 2026-10-09.
 
 ```text
 S1.0 amendment (docs/tasks/task-multimodal-support-2026-10.md): a floor on the mean itself, between the
@@ -3904,7 +3904,7 @@ before-fix 0.858647 and after-fix 0.926917 readings of the dense layer scalar an
 
 ## TestGemma4_depthSweep
 
-Moved from `metal/gemma4_depth_sweep_test.go` (the comment above `TestGemma4_depthSweep`) on 2026-10-09.
+Moved from `backend/metal/gemma4_depth_sweep_test.go` (the comment above `TestGemma4_depthSweep`) on 2026-10-09.
 
 ```text
 TestGemma4_depthSweep turns "int4 conditioning at depth" from an argument into a MEASUREMENT
@@ -3919,7 +3919,7 @@ Env-gated (loads GB-scale f32 checkpoints). GOINFER_DEPTH_SWEEP=1.
 
 ## perLayer64
 
-Moved from `metal/gemma4_depth_sweep_test.go` (the comment above `perLayer64`) on 2026-10-09.
+Moved from `backend/metal/gemma4_depth_sweep_test.go` (the comment above `perLayer64`) on 2026-10-09.
 
 ```text
 perLayer64 captures the 64-layer fixture's per-layer hidden (Metal-int4 vs CPU-int4) at pos 3 and
@@ -3928,7 +3928,7 @@ logs the trace, so its shape can be compared to the 26B's (0.97→0.73→0.26).
 
 ## TestGemma4EModel_realE2BText.amendment
 
-Moved from `metal/gemma4_emodel_real_test.go` (the comment at the G3 amendment) on 2026-10-09.
+Moved from `backend/metal/gemma4_emodel_real_test.go` (the comment at the G3 amendment) on 2026-10-09.
 
 ```text
 G3 amendment (after run 1, docs/tasks/task-multimodal-support-2026-10.md): the CPU loads Metal's sidecar too, so
@@ -3938,7 +3938,7 @@ tables at int4), which compared two quantizations rather than two engines on one
 
 ## TestGemma4EModel_realE2BLocalize
 
-Moved from `metal/gemma4_emodel_real_test.go` (the comment above `TestGemma4EModel_realE2BLocalize`) on 2026-10-09.
+Moved from `backend/metal/gemma4_emodel_real_test.go` (the comment above `TestGemma4EModel_realE2BLocalize`) on 2026-10-09.
 
 ```text
 position 18, CPU gap 7.63% in run 2) localized per layer. Both sides replay the prompt to that position, then the
@@ -3946,7 +3946,7 @@ position 18, CPU gap 7.63% in run 2) localized per layer. Both sides replay the 
 
 ## TestGemma4MoE_noiseFloor
 
-Moved from `metal/gemma4_moe_noisefloor_test.go` (the comment above `TestGemma4MoE_noiseFloor`) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe_noisefloor_test.go` (the comment above `TestGemma4MoE_noiseFloor`) on 2026-10-09.
 
 ```text
 CPU-only (no Metal), so it runs before the gemma4MoeMLP kernels exist. The CUDA MoE fixture had to
@@ -3958,7 +3958,7 @@ that here than after the MoE forward is wired.
 
 ## TestGemma4MoE_localize.floor
 
-Moved from `metal/gemma4_moe_parity_test.go` (the comment at the worst-layer floor) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe_parity_test.go` (the comment at the worst-layer floor) on 2026-10-09.
 
 ```text
 (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.90 after the dense layer scalar and v_norm fixes, between the before-fix 0.999644 and after-fix 0.999982 readings)
@@ -3966,7 +3966,7 @@ Moved from `metal/gemma4_moe_parity_test.go` (the comment at the worst-layer flo
 
 ## TestGemma4MoE_residentParity.mincos
 
-Moved from `metal/gemma4_moe_parity_test.go` (the comment at the minCos floor) on 2026-10-09.
+Moved from `backend/metal/gemma4_moe_parity_test.go` (the comment at the minCos floor) on 2026-10-09.
 
 ```text
 (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.60 after the dense layer scalar and v_norm fixes, between the before-fix 0.872764 and after-fix 0.998690 minCosine readings, s10-both.log and s10-after.log)
@@ -3974,7 +3974,7 @@ Moved from `metal/gemma4_moe_parity_test.go` (the comment at the minCos floor) o
 
 ## TestGemma4TwoGeom_localize.bars
 
-Moved from `metal/gemma4_twogeom_test.go` (the comment at the attribution asserts) on 2026-10-09.
+Moved from `backend/metal/gemma4_twogeom_test.go` (the comment at the attribution asserts) on 2026-10-09.
 
 ```text
 Attribution asserts. Both bars are 0.999 since S1.0's amendment (below). Before it they were 0.95, on the
@@ -3987,7 +3987,7 @@ misthreaded geometry, the 2x v_norm trap) still craters a layer far below either
 
 ## TestGemma4TwoGeom_localize.c1
 
-Moved from `metal/gemma4_twogeom_test.go` (the comment at the layer-1 bar) on 2026-10-09.
+Moved from `backend/metal/gemma4_twogeom_test.go` (the comment at the layer-1 bar) on 2026-10-09.
 
 ```text
 (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes, between the before-fix 0.980768 and after-fix 0.999940 readings)
@@ -3995,7 +3995,7 @@ Moved from `metal/gemma4_twogeom_test.go` (the comment at the layer-1 bar) on 20
 
 ## TestGemma4TwoGeom_f16ScaleConfound
 
-Moved from `metal/gemma4_twogeom_test.go` (the comment above `TestGemma4TwoGeom_f16ScaleConfound`) on 2026-10-09.
+Moved from `backend/metal/gemma4_twogeom_test.go` (the comment above `TestGemma4TwoGeom_f16ScaleConfound`) on 2026-10-09.
 
 ```text
 TestGemma4TwoGeom_f16ScaleConfound isolates ONE candidate for the ~0.98 resident-vs-CPU cosine:
@@ -4017,7 +4017,7 @@ must not reveal a crater. It deliberately does NOT assert 0.999 — that would e
 
 ## TestGemma4TwoGeom_f16ScaleConfound.floor
 
-Moved from `metal/gemma4_twogeom_test.go` (the comment at the f16-scale floor) on 2026-10-09.
+Moved from `backend/metal/gemma4_twogeom_test.go` (the comment at the f16-scale floor) on 2026-10-09.
 
 ```text
 (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes, between the before-fix 0.981251 and after-fix 0.999761 readings) The ~0.98 this
@@ -4026,7 +4026,7 @@ test used to attribute to "the broader resident quant path" was the two Gemma 4 
 
 ## TestGemma4TwoGeom_residentParity
 
-Moved from `metal/gemma4_twogeom_test.go` (the comment above `TestGemma4TwoGeom_residentParity`) on 2026-10-09.
+Moved from `backend/metal/gemma4_twogeom_test.go` (the comment above `TestGemma4TwoGeom_residentParity`) on 2026-10-09.
 
 ```text
 cosine floor (0.979), NOT Metal's looser inherited gemma3 bar (0.88): a near-tie argmax mismatch
@@ -4034,7 +4034,7 @@ cosine floor (0.979), NOT Metal's looser inherited gemma3 bar (0.88): a near-tie
 
 ## TestGemma4TwoGeom_residentParity.floor
 
-Moved from `metal/gemma4_twogeom_test.go` (the comment at the secondary cosine floor) on 2026-10-09.
+Moved from `backend/metal/gemma4_twogeom_test.go` (the comment at the secondary cosine floor) on 2026-10-09.
 
 ```text
 SECONDARY, deliberately LOOSE: this cosine is vs the f32-scale CPU, so it floors at the
@@ -4047,7 +4047,7 @@ a "not obviously broken" backstop; do NOT tighten it toward the noise floor (tha
 
 ## TestGemmaConfirmer_MatchedInput
 
-Moved from `metal/gemma_confirmer_test.go` (the comment above `TestGemmaConfirmer_MatchedInput`) on 2026-10-09.
+Moved from `backend/metal/gemma_confirmer_test.go` (the comment above `TestGemmaConfirmer_MatchedInput`) on 2026-10-09.
 
 ```text
 TestGemmaConfirmer_MatchedInput is the Metal half of the matched-input confirmer (the CUDA box's
@@ -4058,7 +4058,7 @@ craters to 0.640 with byte-identical weights), leaving two candidates —
 
 ## seedPrompt
 
-Moved from `metal/gemma_parity_test.go` (the comment above `seedPrompt`) on 2026-10-09.
+Moved from `backend/metal/gemma_parity_test.go` (the comment above `seedPrompt`) on 2026-10-09.
 
 ```text
 seedPrompt derives the probe from the MODEL'S OWN tokenizer and VERIFIES it by decoding —
@@ -4078,7 +4078,7 @@ directly — either way the result is decoded back and logged, so a bad prompt c
 
 ## residentParity
 
-Moved from `metal/gemma_parity_test.go` (the comment above `residentParity`) on 2026-10-09.
+Moved from `backend/metal/gemma_parity_test.go` (the comment above `residentParity`) on 2026-10-09.
 
 ```text
 observeCos folds one position's logit cosine into the running min. NaN/Inf is COUNTED, never
@@ -4102,7 +4102,7 @@ those this is int8 against int8, and TestW8Native_F2 holds the pair to the int4 
 
 ## residentParityAt.sink
 
-Moved from `metal/gemma_parity_test.go` (the comment at the <bos> sink skip) on 2026-10-09.
+Moved from `backend/metal/gemma_parity_test.go` (the comment at the <bos> sink skip) on 2026-10-09.
 
 ```text
 Skip the <bos> sink positions in the metric. Gemma's <bos> is an ATTENTION SINK whose
@@ -4115,7 +4115,7 @@ over these positions reported the two places the metric is meaningless.
 
 ## TestR18InSequence.pair
 
-Moved from `metal/gemv_r18_seq_test.go` (the comment at the pair measurement) on 2026-10-09.
+Moved from `backend/metal/gemv_r18_seq_test.go` (the comment at the pair measurement) on 2026-10-09.
 
 ```text
 pair: `steps` matched pairs, each a full token then the same token with category c no-op'd (4 = all four),
@@ -4126,7 +4126,7 @@ read 4.2 ms against 8-9 in the others). Returns the median full token and the me
 
 ## TestGemma3_GeneratesCoherently
 
-Moved from `metal/gen_test.go` (the comment above `TestGemma3_GeneratesCoherently`) on 2026-10-09.
+Moved from `backend/metal/gen_test.go` (the comment above `TestGemma3_GeneratesCoherently`) on 2026-10-09.
 
 ```text
 THE decisive test, and the one the debug report wrongly called blocked: does Gemma 3 actually
@@ -4138,7 +4138,7 @@ scores 15/24 vs 20/24 on different id sets) cannot give.
 
 ## TestGemma3_GeneratesCoherently.prompt
 
-Moved from `metal/gen_test.go` (the comment at the prompt construction) on 2026-10-09.
+Moved from `backend/metal/gen_test.go` (the comment at the prompt construction) on 2026-10-09.
 
 ```text
 Build a REAL prompt from vocab lookups. The gate's inherited ids decode to
@@ -4149,7 +4149,7 @@ vocab), but TokenID is enough: SPM marks a leading space with ▁.
 
 ## TestGPT2ResidentParity
 
-Moved from `metal/gpt2_real_test.go` (the comment above `TestGPT2ResidentParity`) on 2026-10-09.
+Moved from `backend/metal/gpt2_real_test.go` (the comment above `TestGPT2ResidentParity`) on 2026-10-09.
 
 ```text
 Dormant until all four features are declared (same pattern as TestGemma3ResidentParity): metal
@@ -4161,11 +4161,11 @@ a silent CPU fallback rather than an honest skip).
 
 ## TestGPT2ResidentParityMetal
 
-Moved from `metal/gpt2_resident_parity_test.go` (the comment above `TestGPT2ResidentParityMetal`) on 2026-10-09.
+Moved from `backend/metal/gpt2_resident_parity_test.go` (the comment above `TestGPT2ResidentParityMetal`) on 2026-10-09.
 
 ```text
 TestGPT2ResidentParityMetal is a whole-model resident-vs-CPU gate for GPT-2 -- the family that
-dispatches layernorm_quant with hasBias=1 (metal/kernels.go; Cohere is the bias-free caller but
+dispatches layernorm_quant with hasBias=1 (backend/metal/kernels.go; Cohere is the bias-free caller but
 does not go resident on Metal at all, declined for unimplemented features [logit-scale,
 parallel-block] -- confirmed directly before writing this test). layernorm_quant had NO
 whole-model coverage before this (only the isolated TestLayerNormQuant unit-kernel test). Built
@@ -4179,7 +4179,7 @@ not merely start empty).
 
 ## gptoss_kernels_test.go.header
 
-Moved from `metal/gptoss_kernels_test.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `backend/metal/gptoss_kernels_test.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 actually ships. FeatAttnSink is now declared for Metal and the resident runs all three end to end
@@ -4188,7 +4188,7 @@ actually ships. FeatAttnSink is now declared for Metal and the resident runs all
 
 ## TestGptOssMoEDownBias_pagedIndexesBiasByExpert
 
-Moved from `metal/gptoss_kernels_test.go` (the comment above `TestGptOssMoEDownBias_pagedIndexesBiasByExpert`) on 2026-10-09.
+Moved from `backend/metal/gptoss_kernels_test.go` (the comment above `TestGptOssMoEDownBias_pagedIndexesBiasByExpert`) on 2026-10-09.
 
 ```text
 C-09: THE PAGED PATH INDEXED THE BIAS TABLE BY THE WEIGHT INDEX.
@@ -4206,7 +4206,7 @@ addressing is not merely inaccurate — it is unmistakable.
 
 ## TestGptOssResidentParityReal20B
 
-Moved from `metal/gptoss_real20b_test.go` (the comment above `TestGptOssResidentParityReal20B`) on 2026-10-09.
+Moved from `backend/metal/gptoss_real20b_test.go` (the comment above `TestGptOssResidentParityReal20B`) on 2026-10-09.
 
 ```text
 gpt-oss forward on the resident path" on EITHER backend, and 2224441 is the precedent for why
@@ -4215,7 +4215,7 @@ that matters: a declaration made on kernel-level parity was correctly reverted. 
 
 ## TestGptOssResidentParityReal20B.path
 
-Moved from `metal/gptoss_real20b_test.go` (the comment at the asset path) on 2026-10-09.
+Moved from `backend/metal/gptoss_real20b_test.go` (the comment at the asset path) on 2026-10-09.
 
 ```text
 decoder.AssetPathForTest, NOT modelPath: this used to call modelPath("gpt-oss-20b-MXFP4.gguf"),
@@ -4229,14 +4229,14 @@ TestGptOssSafetensors_vsGGUF uses, and skips with the reason when absent.
 
 ## TestGptOssResidentParityReal20B.memguard
 
-Moved from `metal/gptoss_real20b_test.go` (the comment at the fits-in-RAM guard) on 2026-10-09.
+Moved from `backend/metal/gptoss_real20b_test.go` (the comment at the fits-in-RAM guard) on 2026-10-09.
 
 ```text
 FITS-IN-RAM GUARD — this test WILL hang a machine without it, and nothing in the engine
 stops it. Measured 2026-08-31 on a 16 GB MacBook: loading this 11.28 GB checkpoint on the
 Metal resident path drove swap to 35.98 GB of 36 GB (885 MB free), left the process in
 uninterruptible I/O wait at 29% CPU with RSS creeping 1.8 -> 2.0 GB over 12 minutes, and
-never completed or declined. The resident path has a KV CONTEXT cap (metal/backend.go, the resident context cap)
+never completed or declined. The resident path has a KV CONTEXT cap (backend/metal/backend.go, the resident context cap)
 but NO weight-size feasibility check, so it accepts a model larger than RAM and thrashes.
 Keyed on bytes computed here, not on the OS's account of what is free: Darwin's UBC reclaims
 under pressure, so "available" reports what survived rather than what can be asked for.
@@ -4244,7 +4244,7 @@ under pressure, so "available" reports what survived rather than what can be ask
 
 ## TestGptOssResidentParity
 
-Moved from `metal/gptoss_real_test.go` (the comment above `TestGptOssResidentParity`) on 2026-10-09.
+Moved from `backend/metal/gptoss_real_test.go` (the comment above `TestGptOssResidentParity`) on 2026-10-09.
 
 ```text
 Dormant until FeatAttnSink is declared: metal ships the sink term (kernels.go's `attention`),
@@ -4256,7 +4256,7 @@ decline once the declaration lands (catching a silent CPU fallback rather than a
 
 ## gvDeepstackCompare.planted
 
-Moved from `metal/grid_vision_deepstack_test.go` (the comment at the planted defect) on 2026-10-09.
+Moved from `backend/metal/grid_vision_deepstack_test.go` (the comment at the planted defect) on 2026-10-09.
 
 ```text
 The planted defect: every tap a block late. The tiny tower has three blocks with DeepStack at 0 and 1 (re-pinned
@@ -4266,7 +4266,7 @@ are inside the tower and the defect is measured as a number: it must come back a
 
 ## requireHeavyModel
 
-Moved from `metal/heavytest_test.go` (the comment above `requireHeavyModel`) on 2026-10-09.
+Moved from `backend/metal/heavytest_test.go` (the comment above `requireHeavyModel`) on 2026-10-09.
 
 ```text
 The bug this closes: metal's real-model tests decided whether to run by PATH EXISTENCE alone
@@ -4279,7 +4279,7 @@ per-test os.Stat skip stays as a second guard, so opting in on a bare box is sti
 
 ## TestImagePrefillResident_gemma3TwoImagesReal
 
-Moved from `metal/image_prefill_resident_real_test.go` (the comment above `TestImagePrefillResident_gemma3TwoImagesReal`) on 2026-10-09.
+Moved from `backend/metal/image_prefill_resident_real_test.go` (the comment above `TestImagePrefillResident_gemma3TwoImagesReal`) on 2026-10-09.
 
 ```text
 differences against the reference and whether each is an R10 near-tie. The first read (2026-10-09) had one that is not
@@ -4289,13 +4289,13 @@ the owner's open decision (docs/tasks/task-multimodal-support-2026-10.md, S11 st
 
 ## TestGemma_Int4DirectContext
 
-Moved from `metal/int4direct_test.go` (the comment above `TestGemma_Int4DirectContext`) on 2026-10-09.
+Moved from `backend/metal/int4direct_test.go` (the comment above `TestGemma_Int4DirectContext`) on 2026-10-09.
 
 ```text
 TestGemma_Int4DirectContext validates the int4-direct fix. The default resident path
 double-quantizes weights (f32→int8→int4); Gemma's low-magnitude attention contexts amplify the
 int8-intermediate drift so the pre-o-proj context craters (cos(Metal,int4-ref) = 0.39/0.52/0.57
-at L31-33, L1 already 0.649 — metal/gemma_sublayer_test.go). int4-direct consumes the decoder's
+at L31-33, L1 already 0.649 — backend/metal/gemma_sublayer_test.go). int4-direct consumes the decoder's
 int4 nibbles verbatim (what CUDA does), removing the int8 step. If the mechanism is right, a
 resident built from a Quant:"int4" model should produce a context that TRACKS the int4 forward
 (goinfer's own int4 == CUDA-int4) instead of cratering.
@@ -4307,7 +4307,7 @@ NOT the double-quant path's 0.39.
 
 ## TestGemma_Int4DirectContext.finding
 
-Moved from `metal/int4direct_test.go` (the comment at the FINDING log) on 2026-10-09.
+Moved from `backend/metal/int4direct_test.go` (the comment at the FINDING log) on 2026-10-09.
 
 ```text
 The FINDING (logged, not a failure): L1 still craters (~0.64), matching the double-quant path's
@@ -4319,7 +4319,7 @@ from the CPU int4 forward at L1, which localizes the bug to Metal's reduced-prec
 
 ## TestDumpLogitsForBisect
 
-Moved from `metal/logit_dump_test.go` (the comment above `TestDumpLogitsForBisect`) on 2026-10-09.
+Moved from `backend/metal/logit_dump_test.go` (the comment above `TestDumpLogitsForBisect`) on 2026-10-09.
 
 ```text
 TestDumpLogitsForBisect writes the resident GPU logits for a fixed 4-token sequence to
@@ -4332,7 +4332,7 @@ so the same source compiles and runs on both commits. Skips unless the env var i
 
 ## TestSetAdapter_partialBindErrorReleasesBuffers
 
-Moved from `metal/lora_bind_leak_test.go` (the comment above `TestSetAdapter_partialBindErrorReleasesBuffers`) on 2026-10-09.
+Moved from `backend/metal/lora_bind_leak_test.go` (the comment above `TestSetAdapter_partialBindErrorReleasesBuffers`) on 2026-10-09.
 
 ```text
 TestSetAdapter_partialBindErrorReleasesBuffers gates C-04 (audit-metal-2026-09-12.md):
@@ -4348,7 +4348,7 @@ exercising the actual partial-progress path rather than failing on the very firs
 
 ## TestLoRAResidentParityMetal.floor
 
-Moved from `metal/lora_resident_parity_test.go` (the comment above `TestLoRAResidentParityMetal.floor`) on 2026-10-09.
+Moved from `backend/metal/lora_resident_parity_test.go` (the comment above `TestLoRAResidentParityMetal.floor`) on 2026-10-09.
 
 ```text
 N-14/N-52 (audit-metal-2026-09-12.md, audit-2026-09-10.md): this floor is far looser than
@@ -4365,7 +4365,7 @@ recommendation, not rejected.
 
 ## TestMC3Chain_newcomerJoinsLongPrompts
 
-Moved from `metal/mc3_chain_long_test.go` (the comment above `TestMC3Chain_newcomerJoinsLongPrompts`) on 2026-10-09.
+Moved from `backend/metal/mc3_chain_long_test.go` (the comment above `TestMC3Chain_newcomerJoinsLongPrompts`) on 2026-10-09.
 
 ```text
 TestMC3Chain_newcomerJoinsLongPrompts and TestMC3Chain_stalledConsumerLongPrompts are the two TestMC3Chain_ scenarios
@@ -4378,7 +4378,7 @@ batching defect; batching is bit-identical (the joint run on a fresh model match
 
 ## mc3ChainFixture
 
-Moved from `metal/mc3_chain_test.go` (the comment above `mc3ChainFixture`) on 2026-10-09.
+Moved from `backend/metal/mc3_chain_test.go` (the comment above `mc3ChainFixture`) on 2026-10-09.
 
 ```text
 The greedy and sampled chains (C-B01 / C-P02) under MC3: a generation alone on the batcher runs the chain with the
@@ -4391,7 +4391,7 @@ no batcher at all.
 
 ## TestMC3Step_qwen3BitIdentical
 
-Moved from `metal/mc3_step_test.go` (the comment above `TestMC3Step_qwen3BitIdentical`) on 2026-10-09.
+Moved from `backend/metal/mc3_step_test.go` (the comment above `TestMC3Step_qwen3BitIdentical`) on 2026-10-09.
 
 ```text
 TestMC3Step_qwen3BitIdentical (E-P07): a Qwen3-shaped model (per-head QK-norm) runs the batched step, and its rows
@@ -4402,7 +4402,7 @@ GOINFER_METAL_MC3_MODEL names (the real Qwen3-0.6B read 0 differing values, 2026
 
 ## TestMC5_prefillChunkInvariance.sizes
 
-Moved from `metal/mc5_chunk_invariance_test.go` (the comment above `TestMC5_prefillChunkInvariance.sizes`) on 2026-10-09.
+Moved from `backend/metal/mc5_chunk_invariance_test.go` (the comment above `TestMC5_prefillChunkInvariance.sizes`) on 2026-10-09.
 
 ```text
 100 and 77 start chunks off the steel kernel's 32-row tiles; a prefix-reuse turn's startPos is arbitrary too. The
@@ -4420,7 +4420,7 @@ sequentially before E-P01 and on the step kernels since, decode's numerics eithe
 
 ## TestMellumResidentParity
 
-Moved from `metal/mellum_real_test.go` (the comment above `TestMellumResidentParity`) on 2026-10-09.
+Moved from `backend/metal/mellum_real_test.go` (the comment above `TestMellumResidentParity`) on 2026-10-09.
 
 ```text
 TestMellumResidentParity is G11's Metal half — the real-weight successor to the abandoned
@@ -4436,7 +4436,7 @@ G11 if it's absent (4 GB, gitignored — only the golden ships).
 
 ## TestMinistral3ResidentSmokeMetal
 
-Moved from `metal/ministral3_resident_parity_test.go` (the comment above `TestMinistral3ResidentSmokeMetal`) on 2026-10-09.
+Moved from `backend/metal/ministral3_resident_parity_test.go` (the comment above `TestMinistral3ResidentSmokeMetal`) on 2026-10-09.
 
 ```text
 TestMinistral3ResidentSmokeMetal is G5's FeatAttnTemp row (docs/tasks/task-gpu-paths-2026-09.md)
@@ -4446,7 +4446,7 @@ AttnTempOrigMaxPos=8, so a 32-token run steps through four distinct scale values
 identity-at-short-prompts trap AttnTempBeta's own comment warns about).
 
 This is DELIBERATELY NOT a resident-vs-CPU cosine floor — same finding as G5 row 1's
-smollm3-tiny (metal/smollm3_resident_parity_test.go's TestSmolLM3ResidentSmokeMetal has the
+smollm3-tiny (backend/metal/smollm3_resident_parity_test.go's TestSmolLM3ResidentSmokeMetal has the
 full writeup). MEASURED here too, not assumed: with the real fix and with it force-disabled
 (qTempScale always 1, i.e. the attn-temp scale silently dropped on every position), the worst
 cosine against the CPU reference over 32 tokens was 0.96446 and 0.96525 respectively — a
@@ -4464,13 +4464,13 @@ the model go resident and run without error/NaN.
 
 ## TestMoEExpertReuseProbe
 
-Moved from `metal/moe_expert_reuse_probe_test.go` (the comment above `TestMoEExpertReuseProbe`) on 2026-10-09.
+Moved from `backend/metal/moe_expert_reuse_probe_test.go` (the comment above `TestMoEExpertReuseProbe`) on 2026-10-09.
 
 ```text
 TestMoEExpertReuseProbe investigates M-05 (audit-metal-2026-09-12.md) cheaply, BEFORE building
 the expert-major prefill restructuring it proposes: on a REAL paged MoE resident, run genuine
 text through the EXACT path paged MoE prefill already uses today — prefillOK is hard-false for
-a paged generic MoE (metal/model.go), so every prompt token already goes through the sequential
+a paged generic MoE (backend/metal/model.go), so every prompt token already goes through the sequential
 per-token decode loop, one router readback + stage per token per layer — and read off the
 expert pool's own telemetry (stages / distinctExperts / nE) to see whether an expert-major
 regroup (stage each routed expert ONCE per prefill instead of once per token that routes to it)
@@ -4493,13 +4493,13 @@ paged only holds N << nE experts per layer.
 
 ## TestMoE_declinesPrefill
 
-Moved from `metal/moe_model_test.go` (the comment above `TestMoE_declinesPrefill`) on 2026-10-09.
+Moved from `backend/metal/moe_model_test.go` (the comment above `TestMoE_declinesPrefill`) on 2026-10-09.
 
 ```text
 TestMoE_declinesPrefill: MoE moved from the decline side to the admit side on 2026-09-08 (G8
 MoE half, docs/tasks/task-gpu-paths-2026-09.md) — the f16 MMA prefill path now runs a MoE layer's FFN
 row by row off the batched residual, reusing the unchanged per-token decode MoE dispatch chain
-(encodeMoERoute/encodeMoEExperts/encodeMoESharedExpert, metal/moe.go); the name is historical
+(encodeMoERoute/encodeMoEExperts/encodeMoESharedExpert, backend/metal/moe.go); the name is historical
 (kept so `git log -p` on it still tells the right story — decoder/gptoss_decline_test.go
 precedent). Both MoE and its dense twin must now accept.
 
@@ -4512,7 +4512,7 @@ logits closely, not just both "succeed".
 
 ## TestMoE_declinesPrefill.gate
 
-Moved from `metal/moe_model_test.go` (the comment above `TestMoE_declinesPrefill.gate`) on 2026-10-09.
+Moved from `backend/metal/moe_model_test.go` (the comment above `TestMoE_declinesPrefill.gate`) on 2026-10-09.
 
 ```text
 This test exercises the ARCH admission (MoE now has a row-by-row FFN path) — not the
@@ -4522,11 +4522,11 @@ Opt past that outer gate so the arch logic is what's under test.
 
 ## TestMoEPrefillMeasure_batchedVsSequential
 
-Moved from `metal/moe_prefill_measure_test.go` (the comment above `TestMoEPrefillMeasure_batchedVsSequential`) on 2026-10-09.
+Moved from `backend/metal/moe_prefill_measure_test.go` (the comment above `TestMoEPrefillMeasure_batchedVsSequential`) on 2026-10-09.
 
 ```text
 TestMoEPrefillMeasure_batchedVsSequential is P-15's real-checkpoint measurement
-(audit-2026-09-10): Metal's batched f16-MMA prefill (metal/prefill.go's PrefillLast) has been
+(audit-2026-09-10): Metal's batched f16-MMA prefill (backend/metal/prefill.go's PrefillLast) has been
 default-ON above the 512-token floor for MoE since 306b16b, but §3.2's decision set that
 justified default-ON was dense-only — nobody has actually timed the batched path against the
 sequential per-token loop on a real, generic (non-Gemma-4) MoE. This times both, directly on
@@ -4544,7 +4544,7 @@ measurement script (docs/measurements/), not a correctness gate:
 
 ## TestMoECacheExperts_bitExactMetal
 
-Moved from `metal/moecache_bitexact_test.go` (the comment above `TestMoECacheExperts_bitExactMetal`) on 2026-10-09.
+Moved from `backend/metal/moecache_bitexact_test.go` (the comment above `TestMoECacheExperts_bitExactMetal`) on 2026-10-09.
 
 ```text
 TestMoECacheExperts_bitExactMetal is G-1 (docs/completed/task-option-path-admission-2026-10.md §4.3, finding 2, registered
@@ -4563,7 +4563,7 @@ defect (expertPoolDefect) must go red: an evicted slot not restaged, the GPU tol
 
 ## TestOptionPathMetal_kvPrecision
 
-Moved from `metal/optiongrid_metal_test.go` (the comment above `TestOptionPathMetal_kvPrecision`) on 2026-10-09.
+Moved from `backend/metal/optiongrid_metal_test.go` (the comment above `TestOptionPathMetal_kvPrecision`) on 2026-10-09.
 
 ```text
 TestOptionPathMetal_kvPrecision: KVPrecision's resident decode, speculative verify and session
@@ -4577,7 +4577,7 @@ model, kernels differing between decode and prefill), and resident_reuse.go does
 
 ## TestOptionPathMetal_prefillChunk
 
-Moved from `metal/optiongrid_metal_test.go` (the comment above `TestOptionPathMetal_prefillChunk`) on 2026-10-09.
+Moved from `backend/metal/optiongrid_metal_test.go` (the comment above `TestOptionPathMetal_prefillChunk`) on 2026-10-09.
 
 ```text
 TestOptionPathMetal_prefillChunk: ResidentPrefillChunk under MC3 prefills a long prompt in chunks while
@@ -4593,7 +4593,7 @@ raises a chunk below the resident's PrefillKernelFloor to the floor.
 
 ## TestPageCost_submissionStructure
 
-Moved from `metal/pagecost_measure_test.go` (the comment above `TestPageCost_submissionStructure`) on 2026-10-09.
+Moved from `backend/metal/pagecost_measure_test.go` (the comment above `TestPageCost_submissionStructure`) on 2026-10-09.
 
 ```text
 TestPageCost_submissionStructure is Step-6 Step-0: PRICE what losing the value-independent
@@ -4616,7 +4616,7 @@ runs (first discarded), greedy, same model + prompt. Heavy-gated (loads a ~1 GB 
 
 ## TestPageCost_submissionStructure.baseline
 
-Moved from `metal/pagecost_measure_test.go` (the comment above `TestPageCost_submissionStructure.baseline`) on 2026-10-09.
+Moved from `backend/metal/pagecost_measure_test.go` (the comment above `TestPageCost_submissionStructure.baseline`) on 2026-10-09.
 
 ```text
 Baseline is ForwardEmb (INLINE single command buffer/token), NOT ForwardEmbPipe: the pipelined
@@ -4629,11 +4629,11 @@ dominant cost is the SUBMISSION STRUCTURE (1 command buffer/token vs ~nL), which
 
 ## TestPageCost_sharedEventReal
 
-Moved from `metal/pagecost_sharedevent_test.go` (the comment above `TestPageCost_sharedEventReal`) on 2026-10-09.
+Moved from `backend/metal/pagecost_sharedevent_test.go` (the comment above `TestPageCost_sharedEventReal`) on 2026-10-09.
 
 ```text
 TestPageCost_sharedEventReal is Step-6 Step-0 regime (3) on the REAL forward — the authoritative
-measurement that the synthetic aikit probe (gpu/metal_sharedevent_test.go) understates. It reprices
+measurement that the synthetic aikit probe (backend/webgpu/metal_sharedevent_test.go) understates. It reprices
 all three regimes inline on qwen2.5-1.5b so shared-event is directly comparable to baseline and
 per-layer-submit. FINDING (2026-08): shared-event handshake (~0.26 ms/boundary) is ≈ per-layer
 submit (~0.23 ms/boundary) — recovers ~0%; both synchronous shapes cost ~+45%. Conclusion:
@@ -4647,7 +4647,7 @@ This is the committed, repo-reproducible form of the regime-3 result (was run un
 
 ## TestPairwiseRoPERealMetal.meanbar
 
-Moved from `metal/pairwise_rope_real_test.go` (the comment above `TestPairwiseRoPERealMetal.meanbar`) on 2026-10-09.
+Moved from `backend/metal/pairwise_rope_real_test.go` (the comment above `TestPairwiseRoPERealMetal.meanbar`) on 2026-10-09.
 
 ```text
 The mean bar is 0.99 for every model but Command-R7B, whose 0.989242 the owner accepted on 2026-10-09 ("close
@@ -4658,7 +4658,7 @@ not a measured tolerance.
 
 ## TestMetalPrefillDecomp.reps
 
-Moved from `metal/prefill_decomp_test.go` (the comment above `TestMetalPrefillDecomp.reps`) on 2026-10-09.
+Moved from `backend/metal/prefill_decomp_test.go` (the comment above `TestMetalPrefillDecomp.reps`) on 2026-10-09.
 
 ```text
 Every repeat of every category that matters, so a wide spread can be traced to its reps
@@ -4667,7 +4667,7 @@ Every repeat of every category that matters, so a wide spread can be traced to i
 
 ## TestMetalPrefillDecomp.loo
 
-Moved from `metal/prefill_decomp_test.go` (the comment above `TestMetalPrefillDecomp.loo`) on 2026-10-09.
+Moved from `backend/metal/prefill_decomp_test.go` (the comment above `TestMetalPrefillDecomp.loo`) on 2026-10-09.
 
 ```text
 Leave-one-out (GOINFER_METAL_DECOMP_LOO=1): a category timed in its own command buffer ran in two
@@ -4682,7 +4682,7 @@ work — only the cache and memory state it sees, which is the effect being meas
 
 ## TestMetalPrefillDecomp.state
 
-Moved from `metal/prefill_decomp_test.go` (the comment above `TestMetalPrefillDecomp.state`) on 2026-10-09.
+Moved from `backend/metal/prefill_decomp_test.go` (the comment above `TestMetalPrefillDecomp.state`) on 2026-10-09.
 
 ```text
 Prior-state test (GOINFER_METAL_DECOMP_STATE=1): the MLP GEMMs run ~1.9x slower inside the sequence
@@ -4693,7 +4693,7 @@ be slow straight after heavy work and fast after an idle gap. Four conditions, i
 
 ## TestPrefillGateVsReference.ctxpin
 
-Moved from `metal/prefill_gate_ref_test.go` (the comment above `TestPrefillGateVsReference.ctxpin`) on 2026-10-09.
+Moved from `backend/metal/prefill_gate_ref_test.go` (the comment above `TestPrefillGateVsReference.ctxpin`) on 2026-10-09.
 
 ```text
 Pin ResidentContext to metalCtxCapDefault (4096): the 0 (backend-default) auto-cap sizes ctx off
@@ -4711,7 +4711,7 @@ GOINFER_METAL_GATE_QUANT=int8int8 grades the native int8 path (docs/tasks/task-m
 
 ## runPrefillGateSet.g02
 
-Moved from `metal/prefill_gate_ref_test.go` (the comment above `runPrefillGateSet.g02`) on 2026-10-09.
+Moved from `backend/metal/prefill_gate_ref_test.go` (the comment above `runPrefillGateSet.g02`) on 2026-10-09.
 
 ```text
 G-02 (audit-metal-2026-09-12.md): a missing reference file used to silently drop that K
@@ -4728,7 +4728,7 @@ is missing rather than requiring a reader to diff the header against the cell co
 
 ## TestPrefillGate.floor
 
-Moved from `metal/prefill_gate_test.go` (the comment above `TestPrefillGate.floor`) on 2026-10-09.
+Moved from `backend/metal/prefill_gate_test.go` (the comment above `TestPrefillGate.floor`) on 2026-10-09.
 
 ```text
 G-07 (audit-metal-2026-09-12.md): this test's K=256 decision cell used to Fatalf outright —
@@ -4740,7 +4740,7 @@ again the next time the floor default moves.
 
 ## TestPrefillGate.divergence
 
-Moved from `metal/prefill_gate_test.go` (the comment above `TestPrefillGate.divergence`) on 2026-10-09.
+Moved from `backend/metal/prefill_gate_test.go` (the comment above `TestPrefillGate.divergence`) on 2026-10-09.
 
 ```text
 G-07 (audit-metal-2026-09-12.md): TestMetalPrefillDivergenceRate, the test that originally
@@ -4751,12 +4751,12 @@ the figure itself is historical record, not a live test (docs/ollama-chase.md).
 
 ## runPrefillGateCell.exact
 
-Moved from `metal/prefill_gate_test.go` (the comment above `runPrefillGateCell.exact`) on 2026-10-09.
+Moved from `backend/metal/prefill_gate_test.go` (the comment above `runPrefillGateCell.exact`) on 2026-10-09.
 
 ```text
 EXACT — sequential Forward per token, today's shipped default.
 
-Forward's return is a REUSED buffer (metal/model.go ForwardEmbPipe: "Returns logits[V]
+Forward's return is a REUSED buffer (backend/metal/model.go ForwardEmbPipe: "Returns logits[V]
 (reused buffer; consume before the next call)") — every capture below is cloned
 immediately. Storing the raw slice instead silently aliases whatever the LAST Forward call
 in the whole cell wrote, which is exactly the bug this comment is here to stop someone
@@ -4768,7 +4768,7 @@ quietly agreed).
 
 ## gemmS2Kernels
 
-Moved from `metal/prefill_gemm_s2_test.go` (the comment above `gemmS2Kernels`) on 2026-10-09.
+Moved from `backend/metal/prefill_gemm_s2_test.go` (the comment above `gemmS2Kernels`) on 2026-10-09.
 
 ```text
 gemmS2Kernels holds R16's prototypes (1-4; prototype 4 became production 2026-09-25) and the retired production
@@ -4781,7 +4781,7 @@ compiles it.
 
 ## TestPrefillParityMoEGatedShared
 
-Moved from `metal/prefill_moe_parity_test.go` (the comment above `TestPrefillParityMoEGatedShared`) on 2026-10-09.
+Moved from `backend/metal/prefill_moe_parity_test.go` (the comment above `TestPrefillParityMoEGatedShared`) on 2026-10-09.
 
 ```text
 TestPrefillParityMoEGatedShared exercises the OTHER branch encodeMoESharedExpert's
@@ -4799,7 +4799,7 @@ sigmoid (gate fixed at 1) still clears 0.95 on qwen35-tiny (0.99813) while readi
 
 ## TestPrefillNoNaN
 
-Moved from `metal/prefill_nan_test.go` (the comment above `TestPrefillNoNaN`) on 2026-10-09.
+Moved from `backend/metal/prefill_nan_test.go` (the comment above `TestPrefillNoNaN`) on 2026-10-09.
 
 ```text
 TestPrefillNoNaN asserts the f16-MMA prefill produces finite logits across a range of prompt
@@ -4812,7 +4812,7 @@ Metal against a checkpoint.
 
 ## TestPrefillRefIdentity
 
-Moved from `metal/prefill_ref_identity_test.go` (the comment above `TestPrefillRefIdentity`) on 2026-10-09.
+Moved from `backend/metal/prefill_ref_identity_test.go` (the comment above `TestPrefillRefIdentity`) on 2026-10-09.
 
 ```text
 resident's. A reference generated from the same text lands at the W4A8-vs-CPU level (measured 0.0015–0.072 on
@@ -4822,7 +4822,7 @@ set B's S-K3900); one generated from different text lands orders of magnitude hi
 
 ## TestPromptHiddenResidentMetal.int4
 
-Moved from `metal/prompthidden_resident_parity_test.go` (the comment above `TestPromptHiddenResidentMetal.int4`) on 2026-10-09.
+Moved from `backend/metal/prompthidden_resident_parity_test.go` (the comment above `TestPromptHiddenResidentMetal.int4`) on 2026-10-09.
 
 ```text
 Both sides run int4. Metal has no int8 GEMV (its decode path reports int8int8 -> int4), so an int8int8 CPU side compares
@@ -4833,7 +4833,7 @@ unusually int4-sensitive (CPU f32 vs CPU int4 is 0.980), which is a property of 
 
 ## TestQuantBar_CPUInt4VsInt8
 
-Moved from `metal/quantbar_test.go` (the comment above `TestQuantBar_CPUInt4VsInt8`) on 2026-10-09.
+Moved from `backend/metal/quantbar_test.go` (the comment above `TestQuantBar_CPUInt4VsInt8`) on 2026-10-09.
 
 ```text
 TestQuantBar_CPUInt4VsInt8 answers the question every Metal Gemma parity number has been
@@ -4866,7 +4866,7 @@ measured on this box rather than assumed.
 
 ## TestQwen35_35B_pagedRuns
 
-Moved from `metal/qwen35_35b_paged_test.go` (the comment above `TestQwen35_35B_pagedRuns`) on 2026-10-09.
+Moved from `backend/metal/qwen35_35b_paged_test.go` (the comment above `TestQwen35_35B_pagedRuns`) on 2026-10-09.
 
 ```text
 WHAT THIS MEASURES AND WHAT IT DOES NOT. Steady-state decode rate through the pager, plus the
@@ -4879,7 +4879,7 @@ against, BEFORE it produced a number.
 
 ## TestQwen35_35B_cpuPagedBaseline
 
-Moved from `metal/qwen35_35b_paged_test.go` (the comment above `TestQwen35_35B_cpuPagedBaseline`) on 2026-10-09.
+Moved from `backend/metal/qwen35_35b_paged_test.go` (the comment above `TestQwen35_35B_cpuPagedBaseline`) on 2026-10-09.
 
 ```text
 TestQwen35_35B_cpuPagedBaseline is the DO-NOTHING ARM for the run above: the same checkpoint,
@@ -4897,7 +4897,7 @@ same seed token, same greedy self-feeding trajectory, same token count.
 
 ## TestR1_laneVsCPU
 
-Moved from `metal/r1_lane_vs_cpu_test.go` (the comment above `TestR1_laneVsCPU`) on 2026-10-09.
+Moved from `backend/metal/r1_lane_vs_cpu_test.go` (the comment above `TestR1_laneVsCPU`) on 2026-10-09.
 
 ```text
 TestR1_laneVsCPU is experiment X2 of the R1 (W4F16 decode lane) re-investigation. X1
@@ -4931,7 +4931,7 @@ Memory: ONE checkpoint resident at a time — the CPU model is Closed before the
 
 ## TestR2_perLayerCtxDiff
 
-Moved from `metal/r2_ctx_diff_test.go` (the comment above `TestR2_perLayerCtxDiff`) on 2026-10-09.
+Moved from `backend/metal/r2_ctx_diff_test.go` (the comment above `TestR2_perLayerCtxDiff`) on 2026-10-09.
 
 ```text
 TestR2_perLayerCtxDiff is the measurement R2's two prior investigations never took
@@ -4966,7 +4966,7 @@ GOINFER_R2_DUMP_DIR for TestR2_replayDump below.
 
 ## runDecodeFidelityGate.identity
 
-Moved from `metal/r2_gate_test.go` (the comment above `runDecodeFidelityGate.identity`) on 2026-10-09.
+Moved from `backend/metal/r2_gate_test.go` (the comment above `runDecodeFidelityGate.identity`) on 2026-10-09.
 
 ```text
 Prompt identity: the reference files carry no prompt ids, so check the one row both arms share — the
@@ -4978,7 +4978,7 @@ the 3900-token window (metal-decode-attn-r17-2026-09-25.md).
 
 ## TestZZ_residencyProbe
 
-Moved from `metal/residency_probe_test.go` (the comment above `TestZZ_residencyProbe`) on 2026-10-09.
+Moved from `backend/metal/residency_probe_test.go` (the comment above `TestZZ_residencyProbe`) on 2026-10-09.
 
 ```text
 TestZZ_residencyProbe isolates the per-submit RESIDENCY cost that dominates the paged-MoE decode
@@ -4993,7 +4993,7 @@ not a gate; documents why the residency-set fix is the lever and would flag an O
 
 ## TestS16MRoPEPrefill_real.sidecar
 
-Moved from `metal/s16_mrope_prefill_test.go` (the comment above `TestS16MRoPEPrefill_real.sidecar`) on 2026-10-09.
+Moved from `backend/metal/s16_mrope_prefill_test.go` (the comment above `TestS16MRoPEPrefill_real.sidecar`) on 2026-10-09.
 
 ```text
 Through the directory's sidecar when it exists (S18: `<dir>.int4.metal.giw`, what serve's Metal load reads):
@@ -5004,7 +5004,7 @@ against 3.77 GB for Qwen2.5-VL) lacked. It generates exactly what the direct loa
 
 ## TestS18ShrinkCtxToFit
 
-Moved from `metal/s18_ctx_shrink_test.go` (the comment above `TestS18ShrinkCtxToFit`) on 2026-10-09.
+Moved from `backend/metal/s18_ctx_shrink_test.go` (the comment above `TestS18ShrinkCtxToFit`) on 2026-10-09.
 
 ```text
 The probe is a Metal load too: a CPU load prices more (it keeps arm64-repacked weights a Metal load does not), which put the budget above the
@@ -5013,7 +5013,7 @@ Metal build's 4096 need on the first try.
 
 ## TestS9EModelBatched_tiny
 
-Moved from `metal/s9_emodel_batched_test.go` (the comment above `TestS9EModelBatched_tiny`) on 2026-10-09.
+Moved from `backend/metal/s9_emodel_batched_test.go` (the comment above `TestS9EModelBatched_tiny`) on 2026-10-09.
 
 ```text
 TestS9EModelBatched_tiny is G-S9c of S9 step 2 (docs/tasks/task-multimodal-support-2026-10.md, registered before any
@@ -5030,7 +5030,7 @@ it. Each planted defect (emodelBatchDefect) must go red on at least one prompt.
 
 ## s3Sharpen
 
-Moved from `metal/s3_towers_test.go` (the comment above `s3Sharpen`) on 2026-10-09.
+Moved from `backend/metal/s3_towers_test.go` (the comment above `s3Sharpen`) on 2026-10-09.
 
 ```text
 The tiny towers are degenerate along several of the registered defects' axes, and G-S3a's first tiny run showed it:
@@ -5044,7 +5044,7 @@ Qwen2.5-VL also v and the output projection, whose init scale left attention a n
 
 ## TestSAGemv_OutlierRegime
 
-Moved from `metal/sa_outlier_test.go` (the comment above `TestSAGemv_OutlierRegime`) on 2026-10-09.
+Moved from `backend/metal/sa_outlier_test.go` (the comment above `TestSAGemv_OutlierRegime`) on 2026-10-09.
 
 ```text
 TestSAGemv_OutlierRegime is the decisive experiment for the Gemma o-proj amplitude bug
@@ -5070,7 +5070,7 @@ massive output and would hide a 6× error on the secondary rows (the sink lesson
 
 ## TestSAQVFusion_correctnessAndThroughput
 
-Moved from `metal/sa_qv_fusion_test.go` (the comment above `TestSAQVFusion_correctnessAndThroughput`) on 2026-10-09.
+Moved from `backend/metal/sa_qv_fusion_test.go` (the comment above `TestSAQVFusion_correctnessAndThroughput`) on 2026-10-09.
 
 ```text
 TestSAQVFusion_correctnessAndThroughput is the measurement item #5 of the 9-finding audit
@@ -5094,7 +5094,7 @@ back it up here.
 
 ## TestSAQVFusion_correctnessAndThroughput.reps
 
-Moved from `metal/sa_qv_fusion_test.go` (the comment above `TestSAQVFusion_correctnessAndThroughput.reps`) on 2026-10-09.
+Moved from `backend/metal/sa_qv_fusion_test.go` (the comment above `TestSAQVFusion_correctnessAndThroughput.reps`) on 2026-10-09.
 
 ```text
 reps=20: NOT the real per-token count (a real decode token issues far fewer than this per
@@ -5109,7 +5109,7 @@ Worth its own investigation separately; out of scope here.
 
 ## TestSAQVFusion_correctnessAndThroughput.interleave
 
-Moved from `metal/sa_qv_fusion_test.go` (the comment above `TestSAQVFusion_correctnessAndThroughput.interleave`) on 2026-10-09.
+Moved from `backend/metal/sa_qv_fusion_test.go` (the comment above `TestSAQVFusion_correctnessAndThroughput.interleave`) on 2026-10-09.
 
 ```text
 INTERLEAVED, not two separate blocks: measuring "all of A then all of B" confounds the
@@ -5124,7 +5124,7 @@ happens to run when conditions are better.
 
 ## TestSink_NormsNotCosines
 
-Moved from `metal/sink_test.go` (the comment above `TestSink_NormsNotCosines`) on 2026-10-09.
+Moved from `backend/metal/sink_test.go` (the comment above `TestSink_NormsNotCosines`) on 2026-10-09.
 
 ```text
 Fable's hypothesis: the probe token is <bos> (id 2), Gemma's ATTENTION SINK. Sink V vectors
@@ -5136,7 +5136,7 @@ a cosine; nobody measured a NORM. So measure norms — and probe a NON-sink toke
 
 ## TestZZ_metalSoftcapTokenShare
 
-Moved from `metal/softcap_ab_test.go` (the comment above `TestZZ_metalSoftcapTokenShare`) on 2026-10-09.
+Moved from `backend/metal/softcap_ab_test.go` (the comment above `TestZZ_metalSoftcapTokenShare`) on 2026-10-09.
 
 ```text
 TestZZ_metalSoftcapTokenShare loads a real dense Gemma (final-logit softcap, 262k vocab) and times
@@ -5147,7 +5147,7 @@ expressed as a share of the token. Opt-in timing diagnostic, not a gate.
 
 ## TestSpecNgram_copyOnStepVerify
 
-Moved from `metal/spec_multiturn_test.go` (the comment above `TestSpecNgram_copyOnStepVerify`) on 2026-10-09.
+Moved from `backend/metal/spec_multiturn_test.go` (the comment above `TestSpecNgram_copyOnStepVerify`) on 2026-10-09.
 
 ```text
 Both compared arms reuse the cache's prompt prefix, so both re-decode the prompt's last position. A cold arm would
@@ -5158,7 +5158,7 @@ for a spec defect (B-P03's revert, since undone). The cold run is a warm-up only
 
 ## TestMetalSnapshotGolden
 
-Moved from `metal/snapshot_golden_test.go` (the comment above `TestMetalSnapshotGolden`) on 2026-10-09.
+Moved from `backend/metal/snapshot_golden_test.go` (the comment above `TestMetalSnapshotGolden`) on 2026-10-09.
 
 ```text
 TestMetalSnapshotGolden is the ABSOLUTE STORED REFERENCE the Metal gate suite otherwise lacks.
@@ -5208,7 +5208,7 @@ every OTHER consumer of that fixture already skipped gracefully, this test was t
 Coverage: mixtral-tiny is full-causal (attention softmax denom over
 >256 keys → the width coupling at multi-iteration depth) + rmsnorm_quant; gemma4-dense-scaled covers
 rmsnorm_f32 + qk_norm. llama-attnfa-tiny (added 2026-09-21, R2 golden-coverage follow-up) covers
-`attention_fa`, DEFAULT ON past depth 1024 (metal/model.go's attnFADepthFloor, 1536 until B-P03) — the other two
+`attention_fa`, DEFAULT ON past depth 1024 (backend/metal/model.go's attnFADepthFloor, 1536 until B-P03) — the other two
 fixtures both fail canUseAttnFA's head_dim==128 guard (8 and 256 respectively) and can never
 dispatch it regardless of depth, so this kernel had zero coverage from this suite until this
 fixture existed. Its checkpoints straddle the floor exactly (1022 declines, 1023 engages) so an
@@ -5228,10 +5228,10 @@ computation rather than for an entry point production never calls (audit G-02).
 
 ## TestMetalSnapshotGolden.attnfa
 
-Moved from `metal/snapshot_golden_test.go` (the comment above `TestMetalSnapshotGolden.attnfa`) on 2026-10-09.
+Moved from `backend/metal/snapshot_golden_test.go` (the comment above `TestMetalSnapshotGolden.attnfa`) on 2026-10-09.
 
 ```text
-R2: attention_fa, DEFAULT ON past attnFADepthFloor=1024 (metal/model.go; 1536 until B-P03). Every other
+R2: attention_fa, DEFAULT ON past attnFADepthFloor=1024 (backend/metal/model.go; 1536 until B-P03). Every other
 fixture here has head_dim != 128 (mixtral-tiny: 8, gemma4-dense-scaled: 256), so
 canUseAttnFA's hd==128 guard declines on both, regardless of depth — neither can ever
 cover this kernel. llama-attnfa-tiny (scripts/pin_llama_attnfa_tiny.py) is a plain dense
@@ -5245,12 +5245,12 @@ just at it. Re-baked for B-P03's floor move (G-04; it was 1400 / 1534 / 1535 / 1
 
 ## TestMetalSnapshotGolden.skip
 
-Moved from `metal/snapshot_golden_test.go` (the comment above `TestMetalSnapshotGolden.skip`) on 2026-10-09.
+Moved from `backend/metal/snapshot_golden_test.go` (the comment above `TestMetalSnapshotGolden.skip`) on 2026-10-09.
 
 ```text
 gemma4-dense-scaled (449 MB) is NOT committed — GitHub's practical push limit is well
 under that, so it can't be, unlike mixtral-tiny/llama-attnfa-tiny — and every OTHER
-consumer of this fixture (metal/gemma4_dense_scaled_test.go, the cuda/gpu prefill tests,
+consumer of this fixture (backend/metal/gemma4_dense_scaled_test.go, the cuda/gpu prefill tests,
 decoder/gemma4_moe_forward_test.go) already skips gracefully when it's absent, pointing
 at scripts/pin_gemma4_dense_scaled.py (deterministic, seed 0) to regenerate it. This test
 was the one outlier that didn't, so a fresh machine got an opaque t.Fatalf instead of a
@@ -5262,7 +5262,7 @@ fully checked on any machine even when this one is locally absent.
 
 ## TestMetalSpecPrefillRegression
 
-Moved from `metal/spec_prefill_regression_test.go` (the comment above `TestMetalSpecPrefillRegression`) on 2026-10-09.
+Moved from `backend/metal/spec_prefill_regression_test.go` (the comment above `TestMetalSpecPrefillRegression`) on 2026-10-09.
 
 ```text
 TestMetalSpecPrefillRegression is the Metal half of the 2026-08-31 speculative-prefill
@@ -5280,7 +5280,7 @@ which moves with the corpus, so it flaps; the slope of (spec - off) against prom
 the defect's signature and is nearly acceptance-independent. Bar: 0.50 ms/prompt-token
 (CUDA measured 2.66 with the bug, 0.12 without).
 
-WHY THIS ASSERTS RATHER THAN LOGS: gpu/spec_ngram_resident_test.go measures the right
+WHY THIS ASSERTS RATHER THAN LOGS: backend/webgpu/spec_ngram_resident_test.go measures the right
 quantity and only t.Logf's it — its own header says "speedup is logged per workload" — so a
 0.3x printed and failed nothing for six weeks. The slope check below is t.Fatalf.
 
@@ -5291,7 +5291,7 @@ repository source at run time instead.
 
 METAL-SPECIFIC PRECONDITION — GOINFER_METAL_BATCHED_PREFILL=1 IS MANDATORY HERE, and a green
 without it is meaningless. Historically (when this test was written) Metal's PrefillLast
-(metal/backend.go) declined by default — Metal's batched prefill was not bit-identical to its
+(backend/metal/backend.go) declined by default — Metal's batched prefill was not bit-identical to its
 decode path (54% stream divergence, a figure once measured by TestMetalPrefillDivergenceRate,
 docs/ollama-chase.md; that test no longer exists — superseded by TestPrefillGateVsReference's
 pooled §3.2 criteria, G-07 audit-metal-2026-09-12.md). Batched prefill is now default-ON above
@@ -5311,7 +5311,7 @@ variable.
 
 ## TestSpecVerifyCurveMetal
 
-Moved from `metal/spec_verify_curve_test.go` (the comment above `TestSpecVerifyCurveMetal`) on 2026-10-09.
+Moved from `backend/metal/spec_verify_curve_test.go` (the comment above `TestSpecVerifyCurveMetal`) on 2026-10-09.
 
 ```text
 CRITICAL, and the reason this needs stating before any number below: `PrefillLast` — the batched
@@ -5331,7 +5331,7 @@ that bit-identity gap closed FIRST; this test answers "is the timing shape even 
 
 ## TestSwigluQuant_MassiveChannel
 
-Moved from `metal/swiglu_massive_test.go` (the comment above `TestSwigluQuant_MassiveChannel`) on 2026-10-09.
+Moved from `backend/metal/swiglu_massive_test.go` (the comment above `TestSwigluQuant_MassiveChannel`) on 2026-10-09.
 
 ```text
 TestSwigluQuant_MassiveChannel isolates the BOS geglu bug (b04d799) to KERNEL vs DATA. The L0
@@ -5344,7 +5344,7 @@ massive geglu channel.
 
 ## skipIfMemoryDeclined
 
-Moved from `metal/testshared_test.go` (the comment above `skipIfMemoryDeclined`) on 2026-10-09.
+Moved from `backend/metal/testshared_test.go` (the comment above `skipIfMemoryDeclined`) on 2026-10-09.
 
 ```text
 skipIfMemoryDeclined skips a resident parity test whose resident build the memory guard declined. That is "this machine
@@ -5357,7 +5357,7 @@ stays visible. Any other decline (a feature or admission mismatch) still fails a
 
 ## TestMaxThreadgroupStageBytes
 
-Moved from `metal/tgbudget_test.go` (the comment above `TestMaxThreadgroupStageBytes`) on 2026-10-09.
+Moved from `backend/metal/tgbudget_test.go` (the comment above `TestMaxThreadgroupStageBytes`) on 2026-10-09.
 
 ```text
 N-32: DeltaNet's out-proj staging (deltanet.go dispatches dp.valueDim*2) was missing
@@ -5369,7 +5369,7 @@ after the first attempt at adding them silently no-opped.
 
 ## TestMetalThetaAB
 
-Moved from `metal/theta_ab_test.go` (the comment above `TestMetalThetaAB`) on 2026-10-09.
+Moved from `backend/metal/theta_ab_test.go` (the comment above `TestMetalThetaAB`) on 2026-10-09.
 
 ```text
 TestMetalThetaAB — does wiring the MEASURED Theta actually make Metal faster?
@@ -5400,12 +5400,12 @@ batched, which is exactly what item (2) would change.
 
 ## TestThetaProbe_Metal
 
-Moved from `metal/theta_probe_test.go` (the comment above `TestThetaProbe_Metal`) on 2026-10-09.
+Moved from `backend/metal/theta_probe_test.go` (the comment above `TestThetaProbe_Metal`) on 2026-10-09.
 
 ```text
 TestThetaProbe_Metal measures Theta — the marginal cost of one extra verify node, in units
 of one single-token target step — on the Metal resident path. Method is identical to the
-CUDA probe (cuda/theta_probe_test.go) and the CPU control (decoder/theta_probe_test.go) so
+CUDA probe (backend/cuda/theta_probe_test.go) and the CPU control (decoder/theta_probe_test.go) so
 the three numbers are directly comparable: seed `depth` positions, then time ForwardN over a
 ladder of widths, and take Theta = (least-squares slope of T(n)) / T(1).
 
@@ -5414,14 +5414,14 @@ decoder/spec_adaptive.go ships Theta = 0.5, calls it the batched-CPU value, and 
 
 WHAT TO EXPECT HERE, AND WHY IT IS NOT THE CUDA STORY. CUDA's low Theta comes from a verify
 that streams the weights ONCE for the whole block, so the marginal node is far cheaper than a
-step. Metal's ForwardN (metal/backend.go:metalResident.ForwardN) is NOT a batched kernel — it is a plain loop of
+step. Metal's ForwardN (backend/metal/backend.go:metalResident.ForwardN) is NOT a batched kernel — it is a plain loop of
 single-token Forward calls. If that is the whole story then T(n) = n*T(1) and Theta ~ 1.0,
 which would mean the controller is running Metal on a constant that is too LOW and therefore
 OVER-drafting — the opposite direction from CUDA, where 0.5 is too high and under-drafts.
 That is a prediction from reading the dispatch, and the point of this test is to measure it
 rather than assert it.
 
-TruncateTo is a NO-OP on Metal (metal/backend.go:metalResident.TruncateTo), unlike CUDA where the probe leans on
+TruncateTo is a NO-OP on Metal (backend/metal/backend.go:metalResident.TruncateTo), unlike CUDA where the probe leans on
 it to hold context depth constant between timed calls. It is safe here for the reason its own
 comment gives — KV positions are overwritten on write and attention reads only keys[0..pos],
 so re-running ForwardN at the same startPos re-attends over the same span. It is called
@@ -5430,7 +5430,7 @@ anyway, so the two probes stay line-for-line comparable.
 
 ## TestTowerGemmKernel
 
-Moved from `metal/kernels/tower_attn_test.go` (the comment above `TestTowerGemmKernel`) on 2026-10-09.
+Moved from `backend/metal/kernels/tower_attn_test.go` (the comment above `TestTowerGemmKernel`) on 2026-10-09.
 
 ```text
 TestTowerGemmKernel is S17 lever B's kernel gate on Metal (docs/tasks/task-multimodal-support-2026-10.md, "S17's
@@ -5448,7 +5448,7 @@ accumulation differs); its fourth planted defect takes each group's scale from t
 
 ## TestVLImageTurn_metalResident
 
-Moved from `metal/vl_image_turn_test.go` (the comment above `TestVLImageTurn_metalResident`) on 2026-10-09.
+Moved from `backend/metal/vl_image_turn_test.go` (the comment above `TestVLImageTurn_metalResident`) on 2026-10-09.
 
 ```text
 TestVLImageTurn_metalResident is S3's tiny-fixture check (2026-10-07, first run: Gemma 3 8/8 tokens identical,
@@ -5460,7 +5460,7 @@ registered S3 gate is the served turn on the real checkpoints.
 
 ## TestW8Native_F3_closerToF32
 
-Moved from `metal/w8_native_gate_test.go` (the comment above `TestW8Native_F3_closerToF32`) on 2026-10-09.
+Moved from `backend/metal/w8_native_gate_test.go` (the comment above `TestW8Native_F3_closerToF32`) on 2026-10-09.
 
 ```text
 TestW8Native_F3_closerToF32 is gate F3: on one token sequence (the prompt, then the CPU f32 model's greedy
@@ -5473,7 +5473,7 @@ runs on the night queue.
 
 ## TestGenerate_warmRepeatMatchesCold
 
-Moved from `metal/warm_cold_identity_test.go` (the comment above `TestGenerate_warmRepeatMatchesCold`) on 2026-10-09.
+Moved from `backend/metal/warm_cold_identity_test.go` (the comment above `TestGenerate_warmRepeatMatchesCold`) on 2026-10-09.
 
 ```text
 TestGenerate_warmRepeatMatchesCold: the same prompt generated twice on one model emits the same tokens, the second time

@@ -1,7 +1,7 @@
 # Speculation with the lane on non-copy traffic, and a lossless fix to the n-gram loop
 
 Three follow-ups to `attn-decode-fa-verify-2026-09-21.md`: (1) the two-model and block-drafter speculative paths with the lane on, (2) what speculation is worth as traffic
-stops being copy-heavy, with acceptance recorded, (3) a fix in the n-gram loop that the (2) measurement exposed. `TestSpecNonCopyLane` (`cuda/spec_noncopy_lane_test.go`).
+stops being copy-heavy, with acceptance recorded, (3) a fix in the n-gram loop that the (2) measurement exposed. `TestSpecNonCopyLane` (`backend/cuda/spec_noncopy_lane_test.go`).
 
 ## 1. The other speculative paths (correctness)
 

@@ -4,14 +4,14 @@
 
 **Layout:** `docs/layout.md` maps every directory, module and `scripts/` prefix. `scripts/make_work.sh` creates `go.work` from `go.work.example`.
 
-**Seven Go modules**: the root, `gpu/`, `cuda/`, `metal/`, `demo/agent/`, `apps/sdktest/` (tests only, the official OpenAI and
+**Seven Go modules**: the root, `backend/webgpu/`, `backend/cuda/`, `backend/metal/`, `demo/agent/`, `apps/sdktest/` (tests only, the official OpenAI and
 Anthropic SDKs against the in-process server; never tagged) and `apps/site/` (the website generator, built by `site.yml`).
 `go.work` is gitignored and **mandatory** for cross-module work. A `GOWORK=off` build of a submodule resolves the root from
 the proxy at its last published tag, so "method not found" on good code is expected between releases, not a bug.
 
 **Build tags gate real code:** `realckpt` (heavy, real checkpoints), `goinfer_testhooks` (cross-module test seams),
 `cuda` / `gpu` / `metal`. A change that compiles untagged can be broken under a tag. Vet the variants your change touches:
-`go vet -tags realckpt ./...`, `go vet -tags 'cuda goinfer_testhooks' ./cuda/`.
+`go vet -tags realckpt ./...`, `go vet -tags 'cuda goinfer_testhooks' ./backend/cuda/`.
 
 **Two CI gates nothing auto-runs for you.** `gofmt -l .` across every module you touched. staticcheck: run
 `go run ./cmd/lint`, which checks the binary is CI's pinned build (and prints the build command if not), proves it analyses

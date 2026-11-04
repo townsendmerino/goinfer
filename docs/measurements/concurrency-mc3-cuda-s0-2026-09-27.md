@@ -26,7 +26,7 @@ code changed.
 
 ## Results
 
-`TestMC3CUDAS0_batchedRowsVsDecode` (`cuda/mc3_cuda_s0_test.go`). The unit is M sequential `Forward` calls; the table
+`TestMC3CUDAS0_batchedRowsVsDecode` (`backend/cuda/mc3_cuda_s0_test.go`). The unit is M sequential `Forward` calls; the table
 shows how many times cheaper each batched variant is.
 
 | model | M | M × decode | `PrefillLastN` (every row's logits, head per row) | `PrefillLastNArgmax` (one batched head, argmax only) | logits differing from `Forward` |

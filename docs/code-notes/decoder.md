@@ -92,7 +92,7 @@ startPos is always 0 for HiddenLast's callers today (a fresh KV per sequence, no
 reuse), but the parameter mirrors Prefiller's so a backend can share its prefill-chunking
 scaffolding. Bit-identical to the CPU path is the bar (embed.go's own doc comment); a backend
 whose batched forward is NOT bit-identical to its own sequential one (Metal was, pre-gate —
-see metal/backend.go's metalFastPrefillEnabled; default-on since 2026-09-09, above
+see backend/metal/backend.go's metalFastPrefillEnabled; default-on since 2026-09-09, above
 metalFastPrefillFloor, 16 tokens since A-P02) must implement this some other way (a
 per-token sequential forward that stops before the head) rather than reuse a declining
 Prefiller, or must not implement this interface at all.
@@ -154,7 +154,7 @@ G7 part 2 (docs/tasks/task-gpu-paths-2026-09.md): decodeRunnerEligible's own Nem
 hard-declines ANY MoE-block variant for every backend — a real crash-risk guard, since
 cuda/metal's own per-layer block-kind switches have no MoE case at all and would
 otherwise nil-dereference on the first token. webgpu now implements it for real
-(gpu/residency.go's switch has a case 3, gpu/decoderunner.go a real nemoKMoE dispatch),
+(backend/webgpu/residency.go's switch has a case 3, backend/webgpu/decoderunner.go a real nemoKMoE dispatch),
 so this is a narrow, backend-specific override — NOT a general "trust the backend"
 escape hatch. cuda/metal still decline exactly as before.
 ```
@@ -227,7 +227,7 @@ relu² MLP, reusing the granite SSM engine. Arch-eligible; the int4-default-vs-i
 precision gate is applied at the Model level (DecodeRunnerEligible).
 
 Nemotron 3 Nano adds a FOURTH block kind (MoE FFN, arch.MoE != nil — plain Nemotron-H never
-sets it) that no GPU resident builder knows about yet: gpu/residency.go's per-layer switch on
+sets it) that no GPU resident builder knows about yet: backend/webgpu/residency.go's per-layer switch on
 NemotronBlockKind has cases 0/1/2 (mamba/attn/mlp) and NO default — an unhandled kind 3 would
 silently leave that layer's op buffers nil rather than erroring, a crash-or-garbage risk, not
 a clean decline. Decline here instead, at the one predicate every backend's admission funnels
@@ -258,7 +258,7 @@ reaching here, and no arch sets LearnedPosEmbed but GPT-2. GPT-2 has no RoPE at 
 so it falls through to ropeResidentCompatible() below and passes vacuously (0==0) — no
 extra bypass needed for that check either.
 MLA (DeepSeek/Kimi) runs its own latent-attention path on the resident runner
-(Lever C4 — gpu/mla.go), so the standard GQA/RoPE/QK-norm/sliding-window checks
+(Lever C4 — backend/webgpu/mla.go), so the standard GQA/RoPE/QK-norm/sliding-window checks
 don't apply; its decoupled RoPE rides a separate qk_rope slice, not HeadDim.
 ```
 
@@ -292,7 +292,7 @@ or local table per the layer's attention type (Mellum YaRN-on-global vs default-
 G5 (docs/tasks/task-gpu-paths-2026-09.md), FeatNoPE: a NoPE layer (SmolLM3's no_rope_layers,
 Cohere2's every-Nth global layer — arch.isNoPELayer) gets an all-ZERO table instead of the
 real one, same length. The resident rope kernels compute cos=cos(pos·invFreq)·mscale,
-sin=sin(pos·invFreq)·mscale (cuda/gemv_fwd.cu, metal/kernels.go); at invFreq==0 that is
+sin=sin(pos·invFreq)·mscale (backend/cuda/gemv_fwd.cu, backend/metal/kernels.go); at invFreq==0 that is
 cos=mscale, sin=0 — the identity rotation ONLY when mscale==1 (RopeMscaleLayer). Every family
 that sets layerNoPE today (SmolLM3) also has no YaRN scaling on those layers, so this holds;
 it is NOT a general "any NoPE layer is safe" claim, and a future family combining YaRN with
@@ -307,7 +307,7 @@ layer) never populates ropeInvFreqGlobal/Local at all — finalizeRoPE's own ear
 there is no base to compute a table from — so ropeInvFreq(i) is empty for EVERY layer, not
 just the ones isNoPELayer would call NoPE anyway. The len(inv)-sized zero table above degrades
 to a ZERO-LENGTH one in that case, not a same-width all-zero one, and a resident backend that
-uploads it unconditionally (cuda/backend.go's L.invF = r.up32(h.invFreq), no length guard)
+uploads it unconditionally (backend/cuda/backend.go's L.invF = r.up32(h.invFreq), no length guard)
 hits a 0-byte device allocation, which this driver treats as a hard error — measured directly:
 "cuda: device allocation failed (typed-len, 0 bytes): cuda: invalid length" bringing up Olmo
 Hybrid's full-attention layer, the first family combining whole-model NoPE with reaching this
@@ -346,7 +346,7 @@ returns a bare bool, so the generic "arch is not eligible" message below would o
 hide WHY. Checked here, ahead of the generic call, so DecodePath/`serve check` name the
 actual gap instead of a family-agnostic decline. webgpu is EXCLUDED from this decline
 (part 2, same doc): it implements the MoE block for real now
-(gpu/residency.go/gpu/decoderunner.go's nemoKMoE case) — DecodeRunnerEligible's own
+(backend/webgpu/residency.go/gpu/decoderunner.go's nemoKMoE case) — DecodeRunnerEligible's own
 backend-aware override admits it, so falling into this specific-reason branch would be
 wrong for webgpu (it isn't declining here at all).
 ```
@@ -389,7 +389,7 @@ half (matmul()/weightmat.go's int4 branch calls the CPU integer W4A8 kernel
 unconditionally, no backend parameter at all) and wrongly generalized that
 int8/int8int8/f32 "reach the backend" on every backend. They do not on cuda or
 metal: both backends' own Backend.MatmulBT implementations are themselves bare CPU
-calls (cuda/backend.go, metal/backend.go — no device dispatch), and NEITHER
+calls (backend/cuda/backend.go, backend/metal/backend.go — no device dispatch), and NEITHER
 implements QuantBackend at all, so the int8 branch's `be.(QuantBackend)` assertion
 fails for them too and falls to the same CPU kernel int4 uses. There is no quant at
 which cuda's or metal's staged path ever reaches the device — "cuda-staged"/
@@ -410,7 +410,7 @@ live Model (see decoder/staged_device_note_test.go) — same shape as declinedTo
 
 G10 (docs/tasks/task-gpu-paths-2026-09.md), widened by M-15... M-25 (audit-2026-09-10): Metal has
 no int8 GEMV kernel at all — ANY Int8()-kind weight is silently re-quantized to W4A8 (int4) at
-resident-build time (metal/model.go's int4Buf falls back to w.Int8() whenever int4DirectWords
+resident-build time (backend/metal/model.go's int4Buf falls back to w.Int8() whenever int4DirectWords
 finds no already-int4 nibbles), not just under `--quant int8int8`. `--quant int8` produces the
 same Int8-kind WeightMat and hits the identical fallback; `--quant int4mix`'s int8-kind tensors
 (the ones it deliberately did NOT keep at int4) do too, so even a "mix" ends up effectively
@@ -445,7 +445,7 @@ stagedDeviceNote names when webgpu's own staged path — the only one that has o
 DecodePath above — still reaches no device for a given quant, so the path name alone does not
 overclaim device use.
 
-WebGPU's Backend.MatmulBT and QuantBackend.MatmulW8A8 (gpu/backend.go) do real device work in
+WebGPU's Backend.MatmulBT and QuantBackend.MatmulW8A8 (backend/webgpu/backend.go) do real device work in
 the staged path, unlike cuda/metal. Its int4 dispatch, QuantBackend4.MatmulW4A8 (G6, db81b08),
 covers M=1 only: decode runs int4 on the device, and a multi-token prefill declines to the host
 W4A8 kernel because this backend has no int4 GEMM. So int4's note splits decode from prefill,
@@ -597,10 +597,10 @@ Moved from `decoder/backend.go` (the comment above `RegisterMemoryProbe`) on 202
 RegisterMemoryProbe registers a live free-memory query for a named backend, for Model.Plan
 (decoder/fitplan.go) and `goinfer-chat fit` to call without decoder importing the cgo/GPU
 packages that know how to ask (the same "register from init(), decoder stays clean" shape
-RegisterBackend already uses, for the same reason). metal/backend.go registers "metal" with
+RegisterBackend already uses, for the same reason). backend/metal/backend.go registers "metal" with
 70% of `hw.memsize` — NOT a live query, matching its OWN resident guard's existing budget
 exactly (darwin's UBC makes "available" memory unreliable, so the guard never asks for it —
-see metal/backend.go's residentMemFraction comment); cuda/backend.go registers "cuda" with
+see backend/metal/backend.go's residentMemFraction comment); backend/cuda/backend.go registers "cuda" with
 the CUDA driver's live MemInfo(). ok=false means "unknown" (no device, no driver, a query
 error) — Plan's own contract treats an unknown freeBytes as "cannot judge, proceed", so a
 probe should never fabricate a number to avoid returning ok=false.
@@ -1400,7 +1400,7 @@ Moved from `decoder/model.go` (the comment above `softcapParallel`) on 2026-10-0
 softcapParallel applies Gemma's final-logit softcap sc·tanh(x/sc) in place, fanning the loop
 out via parallelElementwise. Every element is independent and math.Tanh is deterministic, so
 splitting the loop is BYTE-IDENTICAL to the serial form (disjoint writes, no reduction) --
-gated by TestSoftcapParallel_bitIdentical. Mirrors metal/model.go's softcapParallel (Metal
+gated by TestSoftcapParallel_bitIdentical. Mirrors backend/metal/model.go's softcapParallel (Metal
 already had this; the generic CPU decode path didn't -- task-moe-streaming.md's re-ranked
 lever #3). At Gemma's 256k vocab this is a real per-token tax fanned out over GOMAXPROCS.
 ```
@@ -1514,7 +1514,7 @@ is positional. from == 0 is the cold path.
 hasAdapter must be true whenever this call runs under a bound resident adapter (cache.lora
 != nil at generateInto, the only caller where that is possible — GenerateVL, the n-gram
 spec target and GenerateSpeculative's target and draft never bind one). The batched Prefiller path is a separate encoded launch per
-backend (cuda/prefill.go, metal/prefill.go) that never reads the bound delta at all, so an
+backend (backend/cuda/prefill.go, backend/metal/prefill.go) that never reads the bound delta at all, so an
 adapter session that reaches it would prefill the prompt's K/V from the BASE weights and only
 start applying the adapter at decode — plausible, wrong, HTTP 200 (audit C-01, 09-10). Mirrors
 the CPU sequential/batched split's own rule: decoder/forwardn.go's canBatchN caller declines
@@ -1636,7 +1636,7 @@ Moved from `decoder/model.go` (the comment above `Options.DisableFit`) on 2026-1
 DisableFit is tasks/task-fit-to-hardware.md's --fit=off: restores every "fit by default" behavior
 to its pre-Phase-2 default exactly. Currently: CUDA's unpinned resident context stays the
 flat historical constant instead of asking Plan for more when there's room —
-cuda/resident.go's resolveCtxCapFit; and (decoder/fitguard.go's guardFit, read by
+backend/cuda/resident.go's resolveCtxCapFit; and (decoder/fitguard.go's guardFit, read by
 internal/modelload's Load, not by Load itself) a dense .gguf that will not fit
 resident RAM stays a plain refusal instead of getting an automatic -stream-weights retry.
 Does NOT affect a genuine bug fix shipped alongside Phase 2 work (Metal now honoring an
@@ -2486,7 +2486,7 @@ Moved from `decoder/model.go` (the comment above `FitDisabled`) on 2026-10-09.
 
 ```text
 FitDisabled is tasks/task-fit-to-hardware.md's --fit=off (Options.DisableFit), true when either the
-Options field or the pre-existing GOINFER_NO_FIT_DEFAULT env var (cuda/resident.go's original,
+Options field or the pre-existing GOINFER_NO_FIT_DEFAULT env var (backend/cuda/resident.go's original,
 narrower escape hatch — kept working rather than orphaned) says to restore every "fit by
 default" behavior to its pre-Phase-2 exact default. Checked by backend packages that implement
 a fit-by-default policy (cuda.resolveCtxCapFit today; a future Metal/CPU equivalent would read
@@ -2855,12 +2855,12 @@ decline gpt-oss via the missing FeatRopeMscale check, but the two are declared t
 once Mellum unblocks it, so a reader sees one coherent "gpt-oss shipped" commit rather than
 a half-declared feature set.
 
-CUDA has all three as gated KERNELS (cuda/gptoss_act.cu, plus the sink argument on both
+CUDA has all three as gated KERNELS (backend/cuda/gptoss_act.cu, plus the sink argument on both
 attention kernels) and does not declare this either — but NOT for the reason this comment
 used to give. It said the kernels were "LOADED but never DISPATCHED into a forward pass",
 which the code contradicts: sinkArg is threaded into BOTH attention launches
-(cuda/resident.go: the split-KV launch and the decode launch) and launchGluSplitExpert is dispatched from
-the MoE expert loop (cuda/resident.go, both the decode and the prefill MoE paths). The bridge is WRITTEN. What has never happened is a
+(backend/cuda/resident.go: the split-KV launch and the decode launch) and launchGluSplitExpert is dispatched from
+the MoE expert loop (backend/cuda/resident.go, both the decode and the prefill MoE paths). The bridge is WRITTEN. What has never happened is a
 real gpt-oss forward EXECUTING it, because the 20b MXFP4 checkpoint (~13.8 GB) does not fit
 the CUDA box's 8 GB VRAM without the host<->VRAM MoE-streaming path. Written-but-unexercised
 is a different, smaller gap than not-yet-attempted, and the distinction is the estimate.
@@ -2942,8 +2942,8 @@ Moved from `decoder/features.go` (the comment above `FeatPairwiseRoPE`) on 2026-
 ```text
 FeatPairwiseRoPE: GPT-J pairwise rotation (dims 2d, 2d+1) in the scalar decode/prefill rope —
 Cohere/Command-R, Cohere2/Command-R7B, Aya (cohere), and GLM-OCR's text rows. Every GENERIC
-resident rope kernel is the NeoX half-split rotation of pairs (d, d+half): cuda/glue.cu `rope`,
-gemv_fwd.cu rope_kv, prefill_batched.cu rope_kv_batched, and metal/kernels.go `rope`. A resident
+resident rope kernel is the NeoX half-split rotation of pairs (d, d+half): backend/cuda/glue.cu `rope`,
+gemv_fwd.cu rope_kv, prefill_batched.cu rope_kv_batched, and backend/metal/kernels.go `rope`. A resident
 runner on those kernels is exact at position 0 (rotation is the identity there) and wrong at
 every later one: no error, fluent-looking logits. MEASURED 2026-10-01 on the CUDA resident
 (RTX 2070 SUPER, int4, resident vs CPU at the same quant, 48-token prompt): real Command-R7B
@@ -2954,7 +2954,7 @@ is invisible: cohere-tiny at 0.25-std weights reads cosine 0.06 with the NeoX ke
 0.9997 at 0.02). MLA (DeepSeek/Kimi) is NOT this feature: it carries its own interleave flag
 into mla.cu and is gated by FeatMLA.
 
-Declared by CUDA only (cuda/rope_pairwise.cu: rope_kv_pw, rope_kv_batched_pw,
+Declared by CUDA only (backend/cuda/rope_pairwise.cu: rope_kv_pw, rope_kv_batched_pw,
 rope_kv_mrope_batched_pw, gated by TestPairwiseRoPEResidentParityCUDA and the real-checkpoint
 Aya/R7B gate). Metal and WebGPU do not declare it, so cohere/cohere2/glm_ocr DECLINE there to
 the CPU path until pairwise kernels exist (docs/measurements/cuda-pairwise-rope-2026-10-01.md
@@ -2973,7 +2973,7 @@ rope_kv_mrope_batched) are NeoX too. glm_ocr needs this IN ADDITION to FeatPairw
 text rows and decode go through the scalar kernel). First measured 2026-10-01 with admission
 bypassed: glm-ocr-tiny resident vs CPU (int8int8, 48-token prompt) worst cosine -0.34, against
 a NeoX llama control at 1.000000. CUDA declares it from rope_kv_mrope_batched_pw
-(cuda/rope_pairwise.cu), gated by TestGlmOcrResidentParityCUDA; Metal and WebGPU do not.
+(backend/cuda/rope_pairwise.cu), gated by TestGlmOcrResidentParityCUDA; Metal and WebGPU do not.
 ```
 
 ## residentFeatures.softcap
@@ -3007,7 +3007,7 @@ Moved from `decoder/features.go` (the comment in `residentFeatures`, above FeatM
 ```text
 A sigmoid-GATED always-on shared expert (Qwen2-MoE: out += sigmoid(SharedGate·h)·shared(h))
 is a distinct kernel from the ungated add (GLM/DeepSeek: out += shared(h)). CUDA implements
-only the ungated combine and DECLINES the gated one (cuda/backend.go); Metal and WebGPU
+only the ungated combine and DECLINES the gated one (backend/cuda/backend.go); Metal and WebGPU
 implement both. Splitting it out moves that decline from a hand-coded backend check into the
 shared taxonomy, so the hardware matrix matches admission.
 ```
@@ -3049,11 +3049,11 @@ Moved from `decoder/features.go` (the comment above `residentBackendMoECap`) on 
 ```text
 residentBackendMoECap is the router-kernel capacity of each backend whose MoE scoreboard is a
 FIXED-SIZE array — the numeric twin of ResidentBackendFeatures (a feature is "implemented at
-all"; a cap is "implemented up to N"). gpu/moe.go scores into array<f32,256> and its group-limited
-path into array<f32,32>/array<bool,32>; cuda/backend.go rejects >256 identically. A model past the
+all"; a cap is "implemented up to N"). backend/webgpu/moe.go scores into array<f32,256> and its group-limited
+path into array<f32,32>/array<bool,32>; backend/cuda/backend.go rejects >256 identically. A model past the
 cap would route on only the first N experts (or index groups out of bounds) — plausible-looking
 WRONG output, no error — so it must decline to the staged/CPU path. This is exactly the runtime
-guard M22 added in gpu/backend.go BuildResident; declared here too so the hardware-matrix
+guard M22 added in backend/webgpu/backend.go BuildResident; declared here too so the hardware-matrix
 generator derives the same answer the runtime gives (the C6 one-source-of-truth discipline — a
 feature-only predicate silently over-admitted Kimi K2's 384 experts as WebGPU-resident). Absent
 entry = no fixed-size router cap (a backend that declines these archs on features never reaches
@@ -3069,7 +3069,7 @@ WHY cuda is 512 and the others are not — this is three shader constants plus t
 one of them is expensive to change:
 
   - cuda   moe.cu MOE_MAX_E, raised 256→512. The constant bounds moe_route's per-thread scratch
-           (score[]/sel[]), and moe_route lives in the AUDITED 12.6.85 cuda/testdata/moe.ptx — so
+           (score[]/sel[]), and moe_route lives in the AUDITED 12.6.85 backend/cuda/testdata/moe.ptx — so
            raising it required regenerating that artifact. Done at a PINNED, IDENTICAL toolchain
            with a byte-identical rebuild-unchanged control first; the resulting diff touches only
            moe_route's stack depot (2368→4416 B) and every other kernel in the file is
@@ -3077,7 +3077,7 @@ one of them is expensive to change:
            experts (its whole point) and DeepSeek-V4-Pro's 384; it deliberately stops short of
            Kimi-K3's 896, which is an unbuilt family that should not set validated limits.
   - metal  DECLARED here for the first time, NOT raised. Its shader really is capped at 256
-           (metal/moe.go: the route kernel's score[256]/sel[256] arrays) and rejects above it, so the old "absent entry = no fixed-size
+           (backend/metal/moe.go: the route kernel's score[256]/sel[256] arrays) and rejects above it, so the old "absent entry = no fixed-size
            router cap" claim was FALSE for metal and the hardware-matrix generator derived a
            different answer than the runtime gives — exactly the C6 one-source-of-truth defect
            this map exists to prevent. Raising metal's shader needs Mac validation: future leg.
@@ -3095,11 +3095,11 @@ Moved from `decoder/features.go` (the comment above `ResidentBackendMoECap`) on 
 ResidentBackendMoECap returns backend's declared router-kernel capacity. ok is false for a
 backend with no fixed-size router.
 
-Exported for the BACKENDS to read (M-31). gpu/residency.go had its own hardcoded 256/32 while
+Exported for the BACKENDS to read (M-31). backend/webgpu/residency.go had its own hardcoded 256/32 while
 this map said 512, so ResidentEligible admitted a 384-expert Kimi-K2 or DeepSeek-V4-Pro — "✅
 resident" in both generated matrices — and BuildResident then declined it to CPU with a
 message naming 256, or refused to start under -require-be webgpu. Two pin tests were green
-throughout: one greps gpu/moe.go, the other asserts ResidentEligible; neither reads
+throughout: one greps backend/webgpu/moe.go, the other asserts ResidentEligible; neither reads
 residency.go. That is exactly the drift this map exists to prevent, happening one file over.
 ```
 
@@ -3117,9 +3117,9 @@ This is NOT expressed as a ResidentFeature: no other family needs it (Gemma 3's 
 keeps head_dim uniform), so the taxonomy has no flag for it and residentFeatures() cannot name
 it as a requirement — Gemma 3 and dense Gemma 4 derive the IDENTICAL feature set otherwise (see
 TestZZGemmaFeatureDiff-shaped comparisons). CUDA and Metal implement it via their own per-layer
-geometry seam (cuda/resident.go's cudaLayer.hd/nKV, metal/model.go's residLayer.geom); WebGPU's
-twin fields (runLayer.ghd/gnKV/ghalf, gpu/decoderunner.go) exist but are never populated by
-gpu/residency.go's per-layer builder for any family — confirmed 2026-09-08 when G6's Gemma-set
+geometry seam (backend/cuda/resident.go's cudaLayer.hd/nKV, backend/metal/model.go's residLayer.geom); WebGPU's
+twin fields (runLayer.ghd/gnKV/ghalf, backend/webgpu/decoderunner.go) exist but are never populated by
+backend/webgpu/residency.go's per-layer builder for any family — confirmed 2026-09-08 when G6's Gemma-set
 feature work (docs/tasks/task-gpu-paths-2026-09.md) satisfied every ResidentFeature dense Gemma 4
 nominally requires without also covering this, which would have silently admitted it to a path
 that crashes on upload ("gpu: residency unsupported projection precision \"\"") rather than
@@ -3135,7 +3135,7 @@ Moved from `decoder/features.go` (the comment above `Model.PerLayerGeomOK`) on 2
 PerLayerGeomOK is residentPerLayerGeomOK's Model-level twin, exported so a resident backend's
 own BuildResident can check it directly — the same pattern ResidentBackendMoECap already
 established (a runtime check a backend calls individually, rather than through the combined
-ResidentEligible, which is the doc-generation/admission-golden predicate). gpu/residency.go's
+ResidentEligible, which is the doc-generation/admission-golden predicate). backend/webgpu/residency.go's
 BuildResident calls this because its own admission check is hand-rolled from
 MissingResidentFeatures, not ResidentEligible, and MissingResidentFeatures alone would have
 silently admitted dense Gemma 4 once G6's Gemma-set features landed — see
@@ -3186,7 +3186,7 @@ corrected 2026-09-16): YaRN mscale (FeatRopeMscale) and logit softcap
 logit softcap" was stale, from before they landed. What remains genuinely NOT implemented:
 per-layer rotary WIDTH (only per-layer base); no SSM.
 
-TRAP, resolved 2026-09 — see cuda/resident.go's own moe_route call site for the full
+TRAP, resolved 2026-09 — see backend/cuda/resident.go's own moe_route call site for the full
 story: the nGroup/topkGroup argument order was unverified for a real mismatch until this
 pass (found live, not assumed: a deliberate transposition passed the existing
 TestMLAResidentParityCUDA clean, since its generation check compared only the first
@@ -3250,7 +3250,7 @@ Moved from `decoder/features.go` (the comment above `FeatRopeMscale` in the cuda
 
 ```text
 FeatRopeMscale: YaRN's attention_factor, folded into cos/sin by rope / rope_kv /
-rope_kv_batched (cuda/glue.cu, gemv_fwd.cu, prefill_batched.cu) and threaded per LAYER
+rope_kv_batched (backend/cuda/glue.cu, gemv_fwd.cu, prefill_batched.cu) and threaded per LAYER
 from Model.RopeMscaleLayer via cudaLayer.mscale. Proven in isolation first by
 TestRopeMscale (scale=1 reproduces the unscaled rotation to 8.9e-08; scale=0.85 matches
 the scaled reference AND is provably different from unscaled), then end-to-end on real
@@ -3276,7 +3276,7 @@ needs both and neither admits anything on its own:
 
   FeatAttnSink  the learned per-head softmax sink, the clamped interleaved-SwiGLU
                 expert, and the router whose bias reaches the selection WEIGHT. Kernels
-                in cuda/gptoss_act.cu; sinkArg threaded into BOTH attention launches
+                in backend/cuda/gptoss_act.cu; sinkArg threaded into BOTH attention launches
                 (decode + prefill) and launchGluSplitExpert dispatched from the MoE
                 expert loop.
   FeatOutBias   the o_proj bias. NO new kernel was needed: aikit's gemv_quant.cu and
@@ -3322,7 +3322,7 @@ rope_kv's existing launch (a new qTempScale parameter, applied to Q only, after 
 rotation) rather than a new kernel — Model.AttnTempScale/AttnTempParams
 (decoder/residency.go) supply the value; rope_kv_batched's twin recomputes it per row
 device-side (position varies within one batched launch). beta==0 makes qTempScale==1
-(exact no-op) for every other family. PTX regenerated (cuda/build_ptx.sh, NVRTC) and
+(exact no-op) for every other family. PTX regenerated (backend/cuda/build_ptx.sh, NVRTC) and
 verified end-to-end on real CUDA hardware — TestMinistral3ResidentParityCUDA.
 ```
 
@@ -3344,7 +3344,7 @@ Moved from `decoder/features.go` (the comment above `FeatLayerNorm` in the cuda 
 
 ```text
 G5 (docs/tasks/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-
-R7B. FeatLayerNorm is a genuinely NEW kernel (layernorm_quant, cuda/glue.cu) — this
+R7B. FeatLayerNorm is a genuinely NEW kernel (layernorm_quant, backend/cuda/glue.cu) — this
 backend had NO mean-centered norm before, only RMSNorm variants — but bias-free only
 (Cohere's LayerNorm carries no learned bias term; a future bias-bearing LayerNorm family
 would need its own kernel, not a flag on this one). FeatParallelBlock reuses segA's
@@ -3361,7 +3361,7 @@ resident, so this is the first consumer here).
 Moved from `decoder/features.go` (the comment above `FeatPairwiseRoPE` in the cuda entry) on 2026-10-09.
 
 ```text
-2026-10-01: GPT-J PAIRWISE rotation, via cuda/rope_pairwise.cu (rope_kv_pw,
+2026-10-01: GPT-J PAIRWISE rotation, via backend/cuda/rope_pairwise.cu (rope_kv_pw,
 rope_kv_batched_pw, rope_kv_mrope_batched_pw), bound in place of the NeoX rope pipelines
 when Model.PairwiseRoPEResident(). Cohere/Cohere2/Aya were ADMITTED here before this on the
 NeoX kernels and ran wrong from position 1 (real R7B/Aya at int4, worst cosine -0.075/
@@ -3376,7 +3376,7 @@ Moved from `decoder/features.go` (the comment above `FeatGatedGELU` in the webgp
 
 ```text
 FeatGatedGELU: a genuinely new kernel pair (gegluShaderWGSL/gegluQuantWGSL,
-gpu/layer.go + gpu/decodefuse.go) — this backend had no GELU-tanh-gated activation
+backend/webgpu/layer.go + backend/webgpu/decodefuse.go) — this backend had no GELU-tanh-gated activation
 before, only SiLU. Clamps the tanh argument to ±15 before calling tanh, matching
 Metal's own fix for the exact overflow that cost it a real cosine regression
 (0.818→0.994) the first time this math shipped there.
@@ -3391,10 +3391,10 @@ FeatAttnSink: gpt-oss's three departures — the learned per-head softmax sink
 (threaded through every attention kernel: attn, attn-keys, attn-f16, attn-i8, and
 all three wide variants — 7 pipelines total), the clamped interleaved-SwiGLU expert
 (new gptossGluQuantWGSL kernel), and a router whose bias reaches the mixing WEIGHT,
-not just selection (new routeGptOssWGSL kernel, mirroring cuda/gptoss_act.cu's
-route_gptoss and metal/moe.go's twin exactly — moeRouteWGSL's own contract is wrong
+not just selection (new routeGptOssWGSL kernel, mirroring backend/cuda/gptoss_act.cu's
+route_gptoss and backend/metal/moe.go's twin exactly — moeRouteWGSL's own contract is wrong
 for this family). The sink itself needed a genuinely separate per-layer uniform
-(gpu/attention.go's HS struct) rather than folding into the existing geometry-cached
+(backend/webgpu/attention.go's HS struct) rather than folding into the existing geometry-cached
 P uniform, since hasSink is a per-LAYER property that P's geomFor dedup cache cannot
 safely carry. Declared only after a real gpt-oss forward ran resident end-to-end
 (TestGptOssResidentParityWebGPU) — see CUDA's/Metal's own FeatAttnSink comments for
@@ -3407,7 +3407,7 @@ Moved from `decoder/features.go` (the comment above the `"metal"` entry of `resi
 
 ```text
 cgo-free Metal (metal/): dense Qwen2/Llama plus qk-norm, sliding-window, partial-rotary,
-MoE (router + stacked experts + shared expert; metal/moe.go), the full Gemma set —
+MoE (router + stacked experts + shared expert; backend/metal/moe.go), the full Gemma set —
 sandwich norms, GeGLU, (1+w) RMS, √hidden embed scale, per-layer RoPE base — GPT-2's
 LayerNorm/non-gated-MLP/learned-pos/out-bias (2026-08-18: layernorm_quant, act_quant,
 gemv_w4a8_resid_bias/gemv_w4a8_sa_bias_resid, encodeLayer/encodeAttention wiring, the
@@ -3456,7 +3456,7 @@ FeatGatedGELU:         true, // glu_quant `act` — GeGLU as well as SwiGLU
 FeatEmbedScale:        true, // √hidden applied host-side in embedResident
 FeatFinalLogitSoftcap: true, // softcap·tanh(logits/softcap) host-side after readback (finalSoftcap)
 The attention-score softcap is compiled into the three kernels a capped layer takes (attention, attn_batched, splitkv_scores) as a
-variant built with -DATTN_SOFTCAP (cuda/attnscore.cuh). The lane selectors keep such a layer off flash-decode and its verify
+variant built with -DATTN_SOFTCAP (backend/cuda/attnscore.cuh). The lane selectors keep such a layer off flash-decode and its verify
 rows, the fused prefill kernels, the image block kernel, the block drafter and MLA. The declaration rests on the kernel gates
 against float64 with the cap dropped as the control (TestAttnSoftcap_kernelsAgainstFloat64) and on the lane test
 (TestGemma2Softcap_lanesCUDA); the Gemma 2 end-to-end tests are diagnostics (docs/tasks/task-forward-architecture-2026-10.md §4.6a).
@@ -3477,7 +3477,7 @@ and then end to end on real weights (TestMellumResidentParityCUDA). Declaring it
 {FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow} and cuda already declared the other four.
 FeatRopeMscale: true,
 gpt-oss: FeatAttnSink and FeatOutBias are declared together because the family needs both. FeatAttnSink is the kernels in
-cuda/gptoss_act.cu with sinkArg threaded into both attention launches and launchGluSplitExpert dispatched from the MoE expert loop.
+backend/cuda/gptoss_act.cu with sinkArg threaded into both attention launches and launchGluSplitExpert dispatched from the MoE expert loop.
 FeatOutBias needed no new kernel: gemv_quant.cu and the batched gemv_w4a8_rn fold the o_proj bias in before the accumulate select.
 Declared only after a real gpt-oss-20b forward ran on this path (TestGptOssResidentParityCUDA, resident on an 8 GB card via
 --moe-cache-experts); kernel-level parity is not end-to-end parity, and an earlier declaration on kernel evidence was reverted. The
@@ -3499,7 +3499,7 @@ FeatPostOnlyNorm: true,
 FeatQKNormWhole reuses the per-head qk_norm kernel with its grid collapsed to one Q block and one K block (nH=1, nKV=1,
 hd=nH_orig*hd_orig): no new kernel. Valid only for MHA (nH==nKV); BuildResident declines otherwise.
 FeatQKNormWhole: true,
-Cohere/Command-R and Cohere2. FeatLayerNorm is a new kernel (layernorm_quant, cuda/glue.cu), bias-free only: a LayerNorm family with a
+Cohere/Command-R and Cohere2. FeatLayerNorm is a new kernel (layernorm_quant, backend/cuda/glue.cu), bias-free only: a LayerNorm family with a
 learned bias needs its own kernel. FeatParallelBlock reuses segA's pre-attn norm+quant as the MLP input (Model.ParallelBlockResident),
 a sequencing change. FeatLogitScale is a host-side multiply after readback via Model.LogitScaleResident, not GraniteResidentParams'
 copy of the same arch field.
@@ -3507,15 +3507,15 @@ FeatLayerNorm:     true,
 FeatParallelBlock: true,
 FeatLogitScale:    true,
 FeatMLA:           true, // latent-KV attention (DeepSeek, Kimi)
-Nemotron-H's Mamba-2 mixer (cuda/mamba.cu: mamba_conv, mamba_ssm, mamba_gnorm around two int8 projections), its squared-ReLU MLP
-(cuda/nongated_act.cu: relu2_quant) and the non-gated up/down structure, at int4 only: BuildResident declines an int8 load, whose
+Nemotron-H's Mamba-2 mixer (backend/cuda/mamba.cu: mamba_conv, mamba_ssm, mamba_gnorm around two int8 projections), its squared-ReLU MLP
+(backend/cuda/nongated_act.cu: relu2_quant) and the non-gated up/down structure, at int4 only: BuildResident declines an int8 load, whose
 projections would be re-quantized to int4, and the family's non-gated MoE blocks. Granite-4.0-H stays on the CPU. The declaration rests on
 the tier 0 gates (K, D, I, M, S, G, P) and on tier 1 against the CPU: the 4B whole, a three-layer slice of the 9B, and the whole 9B on this
 8 GB card (docs/tasks/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"; docs/measurements/op2b-cuda-2026-10-16/).
 FeatSSM:           true,
 FeatNonGatedMLP:   true,
 FeatNonGatedReLU2: true,
-GPT-J pairwise rotation via cuda/rope_pairwise.cu (rope_kv_pw, rope_kv_batched_pw, rope_kv_mrope_batched_pw), bound in place of the NeoX
+GPT-J pairwise rotation via backend/cuda/rope_pairwise.cu (rope_kv_pw, rope_kv_batched_pw, rope_kv_mrope_batched_pw), bound in place of the NeoX
 rope pipelines when Model.PairwiseRoPEResident(). Gated by a peaked-attention test that goes red on the NeoX kernels
 (TestPairwiseRoPEResidentParityCUDA), TestGlmOcrResidentParityCUDA and the real-checkpoint TestCohereRealResidentParityCUDA (heavy).
 FeatPairwiseRoPE:  true,
@@ -3545,7 +3545,7 @@ Moved from `decoder/features.go` (the comment above `FeatPairwiseRoPE` in the me
 ```text
 2026-10-09 (docs/tasks/task-metal-pairwise-rope-2026-10.md): GPT-J PAIRWISE rotation, via the twins rope_pw,
 rope2_pw, rope_f16_pw and rope_mrope_f16_pw, bound in place of the NeoX pipelines when
-Model.PairwiseRoPEResident() (metal/model.go, metal/prefill.go); the MC3 batched step declines a pairwise model.
+Model.PairwiseRoPEResident() (backend/metal/model.go, backend/metal/prefill.go); the MC3 batched step declines a pairwise model.
 Backed by the kernel gate (TestRopePairwise_*), the peaked-attention resident gates that go red on the NeoX
 kernels (TestPairwiseRoPEResidentParityMetal, TestGlmOcrResidentParityMetal) and the real checkpoints.
 ```
@@ -3991,7 +3991,7 @@ attach grabbed room NewBlockSpec then needed) is exactly what this term exists t
 PLAN from repeating. capSlots itself is now fixed too (docs/tasks/task-gpu-paths-2026-09.md,
 2026-09-09): no ResidencyBackend interface change was needed after all — an out-of-band
 hint on decoder.Model (Options.ExtraResidentBytes / Model.ExtraResidentBytes()) was enough,
-since cuda/backend.go's BuildResident already receives *Model and can read it directly.
+since backend/cuda/backend.go's BuildResident already receives *Model and can read it directly.
 resolveCtxCapFit passes the SAME value as this field's own ExtraBytes when it asks Plan for
 an unpinned ctx, so the two paths (Plan's dry run and the real load) price a drafter
 identically.
@@ -4004,7 +4004,7 @@ Moved from `decoder/fitplan.go` (the comment above `Model.kvBytesPerPositionAllL
 ```text
 kvBytesPerPositionAllLayers is Plan's own KV-cost formula: per-layer (a per-layer-varying
 family like Gemma 4 is not approximated by one model-level figure — the same reason
-metal/backend.go's residentKVBytes sums per layer rather than using a single kvDim), summed
+backend/metal/backend.go's residentKVBytes sums per layer rather than using a single kvDim), summed
 for K+V, at the requested precision. Bytes-per-element figures match
 decoder/arch.go's kvBytesForCtx exactly (f32 4.0, f16 2, int8 1.125-including-scale).
 
@@ -4031,9 +4031,9 @@ Moved from `decoder/fitplan.go` (the comment above `WebGPUCtxCeiling`) on 2026-1
 
 ```text
 WebGPUCtxCeiling is the WebGPU backend's fixed per-precision KV-capacity ceiling —
-gpu/residency.go's own ctxCap before any -ctx request lowers it further via min(): 16384
+backend/webgpu/residency.go's own ctxCap before any -ctx request lowers it further via min(): 16384
 positions at f32 (the proven 8 GB fit), 32768 at f16 (half the per-token bytes), 65536 at i8
-(a quarter). Shared here, and gpu/residency.go calls THIS function instead of repeating the
+(a quarter). Shared here, and backend/webgpu/residency.go calls THIS function instead of repeating the
 three literals, so the planner's ctx choice and the backend's actual allocation can never
 drift apart — exactly what Phase 3 (tasks/task-fit-to-hardware.md §7) needs before admitting webgpu:
 a freeBytes-driven plan alone could pick a context above this fixed ceiling (VRAM allowing),
@@ -4055,7 +4055,7 @@ weights always stay resident; CPU alone falls to weight-paging rather than ever 
 
 No I/O, no side effects, and no defaults invented — see PlanRequest's own doc comment. backend
 is "cuda", "metal", "cpu", or (Phase 3, tasks/task-fit-to-hardware.md §7) "webgpu" — admitted now that
-M-32 is fixed (gpu/residency.go: BuildResident declines the same Nemotron/Qwen3.5/MLA +
+M-32 is fixed (backend/webgpu/residency.go: BuildResident declines the same Nemotron/Qwen3.5/MLA +
 KVF16/KVI8 combo Plan declines below, and honours -ctx via the same WebGPUCtxCeiling); an
 unrecognised backend name gets the same GPU-shaped feature-eligibility decline a real one would
 for an unsupported arch, rather than a panic or a silent wrong answer — enforced by the
@@ -4108,7 +4108,7 @@ Moved from `decoder/fitguard.go` (the comment above `fitMemFraction`) on 2026-10
 
 ```text
 fitMemFraction is the share of the fit check's base memory figure the WEIGHTS alone may occupy.
-Same figure and same provenance as metal/backend.go's residentMemFraction: ONE measured failure
+Same figure and same provenance as backend/metal/backend.go's residentMemFraction: ONE measured failure
 (11.28 GB of 16 GB = 70.5% thrashed to swap exhaustion), so a threshold rather than a swept
 curve. The rest is not slack — KV, scratch, the tokenizer, and the operating system live there
 too. Originally fractioned against TOTAL physical RAM; fitCheckFor now fractions it against
@@ -4169,7 +4169,7 @@ caller is unaffected.
 ## fitCheck.deviceKV
 
 A load that will be CUDA-resident (`cudaWillBeResident`: CUDA compiled in, the resolved backend, weights not streamed, the architecture inside CUDA's feature gate) has its KV in VRAM, which the context plan sizes; the host guard
-prices none of it (`kvBytes` 0, and `decideGIWFit` asks no KV or prefill scratch of host memory). `packBytes` is what the build adds beside the canonical weights: one packed layer plus the staging blocks (`cudaPackStageBytes`) that `cuda/pack_stream.go` streams it through. On the direct `.gguf` path
+prices none of it (`kvBytes` 0, and `decideGIWFit` asks no KV or prefill scratch of host memory). `packBytes` is what the build adds beside the canonical weights: one packed layer plus the staging blocks (`cudaPackStageBytes`) that `backend/cuda/pack_stream.go` streams it through. On the direct `.gguf` path
 `weightBytes + srcFileBytes` is the larger term and stays, because the load (the source mapped while the canonical weights grow) peaks above the build: the 7B read 8.4 GiB of RSS at t = 3.3 s, before any packing
 (`docs/measurements/cuda-build-heap-2026-10-18/README.md`). A resident that declines falls back to the CPU, whose per-request KV a load-time guard has never priced as held.
 
@@ -4307,7 +4307,7 @@ with a specific PROMPT's length, which load time does not know; this is the same
 cut rather than guess" prefillScratchBytes' own doc comment already takes for its fixed half.
 
 NOT priced here: a Metal buffer-copy term (S4's own item 1 also names "(Metal) buffer
-projection" — metal/model.go's int4Buf/int4Concat make a real host copy per dense projection on
+projection" — backend/metal/model.go's int4Buf/int4Concat make a real host copy per dense projection on
 that backend, unlike CPU's pure mmap alias). decoder cannot import metal (metal imports
 decoder), so that term needs its own hook — not built in this pass; CPU is this function's only
 backend today.
@@ -6346,7 +6346,7 @@ This runs BEFORE prefill begins (internal/serveapp calls it right after `prepare
 prompt length and clamped max_tokens, for every endpoint that reaches prefill), and prices
 KV(promptTokens+maxTokens) plus prefill scratch against what remains of currently-available
 memory — never starting a prefill that would page. It runs for CPU and Metal-resident alike:
-Metal's own residency guard (metal/backend.go's residentFitsMemory) prices weights only,
+Metal's own residency guard (backend/metal/backend.go's residentFitsMemory) prices weights only,
 against host RAM (Metal's unified memory IS host RAM), and has no per-request check at all — this
 is additive to it, not a replacement.
 ```
@@ -7028,7 +7028,7 @@ this model's own quantizer produced. Mirrors wmBytes' own int8/int4/int4Row4 cas
 SplitHalfBytes are never mmap-aliased: f32 is copied at .giw read time — LoadSerializedWeights'
 own doc comment says "float arrays are copied" — and SplitHalfBytes is a derived repack, not a
 stored tensor). M-24 (docs/audit-2026-09-10.md): unlike aikit's WeightMat.MappedSpan (used for
-the expert PAGING registry, metal/moepaging.go), this does NOT page-align — a byte accounting
+the expert PAGING registry, backend/metal/moepaging.go), this does NOT page-align — a byte accounting
 question ("did this allocation happen at all") is not the same question as a pageable-span
 question ("can MADV_DONTNEED release whole pages of it"), and page-rounding would undercount a
 small-but-real mmap-backed tensor for no reason that matters here.
@@ -7049,7 +7049,7 @@ and nothing else in the tree answers it: Dims() exposes hidden/layers/heads but 
 count, so a shape-derived estimate under-reports a sparse MoE by the factor that matters most —
 gpt-oss-20b's experts ARE the model. Measured 2026-08-31: loading an 11.28 GB gpt-oss-20b on
 Metal's resident path on a 16 GB machine drove swap to 35.98 GB of 36 GB and never completed OR
-declined, because the only size guard in the tree caps the KV CONTEXT (metal/backend.go), not
+declined, because the only size guard in the tree caps the KV CONTEXT (backend/metal/backend.go), not
 the weights.
 
 It sums every tensor the load holds: the matrices, where the bytes are, and the norms, biases
@@ -7067,7 +7067,7 @@ Moved from `decoder/weightbytes.go` (the comment above `Model.ResidentWeightByte
 
 ```text
 ResidentWeightBytesPaged is ResidentWeightBytes under Metal's synchronous MoE paging
-(metal/moe.go, metal/gemma4_moe.go): GOINFER_METAL_MOE_SLOTS=N keeps only N of each layer's
+(backend/metal/moe.go, backend/metal/gemma4_moe.go): GOINFER_METAL_MOE_SLOTS=N keeps only N of each layer's
 ROUTED experts resident, staging the rest per token. slots<=0 means unpaged (identical to
 ResidentWeightBytes). SharedExpert is never paged — it is always active, not top-k routed — so
 it is counted in full either way, same as every dense matrix.
@@ -7087,7 +7087,7 @@ Moved from `decoder/weightbytes.go` (the comment above `Model.ResidentDenseWeigh
 ResidentDenseWeightBytesFor is ResidentDenseWeightBytes less the model-level tables backend keeps on the HOST rather
 than on its device — the dense figure its fit checks must price against device memory.
 
-CUDA (cuda/backend.go) uploads every per-layer matrix and the LM head, which is the embedding table when the
+CUDA (backend/cuda/backend.go) uploads every per-layer matrix and the LM head, which is the embedding table when the
 embeddings are tied. It gathers token embeddings on the host (embedResident), and it never uploads the learned
 position table or Gemma 4's per-layer embedding tables. So for an UNTIED model the whole token-embedding table was
 priced as device memory it never takes. Measured 2026-09-27 on qwen2.5-7b-instruct q4_k_m (RTX 2070 SUPER): Plan
@@ -7108,7 +7108,7 @@ Moved from `decoder/weightbytes.go` (the comment above `Model.ResidentHostCopyBy
 ResidentHostCopyBytes is the portion of ResidentWeightBytesPaged's footprint that a UNIFIED-
 MEMORY backend (Metal — "device" memory IS host RAM) keeps resident in TWO PLACES at once: the
 quantized host WeightMat the loader materializes, and a second, freshly re-packed device buffer
-built from it (metal/model.go's int4Buf), with nothing released in between. See M-02
+built from it (backend/metal/model.go's int4Buf), with nothing released in between. See M-02
 (docs/audit-2026-09-02.md): a resident GGUF/safetensors model on Metal was measured landing at
 ~2x the guard's own estimate for exactly this reason.
 
@@ -7117,7 +7117,7 @@ an UNPAGED model's experts) always double this way for a GGUF/safetensors load �
 materializes a fresh heap-allocated quantized copy, and int4Buf/int8Buf build a SEPARATE device
 buffer from it, nothing released in between. Genuinely PAGED routed experts (0 < slots <
 nExperts) do NOT: they stream via pread straight from the .giw file into their device slot
-buffer, or via an mmap the OS can reclaim under pressure (metal/moe.go, metal/gemma4_moe.go) —
+buffer, or via an mmap the OS can reclaim under pressure (backend/metal/moe.go, backend/metal/gemma4_moe.go) —
 an UNSTAGED expert leaves no committed host allocation behind to double.
 
 M-24 (docs/audit-2026-09-10.md): a THIRD case the doc comment above used to miss entirely — a
@@ -7429,8 +7429,8 @@ rather than through WeightMat's own layout-agnostic methods:
     EVERY call, no persistent upload. A repacked-only tensor has nothing to hand it —
     reconstructing canonical on demand there would cost a canonical-sized allocation per
     token, the wrong shape for a per-call path, not merely a deferred optimization.
-  - A resident GPU build (ResidencyBackend.BuildResident — cuda/resident.go, metal/model.go,
-    gpu/residency.go all read w.Int4() directly to upload a tensor once at build time).
+  - A resident GPU build (ResidencyBackend.BuildResident — backend/cuda/resident.go, backend/metal/model.go,
+    backend/webgpu/residency.go all read w.Int4() directly to upload a tensor once at build time).
 
 backendName is Options.Backend AS THE CALLER WROTE IT, not be's resolved capabilities — this
 is the load of the decision: repacked-only is a PROMISE ("no GPU backend will ever touch this
@@ -7615,7 +7615,7 @@ prefill is bit-identical to sequential decode ON THIS KERNEL.
 THAT DOES NOT MAKE THE WHOLE matmul() CALL M-INDEPENDENT (M-09,
 docs/audit-2026-09-10.md): the QuantBackend4 consult just above intercepts
 M=1 for a staged webgpu backend (its own MatmulW4A8 declines any M != 1,
-gpu/backend.go) and routes it through a completely different kernel (a WGSL
+backend/webgpu/backend.go) and routes it through a completely different kernel (a WGSL
 f32 GEMV with f16 group scales) — only M>1 (prefill, speculative verify)
 actually falls through to the bit-identical-with-itself CPU kernel this
 comment describes. A staged-int4 model on webgpu therefore decodes and
@@ -9421,7 +9421,7 @@ thetaFor returns the measured marginal verify-node cost for a backend.
 Every value here is MEASURED by the probes that share one definition --
 Theta = (least-squares slope of T(n)) / T(1) -- so the three are directly
 comparable: decoder/theta_probe_test.go (CPU control),
-cuda/theta_probe_test.go, metal/theta_probe_test.go.
+backend/cuda/theta_probe_test.go, backend/metal/theta_probe_test.go.
 
 Before this table every backend ran the CPU constant 0.5, which
 spec_adaptive.go's own doc comment had asked someone to measure since it was
@@ -9453,7 +9453,7 @@ no further margin needed.
 Moved from `decoder/spec_adaptive.go` (the comment above `thetaFor.cuda`) on 2026-10-09.
 
 ```text
-0.155-0.251 measured (cuda/theta_probe_test.go). The CONSERVATIVE
+0.155-0.251 measured (backend/cuda/theta_probe_test.go). The CONSERVATIVE
 end of the measured range is used deliberately: Theta appears
 inside floor(ln(Theta)/ln(alpha)), so understating it drafts
 deeper, and a too-deep draft on a low-acceptance stream is the
@@ -9599,7 +9599,7 @@ COPY THE LOGITS BEFORE STARTING THE OVERLAP. This is not defensive tidiness; wit
 feature is silently wrong on CUDA.
 
 A resident backend may legitimately return a slice that ALIASES its own reusable host buffer,
-valid only until the next Forward — cuda/resident.go returns r.logitsHost, "a zero-copy view
+valid only until the next Forward — backend/cuda/resident.go returns r.logitsHost, "a zero-copy view
 of logitsPinned". The overlap then has the speculative Forward's device->host DMA writing that
 exact buffer while SampleWithInfo is reading it, so the sampler sees a torn mixture of this
 position's logits and the next one's.
@@ -9770,7 +9770,7 @@ than a fixed constant that drifts from whatever pairing is actually loaded.
 
 EVERY DRAFTER MATRIX IS f32 ON HOST (loaded straight from safetensors via WrapF32 — dflash.go's
 loadMat, never QuantizeInt8/QuantizeInt4) and the only backend that hosts one today, CUDA's
-AttachDrafter (cuda/drafter.go), packs every f32 matrix through packWeight's f32 branch, which
+AttachDrafter (backend/cuda/drafter.go), packs every f32 matrix through packWeight's f32 branch, which
 is ALWAYS int8 (linalg.QuantizeRowsInt8) regardless of the target model's own quant — a drafter
 is never packed to int4. So this is not a generic multi-quant estimate the way
 decoder/fitguard.go's quantBytesPerElem is for the main model: it prices int8 specifically,
@@ -9781,7 +9781,7 @@ beside the matrices.
 NOT included: the verify/capture buffers NewBlockSpec allocates (SetBatchedCapture's batched
 logits, FuseContext's per-call context scratch) — a few MB at the default verify width against
 hundreds of MB of weights, and already the kind of small residual the existing 384 MiB
-ctxCapMarginBytes/slotMarginBytes margins in cuda/resident.go are there to absorb. Naming this
+ctxCapMarginBytes/slotMarginBytes margins in backend/cuda/resident.go are there to absorb. Naming this
 rather than silently folding it into "close enough": the weights are the term this function
 computes for real, not the whole attach.
 
@@ -9797,12 +9797,12 @@ Moved from `decoder/blockdrafter.go` (the comment above `DrafterKVBytesPerPositi
 ```text
 DrafterKVBytesPerPosition is M-22's own fix (docs/audit-2026-09-10.md): the drafter's device K/V
 scales with the TARGET's own resident context, not a fixed size of its own —
-cuda/drafter.go's ExtendContext sizes d.kc/d.vc at capRows = max(need+512, r.ctxCap) — so a
+backend/cuda/drafter.go's ExtendContext sizes d.kc/d.vc at capRows = max(need+512, r.ctxCap) — so a
 5-layer trunk at a large target context is hundreds of MB, not the "few MB" the scratch-buffer
 exemption on DrafterResidentBytesEstimate is about, and DrafterResidentBytesEstimate itself
 cannot price it: it runs BEFORE the target's own residency (and so its chosen ctx) exists.
 
-Returns bytes PER POSITION (layers × kvDim × 2 for K+V × 4 bytes, matching cuda/drafter.go's
+Returns bytes PER POSITION (layers × kvDim × 2 for K+V × 4 bytes, matching backend/cuda/drafter.go's
 own d.kc[l]/d.vc[l] = af(capRows*kvDim) sizing exactly) so the caller — resolveCtxCapFit, which
 already knows the candidate ctx it is about to ask Plan to fit, and the real build, which knows
 the FINAL ctxCap once chosen — can each multiply by the ctx value they actually have in hand,
@@ -10199,7 +10199,7 @@ actually release them, so it gives NO real RAM cap on macOS. Owned buffers the p
 allocates and reuses give a firm cap on every platform: eviction here means "this slot's
 bytes may now be overwritten", genuinely freeing that RAM for the next miss.
 
-Mirrors metal/expertpool.go's shape (measured 1.26x faster darwin cold-stage vs mmap
+Mirrors backend/metal/expertpool.go's shape (measured 1.26x faster darwin cold-stage vs mmap
 byte-copy, zero page faults -- gemma4_moe.go) translated from GPU Buffer writes to plain
 []byte + WeightMat repointing via aikit/linalg's exported Wrap*/accessor API. No aikit API
 change is needed: scales/rows/cols/group are already heap copies untouched by paging (only
@@ -10294,7 +10294,7 @@ SpecDecodeConflict reports why speculative decoding on this model would not be l
 when it would be. Two independent sources, checked in order:
 
  1. M-09 (docs/audit-2026-09-10.md): the STAGED webgpu backend's own MatmulW4A8
-    (gpu/backend.go) declines any M != 1 and falls through to the CPU int4 kernel — so a
+    (backend/webgpu/backend.go) declines any M != 1 and falls through to the CPU int4 kernel — so a
     staged-int4 model on webgpu decodes each M=1 token on the device (a WGSL f32 GEMV with f16
     group scales) but verifies M>1 batches on the CPU's integer kernel: two different kernel
     implementations of the same logical matmul, with no numeric tolerance between them ever
@@ -10337,7 +10337,7 @@ load differently, measured on an M1 Pro (2026-09-25, qwen2.5-coder-1.5b at ctx 4
     the dense weights (unified memory holds the host WeightMat AND the re-packed device buffer —
     ResidentHostCopyBytes), 2.1 GB here, so `fit` could say "resident" for a load the guard refuses;
   - a v14 .giw (weights aliased, host copy 0): the guard 1.40 GB, Plan 1.52 GB. Plan priced Metal's
-    KV at f32; Metal only allocates f16 (the f32 KV kernels are compiled out, metal/model.go's
+    KV at f32; Metal only allocates f16 (the f32 KV kernels are compiled out, backend/metal/model.go's
     r.kvF32), so Plan's KV was twice the real one.
 
 ResidentNeedBytes is now the single definition both use. The KV half is ResidentKVBytes, which
@@ -10561,7 +10561,7 @@ sampling and swamp the signal this gate actually needs).
 Moved from `decoder/fidelity_testhook.go` (the comment above `NearTieArgmaxForTest`) on 2026-10-09.
 
 ```text
-NearTieArgmaxForTest reproduces the 3%-near-tie rule cuda/realforward_test.go's argmaxF
+NearTieArgmaxForTest reproduces the 3%-near-tie rule backend/cuda/realforward_test.go's argmaxF
 comparison established: comparing two logit vectors' argmax, a flip is a defect only if the
 REFERENCE's own margin between its pick and the candidate's pick exceeds NearTieHardFailPct of
 the reference's logit range -- smaller gaps are quant/reassociation noise, not a real
@@ -10573,7 +10573,7 @@ Qwen's typical logit range this threshold is ~2 nats, which is NOT a subtle tie 
 space -- a 2-nat gap is roughly the separation between probabilities 0.85 and 0.11. "Near-tie"
 here means "near" the reference's own full logit spread, not "near" in the sense a reader of
 softmax probabilities would expect. This is the tree's established rule (also used inline by
-cuda/realforward_test.go and gpu/kv_i8_parity_test.go) restated here for one gate, not a
+backend/cuda/realforward_test.go and backend/webgpu/kv_i8_parity_test.go) restated here for one gate, not a
 proposal to change the threshold -- doing that would need to move in all three places at once.
 ```
 
@@ -10606,12 +10606,12 @@ repetition filler, which docs/completed/task-prefill-gap.md §0 rules out for an
 ("the fidelity gate (§3) uses prose"). Ten distinct real technical documents from this repo,
 chosen only for being real, sizeable (each encodes to well over 3900 tokens on its own, so no
 prompt needs repeating to reach the deepest K), and stable — not for their content, the same
-reasoning metal/spec_prefill_regression_test.go's readRepoCorpus gives for reading real
+reasoning backend/metal/spec_prefill_regression_test.go's readRepoCorpus gives for reading real
 repository source instead of a short hand-written corpus.
 
 Paths are relative to a package directory one level under the repo root (as metal/'s and
 decoder/'s own test packages both are), so the same list resolves identically from either —
-this is shared between metal/prefill_gate_test.go (Metal arms) and
+this is shared between backend/metal/prefill_gate_test.go (Metal arms) and
 decoder/prefill_ref_gen_test.go (the CPU f32-activation reference, §3.1) precisely so the two
 runs score the SAME ten prompts.
 ```
@@ -11647,7 +11647,7 @@ wired page (vm_object_iopl_request faults with write intent) and marks the mappi
 true_share. From then on vm_map_fork cannot share the entry lazily: vm_object_copy_delayed refuses
 wired pages and the kernel copies the WHOLE entry, page by page, on the forking thread. Every
 os/exec in the process is a fork on darwin; on a 15 GB mapping on a 16 GB Mac the first one after
-the first GPU request paged the whole server out. Measured with metal/alias_forkprobe_test.go: a
+the first GPU request paged the whole server out. Measured with backend/metal/alias_forkprobe_test.go: a
 fork+exec went 2.8 ms → 1,092 ms after one GPU touch of a 16 MiB window of a 2 GiB mapping, and
 stayed ~3.8 ms with the mapping VM_INHERIT_NONE. A child never needs the weights (the only children
 are exec'd helpers, which discard the address space immediately), so leaving them out is free.
@@ -11659,7 +11659,7 @@ Moved from `decoder/giwmap_darwin.go` (the comment above `mapGIW`) on 2026-10-09
 
 ```text
 Why shared, and why only here (docs/measurements/s6-alias-2026-09-24.md; the probe is
-metal/alias_sharedprobe_test.go): a Metal no-copy buffer over a window of the mapping is wired by IOKit
+backend/metal/alias_sharedprobe_test.go): a Metal no-copy buffer over a window of the mapping is wired by IOKit
 with WRITE intent. Over a PRIVATE mapping that turns every page the GPU reads into a wired anonymous
 copy-on-write copy (+15,131 COW faults for a 16,384-page window, persisting for the mapping's life) — so
 "aliasing" the weights saved no memory — and marks the object true_share, after which any fork() copies
@@ -11878,8 +11878,8 @@ Moved from `decoder/fidelity_testhook.go` (a comment block rewritten to the rule
 
 ```text
 NearTieHardFailPct is the bar NearTieArgmaxForTest hard-fails at -- the same 3% every existing
-near-tie gate in this tree already uses inline (cuda/realforward_test.go's argmaxF comparison,
-gpu/kv_i8_parity_test.go), named here so a new gate cites the rule instead of retyping the
+near-tie gate in this tree already uses inline (backend/cuda/realforward_test.go's argmaxF comparison,
+backend/webgpu/kv_i8_parity_test.go), named here so a new gate cites the rule instead of retyping the
 literal.
 ```
 
@@ -11926,7 +11926,7 @@ Moved from `decoder/fidelity_testhook.go` (a comment block rewritten to the rule
 WritePrefillReferenceForTest serializes docs/completed/task-prefill-gap.md §3.1's CPU f32-activation
 reference for a later cross-process read (ReadPrefillReferenceForTest) — Phase A
 (decoder/prefill_ref_gen_test.go, its own process, CPU only) writes these; Phase B
-(metal/prefill_gate_ref_test.go) reads them back to score both Metal arms against a reference
+(backend/metal/prefill_gate_ref_test.go) reads them back to score both Metal arms against a reference
 neither of them is. Layout, all little-endian: int32 vocab, int32 continuationN, seedLogits
 [vocab]float32, refTokens [continuationN]int32, then continuationN rows of [vocab]float32
 (refLogits). This is a private, single-machine, single-session scratch format — not versioned
@@ -12247,7 +12247,7 @@ only under -tags goinfer_testhooks so they are NOT part of the public API
 HAND-MAINTAINED, NOT MACHINE-GENERATED — despite this file's former name
 (testhooks_gen.go, renamed 2026-09-11, audit-2026-09-02.md N-41). There is no
 //go:generate directive and nothing regenerates it; edit it directly like any
-other file. Mirrors gpu/testhooks.go and cuda/testhooks.go.
+other file. Mirrors backend/webgpu/testhooks.go and backend/cuda/testhooks.go.
 ```
 
 ## Gemma4ResidentMediaRowForTest
@@ -12338,7 +12338,7 @@ Moved from `decoder/testhooks.go` (the comment above `SetSSMForceF32`) on 2026-1
 
 ```text
 SetSSMForceF32 / SetSSMQ8CPU toggle the CPU-reference precision-localization seams
-at runtime (gpu/ssm_kernel_control_test.go needs the staged webgpu backend, which
+at runtime (backend/webgpu/ssm_kernel_control_test.go needs the staged webgpu backend, which
 lives in a package the decoder can't import — so it drives these via the registry).
 ```
 
@@ -12359,7 +12359,7 @@ Moved from `decoder/testhooks.go` (the comment above `DeltaNetStepForTest`) on 2
 
 ```text
 DeltaNetStepForTest runs ONE Gated-DeltaNet decode step on the CPU reference and returns the
-layer output — the parity target for a backend's DeltaNet kernel (gpu/deltanet_test.go).
+layer output — the parity target for a backend's DeltaNet kernel (backend/webgpu/deltanet_test.go).
 
 Why a hook rather than a reimplementation in the backend's test: the CPU recurrence is already
 gated against HF (TestGatedDeltaNet_parity, against transformers'
@@ -12684,7 +12684,7 @@ WHAT IS REPORTED, and why a bare token-mismatch count would mislead: greedy deco
 sequence of argmaxes, so ONE flip at a near-tie makes every later token "differ" without any
 quality claim being warranted. So this reports the FIRST divergence and the baseline's
 top1-vs-top2 margin there, normalized by the logit range — the repo's existing 3%-of-range
-near-tie rule (gpu/kv_f16_test.go, gpu/kv_i8_parity_test.go). A first divergence at a near-tie
+near-tie rule (backend/webgpu/kv_f16_test.go, backend/webgpu/kv_i8_parity_test.go). A first divergence at a near-tie
 is the benign class those tests already accept; one at a real margin is not.
 
 	GOINFER_HEAVY_TESTS=1 GOINFER_DIAG=1 GOINFER_MELLUM_CKPT=~/models/mellum2-unq \
@@ -13845,13 +13845,13 @@ Cohere / Command-R + Cohere2 / Command-R7B: G5's last row (docs/tasks/task-gpu-p
 FeatParallelBlock reuses the pre-attn norm's already-quantized activation as the MLP's
 input too (no new kernel, a sequencing change); FeatLogitScale is a host-side multiply
 after readback (the same shape as FeatFinalLogitSoftcap). FeatLayerNorm was already
-declared on metal (GPT-2); cuda's twin (layernorm_quant, cuda/glue.cu) is genuinely new —
+declared on metal (GPT-2); cuda's twin (layernorm_quant, backend/cuda/glue.cu) is genuinely new —
 this backend had no mean-centered norm before. cohere2 needs FeatNoPE/FeatSlidingWindow
 too, both already declared on both backends from earlier G5 rows, so it reaches the same
 two backends cohere does.
 
 CORRECTION 2026-10-01: CUDA ONLY now. Their rotation is GPT-J pairwise and the metal rope
-kernel is NeoX half-split; the CUDA resident had the same defect until cuda/rope_pairwise.cu
+kernel is NeoX half-split; the CUDA resident had the same defect until backend/cuda/rope_pairwise.cu
 (real Command-R7B / Aya-expanse-8B at int4, resident vs CPU: worst per-position cosine -0.075 /
 -0.041, exact at position 0 only). The old gates used flat 0.02-std fixtures where a wrong
 rotation reads 0.9997. FeatPairwiseRoPE is declared by cuda alone; metal declines these families
@@ -13874,7 +13874,7 @@ already says feature-compatible isn't sufficient — dense Gemma 4's local/globa
 split needs a per-layer geometry seam this simplified feature-list model cannot express
 (decoder.Model.PerLayerGeomOK, a residentMoECapacityOK-shaped runtime check outside the
 ResidentFeature taxonomy), which webgpu's runLayer.ghd/gnKV fields exist for but
-gpu/residency.go's per-layer builder never populates for any family. The REAL runtime
+backend/webgpu/residency.go's per-layer builder never populates for any family. The REAL runtime
 (decoder.ResidentEligible, TestGemma4Admission_unconditional) correctly declines gemma4 on
 webgpu despite this table showing it feature-admitted — this golden intentionally tracks
 the simplified feature-only model, not full runtime truth, matching this file's own MoE-cap
@@ -13892,7 +13892,7 @@ cosine 0.9989); cuda declared 2026-08-31 on the REAL 20B, resident on an 8 GB ca
 --moe-cache-experts (7/8 argmax-exact, min cosine 0.996392) — the stronger evidence of the
 two, an odd inversion worth noting since the tiny fixture stopped reproducing the last
 defect it had to catch. webgpu declared 2026-09-08 (G6): the sink threaded through every
-attention kernel plus three brand-new MoE kernels (gpu/moe.go), verified against the real
+attention kernel plus three brand-new MoE kernels (backend/webgpu/moe.go), verified against the real
 tiny fixture (gpu.TestGptOssResidentParityWebGPU, minCosine 0.9943 — the same 0.95 floor
 Metal's own gate uses on this fixture).
 ```
@@ -13902,7 +13902,7 @@ Metal's own gate uses on this fixture).
 Moved from `decoder/features_test.go` (the comment above the glm_ocr golden row) on 2026-10-09.
 
 ```text
-GLM-OCR: CUDA only (2026-10-01, cuda/rope_pairwise.cu; cuda.TestGlmOcrResidentParityCUDA).
+GLM-OCR: CUDA only (2026-10-01, backend/cuda/rope_pairwise.cu; cuda.TestGlmOcrResidentParityCUDA).
 Admitted with the NeoX kernels it read resident-vs-CPU cosine -0.34 on glm-ocr-tiny; Metal and
 WebGPU still have only NeoX rope kernels and decline (FeatPairwiseRoPE + FeatPairwiseMRoPE).
 2026-10-09: Metal too (the pairwise twins; metal.TestGlmOcrResidentParityMetal). WebGPU still declines.
@@ -13965,7 +13965,7 @@ G5 (docs/tasks/task-gpu-paths-2026-09.md) added seven more, across all five rows
 (SmolLM3), FeatAttnTemp (Ministral 3), FeatPostOnlyNorm + FeatQKNormWhole (Olmo 3/Olmo
 Hybrid), FeatLayerNorm + FeatParallelBlock + FeatLogitScale (Cohere/Command-R +
 Cohere2/Command-R7B, the last row — FeatLayerNorm is a genuinely new kernel here,
-cuda/glue.cu's layernorm_quant; the other two are wiring, no new kernel).
+backend/cuda/glue.cu's layernorm_quant; the other two are wiring, no new kernel).
 ```
 
 ## TestResidentBackendFeatures_noOverclaim.cudaPairwise
@@ -13973,7 +13973,7 @@ cuda/glue.cu's layernorm_quant; the other two are wiring, no new kernel).
 Moved from `decoder/features_test.go` (the comment above the pairwise row of the cuda set) on 2026-10-09.
 
 ```text
-2026-10-01: GPT-J pairwise rotation (cuda/rope_pairwise.cu), declared with the peaked-attention
+2026-10-01: GPT-J pairwise rotation (backend/cuda/rope_pairwise.cu), declared with the peaked-attention
 gates (cuda.TestPairwiseRoPEResidentParityCUDA, cuda.TestGlmOcrResidentParityCUDA) and the
 real Aya/R7B gate. metal declares both since 2026-10-09 (its own twins and gates); webgpu does not.
 2026-10-07: FeatGemma4EModel (S1 on CUDA, docs/completed/task-multimodal-support-2026-10.md): the PLE branch from existing
@@ -14041,7 +14041,7 @@ experts into a fixed-size array (256) and groups into 32; a model past that rout
 first N — plausible-looking wrong output — so ResidentEligible must decline it even though every
 FEATURE it needs is implemented. This is what keeps the generated hardware matrix honest: before
 residentBackendMoECap, the feature-only predicate showed Kimi K2 (384 experts) WebGPU-resident
-while the runtime (gpu/backend.go, M22) declined it.
+while the runtime (backend/webgpu/backend.go, M22) declined it.
 ```
 
 ## TestResidentMoECapacity_routerCap.metal
@@ -14050,7 +14050,7 @@ Moved from `decoder/features_test.go` (the comment above `TestResidentMoECapacit
 
 ```text
 Metal is DECLARED in the cap map for the first time (its shader really is 256 and rejects
-above it, metal/moe.go's router kernel) — the map previously claimed "absent = uncapped", which was false.
+above it, backend/metal/moe.go's router kernel) — the map previously claimed "absent = uncapped", which was false.
 ```
 
 ## TestA3FastAttentionDivergence.floor
@@ -14534,7 +14534,7 @@ The syscall number and argument order excludeFromFork relies on are real: the sa
 invalid inheritance value must come back EINVAL from the kernel's minherit (a wrong syscall number
 would give ENOSYS or act on something else). XNU accepts minherit over an unmapped hole silently, so
 "does it fail on a bad range" is not a usable check; the effect itself is measured by
-metal/alias_forkprobe_test.go (fork 1,092 ms -> 3.8 ms while a page is wired).
+backend/metal/alias_forkprobe_test.go (fork 1,092 ms -> 3.8 ms while a page is wired).
 ```
 
 ## TestForwardN_matchesSequential
@@ -15373,7 +15373,7 @@ Moved from `decoder/glm_ocr_test.go` (the comment above `TestGlmOcr_residentDecl
 ```text
 TestGlmOcr_residentDeclined: GLM-OCR rotates PAIRWISE (GPT-J) over m-RoPE sections, so a backend may
 run it resident only if it declares FeatPairwiseRoPE and FeatPairwiseMRoPE, i.e. has pairwise rope
-kernels. CUDA does (cuda/rope_pairwise.cu, gated by cuda.TestGlmOcrResidentParityCUDA), and Metal since
+kernels. CUDA does (backend/cuda/rope_pairwise.cu, gated by cuda.TestGlmOcrResidentParityCUDA), and Metal since
 2026-10-09 (metal.TestGlmOcrResidentParityMetal); WebGPU still has only the NeoX half-split kernels, and
 admitting glm_ocr there gave logit cosine -0.34 resident-vs-CPU on the CUDA twin of that kernel set
 (2026-10-01), with no error. The decline must name the missing features so `serve check` shows the real cause.
@@ -15481,7 +15481,7 @@ docs/tasks/task-gpu-paths-2026-09.md): the sink threaded through every attention
 attn-keys, attn-f16, attn-i8, and all three wide variants — 7 pipelines), plus three brand-new
 MoE kernels (gpt-oss disagrees with the generic MoE path on what the router bias means and what
 the activation clamps — routeGptOssWGSL/gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL,
-gpu/moe.go). Verified against the real (non-seeded) decoder/testdata/gptoss_tiny.gguf, resident
+backend/webgpu/moe.go). Verified against the real (non-seeded) decoder/testdata/gptoss_tiny.gguf, resident
 vs CPU: min cosine 0.9943 across 8 positions (gpu.TestGptOssResidentParityWebGPU) — the same
 0.95 floor Metal's own gate uses on this fixture.
 ```
@@ -16875,7 +16875,7 @@ and silently skip the mscale that G10 actually changed. Verified against the rel
 config before slicing rather than assumed.
 
 This is the DECODER-side gate: it proves goinfer's own CPU forward matches the HF f32
-reference on real weights. The Metal half (metal/mellum_real_test.go) runs residentParity
+reference on real weights. The Metal half (backend/metal/mellum_real_test.go) runs residentParity
 against the SAME slice; see docs/queue-correctness.md G11 for the handoff, including how
 to regenerate this slice bit-identically (it is 4 GB, so the checkpoint is gitignored and
 only the golden is tracked).
@@ -17074,7 +17074,7 @@ TestResidentMoECap_pinsKernelConstant gates M-17: the feature-matrix MoE caps in
 residentBackendMoECap MUST equal the router kernel's actual fixed-array bounds, or the
 hardware-matrix generator declines archs BuildResident admits (or vice versa) — the
 one-source-of-truth invariant the map's own comment promises. This reads the kernel sources
-and compares. The cuda groups cap was 32 while cuda/moe.cu's MOE_MAX_G is 64, so an arch with
+and compares. The cuda groups cap was 32 while backend/cuda/moe.cu's MOE_MAX_G is 64, so an arch with
 n_group in 33..64 was published not-CUDA-resident while the runtime admitted it. The test
 extracts each constant from its source and pins the cap to it; a future kernel bump that
 forgets the map (or vice versa) fails here.
@@ -17086,7 +17086,7 @@ Moved from `decoder/moecap_kernel_pin_test.go` (the comment above `TestResidentM
 
 ```text
 M-31: the pin above reads the KERNEL sources and features_test.go asserts ResidentEligible.
-Both were green while gpu/residency.go carried its own hardcoded 256/32 — so a 384-expert
+Both were green while backend/webgpu/residency.go carried its own hardcoded 256/32 — so a 384-expert
 Kimi-K2 was published "✅ resident" in both generated matrices, admitted by ResidentEligible,
 and then declined to CPU by a line naming a number nothing else agreed with. Neither existing
 test reads the file that actually makes the decision.
@@ -17580,7 +17580,7 @@ Moved from `decoder/prefill_ref_gen_test.go` (the comment above `TestPrefillGate
 
 ```text
 TestPrefillGateReference is Phase A of docs/completed/task-prefill-gap.md §3.1's L1 re-run: build the CPU
-f32-activation reference logits that BOTH Metal arms (metal/prefill_gate_ref_test.go, Phase B)
+f32-activation reference logits that BOTH Metal arms (backend/metal/prefill_gate_ref_test.go, Phase B)
 are scored against. §3's first form scored Metal's fast (f16-activation) path against Metal's
 own exact (int8-per-row-activation) path and called the exact path truth — but the exact path is
 itself a quantisation, guaranteed to disagree with the fast path for a reason that has nothing
@@ -18551,7 +18551,7 @@ Moved from `decoder/residentneed_test.go` (the comment above `loadAccountingFixt
 
 ```text
 docs/tasks/task-memory-accounting-2026-09.md item 2: `fit`'s verdict (Plan) and Metal's resident guard
-(ResidentNeedBytes, via metal/backend.go's residentNeedBytes) must be the same number by construction. Before,
+(ResidentNeedBytes, via backend/metal/backend.go's residentNeedBytes) must be the same number by construction. Before,
 Plan("metal") had no host-copy term and priced Metal's KV at f32, so on a directly loaded model it asked for
 about half of what the guard would then demand (measured: 2.34 vs 4.33 GB on qwen2.5-coder-1.5b).
 ```
@@ -18647,7 +18647,7 @@ TestPrefillCoverageAudit enumerates every validated family against the cuda Pref
 (decline on: not-resident, MoE, gemma4-moe, sandwich norms, qk-norm, K=V, non-uniform geometry).
 It reports, per family, whether it GETS batched prefill or FALLS BACK, and which guard fires — so
 "extend the guard" work can be scoped by which guard blocks the most families. Guards are read from
-the resolved Architecture (the same flags cuda/backend.go sets the resident from); int4-weight and
+the resolved Architecture (the same flags backend/cuda/backend.go sets the resident from); int4-weight and
 over-cap are checkpoint/prompt-specific, not family-inherent, so they are noted, not tabulated.
 
 qk-norm and sandwich norms are NO LONGER guards: batched prefill applies them via
@@ -19197,7 +19197,7 @@ TestRopeInvFreqLayer_NoPEIsZero is G5's real gate (docs/tasks/task-gpu-paths-202
 a resident backend's rope kernel gets an all-zero invFreq table for a NoPE layer instead of a
 new kernel path (RopeInvFreqLayer, decoder/residency.go), which is exact identity rotation by
 construction (cos(pos·0)=1, sin(pos·0)=0 for every position — verified against the shipped
-kernel math directly, cuda/gemv_fwd.cu and metal/kernels.go's rope2, both
+kernel math directly, backend/cuda/gemv_fwd.cu and backend/metal/kernels.go's rope2, both
 `c=cos(th)*scale,s=sin(th)*scale` with th=pos·invf[dd]).
 
 This is deliberately a PURE, backend-agnostic unit test of RopeInvFreqLayer itself, not a
@@ -19864,7 +19864,7 @@ K=V layer has no V), or a mixed K is written as ordinary consecutive records —
 
 The reader takes the nibbles out of the mapping as before (`WrapInt4` keeps the alias); the Metal
 build (aliasing is on by default since 2026-09-24; `GOINFER_METAL_ALIAS=0` turns it off) checks whether a fused tuple's nibbles are **one contiguous
-run** in the mapping and, if so, binds one no-copy buffer over them (`metal/alias.go`). It is detected,
+run** in the mapping and, if so, binds one no-copy buffer over them (`backend/metal/alias.go`). It is detected,
 not assumed, so a pre-v13 file, a layer whose members are not adjacent, or a heap-backed weight all
 take the old copy path unchanged. In a v13 file the scales are still converted f32→f16 into a small buffer (about ⅛ of
 the nibble bytes); v14, below, stores them as f16 so they alias too.
@@ -19925,14 +19925,14 @@ with each feature's evidence:
 	FeatQKNorm:            true, // qk_norm kernels
 	FeatSlidingWindow:     true, // attention window uniform
 	FeatPartialRotary:     true, // rope rhalf = rotaryDim/2
-	FeatMoE:               true, // moe_route + indexed stacked-expert W4A8 GEMVs + shared expert (metal/moe.go)
-	FeatMoEGatedShared:    true, // shared_gate_combine — sigmoid-gated shared expert (metal/moe.go)
+	FeatMoE:               true, // moe_route + indexed stacked-expert W4A8 GEMVs + shared expert (backend/metal/moe.go)
+	FeatMoEGatedShared:    true, // shared_gate_combine — sigmoid-gated shared expert (backend/metal/moe.go)
 	FeatSandwichNorm:      true, // rmsnorm_f32 on each sublayer output (Gemma)
 	FeatGatedGELU:         true, // GeGLU — clamped-tanh geglu (glu_act)
 	FeatRMSAddOne:         true, // (1+w) RMS offset
 	FeatEmbedScale:        true, // √hidden embedding multiplier (embedResident)
 	FeatPerLayerRoPE:      true, // per-layer invFreq (Gemma local 10k vs global 1M base)
-	FeatFinalLogitSoftcap: true, // softcap·tanh(logits/softcap) host-side after readback (metal/model.go: finalizeLogits)
+	FeatFinalLogitSoftcap: true, // softcap·tanh(logits/softcap) host-side after readback (backend/metal/model.go: finalizeLogits)
 	FeatLayerNorm:         true, // layernorm_quant — mean-centered norm+quant (GPT-2, generalized with a hasBias flag for Cohere)
 	FeatNonGatedMLP:       true, // act_quant — up→act→down, no gate (GPT-2)
 	FeatNonGatedGELUTanh:  true, // act_quant's glu_act branches: GELU-tanh and SiLU only
@@ -19966,13 +19966,13 @@ with each feature's evidence:
 	// gates against float64, with the cap dropped as the control (TestAttnSoftcap_decodeKernels, TestAttnSoftcap_prefillKernel).
 	// The Gemma 2 end-to-end tests are diagnostics, not its gate (docs/tasks/task-forward-architecture-2026-10.md §4.6).
 	FeatAttnLogitSoftcap: true,
-	// Nemotron-H's Mamba-2 mixer (metal/mamba.go: mamba_conv, mamba_ssm, mamba_gnorm) and its squared-ReLU MLP (act_quant's
+	// Nemotron-H's Mamba-2 mixer (backend/metal/mamba.go: mamba_conv, mamba_ssm, mamba_gnorm) and its squared-ReLU MLP (act_quant's
 	// nongated_act), at int4 only: buildMamba declines an int8 model, whose projections would be re-quantized to int4. The
 	// declaration rests on gates M and S, the tier 0 kernel and guard tests, a three-layer slice of the real 9B, and the
 	// whole 9B against the CPU (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b step 2).
 	FeatSSM:           true,
 	FeatNonGatedReLU2: true,
-	// Multi-head latent attention (metal/mla.go: mla_store, mla_head_mv, mla_qrope, mla_attn), the absorbed form, its latent
+	// Multi-head latent attention (backend/metal/mla.go: mla_store, mla_head_mv, mla_qrope, mla_attn), the absorbed form, its latent
 	// rows in each slot's KV buffer. The declaration rests on gate M with routing forced (deepseek-tiny, kimi-tiny), the
 	// kernel gate on both rope branches, the guard tests, and a two-layer slice of DeepSeek-V2-Lite against the CPU
 	// (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2a). Kimi K2's 384-expert router is not here.

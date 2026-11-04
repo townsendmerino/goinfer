@@ -12,7 +12,7 @@ regression; it does not add a speedup.**
 | goinfer | `89911e2` |
 | toolchain | go1.27.0 linux/amd64, `-tags "cuda goinfer_testhooks"` |
 | models | qwen2.5-coder **0.5B** and **1.5B** instruct q4_k_m, int4, from `~/models` on local NVMe |
-| harness | `cuda/theta_ab_test.go` (`TestThetaAB`), arms interleaved per repetition |
+| harness | `backend/cuda/theta_ab_test.go` (`TestThetaAB`), arms interleaved per repetition |
 | run | 162.2 s, **zero lossless violations**, 4 of 8 cells surviving the pre-registered loop rule |
 
 No peer is involved. Both arms are goinfer, so this is goinfer-vs-goinfer work and no

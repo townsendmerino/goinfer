@@ -19,7 +19,7 @@ Its only CUDA tests were a smoke test and a prefill-vs-decode check, and neither
 
 ## What changes
 
-- **NegEigval.** `delta_gates` and `delta_gates_rows` (`cuda/deltanet.cu`) take a `betaScale` argument, 1 or 2, and multiply the sigmoid by
+- **NegEigval.** `delta_gates` and `delta_gates_rows` (`backend/cuda/deltanet.cu`) take a `betaScale` argument, 1 or 2, and multiply the sigmoid by
   it. Multiplying by 1 is exact and multiplying by 2 is exact, so every other DeltaNet family's output is unchanged bit for bit.
 - **ONormEps.** The `delta_gnorm` and `delta_gnorm_rows` launches pass the layer's own epsilon instead of the model's `NormEps`.
 - **Where the values come from.** Both are read at build from each layer's `OpDeltaNet` parameters in the program, not from the family.

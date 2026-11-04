@@ -47,8 +47,8 @@ GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -count=1 -timeout 6
 
 ## 2. New: two-turn tests on CUDA (the property the fixes are for)
 
-Write `cuda/spec_twoturn_test.go` (`//go:build cuda && goinfer_testhooks`, heavy-gated). Port the shape of
-`metal/spec_multiturn_test.go`.
+Write `backend/cuda/spec_twoturn_test.go` (`//go:build cuda && goinfer_testhooks`, heavy-gated). Port the shape of
+`backend/metal/spec_multiturn_test.go`.
 
 - **`TestBlockSpec_twoTurnsMatchPlain`**: qwen3-4b int4 on CUDA plus the DFlash drafter. Each arm gets a fresh load.
   - *plain:* turn 1 is `Generate` (greedy), ending at `max_tokens` N; assert it emitted N, so no EOS. Turn 2 is a

@@ -5,7 +5,7 @@ CPU only. No device run: the derive's error against the card is G-DM2's (`../sb2
 
 ## What the census now says
 
-`TestBackendMemoryCensus_cuda` (`cuda/sb2_census_test.go`), golden `cuda/testdata/sb2_cuda_mem_census.amd64.txt.gz`: 558 lines,
+`TestBackendMemoryCensus_cuda` (`backend/cuda/sb2_census_test.go`), golden `backend/cuda/testdata/sb2_cuda_mem_census.amd64.txt.gz`: 558 lines,
 279 planned cells × the two nobara profiles. Each line's head is unchanged from step 2, byte for byte (the profile's figures, the
 planned context, the margin, the weights verdict). Its `kv: step 3` tail is replaced by `derived(G-DM2 band -62/+58 MiB):`,
 then each reading the build takes, as derived (`kv@`, `ckpt@`, `grantPre@`, `slots@`, `grant@`, `prefill@`), then the decisions.

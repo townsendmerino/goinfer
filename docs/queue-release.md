@@ -385,7 +385,7 @@ three places** — including the very section this release rewrites around the c
 release without D3 means rewriting that section again next version, for the same feature.
 
 **But its branch predates the fix it completes.** `flag-pair-moe-cache` is based on `7ccec1e` — the
-slot-default commit that was **reverted** — and it touches `cuda/backend.go` and `decoder/model.go`,
+slot-default commit that was **reverted** — and it touches `backend/cuda/backend.go` and `decoder/model.go`,
 both of which A5 (`6091e7a`) and A9-FIX (`0103b49`) changed substantially. So this is a **rebase and
 re-verify**, not a merge.
 
@@ -408,16 +408,16 @@ to override it.** So the flag pair is the second branch: legitimate explicit ove
    you get a working cache*. With A5 it means *request no more than N*, and the cap may still lower
    it — the log line says which.
 2. **`docs/completed/BRANCH-NOTE.md`'s own rebase guidance is stale.** It says to expect one conflict in
-   `cuda/backend.go` and to *"keep `main`'s comment"* — but that hunk has changed three times since
+   `backend/cuda/backend.go` and to *"keep `main`'s comment"* — but that hunk has changed three times since
    (`7ccec1e` reverted at `97ee663`, then A5 `6091e7a`, then A9-FIX `0103b49`). The instruction now
    points at text that no longer exists.
 3. **Its freeze paragraph is superseded** — it waits on a lift; the freeze is now a proof requirement
    and the goldens run is the authorisation.
 
-`decoder/model.go` and `decoder/gguf.go` were untouched by A5/A9-FIX/P6/P7, so only `cuda/backend.go`
+`decoder/model.go` and `decoder/gguf.go` were untouched by A5/A9-FIX/P6/P7, so only `backend/cuda/backend.go`
 should conflict.
 
-**REBASED 2026-08-12 (`2d28358`), not yet merged.** One conflict, in `cuda/backend.go`, and it was
+**REBASED 2026-08-12 (`2d28358`), not yet merged.** One conflict, in `backend/cuda/backend.go`, and it was
 not the plumbing conflict the old note predicted:
 
 **the branch defaults the slot request to `nE` — "ask for all, auto-cap" — which is `7ccec1e`'s
@@ -445,7 +445,7 @@ the next action.
 > precondition read; the resolution was appended later; nobody deleted the conclusion. A reader
 > scanning for a verdict finds the stale sentence, because it is the one in verdict position.
 >
-> **What shipped** (`cuda/backend.go`, `8f3c5e7` — "1.59x on the 35B, 2.6x on the 26B"): the
+> **What shipped** (`backend/cuda/backend.go`, `8f3c5e7` — "1.59x on the 35B, 2.6x on the 26B"): the
 > default is `8 × topK`, floored at `topK`, capped to `nE`, and still passed through
 > `allocSlots`' free-VRAM cap — so it can only ever ask for LESS than the reverted "ask for all"
 > default that OOM'd on 2026-08-11.
@@ -473,7 +473,7 @@ the next action.
 
 `topK` degenerates to re-fetching every routed expert every token (~5 tok/s against ~17 at 38 slots on
 the 26B). It was set there because the cap could not be trusted; A5 fixed the cap and A7 proved it on
-the 26B, which is exactly the precondition `cuda/backend.go`'s own comment names. The candidate
+the 26B, which is exactly the precondition `backend/cuda/backend.go`'s own comment names. The candidate
 default is "request all, let the corrected cap decide" — which on this card lands at 31.
 
 Separate from D3 on purpose: D3 changes the *surface*, this changes *what happens to someone who sets
@@ -481,7 +481,7 @@ nothing*. Needs the 26B run and a hit-rate figure at the chosen cap before it la
 
 **PRECONDITION READ, 2026-08-12 — and it is NOT met. D3b waits on A10.**
 
-`cuda/backend.go`'s comment says *"raising it again requires fixing the margin FIRST and proving it on
+`backend/cuda/backend.go`'s comment says *"raising it again requires fixing the margin FIRST and proving it on
 the 26B"*. Two readings are available and the comment's own complaint chooses between them: it faults
 the margin for being *"a flat `marginBytes = 384 MB` **described as** covering the greedy-argmax
 readback + driver overhead — per-token costs — **while what it must actually leave room for** is
@@ -750,7 +750,7 @@ E6 predicted for them.
 
 **The FMA fix was never the pending part, and the bump re-confirmed it.** `be049df` is an ancestor of
 `gpu/v0.27.0`, so goinfer had already been running that PTX; across `gpu/v0.27.0..gpu/v0.28.0` the
-quantized GEMV PTX is **byte-identical** and `gpu/gemv_quant.cu` changes by three lines, all comment.
+quantized GEMV PTX is **byte-identical** and `backend/webgpu/gemv_quant.cu` changes by three lines, all comment.
 E6's read of its own diff was accurate.
 
 **A measurement trap found while checking this, worth more than the closure.** `git diff
@@ -822,7 +822,7 @@ Also open there, deliberately: branch protection is not enabled and `gpu-kernels
   | package | candidates | float | integer |
   |---|---|---|---|
   | `decoder` | 7 | 0 | 7 |
-  | `cuda` | 2 | 0 | 2 — `cuda/softcap.go`, worker count and chunk bounds |
+  | `cuda` | 2 | 0 | 2 — `backend/cuda/softcap.go`, worker count and chunk bounds |
   | `gpu` | 0 | — | — |
   | `metal` | 0 | — | — |
   | aikit | 0 | — | — |

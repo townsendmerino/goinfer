@@ -21,7 +21,7 @@ row, per group of 32 weights that's **16 bytes of nibbles + a 4-byte f32 scale**
 ## Rationale, corrected (verify-don't-trust)
 
 The roadmap line says *"the kernel is ALU-bound so it wouldn't speed decode."*
-**The conclusion is right; the stated reason is wrong** — `gpu/gemv_w4a8.go`'s own
+**The conclusion is right; the stated reason is wrong** — `backend/webgpu/gemv_w4a8.go`'s own
 roofline says the W4A8 GPU decode is **weight-bandwidth-bound**: *"the decode
 roofline is weight bytes/token … this is the lever on the 4.3 ms gemv floor."*
 The real reasons on-disk f16 won't move decode:
@@ -35,7 +35,7 @@ So the `.giw` change shrinks the *file*, not the *working set*, for the **reside
 Decode-neutral there.
 
 **Correction (2026-09-13, doc review): not decode-neutral on Metal's demand-paged MoE path.**
-`metal/model.go`'s `int4DirectBytes` re-derives each staged expert's f16 group scales from the
+`backend/metal/model.go`'s `int4DirectBytes` re-derives each staged expert's f16 group scales from the
 on-disk f32 **every stage, every token** — this is the SAME f32→f16 widen-at-upload pattern as the
 two resident paths above, but repeated per token instead of once, because a paged (not resident)
 expert is re-read and re-converted from the mmap'd `.giw` on every token that routes to it. Measured
@@ -51,7 +51,7 @@ needed narrowing.
 
 ## What already exists (building blocks)
 
-- **The f16 codec** — `packF16Pairs` / `f16to32` (`gpu/gemv_w4a8.go`), already used
+- **The f16 codec** — `packF16Pairs` / `f16to32` (`backend/webgpu/gemv_w4a8.go`), already used
   to build the GPU's f16 scale buffer. Reuse for the giw writer/reader. (CPU-side
   f16↔f32 is a plain `math.Float*` round-trip; no device feature.)
 - **The versioned format** — `serialize.go`: `giwMagic="GINFW"`, `giwVersion=1`;

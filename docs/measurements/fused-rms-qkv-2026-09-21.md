@@ -1,7 +1,7 @@
 # fused_rms_qkv / fused_rms_gu: fewer redundant prologues, bit-identically (+2-3.5% decode; a 4x-unroll null result)
 
 Continues `d7-decode-breakdown-2026-09-21.md`. That profile showed D7 decode GPU-bound with `fused_rms_qkv` at ~163 GB/s (1.39 ms/token) and `fused_rms_gu` at ~316 GB/s (5.9 ms/token, 48%).
-Instrument: `ncu --metrics gpu__time_duration.sum` on kernel launches over random int4 weights of each real geometry (`cuda/fused_qkv_rows_test.go`: `TestFusedQKVRowsBench`,
+Instrument: `ncu --metrics gpu__time_duration.sum` on kernel launches over random int4 weights of each real geometry (`backend/cuda/fused_qkv_rows_test.go`: `TestFusedQKVRowsBench`,
 `TestFusedGUBench`), RTX 2070 SUPER, driver `595.91.07`, idle box. Raw CSVs in `fused-rms-qkv-2026-09-21/`.
 
 ## The mechanism, and a change that cannot alter a logit

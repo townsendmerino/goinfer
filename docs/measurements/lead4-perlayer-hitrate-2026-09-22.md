@@ -7,8 +7,8 @@ on the real 26B, before writing any pooling code.
 
 ## Method
 
-`TestMoEPerLayerHitRate` (`cuda/moe_perlayer_hitrate_test.go`), new: `PerLayerCacheStatsForTest` (new,
-`cuda/testhooks.go`) returns each layer's hit/miss counters individually — the per-layer `expertCache`
+`TestMoEPerLayerHitRate` (`backend/cuda/moe_perlayer_hitrate_test.go`), new: `PerLayerCacheStatsForTest` (new,
+`backend/cuda/testhooks.go`) returns each layer's hit/miss counters individually — the per-layer `expertCache`
 already tracked them; nothing before this exposed them per layer, only summed. RTX 2070 SUPER, driver
 595.91.07, real 26B `.giw`, C′ on, `GOINFER_MOE_CACHE_SLOTS` unset (auto-capped to free VRAM — 29 slots/layer
 today, the same "fixed total budget" every layer already runs under in production, not a number chosen to

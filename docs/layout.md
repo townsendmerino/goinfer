@@ -2,6 +2,12 @@
 
 A map of the tree. Paths are relative to the repository root; every row was checked against the tree.
 
+## Moved
+
+- `cuda/` -> `backend/cuda/` (`module github.com/townsendmerino/goinfer/cuda` -> `github.com/townsendmerino/goinfer/backend/cuda`)
+- `metal/` -> `backend/metal/` (`module github.com/townsendmerino/goinfer/metal` -> `github.com/townsendmerino/goinfer/backend/metal`)
+- `gpu/` -> `backend/webgpu/` (`module github.com/townsendmerino/goinfer/gpu` -> `github.com/townsendmerino/goinfer/backend/webgpu`, `package gpu` -> `package webgpu`)
+
 ## Modules and the workspace
 
 Seven modules are developed together; an eighth `go.mod`, `.github/actions/staticcheck/`, only pins the CI linter build
@@ -10,9 +16,9 @@ Seven modules are developed together; an eighth `go.mod`, `.github/actions/stati
 | Path | Module path | Published |
 |---|---|---|
 | `.` | `github.com/townsendmerino/goinfer` | tagged `vX.Y.Z` |
-| `gpu/` | `.../goinfer/gpu` | tagged `gpu/vX.Y.Z` |
-| `cuda/` | `.../goinfer/cuda` | tagged `cuda/vX.Y.Z` |
-| `metal/` | `.../goinfer/metal` | tagged `metal/vX.Y.Z` |
+| `backend/webgpu/` | `.../goinfer/backend/webgpu` | tagged `backend/webgpu/vX.Y.Z` (formerly `gpu/vX.Y.Z`) |
+| `backend/cuda/` | `.../goinfer/backend/cuda` | tagged `backend/cuda/vX.Y.Z` (formerly `cuda/vX.Y.Z`) |
+| `backend/metal/` | `.../goinfer/backend/metal` | tagged `backend/metal/vX.Y.Z` (formerly `metal/vX.Y.Z`) |
 | `demo/agent/` | `.../goinfer/demo/agent` | tagged `demo/agent/vX.Y.Z` |
 | `apps/sdktest/` | `.../goinfer/sdktest` | never tagged; tests only |
 | `apps/site/` | `.../goinfer/site` | never tagged; the website generator |
@@ -22,7 +28,7 @@ submodule built without a workspace resolves the root from the proxy at its last
 with `scripts/make_work.sh` (copies `go.work.example`, which lists all seven modules, to `go.work` when absent) and it builds
 from a clean clone. Without a `go.work` in the repo, Go walks up and uses one in a parent directory, and a `GOWORK` environment variable overrides both; `make_work.sh` warns about the second and fixes the first. A local aikit checkout is an optional extra `use` line, commented in the example.
 
-Untagged, `cuda/` does not build on its own (`cuda/internal/gpudev` needs the `cuda` build tag); see CLAUDE.md for the tags.
+Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpudev` needs the `cuda` build tag); see CLAUDE.md for the tags.
 
 ## Library packages (root module)
 
@@ -43,9 +49,9 @@ Untagged, `cuda/` does not build on its own (`cuda/internal/gpudev` needs the `c
 
 | Path | What it is |
 |---|---|
-| `gpu/` | the WebGPU backend (opt-in cgo build, tag `gpu`), plus `gpu/cmd/{chat,serve}` |
-| `cuda/` | the CUDA backend (cgo-free, tag `cuda`), `.cu` kernels and `cuda/cmd/{chat,serve}` |
-| `metal/` | the Metal backend (tag `metal`), `metal/cmd/{chat,serve}` |
+| `backend/webgpu/` | the WebGPU backend (opt-in cgo build, tag `gpu`), plus `backend/webgpu/cmd/{chat,serve}` |
+| `backend/cuda/` | the CUDA backend (cgo-free, tag `cuda`), `.cu` kernels and `backend/cuda/cmd/{chat,serve}` |
+| `backend/metal/` | the Metal backend (tag `metal`), `backend/metal/cmd/{chat,serve}` |
 
 ## Binaries
 
@@ -57,7 +63,7 @@ Untagged, `cuda/` does not build on its own (`cuda/internal/gpudev` needs the `c
 | `cmd/hostmem/`, `cmd/prequant/` | prints the memory figure the fit guard uses; builds a `.giw` bundle from a GGUF | root |
 | `cmd/claude-guard/` | the Claude Code PreToolUse hook that refuses commands the repo rules forbid | root |
 | `demo/chat/` | `goinfer-chat`, the single-shot chat binary (`build-embed.sh` bakes a model in) | root |
-| `{gpu,cuda,metal}/cmd/{chat,serve}/` | the same two programs built with a backend | the backend module |
+| `backend/{webgpu,cuda,metal}/cmd/{chat,serve}/` | the same two programs built with a backend | the backend module |
 | `demo/agent/cmd/` | `agent-web`, `stdlib-agent`, `ken-stub` | `demo/agent` |
 | `apps/site/cmd/build/` | the website generator (`site.yml` builds and deploys it) | `site` |
 

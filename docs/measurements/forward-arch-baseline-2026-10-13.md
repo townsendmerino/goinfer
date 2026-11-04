@@ -363,7 +363,7 @@ cpu   gelu vs cpu   gelu_new: maxAbs=5.26986 bit-identical=false
 - **The gated case.** Spark-X2.5 never reaches a GPU, so its hazard is read from the code and pinned by the decoder's tests
   (`TestGatedAct_onlyTanhAndSiLUAdmitted`, `TestGatedGELUErf_sparkNamesIt`), not run on a device.
 
-The test file (`metal/zz_gelu_erf_scratch_test.go`, deleted after each run):
+The test file (`backend/metal/zz_gelu_erf_scratch_test.go`, deleted after each run):
 
 ```go
 //go:build darwin && goinfer_testhooks

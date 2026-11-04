@@ -13,7 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import cuda_device_suite as cds  # noqa: E402
 
-PKG = "github.com/townsendmerino/goinfer/cuda"
+PKG = "github.com/townsendmerino/goinfer/backend/cuda"
 
 
 def ev(action, test=None, output=None):

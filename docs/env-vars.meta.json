@@ -177,7 +177,7 @@
             "GOINFER_METAL_DECODE_LANE"
           ],
           "cells": [
-            "R1 (`docs/tasks/red-october.md`) — `=w4f16` opts a dense (non-MoE, non-paged, non-sandwich/postOnly/parallelBlock/qGate/outBias/layerNorm, no compute-time LoRA) layer's QKV/o-proj/gate-up decode GEMVs into the f16-activation lane instead of the shipped W4A8 (int8-activation) path; unset is the default and unaffected. **Experimental, opt-in, not yet gated**: the 2026-09-19 \"catastrophic divergence at layer 26\" that first parked this lane was an instrument error — the shipped W4A8 path was used as ground truth at the attention-sink position, where its per-tensor int8 activation scale is the coarse arm; against an f64 reference the f16 lane is exact and against a CPU reference it is at least as faithful as W4A8 (see [`r1-layer26-rootcause-2026-09-20.md`](measurements/r1-layer26-rootcause-2026-09-20.md), superseding [`w4f16-decode-investigation-2026-09-19.md`](measurements/w4f16-decode-investigation-2026-09-19.md)). It stays off by default because R1's real gates — the pooled teacher-forced fidelity gate and the served-tok/s band — have not been run on it; `metal/r1_gu_reference_test.go` and `metal/r1_lane_vs_cpu_test.go` are its keeper tests."
+            "R1 (`docs/tasks/red-october.md`) — `=w4f16` opts a dense (non-MoE, non-paged, non-sandwich/postOnly/parallelBlock/qGate/outBias/layerNorm, no compute-time LoRA) layer's QKV/o-proj/gate-up decode GEMVs into the f16-activation lane instead of the shipped W4A8 (int8-activation) path; unset is the default and unaffected. **Experimental, opt-in, not yet gated**: the 2026-09-19 \"catastrophic divergence at layer 26\" that first parked this lane was an instrument error — the shipped W4A8 path was used as ground truth at the attention-sink position, where its per-tensor int8 activation scale is the coarse arm; against an f64 reference the f16 lane is exact and against a CPU reference it is at least as faithful as W4A8 (see [`r1-layer26-rootcause-2026-09-20.md`](measurements/r1-layer26-rootcause-2026-09-20.md), superseding [`w4f16-decode-investigation-2026-09-19.md`](measurements/w4f16-decode-investigation-2026-09-19.md)). It stays off by default because R1's real gates — the pooled teacher-forced fidelity gate and the served-tok/s band — have not been run on it; `backend/metal/r1_gu_reference_test.go` and `backend/metal/r1_lane_vs_cpu_test.go` are its keeper tests."
           ]
         },
         {
@@ -322,7 +322,7 @@
           "cells": [
             "**ON (S=16)**",
             "`=0` / `off` / `false`; a positive integer picks S",
-            "CUDA flash-decode attention lane (R6, `cuda/decode_fa.cu`): one CTA per kv-head × S key splits with online softmax and a fixed-order combine, replacing decode attention's three-launch exact path. **Default ON since 2026-09-23 (owner decision); NOT bit-identical to the exact path.** Acts only once a layer's attended span reaches `GOINFER_CUDA_FLASH_DECODE_MIN_KEYS` (default 2048), so shallow decode is untouched; head dim outside 64/128/256, GQA > 8 and attention-sink models stay exact. A non-numeric value is OFF, never a different S. The default does NOT reach a C′ expert-cache model (VRAM is sized to the byte there); set the variable explicitly to force it on. Served 1.5B@3900 124.7→194.1 tok/s, 7B@8000 39.6→61.1; fidelity gate passed on held-out prompts (`docs/measurements/attn-decode-fa-fidelity-2026-09-20.md`)."
+            "CUDA flash-decode attention lane (R6, `backend/cuda/decode_fa.cu`): one CTA per kv-head × S key splits with online softmax and a fixed-order combine, replacing decode attention's three-launch exact path. **Default ON since 2026-09-23 (owner decision); NOT bit-identical to the exact path.** Acts only once a layer's attended span reaches `GOINFER_CUDA_FLASH_DECODE_MIN_KEYS` (default 2048), so shallow decode is untouched; head dim outside 64/128/256, GQA > 8 and attention-sink models stay exact. A non-numeric value is OFF, never a different S. The default does NOT reach a C′ expert-cache model (VRAM is sized to the byte there); set the variable explicitly to force it on. Served 1.5B@3900 124.7→194.1 tok/s, 7B@8000 39.6→61.1; fidelity gate passed on held-out prompts (`docs/measurements/attn-decode-fa-fidelity-2026-09-20.md`)."
           ]
         },
         {
@@ -459,7 +459,7 @@
             "GOINFER_WEBGPU_GEMM"
           ],
           "cells": [
-            "WebGPU **prefill** W8A8 GEMM kernel selector. Default (unset): the R10 register-blocked 64×64 kernel (`gpu/gemm_rb.go`, each thread a 4×4 block of outputs). `tiled16` restores the pre-R10 16×16 kernel — bit-identical output either way (exact i32 K-sum, same dequant expression; `TestTiledRB64_bitIdentical`), so this is a speed A/B knob, not a fidelity one. Band, profile and A/B: `docs/measurements/webgpu-prefill-profile-2026-09-22.md`."
+            "WebGPU **prefill** W8A8 GEMM kernel selector. Default (unset): the R10 register-blocked 64×64 kernel (`backend/webgpu/gemm_rb.go`, each thread a 4×4 block of outputs). `tiled16` restores the pre-R10 16×16 kernel — bit-identical output either way (exact i32 K-sum, same dequant expression; `TestTiledRB64_bitIdentical`), so this is a speed A/B knob, not a fidelity one. Band, profile and A/B: `docs/measurements/webgpu-prefill-profile-2026-09-22.md`."
           ]
         },
         {
@@ -558,7 +558,7 @@
             "GOINFER_CUDA_GRAPHS_UNSAFE"
           ],
           "cells": [
-            "Bounds-check-elision variant. **It also BYPASSES THE TENANCY GATE** (`cuda/graphs_safe.go`), so it is not a pure performance switch — N-42."
+            "Bounds-check-elision variant. **It also BYPASSES THE TENANCY GATE** (`backend/cuda/graphs_safe.go`), so it is not a pure performance switch — N-42."
           ]
         }
       ]
@@ -638,7 +638,7 @@
           ],
           "label": "`GOINFER_ATTNFA_DEBUG=1`",
           "cells": [
-            "R2 (`docs/tasks/red-october.md`) — prints each `attention_fa` dispatch's parameters (layer, depth, split count, group size, hd) to stderr from `canUseAttnFA`'s call site in `metal/model.go`, kept from the 2026-09-19/20 investigation (see `GOINFER_METAL_ATTN_FA` above) so dispatch parameters can be re-verified without rebuilding the print. No effect if `GOINFER_METAL_ATTN_FA=0` — since the kernel is default-on, this now has effect by default too."
+            "R2 (`docs/tasks/red-october.md`) — prints each `attention_fa` dispatch's parameters (layer, depth, split count, group size, hd) to stderr from `canUseAttnFA`'s call site in `backend/metal/model.go`, kept from the 2026-09-19/20 investigation (see `GOINFER_METAL_ATTN_FA` above) so dispatch parameters can be re-verified without rebuilding the print. No effect if `GOINFER_METAL_ATTN_FA=0` — since the kernel is default-on, this now has effect by default too."
           ]
         }
       ]

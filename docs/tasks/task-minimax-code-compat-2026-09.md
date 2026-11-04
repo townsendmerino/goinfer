@@ -41,7 +41,7 @@
    `--context-limit`, and sends its system prompt (`packages/local-runtime-v2/assets/agents/_default/prompt-base-all.md`
    alone is 7.7 KB) plus the tool schemas on every turn — roughly 5–8k tokens before the first user
    message, by estimate from the files (M0 measures it). goinfer's resident defaults were, when this was written, 4096 on Metal
-   (`decoder/fitplan.go:MetalCtxDefault`) and 4096→8192 fit on CUDA (`cuda/resident.go:cudaCtxCapDefault`); since M2 both grow toward 16384 when memory holds it. The first turn may not fit;
+   (`decoder/fitplan.go:MetalCtxDefault`) and 4096→8192 fit on CUDA (`backend/cuda/resident.go:cudaCtxCapDefault`); since M2 both grow toward 16384 when memory holds it. The first turn may not fit;
    the second almost certainly will not. It does not read goinfer's `/v1/models` `context_window`.
 2. **Thinking models answer the connection test slowly.** `--use` sends a **non-streaming** `ping` with
    `max_tokens` = the configured output limit (default 16,384) and a **10 s** timeout
@@ -127,7 +127,7 @@ agent's first turns fit in, or a message saying so at startup — never a mid-se
 
 **Read first.** `task-fit-to-hardware.md` Phase 2 (CUDA's fit-by-default context: up to 8192 when the
 card affords it, and the 2026-09-15/16 regression it caused on `-moe-cache-experts` loads — a larger
-default ate the expert cache's VRAM; the fix keeps 4096 there), `metal/model.go` `resolveMetalCtxCap`,
+default ate the expert cache's VRAM; the fix keeps 4096 there), `backend/metal/model.go` `resolveMetalCtxCap`,
 the S4 live memory ceiling (`../completed/task-never-swap-2026-09.md`), `task-memory-accounting-2026-09.md` (the one
 KV formula to price with), `docs/tasks/task-embed-and-harness-ux.md` mode 3.
 
@@ -207,7 +207,7 @@ only the night gate's predictions below were made blind. The results follow unde
 **M2 results, 2026-10-12 (the day half; the branch `m2-metal-fit-ctx` is not merged until the night half reads).**
 
 - **Built** as registered: `decoder/metal_fitctx.go:Model.MetalFitCtx` (the one function the Metal load and
-  `goinfer-chat fit` ask), `metal/backend.go:metalFitFor` (chosen once a build), the banner's reason and `harness:`
+  `goinfer-chat fit` ask), `backend/metal/backend.go:metalFitFor` (chosen once a build), the banner's reason and `harness:`
   line (`internal/serveapp/banner.go:harnessLine`), the 400's wording, `internal/fitcmd/fit.go:planFor`. The design
   notes are in `docs/code-notes/metal.md`, "metalFitFor".
 - **Gate 1, unit tests: PASS.** `decoder`'s six `TestMetalFitCtx_*` (grow and shrink on the 8-position grid, slots

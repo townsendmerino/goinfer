@@ -13,7 +13,7 @@ tack's C3 run (tack-runs `e0/c3-2026-10-18`, goinfer f20f0d93) loaded `qwen3.6-3
   (`decoder/sidecar.go:DefaultToSidecar`, `sidecarRoute`), and the v17 sidecar
   `qwen3.6-35b-a3b-q4_k_m.int4.e4h.cuda.v17.giw` (19.6 GB, built 12:51 that day) is what loaded: "reading its 19.6 GB
   once before the load".
-- The anonymous term is the C′ expert cache's host copy. `cuda/pack_stream.go:cudaResident.packStackPinned` allocates
+- The anonymous term is the C′ expert cache's host copy. `backend/cuda/pack_stream.go:cudaResident.packStackPinned` allocates
   the whole int4 expert stack as fresh `cuMemAllocHost` memory (`NewMappedHostBufferOn`, plan line `LinePinnedExperts`)
   and packs every expert into it from the mapped `.giw`. For this model that is 40 layers × 256 experts × 3 × 2048×512
   weights = 32.2 G weights: 16.1 GB of nibbles + 2.0 GB of f16 group scales ≈ 18.1 GB pinned, which is the fit line's
@@ -75,7 +75,7 @@ the figures first written here read 2.4% low; the figures here are converted. It
 | harness turn, cold forced call over 12k | 11,704 | 269.3 s | 129.9 s |
 | harness turn, tool result appended, next forced call (11,730 reused) | 12,066 | 9.4 s | 7.1 s |
 
-Every forced call came back as a listed tool with arguments that parse (`read_file {"path": "cuda/pack_stream.go"}`,
+Every forced call came back as a listed tool with arguments that parse (`read_file {"path": "backend/cuda/pack_stream.go"}`,
 then `run_command {...}` after the tool result), the same calls in both runs; the free-text answers are coherent.
 Prefix reuse works on an append-only follow-up: 12,800 of 13,297 tokens and 11,730 of 12,066 were reused, and the
 follow-up pays for the rest (497 and 336 tokens).
@@ -84,11 +84,11 @@ The two columns are one load each, run one after the other on one box, not an in
 tack's planning, large against anything noise could do (about 2x), not a measured ratio. The raw logs of every run
 are in `raw/` (`mem.log` in the uncorrected units above).
 
-**Why cold prefill was ~46 tok/s.** `cuda/moe_expert_major.go:cudaResident.prefillMoEExpertMajorEligible` refused
+**Why cold prefill was ~46 tok/s.** `backend/cuda/moe_expert_major.go:cudaResident.prefillMoEExpertMajorEligible` refused
 any layer with a shared expert, and every Qwen3.6 MoE layer has one, so prefill ran the per-row loop in
-`cuda/prefill.go:cudaResident.prefillCore`: one decode-shaped FFN per prompt row, each with its own routing readback
+`backend/cuda/prefill.go:cudaResident.prefillCore`: one decode-shaped FFN per prompt row, each with its own routing readback
 and its own expert misses through 58 slots. The fix runs the shared expert after the rank-order fold, once per row,
-through `cuda/resident.go:cudaResident.sharedExpert` (the decode path's own shared block, moved out unchanged), so
+through `backend/cuda/resident.go:cudaResident.sharedExpert` (the decode path's own shared block, moved out unchanged), so
 each row sees the same kernels in the same order. Gate: `TestMoEExpertMajorCUDA_residualIdentical` over
 `qwen3next-tiny` (sigmoid-gated shared expert) and `glm-tiny` (ungated): red before the fix (expert-major never ran),
 green after on all 2,560 residual elements of 40 rows against both the per-row path and the fully resident build; a

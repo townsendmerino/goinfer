@@ -24,7 +24,7 @@ whether the same path pays on the 35B, and is read against the owner's merge rul
   layers, hidden 2,048, block 16, 8 taps; 0.77 GB bf16), opened as `serve` opens it (`decoder.OpenDFlashDrafter`, #263).
 - **Width:** w = 3, SP0's best for the 35B, fixed before any data. G1 also runs w = 16 (the block, the widest fold). **G4 amended
   to w = 4 before its run** (Readings, "G4's width amended").
-- **Harness:** SP2's (`cuda/recurrent_spec_real_test.go`), unchanged but for two knobs: `SP2_WIDTH` (the verify width of G1c
+- **Harness:** SP2's (`backend/cuda/recurrent_spec_real_test.go`), unchanged but for two knobs: `SP2_WIDTH` (the verify width of G1c
   and G4, default 4) and `SP2_MOE_STREAM=1`. Run script: `run-sp2-35b.sh` here.
 - **Prompts:** SP2's. G1: SP0's 12 code and math prompts with thinking off, its 6 math prompts with thinking on, and two long
   prompts of about 3,000 tokens. G4: the 12, as they are and behind a 3,800-token preamble.

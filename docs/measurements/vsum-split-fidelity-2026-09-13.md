@@ -1,13 +1,13 @@
 # V-sum split spike — §3.2 fidelity gate: D7 AMBIGUOUS — PARKED
 
 Pre-registration: `vsum-split-fidelity-PREREGISTERED.md`, committed `4f196d7b` before Phase A was
-launched. Gate: `cuda/vsum_split_gate_test.go` (`f71517b5`). *(The pre-registration still names
+launched. Gate: `backend/cuda/vsum_split_gate_test.go` (`f71517b5`). *(The pre-registration still names
 `docs/task-prefill-gap.md`, which was archived to `docs/completed/task-prefill-gap.md` while this
 gate ran — left unedited on purpose, since a pre-registration that changes after results exist
 stops being one.)*
 
 **The one edit made to the pre-registration after results existed**, recorded so it is not
-discovered: its citation of the teacher-forced decode call in `cuda/prefill_gate_ref_test.go` was changed
+discovered: its citation of the teacher-forced decode call in `backend/cuda/prefill_gate_ref_test.go` was changed
 from line 272 to line 284. *(Written as prose, not as a path:line citation, on purpose: the lint
 indexes every backticked path:line, and quoting the stale line that way re-created the very
 green-but-wrong row this paragraph describes.)* Nothing it registers moved — no arm, criterion, cell, band or prediction. The
@@ -24,8 +24,8 @@ BEFORE the rebase, from the commit that is now `a276b8ef` but was then `13c75842
 commit was not published and is not kept; nothing here depends on retrieving it, because what
 matters about it is stated next and was checked at the time. Between that build and main: the CUDA kernel sources and
 PTX are byte-identical, and the split-KV / V-sum Go code differs only in one comment path — but the
-rebase brought 169 Go-file changes elsewhere, including `cuda/resident.go`, `cuda/backend.go` and
-`cuda/prefill.go`. So the exact-vs-spike **comparison** is a property of the V-sum reduction tree and
+rebase brought 169 Go-file changes elsewhere, including `backend/cuda/resident.go`, `backend/cuda/backend.go` and
+`backend/cuda/prefill.go`. So the exact-vs-spike **comparison** is a property of the V-sum reduction tree and
 carries to main; the **absolute** agreement and KL figures are for the pre-rebase build.
 
 **Verdict: AMBIGUOUS — PARKED.** The decision cell (D7, K=8000) passes criteria (a) and (b) — under
@@ -181,7 +181,7 @@ failure, and a reader should weigh it knowing so.
 count, and a strict `<=` between two such counts is decided by noise — 7 v 8 sits well inside
 σ ≈ 2.6. The replacement is not invented for this gate. It is the ceiling
 `docs/completed/task-prefill-gap.md` §3.2 specifies ("with the Poisson noise of a count of ~40 written into
-it instead of ignored") and `metal/prefill_gate_ref_test.go` implements — the bar the Metal fast
+it instead of ignored") and `backend/metal/prefill_gate_ref_test.go` implements — the bar the Metal fast
 prefill shipped under on 2026-09-09. The pre-registration's own title named §3.2; its rule text did
 not match its title, and the amendment makes them agree.
 

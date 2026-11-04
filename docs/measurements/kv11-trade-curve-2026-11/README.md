@@ -15,7 +15,7 @@ measures (C′), so every byte given to KV is a byte the experts do not get. Thi
   refusal; the expert slots per layer; the pooled hit rate; the decode rate over 200 tokens from position 0 (synthetic embeddings,
   the trained router choosing the experts, as `TestMoEPerLayerHitRate`); and, at the cell's start, the 1-minute load average, the
   available memory and the free VRAM.
-- **Instrument.** `TestKV11TradeCurve` (`cuda/moe_perlayer_hitrate_test.go`), under the exclusive timing lock (a timed run).
+- **Instrument.** `TestKV11TradeCurve` (`backend/cuda/moe_perlayer_hitrate_test.go`), under the exclusive timing lock (a timed run).
 
 ## Pre-registered reading
 

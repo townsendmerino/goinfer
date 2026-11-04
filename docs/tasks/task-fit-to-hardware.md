@@ -116,15 +116,15 @@ Scoped against what exists, the way `task-model-pull.md` was.
 - CPU weight paging: `--weight-cache 0` is "auto, ~half of available RAM"
   (`internal/loadflags/loadflags.go:Register`).
 - Metal: a memory-fit guard that refuses a model whose weights exceed 70% of RAM
-  (`metal/backend.go:residentMemFraction`, `:142`) — the guard whose arithmetic M-01/M-02 found wrong in both
-  directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`metal/backend.go:residentMemoryDecline`).
+  (`backend/metal/backend.go:residentMemFraction`, `:142`) — the guard whose arithmetic M-01/M-02 found wrong in both
+  directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`backend/metal/backend.go:residentMemoryDecline`).
 
 **Still the user's decision, with no basis offered for it:**
 
 | decision | today's surface | what the user has to know |
 |---|---|---|
 | which *mode* — resident, expert-cached, CPU-paged | `--moe-cache-experts` (`internal/config/help.go:backendHelp`), `--stream-weights` (`:372`), or neither | that a 26B's experts exceed 8 GB "even at 4-bit"; that without the flag it declines to CPU |
-| Metal slot count | `GOINFER_METAL_MOE_SLOTS` (`metal/gemma4_moe.go:buildGemma4MoE`, `metal/moe.go:buildMoE`: both read `metalMoESlotsRequest(m)`), env only, no flag, no auto | the measured optimum was N=64 (`docs/completed/task-metal-expert-streaming-at-scale.md`), and the doc's "default to 64" has no code behind it — that doc's archival note also flags that `fitplan.go`'s generic "largest N that fits" auto-sizer would regress past N=64 on Metal if wired here without a cap |
+| Metal slot count | `GOINFER_METAL_MOE_SLOTS` (`backend/metal/gemma4_moe.go:buildGemma4MoE`, `backend/metal/moe.go:buildMoE`: both read `metalMoESlotsRequest(m)`), env only, no flag, no auto | the measured optimum was N=64 (`docs/completed/task-metal-expert-streaming-at-scale.md`), and the doc's "default to 64" has no code behind it — that doc's archival note also flags that `fitplan.go`'s generic "largest N that fits" auto-sizer would regress past N=64 on Metal if wired here without a cap |
 | context cap and KV precision | `-ctx` (`:361`, ignored by WebGPU — M-32), `-kv` (`:360`, breaks three families on WebGPU — M-32), `-kv-quant` (`:362`) | the VRAM a 16k f32 KV costs on their card |
 | quant | `-quant int4` default (`:340`), `--embed-int4` (`:374`) | that int4 is now as fast as int8int8 on CPU (the in-repo guidance was reversed 2026-08-25) |
 | whether it worked | `-require-backend` (`:354`) or reading the decline line | that "declined to CPU" is the failure they are looking for |
@@ -163,7 +163,7 @@ explicitly, which pins that dimension — and every companion the configuration 
 
 **Every allocation is a term of the plan, including the ones that attach after load.** Today's
 CUDA cap sizes the expert cache against *free VRAM at that moment* (`capSlots`,
-`cuda/resident.go`), keeping back `slotMarginBytes` — 384 MiB, by its own comment the only
+`backend/cuda/resident.go`), keeping back `slotMarginBytes` — 384 MiB, by its own comment the only
 unmeasured constant on that path — and nothing else; it cannot see what the same configuration
 allocates next. Measured 2026-09-02 on the 8 GB card, in the verify-vs-pager run: gemma-4-26b-a4b
 auto-sized to 31 slots/layer, the server came up, then `--drafter` attached and `NewBlockSpec`
@@ -220,7 +220,7 @@ cache is a large fraction of a full one (57% hit at 16 slots vs 82% at 38, `docs
 - **Metal slots become an `Option` and a flag**, the same `--moe-cache-slots` CUDA has, with
   `GOINFER_METAL_MOE_SLOTS` kept one release as a deprecated alias. The Metal guard moves inside
   `buildResident`, after the slot count is resolved, and computes `dense + N·L·perExpert + KV +
-  scratch (+ host copy)` — M-02's fix, and the test that exists for it (`metal/qwen35_35b_paged_test.go`)
+  scratch (+ host copy)` — M-02's fix, and the test that exists for it (`backend/metal/qwen35_35b_paged_test.go`)
   then exercises the guard instead of bypassing it.
 
 ## 4. What the user never has to know, and what the decline says instead
@@ -295,7 +295,7 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
    Metal slots as an Option/flag; G1 and G6.
 3. **WebGPU — DONE (2026-09-10).** M-32's `-ctx` half was already fixed 2026-09-02 (declining,
    not implementing); `Plan()` now admits `"webgpu"` (`decoder/fitplan.go`), mirrors
-   `gpu/residency.go`'s own Nemotron/Qwen3.5/MLA + KVF16/KVI8 decline so it never promises a
+   `backend/webgpu/residency.go`'s own Nemotron/Qwen3.5/MLA + KVF16/KVI8 decline so it never promises a
    precision `BuildResident` will refuse, and enforces the SAME fixed per-precision ctx ceiling
    (16k/32k/64k) via one shared `decoder.WebGPUCtxCeiling` both the planner and the backend call
    — no drift possible between what a plan promises and what gets allocated. `goinfer-chat fit`
@@ -325,7 +325,7 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
    on target hardware shows it beating the shipped path's per-layer cost at every measured miss
    count. **Correction (2026-09-13 doc-review): "still no CUDA code" above was stale the same day
    it was written.** `b7cc8351` (2026-09-10, ~2h after this section was last edited) wired a
-   synchronous CPU-offload prototype into the CUDA decode path (`cuda/l01_cpu_offload.go`,
+   synchronous CPU-offload prototype into the CUDA decode path (`backend/cuda/l01_cpu_offload.go`,
    `loadRoutedExperts`, `moeMLPPost`/`l01MergeCPUExperts`), gated behind
    `GOINFER_CUDA_L01_CPU_OFFLOAD` (default off; `docs/env-vars.md` files it under prototype/
    investigation knobs, not an operator contract), verified bit-identical to baseline on
@@ -377,7 +377,7 @@ before this one) · `docs/completed/task-metal-expert-streaming-at-scale.md` (N=
 `docs/completed/task-moe-streaming.md` §C′ (the CUDA cache and its cap) · `docs/QUEUE.md`
 G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residency eligibility, generated) ·
 `internal/serveapp/main.go:registerFlags` (the flags the plan subsumes) · `decoder/model.go:Model.MoECacheSlotsRequest`
-(`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:metalBackend.BuildResident` (the guard: `if why := residentMemoryDecline(m); why != ""`) ·
+(`MoECacheSlotsRequest`, `Options`) · `backend/metal/backend.go:metalBackend.BuildResident` (the guard: `if why := residentMemoryDecline(m); why != ""`) ·
 `decoder/weightbytes.go:Model.ResidentWeightBytes` (`ResidentWeightBytes`, the accountant to replace) ·
 `pull/pull.go:File` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the
 priority order borrowed).

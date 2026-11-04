@@ -20,7 +20,7 @@ Box `apple-m1pro` (M1 Pro, 16 GB), Darwin 25.6.0, goinfer `344b9514` (the R2 roo
 no production code changed since the 2026-09-20 race fix). `qwen2.5-coder-1.5b` GGUF Q4_K_M,
 `Quant:"int4"`. Exactly as pre-registered:
 
-- **Depth bench** (`metal/depth_bench_test.go`, `GOINFER_METAL_DEPTH_BENCH=1`): one resident, KV
+- **Depth bench** (`backend/metal/depth_bench_test.go`, `GOINFER_METAL_DEPTH_BENCH=1`): one resident, KV
   warmed incrementally, steady greedy decode via `ForwardArgmax` (synchronous one-command-buffer
   path through the same `encodeAttentionResidualWith` dispatch site), best-of-5 batches at
   {128, 512, 2048, 4000}. **Three runs per arm, interleaved off/on/off/on/off/on, each its own

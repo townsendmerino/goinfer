@@ -346,7 +346,7 @@ func runCUDAHeavy(argv []string, w io.Writer) int {
 		}
 	}
 	g := &gpuGate{w: w, logDir: *logDir, emitted: map[string]bool{}, models: env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))}
-	listed, err := listCUDATests("./cuda/")
+	listed, err := listCUDATests("./backend/cuda/")
 	if err != nil || len(listed) == 0 {
 		fmt.Fprintf(w, "gate cuda-heavy: `go test -list` found no tests in ./cuda/ (%v)\n", err)
 		return 1

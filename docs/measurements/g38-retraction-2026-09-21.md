@@ -18,7 +18,7 @@ the bug in the original measurement, not in production code.** RTX 2070 SUPER, d
    ruled out co-residency / VRAM fragmentation from the rest of the model's buffers as an explanation.
 4. With the kernel cleared and the real buffer cleared, the only remaining suspect was the comparison itself
    (`TestDecodeArgmaxHeadroom`'s `Run()` vs `RunNoLogits()` delta). Reading `RunNoLogits`'s own body: it calls
-   **`c.device.Poll(false, nil)`** — non-blocking — while every other call site in `gpu/decoderunner.go` (`Run`, the sample paths,
+   **`c.device.Poll(false, nil)`** — non-blocking — while every other call site in `backend/webgpu/decoderunner.go` (`Run`, the sample paths,
    `argmaxOfLastLogits`) calls **`Poll(true, nil)`**. Timing `RunNoLogits` back-to-back without an explicit blocking poll measures
    CPU-side submission time only; the GPU keeps executing the 28-layer trunk asynchronously in the background while the "measurement"
    has already returned. The original delta was therefore comparing **"wait for everything" against "don't wait at all,"** attributing
@@ -49,7 +49,7 @@ Everything about "the LM-head GEMV is the real cost, 10-17x over roofline, unatt
   2.5x at 1k context. On-device argmax is confirmed low-value (~4-5%, not worth building) for the RIGHT reason now. No further decode
   lever is currently named.
 - **R10's prefill investigation is untouched** and is the only genuinely open item left in the brief.
-- `gpu/decode_argmax_headroom_test.go`, `gpu/gemv_n_sweep_test.go` (env-var-driven, one N per process), `gpu/gemv_lmhead_isolation_test.go`,
+- `backend/webgpu/decode_argmax_headroom_test.go`, `backend/webgpu/gemv_n_sweep_test.go` (env-var-driven, one N per process), `backend/webgpu/gemv_lmhead_isolation_test.go`,
   and `DecodeRunner.LMHeadForTest()` are kept in tree as committed instruments — the sweep and isolation tests are exactly what a future
   "is this kernel actually slow" question should reach for BEFORE trusting a single before/after delta.
 

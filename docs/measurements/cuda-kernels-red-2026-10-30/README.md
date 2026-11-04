@@ -36,7 +36,7 @@ verifying #518).
   an out-of-bounds access whose effect depends on memory layout, and so on which tests ran before it in the same process. A fault is
   also reported at the next synchronize, so the faulting launch can be earlier than the kernel named.
 
-**What reading cannot settle.** Reading `splitkv_vsum` and `KV_SUM_RUNS` (`cuda/kvpage.cuh`) finds no row or table read past `nKeys`.
+**What reading cannot settle.** Reading `splitkv_vsum` and `KV_SUM_RUNS` (`backend/cuda/kvpage.cuh`) finds no row or table read past `nKeys`.
 The rig sizes each KV buffer to exactly `nKeys × kvDim`, with an identity block table (`attn_digest_rig_test.go`). nobara has no
 CUDA toolkit, so no `compute-sanitizer`. The faulting launch has to be found on the card, by test order (registered in the task doc,
 "The red cuda/kernels package").

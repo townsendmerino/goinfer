@@ -169,10 +169,10 @@
       runner shape on CUDA and Metal.
   - Llama 4 and LFM2 have no bridge. Granite-4.0-H waits on a bring-up gate, and on CUDA and Metal also lacks SSM.
 - **The GPU backends are uniform-layer runners.**
-  - Each builds a per-layer struct from the `Architecture` and branches on its flags (`cuda/backend.go:cudaBackend.BuildResident`,
-    `metal/backend.go:metalBackend.BuildResident`, `gpu/residency.go:webgpuBackend.BuildResident`).
-  - CUDA's `cuda/resident.go:cudaLayer` has 47 lines of fields. Metal has `metal/model.go:residLayer` beside its own DeltaNet
-    and MoE layer types. WebGPU has `gpu/internal/kernels/decoderunner.go:RunLayer`.
+  - Each builds a per-layer struct from the `Architecture` and branches on its flags (`backend/cuda/backend.go:cudaBackend.BuildResident`,
+    `backend/metal/backend.go:metalBackend.BuildResident`, `backend/webgpu/residency.go:webgpuBackend.BuildResident`).
+  - CUDA's `backend/cuda/resident.go:cudaLayer` has 47 lines of fields. Metal has `backend/metal/model.go:residLayer` beside its own DeltaNet
+    and MoE layer types. WebGPU has `backend/webgpu/internal/kernels/decoderunner.go:RunLayer`.
 - **Admission** is the chain in §2, item 3.
   - An own-forward family needs a per-family bridge to pass the runner-shape check.
   - Every `ResidentFeature` the architecture needs must then be in the backend's declared set
@@ -303,7 +303,7 @@ generator showed: Spark-X2.5 (the activation, below) and Kimi K2 on Metal (a rou
 - **A backend declares the operation kinds it implements,** and runs a program by walking it layer by layer.
 - **Fusions are explicit.**
   - A backend's fusion table claims sequences of operations. For example, CUDA's `fused_rms_qkv` would claim
-    `[norm, proj(qkv)]`. It folds the RMSNorm and the int8 activation quantization into the Q/K/V GEMV (`cuda/fused_qkv.cu`).
+    `[norm, proj(qkv)]`. It folds the RMSNorm and the int8 activation quantization into the Q/K/V GEMV (`backend/cuda/fused_qkv.cu`).
   - Each fusion has an identity gate against the operations it replaces.
   - There is no automatic fusion and no general compiler. goinfer's speed is in hand-written kernels, and its trust is in
     gating them.
@@ -411,8 +411,8 @@ Every `ResidentFeature`, the operation it would become, and what implements it o
     the feature.
   - The kernels were read in three passes, one per backend module. Every kernel name below was then checked to occur in the
     file named. A statement that was not read in the code is marked INFERRED.
-- **Kernel files.** CUDA kernels are `.cu` files in `cuda/`. Metal's are Go string constants: `metal/kernels/kernels_msl.go` (decode), `metal/kernels/prefill_msl.go` (the f16
-  prefill), `metal/kernels/moe_msl.go` and `metal/kernels/deltanet_kernels_msl.go`. WebGPU's are WGSL constants in `gpu/`.
+- **Kernel files.** CUDA kernels are `.cu` files in `cuda/`. Metal's are Go string constants: `backend/metal/kernels/kernels_msl.go` (decode), `backend/metal/kernels/prefill_msl.go` (the f16
+  prefill), `backend/metal/kernels/moe_msl.go` and `backend/metal/kernels/deltanet_kernels_msl.go`. WebGPU's are WGSL constants in `gpu/`.
 - **What "operation" means here.** §4.1's kinds: `norm`, `proj`, `qk-norm`, `rope`, `attention`, `out-gate`, `ffn` (gated,
   non-gated or MoE), the recurrent mixers, and the embedding and head stages. A feature is an operation kind, a parameter of
   one, a property of the layer list, or a bundle of several.
@@ -421,56 +421,56 @@ Every `ResidentFeature`, the operation it would become, and what implements it o
 
 | feature | operation | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
-| `rms-add-one` | parameter of `norm(rms)`: the (1+w) offset | `addOne` of every RMS kernel: `rmsnorm_quant`, `rmsnorm_f32` (`cuda/glue.cu`), `fused_rms_qkv`, `fused_rms_gu`, `qk_norm` (`cuda/fused_qkv.cu`), their batched twins (`cuda/prefill_batched.cu`) | `addOne` of `rmsnorm_quant`, `rmsnorm_f32`, `qk_norm`; `rmsnorm_f16`, `qk_norm_f16` in the prefill | `addone` of `rmsnormQuantWGSL` (`gpu/decodefuse.go`), `rmsnormShaderWGSL` (`gpu/layer.go`), `qkNormWGSL` (`gpu/qknorm.go`) |
-| `layer-norm` | a second `norm` kind, with a bias parameter | `layernorm_quant` (`cuda/glue.cu`), bias-free; `layernorm_quant_batched` (`cuda/layernorm_quant.cu`) | `layernorm_quant` with `hasBias`; the prefill's `layernorm_f16` is bias-free | — |
-| `qk-norm` | `qk-norm`, per head | `qk_norm` (`cuda/fused_qkv.cu`), `qk_norm_batched` (`cuda/prefill_batched.cu`) | `qk_norm`; `qk_norm_f16` | `qkNormWGSL` (`gpu/qknorm.go`) |
+| `rms-add-one` | parameter of `norm(rms)`: the (1+w) offset | `addOne` of every RMS kernel: `rmsnorm_quant`, `rmsnorm_f32` (`backend/cuda/glue.cu`), `fused_rms_qkv`, `fused_rms_gu`, `qk_norm` (`backend/cuda/fused_qkv.cu`), their batched twins (`backend/cuda/prefill_batched.cu`) | `addOne` of `rmsnorm_quant`, `rmsnorm_f32`, `qk_norm`; `rmsnorm_f16`, `qk_norm_f16` in the prefill | `addone` of `rmsnormQuantWGSL` (`backend/webgpu/decodefuse.go`), `rmsnormShaderWGSL` (`backend/webgpu/layer.go`), `qkNormWGSL` (`backend/webgpu/qknorm.go`) |
+| `layer-norm` | a second `norm` kind, with a bias parameter | `layernorm_quant` (`backend/cuda/glue.cu`), bias-free; `layernorm_quant_batched` (`backend/cuda/layernorm_quant.cu`) | `layernorm_quant` with `hasBias`; the prefill's `layernorm_f16` is bias-free | — |
+| `qk-norm` | `qk-norm`, per head | `qk_norm` (`backend/cuda/fused_qkv.cu`), `qk_norm_batched` (`backend/cuda/prefill_batched.cu`) | `qk_norm`; `qk_norm_f16` | `qkNormWGSL` (`backend/webgpu/qknorm.go`) |
 | `qk-norm-whole` | parameter of `qk-norm`: one group over all heads | the same kernels launched as one head; declines unless nH = nKV | the same; declines unless nH = nKV | — |
-| `sandwich-norm` | the layer list: a `norm` after each sublayer | no new kernel: `rmsnorm_f32`, and the o and down projections lose their fused residual add | `rmsnorm_f32`; `rmsnorm_f16` in the prefill | reuses `rmsnormShaderWGSL` and `residualShaderWGSL` (`gpu/layer.go`) |
-| `post-only-norm` | the layer list: no pre-norm | no new kernel: `quant_vec` (`cuda/glue.cu`) replaces the pre-norm | no new kernel: `quant_vec` | — |
+| `sandwich-norm` | the layer list: a `norm` after each sublayer | no new kernel: `rmsnorm_f32`, and the o and down projections lose their fused residual add | `rmsnorm_f32`; `rmsnorm_f16` in the prefill | reuses `rmsnormShaderWGSL` and `residualShaderWGSL` (`backend/webgpu/layer.go`) |
+| `post-only-norm` | the layer list: no pre-norm | no new kernel: `quant_vec` (`backend/cuda/glue.cu`) replaces the pre-norm | no new kernel: `quant_vec` | — |
 | `parallel-block` | the layer list: one `norm` feeds attention and FFN, one residual add | no kernel; the attention input is reused | no kernel; the same | — |
 
 **Positions**
 
 | feature | operation | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
-| `partial-rotary` | parameter of `rope`: the rotary width | `rhalf` of `rope_kv` (`cuda/gemv_fwd.cu`), `rope_kv_batched` (`cuda/prefill_batched.cu`) | `rhalf` of `rope2`; `rope_f16` | `half` in the rope shaders (`gpu/attention.go`); the batched prefill declines it |
+| `partial-rotary` | parameter of `rope`: the rotary width | `rhalf` of `rope_kv` (`backend/cuda/gemv_fwd.cu`), `rope_kv_batched` (`backend/cuda/prefill_batched.cu`) | `rhalf` of `rope2`; `rope_f16` | `half` in the rope shaders (`backend/webgpu/attention.go`); the batched prefill declines it |
 | `yarn-mscale` | parameter of `rope`: a scale | `mscale` of the same kernels | `scale` of `rope2`; `rope_f16` | `scale` in the rope shaders; the batched prefill declines it |
 | `per-layer-rope` | the layer list: `rope`'s table differs by layer | a buffer bound per layer | a buffer bound per layer | a buffer bound per layer |
 | `nope` | the layer list: a layer with no `rope` | no kernel: the decoder hands the layer an all-zero table | the same | — (the table mechanism is there; not declared) |
-| `pairwise-rope` | parameter of `rope`: the pairing; its own kernels | `rope_kv_pw`, `rope_kv_batched_pw` (`cuda/rope_pairwise.cu`) | `rope_pw`, `rope2_pw`; `rope_f16_pw` | — |
-| `pairwise-mrope` | pairing × a (t, h, w) position; prefill only | `rope_kv_mrope_batched_pw` (`cuda/rope_pairwise.cu`) | `rope_mrope_f16_pw` | — |
-| `learned-pos` | an embedding-stage operation; no `rope` | — | host add (`metal/model.go:resident.addLearnedPosTo`) | — |
+| `pairwise-rope` | parameter of `rope`: the pairing; its own kernels | `rope_kv_pw`, `rope_kv_batched_pw` (`backend/cuda/rope_pairwise.cu`) | `rope_pw`, `rope2_pw`; `rope_f16_pw` | — |
+| `pairwise-mrope` | pairing × a (t, h, w) position; prefill only | `rope_kv_mrope_batched_pw` (`backend/cuda/rope_pairwise.cu`) | `rope_mrope_f16_pw` | — |
+| `learned-pos` | an embedding-stage operation; no `rope` | — | host add (`backend/metal/model.go:resident.addLearnedPosTo`) | — |
 
 **Attention**
 
 | feature | operation | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
-| `sliding-window` | parameter of `attention`, and a KV property | `window` of `attention` (`cuda/glue.cu`), `attn_batched`, `attn_fused_hd64` and the tiled kernels; a host-computed start for `splitkv_scores` and `fa_partial` | `window` of `attention`, `attention_i8`, `attention_prefill`; the batched step declines it | `start` in every decode attention shader's uniform (`gpu/attention.go`) |
+| `sliding-window` | parameter of `attention`, and a KV property | `window` of `attention` (`backend/cuda/glue.cu`), `attn_batched`, `attn_fused_hd64` and the tiled kernels; a host-computed start for `splitkv_scores` and `fa_partial` | `window` of `attention`, `attention_i8`, `attention_prefill`; the batched step declines it | `start` in every decode attention shader's uniform (`backend/webgpu/attention.go`) |
 | `attn-logit-softcap` | parameter of `attention` | — | — | — |
 | `attn-temp` | parameter of `attention` (a query scale), implemented in the rope kernel | `qTempScale` of `rope_kv`; a per-row table for `rope_kv_batched` | `qTempScale` of `rope2`; not in the f16 prefill | — |
-| `attn-sink` | **bundle of four** (below) | `sinks` of `splitkv_softmax` (`cuda/decode_splitkv.cu`), `attn_batched`, `attn_fused_hd64`; `glu_quant_gptoss`, `route_gptoss` (`cuda/gptoss_act.cu`); `gemv_w4a8_moe_wacc_bias` (`cuda/moe.cu`) | `sinks` of `attention`, `attention_i8`; `swiglu_quant_gptoss`, `route_gptoss_sg`, `gemv_w4a8_moe_wacc_bias` | `sinks` in the nine decode attention pipelines (`gpu/attention.go`); `routeGptOssWGSL`, `gptossGluQuantWGSL`, `moeExpertGptOssDownGEMVWGSL` (`gpu/moe.go`) |
+| `attn-sink` | **bundle of four** (below) | `sinks` of `splitkv_softmax` (`backend/cuda/decode_splitkv.cu`), `attn_batched`, `attn_fused_hd64`; `glu_quant_gptoss`, `route_gptoss` (`backend/cuda/gptoss_act.cu`); `gemv_w4a8_moe_wacc_bias` (`backend/cuda/moe.cu`) | `sinks` of `attention`, `attention_i8`; `swiglu_quant_gptoss`, `route_gptoss_sg`, `gemv_w4a8_moe_wacc_bias` | `sinks` in the nine decode attention pipelines (`backend/webgpu/attention.go`); `routeGptOssWGSL`, `gptossGluQuantWGSL`, `moeExpertGptOssDownGEMVWGSL` (`backend/webgpu/moe.go`) |
 | `attn-output-gate` | `out-gate`, with two activations under one name, plus a per-layer query-head count | — | — | — |
-| `mla` | a second `attention` kind, with its own projections and rope | `mla_latent_store`, `mla_head_matvec`, `mla_q_rope`, `mla_attn` (`cuda/mla.cu`); decode only | — | `mlaLatentStoreWGSL`, `mlaHeadMatvecWGSL`, `mlaQRopeWGSL`, `mlaAttnWGSL` (`gpu/mla.go`) |
+| `mla` | a second `attention` kind, with its own projections and rope | `mla_latent_store`, `mla_head_matvec`, `mla_q_rope`, `mla_attn` (`backend/cuda/mla.cu`); decode only | — | `mlaLatentStoreWGSL`, `mlaHeadMatvecWGSL`, `mlaQRopeWGSL`, `mlaAttnWGSL` (`backend/webgpu/mla.go`) |
 | `out-bias` | parameter of `proj(o)`: a bias | the bias argument of the GEMVs | `gemv_w4a8_sa_bias_resid` | no new shader: a bare GEMV, then two adds |
 
 **Feed-forward**
 
 | feature | operation | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
-| `gated-gelu` | parameter of `ffn(gated)`: tanh-GELU | `act` of `glu_quant` (`cuda/glue.cu`), `glu_quant_batched` (`cuda/prefill_batched.cu`), `glu_quant_g32` (`cuda/actgroup.cu`) | `act` of `swiglu_quant`, `swiglu_f32`; `swiglu_f16` | its own shader, `gegluQuantWGSL` (`gpu/decodefuse.go`), chosen by one model-level flag |
+| `gated-gelu` | parameter of `ffn(gated)`: tanh-GELU | `act` of `glu_quant` (`backend/cuda/glue.cu`), `glu_quant_batched` (`backend/cuda/prefill_batched.cu`), `glu_quant_g32` (`backend/cuda/actgroup.cu`) | `act` of `swiglu_quant`, `swiglu_f32`; `swiglu_f16` | its own shader, `gegluQuantWGSL` (`backend/webgpu/decodefuse.go`), chosen by one model-level flag |
 | `gated-gelu-erf` | parameter of `ffn(gated)`: exact GELU | — | — | — |
 | `gated-act-unknown` | none: the catch-all for any other gated activation | — | — | — |
-| `non-gated-mlp` | `ffn(non-gated)`; **the activation is not named** | — | `act_quant`: tanh-GELU or SiLU, with biased up and down GEMVs | `relu2QuantWGSL` (`gpu/relu2.go`): squared ReLU, reached only through Nemotron's block kinds |
+| `non-gated-mlp` | `ffn(non-gated)`; **the activation is not named** | — | `act_quant`: tanh-GELU or SiLU, with biased up and down GEMVs | `relu2QuantWGSL` (`backend/webgpu/relu2.go`): squared ReLU, reached only through Nemotron's block kinds |
 | `non-gated-gelu-erf` | parameter of `ffn(non-gated)`: exact GELU | — | — | — |
-| `moe` | `ffn(moe)`: a router, routed experts, an ungated shared expert | `moe_route`, `gemv_w4a8_moe`, `gemv_w4a8_moe_wacc`, `shared_gate_combine` (`cuda/moe.cu`) | `moe_route_sg`, `gemv_w4a8_moe`, `gemv_w4a8_moe_wacc` | `moeRouteWGSL`, `moeExpertGEMVWGSL` (`gpu/moe.go`) |
-| `moe-gated-shared` | parameter of `ffn(moe)`: a sigmoid gate on the shared expert | the `ungated` argument of `shared_gate_combine` | `shared_gate_combine` | `sharedGateWGSL` (`gpu/moe.go`) |
+| `moe` | `ffn(moe)`: a router, routed experts, an ungated shared expert | `moe_route`, `gemv_w4a8_moe`, `gemv_w4a8_moe_wacc`, `shared_gate_combine` (`backend/cuda/moe.cu`) | `moe_route_sg`, `gemv_w4a8_moe`, `gemv_w4a8_moe_wacc` | `moeRouteWGSL`, `moeExpertGEMVWGSL` (`backend/webgpu/moe.go`) |
+| `moe-gated-shared` | parameter of `ffn(moe)`: a sigmoid gate on the shared expert | the `ungated` argument of `shared_gate_combine` | `shared_gate_combine` | `sharedGateWGSL` (`backend/webgpu/moe.go`) |
 
 **Recurrent mixers**
 
 | feature | operation | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
-| `ssm` | `mamba2`, for two families with different block layouts | — | — | `mambaConvShaderWGSL`, `mambaSSMShaderWGSL`, `mambaGNormShaderWGSL` (`gpu/mamba.go`) |
-| `deltanet` | **bundle of two**: the `deltanet` mixer, and a fused output gate on the family's softmax layers | `delta_conv`, `delta_gates`, `delta_norm`, `delta_rule`, `delta_gnorm`; `delta_qsplit`, `delta_attn_gate` (`cuda/deltanet.cu`) | the same seven names | `deltaRuleShaderWGSL`, `deltaNormShaderWGSL`, `deltaGatesShaderWGSL`, `deltaGNormShaderWGSL`; `deltaQSplitShaderWGSL`, `deltaAttnGateShaderWGSL` (`gpu/deltanet.go`) |
+| `ssm` | `mamba2`, for two families with different block layouts | — | — | `mambaConvShaderWGSL`, `mambaSSMShaderWGSL`, `mambaGNormShaderWGSL` (`backend/webgpu/mamba.go`) |
+| `deltanet` | **bundle of two**: the `deltanet` mixer, and a fused output gate on the family's softmax layers | `delta_conv`, `delta_gates`, `delta_norm`, `delta_rule`, `delta_gnorm`; `delta_qsplit`, `delta_attn_gate` (`backend/cuda/deltanet.cu`) | the same seven names | `deltaRuleShaderWGSL`, `deltaNormShaderWGSL`, `deltaGatesShaderWGSL`, `deltaGNormShaderWGSL`; `deltaQSplitShaderWGSL`, `deltaAttnGateShaderWGSL` (`backend/webgpu/deltanet.go`) |
 | `kda` | `kda` | — | — | — |
 | `short-conv` | `short-conv` | — | — | — |
 
@@ -479,9 +479,9 @@ Every `ResidentFeature`, the operation it would become, and what implements it o
 | feature | operation | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
 | `embed-scale` | parameter of the embedding stage | host, in the decoder for every backend (`decoder/residency.go:Model.embedResidentInto`) | the same | the same |
-| `final-logit-softcap` | head post-processing, on the host | `cuda/softcap.go:applySoftcap` | `metal/model.go:softcapParallel` | `gpu/internal/kernels/softcap.go:ApplySoftcap` |
-| `logit-scale` | head post-processing | host multiply (`cuda/softcap.go:applyLogitScale`) | host multiply (`metal/model.go:resident.finalizeLogits`) | folded into the head's weight scale at build, **for the Granite hybrid only** |
-| `gemma4-e-model` | **bundle of three**: a per-layer embedding operation, cross-layer shared KV, a per-layer FFN width | no new kernel | `ple_gelu_mul`, plus existing kernels (`metal/model.go:resident.encodePLE`) | no new shader |
+| `final-logit-softcap` | head post-processing, on the host | `backend/cuda/softcap.go:applySoftcap` | `backend/metal/model.go:softcapParallel` | `backend/webgpu/internal/kernels/softcap.go:ApplySoftcap` |
+| `logit-scale` | head post-processing | host multiply (`backend/cuda/softcap.go:applyLogitScale`) | host multiply (`backend/metal/model.go:resident.finalizeLogits`) | folded into the head's weight scale at build, **for the Granite hybrid only** |
+| `gemma4-e-model` | **bundle of three**: a per-layer embedding operation, cross-layer shared KV, a per-layer FFN width | no new kernel | `ple_gelu_mul`, plus existing kernels (`backend/metal/model.go:resident.encodePLE`) | no new shader |
 
 **What does not map cleanly.** These are the places the operation boundary of §4.1 does not hold today.
 
@@ -492,7 +492,7 @@ Every `ResidentFeature`, the operation it would become, and what implements it o
    - `gemma4-e-model` is one operation, one KV-layer property and one property of the layer list.
    - `moe` covers every routing flavour as kernel parameters, and each backend's build then declines some shapes by hand: on
      CUDA, a non-SiLU expert, MoE with sandwich norms, and widths that are not multiples of 32
-     (`cuda/backend.go:cudaBackend.BuildResident`).
+     (`backend/cuda/backend.go:cudaBackend.BuildResident`).
 2. **One name, a different operation per backend.**
    - `non-gated-mlp` is tanh-GELU or SiLU on Metal and squared ReLU on WebGPU. OP0 named exact GELU; the rest is open.
      - A non-gated squared-ReLU model derives nothing for its activation, and Metal's `act_quant` would run tanh-GELU for it.
@@ -501,7 +501,7 @@ Every `ResidentFeature`, the operation it would become, and what implements it o
      - WebGPU reaches its kernel only through Nemotron's block kinds. INFERRED: another non-gated family that passed the
        gates would fail the build with a projection error, not a decline.
    - `logit-scale` is a host multiply for any family on CUDA and Metal. On WebGPU it is a fold into the head that only the
-     Granite hybrid's build performs (`gpu/residency.go:webgpuBackend.BuildResident`). Another family with a logit scale would
+     Granite hybrid's build performs (`backend/webgpu/residency.go:webgpuBackend.BuildResident`). Another family with a logit scale would
      be admitted there and left unscaled. No released checkpoint reaches it: dense Granite 4.2 ships a scale of 1.0, and
      Command-R declines on WebGPU for other features (both read from this repo's notes, not from the checkpoints).
    - `layer-norm` is biased on Metal's decode kernel, and bias-free on CUDA's decode kernel and in Metal's prefill. GPT-2's
@@ -521,14 +521,14 @@ Every `ResidentFeature`, the operation it would become, and what implements it o
    - in the decoder: the runner shape, the activation hazard and the activation group, the router's capacity, per-layer
      attention geometry, and Gemma 4's parallel dense and MoE block (`decoder/features.go:residentGateReasons`);
    - in each backend's build: hand-written declines. Metal's include widths that are not multiples of 8 and the q4k lane's
-     shape (`metal/model.go:buildResident`). WebGPU's include a head dimension above its kernel's and a KV
+     shape (`backend/metal/model.go:buildResident`). WebGPU's include a head dimension above its kernel's and a KV
      precision per family.
    - OP4's "admission by operation" must take these in, or it replaces one of two systems.
 7. **The feature sets describe decode. Every other request shape keeps its own, smaller list.**
-   - Metal: `metal/model.go:prefillFeatures` for the f16 prefill, and `metal/batch.go:resident.batchIneligible` for the batched
+   - Metal: `backend/metal/model.go:prefillFeatures` for the f16 prefill, and `backend/metal/batch.go:resident.batchIneligible` for the batched
      step, which declines eleven model-level variants.
-   - WebGPU: `gpu/internal/kernels/prefillrunner.go:RunModelToPrefill` declines MoE, MLA, the mixers, partial rotary and a rope scale.
-   - CUDA: `cuda/prefill.go:cudaResident.prefillStaticDecline` and `cuda/batchstep.go:cudaResident.BatchStepRange`. MLA runs
+   - WebGPU: `backend/webgpu/internal/kernels/prefillrunner.go:RunModelToPrefill` declines MoE, MLA, the mixers, partial rotary and a rope scale.
+   - CUDA: `backend/cuda/prefill.go:cudaResident.prefillStaticDecline` and `backend/cuda/batchstep.go:cudaResident.BatchStepRange`. MLA runs
      in decode only (its prefill and verify fall back to sequential: INFERRED from the code, not run).
    - So an operation table needs a request-shape column until RF removes the shapes. This is §3.3's cost, counted per feature.
 
@@ -538,7 +538,7 @@ path:
 | backend | hand-written score implementations | derived or twin forms |
 |---|---|---|
 | CUDA | 10, in 9 `.cu` files; 8 without MLA and the block drafter | f16-KV builds of six of those modules |
-| Metal | 10: 6 decode and 4 prefill | 4 batched-step forms, derived as text (`metal/batch_rows.go`) |
+| Metal | 10: 6 decode and 4 prefill | 4 batched-step forms, derived as text (`backend/metal/batch_rows.go`) |
 | WebGPU | 10: 6 decode, 1 MLA and 3 prefill | 3 derived as text; 14 pipeline slots in all |
 
 Metal's Gemma 4 audio tower already has a softcapped attention kernel, off the text path.
@@ -546,8 +546,8 @@ Metal's Gemma 4 audio tower already has a softcapped attention kernel, off the t
 **Found in backend modules** (a backend change is a two-step tag; each needs its owner's call). The first two were run; the
 rest are read from the code and not fixed.
 - **CUDA: a batched-step row that returns logits got the final softcap and the logit scale twice. Confirmed and fixed
-  2026-10-14.** `cuda/prefill.go:cudaResident.batchedHeadFull` applied both to a step row, and
-  `cuda/prefill.go:cudaResident.prefillCore`'s closing loop applied both again to every logits row; the closing loop is now
+  2026-10-14.** `backend/cuda/prefill.go:cudaResident.batchedHeadFull` applied both to a step row, and
+  `backend/cuda/prefill.go:cudaResident.prefillCore`'s closing loop applied both again to every logits row; the closing loop is now
   the only place. It touched concurrent conversations that sample on a model with a final softcap (dense Gemma 4) or a
   logit scale (Command-R, Granite): those models always draw on the host. `TestCUDAStepBatch_matchesForward` now runs
   `gemma4-dense-twogeom-tiny` (softcap) and `granite-dense-tiny` (logit scale) and compares a step row's logits with
@@ -555,10 +555,10 @@ rest are read from the code and not fixed.
   -0.0024854098 against -0.014912458 (Granite, the scale of 1/6 applied twice).
 - **CUDA: a Cohere step row is not bit-identical to `Forward`, found by the fix above and not fixed.** With the double
   transform gone, `cohere-tiny` and `cohere2-tiny` still differ from `Forward` by one ulp in a logit (cohere-tiny at its
-  third step, cohere2-tiny at its first). The batched LayerNorm, `cuda/layernorm_quant.cu`'s `layernorm_quant_batched`,
-  rounds `((x-mean)*inv)*w`, while decode's `layernorm_quant` in `cuda/glue.cu` rounds `((x-mean)*w)*inv`, so a normed value
+  third step, cohere2-tiny at its first). The batched LayerNorm, `backend/cuda/layernorm_quant.cu`'s `layernorm_quant_batched`,
+  rounds `((x-mean)*inv)*w`, while decode's `layernorm_quant` in `backend/cuda/glue.cu` rounds `((x-mean)*w)*inv`, so a normed value
   can differ in its last bit and move an int8 code. The step, `PrefillLastN` and speculative verify on Cohere inherit it.
-  `cuda/prefill.go:cudaResident.bLayerNormQuantB`'s fallback, which loops decode's kernel per row, would be exact. The
+  `backend/cuda/prefill.go:cudaResident.bLayerNormQuantB`'s fallback, which loops decode's kernel per row, would be exact. The
   batched kernel is shared with the SigLIP tower, so the fix is the CUDA owner's call.
 - **WebGPU: `logit-scale`**, item 2 above.
 - **WebGPU and Granite-4.0-H.** INFERRED: a Granite hybrid checkpoint whose config says `position_embedding_type: "nope"`
@@ -580,8 +580,8 @@ starts, in a commit of their own; after that a change to a rule is a deviation a
 - **Step 2 puts the softcap in that function:** `cap · tanh(score / cap)` on the scaled score, before the mask and the softmax,
   which is what the CPU computes (`decoder/attention.go:softcapScore`).
 
-**What the function has to respect** (Metal, read 2026-10-13 in `metal/kernels/kernels_msl.go` and
-`metal/kernels/prefill_msl.go`). The kernels do not form the score the same way:
+**What the function has to respect** (Metal, read 2026-10-13 in `backend/metal/kernels/kernels_msl.go` and
+`backend/metal/kernels/prefill_msl.go`). The kernels do not form the score the same way:
 - `attention`, `attention_f32`, `attention_fa`, `attention_prefill`, `attention_prefill_img` and `attention_prefill_fused`
   multiply the dot product by the scale;
 - `attention_i8` multiplies by the key's scale first, then by the scale;
@@ -961,8 +961,8 @@ Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits:
 | **G2-T** | **FAIL as registered:** worst logit cosine 0.998997 and 0.998657, against 0.999 |
 | G2-R, G2-M | not run: they follow the declaration |
 
-- **What is on main:** the digest instrument; step 1 (`metal/kernels/attn_score_msl.go:AttnScoreMSL`); and the softcap as a
-  variant of the kernel source (`metal/kernels/attn_score_msl.go:WithAttnSoftcap`), which no model reaches while the feature
+- **What is on main:** the digest instrument; step 1 (`backend/metal/kernels/attn_score_msl.go:AttnScoreMSL`); and the softcap as a
+  variant of the kernel source (`backend/metal/kernels/attn_score_msl.go:WithAttnSoftcap`), which no model reaches while the feature
   is undeclared. Gemma 2 still decodes on the CPU under Metal.
 - **G2-T: FAILED.** The 0.999 bar was copied from Gemma 1's test without first measuring this fixture's no-softcap baseline
   at int4, which is 0.9991 to 0.9993. The softcap's own contribution is shown by the planted defect: with the cap dropped
@@ -988,12 +988,12 @@ Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits:
 
 **What decides the declaration (owner's ruling, 2026-10-13): no G2-T2. The tiny fixtures are diagnostics, not a gate.**
 - **Why not G2-T2.** Metal cannot run f32 weights: a resident build declines them by design
-  (`metal/model.go:f32Projection`). The nearest runnable setting, int8int8, was already read in G2-T's diagnostics
+  (`backend/metal/model.go:f32Projection`). The nearest runnable setting, int8int8, was already read in G2-T's diagnostics
   (0.999255 and 0.999334), so a gate on it could not fail on anything new.
 - **What the tiny fixtures show, kept as a record:**
   - the planted defect separates: with the cap dropped from the Metal build the fixtures read 0.978 and 0.980;
   - the int8int8 readings are 0.999255 and 0.999334. That setting runs native int8 weights
-    (`metal/model.go:w8Weights`) with the library compiled without fast math (`metal/model.go:w8PreciseMath`);
+    (`backend/metal/model.go:w8Weights`) with the library compiled without fast math (`backend/metal/model.go:w8PreciseMath`);
   - **the tanh:** at int4 the library is compiled with fast math, so the capped function's plain `tanh` is the fast one
     (INFERRED from the math-mode rule; the compiled code was not disassembled). An explicit `precise::tanh` moved
     `gemma2-tiny` by 0.00005 and `gemma2-hd-tiny` by nothing.
@@ -1047,7 +1047,7 @@ operations and a `__fmul_rn` stays a `__fmul_rn` (a fused multiply-add must not 
     kernel's tile bound; windowed and not; with and without a sink.
   - The kernel list is a table in the test. **A `__global__` in `cuda/*.cu` whose name says attention, and that is not in the table,
     fails the test.** A kernel in the table that no case drives fails it too.
-  - The digests are committed in `cuda/testdata/attn_digests.json`, keyed by device name and driver version. A run on another
+  - The digests are committed in `backend/cuda/testdata/attn_digests.json`, keyed by device name and driver version. A run on another
     driver is VOID, not a pass.
   - **Planted defect:** one ulp added to a score in each routed kernel turns that kernel's digests red.
 - **G1-M's instrument.** `cmd/gate identity` gets `-backend cuda`: a dumper in `cuda/` with `-tags cuda`, an ephemeral
@@ -1129,15 +1129,15 @@ fit-checked by day before it is queued.
   - `internal/kvmgr/`;
   - `internal/serveapp/` (main, openai, sessions);
   - a new KV-copy file in each of `metal/`, `gpu/` and `cuda/`;
-  - on CUDA, also `cuda/resident.go`.
-- **KV3:** CUDA's half on `kv3-cuda-2026-10` (`cuda/prefill.go` and the prefill scratch). Metal's half is KV-pre's
-  (`metal/prefill.go`).
+  - on CUDA, also `backend/cuda/resident.go`.
+- **KV3:** CUDA's half on `kv3-cuda-2026-10` (`backend/cuda/prefill.go` and the prefill scratch). Metal's half is KV-pre's
+  (`backend/metal/prefill.go`).
 - **The CPU's KV:**
   - G40, stopped: `decoder/forwardn.go`, `decoder/kvcache.go` and `decoder/weightmat.go`;
   - the CPU KV pricing fix: `decoder/model.go`, `decoder/fitguard.go` and `decoder/prefill_budget.go`;
   - CPU f16 KV, approved and not started: `decoder/kvcache.go` and the CPU attention.
 - **Next on the KV track:**
-  - KV4, paged CUDA storage: every CUDA KV kernel goes through a block table, including `mla_attn` in `cuda/mla.cu`;
+  - KV4, paged CUDA storage: every CUDA KV kernel goes through a block table, including `mla_attn` in `backend/cuda/mla.cu`;
   - KV5, the same on Metal;
   - KV8, a recurrent state pool.
 - **Proposal 2** (the integration harness's id carry, nobara's next build): `internal/serveapp/` and one accessor on the
@@ -1181,10 +1181,10 @@ Their gate:
 **OP2a, MLA on Metal.**
 - **Delivers:** DeepSeek-V2/V3 and Moonlight resident on Metal. Kimi K2 also needs a 384-expert router; that is not here.
 - **Size and box:** M–L, on the Mac.
-- **Depends on:** OP0 only. CUDA's `cuda/mla.cu` and WebGPU's `gpu/mla.go` are the models to port.
+- **Depends on:** OP0 only. CUDA's `backend/cuda/mla.cu` and WebGPU's `backend/webgpu/mla.go` are the models to port.
 - **KV:**
   - MLA's latent cache is a second KV shape, a layer group of its own in the KV design (§5.2 of the KV doc).
-  - KV2's Metal KV-copy has to copy it, or decline MLA for cross-conversation reuse, and it shares `metal/model.go`'s
+  - KV2's Metal KV-copy has to copy it, or decline MLA for cross-conversation reuse, and it shares `backend/metal/model.go`'s
     slot allocation with KV2.
   - KV5 will route Metal's MLA kernel through the block table, so OP2a writes the kernel KV5 then edits.
 - **Gates:**
@@ -1199,7 +1199,7 @@ Their gate:
 
 **OP2a on Metal, registered 2026-10-16 before any code** (branch `op2a-mla-metal-2026-10`).
 
-- **Design:** WebGPU's absorbed MLA (`gpu/mla.go`, `gpu/decoderunner.go`), ported to Metal kernels:
+- **Design:** WebGPU's absorbed MLA (`backend/webgpu/mla.go`, `backend/webgpu/decoderunner.go`), ported to Metal kernels:
   - the q-LoRA path or the direct q projection;
   - the KV down-projection with its latent norm and the rope slice, stored per position as one latent row
     (`kvLoRA + qkRope` values);
@@ -1273,7 +1273,7 @@ Their gate:
   - The SSM state is not KV. It lives in today's per-slot recurrent buffers until KV8's state pool.
   - KV2's reuse already treats hybrids as one slot with exact-extension reuse only. OP2b keeps that, so it changes nothing
     in KV2's files.
-  - It shares `cuda/resident.go` (CUDA) and `metal/model.go` (Metal) with KV2's slot code.
+  - It shares `backend/cuda/resident.go` (CUDA) and `backend/metal/model.go` (Metal) with KV2's slot code.
 - **Gates:**
   - **Tier 0:**
     - `nemotron-tiny` and `granite-tiny` on the backend against the CPU, plus `nemotron3nano-tiny` where its MoE is
@@ -1289,7 +1289,7 @@ Their gate:
 **OP2b on Metal: the gates, registered 2026-10-15 before any code.**
 
 **The build:**
-- The Mamba-2 decode kernels in MSL, ported from `gpu/mamba.go`'s shaders: the conv step with its window, the SSM step,
+- The Mamba-2 decode kernels in MSL, ported from `backend/webgpu/mamba.go`'s shaders: the conv step with its window, the SSM step,
   and the gated RMSNorm, per group (Nemotron-H) and over the full inner width (Granite-4.0-H).
 - A squared-ReLU branch in `glu_act`. It is a new ordinal (2); 0 and 1 stay as they are.
 - Metal's resident builder learns Nemotron-H's one-operation blocks: Mamba, NoPE attention and the non-gated MLP. The
@@ -1299,7 +1299,7 @@ Their gate:
 **Tier 0, by day: synthetic kernels and tiny fixtures, seconds.**
 
 - **K, each new kernel against the CPU's own computation** (`decoder/mamba2.go:mamba2Step`'s pieces), on synthetic
-  inputs. The bar is `gpu/mamba_test.go`'s: cosine ≥ 0.99999 and max |diff| ≤ 1e-3.
+  inputs. The bar is `backend/webgpu/mamba_test.go`'s: cosine ≥ 0.99999 and max |diff| ≤ 1e-3.
   - The gated norm at one group and at several.
   - The conv step over ≥ 2 steps past its window. One step inside the window cannot see a window error (CLAUDE.md's
     minimal-repro rule).
@@ -1336,7 +1336,7 @@ Their gate:
 **Step 1, the kernels, read 2026-10-15** (branch `op2b-ssm-metal-2026-10`). All tier 0 gates pass.
 
 - **Built:**
-  - `metal/kernels/mamba_kernels_msl.go`: `mamba_conv`, `mamba_ssm` and `mamba_gnorm`, ported from `gpu/mamba.go`'s
+  - `backend/metal/kernels/mamba_kernels_msl.go`: `mamba_conv`, `mamba_ssm` and `mamba_gnorm`, ported from `backend/webgpu/mamba.go`'s
     shaders and appended to the library.
   - `act_quant`'s squared-ReLU branch: `nongated_act`, ordinal 2, local to `act_quant`, so `glu_act`'s other callers keep
     their code.
@@ -1384,7 +1384,7 @@ Gates S and the tier 0 checks pass. **Gate M fails at int8int8**: stopped for th
     kinds (Granite-4.0-H, once its multipliers are folded) needs no family branch on Metal.
   - What it does not yet do: per-operation norms and fusions are still the runner's own (§4.1's fusion tables are
     OP4's), and the FFN kind is still read from model-level flags.
-- **Mamba-2 on the resident** (`metal/mamba.go`):
+- **Mamba-2 on the resident** (`backend/metal/mamba.go`):
   - in_proj and out_proj run W8A8, as on WebGPU;
   - the conv window and SSM state are per layer, reset with the slot (`resetRecurrent`);
   - Granite-4.0-H declines on Metal, its multipliers not yet folded.
@@ -1431,7 +1431,7 @@ Gates S and the tier 0 checks pass. **Gate M fails at int8int8**: stopped for th
 - **Gate M at int4: PASS:** 0.999699 against the control's 0.999906, argmax 31/32; the conv plant red.
 - **The condition, built:** at int8, Metal declines Nemotron-H as resident, and the CPU runs it at real int8, instead of
   re-quantizing to int4.
-  - It is `metal/mamba.go:buildMamba`, on the decoder's own test (`decoder.Model.ResidentProjsInt4`).
+  - It is `backend/metal/mamba.go:buildMamba`, on the decoder's own test (`decoder.Model.ResidentProjsInt4`).
   - `TestNemotronResident_int8Declines`: int8int8 is refused with the int4-only reason, and int4 builds.
   - Plant: the decline removed. Red: the int8int8 build went through.
 - **The ssm and non-gated-relu2 declaration is scoped to int4:** Metal builds Nemotron-H at int4 only.
@@ -1514,18 +1514,18 @@ on and admitted both. Peak RSS 5.78 GB, 0 swaps, swap flat at about 1.86 GB. Rec
 - **On CUDA, nothing:**
   - no Mamba kernel, no non-gated MLP, and none of `ssm`, `non-gated-mlp`, `non-gated-relu2` is declared. Nemotron-H derives exactly
     those three (`decoder/features.go:Architecture.residentFeatures`);
-  - the only recurrent state is DeltaNet's `dnetParams` (`cuda/resident.go`), model-level and shaped for DeltaNet, so it is not reused;
-  - the recurrent guards test `r.dnet` at eight sites: `cuda/batchstep.go`, `cuda/kvsnap.go`, `cuda/kvcopy.go`, `cuda/prefill.go` (two),
-    `cuda/resident.go` (four). A Mamba layer must read as recurrent at every one.
+  - the only recurrent state is DeltaNet's `dnetParams` (`backend/cuda/resident.go`), model-level and shaped for DeltaNet, so it is not reused;
+  - the recurrent guards test `r.dnet` at eight sites: `backend/cuda/batchstep.go`, `backend/cuda/kvsnap.go`, `backend/cuda/kvcopy.go`, `backend/cuda/prefill.go` (two),
+    `backend/cuda/resident.go` (four). A Mamba layer must read as recurrent at every one.
 - **The shape that carries over from Metal:** Nemotron-H resident at int4 only. Its int8 projections would be re-quantized to int4
   without notice, so int8int8 declines by name, on the decoder's own test (`ResidentProjsInt4`), and the CPU runs it at real int8
   (Metal's gate-M amendment). Granite-4.0-H stays on the CPU: its runner-shape bring-up gate holds it, and the backend declines it by name.
 
 **The build, by step.**
 - **Step 1, kernels and the non-gated MLP, nothing reaches them yet.**
-  - `mamba_conv`, `mamba_ssm`, `mamba_gnorm` (per group for Nemotron-H, over the full inner width for Granite), in a new `cuda/mamba.cu`,
-    from `gpu/mamba.go`'s shaders and `decoder/mamba2.go`. Conv window ≤ 8 taps, the window and the SSM state persistent in place.
-  - The squared-ReLU activation and the non-gated structure (up GEMV, activation, quantize, down GEMV) in a new `cuda/nongated_act.cu`.
+  - `mamba_conv`, `mamba_ssm`, `mamba_gnorm` (per group for Nemotron-H, over the full inner width for Granite), in a new `backend/cuda/mamba.cu`,
+    from `backend/webgpu/mamba.go`'s shaders and `decoder/mamba2.go`. Conv window ≤ 8 taps, the window and the SSM state persistent in place.
+  - The squared-ReLU activation and the non-gated structure (up GEMV, activation, quantize, down GEMV) in a new `backend/cuda/nongated_act.cu`.
   - **Mechanism, chosen here because the gates lean on it: new files and new PTX, no ordinal added to `glue.cu`,
     `prefill_batched.cu` or `actgroup.cu`.** No audited or shipped PTX moves, so gate I below is a byte comparison of PTX and not a
     claim about a compiler. Built at the ambient NVRTC (12.9.86) per `cuda/testdata/REGEN.md`; a new `.cu` needs no pinned toolchain.
@@ -1540,13 +1540,13 @@ on and admitted both. Peak RSS 5.78 GB, 0 swaps, swap flat at about 1.86 GB. Rec
 
 **Tier 0, by day: synthetic and tiny, seconds. In every K and M reading both outputs are asserted non-zero before the cosine is taken,
 and a cosine where exactly one side is all zeros is scored 0.**
-CUDA's `cosF32` returns 1 for an all-zero side (`cuda/deltanet_test.go`), which is the guard that made Metal's first kernel test read
+CUDA's `cosF32` returns 1 for an all-zero side (`backend/cuda/deltanet_test.go`), which is the guard that made Metal's first kernel test read
 1.0 on an all-zero output (step 1's "found on the way"). The non-zero assertion fails the test by name ("output is all zeros: the
 reading is void"), so a kernel that writes nothing, or a replay of a model closed under it, cannot pass as agreement. Tier 1's harness
 applies the same check to each step's logits.
 - **K, each new kernel against the CPU's own computation, on real inputs.** `SetMambaCapHook` captures each step's `in_proj` output
   and gated output from `nemotron-tiny` and `granite-tiny` (the kernels serve Granite's geometry too; the family stays declined), and
-  the CUDA chain replays the `in_proj` output from a fresh state. Bar `gpu/mamba_test.go`'s: cosine ≥ 0.99999 and max |diff| ≤ 1e-3
+  the CUDA chain replays the `in_proj` output from a fresh state. Bar `backend/webgpu/mamba_test.go`'s: cosine ≥ 0.99999 and max |diff| ≤ 1e-3
   (Metal read 1.2e-7 and 7.2e-7).
   - The chain over 72 steps (≥ 2 past the conv window: one step inside it cannot see a window error; 72 for drift).
   - The gated norm at 4 groups against `gatedRMSNormGrouped` (both fixtures have one group, so the grouped case needs its own).
@@ -1621,8 +1621,8 @@ nobara's `~/models` (never `/srv/models`); the CUDA int4 bundle is built from it
 sides on different drivers; the control failing; a refused load.
 
 **Order, and what a failure does.**
-0. **OP2b CUDA's build starts after #58 (OP1 on CUDA) merges** (owner, 2026-10-16): both edit `cuda/resident.go`, `cuda/backend.go` and the PTX lint tests.
-1. Merge main into the branch (B27, `.giw` v17, KV7's snapshot code are all in `cuda/resident.go`'s neighbourhood). Gate F's table,
+0. **OP2b CUDA's build starts after #58 (OP1 on CUDA) merges** (owner, 2026-10-16): both edit `backend/cuda/resident.go`, `backend/cuda/backend.go` and the PTX lint tests.
+1. Merge main into the branch (B27, `.giw` v17, KV7's snapshot code are all in `backend/cuda/resident.go`'s neighbourhood). Gate F's table,
    and the CUDA int4 bundle's size, are written into this section before step 1's code.
 2. Step 1, then K, D, I. A failure: step 2 does not start.
 3. Step 2, then M, G, S, P. A failure: not declared. **Step 2 is four PRs, each gated (owner, 2026-10-16):**
@@ -1697,9 +1697,9 @@ sides on different drivers; the control failing; a refused load.
 - **Depends on:** OP3.
 - **KV:**
   - The memory planner is KV3's admission, generalised, so it follows KV3 on that backend.
-  - CUDA's walk rewrites the launch paths that KV4 routes through block tables (`cuda/resident.go`, `cuda/prefill.go`).
+  - CUDA's walk rewrites the launch paths that KV4 routes through block tables (`backend/cuda/resident.go`, `backend/cuda/prefill.go`).
     **Proposed: CUDA's OP4 after KV4a lands,** so one of the two rebases onto the other once, not repeatedly.
-  - Metal's OP4 shares `metal/model.go`, `metal/prefill.go` and `metal/batch.go` with KV-pre, KV2 and later KV5.
+  - Metal's OP4 shares `backend/metal/model.go`, `backend/metal/prefill.go` and `backend/metal/batch.go` with KV-pre, KV2 and later KV5.
 - **Gates:**
   - **Tier 0:**
     - every family's tiny identity suite on the backend, bit-identical to the pre-walk runner;
@@ -1755,7 +1755,7 @@ sides on different drivers; the control failing; a refused load.
 
 **Shares with KV:**
 
-- the prefill path: `cuda/prefill.go` with KV3's CUDA half, and `metal/prefill.go` with KV-pre;
+- the prefill path: `backend/cuda/prefill.go` with KV3's CUDA half, and `backend/metal/prefill.go` with KV-pre;
 - the q4k prefill sizes its scratch through KV3's admission.
 
 **Gates:**
@@ -2557,7 +2557,7 @@ OP4 on Metal before OP4 on CUDA (§4.7, "Proposed order"). This section register
 question below is for whoever starts the first step, and it goes to Francis before code.
 
 **What OP4 on Metal replaces.** Today the Metal resident's decode is one encoder that branches on per-model flags
-(`metal/model.go:resident.encodeLayerResidualWith`: `sandwich`, `postOnly`, `parallelBlock`, `nonGatedMLP`, the q4k lane, the
+(`backend/metal/model.go:resident.encodeLayerResidualWith`: `sandwich`, `postOnly`, `parallelBlock`, `nonGatedMLP`, the q4k lane, the
 f16 lane, and the mixer kinds). Admission is a second, hand-written list beside it (§4.5, item 6). OP4 makes the encoder walk
 decoder's per-layer program: each operation maps to its dispatches, a fusion table maps operation runs to fused kernels, and
 admission declines on an operation the walker lacks, naming it.
@@ -2638,7 +2638,7 @@ the declarations to `internal/program`, with decoder's aliases, `Model.Program`,
   `onnx`, `testdata/tiny-qwen2-moe/.cache`). With those moved aside, the run was killed at 59 s, after D1 and D2, with the Mac
   at about 2 GB reclaimable. Both are for MM1's owner. The parity core set now lists `internal/program/program.go`, since the
   program's numeric methods (`AttentionParams.Start`, `AttnTempParams.Scale`) moved there.
-- **A4: PASS, with one change from the registration.** `TestResident_holdsTheModelsProgram` (in `metal/resident_memguard_test.go`,
+- **A4: PASS, with one change from the registration.** `TestResident_holdsTheModelsProgram` (in `backend/metal/resident_memguard_test.go`,
   which already imports decoder, so SB13's ratchet does not move) checks a synthetic dense model the test writes (2 layers, 18
   operations) and the tracked `qwen35-tiny` at int4 (4 layers, 24 operations). The registration said two tracked fixtures. The
   synthetic model is written by the test, so it is always present.
@@ -2695,7 +2695,7 @@ standing rule).**
 - **Why split.** Metal's dense decode reads its layer shape from ten Architecture accessors at build
   (`SandwichNormResident`, `PostOnlyNormResident`, `ParallelBlockResident`, `NonGatedMLPResident`, `LayerNormResident`,
   `HasQKNorm`, `QKNormWholeResident`, `OutBiasResident`, `LearnedPosResident`), then branches on the flags in
-  `metal/model.go:resident.encodeLayerResidualWith` and its attention, batch and prefill twins. Every one of those facts is in
+  `backend/metal/model.go:resident.encodeLayerResidualWith` and its attention, batch and prefill twins. Every one of those facts is in
   the program:
   - post-only placement is an input `norm` of form `normCopy`;
   - sandwich placement is a post-attention `norm` after a non-copy input norm;
@@ -2726,7 +2726,7 @@ standing rule).**
   and the argmax fix's 2m59s).
 
 **OP4m-b1: readings, 2026-10-30 (mac-sb11m, branch `op4m-b1-2026-10-30`; every run under the shared timing lock, in gaps
-between tack's blocks).** `denseShapeOf` (`metal/program_shape.go`) derives the shape. `buildResident` and `w8Weights` read it,
+between tack's blocks).** `denseShapeOf` (`backend/metal/program_shape.go`) derives the shape. `buildResident` and `w8Weights` read it,
 and no longer call the nine accessors.
 - **B1-1 and B1-2: PASS, after three derivation fixes.** The first run (15:41) differed from the accessors on 16 fixtures, and
   each was an operation the first rules did not read:
@@ -2750,7 +2750,7 @@ and no longer call the nine accessors.
     - a recurrent-mixer layer is pre-norm or matches it (Olmo Hybrid's DeltaNet layers stay pre-norm beside its post-only
       attention layers, which the encoder handles per layer);
     - the layers that carry the norm form, the FFN form, the QK-norm and its reach, and the output bias agree on each.
-    A disagreement declines, naming both layers. `TestDenseShapeOf_declinesLayersThatDisagree` (hand-built programs, in `metal/resident_memguard_test.go` so SB13's ratchet does not move) was red
+    A disagreement declines, naming both layers. `TestDenseShapeOf_declinesLayersThatDisagree` (hand-built programs, in `backend/metal/resident_memguard_test.go` so SB13's ratchet does not move) was red
     on the old derivation, where all 8 mixed programs passed with no error, and passes now, with Olmo Hybrid's mix allowed.
   - **Memory.** B1-1 closes each model as soon as it is read, instead of holding all of them, and skips any fixture with more
     than 1 GB of weights (the 4.2 GB mellum slice, now NOT RUN). It runs in 1.4 s instead of 12 s.
@@ -2801,7 +2801,7 @@ and no longer call the nine accessors.
   - **M5 (speed):** a whole-token in-process A/B of decode at depth 128, steps against the old switch, interleaved ABBA, 6
     pairs on each of the 0.5B and the 1.5B, under the exclusive timing lock. Both void terms are recorded at the cell's start,
     and a pair started above half the cores plus the test's `GOMAXPROCS` voids the cell. Pass: a median of at least 0.99 in
-    both cells. Prefill at 3,900 is not a cell: b2 changes only the per-token layer body, and `metal/prefill.go` is untouched.
+    both cells. Prefill at 3,900 is not a cell: b2 changes only the per-token layer body, and `backend/metal/prefill.go` is untouched.
   - **M6 (memory):** b2 adds no device buffer. The step lists are host slices of a few function values a layer.
   - **M7 (the rest):** `touched.py`; `go run ./cmd/lint`; vet with the `metal` module's tags; `internal/layout`; the citation
     lint.
@@ -2810,7 +2810,7 @@ and no longer call the nine accessors.
 
 **OP4m-b2: readings, 2026-10-30 (mac-sb11m, branch `op4m-b2-2026-10-30`, code at `9dbe78b6`; every run under the shared timing
 lock).**
-- **What was built.** `metal/layer_steps.go`: `layerStepsOf` splits a layer at its residual adds and names each sublayer's step
+- **What was built.** `backend/metal/layer_steps.go`: `layerStepsOf` splits a layer at its residual adds and names each sublayer's step
   (a parallel block's one sublayer gives the attention step up to its FFN and the dense FFN step from there; Gemma 4's MoE
   block, PLE and layer scale are steps of one operation). `checkStepClaims` checks the steps consume every operation once, in
   order, each only operations its block emits and exactly one core operation. `resident.buildLayerSteps` runs both at build and
@@ -2869,7 +2869,7 @@ it lacks. Today's admission constrains where that check can live.
     scale, the head's softcap and logit scale).
   - `Admit` builds the program from the arch (as `buildProgram` does today, every layer of a MoE family offered its experts so
     the program is a superset of the forms) and declines on the first operation or parameter outside the table, naming it.
-  - `metal/layer_steps.go:layerStepsOf` reads the same table, so the admission and the walker share one list, and a tier-0 test
+  - `backend/metal/layer_steps.go:layerStepsOf` reads the same table, so the admission and the walker share one list, and a tier-0 test
     checks that every fixture program the table admits is one `buildLayerSteps` accepts.
   - Metal's entry in `residentBackendFeatures` goes; CUDA's and WebGPU's stay until their own OP4 steps.
   - Pros: CI and the matrices still compute Metal's answer with no GPU; one admission path; the decline names an operation.
@@ -2938,7 +2938,7 @@ it lacks. Today's admission constrains where that check can live.
 - **Void if:** as §4.9. **Stopping rule:** one run each. **Cost basis:** seconds for C1-1 to C1-3; C1-4 about 1.5 minutes.
 
 **OP4m-c1: readings, 2026-10-31 (mac-sb11m, branch `op4m-c-2026-10-31`, code at `926b446f`; every run under the shared timing
-lock).** `internal/program/support.go` holds `Support` and `program.Metal`; `metal/layer_steps.go:resident.buildLayerSteps`
+lock).** `internal/program/support.go` holds `Support` and `program.Metal`; `backend/metal/layer_steps.go:resident.buildLayerSteps`
 checks each layer against it before deriving the steps. The fixture runs use the 56 tiny checkpoints b1 and b2 read (the
 worktree's gitignored fixtures cloned in; the 4.2 GB mellum slice is NOT RUN, as in b1).
 - **C1-1: PASS, after one walker fix.** The first run went red on the four Laguna and Spark-X2.5 fixtures: the walker counted
@@ -2974,7 +2974,7 @@ worktree's gitignored fixtures cloned in; the 4.2 GB mellum slice is NOT RUN, as
 - **For CUDA's and WebGPU's owners:** neither has `NegEigval` or `ONormEps` anywhere in its DeltaNet path (a grep of `cuda/`
   and `gpu/`), and both admit Olmo Hybrid. Their own OP4 tables would decline it the same way; until then it is a finding.
 - **What c2 does:** `Admit` reads `program.Metal` for Metal (building the program from the arch with `configExperts`, as
-  C1-2 does), Metal's entry in `residentBackendFeatures` and `metal/backend.go`'s feature check go, and the census and the
+  C1-2 does), Metal's entry in `residentBackendFeatures` and `backend/metal/backend.go`'s feature check go, and the census and the
   hardware matrix's "Why a cell reads CPU" take the table's texts, each listed old and new.
 
 **OP4m-c2 registered 2026-10-31, before its code (mac-sb11m; stacked on c1, #547).**
@@ -2986,7 +2986,7 @@ worktree's gitignored fixtures cloned in; the 4.2 GB mellum slice is NOT RUN, as
   - Two features are not in the program, so they stay a feature gate for a table backend. One is the per-layer query-head
     count (Laguna XS). The other is the gated activation of Gemma 4's MoE block: `OpGemma4MoE` carries no activation, and
     adding one would move the program fingerprints, which VK5's shadow keys on until 2026-11-03.
-  - Metal's entry in `residentBackendFeatures` goes. `metal/backend.go:residentPreBuild` checks the table and those two
+  - Metal's entry in `residentBackendFeatures` goes. `backend/metal/backend.go:residentPreBuild` checks the table and those two
     features instead of `MissingResidentFeatures`. Every reader that asks whether a backend declares resident features
     (`Admit`, `ResidentEligible`, `planAdmitDecline`, `BuildQueryFor`, the test hook) also accepts a table. Tests that read
     Metal's feature set read the table or the admission instead.
@@ -3006,7 +3006,7 @@ worktree's gitignored fixtures cloned in; the 4.2 GB mellum slice is NOT RUN, as
 `residentBackendTables` holds `program.Metal`. `residentGateReasons` gives a table backend an operations gate, which lists
 every distinct gap (`program.Support.Gaps`) so that a first refusal hides none, and also gives it the two outside-program
 features. `residentDeclared` and `residentCovers` answer for either form. Metal's feature entry, with each feature's evidence,
-is now in `docs/code-notes/decoder.md`, "residentBackendFeatures.metal.removed". `metal/backend.go:residentPreBuild` checks
+is now in `docs/code-notes/decoder.md`, "residentBackendFeatures.metal.removed". `backend/metal/backend.go:residentPreBuild` checks
 the table.
 - **C2-1: PASS.** `gate identity -backend metal fd127ffb <c2>`: 28 IDENTICAL, 0 DIFFERENT, the same 15 NOT RUN as c1. Cell by
   cell against c1's log, every backend outcome is the same, and only the decline texts change (Bailing Hybrid, Laguna M1,
@@ -3086,7 +3086,7 @@ the table.
 
 **OP4m-d1 registered 2026-10-31, before its code (mac-sb11m; the coordinator's job of 08:22).** OP4m-d's first PR: Metal's
 batched prefill layer body walks the program, as OP4m-b2 made decode do. The multi-sequence step is OP4m-d2, its own PR.
-- **What changes.** `metal/prefill.go:resident.prefillLastImgSrc` chooses each layer's blocks by its kind today (`L.delta`,
+- **What changes.** `backend/metal/prefill.go:resident.prefillLastImgSrc` chooses each layer's blocks by its kind today (`L.delta`,
   `L.mamba`, `L.geom == nil`, `L.ffn`, `L.moe`, the PLE weights, the layer scalar). It will run the layer's steps
   (`residLayer.steps`, which `buildLayerSteps` derives from the program and checks against what was loaded) through a
   table of the batched pass's blocks:
@@ -3122,9 +3122,9 @@ batched prefill layer body walks the program, as OP4m-b2 made decode do. The mul
   minutes for D-2; D-4 about 2 × 12 prefills of a few seconds each, plus two loads.
 
 **OP4m-d1: readings, 2026-10-31 (mac-sb11m, branch `op4m-d-2026-10-31`; every run under the timing lock, shared, and
-exclusive for D-4).** `metal/prefill.go:resident.prefillLastImgSrc` defines the batched pass's blocks as closures
+exclusive for D-4).** `backend/metal/prefill.go:resident.prefillLastImgSrc` defines the batched pass's blocks as closures
 (attention, MoE, FFN, PLE, layer scale; the DeltaNet and Mamba-2 mixers were already their own functions). Each layer runs
-its steps through them. `metal/layer_steps.go:prefillStepsDecline` declines the pass on a step with no block, in place of
+its steps through them. `backend/metal/layer_steps.go:prefillStepsDecline` declines the pass on a step with no block, in place of
 `r.prefillOK`'s hand checks for MLA and Gemma 4's MoE block.
 - **D-1: PASS.** On the 56 tiny checkpoints loaded int4, 29 build resident and take the batched pass. On each, one 24-row
   prefill issues the same pipeline sequence under the step walker as under the old kind switch (24 to 242 dispatches). 11
@@ -3162,7 +3162,7 @@ its steps through them. `metal/layer_steps.go:prefillStepsDecline` declines the 
 - **Next: OP4m-d2,** the multi-sequence step, its own PR.
 
 **OP4m-d2 registered 2026-10-31, before its code (mac-sb11m; the coordinator's job of 09:08).** Metal's multi-sequence step
-(MC3's batched decode, `metal/batch.go`) is admitted by an operation table and runs its layers' steps.
+(MC3's batched decode, `backend/metal/batch.go`) is admitted by an operation table and runs its layers' steps.
 - **What changes.**
   - The step reproduces one layer shape: a pre-norm attention sublayer and a gated dense FFN on every layer.
     `resident.batchIneligible` declines everything else through a hand list of family flags today. It will check
@@ -3197,7 +3197,7 @@ exclusive for D2-4).**
   - `Support` gains the placement and form fields its limits need (sandwich and post-only norms, the parallel block,
     LayerNorm, the output bias, the whole QK-norm, the attention window and softcap, learned positions), checked on the
     embedding and head stages too. `program.Metal` sets them all true.
-  - `metal/batch.go:resident.batchIneligible` checks `program.MetalStep`, then that every layer's steps are an attention and a
+  - `backend/metal/batch.go:resident.batchIneligible` checks `program.MetalStep`, then that every layer's steps are an attention and a
     dense FFN step. It keeps the step's own limits: one KV allocation per layer, the w4f16 lane, the sink, uniform geometry,
     tiled widths.
   - The step's layer body runs its two steps through an attention block and an FFN block.
@@ -3425,7 +3425,7 @@ tack's night and run at 06:05).**
 - **The checkpoint:** `TestRecurrentSlots_checkpointStaysWithItsSlot` covers it. Restoring slot 1's checkpoint with slot 0 bound is refused, and on slot 1 it restores the saved state. The KV8a suite (`TestKV8aMetal_*`) passes unchanged.
 - **D4a-6: PASS.**
   - vet, plain and tagged;
-  - `touched.py`: the queued run (`docs/measurements/op4-2026-10/op4m-d4a-tier0.log`) ends red, 1 of 17. It failed the layout ratchet `TestBackendTests_decoderImportsOnlyFall`: two new test files took metal's decoder-importing count from 241 to 243. The tests then moved into `metal/residentkvbytes_deltanet_test.go`, and touched passed 17/17 at that commit (run by hand, not logged then);
+  - `touched.py`: the queued run (`docs/measurements/op4-2026-10/op4m-d4a-tier0.log`) ends red, 1 of 17. It failed the layout ratchet `TestBackendTests_decoderImportsOnlyFall`: two new test files took metal's decoder-importing count from 241 to 243. The tests then moved into `backend/metal/residentkvbytes_deltanet_test.go`, and touched passed 17/17 at that commit (run by hand, not logged then);
   - `go run ./cmd/lint` 7/7, and the citation lint.
 - **Gemini's review of #570, fixed red first** (passing log: `docs/measurements/op4-2026-10/op4m-d4a-tier0-review.log`, touched 17/17 and lint 7/7):
   - **[bug] the checkpoint before any save.** `ckptSlot` started at 0, so a restore on slot 0 before any save copied the zeroed checkpoint over slot 0's live state. It now starts at -1, a failed save sets it back to -1, and a restore before any save is refused. `TestRecurrentSlots_checkpointStaysWithItsSlot` was red first.
@@ -3747,20 +3747,20 @@ and its size go to Francis through the coordinator before any code. Read at main
 - §5.16's vendor extension saying where a reuse came from is absent. `usage.prefill_reused_tokens` is the only reuse field
   (`internal/serveapp/openai.go`).
 - §5.16's `serve check` row is absent: `internal/servecheck` has no reuse or preamble row.
-- The pool banner is partial. `cuda/kvpool.go:cudaResident.kvPoolLine` names the positions, blocks and conversations, but not
+- The pool banner is partial. `backend/cuda/kvpool.go:cudaResident.kvPoolLine` names the positions, blocks and conversations, but not
   the precision, bytes, groups or sharing scope.
 
 These three are KV4's own close-out (S, serve-side, tier 0 plus one served check). Only the banner touches a file OP4 reads
-(`cuda/kvpool.go`), and the walk does not change it.
+(`backend/cuda/kvpool.go`), and the walk does not change it.
 
 **What CUDA has today.**
-- **The build reads the layer shape from accessors.** `cuda/backend.go:cudaBackend.buildResidentMode` takes the model-level
+- **The build reads the layer shape from accessors.** `backend/cuda/backend.go:cudaBackend.buildResidentMode` takes the model-level
   placements from accessors at build: `SandwichNormResident`, `PostOnlyNormResident`, `QKNormWholeResident`,
   `LayerNormResident`, `ParallelBlockResident` and `LogitScaleResident`. It also reads the per-layer geometry ones and the
   family ones (`IsGemma4Resident`, `HasGemma4MoEResident`, `GptOssActResident`, the MLA, DeltaNet and Mamba-2 parameter
   sets). Each layer's kind comes from `decoder.Model.ResidentLayerOps`, the two-fact layer view OP2b added (a mixer, and
   whether an FFN follows). The function has 61 `declined(...)` sites.
-- **Decode is segmented** (`cuda/resident.go:cudaResident.launchToken`). Each layer runs:
+- **Decode is segmented** (`backend/cuda/resident.go:cudaResident.launchToken`). Each layer runs:
   - `segA`: the input norm, q/k/v and the QK-norm;
   - the dynamic gap `decodeAttnGap`: rope, the KV store into the bound slot, and attention by lane;
   - `segB`: the output projection and the FFN up to the router readback;
@@ -3770,9 +3770,9 @@ These three are KV4's own close-out (S, serve-side, tier 0 plus one served check
   `segAMLA`. CUDA graphs capture the static segments per layer (`cudaLayer.gSegA`, `gSegB`, `gSegC` in
   `cudaResident.captureGraphs`). Graphs are off by default on this card: `admitGraphs` declines in the DEFAULT compute
   mode. The gpu gate's `graphsforced` group checks that a replay equals the live launches.
-- **Every batched entry point is one function**, `cuda/prefill.go:cudaResident.prefillCore`, about 890 lines. Its callers are
+- **Every batched entry point is one function**, `backend/cuda/prefill.go:cudaResident.prefillCore`, about 890 lines. Its callers are
   the prefill entry points, `ResidualAll`, `PrefillLastN`, batched verify and MC3's multi-sequence step
-  (`cuda/batchstep.go:cudaResident.StepBatch`, `rows != nil`). It branches on each layer's kind: DeltaNet rows, the
+  (`backend/cuda/batchstep.go:cudaResident.StepBatch`, `rows != nil`). It branches on each layer's kind: DeltaNet rows, the
   per-row MoE FFN, PLE, K=V. `nonBatchableKind` sends the Mamba-2 mixer and FFN-only blocks to the sequential path.
 - **The step's scope is a flag list.** `cudaResident.BatchStepRange` excludes MoE (C′ expert streaming included), MLA, the
   recurrent families, a model with no batched prefill, and a model with one slot.
@@ -3784,15 +3784,15 @@ These three are KV4's own close-out (S, serve-side, tier 0 plus one served check
 - **The cost basis for identity.** `go run ./cmd/gate identity -backend cuda` on the tiny assets takes 3m42s–3m43s and reads
   28–29 IDENTICAL, 0 different and 14–15 NOT RUN (`docs/measurements/op2b-cuda-2026-10-16/step2a-2026-10-16.md`;
   `docs/measurements/kv7-step2-2026-10-17/README.md`). The NOT RUN are CUDA's declines and fixture gaps. It needs the card.
-- **The files are hot.** Since 2026-10-18, main has 65 commits touching `cuda/resident.go`, 55 touching `cuda/backend.go` and
-  21 touching `cuda/prefill.go`. Each step below is one PR on a short-lived branch, merged with `main` merged in, never rebased.
+- **The files are hot.** Since 2026-10-18, main has 65 commits touching `backend/cuda/resident.go`, 55 touching `backend/cuda/backend.go` and
+  21 touching `backend/cuda/prefill.go`. Each step below is one PR on a short-lived branch, merged with `main` merged in, never rebased.
 
 **The steps, each its own PR with its own reading:**
 - **OP4cu-a, the program reaches CUDA.** The resident holds `decoder.Model.Program()` at build, read-only, as Metal's
   `resident.prog` does, and dispatches nothing from it. `cuda` imports `internal/program`, a new arrow in
   `internal/layout/imports.json`, permitted by §9's table.
 - **OP4cu-b1, the shape comes from the program.** A function in `cuda` derives the model-level placements and each layer's
-  mixer and FFN from the program, as OP4m-b1 did for Metal (`metal/program_shape.go`). `buildResidentMode` stops calling
+  mixer and FFN from the program, as OP4m-b1 did for Metal (`backend/metal/program_shape.go`). `buildResidentMode` stops calling
   those accessors and `ResidentLayerOps`. They stay for WebGPU, and `ResidentLayerOps` for Metal's one remaining read. A layer
   whose operations match no shape the build implements declines, naming the layer and the operation. b1 changes no dispatch.
 - **OP4cu-b2, decode walks the program.** At build, each layer's operation list is matched against a fusion table into steps,
@@ -3926,7 +3926,7 @@ No step needs a night job, and none needs a guard threshold changed.
 - **A-1: PASS.** Red first with the field unset: both fixtures built a CUDA resident holding nil (`op4cu-a-a1-red.log`). Green
   with `prog` set from `m.Program()` in `cudaBackend.buildResidentMode`. `llama-tiny` has 4 layers and 36 operations,
   `qwen35-tiny` 4 layers and 24 (`op4cu-a-a1-green.log`).
-  - **One change from the registration.** The test sits in `cuda/sb2_census_test.go`, not in a file of its own. A new test
+  - **One change from the registration.** The test sits in `backend/cuda/sb2_census_test.go`, not in a file of its own. A new test
     file importing decoder raised SB13's decoder-import ratchet (cuda 242 → 243 importing, 307 → 308 reaching), which only
     falls. Metal's A4 went into an existing file for the same reason.
 - **A-2 (U1): PASS.** `gate identity -backend cuda f10ada6e6 37e139cbd`: 29 IDENTICAL, 0 within tolerance, 0 different and 14
@@ -3949,7 +3949,7 @@ No step needs a night job, and none needs a guard threshold changed.
 - **Card time:** about 11 minutes so far, of the 2 hours: the two identity runs (4m11s and 5m45s), `touched.py` (about a minute) and three A-1 runs of seconds each.
 
 **OP4cu-b1 registered 2026-11-01 14:17 PST, before its code (nobara-sb01; design (a), the coordinator's word, received at 14:17).**
-- **What moves.** Metal's layer-shape derivation (`metal/program_shape.go`: `denseShapeOf`, its plants, the agreement and Olmo
+- **What moves.** Metal's layer-shape derivation (`backend/metal/program_shape.go`: `denseShapeOf`, its plants, the agreement and Olmo
   Hybrid rules) moves verbatim into `internal/program` as `Shape` and `ShapeOf`, with exported fields. Its plants become a
   package test hook, `program.ShapePlantForTest`, which is zero in production.
   - `internal/program` gains `MixerOf(ops)`: a layer's mixer (attention, DeltaNet, Mamba-2, MLA or none) and whether an FFN
@@ -3957,7 +3957,7 @@ No step needs a night job, and none needs a guard threshold changed.
     attention).
   - Metal's pure `denseShapeOf` tests move to `internal/program` with only the names changed. Metal's fixture test
     (`TestDenseShape_matchesTheAccessors`) stays in `metal` and calls `program.ShapeOf`.
-- **The metal/ edit.** `metal/model.go`'s two callers and their field reads take the exported names. No Metal dispatch
+- **The metal/ edit.** `backend/metal/model.go`'s two callers and their field reads take the exported names. No Metal dispatch
   changes.
 - **CUDA.** `buildResidentMode` takes `sandwich`, `postOnly`, `qkNorm`, `qkNormWhole`, `layerNorm` and `parallelBlock` from
   `program.ShapeOf(m.Program())`, and each layer's mixer and FFN from `program.MixerOf`. It stops calling those six accessors
@@ -4085,7 +4085,7 @@ of the timing lock, 14:57–15:04 PST, with only `kwin_wayland` on the card befo
   - **B2-8, U8:** `touched.py`; vet and the pinned staticcheck on `./cuda/...` with CI's tags (canary red); the citation lint.
 - **Amended 2026-11-01 17:13 PST, before any claims code (the coordinator's (a), received at 17:13).** The claims check is not a
   second, CUDA-only model. Metal's sublayer derivation moves into `internal/program`:
-  - What moves from `metal/layer_steps.go`: `layerStepsOf`, `checkStepClaims` and `stepClaims`, with the step kinds, spans
+  - What moves from `backend/metal/layer_steps.go`: `layerStepsOf`, `checkStepClaims` and `stepClaims`, with the step kinds, spans
     and form table. They become `Sublayer`, `SublayerSpan`, `SublayersOf(ops, backend)` and `CheckSublayerClaims(ops, spans)`.
     The plant becomes `ShapePlantClaimOneMore`, behind `SetShapePlantForTest` like b1's.
   - Metal keeps aliases for the old names, and only the span fields are renamed. Its decline texts are unchanged:
@@ -4304,7 +4304,7 @@ Francis's GO).** The CUDA half of OP4m-c2: CUDA's admission reads `program.CUDA`
     - the admission census golden (`testdata/sb2_admission_census.amd64.txt.gz`);
     - the decision census (`TestDecisionCensus`);
     - the generated hardware matrix (`docs/hardware-matrix.md`) and capability matrix;
-    - CUDA's own admission census (`cuda/testdata/sb2_cuda_census.amd64.txt.gz`).
+    - CUDA's own admission census (`backend/cuda/testdata/sb2_cuda_census.amd64.txt.gz`).
 
     The record lists every changed line, old and new, compared as sets.
   - **C2-3, a planted gap:** a copy of `program.CUDA` without the tanh GELU on the gated form, put in place for CUDA, turns the
@@ -4367,7 +4367,7 @@ code `c40e79dc6` and `7f3723eca`).** Logs: `docs/measurements/op4-cuda-2026-11/o
 **OP4cu-d2 registered 2026-11-02 00:33 PST, before its code (nobara-sb01; the coordinator's budget answer, option (b): d2 only, inside
 Francis's 2 hours; d1 waits for Francis).** The CUDA half of OP4m-d2: MC3's step on CUDA is admitted by an operation table.
 - **What changes.**
-  - `program.CUDAStep` is a second `Support`: what `cuda/batchstep.go`'s step implements. It is `program.CUDA` without the
+  - `program.CUDAStep` is a second `Support`: what `backend/cuda/batchstep.go`'s step implements. It is `program.CUDA` without the
     kinds and forms the step excludes: MLA, Mamba-2, DeltaNet, Gemma 4's MoE block, and the MoE and gpt-oss FFN forms.
   - `cudaResident.BatchStepRange` checks the model's program against it, in place of `r.moe || r.gemma4Moe || r.isMLA ||
     r.recurrent()`.
@@ -4380,7 +4380,7 @@ Francis's 2 hours; d1 waits for Francis).** The CUDA half of OP4m-d2: MC3's step
     Plant: `OpMLA` on the step's table, red on the MLA fixtures.
   - **D2-2, U1:** `gate identity -backend cuda` from this step's base (c2's head, `ab271911c`): IDENTICAL on every family that
     runs, every cell's backend outcome unchanged.
-  - **D2-3:** the step's own tests (`TestKV2_*` on the step, `cuda/batchstep_test.go`) pass.
+  - **D2-3:** the step's own tests (`TestKV2_*` on the step, `backend/cuda/batchstep_test.go`) pass.
   - **D2-4 (U8):** `touched.py` in a clean worktree of the commit; vet and the pinned staticcheck on `./cuda/...` (canary red);
     the citation lint.
 - **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
@@ -4558,12 +4558,12 @@ to 06:49:01 PST, load 0.31 at its start, `kwin_wayland` the only other CUDA cont
 ### 5.3 How close the code is
 
 - **Exists:**
-  - MC3's `StepBatch`: B sequences, one row each (`cuda/batchstep.go:cudaResident.StepBatch`,
-    `metal/batch.go:metalResident.StepBatch`);
+  - MC3's `StepBatch`: B sequences, one row each (`backend/cuda/batchstep.go:cudaResident.StepBatch`,
+    `backend/metal/batch.go:metalResident.StepBatch`);
   - `ForwardN`: one sequence, k rows;
   - chunked prefill;
-  - Metal's row kernels (`metal/batch_rows.go`). CUDA's step runs attention row by row
-    (`cuda/batchstep.go:cudaResident.stepAttnRows`).
+  - Metal's row kernels (`backend/metal/batch_rows.go`). CUDA's step runs attention row by row
+    (`backend/cuda/batchstep.go:cudaResident.stepAttnRows`).
 - **Missing:**
   - several rows per sequence in a step that also holds other sequences;
   - ragged attention;
@@ -5178,11 +5178,11 @@ Code, read at `9593bd70`:
 - **The seam and the decode loop:** `decoder/residency.go:ResidentForward`, `decoder/residency.go:ResidentGreedyChain`,
   `decoder/residency.go:ResidentSampleChain`, `decoder/model.go:Model.generateInto`.
 - **The runners:**
-  - `cuda/resident.go:cudaLayer`, `cuda/backend.go:cudaBackend.BuildResident`, `cuda/batchstep.go:cudaResident.StepBatch`,
-    `cuda/batchstep.go:cudaResident.stepAttnRows`, `cuda/fused_qkv.cu`;
-  - `metal/model.go:residLayer`, `metal/backend.go:metalBackend.BuildResident`, `metal/batch.go:metalResident.StepBatch`,
-    `metal/batch_rows.go`;
-  - `gpu/internal/kernels/decoderunner.go:RunLayer`, `gpu/residency.go:webgpuBackend.BuildResident`.
+  - `backend/cuda/resident.go:cudaLayer`, `backend/cuda/backend.go:cudaBackend.BuildResident`, `backend/cuda/batchstep.go:cudaResident.StepBatch`,
+    `backend/cuda/batchstep.go:cudaResident.stepAttnRows`, `backend/cuda/fused_qkv.cu`;
+  - `backend/metal/model.go:residLayer`, `backend/metal/backend.go:metalBackend.BuildResident`, `backend/metal/batch.go:metalResident.StepBatch`,
+    `backend/metal/batch_rows.go`;
+  - `backend/webgpu/internal/kernels/decoderunner.go:RunLayer`, `backend/webgpu/residency.go:webgpuBackend.BuildResident`.
 - **Serve:** `internal/serveapp/tools.go:constrainToolUnion`, `internal/serveapp/budget.go`, `internal/loadflags/loadflags.go`.
 
 Docs and records:

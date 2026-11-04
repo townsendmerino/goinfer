@@ -10,7 +10,7 @@ The GPU re-measure ([experiments §3](./experiments.md)) showed n-gram speculati
 flat at ~1.0× on the resident path even at tok/v 7.6, because the resident verify
 re-streams the weights once **per draft row**:
 
-- `gpu/internal/kernels/decoderunner.go:RunBatch` records K separate **M=1** runners into one command
+- `backend/webgpu/internal/kernels/decoderunner.go:RunBatch` records K separate **M=1** runners into one command
   pass with a single Submit/Poll — it amortizes the *sync*, not the per-token weight
   stream. Each of the K rows re-reads all model weights through the per-token
   `gemvW8A8` GEMV. So committing K tokens costs ~K× the GPU compute of one → no win.
@@ -24,11 +24,11 @@ M=K GEMMs so each weight streams **once** across all K verify rows. Attention / 
 The batched W8A8 GEMM primitive is **already written and parity-gated** — it is the
 staged-**prefill** kernel, not yet used on the resident decode path:
 
-- `gpu/gemm.go`: `matmulTiledW8A8ShaderWGSL` (16×16 shared-memory tiled int8 GEMM,
+- `backend/webgpu/gemm.go`: `matmulTiledW8A8ShaderWGSL` (16×16 shared-memory tiled int8 GEMM,
   math identical to the GEMV), `MatmulW8A8Tiled(aq, aScales, rm, M)`, and
   `BatchTiled(aq, aScales, M, rms)` (shared-activation qkv / gate-up, one submit).
 - Gated: `TestTiled_parity`, `TestBatchTiled_parity` (bit-parity vs the integer ref).
-- Used only in `gpu/backend.go` (the staged/prefill GPU path), **not** in the
+- Used only in `backend/webgpu/backend.go` (the staged/prefill GPU path), **not** in the
   resident `DecodeRunner`.
 
 So Stage B does **not** need a new kernel (a fresh `gemmW8A8` would duplicate this).
@@ -78,7 +78,7 @@ attention reads its own causal prefix from the (shared) resident KV.
   wastes half its M rows at M=8** (it is the *prefill* kernel, M≫16), and the per-row
   GEMV is already bandwidth-optimal. **The existing kernel cannot deliver Stage B.**
   Production wiring into `ForwardN` is therefore NOT worth doing with this kernel.
-- **Inc 3 (done — thin-M kernel built, still no win):** `gpu/gemm_rows.go`
+- **Inc 3 (done — thin-M kernel built, still no win):** `backend/webgpu/gemm_rows.go`
   `gemmRowW8A8` — one workgroup per output column, each weight vec4 read ONCE and
   accumulated against all M rows (M register accumulators, no wasted tile dim).
   Bit-exact (the batched parity gate still passes). Microbench: batched
@@ -111,7 +111,7 @@ gather/scatter; measure at larger M and larger hidden; profile bandwidth vs ALU.
 ## Large-dim re-measure (2026-06-21): amortization IS there for BIG models + SHORT drafts
 
 Ran the unfunded lever the conclusion flagged ("measure at larger M and larger hidden")
-— `gpu/decodetoken_largedim_bench_test.go` (`TestDecodeTokenFusedBatched_largedim`),
+— `backend/webgpu/decodetoken_largedim_bench_test.go` (`TestDecodeTokenFusedBatched_largedim`),
 batched-vs-per-row×M on the 2070S, synthetic layers (L small to fit 8 GB):
 
 Dim ladder @ M=8: qwen0.5b **0.79–0.86×** · llama7b **0.98–1.09×** · llama13b

@@ -7,11 +7,11 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 
 ## s4siglip
 
-Moved from `cuda/s4siglip/siglip_test.go` (the comment above `s4siglip`) on 2026-10-09.
+Moved from `backend/cuda/s4siglip/siglip_test.go` (the comment above `s4siglip`) on 2026-10-09.
 
 ```text
 Package s4siglip reads aikit's CUDA SigLIP tower (gpu/visioncuda) at real size, alone. It is its own package because both aikit's visioncuda and goinfer's
-own cuda.VisionEncoder (cuda/vision_register.go) register through the one global vision.RegisterResident hook and the LAST registration wins: inside package
+own cuda.VisionEncoder (backend/cuda/vision_register.go) register through the one global vision.RegisterResident hook and the LAST registration wins: inside package
 cuda the goinfer tower wins, so a test there measures goinfer's tower, not aikit's (found 2026-10-07; the attached type was *cuda.VisionEncoder).
 This package imports nothing from goinfer's cuda, so only visioncuda registers. Information for the aikit defect report, not a gate (G-S4q).
 ```

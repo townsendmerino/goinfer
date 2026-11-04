@@ -38,7 +38,7 @@ sources:
   - "docs/cuda-backend.md"
   - "docs/webgpu-primer.md"
   - "docs/completed/task-cuda-cgofree-spike.md"
-  - "cuda/build_ptx.sh"
+  - "backend/cuda/build_ptx.sh"
   - ".github/workflows/ci.yml"
   - ".github/workflows/release-assets.yml"
   - "README.md"
@@ -61,21 +61,21 @@ go install github.com/townsendmerino/goinfer/cmd/serve@latest
 For a GPU you build the backend's own entry point. These are also pure Go, and the [README](https://github.com/townsendmerino/goinfer/blob/main/README.md) lists them:
 
 ```sh
-go install github.com/townsendmerino/goinfer/metal/cmd/serve@latest              # macOS
-go install -tags cuda  github.com/townsendmerino/goinfer/cuda/cmd/serve@latest    # Linux + NVIDIA
+go install github.com/townsendmerino/goinfer/backend/metal/cmd/serve@latest              # macOS
+go install -tags cuda  github.com/townsendmerino/goinfer/backend/cuda/cmd/serve@latest    # Linux + NVIDIA
 ```
 
 Because there is no C code, cross-compiling is an ordinary Go cross-compile. The README's example for a Raspberry Pi, run from a clone of the repo, is `GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o goinfer-serve ./cmd/serve`.
 
 ## How it works
 
-**CUDA.** The `cuda/` module uses a Go library, `gocudrv`, that calls the NVIDIA driver without cgo. It uses `purego`, which opens `libcuda.so.1` with `dlopen` at run time. The GPU kernels were compiled ahead of time to PTX, NVIDIA's portable intermediate form. That PTX (932 KB) is embedded in the binary. The driver compiles it for whatever card is installed, just in time, the first time the program starts, and caches the result. So the CUDA toolkit is used only by whoever regenerates the PTX, never to build or run goinfer.
+**CUDA.** The `backend/cuda/` module uses a Go library, `gocudrv`, that calls the NVIDIA driver without cgo. It uses `purego`, which opens `libcuda.so.1` with `dlopen` at run time. The GPU kernels were compiled ahead of time to PTX, NVIDIA's portable intermediate form. That PTX (932 KB) is embedded in the binary. The driver compiles it for whatever card is installed, just in time, the first time the program starts, and caches the result. So the CUDA toolkit is used only by whoever regenerates the PTX, never to build or run goinfer.
 
-**Metal.** The `metal/` module calls the Objective-C runtime through `purego`, and it compiles its Metal Shading Language kernels when the program runs. Every file is marked `//go:build darwin`, so a Mac build includes it without a tag.
+**Metal.** The `backend/metal/` module calls the Objective-C runtime through `purego`, and it compiles its Metal Shading Language kernels when the program runs. Every file is marked `//go:build darwin`, so a Mac build includes it without a tag.
 
 **Keeping it out of the default build.** The backends are separate modules that register themselves into the `decoder` package. The root module does not import them. CI checks this on every push: neither the compiled package list nor the module graph of the root may mention a WebGPU binding, `gocudrv`, `purego`, `aikit/gpu` or a backend module.
 
-**WebGPU** is the exception. It uses cgo through `oliverbestmann/webgpu`, in the `gpu/` module behind `-tags gpu`. The prebuilt `wgpu-native` libraries arrive as Go modules, so you do not build any Rust. It works over Vulkan, Metal or DX12.
+**WebGPU** is the exception. It uses cgo through `oliverbestmann/webgpu`, in the `backend/webgpu/` module behind `-tags gpu`. The prebuilt `wgpu-native` libraries arrive as Go modules, so you do not build any Rust. It works over Vulkan, Metal or DX12.
 
 ## What was measured
 
@@ -94,7 +94,7 @@ Two older figures come from the project's [CUDA backend notes](https://github.co
 ## Use it
 
 - CPU server: `go install github.com/townsendmerino/goinfer/cmd/serve@latest`. The binary is named `serve`, after its directory.
-- CUDA: `CGO_ENABLED=0 go install -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve@latest`, then run with `--backend cuda`. (A plain `go build` of that path works only inside a checkout of the repo.)
-- WebGPU (needs cgo, so a C compiler): `go build -tags gpu github.com/townsendmerino/goinfer/gpu/cmd/serve`.
+- CUDA: `CGO_ENABLED=0 go install -tags cuda github.com/townsendmerino/goinfer/backend/cuda/cmd/serve@latest`, then run with `--backend cuda`. (A plain `go build` of that path works only inside a checkout of the repo.)
+- WebGPU (needs cgo, so a C compiler): `go build -tags gpu github.com/townsendmerino/goinfer/backend/webgpu/cmd/serve`.
 - To see what a binary carries, run it with `--version` (`serve --version`, or `goinfer-serve --version` for a downloaded release binary). The CUDA build in the run above printed `serve v0.18.0 / backends: cpu cuda / go: go1.27.1 linux/amd64`.
 - `-tags cuda` on the root `cmd/serve` does not work. It fails the build and points you to the module path above.

@@ -33,9 +33,9 @@ var decoderRatchet = map[string]struct{ Direct, Reach int }{
 // (docs/tasks/task-subsystems-2026-10.md, "SB2 step 2"). A census of the decoder's admission has to reach decoder, since it
 // loads models through it. The exemption is by exact path, so no other test can shelter under it.
 var decoderRatchetExempt = map[string]bool{
-	"cuda/sb2_census_test.go":  true,
-	"gpu/sb2_census_test.go":   true,
-	"metal/sb2_census_test.go": true,
+	"backend/cuda/sb2_census_test.go":   true,
+	"backend/webgpu/sb2_census_test.go": true,
+	"backend/metal/sb2_census_test.go":  true,
 }
 
 // goFile is one parsed Go file: its directory relative to the repository root, whether it is a test file, and the
@@ -176,6 +176,14 @@ func census(files []goFile) (map[string]backendCount, map[string]int) {
 			continue
 		}
 		mod := strings.SplitN(f.dir, "/", 2)[0]
+		if mod == "backend" {
+			if parts := strings.SplitN(f.dir, "/", 3); len(parts) >= 2 {
+				mod = parts[1]
+				if mod == "webgpu" {
+					mod = "gpu"
+				}
+			}
+		}
 		if _, ok := decoderRatchet[mod]; !ok {
 			continue
 		}

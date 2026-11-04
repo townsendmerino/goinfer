@@ -8,7 +8,7 @@ import (
 	"os"
 	"strconv"
 
-	_ "github.com/townsendmerino/goinfer/cuda"
+	_ "github.com/townsendmerino/goinfer/backend/cuda"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 

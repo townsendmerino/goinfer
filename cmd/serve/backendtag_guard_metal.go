@@ -6,4 +6,4 @@
 // entrypoint itself), so the replacement command omits the tag.
 package main
 
-const _ = "goinfer: `-tags metal` does nothing on the root cmd/serve since v0.10.0 (it builds no backend). Build the submodule entrypoint instead (darwin): go build github.com/townsendmerino/goinfer/metal/cmd/serve" + 1
+const _ = "goinfer: `-tags metal` does nothing on the root cmd/serve since v0.10.0 (it builds no backend). Build the submodule entrypoint instead (darwin): go build github.com/townsendmerino/goinfer/backend/metal/cmd/serve" + 1

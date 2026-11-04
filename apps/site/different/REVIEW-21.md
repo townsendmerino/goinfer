@@ -17,7 +17,7 @@ Draft: `site/different/21-transcripts-that-match-the-reference.md` (body about 8
 | Six planted decoder defects, each red (positions shifted, no final norm among them) | task doc, "G-S14t1, exactness: PASS" and "G-S14f1, tiny: PASS on the first build" |
 | Qwen3-ASR first read 71 of 73, a stop-token bug; then 73 of 73 | task doc, "G-S14c4a: PASS" |
 | 225 s for the 73 clips, 3.1 s a clip | task doc, "G-S14t2, end to end: PASS" |
-| Encoder on CUDA: 1.74 s to 0.13 s for a 30 s window, the 73 transcripts unchanged; CUDA only | `CHANGELOG.md`, "Whisper and Voxtral's audio encoder on the GPU under `--backend cuda`"; `cuda/audio_encoder.go` is the only device registration |
+| Encoder on CUDA: 1.74 s to 0.13 s for a 30 s window, the 73 transcripts unchanged; CUDA only | `CHANGELOG.md`, "Whisper and Voxtral's audio encoder on the GPU under `--backend cuda`"; `backend/cuda/audio_encoder.go` is the only device registration |
 | Qwen3-ASR at int4 5.13% WER against float32's 4.09%; Voxtral Mini compared on a 5.9 s and a 36 s clip | `CHANGELOG.md`, "speech to text" entry |
 
 ## Things to decide or check

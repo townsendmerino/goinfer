@@ -36,7 +36,7 @@ Both are `decode path: cuda-resident (int4)`, one conversation. (The scoping not
 The expert FFN is nearly all of a cold prefill (96.7% at 4096). Attention is 2%. Any lever that does not shorten the expert FFN cannot move Mellum2.1's
 prefill by more than a few percent; one that cuts the FFN by a factor f moves it by about 1 / (0.033 + 0.967 / f).
 
-## Option A: grouped, exact expert kernels (built 2026-10-19, `cuda/moe_rows.cu`)
+## Option A: grouped, exact expert kernels (built 2026-10-19, `backend/cuda/moe_rows.cu`)
 
 The 4096-token profile above shows the expert FFN at 96.7% and about 14.5 us per launch (12k launches per layer per 512-row chunk: three per (row, rank) pair), so the expert-major path was launch-bound.
 `gemv_w4a8_moe_rows` and `glu_quant_rows` take all of one expert's pairs in one launch per stage (three launches per expert) and keep each pair's accumulator in the order, with the rounding, of

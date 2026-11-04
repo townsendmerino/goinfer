@@ -22,7 +22,7 @@
 //	I1 nothing is allocated without a plan line        TestLedger_unplanned; cuda's TestLedger_everyAllocationNamesALine
 //	I2 every lifetime closes to zero                   TestLedger_closesToZero; cuda's TestLedger_closesAgainstDevice
 //	I3 the ledger agrees with the device               cuda's TestLedger_closesAgainstDevice
-//	a build leases what its plan prices, line by line  internal/memgate, with metal's TestMemGate_metal, gpu's TestMemGate_webgpu and memgate's TestMemGate_cpu (MM7)
+//	a build leases what its plan prices, line by line  internal/memgate, with metal's TestMemGate_metal, backend/webgpu's TestMemGate_webgpu and memgate's TestMemGate_cpu (MM7)
 //	I6 no guard threshold is applied outside mem       TestNoGuardThresholdOutsideMem (the backends' own guards ratcheted)
 //	the decisions are today's, byte for byte           decoder's TestDecisionCensus
 //

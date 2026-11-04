@@ -260,7 +260,7 @@ own prefix instead of evicting each other. Still one generation at a time; no ba
   generation binds that slot. No match → the least-recently-used slot is reset and taken.
 - **Slot count.** Reuse `-kv-sessions` as the requested count; the backend clamps it to what the
   fit guard allows and says so in the banner. The fit guard's KV term (`residentKVBytes` in
-  `metal/backend.go`, and the CUDA and WebGPU equivalents) is multiplied by the slot count.
+  `backend/metal/backend.go`, and the CUDA and WebGPU equivalents) is multiplied by the slot count.
   Rough size: KV bytes per token = layers × kvDim × 2 (K and V) × bytes per element. For
   Qwen2.5-1.5B (28 layers, kvDim 256, f16) that is about 28 KB per token, ~117 MB per 4k-context
   slot. Larger models scale with their own geometry; the guard does the arithmetic, not a table.
@@ -395,7 +395,7 @@ control thrashes (3 / 3). The tagged CUDA suite: 171 pass, 0 fail.
 - Owed: the discrete-GPU clamp (a failed allocation plus the headroom probe) on real Vulkan hardware
   (`docs/prompts/nobara-mc1-webgpu-2026-09.md`).
 - **Owner decision, 2026-09-27: slots before context on WebGPU too, in two steps.**
-  - **Step 1, done (darwin):** `slotsBeforeContext` (`gpu/kv_slots.go`). When more than one slot is requested and
+  - **Step 1, done (darwin):** `slotsBeforeContext` (`backend/webgpu/kv_slots.go`). When more than one slot is requested and
     the context is unpinned, the context gives up positions, down to 4096, until every slot fits under
     `darwinKVSlots`. Below the floor the slots clamp. It is priced from `kvBytesPerPosition`, which is pinned against
     the real allocation on every KV layout.
@@ -432,7 +432,7 @@ context, and it silently never ran for it.
   `request` before Plan runs, and `ctxForSlots` takes that `floor` as a parameter instead of hardcoding
   `cudaCtxCapDefault`, so the slots search still respects a sub-4096 guard pin as its own lower bound.
 - **Found and fixed two existing tests that were passing for the wrong reason.** Both `TestResolveCtxCapFit_shortcuts`
-  (`cuda/resident_cap_test.go`) and `TestResolveCtxCapFit_slotsShrinkTheContext` (`cuda/kv_slots_test.go`) called
+  (`backend/cuda/resident_cap_test.go`) and `TestResolveCtxCapFit_slotsShrinkTheContext` (`backend/cuda/kv_slots_test.go`) called
   `resolveCtxCapFit(m, 8192, ...)` on an `m` loaded WITHOUT `ResidentContext` set — i.e. `m.ResidentContextPinned()`
   was already false before this fix existed to check it, so under the corrected logic these cases would silently
   stop testing "a genuine pin never shrinks" and start testing the (different, also-correct) guard-pin path
@@ -455,7 +455,7 @@ context, and it silently never ran for it.
   here as expected. `TestWebGPUKVSlots_interleavedMatchesAlone` on the real 1.5B (`GOINFER_HEAVY_TESTS=1
   GOINFER_WEBGPU_KVSLOTS_MODEL=...`) reused 0/55/105 per turn, matching the CUDA figure exactly
   (`identity-1.5b.log`).
-- **2. The real clamp** (`TestWebGPUKVSlots_realClamp`, `gpu/kv_slots_test.go`, committed). Loads with 4 slots
+- **2. The real clamp** (`TestWebGPUKVSlots_realClamp`, `backend/webgpu/kv_slots_test.go`, committed). Loads with 4 slots
   requested at the default 16k f32-KV context, runs 2 turns × 32 tokens on every granted slot, checks it against a
   fresh one-slot load, and checks `LiveBufferBytes()` and `nvidia-smi` return to their pre-load baseline after
   `Close`.
@@ -468,7 +468,7 @@ context, and it silently never ran for it.
     real out-of-memory buffer allocation on Vulkan fails as a normal Go `error` from `TryCreateBuffer`** — no
     panic, no device loss, no corrupted state. Slot 0's generation is bit-identical to a fresh one-slot load,
     `LiveBufferBytes()` matched exactly, and `nvidia-smi` read +3 MiB after `Close` (well under the 128 MiB margin
-    `cuda/lifecycle_test.go` already uses for the same kind of check).
+    `backend/cuda/lifecycle_test.go` already uses for the same kind of check).
   - Read against the pre-registered rule: the build's own clamp message is the "logged reason"; the granted slot(s)
     are bit-identical on both checkpoints; nothing leaked on either checkpoint; the only "validation error" that
     appeared is the deliberate, handled `TryCreateBuffer` probe the clamp exists to catch, not an unexpected later
@@ -575,7 +575,7 @@ CLAUDE.md's run budget).
   (`scripts/night.py add mc1-webgpu-w7-nobara --est 45 ...`), not run by day.
 - Raw output and gates land in `docs/measurements/concurrency-mc1-webgpu-nobara-2026-09-28/`.
 
-**What was built** (`gpu/kv_slots.go`). The WebGPU resident implements `decoder.ResidentKVSlotter`; the decoder half
+**What was built** (`backend/webgpu/kv_slots.go`). The WebGPU resident implements `decoder.ResidentKVSlotter`; the decoder half
 is Metal's, unchanged.
 - **A slot is a whole decode runner.** This is not a pointer swap, as it is on CUDA and Metal. `newDecodeRunner` bakes
   every KV buffer into bind groups it builds once: `ropeStore`, `vStore`, `qkvFinalize`, the attention binds, and
@@ -601,7 +601,7 @@ is Metal's, unchanged.
     context" to this backend is an owner decision, open.
 - **Families.** A runModel carrying Mamba or DeltaNet state keeps one slot, on WebGPU as well as by the decoder.
 
-**Identity (before timing).** `gpu/kv_slots_test.go`:
+**Identity (before timing).** `backend/webgpu/kv_slots_test.go`:
 - The interleaved-vs-alone scenario with a one-slot thrash control runs on llama-tiny with f32, int8 (scales) and
   f16 KV, and on deepseek-tiny (MLA). mistral-tiny-window is not built on this Mac (gitignored fixture), so it skips
   here; nobara has it.
@@ -744,7 +744,7 @@ serialized MC1 path, the same shape fast prefill used.
   shape, and the prefill GEMM is already Metal's weakest kernel (R4). Prior-art sweep required:
   MLX's and llama.cpp's Metal small-batch matmul paths.
 - **Multi-sequence attention** over B slots of different lengths. MC1's slots are the KV storage,
-  which is why MC1 comes first. The CUDA flash-decode multi-row lane (`cuda/flash_decode.go`)
+  which is why MC1 comes first. The CUDA flash-decode multi-row lane (`backend/cuda/flash_decode.go`)
   batches verify rows of **one** sequence at consecutive positions; it is a reference for the
   kernel shape, not a ready answer.
 - **Per-sequence** positions, sampling, stop tokens and grammar masks (the masker runs host-side;
@@ -880,7 +880,7 @@ work, run one sequence after another:
 - attention, 2.6 ms at B = 4 and 12.7 at B = 8 depth 512.
 
 **The build.**
-- **S3a:** multi-row forms of rmsnorm_quant, quant_vec, swiglu_quant and rope2 (`metal/batch_rows.go`). Their bodies
+- **S3a:** multi-row forms of rmsnorm_quant, quant_vec, swiglu_quant and rope2 (`backend/metal/batch_rows.go`). Their bodies
   are production's byte for byte, derived at init by renaming the signature and adding a per-row prologue; nothing is
   retyped, because these kernels round differently when their code shape changes.
 - **S3b:** multi-row kv_store and attention, the per-head kernel. A row map selects the rows below
@@ -1096,7 +1096,7 @@ lever to test," with a quantified ceiling: batching the head should move M=4 fro
   the SAME `lm_head` weights M times. `batchedHeadArgmax` already had the fix for the argmax-only case
   (`bNormB` + one `bGemvB` call over all M rows) — `tailAllLogits` had never been given the same treatment, only
   the argmax tail had.
-- **`batchedHeadFull`** (`cuda/prefill.go`) reuses those same two calls — `bGemvB`'s own doc comment documents its
+- **`batchedHeadFull`** (`backend/cuda/prefill.go`) reuses those same two calls — `bGemvB`'s own doc comment documents its
   int8 kernel as "bit-identical to gemv_w8a8_fwd by construction" (exact int32 accumulation, so tiling M changes
   no element), and the S0 already proved the same for the int4 kernels used elsewhere in this pass. Only the GEMV
   is batched; per-row post-processing is untouched: a draw row's logits are copied into the single-row `r.logits`
@@ -1138,7 +1138,7 @@ lever to test," with a quantified ceiling: batching the head should move M=4 fro
 - **Not pursued this pass: per-call scratch in `prefillCore`.** Unlike the batched head, this had no prior
   measurement anywhere in the codebase (the S0 named it only as an estimate). `prefillCore` allocates its
   M-sized scratch fresh from the device allocator on every call — including every MC3 `StepBatch` — and frees it
-  at return (`cuda/prefill.go`'s own "M-sized scratch (device), freed at the end" comment), roughly 13 `af`/`ai`
+  at return (`backend/cuda/prefill.go`'s own "M-sized scratch (device), freed at the end" comment), roughly 13 `af`/`ai`
   calls per call, all before the per-layer loop (not multiplied by depth). Whether that allocate/free cycle is a
   meaningful fraction of a 2-4-row step's time was not measured here; sizing it (a category on `prefillProf`, or an
   isolated allocation microbenchmark at MC3's actual M) is the natural next step before deciding whether to build
@@ -1461,7 +1461,7 @@ production's decode kernels run layer-major in one command buffer, so an extra v
       - The block drafter (`--drafter`, CUDA) committed one position more than it wrote, so the next turn reused a
         stale one. It is fixed and pinned by `TestBlockSpecGenerate_commitsOnlyWrittenPositions`. ~~its CUDA check on
         nobara is owed~~ — **run 2026-09-28** (item 30, `docs/prompts/nobara-cuda-spec-trailing-token-2026-09.md`):
-        new `cuda/spec_twoturn_test.go` on the real qwen3-4b + DFlash drafter, N ∈ {1, 17, 48}, both fixes together
+        new `backend/cuda/spec_twoturn_test.go` on the real qwen3-4b + DFlash drafter, N ∈ {1, 17, 48}, both fixes together
         (the n-gram one too). 14/14 pass with the fixes in; reverted, n-gram is exactly one token short at every N
         and the block drafter's turn 2 visibly diverges at N=17/48 (N=1's stale position happens not to corrupt
         that particular continuation — see the record for the caveat). Full results and logs:

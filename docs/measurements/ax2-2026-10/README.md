@@ -32,7 +32,7 @@ Three commits: the mechanical switch (`763b7711`, made by `ax2_rewrite.py`), thi
 | AX2b-N (the mechanical commit is the script) | **PASS**: `ax2_rewrite.py check 763b7711` reproduces all 137 files from the parent, 0 problems. The mapping is aikit's `vision`, `audio` and `gpu/visioncuda` to goinfer's copies |
 | AX2b-S (nothing left on aikit's towers) | **PASS** after one catch: `go list -deps -test` of the root (plain, `realckpt goinfer_testhooks`, windows), `metal`, `gpu`, `cuda` (`GOOS=linux`) and `demo/agent` names neither package. The first run found `cuda/s4siglip`'s blank import of aikit's `gpu/visioncuda`. That import compiles and would have registered into aikit's `vision`, which nothing reads after the switch, so that test's `EnableResident` would have failed on nobara. `visioncuda` joined the script's mapping (its copy, `cuda/internal/visioncuda`) and the mechanical commit was remade |
 | AX2b-ID (tower identity) | **PASS**: the head's records equal AX2a's on the CPU (22 cases), Metal (17) and WebGPU (15). CUDA and nobara's CPU wait for nobara (relayed) |
-| AX2b-M (the gate can go red) | **PASS**, registered fallback form. Leaving any one unnamed-slot registration file on aikit's `vision` does not compile (tried `metal/vl_towers.go`, `gpu/vision_register.go`, `gpu/qwen25_vision.go`, `cuda/vision_register.go`, `cuda/qwen25_vision.go`): each shares the tower types with its package. Planting at the registration instead turned `TestTowerIdentity_metal` red both times. An emptied `vision.RegisterResident` slot gave "siglip on metal: … no resident encoder backend". A renamed Qwen3 registration gave `no "metal" Qwen3.5 tower in this binary (registered: [metal-planted])`. Green again after restoring |
+| AX2b-M (the gate can go red) | **PASS**, registered fallback form. Leaving any one unnamed-slot registration file on aikit's `vision` does not compile (tried `backend/metal/vl_towers.go`, `backend/webgpu/vision_register.go`, `backend/webgpu/qwen25_vision.go`, `backend/cuda/vision_register.go`, `backend/cuda/qwen25_vision.go`): each shares the tower types with its package. Planting at the registration instead turned `TestTowerIdentity_metal` red both times. An emptied `vision.RegisterResident` slot gave "siglip on metal: … no resident encoder backend". A renamed Qwen3 registration gave `no "metal" Qwen3.5 tower in this binary (registered: [metal-planted])`. Green again after restoring |
 | AX2b-B (builds) | **PASS** locally: build and vet of every module under its tags (root also `realckpt`, cuda for linux, demo/agent through CI's workspace shape); CI's staticcheck clean in all five, canary red; root cleanliness guard 0. `touched.py` (15:34 to 15:41) found one red, `TestEnvVars_docAndCodeAgree`: `internal/towerid` read `GOINFER_TOWER_ID_OUT` from non-test code. Fixed on AX2a's branch (the tests read it and pass the path) and merged up; the test passes. CI's full suite and apidiff run on the PR |
 
 The image and audio parity tests run in CI's suite; the switch changes no golden file.
@@ -40,7 +40,7 @@ The image and audio parity tests run in CI's suite; the switch changes no golden
 ## AX2c: the metal module on metal/internal/gpudev
 
 One mechanical commit (`ax2cd_rewrite.py metal`): 18 files, the import path only. The first attempt missed
-`metal/device.go`'s one-line `import gpu "…"`, so the package's type aliases still named aikit's types and the module did
+`backend/metal/device.go`'s one-line `import gpu "…"`, so the package's type aliases still named aikit's types and the module did
 not compile; the regex was fixed in its own commit before the mechanical one was made.
 
 | gate | result |
@@ -126,7 +126,7 @@ lint answered 23 lookups from aikit's root module and none from `aikit/gpu`, at 
 live document resolves a citation through `aikit/gpu`. A pinned record's older `aikit/gpu` still comes through CI's
 `--pinned-modules` step, which reads each pinned commit's own `cuda/go.mod`.
 
-One import was left behind by AX2d: `cuda/kernels/ptx_test.go` arrived with SB1's batch 1 after AX2d's rewrite ran. A
+One import was left behind by AX2d: `backend/cuda/kernels/ptx_test.go` arrived with SB1's batch 1 after AX2d's rewrite ran. A
 mechanical commit at AX3's start switched it. From AX3 on, `internal/movedpaths` catches the next one.
 
 ## Review of #282 (Gemini, relayed 2026-10-27)

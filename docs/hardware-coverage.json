@@ -268,9 +268,9 @@
     "cuda:DeviceAttributeMaxThreadsPerMultiprocessor",
     "cuda:DeviceAttributeMaxSharedMemoryPerMultiprocessor"
    ],
-   "selected_when": "read on every CUDA-resident build (cuda/backend.go readSMShape); a card with more SMs or shared memory sizes different grids",
+   "selected_when": "read on every CUDA-resident build (backend/cuda/backend.go readSMShape); a card with more SMs or shared memory sizes different grids",
    "files": [
-    "goinfer/cuda/fused_qkv_rows.go",
+    "goinfer/backend/cuda/fused_qkv_rows.go",
     "aikit/gpu/cuda.go"
    ],
    "our_machines": "only 40 SMs (the 2070 SUPER)",
@@ -301,9 +301,9 @@
    "predicates": [
     "cuda:DeviceAttributeComputeMode"
    ],
-   "selected_when": "when CUDA graphs are being considered for a resident (cuda/graphs_safe.go)",
+   "selected_when": "when CUDA graphs are being considered for a resident (backend/cuda/graphs_safe.go)",
    "files": [
-    "goinfer/cuda/graphs_safe.go"
+    "goinfer/backend/cuda/graphs_safe.go"
    ],
    "our_machines": "nobara (default compute mode)",
    "last_executed": [],
@@ -331,7 +331,7 @@
    "predicates": [],
    "selected_when": "every NVIDIA card newer than the 2070: all PTX is .target sm_75, JIT-compiled forward by the driver",
    "files": [
-    "goinfer/cuda/*.go (the PTX kernels)"
+    "goinfer/backend/cuda/*.go (the PTX kernels)"
    ],
    "our_machines": "never",
    "last_executed": [],
@@ -344,7 +344,7 @@
    "predicates": [],
    "selected_when": "a driver too old for ISA 8.8 may fail to load the kernels",
    "files": [
-    "goinfer/cuda/*.go (the PTX kernels)"
+    "goinfer/backend/cuda/*.go (the PTX kernels)"
    ],
    "our_machines": "never: driver 595.91.07 only",
    "last_executed": [],
@@ -355,14 +355,14 @@
    "gate": "CUDA free-VRAM probes: the fit guard's and the resident KV pricing",
    "kind": "memory-probe",
    "predicates": [
-    "mem:probe:cuda@goinfer/cuda/backend.go",
-    "mem:MemInfo@goinfer/cuda/backend.go",
-    "mem:MemInfo@goinfer/cuda/resident.go"
+    "mem:probe:cuda@goinfer/backend/cuda/backend.go",
+    "mem:MemInfo@goinfer/backend/cuda/backend.go",
+    "mem:MemInfo@goinfer/backend/cuda/resident.go"
    ],
    "selected_when": "every CUDA plan and resident build; residency, slot count and context follow from what is free",
    "files": [
-    "goinfer/cuda/backend.go",
-    "goinfer/cuda/resident.go"
+    "goinfer/backend/cuda/backend.go",
+    "goinfer/backend/cuda/resident.go"
    ],
    "our_machines": "an 8 GB card only",
    "last_executed": [
@@ -393,7 +393,7 @@
    "selected_when": "e.g. a 7B at 32k context with four slots on a 24 GB card; any model resident only above 8 GB",
    "files": [
     "decoder/fitplan.go",
-    "goinfer/cuda/resident.go"
+    "goinfer/backend/cuda/resident.go"
    ],
    "our_machines": "never",
    "last_executed": [],
@@ -406,11 +406,11 @@
    "predicates": [
     "metal:maxThreadgroupMemoryLength"
    ],
-   "selected_when": "read at every Metal resident build (metal/model.go buildResident); a GPU with a different limit stages differently",
+   "selected_when": "read at every Metal resident build (backend/metal/model.go buildResident); a GPU with a different limit stages differently",
    "files": [
     "aikit/gpu/metal.go",
-    "goinfer/metal/model.go",
-    "goinfer/metal/hwinfo.go"
+    "goinfer/backend/metal/model.go",
+    "goinfer/backend/metal/hwinfo.go"
    ],
    "our_machines": "the M1 Pro only",
    "last_executed": [
@@ -454,9 +454,9 @@
    "gate": "Metal on M2/M3/M4 GPU families",
    "kind": "platform",
    "predicates": [],
-   "selected_when": "every newer Mac: MSL is compiled at load by the OS, with no family query in metal/, so the same kernels meet different codegen",
+   "selected_when": "every newer Mac: MSL is compiled at load by the OS, with no family query in backend/metal/, so the same kernels meet different codegen",
    "files": [
-    "goinfer/metal/*.go"
+    "goinfer/backend/metal/*.go"
    ],
    "our_machines": "never (M1 Pro)",
    "last_executed": [],
@@ -467,14 +467,14 @@
    "gate": "Metal memory ceiling and guards (hw.memsize through internal/mem/probe, recommendedMaxWorkingSetSize)",
    "kind": "memory-probe",
    "predicates": [
-    "mem:probe:metal@goinfer/metal/backend.go",
+    "mem:probe:metal@goinfer/backend/metal/backend.go",
     "metal:recommendedMaxWorkingSetSize"
    ],
    "selected_when": "every Metal plan and resident build: metalMemoryCeiling, fitsResidentBudget, the MoE slot budget, the chain embedding table's guard; the working-set cap (B41 gate 4)",
    "files": [
-    "goinfer/metal/backend.go",
-    "goinfer/metal/greedy_chain.go",
-    "goinfer/metal/workingset.go"
+    "goinfer/backend/metal/backend.go",
+    "goinfer/backend/metal/greedy_chain.go",
+    "goinfer/backend/metal/workingset.go"
    ],
    "our_machines": "16 GB only",
    "last_executed": [
@@ -498,7 +498,7 @@
    "files": [
     "decoder/fitplan.go",
     "decoder/fitguard.go",
-    "goinfer/metal/backend.go"
+    "goinfer/backend/metal/backend.go"
    ],
    "our_machines": "never",
    "last_executed": [],
@@ -630,7 +630,7 @@
    "predicates": [],
    "selected_when": "wgpu-native picks Vulkan, DX12 or Metal per platform and vendor",
    "files": [
-    "goinfer/gpu/*.go"
+    "goinfer/backend/webgpu/*.go"
    ],
    "our_machines": "NVIDIA over Vulkan (nobara) and Metal (the Mac) only",
    "last_executed": [],
@@ -643,7 +643,7 @@
    "predicates": [],
    "selected_when": "Linux with an NVIDIA GPU",
    "files": [
-    "goinfer/gpu/*.go"
+    "goinfer/backend/webgpu/*.go"
    ],
    "our_machines": "nobara",
    "last_executed": [
@@ -665,7 +665,7 @@
    "predicates": [],
    "selected_when": "macOS: wgpu-native's Metal backend",
    "files": [
-    "goinfer/gpu/*.go"
+    "goinfer/backend/webgpu/*.go"
    ],
    "our_machines": "the Mac (M1 Pro) only",
    "last_executed": [
@@ -747,7 +747,7 @@
    "predicates": [],
    "selected_when": "every macOS release compiles MSL itself; bit-identity holds within a machine and OS, not across (positioning.md)",
    "files": [
-    "goinfer/metal/*.go"
+    "goinfer/backend/metal/*.go"
    ],
    "our_machines": "one macOS version on the M1 Pro",
    "last_executed": [
@@ -769,11 +769,11 @@
    "predicates": [
     "cuda:DeviceAttributeComputeCapabilityMajor",
     "cuda:DeviceAttributeComputeCapabilityMinor",
-    "mem:MemInfo@goinfer/cuda/hwinfo.go"
+    "mem:MemInfo@goinfer/backend/cuda/hwinfo.go"
    ],
    "selected_when": "only when `check --hardware` runs on a CUDA build; the report says whether the PTX is native (sm_75) or JIT-compiled forward, or older than sm_75 and unsupported",
    "files": [
-    "goinfer/cuda/hwinfo.go"
+    "goinfer/backend/cuda/hwinfo.go"
    ],
    "our_machines": "an RTX 2070 SUPER only",
    "last_executed": [

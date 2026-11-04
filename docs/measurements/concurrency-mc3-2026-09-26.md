@@ -16,7 +16,7 @@ By the pre-registered decision rule, MC3 ships enabled under `serve`'s existing 
 
 ## What was built
 
-- **The batched step** (`metal/batch.go`, `metalResident.StepBatch`):
+- **The batched step** (`backend/metal/batch.go`, `metalResident.StepBatch`):
   - per sequence, production's own kernels: norm + quantisation; RoPE; the KV store into the sequence's slot;
     attention over it (attention_fa at or above `attnFADepthFloor`, planned for that sequence's own depth); ctx
     quantisation; SwiGLU; the final norm;

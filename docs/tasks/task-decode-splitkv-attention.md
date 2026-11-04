@@ -5,7 +5,7 @@
 > **SHIPPED, DEFAULT-ON per geometry; one measurement open.** *(Status line corrected 2026-09-12: it
 > still read "kernels being written" five weeks after they landed, while every section below records
 > the build, the ship, the re-gate and the refutation. A reader who stopped at the header would have
-> mis-read the whole doc.)* The three kernels landed 2026-08-04 (`cuda/decode_splitkv.cu`,
+> mis-read the whole doc.)* The three kernels landed 2026-08-04 (`backend/cuda/decode_splitkv.cu`,
 > `a4932832`), went default-on the same day (`26ae07da`), and were re-gated per geometry 2026-08-09
 > (P6a, `2693dcec`).
 >
@@ -185,7 +185,7 @@ Original reading (`TestSplitKVCrossover`, 1.5B): split-KV **breaks even at nKeys
 >
 > Now gated **per layer** on the **effective attended span** `nWin ≥ splitkvThreshold(nH, hd)` — a
 > measured per-geometry lookup, not a formula (see the derivation and the full table beside the
-> function in `cuda/resident.go`, and `docs/benchmarks.md` §B6). `nWin` not `nKeys`: a sliding-window
+> function in `backend/cuda/resident.go`, and `docs/benchmarks.md` §B6). `nWin` not `nKeys`: a sliding-window
 > layer never attends more than `window` keys, so gating it on position made gemma3's windowed layers
 > take the split path at a 512-key span — its loss regime — at every depth past the window.
 > `GOINFER_SPLITKV_ATTN=0` still force-disables; `GOINFER_SPLITKV_MIN_KEYS=<n>` now overrides the
@@ -226,7 +226,7 @@ section already gives.
 > than a missing depth: `nH` was never the right variable. Two production models at the anchor's OWN
 > `nH=32` measure **opposite signs** — phi3-mini (MHA, 3072 KV floats/key) loses 0.746 at 3900,
 > mistral-7b (GQA 4:1, 1024/key) wins 1.024 — and `ncu` puts all three geometries at 11–13% achieved
-> occupancy, directly refuting `cuda/resident.go`'s old comment that "the single-block kernel already
+> occupancy, directly refuting `backend/cuda/resident.go`'s old comment that "the single-block kernel already
 > fills the device" at high `nH`
 > (`docs/measurements/splitkv-8000-reanchor-2026-09-12.md`, `splitkv-mechanism-ncu-2026-09-12.md`).
 > What actually orders the sign is `f = nKeys·nKV·hd·4B / (t·BW)` — how close the single-block kernel
@@ -241,7 +241,7 @@ section already gives.
 > (`docs/measurements/splitkv-d7-fthreshold-2026-09-13.md`, `splitkv-f-depth-invariance-2026-09-13.md`.)
 >
 > **Shipped the same day** (`61fe66fe`): `splitkvNever` re-keyed from `nH ≥ splitkvMaxHeads` (24) to
-> `nKV·hd ≥ splitkvNeverKVFloats` (3072) — see the constant's own comment in `cuda/resident.go` for
+> `nKV·hd ≥ splitkvNeverKVFloats` (3072) — see the constant's own comment in `backend/cuda/resident.go` for
 > the full derivation. **D7 is no longer in the never class** (512 ≪ 3072); it now falls through to
 > the conservative default threshold (3072 keys) like any unmeasured geometry. The old
 > misclassification had a real, measured cost: **+9.94% at depth 8000** (35.84 → 39.40 tok/s),

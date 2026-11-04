@@ -59,7 +59,7 @@ session's retained state, on the 1.5B and the 7B (`docs/measurements/mem0-2026-1
 
 ### Tier 0 (branch `cuda-stream-pack`, 2026-10-18, on the RTX 2070 SUPER)
 
-G-S1, G-S2a, G-S2b, G-S3 and the decline-allocates-nothing test pass (`cuda/pack_stream_test.go`, run with `-v` and read for `--- PASS`). The fit-guard tests in
+G-S1, G-S2a, G-S2b, G-S3 and the decline-allocates-nothing test pass (`backend/cuda/pack_stream_test.go`, run with `-v` and read for `--- PASS`). The fit-guard tests in
 `decoder/fitguard_cuda_test.go` pass, `gofmt -l` is empty for `cuda/` and `decoder/`, and `go vet` is clean for `./cuda/` (tags `cuda goinfer_testhooks`) and `./decoder/`.
 `scripts/touched.py` is RED on one test that is not this change's: `TestKernelLocalMemoryCensus` fails with
 `PINNED: mamba_conv declares 32 B/thread of local memory and is not in the pinned set`, and it fails identically on a clean `origin/main` (`1ba40e335`) worktree. The branch changes no kernel.

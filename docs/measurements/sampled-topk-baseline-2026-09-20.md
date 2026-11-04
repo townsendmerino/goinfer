@@ -1,6 +1,6 @@
 # R7 step 0 — sampled-decode baseline and attribution (CUDA, 0.5B), 2026-09-20
 
-Instrument: `TestSampledDecodeLadder` (`cuda/sampled_decode_ladder_test.go`), raw log in
+Instrument: `TestSampledDecodeLadder` (`backend/cuda/sampled_decode_ladder_test.go`), raw log in
 [`sampled-topk-baseline-2026-09-20.log`](sampled-topk-baseline-2026-09-20.log).
 
 **Provenance.** Machine `nobara-pc` (Ryzen 7 3700X, RTX 2070 SUPER 8 GB, NVIDIA driver 595.91.07, box idle,

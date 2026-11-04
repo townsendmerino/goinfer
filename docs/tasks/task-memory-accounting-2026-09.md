@@ -21,7 +21,7 @@ Memory needed by a model is computed in several places that were written separat
 
 **A real disagreement: `Plan("metal")` omits Metal's second copy of the dense weights.**
 
-- Metal's pre-build guard, `residentNeedBytes` (`metal/backend.go`), is
+- Metal's pre-build guard, `residentNeedBytes` (`backend/metal/backend.go`), is
   `ResidentWeightBytesPaged(slots) + ResidentHostCopyBytes(slots) + residentKVBytes(m)`: the weights, a host copy
   of the weights (Metal's unified memory holds the quantized host `WeightMat` *and* a re-packed device buffer), and KV.
 - `decoder.Model.Plan` (`decoder/fitplan.go`) prices `ResidentDenseWeightBytes()` + experts + KV. No host-copy term.
@@ -41,17 +41,17 @@ Memory needed by a model is computed in several places that were written separat
 | `kvBytesForCtx` (`decoder/arch.go`) | per-layer `kvDimAt` (0 for linear/Mamba/conv, MLA latent width), sliding-window count cap | the most complete; unexported |
 | `kvBytesPerPositionAllLayers` (`decoder/fitplan.go`, `Plan`) | per-layer `kvDimAt`, per-position rate | deliberately no sliding-window cap (its own comment) |
 | `kvBytesPerPosition` / `estimateKVBytes` (`decoder/fitguard.go`) | load-time host-RAM guard, from `Config` | pre-model; its own per-layer handling |
-| `residentKVBytes` (`metal/backend.go`) | Metal guard, at Metal's resolved ctxCap | skips DeltaNet layers only (not Mamba/conv), uses head×hd not MLA's latent width, int8 scales as f32 per head |
-| `kvBytesForCap` (`cuda/resident.go`) | sums what CUDA actually allocates | allocation-exact by design — **keep**, it is a different quantity |
+| `residentKVBytes` (`backend/metal/backend.go`) | Metal guard, at Metal's resolved ctxCap | skips DeltaNet layers only (not Mamba/conv), uses head×hd not MLA's latent width, int8 scales as f32 per head |
+| `kvBytesForCap` (`backend/cuda/resident.go`) | sums what CUDA actually allocates | allocation-exact by design — **keep**, it is a different quantity |
 
 On a dense model they agree (1.5B at 32k, f16: `Plan` 0.940 GB = `kvBytesForCtx` 0.940 GB); they diverge at the
 edges named in the table. (`DrafterKVBytesPerPosition` prices a drafter's own cache, a separate model; out of scope.)
 
 **Two copies of the 0.70 fraction:** `fitMemFraction` (`decoder/fitguard.go`) and `residentMemFraction`
-(`metal/backend.go`).
+(`backend/metal/backend.go`).
 
-**Slot sizers:** CUDA's search-based sizing (`capSlots`/`slotRequirement`, `cuda/resident.go`), Metal's
-`autoMoESlotsFor` (`metal/backend.go`, solves the guard's inequality for N), and `Plan`'s expert cap.
+**Slot sizers:** CUDA's search-based sizing (`capSlots`/`slotRequirement`, `backend/cuda/resident.go`), Metal's
+`autoMoESlotsFor` (`backend/metal/backend.go`, solves the guard's inequality for N), and `Plan`'s expert cap.
 
 Not independently verified: the originating review's "12 places" total. The items above are the ones checked.
 
@@ -93,7 +93,7 @@ Not independently verified: the originating review's "12 places" total. The item
 3. **Keep CUDA's search-based slot sizing.** The driver rounds allocations up in 2 MiB steps, so dividing a budget by a
    per-slot size cannot invert it. Pin the search with a test at a boundary where division would over-admit.
 
-   > **Already pinned — nothing added (checked 2026-09-25).** `cuda/slotcap_test.go`'s `TestSlotCapArithmetic_search`
+   > **Already pinned — nothing added (checked 2026-09-25).** `backend/cuda/slotcap_test.go`'s `TestSlotCapArithmetic_search`
    > asserts, on the real 26B's figures, that plain division returns 34 where the search returns 33 (the 33→34 step is 4
    > quanta × 30 layers, the requirement 203,816,960 B over free), plus monotonicity and "largest count that fits";
    > `TestSlotCapArithmetic_mutation` proves it red with the rounding removed.
@@ -107,7 +107,7 @@ Not independently verified: the originating review's "12 places" total. The item
   parity-manifest files; run `scripts/refresh_parity_hashes.sh`.
 - Metal parts (the guard and auto-slots) need a Mac run: `go test -tags goinfer_testhooks ./metal/` and the untagged
   `go test ./metal/`, plus the memory-guard tests (`resident_memguard_test.go`). Coordinate with the S6 work, which is
-  editing `metal/backend.go`.
+  editing `backend/metal/backend.go`.
 - Default behaviour changes only where the old numbers disagreed: `fit` may now say "decline" or "expert-cached"
   for GGUF-loaded models on Metal where it said "resident". That is the fix, and it should be stated in the commit.
 

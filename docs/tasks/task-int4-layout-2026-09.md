@@ -53,8 +53,8 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
   slower path. The failure mode we are designing against is a Metal box quietly decoding on the
   CPU.
 - Paged tensors (MoE experts, layer paging) stay canonical on every target. Paging has no
-  load-time repack step and preads canonical spans off the mapping (`metal/moe.go:buildMoE`,
-  `metal/gemma4_moe.go:buildGemma4MoE`, `decoder/moepaging.go`).
+  load-time repack step and preads canonical spans off the mapping (`backend/metal/moe.go:buildMoE`,
+  `backend/metal/gemma4_moe.go:buildGemma4MoE`, `decoder/moepaging.go`).
 - One doc. Findings from doing the work go into the per-item status line here.
 
 ---
@@ -70,10 +70,10 @@ at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFW
 `QuantBackend4.MatmulW4A8` consult stays under `Int4()`'s ok (mutation-tested: reverting is a
 nil-slice fault in `linalg.MatmulBT`, not a slowdown).
 
-**The gap it hit.** `TestMetalSnapshotGolden` (`metal/snapshot_golden_test.go:TestMetalSnapshotGolden`) loads with no
+**The gap it hit.** `TestMetalSnapshotGolden` (`backend/metal/snapshot_golden_test.go:TestMetalSnapshotGolden`) loads with no
 `Backend` set, then calls Metal's unexported `buildResident` directly — an idiom used at 87 sites
 in `metal/*_test.go` (6 in `gpu/`, `cuda/` unchecked). With the empty backend resolving to CPU
-and therefore repacked-only, `int4Concat` (`metal/model.go:int4BufAOn`) declined via its
+and therefore repacked-only, `int4Concat` (`backend/metal/model.go:int4BufAOn`) declined via its
 panic-and-recover. Not a crash — but it shows the gate had turned `*decoder.Model` from
 backend-agnostic data into something with a hidden property and a silent failure mode.
 
@@ -95,7 +95,7 @@ backend-agnostic data into something with a hidden property and a silent failure
 
 **Gate — done, all green.**
 - `metal.TestBuildResident_declinesWithLoudReasonForRepackedOnlyInt4`
-  (`metal/int4_repacked_only_decline_test.go`): loads `gemma4-dense-scaled` with `Backend:"cpu"`,
+  (`backend/metal/int4_repacked_only_decline_test.go`): loads `gemma4-dense-scaled` with `Backend:"cpu"`,
   calls the unexported `buildResident` directly (the same idiom `TestMetalSnapshotGolden` uses),
   asserts the decline error contains "no canonical bytes", "row4-only", "Options.Backend", and
   `"metal"`. Mutation-checked: reverting the message fix makes it fail on all four assertions
@@ -132,7 +132,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   `TestBackendReport_int4LayoutVisible` (both surfaces, both arms — `Backend:"cpu"` shows
   `row4-only`, unspecified does not).
 - **Item 3 ("Same by inspection in `cuda/` and `gpu/`") found a REAL latent bug in `cuda/`, worse
-  than Metal's.** `cuda/resident.go:packI8`'s `packWeight` switches on `w.Kind()` (stays `"int4"`
+  than Metal's.** `backend/cuda/resident.go:packI8`'s `packWeight` switches on `w.Kind()` (stays `"int4"`
   for a repacked-only tensor — `Kind()` is precision, not layout) and used to discard `Int4()`'s
   `ok` entirely (`q4, sc, _, _ := w.Int4()`), so a repacked-only tensor's nil `q4` would panic on
   an out-of-range slice index (`q4[i*4:i*4+4]`) rather than decline through the function's own
@@ -145,7 +145,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   (module-graph-only, since `cuda` cannot compile here) confirm the edit is syntactically sound;
   nothing more.
   <br>`gpu/` (webgpu) has no direct `int4Concat`/`packWeight` equivalent — its closest analog,
-  `uploadProj`'s int4 case (`gpu/residency.go`), already returns a clean `error` rather than
+  `uploadProj`'s int4 case (`backend/webgpu/residency.go`), already returns a clean `error` rather than
   panicking (`"gpu: residency int4 group %d != %d"` when `Int4()`'s `ok` is false and `group`
   comes back zero), so no code change was needed there. Under this gate it is now provably
   unreachable in practice too: `webgpu` is never the literal string `"cpu"`, so
@@ -279,8 +279,8 @@ are half the disk and page cache per int4 tensor, and row4-by-default for CPU ca
   bytes to be present at all for this to work. So: (a) `weightMatKind3Only`'s MoE-expert exclusion
   (`l.Experts[*]`, `mo.expertsGateUp/expertsDown`) is IMPLEMENTED PER THE DOC'S LITERAL TEXT, but
   is more conservative than the inspected code strictly requires — kept as written rather than
-  silently loosened, since Metal's OWN expert paging (`metal/moe.go:buildMoE`,
-  `metal/gemma4_moe.go:buildGemma4MoE`, cited by the ground rule, NOT inspected this round) may have a real
+  silently loosened, since Metal's OWN expert paging (`backend/metal/moe.go:buildMoE`,
+  `backend/metal/gemma4_moe.go:buildGemma4MoE`, cited by the ground rule, NOT inspected this round) may have a real
   canonical-only requirement the CPU pager does not. (b) The doc's worked example for kind 5 —
   "dense projections" — is EXACTLY what `layerpaging.go` pages for a big dense model that doesn't
   fit resident; reading the ground rule to also exclude THOSE would gut L2's own stated purpose
@@ -337,7 +337,7 @@ blocked on an aikit prerequisite, see that section).
 **Size.** Medium, as scoped. Touched `decoder/serialize.go`, `decoder/weightmat.go`,
 `decoder/gguf.go`, `decoder/weights.go`, `decoder/model.go`, `internal/prequant/prequant.go` (+
 its test), `cmd/prequant/main.go`, `internal/serveapp/main.go`, `demo/chat/build-embed.sh`,
-`metal/moe_pread_test.go`, plus one new test file
+`backend/metal/moe_pread_test.go`, plus one new test file
 (`decoder/w4a8_row4_giwkind5_test.go`).
 
 ## L3 — Doc corrections (do with L1) (DONE 2026-09-11)

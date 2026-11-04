@@ -26,8 +26,8 @@ does not differ early, and the cache is not evicted.**
    tokens are followed by a 6,208-token prompt (+92, the call and its output). opencode on `/v1/chat/completions` sends the reasoning back
    (each prompt grows by the reply plus about 18) and every follow-up of its runs was warm.
 2. **The window cannot roll back that far, most of the time.** Mellum2.1 has 21 sliding-window layers (window 1,024), and with CUDA windowed
-   KV (on by default) each held `window + 512` positions. `cuda/kvwindow.go:cudaResident.kvEnsureSlot` compacted when a write passed
-   `base + 1536` and moved the base to the new row's window start (`p0 - 1023`). `cuda/kvwindow.go:cudaResident.ReusableKV` (called through
+   KV (on by default) each held `window + 512` positions. `backend/cuda/kvwindow.go:cudaResident.kvEnsureSlot` compacted when a write passed
+   `base + 1536` and moved the base to the new row's window start (`p0 - 1023`). `backend/cuda/kvwindow.go:cudaResident.ReusableKV` (called through
    `decoder/resident_reuse.go:Model.residentReuseFloor`) returns 0, a cold prefill, when the reused prefix's window starts below the base. So
    how far back a follow-up could reuse **cycled between 0 and 512 positions**, a sawtooth set by where in the compaction cycle the last
    reply's final token landed. A rollback of 248 tokens could miss and one of 258 hit. This is why it was 35 of 59, not all of them.
@@ -70,7 +70,7 @@ serve's defaults fell off the GPU to the CPU path (its 4,096-token floor needed 
 6,722 to 4,096, and the expert cache shrank from 57 to 56 slots on Mellum2.1 at the I3 settings and from 41 to 35 on Gemma-4-26B, because
 an expert-cache load sizes its cache from what the KV leaves without asking the planner. That build is replaced by two parts.
 
-**Part 1, always: a small-step compaction at the planned slack** (`cuda/kvwindow.go:kvWindowNextBase`, `kvWindowStep = 64`). The slack stays
+**Part 1, always: a small-step compaction at the planned slack** (`backend/cuda/kvwindow.go:kvWindowNextBase`, `kvWindowStep = 64`). The slack stays
 512, so the plan, the price (`decoder.WindowedKVSlack`, unchanged) and the allocation equal main's. A compaction now moves the base only so
 far that `slack - step` = **448 positions of rollback** stay behind the end of the write, so the budget lies between 448 and 512 whatever point
 of the cycle the last decode stopped at. The price is copying: a compaction copies the live tail (window - 1 + rollback positions of every
@@ -113,8 +113,8 @@ inside a run, 30 were cold under the old rule, **16 at the 448 floor** (each rol
 follow-up that diverges inside that last pass (an edit, not a dropped reply) has `rows of that pass + tokens decoded since` of budget, not
 448. A dropped reply, Codex's shape, is always covered: its divergence is the prompt's end.
 
-**Memory**, per windowed layer per KV slot. Windowed layers stay f32 (`cuda/kvpolicy.go` gives the sliding-window ring no f16 form), so a
-layer holds `2 x kvDim x 4 x min(ctx, window + slack)` bytes (`cuda/resident.go:kvBytesForCap`; `TestWindowedKV_allocation` proves it equals
+**Memory**, per windowed layer per KV slot. Windowed layers stay f32 (`backend/cuda/kvpolicy.go` gives the sliding-window ring no f16 form), so a
+layer holds `2 x kvDim x 4 x min(ctx, window + slack)` bytes (`backend/cuda/resident.go:kvBytesForCap`; `TestWindowedKV_allocation` proves it equals
 the bytes allocated before the grant). The planned figure is main's. The last column is the most the grant can take, and it takes it only
 from VRAM nothing else was given. Real geometry from each checkpoint's `config.json` in `~/models`, by `memtable.py`; the load table above is
 the measurement on the device.
@@ -175,11 +175,11 @@ What this record found that the KV2 design has to keep:
   design's "or the cache") can be re-attached by a rollback, which makes a smaller floor enough.
 - **A gate on recorded traffic.** `TestWindowedKV_i3Replay`'s shape (recorded sizes in, the server's warm or cold out) can be pointed at the
   KV manager's window-group retention once it replaces `kvEnsureSlot`; its 35-of-59 half pins the old behaviour as the reference.
-- `decoder/resident_reuse.go` and the KV manager were not touched: the floor is still `ResidentReusableKV`, answered by `cuda/kvwindow.go`.
+- `decoder/resident_reuse.go` and the KV manager were not touched: the floor is still `ResidentReusableKV`, answered by `backend/cuda/kvwindow.go`.
 
 ## 7. Where the constants live
 
-The step (64) and the rollback cap (1,024) live in `cuda/kvwindow.go`, and the planned slack is still `decoder.WindowedKVSlack` (512),
+The step (64) and the rollback cap (1,024) live in `backend/cuda/kvwindow.go`, and the planned slack is still `decoder.WindowedKVSlack` (512),
 unchanged. So nothing under `decoder/` changes and the parity manifest does not go stale. The first build put a new constant in
 `decoder/model.go`, a file every parity family's hash covers, and a CUDA-only figure staled 42 families; that is gone with it.
 

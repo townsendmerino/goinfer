@@ -90,7 +90,7 @@ Diagnostics, taken after the failure with a scratch test that was not committed.
   a model with a cap is a different function from one without, at position 0 (where no softmax runs) every variant
   reads 0.99989, and a precise tanh moves one fixture and not the other.
 - **It is still a failure of the gate as registered.** The bar was taken from Gemma 1's test without measuring this
-  fixture's control first, which is the mistake `metal/gemma_parity_test.go` warns about ("the bar is read off the
+  fixture's control first, which is the mistake `backend/metal/gemma_parity_test.go` warns about ("the bar is read off the
   committed control, not assumed").
 
 **G2-T: FAILED.** The owner's ruling (OP1-M1, 2026-10-13): the bar stays at 0.999, and it is not amended against the

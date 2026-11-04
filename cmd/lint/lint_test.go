@@ -89,7 +89,7 @@ func TestFindingIsFail(t *testing.T) {
 	bin := fakeStaticcheck(t, `case "$*" in
   -version) echo "staticcheck 2026.2.1 (`+pin+`)"; exit 0 ;;
   *`+canaryTag+`*) echo "cmd/lint/canary/canary.go:8:2: `+canaryFinding+`"; exit 1 ;;
-  *./cuda/...*) [ "$GOOS" = linux ] && { echo "cuda/x.go:1:1: bad (SA4006)"; exit 1; } ;;
+  *./backend/cuda/...*) [ "$GOOS" = linux ] && { echo "cuda/x.go:1:1: bad (SA4006)"; exit 1; } ;;
 esac
 exit 0
 `)
@@ -264,7 +264,7 @@ func pinnedFake(t *testing.T, v string) string {
 	return fakeStaticcheck(t, `case "$*" in
   -version) echo "staticcheck 2026.2.1 (`+v+`)"; exit 0 ;;
   *`+canaryTag+`*) echo "cmd/lint/canary/canary.go:8:2: `+canaryFinding+`"; exit 1 ;;
-  *./cuda/...*) echo "cuda/x.go:1:1: bad (SA4006)"; exit 1 ;;
+  *./backend/cuda/...*) echo "cuda/x.go:1:1: bad (SA4006)"; exit 1 ;;
 esac
 exit 0
 `)

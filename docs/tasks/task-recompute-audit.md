@@ -136,7 +136,7 @@ positions are inherent, not recompute.
 - **Where:** `decoder/resident_reuse.go:Model.reuseLenOf` — `if m.hasRecurrentState() {`, added
   2026-09-02 after repeated identical greedy prompts on qwen3.6-35B-A3B decoded from the previous
   generation's tail state. `decoder/forwardn.go:Model.hasRecurrentState` is the shared predicate;
-  `cuda/resident.go:cudaLayer` holds the per-layer `dnWin`/`dnState` that are mutated in place and
+  `backend/cuda/resident.go:cudaLayer` holds the per-layer `dnWin`/`dnState` that are mutated in place and
   re-zeroed only at pos 0.
 - **What the staged path already does, and the resident path should copy:** the CPU `Session`
   reuses through `rewindForReuse` (`decoder/session.go:Session.rewindForReuse`) → `KVCache.TruncateTo`
@@ -215,8 +215,8 @@ positions are inherent, not recompute.
   (per-layer or one arena) so `CopyDeviceBatch`'s adjacent-pair coalescing actually collapses them —
   spec/09 measured this specific gap costing 2× (174 vs 347 GB/s on a synthetic probe; the REAL,
   interleaved layout measured even worse, 65 GB/s in situ). CUDA's `DeltaNet` layer holds
-  `dnWin`+`dnState` at `cuda/resident.go:cudaLayer`; Metal has the same `CopyDeviceBatch` available.
-  WebGPU is NOT covered by this plumbing at all -- its `dnState` lives in `gpu/decoderunner.go`
+  `dnWin`+`dnState` at `backend/cuda/resident.go:cudaLayer`; Metal has the same `CopyDeviceBatch` available.
+  WebGPU is NOT covered by this plumbing at all -- its `dnState` lives in `backend/webgpu/decoderunner.go`
   (`*wgpu.Buffer`, transposed `[nv*hv*hk]` relative to the CPU's `[hk,hv]`) and would need its own
   copy path; not scoped here.
   - **Gate, if this resumes:** restore is bit-exact (`convWin` included — spec/09 shows a width-4
@@ -453,7 +453,7 @@ positions are inherent, not recompute.
 - **Status (2026-09-03): mechanism as described does not exist; the underlying premise is
   UNRESOLVED per this repo's own prior investigation — not implemented.**
   The "Mechanism" bullet's "the pager's fetch already copies into an owned buffer (the `pread`
-  rewrite)" describes the **Metal** expert pool (`metal/expertpool.go`, `metal/gemma4_moe.go` —
+  rewrite)" describes the **Metal** expert pool (`backend/metal/expertpool.go`, `backend/metal/gemma4_moe.go` —
   `preadIntoU32Buf`, GPU slot staging), not the CPU pager `decoder/moepaging.go:newExpertPager` actually
   cites. That CPU pager (`expertPager.touch` → `mmap.SpanCache.Touch`) is zero-copy mmap +
   `MADV_WILLNEED`/`DONTNEED` — there is no copy step to repack during, so "repack during the copy
@@ -690,7 +690,7 @@ listed so the inventory is complete.
 `decoder/attention.go`, `internal/serveapp/openai.go`; `docs/spec/09-mtp-heads.md` (snapshot
 pricing, 2026-08-28); `docs/completed/qwen3_5_moe.md` §"Hybrid cache"; `docs/completed/audit-2026-09-02.md` (C-12,
 P-06, P-09, P-10, P-13, P-15, P-17, P-18, L-05, L-15); `docs/QUEUE.md` §A; aikit
-`gpu/cuda_copy.go`, `gpu/metal_copy.go` (`CopyDevice`, `CopyDeviceBatch`), aikit
+`backend/webgpu/cuda_copy.go`, `backend/webgpu/metal_copy.go` (`CopyDevice`, `CopyDeviceBatch`), aikit
 `docs/task-simd-audit.md` (S-01, S-02, S-03, S-09.1).
 
 ## 5. Same work twice on the same data — the 2026-10-05 sweep (R-11–R-25)
@@ -912,7 +912,7 @@ for a 5–20 GB model, on the first start after a pull.
 
 ### R-19 · Metal step-route prefill runs the LM head and argmax on pieces whose output it discards
 
-- **What happens:** `prefillByStep` calls `forwardMultiInto(seqs, !last)` (`metal/batch.go`). For non-final
+- **What happens:** `prefillByStep` calls `forwardMultiInto(seqs, !last)` (`backend/metal/batch.go`). For non-final
   pieces it drops the result, but `forwardMultiInto` always encodes the final norm, `mc3_pack_lm`,
   `mc3_lm_fb4` over the whole vocabulary, and, with device argmax on, two argmax dispatches per row.
 - **The last piece too:** it converts all n rows to host vectors, and only `rows[n-1]` is used.
@@ -922,7 +922,7 @@ for a 5–20 GB model, on the first start after a pull.
 - **Already known:** the 09-30 Metal audit's E-P01 said this route "needs a mode that skips the LM head on
   non-final pieces". It shipped without one.
 
-**Status, 2026-10-05: FIXED (bit-identical), and it pays.** `forwardMultiOut` (`metal/batch.go`) takes an output mode:
+**Status, 2026-10-05: FIXED (bit-identical), and it pays.** `forwardMultiOut` (`backend/metal/batch.go`) takes an output mode:
 `prefillByStep` runs its pieces before the last as `multiNoHead` (the trunk only: no final norm, LM head or argmax, nothing
 read back) and its last piece as `multiLastRow` (only the last row is copied out; the head still runs for every row,
 since it reads the whole LM head's weights once at any row count). `forwardMultiInto`'s two modes are unchanged for its
@@ -1019,7 +1019,7 @@ Reopen the first item only if M26's paged token falls far enough that 0.16 ms ma
 > faster than every old run (about 12% less time per token). Not pre-registered and not a result; the served read and other M go to a night job if a number is wanted.
 
 - **What happens:** for each row, `stream.Sync`, `Download(rIdx)`, `Download(rWgt)`; after the loop, one
-  `Upload` of all the weights (`cuda/moe_expert_major.go`, and the Gemma 4 version). The host never reads the
+  `Upload` of all the weights (`backend/cuda/moe_expert_major.go`, and the Gemma 4 version). The host never reads the
   weights; it only uploads them back.
 - **Fix:** the route kernel takes an output pointer already. Point it at `wgtAll.At(m·topK·4)`, route all rows
   into a device index array, and do one sync and one download per chunk.
@@ -1038,8 +1038,8 @@ Reopen the first item only if M26's paged token falls far enough that 0.16 ms ma
 > the context and cannot be captured in a CUDA graph). Bit-identical logits and greedy tokens, decode and prefill, graphs on and off, on `gemma4-dense-scaled` and `gemma4-moe-scaled`
 > (`TestKEqVCopy_bitIdenticalToTheDoubleProjection`); `gemma4-moe-kv-tiny` is not CUDA-resident, so it cannot gate this. A copy from the wrong source turned the gate red in both paths. No speed claim: it was not timed.
 
-- **Decode:** `doG(Ly.k → kB)`, then `doG(Ly.k → vB)` on identical inputs (`cuda/resident.go`).
-- **Prefill:** the same pair of `bGemvB` calls (`cuda/prefill.go`).
+- **Decode:** `doG(Ly.k → kB)`, then `doG(Ly.k → vB)` on identical inputs (`backend/cuda/resident.go`).
+- **Prefill:** the same pair of `bGemvB` calls (`backend/cuda/prefill.go`).
 - **Fix:** `CopyDevice(vB, kB)` is bit-identical. WebGPU already does it that way. Change decode and prefill
   together, since the prefill comment says the duplicate was kept to match decode.
 - **Cost:** one extra `kvDim × hidden` weight read per K=V layer per token. Under 1% of a Gemma 4 token. Cheap
@@ -1051,7 +1051,7 @@ Reopen the first item only if M26's paged token falls far enough that 0.16 ms ma
 > - **Fixed, batched-prefill tail:** the full `[M, hidden]` residual is now downloaded only for `ResidualAll`, the one tail that reads it on the host; the argmax and all-logits heads read `xB` on the device, and the last-row
 >   tails (`PrefillLast`, `HiddenLast`) copy that row `xB -> r.x` on the device (a `kv_store` launch, as in R-23) instead of downloading everything and uploading one row back. Gate: `TestPrefillTails_bitIdenticalToTheRecordedBaseline`
 >   hashes every tail mode (last-row logits plus a greedy decode continuation, all-logits, argmax ids, hidden-last, residual-all) on three fixtures against a baseline recorded from the unmodified code
->   (`cuda/testdata/prefill_tails_baseline.json`): 15 outputs bit-identical. Shown red by copying the wrong row, by dropping the `ResidualAll` download, and by dropping the last-row copy.
+>   (`backend/cuda/testdata/prefill_tails_baseline.json`): 15 outputs bit-identical. Shown red by copying the wrong row, by dropping the `ResidualAll` download, and by dropping the last-row copy.
 > - **Fixed, Gemma 4 `g4x2` clear:** the clear is now a `ZeroAsync` on `r.stream` in every mode; the non-overlap path had done `r.stream.Sync()` then a pageable `gpu.Upload` of a host zero slice (two more context syncs). This audit entry
 >   said the Upload already context-syncs, so the Sync was redundant; that is wrong: `gpu.Upload` runs on the legacy stream with no ordering against `r.stream`, which is why the Sync was there (audit R-03). The stream-ordered memset
 >   keeps that ordering. Gated by the existing decode baseline (`TestKEqVCopy_*`: `gemma4-moe-scaled`, CUDA graphs on and off, 4 runs bit-identical) and red when the clear is removed. The `g4zero` host buffer is gone.
@@ -1080,7 +1080,7 @@ Reopen the first item only if M26's paged token falls far enough that 0.16 ms ma
   depending on how wgpu-native tracks initialization.
 
 **Status, 2026-10-05: both halves FIXED (bit-identical). The repeated quantization is speed-neutral on the Mac and stays on (owner: "it stays on"); the buffer recycling is 1.033 at 512 tokens (below).** `tiledProjB` is now
-`quantB` then `projQB` (`gpu/prefillrunner.go`); `sharedQ` quantizes `xn` once for q/k/v and `xn2` once for gate/up
+`quantB` then `projQB` (`backend/webgpu/prefillrunner.go`); `sharedQ` quantizes `xn` once for q/k/v and `xn2` once for gate/up
 when their K match (always here), and `prefillQuantPerProj` (tests only) restores a quantization each.
 - **Gate:** `TestPrefillLastW8A8_sharedQuantBitIdentical`: last-row logits and every K/V cache element bit-identical to
   the per-projection prefill, with and without Qwen2's q/k/v biases, 2 shared quantizations per layer. A mutation that

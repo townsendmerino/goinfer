@@ -24,7 +24,7 @@
 > reuse (attention-only families; hybrid/recurrent families still excluded, which folds into
 > Lead 1); (2) Lead 5 ("genuinely new... track, don't start") has since started —
 > `docs/task-l01-hybrid-moe-cpu-gpu.md` is the live design/build record, with real code
-> landed 2026-09-10 (`cuda/l01_cpu_offload.go`, correctness-verified, not yet wired in).
+> landed 2026-09-10 (`backend/cuda/l01_cpu_offload.go`, correctness-verified, not yet wired in).
 > Leads 1, 3, and 4 were checked against the current tree and stand as written.
 
 > **Doc-review correction, 2026-09-22 (doc otherwise LIVE, corrections applied in place —
@@ -41,7 +41,7 @@
 > decision": CPU-offloaded experts permanently poison the C′ cache, an ~11× regression
 > (`docs/measurements/l01-funding-cell-2026-09-21.md`) — `task-l01-hybrid-moe-cpu-gpu.md`
 > itself already records this; this doc's own summary did not. Leads 1, 3, and 4 were
-> re-checked against the current tree (`cuda/resident.go`'s `mapBytes`, `MoECacheSlots`)
+> re-checked against the current tree (`backend/cuda/resident.go`'s `mapBytes`, `MoECacheSlots`)
 > and stand exactly as written in 2026-09-13 — genuinely unbuilt, unmeasured, unowned by
 > any live doc.
 
@@ -172,7 +172,7 @@ expert once per chunk, **2.66×/2.50×/2.39×/2.26× at M=512/2048/4096/8012 on 
 
 ## Lead 3 — pin the CUDA expert-stack buffer after filling, not before
 
-**Status: unverified until this pass, now fairly precise.** `cuda/resident.go`'s
+**Status: unverified until this pass, now fairly precise.** `backend/cuda/resident.go`'s
 `mapBytes` — the function that stages the full ~11.4 GB expert stack into pinned host
 memory as the C′ DMA source — allocates the pinned buffer first
 (`r.dev.NewMappedHostBuffer(len(src))`) and copies into it second
@@ -202,7 +202,7 @@ pinned memory does). That was flagged as not production-representative (repeated
 in-process trials, no cache reset between them), so the follow-up built it properly —
 `aikit Device.RegisterMappedHostBuffer` + `Queue.UploadAsyncAtFrom` (additive; needed
 because the C′ DMA overlap's `.Host()` call returns nil for this new origin), wired
-behind `GOINFER_MOE_PIN_REGISTER` in `cuda/resident.go`'s `mapBytes`, every existing C′
+behind `GOINFER_MOE_PIN_REGISTER` in `backend/cuda/resident.go`'s `mapBytes`, every existing C′
 correctness gate re-run with it on — and ran the real decision measurement: **one 26B
 load per sample, fresh process each time, ABBA, 4 vs 5 trials: 1.105× — 10.5% faster.**
 Against the rule pre-registered before either measurement (ship ≥15%, park 5–15%, kill
@@ -244,7 +244,7 @@ kind of claim CLAUDE.md's measurement discipline says to check before building:
 "measure don't assume."
 
 **Correction, 2026-09-22: measured, PARKED — real unevenness, bounded upside too small to
-build for.** `PerLayerCacheStatsForTest` (new, `cuda/testhooks.go`) + `TestMoEPerLayerHitRate`
+build for.** `PerLayerCacheStatsForTest` (new, `backend/cuda/testhooks.go`) + `TestMoEPerLayerHitRate`
 ran the real 26B at today's shipped per-layer budget (29 slots, auto-capped). All 30 layers
 are MoE; two of them (layers 10, 11) sit ~1.9 pp below the 96.91% mean, the rest cluster within
 ~1 pp of each other — real, but concentrated in two outliers, not a smooth gradient. Computed
@@ -290,7 +290,7 @@ in parallel, beats today's GPU-compute-plus-DMA cost at every measured miss coun
 m=1 to 3.40× at m=8); the aggregate host-CPU occupancy and multi-tenant-contention questions
 are both resolved in favour of the simpler "send everything" mechanism; and the partial-sum
 merge path is sketched against the real kernel signatures. **Real code landed 2026-09-10**
-(`cuda/l01_cpu_offload.go`): the pinned-host expert extraction, correctness-verified against
+(`backend/cuda/l01_cpu_offload.go`): the pinned-host expert extraction, correctness-verified against
 an independent ground truth (cosine 0.99964–0.9999999 across nine expert/input combinations)
 — not yet wired into `loadRoutedExperts`, no async overlap or merge kernel yet, and not a
 funding decision until the real concurrent prototype and the pre-registered paired measurement
@@ -337,14 +337,14 @@ being compatible. Lead 5 would change exactly the terms that produce the absence
 
 **So: if Lead 5 proceeds, it must pre-register both questions before the first number** —
 whether speculation has to be disabled under split execution, and whether the slot budget
-must be renegotiated per verify width. `cuda/spec_pager_interaction_test.go` and the demand
+must be renegotiated per verify width. `backend/cuda/spec_pager_interaction_test.go` and the demand
 instrument (`PagerStageStatsForTest`) are in place to answer them; they currently report a
 refusal, which is the right answer for today and the wrong one to carry forward.
 
 **Correction, 2026-09-22: Lead 5's funding measurement ran and it was KILLED, not a still-
 open funding decision.** `task-l01-hybrid-moe-cpu-gpu.md`'s §9 remainder — the goroutine-
 per-expert parallel CPU compute, the merge kernel, async overlap alongside the GPU's own
-hit-path launches — was built (`cuda/l01_cpu_offload.go`, `GOINFER_CUDA_L01_CPU_OFFLOAD`,
+hit-path launches — was built (`backend/cuda/l01_cpu_offload.go`, `GOINFER_CUDA_L01_CPU_OFFLOAD`,
 bit-identical per `TestL01_e2eDecode_matchesBaseline`) and run against the pre-registered
 bar this doc itself names (fund ≥1.3×, park <1.15×) on the real target: Qwen3.6-35B-A3B,
 CUDA, RTX 2070 SUPER. **Result: 0.083–0.094× — an ~11× regression, not a win at any
@@ -409,7 +409,7 @@ Lead 1; nothing further to revisit here on its own.
   originally cited at `:828-831` has since moved — see the 2026-09-13 correction inline)
 - `docs/legacy-benchmarks.md:361,366,369`, `docs/scoping-dsh-goinfer.md:32`
 - `decoder/moepaging.go`, `decoder/layerpaging.go`, `decoder/session.go`,
-  `cuda/resident.go` (`mapBytes`)
+  `backend/cuda/resident.go` (`mapBytes`)
 - FreeToken: arXiv:2608.16157; github.com/FlashML-org/FreeToken
 - Added 2026-09-13 doc-review correction: `docs/task-l01-hybrid-moe-cpu-gpu.md` (Lead 5's
   live state), `docs/audit-2026-09-02.md` L-01, `docs/roadmap.md` ("Superseded — June

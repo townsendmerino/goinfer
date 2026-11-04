@@ -31,7 +31,7 @@ The replica's logits are bit-identical to `PrefillLast`'s at both lengths. Log: 
 ## The prior-art read (no runs)
 
 Three kernels were compared:
-- **goinfer:** `metal/prefill.go` `attention_prefill_fused` (kernel at 334–444, dispatch at 885–931).
+- **goinfer:** `backend/metal/prefill.go` `attention_prefill_fused` (kernel at 334–444, dispatch at 885–931).
 - **MLX 0.32.0:** `steel_attention` (Homebrew `include/mlx/backend/metal/kernels/steel/attn/`). At f16, head dim 128,
   it is instantiated as `steel_attention_float16_bq32_bk16_bd128_wm4_wn1` (kernel names in `mlx.metallib`).
 - **ggml 0.22.0:** `kernel_flash_attn_ext`, read from the Metal source embedded in Homebrew's `libggml-metal.so`, as
@@ -112,7 +112,7 @@ process with the candidate alone, 7 paired reps, 2026-09-27 18:08–18:17 PDT.
 3. **K=512 does not regress:** 6.62× faster.
 4. **The do-nothing arm ran in the same session.**
 
-**Wired into production** (`metal/prefill.go`): head dim 128 runs `attention_prefill_steel`, and every other head dim
+**Wired into production** (`backend/metal/prefill.go`): head dim 128 runs `attention_prefill_steel`, and every other head dim
 keeps `attention_prefill_fused`. A test-only `prefillSteelAttnOff` restores the fused kernel for baselines. Checked on
 the wired build ([`r19-wired.log`](metal-prefill-attn-2026-09-27/r19-wired.log),
 [`metal-suite-r19.log`](metal-prefill-attn-2026-09-27/metal-suite-r19.log)):

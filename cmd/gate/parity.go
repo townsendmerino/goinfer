@@ -637,7 +637,7 @@ func buildTaggedTests(root string, dirs []string, tagWord *regexp.Regexp, want f
 
 // metalDirs are the packages scanned for Metal's gate-shaped, goinfer_testhooks-tagged tests, the role
 // realckptDirs plays for the decoder-side scan.
-var metalDirs = []string{"metal"}
+var metalDirs = []string{"backend/metal"}
 
 var metalTesthooksWordRe = regexp.MustCompile(`\bgoinfer_testhooks\b`)
 
@@ -662,7 +662,7 @@ var metalNotRequired = map[string]string{}
 // webgpuDirs, webgpuGateTests, webgpuParityRun and webgpuNotRequired are the WebGPU twin of the Metal scan
 // above: webgpu-parity must select every gate-shaped goinfer_testhooks-tagged gpu/ test, or that test
 // runs in no gate cell and no CI runner.
-var webgpuDirs = []string{"gpu", "gpu/internal/kernels"}
+var webgpuDirs = []string{"backend/webgpu", "backend/webgpu/internal/kernels"}
 
 // webgpuGateShaped widens gateShaped (capital "Parity", _gate, _oracle) with the forms WebGPU's
 // CPU-reference gates use: a lowercase _parity suffix, matchesCPU and matchesSequential.

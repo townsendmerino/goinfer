@@ -61,6 +61,12 @@ func relReplayLook(looks []relLookup, missing *[]string) func(kind string, args 
 	return func(kind string, args ...string) (string, error) {
 		l, ok := ans[relLookupKey(kind, args)]
 		if !ok {
+			if out, err, handled := absentBeforeMove(kind, args, func(k string, a ...string) bool {
+				_, ok := ans[relLookupKey(k, a)]
+				return ok
+			}); handled {
+				return out, err
+			}
 			*missing = append(*missing, strings.TrimSpace(kind+" "+strings.Join(args, " ")))
 			return "", fmt.Errorf("not in the record: %s %s", kind, strings.Join(args, " "))
 		}
@@ -89,6 +95,11 @@ func (e *relEnv) glob(pattern string) []string {
 
 // gitObject is the git object id of path (a file or a directory) at rev, and "" when rev has no such path. An unknown rev is an error.
 func (e *relEnv) gitObject(rev, path string) (string, error) {
+	return objectAt(e.gitObjectAt, rev, path)
+}
+
+// gitObjectAt is gitObject without the pre-move fallback.
+func (e *relEnv) gitObjectAt(rev, path string) (string, error) {
 	out, err := e.git("ls-tree", rev, "--", path)
 	if err != nil {
 		return "", err
@@ -308,7 +319,9 @@ func rowGPU(e *relEnv) relRow {
 	if err != nil {
 		return owed(name, gpuRecordDirDefault, err.Error())
 	}
-	treeOf := func(rev, d string) (string, error) { return e.git("rev-parse", rev+":"+d) }
+	treeOf := func(rev, d string) (string, error) {
+		return treeAt(func(r, dd string) (string, error) { return e.git("rev-parse", r+":"+dd) }, rev, d)
+	}
 	var bad, ok []string
 	for _, be := range []string{"cuda", "metal"} {
 		if r, why := gpuCoverage(recs, be, head, treeOf); r != nil {

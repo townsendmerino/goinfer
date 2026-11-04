@@ -44,11 +44,11 @@ site changes.
 - **Admission:** `FeatPairwiseRoPE` and `FeatPairwiseMRoPE` join the `"metal"` set in `decoder/features.go`.
   - Update `admissionGolden`, `TestResidentBackendFeatures_noOverclaim`'s metal row, the capability and hardware
     matrices, and the matrix footnote.
-  - `metal/cohere_resident_smoke_test.go` falls through to its original smoke body, as the CUDA session wrote it to.
+  - `backend/metal/cohere_resident_smoke_test.go` falls through to its original smoke body, as the CUDA session wrote it to.
 
 ## Gates, registered before any code
 
-- **G-PR1, kernel level** (hermetic, `metal/rope_pairwise_test.go`).
+- **G-PR1, kernel level** (hermetic, `backend/metal/rope_pairwise_test.go`).
   - **Reference:** each twin against a float64 reference written from `decoder/rope.go`'s semantics.
   - **Cases:**
     - full and partial rotary;
@@ -62,7 +62,7 @@ site changes.
     - f16 kernels: max |diff| <= 4e-3, with inputs in [-2, 2].
   - **Degenerate case:** an m-RoPE row with t = h = w must be **bit-identical** to `rope_f16_pw` at that position.
   - **Control:** the NeoX kernel on the same input must miss each tolerance by at least 10x, so no case is vacuous.
-- **G-PR2, peaked tiny residents vs the CPU** (`metal/pairwise_rope_resident_parity_test.go`).
+- **G-PR2, peaked tiny residents vs the CPU** (`backend/metal/pairwise_rope_resident_parity_test.go`).
   - **Fixtures:** cohere-tiny and cohere2-tiny with every 2-D weight x12.5 (CUDA's `peakedCheckpoint`); a 40-token
     prompt.
   - **Quant:** int4. An int8int8 tiny load goes native int8 on Metal and its prefill declines first (memory note).
@@ -79,7 +79,7 @@ site changes.
       `docs/completed/task-metal-prefill-precision-2026-10.md` measured as closer to that arm than to per-row.
   - **Bars:** cosine >= 0.995 and relL2 <= 0.15 on every graded path (CUDA's final tier).
   - **Control:** the NeoX kernels rebound into the same resident must read below the bar on every graded path, every run.
-- **G-PR3, glm-ocr-tiny** (`metal/glm_ocr_resident_test.go`). The same references and bars as G-PR2, and the same
+- **G-PR3, glm-ocr-tiny** (`backend/metal/glm_ocr_resident_test.go`). The same references and bars as G-PR2, and the same
   NeoX control. Paths:
   - text, sequential decode at 48 positions;
   - batched prefill, last token;

@@ -8,8 +8,8 @@ elsewhere, generated so it can never drift from the code: [docs/hardware-matrix.
 
 A resident (GPU) decode path keeps the whole model on-device and runs
 `Forward(embedding, pos) → logits` as one command submission per token — no CPU interleave
-between layers. Each backend (`gpu/decoderunner.go` for WebGPU, `cuda/resident.go` for CUDA,
-`metal/model.go` for Metal) routes a plain `Generate` through its own resident runner whenever
+between layers. Each backend (`backend/webgpu/decoderunner.go` for WebGPU, `backend/cuda/resident.go` for CUDA,
+`backend/metal/model.go` for Metal) routes a plain `Generate` through its own resident runner whenever
 the architecture is eligible (`decoder.ResidentEligible`, `decoder/features.go`) and that
 backend's `BuildResident` accepts the model. Anything ineligible on a given backend falls back to
 that backend's staged per-matmul path, or to CPU, gracefully — declining is never silent
@@ -24,7 +24,7 @@ input_RMSNorm → q/k/v/o GQA attention (RoPE) → +residual
 
 The QUANTIZATION of that block is backend-specific, not "int8 W8A8" uniformly (N-04,
 `docs/audit-metal-2026-09-12.md`): Metal has no int8 GEMV kernel and re-quantises an int8/int8int8
-weight to W4A8 at build time (`metal/model.go`'s `int4Buf`) rather than running it in int8 — every
+weight to W4A8 at build time (`backend/metal/model.go`'s `int4Buf`) rather than running it in int8 — every
 Metal-resident dense projection is W4A8 regardless of the checkpoint's own quant label.
 
 A family is eligible on a backend only if every layer collapses onto that block, or a shape the
@@ -88,10 +88,10 @@ one feature or geometry seam). For each, the predicate that declines it and one 
 - **Nemotron-H** — resident on WebGPU (default-on, int4), CPU on CUDA and Metal. Declines there
   on the same missing feature as Granite-4.0-H above, `FeatSSM` (`decoder/features.go:residentBackendFeatures`, webgpu
   only) — the Mamba-2 scan a CUDA/Metal port would need already exists on WebGPU
-  (`gpu/mamba2.go`), so this is a port, not a new design.
+  (`backend/webgpu/mamba2.go`), so this is a port, not a new design.
 - **Gemma 4 dense** — resident on CUDA, Metal, and (as of 2026-09-17) WebGPU too: WebGPU's
-  per-layer geometry seam (`gpu/residency.go`'s `ghd`/`gnKV`/`ghalf`/`gKEqV`, mirroring
-  `cuda/resident.go`'s `cudaLayer.hd/nKV` and `metal/model.go`'s `residLayer.geom`), K=V
+  per-layer geometry seam (`backend/webgpu/residency.go`'s `ghd`/`gnKV`/`ghalf`/`gKEqV`, mirroring
+  `backend/cuda/resident.go`'s `cudaLayer.hd/nKV` and `backend/metal/model.go`'s `residLayer.geom`), K=V
   (`attention_k_eq_v`, a new dedicated `vNorm` WGSL kernel) and the per-layer output scalar (a
   new `scaleVec` kernel) are all now populated/implemented — closing the gap
   `residentPerLayerGeomBackends` (`decoder/features.go:residentPerLayerGeomBackends`) previously described.
@@ -117,7 +117,7 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   kernels. Cohere rotates GPT-J pairwise (dims 2d, 2d+1), so those kernels are exact at position 0 and wrong
   after it: the CUDA resident measured worst per-position cosine -0.075 (Command-R7B) and -0.041 (Aya-expanse-8B)
   against the CPU at int4 on a 48-token prompt, while the flat-weight tiny gate read 0.9997. CUDA now has
-  pairwise kernels (`cuda/rope_pairwise.cu`) and declares `FeatPairwiseRoPE`; Metal and WebGPU do not, so
+  pairwise kernels (`backend/cuda/rope_pairwise.cu`) and declares `FeatPairwiseRoPE`; Metal and WebGPU do not, so
   Metal now declines these families to the CPU path with a reason naming the feature. The record is
   `docs/measurements/cuda-pairwise-rope-2026-10-01.md`. Original text, for the feature list it describes: resident on CUDA and Metal, CPU on WebGPU. Missing
   `FeatLayerNorm` (declared `decoder/features.go:residentBackendFeatures` for cuda, `decoder/features.go:residentBackendFeatures` for
@@ -151,12 +151,12 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   added for Command-R) and `FeatOutBias` (`decoder/features.go:residentBackendFeatures`, added for gpt-oss) but not
   `FeatNonGatedMLP` or `FeatLearnedPos` anywhere. WebGPU declares none of the four.
 - **Qwen2.5-VL / Qwen3-VL on Metal support full multimodal resident decode via `decoder.ResidentMRoPE`
-  and `UploadKV`.** Metal resident implements `ForwardMRoPE` (`metal/backend.go`, `metal/model.go`)
+  and `UploadKV`.** Metal resident implements `ForwardMRoPE` (`backend/metal/backend.go`, `backend/metal/model.go`)
   decoupling rope rotation position from KV cache position via `uRopePos`, and `UploadKV` enables
   bridging CPU-computed image prefill into resident GPU KV cache. What is tested
-  (2026-10-01, F-D04 in `docs/audit-metal-2026-09-30.md`): `metal/forwardmrope_parity_test.go` checks
+  (2026-10-01, F-D04 in `docs/audit-metal-2026-09-30.md`): `backend/metal/forwardmrope_parity_test.go` checks
   `ForwardMRoPE` against `Forward` and its invariance under a constant position shift, on llama-tiny
-  or a Qwen2.5-Coder GGUF, and `metal/uploadkv_parity_test.go` checks `UploadKV` against a
+  or a Qwen2.5-Coder GGUF, and `backend/metal/uploadkv_parity_test.go` checks `UploadKV` against a
   sequential forward; both skip without their fixture. No Metal test runs a Qwen-VL model.
 
 ## What's not here

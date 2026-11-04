@@ -65,6 +65,6 @@ checks below rather than by this test failing without it. `TestMC3_*` and `TestS
 (the full-row path it replaces), and matches `411e7fc4` on 0/5, which is expected: that build predates the
 `--embed-int4` default and other numeric changes, so its logits differ. [`identity.json`](topp-regression-2026-09-30/identity.json).
 
-**Not covered, and why it does not matter elsewhere.** Only CUDA implements `ResidentTopK` (`cuda/topk.go`), so Metal and WebGPU never had
+**Not covered, and why it does not matter elsewhere.** Only CUDA implements `ResidentTopK` (`backend/cuda/topk.go`), so Metal and WebGPU never had
 the top-K path and top-p there always read the full row; this regression, and this fix, are CUDA's. CPU batching (MC3c) is a
 different path and was not affected.

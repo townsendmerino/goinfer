@@ -16,7 +16,7 @@ of wgpu-native v29.0.1.1.
 - **Hints.**
   - wgpu-native's `map_device_descriptor` (`src/conv.rs`) sets `memory_hints: Default::default()`, which is `Performance`
     (`wgpu-types src/device.rs`). Neither the C header nor the Go binding has a field to change it.
-  - goinfer's `New` (`gpu/internal/kernels/gpu.go`) sets none.
+  - goinfer's `New` (`backend/webgpu/internal/kernels/gpu.go`) sets none.
 - **Block sizes.**
   - `AllocationSizes::from_memory_hints` (`wgpu-hal src/lib.rs`): Performance gives device-local blocks of 128 MiB growing to
     256 MiB, and host-visible blocks of 64 MiB growing to 128 MiB.

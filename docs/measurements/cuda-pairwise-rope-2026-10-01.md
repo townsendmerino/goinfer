@@ -25,7 +25,7 @@ The CUDA resident rotated every family's RoPE with the NeoX half-split kernels `
 use GPT-J **pairwise** rotation, pairs `(2d, 2d+1)`. The two are the same at position 0 and different at every other
 one, so the failure is silent and the logits stay fluent.
 
-* `cuda/rope_pairwise.cu` (new module, `cuda/testdata/rope_pairwise.ptx`): `rope_kv_pw`, `rope_kv_batched_pw`,
+* `backend/cuda/rope_pairwise.cu` (new module, `backend/cuda/testdata/rope_pairwise.ptx`): `rope_kv_pw`, `rope_kv_batched_pw`,
   `rope_kv_mrope_batched_pw`. Same argument lists and launch geometry as the NeoX kernels, bound into the **same**
   pipeline fields (`ropeKV`, `bRopeKV`, `bRopeKVMRoPE`) when `decoder.Model.PairwiseRoPEResident()`; every other
   family still binds exactly the NeoX kernel, and no launch site changed. Partial rotary, YaRN `mscale`, the
@@ -48,7 +48,7 @@ Control run before any change, at NVRTC 12.6.85, rebuilding the audited modules 
 
 The two that differ were never audited at 12.6.85 (their headers say "release 12.9, V12.9.86"); they were restored with
 `git checkout` and are not touched. After the change `git status cuda/testdata` shows no modified existing `.ptx`;
-the commit adds exactly one new file, `cuda/testdata/rope_pairwise.ptx` (its header reads "release 12.6, V12.6.85").
+the commit adds exactly one new file, `backend/cuda/testdata/rope_pairwise.ptx` (its header reads "release 12.6, V12.6.85").
 The numerics do not depend on the toolchain version beyond `cosf`/`sinf`, because every multiply-accumulate is an
 explicit `__fmaf_rn`/`__fmul_rn` (`TestKernelFMALint` lists the new file).
 
@@ -59,7 +59,7 @@ cannot go blind. Separately, the NeoX dispatch was forced in **production code**
 a pairwise model binds the NeoX kernels) and the gates run: both read red with the same numbers as the in-test control
 (`mutation-neox-production.log`); the edit was reverted (`git checkout`).
 
-### Kernel level (`cuda/kernels/rope_pairwise_test.go`, hermetic, runs in about a second)
+### Kernel level (`backend/cuda/kernels/rope_pairwise_test.go`, hermetic, runs in about a second)
 
 Reference written from the semantics in float64, tolerance 2e-5, covering full rotary, partial rotary (8 of 16, 6 of 16),
 `mscale` 0.85, a Q-temperature scale, `ropePos != pos`, 37-row batches with and without `qTempRows`, distinct per-row
@@ -67,7 +67,7 @@ Reference written from the semantics in float64, tolerance 2e-5, covering full r
 the degenerate case t=h=w, which must be bit-identical to the scalar pairwise batched kernel. Green on all. Control: the
 NeoX kernel on the same input differs from the reference by 1.4 to 4.6 (max |diff| on Q) in every case, so no case is vacuous.
 
-### Peaked-attention resident vs CPU (`cuda/pairwise_rope_resident_parity_test.go`)
+### Peaked-attention resident vs CPU (`backend/cuda/pairwise_rope_resident_parity_test.go`)
 
 The committed cohere-tiny is 0.02-std, so attention is nearly uniform and a wrong rotation reads 0.9997.
 The gate derives, in a temp dir at test time, a checkpoint with every 2-D weight x12.5 (about 0.25 std; no new binary
@@ -85,7 +85,7 @@ cosine >= 0.995 and relL2 <= 0.10 on every path.
 
 The old gate `TestCohereResidentParityCUDA` still passes (it stays blind to this: flat weights).
 
-### glm_ocr (`cuda/glm_ocr_resident_test.go`, replaces the decline test)
+### glm_ocr (`backend/cuda/glm_ocr_resident_test.go`, replaces the decline test)
 
 glm-ocr-tiny, int8int8. Bars: cosine >= 0.995, relL2 <= 0.10. Image prompt from `glm_ocr_tiny_mrope_golden.json`: 26
 tokens, a 12-token image block at 8, positions from the real `mropePositions`; decode past the image through
@@ -100,7 +100,7 @@ tokens, a 12-token image block at 8, positions from the real `mropePositions`; d
 
 The -0.3369 on the NeoX arm is the same number O1 measured with admission bypassed.
 
-### Real checkpoints (`cuda/cohere_real_resident_test.go`, heavy, `TestCohereRealResidentParityCUDA`)
+### Real checkpoints (`backend/cuda/cohere_real_resident_test.go`, heavy, `TestCohereRealResidentParityCUDA`)
 
 Run: `GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestCohereRealResidentParityCUDA -v -timeout 40m`,
 about 2 minutes for both models. Logs: `real-ckpt-run1-preregistered-bars.log` (first run), `real-ckpt-green.log` (final).
@@ -174,16 +174,16 @@ carries a footnote with the cause. Deliberate: a resident that returns garbage i
 
 ## What the Mac session must do for Metal (not run here; this box cannot)
 
-1. Port the pairwise rotation into the Metal rope kernels: `rope`, `rope2`, `rope2_kv`, and `mc3_rope2_rows` (`metal/kernels.go`,
-   about lines 820-910; pipelines bound in `metal/model.go` near line 827). Pair `(2d, 2d+1)` with `theta_d = pos*invFreq[d]`, partial
+1. Port the pairwise rotation into the Metal rope kernels: `rope`, `rope2`, `rope2_kv`, and `mc3_rope2_rows` (`backend/metal/kernels.go`,
+   about lines 820-910; pipelines bound in `backend/metal/model.go` near line 827). Pair `(2d, 2d+1)` with `theta_d = pos*invFreq[d]`, partial
    rotary rotating the first `2*rhalf` dims and passing the tail through, `mscale` and the Ministral query scale kept. Select by
    `Model.PairwiseRoPEResident()`, bind the NeoX kernel for everything else untouched. Metal has `ForwardMRoPE` (decode with
    `ropePos`) but no m-RoPE batched-prefill kernel, so glm_ocr's image prefill goes through the CPU prefill + `UploadKV` bridge and needs
-   no new prefill kernel. WebGPU would need the same in `gpu/attention.go` (`ropeShaderWGSL` and the three `ropeStore*` shaders).
+   no new prefill kernel. WebGPU would need the same in `backend/webgpu/attention.go` (`ropeShaderWGSL` and the three `ropeStore*` shaders).
 2. Add `FeatPairwiseRoPE` (and `FeatPairwiseMRoPE` for glm_ocr) to the `"metal"` set in `decoder/features.go` **only with** a
-   peaked-attention resident-vs-CPU gate: copy `cuda/pairwise_rope_resident_parity_test.go` (derive the x12.5 checkpoint from
+   peaked-attention resident-vs-CPU gate: copy `backend/cuda/pairwise_rope_resident_parity_test.go` (derive the x12.5 checkpoint from
    `cohere-tiny` / `cohere2-tiny`, decode + batched prefill + decode after prefill at 40 positions, and a rebound-NeoX control that must read red)
-   and `cuda/glm_ocr_resident_test.go`. The old `metal/cohere_resident_smoke_test.go` only checks admission and no-NaN, which
+   and `backend/cuda/glm_ocr_resident_test.go`. The old `backend/metal/cohere_resident_smoke_test.go` only checks admission and no-NaN, which
    a wrong rotation passes. This session changed it to pin the decline instead (written on the CUDA box, `GOOS=darwin go vet` clean, not run);
    when Metal declares the feature it falls through to the original smoke body.
 3. Update `admissionGolden` and the `"metal"` row of `TestResidentBackendFeatures_noOverclaim` in `decoder/features_test.go`, regenerate
@@ -227,7 +227,7 @@ carries a footnote with the cause. Deliberate: a resident that returns garbage i
   test helpers that exist only for the testhooks build; that variant is not the CI one and the five are not from this change.
   Untagged `go vet` in `cuda/` fails on `prefill_deltanet.go: undefined: Buffer` on the base commit too (a tagged file).
 * **Citation lint** (`scripts/queue_citation_lint.py`, exit read directly from a redirected run, not through a pipe): exit 0 after `--update`
-  and one re-point. `docs/queue-performance.md` cited the `wOff, wLen` line of `appendExpertSlot` in `cuda/resident.go`; the same line also
+  and one re-point. `docs/queue-performance.md` cited the `wOff, wLen` line of `appendExpertSlot` in `backend/cuda/resident.go`; the same line also
   exists in `dmaExpertSlot`, so a one-line shift made the citation AMBIGUOUS, and it was re-pointed by hand (to the line after) rather than deleted. The rest of
   the `--update` diff is 75 line-number-only swaps across 17 docs.
 * **Docs:** matrices regenerated (`go test ./decoder -run 'CapabilityMatrix|HardwareMatrix' -update`): Command-R and Command-R7B read

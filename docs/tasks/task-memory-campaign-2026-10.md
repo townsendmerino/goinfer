@@ -11,7 +11,7 @@
 > way. D5 stays with O3 (`docs/tasks/parked/task-metal-audit-followups-2026-10.md`), parked with a "defer" call. **Moved here
 > the same day:** MEM12 takes the unused f32 KV reservation from the archived cpu-kv-f16 doc (`NewKVCache` reserves f32
 > capacity and `setQuant` keeps it when the storage form changes; int8 has the same leftover). MEM13 takes the two staging
-> copies from the archived never-swap doc (Metal's int4 lane on a direct `.gguf` load, `metal/model.go:int4Concat`, and
+> copies from the archived never-swap doc (Metal's int4 lane on a direct `.gguf` load, `backend/metal/model.go:int4Concat`, and
 > CUDA's dense host pack), decided: remove both. **Stale below:** MEM13's "in PR #94" (merged); §8's "Next" line; §0's MEM3
 > row; MEM5's "blocked on G40-1" (answered 2026-10-15, 90d4c789: a single pass kept); MEM9's ".giw v16 work" (v17 shipped);
 > MEM10's full host copy (gone for dense weights in #95 and for expert stacks in #103); and the M35 figure that
@@ -58,8 +58,8 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | D8a-build | done | — | branch `d8a-single-copy-2026-10`; D8A-G1..G4 PASS, `docs/measurements/d8a-2026-10/README.md` |
 | D8b-build | done | — | branch `d8b-q4k-giw-2026-10` at v17 (D9); D8B-G1..G4 PASS, `docs/measurements/d8b-2026-10/README.md` |
 | D8b-cuda | open | nobara: D8b's CUDA cell, after D8b-build merges; queued as P36 in `docs/queue-performance.md` (a pointer) | — |
-| MEM13-copies-Metal | done | — (removed before the decision was recorded: the int4 lane writes each part into its device buffers) | 1cc27f17 (2026-10-18); `metal/int4_upload_alloc_test.go` |
-| MEM13-copies-CUDA | open | nobara: the dense projections already stream to the device (`cuda/pack_stream.go:planWeight`, `cuda/pack_stream.go:cudaResident.streamW`), so what is left of the decision is the whole-tensor host packing (`cuda/resident.go:packWeight`) of shared experts, Mamba-2 projections and drafter weights, held until upload: about 4 GB of int8 host copies on Nemotron-H 9B by the survey's arithmetic (re-scoped 2026-10-22, kernel survey §3); S–M; queued as P36 in `docs/queue-performance.md` (a pointer) | — |
+| MEM13-copies-Metal | done | — (removed before the decision was recorded: the int4 lane writes each part into its device buffers) | 1cc27f17 (2026-10-18); `backend/metal/int4_upload_alloc_test.go` |
+| MEM13-copies-CUDA | open | nobara: the dense projections already stream to the device (`backend/cuda/pack_stream.go:planWeight`, `backend/cuda/pack_stream.go:cudaResident.streamW`), so what is left of the decision is the whole-tensor host packing (`backend/cuda/resident.go:packWeight`) of shared experts, Mamba-2 projections and drafter weights, held until upload: about 4 GB of int8 host copies on Nemotron-H 9B by the survey's arithmetic (re-scoped 2026-10-22, kernel survey §3); S–M; queued as P36 in `docs/queue-performance.md` (a pointer) | — |
 | MEM14, MEM15, MEM16 | done | — | aikit v1.71.0 |
 | MEM17 | open | aikit, then ken: `chunk.Chunk` as a file and a byte range through a mapping; ken stores chunks that way (D4, owner 2026-10-21); an aikit minor bump | `chunk.Chunk.Text` |
 | ken | open | ken: `StaticModel.Close` on reload, and `Builder.Add` | — |
@@ -160,7 +160,7 @@ CPU target) and with `docs/measurements/memory-accounting-metal-2026-09-25.md` (
 | LM head | int8 on Metal (the pin, MEM8); int4 on CPU/CUDA since 2026-09-28 | 0.55 GB · 8% | 0.23 GB · 9% (tied: the same table) |
 | input embedding | gathered on the host from the mapping; touched rows only | ~0.02 GB · <1% | (tied) |
 | KV — reference row, the KV program's | f16 | 1.88 GB · 28% | 0.94 GB · 37% |
-| Metal prefill scratch | one 512 MiB block per pass (`metal/backend.go:prefillBlockScratch`) | 0.54 GB · 8% | 0.54 GB · 21% |
+| Metal prefill scratch | one 512 MiB block per pass (`backend/metal/backend.go:prefillBlockScratch`) | 0.54 GB · 8% | 0.54 GB · 21% |
 | tokenizer, sampler, logits, runtime | heap | ~0.1 GB · 1.5% | ~0.1 GB · 4% |
 | **total** | | **~6.8 GB** | **~2.6 GB** |
 
@@ -276,10 +276,10 @@ and an f32 sidecar writes ~2 GB beside the model for no new information.
 ### MEM2 · Metal tower scratch: free what grows, and close (S)
 
 **Problem (checked).** The Metal tower accelerators reassign their buffers on growth without releasing the old ones —
-`metal/gemma4_vision.go:g4vAccel.grow`, `metal/gemma4_audio.go:g4aAccel.grow`, `metal/embeddinggemma2.go:eg2Accel.grow`,
-and the grid tower in `metal/grid_vision.go` — and all four `Close` methods return nil
-(`metal/gemma4_vision.go:g4vAccel.Close`, `metal/grid_vision.go:gridVAccel.Close`, `metal/gemma4_audio.go:g4aAccel.Close`,
-`metal/embeddinggemma2.go:eg2Accel.Close`). Each accelerator also owns its own device ledger, so the resident's
+`backend/metal/gemma4_vision.go:g4vAccel.grow`, `backend/metal/gemma4_audio.go:g4aAccel.grow`, `backend/metal/embeddinggemma2.go:eg2Accel.grow`,
+and the grid tower in `backend/metal/grid_vision.go` — and all four `Close` methods return nil
+(`backend/metal/gemma4_vision.go:g4vAccel.Close`, `backend/metal/grid_vision.go:gridVAccel.Close`, `backend/metal/gemma4_audio.go:g4aAccel.Close`,
+`backend/metal/embeddinggemma2.go:eg2Accel.Close`). Each accelerator also owns its own device ledger, so the resident's
 release-all never reaches it. Scratch at about 90 KiB per patch (Qwen3-VL-8B-class tower, f32) makes a 1080p frame
 ~0.7 GiB and a 4K screenshot ~2.8 GiB, held for the life of the process; a video sums its frames. CUDA's towers
 allocate per call and release; Metal's text prefill releases per pass.
@@ -451,7 +451,7 @@ and the halved weight bytes offset it. Log: `~/goinfer-logs/als-g0-2026-10-23.lo
   turned every bf16 cell red and left the f32 cells green, which is why the bf16 copies are there.
 - ALS-G2 **PASS**: Qwen2.5-VL-3B's tower, Go heap in use after load and GC, aliased **9.6 MiB (0.4%)** against **2,551.7 MiB**
   copied; its projections are 2,543.1 MiB as f32. Log: `~/goinfer-logs/als-g2-2026-10-23.log`.
-- ALS-G3 **PASS**: `TestALS_G3_towerHashes` (`metal/als_g3_test.go`; `mem2Towers`' seven towers, 21 output hashes) built against
+- ALS-G3 **PASS**: `TestALS_G3_towerHashes` (`backend/metal/als_g3_test.go`; `mem2Towers`' seven towers, 21 output hashes) built against
   aikit main and against the branch, through two workspaces: identical.
 - Also: aikit's `go vet ./...`, the `vision` and `embed` tests, and `releasegate 1.74.0` clean but for the uncut `[1.74.0]`
   CHANGELOG section. MEM4(b)'s `TestReleaseBlocks_reloadsTheSameTower` now runs copied (its heap check, unchanged) and aliased
@@ -626,7 +626,7 @@ red). Stopping rule: one pass each. Cost: seconds.
 
 ### MEM7 · Size the Metal prefill block to the machine (S)
 
-**Problem.** `metal/backend.go:prefillBlockScratch` is a fixed 512 MiB per pass, allocated and released each pass. On a
+**Problem.** `backend/metal/backend.go:prefillBlockScratch` is a fixed 512 MiB per pass, allocated and released each pass. On a
 1.5B 32K session that is about a fifth of the process; on a 7B it is 8%. It does not consult the KV plan's free-memory
 reading.
 
@@ -637,7 +637,7 @@ on a 16 GB machine?
 **Gates.** Tier 0: logits byte-identical across block sizes (blocking is already invariant; pin it at two sizes).
 Speed: TTFT at the smaller block, in-process A/B by day (TE5(b)); a served gate only if unresolved.
 
-**MEM7 gates, registered 2026-10-22 before the code (BLK-G).** The build: `metal/backend.go:metalResident.PrefillBlockRows`
+**MEM7 gates, registered 2026-10-22 before the code (BLK-G).** The build: `backend/metal/backend.go:metalResident.PrefillBlockRows`
 sizes a pass's scratch to what the memory guard's own budget leaves, `min(prefillBlockScratch, metalMemoryCeiling(ram) −
 residentNeedBytes(m))` (the budget is the "metal" probe the fit plan reads: the static ceiling min'd with B41's live
 reading), in rows a multiple of 64 and never under `prefillBlockRowsMin`; 512 MiB stays the ceiling. **Deviation from the fix
@@ -721,7 +721,7 @@ Planted defect, run once on the committed tree and reverted: pass two writing on
 
 **Problem.**
 
-- Unpaged MoE copies every expert into stacked anonymous buffers (`metal/moe.go:buildMoELayer`): concatenation cannot
+- Unpaged MoE copies every expert into stacked anonymous buffers (`backend/metal/moe.go:buildMoELayer`): concatenation cannot
   alias because the writer emits per-expert records. M26 unpaged = 12.85 GB anonymous. On the 16 GB Mac M26 always
   pages, so this matters on larger Macs.
 - The shared-expert gate|up and qwen35's K‖V are still copied (~50 MB on M35; S6's "two writer gaps").
@@ -739,7 +739,7 @@ copy. Tier 1: footprint on the smallest MoE that runs unpaged on the Mac.
 
 **Problem.** With `--moe-cache-experts`, the whole expert stack is packed into a fresh heap copy and registered as
 pinned host memory (M26 12.85 GB, M35 18.1 GB page-locked), and the build repacks each tensor through a full host
-copy (`cuda/resident.go:packWeight`) with the scales round-tripped f16 → f32 → f16. The `"cuda"` `.giw` target exists
+copy (`backend/cuda/resident.go:packWeight`) with the scales round-tripped f16 → f32 → f16. The `"cuda"` `.giw` target exists
 in the cache key but still writes the canonical kind.
 
 **Fix shape.** A pre-permuted cuda target, so registration and upload read the mapping directly; the scales stay f16 end
@@ -757,7 +757,7 @@ of the 26B with the expert cache before/after (`VmHWM`, the CUDA box rules in `C
   resident weight bytes at int4 — the loader comment's "~0.6% of the model's bytes" counts the depthwise kernel, not the
   projections. Measure with `ResidentWeightBytes` on a real checkpoint before acting.
 - **MLA.** `decoder/weights.go:mlaWeights` is all f32 and copied on `.giw` load (DeepSeek-V2-Lite ≈ 1.49 GB, ~15% of an
-  int4 load); Metal builds int8 copies on the GPU (`metal/mla.go:int8Proj`) while the host keeps the f32.
+  int4 load); Metal builds int8 copies on the GPU (`backend/metal/mla.go:int8Proj`) while the host keeps the f32.
 - **Drafters.** `decoder/dflash.go:LoadDFlashDrafter` widens bf16 to f32 heap (2.1 GB for the 4B pairing); CUDA keeps
   the host f32 beside its int8 device copy.
 
@@ -1230,11 +1230,11 @@ choice in aikit and a storage choice in ken (**D4**).
   next load (each about the model's size on disk; the Mac is at 97% disk), with nothing gained that (a) lacks. The
   branch is built at v17; (b) is a one-line change.
 
-- **D10** (MEM8(b)): **DECIDED by the owner, 2026-10-21: (a)**, the per-layer table only; `metal/model.go` stays untouched (if (a) needs it, stop and say so). The question as asked: Keying the gather-only tables on their own precision is a no-op on CPU and
+- **D10** (MEM8(b)): **DECIDED by the owner, 2026-10-21: (a)**, the per-layer table only; `backend/metal/model.go` stays untouched (if (a) needs it, stop and say so). The question as asked: Keying the gather-only tables on their own precision is a no-op on CPU and
   CUDA, where `--embed-int4` already defaults on and both tables are int4. It changes only Metal, where the head pin keeps
   them int8, so it is a default precision change on Metal (§2 rule 1) and not plumbing. Two further facts bound it. Metal's
-  greedy chain uploads an untied input embedding to the device as int8 (`metal/greedy_chain.go`, through `int8BufA` and
-  `metal/model.go:int8BufOn`), so that table cannot leave int8 without Metal changes, in a file the unmerged
+  greedy chain uploads an untied input embedding to the device as int8 (`backend/metal/greedy_chain.go`, through `int8BufA` and
+  `backend/metal/model.go:int8BufOn`), so that table cannot leave int8 without Metal changes, in a file the unmerged
   `kv8a-metal-2026-10` branch also edits. And the Metal `.giw` sidecar's name does not carry the per-layer table's
   precision, so existing sidecars and fresh loads would disagree unless a variant tag moves. Options: (a) Gemma 4's
   per-layer table only, int4 on Metal by default (E2B's on disk and at transcode 2.35 → 1.32 GB; CPU and CUDA already run

@@ -401,7 +401,7 @@ and we import no Python either way. Record the decision in the PR as 05 did.
    ~~The resident runner has no capture seam.~~ **That claim, made twice, was wrong**, and
    how it was wrong is the part worth keeping: the search was for the CPU seam's identifiers
    (`captureLayers`, `ForwardCapture`), and their absence in `cuda/` was read as absence of
-   the *mechanism*. `cuda/resident.go` already had **`layerCap`** — a divergence-localization
+   the *mechanism*. `backend/cuda/resident.go` already had **`layerCap`** — a divergence-localization
    probe that snapshots the residual `r.x` after **every** layer. **Absence of a name is not
    absence of a capability.**
 
@@ -796,7 +796,7 @@ they line up with the performance problem gate 3 exposed.
   moves with depth (5/36 → ~5/40); the real mechanism is verify amortization (currently
   3.86× at k=16). Whether it rises at scale is empirical — goinfer decode runs at 6–10% of
   peak bandwidth, so the direction is not guaranteed. Two cheap probes settle it: (a) verify
-  amortization on a 12B/26B target (`cuda/spec_verify_ceiling_test.go` takes the
+  amortization on a 12B/26B target (`backend/cuda/spec_verify_ceiling_test.go` takes the
   `GOINFER_CUDA_MODEL` override), and (b) acceptance at scale. Do both before any mac trunk.
 - **The 7.32 math anomaly is a caution, not a win.** Acceptance is measured against the int8
   target's *own* output distribution; int8 biases greedy toward higher-probability tokens
@@ -1651,10 +1651,10 @@ not assumed: `gpu/` is the WebGPU backend (wgpu-native, cgo, `-tags gpu`) — it
 `PrefillLast`** at all, only `ForwardN`. The native cgo-free Metal backend (`metal/`, purego,
 dlopen `Metal.framework` — the one this repo's whole Metal story is actually about) **does** have
 `PrefillLast`, matching CUDA's structure directly. Built the test in `metal/`
-(`metal/spec_verify_curve_test.go`), not `gpu/`.
+(`backend/metal/spec_verify_curve_test.go`), not `gpu/`.
 
 **The load-bearing finding: `PrefillLast` declines by default on Metal, and forcing it on for
-measurement surfaces why nobody ships it.** `metal/backend.go` refuses batched prefill unless
+measurement surfaces why nobody ships it.** `backend/metal/backend.go` refuses batched prefill unless
 `GOINFER_METAL_BATCHED_PREFILL=1` — its own f16-MMA activation kernels are **not bit-identical**
 to decode's int8 path (54% stream divergence measured previously, §A2-Metal). P10's verify step
 needs exact reproduction of sequential greedy (00-core's lossless contract), so **this kernel
@@ -1720,7 +1720,7 @@ a marginal win at best on the current kernel, not the ~1.5-1.7× the CUDA leg fo
 ### The draft term's omitted half: context work, and a hard requirement for increment 4
 
 The 6.6 ms draft is derived by scaling the target's per-layer GPU cost across the drafter's 5
-layers, and `cuda/dflash_draftcost_test.go` states its own limit: it excludes "the drafter's
+layers, and `backend/cuda/dflash_draftcost_test.go` states its own limit: it excludes "the drafter's
 non-causal attention over `[ctx‖block]`… a floor with a named omission, not a prediction." This
 measures the omission's **shape** (`TestDFlashDraftScaling`).
 
@@ -1769,7 +1769,7 @@ The section above claims the 6.6 ms draft "omits" the context-attention term and
 draft term's omitted half". **That is wrong, and the error is in reading rather than in any
 measurement.**
 
-`cuda/dflash_draftcost_test.go` computes an **M=1** floor — `5.33 × per-layer(M=1)` — and its
+`backend/cuda/dflash_draftcost_test.go` computes an **M=1** floor — `5.33 × per-layer(M=1)` — and its
 "excludes the drafter's non-causal attention" note attaches to **that** figure. Re-run today to
 confirm: per-layer(M=1) = **0.2830 ms**, M=1 decode 11.122 ms, floor **1.51 ms**. Those reproduce
 the recorded 0.2818 / 11.105 / 1.50.
@@ -1965,7 +1965,7 @@ GPU-side argmax is worth ~1.11 ms/round (about +0.04× on code) and is the cheap
 
 ### The single biggest remaining win: the verify's LM head is NOT batched
 
-`PrefillLastN` applies the head in a **per-row loop** (`cuda/prefill.go`): for each of the M rows
+`PrefillLastN` applies the head in a **per-row loop** (`backend/cuda/prefill.go`): for each of the M rows
 it uploads that row, runs the final norm, issues the head as an **M=1 GEMV**, `stream.Sync()`s,
 and downloads all 151936 logits. The head is ~389 M parameters (~195 MB at int4), so **its
 weights are re-read from VRAM once per row.**

@@ -16,7 +16,7 @@ bit-identical.
 | model | **Qwen2.5-7B-Instruct**, GGUF **q4_k_m** → `int4`, from **local disk** `~/models/qwen2.5-7b-instruct-q4_k_m.gguf` (4.68 GB) — the peer matrix's D7 |
 | config | `decoder.Options{Backend:"cuda", Quant:"int4", ResidentContext:8192}` — the same cap `scripts/bench_peer.py` passes as `-ctx 8192` under `BENCH_DEEP_CTX` |
 | free VRAM after load | 1.96 GB of 8.16 GB |
-| harness | `cuda/prefill_longprompt_test.go` (`TestPrefillLongPrompt`), `GOINFER_HEAVY_TESTS=1` |
+| harness | `backend/cuda/prefill_longprompt_test.go` (`TestPrefillLongPrompt`), `GOINFER_HEAVY_TESTS=1` |
 | versions | go1.27.0, `aikit/gpu v0.32.0`, goinfer at `5fca4e43` + this change |
 | thermal | idle 50 °C; 77–78 °C under the sequential arm, no clock drop observed (1905 MHz) |
 | logs | `docs/measurements/prefill-chunking-2026-09-04/` — `before-d7.log`, `after-d7.log`, `bit-identity-gate.log` |
@@ -71,7 +71,7 @@ rather than the lengths that fit.
 
 ## Bit-identity
 
-`cuda/prefill_chunked_test.go` (`TestPrefillChunked_bitIdentical`), real qwen2.5-coder-1.5b at
+`backend/cuda/prefill_chunked_test.go` (`TestPrefillChunked_bitIdentical`), real qwen2.5-coder-1.5b at
 int4, M=1024: chunk widths **256** (divides evenly) and **300** (short final pass) against a
 single-pass reference — **0 of 151,936 seed logits differ**, and eight greedy decode steps taken
 from the resulting cache match id-for-id. The second half is not redundant: identical seed logits

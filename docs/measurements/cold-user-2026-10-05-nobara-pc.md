@@ -14,7 +14,7 @@ Target: the published release tag v0.20.0, which `releases/latest` reports as th
 
   I did not open any project file, doc or source tree, and I did not use any of this material to get past an obstacle. Where it may have shaped a choice, the friction-log line says so.
 - **Things I saw that point at project internals (all from allowed sources):**
-  - The `--help` text of both binaries cites internal docs and task IDs: `docs/measurements/cold-user-2026-09-06-nobara-pc.md`, `task-never-swap-2026-09.md`, `audit-2026-09-10.md`, `audit-metal-2026-09-12.md M-13`, `cuda/resident.go's fitDefaultCtx`, and the codes M35/M26/R9/R10/N-35/MC3/K2/K5/J2.
+  - The `--help` text of both binaries cites internal docs and task IDs: `docs/measurements/cold-user-2026-09-06-nobara-pc.md`, `task-never-swap-2026-09.md`, `audit-2026-09-10.md`, `audit-metal-2026-09-12.md M-13`, `backend/cuda/resident.go's fitDefaultCtx`, and the codes M35/M26/R9/R10/N-35/MC3/K2/K5/J2.
   - `serve check` names "M-18".
   - The pkg.go.dev doc for `Model.Generate` cites "R10, docs/measurements/cold-user-2026-09-06-nobara-pc.md", an earlier cold-user run on this same machine.
   - The `--version` string says the release binaries were built from a dirty tree (`890ca565f982-dirty`).

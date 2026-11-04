@@ -1,7 +1,7 @@
-# Releasing goinfer (tri-module: root + gpu + cuda + metal)
+# Releasing goinfer (tri-module: root + backend/webgpu + backend/cuda + backend/metal)
 
 goinfer is **five Go modules** in one repo — the root (`github.com/townsendmerino/goinfer`),
-plus `gpu/`, `cuda/`, `metal/`, and the ancillary `demo/agent/`. This file is the tag ordering
+plus `backend/webgpu/`, `backend/cuda/`, `backend/metal/`, and the ancillary `demo/agent/`. This file is the tag ordering
 that produces a consistent, go-gettable set, plus the module-graph fixes that must land with it.
 It exists because four release blockers in the 2026-08-05 audit (§1a/§1b: B-01…B-07) were "the
 tagged submodules don't build for anyone" — the gitignored `go.work` masks it locally, so it
@@ -10,16 +10,16 @@ survives to a tag unless caught here.
 > **M-19 broke the requirement cycle — this is now a TWO-step tag, not three.** The audit-era
 > flow tagged the root *twice* because the graph was a cycle (root → gpu/cuda/metal → root). M-19
 > moved the backend imports out of the root (`cmd/serve`/`demo` build tags became no-op guards),
-> so the **root no longer requires `gpu`/`cuda`/`metal`** — the graph is one-way: submodules
+> so the **root no longer requires `backend/webgpu`/`backend/cuda`/`backend/metal`** — the graph is one-way: submodules
 > require the root, the root requires none of them. Tag the root **once**, then the submodules;
-> there is no second root tag. Confirm before starting: `grep -E "goinfer/(cuda|gpu|metal)" go.mod`
+> there is no second root tag. Confirm before starting: `grep -E "goinfer/(backend/(cuda|webgpu|metal)|cuda|gpu|metal)" go.mod`
 > in the root prints nothing. (git history holds the obsolete three-step flow.)
 
 ## Invariants (why the steps are shaped this way)
 
 - **Submodule go.mods carry NO `replace` (2026-08-15).** The dev-convenience
-  `replace github.com/townsendmerino/goinfer => ../` was **removed** from `gpu`/`cuda`/`metal`/
-  `demo-agent` go.mods, because a committed replace makes **`go install …/metal/cmd/serve@vX`
+  `replace github.com/townsendmerino/goinfer => ../` was **removed** from `backend/webgpu`/`backend/cuda`/`backend/metal`/
+  `demo-agent` go.mods, because a committed replace makes **`go install …/backend/metal/cmd/serve@vX`
   fail** — `go install pkg@version` treats the target as main and rejects replace directives (C3
   finding, `docs/measurements/c3-metal-consumer-window.md`). The replace was only ever "ignored by
   consumers" on the *require* path; the *binary* path could not `go install`. Every submodule still
@@ -27,7 +27,7 @@ survives to a tag unless caught here.
   version = B-05 — both publish a broken dependency permanently). **Do NOT re-add the replace.**
 - **`go.work` is gitignored, per-machine, and now MANDATORY for cross-module dev.** With the replaces
   gone, a submodule build outside a workspace resolves the root from the proxy; local cross-module
-  work needs a `go.work` covering **all five modules** (`.`, `./gpu`, `./cuda`, `./metal`,
+  work needs a `go.work` covering **all five modules** (`.`, `./backend/webgpu`, `./backend/cuda`, `./backend/metal`,
   `./demo/agent`). It stays dev-only — nothing in the shipped tag may depend on it, which the
   `standalone-build` workflow proves. That workflow runs on TAG pushes, not on every push, and
   the reason is structural rather than a preference: a submodule built with `GOWORK=off`
@@ -37,13 +37,13 @@ survives to a tag unless caught here.
   here claimed a CI step that did not exist, and Step 2 below was the only thing checking it.
 - **Version alignment (B-07):** all five modules must agree on `aikit`. **Read the versions, do not read them
   here.** No module requires `aikit/gpu`: the device package is goinfer's own since Track AX
-  (`cuda/internal/gpudev`, `metal/internal/gpudev`), and `internal/movedpaths` fails on a require of it.
+  (`backend/cuda/internal/gpudev`, `backend/metal/internal/gpudev`), and `internal/movedpaths` fails on a require of it.
   The `aikit` they agree on must be a **tag**: `main` may require an aikit pseudo-version between weekly aikit
   tags, a release may not (owner decision SD3). `gate release`'s pins row is OWED on a pseudo-version; tag aikit
   and bump to the tag first.
 
   ```sh
-  for m in . gpu cuda metal demo/agent; do printf '%-12s ' "$m"; grep -h aikit $m/go.mod | tr '\n' ' '; echo; done
+  for m in . backend/webgpu backend/cuda backend/metal demo/agent; do printf '%-16s ' "$m"; grep -h aikit $m/go.mod | tr '\n' ' '; echo; done
   ```
 
   This used to name the versions, and it has gone stale **twice** — first telling you to align on
@@ -86,10 +86,10 @@ survives to a tag unless caught here.
    **If this release changes which backends the startup self-test covers, or which adapters it skips,** edit its three statements by hand (the matrix test does not see them): the self-test paragraph in `docs/server.md`,
    "What it has been run on" in `README.md`, and the same section in `apps/site/internal/site/templates/download.html`. The site's output check requires that section to exist, not what it says about coverage.
 8. **The GPU gate, on BOTH boxes** (§C1-M on the Mac, §C1-C on the Linux box): `go run ./cmd/gate gpu`, the same command, a different backend. Neither is run by CI. v0.21.0 and v0.22.0 had the Metal run and no
-   recorded CUDA one. Queue the CUDA run at night (about 2 h 20 min) as soon as the release commit is chosen; a run at an earlier commit counts only if nothing under `metal/`, `cuda/`, `gpu/` or `decoder/` changed since.
+   recorded CUDA one. Queue the CUDA run at night (about 2 h 20 min) as soon as the release commit is chosen; a run at an earlier commit counts only if nothing under `backend/metal/`, `backend/cuda/`, `backend/webgpu/` or `decoder/` changed since.
    Every run writes a record, `docs/measurements/gpu-gate/<backend>-<time>-<commit>.json`: **commit it** (the Mac's from the Mac, as a model transfer is). `go run ./cmd/gate gpu-records` then says, per backend, `done` or `OWED` against HEAD, by that rule: the newest record made at the same code decides, and only a PASS on a clean tree with the heavy tier run (no `GOINFER_GATE_SKIP_HEAVY`) counts. Exit 0 only when both backends are done.
    **The tests the day loop defers, on BOTH boxes:** `go run ./cmd/gate quick -full -base <the previous tag>`. By day `gate quick` leaves out each
-   package's real-checkpoint tests and, for a change that does not touch `metal/`, `gpu/` or `cuda/`, that module's long kernel tests; it prints each as
+   package's real-checkpoint tests and, for a change that does not touch `backend/metal/`, `backend/webgpu/` or `backend/cuda/`, that module's long kernel tests; it prints each as
    `DEFERRED`. `-full` runs them all against everything since the last tag. About 10 minutes on the Mac; night-queue it with the GPU gate. Each run writes a
    record, `docs/measurements/quick-full/<os>-<arch>-<time>-<commit>.json`: **commit it**. `gate release` has a row for it: per box (darwin, linux),
    the newest record made at the same code decides, and only a `-full` PASS on a clean tree counts. A change under `docs/`, `apps/site/`, `.github/` or `changelog.d/`,
@@ -128,13 +128,13 @@ git push origin main v0.10.1        # published BEFORE any submodule go-gets it
 > <paths>`) — Step 2 in particular runs `-am` four times across four modules.
 
 **Step 2 — point each submodule at the tagged root, prove the standalone build, tag.**
-Do `gpu/`, `cuda/`, `metal/` first, then `demo/agent/` LAST (it also requires `goinfer/gpu`, so
-`gpu/vX` must be tagged and pushed before demo/agent can `go get` it).
+Do `backend/webgpu/`, `backend/cuda/`, `backend/metal/` first, then `demo/agent/` LAST (it also requires `goinfer/backend/webgpu`, so
+`backend/webgpu/vX` must be tagged and pushed before demo/agent can `go get` it).
 ```
 cd <mod>
 # The go.mods are replace-free (2026-08-15) — nothing to remove/restore. Just point at the tag:
 GOWORK=off go get github.com/townsendmerino/goinfer@v0.10.1        # B-01/B-05: real version, not placeholder/pseudo
-GOWORK=off go get github.com/townsendmerino/goinfer/gpu@v0.10.1    # demo/agent ONLY (it requires goinfer/gpu too)
+GOWORK=off go get github.com/townsendmerino/goinfer/backend/webgpu@v0.10.1    # demo/agent ONLY (it requires goinfer/backend/webgpu too)
 GOWORK=off go mod tidy                                             # B-02/B-03/B-04: complete go.sum for the SELECTED versions
 GOWORK=off go build -tags <cuda|gpu|metal> ./...                  # PROVE it builds with no workspace
 # NO replace to restore — do not re-add it (it breaks `go install …@vX`; see the Invariants).
@@ -144,12 +144,12 @@ EXPECTED; the `go mod tidy` go.sum bump is the deliverable, and macOS/CI runs th
 Then commit the go.mod/go.sum bumps and tag. **`git tag` takes ONE name per call** (unlike
 `git push`, which takes many):
 ```
-git commit -am "release: gpu/cuda/metal require goinfer v0.10.1"
-git tag cuda/v0.10.1 ; git tag gpu/v0.10.1 ; git tag metal/v0.10.1
-# a SEPARATE commit for demo/agent (requires goinfer + goinfer/gpu):
-git commit -am "release: demo/agent requires goinfer + goinfer/gpu v0.10.1"
+git commit -am "release: backend/{webgpu,cuda,metal} require goinfer v0.10.1"
+git tag backend/cuda/v0.10.1 ; git tag backend/webgpu/v0.10.1 ; git tag backend/metal/v0.10.1
+# a SEPARATE commit for demo/agent (requires goinfer + goinfer/backend/webgpu):
+git commit -am "release: demo/agent requires goinfer + goinfer/backend/webgpu v0.10.1"
 git tag demo/agent/v0.10.1
-git push origin main cuda/v0.10.1 gpu/v0.10.1 metal/v0.10.1 demo/agent/v0.10.1
+git push origin main backend/cuda/v0.10.1 backend/webgpu/v0.10.1 backend/metal/v0.10.1 demo/agent/v0.10.1
 ```
 
 ## The site (goinfer.dev) deploys itself after a root tag
@@ -268,8 +268,8 @@ Add to CI, one job per submodule — **no workspace**, so `replace` and the borr
 ```
 cd <mod> && GOWORK=off go build -tags <tag> ./... && GOWORK=off go vet -tags <tag> ./...
 ```
-`cuda` runs on the Linux/NVIDIA runner; `metal` on macOS; `gpu` anywhere with the `gpu` tag.
-Also add `./cuda` and `./demo/agent` to the dev `go.work` (B-05) so local backend work resolves
+`backend/cuda` runs on the Linux/NVIDIA runner; `backend/metal` on macOS; `backend/webgpu` anywhere with the `gpu` tag.
+Also add `./backend/cuda` and `./demo/agent` to the dev `go.work` (B-05) so local backend work resolves
 from the tree, and document that a workspace is mandatory for cross-module development.
 
 ## §C1 — parity re-validation (the ⛔ numeric gate)
@@ -278,7 +278,7 @@ from the tree, and document that a workspace is mandatory for cross-module devel
 (on nobara, at night; it takes hours) writes `docs/measurements/parity-sweep/parity-<time>-<commit>.json`: the commit, the
 verdict, the cells and what ran. Commit it. The row is `done` only when the newest record made at the same code is a
 complete sweep: no blocker, a clean tree, the real-checkpoint tier run (`REALCKPT=1`), not narrowed by `GATE_RUN`. "The
-same code" is every file the parity manifest hashes plus `decoder/`, `cuda/`, `metal/` and `gpu/`
+same code" is every file the parity manifest hashes plus `decoder/`, `backend/cuda/`, `backend/metal/` and `backend/webgpu/`
 (`cmd/gate/parity_record.go:parityQualifyingPaths`); a change to any of them after the sweep makes the row `OWED`
 again and names what changed. A sweep made before the record existed (v0.21.0's, in
 `docs/measurements/release-v0.21.0/parity-sweep-2026-10-06.md`) does not count for a later tag.
@@ -446,7 +446,7 @@ group. The whole run is about 2 h 20 min (basis: `docs/code-notes/cmd-gate.md`, 
    did NOT run, and the gate lists that under "this gate does NOT cover". For a tag that list must not contain the heavy tier, unless an exception is written down in the tag's record.
 4. **The log is archived, not `mktemp`'d**: commit it (or paste it) with the tag record, as for §C1-M.
 
-**Both halves are owed at a tag:** run §C1-M on the Mac and this on the Linux box, at the same commit or at commits that differ by nothing in `metal/`, `cuda/`, `gpu/` and `decoder/`, and record both.
+**Both halves are owed at a tag:** run §C1-M on the Mac and this on the Linux box, at the same commit or at commits that differ by nothing in `backend/metal/`, `backend/cuda/`, `backend/webgpu/` and `decoder/`, and record both.
 
 ## Test hooks build tag (`goinfer_testhooks`)
 
@@ -460,7 +460,7 @@ calls one carries the tag too (`//go:build … && goinfer_testhooks`). Consequen
   defaults to it. A plain `go test ./...` without the tag still compiles — it just *skips* the
   tagged tests (they do not run, and are not a silent failure because CI runs them with the tag).
 - **Shared test helpers must NOT live in a tagged file** — put them in an untagged
-  `*_test.go` (e.g. `metal/testshared_test.go`), or an untagged sibling test can't see them.
+  `*_test.go` (e.g. `backend/metal/testshared_test.go`), or an untagged sibling test can't see them.
 - Production `go build ./...` (no tag) must stay clean — the hooks are absent, proving they
   are not referenced by non-test code.
 

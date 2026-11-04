@@ -1080,8 +1080,8 @@ class FitCheckAtQueueTime(unittest.TestCase):
 
     def test_the_backend_picks_the_binary_and_each_load_is_priced(self):
         self.add("two", fit_model=["a.gguf", "b.giw"], fit_opts=["-backend cuda -quant int4", "-backend metal"])
-        self.assertEqual(self.calls[0][:5], ["go", "run", "-tags", "cuda", "./cuda/cmd/chat"])
-        self.assertEqual(self.calls[1][:3], ["go", "run", "./metal/cmd/chat"])
+        self.assertEqual(self.calls[0][:5], ["go", "run", "-tags", "cuda", "./backend/cuda/cmd/chat"])
+        self.assertEqual(self.calls[1][:3], ["go", "run", "./backend/metal/cmd/chat"])
         self.assertEqual(night.fit_binary(""), ["go", "run", "./demo/chat"])
         self.assertEqual(len(self.queued("two")[0]["fit_check"]), 2)
 

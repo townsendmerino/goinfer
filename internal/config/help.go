@@ -25,7 +25,7 @@ const backendHelp = "compute backend: auto | cpu | webgpu | cuda | metal (cgo-fr
 	"and prints one line saying which; it never picks webgpu. metal is picked on Apple silicon only, and for int4 models only: " +
 	"it re-quantizes other precisions to int4, so auto keeps those on the CPU (-backend metal runs them re-quantized). " +
 	"cuda/metal support both dense and MoE architectures resident. cuda needs `-tags cuda`; metal's own submodule " +
-	"entrypoints (goinfer/metal/cmd/chat, goinfer/metal/cmd/serve) are darwin-gated and need no build tag of their own. " +
+	"entrypoints (goinfer/backend/metal/cmd/chat, goinfer/backend/metal/cmd/serve) are darwin-gated and need no build tag of their own. " +
 	"On cuda/metal, GPU means fully resident, full stop — a model/arch that does not build the resident runner declines straight to CPU; neither backend has a partial \"staged\" GPU path (R9, docs/measurements/cold-user-2026-09-06-nobara-pc.md). " +
 	"The only bigger-than-the-card story on cuda is MoE expert streaming (-moe-cache-experts); webgpu is the one backend with a real staged (non-resident) path, for f32/int8/int8int8, plus int4 decode only (M=1; prefill still declines to CPU)."
 

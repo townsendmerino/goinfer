@@ -149,7 +149,7 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			},
 		},
 		{
-			Name: "gpu", Dir: "gpu", Work: []string{".", "gpu"},
+			Name: "gpu", Dir: "backend/webgpu", Work: []string{".", "backend/webgpu"},
 			ListTags: []string{"gpu", "goinfer_testhooks"}, TestTags: []string{"gpu", "goinfer_testhooks"},
 			TestArgs: []string{"-short"}, Device: true,
 			// The first two were measured on the Mac; the last two on Vulkan (150 device creations each, no model, built with
@@ -164,7 +164,7 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			},
 		},
 		{
-			Name: "cuda", Dir: "cuda", Work: []string{".", "cuda"},
+			Name: "cuda", Dir: "backend/cuda", Work: []string{".", "backend/cuda"},
 			ListTags: []string{"cuda", "goinfer_testhooks"}, TestTags: []string{"cuda", "goinfer_testhooks"},
 			TestArgs: []string{"-short"}, Env: map[string]string{"CGO_ENABLED": "0"},
 			// `CGO_ENABLED=0 go build -tags 'cuda goinfer_testhooks' ./cuda/...` fails on darwin/arm64 (aikit/gpu's
@@ -182,7 +182,7 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			},
 		},
 		{
-			Name: "metal", Dir: "metal", Work: []string{".", "metal"},
+			Name: "metal", Dir: "backend/metal", Work: []string{".", "backend/metal"},
 			ListTags: testhooks, TestTags: testhooks,
 			NativeGOOS: "darwin", CrossTarget: "darwin/arm64", Device: true,
 			// Long tests left in package metal. Each is untagged, so gate gpu's Metal suite runs it. The kernel sweeps
@@ -204,7 +204,7 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			},
 		},
 		{
-			Name: "demo/agent", Dir: "demo/agent", Work: []string{".", "gpu", "demo/agent"},
+			Name: "demo/agent", Dir: "demo/agent", Work: []string{".", "backend/webgpu", "demo/agent"},
 			Lint: []lintSpec{
 				{"build", nil, "", "affected", "gpu: go build ./demo/agent/..."},
 				{"vet", nil, "", "affected", "(not in CI) go vet ./demo/agent/..."},

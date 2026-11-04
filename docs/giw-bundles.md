@@ -164,7 +164,7 @@ The lengths follow from the shapes, so a prefix between members is not needed, a
 layout removes. Members are group-32 int4 with the same K, a multiple of 32. A tuple with an int8 member, an absent
 member (a K=V layer has no V) or a mixed K is written as ordinary records.
 
-The Metal build (`metal/alias.go`; aliasing is on by default, `GOINFER_METAL_ALIAS=0` turns it off) checks whether a
+The Metal build (`backend/metal/alias.go`; aliasing is on by default, `GOINFER_METAL_ALIAS=0` turns it off) checks whether a
 tuple's nibbles and scales are each one contiguous run in the mapping and binds them in place if so. It is detected,
 not assumed:
 

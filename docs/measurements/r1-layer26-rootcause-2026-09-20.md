@@ -60,12 +60,12 @@ both experiments re-ran byte-identical on every measurement line. Logs archived 
 goinfer-logs/r1 directory in the home directory (x1/x2 originals and re-runs); the tests themselves
 are kept in the tree.
 
-**X1 — `metal/r1_gu_reference_test.go` (`TestR1_guReference`).** One model load, lane OFF; the
+**X1 — `backend/metal/r1_gu_reference_test.go` (`TestR1_guReference`).** One model load, lane OFF; the
 lane is toggled at runtime through `r.decodeLaneW4F16` (which `canUseF16Lane` reads on every
 call). Token 785 at position 0, exactly as the record. For each of layers {0, 2, 8, 16, 24, 25, 26,
 27}: replay the W4A8 lane through the preceding layers, run the attention block of the target layer,
 capture the post-attention residual, then dispatch each arm's FFN norm + gate/up **verbatim from the
-production call sites** (`metal/model.go` L2186–2195) into separate command buffers and read `r.gu`,
+production call sites** (`backend/metal/model.go` L2186–2195) into separate command buffers and read `r.gu`,
 `r.mxF16`, `r.mq`/`r.mSc` and `r.dSc` (after `swiglu_quant`) back. CPU side in float64: the normed
 activation from the same residual (eps and addOne read from the resident's own uniform buffers);
 the 17920×1536 weight dequantized row by row from `L.guW`/`L.guS`; three dots per row — W·a_f64,
@@ -73,7 +73,7 @@ W·a_f16half (the exact half activation the f16 kernel received), W·(mq·mSc) (
 the W4A8 kernel received). Then the record's repro, same model: W4A8 through layers 0–25 → x1; W4A8
 26–27 vs f16 26–27 from the same x1, decomposed by channel.
 
-**X2 — `metal/r1_lane_vs_cpu_test.go` (`TestR1_laneVsCPU`).** Teacher-forced, no generation: a
+**X2 — `backend/metal/r1_lane_vs_cpu_test.go` (`TestR1_laneVsCPU`).** Teacher-forced, no generation: a
 48-token Go snippet (this is a coder model) tokenized with the model's own tokenizer, fed one token
 per position to (A) the CPU backend at `Options{Backend:"cpu", Quant:"int8"}` with
 `GOINFER_CPU_FAST_ATTENTION=0` — weight-only per-row int8, f32 activations, exact f64-accumulating
@@ -131,7 +131,7 @@ no information about which arm was right; X2 does.
 
 Lane-vs-lane top-1 agreement 44/48. McNemar d = 4 positions where exactly one arm matches the CPU
 argmax: only W4A8 at position 15; only f16 at positions 0, 10, 20. f16's KL is lower on 25/48
-positions. All three pooled rules from `metal/prefill_gate_ref_test.go`'s header hold with f16 as
+positions. All three pooled rules from `backend/metal/prefill_gate_ref_test.go`'s header hold with f16 as
 the candidate and W4A8 as the shipped arm: (a) hard flips 1 ≤ 2 + 2√2; (b) top-1 0.9375 ≥ 0.8958 −
 2√4/48; (c) mean KL 0.060 ≤ 0.334.
 
@@ -176,10 +176,10 @@ or the int8-weight reference with that stated), and the served-tok/s measurement
 registered band (three arms interleaved, `scripts/bench_peer.py`, `BENCH_BACKENDS=metal`, the lane
 selected by `GOINFER_METAL_DECODE_LANE=w4f16`). Neither is run here.
 
-The deliberately-failing keeper test `metal/gemv_w4f16_layer26_repro_test.go` is **deleted**, not
+The deliberately-failing keeper test `backend/metal/gemv_w4f16_layer26_repro_test.go` is **deleted**, not
 loosened: it asserted the wrong arm as truth, which its own comment forbade "papering over" — the
-mechanism it asked for is this record. `metal/r1_gu_reference_test.go` reproduces its numbers
-(the −0.585) and supplies the reading; it and `metal/r1_lane_vs_cpu_test.go` are the new keepers,
+mechanism it asked for is this record. `backend/metal/r1_gu_reference_test.go` reproduces its numbers
+(the −0.585) and supplies the reading; it and `backend/metal/r1_lane_vs_cpu_test.go` are the new keepers,
 both `GOINFER_HEAVY_TESTS`-gated and cheap (3 s and 8 s after load).
 
 **Follow-up worth its own brief, not done here:** the shipped Metal W4A8 decode lane's per-tensor

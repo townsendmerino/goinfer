@@ -11,7 +11,7 @@ The limits, from `docs/tasks/task-metal-pairwise-rope-2026-10.md`:
 2. **Command-R7B on Metal reads mean cosine 0.989 against the CPU at int4.** CUDA's resident reads 0.997. Metal's f16
    KV cache is a hypothesis, not a finding.
 
-## What is missing, from the code (`metal/model.go`'s `prefillFeatures`, `prefillOK`)
+## What is missing, from the code (`backend/metal/model.go`'s `prefillFeatures`, `prefillOK`)
 
 - **GLM-OCR** lacks only `FeatPairwiseRoPE` and `FeatPairwiseMRoPE` in the prefill feature set.
   - The pairwise prefill kernels (`rope_f16_pw`, `rope_mrope_f16_pw`) exist, are bound for a pairwise model, and

@@ -110,7 +110,7 @@ card). Raw files are in `raw/b-main/`.
 - **`long128`: the same empty failure as BIG1.** An `errNoForcedCall` frame, no usage, no call.
   - Its expert-cache line is `834422 hits, 227338 misses`, equal to BIG1's failing turn to the token, so the reproduction is
     deterministic.
-  - Its reasoning is the same 36 characters as run A's, where the call parsed (`We need to read cuda/pack_stream.go.`). The
+  - Its reasoning is the same 36 characters as run A's, where the call parsed (`We need to read backend/cuda/pack_stream.go.`). The
     reasoning budget did not fire in either run, so **the budget is ruled out as BIG1's cause**. The two runs diverge after
     the reasoning, where the call is written.
 
@@ -191,7 +191,7 @@ Clean start: load 2.26, only the compositor on the card. Raw files are in `raw/f
   `run_command {"cmd":["bash","-lc","-lc","-lc", …, "-c","-1","-lc","-1", … "-1", …]}`, a repeating run of `"-lc"` and
   then `"-1"`.
 - **The schema:** neither argument fits it. `run_command` takes `command`, a string. Run A's passing 45-token call,
-  `{"cmd":["bash","-lc","-lc","cat","cuda/pack_stream.go"]}`, has the same wrong name and the start of the repeat. It was
+  `{"cmd":["bash","-lc","-lc","cat","backend/cuda/pack_stream.go"]}`, has the same wrong name and the start of the repeat. It was
   short enough to finish only because its prefill began at 311.
 
 **So, against run F's rule, the second branch:**
@@ -258,8 +258,8 @@ gpt-oss's own. The card was free after tack's run; it held only the compositor, 
   a different prompt. goinfer's side is run F's recorded output.
 
 **The decode.** llama-server, MXFP4 as shipped, experts on the CPU (`-ot`), greedy (`temperature` 0, `top_k` 1), `-sp`:
-- **llama.cpp:** `<|channel|>analysis<|message|>We need to read cuda/pack_stream.go.<|end|><|start|>assistant<|channel|>commentary
-  to=functions.read_file <|constrain|>json<|message|>{"path":"cuda/pack_stream.go","start_line":1,"end_line":400}<|call|>`.
+- **llama.cpp:** `<|channel|>analysis<|message|>We need to read backend/cuda/pack_stream.go.<|end|><|start|>assistant<|channel|>commentary
+  to=functions.read_file <|constrain|>json<|message|>{"path":"backend/cuda/pack_stream.go","start_line":1,"end_line":400}<|call|>`.
   48 tokens, stopping at EOS.
 - **goinfer (run F):** the same reasoning, byte for byte, then `run_command {"cmd":["bash","-lc","-lc", …]}`, 340 tokens, with
   `"-lc"` 81 times.
@@ -299,7 +299,7 @@ Francis chose (a) through the coordinator: find where goinfer's logits at the to
 **The position.** Step 22 of the reply to run F's prompt.
 - The 10,932 prompt ids are `split/prompt-ids.json`, serve's own rendering, identical to llama.cpp's tokenization (Q1).
 - They are followed by the 22 tokens run F and llama.cpp both wrote (`split/forced.json`): `<|channel|>analysis<|message|>We
-  need to read cuda/pack_stream.go.<|end|><|start|>assistant<|channel|>commentary to=functions`.
+  need to read backend/cuda/pack_stream.go.<|end|><|start|>assistant<|channel|>commentary to=functions`.
 - At step 22 the reference's log-probabilities are `.read` −0.496, `.list` −0.962, `.search` −5.408, `.run` −6.067.
 
 **The arms, all on nobara.**

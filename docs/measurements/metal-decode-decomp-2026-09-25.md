@@ -20,7 +20,7 @@ local; idle at start. Raw: [`metal-decode-decomp-2026-09-25/run.log`](metal-deco
 
 ## Method — no replica
 
-`TestMetalDecodeDecomp` (`metal/decode_decomp_test.go`) times the **production** `Forward` — its own command buffer's
+`TestMetalDecodeDecomp` (`backend/metal/decode_decomp_test.go`) times the **production** `Forward` — its own command buffer's
 GPU timestamps — while one category's pipelines are swapped for a no-op kernel (same dispatches, same grids; only
 that category's work disappears). A category's in-sequence work = full − full-with-it-no-op'd; the dispatch floor =
 the token with every pipeline no-op'd. The KV cache is filled to each depth by `PrefillLast`, then decode repeats at
