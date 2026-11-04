@@ -1,7 +1,7 @@
 # Lead 3 — populate-then-pin vs pin-then-populate for the CUDA expert-stack buffer: real win, noisy magnitude, not wired
 
 `docs/tasks/task-freetoken-techniques.md` Lead 3's "cheap, narrow experiment against an already-known,
-already-measured cost": `cuda/resident.go`'s `mapBytes` (the C′ expert-stack DMA source, ~11.4 GB) allocates
+already-measured cost": `backend/cuda/resident.go`'s `mapBytes` (the C′ expert-stack DMA source, ~11.4 GB) allocates
 pinned host memory first (`NewMappedHostBuffer` → `cuMemAllocHost`) then copies into it. FreeToken's loader
 does the reverse — populate ordinary memory, pin afterward. The doc flagged one real unknown before writing
 any code: whether the primitive to populate-then-pin exists in aikit's dependency stack at all.
@@ -18,7 +18,7 @@ wiring (below).
 
 ## Method
 
-`TestLead3_pinOrderMicrobench` (`cuda/kernels/lead3_pin_order_bench_test.go`), RTX 2070 SUPER, driver 595.91.07, real
+`TestLead3_pinOrderMicrobench` (`backend/cuda/kernels/lead3_pin_order_bench_test.go`), RTX 2070 SUPER, driver 595.91.07, real
 scale (11.4 GB, the doc's own cited figure for C′'s expert stack). Two arms, same total work (allocate N bytes
 of GPU-reachable host memory, fill it with real content), timed in two phases each so allocation cost and fill
 cost don't hide in one number:
@@ -83,7 +83,7 @@ Built both pieces the follow-up named: aikit `Device.RegisterMappedHostBuffer` (
 copy — better than this measurement's own microbenchmark arm B, which still paid a `make`+`copy`) and
 `Queue.UploadAsyncAtFrom` (additive — `UploadAsyncAt`'s existing shipped signature, gpu/v0.33.2, is
 untouched; the C′ decode overlap's DMA path needed a source-agnostic entry point, since `.Host()` returns
-nil for a register-origin `MappedHostBuffer` and the overlap path is default-on). `cuda/resident.go`'s
+nil for a register-origin `MappedHostBuffer` and the overlap path is default-on). `backend/cuda/resident.go`'s
 `mapBytes` gets a third arm, `GOINFER_MOE_PIN_REGISTER` (opt-in, default off): register `src` — the
 already-fully-populated merged expert-stack slice `packWeight` built — in place, no copy at all. Correctness:
 `TestCUDA_registerMappedHostWeight_zeroCopy` (aikit, bit-identical GEMV read) and every existing C′

@@ -17,7 +17,7 @@ production's single-token forward and timed in sequence.
 
 ## The step
 
-`mc3Step.step` (`metal/mc3_step_test.go`, test-only) encodes, per layer:
+`mc3Step.step` (`backend/metal/mc3_step_test.go`, test-only) encodes, per layer:
 - per sequence, production's own kernels for:
   - the norm + int8 quantisation;
   - RoPE, the KV store into that sequence's slot, and attention over that slot;

@@ -20,7 +20,7 @@ numerics are the M=1 lane's, already gated on held-out set B (which is spent; a 
 
 ## Design (fixed here; deviations are recorded, not silent)
 
-- New kernels `fa_partial_rows_{64,128,256}` beside `fa_partial_*` in `cuda/decode_fa.cu`; the M=1 kernels and `fa_combine` maths are untouched
+- New kernels `fa_partial_rows_{64,128,256}` beside `fa_partial_*` in `backend/cuda/decode_fa.cu`; the M=1 kernels and `fa_combine` maths are untouched
   (`fa_combine` gains a row index). A CTA handles (kv head, split, group of R consecutive verify rows), R fixed at compile time; the 8 warps are the
   same 8 "units" as M=1 and each keeps, per row, the SAME (m, l, acc) recurrence over the SAME blocks in the SAME order as the M=1 warp with that unit
   index — so per-row partials are equal bit for bit. K and V rows of a block are loaded once and used for all R rows.

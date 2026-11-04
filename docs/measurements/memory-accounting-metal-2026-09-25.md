@@ -21,7 +21,7 @@ Two disagreements, not one:
 1. **No host-copy term in `Plan`** — the task doc's finding, confirmed and larger here (2.1 GB, not Linux's 1.29, because
    arm64 also holds the repacked int4 copy). Since S6 it is 0 for an aliased `.giw`, so it now bites a direct `.gguf` on
    Metal: `fit` could say *resident* for a load the guard then refused.
-2. **`Plan` priced Metal's KV at f32; Metal allocates f16** (its f32 KV kernels are compiled out, `metal/model.go`'s
+2. **`Plan` priced Metal's KV at f32; Metal allocates f16** (its f32 KV kernels are compiled out, `backend/metal/model.go`'s
    `r.kvF32`), so `Plan`'s KV was twice the real one. Serve's banner printed `KV f32` on Metal for the same reason.
 
 Also found reading the allocation: Metal gives **every attention layer the full padded context** (no sliding-window ring

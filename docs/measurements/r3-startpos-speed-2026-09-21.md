@@ -15,7 +15,7 @@ amortized over the same turn length either way.**
 
 R3's SHIPPED result deliberately did not re-run the pooled *correctness* gate at `startPos > 0` —
 G-08 (`audit-metal-2026-09-12.md`) had already closed that specific coverage gap with a cheaper,
-targeted test (`metal/prefill_startpos_test.go`, a tiny synthetic fixture proving `PrefillLast`'s
+targeted test (`backend/metal/prefill_startpos_test.go`, a tiny synthetic fixture proving `PrefillLast`'s
 output matches sequential `Forward` bit-plausibly at `startPos > 0`). But correctness and *speed*
 are different questions, and nobody had measured whether `PrefillLast`'s dispatch/fixed-cost
 structure changes at all once it starts from a large, already-resident KV instead of position 0 —
@@ -27,7 +27,7 @@ means short turns appended to a long existing conversation, not short standalone
 
 Box `apple-m1pro` (M1 Pro, 16 GB), Darwin 25.6.0, goinfer `ff2687fd`. `qwen2.5-coder-1.5b` GGUF
 Q4_K_M, `Quant:"int4"`, one Metal resident, `ResidentContext` sized to what the test actually
-touches (768). `metal/r3_startpos_speed_test.go` (`TestR3_startPosSpeed`):
+touches (768). `backend/metal/r3_startpos_speed_test.go` (`TestR3_startPosSpeed`):
 
 1. Build a 512-token resident prefix **via the batched path itself**
    (`PrefillLast(embs[0:512], 0)`) — realistic, since a real served session's own earlier turns

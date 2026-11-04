@@ -112,7 +112,7 @@ is worth its own look.
 The three tests aikit passes that goinfer's `cuda/internal/gpudev` does not run:
 
 - `TestOutputContract_newBufferDocsAgreeWithBackends` and `TestOutputContract_hostWritersStateTheirs` live in the Metal
-  half (`metal/internal/gpudev/outputcontract_doc_test.go`), as the split section above says.
+  half (`backend/metal/internal/gpudev/outputcontract_doc_test.go`), as the split section above says.
 - `TestPTXReproducible/gemv_w8a8` rebuilds `anncuda`'s PTX; `anncuda` stays in aikit (SD2,
   `docs/tasks/task-subsystems-2026-10.md`). The other four PTX files (`gemv_quant`, `roofline`, `smoke`, `vit`) reproduce
   byte for byte on both sides.

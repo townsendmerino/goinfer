@@ -12,7 +12,7 @@ import (
 // source (the cuda module is its own module, behind a build tag, and cannot be imported here). It must also hold a
 // coding agent's first request with headroom: 11,137 tokens, opencode's (R19, docs/tasks/task-first-hour.md).
 func TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn(t *testing.T) {
-	src, err := os.ReadFile("../../cuda/resident.go")
+	src, err := os.ReadFile("../../backend/cuda/resident.go")
 	if err != nil {
 		t.Fatal(err)
 	}

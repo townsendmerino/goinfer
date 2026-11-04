@@ -3,17 +3,17 @@
 SP2 of track SP. The gates were registered before any code, in `docs/tasks/task-forward-architecture-2026-10.md` §6a, "SP2 on
 nobara" (commit `7d5a96cf`, pushed before the first line of SP2 code). This page records each reading against that rule.
 
-- **The mechanism:** `cuda/recurrent_spec.go` (the arena, `VerifyLastNArgmax`, `FoldVerified`), the twins in `cuda/deltanet.cu`
+- **The mechanism:** `backend/cuda/recurrent_spec.go` (the arena, `VerifyLastNArgmax`, `FoldVerified`), the twins in `backend/cuda/deltanet.cu`
   (`delta_conv_rows_spec`, `delta_rule_rows_128_spec`, `delta_rule_rows_spec`), and the loop in `decoder/blockspec.go`
   (`BlockSpec.generate`, `Model.specRollbackSafeVia`).
-- **The gates:** tier 0 in `cuda/recurrent_spec_test.go` and `decoder/recurrent_spec_test.go`; the 9B in
-  `cuda/recurrent_spec_real_test.go`, driven by `run-sp2.sh` (`MODE=identity|cost|speed`).
+- **The gates:** tier 0 in `backend/cuda/recurrent_spec_test.go` and `decoder/recurrent_spec_test.go`; the 9B in
+  `backend/cuda/recurrent_spec_real_test.go`, driven by `run-sp2.sh` (`MODE=identity|cost|speed`).
 - **Logs:** `~/goinfer-logs/sp2-2026-10/` on nobara; the JSON lines each 9B run writes are copied under `raw/`.
 
 ## The kernels: what changed in `deltanet.ptx`
 
-Rebuilt with `cuda/build_ptx.sh deltanet` (NVRTC 12.9.86; the committed PTX first rebuilt byte-identically at main `d9a1cb4d`,
-so the toolchain reproduces it). As merged, `cuda/deltanet.cu` gains only additions: every committing kernel's source is main's,
+Rebuilt with `backend/cuda/build_ptx.sh deltanet` (NVRTC 12.9.86; the committed PTX first rebuilt byte-identically at main `d9a1cb4d`,
+so the toolchain reproduces it). As merged, `backend/cuda/deltanet.cu` gains only additions: every committing kernel's source is main's,
 and its PTX is main's apart from label numbers. The three verify twins are standalone kernels:
 - `delta_conv_rows_spec` folds the previous verify's committed rows into the window (the slide alone), then computes each row from
   the window and the pass's earlier rows with `delta_conv_rows`'s FMA chain, in the same floating-point order, and slides nothing
@@ -173,7 +173,7 @@ in its warm-up (no pair timed; `speed-2026-10-25-0636.log` on nobara) and the fo
 - The arena keeps two banks, since a verify overwrites the bank it writes while the previous verify's rows fold from the other:
   63,373,312 B allocated on the 9B, priced at 65,011,712 B (62 MiB). This doubles the 30.1 MiB the registration stated, a
   consequence of the registered response.
-- Every committing kernel's source is main's, unchanged (`cuda/deltanet.cu` gains only additions), and their PTX matches main's
+- Every committing kernel's source is main's, unchanged (`backend/cuda/deltanet.cu` gains only additions), and their PTX matches main's
   apart from label numbers. The 128-wide twin is one loop over the folded rows and its own, and spills 96 B/thread, the committing
   kernel's own figure.
 - G1a's new case checks the in-scan fold byte for byte against a prefill, and the next verify's argmax against the prefill's, on

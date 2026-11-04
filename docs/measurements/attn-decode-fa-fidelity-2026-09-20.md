@@ -1,7 +1,7 @@
 # attn_decode_fa fidelity gate on held-out set B: PASSES on both cells (D7 decision, S confirmation)
 
 Pre-registration: `attn-decode-fa-fidelity-PREREGISTERED.md` (committed before Phase A launched, not edited). S=16 was fixed in
-`attn-decode-fa-ladder-2026-09-20.md` before any scoring. Gate: `TestFlashDecodeGateVsReference` (`cuda/flash_decode_gate_test.go`).
+`attn-decode-fa-ladder-2026-09-20.md` before any scoring. Gate: `TestFlashDecodeGateVsReference` (`backend/cuda/flash_decode_gate_test.go`).
 Reference: CPU f32 weights and activations, exact f64 attention, one worker, held-out prompt set B (`testdata/prefill-gate-prose-b/`),
 built by the decoder test binary from `ec3cd97a` (D7@8000 5h45m, S@3900 ~25 min). Gate binary built from `897f6d29`. Both arms in one
 binary and session, teacher-forced on the reference tokens, `skMinKeys = faMinKeys = 0`, 10 prompts x 64 positions.

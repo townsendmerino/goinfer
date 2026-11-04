@@ -73,7 +73,7 @@ func TestIdentityDumperTemplate_isGoAndHasItsMarkers(t *testing.T) {
 			t.Fatalf("template has %d %s markers, want 1", n, m)
 		}
 	}
-	for _, reg := range []string{"", `_ "github.com/townsendmerino/goinfer/metal"`} {
+	for _, reg := range []string{"", `_ "github.com/townsendmerino/goinfer/backend/metal"`} {
 		src := strings.Replace(identityDumperTmpl, "//REGISTER", reg, 1)
 		if _, err := parser.ParseFile(token.NewFileSet(), "main.go", src, parser.AllErrors); err != nil {
 			t.Fatalf("template (register %q) does not parse: %v", reg, err)

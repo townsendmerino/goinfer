@@ -70,7 +70,7 @@ than papered over.
 | `cmd/gate/mutation.go` | goinfer |
 | `cmd/gate/parity.go` | goinfer |
 | `constrain/maskcost_test.go` | goinfer |
-| `cuda/pager_determinism_test.go` | goinfer |
+| `backend/cuda/pager_determinism_test.go` | goinfer |
 | `decoder/deltanet.go` | goinfer |
 | `decoder/forwardn.go` | goinfer |
 | `decoder/g26_sampler_bench_test.go` | goinfer |
@@ -79,11 +79,11 @@ than papered over.
 | `decoder/resident_reuse.go` | goinfer |
 | `decoder/spec_optfwd.go` | goinfer |
 | `decoder/tree_verify_test.go` | goinfer |
-| `gpu/decode_argmax_headroom_test.go` | goinfer |
-| `gpu/decode_dispatch_profile_test.go` | goinfer |
-| `gpu/internal/kernels/device.go` | goinfer |
-| `gpu/internal/kernels/gemv.go` | goinfer |
-| `gpu/resident_sample.go` | goinfer |
+| `backend/webgpu/decode_argmax_headroom_test.go` | goinfer |
+| `backend/webgpu/decode_dispatch_profile_test.go` | goinfer |
+| `backend/webgpu/internal/kernels/device.go` | goinfer |
+| `backend/webgpu/internal/kernels/gemv.go` | goinfer |
+| `backend/webgpu/resident_sample.go` | goinfer |
 | `internal/serveapp/chaos_test.go` | goinfer |
 | `internal/serveapp/fuzz_test.go` | goinfer |
 | `internal/serveapp/openai.go` | goinfer |

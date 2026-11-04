@@ -11,9 +11,9 @@ The gates are registered in `docs/tasks/task-subsystems-2026-10.md`, "SB1 step 1
   None imported `decoder` itself; each was tied to it only by package `cuda`'s own imports. `go list -deps -test
   ./cuda/kernels/` (tags `cuda goinfer_testhooks`) names no `goinfer/decoder`.
 - **Edits beyond `package kernels`:** the build line drops `goinfer_testhooks` on the eight files that had it; the two
-  test-only PTX embeds (`addone`, `gemv_w8a8`) and the sixteen `cuda/kernels.go` embeds the tests use are read from
-  `cuda/testdata/*.ptx` by `cuda/kernels/ptx_test.go`; `mustAlloc`, `mustStream` and `gcKVIdentityTab` are copied into
-  `cuda/kernels/helpers_test.go` (the table's block size is `kvpage.cuh`'s 64).
+  test-only PTX embeds (`addone`, `gemv_w8a8`) and the sixteen `backend/cuda/kernels.go` embeds the tests use are read from
+  `cuda/testdata/*.ptx` by `backend/cuda/kernels/ptx_test.go`; `mustAlloc`, `mustStream` and `gcKVIdentityTab` are copied into
+  `backend/cuda/kernels/helpers_test.go` (the table's block size is `kvpage.cuh`'s 64).
 
 ## Result: same outcome for every moved test
 
@@ -52,7 +52,7 @@ build) is clean under `cuda goinfer_testhooks`.
   only the compositor's context (`kwin_wayland`, 17 MiB) both times.
 - **What moved:** `layernorm_quant_batched_test.go`, `gelu_quant_test.go`, `moe_route_reservation_test.go`,
   `route_gptoss_reservation_test.go` and `attn_fused_vit_test.go`: 6 tests, none importing `decoder`. Each shared one
-  small helper with a test that stays: `cosineF32` now lives in `cuda/testhooks_helpers_test.go` for the three vision
+  small helper with a test that stays: `cosineF32` now lives in `backend/cuda/testhooks_helpers_test.go` for the three vision
   tests, and `cuda/kernels` holds its own copies of `moePTXOrOverride` (still used by `moe_route_demand_test.go`, which
   stays for its drain marker) and `f16rne` (still used by `attn_fused_test.go`). All five drop `goinfer_testhooks`.
 
@@ -86,7 +86,7 @@ the kernel tests that needed them. The gate is registered in the task doc, "movi
   keeps each name as a thin wrapper; `packWeight` and `packWeightStack` still run `planWeight` ahead of each pack, member by
   member. `decoder.Int4F32`'s two calls (`Int4F16`, `linalg.F16ToF32Slice`) are made in `wpack`; no `decoder` file
   changed. `hostW` stays in package `cuda`.
-- **Gate:** `cuda`'s `TestWeightPackers_bitIdentity`, 32 SHA-256 hashes (`cuda/testdata/wpack_hashes.txt`), written at
+- **Gate:** `cuda`'s `TestWeightPackers_bitIdentity`, 32 SHA-256 hashes (`backend/cuda/testdata/wpack_hashes.txt`), written at
   `91fe36e7b` before any code moved (28 s), reproduced on the unchanged tree (30 s), committed as `064c42989`, then run
   unedited after the move: **all 32 match** (32 s). `packers-identity.log`.
 - **Shown red twice,** each plant reverted: rounding `F32ToF16` on bit 0x0800 instead of 0x1000 fails
@@ -148,7 +148,7 @@ benchmarks were not run, and the 12 skipped tests are env-gated probes, skipped 
   it calls. A `go/ast` reference scan over the list found no other edge between a moved file and one that stays; its three
   other hits were local variables sharing a name.
 - **Edits beyond `package kernels`:** `mla_kernels_test.go` imported `metal/kernels`, a cycle inside the package, so the
-  import and its three `kernels.` qualifiers went. `metal/kernels/moved_helpers_test.go` gives the moved tests package
+  import and its three `kernels.` qualifiers went. `backend/metal/kernels/moved_helpers_test.go` gives the moved tests package
   `metal`'s lowercase names for this package's MSL sources (`allKernels`, `prefillKernels`, …) and `packW4A8Row` and
   `f32ToF16`. The copies of `metal`'s pure helpers turned out unused (U1000) and were dropped. Build lines are unchanged.
 - **No `decoder` change**, and no test deleted: each of the 87 functions is declared in `metal/kernels` after the move.
@@ -206,8 +206,8 @@ shared), nothing timed. Branch `sb1-metal-batch7-2026-10-29`, off `rename-hybrid
   `mamba2State` is an alias of `mamba2.State`, so the cache reset in `decoder/kvcache.go` names the exported fields.
   `GatedRMSNormGroupedForTest`, `SetMambaCapHook` and `SetSSMForceF32` keep their signatures for `cuda` and `gpu`.
 - **What moved to `metal/kernels`:** `TestMambaGNorm_groups` (now against `mamba2.GatedRMSNormGrouped`) and
-  `TestActQuant_relu2`, in `metal/kernels/mamba_kernels_test.go`, untagged. `mambaCos` is copied there; the chain tests
-  (`TestMambaKernels_cpuParity`, `TestMambaKernels_plantsAreRed`) stay in `metal/mamba_kernels_test.go`, which still loads
+  `TestActQuant_relu2`, in `backend/metal/kernels/mamba_kernels_test.go`, untagged. `mambaCos` is copied there; the chain tests
+  (`TestMambaKernels_cpuParity`, `TestMambaKernels_plantsAreRed`) stay in `backend/metal/mamba_kernels_test.go`, which still loads
   the tiny fixtures through `decoder` for their real per-token inputs.
 - **Gate 1, `decoder` bit-identical:** a scratch test (`metal-logs/batch7-hash-scratch_test.go.txt`, not committed) hashed
   `mamba2Seq` on seeded random weights at three geometries with `ssmForceF32` off and on, the grouped norm at each, and the
@@ -229,7 +229,7 @@ shared), nothing timed. Branch `sb1-metal-batch7-2026-10-29`, off `rename-hybrid
   `internal/layout` green with three new arrows (`decoder → internal/mamba2`, `internal/mamba2 → internal/hybridattn`, test
   `metal/kernels → internal/mamba2`); `scripts/touched.py` green. Parity `deps_hash` refreshed through
   `scripts/refresh_parity_hashes.sh` (34 goldens passed, 0 failed).
-- **Ratchet:** unchanged, as registered (metal direct 243, reach 328): `metal/mamba_kernels_test.go` still imports
+- **Ratchet:** unchanged, as registered (metal direct 243, reach 328): `backend/metal/mamba_kernels_test.go` still imports
   `decoder`. Moving its chain tests needs their inputs from somewhere other than a `decoder` forward.
 
 # metal batch 6: DeltaNet and q-gate CPU references out of decoder (2026-10-28, 17:47–18:09 PDT, agy-sb1)
@@ -244,11 +244,11 @@ nothing timed.
   `internal/hybridattn` (`internal/hybridattn/deltanet.go`, importing only the standard library and `aikit/linalg`).
   `decoder/deltanet.go`, `decoder/deltanet_n.go`, `decoder/forward_qwen35.go`, and `decoder/testhooks.go`
   call `internal/hybridattn` so there is one implementation; `decoder`'s `*ForTest` hooks stay for `cuda` and `gpu`.
-- **What moved to `metal/kernels`:** `metal/deltanet_test.go` (`TestDeltaNetKernels_cpuParity`, `TestDeltaNorm_zeroHead`,
-  `TestDeltaNetKernels_mutations`) and `metal/qgate_kernels_test.go` (`TestQGateKernels_cpuParity`,
+- **What moved to `metal/kernels`:** `backend/metal/deltanet_test.go` (`TestDeltaNetKernels_cpuParity`, `TestDeltaNorm_zeroHead`,
+  `TestDeltaNetKernels_mutations`) and `backend/metal/qgate_kernels_test.go` (`TestQGateKernels_cpuParity`,
   `TestQGateKernels_mutations`) moved to `metal/kernels/`, calling `internal/hybridattn` directly and dropping their `decoder`
   import and `goinfer_testhooks` build constraint. `uploadF32` and `cosF32`, declared in `deltanet_test.go` and used by
-  tests that stay in `metal/`, are copied to `metal/mamba_kernels_test.go` (as `clampI` was in batch 5).
+  tests that stay in `metal/`, are copied to `backend/metal/mamba_kernels_test.go` (as `clampI` was in batch 5).
 - **Runs:**
   - `decoder` parity tests (`TestGatedDeltaNet_parity`, `TestDeltaNetCoreN_bitIdentical`, `TestQwen35_forwardParity`,
     `TestQwen3_5_textParity`, `TestQwen3Next_textParity`, `TestOlmoHybrid_forwardParity`): 6 PASS before and after,
@@ -264,15 +264,15 @@ nothing timed.
   `TestBackendTests_decoderImportsOnlyFall`, `TestPackageDocs_namedTestsExist`, `TestArchitecture_importAppendix`) all green.
 - **Ratchet:** metal direct 245 → 243, reach 330 → 328; the SB2 census exemptions unchanged.
 
-# cuda batch 5: `cuda/deltanet_test.go` against the DeltaNet CPU references (2026-10-29, nobara-sb01)
+# cuda batch 5: `backend/cuda/deltanet_test.go` against the DeltaNet CPU references (2026-10-29, nobara-sb01)
 
 - **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — cuda batch 5") at `b9d4fe1cc`, before the code.
 - **Box:** nobara, RTX 2070 SUPER, driver 595.91.07. Correctness runs only, each holding the timing lock shared; the card's
   compute contexts are recorded before each run.
-- **What moved:** `cuda/deltanet_test.go` (`TestDeltaNetKernels_cpuParity`, `TestDeltaNorm_zeroHead`) to `cuda/kernels`. It
+- **What moved:** `backend/cuda/deltanet_test.go` (`TestDeltaNetKernels_cpuParity`, `TestDeltaNorm_zeroHead`) to `cuda/kernels`. It
   calls the references directly (`NewDeltaNet`, `SetDeltaCapHook`, `DeltaNetStep`, `L2NormScaled`) instead of `decoder`'s
   `*ForTest` forwards, and drops its `decoder` import and `goinfer_testhooks` constraint. `cosF32`, used by 19 tests that
-  stay in `cuda/`, is copied to `cuda/mamba_kernels_test.go` (same build constraint).
+  stay in `cuda/`, is copied to `backend/cuda/mamba_kernels_test.go` (same build constraint).
 
 | run | card at start | result |
 |---|---|---|
@@ -297,10 +297,10 @@ nothing timed.
   at that commit.
 - **Box:** nobara, RTX 2070 SUPER, driver 595.91.07. Correctness runs only, each holding the timing lock shared, all at 09:32
   PDT with only the desktop compositor on the card (`batch6-*-card.txt`). `GOINFER_KSO1C_OLD_ACTGROUP_PTX` pointed at
-  `cuda/testdata/actgroup.ptx` on every run, so the untouched-kernels test ran instead of skipping.
+  `backend/cuda/testdata/actgroup.ptx` on every run, so the untouched-kernels test ran instead of skipping.
 - **What moved:**
-  - `kquantGemvRows` (`cuda/resident.go`) to `cuda/internal/launchgeom` as `KQuantGemvRows`, with `KQuantGemvGridX`.
-  - `cuda/actgroup_kernel_test.go`, `cuda/ks_a1_test.go` and `cuda/kso1c_kernels_test.go` to `cuda/kernels`. Each reads its
+  - `kquantGemvRows` (`backend/cuda/resident.go`) to `cuda/internal/launchgeom` as `KQuantGemvRows`, with `KQuantGemvGridX`.
+  - `backend/cuda/actgroup_kernel_test.go`, `backend/cuda/ks_a1_test.go` and `backend/cuda/kso1c_kernels_test.go` to `cuda/kernels`. Each reads its
     PTX from `../testdata`, packs with `wpack` and reads `launchgeom`. The GGUF reference test opens the file with
     `embed.OpenGGUFSplitMmap`, the call `decoder.OpenGGUFMmap` makes for a single-file GGUF. `kso1cPlanes` is kept in
     `kso1c_resident_test.go`, which stays. `kso1cModels`, `kso1cLoad1` and `modelPath` are copied to `cuda/kernels`, and the
@@ -331,7 +331,7 @@ nothing timed.
   compositor on the card (`batch7-before-card.txt`, `batch7-after-card.txt`).
 - **What moved:** gemm_w4a8_mma's tile geometry to `cuda/internal/launchgeom` (`GemmMMABM`, `GemmMMABN`, `GemmMMAThreads`,
   `GemmMMAKStep`, `GemmMMAAPad`, `GemmMMAShmem`, `GemmMMAGrid`); `TestGemmMMA_vsExact` to `cuda/kernels`; `TestF32ToF16RNE_ties`
-  to `cuda/internal/wpack`. The two selector tests stay in `cuda/gemm_mma_test.go`.
+  to `cuda/internal/wpack`. The two selector tests stay in `backend/cuda/gemm_mma_test.go`.
 
 | run | result |
 |---|---|
@@ -358,9 +358,9 @@ nothing timed.
 - **Box:** nobara, RTX 2070 SUPER, driver 595.112.07, kernel 7.3.0-202.nobara.fc44 (after 2026-10-30's system update), at
   10:40 PDT, after nobara-ci01's full-tier run. The timing lock was held exclusive. Each GPU run started with only the
   desktop compositor on the card (`batch8-before-card.txt`, `batch8-after-card.txt`). Load was 2.74 and 2.60.
-- **What moved:** `TestMambaGNorm_groups` and `TestRelu2Quant_exact`, to `cuda/kernels/mamba_kernels_test.go` (`cuda`). The
+- **What moved:** `TestMambaGNorm_groups` and `TestRelu2Quant_exact`, to `backend/cuda/kernels/mamba_kernels_test.go` (`cuda`). The
   gated-norm reference is now `mamba2.GatedRMSNormGrouped` with `f32` false. `TestMambaKernels_cpuParity` stays in
-  `cuda/mamba_kernels_test.go`.
+  `backend/cuda/mamba_kernels_test.go`.
 
 | run | result |
 |---|---|
@@ -380,7 +380,7 @@ nothing timed.
   - `go list -deps -test -tags cuda ./cuda/kernels/` names no `goinfer/decoder`.
   - `internal/layout` passes with the new test arrow (`cuda/kernels → internal/mamba2`, `docs/ARCHITECTURE.md`'s appendix
     regenerated), and `scripts/test_touched.py` passes.
-- **Ratchet:** unchanged at cuda 244/309, as registered. `cuda/mamba_kernels_test.go` keeps the chain test and its `decoder`
+- **Ratchet:** unchanged at cuda 244/309, as registered. `backend/cuda/mamba_kernels_test.go` keeps the chain test and its `decoder`
   import.
 
 # cuda batch 9: the Gumbel kernels' test off the 0.5B model (2026-10-30, nobara-mm01)
@@ -394,7 +394,7 @@ nothing timed.
   - `gumbelThreads` and `gumbelBlocks` to `cuda/internal/launchgeom` (`GumbelThreads`, `GumbelBlocks`).
   - `TestGumbelDeviceAgreesWithHost` to `cuda/kernels`. It drives `gumbel_stage1` and `gumbel_stage2` from `readPTX`,
     against `sampling.GumbelDraw` and `GumbelKeyAt`, with no model and no heavy flag.
-  - The resident's wiring is covered by the new `TestGumbelPick_residentWiring` in `cuda/sampled_gumbel_identity_test.go`.
+  - The resident's wiring is covered by the new `TestGumbelPick_residentWiring` in `backend/cuda/sampled_gumbel_identity_test.go`.
     It checks 48 draws through `gumbelPick` and an all-`-inf` row.
 
 | run | result |
@@ -428,9 +428,9 @@ nothing timed.
 - **Box:** nobara, RTX 2070 SUPER, driver 595.112.07. The runs held the timing lock exclusive, between tack's runs, and each
   started with only the desktop compositor on the card (`batch10-before-card.txt`, `batch10-after-card.txt`).
 - **What changed:**
-  - **Batch 10:** `cuda/backend.go`'s memory probe is the named `freeVRAM`, registered as before. `tower_base_test.go`
+  - **Batch 10:** `backend/cuda/backend.go`'s memory probe is the named `freeVRAM`, registered as before. `tower_base_test.go`
     calls it and no longer imports `decoder`.
-  - **Batch 11:** `cuda/kernel_fma_lint_test.go` moved to `cuda/kernels` and reads `../kernels.go` and `../<name>.cu`.
+  - **Batch 11:** `backend/cuda/kernel_fma_lint_test.go` moved to `cuda/kernels` and reads `../kernels.go` and `../<name>.cu`.
     `ptxSourceName` became `launchgeom.PTXSourceName`, pinned by `TestPTXSourceName_theFourForms`. The lint's two
     `touched_scans.py` rows and `test_touched.py`'s expectation moved with it.
 
@@ -454,13 +454,13 @@ nothing timed.
   What is left in `cuda` either loads models, tests `cuda`'s production code (the build, the fit policy, the residents), is a
   tower test, or is a source scan tied to a device test (`ptx_modules_cover`). The section's "Left in `cuda`" list names them.
 
-# gpu batch 5: `gpu/deltanet_test.go` against the DeltaNet CPU references (2026-10-29, nobara-sb01)
+# gpu batch 5: `backend/webgpu/deltanet_test.go` against the DeltaNet CPU references (2026-10-29, nobara-sb01)
 
 - **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — gpu batch 5") at `533fc4101`, before the code; the
   before-run ran in a detached worktree at that commit.
 - **Box:** nobara, RTX 2070 SUPER through Vulkan, driver 595.91.07. Each run held the timing lock shared and started with only
   the desktop compositor on the card (`gpu5-*-card.txt`), at 13:37 PDT.
-- **What moved:** `gpu/deltanet_test.go` (`TestDeltaRule_cpuParity`, `TestDeltaNorm_cpuParity`) to `gpu/internal/kernels`,
+- **What moved:** `backend/webgpu/deltanet_test.go` (`TestDeltaRule_cpuParity`, `TestDeltaNorm_cpuParity`) to `gpu/internal/kernels`,
   calling `internal/hybridattn`'s `NewDeltaNet`, `SetDeltaCapHook`, `DeltaNetStep` and `L2NormScaled` instead of `decoder`'s
   `*ForTest` forwards, and dropping its `decoder` import and `goinfer_testhooks` constraint. No production code moved.
 
@@ -482,7 +482,7 @@ nothing timed.
 
 # Launch geometry out of package cuda (item 1 of 21:42; 2026-10-26, 21:45–22:10 PDT)
 
-Read as `cuda/prefill.go` and `cuda/flash_decode.go`: the relayed `decoder/` paths do not exist (task doc, "launch
+Read as `backend/cuda/prefill.go` and `backend/cuda/flash_decode.go`: the relayed `decoder/` paths do not exist (task doc, "launch
 geometry out of package cuda"). No `decoder` file changed.
 
 - **What moved:** `faWarps`, `faMaxRows`, `faRowsPerCTA`, `faRun`, `faRowRuns`, `attnFusedBM`, `attnFusedThreads`,
@@ -497,7 +497,7 @@ geometry out of package cuda"). No `decoder` file changed.
   tests), before at `b344ee030` (302 PASS, 288 SKIP, 516 s) and after, with `./cuda/kernels/` (515.7 s and 38.1 s):
   every one of the 590 tests the before-run reported has the same outcome after. The after-run's other 47 names are the
   tests batches 1–3 had already put in `cuda/kernels`. `TestAttnKernelDigests` passes on both sides, so every attention
-  kernel's output digest still equals `cuda/testdata/attn_digests.json`. (`TestMoERouteFirstLaunchReservation` and
+  kernel's output digest still equals `backend/cuda/testdata/attn_digests.json`. (`TestMoERouteFirstLaunchReservation` and
   `TestRouteGptOssGrowsPoolPastMoERoute` skip in a whole-package run by design: each measures a first launch in its
   process, and says to run it alone; batch 2 ran both alone.)
 - **Tests moved:** `attn_digest_rig`, `attn_digest`, `attn_softcap_kernel` and `prefill_splitkv_img` to `cuda/kernels`
@@ -514,9 +514,9 @@ geometry out of package cuda"). No `decoder` file changed.
   context in both runs (`batch4-before-card.txt`, `batch4-after-card.txt`). Both runs held the timing lock shared, after a
   timed tack eval released it.
 - **What moved:**
-  - `cuda/gemv_rn_test.go` to `cuda/kernels`. Its PTX is read from `../testdata`, and it packs with `wpack.Pack` and
+  - `backend/cuda/gemv_rn_test.go` to `cuda/kernels`. Its PTX is read from `../testdata`, and it packs with `wpack.Pack` and
     `wpack.PackI8` (what package `cuda`'s `packWeight` and `packI8` call). `gemm_mma_test.go` keeps a copy of `rnCfg`.
-  - `gpu/moe_expert_test.go`, `gpu/moe_test.go` and `gpu/gumbel_test.go` to `gpu/internal/kernels`. The Gumbel test's host
+  - `backend/webgpu/moe_expert_test.go`, `backend/webgpu/moe_test.go` and `backend/webgpu/gumbel_test.go` to `gpu/internal/kernels`. The Gumbel test's host
     reference is the same three `internal/sampling` calls `decoder.GumbelDrawForTest` and `decoder.GumbelKeyForTest` make.
 
 | run | result |

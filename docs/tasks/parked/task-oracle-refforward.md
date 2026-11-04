@@ -161,7 +161,7 @@ anchors, not per-model generators.
    core change to that family's math re-triggers exactly one anchor run? (Recommended — it makes the
    Python dependency self-documenting and minimal.)
 3. **The `nvrtc` build helper — RESOLVED 2026-08-12 (Francis): "no Python" covers it; do it LAST,
-   low priority.** Replace `cuda/nvrtc_compile.py` with a purego NVRTC binding (~6 C-ABI functions;
+   low priority.** Replace `backend/cuda/nvrtc_compile.py` with a purego NVRTC binding (~6 C-ABI functions;
    purego is already in the cuda/metal dep set, so no new ecosystem) in `cuda/cmd/ptxgen`, dlopening
    the **pinned** `libnvrtc.so` with the byte-identical-rebuild control as acceptance. Removes the
    Python, not the (irreducible) NVRTC dependency. Tracked in QUEUE.md E7 as the build-tooling

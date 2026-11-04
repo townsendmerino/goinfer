@@ -6,7 +6,7 @@
 
 ## Why
 
-CUDA's batched prefill declines every Gated-DeltaNet model (`cuda/prefill.go`: "recurrent state advances one token
+CUDA's batched prefill declines every Gated-DeltaNet model (`backend/cuda/prefill.go`: "recurrent state advances one token
 at a time and cannot be batched"), so qwen3_5 / qwen3_5_moe / qwen3_next prompts run through decode, one token at a
 time.
 - **Measured 2026-09-28 on the RTX 2070 SUPER, Qwen3.5-9B Q4_K_M:** ~14 ms per prompt token (561 tokens in 8.0 s).
@@ -64,7 +64,7 @@ Record and logs: [`docs/measurements/cuda-deltanet-prefill-2026-09-28/`](../meas
 
 **What was built differs from the Design in one respect, stated here:** the recurrence does not replay decode's
 five launches row by row. A first cut did, and took 1.23 s of recurrence at 621 tokens. Instead, each kernel has a
-row-batched twin in `cuda/deltanet.cu` (`delta_conv_rows`, `delta_gates_rows`, `delta_norm_rows`,
+row-batched twin in `backend/cuda/deltanet.cu` (`delta_conv_rows`, `delta_gates_rows`, `delta_norm_rows`,
 `delta_rule_rows`, `delta_gnorm_rows`) that walks the M rows in order inside one launch. Each twin runs decode's
 per-row arithmetic in decode's order, so the result is bit-identical by construction, and the gate below measures
 that rather than assuming it.
@@ -93,7 +93,7 @@ exact kernels the batched path is **bit-identical to per-token decode at every l
 
 - **Fixture gap CLOSED, 2026-09-28** (item 9). qwen3next-tiny did not go resident at all: its MoE shape (moeInter
   16 × hidden 64) was below the int4 residency's own group-of-32 packing requirement
-  (`moeInter%32 != 0 || H%32 != 0`, `cuda/backend.go`), so this gate could only skip it, and qwen3_5_moe /
+  (`moeInter%32 != 0 || H%32 != 0`, `backend/cuda/backend.go`), so this gate could only skip it, and qwen3_5_moe /
   qwen3_next were covered only through the shared per-row MoE FFN path, never by a fixture. Fixed two ways:
   - `scripts/pin_qwen3next_tiny.py` now builds moeInter/sharedInter at 32 instead of 16 (the smallest multiple
     that clears the residency check), regenerating `testdata/qwen3next-tiny` + its golden. `TestQwen3Next_textParity`
@@ -105,7 +105,7 @@ exact kernels the batched path is **bit-identical to per-token decode at every l
     unaffected either way.
   - `decoder/testdata/qwen3_5_moe-tiny` (moeInter 64, hidden 64 — already both multiples of 32, needed no
     reshaping) is now in this gate's own fixture list, the first fixture here carrying a DeltaNet mixer, a sparse
-    FFN, AND a sigmoid-gated shared expert in the same layer (`cuda/qwen35_resident_parity_test.go`'s own
+    FFN, AND a sigmoid-gated shared expert in the same layer (`backend/cuda/qwen35_resident_parity_test.go`'s own
     whole-model parity test already establishes this fixture goes resident at int4; the stat guard here now
     checks `model.safetensors`, not the directory, for the same reason that test's comment gives — the fixture's
     weights are gitignored, built by `scripts/pin_qwen3_5_forward.py --moe`).
@@ -153,7 +153,7 @@ exact kernels the batched path is **bit-identical to per-token decode at every l
       golden): 0.989088 on v1.49.0 — ALREADY below the 0.99 bar before the f16-scale work, an unrelated
       pre-existing miscalibration (`TestQwen25VLReal_gate` loads the same checkpoint at f32 and passes at
       0.999459, so goinfer's Qwen2.5-VL forward is not defective) → 0.988259 today, a further ~0.0008 from
-      the scale change. The bar (`cpuInt4VsF32GoldenFloor`, `cuda/realforward_test.go`) was a PRECONDITION
+      the scale change. The bar (`cpuInt4VsF32GoldenFloor`, `backend/cuda/realforward_test.go`) was a PRECONDITION
       check inherited from an int8/f32-era 0.99, never recalibrated for int4 CPU vs an f32 HF golden; it is
       now 0.98, matching `oracleCosFloor`'s own int4-vs-bf16/f32 precedent (`decoder/real_oracle_test.go`).
       With it, all four tests proceed to their REAL assertion (the CPU-vs-hybrid-CUDA decode-bridge

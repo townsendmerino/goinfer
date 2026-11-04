@@ -26,7 +26,7 @@ Standing (the brief, 2026-09-13 depth bench, W4A8 1.5B): 72.3 / 67.9 / 51.4 / 40
 
 ## Instrument of record
 
-`metal/depth_bench_test.go` `TestZZ_metalDepthBench` (`GOINFER_METAL_DEPTH_BENCH=1`): one resident,
+`backend/metal/depth_bench_test.go` `TestZZ_metalDepthBench` (`GOINFER_METAL_DEPTH_BENCH=1`): one resident,
 `qwen2.5-coder-1.5b` int4, KV warmed incrementally, steady greedy decode via `ForwardArgmax`
 (synchronous `Begin`/`End` command buffer per token, `encodeTrunkInto` → the same
 `encodeAttentionResidualWith` dispatch site that gates `attention_fa`), best-of-5 batches at each
@@ -56,7 +56,7 @@ beside the band, and a disagreement between the two instruments is itself a find
 
 ## Not measured, said in advance
 
-The brief's "cross-check the depth term's GPU-busy time with the `metal/tax_test.go` timestamps":
+The brief's "cross-check the depth term's GPU-busy time with the `backend/metal/tax_test.go` timestamps":
 `tax_test.go` is a nop-kernel binding-tax microbenchmark, not a GPU-busy timer for a real forward,
 so that cross-check is not available as written. The resident does record command-buffer GPU
 timestamps (`gpuStart`/`gpuEnd` in `forwardLogits`) but the depth bench's `ForwardArgmax` path

@@ -17,11 +17,11 @@ measurement of its own peak rather than against any band.
 
 `TestPrefillCrossover` — the real dense **qwen2.5-coder-1.5b-instruct-q4_k_m**, resident, prompts of
 128 / 512 / 1024 / 2048 tokens, 3 repetitions each, prefill + 64 decode steps per point. Sampled
-under `GOINFER_VRAM_TRACE=1` (`cuda/vramtrace_test.go`): `cuMemGetInfo` from an independent goroutine
+under `GOINFER_VRAM_TRACE=1` (`backend/cuda/vramtrace_test.go`): `cuMemGetInfo` from an independent goroutine
 on the same primary context, in-process, throughout the run. **445 samples.**
 
 The minimum across all samples is the peak-consumption point — the moment prefill's `scratch` (the
-allocation `cuda/prefill.go` describes as "hundreds of MB at M=3000") is live on top of the resident
+allocation `backend/cuda/prefill.go` describes as "hundreds of MB at M=3000") is live on top of the resident
 weights and KV.
 
 ## Result

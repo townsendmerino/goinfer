@@ -1,7 +1,7 @@
 # Multi-row flash-decode lane for speculative verify (option B): SHIPS by the pre-registered rule
 
 Pre-registration: `attn-decode-fa-verify-PREREGISTERED.md` (committed before any multi-row kernel existed, not edited). Code: `fa_partial_rows_*` /
-`fa_combine_rows` in `cuda/decode_fa.cu`, routing in `cuda/prefill.go` (`verifyLaneFrom`) and `cuda/flash_decode.go`. Harness:
+`fa_combine_rows` in `backend/cuda/decode_fa.cu`, routing in `backend/cuda/prefill.go` (`verifyLaneFrom`) and `backend/cuda/flash_decode.go`. Harness:
 `scripts/bench_spec_lane.py`. Raw: `attn-decode-fa-verify-served-{1p5b,d7}.{json,log}`.
 
 ## Correctness gates (all held)

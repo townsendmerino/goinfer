@@ -20,8 +20,8 @@ Gates registered before the code: `docs/tasks/task-subsystems-2026-10.md`, "SB2 
   - The headroom plant turns all 298 discrete multi-slot lines to one slot and changes no unified line.
 - `kvprec_decline_test.go`'s source scan now follows the `-ctx` request into `webgpuCtxBeforeSlots`, where it moved.
 - **Goldens:**
-  - `gpu/testdata/sb2_webgpu_slot_census.amd64.txt.gz` was written on nobara.
-  - `gpu/testdata/sb2_webgpu_slot_census.arm64.txt.gz` was taken from CI's gpu-darwin runner (run 41081553865, job 124152637399, head
+  - `backend/webgpu/testdata/sb2_webgpu_slot_census.amd64.txt.gz` was written on nobara.
+  - `backend/webgpu/testdata/sb2_webgpu_slot_census.arm64.txt.gz` was taken from CI's gpu-darwin runner (run 41081553865, job 124152637399, head
     f5180e646): the 955 lines the test printed, prefixed `SB2WEBGPUSLOTCENSUS`, when the golden was missing. They were written
     with `sb2census.Write`'s format, as layer B-webgpu's arm64 golden was.
   - The census reads no device and no reading of the machine it runs on (the profiles are data, the host figure fixed), so the
@@ -84,5 +84,5 @@ was built from a detached worktree with today's toolchain. It ran `TestWebGPUKVS
 
 **Read: passes.** All 4 slots are granted and each is bit-identical to a fresh one-slot load. By the registered rule the corruption
 follows **the code**: a change between 8c9b647f3 and 2ca872273. That is 5,003 commits; 185 touch `gpu/`, and 28 of those touch
-`gpu/kv_slots.go`, `gpu/residency.go` or `gpu/decoderunner.go`. The owner's next step is a bisect over that range. Each step is one
+`backend/webgpu/kv_slots.go`, `backend/webgpu/residency.go` or `backend/webgpu/decoderunner.go`. The owner's next step is a bisect over that range. Each step is one
 build and about 12 s of card on this test.

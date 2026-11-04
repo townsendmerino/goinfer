@@ -1,10 +1,10 @@
 # R8 phase A: fused non-causal attention for the CUDA SigLIP tower — 26.0 s -> 4.1 s per image, opt-in pending a fidelity call
 
 > **Note added 2026-10-02 (multimodal audit, `docs/measurements/multimodal-audit-2026-10-02.md`):** this record's title and its "State" section say the fused kernel is opt-in and the default is
-> unchanged. That was true when it was written. **The owner then overrode the registered rule the same day: `bm128` is the DEFAULT** (`cuda/vision_encoder.go`, `docs/tasks/red-october.md` R8,
+> unchanged. That was true when it was written. **The owner then overrode the registered rule the same day: `bm128` is the DEFAULT** (`backend/cuda/vision_encoder.go`, `docs/tasks/red-october.md` R8,
 > `docs/env-vars.md`; `GOINFER_CUDA_VISION_ATTN=exact` restores the old kernel). The measurements below are unchanged. The audit served a Gemma 3 image on `--backend cuda` and took 4.9 s cold, end to end.
 
-Pre-registration: `vision-tower-attn-PREREGISTERED.md` (written before the kernel existed). RTX 2070 SUPER, driver 595.91.07, idle box, real `gemma-3-4b-it` tower (896^2 = 4096 patches, 27 layers, int8 both arms), committed driver `cuda/vision_tower_timing_test.go`. Logs: `vision-tower-baseline-2026-09-21.log`, `vision-tower-attn-2026-09-21.log`, per-kernel ncu `vision-tower-ncu-baseline-2026-09-21.csv`.
+Pre-registration: `vision-tower-attn-PREREGISTERED.md` (written before the kernel existed). RTX 2070 SUPER, driver 595.91.07, idle box, real `gemma-3-4b-it` tower (896^2 = 4096 patches, 27 layers, int8 both arms), committed driver `backend/cuda/vision_tower_timing_test.go`. Logs: `vision-tower-baseline-2026-09-21.log`, `vision-tower-attn-2026-09-21.log`, per-kernel ncu `vision-tower-ncu-baseline-2026-09-21.csv`.
 
 ## Step 0: the brief's build order was inverted by the profile
 ncu, one forward, 306 launches, 25.54 s of kernel time in a 26.06 s wall: **`attn_img_batched` 22.26 s (87.1%)**, `gemv_w8a8_batched` 3.27 s (12.8%), layernorm/gelu/quant 0.016 s, host round-trip adds + im2col + transfers ~0.5 s (2%). The brief listed the int8 GEMM first; attention is the wall.

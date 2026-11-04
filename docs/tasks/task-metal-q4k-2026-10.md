@@ -90,7 +90,7 @@ no quantization, into each projection.
 - **A projection runs as segments of one weight kind.** A q4_k_m file mixes kinds inside a fused group: Qwen2.5's
   attn_v is Q6_K (int8) in half the layers, beside Q4_K attn_q and attn_k.
   - The lane uploads each run of consecutive same-kind parts as its own buffer and dispatches it into its rows of the
-    output (`q4kLaneProj`, `q4kGemv` in `metal/model.go`).
+    output (`q4kLaneProj`, `q4kGemv` in `backend/metal/model.go`).
   - Phi-3's projections are each a single kind, so it runs one segment per projection, as designed.
   - The bias variants the design lists (`gemv_q4k_f32_bias`, `gemv_w8_f32_bias`) take the combined q/k/v bias, which
     is zeros for Phi-3.
@@ -108,7 +108,7 @@ no quantization, into each projection.
 
 ### By-day wiring smoke (not G-Q2), 2026-10-08
 
-`TestQ4KLaneResidentQwen` (`metal/q4k_resident_test.go`): a Qwen2.5-Coder q4_k_m resident on Metal at q4k, against the
+`TestQ4KLaneResidentQwen` (`backend/metal/q4k_resident_test.go`): a Qwen2.5-Coder q4_k_m resident on Metal at q4k, against the
 CPU at q4k on the same file, teacher-forced over 32 positions. The bar, set before the first run: every position's
 logits cosine at least 0.99 and no NaN, on a decode path reading `metal-resident (q4k)`.
 
@@ -136,7 +136,7 @@ logits cosine at least 0.99 and no NaN, on a decode path reading `metal-resident
 The owner chose the night queue (option a) over a guarded bypass by day and over a memory fix first. Written before
 either gate runs:
 
-- **G-Q2, as it runs:** `TestQ4KLane_realPhi3NonInferiority` (`metal/q4k_phi3_real_test.go`).
+- **G-Q2, as it runs:** `TestQ4KLane_realPhi3NonInferiority` (`backend/metal/q4k_phi3_real_test.go`).
   - **The procedure is G3's, unchanged:** `g3Run`, the eight G3 prompts, 32 greedy tokens, free run then teacher-forced,
     at a pinned context of 512.
   - **The reference:** Qwen2.5-Coder-1.5B's int4 Metal sidecar, as G3 runs it, in the same process and before Phi-3.

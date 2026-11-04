@@ -24,7 +24,7 @@ per token**, identical at both depths. The gap to Ollama at depth is therefore t
 
 `glu_quant` is ONE block (its int8 scale needs the max over the whole intermediate vector), launched at 256 threads, so its time is the per-thread serial loop over I
 elements (I = 18944 on D7, each with an `expf` and a divide). Its only reduction is a MAX, which is exact and order-independent, and every value and packed byte is
-per-element, so the block size changes only how the work is divided. It is now 1024 threads (`glueQuantThreads`, three launch sites in `cuda/resident.go`); the kernel
+per-element, so the block size changes only how the work is divided. It is now 1024 threads (`glueQuantThreads`, three launch sites in `backend/cuda/resident.go`); the kernel
 source and PTX are untouched.
 
 - **Bit-identity, on real logits:** SHA-256 over the full logits of a 300-token prefill plus 24 decode steps, before and after, on the 1.5B, the 0.5B and gemma3-1b

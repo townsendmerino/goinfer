@@ -54,7 +54,7 @@ Verified in the tree at `53a241a`:
   any multi-token prompt without it. EmbeddingGemma 2 is the second family to use this activation
   and inherits the fix.
 - **Gemma's 262,144 vocab and tokenizer — already there** (`multimodal/gemma3_block.go:ImageSoftToken`,
-  `metal/softcap_test.go:TestMetalSoftcapParallel_bitIdentical`).
+  `backend/metal/softcap_test.go:TestMetalSoftcapParallel_bitIdentical`).
 - **A bidirectional attention mask over a span — already there, for a different reason.**
   `decoder/forwardn.go:Model.runLayersFromEmbedN` and `:1693` set up a bidirectional mask over image blocks
   (`SetImageBlocks`, handled in `attendBatchedHeads`). A fully bidirectional encoder is the
@@ -325,7 +325,7 @@ encoder on the CPU only.
 
 ## Phase M — the text encoder on Metal (planned 2026-10-06)
 
-**Status 2026-10-06: BUILT, Gates 1-3 passed; on by default in serve on a Mac.** `metal/embeddinggemma2.go`
+**Status 2026-10-06: BUILT, Gates 1-3 passed; on by default in serve on a Mac.** `backend/metal/embeddinggemma2.go`
 registers a `metal` accelerator (`embeddinggemma2.RegisterAccelerator`); serve's loader uses it when `--backend`
 resolves to metal and says so (`f32, Metal` on the startup line), falls back to the CPU with the reason if it
 declines, and refuses instead under `--require-backend`.
@@ -505,7 +505,7 @@ the cost of an image embedding: about 5 s on the CPU against about 0.5 s for the
 
 **Status 2026-10-06: BUILT, VM1-VM4 passed; on by default where the encoder runs on Metal.** aikit gained
 `Gemma4Encoder.Weights()`, `Gemma4RopeTables` and `FinishHidden` on a local branch (`gemma4-tower-export`, not yet
-tagged; this tree's gitignored `go.work` uses the aikit checkout until it is). `metal/gemma4_vision.go` is the tower;
+tagged; this tree's gitignored `go.work` uses the aikit checkout until it is). `backend/metal/gemma4_vision.go` is the tower;
 `embeddinggemma2.RegisterVisionAccelerator` the seam; `UseAccelerator("metal")` moves both; serve says where the
 tower runs at startup and again when the first image loads it. Read 2026-10-06, 15:13-15:19 PDT:
 - **VM1: PASS**, worst soft-token cosine **1.000000000** in all 12 cases (18, 54 and 135 patches, raster and
@@ -567,7 +567,7 @@ citations, and the probes behind it, are `docs/measurements/embeddinggemma2-2026
 (`LoadGemma4AudioEncoder`, `Forward` → soft tokens at the text width), with a weights export like the vision tower's
 for the Metal port. goinfer: `Encoder.EnableAudio`, `EmbedAudio` (16 kHz mono samples, or a 16-bit PCM WAV at
 16 kHz; any other rate is refused, not resampled), serve's `{"audio": ...}` input, then
-`metal/gemma4_audio.go`.
+`backend/metal/gemma4_audio.go`.
 
 **Gates, written before any measurement.** The reference is `scripts/pin_embeddinggemma2_audio.py`, which uses
 sentence-transformers in f32 with sdpa asserted, the non-persistent buffers and three loaded clip scalars checked
@@ -629,7 +629,7 @@ to 128 or 160 samples). Each is embedded as audio alone, with the `query` prompt
   than VM did.
 
 **Status 2026-10-06: AM BUILT, and AM1-AM3 passed; the audio tower runs on Metal with the encoder.**
-- **Code:** `metal/gemma4_audio.go` runs the 12 blocks with aikit's GEMMs and RMSNorm, the vision tower's clamps, and
+- **Code:** `backend/metal/gemma4_audio.go` runs the 12 blocks with aikit's GEMMs and RMSNorm, the vision tower's clamps, and
   kernels of its own:
   - SiLU, the weighted residual, the GLU, the causal depthwise conv and the q/k scales;
   - a sliding-window attention kernel, one threadgroup per query and head.

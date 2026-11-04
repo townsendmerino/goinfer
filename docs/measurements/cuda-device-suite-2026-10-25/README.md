@@ -6,7 +6,7 @@ pass. The last green run was 2026-10-23 at 5275808c.
 
 - **What differs:** only the `gemma4-moe-scaled` fixture. Its decode, prefill and tail hashes no longer match the baselines the two
   tests recorded (at 3c1a368b and 2d9ce186). Every other fixture still matches.
-- **The cause: #200** (c0acef3b0, Gemma 4 MoE's float-activation decode on CUDA, `cuda/floatact.go`). Its contract change says that
+- **The cause: #200** (c0acef3b0, Gemma 4 MoE's float-activation decode on CUDA, `backend/cuda/floatact.go`). Its contract change says that
   Gemma 4 MoE decode is no longer bit-identical to the W4A8 path, and that the tests holding W4A8 decode to W4A8 references build with
   `floatActOffForTest`. Four tests were changed that way. These two compare against W4A8 baselines too, and were not.
 - **The bisect** (`run-bisect.sh`, the device suite's own runner with `REV` and `TESTARGS`, through `night.py`, 2026-10-25 19:52):

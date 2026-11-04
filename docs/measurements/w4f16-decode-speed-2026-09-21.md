@@ -38,7 +38,7 @@ follow-up already disclosed for the identical reason — this is two separate pr
 not one interleaved session.** Ollama was run inside both invocations as the peer control, so its
 own number is reported twice as a drift check.
 
-**Depth curve** (`metal/depth_bench_test.go`'s `TestZZ_metalDepthBench`, `GOINFER_METAL_DEPTH_BENCH=1`,
+**Depth curve** (`backend/metal/depth_bench_test.go`'s `TestZZ_metalDepthBench`, `GOINFER_METAL_DEPTH_BENCH=1`,
 qwen2.5-coder-1.5b, steady greedy decode via `ForwardArgmax` at depths {128, 512, 2048, 4000}, min-of-5
 batches), run once per lane setting (same env-at-process-start limitation).
 
@@ -84,7 +84,7 @@ differs slightly from the `bench_peer.py` served numbers (73.1/75.2) because it 
 `ForwardArgmax` path directly rather than through the served HTTP/streaming harness — expected, and
 both instruments agree on the same ~3% ratio.
 
-**Minor, independent finding, not fixed here:** `metal/depth_bench_test.go`'s own `t.Logf` header
+**Minor, independent finding, not fixed here:** `backend/metal/depth_bench_test.go`'s own `t.Logf` header
 is hardcoded `"...qwen2.5-coder-1.5b (W4A8)..."` regardless of which lane `GOINFER_METAL_DECODE_LANE`
 actually selects — the W4F16 run's log line still says "(W4A8)". Confirmed this is a label bug, not
 a real toggle failure, by the numbers themselves (would be bit-identical to the W4A8 run if the
@@ -120,7 +120,7 @@ restored the comparison to **cosine 1.000000** exactly, over the same 16 decode 
 exclusion holds on every layer, directly verified); the failure is a test-isolation artifact of one
 test building two residents under one ambient env var, not a defect. Worth a one-line follow-up
 (pin `t.Setenv("GOINFER_METAL_DECODE_LANE", "")` explicitly in `TestMoE_assemblyVsDense`, the same
-discipline `metal/r1_gate3_test.go` and the other R1 tests already use) so this test doesn't again
+discipline `backend/metal/r1_gate3_test.go` and the other R1 tests already use) so this test doesn't again
 read as a lane regression under some future full-suite run with the env var set ambiently; out of
 scope to fix here since R1 itself is already killed on speed regardless.
 
@@ -131,8 +131,8 @@ brief's own decision rule ("a ship on speed with (c) [fidelity] in the parked ba
 shipped — the same rule that parked the CUDA spike"), the inverse also governs here: a lane that
 *passes* fidelity is still killed if it fails the speed band, with no exception. `GOINFER_METAL_DECODE_LANE`
 stays off by default, undocumented as an operator knob (already the case). The kernel, wiring, and
-the three new test files (`metal/r1_gu_reference_test.go`, `metal/r1_lane_vs_cpu_test.go`,
-`metal/r1_gate3_test.go`) are kept — real, reusable, correctness-proven groundwork, exactly the
+the three new test files (`backend/metal/r1_gu_reference_test.go`, `backend/metal/r1_lane_vs_cpu_test.go`,
+`backend/metal/r1_gate3_test.go`) are kept — real, reusable, correctness-proven groundwork, exactly the
 disposition R1's own 2026-09-19 record asked for a "parked, not killed" kernel to receive, now
 formally closed out with a real decision rather than left open.
 

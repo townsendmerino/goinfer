@@ -20,7 +20,7 @@ better starting point if you are picking something up.
 | [small-devices.md](small-devices.md) | a Raspberry Pi, not a microcontroller: cross-compile and copy, what memory floor and CPU features to expect, and why no board figure is published yet |
 | [quantization.md](quantization.md) | which quants goinfer stands behind, which it measured and refused, and where there is no evidence — reading a format is not endorsing it |
 | [how-inference-works.md](how-inference-works.md) | the same ground in ~2,300 words, anchored to specific source lines. The code map |
-| [webgpu-primer.md](webgpu-primer.md) | orientation for anyone touching `gpu/` |
+| [webgpu-primer.md](webgpu-primer.md) | orientation for anyone touching `backend/webgpu/` |
 
 ## Current state — what is true of the engine now
 

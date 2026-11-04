@@ -5,4 +5,4 @@
 // WebGPU submodule entrypoint.
 package main
 
-const _ = "goinfer: `-tags gpu` does nothing on the root cmd/serve since v0.10.0 (it builds no backend). Build the submodule entrypoint instead: go build -tags gpu github.com/townsendmerino/goinfer/gpu/cmd/serve" + 1
+const _ = "goinfer: `-tags gpu` does nothing on the root cmd/serve since v0.10.0 (it builds no backend). Build the submodule entrypoint instead: go build -tags gpu github.com/townsendmerino/goinfer/backend/webgpu/cmd/serve" + 1

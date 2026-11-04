@@ -75,7 +75,7 @@ These are exploratory checks; the table above is what decides.
 
 1. **The fused register GEMMs.** `GEMMW8A8Bias` and `GEMMW8A8BiasAdd` had tests only on CUDA. A new Metal test checks them
    at SigLIP's shapes, ragged N = 4304 included, against the plain register kernel plus a host add, and they pass. It is
-   committed to aikit as `gpu/metal_vit_fused_test.go`.
+   committed to aikit as `backend/webgpu/metal_vit_fused_test.go`.
 2. **The geometry.** A synthetic tower at so400m's exact geometry (hidden 1152, 16 heads of 72, MLP 4304, 4,096 patches,
    one layer, random weights; `mk.py`) gives int8 Metal vs int8 CPU at cosine 0.99999, worst token 0.99997. Shape alone
    breaks nothing.
@@ -97,7 +97,7 @@ divergence is a property of the real weights at depth.
 ## Not covered
 
 - What the decoder writes from int8 against f32 SigLIP features (an end-to-end comparison).
-- CUDA's SigLIP tower (`cuda/vision_encoder.go`, int8 by construction) and WebGPU's. They were not run here, and on this
+- CUDA's SigLIP tower (`backend/cuda/vision_encoder.go`, int8 by construction) and WebGPU's. They were not run here, and on this
   evidence they inherit the int8 loss whatever their kernels do.
 - Whether a different activation quantization (per-channel smoothing, or keeping fc2's input at f16) would make an int8
   SigLIP tower acceptable.

@@ -27,7 +27,7 @@ All three are **aikit** changes. Each needs an aikit release that goinfer then p
 
 - `aikit/vision/resident.go`: `func RegisterResident(f …) { residentFactory = f }`. That is one global slot, and the
   last registration silently wins.
-- Four registrants exist: goinfer's `cuda/vision_register.go` and `gpu/vision_register.go`, and aikit's
+- Four registrants exist: goinfer's `backend/cuda/vision_register.go` and `backend/webgpu/vision_register.go`, and aikit's
   `gpu/visioncuda` and `gpu/visionmetal`. Two CUDA SigLIP towers (goinfer's and aikit's `visioncuda`) can therefore
   both register, and init order decides which one runs.
 - **Latent, not live:** verified 2026-09-24, goinfer imports neither `visioncuda` nor `visionmetal`, so no shipped
@@ -55,7 +55,7 @@ All three are **aikit** changes. Each needs an aikit release that goinfer then p
 ## Not decided (owner, separately)
 
 Whether aikit's GPU device layer (~3.0k lines: `gpu/cuda*.go`, `gpu/metal*.go`, the upload/copy/residency helpers,
-which goinfer's `cuda/device.go` already aliases) moves into goinfer. The obstacle: all eight of aikit's GPU backend
+which goinfer's `backend/cuda/device.go` already aliases) moves into goinfer. The obstacle: all eight of aikit's GPU backend
 modules (`anncuda`, `annmetal`, `enccuda`, `encmetal`, `qwencuda`, `qwenmetal`, `visioncuda`, `visionmetal`) import
 it. Moving it means either **two copies** (goinfer's and aikit's, free to drift, with driver fixes landed twice) or
 **aikit leaving GPU** (its GPU backends deleted or moved too, a decision about aikit as a product). The related

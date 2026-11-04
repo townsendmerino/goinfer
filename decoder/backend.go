@@ -16,7 +16,7 @@ import (
 // use, which avoids a host↔device round-trip per layer.
 //
 // The default "cpu" backend is always registered. A WebGPU backend lives in
-// the opt-in github.com/townsendmerino/goinfer/gpu module: importing it under
+// the opt-in github.com/townsendmerino/goinfer/backend/webgpu module: importing it under
 // `-tags gpu` calls RegisterBackend("webgpu", …) on init, so the decoder gains
 // GPU acceleration WITHOUT pulling github.com/oliverbestmann/webgpu (cgo) into
 // goinfer's core dependency graph.
@@ -92,7 +92,7 @@ var (
 	backendRegistry = map[string]func() (Backend, error){}
 )
 
-// RegisterBackend registers a named Backend factory; the goinfer/gpu, cuda and metal modules call it from init() so
+// RegisterBackend registers a named Backend factory; the goinfer/backend/webgpu, cuda and metal modules call it from init() so
 // the decoder does not import them. Safe for concurrent use; a later registration of a name replaces the earlier.
 func RegisterBackend(name string, factory func() (Backend, error)) {
 	backendMu.Lock()
@@ -227,14 +227,14 @@ func NewBackend(name string) (Backend, error) {
 	}
 	// The root cmd/serve cannot enable a GPU backend with a build tag: it lives in a submodule entrypoint, so name that one.
 	if name == "webgpu" {
-		return &cpuBackend{}, fmt.Errorf("decoder: webgpu backend not built in; build the submodule entrypoint (go build -tags gpu github.com/townsendmerino/goinfer/gpu/cmd/serve) — not `-tags gpu` on the root cmd/serve; using cpu")
+		return &cpuBackend{}, fmt.Errorf("decoder: webgpu backend not built in; build the submodule entrypoint (go build -tags gpu github.com/townsendmerino/goinfer/backend/webgpu/cmd/serve) — not `-tags gpu` on the root cmd/serve; using cpu")
 	}
 	if name == "cuda" {
-		return &cpuBackend{}, fmt.Errorf("decoder: cuda backend not built in; build the submodule entrypoint (CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve) — not `-tags cuda` on the root cmd/serve; using cpu")
+		return &cpuBackend{}, fmt.Errorf("decoder: cuda backend not built in; build the submodule entrypoint (CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/backend/cuda/cmd/serve) — not `-tags cuda` on the root cmd/serve; using cpu")
 	}
 	if name == "metal" {
 		// Options.Validate accepts "metal", so an untagged build reaching here falls back to CPU rather than returning a nil backend.
-		return &cpuBackend{}, fmt.Errorf("decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu")
+		return &cpuBackend{}, fmt.Errorf("decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/backend/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu")
 	}
 	return nil, fmt.Errorf("decoder: unknown backend %q (have: cpu, webgpu, cuda, metal)", name)
 }

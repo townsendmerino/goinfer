@@ -1,8 +1,8 @@
 # attn_decode_fa kernel ladder (R6 step 2): S is fixed at 16
 
 Recorded 2026-09-20 **before any fidelity scoring**, because `attn-decode-fa-fidelity-PREREGISTERED.md` requires the lane's S to
-come from this kernel record and not from gate numbers. Kernel: `cuda/decode_fa.cu` (`fa_partial_{64,128,256}` +
-`fa_combine`); instrument: `cuda/flash_decode_ladder_test.go` (`TestFlashDecodeKernelLadder`), one layer's decode attention on
+come from this kernel record and not from gate numbers. Kernel: `backend/cuda/decode_fa.cu` (`fa_partial_{64,128,256}` +
+`fa_combine`); instrument: `backend/cuda/flash_decode_ladder_test.go` (`TestFlashDecodeKernelLadder`), one layer's decode attention on
 real geometry and a real-size synthetic f32 KV, exact split-KV (3 launches) vs the lane at each S. RTX 2070 SUPER, driver
 `595.91.07`, `nobara-pc`.
 

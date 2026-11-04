@@ -6,9 +6,9 @@
 // logic lives in the importable internal/serveapp package; the opt-in accelerated builds
 // are separate binaries that blank-import a backend before calling the same entrypoint:
 //
-//	go build ./gpu/cmd/serve     # WebGPU  (was: serve -tags gpu)
-//	go build ./cuda/cmd/serve    # CUDA    (was: serve -tags cuda)
-//	go build ./metal/cmd/serve   # Metal   (was: serve -tags metal, darwin)
+//	go build ./backend/webgpu/cmd/serve  # WebGPU  (was: serve -tags gpu)
+//	go build ./backend/cuda/cmd/serve    # CUDA    (was: serve -tags cuda)
+//	go build ./backend/metal/cmd/serve   # Metal   (was: serve -tags metal, darwin)
 package main
 
 import "github.com/townsendmerino/goinfer/internal/serveapp"

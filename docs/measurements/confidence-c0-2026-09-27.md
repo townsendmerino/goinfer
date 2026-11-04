@@ -41,7 +41,7 @@ to judge), not failed. Gates 0 and 1 pass on both graded models.**
   - both from `~/models`.
 - **Data:** [`confidence-c0-2026-09-27/tickets.jsonl`](confidence-c0-2026-09-27/tickets.jsonl), 60 support tickets
   written for this, sha256 `71787d8f…`.
-  - Each gold label follows from rules stated in the system prompt (in `metal/confidence_c0_test.go`).
+  - Each gold label follows from rules stated in the system prompt (in `backend/metal/confidence_c0_test.go`).
   - Category counts: billing 15, technical 15, shipping 13, account 10, other 7. 13 are urgent, 14 request a
     refund, 20 mention orders, and 5 are unsigned.
 - **Schema:** one field of each kind, `additionalProperties: false`. The prompt asks for a JSON object; the grammar

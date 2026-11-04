@@ -517,7 +517,7 @@ through). `Metal-vs-CPU` is tolerance-based (unavoidable, given the f16 scale ga
 pass by construction. The only gate type that catches this is an **absolute stored reference** — one that
 does not move when the code does. CUDA has goldens; Metal had nothing equivalent.
 
-**Landed (`TestMetalSnapshotGolden`, `metal/snapshot_golden_test.go` + `testdata/metal_snapshot_golden.json`).**
+**Landed (`TestMetalSnapshotGolden`, `backend/metal/snapshot_golden_test.go` + `testdata/metal_snapshot_golden.json`).**
 Decodes a fixed token sequence through the Metal resident path on two tiny committed models to depths
 **past both reduction widths (128, 256)** and byte-compares the logits (sha256) to a committed golden:
 - **mixtral-tiny** (int8int8) — full-causal, so the attention softmax denominator reduces over >256 keys
@@ -646,7 +646,7 @@ to the differently-written prompt KV).
 Two corrections to the premise, both important:
 - **Protected by a Metal-backend decline (not by the shared flag).** The shared `GOINFER_BATCHED_PREFILL`
   gate was flipped back to **default-ON** once the CUDA path was made fma-bit-identical — and it has no
-  backend guard, so it *would* pull Metal's divergent path in by default. So `metal/backend.go`'s
+  backend guard, so it *would* pull Metal's divergent path in by default. So `backend/metal/backend.go`'s
   `PrefillLast` now **declines by default** (→ caller falls back to sequential = decode kernels =
   bit-identical); opt in only with `GOINFER_METAL_BATCHED_PREFILL=1`. This is the "default it off"
   response to a non-zero divergence, scoped to the backend that has it.
@@ -681,7 +681,7 @@ TTFT is 2.1 s, down from 13.1 s) and cannot reach parity.
 ### B1. Prefill attention query-tiling — **DESIGN-REVISED (2026-08-04); BANKED, not funded**
 
 > **Superseded (2026-09-21, doc review).** "Banked / can't reach parity" below was overtaken by the L2/L3 prefill campaign: path (3), a tolerance-gated FlashAttention-style kernel, shipped as
-> `cuda/attn_fused.cu` on 2026-09-05 (default ON above a 512-token floor; 1.70× end-to-end), with `gemm_w4a8_mma` beside it, taking CUDA prefill from 12–15× to **1.9–3.2× behind** Ollama.
+> `backend/cuda/attn_fused.cu` on 2026-09-05 (default ON above a 512-token floor; 1.70× end-to-end), with `gemm_w4a8_mma` beside it, taking CUDA prefill from 12–15× to **1.9–3.2× behind** Ollama.
 > The live owners are `docs/tasks/red-october.md` R5 and `queue-performance.md` P24 (`attn_fused` at 1.72% of tensor peak). Kept as written, per this file's retraction discipline.
 
 Design-first (before writing the kernel) found the clean ~1.3× is **not bit-identical-buildable on
@@ -783,7 +783,7 @@ streaming that does not batch.
 
 ### C6. int8 batched prefill — **DONE (2026-08-07, `gemv_w8a8_batched.cu`)**
 
-**Built and gated.** `cuda/gemv_w8a8_batched.cu` (the M=1 `gemv_w8a8_fwd` plus an `MT`=32-wide
+**Built and gated.** `backend/cuda/gemv_w8a8_batched.cu` (the M=1 `gemv_w8a8_fwd` plus an `MT`=32-wide
 column loop), the `kind == "int8"` branch in `bGemvB`, and `nonInt4Kind` → `nonBatchableKind`
 (admits any bundle whose seven projections are each int4 *or* int8; mixed int4/int8 — `int4mix` —
 batches per projection). Bit-identity is **free by construction** as predicted and was proven at
@@ -980,7 +980,7 @@ don't advance it.**
 The stronger, previously-uncosted payoff is on the DECODE axis (where goinfer is at parity): **per-row
 scales delete the group scales from the weight byte-stream.** MEASURED against the actual layout
 (not assumed — the ~23×-estimate lesson): the resident GPU int4 carries an **f16** group scale per
-32-value group (`cuda/resident.go:resolveCtxCap` — deliberately f16 because "f32 would be 20%"), so scale bytes
+32-value group (`backend/cuda/resident.go:resolveCtxCap` — deliberately f16 because "f32 would be 20%"), so scale bytes
 are `2 / (16 + 2) = 11.1%` of the int4 weight stream. Per-row (one scale per row) deletes ~all of it
 (≈0.2%). Decode reads every weight once per token → fewer weight bytes is the decode lever the dp4a
 ceiling (B2) is NOT.
@@ -1392,7 +1392,7 @@ work; `top_k=1` routing was gated on the argmax tie-break, which is now fixed an
 | lever | result | notes |
 |---|---|---|
 | Batched prefill (`PrefillLast`), **CUDA** | 2048 TTFT 13.1→2.1s; crossover 128→320 vs 0.5.7 | **bit-identical, default-on** (restored). Was briefly default-off after an 84% divergence from fma-contraction; FIXED by explicit `__fmaf_rn` everywhere + `TestKernelFMALint`; `TestPrefillDivergenceRate` 0/50 (`task-batched-prefill-bitidentity.md`) |
-| Batched prefill (`PrefillLast`), **Metal** | — | ⚠ **NOT fixed — 54% divergent** (`TestMetalPrefillDivergenceRate` 27/50, first-div ~2.9; f16-activation-MMA vs int8-activation decode + fast-math, §A2-Metal). The CUDA fix does NOT cover it (deeper root than contraction). The shared gate is now default-ON, which *would* have pulled this divergent path in by default — so the **Metal backend now DECLINES it by default** (`metal/backend.go`; falls back to sequential = bit-identical), opt-in `GOINFER_METAL_BATCHED_PREFILL=1`. Real fix needs the activation precision unified, deferred behind decode |
+| Batched prefill (`PrefillLast`), **Metal** | — | ⚠ **NOT fixed — 54% divergent** (`TestMetalPrefillDivergenceRate` 27/50, first-div ~2.9; f16-activation-MMA vs int8-activation decode + fast-math, §A2-Metal). The CUDA fix does NOT cover it (deeper root than contraction). The shared gate is now default-ON, which *would* have pulled this divergent path in by default — so the **Metal backend now DECLINES it by default** (`backend/metal/backend.go`; falls back to sequential = bit-identical), opt-in `GOINFER_METAL_BATCHED_PREFILL=1`. Real fix needs the activation precision unified, deferred behind decode |
 | KV-only prefill for `prompt[:-1]` | −4.39 ms/prompt-token on 26B | skips LM head |
 | GEMV `MT=32` | ~6% | tile width, not an accumulation constraint |
 | GEMV `int2` coalescing | 13% | bytes/sector 49.99 → 98.01% |
@@ -1501,7 +1501,7 @@ generations, not steady-state tok/s. Recording them here so nothing gets re-prop
   `TestMetalSoftcapParallel_bitIdentical` + snapshot golden). Measured `BenchmarkSoftcap_gemmaVocab`
   (262144): **3.40 → 0.86 ms/op (~3.96×, −2.54 ms per SAMPLING token on gemma-4)**. Greedy unaffected
   (skips the softcap — monotonic). gemma-3 removed the softcap (no-op there). The CUDA twin
-  (`cuda/resident.go`, same host parallel-for) is a box follow-up — identical pattern, needs Linux to
+  (`backend/cuda/resident.go`, same host parallel-for) is a box follow-up — identical pattern, needs Linux to
   build/measure.
 - **WebGPU logits host-buffer reuse.** `gpu.DecodeRunner.Run` did `make([]float32, vocab)` every token;
   now returns a reused `r.logitsHost` (mirrors CUDA pinned scratch / Metal `logitsHost`). Measured
@@ -1583,24 +1583,24 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
 - ~~**CUDA Gemma softcap parallel-for**~~ — **DONE, `4c26a58` (2026-08-12), stale bullet corrected
   2026-08-22.** This was landed and measured on the real RTX 2070 SUPER box the same week this
   section was written; the "needs Linux to build/measure" line was never updated after it landed.
-  New file `cuda/softcap.go` (both `cuda/resident.go` and `cuda/prefill.go` now share it), gated by
-  `cuda/softcap_test.go` (exact equality vs. the serial reference across sizes straddling the
+  New file `backend/cuda/softcap.go` (both `backend/cuda/resident.go` and `backend/cuda/prefill.go` now share it), gated by
+  `backend/cuda/softcap_test.go` (exact equality vs. the serial reference across sizes straddling the
   threshold and GOMAXPROCS in {1,3,16}, including non-dividing lengths). Measured, same shape as
   the Metal twin above: 1.47 ms → 639.8 us at Gemma's 262,144 vocab (2.30x on the loop). Same
   reasoning as Metal for staying exact `math.Tanh` rather than a float32/device approximation —
   bit-identity is structural (per-element, no accumulation order to perturb), not merely convenient.
 - **CUDA g4x2 accumulator clear: H2D per MoE layer per token** (Cursor audit, verified). `cudaResident`
   clears the `g4x2` expert accumulator by uploading host zeros (`g4zero`, "no D2D helper" —
-  `cuda/resident.go:cudaResident.launchToken`) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
+  `backend/cuda/resident.go:cudaResident.launchToken`) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
   implicit null-stream sync) per MoE layer per token. cuda/ not frozen; bit-identical (a zero is a zero).
 
 ### Medium / larger — verify + measure before funding
-- **MoE expert-cache host round-trip.** `loadRoutedExperts` (cuda/resident.go:cudaResident.allocSlots) does Sync → D2H routing
-  indices → H2D expert misses; the Metal paged path is worse (submit/wait per layer, `metal/gemma4_moe.go`).
+- **MoE expert-cache host round-trip.** `loadRoutedExperts` (backend/cuda/resident.go:cudaResident.allocSlots) does Sync → D2H routing
+  indices → H2D expert misses; the Metal paged path is worse (submit/wait per layer, `backend/metal/gemma4_moe.go`).
   A device-side gather or async overlap matters whenever experts are paged — see the standing verdict that
   synchronous MoE paging is dead and *speculative prefetch* is the path (memory: Metal MoE paging needs
   speculation). cuda/metal not frozen.
-- **Parallel top-k expert GEMVs.** `moeMLPPost` (cuda/resident.go:cudaResident.Close) runs the selected experts
+- **Parallel top-k expert GEMVs.** `moeMLPPost` (backend/cuda/resident.go:cudaResident.Close) runs the selected experts
   sequentially. Concurrent launches need separate per-expert scratch + an ORDERED combine, or the FMA
   association changes and the bit-identity gate fails. Real but bit-identity-delicate; measure the win
   against the added scratch VRAM.
@@ -1623,7 +1623,7 @@ very different M: P10's verify blocks are tiny (M≤16, appended onto an already
 the fixed dispatch cost dominates and never amortizes); a real prompt prefill is M in the hundreds
 to low thousands, where the same kernel's per-row cost amortizes as designed.
 
-**Measured** (`metal/prefill_ttft_test.go`, qwen2.5-coder-1.5b int4 W4A8, `GOINFER_METAL_BATCHED_
+**Measured** (`backend/metal/prefill_ttft_test.go`, qwen2.5-coder-1.5b int4 W4A8, `GOINFER_METAL_BATCHED_
 PREFILL=1` forced on): sequential Forward-per-token (today's shipped default TTFT path) against one
 batched `PrefillLast` call, both from an empty cache, at four realistic prompt lengths:
 
@@ -1651,7 +1651,7 @@ sequential/CPU reference, for latency-sensitive long-context use") without needi
 is a materially smaller bar to clear.
 
 **LANDED 2026-08-16: `--metal-fast-prefill` (`internal/serveapp`).** Sets the same env var
-(`GOINFER_METAL_BATCHED_PREFILL`) `metal/backend.go`'s `PrefillLast` already gated on, at CLI
+(`GOINFER_METAL_BATCHED_PREFILL`) `backend/metal/backend.go`'s `PrefillLast` already gated on, at CLI
 startup — no frozen-core edit needed, since `decoder/model.go`'s generic batched-prefill gate
 already tries `PrefillLast` by default and falls back gracefully on Metal's own decline; making
 Metal not decline was the whole job. The divergence is disclosed in the flag's own `--help` text

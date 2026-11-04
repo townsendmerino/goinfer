@@ -8,27 +8,27 @@ arithmetic, not a measurement. Names are given as file and function, with no lin
 
 ## What CUDA already has
 
-- **aikit `gpu.ViT` (CUDA, `gpu/vit.cu` through `gpu/cuda_vit.go`) is most of a base.** f32 GEMM C = A·Bᵀ (`gemm_f32_reg` and `gemm_f32_tiled`, chosen by
+- **aikit `gpu.ViT` (CUDA, `backend/webgpu/vit.cu` through `backend/webgpu/cuda_vit.go`) is most of a base.** f32 GEMM C = A·Bᵀ (`gemm_f32_reg` and `gemm_f32_tiled`, chosen by
   `GEMMF32Plan`), f32 GEMM with bias and with bias plus residual epilogues (`GEMMF32BiasPlan`, `GEMMF32BiasAddPlan`), `add_bias`, `add_vec`, LayerNorm with
   weight and bias (f64 accumulate), weight-only RMSNorm, GELU tanh and erf, `silu_mul`, a NeoX rotate-half `rope_qk` on a fused qkv buffer, and attention kernels
   that take an explicit `scale` (`attention`, `attention_tiled`, `attention_seg`, `attention_seg_tiled`, the last two with per-patch segment ranges). There is
   no batched or strided-batch f32 GEMM.
-- **aikit's `gpu/qwencuda/encoder.go` is a correct-at-real-size template** for the Qwen3.5 and GLM-OCR block loop (fused qkv GEMM with bias, `rope_qk`,
+- **aikit's `backend/webgpu/qwencuda/encoder.go` is a correct-at-real-size template** for the Qwen3.5 and GLM-OCR block loop (fused qkv GEMM with bias, `rope_qk`,
   `attention_seg`, `gemm_f32_bias_add`, `silu_mul`). It has no LayerNorm or GELU, since Qwen2.5-VL is RMSNorm and SiLU.
-- **goinfer's `cuda/vision_encoder.go` is Gemma 3's SigLIP tower and is not a base:** int8 W8A8, its own device and executor goroutine, host round trips for
+- **goinfer's `backend/cuda/vision_encoder.go` is Gemma 3's SigLIP tower and is not a base:** int8 W8A8, its own device and executor goroutine, host round trips for
   residual adds, no RoPE. Reusable idioms: a scratch free-list with defer-release, recover around setup, the leak test, and `ReleaseObjects` on close.
-- **`cuda/attn_fused_vit.cu`** is an f16-operand `mma.sync` fused attention specialised to head dim 72, one segment of all keys. A head-dim-64 instantiation is
+- **`backend/cuda/attn_fused_vit.cu`** is an f16-operand `mma.sync` fused attention specialised to head dim 72, one segment of all keys. A head-dim-64 instantiation is
   mechanical, but it rounds Q, K, V and P to f16, which may threaten a 0.9999 per-token bar over 16 to 24 layers (unverified). A speed step after an f32 baseline.
-- **Kernel shipping:** `cuda/build_ptx.sh` builds each `cuda/*.cu` to `cuda/testdata/*.ptx` through NVRTC, embedded in `cuda/kernels.go`. The audited trio
+- **Kernel shipping:** `backend/cuda/build_ptx.sh` builds each `cuda/*.cu` to `cuda/testdata/*.ptx` through NVRTC, embedded in `backend/cuda/kernels.go`. The audited trio
   (`moe`, `glue`, `gemv_fwd`) is pinned to NVRTC 12.6.85 and must never be regenerated elsewhere; a new kernel is a new `.cu` and `.ptx` at whatever NVRTC is
   present, recorded. A new embed must be in `lintedKernels` (explicit `__fmaf_rn`/`__fmul_rn` on every float multiply-add) or in `fmaLintExempt` in
   `kernel_fma_lint_test.go`, and is covered by the PTX consistency and local-memory census tests. Do not edit aikit's `vit.cu`.
 
 ## What carries over from Metal, and what is new
 
-- **Metal's base** is `eg2Ops` (`metal/embeddinggemma2.go`): f32 GEMM, RMSNorm, rotate-half RoPE, and attention built from matmuls in 256-row blocks (headmajor
-  copy, a per-block Vᵀ, scores GEMM, row softmax, PV GEMM, scatter), so memory is one block of scores and never T². `metal/gemma4_vision.go` adds pos-add,
-  ClippableLinear clamps and an axial 2-D RoPE; `metal/grid_vision.go` adds an attention scale on q, biased GEMMs, LayerNorm with bias, GELU, the host Qwen3
+- **Metal's base** is `eg2Ops` (`backend/metal/embeddinggemma2.go`): f32 GEMM, RMSNorm, rotate-half RoPE, and attention built from matmuls in 256-row blocks (headmajor
+  copy, a per-block Vᵀ, scores GEMM, row softmax, PV GEMM, scatter), so memory is one block of scores and never T². `backend/metal/gemma4_vision.go` adds pos-add,
+  ClippableLinear clamps and an axial 2-D RoPE; `backend/metal/grid_vision.go` adds an attention scale on q, biased GEMMs, LayerNorm with bias, GELU, the host Qwen3
   position table and per-segment attention. They register through `multimodal.RegisterGemma4Tower`, `RegisterQwen3Tower` and `RegisterGlmOcrTower`
   (backend-neutral, keyed by name).
 - **Metal's scalar-arena trick does not port.** The CUDA encoder's `Dispatch` binds only buffers; CUDA kernels take scalars as launch arguments. The CUDA base
@@ -76,7 +76,7 @@ under allocation failure, and serve naming the CPU fallback with `-require-backe
 ## Build order
 
 0. Serve plumbing: `planGridTower` and `chooseGemma4Tower` made backend-generic (the existing test row that pins CUDA to the CPU changes).
-1. `cuda/tower_base.cu` and `cuda/tower_base.go`: the new kernels, a tower-ops struct with a launch helper, scratch and plan selection, and per-branch tests.
+1. `backend/cuda/tower_base.cu` and `backend/cuda/tower_base.go`: the new kernels, a tower-ops struct with a launch helper, scratch and plan selection, and per-branch tests.
 2. The Gemma 4 tower (the base's first user), registered as "cuda", with Metal's Gemma 4 gates and a served image turn.
 3. The Qwen3.5+ and GLM-OCR towers on qwencuda's block loop, with G-S2b/c/d unchanged, on CUDA.
 4. The VRAM reserve in serve (before the served gates, since it is what made the Qwen2.5-VL served run need `--kv-sessions 1 -ctx 4096`).

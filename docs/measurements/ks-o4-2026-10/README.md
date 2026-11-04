@@ -46,7 +46,7 @@ registration, committed before any code. A separate PR from KS-F2's.
   - **short:** prompts of about 150 tokens.
   - **long:** prompts of about 600 tokens, more than four times the 128-key window, so the window layers' sliding read and the ring are
     exercised.
-- **Prompts:** passages and instructions in the shape of `gpu/attn_fidelity_test.go`, with a pilot set that shares no passage with the gate
+- **Prompts:** passages and instructions in the shape of `backend/webgpu/attn_fidelity_test.go`, with a pilot set that shares no passage with the gate
   set. `fidelity.PromptSetHash` is recorded.
   - **N, per cell:** from the pilot (2 prompts a cell): `python3 scripts/power.py fidelity --from-positions <the pilot's positions log>`.
     It gives a pooled count, so N a cell is half of it, rounded up.

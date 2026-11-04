@@ -406,7 +406,7 @@ def required_modules():
     # cache directory — reading only the root go.mod left every `gpu/...` citation unresolvable and
     # reddened CI on a reference that was perfectly correct.
     for mod_file, want in ((ROOT / "go.mod", "github.com/townsendmerino/aikit"),
-                           (ROOT / "cuda" / "go.mod", "github.com/townsendmerino/aikit/gpu")):
+                           (ROOT / "backend" / "cuda" / "go.mod", "github.com/townsendmerino/aikit/gpu")):
         try:
             text = mod_file.read_text()
         except OSError:

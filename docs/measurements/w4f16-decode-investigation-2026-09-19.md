@@ -28,20 +28,20 @@ much more basic bar of "produces roughly sane output on one real checkpoint."
 
 First-slice scope, agreed before writing any kernel code: the plain dense (non-MoE, non-paged,
 non-sandwich, non-postOnly, non-parallelBlock, non-qGate, non-outBias, non-layerNorm, no
-compute-time LoRA) QKV / o-proj / gate-up path only — matching `canUseF16Lane` in `metal/model.go`.
+compute-time LoRA) QKV / o-proj / gate-up path only — matching `canUseF16Lane` in `backend/metal/model.go`.
 Down-proj (`gemv_w4a8_resid`, the "coal" family — a different kernel shape) and every special-case
 family stay on the shipped W4A8 kernels unconditionally. This was a deliberate narrowing from the
 brief's full scope, agreed given the real integration surface (13+ existing dispatch call sites)
 turned out much larger than the brief's Build section implied.
 
-**`metal/kernels.go`**: `gemv_w4f16_sa` / `_sa_bias` / `_sa_resid` (the weight-stream half — nibble
+**`backend/metal/kernels.go`**: `gemv_w4f16_sa` / `_sa_bias` / `_sa_resid` (the weight-stream half — nibble
 dequant via the exponent-bias trick named in the brief: pack a raw nibble into a half's mantissa
 bits with a fixed exponent, giving `1.0 + nibble/16`, subtract 1.5h and ×16 recovers `nibble-8`
 exactly for all 16 values); `rmsnorm_f16_act` (QKV/gate-up's norm, no quantization, half output
 instead of the int8 `aq`+scale pair `rmsnorm_quant` produces); `f32_to_f16` (o-proj's input has no
 norm/weight — quant_vec is a bare quantizer — so this lane needs a bare convert there instead).
 
-**`metal/model.go`**: `canUseF16Lane(l int) bool`, new `resident` fields (`pRmsF16`, `pF32ToF16`,
+**`backend/metal/model.go`**: `canUseF16Lane(l int) bool`, new `resident` fields (`pRmsF16`, `pF32ToF16`,
 `pSAf16`/`_Bias`/`_Resid`, `decodeLaneW4F16`, `axF16`/`mxF16`/`cxF16`), and the dispatch branch at
 each of the three target call sites (QKV in `encodeAttentionResidualWith`, o-proj in the same,
 gate/up in `encodeLayerResidualWith`) — gated behind `GOINFER_METAL_DECODE_LANE=w4f16`, off by
@@ -50,7 +50,7 @@ carries both arms," per the brief); only dispatch is conditional.
 
 ## Gate (1): kernel correctness — PASSED
 
-`metal/gemv_w4f16_test.go`. Two independent checks, both against the real Metal compiler and GPU,
+`backend/metal/gemv_w4f16_test.go`. Two independent checks, both against the real Metal compiler and GPU,
 not simulated:
 
 1. **`TestNib2HalfAllValues`** — the exponent-bias dequant trick recovers `nibble-8` exactly (bit-
@@ -176,7 +176,7 @@ count) as opposed to a numerics-design issue with no simple fix.
 
 ## Reproducer
 
-`metal/gemv_w4f16_layer26_repro_test.go`, `TestW4F16Lane_layer26Reproduction`
+`backend/metal/gemv_w4f16_layer26_repro_test.go`, `TestW4F16Lane_layer26Reproduction`
 (`GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./metal/ -run TestW4F16Lane_layer26Reproduction -v`).
 Deliberately fails (loudly, by design) until this is fixed — reproduces the exact cosine from a
 clean input in one run, so whoever picks this back up starts from a known-good minimal repro

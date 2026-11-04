@@ -1,7 +1,7 @@
 # Staging q in shared memory: the diagnosis was right, the payoff is 2.7%
 
-Changed and measured 2026-09-13, nobara-pc. `cuda/decode_splitkv.cu` `splitkv_scores` + its launch
-in `cuda/resident.go`. Follows `splitkv-stall-profile-2026-09-13.md`, which measured this kernel at
+Changed and measured 2026-09-13, nobara-pc. `backend/cuda/decode_splitkv.cu` `splitkv_scores` + its launch
+in `backend/cuda/resident.go`. Follows `splitkv-stall-profile-2026-09-13.md`, which measured this kernel at
 **93.5% lg_throttle**, 203.7 warp-cycles per issued instruction.
 
 ## The change
@@ -62,7 +62,7 @@ is a bigger change than this one and it now has a measured target on both kernel
 
 ## Provenance
 
-Binary rebuilt from this tree; PTX regenerated with `cuda/build_ptx.sh decode_splitkv` at nvrtc
+Binary rebuilt from this tree; PTX regenerated with `backend/cuda/build_ptx.sh decode_splitkv` at nvrtc
 12.9.86, which is what the checked-in `decode_splitkv.ptx` was already built with — the 12.6.85
 freeze applies to `moe.ptx`, `glue.ptx` and the gemv family, not to this module. A no-op regen was
 verified byte-identical BEFORE the change, so the PTX diff is the change and nothing else.

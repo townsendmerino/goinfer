@@ -9,4 +9,4 @@
 // identifier, which cannot contain slashes). One file per tag so the message stays specific.
 package main
 
-const _ = "goinfer: `-tags cuda` does nothing on the root cmd/serve since v0.10.0 (it builds no backend). Build the submodule entrypoint instead: CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve" + 1
+const _ = "goinfer: `-tags cuda` does nothing on the root cmd/serve since v0.10.0 (it builds no backend). Build the submodule entrypoint instead: CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/backend/cuda/cmd/serve" + 1

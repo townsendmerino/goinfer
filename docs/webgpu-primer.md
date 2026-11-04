@@ -1,6 +1,6 @@
-# WebGPU / WGSL primer — the ecosystem and how goinfer's `gpu/` sits in it
+# WebGPU / WGSL primer — the ecosystem and how goinfer's `backend/webgpu/` sits in it
 
-> Orientation doc for anyone touching the `gpu/` module. **What kind of work is
+> Orientation doc for anyone touching the `backend/webgpu/` module. **What kind of work is
 > this?** Not C. It's **Go for everything structural + WGSL for the ~6 hot kernels
 > + a Rust dependency you never open.** This doc maps the ecosystem so you know
 > which repo answers which question, and where goinfer plugs in.
@@ -13,7 +13,7 @@
 - goinfer's GPU backend is **pure Go orchestration calling WGSL kernels**. The cgo
   is quarantined inside the `oliverbestmann/webgpu` dependency (behind `-tags gpu`);
   the default goinfer build stays pure Go.
-- The stack under you, top to bottom: **your Go (`gpu/`) → `oliverbestmann/webgpu`
+- The stack under you, top to bottom: **your Go (`backend/webgpu/`) → `oliverbestmann/webgpu`
   (Go binding) → `wgpu-native` (C API) → `wgpu` (Rust) → `naga` (WGSL→native shader
   compiler) → Vulkan/Metal/DX12 → the GPU.**
 - Three repos answer three questions: **gpuweb/gpuweb** = "is this legal WGSL?",
@@ -38,7 +38,7 @@ no driver install, no CUDA toolkit (`gpu-assessment.md` §4).
 **WGSL** (WebGPU Shading Language) is WebGPU's shader language — the code that runs
 *on* the GPU. Its syntax is influenced by Rust, with strong static validation and
 explicit resource binding. A compute kernel looks like this (the `dot4I8Packed`
-probe from `gpu/spike_test.go`):
+probe from `backend/webgpu/spike_test.go`):
 
 ```wgsl
 @group(0) @binding(0) var<storage, read_write> out: array<i32>;
@@ -51,7 +51,7 @@ fn main() {
 Note what's WGSL-specific: `@group/@binding` (resource binding), `@compute
 @workgroup_size(...)` (this is a compute kernel with N threads per workgroup),
 `var<storage, ...>` (memory space). You think in **workgroups** (thread blocks) and
-**lanes** (threads) — the warp-per-head attention in `gpu/attention.go` is one
+**lanes** (threads) — the warp-per-head attention in `backend/webgpu/attention.go` is one
 workgroup per attention head, 128 lanes doing a tree-reduced softmax. That mental
 model — workgroups, lanes, reductions, keeping intermediates off the critical-path
 "spine," avoiding barriers — is the actual skill of GPU kernel work here.
@@ -99,7 +99,7 @@ platform's real shader language (SPIR-V for Vulkan, MSL for Metal, HLSL for DX12
 - **naga** — in the wgpu repo (Rust). The one under goinfer. It's *why* a WGSL
   builtin like `dot4I8Packed` actually becomes a hardware DP4A instruction on a
   given backend — feature availability is ultimately a naga + driver question, which
-  is what `gpu/spike_test.go` probes at runtime.
+  is what `backend/webgpu/spike_test.go` probes at runtime.
 - **Tint** — in Dawn (C++). The Chromium-side equivalent.
 
 You don't touch these directly, but they're the layer where "WGSL feature X" turns
@@ -113,8 +113,8 @@ into "runs on my GPU" — or doesn't, hence the runtime capability probe.
 ### Layer 4 — the Go bindings (where goinfer works)
 
 - **[oliverbestmann/webgpu](https://github.com/oliverbestmann/webgpu)** — **goinfer's
-  dependency** (`gpu/go.mod`, currently `v1.36.0`, pinning `wgpu-native v29.0.1.1`).
-  A Go binding over `wgpu-native`. This is the API the `gpu/` module calls: `New()`,
+  dependency** (`backend/webgpu/go.mod`, currently `v1.36.0`, pinning `wgpu-native v29.0.1.1`).
+  A Go binding over `wgpu-native`. This is the API the `backend/webgpu/` module calls: `New()`,
   `device.CreateShaderModule`, `CreateComputePipeline`, `Queue.Submit`, buffer
   allocation, etc. It uses cgo — but the cgo is *inside this dependency*, sealed
   behind goinfer's `-tags gpu` submodule, so the default goinfer build is pure Go.
@@ -133,12 +133,12 @@ into "runs on my GPU" — or doesn't, hence the runtime capability probe.
 
 ---
 
-## 3. How goinfer's `gpu/` plugs in
+## 3. How goinfer's `backend/webgpu/` plugs in
 
 The stack, top to bottom:
 
 ```
-goinfer  gpu/*.go            ← Go you write: buffers, dispatches, decode graph, tests
+goinfer  backend/webgpu/*.go ← Go you write: buffers, dispatches, decode graph, tests
    │     (WGSL kernels as Go string literals: quant.go, gemv.go, attention.go, ...)
    ▼
 oliverbestmann/webgpu        ← Go binding (the API you call)   [cgo lives here]
@@ -152,14 +152,14 @@ Vulkan / Metal / D3D12 → the GPU
 
 **What you actually edit**, by file (live as of this writing):
 
-- `gpu/backend.go`, `gpu/gpu.go`, `gpu/device.go` — Go: device/adapter setup,
+- `backend/webgpu/backend.go`, `backend/webgpu/gpu.go`, `backend/webgpu/device.go` — Go: device/adapter setup,
   buffer arena, the `Backend` abstraction.
-- `gpu/decoderunner.go`, `gpu/decodelayer.go` — Go: the resident decode graph
+- `backend/webgpu/decoderunner.go`, `backend/webgpu/decodelayer.go` — Go: the resident decode graph
   (M=1 token forward, `Run(x, pos)`), how kernels chain per layer.
-- `gpu/quant.go`, `gpu/gemv.go`, `gpu/gemm.go`, `gpu/gemv_w4a8.go`,
-  `gpu/attention.go` — **the WGSL kernels** (W8A8/W4A8 GEMV, prefill GEMM,
+- `backend/webgpu/quant.go`, `backend/webgpu/gemv.go`, `backend/webgpu/gemm.go`, `backend/webgpu/gemv_w4a8.go`,
+  `backend/webgpu/attention.go` — **the WGSL kernels** (W8A8/W4A8 GEMV, prefill GEMM,
   warp-per-head attention), embedded as Go strings, plus their Go launchers.
-- `gpu/spike_test.go` — the runtime capability probe (adapter name, limits,
+- `backend/webgpu/spike_test.go` — the runtime capability probe (adapter name, limits,
   `dot4I8Packed` support, timestamp queries).
 - `decoder/residency.go` — the decoder-side seam (`ResidentForward`,
   `ResidencyBackend`, the eligibility gate) connecting `decoder.Generate` to the GPU.
@@ -170,7 +170,7 @@ Vulkan / Metal / D3D12 → the GPU
 |---|---|
 | Is this legal / portable WGSL? | gpuweb/gpuweb |
 | Did feature X land, and on which native backend? | gfx-rs/wgpu (PRs/releases) |
-| Does my actual GPU expose it at runtime? | `gpu/spike_test.go` (probes naga + driver) |
+| Does my actual GPU expose it at runtime? | `backend/webgpu/spike_test.go` (probes naga + driver) |
 | What's the Go API / method signature? | oliverbestmann/webgpu |
 | Cross-backend shader output differs — why? | naga vs Tint (wgslrunner to diff) |
 
@@ -180,7 +180,7 @@ Vulkan / Metal / D3D12 → the GPU
 
 goinfer's whole position is that the default binary is **pure Go, no cgo**. The GPU
 backend uses cgo — but only *transitively*, through `oliverbestmann/webgpu`, and only
-under the `-tags gpu` build tag in a separate submodule (`gpu/go.mod`). You never
+under the `-tags gpu` build tag in a separate submodule (`backend/webgpu/go.mod`). You never
 write C or Rust; that's all downstream of the binding. CI guards the core graph so
 the cgo can't leak into the default build. This quarantine is **non-negotiable**
 (`gpu-assessment.md` §4) — it's why goinfer can ship one pure-Go static binary that
@@ -193,11 +193,11 @@ runs CPU-only everywhere and opt into GPU without a CUDA toolkit or driver insta
 If you've written Go and can read a C-like language, learn the WGSL here from the
 kernels already in the repo — in increasing order of complexity:
 
-1. `gpu/spike_test.go` — a 4-line WGSL kernel; the minimal shape.
-2. `gpu/quant.go` — the W8A8 GEMV (int8×int8 matmul, the hand-unpacked int8 dot —
+1. `backend/webgpu/spike_test.go` — a 4-line WGSL kernel; the minimal shape.
+2. `backend/webgpu/quant.go` — the W8A8 GEMV (int8×int8 matmul, the hand-unpacked int8 dot —
    the thing `dot4I8Packed` would replace).
-3. `gpu/gemv_w4a8.go` — int4 group-wise GEMV (nibble unpack + per-group scales).
-4. `gpu/attention.go` — warp-per-head attention (one workgroup/head, tree-reduced
+3. `backend/webgpu/gemv_w4a8.go` — int4 group-wise GEMV (nibble unpack + per-group scales).
+4. `backend/webgpu/attention.go` — warp-per-head attention (one workgroup/head, tree-reduced
    softmax) — the kernel that landed the 3.1× decode win (`gpu-assessment.md` §0.0)
    and the one a batched-verify (spec-decode) `ForwardN` would extend to M=K.
 
@@ -209,8 +209,8 @@ way in for this codebase specifically.
 
 ## Sources
 
-- In-repo: `gpu/spike_test.go`, `gpu/quant.go`, `gpu/attention.go`,
-  `gpu/decoderunner.go`, `decoder/residency.go`, `gpu/go.mod` (oliverbestmann/webgpu
+- In-repo: `backend/webgpu/spike_test.go`, `backend/webgpu/quant.go`, `backend/webgpu/attention.go`,
+  `backend/webgpu/decoderunner.go`, `decoder/residency.go`, `backend/webgpu/go.mod` (oliverbestmann/webgpu
   v1.36.0, pinning wgpu-native v29.0.1.1); `docs/completed/gpu-assessment.md` (§3 cross-backend
   numerics, §4 cgo quarantine), `docs/completed/gpu-next-levers-assessment.md`.
 - Spec: [gpuweb/gpuweb](https://github.com/gpuweb/gpuweb),

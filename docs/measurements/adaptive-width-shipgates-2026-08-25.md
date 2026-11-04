@@ -2,8 +2,8 @@
 
 > Measured 2026-08-25 on `linux-62gb` (RTX 2070 SUPER), goinfer `d5c8ee8`+, CUDA-resident
 > Qwen3-4B int4 + DFlash-f32, `maxNew=96`, greedy, real `BlockSpec` path (not the
-> `dflashLoop` copy in `cuda/drafter_loop_test.go`). Harness:
-> `cuda/adaptive_width_gate_test.go`. Answers Phase 1 of
+> `dflashLoop` copy in `backend/cuda/drafter_loop_test.go`). Harness:
+> `backend/cuda/adaptive_width_gate_test.go`. Answers Phase 1 of
 > `docs/prompts/adaptive-speculation.md`.
 
 ## Verdict

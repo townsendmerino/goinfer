@@ -163,7 +163,7 @@ slot is gone; and every KV feature is built three or four times.
 
 1. **One conversation gets 1/N of the KV memory.** Every resident slot reserves its whole context up front, so slots and
    context trade against each other.
-   - CUDA shrinks context until the requested slots fit (`cuda/resident.go:ctxForSlots`, `cuda/margin.go:kvChargedSlotsFit`).
+   - CUDA shrinks context until the requested slots fit (`backend/cuda/resident.go:ctxForSlots`, `backend/cuda/margin.go:kvChargedSlotsFit`).
      On the 8 GB card, the 2026-10-05 cold-user run's 7B at `-ctx 16384` got 1 slot of the 4 requested
      (`docs/measurements/cold-user-2026-10-05-nobara-pc.md`).
    - Metal keeps 2 slots by default, and M2 picks the largest context up to 16,384 that fits beside the weights and both
@@ -196,7 +196,7 @@ slot is gone; and every KV feature is built three or four times.
    - R-04's resident half is open. QUEUE §A's figures, quoted there: about 257 MiB and 43 ms to park a 2.3k-token
      conversation, against about 8.9 s to recompute it.
 5. **Every backend lays KV out its own way, so every KV feature is built three or four times.** (§4 has the table.)
-   - Windowed KV: CUDA uses a shifted view with compaction (`cuda/kvwindow.go`, 2026-10-10). Metal and WebGPU allocate
+   - Windowed KV: CUDA uses a shifted view with compaction (`backend/cuda/kvwindow.go`, 2026-10-10). Metal and WebGPU allocate
      the whole context and mask it.
    - Precision: CUDA f16 for five families and f32 for the rest, with no int8; Metal f16 or i8; WebGPU f32, f16 or i8; the CPU f32 or i8.
    - Slots: a pointer swap on CUDA, contiguous views on Metal, whole runners on WebGPU.
@@ -263,14 +263,14 @@ slot is gone; and every KV feature is built three or four times.
 
 | | CPU | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
-| storage | per sequence, per layer `[]float32` growing by append; a ring per window layer (`decoder/kvcache.go:KVCache`) | per slot, per layer `ctxCap × kvDim`; window layers hold window + 512 (`cuda/kvwindow.go`) | per layer, slots in one allocation (`kvContig`), padded | per slot a whole `runModel` and `DecodeRunner` with bind groups baked over its KV (`gpu/kv_slots.go:webgpuKVSlot`) |
+| storage | per sequence, per layer `[]float32` growing by append; a ring per window layer (`decoder/kvcache.go:KVCache`) | per slot, per layer `ctxCap × kvDim`; window layers hold window + 512 (`backend/cuda/kvwindow.go`) | per layer, slots in one allocation (`kvContig`), padded | per slot a whole `runModel` and `DecodeRunner` with bind groups baked over its KV (`backend/webgpu/kv_slots.go:webgpuKVSlot`) |
 | precision | f32, or int8 with a scale per position and KV head | **f16 by default for llama, mistral, qwen2, qwen3 and phi3, f32 otherwise** (`decoder/residency.go:Model.ResidentKVPrecision`, `decoder/kvresolve.go:CUDAKVF16Decline`); no int8, no scales | f16, or int8 (f32 compiled out) | f32, f16 or int8 |
-| context when unpinned | the model's window; KV allocated per request | fit up to 16,384, floor 4,096 (`cuda/resident.go:resolveCtxCapFit`) | fit up to 16,384 (M2), floor 4,096; `-ctx` up to 32,768 (`metal/model.go:resolveMetalCtxCap`) | a ceiling by precision |
-| several conversations | sessions (`-kv-sessions 4`), MC3c workers / batched decode | MC1 slots (`cuda/resident.go:cudaResident.UseKVSlot`), MC3 (`cuda/batchstep.go:cudaResident.StepBatch`) | MC1, 2 slots by default; MC3 (`metal/batch.go:metalResident.StepBatch`) | MC1 only (clamp-only on discrete GPUs) |
+| context when unpinned | the model's window; KV allocated per request | fit up to 16,384, floor 4,096 (`backend/cuda/resident.go:resolveCtxCapFit`) | fit up to 16,384 (M2), floor 4,096; `-ctx` up to 32,768 (`backend/metal/model.go:resolveMetalCtxCap`) | a ceiling by precision |
+| several conversations | sessions (`-kv-sessions 4`), MC3c workers / batched decode | MC1 slots (`backend/cuda/resident.go:cudaResident.UseKVSlot`), MC3 (`backend/cuda/batchstep.go:cudaResident.StepBatch`) | MC1, 2 slots by default; MC3 (`backend/metal/batch.go:metalResident.StepBatch`) | MC1 only (clamp-only on discrete GPUs) |
 | hybrids | all four recurrent kinds | DeltaNet, one slot | DeltaNet, one slot | DeltaNet, Mamba-2, one slot |
 | prefix reuse | `decoder/session.go:Session.rewindForReuse` behind `bestExtend` / `pickSession` | per-slot id lists, longest common prefix (`reuseLenOf`), slot choice (`pickResidentSlot`) | the same | the same |
 | persistence | `.giw-kv` v3 snapshots (`decoder/kvsnapshot.go:Session.Snapshot`), NVMe cold tier | none | none | none |
-| prefill scratch | admission prices an upper bound over the whole prompt (`decoder/prefill_budget.go:prefillScratchBytes`) | passes of 512 to 2,048 rows, the widest whose scratch the build leaves room for (KS-B8; `cuda/prefill_scratch.go:prefillWidthFor`) | the whole padded prompt in one pass (KV-pre is changing this) | allocated per call |
+| prefill scratch | admission prices an upper bound over the whole prompt (`decoder/prefill_budget.go:prefillScratchBytes`) | passes of 512 to 2,048 rows, the widest whose scratch the build leaves room for (KS-B8; `backend/cuda/prefill_scratch.go:prefillWidthFor`) | the whole padded prompt in one pass (KV-pre is changing this) | allocated per call |
 
 **What is already right and carries over:**
 - **The cache-state grid** (`decoder/cachestate.go`). It is exactly the correctness skeleton the new manager needs.
@@ -279,7 +279,7 @@ slot is gone; and every KV feature is built three or four times.
   and `decoder/resident_reuse.go:Model.declineShortLeadReuse` become the class component of the key (§5.5, §5.6).
 - **MC1 and MC3.** Binding a slot and stepping several rows become "pass a sequence's block table" and "pass a table per row".
 - **Chunked prefill.** It is chunk-invariant on Metal: 0 of 14,336,000 KV elements and 0 of 151,936 last-token logits
-  differ at chunks of 64–384 (`metal/mc5_chunk_invariance_test.go:TestMC5_prefillChunkInvariance`).
+  differ at chunks of 64–384 (`backend/metal/mc5_chunk_invariance_test.go:TestMC5_prefillChunkInvariance`).
 - **CUDA's windowed KV.** Built 2026-10-10 and on in the CLIs (`docs/completed/task-cuda-windowed-kv-2026-10.md`). Its
   `TestWindowedKV_*` suite becomes the window group's identity oracle.
 - **One memory function**, `Model.ResidentKVBytes` / `Model.ResidentNeedBytes`.
@@ -305,7 +305,7 @@ layers store what, and which kernel class wrote a row. The *storage* is close to
     (`attention`, `attention_i8`, the `attention_fa*` family and its MC3 row twins, the four prefill kernels). Not KV kernels:
     `g4a_attn`, `attention_fa_combine`, `mc3_attention_fa_combine_rows`. Compiled but never dispatched: `kv_store_f32`,
     `attention_f32`, `rope2_kv`;
-  - **WebGPU:** its attention pipelines (`gpu/attention.go`, `gpu/attn_keys_rows.go`, `gpu/attn_keys_wide.go`, `gpu/mla.go`) and
+  - **WebGPU:** its attention pipelines (`backend/webgpu/attention.go`, `backend/webgpu/attn_keys_rows.go`, `backend/webgpu/attn_keys_wide.go`, `backend/webgpu/mla.go`) and
     the KV stores, about a dozen WGSL shaders.
 
 ## 5. The design
@@ -573,7 +573,7 @@ is MC4's identity gate extended to shared preambles.
 
 - **Prefill runs in chunks of k·B rows,** with chunk boundaries on block boundaries. The scratch is bounded by the chunk,
   not the prompt (KV-pre, KV3).
-- **MC3's step takes a table per row.** Metal's bind limit is 31 in the pinned aikit (the "16" in `metal/batch_rows.go` is a
+- **MC3's step takes a table per row.** Metal's bind limit is 31 in the pinned aikit (the "16" in `backend/metal/batch_rows.go` is a
   stale comment; `mc3_attention_fa*_rows` binds 16 today, so a table buffer fits): one pool buffer per layer plus one table
   buffer. On CUDA there is no rows kernel to extend: `stepAttnRows` loops over rows and rebinds a slot per call, so a table per
   row is new kernel API there.
@@ -603,7 +603,7 @@ is MC4's identity gate extended to shared preambles.
   - **What removes most rollback in the first place** is the client sending its reasoning back. `/v1/responses` returns
     reasoning items and accepts them back (PR #12). The ring rule covers every other client that edits late in its
     prompt.
-- **Drafters' own caches stay outside the pool** in this doc: `cuda/drafter.go`, EAGLE, and the block drafters.
+- **Drafters' own caches stay outside the pool** in this doc: `backend/cuda/drafter.go`, EAGLE, and the block drafters.
 
 ### 5.13 The backend contract (sketch; names provisional)
 
@@ -644,7 +644,7 @@ type BlockStore interface {
 - `ResidentReusableKV`'s windowed floor becomes the window group's retention policy.
 
 **A backend not yet paged** keeps its slots behind a slot adapter. Logical block `i` of the sequence bound to slot `s` lives
-at `(s, i·B)`, so KV1–KV3 run unchanged on every backend. **CUDA's windowed layers (`cuda/kvwindow.go`) need care in KV2,
+at `(s, i·B)`, so KV1–KV3 run unchanged on every backend. **CUDA's windowed layers (`backend/cuda/kvwindow.go`) need care in KV2,
 not in KV1.** A windowed layer of slot `s` holds only its recent rows, at a shifted view (`kvBases[s]`): a kernel still
 addresses position `p` as `p`, so the adapter's statement holds, but rows behind the base are gone. KV1 copies nothing and
 asks the bound slot what it still holds (`ResidentReusableKV`). KV2's copy from another slot has two new needs there, both
@@ -716,7 +716,7 @@ the type.
 ### KV-pre — Metal long-prompt prefill in blocks, admission per block (in flight, not this doc's)
 
 vscode-claude's steps 1–2 of 2026-10-13, recommended to go ahead now. They came out of last night's I7 413.
-- **The cause:** Metal's batched prefill sizes its f16 activation scratch to the whole padded prompt (`metal/prefill.go`,
+- **The cause:** Metal's batched prefill sizes its f16 activation scratch to the whole padded prompt (`backend/metal/prefill.go`,
   "sized to the padded prompt"). Read that day from the allocation: about 144 KB per prompt token on the 7B, so about
   3 GB at 21K tokens and 9.5 GB at 64K.
 - **The fix:** prefill one long prompt in blocks, through the chunking mechanism that already exists, and price admission
@@ -1068,7 +1068,7 @@ KV2 merges when every arm on both boxes is read.
   dense Gemma families (head dim 256, and 512 on Gemma 4's global layers) still fall to the per-token path past 12,160 keys, at least 183 s and 276 s for a
   20,000-token prompt against about 17 s and 49 s batched. The paged-expert families do not decline; their cost is expert paging. **Built 2026-10-13 on
   `kv3-tiled-2026-10`** (record: `docs/measurements/kv3-tiled-exact-2026-10-13.md`, registered before the code, three amendments before their runs): three
-  row-batched kernels in their own module (`cuda/prefill_splitkv.cu`, decode's split-KV attention with the query row on the grid), taken by a layer whose
+  row-batched kernels in their own module (`backend/cuda/prefill_splitkv.cu`, decode's split-KV attention with the query row on the grid), taken by a layer whose
   exact attention is past the bound; nothing below the bound changes. **Day gates pass:** the kernels equal `attn_batched` bit for bit in 360 cases, a forced
   route equals `attn_batched` over a whole model pass, a batched exact pass past the bound equals the per-token path bit for bit on the tiny fixture (logits and
   every K and V row), and admission's figure equals the pass's allocations. **Night readings (2026-10-14, record §10):** speed PASS (Gemma-3-4B 5.68x, Gemma-4-E4B
@@ -1094,7 +1094,7 @@ KV2 merges when every arm on both boxes is read.
   - a Claude Code-sized first request on CUDA prefills in batched passes (night job; 45 s or less on Qwen3-4B).
 - **Size:** S.
 - **Inside a pass: what is left after chunking (added 2026-10-15; not started).** With passes bounded at 512 rows,
-  `cuda/prefill_scratch.go:cudaResident.PrefillScratchBytes` is about 69 MiB on the 1.5B and 148.5 MiB on the 7B (Qwen2.5
+  `backend/cuda/prefill_scratch.go:cudaResident.PrefillScratchBytes` is about 69 MiB on the 1.5B and 148.5 MiB on the 7B (Qwen2.5
   shapes, before the allocator's rounding), and the MLP is most of it: three `M × inter` f32 buffers, against 12–13% on the
   attention side. Two reductions, both bit-identical by construction. Each lowers the per-chunk admission figure, and so frees
   KV pool, since the pool is the budget minus everything else (§5.10). Neither is large; together they are about 1,000 tokens
@@ -1104,7 +1104,7 @@ KV2 merges when every arm on both boxes is read.
      the PLE path, `cudaResident.prefillCore`'s second `bSw` launch). That drops one `M × inter` buffer per pass: 17.5 MiB
      on the 1.5B, 37 MiB on the 7B, about 25%, roughly 640 tokens of f16 KV on either. The kernel declares `g` and `dscr`
      `__restrict__`, and aliasing restrict pointers is undefined behaviour, so this needs an in-place variant without it, a
-     PTX rebuild (`cuda/build_ptx.sh`), a bit-identity check against today's pass, and `PrefillScratchBytes` changed in the
+     PTX rebuild (`backend/cuda/build_ptx.sh`), a bit-identity check against today's pass, and `PrefillScratchBytes` changed in the
      same commit (`TestKV3_prefillScratchBytes_matchesThePass` holds the two together).
   2. **Phase aliasing, the pattern aikit v1.70.2 shipped for its encoder.** The attention-side buffers (`aqB`, `qBb`, `kBb`,
      `vBb`, `cctxB`, `cqB` and their scales) and the MLP-side ones become sub-buffers of one allocation sized to the larger
@@ -1258,11 +1258,11 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
 - **A first slice is built instead of this plan's (2026-11-02, `docs/measurements/kv7-demote-2026-11/`): per slot, demoted on release, because KV7-s1's snapshots already serve a preamble across conversations and the release was the uncovered gap.** The plan below stays for the index-keyed pool, should a reading ask for it.
 - **The plan (written 2026-11-02 for the day, nobara-sb01; no code yet): KV7-rest's first slice, a block host pool on CUDA.**
   - **What it builds:** KV4's full-group blocks demote to pinned host memory by block, not KV7-s1's whole-slot row snapshots.
-    A release (D-KV4-2's D5 step 3, idle and least recently used, `cuda/kvpool.go`) copies the slot's referenced blocks to host
+    A release (D-KV4-2's D5 step 3, idle and least recently used, `backend/cuda/kvpool.go`) copies the slot's referenced blocks to host
     before the device ids return to the pool. The host blocks are keyed by the prefix index's block hashes (§5.5), with the
     fingerprint and numerics epoch KV7's build list names. A later prompt that hits them promotes them back into free device
     blocks and rewrites its table, and `usage.prefill_reuse.promoted_blocks` counts them (§5.16 added the field at 0).
-  - **Where it starts:** `cuda/kvsnap.go` (`SnapshotKV`, `RestoreKV`: the pinned staging and the restore copy), the pools' take and
+  - **Where it starts:** `backend/cuda/kvsnap.go` (`SnapshotKV`, `RestoreKV`: the pinned staging and the restore copy), the pools' take and
     release, and `decoder/kvsnap.go`'s store and admission. The window group stays device-only in this slice.
   - **Gates, red first:**
     - a promoted prefix is bit-exact against the same prompt prefilled cold, logits compared;
@@ -1290,7 +1290,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
   where the checkpoint is taken, not only on whether.
 
 - **Next concrete step on CUDA (planned 2026-11-02 for the day, nobara-sb01; no code yet): state slots for the hybrids.**
-  - **Today:** CUDA forces one KV slot for a recurrent model (`cuda/backend.go:cudaKVSlotsRequest`), because a Gated-DeltaNet or
+  - **Today:** CUDA forces one KV slot for a recurrent model (`backend/cuda/backend.go:cudaKVSlotsRequest`), because a Gated-DeltaNet or
     Mamba-2 layer mutates one state in place. Metal already keeps each slot's own windows and states (`program.Metal`'s
     `RecurrentSlots`, `metal`'s `useKVSlot`), so CUDA is the gap.
   - **The slice:** each DeltaNet and Mamba layer holds `slots` copies of its window and state (`dnWin`, `dnState`, `mbWin`, `mbSSM`).
@@ -1309,7 +1309,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
 
 - **Plan and first slice, registered 2026-11-03 12:08 PST before any code (nobara-sb01; coordinator's item of 12:00 PST; card about 1 h by day).**
   - **What pools.** Not a shared pool of blocks: a recurrent state is compound, so it does not page. One conv window and one state per layer per KV slot, as Metal already keeps
-    (`metal/deltanet.go:resident.allocRecurrentSlots`). Binding a slot points the layer's launches at that slot's pair. The checkpoint stays one copy, which belongs to the slot that last saved
+    (`backend/metal/deltanet.go:resident.allocRecurrentSlots`). Binding a slot points the layer's launches at that slot's pair. The checkpoint stays one copy, which belongs to the slot that last saved
     it, as on Metal: a restore on another slot is refused and the decoder prefills from 0. A checkpoint per slot, the message-boundary position and admission are later slices.
   - **Who gets it.** `program.CUDA` claims `RecurrentSlots` for `OpDeltaNet` and `OpMamba2`, so `cudaKVSlotsRequest` reads `ResidentKVSlotsRequestFor("cuda")`. A hybrid still gets
     one slot unless the caller asked for slots (`ResidentKVSlotsIsDefault`), so a default load keeps its bytes. An expert-cache load stays at one, as it is today.
@@ -1319,7 +1319,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
     (as `ExtraBytes`, beside each further slot's KV), `kvChargedSlotsFit` (a slot that cannot hold its state is not granted) and `postPoolBytes`' caller in the memory plan.
     On the state line the build then leases `StateBytes` x slots.
   - **The memory gate.** `TestMemGate_cuda` already has `qwen35-tiny` at `slots2` and `slots4`, which build one slot on main. After this they build what they ask for, so the state
-    line's figure has to be per slot: the row's figure is `StateBytes` x the built slots. `cuda/testdata/memgate_gaps.txt` gains no row for it.
+    line's figure has to be per slot: the row's figure is `StateBytes` x the built slots. `backend/cuda/testdata/memgate_gaps.txt` gains no row for it.
   - **Gates, red first.** All tier 0 or tiny fixtures on the card, minutes.
     - **S-1, MC3 identity.** Two sequences interleaved token by token on two slots each equal the same sequence alone, bit for bit (logits), on `qwen35-tiny` (DeltaNet),
       `olmo_hybrid-tiny` (DeltaNet with its settings) and `nemotron-tiny` (Mamba-2). **Red first:** the claim made with one shared state must fail this test.
@@ -1540,11 +1540,11 @@ Added on the owner's word the same day, from the conversation that produced `doc
 - **Why: two managers split one memory by a fixed rule.**
   - A load that pages MoE experts keeps KV at 4,096 positions on CUDA and on Metal. The expert cache takes whatever is left
     after everything pinned, so every byte given to KV is a byte the experts never see.
-    - On CUDA, growing the context there "cut its slots and decode speed sharply" (`cuda/resident.go:resolveCtxCapFit`).
+    - On CUDA, growing the context there "cut its slots and decode speed sharply" (`backend/cuda/resident.go:resolveCtxCapFit`).
     - Metal keeps the same rule: "paged MoE keeps the default" (M2, `CHANGELOG.md`).
   - Three expert pagers keep three budgets:
     - CUDA's expert-slot cache, per layer (`-moe-cache-experts`, `-moe-cache-slots`);
-    - Metal's `metal/expertpool.go`, also per layer, under the same flags;
+    - Metal's `backend/metal/expertpool.go`, also per layer, under the same flags;
     - the CPU's `decoder/moepaging.go:expertPager`, one cache across layers (`-moe-pager`, and `-stream-weights` with
       `-weight-cache`).
   - So a paged-MoE user picks context or expert hit rate at load, by flag. Neither choice fits a mixed workload: a long agent
@@ -1573,7 +1573,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
 
     A design option for the build, not a decision. "First, measure" below still decides whether there is a build.
   - **Resizing is new.** Today CUDA sizes its expert cache once, at load and after KV, to the free memory it measures
-    (`cuda/resident.go:cudaResident.allocSlots`, `cuda/resident.go:expertCache`). Any buffer a captured CUDA graph segment
+    (`backend/cuda/resident.go:cudaResident.allocSlots`, `backend/cuda/resident.go:expertCache`). Any buffer a captured CUDA graph segment
     reads must keep its address, so slot buffers are allocated at their largest size up front, or the segments that read
     them are re-captured when they change.
   - An expert's lower tier is the mapping or host copy it is paged from (§5.8).
@@ -1662,7 +1662,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
   - lever 4's third step (KV10);
   - FreeToken Lead 4, pooling the CUDA expert cache across layers (KV11).
 - **Replaces when built:**
-  - `cuda/kvwindow.go`'s shifted view (KV4);
+  - `backend/cuda/kvwindow.go`'s shifted view (KV4);
   - the per-slot bookkeeping in `decoder/resident_reuse.go` (KV1);
   - `pickResidentSlot` and serve's preamble floor (KV1–KV2);
   - WebGPU's runner-per-slot if KV6 says so;
@@ -1931,14 +1931,14 @@ Code, read at `e2ffb953`:
   - `decoder/residentneed.go:Model.ResidentKVBytes`, `decoder/residentneed.go:Model.ResidentNeedBytes`;
   - `decoder/prefill_budget.go:Model.AdmitPrefillMemory`, `decoder/prefill_budget.go:prefillScratchBytes`.
 - **CUDA:**
-  - `cuda/margin.go:kvChargedSlotsFit`, `cuda/resident.go:ctxForSlots`, `cuda/resident.go:kvBytesForCap`,
-    `cuda/resident.go:resolveCtxCapFit`, `cuda/resident.go:cudaResident.checkKVFits`, `cuda/resident.go:cudaLayer`,
-    `cuda/resident.go:cudaResident.UseKVSlot`;
-  - `cuda/kvwindow.go:cudaResident.kvEnsure`, `cuda/kvwindow.go:cudaResident.ReusableKV`;
-  - `cuda/prefill_scratch.go:cudaResident.prefillBaseRows`, `cuda/batchstep.go:cudaResident.StepBatch`.
-- **Metal:** `metal/model.go:resolveMetalCtxCap`, `metal/backend.go:metalResident.UseKVSlot`,
-  `metal/batch.go:metalResident.StepBatch`, `metal/mc5_chunk_invariance_test.go:TestMC5_prefillChunkInvariance`.
-- **WebGPU:** `gpu/kv_slots.go:webgpuKVSlot`.
+  - `backend/cuda/margin.go:kvChargedSlotsFit`, `backend/cuda/resident.go:ctxForSlots`, `backend/cuda/resident.go:kvBytesForCap`,
+    `backend/cuda/resident.go:resolveCtxCapFit`, `backend/cuda/resident.go:cudaResident.checkKVFits`, `backend/cuda/resident.go:cudaLayer`,
+    `backend/cuda/resident.go:cudaResident.UseKVSlot`;
+  - `backend/cuda/kvwindow.go:cudaResident.kvEnsure`, `backend/cuda/kvwindow.go:cudaResident.ReusableKV`;
+  - `backend/cuda/prefill_scratch.go:cudaResident.prefillBaseRows`, `backend/cuda/batchstep.go:cudaResident.StepBatch`.
+- **Metal:** `backend/metal/model.go:resolveMetalCtxCap`, `backend/metal/backend.go:metalResident.UseKVSlot`,
+  `backend/metal/batch.go:metalResident.StepBatch`, `backend/metal/mc5_chunk_invariance_test.go:TestMC5_prefillChunkInvariance`.
+- **WebGPU:** `backend/webgpu/kv_slots.go:webgpuKVSlot`.
 - **Serve:** `internal/serveapp/sessions.go:sessionLRU`, `internal/serveapp/sessions.go:bestExtend`,
   `internal/serveapp/sessions.go:pickSession`, `internal/serveapp/admission.go:admission`,
   `internal/serveapp/main.go:modelFingerprint`.

@@ -72,11 +72,11 @@ func TestGPURecord_coversLaterCommitsOnlyIfTheCodeIsUnchanged(t *testing.T) {
 	if r, why := gpuCoverage(recs, "cuda", docs, treeOf); r == nil {
 		t.Fatalf("a docs-only change voided the run: %s", why)
 	}
-	for _, d := range []string{"metal", "cuda", "gpu", "decoder"} { // RELEASING.md's four, spelled out so the rule cannot be edited out from under its test
+	for _, d := range []string{"backend/metal", "backend/cuda", "backend/webgpu", "decoder"} { // RELEASING.md's four, spelled out so the rule cannot be edited out from under its test
 		gitIn(t, dir, "checkout", "-q", "-B", "from-"+d, ran) // each change on its own, from the commit the run was made at
 		head := commit(d+"/f.txt", "code edit")
 		r, why := gpuCoverage(recs, "cuda", head, treeOf)
-		if r != nil || !strings.Contains(why, d+"/ changed since") {
+		if r != nil || !strings.Contains(why, labelPath(d)+"/ changed since") {
 			t.Errorf("a change under %s/ left the run covering the commit (%v, %q)", d, r, why)
 		}
 	}

@@ -66,7 +66,7 @@ option-path work (`ActQuantGroup` ignored on Metal, a87304e3) showed a cell can 
 KV precision's phase 0 already gave `KVPrecision` its own CUDA cells (`ogWithCUDA`, bcc6b536). **Owner, 2026-10-21: every
 option gets CUDA cells.** How the new cells enter the ratchet (`decoder/optiongrid.go:optionGridUntestedCeiling` is 0) is the
 builder's to register before the code. It includes the one CUDA case the Metal round left open: a CUDA twin of
-`metal/optiongrid_metal_test.go:TestOptionPathMetal_prefillChunk` at chunk sizes below CUDA's prefill floor
+`backend/metal/optiongrid_metal_test.go:TestOptionPathMetal_prefillChunk` at chunk sizes below CUDA's prefill floor
 (`docs/completed/task-option-path-admission-2026-10.md` §4.3, "not exercised here"). nobara, M.
 
 **G47 · A family × path grid for what no forward program reaches: loading and serializing, tokenizer dispatch, chat-template
@@ -101,7 +101,7 @@ request against the declaration and declines by name, and, if it can be made mec
 kernel has no declaration. Start from the 19 B findings, which name most of the kernels. Either box, M.
 
 **G53 · Metal and CUDA: admission claims whole-vector QK-norm, and the build refuses it on a GQA model** — `metal`, `cuda`, **filed 2026-11-03 (mac-sb11m, from Gemini's review of #627); not started**
-- `metal/model.go:buildResident` and `cuda/backend.go` decline a layer with `QKNormWhole` at `nH != nKV`, while `residentBackendFeatures` claims `FeatQKNormWhole` for any KV heads. So `Admit` says resident and the load runs on the CPU. The review says real Olmo 3 checkpoints are GQA; no checkpoint here could confirm that, so read one's `num_key_value_heads` first.
+- `backend/metal/model.go:buildResident` and `backend/cuda/backend.go` decline a layer with `QKNormWhole` at `nH != nKV`, while `residentBackendFeatures` claims `FeatQKNormWhole` for any KV heads. So `Admit` says resident and the load runs on the CPU. The review says real Olmo 3 checkpoints are GQA; no checkpoint here could confirm that, so read one's `num_key_value_heads` first.
 - WebGPU's restriction came off on #627, with a generated GQA tiny case (`olmo3GQAFixture`). The same check for these two needs their QK-norm dispatches to take Q's and K's widths apart: Metal's whole-vector launch sizes its grid from a single head dimension, so it is real work there. Either box, M.
 
 **G52 · WebGPU: `Model.PrefillPath` says "batched" for models the batched pass declines** — `gpu`, **filed 2026-11-03 (mac-sb11m, verifying OW); not started**
@@ -117,23 +117,23 @@ kernel has no declaration. Start from the 19 B findings, which name most of the 
 **G44 · Metal re-quantizes a Gated-DeltaNet model's int8 weights to int4 instead of declining** — `metal`, **filed 2026-10-15
 (owner); built 2026-10-16 (branch `g44-deltanet-int8-decline-2026-10`)**
 
-Metal's native int8 path covers no recurrent family (`metal/model.go:w8Eligible`: its first slice excludes DeltaNet), so a Qwen3.5,
+Metal's native int8 path covers no recurrent family (`backend/metal/model.go:w8Eligible`: its first slice excludes DeltaNet), so a Qwen3.5,
 Qwen3-Next or Olmo Hybrid model loaded at int8int8 runs resident with its attention, MLP and DeltaNet projections re-quantized to
 int4 (`upload` and `fuse` fall back to `int4BufA` / `int4ConcatA`). Checked 2026-10-15 on `qwen35-tiny`: resident at int8int8, decode
 path "metal-resident (int8int8→int4, no Metal int8 GEMV kernel)". The path label names it, but the model does not run at the int8 it
 was loaded with.
 
-**The fix, as Nemotron-H's (OP2b, `metal/mamba.go:buildMamba`):** at int8 Metal declines the model as resident and the CPU runs it
+**The fix, as Nemotron-H's (OP2b, `backend/metal/mamba.go:buildMamba`):** at int8 Metal declines the model as resident and the CPU runs it
 at real int8. Native int8 for recurrent families is a later slice of `docs/tasks/task-metal-int8-2026-10.md`.
 
 **Gate (tier 0):** `qwen35-tiny` at int8int8 does not go resident on Metal; at int4 it does, unchanged. Planted defect: no decline,
 which must turn it red.
 
 **Built 2026-10-16:**
-- **The decline:** `metal/deltanet.go:buildDeltaNet` declines when `recurrentInt8Load` says the load is int8, int8int8 or int4mix.
+- **The decline:** `backend/metal/deltanet.go:buildDeltaNet` declines when `recurrentInt8Load` says the load is int8, int8int8 or int4mix.
   - That predicate reads the load's quant label (`decoder.Model.Quant`), not `ResidentProjsInt4`. The latter reads `qwen35-tiny`
     (a MoE: no MLP up-projection, attention outside `QProj`) as non-int4 even at int4, which would decline every load.
-  - `metal/mamba.go:buildMamba` takes the same predicate as well, so Nemotron-H at int4mix (int4 MLP, int8 attention) now
+  - `backend/metal/mamba.go:buildMamba` takes the same predicate as well, so Nemotron-H at int4mix (int4 MLP, int8 attention) now
     declines too, where its int8 attention used to be re-quantized.
 - **Gate:** `TestG44_deltaNetInt8Declines` PASS. int8int8 gives the int4-only decline, and through the backend it runs on
   the CPU. int4 builds. The planted defect (`dnetInt8DeclineOffForTest`) turns it red.

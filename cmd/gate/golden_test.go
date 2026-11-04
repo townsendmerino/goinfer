@@ -143,7 +143,7 @@ func runGoldenCase(t *testing.T, dir string) {
 	}
 	recorded, used := map[string]string{}, map[string]bool{}
 	look := func(kind string, args ...string) (string, error) {
-		key := kind + "\x00" + strings.Join(args, "\x00")
+		key := lookupKey(kind, args...)
 		used[key] = true
 		if *updateGoldens {
 			v, err := liveLookup(kind, args...)
@@ -155,6 +155,14 @@ func runGoldenCase(t *testing.T, dir string) {
 		v, ok := c.Lookups[key]
 		if *updateGoldens {
 			v, ok = recorded[key], true
+		}
+		if !ok && !*updateGoldens {
+			if v, err, handled := absentBeforeMove(kind, args, func(k string, a ...string) bool {
+				_, ok := c.Lookups[lookupKey(k, a...)]
+				return ok
+			}); handled {
+				return v, err
+			}
 		}
 		if !ok {
 			t.Fatalf("the grader asked for %s %q, which the case did not record (run -update-goldens)", kind, args)
@@ -197,6 +205,10 @@ func runGoldenCase(t *testing.T, dir string) {
 	if got != string(w) {
 		t.Errorf("the grader's verdict differs from %s:\n%s", want, lineDiff(string(w), got))
 	}
+}
+
+func lookupKey(kind string, args ...string) string {
+	return kind + "\x00" + strings.Join(args, "\x00")
 }
 
 // liveLookup answers a lookup from the repository's git, only while capturing.
@@ -410,7 +422,9 @@ func gradeGoldenGPUCoverage(t *testing.T, dir string, c *goldenCase, look lookup
 	if err != nil {
 		t.Fatal(err)
 	}
-	treeOf := func(rev, d string) (string, error) { return look("tree", rev, d) }
+	treeOf := func(rev, d string) (string, error) {
+		return treeAt(func(r, dd string) (string, error) { return look("tree", r, dd) }, rev, d)
+	}
 	var b strings.Builder
 	for _, head := range c.Heads {
 		for _, be := range []string{"cuda", "metal"} {
@@ -440,7 +454,9 @@ func gradeGoldenParityCoverage(t *testing.T, dir string, c *goldenCase, look loo
 			t.Fatal(err)
 		}
 	}
-	objOf := func(rev, p string) (string, error) { return look("object", rev, p) }
+	objOf := func(rev, p string) (string, error) {
+		return objectAt(func(r, pp string) (string, error) { return look("object", r, pp) }, rev, p)
+	}
 	var b strings.Builder
 	for _, head := range c.Heads {
 		r, why := parityCoverage(recs, head, c.Paths, objOf)

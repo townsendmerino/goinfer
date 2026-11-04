@@ -29,7 +29,7 @@ var (
 )
 
 // compSearchDirs mirrors the directories the Python looked in for a gate's test source.
-var compSearchDirs = []string{"decoder", "cuda", "metal", "tokenizer", "internal"}
+var compSearchDirs = []string{"decoder", "backend/cuda", "backend/metal", "tokenizer", "internal"}
 
 type compRow struct{ Family, Test, Quant, Loader string }
 

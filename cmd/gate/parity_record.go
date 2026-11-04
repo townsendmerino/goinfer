@@ -193,7 +193,7 @@ func writeParityRecord(w io.Writer, root, recordDir string, run parityRun) {
 	if mb, err := paritykey.ManifestJSON(paritykey.Dir(root)); err == nil {
 		if paths, err := parityQualifyingPaths(mb); err == nil {
 			for _, p := range paths {
-				if id, err := gitObject(root, full, p); err == nil && id != "" {
+				if id, err := objectAt(func(r, pp string) (string, error) { return gitObject(root, r, pp) }, full, p); err == nil && id != "" {
 					rec.Paths[p] = id
 				}
 			}

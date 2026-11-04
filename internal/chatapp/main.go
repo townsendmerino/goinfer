@@ -232,8 +232,8 @@ goinfer-chat is the single-shot chat runtime; the server (OpenAI/Anthropic route
 zoo, streaming) is a separate binary:
 
     go install github.com/townsendmerino/goinfer/cmd/serve@latest      # CPU
-    go install github.com/townsendmerino/goinfer/metal/cmd/serve@latest # macOS GPU
-    CGO_ENABLED=0 go install -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve@latest
+    go install github.com/townsendmerino/goinfer/backend/metal/cmd/serve@latest # macOS GPU
+    CGO_ENABLED=0 go install -tags cuda github.com/townsendmerino/goinfer/backend/cuda/cmd/serve@latest
 
 or download goinfer-serve-<os>-<arch> from the latest release. It installs as `+"`serve`"+`.
 `, filepath.Base(os.Args[0]), serveOnly)

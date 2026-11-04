@@ -176,7 +176,7 @@ precision.
 |---|---|---|---|---|
 | aikit CPU amd64 | Go (`linalg/quant.go`) | dotI8 AVX2/VNNI, Tile4x1 asm | fold AVX2/VNNI, tile, splithalf asm | hard (asm) |
 | aikit CPU arm64 | Go + NEON asm | dotI8 NEON/SDOT, Tile4x4 asm | ~12 SDOT kernels + tiles | hard (asm) |
-| aikit CUDA (`gpu/gemv_quant.cu`) | none | gemv_w8a8_fwd | gemv_w4a8_fwd | medium (PTX regen) |
+| aikit CUDA (`backend/webgpu/gemv_quant.cu`) | none | gemv_w8a8_fwd | gemv_w4a8_fwd | medium (PTX regen) |
 | goinfer CUDA | 10 kernels + 4 fused | gemv_w8a8_batched | rn, mma, moe×3, fused×4 | medium–hard (frozen PTX) |
 | Metal | 8 kernels | 3 | ~13 | easy–medium |
 | WebGPU | host + 6 shaders | 9 | 3 | easy–medium |
@@ -198,7 +198,7 @@ precision.
 5. **`gemm_w4a8_mma`** applies the activation scale in its epilogue. It needs a shared-memory scale tile
    of one scale per row per group, for each KSTEP.
 6. **Every Go caller that sizes `aSc` / `aScales`** as 1 or M must be resized: CUDA bindings, the Metal
-   and WebGPU callers, the LoRA hooks, and the host dequant in `cuda/prefill.go`.
+   and WebGPU callers, the LoRA hooks, and the host dequant in `backend/cuda/prefill.go`.
 7. **Every precision golden re-baselines:**
    - `testdata/int4_forward_goldens.json` (+ `scripts/refresh_parity_hashes.sh`);
    - `testdata/metal_snapshot_golden.json`;

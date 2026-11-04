@@ -25,8 +25,8 @@ var guardThresholds = map[string]string{
 // thresholdRatchet is each file outside mem that still applies a guard threshold itself, and how many references it makes:
 // the backends' own guards, which MM2 moves into mem. A count may only fall, and a file leaves the list when it reaches 0.
 var thresholdRatchet = map[string]int{
-	"gpu/kv_slots.go":  2,
-	"metal/backend.go": 3,
+	"backend/webgpu/kv_slots.go": 2,
+	"backend/metal/backend.go":   3,
 }
 
 // thresholdUses counts the references to a guard threshold in f, less the ones in a constant declaration that only aliases

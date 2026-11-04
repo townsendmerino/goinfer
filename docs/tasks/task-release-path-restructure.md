@@ -15,7 +15,7 @@ item:
 - **T1 (instruments are not gates)** — effectively shipped, but by a different
   mechanism than this doc proposed. Rather than moving instruments to
   `cuda/instruments/` or a build tag, the tree grew a runtime marker
-  (`drainsDevice` in `cuda/drain_marker_test.go`): a test that calls it SKIPS in
+  (`drainsDevice` in `backend/cuda/drain_marker_test.go`): a test that calls it SKIPS in
   the main tier (`DRAIN-GROUP-SKIP`) unless `GOINFER_DRAIN_GROUP=1`, and
   `cmd/gate/gpu.go`'s `runGPU` runs the marked set in a second, separate process
   ("drain group") after everything else, then reconciles skip-count against

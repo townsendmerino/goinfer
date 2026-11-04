@@ -32,7 +32,7 @@ already answered separately (`reduction-tree-accuracy-2026-09-12.md`).
 
 ## The cheap fix `scores` actually wants, and it is bit-identical
 
-`cuda/decode_splitkv.cu:28-42`. `qh = q + h*hd` depends only on `h = blockIdx.x`, so it is
+`backend/cuda/decode_splitkv.cu:28-42`. `qh = q + h*hd` depends only on `h = blockIdx.x`, so it is
 **block-invariant** — and every one of the 128 threads re-loads the same 32 `float4` of q from
 global inside the inner loop:
 

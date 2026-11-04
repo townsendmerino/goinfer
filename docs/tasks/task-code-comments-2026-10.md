@@ -29,7 +29,7 @@ a ceiling on what moves, not a forecast: a marked comment is often a guardrail p
 
 Two examples of the long form:
 
-- `gpu/internal/kernels/prefillrunner.go:runModelToModelW` — 81 comment lines over the function, about 60 of them the 2026-09-12
+- `backend/webgpu/internal/kernels/prefillrunner.go:runModelToModelW` — 81 comment lines over the function, about 60 of them the 2026-09-12
   debugging story of the bias divergence: two causes, their fixes, a fused-residual attempt that regressed and was
   removed, and advice to whoever picks it up next.
 - the fast-attention guard in `decoder/forwardn.go:Model.runLayersFromEmbedN` — 78 lines, including a timing table and
@@ -37,7 +37,7 @@ Two examples of the long form:
 
 What it costs:
 
-- **Every read.** A session that opens `decoder/residency.go` (941 comment lines of 1,816) or `cuda/resident.go`
+- **Every read.** A session that opens `decoder/residency.go` (941 comment lines of 1,816) or `backend/cuda/resident.go`
   (1,559 of 4,330) reads the history before it reaches the code, on most turns of most campaigns.
 - **Stale claims.** About 600 comment lines quote measured figures and about two dozen state open work ("STILL OPEN",
   "whoever picks this up next", "UNVERIFIED"). `CLAUDE.md`'s retraction rule says to grep for a struck figure with its
@@ -80,8 +80,8 @@ They are converted as their package is worked.
 **Directive comments are code.** `//go:build`, `//go:embed`, `//go:generate`, `//nolint` and `//lint:ignore` (15 today),
 and an Example's `// Output:` block (one file) are never edited by this task; CC2 refuses a diff that touches them.
 
-Before and after, `gpu/internal/kernels/prefillrunner.go:runModelToModelW` (81 lines → 12; the Vulkan-only bias check it describes is
-current, in `gpu/residency.go:webgpuBackend.BuildResident`):
+Before and after, `backend/webgpu/internal/kernels/prefillrunner.go:runModelToModelW` (81 lines → 12; the Vulkan-only bias check it describes is
+current, in `backend/webgpu/residency.go:webgpuBackend.BuildResident`):
 
 ```go
 // runModelToModelW narrows a resident runModel to the plain dense-W8A8 ModelW
@@ -130,10 +130,10 @@ carries open findings (`docs/audit-2026-09-10.md`'s open half) stays pinned: whe
 checked by whoever works it.
 
 **CC0.b Live docs name the declaration.** The form is `path.go:Name`, or `path.go:Type.Method` for a method —
-`decoder/forwardn.go:Model.forwardN`, `gpu/residency.go:residentDecoder.PrefillLast`. The lint checks that the file
+`decoder/forwardn.go:Model.forwardN`, `backend/webgpu/residency.go:residentDecoder.PrefillLast`. The lint checks that the file
 declares that name (func, method, type, or a const or var, including inside a block). That survives every edit that does
 not rename or move the declaration, and a rename is exactly when the doc should go red. For one statement inside a long
-function, name the function and quote a short fragment in the prose — `gpu/residency.go:webgpuBackend.BuildResident`,
+function, name the function and quote a short fragment in the prose — `backend/webgpu/residency.go:webgpuBackend.BuildResident`,
 "`mw.hasBias() && c.Backend() != "vulkan"`"; the lint checks the name, the reader finds the fragment. The lint's
 `anchor_for` already derives a line's enclosing declaration, so the migration is mostly mechanical: rewrite each live
 `path:line` to `path:Name`, and list the ones outside any declaration (file-level comments, import blocks) for hand
@@ -191,7 +191,7 @@ seen red has not been shown to work.
 
 ## 6. CC3 — pilot, with the expectation written first
 
-> **Pilot done 2026-10-09: the result is below the band.** Comment lines `gpu/prefillrunner.go` 248 → 154 (−38%),
+> **Pilot done 2026-10-09: the result is below the band.** Comment lines `backend/webgpu/prefillrunner.go` 248 → 154 (−38%),
 > `decoder/residency.go` 941 → 776 (−18%), together 1,189 → 930 (−22%): under the 25% line below, so the owner decides (§10.1)
 > before any rollout. What the numbers say: only 32 of the 248 and 97 of the 941 comment lines carry a history marker at all (the §1
 > ceiling), so the two files are mostly contract, and `residency.go` is mostly interface documentation. The history that was there
@@ -199,12 +199,12 @@ seen red has not been shown to work.
 > "a sentence or two" with nothing dropped, listed as NOT FOUND by the moved-text report. Going further means cutting contract.
 >
 > **Rule adjusted, pass 2 (2026-10-09, owner: "adjust the rule").** The rule gained the "Length is part of the rule" paragraph
-> (§2, `CLAUDE.md`), and the pilot files were tightened to it: `gpu/prefillrunner.go` 248 → 132 (−47%), `decoder/residency.go` 941 → 705
+> (§2, `CLAUDE.md`), and the pilot files were tightened to it: `backend/webgpu/prefillrunner.go` 248 → 132 (−47%), `decoder/residency.go` 941 → 705
 > (−25%), together 1,189 → 837 (−30%). The band is met for `gpu`; `decoder/residency.go`, interface documentation almost
 > throughout, stays under it, and what remains there is contract. Expect a rollout to land between the 25% line and the
 > band for contract-heavy packages and inside it for the ones the §1 census names (`cuda`, `metal`, `gpu`, `cmd/gate`).
 
-Files: `gpu/prefillrunner.go` (248 comment lines of 1,039) and `decoder/residency.go` (941 of 1,816). Neither has an open
+Files: `backend/webgpu/prefillrunner.go` (248 comment lines of 1,039) and `decoder/residency.go` (941 of 1,816). Neither has an open
 branch against it on 2026-10-09. `decoder/forwardn.go` was the first choice; it is out because `s10-pixtral` edits it.
 
 **Expected band:** comment lines in the two files fall 40–65%.
@@ -277,7 +277,7 @@ that branch merges; rewriting a comment block someone else is editing guarantees
 > every `docs/code-notes` pointer in the Go comments against the notes headings: 141 checked, 0 unresolved.
 
 > **Wave C done 2026-10-09 (CC5, fourteen agent branches merged, not pushed).** All `_test.go` files except 17 that unmerged branches edit
-> (nine in `metal`, three in `gpu`, `cuda/actgroup_kernel_test.go`, three more `metal` ones, `internal/hwcensus/census_test.go`). Comment lines before → after:
+> (nine in `metal`, three in `gpu`, `backend/cuda/actgroup_kernel_test.go`, three more `metal` ones, `internal/hwcensus/census_test.go`). Comment lines before → after:
 >
 > | package | before → after | cut | history-marked |
 > |---|---|---|---|
@@ -302,10 +302,10 @@ that branch merges; rewriting a comment block someone else is editing guarantees
 >
 > | files | before → after | cut |
 > |---|---|---|
-> | `metal/model.go`, `prefill.go`, `moe.go` | 1,677 → 1,399 | −17% (most of `prefill.go` is protected kernel text) |
+> | `backend/metal/model.go`, `prefill.go`, `moe.go` | 1,677 → 1,399 | −17% (most of `prefill.go` is protected kernel text) |
 > | `metal` backend, kernels, `gemma4_moe`, alias, gumbel files and 11 test files | 1,136 → 746 | −34% |
-> | `cuda/resident.go` (and `actgroup_kernel_test.go`, left as is) | 1,558 → 1,176 | −25% |
-> | `gpu/decoderunner.go`, `residency.go` and 3 test files | 923 → 611 | −34% |
+> | `backend/cuda/resident.go` (and `actgroup_kernel_test.go`, left as is) | 1,558 → 1,176 | −25% |
+> | `backend/webgpu/decoderunner.go`, `residency.go` and 3 test files | 923 → 611 | −34% |
 > | `decoder/normnoise.go`, `testhooks.go`, `knobs.go` | 226 → 193 | −14% |
 > | **total** | **5,520 → 4,125** | **−25%** |
 >
@@ -368,14 +368,14 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
 1. **After CC3:** roll out as is, adjust the rule, or stop at CC0 (which pays for itself without the rest).
 2. **After CC4:** CC6's diff mode stays a warning or becomes a refusal.
 3. **Open work found in comments with no owning doc** — listed here as packages are done:
-   - **`gpu/kv_slots.go:slotsBeforeContext`**: context shrinking on a discrete Vulkan GPU waits on a measurement of how a failed
+   - **`backend/webgpu/kv_slots.go:slotsBeforeContext`**: context shrinking on a discrete Vulkan GPU waits on a measurement of how a failed
      allocation behaves on real Vulkan hardware (`docs/QUEUE.md` says only "clamp-only"). `docs/code-notes/gpu.md#slotsBeforeContext`.
-   - **`gpu/attention.go` (top of file)**: Metal's `float(pos)*invf[dd]` sin/cos pattern is unmeasured at long context.
+   - **`backend/webgpu/attention.go` (top of file)**: Metal's `float(pos)*invf[dd]` sin/cos pattern is unmeasured at long context.
      `docs/code-notes/gpu.md`, section "Stage 3 attention primitives: long-context RoPE".
-   - **`metal/batch.go:promptStepAboveFloor`** is off "until the owner decides", and **`metal/paged_fence.go:pagedFenceOn`** is off
+   - **`backend/metal/batch.go:promptStepAboveFloor`** is off "until the owner decides", and **`backend/metal/paged_fence.go:pagedFenceOn`** is off
      (measured 0.85-0.88x); neither has a queue entry. The `pagedFenceOn` "re-measure on M26 before turning it on" is the wave-A
      agent's gloss, not the original text.
-   - **`cuda/vision_encoder.go:addInPlaceHost`**: the tower's residual add round-trips through the host; a device-side kernel was
+   - **`backend/cuda/vision_encoder.go:addInPlaceHost`**: the tower's residual add round-trips through the host; a device-side kernel was
      noted as a natural follow-on. `docs/code-notes/cuda.md`.
    - **`cmd/gate/grade_parity.go:whyNoResult`** checks `-run` selection only, not build-tag reachability, so a tagged test that cannot
      compile is reported as "selected … but reported nothing". Recorded only in `docs/completed/audit-2026-09-02.md` (N-41).
@@ -415,13 +415,13 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
      encoder hit a probabilistic crash; `chat` `TestMistral_toolCallIDIsNotYetRendered`: goinfer emits neither the call id nor `call_id` Mistral's template carries;
      `cmd/gate/parity_test.go:TestParity_missingGateSaysWhichCause`: `whyNoResult` cannot tell a never-compiled tagged test (same gap as `cmd/gate/grade_parity.go:whyNoResult`).
    - **Stale comments the agents could not fix because they are code** (strings): `cmd/gate` `vramNote` says `docs/QUEUE.md A12` (it is in `docs/queue-engineering.md`) and
-     a `neverConfirmed` value says "STILL TRUE 2026-09-18"; `metal/alias_fixtures_test.go` has a `t.Errorf` that says weights format v14 (the writer emits v15);
-     `gpu/internal/kernels/decoderunner.go:attnHeadDimSupported` and `metal/depth_bench_test.go` (`metalCtxCapMax=4096`, now 32768) still say the old limits; `cuda/prefill_deltanet.go` has no
+     a `neverConfirmed` value says "STILL TRUE 2026-09-18"; `backend/metal/alias_fixtures_test.go` has a `t.Errorf` that says weights format v14 (the writer emits v15);
+     `backend/webgpu/internal/kernels/decoderunner.go:attnHeadDimSupported` and `backend/metal/depth_bench_test.go` (`metalCtxCapMax=4096`, now 32768) still say the old limits; `backend/cuda/prefill_deltanet.go` has no
      build line but uses types the tagged files define, so an untagged `go vet ./cuda/` cannot build.
    - Already owned, listed so they are not re-found: `cuda` `PrefillSeedArgmax` cannot be cancelled (`docs/queue-performance.md`);
      `constrain` N-79 control tokens in constrained JSON strings (`docs/audit-2026-09-10.md`, deferred); `metal` qGate LoRA gap
      (`docs/tasks/task-gpu-paths-2026-09.md`).
-   - **`gpu/internal/kernels/prefillrunner.go:runModelToModelW`** (CC3 pilot): bias prefill on Metal still diverges past nKeys~15 (cosine
+   - **`backend/webgpu/internal/kernels/prefillrunner.go:runModelToModelW`** (CC3 pilot): bias prefill on Metal still diverges past nKeys~15 (cosine
      ~0.997-0.999 against sequential decode, not float noise), while Vulkan is bit-exact. The comment named the next step: a
      fused residual-epilogue kernel for O-proj/down-proj (the first attempt regressed Vulkan and was removed), isolated
      tests before wiring, and a check of whether the §3.2 pooled fidelity gate (`docs/completed/task-prefill-gap.md`)
@@ -440,12 +440,12 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
      `fastAttnMinPrompt`; the body loads the dense checkpoint only.
    - `decoder/sidecar_stream_families_test.go:TestStreamTranscode_perFamilyBodiesCarryTheirLayers`: named five GGUF families; the table drives gpt-oss and
      the glm-tiny control.
-   - `cuda/prefill_moe_test.go:TestPrefillMoE_bitIdentical`: "both fixtures are exercised"; one subtest declines and skips, the other's weights are
-     absent in a fresh worktree. `cuda/siglip_vision_test.go`: of three planted defects, two are asserted and one is only logged.
+   - `backend/cuda/prefill_moe_test.go:TestPrefillMoE_bitIdentical`: "both fixtures are exercised"; one subtest declines and skips, the other's weights are
+     absent in a fresh worktree. `backend/cuda/siglip_vision_test.go`: of three planted defects, two are asserted and one is only logged.
    - `internal/serveapp/admin_test.go:TestServe_admin` claimed an unload-while-busy 409 it never exercises; `bodycaps_routes_test.go` claimed
      `visionCap = textCap + 32 MiB` and asserts only `visionCap > textCap`.
-   - `metal/snapshot_golden_test.go:TestMetalSnapshotGolden`: which fixture covers which kernel is by construction, not asserted.
-   - `gpu/granite_resident_speedup_test.go`, `kv_f16_fit_test.go`, `backend_w4a8_batch_test.go`: speed and one-submit claims the bodies only log or do not count.
+   - `backend/metal/snapshot_golden_test.go:TestMetalSnapshotGolden`: which fixture covers which kernel is by construction, not asserted.
+   - `backend/webgpu/granite_resident_speedup_test.go`, `kv_f16_fit_test.go`, `backend_w4a8_batch_test.go`: speed and one-submit claims the bodies only log or do not count.
    - Also corrected, smaller: `TestGemma3Real` (bar 0.9999 vs asserted 0.999), `TestFitGuard`-adjacent Gemma 4 admission and E-model
      comments, `TestMinistral3ResidentParityCUDA` ("32/32 exact argmax" is logged, not asserted), `TestPrefillGateVsReferenceCUDA` (cells 256/1024 vs
      `decisionKs` 512/1024), `TestA10ReportingGap`, `TestGemma4MoE_localize`, `TestQKNorm_wholeVector`, `TestIsVersionArg_recognizesAllForms`.

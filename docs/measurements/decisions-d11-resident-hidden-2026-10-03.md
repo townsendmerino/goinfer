@@ -16,7 +16,7 @@ D11 gave the Clef joint head its input on the CPU: `Model.PromptHiddenAll` retur
   - Every layer writes its residual into `r.x`: `encodeLayerWith` passes `r.x` as the residual buffer.
   - The final norm's kernels (`rmsnorm_quant`, `layernorm_quant`) take `x` as `device const float*`, so they only read it.
   - So once the trunk has run, `r.x` holds the last layer's output untouched by the norm. There is no ping-pong buffer and no in-place norm.
-- **`metalResident.ResidualAll`** (`metal/backend.go`) is `HiddenLast`'s loop. Per position it runs one `forwardHiddenNoHead(emb, startPos+i, false)` (one command-buffer
+- **`metalResident.ResidualAll`** (`backend/metal/backend.go`) is `HiddenLast`'s loop. Per position it runs one `forwardHiddenNoHead(emb, startPos+i, false)` (one command-buffer
   submit), then copies `r.x[:H]` into a fresh row.
   - The guards are `HiddenLast`'s exactly: a paged MoE declined, `checkCap`, `Reset` at `startPos == 0` (DeltaNet), `ctx.Err()` per token, `takeExecErr` per token, and the
     embedding-width check. The rows come back only after every token succeeded.
@@ -49,7 +49,7 @@ D11 gave the Clef joint head its input on the CPU: `Model.PromptHiddenAll` retur
 
 ## On the real weights (EXPLORATORY: three records, one run by day, never quoted as a result)
 
-`cuda/cmd/serve` built with `-tags cuda`, `-model clef=~/models/clef-flash -backend cuda -quant int4`, nobara's RTX 2070 SUPER (8 GB), `POST /v1/systemone` with the first three D10 records. Load took 48 s; the decode path read `cuda-resident (int4)`. The same three records were then run through the full-precision harness in the cuda module (`cuda/clef_fidelity_test.go`), twice: with the token-embedding/LM-head table stored at int4 (`--embed-int4`, which serve and the CLIs turn ON by default with `-quant int4`) and at the int8 pin (the flag off).
+`cuda/cmd/serve` built with `-tags cuda`, `-model clef=~/models/clef-flash -backend cuda -quant int4`, nobara's RTX 2070 SUPER (8 GB), `POST /v1/systemone` with the first three D10 records. Load took 48 s; the decode path read `cuda-resident (int4)`. The same three records were then run through the full-precision harness in the cuda module (`backend/cuda/clef_fidelity_test.go`), twice: with the token-embedding/LM-head table stored at int4 (`--embed-int4`, which serve and the CLIs turn ON by default with `-quant int4`) and at the int8 pin (the flag off).
 
 | record | tokens | time | per token | GPU, table int4 (as served) | GPU, table int8 pin | CPU int4, int8 pin | CPU int8int8 | CPU q4k |
 |---|---|---|---|---|---|---|---|---|

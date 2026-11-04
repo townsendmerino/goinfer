@@ -5,7 +5,7 @@ The build for `docs/tasks/task-kernel-survey-2026-10.md` KS-A5. Its first measur
 4,864) at **55.2%** of DRAM peak. A K = 896 row is 112 words: three serialized load rounds of 64, 32 and 16 words a warp,
 each waiting on the previous round's FMAs. The item waited for KS-A2 (#191), since the gain needs decode to be GPU-bound.
 
-**The change** (`cuda/fused_qkv.cu`, `fused_qkv.ptx` regenerated; today's source first reproduced the committed PTX byte for byte):
+**The change** (`backend/cuda/fused_qkv.cu`, `fused_qkv.ptx` regenerated; today's source first reproduced the committed PTX byte for byte):
 - A lane's words in a row are `lane + 32m` for m ascending; the old 2×-unrolled loop and its tail visit them in that order,
   and the FMA chain runs in that order.
 - A row of at most 256 words (K ≤ 2,048) loads all of its words and group scales in one round (`fq_load`), then runs the

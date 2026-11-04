@@ -435,7 +435,7 @@ func TestGPU_withGoBinPrependsGOPATHBin(t *testing.T) {
 // The build script's execute bit is read only where the OS has one. On Windows every file's mode has none, and a check there
 // ended the PTX group with "missing" before it reached the count that says nothing was verified.
 func TestPTXScriptDecline_executeBitOnlyWhereTheOSHasOne(t *testing.T) {
-	st, err := os.Stat(filepath.Join("..", "..", "cuda", "build_ptx.sh"))
+	st, err := os.Stat(filepath.Join("..", "..", "backend", "cuda", "build_ptx.sh"))
 	if err != nil {
 		t.Fatalf("cuda/build_ptx.sh: %v", err)
 	}
@@ -472,7 +472,7 @@ func (m modeInfo) Mode() os.FileMode { return m.mode }
 // box that has one.
 func TestGatePTX_nothingVerifiedIsRed(t *testing.T) {
 	t.Chdir(filepath.Join("..", ".."))
-	if _, err := os.Stat(filepath.Join("cuda", "build_ptx.sh")); err != nil {
+	if _, err := os.Stat(filepath.Join("backend", "cuda", "build_ptx.sh")); err != nil {
 		t.Fatalf("cuda/build_ptx.sh is not where the gate looks for it: %v", err)
 	}
 	t.Setenv("GOINFER_NVRTC_DIRS", t.TempDir())
@@ -480,7 +480,7 @@ func TestGatePTX_nothingVerifiedIsRed(t *testing.T) {
 	if rc := runPTX(&out, ""); rc != 1 {
 		t.Errorf("gate ptx with no NVRTC exited %d, want 1\n%s", rc, out.String())
 	}
-	all, _ := filepath.Glob(filepath.Join("cuda", "testdata", "*.ptx"))
+	all, _ := filepath.Glob(filepath.Join("backend", "cuda", "testdata", "*.ptx"))
 	if want := fmt.Sprintf("zero of %d artifacts verified", len(all)); len(all) == 0 || !strings.Contains(out.String(), want) {
 		t.Errorf("gate ptx did not count every committed .ptx (%d of them, the f16-KV and softcap twins included), want %q in:\n%s", len(all), want, out.String())
 	}

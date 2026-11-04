@@ -32,7 +32,7 @@ All but four are the rewriting tool's (`gsplit/gsplit.go.txt`, run by `apply.sh`
 
 | edit | count |
 |---|---:|
-| aliases (`type T = kernels.T`) for gpu's public types, in `gpu/api.go` | 12 |
+| aliases (`type T = kernels.T`) for gpu's public types, in `backend/webgpu/api.go` | 12 |
 | wrappers for gpu's public functions (`New`, `GPUEverAvailable`, `LiveBufferBytes`) | 3 |
 | package-level names the glue uses, exported inside the internal package | 61 |
 | fields and methods of non-public types the glue uses, exported there | 165 + 3 |

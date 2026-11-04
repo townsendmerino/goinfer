@@ -42,7 +42,7 @@ one only when the input happens to place an element close enough.
 Box `apple-m1pro` (M1 Pro, 16 GB), Darwin 25.6.0, goinfer `ebe50556` plus this record's tests.
 `qwen2.5-coder-1.5b` GGUF Q4_K_M, `Quant:"int4"`, the e2e repro's own construction reproduced
 exactly: `rand.NewSource(7)` Gaussian embeddings ×0.05, batched prefill (`ForwardBatch`) to
-`prefillLen`, then per-token decode. `metal/r2_ctx_diff_test.go` (`TestR2_perLayerCtxDiff`), one
+`prefillLen`, then per-token decode. `backend/metal/r2_ctx_diff_test.go` (`TestR2_perLayerCtxDiff`), one
 resident, the kernel toggled at runtime through `r.decodeAttnFA` (read by `canUseAttnFA` on every
 dispatch; pipelines and the partial buffer are always built) — the technique R1's root-cause
 tests validated. Three trajectories per run:
@@ -181,8 +181,8 @@ here, which rests on the per-layer tables above.
 > shipped kernel's). The numbers below are kept as the historical record.
 
 R2's brief names it: "the same teacher-forced fidelity gate R1 uses, S at depth 3900 as the
-decision cell, W4A8 + shipped attention as the exact arm". `metal/r2_gate_test.go`
-(`TestR2_decodeFidelityGate`) — `metal/r1_gate3_test.go`'s construction with the toggle swapped to
+decision cell, W4A8 + shipped attention as the exact arm". `backend/metal/r2_gate_test.go`
+(`TestR2_decodeFidelityGate`) — `backend/metal/r1_gate3_test.go`'s construction with the toggle swapped to
 `r.decodeAttnFA` and K=3900 (above `attnFADepthFloor`=1536, so all 64 continuation positions
 dispatch `attention_fa` in the candidate arm). Reference: the S-K3900 CPU f32-weight/
 f32-activation files `decoder/prefill_ref_gen_test.go` built (prompt-final logits + 64
@@ -231,8 +231,8 @@ off by default until that band is measured.
 `TestAttentionFA_endToEndReproduction`, its depth-2200 twin and the position sweep are kept as
 what they are — reproducers of the *instrument's* signature, with their doc comments corrected to
 say so; `TestAttentionFA_ulpPerturbationControl` is kept with its reading corrected.
-`metal/r2_ctx_diff_test.go` (the per-layer harness with its accumulated-divergence table,
-perturbation mode and dump/replay tools) and `metal/r2_gate_test.go` are the new keepers. The
+`backend/metal/r2_ctx_diff_test.go` (the per-layer harness with its accumulated-divergence table,
+perturbation mode and dump/replay tools) and `backend/metal/r2_gate_test.go` are the new keepers. The
 2026-09-20 race fix in `setPos` stands on its own merits, as that record already said.
 
 ## What this does not establish

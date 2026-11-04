@@ -6,14 +6,14 @@ before any implementation or timed run.
 ## Why
 
 - **G10** (`docs/tasks/task-gpu-paths-2026-09.md`): every int8-kind weight is re-quantized to int4 (W4A8) when the Metal
-  resident builds (`metal/model.go`, `int4BufA`). `--quant int8`, `int8int8` and `int4mix` on Metal therefore run int4
+  resident builds (`backend/metal/model.go`, `int4BufA`). `--quant int8`, `int8int8` and `int4mix` on Metal therefore run int4
   numerics, and f32 weights decline to the CPU. G10 offered "a W8A8 GEMV on Metal" or an honest label, sized the
   kernel "medium", and only the label was done.
 - **R17** (`docs/completed/task-first-hour.md`): because of that, `-backend auto` keeps every non-int4 model on the CPU
   (`autoMetalPrecision`, `decoder/residency.go`). The model-included `goinfer-chat` files are int8int8 bundles, so on a
   Mac they never use the GPU.
-- **What already exists.** Metal has W8A8 kernels: `gemv_w8a8_coal` and `gemv_w8a8_amax` (`metal/kernels.go`), and
-  `mc3_lm` for the batched step (`metal/batch.go`). They serve only the LM head, which runs at 161–163 GB/s against a
+- **What already exists.** Metal has W8A8 kernels: `gemv_w8a8_coal` and `gemv_w8a8_amax` (`backend/metal/kernels.go`), and
+  `mc3_lm` for the batched step (`backend/metal/batch.go`). They serve only the LM head, which runs at 161–163 GB/s against a
   178–182 GB/s read ceiling (`docs/measurements/metal-decode-gemv-s0-2026-09-26.md`). The runner began as W8A8 and moved
   to W4A8 as the target quant (`docs/completed/task-metal-cgofree-spike.md`). Native int8 was never tried and rejected.
 - **Why it can be exact.** W8A8 accumulates in int32, so the sum is exact and any kernel shape gives the same bits. The
@@ -46,7 +46,7 @@ before any implementation or timed run.
    - **Scope:** native int8 for the Gated-DeltaNet hybrids (Qwen3.5, Qwen3-Next, Olmo Hybrid) and Nemotron-H: their
      attention and MLP projections, the recurrent mixers' own projections, and the paths slice 1 declines for them.
    - **Until then they do not run resident at int8:**
-     - Nemotron-H declines there (`metal/mamba.go:buildMamba`, OP2b);
+     - Nemotron-H declines there (`backend/metal/mamba.go:buildMamba`, OP2b);
      - the DeltaNet families are queue item G44's same fix.
    - Its gates are written before its code, as every slice's were.
 
@@ -233,7 +233,7 @@ native int8 prefilled one token at a time. `TestW8Native_S_ttft` (night, `GOINFE
 - 2026-10-01: owner decision O1: native. F1 passed: 7 kernels × 8 shapes, 249,984 of 249,984 outputs bit-identical to
   the CPU (`TestGemvW8A8Body_matchesCPU`). Its first run failed the residual kernels by many ulps where the residual
   cancels the sum: fast math fused the product into the add. The kernels now round the product first, as the CPU does.
-- 2026-10-01: slice 1 built and committed with the native path **off by default** (`nativeInt8` in `metal/model.go`, set
+- 2026-10-01: slice 1 built and committed with the native path **off by default** (`nativeInt8` in `backend/metal/model.go`, set
   only by the gate tests), so nothing changes for a user until F3 and S pass; then it becomes the default.
   - **F2 passed on the 0.5B** (`TestW8Native_F2_matchesCPUAtSameQuant`): Metal int8int8 against CPU int8int8, min cosine
     0.994500 and argmax 24/24; Metal int4 against CPU int4, 0.988340 and 23/24. Log:

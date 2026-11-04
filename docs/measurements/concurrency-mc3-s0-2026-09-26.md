@@ -27,8 +27,8 @@ MC3 needed the matrix units and a fidelity gate. **This S0 removes the second ha
   - "× 8 GEMVs" is that time × 8, what 8 sequences cost today.
 - Machine at load1 1.5–2.5 throughout. These are exploratory numbers, not graded.
 
-Tests: `TestMC3S0PrefillGEMMSmallM` (`metal/gemm_smallm_mc3_test.go`); `TestMC3MMA8`, `TestMC3MMA8Down`,
-`TestMC3MMA8LMHead` (`metal/gemm_mma8_mc3_test.go`); `TestMC3SimdSumTree` (`metal/simdsum_tree_mc3_test.go`).
+Tests: `TestMC3S0PrefillGEMMSmallM` (`backend/metal/gemm_smallm_mc3_test.go`); `TestMC3MMA8`, `TestMC3MMA8Down`,
+`TestMC3MMA8LMHead` (`backend/metal/gemm_mma8_mc3_test.go`); `TestMC3SimdSumTree` (`backend/metal/simdsum_tree_mc3_test.go`).
 All are gated on `GOINFER_METAL_MC3=1`. Logs: [`concurrency-mc3-s0-2026-09-26/`](concurrency-mc3-s0-2026-09-26/).
 
 ## 1. The prefill GEMM does not fit: flat from M = 1 to 64

@@ -5,7 +5,7 @@ The work builds on step 1's seam (`cudaBackend.planMemory`, #468). Box: nobara, 
 
 ## The census
 
-`cuda/sb2_census_test.go:TestBackendMemoryCensus_cuda`, golden `cuda/testdata/sb2_cuda_mem_census.amd64.txt.gz`. It covers every
+`backend/cuda/sb2_census_test.go:TestBackendMemoryCensus_cuda`, golden `backend/cuda/testdata/sb2_cuda_mem_census.amd64.txt.gz`. It covers every
 cell layer B-cuda plans (279) × each profile with `cuda_free_bytes` (`nobara-desktop`, `nobara-no-desktop`): 558 lines. Each
 line holds:
 - the figures fed, labelled `(profile)` or `(profile-pool)`;

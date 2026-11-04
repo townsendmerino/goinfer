@@ -32,9 +32,9 @@ this design.
   - qwen2.5-7b-instruct q4_k_m (`.int4.metal.giw` sidecar, aliased; its `.gguf` is refused by the fit guard on this
     machine, and the guard was not bypassed).
 - GPU time comes from each decode token's command-buffer timestamps, as in `TestMetalDecodeDecomp`.
-- Instruments: `metal/gemv_r18_test.go` (standalone prototypes, exploratory) and `metal/gemv_r18_seq_test.go`
+- Instruments: `backend/metal/gemv_r18_test.go` (standalone prototypes, exploratory) and `backend/metal/gemv_r18_seq_test.go`
   (`TestR18InSequence`, the grading instrument). The in-sequence hook is `resident.r18Rows`
-  (`metal/model.go`): rows per simdgroup at the four dense decode GEMV sites. It is zero in production, so every grid
+  (`backend/metal/model.go`): rows per simdgroup at the four dense decode GEMV sites. It is zero in production, so every grid
   is unchanged; `TestMetalSnapshotGolden` passed 10/10 byte-identical with it in place.
 - Raw logs: [`metal-decode-gemv-r18-2026-09-26/`](metal-decode-gemv-r18-2026-09-26/).
 
@@ -201,7 +201,7 @@ exists only after idle.
 Wired in `8b04964a`. `buildResident` picks rows per simdgroup through `gemvRowsFor`: 2 for qkv and o, 4 for the fused
 gate/up and for down. Each GEMV takes its rows kernel only where every layer's row count tiles whole 256-thread
 threadgroups, and down only where its K = I bytes of staged activations fit threadgroup memory. Anything else keeps
-the shipped kernel. The kernels live in `metal/kernels.go`:
+the shipped kernel. The kernels live in `backend/metal/kernels.go`:
 - `gemv_w4a8_sa_rows`, `_bias_rows` and `_resid_rows<R>`;
 - `gemv_w4a8_resid_staged<R>`.
 

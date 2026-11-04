@@ -73,7 +73,7 @@ to. No learned indexer is involved, which removes the component that made Qwen3.
    - the fit guard (`kvBytesPerPosition` in decoder/fitguard.go, `kvBytesPerPositionAllLayers`
      in decoder/fitplan.go)
    - resident reuse (`residentReuseLen` in decoder/resident_reuse.go)
-   - the CUDA pricer (`kvBytesForCap` in cuda/resident.go)
+   - the CUDA pricer (`kvBytesForCap` in backend/cuda/resident.go)
 
    HySparse2 breaks that twice: bridged layers own a cache but never run over the prompt, and
    sparse layers own none. This is the class of bug the Sep 10 audit found (Bailing KDA state

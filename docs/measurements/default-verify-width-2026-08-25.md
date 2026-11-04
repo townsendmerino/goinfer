@@ -3,7 +3,7 @@
 > Measured 2026-08-25 on `linux-62gb` (RTX 2070 SUPER), goinfer `a1f6541`, CUDA-resident
 > Qwen3-4B + DFlash-f32, `maxNew=96`, greedy. 6 prompts/suite x 2 repeats = **n=12 per width**,
 > widths interleaved **within** each (prompt, repeat). Harness:
-> `cuda/default_width_sweep_test.go`. Follows up the side-finding in
+> `backend/cuda/default_width_sweep_test.go`. Follows up the side-finding in
 > `adaptive-width-shipgates-2026-08-25.md`.
 
 ## Result

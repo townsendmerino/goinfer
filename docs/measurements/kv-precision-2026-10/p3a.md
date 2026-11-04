@@ -21,7 +21,7 @@ magnitude closer. The owner chose D6's option (a), the mean of the per-position 
 
 Planted defects: the old `attention_f32` (G1 red), one f32 decline removed (G4 red), f32 priced at 2 B (G3 red).
 
-A first G3 readback double-counted deepseek's buffers (an MLA layer's V aliases its latent, `metal/mla.go`); the test counts it once,
+A first G3 readback double-counted deepseek's buffers (an MLA layer's V aliases its latent, `backend/metal/mla.go`); the test counts it once,
 and Metal's MLA pricing is right.
 
 After `main` brought in G3 (`TestKVDeliveredBytes_Metal`, `docs/measurements/kv-precision-2026-10/g3.md`), its readback runs on this
@@ -37,7 +37,7 @@ what it allocates; that is unchanged. The test asserts the f32 pricing.
 ## D7: the int8 step against the f16 MMA pass, 2026-10-22 (owner, 2026-10-22: measure first, int8 only)
 
 Registered before the run in `docs/tasks/task-kv-precision-everywhere-2026-10.md`, "D7 measurement" (7f4599c5). The test is
-`metal/d7_prefill_gap_test.go:TestD7_int8StepVsF16Pass`, at main 725c840c (P3b-1 merged). Run setup:
+`backend/metal/d7_prefill_gap_test.go:TestD7_int8StepVsF16Pass`, at main 725c840c (P3b-1 merged). Run setup:
 
 - Machine: MacBook Pro, M1 Pro, 16 GB, macOS 26.6.2, Go 1.27.2, plugged in.
 - Model: `~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf` through its Metal sidecar (`.int4.metal.v17.giw`).

@@ -6,7 +6,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// GPU export: the resident GPU encoder lives in the goinfer/gpu module (cgo,
+// GPU export: the resident GPU encoder lives in the goinfer/backend/webgpu module (cgo,
 // -tags gpu). It reads the loaded tower through these exported types so vision
 // stays pure-Go. The matmul weights must be int8 (the GPU path uses the tiled
 // W8A8 kernel) — load the tower with quant=true.

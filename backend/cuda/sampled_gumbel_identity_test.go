@@ -1,0 +1,237 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"context"
+	"flag"
+	"math"
+	"math/rand"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/sampling"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// TestSampledGumbelStreamIdentity is R7b's end-to-end gate (docs/tasks/red-october.md): with a fixed seed, the token
+// stream drawn on-device by Gumbel-max is IDENTICAL to the stream the host draws (GOINFER_NO_SAMPLE_FASTPATH=1): the host
+// and the device implement one algorithm over one Philox counter stream, so they may differ only where two candidates'
+// scores are within an f32 rounding (a ~1e-6 per-token event). Real checkpoints, three temperatures, 1,000 tokens each.
+//
+// PRE-REGISTERED: any divergence fails, and is investigated, not tolerated: at ~1e-6 per token a divergence in ~36k tokens
+// is a ~3% event, so one is more likely a bug than rounding. The test also fails if the device path never engaged
+// (DeviceSampled == 0), so it cannot pass vacuously.
+//
+// Run: GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -run TestSampledGumbelStreamIdentity -v -timeout 30m ./cuda/
+func TestSampledGumbelStreamIdentity(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("heavy-checkpoint measurement: set GOINFER_HEAVY_TESTS=1")
+	}
+	models := []string{
+		os.ExpandEnv("$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
+		os.ExpandEnv("$HOME/models/gemma3-1b-q4_k_m.gguf"),
+		os.ExpandEnv("$HOME/models/llama-3.2-1b-instruct-q4_k_m.gguf"),
+	}
+	if v := os.Getenv("GOINFER_TOPK_MODELS"); v != "" {
+		models = strings.Split(v, ",")
+	}
+	nTok := ladderEnvInt("GOINFER_TOPK_TOKENS", 1000)
+	cfgs := []decoder.SamplingParams{
+		{Temperature: 1.0, Seed: 42},
+		{Temperature: 0.7, Seed: 43},
+		{Temperature: 1.3, Seed: 44},
+	}
+	const prose = "The lighthouse keeper had lived alone on the rock for eleven winters, and in that time he " +
+		"had learned to read the sea the way other men read faces. On the morning the storm finally broke, " +
+		"the water lay flat and pewter-colored under a sky the same shade. He wrote"
+
+	tested := 0
+	for _, path := range models {
+		if _, err := os.Stat(path); err != nil {
+			t.Logf("skip %s: %v", path, err)
+			continue
+		}
+		tok, err := tokenizer.LoadGGUF(path)
+		if err != nil {
+			t.Logf("skip %s: tokenizer: %v", path, err)
+			continue
+		}
+		prompt, err := tok.Encode(prose, true)
+		if err != nil {
+			t.Fatalf("encode: %v", err)
+		}
+		m, err := decoder.Load(path, decoder.Options{Quant: "int4", Backend: "cuda"})
+		if err != nil {
+			t.Logf("skip %s: load: %v", path, err)
+			continue
+		}
+		if !m.ResidentActive() {
+			m.Close()
+			t.Logf("skip %s: not resident", path)
+			continue
+		}
+		run := func(sp decoder.SamplingParams, disable bool) ([]int, *decoder.Generation) {
+			if disable {
+				decoder.SetKnobEnvForTest(t, m, "GOINFER_NO_SAMPLE_FASTPATH", "1")
+			} else {
+				decoder.SetKnobEnvForTest(t, m, "GOINFER_NO_SAMPLE_FASTPATH", "")
+			}
+			ch, g := m.Generate(context.Background(), prompt, nTok, sp)
+			var ids []int
+			for id := range ch {
+				ids = append(ids, id)
+			}
+			if err := g.Err(); err != nil {
+				t.Fatalf("%s: %v", path, err)
+			}
+			return ids, g
+		}
+		for _, sp := range cfgs {
+			host, _ := run(sp, true)
+			dev, g := run(sp, false)
+			first := -1
+			for i := 0; i < min(len(host), len(dev)); i++ {
+				if host[i] != dev[i] {
+					first = i
+					break
+				}
+			}
+			t.Logf("%-38s T=%.1f tokens host=%d device=%d  device-sampled=%d  first divergence %d",
+				pathBase(path), sp.Temperature, len(host), len(dev), g.DeviceSampled, first)
+			if g.DeviceSampled == 0 {
+				t.Errorf("%s T=%.1f: the device sampler never engaged — the test would pass vacuously", path, sp.Temperature)
+			}
+			if first >= 0 {
+				t.Errorf("%s T=%.1f: streams diverge at token %d — investigate before relaxing anything", path, sp.Temperature, first)
+			}
+			if len(host) != len(dev) && first < 0 {
+				t.Errorf("%s T=%.1f: stream lengths differ (%d vs %d) with an identical common prefix", path, sp.Temperature, len(host), len(dev))
+			}
+		}
+		m.Close()
+		tested++
+	}
+	if tested == 0 {
+		t.Skip("no model available")
+	}
+}
+
+var (
+	sb5Out  = flag.String("sb5.out", "", "write the resident decode streams to this file")
+	sb5Want = flag.String("sb5.want", "", "hold the resident decode streams to the record in this file")
+)
+
+// TestSB5ResidentStreams records generateInto's decode paths on llama-tiny resident on cuda, alone and under MC3, and holds
+// them to a record taken before a change (-sb5.out writes one, -sb5.want compares): the before/after identity for moving
+// the plain decode loop onto Forward (docs/tasks/task-subsystems-2026-10.md §8 SB5). Skips without a device.
+func TestSB5ResidentStreams(t *testing.T) {
+	got := map[string]decoder.ResidentStreamCase{}
+	for _, mc3 := range []bool{false, true} {
+		opts := decoder.Options{Backend: "cuda", Quant: "int4"}
+		prefix := "solo/"
+		if mc3 {
+			opts.ResidentKVSlots = 4
+			prefix = "mc3/"
+		}
+		m, err := decoder.Load("../../testdata/llama-tiny", opts)
+		if err != nil {
+			t.Skipf("no cuda load: %v", err)
+		}
+		if !m.ResidentActive() {
+			m.Close()
+			t.Skip("llama-tiny did not go resident on this device")
+		}
+		if mc3 {
+			if n := m.EnableResidentConcurrency(4); n < 2 {
+				t.Logf("MC3 not available on this resident (n=%d): the mc3/ cases run unbatched", n)
+				prefix = "mc3-off/"
+			}
+		}
+		cs, err := decoder.ResidentStreamsForTest(m, prefix)
+		m.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for k, v := range cs {
+			got[k] = v
+		}
+	}
+	diffs, err := decoder.CompareResidentStreamsForTest(got, *sb5Out, *sb5Want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diffs) > 0 {
+		t.Fatalf("%d of %d resident decode streams differ from the record:\n%s", len(diffs), len(got), strings.Join(diffs, "\n"))
+	}
+	t.Logf("%d resident decode streams", len(got))
+}
+
+// TestGumbelPick_residentWiring covers what cuda/kernels' TestGumbelDeviceAgreesWithHost cannot: gumbelPick's own launch,
+// the logits upload into the resident's buffer, the readback, and the fallback to the argmax kernel on a row with nothing
+// comparable. It draws through GumbelForTest at the model's vocabulary and at 67, under the kernel test's rule (at most a 1e-4
+// mismatch rate, every mismatch a near-tie within 5e-5 on the host's own keys), and an all -inf row must equal the host's
+// argmax fallback exactly.
+func TestGumbelPick_residentWiring(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads a 0.5B model for the resident's gumbel launch)")
+	}
+	path := modelPath("qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no fixture at %s", path)
+	}
+	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	rf, ok := mc.ResidentForwardForTest().(*cudaResident)
+	if !ok || rf == nil {
+		t.Fatal("the 0.5B did not go resident")
+	}
+	rng := rand.New(rand.NewSource(23))
+	seeds := []uint64{0, 1, 0xFFFFFFFF, 0x123456789ABCDEF0}
+	total, mismatch := 0, 0
+	for _, v := range []int{rf.vocab, 67} {
+		l := make([]float32, v)
+		for i := range l {
+			l[i] = float32(rng.NormFloat64() * 3)
+		}
+		for d := range 24 {
+			seed, draw := seeds[d%len(seeds)], uint64(d)
+			if d%7 == 0 {
+				draw += 1 << 33
+			}
+			dev, err := rf.GumbelForTest(l, 1.0, seed, draw)
+			if err != nil {
+				t.Fatalf("v=%d draw %d: %v", v, d, err)
+			}
+			host := sampling.GumbelDraw(l, 1.0, seed, draw)
+			total++
+			if dev == host {
+				continue
+			}
+			mismatch++
+			if gap := math.Abs(float64(sampling.GumbelKeyAt(l, 1.0, seed, draw, host) - sampling.GumbelKeyAt(l, 1.0, seed, draw, dev))); gap > 5e-5 {
+				t.Errorf("v=%d seed=%x draw=%d: device %d != host %d and the host's own keys differ by %.3g — not a near-tie", v, seed, draw, dev, host, gap)
+			}
+		}
+	}
+	if rate := float64(mismatch) / float64(total); rate > 1e-4 {
+		t.Errorf("%d of %d draws differ (%.2e), over the 1e-4 rule", mismatch, total, rate)
+	}
+	inf := make([]float32, rf.vocab)
+	for i := range inf {
+		inf[i] = float32(math.Inf(-1))
+	}
+	dev, err := rf.GumbelForTest(inf, 1.0, 1, 1)
+	if err != nil {
+		t.Fatalf("all -inf row: %v", err)
+	}
+	if host := sampling.GumbelDraw(inf, 1.0, 1, 1); dev != host {
+		t.Errorf("all -inf row: device %d, host's argmax fallback %d", dev, host)
+	}
+	t.Logf("%d draws through gumbelPick: %d mismatches; the all -inf row drew %d", total, mismatch, dev)
+}

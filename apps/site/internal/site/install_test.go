@@ -31,12 +31,12 @@ func TestSiteInstallLines(t *testing.T) {
 <pre>chmod +x x
 go get github.com/
   townsendmerino/goinfer</pre>
-<code>go install -tags cuda  github.com/townsendmerino/goinfer/cuda/cmd/serve@latest    # Linux + NVIDIA</code>
+<code>go install -tags cuda  github.com/townsendmerino/goinfer/backend/cuda/cmd/serve@latest    # Linux + NVIDIA</code>
 <code>CGO_ENABLED=0 go install github.com/townsendmerino/goinfer/cmd/serve@latest</code>`
 	got := SiteInstallLines(page)
 	want := []string{
 		"go get github.com/townsendmerino/goinfer",
-		"go install -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve@latest",
+		"go install -tags cuda github.com/townsendmerino/goinfer/backend/cuda/cmd/serve@latest",
 		"go install github.com/townsendmerino/goinfer/cmd/serve@latest",
 	}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
@@ -53,7 +53,7 @@ func TestCheckInstallLines_goesRed(t *testing.T) {
 		ok   bool
 	}{
 		{"<pre>" + readmeGoGet + "</pre>", true},
-		{"<pre>go install github.com/townsendmerino/goinfer/metal/cmd/serve@latest</pre>", true},
+		{"<pre>go install github.com/townsendmerino/goinfer/backend/metal/cmd/serve@latest</pre>", true},
 		{"<pre>go get github.com/townsendmerino/goinfer</pre>", false},                // the download page until 2026-09-30
 		{"<pre>go get github.com/\n  townsendmerino/goinfer</pre>", false},            // the home page's wrapped copy
 		{"<pre>go get github.com/townsendmerino/goinfer/decoder@latest</pre>", false}, // not the README's line

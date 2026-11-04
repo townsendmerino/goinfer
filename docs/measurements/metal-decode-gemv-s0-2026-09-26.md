@@ -20,7 +20,7 @@ out at 108–127 GB/s even without the arithmetic.
 
 ## Method
 
-`TestMetalGEMVS0` (`metal/gemv_s0_test.go`) times each decode GEMV category standalone at its real (N, K):
+`TestMetalGEMVS0` (`backend/metal/gemv_s0_test.go`) times each decode GEMV category standalone at its real (N, K):
 - the production kernel;
 - a **loads-only twin** that reads the same device memory with the same thread mapping (weight words, f16 group
   scales, and the coal kernel's per-word activation bytes) but folds it with an XOR instead of unpacking and

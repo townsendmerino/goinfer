@@ -17,7 +17,7 @@ speedup now flat-to-improving with M instead of declining.**
 | toolchain | go1.26.5 linux/amd64 |
 | model | qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, from `~/models` on local NVMe |
 | backend/quant | `webgpu`, `int8int8` (W8A8) |
-| harness | `gpu/prefilllast_ttft_test.go` `TestResidentPrefillLast_TTFT` — sequential (today's shipped `residentPrefillSeed` per-token loop) vs one `PrefillLast` call, same prompt, same resident pipeline, both timed in the same process run (not cross-run) |
+| harness | `backend/webgpu/prefilllast_ttft_test.go` `TestResidentPrefillLast_TTFT` — sequential (today's shipped `residentPrefillSeed` per-token loop) vs one `PrefillLast` call, same prompt, same resident pipeline, both timed in the same process run (not cross-run) |
 | commits | before: `3a9d313c` (branch tip as left by the prior session); after: `fda9f7e9` (`gpu-dp4a-fix`, two commits on top) |
 
 ## Before the fix (3a9d313c) — the number nobody had run
@@ -143,7 +143,7 @@ already be done, not owed: `decoder/model.go`'s `residentPrefillSeed` has a gene
 interface, and `gpu.residentDecoder` has satisfied it since `813be4e7` (already on this branch,
 predating the dispatch-count fix). Confirmed through the real `Generate()` API, not just the
 isolated `PrefillLast` gates above:
-`TestGenerate_batchedPrefillMatchesSequential` (`gpu/prefilllast_generate_integration_test.go`) —
+`TestGenerate_batchedPrefillMatchesSequential` (`backend/webgpu/prefilllast_generate_integration_test.go`) —
 same real prompt, greedy, `GOINFER_BATCHED_PREFILL=0` vs default, on real hardware: 24/24 tokens
 identical, and both match `decode_parity_test.go`'s independently-pinned CPU reference for the same
 prompt/checkpoint exactly. This means the fix in this document is not a pending feature — it is

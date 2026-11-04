@@ -63,7 +63,7 @@ jobs:
           # `h1:` hash), and touches nothing in the checkout. The root build keeps its own module-mode build, as before.
           gowork="${RUNNER_TEMP:-/tmp}/release-assets.go.work"
           rm -f "$gowork"
-          ( cd "$root" && GOWORK="$gowork" go work init . ./cuda ./metal )
+          ( cd "$root" && GOWORK="$gowork" go work init . ./backend/cuda ./backend/metal )
           build() { # build <module-dir> <tags> <goos> <goarch> <subpath>
             local dir="$1" tags="$2" os="$3" arch="$4" subpath="$5"
             local out="$root/dist/goinfer-chat-$os-$arch"; [ "$os" = windows ] && out="$out.exe"
@@ -76,10 +76,10 @@ jobs:
                 -ldflags="-s -w -X github.com/townsendmerino/goinfer/internal/chatapp.injectedVersion=$TAG" \
                 -trimpath -o "$out" "$subpath" )
           }
-          build metal metal darwin arm64  ./cmd/chat
-          build metal metal darwin amd64  ./cmd/chat
-          build cuda  cuda  linux  amd64  ./cmd/chat
-          build cuda  cuda  linux  arm64  ./cmd/chat
+          build backend/metal metal darwin arm64  ./cmd/chat
+          build backend/metal metal darwin amd64  ./cmd/chat
+          build backend/cuda  cuda  linux  amd64  ./cmd/chat
+          build backend/cuda  cuda  linux  arm64  ./cmd/chat
           build .     ""    windows amd64 ./demo/chat
           build .     ""    windows arm64 ./demo/chat
           ls -lh dist
@@ -92,11 +92,11 @@ jobs:
           # assets get below. This is what would have caught G1: every one of these greps fails on
           # a plain ./demo/chat build with no -tags.
           for t in darwin-arm64 darwin-amd64; do
-            go version -m "dist/goinfer-chat-$t" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/metal\b' \
+            go version -m "dist/goinfer-chat-$t" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/backend/metal\b' \
               || { echo "dist/goinfer-chat-$t was NOT built from the metal entrypoint"; fail=1; }
           done
           for t in linux-amd64 linux-arm64; do
-            go version -m "dist/goinfer-chat-$t" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/cuda\b' \
+            go version -m "dist/goinfer-chat-$t" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/backend/cuda\b' \
               || { echo "dist/goinfer-chat-$t was NOT built from the cuda entrypoint"; fail=1; }
             go version -m "dist/goinfer-chat-$t" | grep -q -- '-tags=cuda' \
               || { echo "dist/goinfer-chat-$t was NOT built with -tags cuda"; fail=1; }
@@ -186,7 +186,7 @@ jobs:
           # binary does not read vcs.modified=true. (R6's -X injection below is still what puts $TAG in --version.)
           gowork="${RUNNER_TEMP:-/tmp}/release-assets.go.work"
           rm -f "$gowork"
-          ( cd "$root" && GOWORK="$gowork" go work init . ./cuda ./metal )
+          ( cd "$root" && GOWORK="$gowork" go work init . ./backend/cuda ./backend/metal )
           build() { # build <module-dir> <tags> <goos> <goarch>
             local dir="$1" tags="$2" os="$3" arch="$4"
             local out="$root/dist/goinfer-serve-$os-$arch"; [ "$os" = windows ] && out="$out.exe"
@@ -199,10 +199,10 @@ jobs:
                 -ldflags="-s -w -X github.com/townsendmerino/goinfer/internal/serveapp.injectedVersion=$TAG" \
                 -trimpath -o "$out" ./cmd/serve )
           }
-          build metal metal darwin arm64
-          build metal metal darwin amd64
-          build cuda  cuda  linux  amd64
-          build cuda  cuda  linux  arm64
+          build backend/metal metal darwin arm64
+          build backend/metal metal darwin amd64
+          build backend/cuda  cuda  linux  amd64
+          build backend/cuda  cuda  linux  arm64
           build .     ""    windows amd64
           build .     ""    windows arm64
           ls -lh dist
@@ -240,11 +240,11 @@ jobs:
           # v0.16.0 shipped. Nothing in `metal/` is gated on a `metal` build TAG (every file is
           # darwin-gated), so a tags grep there would pass on a binary with no Metal in it.
           for t in darwin-arm64 darwin-amd64; do
-            go version -m "dist/goinfer-serve-$t" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/metal\b' \
+            go version -m "dist/goinfer-serve-$t" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/backend/metal\b' \
               || { echo "dist/goinfer-serve-$t was NOT built from the metal entrypoint"; fail=1; }
           done
           for t in linux-amd64 linux-arm64; do
-            go version -m "dist/goinfer-serve-$t" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/cuda\b' \
+            go version -m "dist/goinfer-serve-$t" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/backend/cuda\b' \
               || { echo "dist/goinfer-serve-$t was NOT built from the cuda entrypoint"; fail=1; }
             go version -m "dist/goinfer-serve-$t" | grep -q -- '-tags=cuda' \
               || { echo "dist/goinfer-serve-$t was NOT built with -tags cuda"; fail=1; }
@@ -383,7 +383,7 @@ jobs:
           # workspace) never edits a tracked file; the stamp then reads vcs.modified=false (asserted in the next step).
           gowork="$RUNNER_TEMP/release-assets.go.work"
           rm -f "$gowork"
-          ( cd "$PWD" && GOWORK="$gowork" go work init . ./cuda ./metal )
+          ( cd "$PWD" && GOWORK="$gowork" go work init . ./backend/cuda ./backend/metal )
           export GOWORK="$gowork"
           ./demo/chat/build-embed.sh --name "goinfer-chat-${{ matrix.tier }}" model.gguf \
             darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64
@@ -407,12 +407,12 @@ jobs:
           # THIS tree rather than a previous release.
           for t in darwin-arm64 darwin-amd64; do
             f="demo/chat/dist/goinfer-chat-${{ matrix.tier }}-$t"
-            go version -m "$f" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/metal\b' \
+            go version -m "$f" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/backend/metal\b' \
               || { echo "$f was NOT built from the metal entrypoint"; fail=1; }
           done
           for t in linux-amd64 linux-arm64; do
             f="demo/chat/dist/goinfer-chat-${{ matrix.tier }}-$t"
-            go version -m "$f" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/cuda\b' \
+            go version -m "$f" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/backend/cuda\b' \
               || { echo "$f was NOT built from the cuda entrypoint"; fail=1; }
           done
           for t in darwin-arm64 darwin-amd64 linux-amd64 linux-arm64; do

@@ -1,0 +1,625 @@
+//go:build darwin
+
+package metal
+
+import (
+	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
+	"sync"
+	"time"
+
+	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
+	"github.com/townsendmerino/goinfer/backend/metal/kernels"
+	"github.com/townsendmerino/goinfer/internal/vision"
+	"github.com/townsendmerino/goinfer/multimodal"
+)
+
+// The Qwen3.5+ and GLM-OCR vision towers on Metal (S2 of docs/tasks/task-multimodal-support-2026-10.md): aikit's
+// ForwardViT up to the last block, in float32, from aikit's export (Weights, RopeTables, PositionEmbeds,
+// VisionSegments). The patch embed and every block run here on the Gemma 4 tower's base (eg2Ops: f32 GEMM, RMSNorm,
+// rotate-half RoPE, blocked attention) plus aikit gpu.ViT's bias add, LayerNorm, GELU-tanh and SiLU-mul. The tail
+// (Qwen3: the merger; GLM-OCR: post-norm, downsample, merger) stays aikit's FinishHidden, on the host.
+//
+// Both towers' blocks: biased fused qkv (split into three GEMMs at upload), 2-D RoPE (rotate-half over the full head,
+// aikit's own tables), attention scale 1/sqrt(head_dim) applied to q after RoPE, full attention within each image
+// frame (one eg2Ops.attention per segment), biased proj and residual, then the MLP and residual. Qwen3: LayerNorm with
+// bias, eps 1e-6, MLP fc1 -> GELU-tanh -> fc2, and the interpolated position rows added after the patch embed. GLM-OCR:
+// RMSNorm, eps rms_norm_eps, per-head RMSNorm of q and k before RoPE, MLP down(silu(gate)·up), no position table.
+
+func init() {
+	multimodal.RegisterQwen3Tower("metal", func(enc *vision.Qwen3VisionEncoder) (multimodal.GridTowerAccelerator, error) {
+		return newQwen3VAccel(enc)
+	})
+	multimodal.RegisterGlmOcrTower("metal", func(enc *vision.GlmOcrVisionEncoder) (multimodal.GridTowerAccelerator, error) {
+		return newGlmOcrVAccel(enc)
+	})
+}
+
+// gvKind is the tower family. Its program (vision.TowerBlock) is the block; the kind decides only whether the MLP has a
+// second intermediate buffer (gated).
+type gvKind uint8
+
+const (
+	gvkQwen3  gvKind = iota // LayerNorm, GELU-tanh MLP, interpolated position rows, 2-D RoPE, one segment per frame
+	gvkGlmOcr               // RMSNorm, per-head q/k RMSNorm, SiLU-gated MLP, 2-D RoPE, one segment per frame
+	gvkQwen25               // RMSNorm, SiLU-gated MLP, no patch bias, 2-D RoPE, windows except the full-attention blocks
+	gvkSiglip               // LayerNorm, GELU-tanh MLP, a fixed position table, no RoPE, one segment
+)
+
+func (k gvKind) gated() bool { return k == gvkGlmOcr || k == gvkQwen25 }
+
+type gvProj struct {
+	w, b    Buffer // [out, in]; bias [out] (zero Buffer when none). w is empty when only wh was kept (lever B)
+	wh      Buffer // S17 lever B: the same weights in f16 for tower_gemm_w16; empty when the GEMM runs f32
+	w8, ws  Buffer // S18: int8 weights in groups of 32 along in, and their f32 scales [out, ceil(in/32)], for tower_gemm_w8
+	out, in int
+}
+
+// gvKeepF32ForAB, set only by lever B's in-process A/B, keeps each projection's f32 weights beside its f16 copy so one
+// tower can run both GEMMs. Production uploads the f16 copy alone (half the weight memory).
+var gvKeepF32ForAB bool
+
+type gvBlock struct {
+	norm1w, norm1b, norm2w, norm2b Buffer // LayerNorm (Qwen3, SigLIP) or RMSNorm weight only (GLM-OCR, Qwen2.5-VL: the b's are zero)
+	q, k, v, proj                  gvProj
+	qNorm, kNorm                   Buffer // GLM-OCR's per-head q/k RMSNorm; zero otherwise
+	fc1, fc2                       gvProj // Qwen3, SigLIP
+	gate, up, down                 gvProj // GLM-OCR, Qwen2.5-VL
+	full                           bool   // Qwen2.5-VL: a full-attention block (per image frame, not per window)
+}
+
+// gridVAccel is a grid-based tower on Metal. One image batch at a time (mu): the scratch and the scalar arena are
+// shared.
+type gridVAccel struct {
+	mu sync.Mutex
+	eg2Ops
+	scale          Pipeline
+	fusedAttn      Pipeline // S17 lever A: tower_attn_hd<head_dim>; zero when the head dim has no fused kernel
+	gemmF16        Pipeline // S17 lever B: tower_gemm_w16, the GEMM over the f16 weight copy
+	gemmW8         Pipeline // S18: tower_gemm_w8, the GEMM over int8 weights in groups of 32
+	int8W          bool     // S18: projections upload as int8 groups of 32 (tower_gemm_w8) instead of f16
+	oldGemm        bool     // test seam: run the f32 GEMM even where an f16 copy exists (lever B's A/B; needs gvKeepF32ForAB)
+	gemmDbg        uint32   // test seam: tower_gemm_w16's planted defect (0 in production)
+	oldAttn        bool     // test seam: run eg2Ops.attention even when fusedAttn exists (the lever's in-process A/B)
+	attnDbg        uint32   // test seam: tower_attn's planted defect (0 in production)
+	kind           gvKind
+	hidden, inter  int
+	heads, hd      int
+	patchDim       int
+	lnEps          float32
+	patchW, patchB Buffer
+	blocks         []gvBlock
+	program        func() vision.TowerBlock            // the block's program, for Hidden (Qwen3, GLM-OCR)
+	posEmbeds      func([][3]int) []float32            // Qwen3's interpolated position rows, SigLIP's table; nil otherwise
+	ropeTables     func([][3]int) (cos, sin []float32) // Qwen3, GLM-OCR (Qwen2.5-VL's come from its window plan)
+	planted        gvDefect                            // test seam: G-S2c's planted defects
+	prof           *gvProfile                          // test seam: S17 step 0's per-class GPU split; nil in production
+	tap            func(bi, n int)                     // HiddenTaps: called after block bi\'s command buffer, with the residual\'s live length
+	cap, segCap    int
+	ptInF1         bool        // pt is a view of f1 (grow)
+	idle           *time.Timer // the pending scratch release (armRelease); nil when none
+	gen            uint64      // bumped by every grow and by Close, so a stale release does nothing
+	x, xn, pt, pos Buffer
+	q, k, v, ctx   Buffer
+	o, f1, f2      Buffer
+	qh, kh, vh     Buffer
+	sc, vt, ob     Buffer
+	ropeCos        Buffer
+	ropeSin        Buffer
+}
+
+// gvProfile is S17 step 0's instrument (docs/tasks/task-multimodal-support-2026-10.md): with it set, run ends its command
+// buffer at every change of kernel class and adds each buffer's GPU-busy window to its class, and linear and the
+// attention loop add their FLOPs. A test sets it; production never does, and run is then unchanged.
+type gvProfile struct {
+	cur   string
+	gpu   map[string]float64 // seconds of GPU-busy time per class
+	flops map[string]float64
+	bufs  int
+}
+
+func (p *gvProfile) reset() {
+	p.cur, p.gpu, p.flops, p.bufs = "", map[string]float64{}, map[string]float64{}, 0
+}
+
+// gvDefect is a planted defect (G-S2c); zero in production.
+type gvDefect struct {
+	noScale, swapRope, transposePos, noQKNorm, noPatchBias bool
+	noWindows, noWindowOrder, noPosEmbed                   bool // G-S3a's (3), (4) and (5)
+	tapShift                                               int  // G-S10e: DeepStack taps read this many blocks late
+}
+
+func (a *gridVAccel) Name() string { return "metal" }
+
+// Close frees the tower's device memory; a forward after it is an error.
+func (a *gridVAccel) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.cancelRelease()
+	a.closeDevice()
+	a.blocks, a.cap, a.segCap = nil, 0, 0
+	return nil
+}
+
+func newGridVAccel(kind gvKind, hidden, inter, heads, patchDim int, eps float64) (*gridVAccel, error) {
+	if heads <= 0 || hidden%heads != 0 || (hidden/heads)%2 != 0 {
+		return nil, fmt.Errorf("metal: vision tower hidden %d over %d heads: the kernels need an even head_dim dividing hidden", hidden, heads)
+	}
+	a := &gridVAccel{kind: kind, hidden: hidden, inter: inter, heads: heads, hd: hidden / heads, patchDim: patchDim}
+	var err error
+	more := map[string]*Pipeline{"gv_scale": &a.scale, "tower_gemm_w16": &a.gemmF16, "tower_gemm_w8": &a.gemmW8}
+	switch a.hd {
+	case 64, 72, 80: // S17 lever A's fused attention; any other head dim keeps eg2Ops.attention
+		more[fmt.Sprintf("tower_attn_hd%d", a.hd)] = &a.fusedAttn
+	}
+	a.eg2Ops, err = newEG2Ops(gvMSL, more)
+	if err != nil {
+		return nil, err
+	}
+	a.eps, a.lnEps = float32(eps), float32(eps)
+	return a, nil
+}
+
+func (a *gridVAccel) up(v []float32) Buffer {
+	if len(v) == 0 {
+		return Buffer{}
+	}
+	return NewBufferFloatsOn(mem.LineCompanion, a.d, v)
+}
+
+func (a *gridVAccel) proj(p vision.VisionProj) gvProj {
+	return a.weights(gvProj{b: a.up(p.B), out: p.Out, in: p.In}, p.W)
+}
+
+// weights sets a projection's weights: the f16 copy for tower_gemm_w16 (S17 lever B), and the f32 one only when the
+// A/B keeps both.
+func (a *gridVAccel) weights(p gvProj, w []float32) gvProj {
+	if a.int8W {
+		q, sc := quantG32(w, p.out, p.in)
+		p.w8, p.ws = NewBufferInt8On(mem.LineCompanion, a.d, q), NewBufferFloatsOn(mem.LineCompanion, a.d, sc)
+		return p
+	}
+	h := make([]uint16, len(w))
+	for i, v := range w {
+		h[i] = f32ToF16(v)
+	}
+	p.wh = NewBufferU16sOn(mem.LineCompanion, a.d, h)
+	if gvKeepF32ForAB {
+		p.w = a.up(w)
+	}
+	return p
+}
+
+func quantG32(w []float32, rows, cols int) ([]int8, []float32) {
+	return kernels.QuantG32(w, rows, cols)
+}
+
+// splitQKV uploads a fused [3·hidden, hidden] qkv projection (rows q, then k, then v) as three projections.
+func (a *gridVAccel) splitQKV(p vision.VisionProj) (q, k, v gvProj, err error) {
+	H := a.hidden
+	if p.Out != 3*H || p.In != H || len(p.W) != 3*H*H {
+		return q, k, v, fmt.Errorf("metal: qkv is %dx%d, want %dx%d", p.Out, p.In, 3*H, H)
+	}
+	part := func(i int) gvProj {
+		r := a.weights(gvProj{out: H, in: H}, p.W[i*H*H:(i+1)*H*H])
+		if len(p.B) == 3*H {
+			r.b = a.up(p.B[i*H : (i+1)*H])
+		}
+		return r
+	}
+	return part(0), part(1), part(2), nil
+}
+
+func newQwen3VAccel(enc *vision.Qwen3VisionEncoder) (*gridVAccel, error) {
+	w, err := enc.Weights()
+	if err != nil {
+		return nil, fmt.Errorf("metal: %w", err)
+	}
+	c := w.Cfg
+	a, err := newGridVAccel(gvkQwen3, c.HiddenSize, c.IntermediateSize, c.NumHeads,
+		c.InChannels*c.TemporalPatchSize*c.PatchSize*c.PatchSize, w.LNEps)
+	if err != nil {
+		return nil, err
+	}
+	a.patchW, a.patchB = a.up(w.PatchW), a.up(w.PatchB)
+	a.posEmbeds, a.ropeTables = enc.PositionEmbeds, enc.RopeTables
+	a.program = func() vision.TowerBlock { return vision.Qwen3Program(c) }
+	for _, b := range w.Blocks {
+		q, k, v, err := a.splitQKV(b.QKV)
+		if err != nil {
+			return nil, err
+		}
+		a.blocks = append(a.blocks, gvBlock{norm1w: a.up(b.Norm1W), norm1b: a.up(b.Norm1B), norm2w: a.up(b.Norm2W), norm2b: a.up(b.Norm2B),
+			q: q, k: k, v: v, proj: a.proj(b.Proj), fc1: a.proj(b.FC1), fc2: a.proj(b.FC2)})
+	}
+	return a, nil
+}
+
+func newGlmOcrVAccel(enc *vision.GlmOcrVisionEncoder) (*gridVAccel, error) {
+	w, err := enc.Weights()
+	if err != nil {
+		return nil, fmt.Errorf("metal: %w", err)
+	}
+	c := w.Cfg
+	a, err := newGridVAccel(gvkGlmOcr, c.HiddenSize, c.IntermediateSize, c.NumHeads,
+		c.InChannels*c.TemporalPatchSize*c.PatchSize*c.PatchSize, w.RMSEps)
+	if err != nil {
+		return nil, err
+	}
+	a.patchW, a.patchB = a.up(w.PatchW), a.up(w.PatchB)
+	a.ropeTables = enc.RopeTables
+	a.program = func() vision.TowerBlock { return vision.GlmOcrProgram(c) }
+	for _, b := range w.Blocks {
+		q, k, v, err := a.splitQKV(b.QKV)
+		if err != nil {
+			return nil, err
+		}
+		if len(b.QNorm) != a.hd || len(b.KNorm) != a.hd {
+			return nil, fmt.Errorf("metal: GLM-OCR q/k norm widths %d/%d, want head_dim %d", len(b.QNorm), len(b.KNorm), a.hd)
+		}
+		a.blocks = append(a.blocks, gvBlock{norm1w: a.up(b.Norm1W), norm2w: a.up(b.Norm2W), q: q, k: k, v: v, proj: a.proj(b.Proj),
+			qNorm: a.up(b.QNorm), kNorm: a.up(b.KNorm), gate: a.proj(b.Gate), up: a.proj(b.Up), down: a.proj(b.Down)})
+	}
+	return a, nil
+}
+
+// grow sizes the scratch for np patches and segments of up to maxSeg, releasing what it replaces.
+func (a *gridVAccel) grow(np, maxSeg int) error {
+	a.cancelRelease()
+	if err := a.open(); err != nil {
+		return err
+	}
+	if np > a.cap {
+		if a.ptInF1 {
+			a.pt = Buffer{} // a view of f1, released with it
+		}
+		a.release(&a.x, &a.xn, &a.pt, &a.pos, &a.q, &a.k, &a.v, &a.ctx, &a.o, &a.f1, &a.f2, &a.ropeCos, &a.ropeSin)
+		H, I := a.hidden, a.inter
+		n := func(cols int) Buffer { return a.d.NewBufferLenOn(mem.LineCompanion, np*cols) }
+		a.x, a.xn, a.pos = n(H), n(H), n(H)
+		a.q, a.k, a.v, a.ctx, a.o = n(H), n(H), n(H), n(H), n(H)
+		a.f1 = n(I)
+		if a.kind.gated() || gridScratchAllForTest {
+			a.f2 = n(I)
+		}
+		// The patch rows are read once, by the patch embed, before any block writes f1, so they live in f1 when it is wide enough.
+		a.ptInF1 = I >= a.patchDim && !gridScratchAllForTest
+		if a.ptInF1 {
+			a.pt = a.f1
+		} else {
+			a.pt = n(a.patchDim)
+		}
+		a.ropeCos, a.ropeSin = n(a.hd/2), n(a.hd/2)
+		a.cap = np
+	}
+	// The unfused attention's scratch, only when that attention can run: no fused kernel for this head dim, or the oldAttn seam.
+	unfused := a.fusedAttn == (Pipeline{}) || a.oldAttn || gridScratchAllForTest
+	if unfused && (maxSeg > a.segCap || a.qh == (Buffer{})) {
+		a.release(&a.qh, &a.kh, &a.vh, &a.sc, &a.vt, &a.ob)
+		H, B := a.hidden, min(eg2Block, maxSeg)
+		a.qh, a.kh, a.vh = a.d.NewBufferLenOn(mem.LineCompanion, maxSeg*H), a.d.NewBufferLenOn(mem.LineCompanion, maxSeg*H), a.d.NewBufferLenOn(mem.LineCompanion, maxSeg*H)
+		a.sc, a.vt, a.ob = a.d.NewBufferLenOn(mem.LineCompanion, B*maxSeg), a.d.NewBufferLenOn(mem.LineCompanion, a.hd*maxSeg), a.d.NewBufferLenOn(mem.LineCompanion, B*a.hd)
+		a.segCap = maxSeg
+	}
+	return nil
+}
+
+// gridScratchAllForTest allocates every grid-tower scratch buffer as before KS-D6 (the unfused attention's, f2 on every kind, pt
+// on its own): the old arm of its A/B.
+var gridScratchAllForTest bool
+
+// linear runs out = x·Wᵀ (+ bias) over rows.
+func (a *gridVAccel) linear(e *Encoder, x Buffer, p *gvProj, out Buffer, rows int) {
+	if a.prof != nil {
+		a.prof.flops["gemm"] += 2 * float64(rows) * float64(p.out) * float64(p.in)
+	}
+	if p.w8 != (Buffer{}) {
+		hasBias, b := uint32(0), p.b
+		if b == (Buffer{}) {
+			b = p.ws // bound but never read
+		} else {
+			hasBias = 1
+		}
+		e.Dispatch2D(a.gemmW8, (p.out+63)/64, (rows+63)/64, 512, 1, x, p.w8, out, b, a.u32(uint32(rows)), a.u32(uint32(p.out)),
+			a.u32(uint32(p.in)), a.u32(hasBias), a.u32(a.gemmDbg), p.ws)
+		return
+	}
+	if p.wh != (Buffer{}) && !a.oldGemm {
+		hasBias, b := uint32(0), p.b
+		if b == (Buffer{}) {
+			b = p.wh // bound but never read
+		} else {
+			hasBias = 1
+		}
+		e.Dispatch2D(a.gemmF16, (p.out+63)/64, (rows+63)/64, 512, 1, x, p.wh, out, b, a.u32(uint32(rows)), a.u32(uint32(p.out)),
+			a.u32(uint32(p.in)), a.u32(hasBias), a.u32(a.gemmDbg))
+		return
+	}
+	a.gemm(e, x, p.w, out, rows, p.out, p.in)
+	if p.b != (Buffer{}) {
+		e.Dispatch(a.vit.AddBias, rows*p.out, 256, out, p.b, a.u32(uint32(rows)), a.u32(uint32(p.out)))
+	}
+}
+
+// layerNorm is LayerNorm with weight and bias over rows of the hidden width, at eps.
+func (a *gridVAccel) layerNorm(e *Encoder, x, w, b, out Buffer, rows int, eps float32) {
+	e.Dispatch(a.vit.LayerNorm, rows*gpu.ViTBlock, gpu.ViTBlock, x, w, b, out, a.u32(uint32(rows)), a.u32(uint32(a.hidden)), a.f32(eps))
+}
+
+// Hidden runs the patch embed and every block (multimodal.GridTowerAccelerator): Qwen3.5+ and GLM-OCR, whose attention
+// segments are the image frames.
+func (a *gridVAccel) Hidden(pixels []float32, gridTHW [][3]int) ([]float32, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.hiddenLocked(pixels, gridTHW)
+}
+
+// HiddenTaps is Hidden plus the outputs of the given blocks, in that order (multimodal.GridTowerTapper): Qwen3-VL's
+// DeepStack taps (S10, G-S10e). Each tap is the residual right after its block, read where run ends that block's
+// command buffer.
+func (a *gridVAccel) HiddenTaps(pixels []float32, gridTHW [][3]int, blocks []int) ([]float32, [][]float32, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	taps := make([][]float32, len(blocks))
+	a.tap = func(bi, n int) {
+		for k, b := range blocks {
+			if b+a.planted.tapShift == bi { // G-S10e's planted defect shifts the tap a block late
+				taps[k] = append([]float32(nil), a.x.Floats()[:n]...)
+			}
+		}
+	}
+	defer func() { a.tap = nil }()
+	h, err := a.hiddenLocked(pixels, gridTHW)
+	if err != nil {
+		return nil, nil, err
+	}
+	for k, t := range taps {
+		if t == nil {
+			return nil, nil, fmt.Errorf("metal: DeepStack tap %d (block %d) was not reached in %d blocks", k, blocks[k], len(a.blocks))
+		}
+	}
+	return h, taps, nil
+}
+
+func (a *gridVAccel) hiddenLocked(pixels []float32, gridTHW [][3]int) ([]float32, error) {
+	segs := vision.VisionSegments(gridTHW)
+	np := segs[len(segs)-1]
+	if np == 0 || len(pixels) != np*a.patchDim {
+		return nil, fmt.Errorf("metal: %d pixel values for %d patches of %d", len(pixels), np, a.patchDim)
+	}
+	if err := a.grow(np, maxSegment(segs)); err != nil {
+		return nil, err
+	}
+	copy(a.pt.Floats()[:np*a.patchDim], pixels)
+	cos, sin := a.ropeTables(gridTHW)
+	if err := a.stageRope(cos, sin, np); err != nil {
+		return nil, err
+	}
+	if a.posEmbeds != nil {
+		g := gridTHW
+		if a.planted.transposePos { // G-S2c (3): the position rows for the transposed grid
+			g = make([][3]int, len(gridTHW))
+			for i, t := range gridTHW {
+				g[i] = [3]int{t[0], t[2], t[1]}
+			}
+		}
+		if err := a.stagePos(a.posEmbeds(g), np); err != nil {
+			return nil, err
+		}
+	}
+	var prog vision.TowerBlock
+	if a.program != nil {
+		prog = a.program()
+	}
+	return a.run(np, func(int) []int { return segs }, prog)
+}
+
+// maxSegment is the longest segment of a cumulative-offset list.
+func maxSegment(segs []int) int {
+	m := 0
+	for i := 1; i < len(segs); i++ {
+		m = max(m, segs[i]-segs[i-1])
+	}
+	return m
+}
+
+// stageRope uploads aikit's cos/sin [np, head_dim] tables. eg2_rope takes [T, hd/2]: the first half of each row, which is
+// the whole table (aikit's rows are cat(f, f)).
+func (a *gridVAccel) stageRope(cos, sin []float32, np int) error {
+	hd := a.hd
+	if len(cos) != np*hd || len(sin) != np*hd {
+		return fmt.Errorf("metal: rope tables %d/%d for %d patches of head_dim %d", len(cos), len(sin), np, hd)
+	}
+	hc, hs, half := a.ropeCos.Floats(), a.ropeSin.Floats(), hd/2
+	for i := range np {
+		if a.planted.swapRope { // G-S2c (2), G-S3a (2): the row and column halves swapped
+			q := half / 2
+			copy(hc[i*half:], cos[i*hd+q:i*hd+half])
+			copy(hc[i*half+q:], cos[i*hd:i*hd+q])
+			copy(hs[i*half:], sin[i*hd+q:i*hd+half])
+			copy(hs[i*half+q:], sin[i*hd:i*hd+q])
+			continue
+		}
+		copy(hc[i*half:(i+1)*half], cos[i*hd:i*hd+half])
+		copy(hs[i*half:(i+1)*half], sin[i*hd:i*hd+half])
+	}
+	return nil
+}
+
+// stagePos uploads the position rows [np, hidden] that run adds after the patch embed.
+func (a *gridVAccel) stagePos(pe []float32, np int) error {
+	if len(pe) != np*a.hidden {
+		return fmt.Errorf("metal: %d position values for %d patches of %d", len(pe), np, a.hidden)
+	}
+	copy(a.pos.Floats()[:np*a.hidden], pe)
+	return nil
+}
+
+// segSlots bounds the scalar-arena slots one attention call over T rows takes (eg2Ops.attention: three head-major
+// gathers, then per head and 256-row block a V transpose, two GEMMs, a softmax and a scatter).
+func (a *gridVAccel) segSlots(T int) int {
+	return 9 + a.heads*((T+eg2Block-1)/eg2Block)*20
+}
+
+// run is the patch embed over the rows staged in a.pt (plus the position rows in a.pos, when the tower has them, and the
+// RoPE tables, when it uses them) and every block; segs(bi) is block bi's attention segments as cumulative row offsets.
+// prog is the block's program (vision.TowerBlock), walked by walkBlock for every block; an empty one is an error.
+// A command buffer per block, so the scalar arena is reused from block to block; a block whose segments would overflow
+// it (Qwen2.5-VL's windows) is split across command buffers between segments. The caller holds a.mu.
+func (a *gridVAccel) run(np int, segs func(bi int) []int, prog vision.TowerBlock) ([]float32, error) {
+	if len(prog) == 0 {
+		return nil, fmt.Errorf("metal: grid tower kind %d run with no block program", a.kind)
+	}
+	H := a.hidden
+	a.slot = 0
+	e := a.eg2Ops.q.Begin()
+	account := func() { // S17 step 0: this buffer's GPU window to the class it ran
+		if a.prof != nil {
+			a.prof.gpu[a.prof.cur] += e.GPUEnd() - e.GPUStart()
+			a.prof.bufs++
+		}
+	}
+	flush := func() error {
+		e.End()
+		if err := e.Err(); err != nil {
+			return err
+		}
+		account()
+		a.slot = 0
+		e = a.eg2Ops.q.Begin()
+		return nil
+	}
+	var perr error
+	mark := func(class string) { // a class boundary: a no-op unless profiling
+		if a.prof == nil || class == a.prof.cur {
+			return
+		}
+		if a.prof.cur != "" {
+			if err := flush(); err != nil && perr == nil {
+				perr = err
+			}
+		}
+		a.prof.cur = class
+	}
+	mark("gemm")
+	pb := a.patchB
+	if a.planted.noPatchBias { // G-S2c (5), G-S3a (6)
+		pb = Buffer{}
+	}
+	a.linear(e, a.pt, &gvProj{w: a.patchW, b: pb, out: H, in: a.patchDim}, a.x, np)
+	if a.posEmbeds != nil && !a.planted.noPosEmbed { // G-S3a (5) drops it
+		mark("elementwise")
+		e.Dispatch(a.p.add, np*H, 256, a.x, a.pos, a.u32(uint32(np*H)))
+	}
+	cur := func() *Encoder { return e }
+	for bi := range a.blocks {
+		if err := a.walkBlock(prog, &a.blocks[bi], np, segs(bi), cur, mark, flush); err != nil {
+			return nil, fmt.Errorf("block %d: %w", bi, err)
+		}
+		if bi+1 < len(a.blocks) {
+			if err := flush(); err != nil {
+				return nil, err
+			}
+			if a.tap != nil {
+				a.tap(bi, np*H)
+			}
+		}
+	}
+	e.End()
+	if err := e.Err(); err != nil {
+		return nil, err
+	}
+	account()
+	if perr != nil {
+		return nil, perr
+	}
+	if a.tap != nil && len(a.blocks) > 0 {
+		a.tap(len(a.blocks)-1, np*H)
+	}
+	a.slot = 0
+	out := append([]float32(nil), a.x.Floats()[:np*H]...)
+	a.armRelease()
+	return out, nil
+}
+
+// attendSegments queues the attention of q, k and v into ctx over each segment of sg (cumulative row offsets), flushing
+// the command buffer first when a segment would overflow the scalar arena.
+func (a *gridVAccel) attendSegments(cur func() *Encoder, sg []int, flush func() error) error {
+	H, nH, hd := a.hidden, a.heads, a.hd
+	for si := 1; si < len(sg); si++ {
+		off, T := sg[si-1]*H*4, sg[si]-sg[si-1]
+		if a.prof != nil {
+			a.prof.flops["attention"] += 4 * float64(T) * float64(T) * float64(hd) * float64(nH)
+		}
+		if a.slot+a.segSlots(T)+64 > eg2ArenaSlots {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
+		e := cur()
+		if a.fusedAttn != (Pipeline{}) && !a.oldAttn {
+			e.Dispatch(a.fusedAttn, nH*((T+31)/32)*128, 128, a.q.At(off), a.k.At(off), a.v.At(off), a.ctx.At(off),
+				a.u32(uint32(T)), a.u32(uint32(nH)), a.u32(a.attnDbg))
+			continue
+		}
+		a.attention(e, eg2AttnBufs{q: a.q.At(off), k: a.k.At(off), v: a.v.At(off), qh: a.qh, kh: a.kh, vh: a.vh,
+			sc: a.sc, vt: a.vt, ob: a.ob, ctx: a.ctx.At(off)}, T, nH, hd, nH, 0)
+	}
+	return nil
+}
+
+// gridIdleRelease is how long a grid tower stays idle after a forward before it releases scratch over gridReleaseCeiling; a
+// forward in the meantime cancels the release and reuses the buffers. gridReleaseOffForTest keeps the scratch until Close, as
+// before KS-H4. Variables so a test can shorten them.
+var (
+	gridIdleRelease       = 5 * time.Second
+	gridReleaseCeiling    = int64(256 << 20)
+	gridReleaseOffForTest bool
+)
+
+// scratchBytes is the bytes the tower's scratch buffers hold (pt counted once when it is a view of f1).
+func (a *gridVAccel) scratchBytes() int64 {
+	n := 0
+	for _, b := range []Buffer{a.x, a.xn, a.pos, a.q, a.k, a.v, a.ctx, a.o, a.f1, a.f2, a.ropeCos, a.ropeSin, a.qh, a.kh, a.vh, a.sc, a.vt, a.ob} {
+		n += b.Len()
+	}
+	if !a.ptInF1 {
+		n += a.pt.Len()
+	}
+	return 4 * int64(n)
+}
+
+// armRelease schedules the scratch's release after gridIdleRelease when it is over gridReleaseCeiling. The caller holds a.mu.
+func (a *gridVAccel) armRelease() {
+	if gridReleaseOffForTest || a.scratchBytes() <= gridReleaseCeiling {
+		return
+	}
+	g := a.gen
+	a.idle = time.AfterFunc(gridIdleRelease, func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if a.gen == g && a.d != nil {
+			a.releaseScratch()
+		}
+	})
+}
+
+// cancelRelease stops a pending release and makes any that already fired a no-op. The caller holds a.mu.
+func (a *gridVAccel) cancelRelease() {
+	if a.idle != nil {
+		a.idle.Stop()
+		a.idle = nil
+	}
+	a.gen++
+}
+
+// releaseScratch frees every scratch buffer; the next forward allocates them again (grow). The caller holds a.mu.
+func (a *gridVAccel) releaseScratch() {
+	if a.ptInF1 {
+		a.pt = Buffer{} // a view of f1, released with it
+	}
+	a.release(&a.x, &a.xn, &a.pt, &a.pos, &a.q, &a.k, &a.v, &a.ctx, &a.o, &a.f1, &a.f2, &a.ropeCos, &a.ropeSin,
+		&a.qh, &a.kh, &a.vh, &a.sc, &a.vt, &a.ob)
+	a.cap, a.segCap, a.ptInF1 = 0, 0, false
+	a.idle = nil
+}

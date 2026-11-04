@@ -59,9 +59,9 @@ const webgpuHeader = "W. WebGPU suite + resident parity (adapter-detected, -tags
 // its subtests ran and the tally sees a real skip. The qwen3.5, granite and nemotron fixtures' weights are gitignored, so
 // on a clone without them those tests skip.
 var (
-	webgpuSuiteCell = cell{Name: "webgpu-suite", Pkgs: []string{"./gpu/", "./gpu/internal/kernels/"}, Tags: []string{"gpu"},
+	webgpuSuiteCell = cell{Name: "webgpu-suite", Pkgs: []string{"./backend/webgpu/", "./backend/webgpu/internal/kernels/"}, Tags: []string{"gpu"},
 		Serial: true, Extra: []string{"-short"}}
-	webgpuParityCell = cell{Name: "webgpu-parity", Pkgs: []string{"./gpu/", "./gpu/internal/kernels/"},
+	webgpuParityCell = cell{Name: "webgpu-parity", Pkgs: []string{"./backend/webgpu/", "./backend/webgpu/internal/kernels/"},
 		Tags:    []string{"gpu", "goinfer_testhooks"},
 		Run:     webgpuParityRun, // parity.go; checked by TestWebGPUGateIsListedOrExplicitlyNotRequired
 		Serial:  true,

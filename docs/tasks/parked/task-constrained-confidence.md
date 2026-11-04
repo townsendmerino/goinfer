@@ -215,7 +215,7 @@ beyond what the measurement needs.
    does, it is opt-in (it is opt-in regardless; this sets the documented cost).
 
 **C0 pre-registration (2026-09-27, committed before any graded run).**
-- **Harness:** `metal/confidence_c0_test.go` (`TestConfidenceC0`).
+- **Harness:** `backend/metal/confidence_c0_test.go` (`TestConfidenceC0`).
 - **Analysis:** `docs/measurements/confidence-c0-2026-09-27/analyze.py`, written before any graded run.
   The gates below are that script's arithmetic.
 - **Models (graded):** qwen2.5-coder-1.5b-instruct q4_k_m (`.gguf`) and qwen2.5-7b-instruct q4_k_m

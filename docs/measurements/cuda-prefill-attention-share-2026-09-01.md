@@ -12,7 +12,7 @@ class, not backend.**
 | box | `nobara-pc`, RTX 2070 SUPER, driver **595.91.07**, Nobara 44 |
 | goinfer | `1152c93` + the depth-override patch (committed with this) |
 | model | qwen2.5-coder **1.5B** instruct q4_k_m, **int4**, DENSE (no MoE) |
-| harness | `cuda/prefill_decomp_test.go` (`TestPrefillDecomp`) — the same instrument that produced the 2026-08-04 figure |
+| harness | `backend/cuda/prefill_decomp_test.go` (`TestPrefillDecomp`) — the same instrument that produced the 2026-08-04 figure |
 | method | category boundaries are stream syncs (`r.prof`), so the category sum runs over the pipelined wall time; that over-count is the price of per-kernel attribution and is reported in `catSum` |
 
 ## The result

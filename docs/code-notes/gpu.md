@@ -7,7 +7,7 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 
 ## ensurePrefillBatched
 
-Moved from `gpu/prefillrunner.go` (the comment above `ensurePrefillBatched`) on 2026-10-09.
+Moved from `backend/webgpu/prefillrunner.go` (the comment above `ensurePrefillBatched`) on 2026-10-09.
 
 ```text
 ensurePrefillBatched lazily compiles the two batched-row kernels PrefillLastW8A8
@@ -22,7 +22,7 @@ pay for or risk these at all.
 
 ## runModelToModelW
 
-Moved from `gpu/prefillrunner.go` (the comment above `runModelToModelW`) on 2026-10-09.
+Moved from `backend/webgpu/prefillrunner.go` (the comment above `runModelToModelW`) on 2026-10-09.
 
 ```text
 runModelToModelW narrows a resident runModel (the general polymorphic
@@ -110,7 +110,7 @@ only the former must decline.
 
 ## maxChunkElems
 
-Moved from `gpu/prefillrunner.go` (the comment above `maxChunkElems`) on 2026-10-09.
+Moved from `backend/webgpu/prefillrunner.go` (the comment above `maxChunkElems`) on 2026-10-09.
 
 ```text
 maxChunkElems: WebGPU's per-dimension workgroup-COUNT limit is 65535
@@ -123,7 +123,7 @@ slow), not a silent wrong-output risk, but worth actually fixing.
 
 ## quantPackedM
 
-Moved from `gpu/prefillrunner.go` (the comment above `quantPackedM`) on 2026-10-09.
+Moved from `backend/webgpu/prefillrunner.go` (the comment above `quantPackedM`) on 2026-10-09.
 
 ```text
 quantPackedM quantizes ALL M rows of a packed [M, K] buffer in ONE dispatch,
@@ -136,7 +136,7 @@ the GEMM's aq/aScale inputs ARE this call's direct output.
 
 ## tiledProjB
 
-Moved from `gpu/prefillrunner.go` (the comment above `tiledProjB`) on 2026-10-09.
+Moved from `backend/webgpu/prefillrunner.go` (the comment above `tiledProjB`) on 2026-10-09.
 
 ```text
 tiledProjB runs a projection over all M rows: quantPackedM (one dispatch, no
@@ -157,16 +157,16 @@ reads the same bytes it did when it quantized its own copy.
 
 ## PrefillLastW8A8: profBoundary
 
-Moved from `gpu/prefillrunner.go` (the comment above `pt` and `profBoundary` inside `PrefillLastW8A8`) on 2026-10-09.
+Moved from `backend/webgpu/prefillrunner.go` (the comment above `pt` and `profBoundary` inside `PrefillLastW8A8`) on 2026-10-09.
 
 ```text
-R10 prefill decomposition (gpu/prefill_prof.go): pt is a no-op (time.Time{}) whenever
+R10 prefill decomposition (backend/webgpu/prefill_prof.go): pt is a no-op (time.Time{}) whenever
 c.prefillProf is nil, so every call below costs one nil-check when profiling is off —
 mirroring cudaResident's own profTic/profToc exactly, including the accepted trade-off
 that category boundaries are syncs, so the category sum runs a bit over pipelined wall
 time (docs/measurements/webgpu-prefill-decomp-2026-09-22.md has the numbers). residualB
 and swigluB (elementwise, not GEMM/attn/norm-rope/kv-write) fold into normsRope, the
-same "glue" role cuda/prefill.go's glueCat plays.
+same "glue" role backend/cuda/prefill.go's glueCat plays.
 profBoundary closes one category: it FLUSHES the open encoder first (Poll only waits for
 submitted work — dispatches still in the encoder are invisible to it, so without this the
 split follows the 32-dispatch flush cadence, not the categories; the first run of this
@@ -177,7 +177,7 @@ extra flushes happen ONLY when profiling is on; production cadence is untouched.
 
 ## PrefillLastW8A8: attention step
 
-Moved from `gpu/prefillrunner.go` (the comment above the attention dispatch inside `PrefillLastW8A8`) on 2026-10-09.
+Moved from `backend/webgpu/prefillrunner.go` (the comment above the attention dispatch inside `PrefillLastW8A8`) on 2026-10-09.
 
 ```text
 All rows' K/V are now in the cache; each row attends to its causal prefix
@@ -196,7 +196,7 @@ allocations of it.
 
 ## matmulShaderWGSL
 
-Moved from `gpu/gpu.go` (the comment above `matmulShaderWGSL`) on 2026-10-09.
+Moved from `backend/webgpu/gpu.go` (the comment above `matmulShaderWGSL`) on 2026-10-09.
 
 ```text
 matmulShaderWGSL computes dst[m,n] = Σ_k a[m,k]·b[n,k], i.e. dst =
@@ -213,7 +213,7 @@ stages K-strips into workgroup memory is the throughput follow-up.
 
 ## Context.releases
 
-Moved from `gpu/gpu.go` (the comment above `Context.releases`) on 2026-10-09.
+Moved from `backend/webgpu/gpu.go` (the comment above `Context.releases`) on 2026-10-09.
 
 ```text
 releases holds one closure per lazily-created device object (shader module + compute
@@ -229,7 +229,7 @@ not exist yet.
 
 ## Context.closed
 
-Moved from `gpu/gpu.go` (the comment above `Context.closed`) on 2026-10-09.
+Moved from `backend/webgpu/gpu.go` (the comment above `Context.closed`) on 2026-10-09.
 
 ```text
 closed makes Close IDEMPOTENT. `defer m.Close()` alongside an explicit m.Close() is the
@@ -241,7 +241,7 @@ crashed, and only on a machine with a real GPU.
 
 ## Context.hasDP4A
 
-Moved from `gpu/gpu.go` (the comment above `Context.hasDP4A`) on 2026-10-09.
+Moved from `backend/webgpu/gpu.go` (the comment above `Context.hasDP4A`) on 2026-10-09.
 
 ```text
 hasDP4A records whether this adapter's WGSL compiler accepts dot4I8Packed
@@ -256,7 +256,7 @@ capable TU10x+) over the scalar-unpack fallback every backend accepts.
 
 ## Context.attnBatchedShader
 
-Moved from `gpu/gpu.go` (the comment above `Context.attnBatchedShader`) on 2026-10-09.
+Moved from `backend/webgpu/gpu.go` (the comment above `Context.attnBatchedShader`) on 2026-10-09.
 
 ```text
 docs/completed/task-gpu-batched-prefill.md Increment 1: batched causal attention (PrefillLastW8A8
@@ -275,7 +275,7 @@ than a bit-exact one.
 
 ## liveContexts
 
-Moved from `gpu/gpu.go` (the comment above `liveContexts`) on 2026-10-09.
+Moved from `backend/webgpu/gpu.go` (the comment above `liveContexts`) on 2026-10-09.
 
 ```text
 liveContexts counts Contexts that have been created and not yet Closed. A WebGPU device is
@@ -288,7 +288,7 @@ Exposed to tests through liveContexts.Load(); see TestDeviceExhaustion_repro.
 
 ## Context.mkPipeline
 
-Moved from `gpu/gpu.go` (the comment above `Context.mkPipeline`) on 2026-10-09.
+Moved from `backend/webgpu/gpu.go` (the comment above `Context.mkPipeline`) on 2026-10-09.
 
 ```text
 mkPipeline compiles one WGSL shader into a compute pipeline, registers BOTH objects for release,
@@ -303,7 +303,7 @@ failed ensure* leaves the Context exactly as it found it.
 
 ## finalizerSerial
 
-Moved from `gpu/gpu.go` (the comment above `finalizerSerial`) on 2026-10-09.
+Moved from `backend/webgpu/gpu.go` (the comment above `finalizerSerial`) on 2026-10-09.
 
 ```text
 finalizerSerial runs f on the runtime's finalizer goroutine and waits for it.
@@ -319,7 +319,7 @@ If the finalizer goroutine does not take the job within about a second (it is bl
 
 ## Stage 3 attention primitives: long-context RoPE
 
-Moved from `gpu/attention.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `backend/webgpu/attention.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Stage 3 attention primitives — RoPE and single-query attention on the GPU, so a
@@ -339,14 +339,14 @@ hardware: cosine 0.99999978, maxAbs 2.9e-3 — about 1000x worse than TestRoPE_p
 baseline (maxAbs 3.1e-06), a real and measured effect, not just a theoretical one. Whether that
 magnitude matters for real model quality is a product decision this file does not make; the
 test records the number rather than asserting a pass/fail bar this session has no basis to
-pick. `metal/kernels.go`'s identical `float(pos)*invf[dd]` pattern (the "09-02" Metal note
+pick. `backend/metal/kernels.go`'s identical `float(pos)*invf[dd]` pattern (the "09-02" Metal note
 this cross-references) remains unmeasured — this file's measurement does not carry over to
 Metal, since GPU vendors' sin/cos range reduction is independently implementation-defined.
 ```
 
 ## attnWG
 
-Moved from `gpu/attention.go` (the comment above `attnWG`) on 2026-10-09.
+Moved from `backend/webgpu/attention.go` (the comment above `attnWG`) on 2026-10-09.
 
 ```text
 attnWG is the single-query attention kernels' NARROW workgroup width, and attnWGWide the wide
@@ -370,7 +370,7 @@ narrow single-query kernels below.
 
 ## attnShaderWGSL
 
-Moved from `gpu/attention.go` (the comment above `attnShaderWGSL`) on 2026-10-09.
+Moved from `backend/webgpu/attention.go` (the comment above `attnShaderWGSL`) on 2026-10-09.
 
 ```text
 Single-query attention (decode): one workgroup per query head, an online
@@ -386,7 +386,7 @@ lanes (every lane sees the same score x), so no extra reduction is needed.
 
 ## attnKeysShaderWGSL
 
-Moved from `gpu/attention.go` (the comment above `attnKeysShaderWGSL`) on 2026-10-09.
+Moved from `backend/webgpu/attention.go` (the comment above `attnKeysShaderWGSL`) on 2026-10-09.
 
 ```text
 attnKeys — decode attention that splits the workgroup over KEYS, not over the head
@@ -402,7 +402,7 @@ which at 448 GB/s is a 0.066 ms job. ~0.5% of streaming roofline, against the GE
 
 Here each lane owns a disjoint set of KEYS and computes its own dots with no cross-lane
 traffic; only the softmax max and denominator reduce, ONCE per tile rather than once per
-key. Barriers per layer fall ~250×. This is the shape cuda/attn_block.cu already uses —
+key. Barriers per layer fall ~250×. This is the shape backend/cuda/attn_block.cu already uses —
 WebGPU's kernel was a generation behind it, not blocked by WGSL.
 
 TILED, because WGSL has no dynamic workgroup storage. CUDA sizes sc[nWin] per launch via
@@ -424,7 +424,7 @@ cosine/maxAbs against that f64 reference, plus argmax through TestWebGPU_forward
 
 ## attnKernel
 
-Moved from `gpu/attention.go` (the comment above `attnKernel`) on 2026-10-09.
+Moved from `backend/webgpu/attention.go` (the comment above `attnKernel`) on 2026-10-09.
 
 ```text
 attnKernel picks the non-int8-KV attention pipeline+layout for a given geometry —
@@ -446,7 +446,7 @@ handling it separately, as decoderunner.go already does.
 
 ## ensureAttn: guard
 
-Moved from `gpu/attention.go` (the comment inside `ensureAttn`) on 2026-10-09.
+Moved from `backend/webgpu/attention.go` (the comment inside `ensureAttn`) on 2026-10-09.
 
 ```text
 Guard on the LAST pipeline built, not the first: these are created in order, so a non-nil last
@@ -458,7 +458,7 @@ rebuilt (the old ones stay tracked for release at Close — bounded, not leaked)
 
 ## attnWideTemplateWGSL
 
-Moved from `gpu/attention.go` (the comment above `attnWideTemplateWGSL`) on 2026-10-09.
+Moved from `backend/webgpu/attention.go` (the comment above `attnWideTemplateWGSL`) on 2026-10-09.
 
 ```text
 The WIDE single-query attention kernel: one template, STRIDED lanes.
@@ -482,7 +482,7 @@ how a K/V element is fetched, which is the part that is obvious on sight.
 
 ## ensureAttnWide: guard
 
-Moved from `gpu/attention.go` (the comment inside `ensureAttnWide`) on 2026-10-09.
+Moved from `backend/webgpu/attention.go` (the comment inside `ensureAttnWide`) on 2026-10-09.
 
 ```text
 N-14: guard on the LAST pipeline, not the first. This compiles THREE variants (f32, f16
@@ -497,7 +497,7 @@ being non-nil implies all three are.
 
 ## webgpuBackend
 
-Moved from `gpu/backend.go` (the comment above `webgpuBackend`) on 2026-10-09.
+Moved from `backend/webgpu/backend.go` (the comment above `webgpuBackend`) on 2026-10-09.
 
 ```text
 webgpuBackend runs MatmulBT on a WebGPU adapter (Vulkan / Metal / D3D12) via
@@ -519,15 +519,15 @@ norms/rope/softmax to WGSL) is the remaining work for a GPU-fast forward.
 
 ## webgpuBackend.MatmulW4A8
 
-Moved from `gpu/backend.go` (the comment above `webgpuBackend.MatmulW4A8`) on 2026-10-09.
+Moved from `backend/webgpu/backend.go` (the comment above `webgpuBackend.MatmulW4A8`) on 2026-10-09.
 
 ```text
 MatmulW4A8 is MatmulW8A8's int4 (W4A8) twin — G6 (docs/tasks/task-gpu-paths-2026-09.md), the "staged
 int4" item: decoder/weightmat.go's matmulInto never consulted a backend for int4 before this
 (its int8 branch already did, via MatmulW8A8/QuantBackend), so an int4-quantized model on the
 STAGED (non-resident) path ran every projection on the CPU regardless of which backend was
-active — gpu/gemv_w4a8.go's kernel, upload paths and decodeWeight interface already existed,
-but only gpu/residency.go's RESIDENT uploadProj used them.
+active — backend/webgpu/gemv_w4a8.go's kernel, upload paths and decodeWeight interface already existed,
+but only backend/webgpu/residency.go's RESIDENT uploadProj used them.
 
 M=1 only (decode): the M>1 (prefill/tiled) case has no int4 GEMM kernel on this backend yet —
 declines, so matmulInto's caller falls back to the CPU W4A8 kernel exactly as it did before
@@ -537,7 +537,7 @@ always w4a8GroupSize (32) for goinfer's models (matches uploadProj's own assumpt
 
 ## webgpuBackend.MatmulW4A8Batch
 
-Moved from `gpu/backend.go` (the comment above `webgpuBackend.MatmulW4A8Batch`) on 2026-10-09.
+Moved from `backend/webgpu/backend.go` (the comment above `webgpuBackend.MatmulW4A8Batch`) on 2026-10-09.
 
 ```text
 MatmulW4A8Batch runs several W4A8 GEMVs that share one activation (fused q/k/v or gate/up,
@@ -552,7 +552,7 @@ the same decline contract MatmulW4A8/MatmulW8A8Batch already use.
 
 ## liveBufferBytes
 
-Moved from `gpu/bufaccount.go` (the comment above `liveBufferBytes`) on 2026-10-09.
+Moved from `backend/webgpu/bufaccount.go` (the comment above `liveBufferBytes`) on 2026-10-09.
 
 ```text
 Live device-buffer accounting.
@@ -569,7 +569,7 @@ to the test that caused it. See TestNoBufferLeak.
 
 ## §2 fused decode kernels
 
-Moved from `gpu/decodefuse.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `backend/webgpu/decodefuse.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 §2 fused decode kernels. The §5 finding: decode is glue-serialization-bound —
@@ -582,7 +582,7 @@ is bit-exact with the unfused pair it replaces (same f32 math, same int8 pack).
 
 ## gegluQuant
 
-Moved from `gpu/decodefuse.go` (the comment above `gegluQuantWGSL`) on 2026-10-09.
+Moved from `backend/webgpu/decodefuse.go` (the comment above `gegluQuantWGSL`) on 2026-10-09.
 
 ```text
 gegluQuant is swigluQuant's GELU-tanh-gated twin — Gemma's FeatGatedGELU (G6,
@@ -595,7 +595,7 @@ regression (0.818→0.994 after the fix) the first time it shipped this exact ma
 
 ## DecodeTokenFusedBatched
 
-Moved from `gpu/decodetoken_batched.go` (the comment above `DecodeTokenFusedBatched`) on 2026-10-09.
+Moved from `backend/webgpu/decodetoken_batched.go` (the comment above `DecodeTokenFusedBatched`) on 2026-10-09.
 
 ```text
 DecodeTokenFusedBatched is the Stage-B (docs/spec/07) batched verify forward: it
@@ -631,16 +631,16 @@ measure: the amortization is across M rows within a layer, not across the whole 
 
 ## deltaRuleShaderWGSL
 
-Moved from `gpu/deltanet.go` (the comment above `deltaRuleShaderWGSL`) on 2026-10-09.
+Moved from `backend/webgpu/deltanet.go` (the comment above `deltaRuleShaderWGSL`) on 2026-10-09.
 
 ```text
 Resident Gated-DeltaNet decode step (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8).
 
 N-34 (09-02): this comment used to say the mixer below "makes every DeltaNet hybrid CPU-only
 on every backend today" — true when it was written, false once this file shipped. Status per
-decoder/features.go's FeatDeltaNet declarations: webgpu (here) and metal (metal/deltanet.go,
-metal/deltanet_kernels.go) both implement the full family, dense and MoE siblings alike; cuda
-(cuda/deltanet.ptx) implements it too, gated end-to-end by TestQwen35ResidentParityCUDA. See
+decoder/features.go's FeatDeltaNet declarations: webgpu (here) and metal (backend/metal/deltanet.go,
+backend/metal/deltanet_kernels.go) both implement the full family, dense and MoE siblings alike; cuda
+(backend/cuda/deltanet.ptx) implements it too, gated end-to-end by TestQwen35ResidentParityCUDA. See
 docs/deltanet-residency-plan.md (DONE AND MEASURED 2026-08-19 for this backend, 11.4-12.2x CPU
 decode) for the webgpu measurement this file is the result of.
 
@@ -676,7 +676,7 @@ them inside this kernel would repeat each one hv times — the same work as the 
 
 ## deltaQSplitShaderWGSL
 
-Moved from `gpu/deltanet.go` (the comment above `deltaQSplitShaderWGSL`) on 2026-10-09.
+Moved from `backend/webgpu/deltanet.go` (the comment above `deltaQSplitShaderWGSL`) on 2026-10-09.
 
 ```text
 The SOFTMAX layers of this family are not ordinary GQA either, and that is easy to miss: with
@@ -693,7 +693,7 @@ signature (TestQwen35ResidentParity mutation W1b) — plausible logits from the 
 
 ## slotsBeforeContext
 
-Moved from `gpu/kv_slots.go` (the comment above `slotsBeforeContext`) on 2026-10-09.
+Moved from `backend/webgpu/kv_slots.go` (the comment above `slotsBeforeContext`) on 2026-10-09.
 
 ```text
 slotsBeforeContext is MC1's "slots before context" on WebGPU (owner decision 2026-09-27, the rule CUDA's
@@ -710,7 +710,7 @@ nobara prompt). KV is linear in the context, so "fits" is monotone and a binary 
 
 ## Stage 2: device-resident activations
 
-Moved from `gpu/device.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `backend/webgpu/device.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Stage 2 — device-resident activations. At M=1 decode the activation is a few
@@ -734,7 +734,7 @@ ablation profile in TestDecode_dispatchProfile and G35 in docs/QUEUE.md.
 
 ## readbackRaw
 
-Moved from `gpu/device.go` (the comment above `readbackRaw`) on 2026-10-09.
+Moved from `backend/webgpu/device.go` (the comment above `readbackRaw`) on 2026-10-09.
 
 ```text
 readbackRaw reads n f32 elements from a raw *wgpu.Buffer whose REAL release stays exactly
@@ -759,7 +759,7 @@ back down, for a real GPU allocation that WAS correctly released by the caller's
 
 ## matmulTiledW8A8BiasKernelWGSL
 
-Moved from `gpu/gemm.go` (the comment above `matmulTiledW8A8BiasKernelWGSL`) on 2026-10-09.
+Moved from `backend/webgpu/gemm.go` (the comment above `matmulTiledW8A8BiasKernelWGSL`) on 2026-10-09.
 
 ```text
 matmulTiledW8A8BiasKernelWGSL is matmulTiledW8A8KernelWGSL with one addition: a
@@ -783,7 +783,7 @@ rows at once instead of M separate GEMV calls.
 
 ## Register-blocked tiled W8A8 GEMM
 
-Moved from `gpu/gemm_rb.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `backend/webgpu/gemm_rb.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Register-blocked tiled W8A8 GEMM (R10, docs/measurements/webgpu-prefill-profile-2026-09-22.md).
@@ -810,7 +810,7 @@ TestTiledRB64_bitIdentical across aligned and ragged shapes.
 
 ## f32to16
 
-Moved from `gpu/gemv_w4a8.go` (the comment above `f32to16`) on 2026-10-09.
+Moved from `backend/webgpu/gemv_w4a8.go` (the comment above `f32to16`) on 2026-10-09.
 
 ```text
 f32to16 is an alias for the ONE converter this package uses; see f32ToF16 in f16.go.
@@ -827,13 +827,13 @@ on the CPU, and for those groups it did not.
 
 ## gegluShaderWGSL
 
-Moved from `gpu/layer.go` (the comment above `gegluShaderWGSL`) on 2026-10-09.
+Moved from `backend/webgpu/layer.go` (the comment above `gegluShaderWGSL`) on 2026-10-09.
 
 ```text
 gegluShaderWGSL is swigluShaderWGSL's GELU-tanh-gated twin — Gemma's FeatGatedGELU (G6,
 docs/tasks/task-gpu-paths-2026-09.md). The tanh argument is CLAMPED to ±15 before calling tanh:
 unclamped, tanh's argument overflows f32 before saturating at Gemma's activation magnitudes,
-producing NaN — the exact defect Metal's own port hit (metal/kernels.go's glu_act, logit
+producing NaN — the exact defect Metal's own port hit (backend/metal/kernels.go's glu_act, logit
 cosine 0.818→0.994 after the clamp fix, decoder/features.go's FeatGatedGELU-adjacent note).
 tanh itself saturates to ±1 by |arg|~9, so the clamp is a correctness fix at f32 overflow, not
 an approximation — every other family (SwiGLU) never reaches this branch at all.
@@ -841,11 +841,11 @@ an approximation — every other family (SwiGLU) never reaches this branch at al
 
 ## SetAdapter: partial-bind cleanup
 
-Moved from `gpu/lora_resident.go` (the comment inside `SetAdapter`) on 2026-10-09.
+Moved from `backend/webgpu/lora_resident.go` (the comment inside `SetAdapter`) on 2026-10-09.
 
 ```text
 N-82 (docs/audit-2026-09-10.md): an mk error partway through used to return immediately,
-leaking every already-built projection in built (metal/lora.go's own C-04, audit-metal-
+leaking every already-built projection in built (backend/metal/lora.go's own C-04, audit-metal-
 2026-09-12.md, already fixed the identical shape there — same defer+bound idiom, applied
 here too). Worse than a leak alone: r.loraLayers was already released and nilled above, but
 r.steps was left pointing at the PREVIOUS adapter's now-released bind groups — this file's
@@ -860,7 +860,7 @@ and keeping r.steps consistent with the nil r.loraLayers either way.
 
 ## testhooks.go
 
-Moved from `gpu/testhooks.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `backend/webgpu/testhooks.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Code relocated by the B-08 build-tag pass: these are test-only hooks, compiled
@@ -872,12 +872,12 @@ HAND-MAINTAINED, NOT MACHINE-GENERATED — despite this file's former name
 same-day fix gave it back the missing `gpu` tag this build line requires —
 see git history). There is no //go:generate directive and nothing
 regenerates it; edit it directly like any other file. Mirrors
-decoder/testhooks.go and cuda/testhooks.go.
+decoder/testhooks.go and backend/cuda/testhooks.go.
 ```
 
 ## Resident SigLIP vision encoder
 
-Moved from `gpu/vision.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `backend/webgpu/vision.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Resident SigLIP vision encoder — the path to a GPU-fast image prefill
@@ -894,7 +894,7 @@ quantize / residual primitives.
 
 ## VisionEncoder
 
-Moved from `gpu/vision_encoder.go` (the comment above `VisionEncoder`) on 2026-10-09.
+Moved from `backend/webgpu/vision_encoder.go` (the comment above `VisionEncoder`) on 2026-10-09.
 
 ```text
 VisionEncoder is the resident GPU SigLIP forward. It uploads the tower once
@@ -910,13 +910,13 @@ attached (-tags gpu); the default build is pure-Go CPU.
 
 ## prefillProf
 
-Moved from `gpu/prefill_prof.go` (the comment above `prefillProf`) on 2026-10-09.
+Moved from `backend/webgpu/prefill_prof.go` (the comment above `prefillProf`) on 2026-10-09.
 
 ```text
 R10's prefill-profile step (docs/tasks/red-october.md, docs/measurements/webgpu-prefill-decomp-2026-09-22.md):
-per-category wall time for the batched prefill path, mirroring cuda/prefill.go's own profTic/profToc
+per-category wall time for the batched prefill path, mirroring backend/cuda/prefill.go's own profTic/profToc
 exactly (same shape, same accepted trade-off — "category boundaries are syncs, so the category sum
-runs a bit over the pipelined wall time... the price of per-kernel attribution", cuda/prefill_decomp_test.go's
+runs a bit over the pipelined wall time... the price of per-kernel attribution", backend/cuda/prefill_decomp_test.go's
 own doc comment). Four categories, matching R10's own ask ("the GEMM, the attention, the batched
 norms/rope and the KV write each carry a number") — one more than CUDA's three (gemv/attn/glue),
 because R10 asked norms/rope to be its own class rather than folded into a catch-all.
@@ -924,12 +924,12 @@ because R10 asked norms/rope to be its own class rather than folded into a catch
 
 ## f32ToF16
 
-Moved from `gpu/f16.go` (the comment above `f32ToF16`) on 2026-10-09.
+Moved from `backend/webgpu/f16.go` (the comment above `f32ToF16`) on 2026-10-09.
 
 ```text
 f32ToF16 is THE float32 → IEEE-754 half converter for this package, byte-for-byte identical to
-decoder.f32ToF16bits — the canonical resident-backend representation that cuda/kernels.go's
-f32tof16, metal/pack.go and the GOINFER_INT4_F16_SCALES CPU diagnostic all replicate.
+decoder.f32ToF16bits — the canonical resident-backend representation that backend/cuda/kernels.go's
+f32tof16, backend/metal/pack.go and the GOINFER_INT4_F16_SCALES CPU diagnostic all replicate.
 Round-half-up plus gradual underflow to subnormals.
 
 N-04: this package had TWO converters and neither matched. gemv_w4a8.go's flushed the whole
@@ -937,14 +937,14 @@ subnormal range (so an int4 group scale below 2^-14 read as all-zero on WebGPU o
 one used round-to-nearest-EVEN in the normal range where every other backend rounds half up —
 so identical inputs could produce different halves on exact ties. One converter now, and
 TestF32ToF16_N04 pins it against a local copy of the canonical algorithm, the same way
-cuda/internal/wpack/f16_convert_test.go does for C-15.
+backend/cuda/internal/wpack/f16_convert_test.go does for C-15.
 
 NOT RNE: a lone RNE here would re-introduce the divergence C-15 closed.
 ```
 
 ## Package gpu: status paragraph
 
-Moved from `gpu/doc.go` (the comment in the package doc) on 2026-10-09.
+Moved from `backend/webgpu/doc.go` (the comment in the package doc) on 2026-10-09.
 
 ```text
 Package gpu is the OPTIONAL WebGPU (Metal / Vulkan / DX12) compute backend
@@ -978,7 +978,7 @@ end-to-end parity coverage per family.
 
 ## Releasing a resident ModelW
 
-Moved from `gpu/modelw_release.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `backend/webgpu/modelw_release.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Releasing a resident ModelW.
@@ -1003,7 +1003,7 @@ The only thing that actually ran out was VRAM.
 
 ## swigluQuant
 
-Moved from `gpu/decodefuse.go` (the comment above `swigluQuantWGSL`) on 2026-10-09.
+Moved from `backend/webgpu/decodefuse.go` (the comment above `swigluQuantWGSL`) on 2026-10-09.
 
 ```text
 swigluQuant fuses SwiGLU → activation-quantize: silu(gate)·up is computed,
@@ -1016,7 +1016,7 @@ rather than staged, so no inter-wide workgroup array is needed.
 
 ## DecodeTokenFused
 
-Moved from `gpu/decodetoken_fused.go` (the comment above `DecodeTokenFused`) on 2026-10-09.
+Moved from `backend/webgpu/decodetoken_fused.go` (the comment above `DecodeTokenFused`) on 2026-10-09.
 
 ```text
 copies between passes — then ONE Submit + ONE Poll. The per-op-submit DecodeToken
@@ -1027,14 +1027,14 @@ the §0.5 probe measured as the win. Bit-exact-identical to DecodeToken
 
 ## attnKeysEligible
 
-Moved from `gpu/attention.go` (the comment above `attnKeysEligible` (it sat above `attnKeysDisabled`)) on 2026-10-09.
+Moved from `backend/webgpu/attention.go` (the comment above `attnKeysEligible` (it sat above `attnKeysDisabled`)) on 2026-10-09.
 
 ```text
 attnKeysEligible reports whether the key-split attention kernel can serve this geometry.
 f32 KV only (the f16/int8 caches have their own packed kernels), hd within the narrow
 128-lane kernel, and hd/kvDim both multiples of 4 so the vec4 K/q loads are in bounds and
 aligned — without those loads the key-split read pattern wastes ~78% of each L1TEX sector,
-which is the whole reason cuda/attn_block.cu reads float4.
+which is the whole reason backend/cuda/attn_block.cu reads float4.
 attnKeysDisabled force-disables the key-split kernel (GOINFER_ATTN_KEYS=0), so the old
 dim-split kernel can be A/B'd in the same binary. Read once: the plan is recorded per
 runner, and a mid-run flip would leave a half-converted plan.
@@ -1042,7 +1042,7 @@ runner, and a mid-run flip would leave a half-converted plan.
 
 ## moeRouteWGSL
 
-Moved from `gpu/moe.go` (the comment above `moeRouteWGSL`) on 2026-10-09.
+Moved from `backend/webgpu/moe.go` (the comment above `moeRouteWGSL`) on 2026-10-09.
 
 ```text
 MoE residency (Lever C3) — sparse expert routing + dispatch on the GPU so the MoE
@@ -1062,7 +1062,7 @@ is not the cost, the expert GEMVs are.
 
 ## matmulW8A8ShaderWGSL
 
-Moved from `gpu/quant.go` (the comment above `matmulW8A8ShaderWGSL`) on 2026-10-09.
+Moved from `backend/webgpu/quant.go` (the comment above `matmulW8A8ShaderWGSL`) on 2026-10-09.
 
 ```text
 W8A8 (int8×int8) matmul on the GPU — the Stage-1 "quantized matmul" unlock.
@@ -1076,7 +1076,7 @@ is bandwidth-bound. Math matches linalg.MatmulBTW8A8 exactly:
 
 ## attnMaxHeadDim
 
-Moved from `gpu/attention.go` (the comment inside the `attnWG` constant block) on 2026-10-09.
+Moved from `backend/webgpu/attention.go` (the comment inside the `attnWG` constant block) on 2026-10-09.
 
 ```text
 attnMaxHeadDim is therefore 2048, which no model is near. That is the point: head_dim
@@ -1085,7 +1085,7 @@ stopped being a reason to decline, rather than the wall moving up one notch to 2
 
 ## New: storage-buffer binding limit
 
-Moved from `gpu/gpu.go` (the comment inside `New`) on 2026-10-09.
+Moved from `backend/webgpu/gpu.go` (the comment inside `New`) on 2026-10-09.
 
 ```text
 Raise the storage-buffer binding limit: the DEFAULT device caps it at 128 MB,
@@ -1098,7 +1098,7 @@ required limits). maxBufferSize must be ≥ the binding size.
 
 ## New: MaxBufferSize
 
-Moved from `gpu/gpu.go` (the comment inside `New`) on 2026-10-09.
+Moved from `backend/webgpu/gpu.go` (the comment inside `New`) on 2026-10-09.
 
 ```text
 Raise MaxBufferSize to the binding max (2 GB on this card) so large single
@@ -1110,7 +1110,7 @@ silently keeps the 256 MB default (it must be a concrete value to take).
 
 ## W4A8 decode GEMV
 
-Moved from `gpu/gemv_w4a8.go` (the comment above `w4a8GroupSize`) on 2026-10-09.
+Moved from `backend/webgpu/gemv_w4a8.go` (the comment above `w4a8GroupSize`) on 2026-10-09.
 
 ```text
 W4A8 decode GEMV: int4 group-wise weights × int8 activation. The decode
@@ -1125,7 +1125,7 @@ is one coalesced load. Activations are int8 (per-row aScale, same as W8A8).
 
 ## UploadW4A8Packed
 
-Moved from `gpu/gemv_w4a8.go` (the comment above `UploadW4A8Packed`) on 2026-10-09.
+Moved from `backend/webgpu/gemv_w4a8.go` (the comment above `UploadW4A8Packed`) on 2026-10-09.
 
 ```text
 UploadW4A8Packed is the fast path of UploadW4A8: it uploads int4 weights whose bytes are
@@ -1140,7 +1140,7 @@ callers fall back to UploadW4A8 otherwise. Same nibble value convention (value+8
 
 ## gemmRowMaxM
 
-Moved from `gpu/gemm_rows.go` (the comment above `gemmRowMaxM`) on 2026-10-09.
+Moved from `backend/webgpu/gemm_rows.go` (the comment above `gemmRowMaxM`) on 2026-10-09.
 
 ```text
 Thin-M W8A8 GEMM for the Stage-B verify (docs/spec/07). The 16×16 tiled GEMM
@@ -1155,7 +1155,7 @@ tile dimension. Arithmetic is identical to M separate GEMVs ⇒ bit-parity.
 
 ## deltaNormShaderWGSL
 
-Moved from `gpu/deltanet.go` (the comment above `deltaNormShaderWGSL`) on 2026-10-09.
+Moved from `backend/webgpu/deltanet.go` (the comment above `deltaNormShaderWGSL`) on 2026-10-09.
 
 ```text
 deltaNorm l2-normalizes the per-head q and k slices of the conv output, and applies the query
@@ -1169,7 +1169,7 @@ reference slices, so the layouts agree by construction rather than by comment.
 
 ## deltaGatesShaderWGSL
 
-Moved from `gpu/deltanet.go` (the comment above `deltaGatesShaderWGSL`) on 2026-10-09.
+Moved from `backend/webgpu/deltanet.go` (the comment above `deltaGatesShaderWGSL`) on 2026-10-09.
 
 ```text
 deltaGates turns the two small per-value-head projections into the pair the delta rule consumes:
@@ -1184,7 +1184,7 @@ not optional.
 
 ## darwinKVSlots
 
-Moved from `gpu/kv_slots.go` (the comment above `darwinKVSlots`) on 2026-10-09.
+Moved from `backend/webgpu/kv_slots.go` (the comment above `darwinKVSlots`) on 2026-10-09.
 
 ```text
 darwinKVSlots prices slots where the device's buffers ARE host RAM (darwin), against the same two ceilings Metal's
@@ -1201,7 +1201,7 @@ An unreadable RAM size grants one, as metalKVSlots does.
 
 ## ssmStopLayerForTest
 
-Moved from `gpu/decoderunner.go` (the comment above `ssmStopLayerForTest`) on 2026-10-09.
+Moved from `backend/webgpu/decoderunner.go` (the comment above `ssmStopLayerForTest`) on 2026-10-09.
 
 ```text
 ssmStopLayerForTest truncates a newly built decode plan after this layer (-1 = every layer): the
@@ -1211,7 +1211,7 @@ resident-SSM bring-up's layer-sweep seam, set only by tests in this package
 
 ## attnGeom
 
-Moved from `gpu/decoderunner.go` (the comment above `attnGeom`) on 2026-10-09.
+Moved from `backend/webgpu/decoderunner.go` (the comment above `attnGeom`) on 2026-10-09.
 
 ```text
 attnGeom is one distinct per-layer attention shape: head_dim (hd), KV-head count
@@ -1240,7 +1240,7 @@ to the key too; none on this seam has that (Gemma 4 is 16 query heads in both va
 
 ## runModel.gatedGELU
 
-Moved from `gpu/decoderunner.go` (the comment above `runModel.gatedGELU`) on 2026-10-09.
+Moved from `backend/webgpu/decoderunner.go` (the comment above `runModel.gatedGELU`) on 2026-10-09.
 
 ```text
 G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatGatedGELU, model-level like ropeHalf/
@@ -1258,7 +1258,7 @@ for the family that actually needs it.
 
 ## attnHeadDimSupported
 
-Moved from `gpu/decoderunner.go` (the comment above `attnHeadDimSupported`) on 2026-10-09.
+Moved from `backend/webgpu/decoderunner.go` (the comment above `attnHeadDimSupported`) on 2026-10-09.
 
 ```text
 newDecodeRunner builds the persistent decode plan for either precision.
@@ -1273,7 +1273,7 @@ limit; this covers the softmax/GQA runners including Gemma 4's per-layer head_di
 
 ## newDecodeRunner.guards
 
-Moved from `gpu/decoderunner.go` (the comment above `newDecodeRunner.guards`) on 2026-10-09.
+Moved from `backend/webgpu/decoderunner.go` (the comment above `newDecodeRunner.guards`) on 2026-10-09.
 
 ```text
 The single-query attention kernels (attention.go) parallelize over head_dim at
@@ -1292,7 +1292,7 @@ MLA, but enforce the analogous per-lane rank cap MLAAttn itself checks (rank ≤
 
 ## DecodeRunner.mambaOps
 
-Moved from `gpu/decoderunner.go` (the comment above `DecodeRunner.mambaOps`) on 2026-10-09.
+Moved from `backend/webgpu/decoderunner.go` (the comment above `DecodeRunner.mambaOps`) on 2026-10-09.
 
 ```text
 Mamba-2 SSM mixer dispatches (P5b): the conv/ssm/gatedNorm kernels read slices of
@@ -1303,7 +1303,7 @@ the recurrence. mamba* are nil for non-hybrid models (the closures go unused).
 
 ## ropeKUniFor
 
-Moved from `gpu/decoderunner.go` (the comment above `ropeKUniFor`) on 2026-10-09.
+Moved from `backend/webgpu/decoderunner.go` (the comment above `ropeKUniFor`) on 2026-10-09.
 
 ```text
 ropeKUniFor feeds ropeStoreShaderWGSL, whose P struct has TWO distinct roles: slot 3
@@ -1316,12 +1316,12 @@ never read it. The int8 variant used slot 3, the rope angle, until audit-2026-09
 
 ## DecodeRunner.ReadMambaCap
 
-Moved from `gpu/decoderunner.go` (the comment above `DecodeRunner.ReadMambaCap`) on 2026-10-09.
+Moved from `backend/webgpu/decoderunner.go` (the comment above `DecodeRunner.ReadMambaCap`) on 2026-10-09.
 
 ```text
 ReadMambaCap copies the first mamba layer's captured proj/conv/y/gated buffers (their
 values from the most recent Run) back to the host — the resident's actual per-token kernel
-I/O, for diffing against mamba2Step (gpu/mamba_resident_capture_test.go). projN/convN/dInner
+I/O, for diffing against mamba2Step (backend/webgpu/mamba_resident_capture_test.go). projN/convN/dInner
 are the element counts. Test-only; allocates fresh staging per call.
 
 N-15: this is EXPORTED and used to panic on a failed buffer map. "Test-only" is a comment, not
@@ -1331,7 +1331,7 @@ panic on a device-boundary failure takes the caller's process down. Returns an e
 
 ## DecodeRunner.Run.errchecks
 
-Moved from `gpu/decoderunner.go` (the comment above `DecodeRunner.Run.errchecks`) on 2026-10-09.
+Moved from `backend/webgpu/decoderunner.go` (the comment above `DecodeRunner.Run.errchecks`) on 2026-10-09.
 
 ```text
 N-84 (docs/audit-2026-09-10.md): these two used to discard their error returns, unlike
@@ -1342,7 +1342,7 @@ failed" with no indication which call actually caused it.
 
 ## uploadProj.slowpath
 
-Moved from `gpu/residency.go` (the comment above `uploadProj.slowpath`) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the comment above `uploadProj.slowpath`) on 2026-10-09.
 
 ```text
 The int4 resident upload takes the direct byte path whenever K%32==0 (decoder int4 bytes == GPU
@@ -1353,7 +1353,7 @@ measurement is in docs/completed/mellum2-resident.md.
 
 ## uploadProj.fastpath
 
-Moved from `gpu/residency.go` (the comment above `uploadProj.fastpath`) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the comment above `uploadProj.fastpath`) on 2026-10-09.
 
 ```text
 Fast path: when K%32==0 the decoder's 2-nibble/byte int4 is byte-identical to the
@@ -1363,12 +1363,12 @@ per-element unpack + packNibbles re-pack (the ~30s/12B-param resident-load tax).
 
 ## webgpuBackend.BuildResident.perlayergeom
 
-Moved from `gpu/residency.go` (the comment above `webgpuBackend.BuildResident.perlayergeom`) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the comment above `webgpuBackend.BuildResident.perlayergeom`) on 2026-10-09.
 
 ```text
 Per-layer attention geometry (decoder.Model.PerLayerGeomOK): dense Gemma 4's local/global
 head_dim split (256 vs gemma4.GlobalHeadDim 512) needs a per-layer geometry seam this
-backend's runLayer.ghd/gnKV/ghalf fields exist for but gpu/residency.go's per-layer builder
+backend's runLayer.ghd/gnKV/ghalf fields exist for but backend/webgpu/residency.go's per-layer builder
 never actually populates for any family. Not expressible as a ResidentFeature — Gemma 3 and
 dense Gemma 4 derive the IDENTICAL required-feature set otherwise, so MissingResidentFeatures
 alone cannot catch this; see PerLayerGeomOK's own comment for the admission this predicate
@@ -1378,17 +1378,17 @@ requirement dense Gemma 4 has).
 
 ## webgpuBackend.BuildResident.routercap
 
-Moved from `gpu/residency.go` (the comment above `webgpuBackend.BuildResident.routercap`) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the comment above `webgpuBackend.BuildResident.routercap`) on 2026-10-09.
 
 ```text
-Router-kernel capacity (gpu/moe.go): score/sel are array<f32,256> with nE clamped to
+Router-kernel capacity (backend/webgpu/moe.go): score/sel are array<f32,256> with nE clamped to
 min(nE,256), and the group-limited path uses array<f32,32>/array<bool,32> indexed by
 nGroup. A model with more experts would route on only the first 256 (Kimi K2 has 384 —
 experts 256+ silently never considered); more than 32 groups indexes out of bounds. Either
-is plausible-looking wrong output, so decline to the staged path — matching cuda/backend.go's
+is plausible-looking wrong output, so decline to the staged path — matching backend/cuda/backend.go's
 nE>256 build check (M22). Checked here, before any allocation, so the decline is clean.
 M-31: the cap is READ from decoder's declaration, not restated here. This site had its
-own 256/32 while the map, gpu/moe.go's MAXE and both published matrices said 512 — so a
+own 256/32 while the map, backend/webgpu/moe.go's MAXE and both published matrices said 512 — so a
 384-expert Kimi-K2 or DeepSeek-V4-Pro was admitted by ResidentEligible, advertised as
 resident, and then declined to CPU by this line with a message naming a number nothing
 else agreed with.
@@ -1396,7 +1396,7 @@ else agreed with.
 
 ## webgpuBackend.BuildResident.kvflag
 
-Moved from `gpu/residency.go` (the comment above `webgpuBackend.BuildResident.kvflag`) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the comment above `webgpuBackend.BuildResident.kvflag`) on 2026-10-09.
 
 ```text
 M-32: ONLY the generic GQA branch honours the KV precision flag. The Nemotron, Qwen3.5
@@ -1418,7 +1418,7 @@ the flag, so the operator can drop it and get the resident path back.
 
 ## webgpuBackend.BuildResident.nogqa
 
-Moved from `gpu/residency.go` (the comment above `webgpuBackend.BuildResident.nogqa`) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the comment above `webgpuBackend.BuildResident.nogqa`) on 2026-10-09.
 
 ```text
 TRAP, found live 2026-09-18, CLOSED 2026-09-18 (same day — see
@@ -1432,18 +1432,18 @@ kernel bug and the decline was the honest response to it.
 It was not one. Three independent lines of evidence, the last two against the REAL
 checkpoint on REAL hardware (RTX 2070 SUPER, this box — a third adapter beyond the Mac's
 Metal and a no-GPU sandbox's software Vulkan):
- 1. `gpu/geom_mha_decoderunner_test.go` runs the exact production dispatch plan (int4 GEMV,
+ 1. `backend/webgpu/geom_mha_decoderunner_test.go` runs the exact production dispatch plan (int4 GEMV,
     the attention kernel at group=1/hd=96, o-proj, MLP) against a bit-exact oracle at
     phi3-mini's precise shape: cosine 1.000000 at every geometry tried. The kernels are
     correct for this shape.
- 2. `gpu/resident_capture_parity_test.go` differences resident-vs-CPU PER SUBLAYER on the
+ 2. `backend/webgpu/resident_capture_parity_test.go` differences resident-vs-CPU PER SUBLAYER on the
     real checkpoint (GOINFER_GPU_CAPTURE=1): early layers agree to ~1e-7 (f32 rounding),
     then at some layer — the position varies — one sublayer's contribution jumps to
     O(1e-2) and every later layer inherits and compounds it. That is a int8
     activation-quantizer flipping a rounding decision that sat within a ~1e-7 perturbation,
     not a wrong computation: each flip is a whole quantization step, and the next GEMV
     turns a few flips into a denser perturbation the next quantizer also sees.
- 3. `gpu/cpu_quant_sensitivity_test.go` is the control: the CPU forward against ITSELF, one
+ 3. `backend/webgpu/cpu_quant_sensitivity_test.go` is the control: the CPU forward against ITSELF, one
     side's f32 norms nudged by ±1 ULP (`decoder/normnoise.go` — exactly the magnitude two
     CORRECT implementations differ by from reduction order alone), on the SAME real
     checkpoint. Self-sensitivity floor: min cosine 0.953287, with its own argmax flips at
@@ -1466,7 +1466,7 @@ closing section says what a resident parity gate should measure there instead.
 
 ## webgpuBackend.BuildResident.ctxclamp
 
-Moved from `gpu/residency.go` (the comment above `webgpuBackend.BuildResident.ctxclamp`) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the comment above `webgpuBackend.BuildResident.ctxclamp`) on 2026-10-09.
 
 ```text
 Clamp to the model's own window BEFORE anything else. WebGPUCtxCeiling's "proven 8 GB fit"
@@ -1479,16 +1479,16 @@ the model could never actually serve — ran the per-layer allocation loop below
 partway through (layer 13 of 32), and BuildResident declined to the CPU-staged path for a
 reason that had nothing to do with whether phi3-mini actually fits this card: at its own
 4096-position ceiling the real KV need is ~3.1 GB, which fits an 8 GB card easily beside
-phi3-mini's ~2.3 GB of int4 weights. cuda/resident.go's resolveCtxCap already clamps to
+phi3-mini's ~2.3 GB of int4 weights. backend/cuda/resident.go's resolveCtxCap already clamps to
 modelCtx for exactly this reason; WebGPU never did. No live free-VRAM query exists for this
-backend (unlike CUDA's driver MemInfo()) to catch this the way cuda/resident.go's
+backend (unlike CUDA's driver MemInfo()) to catch this the way backend/cuda/resident.go's
 checkKVFits does, so the model's own window is the one geometry-aware signal available
 here, and skipping it lets any zero-GQA model try to over-allocate the same way.
 ```
 
 ## webgpuBackend.BuildResident.ctxreq
 
-Moved from `gpu/residency.go` (the comment above `webgpuBackend.BuildResident.ctxreq`) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the comment above `webgpuBackend.BuildResident.ctxreq`) on 2026-10-09.
 
 ```text
 M-32, the -ctx half: Options.ResidentContext / `serve -ctx` was read nowhere under gpu/,
@@ -1499,7 +1499,7 @@ and honouring a LARGER request would trade a clear checkCap refusal for an OOM.
 
 ## webgpuBackend.BuildResident.stacked
 
-Moved from `gpu/residency.go` (the comment above `webgpuBackend.BuildResident.stacked`) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the comment above `webgpuBackend.BuildResident.stacked`) on 2026-10-09.
 
 ```text
 int4 stacked experts (W4A8): fits VRAM where int8 spills (e.g. Mellum2 12B on
@@ -1512,12 +1512,12 @@ one memcpy/expert to concatenate, no per-element unpack+repack (the ~30s tax).
 
 ## webgpuBackend.BuildResident.attnSinks
 
-Moved from `gpu/residency.go` (the comment above `webgpuBackend.BuildResident.attnSinks`) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the comment above `webgpuBackend.BuildResident.attnSinks`) on 2026-10-09.
 
 ```text
 FeatAttnSink (gpt-oss): attnSinks is ALWAYS bound (a real one-element dummy when the
 layer has none — WGSL bind groups can't bind a null storage buffer), matching Metal's
-exact convention (metal/model.go's L.attnSinks/L.uHasSink) rather than CUDA's
+exact convention (backend/metal/model.go's L.attnSinks/L.uHasSink) rather than CUDA's
 null-pointer sentinel.
 
 N-87 (docs/audit-2026-09-10.md, confirmed 2026-09-16, no action needed — genuinely
@@ -1534,7 +1534,7 @@ weight/KV-cache VRAM, not worth the complexity of unifying them.
 
 ## webgpuBackend.BuildResident.biasgate
 
-Moved from `gpu/residency.go` (the comment above `webgpuBackend.BuildResident.biasgate`) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the comment above `webgpuBackend.BuildResident.biasgate`) on 2026-10-09.
 
 ```text
 q/k/v bias (Qwen2): the fused-epilogue tiled GEMM (gemm.go's
@@ -1552,7 +1552,7 @@ reference, not cosine-vs-sequential-GPU-decode).
 
 ## residentDecoder.ForwardN.recurrent
 
-Moved from `gpu/residency.go` (the comment above `residentDecoder.ForwardN.recurrent`) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the comment above `residentDecoder.ForwardN.recurrent`) on 2026-10-09.
 
 ```text
 Batched verify is ONLY sound when every position this runner writes can be rolled back.
@@ -1572,7 +1572,7 @@ silently advance. n==1 is the ordinary single-step case and stays allowed.
 
 ## residentDecoder.VerifyPath
 
-Moved from `gpu/residency.go` (the comment above `residentDecoder.VerifyPath`) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the comment above `residentDecoder.VerifyPath`) on 2026-10-09.
 
 ```text
 VerifyPath (decoder.VerifyPathReporter) reports whether this resident's ForwardN executes a
@@ -1585,7 +1585,7 @@ monotone-decreasing in Theta), just never caught here because nothing had measur
 
 MEASURED, not inferred from ForwardN's "one command buffer" doc comment above: despite runBatch
 recording every row into a single Submit/Poll, Theta = 0.978-1.028 across four real
-configurations (docs/measurements/theta-webgpu-2026-09-23.md; gpu/theta_probe_test.go), i.e.
+configurations (docs/measurements/theta-webgpu-2026-09-23.md; backend/webgpu/theta_probe_test.go), i.e.
 T(n) is n·T(1) to within noise — indistinguishable from a plain per-token loop. The single
 submit removes Go-side dispatch/sync overhead between rows, not GPU-side compute: each runner
 still issues its own full set of per-layer dispatches, so the marginal wall-clock cost of an
@@ -1597,7 +1597,7 @@ measured otherwise, and there is no code path here that behaves differently by m
 
 ## webgpuBackend.BuildResident.mambaInt8
 
-Moved from `gpu/residency.go` (the int8-projection comment in the Granite Mamba-2 layer build) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the int8-projection comment in the Granite Mamba-2 layer build) on 2026-10-09.
 
 ```text
 int8 projections. An f16 path was measured and did NOT recover quality (63.9% vs
@@ -1607,7 +1607,7 @@ router, not projection precision (docs/ssm-int8-quality.md; code removed 2026-09
 
 ## webgpuBackend.BuildResident.kvgeom
 
-Moved from `gpu/residency.go` (the per-layer KV geometry comment in the generic attention layer build) on 2026-10-09.
+Moved from `backend/webgpu/residency.go` (the per-layer KV geometry comment in the generic attention layer build) on 2026-10-09.
 
 ```text
 Per-layer KV geometry (P1 seam): each layer's cache is sized by its own
@@ -1618,7 +1618,7 @@ allocation is byte-identical. Gemma 4's builder will set rl.gnKV/rl.ghd (local
 ```
 ## TestCPUQuantSensitivity
 
-Moved from `gpu/cpu_quant_sensitivity_test.go` (the comment above `TestCPUQuantSensitivity.wG`) on 2026-10-09.
+Moved from `backend/webgpu/cpu_quant_sensitivity_test.go` (the comment above `TestCPUQuantSensitivity.wG`) on 2026-10-09.
 
 ```text
 TestCPUQuantSensitivity is the control for TestPhi3SynthResidentParityWebGPU: NO GPU at
@@ -1635,7 +1635,7 @@ perturbation. See docs/completed/task-webgpu-nogqa-decode-bug.md.
 
 ## TestDecodeRunnerW4A8_geometries
 
-Moved from `gpu/geom_mha_decoderunner_test.go` (the comment above `TestDecodeRunnerW4A8_geometries.wG`) on 2026-10-09.
+Moved from `backend/webgpu/geom_mha_decoderunner_test.go` (the comment above `TestDecodeRunnerW4A8_geometries.wG`) on 2026-10-09.
 
 ```text
 TestDecodeRunnerW4A8_geometries is TestDecodeRunnerW4A8_parity re-run over attention
@@ -1657,7 +1657,7 @@ identity on V, so only the projection/norm/MLP/LM-head chain can differ.
 
 ## TestResidentCaptureParityWebGPU
 
-Moved from `gpu/resident_capture_parity_test.go` (the comment above `TestResidentCaptureParityWebGPU.wG`) on 2026-10-09.
+Moved from `backend/webgpu/resident_capture_parity_test.go` (the comment above `TestResidentCaptureParityWebGPU.wG`) on 2026-10-09.
 
 ```text
 TestResidentCaptureParityWebGPU runs docs/completed/task-webgpu-nogqa-decode-bug.md's exact
@@ -1685,7 +1685,7 @@ Moved from the comments of the package's `_test.go` files (CC5); same convention
 
 ## TestAdapterProbe
 
-Moved from `gpu/adapter_probe_test.go` (the comment above `TestAdapterProbe`) on 2026-10-09.
+Moved from `backend/webgpu/adapter_probe_test.go` (the comment above `TestAdapterProbe`) on 2026-10-09.
 
 ```text
 TestAdapterProbe is cmd/gate's WebGPU adapter-detection vehicle (audit G-09): a fast,
@@ -1698,7 +1698,7 @@ resident-parity tests for that).
 
 ## TestRoPE_parityAtLongContextCeiling
 
-Moved from `gpu/attention_test.go` (the comment above `TestRoPE_parityAtLongContextCeiling`) on 2026-10-09.
+Moved from `backend/webgpu/attention_test.go` (the comment above `TestRoPE_parityAtLongContextCeiling`) on 2026-10-09.
 
 ```text
 TestRoPE_parityAtLongContextCeiling is N-85 (docs/audit-2026-09-10.md): TestRoPE_parity above
@@ -1712,7 +1712,7 @@ lands at ~65535 rad, matching the finding's own "~6.5e4 rad" figure.
 
 ## TestRoPE_parityAtLongContextCeiling.measurement
 
-Moved from `gpu/attention_test.go` (the comment at the end of `TestRoPE_parityAtLongContextCeiling`) on 2026-10-09.
+Moved from `backend/webgpu/attention_test.go` (the comment at the end of `TestRoPE_parityAtLongContextCeiling`) on 2026-10-09.
 
 ```text
 MEASUREMENT, not a pass/fail gate: N-85's own point is that this was UNMEASURED, and
@@ -1726,7 +1726,7 @@ record instead of "unmeasured" — see docs/audit-2026-09-10.md's N-85 closure n
 
 ## TestAttnHeadDimSupported_M12
 
-Moved from `gpu/attn_headdim_guard_test.go` (the comment above `TestAttnHeadDimSupported_M12`) on 2026-10-09.
+Moved from `backend/webgpu/attn_headdim_guard_test.go` (the comment above `TestAttnHeadDimSupported_M12`) on 2026-10-09.
 
 ```text
 TestAttnHeadDimSupported_M12 gates M-12: newDecodeRunner must decline a resident plan whose
@@ -1742,7 +1742,7 @@ mode it protects against (silent truncation, no error) has not changed, only mov
 
 ## TestWebGPUBackend_MatmulW4A8Batch_matchesCPU
 
-Moved from `gpu/backend_w4a8_batch_test.go` (the comment above `TestWebGPUBackend_MatmulW4A8Batch_matchesCPU`) on 2026-10-09.
+Moved from `backend/webgpu/backend_w4a8_batch_test.go` (the comment above `TestWebGPUBackend_MatmulW4A8Batch_matchesCPU`) on 2026-10-09.
 
 ```text
 TestWebGPUBackend_MatmulW4A8Batch_matchesCPU is P-16 (audit-2026-09-10): the int4 twin of
@@ -1755,7 +1755,7 @@ backend implements QuantBatchBackend4 — the exact bar P-16 closes.
 
 ## TestWebGPUBackend_MatmulW4A8Batch_oneSubmit
 
-Moved from `gpu/backend_w4a8_batch_test.go` (the comment above `TestWebGPUBackend_MatmulW4A8Batch_oneSubmit`) on 2026-10-09.
+Moved from `backend/webgpu/backend_w4a8_batch_test.go` (the comment above `TestWebGPUBackend_MatmulW4A8Batch_oneSubmit`) on 2026-10-09.
 
 ```text
 TestWebGPUBackend_MatmulW4A8Batch_oneSubmit is the actual claim P-16 makes: the batch call
@@ -1769,7 +1769,7 @@ re-upload), proving both paths route through the one shared cache this fix intro
 
 ## TestWebGPUBackend_MatmulW4A8_matchesCPU
 
-Moved from `gpu/backend_w4a8_test.go` (the comment above `TestWebGPUBackend_MatmulW4A8_matchesCPU`) on 2026-10-09.
+Moved from `backend/webgpu/backend_w4a8_test.go` (the comment above `TestWebGPUBackend_MatmulW4A8_matchesCPU`) on 2026-10-09.
 
 ```text
 TestWebGPUBackend_MatmulW4A8_matchesCPU is G6's staged-int4 gate (docs/tasks/task-gpu-paths-2026-09.md):
@@ -1793,7 +1793,7 @@ reference) added alongside 517 so this gate exercises both upload paths itself.
 
 ## TestNoBufferLeak
 
-Moved from `gpu/bufaccount_test.go` (the comment above `TestNoBufferLeak`) on 2026-10-09.
+Moved from `backend/webgpu/bufaccount_test.go` (the comment above `TestNoBufferLeak`) on 2026-10-09.
 
 ```text
 TestNoBufferLeak pins V-22 (docs/review-2026-09-04.md): bufaccount.go's own comment has
@@ -1818,7 +1818,7 @@ the baseline is taken AFTER the fixture, not before it.
 
 ## TestClose_drainsTrackedReleasesLIFO.filecomment
 
-Moved from `gpu/close_idempotent_test.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `backend/webgpu/close_idempotent_test.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Audit C-26 — Context.Close must release everything, exactly once, however many times it is called.
@@ -1840,7 +1840,7 @@ zero-value Context exercises the drain and the idempotency guard.
 
 ## BenchmarkDecodeStaged_prize
 
-Moved from `gpu/decode_staged_prize_test.go` (the comment above `BenchmarkDecodeStaged_prize`) on 2026-10-09.
+Moved from `backend/webgpu/decode_staged_prize_test.go` (the comment above `BenchmarkDecodeStaged_prize`) on 2026-10-09.
 
 ```text
 TestDecodeStaged_prize sizes the §2 (widen resident-runner eligibility) lever: the
@@ -1858,7 +1858,7 @@ Go runs a benchmark this slow exactly once (N=1 already exceeds benchtime).
 
 ## gpuTimePlanTWE
 
-Moved from `gpu/decode_twe_split_test.go` (the comment above `gpuTimePlanTWE`) on 2026-10-09.
+Moved from `backend/webgpu/decode_twe_split_test.go` (the comment above `gpuTimePlanTWE`) on 2026-10-09.
 
 ```text
 gpuTimePlanTWE returns the min/30 on-GPU ms for the runner's dispatch plan via a
@@ -1873,7 +1873,7 @@ TimestampWrites on the pass descriptor, so this now uses that directly.
 
 ## TestDecodeRunnerW4A8_7B_fit.owned
 
-Moved from `gpu/decoderunner_w4a8_bench_test.go` (the comment inside `TestDecodeRunnerW4A8_7B_fit`) on 2026-10-09.
+Moved from `backend/webgpu/decoderunner_w4a8_bench_test.go` (the comment inside `TestDecodeRunnerW4A8_7B_fit`) on 2026-10-09.
 
 ```text
 Everything below is CALLER-owned: ctx.Close() releases the device handle but not these
@@ -1884,7 +1884,7 @@ with "failed to request device" — an out-of-memory wearing an unrelated messag
 
 ## TestDecodeToken_throughput
 
-Moved from `gpu/decodetoken_bench_test.go` (the comment above `TestDecodeToken_throughput`) on 2026-10-09.
+Moved from `backend/webgpu/decodetoken_bench_test.go` (the comment above `TestDecodeToken_throughput`) on 2026-10-09.
 
 ```text
 TestDecodeToken_throughput times the one-fence DecodeToken on the real Qwen-1.5B
@@ -1896,7 +1896,7 @@ staged W8A8 path (25.6 tok/s E2E, 3.07× CPU). Logs; run -v.
 
 ## TestDecodeToken_throughput.attribution
 
-Moved from `gpu/decodetoken_bench_test.go` (the comment inside `TestDecodeToken_throughput`) on 2026-10-09.
+Moved from `backend/webgpu/decodetoken_bench_test.go` (the comment inside `TestDecodeToken_throughput`) on 2026-10-09.
 
 ```text
 §5 attribution: time the built plan with only the gemv dispatches vs only
@@ -1907,7 +1907,7 @@ execution into matmul-kernel time vs glue-kernel time directly.
 
 ## TestDecodeToken_throughput.roofline
 
-Moved from `gpu/decodetoken_bench_test.go` (the comment inside `TestDecodeToken_throughput`) on 2026-10-09.
+Moved from `backend/webgpu/decodetoken_bench_test.go` (the comment inside `TestDecodeToken_throughput`) on 2026-10-09.
 
 ```text
 Resident int8 weight bytes streamed once per token (the decode roofline
@@ -1918,7 +1918,7 @@ streaming on this card.
 
 ## TestDecodeTokenFusedBatched_largedim
 
-Moved from `gpu/decodetoken_largedim_bench_test.go` (the comment above `TestDecodeTokenFusedBatched_largedim`) on 2026-10-09.
+Moved from `backend/webgpu/decodetoken_largedim_bench_test.go` (the comment above `TestDecodeTokenFusedBatched_largedim`) on 2026-10-09.
 
 ```text
 TestDecodeTokenFusedBatched_largedim is the docs/spec/07 follow-up kill-gate: the
@@ -1933,11 +1933,11 @@ would justify the (high-risk) Stage-B runner surgery; ~1× confirms it's dead. R
 
 ## TestDecodeTokenFusedBatched_largedim.mcap
 
-Moved from `gpu/decodetoken_largedim_bench_test.go` (the comment inside the M-sweep of `TestDecodeTokenFusedBatched_largedim`) on 2026-10-09.
+Moved from `backend/webgpu/decodetoken_largedim_bench_test.go` (the comment inside the M-sweep of `TestDecodeTokenFusedBatched_largedim`) on 2026-10-09.
 
 ```text
 gemmRowMaxM is a HARD kernel limit, not a tuning knob: the thin-M gemmRow kernel
-accumulates into a private array<i32, gemmRowMaxM> (gpu/gemm_rows.go, gemmRowMaxM), and
+accumulates into a private array<i32, gemmRowMaxM> (backend/webgpu/gemm_rows.go, gemmRowMaxM), and
 DecodeTokenFusedBatched returns a clean error above it. This sweep used to request
 M=32/48 anyway and t.Fatalf on that error, so the whole test reported FAIL for asking
 the API to do something it documents it cannot — charging every unrelated leg an
@@ -1949,7 +1949,7 @@ Stage-B design question, not a measurement.
 
 ## TestE2E_webgpu
 
-Moved from `gpu/e2e_test.go` (the comment above `TestE2E_webgpu`) on 2026-10-09.
+Moved from `backend/webgpu/e2e_test.go` (the comment above `TestE2E_webgpu`) on 2026-10-09.
 
 ```text
 TestE2E_webgpu loads a real model on both the CPU and WebGPU backends and
@@ -1966,7 +1966,7 @@ finished decode win.
 
 ## TestEmbedInt4_residentDecisionDoesNotChange
 
-Moved from `gpu/embed_int4_resident_test.go` (the comment above `TestEmbedInt4_residentDecisionDoesNotChange`) on 2026-10-09.
+Moved from `backend/webgpu/embed_int4_resident_test.go` (the comment above `TestEmbedInt4_residentDecisionDoesNotChange`) on 2026-10-09.
 
 ```text
 The WebGPU twin of cuda's TestEmbedInt4_residentDecisionDoesNotChange. Options.EmbedInt4 reaches every family loader since 2026-10-09, so the families that
@@ -1976,7 +1976,7 @@ either table, and the head reading int8 then int4.
 
 ## TestContextClose_finalizerRace
 
-Moved from `gpu/context_close_race_test.go` (the comment above `TestContextClose_finalizerRace`) on 2026-10-09.
+Moved from `backend/webgpu/context_close_race_test.go` (the comment above `TestContextClose_finalizerRace`) on 2026-10-09.
 
 ```text
 TestContextClose_finalizerRace reproduces the intermittent hang the first heavy-tier gate hit in the webgpu-parity cell (1 run in 8 locally; a different test each time): a test
@@ -1989,12 +1989,12 @@ deadline: a hang is a failure that names the cause, not a stuck package.
 
 ## TestDecodeArgmaxHeadroom
 
-Moved from `gpu/decode_argmax_headroom_test.go` (the comment above `TestDecodeArgmaxHeadroom`) on 2026-10-09.
+Moved from `backend/webgpu/decode_argmax_headroom_test.go` (the comment above `TestDecodeArgmaxHeadroom`) on 2026-10-09.
 
 ```text
 TestDecodeArgmaxHeadroom is R10's "measure before building" step for the greedy-decode item named
 in docs/tasks/red-october.md R10 ("on-device argmax for the greedy path with a K-entry MapAsync ...
-so the 608 KB readback goes"): ForwardSample's greedy branch (gpu/resident_sample.go) still calls
+so the 608 KB readback goes"): ForwardSample's greedy branch (backend/webgpu/resident_sample.go) still calls
 Run() — full LM-head GEMV + a vocab*4-byte staging copy + MapAsync + a host linear scan — where a
 device-side argmax kernel would need only the GEMV (unavoidable either way) plus a tiny readback.
 Isolates the piece a device-argmax kernel would remove: RunNoLogits skips the LM-head GEMV
@@ -2017,7 +2017,7 @@ in full; it does not exist.
 
 ## TestDecode_dispatchProfile
 
-Moved from `gpu/decode_dispatch_profile_test.go` (the comment above `TestDecode_dispatchProfile`) on 2026-10-09.
+Moved from `backend/webgpu/decode_dispatch_profile_test.go` (the comment above `TestDecode_dispatchProfile`) on 2026-10-09.
 
 ```text
 TestDecode_dispatchProfile answers "which of the ~13 dispatches/layer actually
@@ -2043,7 +2043,7 @@ is a timing harness; TestResidentForwardN_parity is the correctness gate.
 
 ## TestDecode_dispatchProfile.close
 
-Moved from `gpu/decode_dispatch_profile_test.go` (the comment inside `TestDecode_dispatchProfile`) on 2026-10-09.
+Moved from `backend/webgpu/decode_dispatch_profile_test.go` (the comment inside `TestDecode_dispatchProfile`) on 2026-10-09.
 
 ```text
 Close the RESIDENT model, not just the backend: its weight buffers are caller-owned and
@@ -2053,7 +2053,7 @@ process — the first of the two leaks that were emptying the GPU mid-suite.
 
 ## TestDecode_instrument
 
-Moved from `gpu/decode_instrument_test.go` (the comment above `TestDecode_instrument`) on 2026-10-09.
+Moved from `backend/webgpu/decode_instrument_test.go` (the comment above `TestDecode_instrument`) on 2026-10-09.
 
 ```text
 TestDecode_instrument decomposes the ~44.7 ms/token that the §1 single-pass
@@ -2078,7 +2078,7 @@ is that fixed overhead. Logs; run -v.
 
 ## TestDecode_instrument.census
 
-Moved from `gpu/decode_instrument_test.go` (the comment inside `TestDecode_instrument`) on 2026-10-09.
+Moved from `backend/webgpu/decode_instrument_test.go` (the comment inside `TestDecode_instrument`) on 2026-10-09.
 
 ```text
 ---- (c) reconstruct the 44.7 ms token from the measured pieces ----
@@ -2086,7 +2086,7 @@ Moved from `gpu/decode_instrument_test.go` (the comment inside `TestDecode_instr
 
 ## TestF32ToF16_N04
 
-Moved from `gpu/f16_convert_test.go` (the comment above `TestF32ToF16_N04`) on 2026-10-09.
+Moved from `backend/webgpu/f16_convert_test.go` (the comment above `TestF32ToF16_N04`) on 2026-10-09.
 
 ```text
 N-04: gpu/ carried TWO float32→half converters and neither matched the canonical one.
@@ -2103,7 +2103,7 @@ C-15 fixed this class in cuda/ and gpu/ was not in that disposition. This is the
 
 ## TestKVI8ScaleWrittenAtTruePosition
 
-Moved from `gpu/forwardmrope_kvi8_test.go` (the comment above `TestKVI8ScaleWrittenAtTruePosition`) on 2026-10-09.
+Moved from `backend/webgpu/forwardmrope_kvi8_test.go` (the comment above `TestKVI8ScaleWrittenAtTruePosition`) on 2026-10-09.
 
 ```text
 TestKVI8ScaleWrittenAtTruePosition gates audit-2026-09-10 C-09. The int8 rope-store kernel wrote
@@ -2119,11 +2119,11 @@ delta, and every layer's scale slots [0, N) must then be written, with nothing w
 
 ## TestForwardMRoPE_constantShiftInvariance
 
-Moved from `gpu/forwardmrope_parity_test.go` (the comment above `TestForwardMRoPE_constantShiftInvariance`) on 2026-10-09.
+Moved from `backend/webgpu/forwardmrope_parity_test.go` (the comment above `TestForwardMRoPE_constantShiftInvariance`) on 2026-10-09.
 
 ```text
 TestForwardMRoPE_constantShiftInvariance is ForwardMRoPE's FIRST real correctness test on the
-WebGPU backend — the CUDA twin lives in cuda/forwardmrope_parity_test.go; see that file's doc
+WebGPU backend — the CUDA twin lives in backend/cuda/forwardmrope_parity_test.go; see that file's doc
 comment for the full rationale (RoPE's relative-angle invariance: a decode run where every
 step's rope angle is shifted by the same constant delta must match delta=0 exactly, a property
 independent of any specific family's m-RoPE usage).
@@ -2131,7 +2131,7 @@ independent of any specific family's m-RoPE usage).
 
 ## TestTiledDP4A_parity
 
-Moved from `gpu/gemm_dp4a_test.go` (the comment above `TestTiledDP4A_parity`) on 2026-10-09.
+Moved from `backend/webgpu/gemm_dp4a_test.go` (the comment above `TestTiledDP4A_parity`) on 2026-10-09.
 
 ```text
 TestTiledDP4A_parity is the Increment-1 gate (docs/completed/task-gpu-batched-prefill.md's
@@ -2146,7 +2146,7 @@ alone would silently stop exercising the fallback kernel).
 
 ## TestTiledRB64_microbench
 
-Moved from `gpu/gemm_rb_test.go` (the comment above `TestTiledRB64_microbench`) on 2026-10-09.
+Moved from `backend/webgpu/gemm_rb_test.go` (the comment above `TestTiledRB64_microbench`) on 2026-10-09.
 
 ```text
 TestTiledRB64_microbench is the kernel-level signal, at the 1.5B shapes the profile put
@@ -2155,7 +2155,7 @@ the class at ~975 GFLOPS: the two kernels back to back, same buffers, alternatin
 
 ## TestGemma3ResidentParityWebGPU
 
-Moved from `gpu/gemma3_resident_parity_test.go` (the comment above `TestGemma3ResidentParityWebGPU`) on 2026-10-09.
+Moved from `backend/webgpu/gemma3_resident_parity_test.go` (the comment above `TestGemma3ResidentParityWebGPU`) on 2026-10-09.
 
 ```text
 TestGemma3ResidentParityWebGPU is G6's Gemma set gate (docs/tasks/task-gpu-paths-2026-09.md):
@@ -2167,11 +2167,11 @@ floor, not just an admission-and-no-NaN check: resident vs CPU, both int4, at ev
 
 FeatFinalLogitSoftcap is NOT exercised here (this fixture has no final_logit_softcapping) —
 its own correctness rests on TestApplySoftcap_bitIdentical (softcap_test.go), a direct port of
-cuda/metal's own gate, since gpu/softcap.go is a byte-identical copy of their applySoftcap.
+cuda/metal's own gate, since backend/webgpu/softcap.go is a byte-identical copy of their applySoftcap.
 
 Gemma 4's dense-twogeom/dense-scaled fixtures are NOT used here: both have a per-layer
 head_dim that differs between local and global attention layers (head_dim 256 vs
-global_head_dim 512), and gpu/residency.go's per-layer geometry seam (runLayer.ghd/gnKV) is
+global_head_dim 512), and backend/webgpu/residency.go's per-layer geometry seam (runLayer.ghd/gnKV) is
 never actually set anywhere in this backend — confirmed by grep, and by BuildResident failing
 on gemma4-dense-twogeom-tiny with "unsupported projection precision \"\"" even after this row's
 four features are declared. That is a SEPARATE, pre-existing gap (per-layer attention geometry
@@ -2180,7 +2180,7 @@ on WebGPU) this row does not touch — CUDA/Metal both implement it, WebGPU does
 
 ## TestGemma3ResidentParityWebGPU.stat
 
-Moved from `gpu/gemma3_resident_parity_test.go` (the comment inside `TestGemma3ResidentParityWebGPU`) on 2026-10-09.
+Moved from `backend/webgpu/gemma3_resident_parity_test.go` (the comment inside `TestGemma3ResidentParityWebGPU`) on 2026-10-09.
 
 ```text
 Stat the WEIGHTS, not the directory (audit-2026-09-10 G-13(h)). The dir and its config.json
@@ -2190,7 +2190,7 @@ failed on the missing weights, and the test skipped saying "no webgpu device".
 
 ## TestGemma3ResidentParityWebGPU.floor
 
-Moved from `gpu/gemma3_resident_parity_test.go` (the comment at the end of `TestGemma3ResidentParityWebGPU`) on 2026-10-09.
+Moved from `backend/webgpu/gemma3_resident_parity_test.go` (the comment at the end of `TestGemma3ResidentParityWebGPU`) on 2026-10-09.
 
 ```text
 A REAL numeric floor, not a smoke-test bar: 0.999, matched against a genuine checkpoint,
@@ -2199,7 +2199,7 @@ not a seeded/synthetic one — measured 0.9998 on this fixture at implementation
 
 ## TestGemma4DenseTwoGeom_residentParity.bar
 
-Moved from `gpu/gemma4_twogeom_test.go` (the comment inside `TestGemma4DenseTwoGeom_residentParity`) on 2026-10-09.
+Moved from `backend/webgpu/gemma4_twogeom_test.go` (the comment inside `TestGemma4DenseTwoGeom_residentParity`) on 2026-10-09.
 
 ```text
 S1.0 amendment 2026-10-07 (docs/completed/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. minCosine 0.977930 -> 1.000000.
@@ -2207,7 +2207,7 @@ S1.0 amendment 2026-10-07 (docs/completed/task-multimodal-support-2026-10.md): t
 
 ## TestGemma4DenseScaled_webgpuParity.bar
 
-Moved from `gpu/gemma4_twogeom_test.go` (the comment inside `TestGemma4DenseScaled_webgpuParity`) on 2026-10-09.
+Moved from `backend/webgpu/gemma4_twogeom_test.go` (the comment inside `TestGemma4DenseScaled_webgpuParity`) on 2026-10-09.
 
 ```text
 S1.0 amendment 2026-10-07 (docs/completed/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.996182 -> 1.000000, minCosine 0.800099 -> 0.975300 (exact-argmax 15/16 -> 16/16 on nobara's RTX 2070 SUPER only; the Apple GPU reads 15/16 either way, so the argmax bar below stays at 15/16).
@@ -2215,7 +2215,7 @@ S1.0 amendment 2026-10-07 (docs/completed/task-multimodal-support-2026-10.md): t
 
 ## TestGemma4DenseScaled_webgpuParity.argmax
 
-Moved from `gpu/gemma4_twogeom_test.go` (the comment inside `TestGemma4DenseScaled_webgpuParity`) on 2026-10-09.
+Moved from `backend/webgpu/gemma4_twogeom_test.go` (the comment inside `TestGemma4DenseScaled_webgpuParity`) on 2026-10-09.
 
 ```text
 15 of 16 is the pre-S1.0 bar, restored 2026-10-07: the 16/16 this line asked for was one device's reading (RTX 2070 SUPER, Vulkan). The
@@ -2225,7 +2225,7 @@ pos0 and minCosine above carry the fix's signature: with v_norm re-dropped they 
 
 ## TestGEMVLMHeadIsolation
 
-Moved from `gpu/gemv_lmhead_isolation_test.go` (the comment above `TestGEMVLMHeadIsolation`) on 2026-10-09.
+Moved from `backend/webgpu/gemv_lmhead_isolation_test.go` (the comment above `TestGEMVLMHeadIsolation`) on 2026-10-09.
 
 ```text
 TestGEMVLMHeadIsolation is G38's decisive step: TestGEMVNSweep found the GEMV KERNEL clean and
@@ -2245,7 +2245,7 @@ own state) -- same buffer, same call shape, two points in the model's own lifeti
 
 ## TestGEMVNSweep
 
-Moved from `gpu/gemv_n_sweep_test.go` (the comment above `TestGEMVNSweep`) on 2026-10-09.
+Moved from `backend/webgpu/gemv_n_sweep_test.go` (the comment above `TestGEMVNSweep`) on 2026-10-09.
 
 ```text
 TestGEMVNSweep is R10/G38's root-cause step. First run (in-process, many N in one binary) found a
@@ -2260,7 +2260,7 @@ a clean, isolated allocation the way a real model's own load does.
 
 ## TestW4A8_parity_and_bandwidth
 
-Moved from `gpu/gemv_w4a8_test.go` (the comment above `TestW4A8_parity_and_bandwidth`) on 2026-10-09.
+Moved from `backend/webgpu/gemv_w4a8_test.go` (the comment above `TestW4A8_parity_and_bandwidth`) on 2026-10-09.
 
 ```text
 TestW4A8_parity_and_bandwidth is the W4A8 probe: it validates the int4
@@ -2272,7 +2272,7 @@ by how much once the per-group f32 scales (~⅛ extra bytes) are counted?
 
 ## TestW4A8_parity_and_bandwidth.project
 
-Moved from `gpu/gemv_w4a8_test.go` (the comment inside `TestW4A8_parity_and_bandwidth`) on 2026-10-09.
+Moved from `backend/webgpu/gemv_w4a8_test.go` (the comment inside `TestW4A8_parity_and_bandwidth`) on 2026-10-09.
 
 ```text
 --- project the decode token vs the measured int8 baseline ---
@@ -2284,7 +2284,7 @@ measured W4A8 GB/s (int4 unpack is more ALU-bound than int8).
 
 ## TestGIWInt4_loadtime
 
-Moved from `gpu/giw_resident_test.go` (the comment above `TestGIWInt4_loadtime`) on 2026-10-09.
+Moved from `backend/webgpu/giw_resident_test.go` (the comment above `TestGIWInt4_loadtime`) on 2026-10-09.
 
 ```text
 TestGIWInt4_loadtime times JUST the int4 .giw resident load (no direct cross-load), isolating
@@ -2295,7 +2295,7 @@ docs/completed/mellum2-resident.md.)
 
 ## TestGIWInt4_resident
 
-Moved from `gpu/giw_resident_test.go` (the comment above `TestGIWInt4_resident`) on 2026-10-09.
+Moved from `backend/webgpu/giw_resident_test.go` (the comment above `TestGIWInt4_resident`) on 2026-10-09.
 
 ```text
 TestGIWInt4_resident gates the int4 `.giw` → GPU-resident seam (docs/task-mellum2-fast-load.md
@@ -2308,7 +2308,7 @@ This is the one previously-untested step in the fast-load path.
 
 ## TestGLMResidency_matchesCPU
 
-Moved from `gpu/glm_resident_test.go` (the comment above `TestGLMResidency_matchesCPU`) on 2026-10-09.
+Moved from `backend/webgpu/glm_resident_test.go` (the comment above `TestGLMResidency_matchesCPU`) on 2026-10-09.
 
 ```text
 TestGLMResidency_matchesCPU is the end-to-end gate for Lever C5 (partial RoPE): the
@@ -2324,19 +2324,19 @@ rotary tripped the RotaryDim==HeadDim check) — stranding the C3d shared-expert
 
 ## TestGptOssResidentParityWebGPU
 
-Moved from `gpu/gptoss_resident_test.go` (the comment above `TestGptOssResidentParityWebGPU`) on 2026-10-09.
+Moved from `backend/webgpu/gptoss_resident_test.go` (the comment above `TestGptOssResidentParityWebGPU`) on 2026-10-09.
 
 ```text
 TestGptOssResidentParityWebGPU is G6's gpt-oss gate (docs/tasks/task-gpu-paths-2026-09.md):
 FeatAttnSink + FeatOutBias against the REAL, committed decoder/testdata/gptoss_tiny.gguf —
 not a seeded/synthetic fixture, so this is a genuine numeric floor, the same class of evidence
-gpu/gemma3_resident_parity_test.go established for the Gemma set.
+backend/webgpu/gemma3_resident_parity_test.go established for the Gemma set.
 
 This is the hardest of G6's six features: it needed a per-head softmax sink threaded through
 every attention kernel (attn, attn-keys, attn-f16, attn-i8, and all three wide variants — 7
 pipelines), plus three brand-new MoE kernels (gpt-oss disagrees with the generic MoE path on
 what the router bias means and what the activation clamps — see routeGptOssWGSL/
-gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL's own comments in gpu/moe.go).
+gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL's own comments in backend/webgpu/moe.go).
 
 The floor was 0.95 (Metal's own tiny-fixture bar), and this backend measured 0.9943-0.9967
 against it. That margin was the defect. The fixture is bias-dominated (audit-2026-09-10 G-07),
@@ -2348,7 +2348,7 @@ baseline fails it.
 
 ## gpuWasAvailable
 
-Moved from `gpu/gpu_test.go` (the comment above `gpuWasAvailable`) on 2026-10-09.
+Moved from `backend/webgpu/gpu_test.go` (the comment above `gpuWasAvailable`) on 2026-10-09.
 
 ```text
 gpuWasAvailable records that some earlier test in THIS process successfully got a device.
@@ -2369,7 +2369,7 @@ one that ran nothing — the same reason this project treats a skip as not-a-pas
 
 ## TestGraniteResidentParity
 
-Moved from `gpu/granite_resident_parity_test.go` (the comment above `TestGraniteResidentParity`) on 2026-10-09.
+Moved from `backend/webgpu/granite_resident_parity_test.go` (the comment above `TestGraniteResidentParity`) on 2026-10-09.
 
 ```text
 TestGraniteResidentParity is the whole-model integration gate (P5b.3 short / P5b.4 long):
@@ -2382,7 +2382,7 @@ as a cosine that DRIFTS long. GOINFER_SSM_NTOK bounds the run (P5b.3 a few; P5b.
 
 ## TestGraniteResidentSpeedup
 
-Moved from `gpu/granite_resident_speedup_test.go` (the comment above `TestGraniteResidentSpeedup`) on 2026-10-09.
+Moved from `backend/webgpu/granite_resident_speedup_test.go` (the comment above `TestGraniteResidentSpeedup`) on 2026-10-09.
 
 ```text
 TestGraniteResidentSpeedup is the P7 deliverable: resident granite-4.0-h-tiny generates
@@ -2396,7 +2396,7 @@ coherent + factual. A tight f32 gate would need f16 weights (follow-up).
 
 ## TestGraph_oneFencePerToken
 
-Moved from `gpu/graph_test.go` (the comment above `TestGraph_oneFencePerToken`) on 2026-10-09.
+Moved from `backend/webgpu/graph_test.go` (the comment above `TestGraph_oneFencePerToken`) on 2026-10-09.
 
 ```text
 TestGraph_oneFencePerToken is the §0.5 probe: does recording a whole token's
@@ -2412,7 +2412,7 @@ cost structure only. Logs; run -v.
 
 ## requireHeavyModel
 
-Moved from `gpu/heavytest_test.go` (the comment above `requireHeavyModel`) on 2026-10-09.
+Moved from `backend/webgpu/heavytest_test.go` (the comment above `requireHeavyModel`) on 2026-10-09.
 
 ```text
 requireHeavyModel gates a test that loads a multi-GB checkpoint from ~/models behind an explicit
@@ -2432,7 +2432,7 @@ a PASS that proves nothing about the win they map.
 
 ## TestInt4LayoutMatch
 
-Moved from `gpu/int4_layout_test.go` (the comment above `TestInt4LayoutMatch`) on 2026-10-09.
+Moved from `backend/webgpu/int4_layout_test.go` (the comment above `TestInt4LayoutMatch`) on 2026-10-09.
 
 ```text
 TestInt4LayoutMatch checks the hypothesis behind the fast int4 resident upload: the
@@ -2446,7 +2446,7 @@ on both sides, so values are preserved too.
 
 ## TestKVCacheI8_parity
 
-Moved from `gpu/kv_i8_parity_test.go` (the comment above `TestKVCacheI8_parity`) on 2026-10-09.
+Moved from `backend/webgpu/kv_i8_parity_test.go` (the comment above `TestKVCacheI8_parity`) on 2026-10-09.
 
 ```text
 int8 rounding acts over thousands of keys and a long-range near-tie can flip. int8
@@ -2457,7 +2457,7 @@ least outlier-prone post-RoPE case). The f32 default stays bit-exact elsewhere.
 
 ## dispatchI8
 
-Moved from `gpu/kv_i8_test.go` (the comment above `dispatchI8`) on 2026-10-09.
+Moved from `backend/webgpu/kv_i8_test.go` (the comment above `dispatchI8`) on 2026-10-09.
 
 ```text
 dispatch binds storage buffers (binding 0..k-1) + one or more trailing uniforms (binding
@@ -2469,7 +2469,7 @@ can't be merged into one).
 
 ## BenchmarkKVLongCtx
 
-Moved from `gpu/kv_longctx_test.go` (the comment above `BenchmarkKVLongCtx`) on 2026-10-09.
+Moved from `backend/webgpu/kv_longctx_test.go` (the comment above `BenchmarkKVLongCtx`) on 2026-10-09.
 
 ```text
 TestKVLongCtx sweeps decode tok/s vs context depth for int8 / f16 / f32 KV on the
@@ -2483,7 +2483,7 @@ model load per precision, reused across depths.
 
 ## TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches
 
-Moved from `gpu/kvprec_decline_test.go` (the comment above `TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches`) on 2026-10-09.
+Moved from `backend/webgpu/kvprec_decline_test.go` (the comment above `TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches`) on 2026-10-09.
 
 ```text
 M-32: only the generic GQA branch honoured --kv i8 / --kv f16. The Nemotron, Qwen3.5 and MLA
@@ -2504,7 +2504,7 @@ that silently skipped would be exactly the "a skip is not a pass" trap.
 
 ## TestLocalize_BiasEpilogue
 
-Moved from `gpu/localize_bias_epilogue_test.go` (the comment above `TestLocalize_BiasEpilogue`) on 2026-10-09.
+Moved from `backend/webgpu/localize_bias_epilogue_test.go` (the comment above `TestLocalize_BiasEpilogue`) on 2026-10-09.
 
 ```text
 TestLocalize_BiasEpilogue is the other Claude session's step-1 localization,
@@ -2525,12 +2525,12 @@ bug is further downstream (rope, the KV cache write, or compounding through
 
 ## TestSetAdapter_partialBindErrorRestoresSteps
 
-Moved from `gpu/lora_resident_bind_leak_test.go` (the comment above `TestSetAdapter_partialBindErrorRestoresSteps`) on 2026-10-09.
+Moved from `backend/webgpu/lora_resident_bind_leak_test.go` (the comment above `TestSetAdapter_partialBindErrorRestoresSteps`) on 2026-10-09.
 
 ```text
 TestSetAdapter_partialBindErrorRestoresSteps is N-82 (docs/audit-2026-09-10.md): SetAdapter's
 conversion loop used to return immediately on the first mk error, leaking every already-built
-projection in built (metal/lora.go's own C-04, audit-metal-2026-09-12.md, already fixed the
+projection in built (backend/metal/lora.go's own C-04, audit-metal-2026-09-12.md, already fixed the
 identical shape there — TestSetAdapter_partialBindErrorReleasesBuffers is its regression gate).
 
 Worse than a leak alone here: this backend's SetAdapter clears and releases r.loraLayers
@@ -2546,7 +2546,7 @@ larger spliced-in step count.
 
 ## TestMambaResidentLayerSweep
 
-Moved from `gpu/mamba_layersweep_test.go` (the comment above `TestMambaResidentLayerSweep`) on 2026-10-09.
+Moved from `backend/webgpu/mamba_layersweep_test.go` (the comment above `TestMambaResidentLayerSweep`) on 2026-10-09.
 
 ```text
 Phase-A localization: the mamba path is exonerated (in_proj + mixer correct). The 93.6%→66%
@@ -2559,7 +2559,7 @@ first L where cosine drops names the buggy layer; a gradual drop from every laye
 
 ## TestMambaResidentLayerSweep.reference
 
-Moved from `gpu/mamba_layersweep_test.go` (the comment inside `TestMambaResidentLayerSweep`) on 2026-10-09.
+Moved from `backend/webgpu/mamba_layersweep_test.go` (the comment inside `TestMambaResidentLayerSweep`) on 2026-10-09.
 
 ```text
 f32 CPU reference, truncated per layer through the test hook (this used to os.Setenv
@@ -2568,7 +2568,7 @@ GOINFER_SSM_STOP_LAYER, which the decoder read once at init, so every "reference
 
 ## TestMambaRealInputParity
 
-Moved from `gpu/mamba_realinput_test.go` (the comment above `TestMambaRealInputParity`) on 2026-10-09.
+Moved from `backend/webgpu/mamba_realinput_test.go` (the comment above `TestMambaRealInputParity`) on 2026-10-09.
 
 ```text
 Phase-A reconciliation (docs/ssm-int8-quality.md): the GPU conv/ssm/gatedNorm kernels pass
@@ -2581,7 +2581,7 @@ mamba2Step's. Diverge → kernel-math bug in the real-input regime; match → th
 
 ## TestMambaResidentCapture
 
-Moved from `gpu/mamba_resident_capture_test.go` (the comment above `TestMambaResidentCapture`) on 2026-10-09.
+Moved from `backend/webgpu/mamba_resident_capture_test.go` (the comment above `TestMambaResidentCapture`) on 2026-10-09.
 
 ```text
 Phase-A wiring diff (docs/ssm-int8-quality.md). The GPU mamba kernels are proven correct on
@@ -2597,7 +2597,7 @@ gated) and replays the resident's OWN proj through the CPU reference mixer (mamb
 
 ## TestMLAResidency_realDeepSeek_R05
 
-Moved from `gpu/mla_real_resident_test.go` (the comment above `TestMLAResidency_realDeepSeek_R05`) on 2026-10-09.
+Moved from `backend/webgpu/mla_real_resident_test.go` (the comment above `TestMLAResidency_realDeepSeek_R05`) on 2026-10-09.
 
 ```text
 TestMLAResidency_realDeepSeek_R05 is the regression gate for review-finding R-05: a REAL
@@ -2616,11 +2616,11 @@ holds. Point GOINFER_MLA_MODEL at a DeepSeek/Kimi checkpoint (default: the box's
 
 ## TestMLAResidency_realDeepSeek_R05.heavy
 
-Moved from `gpu/mla_real_resident_test.go` (the comment inside `TestMLAResidency_realDeepSeek_R05`) on 2026-10-09.
+Moved from `backend/webgpu/mla_real_resident_test.go` (the comment inside `TestMLAResidency_realDeepSeek_R05`) on 2026-10-09.
 
 ```text
 The asset happening to be on disk is not a request to run a multi-GB test
-(gpu/heavytest_test.go's requireHeavyModel, which this file — package gpu_test — cannot call
+(backend/webgpu/heavytest_test.go's requireHeavyModel, which this file — package gpu_test — cannot call
 directly). Missing this gate let a checkpoint left over from earlier work make an ordinary
 `-short` suite run try to load a real DeepSeek-V2-Lite and get killed (G-09's webgpu gate
 group ran ./gpu/ automatically for the first time and caught it).
@@ -2628,7 +2628,7 @@ group ran ./gpu/ automatically for the first time and caught it).
 
 ## TestMLAResidency_realDeepSeek_R05.runs
 
-Moved from `gpu/mla_real_resident_test.go` (the comment inside `TestMLAResidency_realDeepSeek_R05`) on 2026-10-09.
+Moved from `backend/webgpu/mla_real_resident_test.go` (the comment inside `TestMLAResidency_realDeepSeek_R05`) on 2026-10-09.
 
 ```text
 Resident is the R-05 gate; also decode a few tokens to confirm the resident MLA runner
@@ -2637,7 +2637,7 @@ actually RUNS (a model can report resident yet silently decode on CPU — the 75
 
 ## TestNemotronBlockKind_hasADefault
 
-Moved from `gpu/n_batch_test.go` (the comment above `TestNemotronBlockKind_hasADefault`) on 2026-10-09.
+Moved from `backend/webgpu/n_batch_test.go` (the comment above `TestNemotronBlockKind_hasADefault`) on 2026-10-09.
 
 ```text
 N-12: BuildResident admits Nemotron regardless of DecodeRunnerEligible, and the block-kind
@@ -2650,7 +2650,7 @@ place the shape is checked. Reachable through the exported ResidencyBackend.Buil
 
 ## TestEnsureAttnWide_guardsOnTheLastPipeline
 
-Moved from `gpu/n_batch_test.go` (the comment above `TestEnsureAttnWide_guardsOnTheLastPipeline`) on 2026-10-09.
+Moved from `backend/webgpu/n_batch_test.go` (the comment above `TestEnsureAttnWide_guardsOnTheLastPipeline`) on 2026-10-09.
 
 ```text
 N-14: ensureAttnWide compiles THREE variants (f32, f16 KV, int8 KV) and returned early when
@@ -2661,7 +2661,7 @@ R-30 fixed.
 
 ## TestGPU_deviceBoundaryErrorsAreNotDropped
 
-Moved from `gpu/n_batch_test.go` (the comment above `TestGPU_deviceBoundaryErrorsAreNotDropped`) on 2026-10-09.
+Moved from `backend/webgpu/n_batch_test.go` (the comment above `TestGPU_deviceBoundaryErrorsAreNotDropped`) on 2026-10-09.
 
 ```text
 N-15: DecodeRunner.ReadMambaCap is EXPORTED and panicked on a failed buffer map — "test-only"
@@ -2672,7 +2672,7 @@ next generation continued from it silently.
 
 ## TestNemotronBenignHarmful
 
-Moved from `gpu/nemotron_benign_test.go` (the comment above `TestNemotronBenignHarmful`) on 2026-10-09.
+Moved from `backend/webgpu/nemotron_benign_test.go` (the comment above `TestNemotronBenignHarmful`) on 2026-10-09.
 
 ```text
 Benign-vs-harmful characterization of int4-resident Nemotron-H's ~7.5% argmax disagreements vs
@@ -2684,7 +2684,7 @@ concentrate at SMALL f32 top1–top2 margins; harmful ⇒ at LARGE margins (f32 
 
 ## TestNemotronMoEResidentParityWebGPU
 
-Moved from `gpu/nemotron_moe_resident_test.go` (the comment above `TestNemotronMoEResidentParityWebGPU`) on 2026-10-09.
+Moved from `backend/webgpu/nemotron_moe_resident_test.go` (the comment above `TestNemotronMoEResidentParityWebGPU`) on 2026-10-09.
 
 ```text
 TestNemotronMoEResidentParityWebGPU is the G7 part 2 gate (docs/tasks/task-gpu-paths-2026-09.md):
@@ -2698,13 +2698,13 @@ Reuses moeRouteWGSL/moeExpertWGSL/relu2QuantWGSL wholesale — no new kernels we
 router is DeepSeek/GLM's own sigmoid+bias+group-limited-top-k shape (moeRouteWGSL already
 implements this; Nemotron's n_group=1 degenerates it to plain top-k, the kernel's own nGroup==1
 path), and moeExpert is already generic per single projection (called here for up/down only,
-with no expGate at all) — the gap was purely gpu/residency.go's per-layer switch never building
-case 3's weights and gpu/decoderunner.go never dispatching nemoKMoE, not a missing primitive.
+with no expGate at all) — the gap was purely backend/webgpu/residency.go's per-layer switch never building
+case 3's weights and backend/webgpu/decoderunner.go never dispatching nemoKMoE, not a missing primitive.
 ```
 
 ## TestNemotronMoEResidentParityWebGPU.stat
 
-Moved from `gpu/nemotron_moe_resident_test.go` (the comment inside `TestNemotronMoEResidentParityWebGPU`) on 2026-10-09.
+Moved from `backend/webgpu/nemotron_moe_resident_test.go` (the comment inside `TestNemotronMoEResidentParityWebGPU`) on 2026-10-09.
 
 ```text
 Stat the WEIGHTS, not the directory (audit-2026-09-10 G-13(h)). The dir and its config.json
@@ -2714,7 +2714,7 @@ failed on the missing weights, and the test skipped saying "no webgpu device".
 
 ## TestNemotronMoEResident_noSharedExpertBuilds
 
-Moved from `gpu/nemotron_moe_resident_test.go` (the comment above `TestNemotronMoEResident_noSharedExpertBuilds`) on 2026-10-09.
+Moved from `backend/webgpu/nemotron_moe_resident_test.go` (the comment above `TestNemotronMoEResident_noSharedExpertBuilds`) on 2026-10-09.
 
 ```text
 TestNemotronMoEResident_noSharedExpertBuilds is M-35's gate (audit-2026-09-10): a Nemotron-H
@@ -2738,7 +2738,7 @@ SharedIntermediateDim is 0, so no fresh weights need to be generated.
 
 ## TestNemotronResidentQuality
 
-Moved from `gpu/nemotron_quality_test.go` (the comment above `TestNemotronResidentQuality`) on 2026-10-09.
+Moved from `backend/webgpu/nemotron_quality_test.go` (the comment above `TestNemotronResidentQuality`) on 2026-10-09.
 
 ```text
 P5/P6: the headline. Nemotron-H is the SAME deep hybrid + recurrent-mamba architecture whose
@@ -2751,7 +2751,7 @@ and decode speed. The AGREEMENT NUMBER drives the default-vs-opt-in flip — no 
 
 ## TestPrefill_dispatchProfile
 
-Moved from `gpu/prefill_dispatch_profile_test.go` (the comment above `TestPrefill_dispatchProfile`) on 2026-10-09.
+Moved from `backend/webgpu/prefill_dispatch_profile_test.go` (the comment above `TestPrefill_dispatchProfile`) on 2026-10-09.
 
 ```text
 TestPrefill_dispatchProfile is R10's prefill investigation (docs/tasks/red-october.md): "extend
@@ -2766,8 +2766,8 @@ recorded/replayable step list (it builds fresh buffers and issues M-row-scaled d
 inline, flushing every 32 passes for Metal's uncommitted-command-buffer cap) — re-running it
 with a class's dispatches skipped would cascade into shape/buffer errors for every downstream
 stage in the same layer, not a clean subtraction. Instead this uses PER-CATEGORY WALL-CLOCK
-ACCUMULATION (gpu/prefill_prof.go's profTic/profToc, wired into PrefillLastW8A8 itself, nil by
-default so it costs nothing when off) — the SAME method cuda/prefill_decomp_test.go already
+ACCUMULATION (backend/webgpu/prefill_prof.go's profTic/profToc, wired into PrefillLastW8A8 itself, nil by
+default so it costs nothing when off) — the SAME method backend/cuda/prefill_decomp_test.go already
 uses for the CUDA side, including its own accepted trade-off: category boundaries are syncs
 (c.device.Poll(true, nil)), so the category sum runs a bit over the pipelined wall time — "the
 price of per-kernel attribution", reported as such, not hidden.
@@ -2775,7 +2775,7 @@ price of per-kernel attribution", reported as such, not hidden.
 
 ## TestPrefill_dispatchProfile.depths
 
-Moved from `gpu/prefill_dispatch_profile_test.go` (the comment inside `TestPrefill_dispatchProfile`) on 2026-10-09.
+Moved from `backend/webgpu/prefill_dispatch_profile_test.go` (the comment inside `TestPrefill_dispatchProfile`) on 2026-10-09.
 
 ```text
 GOINFER_PREFILL_PROF_P overrides the depth list. The 1.5B int8int8 OOMs at P=1024 on this 8 GB
@@ -2786,7 +2786,7 @@ its 1024 cell comes from the 0.5B — which is also the model the doc's own prio
 
 ## TestPrefill_dispatchProfile.warmup
 
-Moved from `gpu/prefill_dispatch_profile_test.go` (the comment inside `TestPrefill_dispatchProfile`) on 2026-10-09.
+Moved from `backend/webgpu/prefill_dispatch_profile_test.go` (the comment inside `TestPrefill_dispatchProfile`) on 2026-10-09.
 
 ```text
 WARM-UP, discarded — the decode profiler warms explicitly for the same reason: the first
@@ -2798,7 +2798,7 @@ A single warm call at a small P touches every pipeline the timed cells will use.
 
 ## TestPrefill_dispatchProfile.selfcheck
 
-Moved from `gpu/prefill_dispatch_profile_test.go` (the comment inside `TestPrefill_dispatchProfile`) on 2026-10-09.
+Moved from `backend/webgpu/prefill_dispatch_profile_test.go` (the comment inside `TestPrefill_dispatchProfile`) on 2026-10-09.
 
 ```text
 Instrument self-check: causal attention is O(P^2), so its booked time MUST grow with P. The
@@ -2809,7 +2809,7 @@ and this assertion is what would have caught it on the spot.
 
 ## TestGenerate_batchedPrefillMatchesSequential
 
-Moved from `gpu/prefilllast_generate_integration_test.go` (the comment above `TestGenerate_batchedPrefillMatchesSequential`) on 2026-10-09.
+Moved from `backend/webgpu/prefilllast_generate_integration_test.go` (the comment above `TestGenerate_batchedPrefillMatchesSequential`) on 2026-10-09.
 
 ```text
 TestGenerate_batchedPrefillMatchesSequential is the integration gate docs/completed/task-gpu-batched-prefill.md's
@@ -2832,7 +2832,7 @@ W8A8 Qwen2 shape) must produce the IDENTICAL token stream.
 
 ## TestResidentPrefillLast_parity.decline
 
-Moved from `gpu/prefilllast_resident_parity_test.go` (the comment inside `TestResidentPrefillLast_parity`) on 2026-10-09.
+Moved from `backend/webgpu/prefilllast_resident_parity_test.go` (the comment inside `TestResidentPrefillLast_parity`) on 2026-10-09.
 
 ```text
 A decline (this model uses a feature outside PrefillLastW8A8's scope —
@@ -2846,7 +2846,7 @@ correctness for models PrefillLast actually accepts.
 
 ## TestResidentPrefillLast_TTFT
 
-Moved from `gpu/prefilllast_ttft_test.go` (the comment above `TestResidentPrefillLast_TTFT`) on 2026-10-09.
+Moved from `backend/webgpu/prefilllast_ttft_test.go` (the comment above `TestResidentPrefillLast_TTFT`) on 2026-10-09.
 
 ```text
 TestResidentPrefillLast_TTFT is the real end-to-end number the whole
@@ -2860,17 +2860,17 @@ the trustworthy comparison for whether batching prefill is worth shipping).
 
 ## TestResidentQKNorm_parity
 
-Moved from `gpu/qknorm_parity_test.go` (the comment above `TestResidentQKNorm_parity`) on 2026-10-09.
+Moved from `backend/webgpu/qknorm_parity_test.go` (the comment above `TestResidentQKNorm_parity`) on 2026-10-09.
 
 ```text
 TestResidentQKNorm_parity is the gate for Lever C increment 1: per-head QK-norm in the
-resident DecodeRunner (gpu/qknorm.go), which makes Qwen3 (and any dense QK-norm arch)
+resident DecodeRunner (backend/webgpu/qknorm.go), which makes Qwen3 (and any dense QK-norm arch)
 GPU-resident — previously decodeRunnerEligible excluded QKNorm outright. Two checks:
 ```
 
 ## TestQwen35ResidentParity.siblings
 
-Moved from `gpu/qwen35_resident_parity_test.go` (the comment inside `TestQwen35ResidentParity`) on 2026-10-09.
+Moved from `backend/webgpu/qwen35_resident_parity_test.go` (the comment inside `TestQwen35ResidentParity`) on 2026-10-09.
 
 ```text
 BOTH siblings, because the resident bridge composes differently for each and "two proven
@@ -2892,7 +2892,7 @@ the rest of that closure) and skip itself when nothing actually ran.
 
 ## TestQwen35ResidentParity.replay
 
-Moved from `gpu/qwen35_resident_parity_test.go` (the comment inside `qwen35ResidentParity`) on 2026-10-09.
+Moved from `backend/webgpu/qwen35_resident_parity_test.go` (the comment inside `qwen35ResidentParity`) on 2026-10-09.
 
 ```text
 SECOND GENERATION on the same model — a REPLAY, not another CPU comparison.
@@ -2912,7 +2912,7 @@ nothing but leftover state can break, and one no tolerance argument can absorb.
 
 ## TestParentSelfSkipsWhenNoSubtestRan
 
-Moved from `gpu/qwen35_resident_parity_test.go` (the comment above `TestParentSelfSkipsWhenNoSubtestRan`) on 2026-10-09.
+Moved from `backend/webgpu/qwen35_resident_parity_test.go` (the comment above `TestParentSelfSkipsWhenNoSubtestRan`) on 2026-10-09.
 
 ```text
 TestParentSelfSkipsWhenNoSubtestRan pins the anti-vacuity mechanism V-06 (docs/review-2026-09-04.md)
@@ -2930,7 +2930,7 @@ unwinds the rest of that closure) and has the parent skip itself when nothing ra
 
 ## TestQwen35ResidentDecodeRate
 
-Moved from `gpu/qwen35_resident_speed_test.go` (the comment above `TestQwen35ResidentDecodeRate`) on 2026-10-09.
+Moved from `backend/webgpu/qwen35_resident_speed_test.go` (the comment above `TestQwen35ResidentDecodeRate`) on 2026-10-09.
 
 ```text
 Decode rate, resident vs CPU, for the Gated-DeltaNet hybrid.
@@ -2951,7 +2951,7 @@ are reported rather than only the flattering one.
 
 ## TestQwen35ResidentDecodeRate.extrapolation
 
-Moved from `gpu/qwen35_resident_speed_test.go` (the comment inside `TestQwen35ResidentDecodeRate`) on 2026-10-09.
+Moved from `backend/webgpu/qwen35_resident_speed_test.go` (the comment inside `TestQwen35ResidentDecodeRate`) on 2026-10-09.
 
 ```text
 ms/LAYER is the transferable quantity and the ratio is the robust one; the absolute
@@ -2964,7 +2964,7 @@ extrapolation as indicative only.
 
 ## TestResident_C01_pos0ResetsRecurrent
 
-Moved from `gpu/residency_c01_reset_test.go` (the comment above `TestResident_C01_pos0ResetsRecurrent`) on 2026-10-09.
+Moved from `backend/webgpu/residency_c01_reset_test.go` (the comment above `TestResident_C01_pos0ResetsRecurrent`) on 2026-10-09.
 
 ```text
 TestResident_C01_pos0ResetsRecurrent is the resident-half gate for audit C-01: the compounding
@@ -2982,7 +2982,7 @@ with GOINFER_SSM_MODEL). The CPU rewind half is covered by decoder.TestTruncateT
 
 ## TestForwardN_declinesRecurrent.filecomment
 
-Moved from `gpu/residency_forwardn_recurrent_test.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `backend/webgpu/residency_forwardn_recurrent_test.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Audit C-17 — batched verify must DECLINE on a recurrent model.
@@ -3005,7 +3005,7 @@ field, so the control case is stubbable.
 
 ## BenchmarkResidentPackCost
 
-Moved from `gpu/resident_pack_bench_test.go` (the comment above `BenchmarkResidentPackCost`) on 2026-10-09.
+Moved from `backend/webgpu/resident_pack_bench_test.go` (the comment above `BenchmarkResidentPackCost`) on 2026-10-09.
 
 ```text
 TestResidentPackCost measures the CPU byte-shuffle that dominates an int4 resident load
@@ -3023,7 +3023,7 @@ Go runs a benchmark this slow exactly once (N=1 already exceeds benchtime).
 
 ## TestResidentPrefixReuse_tokenIdentical.diverge
 
-Moved from `gpu/resident_reuse_parity_test.go` (the comment inside `TestResidentPrefixReuse_tokenIdentical`) on 2026-10-09.
+Moved from `backend/webgpu/resident_reuse_parity_test.go` (the comment inside `TestResidentPrefixReuse_tokenIdentical`) on 2026-10-09.
 
 ```text
 Turn 4 DIVERGES: it shares only the opening words with what the cache holds. That
@@ -3037,7 +3037,7 @@ thing that distinguishes "compared the ids" from "assumed they matched".
 
 ## TestZZ_decodeRunAllocs
 
-Moved from `gpu/run_alloc_test.go` (the comment above `TestZZ_decodeRunAllocs`) on 2026-10-09.
+Moved from `backend/webgpu/run_alloc_test.go` (the comment above `TestZZ_decodeRunAllocs`) on 2026-10-09.
 
 ```text
 TestZZ_decodeRunAllocs reports allocs/op and B/op for DecodeRunner.Run via testing.Benchmark,
@@ -3050,7 +3050,7 @@ allocs/op by ~1. Opt-in diagnostic, not a gate.
 
 ## TestSampledGumbelStreamIdentity
 
-Moved from `gpu/sampled_gumbel_identity_test.go` (the comment above `TestSampledGumbelStreamIdentity`) on 2026-10-09.
+Moved from `backend/webgpu/sampled_gumbel_identity_test.go` (the comment above `TestSampledGumbelStreamIdentity`) on 2026-10-09.
 
 ```text
 TestSampledGumbelStreamIdentity is the WebGPU end-to-end gate for the device Gumbel-max sampler (R7b): with a
@@ -3063,20 +3063,20 @@ tokens that is still a low-percent event, so a failure is more likely a bug than
 
 ## softcapSerial
 
-Moved from `gpu/softcap_test.go` (the comment above `softcapSerial`) on 2026-10-09.
+Moved from `backend/webgpu/softcap_test.go` (the comment above `softcapSerial`) on 2026-10-09.
 
 ```text
-softcapSerial is the reference: the exact loop that shipped at cuda/resident.go and
-cuda/prefill.go before applySoftcap, and that still ships at decoder/forwardn.go,
-decoder/model.go and metal/model.go. Kept verbatim so the gate compares against the thing the
+softcapSerial is the reference: the exact loop that shipped at backend/cuda/resident.go and
+backend/cuda/prefill.go before applySoftcap, and that still ships at decoder/forwardn.go,
+decoder/model.go and backend/metal/model.go. Kept verbatim so the gate compares against the thing the
 other four siblings still do, not against a re-derivation of it. This is the WebGPU twin of
-cuda/softcap_test.go — gpu/softcap.go is a byte-identical port of cuda/softcap.go's
+backend/cuda/softcap_test.go — backend/webgpu/softcap.go is a byte-identical port of backend/cuda/softcap.go's
 applySoftcap (G6, docs/tasks/task-gpu-paths-2026-09.md), so this test is a direct port too.
 ```
 
 ## TestSpeculative_C03_concurrentResidentClaim
 
-Moved from `gpu/spec_c03_concurrent_test.go` (the comment above `TestSpeculative_C03_concurrentResidentClaim`) on 2026-10-09.
+Moved from `backend/webgpu/spec_c03_concurrent_test.go` (the comment above `TestSpeculative_C03_concurrentResidentClaim`) on 2026-10-09.
 
 ```text
 TestSpeculative_C03_concurrentResidentClaim is the gate for audit C-03: GenerateSpeculative must
@@ -3099,7 +3099,7 @@ as TestSpeculativeResident_parity. Heavy + webgpu gated.
 
 ## TestSpeculativeResident_decomp.ceiling
 
-Moved from `gpu/spec_decomp_test.go` (the comment inside `TestSpeculativeResident_decomp`) on 2026-10-09.
+Moved from `backend/webgpu/spec_decomp_test.go` (the comment inside `TestSpeculativeResident_decomp`) on 2026-10-09.
 
 ```text
 Spec ceiling: per round = K·draft + verify; ideal Stage-B verify ≈ 1 target
@@ -3109,7 +3109,7 @@ tokens/round ≈ 3.3 at K=4 (measured acceptance 0.58).
 
 ## TestSpeculativeResident_e2eThroughput
 
-Moved from `gpu/spec_e2e_bench_test.go` (the comment above `TestSpeculativeResident_e2eThroughput`) on 2026-10-09.
+Moved from `backend/webgpu/spec_e2e_bench_test.go` (the comment above `TestSpeculativeResident_e2eThroughput`) on 2026-10-09.
 
 ```text
 TestSpeculativeResident_e2eThroughput is the Lever 2 KILL-GATE measurement: real
@@ -3127,7 +3127,7 @@ asserted as a floor (Stage A is not where the win lives); only parity is hard-ga
 
 ## TestSpeculativeResident_e2eThroughput.draft
 
-Moved from `gpu/spec_e2e_bench_test.go` (the comment inside `TestSpeculativeResident_e2eThroughput`) on 2026-10-09.
+Moved from `backend/webgpu/spec_e2e_bench_test.go` (the comment inside `TestSpeculativeResident_e2eThroughput`) on 2026-10-09.
 
 ```text
 Draft is ALSO GPU-resident: a CPU draft is slower per token than the GPU target
@@ -3137,7 +3137,7 @@ resident models = two Contexts/devices sharing the 8 GB pool.
 
 ## TestSSMKernelControlD3
 
-Moved from `gpu/ssm_kernel_control_test.go` (the comment above `TestSSMKernelControlD3`) on 2026-10-09.
+Moved from `backend/webgpu/ssm_kernel_control_test.go` (the comment above `TestSSMKernelControlD3`) on 2026-10-09.
 
 ```text
 D3 — the last localization control (docs/ssm-int8-quality.md). The CPU experiments
@@ -3152,7 +3152,7 @@ mamba kernels (conv/ssm/gatedNorm) — i.e. the gap is a kernel discrepancy, not
 
 ## TestStagedGPU_nonDense
 
-Moved from `gpu/staged_bench_test.go` (the comment above `TestStagedGPU_nonDense`) on 2026-10-09.
+Moved from `backend/webgpu/staged_bench_test.go` (the comment above `TestStagedGPU_nonDense`) on 2026-10-09.
 
 ```text
 TestStagedGPU_nonDense is Lever A / B14 (docs/task-benchmark-refresh.md): the honest
@@ -3170,7 +3170,7 @@ Lever B). Loads here are Quant "int8int8" so the matmuls actually reach the GPU.
 
 ## TestStagedLayerSweep.hook
 
-Moved from `gpu/staged_layersweep_test.go` (the comment inside `TestStagedLayerSweep`) on 2026-10-09.
+Moved from `backend/webgpu/staged_layersweep_test.go` (the comment inside `TestStagedLayerSweep`) on 2026-10-09.
 
 ```text
 Both loops run the DECODER's granite forward; the truncation goes through the test hook (this
@@ -3180,7 +3180,7 @@ every layer and each row compared two full-model forwards).
 
 ## TestWebGPUThetaAB
 
-Moved from `gpu/theta_ab_test.go` (the comment above `TestWebGPUThetaAB`) on 2026-10-09.
+Moved from `backend/webgpu/theta_ab_test.go` (the comment above `TestWebGPUThetaAB`) on 2026-10-09.
 
 ```text
 TestWebGPUThetaAB — does wiring the MEASURED Theta actually make WebGPU speculative decode
@@ -3189,20 +3189,20 @@ faster (or at least no worse)?
 Theta was reachable only as 0.5 on this backend (P22, docs/queue-performance.md): WebGPU's
 residentDecoder implemented neither VerifyPathReporter nor PrefillPathReporter, so
 decoder.verifyTheta() fell through to the unmeasured default. Theta actually measures
-0.978-1.028 (gpu/theta_probe_test.go) — ForwardN's single-submit structure does not make the
+0.978-1.028 (backend/webgpu/theta_probe_test.go) — ForwardN's single-submit structure does not make the
 marginal row cheap, it just removes Go-side dispatch overhead between rows. Under 0.5 the
 controller drafts several nodes deep; under the measured value it should decline almost
 entirely, because a WebGPU verify node costs very close to a full target step.
 
 That predicts the speculative path under Theta=0.5 is SLOWER than not speculating at all on
 this backend, and that VerifyPath's fix recovers it by declining. This measures that rather
-than asserting it. Three arms, one prompt, interleaved (mirrors metal/theta_ab_test.go exactly,
+than asserting it. Three arms, one prompt, interleaved (mirrors backend/metal/theta_ab_test.go exactly,
 same reasoning, same backend-agnostic decoder API):
 ```
 
 ## TestThetaProbe_WebGPU
 
-Moved from `gpu/theta_probe_test.go` (the comment above `TestThetaProbe_WebGPU`) on 2026-10-09.
+Moved from `backend/webgpu/theta_probe_test.go` (the comment above `TestThetaProbe_WebGPU`) on 2026-10-09.
 
 ```text
 TestThetaProbe_WebGPU measures Theta — the marginal cost of one extra verify node, in units of
@@ -3210,8 +3210,8 @@ one single-token target step — on the cgo WebGPU resident path.
 
 WHY THIS EXISTS. decoder/spec_adaptive.go says Theta "is the relative cost of one extra verify
 node on *this backend* — measure it", ships 0.5 as the batched-CPU value, and CPU/CUDA/Metal
-have each had a real probe since (decoder/theta_probe_test.go, cuda/theta_probe_test.go,
-metal/theta_probe_test.go — docs/measurements/theta-per-backend-2026-09-01.md,
+have each had a real probe since (decoder/theta_probe_test.go, backend/cuda/theta_probe_test.go,
+backend/metal/theta_probe_test.go — docs/measurements/theta-per-backend-2026-09-01.md,
 theta-cuda-ab-2026-09-01.md) — P22 (docs/queue-performance.md) named WebGPU as the one backend
 still falling through to the unmeasured 0.5 default, filed open rather than assumed either way.
 The Metal probe found the domain check itself excluded Metal's real value (1.00–1.05) and
@@ -3222,7 +3222,7 @@ same shape of defect is exactly what this measures.
 METHOD, identical to the CPU control and the CUDA/Metal probes so all four numbers are directly
 comparable: seed a context of `depth` positions, then time ForwardN over n tokens for a ladder
 of n, truncating back to `depth` between every call. Theta = (least-squares slope of T(n)) /
-T(1). residentDecoder.TruncateTo is a documented no-op on this backend (gpu/residency.go: the
+T(1). residentDecoder.TruncateTo is a documented no-op on this backend (backend/webgpu/residency.go: the
 cache is positional, Forward sets nKeys=pos+1, so entries past pos are simply never read and get
 overwritten next round) — safe for this probe specifically because every call passes the SAME
 startPos, so nothing past `depth` is ever read regardless of what a prior wider call left there.
@@ -3230,12 +3230,12 @@ startPos, so nothing past `depth` is ever read regardless of what a prior wider 
 
 ## TestUploadKV_matchesSequentialForward
 
-Moved from `gpu/uploadkv_parity_test.go` (the comment above `TestUploadKV_matchesSequentialForward`) on 2026-10-09.
+Moved from `backend/webgpu/uploadkv_parity_test.go` (the comment above `TestUploadKV_matchesSequentialForward`) on 2026-10-09.
 
 ```text
 TestUploadKV_matchesSequentialForward is UploadKV's FIRST real correctness test on the WebGPU
 backend (P6b / gap-0, docs/multimodal.md) — the CUDA twin of this test lives in
-cuda/uploadkv_parity_test.go; see that file's doc comment for the full rationale. Before this,
+backend/cuda/uploadkv_parity_test.go; see that file's doc comment for the full rationale. Before this,
 UploadKV had zero non-test call sites and every fake stub ignored its arguments and returned
 nil.
 
@@ -3244,7 +3244,7 @@ Two arms on the SAME resident handle (Reset between them):
 
 ## TestUploadKV_matchesSequentialForward.model
 
-Moved from `gpu/uploadkv_parity_test.go` (the comment inside the doc comment of `TestUploadKV_matchesSequentialForward`) on 2026-10-09.
+Moved from `backend/webgpu/uploadkv_parity_test.go` (the comment inside the doc comment of `TestUploadKV_matchesSequentialForward`) on 2026-10-09.
 
 ```text
 Two cases: base=0 (no sliding-window ring wrap) and base>0 (prompt long enough to wrap the
@@ -3261,7 +3261,7 @@ all-zero offset is degenerate for every precision.
 
 ## TestWebGPUKVSlots_realClamp
 
-Moved from `gpu/kv_slots_test.go` (the comment above `TestWebGPUKVSlots_realClamp`) on 2026-10-09.
+Moved from `backend/webgpu/kv_slots_test.go` (the comment above `TestWebGPUKVSlots_realClamp`) on 2026-10-09.
 
 ```text
 TestWebGPUKVSlots_realClamp is item 26 of docs/prompts/nobara-mc1-webgpu-2026-09.md, §2: the discrete-GPU clamp
@@ -3277,7 +3277,7 @@ memory that does not return to baseline. A skip here is not a pass; only a missi
 
 ## TestWebGPUKVSlots_realClamp.cases
 
-Moved from `gpu/kv_slots_test.go` (the comment inside the case table of `TestWebGPUKVSlots_realClamp`) on 2026-10-09.
+Moved from `backend/webgpu/kv_slots_test.go` (the comment inside the case table of `TestWebGPUKVSlots_realClamp`) on 2026-10-09.
 
 ```text
 ~4.4 GB of int4 weights + ~1.88 GB/slot at the default 16k f32 KV on an 8 GB card: the brief
@@ -3287,7 +3287,7 @@ NVMe only; a path under /srv/models or /Volumes/ would be measuring a 5400 rpm S
 
 ## TestWebGPUKVSlots_realClamp.small
 
-Moved from `gpu/kv_slots_test.go` (the comment inside the case table of `TestWebGPUKVSlots_realClamp`) on 2026-10-09.
+Moved from `backend/webgpu/kv_slots_test.go` (the comment inside the case table of `TestWebGPUKVSlots_realClamp`) on 2026-10-09.
 
 ```text
 ~0.94 GB/slot: the brief expects all 4 to fit.
@@ -3295,7 +3295,7 @@ Moved from `gpu/kv_slots_test.go` (the comment inside the case table of `TestWeb
 
 ## TestMellum2_decodeThroughput
 
-Moved from `gpu/mellum2_decode_bench_test.go` (the comment above `TestMellum2_decodeThroughput`) on 2026-10-09.
+Moved from `backend/webgpu/mellum2_decode_bench_test.go` (the comment above `TestMellum2_decodeThroughput`) on 2026-10-09.
 
 ```text
 TestMellum2_decodeThroughput measures decode tok/s of the real Mellum2 (12B-class,
@@ -3305,13 +3305,13 @@ backend, and reports whether it runs RESIDENT (full-residency DecodeRunner) or S
 
 On an 8 GB card Mellum2 stages: int8 MoE experts (the only kind the resident builder
 stacks) make the model ~12 GB > VRAM, while int4 fits VRAM but the resident MoE
-stacking is int8-only (gpu/residency.go). So this measures the STAGED number here;
+stacking is int8-only (backend/webgpu/residency.go). So this measures the STAGED number here;
 set GOINFER_MELLUM_QUANT + a bigger card to get the resident one.
 ```
 
 ## attn_headdim_guard_test.L20
 
-Moved from `gpu/attn_headdim_guard_test.go` (the comment at old line 20, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/attn_headdim_guard_test.go` (the comment at old line 20, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 The invariant is no longer "== the workgroup width". The wide kernel strides, so its reach
@@ -3322,7 +3322,7 @@ the kernel's per-lane array cannot hold.
 
 ## attnbatched_test.L12
 
-Moved from `gpu/attnbatched_test.go` (the comment at old line 12, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/attnbatched_test.go` (the comment at old line 12, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 TestAttnBatched_parity gates docs/completed/task-gpu-batched-prefill.md's Increment 1: does ONE
@@ -3344,7 +3344,7 @@ math (attnKeysShaderWGSL's own comment: "the denominator sums in a different
 
 ## bufaccount_test.L51
 
-Moved from `gpu/bufaccount_test.go` (the comment at old line 51, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/bufaccount_test.go` (the comment at old line 51, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 Same shape TestVisionLayerNorm_parity already exercises — a smaller, ad hoc size here
@@ -3355,7 +3355,7 @@ introducing a second, unrelated flake into a test meant to pin V-22.
 
 ## decode_instrument_test.L78
 
-Moved from `gpu/decode_instrument_test.go` (the comment at old line 78, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/decode_instrument_test.go` (the comment at old line 78, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 ---- (a) resident gate GEMV [inter=8960, hidden=1536], ~13.76 MB int8 ----
@@ -3363,7 +3363,7 @@ Moved from `gpu/decode_instrument_test.go` (the comment at old line 78, reworded
 
 ## decode_instrument_test.L195
 
-Moved from `gpu/decode_instrument_test.go` (the comment at old line 195, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/decode_instrument_test.go` (the comment at old line 195, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 gemv dispatches stream weights of many sizes; scale the measured 13.76 MB
@@ -3373,7 +3373,7 @@ count alone. glue dispatches touch only a few KB → ≈ the no-op floor.
 
 ## decode_realmodel_bench_test.L21
 
-Moved from `gpu/decode_realmodel_bench_test.go` (the comment at old line 21, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/decode_realmodel_bench_test.go` (the comment at old line 21, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 Default model is the Qwen2.5-coder-1.5B GGUF (has qkv bias → the target for the
@@ -3382,7 +3382,7 @@ Increment-2 bias→GEMV-epilogue fusion). Override with GOINFER_DECODE_GGUF.
 
 ## TestDecodeRunnerW4A8_7B_fit.prior
 
-Moved from `gpu/decoderunner_w4a8_bench_test.go` (the comment at old line 12, reworded in place; the comment above `TestDecodeRunnerW4A8_7B_fit` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/decoderunner_w4a8_bench_test.go` (the comment at old line 12, reworded in place; the comment above `TestDecodeRunnerW4A8_7B_fit` keeps the contract) on 2026-10-09.
 
 ```text
 TestDecodeRunnerW4A8_7B_fit is the W4A8 footprint gate: it builds the FULL
@@ -3398,7 +3398,7 @@ NOT fit at int8 (7.07 GB weights) runs at int4.
 
 ## TestDecodeTokenFusedBatched_parity.prior
 
-Moved from `gpu/decodetoken_batched_test.go` (the comment at old line 11, reworded in place; the comment above `TestDecodeTokenFusedBatched_parity` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/decodetoken_batched_test.go` (the comment at old line 11, reworded in place; the comment above `TestDecodeTokenFusedBatched_parity` keeps the contract) on 2026-10-09.
 
 ```text
 TestDecodeTokenFusedBatched_parity is the Stage-B (docs/spec/07) increment-1 gate:
@@ -3411,7 +3411,7 @@ earlier rows of the block via the shared cache.
 
 ## decodetoken_batched_test.L93
 
-Moved from `gpu/decodetoken_batched_test.go` (the comment at old line 93, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/decodetoken_batched_test.go` (the comment at old line 93, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 Release at TEST scope, not inside buildMW. A `defer mw.Release()` in the builder fires
@@ -3422,7 +3422,7 @@ on the first use. Resident weights are caller-owned; Context.Close does not free
 
 ## TestDecodeTokenFusedBatched_microbench.prior
 
-Moved from `gpu/decodetoken_batched_test.go` (the comment at old line 129, reworded in place; the comment above `TestDecodeTokenFusedBatched_microbench` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/decodetoken_batched_test.go` (the comment at old line 129, reworded in place; the comment above `TestDecodeTokenFusedBatched_microbench` keeps the contract) on 2026-10-09.
 
 ```text
 TestDecodeTokenFusedBatched_microbench is the Stage-B increment-2 go/no-go: does
@@ -3435,7 +3435,7 @@ and production wiring isn't worth it (the docs/spec/07 kill gate). Run -v.
 
 ## TestDecodeTokenFusedBatched_Mbound_C13.prior
 
-Moved from `gpu/decodetoken_bound_test.go` (the comment at old line 10, reworded in place; the comment above `TestDecodeTokenFusedBatched_Mbound_C13` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/decodetoken_bound_test.go` (the comment at old line 10, reworded in place; the comment above `TestDecodeTokenFusedBatched_Mbound_C13` keeps the contract) on 2026-10-09.
 
 ```text
 TestDecodeTokenFusedBatched_Mbound_C13 gates C-13: the thin-M gemmRow kernel accumulates into a
@@ -3446,7 +3446,7 @@ it. The bound check runs before any device call, so no adapter is needed.
 
 ## decodetoken_largedim_bench_test.L31
 
-Moved from `gpu/decodetoken_largedim_bench_test.go` (the comment at old line 31, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/decodetoken_largedim_bench_test.go` (the comment at old line 31, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 vocab fixed small (32k) so the LM head doesn't dominate/OOM — we are measuring the
@@ -3456,11 +3456,11 @@ decode bandwidth goes. L kept small at the biggest dims to fit 8 GB.
 
 ## decodetoken_largedim_bench_test.L52
 
-Moved from `gpu/decodetoken_largedim_bench_test.go` (the comment at old line 52, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/decodetoken_largedim_bench_test.go` (the comment at old line 52, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 gemmRowMaxM is a HARD kernel limit, not a tuning knob: the thin-M gemmRow kernel
-accumulates into a private array<i32, gemmRowMaxM> (gpu/gemm_rows.go, gemmRowMaxM), and
+accumulates into a private array<i32, gemmRowMaxM> (backend/webgpu/gemm_rows.go, gemmRowMaxM), and
 DecodeTokenFusedBatched returns a clean error above it. This sweep used to request
 M=32/48 anyway and t.Fatalf on that error, so the whole test reported FAIL for asking
 the API to do something it documents it cannot — charging every unrelated leg an
@@ -3472,7 +3472,7 @@ Stage-B design question, not a measurement.
 
 ## decodetoken_test.L155
 
-Moved from `gpu/decodetoken_test.go` (the comment at old line 155, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/decodetoken_test.go` (the comment at old line 155, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 P1 (own-forward residency bridge): both layers share one attention geometry, so the
@@ -3483,7 +3483,7 @@ the layer count — the assertion catches what the parity check cannot see.
 
 ## deltanet_test.L14
 
-Moved from `gpu/deltanet_test.go` (the comment at old line 14, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/deltanet_test.go` (the comment at old line 14, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 TestDeltaRule_cpuParity — the whole Gated-DeltaNet mixer chain on the GPU vs the CPU reference,
@@ -3496,7 +3496,7 @@ primitives — the A′ zero-copy post-mortem's lesson, recorded as "isolation p
 
 ## deltanet_test.L24
 
-Moved from `gpu/deltanet_test.go` (the comment at old line 24, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/deltanet_test.go` (the comment at old line 24, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 The two GEMVs and the causal conv are deliberately outside: they are ordinary matmuls and
@@ -3516,7 +3516,7 @@ implementation of the thing under test.
 
 ## deltanet_test.L178
 
-Moved from `gpu/deltanet_test.go` (the comment at old line 178, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/deltanet_test.go` (the comment at old line 178, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 Worst-over-steps per stage, so a failure names WHICH kernel drifted rather than only that
@@ -3527,7 +3527,7 @@ the composition the resident runner will actually execute.
 
 ## f16_convert_test.L10
 
-Moved from `gpu/f16_convert_test.go` (the comment at old line 10, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/f16_convert_test.go` (the comment at old line 10, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 canonF32ToF16 is a local copy of decoder.f32ToF16bits (unexported, another module) — THE
@@ -3535,15 +3535,15 @@ canonF32ToF16 is a local copy of decoder.f32ToF16bits (unexported, another modul
 
 ## canonF32ToF16.prior
 
-Moved from `gpu/f16_convert_test.go` (the comment at old line 13, reworded in place; the comment above `canonF32ToF16` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/f16_convert_test.go` (the comment at old line 13, reworded in place; the comment above `canonF32ToF16` keeps the contract) on 2026-10-09.
 
 ```text
-cuda/internal/wpack/f16_convert_test.go's copy, which gates the identical property for C-15.
+backend/cuda/internal/wpack/f16_convert_test.go's copy, which gates the identical property for C-15.
 ```
 
 ## TestTiledDP4A_microbench.prior
 
-Moved from `gpu/gemm_dp4a_test.go` (the comment at old line 193, reworded in place; the comment above `TestTiledDP4A_microbench` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/gemm_dp4a_test.go` (the comment at old line 193, reworded in place; the comment above `TestTiledDP4A_microbench` keeps the contract) on 2026-10-09.
 
 ```text
 TestTiledDP4A_microbench compares the DP4A kernel's throughput against the
@@ -3556,7 +3556,7 @@ informational, not a correctness gate.
 
 ## gemm_dp4a_test.L219
 
-Moved from `gpu/gemm_dp4a_test.go` (the comment at old line 219, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/gemm_dp4a_test.go` (the comment at old line 219, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 sequentialGEMV runs M *real* single-token GEMV dispatches (MatmulW8A8GEMV,
@@ -3568,7 +3568,7 @@ pay off at all (docs/completed/task-gpu-batched-prefill.md).
 
 ## geom_variant_test.L10
 
-Moved from `gpu/geom_variant_test.go` (the comment at old line 10, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/geom_variant_test.go` (the comment at old line 10, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 TestGeomVariants_dedup is the P1 (own-forward residency bridge) unit gate for the
@@ -3585,7 +3585,7 @@ layer's tuple may diverge from its (uniform) weight shapes without consequence; 
 
 ## gptoss_down_w4_test.L11
 
-Moved from `gpu/gptoss_down_w4_test.go` (the comment at old line 11, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/gptoss_down_w4_test.go` (the comment at old line 11, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 TestGptOssDownW4_parity gates gpt-oss's down-projection combine on an INT4 stacked expert set.
@@ -3598,7 +3598,7 @@ The matmul term is made to dominate the bias ON PURPOSE. G-07 is the record of a
 
 ## benchGPU.prior
 
-Moved from `gpu/gpu_test.go` (the comment at old line 201, reworded in place; the comment above `benchGPU` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/gpu_test.go` (the comment at old line 201, reworded in place; the comment above `benchGPU` keeps the contract) on 2026-10-09.
 
 ```text
 BenchmarkMatmulBT_GPU measures the full offload (upload + dispatch +
@@ -3612,16 +3612,16 @@ track it as the resident-buffer follow-up lands.
 
 ## gumbel_test.L14
 
-Moved from `gpu/gumbel_test.go` (the comment at old line 14, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/gumbel_test.go` (the comment at old line 14, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 TestGumbelDeviceAgreesWithHost is the WebGPU kernel gate for the Gumbel-max sampler (R7b). Same PRE-REGISTERED
-rule as cuda/gumbel_test.go, written before the first run:
+rule as backend/cuda/gumbel_test.go, written before the first run:
 ```
 
 ## kv_i8_parity_test.L188
 
-Moved from `gpu/kv_i8_parity_test.go` (the comment at old line 188, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/kv_i8_parity_test.go` (the comment at old line 188, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 doc's "≥0.99" prediction was for a real Qwen-7B distribution; the kernels' bit-
@@ -3630,7 +3630,7 @@ exactness (TestKVI8Kernels/Attn, cosine 1.000000) is the exactness proof.
 
 ## kvprec_decline_test.L61
 
-Moved from `gpu/kvprec_decline_test.go` (the comment at old line 61, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/kvprec_decline_test.go` (the comment at old line 61, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 And the -ctx request must be consulted. It was read nowhere under gpu/, so -ctx 32768
@@ -3639,7 +3639,7 @@ kept 16k and -ctx 2048 still allocated 16k per layer.
 
 ## leak_report_test.L21
 
-Moved from `gpu/leak_report_test.go` (the comment at old line 21, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/leak_report_test.go` (the comment at old line 21, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 The report is printed at the end of the run and any entry FAILS the package (the suite was made leak-free on 2026-10-08, so a new leak is a regression); GOINFER_GPU_LEAKS_FATAL=0 turns the failure off (a test-only switch,
@@ -3648,13 +3648,13 @@ not a production read).
 
 ## lora_resident_parity_test.L17
 
-Moved from `gpu/lora_resident_parity_test.go` (the comment at old line 17, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/lora_resident_parity_test.go` (the comment at old line 17, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 TestLoRAResidentParityWebGPU is the G3 numeric gate (docs/tasks/task-gpu-paths-2026-09.md): compute-
 time LoRA applied on this backend's resident decode path must match the CPU reference (the
 same adapter applied via decoder's generic gatedMLP/causalAttention forward). Mirrors
-metal/lora_resident_parity_test.go — same fixture (testdata/llama-tiny, GQA 4-heads/2-kv-heads
+backend/metal/lora_resident_parity_test.go — same fixture (testdata/llama-tiny, GQA 4-heads/2-kv-heads
 so o-proj and the differently-widthed q/k/v sites are all genuinely exercised), same
 vacuousness check, same reasoning for the 0.95 floor (gpt2_resident_parity_test.go's
 established resident-vs-CPU decode-logit bar on the Metal side; this backend has no
@@ -3663,14 +3663,14 @@ here too) — but drives decoder.ResidentAdapter directly via ResidentForwardFor
 ResidentAdapterLayersForTest to isolate the KERNEL correctness question, same as every other
 resident parity test in this file's package.
 
-Architecturally this backend's SetAdapter (gpu/lora_resident.go) is a genuinely different
+Architecturally this backend's SetAdapter (backend/webgpu/lora_resident.go) is a genuinely different
 mechanism from Metal's — a flat, Go-side dispatch-step list rebuilt from a saved pristine plan
 plus spliced-in LoRA steps, not a per-token re-encode with a plain `if` — so this test is the
 ```
 
 ## mla_real_resident_test.L70
 
-Moved from `gpu/mla_real_resident_test.go` (the comment at old line 70, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/mla_real_resident_test.go` (the comment at old line 70, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 R-05 regression: the 128-wide head-dim guard rejected MLA's 192-wide qk head.
@@ -3678,7 +3678,7 @@ R-05 regression: the 128-wide head-dim guard rejected MLA's 192-wide qk head.
 
 ## mla_real_resident_test.L75
 
-Moved from `gpu/mla_real_resident_test.go` (the comment at old line 75, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/mla_real_resident_test.go` (the comment at old line 75, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 guard — R-05 holds; the model just doesn't fit fully resident here (MLA can't stream).
@@ -3686,7 +3686,7 @@ guard — R-05 holds; the model just doesn't fit fully resident here (MLA can't 
 
 ## TestMLAResidency_matchesCPU.prior
 
-Moved from `gpu/mla_resident_test.go` (the comment at old line 14, reworded in place; the comment above `TestMLAResidency_matchesCPU` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/mla_resident_test.go` (the comment at old line 14, reworded in place; the comment above `TestMLAResidency_matchesCPU` keeps the contract) on 2026-10-09.
 
 ```text
 TestMLAResidency_matchesCPU is the end-to-end bridge gate for Lever C4d: the tiny
@@ -3702,7 +3702,7 @@ themselves is pinned bit-identically by TestDecodeRunnerMLA_parity.
 
 ## TestDecodeRunnerMLA_parity.prior
 
-Moved from `gpu/mla_test.go` (the comment at old line 35, reworded in place; the comment above `TestDecodeRunnerMLA_parity` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/mla_test.go` (the comment at old line 35, reworded in place; the comment above `TestDecodeRunnerMLA_parity` keeps the contract) on 2026-10-09.
 
 ```text
 TestDecodeRunnerMLA_parity gates Lever C4c: the full MLA latent-attention forward on
@@ -3717,7 +3717,7 @@ the shared-expert combine all land correctly on top of the C3 MoE machinery.
 
 ## mla_test.L374
 
-Moved from `gpu/mla_test.go` (the comment at old line 374, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/mla_test.go` (the comment at old line 374, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 TestMLAHeadMatvec_parity gates Lever C4b's per-head block-diagonal matvec — the W_UK
@@ -3725,7 +3725,7 @@ TestMLAHeadMatvec_parity gates Lever C4b's per-head block-diagonal matvec — th
 
 ## TestMLALatentStore_parity.prior
 
-Moved from `gpu/mla_test.go` (the comment at old line 376, reworded in place; the comment above `TestMLALatentStore_parity` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/mla_test.go` (the comment at old line 376, reworded in place; the comment above `TestMLALatentStore_parity` keeps the contract) on 2026-10-09.
 
 ```text
 TestMLALatentStore_parity gates Lever C4b's latent append: kvA-norm the rank latent +
@@ -3736,7 +3736,7 @@ reference (rmsNorm + mlaRope) at a nonzero position so the rope-at-pos path is r
 
 ## TestMLAHeadMatvec_parity.prior
 
-Moved from `gpu/mla_test.go` (the comment at old line 440, reworded in place; the comment above `TestMLAHeadMatvec_parity` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/mla_test.go` (the comment at old line 440, reworded in place; the comment above `TestMLAHeadMatvec_parity` keeps the contract) on 2026-10-09.
 
 ```text
 TestMLAHeadMatvec_parity gates Lever C4b's per-head block-diagonal matvec — the W_UK
@@ -3746,7 +3746,7 @@ lift (aStride==K). A CPU f64 reference over random per-head a/w must match (cosi
 
 ## TestMLAAttn_parity.prior
 
-Moved from `gpu/mla_test.go` (the comment at old line 481, reworded in place; the comment above `TestMLAAttn_parity` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/mla_test.go` (the comment at old line 481, reworded in place; the comment above `TestMLAAttn_parity` keeps the contract) on 2026-10-09.
 
 ```text
 TestMLAAttn_parity gates Lever C4a: the absorb-path MLA rank-space attention kernel.
@@ -3760,7 +3760,7 @@ are exercised, plus a small-rank case so the rank ≤ WG path is covered too.
 
 ## TestMoEExpertGEMV_indexing.prior
 
-Moved from `gpu/moe_expert_test.go` (the comment at old line 12, reworded in place; the comment above `TestMoEExpertGEMV_indexing` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/moe_expert_test.go` (the comment at old line 12, reworded in place; the comment above `TestMoEExpertGEMV_indexing` keeps the contract) on 2026-10-09.
 
 ```text
 TestMoEExpertGEMV_indexing gates C3b: the indexed sparse-expert GEMV must read the
@@ -3773,7 +3773,7 @@ end-to-end on mixtral-tiny in C3c.)
 
 ## TestDecodeRunnerMoE_parity.prior
 
-Moved from `gpu/moe_runner_test.go` (the comment at old line 12, reworded in place; the comment above `TestDecodeRunnerMoE_parity` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/moe_runner_test.go` (the comment at old line 12, reworded in place; the comment above `TestDecodeRunnerMoE_parity` keeps the contract) on 2026-10-09.
 
 ```text
 TestDecodeRunnerMoE_parity gates Lever C3c: the integrated resident MoE forward
@@ -3788,7 +3788,7 @@ shared expert, every layer MoE.
 
 ## TestDecodeRunnerMoEShared_parity.prior
 
-Moved from `gpu/moe_shared_runner_test.go` (the comment at old line 12, reworded in place; the comment above `TestDecodeRunnerMoEShared_parity` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/moe_shared_runner_test.go` (the comment at old line 12, reworded in place; the comment above `TestDecodeRunnerMoEShared_parity` keeps the contract) on 2026-10-09.
 
 ```text
 TestDecodeRunnerMoEShared_parity gates Lever C3d: the resident MoE forward with an
@@ -3801,7 +3801,7 @@ and the sigmoid+bias routing land correctly on top of the C3c routed-expert comb
 
 ## TestMoERoute_parity.prior
 
-Moved from `gpu/moe_test.go` (the comment at old line 69, reworded in place; the comment above `TestMoERoute_parity` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/moe_test.go` (the comment at old line 69, reworded in place; the comment above `TestMoERoute_parity` keeps the contract) on 2026-10-09.
 
 ```text
 TestMoERoute_parity gates the C3a GPU router top-k kernel against the reference for
@@ -3813,11 +3813,11 @@ them in descending selection order, matching the reference sort) and weights to 
 
 ## moe_test.L113
 
-Moved from `gpu/moe_test.go` (the comment at old line 113, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/moe_test.go` (the comment at old line 113, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
-TestMoERoute_pastOldCap is the gate for raising the router cap 256 -> 512 (MAXE in gpu/moe.go,
-MOE_MAX_E in cuda/moe.cu). The cap bounds the ROUTER's per-invocation scratch and nothing else —
+TestMoERoute_pastOldCap is the gate for raising the router cap 256 -> 512 (MAXE in backend/webgpu/moe.go,
+MOE_MAX_E in backend/cuda/moe.cu). The cap bounds the ROUTER's per-invocation scratch and nothing else —
 the expert GEMVs select by index arithmetic into row-stacked weights, so they are expert-count
 agnostic. That makes "does moe_route still agree with the CPU reference at nE > 256" the whole
 correctness question, and this is it.
@@ -3827,7 +3827,7 @@ correctness question, and this is it.
 
 ## nemotron_moe_resident_test.L92
 
-Moved from `gpu/nemotron_moe_resident_test.go` (the comment at old line 92, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/nemotron_moe_resident_test.go` (the comment at old line 92, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 0.95 is the established resident-vs-CPU floor this session's other new-family gates use
@@ -3836,17 +3836,17 @@ Moved from `gpu/nemotron_moe_resident_test.go` (the comment at old line 92, rewo
 
 ## nemotron_moe_resident_test.L174
 
-Moved from `gpu/nemotron_moe_resident_test.go` (the comment at old line 174, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/nemotron_moe_resident_test.go` (the comment at old line 174, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 A forward pass must actually run without panicking on the nil shUp/shDown fields the
 fixed residency.go now leaves unbuilt — the decode-time `if lw.shUp != nil` guard
-(gpu/decoderunner.go) is what this exercises end to end, not just that Load succeeds.
+(backend/webgpu/decoderunner.go) is what this exercises end to end, not just that Load succeeds.
 ```
 
 ## TestNemotronResidentParity.prior
 
-Moved from `gpu/nemotron_resident_parity_test.go` (the comment at old line 13, reworded in place; the comment above `TestNemotronResidentParity` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/nemotron_resident_parity_test.go` (the comment at old line 13, reworded in place; the comment above `TestNemotronResidentParity` keeps the contract) on 2026-10-09.
 
 ```text
 P3/P4 whole-model parity: resident Nemotron-H (single-op-per-block Mamba-2 / NoPE-GQA / relu²
@@ -3860,7 +3860,7 @@ resident quantizes the relu²/conv/proj activations the CPU keeps f32). Opt-in (
 
 ## TestDecodeRunnerPerLayerRoPE_parity.prior
 
-Moved from `gpu/perlayer_rope_runner_test.go` (the comment at old line 12, reworded in place; the comment above `TestDecodeRunnerPerLayerRoPE_parity` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/perlayer_rope_runner_test.go` (the comment at old line 12, reworded in place; the comment above `TestDecodeRunnerPerLayerRoPE_parity` keeps the contract) on 2026-10-09.
 
 ```text
 TestDecodeRunnerPerLayerRoPE_parity gates Lever C7: the resident runner binding a
@@ -3872,7 +3872,7 @@ across layers (the pre-C7 behavior) would diverge here. Cosine must be ~1.0.
 
 ## prefilllast_ttft_test.L89
 
-Moved from `gpu/prefilllast_ttft_test.go` (the comment at old line 89, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/prefilllast_ttft_test.go` (the comment at old line 89, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 SEQUENTIAL — today's shipped default (decoder/model.go's residentPrefillSeed
@@ -3881,7 +3881,7 @@ per-token loop): one Forward call per prompt token, from an empty cache.
 
 ## TestPrefillLastW8A8_parity.prior
 
-Moved from `gpu/prefillrunner_test.go` (the comment at old line 12, reworded in place; the comment above `TestPrefillLastW8A8_parity` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/prefillrunner_test.go` (the comment at old line 12, reworded in place; the comment above `TestPrefillLastW8A8_parity` keeps the contract) on 2026-10-09.
 
 ```text
 TestPrefillLastW8A8_parity is the Increment-2 gate (docs/task-gpu-batched-
@@ -3894,7 +3894,7 @@ prompts run far past 16 tokens.
 
 ## qknorm_parity_test.L29
 
-Moved from `gpu/qknorm_parity_test.go` (the comment at old line 29, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/qknorm_parity_test.go` (the comment at old line 29, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 (decoder.TestQwen3_forwardParity); here it's the resident path.
@@ -3902,7 +3902,7 @@ Moved from `gpu/qknorm_parity_test.go` (the comment at old line 29, reworded in 
 
 ## TestNemotronRelu2FFN_parity.prior
 
-Moved from `gpu/relu2_test.go` (the comment at old line 14, reworded in place; the comment above `TestNemotronRelu2FFN_parity` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/relu2_test.go` (the comment at old line 14, reworded in place; the comment above `TestNemotronRelu2FFN_parity` keeps the contract) on 2026-10-09.
 
 ```text
 P2 parity: the resident non-gated squared-ReLU FFN — up(W8A8) → relu²→int8 (relu2Quant) →
@@ -3912,7 +3912,7 @@ over many tokens (state-free FFN, so per-token), like the mamba-kernel isolation
 
 ## TestResidentDecoderCheckCap.prior
 
-Moved from `gpu/residency_cap_test.go` (the comment at old line 10, reworded in place; the comment above `TestResidentDecoderCheckCap` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/residency_cap_test.go` (the comment at old line 10, reworded in place; the comment above `TestResidentDecoderCheckCap` keeps the contract) on 2026-10-09.
 
 ```text
 TestResidentDecoderCheckCap gates M20/C3: writes at/past the resident KV cap are refused
@@ -3922,7 +3922,7 @@ Pure logic — no device.
 
 ## TestRopeStorePartialRotary_tailStored.prior
 
-Moved from `gpu/rope_partial_test.go` (the comment at old line 12, reworded in place; the comment above `TestRopeStorePartialRotary_tailStored` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/rope_partial_test.go` (the comment at old line 12, reworded in place; the comment above `TestRopeStorePartialRotary_tailStored` keeps the contract) on 2026-10-09.
 
 ```text
 TestRopeStorePartialRotary_tailStored gates C4: for partial rotary (rotaryDim < headDim — GLM,
@@ -3934,7 +3934,7 @@ fused qkvFinalize against a CPU reference that rotates [0,2*half) and passes the
 
 ## rope_partial_test.L53
 
-Moved from `gpu/rope_partial_test.go` (the comment at old line 53, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/rope_partial_test.go` (the comment at old line 53, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 assertTail fails if any tail dim was dropped (the C4 bug wrote zeros there).
@@ -3942,7 +3942,7 @@ assertTail fails if any tail dim was dropped (the C4 bug wrote zeros there).
 
 ## TestDecodeRunnerSlidingWindow_parity.prior
 
-Moved from `gpu/sliding_runner_test.go` (the comment at old line 12, reworded in place; the comment above `TestDecodeRunnerSlidingWindow_parity` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/sliding_runner_test.go` (the comment at old line 12, reworded in place; the comment above `TestDecodeRunnerSlidingWindow_parity` keeps the contract) on 2026-10-09.
 
 ```text
 TestDecodeRunnerSlidingWindow_parity gates Lever C6: the resident dense forward with
@@ -3956,7 +3956,7 @@ gates. The window biting is the point: at W≥nKeys it would be a no-op.
 
 ## spec_c03_concurrent_test.L90
 
-Moved from `gpu/spec_c03_concurrent_test.go` (the comment at old line 90, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/spec_c03_concurrent_test.go` (the comment at old line 90, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 CPU-path greedy references. The CAS loser falls back to the STAGED CPU path (model.go),
@@ -3968,7 +3968,7 @@ valid backends; that distinguishes a backend switch (fine) from corruption (the 
 
 ## theta_ab_test.L36
 
-Moved from `gpu/theta_ab_test.go` (the comment at old line 36, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/theta_ab_test.go` (the comment at old line 36, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 	theta=0.5  the shipped-until-now behaviour, forced explicitly
@@ -3976,7 +3976,7 @@ Moved from `gpu/theta_ab_test.go` (the comment at old line 36, reworded in place
 
 ## TestWebGPUThetaAB.prior
 
-Moved from `gpu/theta_ab_test.go` (the comment at old line 40, reworded in place; the comment above `TestWebGPUThetaAB` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/theta_ab_test.go` (the comment at old line 40, reworded in place; the comment above `TestWebGPUThetaAB` keeps the contract) on 2026-10-09.
 
 ```text
 be materially slower than `off` (it should be within noise of it, since it declines to draft),
@@ -3985,7 +3985,7 @@ and it must beat `theta=0.5`.
 
 ## theta_ab_test.L58
 
-Moved from `gpu/theta_ab_test.go` (the comment at old line 58, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
+Moved from `backend/webgpu/theta_ab_test.go` (the comment at old line 58, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
 Quant int8int8, not int4: M-09 (decoder/spec_verify_guard.go) refuses ALL speculative
@@ -3996,7 +3996,7 @@ route around. int8int8 is not covered by that guard and still resides on WebGPU.
 
 ## TestKVCacheF16_fit
 
-Moved from `gpu/kv_f16_fit_test.go` (the comment above `TestKVCacheF16_fit`) on 2026-10-09.
+Moved from `backend/webgpu/kv_f16_fit_test.go` (the comment above `TestKVCacheF16_fit`) on 2026-10-09.
 
 ```text
 TestKVCacheF16_fit is the Increment-2 measurement gate (task-gpu-f16-kv.md +

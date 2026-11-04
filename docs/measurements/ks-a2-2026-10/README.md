@@ -68,7 +68,7 @@ Run 2026-10-23 11:45–11:47 PDT at goinfer 17a22510c with aikit gpu 9b938a5 (vi
 **The median is above the bound I registered for it, and the bound was wrong.** The pre-registration read the survey's graph
 replay (1.454×) as the most a cheaper launch could buy. But graph replay does not remove launches: the graphs capture only
 segments A, B and C, and rope_kv and attention still run live in the gap, through the executor. That comment is at
-`cuda/resident.go:cudaResident.KVSlots`. So the graph arm still made about five executor hand-offs a layer, and the direct arm
+`backend/cuda/resident.go:cudaResident.KVSlots`. So the graph arm still made about five executor hand-offs a layer, and the direct arm
 makes none. The 0.5B's direct token, 1,919 µs, is 36 µs under the survey's graph token (1,955 µs, another session). The
 mechanism explains that, not a timing fault.
 

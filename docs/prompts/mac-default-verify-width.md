@@ -49,7 +49,7 @@ and ideally a second pairing.
 resident block-drafting path is, sweep `VerifyWidth` over `{5,6,7,8,9,10}` on the code and math
 suites, interleaved within each prompt so thermal drift hits every width alike, ≥4 prompts per
 suite and ≥2 repeats. Report mean tok/s and standard deviation per width, and the 7-vs-8 delta
-against that spread. `cuda/default_width_sweep_test.go` is the shape to copy — it is CUDA-tagged,
+against that spread. `backend/cuda/default_width_sweep_test.go` is the shape to copy — it is CUDA-tagged,
 so port it rather than importing it.
 
 **Better, if a second pairing exists locally:** any dense target with a matching DFlash drafter

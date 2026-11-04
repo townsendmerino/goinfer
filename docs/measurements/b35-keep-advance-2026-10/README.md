@@ -48,7 +48,7 @@ reusing more than Q2, restored still equal to cold, plus B35's own gate re-run. 
 |---|---|---|---|
 | G0 | 0, the Mac | `decoder/b35_snapshot_test.go:TestB35_aRestoredTurnKeepsItsOwnPoint` (and, after the review, `TestB35_aColdTurnNearAHeldPointTakesItsOwn` and `TestB35_aLongerHeldPointIsKeptBeside`) on the hash fake: turn 2 restores turn 1's point and takes its own; turn 3 restores turn 2's, deeper; turn 3's reply equals a cold run | passes on the change, and **fails on `main`** (run before the change is applied: the plant is `main` itself) |
 | G0b | 0, the Mac | every other test in `decoder/b35_snapshot_test.go` and `decoder/kvsnap*_test.go`, through `scripts/touched.py` | all pass |
-| G1 | 0, nobara (CUDA device) | `cuda/b35_snapshot_test.go` at the change | all pass |
+| G1 | 0, nobara (CUDA device) | `backend/cuda/b35_snapshot_test.go` at the change | all pass |
 | G2 | 1, nobara | B35-TL re-run at the change (`run-b35-toolloop.sh`, the same conversation and rules) | verdict **PASS**: R2 met (Q3 reuses more than Q2, on both servers), I1 (restored equals cold), R1, R3 and T1 green |
 | G3 | 1, nobara | B35's own end-to-end gate (`docs/measurements/b35-e2e-2026-10-20/run-b35-e2e.sh <change> <main>`) | every row green, as registered there (I1, I2, I3, R1, T1) |
 
@@ -81,7 +81,7 @@ reusing more than Q2, restored still equal to cold, plus B35's own gate re-run. 
 |---|---|---|
 | G0 | the Mac | `TestB35_aRestoredTurnKeepsItsOwnPoint` failed on `main` (turn 2 restored 1,152 rows and took no snapshot) and passes at the change |
 | G0b | the Mac | `scripts/touched.py` green; the 17 other snapshot and B35 tests pass, none skipped; `go vet -tags realckpt`; the pinned `staticcheck` (its canary red); the parity refresh found 0 lines to refresh |
-| G1 | nobara, 16:46 PDT | `cuda/b35_snapshot_test.go`: 3 of 3 pass |
+| G1 | nobara, 16:46 PDT | `backend/cuda/b35_snapshot_test.go`: 3 of 3 pass |
 | G2 | nobara, 16:47–16:52 | B35-TL at the change: **PASS** (R1, R2, R3, I1, T1 all green) |
 | G3 | nobara, 16:52–17:03 | B35's end-to-end gate, the change against `main` `4814c869`: **PASS**, every row at 4k and 8k |
 
@@ -130,6 +130,6 @@ MiB available; the job waited from 22:45 under the heavy-load gate while another
 
 | gate | result |
 |---|---|
-| G1 | `cuda/b35_snapshot_test.go` passes |
+| G1 | `backend/cuda/b35_snapshot_test.go` passes |
 | G2, B35-TL | PASS: Q3 reuses 7,168 of 8,870 tokens at 0.260 of cold, Q2 4,096 at 0.513; restored replies equal cold |
 | G3, B35's own gate | PASS, every row at 4k and 8k; turn 3 at 4k 0.018 of cold, as at `e6673f9d` |

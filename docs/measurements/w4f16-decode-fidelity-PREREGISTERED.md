@@ -8,7 +8,7 @@ runs, per this repo's own rule that the pre-registration must exist first.
 Whether `GOINFER_METAL_DECODE_LANE=w4f16` (the f16-activation decode GEMV lane; shipped path
 `W4A8`, int8-activation) may become a candidate for default-on, subject to the separate served-
 tok/s band in the same brief. **This gate alone does not flip any default** — same invariant as
-every other fidelity gate in this repo (`cuda/vsum_split_gate_test.go`'s own header).
+every other fidelity gate in this repo (`backend/cuda/vsum_split_gate_test.go`'s own header).
 
 ## Reference
 
@@ -42,13 +42,13 @@ mid-process, confirmed by the arms NOT being bit-identical). Both arms build the
 which is a separate, already-shipped mechanism this gate is not about) so every position — prefill
 and continuation alike — goes through the same per-token dispatch sites R1 touches. Both arms are
 then teacher-forced on the reference's own greedy continuation tokens (never either arm's own
-output), exactly as `metal/prefill_gate_ref_test.go`'s established `teacherForceOnRef` does.
+output), exactly as `backend/metal/prefill_gate_ref_test.go`'s established `teacherForceOnRef` does.
 
 ## Criteria — reusing the implemented §3.2 pooled form, not re-deriving
 
-`docs/completed/task-prefill-gap.md` §3.2 defines the pooled criteria; `metal/prefill_gate_ref_test.go`'s
+`docs/completed/task-prefill-gap.md` §3.2 defines the pooled criteria; `backend/metal/prefill_gate_ref_test.go`'s
 `poolCells`/`cellSummary` is its one implementation in this repo, already used for two decode/prefill
-gates (the Metal fast-prefill lane, and R6's flash-decode attention). `cuda/vsum_split_gate_test.go`
+gates (the Metal fast-prefill lane, and R6's flash-decode attention). `backend/cuda/vsum_split_gate_test.go`
 amended its own criterion (a) by owner decision on 2026-09-13 to match this exact implementation,
 noting the brief's originally-registered strict form (`fast HF <= exact HF`) has no resolving power
 at these sample sizes. **This gate reuses `poolCells` verbatim** (same package, same function,

@@ -299,7 +299,7 @@ at 152k vocab) is 13% of a 1.5B token and ~25% of a 0.5B one (R7).
 expert DMA at line rate. L01's isolated benchmark says computing all of a layer's misses on the CPU
 in parallel beats GPU-compute-plus-DMA at every miss count (1.32× at m=1 to 3.40× at m=8,
 `decoder/l01_expert_bench_test.go`), the extraction and merge are built and verified end to end
-(`cuda/l01_cpu_offload.go`, `TestL01_e2eDecode_matchesBaseline`), but the prototype is synchronous
+(`backend/cuda/l01_cpu_offload.go`, `TestL01_e2eDecode_matchesBaseline`), but the prototype is synchronous
 and the pre-registered funding cell has not run (R11).
 
 **Metal** is the weaker story: 61–81 synchronous command-buffer boundaries per token at a recorded
@@ -323,7 +323,7 @@ bit-identical). M35 additionally needs a batched Gated-DeltaNet (R11).
 
 ### 2.8 Vision
 
-`cuda/vision_encoder.go` projects every linear through `gemv_w8a8_batched` — the dp4a GEMV L3
+`backend/cuda/vision_encoder.go` projects every linear through `gemv_w8a8_batched` — the dp4a GEMV L3
 replaced for text — and attends through `attn_img_batched` gridded (nH, M), the per-query-row shape
 L2 replaced, at M=4096 patches over 27 layers, plus 54 `addInPlaceHost` round-trips per image. The
 text twin measured 4.5× on the gemv category and 3.76× on attention, so 26.1 s → ~7 s is counted,
@@ -335,7 +335,7 @@ exp > attention MACs at so400m) and the S-06 NEON transcendentals unwired (R9).
 
 ### 2.9 Speculative decode and concurrency
 
-Metal's Θ=0.96 is an accurate report of an unbatched `ForwardN` (`metal/backend.go:metalResident.ForwardN` — a loop of
+Metal's Θ=0.96 is an accurate report of an unbatched `ForwardN` (`backend/metal/backend.go:metalResident.ForwardN` — a loop of
 `Forward`s, one command buffer each); CUDA's 0.25 with the same drafter is the existence proof that
 batching the verify into one command buffer turns speculation from "declines" into 1.2–1.8× on agent
 output (R12). Concurrency has no row on any backend; it is the axis a serving deployment buys, and
@@ -429,7 +429,7 @@ Status table, kept current as briefs move:
 | R7 | Sampled-decode cliff — device-side bounded top-K | Linux first, then Mac | M | **CUDA filtered sampling SHIPPED 2026-09-20 (top_p 0.657→0.957 of greedy; top_k 0.961; min_p 0.971). R7b, same day, owner decision: temperature-only by Gumbel-max on every backend — CUDA 0.744→1.008, WebGPU 0.796→1.035 (device draw). Metal device kernel BUILT, GATED AND MEASURED 2026-09-20 (Mac session): 0 mismatches/15,840 draws, 12,000/12,000 real-generation tokens identical to host, device draw 0.96× greedy internally AND peer-verified (goinfer 1.15× Ollama greedy, 1.10× Ollama sampled, both Metal) — see the record.** |
 | R8 | CUDA vision tower onto the L2/L3 kernels | Linux | M | **Phase A SHIPPED OPT-IN 2026-09-21**: fused non-causal attention, tower 26.0 -> 4.1 s/image (6.4x, clears the <=8s band by 3.9s), kernel-logic and BM-arm gates pass. **Not default**: tower-level cosine vs the old GPU output is 0.96 (registered pass line 0.98, ambiguous); a pre-registered served downstream check (8 real images, greedy) then read f_N=6/8 (registered fail line >=2) — the fused kernel perturbs greedy generation somewhat MORE than a 1-LSB pixel jitter control does (A_N/A_P 0.75). No defect found (all 8 outputs coherent and accurate); **Owner override 2026-09-21: made DEFAULT anyway** (`GOINFER_CUDA_VISION_ATTN=exact` reverts) — no defect found in either check, the 6.4x won on the owner's judgment against both misses. Phase B (int8 mma.sync GEMM) not started per the pre-registration (tower already <=8s). Records: `vision-tower-mma-2026-09-21.md`, `vision-tower-downstream-2026-09-21.md` |
 | R9 | CPU decode attribution (Mac fixed cost; the Linux 0.5B anomaly), then S-05 | both | S (measure) + M (aikit) | **Step 1 Mac half done, 2026-09-20**: per-component split at depth 128 on all three named sizes (0.5B/1.5B/7B — 7B needed the fit guard bypassed, user-approved, monitored, no near-incident) — MLP dominates and its share GROWS with size (56.7%→61.5%→70.1%), attention shrinks (28.6%→26.8%→21.4%), LM head 8-13%, sample/logitProc/embed all noise. **Correction:** the fork/join batching this pointed at (`MatmulBTW4A8Batch`, q‖k‖v/gate‖up) is NOT new work — already wired and parked as finding R-06 (ambiguous 1.07× on the 1.5B, two architectures). **Follow-up, same day:** re-measured at 7B specifically — an even cleaner null (OFF/ON differ by 0.017ms against ~2ms stdevs), confirming the fixed-per-barrier-cost reasoning (matters *less*, not more, as matmuls get bigger) rather than the naive size-trend read. R-06 stays parked at both sizes now. **Step 2, 2026-09-21: S-03 + S-04-step-2 were already shipped, never measured — now measured, real ~1.17×.** Reading aikit's own audit doc directly found S-05 is NOT built (deliberately deferred 2026-09-05, its own gate found no prefill deficit to spend it on) but S-03 (NEON activation quantizer) and S-04-step-2 (NEON QK/AV attention kernels) landed in aikit `v1.33.0` (2026-09-03) — 18 days before this session's own step 1 — and goinfer has been on `v1.33.0`+ (currently `v1.46.0`) the whole time, calling the exact functions (`linalg.QuantizeRowInt8`, `linalg.MatmulQKAcc64`/`MatmulAVAcc64`) both kernels dispatch through. A same-session A/B (current `main` vs a worktree-built pre-`v1.33.0` binary) measures 48.3 vs 41.2 tok/s at the 1.5B CPU decode cell — **1.17×**, real and clean (spreads 0.7 vs a 7.1 gap). Not decomposed between the two kernels or isolated from other changes across the 14-release span; may overlap with R13's own shipped numbers (unresolved). Real open levers now: S-05 (fully specified, not yet written), the fan-out shape change, the Linux half. **Linux half + fan-out shape DONE 2026-09-22** ([`cpu-decode-attribution-2026-09-22-linux.md`](../measurements/cpu-decode-attribution-2026-09-22-linux.md)): SMT hypothesis dead (16/8/pinned within noise); the 08-26 0.5B anomaly is GONE with its stale row (0.5B reads 41 tok/s today; the 1.5B is now the size under its bytes). Inner split found two mechanism-confirmed, bit-identical Linux losses: the SwiGLU 6-goroutine fan-out costing 3× the serial loop (1.5B 13.5 → 3.9 ms/token) and R13's grouped attention running aikit's pure-Go `_other.go` fallback on amd64 (core 11.0 → 2.6 ms at depth 128; **2.86× slower whole-token at depth 4096**). Both shipped as non-arm64 defaults (`decoder/cpu_tuning_{arm64,other}.go`): paired ABBA **1.189× and 1.118×; 1.5B 74.5 → 54.5 ms/token (1.37×), 7B 1.10×.** DECODE SPLIT lines kept under `GOINFER_DECODE_TIMING` so the Mac can read its own activation share. **Worker pool (step 2's "per-token pool that does not re-fork") BUILT AND KILLED 2026-09-22** ([`cpu-worker-pool-2026-09-22-linux.md`](../measurements/cpu-worker-pool-2026-09-22-linux.md)): isolated token-shaped sweep a null (29.9 vs 30.2 ms), in-token pool ON slower 3/3 pairs (59.7 vs 54.7 ms/token) — spinning workers steal the serial stretches; the remaining MLP matmul cost is not dispatch-shaped. Code not shipped. **S-05 BUILT, GATED, SHIPPED 2026-09-22 (aikit v1.47.0)** ([`s05-centering-fold-2026-09-22.md`](../measurements/s05-centering-fold-2026-09-22.md)): the −8 centering folded into the SDOT accumulator of the M=1 W4A8 decode kernel, bit-identical (three exact gates, both canaries red, 14/14 words vs clang) — **1.284–1.290× hot, 1.27–1.30× single-core streamed, ~1.05–1.10× on the 1.5B decode token** (15/15 ABBA pairs, ~49 → ~52 tok/s); the Mac DECODE SPLIT table for 0.5B/1.5B with the MLP inner split says the Mac's activation fan-out does NOT lose (6.5% of the token, 5.3 ns/element vs serial 6.9) — arm64 default kept by measurement; the 7B was killed by the swap monitor at +452 MB inside 10 s on today's loaded box (not run, not a number). **`bench_peer.py` re-anchor DONE 2026-09-22** ([`cpu-peer-reanchor-2026-09-22.md`](../measurements/cpu-peer-reanchor-2026-09-22.md)): served-harness numbers confirm the in-process Linux A/B — 1.5B 1.35×, 7B 1.09× (vs `3ea2f93d`); goinfer still trails Ollama at every size (0.65×/0.74×/0.82×), closer than the stale 08-26 fit implied. Found and investigated, not resolved: the Linux 0.5B (a model neither Linux fix targets) is reproducibly ~2.6% SLOWER on HEAD — a bisection attempt initially blamed one line, then a controlled same-tree A/B showed that line makes no difference, so the bisection method itself was the false positive; cause still open, named honestly rather than claimed fixed. Still open: the S-01 tile's own fold (prefill/verify); the 7B column on a quiet Mac box; S-02 per-worker timestamps inside a real Mac token (the Linux pool result bounds that term there) |
-| R10 | WebGPU glue fusion and on-device argmax; batched-prefill profile | Linux | M | **Decode half CLOSED 2026-09-22**: G35/G36 were already shipped; the on-device argmax lever is dead (headroom measured, not there); G38's "LM-head GEMV 10-17× over roofline" was RETRACTED as an instrument bug (`g38-retraction-2026-09-21.md`). **Prefill profile DONE 2026-09-22** (`webgpu-prefill-profile-2026-09-22.md`): the 16×16 tiled W8A8 GEMM is 81–94% of batched prefill at a flat ~1 TFLOPS (~11% of f32 peak); attention 2.5–15%. **Band registered, then BUILT AND SHIPPED DEFAULT 2026-09-22** (`gpu/gemm_rb.go`, `GOINFER_WEBGPU_GEMM=tiled16` reverts): 64×64 register-blocked kernel, 4×4 outputs per thread. Bit-identical (8 kernel shapes + 151,936 model logits, `Float32bits`). **GEMM class 7.10× at 1.5B/P=512 (band: ≥2.0×), whole prefill 5.89× (1.44 s → 0.25 s); confirmation 0.5B/P=1024: 5.08× / 3.31×.** Record in the same measurement doc. R10 CLOSED |
+| R10 | WebGPU glue fusion and on-device argmax; batched-prefill profile | Linux | M | **Decode half CLOSED 2026-09-22**: G35/G36 were already shipped; the on-device argmax lever is dead (headroom measured, not there); G38's "LM-head GEMV 10-17× over roofline" was RETRACTED as an instrument bug (`g38-retraction-2026-09-21.md`). **Prefill profile DONE 2026-09-22** (`webgpu-prefill-profile-2026-09-22.md`): the 16×16 tiled W8A8 GEMM is 81–94% of batched prefill at a flat ~1 TFLOPS (~11% of f32 peak); attention 2.5–15%. **Band registered, then BUILT AND SHIPPED DEFAULT 2026-09-22** (`backend/webgpu/gemm_rb.go`, `GOINFER_WEBGPU_GEMM=tiled16` reverts): 64×64 register-blocked kernel, 4×4 outputs per thread. Bit-identical (8 kernel shapes + 151,936 model logits, `Float32bits`). **GEMM class 7.10× at 1.5B/P=512 (band: ≥2.0×), whole prefill 5.89× (1.44 s → 0.25 s); confirmation 0.5B/P=1024: 5.08× / 3.31×.** Record in the same measurement doc. R10 CLOSED |
 | R11 | MoE: L01 funding cell; P20 expert-major prefill; Metal pager measurement and M-11 | both | L | **(a) L01 KILLED 2026-09-21** on real hardware (`l01-funding-cell-2026-09-21.md`, cache-poisoning root cause). **(b) P20 BUILT AND SHIPPED DEFAULT-ON 2026-09-21**: expert-major prefill, generic path AND gemma4's parallel dense‖MoE (`cuda/moe_expert_major*.go`, `GOINFER_CUDA_MOE_EXPERT_MAJOR`), bit-identical, **2.66×/2.50×/2.39×/2.26× at M=512/2048/4096/8012 on the real 26B** (`p20-expert-major-m26-2026-09-21.md`). Decode-side sibling shipped 2026-09-22 as the C′ compute/DMA overlap, 1.27× (`moe-streaming-decode-overlap-ceiling-2026-09-22.md`). **(c) Metal M26: three near-incidents across the whole N range, 2026-09-20 + 2026-09-22** — `DecodePath`/`g4moe.paged` confirm the paged mechanism engages correctly at auto-sized N=64, manual N=32, AND the floor N=8 (`top_k` itself), but ALL THREE drove this machine into a swap spiral before a served rate was reached, killed before either a kernel panic or a completed measurement — see the record. The N=8 run (automated kill switch, not manual monitoring) caught the spiral far earlier (+341 MB peak vs the first two runs' 7-9x baseline peaks) but did not avoid it. The ceiling, the previous default, and the floor have now all failed the same way; the remaining lever is a lower default for this model class on 16 GB Metal as a hardware-fit question, not further N-tuning. *2026-10-01 (D-D01, `docs/audit-metal-2026-09-30.md`):* the audit reads these spirals as caused by the fork copy-on-wire collapse fixed on 2026-09-24 (`docs/measurements/m26-alias-fork-collapse-2026-09-24.md`); no pager arm has run since, so "a lower default" awaits that re-run (the audit program's T1.8/T1.9). |
 | R12 | Metal `ForwardN` batching (P21); the missing peer rows (MLX, Metal depth, vision, W7) | both | S–M | **CLOSED 2026-09-20/21.** MLX row (i) re-confirmed 2026-09-18; Metal depth row (ii) done via R2 step 0; W7 (iv) done 2026-09-19 (simplified — see the record) — goinfer 60.1→36.1→36.4 tok/s at 1/2/4 clients (a real loss that plateaus), llama-server 84.8→95.9→149.7 (scales up), 4.11× gap at n=4. **Follow-on 2026-09-26 (task-concurrency MC0/MC1):** the plateau was the single resident KV thrashing, not serialization; with MC1's 4 Metal KV slots goinfer holds 70.3→69.5→70.9 (the gap to batching peers is now MC2's question); vision (iii) done 2026-09-20 — Ollama 0.4s TTFT measured (corrected 2026-10-07: a resent image, most likely an image-cache hit, not a new-image TTFT; r12-vision-peer-2026-09-20.md), goinfer's own row unmeasured (a fit-guard bypass on this Mac caused a real near-incident, caught and killed before completion — see the record). **P21 was already shipped** (`a1640a6a`, 2026-09-16, predating this brief) — re-measured 2026-09-20: Θ 0.86–0.96, above the 0.8 kill line at every cell, killed |
 | R13 | CPU decode attention, group-major acc64 kernels (bit-identical) | both (aikit + goinfer) | S (measure) + M (two kernels ×2 ISAs, wiring) | **step 0 complete 2026-09-19**: (i) peer depth row done but not benchmarks.md-quality (thermal drift, re-run needed); (ii) softmax caps the QK+AV grouping ceiling to ~1.39-1.54× overall, not 1.8-1.85×; (iii) the cache-dedup gap is depth-dependent — nil below ~K=1024, 2-5× above K=2048, reinforcing (ii)'s decision depth. **SHIPPED 2026-09-20** — aikit kernel A/B real (1.53-2.39×); goinfer wiring found a real bug (softmax accidentally serialized, not the scheduler-contention red herring a first CPU profile suggested — `go tool trace`'s per-goroutine breakdown found the actual cause). Fixed: parity at depth 2048, **1.32× served at depth 8192**. `GOINFER_ATTN_GROUPED` defaults on. Three-arm/both-box/all-model sweep still not done |
@@ -468,7 +468,7 @@ explain.
 history — the Stage-B lesson, isolated GEMV wins that vanish end to end, is the reason the band is
 served tok/s and not GB/s), audit `M-10` (a dispatch-site swap that was slower at every depth — the
 depth bench is the arbiter), `completed/task-metal-cgofree-spike.md` "P1–P5" (the f16 activation
-kernels `rmsnorm_f16`, `residual_f16`, `swiglu_f16`, `rope_f16` already exist in `metal/prefill.go`
+kernels `rmsnorm_f16`, `residual_f16`, `swiglu_f16`, `rope_f16` already exist in `backend/metal/prefill.go`
 for M>1 — reuse, do not duplicate), `ollama-chase.md` §2 (reduction width and fast-math are part of
 the bit-identity contract; this lane is outside it and must say so), `completed/task-prefill-gap.md`
 §3–§3.2 (the pooled gate and why discrete thresholds without resolving power fail an equal arm ~95%
@@ -476,7 +476,7 @@ of the time). Do not re-propose: Stage B, ICB, unretained references, the megake
 fusions, `sa_qv` — all recorded negatives on the *integer* path and irrelevant to this lane except as
 method warnings.
 
-**Build.** One new kernel family, `gemv_w4f16_*` beside the `gemv_w4a8_sa*` set in `metal/kernels.go`:
+**Build.** One new kernel family, `gemv_w4f16_*` beside the `gemv_w4a8_sa*` set in `backend/metal/kernels.go`:
 one simdgroup per output row (or per 2 rows if the register budget allows — measure both), weights
 read as `uint4` (32 nibbles) per lane-step, nibble→half via the exponent-bias trick rather than a
 convert per element, activation held as `half4` from a `rmsnorm_f16`-style producer, f32
@@ -486,7 +486,7 @@ is untouched — same buffers, same repack, same `.giw`). Fused epilogues mirror
 convert replaces the one `quant_vec` dispatch M-audit §5 counted rather than adding one. The LM head
 stays W8A8 in step 1 (its 84 GB/s with 19,000 threadgroups is a separate question — N-40 covers the
 precision trade). Wire it behind `GOINFER_METAL_DECODE_LANE=w4f16` (name to taste; the flag is the
-contract until the decision in §4 is taken), selected in `metal/model.go` at the pipeline build, so
+contract until the decision in §4 is taken), selected in `backend/metal/model.go` at the pipeline build, so
 one binary carries both arms.
 
 **Gates.** (1) Kernel unit test vs a scalar f32 reference at the real shapes (K=1536/8960, N up to
@@ -494,7 +494,7 @@ one binary carries both arms.
 snapshot golden (`TestMetalSnapshotGolden`) is *not* the gate for this lane — it pins the W4A8
 path; add a second golden entry for the lane so a later change to it is caught the same way, baked
 after gate (3) passes. (3) The decode-side fidelity gate: the vsum gate's (a)/(b)/(c) criteria
-(`cuda/vsum_split_gate_test.go` is the template; `metal/prefill_gate_ref_test.go` has the Metal
+(`backend/cuda/vsum_split_gate_test.go` is the template; `backend/metal/prefill_gate_ref_test.go` has the Metal
 reference plumbing) against the CPU f32-weight, f32-activation reference, teacher-forced, 10
 prompts × 64 positions, S (1.5B) as the decision cell and D7 as confirmation if it fits the fit-guard
 on the day: hard flips ≤ exact + 2√exact, agreement ≥ exact − 1.0 pt and ≥ half the prompts, KL ≤
@@ -508,7 +508,7 @@ Methodology), 0.5B / 1.5B / 7B / phi3-mini, three arms interleaved per cell: W4A
 Ollama; add `mlx` to `BENCH_ENGINES` on the same run so the MLX row stops being a one-off (R12).
 Then the depth bench (`GOINFER_METAL_DEPTH_BENCH=1 go test ./metal -run TestZZ_metalDepthBench`)
 both arms, so the shallow win is not bought with a depth regression. Record the GPU-busy weight-term
-bandwidth with the `metal/tax_test.go` instrument for the mechanism line, but the verdict is the
+bandwidth with the `backend/metal/tax_test.go` instrument for the mechanism line, but the verdict is the
 served number.
 
 **Decision rule.** As registered above, on the 1.5B served cell, with the fidelity gate as a hard
@@ -543,7 +543,7 @@ benchmarking a lane that fails a basic sanity check before reaching the fidelity
 The parked record scored the f16 lane against the shipped W4A8 lane and never against anything
 else — the exact exact-as-oracle scoring `completed/task-prefill-gap.md` §3.1 had already withdrawn
 for the prefill lane on 2026-09-05. Re-measured with an f64 reference from the same resident weight
-bits and the same post-attention residual (`metal/r1_gu_reference_test.go`): the f16 gate/up GEMV is
+bits and the same post-attention residual (`backend/metal/r1_gu_reference_test.go`): the f16 gate/up GEMV is
 exact on real data at every layer including 26 (cosine 1.000000000 vs the f64 dot of its own input,
 maxRel ≤ 6.6e-5) and sits on the reference (cosine ≥ 0.99999997), while W4A8 is the coarse arm — its
 single per-tensor int8 activation scale (amax/127 = 1.15 at layer 26, position 0, the BOS
@@ -551,7 +551,7 @@ attention-sink token) zeroes 96.9% of the FFN input channels. The record's "row 
 its labels backwards (f64 71.62, f16 71.62, W4A8 54.70); the repro's cosine −0.585 reproduces exactly
 and decomposes into the massive-activation channels the residual-cosine instrument is blind to.
 Teacher-forced against an external CPU reference (int8 weights, f32 activations, N=48;
-`metal/r1_lane_vs_cpu_test.go`), the f16 lane is at least as faithful as W4A8 on every pooled
+`backend/metal/r1_lane_vs_cpu_test.go`), the f16 lane is at least as faithful as W4A8 on every pooled
 criterion (mean KL 0.060 vs 0.334, top-1 45/48 vs 43/48, hard flips 1 vs 2) — the whole margin at
 position 0, where the *shipped* lane has a hard flip at 80% of the logit range. This is not a
 gate-(3) pass (one prompt, one cell); it is the absence of any f16 defect. **Gate (3) and the
@@ -580,7 +580,7 @@ shallow win bought by a deep regression — there is simply no regime where the 
 closed: fidelity was never the blocker; the f16-FMA activation regime does not reach the
 served-tok/s win the brief's own premise (≥130–140 GB/s weight-stream bandwidth) predicted on this
 GPU's real dispatch/occupancy floor.** Kernel, wiring, and the three new test files
-(`metal/r1_gu_reference_test.go`, `metal/r1_lane_vs_cpu_test.go`, `metal/r1_gate3_test.go`) are
+(`backend/metal/r1_gu_reference_test.go`, `backend/metal/r1_lane_vs_cpu_test.go`, `backend/metal/r1_gate3_test.go`) are
 kept as correctness-proven groundwork, matching this repo's own convention for a killed-but-correct
 lane — the original deliberately-failing repro they replace stays deleted. Gate (4) is clean with
 the lane off; with it on, one test (`TestMoE_assemblyVsDense`) fails but is diagnosed as a
@@ -611,7 +611,7 @@ fifth time, and that is worth writing down as firmly as the first four).
 collapse probe: 75% of attention at depth is the 6× GQA-redundant K/V read; the four dedup/split
 attempts and *why each lost* — dedup needs co-location, co-location kills occupancy, split needs
 dispatches, dispatches are the floor), audit `M-09` (the staged K read, 0.43×, and its plausible
-cause: half the threads idle during compute plus 64 barrier pairs), `metal/kernels.go`'s
+cause: half the threads idle during compute plus 64 barrier pairs), `backend/metal/kernels.go`'s
 `attention` kernel (the shipped structure: one threadgroup of 128 per query head, thread-per-key
 serial dot, thread-per-dim serial V fold with the 8-wide load batch, the 128-wide pinned reduction
 tree), the deep-context tiled path added 2026-09-17 (`26f64807` — same structure, tiled at 4096
@@ -645,7 +645,7 @@ dense-GQA kernel clears the band on the 1.5B — a family-by-family port, each w
 the reduction order differs by design) at nKeys ∈ {1, 127, 128, 129, 255, 256, 257, 999, 2048,
 4095, 4096, 4097, 8192}, straddling every width and tile boundary, and vs the CPU f64 reference at
 cosine ≥ 0.9999. (2) A new snapshot-golden entry for the kernel (machine-pinned, past both reduction
-widths, per `metal/snapshot_golden_test.go`'s own rules) — baked *after* gate (3). (3) The same
+widths, per `backend/metal/snapshot_golden_test.go`'s own rules) — baked *after* gate (3). (3) The same
 teacher-forced fidelity gate R1 uses, S at depth 3900 as the decision cell, W4A8 + shipped attention
 as the exact arm; expected to pass comfortably (`reduction-tree-accuracy-2026-09-12.md`: a blocked
 fold measured 1.76–4.93× *closer* to f64 than the sequential one on CUDA — a prediction here, not a
@@ -653,7 +653,7 @@ result). (4) Paged ≡ non-paged byte-identity holds trivially (same kernel both
 
 **Gate (1), amended 2026-09-19 — the inputs are part of the gate.** A key-parallel kernel with an
 online softmax has one piece of new arithmetic — the rescale when the running max moves, and
-the fixed-order combine across splits — and a diffuse test cannot see it. `metal/attn_shape_test.go`'s
+the fixed-order combine across splits — and a diffuse test cannot see it. `backend/metal/attn_shape_test.go`'s
 header says why in this repo's own words: random q/k give every key ~1/nKeys, errors average out,
 and a random-weight synthetic passed at 0.997 while the real model did not. So gate (1) runs
 `runAttnCase`'s pattern, not random fill — a sharp hot key, an outlier V row, a near-zero-norm sink
@@ -668,14 +668,14 @@ has no correctness test (the f16 `attention` kernel's does: `TestAttention_Shipp
 its hot key at nKeys/2, which lands in a later tile at 8192 / 16384 / 32768). And
 `TestAttentionPrefillFused` uses uniform random fill at ≤ 520 keys against a 0.999 cosine and a
 0.05 max|Δ| that is about the size of the output itself on those inputs, where the CUDA twin holds
-1e-3 of max|V| and 0.9999 (`cuda/attn_fused_test.go`); what covers that kernel on sharp attention
+1e-3 of max|V| and 0.9999 (`backend/cuda/attn_fused_test.go`); what covers that kernel on sharp attention
 today is the served §3.2 gate, not a unit test. Each is one `runAttnCase`-style case away from
 closed; R4 owns the second.
 
 **Measure.** The depth bench, three runs, both arms, then `scripts/bench_peer.py` at depths 128 and a
 4000-token calibrated prompt (the harness's Phase B is hardcoded CUDA-only — extend it or use the
 depth bench as the instrument of record and say so). Cross-check the depth term's GPU-busy time with
-the `metal/tax_test.go` timestamps so the mechanism line can say what changed.
+the `backend/metal/tax_test.go` timestamps so the mechanism line can say what changed.
 
 **Decision rule.** The band above, on the depth bench. A shallow regression beyond 3% at 128 parks
 the kernel regardless of the depth win, because the 1.5B at 128 is the cell the promotion gate
@@ -723,7 +723,7 @@ and set-A references are mismatched to 4 of 10 prompts. Re-gated on set B under 
 prior records compared **end-to-end logits** of a kernel that is non-bit-identical *by design*
 against the shipped path, on Gaussian-noise embeddings, through goinfer's per-tensor int8
 activation quantization — a discontinuous map — and neither measured the kernel's own output on
-real data. `metal/r2_ctx_diff_test.go` does: one resident, `r.decodeAttnFA` toggled at runtime, and
+real data. `backend/metal/r2_ctx_diff_test.go` does: one resident, `r.decodeAttnFA` toggled at runtime, and
 at every (step, layer) the shipped kernel and `attention_fa` run on the *identical* residual and KV
 state. Result: `|ctxFA − ctxShipped|` ≤ 1e-5 at all 140 cells, including every "bad" step — the
 isolated gate's numbers are the production numbers. The accumulated trajectory divergence stays ≤
@@ -735,7 +735,7 @@ a 1e-6 residual nudge after layer 0 produces the same 0.57–0.74 logit jump at 
 follow-up's position linkage was real and is the input's (a near-boundary element at position
 1602); its ULP control was evidence *for* hypersensitivity, misread as evidence against. Then the
 real gate (3) the brief specifies — S at K=3900, 10 prompts × 64 teacher-forced positions against
-the CPU f32 reference, `metal/r2_gate_test.go` — **passes on all three pooled criteria** (hard flips
+the CPU f32 reference, `backend/metal/r2_gate_test.go` — **passes on all three pooled criteria** (hard flips
 68 ≤ 70, agreement 80.31% ≥ 79.53%, mean KL 0.4859 ≤ 0.4861, lower on 6/10 prompts). **What remains
 is the depth-bench speed band above, unchanged; not run here.** The three e2e/sweep/control tests
 are kept with their doc comments corrected; the 2026-09-20 race fix stands.
@@ -758,7 +758,7 @@ enabling as an incremental improvement, against the bit-identity contract it wou
 
 **Owner decision, 2026-09-21 — shipped as default despite missing the band.** Enable it. The open
 question above is resolved: `attention_fa` is now default-on
-(`metal/backend.go`'s `metalAttnFAEnabled()`; `GOINFER_METAL_ATTN_FA=0` opts back to the shipped
+(`backend/metal/backend.go`'s `metalAttnFAEnabled()`; `GOINFER_METAL_ATTN_FA=0` opts back to the shipped
 kernel unconditionally). What changed, precisely:
 
 - **Every test that used `Forward`'s sequential per-token decode as an "exact" reference at
@@ -768,7 +768,7 @@ kernel unconditionally). What changed, precisely:
   `t.Setenv(..., "")` meaning "off" (the old `== "1"` semantics) were fixed to `"0"` — under the
   new opt-out default, an empty string now means on, and those tests' own build-time self-checks
   would otherwise have started failing.
-- `metal/depth_bench_test.go`'s log header used to hardcode `(W4A8)` regardless of which kernel
+- `backend/metal/depth_bench_test.go`'s log header used to hardcode `(W4A8)` regardless of which kernel
   ran; it now reports the resident's actual `r.decodeAttnFA` state, since the ambient default it
   reads determines that without the test itself setting anything.
 - **`TestMetalSnapshotGolden` did not exercise this path** — its checkpoints stopped at depth 320,
@@ -819,7 +819,7 @@ moves to the smallest K in {64, 128} at which the §3.2 pooled gate ships; at th
 must beat sequential by ≥2× on TTFT (ships), 1.3–2× parked, below 1.3× the floor stays.**
 
 **Read first.** Audit `M-01`, `M-02` and their closure notes (`6cc862a0` — the floor is 256 today,
-`GOINFER_METAL_FAST_PREFILL_FLOOR` read in `metal/backend.go:metalFastPrefillFloorFor`; `ForwardNoLogits` shipped
+`GOINFER_METAL_FAST_PREFILL_FLOOR` read in `backend/metal/backend.go:metalFastPrefillFloorFor`; `ForwardNoLogits` shipped
 synchronous, the `noHead` executor-job version with ~0.9 ms/token of encode-ahead overlap still
 open), `G-02`/`G-08` (the pooled gate drops missing cells silently and never exercises
 `startPos > 0`, which every prefix-reuse turn uses — fix G-08 as part of this brief, since a
@@ -827,7 +827,7 @@ short-prompt floor is exactly the prefix-reuse regime), and the gate record
 `docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md` (K=256 PASS twice — the premise the 512
 floor was set on was wrong once already; do not set the next floor on a premise either).
 
-**Build.** Nothing new in kernel space. Extend `TestPrefillGateVsReference` (`metal/prefill_gate_ref_test.go`)
+**Build.** Nothing new in kernel space. Extend `TestPrefillGateVsReference` (`backend/metal/prefill_gate_ref_test.go`)
 to run K ∈ {64, 128} as decision cells with `startPos ∈ {0, 128}`; set the floor from the result;
 then the `noHead` executor-job completion of M-01 if the sequential residue (adapters, Gemma-3-declined
 shapes, `/v1/embeddings`) measures above 10% of its TTFT in the LM head after the synchronous fix.
@@ -852,13 +852,13 @@ a separate question with its own record).
 f32 reference generated for both K's). Speed: batched beats sequential TTFT by **3.83× at K=64,
 4.66× at K=128** (`bench_peer_prefill.py`, three arms interleaved, n=6) — both well past the ≥2×
 ships band. K=64, the smaller registered candidate, is the new floor. `metalFastPrefillFloor`
-(`metal/backend.go`) moved 256 → 64. A methodology trap caught mid-run: the first two speed
+(`backend/metal/backend.go`) moved 256 → 64. A methodology trap caught mid-run: the first two speed
 attempts only toggled `GOINFER_METAL_FAST_PREFILL=1` and left the (separate) floor override unset,
 so the "batched" arm was silently still declining below the old 256 floor in both — producing a
 false-negative ~1.0-1.1× ratio before `GOINFER_METAL_FAST_PREFILL_FLOOR=0` was added and the real
 numbers above emerged. `startPos > 0` was NOT re-tested against the pooled statistical gate — G-08
 already closed that code path's coverage question with a cheaper, targeted correctness test
-(`metal/prefill_startpos_test.go`), and this brief deferred to that rather than re-litigating it.
+(`backend/metal/prefill_startpos_test.go`), and this brief deferred to that rather than re-litigating it.
 A `startPos`-on-speed sweep remained unmeasured at ship time, left for whoever picked this up
 next. (The `noHead` executor-job/M-01 follow-on named alongside it here was, at the time this
 sentence was written, believed still open — corrected below: it had in fact already shipped four
@@ -881,14 +881,14 @@ new decision.
 item closed above: `a1640a6a` (2026-09-16, three days after M-01's own synchronous-only closure,
 and — worth naming plainly — four days *before* this very brief's SHIPPED note above was first
 written, on 2026-09-20) shipped the full async version: `execJob.noHead`
-(`metal/model.go:resident.recordExecErr`), `execLoop` branching on it to pre-encode the next command buffer while the
-current one is still on the GPU (`metal/model.go:resident.encodeLogitsCB`), and `ForwardEmbNoLogitsPipe`
-(`metal/backend.go:metalResident.ForwardNoLogits`) as the entry point — matching M-01's own Fix-section sketch almost
-verbatim. Paged MoE is declined, not pipelined (`metal/backend.go:metalResident.ForwardNoLogits`): its per-layer
+(`backend/metal/model.go:resident.recordExecErr`), `execLoop` branching on it to pre-encode the next command buffer while the
+current one is still on the GPU (`backend/metal/model.go:resident.encodeLogitsCB`), and `ForwardEmbNoLogitsPipe`
+(`backend/metal/backend.go:metalResident.ForwardNoLogits`) as the entry point — matching M-01's own Fix-section sketch almost
+verbatim. Paged MoE is declined, not pipelined (`backend/metal/backend.go:metalResident.ForwardNoLogits`): its per-layer
 route/stage/submit loop needs a host readback mid-token before the next dispatch can even be
 built, which is a structural incompatibility with pre-encoding, not a small extension — genuinely
 pipelining paged MoE would be a separate, larger redesign, not scoped here. Gated by three
-byte-identical tests (`metal/kvonly_prefill_test.go`). **What remains genuinely open:** the
+byte-identical tests (`backend/metal/kvonly_prefill_test.go`). **What remains genuinely open:** the
 claimed ~0.9 ms/token overlap has no real-model measurement — only a synthetic-fixture benchmark
 (`BenchmarkForwardNoLogits_SyncVsPipe`, ~4% wall-time win on a trivial trunk too small to carry
 meaningful CPU encode time) — and the population that benefits shrank once R3's own floor dropped
@@ -912,7 +912,7 @@ lever the audit thought and the parity path needs a different kernel design — 
 
 **Read first.** Audit `M-03`, `M-04` and their closure notes (`f6c222ee`, `c660ab78` — what shipped
 and what was scoped out: register-O with a diagonal-α MMA, GQA query-head grouping), `N-01` (why no
-ratio was invented without the re-run), `metal/prefill.go` (`gemm_w4f16_store`,
+ratio was invented without the re-run), `backend/metal/prefill.go` (`gemm_w4f16_store`,
 `attention_prefill_fused`), the CUDA L3 record (`prefill-l2l3-phase2-2026-09-05.md`: 4.52× on the
 category from a worse starting shape — the existence proof that a group-scaled int4 GEMM can be
 made fast; the mechanism does not transfer, the ambition does).
@@ -983,8 +983,8 @@ marginal at ~0.25 ms/token (~1.6× behind on throughput, from 3.16×).
 
 **Read first.** P24 in full (`queue-performance.md`) — the grid arithmetic (96 blocks, 178 regs, 2
 blocks/SM, 1.2 waves), the pre-registered rule, and the do-nothing arm; then correct its cap
-paragraph (§3 item 1) in the same commit as phase 1's first measurement. `cuda/attn_fused.cu` and
-its selection rule (`useAttnFused`, hd ∈ {64,128}, the 512 floor, `cuda/prefill.go`).
+paragraph (§3 item 1) in the same commit as phase 1's first measurement. `backend/cuda/attn_fused.cu` and
+its selection rule (`useAttnFused`, hd ∈ {64,128}, the 512 floor, `backend/cuda/prefill.go`).
 `prefill-l2l3-phase1-2026-09-05.md` §4 (the `ncu` capture — re-profile after each phase: the rule
 is profile the unit before designing the next fix, and a phase-1 grid change moves the bound).
 `completed/task-prefill-gap.md` §2.2 (why the per-query-row shape is O(K²) and what a flat marginal
@@ -1046,10 +1046,10 @@ order — `splitkv-8000-reanchor`, `splitkv-mechanism-ncu` (the gate's stated re
 `splitkv-q-staging`, `vsum-split-spike`, `vsum-split-fidelity` (and its PREREGISTERED twin —
 the rule that a re-run needs a mechanism, never a re-roll), `reduction-tree-accuracy-2026-09-12.md`,
 `splitkv-d7-fthreshold` and `splitkv-f-depth-invariance` (the gate is now keyed on nKV·hd,
-`cuda/resident.go:splitkvThreshold`); `ollama-chase.md` §A2, §D4 (Ollama's `flash_attn_ext`: tiled, parallel
+`backend/cuda/resident.go:splitkvThreshold`); `ollama-chase.md` §A2, §D4 (Ollama's `flash_attn_ext`: tiled, parallel
 over keys, online softmax, *not* bit-exact — which is what this lane accepts), §7 (the strategic
 fork, now partly superseded by L3 on the prefill side — read for the trap paragraph on
-tolerance-gated defaults); `cuda/decode_splitkv.cu`, `cuda/attn_block.cu`.
+tolerance-gated defaults); `backend/cuda/decode_splitkv.cu`, `backend/cuda/attn_block.cu`.
 
 **Step 1 — the mechanism, before any new kernel.** The spike's tree is measured *closer* to f64
 than the sequential fold, yet its KL against the reference rose 5.85% on D7 at 8000 while S at 3900
@@ -1100,8 +1100,8 @@ bound; do not carry this diagnosis across, per the record's own §A2-Metal lesso
 **Amendment, 2026-09-19 — from reading the spike's source and from §2.2's fit.** Six things, the
 first three about step 1 as written.
 
-1. **The S=1 detector is vacuous as the code stands.** Both the loader (`cuda/backend.go`, where
-   `GOINFER_SPLITKV_VSUM_SPLIT` is parsed) and the launch site (`cuda/resident.go`, the V-sum step of
+1. **The S=1 detector is vacuous as the code stands.** Both the loader (`backend/cuda/backend.go`, where
+   `GOINFER_SPLITKV_VSUM_SPLIT` is parsed) and the launch site (`backend/cuda/resident.go`, the V-sum step of
    the split-KV decode) require S > 1, so S=1 silently runs the exact `splitkv_vsum` and the check
    compares the exact path with itself. Step 1 needs a test-only way to run `splitkv_vsum_partial` +
    `splitkv_vsum_combine` at nSplit=1, and a precondition that proves they launched (a launch
@@ -1146,9 +1146,9 @@ first three about step 1 as written.
    Ollama 73.3): **ships at ≥70, parked 62–70, killed below 62**, fidelity-gated under the same
    pooled §3.2 rule. No family is known to need f32 KV: Metal ships f16 KV for every family, and
    the one finding that said otherwise (Gemma, 0.64 against 0.92 cosine) is refuted in
-   `metal/model.go`'s own comment — the crater was the position-0 K/V compute, precision was a red
+   `backend/metal/model.go`'s own comment — the crater was the position-0 K/V compute, precision was a red
    herring — although the old claim still stands in the comment above `kv_store_f32` in
-   `metal/kernels.go` and on the `kvF32` field. *(Corrected the same day: this sentence first read
+   `backend/metal/kernels.go` and on the `kvF32` field. *(Corrected the same day: this sentence first read
    "Gemma kept on f32", from that stale comment.)* The family decision is the gate's, behind one
    precondition: record max |K| and max |V| per layer on the gate prompts, and refuse f16 KV for a
    family that comes within 2× of f16's 65504. Every GQA
@@ -1179,8 +1179,8 @@ first three about step 1 as written.
 > device kernel (Mac; handoff note written), a Mac/peer re-baseline of any unfiltered-sampling cell, the Ollama peer sweep.
 
 > **R7b Mac — RESULT 2026-09-20: Metal device kernel built and gated (`decoder.ResidentSample`).**
-> `metal/gumbel.go` (`gumbel_stage1`/`gumbel_stage2` MSL kernels, ported from `cuda/gumbel.cu`/`gpu/gumbel.go`) +
-> `metal/gumbel_sample.go` + `metal/backend.go` (the `*metalResident` delegation every other
+> `backend/metal/gumbel.go` (`gumbel_stage1`/`gumbel_stage2` MSL kernels, ported from `backend/cuda/gumbel.cu`/`backend/webgpu/gumbel.go`) +
+> `backend/metal/gumbel_sample.go` + `backend/metal/backend.go` (the `*metalResident` delegation every other
 > `decoder.ResidentForward` method already needed — easy to miss since `*resident`'s own methods don't
 > promote through the wrapper's named field). Kernel-vs-host: **0 mismatches in 15,840 draws**, matching
 > CUDA's own figure exactly. End-to-end device-vs-host token streams: **12,000/12,000 tokens identical**
@@ -1197,10 +1197,10 @@ first three about step 1 as written.
 > assumed) nor statement-boundary immunity from FMA fusion (the spec documents `fast` contraction as
 > fusing *across* statements, not just within one expression) — handled with a ported 12-term polynomial
 > and a `#pragma METAL fp contract(off)` bracket respectively, both cited against the spec directly in
-> `metal/gumbel.go`'s header. Record: `docs/measurements/r7b-metal-mac-2026-09-20.md`.
+> `backend/metal/gumbel.go`'s header. Record: `docs/measurements/r7b-metal-mac-2026-09-20.md`.
 >
 > **Speed, same day, follow-up pass:** paired vs greedy, interleaved with a rotating arm order, 0.5B,
-> same session (`metal/sampled_gumbel_speed_test.go`, no committed CUDA harness to port — built
+> same session (`backend/metal/sampled_gumbel_speed_test.go`, no committed CUDA harness to port — built
 > to the protocol description). Do-nothing arm (host draw) **0.80-0.84× greedy** (3 runs); device
 > draw **0.96×** (3 runs, tight) — a real ~13-21% win over the do-nothing arm, directionally
 > consistent with CUDA (0.744→1.008) and WebGPU (0.796→1.035) but not full greedy parity the way
@@ -1250,7 +1250,7 @@ too small, not that the design is wrong).
 **Read first.** `ollama-chase.md` §D6 in full (the two cliffs — the host sort, fixed 68×, and the
 readback branch, open; the design sketch with the host-verified nucleus; and "the second, larger
 cost", full-vocabulary normalisation on the temperature-only path), `internal/sampling/sampler.go`
-(`ArgmaxEquivalent`, `internal/sampling/sampler.go:Sampler.ArgmaxEquivalent`; `sampleChunked`; the bounded selection), `cuda/argmax.cu`
+(`ArgmaxEquivalent`, `internal/sampling/sampler.go:Sampler.ArgmaxEquivalent`; `sampleChunked`; the bounded selection), `backend/cuda/argmax.cu`
 (the on-device argmax the greedy path uses — the top-K reduction is its sibling), G26/G28 in
 `docs/QUEUE.md` (why the sampled cells must use a realistic prompt and why the anchor's own spread
 was half the reported delta), `benchmarks.md` Methodology (count tokens from `usage`; early EOS at
@@ -1299,10 +1299,10 @@ from the text twin's 4.5× gemv / 3.76× attention at a matching M); 8–13 s pa
 killed** (below 2× means the tower's cost is not where the text-prefill analogy says it is —
 profile before anything else).
 
-**Read first.** `cuda/vision_encoder.go` top to bottom — the header's design note ("no new GEMM
+**Read first.** `backend/cuda/vision_encoder.go` top to bottom — the header's design note ("no new GEMM
 kernel", `bGemv` = `gemv_w8a8_batched`, `attn_img_batched` gridded (nH, M), `addInPlaceHost` with
-its own "natural next optimisation" admission), `cuda/attn_img_prefill.cu`, `cuda/gemm_w4a8_mma.cu`
-(the L3 kernel and its header on why group scales do not preclude `mma.sync`), `cuda/attn_fused.cu`
+its own "natural next optimisation" admission), `backend/cuda/attn_img_prefill.cu`, `backend/cuda/gemm_w4a8_mma.cu`
+(the L3 kernel and its header on why group scales do not preclude `mma.sync`), `backend/cuda/attn_fused.cu`
 and R5 (the tile this brief borrows — hd=72 pads to 80), `docs/multimodal.md` P6 (the design
 write-up and the cosine 0.910–0.96 real-checkpoint gate, investigated and explained as accumulated
 per-layer rounding, with the row-0 broadcast bug it caught), aikit's `gpu` module ViT implementation (`cuda_vit` and its
@@ -1315,7 +1315,7 @@ group-scaled kernel: no per-group float fold), used for every projection in the 
 available to the text int8int8 batched path afterwards (a second consumer; measure separately, do
 not fold it in). (2) A non-causal `attn_fused` variant for the tower (full bidirectional at
 imgStart=0/imgEnd=M is the whole image — no mask needed beyond the tile bounds), hd=72 padded to 80
-with zeroed lanes, 16 heads. (3) A device-side elementwise add (`cuda/addone.cu` is the shape;
+with zeroed lanes, 16 heads. (3) A device-side elementwise add (`backend/cuda/addone.cu` is the shape;
 one kernel, three call sites: posEmb, two residuals per layer) — 54 launches replacing 54
 download-add-upload trips. (4) `layernorm_f32_batched` already exists; keep it.
 
@@ -1510,7 +1510,7 @@ yet written), the fan-out shape change, and the Linux half.
 > **CLOSED 2026-09-22.** Decode half: G35/G36 were already shipped, on-device argmax has no headroom, G38
 > retracted as an instrument bug. Prefill half: the profile put the 16×16 tiled W8A8 GEMM at 81–94% of batched
 > prefill at ~1 TFLOPS; the band it registered (≥2.0× on the class, bit-identical) was then built the same day —
-> `matmulRB64W8A8` (`gpu/gemm_rb.go`), 64×64 tile, 4×4 outputs per thread, exact i32 K-sum — and cleared 3.5×
+> `matmulRB64W8A8` (`backend/webgpu/gemm_rb.go`), 64×64 tile, 4×4 outputs per thread, exact i32 K-sum — and cleared 3.5×
 > over: **GEMM class 7.10×, whole prefill 5.89× at 1.5B/P=512 (1.44 s → 0.25 s); 5.08× / 3.31× at 0.5B/P=1024**,
 > `Float32bits`-identical logits, every WebGPU parity gate green. Default on; `GOINFER_WEBGPU_GEMM=tiled16` reverts.
 > Record: [`webgpu-prefill-profile-2026-09-22.md`](../measurements/webgpu-prefill-profile-2026-09-22.md). Left
@@ -1532,8 +1532,8 @@ the "13 → 3 was never a WGSL-side possibility" table — K1 yes, K2 no, K3 ban
 that a transferred diagnosis transfers its assumptions), `docs/decode-fusion-next.md`,
 `docs/completed/gpu-next-levers-assessment.md` (the glue-serialisation wall; the `dot4I8Packed`
 story — the binding moved to `oliverbestmann/webgpu` 2026-09-12 and still has no `dot4` symbol,
-re-checked 2026-09-13), `gpu/gemv_w4a8.go`, `gpu/device.go` (`quantizeShaderWGSL`), `gpu/prefillrunner.go`
-(`attnBatchedShaderWGSL`, `attnKeysBatchedShaderWGSL`, the batched rmsnorm/rope), `gpu/attention.go`
+re-checked 2026-09-13), `backend/webgpu/gemv_w4a8.go`, `backend/webgpu/device.go` (`quantizeShaderWGSL`), `backend/webgpu/prefillrunner.go`
+(`attnBatchedShaderWGSL`, `attnKeysBatchedShaderWGSL`, the batched rmsnorm/rope), `backend/webgpu/attention.go`
 (the G36 key-split kernel with its 2048-key online-softmax tiles), `ollama-chase.md` §13's WebGPU
 argmax caveat (on UMA a wash; on PCIe a readback).
 
@@ -1609,12 +1609,12 @@ pattern). (c) Metal: nothing to build for the measurement; M-11 afterwards is on
 token with a shared event between the pread stages and the GPU, measured on the paged shape at
 the ~14 ms boundary, G-05's rule.
 
-**(a) L01 result — KILLED 2026-09-21, real hardware** (`docs/measurements/l01-funding-cell-2026-09-21.md`). Built §9's remainder (goroutine-per-expert CPU compute, bit-identical) and ran §0's funding cell on Qwen3.6-35B-A3B int4 on the real 8 GB card: **~11x SLOWER than C′ off (0.083x-0.094x vs the >=1.3x bar)**. Root cause read from source: the miss branch's `unadmit` reverts a slot to EMPTY rather than its prior occupant, so the C′ cache can never warm once L01 is on — hit rate settles at exactly 0% by the third token, so 100% of every layer's experts route to CPU forever, not the bounded q* fraction the audit's own design specifies. A real re-attempt needs the actual q* split (bounded CPU-offload fraction, rest stays on the normal admit+DMA path) — a redesign, not a re-roll; the committed driver (`cuda/l01_funding_cell_test.go`) is ready to reuse.
+**(a) L01 result — KILLED 2026-09-21, real hardware** (`docs/measurements/l01-funding-cell-2026-09-21.md`). Built §9's remainder (goroutine-per-expert CPU compute, bit-identical) and ran §0's funding cell on Qwen3.6-35B-A3B int4 on the real 8 GB card: **~11x SLOWER than C′ off (0.083x-0.094x vs the >=1.3x bar)**. Root cause read from source: the miss branch's `unadmit` reverts a slot to EMPTY rather than its prior occupant, so the C′ cache can never warm once L01 is on — hit rate settles at exactly 0% by the third token, so 100% of every layer's experts route to CPU forever, not the bounded q* fraction the audit's own design specifies. A real re-attempt needs the actual q* split (bounded CPU-offload fraction, rest stays on the normal admit+DMA path) — a redesign, not a re-roll; the committed driver (`backend/cuda/l01_funding_cell_test.go`) is ready to reuse.
 
 **(b) P20 result — MEASURED 2026-09-21; then BUILT AND SHIPPED DEFAULT-ON the same day** (measurement:
 `docs/measurements/p20-expert-locality-2026-09-21.md`; build and the real-26B numbers, 2.66×/2.50×/2.39×/2.26× at
 M=512/2048/4096/8012: `docs/measurements/p20-expert-major-m26-2026-09-21.md`, `GOINFER_CUDA_MOE_EXPERT_MAJOR`).
-The paragraph below is the measurement-time reading, kept as written; the row above carries the outcome. "Stage each distinct expert once per chunk" first read as needing every distinct expert resident simultaneously — infeasible on M26's 10-slot C′ cache (a 512-row chunk touches 28-117 distinct experts per layer, even an 8-row micro-batch's minimum is 13). That reading was wrong: a real expert-major pass processes experts sequentially, needing no such simultaneous residency, and still gets "one DMA per distinct expert per chunk" as its total volume. Real numbers: current per-row LRU already gets 61.3% hit rate; a perfect once-per-chunk fetch needs only 2,090 of the 47,575 misses it currently issues (22.8x fewer DMA calls). Projected (calls-proportional on the measured 59.5% DMA share): **~2.32x, 46.5 -> ~20 ms/token — inside this brief's own <=25 ships band.** **BUILT AND SHIPPED OPT-IN 2026-09-21** (`docs/measurements/p20-expert-major-2026-09-21.md`): no new kernel, reuses the frozen `moe.ptx` GEMVs and `residual_batched`, bit-identical by construction (mutation-checked on two fixtures, one built for this — `testdata/qwen3moe-tiny-k3` — because a k=2 fixture cannot catch an accumulation-order regression). Real measurement on Mellum2 (the only real generic-MoE checkpoint on this box that reaches the built path): 3.5-4.3%, small because its 51-slot cache already gets 98.1% hit rate. **The gemma4-specific extension is BUILT AND SHIPPED too** (`cuda/moe_expert_major_gemma4.go`, `docs/measurements/p20-expert-major-m26-2026-09-21.md`) — same mechanism against `gemma4MoeMLPPre/Post`'s parallel dense‖MoE shape. Measured on the real 26B: **2.66x / 2.50x / 2.39x / 2.26x at M=512/2048/4096/8012**, sequential control unmoved — the ~2.32x projection held closely. `GOINFER_CUDA_MOE_EXPERT_MAJOR` is now DEFAULT ON (both paths; `=0` opts out), mirroring the CPU P18 precedent. **R11(b) is closed.**
+The paragraph below is the measurement-time reading, kept as written; the row above carries the outcome. "Stage each distinct expert once per chunk" first read as needing every distinct expert resident simultaneously — infeasible on M26's 10-slot C′ cache (a 512-row chunk touches 28-117 distinct experts per layer, even an 8-row micro-batch's minimum is 13). That reading was wrong: a real expert-major pass processes experts sequentially, needing no such simultaneous residency, and still gets "one DMA per distinct expert per chunk" as its total volume. Real numbers: current per-row LRU already gets 61.3% hit rate; a perfect once-per-chunk fetch needs only 2,090 of the 47,575 misses it currently issues (22.8x fewer DMA calls). Projected (calls-proportional on the measured 59.5% DMA share): **~2.32x, 46.5 -> ~20 ms/token — inside this brief's own <=25 ships band.** **BUILT AND SHIPPED OPT-IN 2026-09-21** (`docs/measurements/p20-expert-major-2026-09-21.md`): no new kernel, reuses the frozen `moe.ptx` GEMVs and `residual_batched`, bit-identical by construction (mutation-checked on two fixtures, one built for this — `testdata/qwen3moe-tiny-k3` — because a k=2 fixture cannot catch an accumulation-order regression). Real measurement on Mellum2 (the only real generic-MoE checkpoint on this box that reaches the built path): 3.5-4.3%, small because its 51-slot cache already gets 98.1% hit rate. **The gemma4-specific extension is BUILT AND SHIPPED too** (`backend/cuda/moe_expert_major_gemma4.go`, `docs/measurements/p20-expert-major-m26-2026-09-21.md`) — same mechanism against `gemma4MoeMLPPre/Post`'s parallel dense‖MoE shape. Measured on the real 26B: **2.66x / 2.50x / 2.39x / 2.26x at M=512/2048/4096/8012**, sequential control unmoved — the ~2.32x projection held closely. `GOINFER_CUDA_MOE_EXPERT_MAJOR` is now DEFAULT ON (both paths; `=0` opts out), mirroring the CPU P18 precedent. **R11(b) is closed.**
 
 **Gates.** L01: `TestL01_e2eDecode_matchesBaseline` (cosine 1.0, argmax at every position) with
 overlap on; the coherence floor the B4 gate uses (distinct-trigram ≥0.70). P20: bit-identity to
@@ -1688,7 +1688,7 @@ verify cost, and the Metal small-M GEMM is the reason — record it beside P10's
 `docs/spec/00-core.md` and `10-optfwd-gate.md` (the lossless contract and the prompt-form caveat),
 `completed/task-metal-batched-verify-kernel.md` and `completed/metal-batched-verify.md` (the small-M
 verify kernel that measured ~1.13× and was not adopted — P21 is about the command-buffer boundary,
-not that kernel), `metal/backend.go:metalResident.ForwardN` (`ForwardN` today), the 2026-09-17 note on `VerifyPathReporter`
+not that kernel), `backend/metal/backend.go:metalResident.ForwardN` (`ForwardN` today), the 2026-09-17 note on `VerifyPathReporter`
 (`decoder/residency.go` — the interface that now reports whether the verify is batched; wire it
 truthfully), `task-peer-benchmarks.md` (W7's definition; the MLX quant caveat), `scripts/bench_peer.py`
 (the `mlx` engine branch; `BENCH_VISION=1`; `scripts/bench_peer_transcript.py` for W4/W7).
@@ -1964,7 +1964,7 @@ CPU prefill, which is at parity or ahead at depth (§1, §2.3).
 ### R14 · CUDA speculative-decode drafter — full-logits download, host argmax, no overlap
 
 > **DONE 2026-09-22 — measured, built, shipped default.** Step 0 found the shape at TWO sites, not one: the
-> drafter's `DraftTokens` and the verify's `batchedHeadArgmax` (`cuda/prefill.go`, whose own comment deferred "a
+> drafter's `DraftTokens` and the verify's `batchedHeadArgmax` (`backend/cuda/prefill.go`, whose own comment deferred "a
 > batched argmax kernel" as "a later, separate ~1 ms"). Together: **14.9% (code, w=7) / 16.0% (math, w=8) of the
 > spec round** — the D2H at 4.7 GB/s (fresh pageable slice per call) plus a serial host argmax at 1.2–1.4
 > ns/element. Step 1: `argmax_rows` (`argmax_reduce`'s reduction, one block per row) at both sites via
@@ -1981,16 +1981,16 @@ on-device reduction the main decode path already has.
 
 **Standing and the registered band.** No standing — this is a fresh finding from a 2026-09-22
 cross-backend decode-path review (docs/completed/task-moe-streaming.md's own closure prompted it),
-not yet measured. `cuda/drafter.go`'s `DraftTokens` (~653-718), `FuseContext` (~230-240), and the
+not yet measured. `backend/cuda/drafter.go`'s `DraftTokens` (~653-718), `FuseContext` (~230-240), and the
 block-forward path (~597-608) all: sync the stream, download the ENTIRE `M×vocab` logits block to
 host, then run a hand-written serial host argmax loop per row — where the main decode path already
-has an on-device fused-argmax kernel (`ForwardArgmax`, `cuda/resident.go:cudaResident.ForwardArgmax`, `r.fArg`, a 4-byte
+has an on-device fused-argmax kernel (`ForwardArgmax`, `backend/cuda/resident.go:cudaResident.ForwardArgmax`, `r.fArg`, a 4-byte
 readback) for exactly this reduction. `M` here is the speculative block size (small — single-digit
 to low tens of tokens), so the absolute cost is plausibly minor; unlike R11's MoE case, nothing here
 has been measured, so **no band is registered — step 0 is the measurement, same discipline as R4/R10
 step 0.**
 
-**Read first.** `cuda/drafter.go` in full (the three call sites named above), `cuda/resident.go`'s
+**Read first.** `backend/cuda/drafter.go` in full (the three call sites named above), `backend/cuda/resident.go`'s
 `ForwardArgmax`/`r.fArg` (the on-device reduction pattern to port), `docs/measurements/moe-streaming-decode-dma-2026-09-22.md`
 (the sibling finding this one was found alongside, same review pass — read it for the *shape* of a
 sync→readback→host-loop gap, not because the mechanism transfers: MoE's gap is about DMA/compute
@@ -2087,7 +2087,7 @@ top-k data structure) — this brief is about parallelizing the existing one, no
 
 ### R16 · Metal prefill GEMM redesign — S2 of the scoping, pre-registered 2026-09-25
 
-**Goal.** Replace `gemm_w4f16_store` (`metal/prefill.go`) with a kernel whose structure reaches the int4-class rate
+**Goal.** Replace `gemm_w4f16_store` (`backend/metal/prefill.go`) with a kernel whose structure reaches the int4-class rate
 this GPU is shown to sustain, and so reach TTFT parity with Ollama at K=512 on the 1.5B. This is the build R4's kill
 pointed at ("a different kernel design"), priced from measurement rather than from the audit's pre-M-03 arithmetic.
 
@@ -2126,7 +2126,7 @@ S0), and end-to-end TTFT against Ollama through `scripts/bench_peer_prefill.py` 
 **Read first (prior art, before any kernel is written).** llama.cpp's Metal `kernel_mul_mm` (the kernel S1b's ≥ 2.96
 TFLOPS comes from) and MLX's quantized GEMM: their threadgroup tile, K-slab, how A and the dequantized weights are
 staged and shared across simdgroups, and how many simdgroups share a tile. The kernel it replaced shared nothing between
-simdgroups (`metal/prefill_gemm_s2_test.go:gemmS2Kernels`, kept verbatim as `gemm_w4f16_store_r15`) and stepped K by 8 with two barriers per step; whether that — or something else —
+simdgroups (`backend/metal/prefill_gemm_s2_test.go:gemmS2Kernels`, kept verbatim as `gemm_w4f16_store_r15`) and stepped K by 8 with two barriers per step; whether that — or something else —
 is what separates 0.75 from ~3 TFLOPS is what the read has to establish. Record the read in the S2 measurement doc.
 
 **Build.** A test-only prototype kernel first, wired only in the benchmark; production wiring only after ship.
@@ -2326,7 +2326,7 @@ end-to-end decode tok/s against Ollama through `scripts/bench_peer.py`, with MLX
 never after a candidate has been timed against it without one.
 
 *Measurement note, 2026-09-26, before any grading run (changes neither the band nor a precondition).* The instrument is
-`TestR18InSequence` (`metal/gemv_r18_seq_test.go`). Each category's full − no-op'd difference is taken over **adjacent
+`TestR18InSequence` (`backend/metal/gemv_r18_seq_test.go`). Each category's full − no-op'd difference is taken over **adjacent
 step pairs**: a full token, then the same token with that category no-op'd, 20 pairs, median. Block timing, the
 decomposition's 20 steps per side, failed its own control on the 1.5B. The `i1110` arm is the candidate template at the
 shipped grid, so it must read 1.00×. Under block timing its per-rep ratio ran **0.47–1.25**, and one rep's summed work
@@ -2398,7 +2398,7 @@ it is coal-family and stays as it is.
 - a fresh confirmation run of the selected candidate, with 7 paired reps.
 
 **Steps:**
-1. Production-signature prototypes in `metal/gemv_r18_test.go`, as `TestR18InSequence` arms with F = `h`.
+1. Production-signature prototypes in `backend/metal/gemv_r18_test.go`, as `TestR18InSequence` arms with F = `h`.
 2. Exploratory sweep of R per GEMV.
 3. Confirmation.
 4. Wiring only after ship.
@@ -2580,13 +2580,13 @@ re-runs 2026-09-15/16 and 2026-09-17 on both boxes) · `docs/legacy-benchmarks.m
 `docs/tasks/task-gpu-paths-2026-09.md` (G9, G10, G11, the 2026-09-09 notes) ·
 `docs/tasks/task-l01-hybrid-moe-cpu-gpu.md` · `docs/tasks/task-decode-splitkv-attention.md` ·
 `docs/tasks/task-peer-benchmarks.md` · `docs/hardware-matrix.md` · `docs/roadmap.md` · `CLAUDE.md`
-(measurement discipline) · code read for this doc: `cuda/vision_encoder.go`, `cuda/attn_img_prefill.cu`,
-`cuda/decode_splitkv.cu`, `cuda/resident.go` (the split-KV gate), `cuda/l01_cpu_offload.go`,
-`metal/kernels.go` (`attention`, the `gemv_w4a8_*` set), `metal/prefill.go`, `metal/backend.go`,
-`gpu/gemv_w4a8.go`, `gpu/prefillrunner.go`, `internal/sampling/sampler.go`, `decoder/spec_adaptive.go`; for R13 and
+(measurement discipline) · code read for this doc: `backend/cuda/vision_encoder.go`, `backend/cuda/attn_img_prefill.cu`,
+`backend/cuda/decode_splitkv.cu`, `backend/cuda/resident.go` (the split-KV gate), `backend/cuda/l01_cpu_offload.go`,
+`backend/metal/kernels.go` (`attention`, the `gemv_w4a8_*` set), `backend/metal/prefill.go`, `backend/metal/backend.go`,
+`backend/webgpu/gemv_w4a8.go`, `backend/webgpu/prefillrunner.go`, `internal/sampling/sampler.go`, `decoder/spec_adaptive.go`; for R13 and
 R6's amendment (2026-09-19): `decoder/attention.go` (`causalAttention`), `decoder/forwardn.go`
 (`attendBatchedHeads`), `decoder/scratch.go` (`headWorkerPool`), `decoder/decode_depth_bench_test.go`,
-`cuda/backend.go` and `cuda/resident.go` (the V-sum spike's loader and launch site) ·
+`backend/cuda/backend.go` and `backend/cuda/resident.go` (the V-sum spike's loader and launch site) ·
 aikit: `docs/task-simd-audit.md`, `linalg/attn_acc64_arm64.s` (and, for R13, `linalg/attn_acc64_amd64.s`,
 `linalg/matmul_qk_acc64.go`, `linalg/matmul_av_acc64.go`, read at the vendored v1.45.1) and the `dot_w4a8_*` kernels, plus
 aikit's internal roofline and CPU-acceleration notes (gitignored there, so described rather than
