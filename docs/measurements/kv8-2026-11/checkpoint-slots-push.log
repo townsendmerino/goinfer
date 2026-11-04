@@ -135,3 +135,46 @@ staticcheck -tags goinfer_testhooks ./decoder/ exit 0
 untagged vet exit 0
 darwin vet exit 0
 citation lint exit 0
+
+# #658's final verification, after round 4 and layout PR 1, at 3759082bb, main 9c496e22a merged, 2026-11-04 04:02:56 PST
+gofmt: []
+--- PASS: TestParityManifest_fresh (0.85s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.859s
+# the full CUDA suite, with fixtures placed, 04:03:03 PST
+tests: 1252 passed, 12 failed, 268 skipped; failed packages: ['github.com/townsendmerino/goinfer/backend/cuda']
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_attn_batched_M=1
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_split-KV
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_flash-decode_lane
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_attn_fused
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_attn_batched
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_attn_batched_M=1
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_split-KV
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_flash-decode_lane
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_fused
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_batched
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32
+  FAIL cuda TestPlanSlack_realSizeDiff
+suite exit 1
+# gate identity -backend cuda 9c496e22a 3759082bb, 04:23:20 PST
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+  logs     /tmp/gate-identity-20261104-042321-2290787702/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+identity exit 0
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push); did not run: metal
+touched exit 0
+test_touched exit 0
+canary hits 1
+staticcheck -tags cuda,goinfer_testhooks ./backend/cuda/ exit 0
+staticcheck ./decoder/ exit 0
+staticcheck -tags goinfer_testhooks ./decoder/ exit 0
+untagged vet exit 0
+darwin vet exit 0
+citation lint exit 0
+# fail=1, 04:35:39 PST
+
+# Reading the suite's 12 failures against main at 9c496e22a, the merged base, with fixtures placed (2026-11-04). Neither test touches this branch's change, and both fail on main the same way:
+# - TestKV16_everyAttentionPathStaysCloseToF32 (the parent and its 10 subtests): decoder/fidelity_testhook.go opens "../testdata/prefill-gate-prose-...", and the test now runs two levels down, in backend/cuda. By the path, from layout PR 1. Run on main: the same 10 failures, the same message.
+# - TestPlanSlack_realSizeDiff: its golden of real-size plan cells. Run on main: 63 groups, 63 changed, 462 cells, the same as here. Bisected: ok at 937cfe8fb, FAIL at 3a899d303 ("MM8: the plan prices dense vectors"), and at each commit sampled after it, up to #645's merge.
+# So at this head: 1,252 passed, 0 failed but those. It reads the same on main, and #658 adds no failure to the full suite.
+
