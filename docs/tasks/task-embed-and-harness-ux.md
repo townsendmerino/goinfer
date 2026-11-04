@@ -121,7 +121,7 @@ p, err := llm.Into[Person](ctx, m, "Extract the person from: …")   // the READ
 the *tagged* release with `GOWORK=off` — which is the standalone-build gate M-34 found missing,
 now with a reason to exist beyond release hygiene.
 
-> **Moved here 2026-10-21 (the close-out sweep), from `docs/tasks/task-integration-harness-2026-10.md` I5:** I5 shipped the
+> **Moved here 2026-10-21 (the close-out sweep), from `docs/completed/task-integration-harness-2026-10.md` I5:** I5 shipped the
 > in-process handler, the transport and the SDK module in v0.23.0 (9383547f, fabb21d9, 8ee3597d). Two parts never ran and now
 > sit here beside the facade they exercise: the four framework smokes, and cancel at the SDK level. Neither is in `apps/sdktest/`.
 

@@ -1,5 +1,5 @@
 """How each harness is run headless against goinfer, and how its output is read. One entry per harness; the table of I2
-(docs/tasks/task-integration-harness-2026-10.md) says where each keeps its configuration, `connect` writes it."""
+(docs/completed/task-integration-harness-2026-10.md) says where each keeps its configuration, `connect` writes it."""
 import glob, json, os, re
 
 BIN = os.path.expanduser("~/harnesses/node_modules/.bin")

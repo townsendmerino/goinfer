@@ -1,5 +1,5 @@
 #!/bin/bash
-# G-I7-speed on the Mac (docs/tasks/task-integration-harness-2026-10.md, "I7", registered 2026-10-12): does a default
+# G-I7-speed on the Mac (docs/completed/task-integration-harness-2026-10.md, "I7", registered 2026-10-12): does a default
 # context of 32768 slow a short turn? Dense decode at depth 128 on the 1.5B and the 7B under --backend metal: a trial
 # build whose fit-by-default candidate is 32768 (branch m2b-candidate-32768) against main before M2 (4096), no -ctx on
 # either, two arms, three counterbalanced quads of restarted cells (bench_peer.py phase A, BENCH_ABBA=3). Then one

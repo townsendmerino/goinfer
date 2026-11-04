@@ -170,7 +170,7 @@ slot is gone; and every KV feature is built three or four times.
      slots.
    - **The I7 night (2026-10-12):** the 7B resolved 31,328 positions in 2 slots (3.3 GB of KV), which left 2.5 GB
      available. A 20,199-token request was then refused with a 413, because admission priced its prefill at 3.21 GB
-     (`docs/tasks/task-integration-harness-2026-10.md`, I7). The second slot's reservation held memory that no
+     (`docs/completed/task-integration-harness-2026-10.md`, I7). The second slot's reservation held memory that no
      conversation was using.
 2. **The same preamble is computed once per conversation.**
    - First requests: Claude Code 19,692 tokens (2.1.268, the Mac) and 20,199 (2.1.296, nobara); opencode 7,165; Codex
@@ -1599,7 +1599,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
 | **Q3** | KV4's bar, as registered, mixes two things (§6, KV0's decision rule). Should the sharing arm decide KV2 and the capacity arm decide KV4? | Capacity 2.78 ×; sharing arm clears only with the header off, and KV2 delivers it. **ANSWERED: split the bar. The sharing result decides KV2 (copies deliver the sharing), the capacity result decides KV4. On those terms both go ahead.** |
 | **Q4** | D4's default when `serve` binds beyond loopback with no API keys: the SafeKV reading (§11a) suggests cross-namespace sharing off by default. | A proposal from the reading, not from a source. **ANSWERED: yes, default it off then** (see D4). |
 | **Q5** | Should `declineShortLeadReuse` (and the key) state the 16-row condition, and should KV1's windowed-layer tests run chunk and split arms at a start that is not a multiple of 64? | Measured for the first; INFERRED by the CUDA census for the second. **ANSWERED: yes to both, and the first is a correctness rule, not tuning:** the 16-row condition goes into the short-prefix guard and the key (KV1's files), and into the chunker (KV3, here); KV1's windowed tests start at offsets that are not multiples of 64. |
-| **Q6** | The I3 night plan's configurations run Qwen2.5-7B-Instruct and Mellum2.1 through opencode and Codex. | In KV0's pilots Qwen2.5-7B-Instruct made 1 to 6 requests a session and passed none; the Coder-7B made 1 or 2. Expect the same stall in those cells. **ANSWERED: swap Qwen2.5-7B-Instruct for Qwen3-4B in the I3 night cells** (KV3 item 4; `task-integration-harness-2026-10.md`). |
+| **Q6** | The I3 night plan's configurations run Qwen2.5-7B-Instruct and Mellum2.1 through opencode and Codex. | In KV0's pilots Qwen2.5-7B-Instruct made 1 to 6 requests a session and passed none; the Coder-7B made 1 or 2. Expect the same stall in those cells. **ANSWERED: swap Qwen2.5-7B-Instruct for Qwen3-4B in the I3 night cells** (KV3 item 4; `../completed/task-integration-harness-2026-10.md`). |
 | **Q7** | After the long-prompt census: build a tiled exact attention kernel for CUDA, or only a head-dim-256 fused instantiation? | The exact kernel covers 256 and 512 and removes the 12,160 bound for any family; the fused instantiation covers Gemma 3 only. **ANSWERED 2026-10-13: the tiled exact kernel (the census's recommendation).** Registered before code, in KV3's record. |
 
 ## 9. Risks, and how each is contained
@@ -1636,7 +1636,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
   - the fixed 4,096-position context of a paged-MoE load, and the GPU expert caches' per-layer slot counts (KV11).
 - **Interacts with:**
   - **KV-pre:** its block size;
-  - **I7** (`docs/tasks/task-integration-harness-2026-10.md`): its slots-against-context question dissolves at KV4/KV5,
+  - **I7** (`docs/completed/task-integration-harness-2026-10.md`): its slots-against-context question dissolves at KV4/KV5,
     so its code should stay small;
   - `docs/completed/task-cpu-kv-f16-2026-10.md`: independent;
   - `docs/tasks/task-library-surface-review-2026-10.md`: D6;
@@ -1917,7 +1917,7 @@ Docs and records:
     R-04), `docs/tasks/task-freetoken-techniques.md` (Lead 1);
   - `docs/completed/task-cuda-windowed-kv-2026-10.md`, `docs/tasks/task-memory-accounting-2026-09.md`,
     `docs/completed/task-never-swap-2026-09.md`;
-  - `docs/tasks/task-integration-harness-2026-10.md` (I4, I7), `docs/completed/task-cpu-kv-f16-2026-10.md`,
+  - `docs/completed/task-integration-harness-2026-10.md` (I4, I7), `docs/completed/task-cpu-kv-f16-2026-10.md`,
     `docs/tasks/parked/task-kv-cache-streaming.md`;
   - `docs/completed/task-gpu-f16-kv.md`, `docs/completed/task-cpu-kv-quant.md`, `docs/spec/09-mtp-heads.md`.
 - **Measurements:**

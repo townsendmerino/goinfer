@@ -104,7 +104,7 @@ moving from aikit into goinfer (AX, decided); the backend interface, admission, 
 the serving shell, the codec, configuration, counters and gate infrastructure (SB); and the waiting itself (PW). Its
 census is [`measurements/subsystems-2026-10.md`](measurements/subsystems-2026-10.md).
 
-[`task-claude-code-hygiene-2026-10.md`](tasks/task-claude-code-hygiene-2026-10.md) (DX1–DX10, filed 2026-10-30) is one
+[`task-claude-code-hygiene-2026-10.md`](completed/task-claude-code-hygiene-2026-10.md) (DX1–DX10, filed 2026-10-30) is one
 plan across goinfer, ken and tack for the Claude Code setup around them: shorter `CLAUDE.md` files, staticcheck and two
 lints that end in a VERDICT line, a PreToolUse hook that refuses the known-bad commands and logs each refusal, and a
 monthly rule review that proposes cuts from that log.
@@ -192,7 +192,7 @@ gate that reads current load, sequential counterbalanced gates, prompt budgets s
 instrument that resolves the bar, identity against the last validated build, and `gate quick` — each with a proof
 that it still detects what it did.
 
-[`task-code-comments-2026-10.md`](tasks/task-code-comments-2026-10.md) (CC0–CC6, filed 2026-10-09, scoped) moves the history
+[`task-code-comments-2026-10.md`](completed/task-code-comments-2026-10.md) (CC0–CC6, filed 2026-10-09, scoped) moves the history
 out of the Go comments and keeps the guardrails: a census of where it sits (long comments, most of them dated, cited or
 carrying figures), docs linking to code by declaration name and dated records pinned to their own commit (CC0, first),
 a `gate comments-only` check, notes files for moved text, a pilot with its band written first, and the package order.
