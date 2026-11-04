@@ -1,0 +1,15 @@
+# decoder, CPU only, fixtures placed, 13:48:22
+    fitplan_test.go:129: Placement = resident, want expert-cached: dense 0.01 GB + experts 0.00 GB + KV@8128 0.06 GB fits 0.07 GB free
+    fitplan_test.go:146: Placement = resident, want decline (not even top-k slots fit): dense 0.01 GB + experts 0.00 GB + KV@7936 0.06 GB fits 0.07 GB free
+--- FAIL: TestPlan_tableDriven (0.02s)
+    fitplan_test.go:267: with ExtraBytes=393216 reserved: Placement = resident, want NOT resident — the extra term must be priced ahead of the elastic expert sl
+--- FAIL: TestPlan_extraBytesReservedAheadOfExperts (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.021s
+FAIL
+# backend/cuda, the card, 13:48:22
+     10     kv16_test.go:288: read prose seed ../testdata/prefill-gate-prose-a/audit-2026-09-02.md: open ../testdata/prefill-gate-prose-a/audit-2026-09-02.md: no such fil
+      2 FAIL
+      1 FAIL	github.com/townsendmerino/goinfer/backend/cuda	70.130s
+      1 --- FAIL: TestKV16_everyAttentionPathStaysCloseToF32 (70.05s)
+# done 13:49:33
