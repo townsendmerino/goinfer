@@ -153,7 +153,7 @@ func TestPrefillMRoPE_equalPositionsMatchWalk(t *testing.T) {
 	if _, err := New(); err != nil {
 		t.Skipf("no WebGPU adapter: %v", err)
 	}
-	mropeEqualPositions(t, filepath.Join("..", "testdata", "qwen25vl-tiny"), decoder.Options{ResidentContext: 96}, 7, 40)
+	mropeEqualPositions(t, filepath.Join("..", "..", "testdata", "qwen25vl-tiny"), decoder.Options{ResidentContext: 96}, 7, 40)
 }
 
 // mropeEqualPositions is G-S12.4b-4a-2's reading on one model at each row count.
@@ -373,8 +373,8 @@ func TestPrefillMRoPE_imageAgainstCPU(t *testing.T) {
 	if _, err := New(); err != nil {
 		t.Skipf("no WebGPU adapter: %v", err)
 	}
-	dir := filepath.Join("..", "testdata", "qwen25vl-tiny")
-	golden := mropeGolden(t, filepath.Join("..", "testdata", "qwen25vl_tiny_image_golden.json"))
+	dir := filepath.Join("..", "..", "testdata", "qwen25vl-tiny")
+	golden := mropeGolden(t, filepath.Join("..", "..", "testdata", "qwen25vl_tiny_image_golden.json"))
 	control, image, argOK := mropeImageReading(t, dir, golden)
 	bar := mropeImageBar(control)
 	t.Logf("control (text prompt) worst cosine %.9f; image prompt worst cosine %.9f (bar %.9f); argmax equal or near-tie: %v", control, image, bar, argOK)
@@ -500,7 +500,7 @@ func TestPrefillMRoPE_realImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	pp.MaxPixels = min(pp.MaxPixels, 448*448)                                         // 256 merged rows: enough to place every axis, and a few seconds of CPU tower
-	data, err := os.ReadFile(filepath.Join("..", "testdata", "glm_ocr", "table.png")) // a table: where a patch sits matters to the reply
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "glm_ocr", "table.png")) // a table: where a patch sits matters to the reply
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -18,7 +18,7 @@ func TestTowerIdentity_webgpu(t *testing.T) {
 		t.Skipf("no WebGPU adapter: %v", err)
 	}
 	c.Close()
-	towerid.Check(t, "..", "webgpu", os.Getenv("GOINFER_TOWER_ID_OUT"))
+	towerid.Check(t, "../..", "webgpu", os.Getenv("GOINFER_TOWER_ID_OUT"))
 }
 
 var towerUpdate = flag.Bool("towerid.update", false, "rewrite this platform's WebGPU tower golden (review the diff)")
@@ -34,9 +34,9 @@ func TestTowerGolden_webgpu(t *testing.T) {
 	}
 	anchor := "webgpu " + c.AdapterAnchor()
 	c.Close()
-	rec := towerid.Check(t, "..", "webgpu", "")
-	golden := towerid.CheckGolden(t, "..", rec, anchor, towerid.FailOtherAnchorSkipOnCI, *towerUpdate)
-	towerid.CheckPlants(t, "..", "webgpu", golden)
-	towerid.CheckProgramPlants(t, "..", "webgpu", golden, "siglip", "qwen3", "glm-ocr", "gemma4", "qwen2.5")
-	towerid.CompareBackends(t, "..", "webgpu")
+	rec := towerid.Check(t, "../..", "webgpu", "")
+	golden := towerid.CheckGolden(t, "../..", rec, anchor, towerid.FailOtherAnchorSkipOnCI, *towerUpdate)
+	towerid.CheckPlants(t, "../..", "webgpu", golden)
+	towerid.CheckProgramPlants(t, "../..", "webgpu", golden, "siglip", "qwen3", "glm-ocr", "gemma4", "qwen2.5")
+	towerid.CompareBackends(t, "../..", "webgpu")
 }

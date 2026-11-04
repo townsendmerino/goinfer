@@ -21,7 +21,7 @@ func TestTowerIdentity_metal(t *testing.T) {
 		t.Skipf("no Metal device: %v", err)
 	}
 	d.ReleaseObjects()
-	towerid.Check(t, "..", "metal", os.Getenv("GOINFER_TOWER_ID_OUT"))
+	towerid.Check(t, "../..", "metal", os.Getenv("GOINFER_TOWER_ID_OUT"))
 }
 
 var towerUpdate = flag.Bool("towerid.update", false, "rewrite this platform's Metal tower golden (review the diff)")
@@ -55,11 +55,11 @@ func TestTowerGolden_metal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the golden's anchor (macOS version and build) cannot be read: %v", err)
 	}
-	rec := towerid.Check(t, "..", "metal", "")
-	golden := towerid.CheckGolden(t, "..", rec, anchor, towerid.FailOtherAnchor, *towerUpdate)
-	towerid.CheckPlants(t, "..", "metal", golden)
-	towerid.CheckProgramPlants(t, "..", "metal", golden, "siglip", "qwen3", "glm-ocr", "gemma4", "qwen2.5", "gemma4-audio")
-	towerid.CompareBackends(t, "..", "metal")
+	rec := towerid.Check(t, "../..", "metal", "")
+	golden := towerid.CheckGolden(t, "../..", rec, anchor, towerid.FailOtherAnchor, *towerUpdate)
+	towerid.CheckPlants(t, "../..", "metal", golden)
+	towerid.CheckProgramPlants(t, "../..", "metal", golden, "siglip", "qwen3", "glm-ocr", "gemma4", "qwen2.5", "gemma4-audio")
+	towerid.CompareBackends(t, "../..", "metal")
 }
 
 // TestWalkBlock_refusesMisroutedOps holds walkBlock to the registers its operations really use: an op routed elsewhere is

@@ -78,7 +78,7 @@ func TestParityRecord_qualifyingPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"cuda", "decoder", "gpu", "metal", "scripts/own.py", "scripts/pin.py"}
+	want := []string{"backend/cuda", "backend/metal", "backend/webgpu", "decoder", "scripts/own.py", "scripts/pin.py"}
 	if !slices.Equal(got, want) {
 		t.Errorf("qualifying paths %v, want %v", got, want)
 	}
@@ -150,7 +150,7 @@ func TestParityRecord_coversLaterCommitsOnlyIfTheHashedCodeIsUnchanged(t *testin
 			t.Errorf("a change to %s voided the sweep: %s", f, why)
 		}
 	}
-	for _, f := range []string{"decoder/f.txt", "cuda/f.txt", "metal/f.txt", "gpu/f.txt", "scripts/pin.py", "scripts/own.py"} {
+	for _, f := range []string{"decoder/f.txt", "backend/cuda/f.txt", "backend/metal/f.txt", "backend/webgpu/f.txt", "scripts/pin.py", "scripts/own.py"} {
 		gitIn(t, dir, "checkout", "-q", "-B", "side", ran) // each change on its own, from the commit the sweep was made at
 		head := commit(f, "edit")
 		name := f

@@ -83,7 +83,7 @@ func buildWebGPUCensus(t *testing.T) []string {
 		return be, nil
 	})
 	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
-	d, err := sb2census.ReadLayerD("..", "webgpu")
+	d, err := sb2census.ReadLayerD("../..", "webgpu")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func buildWebGPUCensus(t *testing.T) []string {
 	}
 	var lines []string
 	for _, f := range d.Fixtures {
-		path, err := sb2census.Path("..", f)
+		path, err := sb2census.Path("../..", f)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -201,12 +201,12 @@ func planVsLoadWebGPU(t *testing.T, req func(c sb2census.Cell) decoder.PlanReque
 		return be, nil
 	})
 	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
-	d, err := sb2census.ReadLayerD("..", "webgpu")
+	d, err := sb2census.ReadLayerD("../..", "webgpu")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range d.Fixtures {
-		path, err := sb2census.Path("..", f)
+		path, err := sb2census.Path("../..", f)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -418,12 +418,12 @@ func buildWebGPUSlotCensus(t *testing.T) (lines []string, passed int) {
 		return be, nil
 	})
 	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
-	d, err := sb2census.ReadLayerD("..", "webgpu")
+	d, err := sb2census.ReadLayerD("../..", "webgpu")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range d.Fixtures {
-		path, err := sb2census.Path("..", f)
+		path, err := sb2census.Path("../..", f)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -866,7 +866,7 @@ func webgpuGateRow(t *testing.T, row, path string, o decoder.Options, census boo
 func TestMemGate_webgpu(t *testing.T) {
 	newOrSkip(t).Close()
 	t.Setenv("GOINFER_SSM_RESIDENT", "")
-	d, err := sb2census.ReadLayerD("..", "webgpu")
+	d, err := sb2census.ReadLayerD("../..", "webgpu")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -884,7 +884,7 @@ func TestMemGate_webgpu(t *testing.T) {
 		g.Check(t, read)
 	}
 	for _, f := range d.Fixtures {
-		path, err := sb2census.Path("..", f)
+		path, err := sb2census.Path("../..", f)
 		if err != nil {
 			t.Fatal(err)
 		}

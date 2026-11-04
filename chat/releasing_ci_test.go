@@ -30,7 +30,7 @@ func TestReleasing_standaloneBuildGateExists(t *testing.T) {
 		}
 	}
 	// Every shipped submodule must be covered, or the gate proves less than the doc claims.
-	for _, mod := range []string{"gpu", "cuda", "metal", "demo/agent"} {
+	for _, mod := range []string{"backend/webgpu", "backend/cuda", "backend/metal", "demo/agent"} {
 		if !strings.Contains(src, "module: "+mod) {
 			t.Errorf("standalone-build.yml does not cover the %s module", mod)
 		}

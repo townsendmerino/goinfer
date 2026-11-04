@@ -254,7 +254,7 @@ func (r parityRecord) changedSince(head string, paths []string, objOf func(rev, 
 
 // gpuQualifyingTrees are the directories whose content a GPU-gate run vouches for. A change in any of them since the run
 // voids the run for a later commit; a change anywhere else (docs, the site, cmd) does not.
-var gpuQualifyingTrees = []string{"metal", "cuda", "gpu", "decoder"}
+var gpuQualifyingTrees = []string{"backend/metal", "backend/cuda", "backend/webgpu", "decoder"}
 
 // parityQualifyingTrees are the directories whose every file a sweep vouches for, hashed by the manifest or not.
-var parityQualifyingTrees = []string{"decoder", "cuda", "metal", "gpu"}
+var parityQualifyingTrees = []string{"decoder", "backend/cuda", "backend/metal", "backend/webgpu"}
