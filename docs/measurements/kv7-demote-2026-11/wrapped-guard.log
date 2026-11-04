@@ -27,3 +27,15 @@ VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
 test_touched 0
 staticcheck done, canary hits: 1
 citation lint 0
+
+# Round 1 at f6761aa7a, main d14d10aa8 merged, 2026-11-03 17:14:04 PST
+--- FAIL: TestFlagsDoc (0.00s)
+FAIL	github.com/townsendmerino/goinfer/internal/serveapp	0.005s
+TestKV7_ exit 0, PASS 45, FAIL 0
+    kv4_capacity_test.go:2155: a wrapped upload: floor 131, copy kept false
+touched 1
+      --- FAIL: TestFlagsDoc (0.00s)
+VERDICT: FAIL — touched: 1 of 18 checks failed
+test_touched 0
+canary hits 1
+citation lint 0
