@@ -122,3 +122,16 @@ staticcheck -tags goinfer_testhooks ./decoder/ exit 0
 untagged vet exit 0
 darwin vet exit 0
 citation lint exit 0
+
+# #658 round 4, at 37b3f1a8f, main f384b1699 merged, 2026-11-04 00:08:34 PST
+gofmt: []
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push); did not run: metal
+touched exit 0
+test_touched exit 0
+canary hits 1
+staticcheck -tags cuda,goinfer_testhooks ./cuda/ exit 0
+staticcheck ./decoder/ exit 0
+staticcheck -tags goinfer_testhooks ./decoder/ exit 0
+untagged vet exit 0
+darwin vet exit 0
+citation lint exit 0
