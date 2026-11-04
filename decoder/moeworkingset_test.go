@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
 // TestMoEHitRatePrior pins the calibration points against benchmarks.md §B4.1 directly (not a

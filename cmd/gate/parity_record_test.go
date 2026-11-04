@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/paritykey"
+	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
 // The parity sweep's record and the release row that reads it (parity_record.go), registered here before the code: no

@@ -285,7 +285,7 @@ are correctly measured and unchanged.
   useful as a same-session comparative number between engines, not as an allocation-accurate one.
 - **Embeddings throughput** (`BENCH_EMBED_LENGTHS`, `GOINFER_EMBED_MODEL`): goinfer's
   `-embed-model` path (a CodeRankEmbed-family HF dir, not a GGUF) against Ollama's `nomic-embed-text`
-  — the same NomicBERT architecture family, confirmed via `internal/serveapp/embeddings_test.go`'s
+  — the same NomicBERT architecture family, confirmed via `internal/app/serveapp/embeddings_test.go`'s
   own compatibility table, but NOT the same weights or quantization. A throughput comparison only;
   never present it as a quality/parity claim, the same restriction §M26 above already states for
   its own cross-provenance quant pairing.
@@ -2271,7 +2271,7 @@ HTTP-visible reuse signal alongside them (`usage.prefill_reused_tokens`, a vendo
 is what's reported), `qwen2.5-7b-instruct-q4_k_m.gguf` → int4, CUDA resident, greedy (temperature
 0), idle box (loadavg ≤1.2). Harness: `scripts/bench_peer_transcript.py --model 7B --backend cuda`,
 fixtures `scripts/w4_transcript_{base,edited_turn6}.json` (12 real tool schemas ported from
-`internal/servecheck/check.go`'s `harnessScaleTools`, a synthetic-but-plausible coding-agent
+`internal/guard/servecheck/check.go`'s `harnessScaleTools`, a synthetic-but-plausible coding-agent
 session — bug report → read → grep → read test → edit → run tests → git status → diff → changelog
 → file a task → list dir). Every turn forces a named `tool_choice` so the transcript never leaves
 the tool-rendering prompt path (see the harness's own docstring for why that matters for prefix
@@ -2279,7 +2279,7 @@ continuity). Record: `docs/measurements/peer-matrix-2026-09/nobara-w4-transcript
 
 **Why TTFT here is from two non-streaming requests per turn, not the streaming method W1-W3 use**:
 a grammar-forced tool call streams nothing until the whole generation completes (confirmed by
-reading `internal/serveapp/tools.go`'s `serveChatToolsWith` — buffered by construction once a call
+reading `internal/app/serveapp/tools.go`'s `serveChatToolsWith` — buffered by construction once a call
 is constrained from token 1), so "TTFT from first streamed token" is unmeasurable for a forced-tool
 turn as such. Each turn instead sends a `max_tokens:1` probe (its wall-clock IS the TTFT, its
 `usage.prefill_reused_tokens` IS this turn's reuse reading) followed by the real, longer generation

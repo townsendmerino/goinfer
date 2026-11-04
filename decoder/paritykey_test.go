@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/paritykey"
+	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
 // TestParityKey_matchesFreshDepsHash is VK5's P1 (docs/tasks/task-subsystems-2026-10.md §5.8): internal/paritykey's

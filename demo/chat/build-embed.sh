@@ -76,7 +76,7 @@ if [ "$MODE" = prequant ]; then
   # flag has its ordinary effect there) — only the prequant path fixes a quant at build time, so
   # only it injects embeddedQuant. `-X` values cannot contain spaces (go build's own ldflags
   # parser word-splits them), which is the other reason this stays a single token.
-  EMBED_QUANT_LDFLAG="-X github.com/townsendmerino/goinfer/internal/chatapp.embeddedQuant=$QUANT"
+  EMBED_QUANT_LDFLAG="-X github.com/townsendmerino/goinfer/internal/app/chatapp.embeddedQuant=$QUANT"
 else
   echo "staging $(basename "$MODEL") -> internal/chatapp/model.gguf ($(du -h "$MODEL" | cut -f1))"
   cp "$MODEL" "$PKGDIR/model.gguf"
@@ -85,8 +85,8 @@ else
 fi
 
 LDFLAGS="-s -w $EMBED_QUANT_LDFLAG"
-[ -n "$TIER" ] && LDFLAGS="$LDFLAGS -X github.com/townsendmerino/goinfer/internal/chatapp.embeddedTier=$TIER"
-[ -n "${GOINFER_RELEASE_TAG:-}" ] && LDFLAGS="$LDFLAGS -X github.com/townsendmerino/goinfer/internal/chatapp.injectedVersion=$GOINFER_RELEASE_TAG"
+[ -n "$TIER" ] && LDFLAGS="$LDFLAGS -X github.com/townsendmerino/goinfer/internal/app/chatapp.embeddedTier=$TIER"
+[ -n "${GOINFER_RELEASE_TAG:-}" ] && LDFLAGS="$LDFLAGS -X github.com/townsendmerino/goinfer/internal/app/chatapp.injectedVersion=$GOINFER_RELEASE_TAG"
 
 TARGETS=("$@")
 if [ ${#TARGETS[@]} -eq 0 ]; then TARGETS=("$(go env GOOS)/$(go env GOARCH)"); fi

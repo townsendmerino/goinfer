@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/sampling"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestAmaxHead_nanRowsMatchTheHost is G-MA1 (docs/tasks/task-subsystems-2026-10.md §8, "The device argmax on Metal: NaN rows"):

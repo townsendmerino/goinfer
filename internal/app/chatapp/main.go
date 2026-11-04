@@ -1,0 +1,1204 @@
+// Command chat is goinfer's interactive demo: a terminal REPL around a local
+// decoder-only LLM running on the pure-Go decoder — no cgo, no Python, no model
+// download step (in the embed build the model ships *inside* the binary).
+//
+// It is built for prompt iteration. Type a message and the model streams a
+// reply; slash-commands tune the system prompt and sampling live so you can
+// feel out what makes a small Instruct model behave:
+//
+//	/system <text>   set the system prompt (steers tone/role) and reset history
+//	/temp <f>        sampling temperature (0 = greedy/deterministic)
+//	/topk <n>        top-k filter (0 = off)        /topp <f>  nucleus (0 = off)
+//	/max <n>         max tokens per reply           /seed <n> RNG seed
+//	/json            toggle JSON-constrained output (model cannot emit bad JSON)
+//	/reset           clear the conversation history
+//	/params          show current settings          /help     list commands
+//	/quit            exit (or Ctrl-D)
+//
+// During a reply, Ctrl-C cancels just that generation and returns to the prompt.
+//
+// Usage:
+//
+//	go run ./demo/chat --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+//	go run ./demo/chat --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf \
+//	    --system "You are a terse Go expert. Answer with code, no prose."
+package chatapp
+
+import (
+	"bufio"
+	"context"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/constrain"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/app/decidecmd"
+	"github.com/townsendmerino/goinfer/internal/app/fitcmd"
+	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"github.com/townsendmerino/goinfer/internal/app/pullcmd"
+	"github.com/townsendmerino/goinfer/internal/codec"
+	"github.com/townsendmerino/goinfer/internal/diag/hwreport"
+	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
+	"github.com/townsendmerino/goinfer/pull"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// defaultSystem is a code-flavored system prompt — on-brand for the Coder model
+// and a sane starting point you can override with --system or /system.
+const defaultSystem = "You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations."
+
+// msg is one conversation turn kept in history.
+type msg struct{ role, content string }
+
+// session holds the loaded model + the live, user-tunable settings.
+type session struct {
+	tk      *tokenizer.Tokenizer
+	model   *decoder.Model
+	special tokenizer.SpecialTokens
+	tmpl    *chat.Template // nil → raw-completion fallback (unrecognized template)
+	stopIDs []int          // turn-stop token ids resolved from tmpl.Stops()
+	vocab   int
+
+	// tokenBytes is the constraint masker's token→bytes table (P-17, audit-2026-09-10), built
+	// once in newSession rather than by jsonMasker on every constrained turn — the same fix
+	// serve's own cachedTokenBytes made for the same table (internal/serveapp/openai.go).
+	tokenBytes [][]byte
+
+	system  string
+	history []msg
+	sp      decoder.SamplingParams
+	maxTok  int
+	jsonOut bool
+	schema  []byte // when set, JSON output is constrained to this JSON Schema
+
+	// think is the thinking mode the prompt is rendered in (-thinking; /think changes it) and showThinking whether the model's
+	// reasoning is printed (dimmed) or hidden. A model whose template has no recognised thinking control is unaffected by both.
+	think        chat.ThinkMode
+	showThinking bool
+	// effort is gpt-oss's reasoning effort (--reasoning-effort; /effort changes it): "" = the template's own default (medium). It reaches
+	// no other family's prompt (chat.Template.WithReasoningEffort is a no-op for them).
+	effort string
+
+	// plain is script-friendly output (R26, docs/tasks/task-first-hour.md): no banner, no `you>` label, no ANSI escapes, no `bye`, the
+	// reasoning (when shown) on stderr so stdout is the answer and nothing else. It is on for -p, and whenever stdin or stdout is not a
+	// terminal. out is where stdout-bound text goes (nil = os.Stdout), so a test can read it; genFn replaces generate in tests.
+	plain bool
+	out   io.Writer // stdout-bound text (nil = os.Stdout)
+	errw  io.Writer // where plain mode sends the reasoning (nil = os.Stderr)
+	genFn func() string
+
+	img *imageInput // --image: one preprocessed image attached to this one-shot run (nil = text only)
+
+	draft *decoder.Model // optional speculative-decoding draft model (--draft)
+	specK int            // speculative draft length per verify pass
+	ngram bool           // --spec ngram: lossless n-gram (prompt-lookup) drafting, adaptive depth
+}
+
+// chatFlags is goinfer-chat's command line: the model-loading flags it shares with goinfer-serve
+// (internal/loadflags — one registration, so the binaries cannot drift apart again: chat had no --ctx,
+// --stream-weights or --moe-cache-* until they shared it) and its own sampling and REPL flags.
+type chatFlags struct {
+	load                                       *loadflags.Flags
+	model, system, schema, draft, spec         *string
+	maxTok, topK, repLastN, specK              *int
+	temp, topP, minP, repPen, presPen, freqPen *float64
+	seed                                       *int64
+	modelTmp, showVersion, showThinking        *bool
+	thinking, batch, out, effort, prompt       *string
+	image                                      *string
+	visionMaxPixels                            *int
+	noSelfTest                                 *bool
+}
+
+// registerFlags puts chat's whole command line on fs. Main passes flag.CommandLine; a test passes a fresh
+// set, so it checks the real list rather than a copy of it (serveOnlyInvocation reads it the same way).
+func registerFlags(fs *flag.FlagSet) *chatFlags {
+	c := &chatFlags{load: loadflags.Register(fs, loadflags.Chat)}
+	c.model = fs.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference fetched on first use — hf:<owner>/<repo>:<quant>, hf:<owner>/<repo>:safetensors or demo:<tier> (omit in the -tags embed build to use the baked-in model)")
+	c.system = fs.String("system", defaultSystem, "system prompt that steers the model")
+	c.maxTok = fs.Int("max", 512, "max tokens per reply")
+	c.temp = fs.Float64("temp", 0.7, "sampling temperature (0 = greedy)")
+	c.topK = fs.Int("top-k", 20, "top-k filter (0 = off)")
+	c.topP = fs.Float64("top-p", 0.8, "top-p / nucleus (0 = off)")
+	c.minP = fs.Float64("min-p", 0, "min-p: keep tokens with prob ≥ min-p×max-prob (0 = off)")
+	c.repPen = fs.Float64("repeat-penalty", 0, "repetition penalty over the last --repeat-last-n tokens (1 or 0 = off)")
+	c.presPen = fs.Float64("presence-penalty", 0, "presence penalty: flat logit drop for tokens already seen (0 = off)")
+	c.freqPen = fs.Float64("frequency-penalty", 0, "frequency penalty: logit drop ∝ token count (0 = off)")
+	c.repLastN = fs.Int("repeat-last-n", 64, "window (in tokens) the repetition penalties consider (≤0 = whole context)")
+	c.schema = fs.String("schema", "", "constrain output to a JSON Schema file (implies JSON mode); the model cannot emit non-conforming JSON")
+	c.seed = fs.Int64("seed", 0, "sampling RNG seed")
+	c.modelTmp = fs.Bool("model-tmp", false, "embed build: stream the baked-in model to a temp file + mmap instead of loading it into memory. Lower peak RAM for big models, but needs a writable temp dir. Also via GOINFER_MODEL_TMP=1. (If your temp dir is a tmpfs / RAM-backed, this saves no RAM.)")
+	c.draft = fs.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab. chat-only; goinfer-serve offers --spec ngram and --drafter instead")
+	c.spec = fs.String("spec", "", "speculative decoding without a second model: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth, as goinfer-serve's --spec. Wins on copy-heavy turns (code edits, quoting the conversation back); output is identical to plain decode (greedy bit-exact, sampled in-distribution). Falls back to plain decode per turn when it cannot apply (e.g. with --schema). Not combinable with --draft")
+	c.specK = fs.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
+	c.thinking = fs.String("thinking", "template", "thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): template (what the model's own template renders — the default), asis (the prompt as goinfer rendered it before thinking was modelled), on, or off. /think changes it mid-session")
+	c.effort = fs.String("reasoning-effort", "", "gpt-oss only: how hard the model reasons — low | medium | high (default: the template's own, medium). Lower is faster and spends fewer tokens before the answer. Ignored by every other model. /effort changes it mid-session; a --batch line's own reasoning_effort overrides it")
+	c.showThinking = fs.Bool("show-thinking", true, "print the model's reasoning, dimmed, before its answer (false: show only a \"thinking…\" marker). The reasoning is never kept in the conversation history either way")
+	c.batch = fs.String("batch", "", "run a batch file instead of chatting: an OpenAI-style JSONL of chat requests (the same file goinfer-serve's POST /v1/batches reads), one reply each, written to -o. No server; resumable — rerun the same command after an interruption and finished lines are skipped. A line that states no sampling settings gets the API's defaults (temperature 1, 512 tokens, random seed), not this binary's interactive ones, unless you pass the flag")
+	c.out = fs.String("o", "", "with --batch: the output file. Finished lines are appended as they land and already-finished custom_ids are skipped on a rerun; lines that failed go to a sibling <name>.errors.jsonl")
+	c.prompt = fs.String("p", "", "answer this one prompt and exit: only the answer is printed to stdout, with no banner, colours or prompt label (the reasoning of a thinking model, if shown, goes to stderr). Piped input and redirected output get the same plain output without -p")
+	c.image = fs.String("image", "", "answer about this image file (PNG or JPEG) and exit, like -p: one image, one answer, printed to stdout. GLM-OCR only (--model <the zai-org/GLM-OCR directory>); the image goes through its vision tower on the CPU (about a minute per megapixel). With no -p the task is text recognition; with --schema it is EXTRACTION: the prompt is the schema's JSON template and the reply is constrained to the schema (goinfer-chat --model ~/models/glm-ocr --image invoice.png --schema invoice.schema.json). Unless given, --temp defaults to 0 and --max to 2048 for an image run, and the REPL's coding system prompt is not sent")
+	c.visionMaxPixels = fs.Int("vision-max-pixels", 0, "with --image: lower the image pixel budget to this many pixels (0 = the model's own ceiling, 4.82 MP; it is never raised). The CPU vision tower costs about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP on an M1 Pro.")
+	c.noSelfTest = fs.Bool("no-selftest", false, "skip the startup self-tests (a kernel check against a reference that steps a CPU kernel tier down, or declines a GPU backend, when its output disagrees); `check --hardware` prints what they found")
+	c.showVersion = fs.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
+	return c
+}
+
+func Main() {
+	// Subcommand dispatch, before flag.Parse so `pull` gets its own flag set.
+	//
+	// `pull` lives INSIDE this binary rather than shipping as a separate tool on purpose.
+	// The person it is for is holding `goinfer-chat-<os>-<arch>` — the ~5 MB runtime whose
+	// whole pitch is "point it at your own GGUF" — and has no other goinfer binary. A
+	// standalone fetcher they would have to go and download first would reintroduce exactly
+	// the friction it exists to remove.
+	if len(os.Args) > 1 && os.Args[1] == "pull" {
+		os.Exit(pullcmd.Run(os.Args[2:]))
+	}
+	// `fit` — tasks/task-fit-to-hardware.md Phase 1's dry run: "does this fit, and how" without
+	// starting a chat session. Same dispatch shape as `pull` above, for the same reason (this
+	// binary IS the only tool the person running it has).
+	// `cache` lists what `pull` has put on disk (task-checkpoint-fetch-2026-09.md P8).
+	if len(os.Args) > 1 && os.Args[1] == "cache" {
+		os.Exit(pullcmd.RunCache(os.Args[2:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "fit" {
+		os.Exit(fitcmd.Run(os.Args[2:]))
+	}
+	// `check --hardware` (H3, docs/tasks/task-hardware-coverage-2026-10.md): the block a hardware bug report needs. Chat has no server to drive, so `check` here is only that.
+	if len(os.Args) > 1 && os.Args[1] == "check" {
+		os.Exit(hwreport.Run(os.Args[2:], filepath.Base(os.Args[0])))
+	}
+	// `decide` / `decisions-calibrate` — D1 of docs/tasks/task-constrained-confidence.md: decisions by label-token
+	// scoring (one prefill per line, a distribution over the line's options) and the per-kind temperature fit.
+	if len(os.Args) > 1 && os.Args[1] == "decide" {
+		os.Exit(decidecmd.Run(os.Args[2:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "decisions-calibrate" {
+		os.Exit(decidecmd.RunCalibrate(os.Args[2:]))
+	}
+	// `models` lists the checkpoints this project has actually run, so "what should I download"
+	// has an answer that is not "go read Hugging Face". Every row derives from a
+	// docs/capability-matrix.json family with a parity status (pull/registry.go).
+	if len(os.Args) > 1 && (os.Args[1] == "models" || os.Args[1] == "list") {
+		all := pull.RecommendedAll()
+		fmt.Printf("Checkpoints goinfer has run, smallest first. Fetch one with `%s pull <name>`.\n\n", filepath.Base(os.Args[0]))
+		for _, c := range all {
+			fmt.Printf("  %s\n", c.Describe())
+			fmt.Printf("  %-22s %s\n", "", c.Needs)
+			fmt.Printf("  %-22s %s · %s · parity %s\n", "", c.Repo, c.Family, c.Parity)
+			fmt.Printf("  %-22s tools: %s\n\n", "", c.DescribeTools())
+		}
+		fmt.Printf("Downloads come from Hugging Face and are sha256-verified against a digest this\n" +
+			"build pins; goinfer hosts no weights. Any other GGUF works too — pass owner/repo:quant.\n")
+		os.Exit(0)
+	}
+	// POINT AT THE OTHER BINARY INSTEAD OF SWALLOWING THE ARGUMENT.
+	//
+	// Cold-user run 2026-09-06, scenario B, 06:37:23 — the tester's first error of that leg, and
+	// the reason the whole leg started badly. `goinfer-chat serve` IGNORED the subcommand and
+	// complained about --model; `goinfer-chat -web` said "flag provided but not defined: -web".
+	// Neither hinted that `serve` and `-web` belong to a DIFFERENT binary, and the README's own
+	// examples used them — so the tester reasonably concluded the released binary was broken and
+	// went hunting through pkg.go.dev by trial and error to find a server at all.
+	//
+	// The README is fixed, but a stale README, a cached blog post or a year-old shell history will
+	// keep producing this invocation forever. An error that names the replacement costs one
+	// branch; the failure it prevents cost that run its worst dead end.
+	// --version answers "what is in this binary" without loading a model — R6
+	// (docs/measurements/cold-user-2026-09-06-nobara-pc.md): this binary had no way to report its
+	// own version at all. Checked here, before flag.Parse, so it works as the first argument the
+	// way `pull`/`models` above do; also registered as a flag below so `--model x --version`
+	// (version after another flag) is caught too.
+	if len(os.Args) > 1 && isVersionArg(os.Args[1]) {
+		fmt.Print(versionReport(filepath.Base(os.Args[0])))
+		return
+	}
+	cf := registerFlags(flag.CommandLine)
+	if serveOnly := serveOnlyInvocation(os.Args[1:], flag.CommandLine); serveOnly != "" {
+		fmt.Fprintf(os.Stderr, `%s: %q belongs to goinfer-serve, not this binary.
+
+goinfer-chat is the single-shot chat runtime; the server (OpenAI/Anthropic routes, -web, model
+zoo, streaming) is a separate binary:
+
+    go install github.com/townsendmerino/goinfer/cmd/serve@latest      # CPU
+    go install github.com/townsendmerino/goinfer/backend/metal/cmd/serve@latest # macOS GPU
+    CGO_ENABLED=0 go install -tags cuda github.com/townsendmerino/goinfer/backend/cuda/cmd/serve@latest
+
+or download goinfer-serve-<os>-<arch> from the latest release. It installs as `+"`serve`"+`.
+`, filepath.Base(os.Args[0]), serveOnly)
+		os.Exit(2)
+	}
+	// A header naming the subcommands, for the same reason serve has one: the cold-user run found
+	// a 39-flag dump nobody could skim, and a feature a user cannot find does not exist. `models`
+	// in particular is the answer to "what should I download", which is worthless if the only way
+	// to discover it is to already know.
+	flag.Usage = func() {
+		self := filepath.Base(os.Args[0])
+		fmt.Fprintf(flag.CommandLine.Output(), `%[1]s — chat with a local model. One binary, no daemon, no Python.
+
+  %[1]s models                          what to download, and what each one costs
+  %[1]s pull <name>                     fetch one, sha256-verified
+  %[1]s cache                           what pull has put on disk, and the --model path for each
+  %[1]s fit <file.gguf|dir>             will this fit, and how — per backend, before you load it
+  %[1]s decide --model <f> in.jsonl     decisions: a distribution over each line's options, one prefill each
+  %[1]s --model <f> --batch in.jsonl -o out.jsonl   run a batch file locally; resumable
+  %[1]s --model <file.gguf|dir>         chat with it
+  %[1]s --model <f> --temp 0            greedy, for reproducible output
+  %[1]s --model <f> -p "prompt"         one answer on stdout, plain (no colours, banner or prompt), then exit
+  %[1]s --version                       version + the backends compiled in
+
+Reads a .gguf or an HF checkpoint dir. The server (OpenAI/Anthropic routes, --web,
+model zoo) is a separate binary — see goinfer-serve.
+
+%[2]s
+
+All flags:
+
+`, self, pull.CacheHelp())
+		flag.PrintDefaults()
+	}
+
+	flag.Parse()
+	if *cf.showVersion {
+		fmt.Print(versionReport(filepath.Base(os.Args[0])))
+		return
+	}
+	// An unrecognized subcommand/positional falls through silently otherwise — R6's other half.
+	// `./goinfer-chat-1.5b version` (a typo reaching for --version) was swallowed here: flag.Parse
+	// stops at the first non-flag argument and leaves it in flag.Args(), which nothing checked, so
+	// it fell straight into the `case hasEmbeddedModel:` branch below and started an interactive
+	// chat session — no error, no hint that "version" meant anything. Nothing in normal usage
+	// leaves a bare positional (every argument here is a --flag), so anything left is a mistake.
+	if args := flag.Args(); len(args) > 0 {
+		fmt.Fprintf(os.Stderr, "%s: unrecognized argument %q\n\nknown subcommands: pull <name>, cache, fit <path>, decide, decisions-calibrate, models, --version. Or pass --model <file.gguf|dir>.\n",
+			filepath.Base(os.Args[0]), args[0])
+		os.Exit(2)
+	}
+
+	// --image: check the flags and read + preprocess the image BEFORE loading a model, like --batch below: a bad path or a
+	// non-GLM-OCR directory costs a second, not a load.
+	if *cf.noSelfTest {
+		decoder.SkipSelfTests()
+	}
+	if err := checkImageFlags(*cf.image, *cf.model, *cf.batch); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
+	var img *imageInput
+	if *cf.image != "" {
+		var ierr error
+		if img, ierr = loadImageInput(*cf.model, *cf.image, *cf.visionMaxPixels); ierr != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", ierr)
+			os.Exit(1)
+		}
+	}
+
+	// --batch: read and check the input and the existing output BEFORE loading a model — a bad file costs a second, not a load,
+	// and a run that has nothing left to do never loads one.
+	var plan *batchPlan
+	if *cf.batch != "" || *cf.out != "" {
+		if *cf.schema != "" {
+			fmt.Fprintln(os.Stderr, "error: --schema constrains the interactive session; in a batch put response_format in each line")
+			os.Exit(2)
+		}
+		var perr error
+		if plan, perr = planBatch(*cf.batch, *cf.out); perr != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", perr)
+			os.Exit(2)
+		}
+		fmt.Fprintf(os.Stderr, "batch %s: %d lines, %d already done in %s, %d to run\n",
+			plan.in, len(plan.lines), len(plan.lines)-len(plan.todo), plan.out, len(plan.todo))
+		if len(plan.todo) == 0 {
+			fmt.Fprintln(os.Stderr, "nothing to do")
+			return
+		}
+	}
+
+	if err := cf.load.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
+	if l := cf.load.BackendLine(); l != "" {
+		fmt.Fprintln(os.Stderr, l)
+	}
+	opts := cf.load.Options()
+	if err := opts.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(2)
+	}
+	// The quant the user EXPLICITLY chose (vs the "int4" default) — for the .giw mismatch check
+	// (T1-7); a bare default must not conflict with an already-baked bundle.
+	explicitQuant := cf.load.ExplicitQuant()
+	useTmp := *cf.modelTmp || os.Getenv("GOINFER_MODEL_TMP") != ""
+
+	// (Decode-parallelism tuning is now automatic per-Workspace inside decoder — the
+	// old SetDecodeParallelThreshold call here is redundant and was removed.)
+
+	var s *session
+	var err error
+	switch {
+	case *cf.model != "":
+		// Explicit checkpoint: a .gguf file, an HF dir, a .giw, or an hf:/demo: reference fetched on
+		// first use. The same path serve and fit take (internal/modelload): reference resolution, the
+		// S1 sidecar .giw default for a .gguf, the tokenizer, the swap-guarded load and the one
+		// automatic streaming retry on a dense fit decline.
+		s, err = loadFromPath(*cf.model, opts, cf.load.DirectLoad, explicitQuant)
+	case hasEmbeddedModel && opts.StreamWeights:
+		// Refused, not ignored: paging reads a .giw FILE's mapping, and the baked-in model is in this
+		// binary's own image (the prequant build would refuse it anyway, less helpfully).
+		err = fmt.Errorf("--stream-weights pages a model out of a .giw file, and the baked-in model lives in this binary's own image — pass --model <file> to stream a model")
+	case hasEmbeddedModel:
+		// Baked-in model (-tags embed): in-memory by default — no temp file, so
+		// the binary runs on a read-only filesystem. --model-tmp opts into the
+		// lower-peak-RAM disk path.
+		s, err = loadEmbedded(useTmp, opts)
+	default:
+		fmt.Fprintln(os.Stderr, "error: --model is required (path to a .gguf file or HF checkpoint dir)")
+		flag.Usage()
+		os.Exit(2)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+	// A prequant .giw carries its own quant; --quant can't re-quantize it. Fail on an explicit
+	// mismatch rather than silently ignoring the flag (T1-7).
+	if qerr := s.model.CheckGiwQuantMatch(explicitQuant); qerr != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", qerr)
+		os.Exit(1)
+	}
+	s.system = *cf.system
+	mode, ok := chat.ParseThinkMode(*cf.thinking)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "error: --thinking %q: want template, asis, on or off\n", *cf.thinking)
+		os.Exit(2)
+	}
+	s.think, s.showThinking = mode, *cf.showThinking
+	if *cf.effort != "" {
+		e, ok := chat.NormalizeReasoningEffort(*cf.effort)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "error: --reasoning-effort %q: want low, medium or high\n", *cf.effort)
+			os.Exit(2)
+		}
+		s.effort = e
+	}
+	s.maxTok = *cf.maxTok
+	s.sp = decoder.SamplingParams{
+		Temperature: *cf.temp, TopK: *cf.topK, TopP: *cf.topP, MinP: *cf.minP, Seed: *cf.seed,
+		RepeatPenalty: *cf.repPen, PresencePenalty: *cf.presPen, FrequencyPenalty: *cf.freqPen, RepeatLastN: *cf.repLastN,
+	}
+	if img != nil {
+		explicit := map[string]bool{}
+		flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+		s.img = img
+		img.useBackend(opts.Backend)
+		if !explicit["temp"] {
+			s.sp.Temperature = imageDefaultTemp
+		}
+		if !explicit["max"] {
+			s.maxTok = imageDefaultMax
+		}
+	}
+	if *cf.schema != "" {
+		raw, rerr := os.ReadFile(*cf.schema)
+		if rerr != nil {
+			fmt.Fprintf(os.Stderr, "read schema: %v\n", rerr)
+			os.Exit(1)
+		}
+		if _, cerr := constrain.JSONSchema(raw); cerr != nil { // fail fast on a bad schema
+			fmt.Fprintf(os.Stderr, "compile schema: %v\n", cerr)
+			os.Exit(1)
+		}
+		s.schema = raw
+		s.jsonOut = true
+		fmt.Fprintf(os.Stderr, "constraining output to JSON Schema %s\n", *cf.schema)
+	}
+
+	switch *cf.spec {
+	case "":
+	case "ngram":
+		if *cf.draft != "" {
+			fmt.Fprintln(os.Stderr, "error: --spec ngram and --draft are two ways to speculate; pick one")
+			os.Exit(2)
+		}
+		s.ngram = true
+		fmt.Fprintln(os.Stderr, "speculative decoding on (n-gram prompt lookup, adaptive depth) — output identical to plain decode")
+	default:
+		fmt.Fprintf(os.Stderr, "error: --spec must be \"\" or \"ngram\" (got %q)\n", *cf.spec)
+		os.Exit(2)
+	}
+	if *cf.draft != "" {
+		progress("loading draft model…")
+		// The draft loads directly, not through modelload, so it has no sidecar .giw to page from:
+		// --stream-weights (and its budget) is the target's, never the draft's.
+		dopts := opts
+		dopts.StreamWeights, dopts.WeightCacheBytes = false, 0
+		dopts.DirectLoad = true
+		dm, derr := decoder.Load(*cf.draft, dopts)
+		if derr != nil {
+			fmt.Fprintf(os.Stderr, "load draft model: %v\n", derr)
+			os.Exit(1)
+		}
+		s.draft = dm
+		s.specK = *cf.specK
+		fmt.Fprintf(os.Stderr, "speculative decoding on (draft=%s, K=%d) — greedy only\n", *cf.draft, *cf.specK)
+		if *cf.temp != 0 {
+			fmt.Fprintf(os.Stderr, "  note: --temp %.2g is not greedy; set --temp 0 to use the draft (else plain decode)\n", *cf.temp)
+		}
+	}
+
+	if plan != nil {
+		explicit := map[string]bool{}
+		flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+		bd := newBatchDefaults(cf, explicit)
+		bd.rec = s.model.Config().Sampling
+		if bd.rec != nil && len(bd.rec.Applied()) > 0 {
+			fmt.Fprintf(os.Stderr, "batch: a line that leaves a sampling field out takes the model's recommended value (%s: %s) unless a flag sets it\n",
+				bd.rec.Source, strings.Join(bd.rec.Applied(), ", "))
+		}
+		if bd.rec != nil && bd.rec.RepetitionPenalty != nil {
+			fmt.Fprintf(os.Stderr, "batch: the model's repetition_penalty %g is not applied (it divides logits; the sampler's penalties are subtractive)\n", *bd.rec.RepetitionPenalty)
+		}
+		os.Exit(s.runBatch(plan, bd, modelNameOf(*cf.model)))
+	}
+	// R26: one prompt, plain output, exit — or the REPL, plain when it is being scripted (stdin or stdout is not a terminal).
+	s.plain = *cf.prompt != "" || img != nil || !isTerminal(os.Stdin) || !isTerminal(os.Stdout)
+	if *cf.prompt != "" || img != nil { // --image is one image, one answer: it never opens the REPL
+		if img != nil && *cf.prompt != "" && *cf.schema != "" {
+			fmt.Fprintln(os.Stderr, "note: -p text with --schema is kept as your own prompt unless it is empty or a bare task prompt (Text Recognition: and the like); include the JSON template yourself, or omit -p to send the schema's")
+		}
+		os.Exit(s.oneShot(*cf.prompt))
+	}
+	s.repl(os.Stdin)
+}
+
+// stdout is where text meant for the reader goes: os.Stdout, or the writer a test installed.
+func (s *session) stdout() io.Writer {
+	if s.out != nil {
+		return s.out
+	}
+	return os.Stdout
+}
+
+// sgr is an ANSI escape, or nothing in plain mode — a pipe, a file and a script must not receive terminal control codes.
+func (s *session) sgr(code string) string {
+	if s.plain {
+		return ""
+	}
+	return code
+}
+
+// isTerminal reports whether f is a character device (a terminal), which is what decides between the coloured REPL and plain output.
+func isTerminal(f *os.File) bool {
+	st, err := f.Stat()
+	return err == nil && st.Mode()&os.ModeCharDevice != 0
+}
+
+// oneShot answers one prompt (-p) and returns the process exit code: 0 with an answer on stdout, 1 without one.
+func (s *session) oneShot(prompt string) int {
+	s.history = append(s.history, msg{"user", prompt})
+	gen := s.generate
+	if s.genFn != nil {
+		gen = s.genFn
+	}
+	if strings.TrimSpace(gen()) == "" {
+		fmt.Fprintln(os.Stderr, "no answer")
+		return 1
+	}
+	return 0
+}
+
+// loadEmbedded loads the baked-in model. Its implementation is build-tag
+// specific: -tags prequant maps a serialized weight bundle (zero-copy); -tags
+// embed loads the embedded GGUF; the default build has no embedded model.
+
+// loadFromPath loads the tokenizer + model through internal/modelload, the path serve and fit share.
+// directLoad skips the .gguf sidecar default (the embedded build's --model-tmp passes true: its .gguf
+// is a temp file, and caching a sidecar from it would be wasted work).
+func loadFromPath(spec string, opts decoder.Options, directLoad bool, explicitQuant string) (*session, error) {
+	advice := "use a smaller -quant"
+	if prequant.DefaultToSidecar(false) {
+		// Here a .gguf only builds directly when -direct-load / GOINFER_GGUF_DIRECT asked for it.
+		advice = "drop -direct-load (and GOINFER_GGUF_DIRECT) so the .gguf loads through its sidecar .giw, or use a smaller -quant"
+	}
+	progress("loading + quantizing…")
+	res, err := modelload.Load(context.Background(), modelload.Request{
+		Spec: spec, Opts: opts, DirectLoad: directLoad, ExplicitQuant: explicitQuant, GuardAdvice: advice,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return newSession(res.Tokenizer, res.Model, res.Opts, res.LoadTime), nil
+}
+
+// loadFromBytes loads the tokenizer + model from an in-memory GGUF slice — the
+// no-filesystem path used by the embedded binary. The default (download-a-path)
+// build never embeds a model, so this reads as unused there:
+//
+//lint:ignore U1000 called only from embed.go (//go:build embed && !prequant).
+func loadFromBytes(raw []byte, opts decoder.Options) (*session, error) {
+	t0 := time.Now()
+	tk, err := tokenizer.LoadGGUFBytes(raw)
+	if err != nil {
+		return nil, fmt.Errorf("load tokenizer: %w", err)
+	}
+	progress("loading + quantizing…")
+	model, err := decoder.LoadGGUFBytes(raw, opts)
+	if err != nil {
+		return nil, fmt.Errorf("load model: %w", err)
+	}
+	return newSession(tk, model, opts, time.Since(t0)), nil
+}
+
+// newSession assembles the REPL session and prints the load summary to stderr.
+func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, opts decoder.Options, dt time.Duration) *session {
+	cfg := model.Config()
+	// M-25 (audit-2026-09-10): DecodePath(), not Quant() — on Metal, --quant int8/int8int8/int4mix
+	// all silently re-quantize to int4 at resident-build time (no int8 GEMV kernel on that
+	// backend), so the raw requested quant string was printing a precision the GPU never actually
+	// runs. DecodePath() reports the corrected label (decoder/residency.go's residentQuantLabel).
+	fmt.Fprintf(os.Stderr, "loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s decode=%s]\n",
+		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, dt.Round(time.Millisecond), model.BackendReport(), model.DecodePath())
+	// The phase split, on the line under the banner. chat is where a first-time user meets a load
+	// time at all -- the cold-user run's scenario A measured 3.314s here and had no way to know
+	// what it was spent on.
+	if sum := model.LoadProfile().Summary(); sum != "" {
+		fmt.Fprintln(os.Stderr, sum)
+	}
+	// M-41 (audit-2026-09-10): the same C-10 reasoning serve already applies, extended here — the
+	// REPL is the release asset whose whole pitch is "point it at your own GGUF," so a declined
+	// pre-tokenizer here is the single most likely place a user hits one, silently.
+	if d := tk.PreTokenizerDecline(); d != "" {
+		fmt.Fprintf(os.Stderr, "  !! tokenizer: %s\n", d)
+	}
+	s := &session{tk: tk, model: model, special: tk.Special(), vocab: cfg.VocabSize}
+	s.tokenBytes = constrain.TokenBytes(s.vocab, tk.TokenText)
+	tmpl, err := codec.Template(tk)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "note: no recognized chat template; replies may be raw completions")
+	} else {
+		s.tmpl = tmpl
+		for _, str := range tmpl.Stops().Strings {
+			if id, ok := tk.TokenID(str); ok {
+				s.stopIDs = append(s.stopIDs, id)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "chat template: %s\n", tmpl.Name())
+	}
+	return s
+}
+
+// progress prints a one-line status to stderr (stdout stays clean for piping).
+func progress(msg string) { fmt.Fprintln(os.Stderr, msg) }
+
+// repl is the read–eval–print loop. Lines starting with '/' are commands; every
+// other line is a user turn that gets a streamed reply.
+func (s *session) repl(r io.Reader) {
+	if !s.plain {
+		fmt.Fprintf(s.stdout(), "\ngoinfer chat — %d msgs of history, system prompt steers it. /help for commands, /quit to exit.\n", 0)
+		fmt.Fprintf(s.stdout(), "system: %s\n\n", short(s.system))
+	}
+	in := bufio.NewScanner(r)
+	in.Buffer(make([]byte, 0, 1<<20), 1<<20) // allow long pasted prompts
+	for {
+		if !s.plain {
+			fmt.Fprint(s.stdout(), "\033[1myou>\033[0m ")
+		}
+		if !in.Scan() {
+			if !s.plain {
+				fmt.Fprintln(s.stdout(), "\nbye")
+			}
+			return
+		}
+		line := strings.TrimSpace(in.Text())
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "/") {
+			if s.command(line) {
+				return // /quit
+			}
+			continue
+		}
+		s.history = append(s.history, msg{"user", line})
+		gen := s.generate
+		if s.genFn != nil {
+			gen = s.genFn
+		}
+		reply := gen()
+		if reply != "" {
+			s.history = append(s.history, msg{"assistant", reply})
+		}
+	}
+}
+
+// generate builds the templated prompt from system + history, streams the
+// reply to stdout, and returns the assistant text (for history). Ctrl-C during
+// generation cancels just this turn.
+func (s *session) generate() string {
+	prompt, turns, tm := s.buildPrompt()
+	var ids []int
+	if s.img == nil { // an image request builds its own prompt below (startImageGen)
+		// Rendered templates already include the family's BOS marker; only the raw
+		// fallback needs the tokenizer to prepend one.
+		var err error
+		ids, err = s.tk.Encode(prompt, s.tmpl == nil /* addBOS */)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "encode: %v\n", err)
+			return ""
+		}
+	}
+
+	sp := s.sp
+	sp.StopIDs = s.stopIDs // turn-stop markers for this family (e.g. <end_of_turn>)
+	if s.jsonOut {
+		sp.LogitProcessor = s.jsonMasker()
+	}
+	s.applyBudget(&sp, tm, turns)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	var stream <-chan int
+	var gen *decoder.Generation
+	if s.img != nil {
+		var ierr error
+		if stream, gen, ierr = s.startImageGen(ctx, turns, s.maxTok, sp); ierr != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", ierr)
+			return ""
+		}
+	} else {
+		stream, gen = s.startGen(ctx, ids, s.maxTok, sp)
+	}
+
+	// The reasoning, when the model has any, prints dimmed (or as a one-word marker with --show-thinking=false) and the answer
+	// follows in cyan; the two never mix, and only the answer goes into the conversation history.
+	rs := codec.NewReplySplitter(tm, turns) // nil for a model with no recognised thinking control: everything is the answer
+	rp := &replyPrinter{s: s}
+	start := time.Now()
+	text, _, nTok, truncated := s.streamReply(stream, rs, rp.reasoning, rp.chunk)
+	rp.end()
+	if truncated {
+		fmt.Fprintln(os.Stderr, s.sgr("\033[2m")+"(no answer: the reply ended while the model was still thinking — raise /max)"+s.sgr("\033[0m"))
+	}
+
+	if err := gen.Err(); err != nil && ctx.Err() == nil {
+		fmt.Fprintf(os.Stderr, "(generation error: %v)\n", err)
+	}
+	elapsed := time.Since(start)
+	if s.img != nil {
+		elapsed -= s.img.towerTime // the tower runs inside the generation call; tok/s is the model's, not the tower's
+	}
+	if elapsed > 0 && nTok > 0 {
+		fmt.Fprintf(os.Stderr, "%s[%d tok, %.1f tok/s]%s", s.sgr("\033[2m"), nTok, float64(nTok)/elapsed.Seconds(), s.sgr("\033[0m"))
+		if gen.Spec != nil {
+			fmt.Fprintf(os.Stderr, "%s [spec: %.0f%% accepted, %.1f tok/pass]%s", s.sgr("\033[2m"), gen.Spec.AcceptanceRate()*100, gen.Spec.TokensPerRound(), s.sgr("\033[0m"))
+		}
+		fmt.Fprintln(os.Stderr)
+	}
+	return strings.TrimSpace(text)
+}
+
+// startGen starts one generation: speculative when a draft model is loaded and the turn is greedy with no masking (output is
+// token-identical to plain greedy, just faster), n-gram speculative when --spec ngram is on and the turn can take it, plain
+// decode otherwise. Shared by the REPL and --batch, so the two cannot pick different decode paths for the same request.
+func (s *session) startGen(ctx context.Context, ids []int, maxTok int, sp decoder.SamplingParams) (<-chan int, *decoder.Generation) {
+	var stream <-chan int
+	var gen *decoder.Generation
+	// Speculative path when a draft model is loaded and we're greedy (temp 0) with
+	// no logit masking — output is token-identical to plain greedy, just faster.
+	useSpec := s.draft != nil && sp.Temperature == 0 && sp.LogitProcessor == nil
+	if useSpec {
+		var serr error
+		stream, gen, serr = s.model.GenerateSpeculative(ctx, ids, maxTok, s.draft, s.specK, sp)
+		if serr != nil {
+			fmt.Fprintf(os.Stderr, "(speculative unavailable: %v; using plain decode)\n", serr)
+			useSpec = false
+		}
+	}
+	if !useSpec && s.ngram {
+		// Same try/fallback shape as goinfer-serve's --spec ngram: the call validates the request
+		// (e.g. a --schema logit processor) and returns an error BEFORE touching any state, so a
+		// turn it cannot take falls back to plain decode exactly.
+		var serr error
+		if stream, gen, serr = s.model.GenerateNgramSpeculativeAdaptive(ctx, ids, maxTok, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, sp); serr == nil {
+			useSpec = true
+		}
+	}
+	if !useSpec {
+		stream, gen = s.model.Generate(ctx, ids, maxTok, sp)
+	}
+	return stream, gen
+}
+
+// applyBudget installs the reasoning budget on sp: a thinking reply must always have room to answer, so once the think block has used
+// three quarters of --max the next token is forced to close it (chat.ReasoningBudget; the same rule serve applies). Not under a JSON
+// grammar (it governs token 1, and the prompt is rendered thinking-off), not under speculative decoding (a logit processor would turn
+// the drafter off), and not over a processor already set.
+func (s *session) applyBudget(sp *decoder.SamplingParams, tm *chat.Template, turns []chat.Turn) {
+	s.applyBudgetFor(sp, tm, turns, s.maxTok, s.jsonOut, 0)
+}
+
+// applyBudgetFor is applyBudget for one turn's own settings: its max_tokens, whether a grammar constrains it, and the request's
+// own cap on thinking tokens (0 = none asked for; a cap above the room is clamped to it, as serve does).
+func (s *session) applyBudgetFor(sp *decoder.SamplingParams, tm *chat.Template, turns []chat.Turn, maxTok int, constrained bool, explicit int) {
+	if constrained || s.draft != nil || s.ngram || sp.LogitProcessor != nil {
+		return
+	}
+	room, ok := chat.BudgetRoom(maxTok)
+	if !ok {
+		return
+	}
+	if explicit > 0 {
+		room = min(explicit, room)
+	}
+	if b := tm.NewReasoningBudgetFor(s.tk, turns, room); b != nil {
+		sp.LogitProcessor, sp.LogitProcessorGate = b.Process, b.Gate
+	}
+}
+
+// streamGen drains a token channel into text with UTF-8 holdback, calling onChunk with each
+// newly-completed span (a byte-fallback token may be a partial rune, so a flush emits only the
+// longest complete-rune prefix of what has not been emitted yet), and returns the full text plus
+// the token count.
+//
+// sb accumulates the decoded text INCREMENTALLY instead of re-decoding the whole generated
+// sequence every token (P-17, audit-2026-09-10 — this demo's own twin of R-08, already fixed in
+// internal/serveapp/openai.go's streamTokens for the same reason). DecodePiece(id) appended one
+// token at a time is byte-identical to a fresh whole-sequence decode at every flush point
+// (TestDecodeContinuation_isIncrementallyAssociative, tokenizer/). strings.Builder, not
+// `text += piece`: Go strings are immutable, so naive concatenation is itself O(n) per append and
+// would silently reintroduce the O(n^2) this removes.
+func (s *session) streamGen(tokens <-chan int, onChunk func(string)) (text string, nTok int) {
+	text, _, nTok, _ = s.streamReply(tokens, nil, nil, onChunk)
+	return text, nTok
+}
+
+// streamReply is streamGen with the reasoning taken out: with a splitter (chat.Template.NewReplySplitter, nil for a model with
+// no recognised thinking control) each decoded fragment's reasoning goes to onReasoning — on UTF-8 boundaries — and only the
+// answer goes through the holdback and onChunk. Returns the answer, the reasoning, the token count (thinking included), and
+// whether the reply ended inside an unclosed think block (no answer).
+func (s *session) streamReply(tokens <-chan int, rs *chat.ReplySplitter, onReasoning, onChunk func(string)) (answer, reasoning string, nTok int, truncated bool) {
+	var sb, rb strings.Builder
+	printed := 0
+	flush := func(final bool) {
+		txt := sb.String() // O(1): a view over the Builder's buffer, not a copy
+		tail := txt[printed:]
+		end := len(tail) + printed
+		if !final {
+			end = completeUTF8Len([]byte(tail)) + printed
+		}
+		if end > printed {
+			if onChunk != nil {
+				onChunk(txt[printed:end])
+			}
+			printed = end
+		}
+	}
+	report := func(r string) {
+		if r == "" {
+			return
+		}
+		rb.WriteString(r)
+		if onReasoning != nil {
+			onReasoning(r)
+		}
+	}
+	for id := range tokens {
+		nTok++
+		// DecodePiece, not Decode: these ids CONTINUE the prompt (no sequence-level
+		// dummy-prefix strip — M-25), and appending each token's own piece is exactly what a
+		// whole-sequence decode does internally, one token at a time.
+		piece, _ := s.tk.DecodePiece(id)
+		if rs != nil {
+			r, a := rs.Push(piece)
+			report(r)
+			piece = a
+		}
+		sb.WriteString(piece)
+		flush(false)
+	}
+	if rs != nil {
+		r, a, trunc := rs.Finish()
+		report(r)
+		sb.WriteString(a)
+		truncated = trunc
+	}
+	flush(true)
+	return sb.String(), rb.String(), nTok, truncated
+}
+
+// command handles a /slash line; returns true to quit.
+func (s *session) command(line string) bool {
+	cmd, arg, _ := strings.Cut(line, " ")
+	arg = strings.TrimSpace(arg)
+	switch cmd {
+	case "/quit", "/exit":
+		if !s.plain {
+			fmt.Fprintln(s.stdout(), "bye")
+		}
+		return true
+	case "/help":
+		fmt.Print(helpText)
+	case "/reset":
+		s.history = nil
+		fmt.Println("(history cleared)")
+	case "/system":
+		s.system = arg
+		s.history = nil
+		fmt.Printf("(system set; history cleared)\nsystem: %s\n", short(s.system))
+	case "/temp":
+		s.sp.Temperature = parseF(arg, s.sp.Temperature)
+	case "/topk":
+		s.sp.TopK = parseI(arg, s.sp.TopK)
+	case "/topp":
+		s.sp.TopP = parseF(arg, s.sp.TopP)
+	case "/seed":
+		s.sp.Seed = int64(parseI(arg, int(s.sp.Seed)))
+	case "/max":
+		s.maxTok = parseI(arg, s.maxTok)
+	case "/think":
+		if arg == "" {
+			fmt.Printf("(thinking: %s, reasoning shown: %v — /think template|asis|on|off)\n", s.think, s.showThinking)
+			break
+		}
+		m, ok := chat.ParseThinkMode(arg)
+		if !ok {
+			fmt.Printf("(bad mode %q — want template, asis, on or off)\n", arg)
+			break
+		}
+		s.think = m
+		fmt.Printf("(thinking: %s)\n", s.think)
+	case "/effort":
+		if arg == "" {
+			fmt.Printf("(reasoning effort: %s — /effort low|medium|high; gpt-oss only)\n", effortLabel(s.effort))
+			break
+		}
+		e, ok := chat.NormalizeReasoningEffort(arg)
+		if !ok {
+			fmt.Printf("(bad effort %q — want low, medium or high)\n", arg)
+			break
+		}
+		s.effort = e
+		fmt.Printf("(reasoning effort: %s)\n", e)
+	case "/json":
+		s.jsonOut = !s.jsonOut
+		fmt.Printf("(json-constrained output: %v)\n", s.jsonOut)
+	case "/params":
+		s.printParams()
+	case "/demos", "/examples":
+		fmt.Println("canned demo prompts — run with /demo <n|name>:")
+		for i, d := range demos {
+			tag := ""
+			if d.tier == "big" {
+				tag += "  \033[2m[1.5B]\033[0m"
+			}
+			if d.json {
+				tag += "  \033[2m[json]\033[0m"
+			}
+			fmt.Printf("  %d  %-8s %s%s\n", i+1, d.name, firstLine(d.prompt), tag)
+		}
+	case "/demo", "/ex":
+		d, ok := pickDemo(arg)
+		if !ok {
+			fmt.Printf("(no such demo %q — /demos to list)\n", arg)
+			break
+		}
+		if d.system != "" {
+			s.system = d.system
+			s.history = nil
+			fmt.Printf("\033[2m(system: %s)\033[0m\n", short(s.system))
+		}
+		prevJSON := s.jsonOut
+		s.jsonOut = d.json
+		fmt.Printf("\033[1myou>\033[0m %s\n", d.prompt) // echo so viewers see the prompt
+		s.history = append(s.history, msg{"user", d.prompt})
+		if reply := s.generate(); reply != "" {
+			s.history = append(s.history, msg{"assistant", reply})
+		}
+		s.jsonOut = prevJSON // restore; the demo's json setting was one-shot
+	default:
+		fmt.Printf("unknown command %q — /help for the list\n", cmd)
+	}
+	return false
+}
+
+// effortLabel names an effort for display: "" is the template's own default.
+func effortLabel(e string) string {
+	if e == "" {
+		return "template default (medium)"
+	}
+	return e
+}
+
+func (s *session) printParams() {
+	fmt.Printf("temp=%.2f topK=%d topP=%.2f seed=%d max=%d json=%v thinking=%s effort=%s history=%d turns\nsystem: %s\n",
+		s.sp.Temperature, s.sp.TopK, s.sp.TopP, s.sp.Seed, s.maxTok, s.jsonOut, s.think, effortLabel(s.effort), len(s.history), short(s.system))
+}
+
+// buildPrompt renders system + history into the model's chat template via the
+// chat package (the family was resolved at load). With no recognized template it
+// falls back to a plain raw completion.
+func (s *session) buildPrompt() (prompt string, turns []chat.Turn, tm *chat.Template) {
+	system := strings.TrimSpace(s.system)
+	turns = make([]chat.Turn, len(s.history))
+	for i, m := range s.history {
+		turns[i] = chat.Turn{Role: m.role, Content: m.content}
+	}
+	// The model's own template, in the thinking mode the session is in (nil-safe: no template → nil). A JSON grammar governs
+	// the first token, so a prompt that ends inside an open think block would contradict it: render thinking-off.
+	tm = s.tmpl.WithThinking(s.think).WithReasoningEffort(s.effort)
+	if s.jsonOut && tm.PromptOpensThink() {
+		tm = tm.WithThinking(chat.ThinkOff)
+	}
+	if tm != nil {
+		return tm.Render(system, turns), turns, tm
+	}
+	return rawPrompt(system, turns), turns, nil
+}
+
+// rawPrompt is the unrecognized-template fallback: the conversation as plain
+// text for the model to continue (no special markers).
+func rawPrompt(system string, turns []chat.Turn) string {
+	var b strings.Builder
+	if system != "" {
+		b.WriteString(system + "\n\n")
+	}
+	for _, t := range turns {
+		b.WriteString(t.Content + "\n")
+	}
+	return b.String()
+}
+
+// jsonMasker constrains output to valid JSON via logit masking; EOS/end-of-turn
+// are gated until the document is complete.
+func (s *session) jsonMasker() func(generated []int, logits []float32) {
+	g := constrain.JSON()
+	if s.schema != nil { // --schema: constrain to the schema, not just well-formed JSON
+		if sg, err := constrain.JSONSchema(s.schema); err == nil {
+			g = sg
+		} else {
+			// N-78 (docs/audit-2026-09-10.md): main's flag parsing already fail-fasts (os.Exit) on
+			// an invalid --schema before s.schema is ever set, so this branch is unreachable today
+			// — but silently downgrading to the unconstrained JSON grammar here means a future
+			// caller that sets s.schema some other way (a reload, a per-request schema) would get a
+			// silently WEAKER constraint instead of an error, the exact shape constrain's own
+			// JSONSchema/GrammarFromStruct refuse to produce elsewhere. Say so instead of hiding it.
+			fmt.Fprintf(os.Stderr, "warning: schema failed to compile (%v); falling back to unconstrained JSON\n", err)
+		}
+	}
+	return s.grammarMasker(g)
+}
+
+// grammarMasker constrains output to grammar g via logit masking; EOS/end-of-turn are held back until the document is complete.
+// jsonMasker's grammar is the session's (--schema or plain JSON); --batch passes each line's own response_format.
+func (s *session) grammarMasker(g constrain.Grammar) func(generated []int, logits []float32) {
+	// N-71 (docs/audit-2026-09-10.md): EOS/EndOfTurn alone misses the template's own turn-stop
+	// ids (s.stopIDs, resolved from tmpl.Stops()) — Llama-3's <|eot_id|> and harmony's <|end|>
+	// are neither EOS nor EndOfTurn, so without stopIDs the masker never holds them back and a
+	// constrained JSON generation could emit one mid-document. internal/serveapp/openai.go's own
+	// masker already unions eosIDs with stopIDs; this mirrors that.
+	var eos []int
+	for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {
+		if id >= 0 {
+			eos = append(eos, id)
+		}
+	}
+	eos = append(eos, s.stopIDs...)
+	m := constrain.NewMasker(g, s.tokenBytes, eos).StopWhenComplete()
+	return m.Process
+}
+
+func completeUTF8Len(b []byte) int {
+	i := 0
+	for i < len(b) {
+		if b[i] < utf8.RuneSelf {
+			i++
+			continue
+		}
+		if !utf8.FullRune(b[i:]) {
+			break
+		}
+		_, size := utf8.DecodeRune(b[i:])
+		i += size
+	}
+	return i
+}
+
+func parseF(s string, def float64) float64 {
+	if v, err := strconv.ParseFloat(s, 64); err == nil {
+		return v
+	}
+	fmt.Printf("(bad number %q, keeping %v)\n", s, def)
+	return def
+}
+
+func parseI(s string, def int) int {
+	if v, err := strconv.Atoi(s); err == nil {
+		return v
+	}
+	fmt.Printf("(bad integer %q, keeping %v)\n", s, def)
+	return def
+}
+
+func short(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "(none)"
+	}
+	if len(s) > 100 {
+		return s[:97] + "..."
+	}
+	return s
+}
+
+// demo is a canned prompt so a live or recorded session can trigger a
+// known-good result with a couple of keystrokes instead of typing a long
+// prompt (and risking typos on camera). Run with /demo <n|name>.
+type demo struct {
+	name, system, prompt string
+	json                 bool   // one-shot JSON-constrained output for this prompt
+	tier                 string // "" / "fast" run great on the 0.5B; "big" flatter the 1.5B
+}
+
+var demos = []demo{
+	{
+		name:   "bug",
+		prompt: "What's the bug, and what's the fix?\n\nfunc Sum(xs []int) int {\n\ttotal := 0\n\tfor i := 1; i <= len(xs); i++ {\n\t\ttotal += xs[i]\n\t}\n\treturn total\n}",
+	},
+	{
+		name:   "dedup",
+		prompt: "Complete this function:\n\n// Dedup returns xs with duplicates removed, preserving first-seen order.\nfunc Dedup[T comparable](xs []T) []T {",
+	},
+	{
+		name:   "mutex",
+		prompt: "Write a thread-safe counter in Go using sync.Mutex. Code only, then one sentence.",
+	},
+	{
+		name:   "reverse",
+		prompt: "Write a Go function that reverses a slice of ints in place.",
+	},
+	{
+		name:   "fim",
+		prompt: "Fill in the body. Return only the completed function.\n\n// Clamp returns v limited to the range [lo, hi].\nfunc Clamp(v, lo, hi int) int {\n\t// <fill in>\n}",
+	},
+	{
+		name:   "range",
+		prompt: "Rewrite this loop to use range, keeping behavior identical:\n\nfor i := 0; i < len(items); i++ {\n\tfmt.Println(i, items[i])\n}",
+	},
+	{
+		name:   "json",
+		json:   true,
+		prompt: "Extract the name, version, and language as a JSON object from:\nken v0.4.0 — a fast Go code-search tool for agents",
+	},
+	// Bigger-model tier: multi-step bugs, small algorithms, concurrency, a
+	// conceptual answer, richer extraction — these flatter the 1.5B (and still run
+	// on the 0.5B). Kept brief: at ~20 tok/s a 400-token answer is ~20 s on screen.
+	{name: "race", tier: "big", prompt: "What's the bug and the fix?\n\nfunc main() {\n\tfor i := 0; i < 3; i++ {\n\t\tgo func() { fmt.Println(i) }()\n\t}\n\ttime.Sleep(time.Second)\n}"},
+	{name: "lru", tier: "big", prompt: "Implement an LRU cache in Go with O(1) Get and Put. Code only, brief."},
+	{name: "pool", tier: "big", prompt: "Write a worker pool in Go: N goroutines consume a jobs channel and send results on another channel, coordinated with sync.WaitGroup. Concise."},
+	{name: "test", tier: "big", prompt: "Write IsBalanced(s string) bool that checks balanced (), [], and {}, plus a table-driven test for it. Concise."},
+	{name: "niltl", tier: "big", prompt: "Explain the difference between a nil slice and an empty slice in Go, with a one-line example of each. Two sentences."},
+	{name: "wrap", tier: "big", prompt: "Write a Go function that opens a file and returns a wrapped error with %w, then show a caller using errors.Is. Concise."},
+	{name: "extract", json: true, prompt: "Extract repo, version, language, and license as a JSON object from:\nken v0.4.0 is an MIT-licensed Go code-search tool."},
+}
+
+// pickDemo resolves a /demo argument by 1-based index or by name.
+func pickDemo(arg string) (demo, bool) {
+	arg = strings.TrimSpace(arg)
+	if arg == "" {
+		return demo{}, false
+	}
+	if n, err := strconv.Atoi(arg); err == nil {
+		if n >= 1 && n <= len(demos) {
+			return demos[n-1], true
+		}
+		return demo{}, false
+	}
+	for _, d := range demos {
+		if strings.EqualFold(d.name, arg) {
+			return d, true
+		}
+	}
+	return demo{}, false
+}
+
+// firstLine renders a one-line preview of a (possibly multi-line) prompt.
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i] + " …"
+	}
+	if len(s) > 60 {
+		s = s[:57] + "..."
+	}
+	return s
+}
+
+const helpText = `commands:
+  /system <text>  set system prompt (steers the model) and reset history
+  /temp <f>       temperature (0 = greedy)      /topk <n>  top-k (0=off)
+  /topp <f>       nucleus (0=off)               /seed <n>  RNG seed
+  /max <n>        max tokens per reply          /json      toggle JSON-only output
+  /think <mode>   thinking: template | asis | on | off (no arg: show)
+  /effort <level> gpt-oss reasoning effort: low | medium | high (no arg: show)
+  /reset          clear conversation history    /params    show settings
+  /demos          list canned demo prompts      /demo <n>  run demo n (or by name)
+  /help           this list                     /quit      exit
+`
+
+// replyPrinter writes a reply as it streams: the reasoning dimmed and the answer in cyan on a terminal; in plain mode (R26) the answer alone on
+// stdout, uncoloured, with the reasoning (or its marker) on stderr — so `goinfer-chat -p ... > file` holds the answer and nothing else.
+type replyPrinter struct {
+	s                  *session
+	inThink, answering bool
+}
+
+func (p *replyPrinter) reasoningTo() io.Writer {
+	if !p.s.plain {
+		return p.s.stdout()
+	}
+	if p.s.errw != nil {
+		return p.s.errw
+	}
+	return os.Stderr
+}
+
+func (p *replyPrinter) reasoning(r string) {
+	w := p.reasoningTo()
+	if !p.inThink {
+		p.inThink = true
+		fmt.Fprint(w, p.s.sgr("\033[2m"))
+		if !p.s.showThinking {
+			fmt.Fprint(w, "(thinking…)")
+		}
+	}
+	if p.s.showThinking {
+		io.WriteString(w, r)
+	}
+}
+
+func (p *replyPrinter) chunk(c string) {
+	if p.inThink {
+		fmt.Fprint(p.reasoningTo(), p.s.sgr("\033[0m")+"\n\n")
+		p.inThink = false
+	}
+	if !p.answering {
+		fmt.Fprint(p.s.stdout(), p.s.sgr("\033[36m")) // cyan reply
+		p.answering = true
+	}
+	io.WriteString(p.s.stdout(), c)
+}
+
+// end closes the colour and the line after the last chunk.
+func (p *replyPrinter) end() { fmt.Fprint(p.s.stdout(), p.s.sgr("\033[0m")+"\n") }

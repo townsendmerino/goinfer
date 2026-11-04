@@ -15,7 +15,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // OP2b on CUDA, step 2c (docs/tasks/task-forward-architecture-2026-10.md §4.7): the sites that tested r.dnet read "recurrent", so a Mamba-2 resident is

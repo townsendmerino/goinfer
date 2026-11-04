@@ -2,7 +2,7 @@
 
 package metal
 
-import "github.com/townsendmerino/goinfer/internal/mem"
+import "github.com/townsendmerino/goinfer/internal/runtime/mem"
 
 // KS-D8 (docs/tasks/task-kernel-survey-2026-10.md, "KS-D8 design and gates"): a Mamba-2 layer in the batched prefill pass, in
 // D-B01's shape. in_proj and out_proj run as int8 prefill GEMMs over all M rows (gemm_w8f16_*, on the int8 codes and per-row

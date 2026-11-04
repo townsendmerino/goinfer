@@ -3,7 +3,7 @@
 
 package decoder
 
-import "github.com/townsendmerino/goinfer/internal/program"
+import "github.com/townsendmerino/goinfer/internal/runtime/program"
 
 type (
 	layerProgram     = program.Program

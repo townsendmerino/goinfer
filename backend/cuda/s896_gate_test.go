@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/loadflags"
+	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"

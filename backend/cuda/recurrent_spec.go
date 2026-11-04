@@ -9,7 +9,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // SP2's speculative verify on a Gated-DeltaNet resident (decoder.ResidentRecurrentSpec; design and gates in

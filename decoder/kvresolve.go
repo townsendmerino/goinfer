@@ -3,7 +3,7 @@ package decoder
 import (
 	"fmt"
 
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // The KV precision a load delivers (docs/tasks/task-kv-precision-everywhere-2026-10.md, phase 0). ResolveKV is the one answer every

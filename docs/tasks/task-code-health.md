@@ -115,7 +115,7 @@ history against which anyone could later establish what it contained.) Cheap to 
 but not a drive-by.
 
 One extract-method (`generate` in `decoder/blockspec.go`, 7 lines, −2 CCN) and one move-method
-(`server.serveChatText` → `loadedModel`, both in `internal/serveapp/openai.go`, uses 7 foreign vs
+(`server.serveChatText` → `loadedModel`, both in `internal/app/serveapp/openai.go`, uses 7 foreign vs
 0 own members) are genuinely trivial and unconstrained.
 
 ### 3.3 · `decoder/kvsnapshot.go` — the strongest predictor in the set

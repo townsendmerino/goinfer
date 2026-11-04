@@ -144,12 +144,12 @@ Thin, and explicitly not an assistant:
 
 ## Sources
 
-`internal/serveapp/openai.go` (`completionReq` — `Model`/`Prompt`/`Stream`/`Logprobs`, no `suffix`) ·
+`internal/app/serveapp/openai.go` (`completionReq` — `Model`/`Prompt`/`Stream`/`Logprobs`, no `suffix`) ·
 `chat/tools.go` (`ToolCallWrapper` — the per-family shape `FIMWrapper` mirrors) ·
 `chat/templates.go` (`mellum2`, registered as a chat template) ·
 Mellum2's own `tokenizer_config.json` (a gitignored local test-fixture slice — the FIM tokens, already special) ·
-`decoder/resident_reuse.go`, `internal/serveapp/sessions.go` (the LCP reuse §3 depends on) ·
-`internal/serveapp/main.go` (`-kv-sessions`) ·
+`decoder/resident_reuse.go`, `internal/app/serveapp/sessions.go` (the LCP reuse §3 depends on) ·
+`internal/app/serveapp/main.go` (`-kv-sessions`) ·
 [`task-halt-2026-09.md`](task-halt-2026-09.md) K1 (cancel-by-id, F3's debounce mechanism) ·
 [`task-turn-telemetry-2026-09.md`](task-turn-telemetry-2026-09.md) X7, X2/X8 ·
 `docs/integrations/` (the two recipes F2 joins)

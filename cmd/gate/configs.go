@@ -13,7 +13,7 @@ func heavyConfig() *gateConfig {
 	models := env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))
 	run := env("GOINFER_HEAVY_RUN", "")
 	timeout := env("GOINFER_HEAVY_TIMEOUT", "120m")
-	pkgs := strings.Fields(env("GOINFER_HEAVY_PKGS", "./decoder/ ./internal/serveapp/"))
+	pkgs := strings.Fields(env("GOINFER_HEAVY_PKGS", "./decoder/ ./internal/app/serveapp/"))
 
 	cells := make([]cell, 0, len(pkgs))
 	for _, p := range pkgs {

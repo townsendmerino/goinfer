@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // Windowed KV (docs/tasks/task-cuda-windowed-kv-2026-10.md). A sliding-window layer reads only the last `window` positions, so with

@@ -1,6 +1,6 @@
 package decoder
 
-import "github.com/townsendmerino/goinfer/internal/mem/probe"
+import "github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 
 // HostRAMBytes is this machine's physical RAM, or 0 when it cannot be determined; 0 is a real answer that every caller
 // must treat as "proceed", never as "no memory". Read once per process. Inside a container with a cgroup memory limit it

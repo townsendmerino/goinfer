@@ -7,7 +7,7 @@ package metal
 
 import (
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // Every device created in a process that links this package leases its MTLBuffers to a mem.Ledger (MM3), whichever package

@@ -1,4 +1,4 @@
-# internal/scheduler: design notes
+# internal/runtime/scheduler: design notes
 
 The package's contract is in its `doc.go`. This file holds the design: why it has this shape, what it does not decide,
 and where its evidence lives. Plan: `docs/tasks/task-subsystems-2026-10.md` §8, SB6. Background:
@@ -6,11 +6,11 @@ and where its evidence lives. Plan: `docs/tasks/task-subsystems-2026-10.md` §8,
 
 ## Why decisions over plain values
 
-The policy used to live in `internal/serveapp` beside the HTTP code, where the only way to see an ordering was to run
+The policy used to live in `internal/app/serveapp` beside the HTTP code, where the only way to see an ordering was to run
 the server. Here it takes numbers and token lists and returns indices and booleans, so the census can replay recorded
 traces on a virtual clock, and a future policy (J7's classes and deadlines, RF's batch building) can be tried against
 the same traces before anything loads a model. What it cannot hold stays in the server: the session LRU's sessions and
-their disk tier (`internal/serveapp/sessions.go:sessionLRU`), the halt state, jobs and batches.
+their disk tier (`internal/app/serveapp/sessions.go:sessionLRU`), the halt state, jobs and batches.
 
 ## Admission
 
@@ -48,5 +48,5 @@ server takes it in place, cut back to the shared rows, and saves the copy.
 - **Classes, priorities, deadlines (J7).** Not built. The census traces carry each request's session, class and
   deadline next to the FIFO order, so a policy that uses them shows its whole effect as a golden diff, which needs
   Francis's word.
-- **The resident GPU slots.** `internal/kvmgr`'s `PickSlotFor` places a request on a GPU KV slot; it is the same kind of
+- **The resident GPU slots.** `internal/runtime/kvmgr`'s `PickSlotFor` places a request on a GPU KV slot; it is the same kind of
   decision over plain values, already outside the HTTP package.

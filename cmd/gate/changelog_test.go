@@ -33,11 +33,11 @@ func writeTree(t *testing.T, root string, files map[string]string) {
 
 func baseFiles() map[string]string {
 	return map[string]string{
-		"internal/serveapp/routes.go":      serveSrc,
-		"internal/serveapp/routes_test.go": `package serveapp; func x(m *mux) { m.HandleFunc("GET /v1/only-in-a-test", nil) }`,
-		"docs/flags.meta.json":             `{"flags":[{"name":"model"},{"name":"old-flag"}]}`,
-		"docs/capability-matrix.json":      `[{"name":"llama","display_name":"Llama","model_types":["llama"]}]`,
-		"go.mod":                           "module x\n\nrequire (\n\tgithub.com/townsendmerino/aikit v1.60.0\n)\n",
+		"internal/app/serveapp/routes.go":      serveSrc,
+		"internal/app/serveapp/routes_test.go": `package serveapp; func x(m *mux) { m.HandleFunc("GET /v1/only-in-a-test", nil) }`,
+		"docs/flags.meta.json":                 `{"flags":[{"name":"model"},{"name":"old-flag"}]}`,
+		"docs/capability-matrix.json":          `[{"name":"llama","display_name":"Llama","model_types":["llama"]}]`,
+		"go.mod":                               "module x\n\nrequire (\n\tgithub.com/townsendmerino/aikit v1.60.0\n)\n",
 	}
 }
 
@@ -85,7 +85,7 @@ func states(t *testing.T) (base, head *clState) {
 		t.Fatal(err)
 	}
 	h2 := baseFiles()
-	h2["internal/serveapp/routes.go"] = serveSrc + `
+	h2["internal/app/serveapp/routes.go"] = serveSrc + `
 func (s *server) more(mux *mux) {
 	mux.HandleFunc("POST /v1/audio/transcriptions", s.tr)
 	mux.HandleFunc("POST /v1/batches", s.b)
@@ -205,7 +205,7 @@ func TestRunChangelog_throughAGitRepo(t *testing.T) {
 	gitIn(t, dir, "commit", "-q", "-m", "release")
 	gitIn(t, dir, "tag", "v0.1.0")
 	head := baseFiles()
-	head["internal/serveapp/routes.go"] = serveSrc + "func (s *server) m(mux *mux) { mux.HandleFunc(\"POST /v1/new\", nil) }\n"
+	head["internal/app/serveapp/routes.go"] = serveSrc + "func (s *server) m(mux *mux) { mux.HandleFunc(\"POST /v1/new\", nil) }\n"
 	writeTree(t, dir, head)
 	gitIn(t, dir, "add", ".")
 	gitIn(t, dir, "commit", "-q", "-m", "a route")

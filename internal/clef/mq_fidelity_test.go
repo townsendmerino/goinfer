@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/modelload"
+	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 )
 
 // The multi-question run harness (D13 addendum, decisions-d13-clef-multiquestion-2026-10-03.md): goinfer's Clef pipeline over the five-question records scripts/pin_clef_mq.py built

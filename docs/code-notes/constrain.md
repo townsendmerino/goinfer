@@ -52,7 +52,7 @@ other run of bytes, and a real control-token id can leak into constrained output
 were content. Fixing this needs a DIFFERENT semantics than eosIDs: eosIDs are masked only
 UNTIL canEnd, but a control token must be forbidden ALWAYS, everywhere, including mid-
 string — that is new plumbing (an always-forbidden id set threaded through NewMasker and
-every call site: internal/serveapp/openai.go, internal/chatapp/main.go,
+every call site: internal/app/serveapp/openai.go, internal/app/chatapp/main.go,
 demo/agent/agent/agent.go, plus a tokenizer-side way to enumerate "special/control ids"
 uniformly across byte-level/SentencePiece/WordPiece modes — isAdded exists but is
 unexported and not obviously complete for this purpose), not a local fix to this function.

@@ -7,6 +7,10 @@ A map of the tree. Paths are relative to the repository root; every row was chec
 - `cuda/` -> `backend/cuda/` (`module github.com/townsendmerino/goinfer/cuda` -> `github.com/townsendmerino/goinfer/backend/cuda`)
 - `metal/` -> `backend/metal/` (`module github.com/townsendmerino/goinfer/metal` -> `github.com/townsendmerino/goinfer/backend/metal`)
 - `gpu/` -> `backend/webgpu/` (`module github.com/townsendmerino/goinfer/gpu` -> `github.com/townsendmerino/goinfer/backend/webgpu`, `package gpu` -> `package webgpu`)
+- `internal/{serveapp,chatapp,cliutil,fitcmd,decidecmd,pullcmd,inproc,connect,loadflags}` -> `internal/app/<pkg>` (package clause unchanged)
+- `internal/{swapguard,prezerolint,paritykey,movedpaths,servecheck,memgate}` -> `internal/guard/<pkg>` (package clause unchanged)
+- `internal/{hwcensus,hwreport,kernelprint,sb2census,towerid}` -> `internal/diag/<pkg>` (package clause unchanged)
+- `internal/{giw,mem,kvmgr,f16,mamba2,whisper,scheduler,adapter,hybridattn,program,modelload,prequant,diskfree,sampling}` -> `internal/runtime/<pkg>` (`internal/mem/probe` -> `internal/runtime/mem/probe`; package clause unchanged)
 
 ## Modules and the workspace
 
@@ -43,7 +47,7 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 | `multimodal/` | vision and audio towers and preprocessing |
 | `embeddinggemma2/` | the EmbeddingGemma 2 text encoder |
 | `pull/` | resumable checkpoint download from HuggingFace |
-| `internal/` | packages private to the root module (45 of them: guards, codecs, scheduler, census and fit logic, the app wiring behind `cmd/`); `internal/layout` holds repository-shape checks as tests |
+| `internal/` | packages private to the root module, grouped under `internal/app/` (CLI/server apps and wiring), `internal/guard/` (lint/CI/memory/parity guards), `internal/diag/` (hardware census and reports), and `internal/runtime/` (execution, memory, KV, scheduler, model loading, sampling, and runtime kernels), plus top-level domain packages (`audio`, `batchio`, `clef`, `codec`, `confidence`, `config`, `cost`, `decide`, `fidelity`, `layout`, `vision`, `wrappedupload`); `internal/layout` holds repository-shape checks as tests |
 
 ## GPU backend modules
 

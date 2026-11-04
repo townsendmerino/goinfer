@@ -3,7 +3,7 @@
 package cuda
 
 import (
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"slices"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"

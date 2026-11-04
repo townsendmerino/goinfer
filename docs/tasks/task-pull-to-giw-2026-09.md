@@ -5,7 +5,7 @@
 > format?" The facts below were checked against `main` at `fe970d7c`. Four decisions are the owner's (§ Decisions).
 
 > **Review 2026-10-05 (checked against `main`, `338789c6`): still LIVE, still not started beyond P0, but the facts under it had moved. Corrections are marked "[2026-10-05]" beside each claim they change.**
-> - **P0 is done** (`internal/prequant/projected.go`). **P1-P3 are not started**: no `--keep-gguf`, no provenance record, no `.giw.json`; `pull` still "deliberately does NOT convert" (`pull/pull.go`). The four decisions are still the owner's and still open.
+> - **P0 is done** (`internal/runtime/prequant/projected.go`). **P1-P3 are not started**: no `--keep-gguf`, no provenance record, no `.giw.json`; `pull` still "deliberately does NOT convert" (`pull/pull.go`). The four decisions are still the owner's and still open.
 > - **The sidecar name and sizes changed.** The default int4 sidecar is `<base>.int4.e4h.<target>.giw` (int4 embedding and head, the default since 2026-09-28), and the `.giw` int4 scales became binary16 (v15) on 2026-09-28. The size table below predates both: measured now on this box, the default sidecar is 0.73x (0.5B), 0.90x (1.5B), 0.92x (7B), 0.89x (9B), 0.96x (Gemma 4 12B) of its `.gguf`.
 >   A default pulled model therefore costs about 1.7-1.9x its download, not 2.0-2.2x, and deleting the `.gguf` still saves about half.
 > - **Sidecars accumulate, which this proposal did not model.** This box has 14 `.gguf` files with sidecars: 122.7 GB of `.gguf` and **275.0 GB of sidecars (2.24x)**, up to six per `.gguf` (quant x target x head variants, plus f32 and int8int8 experiments), on a `/home` at 97%. This is a developer box, not a typical user's, but it says the larger reclaim may be pruning stale sidecars (P3 below) rather than deleting the `.gguf`.
@@ -59,7 +59,7 @@ is dead weight until someone asks for a different quant or backend layout.
   happens on first load.
 
 **The conversion (`prequant.EnsureCachedGIW` → `StreamTranscodeGGUF`)**
-- It writes `<base>.<quant>.<target>.giw` next to the `.gguf`, one layer at a time. **[2026-10-05: by default `<base>.int4.e4h.<target>.giw`; the `e4h` segment marks int4 embedding and head, so a sidecar built with an int8 head before 2026-09-28 is never mistaken for it (`internal/prequant/prequant.go`).]**
+- It writes `<base>.<quant>.<target>.giw` next to the `.gguf`, one layer at a time. **[2026-10-05: by default `<base>.int4.e4h.<target>.giw`; the `e4h` segment marks int4 embedding and head, so a sidecar built with an int8 head before 2026-09-28 is never mistaken for it (`internal/runtime/prequant/prequant.go`).]**
   - The quant comes from `--quant` (default `int4`).
   - The target comes from `--backend` via `GIWTargetForBackend`: `cpu` maps to `cpu-amd64` or `cpu-arm64`, and `metal`,
     `cuda` and `webgpu` map to their own names. **[2026-10-05: on arm64, `cpu` maps to `cpu-arm64` only on a core that can read that layout (DotProd); a core without it (Raspberry Pi 4, Windows on ARM before aikit v1.56.0) gets the canonical target, because the old mapping wrote a sidecar its own loader refused and rebuilt it on every start.]** `cpu-amd64` and `cuda` currently write byte-identical files.

@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // A dense projection is planned while the build walks the layers and packed while it uploads. planWeight makes packWeight's accept-or-decline

@@ -39,11 +39,11 @@ N-26 moved TurnImage's turn to EncodeSegments (correct — the check above), but
 placeholder block was glued into the turn's plain text and rendered as part of a non-Special
 segment, so it got BPE'd as literal text instead of parsed into the real image tokens, and
 FindImageRun always found no run ("image placeholder run = 0"). The serving path hit the
-identical gap and was fixed with spliceImageBlock (M-22, internal/serveapp/vision_serve.go);
+identical gap and was fixed with spliceImageBlock (M-22, internal/app/serveapp/vision_serve.go);
 this pins the same fix ported into this package (unreachable directly — separate module,
 unexported).
 
-Mirrors internal/serveapp/vision_hardening_test.go's TestVision_userTextIsNotSpecialButTheImageBlockIs:
+Mirrors internal/app/serveapp/vision_hardening_test.go's TestVision_userTextIsNotSpecialButTheImageBlockIs:
 asserts segment SHAPE, not token ids, so it needs no tokenizer or model.
 ```
 
@@ -57,7 +57,7 @@ this package's ported copy of spliceImageBlock. It used to splice the FIRST non-
 containing the block, anywhere in the rendered history — an earlier turn that happens to contain
 the literal block text as ordinary words would get spliced instead of the real current image
 turn, reopening the special-token-forging class V-03/M-22 closed. Mirrors
-internal/serveapp/vision_hardening_test.go's TestVision_spliceUsesTheLastOccurrenceNotTheFirst.
+internal/app/serveapp/vision_hardening_test.go's TestVision_spliceUsesTheLastOccurrenceNotTheFirst.
 ```
 
 ## TestStreamGen_matchesWholeSequenceDecode
@@ -91,7 +91,7 @@ read that cached field rather than touching the tokenizer again.
 Proven by nil-ing s.tk AFTER building s.tokenBytes by hand (mirroring newSession's own one-line
 wiring) and confirming schemaMasker still runs: if it still called s.tk.TokenText, this would
 panic on the nil pointer instead of silently passing. No committed fixture pairs a real
-tokenizer with a loadable model (internal/serveapp/prefillpath_test.go's tinyServed notes the
+tokenizer with a loadable model (internal/app/serveapp/prefillpath_test.go's tinyServed notes the
 same gap), so newSession's own construction isn't exercised end-to-end here — its wiring is the
 one-line `s.tokenBytes = constrain.TokenBytes(...)` this test's setup mirrors exactly.
 ```
@@ -106,7 +106,7 @@ held back EOS/EndOfTurn, not the chat template's own turn-stop ids (s.stopIDs) �
 <|eot_id|> and harmony's <|end|> are neither, so a constrained DECIDE turn for those families
 could emit the real stop token mid-document instead of it being masked. A held-back id must be
 masked to -Inf before the grammar can end (an empty document is not valid JSON yet, so CanEnd
-is false here) — internal/serveapp/openai.go's own masker already unions eosIDs with stopIDs;
+is false here) — internal/app/serveapp/openai.go's own masker already unions eosIDs with stopIDs;
 this pins the demo doing the same.
 
 The stop id's own surface MUST be a byte the grammar would otherwise accept here (decisionSchema

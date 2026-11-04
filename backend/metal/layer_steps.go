@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/townsendmerino/goinfer/internal/program"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // Metal's names for internal/program's sublayers (OP4cu-b2 moved the derivation there, from this file): a layer's steps are its

@@ -16,7 +16,7 @@ import (
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem/probe"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
 // kse2Run compiles code and dispatches it over wg workgroups with the bindings in order: ins (read storage, as words), then

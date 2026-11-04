@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
 // sidecarHostRAM is the installed-memory probe markWritten compares a bundle and its source with.

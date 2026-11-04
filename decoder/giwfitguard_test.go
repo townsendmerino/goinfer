@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
 // S4 item 1 of docs/tasks/task-never-swap-2026-09.md: a .giw load's weights are file-backed (fitCheckFor is never

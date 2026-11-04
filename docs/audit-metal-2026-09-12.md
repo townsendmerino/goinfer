@@ -735,7 +735,7 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/backend.go:262-221` (`metalMoESlotsRequest`: flag or env only; 0 ⇒ unpaged),
   `metal/moe.go:681-683`, `metal/backend.go:416-295` (guard prices the *unpaged* set when slots are
   unset, declines to CPU; the message names `GOINFER_NO_RESIDENT_MEM_GUARD` but not
-  `--moe-cache-slots`); `internal/loadflags/loadflags.go:276` (`--moe-cache-experts` … "CUDA only"),
+  `--moe-cache-slots`); `internal/app/loadflags/loadflags.go:276` (`--moe-cache-experts` … "CUDA only"),
   `:488` ("Metal: every expert resident, unpaged"); `docs/benchmarks.md:1698-1708` ("falls back
   automatically to a CPU-staged … path … killed after 2h10min with zero completions");
   `docs/completed/task-metal-expert-streaming-at-scale.md:288-291` (recommendation: default N=64).
@@ -764,7 +764,7 @@ re-baked by the code it checks (G-04).
   the real paging engagement, and the CLI's own advertised default all at once. Also named
   `--moe-cache-slots`/`--moe-cache-experts` in the decline message for an MoE model that doesn't
   fit, and corrected `--moe-cache-experts`'s "CUDA only" / `--moe-cache-slots`'s "Metal: every
-  expert resident, unpaged" CLI help text (`internal/serveapp/main.go`) — plus, found in the same
+  expert resident, unpaged" CLI help text (`internal/app/serveapp/main.go`) — plus, found in the same
   spot, a stale "DEFAULT ON above 512 tokens" that M-02 had already moved to 256.
   <br>The pure formula (`autoMoESlotsFor`) is split out for direct unit testing against a
   deliberately small `ram` value, mirroring `fitsResidentBudget`'s own established pattern — no
@@ -778,7 +778,7 @@ re-baked by the code it checks (G-04).
   `TestMoeTopK_realFixtures`, `TestMetalMoESlotsRequest_autoOnlyWithCacheExperts` (confirmed red
   without the fix: `metalMoESlotsRequest` returned `""` with `MoECacheExperts` set). Verified:
   `go test ./metal/` (85 pass), `-tags goinfer_testhooks` (137 pass), `go test
-  ./internal/serveapp/...`, gofmt/vet/staticcheck clean.
+  ./internal/app/serveapp/...`, gofmt/vet/staticcheck clean.
 
 #### M-14 · The residency set rides on every command buffer because aikit's binding has `Queue.AddResidencySet` but not `MTLCommandBuffer.useResidencySet:` — a recorded +62 ms/token waiting on one selector (aikit item)
 - **Where:** aikit `residencyset.go:108-109` (only the queue-level attach; `:22-29` lists five
@@ -825,7 +825,7 @@ re-baked by the code it checks (G-04).
 ### D. Cross-repo and unassessed
 
 #### M-15 · On a Metal box every image turn runs the vision tower on the CPU, and aikit's Metal tower cannot be wired as a win until three shapes change (aikit M-14/M-09/M-10 Metal halves)
-- **Where:** `internal/serveapp/main.go:1109-1180` (`EnableResident` only for `webgpu`; nothing imports
+- **Where:** `internal/app/serveapp/main.go:1109-1180` (`EnableResident` only for `webgpu`; nothing imports
   `visionmetal`/`qwenmetal`); aikit `metal_vit.go:168-221` (attention: one threadgroup per
   (head, query), re-streams K and V per query — no query tile; score lanes 4,608 B apart; PV keeps
   hd=72 of 256 lanes busy), `:397-420` (`gemm_w8a8_tiled`: one output per thread, byte-granular
@@ -891,7 +891,7 @@ re-baked by the code it checks (G-04).
   parity-gate baseline, which needs a measurement pass on real hardware and real shapes, not a
   decision folded silently into the kernel's own landing.
   <br>**NOT done:** (a) goinfer-side wiring (`EnableResident` for `cfg.backend == "metal"` in
-  `internal/serveapp/main.go`, both the generic `vision.Encoder` path AND the separate
+  `internal/app/serveapp/main.go`, both the generic `vision.Encoder` path AND the separate
   `loadQwenVisionTower`, which never calls `EnableResident` on any backend today) — blocked on a
   fresh `gpu/vX.Y.Z` release bundling the three commits above, the same release ritual C-05/C-06/
   G-06 already went through this session; (b) the crossover measurement itself, since this
@@ -1593,10 +1593,10 @@ re-baked by the code it checks (G-04).
   warm-cache for the same reason.
 - N-38 `metal/prefill_ttft_test.go:80` — the first `PrefillLast` (P=256) includes the one-time compile;
   the L2 record's P=256 row carries it in both arms.
-- N-39 `internal/serveapp/openai.go:1532-1351` — comment says adapter requests "drop to the staged
+- N-39 `internal/app/serveapp/openai.go:1532-1351` — comment says adapter requests "drop to the staged
   path"; since G3 they reach the resident path on a `prefillFrom == 0` turn. Later-turn behaviour
   (`decoder/session.go`) not in tree. **FIXED 2026-09-13** — rewrote the three comments describing
-  adapter routing (`internal/serveapp/openai.go:1532-1358,753-757,844-847`) to say what  `decoder/model.go:1801`'s actual chokepoint (`useGPU := m.resident != nil && prefillFrom == 0 &&
+  adapter routing (`internal/app/serveapp/openai.go:1532-1358,753-757,844-847`) to say what  `decoder/model.go:1801`'s actual chokepoint (`useGPU := m.resident != nil && prefillFrom == 0 &&
   (commit == nil || (lora != nil && resAdapter != nil))`) does: a session's FIRST turn
   (`prefillFrom==0`) with a bound resident adapter reaches the resident GPU path; a later turn on
   the same session (`prefillFrom>0`, continuing off the reused warm prefix) still drops to CPU,

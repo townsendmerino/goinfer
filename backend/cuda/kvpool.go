@@ -9,7 +9,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // Paged KV storage (docs/tasks/task-kv-architecture-2026-10.md §5.3, KV4). Every layer that keeps K/V holds them in a pool of

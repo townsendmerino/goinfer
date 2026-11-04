@@ -138,7 +138,7 @@ different number of dimensions. **Bring-up gate** is Granite-4.0-H's parity brin
 **Phi-3 / Phi-4: the table reads one configuration, and a default load picks another.** The activation
 hazard is the per-row int8 activation scale (`decoder/actquant_hazard.go:ActivationQuantHazard`), and the table reads
 the configuration that has it. The loader picks one that does not
-(`internal/modelload/modelload.go:activationSafeQuant`):
+(`internal/runtime/modelload/modelload.go:activationSafeQuant`):
 
 - **CUDA:** a GGUF loads at `--quant q4k` by default and runs resident. Any other source loads at int8int8 with
   per-32 activation scales, which CUDA's residency also implements.

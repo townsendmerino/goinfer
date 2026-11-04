@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/hybridattn"
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // TestDeltaNetKernels_cpuParity is the Metal twin of cuda.TestDeltaNetKernels_cpuParity — same

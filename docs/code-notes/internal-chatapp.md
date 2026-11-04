@@ -1,13 +1,13 @@
-# internal/chatapp: notes moved out of code comments
+# internal/app/chatapp: notes moved out of code comments
 
-History, measurements and open work that used to sit in the comments of `internal/chatapp`, moved here verbatim by the comment diet
+History, measurements and open work that used to sit in the comments of `internal/app/chatapp`, moved here verbatim by the comment diet
 (`docs/tasks/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
 its guardrails, and points here by heading. This file is off the read path: open it when a pointer sends you. Text is unedited,
 except that a `file.go:NNN` reference inside it names the declaration instead (the line numbers had already gone stale).
 
 ## TestExactPrefillFlag_realBinaryParses
 
-Moved from `internal/chatapp/fitflag_test.go` (the comment above `TestExactPrefillFlag_realBinaryParses`) on 2026-10-09.
+Moved from `internal/app/chatapp/fitflag_test.go` (the comment above `TestExactPrefillFlag_realBinaryParses`) on 2026-10-09.
 
 ```text
 TestExactPrefillFlag_realBinaryParses is M-26 (audit-2026-09-10): chatapp had no --exact-prefill
@@ -19,7 +19,7 @@ but not defined"), not just present in source. --version exits before touching a
 
 ## TestChatImage_demoEndToEnd
 
-Moved from `internal/chatapp/image_test.go` (the comment above `TestChatImage_demoEndToEnd`) on 2026-10-09.
+Moved from `internal/app/chatapp/image_test.go` (the comment above `TestChatImage_demoEndToEnd`) on 2026-10-09.
 
 ```text
 TestChatImage_demoEndToEnd is the one-line demo, on the real checkpoint: the real goinfer-chat binary (pure Go, CPU,
@@ -32,19 +32,19 @@ model reading the page.
 
 ## TestLoadFlags_realBinaryParses
 
-Moved from `internal/chatapp/loadflags_test.go` (the comment above `TestLoadFlags_realBinaryParses`) on 2026-10-09.
+Moved from `internal/app/chatapp/loadflags_test.go` (the comment above `TestLoadFlags_realBinaryParses`) on 2026-10-09.
 
 ```text
 TestLoadFlags_realBinaryParses: chat had no --ctx, --stream-weights or --moe-cache-experts/
 --moe-cache-slots, and a cold-user run reached for --moe-cache-experts and got "flag provided but
-not defined". They are internal/loadflags' now, registered for both binaries; this proves the REAL
+not defined". They are internal/app/loadflags' now, registered for both binaries; this proves the REAL
 flag.CommandLine carries them (--version exits before touching a model, the same discipline as
 TestExactPrefillFlag_realBinaryParses).
 ```
 
 ## TestRepl_plainWhenScripted
 
-Moved from `internal/chatapp/plain_test.go` (the comment above `TestRepl_plainWhenScripted`) on 2026-10-09.
+Moved from `internal/app/chatapp/plain_test.go` (the comment above `TestRepl_plainWhenScripted`) on 2026-10-09.
 
 ```text
 R26 (docs/completed/task-first-hour.md): piped stdin used to print a banner, a `you>` label, ANSI escapes and a trailing `bye`. Through the REPL loop
@@ -53,7 +53,7 @@ itself (the caller of every one of those prints) a scripted session must print t
 
 ## TestServeOnlyInvocation
 
-Moved from `internal/chatapp/serveonly_test.go` (the comment above `TestServeOnlyInvocation`) on 2026-10-09.
+Moved from `internal/app/chatapp/serveonly_test.go` (the comment above `TestServeOnlyInvocation`) on 2026-10-09.
 
 ```text
 Cold-user run 2026-09-06, scenario B, 06:37:23 — the tester's FIRST error of that leg, and the
@@ -65,16 +65,16 @@ the released binary was broken and went hunting through pkg.go.dev for a server.
 
 ## TestServeOnlyInvocation.shared
 
-Moved from `internal/chatapp/serveonly_test.go` (the comment above `TestServeOnlyInvocation.shared`) on 2026-10-09.
+Moved from `internal/app/chatapp/serveonly_test.go` (the comment above `TestServeOnlyInvocation.shared`) on 2026-10-09.
 
 ```text
---stream-weights was serve-only and redirected here; since internal/loadflags it is chat's own
+--stream-weights was serve-only and redirected here; since internal/app/loadflags it is chat's own
 flag too, so it must now fall through to chat (the cold-user run's dead end, closed the other way).
 ```
 
 ## TestServeOnlyInvocation.flagvalue
 
-Moved from `internal/chatapp/serveonly_test.go` (the comment above `TestServeOnlyInvocation.flagvalue`) on 2026-10-09.
+Moved from `internal/app/chatapp/serveonly_test.go` (the comment above `TestServeOnlyInvocation.flagvalue`) on 2026-10-09.
 
 ```text
 N-77 (docs/audit-2026-09-10.md): every argv token used to be checked uniformly, with no
@@ -85,7 +85,7 @@ wrongly triggered the redirect.
 
 ## TestStreamGen_matchesWholeSequenceDecode
 
-Moved from `internal/chatapp/streamgen_test.go` (the comment above `TestStreamGen_matchesWholeSequenceDecode`) on 2026-10-09.
+Moved from `internal/app/chatapp/streamgen_test.go` (the comment above `TestStreamGen_matchesWholeSequenceDecode`) on 2026-10-09.
 
 ```text
 TestStreamGen_matchesWholeSequenceDecode is P-17's deferred demo half (audit-2026-09-10):
@@ -102,7 +102,7 @@ token channel directly).
 
 ## TestJSONMasker_reusesCachedTokenBytes
 
-Moved from `internal/chatapp/tokenbytes_test.go` (the comment above `TestJSONMasker_reusesCachedTokenBytes`) on 2026-10-09.
+Moved from `internal/app/chatapp/tokenbytes_test.go` (the comment above `TestJSONMasker_reusesCachedTokenBytes`) on 2026-10-09.
 
 ```text
 TestJSONMasker_reusesCachedTokenBytes is P-17's demo half (audit-2026-09-10): jsonMasker used to
@@ -114,7 +114,7 @@ jsonMasker must read that cached field rather than touching the tokenizer again.
 Proven by nil-ing s.tk AFTER building s.tokenBytes by hand (mirroring newSession's own one-line
 wiring) and confirming jsonMasker still runs: if it still called s.tk.TokenText, this would
 panic on the nil pointer instead of silently passing. No committed fixture pairs a real
-tokenizer with a loadable model (internal/serveapp/prefillpath_test.go's tinyServed notes the
+tokenizer with a loadable model (internal/app/serveapp/prefillpath_test.go's tinyServed notes the
 same gap: "the committed tiny GGUF carries no embedded tokenizer"), so newSession's own
 construction isn't exercised end-to-end here — its wiring is the one-line
 `s.tokenBytes = constrain.TokenBytes(...)` this test's setup mirrors exactly.
@@ -122,7 +122,7 @@ construction isn't exercised end-to-end here — its wiring is the one-line
 
 ## TestJSONMasker_holdsBackTemplateStopIDs
 
-Moved from `internal/chatapp/tokenbytes_test.go` (the comment above `TestJSONMasker_holdsBackTemplateStopIDs`) on 2026-10-09.
+Moved from `internal/app/chatapp/tokenbytes_test.go` (the comment above `TestJSONMasker_holdsBackTemplateStopIDs`) on 2026-10-09.
 
 ```text
 TestJSONMasker_holdsBackTemplateStopIDs is N-71 (docs/audit-2026-09-10.md): jsonMasker only
@@ -130,13 +130,13 @@ held back EOS/EndOfTurn, not the chat template's own turn-stop ids (s.stopIDs) �
 <|eot_id|> and harmony's <|end|> are neither, so a constrained generation for those families
 could emit the real stop token mid-document instead of it being masked. A held-back id must
 be masked to -Inf before the grammar can end (an empty document is not valid JSON yet, so
-CanEnd is false here) — internal/serveapp/openai.go's own masker already unions eosIDs with
+CanEnd is false here) — internal/app/serveapp/openai.go's own masker already unions eosIDs with
 stopIDs; this pins the demo doing the same.
 ```
 
 ## TestJSONMasker_warnsOnUnreachableSchemaCompileFailure
 
-Moved from `internal/chatapp/tokenbytes_test.go` (the comment above `TestJSONMasker_warnsOnUnreachableSchemaCompileFailure`) on 2026-10-09.
+Moved from `internal/app/chatapp/tokenbytes_test.go` (the comment above `TestJSONMasker_warnsOnUnreachableSchemaCompileFailure`) on 2026-10-09.
 
 ```text
 TestJSONMasker_warnsOnUnreachableSchemaCompileFailure is N-78 (docs/audit-2026-09-10.md):
@@ -151,7 +151,7 @@ stderr rather than swallowed.
 
 ## TestEmbedBuild_versionReportsWhatWasActuallyBaked
 
-Moved from `internal/chatapp/version_prequant_test.go` (the comment above `TestEmbedBuild_versionReportsWhatWasActuallyBaked`) on 2026-10-09.
+Moved from `internal/app/chatapp/version_prequant_test.go` (the comment above `TestEmbedBuild_versionReportsWhatWasActuallyBaked`) on 2026-10-09.
 
 ```text
 R6 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): the release's embedded-tier chat
@@ -161,7 +161,7 @@ regardless of build. This is the "help text default equals runtime default" gate
 the --version line rather than rewriting the shared flag text: it must state whatever was
 actually baked in, not the --model flag's unrelated default.
 
-Requires -tags prequant AND internal/chatapp/model.giw staged (build-embed.sh's own build
+Requires -tags prequant AND internal/app/chatapp/model.giw staged (build-embed.sh's own build
 input, gitignored, not committed) — that is why this file is build-tag gated rather than
 part of the always-built version_test.go: a plain `go test ./...` must not need a 600+ MB
 local asset to pass.
@@ -169,7 +169,7 @@ local asset to pass.
 
 ## TestEmbedBuild_versionReportsWhatWasActuallyBaked.mutation
 
-Moved from `internal/chatapp/version_prequant_test.go` (the comment above `TestEmbedBuild_versionReportsWhatWasActuallyBaked.mutation`) on 2026-10-09.
+Moved from `internal/app/chatapp/version_prequant_test.go` (the comment above `TestEmbedBuild_versionReportsWhatWasActuallyBaked.mutation`) on 2026-10-09.
 
 ```text
 The mutation this guards against: silently falling back to the unrelated --quant
@@ -180,7 +180,7 @@ binary ran int8int8).
 
 ## TestLoadEmbedded_rejectsLoRAInsteadOfSilentlyIgnoringIt
 
-Moved from `internal/chatapp/version_prequant_test.go` (the comment above `TestLoadEmbedded_rejectsLoRAInsteadOfSilentlyIgnoringIt`) on 2026-10-09.
+Moved from `internal/app/chatapp/version_prequant_test.go` (the comment above `TestLoadEmbedded_rejectsLoRAInsteadOfSilentlyIgnoringIt`) on 2026-10-09.
 
 ```text
 N-78 (docs/audit-2026-09-10.md): decoder.NewModel (what loadEmbedded's prequant path calls,
@@ -194,7 +194,7 @@ the stub's bytes are never actually parsed as a bundle.
 
 ## TestIsVersionArg_recognizesAllForms
 
-Moved from `internal/chatapp/version_test.go` (the comment above `TestIsVersionArg_recognizesAllForms`) on 2026-10-09.
+Moved from `internal/app/chatapp/version_test.go` (the comment above `TestIsVersionArg_recognizesAllForms`) on 2026-10-09.
 
 ```text
 R6 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): `goinfer-chat --version` was
@@ -205,7 +205,7 @@ session with the embedded model instead of erroring or printing anything.
 
 ## TestChatVersionFlag_answersWithoutAModel
 
-Moved from `internal/chatapp/version_test.go` (the comment above `TestChatVersionFlag_answersWithoutAModel`) on 2026-10-09.
+Moved from `internal/app/chatapp/version_test.go` (the comment above `TestChatVersionFlag_answersWithoutAModel`) on 2026-10-09.
 
 ```text
 The mutation this guards against: deleting the dispatch check makes this go red with exactly
@@ -214,7 +214,7 @@ v0.17.0's own error text, "flag provided but not defined: -version".
 
 ## TestChatVersionFlag_answersWithoutAModel.positions
 
-Moved from `internal/chatapp/version_test.go` (the comment above `TestChatVersionFlag_answersWithoutAModel.positions`) on 2026-10-09.
+Moved from `internal/app/chatapp/version_test.go` (the comment above `TestChatVersionFlag_answersWithoutAModel.positions`) on 2026-10-09.
 
 ```text
 Both spellings, and both positions (bare first arg, and the registered flag after one
@@ -223,7 +223,7 @@ that would otherwise require a model) — R6 found the first broken and the seco
 
 ## TestChatUnknownPositional_namesTheSubcommands
 
-Moved from `internal/chatapp/version_test.go` (the comment above `TestChatUnknownPositional_namesTheSubcommands`) on 2026-10-09.
+Moved from `internal/app/chatapp/version_test.go` (the comment above `TestChatUnknownPositional_namesTheSubcommands`) on 2026-10-09.
 
 ```text
 The other half of R6: a bare unrecognized positional must error and name the real

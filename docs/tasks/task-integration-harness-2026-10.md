@@ -65,10 +65,10 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 |---|---|---|
 | Wire-dialect census of eight harnesses | `task-harness-reliability-2026-10.md` Gate 0 | **done** 2026-10-09 (`docs/measurements/harness-dialects-2026-10-09.md`): three dialects, gaps H-a to H-d |
 | H-a Responses tool shape (stopped Codex outright) | same | **fixed**, merged 2026-10-11; unrunnable tool types are dropped and named in `X-Goinfer-Tools-Dropped` |
-| H-b `/v1/models` context fields | same | **fixed**: `context_window`, `context_length`, `max_model_len` (`internal/serveapp/openai.go:533`, `:537`, `:538`) |
+| H-b `/v1/models` context fields | same | **fixed**: `context_window`, `context_length`, `max_model_len` (`internal/app/serveapp/openai.go:533`, `:537`, `:538`) |
 | H-c Anthropic overflow wording | same | **open, as a decision**; I1 proposes the rule |
 | H-d Anthropic keep-alive form | same | open pending a trace; §5 has a lead |
-| `/v1/messages` harness-scale row | same, Gate 1 | **next**; `serve check`'s rows still end at `tools, harness-scale` (`internal/servecheck/check.go:551`) |
+| `/v1/messages` harness-scale row | same, Gate 1 | **next**; `serve check`'s rows still end at `tools, harness-scale` (`internal/guard/servecheck/check.go:551`) |
 | Model tables in both dialects; T0 widened to whole sessions | same, Gates 2–3 | open |
 | Union tool-call grammar | `task-tool-grammar-union-2026-09.md` | **shipped** 2026-09-24, default-on (Qwen2.5-7B unusable calls 14/111 → 0) |
 | Mellum2.1 harness-scale | `task-mellum21-2026-10.md` Gate 2 | **ok** on the 8 GB card through expert streaming (45 of 64 slots), 7.4 GB VRAM, 71 tok/s: the second measured harness-scale success, and the first MoE |
@@ -76,7 +76,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | Fill-in-the-middle and editors | `task-editor-fim-2026-09.md` | unstarted; F0 gates it |
 | Desktop sidecar prerequisites | `parked/task-bindings.md` A0 | parked |
 | Default context raised to 16384 on CUDA | `../completed/task-first-hour.md` R19 | shipped 2026-10-01; Metal followed on 2026-10-13 (M2, `task-minimax-code-compat-2026-09.md`): up to 16384 in 2 slots when memory holds it |
-| Per-request log | `../completed/task-first-hour.md` R25 | shipped: `-log-requests` (`internal/serveapp/reqlog.go:15`) |
+| Per-request log | `../completed/task-first-hour.md` R25 | shipped: `-log-requests` (`internal/app/serveapp/reqlog.go:15`) |
 
 ## 0a. Results, 2026-10-12 (the first day)
 
@@ -85,7 +85,7 @@ Record: `docs/measurements/integration-harness-2026-10/claude-code-census-2026-1
 
 - **H-e, new, fixed: Claude Code sends a `system` message inside `messages` on every turn, and goinfer answered 400.**
   Found by the first trace of I4. Claude Code 2.1.268 could not complete one turn. `/v1/messages` now keeps such a
-  message in place as user-side text (`internal/serveapp/anthropic.go:anthropicTurns`); a `system` message in first
+  message in place as user-side text (`internal/app/serveapp/anthropic.go:anthropicTurns`); a `system` message in first
   place and every other unknown role are still a 400. The rendering is a choice: hoisting it into the system prompt
   would change the prompt's prefix each time one is added, and no chat template has a system turn after the first.
 - **Step 1, the recipe: done**, from the trace and Claude Code's documentation (`docs/integrations/claude-code.md`).
@@ -108,12 +108,12 @@ Record: `docs/measurements/integration-harness-2026-10/claude-code-census-2026-1
   16,384 by I4's rule.
 - **H-f, new, fixed: goinfer dropped Codex's agent instructions.** Codex sends them as the first of two `developer`
   messages and no `instructions` field; only the last system message was used, so 3,553 tokens of instructions never
-  reached the model. Every system message is now kept (`internal/serveapp/openai.go:messagesToTurns`): leading ones
+  reached the model. Every system message is now kept (`internal/app/serveapp/openai.go:messagesToTurns`): leading ones
   joined in order, a later one in place as on `/v1/messages`.
 - **I6's premise does not hold on Codex 0.162.1:** its request for an unknown model carries no `apply_patch` and no
   `custom` tool; edits would go through `exec_command`. I3's Codex cell still decides.
 - **Step 3, harness-reliability Gate 1: built.** `serve check` has a `tools, harness, Messages` row
-  (`ToolsHarnessMessages` in `internal/servecheck`, newer than this doc's pin). Against the 1.5B on Metal it reads skip, as the
+  (`ToolsHarnessMessages` in `internal/guard/servecheck`, newer than this doc's pin). Against the 1.5B on Metal it reads skip, as the
   OpenAI-dialect row does. The 7B reading on nobara-pc is in that task's record.
 - **Corrections to this doc's desk read**, from the trace and from Claude Code's documentation as read on 2026-10-12:
   - *"Without `ANTHROPIC_DEFAULT_HAIKU_MODEL` its background requests name a model goinfer does not serve"* (§2 I2):
@@ -130,7 +130,7 @@ Record: `docs/measurements/integration-harness-2026-10/claude-code-census-2026-1
     goinfer's 10 s heartbeat is inside both.
   - *Claude Code's own position:* its documentation says routing it to non-Claude models through a gateway is not
     supported. The recipe stands on traces, and a release can break it.
-- **I5, the first piece (owner 2026-10-12: the transport before the facade):** `internal/inproc` holds the
+- **I5, the first piece (owner 2026-10-12: the transport before the facade):** `internal/app/inproc` holds the
   RoundTripper that serves a request with a handler in the same process. A reply streams frame by frame, closing the
   body or cancelling the context cancels the handler, and a handler's panic is an error and not a crash; its tests
   run under the race detector. **Not built yet:** the constructor that gives it serve's handler (the seam in serve's
@@ -164,10 +164,10 @@ alone was 11,137 tokens (R19). So unless each harness is told the real window, *
 goinfer's**, and what happens next depends entirely on how the overflow error is worded. Today:
 
 - **Chat Completions:** a 400 with `type: invalid_request_error` and **no `code` field**. `writeErr`
-  (`internal/serveapp/helpers.go:390`) writes only `message` and `type`; the message carries
-  "context_length_exceeded" in parentheses (`internal/serveapp/openai.go:1299`), which some matchers find in the text.
+  (`internal/app/serveapp/helpers.go:390`) writes only `message` and `type`; the message carries
+  "context_length_exceeded" in parentheses (`internal/app/serveapp/openai.go:1299`), which some matchers find in the text.
 - **Messages:** `invalid_request_error` with the same text through `writeAnthropicErr`
-  (`internal/serveapp/anthropic.go:154`), which Claude Code's "prompt is too long" matcher does not recognise.
+  (`internal/app/serveapp/anthropic.go:154`), which Claude Code's "prompt is too long" matcher does not recognise.
 - **Responses:** no `response.failed` event is ever emitted. The route's events are `response.created`,
   `response.output_text.delta`, `response.completed` and `response.cancelled`, so Codex cannot recover from overflow.
 
@@ -189,7 +189,7 @@ peer has:
 ### I1 — Overflow that helps: one rule for all three dialects (resolves H-c)
 
 H-c was left open on purpose. The server-cap message was worded so a client does *not* compact against a server limit
-(`contextLengthErrorFor`, `internal/serveapp/openai.go:1308`), because opencode once compacted 34 times in a row
+(`contextLengthErrorFor`, `internal/app/serveapp/openai.go:1308`), because opencode once compacted 34 times in a row
 (R19). That loop happened because the request's **fixed part**, system prompt plus tool schemas at about 11K tokens,
 was larger than the 8,192 window. No compaction can shrink the fixed part, so retrying could never fit. When it is the
 **history** that overflows, compaction is exactly the right response, server limit or not: on an 8 GB card the server
@@ -492,7 +492,7 @@ Start with one harness per dialect (Claude Code, opencode, Codex), then the rest
 file byte-identical to before. Tests parse each harness's published config schema where one exists.
 
 **I2 built 2026-10-13 for Claude Code, opencode and Codex (the unit half of its gate).**
-- **`goinfer-serve connect <agent> [url]`**, package `internal/connect`: reads `/v1/models`, prints the configuration,
+- **`goinfer-serve connect <agent> [url]`**, package `internal/app/connect`: reads `/v1/models`, prints the configuration,
   `-write` patches the agent's file with a backup and a restore record beside it, `-undo` restores it.
 - **Read by its tests:** each JSON file keeps its other settings and their order; Codex's TOML keeps every line it
   has no business with and has its provider table replaced, not doubled; `-write` twice then `-undo` is byte for byte
@@ -871,7 +871,7 @@ Every Go SDK and agent framework checked accepts a caller-supplied HTTP client:
 So an `http.RoundTripper` that calls goinfer's handler directly (no listener, no port, no daemon, no auth) gives
 in-process local inference to all of them with no framework-specific code. It brings everything the server already
 does: three dialects, schema-constrained output, union-grammar tool calls, and reasoning separation
-(`-reasoning-format`, `internal/serveapp/think.go:16`). It is "no sidecar" for language models, and a llama.cpp
+(`-reasoning-format`, `internal/app/serveapp/think.go:16`). It is "no sidecar" for language models, and a llama.cpp
 wrapper cannot offer it without cgo.
 
 **Against the facade** (`task-embed-and-harness-ux.md` §2): complementary. The facade is a goinfer-native API for
@@ -881,8 +881,8 @@ is the contract and is already tested, and it is smaller. Its cost is JSON encod
 request and per token: negligible beside inference for chat, and worth one by-day measurement for embeddings in a
 loop. **Lean: the transport first.** The owner decides.
 
-**The real work is one seam.** The mux is built inside the serve entry point (`internal/serveapp/main.go:668`), after
-flag parsing and model loading, and `internal/serveapp` cannot be imported. Extract a constructor,
+**The real work is one seam.** The mux is built inside the serve entry point (`internal/app/serveapp/main.go:668`), after
+flag parsing and model loading, and `internal/app/serveapp` cannot be imported. Extract a constructor,
 `NewHandler(Config) (http.Handler, io.Closer, error)`, into a public Experimental sub-package (the reasoning of
 `task-embed-and-harness-ux.md` §7 F.1 for the facade's place applies), and build the transport on it:
 
@@ -900,7 +900,7 @@ route, and so H-a's fix); a mid-stream cancel stops generation and leaves no gor
 unchanged.
 
 **I5, the seam, built 2026-10-13 (its SDK gate is not).**
-- **In `internal/serveapp`:** the route table and the listener-independent checks moved out of the entry point
+- **In `internal/app/serveapp`:** the route table and the listener-independent checks moved out of the entry point
   unchanged, and a constructor builds a handler from the binary's own flag set, so a setting cannot mean one thing on
   the command line and another in process. The flags that configure the listener or the process are refused by name.
 - **Public, Experimental:** package `server`, two functions (`NewHandler`, `Transport`); `docs/api-tiers.md` lists it.
@@ -1128,7 +1128,7 @@ falls (I3).
 - **H-c:** replace "open as a decision" with I1's rule, or record why the owner prefers the current wording.
 - **H-d:** the desk read found that Claude Code aborts a stream after 300 s with no *bytes* received, adjustable with
   `CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS`. If the limit is byte-level, the 10 s SSE-comment heartbeat
-  (`internal/serveapp/helpers.go:274`) already satisfies it with a 30× margin. The trace still decides; this says what
+  (`internal/app/serveapp/helpers.go:274`) already satisfies it with a 30× margin. The trace still decides; this says what
   to expect. It also answers `task-embed-and-harness-ux.md` §7 F.4, which records the timeout value as unknown.
 - **Gate 2:** the "harness-scale: skip — too small" verdicts for the small Qwen coders were measured in early
   September, before the union grammar shipped and before a bare call naming a supplied tool was accepted as a call
@@ -1153,9 +1153,9 @@ falls (I3).
 - The convention to copy is Jan's llama.cpp worker: listen on port 0, print exactly one JSON line `{port, pid, models}`
   on stdout once listening, exit when stdin closes (the one parent-death signal that survives a force-quit in both
   Tauri and Electron), and answer `/health` with 503 until the model is loaded.
-- Port 0 is unusable today without that line: serve calls `ListenAndServe` (`internal/serveapp/main.go:922`), which
+- Port 0 is unusable today without that line: serve calls `ListenAndServe` (`internal/app/serveapp/main.go:922`), which
   never reports the port it bound. The admin socket already shows the unix-listener pattern A0's first item wants
-  (`internal/serveapp/admin_socket.go:45`).
+  (`internal/app/serveapp/admin_socket.go:45`).
 
 **`docs/integrations/claude-code.md`** (applied 2026-10-12, with §0a's corrections)
 - Add `ANTHROPIC_DEFAULT_HAIKU_MODEL` (background work; `ANTHROPIC_SMALL_FAST_MODEL` is deprecated) and

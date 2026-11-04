@@ -507,7 +507,7 @@ Compatible, not full-spec (llama.cpp's bar): `thinking` / `cache_control` /
 (≥32k).
 
 **Vision (image→text), pure Go.** With a vision-capable checkpoint loaded behind
-`--vision <dir>` (auto-discovered when `--model` is a VL directory: `internal/serveapp/main.go`'s
+`--vision <dir>` (auto-discovered when `--model` is a VL directory: `internal/app/serveapp/main.go`'s
 `loadVisionTower` detects Gemma 3's SigLIP projector, Qwen2.5-VL's own ViT, Gemma 4's vision
 tower, a Qwen3.5+ checkpoint and a GLM-OCR checkpoint, and routes each to its own loader),
 `cmd/serve` accepts images on both surfaces — OpenAI `image_url` content parts and Anthropic
@@ -618,7 +618,7 @@ The same flow in the terminal: `goinfer-chat --model ~/models/glm-ocr --image in
 
 **Prompt-prefix KV caching.** Across requests the server reuses the KV cache of a
 warm session **whose entire token history is a prefix of the new prompt** —
-not the longest prefix the two merely share (`internal/serveapp/sessions.go`'s
+not the longest prefix the two merely share (`internal/app/serveapp/sessions.go`'s
 `bestExtend`: a session that diverges anywhere, even one token in, is not
 reused at all; among the sessions that DO qualify, the longest — most
 reused — one wins) — prefilling only the new suffix. So a continuing chat (or

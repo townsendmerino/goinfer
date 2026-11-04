@@ -18,7 +18,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/townsendmerino/goinfer/internal/paritykey"
+	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
 func main() {

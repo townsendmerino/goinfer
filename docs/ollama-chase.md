@@ -1241,7 +1241,7 @@ kernel.
 Surfaced by outside-consumer testing of the released **v0.10.2** across a five-model sweep. Two
 distinct sampling cliffs were measured; **one is now fixed, one remains and is the lever here.**
 
-**Fixed this session (host-side, `internal/sampling/sampler.go`).** The top-p/top-k selection path softmaxed
+**Fixed this session (host-side, `internal/runtime/sampling/sampler.go`).** The top-p/top-k selection path softmaxed
 all V and then **full-sorted all V** (`sort.Slice`) on the host, single-threaded, every token — the
 reporter's inferred "O(V×k) successive scans" was actually an O(V·log V) sort whose Go
 reflection-per-comparison constant made it *present* as linear in V. Replaced with bounded
@@ -1257,7 +1257,7 @@ That closes the *top-p/top-k* portion of the reporter's ~15 tok/s cell (the ~361
 sweep attributed to "linear in V" was the sort). It does **not** touch the second cliff:
 
 **The remaining lever — the `temperature==0` branch.** `Sampler.ArgmaxEquivalent()`
-(`internal/sampling/sampler.go`) is true only for greedy: `Temperature <= 0 && no bias && no penalties &&
+(`internal/runtime/sampling/sampler.go`) is true only for greedy: `Temperature <= 0 && no bias && no penalties &&
 !Logprobs`. When true, the resident CUDA/Metal backends return the token from an **on-device argmax
 and never read the V-wide logits back to the host**. Any nonzero temperature — even `0.01` — flips
 that branch, forcing a **full V-float logit readback per token + a host softmax over V**. The
@@ -1342,7 +1342,7 @@ and take the on-device argmax with no readback. Measured gap it would recover �
 - gemma3-1b: `top_k=1` **148** vs greedy **180** tok/s
 
 **SHIPPED and measured (2026-08-09, this box).** `top_k=1` now takes the on-device greedy fast path
-via the `GreedyEquivalent` sampler predicate (`internal/sampling/sampler.go`), so the readback is skipped.
+via the `GreedyEquivalent` sampler predicate (`internal/runtime/sampling/sampler.go`), so the readback is skipped.
 Decode-only, prefill excluded; RTX 2070 SUPER / driver 595.58.03; goinfer at the P1 commit; q4_K_M
 int4; 128-token prompt; 8 completions/run, 2 runs/cell, spread shown. "before" is the same binary
 with `GOINFER_NO_GREEDY_FASTPATH=1` (the readback path), so both arms are one build:
@@ -1650,7 +1650,7 @@ sequential/CPU reference, for latency-sensitive long-context use") without needi
 "unify activation precision so it's safe as the default" fix P10's case would have required. That
 is a materially smaller bar to clear.
 
-**LANDED 2026-08-16: `--metal-fast-prefill` (`internal/serveapp`).** Sets the same env var
+**LANDED 2026-08-16: `--metal-fast-prefill` (`internal/app/serveapp`).** Sets the same env var
 (`GOINFER_METAL_BATCHED_PREFILL`) `backend/metal/backend.go`'s `PrefillLast` already gated on, at CLI
 startup — no frozen-core edit needed, since `decoder/model.go`'s generic batched-prefill gate
 already tries `PrefillLast` by default and falls back gracefully on Metal's own decline; making
@@ -1662,7 +1662,7 @@ documentation surface, matching `--moe-cache-experts` and similar), matching the
 **Verified end-to-end, not just built and unit-tested:** ran the actual server binary, a real
 ~1450-token prompt through `/v1/chat/completions`, off vs on: **68.5s → 18.3s (3.74×)**,
 identical response content both times ("done"). Confirms the flag reaches the real production
-path, not just the synthetic benchmark harness. `go test ./internal/serveapp/...` green; full
+path, not just the synthetic benchmark harness. `go test ./internal/app/serveapp/...` green; full
 repo build/vet clean.
 
 *Corroboration:* the fan-out audit and an independent code-grounded pass (Cursor, 2026-08-10) agreed on

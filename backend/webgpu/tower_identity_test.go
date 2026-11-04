@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/towerid"
+	"github.com/townsendmerino/goinfer/internal/diag/towerid"
 )
 
 // TestTowerIdentity_webgpu is AX2a-T on WebGPU (docs/tasks/task-subsystems-2026-10.md §7.8): every tower WebGPU declares

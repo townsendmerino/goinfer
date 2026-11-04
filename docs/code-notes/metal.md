@@ -609,7 +609,7 @@ correct. It is not safe TODAY, and the reason is not in this file: serve's unloa
 between pick() and enter() in which a request still holds lm.model with no lock held, so
 TryLock grants the unload while a handler is mid-tokenize against those weights. Adding the call
 turns a bounded leak into a use-after-free — on CUDA, a driver SIGSEGV that kills the server.
-The blocker is serve's drain, not this teardown. Full account: internal/serveapp/admin.go,
+The blocker is serve's drain, not this teardown. Full account: internal/app/serveapp/admin.go,
 handleAdminUnload. Close itself is correct and stays correct; it just has no safe caller yet.
 kvSlotBuf is one resident KV slot's per-layer buffers (MC1).
 ```
@@ -893,7 +893,7 @@ are in `docs/tasks/task-integration-harness-2026-10.md`, "I8".
 The fit-by-default context of an unpinned Metal load (`backend/metal/backend.go:metalFitFor`, `backend/metal/backend.go:metalFitNow`,
 `decoder/metal_fitctx.go:Model.MetalFitCtx`). The design, and why each piece is there:
 
-- **One function for the load and for `fit`.** `MetalFitCtx` lives in `decoder` so `internal/fitcmd/fit.go:planFor` can
+- **One function for the load and for `fit`.** `MetalFitCtx` lives in `decoder` so `internal/app/fitcmd/fit.go:planFor` can
   ask it without linking Metal. Both hand it the registered `metal` memory probe (`metalMemoryCeiling`: the smaller of
   0.70 of RAM and the live available figure) and Metal's default slot count, so they cannot name different contexts
   for one memory figure.
@@ -1067,7 +1067,7 @@ Moved from `backend/metal/model.go` (the comment in `resident`, above `loraCache
 loraCacheSrc/loraCached are P-10's single-adapter device cache (audit-2026-09-10): the
 source layers a bind's device buffers were built from, and those buffers themselves,
 KEPT ALIVE across a SetAdapter(nil) clear rather than released — a rebind of the SAME
-adapter (the common "one chat session, many turns" shape internal/serveapp/main.go's
+adapter (the common "one chat session, many turns" shape internal/app/serveapp/main.go's
 N-adapters-one-resident design produces) then skips the re-upload entirely instead of
 paying it on every generation. See SetAdapter's own comment for the identity check.
 ```

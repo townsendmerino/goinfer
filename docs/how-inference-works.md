@@ -159,23 +159,23 @@ many layers → one score per possible next token.**
 ## Step 3: Picking the next token (sampling)
 
 Now we have 100,000 scores. How do we choose one? That's
-[sampler.go](../internal/sampling/sampler.go), specifically
-[`SampleWithInfo`](../internal/sampling/sampler.go).
+[sampler.go](../internal/runtime/sampling/sampler.go), specifically
+[`SampleWithInfo`](../internal/runtime/sampling/sampler.go).
 
 - The simplest choice: just take the highest-scoring token. That's **greedy /
-  argmax** ([internal/sampling/sampler.go:Sampler.SampleWithInfo](../internal/sampling/sampler.go)) — deterministic, the
+  argmax** ([internal/runtime/sampling/sampler.go:Sampler.SampleWithInfo](../internal/sampling/sampler.go)) — deterministic, the
   model's single best guess.
 - More commonly we add controlled randomness so output isn't robotic.
   **Temperature** flattens or sharpens the scores (high temperature = more
   adventurous, low = more predictable). Then we usually restrict the random draw
   to the top few candidates — **top-k** (only the k best), **top-p / nucleus**
   (the smallest set covering p% of the probability) — to avoid picking something
-  absurd ([internal/sampling/sampler.go:Sampler.SampleWithInfo](../internal/sampling/sampler.go)).
+  absurd ([internal/runtime/sampling/sampler.go:Sampler.SampleWithInfo](../internal/sampling/sampler.go)).
 
 The scores are turned into actual probabilities via **softmax** (exponentiate and
 normalize so they sum to 1), and one token is drawn. There are also **penalties**
 to discourage the model from repeating itself
-([internal/sampling/sampler.go:Sampler.SampleWithInfo](../internal/sampling/sampler.go)).
+([internal/runtime/sampling/sampler.go:Sampler.SampleWithInfo](../internal/sampling/sampler.go)).
 
 The output is a single integer — the next token.
 

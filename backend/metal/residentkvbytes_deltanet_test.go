@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // TestResidentKVBytes_excludesDeltaNetLayers gates N-36 (docs/audit-metal-2026-09-12.md): residentKVBytes must not charge every

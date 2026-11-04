@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
 // Load must map a .giw MAP_SHARED on darwin (giwmap_darwin.go): over a private mapping, Metal's no-copy

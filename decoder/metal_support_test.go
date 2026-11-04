@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/program"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // TestMetalPricing_followsThePathThatRuns (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-c2): the fit guard prices a Metal

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/townsendmerino/goinfer/internal/mem/probe"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
 // procPeak is a test binary's memory as read from /proc/<pid>/status while it ran. The never-swap rule judges a test

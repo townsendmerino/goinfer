@@ -11,7 +11,7 @@ reads only weights format vN refuses a v(N+1) file as too new and replaces it; t
 release binary and a dev build on one box (the normal state of a developer, and of anyone trying a release candidate)
 therefore transcoded the model each time they alternated: about 12 minutes and 17 GB written for a 30B.
 
-**The change.** `internal/prequant.streamCachePath` names the file `<model>.<quant>[.e4h].<target>.v<N>.giw`, N being
+**The change.** `internal/runtime/prequant.streamCachePath` names the file `<model>.<quant>[.e4h].<target>.v<N>.giw`, N being
 `decoder.GIWFormatVersion` (a new exported constant for `giwVersion`). `EnsureCachedGIW` and `SidecarPathIfFresh` (which
 `fit` uses) go through `freshCache`:
 
@@ -26,7 +26,7 @@ therefore transcoded the model each time they alternated: about 12 minutes and 1
 brings back the ping-pong. The price is disk: one extra model-sized file per model per format bump. The CHANGELOG and
 `docs/giw-bundles.md` ("One version") say so. A sweep that lists the stale ones is item 1b below.
 
-**Tests** (`internal/prequant`): the name carries the version and the file holds that version; an unversioned file in
+**Tests** (`internal/runtime/prequant`): the name carries the version and the file holds that version; an unversioned file in
 this format is adopted as a hard link with no transcode, and `SidecarPathIfFresh` finds it; with another build's file
 sitting under the old name, this build neither transcodes nor touches it; an unversioned file in another format is left
 alone, one transcode happens, and the note appears. Removing the link makes the adoption test fail. `fit`'s and
@@ -53,7 +53,7 @@ CHANGELOG's `[Unreleased]` section, or the `[vX]` section when the tag is being 
 
 | kind | read from, at both revs | owed when |
 |---|---|---|
-| route | the route literals `serverBanner` can print and the `mux` registrations in `internal/serveapp` (extracted by a small `go/ast` pass, not a regex over text, so a commented-out route does not count) | a route exists at HEAD and not at base, and its path is not a substring of the section |
+| route | the route literals `serverBanner` can print and the `mux` registrations in `internal/app/serveapp` (extracted by a small `go/ast` pass, not a regex over text, so a commented-out route does not count) | a route exists at HEAD and not at base, and its path is not a substring of the section |
 | flag | the names in `docs/flags.meta.json` | a name is new, or removed, and `--name` is not a substring of the section |
 | family | the `model_type` keys of `docs/capability-matrix.json` | a family is new and its name is not a substring of the section |
 | aikit pin | the `aikit` require in `go.mod` | the version string differs and the section does not contain the new one |
@@ -80,7 +80,7 @@ step is to assert the pass finds a known count at HEAD (today's), the same guard
 uses against an empty scan.
 
 **Built as planned, with these particulars.** `gate changelog [-base TAG] [-head REV] [-section S]` in `cmd/gate/changelog.go`. Routes are the
-first string literal of every `HandleFunc` or `Handle` call in the non-test files of `internal/serveapp`, found with `go/parser`
+first string literal of every `HandleFunc` or `Handle` call in the non-test files of `internal/app/serveapp`, found with `go/parser`
 (a commented-out route and a registration in a test file do not count; the scan refuses to run if it finds fewer than 10 routes in
 either tree, and a test asserts at least 30 at HEAD, so a refactor cannot make it read "nothing changed"). A route is covered by
 its own path, or by a new route that is a path prefix of it. Flags come from `docs/flags.meta.json` (new and removed), families

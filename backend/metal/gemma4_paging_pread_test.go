@@ -11,7 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/prequant"
+	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 )
 
 // TestGemma4PagingPread_matchesNonPaged is TestMoEPagingPread_matchesByteCopy's twin for the Gemma 4 pager, the one

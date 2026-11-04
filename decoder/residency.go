@@ -13,7 +13,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 
-	"github.com/townsendmerino/goinfer/internal/adapter"
+	"github.com/townsendmerino/goinfer/internal/runtime/adapter"
 )
 
 // isWebGPUBackend reports whether a Backend.Name() string names the webgpu backend. NOT a plain

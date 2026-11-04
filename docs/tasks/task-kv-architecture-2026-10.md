@@ -41,7 +41,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV2 | done | — | 772b1fb2 (#26); G5-C PASS, kv2-cuda-2026-10-15.md §7 |
 | KV2-FU1 | done | — | built on branch `kv2-fu1-2026-10`, merged through `kv2-fu1-merge-2026-10` (gates re-run green on that merge with main, 2026-10-21); `TestKV2FU1_ownRollbackScheduleIndependence`, `TestKV2FU1_cpuOwnRollback`; §6, KV2 follow-up 1, readings |
 | KV2-FU2 | done | — | 11b29ba5 (#37) |
-| KV2-FU3 | done | — | in-place reuse capped to the kernel class of the prompt's cold prefill (`internal/kvmgr/share.go:ClassMap.CapInPlace`); found on main by KV4's G3b (KV4's CUDA record on branch `kv4-2026-10-21`, "Found on main, not KV4's"); `TestKV2_inPlaceCap_tiny` red without it, green with it |
+| KV2-FU3 | done | — | in-place reuse capped to the kernel class of the prompt's cold prefill (`internal/runtime/kvmgr/share.go:ClassMap.CapInPlace`); found on main by KV4's G3b (KV4's CUDA record on branch `kv4-2026-10-21`, "Found on main, not KV4's"); `TestKV2_inPlaceCap_tiny` red without it, green with it |
 | KV3 | done | — (CUDA and Metal) | 356fa99a (#14), in v0.23.0; 973527ef (#102) |
 | KV3-WebGPU | done | — | d555247c, 49898b2f; kv3-webgpu-2026-10-13.md (day gates re-read on the merged tree 2026-10-21: price x1.040 to x1.056, 1.65 GB whole vs 0.180 GB per chunk) |
 | KV3-E4B | done | — (read 2026-10-21: not resolved by the registered rule; 1.08x inside the 10% band at 12.2k, 1.56x at 16.2k, 1.81x at 24.3k on a flagged-load cell) | kv3-e4b-cold-ttft-2026-10-19 |
@@ -180,7 +180,7 @@ slot is gone; and every KV feature is built three or four times.
      prompt (I7 night).
    - Resident reuse is per slot (`decoder/resident_reuse.go:Model.reuseLenOf`). It declines a "shared lead" on purpose
      (`decoder/resident_reuse.go:pickResidentSlot`), as serve's session LRU does
-     (`internal/serveapp/sessions.go:pickSession`), because taking it would overwrite another conversation's history.
+     (`internal/app/serveapp/sessions.go:pickSession`), because taking it would overwrite another conversation's history.
    - That is a mutable-slot problem. Immutable shared blocks do not have it (§5.5).
 3. **Hybrids get one slot and exact-extension reuse only.**
    - `decoder/resident_reuse.go:Model.residentSlotCount` returns 1 when `decoder/forwardn.go:Model.hasRecurrentState`.
@@ -191,7 +191,7 @@ slot is gone; and every KV feature is built three or four times.
    - R-01 phase 2 and FreeToken Lead 1 are both open (`docs/tasks/task-recompute-audit.md`,
      `docs/tasks/task-freetoken-techniques.md`).
 4. **A conversation that loses its GPU slot is gone.**
-   - The CPU path has a RAM → NVMe tier (`internal/serveapp/sessions.go:sessionLRU`, `.giw-kv` v3 snapshots,
+   - The CPU path has a RAM → NVMe tier (`internal/app/serveapp/sessions.go:sessionLRU`, `.giw-kv` v3 snapshots,
      `-session-dir`, `-kv-idle-demote`). The GPU paths have nothing.
    - R-04's resident half is open. QUEUE §A's figures, quoted there: about 257 MiB and 43 ms to park a 2.3k-token
      conversation, against about 8.9 s to recompute it.
@@ -521,7 +521,7 @@ is MC4's identity gate extended to shared preambles.
   - Each block carries a CRC, a geometry guard, its precision, its producer class and the numerics epoch.
   - Files are owner-only (0700/0600), as `.giw-kv` blobs are today.
   - It stays opt-in, as `-session-dir` is today.
-- **The numerics identity** is today's `internal/serveapp/main.go:modelFingerprint` (name, size, mtime, quant) plus the
+- **The numerics identity** is today's `internal/app/serveapp/main.go:modelFingerprint` (name, size, mtime, quant) plus the
   embedding/head-table precision (`Model.HeadTable()`, since `--embed-int4` changes `m.w.Embed` while `m.Quant()` stays `"int4"`),
   the backend, the GPU device and driver (for the disk tier), every operator knob that changes which kernel computes a row at
   a given position (a class boundary needs none: a row's class is in its block key), and a **numerics epoch** (the build's
@@ -555,7 +555,7 @@ is MC4's identity gate extended to shared preambles.
     with one budget for KV blocks and experts (§6).
 - **Admission** asks for blocks for [hit, prompt) plus one block of headroom, plus the chunk scratch, priced from the
   allocator's own figure, not `prefillScratchBytes`'s whole-prompt bound.
-  - If the blocks are not free yet, the request waits in serve's existing FIFO (`internal/serveapp/admission.go:admission`).
+  - If the blocks are not free yet, the request waits in serve's existing FIFO (`internal/app/serveapp/admission.go:admission`).
   - A prompt over the per-sequence cap (the model's window, `-ctx`, the kernel limit, the pool) gets 400
     `context_length_exceeded`, as today.
   - A request that could never fit gets a 413.
@@ -782,7 +782,7 @@ fast-class windowed measurement (which measures, and does not gate KV1), the ser
 Metal device gate.
 
 - **Built:**
-  - `internal/kvmgr`, importing nothing of goinfer's: the geometry types; the key (a root of model, namespace, adapter
+  - `internal/runtime/kvmgr`, importing nothing of goinfer's: the geometry types; the key (a root of model, namespace, adapter
     and KV precision; a SHA-256 chain per block over its tokens, the image spans that touch it and the class of each
     row); blocks of 64 with reference counts, publish, the index and the LRU of blocks nobody references; sequences
     with admit, append, publish, truncate, fork and release; and the slot adapter (`kvmgr.Slots`), where logical block
@@ -955,9 +955,9 @@ KV2 merges when every arm on both boxes is read.
     - *Units:* `TestPickSlotFor_deepOwnRollback`, `TestPickSlotFor_ownRollback` (as amended) and
       `TestPickSessionFor_ownRollback` pass.
     - *Identity:* `decoder` `-run 'KV2|ResidentReuse|MC3|Session'` gives 49 PASS, 4 SKIP and 0 FAIL. The four skips need the
-      gemma-3-270m fixture, which this box does not have, and skip on `main` too. `internal/kvmgr` gives 29 PASS and
-      `internal/serveapp` `-run 'Session|KVShare|PickSession'` 12 PASS. The only existing test file changed is
-      `internal/kvmgr/share_test.go`, in the named case.
+      gemma-3-270m fixture, which this box does not have, and skip on `main` too. `internal/runtime/kvmgr` gives 29 PASS and
+      `internal/app/serveapp` `-run 'Session|KVShare|PickSession'` 12 PASS. The only existing test file changed is
+      `internal/runtime/kvmgr/share_test.go`, in the named case.
     - *Plants* (`docs/measurements/kv2-2026-10-14/planted-fu1.txt`):
       1. the branch point's rule in `kvmgr.pickSlot`: red in all 24 schedules at 4 slots and in 7 at 2 (rules 1 and 2
          on 136 turns, rule 3 on 137), and in both `kvmgr` unit tests. A one-slot model never calls `PickSlot`, so 1
@@ -991,7 +991,7 @@ KV2 merges when every arm on both boxes is read.
         rows on another kernel than the decode that wrote them in place, and the reply check can see the defect.
     - *Identity (replies unchanged against KV2's merge):* KV2's tests of the slot choice, the copy and the sessions
       pass, with their test files byte-identical to the branch point (`48ca55f8`): `decoder`
-      `-run 'KV2|ResidentReuse|MC3|Session'`, `internal/kvmgr` whole, and `internal/serveapp`
+      `-run 'KV2|ResidentReuse|MC3|Session'`, `internal/runtime/kvmgr` whole, and `internal/app/serveapp`
       `-run 'Session|KVShare|PickSession'`.
       - **Named under G1's exception, before the change:** `TestPickSlotFor_ownRollback`'s last case ("own rollback
         that keeps less than it overwrites", want 1, "main's rule stands") asserts the rule this item removes, and
@@ -1367,7 +1367,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
     attention KV to `c`, and prefill from `c`. §2's rule that at least one token is always recomputed holds, since the
     request has tokens past `c`. A strict extension of the whole sequence keeps today's path (continue from the live state).
     A divergence before `c`, an identical re-request, or a request with image spans stays cold, as today.
-  - **Score.** `internal/kvmgr/slots.go:scoreRecurrent` returns `c` in the restore case, where today it returns 0. Its image
+  - **Score.** `internal/runtime/kvmgr/slots.go:scoreRecurrent` returns `c` in the restore case, where today it returns 0. Its image
     rules are unchanged.
   - **Where it lives.** Device memory if the load's memory plan admits it, host memory otherwise; the choice is registered
     per backend before building. Its size comes from the state spec (§5.7: 62.8 MiB for Qwen3.6-35B-A3B, 149.6 MiB for the
@@ -1906,9 +1906,9 @@ Code, read at `e2ffb953`:
 - **Metal:** `backend/metal/model.go:resolveMetalCtxCap`, `backend/metal/backend.go:metalResident.UseKVSlot`,
   `backend/metal/batch.go:metalResident.StepBatch`, `backend/metal/mc5_chunk_invariance_test.go:TestMC5_prefillChunkInvariance`.
 - **WebGPU:** `backend/webgpu/kv_slots.go:webgpuKVSlot`.
-- **Serve:** `internal/serveapp/sessions.go:sessionLRU`, `internal/serveapp/sessions.go:bestExtend`,
-  `internal/serveapp/sessions.go:pickSession`, `internal/serveapp/admission.go:admission`,
-  `internal/serveapp/main.go:modelFingerprint`.
+- **Serve:** `internal/app/serveapp/sessions.go:sessionLRU`, `internal/app/serveapp/sessions.go:bestExtend`,
+  `internal/app/serveapp/sessions.go:pickSession`, `internal/app/serveapp/admission.go:admission`,
+  `internal/app/serveapp/main.go:modelFingerprint`.
 
 Docs and records:
 - **Positioning and policy:** `docs/positioning.md`, `docs/roadmap.md`, `docs/api-tiers.md`, `docs/ARCHITECTURE.md`.

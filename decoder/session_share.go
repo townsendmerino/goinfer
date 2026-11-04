@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/townsendmerino/goinfer/internal/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 // Sharing between CPU sessions (docs/tasks/task-kv-architecture-2026-10.md §6, KV2; the CPU joins through copies, D2):

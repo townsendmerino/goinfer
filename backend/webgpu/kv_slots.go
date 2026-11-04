@@ -7,7 +7,7 @@ package webgpu
 import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"os"
 	"runtime"
 	"slices"

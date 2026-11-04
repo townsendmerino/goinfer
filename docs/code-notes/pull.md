@@ -177,7 +177,7 @@ carries the tower (docs/multimodal.md, P9(d)).
 Moved from `pull/registry.go` (the comment in `Checkpoint`) on 2026-10-09.
 
 ```text
-Tools records what `internal/servecheck`'s two tools rows measured for this checkpoint
+Tools records what `internal/guard/servecheck`'s two tools rows measured for this checkpoint
 (R11, docs/measurements/cold-user-2026-09-06-nobara-pc.md): "tools, OpenAI" is a
 one-function schema, "tools, harness-scale" a dozen-tool schema shaped like a real agent's
 — the shape that broke under opencode with a server whose minimal-schema row was green.

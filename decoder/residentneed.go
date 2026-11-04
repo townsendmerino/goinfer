@@ -1,6 +1,6 @@
 package decoder
 
-import "github.com/townsendmerino/goinfer/internal/mem"
+import "github.com/townsendmerino/goinfer/internal/runtime/mem"
 
 // One memory-accounting path per backend (docs/tasks/task-memory-accounting-2026-09.md).
 //

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/paritykey"
+	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
 // SB12's goldens (docs/tasks/task-subsystems-2026-10.md §8 SB12, gate SB12-C2): each case under goldenRoot is a recorded

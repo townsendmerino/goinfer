@@ -9,7 +9,7 @@ import (
 
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
-	"github.com/townsendmerino/goinfer/internal/sampling"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 var adGumbel = adMod{"gumbel", readPTX("gumbel")}

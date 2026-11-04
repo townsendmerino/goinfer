@@ -37,7 +37,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/townsendmerino/goinfer/internal/diskfree"
+	"github.com/townsendmerino/goinfer/internal/runtime/diskfree"
 )
 
 // hfAPI and hfCDN are split because they are different services with different failure

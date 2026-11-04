@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // TestHoldsWalker_chargesItsLine: every byte the walker can see lands on the line of the field it came from, in each shape that once went uncounted

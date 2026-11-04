@@ -1,0 +1,36 @@
+package serveapp
+
+import (
+	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"testing"
+)
+
+// --kv is the one KV-precision flag for whichever backend serves: it sets the GPU residency cache
+// (Options.KVPrecision) and the CPU cache (Options.KVQuant); auto stays f32 on the CPU. --kv-quant is a
+// deprecated alias that, when given, overrides the CPU cache alone. Same for the per-model keys.
+func TestKVFlag_drivesBothCachesUnlessKVQuantOverrides(t *testing.T) {
+	str := func(s string) *string { return &s }
+	for _, c := range []struct {
+		name          string
+		spec          modelSpec
+		cfg           config
+		wantGPU, want string
+	}{
+		{"default", modelSpec{}, config{load: loadflags.Flags{KV: "f32"}}, "f32", "f32"},
+		{"--kv i8 reaches the CPU cache too", modelSpec{}, config{load: loadflags.Flags{KV: "i8"}}, "i8", "i8"},
+		{"--kv f16 reaches the CPU cache too", modelSpec{}, config{load: loadflags.Flags{KV: "f16"}}, "f16", "f16"},
+		{"--kv auto keeps the CPU cache at f32", modelSpec{}, config{load: loadflags.Flags{KV: "auto"}}, "auto", "f32"},
+		{"deprecated --kv-quant still overrides the CPU cache", modelSpec{}, config{load: loadflags.Flags{KV: "f16"}, kvQuant: "i8"}, "f16", "i8"},
+		{"--kv-quant f32 beats --kv i8 on CPU", modelSpec{}, config{load: loadflags.Flags{KV: "i8"}, kvQuant: "f32"}, "i8", "f32"},
+		{"per-model kv= drives both", modelSpec{kvPrec: str("i8")}, config{load: loadflags.Flags{KV: "f32"}}, "i8", "i8"},
+		{"per-model kv-quant= overrides", modelSpec{kvPrec: str("i8"), kvQuant: str("f32")}, config{load: loadflags.Flags{KV: "f32"}}, "i8", "f32"},
+	} {
+		o := c.spec.options(c.cfg)
+		if o.KVPrecision != c.wantGPU || o.KVQuant != c.want {
+			t.Errorf("%s: KVPrecision=%q KVQuant=%q, want %q / %q", c.name, o.KVPrecision, o.KVQuant, c.wantGPU, c.want)
+		}
+		if err := o.Validate(); err != nil {
+			t.Errorf("%s: resolved options do not validate: %v", c.name, err)
+		}
+	}
+}

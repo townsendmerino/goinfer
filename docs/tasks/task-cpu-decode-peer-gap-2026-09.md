@@ -393,7 +393,7 @@ not copy them to the heap, and that aliasing was measured to matter for the Mac'
 PR #5 merged as `5c85f7c0` at 14:01 UTC, while this ran. Measured on the MacBook (M1 Pro, 16 GB, darwin/arm64).
 - **Builds.** Old is `3cd62e6d`, the merge's first parent (aikit v1.49.0, f32 scales). New is the PR head `84ee8f49`
   for the logit dumps, and the merge `5c85f7c0` for served speed. The merge adds nothing to what the dumps exercise:
-  over `84ee8f49` it changes only docs, `internal/decide` and `internal/serveapp`.
+  over `84ee8f49` it changes only docs, `internal/decide` and `internal/app/serveapp`.
 - **New ≠ old in one more respect.** New also carries `310a2e44`, the fit-guard re-pricing. The load banners show it
   (the 1.5B prices at 1.9 GB resident, against 2.1 GB in the old build), and the old Metal/WebGPU 1.5B loads capped
   their context below the model maximum. No dump or speed cell here is long enough for the cap to matter.
@@ -474,7 +474,7 @@ bandwidth-bound (the old 0.5B's 9.4 ms/token against under 2 ms to stream its ~0
     - old build on v12: 1,123–1,127 MB;
     - new build on the same v12: 1,179–1,184 MB (+57);
     - new build on its own v15: 1,045–1,053 MB (−75).
-  - The fix (`internal/prequant`'s `cacheFresh`): an int4 sidecar older than v15 is stale and rebuilt once. With it,
+  - The fix (`internal/runtime/prequant`'s `cacheFresh`): an int4 sidecar older than v15 is stale and rebuilt once. With it,
     the first load after a v12 sidecar rebuilt it and the next three peaked at 1,045–1,051 MB.
   - **Verified on arm64, 2026-09-28: the same cause, with nothing extra.** The Mac's 1.5B delta (+150–179) was
     larger than amd64's +57, and "a second converted scale array in the arm64 row4 layout" was the open guess. It is

@@ -10,7 +10,7 @@ import (
 
 	"github.com/townsendmerino/aikit/mmap"
 
-	"github.com/townsendmerino/goinfer/internal/mem/probe"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
 // TestColdLoad_linuxProbesAndActions runs the real kernel calls on a real file: a file written, synced and dropped

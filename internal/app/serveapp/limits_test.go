@@ -1,0 +1,613 @@
+package serveapp
+
+import (
+	"context"
+	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/tokenizer"
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
+	"math/big"
+)
+
+// top_logprobs must be range-checked in `prepare`: each retained entry is materialized as a map[string]any
+// before the response is written, so an unbounded value (150000 with max_tokens 4096 on a 152k-vocab model) is
+// a fatal allocation failure no handler can catch. Audit C-08.
+func TestPrepare_rejectsUnboundedTopLogprobs(t *testing.T) {
+	lm := &loadedModel{}
+	n := func(v int) *int { return &v }
+
+	for _, bad := range []int{-1, maxTopLogprobs + 1, 20000, 150000} {
+		_, err := lm.prepare(sampling{Logprobs: true, TopLogprobs: n(bad)}, []int{1}, false)
+		if err == nil {
+			t.Errorf("top_logprobs=%d accepted; one such request retains max_tokens x %d entries "+
+				"and materializes a map per entry before writing a byte", bad, bad)
+			continue
+		}
+		if !strings.Contains(err.Error(), "top_logprobs") {
+			t.Errorf("top_logprobs=%d rejected for the wrong reason: %v", bad, err)
+		}
+	}
+	// The documented range must still be accepted — OpenAI's own ceiling, so this rejects nothing
+	// a compatible client sends. A fix that clamped everything would pass the loop above.
+	for _, ok := range []int{0, 1, maxTopLogprobs} {
+		if _, err := lm.prepare(sampling{Logprobs: true, TopLogprobs: n(ok)}, []int{1}, false); err != nil {
+			t.Errorf("top_logprobs=%d rejected, but it is inside OpenAI's documented range: %v", ok, err)
+		}
+	}
+	// Absent stays absent.
+	if _, err := lm.prepare(sampling{}, []int{1}, false); err != nil {
+		t.Errorf("a request with no top_logprobs was rejected: %v", err)
+	}
+}
+
+// A generation cancelled from outside (shutdown cancels every in-flight request before Shutdown, or the client
+// vanished) must end as finish_reason "length", not a clean "stop": `genErr` treats context.Canceled as a
+// clean end, and the client would read truncated text as complete. "length" is truthful in both cases and a
+// signal clients already act on. Audit M-23.
+func TestStreamTokens_externallyCancelledIsTruncatedNotClean(t *testing.T) {
+	lm := &loadedModel{tk: &tokenizer.Tokenizer{}}
+	gr := genRequest{maxTokens: 64}
+
+	// A stream that ends without the budget being reached: the "clean stop" shape.
+	closed := make(chan int)
+	close(closed)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	finish, _, stopHit := lm.streamTokens(ctx, cancel, closed, gr, nil, func(string) {})
+	if finish != "stop" || stopHit != "" {
+		t.Fatalf("premise broke: an uncancelled short generation reported %q/%q, want stop/\"\"", finish, stopHit)
+	}
+
+	// Same generation, parent cancelled from outside (shutdown, or the client vanished).
+	cctx, ccancel := context.WithCancel(context.Background())
+	ccancel()
+	closed2 := make(chan int)
+	close(closed2)
+	finish, _, stopHit = lm.streamTokens(cctx, ccancel, closed2, gr, nil, func(string) {})
+	if stopHit != "" {
+		t.Fatalf("premise broke: stopHit=%q, this case is about NO stop string", stopHit)
+	}
+	if finish != "length" {
+		t.Errorf("finish_reason = %q after an external cancel, want \"length\". \"stop\" tells the "+
+			"client the model finished when the answer was cut off mid-sentence", finish)
+	}
+}
+
+// Every route that tokenizes must reject an oversized body first (`promptTooLargeForContext`), or it runs a
+// full O(n) BPE over an arbitrary body; count_tokens is the worst, since it never enters the per-model queue
+// and up to -max-inflight tokenizations run at once. Guarded and unguarded routes are counted rather than
+// remembered: a route is a handler that takes a ResponseWriter and calls a tokenizing entry point, and it must
+// call the guard or name itself as guarded by its caller. Audit M-21.
+func TestServe_everyTokenizingRouteGuardsItsInputSize(t *testing.T) {
+	// Guarded by a caller, with the reason. A private helper reached from exactly one guarded
+	// handler does not need its own check — but it has to say so here rather than be forgotten.
+	guardedByCaller := map[string]string{
+		"respondTools":         "reached only from serveResponsesWith, which guards before the tools/plain branch",
+		"serveVisionResponses": "reached only from serveResponsesWith, which guards before the images/tools/plain branch (S11)",
+	}
+	// Direct calls, plus the prompt builders that tokenize TRANSITIVELY: serveVisionChatWith has no tokenizer call
+	// of its own (visionPrompt does), so a check on direct calls alone passes over the route the guard protects.
+	tokenizers := []string{
+		"lm.promptForT(", "lm.tk.EncodeSegments(", "lm.tk.Encode(", "lm.encode(",
+		"lm.visionPrompt(", "lm.visionPromptN(", "lm.imagesPrompt(",
+	}
+
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(files)
+	fnRe := regexp.MustCompile(`(?ms)^func (?:\([^)]*\) )?(\w+)\(([^\n]*)\{\n(.*?)\n\}`)
+	routes, unguarded := 0, []string{}
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		for _, m := range fnRe.FindAllStringSubmatch(string(b), -1) {
+			name, params, body := m[1], m[2], m[3]
+			if !strings.Contains(params, "http.ResponseWriter") {
+				continue // not a route: helpers that tokenize are reached through one
+			}
+			tokenizes := false
+			for _, c := range tokenizers {
+				if strings.Contains(body, c) {
+					tokenizes = true
+					break
+				}
+			}
+			if !tokenizes {
+				continue
+			}
+			routes++
+			if strings.Contains(body, "promptTooLargeForContext(") {
+				continue
+			}
+			if _, ok := guardedByCaller[name]; ok {
+				continue
+			}
+			unguarded = append(unguarded, f+":"+name)
+		}
+	}
+	if routes == 0 {
+		t.Fatal("no tokenizing route found — the scan is broken, and a broken scan makes this " +
+			"gate pass over nothing")
+	}
+	for _, u := range unguarded {
+		t.Errorf("%s tokenizes an arbitrary request body with no promptTooLargeForContext guard: "+
+			"a body under the byte cap still pays a full O(n) BPE before being rejected. That is "+
+			"audit-2026-09-02 M-21, which was G1c reaching three routes of eight; this is the "+
+			"check that counts them.", u)
+	}
+	for name, why := range guardedByCaller {
+		if strings.TrimSpace(why) == "" {
+			t.Errorf("%s claims a caller guards it and gives no reason", name)
+		}
+	}
+	t.Logf("%d tokenizing route(s), all guarded (%d by a caller)", routes, len(guardedByCaller))
+}
+
+// The decoder-as-embedder must TRUNCATE to the model's context window (HF truncation=True), not send
+// HiddenLast more tokens than it can take: ~1 MiB of short words is ~500k tokens, and HiddenLast preallocates
+// KV for all of them under the embed mutex until the process is OOM-killed. The decoder-side guard
+// (TestHiddenLast_refusesMoreTokensThanTheContextWindow) makes that an error; both halves are pinned. Audit
+// C-07, C-21.
+func TestDecoderEmbedder_truncatesToTheContextWindow(t *testing.T) {
+	const window = 16
+	e := &decoderEmbedder{
+		maxTokens: window, // what loadDecoderEmbedder now sets from m.Config().MaxPositions
+		appendID:  -1,
+	}
+	if e.maxTokens == 0 {
+		t.Fatal("premise broke: maxTokens 0 is the unbounded state this test is about")
+	}
+	// truncateForContext is the exact function tokenize() calls (docs/review-2026-09-04.md, V-21): the test calls
+	// it rather than re-deriving the arithmetic, so a bug in the real code cannot pass unnoticed.
+	ids := truncateForContext(make([]int, window*4), e.maxTokens, e.appendID)
+	if len(ids) != window {
+		t.Fatalf("truncated to %d, want %d", len(ids), window)
+	}
+
+	// With an appended pooling token, the slot must be RESERVED — the appended token has to stay
+	// last because it is the pooled position, so truncation must not be what drops it.
+	e2 := &decoderEmbedder{maxTokens: window, appendID: 7}
+	ids2 := truncateForContext(make([]int, window*4), e2.maxTokens, e2.appendID)
+	ids2 = append(ids2, e2.appendID)
+	if len(ids2) != window {
+		t.Errorf("with an appended token the total is %d, want %d", len(ids2), window)
+	}
+	if ids2[len(ids2)-1] != 7 {
+		t.Error("the appended pooling token is not last; truncation dropped the pooled position")
+	}
+}
+
+// The wiring itself: loadDecoderEmbedder must set maxTokens from the model, not leave it 0.
+// The arithmetic test above passes for any non-zero bound, so this is what pins the SOURCE of it.
+func TestDecoderEmbedder_boundComesFromTheModelNotZero(t *testing.T) {
+	b, err := os.ReadFile("decoder_embedder.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	if strings.Contains(src, "maxTokens: 0,") {
+		t.Error("loadDecoderEmbedder still constructs the embedder with maxTokens: 0 — the token " +
+			"count is unbounded and only C-21's 1 MiB byte cap stands between a request and ~500k " +
+			"positions of sequential forward under the embed mutex (audit-2026-09-02 C-07)")
+	}
+	if !strings.Contains(src, "maxTokens: m.Config().MaxPositions,") {
+		t.Error("the embedder's token bound no longer comes from the model's context window; " +
+			"m.Config().MaxPositions is max_position_embeddings, and NOT Architecture.MaxPositions, " +
+			"which is the GPT-2 learned-position table and 0 for every RoPE family")
+	}
+}
+
+// Both JSON decoders must shape an error the same way, and neither may echo the raw one: Go struct, field and
+// type names ("json: cannot unmarshal string into Go struct field anthropicReq.max_tokens of type int") must
+// not reach the client. Audit N-16.
+func TestJSONDecodeMessage_neverLeaksGoTypeNames(t *testing.T) {
+	type inner struct {
+		N int `json:"n"`
+	}
+	type req struct {
+		Flag     bool            `json:"flag"`
+		Messages []inner         `json:"messages"`
+		Raw      json.RawMessage `json:"raw"`
+	}
+	for name, body := range map[string]string{
+		"scalar field":    `{"flag": "yes"}`,
+		"composite field": `{"messages": "nope"}`,
+		"malformed":       `{"flag":`,
+	} {
+		var v req
+		err := json.Unmarshal([]byte(body), &v)
+		if err == nil {
+			t.Fatalf("%s: premise broke, %s decoded cleanly", name, body)
+		}
+		msg, tooLarge := jsonDecodeMessage(err)
+		if tooLarge {
+			t.Errorf("%s: reported as a body-size failure", name)
+		}
+		for _, leak := range []string{"Go struct", "serveapp.", "json:", "*serveapp"} {
+			if strings.Contains(msg, leak) {
+				t.Errorf("%s: message leaks internals (%q): %s", name, leak, msg)
+			}
+		}
+		if msg == "" {
+			t.Errorf("%s: empty message", name)
+		}
+	}
+}
+
+// The Anthropic decoder must USE the shared shaping: the test above proves the shaper is clean, not the call
+// site.
+func TestAnthropic_decodeUsesTheSharedShaping(t *testing.T) {
+	b, err := os.ReadFile("anthropic.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	if strings.Contains(src, `"invalid request body: "+err.Error()`) {
+		t.Error("decodeAnthropicJSON still appends the raw json error, which re-leaks the Go " +
+			"struct/field/type names M-06 and R-11 removed from the OpenAI surface (N-16)")
+	}
+	if !strings.Contains(src, "jsonDecodeMessage(err)") {
+		t.Error("decodeAnthropicJSON no longer routes through jsonDecodeMessage; the two surfaces " +
+			"can drift again")
+	}
+}
+
+// Session persistence is the conversation: a .giw-kv blob replays what the user said and the model answered,
+// so the blobs and their directory (whose listing exposes the session ids) must be owner-only, not
+// world-readable. Audit N-21.
+func TestSessions_persistedStateIsOwnerOnly(t *testing.T) {
+	if sessionFilePerm != 0o600 {
+		t.Errorf("session blobs are written %#o, want 0o600", sessionFilePerm)
+	}
+	if sessionDirPerm != 0o700 {
+		t.Errorf("the session directory is created %#o, want 0o700", sessionDirPerm)
+	}
+	b, err := os.ReadFile("sessions.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Code lines only: the comment above the constants names the old modes, and a substring scan over the whole
+	// file would match its own explanation.
+	for line := range strings.SplitSeq(string(b), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+			continue
+		}
+		for _, world := range []string{"0o644", "0o755", "0o666", "0o777"} {
+			if strings.Contains(line, world) {
+				t.Errorf("sessions.go still writes something %s — a KV blob is the conversation: %s",
+					world, strings.TrimSpace(line))
+			}
+		}
+	}
+}
+
+// Two concurrent loads of the same name must not leak the loser's model. loadDecoder runs outside the registry
+// lock, so both load and the post-check in publishLoaded (admin.go, shared with the web UI load in webui.go)
+// refuses the second; the refused *loadedModel holds resident device memory, the .giw mmap and an uploaded
+// block drafter, and purego installs no finalizers, so it must be closed explicitly.
+//
+// Asserted on the SOURCE because the leak has no observable behaviour: a test watching RSS would measure
+// Darwin's UBC, not the defect. It checks that the refusal branch in publishLoaded closes what it refuses, and
+// that neither handler publishes into s.models around that branch. Audit M-24.
+func TestAdminLoad_racedDuplicateIsClosed(t *testing.T) {
+	fset := token.NewFileSet()
+	af, err := parser.ParseFile(fset, "admin.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse admin.go: %v", err)
+	}
+	var publish *ast.FuncDecl
+	for _, d := range af.Decls {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Name.Name == "publishLoaded" {
+			publish = fd
+		}
+	}
+	if publish == nil {
+		t.Fatal("publishLoaded not found in admin.go — this guard is watching nothing")
+	}
+	// The refusal branch: a block that unlocks regMu and returns false, as DIRECT statements.
+	// Matching nested text would make the enclosing function body match as well, since it
+	// contains this block — a guard counting 2 where it meant 1.
+	var checked int
+	ast.Inspect(publish.Body, func(n ast.Node) bool {
+		blk, ok := n.(*ast.BlockStmt)
+		if !ok {
+			return true
+		}
+		var unlocks, refuses bool
+		for _, st := range blk.List {
+			if es, ok := st.(*ast.ExprStmt); ok {
+				src := &strings.Builder{}
+				_ = printer.Fprint(src, fset, es)
+				if strings.Contains(src.String(), "regMu.Unlock()") {
+					unlocks = true
+				}
+			}
+			if rs, ok := st.(*ast.ReturnStmt); ok && len(rs.Results) == 1 {
+				if id, ok := rs.Results[0].(*ast.Ident); ok && id.Name == "false" {
+					refuses = true
+				}
+			}
+		}
+		if !unlocks || !refuses {
+			return true
+		}
+		checked++
+		var body strings.Builder
+		_ = printer.Fprint(&body, fset, blk)
+		for _, want := range []string{"model.Close()", "closeEntryNatives()"} {
+			if !strings.Contains(body.String(), want) {
+				t.Errorf("publishLoaded's raced-duplicate branch does not call %s: the loser's fully "+
+					"loaded model is dropped without releasing device memory, the .giw mmap or "+
+					"the block drafter, and purego has no finalizers to collect them (M-24)", want)
+			}
+		}
+		return true
+	})
+	if checked != 1 {
+		t.Errorf("found %d refusal branches in publishLoaded, want 1 — the guard is watching the wrong code", checked)
+	}
+
+	// Only publishLoaded may write the registry, in both files a load can come from.
+	for _, file := range []string{"admin.go", "webui.go"} {
+		f, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
+		for _, d := range f.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok || fd.Body == nil || fd.Name.Name == "publishLoaded" {
+				continue
+			}
+			ast.Inspect(fd.Body, func(n ast.Node) bool {
+				as, ok := n.(*ast.AssignStmt)
+				if !ok {
+					return true
+				}
+				for _, lhs := range as.Lhs {
+					ix, ok := lhs.(*ast.IndexExpr)
+					if !ok {
+						continue
+					}
+					if sel, ok := ix.X.(*ast.SelectorExpr); ok && sel.Sel.Name == "models" {
+						t.Errorf("%s: %s writes s.models directly — publish through publishLoaded, or a raced "+
+							"duplicate load leaks its model (M-24)", file, fd.Name.Name)
+					}
+				}
+				return true
+			})
+		}
+	}
+}
+
+// Response, message and tool-call ids must not be guessable: a sequential counter, even one seeded from
+// UnixNano, gives consecutive ids, and previous_response_id continues a stored conversation from an id, so
+// with -addr 0.0.0.0 and one shared key a client could walk onto another client's turns. Audit N-17.
+func TestReqID_isNotGuessable(t *testing.T) {
+	const n = 512
+	seen := make(map[string]bool, n)
+	ids := make([]string, 0, n)
+	for range n {
+		id := reqID()
+		if seen[id] {
+			t.Fatalf("duplicate id %q in %d draws", id, n)
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	if len(ids[0]) < 24 {
+		t.Errorf("id %q is %d chars — too short to resist enumeration", ids[0], len(ids[0]))
+	}
+	// Consecutive ids must not be consecutive integers: parsed as big-endian hex, a counter differs by exactly 1
+	// every time.
+	var consecutive int
+	for i := 1; i < len(ids); i++ {
+		a, ok1 := new(big.Int).SetString(ids[i-1], 16)
+		b, ok2 := new(big.Int).SetString(ids[i], 16)
+		if !ok1 || !ok2 {
+			t.Fatalf("ids are not hex: %q %q", ids[i-1], ids[i])
+		}
+		if new(big.Int).Sub(b, a).CmpAbs(big.NewInt(1)) == 0 {
+			consecutive++
+		}
+	}
+	if consecutive > 0 {
+		t.Errorf("%d of %d consecutive id pairs differ by exactly 1 — the ids are a counter, so "+
+			"holding one id gives you the next (N-17)", consecutive, len(ids)-1)
+	}
+}
+
+// The unload drain must save sessions under lm.sessMu: demoteLoop mutates the session LRU on its own ticker,
+// the drain waits out in-flight requests but the idle-demote goroutine is not one and holds no ml.rw, and
+// sessions.go documents the LRU as not goroutine-safe, so an unlocked save is a concurrent map access (a
+// crash).
+//
+// Asserted on the source: reproducing it needs -kv-idle-demote, -session-dir and an unload landing inside a
+// tick, and a test that raced for it would be flaky in the direction that reports success. Audit N-20.
+func TestStartDrain_savesSessionsUnderTheLRULock(t *testing.T) {
+	src, err := os.ReadFile("liveness.go")
+	if err != nil {
+		t.Fatalf("read liveness.go: %v", err)
+	}
+	lines := strings.Split(string(src), "\n")
+	var found bool
+	for i, ln := range lines {
+		if !strings.Contains(ln, "lm.sessions.save(") {
+			continue
+		}
+		found = true
+		// lm.sessMu must be held: look for the Lock in the few lines above.
+		var locked bool
+		for j := i - 1; j >= 0 && j >= i-6; j-- {
+			if strings.Contains(lines[j], "lm.sessMu.Lock()") {
+				locked = true
+				break
+			}
+		}
+		if !locked {
+			t.Errorf("liveness.go:%d saves the session LRU without taking lm.sessMu — demoteLoop "+
+				"mutates the same map on its ticker (N-20):\n\t%s", i+1, strings.TrimSpace(ln))
+		}
+	}
+	if !found {
+		t.Error("no lm.sessions.save( in liveness.go — this guard is watching the wrong file")
+	}
+}
+
+// Admin load must take c.quantSet from the request, not inherit it from the CLI: explicitQuant(), which drives
+// the .giw baked-quant mismatch check, reads it. Both directions fail and they are opposite failures, so both
+// are checked. Audit N-19:
+//
+//	no CLI --quant + admin asks int8  → not treated as explicit → the bundle's baked int4
+//	                                    loads SILENTLY under an int8 request
+//	CLI --quant given + admin asks nothing → treated as explicit → the request is rejected
+//	                                    against a quant it never named
+func TestAdminLoad_requestQuantIsTheExplicitOne(t *testing.T) {
+	for name, tc := range map[string]struct {
+		cliQuant    string
+		cliQuantSet bool
+		reqQuant    string
+		want        string // what explicitQuant should report for this load
+	}{
+		"request names a quant, no CLI default": {"", false, "int8", "int8"},
+		"request names a quant, CLI differs":    {"int4", true, "int8", "int8"},
+		"request names nothing, CLI was passed": {"int4", true, "", ""},
+		"request names nothing, no CLI either":  {"", false, "", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := config{load: loadflags.Flags{Quant: tc.cliQuant, QuantSet: tc.cliQuantSet}}
+			// The admin handler's resolution, verbatim.
+			if tc.reqQuant != "" {
+				c.load.Quant, c.load.QuantSet = tc.reqQuant, true
+			} else {
+				c.load.QuantSet = false
+			}
+			if got := (modelSpec{}).explicitQuant(c); got != tc.want {
+				t.Errorf("explicitQuant = %q, want %q — the .giw mismatch check keys on this, so "+
+					"a wrong answer either loads a differently-baked bundle silently or rejects "+
+					"a request that named nothing (N-19)", got, tc.want)
+			}
+		})
+	}
+
+	// And the handler must do that resolution: the table is the rule, this is the call site.
+	src, err := os.ReadFile("admin.go")
+	if err != nil {
+		t.Fatalf("read admin.go: %v", err)
+	}
+	if !strings.Contains(string(src), "c.load.Quant, c.load.QuantSet = req.Quant, true") {
+		t.Error("admin.go does not set QuantSet from the request: c.load.Quant moves and QuantSet " +
+			"stays inherited from the CLI, which is N-19 exactly")
+	}
+}
+
+// A NAMED tool_choice whose function is not in tools must be a 400: decoded unconstrained, it asked for one
+// function and gets prose that looks like a free choice. ("Named but unconstrainable" is already a 400.) Audit
+// N-18.
+func TestConstrainForcedTool_namedButNonexistentIs400(t *testing.T) {
+	tools := []chat.Tool{{Name: "get_weather"}, {Name: "get_time"}}
+	lm := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
+
+	err := constrainForcedTool(lm, &genRequest{}, nil, true, "", tools)
+	if err == nil {
+		t.Fatal("a named tool_choice matching no tool returned nil (N-18)")
+	}
+	// The message must name what IS available, or the caller cannot tell a typo from a
+	// server-side omission.
+	for _, want := range []string{"get_weather", "get_time"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not list the available tool %q", err, want)
+		}
+	}
+	// Not an error when no specific function was named — that is just "no lone-tool shortcut".
+	if err := constrainForcedTool(lm, &genRequest{}, nil, false, "", tools); err != nil {
+		t.Errorf("unnamed choice with no forced tool errored: %v", err)
+	}
+}
+
+// The input-size guard must price everything rendered into the prompt, not message text only: tool schemas
+// (RenderToolsSegments) and replayed tool_calls[].arguments (messagesToTurns) too, or a small message with a
+// huge schema passes in constant time and then runs the full BPE.
+// TestServe_everyTokenizingRouteGuardsItsInputSize checks only that the guard is present; the tests below
+// check what it measures. Audit M-15.
+
+// TestChatInputBytes_countsReplayedToolCallArguments is the direct unit gate: an assistant
+// message's ToolCalls (OpenAI/Responses shape) must be counted, not just its own text.
+func TestChatInputBytes_countsReplayedToolCallArguments(t *testing.T) {
+	textOnly := []chatMessage{{Role: "user", Content: rawStr("hi")}}
+	base := chatInputBytes(textOnly)
+
+	bigArgs := strings.Repeat("x", 10000)
+	withReplay := []chatMessage{
+		{Role: "user", Content: rawStr("hi")},
+		{Role: "assistant", ToolCalls: []apiToolCall{{Function: struct {
+			Name      string `json:"name"`
+			Arguments string `json:"arguments"`
+		}{Name: "f", Arguments: bigArgs}}}},
+	}
+	got := chatInputBytes(withReplay)
+	want := base + len("f") + len(bigArgs)
+	if got != want {
+		t.Errorf("chatInputBytes with a replayed tool call = %d, want %d (base %d + name/arguments) "+
+			"— the guard's argument does not cover tool_calls[].function.arguments (M-15)", got, want, base)
+	}
+}
+
+// TestToolSchemaBytes_countsFunctionFields is the direct unit gate for the OpenAI/Responses tool
+// declaration list.
+func TestToolSchemaBytes_countsFunctionFields(t *testing.T) {
+	tools := []toolSpec{{Type: "function"}}
+	tools[0].Function.Name = "get_weather"
+	tools[0].Function.Description = "Get the current weather"
+	tools[0].Function.Parameters = json.RawMessage(strings.Repeat("x", 5000))
+	got := toolSchemaBytes(tools)
+	want := len(tools[0].Function.Name) + len(tools[0].Function.Description) + len(tools[0].Function.Parameters)
+	if got != want {
+		t.Errorf("toolSchemaBytes = %d, want %d — not every field the renderer reads is covered (M-15)", got, want)
+	}
+}
+
+// A tiny message plus a huge tool schema, composed as serveChatToolsWith's guard call does
+// (chatInputBytes(msgs) + toolSchemaBytes(tools)), must trip a budget the message text alone passes. This is
+// not a call through the real HTTP handler: promptTooLargeForContext returns nil without a real
+// *decoder.Model, so this pins the composition and the per-function tests above pin each addend.
+func TestGuardComposition_hugeToolSchemaTripsTheBudgetAloneOnATinyMessage(t *testing.T) {
+	msgs := []chatMessage{{Role: "user", Content: rawStr("hi")}}
+	tools := []toolSpec{{Type: "function"}}
+	tools[0].Function.Name = "f"
+	tools[0].Function.Parameters = json.RawMessage(strings.Repeat("x", 100000))
+
+	textOnly := chatInputBytes(msgs)
+	withSchema := textOnly + toolSchemaBytes(tools)
+	if withSchema <= textOnly {
+		t.Fatal("test bug: schema bytes did not add anything measurable")
+	}
+	// A context/maxTokenBytes budget that admits textOnly but refuses withSchema — proving the
+	// schema bytes are what tips it over, not an unrelated budget choice.
+	const maxTokenBytes = 4
+	ctx := (textOnly + toolSchemaBytes(tools)) / (2 * maxTokenBytes) // budget strictly between the two
+	if err := promptByteBudgetError(textOnly, ctx, maxTokenBytes); err != nil {
+		t.Fatalf("test bug: text-only bytes alone already exceed the chosen budget: %v", err)
+	}
+	if err := promptByteBudgetError(withSchema, ctx, maxTokenBytes); err == nil {
+		t.Error("a huge tool schema on a tiny message did not trip the budget guard (M-15) — " +
+			"the guard's argument does not include toolSchemaBytes")
+	}
+}

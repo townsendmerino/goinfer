@@ -90,31 +90,31 @@ reported rather than reddening the lint.
 Not rebuilt below; this is the floor J1–J9 build on.
 
 - **One decode worker per model.** `tryEnter` claims a queue slot and then takes its turn
-  (`internal/serveapp/openai.go:loadedModel.tryEnter`), and that turn is what serialises decode. The cap is
-  literally `1 running + --max-queue` (`internal/serveapp/openai.go:loadedModel`).
+  (`internal/app/serveapp/openai.go:loadedModel.tryEnter`), and that turn is what serialises decode. The cap is
+  literally `1 running + --max-queue` (`internal/app/serveapp/openai.go:loadedModel`).
 - **The wait is not fair and not context-aware by itself.** `sync.Mutex.Lock()` has no context, so
   a second check exists purely so a halt can cut a waiter loose
-  (`internal/serveapp/openai.go:loadedModel.tryEnter`). Waiters are woken in whatever order the mutex chooses: a
+  (`internal/app/serveapp/openai.go:loadedModel.tryEnter`). Waiters are woken in whatever order the mutex chooses: a
   20-token request that arrived last can go after a 4,000-token one that arrived first, and
   nothing in the system knows the difference.
 - **Backpressure is a number, not a plan.** `-max-queue` defaults to 8
-  (`internal/serveapp/main.go:registerFlags`); a full queue is a 429 on the OpenAI routes and a 529
-  `overloaded_error` on the Anthropic one (`internal/serveapp/anthropic.go:server.serveMessagesWith`). A global
+  (`internal/app/serveapp/main.go:registerFlags`); a full queue is a 429 on the OpenAI routes and a 529
+  `overloaded_error` on the Anthropic one (`internal/app/serveapp/anthropic.go:server.serveMessagesWith`). A global
   `-max-inflight` (default 128) bounds the pre-queue stage — JSON and image decode, tokenisation,
   template render — and is deliberately distinct from the per-model 429
-  (`internal/serveapp/helpers.go:limitInflight`).
+  (`internal/app/serveapp/helpers.go:limitInflight`).
 - **Nothing is durable.** `drive` runs the generation for the life of the request
-  (`internal/serveapp/openai.go:loadedModel.drive`). The client's connection *is* the job: close it and the  work is cancelled and unrecoverable. There is no id to ask about afterwards.
+  (`internal/app/serveapp/openai.go:loadedModel.drive`). The client's connection *is* the job: close it and the  work is cancelled and unrecoverable. There is no id to ask about afterwards.
 - **There is warm state worth scheduling around.** The session LRU keeps prefilled KV and hands a
   request the session that already holds its prompt as a prefix
-  (`internal/serveapp/sessions.go:sessionLRU`), `-kv-sessions` 4 by default
-  (`internal/loadflags/loadflags.go:Register`). Admission order therefore has a measurable cost today that
+  (`internal/app/serveapp/sessions.go:sessionLRU`), `-kv-sessions` 4 by default
+  (`internal/app/loadflags/loadflags.go:Register`). Admission order therefore has a measurable cost today that
   admission does not know about.
 - **One route already takes a batch.** `/v1/embeddings` accepts up to 2,048 inputs in a request
-  (`internal/serveapp/embeddings.go:maxEmbedInputs`) — the only bulk surface in the product, and the shape J4
+  (`internal/app/serveapp/embeddings.go:maxEmbedInputs`) — the only bulk surface in the product, and the shape J4
   generalises.
 - **No batch CLI.** `goinfer-chat` takes one `--model` and one conversation
-  (`internal/chatapp/main.go:Main`); there is no file-in/file-out mode.
+  (`internal/app/chatapp/main.go:Main`); there is no file-in/file-out mode.
 - **From K1/K2/K5, already shipped:** a generation registry with cancel-by-id, global halt with
   in-flight cancellation, and an admin unix socket. J2 and J3 are the durable layer those three
   already assume exists and currently do without.
@@ -143,7 +143,7 @@ Replace the bare mutex wait with an explicit queue the server can reason about.
 
 - A per-model FIFO of waiting requests with a real `context.Context` per waiter, so a cancelled or
   halted waiter leaves immediately and the second halt check in
-  `internal/serveapp/openai.go:loadedModel.tryEnter` stops being load-bearing.
+  `internal/app/serveapp/openai.go:loadedModel.tryEnter` stops being load-bearing.
 - **Context-aware**, in both senses: the admission record carries the request's prompt-token count
   and its session/prefix key, so J6 and J7 have something to schedule on. J1 itself keeps strict
   FIFO — it establishes the structure and changes no order.
@@ -151,7 +151,7 @@ Replace the bare mutex wait with an explicit queue the server can reason about.
 - Gate: with `-max-queue 1` and two concurrent requests, the second's cancellation is observed at
   the server within one decode step, not at the end of the first generation. Red before the change.
 
-**Status: DONE 2026-09-14** (`main`). `internal/serveapp/admission.go`: a size-1, FIFO,
+**Status: DONE 2026-09-14** (`main`). `internal/app/serveapp/admission.go`: a size-1, FIFO,
 context-aware turn-granter (modeled on `golang.org/x/sync/semaphore.Weighted`'s `Acquire` as a
 *technique*, not a dependency — ground rule 4 forbids a new module for this), replacing
 `loadedModel.mu`. `sessionLRU` turned out to have no client-visible session key at all — it matches
@@ -168,7 +168,7 @@ safety property is unchanged; only the *wait for a turn* gained context-awarenes
 and the same safety property comes from checking the in-use session out (`sessionLRU.busy`). The LRU never hands
 out, evicts, demotes, saves or reads a session a generation holds, and admission is N-wide on a CPU model.
 
-Gate built as specified in `internal/serveapp/admission_test.go`, deterministic and fast (no real
+Gate built as specified in `internal/app/serveapp/admission_test.go`, deterministic and fast (no real
 checkpoint needed — the defect is in the wait mechanism itself): a waiter behind an indefinitely-
 held turn is cancelled and must return well within milliseconds, not "the end of the first
 generation." Verified red without the fix with a companion test running the identical scenario
@@ -185,7 +185,7 @@ rather than needing to be granted their turn first — the concrete, observable 
   Every generation gets one, whether or not anything durable is on.
 - `-job-dir <path>` (off by default) appends one JSONL line per state transition. Append-only,
   fsync on terminal states, owner-only mode — the same 0600/0700 reasoning
-  `internal/serveapp/sessions.go`'s snapshot fix already applies, since a job record replays the
+  `internal/app/serveapp/sessions.go`'s snapshot fix already applies, since a job record replays the
   prompt.
 - On restart, the journal is read to reconstruct terminal jobs for J3's lookup. A job that was
   *running* at exit is marked `interrupted`, never silently `failed` — the distinction is the whole
@@ -193,9 +193,9 @@ rather than needing to be granted their turn first — the concrete, observable 
 - This subsumes K9 (the append-only generation log) rather than duplicating it: one journal, two
   readers.
 
-**Status: DONE 2026-09-14** (`main`). `internal/serveapp/job.go` (the `job`/`jobStore` object,
+**Status: DONE 2026-09-14** (`main`). `internal/app/serveapp/job.go` (the `job`/`jobStore` object,
 in-memory, always populated — `newServer` constructs it unconditionally) and
-`internal/serveapp/jobjournal.go` (the optional JSONL durability layer, gated on `-job-dir`).
+`internal/app/serveapp/jobjournal.go` (the optional JSONL durability layer, gated on `-job-dir`).
 `request` is scoped to what `drive`/`driveVL`'s existing K1 chokepoint actually has — the decoded
 prompt token ids, not the raw HTTP body, which would need new plumbing from all 8 handler call
 sites for no reader that exists yet. Each journal line is a full snapshot at that transition (not a
@@ -203,7 +203,7 @@ diff), so reconstruction is "keep the last line per id." Jobs are created/finish
 `drive`/`driveVL` chokepoint as K1's registration, keyed on the same `gr.id`, so J3's later "the two
 registries are joined, not parallel" is a lookup away rather than a retrofit — not built this pass.
 
-Gate built as specified in `internal/serveapp/job_test.go`: round-trip (write, reload, get the last
+Gate built as specified in `internal/app/serveapp/job_test.go`: round-trip (write, reload, get the last
 state back), the interrupted-on-restart case (a `running` transition with no terminal follow-up
 reconstructs as `interrupted`, verified red without the fix by removing that logic and confirming
 the test catches it), a *second* restart's own last line correctly stays `interrupted` (not
@@ -229,18 +229,18 @@ behavior (`TestServe_backpressure`, `TestServe_haltUnderLoad`, `TestServe_anthro
   byte-identical to an uninterrupted run of the same seed.
 
 **Status: DONE 2026-09-14** (`main`), text-chat scope only — see "not built" below.
-`internal/serveapp/jobs_http.go` (the four routes), `jobs_run.go` (`runJob`, the async
+`internal/app/serveapp/jobs_http.go` (the four routes), `jobs_run.go` (`runJob`, the async
 counterpart to `serveChatText`, decoupled from any HTTP request's lifetime), `jobeventlog.go`
 (the replay-then-live buffer). The one real architectural gap: every existing generation path runs
 `drive()` synchronously inside its own handler, holding `withModel`'s RLock
-(`internal/serveapp/liveness.go:server.withModel`) for the handler's whole body so `/admin` unload can't free the model
+(`internal/app/serveapp/liveness.go:server.withModel`) for the handler's whole body so `/admin` unload can't free the model
 mid-generation. `POST /v1/jobs` returns before the generation finishes, so `resolveAndLock`
-(`internal/serveapp/liveness.go:server.resolveAndLock`) is called directly instead of through `withModel`, and its `release` is handed
+(`internal/app/serveapp/liveness.go:server.resolveAndLock`) is called directly instead of through `withModel`, and its `release` is handed
 to `runJob` to defer over the job's whole life instead of the handler's. Everything else needed —
 admission (`lm.tryEnter`, no `http.ResponseWriter` required), cancel-by-id (`drive`/`driveVL`
 already register `gr.id` in K1's registry once running) — was already reusable as-is.
 
-`jobStore` (J2) gained a `responseStore`-style FIFO cap (`internal/serveapp/responses.go:responseStore`'s pattern), skipping
+`jobStore` (J2) gained a `responseStore`-style FIFO cap (`internal/app/serveapp/responses.go:responseStore`'s pattern), skipping
 over any still-pending/running job rather than evicting it; and two creation paths — `create`
 (unchanged, both transitions at once, for every synchronous handler) and `createPending` +
 `getOrCreate` (the async path: pre-create pending BEFORE admission is even attempted, so
@@ -277,7 +277,7 @@ batch APIs, over this same store) and J6–J9 remain open.
 **Additions 2026-09-15, for the web UI's W27/W28** (`docs/tasks/task-web-ui-2026-09.md` §7). All additive.
 - **The events stream now closes the way `/v1/chat/completions` does:** a `finish_reason` chunk and a
   usage chunk, or an OpenAI-style `{"error":…}` event for a failed job (`jobTerminalEvents`,
-  `internal/serveapp/jobs_run.go`). Before, it sent the text and `[DONE]`, so a re-attaching client had to
+  `internal/app/serveapp/jobs_run.go`). Before, it sent the text and `[DONE]`, so a re-attaching client had to
   poll to learn whether the reply was complete, what it cost, or that it had failed. The chunks carry no
   text, so the byte-identical re-attach gate above still holds.
 - **`GET /v1/jobs/{id}` reports a waiting job's place in line:** `queue: {position, waiting, running}`, from
@@ -309,12 +309,12 @@ The existing J3/J4 real-checkpoint tests pass unchanged. Six mutations, each red
   knowledge, and the result file's `custom_id` ordering matches the input.
 
 **Status: DONE 2026-09-15** (`main`), text-only scope — see "not built" below. Both dialects reduce
-to the same three parts, all new: `internal/serveapp/files.go` (OpenAI's file store — write-once,
-so unlike `job` it needs no `snapshot`-style copy to read race-free), `internal/serveapp/batches.go`
+to the same three parts, all new: `internal/app/serveapp/files.go` (OpenAI's file store — write-once,
+so unlike `job` it needs no `snapshot`-style copy to read race-free), `internal/app/serveapp/batches.go`
 (`batchStore`/`batchRecord`, mirroring `jobStore`'s own FIFO-skip-a-live-one eviction shape almost
-verbatim), `internal/serveapp/batches_run.go` (`runBatchChatLine`/`runBatchMessageLine`, one
-goroutine per line), `internal/serveapp/batches_finalize.go` (`finalizeBatch`, assembling the
-output once every line is terminal), `internal/serveapp/batches_http.go` (the ten new routes).
+verbatim), `internal/app/serveapp/batches_run.go` (`runBatchChatLine`/`runBatchMessageLine`, one
+goroutine per line), `internal/app/serveapp/batches_finalize.go` (`finalizeBatch`, assembling the
+output once every line is terminal), `internal/app/serveapp/batches_http.go` (the ten new routes).
 
 **No second execution path, literally**: every line calls the exact same `lm.tryEnter`/`lm.drive`
 pair every other surface calls, with the SAME `jobStore.createPending`/`setCancel`/`finish`
@@ -389,7 +389,7 @@ remain open.
 - No server required — this runs the library in-process, which is also the mode-2 story the facade
   doc wants a real example of.
 
-**Status: built 2026-09-30.** `goinfer-chat --batch in.jsonl -o out.jsonl` (`internal/chatapp/batch.go`), documented in
+**Status: built 2026-09-30.** `goinfer-chat --batch in.jsonl -o out.jsonl` (`internal/app/chatapp/batch.go`), documented in
 `docs/server.md` § Batch files.
 
 - **One format, one copy of the code.** The input parser, the byte layout of an output and an error line, and the resume scan
@@ -435,7 +435,7 @@ a real speed lever for big batches, not measured); vision and tool lines (as J4)
 
 The only place ordering can buy real throughput on one worker: prefer the waiter whose prompt
 shares the longest prefix with a session already warm in the LRU
-(`internal/serveapp/sessions.go:sessionLRU`).
+(`internal/app/serveapp/sessions.go:sessionLRU`).
 
 - **Pre-registered band: 1.3–2.0×** on a mixed agent-loop workload (shared system prompt and tool
   specs, divergent tails) against strict FIFO.
@@ -446,8 +446,8 @@ shares the longest prefix with a session already warm in the LRU
 
 **Status: KILLED 2026-09-15** (measured, not shipped) — full record in
 `docs/measurements/j6-prefix-scheduling-2026-09-15.md`. Mechanism was implemented and
-unit-tested (`internal/serveapp/admission.go`'s `release`/`pickLocked`/`longestResidentPrefix`,
-`internal/serveapp/sessions.go`'s `residentPrefixSnapshot`), then measured with a new harness
+unit-tested (`internal/app/serveapp/admission.go`'s `release`/`pickLocked`/`longestResidentPrefix`,
+`internal/app/serveapp/sessions.go`'s `residentPrefixSnapshot`), then measured with a new harness
 (`scripts/bench_j6_scheduling.py` — neither `bench_compare.sh` nor
 `bench_peer.py`/`bench_peer_transcript.py` can drive concurrent admission-queue contention) against
 the pre-registered band in `docs/measurements/j6-prefix-scheduling-PREREGISTERED.md`. **Measured
@@ -524,12 +524,12 @@ The only throughput item, and it is deliberately last.
 
 ## Sources
 
-`internal/serveapp/openai.go:loadedModel`, `:209`, `:220`, `:1087` (the queue cap, `tryEnter`, the halt
-check, `drive`) · `internal/serveapp/helpers.go:limitInflight` (`-max-inflight`, distinct from the per-model
-429) · `internal/loadflags/loadflags.go:Register`, `:508` (`-kv-sessions`, `-max-queue`) ·
-`internal/serveapp/anthropic.go:server.serveMessagesWith` (529 on a full queue) · `internal/serveapp/sessions.go:sessionLRU`
-(the session LRU J6 schedules around) · `internal/serveapp/embeddings.go:maxEmbedInputs` (the one existing bulk
-surface) · `internal/chatapp/main.go:Main` (the CLI J5 extends) ·
+`internal/app/serveapp/openai.go:loadedModel`, `:209`, `:220`, `:1087` (the queue cap, `tryEnter`, the halt
+check, `drive`) · `internal/app/serveapp/helpers.go:limitInflight` (`-max-inflight`, distinct from the per-model
+429) · `internal/app/loadflags/loadflags.go:Register`, `:508` (`-kv-sessions`, `-max-queue`) ·
+`internal/app/serveapp/anthropic.go:server.serveMessagesWith` (529 on a full queue) · `internal/app/serveapp/sessions.go:sessionLRU`
+(the session LRU J6 schedules around) · `internal/app/serveapp/embeddings.go:maxEmbedInputs` (the one existing bulk
+surface) · `internal/app/chatapp/main.go:Main` (the CLI J5 extends) ·
 [`task-halt-2026-09.md`](task-halt-2026-09.md) K1/K2/K4/K5/K9 ·
 [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) §3.3 ·
 [`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W27–W31 · `docs/api-tiers.md` (what `serve` promises)

@@ -2122,7 +2122,7 @@ refused it (R19, docs/completed/task-first-hour.md); 16384 holds that request wi
 CANDIDATE, not a grant: Plan shrinks it to what the card holds, and ctxForSlots shrinks it further until
 the requested KV slots all fit (owner decision 2026-09-27: context before conversations), so a card or
 model that cannot hold 16384 per slot lands where it always did. goinfer-chat fit's own -ctx default
-(internal/fitcmd/fit.go) uses the same figure, so the dry run and the real load agree.
+(internal/app/fitcmd/fit.go) uses the same figure, so the dry run and the real load agree.
 ```
 
 ## resolveCtxCapFit
@@ -2390,7 +2390,7 @@ hidCap is the hidden-state seam (P10 / docs/spec/08) a resident CUDA target woul
 to feed a hidden-state drafter (DFlash, DSpark) — the resident analogue of
 decoder.Model.ForwardCapture, which exists only on the CPU forward. NOT wired into
 production yet (audit-2026-09-02.md N-34, checked 2026-09-11): SetHiddenCapture/
-HiddenCapture have no non-test caller anywhere in the tree today — internal/serveapp's
+HiddenCapture have no non-test caller anywhere in the tree today — internal/app/serveapp's
 --drafter flag attaches through decoder.DFlashDrafter/LoadDFlashDrafter, which does not
 call into this seam, and decoder/*.go's only hidden-capture callers
 (SetGemma4HiddenCaptureForTest and friends) are a SEPARATE, Gemma4-CPU-specific,
@@ -3845,7 +3845,7 @@ every ratio here ~10% optimistic.
 Moved from `backend/cuda/drafter_reserve_test.go` (the comment above `withDrafterReserve`) on 2026-10-09.
 
 ```text
-withDrafterReserve is o for a target a block drafter attaches to AFTER the load, priced the way `serve --drafter` prices it (internal/serveapp/main.go loads the
+withDrafterReserve is o for a target a block drafter attaches to AFTER the load, priced the way `serve --drafter` prices it (internal/app/serveapp/main.go loads the
 drafter first and sets both fields): the plan then leaves the drafter's int8 weights and its per-position K/V out of the context it chooses. A test that loads the
 target plainly and bolts NewBlockSpec on afterwards gets a context sized to every byte beyond the 384 MiB margin and the drafter's allocation runs out of device
 memory (the 2026-10-07 night gate's three drafter failures, root-caused 2026-10-08: the loads logged "less 384 MB reserved", the margin alone). Production never

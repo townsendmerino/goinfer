@@ -226,9 +226,9 @@ them on 2026-10-09:
 | A | `cuda` | 4,155 | 1,115 |
 | A | `gpu` | 2,946 | 749 |
 | A | `cmd/gate` | 1,680 | 498 |
-| A | `constrain`, `tokenizer`, `pull`, `internal/prequant` | ~2,080 | ~580 |
+| A | `constrain`, `tokenizer`, `pull`, `internal/runtime/prequant` | ~2,080 | ~580 |
 | B | `decoder`, by file groups, one commit each | 15,708 | 4,902 |
-| B | `internal/serveapp` | 3,730 | 749 |
+| B | `internal/app/serveapp` | 3,730 | 749 |
 | B | `chat`, `multimodal` | ~1,270 | ~300 |
 | C | each package's `_test.go` files, after its non-test files (CC5) | ~34k | ~9.5k |
 
@@ -249,7 +249,7 @@ that branch merges; rewriting a comment block someone else is editing guarantees
 > | `constrain` | 678 → 600 | −12% | 55 → 12 | none |
 > | `tokenizer` | 756 → 652 | −14% | 51 → 8 | none |
 > | `pull` | 388 → 360 | −8% | 33 → 13 | none |
-> | `internal/prequant` | 258 → 217 | −16% | 33 → 8 | none |
+> | `internal/runtime/prequant` | 258 → 217 | −16% | 33 → 8 | none |
 > | **total** | **14,121 → 12,268** | **−14%** | **1,679 → 1,127** | |
 >
 > Over only the files that were worked the cut is larger (`cuda` −32%, `cmd/gate` −24%, `gpu` −18%, `metal` −16%). The four skipped
@@ -264,7 +264,7 @@ that branch merges; rewriting a comment block someone else is editing guarantees
 > | package | before → after | cut | history-marked | left alone |
 > |---|---|---|---|---|
 > | `decoder` | 15,481 → 11,384 | −27% | 1,524 → 439 | `residency.go` (the pilot's pass stands), `normnoise.go`, `testhooks.go`, `knobs.go` (open branches) |
-> | `internal/serveapp` | 3,739 → 3,057 | −19% | 461 → 123 | none |
+> | `internal/app/serveapp` | 3,739 → 3,057 | −19% | 461 → 123 | none |
 > | `chat` | 916 → 784 | −15% | 42 → 12 | none |
 > | `multimodal` | 400 → 344 | −14% | 30 → 13 | none |
 > | **total** | **20,536 → 15,569** | **−25%** | **2,057 → 587** | |
@@ -277,7 +277,7 @@ that branch merges; rewriting a comment block someone else is editing guarantees
 > every `docs/code-notes` pointer in the Go comments against the notes headings: 141 checked, 0 unresolved.
 
 > **Wave C done 2026-10-09 (CC5, fourteen agent branches merged, not pushed).** All `_test.go` files except 17 that unmerged branches edit
-> (nine in `metal`, three in `gpu`, `backend/cuda/actgroup_kernel_test.go`, three more `metal` ones, `internal/hwcensus/census_test.go`). Comment lines before → after:
+> (nine in `metal`, three in `gpu`, `backend/cuda/actgroup_kernel_test.go`, three more `metal` ones, `internal/diag/hwcensus/census_test.go`). Comment lines before → after:
 >
 > | package | before → after | cut | history-marked |
 > |---|---|---|---|
@@ -285,7 +285,7 @@ that branch merges; rewriting a comment block someone else is editing guarantees
 > | `cuda` | 7,086 → 6,028 | −15% | 757 → 525 |
 > | `metal` | 6,150 → 5,694 | −8% | 951 → 790 |
 > | `gpu` | 2,392 → 2,179 | −9% | 269 → 143 |
-> | `internal/serveapp` | 2,360 → 2,127 | −10% | 240 → 169 |
+> | `internal/app/serveapp` | 2,360 → 2,127 | −10% | 240 → 169 |
 > | the other 34 packages | 3,455 → 3,260 | −6% | 107 → 98 |
 > | **total** | **34,289 → 30,056** | **−13%** | **4,081 → 2,899** |
 >
@@ -309,7 +309,7 @@ that branch merges; rewriting a comment block someone else is editing guarantees
 > | `decoder/normnoise.go`, `testhooks.go`, `knobs.go` | 226 → 193 | −14% |
 > | **total** | **5,520 → 4,125** | **−25%** |
 >
-> Still skipped: `internal/hwcensus/census_test.go` (branch `hw-h1-ci-runners`, 2026-10-03, live) and the one `decoder/residency.go` pass that was the pilot's (the file
+> Still skipped: `internal/diag/hwcensus/census_test.go` (branch `hw-h1-ci-runners`, 2026-10-03, live) and the one `decoder/residency.go` pass that was the pilot's (the file
 > is worked). `gate comments-only 9c3833aa` is GREEN over the 27 files; `staticcheck` clean on the root, `cuda`, `gpu` and `metal` (darwin) modules; `deps_hash`
 > refreshed once more (35 goldens, 0 failed); `comment_diet.py pointers`: 323 checked, 0 unresolved. Merging `origin/main` (S10 LFM2.5-VL, aikit v1.64.0) first
 > conflicted in 22 files, all comment-versus-code overlaps: main's code kept byte for byte, the diet's wording kept.
@@ -391,13 +391,13 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
      the n-gram speculative entry points refuse them. **`decoder/deltanet.go`** (file comment): the Gated DeltaNet recurrence is the
      sequential reference, no chunked or parallel scan. **`decoder/kvcache.go:KVCache.resetMultimodal`**: not a live leak until VL
      goes through the session path. **`decoder/mlp.go:moeMLPBatchWith`**: expert-major order for paging is unmeasured. No owner.
-   - **`internal/mem/probe/physical_linux.go:Physical`**: the cgroup `memory.max` is not read, so a container over-reports. **`decoder/dspark.go`**:
+   - **`internal/runtime/mem/probe/physical_linux.go:Physical`**: the cgroup `memory.max` is not read, so a container over-reports. **`decoder/dspark.go`**:
      reusing the resident target's embed/head is unproven. **`decoder/gptq.go:parseQuantConfig`**: GPTQModel v2 is refused for want of a
      checkpoint to validate against. **`decoder/actquant_hazard.go:ActivationQuantHazard`** is a guard until per-group activation scales land.
      No owner for any of the four.
    - **`chat/tools.go:Template.RenderToolsSegments`** and **`chat/templates.go:Mistral`**: with tools declared, non-Harmony families return one
      Special segment, so their content spans get no injection hardening (a "follow-up" in the old comments). No owner.
-   - **`internal/serveapp`**: compute-time LoRA is not wired into the resident prefix-reuse path (`loadedModel.drive`), no owner;
+   - **`internal/app/serveapp`**: compute-time LoRA is not wired into the resident prefix-reuse path (`loadedModel.drive`), no owner;
      `pathFields` publishes `context_window` using `lm.adapter == ""` while the text routes enforce with `lm.residentPath()`, so an
      adapter model on a resident backend publishes `MaxPositions` but is held to the resident cap (a code inconsistency, comment now
      describes it, not fixed).
@@ -442,7 +442,7 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
      the glm-tiny control.
    - `backend/cuda/prefill_moe_test.go:TestPrefillMoE_bitIdentical`: "both fixtures are exercised"; one subtest declines and skips, the other's weights are
      absent in a fresh worktree. `backend/cuda/siglip_vision_test.go`: of three planted defects, two are asserted and one is only logged.
-   - `internal/serveapp/admin_test.go:TestServe_admin` claimed an unload-while-busy 409 it never exercises; `bodycaps_routes_test.go` claimed
+   - `internal/app/serveapp/admin_test.go:TestServe_admin` claimed an unload-while-busy 409 it never exercises; `bodycaps_routes_test.go` claimed
      `visionCap = textCap + 32 MiB` and asserts only `visionCap > textCap`.
    - `backend/metal/snapshot_golden_test.go:TestMetalSnapshotGolden`: which fixture covers which kernel is by construction, not asserted.
    - `backend/webgpu/granite_resident_speedup_test.go`, `kv_f16_fit_test.go`, `backend_w4a8_batch_test.go`: speed and one-submit claims the bodies only log or do not count.

@@ -7,7 +7,7 @@ import (
 	"slices"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
-	"github.com/townsendmerino/goinfer/internal/program"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // cudaStep is one entry of CUDA's fusion table (OP4cu-b2, docs/tasks/task-forward-architecture-2026-10.md §4.9a): one of

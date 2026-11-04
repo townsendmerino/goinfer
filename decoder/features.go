@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/townsendmerino/goinfer/internal/program"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // ResidentFeature is one architecture capability a resident (GPU) decode path must implement to run a model correctly.

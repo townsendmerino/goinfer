@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 // The prefix snapshot's policy (kvsnap.go) on a hash fake: mc3Fake's rows are a hash of each position's input and its logits a hash

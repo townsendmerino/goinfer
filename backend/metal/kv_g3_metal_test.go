@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/loadflags"
+	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 )
 
 // g3MetalNotBuilt are the Metal cells whose fixture builds no Metal resident (a decline outside KV), so the model runs on the CPU

@@ -2,7 +2,7 @@
 
 package kernels
 
-import "github.com/townsendmerino/goinfer/internal/f16"
+import "github.com/townsendmerino/goinfer/internal/runtime/f16"
 
 // The names package metal's kernel tests used for this package's MSL sources and packers (metal/msl.go, metal/pack.go),
 // kept for the tests that moved here so their bodies are unchanged.

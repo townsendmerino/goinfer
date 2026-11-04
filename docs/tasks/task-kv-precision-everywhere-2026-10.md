@@ -76,7 +76,7 @@ the CPU, Metal and WebGPU int8 caches already use (`decoder/kvcache.go`, `metal/
 | Session reuse, KV7 snapshots | yes | yes; precision is part of the share root (`resident_reuse.go`) | CPU snapshot tested (`TestKVI8_snapshotRoundtrip`); CUDA none |
 | MLA latent cache (DeepSeek, Kimi) | yes | none (CUDA declines, named) | none |
 
-Also wrong today: the `--kv` help text (`kvHelp` in `internal/loadflags/loadflags.go`) claims i8 for "the GPU residency cache", and
+Also wrong today: the `--kv` help text (`kvHelp` in `internal/app/loadflags/loadflags.go`) claims i8 for "the GPU residency cache", and
 B39's "State today" line says i8 is honored on Metal and WebGPU without the prefill and family declines above.
 
 **aikit** loads no goinfer model and has no KV setting (`go.mod` has no goinfer dependency), so it has nothing to build.

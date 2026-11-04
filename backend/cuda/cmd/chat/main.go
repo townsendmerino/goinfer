@@ -7,7 +7,7 @@ package main
 
 import (
 	_ "github.com/townsendmerino/goinfer/backend/cuda"
-	"github.com/townsendmerino/goinfer/internal/chatapp"
+	"github.com/townsendmerino/goinfer/internal/app/chatapp"
 )
 
 func main() { chatapp.Main() }

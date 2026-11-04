@@ -20,10 +20,10 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
-	"github.com/townsendmerino/goinfer/internal/memgate"
-	"github.com/townsendmerino/goinfer/internal/program"
-	"github.com/townsendmerino/goinfer/internal/sb2census"
+	"github.com/townsendmerino/goinfer/internal/diag/sb2census"
+	"github.com/townsendmerino/goinfer/internal/guard/memgate"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 	"github.com/townsendmerino/goinfer/internal/wrappedupload"
 )
 

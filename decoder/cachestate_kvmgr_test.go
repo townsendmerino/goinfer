@@ -3,7 +3,7 @@ package decoder
 import (
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 // What the KV manager's three paths can do with a kind of state at all (cachestate_test.go's allowedHandling, which

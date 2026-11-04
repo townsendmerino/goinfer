@@ -18,8 +18,8 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/goinfer/internal/cost"
-	"github.com/townsendmerino/goinfer/internal/giw"
-	"github.com/townsendmerino/goinfer/internal/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 // decodeTiming env-gates per-component decode timing (GOINFER_DECODE_TIMING=1) so

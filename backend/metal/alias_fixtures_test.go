@@ -8,7 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"io"
 	"maps"
 	"math"
@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/prequant"
+	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 )
 
 // S6's byte-identity gate over every resident-parity fixture, not just the two real checkpoints

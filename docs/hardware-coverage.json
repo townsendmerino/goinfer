@@ -509,13 +509,13 @@
    "gate": "Host RAM probe on macOS (hw.memsize; available memory through host_statistics64; internal/mem/probe)",
    "kind": "memory-probe",
    "predicates": [
-    "mem:hw.memsize@goinfer/internal/mem/probe/physical_darwin.go",
-    "mem:hw.memsize@goinfer/internal/mem/probe/read_darwin.go"
+    "mem:hw.memsize@goinfer/internal/runtime/mem/probe/physical_darwin.go",
+    "mem:hw.memsize@goinfer/internal/runtime/mem/probe/read_darwin.go"
    ],
    "selected_when": "the CPU fit guard and Plan on darwin, the Metal memory ceiling; every available-memory reading (decoder.HostRAMAvailableBytes, cmd/hostmem, the scripts' start checks)",
    "files": [
-    "goinfer/internal/mem/probe/physical_darwin.go",
-    "goinfer/internal/mem/probe/read_darwin.go"
+    "goinfer/internal/runtime/mem/probe/physical_darwin.go",
+    "goinfer/internal/runtime/mem/probe/read_darwin.go"
    ],
    "our_machines": "the 16 GB Mac",
    "last_executed": [
@@ -543,14 +543,14 @@
    "gate": "Host RAM probe on Linux (/proc/meminfo, also read by the swap reader; internal/mem/probe)",
    "kind": "memory-probe",
    "predicates": [
-    "mem:/proc/meminfo@goinfer/internal/mem/probe/physical_linux.go",
-    "mem:/proc/meminfo@goinfer/internal/mem/probe/read_linux.go"
+    "mem:/proc/meminfo@goinfer/internal/runtime/mem/probe/physical_linux.go",
+    "mem:/proc/meminfo@goinfer/internal/runtime/mem/probe/read_linux.go"
    ],
    "selected_when": "the CPU fit guard, Plan, the Linux swap watch, and every available-memory reading (MemAvailable through internal/mem/probe, cmd/hostmem)",
    "files": [
-    "goinfer/internal/mem/probe/physical_linux.go",
-    "goinfer/internal/mem/probe/swap_linux.go",
-    "goinfer/internal/mem/probe/read_linux.go"
+    "goinfer/internal/runtime/mem/probe/physical_linux.go",
+    "goinfer/internal/runtime/mem/probe/swap_linux.go",
+    "goinfer/internal/runtime/mem/probe/read_linux.go"
    ],
    "our_machines": "nobara (62 GB); GitHub runners",
    "last_executed": [
@@ -578,11 +578,11 @@
    "gate": "Swap watch on macOS (vm.swapusage)",
    "kind": "memory-probe",
    "predicates": [
-    "mem:vm.swapusage@goinfer/internal/mem/probe/swap_darwin.go"
+    "mem:vm.swapusage@goinfer/internal/runtime/mem/probe/swap_darwin.go"
    ],
    "selected_when": "serve's swap guard and the load-time watch on darwin",
    "files": [
-    "goinfer/internal/mem/probe/swap_darwin.go"
+    "goinfer/internal/runtime/mem/probe/swap_darwin.go"
    ],
    "our_machines": "the Mac",
    "last_executed": [

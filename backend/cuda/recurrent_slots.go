@@ -5,7 +5,7 @@ package cuda
 import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // recurrentPair is one KV slot's copy of a recurrent layer's two compounding buffers: the conv window and the matrix or SSM state.

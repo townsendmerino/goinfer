@@ -62,8 +62,8 @@ Verified in the tree at `53a241a`:
   generalization rather than a new mask implementation. **Confirm this is the shape needed; see
   Gate 0.**
 - **An embedder entry point and a parity pattern for one — already there.**
-  `internal/serveapp/decoder_embedder.go` wires a causal decoder in as the embedder via
-  `-embed-model` pointing at a file; `internal/serveapp/qwen3_embedding_parity_test.go` is the
+  `internal/app/serveapp/decoder_embedder.go` wires a causal decoder in as the embedder via
+  `-embed-model` pointing at a file; `internal/app/serveapp/qwen3_embedding_parity_test.go` is the
   model for how an embedder gets gated.
 
 What is **not** in the tree:
@@ -162,7 +162,7 @@ sentence-transformers', and the embedding's cosine is 0.999999998, max |diff| 1.
   an unknown task is a 400 naming the model's tasks.
 - **`dimensions` takes exactly 768, 512, 256 and 128**, and any other value is a 400 naming them, pending Gate 2's
   truncation reading (rule below).
-- Tests: `internal/serveapp/embeddinggemma2_embedder_test.go` (prompt choice, echo, refusals, widths, the quant
+- Tests: `internal/app/serveapp/embeddinggemma2_embedder_test.go` (prompt choice, echo, refusals, widths, the quant
   refusal, the checkpoint dispatch), on a stub; a planted default-to-document fails it. A serve run on the real
   checkpoint answered all of these by day (exploratory).
 
@@ -377,7 +377,7 @@ weighted row RMSNorm and GELU-tanh, but its attention has no grouped-query suppo
 **Status 2026-10-06: DONE on the CPU (the tower) with the encoder on Metal or the CPU; served at `/v1/embeddings`.**
 V1-V3 below, V4 accepted by the owner. Request shapes (owner: both): `{"image", "text"}` objects and OpenAI content
 parts, mixed with strings; inline base64 only; one image per input, text after it; the tower loads lazily
-(`internal/serveapp/embeddings_images.go`, tests in `embeddings_images_test.go`). Through the Metal serve binary on the
+(`internal/app/serveapp/embeddings_images.go`, tests in `embeddings_images_test.go`). Through the Metal serve binary on the
 real checkpoint, the table image read cosine 0.999683 alone and 0.999713 with text against sentence-transformers,
 matching the gate's CPU figures. The reference's bicubic resize is in and the default since the same day (R1/R2 below:
 pixels bit-identical, every case 1.000000000), bilinear selectable, and the tower runs on Metal with the encoder (Phase
@@ -424,7 +424,7 @@ VM below). Open: text before an image, several images in one input, and the bicu
   original. Matching torchvision's bicubic resize was then done in goinfer (the resize option below); in aikit, which
   would also serve Gemma 4, it stays open.
   Raw: `docs/measurements/embeddinggemma2-2026-10-06/vision-gates.txt`.
-- **The same resizer serves Gemma 4's own image input** (`internal/serveapp/vision_serve.go` calls
+- **The same resizer serves Gemma 4's own image input** (`internal/app/serveapp/vision_serve.go` calls
   `vision.Gemma4Preprocess`, and Gemma 4's processor is the same `Gemma4ImageProcessor`), so it probably carries the
   same mismatch; noted in `docs/multimodal.md` P7.
 
