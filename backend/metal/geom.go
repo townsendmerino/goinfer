@@ -2,7 +2,7 @@
 
 package metal
 
-import "github.com/townsendmerino/goinfer/internal/mem"
+import "github.com/townsendmerino/goinfer/internal/runtime/mem"
 
 // attnGeom is one distinct per-layer attention geometry, shared by every layer that has it. Gemma 4's own-forward residency
 // interleaves two attention shapes in one model (local: head_dim 256, kv_heads 8, full rotary; global: head_dim 512,

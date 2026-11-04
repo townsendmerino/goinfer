@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
-	"github.com/townsendmerino/goinfer/internal/hybridattn"
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // deltaNetTiming (GOINFER_DELTANET_TIMING=1) is a diagnostic that splits gatedDeltaNetStep's cost into the three dominant

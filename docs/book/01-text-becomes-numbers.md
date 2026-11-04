@@ -194,7 +194,7 @@ Measured on 2026-10-02 with the v0.20.0 release ([record](https://github.com/tow
 ---
 
 *Sources: `tokenizer/` (`bytelevel.go`, `sentencepiece.go`, `added.go`, `gguf.go`),
-[`docs/how-inference-works.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/how-inference-works.md) §Step 1, [`internal/serveapp/openai.go`](https://github.com/townsendmerino/goinfer/blob/main/internal/serveapp/openai.go) and
-[`internal/serveapp/openai_stream_usage_test.go`](https://github.com/townsendmerino/goinfer/blob/main/internal/serveapp/openai_stream_usage_test.go) (streaming hold-back), [`CHANGELOG.md`](https://github.com/townsendmerino/goinfer/blob/main/CHANGELOG.md)
+[`docs/how-inference-works.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/how-inference-works.md) §Step 1, [`internal/app/serveapp/openai.go`](https://github.com/townsendmerino/goinfer/blob/main/internal/app/serveapp/openai.go) and
+[`internal/app/serveapp/openai_stream_usage_test.go`](https://github.com/townsendmerino/goinfer/blob/main/internal/app/serveapp/openai_stream_usage_test.go) (streaming hold-back), [`CHANGELOG.md`](https://github.com/townsendmerino/goinfer/blob/main/CHANGELOG.md)
 (the 1.046 tokens-per-chunk measurement across 92 cells),
 [`docs/QUEUE.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/QUEUE.md) and [`docs/spec/10-optfwd-gate.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/spec/10-optfwd-gate.md) (sampler-share measurements).*

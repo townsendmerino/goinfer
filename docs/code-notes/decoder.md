@@ -1624,7 +1624,7 @@ EmbedInt4 relaxes the int8 pin on the token-embedding/LM-head table in int4
 mode, storing it at int4 too — halving the single largest resident tensor on a
 big-vocab small model. Lossy (~2.3 pts top-1, mostly on rare tokens). Off in a zero
 Options, which keeps the bit-exact int8 pin; the CLIs turn it on by default since
-2026-09-28 (internal/loadflags, the owner decision in task-never-swap-2026-09.md;
+2026-09-28 (internal/app/loadflags, the owner decision in task-never-swap-2026-09.md;
 E-D01, audit-metal-2026-09-30.md). GGUF load path only.
 ```
 
@@ -1637,7 +1637,7 @@ DisableFit is tasks/task-fit-to-hardware.md's --fit=off: restores every "fit by 
 to its pre-Phase-2 default exactly. Currently: CUDA's unpinned resident context stays the
 flat historical constant instead of asking Plan for more when there's room —
 backend/cuda/resident.go's resolveCtxCapFit; and (decoder/fitguard.go's guardFit, read by
-internal/modelload's Load, not by Load itself) a dense .gguf that will not fit
+internal/runtime/modelload's Load, not by Load itself) a dense .gguf that will not fit
 resident RAM stays a plain refusal instead of getting an automatic -stream-weights retry.
 Does NOT affect a genuine bug fix shipped alongside Phase 2 work (Metal now honoring an
 explicit -ctx at all, docs/tasks/task-gpu-paths-2026-09.md's G6 entry) — that is correctness, not
@@ -1734,7 +1734,7 @@ Besides the direct GGUF build, three places poll the channel now:
   and between the blocks of a streamed weight upload;
 - `withResidency` treats a build error wrapping `ErrLoadAborted` as the load's error (`withResidencyOrAbort` closes the model and returns it), where every other build error is a decline that goes on on the CPU.
 
-`internal/modelload.loadGuarded` arms the load-time watch for a `.giw` as well as a direct `.gguf`. A streamed load, an HF directory and a transcode are still unwatched.
+`internal/runtime/modelload.loadGuarded` arms the load-time watch for a `.giw` as well as a direct `.gguf`. A streamed load, an HF directory and a transcode are still unwatched.
 
 ## modelFromOptions
 
@@ -1811,7 +1811,7 @@ Moved from `decoder/model.go` (the comment above `Load.eos`) on 2026-10-09.
 ```text
 M-04 (docs/audit-2026-09-10.md): write the RESOLVED EOS set — config.json plus any extra
 ids generation_config.json adds — back into w.Cfg.EOSTokenID, not just onto this Model's
-own eosIDs field. w.Cfg is what a .giw bundle serializes (internal/prequant, via
+own eosIDs field. w.Cfg is what a .giw bundle serializes (internal/runtime/prequant, via
 SerializeWeightsToForTarget), and a .giw's own Load branch reads eosIDs straight from
 w.Cfg.EOSIDs() with no directory to re-resolve generation_config.json from — so without
 this, a checkpoint whose stop ids live only in generation_config.json (Qwen3:
@@ -2354,7 +2354,7 @@ this call's own cache, so both still complete correctly (M9). The doc's
 "distinct sequences can run concurrently" holds; only resident speed is lost.
 
 This is ALSO what makes binding an adapter here race-free even though N adapters of
-one base share this single resident runner (internal/serveapp/main.go): only the
+one base share this single resident runner (internal/app/serveapp/main.go): only the
 resBusy winner's SetAdapter/Forward/SetAdapter(nil) sequence ever runs at a time, so
 two adapter sessions (or an adapter session and a base-model session) can never
 ```
@@ -2533,7 +2533,7 @@ Moved from `decoder/model.go` (the comment above `ExtraResidentBytes` in `Option
 ```text
 ExtraResidentBytes prices a companion allocation that will claim VRAM on the SAME device
 AFTER this model's own residency is built — a --drafter's weights today
-(internal/serveapp's loadDecoder computes this via decoder.DrafterResidentBytesEstimate
+(internal/app/serveapp's loadDecoder computes this via decoder.DrafterResidentBytesEstimate
 before calling Load, so it is known before BuildResident runs). See
 Model.ExtraResidentBytes's own doc comment for why this exists and what it fixes. 0 (the
 default) is today's behavior, unchanged.
@@ -3436,7 +3436,7 @@ start here.
 ## residentBackendFeatures.cuda.entry
 
 The whole `"cuda"` entry of `residentBackendFeatures` with its comments, moved from `decoder/features.go` on 2026-11-01, when CUDA's
-admission moved to its operation table (`internal/program.CUDA`, OP4cu-c2). It is the evidence each feature was declared on.
+admission moved to its operation table (`internal/runtime/program.CUDA`, OP4cu-c2). It is the evidence each feature was declared on.
 
 ```text
 cgo-free CUDA (cuda/). FeatMoE covers the routed block (router, stacked experts, every routing flavour the route kernel handles) and
@@ -3589,7 +3589,7 @@ Moved from `decoder/blockspec.go` (the comment above `errBlockSpecResidentBusy`)
 ```text
 errBlockSpecResidentBusy is returned when another generation already holds the model's single
 shared resident KV (audit R-00). Returned before any device write, so a caller's existing
-fallback to plain Generate (internal/serveapp/openai.go) is exact — Generate makes its own CAS
+fallback to plain Generate (internal/app/serveapp/openai.go) is exact — Generate makes its own CAS
 attempt and, finding the same claim held, drops to the staged CPU path itself (M9).
 ```
 
@@ -6342,7 +6342,7 @@ it again would double-count. Reads live available memory through cachedHostRAMAv
 audit-2026-09-10: a 250ms TTL cache, not read fresh on every call as this comment used to say —
 the raw probe forks+execs on darwin, and every request that reaches prefill was paying for one).
 
-This runs BEFORE prefill begins (internal/serveapp calls it right after `prepare` resolves the
+This runs BEFORE prefill begins (internal/app/serveapp calls it right after `prepare` resolves the
 prompt length and clamped max_tokens, for every endpoint that reaches prefill), and prices
 KV(promptTokens+maxTokens) plus prefill scratch against what remains of currently-available
 memory — never starting a prefill that would page. It runs for CPU and Metal-resident alike:
@@ -6365,7 +6365,7 @@ line.
 
 budgetBytes is priced against CURRENTLY AVAILABLE memory (R13-follow-on), read at call time —
 by the time this runs the model is already loaded, so weightBytes is ALREADY excluded from
-availability by the OS's own accounting. The caller (internal/serveapp/banner.go) must NOT
+availability by the OS's own accounting. The caller (internal/app/serveapp/banner.go) must NOT
 subtract weightBytes from budgetBytes again when computing what remains — weightBytes is
 returned for DISPLAY only, the same "no double-count" rule prefill_budget.go's
 AdmitPrefillMemory applies at request time.
@@ -6634,7 +6634,7 @@ and set A's 2026-09-05 files were scored against logits for different text (pref
 Each (model, K, prompt) reference is keyed by everything it depends on:
   - the checkpoint's sha256 (cached by path + size + mtime, so a 4.7 GB file is hashed once);
   - the prompt's own token ids at that K (sha256, the same encoding as internal/fidelity.PromptSetHash);
-  - the source the CPU reference path compiles from: every non-test .go file in decoder/, internal/giw/ and
+  - the source the CPU reference path compiles from: every non-test .go file in decoder/, internal/runtime/giw/ and
     constrain/ (go list -deps ./decoder, 2026-09-28) plus go.mod, which pins aikit and golang.org/x;
   - runtime.GOARCH (the CPU reference is bit-identical within an arch, not across), the weight quant, the
     continuation length, and the forced exact attention.
@@ -7054,7 +7054,7 @@ the weights.
 
 It sums every tensor the load holds: the matrices, where the bytes are, and the norms, biases
 and small f32 tables beside them. What a backend derives on top (rotation tables, constants) is
-not in it, and stays named in that backend's table in MM7's gate (`internal/memgate`).
+not in it, and stays named in that backend's table in MM7's gate (`internal/guard/memgate`).
 
 This is a quantity we COMPUTE, deliberately — not the OS's account of free memory. Darwin's UBC
 reclaims under pressure, so "available" reports what survived rather than what can be asked
@@ -8474,7 +8474,7 @@ floats and the norm/bias vectors are COPIED (the input isn't guaranteed
 
 Discipline mirrors ken's index_serialize.go: magic + version + a config/quant
 guard + CRC — any mismatch returns a typed error and never panics. There is no automatic
-fallback to the GGUF: a sidecar that fails its freshness check is rebuilt (internal/prequant),
+fallback to the GGUF: a sidecar that fails its freshness check is rebuilt (internal/runtime/prequant),
 and an embedded or explicitly named bundle refuses to load.
 
 Format (little-endian throughout):
@@ -8608,7 +8608,7 @@ consumer (docs/tasks/task-int4-layout-2026-09.md's L2): on a cpu-arm64 target, e
 eligible int4 tensor (see weightMat vs weightMatKind3Only) writes kind 5
 (row4-only — no canonical arrays at all) instead of kind 3; every other target,
 including GIWTargetNone, writes kind 3 for every int4 tensor exactly like
-SerializeWeights. This is what internal/prequant.Transcode/EnsureCachedGIW and
+SerializeWeights. This is what internal/runtime/prequant.Transcode/EnsureCachedGIW and
 cmd/prequant drive now — SerializeWeightsRow4/kind 4 is legacy, kept for its own
 "usable on any core" contract, not for this one.
 ```
@@ -8630,7 +8630,7 @@ make()'d, all-zero Layers slice BEFORE streaming any layer in — quantLabel() t
 real data there, and its default case returns "native", a REAL quant mode, not an empty
 string, so calling it unconditionally would have baked a FALSE "native" label into every
 genuinely-streamed bundle). But they disagree for a caller that already has a fully-loaded
-*Weights and simply chooses the streaming API for its I/O shape — internal/prequant and the
+*Weights and simply chooses the streaming API for its I/O shape — internal/runtime/prequant and the
 qwen35 GGUF branch (a dedicated loader that fully materializes w, THEN calls
 SerializeWeightsTo) both do exactly this — and there the label WAS resolvable, just skipped
 because the wrong signal was being tested. That mismatch is B11: a buffered and a streamed
@@ -8650,7 +8650,7 @@ model's lifetime (the aliased slices point into it). On any magic/version/
 quant/arch/CRC mismatch it returns a *SerializeError.
 
 N-34: that used to end "so the caller can fall back to the GGUF". No caller does —
-decoder/model.go and internal/chatapp both return the error, the latter telling the operator
+decoder/model.go and internal/app/chatapp both return the error, the latter telling the operator
 to rebuild the bundle or pass --model <gguf> themselves. The typed error is still worth having
 (it distinguishes a corrupt bundle from an I/O failure); the fallback it promised was never
 built.
@@ -9034,7 +9034,7 @@ round therefore takes busy too, as the design said it would ("each round runs in
 
 ## SamplingParams.LogitProcessorGate
 
-Moved from `internal/sampling/sampler.go` (the comment above `SamplingParams.LogitProcessorGate`) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler.go` (the comment above `SamplingParams.LogitProcessorGate`) on 2026-10-09.
 
 ```text
 LogitProcessorGate, when set together with LogitProcessor, makes the processor LAZY: it is
@@ -9052,7 +9052,7 @@ any LogitProcessor, gated or not, and callers fall back to Generate as before.
 
 ## NewSampler.minp
 
-Moved from `internal/sampling/sampler.go` (the comment above `NewSampler.minp`) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler.go` (the comment above `NewSampler.minp`) on 2026-10-09.
 
 ```text
 M-08: MinP > 1 asks for "keep tokens with probability ≥ 1.2× the maximum", which is
@@ -9071,7 +9071,7 @@ aspirational.
 
 ## Sampler.applyPenalties
 
-Moved from `internal/sampling/sampler.go` (the comment above `Sampler.applyPenalties`) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler.go` (the comment above `Sampler.applyPenalties`) on 2026-10-09.
 
 ```text
 applyPenalties applies repeat/presence/frequency penalties to the logits of
@@ -9089,7 +9089,7 @@ the O(n²) shape this fixes.
 
 ## computeLogprobs
 
-Moved from `internal/sampling/sampler.go` (the comment above `computeLogprobs`) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler.go` (the comment above `computeLogprobs`) on 2026-10-09.
 
 ```text
 computeLogprobs returns log P(chosen) and the topN highest-prob (id, logprob)
@@ -9102,7 +9102,7 @@ its buffer instead of paying a fresh full-vocab make() on every logprobs:true re
 
 ## lastWithMass
 
-Moved from `internal/sampling/sampler.go` (the comment above `lastWithMass`) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler.go` (the comment above `lastWithMass`) on 2026-10-09.
 
 ```text
 lastWithMass is the float-rounding fall-through for a cumulative draw: the last index in
@@ -9117,7 +9117,7 @@ than a live bug, but it is the contract top-k and top-p exist to provide.
 
 ## topFilterLogits
 
-Moved from `internal/sampling/sampler.go` (the comment above `topFilterLogits`) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler.go` (the comment above `topFilterLogits`) on 2026-10-09.
 
 ```text
 topFilterLogits applies top-k, then min-p, then top-p to a LOGIT vector,
@@ -9155,7 +9155,7 @@ immediately after return) and never retained, the same lifetime vocabScratch alr
 
 ## Sampler.scratch
 
-Moved from `internal/sampling/sampler.go` (the comment on the scratch fields of `Sampler`) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler.go` (the comment on the scratch fields of `Sampler`) on 2026-10-09.
 
 ```text
 [vocab] scratch shared by sampleChunked's e and chunkedZ's tmp — one full-vocab
@@ -10412,7 +10412,7 @@ seqPos+delta, exactly as prefillLogitsQwenVL does.
 
 ## topFilterLogits.Z
 
-Moved from `internal/sampling/sampler.go` (the comment in the body of `topFilterLogits`) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler.go` (the comment in the body of `topFilterLogits`) on 2026-10-09.
 
 ```text
 P2b step 3: the same fixed-chunk fold as the temperature-only path. This Z feeds the
@@ -10448,7 +10448,7 @@ can climb back out of D=0.
 
 ## Sampler.distVectorFrom.default
 
-Moved from `internal/sampling/spec_sample.go` (the comment in the body of `distVectorFrom`) on 2026-10-09.
+Moved from `internal/runtime/sampling/spec_sample.go` (the comment in the body of `distVectorFrom`) on 2026-10-09.
 
 ```text
 P-04 (audit-2026-09-10): P-14 (09-02) reused distBufN on the greedy and filtered
@@ -11047,7 +11047,7 @@ buffer that says when it stopped.
 
 ## sampler_topk
 
-Moved from `internal/sampling/sampler_topk.go` (the comment above `sampler_topk`) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler_topk.go` (the comment above `sampler_topk`) on 2026-10-09.
 
 ```text
 TEMPERATURE-ONLY SAMPLING IS NOT SERVED HERE, and cannot be: it draws by inverse CDF in vocabulary
@@ -11063,7 +11063,7 @@ rather than assumed.
 
 ## SampleFromTopK.nucleus
 
-Moved from `internal/sampling/sampler_topk.go` (the comment above `SampleFromTopK.nucleus`) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler_topk.go` (the comment above `SampleFromTopK.nucleus`) on 2026-10-09.
 
 ```text
 Nucleus-only. Walk the candidates in row order — (logit desc, id asc), which is (prob desc, id
@@ -11183,7 +11183,7 @@ Moved from `decoder/doc.go` (the comment above `doc.families`) on 2026-10-09.
 
 ## sampler_gumbel
 
-Moved from `internal/sampling/sampler_gumbel.go` (the comment above `sampler_gumbel`) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler_gumbel.go` (the comment above `sampler_gumbel`) on 2026-10-09.
 
 ```text
 Temperature-only sampling by Gumbel-max (docs/tasks/red-october.md R7b, owner decision 2026-09-20).
@@ -11242,7 +11242,7 @@ default resident's batched f16 prefill, which --exact-prefill alone reproduces. 
 
 ## sampler_chunked
 
-Moved from `internal/sampling/sampler_chunked.go` (the comment above `sampler_chunked`) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler_chunked.go` (the comment above `sampler_chunked`) on 2026-10-09.
 
 ```text
 P2b — deterministic parallel host normalization.
@@ -11255,7 +11255,7 @@ normalize-divide pass by drawing against unnormalized weights.
 
 ## chunkedZ
 
-Moved from `internal/sampling/sampler_chunked.go` (the comment above `chunkedZ`) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler_chunked.go` (the comment above `chunkedZ`) on 2026-10-09.
 
 ```text
 chunkedZ is the top-p denominator (step 3), given the same fixed-chunk treatment so the nucleus
@@ -12097,7 +12097,7 @@ the stream writes the config in its head, before any layer, so it resolves them 
 
 ## SelfSwapBytes
 
-`SwapWatch` is generic over a `SwapReader`; `internal/swapguard.Select` chooses the readers. On Linux the server's own swap is `SelfSwapBytes`: `VmSwap` from `/proc/<pid>/status`, summed over the process and every
+`SwapWatch` is generic over a `SwapReader`; `internal/guard/swapguard.Select` chooses the readers. On Linux the server's own swap is `SelfSwapBytes`: `VmSwap` from `/proc/<pid>/status`, summed over the process and every
 descendant (parents come from the `stat` line, counted from its last `)` because a command name may hold spaces and parentheses). It is unknown, not zero, when the process's own `VmSwap` line is missing, and the guard then
 falls back to `SwapUsedBytes` (system-wide) at the same threshold. A second Linux source watches `SwapUsedBytes` at a 4096 MB backstop (`swapguard.BackstopMB`). macOS and the other platforms have no per-process swap
 figure (`SelfSwapReader` reports why), so they keep the system-wide guard alone. A guard that watches the server's own swap does not see a server that pushes other processes into swap while holding none itself; the backstop is what covers that.
@@ -14789,7 +14789,7 @@ plain head), mapped rather than quantized into the heap, which the load guard re
 Moved from `decoder/gemma3_tower_sensitivity_real_test.go` (the comment above `TestGemma3TowerSensitivity.prompt`) on 2026-10-09.
 
 ```text
-serve's prompt, built the way serve builds it (internal/serveapp encodeVisionSegments): the model's chat template
+serve's prompt, built the way serve builds it (internal/app/serveapp encodeVisionSegments): the model's chat template
 rendered as segments, the image block (the processor's "\n\n" on both sides, M-38) spliced in as its own Special
 segment, then EncodeSegments. Until 2026-10-08 this hand-wrote the template and encoded it as one string, which merges
 the template's "\n" with the block's "\n\n" into one token: 277 tokens against serve's 278, so the greedy reference
@@ -15226,7 +15226,7 @@ task-never-swap-2026-09.md S2: a family's per-layer loader closure is safe to st
 (build -> sink.layer -> release, the loadQ35/loadGptOss shape) only if EVERY tensor it reads is
 genuinely per-layer — named "blk.{i}." + something, never a bare/model-level name. gpt-oss's own
 closure was verified this way by hand before its fix landed (byte-identical to the resident
-path, on a real fixture — decoder/testdata/gptoss_tiny.gguf, internal/prequant's
+path, on a real fixture — decoder/testdata/gptoss_tiny.gguf, internal/runtime/prequant's
 TestGptOss_streamedMatchesResident). laguna, granite (the Mamba-2+MoE hybrid, arch.granite —
 not the plain dense Granite family gguf_granite_permute_test.go covers), nemotron and llama4
 have NO comparable fixture (no small, tokenizer-bearing, architecture-correct GGUF for any of
@@ -18596,7 +18596,7 @@ unexported in aikit — but a flat maximum across thousands of matmuls is unambi
 
 ## sampler_chunked_test.header
 
-Moved from `internal/sampling/sampler_chunked_test.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler_chunked_test.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 SAMPLER MICROBENCHMARKS IN THIS PACKAGE MAY NOT PRODUCE QUOTABLE FIGURES.
@@ -18616,7 +18616,7 @@ and it was earned twice in a single investigation (G26, 2026-08-27):
 
 ## benchExpChunked
 
-Moved from `internal/sampling/sampler_chunked_test.go` (the comment above `benchExpChunked`) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler_chunked_test.go` (the comment above `benchExpChunked`) on 2026-10-09.
 
 ```text
 G26. The temp-only draw (no truncation) goes through sampleChunked, NOT topFilterLogits — so the
@@ -18915,7 +18915,7 @@ parity on every step, keeping both shapes represented.
 
 ## TestSampleFromTopK_matchesFullPath
 
-Moved from `internal/sampling/sampler_topk_test.go` (the comment in the draw-count branch) on 2026-10-09.
+Moved from `internal/runtime/sampling/sampler_topk_test.go` (the comment in the draw-count branch) on 2026-10-09.
 
 ```text
 C8 (docs/completed/task-ci-speed-2026-09.md): under -race the DRAW axis is strided by
@@ -19912,7 +19912,7 @@ On the box tack's C3 ran on (38 GiB available) the load is admitted; the term re
 ## residentBackendFeatures.metal.removed
 
 Moved from `decoder/features.go` on 2026-10-31, when Metal's admission moved from its feature set to its operation table
-(`internal/program/support.go:Metal`; docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-c2). The entry as it stood,
+(`internal/runtime/program/support.go:Metal`; docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-c2). The entry as it stood,
 with each feature's evidence:
 
 ```go

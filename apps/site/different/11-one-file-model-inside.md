@@ -35,7 +35,7 @@ figures:
 sources:
   - .github/workflows/release-assets.yml
   - demo/chat/build-embed.sh
-  - internal/chatapp/prequant.go
+  - internal/app/chatapp/prequant.go
   - NOTICE
   - docs/benchmarks.md
   - docs/ARCHITECTURE.md

@@ -40,8 +40,8 @@ sources:
   - "docs/measurements/cold-user-2026-09-18-nobara-pc.md"
   - "docs/tasks/task-first-hour.md"
   - "docs/capability-matrix.json"
-  - "internal/servecheck/check.go"
-  - "internal/fitcmd/fit.go"
+  - "internal/guard/servecheck/check.go"
+  - "internal/app/fitcmd/fit.go"
 ---
 
 ## The problem

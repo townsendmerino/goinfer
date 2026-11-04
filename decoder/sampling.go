@@ -1,6 +1,6 @@
 package decoder
 
-import "github.com/townsendmerino/goinfer/internal/sampling"
+import "github.com/townsendmerino/goinfer/internal/runtime/sampling"
 
 // The sampler's implementation lives in internal/sampling, a package that imports nothing from decoder, so its
 // statistical tests are cached apart from decoder's and a decoder edit does not re-run them

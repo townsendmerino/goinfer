@@ -227,7 +227,7 @@ func renderHardwareWhy(rows []hwRow) string {
 		b.WriteString("\n**" + strings.Join(hazard, ", ") + ": the table reads one configuration, and a default load picks another.** The activation\n")
 		b.WriteString("hazard is the per-row int8 activation scale (`decoder/actquant_hazard.go:ActivationQuantHazard`), and the table reads\n")
 		b.WriteString("the configuration that has it. The loader picks one that does not\n")
-		b.WriteString("(`internal/modelload/modelload.go:activationSafeQuant`):\n\n")
+		b.WriteString("(`internal/runtime/modelload/modelload.go:activationSafeQuant`):\n\n")
 		b.WriteString("- **CUDA:** a GGUF loads at `--quant q4k` by default and runs resident. Any other source loads at int8int8 with\n")
 		b.WriteString("  per-32 activation scales, which CUDA's residency also implements.\n")
 		b.WriteString("- **Metal:** resident only with an explicit `--quant q4k`. The default load is int8int8 with per-32 activation\n")

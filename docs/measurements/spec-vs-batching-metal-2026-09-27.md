@@ -103,7 +103,7 @@ The spec cells never did.
 - The server banner that run read "0.7 GB left for a request's own prefill". This is live available memory, lower
   than during the morning's W7 run (1.0 GB).
 - Since MC3c, `prepare` divides that margin by `min(concurrent, turns running or queued + 1)`
-  (`internal/serveapp/openai.go`, `AdmitPrefillMemoryShare`). With 4 generations in flight, a ~1000-token 7B prompt
+  (`internal/app/serveapp/openai.go`, `AdmitPrefillMemoryShare`). With 4 generations in flight, a ~1000-token 7B prompt
   was priced against a quarter of it.
 - The division fits MC3c's CPU workers, which prefill at the same time. **Under MC3 on a Metal resident, prefills run
   one at a time** in the exclusive section. The margin is also already read from live memory, so it counts what the

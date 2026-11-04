@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/prequant"
+	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 )
 
 // TestG4Prefetch_bitExactAndRuns is lever 3's gate (docs/tasks/task-m26-mac-2026-10.md): on the tiny Gemma 4 MoE as a

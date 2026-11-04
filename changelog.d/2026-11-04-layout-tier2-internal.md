@@ -1,0 +1,1 @@
+- Regrouped `internal/` packages under `internal/app/`, `internal/guard/`, `internal/diag/`, and `internal/runtime/` (Tier 2 repository layout move). `internal/` is not importable from outside the module, so there is no public API change.

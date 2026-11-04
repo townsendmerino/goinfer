@@ -32,7 +32,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 > Every cell carries a label in the audit record: **run** = run on `nobara-pc` on 2026-10-02 (CUDA and WebGPU only), **read** = read from code and never run
 > (**every Metal cell: no Mac was available**), **recorded** = a dated record in the tree, not re-measured. A cell marked unverified stays unverified here.
 >
-> Images are accepted on the OpenAI `image_url` and Anthropic `image` surfaces (base64 / `data:` URIs only; the newest message's images, up to 8 and each its own block in place (S11), while earlier images are replaced by a note, `internal/serveapp/image_history.go`; GLM-OCR takes one) for **Gemma 3** (SigLIP),
+> Images are accepted on the OpenAI `image_url` and Anthropic `image` surfaces (base64 / `data:` URIs only; the newest message's images, up to 8 and each its own block in place (S11), while earlier images are replaced by a note, `internal/app/serveapp/image_history.go`; GLM-OCR takes one) for **Gemma 3** (SigLIP),
 > **Gemma 4** (E2B/E4B/26B-A4B/31B), **Qwen2.5-VL**, **Qwen3.5+ dense** (0.8B and 9B gated; the MoE sizes are accepted by serve's auto-discovery and have never been
 > run), **GLM-OCR**, **Qwen3-VL** (S10), **Ministral 3** (the Pixtral tower, CPU float32; S10, G-S10m-a to d, 2026-10-09) and **LFM2.5-VL** (the SigLIP2 NaFlex tower and the lfm2 decoder, both CPU only; S10, G-S10l, 2026-10-09).
 > In each cell, the first half is where the vision **tower** runs, the second where the **decoder** runs after the image.
@@ -50,12 +50,12 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 > E2B and 26B-A4B 2026-09-10, Qwen3.5 0.8B and 9B 2026-09-30, GLM-OCR 2026-10-02). On CUDA and WebGPU, "(run)" means a served image request or a test on the real checkpoint.
 >
 > - **Tower.** Only Gemma 3's tower ever runs on a GPU, on CUDA and WebGPU. aikit now ships `gpu/qwencuda`, `gpu/qwenmetal`, `gpu/visioncuda` and `gpu/visionmetal`
->   (and a Qwen resident seam), but **goinfer imports none of them** and serve calls `EnableResident` in exactly one place (`internal/serveapp/main.go`, the Gemma 3
+>   (and a Qwen resident seam), but **goinfer imports none of them** and serve calls `EnableResident` in exactly one place (`internal/app/serveapp/main.go`, the Gemma 3
 >   tower, on `--backend cuda|webgpu`). So the Qwen2.5-VL, Qwen3.5+, Gemma 4 and GLM-OCR towers are CPU towers on every backend, and **no generative family's tower runs
 >   on Metal** (`docs/audit-metal-2026-09-12.md` M-15 says why aikit's Metal SigLIP tower was not wired; the 2026-09-30 audit found that unchanged). **2026-10-06:** Metal does
 >   run a Gemma 4 vision tower and the `gemma4_audio` tower now, goinfer's own (`backend/metal/gemma4_vision.go`, `backend/metal/gemma4_audio.go`), but only for EmbeddingGemma 2's embeddings
 >   (`docs/tasks/task-embeddinggemma2.md`, Phases VM and A). Wiring the vision one to Gemma 4's own image input is in "Finishing this doc" below.
-> - **int8.** With `-vision-quant` unset, `--backend webgpu` makes Gemma 3's tower int8, because that is the only device tower it has (`towerInt8` in `internal/serveapp/main.go`). On `--backend cuda` the default is the float32 SigLIP tower
+> - **int8.** With `-vision-quant` unset, `--backend webgpu` makes Gemma 3's tower int8, because that is the only device tower it has (`towerInt8` in `internal/app/serveapp/main.go`). On `--backend cuda` the default is the float32 SigLIP tower
 >   (S4 addendum; the owner's decision, 2026-10-08: its reply equals the CPU float32 reference's and a new image costs 2.4 s of time to first token against the int8 tower's 4.6 s), at about 1.7 GiB of VRAM against 0.56, which on the 8 GB card is 2 resident KV slots
 >   at the 4096-position floor instead of 3. Before the plan is made, serve checks that the card can hold the decoder, one KV slot at the context floor and the float32 tower (an estimate from the checkpoint and the free VRAM, `resolveGemma3VisionQuant`); if it cannot, it says so and uses the int8 device tower, because a float32 reserve on a tight card would otherwise push the decoder itself to the CPU (measured on the 8 GB card with 5.4 GB free: 
 >   CPU decoder with float32, `cuda-resident` with int8). If the float32 tower still fails to attach, it falls back to the int8 device tower, not the CPU one (`attachGemma3Tower`); `-vision-quant int8` asks for it, and an explicit `-vision-quant f32` never falls back. On webgpu there is no float32 device tower, so an explicit `f32` runs on the CPU. Every other tower (Qwen2.5-VL, Qwen3.5+, Gemma 4, GLM-OCR) is CPU-only and f32 unless `-vision-quant int8`; until 2026-10-02 the first three were forced to
@@ -96,7 +96,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 > regardless of which family.~~ **WRONG: only WebGPU needs cgo. The Linux release binary is `CGO_ENABLED=0` and carries the CUDA tower; it is the macOS and Windows binaries, and every family
 > but Gemma 3, that run the tower at CPU speed.** CPU tower cost is ~31.3 s/image (SigLIP, re-measured 2026-09-08, §A "Vision tower CPU prefill" in `docs/benchmarks.md` — flat vs. the
 > pre-measurement baseline, not a regression) *(still the recorded CPU figure)*. No audio in, no video, no image out. Nothing multimodal is in `serve check`, the fit guard, the recommendation
-> registry, or the cold-user protocol *(stale as written, read from code and not run: the fit guard prices safetensors towers since 2026-09-08, P9(b) below, and `serve check` has a vision row, `internal/servecheck/check.go:Client.Vision`; the registry still has none; **the cold-user protocol does**, scenario F "Show it a screenshot", `docs/tasks/task-first-hour.md`, run 2026-10-05)*.
+> registry, or the cold-user protocol *(stale as written, read from code and not run: the fit guard prices safetensors towers since 2026-09-08, P9(b) below, and `serve check` has a vision row, `internal/guard/servecheck/check.go:Client.Vision`; the registry still has none; **the cold-user protocol does**, scenario F "Show it a screenshot", `docs/tasks/task-first-hour.md`, run 2026-10-05)*.
 >
 > **Update 2026-10-02 (GLM-OCR, O3 of `docs/tasks/task-glm-ocr-2026-10.md`):** GLM-OCR reads images on the same OpenAI route: aikit's own tower (CPU, f32 by default, loaded on the first image)
 > feeds `GenerateQwenVL`, the CPU path is the default and the CUDA resident serves the decoder (pairwise rope kernels). Goinfer at f32 is token-identical to transformers on three rendered
@@ -452,7 +452,7 @@ number is published without provenance.
 
   **What Phase A does NOT include, deliberately scoped out of this pass**: the full serving/
   generation integration (placeholder-token constants, a `multimodal.Gemma4ImageBlock`-style
-  prompt splice, a `GenerateGemma4VL`-shaped driving loop, HTTP wiring in `internal/serveapp/
+  prompt splice, a `GenerateGemma4VL`-shaped driving loop, HTTP wiring in `internal/app/serveapp/
   vision_serve.go`) — the vision-tower primitive and its decoder-side hook are proven correct in
   isolation; wiring them into an end-to-end image-in-prompt request is real, separate work, sized
   similarly to Qwen2.5-VL's own `vision_serve.go` integration, and is the natural next slice.
@@ -479,7 +479,7 @@ number is published without provenance.
   `Gemma4PooledTokens` (the real tokenizer sentinels — `<|image>`/`<|image|>`/`<image|>`, verified
   against a real E2B-it checkpoint's `tokenizer.json`/`tokenizer_config.json`, not guessed from
   Gemma 3's symmetric naming), `decoder.GenerateGemma4VL` + `prefillLogitsGemma4VL` (a new file,
-  `decoder/generate_gemma4_vl.go`), and the `internal/serveapp` wiring (`loadedModel.gemma4Enc`,
+  `decoder/generate_gemma4_vl.go`), and the `internal/app/serveapp` wiring (`loadedModel.gemma4Enc`,
   `visionCapable()`'s third disjunct, `driveVL`'s third dispatch arm, `main.go`'s
   `loadGemma4VisionTower`, both auto-discovery and explicit `--vision <dir>`).
 
@@ -650,7 +650,7 @@ number is published without provenance.
   fast path), real-26B-A4B end-to-end validation (**closed by Phase E, next**), video, and audio.
 
   **Phase E (real-checkpoint end-to-end VL validation) DONE, 2026-09-10.** Two new real-checkpoint
-  coherence gates (`internal/serveapp/gemma4_vl_real_test.go`, mirroring
+  coherence gates (`internal/app/serveapp/gemma4_vl_real_test.go`, mirroring
   `decoder/gemma4_26b_real_test.go`'s known-answer-substring + degeneracy-floor shape rather than
   an HF-golden cosine gate — a full HF forward on these checkpoints is prohibitively slow on CPU,
   already established) — and the first-ever run of the REAL serving-side wiring end to end
@@ -925,7 +925,7 @@ number is published without provenance.
   Image-token KV needed nothing new either: unpinned loads already price KV at the model's full
   `MaxPositions` (R13), the request-time worst case regardless of whether those positions hold text
   or image placeholders; and request-time admission (`contextLengthError`/`clampMaxTokens`,
-  `internal/serveapp/openai.go`) already ran on the fully placeholder-expanded prompt (`vi.ids`,
+  `internal/app/serveapp/openai.go`) already ran on the fully placeholder-expanded prompt (`vi.ids`,
   `vision_serve.go`) before this pass touched anything — confirmed by reading the code, not
   assumed. See `docs/tasks/task-first-hour.md`'s R2/guard section for the full writeup and
   `decoder/fitguard_test.go`'s `TestFitEstimate_safetensorsAgreesWithResidentWeightBytes` /

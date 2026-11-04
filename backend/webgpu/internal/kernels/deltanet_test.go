@@ -9,7 +9,7 @@ import (
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 
-	"github.com/townsendmerino/goinfer/internal/hybridattn"
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // TestDeltaRule_cpuParity pins the whole Gated-DeltaNet mixer chain on the GPU against the CPU

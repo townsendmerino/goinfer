@@ -25,5 +25,5 @@
 //
 // Imports: decoder, constrain; never the serving shell (internal/layout's engine-below-the-shell rule).
 //
-// Test it: go test ./engine/... (no model), and the shell's census, go test ./internal/serveapp -run 'TestWireCensus'.
+// Test it: go test ./engine/... (no model), and the shell's census, go test ./internal/app/serveapp -run 'TestWireCensus'.
 package engine

@@ -43,16 +43,17 @@ func movedRepo(t *testing.T) (root, pre, post string) {
 	return root, pre, post
 }
 
-func TestLabelPath_reportsThePreMoveName(t *testing.T) {
+func TestCanonicalPath_reportsTheCurrentName(t *testing.T) {
 	for in, want := range map[string]string{
-		"backend/cuda":            "cuda",
-		"./backend/cuda/kernels/": "./cuda/kernels/",
-		"backend/webgpu":          "gpu",
-		"decoder":                 "decoder",
-		"./decoder/":              "./decoder/",
+		"cuda":         "backend/cuda",
+		"metal/x.go":   "backend/metal/x.go",
+		"gpu/kernels":  "backend/webgpu/kernels",
+		"backend/cuda": "backend/cuda",
+		"decoder":      "decoder",
+		"cudaish/x":    "cudaish/x",
 	} {
-		if got := labelPath(in); got != want {
-			t.Errorf("labelPath(%q) = %q, want %q", in, got, want)
+		if got := canonicalPath(in); got != want {
+			t.Errorf("canonicalPath(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

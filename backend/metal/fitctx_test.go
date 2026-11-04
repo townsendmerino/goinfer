@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // fitBudget sizes a memory figure for m: the bytes at which exactly `positions` positions of KV fit beside the weights

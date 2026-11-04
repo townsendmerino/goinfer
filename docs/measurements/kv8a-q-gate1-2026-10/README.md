@@ -28,7 +28,7 @@ describe main. Its save point ("end-of-prefill state") would also miss: end of p
   - `on`: `enable_thinking: true`, every assistant turn's `reasoning_content` sent back.
   - `off`: `enable_thinking: false`, no reasoning.
   - `default`: neither. This is the template's default, and it renders identically to `off`.
-- **Instrument** (`internal/serveapp/kv8aq_gate1_test.go:TestKV8aQ_gate1Scopes`): posts each body to the real chat route
+- **Instrument** (`internal/app/serveapp/kv8aq_gate1_test.go:TestKV8aQ_gate1Scopes`): posts each body to the real chat route
   (`server.handleChat`) on a scripted model that keeps recurrent snapshots (`loadedModel.scriptedRecurrent`). It captures the
   prompt ids and the `decoder.KVScope` the route hands the decoder. The system-and-tools boundary comes from
   `loadedModel.prefixBoundaryOf`. The route's ids equal those of the KV0 study renderer (`TestKV0_tokenizeBodies`) for every

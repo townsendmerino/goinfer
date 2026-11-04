@@ -43,7 +43,7 @@
 
 [1m== 2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; main group one process per model family) ==[0m
       partition (drain group from drainsDevice() in cuda/drain_marker_test.go; main group by model family, heavyFamilies):
-        package total     600 test(s)   [go test -list '.*'], plus 66 in ./cuda/kernels/
+        package total     600 test(s)   [go test -list '.*'], plus 66 in ./backend/cuda/kernels/
         drain group        4 test(s)   TestA10FloorIsPerProcessOrPerDevice TestA10ReportingGap TestAllocFloor TestMoERouteDemandThreshold
         main group         596 test(s)   [complement, by construction], 18 process(es):
           gemma4-26b     16 test(s)

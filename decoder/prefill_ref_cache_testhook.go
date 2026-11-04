@@ -9,7 +9,7 @@ package decoder
 //
 //   - the checkpoint's sha256 (cached by path + size + mtime, so a 4.7 GB file is hashed once);
 //   - the prompt's own token ids at that K (sha256, the same encoding as internal/fidelity.PromptSetHash);
-//   - the source the CPU reference path compiles from: every non-test .go file in decoder/, internal/giw/ and constrain/ (from
+//   - the source the CPU reference path compiles from: every non-test .go file in decoder/, internal/runtime/giw/ and constrain/ (from
 //     go list -deps ./decoder) plus go.mod, which pins aikit and golang.org/x;
 //   - runtime.GOARCH (the CPU reference is bit-identical within an arch, not across), the weight quant, the continuation length,
 //     and the forced exact attention.
@@ -91,7 +91,7 @@ var (
 	refSourceErr  error
 )
 
-// prefillRefSourceSHA256 hashes the reference path's source: every non-test .go file in decoder/, internal/giw/ and
+// prefillRefSourceSHA256 hashes the reference path's source: every non-test .go file in decoder/, internal/runtime/giw/ and
 // constrain/, plus go.mod, in sorted relative-path order, each path and content length-prefixed.
 func prefillRefSourceSHA256() (string, error) {
 	refSourceOnce.Do(func() {
@@ -102,7 +102,7 @@ func prefillRefSourceSHA256() (string, error) {
 		}
 		root := filepath.Dir(filepath.Dir(self)) // decoder/ -> module root
 		var files []string
-		for _, dir := range []string{"decoder", filepath.Join("internal", "giw"), "constrain"} {
+		for _, dir := range []string{"decoder", filepath.Join("internal", "runtime", "giw"), "constrain"} {
 			ents, err := os.ReadDir(filepath.Join(root, dir))
 			if err != nil {
 				refSourceErr = err

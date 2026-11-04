@@ -59,12 +59,12 @@ func gradeHeavyStart(in heavyInput) ([]groupVerdict, bool) {
 			Notes: []string{"heavy tier did not run: the model-family derivation could not read cuda/*_test.go"}}), false
 	case in.KernelsErr != "" || in.Kernels == 0:
 		return append(out, groupVerdict{State: groupFail,
-			Line:  fmt.Sprintf("heavy tier: `go test -list` found no tests in %s (%s)", labelPath(cudaKernelsPkg), errText(in.KernelsErr)),
+			Line:  fmt.Sprintf("heavy tier: `go test -list` found no tests in %s (%s)", cudaKernelsPkg, errText(in.KernelsErr)),
 			Notes: []string{"heavy tier did not run: the " + cudaKernelsPkg + " test listing was empty or failed to build"}}), false
 	}
 	lines := []string{
 		"      partition (drain group from drainsDevice() in cuda/drain_marker_test.go; main group by model family, heavyFamilies):",
-		fmt.Sprintf("        package total     %d test(s)   [go test -list '.*'], plus %d in %s", in.Total, in.Kernels, labelPath(cudaKernelsPkg)),
+		fmt.Sprintf("        package total     %d test(s)   [go test -list '.*'], plus %d in %s", in.Total, in.Kernels, cudaKernelsPkg),
 		fmt.Sprintf("        drain group        %d test(s)   %s", len(in.Drain), strings.Join(in.Drain, " ")),
 		fmt.Sprintf("        main group         %d test(s)   [complement, by construction], %d process(es):", in.Total-len(in.Drain), len(in.Groups)),
 	}

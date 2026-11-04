@@ -1536,7 +1536,7 @@ n-gram loop already prefers when present).
     - **Why its condition is met.** The 2026-09-27 rule registers this when S > 1.05 on a workload with L < 1.
       - When that rule ran, S was 0.979× / 0.928×. The step-kernel verify (1e153876) then made a lone request 2.082×
         plain on copy and 1.068× on chat (1.5B; the 7B 1.846× / 1.014×), so S > 1.05 on both workloads.
-      - L is still < 1. `-spec` forces one generation at a time (`internal/serveapp/openai.go`, `setConcurrency`), so
+      - L is still < 1. `-spec` forces one generation at a time (`internal/app/serveapp/openai.go`, `setConcurrency`), so
         under 4 clients it gives up MC3's batching (0.610× / 0.489× before the step verify, and still one stream).
     - **The candidate.** With `-spec ngram` on a resident that batches, the model keeps MC3's concurrency. A
       generation speculates only while it is alone.

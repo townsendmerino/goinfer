@@ -8,7 +8,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // Compute-time LoRA on the resident path (docs/tasks/task-gpu-paths-2026-09.md). Like Metal and unlike WebGPU:

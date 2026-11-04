@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // The load-time fit guard: refuse a model that cannot fit in RAM BEFORE allocating it, naming the numbers and the flag that fixes it (an

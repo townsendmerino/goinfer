@@ -58,7 +58,7 @@
   - Pulled again for the second limit.
   - Peak RSS reported.
   - The bundle's own self-check passes, or its failure is recorded with its cause.
-- **G-DS4, no regression.** `go test ./internal/prequant/` and `go run ./cmd/gate quick` green.
+- **G-DS4, no regression.** `go test ./internal/runtime/prequant/` and `go run ./cmd/gate quick` green.
 - **Wall time, recorded, not gated:** old against new on gemma-3-4b-it. A one-time build may be slower once it is
   sequential; more than 2x slower gets a note and a follow-up (parallelism within a layer), not a block.
 

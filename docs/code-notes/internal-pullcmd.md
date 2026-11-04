@@ -1,13 +1,13 @@
-# internal/pullcmd: notes moved out of code comments
+# internal/app/pullcmd: notes moved out of code comments
 
-History, measurements and open work that used to sit in the comments of `internal/pullcmd`, moved here verbatim by the comment diet
+History, measurements and open work that used to sit in the comments of `internal/app/pullcmd`, moved here verbatim by the comment diet
 (`docs/tasks/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
 its guardrails, and points here by heading. This file is off the read path: open it when a pointer sends you. Text is unedited,
 except that a `file.go:NNN` reference inside it names the declaration instead (the line numbers had already gone stale).
 
 ## TestResolveRunRef_everyFormModelAcceptsPullAcceptsToo
 
-Moved from `internal/pullcmd/pull_test.go` (the comment above `TestResolveRunRef_everyFormModelAcceptsPullAcceptsToo`) on 2026-10-09.
+Moved from `internal/app/pullcmd/pull_test.go` (the comment above `TestResolveRunRef_everyFormModelAcceptsPullAcceptsToo`) on 2026-10-09.
 
 ```text
 R15 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): `pull` and `--model` are meant
@@ -24,7 +24,7 @@ cases (which never carried the prefix) stay green, proving the assertion isolate
 
 ## TestResolveRunRef_registryShortNameRewrites.digest
 
-Moved from `internal/pullcmd/pull_test.go` (the comment above `TestResolveRunRef_registryShortNameRewrites.digest`) on 2026-10-09.
+Moved from `internal/app/pullcmd/pull_test.go` (the comment above `TestResolveRunRef_registryShortNameRewrites.digest`) on 2026-10-09.
 
 ```text
 M-32 (audit-2026-09-10.md): a recommended checkpoint's SHA256/Bytes used to be dropped

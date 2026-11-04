@@ -244,5 +244,5 @@ reads `0.22 GB`, because Metal keeps the cache in f16. The rest of each line is 
 
 ---
 
-*Sources: `internal/serveapp/openai.go` (the decode mutex, the bounded queue, the 429), `internal/serveapp/main.go` (`--max-queue`, `--max-inflight`), `decoder/deltanet.go:deltaState`, [`docs/completed/qwen3_5_moe.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/completed/qwen3_5_moe.md), `docs/ollama-chase.md`,
+*Sources: `internal/app/serveapp/openai.go` (the decode mutex, the bounded queue, the 429), `internal/app/serveapp/main.go` (`--max-queue`, `--max-inflight`), `decoder/deltanet.go:deltaState`, [`docs/completed/qwen3_5_moe.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/completed/qwen3_5_moe.md), `docs/ollama-chase.md`,
 [`docs/api-tiers.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/api-tiers.md) (`.giw-kv`), [`docs/queue-performance.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/queue-performance.md) (prefill baselines).*

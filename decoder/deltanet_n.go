@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
-	"github.com/townsendmerino/goinfer/internal/hybridattn"
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // P26c (docs/queue-performance.md). The batched Qwen3.5 forward (runLayersQwen35N) runs every projection as one matmul over the prompt, but deltaNetCore was then called once per token on ONE thread, serializing the recurrence and the conv's SiLU between matmuls that run on all threads.

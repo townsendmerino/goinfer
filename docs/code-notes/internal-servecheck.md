@@ -1,13 +1,13 @@
-# internal/servecheck: notes moved out of code comments
+# internal/guard/servecheck: notes moved out of code comments
 
-History, measurements and open work that used to sit in the comments of `internal/servecheck`, moved here verbatim by the comment diet
+History, measurements and open work that used to sit in the comments of `internal/guard/servecheck`, moved here verbatim by the comment diet
 (`docs/tasks/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
 its guardrails, and points here by heading. This file is off the read path: open it when a pointer sends you. Text is unedited,
 except that a `file.go:NNN` reference inside it names the declaration instead (the line numbers had already gone stale).
 
 ## check_g12_test.header
 
-Moved from `internal/servecheck/check_g12_test.go` (the comment above `check_g12_test.header`) on 2026-10-09.
+Moved from `internal/guard/servecheck/check_g12_test.go` (the comment above `check_g12_test.header`) on 2026-10-09.
 
 ```text
 audit-2026-09-10 G-12: the tools row passed turn two on any 200, and the stop row passed when the
@@ -16,7 +16,7 @@ stop sequence never fired. These fakes drive the FAILING direction the existing 
 
 ## check_test.header
 
-Moved from `internal/servecheck/check_test.go` (the comment above `check_test.header`) on 2026-10-09.
+Moved from `internal/guard/servecheck/check_test.go` (the comment above `check_test.header`) on 2026-10-09.
 
 ```text
 A checker that cannot go red is not a checker. These drive the client against servers that
@@ -28,7 +28,7 @@ at all (ten of the serveapp test files skip without one).
 
 ## TestStructured_truncatedDigitFails
 
-Moved from `internal/servecheck/check_test.go` (the comment above `TestStructured_truncatedDigitFails`) on 2026-10-09.
+Moved from `internal/guard/servecheck/check_test.go` (the comment above `TestStructured_truncatedDigitFails`) on 2026-10-09.
 
 ```text
 TestStructured_truncatedDigitFails pins V-17 (docs/review-2026-09-04.md): the prompt asks for
@@ -40,7 +40,7 @@ would report OK against the very regression this row exists to catch.
 
 ## TestRun_zeroModelsReportsSkippedNotFullyPassed
 
-Moved from `internal/servecheck/cmd_test.go` (the comment above `TestRun_zeroModelsReportsSkippedNotFullyPassed`) on 2026-10-09.
+Moved from `internal/guard/servecheck/cmd_test.go` (the comment above `TestRun_zeroModelsReportsSkippedNotFullyPassed`) on 2026-10-09.
 
 ```text
 TestRun_zeroModelsReportsSkippedNotFullyPassed pins V-17 (docs/review-2026-09-04.md): against

@@ -4,7 +4,7 @@ The `-web` UI could attach an image to a vision model but had no way to constrai
 unconstrained OCR or a hand-typed prompt with no grammar (found by the O5 agent, `docs/tasks/task-glm-ocr-2026-10.md`). The server already
 honoured `response_format` on `/v1/chat/completions` and on the `/v1/jobs` route text replies take. This adds the control.
 
-## What was built (`internal/serveapp/webui/`)
+## What was built (`internal/app/serveapp/webui/`)
 
 - A **Response schema** textarea in the Sampling box (`index.html`, `ui/app.css`, `ui/app.js`). It takes a JSON Schema, or a whole `response_format`
   object pasted from an API call. Either is sent as `response_format: {type: "json_schema", json_schema: {name, schema}}` (a missing name becomes

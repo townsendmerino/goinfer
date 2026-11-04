@@ -4,7 +4,7 @@ package metal
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // KS-D9's batched phase 2 for the generic paged MoE prefill (docs/tasks/task-kernel-survey-2026-10.md, "KS-D9"): D-P01's

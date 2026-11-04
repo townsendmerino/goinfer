@@ -11,6 +11,6 @@
 //	go build ./backend/metal/cmd/chat   # Metal   (was: chat -tags metal, darwin)
 package main
 
-import "github.com/townsendmerino/goinfer/internal/chatapp"
+import "github.com/townsendmerino/goinfer/internal/app/chatapp"
 
 func main() { chatapp.Main() }

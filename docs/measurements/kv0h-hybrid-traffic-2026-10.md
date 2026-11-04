@@ -44,7 +44,7 @@ whose server returned 503 `halted` (the swap guard) is void and re-run.
 ### 1.3 Per-request ground truth
 
 For each request: (a) the **committed sequence before it** (the previous request's prompt ids plus the ids it generated), (b) the **reuse the
-server actually applied**, (c) the **time to first token**. What the server itself records today (`internal/serveapp/reqlog.go`):
+server actually applied**, (c) the **time to first token**. What the server itself records today (`internal/app/serveapp/reqlog.go`):
 
 | | where | what |
 |---|---|---|
@@ -57,7 +57,7 @@ server actually applied**, (c) the **time to first token**. What the server itse
 
 So (b) and (c) are the server's own, and the generated ids in (a) are the server's own. **The prompt ids are not recorded, only their hash.**
 The study does not add a record: it renders each recorded request body with the served model's own tokenizer and chat template (KV0's
-`internal/serveapp/kv0_tokenize_test.go`, which mirrors each route's rendering) and **accepts a rendering only when its length and SHA-256 equal
+`internal/app/serveapp/kv0_tokenize_test.go`, which mirrors each route's rendering) and **accepts a rendering only when its length and SHA-256 equal
 the server's logged length and hash for that request**. That is a stronger check than KV0's token-count equality: an accepted request's prompt
 ids are the ids the server prefilled, byte for byte. A request that fails the check is excluded from every statistic and listed. **Stop
 condition:** if more than 10% of requests of a harness fail the hash check (for instance because carried ids, `ids=<used>/<carried>`, make the
@@ -147,9 +147,9 @@ bodies or text (KV0's policy; the bodies stay outside the repository).
    previous compact, 3 times in a row." The session was `connect`-told a window of 28,672 tokens with an output limit of 6,425, so its usable prompt was about
    22.2k. Noted under I4 in `docs/tasks/task-integration-harness-2026-10.md`.
 3. **The hash check's 4 of 8 rejections were carried ids.** Requests 2 to 5 of the Claude Code pilot rendered exactly one token shorter than the server's prompt
-   (`ids=1/1 ids_fmt=1`: the server replaced the template's formatting around the reply with the reply's own ids, `internal/serveapp/carried_ids.go`), and the
+   (`ids=1/1 ids_fmt=1`: the server replaced the template's formatting around the reply with the reply's own ids, `internal/app/serveapp/carried_ids.go`), and the
    offline renderer, holding no key, could not verify the blob. **Fix, a measurement-tool change only (owner-approved):** the study server runs with
-   `--ids-key-file` (a fixed 48-byte key, mode 600, outside the repository) and the offline renderer in `internal/serveapp/kv0_tokenize_test.go` takes the
+   `--ids-key-file` (a fixed 48-byte key, mode 600, outside the repository) and the offline renderer in `internal/app/serveapp/kv0_tokenize_test.go` takes the
    same key, the served model's name and its quant (`KV0_IDS_KEY_FILE`, `KV0_MODEL_NAME`, `KV0_QUANT`), so a carried blob verifies and the render is the
    server's. The §1.3 stop condition (more than 10% rejected) stays in force for the study. **No server restart inside a session:** the server stays up
    across a configuration's sessions as §1.2 registered; **any restart is recorded in the readings** (a restart would also drop the slot, so a restart is

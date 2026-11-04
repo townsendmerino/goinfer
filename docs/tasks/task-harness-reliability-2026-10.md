@@ -24,7 +24,7 @@
   nobara-pc (CUDA, 8 GB) "ok — real tool calls, real completion" (OpenAI dialect). `docs/integrations/claude-code.md`:
   an agent loop verified end to end on 2026-09-02 (Anthropic dialect). Re-read both at the start; correct this section
   if either has changed.
-- **`serve check`'s tool rows** (`internal/servecheck/check.go`): `tools, OpenAI` (:460) and `tools, harness-scale`
+- **`serve check`'s tool rows** (`internal/guard/servecheck/check.go`): `tools, OpenAI` (:460) and `tools, harness-scale`
   (:547, using `harnessScaleTools()` at :572), both on `/v1/chat/completions`. There is no `/v1/messages` row, so the
   dialect Claude Code uses cannot be predicted per checkpoint; the 2026-09-02 result was a hand measurement.
 
@@ -46,7 +46,7 @@ the same change as its tests. **It is not a check until it reproduces the two kn
 the box that produced the 2026-09-02 numbers, and skip against a 1.5B.
 
 **Gate 1 result, 2026-10-12: it is a check.** The row is `tools, harness, Messages`
-(`internal/servecheck/check.go:Client.ToolsHarnessMessages`), with tests that make it fail on each `tool_use` block a
+(`internal/guard/servecheck/check.go:Client.ToolsHarnessMessages`), with tests that make it fail on each `tool_use` block a
 Messages client could not use (no id, another tool's name, an input that is not an object, a `stop_reason` other than
 `tool_use`) and skip when the model does not call. On nobara-pc (RTX 2070 SUPER, CUDA, int4, `-ctx 16384`, serve at
 `e41add80`; `docs/measurements/integration-harness-2026-10/gate1-nobara-2026-10-12.log`):

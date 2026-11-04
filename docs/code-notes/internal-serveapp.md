@@ -1,13 +1,13 @@
-# internal/serveapp: notes moved out of code comments
+# internal/app/serveapp: notes moved out of code comments
 
-History, measurements and open work that used to sit in the comments of `internal/serveapp`, moved here verbatim by the comment diet
+History, measurements and open work that used to sit in the comments of `internal/app/serveapp`, moved here verbatim by the comment diet
 (`docs/tasks/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
 its guardrails, and points here by heading. This file is off the read path: open it when a pointer sends you. Text is unedited,
 except that a `file.go:NNN` reference inside it names the declaration instead (the line numbers had already gone stale).
 
 ## maxTopLogprobs
 
-Moved from `internal/serveapp/openai.go` (the comment above `maxTopLogprobs`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `maxTopLogprobs`) on 2026-10-09.
 
 ```text
 maxTopLogprobs is the largest `top_logprobs` a request may ask for — OpenAI's own documented
@@ -18,7 +18,7 @@ max_tokens x top_logprobs entries and materializes a map per entry before writin
 
 ## maxOutputTokensCeiling
 
-Moved from `internal/serveapp/openai.go` (the comment above `maxOutputTokensCeiling`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `maxOutputTokensCeiling`) on 2026-10-09.
 
 ```text
 maxOutputTokensCeiling is a hard upper bound on a request's max_tokens. KV is
@@ -30,7 +30,7 @@ is rejected 400 rather than clamped, so the caller learns its request was too bi
 
 ## loadedModel.blockSpec
 
-Moved from `internal/serveapp/openai.go` (the comment above `loadedModel.blockSpec`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `loadedModel.blockSpec`) on 2026-10-09.
 
 ```text
 blockSpec is an attached pretrained block drafter (--drafter), nil when unused. Attached
@@ -40,7 +40,7 @@ ONCE at load: the weight upload is a per-process cost, and doing it per request 
 
 ## loadedModel.turns
 
-Moved from `internal/serveapp/openai.go` (the comment above `loadedModel.turns`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `loadedModel.turns`) on 2026-10-09.
 
 ```text
 decode worker — replaces the OLD lm.mu's admission role. A mutex has no notion of context,
@@ -58,7 +58,7 @@ property — nothing frees or moves memory out from under a running generation �
 
 ## loadedModel.maxTokBytes
 
-Moved from `internal/serveapp/openai.go` (the comment above `loadedModel.maxTokBytes`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `loadedModel.maxTokBytes`) on 2026-10-09.
 
 ```text
 maxTokBytes is the byte length of the longest token in the vocab, computed once. It
@@ -70,7 +70,7 @@ on a 32 MiB body) and only then comparing against the context window.
 
 ## chatInputBytes
 
-Moved from `internal/serveapp/openai.go` (the comment above `chatInputBytes`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `chatInputBytes`) on 2026-10-09.
 
 ```text
 chatInputBytes sums the tokenizable text across chat messages — the input the BPE runs
@@ -85,7 +85,7 @@ used to pass this guard in constant time and then run the full BPE over it anywa
 
 ## toolSchemaBytes
 
-Moved from `internal/serveapp/openai.go` (the comment above `toolSchemaBytes`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `toolSchemaBytes`) on 2026-10-09.
 
 ```text
 toolSchemaBytes sums an OpenAI-shaped tool declaration list's rendered bytes (M-15,
@@ -96,7 +96,7 @@ that already prices the messages, not left to run the full BPE unpriced.
 
 ## server.lookupLocked
 
-Moved from `internal/serveapp/openai.go` (the comment above `server.lookupLocked`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `server.lookupLocked`) on 2026-10-09.
 
 ```text
 pick resolves the OpenAI `model` field to a loaded generative model: an exact
@@ -112,7 +112,7 @@ Adding a handler that calls this directly would skip that lock; there is no expo
 
 ## server.modelByName
 
-Moved from `internal/serveapp/openai.go` (the comment above `server.modelByName`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `server.modelByName`) on 2026-10-09.
 
 ```text
 servedNames lists the loaded generative + embedding model ids (sorted).
@@ -123,7 +123,7 @@ attach a decoder's paths to the embedding-model entry).
 
 ## chatReq.N
 
-Moved from `internal/serveapp/openai.go` (the comment above `chatReq.N`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `chatReq.N`) on 2026-10-09.
 
 ```text
 N is OpenAI's "how many choices" field (N-30, docs/audit-2026-09-10.md — this repo
@@ -134,7 +134,7 @@ what was ignored. *int (not int) so n:0 and "omitted" are distinguishable from n
 
 ## completionReq.Logprobs
 
-Moved from `internal/serveapp/openai.go` (the comment above `completionReq.Logprobs`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `completionReq.Logprobs`) on 2026-10-09.
 
 ```text
 Logprobs shadows sampling.Logprobs (embedded below) for the /v1/completions surface.
@@ -147,7 +147,7 @@ logprobs path never engages; the handler 400s explicitly when it is set (unimple
 
 ## serveChatText.guard
 
-Moved from `internal/serveapp/openai.go` (the comment above `serveChatText.guard`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `serveChatText.guard`) on 2026-10-09.
 
 ```text
 Reject an over-context prompt before tokenizing it (G1c): turns a multi-MiB body from
@@ -156,7 +156,7 @@ Reject an over-context prompt before tokenizing it (G1c): turns a multi-MiB body
 
 ## serveChatText.heartbeat
 
-Moved from `internal/serveapp/openai.go` (the comment above `serveChatText.heartbeat`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `serveChatText.heartbeat`) on 2026-10-09.
 
 ```text
 N-24 (docs/audit-2026-09-10.md): nothing else is sent between here and the first
@@ -167,7 +167,7 @@ the prefill window itself, same shape as the buffer-then-stream sites M-19 fixed
 
 ## validateN
 
-Moved from `internal/serveapp/openai.go` (the comment above `validateN`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `validateN`) on 2026-10-09.
 
 ```text
 validateN rejects an explicit "n" other than 1 (N-30, docs/audit-2026-09-10.md): this server
@@ -179,7 +179,7 @@ anything else is a clean 400 rather than a silently wrong choice count.
 
 ## loadedModel.contextWindow
 
-Moved from `internal/serveapp/openai.go` (the comment above `loadedModel.contextWindow`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `loadedModel.contextWindow`) on 2026-10-09.
 
 ```text
 contextWindow is the context cap prepare enforces for one request: the model's MaxPositions,
@@ -199,7 +199,7 @@ requests never enter) requests, which are bounded by MaxPositions, not the resid
 
 ## loadedModel.residentPath
 
-Moved from `internal/serveapp/openai.go` (the comment above `loadedModel.residentPath`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `loadedModel.residentPath`) on 2026-10-09.
 
 ```text
 residentPath reports whether a text-completion request against lm will actually run the
@@ -219,7 +219,7 @@ prepare with one.
 
 ## prepare.temperature
 
-Moved from `internal/serveapp/openai.go` (the comment above `prepare.temperature`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `prepare.temperature`) on 2026-10-09.
 
 ```text
 G4: temperature has the same lower bound as top_p (rejected < 0), for consistency —
@@ -231,7 +231,7 @@ scaling, so a negative temperature decoded greedily rather than inverting the or
 
 ## prepare.topP
 
-Moved from `internal/serveapp/openai.go` (the comment above `prepare.topP`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `prepare.topP`) on 2026-10-09.
 
 ```text
 M-02: top_p == 0 is the tightest nucleus (the single most-likely token), which is greedy — the old
@@ -241,7 +241,7 @@ tightest filter got a full-vocab draw. Reject outside [0,1]; map explicit 0 to g
 
 ## prepare.topLogprobs
 
-Moved from `internal/serveapp/openai.go` (the comment above `prepare.topLogprobs`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `prepare.topLogprobs`) on 2026-10-09.
 
 ```text
 C-08: top_logprobs was the one sampling field `prepare` passed through unvalidated, and it is
@@ -256,7 +256,7 @@ a 500. top_logprobs:20000 with max_tokens:2000 already reaches ~6 GB. One reques
 
 ## prepare.maxTokens
 
-Moved from `internal/serveapp/openai.go` (the comment above `prepare.maxTokens`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `prepare.maxTokens`) on 2026-10-09.
 
 ```text
 A negative/zero value reaches NewCache(len(prompt)+maxTokens) → makeslice with a
@@ -268,7 +268,7 @@ endpoint already rejects <= 0 upstream.
 
 ## prepare.clamp
 
-Moved from `internal/serveapp/openai.go` (the comment above `prepare.clamp`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `prepare.clamp`) on 2026-10-09.
 
 ```text
 C-18: bound max_tokens by the model's context window. The KV cache is preallocated as
@@ -282,7 +282,7 @@ itself exceeds the context is C-20's concern; here we only bound the max_tokens 
 
 ## prepare.admit
 
-Moved from `internal/serveapp/openai.go` (the comment above `prepare.admit`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `prepare.admit`) on 2026-10-09.
 
 ```text
 R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the load-time fit guard
@@ -294,7 +294,7 @@ prepare() caller gets this for free rather than needing its own copy of the chec
 
 ## prepare.share
 
-Moved from `internal/serveapp/openai.go` (the comment above `prepare.share`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `prepare.share`) on 2026-10-09.
 
 ```text
 MC3c: with several generations allowed at once, this request's prefill shares the margin with the ones running
@@ -306,7 +306,7 @@ it refused ~1000-token 7B prompts under MC3 (docs/measurements/spec-vs-batching-
 
 ## contextLengthError
 
-Moved from `internal/serveapp/openai.go` (the comment above `contextLengthError`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `contextLengthError`) on 2026-10-09.
 
 ```text
 contextLengthError rejects a prompt that alone fills or exceeds the model's context window (C-20).
@@ -318,7 +318,7 @@ garbage under HTTP 200 instead of a 400. ctx ≤ 0 (unknown) never rejects.
 
 ## contextLengthErrorFor
 
-Moved from `internal/serveapp/openai.go` (the comment above `contextLengthErrorFor`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `contextLengthErrorFor`) on 2026-10-09.
 
 ```text
 contextLengthErrorFor is contextLengthError plus the remedy, for the case where the window that rejected the prompt is the
@@ -330,7 +330,7 @@ the operator raising -ctx. When the model's own window is the limit, -ctx cannot
 
 ## seedOrRandom
 
-Moved from `internal/serveapp/openai.go` (the comment above `seedOrRandom`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `seedOrRandom`) on 2026-10-09.
 
 ```text
 seedOrRandom returns the request's seed, or a fresh random seed when absent (M-03). OpenAI's contract
@@ -341,7 +341,7 @@ seed-0 stream. A supplied seed (including 0) is still honored verbatim for repro
 
 ## loadedModel.drive
 
-Moved from `internal/serveapp/openai.go` (the comment above `loadedModel.drive`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `loadedModel.drive`) on 2026-10-09.
 
 ```text
 drive runs the generation, applying stop strings and UTF-8 holdback, calling
@@ -368,7 +368,7 @@ joined by id later (J3) without a retrofit.
 
 ## drive.adminCancel
 
-Moved from `internal/serveapp/openai.go` (the comment above `drive.adminCancel`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `drive.adminCancel`) on 2026-10-09.
 
 ```text
 K1's cancel must land on `parent` itself, not on `ctx` below (drive's own
@@ -382,7 +382,7 @@ genuinely stopped — cancelling ctx silences the loop but parent.Err() stays ni
 
 ## loadedModel.drive.resident
 
-Moved from `internal/serveapp/openai.go` (the comment above `loadedModel.drive.resident`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `loadedModel.drive.resident`) on 2026-10-09.
 
 ```text
 GPU-resident models take the STATELESS path. decoder.Generate only engages the resident
@@ -417,7 +417,7 @@ nothing wires compute-time LoRA into the resident prefix-reuse path yet (N-39).
 
 ## streamTokens.sb
 
-Moved from `internal/serveapp/openai.go` (the comment above `streamTokens.sb`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `streamTokens.sb`) on 2026-10-09.
 
 ```text
 sb accumulates the decoded text INCREMENTALLY instead of re-decoding the whole `ids`
@@ -434,7 +434,7 @@ append and would silently reintroduce the O(n^2) this exists to remove.
 
 ## streamTokens.tail
 
-Moved from `internal/serveapp/openai.go` (the comment above `streamTokens.tail`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `streamTokens.tail`) on 2026-10-09.
 
 ```text
 tail is text[printed:] — the not-yet-emitted suffix, bounded (does not grow with total
@@ -451,7 +451,7 @@ absolute offsets into text (+= printed) before use.
 
 ## logprobImpossible
 
-Moved from `internal/serveapp/openai.go` (the comment above `logprobImpossible`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai.go` (the comment above `logprobImpossible`) on 2026-10-09.
 
 ```text
 logprobImpossible is the logprob reported for a token whose probability is exactly zero: OpenAI's own convention (-9999.0), because -Inf, the true value, cannot be written in JSON.
@@ -461,7 +461,7 @@ filler entries that pad the top-k list, has none (S6's 35B image check, 2026-10-
 
 ## admissionRecord
 
-Moved from `internal/serveapp/admission.go` (the comment above `admissionRecord`) on 2026-10-09.
+Moved from `internal/app/serveapp/admission.go` (the comment above `admissionRecord`) on 2026-10-09.
 
 ```text
 admissionRecord is what a future scheduler reads to decide ordering — J1 keeps strict FIFO and
@@ -475,7 +475,7 @@ need to run that same match against the LRU at pick time.
 
 ## admission
 
-Moved from `internal/serveapp/admission.go` (the comment above `admission`) on 2026-10-09.
+Moved from `internal/app/serveapp/admission.go` (the comment above `admission`) on 2026-10-09.
 
 ```text
 admission is a size-1, FIFO, context-aware turn-granter (J1, task-work-queue-2026-09.md),
@@ -501,7 +501,7 @@ for everyone waiting.
 
 ## admission.position
 
-Moved from `internal/serveapp/admission.go` (the comment above `admission.position`) on 2026-10-09.
+Moved from `internal/app/serveapp/admission.go` (the comment above `admission.position`) on 2026-10-09.
 
 ```text
 position reports where the waiter with this id stands: its place among the waiters (1 = next to be
@@ -512,7 +512,7 @@ exactly arrival order: J1 is strict FIFO, and J6's reordering was measured and n
 
 ## streamMessages.heartbeat
 
-Moved from `internal/serveapp/anthropic_stream.go` (the comment above `streamMessages.heartbeat`) on 2026-10-09.
+Moved from `internal/app/serveapp/anthropic_stream.go` (the comment above `streamMessages.heartbeat`) on 2026-10-09.
 
 ```text
 N-24 (docs/audit-2026-09-10.md): the ping above is a one-shot liveness check, not a
@@ -522,7 +522,7 @@ prefill (minutes for an image, ~270s for an 8k agent prompt) against a 300s idle
 
 ## streamMessagesTools
 
-Moved from `internal/serveapp/anthropic_stream.go` (the comment above `streamMessagesTools`) on 2026-10-09.
+Moved from `internal/app/serveapp/anthropic_stream.go` (the comment above `streamMessagesTools`) on 2026-10-09.
 
 ```text
 streamMessagesTools runs a tool-bearing turn on /v1/messages: prose streams as a text content block
@@ -537,7 +537,7 @@ route streamed prose during a tool call.
 
 ## bannerFacts.fit
 
-Moved from `internal/serveapp/banner.go` (the comment above `bannerFacts.fit`) on 2026-10-09.
+Moved from `internal/app/serveapp/banner.go` (the comment above `bannerFacts.fit`) on 2026-10-09.
 
 ```text
 R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the context cap, KV at that
@@ -548,7 +548,7 @@ request were the same load with no line connecting them.
 
 ## modelBannerFrom.context
 
-Moved from `internal/serveapp/banner.go` (the comment above `modelBannerFrom.context`) on 2026-10-09.
+Moved from `internal/app/serveapp/banner.go` (the comment above `modelBannerFrom.context`) on 2026-10-09.
 
 ```text
 How much context, and at what KV precision — the two numbers that decide whether a
@@ -564,7 +564,7 @@ this model (the caller passes the per-model ctx= override when there is one).
 
 ## modelBannerFrom.cpuNote
 
-Moved from `internal/serveapp/banner.go` (the comment above `modelBannerFrom.cpuNote`) on 2026-10-09.
+Moved from `internal/app/serveapp/banner.go` (the comment above `modelBannerFrom.cpuNote`) on 2026-10-09.
 
 ```text
 R20 (docs/completed/task-first-hour.md): on the CPU path the window is the model's whole maximum — -ctx is the GPU-resident KV capacity and caps nothing
@@ -575,7 +575,7 @@ question. Said here, beside the figure, so it is not left to be worked out.
 
 ## modelBannerFrom.fit
 
-Moved from `internal/serveapp/banner.go` (the comment above `modelBannerFrom.fit`) on 2026-10-09.
+Moved from `internal/app/serveapp/banner.go` (the comment above `modelBannerFrom.fit`) on 2026-10-09.
 
 ```text
 R13: the memory this context cap actually costs, and what is left — the line a harness
@@ -591,7 +591,7 @@ function's.
 
 ## modelBannerFrom.reuse
 
-Moved from `internal/serveapp/banner.go` (the comment above `modelBannerFrom.reuse`) on 2026-10-09.
+Moved from `internal/app/serveapp/banner.go` (the comment above `modelBannerFrom.reuse`) on 2026-10-09.
 
 ```text
 Prefix reuse, and WHY when it is off or narrower than it sounds. This is the line that makes
@@ -605,7 +605,7 @@ true when resident reuse shipped (2026-09-03).
 
 ## modelBannerFrom.reuseNotMetal
 
-Moved from `internal/serveapp/banner.go` (the comment above `modelBannerFrom.reuseNotMetal`) on 2026-10-09.
+Moved from `internal/app/serveapp/banner.go` (the comment above `modelBannerFrom.reuseNotMetal`) on 2026-10-09.
 
 ```text
 Not Metal: this used to print "Metal keeps N by default" for the count a CUDA card had granted.
@@ -613,7 +613,7 @@ Not Metal: this used to print "Metal keeps N by default" for the count a CUDA ca
 
 ## concurrencyLine
 
-Moved from `internal/serveapp/banner.go` (the comment above `concurrencyLine`) on 2026-10-09.
+Moved from `internal/app/serveapp/banner.go` (the comment above `concurrencyLine`) on 2026-10-09.
 
 ```text
 concurrencyLine is how many generations of a model run at once (MC3c / MC3, -max-concurrent) and why fewer than asked
@@ -624,7 +624,7 @@ report the undecided value (it did, 2026-09-26: every model's banner said "one g
 
 ## warnThinkingTemplate
 
-Moved from `internal/serveapp/blockdrafter.go` (the comment above `warnThinkingTemplate`) on 2026-10-09.
+Moved from `internal/app/serveapp/blockdrafter.go` (the comment above `warnThinkingTemplate`) on 2026-10-09.
 
 ```text
 warnThinkingTemplate says so when the served template will put the target in THINKING mode.
@@ -644,7 +644,7 @@ deployment is merely not getting the win, rather than being harmed. But an opera
 
 ## qwen3EmbedEOD
 
-Moved from `internal/serveapp/decoder_embedder.go` (the comment above `qwen3EmbedEOD`) on 2026-10-09.
+Moved from `internal/app/serveapp/decoder_embedder.go` (the comment above `qwen3EmbedEOD`) on 2026-10-09.
 
 ```text
 Qwen3-Embedding conventions. Read from the model's own config files AND — the part config-reading
@@ -664,7 +664,7 @@ alone gets wrong — from what sentence-transformers actually feeds the model:
 
 ## newDecoderEmbedder.maxTokens
 
-Moved from `internal/serveapp/decoder_embedder.go` (the comment above `newDecoderEmbedder.maxTokens`) on 2026-10-09.
+Moved from `internal/app/serveapp/decoder_embedder.go` (the comment above `newDecoderEmbedder.maxTokens`) on 2026-10-09.
 
 ```text
 BOUNDED BY THE MODEL'S CONTEXT, always. The reference imposes nothing shorter than the
@@ -685,7 +685,7 @@ closure of the 2026-08-05 audit's C-21).
 
 ## server.loadDecoderEmbedder
 
-Moved from `internal/serveapp/decoder_embedder.go` (the comment above `server.loadDecoderEmbedder`) on 2026-10-09.
+Moved from `internal/app/serveapp/decoder_embedder.go` (the comment above `server.loadDecoderEmbedder`) on 2026-10-09.
 
 ```text
 M-17 (docs/audit-2026-09-10.md): Backend/Quant were left zero-valued here, so this embedder
@@ -709,7 +709,7 @@ per-row), the same precision class the aikit encoder's LoadQ8 path uses.
 
 ## decoderEmbedder.EncodeBatchCounted
 
-Moved from `internal/serveapp/decoder_embedder.go` (the comment above `decoderEmbedder.EncodeBatchCounted`) on 2026-10-09.
+Moved from `internal/app/serveapp/decoder_embedder.go` (the comment above `decoderEmbedder.EncodeBatchCounted`) on 2026-10-09.
 
 ```text
 EncodeBatchCounted is EncodeBatch plus each input's token count, read off the SAME tokenize
@@ -722,7 +722,7 @@ through; encoders that don't implement it (the aikit-embed.Tokenizer path) are u
 
 ## truncateForContext
 
-Moved from `internal/serveapp/decoder_embedder.go` (the comment above `truncateForContext`) on 2026-10-09.
+Moved from `internal/app/serveapp/decoder_embedder.go` (the comment above `truncateForContext`) on 2026-10-09.
 
 ```text
 truncateForContext is tokenize's C-07 truncation arithmetic, pulled out so a test can call the
@@ -735,7 +735,7 @@ never the thing truncation drops — it must stay last, because it is the pooled
 
 ## embedTask
 
-Moved from `internal/serveapp/embeddings.go` (the comment above `embedTask`) on 2026-10-09.
+Moved from `internal/app/serveapp/embeddings.go` (the comment above `embedTask`) on 2026-10-09.
 
 ```text
 embedTask picks the prompt a taskEmbedder applies (docs/tasks/task-embeddinggemma2.md, Gate 3, owner decision
@@ -746,7 +746,7 @@ so a client that knows nothing about prompts gets the reference's own output.
 
 ## maxEmbedInputs
 
-Moved from `internal/serveapp/embeddings.go` (the comment above `maxEmbedInputs`) on 2026-10-09.
+Moved from `internal/app/serveapp/embeddings.go` (the comment above `maxEmbedInputs`) on 2026-10-09.
 
 ```text
 Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the encoder is
@@ -760,7 +760,7 @@ input to text sizes (an embedding input is a query/passage, not a document dump)
 
 ## server.resolveDimensions
 
-Moved from `internal/serveapp/embeddings.go` (the comment above `server.resolveDimensions`) on 2026-10-09.
+Moved from `internal/app/serveapp/embeddings.go` (the comment above `server.resolveDimensions`) on 2026-10-09.
 
 ```text
 resolveDimensions validates the optional output-dimension override against the
@@ -779,7 +779,7 @@ published Truncatable column.
 
 ## generation
 
-Moved from `internal/serveapp/generations.go` (the comment above `generation`) on 2026-10-09.
+Moved from `internal/app/serveapp/generations.go` (the comment above `generation`) on 2026-10-09.
 
 ```text
 K1 (docs/tasks/task-halt-2026-09.md): a process-wide registry of in-flight generations, keyed by the
@@ -809,7 +809,7 @@ this commit.
 
 ## jobEventLog.markDone
 
-Moved from `internal/serveapp/jobeventlog.go` (the comment above `jobEventLog.markDone`) on 2026-10-09.
+Moved from `internal/app/serveapp/jobeventlog.go` (the comment above `jobEventLog.markDone`) on 2026-10-09.
 
 ```text
 markDone marks the log closed — no further events will ever be appended — and wakes every
@@ -820,7 +820,7 @@ an already-replaced channel and panic, so it must not be called more than once p
 
 ## maxEmbedBodyBytes
 
-Moved from `internal/serveapp/helpers.go` (the comment above `maxEmbedBodyBytes`) on 2026-10-09.
+Moved from `internal/app/serveapp/helpers.go` (the comment above `maxEmbedBodyBytes`) on 2026-10-09.
 
 ```text
 maxEmbedBodyBytes is /v1/embeddings' own floor, deliberately NOT derived from any decoder's
@@ -836,7 +836,7 @@ bounding the read. -max-body-bytes overrides it like the others.
 
 ## maxBytes
 
-Moved from `internal/serveapp/helpers.go` (the comment above `maxBytes`) on 2026-10-09.
+Moved from `internal/app/serveapp/helpers.go` (the comment above `maxBytes`) on 2026-10-09.
 
 ```text
 maxBytes wraps a handler so its request body is bounded to n bytes (n <= 0 disables).
@@ -859,7 +859,7 @@ tell which of the three numbers it actually violated.
 
 ## jsonDecodeMessage
 
-Moved from `internal/serveapp/helpers.go` (the comment above `jsonDecodeMessage`) on 2026-10-09.
+Moved from `internal/app/serveapp/helpers.go` (the comment above `jsonDecodeMessage`) on 2026-10-09.
 
 ```text
 decodeJSON reads the (size-bounded, see maxBytes) request body into v, writing
@@ -877,7 +877,7 @@ Anthropic one still appended err.Error() verbatim and leaked exactly what those 
 
 ## sseWriter
 
-Moved from `internal/serveapp/helpers.go` (the comment above `sseWriter`) on 2026-10-09.
+Moved from `internal/app/serveapp/helpers.go` (the comment above `sseWriter`) on 2026-10-09.
 
 ```text
 sseWriter owns one SSE response: every frame goes through it, one at a time, under a bounded
@@ -905,7 +905,7 @@ generating rather than keep pushing frames into a dead socket.
 
 ## sseHeartbeat
 
-Moved from `internal/serveapp/helpers.go` (the comment above `sseHeartbeat`) on 2026-10-09.
+Moved from `internal/app/serveapp/helpers.go` (the comment above `sseHeartbeat`) on 2026-10-09.
 
 ```text
 sseHeartbeat keeps a stream alive while the handler is producing nothing to
@@ -926,7 +926,7 @@ caller's final frame (audit-2026-09-02 C-06).
 
 ## sendUsage
 
-Moved from `internal/serveapp/helpers.go` (the comment above `sendUsage`) on 2026-10-09.
+Moved from `internal/app/serveapp/helpers.go` (the comment above `sendUsage`) on 2026-10-09.
 
 ```text
 sendUsage emits the include_usage chunk, if the client asked for one, immediately before
@@ -941,7 +941,7 @@ fifth streaming surface cannot be added quietly without one.
 
 ## writeJSON
 
-Moved from `internal/serveapp/helpers.go` (the comment above `writeJSON`) on 2026-10-09.
+Moved from `internal/app/serveapp/helpers.go` (the comment above `writeJSON`) on 2026-10-09.
 
 ```text
 Encode BEFORE the status line goes out. The body used to be streamed straight from the encoder after WriteHeader(code) with its error dropped, so a value JSON cannot
@@ -951,7 +951,7 @@ the server said nothing (2026-10-09). A body that cannot be encoded is a server 
 
 ## reqID
 
-Moved from `internal/serveapp/helpers.go` (the comment above `reqID`) on 2026-10-09.
+Moved from `internal/app/serveapp/helpers.go` (the comment above `reqID`) on 2026-10-09.
 
 ```text
 reqID is a short, monotonically increasing id suffix (unique per process run).
@@ -969,7 +969,7 @@ in URLs and logs, and 128 bits is beyond enumeration.
 
 ## serveResponsesWith.guard
 
-Moved from `internal/serveapp/responses.go` (the comment above `serveResponsesWith.guard`) on 2026-10-09.
+Moved from `internal/app/serveapp/responses.go` (the comment above `serveResponsesWith.guard`) on 2026-10-09.
 
 ```text
 G1c, extended (audit-2026-09-02 M-21). Placed BEFORE the tools/plain branch so one guard
@@ -983,7 +983,7 @@ RenderToolsSegments renders every one of them into the prompt.
 
 ## respondTools.stream
 
-Moved from `internal/serveapp/responses.go` (the comment above `respondTools.stream`) on 2026-10-09.
+Moved from `internal/app/serveapp/responses.go` (the comment above `respondTools.stream`) on 2026-10-09.
 
 ```text
 The shared tool turn (tool_turn.go). Streaming: response.created goes out first, as on the
@@ -993,7 +993,7 @@ family allows (G21) — before, this path sent nothing but heartbeats until the 
 
 ## server.maybeStore
 
-Moved from `internal/serveapp/responses.go` (the comment above `server.maybeStore`) on 2026-10-09.
+Moved from `internal/app/serveapp/responses.go` (the comment above `server.maybeStore`) on 2026-10-09.
 
 ```text
 maybeStore records this turn's assistant output for a later previous_response_id
@@ -1013,7 +1013,7 @@ was never made.
 
 ## responseInputToMessages
 
-Moved from `internal/serveapp/responses.go` (the comment above `responseInputToMessages`) on 2026-10-09.
+Moved from `internal/app/serveapp/responses.go` (the comment above `responseInputToMessages`) on 2026-10-09.
 
 ```text
 `type` and the function-call fields are decoded, not just {role, content}. A Responses tool
@@ -1028,7 +1028,7 @@ TestServe_responses step 4 never feeds a result back, which is why nothing caugh
 
 ## handleCreateJob.scope
 
-Moved from `internal/serveapp/jobs_http.go` (the comment above `handleCreateJob.scope`) on 2026-10-09.
+Moved from `internal/app/serveapp/jobs_http.go` (the comment above `handleCreateJob.scope`) on 2026-10-09.
 
 ```text
 J3 (task-work-queue-2026-09.md): POST /v1/jobs submits a generation and returns its id
@@ -1040,7 +1040,7 @@ see jobs_run.go's own doc comment and the task doc's closure note for what's sco
 
 ## qwen3MaxImageTokens
 
-Moved from `internal/serveapp/qwen35_vision.go` (the comment above `qwen3MaxImageTokens`) on 2026-10-09.
+Moved from `internal/app/serveapp/qwen35_vision.go` (the comment above `qwen3MaxImageTokens`) on 2026-10-09.
 
 ```text
 qwen3MaxImageTokens is the serve-side ceiling on merged image tokens per image. The checkpoint's own
@@ -1053,7 +1053,7 @@ processor would for its own max_pixels; a build-time constant, not an environmen
 
 ## isQwen35VisionDir
 
-Moved from `internal/serveapp/qwen35_vision.go` (the comment above `isQwen35VisionDir`) on 2026-10-09.
+Moved from `internal/app/serveapp/qwen35_vision.go` (the comment above `isQwen35VisionDir`) on 2026-10-09.
 
 ```text
 isQwen35VisionDir reports whether dir is a Qwen3.5+ checkpoint that carries a usable vision tower:
@@ -1064,7 +1064,7 @@ config LoadQwen3PreprocessConfig accepts. Used for AUTO-discovery only: a stripp
 
 ## sessionLRU
 
-Moved from `internal/serveapp/sessions.go` (the comment above `sessionLRU`) on 2026-10-09.
+Moved from `internal/app/serveapp/sessions.go` (the comment above `sessionLRU`) on 2026-10-09.
 
 ```text
 sessionLRU keeps up to size prefilled KV sessions and hands each request the
@@ -1082,7 +1082,7 @@ so the background demoter and the request path never race.
 
 ## sessionDirPerm
 
-Moved from `internal/serveapp/sessions.go` (the comment above `sessionDirPerm`) on 2026-10-09.
+Moved from `internal/app/serveapp/sessions.go` (the comment above `sessionDirPerm`) on 2026-10-09.
 
 ```text
 KV snapshots and cold blobs are the CONVERSATION, not a cache of public data: a .giw-kv blob
@@ -1094,7 +1094,7 @@ session ids.
 
 ## sessionLRU.acquire
 
-Moved from `internal/serveapp/sessions.go` (the comment above `sessionLRU.acquire`) on 2026-10-09.
+Moved from `internal/app/serveapp/sessions.go` (the comment above `sessionLRU.acquire`) on 2026-10-09.
 
 ```text
 acquire returns the session to generate prompt against and marks it most-
@@ -1117,7 +1117,7 @@ re-prefill-everything behavior).
 
 ## bestExtend
 
-Moved from `internal/serveapp/sessions.go` (the comment above `bestExtend`) on 2026-10-09.
+Moved from `internal/app/serveapp/sessions.go` (the comment above `bestExtend`) on 2026-10-09.
 
 ```text
 bestExtend returns the index of the session whose common prefix with prompt is
@@ -1139,7 +1139,7 @@ the matched length; bestExtend only picks which session gets that treatment.
 
 ## sessionLRU.save
 
-Moved from `internal/serveapp/sessions.go` (the comment above `sessionLRU.save`) on 2026-10-09.
+Moved from `internal/app/serveapp/sessions.go` (the comment above `sessionLRU.save`) on 2026-10-09.
 
 ```text
 Snapshot refuses RECURRENT state (Mamba-2 / DeltaNet / LFM2 conv / MLA latent),
@@ -1150,7 +1150,7 @@ kvSnapVersion 2 (N-34).
 
 ## pickSession
 
-Moved from `internal/serveapp/sessions.go` (the comment above `pickSession`) on 2026-10-09.
+Moved from `internal/app/serveapp/sessions.go` (the comment above `pickSession`) on 2026-10-09.
 
 ```text
 pickSession is acquire's choice: bestExtend's candidate, unless the LRU has room for a fresh session (spare) and
@@ -1166,7 +1166,7 @@ stands. -1 means take a fresh session.
 
 ## handleSystemOne
 
-Moved from `internal/serveapp/systemone.go` (the comment above `handleSystemOne`) on 2026-10-09.
+Moved from `internal/app/serveapp/systemone.go` (the comment above `handleSystemOne`) on 2026-10-09.
 
 ```text
 POST /v1/systemone — TypeSafe's decisions wire shape (D5 of docs/tasks/task-constrained-confidence.md; the request
@@ -1181,7 +1181,7 @@ response's goinfer.calibrated says which).
 
 ## toolTurn
 
-Moved from `internal/serveapp/tool_turn.go` (the comment above `toolTurn`) on 2026-10-09.
+Moved from `internal/app/serveapp/tool_turn.go` (the comment above `toolTurn`) on 2026-10-09.
 
 ```text
 toolTurn is the outcome of one tool-bearing generation. /v1/chat/completions, /v1/responses and
@@ -1193,7 +1193,7 @@ implementation; each front end keeps only its wire format.
 
 ## reconcileProse
 
-Moved from `internal/serveapp/tool_turn.go` (the comment above `reconcileProse`) on 2026-10-09.
+Moved from `internal/app/serveapp/tool_turn.go` (the comment above `reconcileProse`) on 2026-10-09.
 
 ```text
 reconcileProse settles a finished turn's prose against what already streamed. lead is the turn's
@@ -1211,7 +1211,7 @@ was shared — reported a false divergence and ended the stream in an error. Whe
 
 ## versionReport.history
 
-Moved from `internal/serveapp/version.go` (the comment above `versionReport.history`) on 2026-10-09.
+Moved from `internal/app/serveapp/version.go` (the comment above `versionReport.history`) on 2026-10-09.
 
 ```text
 versionReport is what `serve --version` prints. Its load-bearing line is `backends:` — the
@@ -1236,7 +1236,7 @@ the release workflow's own path.
 
 ## countFlags
 
-Moved from `internal/serveapp/version.go` (the comment above `countFlags`) on 2026-10-09.
+Moved from `internal/app/serveapp/version.go` (the comment above `countFlags`) on 2026-10-09.
 
 ```text
 countFlags reports how many flags are registered, so the help header's "all N flags" line cannot
@@ -1246,7 +1246,7 @@ parity manifest's hand-typed aikit_version, which sat seventeen versions stale.
 
 ## prepImage.qwenBlock
 
-Moved from `internal/serveapp/vision_multi.go` (the comment above `prepImage.qwenBlock`) on 2026-10-09.
+Moved from `internal/app/serveapp/vision_multi.go` (the comment above `prepImage.qwenBlock`) on 2026-10-09.
 
 ```text
 M-38 (audit-2026-09-10): Qwen2.5-VL's real chat_template.json (verified live against
@@ -1257,7 +1257,7 @@ exist in the real template.
 
 ## prepImage.gemma4Block
 
-Moved from `internal/serveapp/vision_multi.go` (the comment above `prepImage.gemma4Block`) on 2026-10-09.
+Moved from `internal/app/serveapp/vision_multi.go` (the comment above `prepImage.gemma4Block`) on 2026-10-09.
 
 ```text
 M-38 (audit-2026-09-10): Gemma 4's own processor (processing_gemma4.py, verified against the
@@ -1267,7 +1267,7 @@ newline at all, unlike the trailing "\n" this used to append.
 
 ## Main.usage
 
-Moved from `internal/serveapp/main.go` (the comment above `flag.Usage` in `Main`) on 2026-10-09.
+Moved from `internal/app/serveapp/main.go` (the comment above `flag.Usage` in `Main`) on 2026-10-09.
 
 ```text
 A SKIMMABLE HELP HEADER, printed before the 39-flag dump.
@@ -1286,7 +1286,7 @@ map ABOVE it rather than trimming it, so skimming and reading are both possible.
 
 ## Main.routes
 
-Moved from `internal/serveapp/main.go` (the comment above `reqLogOut` in `Main`) on 2026-10-09.
+Moved from `internal/app/serveapp/main.go` (the comment above `reqLogOut` in `Main`) on 2026-10-09.
 
 ```text
 K2 (docs/tasks/task-halt-2026-09.md): halt is checked AFTER auth (a bad key is still rejected
@@ -1304,7 +1304,7 @@ absent model with the OpenAI-shaped 404 "model not found (served: …)".
 
 ## Main.webroutes
 
-Moved from `internal/serveapp/main.go` (the comment above the `GET /{$}` route in `Main`) on 2026-10-09.
+Moved from `internal/app/serveapp/main.go` (the comment above the `GET /{$}` route in `Main`) on 2026-10-09.
 
 ```text
 "GET /{$}" matches the root path EXACTLY. A bare "GET /" would be a catch-all and
@@ -1322,7 +1322,7 @@ auth stays on the two routes below, which actually act (list a repo, pull a mode
 
 ## Main.shutdown
 
-Moved from `internal/serveapp/main.go` (the comment above `srvCtx` in `Main`) on 2026-10-09.
+Moved from `internal/app/serveapp/main.go` (the comment above `srvCtx` in `Main`) on 2026-10-09.
 
 ```text
 ReadHeaderTimeout + ReadTimeout + IdleTimeout bound slow-header (slowloris), slow-body
@@ -1346,7 +1346,7 @@ specifically, for whatever brief window a generation is actually inside sessions
 
 ## loadVisionTower.gemma3
 
-Moved from `internal/serveapp/main.go` (the comment above `attachGemma3Tower` in `server.loadVisionTower`) on 2026-10-09.
+Moved from `internal/app/serveapp/main.go` (the comment above `attachGemma3Tower` in `server.loadVisionTower`) on 2026-10-09.
 
 ```text
 On CUDA the unset default is the float32 tower (towerInt8); if it does not attach, attachGemma3Tower releases it and attaches the int8 device
@@ -1361,7 +1361,7 @@ M-18 (docs/audit-2026-09-10.md): cuda joins webgpu here now that the resident CU
 
 ## towerInt8
 
-Moved from `internal/serveapp/main.go` (the comment above `towerInt8`) on 2026-10-09.
+Moved from `internal/app/serveapp/main.go` (the comment above `towerInt8`) on 2026-10-09.
 
 ```text
 towerInt8 says whether a vision tower loads with int8 matmul weights. Gemma 3's SigLIP: WebGPU's device tower needs int8 (W8A8), so --backend webgpu
@@ -1377,7 +1377,7 @@ cosine mean 0.975 / 0.992 / 0.950 (docs/measurements/vision-tower-int8-fidelity-
 
 ## towerInt8.f32
 
-Moved from `internal/serveapp/main.go` (the comment inside `towerInt8` (case "f32")) on 2026-10-09.
+Moved from `internal/app/serveapp/main.go` (the comment inside `towerInt8` (case "f32")) on 2026-10-09.
 
 ```text
 Explicit, and the only way to ask for Gemma 3's float32 device tower on CUDA (S4 addendum); unset keeps the old rule below. On webgpu there is no float32
@@ -1386,7 +1386,7 @@ device tower, so the attach declines by name and the CPU tower runs.
 
 ## enableResidentTower
 
-Moved from `internal/serveapp/main.go` (the comment above `enableResidentTower`) on 2026-10-09.
+Moved from `internal/app/serveapp/main.go` (the comment above `enableResidentTower`) on 2026-10-09.
 
 ```text
 enableResidentTower attaches the device-resident vision tower when the backend is webgpu, cuda or metal and reports whether it
@@ -1398,7 +1398,7 @@ and decline an int8 tower, which lands here as that warning.
 
 ## loadQwenVisionTower
 
-Moved from `internal/serveapp/main.go` (the comment inside `server.loadQwenVisionTower`) on 2026-10-09.
+Moved from `internal/app/serveapp/main.go` (the comment inside `server.loadQwenVisionTower`) on 2026-10-09.
 
 ```text
 Metal's tower (S3) attaches through attachResidentTower; CUDA's (aikit's gpu/qwencuda, S4: G-S4q correct at real size and 1.6-2.7x the CPU tower)
@@ -1407,7 +1407,7 @@ through qwenTowerPlacement, which names every CPU fallback; every other backend 
 
 ## server.loadGemma4VisionTower
 
-Moved from `internal/serveapp/main.go` (the comment above `server.loadGemma4VisionTower`) on 2026-10-09.
+Moved from `internal/app/serveapp/main.go` (the comment above `server.loadGemma4VisionTower`) on 2026-10-09.
 
 ```text
 loadGemma4VisionTower attaches the Gemma 4 vision tower (aikit) to the single
@@ -1425,7 +1425,7 @@ beyond the optional int8 CPU weight format.
 
 ## tryLockUntil
 
-Moved from `internal/serveapp/main.go` (the comment above `tryLockUntil` (with the `demoteLoop` and `modelList` comments, which were glued above it)) on 2026-10-09.
+Moved from `internal/app/serveapp/main.go` (the comment above `tryLockUntil` (with the `demoteLoop` and `modelList` comments, which were glued above it)) on 2026-10-09.
 
 ```text
 demoteLoop periodically demotes idle KV sessions across all models to disk
@@ -1444,7 +1444,7 @@ if the lock was not taken by the deadline.
 
 ## visionPathError
 
-Moved from `internal/serveapp/main.go` (the comment above `visionPathError`) on 2026-10-09.
+Moved from `internal/app/serveapp/main.go` (the comment above `visionPathError`) on 2026-10-09.
 
 ```text
 visionPathError is -vision's refusal for a path that is a file, not a vision-tower directory (R22, docs/completed/task-first-hour.md).
@@ -1454,7 +1454,7 @@ does not exist, or a directory, is the loaders' to judge, with their own message
 
 ## qwenTowerPlacement
 
-Moved from `internal/serveapp/main.go` (the comment above `qwenTowerPlacement`) on 2026-10-09.
+Moved from `internal/app/serveapp/main.go` (the comment above `qwenTowerPlacement`) on 2026-10-09.
 
 ```text
 qwenTowerPlacement decides where Qwen2.5-VL's vision tower runs and attaches it (S4, docs/completed/task-multimodal-support-2026-10.md): aikit's gpu/qwencuda
@@ -1465,7 +1465,7 @@ here as backend "cpu". Metal has no Qwen2.5-VL device tower yet (the owner's reb
 
 ## server.publishLoaded
 
-Moved from `internal/serveapp/admin.go` (the comment above `lm.model.Close()` in `server.publishLoaded`) on 2026-10-09.
+Moved from `internal/app/serveapp/admin.go` (the comment above `lm.model.Close()` in `server.publishLoaded`) on 2026-10-09.
 
 ```text
 M-24: the LOSER of the race holds a fully loaded model — resident device
@@ -1482,7 +1482,7 @@ has not run for it — it was never published.
 
 ## server.handleAdminUnload
 
-Moved from `internal/serveapp/admin.go` (the comment above `server.handleAdminUnload`) on 2026-10-09.
+Moved from `internal/app/serveapp/admin.go` (the comment above `server.handleAdminUnload`) on 2026-10-09.
 
 ```text
 handleAdminUnload drops a model from the registry and DRAINS before freeing its native memory.
@@ -1506,7 +1506,7 @@ immediately either way, and /health lists what is still draining. ?wait=false sk
 
 ## anthropicInputBytes
 
-Moved from `internal/serveapp/anthropic.go` (the comment above `anthropicInputBytes`) on 2026-10-09.
+Moved from `internal/app/serveapp/anthropic.go` (the comment above `anthropicInputBytes`) on 2026-10-09.
 
 ```text
 anthropicInputBytes sums the TOKENIZABLE text across an Anthropic request — the system prompt
@@ -1527,7 +1527,7 @@ here too, matching that intent rather than duplicating the guard per branch.
 
 ## anthropicTurns.roles
 
-Moved from `internal/serveapp/anthropic.go` (the comment above the role check in `anthropicTurns`) on 2026-10-09.
+Moved from `internal/app/serveapp/anthropic.go` (the comment above the role check in `anthropicTurns`) on 2026-10-09.
 
 ```text
 G13: the Anthropic Messages API accepts exactly two roles in this array.
@@ -1545,7 +1545,7 @@ compatibility bar this surface is held to.
 
 ## batchRecord
 
-Moved from `internal/serveapp/batches.go` (the comment above `batchRecord`) on 2026-10-09.
+Moved from `internal/app/serveapp/batches.go` (the comment above `batchRecord`) on 2026-10-09.
 
 ```text
 batchRecord is J4's unit of work over J2's job store (task-work-queue-2026-09.md): N lines,
@@ -1560,13 +1560,13 @@ mu guards Status/Results/OutputFileID/ErrorFileID/CompletedAt: many line gorouti
 Results[i] concurrently (disjoint indices, so the writes themselves never race each other) but
 Status and the two file-id fields are read by every GET and written by exactly one finalizer,
 so they need the same discipline job.go's own mu gained in J3 after -race caught a real bug
-there (internal/serveapp/job.go:jobStore's doc comment) — written locked from the start here instead of finding the
+there (internal/app/serveapp/job.go:jobStore's doc comment) — written locked from the start here instead of finding the
 same class of defect twice.
 ```
 
 ## batchRecord.requestCancel
 
-Moved from `internal/serveapp/batches.go` (the comment above `batchRecord.requestCancel`) on 2026-10-09.
+Moved from `internal/app/serveapp/batches.go` (the comment above `batchRecord.requestCancel`) on 2026-10-09.
 
 ```text
 requestCancel is the batch-level analogue of jobStore.cancel: mark cancelling, then cancel
@@ -1577,16 +1577,16 @@ has no Results entry yet either way).
 JobIDs is copied under b.mu before ranging over it — found by -race, not by inspection: each
 line's goroutine writes its own slot via setJobID (batches_run.go) under the same lock, and a
 plain read of the slice here raced those writes even though every write lands at a disjoint
-index (internal/serveapp/job.go:jobStore's doc comment names the same class of bug in J3's job store).
+index (internal/app/serveapp/job.go:jobStore's doc comment names the same class of bug in J3's job store).
 ```
 
 ## setJobID
 
-Moved from `internal/serveapp/batches_run.go` (the comment above `setJobID`) on 2026-10-09.
+Moved from `internal/app/serveapp/batches_run.go` (the comment above `setJobID`) on 2026-10-09.
 
 ```text
 setJobID records line i's job id under the batch's own lock. Found by -race, not by
-inspection, the same way job.go's own mu gained coverage in J3 (internal/serveapp/job.go:jobStore's doc comment):
+inspection, the same way job.go's own mu gained coverage in J3 (internal/app/serveapp/job.go:jobStore's doc comment):
 requestCancel (batches.go) reads the whole JobIDs slice from a different goroutine while lines
 are still writing their own slot — disjoint indices don't save a plain slice write from racing a
 concurrent read of the slice's backing array with no synchronization between them.
@@ -1594,7 +1594,7 @@ concurrent read of the slice's backing array with no synchronization between the
 
 ## featureCache
 
-Moved from `internal/serveapp/feature_cache.go` (the comment above `featureCacheBudget`) on 2026-10-09.
+Moved from `internal/app/serveapp/feature_cache.go` (the comment above `featureCacheBudget`) on 2026-10-09.
 
 ```text
 A vision tower is the slow part of an image turn on the families whose tower runs on the CPU: the cold-user run
@@ -1612,7 +1612,7 @@ instead of skipping a prefix, and a collision there would be a wrong picture, no
 
 ## attachGemma3Tower
 
-Moved from `internal/serveapp/gemma3_tower.go` (the comment above `attachGemma3Tower`) on 2026-10-09.
+Moved from `internal/app/serveapp/gemma3_tower.go` (the comment above `attachGemma3Tower`) on 2026-10-09.
 
 ```text
 attachGemma3Tower loads Gemma 3's SigLIP encoder (load(true) is the int8 one) and attaches its device-resident form.
@@ -1627,7 +1627,7 @@ It returns the encoder that is attached (or the CPU one), whether it is int8, an
 
 ## resolveGemma3VisionQuant
 
-Moved from `internal/serveapp/gemma3_tower.go` (the comment above `resolveGemma3VisionQuant`) on 2026-10-09.
+Moved from `internal/app/serveapp/gemma3_tower.go` (the comment above `resolveGemma3VisionQuant`) on 2026-10-09.
 
 ```text
 resolveGemma3VisionQuant settles Gemma 3's UNSET -vision-quant on CUDA before anything is planned. Float32 is the default there (towerInt8), and the plan subtracts its reserve (about 2.4 GB with the margin) from the
@@ -1642,7 +1642,7 @@ leans toward declining. Anything it cannot read (an hf: reference, no free-VRAM 
 
 ## resolveGemma3VisionQuantMetal
 
-Moved from `internal/serveapp/gemma3_tower.go` (the comment above `resolveGemma3VisionQuantMetal`) on 2026-10-09.
+Moved from `internal/app/serveapp/gemma3_tower.go` (the comment above `resolveGemma3VisionQuantMetal`) on 2026-10-09.
 
 ```text
 resolveGemma3VisionQuantMetal is resolveGemma3VisionQuant on Metal (S18 on the Mac, docs/completed/task-multimodal-support-2026-10.md): the unset default is
@@ -1655,7 +1655,7 @@ is far worse than the int8 tower.
 
 ## glm_ocr_vision.header
 
-Moved from `internal/serveapp/glm_ocr_vision.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `internal/app/serveapp/glm_ocr_vision.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 GLM-OCR image serving (O3, docs/tasks/task-glm-ocr-2026-10.md). The route is the Qwen2.5-VL / Qwen3.5+ one —
@@ -1675,7 +1675,7 @@ gated on the real checkpoint.
 
 ## jobStore.markRunning
 
-Moved from `internal/serveapp/job.go` (the comment above `jobStore.markRunning`) on 2026-10-09.
+Moved from `internal/app/serveapp/job.go` (the comment above `jobStore.markRunning`) on 2026-10-09.
 
 ```text
 markRunning records the pending -> running transition for an already-created job.
@@ -1689,7 +1689,7 @@ see snapshot's own comment for the matching read-side fix (found by -race, not b
 
 ## loadedModel.closeEntryNatives
 
-Moved from `internal/serveapp/liveness.go` (the comment inside `loadedModel.closeEntryNatives`) on 2026-10-09.
+Moved from `internal/app/serveapp/liveness.go` (the comment inside `loadedModel.closeEntryNatives`) on 2026-10-09.
 
 ```text
 N-32 (docs/audit-2026-09-10.md): gemma4Enc (*vision.Gemma4Encoder) has no Close method
@@ -1702,7 +1702,7 @@ and just needed the same nil-out vproj already gets.
 
 ## reqTrace
 
-Moved from `internal/serveapp/reqlog.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `internal/app/serveapp/reqlog.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 -log-requests (R25, docs/completed/task-first-hour.md): one line per generation request on stderr — route, model, status, prompt and completion tokens,
@@ -1716,7 +1716,7 @@ per request: prompt tokens of its first generation, completion tokens summed, fi
 
 ## swapguard.header
 
-Moved from `internal/serveapp/swapguard.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `internal/app/serveapp/swapguard.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 S3 (docs/completed/task-never-swap-2026-09.md): both halves of the swap tripwire.
@@ -1731,7 +1731,7 @@ see halt.go. Unlike halt(), which cancels every in-flight generation (K1's cance
 the swap guard does NOT cancel anything already running, only refuses new admissions — the
 brief's own "lets in-flight generations finish".
 
-The LOAD-TIME half (internal/swapguard's ArmLoad, shared with goinfer-chat; armed and torn down around exactly one decoder.Load
+The LOAD-TIME half (internal/guard/swapguard's ArmLoad, shared with goinfer-chat; armed and torn down around exactly one decoder.Load
 call): "the callback cancels the load's context... the direct build needs a check between
 layers in parallelLayers" — that plumbing lives in decoder (Options.LoadAbort, checked by
 parallelLayers), this file only arms/tears down the watch around loadDecoder's decoder.Load
@@ -1747,7 +1747,7 @@ numbers for the same env var.
 
 ## systemone_clef.header
 
-Moved from `internal/serveapp/systemone_clef.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `internal/app/serveapp/systemone_clef.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 Route C of POST /v1/systemone (D13 of docs/tasks/task-constrained-confidence.md): a model directory that carries joint_head.safetensors is Cloudflare's Clef
@@ -1765,7 +1765,7 @@ are rounded to four decimals as the reference rounds them.
 
 ## clefQuantRefusal
 
-Moved from `internal/serveapp/systemone_clef.go` (the comment above `clefQuantRefusal`) on 2026-10-09.
+Moved from `internal/app/serveapp/systemone_clef.go` (the comment above `clefQuantRefusal`) on 2026-10-09.
 
 ```text
 clefQuantRefusal is the error a Clef model gets for a quant it is not offered at, or nil. int4 is refused (owner decision 2026-10-03, after D13): on 150
@@ -1775,7 +1775,7 @@ and 0.907 (decisions-d13-clef-fidelity-2026-10-03.md section 7). Other quants ar
 
 ## serveChatToolsWith.guard
 
-Moved from `internal/serveapp/tools.go` (the comment above the context-window guard in `serveChatToolsWith`) on 2026-10-09.
+Moved from `internal/app/serveapp/tools.go` (the comment above the context-window guard in `serveChatToolsWith`) on 2026-10-09.
 
 ```text
 G1c, extended (audit-2026-09-02 M-21). The guard reached three routes; this was one of the
@@ -1788,7 +1788,7 @@ renders every one of them into the prompt.
 
 ## serveChatToolsWith.buffer
 
-Moved from `internal/serveapp/tools.go` (the comment above `ss` in `serveChatToolsWith`) on 2026-10-09.
+Moved from `internal/app/serveapp/tools.go` (the comment above `ss` in `serveChatToolsWith`) on 2026-10-09.
 
 ```text
 Tool decisions need the whole output, so buffer (even when streaming).
@@ -1808,7 +1808,7 @@ The non-streaming path below keeps its 500 unchanged.
 
 ## constrainForcedTool.named
 
-Moved from `internal/serveapp/tools.go` (the comment above the `namedForce` check in `constrainForcedTool`) on 2026-10-09.
+Moved from `internal/app/serveapp/tools.go` (the comment above the `namedForce` check in `constrainForcedTool`) on 2026-10-09.
 
 ```text
 N-18: a NAMED tool_choice that matched no tool used to land here and return nil —
@@ -1821,7 +1821,7 @@ simply chose not to call anything.
 
 ## toolUnionEnabled
 
-Moved from `internal/serveapp/tools.go` (the comment above `toolUnionEnabled`) on 2026-10-09.
+Moved from `internal/app/serveapp/tools.go` (the comment above `toolUnionEnabled`) on 2026-10-09.
 
 ```text
 toolUnionEnabled / toolUnionAuto are GOINFER_TOOL_UNION: on by default for both required /
@@ -1838,7 +1838,7 @@ exactly as before T1). docs/measurements/tool-union-2026-09-24.md:
 
 ## forcedTool
 
-Moved from `internal/serveapp/tools.go` (the comment above `forcedTool`) on 2026-10-09.
+Moved from `internal/app/serveapp/tools.go` (the comment above `forcedTool`) on 2026-10-09.
 
 ```text
 forcedTool returns the single tool the call must be (a forced function, or the
@@ -1853,7 +1853,7 @@ client's own request and is forced on every turn, as before; "none" is never for
 
 ## towerParts.glm_ocr
 
-Moved from `internal/serveapp/tower_reserve.go` (the comment inside the `glm_ocr` case of `towerParts`) on 2026-10-09.
+Moved from `internal/app/serveapp/tower_reserve.go` (the comment inside the `glm_ocr` case of `towerParts`) on 2026-10-09.
 
 ```text
 The ceiling's scratch alone is ~2.5 GB and, reserved, took GLM-OCR's CUDA context from 16384 to 4931 positions on the 8 GB card (measured 2026-10-07). Reserve for
@@ -1862,7 +1862,7 @@ about 1.5 MP and let a larger image fall back to the CPU tower (deviceFallback) 
 
 ## metalTowerEstimate
 
-Moved from `internal/serveapp/tower_reserve.go` (the comment above `metalTowerEstimate`) on 2026-10-09.
+Moved from `internal/app/serveapp/tower_reserve.go` (the comment above `metalTowerEstimate`) on 2026-10-09.
 
 ```text
 metalTowerEstimate is what a Metal device tower holds of the Mac's memory (S18 on the Mac): the projections at the form Metal uploads, the rest in float32, plus
@@ -1874,7 +1874,7 @@ scratch term is towerParts', which over-counts Metal's).
 
 ## towerInt8VRAMEstimate
 
-Moved from `internal/serveapp/tower_reserve.go` (the comment above `towerInt8VRAMEstimate`) on 2026-10-09.
+Moved from `internal/app/serveapp/tower_reserve.go` (the comment above `towerInt8VRAMEstimate`) on 2026-10-09.
 
 ```text
 towerInt8VRAMEstimate is the Gemma 3 W8A8 SigLIP tower's footprint on the device: the block weights at one byte, the patch embed and position table in float32, and the fixed scratch (about nine
@@ -1884,7 +1884,7 @@ hidden-wide float32 buffers per patch). Calibrated against a measurement, not de
 
 ## qwen25VLTowerEstimate
 
-Moved from `internal/serveapp/tower_reserve.go` (the comment above `qwen25VLTowerEstimate`) on 2026-10-09.
+Moved from `internal/app/serveapp/tower_reserve.go` (the comment above `qwen25VLTowerEstimate`) on 2026-10-09.
 
 ```text
 qwen25VLTowerEstimate prices goinfer's float32 Qwen2.5-VL tower on CUDA (backend/cuda/qwen25_vision.go), calibrated to a measurement and not derived (S7 on CUDA's fix, 2026-10-08). On the 8 GB card the tower's weights took
@@ -1898,7 +1898,7 @@ card: serve's defaults on the 3B, a ~8,000-patch image (2,014 prompt tokens) the
 
 ## encodeVisionSegments
 
-Moved from `internal/serveapp/vision_serve.go` (the comment above `encodeVisionSegments`) on 2026-10-09.
+Moved from `internal/app/serveapp/vision_serve.go` (the comment above `encodeVisionSegments`) on 2026-10-09.
 
 ```text
 encodeVisionSegments encodes a vision prompt the way the TEXT path already does: the template's
@@ -1921,7 +1921,7 @@ misleading message about a template mismatch).
 
 ## recoverDeviceTower
 
-Moved from `internal/serveapp/vision_serve.go` (the comment above `recoverDeviceTower`) on 2026-10-09.
+Moved from `internal/app/serveapp/vision_serve.go` (the comment above `recoverDeviceTower`) on 2026-10-09.
 
 ```text
 recoverDeviceTower runs a tower's forward and turns a panic into an error that names the likely cause. A device tower grows its scratch on the first image, after the
@@ -1933,7 +1933,7 @@ Gemma 4's image and audio towers included) at withFeatureCache.
 
 ## webUIFS
 
-Moved from `internal/serveapp/webui.go` (the comment above `webUIFS`) on 2026-10-09.
+Moved from `internal/app/serveapp/webui.go` (the comment above `webUIFS`) on 2026-10-09.
 
 ```text
 ONE DIRECTORY, NOT ONE FILE (docs/tasks/task-web-ui-2026-09.md §6.1). The page was a single
@@ -1947,7 +1947,7 @@ blocks loopback HTTP.
 
 ## searchLimit
 
-Moved from `internal/serveapp/webui.go` (the comment above `searchLimit`) on 2026-10-09.
+Moved from `internal/app/serveapp/webui.go` (the comment above `searchLimit`) on 2026-10-09.
 
 ```text
 searchLimit bounds how many suggestions a search returns — a dropdown, not a full listing;
@@ -1959,7 +1959,7 @@ narrow to surface a less-trending-but-still-relevant repo past HF's own trending
 
 ## webPullRef
 
-Moved from `internal/serveapp/webui.go` (the comment above `webPullRef`) on 2026-10-09.
+Moved from `internal/app/serveapp/webui.go` (the comment above `webPullRef`) on 2026-10-09.
 
 ```text
 webPullRef resolves a pull request's repo box and the clicked selector (if any) into one Ref,
@@ -1986,7 +1986,7 @@ Moved from the comments of the package's `_test.go` files (CC5); same convention
 
 ## TestPrepare_rejectsUnboundedTopLogprobs
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestPrepare_rejectsUnboundedTopLogprobs`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestPrepare_rejectsUnboundedTopLogprobs`) on 2026-10-09.
 
 ```text
 C-08: top_logprobs was the one sampling field `prepare` passed through without a range check.
@@ -2000,7 +2000,7 @@ sampling field on the same struct was already validated.
 
 ## TestStreamTokens_externallyCancelledIsTruncatedNotClean
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestStreamTokens_externallyCancelledIsTruncatedNotClean`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestStreamTokens_externallyCancelledIsTruncatedNotClean`) on 2026-10-09.
 
 ```text
 M-23: graceful shutdown cancels every in-flight generation, and `genErr` treats every
@@ -2015,7 +2015,7 @@ a client already knows how to act on.
 
 ## TestServe_everyTokenizingRouteGuardsItsInputSize
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestServe_everyTokenizingRouteGuardsItsInputSize`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestServe_everyTokenizingRouteGuardsItsInputSize`) on 2026-10-09.
 
 ```text
 M-21: EVERY ROUTE THAT TOKENIZES MUST REJECT AN OVERSIZED BODY FIRST.
@@ -2033,7 +2033,7 @@ tokenizing entry points. Each must call the guard, or name itself as guarded by 
 
 ## TestServe_everyTokenizingRouteGuardsItsInputSize.transitive
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestServe_everyTokenizingRouteGuardsItsInputSize.transitive`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestServe_everyTokenizingRouteGuardsItsInputSize.transitive`) on 2026-10-09.
 
 ```text
 Direct calls, plus the prompt builders that tokenize TRANSITIVELY. The vision routes were the
@@ -2044,7 +2044,7 @@ to protect, and dropping that guard produced no failure. Caught by mutation, not
 
 ## TestDecoderEmbedder_truncatesToTheContextWindow
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestDecoderEmbedder_truncatesToTheContextWindow`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestDecoderEmbedder_truncatesToTheContextWindow`) on 2026-10-09.
 
 ```text
 C-07, the serving half: the decoder-as-embedder must TRUNCATE to the model's context window.
@@ -2060,7 +2060,7 @@ the decoder refuses, and this one never sends it more than it can take.
 
 ## TestDecoderEmbedder_truncatesToTheContextWindow.exact
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestDecoderEmbedder_truncatesToTheContextWindow.exact`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestDecoderEmbedder_truncatesToTheContextWindow.exact`) on 2026-10-09.
 
 ```text
 truncateForContext is the EXACT function tokenize() calls (V-21, docs/review-2026-09-04.md):
@@ -2070,7 +2070,7 @@ a bug in the real code — not a paraphrase of it — would have passed this tes
 
 ## TestJSONDecodeMessage_neverLeaksGoTypeNames
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestJSONDecodeMessage_neverLeaksGoTypeNames`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestJSONDecodeMessage_neverLeaksGoTypeNames`) on 2026-10-09.
 
 ```text
 N-16: BOTH decoders must shape a JSON error the same way, and neither may echo the raw one.
@@ -2083,7 +2083,7 @@ one route hardened, its twin not.
 
 ## TestAnthropic_decodeUsesTheSharedShaping
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestAnthropic_decodeUsesTheSharedShaping`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestAnthropic_decodeUsesTheSharedShaping`) on 2026-10-09.
 
 ```text
 The Anthropic decoder must USE it. The test above proves the shaper is clean and says nothing
@@ -2092,7 +2092,7 @@ about the call site — the same gap that let M-21's vision route and M-22's cal
 
 ## TestSessions_persistedStateIsOwnerOnly
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestSessions_persistedStateIsOwnerOnly`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestSessions_persistedStateIsOwnerOnly`) on 2026-10-09.
 
 ```text
 N-21: session persistence is the CONVERSATION. A .giw-kv blob replays what the user said and what
@@ -2102,7 +2102,7 @@ account. The directory matters as much as the files: a readable one lists the se
 
 ## TestSessions_persistedStateIsOwnerOnly.scan
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestSessions_persistedStateIsOwnerOnly.scan`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestSessions_persistedStateIsOwnerOnly.scan`) on 2026-10-09.
 
 ```text
 Code lines only. The comment above the constants NAMES the old modes, and a substring scan
@@ -2112,7 +2112,7 @@ this batch did that, so it is worth doing deliberately rather than rediscovering
 
 ## TestAdminLoad_racedDuplicateIsClosed
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestAdminLoad_racedDuplicateIsClosed`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestAdminLoad_racedDuplicateIsClosed`) on 2026-10-09.
 
 ```text
 M-24: two concurrent admin loads of the same name leaked the loser's model.
@@ -2135,7 +2135,7 @@ it refuses, and neither handler publishes into s.models on its own, around that 
 
 ## TestReqID_isNotGuessable
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestReqID_isNotGuessable`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestReqID_isNotGuessable`) on 2026-10-09.
 
 ```text
 N-17: response/message/tool-call ids were a SEQUENTIAL counter. Seeding it from UnixNano hid
@@ -2147,7 +2147,7 @@ someone else's turns.
 
 ## TestAdminLoad_requestQuantIsTheExplicitOne
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestAdminLoad_requestQuantIsTheExplicitOne`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestAdminLoad_requestQuantIsTheExplicitOne`) on 2026-10-09.
 
 ```text
 N-19: admin-load set c.quant from the request but inherited c.quantSet from the CLI, and
@@ -2157,7 +2157,7 @@ directions were wrong, and they are opposite failures, so a fix has to be checke
 
 ## TestConstrainForcedTool_namedButNonexistentIs400
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestConstrainForcedTool_namedButNonexistentIs400`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestConstrainForcedTool_namedButNonexistentIs400`) on 2026-10-09.
 
 ```text
 N-18: a NAMED tool_choice whose function is not in tools decoded completely unconstrained,
@@ -2168,7 +2168,7 @@ means a typo or a stale tool list and the prose answer looks like a free choice.
 
 ## TestChatInputBytes_countsReplayedToolCallArguments
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestChatInputBytes_countsReplayedToolCallArguments`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestChatInputBytes_countsReplayedToolCallArguments`) on 2026-10-09.
 
 ```text
 M-15 (audit-2026-09-10): the G1c guard's argument counted message TEXT only — tool schemas and
@@ -2181,7 +2181,7 @@ what it measures — these test what it measures, directly and end to end.
 
 ## TestGuardComposition_hugeToolSchemaTripsTheBudgetAloneOnATinyMessage
 
-Moved from `internal/serveapp/limits_test.go` (the comment above `TestGuardComposition_hugeToolSchemaTripsTheBudgetAloneOnATinyMessage`) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment above `TestGuardComposition_hugeToolSchemaTripsTheBudgetAloneOnATinyMessage`) on 2026-10-09.
 
 ```text
 TestGuardComposition_hugeToolSchemaTripsTheBudgetAloneOnATinyMessage matches the audit's own
@@ -2196,7 +2196,7 @@ to prove each addend's own arithmetic.
 
 ## TestWebUI_pullRefReplacesSelector
 
-Moved from `internal/serveapp/webui_test.go` (the comment above `TestWebUI_pullRefReplacesSelector`) on 2026-10-09.
+Moved from `internal/app/serveapp/webui_test.go` (the comment above `TestWebUI_pullRefReplacesSelector`) on 2026-10-09.
 
 ```text
 TestWebUI_pullRefReplacesSelector pins the fix for a real bug hit from the page: typing
@@ -2211,7 +2211,7 @@ which reads like a bad repo rather than a bad concatenation — exactly what the
 
 ## TestWebUI_rootRouteIsUnauthenticated
 
-Moved from `internal/serveapp/webui_test.go` (the comment above `TestWebUI_rootRouteIsUnauthenticated`) on 2026-10-09.
+Moved from `internal/app/serveapp/webui_test.go` (the comment above `TestWebUI_rootRouteIsUnauthenticated`) on 2026-10-09.
 
 ```text
 TestWebUI_rootRouteIsUnauthenticated guards V-02 (docs/review-2026-09-04.md): GET /{$} used to
@@ -2229,7 +2229,7 @@ must NOT wrap its handler in the auth closure, while the /web/models/* registrat
 
 ## TestWebUI_rootRouteIsUnauthenticated.chain
 
-Moved from `internal/serveapp/webui_test.go` (the comment above `TestWebUI_rootRouteIsUnauthenticated.chain`) on 2026-10-09.
+Moved from `internal/app/serveapp/webui_test.go` (the comment above `TestWebUI_rootRouteIsUnauthenticated.chain`) on 2026-10-09.
 
 ```text
 Searches the WHOLE wrapper chain, not just the outermost call — V-20
@@ -2240,7 +2240,7 @@ would have silently stopped seeing auth(...) the moment that landed.
 
 ## TestWebUI_listAndPullAreWrappedInSameOrigin
 
-Moved from `internal/serveapp/webui_test.go` (the comment above `TestWebUI_listAndPullAreWrappedInSameOrigin`) on 2026-10-09.
+Moved from `internal/app/serveapp/webui_test.go` (the comment above `TestWebUI_listAndPullAreWrappedInSameOrigin`) on 2026-10-09.
 
 ```text
 TestWebUI_listAndPullAreWrappedInSameOrigin is the wiring guard: the unit test above proves
@@ -2251,7 +2251,7 @@ site nobody checked).
 
 ## TestSSEWriter_heartbeatAndHandlerDoNotRace
 
-Moved from `internal/serveapp/sse_writer_test.go` (the comment above `TestSSEWriter_heartbeatAndHandlerDoNotRace`) on 2026-10-09.
+Moved from `internal/app/serveapp/sse_writer_test.go` (the comment above `TestSSEWriter_heartbeatAndHandlerDoNotRace`) on 2026-10-09.
 
 ```text
 C-06: THE HEARTBEAT GOROUTINE AND THE HANDLER WRITE THE SAME ResponseWriter.
@@ -2269,7 +2269,7 @@ TICKER goroutine, outside net/http's per-request recover, i.e. the process.
 
 ## TestSSEWriter_heartbeatAndHandlerDoNotRace.until
 
-Moved from `internal/serveapp/sse_writer_test.go` (the comment above `TestSSEWriter_heartbeatAndHandlerDoNotRace.until`) on 2026-10-09.
+Moved from `internal/app/serveapp/sse_writer_test.go` (the comment above `TestSSEWriter_heartbeatAndHandlerDoNotRace.until`) on 2026-10-09.
 
 ```text
 Send until the ticker has written at least one heartbeat into the stream, not for a fixed time: 800 small
@@ -2281,7 +2281,7 @@ so the check is race-free; the 5s cap turns a heartbeat that never comes into th
 
 ## TestSSEWriter_stalledClientFailsTheWriteInsteadOfBlocking
 
-Moved from `internal/serveapp/sse_writer_test.go` (the comment above `TestSSEWriter_stalledClientFailsTheWriteInsteadOfBlocking`) on 2026-10-09.
+Moved from `internal/app/serveapp/sse_writer_test.go` (the comment above `TestSSEWriter_stalledClientFailsTheWriteInsteadOfBlocking`) on 2026-10-09.
 
 ```text
 M-17: a client that stops READING must not pin the handler forever.
@@ -2294,7 +2294,7 @@ server-wide WriteTimeout the M3 comment conflated it with.
 
 ## TestSSE_everyStreamingDriveSiteHeartbeats
 
-Moved from `internal/serveapp/sse_writer_test.go` (the comment above `TestSSE_everyStreamingDriveSiteHeartbeats`) on 2026-10-09.
+Moved from `internal/app/serveapp/sse_writer_test.go` (the comment above `TestSSE_everyStreamingDriveSiteHeartbeats`) on 2026-10-09.
 
 ```text
 N-24 (docs/audit-2026-09-10.md): EVERY lm.drive/driveVL STREAMING SITE MUST START A HEARTBEAT,
@@ -2316,7 +2316,7 @@ coverage. This pins them explicitly rather than trying to widen the delicate M-1
 
 ## TestSSE_everyBufferedStreamSiteHeartbeats
 
-Moved from `internal/serveapp/sse_writer_test.go` (the comment above `TestSSE_everyBufferedStreamSiteHeartbeats`) on 2026-10-09.
+Moved from `internal/app/serveapp/sse_writer_test.go` (the comment above `TestSSE_everyBufferedStreamSiteHeartbeats`) on 2026-10-09.
 
 ```text
 M-19: EVERY BUFFER-THEN-STREAM SITE MUST START A HEARTBEAT.
@@ -2334,7 +2334,7 @@ must start a heartbeat, because it is silent for the whole generation by constru
 
 ## TestSSE_everyBufferedStreamSiteHeartbeats.callback
 
-Moved from `internal/serveapp/sse_writer_test.go` (the comment above `TestSSE_everyBufferedStreamSiteHeartbeats.callback`) on 2026-10-09.
+Moved from `internal/app/serveapp/sse_writer_test.go` (the comment above `TestSSE_everyBufferedStreamSiteHeartbeats.callback`) on 2026-10-09.
 
 ```text
 THE CALLBACK, NOT THE BODY. streamMessagesTools writes plenty — tool_use blocks,
@@ -2345,7 +2345,7 @@ this check looked at the whole function and so excluded the one site it exists f
 
 ## unconditionalStreamCall
 
-Moved from `internal/serveapp/sse_writer_test.go` (the comment above `unconditionalStreamCall`) on 2026-10-09.
+Moved from `internal/app/serveapp/sse_writer_test.go` (the comment above `unconditionalStreamCall`) on 2026-10-09.
 
 ```text
 unconditionalStreamCall reports whether cb — a driveCallback result — calls one of the
@@ -2367,7 +2367,7 @@ driveCallback already walks depth to find the callback's closing brace.
 
 ## TestConstrainForcedTool_M05.named
 
-Moved from `internal/serveapp/openai_test.go` (the comment above `TestConstrainForcedTool_M05.named`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai_test.go` (the comment above `TestConstrainForcedTool_M05.named`) on 2026-10-09.
 
 ```text
 N-18: forced == nil now depends on WHY. With namedForce, the caller named a function that
@@ -2378,7 +2378,7 @@ opposite ("nil forced tool should not error"), which is the defect N-18 describe
 
 ## TestLoadDecoderEmbedder_requestedBackendReachesTheLoad
 
-Moved from `internal/serveapp/decoder_embedder_test.go` (the comment above `TestLoadDecoderEmbedder_requestedBackendReachesTheLoad`) on 2026-10-09.
+Moved from `internal/app/serveapp/decoder_embedder_test.go` (the comment above `TestLoadDecoderEmbedder_requestedBackendReachesTheLoad`) on 2026-10-09.
 
 ```text
 TestLoadDecoderEmbedder_requestedBackendReachesTheLoad is M-17's own gate
@@ -2388,7 +2388,7 @@ implement is shipped but unreachable — every /v1/embeddings call silently take
 sequential path regardless of -backend.
 
 Asserts against decoder.Model.RequestedBackend(), not ResidentActive(): this test binary
-(plain `go test ./internal/serveapp/...`, no -tags gpu, no metal/cmd/serve submodule build)
+(plain `go test ./internal/app/serveapp/...`, no -tags gpu, no metal/cmd/serve submodule build)
 cannot make ANY GPU backend actually activate — decoder.NewBackend falls back to CPU with an
 explanatory error for every non-cpu name here, by design (M-19: the real backends live in
 submodule entrypoints, not a build tag on the root binary). RequestedBackend() is exactly the
@@ -2400,7 +2400,7 @@ hardware-independent test of the fix, not a proxy for one.
 
 ## TestLoadDecoderEmbedder_embedQuantQ8MapsToInt8
 
-Moved from `internal/serveapp/decoder_embedder_test.go` (the comment above `TestLoadDecoderEmbedder_embedQuantQ8MapsToInt8`) on 2026-10-09.
+Moved from `internal/app/serveapp/decoder_embedder_test.go` (the comment above `TestLoadDecoderEmbedder_embedQuantQ8MapsToInt8`) on 2026-10-09.
 
 ```text
 TestLoadDecoderEmbedder_embedQuantQ8MapsToInt8 is the other half of M-17: -embed-quant's own
@@ -2412,7 +2412,7 @@ translate "q8" to Quant's own "int8" instead.
 
 ## TestVision_userTextIsNotSpecialButTheImageBlockIs
 
-Moved from `internal/serveapp/vision_hardening_test.go` (the comment above `TestVision_userTextIsNotSpecialButTheImageBlockIs`) on 2026-10-09.
+Moved from `internal/app/serveapp/vision_hardening_test.go` (the comment above `TestVision_userTextIsNotSpecialButTheImageBlockIs`) on 2026-10-09.
 
 ```text
 M-22: THE VISION PATH LET USER TEXT FORGE A TURN BOUNDARY.
@@ -2428,7 +2428,7 @@ image block must come out Special (FindImageRun depends on it) and the user's wo
 
 ## TestVision_userTextIsNotSpecialButTheImageBlockIs.real
 
-Moved from `internal/serveapp/vision_hardening_test.go` (the comment above `TestVision_userTextIsNotSpecialButTheImageBlockIs.real`) on 2026-10-09.
+Moved from `internal/app/serveapp/vision_hardening_test.go` (the comment above `TestVision_userTextIsNotSpecialButTheImageBlockIs.real`) on 2026-10-09.
 
 ```text
 The REAL function, not a copy of it beside the test: an earlier cut of spliceImageBlock
@@ -2438,7 +2438,7 @@ test that re-implemented the splice would have agreed with itself about that.
 
 ## TestVision_spliceUsesTheLastOccurrenceNotTheFirst
 
-Moved from `internal/serveapp/vision_hardening_test.go` (the comment above `TestVision_spliceUsesTheLastOccurrenceNotTheFirst`) on 2026-10-09.
+Moved from `internal/app/serveapp/vision_hardening_test.go` (the comment above `TestVision_spliceUsesTheLastOccurrenceNotTheFirst`) on 2026-10-09.
 
 ```text
 TestVision_spliceUsesTheLastOccurrenceNotTheFirst pins V-19 (docs/review-2026-09-04.md):
@@ -2452,7 +2452,7 @@ sentinels, while the real image tokens stay unspliced plain text.
 
 ## TestServe_noRouteEncodesARenderedPrompt
 
-Moved from `internal/serveapp/vision_hardening_test.go` (the comment above `TestServe_noRouteEncodesARenderedPrompt`) on 2026-10-09.
+Moved from `internal/app/serveapp/vision_hardening_test.go` (the comment above `TestServe_noRouteEncodesARenderedPrompt`) on 2026-10-09.
 
 ```text
 NO ROUTE MAY TOKENIZE A RENDERED CHAT PROMPT WITH Encode.
@@ -2469,7 +2469,7 @@ prompt always contains user content. EncodeSegments is the only correct way to t
 
 ## TestServe_noRouteEncodesARenderedPrompt.comments
 
-Moved from `internal/serveapp/vision_hardening_test.go` (the comment above `TestServe_noRouteEncodesARenderedPrompt.comments`) on 2026-10-09.
+Moved from `internal/app/serveapp/vision_hardening_test.go` (the comment above `TestServe_noRouteEncodesARenderedPrompt.comments`) on 2026-10-09.
 
 ```text
 Comments describing the old code are not the old code — this check fired on its own
@@ -2478,7 +2478,7 @@ explanation of the defect the first time it ran.
 
 ## TestVision_imageBlockNewlinesMatchTheRealProcessors
 
-Moved from `internal/serveapp/vision_hardening_test.go` (the comment above `TestVision_imageBlockNewlinesMatchTheRealProcessors`) on 2026-10-09.
+Moved from `internal/app/serveapp/vision_hardening_test.go` (the comment above `TestVision_imageBlockNewlinesMatchTheRealProcessors`) on 2026-10-09.
 
 ```text
 TestVision_imageBlockNewlinesMatchTheRealProcessors is M-38's regression guard
@@ -2496,7 +2496,7 @@ family's assignment from another's.
 
 ## TestBanner_contextIsTheEnforcedWindow.gpu
 
-Moved from `internal/serveapp/banner_test.go` (the comment above `TestBanner_contextIsTheEnforcedWindow.gpu`) on 2026-10-09.
+Moved from `internal/app/serveapp/banner_test.go` (the comment above `TestBanner_contextIsTheEnforcedWindow.gpu`) on 2026-10-09.
 
 ```text
 On cpu the resident cap does not exist, so window == MaxPositions and a factsOf that read
@@ -2507,7 +2507,7 @@ the load path must hand the banner the -ctx THIS model resolved (a per-model ctx
 
 ## TestFactsOf_aPlainCPULoadDeclinedNothing
 
-Moved from `internal/serveapp/banner_test.go` (the comment above `TestFactsOf_aPlainCPULoadDeclinedNothing`) on 2026-10-09.
+Moved from `internal/app/serveapp/banner_test.go` (the comment above `TestFactsOf_aPlainCPULoadDeclinedNothing`) on 2026-10-09.
 
 ```text
 A plain CPU load is not a decline: the CPU was the choice. decoder sets ResidentDecline for it too ("backend does not implement residency (… the CPU backend)"), so
@@ -2516,7 +2516,7 @@ the banner must not report that as a GPU load that fell through — found when a
 
 ## TestBanner_headTable
 
-Moved from `internal/serveapp/banner_test.go` (the comment above `TestBanner_headTable`) on 2026-10-09.
+Moved from `internal/app/serveapp/banner_test.go` (the comment above `TestBanner_headTable`) on 2026-10-09.
 
 ```text
 The head table's precision is on the banner (D of the --embed-int4 decision, 2026-10-08): the same checkpoint is a different model under a different table, and the default differs by backend.
@@ -2525,7 +2525,7 @@ Two halves: the line itself from the facts, and the facts from a real load with 
 
 ## TestHandleEmbeddings_dimensionsRequiresMatryoshka
 
-Moved from `internal/serveapp/embeddings_test.go` (the comment above `TestHandleEmbeddings_dimensionsRequiresMatryoshka`) on 2026-10-09.
+Moved from `internal/app/serveapp/embeddings_test.go` (the comment above `TestHandleEmbeddings_dimensionsRequiresMatryoshka`) on 2026-10-09.
 
 ```text
 TestHandleEmbeddings_dimensionsRequiresMatryoshka is the guard against a silent-wrong: honoring
@@ -2541,7 +2541,7 @@ accepts: it would refuse the legitimate MRL truncation the parameter exists for.
 
 ## TestServe_anthropic_streamAbort
 
-Moved from `internal/serveapp/anthropic_test.go` (the comment above `TestServe_anthropic_streamAbort`) on 2026-10-09.
+Moved from `internal/app/serveapp/anthropic_test.go` (the comment above `TestServe_anthropic_streamAbort`) on 2026-10-09.
 
 ```text
 sessMu (held for the duration of a generation, same span the old lm.mu covered — J1,
@@ -2550,7 +2550,7 @@ task-work-queue-2026-09.md) must free promptly once the request context is cance
 
 ## TestServe_anthropic_tools.replay
 
-Moved from `internal/serveapp/anthropic_test.go` (the comment above `TestServe_anthropic_tools.replay`) on 2026-10-09.
+Moved from `internal/app/serveapp/anthropic_test.go` (the comment above `TestServe_anthropic_tools.replay`) on 2026-10-09.
 
 ```text
 Replay the call + a result → expect a grounded text answer (end_turn). tool_choice "none" on the
@@ -2562,7 +2562,7 @@ get_weather (its prompt still ends in "Use the tool."; the rendering matches Qwe
 
 ## developerrole_test.go.header
 
-Moved from `internal/serveapp/developerrole_test.go` (the comment above `developerrole_test.go.header`) on 2026-10-09.
+Moved from `internal/app/serveapp/developerrole_test.go` (the comment above `developerrole_test.go.header`) on 2026-10-09.
 
 ```text
 Gates for the `role: "developer"` → `role: "system"` alias (queue G12).
@@ -2581,7 +2581,7 @@ role fails here rather than in someone's agent loop.
 
 ## TestAnthropicRejectsIllegalRoles
 
-Moved from `internal/serveapp/developerrole_test.go` (the comment above `TestAnthropicRejectsIllegalRoles`) on 2026-10-09.
+Moved from `internal/app/serveapp/developerrole_test.go` (the comment above `TestAnthropicRejectsIllegalRoles`) on 2026-10-09.
 
 ```text
 TestAnthropicRejectsIllegalRoles is the G12 pin, FLIPPED by G13.
@@ -2600,7 +2600,7 @@ what the model saw. Each case below is a shape that used to be swallowed.
 
 ## TestStreamOptions_includeUsageShape
 
-Moved from `internal/serveapp/openai_stream_usage_test.go` (the comment above `TestStreamOptions_includeUsageShape`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai_stream_usage_test.go` (the comment above `TestStreamOptions_includeUsageShape`) on 2026-10-09.
 
 ```text
 A streaming client has no token count unless the server sends one, and counting SSE chunks is not
@@ -2612,7 +2612,7 @@ in the same direction. bench_peer.py counted chunks and called them tokens.
 
 ## TestStreamSurfaces_allSendUsageBeforeDone
 
-Moved from `internal/serveapp/openai_stream_usage_test.go` (the comment above `TestStreamSurfaces_allSendUsageBeforeDone`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai_stream_usage_test.go` (the comment above `TestStreamSurfaces_allSendUsageBeforeDone`) on 2026-10-09.
 
 ```text
 M-26: include_usage was honoured on the plain chat stream ONLY. The tool and vision streams
@@ -2629,7 +2629,7 @@ being formatted differently.
 
 ## TestStreamTokens_decodesAsAContinuation
 
-Moved from `internal/serveapp/openai_stream_usage_test.go` (the comment above `TestStreamTokens_decodesAsAContinuation`) on 2026-10-09.
+Moved from `internal/app/serveapp/openai_stream_usage_test.go` (the comment above `TestStreamTokens_decodesAsAContinuation`) on 2026-10-09.
 
 ```text
 M-25, AT THE CALL SITE. The tokenizer tests prove DecodePiece/DecodeContinuation keep the
@@ -2653,7 +2653,7 @@ DecodeContinuation, and forbids Decode exactly as before.
 
 ## bodycaps_routes_test.go.header
 
-Moved from `internal/serveapp/bodycaps_routes_test.go` (the comment above `bodycaps_routes_test.go.header`) on 2026-10-09.
+Moved from `internal/app/serveapp/bodycaps_routes_test.go` (the comment above `bodycaps_routes_test.go.header`) on 2026-10-09.
 
 ```text
 Route-specific body-cap gates (v0.10.3 pre-tag review of the G1 default).
@@ -2675,7 +2675,7 @@ real answers:
 
 ## TestAnthropicInputBytes_excludesImages
 
-Moved from `internal/serveapp/bodycaps_routes_test.go` (the comment above `TestAnthropicInputBytes_excludesImages`) on 2026-10-09.
+Moved from `internal/app/serveapp/bodycaps_routes_test.go` (the comment above `TestAnthropicInputBytes_excludesImages`) on 2026-10-09.
 
 ```text
 TestAnthropicInputBytes_excludesImages is the /v1/messages half of the pre-tokenization guard.
@@ -2687,7 +2687,7 @@ requests on small-context models, trading one defect for a worse one.
 
 ## TestBestExtend_stopStringTokensReuse
 
-Moved from `internal/serveapp/sessions_test.go` (the comment above `TestBestExtend_stopStringTokensReuse`) on 2026-10-09.
+Moved from `internal/app/serveapp/sessions_test.go` (the comment above `TestBestExtend_stopStringTokensReuse`) on 2026-10-09.
 
 ```text
 TestBestExtend_stopStringTokensReuse is L-15's fix for the P-18 gate: a
@@ -2705,7 +2705,7 @@ invisible tail).
 
 ## TestPickSession_sparePreambleGoesFresh
 
-Moved from `internal/serveapp/sessions_test.go` (the comment above `TestPickSession_sparePreambleGoesFresh`) on 2026-10-09.
+Moved from `internal/app/serveapp/sessions_test.go` (the comment above `TestPickSession_sparePreambleGoesFresh`) on 2026-10-09.
 
 ```text
 TestPickSession_sparePreambleGoesFresh is the bug MC0 found (docs/tasks/task-concurrency-2026-09.md, 2026-09-26):
@@ -2717,7 +2717,7 @@ CPU W7 workload that read prefill_reused_tokens = 7 on every turn at 2 clients, 
 
 ## tinyServed
 
-Moved from `internal/serveapp/prefillpath_test.go` (the comment above `tinyServed`) on 2026-10-09.
+Moved from `internal/app/serveapp/prefillpath_test.go` (the comment above `tinyServed`) on 2026-10-09.
 
 ```text
 The serve half of the prefill-path report.
@@ -2737,7 +2737,7 @@ GOINFER_SERVE_MODEL download.
 
 ## TestVersionReport_backendsLineIsDerived
 
-Moved from `internal/serveapp/version_test.go` (the comment above `TestVersionReport_backendsLineIsDerived`) on 2026-10-09.
+Moved from `internal/app/serveapp/version_test.go` (the comment above `TestVersionReport_backendsLineIsDerived`) on 2026-10-09.
 
 ```text
 R2 gate (docs/measurements/cold-user-2026-09-06.md, finding #3). On v0.16.0 there was no way
@@ -2752,7 +2752,7 @@ exactly the lie the finding is about.
 
 ## TestServeUnknownPositional_namesTheSubcommands
 
-Moved from `internal/serveapp/version_test.go` (the comment above `TestServeUnknownPositional_namesTheSubcommands`) on 2026-10-09.
+Moved from `internal/app/serveapp/version_test.go` (the comment above `TestServeUnknownPositional_namesTheSubcommands`) on 2026-10-09.
 
 ```text
 R6's other half (docs/measurements/cold-user-2026-09-06-nobara-pc.md): an unrecognized
@@ -2763,7 +2763,7 @@ exits 0 with no error, instead of naming the argument as unrecognized.
 
 ## TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered
 
-Moved from `internal/serveapp/version_test.go` (the comment above `TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered`) on 2026-10-09.
+Moved from `internal/app/serveapp/version_test.go` (the comment above `TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered`) on 2026-10-09.
 
 ```text
 TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered is R4's gate for the scenario-B friction
@@ -2781,7 +2781,7 @@ names the flag whose absence did the damage, and that it comes FIRST.
 
 ## TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered.count
 
-Moved from `internal/serveapp/version_test.go` (the comment above `TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered.count`) on 2026-10-09.
+Moved from `internal/app/serveapp/version_test.go` (the comment above `TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered.count`) on 2026-10-09.
 
 ```text
 The flag count must be DERIVED. A hand-typed count is the same defect class as the parity
@@ -2793,7 +2793,7 @@ first run, reporting 47 against a real 40.
 
 ## askAboutImage
 
-Moved from `internal/serveapp/gemma4_vl_real_test.go` (the comment above `askAboutImage`) on 2026-10-09.
+Moved from `internal/app/serveapp/gemma4_vl_real_test.go` (the comment above `askAboutImage`) on 2026-10-09.
 
 ```text
 askAboutImage drives the REAL serving-side vision wiring end to end on real weights:
@@ -2806,7 +2806,7 @@ Phase B "HTTP-level integration smoke test" gap).
 
 ## TestGemma4VLReal_26BA4B
 
-Moved from `internal/serveapp/gemma4_vl_real_test.go` (the comment above `TestGemma4VLReal_26BA4B`) on 2026-10-09.
+Moved from `internal/app/serveapp/gemma4_vl_real_test.go` (the comment above `TestGemma4VLReal_26BA4B`) on 2026-10-09.
 
 ```text
 TestGemma4VLReal_26BA4B is the real-checkpoint end-to-end gate for the 26B-A4B/31B-class
@@ -2820,7 +2820,7 @@ needed.
 
 ## newToolsTestServer
 
-Moved from `internal/serveapp/heartbeat_test.go` (the comment above `newToolsTestServer`) on 2026-10-09.
+Moved from `internal/app/serveapp/heartbeat_test.go` (the comment above `newToolsTestServer`) on 2026-10-09.
 
 ```text
 Gates for G19 — SSE heartbeats while the tool path buffers.
@@ -2834,7 +2834,7 @@ content-free comment frames, which every SSE parser drops.
 
 ## realGptOssReply
 
-Moved from `internal/serveapp/harmony_test.go` (the comment above `realGptOssReply`) on 2026-10-09.
+Moved from `internal/app/serveapp/harmony_test.go` (the comment above `realGptOssReply`) on 2026-10-09.
 
 ```text
 A real gpt-oss-20b reply (goinfer-chat, temperature 0, 2026-09-30; the same capture chat/harmony_parse_test.go pins) through
@@ -2845,7 +2845,7 @@ carry the analysis as reasoning and the final channel as the answer, and nothing
 
 ## TestServe_haltUnderLoad
 
-Moved from `internal/serveapp/halt_test.go` (the comment above `TestServe_haltUnderLoad`) on 2026-10-09.
+Moved from `internal/app/serveapp/halt_test.go` (the comment above `TestServe_haltUnderLoad`) on 2026-10-09.
 
 ```text
 K2 gate (docs/tasks/task-halt-2026-09.md): 32 concurrent generations at -max-inflight 32
@@ -2871,7 +2871,7 @@ Gated on GOINFER_SERVE_MODEL like this package's other real-model tests.
 
 ## TestServe_haltUnderLoad.admitted
 
-Moved from `internal/serveapp/halt_test.go` (the comment above `TestServe_haltUnderLoad.admitted`) on 2026-10-09.
+Moved from `internal/app/serveapp/halt_test.go` (the comment above `TestServe_haltUnderLoad.admitted`) on 2026-10-09.
 
 ```text
 admitted: Do() blocks until the server sends response headers, which for a request
@@ -2883,7 +2883,7 @@ blocking the issuing of.
 
 ## TestServe_qwen35Image_G4
 
-Moved from `internal/serveapp/qwen35_vision_real_test.go` (the comment above `TestServe_qwen35Image_G4`) on 2026-10-09.
+Moved from `internal/app/serveapp/qwen35_vision_real_test.go` (the comment above `TestServe_qwen35Image_G4`) on 2026-10-09.
 
 ```text
 	    HF's 32 greedy tokens over those ids, decoded, for each of the 3 images. Before 2026-09-30 serve
@@ -2893,7 +2893,7 @@ Moved from `internal/serveapp/qwen35_vision_real_test.go` (the comment above `Te
 
 ## fuzz_test.go.header
 
-Moved from `internal/serveapp/fuzz_test.go` (the comment above `fuzz_test.go.header`) on 2026-10-09.
+Moved from `internal/app/serveapp/fuzz_test.go` (the comment above `fuzz_test.go.header`) on 2026-10-09.
 
 ```text
 Track 2.6 (testing campaign): the request JSON for /v1/chat/completions and
@@ -2906,7 +2906,7 @@ a loaded model is the maintainer-only soak in Track 5.)
 
 ## TestSetupGlmOcrVision_pixelCap
 
-Moved from `internal/serveapp/glm_ocr_vision_test.go` (the comment above `TestSetupGlmOcrVision_pixelCap`) on 2026-10-09.
+Moved from `internal/app/serveapp/glm_ocr_vision_test.go` (the comment above `TestSetupGlmOcrVision_pixelCap`) on 2026-10-09.
 
 ```text
 TestSetupGlmOcrVision_pixelCap: -vision-max-pixels (O4, owner decision 2026-10-04: the default stays the model's own 4.82 MP ceiling, the flag only lowers it).
@@ -2916,7 +2916,7 @@ ABOVE the ceiling does not raise it (the tower and the context were gated for 6,
 
 ## TestTowerReserve_everyDeviceTower
 
-Moved from `internal/serveapp/siglip_f32_default_test.go` (the comment above `TestTowerReserve_everyDeviceTower`) on 2026-10-09.
+Moved from `internal/app/serveapp/siglip_f32_default_test.go` (the comment above `TestTowerReserve_everyDeviceTower`) on 2026-10-09.
 
 ```text
 TestTowerReserve_everyDeviceTower is S18's G-S18c (docs/completed/task-multimodal-support-2026-10.md): towerReserve is nonzero for every family that has a DEVICE tower under its backend, int8 included, and
@@ -2925,7 +2925,7 @@ zero where the tower runs on the CPU. A table over family x -vision-quant x back
 
 ## TestResolveGemma3VisionQuant.sidecar
 
-Moved from `internal/serveapp/gemma3_tower_test.go` (the comment above `TestResolveGemma3VisionQuant.sidecar`) on 2026-10-09.
+Moved from `internal/app/serveapp/gemma3_tower_test.go` (the comment above `TestResolveGemma3VisionQuant.sidecar`) on 2026-10-09.
 
 ```text
 The sidecar it asks about is the one a Metal load reads: int4 with the plain head (embed-int4 resolves off on Metal
@@ -2935,7 +2935,7 @@ by G-S18a: the default arm transcoded "gemma-3-4b-it.int4.metal.giw" beside a fr
 
 ## TestPrepare_prefillShare
 
-Moved from `internal/serveapp/prefill_share_testhooks_test.go` (the comment above `TestPrepare_prefillShare`) on 2026-10-09.
+Moved from `internal/app/serveapp/prefill_share_testhooks_test.go` (the comment above `TestPrepare_prefillShare`) on 2026-10-09.
 
 ```text
 Before the fix the resident request was split four ways too: on the 7B, MC3 cells lost ~1000-token prompts to 413
@@ -2944,7 +2944,7 @@ Before the fix the resident request was split four ways too: on the 7B, MC3 cell
 
 ## TestServe_admin
 
-Moved from `internal/serveapp/admin_test.go` (the comment above `TestServe_admin`) on 2026-10-09.
+Moved from `internal/app/serveapp/admin_test.go` (the comment above `TestServe_admin`) on 2026-10-09.
 
 ```text
 TestServe_admin is the Inc3 gate: --allow-admin off → 403; with it on, a
@@ -2954,7 +2954,7 @@ Gated on GOINFER_SERVE_MODEL (a .gguf).
 
 ## TestServe_admin.unload
 
-Moved from `internal/serveapp/admin_test.go` (the comment above `TestServe_admin.unload`) on 2026-10-09.
+Moved from `internal/app/serveapp/admin_test.go` (the comment above `TestServe_admin.unload`) on 2026-10-09.
 
 ```text
 unload an idle model → 200 freed (the drain completes at once; native memory released). The
@@ -2964,7 +2964,7 @@ race is the drain regression test's job (TestUnloadDrain_*), not this cycle test
 
 ## TestPlanGridTower
 
-Moved from `internal/serveapp/grid_tower_plan_test.go` (the comment above `TestPlanGridTower`) on 2026-10-09.
+Moved from `internal/app/serveapp/grid_tower_plan_test.go` (the comment above `TestPlanGridTower`) on 2026-10-09.
 
 ```text
 TestPlanGridTower pins where a Qwen3.5+ or GLM-OCR tower runs (S2 of docs/completed/task-multimodal-support-2026-10.md):
@@ -2974,7 +2974,7 @@ fallback a refusal under -require-backend. (S4 made the rules backend-generic; u
 
 ## requireHeavyModel
 
-Moved from `internal/serveapp/heavytest_test.go` (the comment above `requireHeavyModel`) on 2026-10-09.
+Moved from `internal/app/serveapp/heavytest_test.go` (the comment above `requireHeavyModel`) on 2026-10-09.
 
 ```text
 requireHeavyModel gates a test that loads a multi-GB checkpoint from ~/models behind an explicit
@@ -2990,7 +2990,7 @@ guard, so opting in on a bare box is still harmless.
 
 ## TestPrefillFlags_reachTheDecoderThroughOptions
 
-Moved from `internal/serveapp/exactprefill_test.go` (the comment above `TestPrefillFlags_reachTheDecoderThroughOptions`) on 2026-10-09.
+Moved from `internal/app/serveapp/exactprefill_test.go` (the comment above `TestPrefillFlags_reachTheDecoderThroughOptions`) on 2026-10-09.
 
 ```text
 The prompt-ingestion flags reach each model through its decoder.Options, never the process environment
@@ -3001,7 +3001,7 @@ Options.ExactPrefill is consulted by each (CPU, CUDA resident build, Metal resid
 
 ## TestMoEPagerFlag_reachesTheDecoderThroughOptions
 
-Moved from `internal/serveapp/exactprefill_test.go` (the comment above `TestMoEPagerFlag_reachesTheDecoderThroughOptions`) on 2026-10-09.
+Moved from `internal/app/serveapp/exactprefill_test.go` (the comment above `TestMoEPagerFlag_reachesTheDecoderThroughOptions`) on 2026-10-09.
 
 ```text
 TestMoEPagerFlag_reachesTheDecoderThroughOptions: --moe-pager is carried to decoder.Load in
@@ -3010,7 +3010,7 @@ Options.MoEPager (it used to be applied by setting GOINFER_MOE_PREAD_CPU, proces
 
 ## TestLoadVisionTower_siglipHonoursVisionDevice
 
-Moved from `internal/serveapp/vision_device_siglip_test.go` (the comment above `TestLoadVisionTower_siglipHonoursVisionDevice`) on 2026-10-09.
+Moved from `internal/app/serveapp/vision_device_siglip_test.go` (the comment above `TestLoadVisionTower_siglipHonoursVisionDevice`) on 2026-10-09.
 
 ```text
 TestLoadVisionTower_siglipHonoursVisionDevice: -vision-device cpu keeps Gemma 3's SigLIP tower on the CPU, f32, under a
@@ -3020,7 +3020,7 @@ attached whatever the flag said, so G-S3c's "tower on the CPU in every arm" did 
 
 ## TestDeviceFallback_requireBackendRefuses
 
-Moved from `internal/serveapp/device_fallback_test.go` (the comment above `TestDeviceFallback_requireBackendRefuses`) on 2026-10-09.
+Moved from `internal/app/serveapp/device_fallback_test.go` (the comment above `TestDeviceFallback_requireBackendRefuses`) on 2026-10-09.
 
 ```text
 Under -require-backend a device tower's memory failure fails the request: no CPU run, the accelerator kept (S4 audit, 2026-10-07: the fallback used to run the
@@ -3029,7 +3029,7 @@ CPU tower even when the user had asked never to leave the backend).
 
 ## TestForcedTool_loneToolConvenienceEndsAtTheToolResult
 
-Moved from `internal/serveapp/lone_tool_livelock_test.go` (the comment above `TestForcedTool_loneToolConvenienceEndsAtTheToolResult`) on 2026-10-09.
+Moved from `internal/app/serveapp/lone_tool_livelock_test.go` (the comment above `TestForcedTool_loneToolConvenienceEndsAtTheToolResult`) on 2026-10-09.
 
 ```text
 PRE-REGISTERED (docs/queue-correctness.md G39). `serve check`'s `tools, OpenAI` row failed with "turn two asked for the tool
@@ -3044,7 +3044,7 @@ result and tool_choice is auto (or absent). An explicit "required", a named func
 
 ## TestServe_generationRoutesExistWithoutAStartupModel
 
-Moved from `internal/serveapp/routes_nomodel_test.go` (the comment above `TestServe_generationRoutesExistWithoutAStartupModel`) on 2026-10-09.
+Moved from `internal/app/serveapp/routes_nomodel_test.go` (the comment above `TestServe_generationRoutesExistWithoutAStartupModel`) on 2026-10-09.
 
 ```text
 TestServe_generationRoutesExistWithoutAStartupModel: a server started with only --web (or
@@ -3058,7 +3058,7 @@ its JSON "model not found", not the mux's plain-text 404.
 
 ## TestDriveUsesRequestContext
 
-Moved from `internal/serveapp/reqctx_test.go` (the comment above `TestDriveUsesRequestContext`) on 2026-10-09.
+Moved from `internal/app/serveapp/reqctx_test.go` (the comment above `TestDriveUsesRequestContext`) on 2026-10-09.
 
 ```text
 TestDriveUsesRequestContext gates M6 (and the whole class it belongs to): every
@@ -3071,7 +3071,7 @@ one caller that got this wrong; this scans the whole package so a future one can
 
 ## TestWriteJSON_unencodableBodyIsAServerError
 
-Moved from `internal/serveapp/writejson_test.go` (the comment above `TestWriteJSON_unencodableBodyIsAServerError`) on 2026-10-09.
+Moved from `internal/app/serveapp/writejson_test.go` (the comment above `TestWriteJSON_unencodableBodyIsAServerError`) on 2026-10-09.
 
 ```text
 writeJSON used to send the status line and then stream the encoder's output with its error dropped, so a body JSON cannot carry (NaN, an infinity) reached the client as
@@ -3081,7 +3081,7 @@ must be byte-for-byte what it was (200, the JSON and its trailing newline).
 
 ## TestEnableResidentTower
 
-Moved from `internal/serveapp/vision_resident_fallback_test.go` (the comment above `TestEnableResidentTower`) on 2026-10-09.
+Moved from `internal/app/serveapp/vision_resident_fallback_test.go` (the comment above `TestEnableResidentTower`) on 2026-10-09.
 
 ```text
 A resident GPU vision tower that cannot be attached (no VRAM left for it, a build without the backend) used to abort serve
@@ -3091,7 +3091,7 @@ is now a warning, and the tower runs on the CPU path EnableResident leaves intac
 
 ## TestTowerInt8
 
-Moved from `internal/serveapp/vision_tower_int8_test.go` (the comment above `TestTowerInt8`) on 2026-10-09.
+Moved from `internal/app/serveapp/vision_tower_int8_test.go` (the comment above `TestTowerInt8`) on 2026-10-09.
 
 ```text
 Which towers load int8, for every vision family serve dispatches on (loadVisionTower: "" and "gemma3" reach the SigLIP path)
@@ -3102,7 +3102,7 @@ float32, and int8 measured lossy and not faster (see towerInt8). qwen3_vl is the
 
 ## TestWithFeatureCache_recoversAnyTower
 
-Moved from `internal/serveapp/recover_device_tower_test.go` (the comment above `TestWithFeatureCache_recoversAnyTower`) on 2026-10-09.
+Moved from `internal/app/serveapp/recover_device_tower_test.go` (the comment above `TestWithFeatureCache_recoversAnyTower`) on 2026-10-09.
 
 ```text
 Every family's tower runs through withFeatureCache, so a tower that panics there (Gemma 3's SigLIP, Gemma 4's image or audio tower, on any device) fails the
@@ -3111,7 +3111,7 @@ request with an error, not the server. Before 2026-10-07 only Qwen2.5-VL's forwa
 
 ## TestSetConcurrency_reportsTheDecidedValue.prior
 
-Moved from `internal/serveapp/concurrent_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/concurrent_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestSetConcurrency_reportsTheDecidedValue: the concurrency line serve prints comes from setConcurrency itself, after
@@ -3121,7 +3121,7 @@ time" whatever -max-concurrent was, because it read the value before setConcurre
 
 ## TestBanner_sessionReuseNamesMetalOnlyOnMetal.prior
 
-Moved from `internal/serveapp/banner_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/banner_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 The session-reuse line used to say "Metal keeps N by default" for a CUDA card's granted count. It names Metal only for a Metal decode path.
@@ -3129,7 +3129,7 @@ The session-reuse line used to say "Metal keeps N by default" for a CUDA card's 
 
 ## TestServe_prepareEnforcesResidentCapForAdapter.prior
 
-Moved from `internal/serveapp/residentpath_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/residentpath_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestServe_prepareEnforcesResidentCapForAdapter reproduces M-01's exact failure scenario end to
@@ -3142,7 +3142,7 @@ cleanly up front.
 
 ## TestServe_prepareEnforcesResidentCapForAdapter.reject.prior
 
-Moved from `internal/serveapp/residentpath_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/residentpath_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 A prompt past the resident cap, but still under MaxPositions, must now be rejected cleanly —
@@ -3151,7 +3151,7 @@ the old `lm.adapter == ""` predicate let this through to die mid-prefill instead
 
 ## TestMaybeStore_preservesToolCallsForPreviousResponseID.prior
 
-Moved from `internal/serveapp/responses_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/responses_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestMaybeStore_preservesToolCallsForPreviousResponseID pins V-18 (docs/review-2026-09-04.md):
@@ -3166,7 +3166,7 @@ and the store it writes to are plain Go values.
 
 ## TestRespondTools_callsMaybeStoreWithTheToolCalls.prior
 
-Moved from `internal/serveapp/responses_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/responses_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestRespondTools_callsMaybeStoreWithTheToolCalls is the wiring guard: the unit test above
@@ -3177,7 +3177,7 @@ call site nobody checked).
 
 ## TestResponses_toolLoopItemsSurviveDecoding.prior
 
-Moved from `internal/serveapp/responses_tools_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/responses_tools_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 M-18: A RESPONSES TOOL LOOP COULD NOT COMPLETE.
@@ -3193,7 +3193,7 @@ This is the step-4 that was missing, at the decode layer where the loss happened
 
 ## TestStreamTokens_thinkStopStrings.prior
 
-Moved from `internal/serveapp/think_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/think_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 Stop strings are matched against the ANSWER only. A stop string is a request about what the model says to the client; the
@@ -3203,7 +3203,7 @@ deepseek-legacy, where `content` is the raw text, tags included — what the cli
 
 ## TestStreamTokens_thinkReasoningNeverSplitsARune.prior
 
-Moved from `internal/serveapp/think_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/think_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 Reasoning no longer rides through the stop logic, which used to hold a partial UTF-8 rune back for it. A multi-byte character
@@ -3212,7 +3212,7 @@ split across two tokens inside the reasoning must still reach the client whole �
 
 ## TestHandleChat_imageStreamLogprobsRejected.prior
 
-Moved from `internal/serveapp/vision_logprobs_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/vision_logprobs_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 An image request used to accept logprobs:true and answer 200 with no logprobs at all: driveVL threw them away. They are now
@@ -3222,7 +3222,7 @@ which has no logprobs field, refuses the combination the way the text route does
 
 ## TestTowerInt8_gemma3ExplicitF32.prior
 
-Moved from `internal/serveapp/siglip_f32_default_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/siglip_f32_default_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 The S4 addendum (docs/completed/task-multimodal-support-2026-10.md): -vision-quant is unset by default so an explicit f32 is distinguishable from the default (which matters for the
@@ -3232,7 +3232,7 @@ int8 stays int8 everywhere.
 
 ## TestTowerReserve_gemma3.prior
 
-Moved from `internal/serveapp/siglip_f32_default_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/siglip_f32_default_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 Gemma 3's SigLIP tower is priced into the resident plan on CUDA: the default (float32 since 2026-10-08) and an explicit f32 reserve about 2 GB (27 layers of hidden 1152 / intermediate
@@ -3241,7 +3241,7 @@ Gemma 3's SigLIP tower is priced into the resident plan on CUDA: the default (fl
 
 ## TestTowerReserve_everyDeviceTower.metal.prior
 
-Moved from `internal/serveapp/siglip_f32_default_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/siglip_f32_default_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 G-S18c-Mac: Gemma 3's Metal figures within 25% of the phys_footprint its towers measured (metal TestS18TowerHostMemory, 2026-10-08)
@@ -3249,7 +3249,7 @@ G-S18c-Mac: Gemma 3's Metal figures within 25% of the phys_footprint its towers 
 
 ## TestWebUI_pageIsSelfContained.prior
 
-Moved from `internal/serveapp/webui_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/webui_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestWebUI_pageIsSelfContained guards the offline property: the UI of an engine that runs
@@ -3265,7 +3265,7 @@ A blanket "no http(s):// substring anywhere" check would have banned that link t
 
 ## TestWebUI_pageIsSelfContained.embedded.prior
 
-Moved from `internal/serveapp/webui_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/webui_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 EVERY EMBEDDED FILE, not just index.html. The page is split across webui/ (§6.1 of
@@ -3275,7 +3275,7 @@ a CDN import sat in ui/app.js — narrowing silently exactly when the page grew.
 
 ## TestWebUI_pageIsSelfContained.localcss.prior
 
-Moved from `internal/serveapp/webui_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/webui_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 A LOCAL stylesheet link (href="ui/...") is now expected; an external one is still banned.
@@ -3283,7 +3283,7 @@ A LOCAL stylesheet link (href="ui/...") is now expected; an external one is stil
 
 ## TestWebUI_pageIsSelfContained.external.prior
 
-Moved from `internal/serveapp/webui_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/webui_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 The two allowed external references, neither a render-time asset: an out-bound link to
@@ -3296,7 +3296,7 @@ offline-break this test exists to catch.
 
 ## TestWebUI_appGateInBrowser.prior
 
-Moved from `internal/serveapp/webui_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/webui_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestWebUI_appGateInBrowser runs scripts/webui_app_gate.mjs: the SHIPPED index.html driven through its own
@@ -3307,7 +3307,7 @@ answer, and after a re-render rebuilds every code-block button.
 
 ## TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone.prior
 
-Moved from `internal/serveapp/webui_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/webui_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone pins V-20 (docs/review-2026-09-04.md):
@@ -3319,7 +3319,7 @@ N-26's identical sameOrigin in demo/agent/cmd/agent-web/main.go.
 
 ## TestLoadDecoder_clefRefusesInt4.prior
 
-Moved from `internal/serveapp/systemone_clef_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/systemone_clef_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 A Clef model is not served at int4 (owner decision 2026-10-03, D13). The refusal is tested through loadDecoder, the one caller that matters: a refusal function
@@ -3329,7 +3329,7 @@ that nothing calls would pass its own unit test. It must fire for an explicit qu
 
 ## TestModelSpec_headDefaultsToTheDecisionQuant.prior
 
-Moved from `internal/serveapp/modelspec_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/modelspec_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 A model with a decision head (head=) loads at decoder.DecisionHeadQuant unless a quant was chosen, through the same
@@ -3338,7 +3338,7 @@ options() path serve uses for every --model entry (D6b, owner decision 2026-10-0
 
 ## TestEmbeddings_taskPromptChoice.prior
 
-Moved from `internal/serveapp/embeddinggemma2_embedder_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/embeddinggemma2_embedder_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestEmbeddings_taskPromptChoice is Gate 3's prompt rule (docs/tasks/task-embeddinggemma2.md, owner decision
@@ -3349,7 +3349,7 @@ applied is echoed in goinfer_task and the X-Goinfer-Embedding-Task header.
 
 ## TestSSEJSONSender_cancelsOnWriteFailure.prior
 
-Moved from `internal/serveapp/sse_writer_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/sse_writer_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestSSEJSONSender_cancelsOnWriteFailure is N-23's other half (docs/audit-2026-09-10.md):
@@ -3363,7 +3363,7 @@ way the r.Context() cancellation already stops Download for an outright closed t
 
 ## TestReqID_isNotGuessable.property.prior
 
-Moved from `internal/serveapp/limits_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 THE PROPERTY THAT WAS BROKEN: consecutive ids must not be consecutive integers. Parsed as
@@ -3372,7 +3372,7 @@ big-endian hex, a counter gives a difference of exactly 1 every time.
 
 ## TestStartDrain_savesSessionsUnderTheLRULock.prior
 
-Moved from `internal/serveapp/limits_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 N-20: demoteLoop mutates the session LRU on its own ticker while the unload drain saved it
@@ -3388,7 +3388,7 @@ reports success.
 
 ## TestAdminLoad_requestQuantIsTheExplicitOne.callsite.prior
 
-Moved from `internal/serveapp/limits_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 And the handler must actually do that resolution — the table above is the RULE, this is
@@ -3397,7 +3397,7 @@ the call site. Same gap that made M-25's component test vouch for nothing.
 
 ## TestGuardComposition_hugeToolSchemaTripsTheBudgetAloneOnATinyMessage.prior
 
-Moved from `internal/serveapp/limits_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/limits_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestGuardComposition_hugeToolSchemaTripsTheBudgetAloneOnATinyMessage matches the audit's own
@@ -3412,7 +3412,7 @@ to prove each addend's own arithmetic.
 
 ## TestCloseEntryNatives_dropsGemma4Enc.prior
 
-Moved from `internal/serveapp/liveness_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/liveness_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestCloseEntryNatives_dropsGemma4Enc is N-32 (docs/audit-2026-09-10.md): closeEntryNatives
@@ -3425,7 +3425,7 @@ reference is dropped, not that anything was called on it.
 
 ## TestFitFlag_realBinaryAcceptsOff.prior
 
-Moved from `internal/serveapp/fitflag_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/fitflag_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestFitFlag_realBinaryAcceptsOff proves the fix through the FULL registered flag.CommandLine,
@@ -3437,7 +3437,7 @@ boolean value \"off\"".
 
 ## TestGemma4VLReal_E2B_logprobs.prior
 
-Moved from `internal/serveapp/gemma4_vl_real_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/gemma4_vl_real_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestGemma4VLReal_E2B_logprobs: an image turn's driveVL returns the per-token logprobs the request asked for (they were
@@ -3448,7 +3448,7 @@ and the OpenAI-shaped rendering carries the same count.
 
 ## TestPrepare_temperatureValidation.prior
 
-Moved from `internal/serveapp/validation_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/validation_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestPrepare_temperatureValidation gates G4: temperature has the same lower bound as top_p.
@@ -3459,7 +3459,7 @@ output). 0 (greedy) and positive values stay valid.
 
 ## TestPick_modelValidation.prior
 
-Moved from `internal/serveapp/validation_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/validation_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestPick_modelValidation gates G6: an unknown NON-EMPTY model name is rejected on both a
@@ -3469,7 +3469,7 @@ server. Previously a single-model server served any name (confident wrong-model 
 
 ## pickTest.prior
 
-Moved from `internal/serveapp/validation_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/validation_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 pickTest is a test-only wrapper for the request-path lookup (lookupLocked requires regMu). It
@@ -3479,7 +3479,7 @@ match + single-model fallback, G6) is unchanged.
 
 ## TestConstrainToolUnion_wiring.prior
 
-Moved from `internal/serveapp/openai_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/openai_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestConstrainToolUnion_wiring pins T1-T3's routing decisions (docs/tasks/task-tool-grammar-union-2026-09.md):
@@ -3491,7 +3491,7 @@ constrained under required; GOINFER_TOOL_UNION=0 restores the pre-T1 behaviour e
 
 ## TestConstrainToolUnion_wiring.spec.prior
 
-Moved from `internal/serveapp/openai_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/openai_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 a speculative server keeps its pre-T1 auto behaviour (its drafter), but still gets required
@@ -3499,7 +3499,7 @@ a speculative server keeps its pre-T1 auto behaviour (its drafter), but still ge
 
 ## TestSplitter_gemmaToolResponsePromptIsForcedOpen.prior
 
-Moved from `internal/serveapp/history_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/history_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 A reply to a Gemma 4 thinking-on prompt that ends after a tool response starts INSIDE an open thought channel, so the
@@ -3508,7 +3508,7 @@ splitter must start forced-open or the reasoning leaks into content (found by th
 
 ## chaos_test.go.header.prior
 
-Moved from `internal/serveapp/chaos_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/chaos_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 Track 5 (testing campaign): the untested interaction is multi-model + admin +
@@ -3520,7 +3520,7 @@ restart restores warm KV without corrupting the continuation.
 
 ## TestServe_tieredKVDemoteFaultBack.prior
 
-Moved from `internal/serveapp/chaos_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/chaos_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestServe_tieredKVDemoteFaultBack exercises idea #8 (tiered KV): a warm session
@@ -3531,7 +3531,7 @@ prefill. The LRU's clock is injected so idle demotion is deterministic.
 
 ## TestBanner_sessionReuseMatchesTheDecodePath.prior
 
-Moved from `internal/serveapp/banner_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/banner_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestBanner_sessionReuseMatchesTheDecodePath is G6's core assertion, and the one worth
@@ -3547,7 +3547,7 @@ what their latency will do.
 
 ## TestServe_multiAdapter.prior
 
-Moved from `internal/serveapp/adapter_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
+Moved from `internal/app/serveapp/adapter_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
 TestServe_multiAdapter is the end-to-end #7 proof: one synthetic safetensors base

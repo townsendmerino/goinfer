@@ -10,7 +10,7 @@
 > doc originally specified (no single `WeightBudget()`; the CPU path uses `fitCheck`/
 > `estimateGGUFWeightBytes` instead, and CUDA/Metal each kept their own separate guard rather than
 > unifying on one). **Phase 1 is DONE for its `plan()` core and `goinfer-chat fit` dry run**
-> (`decoder/fitplan.go` + `internal/fitcmd`, 2026-09-09; verified end-to-end on real Mac/Metal and
+> (`decoder/fitplan.go` + `internal/app/fitcmd`, 2026-09-09; verified end-to-end on real Mac/Metal and
 > nobara/CUDA hardware, including the exact gemma-4-26B expert-cache scenario §4 uses as its worked
 > example) — Load()-based rather than header-only, see `docs/tasks/task-gpu-paths-2026-09.md`'s entries
 > for the scope decision. **The startup banner (Phase 1's third surface) is NOT started**, nor are
@@ -114,7 +114,7 @@ Scoped against what exists, the way `task-model-pull.md` was.
   (`decoder/model.go:Model.MoECacheSlotsRequest`, the cap that accounts for 2 MiB allocation quanta and the first-launch
   reservation — `docs/positioning.md`'s own history of it).
 - CPU weight paging: `--weight-cache 0` is "auto, ~half of available RAM"
-  (`internal/loadflags/loadflags.go:Register`).
+  (`internal/app/loadflags/loadflags.go:Register`).
 - Metal: a memory-fit guard that refuses a model whose weights exceed 70% of RAM
   (`backend/metal/backend.go:residentMemFraction`, `:142`) — the guard whose arithmetic M-01/M-02 found wrong in both
   directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`backend/metal/backend.go:residentMemoryDecline`).
@@ -147,7 +147,7 @@ plan(checkpoint, machine, request) → placement
 (attention + shared FFN + norms + embeddings/head), routed experts (nE, top-k, bytes per expert
 at the requested quant), per-layer recurrent state (DeltaNet/Mamba/conv), KV bytes per position per
 precision, and the family's residency eligibility per backend (`decoder.ResidentEligible`, the
-generator behind `docs/hardware-matrix.md`). `internal/prequant/ggufmeta.go` already reads GGUF
+generator behind `docs/hardware-matrix.md`). `internal/runtime/prequant/ggufmeta.go` already reads GGUF
 metadata without loading; the `.giw` header carries the same. This is the accounting M-01 asks
 for: the same walker the `.giw` writer uses, so the accountant and the writer cannot disagree.
 
@@ -209,7 +209,7 @@ cache is a large fraction of a full one (57% hit at 16 slots vs 82% at 38, `docs
   the closest thing the product has to a UI (`tasks/task-embed-and-harness-ux.md` §3.3 owns its full
   shape; this doc owns the placement lines).
 - **`pull` prints the verdict for the file it fetched**, on the line that already prints the
-  `--model` command (`internal/pullcmd/pull.go`): "fits resident on this machine at int4 (9.1 GB
+  `--model` command (`internal/app/pullcmd/pull.go`): "fits resident on this machine at int4 (9.1 GB
   of 16 GB); expect the 1.5B–7B class". Cheap: the planner reads the header of the file it just
   wrote.
 - **The web UI's Models tab shows fit before download.** `pull.File` already carries `Size`
@@ -306,7 +306,7 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
    room, a pinned ctx above the ceiling declines, and the family decline fires on a real MLA
    fixture before any byte accounting runs.
 4. **The band — self-measure half DONE (2026-09-10), `pull`/web-UI half still blocked.**
-   `goinfer-chat fit -measure` (`internal/fitcmd/fit.go`) does §5's self-measure: after the dry
+   `goinfer-chat fit -measure` (`internal/app/fitcmd/fit.go`) does §5's self-measure: after the dry
    run, picks the best ADMITTED backend (any non-cpu over cpu — cpu is always eligible and
    always tried last), does a REAL `decoder.Load` + `Generate` on it (64-token deterministic
    prompt, 32 decode steps, greedy), and prints the measured tok/s. Off by default (a second
@@ -376,7 +376,7 @@ before this one) · `docs/completed/task-metal-expert-streaming-at-scale.md` (N=
 `fitplan.go`'s auto-sizer will need once Metal is wired into it) ·
 `docs/completed/task-moe-streaming.md` §C′ (the CUDA cache and its cap) · `docs/QUEUE.md`
 G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residency eligibility, generated) ·
-`internal/serveapp/main.go:registerFlags` (the flags the plan subsumes) · `decoder/model.go:Model.MoECacheSlotsRequest`
+`internal/app/serveapp/main.go:registerFlags` (the flags the plan subsumes) · `decoder/model.go:Model.MoECacheSlotsRequest`
 (`MoECacheSlotsRequest`, `Options`) · `backend/metal/backend.go:metalBackend.BuildResident` (the guard: `if why := residentMemoryDecline(m); why != ""`) ·
 `decoder/weightbytes.go:Model.ResidentWeightBytes` (`ResidentWeightBytes`, the accountant to replace) ·
 `pull/pull.go:File` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the

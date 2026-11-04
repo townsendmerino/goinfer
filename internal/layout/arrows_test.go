@@ -348,7 +348,7 @@ func TestLayout_towersStandalone(t *testing.T) {
 			{"internal/audio", g("internal/vision"), false},
 			{"internal/audio", g("internal/vision/x"), true},
 			{"internal/audio", g("decoder"), true},
-			{"internal/audio", g("internal/mem"), true},
+			{"internal/audio", g("internal/runtime/mem"), true},
 			{"internal/audio", modulePath, true},
 			{"internal/audio", g("multimodal"), true},
 			{"internal/vision", g("internal/audio"), true},

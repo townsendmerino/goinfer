@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 	"github.com/townsendmerino/goinfer/internal/config"
-	"github.com/townsendmerino/goinfer/internal/loadflags"
 )
 
 // surfaces is what the tree registers today: the schema is checked against it, never the other way round.

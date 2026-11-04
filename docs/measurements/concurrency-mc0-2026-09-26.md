@@ -48,7 +48,7 @@ is recorded here rather than folded silently into the verdict.
 
 ## The CPU bug
 
-`sessionLRU.acquire` (`internal/serveapp/sessions.go`) reuses the session `bestExtend` picks.
+`sessionLRU.acquire` (`internal/app/serveapp/sessions.go`) reuses the session `bestExtend` picks.
 - `bestExtend` accepts a candidate whose common prefix with the prompt beats the candidate's "floor": the longest
   prefix it shares with any *other* resident session. That is what stops a shared system-prompt preamble counting as
   reuse.

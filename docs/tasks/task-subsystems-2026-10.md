@@ -62,31 +62,31 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | id | state | next | evidence |
 |---|---|---|---|
 | VK0 | done | 2026-10-26 (mac-vk01): 234 of 4,052 commits re-staled 8,895 family validations in 30 days; 8,775 (98.7%) came with no moved golden and no changed recorded metric, an upper bound on what a behavior key saves | §5.3; `docs/measurements/vk0-2026-10.md` |
-| VK1 | done | 2026-10-26 (mac-vk01): `internal/kernelprint`, 65 kernels; K1, K2 and K3 PASS on arm64, arm64 `aikit_nodotprod`, amd64 AVX2, `aikit_noavx2`, `aikit_nopopcnt` (`aikit_noavx512` VOID here); all 8 aikit bumps the suite builds against (v1.70.0 to v1.75.0) left every fingerprint unchanged, 385 family re-stalings a fingerprint key would not have made; found: embed's AVX2 Q4_K/Q6_K dequant fallback is forced by no tag | §5.4; `docs/measurements/vk1-2026-10.md` |
+| VK1 | done | 2026-10-26 (mac-vk01): `internal/diag/kernelprint`, 65 kernels; K1, K2 and K3 PASS on arm64, arm64 `aikit_nodotprod`, amd64 AVX2, `aikit_noavx2`, `aikit_nopopcnt` (`aikit_noavx512` VOID here); all 8 aikit bumps the suite builds against (v1.70.0 to v1.75.0) left every fingerprint unchanged, 385 family re-stalings a fingerprint key would not have made; found: embed's AVX2 Q4_K/Q6_K dequant fallback is forced by no tag | §5.4; `docs/measurements/vk1-2026-10.md` |
 | VK2 | done | 2026-10-26 (mac-vk01): part 1, one file per family adapter (#277, A1–A4 PASS); part 2, `core` covers the forward path (Francis 15:31, option 1; B1–B4 PASS, the census roots amended before grading): `model_forward.go` replaces `model.go` in `core`, 26 forward-path files gain a home, `TestParityManifest_coreClosed` holds it; VK0's window: 52 plumbing-only commits (2,089 re-stalings) no longer re-stale, at most 24 forward-path commits newly do | §5.5; `docs/measurements/vk2-2026-10.md` |
 | VK3 | done | 2026-10-26 (mac-vk01, Francis 17:37): one record per family, `testdata/parity/<family>.json` and `shared_sets.json`; every reader through `paritykey.ManifestJSON` (the old single file still read at older commits, so `gate shadow` compares across the change); R1–R4 PASS, two families refreshed in parallel now change two files | §5.6; `docs/measurements/vk3-2026-10.md` |
 | VK4 | done | 2026-10-26 (mac-vk01): `programFingerprint` per fixture config (37, `testdata/program_fingerprints.json`) and per real-checkpoint config present; F1–F3 PASS, F2 found and fixed the head tie (`tie_word_embeddings`); 33 of 43 families have a fixture program; in no key yet: it enters VK5's shadow key in week 2 (Francis 16:27) | §5.7; `docs/measurements/vk4-2026-10.md` |
 | VK5 | active | week 1 graded 2026-10-27 (31 runs, all green; the aikit v1.76.0 bump re-staled 43 families by today's key and none by the fingerprint key, each explained; caveat: no kernel changed); the switch to the kernel-fingerprint key, S1–S5 all PASS, merged (#308); week 2 (option A, Francis 05:52: the program builders out, programs in): W1–W5 all PASS (#310); amended after Gemini's review of #310 (§5.8), and the week starts at the first `vk-shadow` run after that fix merges (mac-vk01, branch `vk5-review310-2026-10`), graded a week later; read early 2026-10-28 (mac-vk5grade, Francis's 16:07 approval): 81 runs, all green, no disagreement, but no push touched a program builder, so it does not qualify to end early and runs to 2026-11-03 08:27 PDT (vk5 record §9); **week 2 graded 2026-11-02, a day early by Francis's override (11:52 PST): 271 runs, 0 disagreements, so the builder-diff clause had nothing to read; the builder-out half has still not decided a verdict on a real push (vk5 record §10)**; week 3 built 2026-11-02, SB4's option A, L1–L5 PASS (vk5 record §11), and it runs from the first `vk-shadow` run after its PR merges; the switch stays its own decision; a possible later week (option C, decoder's own ops fingerprinted) noted, not started; M | §5.8; `docs/measurements/vk5-2026-10.md` |
 | VK6 | blocked | VK5; the daily canary and the coverage-of-reality audit; M | §5.9 |
-| MM0 | done | 2026-10-26 (nobara-mm01): #287, `internal/mem/probe` the one reader of the OS's memory account, a fake for tests, and the scan that finds no OS memory read outside it; S | §6.5; MM0's gates |
+| MM0 | done | 2026-10-26 (nobara-mm01): #287, `internal/runtime/mem/probe` the one reader of the OS's memory account, a fake for tests, and the scan that finds no OS memory read outside it; S | §6.5; MM0's gates |
 | MM1 | done | 2026-10-26/27 (nobara-mm01, Francis approved all of MM1 at 17:35 on 10-26): the decision census #293 (and #302), the host guards #295, `Plan` and Metal's context #296, `ResolveKV` and I6's scan #300; Gemini follow-ups #316 and #320; the MoE reserve #321 (Francis's option A, 09:09; G-MA-1 re-registered under option C, 10:36); the census held byte for byte throughout; M | §6.5; MM1's sections |
 | MM2 | done | 2026-10-27 (nobara-mm01): MM2a #307, each backend reports its own build demand and `cudaWillBeResident` and `metalWillBeResident` go (Francis's answers of 22:40, 10-26); MM2b #311, `Plan("cuda")` prices the driver's 2 MiB rounding (Francis's option A, 05:50); census unchanged; M | §6.5; MM2a's and MM2b's gates |
 | MM3 | done | 2026-10-27 (nobara-mm01, Francis's go of 11:08): a ledger and every allocation a lease naming its plan line, CUDA #328 (MM3a, exact lower bound restored in #372), WebGPU #334 and its follow-up #339 (MM3b), Metal #335 (MM3c). The Mac's MM3c reads (#374): G-MM3c-2 passes after #384 (four tests release their buffers); G-MM3c-4's 3,692 B gap was Metal packing buffers of 4 KB and under into 128 KB chunks, not a ledger over-count (#383). G-MM3c-4 now reconciles the ledger's own charge per buffer to the byte for every buffer of 16 KB and up, grades untraced memory, and plants an over-charge, an under-charge and an out-of-band buffer (Francis 20:39 and 20:51; #390, corrected by #391; mac-vk01's device pass on the M1 Pro, all five cells); M | §6.5; MM3a–MM3c's gates |
 | MM4 | blocked | KV4 and KV7; the arbiter, which is KV11's one budget for KV blocks, expert slots and the prefix cache; L | §6.5; KV11 |
 | MM5 | blocked | OP4; demand derived from the program, each operation declaring its buffers; M | §6.5 |
 | MM6 | active | queue-time pricing #306 (Francis's answers of 22:37, 10-26) and the night profile #312, #322 (Francis's option B, 05:56) merged; G-MM6-5 read FAIL by its rule (#309), which the night profile answers; nobara's G-NP and G-NP2 gates pass. Owed: G-NP-4, the Mac's replay on its night profile, VOID twice (#313: no profile; re-run 2026-10-27 19:00, mac-vk01: the backfill fixed, too few readings); checked 2026-10-30 (mac-sb11m): still 3 readings over 1 night, because the Mac's runner (`~/goinfer-runner`, at `6c99e585`) predates #312 and records no start readings. Runner moved to `d6c91d9d` with `night.py update-runner` (Francis 2026-10-30 06:18); serve restarted on it at 06:18:46. G-NP-4 read 2026-11-01 (mac-sb11m): FAIL by its rule, 5 of 7 counted rows refused (the profile 7.74 GB from START readings near 12 GB; row 2's model off disk). Decided 2026-11-01 07:55 PST (Francis, via the coordinator): C+B. C, the night profile floored at the day profile (#575, §8 "MM6 option C"), and B, sampling the night every 30 min between jobs (#576, §8 "MM6 option B"), are both merged. Left: G-NPC-2, C's replay on the Mac (owed after merge; no read recorded yet); `night.py update-runner` on each box, so its runner samples (none recorded yet); G-NP-4b, 14 sampled nights after that (the morning of 2026-11-15 at the earliest), which informs Francis's call on whether C's floor stays; S | §6.5; MM6's sections |
-| MM7 | active | The allocation-vs-plan gate (Francis, 2026-11-02 15:05): per test model and backend, what the ledger leased on each plan line against the plan's figure, with each allocator's rounding named in the test; a lease over plan, on an unknown line, or open after Close is red. Known reds go in a skip table naming the MM8 item that removes them, and it only shrinks. A case it must cover: the backends upload Mamba-2 projections as priced (`TestResidentDense_mambaProjectionsAsUploaded` runs no uploader). The harness is `internal/memgate`, with `TestMemGate_metal`: 279 Metal builds (every census fixture and cell that builds resident, and each at int4 with two KV slots, with and without the step's blocks), read after the build and after a short generation. A line may exceed its figure only by what the allocator actually rounded on it, up to the named limit, so an allowance cannot hide a request over plan; each table row is bounded in bytes, and a row that stops firing is red. Metal's KV is exact to the plan. Its table holds five gaps, each bounded from the model's geometry and in MM8's or MM5a's row. CUDA (nobara-sb01): `TestMemGate_cuda`, 474 builds (the census fixtures and cells, the memory census's windowed, expert-cache and slot cells at int4, and three shapes past the tiny context: a window the context reaches, a cap past the per-slot context, and expert slots across the quantum), each named in `backend/cuda/testdata/memgate_rows.txt`, so a row that stops building is red. Its table, `backend/cuda/testdata/memgate_gaps.txt`, names 843 exact rows in MM8's four CUDA items. Plants through the real ledger go red on every line, and what one Mamba-2 layer's projections add at f32 is red on `nemotron-tiny`, which is the case above: CUDA has no f32 Mamba-2 load to read directly. `TestMemGate_webgpu`: 238 builds, read after the build and after a short generation. `TestMemGate_cpu`: 382 rows; the CPU has no allocator to account, so its ledger is filled by walking what the model and the cache hold, every byte the walk can see on its field's line (`TestHoldsWalker_chargesItsLine`). Each names its rows in a file, so a row that stops building is red. On both, KV and state are also held the other way (`Reading.Exact`): a plan priced over what the row holds is red, so a row priced for the wrong precision can't pass. WebGPU's dense line still can't see an under-price while the plan counts host-kept tables it doesn't upload (`docs/measurements/mm7-cpu-webgpu-2026-11-03/plants.log`). | why: 39 pricing fixes since 2026-10-10, 31 of them hand pricing not matching allocation; `docs/measurements/mm7-2026-11/` |
+| MM7 | active | The allocation-vs-plan gate (Francis, 2026-11-02 15:05): per test model and backend, what the ledger leased on each plan line against the plan's figure, with each allocator's rounding named in the test; a lease over plan, on an unknown line, or open after Close is red. Known reds go in a skip table naming the MM8 item that removes them, and it only shrinks. A case it must cover: the backends upload Mamba-2 projections as priced (`TestResidentDense_mambaProjectionsAsUploaded` runs no uploader). The harness is `internal/guard/memgate`, with `TestMemGate_metal`: 279 Metal builds (every census fixture and cell that builds resident, and each at int4 with two KV slots, with and without the step's blocks), read after the build and after a short generation. A line may exceed its figure only by what the allocator actually rounded on it, up to the named limit, so an allowance cannot hide a request over plan; each table row is bounded in bytes, and a row that stops firing is red. Metal's KV is exact to the plan. Its table holds five gaps, each bounded from the model's geometry and in MM8's or MM5a's row. CUDA (nobara-sb01): `TestMemGate_cuda`, 474 builds (the census fixtures and cells, the memory census's windowed, expert-cache and slot cells at int4, and three shapes past the tiny context: a window the context reaches, a cap past the per-slot context, and expert slots across the quantum), each named in `backend/cuda/testdata/memgate_rows.txt`, so a row that stops building is red. Its table, `backend/cuda/testdata/memgate_gaps.txt`, names 843 exact rows in MM8's four CUDA items. Plants through the real ledger go red on every line, and what one Mamba-2 layer's projections add at f32 is red on `nemotron-tiny`, which is the case above: CUDA has no f32 Mamba-2 load to read directly. `TestMemGate_webgpu`: 238 builds, read after the build and after a short generation. `TestMemGate_cpu`: 382 rows; the CPU has no allocator to account, so its ledger is filled by walking what the model and the cache hold, every byte the walk can see on its field's line (`TestHoldsWalker_chargesItsLine`). Each names its rows in a file, so a row that stops building is red. On both, KV and state are also held the other way (`Reading.Exact`): a plan priced over what the row holds is red, so a row priced for the wrong precision can't pass. WebGPU's dense line still can't see an under-price while the plan counts host-kept tables it doesn't upload (`docs/measurements/mm7-cpu-webgpu-2026-11-03/plants.log`). | why: 39 pricing fixes since 2026-10-10, 31 of them hand pricing not matching allocation; `docs/measurements/mm7-2026-11/` |
 | MM8 | active | The memory-drift plan's gap fixes (Francis approved 2026-11-02 15:05). CUDA (nobara-sb01): the context plan prices Gated-DeltaNet's conv window and state; red first, on `qwen35-tiny` it priced 0 of the build's 16,896 bytes (`docs/measurements/mm8-cuda-2026-11/`). The audit's `postPoolBytes` half is struck: the state is allocated at upload, before the KV pools, and `deriveMemory` already subtracts it at the KV reading (`recurrentStateCharged`). Solve/Plan state line built (mbp2-sb7), and CUDA's context plan reads it, in place of the figures it passed as extra bytes. Metal (mac-sb11m): a dense build of two or more slots charges the batched step's scratch against the memory guard, a miss declining the step and not the load, an unpinned slot count gives up a slot first to keep room for that scratch, where that makes the step fit (the coordinator's decision, 2026-11-02), and `Model.ResidentNeedBytes` holds slot 0's recurrent state, so Metal's guard judges a one-slot recurrent load with it and agrees with `Plan`; no decision moves (`docs/measurements/mm8-metal-2026-11/`). Found by MM7's CPU and WebGPU rows (mbp2-sb7), each in its table: the plan prices int8 K/V at 1/8 of a byte an element where it holds one scale a head, so a narrow head is under-priced and a wide one over; the CPU prices a sliding layer's whole context where its ring holds its window, and at int8 on those fixtures the scale's under-price nets inside that figure (`memgate.Geometry` names each); a Mamba-2 window row keeps its projection output's tail alive; WebGPU's stacked experts over the plan's expert figure, not diagnosed; Gemma 4 MoE's small tables on dense, not diagnosed. Found by MM7's CUDA rows, each in its skip table (nobara-sb01): **KV staging ring**, the plan's KV figure has the pools and the block tables, and the tables' staging ring leases on the line too; **dense vectors**, as on Metal, with per-expert vectors past them on `gptoss_tiny.gguf` and `gemma4-moe-kv-tiny32`, Gemma 4's not diagnosed; **recurrent checkpoint**, as on Metal; **windowed rollback grant**, the build grants rollback from free VRAM past the plan's KV figure, by design: the context plan subtracts it, so the item is the plan's KV figure showing it, or the table naming why it does not (886,784 bytes on `mistral-tiny-window` at 8,192, beside that row's 2,048 of staging ring). Found by MM7's Metal rows, still in its skip table (mac-sb11m): decode's own scratch and uniforms lease on the scratch line and nothing prices them, for MM5; the recurrent checkpoint leases on the state line and the plan prices none; the plan's dense figure sums weight matrices, so norms, biases, sinks and rotation tables are priced nowhere (the greedy chain's embedding table is in that figure, so it is no gap); Gemma 4's MoE leases 21,128 more bytes on dense on `gemma4-moe-kv-tiny32`, and gpt-oss's experts 8,192 over on `gptoss_tiny.gguf`, neither diagnosed. Confirmed and fixed: Gemma 4 shared-KV priced as owning on CPU and WebGPU (the plan's KV, and the host fit's `kvBytesForCtx` on Francis's word of 2026-11-03, with the CPU's `NewCache` reserving each layer at its own width and a shared layer at none, where it had grown a wider one by append to about four times the plan); DeltaNet small weights unpriced; Mamba projections priced as f32 where a resident backend uploads int8, reached only by Granite on Metal or WebGPU at f32 and by Nemotron past its int4 decline. MLA's KV fixed (mbp2-sb7, 2026-11-03): Plan's CPU and WebGPU rate and the host fit's `kvBytesForCtx` price one f32 latent row at any precision, and `NewCache` reserves it, since the double price had hidden its append growth. Priced (mbp2-sb7, 2026-11-03): `residentWeightBytesSplit` sums every norm, bias and small f32 tensor beside the matrices, on every backend, and gpt-oss's expert biases as fixed bytes on the line each backend leases them on: dense on CUDA and WebGPU, experts on the CPU and Metal, where they are the 8,192 Metal's table named undiagnosed (`DeviceLoad.ExpertBytesFixed`); the fit guard's estimate prices those biases f32; the CPU's plan adds the weights' own structs (`cpuStructBytes`); and `Plan.CheckpointBytes` shows the recurrent checkpoint on an accepted Metal or CUDA plan with room for it, on the gate's state line and out of `NeedBytes`, since a load with no room for it keeps none. The CPU's gate is down to its KV rows; WebGPU's dense rows narrow to the tables a build derives, and Gemma 4's MoE to 1,128 or 2,152 bytes of them, still not diagnosed. Metal's and CUDA's dense rows bound what's left past the plan's vectors, their derived tables. To confirm, then fix or strike, one line each: vision and audio towers unpriced; WebGPU and Metal count host-kept embeddings; speculative verify's logits unpriced | `TestMC3Step_scratchPricedAtTwoSlots`, `TestMetalKVSlots_defaultLeavesRoomForTheStep`, `TestResidentNeedBytes_countsRecurrentState`, `TestPlan_pricesRecurrentState`, `TestSolvePlacement_statePricedOnEveryPath`, `TestResidentKV_sharedLayersOwnNone`, `TestHostFitKV_sharedLayersOwnNone`, `TestNewCache_reservesEachLayersWidth`, `TestResidentDense_countsEveryDeltaNetTensor`, `TestResidentDense_mambaProjectionsAsUploaded`, `TestPlan_pricesRecurrentCheckpoint`, `TestPlan_expertBiasesOnTheLineThatHoldsThem`, `TestMemGate_cpu`, `TestKVBytes_mlaHoldsOneLatentRow`; `docs/measurements/mm8-state-line-2026-11-02/`, `docs/measurements/mm8-audit-confirm-2026-11-02/`, `docs/measurements/mm8-cpu-gaps-2026-11-03/`, `docs/measurements/mm8-host-fit-shared-kv-2026-11-03/`, `docs/measurements/mm8-mla-kv-2026-11-03/` |
 | MM5a | active | MM5's first piece (mac-sb11m; #623's stack): one list of buffers, used to allocate and to price. Recurrent state: `decoder.Model.StateSpecs` per layer, which every slot and the checkpoint of Metal's DeltaNet and Mamba-2 layers allocate from and `metalRecurrentSlotBytes` and the plan's `stateBuffers` sum. Metal's batched step: `stepShape.buffers`, which `buildBatch` allocates from and `stepScratchBytes` sums, and `stepInputs`, which the build and `metalStepScratchReserve` both decide from, so the reserve before a build is the build's price, or 0 where the step cannot build. `TestStepBuffers_listIsWhatBuilds` holds the list to the ledger to the byte and the lease; on the way it found `batchSimdSumTreeOK` never freed its 544 KiB of probes, on every build with a step, now freed. MM7's gate stays green across the switch, holds step rows to the list's exact bytes, and bounds its gaps tightly: dense vectors and the checkpoint to the byte on every row, decode's scratch at 0.86 to 1.00 of what it allows. CUDA later; decode's own scratch is MM7's remaining scratch gap, for MM5 | `TestStepBuffers_listIsWhatBuilds`, `TestStepBuffers_q4kWidths`, `TestStepInputs_reserveOnShapesNoFixtureHas`, `TestRecurrentSlots_eachSlotPricesItsState`, `TestRecurrentState_everyBufferReadsTheList`, `TestMemGate_metal`; `docs/measurements/mm5a-2026-11/` |
 | AX0 | done | aikit PR #21 merged 2026-10-26 (`e262e12`): the README freezes the moving paths at root v1.75.0 and `gpu/v0.35.0`, the newest tags, and records `gpu/webgpu` as retired; S | §7.3 |
 | AX1 | done | PR #274 merged 2026-10-26 (the device package split into `cuda/internal/gpudev` and `metal/internal/gpudev`; supersedes §7.1 and §9's `internal/gpudev`); Mac gates §7.6; nobara's CUDA device run (#279) 0 regressions against aikit `gpu/v0.35.0`, and `TestCUDA_launchDirect` segfaults on both sides alike (open, aikit's at the tag; it joins goinfer's CUDA suite at AX2d); `gpu/webgpu` retired, not copied (owner, 2026-10-26); M | §7.3, §7.6; `docs/measurements/ax1-2026-10/README.md` |
 | AX2 | done | AX2a #278, AX2b #282, AX2c #283, AX2d #284; every gate PASS (§7.8–§7.10), the CUDA legs on nobara 2026-10-26 (0 differ in every tower-identity pair; the CUDA suite identical by name). Found on the way: `cuda/s4siglip`'s silent registry split (fixed in AX2b), `TestCUDA_launchDirect`'s segfault (aikit's at the tag), and four CUDA tests red on main (`TestCUDAKVSlots_pricedAgainstWhatIsLeft`, `TestResidentDenseBytes_matchesCUDADevice`), none caused by AX; M | §7.7–§7.10; `docs/measurements/ax2-2026-10/README.md` |
-| AX3 | done | #289 merged 2026-10-27: no goinfer `go.mod` requires `aikit/gpu`; `internal/movedpaths` refuses the moved paths; gates §7.11 PASS except AX3-G, which `standalone-build.yml` grades at the next release tag; S | §7.3, §7.11 |
+| AX3 | done | #289 merged 2026-10-27: no goinfer `go.mod` requires `aikit/gpu`; `internal/guard/movedpaths` refuses the moved paths; gates §7.11 PASS except AX3-G, which `standalone-build.yml` grades at the next release tag; S | §7.3, §7.11 |
 | AX4 | done | aikit #22 and #23 merged 2026-10-27, tagged v1.76.0: `vision` and `audio` deprecated toward goinfer, the four tower backends retired, `gpupins` trimmed to the four that stay; gates and results in aikit's `docs/task-ax4-retire-moved-2026-10.md`; S–M | §7.3 |
 | AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
 | AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
-| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`backend/cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309), batch 8 #515 (`TestMambaGNorm_groups` and `TestRelu2Quant_exact` to `cuda/kernels` against `internal/mamba2`, ratchet unchanged); batch 9 #524 (`TestGumbelDeviceAgreesWithHost` to `cuda/kernels` off the 0.5B model, its geometry to `launchgeom`, cuda 244/309 → 243/308; its all-`-inf` check found the device argmax's -1, fixed in #523; Metal's fused-head argmax on NaN rows, fixed by mac-sb11m on 10-30, §8 "The device argmax on Metal: NaN rows"); batches 10 and 11 #533 (`tower_base_test` off `decoder` through a named `freeVRAM`; the FMA lint to `cuda/kernels` with `launchgeom.PTXSourceName`; cuda 243/308 → 242/307; the last two: SB1's cuda test moves stop there, the coordinator under Francis's standing rule); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`backend/webgpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `backend/cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
+| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`backend/cuda/deltanet_test.go` to `cuda/kernels` against `internal/runtime/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309), batch 8 #515 (`TestMambaGNorm_groups` and `TestRelu2Quant_exact` to `cuda/kernels` against `internal/runtime/mamba2`, ratchet unchanged); batch 9 #524 (`TestGumbelDeviceAgreesWithHost` to `cuda/kernels` off the 0.5B model, its geometry to `launchgeom`, cuda 244/309 → 243/308; its all-`-inf` check found the device argmax's -1, fixed in #523; Metal's fused-head argmax on NaN rows, fixed by mac-sb11m on 10-30, §8 "The device argmax on Metal: NaN rows"); batches 10 and 11 #533 (`tower_base_test` off `decoder` through a named `freeVRAM`; the FMA lint to `cuda/kernels` with `launchgeom.PTXSourceName`; cuda 243/308 → 242/307; the last two: SB1's cuda test moves stop there, the coordinator under Francis's standing rule); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/runtime/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/runtime/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`backend/webgpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/runtime/hybridattn`, gpu 86/96 → 85/95). `backend/cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). The build's memory and device reads, fed from the machine profiles: scoped 2026-10-29 by mbp2-sb10 (§8 SB2, "the build's memory reads", #459), CUDA first; step 1, the memory-plan seam in cuda's build, its decisions as pure functions and the real build byte-identical on 412 cells (G-MP2, G-MP3; nobara-sb01, #468); step 2, cuda's memory census over the machine profiles, 558 lines (G-MC1 to 3 PASS; #476); step 3, the post-allocation reads (the KV fit, expert slots, prefill width, grants), approved by Francis 2026-10-29 18:22, option (a): the seam first, then the derived model checked on real checkpoints against a bound registered first, the census only if it holds (nobara-sb01). Held: G-DM2 after the pool term and `kvRaise` (#495), and the derived census's gates pass (2026-10-30, `docs/measurements/sb2-dcensus-2026-10-30/README.md`); M | §8 SB2 |
 | SB2-cov | done | The memory census reaches the raise (`llama-tiny@window32768`, G-DC7 passes, 2026-10-30) and the slot cap (`glm-tiny@experts16384`, 16384-wide experts whose slot buffers cross the 2 MiB quantum: four `@halfcache` lines hold 4 of 8 slots, and the slots plant changes exactly those, G-DC7 and G-DC8 pass, 2026-10-31; `docs/measurements/sb2-cov-2026-10-30/README.md`). | §8 SB2 |
 | SB2-vk | open | M1′ (gpu-allocator's first-fit placement over the build's buffers in creation order, one 64 MiB host block, a 144 MiB device constant) predicts Vulkan's device use within 7 MiB on fourteen loads (`docs/measurements/sb2-vk-2026-10-31/README.md`). WebGPU's discrete slot-census lines now predict `newKVSlot` with it instead of G-WS3's band. Left: the planner change (branch `sb2-vk-plan-2026-10-31`: the untied token table off the device as on cuda, M1′ with the context-dependent block packing, KV only on cache-owning layers) fits all fourteen within 7 MiB but has no held-out pass: held-out sets 3 and 4 were void (no unseen architecture that fits the 8 GB card went resident on WebGPU). One card and driver so far. | §8 SB2 |
@@ -94,8 +94,8 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | active | In the shadow key as VK5's week 3 (Francis brought it forward, 2026-11-02 11:52 PST; vk5 record §11); it ends with that week's grade and the switch's decision. Francis chose option A (2026-10-27). Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | done | 2026-10-27 (mbp2-sb4, Francis 18:47; the last step nobara-ci01, Francis 21:02): P1–P5 PASS. The census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation (#375); the session policy (#378); sampled n-gram speculation lossless in distribution on the fake, total variation ≤0.014 over 30,000 seeds (#382); the plain decode loop `generateInto` over a target of hooks, with no token stream changed: CPU census unchanged, CUDA 35 and WebGPU 32 resident streams byte for byte (#392) | §8 SB5; `docs/measurements/sb5-2026-10.md` |
-| SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | done | 2026-11-01 (mbp2-sb7, doc review): every generation in `internal/serveapp` starts through `engine.Engine` (`lm.genEngine()` at two sites, `drive` and `driveVL`; no direct generator call is left in the package's production code). Wire census (#376, extended #386, #389; 44 cases), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, the exported `engine` package (Francis's option B, 2026-10-28 05:01; #400–#402, #405, #407), its API shrunk (Francis, 2026-10-29 11:41; #443–#445) and renamed (#450), image and audio turns as `engine.Media` (#461, merged 2026-10-30). Not moved, and owned by no item: `internal/chatapp`'s own generator calls; see §8's closing note, and §9 is corrected. Gates re-read in `docs/measurements/sb7-close-2026-11-01/`; L | §8 |
+| SB6 | done | the scheduling policy moved to `internal/runtime/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
+| SB7 | done | 2026-11-01 (mbp2-sb7, doc review): every generation in `internal/app/serveapp` starts through `engine.Engine` (`lm.genEngine()` at two sites, `drive` and `driveVL`; no direct generator call is left in the package's production code). Wire census (#376, extended #386, #389; 44 cases), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, the exported `engine` package (Francis's option B, 2026-10-28 05:01; #400–#402, #405, #407), its API shrunk (Francis, 2026-10-29 11:41; #443–#445) and renamed (#450), image and audio turns as `engine.Media` (#461, merged 2026-10-30). Not moved, and owned by no item: `internal/app/chatapp`'s own generator calls; see §8's closing note, and §9 is corrected. Gates re-read in `docs/measurements/sb7-close-2026-11-01/`; L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `apps/examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | done | 2026-10-29 (nobara-mm01 and mac-ax01; Francis chose to convert the last tower first, option (b), 19:47): step S, per-tower goldens with plants on the CPU, CUDA, WebGPU and Metal (#388, #409, #414, and `siglip-int8` on CUDA in #493); step M, every tower block one program in `internal/vision` (audio towers on its type, #482), walked on every backend with a device path and graded by the goldens and per-program plants (#416, #417, #434, #436, #440, #446, #455, #458, #462, #463, #466, #469, #475, #479, #483, #485, #487, #489, #490, #493, and #496, the int8 walker's whole-block plan and refusals). The CPU walks all nine programs (siglip, qwen3, glm-ocr, gemma4, qwen2.5, pixtral, whisper, gemma4-audio, qwen3-asr); CUDA six (SigLIP in float32 and int8), WebGPU five, Metal six, each with its walkers' refusal tests; M | §8 SB9 |
 | SB10 | done | 2026-10-29 (mbp2-sb10): scope #422; the schema `internal/config.Settings` and `TestInventory` (tree to schema) #424; the loading flags' names, defaults and help from it #432; `loadflags.Resolve`, pure, #437, with serve's per-model overrides #441; `docs/env-vars.md`'s knob list #438 and tables #442 generated (`TestEnvVarsDoc`, schema to page), `docs/flags.md` already generated (`TestFlagsDoc`); the env-read scan through constants and `GOINFER_GIW_VERIFY` listed #447 (Francis 11:51); the three hidden rows moved #448; G-SB10-1 to 18 PASS; M | §8 SB10 |
@@ -229,7 +229,7 @@ runs 1,205 top-level tests in 249 s under `-race`; its slowest is `TestPrefillCh
 
 3,260 non-merge commits on main in the 30 days to 2026-10-26; 113 to 164 a day from 2026-10-21 to 10-25. The most
 touched files: `docs/citation-index.md` 241, `CHANGELOG.md` 229, `testdata/parity_manifest.json` 225,
-`docs/queue-engineering.md` 162, `internal/serveapp/main.go` 116, `docs/README.md` 106, `backend/metal/model.go` 99,
+`docs/queue-engineering.md` 162, `internal/app/serveapp/main.go` 116, `docs/README.md` 106, `backend/metal/model.go` 99,
 `decoder/model.go` 86.
 
 ### 1.6 Limits
@@ -267,7 +267,7 @@ touched files: `docs/citation-index.md` 241, `CHANGELOG.md` 229, `testdata/parit
 | `cuda` | 347 | 240 | 21 | 93 |
 | `metal` | 401 | 245 | 16 | 103 |
 | `gpu` | 172 | 87 | 7 | 35 |
-| `internal/serveapp` | 162 | 39 | 20 | 52 |
+| `internal/app/serveapp` | 162 | 39 | 20 | 52 |
 
 - The production seam is narrow (about 100 identifiers per backend); the test seam is the whole decoder, because the
   tests drive a backend through `decoder.Load` and a model fixture. Go re-runs a package when anything it imports
@@ -275,7 +275,7 @@ touched files: `docs/citation-index.md` 241, `CHANGELOG.md` 229, `testdata/parit
 - Where the seam is used, it is wide: CUDA's resident has 18 methods that run the model, Metal's 18 and WebGPU's 7, and
   the decoder type-asserts a resident against 34 optional interfaces (the forward-architecture doc, §0, read
   2026-10-13).
-- `internal/serveapp`'s tests call `decoder.Load` 43 times; the package takes about two minutes.
+- `internal/app/serveapp`'s tests call `decoder.Load` 43 times; the package takes about two minutes.
 
 ### 2.3 Machine state as a hidden input
 
@@ -358,7 +358,7 @@ Four homes, one kind of fact each, and each one checked so it cannot drift:
 - **No ADR files.** Decisions live in the task docs, dated and in the owner's words (SD1–SD8 here); code-notes link to them.
 - **History stays out of all four**, per `CLAUDE.md`'s comment rule: it goes in commit messages, task docs and measurement records.
 
-**The template, for `internal/mem` (MM0 starts from it):**
+**The template, for `internal/runtime/mem` (MM0 starts from it):**
 
 ```go
 // Package mem plans, accounts for and arbitrates every byte goinfer holds: weights, KV blocks, recurrent state,
@@ -381,7 +381,7 @@ Four homes, one kind of fact each, and each one checked so it cannot drift:
 //
 // Imports: the standard library only (mem/probe adds golang.org/x/sys).
 //
-// Test it: go test ./internal/mem/... (seconds; no model, no device). The machine zoo is testdata/machines/*.json.
+// Test it: go test ./internal/runtime/mem/... (seconds; no model, no device). The machine zoo is testdata/machines/*.json.
 //
 // Design: docs/code-notes/mem.md. Plan and phases: docs/tasks/task-subsystems-2026-10.md, Track MM.
 package mem
@@ -390,8 +390,8 @@ package mem
 And its folder's `CLAUDE.md`, in full:
 
 ```markdown
-# internal/mem — working rules
-- Day loop: `go test ./internal/mem/...` (seconds). Never load a model or touch a device here.
+# internal/runtime/mem — working rules
+- Day loop: `go test ./internal/runtime/mem/...` (seconds). Never load a model or touch a device here.
 - Import nothing from goinfer. Read the OS or a device only in `mem/probe`.
 - A guard threshold changes only in the committed Policy, with Francis's approval stamp.
 - A new invariant goes in `doc.go` with its test name, or SB14's test fails.
@@ -444,7 +444,7 @@ Tier 0; minutes. S.
 
 #### VK1's gates, registered 2026-10-26 before the code (mac-vk01)
 
-All tier 0: no model, no device, no timed run. The instrument is the package `internal/kernelprint`: `Compute` runs each
+All tier 0: no model, no device, no timed run. The instrument is the package `internal/diag/kernelprint`: `Compute` runs each
 aikit `linalg` and `embed` kernel goinfer's production code calls over a fixed, generated input suite and returns one
 SHA-256 per kernel, keyed by the dispatch configuration (GOARCH, `linalg.ActiveKernels().Active`, `ForcedFallbacks()`).
 "The dispatch census" is the `cpu-*` entries of `docs/hardware-coverage.json` and the predicates they name.
@@ -573,7 +573,7 @@ Switch after one week (SD6, decided 2026-10-26) with no disagreement left unexpl
 Order: VK5 shadow mode first, then VK2 (owner, 2026-10-26 13:06, relayed). Until VK4 exists, the shadow key is today's
 key with one input replaced: `aikit_version=<pin>` becomes `kernelprint=<digest>`, the SHA-256 of the dispatch
 configuration and every kernel's VK1 fingerprint. The source files are hashed as today. The instrument is
-`internal/paritykey` (today's key as a library, and the shadow key), `go run ./cmd/gate shadow <before> <after>`, and a
+`internal/guard/paritykey` (today's key as a library, and the shadow key), `go run ./cmd/gate shadow <before> <after>`, and a
 workflow, `.github/workflows/vk-shadow.yml`, that runs it on every push to main. It is not a required check and has no
 concurrency group, so collapsed pushes are not skipped. It writes the comparison to the job summary and to an artifact.
 Both fingerprints of a push come from one runner and one suite: the after side builds the suite against the after
@@ -624,7 +624,7 @@ every runner, so the key mixes in a committed table, not the runner's own finger
   - `amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt]`, #303's SDE table. Its digest equals the one 14 week-1 runs on
     AVX-512 runners recorded, so the emulation matched the hardware.
 - **The key.** `freshDepsHash` and `paritykey`'s today key end in `kernel_fingerprints=<digest of the table>`.
-- **The table's own check.** `internal/kernelprint`'s `TestCompute_table` compares the runner's own fingerprints with
+- **The table's own check.** `internal/diag/kernelprint`'s `TestCompute_table` compares the runner's own fingerprints with
   its configuration's entry, and reports a configuration with no entry as not checked. `-update` writes the entry.
 - **The shadow job.** `gate shadow` gains one explained reason: the key's definition changed at this commit.
 
@@ -771,15 +771,15 @@ packages:
 | `decoder/moepool.go`, `decoder/moepaging.go`, `decoder/moeworkingset.go`, `decoder/layerpaging.go` | 4 | 890 | 5 | expert and layer pager policies |
 | probes: `decoder/hostram_*.go`, `decoder/memwatch_*.go`, `decoder/swapwatch.go`, `decoder/faultcount_*.go`, `decoder/coldload*.go`, `decoder/giwmap_*.go` | 16 | 904 | 12 | reading the OS |
 | `internal/hostmem` | 6 | 458 | 17 | the available reading (`cmd/hostmem`) |
-| `internal/swapguard` | 2 | 235 | 2 | the swap guard |
-| `internal/fitcmd` | 1 | 312 | 5 | `goinfer fit` |
-| `internal/kvmgr` | 5 | 1,344 | 11 | KV blocks and the prefix index |
+| `internal/guard/swapguard` | 2 | 235 | 2 | the swap guard |
+| `internal/app/fitcmd` | 1 | 312 | 5 | `goinfer fit` |
+| `internal/runtime/kvmgr` | 5 | 1,344 | 11 | KV blocks and the prefix index |
 
 - `decoder/fitguard.go:fitCheckFor` reads the checkpoint's tensor headers and the machine while it decides;
   `metalWillBeResident` and `cudaWillBeResident` predict a backend's build instead of asking the backend.
 - Because decisions read the live machine, their tests do. The same load passes by night and is refused by day with the
   owner's apps open (2026-10-20: a 5.1 GB budget against a 5.6 GB need), and the night queue spends rows on it (§1.3).
-- **`internal/kvmgr` is the model to copy:** it imports only the standard library (`crypto/sha256`, `encoding/binary`,
+- **`internal/runtime/kvmgr` is the model to copy:** it imports only the standard library (`crypto/sha256`, `encoding/binary`,
   `errors`, `slices`), its tests are oracle tests, and it took 15 commits in 60 days while `decoder/residency.go` took
   58 in 30.
 
@@ -880,19 +880,19 @@ type Arbiter interface {
 
 | phase | what moves | gate (sketch) | size |
 |---|---|---|---|
-| MM0 | the probes (`hostram_*`, `memwatch_*`, `swapwatch`, `faultcount_*`, the cold-load probes) and `internal/hostmem` and `internal/swapguard`'s readings behind `mem/probe`; a fake probe for tests | identical readings through the interface; a source scan finds no OS memory read outside `mem/probe` | S |
+| MM0 | the probes (`hostram_*`, `memwatch_*`, `swapwatch`, `faultcount_*`, the cold-load probes) and `internal/hostmem` and `internal/guard/swapguard`'s readings behind `mem/probe`; a fake probe for tests | identical readings through the interface; a source scan finds no OS memory read outside `mem/probe` | S |
 | MM1 | `Solve`, out of `fitguard.go`, `fitplan.go`, `fitquery.go`, `prefill_budget.go`, `weightbytes.go`, `residentneed.go`, `kvresolve.go` and `metal_fitctx.go`; tensor-header reads move to the caller, which hands `Solve` numbers | a decision census: for every family config × zoo machine × option cell, the same decision and the same arithmetic line as today's code, byte for byte; tier 0 | M |
 | MM2 | backends report their own `Demand` for a build, their rounding included; `metalWillBeResident` and `cudaWillBeResident` go | the census unchanged; I3 per backend | M |
 | MM3 | a ledger and leases in the allocators: CUDA (`cuMemAlloc`'s 2 MiB rounding priced), Metal (buffers; no-copy aliasing as `FileMapped`), WebGPU (`backend/webgpu/bufaccount.go`) | I1 and I2 per backend at tier 0; I3 | M |
-| MM4 | the arbiter, KV11: one budget for KV blocks, expert slots and the prefix cache; `internal/kvmgr` asks it for blocks | the simulator's policy registered and graded first, then device runs | L; after KV4 and KV7 |
+| MM4 | the arbiter, KV11: one budget for KV blocks, expert slots and the prefix cache; `internal/runtime/kvmgr` asks it for blocks | the simulator's policy registered and graded first, then device runs | L; after KV4 and KV7 |
 | MM5 | demand from the program: each operation declares its buffers (weights, per-sequence state, per-step scratch), and `Demand` is their sum plus the backend's deltas | the census unchanged; a planted new family with no hand-written memory line is priced correctly | M; after OP4 |
 | MM6 | `night.py add` and `goinfer fit` call `Solve` against the target box's recorded profile at queue time | replay the last three weeks' refused night jobs: each would have been refused at queue time | S; after MM1 |
 
 #### MM0's gates, registered 2026-10-26 before the code (nobara-mm01)
 
 What moves: the OS memory readings in `decoder/hostram_*`, `decoder/memwatch_*`, `decoder/faultcount_*`, the cold-load
-residency sample (`giwResidentFraction`), `decoder/swapwatch.go`'s sampler, all of `internal/hostmem` (which `internal/mem/probe`
-absorbs; `cmd/hostmem` prints the same lines), `internal/swapguard`'s readings, the Metal module's direct `hw.memsize` reads and
+residency sample (`giwResidentFraction`), `decoder/swapwatch.go`'s sampler, all of `internal/hostmem` (which `internal/runtime/mem/probe`
+absorbs; `cmd/hostmem` prints the same lines), `internal/guard/swapguard`'s readings, the Metal module's direct `hw.memsize` reads and
 `cmd/gate`'s `/proc/<pid>/status` read. `decoder`'s exported readers (`HostRAMBytes`, `HostRAMAvailableBytes`, `SwapUsedBytes`,
 `SelfSwapReader`, `SelfSwapBytes`, `StartSwapWatch` and its types) stay, as delegates (§3 item 3). Out of scope, named so the
 gap is visible: the device readings (`cuMemGetInfo`, Metal's `recommendedMaxWorkingSetSize` and `currentAllocatedSize`) need a
@@ -904,7 +904,7 @@ All four are tier 0: no model, no device, no timed run, so the timing lock is no
 |---|---|---|---|---|
 | G-MM0-1 identical readings | (a) every parser test that existed moves with its parser and passes with its expected values unchanged; (b) a frozen copy of each pre-move reader (from `origin/main` at bc365a837), kept in a test file, agrees with the probe on the live box: `Physical`, `SelfSwap`'s availability and `FaultCounts`' ok exactly; `Available`, `SwapUsed` and `SelfSwap` equal, or between two reference reads that bracket the probe's, within 5 tries; (c) every decoder seam (`hostRAM`, `hostRAMAvailable`, `coldAvailBytes`, `coldRAMBytes`, `coldResidentFraction`, `sidecarHostRAM`) and the exported readers return the probe's value | the box has no swap configured and (b)'s swap leg compares 0 with 0 (reported, not passed) | all run to completion | seconds; Linux natively, darwin and windows in CI's root jobs |
 | G-MM0-2 a fake drives the fit guard | with `probe.Fake` installed through one test helper, each outcome is reached and named: `guardFit` (through `fitCheckFor` on a tracked tiny fixture) proceeds on an unknown reading, proceeds when it fits, auto-pins, refuses a pinned context, refuses at the floor; `decideGIWFit` reaches the same five; `planColdLoad` through `prepareColdLoad` reaches read-first, no-read-around and nothing | an outcome is reached only by setting a non-probe input (each case changes the fake's readings alone, plus the pin) | all cases run | seconds |
-| G-MM0-3 one reader | a source scan (go/ast, not text, so comments do not count) over every non-test `.go` file in all seven modules, outside `testdata/`, finds none of the OS memory reads (the literals `/proc/meminfo`, `MemTotal:`, `MemAvailable:`, `SwapTotal:`, `SwapFree:`, `VmSwap`, `VmHWM`, `VmRSS`, `statm`, `smaps`, `hw.memsize`, `vm.swapusage`, `kern.memorystatus_level`, `vm.page_`, `GlobalMemoryStatusEx`, `host_statistics64`, `task_info`; the selectors `Getrusage`, `Sysinfo`, `SYS_MINCORE`, `Mincore`) outside `internal/mem/probe`. It must go red first: a planted source per pattern is flagged. And `internal/mem/probe` imports the standard library and `golang.org/x/sys` only | the scan reads zero files, or fewer than the tree's count of non-test `.go` files less the excluded ones (a scan that read nothing passes vacuously) | runs to completion | seconds |
+| G-MM0-3 one reader | a source scan (go/ast, not text, so comments do not count) over every non-test `.go` file in all seven modules, outside `testdata/`, finds none of the OS memory reads (the literals `/proc/meminfo`, `MemTotal:`, `MemAvailable:`, `SwapTotal:`, `SwapFree:`, `VmSwap`, `VmHWM`, `VmRSS`, `statm`, `smaps`, `hw.memsize`, `vm.swapusage`, `kern.memorystatus_level`, `vm.page_`, `GlobalMemoryStatusEx`, `host_statistics64`, `task_info`; the selectors `Getrusage`, `Sysinfo`, `SYS_MINCORE`, `Mincore`) outside `internal/runtime/mem/probe`. It must go red first: a planted source per pattern is flagged. And `internal/runtime/mem/probe` imports the standard library and `golang.org/x/sys` only | the scan reads zero files, or fewer than the tree's count of non-test `.go` files less the excluded ones (a scan that read nothing passes vacuously) | runs to completion | seconds |
 | G-MM0-4 builds | `go build` and `go vet` of the root for GOOS linux, darwin and windows; `metal` for darwin; `gpu` and `cuda` for linux with their tags (`cuda goinfer_testhooks`, `gpu goinfer_testhooks`); CI's pinned `staticcheck` on the touched modules after its U1000 canary goes red; `gofmt -l` empty on every touched module | the staticcheck canary does not go red (then nothing was checked) | all run | about a minute |
 
 **MM0 read, 2026-10-26 (nobara, linux/amd64): all four pass.** G-MM0-1: `TestHost_matchesFrozenReaders` and
@@ -995,7 +995,7 @@ reports only the decoder package's time (410 s on 2026-10-27, run 40520519837), 
 #### MM1's `Solve`, registered 2026-10-26 before the code (nobara-mm01; Francis approved all of MM1 at 17:35)
 
 **What moves, in three PRs, each held to the census.**
-- **MM1a, this PR: the host guards.** D1, D2, D5 and D6 move into a new `internal/mem`: the resident guard's need, budget,
+- **MM1a, this PR: the host guards.** D1, D2, D5 and D6 move into a new `internal/runtime/mem`: the resident guard's need, budget,
   ratio, auto-pin search, refusal, warning and cap lines, the `.giw` guard, request admission, the load banner's budget, and
   the weight-cache budget. `mem` takes numbers and returns decisions with their lines. A load's KV comes in as a curve, the
   bytes at a context, because KV is not linear in the context (sliding windows flatten it). Machine state comes in as a
@@ -1012,18 +1012,18 @@ reports only the decoder package's time (410 s on 2026-10-27, run 40520519837), 
 | gate | rule (pass) | void if | stopping rule | cost basis |
 |---|---|---|---|---|
 | G-MM1-S1 the census | `TestDecisionCensus` passes without `-census.update`, on nobara and on CI's amd64 jobs (linux and windows): every group byte for byte | the census reports a capture run on an amd64 host (the golden's class not found) | runs to completion | 16 s on nobara |
-| G-MM1-S2 imports | `internal/mem` imports the standard library only (an import test, as `internal/mem/probe` has) | the test reads no source file | runs to completion | seconds |
+| G-MM1-S2 imports | `internal/runtime/mem` imports the standard library only (an import test, as `internal/runtime/mem/probe` has) | the test reads no source file | runs to completion | seconds |
 | G-MM1-S3 pure (I4) | each `mem` decision, on 10,000 generated inputs, gives the same answer twice in one goroutine and once each in 16 concurrent ones; `mem` holds no package-level variable | — | runs to completion | seconds |
 | G-MM1-S4 monotone (I5) | on the same inputs, more available memory never makes the resident or `.giw` guard's outcome worse (refusal, then auto-pin, then fits) or its pinned context smaller, and never turns an admitted request into a refusal | — | runs to completion | seconds |
 | G-MM1-S5 the existing tests | the decoder's fit tests pass unchanged: `fitguard*_test.go`, `giwfitguard_test.go`, `fitguard_giw_pinned_test.go`, `prefill_budget_test.go`, `memprobe_test.go`, `fitquery*_test.go`; the `cuda`, `metal` and `gpu` modules build and vet with their tags | — | runs to completion | about a minute |
 | G-MM1-S6 builds | build and vet for linux, darwin and windows; CI's pinned staticcheck after its canary goes red; gofmt; `touched.py`; the parity manifest stays fresh, or is refreshed once with its goldens before the push | the staticcheck canary does not go red | runs to completion | about two minutes |
 
 **MM1a read, 2026-10-26 (nobara): all six pass.** G-MM1-S1: `TestDecisionCensus` passes without `-census.update`, every group
-byte for byte, and so does the second-process test (16.5 and 16.8 s). G-MM1-S2: `internal/mem` imports the standard library only.
+byte for byte, and so does the second-process test (16.5 and 16.8 s). G-MM1-S2: `internal/runtime/mem` imports the standard library only.
 G-MM1-S3: 10,000 generated inputs give the same answers twice in one goroutine and in each of 16 at once, and the package
 declares no variable. G-MM1-S4: over a 13-reading ladder, no decision gets worse with more memory. It goes red on a planted
 defect (a refusal above 64 GiB), on its first input. G-MM1-S5: the 59 decoder fit tests named in the gate pass unchanged, as do
-`internal/fitcmd` and `internal/swapguard`; `cuda`, `metal` and `gpu` vet with their tags. G-MM1-S6: vet on linux, darwin and
+`internal/app/fitcmd` and `internal/guard/swapguard`; `cuda`, `metal` and `gpu` vet with their tags. G-MM1-S6: vet on linux, darwin and
 windows; the pinned staticcheck after its canary went red (it found `fitCheck.remedy` left unused, now removed); gofmt;
 `touched.py`; the citation lint. The parity manifest stayed fresh. The decoder keeps `fitCheck`, `giwFit` and
 `FitDeclineError` as adapters: a `fitCheck` becomes a `mem.HostCheck` (its KV as a curve over `estimateKVBytes`), and
@@ -1073,7 +1073,7 @@ f32). The decoder keeps the policy registry and its public types (`KVFacts`, `KV
 closures bound to the load's options. The decoder also keeps `resolveKVHook`, a test seam, and the architecture predicates,
 which `mem` takes as booleans.
 
-**I6, as far as MM1 reaches.** A source scan over every non-test Go file outside `internal/mem` finds each reference to a
+**I6, as far as MM1 reaches.** A source scan over every non-test Go file outside `internal/runtime/mem` finds each reference to a
 guard threshold: `WeightsMemFraction`, `fitMemFraction`, `prefillAvailFraction`, `giwMemMargin`, `residentMemFraction`,
 `MetalFitMarginBytes`, `ctxPlanFloor`, `fitWarnRatio`, `ctxFloor`, and `mem`'s own constant names. Each must be a constant
 declaration that aliases `mem` (directly or through one decoder alias), or a site on a ratchet list whose per-file count may
@@ -1093,7 +1093,7 @@ identity and default tests pass on the RTX 2070 SUPER under the timing lock (47 
 module's `ResolveKV` test. G-MM1c-3: `TestNoGuardThresholdOutsideMem` reads 726 non-test files. It finds exactly the ratchet
 (`backend/webgpu/kv_slots.go` 2, `backend/metal/backend.go` 3) and counts a planted reference. G-MM1c-4: vet on three systems and with the
 module tags, the pinned staticcheck, gofmt, `test_touched.py`; the parity manifest stayed fresh. MM1 is done with this:
-D1–D7 run through `internal/mem`, and the census holds byte for byte.
+D1–D7 run through `internal/runtime/mem`, and the census holds byte for byte.
 
 #### MM6's gates, registered 2026-10-26 before the code (nobara-mm01; Francis's answers of 22:37)
 
@@ -1456,11 +1456,11 @@ step a constructed Metal MoE load (8 experts, top-2, 512 KiB a KV step) falls fr
 | gate | rule (pass) | void if | stopping rule | cost basis |
 |---|---|---|---|---|
 | G-GF2-1 the census | `TestDecisionCensus` passes without `-census.update` | the golden's class not found on an amd64 host | runs to completion | 16 s |
-| G-GF2-2 the planner | `go test ./internal/mem/` passes, with `TestSolvePlacement_unpricedExperts` (0 and 7 bytes over 8 experts decline naming the unpriced experts); reverting the guard turns it red | — | runs to completion | under a minute |
+| G-GF2-2 the planner | `go test ./internal/runtime/mem/` passes, with `TestSolvePlacement_unpricedExperts` (0 and 7 bytes over 8 experts decline naming the unpriced experts); reverting the guard turns it red | — | runs to completion | under a minute |
 | G-GF2-3 the slack hook | the rounding diff (`TestPlanSlack_realSizeDiff`) holds its golden on nobara's card; vet with the testhooks and cuda tags | a timed run holds the card | runs to completion | about a minute |
 | G-GF2-4 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
 
-**Read, 2026-10-27 (nobara): all four pass.** G-GF2-1: the census and its second-process twin pass. G-GF2-2: `internal/mem`
+**Read, 2026-10-27 (nobara): all four pass.** G-GF2-1: the census and its second-process twin pass. G-GF2-2: `internal/runtime/mem`
 passes; the unpriced-expert test goes red with the guard reverted. G-GF2-3: `TestPlanSlack_realSizeDiff` holds its golden and
 `TestPlanSlack_matchesTheBuild` passes on the RTX 2070 SUPER (exclusive timing lock). G-GF2-4: vet (testhooks, cuda, darwin
 metal), the pinned staticcheck with its canary red, gofmt, `touched.py`, the parity refresh, the citation lint.
@@ -1521,7 +1521,7 @@ that stated; Francis decides whether it stands.**
 - G-MA-5: listed in the PR.
 
 **G-MA-1 re-registered, 2026-10-27 (Francis's option C of 10:36), before the re-run.** The rule above is replaced by this
-one. The census is computed with and without the change: "without" is this branch with `internal/mem/placement.go` taken from
+one. The census is computed with and without the change: "without" is this branch with `internal/runtime/mem/placement.go` taken from
 main. The diff is graded as before: placements and classes at every reading either run records, contexts only at readings
 both runs record.
 - **Pass:**
@@ -1554,7 +1554,7 @@ both runs record.
   expert-cached, 732 declined → resident, 92 expert-cached → resident, and 1,232 Metal fits leave the floor.
 - No placement moves down, no Metal fit falls to the floor, and no context is smaller within a placement at a reading both runs
   record.
-- The committed golden holds (`TestDecisionCensus` passes) and `go test ./internal/mem/` passes.
+- The committed golden holds (`TestDecisionCensus` passes) and `go test ./internal/runtime/mem/` passes.
 - G-MA-4 re-run on the RTX 2070 SUPER under the exclusive timing lock: 15 of 15 pass (the rounding diff's golden, the
   KV-slot, margin, dense-bytes and agreement tests; log `~/goinfer-logs/mm1/` on nobara, ma-cuda-device-rerun).
 
@@ -1586,7 +1586,7 @@ counted as searched) are on the monotone test that #321 rewrites: it asserts eve
 |---|---|---|---|---|
 | G-NP2-1 per night | a fake history with one night of ten readings at 1 GB and four nights of one reading at 6 GB: the profile is the 25th percentile of the five nights' minimums, checked against a hand computation | — | runs to completion | seconds |
 | G-NP2-2 the record | through the real runner at 23:00 a job records `night: true`; at 20:00 `night: false`; a failed reading logs a line naming it; backfill adds nothing for a job that has a start reading | — | runs to completion | seconds |
-| G-NP2-3 the unpriced MoE | on loads that keep `DeviceLoad`'s invariants (CUDA with no host copy; Metal whose host copy is its experts'), an unpriced MoE declines on CUDA and Metal and pages on the CPU, at slot counts 0 and 2; `go test ./internal/mem/` passes | — | runs to completion | seconds |
+| G-NP2-3 the unpriced MoE | on loads that keep `DeviceLoad`'s invariants (CUDA with no host copy; Metal whose host copy is its experts'), an unpriced MoE declines on CUDA and Metal and pages on the CPU, at slot counts 0 and 2; `go test ./internal/runtime/mem/` passes | — | runs to completion | seconds |
 | G-NP2-4 the census | `TestDecisionCensus`: the diff with and without the change is listed in the PR body group by group before `-census.update`. Expected: no group moves, since no fixture's experts are unpriced. Any move is listed for Francis | the golden's class not found on an amd64 host | runs to completion | about a minute |
 | G-NP2-5 builds | `test_night.py`, `touched.py`, vet, the pinned staticcheck, the citation lint | — | runs to completion | about two minutes |
 
@@ -1600,7 +1600,7 @@ counted as searched) are on the monotone test that #321 rewrites: it asserts eve
 - G-NP2-3: `TestSolvePlacement_unpricedExperts` passes on CUDA, Metal and the CPU at 0 and 2 slots. With the guard
   disabled, it goes red (resident with 0 expert bytes).
 - G-NP2-4: the census dump is byte-identical with and without the change. No fixture's experts are unpriced, so nothing moves.
-- G-NP2-5: `test_night.py` (81 tests), `go test ./internal/mem/`; the rest is in the PR.
+- G-NP2-5: `test_night.py` (81 tests), `go test ./internal/runtime/mem/`; the rest is in the PR.
 
 #### MM6 option B: the night sampled, registered 2026-11-01 08:06 PST before the re-read (nobara-mm01; the code and its red-first tests written in the same hour)
 
@@ -1647,7 +1647,7 @@ line. CUDA first (cuMemAlloc's 2 MiB rounding priced, now one figure after MM2b)
 I1 … and I2 … per backend at tier 0; I3 … with one tiny model per backend, seconds. No change to what any guard admits."
 
 **The design.**
-- **`internal/mem` gets the ledger**, its one stateful type. It records reservations; it reads nothing and decides nothing.
+- **`internal/runtime/mem` gets the ledger**, its one stateful type. It records reservations; it reads nothing and decides nothing.
   - `Ledger.Reserve(tier, line, requested, charged)` returns a `*Lease`, and `Lease.Release` is idempotent.
   - `Usage()` reports, per tier and per line, the open leases and their requested and charged bytes, plus the peak charged.
     `Unplanned` is the charged bytes of open leases whose line is empty or not a known plan line.
@@ -1671,7 +1671,7 @@ I1 … and I2 … per backend at tier 0; I3 … with one tiny model per backend,
 |---|---|---|---|---|
 | G-MM3a-1 I1, static | a source scan over every non-test file of the `cuda` module (`internal/qwencuda` and `internal/visioncuda` included) finds no call to an unlined `gpudev` constructor (`NewBufferLenOf`, `NewBufferOf`, `NewBufferLen`, `NewBufferBytes`, `MustBuf`, `NewHostBuffer`, `NewMappedHostBuffer`, `RegisterMappedHostBuffer`); it reads every file and goes red on a planted call | it reads fewer files than the module holds | runs to completion | seconds |
 | G-MM3a-2 I1, dynamic | the `cuda` package's `TestMain` installs a hook on `ReleaseObjects` and fails the run if any released device's `Usage().Unplanned` was above 0; run with the device suite once on nobara (tags `cuda goinfer_testhooks`, the tests MM2b and MM1 ran: KV slots, dense bytes, plan slack, build scratch, KS-B8, KS-H6C) and `-v`. A planted allocation on the empty line is reported | a timed run holds the card | one run | about two minutes on the card |
-| G-MM3a-3 I2 | tier 0: `internal/mem`'s ledger tests (reserve and release in any order, idempotent release, peak, by line and tier, concurrent use under `-race`); on the device: every released device's ledger has 0 open leases and 0 charged bytes after `ReleaseObjects`, and `ReleaseBuf` closes its one lease (the same hook as G-MM3a-2) | as G-MM3a-2 | as G-MM3a-2 | seconds, and the same run |
+| G-MM3a-3 I2 | tier 0: `internal/runtime/mem`'s ledger tests (reserve and release in any order, idempotent release, peak, by line and tier, concurrent use under `-race`); on the device: every released device's ledger has 0 open leases and 0 charged bytes after `ReleaseObjects`, and `ReleaseBuf` closes its one lease (the same hook as G-MM3a-2) | as G-MM3a-2 | as G-MM3a-2 | seconds, and the same run |
 | G-MM3a-4 I3 | on the RTX 2070 SUPER under the exclusive timing lock, for llama-tiny and Qwen2.5-Coder-0.5B q4_k_m (`~/models`): the device's free VRAM just after the device is created, against free VRAM after the build and one 8-token generate, gives the measured bytes. **Pass: charged ≤ measured ≤ charged + 64 MiB.** Small buffers are charged at their size, while the driver hands them out of shared 2 MiB pages; the 64 MiB also covers the modules the build loads and its streams. The record reports both numbers and the gap | another process's allocation on the card changes during the cell (the desktop's context is constant and noted) | one run per model | under a minute |
 | G-MM3a-5 one rounding rule | `TestPlanSlack_oneCopy` still passes; `allocRoundSlack` calls `gpudev`'s rule (a scan finds the 2 MiB constant once); `TestPlanSlack_matchesTheBuild` still matches to the byte | as G-MM3a-2 | runs to completion | seconds |
 | G-MM3a-6 no guard change | `TestDecisionCensus` passes unchanged; the CUDA fit, KV-slot and margin tests pass unchanged; a scan finds no non-test read of `Usage()` outside tests and the ledger's own package | — | runs to completion | about a minute |
@@ -1691,7 +1691,7 @@ If I3 misses its band, the finding is reported first and the band is not widened
 - **G-MM3a-2 and G-MM3a-3:** in the device run (tags `cuda goinfer_testhooks`, `GOINFER_HEAVY_TESTS=1`, exclusive timing lock,
   `-v`), 96 devices are released, none with an unplanned byte and none with an open lease. 27 tests pass; 7 skip on their own
   gates (KS-B8's timing and KS-H6C's breakdown and margin, which need their variables). `TestLedger_unplannedIsReported` sees
-  the planted 3 MiB, charged as 4, and the planted open lease. `internal/mem`'s ledger tests pass under `-race`.
+  the planted 3 MiB, charged as 4, and the planted open lease. `internal/runtime/mem`'s ledger tests pass under `-race`.
   - `touched.py`'s wider selection first found 4 devices with unplanned bytes: three pack-stream tests and
     `TestWindowedKV_view`, which drive the build's helpers outside a build. A stack per unplanned lease showed every one came
     from those tests and none from production. They now name the test line, and the selection passes.
@@ -1724,7 +1724,7 @@ If I3 misses its band, the finding is reported first and the band is not widened
   again).
 - **G-MM3a-6:** `TestDecisionCensus` passes unchanged. The only non-test reader of the ledger is the test seam's call site.
 - **G-MM3a-7:** vet (cuda with and without testhooks, gpu, darwin metal); the pinned staticcheck with its canary red, clean;
-  gofmt; the layout tests, with `imports.json` and the ARCHITECTURE appendix regenerated for the new `→ internal/mem`
+  gofmt; the layout tests, with `imports.json` and the ARCHITECTURE appendix regenerated for the new `→ internal/runtime/mem`
   arrows; `touched.py`; the citation lint.
 - Logs: `~/goinfer-logs/mm1/` on nobara (mm3a-device2).
 
@@ -1821,7 +1821,7 @@ If I3 misses its band, the finding is reported first and the band is not widened
   - The pinned staticcheck is clean with those tags (CI's variant), and its canary goes red. It flagged two wrappers nothing
     called, which are removed.
   - gofmt, `touched.py`, `test_touched.py` (the scan listed in `touched_scans.py`) and the citation lint pass.
-  - The layout tests pass, with `imports.json` and the ARCHITECTURE appendix regenerated for the `→ internal/mem` arrows.
+  - The layout tests pass, with `imports.json` and the ARCHITECTURE appendix regenerated for the `→ internal/runtime/mem` arrows.
 - Logs: `~/goinfer-logs/mm1/` on nobara (mm3b-kernels3, mm3b-gpu2, and main's baseline mm3b-baseline-main).
 
 #### MM3b follow-up: Gemini's review of #334, registered 2026-10-27 before the code (nobara-mm01; coordinator, 14:18)
@@ -2168,7 +2168,7 @@ on llama-tiny, the 0.5B and the 1.5B, with every `TestCUDAKVSlots_` test. With `
 | aikit package (module) | files, lines | tests | goinfer non-test importers today | lands in goinfer |
 |---|---|---:|---|---|
 | `github.com/townsendmerino/aikit/vision` (root module; Hard tier) | 23, 6,323 | 30 | 33 files: 18 in the root module, 1 in `demo/agent`, cuda 6, metal 3, gpu 5 | `internal/vision` (SD5) |
-| `github.com/townsendmerino/aikit/audio` (root module) | 8, 2,227 | 6 | root 10, cuda 1, metal 1 | `internal/audio`, beside `internal/whisper` |
+| `github.com/townsendmerino/aikit/audio` (root module) | 8, 2,227 | 6 | root 10, cuda 1, metal 1 | `internal/audio`, beside `internal/runtime/whisper` |
 | `github.com/townsendmerino/aikit/gpu` (its own module, v0.35.0): the device substrate (Metal and CUDA behind one `Device`/`Buffer`/`Queue`/`Pipeline`/`Encoder` vocabulary), copies and uploads, streams, residency sets, the ViT kernels | 15, 5,125 | 38 | cuda 31, metal 8, root 1 | `internal/gpudev` |
 | `…/gpu/qwencuda`, `…/gpu/visioncuda` (modules) | 1 each, 484 and 330 | 1 each | `visioncuda` in one cuda test | the `cuda` module |
 | `…/gpu/qwenmetal`, `…/gpu/visionmetal` (modules) | 1 each, 527 and 398 | 2 and 3 | none | the `metal` module |
@@ -2253,7 +2253,7 @@ root on `internal/vision` beside a backend on aikit's `vision` either fails to c
 silently runs the CPU tower (the hooks). Importers on origin/main `4a91080e`, non-test + test files:
 `vision` 18 + 22 root, 6 + 23 cuda, 3 + 16 metal, 5 + 8 gpu, 1 `demo/agent`; `audio` 10 + 18 root, 1 + 3 cuda, 1 + 3
 metal; aikit's `gpu` 31 + 52 cuda, 8 + 10 metal (the root imports none: `cmd/gate`'s release check and
-`internal/hwcensus`'s census name it as a module string, and AX3 points both at the two `gpudev` halves).
+`internal/diag/hwcensus`'s census name it as a module string, and AX3 points both at the two `gpudev` halves).
 
 | step | what | gate |
 |---|---|---|
@@ -2271,7 +2271,7 @@ its importer, or the citation lint goes red at AX4.
 Tier 0: tiny committed fixtures, f32 towers, no model, no timed run. Every Mac test command holds the timing lock shared.
 The test-only environment variable below is read by tests only, so `testdata/env_reads.txt` does not change.
 
-**The instrument (AX2a).** `internal/towerid` runs each tower family on its committed tiny fixture with fixed synthetic
+**The instrument (AX2a).** `internal/diag/towerid` runs each tower family on its committed tiny fixture with fixed synthetic
 inputs: SigLIP, Qwen2.5-VL, Qwen3.5-VL, Qwen3-VL with DeepStack, GLM-OCR, Gemma 4 vision, Pixtral, SigLIP2 NaFlex,
 Gemma 4 audio, Whisper, Voxtral and Qwen3-ASR. On a device backend it attaches each tower through the registry production
 uses: the unnamed slots (`EnableResident`) for SigLIP and Qwen2.5-VL, and the named ones (`multimodal.NewQwen3Tower`,
@@ -2345,7 +2345,7 @@ AX3 drops `github.com/townsendmerino/aikit/gpu` and `…/gpu/visioncuda` from ev
 moved paths out: it fails on a `.go` file importing aikit's `vision`, `audio` or `gpu` (or anything under it), and on a
 `go.mod` requiring the `gpu` module or one under it. Three things outside the imports move with it.
 
-- **`internal/hwcensus`'s census** scans goinfer's two `gpudev` halves in place of the aikit module.
+- **`internal/diag/hwcensus`'s census** scans goinfer's two `gpudev` halves in place of the aikit module.
 - **`cmd/gate release`'s row 2 and `decoder/aikit_pin_test.go`** stop pinning `aikit/gpu`; no module requires it.
 - **The citation lint.** It resolves aikit `gpu/...` citations through `cuda/go.mod`'s require. With the require gone,
   it falls back to the frozen tag `gpu/v0.35.0`, which aikit keeps (SD2, AX0), so those citations stay valid. §7.5
@@ -2579,7 +2579,7 @@ the reading before auto-merge is set.
 #### SB1 — gpu's kernel layer: decided, and its gates, registered 2026-10-27 before the code (nobara-sb01)
 
 Francis's decisions: the alias split (05:46), contained in `gpu/internal/kernels` (06:34), after `decoder`'s adapter types
-moved to `internal/adapter` (06:57, #314). The cut, from a type-checked declaration graph of package `gpu` with its tests
+moved to `internal/runtime/adapter` (06:57, #314). The cut, from a type-checked declaration graph of package `gpu` with its tests
 (tags `gpu goinfer_testhooks`): a declaration stays in `gpu` if it uses `decoder`, uses a declaration that stays, or is a
 method of a type that stays; an exported method that stays keeps its type in `gpu`, and an unexported one becomes a
 function. That leaves in `gpu` the residency glue (`backend.go` with the `decoder.RegisterBackend` call, so WebGPU still
@@ -2642,7 +2642,7 @@ test helpers:
 - `backend/cuda/gemv_rn_test.go` moves to `cuda/kernels`. It reads its PTX from `../testdata` and packs with `cuda/internal/wpack`.
   `rnCfg`, which `gemm_mma_test.go` also uses and which stays, is copied there with its "must match the .cu" note.
 - `backend/webgpu/moe_expert_test.go`, `backend/webgpu/moe_test.go` and `backend/webgpu/gumbel_test.go` move to `gpu/internal/kernels`. The gumbel test's
-  host reference, `decoder.GumbelDrawForTest` and `decoder.GumbelKeyForTest`, is three calls into `internal/sampling`; the
+  host reference, `decoder.GumbelDrawForTest` and `decoder.GumbelKeyForTest`, is three calls into `internal/runtime/sampling`; the
   moved test makes those calls itself, so it is held to the same code.
 
 Everything else that does not import decoder is one of these:
@@ -2721,11 +2721,11 @@ whose only `decoder` dependency is CPU reference functions reached through `deco
   `qGateContext`.
 
 Copying a reference is a second unvalidated implementation (`docs/parity-coverage-policy.md`). Batch 6 moves those CPU
-reference functions out of `decoder` into `internal/hybridattn` (holding the hybrid-attention layers' operations shared
+reference functions out of `decoder` into `internal/runtime/hybridattn` (holding the hybrid-attention layers' operations shared
 by `decoder` and the kernel tests, importing only the standard library and `aikit/linalg`), with `decoder` calling
-`internal/hybridattn` so there is still one implementation and `decoder/testhooks.go` forwarding its `*ForTest` helpers for
+`internal/runtime/hybridattn` so there is still one implementation and `decoder/testhooks.go` forwarding its `*ForTest` helpers for
 `cuda` and `gpu`. Then `backend/metal/deltanet_test.go` and `backend/metal/qgate_kernels_test.go` move to `metal/kernels` against
-`internal/hybridattn`, dropping their `decoder` import and `goinfer_testhooks` build constraint:
+`internal/runtime/hybridattn`, dropping their `decoder` import and `goinfer_testhooks` build constraint:
 
 - **Gate, as batches 1–5.** Every moved `Test` is listed before and found after the move (`TestDeltaNetKernels_cpuParity`,
   `TestDeltaNorm_zeroHead`, `TestDeltaNetKernels_mutations`, `TestQGateKernels_cpuParity`, `TestQGateKernels_mutations`).
@@ -2736,13 +2736,13 @@ by `decoder` and the kernel tests, importing only the standard library and `aiki
   `qwen3_5`, `qwen3_5_moe`, `qwen3_next`, and `olmo_hybrid`). Both modules build, vet, and pass `staticcheck` with and
   without `goinfer_testhooks`. `go list -deps -test ./metal/kernels/` names no `goinfer/decoder`. The ratchet's metal
   counts fall by the two files moved (`Direct: 245 → 243`, `Reach: 330 → 328`), lowered in the same commit; `imports.json`
-  and `docs/ARCHITECTURE.md` record the new `internal/hybridattn` arrows; the SB2 census exemptions are unchanged.
+  and `docs/ARCHITECTURE.md` record the new `internal/runtime/hybridattn` arrows; the SB2 census exemptions are unchanged.
 - **Void:** a run under 4 GB reclaimable (`cmd/hostmem -reclaimable`), a battery under 25% (the work stops and pushes what
   it has), or a timed holder on the timing lock.
 - **Stopping rule:** one before-run and one after-run; a mismatch, a non-bit-identical `decoder` output, or a need for a
   public API change stops the batch (`STATE: decision`).
 - **Cost basis:** seconds of device and CPU time.
-- **Read (2026-10-28, agy-sb1).** `internal/hybridattn/deltanet.go` holds the Gated DeltaNet and q-gate CPU reference
+- **Read (2026-10-28, agy-sb1).** `internal/runtime/hybridattn/deltanet.go` holds the Gated DeltaNet and q-gate CPU reference
   functions (`GatedDeltaNetStep`, `DeltaNetCore`, `DeltaNetRecurrence`, `L2NormScaledInto`, `L2NormScaled`,
   `NegExpAFromLog`, `SetDeltaCapHook`, `HasDeltaCapHook`, `SplitQGate`, `SplitQGateAlloc`, `QGateContext`), with `decoder`
   and `decoder/testhooks.go` calling them so there is one implementation. `decoder`'s 6 tests covering these paths
@@ -2763,11 +2763,11 @@ norm, and `gatedRMSNormGrouped` through `GatedRMSNormGroupedForTest`), and, for 
 Batch 7 moves the reference, the way batch 6 did:
 
 - **What moves:** the mixer between the two projections (the causal conv, the split, the selective-scan recurrence, the gate
-  and the grouped gated RMSNorm), with its state and geometry, into `internal/mamba2` (standard library, `aikit/linalg` and
-  `internal/hybridattn`'s scalar activations only). `decoder`'s `mamba2Step` keeps the projections, the int8 seams and the
-  capture hook, and calls `internal/mamba2` for the rest, so there is one implementation; `decoder/testhooks.go` keeps its
+  and the grouped gated RMSNorm), with its state and geometry, into `internal/runtime/mamba2` (standard library, `aikit/linalg` and
+  `internal/runtime/hybridattn`'s scalar activations only). `decoder`'s `mamba2Step` keeps the projections, the int8 seams and the
+  capture hook, and calls `internal/runtime/mamba2` for the rest, so there is one implementation; `decoder/testhooks.go` keeps its
   exports for `cuda` and `gpu`.
-- **Tests that move:** `TestMambaGNorm_groups` (against `internal/mamba2`'s grouped norm) and `TestActQuant_relu2` (no
+- **Tests that move:** `TestMambaGNorm_groups` (against `internal/runtime/mamba2`'s grouped norm) and `TestActQuant_relu2` (no
   `decoder` use) to `metal/kernels`. The two chain tests stay in `metal/`: their inputs are a real forward's, and only
   `decoder` produces those. Moving them needs those inputs from elsewhere (a committed capture, or a decoder-free loader), a
   change to what the gate measures, which is not this batch's to make.
@@ -2785,7 +2785,7 @@ Batch 7 moves the reference, the way batch 6 did:
 - **Stopping rule:** one before-run and one after-run; a hash mismatch, a changed test outcome or figure, or a need for a
   public API change stops the batch (`STATE: decision`).
 - **Cost basis:** seconds of CPU and device time.
-- **Read (2026-10-29, mac-ax01).** `internal/mamba2` holds the mixer (`Params`, `Weights`, `State`, `NewState`, `Mix`,
+- **Read (2026-10-29, mac-ax01).** `internal/runtime/mamba2` holds the mixer (`Params`, `Weights`, `State`, `NewState`, `Mix`,
   `GatedRMSNormGrouped`); `decoder/mamba2.go:mamba2Step` calls `mamba2.Mix`, so there is one implementation. Gate 1: all 16
   scratch hashes equal before and after, and `decoder`'s mamba tests pass with the same figures. Gate 2: 4 PASS before in
   `./metal/`, the same 4 PASS after (2 in `./metal/`, 2 in `./metal/kernels/` tagged and untagged), every figure equal. Three
@@ -2802,7 +2802,7 @@ Batch 7 moves the reference, the way batch 6 did:
 #### SB1 step 1 — cuda batch 5, registered 2026-10-29 before the code (nobara-sb01)
 
 Metal batch 6 moved the Gated DeltaNet and q-gate CPU references out of `decoder` (into
-`internal/hybridattn`). In `cuda/` and `gpu/`, only `backend/cuda/deltanet_test.go` and `backend/webgpu/deltanet_test.go` still reach
+`internal/runtime/hybridattn`). In `cuda/` and `gpu/`, only `backend/cuda/deltanet_test.go` and `backend/webgpu/deltanet_test.go` still reach
 them through `decoder/testhooks.go`, and no cuda test uses the q-gate references. This batch is the cuda one:
 `backend/cuda/deltanet_test.go` (`TestDeltaNetKernels_cpuParity`, `TestDeltaNorm_zeroHead`) moves to `cuda/kernels`, calling the
 references directly (`NewDeltaNet`, `SetDeltaCapHook`, `DeltaNetStep`, `L2NormScaled` for `decoder`'s `NewDeltaNetForTest`,
@@ -2827,7 +2827,7 @@ used by tests that stay in `cuda/`, is copied to `backend/cuda/mamba_kernels_tes
 - **Stopping rule:** one before-run and one after-run per tag set; a mismatch stops the batch and is reported.
 - **Cost basis:** seconds on nobara's RTX 2070 SUPER (batch 4's runs).
 - **Read (2026-10-29, nobara-sb01).** Both moved tests are listed before and after. 2 PASS before in `./cuda/`, and 2 PASS
-  after in `./cuda/kernels/` under `cuda` and under `cuda goinfer_testhooks` (against `internal/hybridattn`), each on a card
+  after in `./cuda/kernels/` under `cuda` and under `cuda goinfer_testhooks` (against `internal/runtime/hybridattn`), each on a card
   holding only the desktop compositor. The per-stage worst figures are equal on every run (`delta_conv` `2.37e-06`,
   `delta_gates` `2.42e-07`, `delta_rule` `7.07e-06`, `delta_gnorm` `2.22e-05`, `delta_norm` clean). The first pair of
   after-runs started with another session's `cuda.test` on the card: void, re-run, and kept in the record. Build, vet,
@@ -2926,12 +2926,12 @@ What changes:
   `gemmMMA` hash. Build, vet, staticcheck, `scripts/test_touched.py` and `internal/layout` green. Ratchet: cuda 244/310 →
   244/309. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "cuda batch 7".
 
-#### SB1 step 1 — gpu batch 5, the DeltaNet kernel test against `internal/hybridattn`, registered 2026-10-29 before the code (nobara-sb01; coordinator 11:05)
+#### SB1 step 1 — gpu batch 5, the DeltaNet kernel test against `internal/runtime/hybridattn`, registered 2026-10-29 before the code (nobara-sb01; coordinator 11:05)
 
 `backend/webgpu/deltanet_test.go` (`TestDeltaRule_cpuParity`, `TestDeltaNorm_cpuParity`) is the gpu twin of cuda batch 5: its only
 `decoder` use is the Gated DeltaNet CPU reference through `decoder/testhooks.go` (`NewDeltaNetForTest`, `SetDeltaCapHook`,
 `DeltaNetStepForTest(nil, …)`, `L2NormScaledForTest`), and everything else it touches (the context, the DeltaNet pipelines
-and layouts, `newOrSkipHW`, `cosSim`) lives in `gpu/internal/kernels`. It moves there, calling `internal/hybridattn`'s
+and layouts, `newOrSkipHW`, `cosSim`) lives in `gpu/internal/kernels`. It moves there, calling `internal/runtime/hybridattn`'s
 `NewDeltaNet`, `SetDeltaCapHook`, `DeltaNetStep` and `L2NormScaled` directly, and drops its `decoder` import and its
 `goinfer_testhooks` constraint. No production code moves. `decoder`'s DeltaNet `*ForTest` hooks then have no caller outside
 `decoder`; removing them is left to a later change.
@@ -2944,7 +2944,7 @@ and layouts, `newOrSkipHW`, `cosSim`) lives in `gpu/internal/kernels`. It moves 
   - The gpu module builds, vets and passes `staticcheck` under no tag, `gpu`, and `gpu goinfer_testhooks`;
     `go list -deps -test -tags gpu ./gpu/internal/kernels/` names no `goinfer/decoder`.
   - The ratchet's gpu counts fall by the one file (`Direct` −1, `Reach` −1), lowered in the same commit; `imports.json` and
-    `docs/ARCHITECTURE.md` record the new `gpu/internal/kernels` test arrow to `internal/hybridattn`.
+    `docs/ARCHITECTURE.md` record the new `gpu/internal/kernels` test arrow to `internal/runtime/hybridattn`.
 - **Void:** a run while a timed holder has the timing lock, or with another process's GPU context on the card besides the
   desktop compositor's (recorded before each run).
 - **Stopping rule:** one before-run and one after-run per tag set; a mismatch stops the batch and is reported.
@@ -2954,12 +2954,12 @@ and layouts, `newOrSkipHW`, `cosSim`) lives in `gpu/internal/kernels`. It moves 
   `6.03e-06`, `deltaGNorm` `1.32e-05`). Build, vet, staticcheck and `internal/layout` green; the destination reaches no
   `decoder`. Ratchet: gpu 86/96 → 85/95. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "gpu batch 5".
 
-#### SB1 step 1 — cuda batch 8, the Mamba-2 kernel tests against `internal/mamba2`, registered 2026-10-30 before the code (nobara-mm01; coordinator 07:30)
+#### SB1 step 1 — cuda batch 8, the Mamba-2 kernel tests against `internal/runtime/mamba2`, registered 2026-10-30 before the code (nobara-mm01; coordinator 07:30)
 
 The cuda twin of metal batch 7. `backend/cuda/mamba_kernels_test.go` has three tests:
 
 - `TestMambaGNorm_groups` tests the `mamba_gnorm` kernel on seeded inputs. Its one `decoder` use is the grouped gated norm
-  (`decoder.GatedRMSNormGroupedForTest`), which since metal batch 7 forwards to `internal/mamba2.GatedRMSNormGrouped`.
+  (`decoder.GatedRMSNormGroupedForTest`), which since metal batch 7 forwards to `internal/runtime/mamba2.GatedRMSNormGrouped`.
 - `TestRelu2Quant_exact` tests `relu2_quant` on seeded inputs and uses no `decoder` symbol.
 - `TestMambaKernels_cpuParity` chains the conv, SSM and norm kernels on the tiny Nemotron-H and Granite-4.0-H fixtures'
   real per-token inputs, which it captures from a `decoder` forward (`SetMambaCapHook`). It stays, as metal's chain tests did.
@@ -2970,7 +2970,7 @@ What changes:
   `cuda/kernels`' `adRig`, `adCfg`, `adI`, `mustAlloc` and `readPTX("mamba")` and `readPTX("nongated_act")`. The gated-norm
   reference is `mamba2.GatedRMSNormGrouped(want, w, groups, eps, false)`: `decoder.GatedRMSNormGroupedForTest` passes
   `ssmForceF32`, which is false unless `SetSSMForceF32` sets it, and no cuda test does, so the reference arithmetic is unchanged. `mambaCosNonZero` and `allZero` are copied; `cuda/kernels` already has an identical `cosF32`. No production code moves.
-- **Layout:** one new test arrow, `cuda/kernels → internal/mamba2`.
+- **Layout:** one new test arrow, `cuda/kernels → internal/runtime/mamba2`.
 
 **Gate:**
 - **Names:** both moved tests are listed before (in `./cuda/`) and found after (in `./cuda/kernels/`). The chain test is
@@ -3003,7 +3003,7 @@ staticcheck, `internal/layout`, `scripts/test_touched.py` and the no-`decoder` d
 `backend/cuda/gumbel_test.go`'s one test, `TestGumbelDeviceAgreesWithHost`, checks `gumbel_stage1` and `gumbel_stage2` against
 the host's Gumbel-max draw over 5 vocabulary sizes × 4 logit shapes × 3 temperatures. It loads the Qwen2.5-Coder 0.5B
 model under `GOINFER_HEAVY_TESTS` only to reach `cudaResident.gumbelPick`, and uses `decoder` only for the model and for
-the host reference (`GumbelDrawForTest`, `GumbelKeyForTest`), which forward to `internal/sampling`.
+the host reference (`GumbelDrawForTest`, `GumbelKeyForTest`), which forward to `internal/runtime/sampling`.
 
 What changes:
 
@@ -3164,7 +3164,7 @@ is a separate readback with its own callers, and is left to a later change.
     comparable, and the code path on such rows is unchanged.
   - After this merges, batch 9's `TestGumbelPick_residentWiring` passes its all-`-inf` check.
 - **Builds:** vet under `cuda` and `cuda goinfer_testhooks`, `go run ./cmd/lint` PASS, `internal/layout` with the new
-  production arrow `cuda → internal/sampling`, and `scripts/test_touched.py`.
+  production arrow `cuda → internal/runtime/sampling`, and `scripts/test_touched.py`.
 
 **Void:** a card run while another session's run holds the card, or with any CUDA context on it besides the desktop
 compositor's. **Stopping rule:** one run each. **Cost basis:** seconds; two 0.5B loads on the RTX 2070 SUPER.
@@ -3176,7 +3176,7 @@ compositor's. **Stopping rule:** one run each. **Cost basis:** seconds; two 0.5B
   `TestArgmaxTieBreak` passes. Its five tie cases are unchanged, the all-`-inf` row gives 0, and the under-`-1e30` row
   gives 423.
 - **Builds:** vet under `cuda` and `cuda goinfer_testhooks`, `go run ./cmd/lint` PASS 7/7, `internal/layout` (the new
-  arrows `cuda → internal/sampling`, production and test), and `scripts/test_touched.py` all pass.
+  arrows `cuda → internal/runtime/sampling`, production and test), and `scripts/test_touched.py` all pass.
 - **The logs:** in nobara's local log directory for this session (`mm01/argmax`).
 
 #### The device argmax's -1, the multi-row half: `argmax_rows`, registered 2026-10-30 before the code (nobara-mm01; the coordinator's option (a) under Francis's standing rule, on his end-of-day list)
@@ -3341,7 +3341,7 @@ nobara-mm01's predictions hold:
 - **G-MA4: PASS.** `gate identity -backend metal 926626e2 e4459f5e`: 29 IDENTICAL, 0 DIFFERENT, the same 14 NOT RUN as OP4m-a,
   and every family's backend outcome is the same in both builds (2m59s).
 - **G-MA5: PASS.** `touched.py`; `go run ./cmd/lint` (7 of 7); `internal/layout`, after `-update` added the test arrow
-  `metal/kernels → internal/sampling`; the citation lint.
+  `metal/kernels → internal/runtime/sampling`; the citation lint.
 - **One overlap to record:** at about 13:05, while tack's pilot held the timing lock exclusively, a `go vet ./metal/` (seconds
   of compile) ran without the lock. No timed run on this Mac measured anything then (tack's pilot times nobara).
 - Logs: `docs/measurements/metal-argmax-nan-2026-10-30/` (the red and green runs, the identity run, and the scratch test that
@@ -3372,7 +3372,7 @@ A scan for the next kernel-test batch skips these:
 #### SB2 — the admission and routing census, registered 2026-10-27 before the code (nobara-sb01)
 
 Francis's decision (11:08): census first; the pure function must reproduce it exactly; the matrices generated from it must
-equal today's committed ones byte for byte; memory questions go through `internal/mem`; no change to what is admitted or
+equal today's committed ones byte for byte; memory questions go through `internal/runtime/mem`; no change to what is admitted or
 routed (one that appears stops the work with DECISION NEEDED).
 
 Where today's decisions live (surveyed 2026-10-27): the decoder's load path (backend choice, the fit guards, which MM1's
@@ -3968,7 +3968,7 @@ written for when the lock frees, and no planner change is made without a decisio
     = 519.7 MiB on qwen2.5-7b q4_k_m. Both GGUFs carry a separate `output.weight`.
   - G-WS3 measured B − D = −222.6 and −519.1 MiB.
 - **What reads it.** WebGPU's build has no free-VRAM query and does not gate on the plan. The plan reaches `goinfer fit`
-  (`internal/fitcmd`) and serve's admin fit report.
+  (`internal/app/fitcmd`) and serve's admin fit report.
 - **The net error today.**
   - The planner's D (G-WS3) against the card's rise over the load (G-VK1), at the same context: 2,045 against 2,128 MiB on the
     1.5B, and 6,333 against 6,494 MiB on the 7B.
@@ -4659,7 +4659,7 @@ how it enters the key. This item changes no key. Every gate below is tier 0: tin
   with the CPU backend's flags (no canonical int4 kept, row4 allowed) and `checkHalf16Load` allows it, and the test
   fails both on a pair that loads with no entry and on an entry that no longer loads. A GOARCH with no entry is a named
   skip, not a pass; this box makes the amd64 entry, and the arm64 entry is a Mac's `-update`.
-- **The shadow input.** `internal/paritykey` gains the table's path, its reader and a per-family digest over a fixture
+- **The shadow input.** `internal/guard/paritykey` gains the table's path, its reader and a per-family digest over a fixture
   list, which no key reads. How it enters the key is a decision for VK (DECISION NEEDED in the record).
 
 | gate | rule | void when | stopping rule | cost basis |
@@ -4696,7 +4696,7 @@ fixture.
 ### SB5 — engine policies (sessions, prefix reuse, speculative decoding, sampling, constraints)
 
 - **Today:** 26 `spec_*` test files and the session and reuse tests in `decoder` run through loaded fixtures;
-  `internal/sampling` and `internal/kvmgr` are already packages of their own.
+  `internal/runtime/sampling` and `internal/runtime/kvmgr` are already packages of their own.
 - **Contract:** each policy runs over a `Forward` interface; an exact policy produces the same token stream as plain
   decoding.
 - **Fast check:** a fake model with scripted logits: acceptance patterns, rollbacks, branch points. M.
@@ -4770,8 +4770,8 @@ token stream changed.
 
  — the scheduler
 
-- **Today:** queueing, fair admission, jobs and batches live in the HTTP package (`internal/serveapp/batches.go`,
-  `internal/serveapp/sessions.go` and the job files; `docs/tasks/task-work-queue-2026-09.md`, J1–J9).
+- **Today:** queueing, fair admission, jobs and batches live in the HTTP package (`internal/app/serveapp/batches.go`,
+  `internal/app/serveapp/sessions.go` and the job files; `docs/tasks/task-work-queue-2026-09.md`, J1–J9).
 - **Contract:** a policy over a queue and an engine's capacity: admission order, fairness, priorities, deadlines,
   prefix-aware placement (J6), and later RF's batch building.
 - **Fast check:** a simulator on a virtual clock over recorded arrivals. M.
@@ -4779,15 +4779,15 @@ token stream changed.
 #### SB6 — the scheduling census, registered 2026-10-27 17:17 PDT before the code (mbp2-sb6)
 
 Francis chose SB6 for mbp2's second session (17:13). The way SB8 worked: census first, recorded at `origin/main`; the move
-to `internal/scheduler` must reproduce every golden byte for byte; nothing about scheduling behavior may change (a change
+to `internal/runtime/scheduler` must reproduce every golden byte for byte; nothing about scheduling behavior may change (a change
 stops the work with DECISION NEEDED).
 
-**What schedules today, read before registering.** Three decisions, all in `internal/serveapp`:
-- **Admission order** (`internal/serveapp/admission.go:admission`): a per-model FIFO turn granter, `-max-concurrent` wide (`setCap`), that a
+**What schedules today, read before registering.** Three decisions, all in `internal/app/serveapp`:
+- **Admission order** (`internal/app/serveapp/admission.go:admission`): a per-model FIFO turn granter, `-max-concurrent` wide (`setCap`), that a
   waiter leaves the moment its context ends, with a direct hand-off on `release` and `position` for `GET /v1/jobs/{id}`.
-- **The queue bound** (`internal/serveapp/openai.go:loadedModel.tryEnter`): a slot of `lm.queue`, `concurrency + -max-queue` deep, claimed
+- **The queue bound** (`internal/app/serveapp/openai.go:loadedModel.tryEnter`): a slot of `lm.queue`, `concurrency + -max-queue` deep, claimed
   before the turn and refused at once when full (the 429); a halt found after the grant gives the turn back.
-- **Prefix-aware placement** (`internal/serveapp/sessions.go:sessionLRU.acquire`): which resident session a prompt extends
+- **Prefix-aware placement** (`internal/app/serveapp/sessions.go:sessionLRU.acquire`): which resident session a prompt extends
   (`pickSessionFor`, `bestExtend`, `keepsFirst`), which idle session gives rows by copy (`donorFor`), and which is
   evicted (`coldestIdle`, `fresh`).
 
@@ -4797,7 +4797,7 @@ There is no fairness across sessions, no priority, no class and no deadline: J6'
 session, priority and deadline kept beside the order, so the first policy that uses them shows its whole diff against
 today's.
 
-**The census** is two tests in `serveapp` that add test files and goldens under `internal/serveapp/testdata/sched/` and
+**The census** is two tests in `serveapp` that add test files and goldens under `internal/app/serveapp/testdata/sched/` and
 change no other file:
 - `TestSchedCensus_admission`: a simulator on a virtual clock that replays a trace of events (arrive, finish, cancel,
   set capacity, halt, resume) through the real `tryEnter`, `exit`, `position` and `setCap` of a bare `loadedModel`, one
@@ -4819,12 +4819,12 @@ change no other file:
 |---|---|---|---|---|
 | SC1 recorded | both census tests pass at `origin/main` with the goldens written from it; recording twice gives identical files; `-count=20 -race` on the admission census passes | none: deterministic | a nondeterministic record is fixed in the driver before anything is recorded | seconds |
 | SC2 shown red | each plant fails the census and is reverted: `release` handing the turn to the back waiter (LIFO); the queue bound one deeper; a waiter granted although its context ended; `bestExtend`'s floor removed; `donorFor`'s `>=` made `>`; `coldestIdle` taking the most recent | none | one run each | seconds |
-| SC3 the move | `internal/scheduler` imports the standard library only (a rule in `internal/layout/imports.json`, so `TestLayout_arrows` fails on any goinfer import there, shown red with a planted `decoder` import); both census tests pass with no file under `internal/serveapp/testdata/sched/` in the diff | none | any golden change stops the move with DECISION NEEDED; there is no tolerance | seconds |
+| SC3 the move | `internal/runtime/scheduler` imports the standard library only (a rule in `internal/layout/imports.json`, so `TestLayout_arrows` fails on any goinfer import there, shown red with a planted `decoder` import); both census tests pass with no file under `internal/app/serveapp/testdata/sched/` in the diff | none | any golden change stops the move with DECISION NEEDED; there is no tolerance | seconds |
 | SC4 callers | `serveapp`'s admission, session, concurrency, KV-share, job and batch tests named for the moved code pass unchanged, with no test or golden of theirs in the diff; `touched.py` green | none | a red test is fixed in the move or the move is reverted, never a golden re-recorded | `touched.py` seconds; the rest is CI's |
 
 - **Census recorded (2026-10-27, mbp2, Linux amd64, Go 1.27.3, at `origin/main` `2405f834`).**
-  `internal/serveapp/sched_census_test.go`: `TestSchedCensus_admission`, 11 traces under
-  `internal/serveapp/testdata/sched/admission_traces/` with their records under `testdata/sched/admission/`, and
+  `internal/app/serveapp/sched_census_test.go`: `TestSchedCensus_admission`, 11 traces under
+  `internal/app/serveapp/testdata/sched/admission_traces/` with their records under `testdata/sched/admission/`, and
   `TestSchedCensus_placement`, 10 traces under `testdata/sched/placement_traces/` with records under
   `testdata/sched/placement/` (252 KB in all, plain JSON). The admission driver sizes the turns and the queue with the real
   `setConcurrency` (no model at one turn; `testdata/llama-attnfa-tiny` on the CPU above it). Each placement reply is
@@ -4850,9 +4850,9 @@ change no other file:
 
 The move's package shape is registered after the census lands, as SB8's was.
 
-#### SB6 — the move to `internal/scheduler`, registered 2026-10-27 before the code (mbp2-sb6)
+#### SB6 — the move to `internal/runtime/scheduler`, registered 2026-10-27 before the code (mbp2-sb6)
 
-`internal/scheduler` owns the decisions, over plain values; `serveapp` keeps what touches a `decoder.Session`, a halt, a
+`internal/runtime/scheduler` owns the decisions, over plain values; `serveapp` keeps what touches a `decoder.Session`, a halt, a
 job or HTTP, and calls it. Standard library only. Two pull requests, each green on its own:
 
 - **M1, admission and placement.** `scheduler.Admission` is today's `admission` with its methods exported (`SetCap`,
@@ -4862,7 +4862,7 @@ job or HTTP, and calls it. Standard library only. Two pull requests, each green 
   `ColdestIdle` (over busy flags, most recent first) and `PickDonor` (over each idle session's shared hit, the `>=` rule
   kept) move; `sessionLRU` computes the inputs (tokens, first prompts, busy flags, `SharedHit`) and calls them, and
   `serveapp`'s `commonPrefix`, `bestExtend`, `pickSession`, `pickSessionFor` and `keepsFirst` become delegates for the
-  tests that call them. `internal/layout/imports.json` gains a rule, `scheduler-standard-library`: `internal/scheduler`,
+  tests that call them. `internal/layout/imports.json` gains a rule, `scheduler-standard-library`: `internal/runtime/scheduler`,
   tests included, imports no goinfer package and nothing outside the standard library (a `std_only` field the layout
   test gains for it).
 - **M2, the queue bound.** The bounded queue (`lm.queue`, `concurrency + -max-queue` slots claimed before the turn,
@@ -4874,14 +4874,14 @@ job or HTTP, and calls it. Standard library only. Two pull requests, each green 
 
 **SC4, amended before the code:** `jobs_w27_test.go` waits for its waiters by reading `admission`'s lock and list, which a
 type in another package cannot expose; that loop reads the same count from `position` instead, and none of its
-assertions changes. No other test file under `internal/serveapp/` is in either diff. SC1 to SC3 stand as registered.
+assertions changes. No other test file under `internal/app/serveapp/` is in either diff. SC1 to SC3 stand as registered.
 
-- **M1 landed on its branch (2026-10-27, mbp2).** `internal/scheduler/admission.go` (`Admission`, `Record`) and
-  `internal/scheduler/placement.go` (`CommonPrefix`, `BestExtend`, `PickSession`, `KeepsFirst`, `ColdestIdle`,
+- **M1 landed on its branch (2026-10-27, mbp2).** `internal/runtime/scheduler/admission.go` (`Admission`, `Record`) and
+  `internal/runtime/scheduler/placement.go` (`CommonPrefix`, `BestExtend`, `PickSession`, `KeepsFirst`, `ColdestIdle`,
   `PickDonor`). `serveapp`'s `admission` embeds `scheduler.Admission` behind one-line delegates (its `capacity` delegate
   is gone: nothing but the old `enter` called it); `sessionLRU.donorFor` and `coldestIdle` pass the busy flags and shared
   hits to the scheduler; the five placement helpers are delegates. **SC3:** both census tests pass, 21 traces, with no
-  file under `internal/serveapp/testdata/sched/` in the diff; the same plants made inside `internal/scheduler` (LIFO
+  file under `internal/app/serveapp/testdata/sched/` in the diff; the same plants made inside `internal/runtime/scheduler` (LIFO
   `Release`, `PickDonor`'s `>`) fail the same traces as in `serveapp` before the move (10 admission traces;
   `more_conversations_than_slots`), so the census runs through the moved code. The layout rule
   `scheduler-standard-library` is in `imports.json`, with a `std_only` field in the layout test, which now knows every
@@ -4891,19 +4891,19 @@ assertions changes. No other test file under `internal/serveapp/` is in either d
   amended; 54 tests in the admission, session, concurrency, KV-share, job, batch, cancel and backpressure files run
   under `-race`: 45 pass, 9 skip (they need a `.gguf` in `GOINFER_SERVE_MODEL` or `GOINFER_MC3C_MODEL`, not run here:
   tier 0 on a CPU-only box). `touched.py` green; staticcheck clean.
-- **M2 landed on its branch (2026-10-27, mbp2).** `internal/scheduler/queue.go`: `NewQueue`, `QueueFull`, `MaxQueued`,
+- **M2 landed on its branch (2026-10-27, mbp2).** `internal/runtime/scheduler/queue.go`: `NewQueue`, `QueueFull`, `MaxQueued`,
   `Admit` (claim a slot, wait for the turn, then the halt check, which gives both back) and `Exit` (the turn, then the
   slot). The queue stays a `chan struct{}` on `loadedModel`, so the census reads it unchanged; `tryEnter` is a call to
   `Admit`, `exit` to `Exit`, and the four places that sized or read the queue call the scheduler. The halt callback
   returns `(reason, halted)`, so a halt with an empty reason still refuses, as `tryEnter`'s `hi != nil` did;
-  `TestAdmit_haltWithNoReasonRefuses` in `internal/scheduler` pins it (shown red by keying the refusal on a non-empty
+  `TestAdmit_haltWithNoReasonRefuses` in `internal/runtime/scheduler` pins it (shown red by keying the refusal on a non-empty
   reason, reverted). **SC3:** both census tests pass with no golden in the diff; plants in `queue.go` fail the census and
   are reverted: one slot deeper fails `burst_bounded_queue`, no halt check fails `halt_with_waiters`, a slot kept after
   a cancelled wait fails `cancel_queued`. **SC4:** the same 54 tests under `-race`: 45 pass, 9 skip, as in M1; no test
-  file under `internal/serveapp/` in M2's diff. `touched.py` green; staticcheck clean; `go vet` with `realckpt` and
+  file under `internal/app/serveapp/` in M2's diff. `touched.py` green; staticcheck clean; `go vet` with `realckpt` and
   `goinfer_testhooks` clean.
-- **The subsystem's documents, per §4.1 (2026-10-27, mbp2).** `internal/scheduler/doc.go` (the contract; six invariants,
-  each naming its test, which `TestPackageDocs_namedTestsExist` checks), `internal/scheduler/CLAUDE.md` (the day loop,
+- **The subsystem's documents, per §4.1 (2026-10-27, mbp2).** `internal/runtime/scheduler/doc.go` (the contract; six invariants,
+  each naming its test, which `TestPackageDocs_namedTestsExist` checks), `internal/runtime/scheduler/CLAUDE.md` (the day loop,
   the import rule, a census move needs Francis's word), `docs/code-notes/internal-scheduler.md` (why decisions over
   plain values; admission's hand-off and post-grant halt check; placement's floor, room rule and donor tie-break; what
   it does not decide, with J6's kill and J7), and `docs/ARCHITECTURE.md` (the request path and the packages table). The
@@ -4921,7 +4921,7 @@ assertions changes. No other test file under `internal/serveapp/` is in either d
   `busy` unguarded; a session past its end now counts as idle (a nil `busy`: none busy), and `TestPickDonor_shortBusy`
   panics without the guard. `serveapp` passes a flag for every session, so the census is unchanged.
 - **Closed (2026-10-27).** Francis chose option A (18:05, relayed): SB6 closes at the move. The scheduling policy is in
-  `internal/scheduler` with no behavior change: the census (#351) reproduces byte for byte through M1 (#352) and M2
+  `internal/runtime/scheduler` with no behavior change: the census (#351) reproduces byte for byte through M1 (#352) and M2
   (#353), and the §4.1 documents are #355. Priorities, classes and deadlines (J7, `docs/tasks/task-work-queue-2026-09.md`)
   stay FIFO, as the census records them, and remain a possible future item on this package; the census traces for them
   (`priorities_classes`, `deadlines_pass_while_waiting`, `fairness_flooding_session`) are the baseline a J7 policy would
@@ -4929,7 +4929,7 @@ assertions changes. No other test file under `internal/serveapp/` is in either d
 
 ### SB7 — the serving shell
 
-- **Today:** `internal/serveapp`, 76 source files and 19.9k lines; `main.go` took 116 commits in 30 days; 39 of its
+- **Today:** `internal/app/serveapp`, 76 source files and 19.9k lines; `main.go` took 116 commits in 30 days; 39 of its
   162 test files import `decoder`.
 - **Contract:** an `Engine` interface (generate, stream events, cancel, stats, models).
 - **Fast check:** a fake engine; the OpenAI and Anthropic shapes and SSE checked with no model. The `sdktest` module
@@ -4943,7 +4943,7 @@ DECISION NEEDED). The census is recorded on a branch carrying SB6's move (#352, 
 behavior (SB6's SC4).
 
 **The census** is a test in `serveapp`, `TestWireCensus`, that adds test files and goldens under
-`internal/serveapp/testdata/wire/` and changes no other file. It drives the in-process handler (`NewHandler`, as
+`internal/app/serveapp/testdata/wire/` and changes no other file. It drives the in-process handler (`NewHandler`, as
 `TestNewHandler_servesTheAPIInProcess` does) over a scripted list of requests and records, per case, the status, the
 headers a client reads (`Content-Type`, `Retry-After`, `Cache-Control`) and the body byte for byte, with an SSE stream
 kept whole (event names, data lines, separators, `[DONE]`).
@@ -4971,7 +4971,7 @@ kept whole (event names, data lines, separators, `[DONE]`).
 | W5 the engine (later steps) | with the shell on the `Engine` interface, the census passes through the real engine with no golden in the diff, and the scripted cases pass through the fake engine | none | any golden change stops with DECISION NEEDED | seconds |
 
 - **Census recorded (2026-10-27, mbp2, Linux amd64, Go 1.27.3, on `sb7-serving-shell-2026-10` off #355's head).**
-  `internal/serveapp/wire_census_test.go`: `TestWireCensus`, 38 cases in `internal/serveapp/testdata/wire/cases.json`,
+  `internal/app/serveapp/wire_census_test.go`: `TestWireCensus`, 38 cases in `internal/app/serveapp/testdata/wire/cases.json`,
   one golden each under `testdata/wire/golden/` (status, client-read headers, body), 25 on the tiny model and 13 on the
   scripted model. Each case gets a fresh in-process server, so no record depends on the cases before it; two cases send
   their request twice (`warm`) to record prefix reuse. The census takes about 0.3 s. Normalized, and named in each
@@ -5035,7 +5035,7 @@ commit, each with the census unchanged:
 - **E3, the request.** The engine request carries the sampling, constraint and think state as the shell's own types,
   so `engine` names no `decoder` or `constrain` type; the interface is exported for SB7's contract (generate, stream
   events, cancel, stats, models).
-  *Amended before E3's code (2026-10-27 19:18 PDT):* `genRequest.sp` becomes `internal/sampling.SamplingParams`, which is
+  *Amended before E3's code (2026-10-27 19:18 PDT):* `genRequest.sp` becomes `internal/runtime/sampling.SamplingParams`, which is
   field for field `decoder.SamplingParams` (decoder converts to it itself), so the decoder calls convert it in place and
   nothing about sampling changes. `genRequest.masker` stays `*constrain.Masker`: `constrain` is not `decoder`, and it is
   the codec's (SB8). Exporting the interface waits for E4, when the fake engine is its second real user. Measured
@@ -5043,7 +5043,7 @@ commit, each with the census unchanged:
   identifiers, so an `Engine` that owns all of them (models, stats, the vision and audio paths, admin) is several steps
   past E4, and SB7 is nearer L than M.
 - **E3b, the logprobs** *(registered before its code, 2026-10-27, mbp2):* `genReport.logprobs`, and what `drive`,
-  `driveVL` and `loadedModel.logprobs` pass, become `internal/sampling.SampleInfo`. The two `SampleInfo` structs match
+  `driveVL` and `loadedModel.logprobs` pass, become `internal/runtime/sampling.SampleInfo`. The two `SampleInfo` structs match
   field for field, but their `Top` element types are distinct named types, so the report copies them (`logprobsOf`),
   keeping nil as nil and empty as empty at both levels. After it `engine` names no `decoder` type. Gate: W5 (the
   census's logprobs case reproduces, and a copy that drops `Top` or turns a nil into an empty slice fails it or the
@@ -5066,7 +5066,7 @@ commit, each with the census unchanged:
 
 | gate | rule | void | stopping rule | cost basis |
 |---|---|---|---|---|
-| W5 per step | `TestWireCensus` passes with no file under `internal/serveapp/testdata/wire/` in the diff; the tiny-model cases run through `decoderEngine` and the scripted cases through `scriptedEngine` (E1 on), shown by a plant in each engine failing its own cases | none | any golden change stops the step with DECISION NEEDED | seconds |
+| W5 per step | `TestWireCensus` passes with no file under `internal/app/serveapp/testdata/wire/` in the diff; the tiny-model cases run through `decoderEngine` and the scripted cases through `scriptedEngine` (E1 on), shown by a plant in each engine failing its own cases | none | any golden change stops the step with DECISION NEEDED | seconds |
 | W6 callers | the `serveapp` tests named for the moved code (scripted, empty-answer, think, tool, KV-boundary, concurrency, session, cancel, job) pass unchanged, with no test file in the step's diff except E4's moves; `touched.py` green | none | a red test is fixed in the step or the step is reverted | `touched.py` seconds; the rest is CI's |
 #### SB7 — the model handle, registered 2026-10-27 before the code (mbp2-sb6; the coordinator's option A)
 
@@ -5076,7 +5076,7 @@ and the session LRU's model) and 11 sites that need the concrete type (the liven
 `releaseLocked`, `newSessionLRU`, `decide.ModelHidden`/`ModelPrefill` and their batch forms, one assignment in `main.go`).
 A narrower interface cannot type the field, so the steps are groups of tests, not of methods:
 
-- **H1, the handle.** `modelHandle` in `internal/serveapp/model_handle.go`: every method the shell calls on a model,
+- **H1, the handle.** `modelHandle` in `internal/app/serveapp/model_handle.go`: every method the shell calls on a model,
   with `var _ modelHandle = (*decoder.Model)(nil)`. `loadedModel.model` and the liveness keys take it; the session LRU keeps its `*decoder.Model`
   (`asDecoder`), so sessions are untouched (*narrowed before the code*). Every assignment goes through `handleOf`, which keeps a nil `*decoder.Model` a nil interface, so each of the
   27 `model == nil` / `!= nil` checks reads as it does today (an interface holding a typed nil is not nil). The sites
@@ -5091,7 +5091,7 @@ A narrower interface cannot type the field, so the steps are groups of tests, no
 | H-census | `TestWireCensus` and `TestSchedCensus_*` pass with no golden in the diff | none | any golden change stops the step with DECISION NEEDED | seconds |
 | H-nil | every assignment into a handle field goes through `handleOf` (a source-scan test fails on a bare `*decoder.Model` assigned to one), shown red by a planted bare assignment | none | one run | seconds |
 | H-callers | `touched.py` green; the W6 set and the liveness, admin, unload, tower, audio, adapter, session and concurrency tests pass unchanged (H1) or with only the sentinel swapped (H2+); `go vet` with `realckpt`, `goinfer_testhooks` and `-tags cuda`/`metal` builds of the modules that import `serveapp` | none | a red test is fixed in the step or the step is reverted | `touched.py` seconds; the rest is CI's |
-- **H1 landed on its branch (2026-10-27, mbp2; `sb7-handle-2026-10`).** `internal/serveapp/model_handle.go`: `modelHandle`
+- **H1 landed on its branch (2026-10-27, mbp2; `sb7-handle-2026-10`).** `internal/app/serveapp/model_handle.go`: `modelHandle`
   (`Close` and the 45 methods the shell calls, signatures read from `*decoder.Model` by reflection), `handleOf`,
   `asDecoder`. `loadedModel.model` and the liveness keys are handles; the load path sets the field with `handleOf`;
   `newSessionLRU`, the decision heads (`decide.ModelHidden` and the rest) and the Gemma 4 tower swap take
@@ -5169,18 +5169,18 @@ Steps, each its own pull request, each green on its own:
 | gate | rule | void | stopping rule | cost basis |
 |---|---|---|---|---|
 | X-census | `TestWireCensus` and `TestSchedCensus_*` pass with no golden in the diff | none | any golden change stops the step with DECISION NEEDED | seconds |
-| X-imports | what moved is named through `engine` in the shell; `engine` imports no shell package (a layout rule, `engine-below-the-shell`: `engine` imports nothing under `internal/serveapp`, `internal/chatapp` or `cmd`), shown red with a planted import | none | one run | seconds |
+| X-imports | what moved is named through `engine` in the shell; `engine` imports no shell package (a layout rule, `engine-below-the-shell`: `engine` imports nothing under `internal/app/serveapp`, `internal/app/chatapp` or `cmd`), shown red with a planted import | none | one run | seconds |
 | X-api | `scripts/apidiff_check.sh v0.13.0` passes (no Hard-tier change); `engine` is listed in `docs/api-tiers.md`'s Experimental tier; its `doc.go` names its invariants' tests | none | a Hard-tier report stops with DECISION NEEDED | seconds |
 | X-ratchet | `serveappDecoderTests` does not rise | none | a rise is fixed in the step | seconds |
 | X-callers | `touched.py` green; the whole `serveapp` package passes untagged and with `goinfer_testhooks` (once per step, the shared timing lock held); `go vet` under `realckpt` and `goinfer_testhooks` | none | a red test is fixed in the step or the step is reverted | about 45 s each |
 - **B1 landed on its branch (2026-10-28, mbp2; `sb7b-engine-2026-10`).** `engine/` (`doc.go`, `model.go`, `report.go`,
   `engine.go`): `Engine`, `Request`, `Report` (exported fields, `BudgetFor`), `SampleInfo`, `TokenLogprob`, `KVScope`,
   `Model`, `BlockDrafter`, and `HandleOf`, `DrafterOf`, `Call`, `IsNil`, `AsDecoder`, `ReportOf`, `Reporter`,
-  `ReportNow`, `LogprobsOf`. The package defines its own `SampleInfo` rather than expose `internal/sampling`'s in a
+  `ReportNow`, `LogprobsOf`. The package defines its own `SampleInfo` rather than expose `internal/runtime/sampling`'s in a
   public signature. The shell aliases `modelHandle`, `blockDrafter`, `kvScope` and `genReport` to them, its helpers
   delegate, and its unexported engine interface is `genEngine` (the package name took `engine`); `Engine` and
   `Request` have no user yet, which B2 changes. **X-census:** both censuses pass, no golden in the diff. **X-imports:**
-  the layout rule `engine-below-the-shell` is in `imports.json`; a planted `engine` → `internal/serveapp` import fails
+  the layout rule `engine-below-the-shell` is in `imports.json`; a planted `engine` → `internal/app/serveapp` import fails
   it, naming the rule. **X-api:** `scripts/apidiff_check.sh v0.13.0` passes; `engine` is in `docs/api-tiers.md`'s
   Experimental tier and the packages table of `docs/ARCHITECTURE.md`; its `doc.go` names four tests of its own and the
   shell's census. **X-ratchet:** 31, unchanged (`openai_test.go`'s budget table reads the exported fields).
@@ -5221,7 +5221,7 @@ Steps, each its own pull request, each green on its own:
   passes, the pitfall `Call` had. `Decoder.drafter` returns nil for a nil drafter or one holding a nil pointer, and the
   resident path asks it. `TestDecoder_typedNilDrafterIsNone` fails with the pointer check disabled (shown, reverted);
   the whole `serveapp` package passes untagged and with `goinfer_testhooks`.
-- **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
+- **E1 landed on its branch (2026-10-27, mbp2).** `internal/app/serveapp/engine.go`: `engine`, `scriptedEngine`,
   `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
   `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the
   census passes with no file under `testdata/wire/` in the diff; one token fewer in `decoderEngine`'s default path fails
@@ -5232,7 +5232,7 @@ Steps, each its own pull request, each green on its own:
   CPU-only box); the same set passes under `-race`. No test file in E1's diff. `touched.py` green; staticcheck clean;
   `go vet` with `realckpt` and `goinfer_testhooks` clean.
 - **E2 landed on its branch (2026-10-27, mbp2; `sb7-e2-2026-10`, stacked on the census and E1).** `genReport` in
-  `internal/serveapp/engine.go`, the fields the shell reads (budget clamp, logprobs, reuse, KV copy, snapshot and
+  `internal/app/serveapp/engine.go`, the fields the shell reads (budget clamp, logprobs, reuse, KV copy, snapshot and
   checkpoint counts, error), and `engine.start` returns it as a function, read afresh at each place `drive`,
   `streamTokens` and the request log read `*decoder.Generation`. `effectiveBudget` is now `genReport.budgetFor`.
   `driveVL` hands `streamTokens` its generation's report the same way and keeps its own reads of the vision fields.
@@ -5241,8 +5241,8 @@ Steps, each its own pull request, each green on its own:
   `genReport` with the same five rows: 95 pass, 9 skip, `-race` clean. `openai_test.go` no longer imports `decoder`,
   and `serveappDecoderTests` is 39. `touched.py` green; staticcheck clean.
 - **E3 landed on its branch (2026-10-27, mbp2; `sb7-e3-2026-10`, stacked on E2).** `genRequest.sp` is
-  `internal/sampling.SamplingParams`; the 17 calls into `decoder` (11 in `decoderEngine`, 6 in `driveVL`) convert it in
-  place, and the layout data records the new arrow (`internal/serveapp` to `internal/sampling`). `engine` now names
+  `internal/runtime/sampling.SamplingParams`; the 17 calls into `decoder` (11 in `decoderEngine`, 6 in `driveVL`) convert it in
+  place, and the layout data records the new arrow (`internal/app/serveapp` to `internal/runtime/sampling`). `engine` now names
   `decoder` only through `genReport.logprobs` (`decoder.SampleInfo`). **W5:** the census passes with no file under
   `testdata/wire/` in the diff; a conversion that drops `LogitBias` on the default session path fails 16 cases (the
   forced tokens are lost), reverted. **W6:** 118 tests, the W6 set plus the budget, Harmony, logit-bias,
@@ -5261,7 +5261,7 @@ Francis chose (11:41, relayed) to shrink the exported `engine` package before SB
 after a read-only review of its surface. Four changes, in three pull requests, each green on its own:
 - **S1** (with S2, the first PR). `Model`, `BlockDrafter` and the helpers `HandleOf`, `DrafterOf`, `Call`, `IsNil`,
   `AsDecoder`, `ReportNow` and `LogprobsOf` leave the package: the model handle and its helpers go back into
-  `internal/serveapp`, `Decoder.Model` is a `*decoder.Model` and `Decoder.Drafter` a `*decoder.BlockSpec`. `ReportOf`
+  `internal/app/serveapp`, `Decoder.Model` is a `*decoder.Model` and `Decoder.Drafter` a `*decoder.BlockSpec`. `ReportOf`
   and `Reporter` stay until S3, whose stream constructors replace them (the shell's vision path reads a
   `*decoder.Generation`'s report, and `Decoder` needs the same conversion, so neither side can own it alone).
 - **S2.** `engine`'s `SampleInfo`, `TokenLogprob` and `KVScope` go; `Report.Logprobs` is `[]decoder.SampleInfo` and
@@ -5283,7 +5283,7 @@ Not in scope (Francis did not choose them): renaming `Decoder`, `Spec`, `Adapter
 | S-callers | `touched.py` green; the whole `serveapp` package passes untagged and with `goinfer_testhooks` (the shared timing lock held); `go vet` under `realckpt` and `goinfer_testhooks`; staticcheck clean on `engine` and `serveapp` with its canary red | none | a red test is fixed in the step or the step is reverted | about 45 s each |
 | S-stream (S3) | a `Stream`'s `Report()` is nil-safe (a nil report function, a nil result, a nil `*Stream`'s report is nil) and `Close()` runs its done function once however often it is called; a test each | none | one run | seconds |
 - **S1 and S2 landed on their branch (2026-10-29, mbp2; `sb7b-api-shrink-2026-10-29`).** `engine/model.go` is gone:
-  the model handle, the block drafter and their helpers are `internal/serveapp`'s again (`modelHandle`,
+  the model handle, the block drafter and their helpers are `internal/app/serveapp`'s again (`modelHandle`,
   `blockDrafter`, `handleOf`, `drafterOf`, `nilHandle`, `callHandle`, `asDecoder`, `asBlockSpec`; `reportNow` beside
   the engine glue). `Decoder.Model` is a `*decoder.Model`, `Decoder.Drafter` a `*decoder.BlockSpec` (no reflection
   left in `engine`), `Report.Logprobs` is `[]decoder.SampleInfo` and `Request.Scope` a `decoder.KVScope`. The shell
@@ -5309,7 +5309,7 @@ Not in scope (Francis did not choose them): renaming `Decoder`, `Spec`, `Adapter
   tags and `realckpt`; staticcheck clean. **S-ratchet:** 31.
 - **S4 landed on its branch (2026-10-29, mbp2; `sb7b-enginetest-2026-10-29`, stacked on S3).** `Scripted` is
   `engine/enginetest.Scripted`, unchanged, with its test beside it; the shell's scripted seam (production code, a test
-  seam on `loadedModel`) builds one from there, so `internal/serveapp` imports `engine/enginetest` as well as `engine`.
+  seam on `loadedModel`) builds one from there, so `internal/app/serveapp` imports `engine/enginetest` as well as `engine`.
   `engine-below-the-shell` now covers `engine/enginetest`, and the layout data records its three arrows (`-update`).
   **S-census:** both censuses pass, no golden in the diff. **S-surface:** `TestSurface_exportsOnlyItsContract` reads
   both directories: `engine` exports eight names, `enginetest` only `Scripted`; a wrong `enginetest` list fails it,
@@ -5380,7 +5380,7 @@ diagnostics off the `*decoder.Generation`. The step moves that choice behind `en
   row name are merged, and no SB7 PR is open. Read against the tree:
   - **The contract.** An `Engine` is `Start`; its `Stream` gives `Tokens`, `Report` and `Close`; a caller cancels through `ctx`. That is
     generate, stream events, cancel and stats. "Models" is not on the interface: Francis's shrink (2026-10-29 11:41) put the
-    model handle back in `internal/serveapp`, so the shell's `modelHandle` answers for loaded models, and that is a choice, not a gap.
+    model handle back in `internal/app/serveapp`, so the shell's `modelHandle` answers for loaded models, and that is a choice, not a gap.
   - **"Checked with no model" holds in part.** The census keeps its two kinds of case: the scripted ones run with no model, and the
     rest run the tiny in-repo fixture on the CPU. It needs no downloaded asset, and `TestWireCensus` takes 0.3 s. One test file sets
     `fakeEngine`, so E4's "any route on a fake engine" was built as a seam and used only as far as the batches above went.
@@ -5390,8 +5390,8 @@ diagnostics off the `*decoder.Generation`. The step moves that choice behind `en
     passes. The S-names grep is empty.
   - **The ratchet's breakdown was not re-derived.** The count is 31, as the test holds it. The 2026-10-27 split above (22, six, the rest) came
     from reading each file; a grep today finds 26 files naming a load helper and five that do not, which is a coarser reading and does not contradict it.
-  - **One claim was wrong: §9's row put `internal/chatapp` and `cmd/*` behind the `Engine` interface.** SB7's own scope above is
-    `internal/serveapp` only, and no SB7 step touched the others. `internal/chatapp` imports no `engine` and calls `decoder`
+  - **One claim was wrong: §9's row put `internal/app/chatapp` and `cmd/*` behind the `Engine` interface.** SB7's own scope above is
+    `internal/app/serveapp` only, and no SB7 step touched the others. `internal/app/chatapp` imports no `engine` and calls `decoder`
     at four sites (`session.startGen`'s three, `session.startImageGen`'s one). The one `cmd/*` package whose production code imports `decoder`
     is `cmd/prequant`, which does not generate. §9 now says so.
   - **Out of scope and not picked up:** splitting `Report` (Francis did not choose it).
@@ -5572,13 +5572,13 @@ expressed as programs, so SB1's kit covers them on every backend. S, then M.
 
 #### SB9's gates, step S (the goldens), registered 2026-10-27 before any code (nobara-mm01; Francis's pick of 20:28)
 
-**The instrument is AX2's.** `internal/towerid` runs the twelve tower families on their committed tiny fixtures with fixed
+**The instrument is AX2's.** `internal/diag/towerid` runs the twelve tower families on their committed tiny fixtures with fixed
 synthetic inputs (seeded PCG), and fingerprints each output as the SHA-256 of its float32 bits. Run on CPU it gives 22 cases.
 On a device it runs only the families that backend declares, through the production registries; a declared family that
 does not attach is an error. `towerid.Check` already requires two runs to agree bit for bit. Step S commits each backend's
 record as a golden, and grades every later run against it.
 
-- **Where the goldens live:** `internal/towerid/testdata/towers.<backend>-<goos>-<goarch>.json`. Each holds the record and
+- **Where the goldens live:** `internal/diag/towerid/testdata/towers.<backend>-<goos>-<goarch>.json`. Each holds the record and
   its **anchor**, what its bits depend on:
   - CPU: `kernelprint.CurrentConfig()`, which is GOARCH, linalg's active kernels and any forced fallbacks;
   - CUDA: the GPU's name and the NVIDIA driver version (nvidia-smi);
@@ -5605,7 +5605,7 @@ The towers' outputs do not change in this step. GPU runs are seconds, and they r
 (22:00 to about 00:30) under the timing lock held shared.
 
 **Step S read, 2026-10-27 (nobara: Ryzen 7 3700X, RTX 2070 SUPER, NVIDIA driver 595.91.07, Go 1.27.3): all four pass.**
-- **G-SB9-1:** three goldens are committed under `internal/towerid/testdata/`. Each passes on a run without `-update`.
+- **G-SB9-1:** three goldens are committed under `internal/diag/towerid/testdata/`. Each passes on a run without `-update`.
 
   | golden | anchor | families | cases |
   |---|---|---:|---:|
@@ -5624,8 +5624,8 @@ The towers' outputs do not change in this step. GPU runs are seconds, and they r
 - **G-SB9-3:** every device case agrees with the CPU at cosine 1.000000000 (to nine places) on both backends. The largest
   max|d|/rms values are 1.76e-4 (CUDA Whisper) and 1.03e-4 (CUDA Voxtral); every vision tower is between 3.4e-7 and 5.0e-6.
   The registered bound is 0.05. No finding.
-- **G-SB9-4:** vet under each module's CI tags, staticcheck, gofmt, `touched.py`, the layout data (`internal/towerid` now
-  imports `internal/kernelprint` for the CPU anchor), the citation lint; a `changelog.d` fragment.
+- **G-SB9-4:** vet under each module's CI tags, staticcheck, gofmt, `touched.py`, the layout data (`internal/diag/towerid` now
+  imports `internal/diag/kernelprint` for the CPU anchor), the citation lint; a `changelog.d` fragment.
 - **Metal and the darwin goldens:** a named skip. A Mac session records `cpu-darwin-arm64`, `metal-darwin-arm64` and
   `webgpu-darwin-arm64` with `-towerid.update` and reviews them. The `metal` module still runs its identity check only,
   until a Mac session adds the golden test there.
@@ -5671,7 +5671,7 @@ fixtures, each run seconds. They are step S's gates, applied to Metal and to the
 | G-SB9-4M builds | vet under `metal`'s CI tags, the pinned staticcheck on `metal/` with its canary, gofmt, `touched.py`, the citation lint; a `changelog.d` fragment | — | runs to completion | minutes |
 
 **Step S on the Mac read, 2026-10-28 (M1 Pro, macOS 26.6.2 build 25G83, on battery, Go 1.27.2): all four pass.**
-- **G-SB9-1M:** two goldens are committed under `internal/towerid/testdata/`. Each passes on a run without `-update`.
+- **G-SB9-1M:** two goldens are committed under `internal/diag/towerid/testdata/`. Each passes on a run without `-update`.
 
   | golden | anchor | families | cases |
   |---|---|---:|---:|
@@ -5724,7 +5724,7 @@ fixtures, each run seconds. They are step S's gates, applied to Metal and to the
 - **G-SB9-3W:** every case agrees with the darwin CPU at cosine 1.000000000; the largest max|d|/rms is 4.8e-6 (GLM-OCR).
 - **G-SB9-5:** `TestCheckGolden_otherAnchor` passes all seven cases. A mutation that skips whatever the environment turns it
   red. On this Mac, a golden with a changed anchor fails; under `GITHUB_ACTIONS=true` it skips, naming both anchors.
-- **G-SB9-4W:** vet and the pinned staticcheck under `gpu goinfer_testhooks` and on `internal/towerid`, gofmt, `touched.py`
+- **G-SB9-4W:** vet and the pinned staticcheck under `gpu goinfer_testhooks` and on `internal/diag/towerid`, gofmt, `touched.py`
   green, the citation lint; a `changelog.d` fragment.
 
 #### SB9 step M (the towers as programs): scoping, 2026-10-28 before any code (nobara-mm01; Francis 17:26)
@@ -5750,9 +5750,9 @@ fixtures, each run seconds. They are step S's gates, applied to Metal and to the
   - SB1's op conformance kit is not built (SB1 is in step 1, moving tests).
   - OP4 (residents walk the program) has not started.
   - The decoder's `program` is unexported in `decoder`.
-  - `internal/program`, §9's home for the operation list, does not exist.
+  - `internal/runtime/program`, §9's home for the operation list, does not exist.
   - The `towers-standalone` layout rule (SB13) forbids `internal/vision` and `internal/audio` to import any goinfer
-    package, so they cannot import `internal/program` without a rule change.
+    package, so they cannot import `internal/runtime/program` without a rule change.
 
 **What step M would do.** It would give each tower block one description: a list of operations with their parameters,
 built from the tower's config. The CPU and each backend would walk that list over their existing op layer, in place of
@@ -5783,11 +5783,11 @@ operation, never folded in by a walker.
 1. **Where the tower program lives.** This sets the operation vocabulary SB1's kit and OP4 inherit.
    - (a) **Recommended:** a tower program type inside `internal/vision`, exported for the backends; the audio towers take
      it too.
-     - Pros: no layout-rule change, no new package, and nothing pre-empts OP4's design of `internal/program`. Each block
+     - Pros: no layout-rule change, no new package, and nothing pre-empts OP4's design of `internal/runtime/program`. Each block
        lands bit for bit in its own PR.
-     - Cons: two operation vocabularies, the decoder's and the towers', until OP4 extracts `internal/program` and folds this
+     - Cons: two operation vocabularies, the decoder's and the towers', until OP4 extracts `internal/runtime/program` and folds this
        one in. Until then SB1's kit covers neither, and the goldens are the only gate.
-   - (b) Create `internal/program` now, with the tower operations as its first kinds, and amend `towers-standalone` to
+   - (b) Create `internal/runtime/program` now, with the tower operations as its first kinds, and amend `towers-standalone` to
      allow it.
      - Pros: one vocabulary from the start, where §9 puts it.
      - Cons: this decides OP4's and SB1's program shape before either is designed. It changes a protected layout rule.
@@ -5880,7 +5880,7 @@ the same dispatches in the same order through the tower's existing operations:
 The loop keeps Qwen3, GLM-OCR and Qwen2.5-VL, whose blocks are later shapes. Box: the MacBook (M1 Pro), on AC; correctness
 runs only, `go test -p 2`, holding the timing lock shared.
 
-- **G-SB9M-1 on the Mac:** `TestTowerGolden_metal` passes before and after with `internal/towerid/testdata/towers.metal-darwin-arm64.json`
+- **G-SB9M-1 on the Mac:** `TestTowerGolden_metal` passes before and after with `internal/diag/towerid/testdata/towers.metal-darwin-arm64.json`
   unedited: every case of every family equals its golden, `siglip` among them, and so do the per-family plants and the
   backend comparison it already runs. `TestTowerGolden_cpu` on darwin (`towers.cpu-darwin-arm64.json`) and
   `TestTowerIdentity_metal` pass before and after. If the CPU golden's anchor is not this Mac's, its skip is recorded as a
@@ -6223,10 +6223,10 @@ holding the timing lock shared.
     `CheckRegs` refuses every op either would refuse. *Corrected in review: this line first said two lookups, and every
     check.*
   - Build and vet of the root, `metal`, `gpu` (`gpu goinfer_testhooks`) and `cuda` (`cuda goinfer_testhooks`,
-    `GOOS=linux`); CI's pinned `staticcheck` on `internal/vision`, `internal/towerid` and `metal` under
+    `GOOS=linux`); CI's pinned `staticcheck` on `internal/vision`, `internal/diag/towerid` and `metal` under
     `goinfer_testhooks`; `TestLayout_arrows` and `scripts/touched.py` are green. A changelog fragment is added.
 - **After merging `main` (#458, the walkers' `CheckShape`):** build and vet as above, the `internal/vision` and
-  `internal/towerid` tests, and the Metal tower tests pass again. All 51 figure lines of the Metal run are in the
+  `internal/diag/towerid` tests, and the Metal tower tests pass again. All 51 figure lines of the Metal run are in the
   after-run (`sb9m-b3-postmerge-*.log`).
 - **After merging `main` again (#463, Qwen2.5-VL's program):** both programs are in each list. The CPU plants of every
   program, `gemma4` and `qwen2.5` among them, turn exactly their own families red.
@@ -6255,7 +6255,7 @@ holding the timing lock shared.
     Its first run started at 3.94 GB and is void (`sb9m-b3-review-after-void.log`; every test in it passed). Every one
     of its 68 figure lines (per-case hashes, cosines, the clamps-off control, MEM2) equals the registered after-run.
     Build and vet of the root, `metal`, `gpu` and `cuda`, and CI's pinned `staticcheck` on `internal/vision`,
-    `internal/towerid` and `metal`, are green.
+    `internal/diag/towerid` and `metal`, are green.
 - **After merging `main` a third time (#462, #467, #469):** the shared misrouted cases hold both sets (the transposed
   routings and the norm weights). Metal's plants list `gemma4` and `qwen2.5`. Build, vet and `staticcheck` are green.
   The gated re-run (`sb9m-b3-after-main469.log`; 6.4 GB reclaimable, load 2.2) passes:
@@ -6457,7 +6457,7 @@ timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-metal-2026
 - **G-SB9M-3:** `forward`'s layer loop is gone. The block's order exists only as `PixtralProgram`.
 - **G-SB9M-4:**
   - The root builds and vets, and so do `metal`, `gpu` and `cuda` under their tags. CI's pinned `staticcheck` on
-    `internal/vision` and `internal/towerid` is clean, and its canary was shown red in block 3's read.
+    `internal/vision` and `internal/diag/towerid` is clean, and its canary was shown red in block 3's read.
   - `TestLayout_arrows` passes. `TestTowerOpCheckRegs` now checks `PixtralProgram`'s ops too.
   - `scripts/touched.py` is green (`sb9m-pix-touched.log`).
   - The walkers' refusal tests pass unchanged, and a changelog fragment is added.
@@ -6606,7 +6606,7 @@ dip to 2.0 GB.
   `g4aAccel.walkBlock`.
 - **G-SB9M-4:**
   - The root, `metal` (with `goinfer_testhooks`), `gpu` and `cuda` under their tags build and vet. CI's pinned
-    `staticcheck` on `internal/audio`, `internal/vision`, `internal/towerid`, `internal/layout`, `embeddinggemma2` and
+    `staticcheck` on `internal/audio`, `internal/vision`, `internal/diag/towerid`, `internal/layout`, `embeddinggemma2` and
     `metal` is clean.
   - `TestLayout_arrows` passes with the arrow `internal/audio` → `internal/vision` recorded, for production and test
     files, under #482's exception. `scripts/touched.py` is green (`g4a-touched.log`).
@@ -6696,7 +6696,7 @@ timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-audio-2026
 - **G-SB9M-3:** `QwenASREncoder.layer` is gone. Its attention loop is unchanged as `attendWindowed`.
 - **G-SB9M-4:**
   - The root builds and vets, and so do `metal`, `gpu` and `cuda` under their tags. CI's pinned `staticcheck` on
-    `internal/audio`, `internal/vision` and `internal/towerid` is clean.
+    `internal/audio`, `internal/vision` and `internal/diag/towerid` is clean.
   - `scripts/touched.py` is green, `TestLayout_arrows` included (`asr-touched.log`). A changelog fragment is added.
   - All 9 plants are red (`asr-plants.log`): the walker's seven refusals, each removed alone, and `CheckRegs`' GELU
     register and no-weight branches.
@@ -6730,7 +6730,7 @@ timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-audio-2026
 `backend/cuda/vision_encoder.go:VisionEncoder` is the tower serve runs for an int8-loaded SigLIP encoder (`-vision-quant int8`,
 or the fallback when the float32 attach fails). It was the last hand-ordered tower on a device.
 
-**Step S first, a golden for this tower.** `internal/towerid` gains a family, `siglip-int8`: the tiny SigLIP loaded with
+**Step S first, a golden for this tower.** `internal/diag/towerid` gains a family, `siglip-int8`: the tiny SigLIP loaded with
 int8 weights (`LoadEncoder(dir, true)`) on the same input as `siglip`.
 - **Where it is recorded:** only on CUDA, as Whisper's families are declared per backend. It is recorded at main before
   any change to the tower, with `-towerid.update`, into the CUDA golden anchored to the GPU and driver.
@@ -6825,7 +6825,7 @@ holding no timed run): every G-SB9a gate passes.** Logs are in `~/goinfer-logs/i
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
-  `internal/loadflags` and `docs/flags.meta.json`.
+  `internal/app/loadflags` and `docs/flags.meta.json`.
 - **Contract:** one typed schema, and `Resolve(flags, env, defaults, machine)` returning the resolved settings, pure.
 - **Fast check:** table tests; the docs generated; `TestEnvVars_docAndCodeAgree` generalized to flags and options. M.
 
@@ -6838,7 +6838,7 @@ holding no timed run): every G-SB9a gate passes.** Logs are in `~/goinfer-logs/i
 - Environment: the 42 direct reads in `testdata/env_reads.txt` (startup and diagnostic), plus the 52 per-model knobs that
   `decoder/knobs.go` snapshots at Load (23 named constants, `cudaKnobs`, `metalKnobs`) and that `Options.Knobs` overrides by
   name. `docs/env-vars.md` documents both sets; `TestEnvVars_docAndCodeAgree` checks the doc against the code.
-- Flags: 17 shared loading flags in `internal/loadflags` (both binaries); serve's 72, curated in `docs/flags.meta.json` and checked
+- Flags: 17 shared loading flags in `internal/app/loadflags` (both binaries); serve's 72, curated in `docs/flags.meta.json` and checked
   against `registerFlags` by `TestFlagsDoc`. Chat's own flags (sampling, REPL) are not load configuration and stay out of scope.
 - Resolution today is spread: `Register` reads `GOINFER_GGUF_DIRECT` and `runtime.GOOS` while registering; `resolveAuto` probes
   the machine; `Options()` maps; serve layers per-model keys on top.
@@ -6878,7 +6878,7 @@ settings), 50 knobs (`GOINFER_MOE_CACHE_EXPERTS` and `_SLOTS` sit on theirs), an
 its reason. A knob's class is its `docs/env-vars.md` section: "Diagnostics and experiment knobs — NOT contract" is Diagnostic.
 - G-SB10-1, G-SB10-2: PASS (`TestInventory`). It was red once before the commit on a default the table had wrong (`--fit` prints
   `true`, not `on`), so the default check reads. Only the shared loading flags' defaults are recorded and checked: serve's own
-  flags are registered in `internal/serveapp`, which this package does not import; step 2 owns them. `--moe-pager`'s darwin
+  flags are registered in `internal/app/serveapp`, which this package does not import; step 2 owns them. `--moe-pager`'s darwin
   default is recorded and checked only on a darwin run.
 - G-SB10-3: PASS (`TestInventory_plants`, eight plants, each reported by name).
 - G-SB10-4: PASS. The diff is `internal/config`, two `scripts/touched_scans.py` rows, `internal/layout/imports.json`'s two test
@@ -6891,10 +6891,10 @@ recorded in the schema. Help that differs by binary is one text with serve's par
 
 | gate | rule (pass) | void if | stopping rule | cost basis |
 |---|---|---|---|---|
-| G-SB10-5 help and defaults unchanged | a golden of every flag `loadflags.Register` adds, for chat and for serve (name, usage text, `DefValue`, value type), recorded from `origin/main`'s code in a commit before the move, is equal byte for byte after it (`--moe-pager`'s `DefValue` is checked against `decoder.MoEPagerDefault(runtime.GOOS)`, so the golden holds on every OS); `TestFlagsDoc` green, so `docs/flags.md` is unchanged; every existing `internal/loadflags` test green | the golden commit is not the parent of the move | runs to completion | seconds |
+| G-SB10-5 help and defaults unchanged | a golden of every flag `loadflags.Register` adds, for chat and for serve (name, usage text, `DefValue`, value type), recorded from `origin/main`'s code in a commit before the move, is equal byte for byte after it (`--moe-pager`'s `DefValue` is checked against `decoder.MoEPagerDefault(runtime.GOOS)`, so the golden holds on every OS); `TestFlagsDoc` green, so `docs/flags.md` is unchanged; every existing `internal/app/loadflags` test green | the golden commit is not the parent of the move | runs to completion | seconds |
 | G-SB10-6 serve's defaults | a test beside `registerFlags` checks that every flag serve registers has a schema setting whose `Default` equals its `DefValue` with `GOINFER_GGUF_DIRECT` unset; shown red once by a planted wrong default | — | runs to completion | seconds |
 | G-SB10-7 read from the schema | a test that changes one shared setting's default and help in `Settings` sees `Register`'s flag change with it, for a flag of each value kind (string, bool, int, float, and the custom `quant`, `embed-int4` and `fit` values) | — | runs to completion | seconds |
-| G-SB10-8 nothing else moved | no decoder file changes, so no parity hash stales; the one new production arrow is `internal/loadflags → internal/config`; `touched.py`, gofmt, vet, the pinned staticcheck with its canary, the layout tests, the citation lint | — | runs to completion | about two minutes |
+| G-SB10-8 nothing else moved | no decoder file changes, so no parity hash stales; the one new production arrow is `internal/app/loadflags → internal/config`; `touched.py`, gofmt, vet, the pinned staticcheck with its canary, the layout tests, the citation lint | — | runs to completion | about two minutes |
 
 **Step 2's results, 2026-10-29 (mbp2-sb10, linux/amd64).** The shared flags' usage text moved to `internal/config/help.go`;
 each setting carries `Help`, `PerModel` (serve's override key) and `ServeHelp` (`--ctx`'s serve clause), and
@@ -6902,14 +6902,14 @@ each setting carries `Help`, `PerModel` (serve's override key) and `ServeHelp` (
 flags now carry their defaults (32 non-empty). `--direct-load` still ORs in `GOINFER_GGUF_DIRECT` at registration, and
 `--moe-pager`'s platform default is now the schema's `DefaultOn`, held equal to `decoder.MoEPagerDefault` on every OS by the
 golden; making both inputs to `Resolve` is step 3.
-- G-SB10-5: PASS. The golden (`internal/loadflags/testdata/register.golden.json`, 17 flags for each app) was recorded from
+- G-SB10-5: PASS. The golden (`internal/app/loadflags/testdata/register.golden.json`, 17 flags for each app) was recorded from
   `origin/main`'s `Register` in the commit before the move, and `TestRegister_golden` is green after it; `TestFlagsDoc` green;
-  every `internal/loadflags` test green.
-- G-SB10-6: PASS (`TestConfigDefaults` in `internal/serveapp`); red once on a planted `--addr` default.
+  every `internal/app/loadflags` test green.
+- G-SB10-6: PASS (`TestConfigDefaults` in `internal/app/serveapp`); red once on a planted `--addr` default.
 - G-SB10-7: PASS (`TestRegister_readsTheSchema`, seven planted defaults and help texts across string, bool, int, float, `quant`,
   `embed-int4` and `fit`).
-- G-SB10-8: PASS. No decoder file changed. New arrows: `internal/loadflags → internal/config` (production) and
-  `internal/serveapp → internal/config` (test); `internal/config`'s test is now an external test package, since `loadflags`
+- G-SB10-8: PASS. No decoder file changed. New arrows: `internal/app/loadflags → internal/config` (production) and
+  `internal/app/serveapp → internal/config` (test); `internal/config`'s test is now an external test package, since `loadflags`
   imports `config`. `touched.py` green, gofmt and vet clean, the pinned staticcheck clean (its canary red earlier this session
   on the same binary), the layout tests green.
 
@@ -6923,7 +6923,7 @@ today, and calls `Resolve`. Serve's per-model merge is 3b, after Francis's answe
 
 | gate | rule (pass) | void if | stopping rule | cost basis |
 |---|---|---|---|---|
-| G-SB10-9 same options | a golden of `Options()` (every field but `LoadAbort`), recorded from the current code in a commit before the change with `autoBackend` stubbed, over a table: the defaults, each shared flag at a non-default value, `--backend` auto resolving to cuda, metal and cpu and named cpu and metal, `--embed-int4` given and not on metal, for chat and serve; `Resolve` over the same table after the change equals it byte for byte; every existing `internal/loadflags` test green | the golden commit is not before the change | runs to completion | seconds |
+| G-SB10-9 same options | a golden of `Options()` (every field but `LoadAbort`), recorded from the current code in a commit before the change with `autoBackend` stubbed, over a table: the defaults, each shared flag at a non-default value, `--backend` auto resolving to cuda, metal and cpu and named cpu and metal, `--embed-int4` given and not on metal, for chat and serve; `Resolve` over the same table after the change equals it byte for byte; every existing `internal/app/loadflags` test green | the golden commit is not before the change | runs to completion | seconds |
 | G-SB10-10 pure | `Resolve` with `autoBackend` replaced by a function that fails the test returns the table's options from `Machine.Auto`; `register` given goos `darwin` and a `GOINFER_GGUF_DIRECT` of `1` through its parameters yields `--moe-pager` pool and `--direct-load` true on any host, with the process environment unset | — | runs to completion | seconds |
 | G-SB10-11 nothing else moved | no decoder file changes; the golden of step 2 (`TestRegister_golden`), `TestFlagsDoc` and `TestConfigDefaults` green; `touched.py`, gofmt, vet, the pinned staticcheck, the layout tests, the citation lint | — | runs to completion | about two minutes |
 
@@ -6932,7 +6932,7 @@ today, and calls `Resolve`. Serve's per-model merge is 3b, after Francis's answe
 takes the OS and whether `GOINFER_GGUF_DIRECT` is set: the variable is passed as a value rather than a lookup function
 because `TestEnvVars_docAndCodeAgree` finds reads by their literal `os.Getenv` call, and `Register` keeps that call.
 - G-SB10-9: PASS. `testdata/resolve.golden.json` (26 cases for each app) was recorded from the pre-change `Options()`, at the
-  commit before the change; `TestOptions_golden` is green after it, and every existing `internal/loadflags` test is green.
+  commit before the change; `TestOptions_golden` is green after it, and every existing `internal/app/loadflags` test is green.
   The golden records that `--direct-load` does not reach `Options.DirectLoad`: the apps hand it to `modelload` beside the
   options, as before.
 - G-SB10-10: PASS (`TestResolve_pure`); red once on a planted probe call inside `Resolve` ("Resolve probed the devices").
@@ -6957,13 +6957,13 @@ head's quant stays serve's rule (`decide.HeadQuant`): serve computes it and pass
 | gate | rule (pass) | void if | stopping rule | cost basis |
 |---|---|---|---|---|
 | G-SB10-13 serve's options unchanged | a golden of `modelSpec.options(cfg)` (every field but `LoadAbort`), recorded from the current code in a commit before the change, over a table: a bare spec, each per-model key alone (and `stream=false`, `embed-int4` both ways), a decision head with and without `quant=` and with a global `--quant`, global `--kv i8` and `--kv-quant`, each serve load setting changed, and `--backend metal` without `embed-int4`; the same table after the change equals it byte for byte; `TestOptions_golden` and `TestResolve_pure` (chat's, no overrides) unchanged | the golden commit is not before the change | runs to completion | seconds |
-| G-SB10-14 one merge | after the change `internal/serveapp`'s non-test files assign no `decoder.Options` field that `Resolve` sets (a source scan for `o.<Field> =` and `opts.<Field> =` on those fields) outside a listed exception (the drafter's pricing, computed from the drafter, not configured); shown red once by a planted assignment | — | runs to completion | seconds |
+| G-SB10-14 one merge | after the change `internal/app/serveapp`'s non-test files assign no `decoder.Options` field that `Resolve` sets (a source scan for `o.<Field> =` and `opts.<Field> =` on those fields) outside a listed exception (the drafter's pricing, computed from the drafter, not configured); shown red once by a planted assignment | — | runs to completion | seconds |
 | G-SB10-15 nothing else moved | no decoder file changes; `TestRegister_golden`, `TestFlagsDoc`, `TestConfigDefaults`, `TestInventory` green; `touched.py`, gofmt, vet, the pinned staticcheck, the layout tests, the citation lint | — | runs to completion | about two minutes |
 
 **Step 3b's results, 2026-10-29 (mbp2-sb10, linux/amd64).** `loadflags.Overrides` (the per-model keys and `*ServeLoad`),
 `Resolve(f, m, ov)`, and `Flags.OptionsWith(ov)`; `modelSpec.options` builds the overrides, picks a decision head's quant with
 `decide.HeadQuant` as before, and makes one call. Serve's four `or*` helpers went with the merge they served.
-- G-SB10-13: PASS. `internal/serveapp/testdata/options.golden.json` (28 cases) was recorded from the old `modelSpec.options`
+- G-SB10-13: PASS. `internal/app/serveapp/testdata/options.golden.json` (28 cases) was recorded from the old `modelSpec.options`
   in the commit before the change and is equal after it; chat's `TestOptions_golden` and `TestResolve_pure` unchanged. After
   that commit the golden test was rewritten not to import `decoder` (serve's test files that import it are held at 31 by
   `TestServeappTests_decoderImportsOnlyFall`, SB7): `--moe-pager`'s default is read from the registered flag and
@@ -7147,7 +7147,7 @@ they promised.
   before the run, load 2.03.
 - **G-SB11-11:** the KV-slot, plan-slack, ledger and cost tests pass on the tree merged with step 1's review fixes
   (19 tests); logits with the counter on equal logits with it off.
-- **Builds:** vet and the pinned staticcheck under `cuda goinfer_testhooks`, staticcheck on `internal/mem`,
+- **Builds:** vet and the pinned staticcheck under `cuda goinfer_testhooks`, staticcheck on `internal/runtime/mem`,
   `internal/cost` and `decoder`, `touched.py`, the layout tests, the citation lint; a `changelog.d` fragment.
 
 **Review fixes on #370, 2026-10-27 (Gemini's review, relayed by the coordinator).** The gates did not change; G-SB11-8
@@ -7475,7 +7475,7 @@ exclusive lock, with the same void rule as G-SB11b-5. One run, about 1 minute.
 - **G-SB11b-1, 2, 3: PASS** (tier 0, 07:25).
   - `TestTurnWire_golden`: chat completions, completions, responses and messages, buffered and streamed, and the job
     object. Each carries one `timings` block with the four fields, and `cost` only when asked (`{}` on the scripted engine).
-    The golden is `internal/serveapp/testdata/wire/sb11b_turn.golden.json`.
+    The golden is `internal/app/serveapp/testdata/wire/sb11b_turn.golden.json`.
   - `TestTurnWire_costOverHTTP` (the review's point 4): the real handler on the tiny CPU model, buffered and streamed. A
     request that asks gets a prefill and a decode phase, whose tokens equal its prompt less what was reused, and its
     completion tokens. One that does not ask gets no `cost`.
@@ -7507,7 +7507,7 @@ exclusive lock, with the same void rule as G-SB11b-5. One run, about 1 minute.
   - vet (realckpt; cuda goinfer_testhooks), the pinned staticcheck 0.8.1 (its canary red), the parity refresh (36 forward
     goldens green, 0 deps_hash lines stale) and the citation lint, in both day-gate runs (06:11 and 07:25).
   - `touched.py` was red in each of those runs, on a layout ratchet, and is green at 07:29, 20 of 20 (`raw/touched-0729-pass.log`).
-    The 06:11 run's ratchets were the `internal/serveapp → internal/cost` arrow, and a 243rd decoder-importing cuda test
+    The 06:11 run's ratchets were the `internal/app/serveapp → internal/cost` arrow, and a 243rd decoder-importing cuda test
     file (the test moved into `kv_slots_test.go`). The 07:25 run's was the `engine → internal/cost` arrow. All are recorded
     in `internal/layout/imports.json`.
   - `raw/day-gates-0611*.log` and `raw/day-gates-0725*.log` are those runs as they ended.
@@ -8022,7 +8022,7 @@ and `docs/ARCHITECTURE.md` can read. It holds two things:
     `linalg` and `embed`.
   - The two gpudev halves (`cuda/internal/gpudev`, `metal/internal/gpudev`) import no goinfer package.
   - `cuda/kernels` and `metal/kernels` never import `decoder`, in tests either.
-  - `internal/mem/probe` imports no goinfer package; that it is the only OS memory reader stays MM0's
+  - `internal/runtime/mem/probe` imports no goinfer package; that it is the only OS memory reader stays MM0's
     `TestOnlyProbeReadsOSMemory`.
   - No root-module package imports the `cuda`, `metal` or `gpu` modules or aikit's GPU modules, and the root `go.mod`
     requires none of them.
@@ -8058,7 +8058,7 @@ imports no goinfer package, and the external allow-list is unchanged.
 
 | gate | rule (pass) | void when | stopping rule | cost basis |
 |---|---|---|---|---|
-| L4 the exception, red first | `TestLayout_towersStandalone` reads `towers-standalone` from `imports.json` and calls `breaks`. `internal/audio` → `internal/vision` is allowed, from a test file too. Each of these is still forbidden: `internal/audio` → `internal/vision/x`, → `decoder`, → `internal/mem`, → the root package, → `multimodal`; `internal/vision` → `internal/audio`, → `decoder`; an external import outside aikit's `linalg` and `embed`. The test is committed before the data change and is red on the allowed case alone. | never | one run | seconds |
+| L4 the exception, red first | `TestLayout_towersStandalone` reads `towers-standalone` from `imports.json` and calls `breaks`. `internal/audio` → `internal/vision` is allowed, from a test file too. Each of these is still forbidden: `internal/audio` → `internal/vision/x`, → `decoder`, → `internal/runtime/mem`, → the root package, → `multimodal`; `internal/vision` → `internal/audio`, → `decoder`; an external import outside aikit's `linalg` and `embed`. The test is committed before the data change and is red on the allowed case alone. | never | one run | seconds |
 | L5 the scan still goes red | with `breaks`' `allow_goinfer` check planted to match by prefix ("internal" allows every `internal/...`), and then with the exception listed under `internal/vision` instead, `TestLayout_towersStandalone` is red each time | never | one run each | seconds |
 | L6 the tree | `TestLayout_arrows` and `TestArchitecture_importAppendix` pass; the arrows are unchanged, since no code imports across yet | never | one run | seconds |
 | L7 builds | `scripts/touched.py` is green | never | one run | seconds |
@@ -8068,7 +8068,7 @@ imports no goinfer package, and the external allow-list is unchanged.
 - **L4:** with the data unchanged, `TestLayout_towersStandalone` fails on the allowed case alone (`l4-red.log`). With
   `allow_goinfer` in the data, it passes (`l4-l6-green.log`).
 - **L5:** each plant turns it red (`l5-plants.log`):
-  - matching by prefix lets `internal/audio` import `internal/vision/x` and `internal/mem`;
+  - matching by prefix lets `internal/audio` import `internal/vision/x` and `internal/runtime/mem`;
   - moving the exception's key to `internal/vision` forbids the allowed import again;
   - reversing the exception (`internal/vision` may import `internal/audio`) is red both ways.
 - **L6:** `TestLayout_arrows`, `TestArchitecture_importAppendix` (the appendix regenerated) and
@@ -8080,17 +8080,17 @@ imports no goinfer package, and the external allow-list is unchanged.
 | package | owns | may import |
 |---|---|---|
 | `decoder` (public) | the facade: `Load`, `Model`, `Options`, generation; the per-family adapter files (VK2) | everything in this table except the backend modules |
-| `internal/program` (out of `decoder` when SB1 needs it) | the operation list and the CPU reference | aikit `linalg` |
-| `internal/backendapi` (SB1) | the backend interface | `internal/program`, `internal/mem` |
-| `internal/mem`, `internal/mem/probe` (MM) | planning, the ledger, the arbiter; the probes | the standard library (the probes also `golang.org/x/sys`) |
-| `internal/kvmgr` | KV blocks and the prefix index | the standard library |
+| `internal/runtime/program` (out of `decoder` when SB1 needs it) | the operation list and the CPU reference | aikit `linalg` |
+| `internal/backendapi` (SB1) | the backend interface | `internal/runtime/program`, `internal/runtime/mem` |
+| `internal/runtime/mem`, `internal/runtime/mem/probe` (MM) | planning, the ledger, the arbiter; the probes | the standard library (the probes also `golang.org/x/sys`) |
+| `internal/runtime/kvmgr` | KV blocks and the prefix index | the standard library |
 | `internal/gpudev` (AX) | the device substrate | `golang.org/x/sys`, purego |
 | `internal/vision`, `internal/audio` (AX) | the towers | aikit `linalg` and `embed` |
 | `multimodal` (public) | the goinfer side of each tower | `internal/vision`, `internal/audio` |
-| the `cuda`, `metal` and `gpu` modules | backends | `internal/backendapi`, `internal/program`, `internal/mem`, `internal/gpudev`, aikit; **never** `decoder` once SB1 lands |
-| `internal/scheduler` (SB6) | the scheduling policy | the standard library |
-| `internal/serveapp` | the serving shell | `decoder` through `engine.Engine` for every generation, and through its model handle for the rest (SB7) |
-| `internal/chatapp`, `cmd/*` | the CLI shell and tools | `decoder` directly; SB7 did not move them (§8, SB7's closing note) |
+| the `cuda`, `metal` and `gpu` modules | backends | `internal/backendapi`, `internal/runtime/program`, `internal/runtime/mem`, `internal/gpudev`, aikit; **never** `decoder` once SB1 lands |
+| `internal/runtime/scheduler` (SB6) | the scheduling policy | the standard library |
+| `internal/app/serveapp` | the serving shell | `decoder` through `engine.Engine` for every generation, and through its model handle for the rest (SB7) |
+| `internal/app/chatapp`, `cmd/*` | the CLI shell and tools | `decoder` directly; SB7 did not move them (§8, SB7's closing note) |
 
 ## 10. Performance: counters per change, timed runs once a day
 
@@ -8319,7 +8319,7 @@ Purity, for the -race clause: neither census test is pure. `buildCensus` runs D1
 
 | gate | rule (PASS iff) | void if | stopping rule | cost basis |
 |---|---|---|---|---|
-| PW2a-G1 every test still runs, by name | `docs/measurements/ci-tail-2026-10-27/shard_cover.py` reads every `go test` line of the five decoder shards and `test-rest` in `ci.yml` at `origin/main` and at the branch, lists the top-level tests of `./decoder` and `./internal/sampling` (`go test -list`, `-tags goinfer_testhooks`), and maps each to the steps that select it, applying `-run`, `-skip` and the package list. PASS iff, on both sides, every listed test is selected by exactly one -race step; the two sides select the same tests (counts printed, equal); the only tests whose step changed are the two census tests; and the no-race sampler-gates step selects the same tests on both sides | the two sides' test lists differ (main moved under the branch: re-run on a merged tree) | one run | `go test -list` compiles two packages, under a minute |
+| PW2a-G1 every test still runs, by name | `docs/measurements/ci-tail-2026-10-27/shard_cover.py` reads every `go test` line of the five decoder shards and `test-rest` in `ci.yml` at `origin/main` and at the branch, lists the top-level tests of `./decoder` and `./internal/runtime/sampling` (`go test -list`, `-tags goinfer_testhooks`), and maps each to the steps that select it, applying `-run`, `-skip` and the package list. PASS iff, on both sides, every listed test is selected by exactly one -race step; the two sides select the same tests (counts printed, equal); the only tests whose step changed are the two census tests; and the no-race sampler-gates step selects the same tests on both sides | the two sides' test lists differ (main moved under the branch: re-run on a merged tree) | one run | `go test -list` compiles two packages, under a minute |
 | PW2a-G2 -race kept | in G1's map, every test that ran under -race on `origin/main` runs under -race on the branch, the census tests included (no exception is claimed: they are not pure, above) | as G1 | one run | in G1 |
 | PW2a-G3 check names | the set of job ids and of job `name:`s in `ci.yml` (loaded as YAML) is identical at `origin/main` and the branch, so the 19 required checks keep existing and branch protection needs no change | — | one run | a second |
 | PW2a-G4 the census steps ran their tests | in the first PR run, each new census step's summary lists its test with an elapsed time over 60 s (a skip or a zero-match reads near 0 s), and the tail's top-level test count plus the two census steps' counts equals the count main's tail reported at the PR's merge base | a decoder test was added or removed between the merge base and the PR head (then compare against `go test -list` on the PR head) | the first PR run | read from its logs |
@@ -8349,7 +8349,7 @@ depends on is a hidden input, and a replayed pass would hide a change in it.
 
 | hidden input | how the scan finds it |
 |---|---|
-| OS memory | an import of `internal/mem/probe`, the only OS memory reader since MM0 |
+| OS memory | an import of `internal/runtime/mem/probe`, the only OS memory reader since MM0 |
 | a device | `metal`, `cuda` or `gpu` code, or an aikit `gpu` import |
 | a subprocess | `exec.Command`; its environment and its reads are untracked |
 | the whole environment | `os.Environ()`, which `testlog` does not record |
@@ -8376,10 +8376,10 @@ Most packages that import `decoder` are therefore not cacheable, because `Load`'
 | gate | rule | void when | stopping rule | cost basis |
 |---|---|---|---|---|
 | PW5-G1 complete and true | `TestTestCache_classified` passes; every directory holding a Go file in the seven modules has an entry; every non-cacheable entry names at least one reason | never | one run | seconds |
-| PW5-G2 the scan bites | three `gate mutation` plants turn it red, naming the package and the reason: `exec.Command` in a test of `internal/f16`; `time.Since` in a test of `internal/giw`; an import of `decoder` in a test of `internal/towerid` ("OS memory", reached through `decoder`) | never | one run each | seconds |
+| PW5-G2 the scan bites | three `gate mutation` plants turn it red, naming the package and the reason: `exec.Command` in a test of `internal/runtime/f16`; `time.Since` in a test of `internal/runtime/giw`; an import of `decoder` in a test of `internal/diag/towerid` ("OS memory", reached through `decoder`) | never | one run each | seconds |
 | PW5-G3 touched.py honors it | `scripts/test_touched.py`: a cacheable package's `go test` has no `-count=1`; a non-cacheable one, an unlisted one, and every package when the data file is missing or malformed all keep it | never | one run | seconds |
 | PW5-G4 the cache replays only what it should | in G5's second run, every package the data marks cacheable whose inputs the edit did not touch prints `(cached)`, and no non-cacheable package does | the edit touches every cacheable package | one run | from G5 |
-| PW5-G5 the measurement | `touched.py`'s wall time on the diff `0158bdc0..3d01e4a3` (`decoder` 3 files, `internal/mem` 3, `metal` 1, and the scan tests they trigger), on the PW5 branch, under a private `GOCACHE` warmed once by an untimed run. Sequence: before A1, then a one-line comment edit to one `decoder` file in the diff, A2, a run with no change A3; the edit reverted; after B1, the same edit, B2, B3. Each run records its wall time, the packages that ran and replayed, and the 1-minute load average at its start. Reported as measured, with no pass bar: Francis asked for the number | a run starts with the load average above 4.0 (re-run it, and list it) | one sequence | about 6 runs × a minute or two |
+| PW5-G5 the measurement | `touched.py`'s wall time on the diff `0158bdc0..3d01e4a3` (`decoder` 3 files, `internal/runtime/mem` 3, `metal` 1, and the scan tests they trigger), on the PW5 branch, under a private `GOCACHE` warmed once by an untimed run. Sequence: before A1, then a one-line comment edit to one `decoder` file in the diff, A2, a run with no change A3; the edit reverted; after B1, the same edit, B2, B3. Each run records its wall time, the packages that ran and replayed, and the 1-minute load average at its start. Reported as measured, with no pass bar: Francis asked for the number | a run starts with the load average above 4.0 (re-run it, and list it) | one sequence | about 6 runs × a minute or two |
 
 **PW5 graded, 2026-10-27: G1–G3 PASS, G4 VOID in its registered run and shown by B3, G5 measured**
 (`docs/measurements/pw5-2026-10.md`).
@@ -8388,7 +8388,7 @@ Most packages that import `decoder` are therefore not cacheable, because `Load`'
 - On `0158bdc0..3d01e4a3`, a re-run with nothing changed fell from about 133 s to 124.3 s. Three cacheable tests
   replayed, saving about 9 s. Most of the time is `metal`'s device suite (about 100 s) and `decoder` (13–18 s), both
   uncached by their hidden inputs.
-- G2's first plant moved to `internal/kvmgr` (`internal/f16` has no test), and timing counts only test files, as
+- G2's first plant moved to `internal/runtime/kvmgr` (`internal/runtime/f16` has no test), and timing counts only test files, as
   registered. Both are recorded there.
 
 **Amended 2026-10-27, after Gemini's second look at #327** (`docs/measurements/pw5-2026-10.md` §5):

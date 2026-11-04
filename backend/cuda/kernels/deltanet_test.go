@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	"github.com/townsendmerino/goinfer/internal/hybridattn"
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // The whole Gated-DeltaNet mixer chain on CUDA vs the CPU reference, at REAL head geometry,

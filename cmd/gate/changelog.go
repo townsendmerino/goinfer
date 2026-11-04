@@ -94,7 +94,7 @@ func normRoute(r string) string { return placeholderRE.ReplaceAllString(r, "{}")
 
 // serveRoutes parses the non-test files of internal/serveapp and returns every route literal passed to a HandleFunc or Handle call.
 func serveRoutes(src clSource) (map[string]bool, error) {
-	names, err := src.list("internal/serveapp")
+	names, err := src.list("internal/app/serveapp")
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func serveRoutes(src clSource) (map[string]bool, error) {
 		if !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
 			continue
 		}
-		b, err := src.read("internal/serveapp/" + n)
+		b, err := src.read("internal/app/serveapp/" + n)
 		if err != nil {
 			return nil, err
 		}

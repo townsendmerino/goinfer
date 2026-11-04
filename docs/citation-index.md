@@ -84,9 +84,9 @@ than papered over.
 | `backend/webgpu/internal/kernels/device.go` | goinfer |
 | `backend/webgpu/internal/kernels/gemv.go` | goinfer |
 | `backend/webgpu/resident_sample.go` | goinfer |
-| `internal/serveapp/chaos_test.go` | goinfer |
-| `internal/serveapp/fuzz_test.go` | goinfer |
-| `internal/serveapp/openai.go` | goinfer |
+| `internal/app/serveapp/chaos_test.go` | goinfer |
+| `internal/app/serveapp/fuzz_test.go` | goinfer |
+| `internal/app/serveapp/openai.go` | goinfer |
 | `scripts/bench_compare.sh` | goinfer |
 | `scripts/bench_peer.py` | goinfer |
 | `scripts/g33_replay.py` | goinfer |

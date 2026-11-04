@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
-	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
 // TestGiwRecordsResolvedQuant is the ITEM-4b gate: a v5 .giw baked by the buffer path records the

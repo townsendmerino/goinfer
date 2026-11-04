@@ -89,9 +89,9 @@ one this item asked for — a Gemma 3 / Qwen2.5-VL image turn's text decode no l
 speed on a GPU box.
 
 **Where (as of the original 2026-09-08 draft, now historical).** `decoder/generate_vl.go:Model.vlDecodeLoop`: `GenerateVL` (and `GenerateQwenVL`) are "stateless and
-CPU-only by design — never touches m.resident at all". `internal/serveapp/openai.go:loadedModel.driveVL`
+CPU-only by design — never touches m.resident at all". `internal/app/serveapp/openai.go:loadedModel.driveVL`
 (`driveVL`) is the only caller from serve; `prepare()` is told `residentPath=false` for vision
-(`internal/serveapp/openai.go:loadedModel.residentPath`).
+(`internal/app/serveapp/openai.go:loadedModel.residentPath`).
 **Effect.** On the Mac or a CUDA box, a Gemma 3 image request runs the *text* decode at CPU speed
 even though `gemma3` text is resident on both backends. `-tags gpu` moves only the SigLIP tower
 (`docs/multimodal.md`); the cgo-free release binaries move nothing.
@@ -113,10 +113,10 @@ record it there as P6a and do it with the tower move rather than after.
 
 ### G3 — LoRA adapter requests drop to the staged path (100% CPU on CUDA/Metal)
 
-**Where.** `internal/serveapp/openai.go:loadedModel.drive`: `if lm.model.ResidentActive() && lm.adapter == ""` —
+**Where.** `internal/app/serveapp/openai.go:loadedModel.drive`: `if lm.model.ResidentActive() && lm.adapter == ""` —
 adapter models take the session path below it, and `decoder/model.go:Model.generateInto` makes a session
 generation ineligible for the resident KV (`useGPU = resident != nil && prefillFrom == 0 &&
-commit == nil`). The comment at `internal/serveapp/openai.go:loadedModel.drive` records the cost: 13 tok/s vs ~460 resident ona 0.5B (RTX 2070 SUPER). Documented as audit R-01 and left there.
+commit == nil`). The comment at `internal/app/serveapp/openai.go:loadedModel.drive` records the cost: 13 tok/s vs ~460 resident ona 0.5B (RTX 2070 SUPER). Documented as audit R-01 and left there.
 
 **Fix.** Apply the compute-time LoRA on the resident path: the adapter is a per-projection
 low-rank delta applied to the activations (`Session.UseAdapter` → cache's `lora`), so the resident
@@ -124,7 +124,7 @@ runners need one extra GEMV pair per adapted projection per token, with the delt
 at `bindAdapter` time. Alternative that is cheaper and may be enough: merge the adapter into the
 resident weights at bind time (re-pack the affected projections) and treat "switch adapter" as a
 re-pack; one adapter per loaded model at a time, which is what `lm.sessions.adapter` already
-assumes (`internal/serveapp/main.go:server.loadAdapters`).
+assumes (`internal/app/serveapp/main.go:server.loadAdapters`).
 
 **Gate.** An adapter-vs-merged parity test on the tiny fixture, then the R-01 measurement
 re-run on the 0.5B.
@@ -134,7 +134,7 @@ re-run on the 0.5B.
 ### G4 — `/v1/embeddings` on decoder models never uses the resident path
 
 **Where.** `decoder/embed.go:Model.HiddenLast`: `HiddenLast` → `hiddenLastBatched` (CPU `forwardN`) or
-`hiddenLastSequential`; neither consults `m.resident`. `internal/serveapp/decoder_embedder.go` is
+`hiddenLastSequential`; neither consults `m.resident`. `internal/app/serveapp/decoder_embedder.go` is
 the only serving caller.
 
 **Fix.** A resident `HiddenLast`: the resident prefill already exposes hidden-state capture for the
@@ -262,10 +262,10 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
 ## Things checked and found fine
 
 - The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:Model.generateInto`), but serve
-  serializes each model's generations (`internal/serveapp/openai.go:loadedModel` `turns`), so it never fires
+  serializes each model's generations (`internal/app/serveapp/openai.go:loadedModel` `turns`), so it never fires
   through the HTTP surface; only direct library callers running two generations on one `Model`
   see it.
-- Constrained/tool requests keep the plain resident `Generate` (`internal/serveapp/openai.go:loadedModel.drive`).- The n-gram and block drafters claim `resBusy` and verify on the resident batched `ForwardN`;
+- Constrained/tool requests keep the plain resident `Generate` (`internal/app/serveapp/openai.go:loadedModel.drive`).- The n-gram and block drafters claim `resBusy` and verify on the resident batched `ForwardN`;
   the CPU block drafter was measured negative and its code removed 2026-09-24 (record: `docs/completed/task-laguna.md`).
 - Sampling, argmax readback, grammar masking and tokenization are per-token host work by design.
 
@@ -773,7 +773,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
 - 2026-09-08 — G3 IN PROGRESS: decoder-level plumbing done and seam-tested; no backend
   implementation yet.
   - **Why "merge into resident weights at bind time" (this doc's own listed alternative) is
-    architecturally wrong**, found while scoping: `internal/serveapp/main.go`'s
+    architecturally wrong**, found while scoping: `internal/app/serveapp/main.go`'s
     `lm.sessions.adapter` design shares ONE base `*decoder.Model` — and its ONE `m.resident`
     object — across every `--adapter` served name. Merging would need either N resident copies (one
     per adapter, defeating the whole point of a shared resident base) or unsafe concurrent mutation
@@ -1504,8 +1504,8 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   links — Phase 1's own `plan()` work (previous entry) only ever took `freeBytes` as a plain
   argument; nothing wired a live query to it until now.
   - **The gap found while wiring it**: `decoder` cannot import `cuda`/`metal` (they import IT), so
-    a CLI command living in `internal/fitcmd` (linked into the plain, GPU-tag-free
-    `internal/chatapp`) has no way to ask "how much VRAM/unified-RAM headroom does this backend
+    a CLI command living in `internal/app/fitcmd` (linked into the plain, GPU-tag-free
+    `internal/app/chatapp`) has no way to ask "how much VRAM/unified-RAM headroom does this backend
     have" for a backend it may not even be compiled with. `decoder.RegisterBackend` already solves
     the exact same shape of problem for backend REGISTRATION; added `decoder.RegisterMemoryProbe`/
     `FreeBytesFor` next to it in `decoder/backend.go`, same pattern (register from `init()`, decoder
@@ -1521,12 +1521,12 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     immediately after the query, the same bare create→query→release shape
     `backend/cuda/alloc_floor_test.go` already uses directly — not the persistent `LockOSThread`'d executor
     `cudaResident` needs for actual decode.
-  - **`internal/fitcmd/fit.go`** (new): `Run(args) int`, same shape as `internal/pullcmd`'s `Run`
+  - **`internal/app/fitcmd/fit.go`** (new): `Run(args) int`, same shape as `internal/app/pullcmd`'s `Run`
     (a `flag.FlagSet` + a leading positional path, shared by both binaries' dispatch). Loads the
     checkpoint (this phase's Load()-based scope, previous entry), then calls `Plan` once per
     `decoder.CompiledBackends()` — so a CPU-only build reports only "cpu"; the metal/cuda release
     binaries report their own GPU backend too, automatically, with no per-binary fit code. Wired
-    into `internal/chatapp/main.go` as a `pull`-style pre-`flag.Parse` subcommand
+    into `internal/app/chatapp/main.go` as a `pull`-style pre-`flag.Parse` subcommand
     (`goinfer-chat fit <path>`), plus the usage/error-message updates naming it alongside
     `pull`/`models`.
   - **Verified end-to-end on real hardware, all three binary variants, first try**:
@@ -1551,13 +1551,13 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     which is exactly the doc's own header note: "three residency guards... still fragmented rather
     than reconciled into one planner" — visible now in `fit`'s own output, not just in code, but
     not fixed here.
-  - **`internal/fitcmd/fit_test.go`** (new, zero prior coverage in that package): usage-error and
+  - **`internal/app/fitcmd/fit_test.go`** (new, zero prior coverage in that package): usage-error and
     load-error exit codes; a real end-to-end run against `testdata/llama-tiny` (tracked, runs in
     CI) asserting the report names `cpu` and a real placement word; the pinned-impossible-ctx case
     on the same tracked fixture, asserting the header echoes the ctx UNCHANGED and no backend
     reports RESIDENT.
   - Full regression: `decoder` 419/1(pre-existing)/134skip unchanged, `metal` 111/0 unchanged,
-    `internal` all packages pass (new `internal/fitcmd` 4/4). `cuda`, real hardware on nobara:
+    `internal` all packages pass (new `internal/app/fitcmd` 4/4). `cuda`, real hardware on nobara:
     `TestBackendResidentWired` (production load path) still green with the new probe registered;
     `TestFitsWeightsBudget`/`TestKVBytesForCap` unaffected. `gofmt -l`, `go vet`, staticcheck all
     clean on every touched package.
@@ -1659,7 +1659,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **The slots piece, by contrast, was already 90% there**: `decoder.Options.MoECacheSlots` /
     `Model.MoECacheSlotsRequest()` — the SAME field and accessor CUDA's `--moe-cache-slots` already
     reads — were already backend-agnostic and already wired from the CLI flag
-    (`internal/loadflags/loadflags.go:Flags.Options`, unchanged, predates this entry); Metal's own code simply
+    (`internal/app/loadflags/loadflags.go:Flags.Options`, unchanged, predates this entry); Metal's own code simply
     never READ them, checking only `os.Getenv("GOINFER_METAL_MOE_SLOTS")` directly at its three
     real call sites (the guard's estimate, `backend/metal/moe.go`'s and `backend/metal/gemma4_moe.go`'s actual
     paging-engagement checks).
@@ -1673,7 +1673,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     the exact same validation (`n >= topK`) and error path, just resolving from the shared
     priority order first. `m` was already in scope at both sites (used a few lines below for
     `.GiwPath()`/similar), so this is a same-function, no-signature-change edit.
-  - **`internal/serveapp/main.go`**: `--moe-cache-slots`'s help text corrected, not just extended —
+  - **`internal/app/serveapp/main.go`**: `--moe-cache-slots`'s help text corrected, not just extended —
     it previously said "the runtime measures free VRAM and lowers it if the request does not fit",
     which is true for CUDA's `capSlots` but was NEVER true for Metal (a request Metal cannot honor
     declines the WHOLE LOAD to CPU via the memory guard; it does not auto-lower the slot count the
@@ -1696,7 +1696,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     the first real run.
   - Full regression: `metal` 113 pass/0 fail/51 skip (111→113: two new tests; the rewritten
     `TestMetalMoESlotsFromEnv` replaces rather than adds subtests net). `gofmt -l`, `go vet`,
-    staticcheck all clean; `metal/cmd/serve` and `internal/serveapp` both still build clean with
+    staticcheck all clean; `metal/cmd/serve` and `internal/app/serveapp` both still build clean with
     the help-text change.
   - **Not done, left open**: Metal's context sizing (blocked on the fixed-size kernel threadgroup
     buffer, above); the real `--fit=off` flag; G6's table test; the drafter-aware
@@ -1718,7 +1718,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     choice, this is documented here as a known, separately-scoped gap rather than attempted this
     pass: **the real fix is "give Metal a resolveCtxCap of its own," which cannot happen until
     metalCtxCap stops being a compile-time constant.**
-  - **`-kv` (KV precision) is WebGPU-only today** (`internal/serveapp/main.go`'s own flag help
+  - **`-kv` (KV precision) is WebGPU-only today** (`internal/app/serveapp/main.go`'s own flag help
     text: "webgpu backend only") — CUDA and Metal have no `-kv` handling to test at all, so G6's
     `-kv` row does not apply to either backend this phase; it becomes live once Phase 3 (WebGPU)
     lands.
@@ -1815,7 +1815,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     `GOINFER_NO_FIT_DEFAULT` itself — the ONE call site this session's CUDA ctx-default work
     added, now backend-agnostic-ready (a future Metal/CPU fit-by-default policy would read the
     same accessor, not invent its own env var).
-  - **`internal/serveapp/main.go`**: new `--fit` bool flag (default true), wired as
+  - **`internal/app/serveapp/main.go`**: new `--fit` bool flag (default true), wired as
     `DisableFit: !cfg.fit` in `modelSpec.options()` — global, not per-model, matching how
     `--moe-cache-experts`/`--moe-cache-slots` are ALSO global rather than per-`--model` overrides
     (an inconsistency already present in the flag surface, not introduced here). Help text states
@@ -1913,7 +1913,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     pager's own decision to actually build one can never disagree) — and false for a nil `cfg`
     (header unreadable ⇒ don't know ⇒ don't retry, the same "every unknown proceeds \[without
     acting\]" discipline this file already states for the refusal path itself).
-  - **`internal/serveapp/main.go`'s `loadDecoder`**: the `.gguf→.giw` transcode block (previously
+  - **`internal/app/serveapp/main.go`'s `loadDecoder`**: the `.gguf→.giw` transcode block (previously
     only reachable via an explicit `--stream-weights`) factored into a shared `ensureGIW` closure.
     On a `decoder.Load` failure, `errors.As` recovers a `*decoder.FitDeclineError`; when
     `!opts.StreamWeights && !opts.DisableFit && strings.HasSuffix(spec.path, ".gguf") &&
@@ -1964,7 +1964,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     one needs either a tracked tiny DENSE `.gguf` fixture (none exists anywhere in this repo today
     — every dense tiny fixture is a safetensors dir, and only `.gguf` reaches the fit guard at
     all) or an exported `goinfer_testhooks`-gated RAM-override hook callable from
-    `internal/serveapp` (decoder's `hostRAM`/`hostRAMAvailable` indirection is package-private, and
+    `internal/app/serveapp` (decoder's `hostRAM`/`hostRAMAvailable` indirection is package-private, and
     the existing `assets_testhook.go`/`fidelity_testhook.go` pattern would need a new entry plus a
     tag-gated test file). Judged disproportionate to what remained unproven: the classification
     logic is unit-tested for real (above), and the actual streamed-load-and-decode mechanism the
@@ -1983,7 +1983,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     byte-for-byte the same counts as the pre-existing baseline** — then `go test ./decoder/ -run
     TestParityManifest -update`, `git diff -- testdata/parity_manifest.json` confirmed
     deps_hash-only (66 lines / 33 families), `TestParityManifest_fresh` re-run green
-    ("35/35 families enforced"). `internal/serveapp` full suite green (unaffected by the
+    ("35/35 families enforced"). `internal/app/serveapp` full suite green (unaffected by the
     manifest refresh). `gofmt -l`/`go vet`/CI-pinned staticcheck (v0.8.0, confirmed via
     `-version`) clean on both touched packages.
   - **Not done, left open**: the CI-integration-test gap above; the drafter-aware
@@ -2025,7 +2025,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     `decoder/model.go`): threaded through both `&Model{...}` construction sites the same way
     `ResidentContext`/`MoECacheSlots` already are. 0 (default) is a total no-op through every call
     site below.
-  - **`internal/serveapp/main.go`'s `loadDecoder`**: `--drafter` is now loaded ONCE, at the TOP of
+  - **`internal/app/serveapp/main.go`'s `loadDecoder`**: `--drafter` is now loaded ONCE, at the TOP of
     `loadDecoder` (before `decoder.Load`), not inside `attachBlockDrafter` after the fact —
     `decoder.LoadDFlashDrafter(cfg.drafter)` runs early, `DrafterResidentBytesEstimate` prices it
     into `opts.ExtraResidentBytes`, and the SAME loaded `*decoder.DFlashDrafter` is passed through
@@ -2114,7 +2114,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     then green after the identical by-hand refresh: golden regex set re-run with these changes
     present — **36 pass/1 fail(olmo3, identical)/21 skip, byte-for-byte the same as baseline** —
     then `-run TestParityManifest -update`, `git diff` confirmed deps_hash-only (66 lines/33
-    families), `TestParityManifest_fresh` green ("35/35 families enforced"). `internal/serveapp`
+    families), `TestParityManifest_fresh` green ("35/35 families enforced"). `internal/app/serveapp`
     full suite green. `gofmt -l`/`go vet`/staticcheck (v0.8.0, `-version` confirmed) clean on every
     touched package, both machines.
   - **Not done, left open**: the verify/capture-buffer term `DrafterResidentBytesEstimate`

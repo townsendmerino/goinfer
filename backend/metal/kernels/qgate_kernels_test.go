@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/hybridattn"
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // TestQGateKernels_cpuParity (D-G02, docs/audit-metal-2026-09-30.md) checks the two kernels of the gated softmax layer

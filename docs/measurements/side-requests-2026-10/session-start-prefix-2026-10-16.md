@@ -5,7 +5,7 @@ prefix shared with the previous session, and whether a one-slot card could keep 
 
 All of it is read from runs already on disk; nothing was loaded for it. Readers:
 `TestSideRequests_evictionCounterfactual` (opencode, Chat Completions) and `TestSideRequests_sessionStartPrefix` (one session per
-server, any route), both in `internal/serveapp/side_requests_replay_test.go`, skipped without `SIDE_OUT`.
+server, any route), both in `internal/app/serveapp/side_requests_replay_test.go`, skipped without `SIDE_OUT`.
 
 ## The cost
 

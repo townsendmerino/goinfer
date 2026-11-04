@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/goinfer/internal/mem/probe"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
 // The admission and routing census, layer D (SB2, docs/tasks/task-subsystems-2026-10.md, "SB2 — the admission and routing

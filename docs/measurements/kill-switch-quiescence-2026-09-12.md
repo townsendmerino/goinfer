@@ -8,7 +8,7 @@ by hand here since K8 itself is not built yet.
 **Box:** MacBook, Apple Silicon (arm64), CPU backend. **Model:** Qwen2.5-Coder-0.5B-Instruct,
 Q4_K_M source quantized to int8int8 at load. **goinfer:** `4b979d0` (branch
 `killswitch-k1-k2-k5`, off `main`). **Method:** `TestServe_haltUnderLoad`
-(`internal/serveapp/halt_test.go`) — 32 concurrent streaming chat completions at
+(`internal/app/serveapp/halt_test.go`) — 32 concurrent streaming chat completions at
 `-max-inflight 32 -max-queue 32` (saturated), `POST /admin/halt`, measuring from the halt call to
 `generationRegistry.waitEmpty` returning.
 

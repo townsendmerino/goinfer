@@ -4,7 +4,7 @@ package metal
 
 import (
 	"github.com/townsendmerino/goinfer/backend/metal/kernels"
-	"github.com/townsendmerino/goinfer/internal/f16"
+	"github.com/townsendmerino/goinfer/internal/runtime/f16"
 )
 
 func packW4A8Row(row []float32) (words []uint32, scales []float32) { return kernels.PackW4A8Row(row) }

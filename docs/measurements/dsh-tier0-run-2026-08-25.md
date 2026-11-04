@@ -173,7 +173,7 @@ answers a small request promptly, so nothing is wedged.
 
 ## Finding 1 — the tool path buffers even when streaming, so a slow generation is INVISIBLE
 
-`internal/serveapp/tools.go`, stated in its own comment: *"Tool decisions need the whole output, so
+`internal/app/serveapp/tools.go`, stated in its own comment: *"Tool decisions need the whole output, so
 buffer (even when streaming)."* The whole generation is accumulated into a `strings.Builder`, and
 only then is SSE opened and the entire message sent as one delta plus a finish. This is correct for
 tool-call parsing and it is honest SSE — but it means **`stream: true` with tools declared emits

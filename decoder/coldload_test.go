@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
 // TestPlanColdLoad is the rule, row by row: a bundle is read first only when the policy covers it, it is cold and it

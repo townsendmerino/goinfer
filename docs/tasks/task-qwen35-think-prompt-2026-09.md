@@ -24,7 +24,7 @@ What shipped, against the design in "Proposed fix" below (which is kept as the r
   `scripts/pin_chat_think_modes.py`); the splitter is property-tested over every split point and random partitions. Nine
   mutations (9B default flipped, trailing-newline trim, partial-close hold, re-entry from content, splitter bypassed, flush
   dropped, effort mapping, constrained-template rule, legacy raw) each turn a gate red.
-- **`internal/serveapp/think.go` — the wire half.** One splitter wrap inside `streamTokens`, so every route gets clean
+- **`internal/app/serveapp/think.go` — the wire half.** One splitter wrap inside `streamTokens`, so every route gets clean
   `content` from one place: OpenAI chat (`reasoning_content`, streamed, all before content), tools, vision, Anthropic
   (`thinking` blocks with `signature_delta`, block indices shifted, only when the request asked), Responses (reasoning
   dropped), jobs (reasoning in the event log, not the result) and batches. Controls: `chat_template_kwargs.enable_thinking`,
@@ -42,7 +42,7 @@ What shipped, against the design in "Proposed fix" below (which is kept as the r
   Gemma's template does not; the old tool goldens had no system-prompt case. The per-checkpoint goldens found it.
 
 - **The reasoning budget (built 2026-09-30, owner request)** closes the truncation hole: a gated logit processor
-  (`internal/serveapp/budget.go`) force-closes the think block once it has used its budget (request's own, else
+  (`internal/app/serveapp/budget.go`) force-closes the think block once it has used its budget (request's own, else
   `-reasoning-budget`, else `auto` = three quarters of `max_tokens`), so a thinking reply always has room to answer. Gated:
   fast paths are untouched until due. Composes with the lazy tool-union masker; steps aside under `-spec`/`-drafter` and for
   grammar-constrained requests. Gates: pure-function table, the real decode loop on the tiny model (gated and ungated;
@@ -296,7 +296,7 @@ common path. What it can mean is **one invariant that every client family surviv
 | goinfer's own web UI | its JS `splitThinking` | keeps working on clean content (no tags left to split) |
 
 **The mechanism: one splitter at the one choke point.** Every reply funnels through `drive`'s `onText(string)`
-(`streamTokens` in `internal/serveapp/openai.go` decodes special tokens to literal `<think>` / `</think>` text, one token
+(`streamTokens` in `internal/app/serveapp/openai.go` decodes special tokens to literal `<think>` / `</think>` text, one token
 each, so tags never arrive split across *special-token* boundaries — but a model can also write them as ordinary tokens, so
 chunk-safety is still required). Add a pure, chunk-boundary-safe state machine in `chat/` next to `ProseStreamer`
 (`chat/tools.go`, same shape: `Push(chunk) → (reasoning, content)`, holds back a partial tag at the tail, `Flush`):
@@ -379,7 +379,7 @@ changing how history renders breaks KV prefix reuse from the changed turn onward
 - *Several tests are AST guards:* `TestStreamSurfaces_allSendUsageBeforeDone` counts exactly 5 `sseDone` completions,
   `TestDriveUsesRequestContext`, `TestServe_noRouteEncodesARenderedPrompt`. A new streaming site updates the count.
 - *No shared reply builder:* the text-reply logic is duplicated in `serveChatText`, `serveVisionChat`,
-  `serveVisionMessages`, the tool paths, `batches_run.go`, `jobs_run.go`, plus library copies in `internal/chatapp/main.go`
+  `serveVisionMessages`, the tool paths, `batches_run.go`, `jobs_run.go`, plus library copies in `internal/app/chatapp/main.go`
   and `demo/agent/agent/agent.go`. The splitter belongs in `chat/` (importable by all) and each site needs wiring; budget
   for missing one, and grep for `onText` callers as the completeness check.
 - *Adjacent defect — RETRACTED 2026-09-30:* this note said Qwen3.5's own tool format (`<tool_call><function=NAME><parameter=K>…`) was

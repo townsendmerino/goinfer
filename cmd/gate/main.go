@@ -80,7 +80,7 @@ gpu env:
 heavy env:
   GOINFER_GATE_MODELS    dir holding the real checkpoints (default: $HOME/models)
   GOINFER_HEAVY_RUN      `+"`go test -run`"+` regex to narrow the run (default: all)
-  GOINFER_HEAVY_PKGS     space-separated packages (default: "./decoder/ ./internal/serveapp/")
+  GOINFER_HEAVY_PKGS     space-separated packages (default: "./decoder/ ./internal/app/serveapp/")
   GOINFER_HEAVY_TIMEOUT  per-package timeout (default 120m)
 common:
   -logdir DIR            where raw `+"`go test -json`"+` streams are written (default: $TMPDIR)

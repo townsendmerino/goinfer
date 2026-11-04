@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/townsendmerino/goinfer/internal/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 // Prefix snapshots in host memory (docs/tasks/task-kv7-prefix-snapshot-2026-10.md). After a cold first prefill of a long prompt the

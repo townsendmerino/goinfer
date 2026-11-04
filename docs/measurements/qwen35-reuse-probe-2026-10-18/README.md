@@ -14,7 +14,7 @@ its loop appends the previous reply and a new user turn instead. This plays that
 
 (time to the first streamed token; raw data in `raw/`.)
 
-**The engine reuses an appended request; the chat endpoint's request never extends the held sequence.** On plain text, turn 2 and turn 3 start in 0.04 s, so `internal/kvmgr/slots.go:scoreRecurrent` does what it says (the held sequence is the prompt plus the generated
+**The engine reuses an appended request; the chat endpoint's request never extends the held sequence.** On plain text, turn 2 and turn 3 start in 0.04 s, so `internal/runtime/kvmgr/slots.go:scoreRecurrent` does what it says (the held sequence is the prompt plus the generated
 tokens, and a request that starts with all of them continues from the state as it stopped). Through the chat template the same conversation gets no reuse at either size.
 
 ## Why: the history render drops the empty think block the generation prompt ends with

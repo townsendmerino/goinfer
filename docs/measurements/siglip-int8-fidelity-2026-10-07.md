@@ -23,7 +23,7 @@ towers.
 
   The 2026-10-02 record has Qwen2.5-VL, Qwen3.5 and Gemma 4 at relative L2 0.14-0.31.
 
-  Serve still forces this tower for Gemma 3 under `--backend cuda|webgpu` (`towerInt8` in `internal/serveapp/main.go`).
+  Serve still forces this tower for Gemma 3 under `--backend cuda|webgpu` (`towerInt8` in `internal/app/serveapp/main.go`).
   How much reaches the decoder's text was **not** measured here.
 
 ## What was measured

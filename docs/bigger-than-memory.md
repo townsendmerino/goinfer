@@ -36,7 +36,7 @@ build. **Every other family now streams its transcode too**: the five that used 
 first (gemma4, laguna, granite, nemotron, llama4) moved over in `d46fd746` and `e04dd80e`, and the
 resident-build fallback was deleted on 2026-09-24. gemma4's streamed bundle was measured
 byte-identical to the resident build's on the real 26B-A4B (peak anonymous RSS 1.61 GB against 18.1
-GB resident; `e04dd80e`), and the tiny-fixture gates in `internal/prequant/stream_families_test.go`
+GB resident; `e04dd80e`), and the tiny-fixture gates in `internal/runtime/prequant/stream_families_test.go`
 check that every family's stream carries all its layers.
 `GOINFER_SWAP_GUARD`'s load-time half (armed by default) still aborts a load if swap grows too far,
 though a real run on gpt-oss-20b (before its S2 fix) found it does not always hold the line

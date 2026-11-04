@@ -11,6 +11,6 @@
 //	go build ./backend/metal/cmd/serve   # Metal   (was: serve -tags metal, darwin)
 package main
 
-import "github.com/townsendmerino/goinfer/internal/serveapp"
+import "github.com/townsendmerino/goinfer/internal/app/serveapp"
 
 func main() { serveapp.Main() }

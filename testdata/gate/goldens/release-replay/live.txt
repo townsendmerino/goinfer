@@ -10,8 +10,8 @@ gate release v0.99.0 (previous tag v0.23.0)
              none of the records names v0.23.0 (they name: v0.18.0, v0.20.0, v0.22.0); run task-first-hour.md section 1 on the published tag
  4. OWED    the GPU gate on both backends covers HEAD
              record: docs/measurements/gpu-gate/<backend>-<time>-<commit>.json
-             cuda: newest record 2026-10-15T07:36:42Z @ 695ce16c: metal/ changed since
-             metal: newest record 2026-10-29T22:58:23Z @ a241c29c: metal/ changed since
+             cuda: newest record 2026-10-15T07:36:42Z @ 695ce16c: backend/metal/ changed since
+             metal: newest record 2026-10-29T22:58:23Z @ a241c29c: backend/metal/ changed since
              run `go run ./cmd/gate gpu` on that box (cuda: about 83 minutes, queue it at night) and commit the record
  5. done    the hardware matrix is current; the never-executed list is read
              record: docs/hardware-matrix.md (from docs/hardware-coverage.json)
@@ -38,7 +38,7 @@ gate release v0.99.0 (previous tag v0.23.0)
              offline: not read
 11. OWED    the §C1 parity sweep covers HEAD
              record: docs/measurements/parity-sweep/parity-<time>-<commit>.json
-             newest record 2026-10-15T09:30:55Z @ 695ce16c: cuda/ changed since
+             newest record 2026-10-15T09:30:55Z @ 695ce16c: backend/cuda/ changed since
              run `go run ./cmd/gate parity -logdir <durable dir>` on nobara, at night (it takes hours), and commit the record it writes
 12. OWED    the deferred tests (gate quick -full) on both systems cover HEAD
              record: docs/measurements/quick-full/<os>-<arch>-<time>-<commit>.json

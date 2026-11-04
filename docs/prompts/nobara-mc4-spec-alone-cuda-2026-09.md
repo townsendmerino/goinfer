@@ -8,7 +8,7 @@ For a Claude Code session on `nobara-pc` (RTX 2070 SUPER 8 GB), repo `~/mycode/g
   `docs/tasks/task-concurrency-2026-09.md`, MC3 follow-ons, "MC4 candidate: speculate when alone, batch under load").
   With `-spec ngram` a model would keep MC3's concurrency: a generation drafts only while it is alone, and joins
   batched decode at a round boundary when others arrive.
-  - Today `-spec` forces one generation at a time on every resident (`internal/serveapp/openai.go`,
+  - Today `-spec` forces one generation at a time on every resident (`internal/app/serveapp/openai.go`,
     `setConcurrency`), so under load it gives up MC3's batching.
 - **What Metal showed.** Its condition was met there: a lone request is 2.08× (copy) / 1.07× (chat) plain on the
   1.5B, and under load spec is one stream against batching's four.

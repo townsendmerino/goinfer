@@ -65,7 +65,7 @@ request 3..16: HTTP 413
 
 Why: two identical prompts never chain through `sessionLRU.bestExtend`'s strict prefix-containment
 rule (a session's own full token history — prompt + the previous reply — is *longer* than the new,
-identical-content prompt, so `n == commonPrefix` fails; see `internal/serveapp/sessions.go`). Every
+identical-content prompt, so `n == commonPrefix` fails; see `internal/app/serveapp/sessions.go`). Every
 repeated call therefore gets a **cold, fresh session** in a **new slot** (`-kv-sessions 4`, the
 default). Each slot's KV cache for a ~3900-token f32 context on a 4096-ctx model costs ~2.9 GB —
 so the *second* concurrent slot alone pushes the machine over its safety margin, and the guard

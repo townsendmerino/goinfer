@@ -8,7 +8,7 @@ import (
 	"math"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/program"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // One decode token for each of several sequences, each on its own resident KV slot at its own position, in one step

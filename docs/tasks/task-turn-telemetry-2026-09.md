@@ -110,7 +110,7 @@ same facts a live stream would. Where a route's own schema has a natural home (A
 costs nothing per token, needs no clock, and is not subject to X6's overhead gate at all. It also
 covers six chapters where X1–X4 together cover four.
 
-**The gap it closes is an asymmetry, not an absence.** `internal/serveapp/banner.go` already prints
+**The gap it closes is an asymmetry, not an absence.** `internal/app/serveapp/banner.go` already prints
 most of this at startup — decode path, prefill path, the context cap and KV precision, the features
 line, and session reuse with the reason when it is off ("resident decode is stateless, so every turn
 re-prefills its whole prompt"). A terminal user is told. A browser user gets a model name and a
@@ -168,10 +168,10 @@ Neither is a timing, so neither carries X1's measurement risk.
 
 ## Sources
 
-`internal/serveapp/openai.go` (the `usage` struct and `prefill_reused_tokens`'s own comment on its
+`internal/app/serveapp/openai.go` (the `usage` struct and `prefill_reused_tokens`'s own comment on its
 ambiguity; the `decode_path`/`prefill_path` vendor-extension convention) ·
 `decoder/dflash_accept_test.go`, `decoder/eagle_accept_test.go` (acceptance, measured but not
-exported) · `internal/serveapp/banner.go` (what a terminal user is already told at startup, and
+exported) · `internal/app/serveapp/banner.go` (what a terminal user is already told at startup, and
 the page is not — X7's premise) · `docs/capability-matrix.json` (the per-family `parity` column
 X7 surfaces) · `decoder/fitguard.go` (the placement arithmetic X7 reports rather than recomputes) · [`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W34 ·
 [`task-peer-benchmarks.md`](task-peer-benchmarks.md) · [`task-work-queue-2026-09.md`](task-work-queue-2026-09.md)

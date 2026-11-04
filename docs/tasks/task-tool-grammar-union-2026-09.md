@@ -70,7 +70,7 @@ case is where things fall apart. Neither Ollama nor llama.cpp's default path mak
   value, assembling the schema document inline as
   `{"name":{"const":<name>}, <argsKey>:<paramSchema>}`. The model physically cannot emit anything
   else.
-- **It is only reached when unambiguous.** `internal/serveapp/tools.go` applies it "tight when
+- **It is only reached when unambiguous.** `internal/app/serveapp/tools.go` applies it "tight when
   unambiguous" — a forced function, or a lone tool. A named `tool_choice` that cannot be
   constrained is a 400 rather than a silent unconstrained decode (audit M-05). With 2+ tools and
   `auto`, nothing is applied.
@@ -83,7 +83,7 @@ case is where things fall apart. Neither Ollama nor llama.cpp's default path mak
   methods, with `Clone` existing for non-mutating multi-step lookahead. Anything implementing it
   drops into `constrain.NewMasker` unchanged.
 - **Masking already enables grammar-fused speculative decode.** `gr.masker` is what turns it on
-  (`internal/serveapp/tools.go`), so a union masker that respects the interface inherits it.
+  (`internal/app/serveapp/tools.go`), so a union masker that respects the interface inherits it.
 - **Only four templates have a constrainable call form.** `ToolCallWrapper` (`chat/tools.go:Template.ToolCallWrapper`)
   covers `chatml`/`mellum2` (`<tool_call>\n` … `\n</tool_call>`), `llama3` (**empty prefix and
   suffix**, `parameters` as the args key), and `mistral` (`[TOOL_CALLS] `, one-element array).
@@ -241,7 +241,7 @@ and a tool call that cannot fail to parse.
 
 `constrain/tool_grammar.go:ToolCallGrammar` (`ToolCallGrammar`, the single-tool case) ·
 `constrain/constrain.go:Grammar` (the `Grammar` interface, including `Clone`) · `constrain/schema.go`
-(the keyword contract, and `oneOf` among the unenforced) · `internal/serveapp/tools.go` ("tight
+(the keyword contract, and `oneOf` among the unenforced) · `internal/app/serveapp/tools.go` ("tight
 when unambiguous", and `gr.masker` enabling grammar-fused spec) · `chat/tools.go:Template.ToolCallWrapper` (the four
 wrapper families, and llama3's empty prefix) · `chat/tools.go:Template.ParseToolCalls` (`ParseToolCalls`, where a
 malformed call becomes a prose answer) · `docs/server.md:144` (the user-facing claim this rewrites)

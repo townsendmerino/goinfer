@@ -11,7 +11,7 @@ snapshot. nobara-pc, RTX 2070 SUPER, driver 595.91.07, GPU runs under the timing
   `residentSnapshotRows` (the take, now at any row count); `residentSnapshotPrompt` skips the end snapshot once the mark fired or a restore happened;
   restore walks `candidates` (best first by rows servable) and takes the first its window can serve; `covering` also requires that the held snapshot can serve what it shares.
 - `backend/cuda/prefill.go`: `PrefillMarkAlign`, `PrefillLastMarked` (the callback after the pass that ends exactly at the mark, on the caller's goroutine).
-- `internal/serveapp/kv_boundary.go`: `prefixBoundary`, from the render alone (the first turn's content changed; the segments that render identically are the stable section; their
+- `internal/app/serveapp/kv_boundary.go`: `prefixBoundary`, from the render alone (the first turn's content changed; the segments that render identically are the stable section; their
   ids are checked to be a prefix of the prompt's), set on the five routes' requests and passed to Generate as `KVScope.Boundary`.
 - The parity manifest's `deps_hash` refreshed (64 forward goldens green): the decoder edit is non-numeric.
 

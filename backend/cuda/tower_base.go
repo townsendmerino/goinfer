@@ -7,7 +7,7 @@ import (
 	"runtime"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // The CUDA vision-tower base (docs/tasks/task-multimodal-support-2026-10.md;

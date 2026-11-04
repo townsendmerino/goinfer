@@ -236,7 +236,7 @@ gate and it passes at 1.21×.
 `docs/completed/` is a record, not a task list, so anything still to do had to leave it.
 
 - ~~**Disk-space precheck** before a multi-gigabyte fetch.~~ **Done 2026-11-01** (mbp2-sb7): `pull/pull.go:checkDiskSpace`,
-  on both the file-set and the checkpoint path; the free-space reader is `internal/diskfree`, shared with the sidecar's check.
+  on both the file-set and the checkpoint path; the free-space reader is `internal/runtime/diskfree`, shared with the sidecar's check.
 - **Split-GGUF checkpoints.** A shard is *detected* and refused by name (`Select`), so nobody
   gets one useless piece — but assembling a split checkpoint needs loader work beyond the fetch
   command, which is why it stopped at the refusal.
@@ -867,7 +867,7 @@ itself stays live.
 
 **G12 · `role: "developer"` silently demoted to a user turn on the OpenAI surfaces** — `mac`,
 **DONE `4ca19e9` (2026-08-25).** Claimed and finished the same day. One `case "developer":` arm in
-`messagesToTurns` (`internal/serveapp/openai.go`), which all four OpenAI-side surfaces funnel
+`messagesToTurns` (`internal/app/serveapp/openai.go`), which all four OpenAI-side surfaces funnel
 through, so chat/completions, the Responses message-item path, the tools path and the vision path
 were covered at once. Precedence needed no new concept — two `system` messages already resolve
 last-one-wins and the alias inherits it.
@@ -883,7 +883,7 @@ last-one-wins and the alias inherits it.
    because Anthropic carries `system` as a top-level field, and asked only that the error be
    confirmed clean. There is no error: `anthropicMessage.Role` is a free string, `anthropicRole`
    maps everything that is not `"assistant"` to a user turn, and **there is no role validation
-   anywhere in `internal/serveapp`** — so the same silent demotion was live on that surface too.
+   anywhere in `internal/app/serveapp`** — so the same silent demotion was live on that surface too.
    Left demoted **deliberately** (the Anthropic API has no developer role; honoring one invents
    behavior upstream does not have, on a surface whose bar is "works for the apps that matter"),
    but now pinned by `TestAnthropicDeveloperRoleStaysUser` so the decision is visible rather than
@@ -935,7 +935,7 @@ groups were seeded from conversation, and **the rate is much lower**, which is t
 | C1 drain fix — CUDA verification | **open** | no CUDA unload/drain test found |
 | C2 out-of-tree consumer audit | **open** | needs a fresh no-repo session by design |
 | C3 Metal consumer window | **RUN + CLOSED 2026-08-19 (metal/v0.14.0)** | v0.13.0 run (2026-08-15) found `go install …@v0.13.0` BROKEN by the committed `replace`; replaces removed from all 4 submodule go.mods, RELEASING.md updated. **v0.14.0 re-run (2026-08-19) verifies the fix reached consumers for real:** `go install …/metal/cmd/serve@v0.14.0` builds (13.7 MB, clean GOPATH); resident decode via `Load(Backend:"metal")`+blank-import at **65.4 tok/s out-of-tree** (was 65.2 at v0.13.0 — no regression); cgo-free otool-confirmed both paths. Full note: `docs/measurements/c3-metal-consumer-window-v0.14.0.md` (supersedes the v0.13.0 note, kept as history). |
-| C4 soak testing | **open** | `internal/serveapp/fuzz_test.go` and `internal/serveapp/chaos_test.go` exist; neither is an hours-long soak |
+| C4 soak testing | **open** | `internal/app/serveapp/fuzz_test.go` and `internal/app/serveapp/chaos_test.go` exist; neither is an hours-long soak |
 | D1 trace tap + launch-site table | **open** | no coverage table in `docs/` |
 | D2 launch-wrapper commit 1 | **open** | no `cuda/internal/gen` |
 | D3 parked flag-pair | **open**, design read done above | — |

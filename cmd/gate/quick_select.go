@@ -22,7 +22,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/townsendmerino/goinfer/internal/paritykey"
+	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
 // `gate quick`'s SELECTION (docs/tasks/task-test-efficiency-2026-09.md, TE7(a)): changed files -> their

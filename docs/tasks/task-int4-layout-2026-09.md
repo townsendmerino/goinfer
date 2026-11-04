@@ -33,7 +33,7 @@ consumer. But every consumer is known at the moment the representation is chosen
   CPU backend never needs canonical once row4 exists — `Row()` is layout-independent since
   aikit v1.41.0, and `MatmulBT*`/`MatmulBTW4A8Batch` prefer row4 when present.
 - **At prequant time**, the `.giw` is built either on the box that will read it
-  (`internal/prequant.EnsureCachedGIW`, `serve --stream-weights`) or in CI for a per-os/arch
+  (`internal/runtime/prequant.EnsureCachedGIW`, `serve --stream-weights`) or in CI for a per-os/arch
   asset whose backend tag is already chosen (`demo/chat/build-embed.sh`). Nobody carries a
   `.giw` from one kind of machine to another.
 
@@ -120,9 +120,9 @@ backend-agnostic data into something with a hidden property and a silent failure
   (`deps_hash`/`cosine`/`validated_at`), not a per-load runtime layout choice — Backend:"cpu" is
   a request-time decision, and the same family can load either way in different processes, so
   there is no single per-family "layout" fact to record there. Implemented instead on the two
-  surfaces that are actually consulted: `Model.BackendReport()` (what `internal/chatapp`,
+  surfaces that are actually consulted: `Model.BackendReport()` (what `internal/app/chatapp`,
   `internal/gemmaapp`, `demo/gemma-web` print at load) and `Model.DecodePath()` (what
-  `internal/serveapp` — the actual `goinfer-serve` binary — logs and returns as `decode_path` in
+  `internal/app/serveapp` — the actual `goinfer-serve` binary — logs and returns as `decode_path` in
   the API; also `servecheck`'s wire format shows it via `decode_path` if a route echoes it,
   though servecheck itself is an HTTP client, not a direct `*Model` inspector, and has no route
   today that surfaces this specifically). Format: `int4 layout: row4-only (embed, qkv, gate/up);
@@ -150,11 +150,11 @@ backend-agnostic data into something with a hidden property and a silent failure
   comes back zero), so no code change was needed there. Under this gate it is now provably
   unreachable in practice too: `webgpu` is never the literal string `"cpu"`, so
   `wantsCanonicalInt4` always keeps canonical for it regardless.
-- **Item 4: no code change needed.** `internal/serveapp/main.go:Main`,
-  `internal/chatapp` (both binaries now register it through `internal/loadflags/loadflags.go:Register`), and the gemma demo's own flag (`internal/gemmaapp`, removed 2026-09-25) all already register `--backend` with
+- **Item 4: no code change needed.** `internal/app/serveapp/main.go:Main`,
+  `internal/app/chatapp` (both binaries now register it through `internal/app/loadflags/loadflags.go:Register`), and the gemma demo's own flag (`internal/gemmaapp`, removed 2026-09-25) all already register `--backend` with
   `flag.String(..., "cpu", ...)` — the literal default is already `"cpu"`, not empty (since R17, 2026-10-01, it is `"auto"`, which is `cpu` on a binary with no GPU backend). The root
   (no-tags) CPU release binaries already got this saving the moment L1 landed; nothing to wire up.
-  `demo/chat`'s embedded variant shares `internal/chatapp`'s flag registration, so the same holds
+  `demo/chat`'s embedded variant shares `internal/app/chatapp`'s flag registration, so the same holds
   for it. Did not check `internal/gemmaapp`'s actual callers beyond confirming its own flag
   default, since gemma-web was out of this item's named list.
 
@@ -174,7 +174,7 @@ kinds 3/4/5 (`:1466–1525`), `giwVersion = 11` (`:87`), `SerializeWeightsForTar
 `decoder/gguf.go` (`StreamTranscodeGGUF`'s `target GIWTarget` param); `decoder/weights.go`
 (`repackedOnlyInt4Count`); `decoder/model.go` (the `.giw` branch's post-load backend check);
 `decoder/w4a8_row4_emit_arm64.go` (`repackRow4ForEmit`, reused unchanged);
-`internal/prequant/prequant.go` (`Transcode`'s `target GIWTarget` param, `EnsureCachedGIW`'s new
+`internal/runtime/prequant/prequant.go` (`Transcode`'s `target GIWTarget` param, `EnsureCachedGIW`'s new
 `backend string` param, `streamCachePath`, `selfCheck` — see Findings for why the last one
 needed a fix); `cmd/prequant/main.go` (`-target` flag replaces `-row4`); `demo/chat/build-embed.sh`
 around its `go run ./cmd/prequant` call (the hyphen in this filename defeats
@@ -307,7 +307,7 @@ are half the disk and page cache per int4 tensor, and row4-by-default for CPU ca
   than needing its own separate tensor list. KDA/DeltaNet/qattn mixer projections and gemma4's
   fused-MoE router+experts (absent from `matmulWeights()`) stay `weightMatKind3Only` — kind 3
   always — for now; extending kind 5 to them is a follow-on, not started, not blocking.
-- **Found a real bug fixing this: `internal/prequant.selfCheck` used `Options{}` (empty
+- **Found a real bug fixing this: `internal/runtime/prequant.selfCheck` used `Options{}` (empty
   `Backend`).** Empty means "needs canonical" (L1's own literal-"cpu"-is-a-promise design), so
   EVERY `-target cpu-arm64` transcode failed its own self-check the first time this was run for
   real: `prequant: self-check: decoder: ...: 196 int4 tensor(s) are stored row4-only ... needs
@@ -335,8 +335,8 @@ are half the disk and page cache per int4 tensor, and row4-by-default for CPU ca
 blocked on an aikit prerequisite, see that section).
 
 **Size.** Medium, as scoped. Touched `decoder/serialize.go`, `decoder/weightmat.go`,
-`decoder/gguf.go`, `decoder/weights.go`, `decoder/model.go`, `internal/prequant/prequant.go` (+
-its test), `cmd/prequant/main.go`, `internal/serveapp/main.go`, `demo/chat/build-embed.sh`,
+`decoder/gguf.go`, `decoder/weights.go`, `decoder/model.go`, `internal/runtime/prequant/prequant.go` (+
+its test), `cmd/prequant/main.go`, `internal/app/serveapp/main.go`, `demo/chat/build-embed.sh`,
 `backend/metal/moe_pread_test.go`, plus one new test file
 (`decoder/w4a8_row4_giwkind5_test.go`).
 
@@ -348,7 +348,7 @@ its test), `cmd/prequant/main.go`, `internal/serveapp/main.go`, `demo/chat/build
   The second claim is false — kind 4 *is* the both policy on disk, loaded at
   `decoder/serialize.go:giwReader.weightMat`. The true precedent is that the **in-RAM** repack is not applied to a
   mmap'd `.giw`. Replace both with a pointer to L2.
-- `internal/prequant/prequant.go:Transcode` comment: "always emits kind 3" becomes the L2 target
+- `internal/runtime/prequant/prequant.go:Transcode` comment: "always emits kind 3" becomes the L2 target
   rule when L2 lands; until then add one line saying the CPU cache is on the canonical kernel.
 
 **Findings.** The false "isn't wired into .giw loading" claim was mine — introduced this same
@@ -360,7 +360,7 @@ both now point at L2 instead of repeating the false generalization. The ORIGINAL
 .giw loader") was re-read against this item's claim and found accurate as written — it is
 specifically about the in-RAM repack function, gives the real reason (paging/`madvise` pageability
 would be pinned by a heap-resident row4 copy sitting next to a pageable mmap alias), and was not
-touched. `internal/prequant/prequant.go`'s comment got the one line requested, pointing at L2 by
+touched. `internal/runtime/prequant/prequant.go`'s comment got the one line requested, pointing at L2 by
 name rather than restating the rule speculatively.
 
 **Size.** Ten minutes — accurate; this took about that.

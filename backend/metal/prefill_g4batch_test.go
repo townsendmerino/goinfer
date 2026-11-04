@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/prequant"
+	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 )
 
 // TestG4ExpertBatch_matchesPerRow is D-P01's gate (docs/tasks/task-m26-mac-2026-10.md): the layer-major paged prefill

@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
 // FitAnswer is what Load's own memory check says of loading a path with given options, priced against the memory

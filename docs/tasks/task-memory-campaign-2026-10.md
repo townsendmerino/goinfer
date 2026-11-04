@@ -228,8 +228,8 @@ item is sized by the tree and not by this doc.
 
 ### MEM1 · A public mapped-load entry point (S–M)
 
-**Problem (checked).** The sidecar policy lives under `internal/`: `internal/prequant/prequant.go:EnsureCachedGIW`
-and `internal/prequant/prequant.go:DefaultToSidecar`, reached only through `internal/modelload/modelload.go`. A caller
+**Problem (checked).** The sidecar policy lives under `internal/`: `internal/runtime/prequant/prequant.go:EnsureCachedGIW`
+and `internal/runtime/prequant/prequant.go:DefaultToSidecar`, reached only through `internal/runtime/modelload/modelload.go`. A caller
 in another module that calls `decoder.Load` on a `.gguf` or a safetensors dir gets the weights built into the Go heap.
 `docs/use-from-go.md` shows `decoder.Load(path, decoder.Options{})`, which loads f32. Two multipliers sit on that heap:
 
@@ -252,7 +252,7 @@ stated bound and the weights report mmap-aliased; logits byte-identical to the i
 after load, library path before vs after.
 
 **Gates, registered 2026-10-21 before the code (MEM1-G).** The shape built: `decoder.Options.DirectLoad` (zero value: the
-sidecar), and the sidecar machinery moved from `internal/prequant` into `decoder` (prequant imports decoder, so `Load`
+sidecar), and the sidecar machinery moved from `internal/runtime/prequant` into `decoder` (prequant imports decoder, so `Load`
 cannot reach it where it was; prequant keeps its API as wrappers). A test binary's zero `Options` keeps the direct load
 (`testing.Testing()`, the `swapguard` precedent): the ~300 test files that load a `.gguf` test the direct path today, and
 under the default each would transcode and write a `.giw` beside its fixture or real checkpoint.
@@ -327,7 +327,7 @@ G1–G3; about 2 min for G4 (a 32,400-patch tower forward; not a timed run, so i
 > run). Consequence for goinfer: a `SafetensorsFile` dropped without `Close` now keeps its mapping until exit, by contract.
 > Checked at goinfer `main`: every other opener closes after copying or keeps its file (main weights, LoRA, DFlash, DSpark,
 > embeddinggemma2, the clef head, the multimodal projectors), so **the goinfer follow-up is exactly: close serve's lazily
-> loaded `qwenASR` and `voxtral` encoders on unload, and give `internal/whisper`'s decoder and `Transcriber` a `Close`**
+> loaded `qwenASR` and `voxtral` encoders on unload, and give `internal/runtime/whisper`'s decoder and `Transcriber` a `Close`**
 > (the whisper decoder keeps views and drops its file).
 
 > **Status 2026-10-17: fixed on aikit branch `mem3-audio-mapping-lifetime` (`db44648`, unpushed), and the finding was
@@ -361,7 +361,7 @@ file but copies every tensor out first); all six vision loaders (SigLIP, Qwen2.5
 Gemma 4 — each copies out, then closes); aikit `encoder` (keeps the file on its weights); and goinfer's own loaders
 (main weights, LoRA, DFlash, DSpark — each keeps its `SafetensorsFile`). BF16 checkpoints are safe in any loader: they
 are widened into the heap. goinfer reaches all three bad loaders: serve loads Qwen ASR and Voxtral lazily
-(`internal/serveapp/vision_serve.go`) and `internal/whisper/transcribe.go` loads Whisper. Not reproduced.
+(`internal/app/serveapp/vision_serve.go`) and `internal/runtime/whisper/transcribe.go` loads Whisper. Not reproduced.
 
 **Fix shape.** Retain the `SafetensorsFile` in each of the three encoders, with a `Close`. On the goinfer side, at the
 next aikit bump: close serve's lazily loaded Qwen ASR and Voxtral encoders on model unload, and close the Whisper
@@ -457,7 +457,7 @@ and the halved weight bytes offset it. Log: `~/goinfer-logs/als-g0-2026-10-23.lo
   CHANGELOG section. MEM4(b)'s `TestReleaseBlocks_reloadsTheSameTower` now runs copied (its heap check, unchanged) and aliased
   (the blocks are never on the heap; the reload, forward and export checked).
 
-The goinfer half, after the aikit tag: the bump, and `internal/serveapp/liveness.go:loadedModel.closeEntryNatives` closing the GLM-OCR,
+The goinfer half, after the aikit tag: the bump, and `internal/app/serveapp/liveness.go:loadedModel.closeEntryNatives` closing the GLM-OCR,
 Qwen3.5+ and Gemma 4 encoders it used to drop, since their mappings now stay until `Close`.
 
 Stopping rule: one pass each; ALS-G0 failing stops the item before any code ships. Cost: ALS-G0 about 15 min; the rest seconds
@@ -659,7 +659,7 @@ the 1.5B, about 15 s each, plus loads), from G-I8-5's record.
 
 ### MEM8 · Metal int4 LM head; gather-only tables decoupled from the head pin (M)
 
-**Problem (checked).** `internal/loadflags/loadflags.go:Flags.embedInt4` returns false on Metal unless the flag is set
+**Problem (checked).** `internal/app/loadflags/loadflags.go:Flags.embedInt4` returns false on Metal unless the flag is set
 explicitly, because Metal has no int4 head GEMV — an int4 table made a plain Metal load decline to the CPU. So tied
 tables stay int8 on Metal (1.5B 234 vs 131 MB; M26 739 vs 415 MB), and every table that shares the policy follows:
 Gemma 4 E2B's per-layer embedding table is 2.35 GB int8 against 1.32 GB int4. That table is only gathered on the host
@@ -927,7 +927,7 @@ the generation ends (`generateInto`, the n-gram and grammar speculative loops); 
 |---|---|---|---|
 | SCR-G1 MoE | 0 | `mixtral-tiny` (4 layers, hidden 64, 8 experts, top 2), expert-major on, `prefillChunkRows` 16, a 64-token prompt: bytes allocated (`TotalAlloc`, GC off) between the first chunk's end and the last's, branch against `origin/main` | the branch allocates at least 90% of the arithmetic MoE buffers less than main: 3 chunks × 4 layers × 4 B × (16·64 output + 16·8 router logits + 16·2·64 per-rank) = 153,600 bytes, so a fall of ≥ 138,240 |
 | SCR-G2 logits | 0 | `llama-tiny` (vocab 256): a warm verify round (`forwardN`, K = 4) and a 16-token `prefillLogits`, bytes allocated, branch against main | the round falls by ≥ 0.99 × 4 × 256 × 4 B and the prefill by ≥ 0.99 × 256 × 4 B |
-| SCR-G3 sampler | 0 | `internal/sampling`, vocabulary 151,936, ten requests each `NewSampler`, `Observe` of 64 ids, 8 draws with top-k, top-p, min-p and a repetition penalty, then the release; GC off | requests 2–10 each allocate ≤ 5% of request 1's bytes (main: each the same as request 1) |
+| SCR-G3 sampler | 0 | `internal/runtime/sampling`, vocabulary 151,936, ten requests each `NewSampler`, `Observe` of 64 ids, 8 draws with top-k, top-p, min-p and a repetition penalty, then the release; GC off | requests 2–10 each allocate ≤ 5% of request 1's bytes (main: each the same as request 1) |
 | SCR-G4 identity | 0 | on `mixtral-tiny` with expert-major on and on `llama-tiny`: the chunked batched prefill's last logits against the sequential decode's, byte-equal; the speculative tests (`TestSpec*`, `TestGenerateNgram*`), the sampler package's tests, then `scripts/refresh_parity_hashes.sh` | all byte-equal and PASS (not skip); the goldens green |
 
 Planted defects, each run once on the committed tree and reverted: the MoE branch allocating its output again (G1 red), the
@@ -958,16 +958,16 @@ diagnosed, not re-run. Cost: seconds for G1–G3, a few minutes for G4's test se
 | item | where | bytes | fix |
 |---|---|---|---|
 | tokenizer kept size and load spike | `tokenizer/sentencepiece.go:Tokenizer`; aikit's GGUF metadata reader boxes every string | 25.8 MB kept, 92.9 MB allocated per load (measured on a Go 1.24 copy) | merge ranks keyed by `(leftID, rightID)` as one uint64 (10.2 → 4.7 MB), a size hint for the rank map, a typed metadata reader (~half the spike); ~15–18 MB per model |
-| job store keeps prompt ids with no journal | `internal/serveapp/job.go:jobStore` | ~41 MB at its cap with 20K prompts | `[]int32`, or keep them only with `-job-dir` |
-| feature cache not priced | `internal/serveapp/feature_cache.go:featureCacheBudget` | 256 MiB per vision model | count it in the fit plan, or size it from free memory |
-| token bytes per adapter | `internal/serveapp/openai.go:loadedModel` (`tokenBytes`) | 5.4 MB per adapter | share with the base, as the tokenizer is |
+| job store keeps prompt ids with no journal | `internal/app/serveapp/job.go:jobStore` | ~41 MB at its cap with 20K prompts | `[]int32`, or keep them only with `-job-dir` |
+| feature cache not priced | `internal/app/serveapp/feature_cache.go:featureCacheBudget` | 256 MiB per vision model | count it in the fit plan, or size it from free memory |
+| token bytes per adapter | `internal/app/serveapp/openai.go:loadedModel` (`tokenBytes`) | 5.4 MB per adapter | share with the base, as the tokenizer is |
 | heap-only quant | q4k (phi3's default on CPU/CUDA) has no `.giw` form; on the arm64 heap path o_proj, down_proj and experts keep the dual copy even with `Backend: "cpu"` | model-sized | after MEM1, decide whether the heap path still matters |
 
 **D8b-build gates, registered 2026-10-21 before the code (D8B-G).** The build: a `.giw` tensor kind 7 for a native Q4_K
 matrix (the header, then the raw super-blocks, aligned and aliased from the mapping through `linalg.WrapQ4K`), the
 weights format version 17 → 18 (every sidecar of an older version is rebuilt on its next load, as the version rule
 already does), the writer no longer refusing q4k, a q4k `.gguf` routed to its sidecar by `decoder.Load`'s default and
-by `internal/modelload` (q4k leaves the direct-only list for a `.gguf`; a safetensors directory at q4k stays direct), and
+by `internal/runtime/modelload` (q4k leaves the direct-only list for a `.gguf`; a safetensors directory at q4k stays direct), and
 a q4k bundle's per-32 activation group stamped from its baked quant label when `Options` does not set it.
 
 | gate | tier | instrument | PASS iff |
@@ -1046,7 +1046,7 @@ two halves, and the reading separates them:
   1,150 (42–61% more; `Backend` empty, so every projection kept both forms). After MEM1 the same library load holds 1 MiB
   (`docs/measurements/mem1-2026-10/README.md`). Only a caller who sets `DirectLoad` pays it, and that caller asked for
   the heap build.
-- **q4k still has no `.giw` form, so phi3 on the CPU or CUDA is still a heap load by default.** `internal/modelload`'s
+- **q4k still has no `.giw` form, so phi3 on the CPU or CUDA is still a heap load by default.** `internal/runtime/modelload`'s
   `activationSafeQuant` picks q4k for a phi3 `.gguf` on the CPU or CUDA (phi3 is the only family
   `decoder.ActivationQuantHazard` names), and q4k routes direct. Phi-3-mini's `.gguf` is 2.39 GB, and the heap build
   should hold about that (Q4_K tensors wrapped exact, the rest int8; arithmetic, not measured). On Metal, phi3 loads int8int8 through its sidecar and is not
@@ -1139,7 +1139,7 @@ choice in aikit and a storage choice in ken (**D4**).
 | `MADV_DONTNEED` eviction on darwin | a no-op on a read-only mapping; why pool mode is the darwin default | never-swap S5; aikit perf-dead-ends |
 | `F_NOCACHE` on the expert pread fd | measured, no effect | Metal code notes |
 | f32 routers, f32 matrices copied on `.giw` load | deliberate (discrete top-k; small) | the `.giw` writer's kind choice |
-| embed-int4 as the CPU/CUDA default | owner decision 2026-09-28 | `internal/loadflags/loadflags.go` |
+| embed-int4 as the CPU/CUDA default | owner decision 2026-09-28 | `internal/app/loadflags/loadflags.go` |
 | PQ / IVF in aikit | int8 already took the 4× | aikit perf-dead-ends, "Reasoned out, not built" |
 | CPU vision scratch pooling; folding worker scratch | measured, no gain | aikit roadmap §3 (A-4, A-5) |
 | RoPE tables | none are precomputed; nothing to save | — |

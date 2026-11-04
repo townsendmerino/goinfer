@@ -15,7 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/modelload"
+	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 )
 
 // TestG4LayerMajor_M26AB is 4b's grade (docs/tasks/task-m26-mac-2026-10.md, pre-registered): on M26, a fresh
