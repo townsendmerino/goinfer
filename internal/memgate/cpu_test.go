@@ -85,10 +85,6 @@ var cpuDenseVectorFixtures = []vectorFixture{
 // cpuMemGaps is the CPU's table of known reds. It may only shrink: the fix that removes a row lowers cpuMemGapsPin.
 var cpuMemGaps = append(denseVectorGaps(cpuDenseVectorFixtures), []Gap{
 	gemma4MoEDenseGap("testdata/gemma4-moe-kv-tiny"), gemma4MoEDenseGap("testdata/gemma4-moe-kv-tiny32"),
-	{Row: "testdata/gemma4-moe-kv-tiny *", Line: mem.LineKV, What: "NewCache reserves every layer at the model's kvDim, and a wider layer grows past that by append, holding more than it stores",
-		Item: "MM8 CPU, KV reserve by layer", Bytes: cpuKVGrowth},
-	{Row: "testdata/gemma4-moe-kv-tiny32 *", Line: mem.LineKV, What: "NewCache reserves every layer at the model's kvDim, and a wider layer grows past that by append, holding more than it stores",
-		Item: "MM8 CPU, KV reserve by layer", Bytes: cpuKVGrowth},
 	{Row: "testdata/gptoss_tiny.gguf *", Line: mem.LineExperts, What: "gpt-oss's expert biases are held with its experts, and the plan's expert figure sums weight matrices",
 		Item: "MM8 CPU, gpt-oss experts", Bytes: func(map[string]int64) int64 { return 8192 }},
 }...)
@@ -131,7 +127,7 @@ func init() {
 	}
 }
 
-const cpuMemGapsPin = 108
+const cpuMemGapsPin = 106
 
 // cpuKVGaps are the CPU plan's KV figures that a row reads wrong, each in MM8's row. The plan prices ctx positions of K and V on every layer.
 var cpuKVGaps = func() []Gap {
@@ -163,9 +159,6 @@ func gemma4MoEDenseGap(fixture string) Gap {
 	return Gap{Row: fixture + " *", Line: mem.LineDense, What: "Gemma 4's MoE block holds router and expert tables beside the vectors, priced nowhere: not diagnosed",
 		Item: "MM8, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return 10542 }}
 }
-
-// cpuKVGrowth bounds an append-grown layer: Go's growth from the reserved capacity holds at most about four times what it stores.
-func cpuKVGrowth(f map[string]int64) int64 { return 3 * f["kvFormula"] }
 
 func denseVectorGaps(fixtures []vectorFixture) []Gap {
 	var out []Gap
