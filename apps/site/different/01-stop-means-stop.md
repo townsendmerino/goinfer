@@ -98,7 +98,7 @@ One record, dated 2026-09-12: [the halt-time record](https://github.com/townsend
 | Machine | A MacBook, Apple Silicon (arm64), CPU backend |
 | Model | Qwen2.5-Coder-0.5B-Instruct: a 4-bit Q4_K_M file, converted at load to 8-bit weights and 8-bit activations (int8int8) |
 | Build | goinfer [`4b979d0`](https://github.com/townsendmerino/goinfer/commit/4b979d0) |
-| Test | [`TestServe_haltUnderLoad`](https://github.com/townsendmerino/goinfer/blob/main/internal/serveapp/halt_test.go): 32 concurrent streaming chats, `-max-inflight 32 -max-queue 32`, then `POST /admin/halt` |
+| Test | [`TestServe_haltUnderLoad`](https://github.com/townsendmerino/goinfer/blob/main/internal/app/serveapp/halt_test.go): 32 concurrent streaming chats, `-max-inflight 32 -max-queue 32`, then `POST /admin/halt` |
 | Time from halt to every cancelled generation stopped | ~10ms, with and without `-race` (Go's race detector) |
 | Outcome | 1 of 32 cancelled mid-stream; 31 of 32 refused with 503 before starting |
 
@@ -106,7 +106,7 @@ Only one request streams at a time, because this build runs one generation per m
 
 The ~10ms is coarse. The server checks for an empty registry every 10 ms, so a reading of 10 means "within about one check". The record calls it a single-machine sample, not a pass/fail bar.
 
-Two tests check behaviour, not time. [`TestServe_cancelByID`](https://github.com/townsendmerino/goinfer/blob/main/internal/serveapp/cancel_test.go) needs a real `.gguf` model file. It cancels a 4096-token stream by id and checks the `cancelled` finish, the `goinfer_cancelled` event, and that the id leaves the registry. It then checks that the next greedy request (greedy: always take the most likely next token, so a repeat gives the same text) matches one made before the cancel. That shows the cancel left the model's state clean. [`TestServe_adminSocket`](https://github.com/townsendmerino/goinfer/blob/main/internal/serveapp/admin_socket_test.go) needs no model: halt, status and resume work over the socket without a key, and `/admin/halt` on TCP returns 404. The model-backed tests skip unless `GOINFER_SERVE_MODEL` names a model file. The halt-file and signal triggers have no test; the design notes say they were tried by hand.
+Two tests check behaviour, not time. [`TestServe_cancelByID`](https://github.com/townsendmerino/goinfer/blob/main/internal/app/serveapp/cancel_test.go) needs a real `.gguf` model file. It cancels a 4096-token stream by id and checks the `cancelled` finish, the `goinfer_cancelled` event, and that the id leaves the registry. It then checks that the next greedy request (greedy: always take the most likely next token, so a repeat gives the same text) matches one made before the cancel. That shows the cancel left the model's state clean. [`TestServe_adminSocket`](https://github.com/townsendmerino/goinfer/blob/main/internal/app/serveapp/admin_socket_test.go) needs no model: halt, status and resume work over the socket without a key, and `/admin/halt` on TCP returns 404. The model-backed tests skip unless `GOINFER_SERVE_MODEL` names a model file. The halt-file and signal triggers have no test; the design notes say they were tried by hand.
 
 ## Use it
 
