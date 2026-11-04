@@ -41,13 +41,47 @@ type clSource interface {
 
 type gitSource struct{ root, rev string }
 
+// read is the file at g.rev. A path that moved (layout Tier 2; see preMovePath) is read at the revision's own name:
+// the new path first, and the pre-move name once when git says the new one is absent there.
 func (g gitSource) read(path string) ([]byte, error) {
-	cmd := exec.Command("git", "show", g.rev+":"+path)
-	cmd.Dir = g.root
-	return cmd.Output()
+	b, err := g.showOnce(path)
+	if err == nil {
+		return b, nil
+	}
+	old, moved := preMovePath(path)
+	if !moved || !absentFromRev(err) {
+		return nil, err
+	}
+	return g.showOnce(old)
 }
 
+func (g gitSource) showOnce(path string) ([]byte, error) {
+	cmd := exec.Command("git", "show", g.rev+":"+path)
+	cmd.Dir = g.root
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	b, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git show %s:%s: %v: %s", g.rev, path, err, strings.TrimSpace(stderr.String()))
+	}
+	return b, nil
+}
+
+// list is the file names directly under dir at g.rev. `git ls-tree` prints nothing for a missing directory, so a moved
+// directory with no entries at the new name is listed under its pre-move name.
 func (g gitSource) list(dir string) ([]string, error) {
+	names, err := g.lsTree(dir)
+	if err == nil && len(names) > 0 {
+		return names, nil
+	}
+	old, moved := preMovePath(dir)
+	if !moved {
+		return names, err
+	}
+	return g.lsTree(old)
+}
+
+func (g gitSource) lsTree(dir string) ([]string, error) {
 	cmd := exec.Command("git", "ls-tree", "--name-only", g.rev, dir+"/")
 	cmd.Dir = g.root
 	out, err := cmd.Output()
