@@ -41,7 +41,7 @@ func CPUAnchor() string { return kernelprint.CurrentConfig().String() }
 
 // GoldenPath is backend's golden on this platform, under the repository root.
 func GoldenPath(root, backend string) string {
-	return filepath.Join(root, "internal", "towerid", "testdata", fmt.Sprintf("towers.%s-%s-%s.json", backend, runtime.GOOS, runtime.GOARCH))
+	return filepath.Join(root, "internal", "diag", "towerid", "testdata", fmt.Sprintf("towers.%s-%s-%s.json", backend, runtime.GOOS, runtime.GOARCH))
 }
 
 // CheckGolden grades rec, recorded under anchor, against its backend's golden case for case, exactly (G-SB9-1). With update

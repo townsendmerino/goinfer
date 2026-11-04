@@ -17,8 +17,8 @@ Body lengths (words, tables and code included): 13 = 977, 14 = 925, 16 = 894, 18
 | CUDA 1.5B 1.380× (218.0 to 300.6), 7B 1.826× (74.03 to 135.16, one pair, not gated), 99.8% of tokens in 4-row steps, driver 595.91.07 | `concurrency-mc3-cuda-2026-09-27.md`, gate table, "W7 cells" |
 | CPU 7B 2.19× the step-1 workers (5.44 to 11.92), lone 1.000×, 0.5B forced-on 0.73× | `concurrency-mc3c-step2-2026-09-27.md`, "Result" |
 | Bit-identity test: 4 sequences × 12 steps, 0 logits differ; gates registered before timing | mc3 record, "Identity and correctness gates" and "The W7 grading" |
-| Defaults `-max-concurrent` 4, `-kv-sessions` 4, `-prefill-chunk` 512, `-max-queue` 8 (429); `-cpu-batch auto` at 2 GiB; ~117 MB slot | `docs/server.md` (concurrency paragraphs); `internal/serveapp/main.go` flag definitions |
-| Banner line text | `internal/serveapp/banner.go` |
+| Defaults `-max-concurrent` 4, `-kv-sessions` 4, `-prefill-chunk` 512, `-max-queue` 8 (429); `-cpu-batch auto` at 2 GiB; ~117 MB slot | `docs/server.md` (concurrency paragraphs); `internal/app/serveapp/main.go` flag definitions |
+| Banner line text | `internal/app/serveapp/banner.go` |
 | Not continuous batching or paged attention; bit-identity is within machine and OS | `docs/positioning.md` |
 | Which families stay one at a time | mc3 record "Scope"; cuda record "Reading"; server.md |
 
@@ -46,7 +46,7 @@ Body lengths (words, tables and code included): 13 = 977, 14 = 925, 16 = 894, 18
 | Later turns differed: 3 / 18 and 15 / 72 equal, 30 / 30 single-turn; cause (one token short, 156 vs 157); fix commit 97615930; 24 / 24 after | same record, §4 and "Update: §4's divergence found and fixed" |
 | CUDA block drafter same gap; 14/14 with fix, 11/14 reverted (nobara, 2026-09-28) | same record, "the other speculation loops checked" |
 | Mechanism (prompt-lookup index, adaptive depth) | `docs/spec/02-cache-ngram.md`; metal record §2 |
-| `--spec ngram`, greedy identical, sampled "in-distribution", per-request fallback | `internal/serveapp/main.go` flag help; `docs/server.md` |
+| `--spec ngram`, greedy identical, sampled "in-distribution", per-request fallback | `internal/app/serveapp/main.go` flag help; `docs/server.md` |
 | Use for one user or agent loop, not a shared server | `docs/server.md`; metal record "Reading" |
 
 **Conflicts**: the brief's "0.98×" matches two records (0.979× the morning measurement, 0.977× the graded run's old arm). Both are quoted and explained. `server.md`'s "1.85×" for the 7B is 1.846× in the record; the record is used.
@@ -94,7 +94,7 @@ Body lengths (words, tables and code included): 13 = 977, 14 = 925, 16 = 894, 18
 | Machine, date and time (08:52–09:02, load < 0.6), v12 weights / v3 bundle, 1.29 / 5.18 GB, transcode 20.9 / 102.1 s | same record, "Results" |
 | CUDA: 2.6–2.8 s vs 8.0–8.2 s (1.5B), 10.0–11.0 s vs 26.2–26.8 s (7B); first start 29.7 s / 110.4 s | same record, "CUDA, and the linux default flip" |
 | macOS memory: 327 MB vs 1572 MB (1.5B, before v12) | `sidecar-default-2026-09-22.md`, "Results" |
-| Default on darwin and linux; `-direct-load`, `GOINFER_GGUF_DIRECT=1`; refusal when disk is short; transcode message; `cmd/prequant` flags; a directly passed `.giw` is not a cache | `internal/prequant/prequant.go`; `internal/loadflags/loadflags.go`; `cmd/prequant/main.go`; `CHANGELOG.md` |
+| Default on darwin and linux; `-direct-load`, `GOINFER_GGUF_DIRECT=1`; refusal when disk is short; transcode message; `cmd/prequant` flags; a directly passed `.giw` is not a cache | `internal/runtime/prequant/prequant.go`; `internal/app/loadflags/loadflags.go`; `cmd/prequant/main.go`; `CHANGELOG.md` |
 | v12 aligned-scale change on 2026-09-24 | commit `cdae727d` (message, 07:14 -0700) |
 
 **Re-measured after the scale-alignment change?** The figures were measured after it, on v12 / bundle v3 files (the record's own header line), the same morning. They were not re-measured on later formats: v13 and v14 (Metal alias, opt-in then default) and the unreleased v15 (CPU f16 scales), after which an older int4 sidecar is rebuilt once (`CHANGELOG.md`, Unreleased). The page says so in the last "doesn't" entry. The only post-change CPU figure I found is peak RSS in the CHANGELOG (1.5B: 1,123–1,127 MB before, 1,045–1,053 MB after rebuild); I did not use it, since it is a different quantity.

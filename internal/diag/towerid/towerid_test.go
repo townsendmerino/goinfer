@@ -114,7 +114,7 @@ func (o *outcomeTB) outcome(run func(*outcomeTB)) (res *outcomeTB) {
 // anchors either way; SkipOtherAnchor skips and FailOtherAnchor fails whatever the environment.
 func TestCheckGolden_otherAnchor(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "internal", "towerid", "testdata"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "internal", "diag", "towerid", "testdata"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	rec := Record{Schema: 1, Backend: "webgpu", GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,

@@ -6,8 +6,8 @@ Draft, `reviewed:` empty. Body 900 words (tables and code included). The site bu
 
 | Claim | Source |
 |---|---|
-| Cancel by id: `GET /admin/generations`, `POST /admin/generations/{id}/cancel {"reason"}`; reason required (400 otherwise); reply `{"id","found"}` | `internal/serveapp/admin.go` (`registerAdminRoutes`, `handleAdminGenerationCancel`) |
-| Generation list fields (id, model, started, tokens_so_far) | `internal/serveapp/generations.go` (`generationSnapshot`) |
+| Cancel by id: `GET /admin/generations`, `POST /admin/generations/{id}/cancel {"reason"}`; reason required (400 otherwise); reply `{"id","found"}` | `internal/app/serveapp/admin.go` (`registerAdminRoutes`, `handleAdminGenerationCancel`) |
+| Generation list fields (id, model, started, tokens_so_far) | `internal/app/serveapp/generations.go` (`generationSnapshot`) |
 | Halt: `POST /admin/halt {"reason"}` (reason required), reply `{"halted":true,"reason","quiesced_in_ms"}`, blocks until quiescent, bounded 30 s; `POST /admin/resume`; `GET /admin/status` | `halt.go` (`halt`, `handleAdminHalt`), `admin.go` (`handleAdminStatus`) |
 | 503 `{"error":"halted","reason"}` on inference routes while halted; `/health` gets `halted`/`halt_reason`/`halt_at` | `halt.go` (`haltGate`), `health.go` |
 | Halt checked before the in-flight cap and again when a queued request is admitted; the missing second check was a bug found while building | `docs/tasks/task-halt-2026-09.md`, K2 "Found while building"; `openai.go` (`tryEnter`) |

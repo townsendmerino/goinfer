@@ -20,11 +20,11 @@ Draft: `04-a-go-struct-the-model-cant-break.md` (body about 846 words including 
 | Mask timing: 1.299 ms/step over a 17-token document; 1.21x (pos 64) / 1.18x (pos 512) against 6.2 / 7.4 ms; worst state "<= 1.72x upper bound"; 96.88% plain-string ids; ~1.65x against a ~2 ms step; measured 2026-09-02 | `docs/QUEUE.md`, "## G37" (the "second lever" and "Limits, stated" subsections); date from "Measured 2026-09-02" and commit `2a44d4e2` |
 | Test facts: 5 schemas x 200 seeds, independent validator; struct round trip 200, DisallowUnknownFields; 3000 random walks over `JSON()` valid per encoding/json; small made-up vocabulary | `constrain/schema_test.go` (`propertySchemas`, `TestSchema_propertyValidates`, `TestGrammarFromStruct_roundTrip`); `constrain/constrain_test.go` (`TestConstrainedDecode_alwaysValidJSON`, `const trials = 3000`) |
 | N-79: a control/special id that is not EOS can appear as text inside a string; deferred | `constrain/constrain.go` comment in `maskID`; `docs/audit-2026-09-10.md` N-79 and its header ("DEFERRED") |
-| Length stop reported as finish_reason "length" | `internal/serveapp/openai.go` comment at `effectiveBudget` (~line 1687). The claim that the grammar cannot force a close before max_tokens is from reading `Process` (no forced close); the sibling page 03 says the same of tool calls. Not run |
+| Length stop reported as finish_reason "length" | `internal/app/serveapp/openai.go` comment at `effectiveBudget` (~line 1687). The claim that the grammar cannot force a close before max_tokens is from reading `Process` (no forced close); the sibling page 03 says the same of tool calls. Not run |
 | `go get` line | `README.md` install section |
 | `go run ./examples/confidence ...` command | doc comment atop `examples/confidence/main.go` |
-| `--schema` flag on the chat demo | `internal/chatapp/main.go` (flag "schema"); README's `go run ./demo/chat --model ... --schema person.schema.json` (`demo/chat/main.go` imports `internal/chatapp`) |
-| Server takes `response_format` json_schema through `constrain.JSONSchema`; `json_object` uses `constrain.JSON()` | `internal/serveapp/openai.go` `grammarFor`; `docs/server.md` |
+| `--schema` flag on the chat demo | `internal/app/chatapp/main.go` (flag "schema"); README's `go run ./demo/chat --model ... --schema person.schema.json` (`demo/chat/main.go` imports `internal/chatapp`) |
+| Server takes `response_format` json_schema through `constrain.JSONSchema`; `json_object` uses `constrain.JSON()` | `internal/app/serveapp/openai.go` `grammarFor`; `docs/server.md` |
 
 ## Conflicts
 

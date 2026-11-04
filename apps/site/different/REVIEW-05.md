@@ -10,22 +10,22 @@ The brief asks for D6a ECE and the bias-adjusted bar as measured quality. **D6a 
 
 | Claim | Source |
 |---|---|
-| `POST /v1/systemone`, TypeSafe wire shape; jevx and SDKs work by base-URL | `docs/server.md` "Decisions"; `internal/serveapp/systemone.go` header; `docs/measurements/decisions-d0-prior-art-2026-09-27.md` §3 |
+| `POST /v1/systemone`, TypeSafe wire shape; jevx and SDKs work by base-URL | `docs/server.md` "Decisions"; `internal/app/serveapp/systemone.go` header; `docs/measurements/decisions-d0-prior-art-2026-09-27.md` §3 |
 | Request/response example; `usage.output_tokens` 0; `goinfer` block fields (route, template, calibrated map) | `docs/server.md` example; `serveSystemOne` in `systemone.go` |
 | Kinds: noul P(true), choice 2..16 (A..P), score 2..10 levels with expected level | `decide.MaxChoiceOptions`, `MaxScoreLevels` in `internal/decide/decide.go`; `systemOneRequest` |
 | confidence = `(n·p − 1)/(n − 1)` | `typesafeConfidence` in `systemone.go`; `docs/server.md` "confidence" |
 | 422 before any prefill for a rule-breaking question | `handleSystemOne`: validation runs before `withModel`; empty `instructions`, unknown type, bad criteria, over-limit questions all 422 |
-| `/v1/models` lists `decisions` (endpoint, route, kinds, template, calibrated) | `decisionsField` in `internal/serveapp/openai.go` |
+| `/v1/models` lists `decisions` (endpoint, route, kinds, template, calibrated) | `decisionsField` in `internal/app/serveapp/openai.go` |
 | Mechanism: prompt with lettered options, chat-v1 asks for one letter, one prefill, restricted softmax at last position, per-kind temperature, labels must be single tokens | `internal/decide/decide.go` (`RenderChat`, `score`, `New`); D1 in the task doc |
 | Adapter entry refused; encoder/non-generative entries lack `decisions` | `serveSystemOne` (400 "not supported on a compute-time adapter entry"); `decisionsField` (nil) |
-| Flags `-decisions-template` (default chat-v1), `-decisions-calibration`; startup refusal on template mismatch | `internal/serveapp/main.go` lines ~398-399, ~505-516 |
-| `goinfer-chat decide` / `decisions-calibrate`, flags `--model --template --calibration --permute -o`, input row fields, default template `bare-v1` | `internal/decidecmd/decidecmd.go`; dispatch in `internal/chatapp/main.go` ~142 |
+| Flags `-decisions-template` (default chat-v1), `-decisions-calibration`; startup refusal on template mismatch | `internal/app/serveapp/main.go` lines ~398-399, ~505-516 |
+| `goinfer-chat decide` / `decisions-calibrate`, flags `--model --template --calibration --permute -o`, input row fields, default template `bare-v1` | `internal/app/decidecmd/decidecmd.go`; dispatch in `internal/app/chatapp/main.go` ~142 |
 | B0 numbers 0.5323 / 0.898 / 0.5180 / 0.9181 / 0.0720 / 0.0396 (authors' run, bare-v1, bf16) | D0 record §1 "Published numbers" table |
 | Pre-registered bar 0.8881 / 0.8181, bias-adjusted ECE bar sqrt(0.05² + floor²), 872-row eval sample, arm A chat-v1, nobara CUDA, Qwen3.5-9B Q4_K_M | task doc "D6a pre-registration", "amendment", "amendment 2" |
 | Smoke 3/6 vs 1/6, "decides nothing" | task doc, D6a pre-registration "Machine" bullet |
 | C0 enum AUROC 0.847, bar 0.65, 1.5B on Metal | `confidence-c0-2026-09-27.md` (table, Setup); the 0.65 bar is in the task doc, as writeup 02 already cites |
 | 9B fell back to CPU on the Mac, so D6a is on CUDA | task doc, D6a pre-registration |
-| Metal `--embed-int4=false` note | `docs/quantization.md` "Known issue"; flag in `internal/loadflags/loadflags.go` |
+| Metal `--embed-int4=false` note | `docs/quantization.md` "Known issue"; flag in `internal/app/loadflags/loadflags.go` |
 | Many questions re-prefill; no prefix reuse on Gated-DeltaNet families; D7 is a projection only | `docs/server.md`; `decisions-d7-2026-09-28.md` header and §4.5 |
 | `--permute` cost and position bias | `decidecmd.go`; task doc D1 ("permute 3 flattened a 3-way choice", 0.5B, anecdotal) |
 

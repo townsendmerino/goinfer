@@ -12,19 +12,19 @@ Draft only (`reviewed:` empty). Body about 830 words. The site build passes with
 | Refusal names -stream-weights, smaller model/quant, `GOINFER_NO_FIT_GUARD=1` | `decoder/fitguard.go` `remedy()`, `declineErr()` |
 | Estimate = weights + KV + mapped source file vs 70% of currently available memory; live, not total | `decoder/fitguard.go` (`fitMemFraction`, `arithmetic`); `CHANGELOG.md` v0.17.2; `task-first-hour.md` "R13-follow-on" |
 | Third live re-run: refused in under 5 seconds, zero Swapouts, 8.9 GB weights vs 5.0 GB budget (70% of ~7.1-7.2 GB) | `task-first-hour.md` "Re-verified live, third time" |
-| Sidecar is the default for a .gguf on macOS and Linux; a .giw load prices KV + scratch only | `internal/prequant/prequant.go` `DefaultToSidecar`; `task-never-swap-2026-09.md` S4 item 1; `docs/env-vars.md` `GOINFER_GGUF_DIRECT` |
-| Automatic retry: dense only, one retry, note on stderr, `--fit=off` keeps the refusal | `internal/modelload/modelload.go` (the retry block); `loadflags.go` `fitHelp` |
+| Sidecar is the default for a .gguf on macOS and Linux; a .giw load prices KV + scratch only | `internal/runtime/prequant/prequant.go` `DefaultToSidecar`; `task-never-swap-2026-09.md` S4 item 1; `docs/env-vars.md` `GOINFER_GGUF_DIRECT` |
+| Automatic retry: dense only, one retry, note on stderr, `--fit=off` keeps the refusal | `internal/runtime/modelload/modelload.go` (the retry block); `loadflags.go` `fitHelp` |
 | Retry cost: streamed/resident 0.944, ~5.6%, 7B q4_k_m, window 7 of 28, 6 runs per arm, 2026-09-09 | `task-gpu-paths-2026-09.md` (entry dated 2026-09-09); `task-fit-to-hardware.md` header |
-| Tripwire: swap-used, first sample is baseline, +512 MB, 2 s poll, direct .gguf load aborts naming growth and priced terms | `decoder/swapwatch.go` defaults; `internal/swapguard/swapguard.go`; `docs/env-vars.md` `GOINFER_SWAP_GUARD` |
-| Serving half: 503, recovers after 30 s within threshold, running requests finish, banner line | `docs/server.md`; `internal/serveapp/swapguard.go` |
+| Tripwire: swap-used, first sample is baseline, +512 MB, 2 s poll, direct .gguf load aborts naming growth and priced terms | `decoder/swapwatch.go` defaults; `internal/guard/swapguard/swapguard.go`; `docs/env-vars.md` `GOINFER_SWAP_GUARD` |
+| Serving half: 503, recovers after 30 s within threshold, running requests finish, banner line | `docs/server.md`; `internal/app/serveapp/swapguard.go` |
 | Positive control: tripped at +0.72-0.80 GB, peak +1.69 GB, external kill, machine recovered, cause inferred not traced | `swap-tripwire-2026-09-22.md` (result, table, "Why the peak overshoots") |
 | Negative controls: 100/100 each, 0 trips, 467 readings flat at 1,346.12 MB, M1 Pro 16 GB | `swap-tripwire-negative-controls-2026-09-24.md` |
 | Sidecar vs direct: anonymous footprint 16-21%, swap delta 0 MB | `sidecar-default-2026-09-22.md` |
-| Load-time abort covers only a direct .gguf build, not sidecar/streamed/safetensors | `internal/modelload/modelload.go` `loadGuarded`; `task-never-swap-2026-09.md` S3 "Scope, deliberately narrow" |
+| Load-time abort covers only a direct .gguf build, not sidecar/streamed/safetensors | `internal/runtime/modelload/modelload.go` `loadGuarded`; `task-never-swap-2026-09.md` S3 "Scope, deliberately narrow" |
 | Swap probe on macOS and Linux only, else unknown | `decoder/memwatch_darwin.go`, `memwatch_linux.go`, `memwatch_other.go` |
 | MoE excluded from the auto retry; manual CPU MoE streaming ran 2h10 with zero completions | `decoder/fitguard.go` `FitDeclineError` comment; `task-never-swap-2026-09.md` S0 |
 | Guard is an "every unknown proceeds" design; 70% came from one measured failure | `decoder/fitguard.go` header and `fitMemFraction` comment |
-| `goinfer-chat fit <path>` loads the checkpoint | `internal/fitcmd/fit.go` usage; only `internal/chatapp/main.go` dispatches `fit` (serve does not) |
+| `goinfer-chat fit <path>` loads the checkpoint | `internal/app/fitcmd/fit.go` usage; only `internal/app/chatapp/main.go` dispatches `fit` (serve does not) |
 
 ## Conflicts between records
 

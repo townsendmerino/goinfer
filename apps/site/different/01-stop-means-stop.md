@@ -31,9 +31,9 @@ sources:
   - "docs/measurements/kill-switch-quiescence-2026-09-12.md"
   - "CHANGELOG.md"
   - "docs/ARCHITECTURE.md"
-  - "internal/serveapp/halt.go"
-  - "internal/serveapp/admin.go"
-  - "internal/serveapp/admin_socket.go"
+  - "internal/app/serveapp/halt.go"
+  - "internal/app/serveapp/admin.go"
+  - "internal/app/serveapp/admin_socket.go"
 ---
 
 ## The problem

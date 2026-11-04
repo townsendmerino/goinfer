@@ -52,8 +52,8 @@ sources:
   - "docs/env-vars.md"
   - "CHANGELOG.md"
   - "decoder/fitguard.go"
-  - "internal/modelload/modelload.go"
-  - "internal/swapguard/swapguard.go"
+  - "internal/runtime/modelload/modelload.go"
+  - "internal/guard/swapguard/swapguard.go"
 ---
 
 ## The problem

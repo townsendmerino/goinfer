@@ -64,7 +64,7 @@ sources:
   - "docs/measurements/sidecar-default-2026-09-22.md"
   - "docs/giw-bundles.md"
   - "CHANGELOG.md"
-  - "internal/prequant/prequant.go"
+  - "internal/runtime/prequant/prequant.go"
 ---
 
 ## The problem

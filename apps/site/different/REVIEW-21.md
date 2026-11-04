@@ -6,7 +6,7 @@ Draft: `site/different/21-transcripts-that-match-the-reference.md` (body about 8
 
 | Claim | Source |
 |---|---|
-| `POST /v1/audio/transcriptions`; formats `json`, `text`, `srt`, `vtt`, `verbose_json`; `language` or detection; longer than 30 s window by window; at most 600 s; 16-bit PCM WAV only, mp3 and m4a a 400; `prompt`, `stream` and word-level timestamps refused by name; one transcription at a time per model; listed in `/v1/models` with `audio.transcriptions`; served beside chat models | `docs/server.md`, the "Speech to text" paragraphs; `internal/serveapp/speech.go` |
+| `POST /v1/audio/transcriptions`; formats `json`, `text`, `srt`, `vtt`, `verbose_json`; `language` or detection; longer than 30 s window by window; at most 600 s; 16-bit PCM WAV only, mp3 and m4a a 400; `prompt`, `stream` and word-level timestamps refused by name; one transcription at a time per model; listed in `/v1/models` with `audio.transcriptions`; served beside chat models | `docs/server.md`, the "Speech to text" paragraphs; `internal/app/serveapp/speech.go` |
 | OpenAI's decode policy by default: compression ratio over 2.4, average log-probability under -1.0, a silent window skipped; a `temperature` above 0 is one attempt from goinfer's own seeded stream | `docs/server.md`, same paragraphs |
 | 73/73 transcripts byte-equal to transformers, WER 6.70% on both sides, detected language differs on 0/73 | `docs/tasks/task-multimodal-support-2026-10.md`, "G-S14f3: PASS" (2026-10-10, nobara-pc night run) and "G-S14t2, end to end: PASS" (2026-10-11) |
 | The reference is transformers 5.15.0 in float32; the clips are `hf-internal-testing/librispeech_asr_dummy` | `docs/measurements/multimodal-support-2026-10/run-s14f-night.sh` (header); the task doc's G-S14c4 "Data" line |

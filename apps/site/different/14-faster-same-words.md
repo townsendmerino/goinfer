@@ -55,7 +55,7 @@ sources:
   - "docs/spec/02-cache-ngram.md"
   - "docs/server.md"
   - "scripts/bench_spec_copy.py"
-  - "internal/serveapp/openai.go"
+  - "internal/app/serveapp/openai.go"
 ---
 
 ## The problem

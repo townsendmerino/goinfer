@@ -43,9 +43,9 @@ sources:
   - "docs/measurements/decisions-d7-2026-09-28.md"
   - "docs/measurements/confidence-c0-2026-09-27.md"
   - "docs/integrations/typesafe-jevx.md"
-  - "internal/serveapp/systemone.go"
+  - "internal/app/serveapp/systemone.go"
   - "internal/decide/decide.go"
-  - "internal/decidecmd/decidecmd.go"
+  - "internal/app/decidecmd/decidecmd.go"
 ---
 
 ## The problem
