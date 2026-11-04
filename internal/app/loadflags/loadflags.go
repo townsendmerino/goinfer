@@ -132,14 +132,16 @@ type Overrides struct {
 
 // ServeLoad is serve's load settings, the same for every model it serves.
 type ServeLoad struct {
-	KVQuant       string // --kv-quant; "" follows --kv
-	KVSessions    int    // --kv-sessions, also the KV slots a GPU-resident backend is asked for
-	KVSessionsSet bool   // --kv-sessions was given; without it Metal keeps its own slot default
-	PrefillChunk  int    // --prefill-chunk; 0 = off
-	KVShareOff    bool   // no request takes KV rows another conversation computed
-	KVHostBytes   int64  // the prefix-snapshot budget; 0 = off
-	KVDemote      bool   // keep a released conversation's rows under that budget
-	CPUBatch      int    // --cpu-batch: decoder.CPUBatchAuto, CPUBatchOn or CPUBatchOff
+	KVQuant          string // --kv-quant; "" follows --kv
+	KVSessions       int    // --kv-sessions, also the KV slots a GPU-resident backend is asked for
+	KVSessionsSet    bool   // --kv-sessions was given; without it Metal keeps its own slot default
+	RecurrentStepSet bool   // --recurrent-step was given
+	Gemma4StepSet    bool   // --gemma4-step was given
+	PrefillChunk     int    // --prefill-chunk; 0 = off
+	KVShareOff       bool   // no request takes KV rows another conversation computed
+	KVHostBytes      int64  // the prefix-snapshot budget; 0 = off
+	KVDemote         bool   // keep a released conversation's rows under that budget
+	CPUBatch         int    // --cpu-batch: decoder.CPUBatchAuto, CPUBatchOn or CPUBatchOff
 }
 
 // Resolve is the decoder.Options f describes on m, with ov layered on. It reads nothing but its arguments: the
@@ -179,6 +181,15 @@ func Resolve(f Flags, m Machine, ov Overrides) decoder.Options {
 	if sv := ov.Serve; sv != nil {
 		o.ResidentKVSlots = sv.KVSessions
 		o.ResidentKVSlotsDefault = !sv.KVSessionsSet
+		// A step flag left unset is on where the load holds two or more sessions, since the step's scratch buys nothing at one. A
+		// recurrent model keeps one slot unless a count is given (decoder.Model.ResidentKVSlotsRequestFor); a Gemma 4 dense model keeps
+		// the backend's default slots.
+		if !sv.RecurrentStepSet {
+			o.ResidentRecurrentStep = sv.KVSessionsSet && sv.KVSessions >= 2
+		}
+		if !sv.Gemma4StepSet {
+			o.ResidentGemma4Step = sv.KVSessions >= 2
+		}
 		o.ResidentPrefillChunk = sv.PrefillChunk
 		o.KVShareOff = sv.KVShareOff
 		o.KVHostBytes = sv.KVHostBytes

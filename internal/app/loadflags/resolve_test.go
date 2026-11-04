@@ -159,3 +159,35 @@ func TestResolve_pure(t *testing.T) {
 		}
 	}
 }
+
+// TestResolve_stepFlagsFollowServeSessions: in serve, a step flag left unset follows the session count, a given one is kept, and chat
+// holds one session, so each is off until given. A recurrent family keeps one slot unless --kv-sessions asks for more, so
+// --recurrent-step follows a given count; a Gemma 4 dense model keeps Metal's default slots, so --gemma4-step follows the default too.
+func TestResolve_stepFlagsFollowServeSessions(t *testing.T) {
+	for _, c := range []struct {
+		name                string
+		app                 App
+		args                []string
+		serve               *ServeLoad
+		wantRecurrent, want bool
+	}{
+		{"chat, unset", Chat, nil, nil, false, false},
+		{"chat, given", Chat, []string{"-recurrent-step", "-gemma4-step"}, nil, true, true},
+		{"serve, the default count", Serve, nil, &ServeLoad{KVSessions: 4}, false, true},
+		{"serve, 4 sessions", Serve, nil, &ServeLoad{KVSessions: 4, KVSessionsSet: true}, true, true},
+		{"serve, 2 sessions", Serve, nil, &ServeLoad{KVSessions: 2, KVSessionsSet: true}, true, true},
+		{"serve, 1 session", Serve, nil, &ServeLoad{KVSessions: 1, KVSessionsSet: true}, false, false},
+		{"serve, given off", Serve, []string{"-recurrent-step=false", "-gemma4-step=false"},
+			&ServeLoad{KVSessions: 4, KVSessionsSet: true, RecurrentStepSet: true, Gemma4StepSet: true}, false, false},
+		{"serve, given on at 1 session", Serve, []string{"-recurrent-step", "-gemma4-step"},
+			&ServeLoad{KVSessions: 1, KVSessionsSet: true, RecurrentStepSet: true, Gemma4StepSet: true}, true, true},
+		{"serve, given on at the default count", Serve, []string{"-recurrent-step"}, &ServeLoad{KVSessions: 4, RecurrentStepSet: true}, true, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			o := Resolve(*parsed(t, c.app, c.args), Machine{}, Overrides{Serve: c.serve})
+			if o.ResidentRecurrentStep != c.wantRecurrent || o.ResidentGemma4Step != c.want {
+				t.Errorf("recurrent %v, gemma4 %v; want %v, %v", o.ResidentRecurrentStep, o.ResidentGemma4Step, c.wantRecurrent, c.want)
+			}
+		})
+	}
+}

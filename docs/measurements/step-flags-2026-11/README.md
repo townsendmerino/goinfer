@@ -53,3 +53,26 @@ MacBookPro18,3, 16 GB, int4, `-ctx 4096`, instrument `stepflags_test.go.txt` (co
 
 **A cost of this measurement.** The 4B's direct safetensors load quantizes in memory, and at 07:45 PST it pushed 1.5 GB of swap-outs while Francis was on the Mac, taking swap in use from about 3.2 to 7.1 GB. It came back down, and no timed run was under way. E4B read 29 MB of swap-outs, with `mac-layout2` building beside it. Neither moves a figure above, which are byte counts. **Load big checkpoints from a bundle,** as `run-4b.sh` now does.
 
+## Francis's decision, 2026-11-04 09:00, relayed by the coordinator: "a seems like a no-brainer"
+
+**In v0.24.0, `--gemma4-step` and `--recurrent-step` default on in serve, on any load with two or more KV sessions, and off in single-session chat, where the scratch buys nothing. The explicit flags stay, so either can be turned on or off.** He decided from the table above: at most 0.996% extra at 4 sessions and at most 1.57% off the longest context, with the 1.38× on Gemma 4 E2B and the 1.58× on Qwen3.5 0.8B on the other side.
+
+**Still open:** Nemotron-H 4B's flag-on arms, night job `step-flags-4b`. If it fails the bar, that comes back to him.
+
+**How "two or more sessions" lands:** a recurrent model keeps one slot unless `--kv-sessions` asks for more, so `--recurrent-step` follows a given count of 2 or more, and plain serve does not batch those models. A Gemma 4 dense model keeps Metal's default slots, so `--gemma4-step` also follows serve's default count. If the memory guard grants one slot where two were asked, the step still builds and takes its scratch.
+
+**What serve's own banner reads, on this change's build:**
+
+| Load | Flags | Concurrency line |
+|---|---|---|
+| Qwen3.5 tiny, no tower | none | one generation |
+| Qwen3.5 tiny, no tower | `--kv-sessions 2` | 2 at once, batched |
+| Qwen3.5 tiny, no tower | `--kv-sessions 2 --recurrent-step=false` | one generation |
+| Nemotron-H tiny | `--kv-sessions 4` | 4 at once, batched |
+| Nemotron-H tiny | none | one generation |
+| Gemma 4 E2B | none | 2 at once, batched |
+| Gemma 4 E2B | `--gemma4-step=false` | one generation |
+| **Qwen3.5 0.8B, its checkpoint directory** | `--kv-sessions 2`, and with `--recurrent-step` given | **one generation** |
+
+**That last row is older than this change, and it narrows what the default buys.** `serve` runs a model with a vision tower attached one generation at a time, and Qwen3.5 0.8B's checkpoint ships its tower. So the step builds, takes its scratch and does not batch there. The 1.58× is an in-process reading (D4b-4, `ForwardBatch` on four slots), and it does not reach that load through serve. Text-only Qwen3.5 loads, such as a `.giw`, and Nemotron-H do batch. The same holds for a Gemma 4 load with its tower attached. Dropping the step where a tower attaches was not done: serve decides concurrency after the towers load, which is after the build.
+
