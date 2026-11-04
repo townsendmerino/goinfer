@@ -32,11 +32,13 @@ EXC="$LOG/untracked-fixtures.exclude"
 fixtures=$(bash "$SRC/scripts/worktree_fixtures.sh" "$SRC" "$WT" "$EXC") || { echo "FATAL: placing the fixtures: $fixtures"; exit 2; }
 cd "$WT" || exit 2
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.excludesFile GIT_CONFIG_VALUE_0="$EXC"
-go work init . ./gpu ./cuda ./metal ./demo/agent || { echo "FATAL: go work init"; exit 2; }
+# Layout Tier 2 (2026-11-04) moved the backends under backend/; a REV from before the move still has them at the root.
+if [ -d backend/cuda ]; then BK=backend/cuda; WG=backend/webgpu; MT=backend/metal; else BK=cuda; WG=gpu; MT=metal; fi
+go work init . "./$WG" "./$BK" "./$MT" ./demo/agent || { echo "FATAL: go work init"; exit 2; }
 { echo "rev:      $(git rev-parse HEAD) ($REV)"; echo "started:  $(date '+%F %T %Z')"; echo "fixtures: $fixtures"
   echo "go:       $(go version)"; echo "gpu:      $(nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv,noheader)"; } | tee "$LOG/provenance.txt"
 # The runner is the SRC checkout's copy, so a REV from before it existed can still be judged by it.
-CGO_ENABLED=0 python3 "$SRC/scripts/cuda_device_suite.py" --cwd "$WT/cuda" --raw "$LOG/go-test.jsonl" -- \
+CGO_ENABLED=0 python3 "$SRC/scripts/cuda_device_suite.py" --cwd "$WT/$BK" --raw "$LOG/go-test.jsonl" -- \
   go test -json -count=1 -p 1 -timeout 25m -tags 'cuda goinfer_testhooks' ${TESTARGS:-} ./... 2>&1 | tee "$LOG/verdict.log"
 rc=${PIPESTATUS[0]}
 # The verdict becomes a GitHub issue (red: open one or comment on the open one; green: close it). A failure here is reported, not fatal: the verdict is the job's.
