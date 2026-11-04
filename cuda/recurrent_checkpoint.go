@@ -159,6 +159,9 @@ func ckptKeptLine(bytes int64, buffers int) string {
 	return fmt.Sprintf("cuda: recurrent checkpoint: %.1f MiB on the device (%d buffers, KV8a)\n", mib(bytes), buffers)
 }
 
+// ckptAllocFailAfterForTest, when above 0, fails allocCheckpointCopy part way once that many copies are kept, as a fragmented device would. Only a test sets it.
+var ckptAllocFailAfterForTest int
+
 // allocCheckpointCopy allocates a device buffer the size of each live one, all or none: a failed allocation releases what it made.
 func (r *cudaResident) allocCheckpointCopy() (bufs []Buffer, ok bool) {
 	defer r.onLine(mem.LineState)()
@@ -178,6 +181,9 @@ func (r *cudaResident) allocCheckpointCopy() (bufs []Buffer, ok bool) {
 			p := L.recurrentLive()
 			for _, b := range []Buffer{p.win, p.state} {
 				bufs = append(bufs, r.af(b.Len()))
+				if ckptAllocFailAfterForTest > 0 && len(r.ckptCopies) >= ckptAllocFailAfterForTest {
+					panic("cuda: device allocation failed (test seam): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY")
+				}
 			}
 		}
 	}

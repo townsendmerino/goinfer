@@ -2230,6 +2230,9 @@ var cudaGatePlantForTest func(r *cudaResident)
 // cudaGateGenCtxForTest, when set, is the context a row's generation runs under.
 var cudaGateGenCtxForTest context.Context
 
+// cudaGatePlanFreeForTest, when set, is the free memory cudaGateRow plans its row at, in place of a figure with room for everything.
+var cudaGatePlanFreeForTest func(m *decoder.Model, r *cudaResident) int64
+
 // cudaGateRow loads fixture path at options o, runs it, and returns the row: the build's ledger after the build and after a short
 // generation, the plan for the same load, and the ledger after Close. ok is false when CUDA's own build declines, which has no
 // allocation to hold.
@@ -2255,7 +2258,11 @@ func cudaGateRow(t testing.TB, row, path string, o decoder.Options) (memgate.Rea
 		return memgate.Reading{}, false
 	}
 	read := memgate.Reading{Row: row, KVSlots: r.KVSlots()}
-	read.Plan = m.Plan("cuda", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, Slots: gateSlots(r), KVSlots: r.KVSlots(), CheckpointReserve: r.ckptReserve()})
+	planFree := int64(math.MaxInt64 / 4)
+	if cudaGatePlanFreeForTest != nil {
+		planFree = cudaGatePlanFreeForTest(m, r)
+	}
+	read.Plan = m.Plan("cuda", planFree, decoder.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, Slots: gateSlots(r), KVSlots: r.KVSlots(), CheckpointReserve: r.ckptReserve()})
 	facts := func() map[string]int64 {
 		priced := m.PricedDenseVectorBytesForTest("cuda")
 		return map[string]int64{"kvRing": cudaKVRingBytes(r), "denseVectors": max(cudaDenseVectorBytes(m)-priced, 0), "moeVectors": max(cudaMoEVectorBytes(m, r.nE)-priced, 0), "windowGrant": cudaWindowGrantBytes(r)}
@@ -2466,6 +2473,54 @@ func TestMemGate_cudaInvariantsGoRed(t *testing.T) {
 		}
 		t.Logf("the row failed with: %s", rec.msg)
 	})
+}
+
+// TestMemGate_cudaTightCheckpointRoom reads the state line on a card with room for one checkpoint at two slots, where the gate's usual room for everything cannot tell: the build keeps one, the
+// plan at the free memory the build read says one, and the line holds exactly that. A plan with room for all is over the row, which is the plant.
+func TestMemGate_cudaTightCheckpointRoom(t *testing.T) {
+	requireCUDADevice(t)
+	g := cudaGate(t)
+	const row, fixture = "testdata/qwen35-tiny int4/slots2/one checkpoint", "testdata/qwen35-tiny"
+	path, err := sb2census.Path("..", fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recurrentSlotRoom(t, 1)
+	t.Cleanup(func() { cudaGatePlanFreeForTest = nil })
+	read := func(t *testing.T, planFree func(m *decoder.Model, r *cudaResident) int64) (memgate.Reading, []memgate.Finding) {
+		t.Helper()
+		cudaGatePlanFreeForTest = planFree
+		o := decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 256, ResidentKVSlots: 2}
+		rd, ok := cudaGateRow(t, row, path, o)
+		if !ok {
+			t.Fatal("the row did not build resident")
+		}
+		rd.Exact = []mem.LineID{mem.LineState}
+		var state []memgate.Finding
+		for _, f := range g.Unknown(rd) {
+			if f.Line == mem.LineState {
+				state = append(state, f)
+			}
+		}
+		return rd, state
+	}
+	rd, found := read(t, func(m *decoder.Model, r *cudaResident) int64 {
+		req := decoder.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, KVSlots: r.KVSlots(), CheckpointReserve: r.ckptReserve()}
+		p := m.Plan("cuda", math.MaxInt64/4, req)
+		return p.NeedBytes() + int64(r.KVSlots()-1)*(p.KVBytes+p.StateBytes) + r.ckptReserve() + p.CheckpointBytes
+	})
+	t.Logf("%d checkpoints planned at %d slots, %v", rd.Plan.CheckpointCopies, rd.KVSlots, found)
+	if rd.Plan.CheckpointCopies != 1 || rd.KVSlots != 2 {
+		t.Errorf("the plan keeps %d checkpoints at %d slots, want 1 at 2", rd.Plan.CheckpointCopies, rd.KVSlots)
+	}
+	if len(found) != 0 {
+		t.Errorf("the state line disagrees with the plan at the free memory the build read: %v", found)
+	}
+	rd, found = read(t, nil)
+	t.Logf("planted, room for all: %d checkpoints planned, %v", rd.Plan.CheckpointCopies, found)
+	if rd.Plan.CheckpointCopies != 2 || len(found) == 0 {
+		t.Errorf("a plan with room for all keeps %d and reads %v: the row cannot see a plan over its build", rd.Plan.CheckpointCopies, found)
+	}
 }
 
 // TestMemGate_cudaRowsHoldGoesRed: a row the table of rows names and the run did not build is red, and so is a row it built and the table does not name.

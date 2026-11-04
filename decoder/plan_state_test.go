@@ -296,3 +296,28 @@ func TestStateBuffers_kdaPerStream(t *testing.T) {
 		t.Errorf("KDA's state buffers: %v, want %v", got, want)
 	}
 }
+
+// TestCheckpointHeadroom_followsTheBuildsOrder: a build allocates checkpoints before it sizes the expert cache and attaches a companion, and its reserve holds room for both, so a named
+// reserve replaces them in the need rather than counting them twice. Experts that are resident whole are allocated first, so they stay in it. With no reserve named, the plan counts
+// everything it knows.
+func TestCheckpointHeadroom_followsTheBuildsOrder(t *testing.T) {
+	base := Plan{DenseBytes: 1000, StateBytes: 10, KVBytes: 100, ExpertBytesUsed: 500, ExtraBytes: 70}
+	cached, whole := base, base
+	cached.Placement, whole.Placement = PlacementExpertCached, PlacementResident
+	const free = 10000
+	for _, c := range []struct {
+		name string
+		p    Plan
+		req  PlanRequest
+		want int64
+	}{
+		{"one slot, no reserve: everything counts", cached, PlanRequest{}, free - 1680},
+		{"a cached load with a reserve: the cache and the companion are in the reserve", cached, PlanRequest{CheckpointReserve: 300}, free - 1110 - 300},
+		{"whole experts with a reserve: they stay, the companion is in the reserve", whole, PlanRequest{CheckpointReserve: 300}, free - 1610 - 300},
+		{"two more slots add their KV and state", cached, PlanRequest{KVSlots: 3, CheckpointReserve: 300}, free - 1110 - 220 - 300},
+	} {
+		if got := checkpointHeadroom(c.p, free, c.req); got != c.want {
+			t.Errorf("%s: headroom %d, want %d", c.name, got, c.want)
+		}
+	}
+}

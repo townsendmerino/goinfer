@@ -269,3 +269,26 @@ FAIL	github.com/townsendmerino/goinfer/decoder	0.045s
 FAIL	github.com/townsendmerino/goinfer/cuda	2.014s
 
 # Not this PR's: TestPlan_tableDriven and TestPlan_extraBytesReservedAheadOfExperts fail with fixtures placed on main f384b1699, and at each older commit sampled back to 937cfe8fb. A clean worktree has no such fixture, so they skip there and in CI.
+
+# #658 round 4: the plan in the build's order, a tight row on the gate, a failed copy read. 2026-11-04 00:04:34 PST
+vets done; gofmt: []
+ok  	github.com/townsendmerino/goinfer/decoder	1.360s
+exit 0, PASS 40, FAIL 0
+    sb2_census_test.go:2512: 1 checkpoints planned at 2 slots, []
+    sb2_census_test.go:2520: planted, room for all: 2 checkpoints planned, [testdata/qwen35-tiny int4/slots2/one checkpoint: line "state": built: leased 50688 bytes against a plan of 67584: priced 16896 over, p
+    sb2_census_test.go:2659: 474 builds held, 155 options declined by CUDA's own build
+ok  	github.com/townsendmerino/goinfer/cuda	165.447s
+# plant: the reserve counts the cache and the companion twice
+--- FAIL: TestCheckpointHeadroom_followsTheBuildsOrder (0.00s)
+    plan_state_test.go:320: a cached load with a reserve: the cache and the companion are in the reserve: headroom 8020, want 8590
+    plan_state_test.go:320: whole experts with a reserve: they stay, the companion is in the reserve: headroom 8020, want 8090
+    plan_state_test.go:320: two more slots add their KV and state: headroom 7800, want 8370
+FAIL	github.com/townsendmerino/goinfer/decoder	0.005s
+# plant: whole experts leave the need too
+--- FAIL: TestCheckpointHeadroom_followsTheBuildsOrder (0.00s)
+    plan_state_test.go:320: whole experts with a reserve: they stay, the companion is in the reserve: headroom 8590, want 8090
+FAIL	github.com/townsendmerino/goinfer/decoder	0.005s
+# plant: a partial copy is not released
+    mamba_guards_test.go:687: the state line holds 52224 bytes, want 50688: two slots' state and one copy, and the partial copy released
+--- FAIL: TestRecurrentSlots_aFailedCopyIsNotCounted (1.87s)
+FAIL	github.com/townsendmerino/goinfer/cuda	1.932s

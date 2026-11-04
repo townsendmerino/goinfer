@@ -254,6 +254,9 @@ func (f *slottedRecurrentFake) SaveRecurrentCheckpoint() error {
 }
 func (f *slottedRecurrentFake) RestoreRecurrentCheckpoint() error {
 	f.restores++
+	if !f.held[f.bound] {
+		return fmt.Errorf("slot %d holds no recurrent checkpoint", f.bound)
+	}
 	f.st = f.ckpt[f.bound]
 	return nil
 }

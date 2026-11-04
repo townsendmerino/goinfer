@@ -68,8 +68,9 @@ type PlanRequest struct {
 	// (docs/tasks/task-fit-to-hardware.md §0).
 	KVF16, KVI8 bool
 
-	// KVSlots is how many KV slots the load holds, for its checkpoints alone: 0 or 1 plans one slot's. CheckpointReserve is what a build leaves free beside them. A backend that
-	// keeps a checkpoint per slot passes both from its build, so the plan's copies are the ones that build allocates (Plan.CheckpointCopies).
+	// KVSlots is how many KV slots the load holds, and it reaches only Plan.CheckpointCopies: Placement and NeedBytes stay one slot's, because a caller that sizes a context for
+	// several prices the further slots through ExtraBytes (a multi-slot fit decides that itself). CheckpointReserve is what a build leaves free beside its checkpoints for what it
+	// allocates after them: the expert cache and the companion included, so with a reserve named those two leave the need the copies are counted beside.
 	KVSlots           int
 	CheckpointReserve int64
 
@@ -227,13 +228,24 @@ func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack boo
 	p.Placement, p.Ctx, p.Slots = Placement(d.Placement), d.Ctx, d.Slots
 	p.ExpertBytesUsed, p.KVBytes, p.HostCopyBytes, p.Reason = d.ExpertBytesUsed, d.KVBytes, d.HostCopyBytes, d.Reason
 	if ckpt, perSlot := m.checkpointBytes(backend); p.Placement != PlacementDecline {
-		n := max(req.KVSlots, 1)
-		further := int64(n-1) * (p.KVBytes + p.StateBytes)
-		if copies := checkpointCopies(freeBytes-p.NeedBytes()-further-req.CheckpointReserve, ckpt, n, perSlot); copies > 0 {
+		if copies := checkpointCopies(checkpointHeadroom(p, freeBytes, req), ckpt, max(req.KVSlots, 1), perSlot); copies > 0 {
 			p.CheckpointBytes, p.CheckpointCopies = ckpt, copies
 		}
 	}
 	return p
+}
+
+// checkpointHeadroom is the room p's load has for checkpoints, in the build's order: beside the weights, every KV slot and its state. A build allocates them before it sizes the
+// expert cache and attaches a companion, and holds room for those in its reserve, so a named reserve stands in for them here rather than adding to them.
+func checkpointHeadroom(p Plan, free int64, req PlanRequest) int64 {
+	need := p.NeedBytes()
+	if req.CheckpointReserve > 0 {
+		need -= p.ExtraBytes
+		if p.Placement == PlacementExpertCached {
+			need -= p.ExpertBytesUsed
+		}
+	}
+	return free - need - int64(max(req.KVSlots, 1)-1)*(p.KVBytes+p.StateBytes) - req.CheckpointReserve
 }
 
 // checkpointCopies is how many checkpoints of ckpt bytes fit in headroom: at most one for each of n KV slots on a backend that keeps one per slot, else at most one.

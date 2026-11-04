@@ -662,6 +662,32 @@ func TestCkptCopies_countTheCharge(t *testing.T) {
 	}
 }
 
+// TestRecurrentSlots_aFailedCopyIsNotCounted: a device that fails part way through a copy leaves the copies already kept, releases the partial one, and reports what it holds, on the ledger
+// and in RecurrentCheckpointBytes. Later sizing in the build reads free VRAM again, so nothing past this carries a count of the copies it asked for; the memory plan runs before any
+// allocation and cannot see this.
+func TestRecurrentSlots_aFailedCopyIsNotCounted(t *testing.T) {
+	r := func() *cudaResident {
+		ckptAllocFailAfterForTest = 1
+		defer func() { ckptAllocFailAfterForTest = 0 }()
+		_, r := recurrentSlotsLoad(t, "qwen35-tiny", decoder.Options{ResidentKVSlots: 2})
+		return r
+	}()
+	if n := len(r.ckptCopies); n != 1 {
+		t.Fatalf("the build keeps %d checkpoints, want the 1 before the failure", n)
+	}
+	charged := r.recurrentStateCharged()
+	if got := r.RecurrentCheckpointBytes(); got != charged {
+		t.Errorf("it reports %d checkpoint bytes, holds %d", got, charged)
+	}
+	l, ok := r.dev.Leaser().(*deviceLedger)
+	if !ok {
+		t.Fatal("the device has no ledger")
+	}
+	if got, want := l.Usage().ByLine[mem.LineState], 3*charged; got != want {
+		t.Errorf("the state line holds %d bytes, want %d: two slots' state and one copy, and the partial copy released", got, want)
+	}
+}
+
 // TestCkptCopiesFor is C-3's arithmetic, no device: as many as fit beside the reserve, at most one a slot.
 func TestCkptCopiesFor(t *testing.T) {
 	const b, reserve = int64(100), int64(1000)
