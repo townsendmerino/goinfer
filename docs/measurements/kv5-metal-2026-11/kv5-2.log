@@ -102,7 +102,14 @@ gemma3-1b's repeat, two more quads a cell, context for D-KV5-1, not a gate:
   gemma3-1b  3900  new  63.5  old  66.4 tok/s  new/old 0.956  FAIL       blocks 0.956, 0.957, 0.956, 0.957  RSS new-old  -6.6 MB
 Swap-outs 0.0 MB, no voids. RSS: the widest gap 29.1 MB. This is tighter than the day's reading and a little worse: 3.0% and 4.4% against the 2.5% and 3.7% he accepted.
 
-Not read on the code that ships: G2's prefill TTFT. It was left to KV5-3, since prefill's kernels do not change until then, and KV5-3 is out of v0.24.0. The harness's prefill_and_request_s reads old/new 1.002, 1.029, 1.012 and 1.004 on the 7B and 0.939, 1.028, 1.038 and 0.932 on the 1.5B, at 128, 2,048, 3,900 and 8,000. That is context only and bears no weight: it reads shorter at 8,000 than at 3,900, so those requests are not all cold prefills.
+== G2's prefill TTFT on the shipping code, 2026-11-04 04:02 to 04:22 PST: PASS
+It was left to KV5-3, since prefill's kernels do not change until then, and KV5-3 is out of v0.24.0, so the coordinator asked for it to be read here. Instrument: ttft_ab.py in this directory, committed before the run: KV4's, on Metal, three alternating pairs, a fresh server per run at -ctx 4096, six unique prompts per depth, a warm-up first, client-timed to the first streamed event. New a297113d against old f8632013, pinned binaries and harness, MacBookPro18,3, 16 GB, ~/models, int4, on AC, thermal not read, exclusive lock. Raw: kv5-2-ttft.json.gz. old/new per pair, median:
+  1.5B   K=512    1.009, 0.998, 1.000   median 1.000  PASS   about 496 ms a side
+  1.5B   K=3,900  1.002, 1.001, 0.999   median 1.001  PASS   about 4,150 ms a side
+  7B     K=512    0.999, 1.001, 1.001   median 1.001  PASS   about 2,296 ms a side
+  7B     K=3,900  1.001, 1.001, 1.000   median 1.001  PASS   about 18,790 ms a side
+Swap-outs 0.0 MB in all 12 runs, no voids and no void starts; swap-ins at most 0.31 MB. Load at a run's start 0.20 to 2.76. RSS is sampled after each depth here, not at its peak, and reads 104 to 119 MB, with no pattern by arm.
+The harness's prefill_and_request_s, an earlier stand-in, is not a TTFT reading and is not used: it runs shorter at 8,000 than at 3,900, so those requests are not all cold prefills.
 
 == FRANCIS'S DECISION, 2026-11-03 14:22, relayed by the coordinator: option (b)
 He accepts gemma3-1b's measured cost, as D-KV4-3 did for KV4. KV5 does not park. gemma3-1b, new/old: at depth 128 / 2,048 / 3,900, 0.995 / 0.975 / 0.963 on round one's code, which is what ships here; 0.980 / 0.975 / 0.963 on round two's, which does not ship and is the set relayed with his answer. Depth 2,048 and 3,900 read the same on both.
@@ -125,4 +132,4 @@ Touched: VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
 CI at 6e30abcc, before round one: success.
 Round one's plants, each table read taken out: every one red. Two share their mistake across both arms of a scrambled comparison and need a reference: a row offset inside a block (the fused kernels' single-row check) and i8's value scales (TestAttentionKernelsPastTileBound).
 VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
-THIS RECORD ENDS WITH THE 7B'S DECODE GATE PASSED, gemma3-1b's cost accepted by Francis, and prefill TTFT unread. The slice is bit-identical.
+THIS RECORD ENDS WITH THE 7B'S DECODE GATE AND G2's PREFILL TTFT PASSED, and gemma3-1b's cost accepted by Francis. The slice is bit-identical.
