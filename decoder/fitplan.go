@@ -96,8 +96,8 @@ type Plan struct {
 	CheckpointBytes int64
 	// CheckpointPerSlot says the load keeps that checkpoint once per KV slot where it fits, not once (BuildDemand.CheckpointPerSlot).
 	CheckpointPerSlot bool
-	AllocSlackBytes int64 // the backend's allocator rounding over the weight buffers (PlanSlack): CUDA's 2 MiB granularity
-	ExtraBytes      int64 // PlanRequest.ExtraBytes, carried through for NeedBytes()/reporting
+	AllocSlackBytes   int64 // the backend's allocator rounding over the weight buffers (PlanSlack): CUDA's 2 MiB granularity
+	ExtraBytes        int64 // PlanRequest.ExtraBytes, carried through for NeedBytes()/reporting
 
 	FreeBytes int64  // what Plan was told is available on this backend/device
 	Reason    string // human-readable justification (admit) or decline message with the numbers
