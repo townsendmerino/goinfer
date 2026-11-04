@@ -97,3 +97,20 @@ Francis's answer of 14:58 PST, relayed by the coordinator: keep the FAIL above o
 
 **What this does not cover:** one prompt shape of about 2,000 tokens, two clients, one card and driver, and no agent's real traffic. It is not a row for `docs/benchmarks.md`. Comparing with each client alone says the slots keep conversations apart; it does not say a reused reply is as good as a cold one.
 
+## The served reading a third time, restoring on both slots, registered 2026-11-03 18:19 PST before any run (nobara-sb01)
+
+**Why:** #658's review read the logs of the reading above. Client A's one follow-up restored (0.14 s). Every other follow-up, all of client B's among them, was a strict extension. **So the second slot never restored, and the 0.05 s median is mostly strict extensions.** The reading passed its registration, and that registration could not see this. It stands as it is.
+
+**What it adds:** after the three turns, an edit round, before the at-once round: each client sends its last prompt, then its reply with a word put in front, as a client that re-renders a reply does, then a new question. That diverges at the prompt's end on both slots, so each must restore its own checkpoint. Alone, each client sends the same turn.
+
+**The decision, added to the registration above, whose other clauses hold, over both two-slot cells:**
+
+| | |
+|---|---|
+| **PASS** | both clients' edit turns reuse exactly their last prompt's rows, on two slots and alone; those turns' median first token, two slots over the one-slot arm's, at most 0.5; and each reply equals that client's alone |
+| **PARKED** | that ratio above 0.5 and at most 0.7, the others holding |
+| **FAIL** | either client's edit turn restoring nothing, a reply that differs from that client's alone, or that ratio above 0.7 |
+
+- **The restores are read from each turn's reuse,** which replaces the filter that printed an empty list above. The request logs' `ckpt_restore` are the check on it.
+- **Instrument, void rules, stopping rule:** as above, with serve built at this PR's head. Cost about 5 minutes.
+
