@@ -1,0 +1,101 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+// TestStepFlagsMemory is the instrument of docs/measurements/step-flags-2026-11/README.md: one model, named by STEPFLAGS_PATH, at flag off
+// and on (STEPFLAGS_FLAG: recurrent or gemma4), at 4 and 2 KV sessions, plus on at 1, each a fresh load at -ctx 4096. It writes one JSON
+// object per arm to STEPFLAGS_OUT. A resident build that declines keeps its priced figures, which come from the model, and has no allocation to read.
+func TestStepFlagsMemory(t *testing.T) {
+	path, flag, outPath := os.Getenv("STEPFLAGS_PATH"), os.Getenv("STEPFLAGS_FLAG"), os.Getenv("STEPFLAGS_OUT")
+	if path == "" {
+		t.Skip("set STEPFLAGS_PATH, STEPFLAGS_FLAG and STEPFLAGS_OUT")
+	}
+	out, err := os.Create(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	const ctxSize = 4096
+	profiles := map[string]int64{"m1pro-near-idle": 13047808655, "m1pro-apps-open": 7516192768}
+	for _, arm := range []struct {
+		on    bool
+		slots int
+	}{{false, 4}, {true, 4}, {false, 2}, {true, 2}, {true, 1}} {
+		o := decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: ctxSize, ResidentKVSlots: arm.slots}
+		if flag == "recurrent" {
+			o.ResidentRecurrentStep = arm.on
+		} else {
+			o.ResidentGemma4Step = arm.on
+		}
+		row := map[string]any{"path": path, "flag": flag, "on": arm.on, "asked": arm.slots}
+		func() {
+			m, err := decoder.Load(path, o)
+			if err != nil {
+				row["load_error"] = err.Error()
+				return
+			}
+			defer m.Close()
+			reserve, state := metalStepScratchReserve(m), metalRecurrentSlotBytes(m)
+			slots := arm.slots
+			a, ok := m.ResidentForwardForTest().(*metalResident)
+			if ok {
+				slots = a.r.kvSlotCount()
+			} else {
+				row["declined"] = m.ResidentDecline()
+			}
+			row["slots"] = slots
+			row["priced_step_scratch"], row["priced_state_per_session"] = reserve, state
+			row["priced_kv"] = m.MetalKVBytes(slots, ctxSize)
+			need := func(ctx int) int64 {
+				n := m.ResidentNeedBytes("metal", 0, ctx, false, false) + int64(slots-1)*(m.MetalKVSlotBytes(ctx)+state)
+				return n + reserve
+			}
+			longest := map[string]int{}
+			for name, avail := range profiles {
+				budget, best := avail-decoder.MetalFitMarginBytes, 0
+				for ctx := decoder.KVBlockRows; ctx <= decoder.MetalCtxCeiling; ctx += decoder.KVBlockRows {
+					if need(ctx) <= budget {
+						best = ctx
+					}
+				}
+				longest[name] = best
+			}
+			row["longest_ctx"] = longest
+			row["need_at_4096"] = need(ctxSize)
+			if !ok {
+				return // a refused load has no allocation to read
+			}
+			r := a.r
+			l := metalLedgerOf(r.d)
+			row["ctx"] = r.ctxCap
+			row["batched_step"] = r.batch != nil
+			row["step_declines"] = r.batchIneligible()
+			if r.batch != nil {
+				row["step_list_bytes"] = r.stepShape().listBytes()
+			}
+			built := l.Usage()
+			row["built_total"], row["built_by_line"] = built.Charged, built.ByLine
+			ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{Temperature: 0})
+			for range ch {
+			}
+			if err := g.Err(); err != nil {
+				row["generate_error"] = err.Error()
+			}
+			gen := l.Usage()
+			row["generated_total"], row["generated_by_line"], row["peak_charged"] = gen.Charged, gen.ByLine, gen.PeakCharged
+		}()
+		b, _ := json.Marshal(row)
+		fmt.Fprintln(out, string(b))
+		fmt.Fprintf(os.Stderr, "[stepflags] %s\n", b)
+	}
+}

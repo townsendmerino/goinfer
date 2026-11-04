@@ -23,3 +23,33 @@ Release v0.24.0, item 3d. Registered 2026-11-03, before any run; runs Wednesday 
 **Stopping rule:** one pass per arm. The readings are byte counts, so nothing repeats. A priced figure more than 16 KiB per lease from its allocation stops that model's reading until it is understood, since the fit would then be pricing the wrong number, and the memory gate's list is where that fix belongs.
 
 **What each outcome means:** under the rule, a one-line default change, in its own PR, to Francis before merge, like any default. Over it, the flag stays opt-in and the record says what it costs. Either way this record is the number `docs/flags.md` quotes.
+
+## Read, 2026-11-04, by day, untimed, shared lock
+
+MacBookPro18,3, 16 GB, int4, `-ctx 4096`, instrument `stepflags_test.go.txt` (copy it into `backend/metal/` to run it), raw `readings.json.gz`. Nothing here flips a default: **Francis decides.** The rule is his placeholder.
+
+| Flag | Model | Extra at 4 sessions, MiB | Share of resident size | Longest context on `m1pro-apps-open`, off → on | Shrink | Against the placeholder |
+|---|---|---|---|---|---|---|
+| `--recurrent-step` | Qwen3.5 0.8B | 8.16 | 0.996% | 32,768 → 32,768 | 0% | under both |
+| `--recurrent-step` | Qwen3.5 9B | 9.30 | 0.170% | 6,976 → 6,912 | 0.92% | under both |
+| `--recurrent-step` | Nemotron-H 9B | 12.92, priced | 0.112% of its need, priced | fits at neither | on `m1pro-near-idle`, 12,224 → 12,032: 1.57% | under both, priced only |
+| `--recurrent-step` | Nemotron-H 4B | **not read** | **not read** | **not read** | **not read** | **open** |
+| `--gemma4-step` | Gemma 4 E2B | 9.62 | 0.566% | 32,768 → 32,768 | 0% | under both |
+| `--gemma4-step` | Gemma 4 E4B | 9.68 | 0.263% | 11,392 → 11,328 | 0.56% | under both |
+
+**By the rule as written:** `--gemma4-step` reads under both bars on both its models. `--recurrent-step` reads under both on three of its four models, and the rule asks for every model, so it can't be graded whole until the 4B reads. No reading is a near miss. Everything read is well inside the bars.
+
+**What the extra is.** It is the step's scratch alone: 8 to 10 MiB allocated and about the same whatever the model's size, so it weighs least on the largest. KV and recurrent state are equal between the arms, because an explicit `--kv-sessions` already holds that many slots with the flag off. So this doesn't price what a **default** session count costs, which is a separate question.
+
+**At 2 sessions** the extra is the same bytes: 1.193%, 0.182%, 0.619% and 0.299% on the four models with allocations, and the longest context shrinks at most 0.82%.
+
+**`goinfer-chat`:** `--kv-sessions` is a serve flag, so chat holds one session. With the flag on at one session the step builds and takes the same scratch, 8 to 10 MiB. It has only one row to run, so chat pays that for no batching; the batched step's gain needs two or more sessions. An on-by-default flag that skips the step at one session would save it. That was not measured.
+
+**What was not read:**
+- **Nemotron-H 4B:** only its flag-off arm at 4 sessions, 3,797 MiB allocated. The fit guard refused the rest by day. Night job `step-flags-4b` (`run-4b.sh`) reads them from a Metal bundle.
+- **Nemotron-H 9B:** the file standing for it is Nemotron Nano 9B v2, `nemotron-nano-9b-v2-int4-metal.v17.giw`. The guard refused every arm, needing 10.68 GB against a live budget near 7 GB, so its figures are priced from the model with no allocation behind them. The 4B's file is `nemotron-h-4b-instruct-128k`.
+
+**Checks.** Where a step built, the ledger's scratch moved by the step's list to within one 16 KiB rounding (0.8B: 8,540,936 B asked, 8,557,320 B allocated; the 9B's Qwen3.5 exactly). The priced figure sits above that by design, each buffer rounded to a page (`stepShape.scratchBytes`), so the longest-context column errs short. KV allocated equals KV priced in every arm. The serve banner of a real load, E4B at 2 slots, reads 0.2 GB of KV a conversation and 4.2 GB of weights, against 0.237 GB and 4.19 GiB here.
+
+**A cost of this measurement.** The 4B's direct safetensors load quantizes in memory, and at 07:45 PST it pushed 1.5 GB of swap-outs while Francis was on the Mac, taking swap in use from about 3.2 to 7.1 GB. It came back down, and no timed run was under way. E4B read 29 MB of swap-outs, with `mac-layout2` building beside it. Neither moves a figure above, which are byte counts. **Load big checkpoints from a bundle,** as `run-4b.sh` now does.
+
