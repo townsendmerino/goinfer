@@ -26,18 +26,9 @@ var cpuGateRowsUpdate = flag.Bool("memgate.cpurows.update", false, "have TestMem
 var cpuRounding = PerLease("none: the walk leases each array's own bytes", 0)
 
 // cpuMemGaps is the CPU's table of known reds. It may only shrink: the fix that removes a row lowers cpuMemGapsPin.
-var cpuMemGaps = []Gap{
-	{Row: "testdata/gemma4-moe-kv-tiny *", Line: mem.LineKV, What: "NewCache reserves every layer at the model's kvDim, and a wider layer grows past that by append, holding more than it stores",
-		Item: "MM8 CPU, KV reserve by layer", Bytes: cpuKVGrowth},
-	{Row: "testdata/gemma4-moe-kv-tiny32 *", Line: mem.LineKV, What: "NewCache reserves every layer at the model's kvDim, and a wider layer grows past that by append, holding more than it stores",
-		Item: "MM8 CPU, KV reserve by layer", Bytes: cpuKVGrowth},
-}
+var cpuMemGaps = cpuKVGaps
 
-func init() {
-	cpuMemGaps = append(cpuMemGaps, cpuKVGaps...)
-}
-
-const cpuMemGapsPin = 30
+const cpuMemGapsPin = 28
 
 // cpuKVGaps are the CPU plan's KV figures that a row reads wrong, each in MM8's row. The plan prices ctx positions of K and V on every layer.
 var cpuKVGaps = func() []Gap {
@@ -62,9 +53,6 @@ var cpuKVGaps = func() []Gap {
 	}
 	return out
 }()
-
-// cpuKVGrowth bounds an append-grown layer: Go's growth from the reserved capacity holds at most about four times what it stores.
-func cpuKVGrowth(f map[string]int64) int64 { return 3 * f["kvFormula"] }
 
 // cpuGateRow loads fixture path on the CPU, writes cpuGateCtx positions, and returns the row. The CPU has no allocator to account, so its
 // ledger is filled by walking what the model and the cache hold (Model.CPUHoldsForTest). Closed reads that ledger after the model closed and

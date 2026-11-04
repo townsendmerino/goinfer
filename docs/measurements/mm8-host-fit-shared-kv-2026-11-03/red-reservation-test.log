@@ -1,0 +1,9 @@
+go test -count=1 ./decoder -run ^(TestHostFitKV_sharedLayersOwnNone|TestNewCache_reservesEachLayersWidth)$
+# NewCache without per-layer widths and without the shared skip
+--- FAIL: TestNewCache_reservesEachLayersWidth (0.00s)
+    audit_items_test.go:110: f32: layer 1 reserves 2048 and 2048 floats, want 32768
+    audit_items_test.go:121: f32: 8 forwards left layer 1 at 133120 and 133120 floats, not its 32768
+    audit_items_test.go:129: a shared layer reserves 2048 and 2048 floats
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.012s
+FAIL

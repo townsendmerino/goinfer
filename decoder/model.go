@@ -1030,8 +1030,9 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// A ring layer (ringLayerAt, which also decides enableRings below) never reads or grows its append-forever arrays
 	// either, so it reserves none.
 	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, func(l int) bool {
-		return a.hasNoAttentionKVAt(l) || a.ringLayerAt(l)
+		return a.hasNoAttentionKVAt(l) || a.ringLayerAt(l) || a.gemma4KVSrcAt(l) != l // a Gemma 4 shared layer reads its source's cache
 	})
+	c.reserveWidths(kvCapHint, a.kvDimAt)
 	c.scr = newDecodeScratch(a)
 	// Must precede enableRings so local layers inherit the mode.
 	if quant != kvqF32 {
