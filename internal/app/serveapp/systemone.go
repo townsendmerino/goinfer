@@ -44,7 +44,7 @@ type systemOneItem struct {
 func (s *server) handleSystemOne(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "read body: "+err.Error())
+		writeBodyErr(w, "read body", err)
 		return
 	}
 	var req struct {
