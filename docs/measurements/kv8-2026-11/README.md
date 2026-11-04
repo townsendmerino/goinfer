@@ -114,3 +114,22 @@ Francis's answer of 14:58 PST, relayed by the coordinator: keep the FAIL above o
 - **The restores are read from each turn's reuse,** which replaces the filter that printed an empty list above. The request logs' `ckpt_restore` are the check on it.
 - **Instrument, void rules, stopping rule:** as above, with serve built at this PR's head. Cost about 5 minutes.
 
+### The third reading, 2026-11-03 18:48 to 18:53 PST: PASS, with both slots restoring
+
+`served-third-2026-11-03/run.log`, `turns.jsonl`. Serve at `9a8f49a41`, which scores a checkpoint only where its slot holds one. Driver 595.112.07, load at most 1.33 at a cell's start, about 61 GB available, no void cell.
+
+| | one slot | two slots | bar |
+|---|---|---|---|
+| **the edit round's median first token, a restore on each slot** | 7.15 s, 7.18 s | **0.15 s** (ratio **0.021**) | at most 0.5 |
+| rounds 1 and 2's median first token | 6.93 s | 0.05 s (ratio 0.008) | at most 0.5 |
+| edit turns reusing exactly their last prompt's rows | | **4 of 4**: 1,978 and 2,119, in both cells, the same alone | all |
+| follow-ups that reused rows | | 16 of 16 | all |
+| turns equal to that client's alone on one slot | | 20 of 20 | all |
+| peak `VmSwap` | 0 MB | 0 MB | at most 512 MB |
+
+The request logs' `ckpt_restore=1978` and `ckpt_restore=2119` agree, in both two-slot cells. **The 0.05 s above is mostly strict extensions, as #658's review said; 0.15 s is what a restore on either slot costs here.**
+
+**Reported, not graded:** 4 of 10 two-slot turns differ from the cold one-slot arm's. A reused prompt's reply still differs from a cold one's on this path, and this reading leaves that as it found it.
+
+**What it does not cover:** a restore with fewer copies than slots on a served load, which only tests read; one prompt shape; two clients; no agent's real traffic. Not a row for `docs/benchmarks.md`.
+

@@ -1,0 +1,69 @@
+[18:48:44] cell A1: 1 slot(s), clients AB, load 0.96, 61187 MB available, 453 MiB on the card
+[18:49:02]   A1 round 0 A: 1907 tokens, reused 0, first token 6.47 s
+[18:49:10]   A1 round 0 B: 2047 tokens, reused 0, first token 7.01 s
+[18:49:17]   A1 round 1 A: 1942 tokens, reused 0, first token 6.57 s
+[18:49:24]   A1 round 1 B: 2083 tokens, reused 0, first token 7.14 s
+[18:49:31]   A1 round 2 A: 1978 tokens, reused 0, first token 6.73 s
+[18:49:39]   A1 round 2 B: 2119 tokens, reused 0, first token 7.27 s
+[18:49:46]   A1 round edit A: 2016 tokens, reused 0, first token 6.88 s
+[18:49:54]   A1 round edit B: 2157 tokens, reused 0, first token 7.43 s
+[18:50:02]   A1 round both A: 2051 tokens, reused 0, first token 7.43 s
+[18:50:02]   A1 round both B: 2192 tokens, reused 2181, first token 0.06 s
+[18:50:05] cell B1: 2 slot(s), clients AB, load 1.06, 61267 MB available, 453 MiB on the card
+[18:50:23]   B1 round 0 A: 1907 tokens, reused 0, first token 6.47 s
+[18:50:30]   B1 round 0 B: 2047 tokens, reused 0, first token 7.00 s
+[18:50:31]   B1 round 1 A: 1942 tokens, reused 1907, first token 0.14 s
+[18:50:31]   B1 round 1 B: 2083 tokens, reused 2071, first token 0.05 s
+[18:50:32]   B1 round 2 A: 1978 tokens, reused 1966, first token 0.05 s
+[18:50:32]   B1 round 2 B: 2119 tokens, reused 2107, first token 0.05 s
+[18:50:33]   B1 round edit A: 2016 tokens, reused 1978, first token 0.15 s
+[18:50:33]   B1 round edit B: 2157 tokens, reused 2119, first token 0.15 s
+[18:50:34]   B1 round both A: 2051 tokens, reused 2040, first token 0.48 s
+[18:50:34]   B1 round both B: 2192 tokens, reused 2181, first token 0.05 s
+[18:50:37] cell alone-A: 1 slot(s), clients A, load 1.10, 61262 MB available, 453 MiB on the card
+[18:50:55]   alone-A round 0 A: 1907 tokens, reused 0, first token 6.49 s
+[18:50:56]   alone-A round 1 A: 1942 tokens, reused 1907, first token 0.14 s
+[18:50:56]   alone-A round 2 A: 1978 tokens, reused 1966, first token 0.05 s
+[18:50:57]   alone-A round edit A: 2016 tokens, reused 1978, first token 0.15 s
+[18:50:57]   alone-A round both A: 2051 tokens, reused 2040, first token 0.05 s
+[18:51:01] cell alone-B: 1 slot(s), clients B, load 1.13, 61278 MB available, 453 MiB on the card
+[18:51:19]   alone-B round 0 B: 2047 tokens, reused 0, first token 7.01 s
+[18:51:20]   alone-B round 1 B: 2083 tokens, reused 2071, first token 0.05 s
+[18:51:20]   alone-B round 2 B: 2119 tokens, reused 2107, first token 0.05 s
+[18:51:21]   alone-B round edit B: 2157 tokens, reused 2119, first token 0.15 s
+[18:51:21]   alone-B round both B: 2192 tokens, reused 2181, first token 0.05 s
+[18:51:24] cell B2: 2 slot(s), clients AB, load 1.01, 61299 MB available, 453 MiB on the card
+[18:51:42]   B2 round 0 A: 1907 tokens, reused 0, first token 6.45 s
+[18:51:50]   B2 round 0 B: 2047 tokens, reused 0, first token 6.99 s
+[18:51:50]   B2 round 1 A: 1942 tokens, reused 1907, first token 0.14 s
+[18:51:51]   B2 round 1 B: 2083 tokens, reused 2071, first token 0.05 s
+[18:51:51]   B2 round 2 A: 1978 tokens, reused 1966, first token 0.05 s
+[18:51:51]   B2 round 2 B: 2119 tokens, reused 2107, first token 0.05 s
+[18:51:52]   B2 round edit A: 2016 tokens, reused 1978, first token 0.15 s
+[18:51:53]   B2 round edit B: 2157 tokens, reused 2119, first token 0.15 s
+[18:51:53]   B2 round both A: 2051 tokens, reused 2040, first token 0.48 s
+[18:51:53]   B2 round both B: 2192 tokens, reused 2181, first token 0.05 s
+[18:51:57] cell A2: 1 slot(s), clients AB, load 1.17, 61305 MB available, 453 MiB on the card
+[18:52:15]   A2 round 0 A: 1907 tokens, reused 0, first token 6.46 s
+[18:52:22]   A2 round 0 B: 2047 tokens, reused 0, first token 7.00 s
+[18:52:29]   A2 round 1 A: 1942 tokens, reused 0, first token 6.58 s
+[18:52:36]   A2 round 1 B: 2083 tokens, reused 0, first token 7.13 s
+[18:52:44]   A2 round 2 A: 1978 tokens, reused 0, first token 6.72 s
+[18:52:51]   A2 round 2 B: 2119 tokens, reused 0, first token 7.31 s
+[18:52:59]   A2 round edit A: 2016 tokens, reused 0, first token 6.90 s
+[18:53:06]   A2 round edit B: 2157 tokens, reused 0, first token 7.45 s
+[18:53:22]   A2 round both A: 2051 tokens, reused 0, first token 7.02 s
+[18:53:22]   A2 round both B: 2192 tokens, reused 0, first token 14.98 s
+pair 1: rounds 1 and 2, one slot 6.93 s, two slots 0.05 s, ratio 0.008; the edit round, one slot 7.15 s, two slots 0.15 s, ratio 0.021
+pair 2: rounds 1 and 2, one slot 6.93 s, two slots 0.05 s, ratio 0.008; the edit round, one slot 7.18 s, two slots 0.15 s, ratio 0.021
+two slots: 0 of 16 follow-ups reused nothing, the edit and at-once rounds included
+B1 client A: the edit round reused 1978, its last prompt was 1978 tokens, first token 0.15 s
+B1 client B: the edit round reused 2119, its last prompt was 2119 tokens, first token 0.15 s
+B2 client A: the edit round reused 1978, its last prompt was 1978 tokens, first token 0.15 s
+B2 client B: the edit round reused 2119, its last prompt was 2119 tokens, first token 0.15 s
+alone-A client A: the edit round reused 1978, its last prompt was 1978 tokens, first token 0.15 s
+alone-B client B: the edit round reused 2119, its last prompt was 2119 tokens, first token 0.15 s
+0 of 4 conversations differ from that client alone; 20 turns compared
+reported: 4 of 10 two-slot turns differ from the cold one-slot arm's, whose prompts diverge after the first
+peak VmSwap 0 MB (the bar: 512)
+VERDICT: PASS (worst ratio 0.008, edit ratio 0.021)
