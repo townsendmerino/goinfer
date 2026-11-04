@@ -268,16 +268,12 @@ func proseSeedAbove(f string) (string, bool) {
 	dir := ".."
 	for range 4 {
 		dir = filepath.Join(dir, "..")
-		if p := filepath.Join(dir, filepath.FromSlash(rel)); fileExists(p) {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
 			return p, true
 		}
 	}
 	return "", false
-}
-
-func fileExists(p string) bool {
-	st, err := os.Stat(p)
-	return err == nil && !st.IsDir()
 }
 
 // PrefillGateProseIDsForTest reads f, encodes it with tk, and returns at least minTokens ids, repeating the same real

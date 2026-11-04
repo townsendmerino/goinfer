@@ -28,3 +28,5 @@ FAIL
     --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_batched (10.61s)
 ok  	github.com/townsendmerino/goinfer/backend/cuda	74.160s
 # done 13:58:32 PST
+
+# A SECOND COMMIT, found by a preview of quick -full (2026-11-04 14:03): my helper fileExists in fidelity_testhook.go (tag goinfer_testhooks) was redeclared by decoder/gemma12_real_test.go (tag realckpt), so decoder did not compile under both tags: go vet -tags 'realckpt goinfer_testhooks' failed. It is inlined now. go vet ./decoder/ under no tag, goinfer_testhooks, realckpt goinfer_testhooks, and realckpt: all exit 0.
