@@ -126,6 +126,104 @@ current tracks.
   - Laya, NLI, Decima and Largha need an encoder family (ModernBERT, DeBERTa or mmBERT) goinfer does not have;
   - d1 needs `lfm2` on a GPU.
 
+## Field check — 2026-11-03 (releases 2026-10-26 to 11-03)
+
+> Drafted by Gemini from posted config.json files and model cards, 2026-11-03, and read by the coordinator; not
+> independently re-fetched. Each candidate's Gate 0 re-reads its config before any estimate.
+> Summary: CHEAP: LFM3-1.7B (new `lfm3`, the `lfm2` family plus sliding attention, partial RoPE, a head-wise gate and
+> sandwich norms; CPU until a GPU has short-conv), Nanbeige4.3-33B (plain `llama`, nobara only), the MiniCPM-OCR-1.0
+> text decoder (`qwen3_5_text` behind a new outer key), Nemotron 3.5 Bolt E4B (confirmed `gemma4`). EXPENSIVE:
+> SenseNova-Loop-9B (looped layers with per-pass cache state, plus mHC). Mistral Large 4 posted and is out by rule 2;
+> the Mistral Small 4 guard stands. The Bonsai-2 guard must key on its Hadamard-rotated weights, not only the tensor types.
+
+Field check for this doc covering open-weight releases from **2026-10-26 to 2026-11-03** and updates to **Next up** (2026-10-15 and 2026-10-26) and **Watching**. Selection rule (this doc): (1) weights and `config.json` posted, not announced; (2) fits the **16 GB M1 Pro** or **8 GB RTX 2070 SUPER** at int4 (or 62 GB host RAM for an HF oracle forward), or is a new version of a family `goinfer` already runs ([`decoder/registry.go`](../decoder/registry.go)). All config facts below come from the posted `config.json`, `modeling_*.py`, or model card.
+
+---
+
+## Releases passing the selection rule (2026-10-26 – 2026-11-03)
+
+### 1. LFM3-1.7B / LFM3-1.7B-Base and LFM3-VL-2B
+
+- **Name:** `LiquidAI/LFM3-1.7B` ([HF card](https://huggingface.co/LiquidAI/LFM3-1.7B)), `LiquidAI/LFM3-1.7B-Base` ([HF card](https://huggingface.co/LiquidAI/LFM3-1.7B-Base)), `LiquidAI/LFM3-VL-2B` ([HF card](https://huggingface.co/LiquidAI/LFM3-VL-2B)); Ollama `lfm3` ([library](https://ollama.com/library/lfm3)) and `lfm3-vl` ([library](https://ollama.com/library/lfm3-vl)).
+- **Maker:** Liquid AI ([LiquidAI org](https://huggingface.co/LiquidAI)).
+- **Date:** 2026-10-27 ([HF card](https://huggingface.co/LiquidAI/LFM3-1.7B), [Ollama v0.40.11–v0.40.13](https://github.com/ollama/ollama/releases)).
+- **License:** LFM Open License v1.0 (`lfm1.0`; free for research/personal and commercial under $10M annual revenue; [LICENSE](https://huggingface.co/LiquidAI/LFM3-1.7B/blob/main/LICENSE)).
+- **`model_type` / `architectures` (`config.json`):**
+  - Text ([`LFM3-1.7B/config.json`](https://huggingface.co/LiquidAI/LFM3-1.7B/blob/main/config.json)): `"model_type": "lfm3"`, `"architectures": ["Lfm3ForCausalLM"]`; 24 layers (`hidden_size: 2048`, `intermediate_size: 7680`, `num_attention_heads: 16`, `num_key_value_heads: 4`, `head_dim: 128`, `vocab_size: 128000`, `norm_eps: 1e-05`, `tie_word_embeddings: true`, `use_sandwich_norm: true`, `conv_L_cache: 7`, `conv_bias: false`, `sliding_window: 256`); tri-hybrid `layer_types` with 13 `"conv"`, 5 `"sliding_attention"`, and 6 `"full_attention"` layers; `rope_parameters` sets `full_attention` (`rope_theta: 1000000.0`, `partial_rotary_factor: 0.5`) and `sliding_attention` (`rope_theta: 10000.0`, full rotary).
+  - VL ([`LFM3-VL-2B/config.json`](https://huggingface.co/LiquidAI/LFM3-VL-2B/blob/main/config.json)): outer `"model_type": "lfm3_vl"`, `"architectures": ["Lfm3VlForConditionalGeneration"]`, nested `text_config.model_type: "lfm3"`, plus 14-layer hybrid conv/attention `vision_config`.
+- **Size:** 1.73B text (~1.0 GB int4, ~3.5 GB BF16) and 2.0B VL (~1.3 GB int4) ([HF card](https://huggingface.co/LiquidAI/LFM3-1.7B), [Ollama `lfm3`](https://ollama.com/library/lfm3)). Fits both the 8 GB RTX 2070 SUPER and 16 GB M1 Pro, and is the new version of the shipped `lfm2` family ([`decoder/arch_lfm2.go`](../decoder/arch_lfm2.go)).
+- **Existing `goinfer` adapter check:** **No.** [`decoder/registry.go`](../decoder/registry.go) registers `"lfm2"` and `"lfm2_vl"`, not `"lfm3"` or `"lfm3_vl"`, and `validateLFM2` in [`decoder/config.go`](../decoder/config.go) rejects any `layer_types` entry outside `"conv"` and `"full_attention"`.
+- **New primitives needed:** **None (composition over shipped primitives + 1 program hook).** Per [`modeling_lfm3.py`](https://huggingface.co/LiquidAI/LFM3-1.7B/blob/main/modeling_lfm3.py), LFM3's four deltas over `lfm2` ([`decoder/arch_lfm2.go`](../decoder/arch_lfm2.go)) already exist in `decoder`: (1) `"sliding_attention"` layers (`SlidingWindow: 256`, `IsGlobalLayer`); (2) per-layer-type RoPE theta and `partial_rotary_factor: 0.5` (`parseRopeParameters`, `RotaryDim`/`RotaryDimLocal` as in [`decoder/arch_laguna.go`](../decoder/arch_laguna.go) and [`decoder/arch_spark2_5.go`](../decoder/arch_spark2_5.go)); (3) head-wise sigmoid attention gate `gate_proj: Linear(2048, 16, bias=False)` (`AttnGate: GateSigmoid` as in [`decoder/arch_spark2_5.go`](../decoder/arch_spark2_5.go)); (4) `NormSandwich4` (`operator_norm`, `post_operator_norm`, `ffn_norm`, `post_ffn_norm`), where [`decoder/program.go`](../decoder/program.go) (`a.isConvLayer(l)`) currently hardcodes `NormPre2` on conv layers and needs to emit `slotPostAttn`/`slotPostMLP` when `NormSandwich4` is active. (Like `lfm2`, `lfm3` stays CPU-only until a GPU backend implements `FeatShortConv`.)
+- **Cost class:** **CHEAP** (days — adapter wiring, conv-layer `NormSandwich4` emission in [`decoder/program.go`](../decoder/program.go), and tensor-name mapping; VL vision encoder follows [`docs/multimodal.md`](multimodal.md)).
+
+### 2. MiniCPM-OCR-1.0 and MiniCPM-OCR-Jev
+
+- **Name:** `openbmb/MiniCPM-OCR-1.0` ([HF card](https://huggingface.co/openbmb/MiniCPM-OCR-1.0)) and `openbmb/MiniCPM-OCR-Jev` ([HF card](https://huggingface.co/openbmb/MiniCPM-OCR-Jev)).
+- **Maker:** OpenBMB ([openbmb org](https://huggingface.co/openbmb)).
+- **Date:** 2026-10-28 ([OCR-1.0 card](https://huggingface.co/openbmb/MiniCPM-OCR-1.0), [OCR-Jev card](https://huggingface.co/openbmb/MiniCPM-OCR-Jev)).
+- **License:** Apache-2.0 ([OCR-1.0 README](https://huggingface.co/openbmb/MiniCPM-OCR-1.0/blob/main/README.md), [OCR-Jev README](https://huggingface.co/openbmb/MiniCPM-OCR-Jev/blob/main/README.md)).
+- **`model_type` / `architectures` (`config.json`):**
+  - `MiniCPM-OCR-1.0` ([`config.json`](https://huggingface.co/openbmb/MiniCPM-OCR-1.0/blob/main/config.json)): outer `"model_type": "minicpm_ocr"`, `"architectures": ["MiniCPMOcrForConditionalGeneration"]`; nested `text_config` has `"model_type": "qwen3_5_text"`, 24 layers (`hidden_size: 1024`, `intermediate_size: 3584`, `head_dim: 256`, `full_attention_interval: 4`, `linear_conv_kernel_dim: 4`, `linear_key_head_dim: 128`, `attn_output_gate: true`, 3:1 `"linear_attention"` / `"full_attention"` Gated DeltaNet hybrid); `vision_config` has `"model_type": "minicpm_ocr_vision"` (SigLIP + window-attention resampler with `insert_layer_id: 6`).
+  - `MiniCPM-OCR-Jev` ([`config.json`](https://huggingface.co/openbmb/MiniCPM-OCR-Jev/blob/main/config.json)): outer `"model_type": "qwen3_5"`, `"architectures": ["Qwen3_5ForConditionalGeneration"]`, `"problem_type": "single_label_classification"`; nested `text_config` has `"model_type": "qwen3_5_text"`, 24 layers (`hidden_size: 2048`, `intermediate_size: 6144`, `head_dim: 256`, `full_attention_interval: 4`, `linear_conv_kernel_dim: 4`).
+- **Size:** 1.3B (`MiniCPM-OCR-1.0`, ~0.8 GB int4 / ~2.6 GB BF16) and 2.0B (`MiniCPM-OCR-Jev`, ~1.2 GB int4 / ~4.0 GB BF16) ([OCR-1.0 card](https://huggingface.co/openbmb/MiniCPM-OCR-1.0), [OCR-Jev card](https://huggingface.co/openbmb/MiniCPM-OCR-Jev)). Both fit the 8 GB RTX 2070 SUPER and 16 GB M1 Pro, and both text decoders are `qwen3_5_text` ([`decoder/arch_qwen3_5.go`](../decoder/arch_qwen3_5.go)).
+- **Existing `goinfer` adapter check:**
+  - `MiniCPM-OCR-1.0`: **Text backbone yes (with alias); full VLM no.** `loadConfig` ([`decoder/config.go`](../decoder/config.go)) flattens `text_config` and re-applies outer `"model_type": "minicpm_ocr"`, which is not in [`decoder/registry.go`](../decoder/registry.go). Aliasing `"minicpm_ocr"` to `qwen35DenseArchitecture` ([`decoder/arch_qwen3_5.go`](../decoder/arch_qwen3_5.go)) serves the text decoder.
+  - `MiniCPM-OCR-Jev`: Outer `"model_type": "qwen3_5"` **is** registered ([`decoder/registry.go`](../decoder/registry.go)), **but** it replaces `lm_head` with a binary classification head (`problem_type: "single_label_classification"`) for OCR quality scoring (`0..1`), making it a trained-head verifier ([`docs/tasks/parked/task-constrained-confidence.md`](tasks/parked/task-constrained-confidence.md) Route B/C).
+- **New primitives needed:** None for the `qwen3_5_text` decoder; `MiniCPM-OCR-1.0` needs the SigLIP + mid-layer window-attention resampler (`insert_layer_id: 6`, `4x` token compression) in `aikit` for vision-in OCR, and `MiniCPM-OCR-Jev` needs its binary classifier readout head.
+- **Cost class:** **CHEAP** for text-decoder / verifier-head wiring on `qwen3_5` (days); vision encoder + resampler follows [`docs/multimodal.md`](multimodal.md).
+
+### 3. SenseNova-Loop-9B-Preview
+
+- **Name:** `sensenova/SenseNova-Loop-9B-Preview` ([HF card](https://huggingface.co/sensenova/SenseNova-Loop-9B-Preview)).
+- **Maker:** SenseTime / SenseNova ([sensenova org](https://huggingface.co/sensenova)).
+- **Date:** 2026-10-30 ([HF card](https://huggingface.co/sensenova/SenseNova-Loop-9B-Preview)).
+- **License:** Apache-2.0 ([README](https://huggingface.co/sensenova/SenseNova-Loop-9B-Preview/blob/main/README.md)).
+- **`model_type` / `architectures` (`config.json`):** Outer `"model_type": "sensenova_loop"`, `"architectures": ["SenseNovaLoopForConditionalGeneration"]` ([`config.json`](https://huggingface.co/sensenova/SenseNova-Loop-9B-Preview/blob/main/config.json)); `text_config` has 32 physical layers (`hidden_size: 4096`, `intermediate_size: 12288`, `num_attention_heads: 16`, `num_key_value_heads: 4`, `head_dim: 256`, `linear_conv_kernel_dim: 4`, `attn_output_gate: true`, `full_attention_interval: 4`, 3:1 `"linear_attention"` / `"full_attention"` Gated DeltaNet hybrid, `max_position_embeddings: 262144`) plus `loop_settings: {"counts": [2], "start": 4, "end": 28, "eval_count": 2}` (physical layers 4..27 execute twice in sequence for 56 effective layer steps).
+- **Size:** 9B parameters (~5.5 GB int4, ~18 GB BF16) ([HF card](https://huggingface.co/sensenova/SenseNova-Loop-9B-Preview)). Fits both the 16 GB M1 Pro and 8 GB RTX 2070 SUPER at int4, and 62 GB host RAM at BF16.
+- **Existing `goinfer` adapter check:** **No.** `"sensenova_loop"` is not registered in [`decoder/registry.go`](../decoder/registry.go).
+- **New primitives needed:** While per-layer mixers match `qwen3_5` ([`decoder/arch_qwen3_5.go`](../decoder/arch_qwen3_5.go)), [`modeling_sensenova_loop.py`](https://huggingface.co/sensenova/SenseNova-Loop-9B-Preview/blob/main/modeling_sensenova_loop.py) introduces two architectural primitives `goinfer` lacks:
+  1. **Looped layer schedule with per-visit cache state:** 32 physical weight layers unroll to 56 execution steps (`loop_settings`), with distinct KV and Gated DeltaNet recurrent slots per loop pass — breaking the 1:1 physical-layer-to-cache-slot invariant in `kvgeometry.go`, `statebytes.go`, and the runners.
+  2. **2-stream Manifold-Constrained Hyper-Connections (mHC):** Sinkhorn / log-space row-column doubly-stochastic mixing across two parallel residual streams in the looped block (the same hyper-connection primitive family noted on DeepSeek V4-Flash and GLM-5.3-Flash in this doc).
+- **Cost class:** **EXPENSIVE** (weeks — decoupled weight-layer vs. state-slot indexing + 2-stream mHC residual mixer).
+
+### 4. Nanbeige4.3-33B / Nanbeige4.3-33B-Base
+
+- **Name:** `Nanbeige/Nanbeige4.3-33B` ([HF card](https://huggingface.co/Nanbeige/Nanbeige4.3-33B)) and `Nanbeige/Nanbeige4.3-33B-Base` ([HF card](https://huggingface.co/Nanbeige/Nanbeige4.3-33B-Base)).
+- **Maker:** Nanbeige LLM Lab / BOSS Zhipin ([Nanbeige org](https://huggingface.co/Nanbeige)).
+- **Date:** 2026-10-25/26 ([HF card](https://huggingface.co/Nanbeige/Nanbeige4.3-33B)).
+- **License:** Apache-2.0 ([README](https://huggingface.co/Nanbeige/Nanbeige4.3-33B/blob/main/README.md)).
+- **`model_type` / `architectures` (`config.json`):** `"model_type": "llama"`, `"architectures": ["LlamaForCausalLM"]` ([`config.json`](https://huggingface.co/Nanbeige/Nanbeige4.3-33B/blob/main/config.json)); 52 layers, `hidden_size: 7168`, `intermediate_size: 22016`, `num_attention_heads: 56`, `num_key_value_heads: 8` (`head_dim: 128`), `vocab_size: 166912`, `rms_norm_eps: 1e-05`, `rope_theta: 120000000`, `max_position_embeddings: 524288`, `attention_bias: false`, `mlp_bias: false`, `hidden_act: "silu"`.
+- **Size:** 33B dense (~17 GB int4, ~66 GB BF16) ([HF card](https://huggingface.co/Nanbeige/Nanbeige4.3-33B)). Above the 8 GB card and tight on the 16 GB M1 Pro at int4 (fits the 62 GB Linux host at int4), **and** passes as a new checkpoint on a family `goinfer` already runs (`"llama"`).
+- **Existing `goinfer` adapter check:** **Yes.** Directly served by `"llama": llamaArchitecture` ([`decoder/arch_llama.go`](../decoder/arch_llama.go), [`decoder/registry.go`](../decoder/registry.go)).
+- **New primitives needed:** **None** (verify chat template and `eos_token_id: [2, 166101]` at Gate 0).
+- **Cost class:** **CHEAP** (days — zero-code checkpoint swap on `llama`).
+
+---
+
+## Inspected releases in window filtered out by scope
+
+- **`DiffuSpace/Clover-35B-A3B-Preview`** (DiffuSpace, 2026-10-28, Apache-2.0; [`config.json`](https://huggingface.co/DiffuSpace/Clover-35B-A3B-Preview/blob/main/config.json)): `"model_type": "clover_moe"`, `"architectures": ["CloverMoeModelLM"]`, 40 layers, 256 experts top-8 + 1 shared (35B total / 3B active, converted from `Qwen3.6-35B-A3B`). Per [`modeling_clover_moe.py`](https://huggingface.co/DiffuSpace/Clover-35B-A3B-Preview/blob/main/modeling_clover_moe.py) and [`llama.cpp` PR #31306](https://github.com/ggml-org/llama.cpp/pull/31306), it is a **block-diffusion LM** — excluded by this doc ("Explicitly out of scope: Diffusion LMs").
+- **`tencent/Hy-SimulMT-30B-A3B`** (Tencent Hunyuan, 2026-10-26, Apache-2.0; [`config.json`](https://huggingface.co/tencent/Hy-SimulMT-30B-A3B/blob/main/config.json)): `"model_type": "hy_v3"`, `"architectures": ["HYV3SpeechForCausalLM"]`. Speech/voice-cloning simultaneous translation — audio/speech output is out of scope (this doc).
+- **`LiquidAI/LFM3-Audio-2B` & `LiquidAI/LFM3-Omni-2B`** (Liquid AI, 2026-10-27, `lfm1.0`; [Audio](https://huggingface.co/LiquidAI/LFM3-Audio-2B), [Omni](https://huggingface.co/LiquidAI/LFM3-Omni-2B), [Ollama `lfm3-audio`](https://ollama.com/library/lfm3-audio), [Ollama `lfm3-omni`](https://ollama.com/library/lfm3-omni)) and **`MayaResearch/Maya-2-Native`** ([HF card](https://huggingface.co/MayaResearch/Maya-2-Native)): speech/audio generation — out of scope (this doc).
+
+---
+
+## Changes to items already in "Next up" and "Watching"
+
+1. **Mistral Large 4 ("Le Chonk", `mistralai/Mistral-Large-4-1T-A52B`) — weights posted 2026-10-29; refutes the `mistral4` alias hypothesis ("Next up" #3 & 2026-10-26 check):**
+   - **Update:** Open weights dropped 2026-10-29 at [`mistralai/Mistral-Large-4-1T-A52B`](https://huggingface.co/mistralai/Mistral-Large-4-1T-A52B) ([`config.json`](https://huggingface.co/mistralai/Mistral-Large-4-1T-A52B/blob/main/config.json), [Ollama `mistral-large-4`](https://ollama.com/library/mistral-large-4)) under the **Mistral Ecosystem Open-Weight License** (MIT-derived with a MaaS restriction, not Apache-2.0).
+   - **Config check:** Outer `"model_type": "mistral_large4"` (`"architectures": ["MistralLarge4ForConditionalGeneration"]`) and `text_config.model_type: "mistral_large4"` (`"architectures": ["MistralLarge4ForCausalLM"]`). Unlike Mistral Small 4 (`119B-A6.5B`, outer `"mistral3"` / inner `"mistral4"`), Large 4 **does not** hit the `"mistral3"` outer-key collision in [`decoder/arch_mistral3.go`](../decoder/arch_mistral3.go); `resolveArchitecture` cleanly rejects `"mistral_large4"`. Architecturally it is **not** plain `mistral4`: its 72-layer `text_config` (`hidden_size: 6144`, `kv_lora_rank: 512`, `q_lora_rank: null`, 128 routed experts top-4 + 1 shared) adds **DeepSeek Sparse Attention (DSA)** with a 32-head (`head_dim: 128`) top-2048 token-selection `indexer` (`"full"` and `"shared"` indexer modes after 17 dense layers, NoPE every 4th layer), **cross-layer KV sharing** (every 4th layer from layer 39 reuses layer 35's KV latent), and **LeRoPE** + YaRN to 1M context ([`config.json`](https://huggingface.co/mistralai/Mistral-Large-4-1T-A52B/blob/main/config.json)). Moves to **Out by rule 2** (1.05T total / 52B active), and item 3's `mistral3` -> `mistral4` guard only needs to cover Mistral Small 4.
+2. **Ternary Bonsai 2 (`PrismML/Ternary-Bonsai-2-*`) — 2026-10-26 `Q2_0` guard question resolved ("Next up" #2 & 2026-10-26 check):**
+   - **Update:** PrismML ships three GGUF packings (`PTQ1_0` ~1.75–1.83 bpw, `PQ2_0` ~2.13–2.20 bpw, and standard `Q2_0` ~2.28–2.33 bpw; [`PrismML/Bonsai-2-27B-GGUF`](https://huggingface.co/PrismML/Bonsai-2-27B-GGUF), [prismml.com](https://prismml.com)). Even standard `Q2_0` files output gibberish on stock `llama.cpp` prior to [`b11556`](https://github.com/ggml-org/llama.cpp/releases/tag/b11556) because Bonsai-2 folds a **blockwise Hadamard rotation** into the weights that requires a matching runtime Hadamard activation transform on every forward pass. Item 2's GGUF guard must decline Bonsai-2 / Hadamard-rotated GGUFs via metadata, not only `TQ1_0`/`PQ2_0` tensor types.
+3. **Nemotron 3.5 Bolt E4B (`nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16`) — Gate 0 config and license verified (2026-10-26 check):**
+   - **Update:** [`config.json`](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16/blob/main/config.json) (and [`Bolt-E4B-4GB`](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-4GB), featured in NVIDIA's 2026-10-30 [Halloween post](https://huggingface.co/blog/nvidia/nemotron-halloween)) has outer `"model_type": "gemma4"`, `"architectures": ["Gemma4ForConditionalGeneration"]`, and `text_config` (`hidden_size: 2560`, `num_hidden_layers: 42`, `enable_moe_block: false`) under **NVIDIA OpenMDW-1.1** — confirming it resolves directly through `"gemma4": gemma4Architecture` ([`decoder/arch_gemma4.go`](../decoder/arch_gemma4.go)) as a **CHEAP** checkpoint swap.
+4. **Decision models (`d1` and `d3`) — new 2B `d1` on LFM3 and `d3` on Qwen3.5 (2026-10-26 check):**
+   - **Update:** On 2026-10-27 Liquid AI posted smaller 2B decision models [`LiquidAI/d1-2B`](https://huggingface.co/LiquidAI/d1-2B/blob/main/config.json) (`"model_type": "lfm3_vl"`, `"architectures": ["D1Model"]`) and [`LiquidAI/d1-Omni-2B`](https://huggingface.co/LiquidAI/d1-Omni-2B/blob/main/config.json) ([Ollama `d1`](https://ollama.com/library/d1), [Ollama v0.40.12](https://github.com/ollama/ollama/releases)), moving `d1` from 3B `lfm2` to 2B `lfm3_vl` + `D1Model` head. `vllm-sr` posted `d3-nano`/`mini`/`flash`/`ultra` (2B/4B/9B/27B; [`vllm-sr`](https://huggingface.co/vllm-sr), [Ollama `d3`](https://ollama.com/library/d3), [Ollama v0.40.11](https://github.com/ollama/ollama/releases)) with `"model_type": "qwen3_5"` (`Qwen3_5Model`, served by `qwen35DenseArchitecture` in [`decoder/arch_qwen3_5.go`](../decoder/arch_qwen3_5.go)).
+5. **Watching & Out-by-rule-2 items (2026-10-26 – 2026-11-03):**
+   - **Kimi K3 / Kimi K3.1 Pro:** Moonshot announced **Kimi K3.1 Pro** (same 2.8T total / 104B active `kimi_k3` hybrid: 69 KDA + 24 gated-MLA layers, 896 routed + 2 shared LatentMoE experts top-16; [`moonshotai/Kimi-K3`](https://huggingface.co/moonshotai/Kimi-K3), [kimi.ai](https://kimi.ai)) with weights scheduled for 2026-11-04. Still out by rule 1 (until posted) and rule 2 (size), with no smaller KDA+MLA checkpoint released.
+   - **DeepSeek V4.1 Flash:** NVIDIA posted [`nvidia/DeepSeek-V4.1-Flash-1017-NVFP4`](https://huggingface.co/nvidia/DeepSeek-V4.1-Flash-1017-NVFP4) on 2026-10-30; still 552B/763B causal encoder-decoder MoE, out by rule 2 with no Lite checkpoint posted.
+   - **GLM-5.x (`zai-org`), Qwen 4 (`Qwen`), Muse Glimmer 30B (`meta-models`), Xiaomi MiMo-V3 (`XiaomiMiMo`):** No change — `GLM-5.3-FlashX` is an API tier of the 320B-A18B [`zai-org/GLM-5.3-Flash`](https://huggingface.co/zai-org/GLM-5.3-Flash) (still no Air-class checkpoint); Qwen 4 remains in training with no smaller open-weight carrier after [`Qwen/Qwen3.8-Flash-Next`](https://huggingface.co/Qwen/Qwen3.8-Flash-Next); [`meta-models/Muse-Glimmer-30B`](https://huggingface.co/meta-models/Muse-Glimmer-30B) has no smaller size; [`XiaomiMiMo`](https://huggingface.co/XiaomiMiMo) MiMo-V3 (HySparse2) remains paper-only.
+
 ## Watching — current list
 
 - **Kimi K3** — reportedly ~3–4T params; *not* a K2.x point release (K2 through K2.7-Code are
