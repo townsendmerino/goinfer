@@ -279,6 +279,16 @@ on a CPU. Over HTTP the same request is an `image_url` part plus `response_forma
   the model is open. `Config`, `Dims`, `Quant`, `NewCache` and `NewSession` only read the config or
   allocate, and still work afterward.
 
+## Errors and logging
+
+`decoder.Load` refuses a model you can branch on with `errors.Is`: `decoder.ErrUnsupportedModel`, `decoder.ErrUnknownQuant`,
+`decoder.ErrUnknownBackend`, and `decoder.ErrWontFitResident` for one the fit guard turned away.
+
+The library says what it decided (a context capped, a path declined, a fallback taken) as plain lines on stderr. To take them instead,
+call `decoder.SetLogger` with a `*slog.Logger`: each message becomes a record at debug, info or warn, attributed to the line that wrote it,
+and nothing reaches stderr. It covers `decoder` and the GPU backends. It does not cover the banner and request log of a server embedded
+with `server.NewHandler`, or `pull`'s download progress.
+
 ## What v1.0 will bind
 
 goinfer is pre-1.0, so any of this can still change. Which surfaces the v1.0 tag will hold to
