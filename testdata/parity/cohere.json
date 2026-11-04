@@ -10,7 +10,7 @@
   "programs": [
     "testdata/cohere-tiny"
   ],
-  "deps_hash": "sha256:3d9d6a56dcd5ad1e1c25010a1d13ab30c75dc6e0c143a138bdba3b410c307cbe",
+  "deps_hash": "sha256:e75c4791ad4c6187976ab450f7d5da11aa533729d9403c8b55f859c770fa5813",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

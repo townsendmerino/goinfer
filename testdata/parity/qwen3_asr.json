@@ -11,7 +11,7 @@
   "programs": [
     "testdata/qwen3asr-tiny"
   ],
-  "deps_hash": "sha256:04db2ad2e228caff29ef9d7b58d9a859e88adbb65646a7e510589ba720460d5e",
+  "deps_hash": "sha256:f8f4367dbb8d35cb547453eb7456135cded8f6a6adf78377fa36957fd8054abc",
   "status": "validated",
   "validated_at": "4f84f2c1",
   "date": "2026-10-08",
