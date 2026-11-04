@@ -10,7 +10,7 @@ A map of the tree. Paths are relative to the repository root; every row was chec
 - `internal/{serveapp,chatapp,cliutil,fitcmd,decidecmd,pullcmd,inproc,connect,loadflags}` -> `internal/app/<pkg>` (package clause unchanged)
 - `internal/{swapguard,prezerolint,paritykey,movedpaths,servecheck,memgate}` -> `internal/guard/<pkg>` (package clause unchanged)
 - `internal/{hwcensus,hwreport,kernelprint,sb2census,towerid}` -> `internal/diag/<pkg>` (package clause unchanged)
-- `internal/{giw,mem,kvmgr,f16,mamba2,whisper,scheduler,adapter,hybridattn,program,modelload,prequant,diskfree,sampling}` -> `internal/runtime/<pkg>` (`internal/runtime/mem/probe` -> `internal/runtime/mem/probe`; package clause unchanged)
+- `internal/{giw,mem,kvmgr,f16,mamba2,whisper,scheduler,adapter,hybridattn,program,modelload,prequant,diskfree,sampling}` -> `internal/runtime/<pkg>` (`internal/mem/probe` -> `internal/runtime/mem/probe`; package clause unchanged)
 
 ## Modules and the workspace
 
@@ -77,7 +77,7 @@ paths it names):
 
 - The backend `cmd/` directories (`backend/{webgpu,cuda,metal}/cmd/{chat,serve}`) stay inside their backend module. They
   import the backend's packages, and the root cannot require its own submodules without a cycle, so they cannot move to the
-  root `cmd/`. The root `cmd/serve` and `cmd/chat` (where `demo/chat` is the CPU chat) are the no-backend builds.
+  root `cmd/`. The root `cmd/serve` and `demo/chat` are the no-backend builds.
 - `demo/agent/cmd/` stays inside `demo/agent`. That module is published (tags `demo/agent/vX.Y.Z`) and keeps its MCP SDK
   out of the root `go.mod`; moving its binaries to the root would pull that dependency in.
 - `apps/site/cmd/build/` stays inside `apps/site`. The site is never tagged, and its generator imports its own packages.

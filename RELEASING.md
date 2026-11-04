@@ -1,7 +1,11 @@
-# Releasing goinfer (tri-module: root + backend/webgpu + backend/cuda + backend/metal)
+# Releasing goinfer (root + backend/webgpu + backend/cuda + backend/metal + demo/agent)
 
-goinfer is **five Go modules** in one repo — the root (`github.com/townsendmerino/goinfer`),
-plus `backend/webgpu/`, `backend/cuda/`, `backend/metal/`, and the ancillary `demo/agent/`. This file is the tag ordering
+goinfer has **seven Go modules** in its workspace — five that are tagged and released together (`github.com/townsendmerino/goinfer` at `.`,
+`github.com/townsendmerino/goinfer/backend/webgpu` at `backend/webgpu/`, `github.com/townsendmerino/goinfer/backend/cuda` at `backend/cuda/`,
+`github.com/townsendmerino/goinfer/backend/metal` at `backend/metal/`, and the ancillary `github.com/townsendmerino/goinfer/demo/agent` at
+`demo/agent/`), plus two that are never tagged (`github.com/townsendmerino/goinfer/sdktest` at `apps/sdktest/`, tests only, and
+`github.com/townsendmerino/goinfer/site` at `apps/site/`, the website generator; an eighth `go.mod` in `.github/actions/staticcheck/`
+only pins the CI linter build). This file is the tag ordering
 that produces a consistent, go-gettable set, plus the module-graph fixes that must land with it.
 It exists because four release blockers in the 2026-08-05 audit (§1a/§1b: B-01…B-07) were "the
 tagged submodules don't build for anyone" — the gitignored `go.work` masks it locally, so it
@@ -27,17 +31,17 @@ survives to a tag unless caught here.
   version = B-05 — both publish a broken dependency permanently). **Do NOT re-add the replace.**
 - **`go.work` is gitignored, per-machine, and now MANDATORY for cross-module dev.** With the replaces
   gone, a submodule build outside a workspace resolves the root from the proxy; local cross-module
-  work needs a `go.work` covering **all five modules** (`.`, `./backend/webgpu`, `./backend/cuda`, `./backend/metal`,
-  `./demo/agent`). It stays dev-only — nothing in the shipped tag may depend on it, which the
+  work needs a `go.work` covering **all seven workspace modules** (`.`, `./backend/webgpu`, `./backend/cuda`, `./backend/metal`,
+  `./demo/agent`, `./apps/sdktest`, `./apps/site`). It stays dev-only — nothing in the shipped tag may depend on it, which the
   `standalone-build` workflow proves. That workflow runs on TAG pushes, not on every push, and
   the reason is structural rather than a preference: a submodule built with `GOWORK=off`
   resolves the goinfer root from the proxy at its LAST PUBLISHED TAG, so between releases it
   legitimately fails on perfectly good code that uses a root symbol added since. At tag time the
   root tag is published, which is when the answer means anything. Until 2026-09-02 the sentence
   here claimed a CI step that did not exist, and Step 2 below was the only thing checking it.
-- **Version alignment (B-07):** all five modules must agree on `aikit`. **Read the versions, do not read them
+- **Version alignment (B-07):** all five tagged modules must agree on `aikit`. **Read the versions, do not read them
   here.** No module requires `aikit/gpu`: the device package is goinfer's own since Track AX
-  (`backend/cuda/internal/gpudev`, `backend/metal/internal/gpudev`), and `internal/movedpaths` fails on a require of it.
+  (`backend/cuda/internal/gpudev`, `backend/metal/internal/gpudev`), and `internal/guard/movedpaths` fails on a require of it.
   The `aikit` they agree on must be a **tag**: `main` may require an aikit pseudo-version between weekly aikit
   tags, a release may not (owner decision SD3). `gate release`'s pins row is OWED on a pseudo-version; tag aikit
   and bump to the tag first.
@@ -407,7 +411,7 @@ after the last ritual was written.
 **RESOLVED 2026-08-06 (`160dc3f`) — was known-red, is not any more, and the safety condition
 below is the record of how that was checked, not a live warning.** `TestMetalSnapshotGolden` was
 EXPECTED to fail on the Mac until its goldens were re-baked
-(`GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/`) after audit G-02, fixed
+(`GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./backend/metal/`) after audit G-02, fixed
 on Linux where the suite cannot run: the checkpoint call now drives `ForwardEmb` with the
 production-scaled embedding row and `Forward`/`ForwardArgmax` apply the arch embed scale. The
 re-bake was only legitimate if **`gemma4-dense-scaled` entries moved** (it has
