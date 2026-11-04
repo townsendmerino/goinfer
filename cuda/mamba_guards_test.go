@@ -916,15 +916,15 @@ func TestRecurrentSlots_restoreThroughGenerate(t *testing.T) {
 				}
 				replies[c.name] = got
 			}
-			// With room for one copy, Q saves last, so P's restore is refused, and P prefills from 0.
+			// With room for one copy, Q saves last, so P's slot holds none: its follow-up scores no restore, and prefills from 0.
 			saved := ckptFreeVRAM
 			ckptFreeVRAM = func(r *cudaResident) (uint64, error) { return uint64(r.recurrentLiveBytes() + r.ckptReserve()), nil }
 			short, _ := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
 			ckptFreeVRAM = saved
 			gen(short, P)
 			gen(short, Q)
-			if _, g := gen(short, fp); g.CheckpointRestored != 0 || !strings.Contains(g.CheckpointDeclined, "holds no recurrent checkpoint") {
-				t.Errorf("with one copy, the client that saved first restored at %d, declined %q", g.CheckpointRestored, g.CheckpointDeclined)
+			if _, g := gen(short, fp); g.CheckpointRestored != 0 || g.CheckpointDeclined != "" {
+				t.Errorf("with one copy, the client that saved first restored at %d, declined %q; want no restore tried", g.CheckpointRestored, g.CheckpointDeclined)
 			}
 			for name, c := range map[string][2][]int{"P": {P, fp}, "Q": {Q, fq}} {
 				alone, _ := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 1})
@@ -938,5 +938,144 @@ func TestRecurrentSlots_restoreThroughGenerate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// recurrentSlotRoom makes the checkpoints' free-VRAM reading hold copies copies, until the test ends.
+func recurrentSlotRoom(t *testing.T, copies int64) {
+	t.Helper()
+	saved := ckptFreeVRAM
+	t.Cleanup(func() { ckptFreeVRAM = saved })
+	ckptFreeVRAM = func(r *cudaResident) (uint64, error) {
+		return uint64(copies*r.recurrentLiveBytes() + r.ckptReserve()), nil
+	}
+}
+
+// TestRecurrentSlots_aTakenCheckpointIsNotScored is the card's half of decoder's test of that name: three slots and one copy through Generate. A branch of the conversation
+// whose copy was taken takes the empty slot and attempts no restore, and that conversation's next turn still continues its own state, with the reply it gets alone.
+func TestRecurrentSlots_aTakenCheckpointIsNotScored(t *testing.T) {
+	for _, fixture := range recurrentSlotFixtures {
+		t.Run(fixture, func(t *testing.T) {
+			recurrentSlotRoom(t, 1)
+			m, r := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 3})
+			if n := len(r.ckptCopies); n != 1 {
+				t.Fatalf("the build keeps %d checkpoints, want 1 (%s)", n, r.ckptDeclined)
+			}
+			_, _, _, _, _, _, vocab := m.Dims()
+			gen := func(md *decoder.Model, prompt []int) ([]int, *decoder.Generation) {
+				t.Helper()
+				ch, g := md.Generate(context.Background(), prompt, 6, decoder.SamplingParams{})
+				var toks []int
+				for tok := range ch {
+					toks = append(toks, tok)
+				}
+				if err := g.Err(); err != nil {
+					t.Fatal(err)
+				}
+				return toks, g
+			}
+			seq := func(n, a, b int) []int {
+				s := make([]int, n)
+				for i := range s {
+					s[i] = (i*a + b) % vocab
+				}
+				return s
+			}
+			P, Q := seq(32, 31, 7), seq(32, 17, 101)
+			rp, _ := gen(m, P)
+			gen(m, Q)
+			branch := append(slices.Clone(P), (rp[0]+1)%vocab)
+			branch = append(branch, seq(32, 13, 3)...)
+			_, g := gen(m, branch)
+			t.Logf("%s: the branch restored at %d, reused %d, declined %q", fixture, g.CheckpointRestored, g.PrefillReused, g.CheckpointDeclined)
+			if g.CheckpointRestored != 0 || g.CheckpointDeclined != "" {
+				t.Errorf("a restore was scored on a slot with no checkpoint: restored at %d, declined %q", g.CheckpointRestored, g.CheckpointDeclined)
+			}
+			ext := append(append(slices.Clone(P), rp...), seq(8, 5, 9)...)
+			got, g2 := gen(m, ext)
+			if g2.PrefillReused != len(P)+len(rp) {
+				t.Errorf("P's next turn reused %d of %d rows: the branch took its slot", g2.PrefillReused, len(P)+len(rp))
+			}
+			ckptFreeVRAM = func(r *cudaResident) (uint64, error) { return uint64(1 << 40), nil }
+			alone, _ := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 1})
+			gen(alone, P)
+			want, _ := gen(alone, ext)
+			if !slices.Equal(got, want) {
+				t.Errorf("P's next turn replied %v, alone %v", got, want)
+			}
+		})
+	}
+}
+
+// TestRecurrentSlots_leastRecentlySavedGoesFirst: three slots and two copies, so the third save has a choice to make. It takes the copy saved longest ago, and a slot that
+// saved again in between keeps its own.
+func TestRecurrentSlots_leastRecentlySavedGoesFirst(t *testing.T) {
+	recurrentSlotRoom(t, 2)
+	m, r := recurrentSlotsLoad(t, "qwen35-tiny", decoder.Options{ResidentKVSlots: 3})
+	if n := len(r.ckptCopies); n != 2 {
+		t.Fatalf("the build keeps %d checkpoints, want 2 (%s)", n, r.ckptDeclined)
+	}
+	A, _ := recurrentSlotSeqs(m, 2)
+	save := func(s int) {
+		t.Helper()
+		recurrentSlotBind(t, r, s)
+		r.Reset()
+		if _, err := r.Forward(A[0], 0); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.SaveRecurrentCheckpoint(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	held := func(want ...int) {
+		t.Helper()
+		for s := range 3 {
+			if got := r.RecurrentCheckpointHeld(s); got != slices.Contains(want, s) {
+				t.Errorf("slot %d holds a checkpoint: %v; want the holders %v", s, got, want)
+			}
+		}
+	}
+	save(0)
+	save(1)
+	held(0, 1)
+	save(2) // slot 0 saved longest ago
+	held(1, 2)
+	save(1) // slot 1's own copy, so slot 2 is now the oldest
+	held(1, 2)
+	save(0)
+	held(0, 1)
+}
+
+// TestRecurrentSlots_resetFreesTheSlotsCheckpoint: a reset starts a new sequence on the slot, so its checkpoint holds nothing a request can use, and the copy is free: a
+// later save takes it before it takes another slot's.
+func TestRecurrentSlots_resetFreesTheSlotsCheckpoint(t *testing.T) {
+	recurrentSlotRoom(t, 2)
+	m, r := recurrentSlotsLoad(t, "qwen35-tiny", decoder.Options{ResidentKVSlots: 3})
+	A, _ := recurrentSlotSeqs(m, 2)
+	for _, s := range []int{0, 1} {
+		recurrentSlotBind(t, r, s)
+		r.Reset()
+		if _, err := r.Forward(A[0], 0); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.SaveRecurrentCheckpoint(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recurrentSlotBind(t, r, 1) // the most recently saved
+	r.Reset()
+	if r.RecurrentCheckpointHeld(1) {
+		t.Error("a reset left the slot's checkpoint held")
+	}
+	recurrentSlotBind(t, r, 2)
+	r.Reset()
+	if _, err := r.Forward(A[0], 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SaveRecurrentCheckpoint(); err != nil {
+		t.Fatal(err)
+	}
+	if !r.RecurrentCheckpointHeld(0) {
+		t.Error("a save took slot 0's checkpoint with a free copy available")
 	}
 }

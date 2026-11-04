@@ -104,3 +104,61 @@ ok  	github.com/townsendmerino/goinfer/decoder	0.015s
     kv8a_generate_test.go:310: B: restored at 0 on slot 1, declined ""
     kv8a_generate_test.go:312: B: restored at 0 (declined ""), want its prompt's end, 40
 FAIL	github.com/townsendmerino/goinfer/decoder	0.016s
+
+# #658's review, red first: a taken checkpoint scored, and a reset leaving its owner. The tests on the code as reviewed, plus only the query they call. 41d262da2, 2026-11-03 18:21:51 PST
+    kv8a_generate_test.go:392: the branch: slot 0, restored at 0, reused 0, declined "restore failed: slot 0 holds no recurrent checkpoint", 1 restores tried
+    kv8a_generate_test.go:394: a restore was tried on a slot with no checkpoint: 1 restores, declined "restore failed: slot 0 holds no recurrent checkpoint"
+    kv8a_generate_test.go:397: the branch took slot 0, A's, with an empty slot free
+    kv8a_generate_test.go:401: A's own next turn reused 0 of 48 rows: the branch took its slot's sequence
+--- FAIL: TestKV8_aTakenCheckpointIsNotScored (0.01s)
+FAIL	github.com/townsendmerino/goinfer/decoder	0.012s
+    mamba_guards_test.go:990: qwen35-tiny: the branch restored at 0, reused 0, declined "restore failed: cuda: KV slot 0 holds no recurrent checkpoint"
+    mamba_guards_test.go:992: a restore was scored on a slot with no checkpoint: restored at 0, declined "restore failed: cuda: KV slot 0 holds no recurrent checkpoint"
+    mamba_guards_test.go:997: P's next turn reused 0 of 38 rows: the branch took its slot
+    mamba_guards_test.go:990: olmo_hybrid-tiny: the branch restored at 0, reused 0, declined "restore failed: cuda: KV slot 0 holds no recurrent checkpoint"
+    mamba_guards_test.go:992: a restore was scored on a slot with no checkpoint: restored at 0, declined "restore failed: cuda: KV slot 0 holds no recurrent checkpoint"
+    mamba_guards_test.go:997: P's next turn reused 0 of 38 rows: the branch took its slot
+    mamba_guards_test.go:990: nemotron-tiny: the branch restored at 0, reused 0, declined "restore failed: cuda: KV slot 0 holds no recurrent checkpoint"
+    mamba_guards_test.go:992: a restore was scored on a slot with no checkpoint: restored at 0, declined "restore failed: cuda: KV slot 0 holds no recurrent checkpoint"
+    mamba_guards_test.go:997: P's next turn reused 0 of 38 rows: the branch took its slot
+--- FAIL: TestRecurrentSlots_aTakenCheckpointIsNotScored (2.64s)
+    --- FAIL: TestRecurrentSlots_aTakenCheckpointIsNotScored/qwen35-tiny (2.01s)
+    --- FAIL: TestRecurrentSlots_aTakenCheckpointIsNotScored/olmo_hybrid-tiny (0.31s)
+    --- FAIL: TestRecurrentSlots_aTakenCheckpointIsNotScored/nemotron-tiny (0.32s)
+--- PASS: TestRecurrentSlots_leastRecentlySavedGoesFirst (0.25s)
+    mamba_guards_test.go:1068: a reset left the slot's checkpoint held
+    mamba_guards_test.go:1079: a save took slot 0's checkpoint with a free copy available
+--- FAIL: TestRecurrentSlots_resetFreesTheSlotsCheckpoint (0.26s)
+FAIL	github.com/townsendmerino/goinfer/cuda	3.211s
+
+# The ownership query and the reset's release, 2026-11-03 18:22:41 PST
+vets done
+--- PASS: TestKV8a_restoreEqualsCold (0.01s)
+--- PASS: TestKV8a_noCheckpointRunsCold (0.00s)
+--- PASS: TestKV8a_saveBeforeTheFirstDecodeStep (0.00s)
+--- PASS: TestKV8_severalSlotsRestoreTheirCheckpoints (0.01s)
+    kv8a_generate_test.go:393: the branch: slot 2, restored at 0, reused 0, declined "", 0 restores tried
+--- PASS: TestKV8_aTakenCheckpointIsNotScored (0.00s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.033s
+exit 1, PASS 25, FAIL 1
+--- FAIL: TestRecurrentSlots_restoreThroughGenerate (1.43s)
+    mamba_guards_test.go:990: qwen35-tiny: the branch restored at 0, reused 0, declined ""
+    mamba_guards_test.go:990: olmo_hybrid-tiny: the branch restored at 0, reused 0, declined ""
+    mamba_guards_test.go:990: nemotron-tiny: the branch restored at 0, reused 0, declined ""
+    sb2_census_test.go:2604: 474 builds held, 155 options declined by CUDA's own build
+FAIL	github.com/townsendmerino/goinfer/cuda	144.237s
+# plant: the least recently saved goes last
+    mamba_guards_test.go:1042: slot 0 holds a checkpoint: true; want the holders [1 2]
+    mamba_guards_test.go:1042: slot 1 holds a checkpoint: false; want the holders [1 2]
+    mamba_guards_test.go:1044: slot 0 holds a checkpoint: true; want the holders [1 2]
+    mamba_guards_test.go:1044: slot 2 holds a checkpoint: false; want the holders [1 2]
+--- FAIL: TestRecurrentSlots_leastRecentlySavedGoesFirst (1.90s)
+FAIL	github.com/townsendmerino/goinfer/cuda	1.954s
+# plant: the score does not ask who holds the copy
+    kv8a_generate_test.go:393: the branch: slot 0, restored at 0, reused 0, declined "restore failed: slot 0 holds no recurrent checkpoint", 1 restores tried
+    kv8a_generate_test.go:395: a restore was tried on a slot with no checkpoint: 1 restores, declined "restore failed: slot 0 holds no recurrent checkpoint"
+    kv8a_generate_test.go:398: the branch took slot 0, A's, with an empty slot free
+    kv8a_generate_test.go:402: A's own next turn reused 0 of 48 rows: the branch took its slot's sequence
+--- FAIL: TestKV8_aTakenCheckpointIsNotScored (0.01s)
+FAIL	github.com/townsendmerino/goinfer/decoder	0.011s
+# plant a reset keeps its owner NOT APPLIED: text moved

@@ -2778,6 +2778,9 @@ func (r *cudaResident) Reset() {
 // the goroutine that services reqCh and deadlocks — a hang, not an error, and one that only appears
 // once graphs are actually admitted for a recurrent model.
 func (r *cudaResident) resetState() error {
+	if k := r.ckptCopyOf(r.kvSlot); k >= 0 { // a new sequence: what the copy holds is no request's, so a later save takes it first
+		r.ckptCopies[k].slot = -1
+	}
 	if e := r.resetMambaState(); e != nil {
 		return e
 	}

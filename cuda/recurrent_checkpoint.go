@@ -213,6 +213,16 @@ func (r *cudaResident) ckptCopyOf(s int) int {
 	return -1
 }
 
+// RecurrentCheckpointHeld implements decoder.ResidentRecurrentCheckpointOwner.
+func (r *cudaResident) RecurrentCheckpointHeld(slot int) bool {
+	held := false
+	_ = r.do(func() error {
+		held = r.ckptCopyOf(slot) >= 0
+		return nil
+	})
+	return held
+}
+
 // ckptCopyFor is the checkpoint a save on slot s writes: its own, then a free one, then the least recently saved.
 func (r *cudaResident) ckptCopyFor(s int) int {
 	if k := r.ckptCopyOf(s); k >= 0 {
