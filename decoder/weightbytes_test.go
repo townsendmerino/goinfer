@@ -61,9 +61,9 @@ func preM01ResidentWeightBytes(w *Weights) int64 {
 // fixture's dense/embed bytes already exceed the expert sum by coincidence, so that assertion
 // would pass even against the pre-fix code that counts the experts as zero. Asserting against
 // preM01ResidentWeightBytes measures the actual delta instead — it must be positive (something
-// new got counted) and must equal the gemma4moe router+experts exactly (nothing else in this
-// fixture is new: hidden_size_per_layer_input is 0, so no PLE, and gemma4 has no
-// delta/qattn/mla/mamba/shortConv fields to contribute).
+// new got counted) and must equal the gemma4moe router+experts plus denseVectorBytes exactly
+// (nothing else in this fixture is new: hidden_size_per_layer_input is 0, so no PLE, and gemma4
+// has no delta/qattn/mla/mamba/shortConv fields to contribute).
 func TestResidentWeightBytes_countsGemma4MoEExperts(t *testing.T) {
 	m := loadGemma4MoETiny(t)
 
@@ -85,9 +85,10 @@ func TestResidentWeightBytes_countsGemma4MoEExperts(t *testing.T) {
 	}
 
 	got, old := m.ResidentWeightBytes(), preM01ResidentWeightBytes(m.w)
-	if delta := got - old; delta != expertOnly {
+	vectors := m.denseVectorBytes()
+	if delta := got - old; delta != expertOnly+vectors {
 		t.Errorf("ResidentWeightBytes() - preM01 delta = %d, want exactly %d (the gemma4moe "+
-			"router+experts) — got %d old %d", delta, expertOnly, got, old)
+			"router+experts %d + denseVectorBytes %d) — got %d old %d", delta, expertOnly+vectors, expertOnly, vectors, got, old)
 	}
 }
 

@@ -231,7 +231,8 @@ func linkOrCopy(src, dst string) error {
 
 // longVariant copies a checkpoint directory into a temp dir with its window raised to 131,072 positions, so the auto-pin and floor
 // branches are reachable on a tiny model. The weights are hard-linked where the filesystem allows it, else copied. The copy keeps the directory's own name, which the
-// fit guard's lines print.
+// fit guard's lines print. Subdirectories are left out: a load reads the checkpoint's top-level files, and a real fixture can carry
+// a download cache or an onnx export beside them.
 func longVariant(t *testing.T, dir string) string {
 	t.Helper()
 	out := filepath.Join(t.TempDir(), filepath.Base(dir))
@@ -243,6 +244,9 @@ func longVariant(t *testing.T, dir string) string {
 		t.Fatal(err)
 	}
 	for _, e := range ents {
+		if e.IsDir() {
+			continue
+		}
 		src, _ := filepath.Abs(filepath.Join(dir, e.Name()))
 		if e.Name() != "config.json" {
 			if err := linkOrCopy(src, filepath.Join(out, e.Name())); err != nil {
