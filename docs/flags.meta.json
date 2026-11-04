@@ -198,13 +198,15 @@
   {
    "name": "recurrent-step",
    "group": "Backend, precision and context",
-   "summary": "Metal only: a Qwen3.5-family or Nemotron-H model batches concurrent requests in one decode step, each on its own KV slot and recurrent state. Bit-identical output. In serve it needs `--kv-sessions` 2 or more. Off by default.",
+   "summary": "Metal only: a Qwen3.5-family or Nemotron-H model batches concurrent requests in one decode step. Bit-identical output. In serve, on when `--kv-sessions` is given at 2 or more, for about 10 MB; off in `goinfer-chat`. Not with a vision tower attached.",
+   "type": "bool",
    "see": "docs/tasks/task-forward-architecture-2026-10.md"
   },
   {
    "name": "gemma4-step",
    "group": "Backend, precision and context",
-   "summary": "Metal only: a Gemma 4 dense model batches concurrent requests in one decode step. Bit-identical output. In serve it needs `--kv-sessions` 2 or more. Off by default.",
+   "summary": "Metal only: a Gemma 4 dense model batches concurrent requests in one decode step. Bit-identical output. In serve, on with 2 or more KV sessions, the default included, for about 10 MB; off in `goinfer-chat`. Not with a vision tower attached.",
+   "type": "bool",
    "see": "docs/tasks/task-forward-architecture-2026-10.md"
   },
   {

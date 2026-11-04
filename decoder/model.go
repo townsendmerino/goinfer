@@ -104,6 +104,8 @@ type Model struct {
 	moeStep       bool          // Options.ResidentMoEStep
 	recurStep     bool          // Options.ResidentRecurrentStep
 	gemma4Step    bool          // Options.ResidentGemma4Step
+	recurStepDef  bool          // Options.ResidentRecurrentStepDefault
+	gemma4StepDef bool          // Options.ResidentGemma4StepDefault
 	resCtxPinned  bool          // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
 	prefillChunk  int           // Options.ResidentPrefillChunk: MC3 chunked prefill's chunk size, 0 = off
 	kvShareOff    bool          // Options.KVShareOff
@@ -261,6 +263,17 @@ func (m *Model) ResidentMoEStep() bool { return m.moeStep }
 // ResidentRecurrentStep reports Options.ResidentRecurrentStep: the caller let a Qwen3.5-family model (Gated-DeltaNet and gated
 // attention) or a Nemotron-H model (Mamba-2) run on a backend's multi-sequence step.
 func (m *Model) ResidentRecurrentStep() bool { return m.recurStep }
+
+// ResidentRecurrentStepOn reports whether a backend granting slots KV slots runs the recurrent step: chosen, always; a default, only with
+// two or more.
+func (m *Model) ResidentRecurrentStepOn(slots int) bool {
+	return m.recurStep && (!m.recurStepDef || slots >= 2)
+}
+
+// ResidentGemma4StepOn is ResidentRecurrentStepOn for the Gemma 4 step.
+func (m *Model) ResidentGemma4StepOn(slots int) bool {
+	return m.gemma4Step && (!m.gemma4StepDef || slots >= 2)
+}
 
 // ResidentGemma4Step reports Options.ResidentGemma4Step: the caller let a Gemma 4 dense model run on a backend's
 // multi-sequence step.
@@ -475,6 +488,9 @@ type Options struct {
 	// -kv-sessions was not given). A backend may then lower it to its own default: Metal keeps 2 slots, since every slot's KV is
 	// resident from the first token on unified memory.
 	ResidentKVSlotsDefault bool
+	// ResidentRecurrentStepDefault and ResidentGemma4StepDefault say the step option beside each is the caller's default, not a choice: a
+	// backend that grants one KV slot leaves that step out, since its scratch then batches nothing.
+	ResidentRecurrentStepDefault, ResidentGemma4StepDefault bool
 	// ResidentWindowedKV asks the CUDA resident to keep only a window's worth of K/V (plus WindowedKVSlack positions of headroom) for each
 	// sliding-window layer instead of the whole context, which lets a windowed model such as Mellum2.1 fit a long context fully resident
 	// beside its weights (docs/tasks/task-cuda-windowed-kv-2026-10.md). Off by default: it changes how much memory a load takes. A
@@ -587,7 +603,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	return &Model{planSlackOf: &planSlackMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), kvOpts: opts,
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
-		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, moeStep: opts.ResidentMoEStep, recurStep: opts.ResidentRecurrentStep, gemma4Step: opts.ResidentGemma4Step, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), kvDemote: opts.KVDemote, disableFit: opts.DisableFit,
+		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, moeStep: opts.ResidentMoEStep, recurStep: opts.ResidentRecurrentStep, recurStepDef: opts.ResidentRecurrentStepDefault, gemma4StepDef: opts.ResidentGemma4StepDefault, gemma4Step: opts.ResidentGemma4Step, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), kvDemote: opts.KVDemote, disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		loadAbort:  opts.LoadAbort,

@@ -140,12 +140,14 @@ func (r *resident) stepInputs() *stepInputs {
 	return in
 }
 
-// metalStepInputs reads m before any build, as buildResident will decide each of them.
+// metalStepInputs reads m before any build, as buildResident will decide each of them. The slots it reads are those the load asks for, since
+// the granted count depends on this price: a defaulted step on a load memory then holds to one slot is priced here and not built.
 func metalStepInputs(m *decoder.Model) *stepInputs {
 	H, nL, nH, _, _, I, V := m.Dims()
 	p := m.Program()
-	in := &stepInputs{prog: p, H: H, V: V, I: I, nH: nH, moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStep(),
-		gemma4Step: m.ResidentGemma4Step(), q4k: m.Quant() == "q4k"}
+	wanted := metalKVSlotsWanted(m)
+	in := &stepInputs{prog: p, H: H, V: V, I: I, nH: nH, moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStepOn(wanted),
+		gemma4Step: m.ResidentGemma4StepOn(wanted), q4k: m.Quant() == "q4k"}
 	in.w4f16Lane = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16" && m.Quant() == "int4"
 	_, _, in.attnSink = m.GptOssActResident()
 	if nE, _, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams(); ok {

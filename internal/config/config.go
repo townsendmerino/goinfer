@@ -263,6 +263,8 @@ var Settings = []Setting{
 	{Name: "Knobs", Option: "Knobs", Class: Internal, Reason: "the per-model knob overrides by variable name; each knob is its own setting"},
 	{Name: "KVDemote", Option: "KVDemote", Class: Internal, Reason: "serve sets it when --kv-host-bytes names a budget"},
 	{Name: "ResidentKVSlotsDefault", Option: "ResidentKVSlotsDefault", Class: Internal, Reason: "serve sets it when --kv-sessions was not given"},
+	{Name: "ResidentRecurrentStepDefault", Option: "ResidentRecurrentStepDefault", Class: Internal, Reason: "serve sets it when --recurrent-step was not given, so a backend that grants one KV slot leaves the step out"},
+	{Name: "ResidentGemma4StepDefault", Option: "ResidentGemma4StepDefault", Class: Internal, Reason: "serve sets it when --gemma4-step was not given, so a backend that grants one KV slot leaves the step out"},
 	{Name: "ExtraResidentBytes", Option: "ExtraResidentBytes", Class: Internal, Reason: "serve prices a --drafter's weights into it"},
 	{Name: "ExtraResidentKVPerPosition", Option: "ExtraResidentKVPerPosition", Class: Internal, Reason: "serve prices a --drafter's KV rate into it"},
 	{Name: "ActQuantGroup", Option: "ActQuantGroup", Class: Internal, Reason: "library callers only; a q4k load picks 32 itself"},

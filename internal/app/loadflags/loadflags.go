@@ -30,29 +30,31 @@ const (
 
 // Flags holds the shared loading flags' values once the flag set has been parsed.
 type Flags struct {
-	Backend         string              // --backend; "auto" (the default) is replaced by the backend it resolves to in Validate
-	Auto            *decoder.AutoChoice // what -backend auto chose and why; nil when the user named a backend
-	Quant           string              // --quant
-	QuantSet        bool                // --quant was given on the command line, not left at its default
-	LoRA            string              // --lora
-	KV              string              // --kv
-	Ctx             int                 // --ctx
-	StreamWeights   bool                // --stream-weights
-	WeightCacheGB   float64             // --weight-cache
-	MoECacheExperts bool                // --moe-cache-experts
-	MoECacheSlots   int                 // --moe-cache-slots
-	MoEPager        string              // --moe-pager
-	AcceptSlow      bool                // --accept-slow
-	EmbedInt4       bool                // --embed-int4
-	EmbedInt4Set    bool                // --embed-int4 was given on the command line, not left at its default
-	DirectLoad      bool                // --direct-load
-	Fit             bool                // --fit
-	ExactPrefill    bool                // --exact-prefill
-	CPUExactPrefill bool                // --cpu-exact-prefill
-	WindowedKV      bool                // --windowed-kv
-	MoEStep         bool                // --moe-step
-	RecurrentStep   bool                // --recurrent-step
-	Gemma4Step      bool                // --gemma4-step
+	Backend          string              // --backend; "auto" (the default) is replaced by the backend it resolves to in Validate
+	Auto             *decoder.AutoChoice // what -backend auto chose and why; nil when the user named a backend
+	Quant            string              // --quant
+	QuantSet         bool                // --quant was given on the command line, not left at its default
+	LoRA             string              // --lora
+	KV               string              // --kv
+	Ctx              int                 // --ctx
+	StreamWeights    bool                // --stream-weights
+	WeightCacheGB    float64             // --weight-cache
+	MoECacheExperts  bool                // --moe-cache-experts
+	MoECacheSlots    int                 // --moe-cache-slots
+	MoEPager         string              // --moe-pager
+	AcceptSlow       bool                // --accept-slow
+	EmbedInt4        bool                // --embed-int4
+	EmbedInt4Set     bool                // --embed-int4 was given on the command line, not left at its default
+	DirectLoad       bool                // --direct-load
+	Fit              bool                // --fit
+	ExactPrefill     bool                // --exact-prefill
+	CPUExactPrefill  bool                // --cpu-exact-prefill
+	WindowedKV       bool                // --windowed-kv
+	MoEStep          bool                // --moe-step
+	RecurrentStep    bool                // --recurrent-step
+	Gemma4Step       bool                // --gemma4-step
+	RecurrentStepSet bool                // --recurrent-step was given on the command line, not left at its default
+	Gemma4StepSet    bool                // --gemma4-step was given on the command line, not left at its default
 }
 
 // Register adds the shared loading flags to fs and returns the Flags their values are parsed into. Each flag's
@@ -91,8 +93,9 @@ func register(fs *flag.FlagSet, app App, goos string, ggufDirect bool) *Flags {
 	fs.BoolVar(&f.CPUExactPrefill, "cpu-exact-prefill", boolDef("cpu-exact-prefill"), use("cpu-exact-prefill"))
 	fs.BoolVar(&f.WindowedKV, "windowed-kv", boolDef("windowed-kv"), use("windowed-kv"))
 	fs.BoolVar(&f.MoEStep, "moe-step", boolDef("moe-step"), use("moe-step"))
-	fs.BoolVar(&f.RecurrentStep, "recurrent-step", boolDef("recurrent-step"), use("recurrent-step"))
-	fs.BoolVar(&f.Gemma4Step, "gemma4-step", boolDef("gemma4-step"), use("gemma4-step"))
+	f.RecurrentStep, f.Gemma4Step = boolDef("recurrent-step"), boolDef("gemma4-step")
+	fs.Var(givenBool{&f.RecurrentStep, &f.RecurrentStepSet}, "recurrent-step", use("recurrent-step"))
+	fs.Var(givenBool{&f.Gemma4Step, &f.Gemma4StepSet}, "gemma4-step", use("gemma4-step"))
 	return f
 }
 
@@ -179,6 +182,15 @@ func Resolve(f Flags, m Machine, ov Overrides) decoder.Options {
 	if sv := ov.Serve; sv != nil {
 		o.ResidentKVSlots = sv.KVSessions
 		o.ResidentKVSlotsDefault = !sv.KVSessionsSet
+		// A step flag left unset is on where the load asks for two or more sessions, and the backend drops it if it grants one. A
+		// recurrent model keeps one slot unless a count is given (decoder.Model.ResidentKVSlotsRequestFor); a Gemma 4 dense model keeps
+		// the backend's default slots.
+		if !f.RecurrentStepSet {
+			o.ResidentRecurrentStep, o.ResidentRecurrentStepDefault = sv.KVSessionsSet && sv.KVSessions >= 2, true
+		}
+		if !f.Gemma4StepSet {
+			o.ResidentGemma4Step, o.ResidentGemma4StepDefault = sv.KVSessions >= 2, true
+		}
 		o.ResidentPrefillChunk = sv.PrefillChunk
 		o.KVShareOff = sv.KVShareOff
 		o.KVHostBytes = sv.KVHostBytes
@@ -311,6 +323,27 @@ func (q quantFlag) Set(v string) error {
 	q.f.Quant, q.f.QuantSet = v, true
 	return nil
 }
+
+// givenBool is a bool flag that also records that it was given, so a default that depends on other flags can tell.
+type givenBool struct{ v, given *bool }
+
+func (g givenBool) String() string {
+	if g.v == nil {
+		return "false"
+	}
+	return strconv.FormatBool(*g.v)
+}
+
+func (g givenBool) Set(v string) error {
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return err
+	}
+	*g.v, *g.given = b, true
+	return nil
+}
+
+func (g givenBool) IsBoolFlag() bool { return true }
 
 // embedInt4Flag is --embed-int4: a bool flag that also records that it was given, so the Metal default (embedInt4) can
 // tell an explicit --embed-int4 from its default.

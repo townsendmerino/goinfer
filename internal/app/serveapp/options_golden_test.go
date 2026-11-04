@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
@@ -116,5 +117,36 @@ func TestSpecOptions_golden(t *testing.T) {
 		if got[k] != w {
 			t.Errorf("%s:\n got %s\nwant %s", k, got[k], w)
 		}
+	}
+}
+
+// TestStepFlags_servePath is serve's own path for the step flags' defaults: its flags parsed, markGivenFlags, and modelSpec.options, so a
+// flag on the command line reaches Resolve as given.
+func TestStepFlags_servePath(t *testing.T) {
+	for _, c := range []struct {
+		args                []string
+		wantRecurrent, want bool
+	}{
+		{nil, false, true},
+		{[]string{"-kv-sessions", "4"}, true, true},
+		{[]string{"-kv-sessions", "2"}, true, true},
+		{[]string{"-kv-sessions", "1"}, false, false},
+		{[]string{"-kv-sessions", "4", "-recurrent-step=false", "-gemma4-step=false"}, false, false},
+		{[]string{"-kv-sessions", "1", "-recurrent-step", "-gemma4-step"}, true, true},
+	} {
+		t.Run(strings.Join(c.args, " "), func(t *testing.T) {
+			fs := flag.NewFlagSet("goinfer-serve", flag.ContinueOnError)
+			sf := registerFlags(fs)
+			if err := fs.Parse(append([]string{"-backend", "cpu"}, c.args...)); err != nil {
+				t.Fatal(err)
+			}
+			sf.cfg.load = *sf.lf
+			markGivenFlags(fs, &sf.cfg)
+			v := reflect.ValueOf(modelSpec{path: "/p"}.options(sf.cfg))
+			r, g := v.FieldByName("ResidentRecurrentStep").Bool(), v.FieldByName("ResidentGemma4Step").Bool()
+			if r != c.wantRecurrent || g != c.want {
+				t.Errorf("recurrent %v, gemma4 %v; want %v, %v", r, g, c.wantRecurrent, c.want)
+			}
+		})
 	}
 }
