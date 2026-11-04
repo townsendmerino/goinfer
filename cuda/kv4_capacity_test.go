@@ -2135,10 +2135,11 @@ func TestKV7_demoteRefusesAWrappedUpload(t *testing.T) {
 		var kept bool
 		var floor int
 		if err := r.do(func() error {
+			floor = r.kvFloor[1] // what the upload set, before the release
 			if !r.kvEvictIdle(0) {
 				return fmt.Errorf("nothing to release")
 			}
-			kept, floor = r.kvDemoted[1] != nil, r.kvFloor[1]
+			kept = r.kvDemoted[1] != nil
 			return nil
 		}); err != nil {
 			t.Fatal(err)

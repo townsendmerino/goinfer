@@ -38,13 +38,13 @@ func (r *cudaResident) kvDemote(s, taker int) {
 	if r.kvHost == nil || r.kvWin || r.dnet != nil || r.mamba != nil || r.kvStopped[s] {
 		return
 	}
-	if r.kvFloor[s] > 0 {
-		fmt.Fprintf(os.Stderr, "cuda: KV pool: slot %d's rows not kept in host memory: its upload holds rows only for prefixes of at least %d\n", s, r.kvFloor[s])
-		return
-	}
 	end := kvBlocksFor(r.kvValid[s]) * kvBlock // whole blocks: kvValid keeps which of their rows were written
 	bytes := r.KVSnapshotBytes(end)
 	if bytes <= 0 {
+		return
+	}
+	if r.kvFloor[s] > 0 {
+		fmt.Fprintf(os.Stderr, "cuda: KV pool: slot %d's rows not kept in host memory: its upload holds rows only for prefixes of at least %d\n", s, r.kvFloor[s])
 		return
 	}
 	if !r.kvHostReserve(bytes, s, taker) {

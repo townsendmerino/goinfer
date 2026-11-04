@@ -87,6 +87,7 @@ SCANS = [
     Scan("internal/config", "TestEnvVarsDoc", F("docs/env-vars.md", "docs/env-vars.meta.json")),
     Scan("internal/config", "TestEnvVarsDoc_plants", F("docs/env-vars.meta.json")),
     Scan("internal/serveapp", "TestOneMerge", NT("internal/serveapp")),
+    Scan("internal/serveapp", "TestFlagsDoc", F("docs/flags.md", "docs/flags.meta.json") + NT("internal/serveapp")),
     Scan("decoder", "TestGoldenNames_matchTheFileOnDisk", TREE_T),
     Scan("decoder", "TestOptionGrid_cellsCarryEvidence", TREE_GO),
     Scan("decoder", "TestAssetRegistry_usedByExists", TREE_T + F("testdata/assets.json")),
