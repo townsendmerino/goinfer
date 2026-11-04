@@ -5,7 +5,6 @@ package cuda
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -98,7 +97,7 @@ func (r *cudaResident) allocRecurrentSpec(rows int) error {
 	err := r.do(func() (err error) {
 		defer func() {
 			if v := recover(); v != nil {
-				if !strings.Contains(fmt.Sprint(v), "device allocation failed") {
+				if !mem.DeviceAllocFailed(v) {
 					panic(v)
 				}
 				err = fmt.Errorf("the device allocation failed")

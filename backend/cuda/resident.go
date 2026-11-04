@@ -2988,7 +2988,7 @@ func (r *cudaResident) describeLaunchErr(f Pipeline, e error) error {
 	// far the largest operator-controlled VRAM consumer on this path. Deliberately does NOT suggest
 	// a specific safe value — the computation that would produce one (capSlots) is the thing under
 	// suspicion, and printing a number from it would launder a suspect figure into advice.
-	if r.cacheExperts && strings.Contains(e.Error(), "OUT_OF_MEMORY") {
+	if r.cacheExperts && mem.DeviceOutOfMemory(e) {
 		// Name the REQUESTED and EFFECTIVE counts both. They differ when the cap fires, and naming
 		// only the effective one sends a user who set 48 to lower it to 40 — which caps to the same
 		// value, fails identically, and makes the advice look wrong.

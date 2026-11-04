@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -148,7 +147,7 @@ func (r *cudaResident) allocCheckpointCopies(live []Buffer) (copies []gpu.Device
 	var made []Buffer
 	defer func() {
 		if v := recover(); v != nil {
-			if !strings.Contains(fmt.Sprint(v), "device allocation failed") {
+			if !mem.DeviceAllocFailed(v) {
 				panic(v)
 			}
 			for _, b := range made {

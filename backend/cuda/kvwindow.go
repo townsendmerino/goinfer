@@ -5,7 +5,6 @@ package cuda
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
@@ -184,7 +183,7 @@ func (r *cudaResident) kvReallocWindowed(slack int) (ok bool) {
 	var made []swap
 	defer func() {
 		if v := recover(); v != nil {
-			if !strings.Contains(fmt.Sprint(v), "device allocation failed") {
+			if !mem.DeviceAllocFailed(v) {
 				panic(v)
 			}
 			for _, m := range made {
