@@ -2481,7 +2481,7 @@ func TestMemGate_cudaTightCheckpointRoom(t *testing.T) {
 	requireCUDADevice(t)
 	g := cudaGate(t)
 	const row, fixture = "testdata/qwen35-tiny int4/slots2/one checkpoint", "testdata/qwen35-tiny"
-	path, err := sb2census.Path("..", fixture)
+	path, err := sb2census.Path("../..", fixture)
 	if err != nil {
 		t.Fatal(err)
 	}
