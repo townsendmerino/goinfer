@@ -13,7 +13,7 @@ runner, so the verdict is not `go test`'s exit status alone:
 The last lines of the output are the verdict and the failing names, because night.py's SUMMARY.md quotes the last 25 lines of a job that is not ok. A progress line
 (elapsed, tests finished, the test in flight) is printed at least every PROGRESS_S seconds.
 
-  python3 scripts/cuda_device_suite.py --cwd cuda --raw /path/raw.jsonl -- go test -json -tags 'cuda goinfer_testhooks' -timeout 25m ./...
+  python3 scripts/cuda_device_suite.py --cwd backend/cuda --raw /path/raw.jsonl -- go test -json -tags 'cuda goinfer_testhooks' -timeout 25m ./...
 """
 import argparse
 import json
