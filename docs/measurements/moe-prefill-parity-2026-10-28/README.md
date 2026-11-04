@@ -9,7 +9,7 @@ loads it (`-ctx 8192 -moe-cache-experts`). The runs held the exclusive timing lo
 
 `TestPrefillMoE_real26B` compares the batched MoE prefill with the sequential path at 48 positions, bit for bit. Its
 sequential leg (`ForwardNoLogits`, then `Forward`) is the decode path. On a Gemma 4 MoE that path decodes on float
-activations by default (`cuda/floatact.go`, S19), while prefill and the LM head stay W4A8. That split is by design. So the
+activations by default (`backend/cuda/floatact.go`, S19), while prefill and the LM head stay W4A8. That split is by design. So the
 test compared two different arithmetics, and a router argmax that flips under the difference sends every later row to
 different experts.
 

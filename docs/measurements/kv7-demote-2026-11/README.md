@@ -138,7 +138,7 @@ The decline test took three tries to bite, because the fixture's window is 16 ro
 
 ## The seventh round, 2026-11-03 05:58 PST (`review7-red.log`, `review7-green.log`, `identity-review7.log`, `push-checks-review7.log`)
 
-**One helper, one table.** Every path that writes a slot (a prefill or decode step, an upload, a copy, a restore or promotion) now goes through `kvWriteBegin` and ends in `kvWriteDone` or `kvWriteFailed` (`cuda/kvslotwrite.go`), and a refused write comes from one place. `TestKV7_slotWriteTable` holds the rule over 4 states x 5 writes x 3 endings, as 60 subtests; `TestKV7_promotionTable` does it for a promotion, which only a demoted slot has anything to do on. 11 subtests were red on the code as pushed. The rule is the table's own comment:
+**One helper, one table.** Every path that writes a slot (a prefill or decode step, an upload, a copy, a restore or promotion) now goes through `kvWriteBegin` and ends in `kvWriteDone` or `kvWriteFailed` (`backend/cuda/kvslotwrite.go`), and a refused write comes from one place. `TestKV7_slotWriteTable` holds the rule over 4 states x 5 writes x 3 endings, as 60 subtests; `TestKV7_promotionTable` does it for a promotion, which only a demoted slot has anything to do on. 11 subtests were red on the code as pushed. The rule is the table's own comment:
 
 - It succeeds: the slot is live, holds no host copy, answers for the rows written, and takes the next write.
 - It is declined or refused: the slot is as it was.

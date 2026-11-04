@@ -85,7 +85,7 @@ The results read as follows:
 ## MC3 S0 — a bit-identical small-M W4A8 kernel on Metal (exploratory)
 
 MC3's first new piece is a small-M W4 GEMM, and S0 of MC2 flagged that Metal's batched verify costs ~0.86–0.96 of a
-decode per extra row (R12). `TestMC3SmallMProbe` (`metal/gemm_smallm_mc3_test.go`) extends R18's shipped
+decode per extra row (R12). `TestMC3SmallMProbe` (`backend/metal/gemm_smallm_mc3_test.go`) extends R18's shipped
 rows-per-simdgroup kernel to M activation rows. It is timed standalone per dispatch, with SLC-defeating rotation,
 against the shipped M = 1 kernel run M times. Every variant's outputs are checked bit for bit against the shipped kernel
 row by row, and all are identical. Logs: [`mc3-s0-probe.log`](concurrency-mc2-2026-09-26/mc3-s0-probe.log),

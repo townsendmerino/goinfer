@@ -56,6 +56,6 @@ either.
   for the requested precisions and 2.000× for MLA at f32.
 - `TestResidentKVBytes_cudaLayout` (decoder, runs in CI): the same layout on llama-tiny and deepseek-tiny without a GPU;
   red under the same mutation.
-- Item 3 (slot sizing) needed nothing: `cuda/slotcap_test.go` already pins the boundary where division over-admits
+- Item 3 (slot sizing) needed nothing: `backend/cuda/slotcap_test.go` already pins the boundary where division over-admits
   (`TestSlotCapArithmetic_search`: division 34, search 33 on the real 26B's figures, the 4-quanta 33→34 step) and proves
   it by mutation (`TestSlotCapArithmetic_mutation`).

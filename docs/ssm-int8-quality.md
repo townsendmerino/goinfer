@@ -3,7 +3,7 @@
 Generation-quality eval of the shipped guarded int8 resident SSM path
 (`GOINFER_SSM_RESIDENT`) vs precision references, turning the cosine-0.37 finding
 (`ssm-residency-build.md`) into agreement / KL / perplexity over a distribution.
-Measurement only (`gpu/ssm_int8_quality_test.go`); no production change. RTX 2070 SUPER.
+Measurement only (`backend/webgpu/ssm_int8_quality_test.go`); no production change. RTX 2070 SUPER.
 
 ## Verdict
 
@@ -82,15 +82,15 @@ anything harder — consistent with the 66% agreement / 2.4× perplexity.
 > while the resident runs its *own* W8A8 GEMVs (the Phase-A.1 confound). Direct capture proves
 > the mamba kernels are innocent:
 >
-> - **`gpu/mamba_realinput_test.go`** — replay REAL granite layer-0 in_proj outputs (captured
+> - **`backend/webgpu/mamba_realinput_test.go`** — replay REAL granite layer-0 in_proj outputs (captured
 >   from a live run) through the GPU conv/ssm/gatedNorm kernels vs `mamba2Step`, 66 tokens:
 >   **worst cosine 1.000000**. The kernels are bit-correct on real inputs in isolation.
-> - **`gpu/mamba_resident_capture_test.go`** — capture the resident's ACTUAL per-token layer-0
+> - **`backend/webgpu/mamba_resident_capture_test.go`** — capture the resident's ACTUAL per-token layer-0
 >   kernel I/O from the full plan and diff vs `mamba2Step` on the resident's own proj, 60
 >   tokens: conv/y/gated **all cosine 1.000000**; and the resident's proj matches `mamba2Step`
 >   (cosine 0.9997, no divergence). So the mamba mixer-in-plan AND in_proj are correct — no
 >   barrier/race/state bug, no wiring bug in the mamba path.
-> - **`gpu/mamba_layersweep_test.go` + `staged_layersweep_test.go`** — token-0 hidden vs f32
+> - **`backend/webgpu/mamba_layersweep_test.go` + `staged_layersweep_test.go`** — token-0 hidden vs f32
 >   after each layer. Resident and staged are **bit-identical for layers 0–9**, then the
 >   resident accumulates more error, ending at **0.892** vs staged **0.951** (→ 66% vs 93.6%
 >   agreement). The drift is **distributed across the deep stack**, not any single op or layer
@@ -138,13 +138,13 @@ kernels**, and *that alone* drops agreement 93.6% → 66%. So:
 ## f16 mixed-precision attempt (built + measured) — does NOT recover quality
 
 > **Code removed 2026-09-24** with the W8A16 control below (owner clean-up of code whose record says it
-> didn't pay): `gpu/mamba_f16.go` and `gpu/gemv_w8a16.go` and their branches in `gpu/decoderunner.go` /
-> `gpu/residency.go` are gone, and `GOINFER_SSM_F16MAMBA` / `GOINFER_SSM_W8A16` no longer exist; last present
-> at `8f452a7e`. The package's shared `f32ToF16` and `buildCompute` moved to `gpu/f16.go` / `gpu/gpu.go`. This
+> didn't pay): `backend/webgpu/mamba_f16.go` and `backend/webgpu/gemv_w8a16.go` and their branches in `backend/webgpu/decoderunner.go` /
+> `backend/webgpu/residency.go` are gone, and `GOINFER_SSM_F16MAMBA` / `GOINFER_SSM_W8A16` no longer exist; last present
+> at `8f452a7e`. The package's shared `f32ToF16` and `buildCompute` moved to `backend/webgpu/f16.go` / `backend/webgpu/gpu.go`. This
 > section and the next describe the code as it was.
 
 Acting on the R2 localization, I raised the mamba `in/out_proj` to **f16** (f16 weights ×
-f32 activation; experts/attention/MoE stay int8) — `gpu/mamba_f16.go`, default-guarded to
+f32 activation; experts/attention/MoE stay int8) — `backend/webgpu/mamba_f16.go`, default-guarded to
 granite-resident. It **fails Gate 1**, essentially unchanged from int8:
 
 | config | agreement | KL | top-5 | perplexity | ms/tok |
@@ -167,7 +167,7 @@ router sensitivity"; experiment E1 refuted that — f32 SSM is a no-op at 100%.)
 ## Control A/B (W8A16) — activation precision is NOT the lever; the gap is FUNDAMENTAL
 
 One last control: is the gap fixable activation-precision / accumulation, or fundamental? Built a
-**W8A16** path — int8 WEIGHTS × **f32 ACTIVATIONS**, no activation quantization (`gpu/gemv_w8a16.go`:
+**W8A16** path — int8 WEIGHTS × **f32 ACTIVATIONS**, no activation quantization (`backend/webgpu/gemv_w8a16.go`:
 a W8A16 GEMV + a W8A16 MoE-expert GEMV, wired through the resident behind `GOINFER_SSM_W8A16`).
 The W8A16 GEMV is proven accurate in isolation (cosine **1.000000** vs f32-dequant matvec).
 
@@ -206,7 +206,7 @@ its code was removed 2026-09-24.)
    the experiments refute both premises (router robust at 97% with 22% benign flips; int8/f16
    projections cost only ~3%). The default stays int8; the f16 path was removed 2026-09-24.
 4. **Do NOT fund a "GPU mamba kernel" debug — Phase A proved the kernels are bit-correct**
-   (`gpu/mamba_realinput_test.go`, `mamba_resident_capture_test.go`: cosine 1.000000 on real
+   (`backend/webgpu/mamba_realinput_test.go`, `mamba_resident_capture_test.go`: cosine 1.000000 on real
    inputs, in isolation and in-plan). The 93.6% (D3) vs 66.2% (resident) delta is the resident's
    all-GPU W8A8 forward vs the staged tiled-GEMM path — a *distributed* accumulation across
    granite's 40-layer all-MoE stack (resident/staged are bit-identical for the first ~10 layers,

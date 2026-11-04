@@ -507,7 +507,7 @@ Not a suffix tree. In order:
      that streams the weights once for the whole block, the controller is plausibly drafting a
      quarter as deep as it should. **Measuring Theta on the resident path is the single highest-value
      next measurement on this spoke**, and it is a prerequisite the design already wrote down.
-   - **`gpu/spec_ngram_resident_test.go` uses the IDENTICAL constructed corpus** — its
+   - **`backend/webgpu/spec_ngram_resident_test.go` uses the IDENTICAL constructed corpus** — its
      `ngramWorkloads` are `specWorkloads` copied verbatim, comment included. So the GPU-side evidence
      for this spoke inherits the same 4–7× copy-density defect measured above. Whatever those numbers
      currently say, they say it about engineered input, and re-running them on realistic traffic is
@@ -540,7 +540,7 @@ what `D = floor(ln Theta / ln α)` trades against.
 **Provenance.** `nobara-pc`, RTX 2070 SUPER, driver 595.91.07, Nobara 44 · goinfer `574229b`
 (dirty) · qwen2.5-coder 0.5B / 1.5B q4_K_M from `~/models`, `Backend: "cuda"`, `Quant: "int4"` ·
 median of 9 reps after 2 warm-ups, `TruncateTo` between every call · widths 1,2,3,4,6,8,12,16 ·
-2026-08-31 · harnesses `decoder/theta_probe_test.go`, `cuda/theta_probe_test.go` · logs
+2026-08-31 · harnesses `decoder/theta_probe_test.go`, `backend/cuda/theta_probe_test.go` · logs
 `docs/measurements/spec04-theta-{cpu,cuda}-2026-08-31.log`.
 
 | backend | model | depth | T(1) | slope (µs/node) | **Theta** |
@@ -582,7 +582,7 @@ CPU, and on CUDA's cost structure the correct depth is not zero.
 
 ### Metal: Theta ≈ 1.0 — and that is not a mistuned constant, it is a missing premise
 
-Measured on the MacBook (`metal/theta_probe_test.go`, `8ef4d69`), completing the table:
+Measured on the MacBook (`backend/metal/theta_probe_test.go`, `8ef4d69`), completing the table:
 
 | backend | Theta | vs the shipped 0.5 |
 |---|---|---|
@@ -591,7 +591,7 @@ Measured on the MacBook (`metal/theta_probe_test.go`, `8ef4d69`), completing the
 | **Metal resident** | **0.995 – 1.046** | **2× too LOW** → over-drafts |
 
 Metal's value is **flat** across depth 128/512 and across 0.5B/1.5B, with the ladder linear out to
-n=16 (16.57). The mechanism was predicted from the dispatch and then measured: **`metal/backend.go`'s
+n=16 (16.57). The mechanism was predicted from the dispatch and then measured: **`backend/metal/backend.go`'s
 `ForwardN` is a plain loop of single-token `Forward` calls, not a batched kernel.** There is no block
 to amortise the weight stream over, so the *n*-th verify node costs a full step.
 
@@ -602,7 +602,7 @@ profitable** until `ForwardN` is genuinely batched. Two independent measurements
 839-token prompt, Metal speculation is **1836 ms against `off`'s 1709 ms** — still behind, with the
 prefill bug gone.
 
-**It also retires an open puzzle on this page.** `gpu/spec_ngram_resident_test.go` has been printing
+**It also retires an open puzzle on this page.** `backend/webgpu/spec_ngram_resident_test.go` has been printing
 ~0.3× speedups and asserting nothing about them. That was read here as a symptom of the corpus and of
 the missing gate; on a backend whose Theta is 1.0 it is the *expected* result, and the harness was
 faithfully reporting a real absence of a win nobody read.
@@ -668,7 +668,7 @@ trade.
 **Provenance.** `nobara-pc`, RTX 2070 SUPER, driver 595.91.07, Nobara 44 · goinfer `574229b`
 (dirty) · qwen2.5-coder 0.5B / 1.5B q4_K_M, `Backend: "cuda"`, `Quant: "int4"` · greedy, 160 max
 tokens, 3 reps per (input, arm) interleaved arm-by-arm, median · realistic corpus · 2026-08-31 ·
-harness `cuda/theta_ab_test.go` · log `docs/measurements/spec02-theta-ab-cuda-2026-08-31.log`.
+harness `backend/cuda/theta_ab_test.go` · log `docs/measurements/spec02-theta-ab-cuda-2026-08-31.log`.
 **Every arm was token-identical to `off` in every cell — the lossless invariant held throughout.**
 
 | model | input | `off` | fixed-8 | `ada@0.5` | `ada@measured` | `ada@0.30` | measured vs 0.5 |
@@ -700,7 +700,7 @@ Not a regression *in* the drafter — a regression in the resident **speculative
 `decoder/model.go`'s `generateInto` prefills a resident model with **one batched on-device pass**
 (the optional `Prefiller` seam, `pf.PrefillLast(embs, 0)`, taken whenever `len(prompt) >= 8`).
 `decoder/spec_ngram.go`'s `genNgramInto` instead loops **`target.resident.Forward(...)` once per
-prompt token**. `cudaResident` implements `PrefillLast` (`cuda/prefill.go`) — **the fast path exists
+prompt token**. `cudaResident` implements `PrefillLast` (`backend/cuda/prefill.go`) — **the fast path exists
 and is simply not called on the speculative path.**
 
 **It is an oversight with a date, not a design choice.** `0fd54e8` (2026-06-20) landed n-gram
@@ -711,7 +711,7 @@ difference, and the speculative prefill has never been touched since it was writ
 ### The control: the penalty is linear in prompt length
 
 If the cause is per-token prefill, the *absolute* gap must grow with prompt length and the ratio
-must collapse on short prompts. `cuda/spec_prefill_regression_test.go`, 0.5B, 64 tokens generated,
+must collapse on short prompts. `backend/cuda/spec_prefill_regression_test.go`, 0.5B, 64 tokens generated,
 median of 3, lossless-checked at every length:
 
 | prompt | tokens | `off` | speculative | ratio | absolute gap |
@@ -729,7 +729,7 @@ direct an attribution as this kind of measurement gets.
 
 ### Why no test caught it — two independent reasons, both instructive
 
-1. **The only GPU speculative harness has no long prompts.** `gpu/spec_ngram_resident_test.go`'s
+1. **The only GPU speculative harness has no long prompts.** `backend/webgpu/spec_ngram_resident_test.go`'s
    corpus is `specWorkloads` copied verbatim: **36–74 tokens**. At 33 tokens the control above
    measures 0.53× — a *visible* loss, but a small absolute one that reads as noise. The defect scales
    with prompt length and the corpus has no length to scale with. **The constructed corpus did not
@@ -781,7 +781,7 @@ Corrected, by tracing `residentPrefillSeed` per backend:
 
 | backend | `PrefillLast` | `ForwardNoLogits` (KV-only) | effect of this fix |
 |---|---|---|---|
-| **CUDA** | taken | **implemented** (`cuda/resident.go`) | **the measured 3–4.5× → 1.0–1.6×** |
+| **CUDA** | taken | **implemented** (`backend/cuda/resident.go`) | **the measured 3–4.5× → 1.0–1.6×** |
 | **Metal** | **DECLINES by default** | **not implemented** | **NO-OP** |
 | **WebGPU** | not implemented | not implemented | no-op (never had the asymmetry) |
 
@@ -802,7 +802,7 @@ failed in an instructive way: I had just corrected one unchecked assumption abou
 takes) and immediately made a second one in the same paragraph, about which configuration a number
 came from. **A measurement's configuration is part of the measurement.**
 
-**Metal, measured** (MacBook, `metal/spec_prefill_regression_test.go`, commit `8ef4d69`):
+**Metal, measured** (MacBook, `backend/metal/spec_prefill_regression_test.go`, commit `8ef4d69`):
 
 | configuration | slope (ms/prompt-token) | R² | gate |
 |---|---|---|---|
@@ -845,7 +845,7 @@ Log `docs/measurements/spec02-resident-prefill-FIXED-2026-08-31.log`.
 
 ### The gate that was missing
 
-`cuda/spec_prefill_regression_test.go` now **fails** instead of logging. It gates the **defect
+`backend/cuda/spec_prefill_regression_test.go` now **fails** instead of logging. It gates the **defect
 signature** — the gap growing linearly in prompt length — not "does speculation pay", which is a
 noisy question that would make the test flap. Bar 0.50 ms/prompt-token, between the defect's 2.66 and
 the fixed 0.12.
@@ -916,5 +916,5 @@ models and more files is what would settle it, not a re-reading of these six cel
   (drafter cost, the oracle ceiling, match provenance), none of which this fix touches.
 - **The CPU step-1 result stands unchanged.** The CPU path already batched its prefill, so the 0.83×
   seen there is fixed-K over-draft — a different phenomenon, and still real.
-- **`gpu/spec_ngram_resident_test.go` still needs the realistic corpus and a failing gate.** This
+- **`backend/webgpu/spec_ngram_resident_test.go` still needs the realistic corpus and a failing gate.** This
   change fixes the code it exercises; it does not fix the harness that missed it.

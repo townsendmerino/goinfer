@@ -131,7 +131,7 @@ worth printing.
 Moved from `cmd/gate/gpu.go` (the comment above `detectWebGPU`) on 2026-10-09.
 
 ```text
-detectWebGPU probes for a real WebGPU adapter via a subprocess (gpu/adapter_probe_test.go's
+detectWebGPU probes for a real WebGPU adapter via a subprocess (backend/webgpu/adapter_probe_test.go's
 TestAdapterProbe) — cmd/gate stays free of the gpu build tag and its cgo dependency, matching
 detectBackend's nvidia-smi/uname style. Independent of detectBackend's cuda|metal|none choice on
 purpose (G-09): a CUDA Linux box can ALSO have a working Vulkan adapter, and before this fix
@@ -226,7 +226,7 @@ drainingTests derives the drain group FROM A MARKER rather than a list.
 
 The draining tests take the device to refusal, which is A13's only reproducible poisoning
 stimulus, so they run in their OWN process after the main tier and an exhausted device cannot
-reach anything else. `drainsDevice(t, why)` in cuda/drain_marker_test.go is the marker; this walks
+reach anything else. `drainsDevice(t, why)` in backend/cuda/drain_marker_test.go is the marker; this walks
 the test files tracking the enclosing `func TestX` and returns X for each one that calls it. A
 hand-kept -run list would be a constant restating a property — the same drift shape the census
 denominators keep making visible.
@@ -238,7 +238,7 @@ Moved from `cmd/gate/gpu.go` (the comment above `isolatedTests`) on 2026-10-09.
 
 ```text
 isolatedTests derives the fresh-process group from needsFreshProcess(t, why) in
-cuda/isolated_marker_test.go, the same way: edge-of-card tests that fit in a fresh process and not
+backend/cuda/isolated_marker_test.go, the same way: edge-of-card tests that fit in a fresh process and not
 after a few hundred others (measured 2026-09-28, see the marker's comment).
 ```
 
@@ -510,7 +510,7 @@ Moved from `cmd/gate/gpu.go` (the comment inside `repoHygiene`) on 2026-10-09.
 The queue's citations, commit AND path:line. A state document is cited without being
 re-derived, so a wrong reference in it propagates with more confidence than the same error in
 conversation — 9e5f8fa was cited several times, from the file, without anyone opening it, and
-cuda/resident.go (a line there) kept an audit critical listed as open for weeks after it was fixed.
+backend/cuda/resident.go (a line there) kept an audit critical listed as open for weeks after it was fixed.
 ```
 
 ## withGoBin
@@ -608,7 +608,7 @@ Moved from `cmd/gate/parity.go` (the comment below `parityRealckptGates`) on 202
 
 ```text
 Not in parityRealckptGates/realckptNotRequired (and not found by realckptDirs' decoder-only
-scan): cuda/qwen25vl_resident_real_test.go's TestQwen25VLResidentReal_gate — gap 0's real-
+scan): backend/cuda/qwen25vl_resident_real_test.go's TestQwen25VLResidentReal_gate — gap 0's real-
 checkpoint continuation of qwen25vl-real above (that gate is prefill-only; this one exercises
 GenerateQwenVL's actual resident-decode path, one CPU-vs-hybrid step on the real image, via
 UploadKV + ForwardMRoPE). It lives in package cuda (needs the cuda backend's init() to

@@ -65,7 +65,7 @@ which refuses `-tags cuda` with its own compile-time guard pointing here), via `
 
 ### What the resident engine actually does (real code, not the flag text)
 
-`cuda/resident.go`'s `checkKVFits` runs at load time against real free VRAM (`MemInfo()`). The
+`backend/cuda/resident.go`'s `checkKVFits` runs at load time against real free VRAM (`MemInfo()`). The
 **default** resident cap is 4096 positions (`cudaCtxCapDefault`) — a deliberately conservative
 *software* choice, not the VRAM ceiling; `-ctx` raises it, `min(model context window, request)`.
 
@@ -178,7 +178,7 @@ underlying byte count).
    the flag help's own per-backend quant caveats.
 3. **Recorded** the true `-ctx` ceiling (20000 succeeds, 24576 fails, D7 int4, this card) and
    answered the question directly: 4096 is a round, conservative default, not a value ever tuned
-   against real VRAM headroom — `cuda/resident.go`'s `cudaCtxCapDefault` comment now says so, with
+   against real VRAM headroom — `backend/cuda/resident.go`'s `cudaCtxCapDefault` comment now says so, with
    the measured ceiling as a concrete reference point. Same content mirrored into
    `docs/cuda-backend.md` and the flag help.
 

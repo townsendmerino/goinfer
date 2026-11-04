@@ -492,7 +492,7 @@ A resident backend keeps its own cache on the device, one fixed reservation per 
 | | K/V precision | MLA | sliding-window layers | context when not pinned |
 |---|---|---|---|---|
 | CPU | f32, or int8 (`--kv i8`) | the latent | a ring the size of the window | the model's maximum, unless the fit guard lowers it; allocated per request |
-| CUDA | f16 by default for dense llama, mistral, qwen2, qwen3 and phi3 (`--kv f32` for exact); f32 for every other family | one latent buffer | the window plus 512 positions, compacted as the sequence grows (`cuda/kvwindow.go`; `--windowed-kv=false` for the whole context) | the largest that fits, up to 16384 and never under 4096 |
+| CUDA | f16 by default for dense llama, mistral, qwen2, qwen3 and phi3 (`--kv f32` for exact); f32 for every other family | one latent buffer | the window plus 512 positions, compacted as the sequence grows (`backend/cuda/kvwindow.go`; `--windowed-kv=false` for the whole context) | the largest that fits, up to 16384 and never under 4096 |
 | Metal | f16, or int8 (`--kv i8`); padded to 8 positions | not resident | the whole context, masked | the largest that fits beside the weights and its slots, up to 16384 and never under 4096 (`-ctx` up to 32768) |
 | WebGPU | f32, f16 or int8 (`--kv`) | resident | the whole context, masked | a ceiling of 16k / 32k / 64k by precision |
 

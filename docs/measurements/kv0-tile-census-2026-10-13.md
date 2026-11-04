@@ -90,7 +90,7 @@ sequences' needs and gives the rest to the full or latent group (§5.2).
 ## 4. The class map, per backend (KV0 item 3's "class map")
 
 Which kernel class writes a row of a pass of m rows starting at s.
-- **CUDA** (read from `cuda/prefill.go`, and **confirmed by every arm of `docs/measurements/kv0-invariance-2026-10-13.md`**):
+- **CUDA** (read from `backend/cuda/prefill.go`, and **confirmed by every arm of `docs/measurements/kv0-invariance-2026-10-13.md`**):
   the fast kernels (`attn_fused`, `gemm_w4a8_mma`) when m ≥ 16 and max(promptLen, s + m) ≥ 512, where promptLen is the whole
   prompt's length for a pass inside a multi-chunk prefill and 0 otherwise; otherwise the exact kernels, which are bit-identical
   to decode. The prompt length is **the pass's end** for a prefill that arrives in two calls, so the first call of a split is
@@ -110,7 +110,7 @@ Which kernel class writes a row of a pass of m rows starting at s.
   `kv_store_f32` and `attention_f32` are compiled but never dispatched, and `rope2_kv` is unwired: 4 live stores and 14 live reader
   entry points. CUDA has no int8 KV and no scale tensors (f32, and f16 by default for cleared families).
 - **§5.3's "Metal's `attention_fa_blk64` loads 64".** It is the head-dim-64 twin of `attention_fa_blk`; both load 32 keys a block.
-- **§5.11's "Metal's 16-buffer bind limit".** The comments in `metal/batch_rows.go` and `metal/model.go` say 16; the pinned aikit
+- **§5.11's "Metal's 16-buffer bind limit".** The comments in `backend/metal/batch_rows.go` and `backend/metal/model.go` say 16; the pinned aikit
   `gpu` has `maxBindBuffers = 31`, and `mc3_attention_fa*_rows` binds exactly 16 today, so a table buffer (17) fits.
 - **MC3 on CUDA is not a rows kernel.** `stepAttnRows` loops over rows and rebinds a slot per call; no CUDA kernel takes a
   per-row KV pointer or table, so §5.11's "a table per row" is new kernel API on CUDA, not an edit.

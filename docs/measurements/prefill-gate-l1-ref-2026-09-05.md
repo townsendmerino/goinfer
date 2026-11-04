@@ -41,7 +41,7 @@ proceed from this doc's plan, but not because fast was shown to be worse — it 
   (`GOINFER_METAL_BATCHED_PREFILL=1`, i.e. what `--metal-fast-prefill` sets).
 - **Sampling:** none anywhere in the harness — every position scored by argmax over full logits.
 - **Tests:** `decoder/prefill_ref_gen_test.go` (`TestPrefillGateReference`, Phase A) and
-  `metal/prefill_gate_ref_test.go` (`TestPrefillGateVsReference`, Phase B), both
+  `backend/metal/prefill_gate_ref_test.go` (`TestPrefillGateVsReference`, Phase B), both
   `GOINFER_HEAVY_TESTS=1`.
 - **Raw logs** (this directory): `prefill-ref-gen-2026-09-05.log` (Phase A, complete) and
   `prefill-gate-vs-ref-2026-09-05.log` (Phase B, complete). The 50 reference binaries themselves

@@ -16,7 +16,7 @@ For a Claude Code session on `nobara-pc` (RTX 2070 SUPER 8 GB), repo `~/mycode/g
   1.826× on the 7B), and its spec verify is cheap (θ 0.155–0.251; 2.14× on a verbatim-copy prompt,
   `docs/measurements/spec-decode-lane-2026-09-21.md`). But CUDA's S and L have never been measured against MC3, and
   Metal's numbers do not transfer.
-- **Losslessness is already settled on CUDA.** Your item-30 check (`cuda/spec_twoturn_test.go`) matched plain decode
+- **Losslessness is already settled on CUDA.** Your item-30 check (`backend/cuda/spec_twoturn_test.go`) matched plain decode
   across two turns, 14/14 with the fixes. This prompt is about speed only.
 
 **This session measures CUDA's S and L under the rule that decided Metal. It builds nothing.** The rule (§3) is

@@ -22,7 +22,7 @@
 > never a net loss in what was measured). **§6's merge path is sketched and verified against
 > the real CUDA kernel signatures** — no kernel rewrite needed, estimated single-digit-µs cost.
 > Every item this pass could resolve without writing CUDA is now resolved. **First real code
-> landed 2026-09-10** (`cuda/l01_cpu_offload.go`): the pinned-host extraction (unpermute +
+> landed 2026-09-10** (`backend/cuda/l01_cpu_offload.go`): the pinned-host extraction (unpermute +
 > f16-scale decode + `linalg.WrapInt4`), CORRECTNESS-VERIFIED against an independent ground
 > truth on real hardware (cosine 0.99964–0.9999999 across nine expert/input combinations,
 > `testdata/qwen35-tiny` — the same family as the audit's own decision-rule model) — but NOT
@@ -35,7 +35,7 @@
 > `GOINFER_CUDA_L01_CPU_OFFLOAD` is set (default off), and `moeMLPPost` skips those slots on the
 > GPU's own accumulation and merges the CPU-computed partial sum back in via the now-real
 > `l01MergeCPUExperts` — the merge machinery §6 called "sketched, not built" is built, matching
-> the sketch. `TestL01_e2eDecode_matchesBaseline` (`cuda/l01_e2e_decode_test.go`) verifies the
+> the sketch. `TestL01_e2eDecode_matchesBaseline` (`backend/cuda/l01_e2e_decode_test.go`) verifies the
 > flag on vs off end to end on `testdata/qwen35-tiny`: bit-identical to float32 rounding (cosine
 > 1.0, max abs diff ~1e-7, argmax matches at every position), including the deliberately hardest
 > case (empty LRU at pos 0, so every routed expert goes to CPU).
@@ -61,7 +61,7 @@
 `docs/completed/audit-2026-09-02.md` L-01: *"per layer, the m experts missing from the device cache are
 split — q⋆ ≈ m·(B_PCIe/B_host) fetched into slots and run on the GPU, the rest computed on the
 CPU from the pinned host copy with the existing W4A8/W8A8 NEON/AVX2 expert kernels, partial sums
-merged exactly."* Rationale: `cuda/resident.go`'s C′ path already holds every expert pinned on
+merged exactly."* Rationale: `backend/cuda/resident.go`'s C′ path already holds every expert pinned on
 the host, already has the CPU expert kernels (P18 made them expert-major), and already pays a
 host-visible routing readback per layer — so the architectural objection recorded in
 `docs/tasks/task-freetoken-techniques.md` Lead 5 is smaller than when written. The lever: with misses
@@ -254,9 +254,9 @@ alongside — those weren't in this benchmark's loop and stay a real, smaller, u
 
 §4/§5 resolved (compute clears the latency bar per layer, and the aggregate-occupancy bar per
 token), so this is no longer "design once the above resolves" — it's the next real gap. Read
-`cuda/resident.go`/`cuda/moe.cu` directly to check the sketch below is buildable, not assumed:
+`backend/cuda/resident.go`/`backend/cuda/moe.cu` directly to check the sketch below is buildable, not assumed:
 
-**The hook point already exists and needs no new readback.** `loadRoutedExperts` (`cuda/resident.go`)
+**The hook point already exists and needs no new readback.** `loadRoutedExperts` (`backend/cuda/resident.go`)
 already does a device→host download of `r.rIdx` (the router's topK expert indices) once per MoE
 layer per token — "the only host round trip on the decode path" (its own comment) — then checks
 each against the layer's LRU slot cache, classifying hits vs. misses BEFORE any DMA is issued.
@@ -264,9 +264,9 @@ each against the layer's LRU slot cache, classifying hits vs. misses BEFORE any 
 DMA admission, hand its expert id to a CPU goroutine (the pinned host copy C′ already holds).
 
 **Excluding a CPU-handled expert from the GPU's own accumulation needs no kernel change.**
-`gemv_w4a8_moe_wacc` (`cuda/moe.cu:180`) — the "expert combine" kernel, `dst[row] += wgt[slot] *
+`gemv_w4a8_moe_wacc` (`backend/cuda/moe.cu:180`) — the "expert combine" kernel, `dst[row] += wgt[slot] *
 result` — is dispatched ONE SLOT AT A TIME, in a `for j := 0; j < topK; j++` loop
-(the L01 skip in `moeMLPPost`, `cuda/resident.go` at `8f452a7e` — code removed 2026-09-24 — confirmed by reading the actual loop, not assumed). Skipping a slot
+(the L01 skip in `moeMLPPost`, `backend/cuda/resident.go` at `8f452a7e` — code removed 2026-09-24 — confirmed by reading the actual loop, not assumed). Skipping a slot
 CPU is handling is a caller-side `continue` in that loop — zero CUDA changes, because the kernel
 was already per-slot, not a fused all-topK-at-once dispatch.
 
@@ -306,7 +306,7 @@ account; the remaining CUDA-stream-semantics risk this section flagged is the as
 
 ## 7. The speculation-antagonism risk — RE-CONFIRMED 2026-09-10, still holds
 
-Ran `cuda/spec_pager_interaction_test.go` (`TestSpecPagerInteraction`) with
+Ran `backend/cuda/spec_pager_interaction_test.go` (`TestSpecPagerInteraction`) with
 `GOINFER_HEAVY_TESTS=1` on real hardware (nobara-pc, Qwen3.6-35B-A3B int4, 64 slots/layer,
 today, not re-derived from the doc): **PASS, 217.87s.** Every speculative-decode arm — block
 verify at width 4 and 7, n-gram speculation at width 4 and 7 — **DECLINED**, citing "this model
@@ -358,10 +358,10 @@ the real kernel signatures is done: the isolated microbenchmark (§3), aggregate
 occupancy (§5), the merge-path sketch (§6), and multi-tenant contention (§5).
 
 **First real code, 2026-09-10: the pinned-host extraction is built and CORRECTNESS-VERIFIED,
-still not wired into the decode path.** `cuda/l01_cpu_offload.go` unpermutes an expert's Gate/
+still not wired into the decode path.** `backend/cuda/l01_cpu_offload.go` unpermutes an expert's Gate/
 Up/Down straight out of C′'s pinned host stack (the SAME bytes the DMA-miss path would
 otherwise fetch — `permuteFast`'s exact inverse, round-trip-verified for 2,100,000 sample words)
-and hands them to a new `decoder.ComputeExpertMLP` export. `cuda/l01_cpu_offload_test.go`
+and hands them to a new `decoder.ComputeExpertMLP` export. `backend/cuda/l01_cpu_offload_test.go`
 verified the extraction against an INDEPENDENT ground truth — the same model loaded a second
 time on the plain CPU backend, comparing SwiGLU output for the same expert and input across
 three experts × three random inputs on `testdata/qwen35-tiny` (the SAME family, `qwen3_5_moe_text`,
@@ -375,14 +375,14 @@ more). Caught and fixed one real bug in the process: `r.inter` (dense MLP interm
 have silently misread every expert's shape.
 
 **Corrected 2026-09-13 (doc review): wired and merged as of `b7cc8351` (2026-09-10), still
-synchronous.** `loadRoutedExperts`/`moeMLPPost` (`cuda/resident.go`) now branch on
+synchronous.** `loadRoutedExperts`/`moeMLPPost` (`backend/cuda/resident.go`) now branch on
 `GOINFER_CUDA_L01_CPU_OFFLOAD` (default off) and the merge sketched in §6 is real code
 (`l01MergeCPUExperts`), end-to-end correctness-verified bit-identical against the flag-off path
-(`TestL01_e2eDecode_matchesBaseline`, `cuda/l01_e2e_decode_test.go`). What remains is exactly
+(`TestL01_e2eDecode_matchesBaseline`, `backend/cuda/l01_e2e_decode_test.go`). What remains is exactly
 what this list already said, minus the wiring/merge item it no longer needs:
 
 1. ~~A real concurrent prototype...~~ **DONE 2026-09-21**: goroutine-per-expert CPU compute
-   (`cuda/l01_cpu_offload.go`'s `l01MergeCPUExperts`), bit-identical, race-clean; the GPU hit-path
+   (`backend/cuda/l01_cpu_offload.go`'s `l01MergeCPUExperts`), bit-identical, race-clean; the GPU hit-path
    loop already issues async launches with no intervening sync, so the two kinds of overlap §9
    asked for both exist in the code — but see the finding below for why they do not help.
 2. ~~Only then: the audit's pre-registered...~~ **DONE 2026-09-21, KILLED**: run on
@@ -404,7 +404,7 @@ what this list already said, minus the wiring/merge item it no longer needs:
 split (§0: "the REST computed on CPU", implying a BOUNDED fraction) — keep DMA'ing a bounded
 number of misses per layer normally, so `admit`'s bookkeeping stays intact for them and the cache
 actually warms, and offload only misses past that bound to CPU. Re-run the same committed driver
-(`cuda/l01_funding_cell_test.go`) once that exists; it needs no changes to be reused.
+(`backend/cuda/l01_funding_cell_test.go`) once that exists; it needs no changes to be reused.
 
 ## Sources
 
@@ -414,18 +414,18 @@ miss classification, block-verify's own infra-gap finding) · `decoder/mlp.go` (
 `swiGLUExpert` — the existing sequential CPU expert loop) · aikit `linalg.MatmulBT`/`parallelCols`
 (the existing per-expert core-width parallelism) · `internal/fitcmd/fit.go` (`-measure`, used
 as-is for §2's new number) · `docs/measurements/g33-routing-trace.json` (re-read for its
-per-decision distribution, §8) · `cuda/spec_pager_interaction_test.go` (re-run on real hardware
+per-decision distribution, §8) · `backend/cuda/spec_pager_interaction_test.go` (re-run on real hardware
 for §7's confirmation) · `decoder/l01_expert_bench_test.go` (the isolated microbenchmark and the
-multi-tenant `l01Concurrent` benchmark, §3/§5) · `cuda/resident.go` (`loadRoutedExperts`, the
+multi-tenant `l01Concurrent` benchmark, §3/§5) · `backend/cuda/resident.go` (`loadRoutedExperts`, the
 existing routing-readback hook point; the per-slot `fMoEWacc` dispatch loop; `permuteFast`,
 `cudaWQ`'s `srcW`/`srcS`/`perExpertW`/`perExpertS`, `cudaLayer`'s `expGU`/`expDown`) ·
-`cuda/moe.cu` (`gemv_w4a8_moe_wacc`'s per-slot signature) — both read directly for §6's merge
-sketch, not assumed · `cuda/l01_cpu_offload.go`/`decoder/l01_export.go` (the extraction
-prototype, §9) · `cuda/l01_cpu_offload_test.go` (the correctness verification, §9) ·
+`backend/cuda/moe.cu` (`gemv_w4a8_moe_wacc`'s per-slot signature) — both read directly for §6's merge
+sketch, not assumed · `backend/cuda/l01_cpu_offload.go`/`decoder/l01_export.go` (the extraction
+prototype, §9) · `backend/cuda/l01_cpu_offload_test.go` (the correctness verification, §9) ·
 `testdata/qwen35-tiny` (the small same-family fixture the correctness test runs against) ·
 `b7cc8351` (2026-09-10: wires the extraction into `loadRoutedExperts`/`moeMLPPost` behind
 `GOINFER_CUDA_L01_CPU_OFFLOAD`, builds `l01MergeCPUExperts`, synchronous only) ·
-`cuda/l01_e2e_decode_test.go` (`TestL01_e2eDecode_matchesBaseline`, the on/off end-to-end
+`backend/cuda/l01_e2e_decode_test.go` (`TestL01_e2eDecode_matchesBaseline`, the on/off end-to-end
 correctness gate for that wiring — added in the 2026-09-13 doc-review correction).
 
 <!-- doc-reviewed: 2026-09-13 -->

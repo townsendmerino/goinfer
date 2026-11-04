@@ -125,7 +125,7 @@ optimistic-forward overlap (10) — not one experiment:
 AVAILABILITY rather than losslessness — the verify cannot be built, so there is nothing to be
 lossless about (measured 2026-09-02, `docs/measurements/spec-x-pager-2026-09-02.md`):
 
-- **any MoE, for block-drafted speculation.** `cuda/prefill.go` declines the batched
+- **any MoE, for block-drafted speculation.** `backend/cuda/prefill.go` declines the batched
   weight-stationary path for `r.moe || r.gemma4Moe`, and `PrefillLastNArgmax` / `PrefillSeedArgmax`
   reach `prefillCore` with NO sequential fallback — so the verify does not run slowly, it refuses.
   The n-gram verify goes through `ForwardN`, which does fall back per-token, so where it is allowed

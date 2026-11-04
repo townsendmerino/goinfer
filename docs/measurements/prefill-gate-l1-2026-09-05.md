@@ -24,7 +24,7 @@ Phase 2 (flipping the default, building the unifying `--exact-prefill` flag) doe
   during the ~2-hour combined run. The MacBook was on AC power throughout. This is a real
   methodology gap (`benchmarks.md`'s own convention calls for a thermal note); flagged here rather
   than silently omitted, per this repo's provenance rule.
-- **Test:** `metal/prefill_gate_test.go` (`TestPrefillGate`), `GOINFER_HEAVY_TESTS=1`. Command used
+- **Test:** `backend/metal/prefill_gate_test.go` (`TestPrefillGate`), `GOINFER_HEAVY_TESTS=1`. Command used
   for D7 (S's command was identical, `-run` differs):
   ```
   GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./metal/ -run 'TestPrefillGate/D7|TestPrefillTTFT' -v -timeout 4h
@@ -53,7 +53,7 @@ anything content-dependent):
 3. **Score:**
    - *Seed-logit argmax agreement* — `decoder.NearTieArgmaxForTest` between the two seeds: agrees,
      or a "near-tie" flip (gap ≤ 3% of the exact logits' own range, the same rule
-     `cuda/realforward_test.go`'s `argmaxF` comparison and `gpu/kv_i8_parity_test.go` already use),
+     `backend/cuda/realforward_test.go`'s `argmaxF` comparison and `backend/webgpu/kv_i8_parity_test.go` already use),
      or a hard fail (gap > 3%). **Gating.**
    - *Teacher-forced top-1 agreement* — `decoder.TeacherForcedTop1AgreementForTest` over the 64
      continuation positions: fraction where the fast path's argmax equals the reference token.
@@ -64,7 +64,7 @@ anything content-dependent):
    - *KL divergence* — `decoder.KLDivergenceForTest(exact, fast)` at the seed and (mean) over the
      64 continuation positions. **Reported, not gating**, per §3.
    - *Greedy stream divergence* — **not re-measured**. `TestMetalPrefillDivergenceRate` already
-     measures this (54%, cited in `metal/backend.go`'s `PrefillLast` decline comment, §A2-Metal).
+     measures this (54%, cited in `backend/metal/backend.go`'s `PrefillLast` decline comment, §A2-Metal).
      Re-running it would duplicate a test this gate only reports the existing number from.
 
 ## A gap in the gate itself, found while building it

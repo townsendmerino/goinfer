@@ -24,15 +24,15 @@ of this job.
   - `6807ab95`: the slots must be priced **before** the build allocates, or the weights are counted twice.
   - `1b5b8b5e`: the clamp is tested and logged.
 - The Metal half to mirror:
-  - `metal/backend.go`: `metalKVSlots`, and `KVSlots` / `UseKVSlot` on `metalResident`;
-  - `metal/kv_slots_test.go`: `TestMetalKVSlots_interleavedMatchesAlone`, `TestKVSlotsWithin`,
+  - `backend/metal/backend.go`: `metalKVSlots`, and `KVSlots` / `UseKVSlot` on `metalResident`;
+  - `backend/metal/kv_slots_test.go`: `TestMetalKVSlots_interleavedMatchesAlone`, `TestKVSlotsWithin`,
     `TestMetalKVSlots_pricedBeforeTheBuild`.
 
 So the CUDA work is the backend half: implement `decoder.ResidentKVSlotter` on the CUDA resident.
 
 ## CUDA specifics to settle (check each in the code; do not assume)
 
-- **Storage.** The per-layer `kc, vc []Buffer` in `cuda/resident.go` are always f32, and an MLA layer holds one
+- **Storage.** The per-layer `kc, vc []Buffer` in `backend/cuda/resident.go` are always f32, and an MLA layer holds one
   latent buffer. A slot is a full copy of that set.
   - The price per slot is `kvBytesForCap` / `decoder.(*Model).cudaKVBytes` at the resident's `ctxCap`.
   - `TestResidentKVBytes_matchesCUDAAllocation` should extend to N slots.

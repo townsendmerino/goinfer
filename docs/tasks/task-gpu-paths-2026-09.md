@@ -138,7 +138,7 @@ re-run on the 0.5B.
 the only serving caller.
 
 **Fix.** A resident `HiddenLast`: the resident prefill already exposes hidden-state capture for the
-block drafter (`hidCapTaps`, `cuda/prefill.go:cudaResident.prefillChunked`), so a "prefill and return the last row's
+block drafter (`hidCapTaps`, `backend/cuda/prefill.go:cudaResident.prefillChunked`), so a "prefill and return the last row's
 pre-LM-head hidden state" entry is mostly wiring on CUDA; Metal and WebGPU need the same tap. Must
 respect `ownForward` families (they error today, keep that), claim `resBusy`, and forget `resIDs`
 after (it drives the shared positional KV).
@@ -161,7 +161,7 @@ which on CUDA/Metal is entirely CPU (R9), so each missing kernel costs the whole
 | Olmo Hybrid | the two above + `FeatNoPE` | same | its Gated-DeltaNet half is already declared on both backends |
 | Command-R / R7B | `FeatLayerNorm`, `FeatParallelBlock`, `FeatLogitScale` | `FeatParallelBlock`, `FeatLogitScale` | parallel attn‖MLP from one normed input, summed; logits scale is a host-side multiply; Metal already has the LayerNorm (generalized for Cohere, `features.go` note) |
 | Nemotron-H | `FeatSSM`, `FeatNonGatedMLP`, `FeatLogitScale`… | `FeatSSM`, `FeatLogitScale` | the Mamba-2 engine exists on WebGPU (`gpu/`); a port, not a design |
-| DeepSeek-V2/V3, Kimi K2 | ~~`FeatMLA`~~ done 2026-09-17 (`decoder/features.go:residentBackendFeatures`, `cuda/mla.cu`) | `FeatMLA` | CUDA shipped: latent-cache attention + absorbed W_UK/W_UV, real parity gate against `testdata/deepseek-tiny`; the nGroup/topkGroup mapping this row used to flag as ungated is now covered by `TestMLAResidentParityCUDA`'s full-sequence check. WebGPU already had it; Metal still doesn't |
+| DeepSeek-V2/V3, Kimi K2 | ~~`FeatMLA`~~ done 2026-09-17 (`decoder/features.go:residentBackendFeatures`, `backend/cuda/mla.cu`) | `FeatMLA` | CUDA shipped: latent-cache attention + absorbed W_UK/W_UV, real parity gate against `testdata/deepseek-tiny`; the nGroup/topkGroup mapping this row used to flag as ungated is now covered by `TestMLAResidentParityCUDA`'s full-sequence check. WebGPU already had it; Metal still doesn't |
 | Laguna | `FeatAttnOutputGate` | same | not on any backend; WebGPU's DeltaNet has a fused output gate to crib from |
 | LFM2.5 | `FeatShortConv` + "own forward, not bridged" | same | `decoder/residency.go:ResidentImagePrefill` declines it before features are consulted |
 | Llama 4 | own forward, not bridged | same | `decoder/residency.go:ResidentImagePrefill` |
@@ -179,7 +179,7 @@ those five, in that order, and treat the rest as the standing residency backlog
 `FeatEmbedScale`, `FeatFinalLogitSoftcap` (the Gemma set) and `FeatAttnSink`, `FeatOutBias`
 (gpt-oss) — every one of which CUDA and Metal already implement. Pure ports. Also unchanged since
 R9: the WebGPU staged path never consults a backend for int4 (`decoder/weightmat.go` staged
-dispatch), and `gpu/gemv_w4a8.go` is wired only into the resident runner.
+dispatch), and `backend/webgpu/gemv_w4a8.go` is wired only into the resident runner.
 
 **Size.** Medium (ports). Lower priority than G5 because the cgo-free release binaries don't carry
 WebGPU.
@@ -194,7 +194,7 @@ true of Nemotron-H and false of the two models people download. docs/completed/t
 
 **Fix, two parts.** (1) Today: a footnote on the matrix row and a line in the Lightning/Nano
 family docs; `serve check` should say "CPU (MoE block not resident)" for these. (2) The real one:
-add the MoE FFN case to the WebGPU Nemotron block switch (`gpu/residency.go:webgpuBackend.BuildResident`, cases 0/1/2;
+add the MoE FFN case to the WebGPU Nemotron block switch (`backend/webgpu/residency.go:webgpuBackend.BuildResident`, cases 0/1/2;
 the `default` that residency.go's comment says is missing is there now at line 583, so an
 unknown kind declines cleanly), gated on the real Nano checkpoint on the Linux box.
 
@@ -206,12 +206,12 @@ unknown kind declines cleanly), gated on the real Nano checkpoint on the Linux b
 
 ### G8 — Metal prefill is sequential for every non-plain-dense family, flag or no flag
 
-**Where.** `metal/model.go:resolveMetalCtxCap`: `prefillFeatures` is exactly `{FeatQKNorm, FeatSlidingWindow,
-FeatPartialRotary}`; `metal/model.go:buildResident` sets `prefillOK` from it; `metal/backend.go:metalResident.ResidentQuant` declines.
-Separately, `metal/backend.go:metalFastPrefillEnabled` declines batched prefill unless `GOINFER_METAL_BATCHED_PREFILL=1`
+**Where.** `backend/metal/model.go:resolveMetalCtxCap`: `prefillFeatures` is exactly `{FeatQKNorm, FeatSlidingWindow,
+FeatPartialRotary}`; `backend/metal/model.go:buildResident` sets `prefillOK` from it; `backend/metal/backend.go:metalResident.ResidentQuant` declines.
+Separately, `backend/metal/backend.go:metalFastPrefillEnabled` declines batched prefill unless `GOINFER_METAL_BATCHED_PREFILL=1`
 (the 54% stream divergence, §A2-Metal). So MoE, Gemma, DeltaNet, gpt-oss and GPT-2 prompts on the
 Mac are one forward per prompt token regardless of `--metal-fast-prefill`. CUDA's batched prefill
-covers dense and MoE (`cuda/prefill.go:cudaResident.prefillChunked`) and declines only f32 projections and the
+covers dense and MoE (`backend/cuda/prefill.go:cudaResident.prefillChunked`) and declines only f32 projections and the
 per-token debug seams.
 
 **Fix.** Two levers, in order: (a) extend the f16-MMA prefill to MoE (per-row FFN off the batched
@@ -227,7 +227,7 @@ dense (`docs/ollama-chase.md`), and the Mac's remaining gap to Ollama is mostly 
 
 ### G9 — WebGPU has no batched prefill at all
 
-**Where.** `decoder/model_forward.go:Model.logitsFromNormed`: "WebGPU implements no Prefiller"; `gpu/residency.go:webgpuBackend.BuildResident`
+**Where.** `decoder/model_forward.go:Model.logitsFromNormed`: "WebGPU implements no Prefiller"; `backend/webgpu/residency.go:webgpuBackend.BuildResident`
 seeds the caches via sequential `Forward`. Every prompt on WebGPU is one submit per token.
 
 **Fix.** A `Prefiller` on the WebGPU runner, dense first, following the CUDA shape
@@ -235,10 +235,10 @@ seeds the caches via sequential `Forward`. Every prompt on WebGPU is one submit 
 
 ### G10 — Metal has no int8 weight kernel: `int8int8` is requantized to W4A8 on device
 
-**Where.** `metal/model.go:int4DirectWords` (`int4Buf`): an int4 weight is packed directly; an int8 weight
+**Where.** `backend/metal/model.go:int4DirectWords` (`int4Buf`): an int4 weight is packed directly; an int8 weight
 is dequantized to f32 and re-packed as 4-bit/group-32. There is no W8 GEMV in `metal/`. So
 `-quant int8int8` on Metal runs int4 numerics on the GPU while holding the int8 host copy — more
-RAM, not more precision. `metal/backend.go:metalBackend.Name`'s comment ("weights must be int8-loaded…") is stale
+RAM, not more precision. `backend/metal/backend.go:metalBackend.Name`'s comment ("weights must be int8-loaded…") is stale
 in the other direction.
 
 **Fix.** Either a W8A8 GEMV on Metal (CUDA has `gemv_w8a8_batched`), or make the requant explicit:
@@ -252,7 +252,7 @@ int8int8 on the Mac" loose end from task-first-hour is void until this is decide
 
 ### G11 — no layer placement on CUDA/Metal (resident-or-CPU)
 
-**Where.** `cuda/backend.go` / `metal/backend.go` `BuildResident` admit the whole model or decline
+**Where.** `backend/cuda/backend.go` / `backend/metal/backend.go` `BuildResident` admit the whole model or decline
 it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on the 8 GB card
 (M35 32.9 vs 23.5, M26 27.8 vs 24.6 tok/s; `docs/benchmarks.md` peer matrix). Already scoped as
 `tasks/task-fit-to-hardware.md`; listed here for completeness, not re-scoped.
@@ -308,7 +308,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     primitive; new `metalResident.HiddenLast` (`backend.go`) loops it per token (Metal's batched
     `PrefillLast` declines by default — not bit-identical to decode, §A2-Metal — so this reuses the
     sequential per-token kernels instead, like decode does). New real-checkpoint gate
-    `metal/hiddenlast_resident_parity_test.go` against the committed (gitignored, already-present)
+    `backend/metal/hiddenlast_resident_parity_test.go` against the committed (gitignored, already-present)
     `testdata/gpt2` fixture — chosen specifically because GPT-2 exercises learned positional
     embeddings, the one family-specific wrinkle `forwardHiddenNoHead` has to reproduce. **Finding**:
     the doc's stated "cosine ≥ 0.9999" gate does not hold for a CPU-vs-Metal-resident int8
@@ -342,7 +342,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   (same "no CUDA box this session" limitation as G4). `RopeInvFreqLayer` (`decoder/residency.go`)
   returns an all-zero per-layer invFreq table for a NoPE layer (`arch.isNoPELayer`) instead of a
   new kernel path — identity rotation by construction at `invFreq==0` (verified directly against
-  the shipped kernel math, `cuda/gemv_fwd.cu` and `metal/kernels.go`'s `rope2`:
+  the shipped kernel math, `backend/cuda/gemv_fwd.cu` and `backend/metal/kernels.go`'s `rope2`:
   `c=cos(pos·invf)·scale, s=sin(pos·invf)·scale`), holding only where `mscale==1` on the NoPE
   layers — true of every family that sets `layerNoPE` today, documented as a real caveat rather
   than a general claim. `FeatNoPE: true` declared on both `residentBackendFeatures["cuda"]` and
@@ -363,8 +363,8 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **The real gate**: `decoder.TestRopeInvFreqLayer_NoPEIsZero` (`decoder/smollm3_test.go`) — a
     pure, backend-agnostic unit test of the actual changed function (exact zero/non-zero per
     layer against the fixture's `no_rope_layers=[1,1,1,0]` pin), no GPU, no quantization noise.
-    PASSES. The resident tests (`metal/smollm3_resident_parity_test.go`'s
-    `TestSmolLM3ResidentSmokeMetal`, `cuda/smollm3_resident_smoke_test.go`'s
+    PASSES. The resident tests (`backend/metal/smollm3_resident_parity_test.go`'s
+    `TestSmolLM3ResidentSmokeMetal`, `backend/cuda/smollm3_resident_smoke_test.go`'s
     `TestSmolLM3ResidentSmokeCUDA`) were downgraded from a numeric floor to a smoke check
     (resident admission + no NaN over 32 tokens) with the finding documented inline, rather than
     shipping a test whose name claims coverage its assertions don't have.
@@ -375,7 +375,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   row with a real CUDA-hardware run. Session had no CUDA box of its own, so this used `ssh nobara`
   into an ISOLATED `git clone` at `/tmp/ministral3-cuda-check` (bundle-transferred, never touching
   the OTHER session's live checkout at `~/mycode/goinfer`, which had its own uncommitted edits to
-  `cuda/gemv_fwd.cu`/`cuda/resident.go` mid-test-run at the time — checked first, deliberately not
+  `backend/cuda/gemv_fwd.cu`/`backend/cuda/resident.go` mid-test-run at the time — checked first, deliberately not
   gone near). Cleaned up after.
   - **The fix.** `RopeInvFreqLayer`'s twin for a genuinely position-dependent (not per-layer-
     constant) feature: `decoder.Model.AttnTempScale(pos)` (decode, one scalar per call) and
@@ -398,7 +398,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     session's own search almost missed.** Beyond `resident.go`/`prefill.go`, three TEST files
     construct raw kernel launches with hardcoded argument lists (`rope_partial_test.go`,
     `moe_route_demand_test.go`) and — the one that actually matters for correctness, not just test
-    hygiene — `cuda/drafter.go`'s speculative-decode block-drafter path calls `bRopeKV` from TWO
+    hygiene — `backend/cuda/drafter.go`'s speculative-decode block-drafter path calls `bRopeKV` from TWO
     production call sites with no `decoder.Model` reference available (drafters build from a raw
     geometry). All fixed the same way the file's own existing YaRN-mscale precedent already
     established for exactly this "no model reference" situation: hardcoded `0`/`0` (off), with a
@@ -474,14 +474,14 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     incidental `len(invf) > 0` guard (originally added for GPT-2) that avoided the crash by
     skipping the buffer build entirely, leaving an uninitialized zero-value buffer rather than a
     deliberate all-zero one — working by accident, not by design. Root-caused on nobara with a
-    temporary `fmt.Printf` in `cuda/backend.go` (added, used, reverted before any commit) that
+    temporary `fmt.Printf` in `backend/cuda/backend.go` (added, used, reverted before any commit) that
     isolated the failure to layer 3 (full-attention), not layers 0–2 (DeltaNet, unaffected). Fixed
     by falling back to `a.rotaryDim()/2` as the table width whenever the real table is empty, so
     the zero-fill is always the correct length; also makes Metal's behavior deliberate instead of
     incidental. No regression: `TestSmolLM3_forwardParity`, `TestGPT2ResidentParityMetal`,
     `TestRopeInvFreqLayer_NoPEIsZero` all rerun byte-identical.
   - **Real bug #3, a REGRESSION in the ALREADY-COMMITTED G5 row 2, found only by running the full
-    Metal suite instead of a targeted `-run`.** `metal/rope2_test.go` and `metal/rope2_kv_test.go`
+    Metal suite instead of a targeted `-run`.** `backend/metal/rope2_test.go` and `backend/metal/rope2_kv_test.go`
     construct their own `rope2` pipeline and dispatch it with a hardcoded argument list,
     independent of `model.go`'s dispatch helpers — row 2's grep for production call sites never
     found them, so both tests were passing the OLD (pre-`qTempScale`) argument count against the
@@ -494,7 +494,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **Correctness evidence, since neither fixture supports a resident-vs-CPU cosine floor** (both
     `testdata/olmo3-tiny` and `testdata/olmo_hybrid-tiny` are seeded/synthetic, same class as rows
     1–2's Metal findings, and this feature has no new pure-Go formula to unit-test the way
-    `FeatNoPE`/`FeatAttnTemp` did): `metal/qknorm_whole_test.go`'s `TestQKNorm_wholeVector` is an
+    `FeatNoPE`/`FeatAttnTemp` did): `backend/metal/qknorm_whole_test.go`'s `TestQKNorm_wholeVector` is an
     isolated kernel-geometry proof — compiles `allKernels`, dispatches the real `qk_norm` kernel
     directly with the whole-vector geometry, compares against a precise CPU reference (maxAbs
     ~1.19e-07/2.38e-07, plus a non-vacuousness sanity check) — and both backends' postOnly/
@@ -547,7 +547,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     that dispatch) since this family has no post-attn/post-MLP norm weight to apply. Two
     sequential residual adds (attn then MLP) into the same accumulator equal one combined add,
     since addition doesn't care which order two independent terms land in.
-  - **CUDA's new kernel**: `layernorm_quant` (`cuda/glue.cu`) — mean-centered LayerNorm+quant,
+  - **CUDA's new kernel**: `layernorm_quant` (`backend/cuda/glue.cu`) — mean-centered LayerNorm+quant,
     structurally `rmsnorm_quant` plus a mean-subtraction pass ahead of the variance pass, same
     warp-shuffle maxabs epilogue. BIAS-FREE ONLY (no `hasBias` parameter at all, unlike Metal's
     kernel): Cohere's LayerNorm carries no learned bias term, and no other family needs one on
@@ -557,13 +557,13 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     of it** — the same discipline G5 row 3's `TestQKNorm_wholeVector` established: `TestLayerNormQuant`
     now exists on BOTH backends (Metal's already existed, built for GPT-2, and ALREADY covered the
     bias-free branch explicitly commented "Cohere's hasBias=0 path" — this row needed to write
-    only CUDA's twin, `cuda/kernels/layernorm_quant_test.go`). Both compare a real dispatch against an
+    only CUDA's twin, `backend/cuda/kernels/layernorm_quant_test.go`). Both compare a real dispatch against an
     exact float64 CPU reference at a 0.9999 cosine floor (not exact equality — `rsqrtf` is not
     IEEE-exact, the same reason `quant_vec_exact_test.go`'s own comment gives for why
     `rmsnorm_quant` has no exact-equality gate either): Metal 0.9999887, CUDA 0.9999884 on real
     hardware.
   - **`FeatLogitScale`**: a plain host-side multiply after readback — `applyLogitScale`
-    (`cuda/softcap.go`) / `finalizeLogits`'s inline loop (`metal/model.go`), the exact same site
+    (`backend/cuda/softcap.go`) / `finalizeLogits`'s inline loop (`backend/metal/model.go`), the exact same site
     and shape as `FeatFinalLogitSoftcap`'s existing softcap. Unlike softcap's tanh, a multiply is
     memory- not compute-bound at any vocab size this repo has seen, so it stays a single serial
     pass with no parallel-fan-out threshold to measure or maintain. `LogitScaleResident()` is
@@ -627,8 +627,8 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **FeatEmbedScale**: zero new code. `decoder/residency.go`'s `embedResident` already applies
     √hidden host-side, generically, before calling `resident.Forward` — this backend just
     consumes the already-scaled embedding like CUDA/Metal do. Pure declare-and-gate.
-  - **FeatFinalLogitSoftcap**: a byte-identical port of `cuda/softcap.go`'s `applySoftcap` to
-    `gpu/softcap.go`, applied in `residentDecoder.Forward`/`ForwardN` after readback — same site
+  - **FeatFinalLogitSoftcap**: a byte-identical port of `backend/cuda/softcap.go`'s `applySoftcap` to
+    `backend/webgpu/softcap.go`, applied in `residentDecoder.Forward`/`ForwardN` after readback — same site
     and shape as CUDA's `step()`/Metal's `finalizeLogits`. Ported CUDA's own bit-identity +
     mutation-check test suite (`TestApplySoftcap_bitIdentical/_disabled/_mutation`) verbatim
     rather than writing a new one, since the code itself is a verbatim port.
@@ -636,8 +636,8 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     defeats the fused `gemvAdd` residual epilogue at the o-proj and MLP down-proj sites (bare
     `gemv` → norm → separate residual add via `biasAdd`, which is really "`xd += out`"), the same
     shape CUDA/Metal already use for this feature. No new kernel.
-  - **FeatGatedGELU**: a genuinely new kernel pair (`gegluShaderWGSL` in `gpu/layer.go`,
-    `gegluQuantWGSL` in `gpu/decodefuse.go`) — this backend had no GELU-tanh-gated activation
+  - **FeatGatedGELU**: a genuinely new kernel pair (`gegluShaderWGSL` in `backend/webgpu/layer.go`,
+    `gegluQuantWGSL` in `backend/webgpu/decodefuse.go`) — this backend had no GELU-tanh-gated activation
     before, only SiLU. Clamps the tanh argument to ±15 before calling `tanh`, matching Metal's own
     fix for the exact f32-overflow-before-saturation defect that cost it a real cosine regression
     (0.818→0.994) the first time this math shipped there — applied preemptively here, not found
@@ -660,10 +660,10 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
       (`geomFor`'s dedup, an optimization CUDA/Metal don't have) — baking `hasSink` into `P` would
       have let one layer's flag leak onto another sharing its `{hd,nKV,half,kEqV}` tuple. Fixed by
       adding a genuinely separate per-layer uniform (`struct HS`) rather than widening `P`.
-    - Three brand-new MoE kernels (`gpu/moe.go`): `routeGptOssWGSL` (gpt-oss's router disagrees
+    - Three brand-new MoE kernels (`backend/webgpu/moe.go`): `routeGptOssWGSL` (gpt-oss's router disagrees
       with the generic `moeRouteWGSL` about what the bias means — biased logits select AND weight,
       vs "bias steers selection only, weight is the unbiased score" — mirroring
-      `cuda/gptoss_act.cu`'s `route_gptoss`/`metal/moe.go`'s twin exactly), `gptossGluQuantWGSL`
+      `backend/cuda/gptoss_act.cu`'s `route_gptoss`/`backend/metal/moe.go`'s twin exactly), `gptossGluQuantWGSL`
       (the clamped interleaved-SwiGLU expert, with a per-expert gate‖up bias table), and
       `moeExpertGptOssDownGEMVWGSL` (the down-combine, with a per-expert down bias — `wgt[slot]*(r
       + bias[idx[slot]*N+row])`, NOT a plain `+= bias[row]`, matching Metal's own documented
@@ -704,14 +704,14 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     caught it immediately. Dense Gemma 4's local/global attention layers genuinely have DIFFERENT
     head_dim (256 vs `gemma4.GlobalHeadDim` 512), which needs a per-layer geometry seam
     (`runLayer.ghd`/`gnKV`/`ghalf` — the fields exist, CUDA/Metal populate their own twins,
-    `gpu/residency.go`'s per-layer builder never has for ANY family). This is NOT expressible as a
+    `backend/webgpu/residency.go`'s per-layer builder never has for ANY family). This is NOT expressible as a
     `ResidentFeature` — Gemma 3 (uniform head_dim) and dense Gemma 4 derive the IDENTICAL required
     set otherwise — so `MissingResidentFeatures` structurally cannot catch it, the same class of
     blind spot `residentMoECapacityOK` already exists to patch for MoE expert/group counts. Fixed
     by adding a parallel, backend-scoped predicate (`decoder.residentPerLayerGeomOK` /
     `Model.PerLayerGeomOK`, `cuda`+`metal` declared capable, `webgpu` not) wired into BOTH
     `decoder.ResidentEligible` (the doc-generation/admission-golden predicate) and
-    `gpu/residency.go`'s own hand-rolled `BuildResident` admission check (which does NOT call
+    `backend/webgpu/residency.go`'s own hand-rolled `BuildResident` admission check (which does NOT call
     `ResidentEligible` and would otherwise still have shipped the crash). Confirmed the fix by
     re-running the exact `gemma4-dense-twogeom-tiny` load that previously crashed
     `wgpu-native` ("unsupported projection precision \"\"") — now a clean, named decline instead.
@@ -750,7 +750,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     G2 (handed to the Linux box session).
 
 - 2026-09-08 — G10 DONE (Metal's `int8int8` silently runs as int4; the report lied about it).
-  `metal/model.go`'s `int4Buf` re-quantizes ANY int8-kind weight through the W4A8 packer
+  `backend/metal/model.go`'s `int4Buf` re-quantizes ANY int8-kind weight through the W4A8 packer
   (dequant-then-repack) because Metal has no int8 GEMV kernel at all — int4 IS the resident
   precision on Metal whether loaded directly (`--quant int4`, cheaper — no dequant-then-repack) or
   arrived at via `int8int8`. `decoder.Model.DecodePath()` used to just echo the requested quant
@@ -759,7 +759,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   every (backend, quant) pair through unchanged except `("metal", "int8int8")`, which becomes
   `"int8int8→int4, no Metal int8 GEMV kernel"` — wired into `DecodePath()`'s resident-case
   `Sprintf`. Also corrected two stale/wrong claims this same investigation turned up:
-  `metal/backend.go`'s `BuildResident` doc comment (previously implied int8 gets a real kernel and
+  `backend/metal/backend.go`'s `BuildResident` doc comment (previously implied int8 gets a real kernel and
   int4 declines to CPU on Metal — both false) and `docs/quantization.md`'s `int8int8 (W8A8)`
   section (same two false claims, now explains the silent re-quantization and points at the new
   `DecodePath()` string). `TestResidentQuantLabel` (`decoder/staged_device_note_test.go`) pins the
@@ -833,7 +833,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     testhook-only helpers) all clean.
 - 2026-09-08 — G3's Metal backend DONE (the decoder plumbing above now has a real implementation
   and a numeric parity gate). No commit yet.
-  - **Two new kernels** (`metal/kernels.go`): `lora_delta_down` (ONE threadgroup, loops over rank
+  - **Two new kernels** (`backend/metal/kernels.go`): `lora_delta_down` (ONE threadgroup, loops over rank
     r serially, standard tree-reduction of `A[r,:]·dequant(aq,asc)` into a small `t[R]` scratch
     buffer — same shape as `rmsnorm_quant`'s own reduction) and `lora_delta_up` (one thread per
     output row, `out[row] += scale·Σ_r B[row,r]·t[r]`, dispatched with an exact non-uniform grid
@@ -841,13 +841,13 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     one command buffer — safe because dispatches within one `MTLComputeCommandEncoder` observe
     each other's writes, the same guarantee every other multi-stage GEMV in this file already
     relies on (rmsnorm→GEMV, GEMV→SwiGLU, etc).
-  - **New file `metal/lora.go`**: `residLoRAProj`/`residLoRALayer` (device-resident A/B buffers +
+  - **New file `backend/metal/lora.go`**: `residLoRAProj`/`residLoRALayer` (device-resident A/B buffers +
     uniforms per projection per layer), `resident.SetAdapter` (releases whatever was previously
     bound FIRST, then uploads the new deltas or leaves `r.loraLayers` nil — matching prefill.go's
     C5 fix for the same class of per-call-buffer leak: a resident backend's `BuildResident`-time
     buffers are tracked for `Close`, but a bind/rebind buffer created OUTSIDE that isn't, unless
     released explicitly), `applyResidentLoRA` (the shared down-then-up dispatch helper, no-op when
-    the target projection's delta is nil). `metalResident.SetAdapter` (`metal/backend.go`) is a
+    the target projection's delta is nil). `metalResident.SetAdapter` (`backend/metal/backend.go`) is a
     thin forward to `resident.SetAdapter`, with the usual compile-time
     `_ decoder.ResidentAdapter = (*metalResident)(nil)` seam.
   - **Dispatch sites**: `encodeAttention` (q/k/v into their `r.qkv` slots, right after the base
@@ -864,7 +864,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     exclude qGate families by name, only by its three structural checks (own-forward/MoE/non-gated
     MLP), so an adapter loaded against a qGate family would silently apply no q/k/v delta on Metal
     today. No family with qGate=true is known to pass `LoadAdapter`'s checks currently; recorded in
-    `metal/lora.go`'s file comment as the gap to close first if one arrives.
+    `backend/metal/lora.go`'s file comment as the gap to close first if one arrives.
   - **A real bug, caught by the parity test's own vacuousness check failing, not by inspection**:
     `lora_delta_down`'s first version declared its reduction scratch as a DYNAMIC
     `threadgroup float* red[[threadgroup(0)]]` PARAMETER but was dispatched via `Dispatch` (not
@@ -886,7 +886,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     trivially identical regardless of what the kernels did. `gpt2_resident_parity_test.go` already
     has the right pattern (`append([]float32(nil), lr...)`) for exactly this reason; missed it on
     the first pass. Fixed by copying at the end of each run.
-  - **`TestLoRAResidentParityMetal`** (new, `metal/lora_resident_parity_test.go`): drives
+  - **`TestLoRAResidentParityMetal`** (new, `backend/metal/lora_resident_parity_test.go`): drives
     `decoder.ResidentAdapter` directly via `ResidentForwardForTest`/`ResidentAdapterLayersForTest`
     (two new CPU-exported test hooks in `decoder/fidelity_testhook.go` —
     `PrefillLogitsWithAdapterForTest` and `ResidentAdapterLayersForTest`, since `KVCache.lora` and
@@ -916,7 +916,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   means CUDA can only be written fully blind with zero local verification. Asked the user how to
   proceed given that; chose WebGPU next (testable end-to-end on this Mac) over writing CUDA blind.
   No commit yet.
-  - **The real design problem, exactly as scoped before starting**: `gpu/decoderunner.go`'s
+  - **The real design problem, exactly as scoped before starting**: `backend/webgpu/decoderunner.go`'s
     `DecodeRunner` builds a FIXED, flat `[]runStep` dispatch plan ONCE at construction
     (`newDecodeRunner`) and `record()` just walks it fresh into a new command buffer every single
     `Run()` — nothing about the plan itself is baked GPU-side, but its STRUCTURE (which dispatches,
@@ -942,7 +942,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     the LoRA hook right after the base gemv, before the qGate check, applies correctly regardless
     of qGate (the delta targets whatever width the base matmul actually produced, qGate or not).
     No documented gap needed here on this backend.
-  - **Two new WGSL kernels** (`gpu/lora.go`): `loraDeltaDown` (ONE workgroup only,
+  - **Two new WGSL kernels** (`backend/webgpu/lora.go`): `loraDeltaDown` (ONE workgroup only,
     `@workgroup_size(64)`, loops over rank serially — same reduction shape as
     `rmsnormQuantWGSL`'s own sum-of-squares tree, reading the SAME packed
     `array<vec4<u32>>` int8 activation format every GEMV kernel in this backend already uses, via
@@ -951,18 +951,18 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     Compiled once via `ensureLora` (auto bind-group layout via `c.bgl`, matching every other
     kernel in this package), added to `newDecodeRunner`'s base `ensures` list unconditionally —
     same "always create, cheap" choice Metal made for its own LoRA pipelines.
-  - **`gpu/lora_resident.go`**: `loraRunProj`/`loraRunLayer` (bound per-projection buffers +
+  - **`backend/webgpu/lora_resident.go`**: `loraRunProj`/`loraRunLayer` (bound per-projection buffers +
     bind groups — built fresh per `SetAdapter` call since a hook's fixed buffers and an
     adapter's rank/scale can only be combined once both are known), `SetAdapter` (releases the
-    previous bind's GPU resources first, same leak-avoidance discipline as `metal/lora.go`'s
+    previous bind's GPU resources first, same leak-avoidance discipline as `backend/metal/lora.go`'s
     `releaseLoRALayers`), `rebuildSteps` (the splice described above). `residentDecoder.SetAdapter`
-    (`gpu/residency.go`) forwards to `rd.runner` only — `ForwardN`'s batched verify runners
+    (`backend/webgpu/residency.go`) forwards to `rd.runner` only — `ForwardN`'s batched verify runners
     (`rd.batch`) are speculative-decode-only, and `generateInto`'s adapter-admission path (the
     thing that can ever call `SetAdapter` in production) calls `Forward` exclusively, confirmed by
     reading `decoder/model.go`'s two `m.resident.Forward` call sites directly rather than assuming
     it — so this is a scoped decision, not an oversight, matching the same scope
     `Model.LoadAdapter` itself already restricts to.
-  - **`TestLoRAResidentParityWebGPU`** (new, `gpu/lora_resident_parity_test.go`): the same
+  - **`TestLoRAResidentParityWebGPU`** (new, `backend/webgpu/lora_resident_parity_test.go`): the same
     `testdata/llama-tiny` fixture and synthetic 7-projection/4-layer adapter as the Metal test
     (duplicated locally — `buildLlamaTinyLoRAFixtureGPU`/`writeLoraGPUSafetensors` — since the
     Metal test's versions are package-private there), same 0.95 floor, same vacuousness check.
@@ -1007,12 +1007,12 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     this codebase). Confirmed safe by checking `BuildResident`: `r.fuseQKV` is forced `false` for
     both `postOnly` and `parallelBlock` (their own comments explain why), so this fused-path
     materialization is never ambiguous about which norm weight applies.
-  - **`cuda/lora.cu`** (new, own module — `cuda/testdata/REGEN.md`'s rule for a NEW kernel):
+  - **`backend/cuda/lora.cu`** (new, own module — `cuda/testdata/REGEN.md`'s rule for a NEW kernel):
     `lora_delta_down` (one block, loops over rank, same reduction shape as `rmsnorm_quant`'s
     sum-of-squares tree, reading the SAME packed-int8-per-int32-word activation format every
     GEMV kernel in this backend already consumes) and `lora_delta_up` (one thread per output row,
     `if (row >= Outn) return;` bounds check matching `gemv_w8a8`'s own convention for an
-    over-provisioned grid). `cuda/lora.go`: `SetAdapter` (runs via `r.do(...)`, the executor-
+    over-provisioned grid). `backend/cuda/lora.go`: `SetAdapter` (runs via `r.do(...)`, the executor-
     thread indirection EVERY device-touching call in this backend requires — CUDA contexts are
     thread-affine — and releases the previous bind's buffers via `r.dev.ReleaseBuf`, since unlike
     Metal/WebGPU this backend's device ledger normally frees everything only at `Close`, so
@@ -1022,7 +1022,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **Two real, independently-discovered pre-existing bugs, both fixed, NEITHER caused by this
     row** — found only because this was the first CUDA build attempted against a fresh checkout
     since they landed:
-    1. **`cuda/testdata/glue.ptx` was stale by three commits.** `git log` on `glue.ptx` vs
+    1. **`backend/cuda/testdata/glue.ptx` was stale by three commits.** `git log` on `glue.ptx` vs
        `glue.cu` showed the committed PTX predates `7357856` (G5's Cohere row, which added
        `layernorm_quant`) AND two further optimization commits (`glu_quant`/`rmsnorm_quant`'s
        warp-shuffle maxabs, RoPE's YaRN mscale) — none of their PTX regens were ever committed.
@@ -1043,7 +1043,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
        CORRECT fix for a brand-new kernel, not an exemption (`moe.cu`'s exemption is a legacy
        special case with its own expired justification already flagged in that file; a new kernel
        with no such history should comply, not join it).
-  - **`TestLoRAResidentParityCUDA`** (new, `cuda/lora_resident_parity_test.go`): same
+  - **`TestLoRAResidentParityCUDA`** (new, `backend/cuda/lora_resident_parity_test.go`): same
     `testdata/llama-tiny` fixture, same synthetic 7-projection/4-layer adapter, same 0.95 floor,
     same vacuousness check as the Metal/WebGPU twins. Measured: **cosine 0.999963** — matching
     WebGPU's 0.999963 and Metal's 0.999960 on the identical fixture almost exactly; three
@@ -1067,7 +1067,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     copied back to this Mac's checkout so everything lands in one place to commit from here.
   - **All six commits above landed** (65781ec decoder plumbing, 7468e82 G10, e13cc00 Metal,
     2048ca2 WebGPU, 23c46b1 glue.ptx fix, 0547f60 CUDA), split by `git add -p` where a single
-    file (`decoder/residency.go`, `metal/backend.go`) mixed G3 and G10 hunks — each commit
+    file (`decoder/residency.go`, `backend/metal/backend.go`) mixed G3 and G10 hunks — each commit
     independently build+test-verified in isolation via `git stash --keep-index -u` before
     committing, not just at the end.
 
@@ -1099,7 +1099,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   shape batching, a genuinely separate and larger undertaking than extending the existing dense
   kernels. Item (b) (the bit-identity work that would let batched prefill default on) untouched,
   tracked elsewhere as the doc already noted.
-  - **Two kernel signature changes, both in `metal/prefill.go`'s own separately-compiled
+  - **Two kernel signature changes, both in `backend/metal/prefill.go`'s own separately-compiled
     library** (`prefillKernels`, isolated from decode's `allKernels` on purpose, so this row
     can't touch decode's audited numerics): `rmsnorm_f16` gains an `addOne` parameter (Gemma's
     `(1+w)` RMS offset — this kernel had NO addOne support at all before, meaning it was
@@ -1165,13 +1165,13 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     safetensors index in `decoder/forward_nemotron.go`'s own comment — NOT `moeMLP`'s gated
     SwiGLU), so calling it for up/down only, skipping expGate entirely, was already correct.
     `relu2Quant` already existed (built for the DENSE Nemotron-H port's own relu²-MLP block).
-    The actual gap: `gpu/residency.go`'s per-layer Nemotron block-kind switch (cases 0/1/2 —
+    The actual gap: `backend/webgpu/residency.go`'s per-layer Nemotron block-kind switch (cases 0/1/2 —
     mamba/attn/mlp) always `append`s the layer and `continue`s before reaching the generic
     isMoE-building code a Mixtral/DeepSeek/GLM layer would hit, so a MoE block's per-layer
     weights (`rl.router`/`rl.expUp`/`rl.expDown`/`rl.shUp`/`rl.shDown`) were simply never
     populated. Added `case 3:` doing exactly that (no `expGate`/`shGate`/`shGateW` at all, unlike
     the generic branch it mirrors); added a matching `nemoKMoE` dispatch-side case in
-    `gpu/decoderunner.go` (route → k routed non-gated-relu² experts weighted-summed → the
+    `backend/webgpu/decoderunner.go` (route → k routed non-gated-relu² experts weighted-summed → the
     always-on ungated shared expert of the same shape), inserted next to the existing `nemoKMLP`
     early-return (no mixer to run first, same as that case).
   - **A real, separate, pre-existing bug found and fixed while wiring the admission check**:
@@ -1200,7 +1200,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     `docs/completed/nemotron-resident.md`,
     and `docs/completed/task-families-2026-09.md`'s F2 section (all written in part 1, when "no backend
     implements it" was still true) updated to say webgpu now does.
-  - **`TestNemotronMoEResidentParityWebGPU`** (new, `gpu/nemotron_moe_resident_test.go`): real
+  - **`TestNemotronMoEResidentParityWebGPU`** (new, `backend/webgpu/nemotron_moe_resident_test.go`): real
     committed fixture `testdata/nemotron3nano-tiny` (6 layers: linear_attention/moe/
     linear_attention/full_attention/moe/linear_attention — exercises mamba, attention, AND moe
     block kinds in one fixture, not a moe-only synthetic). Resident vs CPU, int4 both sides,
@@ -1219,13 +1219,13 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   Metal — Gemma set + MoE, both extending the batched f16-MMA prefill kernels). Gemma 4's
   `enable_moe_block` (g4moe) variant still declines (see below) — a third FFN shape, not this
   row's target.
-  - **Mirrors CUDA's own established shape exactly, no new routing math**: `cuda/prefill.go`
+  - **Mirrors CUDA's own established shape exactly, no new routing math**: `backend/cuda/prefill.go`
     already batches a MoE layer's attention half normally and runs the FFN ROW BY ROW off the
     batched residual, reusing the per-token decode MoE dispatch chain unchanged — not a batched-
     routing-and-indexed-GEMM kernel, which is what G8's own write-up originally guessed this would
     need before actually looking at how CUDA does it. Metal's row loop does the same: for each of
     the M prompt positions, norm+quantize that row, route, run the k experts + shared expert, fold
-    the result back into the batched residual — `metal/prefill.go`'s `PrefillLast`, a new
+    the result back into the batched residual — `backend/metal/prefill.go`'s `PrefillLast`, a new
     `if L.moe != nil { ... continue }` branch ahead of the existing dense-FFN dispatch sequence.
   - **The type-mismatch bridge**: decode's MoE dispatch chain is F32-only (`r.x`); prefill's
     residual (`xF`) is F16. Three pieces close the gap: (1) `rmsnorm_quant_f16` — already existed,
@@ -1237,7 +1237,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     `residual_f16_from_f32` kernel (`x[i] = half(float(x[i]) + y[i])`) folds `moeDst` into `xF`'s
     row once, after the expert+shared-expert accumulation completes.
   - **`encodeMoEExperts`/`encodeMoESharedExpert` parameterized with a `dst Buffer` accumulate
-    target** (`metal/moe.go`), previously hardcoded to `r.x`. Decode's two callers
+    target** (`backend/metal/moe.go`), previously hardcoded to `r.x`. Decode's two callers
     (`encodeMoEFFN`, `encodeMoEExpertsPaged`'s tail call) both now pass `r.x` explicitly; the new
     prefill row loop passes `moeDst`. Also split `encodeMoERouter` into a norm dispatch plus a new
     `encodeMoERoute` (route-selection only, no `r.x` involvement) so prefill's row loop — which
@@ -1254,7 +1254,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     an otherwise-identical feature set). Added `&& !m.HasGemma4MoEResident()` to `r.prefillOK`'s
     computation; confirmed via a throwaway test against `testdata/gemma4-moe-tiny`
     (`prefillOK=false`) before deleting the scaffolding.
-  - **`TestPrefillParityMoE`** (new, `metal/prefill_moe_parity_test.go`): real checkpoint
+  - **`TestPrefillParityMoE`** (new, `backend/metal/prefill_moe_parity_test.go`): real checkpoint
     `testdata/mixtral-tiny` (no shared expert, softmax routing, MHA — the simplest MoE shape
     available, deliberately isolating the row-loop mechanics). Same structure as
     `TestPrefillParity`/`TestPrefillParityGemma`: sequential Forward vs `PrefillLast`, argmax
@@ -1276,7 +1276,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     allocation, leaving 8 nil rows, surfaced as `index out of range [0] with length 0` deep inside
     the dispatch chain — a reminder that an empty-input panic from GPU code can look exactly like
     a real kernel bug until you check the input.)
-  - `metal/backend.go`'s `PrefillLast` doc comment (stale since G8's Gemma half, worse now)
+  - `backend/metal/backend.go`'s `PrefillLast` doc comment (stale since G8's Gemma half, worse now)
     updated to describe both what admits (Gemma set, generic gated-SwiGLU MoE) and what still
     declines (per-layer-geometry, g4moe) accurately.
   - Full regression: `metal` 111 pass/0 fail/51 skip (110 prior + 1 new test; `TestMoE_declinesPrefill`
@@ -1358,16 +1358,16 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     can share one enumeration pass rather than risk disagreeing about what "dense" means.
     `ResidentHostCopyBytes` accounts for the specific M-02 gap: Metal's unified memory holds BOTH
     a quantized host `WeightMat` AND a separately re-packed device buffer for the same dense
-    weights (`metal/model.go`'s `int4Buf`, nothing released in between) — but a genuinely PAGED
+    weights (`backend/metal/model.go`'s `int4Buf`, nothing released in between) — but a genuinely PAGED
     expert (`0 < slots < nExperts`) does NOT get this doubling, since it streams via pread
     straight from the `.giw` file into its device slot buffer (confirmed by reading
-    `metal/moe.go`/`metal/gemma4_moe.go`'s staging code directly, not assumed) rather than being
-    materialized host-side first. `metal/backend.go`'s `residentNeedBytes` gained this addend plus
+    `backend/metal/moe.go`/`backend/metal/gemma4_moe.go`'s staging code directly, not assumed) rather than being
+    materialized host-side first. `backend/metal/backend.go`'s `residentNeedBytes` gained this addend plus
     a new `residentKVBytes` term (`metalCtxCap × kvDim × 2 bytes(f16) × 2(K,V)`, summed per layer
     for per-layer-geometry families) — the dominant "scratch" term M-02 named as entirely missing;
     the many small per-model buffers (`r.mq`/`r.gu`/`r.logits`/etc.) stay excluded as rounding to
     nothing beside it, the same exemption `ResidentWeightBytes`' own doc comment already gives
-    norms/biases. `metal/resident_memguard_test.go`'s existing M-02 gate updated to assert the new
+    norms/biases. `backend/metal/resident_memguard_test.go`'s existing M-02 gate updated to assert the new
     three-term sum instead of the old weight-only one, plus a new assertion that the host-copy
     addend itself shrinks under paging; `decoder/weightbytes_test.go` gained
     `TestResidentHostCopyBytes_exemptsPagedExperts`, cross-checked against an independently-
@@ -1378,16 +1378,16 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     all clean.
   - **CUDA (M-02, new ground — no guard existed here at all).** An earlier grep-based pass had
     concluded CUDA had zero memory-fit protection; closer reading found that's only true for the
-    FIXED weight term — `cuda/resident.go`'s `checkKVFits` already guards KV-vs-free-VRAM well
+    FIXED weight term — `backend/cuda/resident.go`'s `checkKVFits` already guards KV-vs-free-VRAM well
     (hard error when an explicit `-ctx` doesn't fit, decline when the default doesn't), and
     `capSlots` already elastically sizes the MoE expert cache against live free VRAM via a
     bisection search. What was missing: a dense model whose weights ALONE exceed free VRAM ran
     the full kernel-compile-and-upload sequence before failing on whichever raw CUDA allocation
     happened to be the first one that didn't fit — no clean decline naming the numbers, the exact
     failure MODE `checkKVFits`'s own doc comment already named as the point of a load-time guard.
-    Added `checkWeightsFit` (`cuda/resident.go`, next to `checkKVFits`) + `fitsWeightsBudget` (the
+    Added `checkWeightsFit` (`backend/cuda/resident.go`, next to `checkKVFits`) + `fitsWeightsBudget` (the
     pure arithmetic, unit-tested standalone like Metal's `fitsResidentBudget`), wired into
-    `cuda/backend.go`'s `BuildResident` immediately after the device is created — before any
+    `backend/cuda/backend.go`'s `BuildResident` immediately after the device is created — before any
     kernel compile or weight upload. Deliberately prices `m.ResidentDenseWeightBytes()`, NOT
     `ResidentWeightBytesPaged(0)`: routed MoE experts have their own elastic sizing that runs
     LATER against live free VRAM, so pricing them at full unpaged size here would decline a model
@@ -1464,7 +1464,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     declines outright — it always has weight-paging as a backstop, matching how `--weight-cache`
     already behaves today. A new `kvBytesPerPositionAllLayers` sums KV bytes PER LAYER (not one
     model-level figure) so a per-layer-geometry family (Gemma 4) isn't mis-priced, mirroring
-    `metal/backend.go`'s own `residentKVBytes` from the M-02 work but backend-agnostic (no
+    `backend/metal/backend.go`'s own `residentKVBytes` from the M-02 work but backend-agnostic (no
     `metalCtxCap` dependency). WebGPU is explicitly out of scope this phase (needs M-32 first,
     Phase 3's own item) — an unrecognised backend name declines on features, same as an
     unimplemented arch would, never panics or silently answers wrong.
@@ -1510,16 +1510,16 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     the exact same shape of problem for backend REGISTRATION; added `decoder.RegisterMemoryProbe`/
     `FreeBytesFor` next to it in `decoder/backend.go`, same pattern (register from `init()`, decoder
     stays clean, `ok=false` means "unknown, don't guess").
-  - **`metal/backend.go`'s registered probe is NOT a live query** — 70% of `hw.memsize`, the exact
+  - **`backend/metal/backend.go`'s registered probe is NOT a live query** — 70% of `hw.memsize`, the exact
     figure `residentFitsMemory`'s own `residentMemFraction` already uses, so `fit`'s report can
     never disagree with what the real guard would do. Darwin's UBC makes "available" memory
     unreliable (documented at length on that same guard already), so a live query would be the
     wrong number to report, not just an inconsistent one.
-  - **`cuda/backend.go`'s registered probe IS a live query** (`dev.Context().MemInfo()`) — VRAM is
+  - **`backend/cuda/backend.go`'s registered probe IS a live query** (`dev.Context().MemInfo()`) — VRAM is
     a separate pool from host RAM, so "free" is real and reliable here, unlike Metal's case.
     Creates a throwaway device with no kernels loaded and releases it (`dev.ReleaseObjects()`)
     immediately after the query, the same bare create→query→release shape
-    `cuda/alloc_floor_test.go` already uses directly — not the persistent `LockOSThread`'d executor
+    `backend/cuda/alloc_floor_test.go` already uses directly — not the persistent `LockOSThread`'d executor
     `cudaResident` needs for actual decode.
   - **`internal/fitcmd/fit.go`** (new): `Run(args) int`, same shape as `internal/pullcmd`'s `Run`
     (a `flag.FlagSet` + a leading positional path, shared by both binaries' dispatch). Loads the
@@ -1571,14 +1571,14 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   direction ("CUDA first, measured") over wiring all three backends at once — Phase 2 is a real
   production default change, unlike Phase 1's dry run, and its own gate (G1) requires a real
   decode-rate measurement, not just correctness. Metal and CPU are NOT touched this pass.
-  - **What actually changes for CUDA**: only CONTEXT. `capSlots` (`cuda/resident.go`) already IS
+  - **What actually changes for CUDA**: only CONTEXT. `capSlots` (`backend/cuda/resident.go`) already IS
     "fit by default" for the elastic MoE term — `--moe-cache-slots 0` auto-caps to live free VRAM,
     which is exactly what Phase 2 asks for and already existed before this task doc was written.
     The one CUDA piece that was NOT automatic: an unpinned load always got the flat
     `cudaCtxCapDefault` (4096) regardless of the card, and that constant's OWN doc comment already
     recorded a real measurement (RTX 2070 SUPER, dense 7B int4) where the true per-card ceiling was
     5-6x the default — headroom nobody who didn't know to pass `-ctx` ever got.
-  - **`cuda/resident.go`**: new `resolveCtxCapFit(m, request, modelCtx)` next to the existing
+  - **`backend/cuda/resident.go`**: new `resolveCtxCapFit(m, request, modelCtx)` next to the existing
     `resolveCtxCap`. An EXPLICIT request (a pinned `-ctx`) is untouched either way — fit-by-default
     only ever applies to the unpinned case. Otherwise: try a candidate of `fitDefaultCtx` (8192,
     the same agent-turn-size default `tasks/task-fit-to-hardware.md` §8 and `goinfer-chat fit`'s own
@@ -1592,7 +1592,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     the doc's own `--fit=off` CLI flag yet — deferred until Metal/CPU share it too, since a flag
     that only ever affects one of the three backends the doc names is premature).
   - **Verified on real hardware (nobara, RTX 2070 SUPER), not assumed from the arithmetic alone**:
-    `TestResolveCtxCapFit_shortcuts` (new, `cuda/resident_cap_test.go`) pins the branches that need
+    `TestResolveCtxCapFit_shortcuts` (new, `backend/cuda/resident_cap_test.go`) pins the branches that need
     no device (explicit request, the env escape hatch, a model window already at/below the
     historical default) — `nil` is passed for `*decoder.Model` deliberately, itself asserting none
     of those three branches ever reaches code that would dereference it. The live-probe-driven
@@ -1602,7 +1602,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **G1's rate bar, measured, not assumed**: KV cap size affects reserved VRAM, not per-token
     compute at a fixed shallow decode depth — a bigger allocated cap should cost nothing at the
     depths a real test decodes to, but that is a claim, not evidence, so it was measured directly.
-    `TestProdThroughput` (existing, `cuda/backend_wired_test.go`, autoregressive with real
+    `TestProdThroughput` (existing, `backend/cuda/backend_wired_test.go`, autoregressive with real
     advancing positions) run twice, same box, same model, ctx=8192 (new default) vs ctx=4096
     (`GOINFER_NO_FIT_DEFAULT=1`): logits path 230.9 vs 230.7 tok/s, greedy fast path 234.2 vs 234.9
     tok/s — differences of 0.09% and 0.3%, both comfortably inside noise, nowhere near the ≥0.90×
@@ -1650,7 +1650,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   structural blocker this phase correctly stays away from (below).
   - **Why Metal's ctx wasn't touched too, checked before writing anything**: CUDA's
     `resolveCtxCap` at least took a real request value; Metal's `metalCtxCap` is a bare package
-    CONSTANT (`const metalCtxCap = 4096 // resident KV positions (spike)`, `metal/model.go`) with
+    CONSTANT (`const metalCtxCap = 4096 // resident KV positions (spike)`, `backend/metal/model.go`) with
     NO `-ctx` plumbing into it at all today, AND its own doc comment says raising it past 4096
     without also resizing a fixed-size kernel-side threadgroup buffer (`sc[4096]` in the attention
     kernel) is a silent out-of-bounds write. This is a real, deliberate kernel-level ceiling, not
@@ -1661,14 +1661,14 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     reads — were already backend-agnostic and already wired from the CLI flag
     (`internal/loadflags/loadflags.go:Flags.Options`, unchanged, predates this entry); Metal's own code simply
     never READ them, checking only `os.Getenv("GOINFER_METAL_MOE_SLOTS")` directly at its three
-    real call sites (the guard's estimate, `metal/moe.go`'s and `metal/gemma4_moe.go`'s actual
+    real call sites (the guard's estimate, `backend/metal/moe.go`'s and `backend/metal/gemma4_moe.go`'s actual
     paging-engagement checks).
-  - **`metal/backend.go`**: new `metalMoESlotsRequest(m) string` resolves Options first
+  - **`backend/metal/backend.go`**: new `metalMoESlotsRequest(m) string` resolves Options first
     (`m.MoECacheSlotsRequest() > 0`), falling back to the env var — "kept one release as a
     deprecated alias" per the doc's own §3 wording. `metalMoESlotsFromEnv` (the guard's int-typed
     reader, kept its name — same `decoder/gptoss_decline_test.go`-style precedent of not renaming
     something mid-transition) now calls it instead of reading `os.Getenv` directly.
-  - **`metal/moe.go` and `metal/gemma4_moe.go`**: their real paging-engagement checks (`if s :=
+  - **`backend/metal/moe.go` and `backend/metal/gemma4_moe.go`**: their real paging-engagement checks (`if s :=
     os.Getenv("GOINFER_METAL_MOE_SLOTS"); s != ""`) now call `metalMoESlotsRequest(m)` instead —
     the exact same validation (`n >= topK`) and error path, just resolving from the shared
     priority order first. `m` was already in scope at both sites (used a few lines below for
@@ -1679,19 +1679,19 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     declines the WHOLE LOAD to CPU via the memory guard; it does not auto-lower the slot count the
     way CUDA does). Rewritten to state that per-backend difference explicitly rather than let a
     CUDA-only claim quietly become wrong for a second backend as soon as this landed.
-  - **Verified**: `TestMetalMoESlotsFromEnv` (existing, `metal/resident_memguard_test.go`) rewritten
+  - **Verified**: `TestMetalMoESlotsFromEnv` (existing, `backend/metal/resident_memguard_test.go`) rewritten
     to load a real (synthetic, in-memory) model per case instead of testing the bare env-var parser
     in isolation — the env-var sub-cases now go through a model whose `Options.MoECacheSlots` is
     genuinely 0, so the fallback path is what's actually exercised, plus two new cases pinning the
     priority order directly (Options wins over a conflicting env var; Options alone with no env var
     set). New `TestMoESlotsViaOptions_engagesPaging`
-    (`metal/moe_slots_option_test.go`) proves the REAL dispatch path, not just the guard: on the
+    (`backend/metal/moe_slots_option_test.go`) proves the REAL dispatch path, not just the guard: on the
     real `testdata/gemma4-moe-tiny` fixture, with `GOINFER_METAL_MOE_SLOTS` explicitly unset,
     `decoder.Options{MoECacheSlots: N}` alone engages paging (`r.g4moe.paged=true`,
     `r.g4moe.slots=N`) — passed on the first real run.
   - **`TestMoESlotsViaOptions_engagesPaging_genericMoE`** (new, same file): the generic (non-
     gemma4) twin, on `testdata/mixtral-tiny` — TRACKED in git (nE=8, topK=2), so unlike the gemma4
-    case this one runs in CI unconditionally, no skip guard needed. Confirms `metal/moe.go`'s own
+    case this one runs in CI unconditionally, no skip guard needed. Confirms `backend/metal/moe.go`'s own
     separate `moeResident`/`paged`/`slots` fields engage identically from Options alone. Passed on
     the first real run.
   - Full regression: `metal` 113 pass/0 fail/51 skip (111→113: two new tests; the rewritten
@@ -1713,7 +1713,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     `metalCtxCap` is always the bare 4096 constant regardless of what a caller asked for. This is
     exactly the class of bug G6 exists to catch, and it is real, but fixing it means converting
     `metalCtxCap` from a package constant into a per-resident field across a dozen-plus call sites
-    in `metal/backend.go`/`metal/model.go` (mirroring the `r.ctxCap` field CUDA already has) — a
+    in `backend/metal/backend.go`/`backend/metal/model.go` (mirroring the `r.ctxCap` field CUDA already has) — a
     bigger, more delicate change than writing G6's test was scoped to cost. At the user's explicit
     choice, this is documented here as a known, separately-scoped gap rather than attempted this
     pass: **the real fix is "give Metal a resolveCtxCap of its own," which cannot happen until
@@ -1728,12 +1728,12 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     `tasks/task-fit-to-hardware.md` §0's own rule ("never selects a lossy... quant... without saying so
     and requiring the flag").
   - **What WAS tested, on real hardware**: `TestCheckKVFits_realDevice_explicitRefusesWithNumbers`
-    (new, `cuda/resident_cap_test.go`) — the sibling test already pinned the sentinel/wiring
+    (new, `backend/cuda/resident_cap_test.go`) — the sibling test already pinned the sentinel/wiring
     without a device; this one calls `checkKVFits()` against a REAL device's REAL free VRAM with
     an absurd explicit ctx and asserts the refusal actually NAMES the position count and GB
     figures, not just that an error occurred. Verified on nobara's RTX 2070 SUPER, passed first
     try. `TestMoESlotsViaOptions_belowTopKRefusesWithNumbers` (new,
-    `metal/moe_slots_option_test.go`, `testdata/mixtral-tiny`, tracked/CI-safe): an explicit
+    `backend/metal/moe_slots_option_test.go`, `testdata/mixtral-tiny`, tracked/CI-safe): an explicit
     `Options.MoECacheSlots` below top-k refuses with both the requested count and `topK=N` in the
     message. `TestResolveCtxCapFit_shortcuts`'s existing "explicit request bypasses fit entirely"
     case already covered the honoured-unchanged half for CUDA's ctx; no new test needed there.
@@ -1749,7 +1749,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   direction after "continue." An explicit `-ctx` now actually reaches the Metal resident path —
   previously silently ignored entirely, always using the bare 4096 constant regardless of what
   was requested.
-  - **`metalCtxCap` (const) renamed `metalCtxCapMax`** (`metal/model.go`) — the value did not
+  - **`metalCtxCap` (const) renamed `metalCtxCapMax`** (`backend/metal/model.go`) — the value did not
     change, but its MEANING did: it is now documented as the hard kernel ceiling a resolved value
     can never exceed (the attention kernel's fixed-size `threadgroup float sc[4096]` score
     buffer), not "the resident context" itself. `resident` (the per-build struct) gained a new
@@ -1760,7 +1760,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     `resolveMetalCtxCap(m)` call instead. `TestMetalCtxCapWithinKernelBound`'s invariant (the
     constant must never exceed the kernel's real score-buffer size) is UNCHANGED in substance,
     just renamed along with the constant.
-  - **New `resolveMetalCtxCap(m) (int, error)`** (`metal/model.go`), deliberately shaped like
+  - **New `resolveMetalCtxCap(m) (int, error)`** (`backend/metal/model.go`), deliberately shaped like
     CUDA's `resolveCtxCap`/`resolveCtxCapFit` but NOT the same policy: CUDA raises an unpinned
     default toward available VRAM because `cudaCtxCapDefault` is an arbitrary, conservative
     choice; `metalCtxCapMax` is NOT arbitrary — it is the kernel ceiling — so there is no "raise it
@@ -1784,7 +1784,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     fallback to `metalCtxCapMax` instead of inlining the field read at each of the three call
     sites, so this precedent-preserving fallback lives in exactly one place.
   - **Verified, including the POSITIVE case, not just the refusal**: `TestResolveMetalCtxCap`
-    (new, `metal/resident_cap_test.go`, `testdata/llama-tiny` — tracked, runs in CI
+    (new, `backend/metal/resident_cap_test.go`, `testdata/llama-tiny` — tracked, runs in CI
     unconditionally) covers all four branches (unset, honored-as-requested, clamped-to-model-
     window, refused-above-ceiling) as pure logic, no device needed.
     `TestMetalBuildResident_explicitCtxTooLargeRefusesNotDecline` confirms the wiring one level up
@@ -1811,7 +1811,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     construction sites the same way those already are. `FitDisabled()` checks the new field OR
     (kept working, not orphaned) the original `GOINFER_NO_FIT_DEFAULT` env var — so anything
     driving `decoder.Load` directly without the flag still has an escape hatch.
-  - **`cuda/resident.go`'s `resolveCtxCapFit`** now calls `m.FitDisabled()` instead of reading
+  - **`backend/cuda/resident.go`'s `resolveCtxCapFit`** now calls `m.FitDisabled()` instead of reading
     `GOINFER_NO_FIT_DEFAULT` itself — the ONE call site this session's CUDA ctx-default work
     added, now backend-agnostic-ready (a future Metal/CPU fit-by-default policy would read the
     same accessor, not invent its own env var).
@@ -1834,7 +1834,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **Two real, unrelated issues found and fixed while closing this out, neither caused by the
     `--fit` flag itself**:
     1. `TestEnvVars_docAndCodeAgree` started failing the moment `GOINFER_NO_FIT_DEFAULT` moved
-       from being read only in `cuda/resident.go` (a CUDA-tagged file, evidently outside this
+       from being read only in `backend/cuda/resident.go` (a CUDA-tagged file, evidently outside this
        test's plain-`decoder`-package scan) to `decoder/model.go` (untagged, always compiled) —
        a real, previously-invisible documentation gap the move exposed. Added it to
        `docs/env-vars.md`'s "Operator knobs" table.
@@ -2004,7 +2004,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     (the G11 entry above: "needs `BuildResident`'s signature... or an out-of-band hint... a
     `decoder.ResidencyBackend` interface change both CUDA and Metal implement").** The
     out-of-band-hint alternative that entry floated turned out to be sufficient on its own:
-    `cuda/backend.go`'s `BuildResident(m *decoder.Model)` already receives `*Model`, and `Model`
+    `backend/cuda/backend.go`'s `BuildResident(m *decoder.Model)` already receives `*Model`, and `Model`
     already carries per-load knobs this way (`resCtxReq`, `moeSlots`, `disableFit` — the same
     pattern `ResidentContext`/`MoECacheSlots`/`DisableFit` already established). Adding one more
     field (`extraBytes` / `Options.ExtraResidentBytes` / `Model.ExtraResidentBytes()`) cost zero
@@ -2035,7 +2035,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     the eventual backend cannot host one (previously `attachBlockDrafter` checked
     `BlockSpecCapable()` before touching the file at all); accepted as the necessary order once the
     byte count has to exist before `BuildResident` runs.
-  - **`cuda/resident.go`, every free-VRAM check a companion allocation could be starved by**:
+  - **`backend/cuda/resident.go`, every free-VRAM check a companion allocation could be starved by**:
     - `resolveCtxCapFit`: `m.ExtraResidentBytes()` now passed as `PlanRequest.ExtraBytes` into the
       `m.Plan("cuda", free, ...)` call — `Plan`'s own arithmetic already handled `ExtraBytes`
       correctly (pinned by `decoder/fitplan_test.go`'s existing `TestPlan_tableDriven` case, which
@@ -2071,7 +2071,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     - `TestFitsWeightsBudget` (pre-existing) and new `TestReservedBudget` (pure, no device) both
       pass — the arithmetic in isolation.
     - New `TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers`
-      (`cuda/resident_cap_test.go`, sibling to the existing G6-era
+      (`backend/cuda/resident_cap_test.go`, sibling to the existing G6-era
       `TestCheckKVFits_realDevice_explicitRefusesWithNumbers`): a PAIRED real-device comparison —
       the SAME modest 128-position ctx, on the SAME card, fits at `extraBytes=0` and is refused at
       `extraBytes=100 GiB` (deliberately bigger than any card this repo targets, so the refusal

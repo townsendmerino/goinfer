@@ -1,6 +1,6 @@
 # Metal short-prompt prefill floor — R3, 2026-09-20
 
-**Result: floor lowered from 256 to 64 tokens.** `metal/backend.go`'s `metalFastPrefillFloor`
+**Result: floor lowered from 256 to 64 tokens.** `backend/metal/backend.go`'s `metalFastPrefillFloor`
 constant, gating `PrefillLast`'s batched f16-MMA prefill path vs the sequential per-token loop.
 
 Brief: `docs/tasks/red-october.md` R3 ("Metal short-prompt floor, and what stays sequential").
@@ -31,7 +31,7 @@ not the sole basis.
 
 `startPos > 0` (the prefix-reuse dimension R3's Build section also names) was **not** re-tested
 here. G-08 (`docs/audit-metal-2026-09-12.md`) already closed the coverage question for that code
-path with a dedicated correctness test (`metal/prefill_startpos_test.go`, K=48/from=24, cosine
+path with a dedicated correctness test (`backend/metal/prefill_startpos_test.go`, K=48/from=24, cosine
 0.999941, no defect found) rather than extending this pooled statistical gate to a second
 dimension — a judgment call from that session this one is deferring to rather than re-litigating,
 since the decision rule below is stated purely in terms of K.
@@ -72,7 +72,7 @@ looks like a clean, decisive result if not checked.
 Per the brief's registered rule ("the floor moves to the smallest K in {64, 128} at which the
 §3.2 pooled gate ships; at that K the batched arm must beat sequential by ≥2x on TTFT"): K=64
 ships on both fidelity and speed. **New floor: 64.** Shipped as the new
-`metalFastPrefillFloor` default in `metal/backend.go` (was 256, set 2026-09-12 per M-02).
+`metalFastPrefillFloor` default in `backend/metal/backend.go` (was 256, set 2026-09-12 per M-02).
 
 ## Out of scope, deferred
 

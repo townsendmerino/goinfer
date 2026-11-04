@@ -25,7 +25,7 @@ running the widest-N and longest-K shapes at roughly half the rate of the others
 
 - **Machine:** Apple M1 Pro, 16 GB, macOS 26.6.2 (kernel 25.6.0). Idle at start (load1 1.89 after the runner's
   wait for ≤ 2.0).
-- **Build:** goinfer `558c6cad`, plus the uncommitted test file this record adds (`metal/prefill_decomp_test.go`,
+- **Build:** goinfer `558c6cad`, plus the uncommitted test file this record adds (`backend/metal/prefill_decomp_test.go`,
   the only dirty path; no production file differs). Metal backend, `-tags goinfer_testhooks`.
 - **Model:** `~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf` (internal SSD), loaded `Quant: "int4"` through its
   v14 `.metal.giw` sidecar. H=1536, I=8960, 28 layers, 12 heads, V=151936. Fused attention on (the default).

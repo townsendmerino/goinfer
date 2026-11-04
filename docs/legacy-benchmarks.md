@@ -633,7 +633,7 @@ comparison on this page.
   prompt+64). goinfer's resident CUDA **decode** is actually *faster* (~200 tok/s at short
   context), which is the §B2 win — but its prefill cost is what erodes that lead as the prompt
   grows, so there is a crossover length past which goinfer's total time exceeds Ollama's.
-- **Batched prefill (`PrefillLast`, `cuda/prefill.go`, 2026-08-03) moved the crossover
+- **Batched prefill (`PrefillLast`, `backend/cuda/prefill.go`, 2026-08-03) moved the crossover
   ~128 → ~230 tokens (~1.8×).** The weight-stationary batched W4A8 GEMV replaces the
   sequential **M=1** prefill (one full forward per prompt token) with an M=len pass that reads
   each int4 weight row once per 8-token tile. Measured (real qwen2.5-coder-1.5b, same rig/quant,
@@ -749,7 +749,7 @@ comparison on this page.
     the cgo-free, bit-identical thesis: a **stated trade, not a deficiency**. (Against the current peer
     v0.32.5 the total-time crossover is short — see the re-anchor box at the top of §B2; goinfer stays
     behind Ollama on raw prefill throughput at long context.)
-  - Gates: `cuda/prefill_e2e_test.go` (KV bit-identical all layers×rows + logits + 64-token
+  - Gates: `backend/cuda/prefill_e2e_test.go` (KV bit-identical all layers×rows + logits + 64-token
     byte-identical decode, real windowed Mistral); `TestPrefillTTFT` / `TestPrefillCrossover` /
     `TestPrefillDecomp` (heavy) reproduce the numbers above. The rows in the §B2 table are
     **not edited**.
@@ -822,7 +822,7 @@ prefill penalty. **goinfer's total-time advantage is a small-model, short-prompt
 | resident VRAM | ~1.3 GB core + ~3.8 GB slots + KV — the 11.4 GB of experts live in host RAM |
 | coherence | greedy through the real chat template: distinct-trigram 0.818, *"…**Paris**… the Eiffel Tower, the Louvre Museum… **Gastronomy:**"* |
 | peers | **Ollama v0.32.5: loads + runs** via 42% GPU / 58% CPU-RAM split, **~24.5 tok/s** (faster than goinfer here) — the old "fail to load" claim was outdated and is retracted |
-| commit | `cuda/gemma4_26b_cache_test.go` (`GOINFER_HEAVY_TESTS=1`), host↔VRAM track through `2f51449` |
+| commit | `backend/cuda/gemma4_26b_cache_test.go` (`GOINFER_HEAVY_TESTS=1`), host↔VRAM track through `2f51449` |
 
 - The number is a **floor**: synchronous H2D with no async overlap yet, and it still clears
   fieldfare's 5.1–6.3 tok/s on its own 8 GB M2 Air (the closest analogue either project has —
@@ -942,7 +942,7 @@ change is entirely ours (P2b's parallel normalization, `686c9f8`).
 v0.32.5 (146–182 over ten runs). Treat as indicative.
 
 **Depth stops at 3900 because of `cudaCtxCap = 4096`** (the constant is declared near the top of
-`cuda/resident.go`; the line number is deliberately dropped here — this archive must stay readable
+`backend/cuda/resident.go`; the line number is deliberately dropped here — this archive must stay readable
 without re-indexing a live source file), the resident KV
 capacity — not because 3900 was chosen as an interesting depth. 8k/16k/32k are unmeasurable on the
 resident path until that cap is configuration-derived.
@@ -1097,7 +1097,7 @@ largest score array of the four). This is why no formula fits: a formula gate ha
 **"ON iff nWin ≥ f(geometry)"**, which always predicts ON wins at sufficient depth. **phi3 falsifies
 that shape, not merely its constants.** Two candidate laws (`nLayers/(nH·hd)` and `nLayers/(nKV·hd)`)
 additionally underpredicted the 0.5B crossover by ~2×. Shipped as a measured per-geometry table with a
-"never" class and a conservative default, cited beside the constants in `cuda/resident.go` and pinned
+"never" class and a conservative default, cited beside the constants in `backend/cuda/resident.go` and pinned
 by `TestSplitKVGate_measuredGeometries`.
 
 **Asymmetric loss.** Firing early costs up to 18–25%; firing late costs a few percent, because OFF's

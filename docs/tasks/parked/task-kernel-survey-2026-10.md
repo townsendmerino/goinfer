@@ -70,7 +70,7 @@
 | KS-E5 | blocked | parked at the STOP POINT, 2026-10-26. Mac 2026-10-25, the 1.5B on WebGPU: decode attention is 62% / 87% / 93% of a token at 2k / 8k / 16k positions, about 15 µs a position. Nothing built. Francis decided 2026-10-26 (option (a)): confirm the share on nobara's WebGPU before building (`TestDecode_dispatchProfile` with `GOINFER_DECODE_POS=2048,8192,16384`); then (a) the bit-identical V-load unroll, then (b) split-KV behind its fidelity gate. Not started in the wind-down | `docs/measurements/ks-e-profiles-2026-10-25/README.md` |
 | KS-E6 | open (measured) | Mac 2026-10-25: prefill attention is 43% of a 4,096-row pass (5% at 256, 16% at 1,024) | `docs/measurements/ks-e-profiles-2026-10-25/README.md` |
 | KS-E7 | open | either box: KV bytes per slot and KV equality past the window | — |
-| KS-E8 | open | either box: a WebGPU twin of `cuda/lora_cost_measure_test.go` | — |
+| KS-E8 | open | either box: a WebGPU twin of `backend/cuda/lora_cost_measure_test.go` | — |
 | KS-E9 | open | either box: `TestSpike_capabilities` | — |
 | KS-E10 | open | either box: dispatch count, then an A/B | — |
 | KS-E11 | open | either box: `deepseek-tiny`, then V2-Lite | — |
@@ -105,7 +105,7 @@
 | KS-O3 | moved | KS-H6: decided A (Francis, 2026-10-25): re-derive the margins after KS-H2 and KS-H3, numbers to Francis before either guard changes | §2 |
 | KS-O4 | moved | KS-F2 (mac-kapitsa): decided B, approved gated (Francis, 2026-10-25): a fidelity gate (KL and agreement against today's gpt-oss path, what each outcome means) registered before any code | §2 |
 | KS-DOC | done | — | notes 1–3, 5 and 7–10 corrected in their docs, 2026-10-22, in the commit that closed this row |
-| KS-DOC-code | open | the next change to `cuda/resident.go` or aikit's `encoder/`: notes 4 and 11 are code comments (a product-code push); note 6 done 2026-10-22 with KS-H1 (`PrefillBlockRows`' comment) | — |
+| KS-DOC-code | open | the next change to `backend/cuda/resident.go` or aikit's `encoder/`: notes 4 and 11 are code comments (a product-code push); note 6 done 2026-10-22 with KS-H1 (`PrefillBlockRows`' comment) | — |
 
 ## 0. Where to start
 
@@ -185,8 +185,8 @@ By expected value for the effort, per box. Sizes: S up to a day, M a few days, L
 - **KS-O2 / KS-B15: A.** The 64 KB opt-in goes through aikit onto the exact attention kernels (bound 12,160 → 16,256 keys).
   - Prompts in that band stay on the exact GEMM, which is bit-identical. The gain is measured.
   - The fast-GEMM option is not approved; it would need its own fidelity gate and a new decision.
-- **KS-O3 / KS-H6: A.** After KS-H2 and KS-H3 read, the two 384 MiB margins (`cuda/margin.go:cudaResident.ctxMarginFor` (then the constant `ctxCapMarginBytes`),
-  `cuda/resident.go:slotMarginBytes`) are re-derived from measured parts, the wider (2,048-row) pass's scratch included.
+- **KS-O3 / KS-H6: A.** After KS-H2 and KS-H3 read, the two 384 MiB margins (`backend/cuda/margin.go:cudaResident.ctxMarginFor` (then the constant `ctxCapMarginBytes`),
+  `backend/cuda/resident.go:slotMarginBytes`) are re-derived from measured parts, the wider (2,048-row) pass's scratch included.
   - The numbers come to Francis before either guard changes.
 - **KS-O4: B, approved gated.** gpt-oss moves onto the batched acc64 attention with a sink term.
   - A fidelity gate (KL and agreement against today's gpt-oss path, and what each outcome means) is registered before any code.
@@ -204,7 +204,7 @@ The options as they were put to the owner:
     16,256.
   - Prompts in between could stay past-bound (exact GEMM).
   - Or they could regain the fast GEMM: 1.37× on Gemma-3-4B, but it re-exposes the measured cosine drift of 0.9865–0.990.
-- **KS-O3, the two CUDA 384 MiB margins (`cuda/margin.go:cudaResident.ctxMarginFor` (then the constant `ctxCapMarginBytes`), `cuda/resident.go:slotMarginBytes`).**
+- **KS-O3, the two CUDA 384 MiB margins (`backend/cuda/margin.go:cudaResident.ctxMarginFor` (then the constant `ctxCapMarginBytes`), `backend/cuda/resident.go:slotMarginBytes`).**
   - After KS-H2 and KS-H3, a margin built from measured parts could return about 100–200 MiB (estimate): 700–1,400
     positions on Qwen3-8B, or 1–2 expert slots on the 26B.
   - The parts are the ~144 MiB allocation floor, one prefill pass's scratch, and decode transients.
@@ -227,16 +227,16 @@ noticed: `docs/queue-performance.md` has two entries numbered P24 (`attn_fused`,
    `decoder/arch.go:Architecture.kvRingsOK` admits only `attnBatchedAcc64`, and gpt-oss runs `attnSinksF64`, so its sliding
    layers keep append-forever f32 KV (KS-F2).
 2. **The memory campaign's MEM13-copies-CUDA row** ("remove CUDA's dense host pack") is out of date.
-   - The dense pack is already gone (`cuda/pack_stream.go`).
+   - The dense pack is already gone (`backend/cuda/pack_stream.go`).
    - What remains is whole-tensor packing for shared experts, Mamba-2 projections and drafter weights.
    - That is about 4 GB of int8 host copies on Nemotron-H 9B by arithmetic.
 3. **KV4a's record** (`docs/measurements/kv4-cuda-2026-10-21.md` §1, §4) says the pool VRAM is priced. The 2 MiB rounding of
    each layer's pool buffer is not (KS-H2).
-4. **The comment on `cuda/resident.go:singleBlockAttnShmemLimit`** says per-kernel attribute support does not exist. gocudrv
+4. **The comment on `backend/cuda/resident.go:singleBlockAttnShmemLimit`** says per-kernel attribute support does not exist. gocudrv
    v0.3.2 has `Function.SetAttribute`; aikit's `gpu` layer does not pass it through (KS-B15).
 5. **`docs/completed/task-multimodal-support-2026-10.md` S14.6** concludes "Both are matmul-bound" from CPU-sample share, which
    sums over threads. The serial share of wall time is much larger (KS-G1).
-6. **`metal/backend.go:metalResident.PrefillBlockRows`** excludes exact-attention models for a 4,096-key decline. The tiled
+6. **`backend/metal/backend.go:metalResident.PrefillBlockRows`** excludes exact-attention models for a 4,096-key decline. The tiled
    twin removed that decline (KS-H1).
 7. **`docs/tasks/task-forward-architecture-2026-10.md` §6** says "decode already replays CUDA graph segments". Graphs are
    opt-in and off by default.
@@ -265,7 +265,7 @@ The two small models read fewer bytes than llama.cpp and still trail it. phi3-mi
 matches llama.cpp's (1.46 against 1.50 ms), so its gap is bytes.
 
 **KS-A2 · Launches may cost about 14.6 µs each on the small models (measure first).**
-- **Where:** `cuda/resident.go:cudaResident.launch` → aikit `gpu` `Queue.Launch` (an argument slice per launch) → gocudrv
+- **Where:** `backend/cuda/resident.go:cudaResident.launch` → aikit `gpu` `Queue.Launch` (an argument slice per launch) → gocudrv
   v0.3.2 `Function.LaunchOn` (a lock per buffer argument) → `Executor.DoJob`.
 - **Evidence, three readings that agree:**
   - The 0.5B and gemma3-1b cost the same 14.6 µs per launch, and their token-time ratio (1.749) equals their launch-count
@@ -296,7 +296,7 @@ matches llama.cpp's (1.46 against 1.50 ms), so its gap is bytes.
 
 **KS-A1 · phi3-mini: keep the GGUF's Q5_K and Q6_K tensors native under `q4k` (needs KS-O1).**
 - **Where:** `decoder/weightmat.go:streamQuantizedRow4` ("the rest of quantQ4K is int8 W8A8"), `decoder/gguf.go:q4kMat`
-  (Q4_K only), and `rowQ4K` / `projRow` in `cuda/actgroup.cu`.
+  (Q4_K only), and `rowQ4K` / `projRow` in `backend/cuda/actgroup.cu`.
 - **Waste:** the 32 Q5_K `attn_qkv` tensors and 17 Q6_K tensors (16 `ffn_down` plus the head) run as int8. That adds
   +283, +72 and +18 MB per token, for 2,711 MB against llama.cpp's 2,336.
 - **Change:**
@@ -314,7 +314,7 @@ matches llama.cpp's (1.46 against 1.50 ms), so its gap is bytes.
 
 **KS-A1 on CUDA: the first measurement's gate, registered 2026-10-24 before any kernel is written or timed (A1-G0), on the
 owner's word of 4:37 pm ("#2 then #1": KS-A1's CUDA half, then KS-O1 on CUDA).**
-- **Prototype kernels** (`cuda/ks_a1_proto.cu`, test-only, a module of its own; nothing shipped loads it): one warp per output row
+- **Prototype kernels** (`backend/cuda/ks_a1_proto.cu`, test-only, a module of its own; nothing shipped loads it): one warp per output row
   group, 8 warps a 256-thread block, the shipped per-32 int8 activations (`quantG32`'s codes, scales and group sums) and the
   explicit `__fmaf_rn` / `__fmul_rn` form of `rowQ4K`.
   - `gemv_q5k_g32` (Q5_K, 176-byte blocks, 16-byte aligned in the file's own layout): (A) `rowQ4K`'s lane map, lane l on pair
@@ -326,7 +326,7 @@ owner's word of 4:37 pm ("#2 then #1": KS-A1's CUDA half, then KS-O1 on CUDA).**
     8·(k mod 4)…+7 of each of the half's four 32-element groups; the two Q6_K sub-scales of a group fold in integer arithmetic,
     then × d × the group's activation scale.
   - Each at R = 1, 2, 4 rows a warp (the activation loads shared by the R rows).
-- **Instrument:** `TestKSA1_gemvTiming` (`cuda/ks_a1_test.go`, `-tags cuda`), the timing lock held exclusively. The shipped
+- **Instrument:** `TestKSA1_gemvTiming` (`backend/cuda/ks_a1_test.go`, `-tags cuda`), the timing lock held exclusively. The shipped
   `gemv_w8a8_g32` comes from the embedded `actgroup.ptx` itself. Per shape and kernel: CUDA-event time of 50 launches, median of 7
   batches after 3 warm launches, the weights rotated over copies of at least 64 MiB per arm (16× the 4 MiB L2), beside a
   streaming-read ceiling over the same bytes. GB/s is the kernel's own weight bytes (int8: N·K plus the f32 row scales; Q5_K: the
@@ -383,8 +383,8 @@ in ms (GB/s):
 - **Log:** `docs/measurements/ks-a1-2026-10/a1-g0-2026-10-24-1704.log` (from `~/goinfer-logs/ks-a1-2026-10/`).
 
 **KS-A5 · Load each short GEMV row in one round (output unchanged).**
-- **Where:** `fused_rms_gu` and `fused_rms_qkv` in `cuda/fused_qkv.cu`, their rows-per-warp twins, and aikit's
-  `gemv_w4a8_fwd` (`gpu/gemv_quant.cu`).
+- **Where:** `fused_rms_gu` and `fused_rms_qkv` in `backend/cuda/fused_qkv.cu`, their rows-per-warp twins, and aikit's
+  `gemv_w4a8_fwd` (`backend/webgpu/gemv_quant.cu`).
 - **Waste:** a K=896 row is three serialized load rounds of 64, 32 and 16 words, and the next row waits for the reduction.
   Committed ncu times track row length: `fused_rms_gu` runs at 200 GB/s on the 0.5B shape against 355–368 GB/s at
   K ≥ 3072. The 0.5B's gate/up kernel is 0.59 ms of a 2.85 ms token.
@@ -454,7 +454,7 @@ in ms (GB/s):
 | 2048–3900 | 0.289 | 0.139 | 0.130 | 0.020 | 0.160 |
 
 **KS-B1 · The fast-lane GEMM is latency-bound at 12% of int8 peak (bit-identical rework).**
-- **Where:** `gemm_w4a8_mma` in `cuda/gemm_w4a8_mma.cu`, launched from `cuda/prefill.go:cudaResident.bGemvB`.
+- **Where:** `gemm_w4a8_mma` in `backend/cuda/gemm_w4a8_mma.cu`, launched from `backend/cuda/prefill.go:cudaResident.bGemvB`.
 - **Waste:**
   - It runs at 19.3 TOPS (156 TOPS peak).
   - Per-token floors: tensor 16.8 µs; the I2F conversion, one per output per 32-group at quarter rate on sm_75, 33.6 µs. The
@@ -476,7 +476,7 @@ in ms (GB/s):
 - **Prior art:** reopens red-october §2.3's "done" (§3, note 8).
 
 **KS-B2 · `attn_fused` stages K/V with one scalar load in flight per thread (bit-identical).**
-- **Where:** the staging loops of `attn_fused_impl` in `cuda/attn_fused_bm.cu` and `cuda/attn_fused.cu`.
+- **Where:** the staging loops of `attn_fused_impl` in `backend/cuda/attn_fused_bm.cu` and `backend/cuda/attn_fused.cu`.
 - **Waste:**
   - Every `attn_fused*` PTX module has zero vector global loads; `decode_fa*` has 279–288.
   - That is about 77K cycles per (block, 64-key tile) against an ~8.2K-cycle MMA floor.
@@ -502,7 +502,7 @@ in ms (GB/s):
 - **Change:** 1024- or 2048-row passes where scratch allows (138 / 276 MiB on the 1.5B; admission prices them).
 - **Gain (simulated, attention only):** 1.5B 1.16–1.26× at 1024 rows and 1.37–1.47× at 2048; the 7B 1.02–1.09×.
 - **First measurement:** `TestPrefillDecomp` with the pass width at 512/1024/2048 and K=2048/3900.
-- **Prior art:** reopens the `cuda/prefill.go:prefillDefaultChunk` note, which was measured on the old grid.
+- **Prior art:** reopens the `backend/cuda/prefill.go:prefillDefaultChunk` note, which was measured on the old grid.
 
 **KS-B8 build: gates, registered 2026-10-25 before any code (B8-G), on the owner's word of 6:33–6:36 am (option A: 2,048-row CUDA
 prefill passes by default where the scratch allows, admission pricing the scratch, falling back to narrower passes otherwise).**
@@ -586,8 +586,8 @@ the 1-minute load 2.14 (the line is 8.0), 58.2 GB available, the desktop composi
     a non-zero span term exercised.
 
 **KS-B3 · Gemma 4 26B (M26) expert-major prefill never got option A (bit-identical).**
-- **Where:** `cuda/moe_expert_major_gemma4.go:cudaResident.prefillGemma4ExpertMajorRun`; it has no reference to the grouped
-  kernels that `cuda/moe_expert_major.go` uses.
+- **Where:** `backend/cuda/moe_expert_major_gemma4.go:cudaResident.prefillGemma4ExpertMajorRun`; it has no reference to the grouped
+  kernels that `backend/cuda/moe_expert_major.go` uses.
 - **Waste:**
   - Phase 2 is three launches per (row, rank) pair, 12,288 per layer per chunk.
   - Phase 1 is 11 launches per row, including the dense FFN as M=1 GEMVs that re-read ~10 MB per row.
@@ -600,7 +600,7 @@ the 1-minute load 2.14 (the line is 8.0), 58.2 GB available, the desktop composi
 - **First measurement:** the MoE category and a launch count at M=512, then `TestMoEExpertMajorGemma4CUDA_bitIdentical`.
 
 **KS-B4 · Exact attention, row-tiled (bit-identical; reopens P35 option A).**
-- **Where:** `attn_batched` (`cuda/prefill_batched.cu`) and the `splitkv_*_rows` kernels.
+- **Where:** `attn_batched` (`backend/cuda/prefill_batched.cu`) and the `splitkv_*_rows` kernels.
 - **Waste:**
   - Each (head, row) streams its whole key range with no reuse across rows, at 0.43 TFLOPS.
   - This path serves Gemma 2/3/4, the Qwen3.5/3.6 attention layers, phi3, E-models, prompts under 512, speculative verify
@@ -616,7 +616,7 @@ the 1-minute load 2.14 (the line is 8.0), 58.2 GB available, the desktop composi
 - **Risk:** the shared-memory budget at head dims 256/512, plus windows, sinks, softcap and image blocks.
 
 **KS-B5 · Expert-major for shared-expert MoE (M35) and gpt-oss (bit-identical).**
-- **Where:** `cuda/moe_expert_major.go:cudaResident.prefillMoEExpertMajorEligible` declines `hasShared`, bias tables and the gpt-oss route.
+- **Where:** `backend/cuda/moe_expert_major.go:cudaResident.prefillMoEExpertMajorEligible` declines `hasShared`, bias tables and the gpt-oss route.
   Those models fall back to per-row FFN, the shape P20 found 2.3–2.7× slower on M26.
 - **Change:**
   - The shared expert through the batched twins, plus a row twin of `shared_gate_combine`.
@@ -626,9 +626,9 @@ the 1-minute load 2.14 (the line is 8.0), 58.2 GB available, the desktop composi
 - **Prior art:** extends P20 ("not attempted"). Confirm `hasShared` on a real M35 load first.
 
 **KS-B6 · phi3/phi4 at their default `q4k` prefill one token at a time.**
-- **Where:** `cuda/prefill.go:cudaResident.prefillStaticDecline` (per-32 activations) and `cuda/prefill.go:nonBatchableKind` (`q4k`).
+- **Where:** `backend/cuda/prefill.go:cudaResident.prefillStaticDecline` (per-32 activations) and `backend/cuda/prefill.go:nonBatchableKind` (`q4k`).
   About 35 s at K=3900.
-- **Change:** batched row twins of the per-32 quantizers in `cuda/actgroup.cu`, plus a batched `gemv_q4k_g32`.
+- **Change:** batched row twins of the per-32 quantizers in `backend/cuda/actgroup.cu`, plus a batched `gemv_q4k_g32`.
 - **Gain (est.):** 5–9× time to first token. Exact-class twins.
 - **Size:** L.
 - **Prior art:** the unowned remainder of `docs/tasks/task-actquant-pergroup-2026-09.md`.
@@ -649,7 +649,7 @@ tiling reproduces").**
 - **Class:** bit-identical. **Size:** S–M.
 
 **KS-B10 · Generic expert-major plumbing.**
-- **Where:** `cuda/moe_expert_major.go:cudaResident.prefillMoEExpertMajorRun`.
+- **Where:** `backend/cuda/moe_expert_major.go:cudaResident.prefillMoEExpertMajorRun`.
 - **Waste:** Phase 1 launches three tiny kernels per row (1,536 per layer per chunk), including the single-thread
   `moe_route`. Each distinct expert costs two context syncs, and the expert DMA is synchronous.
 - **Change:** row twins of the router and route, slot ids passed by value, and `dmaExpertSlot` with events.
@@ -669,14 +669,14 @@ tiling reproduces").**
 - **Gain (est.):** 4–6× time to first token.
 - **Size:** M.
 
-**KS-B13 · aikit's f32 tower GEMM (`gemm_f32_bias` in `gpu/vit.cu`).**
+**KS-B13 · aikit's f32 tower GEMM (`gemm_f32_bias` in `backend/webgpu/vit.cu`).**
 - **Waste:** 3.56 TFLOPS (39% of fp32 peak) on a 4×4 micro-tile, with 12 shared-memory reads per 16 FFMA.
 - **Change:** a 128×128 block with 8×8 micro-tiles, `LDS.128` and double buffering, keeping each output's ascending-k chain.
 - **Gain (est.):** 1.5–1.8× on the GEMMs (40–53% of each f32 tower); SigLIP 1.97 → ~1.5 s.
 - **Class:** bit-identical. **Size:** M, aikit.
 
 **KS-B14 · The int8 SigLIP fallback tower.**
-- **Waste:** `cuda/vision_encoder.go:addInPlaceHost` makes ~55 host round trips per image (~0.5 s of 4.08 s), and the int8
+- **Waste:** `backend/cuda/vision_encoder.go:addInPlaceHost` makes ~55 host round trips per image (~0.5 s of 4.08 s), and the int8
   GEMV runs at ~1 TOPS.
 - **Change:** device residual adds (`residual_batched`), and an exact int8 `mma.sync` GEMM.
 - **Gain (est.):** the tower to about 1.2–1.5 s. Matters only when the f32 tower does not fit.
@@ -793,8 +793,8 @@ tiling reproduces").**
   - Add the greedy chain's head as its own category.
 
 **KS-C1 · Rebuild the q4k lane's GEMVs (phi3-mini on Metal, 0.539× Ollama).**
-- **Where:** `metal/model.go:resident.q4kGemv`; `gemv_q4k_f32` (`Q4K_F32_BODY`), `W8_F32_BODY` and `gemv_w8f32_head` in
-  `metal/kernels/kernels_msl.go`; the step twins in `metal/batch_rows.go`.
+- **Where:** `backend/metal/model.go:resident.q4kGemv`; `gemv_q4k_f32` (`Q4K_F32_BODY`), `W8_F32_BODY` and `gemv_w8f32_head` in
+  `backend/metal/kernels/kernels_msl.go`; the step twins in `backend/metal/batch_rows.go`.
 - **Waste:**
   - Per weight, about 20 instructions and 4.5 loads. Every lane repeats `q4k_scale_min` for each sub-block, loads one byte
     of weights and 8 bytes of f32 activation, and the int4 rows kernel needs about 3.8 ALU operations and 0.07 loads.
@@ -886,7 +886,7 @@ C1-G3 (08:39–08:44, the lock held exclusively; not timed): G-Q2 on the rows ke
 **KS-O1 on Metal: gates, registered 2026-10-24 before any code (O1-G), on the owner's word of 10:22 am (build native Q5_K/Q6_K
 for the GPU q4k lanes, Metal first).** The build:
 - **Kernels:** `gemv_q5k_f32_rows<R>` and `gemv_q6k_f32_rows<R>` (plain, residual, bias), their batched-step twins in
-  `metal/batch_rows.go`, and a native Q6_K head (`gemv_q6kf32_head` and its block-argmax twin) beside `gemv_w8f32_head`. Q5_K
+  `backend/metal/batch_rows.go`, and a native Q6_K head (`gemv_q6kf32_head` and its block-argmax twin) beside `gemv_w8f32_head`. Q5_K
   takes `q4k_rows_acc`'s lane map (8 lanes a super-block, 4 in flight, one `uint4` of quants a lane) plus the matching 16 bytes of
   `qh`. Q6_K's 210-byte block is not word-aligned, so it is uploaded split into planes of the same total size (`ql`, `qh`, scales,
   `d`). Lane k of a block takes half k/4 and elements 8·(k mod 4)…+7 of each of its four 32-element groups.
@@ -1157,7 +1157,7 @@ Expected cost: G1 seconds. G3 about 3 min, from C1-G4's wall, after Phi-3's fit 
 **KS-O1 on CUDA: gates, registered 2026-10-24 before any product code (O1C-G), on the owner's word of 4:37 pm ("#2 then #1":
 KS-A1's CUDA half, then KS-O1 on CUDA, the twin of what shipped on Metal).** Each kind is built only if it passed A1-G0's rule
 ("KS-A1 on CUDA"); a kind A1-G0 kills stops for the owner's decision before any code for it. The build:
-- **Kernels** (`cuda/actgroup.cu`): per-row `rowQ5K` and `rowQ6K` bodies in A1-G0's chosen lane map, the per-32 int8 activations
+- **Kernels** (`backend/cuda/actgroup.cu`): per-row `rowQ5K` and `rowQ6K` bodies in A1-G0's chosen lane map, the per-32 int8 activations
   and the explicit `__fmaf_rn` / `__fmul_rn` form of `rowQ4K`. `projRow` and `finishRow` gain two kinds (`WK_Q5K`, `WK_Q6K`), so the
   fused per-32 kernels (`fused_rms_qkv_g32`, `fused_rms_gu_g32`, used at hidden sizes up to `fusedG32MaxHidden`) take them, and
   standalone `gemv_q5k_g32` / `gemv_q6k_g32` at A1-G0's R serve `doG`. Q5_K is uploaded in the file's own 176-byte blocks (16-byte
@@ -1362,7 +1362,7 @@ only for the instruction region's median.
 further from f32 than the int8 lane's on highly repetitive input (Phi-3 mini q4, 110 × "the ": p10 0.8826, min 0.029, against
 int8's 0.9401 and 0.454), while about 2× closer on natural text (LQ3). Phi-3 mini q4 `Phi-3-mini-4k-instruct-q4.gguf`, the CUDA
 resident at `--quant q4k` holding both arms (`kso1cLoadBothArms`), against the CPU at f32 on the same GGUF. Instrument: a scratch
-harness beside `cuda/kso1c_fidelity_test.go:TestKSO1C_fillerDiagnostic`, kept as text in `docs/measurements/ks-o1-f-2026-10-25/`.
+harness beside `backend/cuda/kso1c_fidelity_test.go:TestKSO1C_fillerDiagnostic`, kept as text in `docs/measurements/ks-o1-f-2026-10-25/`.
 Tier 1, the shared timing lock, not timed; about 5 minutes a run.
 - **D1, where they diverge.** The same prompt (TestQ4K_phi3ResidentMatchesCPU's filler at 110 repeats under Phi-3's chat template),
   token by token through `cudaResident.Forward` with every layer's output captured (`cudaResident.SetHiddenCapture`), for four
@@ -1373,7 +1373,7 @@ Tier 1, the shared timing lock, not timed; about 5 minutes a run.
 - **D3, the KV path.** D1's native and int8 arms rerun with `--kv f32` (explicit). The KV path is implicated if the native arm's
   final-layer minimum moves by more than half its gap to the int8 arm's.
 - **D3 amended (14:34, D1 running, none of its output read).** The figures this diagnostic explains were read on the f32 cache: the
-  CUDA test suite's default is f32 KV (`cuda/kv16_default_test.go`), and every LQ log reads `layer 0 KV half false`. KV precision is
+  CUDA test suite's default is f32 KV (`backend/cuda/kv16_default_test.go`), and every LQ log reads `layer 0 KV half false`. KV precision is
   therefore excluded by construction, and D3 as registered is D1's own configuration: it runs as an A/A repeat of D1 and is reported
   as that (each layer's minimum must repeat to within 0.001, or D1's readings are not deterministic enough to locate anything). The
   rest of the KV path, cached K and V that differ because each arm's own projections wrote them, is inside D1's per-layer reading.
@@ -1485,7 +1485,7 @@ repetitive input in general, or only from 110 × "the "?
   no fix is indicated.
 
 **KS-C2 · The down projection in R18b's masked form, in coal's per-word order (bit-identical).**
-- **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `metal/kernels/kernels_msl.go`.
+- **Where:** `gemv_w4a8_resid_staged<R>` (and `gemv_w4a8_coal_staged<R>`) in `backend/metal/kernels/kernels_msl.go`.
 - **Waste:** it still runs `int gi = (int((x)&0xF)-8)*int(a0.x) + …` with `acc[r] += float(gi) * …`: about 5.4 operations per
   weight against R18b's 3.8.
 - **Change:**
@@ -1497,12 +1497,12 @@ repetitive input in general, or only from 110 × "the "?
   ms on the 7B. `mc3_btd` stays valid.
 - **Size:** S–M.
 - **First measurement:**
-  - A `resid_mk4` prototype beside `resid_st4` in `metal/gemv_r18_test.go`, byte-equal at both shapes.
+  - A `resid_mk4` prototype beside `resid_st4` in `backend/metal/gemv_r18_test.go`, byte-equal at both shapes.
   - Then `TestR18InSequence`, 7 paired reps.
   - Kill it under 1.03× or on any differing byte.
 
 **KS-C2 first measurement, registered 2026-10-23 before the code, on the owner's order of 11:50.** The prototype,
-`gemv_w4a8_resid_mk<R>` in `metal/gemv_r18_test.go`'s `r18Kernels`: `gemv_w4a8_resid_staged<R>` (production's down) with each
+`gemv_w4a8_resid_mk<R>` in `backend/metal/gemv_r18_test.go`'s `r18Kernels`: `gemv_w4a8_resid_staged<R>` (production's down) with each
 word's integer sum taken as R18b does, through two masked half-word dots against the word's eight activations pre-scaled by
 16^-(k mod 4), less 8·Σa. The activations stay staged as int8 (K bytes, so the 7B's 18,944 fits) and are scaled in registers.
 Every partial sum is an integer below 2^24, so `float(gi)` is the shipped integer exactly and the per-row chain
@@ -1747,7 +1747,7 @@ with no int4 dequant to pay. At K=3900 the 1.5B pass is 83% GEMM, so the 0.90× 
 efficiency (an inference; there is no MLX-side breakdown). KS-D7 is the one kernel-level lever found.
 
 **KS-D1 · Gemma 4 (head dims 256/512): a steel kernel with the head dim split across simdgroups.**
-- **Where:** today `metal/prefill.go:resident.prefillAttnKernels` sends every layer with head dim >128 to the exact
+- **Where:** today `backend/metal/prefill.go:resident.prefillAttnKernels` sends every layer with head dim >128 to the exact
   `attention_prefill`. That kernel uses one threadgroup per (row, head), a scalar dot per key and a serial P·V scan per
   output dim, at ~0.06–0.07 TFLOPS.
 - **Why P32's plan does not fit:** `attention_prefill_fused` keeps `oScr[ATTN_SGPT][8*ATTN_MAXHD]` floats in threadgroup
@@ -1811,7 +1811,7 @@ what makes that safe. And every model with head dim 256 or 512 and no softcap ta
 at model level.
 
 **KS-D2 · Steel prefill attention for head dims 64, 80 and 96.**
-- **Where:** `metal/prefill.go:resident.prefillAttnKernels` takes steel only for head dim 128. Others run
+- **Where:** `backend/metal/prefill.go:resident.prefillAttnKernels` takes steel only for head dim 128. Others run
   `attention_prefill_fused`, which R19 measured 7.2× slower.
 - **Affected:** Qwen2.5-0.5B, Llama-3.2-1B and SmolLM2 (64), and Phi-3 at int4 (96).
 - **Gain (est.):** attention is ~65–70% of the 0.5B's pass at 3900, so 3.4–3.8 s → ~1.6 s (~2.2×), and ~1.2× at 512.
@@ -1864,8 +1864,8 @@ entry's "Phi-3 at int4 (96)" as an affected model was wrong for the same reason.
 Log: `~/goinfer-logs/ksd2b-g1-2026-10-24.log`, `~/goinfer-logs/ksd2b-g3-2026-10-24.log`.
 
 **KS-D3 · DeltaNet prefill scan with the state on chip (bit-identical).**
-- **Where:** `delta_rule_seq` in `metal/kernels/deltanet_kernels_msl.go`, from
-  `metal/prefill_deltanet.go:resident.encodePrefillDeltaMixer`.
+- **Where:** `delta_rule_seq` in `backend/metal/kernels/deltanet_kernels_msl.go`, from
+  `backend/metal/prefill_deltanet.go:resident.encodePrefillDeltaMixer`.
 - **Waste:** each thread's 512-byte state row (`device float* S`) is read and written in device memory for every prompt row,
   and lanes are 512 B apart. CUDA's register version, `delta_rule_rows_128`, took 1.23 s to 38 ms, bit-identical.
 - **Change:**
@@ -1898,7 +1898,7 @@ Planted defect, run once on the committed tree and reverted: the new rule kernel
 about a minute.
 
 **KS-D4 · Gemma 4 vision and audio towers and EmbeddingGemma 2 onto S17's kernels.**
-- **Where:** `metal/embeddinggemma2.go:eg2Ops.gemm`.
+- **Where:** `backend/metal/embeddinggemma2.go:eg2Ops.gemm`.
 - **Waste:** these towers run aikit's `gemm_f32_sg_big` (1.19 TFLOPS) and unfused attention, against `tower_gemm_w32` / `w16`
   (2.02–2.22) and `tower_attn`. The Gemma 4 tower is recorded at 1.3–2.3 s per image.
 - **Gain (est.):** −0.6 to −1.5 s per E2B/E4B image turn (6.2 s recorded). w16 halves the tower weights (604 → 302 MB).
@@ -1992,7 +1992,7 @@ the 0.5B's own: the two-step pass's counted scratch less `guF` (Mpad × 2 × 4,8
 are unchanged. The kernel cells (K = 1,536, I = 96 and 8,960) already ran and passed at 10:13; they stand.
 
 **KS-D6 · Grid towers allocate scratch they never read (bit-identical).**
-- **Where:** `metal/grid_vision.go:gridVAccel.grow`.
+- **Where:** `backend/metal/grid_vision.go:gridVAccel.grow`.
 - **Waste:**
   - `qh`, `kh`, `vh`, `sc`, `vt` and `ob` serve the old unfused attention, which no shipped grid tower takes.
   - `f2` serves only gated MLPs.
@@ -2037,7 +2037,7 @@ any gains, if it's bit-identical and doesn't use more memory." The re-run read a
 goes up, stop and tell him.
 
 **KS-D8 · Batched Mamba-2 prefill on Metal (Nemotron-H).**
-- **Waste:** `metal/model.go:resident.recurrentPrefillOK` declines Mamba, so every prompt token is a decode step.
+- **Waste:** `backend/metal/model.go:resident.recurrentPrefillOK` declines Mamba, so every prompt token is a decode step.
 - **Gain (est.):** the DeltaNet precedent was 6.7–8.4×, so 5–8×.
 - **Class:** fidelity-gated, like D-B01.
 - **Size:** M–L. Pairs with KS-B12.
@@ -2065,7 +2065,7 @@ and gates first).** What the pass lacks for Nemotron-H, read off `MissingResiden
 128, in_proj 22,656 × 4,480): `ssm`, `non-gated-mlp` and `non-gated-relu2`. Its attention layers are already in the pass. The build:
 - **The layer loop takes decode's shape:** the mixer by kind (DeltaNet, Mamba-2, attention, or none for an MLP-only layer), then
   the FFN only where the layer has one (`L.ffn`), as `encodeLayerResidualWith` does.
-- **The Mamba-2 mixer over M rows** (`encodePrefillMambaMixer`, a new `metal/prefill_mamba.go`, after D-B01's DeltaNet form):
+- **The Mamba-2 mixer over M rows** (`encodePrefillMambaMixer`, a new `backend/metal/prefill_mamba.go`, after D-B01's DeltaNet form):
   the pre-norm into the pass's f16 norm scratch; in_proj as an int8 prefill GEMM (`gemm_w8f16_*`, which takes the int8 codes and
   per-row f32 scales the layer already holds; the W8 tiles compile for a Mamba resident too); then three row kernels over the M
   rows, `mamba_conv_seq` (a thread per channel, the window in registers), `mamba_ssm_seq` (a thread per head and channel, the state
@@ -2077,7 +2077,7 @@ and gates first).** What the pass lacks for Nemotron-H, read off `MissingResiden
   `nongated_act` per element), the down projection accumulating into the residual (mode 2). Admitted only where the down projection
   has no bias (Nemotron-H); a biased one (GPT-2) stays sequential, so the shared GEMM kernel is not touched.
 - **Admission:** `recurrentPrefillOK` admits a Mamba resident when `mambaPrefillOn` (a test switch, on) and dConv ≤ 8; the three
-  features leave the missing list as DeltaNet's does. The new kernels live in `metal/kernels/mamba_kernels_msl.go`.
+  features leave the missing list as DeltaNet's does. The new kernels live in `backend/metal/kernels/mamba_kernels_msl.go`.
 - **Class: fidelity-gated.** What leaves decode's arithmetic is what every batched layer changes: f16 activations into the
   projections and f16 projection outputs, where decode runs W8A8 with f32 outputs.
 
@@ -2196,7 +2196,7 @@ outside 2..8, hidden or inner width off a multiple of 32), each set alone on a b
 Logs: `~/goinfer-logs/ksd8-g2-scaled-2026-10-24.log`, `~/goinfer-logs/ksd8-g2-scaled-plant-2026-10-24.log`.
 
 **KS-D9 · Batched phase 2 for the generic paged MoE prefill.**
-- **Waste:** `metal/prefill_g4paged.go:resident.moeLayerMajorRows` runs experts per row and re-reads the shared expert for
+- **Waste:** `backend/metal/prefill_g4paged.go:resident.moeLayerMajorRows` runs experts per row and re-reads the shared expert for
   every prompt row (19.5 MB per layer on Qwen1.5-MoE).
 - **Change:** reuse `moe_batch_gemv`.
 - **Gain (est.):** ~1.2×.
@@ -2310,7 +2310,7 @@ token into one compute pass. Device setup requests no optional features. `dot4I8
 prefill GEMMs and int8 KV attention use it.
 
 **KS-E1 · int4 decode GEMV: `nib4` with `dot4I8Packed` (bit-identical).**
-- **Where:** `dot8` in `gpu/internal/kernels/gemv_w4a8.go:gemvW4A8ShaderWGSL`; the same in `moeExpertGEMVW4WGSL` and `gemmRowsW4A8ShaderWGSL`.
+- **Where:** `dot8` in `backend/webgpu/internal/kernels/gemv_w4a8.go:gemvW4A8ShaderWGSL`; the same in `moeExpertGEMVW4WGSL` and `gemmRowsW4A8ShaderWGSL`.
 - **Waste:** eight `(i32((ww >> k) & 0xFu) - 8) * a` terms per word, about 55 integer operations. It is recorded as ALU-bound
   at 250–280 GB/s against int8's ~360.
 - **Change:**
@@ -2323,7 +2323,7 @@ prefill GEMMs and int8 KV attention use it.
 - **Prior art:** reopens the "~0 gain" verdicts, which were read on the W8A8 GEMV and on time to first token.
 
 **KS-E2 · Widen six single-workgroup decode quantizers from 64 to 256 lanes (bit-identical).**
-- **Where:** `gpu/internal/kernels/decodefuse.go:SwigluQuantWGSL`, plus `gegluQuantWGSL`, `rmsnormQuantWGSL`, `quantizeShaderWGSL`,
+- **Where:** `backend/webgpu/internal/kernels/decodefuse.go:SwigluQuantWGSL`, plus `gegluQuantWGSL`, `rmsnormQuantWGSL`, `quantizeShaderWGSL`,
   `relu2QuantWGSL` and `gptossGluQuantWGSL`, each dispatched (1,1).
 - **Waste:** `swigluQuant` measures 30.3 µs for 143 KB.
 - **Change:** 256 lanes with the same per-element expressions. f32 max is exact in any order, and the norm's sum stays on
@@ -2448,7 +2448,7 @@ wide/narrow 0.8810, 10 of 10 pairs faster**. The four guarded A/B readings: 0.88
 `~/goinfer-logs/kse2-g2-fixedguard-2026-10-24.log`.
 
 **KS-E3 · Encode token t+1 while the GPU runs token t (bit-identical).**
-- **Where:** `gpu/internal/kernels/decoderunner.go:DecodeRunner.Run`.
+- **Where:** `backend/webgpu/internal/kernels/decoderunner.go:DecodeRunner.Run`.
 - **Waste:** recording starts only after the previous token's Poll, so about 0.62 ms of CPU encode is exposed per token.
 - **Change:** record after the submit. Drop the pending buffer on `SetAdapter`, `UseKVSlot` or a mode switch.
 - **Gain (est.):** ~0.6 ms (~8%). Metal's version measured +4.4%.
@@ -2545,7 +2545,7 @@ not in the CPU figure the guard reads; its source (another app's GPU work is one
 `~/goinfer-logs/kse3-g2-rerun3-2026-10-24.log`.
 
 **E3-G2 with a GPU-contention term, registered 2026-10-24 (16:50) before the run, on Francis's choice (c) of the three put to him
-(revert, keep, or re-run with a GPU-contention check).** `otherGPUWindow` (`gpu/gpuothers_test.go`) reads, at both ends of each
+(revert, keep, or re-run with a GPU-contention check).** `otherGPUWindow` (`backend/webgpu/gpuothers_test.go`) reads, at both ends of each
 arm's timed decode, the GPU time every other process has accumulated: on macOS the IORegistry's `AGXDeviceUserClient` entries,
 `AppUsage` `accumulatedGPUTime` in nanoseconds, the figure Activity Monitor's GPU column reads. **An arm is void if other
 processes' GPU time exceeds 2% of its wall time**: the size of the effect under test, so contention of that size could produce
@@ -2662,7 +2662,7 @@ instrument check (`TestOtherGPUWindow_seesAnotherProcess`) also no longer fails 
 window: it requires only the child's own clients to stay listed. E3-G2's own rule, voiding an arm with any vanished client, is
 unchanged. The 00:44 reading stands: its log shows every client parsed (other processes 0.00–0.71%) and none vanished.
 
-**KS-E4 · int4 prefill GEMM (`gpu/internal/kernels/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
+**KS-E4 · int4 prefill GEMM (`backend/webgpu/internal/kernels/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
   barriers per 128 `dot4`, plus 16 int-to-float conversions per group per thread.
 - **Change:** two groups per barrier pair, and the exact magic-number conversion.
@@ -2670,32 +2670,32 @@ unchanged. The 00:44 reading stands: its log shows every client parsed (other pr
 - **Size:** M.
 
 **KS-E5 · Decode attention at depth.**
-- **Where:** `gpu/internal/kernels/attention.go:attnKeysShaderWGSL`.
+- **Where:** `backend/webgpu/internal/kernels/attention.go:attnKeysShaderWGSL`.
 - **Waste:** only nH workgroups, with a serial V-sum. 1.14 µs per position of context on the 1.5B, against CUDA's 0.924 and
   Ollama's 0.168.
 - **Change:** (a) a bit-identical V-load unroll; (b) split-KV, fidelity-gated, like CUDA's parked V-sum split.
 - **Gain (est.):** (b) the 1.5B at 16k 26.1 → 12.4 ms per token.
 
 **KS-E6 · Prefill attention with several rows per workgroup.**
-- **Where:** `gpu/internal/kernels/prefillrunner.go:attnKeysBatchedShaderWGSL`.
+- **Where:** `backend/webgpu/internal/kernels/prefillrunner.go:attnKeysBatchedShaderWGSL`.
 - **Change:** each K/V load serves R rows. This needs the workgroup storage limit raised (KS-E9).
 - **Gain (est.):** 22–30% at 4,096 rows.
 - **Class:** bit-identical. **Size:** L.
 
 **KS-E7 · A KV ring for sliding-window layers (bit-identical).**
-- **Where:** `gpu/residency.go:webgpuBackend.BuildResident` allocates every layer at the full context.
+- **Where:** `backend/webgpu/residency.go:webgpuBackend.BuildResident` allocates every layer at the full context.
 - **Gain:** per slot at 16,384 positions: Gemma 3 4B 4.25 → 0.97 GiB, Mistral-7B v0.1 4.0 → 1.13 GiB.
 - **Size:** M.
-- **Prior art:** precedent in `cuda/kvwindow.go`.
+- **Prior art:** precedent in `backend/cuda/kvwindow.go`.
 
 **KS-E8 · LoRA: the P-10 and P-11 fixes CUDA and Metal got (bit-identical).**
-- **Waste:** `loraDeltaDownWGSL` runs on a (1,1) grid (`gpu/internal/kernels/lora_resident.go:DecodeRunner.rebuildSteps`), and every bind
+- **Waste:** `loraDeltaDownWGSL` runs on a (1,1) grid (`backend/webgpu/internal/kernels/lora_resident.go:DecodeRunner.rebuildSteps`), and every bind
   re-uploads A and B.
 - **Gain:** on CUDA these fixes took adapter overhead from 122% to 42% of a token.
 - **Size:** S.
 
 **KS-E9 · Request the features the adapter offers.**
-- **Where:** `gpu/internal/kernels/gpu.go:New`.
+- **Where:** `backend/webgpu/internal/kernels/gpu.go:New`.
 - **Change:** request timestamp queries (per-pass GPU time for every item here), subgroups where exposed, and a larger
   workgroup storage limit.
 - **Size:** S. Mainly an enabler.
@@ -2704,7 +2704,7 @@ unchanged. The 00:44 reading stands: its log shows every client parsed (other pr
 - **Gain (est.):** 84 fewer dispatches, ~0.15 ms (~2%).
 - **Class:** bit-identical without an adapter.
 
-**KS-E11 · MLA decode attention (`gpu/internal/kernels/mla.go:mlaAttnWGSL`).**
+**KS-E11 · MLA decode attention (`backend/webgpu/internal/kernels/mla.go:mlaAttnWGSL`).**
 - **Waste:** about 9 barriers per key.
 - **Change:** port G36's key split.
 - **Class:** fidelity-gated. **Size:** M.
@@ -2887,11 +2887,11 @@ unchanged. The 00:44 reading stands: its log shows every client parsed (other pr
 ## 11. Memory the kernels need, all backends (KS-H)
 
 **KS-H1 · Metal: block the exact-attention and E-model prompts like the plain pass (bit-identical at head dim ≤256).**
-- **Where:** `metal/backend.go:metalResident.PrefillBlockRows` returns 0 for `prefillExactAttn()` and `emodelLayerMajor()`,
+- **Where:** `backend/metal/backend.go:metalResident.PrefillBlockRows` returns 0 for `prefillExactAttn()` and `emodelLayerMajor()`,
   so those prompts embed and prefill in one pass. Admission then prices them with the CPU formula
   (`decoder/prefill_budget.go:prefillScratchBytes`).
 - **Why the exclusion is stale:** it rests on the exact kernel declining past 4,096 keys. The tiled twin removed that decline.
-- **Row scratch per row** (`metal/prefill.go:resident.prefillScratchBytes`): Qwen3.5-9B 254,468 B, E2B 134,660, Gemma-3-4B
+- **Row scratch per row** (`backend/metal/prefill.go:resident.prefillScratchBytes`): Qwen3.5-9B 254,468 B, E2B 134,660, Gemma-3-4B
   83,972, gemma3-1b 51,204.
 - **What it costs:**
   - Qwen3.5-9B at 20,189 tokens: 4.78 GiB of transient scratch, priced at 2.10 GiB.
@@ -2920,7 +2920,7 @@ finding holds. `PrefillBlockRows` still returns 0 for `prefillExactAttn()` and `
 each pass's own end (`exactAttnTile(startPos+M)`), and such a resident is still priced by the CPU formula.
 
 **The build.**
-- `metal/backend.go:metalResident.PrefillBlockRows` stops excluding exact-attention models and Gemma 4 E-models whose widest
+- `backend/metal/backend.go:metalResident.PrefillBlockRows` stops excluding exact-attention models and Gemma 4 E-models whose widest
   exact-attention head dim is at most 256. There the exact and tiled kernels are bit-identical, so a block may take either.
 - The decoder then splits their prompts in blocks, and admission prices one pass (`residentPrefillScratch`).
 - A model whose exact-attention head dim is 512 (Gemma 4's global layers) stays unblocked. Blocking it needs the tile choice
@@ -2958,9 +2958,9 @@ no bypass. Qwen3.5-9B's Metal `.giw`, one cold 20,443-token prompt per fresh ser
 Logs: `~/goinfer-logs/kh1-g5-day-2026-10-24-0856/`.
 
 **KS-H2 · CUDA: suballocate weights, KV pools and expert slots from arenas (bit-identical).**
-- **Where:** one `cuMemAlloc` per weight buffer (`cuda/resident.go:cudaResident.upW`, `cuda/pack_stream.go`), per layer's
-  K and V pool (`cuda/kvpool.go:cudaResident.kvAllocPools`), and four per MoE layer
-  (`cuda/resident.go:cudaResident.allocSlots`). Each rounds up to `cuda/resident.go:allocQuantumBytes`, 2 MiB.
+- **Where:** one `cuMemAlloc` per weight buffer (`backend/cuda/resident.go:cudaResident.upW`, `backend/cuda/pack_stream.go`), per layer's
+  K and V pool (`backend/cuda/kvpool.go:cudaResident.kvAllocPools`), and four per MoE layer
+  (`backend/cuda/resident.go:cudaResident.allocSlots`). Each rounds up to `backend/cuda/resident.go:allocQuantumBytes`, 2 MiB.
 - **Waste:**
   - The weights' rounding is measured (G-M1): 139 / 122 / 406 / 257 / 136 / 142 MiB on the 0.5B / 1.5B / 7B /
     Gemma-3-4B / Qwen2.5-VL-3B / E2B. It is priced, not removed.
@@ -3004,7 +3004,7 @@ the exclusive timing lock, with the desktop compositor's context (about 16 MiB) 
   VRAM just before the first pool buffer and just after the last, against the pool bytes requested (`kvAllocSeenForTest`) and
   the same requests rounded. Expectation from the survey: about 135 MiB of rounding not in the price.
 - **H3-R1, H3-R2, `TestKernelLocalMemoryCensus` and `TestMoERouteFirstLaunchReservation` as they stand.** `moe_route` and
-  `route_gptoss` still keep their per-thread arrays (`cuda/moe.cu:moe_route`'s `score[MOE_MAX_E]`), so these are the readings
+  `route_gptoss` still keep their per-thread arrays (`backend/cuda/moe.cu:moe_route`'s `score[MOE_MAX_E]`), so these are the readings
   before the move, the baseline the move's own gate compares against; the move itself is KS-H3's code change, not this one.
   Expectation: `moe_route` 4,416 B per thread; 138,412,032 B retained after its first launch.
 - **Void and stopping rule:** a reading taken while another process holds a CUDA context beyond the compositor is void and re-run;
@@ -3016,7 +3016,7 @@ the exclusive timing lock, with the desktop compositor's context (about 16 MiB) 
   over after its harness released the lock (since fixed on that harness's branch). H3-R1 and H3-R2 valid: the card held only the
   compositor by then.
 - **Attempt 2 (14:32, `readings-2-h2.log`), a deviation:** both builds came up on the f32 cache. The cuda test suite's default
-  turns `--kv auto`'s f16 off (`cuda/kv16_default_test.go`), so the harness did not resolve the KV as serve does. That is right for
+  turns `--kv auto`'s f16 off (`backend/cuda/kv16_default_test.go`), so the harness did not resolve the KV as serve does. That is right for
   H2-R1's weight stage, which does not depend on the KV, and wrong for the registration's `auto`. Qwen3-8B at 16,384 was refused on
   f32 (4.83 GB of KV against 2.98 GB free).
 - **Attempt 3 (14:40, `readings-3-h2-served.log`):** `KSH2_SERVED=1` turns `kvF16Auto` on for the build, so both builds resolve f16 as
@@ -3049,7 +3049,7 @@ the exclusive timing lock, with the desktop compositor's context (about 16 MiB) 
 - **Handed to nobara-ks-cuda for KS-H6.** No guard changed here.
 
 **KS-H4 · Metal towers keep their largest image's scratch until unload (bit-identical).**
-- **Where:** `metal/grid_vision.go:gridVAccel.grow` only grows; the same holds in the other tower accelerators and aikit's
+- **Where:** `backend/metal/grid_vision.go:gridVAccel.grow` only grows; the same holds in the other tower accelerators and aikit's
   `qwenmetal` / `visionmetal`.
 - **Waste:** MEM2-G4: Qwen3-VL-2B holds 2,622.5 MiB after a 4K forward until `Close`.
 - **Change:** release above a ceiling after the forward, or MEM2's optional patch ceiling.
@@ -3074,10 +3074,10 @@ red. Stopping rule: one pass each. Cost: seconds; H4-G2 about 2 minutes; H4-G3 a
 
 **KS-H5 · Buffers only speculative verify reads, allocated at build (bit-identical).**
 - **Waste:**
-  - CUDA's `faBuf` (`cuda/flash_decode.go:cudaResident.loadFlashDecode`, sized by `cuda/flash_decode.go:faMaxRows` = 16
+  - CUDA's `faBuf` (`backend/cuda/flash_decode.go:cudaResident.loadFlashDecode`, sized by `backend/cuda/flash_decode.go:faMaxRows` = 16
     rows): 31 MiB unused at M=1 on Qwen3-8B (≈220 positions), 27 MiB on the 7B.
   - phi3-mini: 26.2 MiB that can never be used (head dim 96 is never eligible).
-  - Metal's `metal/model.go:resident.ensureBatchCap(16)` at build: 9.3–16 MiB. A growth strands the old pair until `Close`.
+  - Metal's `backend/metal/model.go:resident.ensureBatchCap(16)` at build: 9.3–16 MiB. A growth strands the old pair until `Close`.
 - **Change:** allocate the multi-row part on first verify, or when speculation or a drafter is on; skip it when no layer is
   eligible; release on growth.
 - **Size:** S.

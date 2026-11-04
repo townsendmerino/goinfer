@@ -73,8 +73,8 @@ passes. aikit's Metal Qwen2.5-VL tower was correct but no faster than the CPU. T
 towers get rebuilt on goinfer's own base.
 
 S4 says to wire aikit's `gpu/qwencuda` on CUDA. G-S4q, registered in S4, decides whether that still holds.
-- Port the Qwen2.5-VL half of the Mac's `metal/s3_towers_test.go` (on `s2-towers`) to `cuda/`. Use the same images,
-  bars and grading helper. Copy `gvWorst` from `metal/grid_vision_test.go` or share it.
+- Port the Qwen2.5-VL half of the Mac's `backend/metal/s3_towers_test.go` (on `s2-towers`) to `cuda/`. Use the same images,
+  bars and grading helper. Copy `gvWorst` from `backend/metal/grid_vision_test.go` or share it.
 - It needs a blank import of `github.com/townsendmerino/aikit/gpu/qwencuda` and a `require` for it in `cuda/go.mod`, as
   the Mac's commit `29dece6c` did for Metal.
 - Run it under `GOINFER_HEAVY_TESTS=1` with `-v`.
@@ -82,13 +82,13 @@ S4 says to wire aikit's `gpu/qwencuda` on CUDA. G-S4q, registered in S4, decides
   - **correct and faster:** wire `qwencuda`, as S4 says;
   - **wrong, or not faster:** Qwen2.5-VL's CUDA tower is built on the CUDA base in item 3, as Metal's will be.
 - If aikit's `gpu/visioncuda` (SigLIP) can be attached the same way, read it at real size too. It is unused here, because
-  goinfer's own `cuda/vision_encoder.go` is Gemma 3's CUDA tower, so this is information for the aikit defect report,
+  goinfer's own `backend/cuda/vision_encoder.go` is Gemma 3's CUDA tower, so this is information for the aikit defect report,
   not a gate.
 
 ## 3. The CUDA towers: Gemma 4 first (the base), then Qwen3.5+ and GLM-OCR (S4 + S2's CUDA twins; size L)
 
-CUDA has no general tower base. Metal's is `metal/gemma4_vision.go`, its `eg2Ops`: f32 GEMM, RMSNorm, per-head norm,
-rotate-half RoPE, and attention built from matmuls in 256-row blocks, never T². S2 built `metal/grid_vision.go` on top of
+CUDA has no general tower base. Metal's is `backend/metal/gemma4_vision.go`, its `eg2Ops`: f32 GEMM, RMSNorm, per-head norm,
+rotate-half RoPE, and attention built from matmuls in 256-row blocks, never T². S2 built `backend/metal/grid_vision.go` on top of
 it for Qwen3.5+ and GLM-OCR, adding:
 - an attention scale;
 - LayerNorm with bias, biased GEMM epilogues and GELU (tanh and erf) from aikit `gpu.ViT`;
@@ -97,16 +97,16 @@ it for Qwen3.5+ and GLM-OCR, adding:
 
 On CUDA:
 1. **Gate 0, a desk map, recorded in S4 before any CUDA tower code.**
-   - What CUDA already has: `cuda/vision_encoder.go` and `attn_fused_vit.cu` (goinfer's SigLIP tower), and aikit's
-     `gpu/cuda_vit.go` ops.
-   - What carries over from `metal/gemma4_vision.go` and `metal/grid_vision.go`.
+   - What CUDA already has: `backend/cuda/vision_encoder.go` and `attn_fused_vit.cu` (goinfer's SigLIP tower), and aikit's
+     `backend/webgpu/cuda_vit.go` ops.
+   - What carries over from `backend/metal/gemma4_vision.go` and `backend/metal/grid_vision.go`.
    - What is new.
    - Any CUDA-specific planted defects to add to G-S2c's list.
 2. **The Gemma 4 tower on CUDA**, registered through `multimodal.RegisterGemma4Tower` (already backend-neutral). Its
-   gates are Metal's Gemma 4 tower gates (`metal/gemma4_vision_test.go`), plus a served Gemma 4 image turn, tower on
+   gates are Metal's Gemma 4 tower gates (`backend/metal/gemma4_vision_test.go`), plus a served Gemma 4 image turn, tower on
    CUDA against `-vision-device cpu`, as in G-S2d. That turn runs on the E2B, which CUDA now decodes resident.
 3. **Qwen3.5+ and GLM-OCR on CUDA**, through `multimodal.RegisterQwen3Tower` / `RegisterGlmOcrTower`, mirroring
-   `metal/grid_vision.go`. Gates: G-S2b, G-S2c and G-S2d unchanged, on CUDA.
+   `backend/metal/grid_vision.go`. Gates: G-S2b, G-S2c and G-S2d unchanged, on CUDA.
    - The tiny GLM tower is `testdata/glm-ocr-vision-tiny` (on the branch).
    - The real ones are `~/models/qwen3.5-0.8b` and `~/models/glm-ocr`, both already here.
    - Randomise the norms through the export's aliasing slices before comparing: the tiny towers' norms are all ones,

@@ -33,12 +33,12 @@ lead token. Records: `step1/`.
 ## Read from the code before step 2 (main 784e7c82)
 
 - **The kernel each layer takes:** the batched pass takes the fused (flash) attention kernel only for a head dim that is a
-  multiple of 8 and at most 128 (`metal/prefill.go:resident.prefillAttnKernels`, `metal/prefill.go:resident.prefillExactAttn`).
+  multiple of 8 and at most 128 (`backend/metal/prefill.go:resident.prefillAttnKernels`, `backend/metal/prefill.go:resident.prefillExactAttn`).
   Gemma 4's layer head dims are above that, so E2B's attention layers run the exact kernel, `attention_prefill`.
 - **What the exact kernel does:** it keeps one score per key in threadgroup memory, `sc[4096]`, so it holds at most 4,096
-  keys (`metal/prefill.go:prefillExactAttnMaxKeys`). It does not write a score matrix to device memory.
-- **What happens past 4,096 keys:** `metal/backend.go:metalResident.batchedPrefill` declines the prompt ("the exact prefill
-  attention kernel holds 4096"). The E-model branch of `metal/backend.go:metalResident.PrefillLast` drops that error and
+  keys (`backend/metal/prefill.go:prefillExactAttnMaxKeys`). It does not write a score matrix to device memory.
+- **What happens past 4,096 keys:** `backend/metal/backend.go:metalResident.batchedPrefill` declines the prompt ("the exact prefill
+  attention kernel holds 4096"). The E-model branch of `backend/metal/backend.go:metalResident.PrefillLast` drops that error and
   runs the layer-major pass on decode's kernels (bit-identical to sequential). Nothing logs it: the banner's prefill path
   line does not mention the bound.
 - **Prediction:** the knee is at 4,097 keys, a fall from the batched pass to the layer-major one, rather than memory
@@ -81,9 +81,9 @@ Run as registered (`run-p28b.py`, the pinned `serve-metal` at `784e7c82`, `-ctx 
   4,096 has the only compressor activity, and it runs at the batched pass's rate.
 - **The knee is past 4,096 keys,** at the layer-major pass's rate: 37.5 and 34.3 tok/s, about 4× under the batched
   pass's 143.5. That is what the code predicts.
-  - E2B's head dims are above the fused kernel's 128 (`metal/prefill.go:resident.prefillAttnKernels`), so the batched
+  - E2B's head dims are above the fused kernel's 128 (`backend/metal/prefill.go:resident.prefillAttnKernels`), so the batched
     pass runs the exact `attention_prefill` kernel.
-  - That kernel holds at most 4,096 scores (`metal/prefill.go:prefillExactAttnMaxKeys`), so `PrefillLast` drops past it to
+  - That kernel holds at most 4,096 scores (`backend/metal/prefill.go:prefillExactAttnMaxKeys`), so `PrefillLast` drops past it to
     the layer-major pass.
 - **Nothing logged the change in this build.** All three servers print the same banner line (`prefill path: batched
   f16-MMA from 16 prompt tokens ...`), and the long requests' `-log-requests` lines carry no `prefill_fallback` field. The

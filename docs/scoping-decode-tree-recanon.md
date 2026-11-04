@@ -16,7 +16,7 @@ they do now.
 The idea arrived as "then split-KV can be default wherever it wins with no fidelity dimension to the
 gate at all." **Split-KV has no fidelity dimension today.** It is bit-identical to `attn_batched`
 by construction — that constraint is the whole of Campaign A's design, it is stated four times in
-`cuda/decode_splitkv.cu`'s own header, and it is gated by `TestSplitKV_bitIdentical` plus a second
+`backend/cuda/decode_splitkv.cu`'s own header, and it is gated by `TestSplitKV_bitIdentical` plus a second
 gate on the hd=256/windowed path. The split-KV gate is *already* a pure performance decision.
 
 So re-canonicalisation is **not a standalone improvement**. Its entire value is as a **prerequisite

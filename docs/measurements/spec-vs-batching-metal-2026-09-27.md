@@ -116,7 +116,7 @@ The spec cells never did.
 
 **The fix.** `prepare` no longer divides the prefill-memory margin for a request that prefills on a GPU resident.
 - CPU workers (MC3c) keep the division, because they prefill at the same time.
-- On a resident, prefill passes run one at a time, and each pass's scratch is released when it ends (`metal/prefill.go`,
+- On a resident, prefill passes run one at a time, and each pass's scratch is released when it ends (`backend/metal/prefill.go`,
   fix C5, after the command buffer completes). So nothing accumulates across them. The margin is live memory, which
   already excludes what the other generations hold.
 - `TestPrepare_prefillShare` (`internal/serveapp`, `goinfer_testhooks`) drives `prepare` with 3 generations ahead at
@@ -208,7 +208,7 @@ at its exit, and each finding below is tested.
   - **1. The existing CUDA gates, with the fix in:** `TestGenerateBlockSpec_production`, `TestBlockSpecStream`,
     `TestFlashDecodeBlockSpecLane`, `TestFlashDecodeSpeculativeScope`, `TestFlashDecodeTwoModelSpecLane` — **5/5
     pass**. No regression in the trailing forward (`PrefillLastNArgmax` at M=1, the one-row capture fuse).
-  - **2. New `cuda/spec_twoturn_test.go`** (`TestBlockSpec_twoTurnsMatchPlain`,
+  - **2. New `backend/cuda/spec_twoturn_test.go`** (`TestBlockSpec_twoTurnsMatchPlain`,
     `TestNgramSpec_twoTurnsMatchPlain`), qwen3-4b int4 + the real DFlash drafter, N ∈ {1, 17, 48}, run twice:
     - **With the fix (HEAD): 14/14 pass.** Every arm — n-gram, and the block drafter continued through both plain
       `Generate` and the drafter's own `GenerateStream` again — matches plain decode exactly: turn-1 losslessness,

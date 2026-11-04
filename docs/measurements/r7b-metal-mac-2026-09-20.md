@@ -30,7 +30,7 @@ This session's own current `main` (from earlier, unrelated work) was 3 commits a
 `origin/main`), not on the locally-checked-out `main`, to avoid mixing this session's own unrelated
 in-flight work (stashed) with R7b's code.
 
-## 1. `metal/optfwd_test.go` / `metal/optfwd_bench_test.go` — checked first, as asked
+## 1. `backend/metal/optfwd_test.go` / `backend/metal/optfwd_bench_test.go` — checked first, as asked
 
 Neither compares against a fixed token list. Both compare two **live** runs of the same code
 (`TestOptFwd_bitIdenticalStream`: optFwd on vs off; `TestOptFwd_lowTempHighHitRate`: low vs high
@@ -109,11 +109,11 @@ which was true until §4 below and is updated there. Nothing else needs flagging
 
 ### What was built
 
-- **`metal/gumbel.go`** — `gumbel_stage1` / `gumbel_stage2`, a direct port of `cuda/gumbel.cu` /
-  `gpu/gumbel.go` (WGSL) checked against the actual **Metal Shading Language Specification**
+- **`backend/metal/gumbel.go`** — `gumbel_stage1` / `gumbel_stage2`, a direct port of `backend/cuda/gumbel.cu` /
+  `backend/webgpu/gumbel.go` (WGSL) checked against the actual **Metal Shading Language Specification**
   (2026-06-04 rev, fetched and grepped directly — not assumed to match WGSL's constraints):
   - **MSL has no `log1p`** — absent from Table 8.1/8.2's complete function lists. The small-`w`
-    noise branch uses the same 12-term Taylor polynomial `gpu/gumbel.go`'s WGSL kernel already
+    noise branch uses the same 12-term Taylor polynomial `backend/webgpu/gumbel.go`'s WGSL kernel already
     needed, for the same reason: `1.0 - w` in f32 rounds exactly to `1.0` below `w`'s representable
     ULP spacing near 1 (~6e-8), destroying the input regardless of which `log` variant runs
     afterward — a cancellation problem the polynomial avoids by never forming `1 - w`.
@@ -122,7 +122,7 @@ which was true until §4 below and is updated there. Nothing else needs flagging
     16-bit-limb reconstruction, and the same computation `decoder.philox4x32` does in Go.
   - **`precise::log`** is used for the `w >= 0.25` branch and the `h >= 2^31` branch: Table 8.1
     (fast math off, what `precise::` selects) gives `log <= 4 ulp` for any `x > 0`; Table 8.2 (fast
-    math, the library's default — `metal/model.go`'s `preciseMathCompile` defaults false) gives only
+    math, the library's default — `backend/metal/model.go`'s `preciseMathCompile` defaults false) gives only
     "absolute error <= 2^-21 near x=1, else <= 3 ulp" — verified against the spec's actual tables,
     not assumed to match WGSL's own (weaker, WGSL-specific) guarantee.
   - **No FMA in the key.** `#pragma METAL fp contract(off)` brackets both kernels. The spec states
@@ -131,7 +131,7 @@ which was true until §4 below and is updated there. Nothing else needs flagging
     `decoder.gumbelKey`'s explicit `float32(...)` casts do on the host) is documented as
     **insufficient** on its own under `fast`. The pragma is scoped to just these two kernels and
     restored to `fast` immediately after, so no other kernel sharing `allKernels` is affected.
-- **`metal/gumbel_sample.go`** — `(*resident).SampleAvailable`/`ForwardSample`/`GumbelForTest`.
+- **`backend/metal/gumbel_sample.go`** — `(*resident).SampleAvailable`/`ForwardSample`/`GumbelForTest`.
   `SampleAvailable` declines when a host-side final-logit softcap or non-identity logit scale is
   configured (the device row wouldn't be ranking what `decoder.gumbelDraw` actually scores — the
   same condition `gpu.residentDecoder.SampleAvailable` uses) or when the model is paged MoE
@@ -140,7 +140,7 @@ which was true until §4 below and is updated there. Nothing else needs flagging
   the SAME command buffer as the trunk + LM head with the two Gumbel dispatches (one `Begin`/`End`,
   not a second round trip) and reads the drawn id directly off unified memory — no download step,
   unlike CUDA (`gpu.Download`) or WebGPU (`MapAsync`).
-- **`metal/backend.go`** — `*metalResident.SampleAvailable`/`ForwardSample`, delegating to `.r`.
+- **`backend/metal/backend.go`** — `*metalResident.SampleAvailable`/`ForwardSample`, delegating to `.r`.
   **Necessary and easy to miss**: `decoder.Model.resident` holds a `*metalResident` wrapper around
   `*resident` via a *named* field (`r *resident`), not an embedded one, so Go does not promote
   `*resident`'s methods onto `*metalResident` — every other `decoder.ResidentForward` method on this
@@ -148,7 +148,7 @@ which was true until §4 below and is updated there. Nothing else needs flagging
   `ResidentSample` needed the same treatment. Missing this made the first end-to-end run pass
   **vacuously** (`DeviceSampled == 0` — see §"A real bug" below for the *second* thing this caught).
 
-### Gates (`metal/gumbel_test.go`, `metal/sampled_gumbel_identity_test.go`)
+### Gates (`backend/metal/gumbel_test.go`, `backend/metal/sampled_gumbel_identity_test.go`)
 
 | gate | result |
 |---|---|
@@ -199,7 +199,7 @@ full pipeline.
 
 ### Speed, internal harness (added in a follow-up pass, same day)
 
-`metal/sampled_gumbel_speed_test.go`: three arms (greedy T=0; host draw T=1.0 with
+`backend/metal/sampled_gumbel_speed_test.go`: three arms (greedy T=0; host draw T=1.0 with
 `GOINFER_NO_SAMPLE_FASTPATH=1`, the do-nothing arm; device draw T=1.0), one seed, one 125-token
 narrative-prose prompt, 200 generated tokens/round, 15 rounds + 1 discarded warm-up round, **arm
 order rotated every round** and ratios computed **per round then summarized** (never pooled means —

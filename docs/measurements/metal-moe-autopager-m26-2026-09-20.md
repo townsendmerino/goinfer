@@ -27,7 +27,7 @@ mechanism from the GPU-resident expert pager (`decoder.Options.MoECacheExperts`)
 record already showed producing a real, if slow, decode rate (~2 tok/s) rather than hanging. The
 open question R11(c) asks is whether the auto-sizer, when actually exercised (not hand-picked via
 `GOINFER_METAL_MOE_SLOTS`, which the existing `TestGemma4_26B_pagedRuns` test uses and which
-bypasses the auto-sizer entirely — see `metal/backend.go`'s `metalMoESlotsRequest`), is safe on
+bypasses the auto-sizer entirely — see `backend/metal/backend.go`'s `metalMoESlotsRequest`), is safe on
 this hardware.
 
 ## What ran
@@ -38,15 +38,15 @@ check would still be visible, and both were killed manually (`pkill -9 -f metal.
 the monitor showed sustained (not single-tick) swap growth — not left to run to Go's own 10-minute
 test timeout.
 
-**Run 1 — auto-sized (N=64).** New test, `metal/gemma4_26b_autopaged_test.go`
+**Run 1 — auto-sized (N=64).** New test, `backend/metal/gemma4_26b_autopaged_test.go`
 (`TestGemma4_26B_autoPagedRuns`, heavy-gated): `decoder.Load(giw, decoder.Options{Backend: "metal",
 Quant: "int4", MoECacheExperts: true})` — `MoECacheSlots` left at 0, the real auto-size path
-(`autoMoESlots` in `metal/backend.go`), not a hand-picked N. Checks `DecodePath()` reports
+(`autoMoESlots` in `backend/metal/backend.go`), not a hand-picked N. Checks `DecodePath()` reports
 `metal-resident` (not `-staged`/`cpu`) and `r.g4moe.paged` is true *before* touching anything else;
 bounded to 4 timed decode steps; an in-process RSS kill switch at 15,000 MB.
 
 **Run 2 — manually forced (N=32).** The existing, previously-shipped
-`TestGemma4_26B_pagedRuns` (`metal/gemma4_26b_paged_test.go`), which sets
+`TestGemma4_26B_pagedRuns` (`backend/metal/gemma4_26b_paged_test.go`), which sets
 `GOINFER_METAL_MOE_SLOTS=32` directly — bypassing the auto-sizer entirely, so this is a genuinely
 different, lower, hand-picked commitment (half of run 1's N), not a re-run of the same thing.
 Attempted after run 1's writeup, at the user's request, specifically to see whether a smaller
@@ -107,7 +107,7 @@ it explicitly before decoding is a real, working safeguard (it would have caught
 failure mode; it does nothing for either of these, because both are memory-budget problems
 *inside* the safe path, not a wrong-path selection).
 
-Run 1 alone would have pointed at `autoMoESlotsFor`'s budget check (`metal/backend.go`) specifically:
+Run 1 alone would have pointed at `autoMoESlotsFor`'s budget check (`backend/metal/backend.go`) specifically:
 it solves `needFixed + N·perSlot ≤ 0.7·RAM` against a **snapshot of available memory taken at one
 instant**, and this machine's free-memory reading is measured (that run) to swing by multiple GB
 within single-digit seconds under ordinary desktop load — the external monitor's own free-page

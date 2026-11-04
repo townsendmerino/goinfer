@@ -7,7 +7,7 @@ tests cannot see the root module's current code without it.
 ## Where this stands
 
 MC1 (multi-slot resident KV) shipped on WebGPU on 2026-09-27, graded on the MacBook through wgpu's Metal backend.
-- Code: `3926f927`, `gpu/kv_slots.go`.
+- Code: `3926f927`, `backend/webgpu/kv_slots.go`.
 - Record: `docs/measurements/concurrency-mc1-webgpu-2026-09-27.md`. At 4 clients it reads 2.805× the one-slot build,
   every gate passes, and every reply is identical.
 - Design: a slot is a whole `DecodeRunner`, because `newDecodeRunner` bakes every KV buffer into bind groups. Each
@@ -32,10 +32,10 @@ MC1 (multi-slot resident KV) shipped on WebGPU on 2026-09-27, graded on the MacB
 ## Read first
 
 - `docs/tasks/task-concurrency-2026-09.md`: "MC1 on WebGPU", and "MC1 on CUDA" for the context policy.
-- `gpu/kv_slots.go` in full, and the hooks in `gpu/residency.go` (`runnerFor`, `buildKVSlots`, `slotsBeforeContext`,
+- `backend/webgpu/kv_slots.go` in full, and the hooks in `backend/webgpu/residency.go` (`runnerFor`, `buildKVSlots`, `slotsBeforeContext`,
   `SetAdapter`, `release`).
-- `gpu/kv_slots_test.go`.
-- `cuda/resident.go` `ctxForSlots` / `resolveCtxCapFit`, the CUDA rule being mirrored.
+- `backend/webgpu/kv_slots_test.go`.
+- `backend/cuda/resident.go` `ctxForSlots` / `resolveCtxCapFit`, the CUDA rule being mirrored.
 
 ## 1. Identity on Vulkan (hard gate; a difference stops the job)
 
@@ -53,7 +53,7 @@ GOINFER_HEAVY_TESTS=1 GOINFER_WEBGPU_KVSLOTS_MODEL=$HOME/models/qwen2.5-coder-1.
 
 ## 2. The real clamp (the question this job exists for)
 
-Write a heavy test in `gpu/kv_slots_test.go`, e.g. `TestWebGPUKVSlots_realClamp`, selected by an env var naming a
+Write a heavy test in `backend/webgpu/kv_slots_test.go`, e.g. `TestWebGPUKVSlots_realClamp`, selected by an env var naming a
 checkpoint, and commit it. It should:
 1. Load the checkpoint on webgpu with `ResidentKVSlots: 4` at the default context (16384, f32 KV). Read `KVSlots()`
    and the clamp line from stderr.

@@ -74,7 +74,7 @@ worse for the candidate at any depth (see the logs). This is not a win that exis
 
 ## Production wiring
 
-The kernel form replaces the inner loop of production's `sa_rows_acc` (`metal/kernels.go`). Kernel names, dispatch
+The kernel form replaces the inner loop of production's `sa_rows_acc` (`backend/metal/kernels.go`). Kernel names, dispatch
 sites and threadgroup memory are unchanged. `buildResident`'s rule moves qkv from 2 to 4 rows per simdgroup
 (`gemvRowsFor`, which falls back where rows do not tile). Production now reads `gemvRows {qkv:4 o:2 gu:4 down:4}` on
 both models.

@@ -2,7 +2,7 @@
 
 Pre-registration: `attn-fused-tile-PREREGISTERED.md` (with its dated addendum, written after the phase-1 timing and before the 128-row run). RTX 2070 SUPER, driver 595.91.07, idle box, dense qwen2.5-coder-1.5B int4, `TestPrefillDecomp`
 (attention category; gemv category = control), arms interleaved as separate processes A,B,C / A,B repeated for 3 rounds, same binary, arm chosen by `GOINFER_CUDA_ATTN_FUSED_TILE`. Raw logs beside this file.
-Kernel: `cuda/attn_fused_bm.cu` (`template <HD, BM, BN>`; `attn_fused.cu`/PTX untouched; own PTX module).
+Kernel: `backend/cuda/attn_fused_bm.cu` (`template <HD, BM, BN>`; `attn_fused.cu`/PTX untouched; own PTX module).
 
 ## Result (attention ms, median of 3 rounds; every arm's round-to-round spread < 0.5%)
 

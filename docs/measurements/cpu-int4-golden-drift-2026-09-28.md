@@ -44,7 +44,7 @@ already has the right precedent for this exact situation (`oracleCosFloor`): int
   and passes at cosine 0.999459, exact argmax — goinfer's Qwen2.5-VL forward matches HF; the int4 CPU kernel path is
   simply noisier on this checkpoint than Gemma3's.
 
-**Fix:** `cpuInt4VsF32GoldenFloor = 0.98` (`cuda/realforward_test.go`), used by all four precondition checks in
+**Fix:** `cpuInt4VsF32GoldenFloor = 0.98` (`backend/cuda/realforward_test.go`), used by all four precondition checks in
 place of the literal `0.99`. Mutation-checked (raising it to 0.999 turns the check red again).
 
 **With the fix, all four tests reach their REAL assertion for the first time** — the `t.Fatalf` precondition had
@@ -71,7 +71,7 @@ transposition in the CUDA router launch) left the per-position cosine check unto
 tokens into free generation — exactly this failure's surface shape. So this needed direct verification, not
 pattern-matching.
 
-**Debug replay** (temporary instrumentation, `cuda/mla_resident_test.go`, removed before the final fix): raw top-2
+**Debug replay** (temporary instrumentation, `backend/cuda/mla_resident_test.go`, removed before the final fix): raw top-2
 logit margins at every generation step —
 
 | step | cpu top1/top2 gap | cuda top1/top2 gap |
@@ -87,7 +87,7 @@ noise) — an already-near-tied pick on a random-weight fixture, decided by back
 wrong computation. A real routing defect produces a confidently wrong pick, not a swap between each side's own
 top-2, which the fix's mutual-containment check below still catches.
 
-**Fix, `cuda/mla_resident_test.go`:**
+**Fix, `backend/cuda/mla_resident_test.go`:**
 - The generation check now walks ONE teacher-forced trajectory — both arms fed the same, CPU-chosen token at every
   step (matched observations, not two independently-diverging free-running arms; the same principle this repo's
   measurement discipline names for a peer comparison, applied here to a backend comparison). This also means a

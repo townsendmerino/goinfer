@@ -1,7 +1,7 @@
 # KV0 — prefill invariance on CUDA and WebGPU, and the continuation effect (2026-10-13)
 
 `docs/tasks/task-kv-architecture-2026-10.md` §5.6 and §6 KV0, item 3. Machine: nobara-pc (amd64, RTX 2070 SUPER 8 GB, CUDA and
-WebGPU/Vulkan). The tests are `cuda/kv0_invariance_test.go` (`cuda && goinfer_testhooks`) and `gpu/kv0_invariance_test.go`
+WebGPU/Vulkan). The tests are `backend/cuda/kv0_invariance_test.go` (`cuda && goinfer_testhooks`) and `backend/webgpu/kv0_invariance_test.go`
 (`gpu && goinfer_testhooks`). No product code changed.
 
 ## 1. Registration (written and committed before the first run)
@@ -35,7 +35,7 @@ cannot match the row an earlier arm left behind. Then it prefills, then reads ev
 differs from there on, and the last logits differ. If it does not, the comparison cannot see a difference and no arm's
 verdict counts.
 
-**CUDA class map (read from `cuda/prefill.go`, before measuring).** A pass of m rows starting at s runs the fast kernels
+**CUDA class map (read from `backend/cuda/prefill.go`, before measuring).** A pass of m rows starting at s runs the fast kernels
 (`attn_fused`, `gemm_w4a8_mma`) when all of these hold: the tail is an ordinary `PrefillLast` (or a non-final chunk of one);
 m ≥ 16 (`attnFusedMinRows`, `gemmMMAMinRows`); the prompt length the pass is judged on is ≥ 512 (`fastPrefillFloor`); the
 head dim is 64 or 128 for attention, and K % 32 == 0 for the GEMM; and the model is not a DeltaNet, E-model or DeepStack
@@ -58,7 +58,7 @@ Predictions that follow, registered:
 
 The tests assert predictions 1–7, so a class map that is wrong fails the run and is not recorded as a surprise.
 
-**WebGPU class map (read from `gpu/residency.go:residentDecoder.prefillBlocks` and `gpu/prefillrunner.go`).** The batched pass
+**WebGPU class map (read from `backend/webgpu/residency.go:residentDecoder.prefillBlocks` and `backend/webgpu/prefillrunner.go`).** The batched pass
 is built from per-row kernels (`attnBatchedShaderWGSL` takes each row's own causal limit; `ropeBatchedShaderWGSL` recovers
 row r's position as start + r) and is documented bit-equivalent to M sequential decode calls. Nothing reads the prompt's
 length. The one selector that reads the row count is `w4MultiFor` (the row-shaped int4 kernel up to `w4MultiMaxRows`, the
@@ -72,7 +72,7 @@ trials (50 different windows of the text): the K/V elements of the 32 decode row
 absolute difference and the rms difference relative to the rms value, the next-token logits' cosine (min, mean) and argmax
 agreement, and the logits that differ bit for bit. Two controls per trial: A' and C, the same two runs with the floor raised
 above the prompt so every pass is exact class. **Registered prediction: A' equals C exactly** (the exact class is documented
-bit-identical to decode: `cuda/prefill.go:cudaResident.prefillChunked`, `cuda/prefill.go:cudaResident.useAttnFused`), and A differs from B (decode is not the fast
+bit-identical to decode: `backend/cuda/prefill.go:cudaResident.prefillChunked`, `backend/cuda/prefill.go:cudaResident.useAttnFused`), and A differs from B (decode is not the fast
 class). No number is predicted for the size of A against B: it is what is being measured. The 1.5B's reading is the
 reference one; the tiny fixture's random weights make its argmax meaningless and it is reported as a plumbing check.
 
@@ -84,7 +84,7 @@ trial). Run with `-v`, `-timeout 30m`, a heartbeat line at least every 30 s, one
 
 ### 1a. Addendum, registered before the f16 runs
 
-After the first CUDA runs (below, §2.1), a read of `cuda/kvpolicy.go` and commit 60222412 found that **f16 KV is the CUDA
+After the first CUDA runs (below, §2.1), a read of `backend/cuda/kvpolicy.go` and commit 60222412 found that **f16 KV is the CUDA
 default** for llama, mistral, qwen2, qwen3 and phi3 since 2026-10-13 (`Options.KVPrecision` "" or "auto"), so `serve` runs the
 models of this study with f16 KV. The registered runs loaded with the test's own options and asserted f32 K/V rows, so they
 measured f32. This addendum adds the configuration `serve` ships.
@@ -195,7 +195,7 @@ random weights make its argmax meaningless; its line in `cuda-f32-f16.log` is a 
 
 ### 2.5 Amendment, 2026-10-13 (KV3): the 8-row tail of `chunk = 496` no longer happens
 
-The chunker (`cuda/prefill.go:cudaResident.prefillChunked`) now never ends a multi-pass prefill in a pass of fewer than 16 rows: it moves the
+The chunker (`backend/cuda/prefill.go:cudaResident.prefillChunked`) now never ends a multi-pass prefill in a pass of fewer than 16 rows: it moves the
 missing rows from the previous pass to the last. So the arm `chunk=496` (1,000 tokens = 496 + 496 + 8) now runs as 496 + 432 + 72 (first as 496 + 488 + 16; the pass before the last gives up 64 rows since the KV1 record's G2b, see `kv3-cuda-2026-10-13.md` §2.5), every pass
 fused, and is invariant; the non-invariant readings above (starts at position 992) are the behaviour before that change and stay as measured.
 The splits (`split@985` and the others) are two separate calls and are unchanged, which is why the 16-row condition is also asked of the

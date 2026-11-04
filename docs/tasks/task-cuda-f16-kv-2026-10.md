@@ -25,7 +25,7 @@ finding 1), and every attention kernel reads `const float* kc`. So this is a bui
 
 ## The gates (registered before any code runs; the criteria are the R6 flash-decode gate's, unchanged)
 
-Instrument: `cuda.TestFlashDecodeGateVsReference`'s shape (`cuda/flash_decode_gate_test.go`), arms `f32` (exact) and `f16` in one binary and
+Instrument: `cuda.TestFlashDecodeGateVsReference`'s shape (`backend/cuda/flash_decode_gate_test.go`), arms `f32` (exact) and `f16` in one binary and
 session, teacher-forced on the reference tokens, against the **already-built** CPU f32/f64 reference rows of held-out prompt set B
 (`~/goinfer-logs/prefill-ref-b`, D7-K8000 and S-K3900, ten prompts of 64 positions each; `testdata/prefill-gate-prose-b/`). Set B was scored once
 for the flash-decode lane; this candidate has no tunable parameter and was never scored on B, so B is still not a set this decision was fitted to,

@@ -11,8 +11,8 @@ class (a domain-excluded measured value silently replaced by the worst available
 
 nobara-pc, RTX 2070 SUPER (WebGPU via Vulkan), commit `1f2010ff` at measurement time. Models:
 qwen2.5-coder 0.5B and 1.5B instruct, from `~/models` on local NVMe. Probe:
-`gpu/theta_probe_test.go` (new — mirrors `decoder/theta_probe_test.go`,
-`cuda/theta_probe_test.go`, `metal/theta_probe_test.go`, same definition: `T(n)` = wall time of one
+`backend/webgpu/theta_probe_test.go` (new — mirrors `decoder/theta_probe_test.go`,
+`backend/cuda/theta_probe_test.go`, `backend/metal/theta_probe_test.go`, same definition: `T(n)` = wall time of one
 verify pass over `n` tokens at fixed depth; `Theta = (least-squares slope of T(n)) / T(1)`).
 
 ## Measured
@@ -29,7 +29,7 @@ Reproduced on a second run (0.5B @128: Theta 1.062) — consistent, tight range 
 8.11 → 12.20 → 16.32) — indistinguishable from a plain per-token loop, exactly the shape Metal's
 own probe found (1.006-1.048, linear to n=16) before Metal's fix.
 
-**This is despite `gpu/decoderunner.go`'s `runBatch` genuinely recording every row into ONE
+**This is despite `backend/webgpu/decoderunner.go`'s `runBatch` genuinely recording every row into ONE
 command buffer and ONE `Submit`/`Poll`** (checked directly, not inferred from Theta alone): the
 single-submit structure removes Go-side dispatch/sync overhead between rows, but each runner still
 issues its own full set of per-layer GPU dispatches — no fusion of compute across rows — so the
@@ -41,7 +41,7 @@ over an actual measurement.
 
 ## Wired
 
-`gpu.residentDecoder` now implements `decoder.VerifyPathReporter` (`gpu/residency.go`), returning
+`gpu.residentDecoder` now implements `decoder.VerifyPathReporter` (`backend/webgpu/residency.go`), returning
 `(false, ...)` unconditionally — no configuration measured a different shape, and there is no
 per-model branch in `ForwardN`/`runBatch` that would behave otherwise. This routes
 `decoder.verifyTheta()` to the existing `sequentialVerifyTheta = 1.02` constant (already shared
@@ -51,7 +51,7 @@ that shared constant represents.
 
 ## Confirmed with a real A/B, not asserted from the probe alone
 
-`gpu/theta_ab_test.go` (mirrors `metal/theta_ab_test.go`): three interleaved arms, real hardware,
+`backend/webgpu/theta_ab_test.go` (mirrors `backend/metal/theta_ab_test.go`): three interleaved arms, real hardware,
 qwen2.5-coder-0.5B, int8int8 (int4 is out of scope — M-09, `decoder/spec_verify_guard.go`, refuses
 ALL speculative decoding on a staged webgpu-int4 model outright; a correctness guard, not routed
 around), 256-token prompt from real repo source, 48 generated tokens, median of 3, do-nothing arm

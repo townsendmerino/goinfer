@@ -716,7 +716,7 @@ below R4's own 256 floor: `scripts/bench_peer_prefill.py --backend metal --model
 
 Both K=64 and K=128 clear the registered ≥2× ships band by a wide margin, and both pass the §3.2
 pooled fidelity gate (K=64 alone and K=64+128 pooled; see the record). K=64, the smaller
-candidate, is the new floor. `metal/backend.go`'s `metalFastPrefillFloor` moved from 256 to 64.
+candidate, is the new floor. `backend/metal/backend.go`'s `metalFastPrefillFloor` moved from 256 to 64.
 
 *2026-10-01 note (A-D01, `docs/audit-metal-2026-09-30.md`):* these rows predate R16's prefill GEMM (2026-09-25) and R19's
 prefill attention (2026-09-27), and none has been re-measured since. The floor's fidelity verdict stands; the ratios
@@ -795,7 +795,7 @@ already shipped).
 int8 both arms (`vision.LoadEncoder(dir, quant=true)` puts BOTH the CPU and resident paths on
 identical W8A8 weights — a matched-precision, same-session-interleaved comparison, not int8-vs-f32),
 1 discarded warm-up + 5 measured. RTX 2070 SUPER, driver `595.91.07`, Nobara 44. Harness: a
-throwaway timing driver (`cuda/zztiming_vision_test.go`, matching this session's own precedent —
+throwaway timing driver (`backend/cuda/zztiming_vision_test.go`, matching this session's own precedent —
 not committed).**
 
 | | median forward time | speedup |
@@ -804,9 +804,9 @@ not committed).**
 | resident CUDA (int8) | 26.1 s | **1.58×** |
 
 A real, positive, but modest win — **not** the ~9× WebGPU's own resident tower measures
-(`gpu/vision_encoder.go`'s own doc comment), because this v1 implementation deliberately keeps the
+(`backend/webgpu/vision_encoder.go`'s own doc comment), because this v1 implementation deliberately keeps the
 residual adds and the position-embedding add as HOST ROUND-TRIPS (download → CPU add → upload,
-`addInPlaceHost`, `cuda/vision_encoder.go`) rather than a device-side elementwise-add kernel —
+`addInPlaceHost`, `backend/cuda/vision_encoder.go`) rather than a device-side elementwise-add kernel —
 "correctness first," explicitly logged as the natural next optimization if profiling ever shows it
 matters, not attempted in this pass. 27 layers × 2 residual adds per layer × a full [4096,1152]
 round-trip each is real, uncounted overhead this number does NOT hide. The CPU-side absolute number
@@ -816,7 +816,7 @@ loads and kernel compiles since), and the CPU-vs-resident RATIO here is the vali
 (same-session interleaved, both arms under identical load), not the absolute CPU number against an
 earlier, differently-loaded baseline.
 
-**Real-checkpoint correctness gate** (`cuda/gemma3_vision_resident_real_test.go`,
+**Real-checkpoint correctness gate** (`backend/cuda/gemma3_vision_resident_real_test.go`,
 `TestGemma3VisionResidentReal_gate`): matched int8 precision both arms, cosine **0.910** on this
 run (measured range 0.91–0.96 depending on the input pixel pattern — logged, not cherry-picked).
 **Lower than this repo's usual ≥0.99 matched-precision bar, investigated rather than waved through**:
@@ -882,7 +882,7 @@ CPU text-prefill code path — only decode differs):
 
 **13.26× — larger than Qwen's 3.86×, consistent with Gemma 3 having no m-RoPE overhead on the
 resident decode path.** Same box/driver/harness as the Qwen measurement, goinfer `a630a2cc`+
-(includes the follow-up `cuda/gemma3_resident_real_test.go` gate this measurement's own harness
+(includes the follow-up `backend/cuda/gemma3_resident_real_test.go` gate this measurement's own harness
 reused the golden from). Real-checkpoint parity gate: cosine 0.998167, exact argmax, on a
 forced-trajectory decode step past the real image block — tighter than Qwen's 0.99, as expected
 with no m-RoPE noise in the comparison.
@@ -936,7 +936,7 @@ median above (31.3 s).
 
 **Not yet measured**: CUDA is the only backend measured (Metal has no `UploadKV`/resident image-turn
 decode at all — out of scope, see `docs/multimodal.md` **[corrected 2026-10-02: Metal has had a real `UploadKV` and `ForwardMRoPE` since 2026-09-17, so the bridge exists there; still never run on a Mac]**; WebGPU declines `gemma-3-4b-it` residency
-on this box for an unrelated reason, missing arch features — see `cuda/resident_reuse_vl_parity_test.go`'s
+on this box for an unrelated reason, missing arch features — see `backend/cuda/resident_reuse_vl_parity_test.go`'s
 own doc comment).
 
 #### Resident image-block PREFILL, finishing gap 0 — 2026-09-08
@@ -946,7 +946,7 @@ the resident GPU; P9(a) above made a *resent* image skip the tower and the CPU p
 reusing the resident KV. Neither touches a first-time image's own PREFILL — the P9(a) row above
 measured that cost in isolation at **8.215 s** (tower excluded) for this same 266-token Gemma-3 VL
 prompt, dwarfing everything gap-0/P9a already fixed on a cold turn. This closes that: a new resident
-CUDA kernel (`cuda/attn_img_prefill.cu`, `attn_img_batched`) runs the SAME bidirectional image-block
+CUDA kernel (`backend/cuda/attn_img_prefill.cu`, `attn_img_batched`) runs the SAME bidirectional image-block
 attention `decoder/kvcache.go`'s CPU reference (`attendHi`/`SetImageBlocks`) computes, so a cold
 turn's prefill runs on the resident GPU too — `decoder.ResidentImagePrefill`, CUDA only, v1 requires
 the whole prompt (image block included) to fit in one weight-stationary pass (confirmed against
@@ -966,13 +966,13 @@ instance and stayed within the true interleaved-pairing discipline. RTX 2070 SUP
 | old (CPU prefill + `UploadKV` bridge, gap 0's path) | 8.165 s | — |
 | new (resident image-prefill kernel) | 0.367 s | **22.27×** |
 
-**Real-checkpoint correctness gate** (`cuda/gemma3_img_prefill_resident_real_test.go`,
+**Real-checkpoint correctness gate** (`backend/cuda/gemma3_img_prefill_resident_real_test.go`,
 `TestGemma3ImgPrefillResidentReal_gate`): matched int4 precision both arms, forced-trajectory
 cosine on raw logits (same discipline as gap-0's own gate, avoiding the f32-vs-int4 quantization-noise
 trap) — resident image-prefill logits vs the CPU reference, cosine **0.997042**, exact argmax match
 (496 == 496); the same turn driven through the real `GenerateVL` entrypoint confirms the fast path
 actually engaged (`Generation.ImgPrefillResident == true`) and streams the identical first token.
-Kernel-level parity (`cuda/attn_img_batched_test.go`, synthetic Q/K/V, no real checkpoint needed):
+Kernel-level parity (`backend/cuda/attn_img_batched_test.go`, synthetic Q/K/V, no real checkpoint needed):
 bidirectional-block and outside-block masking pinned from both sides (mirrors
 `TestAttnBlockFull_nonCausal`'s boundary-equality proof), plus a dedicated poison-key test proving
 the kernel's sliding-window start stays DECOUPLED from the image-widened key count — a naive port of
@@ -999,14 +999,14 @@ rope kernel only knew a single row-sequential rotation angle — m-RoPE needs a 
 one (`decoder/rope.go`'s `applyMRoPE`), and — a real subtlety, not just a formatting change — even
 ORDINARY text rows after an image block need it too, since `mropePositions` compresses their
 position by the merged image grid rather than counting sequentially. Closed via a new resident
-kernel (`cuda/rope_mrope_prefill.cu`, `rope_kv_mrope_batched`) — `decoder.ResidentMRoPEPrefill`,
+kernel (`backend/cuda/rope_mrope_prefill.cu`, `rope_kv_mrope_batched`) — `decoder.ResidentMRoPEPrefill`,
 CUDA only, chunkable (no cross-row attention coupling, unlike Gemma-3's bidirectional block).
 
 **Measured: real checkpoint (`Qwen2.5-VL-3B-Instruct`), real image
 (`testdata/qwen25vl_real_golden.json.gz`'s fixture, 14 tokens, image run `[5,11)`), int4, PREFILL ONLY
 (vision tower excluded, computed once), 1 discarded warm-up + 5 measured, both arms on the SAME
 resident instance (each fully overwrites `[0,len(ids))`). RTX 2070 SUPER, driver `595.91.07`,
-Nobara 44. Harness: a throwaway timing driver (`cuda/zztmp_qwen_mrope_timing_test.go`, matching
+Nobara 44. Harness: a throwaway timing driver (`backend/cuda/zztmp_qwen_mrope_timing_test.go`, matching
 this session's own precedent — not committed).**
 
 | | median turn time | speedup |
@@ -1017,12 +1017,12 @@ this session's own precedent — not committed).**
 (This prompt is 14 tokens against Gemma-3's 266 above — the two speedups are not directly
 comparable in absolute terms, only each internally consistent against its own old/new pair.)
 
-**Real-checkpoint correctness gate** (`cuda/qwen25vl_mrope_prefill_resident_real_test.go`,
+**Real-checkpoint correctness gate** (`backend/cuda/qwen25vl_mrope_prefill_resident_real_test.go`,
 `TestQwen25VLMRoPEPrefillResidentReal_gate`): matched int4 precision both arms, forced-trajectory
 cosine on raw logits — resident m-RoPE prefill logits vs the CPU reference, cosine **0.993995**,
 exact argmax match (264 == 264); the same turn through the real `GenerateQwenVL` entrypoint
 confirms the fast path actually engaged (`Generation.ImgPrefillResident == true`) and streams the
-identical first token. Kernel-level parity (`cuda/rope_kv_mrope_batched_test.go`, synthetic
+identical first token. Kernel-level parity (`backend/cuda/rope_kv_mrope_batched_test.go`, synthetic
 Q/K/V/positions, no real checkpoint needed): the degenerate case (every row's (t,h,w) collapsed to
 one scalar) proven bit-identical to the existing scalar `rope_kv_batched` kernel regardless of how
 the frequency sections are split, plus an adversarial case with per-row triples that diverge from
@@ -1693,7 +1693,7 @@ construction. Forcing the split path at 128 costs 7–14% on three of the four g
 shallow cost the control could not show.
 
 **Mode `gate` — the shipped default ÷ off.** Not a re-anchor of anything; it asks whether the
-per-geometry table now in `cuda/resident.go` costs anything against not splitting at all. **~1.000
+per-geometry table now in `backend/cuda/resident.go` costs anything against not splitting at all. **~1.000
 is the pass condition here, not a null result.**
 
 | geometry | 128 | 256 | 512 | 1024 | 2048 | 3900 |
@@ -1898,10 +1898,10 @@ mean different things.
 **Provenance.** RTX 2070 SUPER, NVIDIA driver `595.91.07`, Nobara 44 · Ryzen 3700X ·
 goinfer `cd6895c2`, aikit `v1.31.0` · Qwen2.5-Coder-1.5B: `~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`
 and `~/models/qwen15-w4a8-int4.giw`, both on local NVMe · greedy (temperature 0) ·
-`gpu/matrix_bench_test.go` via `decoder.Generate`, so token counts come from the engine, not
+`backend/webgpu/matrix_bench_test.go` via `decoder.Generate`, so token counts come from the engine, not
 from counting SSE frames · warm (a discarded generation compiles the pipelines first) ·
 **two full runs, both reported** — no peer is involved, so these are goinfer-vs-goinfer only.
-**Every GPU-prefixed row is WebGPU specifically** (`gpu/matrix_bench_test.go`'s `row()` calls all
+**Every GPU-prefixed row is WebGPU specifically** (`backend/webgpu/matrix_bench_test.go`'s `row()` calls all
 pass `Backend: "webgpu"`) — labeled explicitly per R9 (docs/measurements/
 cold-user-2026-09-06-nobara-pc.md): cuda/metal have no staged path at all (their own
 `Backend.MatmulBT` is CPU-only and neither implements `QuantBackend`), so a bare "GPU" label
@@ -2411,7 +2411,7 @@ fit under the old 4096 default might not under 8192") — for the drafter case s
 expert cache is the same shape of companion allocation, just not the one that pairing was written
 about.
 
-**Fixed**: `resolveCtxCapFit` (`cuda/resident.go`) now treats `m.MoECacheExperts()` the same as
+**Fixed**: `resolveCtxCapFit` (`backend/cuda/resident.go`) now treats `m.MoECacheExperts()` the same as
 `m.FitDisabled()` — an unpinned MoE-cache-experts load keeps the historical 4096 default rather
 than growing into VRAM the expert cache needs, restoring the original commit's own stated invariant
 ("there is no configuration where turning this on makes an existing deployment worse") for the one

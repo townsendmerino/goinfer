@@ -13,7 +13,7 @@ exclusively, in a gap mac-tack5's C8 left (12:22:01–12:22:45). `run-ms.sh` ran
 **G-MS1 withdraws the claim that b6397eee5 exposed the test.** By the registered rule, a pass at b6397eee5 means the claim is
 withdrawn. The unchanged test still fails at 2ca872273 (`../sb2-webgpu-slots-2026-10-30/pass1-realclamp-1.5b-on-main-2ca872273.log`),
 so the change that exposed it is later than b6397eee5. Twenty-one commits in b6397eee5..2ca872273 touch `decoder/resident_reuse.go`,
-`decoder/kvmgr` or `gpu/kv_slots.go`. One candidate, not tested, is e59788c2d (2026-10-21: "an own rollback continues in place, on
+`decoder/kvmgr` or `backend/webgpu/kv_slots.go`. One candidate, not tested, is e59788c2d (2026-10-21: "an own rollback continues in place, on
 the GPU and the CPU"). Naming it would take a bisect over that range, about 5 steps.
 
 **G-MS2 is what stands.** The production code, driven as serving drives it, gives every granted slot bit-identical output. The

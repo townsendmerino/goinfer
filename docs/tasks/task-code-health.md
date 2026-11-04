@@ -8,7 +8,7 @@
 > the 20-item tool output as a work list — §4 explains why most of it is not one.
 >
 > **Re-verified 2026-09-13 (doc review): still nothing started, §3 items 1-4 all still open.**
-> `gpu/moe_w4a8.go` is still untested (§3.1 still the one clear gap, and has grown 175→274 lines
+> `backend/webgpu/moe_w4a8.go` is still untested (§3.1 still the one clear gap, and has grown 175→274 lines
 > since scoping — see the note there). `decoder/gguf.go`, `decoder/model.go` and
 > `decoder/serialize.go` have all been heavily edited since (net +312 / +675 / +494 lines,
 > mostly the `.giw` kind-5 int4-layout work and new families) — the §2 CCN/NLOC table and the
@@ -51,8 +51,8 @@ so the ranking is worth taking seriously even where individual findings are not.
 |---|--:|--:|--:|--:|:--:|
 | `decoder/gguf.go` | **1.4** | **306** | 5 | 2,174 | yes |
 | `decoder/serialize.go` | **1.4** | 47 | 6 | 981 | yes |
-| `cuda/resident.go` | 1.7 | 43 | 5 | 1,590 | yes |
-| `gpu/moe_w4a8.go` | 1.8 | 12 | 2 | 151 | **no** |
+| `backend/cuda/resident.go` | 1.7 | 43 | 5 | 1,590 | yes |
+| `backend/webgpu/moe_w4a8.go` | 1.8 | 12 | 2 | 151 | **no** |
 | `decoder/weights.go` | 1.9 | 105 | 4 | 1,569 | yes |
 
 `gguf.go` at CCN **306** is the single largest complexity concentration in the repo. That is a
@@ -71,7 +71,7 @@ most dangerous ones to touch. Any change here is a bit-identity change until pro
 
 ## 3 · The actionable items
 
-### 3.1 · `gpu/moe_w4a8.go` is genuinely untested — the one clear gap
+### 3.1 · `backend/webgpu/moe_w4a8.go` is genuinely untested — the one clear gap
 
 repowise flagged two "untested hotspots". **Only one survives verification**, and it is not the
 one the tool ranked higher:
@@ -79,13 +79,13 @@ one the tool ranked higher:
 | file | NLOC | dependents | paired `_test.go` | symbols referenced from any test |
 |---|--:|--:|:--:|--:|
 | `decoder/routercapture.go` | 52 | 187 | none | **9 files** |
-| `gpu/moe_w4a8.go` | 175 | 18 | none | **0 files** |
+| `backend/webgpu/moe_w4a8.go` | 175 | 18 | none | **0 files** |
 
 `routercapture.go` trips the finding on a **paired-filename heuristic** — there is no
 `routercapture_test.go`, so the tool calls it untested, but nine test files exercise its symbols.
 Its 187 dependents make it look like the scarier of the two; it is not. Downgrade it.
 
-`gpu/moe_w4a8.go` has no paired test **and zero references from any `_test.go` in the repo** —
+`backend/webgpu/moe_w4a8.go` has no paired test **and zero references from any `_test.go` in the repo** —
 175 lines of MoE W4A8 path with 18 dependents and no test exercising it, on the same quant path
 the W4A8 campaign is actively changing. **This is the item to do.** Not a refactor: a test.
 
@@ -140,7 +140,7 @@ itself still has not happened.
 CCN 25 and a censusing loop nested 5 deep is doing its job; complexity in a test that pins
 numerical behaviour is not the same defect as complexity in the code under test. **Do not
 refactor these to move a score.** Only six production files appear at all: `routercapture.go`,
-`cmd/serve/main.go`, `demo/chat/main.go`, `forward_gemma4_moe.go`, `gpu/moe_w4a8.go`,
+`cmd/serve/main.go`, `demo/chat/main.go`, `forward_gemma4_moe.go`, `backend/webgpu/moe_w4a8.go`,
 `kvsnapshot.go`.
 
 **4.2 · `change_entropy` findings are an artifact of being actively developed.**
@@ -196,7 +196,7 @@ now** — recorded here so it is a known state rather than a lurking surprise.
 
 Suggested order, cheapest-first, and each independently droppable:
 
-1. **Test `gpu/moe_w4a8.go`** (§3.1) — the only unambiguous gap; a test, not a refactor.
+1. **Test `backend/webgpu/moe_w4a8.go`** (§3.1) — the only unambiguous gap; a test, not a refactor.
 2. **Read `decoder/kvsnapshot.go`** (§3.3) — 334 lines, 3 recent bug fixes, highest-signal predictor.
 3. **`model.go` duplication + the two trivial method plans** (§3.2) — unconstrained, mechanical.
 4. **`gguf.go` duplication** (§3.2) — only behind a `.giw` byte-identity gate.

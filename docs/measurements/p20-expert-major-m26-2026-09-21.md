@@ -1,6 +1,6 @@
 # R11/P20's gemma4 extension, built and measured on the real target: 2.66x at M=512, still 2.26x at M=8012, DEFAULT ON
 
-Follows `p20-expert-major-2026-09-21.md` (the generic-path build, opt-in, small measured win on Mellum2) and `docs/queue-performance.md`'s own "OPEN, ORPHANED" item this closes. Build: `cuda/moe_expert_major_gemma4.go`, wired into `cuda/prefill.go`'s
+Follows `p20-expert-major-2026-09-21.md` (the generic-path build, opt-in, small measured win on Mellum2) and `docs/queue-performance.md`'s own "OPEN, ORPHANED" item this closes. Build: `backend/cuda/moe_expert_major_gemma4.go`, wired into `backend/cuda/prefill.go`'s
 per-row MoE FFN loop as the `Ly.g4moe` branch, mirroring `moe_expert_major.go`'s mechanism (route every row first, bucket by expert, admit/DMA each distinct expert once, fold in rank order via sequential `residual_batched` launches — see that file's header
 for the full bit-identity argument, reused unchanged here) against Gemma-4's own parallel dense‖MoE FFN shape (`gemma4MoeMLPPre/Post`): the expert loop now accumulates into a per-row scratch buffer instead of the shared decode-native `r.g4x2`, and the
 remaining join (`normF32(g4x2)` → `x1+=x2` → `normF32` → `x=h+comb` → `*layerScalar`) runs per row afterward — cheap, not the DMA-heavy part, so a plain loop over the batched buffer's row-views is enough.

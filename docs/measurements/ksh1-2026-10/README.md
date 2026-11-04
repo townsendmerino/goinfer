@@ -3,7 +3,7 @@
 Gates: `docs/tasks/task-kernel-survey-2026-10.md`, "KS-H1 gates" (KH1-G), registered before the code (8dd54168), after
 re-checking the finding on main 0e620108. Machine: MacBook Pro, M1 Pro, 16 GB, macOS 26.6.2, Go 1.27.2. Built on MEM6's branch.
 
-**The build.** `metal/backend.go:metalResident.PrefillBlockRows` no longer excludes exact-attention models and Gemma 4 E-models.
+**The build.** `backend/metal/backend.go:metalResident.PrefillBlockRows` no longer excludes exact-attention models and Gemma 4 E-models.
 - It blocks whenever the widest exact-attention head dim is at most 256, where the exact and tiled kernels a block may choose are
   bit-identical.
 - An E-model blocks on its batched pass.

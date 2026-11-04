@@ -41,8 +41,8 @@ The V-sum split reads +40% on its kernel and +16.2% served on D7@8000, and is pa
 KL 1.0585× exact's, inside the 1.05–1.10 band. A re-run needs a mechanism, never a re-roll.
 
 1. **Make the S=1 detector real first.** R6 step 1 asks for S=1 to reproduce the exact arm
-   byte-for-byte. As the code stands that check is vacuous: the loader in `cuda/backend.go` and the
-   V-sum launch in `cuda/resident.go` both require S > 1, and the gate's test hook sets the same
+   byte-for-byte. As the code stands that check is vacuous: the loader in `backend/cuda/backend.go` and the
+   V-sum launch in `backend/cuda/resident.go` both require S > 1, and the gate's test hook sets the same
    field — so S=1 runs the exact `splitkv_vsum` and compares it with itself. Add a test-only way to
    launch `splitkv_vsum_partial` + `splitkv_vsum_combine` at nSplit=1, and a precondition that
    proves they launched (a launch counter; the mirror image of the gate's "630/630 rows
@@ -145,9 +145,9 @@ cover a byte-bound geometry, and every GQA geometry becomes one the moment phase
 phi3-mini at 3900, served, greedy: ≥70 tok/s ships (today 56.2, Ollama 73.3; halving A reads 79),
 62–70 parked, below 62 killed.** Fidelity-gated under the same pooled §3.2 rule. No family is
 known to need f32 KV: Metal ships f16 KV for every family, and the one finding that said otherwise
-(Gemma, 0.64 against 0.92 cosine) is refuted in `metal/model.go`'s own comment — the crater was the
+(Gemma, 0.64 against 0.92 cosine) is refuted in `backend/metal/model.go`'s own comment — the crater was the
 position-0 K/V compute — although the old claim still stands in the comment above `kv_store_f32`
-in `metal/kernels.go`. The family decision is the gate's, behind one precondition: record max |K|
+in `backend/metal/kernels.go`. The family decision is the gate's, behind one precondition: record max |K|
 and max |V| per layer on the gate prompts and refuse f16 KV for a family that comes within 2× of
 f16's 65504. `attn_batched`, the
 split kernels and the FA kernel each need an f16-KV twin. The general trigger for any other

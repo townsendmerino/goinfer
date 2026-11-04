@@ -192,7 +192,7 @@ that shape as far as one change reasonably can: `specRollbackSafe`'s inline copy
 resident-reuse guard both read a single named `Model.hasRecurrentState()`, which reads the dispatch
 table's `Recurrent` bit — so a fourth state kind is added in the table once.
 
-Repro and evidence: `cuda/pager_determinism_test.go`,
+Repro and evidence: `backend/cuda/pager_determinism_test.go`,
 `docs/measurements/spec-x-pager-2026-09-02.md`.
 
 **Granite/Nemotron lost resident residency on WebGPU — `[nope]`** *(found 2026-09-02, unfiled
@@ -569,9 +569,9 @@ against the **2.7%** observed — the effect is fully explained with nothing lef
 
 > **CORRECTION, made the same day and before the number was acted on: this tail is NOT the sampler
 > alone, and calling it "the sampling step" would have sent the next reader to the wrong function.**
-> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:cudaResident.launchToken`
+> On CUDA the two configs do not differ only in host-side sampling. `backend/cuda/resident.go:cudaResident.launchToken`
 > documents `ForwardArgmax` as the greedy fast path that "reduce[s] the argmax on-device and read[s]
-> back 4 B instead of the whole logits vector", and `cuda/softcap.go:applySoftcap` records the consequence:
+> back 4 B instead of the whole logits vector", and `backend/cuda/softcap.go:applySoftcap` records the consequence:
 > the sampled path is "the path that also does the ~1 MB readback", and pays softcap where the
 > family has it. So the 0.703 → 0.950 ms gap is **the whole sampled-path tail**: the full-vocab
 > device→host readback that greedy skips entirely, plus any softcap, plus `Sampler.Sample`.
@@ -1271,7 +1271,7 @@ so the instrument was built and never wired. Raw `docs/measurements/g31-cprime-r
 
 | | 30 slots (48 req) | 16 slots | ratio |
 |---|---|---|---|
-| **stall** (the `Sync` at `cuda/resident.go:cudaResident.loadRoutedExperts`) | 15 ms (**0.4%**) | 15 ms (**0.3%**) | 1.00 |
+| **stall** (the `Sync` at `backend/cuda/resident.go:cudaResident.loadRoutedExperts`) | 15 ms (**0.4%**) | 15 ms (**0.3%**) | 1.00 |
 | **host** (slot bookkeeping) | 107 ms (2.7%) | 108 ms (2.0%) | 1.01 |
 | **dma** (expert transfers) | 1.808 s (**45.1%**) | 3.227 s (**59.9%**) | **1.785** |
 | misses | 5229 | 9316 | **1.782** |
@@ -1550,7 +1550,7 @@ about block verify in general.
 
 **Result 2's compute-amortization case is unverified against a real kernel — there isn't one yet.**
 G31's 32.1 ms/token compute figure was measured on ordinary serial decode, one token at a time, and
-Result 2 treats it as roughly flat per verify-pass regardless of K. But `cuda/moe.cu`'s kernels are
+Result 2 treats it as roughly flat per verify-pass regardless of K. But `backend/cuda/moe.cu`'s kernels are
 GEMV, architecturally: `moe_route` is one thread per token by design ("runs ONE thread once per
 layer per token"), `gemv_w4a8_moe` takes a single `slot`, not an array, and `prefill_batched.cu`
 says outright that moe.ptx is untouched by the batched-prefill work. There is no fused, batched MoE
@@ -1579,8 +1579,8 @@ loaded `int8int8`, GPU-resident), greedy/temp-0, warm, best-of-6 × 48 tokens. L
 `docs/completed/task-cuda-cgofree-spike.md` carries the whole Phase-2 log through 2026-08-31, well past
 "the box fills": production backend, real-checkpoint parity, W4A8 coalescing 43%→80% of peak, the
 launch diet (18→13→8 launches/layer), **and the §5.2 three-super-kernel fusion itself** — K1
-(rmsnorm folded into the QKV GEMV) and K3a shipped as `cuda/fused_qkv.cu` behind `fuseQKV` /
-`GOINFER_CUDA_NO_FUSE`; **K2 built, measured at ~0%, and reverted.** `cuda/megakernel.cu` was a dead
+(rmsnorm folded into the QKV GEMV) and K3a shipped as `backend/cuda/fused_qkv.cu` behind `fuseQKV` /
+`GOINFER_CUDA_NO_FUSE`; **K2 built, measured at ~0%, and reverted.** `backend/cuda/megakernel.cu` was a dead
 July scaffold referenced only from tests, deleted in the 2026-09-12 closeout; the work landed
 elsewhere. Nothing in Experiment A was open. Recorded here because the spec
 (`docs/completed/cuda-megakernel-spec.md`) then still read as a live prep artifact and did not
@@ -1609,7 +1609,7 @@ was described as, before any of the above.
 
 ### The measurement that mattered: ablate, don't attribute
 
-`TestDecode_dispatchProfile` (`gpu/decode_dispatch_profile_test.go`) re-records the whole token plan
+`TestDecode_dispatchProfile` (`backend/webgpu/decode_dispatch_profile_test.go`) re-records the whole token plan
 R×8 into one pass with one pipeline class **omitted**, one Submit, one blocking Poll, and differences
 against the unablated plan. Ablation, not per-kernel attribution, because the question is "what would
 deleting this buy" — a dispatch that fully overlaps its neighbours costs wall-clock nothing to remove,
@@ -1753,7 +1753,7 @@ and following it here would have been a mistake twice over:
    measures 0.941 at 256 keys and 0.939 at 512; its crossover is in (512, 1024]. phi3-mini (MHA,
    nH=32) never crosses at any depth, declining monotonically to 0.754. The shipped gate had to
    become a measured per-geometry lookup because the *form* "ON iff nWin ≥ f(geometry)" is falsified.
-2. **CUDA and WebGPU were not running the same algorithm.** `cuda/attn_block.cu` splits lanes over
+2. **CUDA and WebGPU were not running the same algorithm.** `backend/cuda/attn_block.cu` splits lanes over
    **keys** and reduces twice per layer; WebGPU split over **dims** and reduced once per key —
    a ~250× difference in barrier count. Split-KV is an occupancy fix for a kernel already
    structurally right. Ours was not, and adding workgroups underneath a per-key barrier storm
@@ -1795,7 +1795,7 @@ the dim-split arm was re-measured after the key-split arm to close the interleav
 ### Combined with G35 — the end-to-end number for the two changes together
 
 Measured separately afterwards, because the table above is the attention A/B *on top of* G35's
-`quantize` fix and multiplying two deltas is not a measurement. Both-off is HEAD with `gpu/internal/kernels/device.go`
+`quantize` fix and multiplying two deltas is not a measurement. Both-off is HEAD with `backend/webgpu/internal/kernels/device.go`
 reverted to its pre-G35 state (verified: no other commit has touched that file since) and
 `GOINFER_ATTN_KEYS=0`; both-on is the shipped binary. Same server, same prompt, interleaved.
 
@@ -2018,11 +2018,11 @@ key-split attention (2.5× at 1k context). R10's "Standing" numbers (137.6 tok/s
 both and are stale. Only the argmax item and the prefill profile were genuinely open.
 
 **Box:** RTX 2070 SUPER, driver 595.91.07, Qwen2.5-Coder-1.5B and -0.5B (`int8int8`, GPU-resident),
-greedy, `TestDecodeArgmaxHeadroom` (`gpu/decode_argmax_headroom_test.go`, committed).
+greedy, `TestDecodeArgmaxHeadroom` (`backend/webgpu/decode_argmax_headroom_test.go`, committed).
 
 ### The readback is not the cost — checked directly, not assumed
 
-`ForwardSample`'s greedy branch (`gpu/resident_sample.go`, `invT == +Inf`) calls `Run()`: full
+`ForwardSample`'s greedy branch (`backend/webgpu/resident_sample.go`, `invT == +Inf`) calls `Run()`: full
 LM-head GEMV → copy `vocab*4` bytes to a staging buffer → `MapAsync` → a host linear scan for the
 max. `RunNoLogits` (already in tree, unused by any test until now) skips the GEMV, the copy, and the
 readback entirely, so `Run() − RunNoLogits()` bounds what ANY logits-avoiding scheme — a device-side
@@ -2054,7 +2054,7 @@ corrected itself out of for attention occupancy). Not built.
 The GEMV cost scales near-linearly with `hidden` (8,512 → 4,264 µs as hidden drops 1536 → 896, ratio
 0.58 vs the shape's 0.50 — real, not noise), which rules out a **fixed-per-workgroup / dispatch-count**
 defect (that would cost the SAME regardless of K) — this is genuine, proportional compute, just at
-low measured efficiency. It is the SAME shared kernel (`gemvW8A8ShaderWGSL`, `gpu/internal/kernels/gemv.go`) every
+low measured efficiency. It is the SAME shared kernel (`gemvW8A8ShaderWGSL`, `backend/webgpu/internal/kernels/gemv.go`) every
 trunk projection uses — one workgroup per output row, 64-lane parallel tree reduce (not a serial
 scan; no G35-class bug in the kernel body itself), `gemvGrid` sizes a proper 2D grid for N>32768
 (151,936 → 5×32,768 = 163,840 workgroups, far more than this card's SM count — not an occupancy

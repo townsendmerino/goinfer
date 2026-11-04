@@ -28,7 +28,7 @@ So the prefill of a session start is, to within 13 to 25 ids, work the previous 
 ## Could a one-slot card keep it?
 
 **Not under the 448 rollback, in any session measured.** The windowed ring serves a follow-up that diverges up to the rollback before
-the slot's newest position (448 at the planned slack, and an expert-cache load gets no grant; `cuda/kvwindow.go`). A new session
+the slot's newest position (448 at the planned slack, and an expert-cache load gets no grant; `backend/cuda/kvwindow.go`). A new session
 diverges from the previous one at the shared prefix `p`, so the previous session's slot can serve it only if that session **ended
 within 448 positions of `p`**. Measured, how far past `p` each previous session ended:
 

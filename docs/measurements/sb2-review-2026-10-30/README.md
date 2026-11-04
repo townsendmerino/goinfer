@@ -13,10 +13,10 @@ run with `CUDA_VISIBLE_DEVICES=-1` (nobara-ci01 held the card). `red.log` is bef
 `TestPlanMemory_grantsAndWidth` now sweeps llama-tiny's prefill reading from 1 GiB down in 1 MiB steps and requires the 2048,
 1024 and 512 rungs. It passed on the old code too. The old four-point ladder skipped 1024, and the sweep does not.
 
-**The census golden did not move.** All 558 lines match `cuda/testdata/sb2_cuda_mem_census.amd64.txt.gz` as committed by #502,
+**The census golden did not move.** All 558 lines match `backend/cuda/testdata/sb2_cuda_mem_census.amd64.txt.gz` as committed by #502,
 and no line carries a mark. No census cell has more than one KV slot (R1), an expert cache (R2's slots, R3's slots refusal), or a
 derive within 64 MiB of refusing (R3). The changes are reached only by the tests above.
 
 **Checks:** gofmt clean. vet under no tag, `cuda` and `cuda goinfer_testhooks`. staticcheck under the same three: nothing in the
-changed files; under `cuda` alone, the 20 pre-existing test-hook-only U1000s. The source scans over `cuda/backend.go` and cuda's
+changed files; under `cuda` alone, the 20 pre-existing test-hook-only U1000s. The source scans over `backend/cuda/backend.go` and cuda's
 non-test files (`TestDeclineAdvice_wiredIntoBuildResident`, `TestPTX_matchesSourcesAndBindings`) pass.

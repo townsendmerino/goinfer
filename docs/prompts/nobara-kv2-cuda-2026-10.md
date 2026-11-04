@@ -64,7 +64,7 @@ Notes on the contract:
 - **`CopyKV` on `cudaResident`.**
   - A device-to-device copy per layer of K and V, on the executor's stream, at the slot's KV precision.
   - A full-attention layer copies the rows.
-  - A windowed layer (`cuda/kvwindow.go`) reads through src's shifted view and writes through dst's, then sets dst's
+  - A windowed layer (`backend/cuda/kvwindow.go`) reads through src's shifted view and writes through dst's, then sets dst's
     base for that layer. Copy only what dst will attend to from `end`.
   - A layer that reads another layer's KV copies nothing of its own.
   - An MLA latent layer copies its latent rows.

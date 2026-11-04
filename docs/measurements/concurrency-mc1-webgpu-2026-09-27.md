@@ -18,7 +18,7 @@ still one at a time, because WebGPU has no batch stepper.
 - Every reply is identical. Old and new agree on all 108 turns at 2 and 4 clients, which was reported, not gated.
 
 **Why the win is so much larger than CUDA's 1.25×.** On this backend Qwen2.5 prefills one token at a time:
-`PrefillLast` declines q/k/v bias off Vulkan (`gpu/residency.go`). So a thrashing turn re-prefills its whole
+`PrefillLast` declines q/k/v bias off Vulkan (`backend/webgpu/residency.go`). So a thrashing turn re-prefills its whole
 conversation (176 → 786 tokens by turn 6) at decode speed, where CUDA's batched prefill makes the same re-prefill
 cheap. The mechanism is the same on both backends; the thrash simply costs more here.
 
@@ -87,7 +87,7 @@ cheap. The mechanism is the same on both backends; the thrash simply costs more 
 
 ## Identity before timing
 
-All in `gpu/kv_slots_test.go` on this Mac. The logs are archived.
+All in `backend/webgpu/kv_slots_test.go` on this Mac. The logs are archived.
 - `TestWebGPUKVSlots_interleavedMatchesAlone` runs two conversations sharing a 3-token lead, interleaved A B A B A B
   on 2 slots, against each alone, with a one-slot control that must thrash. It passes on:
   - llama-tiny with f32, int8 (the per-head scale buffers) and f16 KV;

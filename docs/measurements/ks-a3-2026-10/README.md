@@ -12,7 +12,7 @@ path instead), then the Z sum.
 ## Pre-registration: the phase read (tier 1, no bar)
 
 Registered 2026-10-23 before it runs. It informs the build's design and decides nothing on its own.
-- **Instrument:** `instruments/topk_phases.cu.txt` is `cuda/topk.cu` with thread 0 stamping `%globaltimer` at each phase
+- **Instrument:** `instruments/topk_phases.cu.txt` is `backend/cuda/topk.cu` with thread 0 stamping `%globaltimer` at each phase
   boundary. `instruments/ks_a3_phases_test.go.txt` launches it over a real logits row: after 8 greedy tokens, k 256 on the
   Qwen2.5-Coder-0.5B Q4_K_M and k 1,024 on gemma3-1b Q4_K_M, both loaded as serve loads them, with Z on and temperature 1.
 - **Readout:** 20 launches after one warm-up; the median µs a phase and in total; how often the fast path ran; the candidate
@@ -23,7 +23,7 @@ Registered 2026-10-23 before it runs. It informs the build's design and decides 
 
 ## The build
 
-`cuda/topk.cu` becomes three launches, in stream order, from `cuda/topk.go:cudaResident.topkReadback`:
+`backend/cuda/topk.cu` becomes three launches, in stream order, from `backend/cuda/topk.go:cudaResident.topkReadback`:
 - **`topk_compact`** (fast path only, 32 blocks of 1,024): each block finds the same threshold by an exact radix select of the
   R-th largest sample (`tk_kth`, the slow path's own passes) instead of a bitonic sort. It then appends every entry ≥ t0 of
   its slice of the row to a global candidate buffer.

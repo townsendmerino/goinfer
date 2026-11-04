@@ -41,7 +41,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 > |---|---|---|---|---|
 > | **Gemma 3** | CPU / CPU | **resident tower (goinfer's own) / resident decode** (run) | CPU / resident decode through the `UploadKV` bridge (read) | resident tower / resident decode (run) |
 > | **Gemma 4 E2B, E4B** | CPU / CPU | CPU / **CPU, the whole model** (run) | CPU / CPU (read) | CPU / CPU (read) |
-> | **Gemma 4 26B-A4B, 31B** | CPU / CPU | CPU / CPU prefill, then resident decode (26B run; 31B unverified) | CPU / bridge (read) | CPU / CPU: WebGPU declines Gemma 4 MoE, `gpu/residency.go` (26B, read); 31B unverified |
+> | **Gemma 4 26B-A4B, 31B** | CPU / CPU | CPU / CPU prefill, then resident decode (26B run; 31B unverified) | CPU / bridge (read) | CPU / CPU: WebGPU declines Gemma 4 MoE, `backend/webgpu/residency.go` (26B, read); 31B unverified |
 > | **Qwen2.5-VL** | CPU / CPU | CPU / resident m-RoPE prefill and decode (run) | CPU / bridge decode (read) | CPU / bridge decode (run) |
 > | **Qwen3.5+ dense** | CPU / CPU | CPU / **resident image prefill and decode** since 2026-10-06, P26b (run) | CPU / CPU (read) | CPU / CPU (read) |
 > | **GLM-OCR** | CPU (f32) / CPU | CPU (f32) / resident decode (run) | CPU (f32) / CPU (read) | CPU (f32) / staged, no resident KV (run) |
@@ -53,7 +53,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 >   (and a Qwen resident seam), but **goinfer imports none of them** and serve calls `EnableResident` in exactly one place (`internal/serveapp/main.go`, the Gemma 3
 >   tower, on `--backend cuda|webgpu`). So the Qwen2.5-VL, Qwen3.5+, Gemma 4 and GLM-OCR towers are CPU towers on every backend, and **no generative family's tower runs
 >   on Metal** (`docs/audit-metal-2026-09-12.md` M-15 says why aikit's Metal SigLIP tower was not wired; the 2026-09-30 audit found that unchanged). **2026-10-06:** Metal does
->   run a Gemma 4 vision tower and the `gemma4_audio` tower now, goinfer's own (`metal/gemma4_vision.go`, `metal/gemma4_audio.go`), but only for EmbeddingGemma 2's embeddings
+>   run a Gemma 4 vision tower and the `gemma4_audio` tower now, goinfer's own (`backend/metal/gemma4_vision.go`, `backend/metal/gemma4_audio.go`), but only for EmbeddingGemma 2's embeddings
 >   (`docs/tasks/task-embeddinggemma2.md`, Phases VM and A). Wiring the vision one to Gemma 4's own image input is in "Finishing this doc" below.
 > - **int8.** With `-vision-quant` unset, `--backend webgpu` makes Gemma 3's tower int8, because that is the only device tower it has (`towerInt8` in `internal/serveapp/main.go`). On `--backend cuda` the default is the float32 SigLIP tower
 >   (S4 addendum; the owner's decision, 2026-10-08: its reply equals the CPU float32 reference's and a new image costs 2.4 s of time to first token against the int8 tower's 4.6 s), at about 1.7 GiB of VRAM against 0.56, which on the 8 GB card is 2 resident KV slots
@@ -169,27 +169,27 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    any real image turn, not an edge case) — added as a new optional interface,
    `decoder.ResidentMRoPE.ForwardMRoPE(embedding, pos, ropePos)`, alongside the existing `Forward`
    rather than widening it (CUDA: a `ropePos` kernel argument threaded through `rope_kv`,
-   `cuda/gemv_fwd.cu`, PTX regenerated and diff-verified isolated to that one kernel; WebGPU: no
+   `backend/cuda/gemv_fwd.cu`, PTX regenerated and diff-verified isolated to that one kernel; WebGPU: no
    shader changes — its RoPE kernel is pure rotation with no KV-write side effect — just the
    `DecodeRunner` uniform-generation plumbing widened to carry a second position). Both new
    primitives (`UploadKV`'s offset, `ForwardMRoPE`'s angle split) pass their first real
-   correctness tests on real hardware at cosine 1.0 (`cuda/uploadkv_parity_test.go`,
-   `cuda/forwardmrope_parity_test.go`, and their WebGPU twins). **Measured real payoff, real
+   correctness tests on real hardware at cosine 1.0 (`backend/cuda/uploadkv_parity_test.go`,
+   `backend/cuda/forwardmrope_parity_test.go`, and their WebGPU twins). **Measured real payoff, real
    checkpoint (Qwen2.5-VL-3B, real image, int4 both arms, interleaved-paired, median of 5):
    decode 5.95 → 22.98 tok/s, 3.86× — clears the pre-registered ≥1.5× bar by a wide margin** (full
-   real-checkpoint parity gate: `cuda/qwen25vl_resident_real_test.go`, cosine 0.99+/exact argmax on
+   real-checkpoint parity gate: `backend/cuda/qwen25vl_resident_real_test.go`, cosine 0.99+/exact argmax on
    a forced-trajectory decode step past a real image block, mropeDelta confirmed nonzero so the
    m-RoPE split is genuinely exercised). **Gemma 3 (`GenerateVL`) closed 2026-09-08**: needed no
    m-RoPE work — plain `Forward` suffices — real-checkpoint gate built (`scripts/pin_gemma3_real.py`
-   + `cuda/gemma3_resident_real_test.go`, a pre-sized 896×896 test image so goinfer's bilinear
+   + `backend/cuda/gemma3_resident_real_test.go`, a pre-sized 896×896 test image so goinfer's bilinear
    resize vs HF's bicubic is a non-issue), decode-step cosine **0.998167**, exact argmax, tighter
    than Qwen's (no m-RoPE noise to contend with). **Measured decode-only speedup (text-decoder
    prefill+decode isolated from the vision tower, which is unaffected by this change either way):
    6.96 → 92.27 tok/s, 13.26×** — larger than Qwen's, consistent with Gemma 3 having no m-RoPE
    overhead on the resident path. **Metal is out of scope**: `UploadKV` is unimplemented there
-   (`metal/backend.go`), so this design doesn't reach it; a real gap for whoever picks up Metal
+   (`backend/metal/backend.go`), so this design doesn't reach it; a real gap for whoever picks up Metal
    residency next, not attempted here.
-   **CORRECTED 2026-10-02:** Metal's `UploadKV` and `ForwardMRoPE` were real by 2026-09-17 (`26f64807`; `metal/backend.go`), so this design does reach Metal for
+   **CORRECTED 2026-10-02:** Metal's `UploadKV` and `ForwardMRoPE` were real by 2026-09-17 (`26f64807`; `backend/metal/backend.go`), so this design does reach Metal for
    Gemma 3 and Qwen2.5-VL (CPU prefill, then resident decode). No Mac run of it exists, so it is read from code, not shown to work
    (`docs/measurements/multimodal-audit-2026-10-02.md`). Metal still has no resident image prefill and no tower.
    **UPDATE 2026-09-08: a cold (first-time) image turn's own PREFILL, not just decode, is now
@@ -197,12 +197,12 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    resident equivalent of the bidirectional image-block mask existed) and only moved decode; this
    left the CPU prefill itself — measured **8.215 s** in isolation — as the largest remaining
    cost on a cold turn (dwarfing gap-0's own decode fix). Closed via a new resident CUDA kernel
-   (`cuda/attn_img_prefill.cu`, `attn_img_batched`) that runs the SAME bidirectional attention
+   (`backend/cuda/attn_img_prefill.cu`, `attn_img_batched`) that runs the SAME bidirectional attention
    `decoder/kvcache.go`'s CPU reference computes — `decoder.ResidentImagePrefill`, v1 requires the
    whole prompt to fit in one weight-stationary pass (declines to the unchanged CPU-prefill+
    `UploadKV` bridge otherwise). **Measured: 8.165 s → 0.367 s, 22.27×** (prefill only, tower
    excluded — `docs/benchmarks.md` "Resident image-block PREFILL, finishing gap 0"). Real-checkpoint
-   gate: cosine 0.997042, exact argmax, matched int4 precision — `cuda/gemma3_img_prefill_resident_real_test.go`.
+   gate: cosine 0.997042, exact argmax, matched int4 precision — `backend/cuda/gemma3_img_prefill_resident_real_test.go`.
    Combined with the decode fix above, a cold Gemma-3 image turn's non-tower cost drops from ~8.2 s
    to ~0.37 s; the vision tower (~31.3 s, unaffected) is now essentially the whole cost of a cold
    turn. Out of scope for this pass: the `attn_fused` L2 tensor-core path (its tile-level
@@ -216,10 +216,10 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    but its m-RoPE 3-component rotation wasn't servable by the existing batched-prefill rope kernel —
    and, a real subtlety, even ORDINARY text rows after an image block needed the fix too, since
    `mropePositions` compresses their position by the merged image grid rather than counting
-   sequentially. New kernel `cuda/rope_mrope_prefill.cu` (`rope_kv_mrope_batched`) +
+   sequentially. New kernel `backend/cuda/rope_mrope_prefill.cu` (`rope_kv_mrope_batched`) +
    `decoder.ResidentMRoPEPrefill` close it — **measured 711.2 ms → 19.7 ms, 36.14×** (prefill only,
    `docs/benchmarks.md` "Resident m-RoPE PREFILL (Qwen2.5-VL)"); real-checkpoint gate cosine
-   0.993995, exact argmax (`cuda/qwen25vl_mrope_prefill_resident_real_test.go`). Unlike Gemma-3's
+   0.993995, exact argmax (`backend/cuda/qwen25vl_mrope_prefill_resident_real_test.go`). Unlike Gemma-3's
    bidirectional image block, m-RoPE has no cross-row attention coupling, so it chunks cleanly —
    `PrefillMRoPELast` reuses the ordinary chunked-prefill loop rather than declining outright.
    Separately, `PrefillImageLast`'s own chunk floor was raised from the shared 512-row text default
@@ -299,8 +299,8 @@ number is published without provenance.
   which exists anywhere else in this codebase — needed exactly two new, small kernels
   (`layernorm_quant.cu`, `gelu_quant.cu`), not a new attention or GEMM primitive. Plugs into
   `aikit/vision`'s ALREADY-BUILT `ResidentEncoder`/`RegisterResident` seam (the same one WebGPU's
-  own resident tower uses) — `cuda/vision_encoder.go` + `cuda/vision_register.go`, ~40 lines of
-  registration glue, mirroring `gpu/vision_register.go` almost verbatim.
+  own resident tower uses) — `backend/cuda/vision_encoder.go` + `backend/cuda/vision_register.go`, ~40 lines of
+  registration glue, mirroring `backend/webgpu/vision_register.go` almost verbatim.
 
   **Measured: 1.58× (41.3s→26.1s median, real gemma-3-4b-it tower, matched int8 precision,
   interleaved).** Real-checkpoint gate cosine 0.91-0.96 (int8-vs-int8, not int4-vs-f32) —
@@ -465,7 +465,7 @@ number is published without provenance.
   torchvision's antialiased bicubic on uint8, bit-identical to it on the four gate images and twelve synthetic cases,
   which brought its image embeddings to 1.000000000. It lives in goinfer, not aikit, so Gemma 4's image input still
   resizes bilinearly; moving it into aikit's `Gemma4Preprocess` would serve both. **A Metal Gemma 4 tower exists
-  too** (`metal/gemma4_vision.go`, 2026-10-06, from aikit's `Gemma4Encoder.Weights()` export), so far used only by
+  too** (`backend/metal/gemma4_vision.go`, 2026-10-06, from aikit's `Gemma4Encoder.Weights()` export), so far used only by
   EmbeddingGemma 2; Gemma 4's own image input could take it the same way.
   **Audio's tower is built (2026-10-06):** aikit `audio` runs `gemma4_audio` (the log-mel and the conformer) and
   matches transformers on EmbeddingGemma 2 at 1.000000000 (`docs/tasks/task-embeddinggemma2.md`, Phase A). Gemma 4
@@ -614,7 +614,7 @@ number is published without provenance.
   combining `pin_gemma4_dense_scaled.py`'s real geometry (hidden 1024, 12 layers, 5:1 sliding/full,
   head_dim 256 local / 512 global, K=V on the two global layers — the geometry a tiny hd=16
   fixture can't exercise, per that script's own documented history) with a vision tower and
-  `use_bidirectional_attention="vision"`. `cuda/gemma4_vl_resident_parity_test.go`
+  `use_bidirectional_attention="vision"`. `backend/cuda/gemma4_vl_resident_parity_test.go`
   (`TestGemma4VLResident_bidirParity`) compares CPU-int4 decode against CPU-bidirectional-prefill
   + `residentUploadPrefill` + resident decode, using the same calibrated-mean methodology
   `TestGemma4DenseScaled_residentParity` established (CUDA must agree with CPU-int4 at least as
@@ -814,8 +814,8 @@ number is published without provenance.
      the MoE builder; they must be set from `rope_parameters` there, only when a vision tower is present or
      unconditionally (unconditional is safe: text tokens have equal components).
   5. *Resident executors.* `ForwardMRoPE` (`ResidentMRoPE`) exists on `cudaResident`
-     (`cuda/resident.go:cudaResident.ForwardMRoPE`), the WebGPU `residentDecoder` (`gpu/residency.go:residentDecoder.ForwardMRoPE`) and `metalResident`
-     (`metal/backend.go:metalResident.ForwardMRoPE`), so the SCALAR-`ropePos` decode half is not the obstacle: a decoded token
+     (`backend/cuda/resident.go:cudaResident.ForwardMRoPE`), the WebGPU `residentDecoder` (`backend/webgpu/residency.go:residentDecoder.ForwardMRoPE`) and `metalResident`
+     (`backend/metal/backend.go:metalResident.ForwardMRoPE`), so the SCALAR-`ropePos` decode half is not the obstacle: a decoded token
      has T=H=W, which is exactly what one scalar carries. The obstacle is the bridge into it.
      `GenerateQwenVL`'s non-fast path is CPU prefill → `residentUploadPrefill` → `UploadKV`, and
      `residentUploadPrefill` (`decoder/generate_vl_resident.go:Model.residentUploadPrefill`) copies only layers whose

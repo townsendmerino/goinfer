@@ -13,7 +13,7 @@
 > (`rmsnorm-quant`/`swiglu-quant`/`qk-norm`/`act-quant`/`gpu-delta-rule`) correctly reverted —
 > written-refutation artifacts, not gaps. The `autoresearch/*` branches are gone now (superseded by
 > main). `scripts/autoresearch_rmsnorm_results.tsv` — the artifact G-04 found cited in
-> `metal/kernels.go`'s comments — is still not in this tree; that is a retention gap in the audit
+> `backend/metal/kernels.go`'s comments — is still not in this tree; that is a retention gap in the audit
 > trail, not doubt about whether the loop ran.
 >
 > The method also transferred to CUDA: `docs/completed/cuda-kernel-autoresearch.md` ran its own

@@ -1,7 +1,7 @@
 # P20 expert-major on CUDA: "measure the split before building" — real locality data, and a correction to my own first read
 
 `docs/queue-performance.md`'s P20 entry names this exact step ("Capture UploadProfForTest's byte counters in the next probe and size it from those") and never ran it. Real `gemma-4-26b-a4b-it` int4 (`gemma4-26b-int4.giw`), `-moe-cache-experts`, `-ctx 8192`, RTX 2070 SUPER, driver 595.91.07 — the same
-checkpoint and config `docs/queue-performance.md`'s M26 guard log used (30 MoE layers, hidden=2816, inter=2112, nE=128, topK=8). Committed instrument: `cuda/p20_expert_locality_test.go`, using a new test-only hook (`cuda/resident.go`'s `routeRecord` field) that records every routed expert id per layer across one whole prefill chunk, so "how many DISTINCT experts does an M-row chunk touch, per layer" can be read directly rather than inferred.
+checkpoint and config `docs/queue-performance.md`'s M26 guard log used (30 MoE layers, hidden=2816, inter=2112, nE=128, topK=8). Committed instrument: `backend/cuda/p20_expert_locality_test.go`, using a new test-only hook (`backend/cuda/resident.go`'s `routeRecord` field) that records every routed expert id per layer across one whole prefill chunk, so "how many DISTINCT experts does an M-row chunk touch, per layer" can be read directly rather than inferred.
 Logs beside this file (`p20-expert-locality-2026-09-21-M512.log`, `-M8.log`).
 
 ## First read, and why it was wrong

@@ -1,7 +1,7 @@
 # CUDA Graphs for the resident CUDA decode — built, bounded, SAFE-GATED (2026-08-03)
 
 **Status: shippable behind a safe-gate (was: parked).** The §8-step-1 runtime tenancy gate is now
-built (`cuda/graphs_safe.go`, `admitGraphs`): `GOINFER_CUDA_GRAPHS=1` is promoted to on ONLY under
+built (`backend/cuda/graphs_safe.go`, `admitGraphs`): `GOINFER_CUDA_GRAPHS=1` is promoted to on ONLY under
 `CU_COMPUTEMODE_EXCLUSIVE_PROCESS` or active MPS (`CUDA_MPS_PIPE_DIRECTORY`), then confirmed by a
 startup bit-exactness self-test (live vs replay, one forward); a DEFAULT-compute-mode box declines to
 the live path with a logged reason — "byte-identical or decline, never silently mis-run" restored.
@@ -48,7 +48,7 @@ Resident CUDA decode on the 2070 runs ~59 ms/token. The measured decomposition (
 | readback drain | ~12 | 30 host round-trips, fixed sync latency |
 | expert-miss DMA | ~11 | host→VRAM expert streaming |
 
-The dispatch line is the target. `cuda/launch_cost_test.go` (Step 0, committed earlier as `b2227ec`)
+The dispatch line is the target. `backend/cuda/launch_cost_test.go` (Step 0, committed earlier as `b2227ec`)
 bounded the per-launch host cost at **~10 µs for a 1×1 grid, ~11 µs for a 512-block grid** — i.e.
 **FFI/purego-bound, grid-independent**, not GPU-side dispatch. Every `cuLaunchKernel` in the cgo-free
 stack is a dlopen'd-symbol crossing + Go-side arg packing. That is exactly what **CUDA graphs**
@@ -70,7 +70,7 @@ A thin wrapper over gocudrv's own graph API — **no fork**:
 Tested in `aikit/gpu/cuda_graph_test.go`: a captured `vadd` replays bit-identically AND reads current
 buffer contents across replays (the property the whole design needs — topology fixed, contents vary).
 
-### 2b. goinfer forward restructure (`cuda/resident.go`, `cuda/backend.go`)
+### 2b. goinfer forward restructure (`backend/cuda/resident.go`, `backend/cuda/backend.go`)
 The per-layer body of `launchToken` was factored into three **graph-static** segment methods, so a
 single source of truth serves both paths — the live path calls them in sequence (byte-identical to the
 pre-graph code), the graph path replays captured versions:
@@ -105,7 +105,7 @@ context teardown.
 
 ## 3. The fail-fast bound (before touching launchToken)
 
-`cuda/graph_bound_test.go` — `TestCUDA_graphReplayBound`. Captures a representative 16-kernel static
+`backend/cuda/graph_bound_test.go` — `TestCUDA_graphReplayBound`. Captures a representative 16-kernel static
 chain, times live-issue vs graph-replay per iteration, and spot-checks bit-exactness. Result on the
 tiny fixture:
 
@@ -309,14 +309,14 @@ processes and can destabilize the session — use exact PIDs or a specific patte
    (`TestCUDA_graphLiveNoSyncOrdering` extended toward the failing composition) and a report.
 3. **To promote to a shipped feature** (only after step 1 passes on target hardware): keep it opt-in
    with a doc caveat, OR make it default and add a load-time GPU-capability gate. Then measure the real
-   26B tok/s (`cuda/gemma4_26b_cache_test.go` pattern, `GOINFER_HEAVY_TESTS`, `GOINFER_CUDA_GRAPHS=1`)
+   26B tok/s (`backend/cuda/gemma4_26b_cache_test.go` pattern, `GOINFER_HEAVY_TESTS`, `GOINFER_CUDA_GRAPHS=1`)
    against the ~1.4–1.7× prediction. Bit-exact gate that must pass first:
    `TestGemma4Graphs_bitExact_{tiny,scaled}` under churn on the target GPU.
 
 ## 8b. The 26B measurement (2026-09-24) — graphs pay on the C′ MoE path
 
 Asked for by the owner before deciding whether graphs stay (they block compute-time LoRA and force the C′ DMA
-overlap off). `TestGraphsDecode26B` (`cuda/graphs_speed_test.go`): real `gemma4-26b-int4.giw`, C′ expert cache
+overlap off). `TestGraphsDecode26B` (`backend/cuda/graphs_speed_test.go`): real `gemma4-26b-int4.giw`, C′ expert cache
 (29 slots), RTX 2070 SUPER, DEFAULT compute mode so graphs via `GOINFER_CUDA_GRAPHS_UNSAFE=1` (the self-test
 passed), greedy decode feeding each argmax back, 32 teacher-forced + 128 measured steps, four separate loads ABBA.
 Pre-registered rule: >= 1.05x keep, <= 1.00x remove, between → owner.
@@ -342,16 +342,16 @@ Log: `~/goinfer-logs/env-config/graphs26b.log`.
 - `aikit/gpu/cuda.go` — `Queue.Capture`, `Graph.Replay/Close` (`gpu/v0.21.0`, `b4fb5c1`);
   `Queue.UploadAsync` (`gpu/v0.20.0`, `133c87a`, banked, unused here).
 - `aikit/gpu/cuda_graph_test.go` — primitive tests incl. `TestCUDA_graphDependentChain`.
-- `cuda/resident.go` — `segA/segB/segC`, `moeMLPPre/Post`, `gemma4MoeMLPPre/Post`, `captureGraphs`,
+- `backend/cuda/resident.go` — `segA/segB/segC`, `moeMLPPre/Post`, `gemma4MoeMLPPre/Post`, `captureGraphs`,
   `cudaLayer.gSegA/B/C`, `cudaResident.graphs/graphsSync/graphMask`, `launchToken` loop, `Close`.
-- `cuda/backend.go` — env wiring + `captureGraphs` call after `fuseQKV`.
-- `cuda/graph_bound_test.go` — the fail-fast replay-cost bound.
-- `cuda/gemma4_graphs_test.go` — bit-exact gate: `bitExact` (isolation), `sameModelUnderLoad`,
+- `backend/cuda/backend.go` — env wiring + `captureGraphs` call after `fuseQKV`.
+- `backend/cuda/graph_bound_test.go` — the fail-fast replay-cost bound.
+- `backend/cuda/gemma4_graphs_test.go` — bit-exact gate: `bitExact` (isolation), `sameModelUnderLoad`,
   `offVsOffControl` (the critical control).
-- `cuda/graph_sharedmem_test.go` — kernel-class isolation (elementwise vs reduction).
-- `cuda/graph_segisolate_test.go` — single-segment high-volume replay (intra-graph, trailing-sync-valid).
-- `cuda/graph_nosync_test.go` — no-sync non-commutative live↔graph ordering (the VALID ordering test).
-- `cuda/graph_locate_test.go` — per-layer divergence localizer (its per-layer drain also demonstrated
+- `backend/cuda/graph_sharedmem_test.go` — kernel-class isolation (elementwise vs reduction).
+- `backend/cuda/graph_segisolate_test.go` — single-segment high-volume replay (intra-graph, trailing-sync-valid).
+- `backend/cuda/graph_nosync_test.go` — no-sync non-commutative live↔graph ordering (the VALID ordering test).
+- `backend/cuda/graph_locate_test.go` — per-layer divergence localizer (its per-layer drain also demonstrated
   the sync-maskability). Uses `cudaResident.layerCap`.
 - `cuda/go.mod` — pinned to `gpu/v0.21.0` with this landing (the pin that "rides Step 2").
 - **Investigation tooling (UNCOMMITTED, for the Ampere+ resume test):**

@@ -7,7 +7,7 @@
 > (`docs/tasks/task-kv-architecture-2026-10.md`) goes first. Phase 1 (CUDA f16 for the ten families that refuse it) folds
 > into KV4b, and phase 2 (CUDA int8, B39) waits for KV4's pools, so no KV kernel is written twice. That revises D4's order;
 > phases 3 to 6 stay this doc's. **Stale below:** the status line's "Phase 0 is next"; §2, which is the tree at 8494a91d
-> (the generated matrix is the truth now); §2's `cuda/kvpolicy.go`, since moved to
+> (the generated matrix is the truth now); §2's `backend/cuda/kvpolicy.go`, since moved to
 > `decoder/kvresolve.go:CUDAKVF16Decline`; and "used by every backend's build", since Metal's and WebGPU's builds still read
 > the raw request (P0a′ below).
 
@@ -57,7 +57,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 6. A model with no KV cache (a Mamba-only family) reports `KV n/a` and accepts any `--kv` value.
 
 One quantization scheme everywhere: int8 is symmetric per (position, KV head), one f32 scale each for K and V, the scheme
-the CPU, Metal and WebGPU int8 caches already use (`decoder/kvcache.go`, `metal/kernels` `attention_i8`, `gpu/decoderunner.go`
+the CPU, Metal and WebGPU int8 caches already use (`decoder/kvcache.go`, `metal/kernels` `attention_i8`, `backend/webgpu/decoderunner.go`
 `kScale`/`vScale`). The same scheme on every backend is what lets G2 compare backends at equal precision.
 
 ## 2. Where it stands today (main `8494a91d`)
@@ -68,10 +68,10 @@ the CPU, Metal and WebGPU int8 caches already use (`decoder/kvcache.go`, `metal/
 |---|---|---|---|
 | **CPU** decode and batched prefill | all | dense families on the batched attention kernel, no MoE (`Architecture.kvF16OK`); others stay f32, banner names why | same set (`kvInt8OK`); others stay f32, **silent** (no i8 decline reason exists) |
 | **CPU** batched decode (several sequences) | yes | declined at `cpuBatchCacheEligible`, falls back per sequence | same |
-| **CUDA** resident decode and prefill | all | llama, mistral, qwen2, qwen3, phi3, dense, no sliding window, pairwise RoPE, m-RoPE, hybrid, MLA, MoE or paged experts (`cuda/kvpolicy.go`); others f32, banner names why | **none: silent f32** (`ResidentKVPrecision`'s `cuda` branch ignores i8; the `--kv` help says it works) |
-| **Metal** resident decode | **silent f16** (`metal/model.go` sets `r.kvF32 = false`; the f32 kernels are compiled out) | all resident families | decode attention exists (`attention_i8`) |
-| **Metal** batched prefill, batched decode, layer-major paths | as above | yes | declined: the MMA prefill writes f16 K/V (`metalResident.PrefillPath` in `metal/backend.go`, `TestPrefill_declinesInt8KV`), batched decode (`resident.batchIneligible` and `canUseAttnFAAt` in `metal/batch.go`), Gemma 4, MoE and emodel layer-major paths; each falls to the per-token path, so i8 is delivered but prefill is slow |
-| **WebGPU** resident | yes | decode kernels exist (`gpu/decoderunner.go` `kvF16`) | decode kernels exist with scales; the faster "keys" attention declines both (`attnKeysEligible` in `gpu/attention.go`, speed only); family and prefill coverage **unsurveyed** |
+| **CUDA** resident decode and prefill | all | llama, mistral, qwen2, qwen3, phi3, dense, no sliding window, pairwise RoPE, m-RoPE, hybrid, MLA, MoE or paged experts (`backend/cuda/kvpolicy.go`); others f32, banner names why | **none: silent f32** (`ResidentKVPrecision`'s `cuda` branch ignores i8; the `--kv` help says it works) |
+| **Metal** resident decode | **silent f16** (`backend/metal/model.go` sets `r.kvF32 = false`; the f32 kernels are compiled out) | all resident families | decode attention exists (`attention_i8`) |
+| **Metal** batched prefill, batched decode, layer-major paths | as above | yes | declined: the MMA prefill writes f16 K/V (`metalResident.PrefillPath` in `backend/metal/backend.go`, `TestPrefill_declinesInt8KV`), batched decode (`resident.batchIneligible` and `canUseAttnFAAt` in `backend/metal/batch.go`), Gemma 4, MoE and emodel layer-major paths; each falls to the per-token path, so i8 is delivered but prefill is slow |
+| **WebGPU** resident | yes | decode kernels exist (`backend/webgpu/decoderunner.go` `kvF16`) | decode kernels exist with scales; the faster "keys" attention declines both (`attnKeysEligible` in `backend/webgpu/attention.go`, speed only); family and prefill coverage **unsurveyed** |
 | Speculative verify | tested on Metal only (option grid) | as the target's cache | CPU tested (`TestOptionPath_specVerify`) |
 | Session reuse, KV7 snapshots | yes | yes; precision is part of the share root (`resident_reuse.go`) | CPU snapshot tested (`TestKVI8_snapshotRoundtrip`); CUDA none |
 | MLA latent cache (DeepSeek, Kimi) | yes | none (CUDA declines, named) | none |
@@ -125,7 +125,7 @@ different cache and its range needs G5 first.
 ### Phase 3 — Metal: int8 on every path, and f32 back (M–L: about a week, Mac)
 
 - int8 in the MMA prefill: the prefill's K/V write quantizes on store (the same store kernel shape as decode's), so
-  `TestPrefill_declinesInt8KV` becomes a delivery test; then int8 in batched decode (`metal/batch.go`) and the Gemma 4,
+  `TestPrefill_declinesInt8KV` becomes a delivery test; then int8 in batched decode (`backend/metal/batch.go`) and the Gemma 4,
   MoE and emodel layer-major paths.
 - f32 KV: rebuild the f32 kernels that were compiled out, behind `--kv f32` only, so Metal has its reference precision
   again. `auto` on Metal stays f16.
@@ -152,7 +152,7 @@ owner decision D3 can move it out.
 
 ### P0a′ gates, registered 2026-10-22 before the code (P0A-G)
 
-The build: Metal's resident build (`metal/model.go`, `r.kvI8` and `r.kvF32`) and WebGPU's (`gpu/residency.go`, `kvF16` and
+The build: Metal's resident build (`backend/metal/model.go`, `r.kvI8` and `r.kvF32`) and WebGPU's (`backend/webgpu/residency.go`, `kvF16` and
 `kvI8`) take the cache precision from `decoder.ResolveKV` for their backend (a new `Model.KVDeliveredFor`), not from the raw
 request (`KVCacheF16`, `KVCacheI8`). For every request either backend honours today the two agree, so nothing a user sees
 changes; the point is that phase 3 (Metal f32 back) and any later resolver change reach the build through one function. A

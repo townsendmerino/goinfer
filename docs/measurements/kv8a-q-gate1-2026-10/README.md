@@ -78,7 +78,7 @@ done
 - **The restore:** r4 restores it and re-prefills from there. That is B35 (`docs/queue-engineering.md` § B35), on main. Its
   end-to-end gate measured plain chat turns 2 and 3 on nobara, not a question after a tool loop.
 - **B35's limits, which are what KV8a-Q could still add:**
-  - **CUDA only.** `cuda/kvsnap.go:cudaResident.KVSnapshotRecurrent` is true only with no Mamba-2 layer. Metal and the CPU
+  - **CUDA only.** `backend/cuda/kvsnap.go:cudaResident.KVSnapshotRecurrent` is true only with no Mamba-2 layer. Metal and the CPU
     keep no recurrent snapshot (`Model.KeepsRecurrentSnapshots` false), so on Metal the new question goes cold.
   - **Not Mamba-2.** Nemotron-H and Granite-4.0-H are refused on CUDA too.
   - **A long prompt.** A prompt of at least `kvSnapMinPrompt` (2048) ids, and a kept point of at least `kvSnapMinShared` (512)

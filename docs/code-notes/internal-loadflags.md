@@ -30,6 +30,6 @@ flag, or the "default does NOT look like the non-default value" check below is v
 Moved from `internal/loadflags/loadflags_test.go` (the comment above `TestCPUExactPrefillDisclosesTheDefaultsTrade.metalfloor`) on 2026-10-09.
 
 ```text
---exact-prefill's help quotes each backend's floor; Metal's is 16 (metal/backend.go metalFastPrefillFloor, A-P02),
+--exact-prefill's help quotes each backend's floor; Metal's is 16 (backend/metal/backend.go metalFastPrefillFloor, A-P02),
 which the help used to give as 512 and then 64 (and the removed --metal-fast-prefill's as 256).
 ```

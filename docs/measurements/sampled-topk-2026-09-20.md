@@ -18,7 +18,7 @@ Raw logs: [`sampled-topk-2026-09-20.log`](sampled-topk-2026-09-20.log).
 | machine | `nobara-pc`: Ryzen 7 3700X, RTX 2070 SUPER 8 GB, NVIDIA driver **595.91.07**, Nobara 44, no other GPU or CPU work started by this session during any timed run (runs were sequential; box idle before the first, load average not re-read before the final one) |
 | checkpoint | `~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf`, `--quant int4`, `Backend: cuda`, resident (local NVMe path, not `/srv/models`) |
 | code | goinfer `main` @ `12777baa` (`feat(cuda): device-side top-K ...`); Go 1.27.0; `topk.ptx` built at the ambient NVRTC **12.9.86** (a new isolated module — no audited PTX regenerated) |
-| instrument | `TestSampledDecodeLadder` (`cuda/sampled_decode_ladder_test.go`): 15 interleaved rounds, arm order rotated per round, one discarded warm-up per arm, 77-token narrative-prose prompt (in the source), ≤160 generated tokens, decode rate excludes prefill, no run dropped for early EOS. Paired ratio = sampled ÷ greedy **within a round**. |
+| instrument | `TestSampledDecodeLadder` (`backend/cuda/sampled_decode_ladder_test.go`): 15 interleaved rounds, arm order rotated per round, one discarded warm-up per arm, 77-token narrative-prose prompt (in the source), ≤160 generated tokens, decode rate excludes prefill, no run dropped for early EOS. Paired ratio = sampled ÷ greedy **within a round**. |
 | sampling | explicit per arm, fixed seeds; **do-nothing arm included**: the same top_p config with `GOINFER_NO_TOPK_FASTPATH=1` in the same session |
 | thermal | not logged (57 s run); GPU idle at 639 MiB before the run |
 

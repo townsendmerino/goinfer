@@ -26,7 +26,7 @@ Chunking takes a long prompt in pieces while others decode, yielding one decode 
 
 ## 1. Chunk invariance (the question the design turns on)
 
-`TestMC5_prefillChunkInvariance` (`metal/mc5_chunk_test.go`):
+`TestMC5_prefillChunkInvariance` (`backend/metal/mc5_chunk_test.go`):
 - qwen2.5-coder-1.5b int4 on Metal, 2 contiguous f16 KV slots.
 - A 1000-token prompt is prefilled whole (`PrefillLast(all, 0)`) into slot 0, then into slot 1 as chunks of C in
   sequence (`PrefillLast(chunk, start)`).
@@ -61,8 +61,8 @@ start chunks off the kernel's 32-row tiles:
 The control: nothing differs before position 700, and 3,747,365 elements differ from it on.
 Log: [`mc5-chunk-invariance-steel-2026-10-01.log`](chunked-prefill-2026-09-27/mc5-chunk-invariance-steel-2026-10-01.log).
 
-The test now lives in `metal/mc5_chunk_invariance_test.go` and runs by default on a generated fixture
-(`metal/mc3_fixture_test.go`). The off-tile sizes are there because the aligned ones cannot see a bug at a tile edge:
+The test now lives in `backend/metal/mc5_chunk_invariance_test.go` and runs by default on a generated fixture
+(`backend/metal/mc3_fixture_test.go`). The off-tile sizes are there because the aligned ones cannot see a bug at a tile edge:
 with the kernel's causal limit moved by one key, every aligned size still matched bit for bit on the fixture, while 100
 and 77 differed from the first chunk boundary on.
 

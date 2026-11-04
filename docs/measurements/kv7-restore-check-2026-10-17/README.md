@@ -31,7 +31,7 @@ large request of a run, which restored a 1,792-row snapshot (`snap=1792`). Is a 
 3. **Pass alignment.** The default pass is 512 rows. The cold prefill's passes start at 0, 512, 1,024 …; the restored one starts at 1,792 = 3.5 × 512, so its passes are 1,792, 2,304 …: **they do not line up
    at the default width**. At `GOINFER_PREFILL_CHUNK=256` they do (1,792 = 7 × 256). Both widths read bit-identical, so bit-identity does not need the alignment on this model, consistent with the pass-width
    invariance KV0 recorded (`docs/measurements/kv0-invariance-2026-10-13.md`) while the kernel class (a function of the whole prompt's length and the pass's rows) is the same. The tier 0 test pins the
-   aligned case, and pins it on the tiny fixture only: `cuda/kvsnap_cold_test.go:TestKV7_restoreMatchesColdAtPassBoundaries`.
+   aligned case, and pins it on the tiny fixture only: `backend/cuda/kvsnap_cold_test.go:TestKV7_restoreMatchesColdAtPassBoundaries`.
 
 ## Verdict
 

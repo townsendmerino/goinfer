@@ -1,7 +1,7 @@
 # V-sum spike mechanism run (R6 step 1): the 1.0585× KL excess does NOT reproduce, and S=1 is bit-identical
 
 Pre-registration: `vsum-mechanism-PREREGISTERED.md` (committed `dcc7978f` before the run, not edited). Harness:
-`cuda/vsum_mechanism_test.go` (`TestVsumMechanism`), log `vsum-mechanism-2026-09-20.log`. nobara-pc, RTX 2070 SUPER,
+`backend/cuda/vsum_mechanism_test.go` (`TestVsumMechanism`), log `vsum-mechanism-2026-09-20.log`. nobara-pc, RTX 2070 SUPER,
 driver `595.91.07`, D7 = qwen2.5-7b-instruct-q4_k_m, K=8000, prompt set A, 10 prompts x 64 positions, the SAME cached
 Phase A f32/f64 reference rows the parked record used (`~/goinfer-logs/prefill-ref/D7-K8000-p*.bin`). One binary, one
 session, arms run back to back per prompt, 53.7 min. Build: goinfer `dcc7978f` + the one-line `skVsumSplit >= 1` guard
@@ -42,7 +42,7 @@ still needs its own fidelity gate on held-out prompt set B.
 - **Why the parked record read 1.0585x.** Not explained. The parked record's *exact* arm differs materially from this run's
   exact arm on the same references: hard flips **30 → 15**, mean agreement **83.91% → 86.09%** (KL 0.100720 → 0.100480, nearly
   the same). Its own text says its scoring binary was built before a four-times rebase that brought 169 Go-file changes
-  (`cuda/resident.go`, `backend.go`, `prefill.go`, ...), and it warned that absolute figures are for that pre-rebase
+  (`backend/cuda/resident.go`, `backend.go`, `prefill.go`, ...), and it warned that absolute figures are for that pre-rebase
   build. This run confirms the exact path itself moved by that much. I have NOT bisected which change did it, so "the
   rebase" is a candidate, not a finding; nor can I say whether the old spike arm carried a defect that has since been fixed
   or the old figure was simply a different draw of the same noise. The paired-delta s.e. here (~0.002 per arm) says a

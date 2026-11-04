@@ -14,7 +14,7 @@ a way its matmuls did not explain.
 
 ## Where the step's time went (exploratory, before the build)
 
-`TestMC3StepBreakdown` (`metal/mc3_step_test.go`) times the batched step in sequence. It then replaces one category's
+`TestMC3StepBreakdown` (`backend/metal/mc3_step_test.go`) times the batched step in sequence. It then replaces one category's
 kernels at a time with an empty kernel, so the dispatches still launch but do no work, and finally every kernel.
 Median of 15 steps per arm, arms interleaved; 1.5B, M1 Pro.
 
@@ -36,7 +36,7 @@ Logs: [`s3-breakdown.log`](concurrency-mc3-s3-2026-09-27/s3-breakdown.log),
 
 ## The build (`731f4f4e`)
 
-- **S3a: multi-row forms of rmsnorm_quant, quant_vec, swiglu_quant and rope2** (`metal/batch_rows.go`), one
+- **S3a: multi-row forms of rmsnorm_quant, quant_vec, swiglu_quant and rope2** (`backend/metal/batch_rows.go`), one
   threadgroup or thread block per row, all rows in one dispatch.
   - Their bodies are production's byte for byte. Each variant is derived at init from `allKernels`' own source, by
     renaming the pointer and per-row parameters in the signature and adding a prologue that points them at the row.

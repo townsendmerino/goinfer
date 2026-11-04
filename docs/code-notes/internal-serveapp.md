@@ -1356,7 +1356,7 @@ The default flipped on the S13-lite float32 arm (2.40 s against 4.59 s a new ima
 docs/completed/task-multimodal-support-2026-10.md, "Gemma 3's CUDA default is now float32". The float32 tower holds about 1.7 GiB against 0.56, which on
 the 8 GB card is 2 resident KV slots at the 4096 floor instead of 3.
 M-18 (docs/audit-2026-09-10.md): cuda joins webgpu here now that the resident CUDA vision tower's own leak/threading bugs are fixed
-(cuda/vision_encoder.go); cuda/vision_register.go registered its factory with vision.RegisterResident via cuda/cmd/serve's blank import.
+(backend/cuda/vision_encoder.go); backend/cuda/vision_register.go registered its factory with vision.RegisterResident via cuda/cmd/serve's blank import.
 ```
 
 ## towerInt8
@@ -1458,7 +1458,7 @@ Moved from `internal/serveapp/main.go` (the comment above `qwenTowerPlacement`) 
 
 ```text
 qwenTowerPlacement decides where Qwen2.5-VL's vision tower runs and attaches it (S4, docs/completed/task-multimodal-support-2026-10.md): aikit's gpu/qwencuda
-tower under --backend cuda when the binary registers one (cuda/vision_towers.go imports it) and the tower is float32 (G-S4q: correct at real size, 1.6-2.7x the
+tower under --backend cuda when the binary registers one (backend/cuda/vision_towers.go imports it) and the tower is float32 (G-S4q: correct at real size, 1.6-2.7x the
 CPU tower); the CPU everywhere else, with the reason named. -require-backend turns each CPU fallback under cuda into a refusal. -vision-device cpu arrives
 here as backend "cpu". Metal has no Qwen2.5-VL device tower yet (the owner's rebuild on the Metal base is the Mac's), so only cuda asks for one.
 ```
@@ -1887,7 +1887,7 @@ hidden-wide float32 buffers per patch). Calibrated against a measurement, not de
 Moved from `internal/serveapp/tower_reserve.go` (the comment above `qwen25VLTowerEstimate`) on 2026-10-09.
 
 ```text
-qwen25VLTowerEstimate prices goinfer's float32 Qwen2.5-VL tower on CUDA (cuda/qwen25_vision.go), calibrated to a measurement and not derived (S7 on CUDA's fix, 2026-10-08). On the 8 GB card the tower's weights took
+qwen25VLTowerEstimate prices goinfer's float32 Qwen2.5-VL tower on CUDA (backend/cuda/qwen25_vision.go), calibrated to a measurement and not derived (S7 on CUDA's fix, 2026-10-08). On the 8 GB card the tower's weights took
 2758 MiB, 337 MiB over the arithmetic size (about 570 separate buffers, each rounded up to the allocator's 2 MiB quantum); the first image's scratch is np * (7 hidden + 2 padded intermediate + patch dim + 2 head dim) * 4
 bytes, 270 MiB at 4096 patches. The ceiling stays 8192 patches (about 1.6 MP); a larger image falls back to the CPU tower by name (deviceFallback).
 

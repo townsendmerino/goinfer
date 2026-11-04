@@ -1,6 +1,6 @@
 # Tack's E0 run C3 on goinfer f20f0d93: two findings read from its logs and the code (2026-10-18)
 
-Logs only; nothing was run for this note. Sources: tack's C3 output and the servers' load logs on nobara (under `~/tack-runs/e0/`), `internal/kvmgr`, `decoder/cachestate.go`, `cuda/prefill.go`, and the `kv3-tiled-2026-10` branch.
+Logs only; nothing was run for this note. Sources: tack's C3 output and the servers' load logs on nobara (under `~/tack-runs/e0/`), `internal/kvmgr`, `decoder/cachestate.go`, `backend/cuda/prefill.go`, and the `kv3-tiled-2026-10` branch.
 Nothing here is built. Where a number is not in the logs, the note says so and names the cheapest run that would give it.
 
 ## 1. Qwen3.6-35B-A3B (`--moe-cache-experts`): the serving swap watch halted the whole arm
@@ -79,12 +79,12 @@ Model facts (GGUF metadata): 32 layers, `full_attention_interval` 4 (so 8 full-a
 ### (b) Cold prefill 260 → 75 tok/s between 4k and 31k: the same 48 KiB shared-memory limit as Gemma 4's finding 1
 
 - The 9B's load log says `prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)`. Head dim 256 is not served by the fused attention (64 or 128 only), so the 8 full-attention layers take
-  the exact `attn_batched`, whose dynamic shared memory is `(nKeys+128)*4` bytes. The device limit is `singleBlockAttnShmemLimit`, 48 KiB or 49,152 B, which allows **12,160 attended keys**. Gemma's 50,300 B is 12,447 keys on the same formula. Past that bound `cuda/prefill.go:cudaResident.checkPrefillShmem`
+  the exact `attn_batched`, whose dynamic shared memory is `(nKeys+128)*4` bytes. The device limit is `singleBlockAttnShmemLimit`, 48 KiB or 49,152 B, which allows **12,160 attended keys**. Gemma's 50,300 B is 12,447 keys on the same formula. Past that bound `backend/cuda/prefill.go:cudaResident.checkPrefillShmem`
   declines the batched pass (`errPrefillDeclined`) and the prompt is prefilled by the sequential KV-only path.
 - **The throughput numbers fit.** 4,093 tokens in 15.3 s is 267 tok/s, and 8,182 in 38.8 s is 211 tok/s (batched, under the bound; the fall is the attention's quadratic growth). 31,744 tokens in 421.3 s is **75.3 tok/s**, close to the 65 tok/s decode rate:
   the whole 31.7k prompt ran sequentially, as an up-front check on the prompt length would have it.
 - **Not captured:** the decline line itself (`cuda prefill: layer N attention at … attended keys needs … B of shared memory …`) is not in the logs tack saved, since the load logs end at shutdown. One request of about 13,000 tokens on the 9B, reading the server's stderr, confirms it in about 3 minutes.
-- **A fix already exists, unmerged.** Branch `kv3-tiled-2026-10` (17 commits ahead of main; the owner's decision is recorded in `docs/measurements/kv3-tiled-exact-2026-10-13.md` §11) has `cuda/prefill_splitkv.cu`: three row-batched kernels (scores, softmax, V-sum) that run an exact-attention layer past the shared-memory bound,
+- **A fix already exists, unmerged.** Branch `kv3-tiled-2026-10` (17 commits ahead of main; the owner's decision is recorded in `docs/measurements/kv3-tiled-exact-2026-10-13.md` §11) has `backend/cuda/prefill_splitkv.cu`: three row-batched kernels (scores, softmax, V-sum) that run an exact-attention layer past the shared-memory bound,
   bit-identical to `attn_batched`, routed exactly where `splitKVRequired` holds and no fused attention serves the head dim, with the score scratch bounded at 64 MiB. That is the split-KV prefill path for Gemma, and it serves any layer with head dim 256, so it would carry the 9B's 8 attention layers.
   Two things are not known. First, past the bound the branch runs every pass of the prompt on the exact kernels (the tensor-core GEMM missed its fidelity bar there), so the speed past 12k is that path's and has not been measured for a DeltaNet hybrid. Second, the branch predates the Gated-DeltaNet batched
   prefill and the `.giw` changes, so it has to be brought onto main, and a Qwen3.5 tiny fixture must prove the route (bit-identity below the bound with the route forced; above the bound against the per-token path).

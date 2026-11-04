@@ -18,13 +18,13 @@ was correct *as of 2026-09-01*. It is simply older than the code.
 ## What actually shipped, and when
 
 `git log -S "sequences all N token forward steps inside a SINGLE Metal command buffer" --
-metal/backend.go` finds exactly one commit: `a1640a6a` ("perf(decoder,gpu,metal): bump aikit to
+backend/metal/backend.go` finds exactly one commit: `a1640a6a` ("perf(decoder,gpu,metal): bump aikit to
 v1.44.0; batch/pipeline forward optimizations", 2026-09-16). Its own commit message states
 plainly: "Metal's `ForwardN` now batches all [N token forward steps into a single command
-buffer]." `metal/backend.go`'s `ForwardN` calls `a.r.ForwardBatch(embeddings, startPos)` today
+buffer]." `backend/metal/backend.go`'s `ForwardN` calls `a.r.ForwardBatch(embeddings, startPos)` today
 (confirmed by direct read, not assumed), and `VerifyPath()` reports `"batched layer-major
 single-command-buffer"` for every non-paged-MoE family. The one place still describing the old
-behavior in comment form is `metal/theta_probe_test.go`'s own doc comment — worth a follow-up fix,
+behavior in comment form is `backend/metal/theta_probe_test.go`'s own doc comment — worth a follow-up fix,
 out of scope for this record.
 
 **The dates matter.** `a1640a6a` landed 2026-09-16. Red-october's own cited Metal Θ=0.96 figure is
@@ -37,7 +37,7 @@ earlier today, not a coincidence of phrasing.
 
 ## Method
 
-Box: `apple-m1pro` (M1 Pro, 6P+2E, 16 GB). goinfer `d3ab9223`. `metal/theta_probe_test.go`'s
+Box: `apple-m1pro` (M1 Pro, 6P+2E, 16 GB). goinfer `d3ab9223`. `backend/metal/theta_probe_test.go`'s
 existing `TestThetaProbe_Metal` (`GOINFER_THETA_PROBE=1`), unmodified — the same instrument
 `theta-per-backend-2026-09-01.md` used, so the two are directly comparable. Definition unchanged:
 seed `depth` positions, time `ForwardN` over a width ladder {1,2,3,4,6,8,12,16}, Θ = least-squares

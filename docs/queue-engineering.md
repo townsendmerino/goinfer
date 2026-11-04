@@ -155,7 +155,7 @@ of those is named anywhere, and all of them break it. The failure will be **sile
 error**, so it will not announce itself.
 
 **It is recorded in two places on purpose**, because the entry is not where the change gets written:
-here, and at the module/pipeline cache site in `cuda/backend.go` — the code someone adding residency
+here, and at the module/pipeline cache site in `backend/cuda/backend.go` — the code someone adding residency
 recovery is actually reading. Neither location is decorative; a rule filed only in a queue entry is a
 rule nobody encounters at the moment they break it.
 
@@ -195,7 +195,7 @@ pinned. One line tested it:
     PINNED    hold+release 50%   POISON POISON POISON   (runtime.LockOSThread + defer Unlock)
 
 **Three of three either way.** So `cuFuncGetAttribute` staying valid while a reload fixes the result
-still stands as the finding, `cuda/backend.go`'s cache-site comment stands as written, and nothing
+still stands as the finding, `backend/cuda/backend.go`'s cache-site comment stands as written, and nothing
 downstream of eviction needs revisiting.
 
 **What it does leave open: the thread factor is real but NOT pinning.** A pinned test goroutine
@@ -227,7 +227,7 @@ could show otherwise.** Two nulls from a route with no positive control are not 
 load-bearing work in the tag argument.** Read rather than assumed, after the prefill control failed
 to fire:
 
-- `CreateSystemDefaultDevice()` (aikit `gpu/cuda.go`) calls **`dev.Primary()`** — the device's
+- `CreateSystemDefaultDevice()` (aikit `backend/webgpu/cuda.go`) calls **`dev.Primary()`** — the device's
   **primary context**, retained by refcount. gocudrv **does not bind `cuCtxCreate` at all**.
 - `Context.Close()` calls **`PrimaryCtxRelease`** — a refcount **decrement**, not a destroy.
 
@@ -252,7 +252,7 @@ destroys the context" verdict rested on the same false premise and is withdrawn.
 does is release a model's device memory into a context that other models may still be using.
 
 **PREFILL MEASUREMENT: INCONCLUSIVE, because the POSITIVE CONTROL DOES NOT FIRE. Reported as
-inconclusive rather than clean.** (`cuda/a13_prefillchurn_test.go`, 2026-08-13)
+inconclusive rather than clean.** (`backend/cuda/a13_prefillchurn_test.go`, 2026-08-13)
 
 `ReleaseBuf` was read first and the stimulus is real: `ReleaseBuf` → `Buffer.Close` →
 `cudaresult.MemFree`. **No pool, no reuse** — prefill scratch genuinely returns hundreds of MB to
@@ -295,7 +295,7 @@ invariant, not the invariant itself.
 | **A5 cap search** (`capSlots`) | **no — pure arithmetic.** `fits(n)` compares `slotRequirement(...)+slotMarginBytes` against `free`; nothing is allocated to probe | **CLEAN** |
 | **`allocSlots` failure** | **no.** OOM arrives as a panic from `MustBuf` and *the resident is discarded on decline* — context torn down | **CLEAN** |
 | **expert cache / KV growth** | no mid-life grow/resize path exists in `cuda/` | **CLEAN** |
-| **prefill scratch** (`cuda/prefill.go:cudaResident.prefillCore`) | **YES.** `scratch` is allocated per call and released by a deferred loop of `r.dev.ReleaseBuf(b)`, inside the live resident context. Its own comment: *"at M=3000 this is hundreds of MB"* | **NEEDS MEASUREMENT — see below** |
+| **prefill scratch** (`backend/cuda/prefill.go:cudaResident.prefillCore`) | **YES.** `scratch` is allocated per call and released by a deferred loop of `r.dev.ReleaseBuf(b)`, inside the live resident context. Its own comment: *"at M=3000 this is hundreds of MB"* | **NEEDS MEASUREMENT — see below** |
 
 **PREFILL SCRATCH IS THE ONE PATH THAT MATCHES THE POISONING CONDITION, and it ships.** Every long
 prompt allocates hundreds of MB of scratch and frees it without leaving the context. That is
@@ -533,11 +533,11 @@ used, and the next 9B job's start check read 8.13 GB against an 8.7 GB need unti
   - **The `.giw` stays mapped until `decoder/model.go:Model.Close`** (`decoder/giwmap_darwin.go:mapGIW`: `MAP_SHARED` on darwin, aikit's
     `MAP_PRIVATE` elsewhere), and the host weights alias it: int8 and int4 codes and their scales are views into the mapping, not copies.
     The first load reads every page for the CRC pass unless `decoder/giwverify.go:giwVerified` finds the file's marker.
-  - **CUDA and WebGPU copy the weights to the device** (`cuda/pack_stream.go:cudaResident.streamW`, in row blocks through a staging
-    buffer; `gpu/residency.go:webgpuBackend.BuildResident`), and keep the host weights afterwards: `decoder/model.go:Model.tryClaimResident`
+  - **CUDA and WebGPU copy the weights to the device** (`backend/cuda/pack_stream.go:cudaResident.streamW`, in row blocks through a staging
+    buffer; `backend/webgpu/residency.go:webgpuBackend.BuildResident`), and keep the host weights afterwards: `decoder/model.go:Model.tryClaimResident`
     falls back to the CPU path when the resident is busy, and CUDA gathers token embeddings on the host. Nothing drops or advises the pages
     after the upload.
-  - **Metal aliases most of a `.giw` model:** `metal/alias.go:weightAlias.windowOn` builds no-copy buffers over `Model.MmapAliasWindow`
+  - **Metal aliases most of a `.giw` model:** `backend/metal/alias.go:weightAlias.windowOn` builds no-copy buffers over `Model.MmapAliasWindow`
     (default on; `GOINFER_METAL_ALIAS=0` turns it off) for the int4 and int8 codes and contiguous scales; norms, routers, non-contiguous
     scales and unpaged routed experts are copied. While a Metal resident serves, those file pages **are** its weights.
   - **The sidecar write** goes through the page cache: buffered writes, a read-back of the cached copy, then a self-check load of the new
@@ -621,7 +621,7 @@ checkout. The M1 cell is re-queued night-only with its exit 75 on a fit refusal.
 - **Gate:** tier 0 in `scripts/test_night.py` with a fake clock and lock: each start condition, the exit-75 re-queue and its limit, an idle
   runner holding no lock, settle under the lock, idle-versus-busy status; a plant per rule; the plist and unit linted.
 
-**B37 · The in-process real-model harnesses load with `decoder.Options` that are not serve's, so their expert cache and KV plan differ from the server's at the same flags** — filed 2026-10-19 (owner, from the Mellum2.1 16k reading). **DONE: merged 2026-10-19 as #109 (`504da5ab`; the build is `4e8610ee`).** `serveOptions` and `loadLikeServe` (`cuda/serve_options_test.go`) build serve's options for the same flags and VOID a load whose memory-moving fields differ; the Mellum2.1 moe-rows harness, `prefill_decomp`, `prefill_longprompt`, `p20_expert_locality` and the 26B in `prefill_moe` load through them. Gate (a) passed: the harness planned 53 expert slots, the server's figure (26 before); (b) and (c) are `TestServeOptions_carryServesDefaults` and `TestServeOptions_guardVoidsTheB37HarnessOptions` (the plant). Not moved: `gptoss_real20b_test.go` (a parity gate, not timed) and the KV-policy readings still write their own options. The scoping below is the record.
+**B37 · The in-process real-model harnesses load with `decoder.Options` that are not serve's, so their expert cache and KV plan differ from the server's at the same flags** — filed 2026-10-19 (owner, from the Mellum2.1 16k reading). **DONE: merged 2026-10-19 as #109 (`504da5ab`; the build is `4e8610ee`).** `serveOptions` and `loadLikeServe` (`backend/cuda/serve_options_test.go`) build serve's options for the same flags and VOID a load whose memory-moving fields differ; the Mellum2.1 moe-rows harness, `prefill_decomp`, `prefill_longprompt`, `p20_expert_locality` and the 26B in `prefill_moe` load through them. Gate (a) passed: the harness planned 53 expert slots, the server's figure (26 before); (b) and (c) are `TestServeOptions_carryServesDefaults` and `TestServeOptions_guardVoidsTheB37HarnessOptions` (the plant). Not moved: `gptoss_real20b_test.go` (a parity gate, not timed) and the KV-policy readings still write their own options. The scoping below is the record.
 - **Measured:** `TestMoERows_realMellumIdentityAndAB` at `-ctx 32768 --moe-cache-experts` planned 26 expert slots per layer (3.1 GB free after the build) on a quiet card (only `kwin_wayland`) in two sessions; the server planned 53 (5.8 GB free) with the same flags minutes apart (`docs/measurements/mellum21-served-16k-2026-10-19/README.md`).
 - **Cause:** `Options.ResidentWindowedKV`. Serve sets it from `--windowed-kv` (default true, `internal/loadflags/loadflags.go`); the library default is false and the harness does not set it, so Mellum2.1's 21 sliding-window layers kept the whole context instead of window + 512 positions: 21 x (32,768 - 1,536) x 4,096 B = 2.686 GB, against the observed 2.7 GB gap. Arithmetic match to three figures; the first gate below turns it into a run.
 - **Affected:** every `cuda/*_test.go` harness that loads a real checkpoint through `decoder.Load` with hand-written options (`moe_rows_real_test.go`, `prefill_decomp_test.go`, `prefill_longprompt_test.go`, the P20 and KV-policy readings, `gptoss_real20b_test.go`), for any model with sliding-window layers; other options that move memory (KV slots, the KV element type, act-quant group, embed-int4) are the same class and unchecked.
@@ -721,7 +721,7 @@ correctly and then continues with `<|im_start|>assistant ... What is the currenc
 **Not started.** Loading the whole Nemotron-Nano-9B-v2 from its GGUF on the 8 GB card, with the token table at int4 and no `-ctx`, the load-time fit
 guard pinned a context of **12,353** positions and the CUDA build then refused it: 0.40 GB of KV against 0.80 GB free, with 384 MiB reserved
 (`checkKVFits`), short by about 8 MB, so the model ran on the CPU. With an explicit `ResidentContext: 4096` it ran resident (the same weights, 135 MiB of KV).
-- **Why it is not trimmed (INFERRED from `cuda/resident.go` and `decoder/model.go`; not stepped through):** the guard's pin sets
+- **Why it is not trimmed (INFERRED from `backend/cuda/resident.go` and `decoder/model.go`; not stepped through):** the guard's pin sets
   `ResidentContextRequest() > 0` while `ResidentContextPinned()` stays false, and the build's `ctxExplicit` is `ResidentContextRequest() > 0`, so
   `checkKVFits`'s trim of an *unpinned* context (`trimUnpinnedCtx`, which would have given 12,124) is skipped for a guard pin and the build declines.
   The plan (`resolveCtxCapFitSlack`) treats a guard pin as a ceiling, but nothing makes the ceiling fit this card's free memory net of the reserve.
@@ -732,8 +732,8 @@ guard pinned a context of **12,353** positions and the CUDA build then refused i
   only when even `cudaCtxCapDefault` does not fit; a planted defect (the trim skipped for a guard pin, as now) must go red. Then the 9B load itself as the by-day tier 1.
 
 **B29 · the CUDA context plan does not price a Gated-DeltaNet model's recurrent state: measure what pricing it would change before deciding** — filed 2026-10-16
-(owner, from OP2b step 2c). **Not started; not blocking.** Step 2c made the plan price the Mamba-2 state (`mambaStateBytes` in `cuda/mamba_resident.go`,
-added to the allocation slack `resolveCtxCapFitSlack` is given, `cuda/backend.go`). The DeltaNet families' state is allocated at upload exactly the same way
+(owner, from OP2b step 2c). **Not started; not blocking.** Step 2c made the plan price the Mamba-2 state (`mambaStateBytes` in `backend/cuda/mamba_resident.go`,
+added to the allocation slack `resolveCtxCapFitSlack` is given, `backend/cuda/backend.go`). The DeltaNet families' state is allocated at upload exactly the same way
 (`dnWin` and `dnState` per linear layer) and is not priced, so the context the plan picks before the build is chosen against that much more free VRAM than the
 build will find. The build's own fit check (`checkKVFits`) reads free VRAM after the upload, so it sees the state; only the pre-build plan does not. Pricing it
 changes the plan of every shipped DeltaNet model that fits the card, so it is a measurement first.
@@ -755,7 +755,7 @@ before any code.
 
 NVIDIA-Nemotron-Nano-9B-v2's int4 .giw is 19.2 GB: the Mamba in/out projections stay f32 there and in the decoder's host
 weights (about 0.59 GB a layer over 27 layers), and only attention and MLP take the requested quant. Metal already runs
-those projections at int8 (`metal/mamba.go`, quantized at build from the f32 host copy), so the f32 bytes serve only the
+those projections at int8 (`backend/metal/mamba.go`, quantized at build from the f32 host copy), so the f32 bytes serve only the
 CPU path and the build. At int8 the bundle would be about 7 GB, which a 16 GB Mac could load at night, and the whole-model
 half of OP2b's tier 1 could run (docs/tasks/task-forward-architecture-2026-10.md §4.7, "Tier 1 on a layer slice").
 
@@ -1037,7 +1037,7 @@ Three instances, one fact, and the third was inside the tool built to check the 
 |---|---|
 | **E6** | `git diff v1.16.0..v1.17.0 -- gpu/` reported a 72-line PTX change that goinfer had already been running — a nested module diffed across the *parent's* tags |
 | **B7** | the manifest's single `aikit_version` field cannot represent two versions; it drifted to `v1.12.0` against a `go.mod` saying `v1.16.0` |
-| **the citation lint** | `gpu/cuda.go` resolved nowhere, because `required_modules()` read only the root `go.mod` and `aikit/gpu` is not inside `aikit@v1.17.1`'s module-cache directory. Reddened CI on a correct reference |
+| **the citation lint** | `backend/webgpu/cuda.go` resolved nowhere, because `required_modules()` read only the root `go.mod` and `aikit/gpu` is not inside `aikit@v1.17.1`'s module-cache directory. Reddened CI on a correct reference |
 
 **THE FACT LIVES IN `scripts/queue_citation_lint.py`'s `required_modules()`**, which now reads *both*
 `go.mod` files — the root for `aikit`, `cuda/go.mod` for `aikit/gpu` — and prints both resolutions
@@ -1073,8 +1073,8 @@ resource failure arrived wearing a numerics bug's clothes. **`errcheck -blank` c
 | | | | **268** |
 
 **The production set is the one that matters, and `cuda/`'s 35 are concentrated on the DECODE FORWARD
-PATH** — `r.launch(...)`, `r.doG(...)`, `r.stream.Sync()`, `gpu.Download(...)` in `cuda/resident.go` and
-`cuda/prefill.go`. In a test a dropped error reaches an assertion; **in production it reaches a caller**,
+PATH** — `r.launch(...)`, `r.doG(...)`, `r.stream.Sync()`, `gpu.Download(...)` in `backend/cuda/resident.go` and
+`backend/cuda/prefill.go`. In a test a dropped error reaches an assertion; **in production it reaches a caller**,
 as silently wrong output. That is a strictly worse version of the bug A12 just found in a test.
 
 **It can be a gate, unlike the dispatch shape.** `_ =` on an error return is **syntactically
@@ -1314,9 +1314,9 @@ property:
 **No gate remains position-keyed.** The residual surface is **14 `file:line` citations in this file's
 prose**, which no lint covers and which drift silently. Already stale, checked:
 
-- `cuda/backend.go:cudaBackend.BuildResident` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
+- `backend/cuda/backend.go:cudaBackend.BuildResident` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
   inserted the warm-up above it).
-- `cuda/resident.go:cudaResident` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
+- `backend/cuda/resident.go:cudaResident` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
 - two citations were **unresolvable**, because they omitted the repo — an aikit `linalg/quant.go`
   line and a bare `decoder/weightmat.go` one. Both
   are aikit paths written as if they were local ones; the SHA lint learned this distinction for
@@ -1333,7 +1333,7 @@ v1.44.0 bump; previously shifted from `:138` by the 2026-09-03 aikit v1.33.0 bum
 v1.18.0/P2 landed and goinfer bumped to v1.19.0, 2026-08-15 — retargeted so the citation still
 resolves).
 
-**And one turned out not to be a line drift at all.** `cuda/resident.go:cudaResident` was cited for audit
+**And one turned out not to be a line drift at all.** `backend/cuda/resident.go:cudaResident` was cited for audit
 C-08 — `_ = gpu.Upload(...)` discarding errors. That code is **gone**: `recordUpload` captures the
 first error into `r.setupErr` and the build declines gracefully. The citation was stale because the
 CLAIM was stale, and F2 had been listing a fixed critical as open. A line-number check would have
@@ -1467,14 +1467,14 @@ of them:
 
 | site | status |
 |---|---|
-| `cuda/resident.go` (decode) | **shares `applySoftcap`** (`4c26a58`) |
-| `cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
+| `backend/cuda/resident.go` (decode) | **shares `applySoftcap`** (`4c26a58`) |
+| `backend/cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
 | `decoder/forwardn.go:Model.lmHeadN` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-09-16; previously retargeted 2026-08-24, and 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
 | `decoder/model_forward.go:Model.ForwardSubCapture` | unchanged — same freeze |
-| `metal/model.go:buildResident` | unchanged — Metal is on hold for core-numerics surfaces |
+| `backend/metal/model.go:buildResident` | unchanged — Metal is on hold for core-numerics surfaces |
 
 The three unchanged members are a **deliberate** partial fix, not an oversight, and they are the
-reason this row exists: had P3 been taken at face value and only `cuda/resident.go` parallelised,
+reason this row exists: had P3 been taken at face value and only `backend/cuda/resident.go` parallelised,
 even the second CUDA site would have drifted from it. Adopting `applySoftcap` (or its equivalent) at
 the remaining three is the work that closes the row, and it unblocks with the freeze.
 
@@ -1615,7 +1615,7 @@ model.
 Design approved and fully specified. Positional parameters, one generated named type per
 **(parameter name, C type)** — 13 names carry more than one C type, so name-only keying is
 ambiguous. Buffers typed too. Returns `[]KernelArg` rather than launching, so `r.launch`'s sticky-
-error accumulator stays intact and `cuda/prefill.go` and tests share the wrappers.
+error accumulator stays intact and `backend/cuda/prefill.go` and tests share the wrappers.
 
 Extraction: `cuda/internal/gen` parsing `__global__ void NAME(params)`, comments stripped before
 splitting, **hard-failing on any parameter outside the closed 9-type table — never skipping**.
@@ -1631,8 +1631,8 @@ proved `.cu` and `.ptx` can diverge for months. Plus a second lint: **every gene
 called at least once from non-test code**, or is on an explicit test-only list — that closes
 embedded-but-never-bound, the last uncovered member of the dead-code family.
 
-Commit 1 changes no call sites and must be provably inert. Then migrate per file (`cuda/resident.go` 36,
-`cuda/prefill.go` 11, testhooks 1) with a trace comparison at each step.
+Commit 1 changes no call sites and must be provably inert. Then migrate per file (`backend/cuda/resident.go` 36,
+`backend/cuda/prefill.go` 11, testhooks 1) with a trace comparison at each step.
 
 State the **641 → 0** figure in the commit message with its limit: zero counts cross-name
 transpositions the type system prevents; passing a wrong *value* of the right kind still compiles.
@@ -1660,12 +1660,12 @@ blocked on Francis's torch-replacement research — do not attempt it or design 
 | 6 | `scripts/bench_peer.py` | 229 | goinfer-vs-peer decode A/B over both HTTP servers | `scripts/bench_compare.sh` | **stdlib Go** (`net/http`, `os/exec`) but larger | low load-bearing (benchmark, not a gate) |
 | — | `scripts/chatml_tiny_fixture.py` (97), `scripts/diff_gemma4_12b.py` (53), `scripts/bench_prompts_calibrate.py` (41) | | fixture-gen / debug-diff / bench-prompt calibration | none | stdlib | low priority tail — opportunistic |
 
-**Separate category — build tooling / FFI: `cuda/nvrtc_compile.py` (68) — DECIDED 2026-08-12 (Francis): "no Python" COVERS it; do it, LAST, low priority.** It compiles a `.cu` to PTX via **NVRTC** (invoked by `cuda/build_ptx.sh` → `scripts/gpu_gate.sh`); the runtime never calls it (goinfer ships committed PTX, loaded via gocudrv), so it fires only when a `.cu` changes, on the GPU-gate path — **not** always-on CI. Replacement:
+**Separate category — build tooling / FFI: `backend/cuda/nvrtc_compile.py` (68) — DECIDED 2026-08-12 (Francis): "no Python" COVERS it; do it, LAST, low priority.** It compiles a `.cu` to PTX via **NVRTC** (invoked by `backend/cuda/build_ptx.sh` → `scripts/gpu_gate.sh`); the runtime never calls it (goinfer ships committed PTX, loaded via gocudrv), so it fires only when a `.cu` changes, on the GPU-gate path — **not** always-on CI. Replacement:
 
-- **Mechanism: a purego NVRTC binding**, ~6 C-ABI functions (`nvrtcCreateProgram` / `nvrtcCompileProgram` / `nvrtcGetPTXSize` / `nvrtcGetPTX` / `nvrtcGetProgramLog` / `nvrtcDestroyProgram`), same shape as the Metal binding. **purego is already in the cuda/metal dependency set → no new ecosystem.** A `cuda/cmd/ptxgen` (run from `cuda/build_ptx.sh` / `go:generate`) reads the `.cu`, passes the arch options (`--gpu-architecture=compute_75` for Turing, etc.), writes the `.ptx`. Build tooling only — **not** in the main `go.mod` (item-4 constraint holds by construction).
+- **Mechanism: a purego NVRTC binding**, ~6 C-ABI functions (`nvrtcCreateProgram` / `nvrtcCompileProgram` / `nvrtcGetPTXSize` / `nvrtcGetPTX` / `nvrtcGetProgramLog` / `nvrtcDestroyProgram`), same shape as the Metal binding. **purego is already in the cuda/metal dependency set → no new ecosystem.** A `cuda/cmd/ptxgen` (run from `backend/cuda/build_ptx.sh` / `go:generate`) reads the `.cu`, passes the arch options (`--gpu-architecture=compute_75` for Turing, etc.), writes the `.ptx`. Build tooling only — **not** in the main `go.mod` (item-4 constraint holds by construction).
 - **Load-bearing constraint (from the split-KV / cap-bump PTX discipline):** `ptxgen` must dlopen the **PINNED** `libnvrtc.so` (explicit path, e.g. 12.6.85 — not "whatever's on the box"), or a regen is a toolchain bump masquerading as a kernel change. Acceptance = the relay's byte-identical control: the Go tool must reproduce **every currently-committed `.ptx` byte-for-byte** from the current `.cu` at the pinned version before the Python is deleted (criterion **a**), and rebuild-unchanged → identical sha.
 - **Honest limit:** removes the *Python*, not the *NVRTC dependency* — someone must still compile `.cu`→PTX, which irreducibly needs libnvrtc at regen time (the Python helper needs it too; no new burden). "No Python," not "no CUDA build dep."
-- **Priority: LAST E7 item**, after the `queue_citation_lint` capstone proves the pattern — nvrtc is hardware-gate-path and rarely invoked, unlike the CI-critical citation lint. Independent of the `oracle/` plan (`docs/tasks/parked/task-oracle-refforward.md`); shares nothing with it. Deletes `cuda/nvrtc_compile.py` in the landing commit (criterion **c**).
+- **Priority: LAST E7 item**, after the `queue_citation_lint` capstone proves the pattern — nvrtc is hardware-gate-path and rarely invoked, unlike the CI-critical citation lint. Independent of the `oracle/` plan (`docs/tasks/parked/task-oracle-refforward.md`); shares nothing with it. Deletes `backend/cuda/nvrtc_compile.py` in the landing commit (criterion **c**).
 
 **Acceptance criterion per migration (non-negotiable, from Francis):**
 - **a.** Run the Python and the Go against the current tree; outputs must **agree**. Any disagreement is **investigated before the swap**, not explained after.
@@ -1676,7 +1676,7 @@ blocked on Francis's torch-replacement research — do not attempt it or design 
 **Dependency constraint:** **no tooling dependency in the main module's `go.mod`.** Stdlib-only where possible; a separate **`tools/` module with its own `go.mod`** where a parser is genuinely needed (the ci-checks YAML question is the only candidate). A consumer's module graph must not grow because a lint changed language.
 
 **Shell — minimize, harden what stays (item 6 audit, 9 shell scripts):**
-- **Keep (orchestration):** `scripts/parity_sweep.sh`, `scripts/gpu_gate.sh`, `scripts/heavy_gate.sh`, `cuda/build_ptx.sh`, and the two demo asset-build scripts under `demo/chat/` and `demo/agent/`. **Move (reads tree + decides):** `scripts/mutation_check.sh` MOVED 2026-08-21 (`gate mutation`, script deleted); the deciding half of `scripts/refresh_parity_hashes.sh` remains a candidate; `scripts/bench_compare.sh` folds into the bench-peer Go successor.
+- **Keep (orchestration):** `scripts/parity_sweep.sh`, `scripts/gpu_gate.sh`, `scripts/heavy_gate.sh`, `backend/cuda/build_ptx.sh`, and the two demo asset-build scripts under `demo/chat/` and `demo/agent/`. **Move (reads tree + decides):** `scripts/mutation_check.sh` MOVED 2026-08-21 (`gate mutation`, script deleted); the deciding half of `scripts/refresh_parity_hashes.sh` remains a candidate; `scripts/bench_compare.sh` folds into the bench-peer Go successor.
 - **Rule audit (the four rules):**
   - **Rule 3 (`set -euo pipefail`):** `scripts/refresh_parity_hashes.sh` and the three build scripts compliant. **Violations:** `scripts/bench_compare.sh` (`set -u` only) and `scripts/mutation_check.sh` (`set -u` only) — add `pipefail`. *(mutation_check.sh was deleted 2026-08-21 by E8; its finding died with it rather than being fixed, which is what the do-not-harden-the-condemned rule predicted.)* The gate scripts (`scripts/gpu_gate.sh`, `scripts/heavy_gate.sh` are `set -u`; `scripts/parity_sweep.sh` is `set -uo pipefail`) **omit `-e` DELIBERATELY** — they run N families/packages and tally, and `-e` would abort on the first failure and lose the tally. The real requirement there is per-command rc / `PIPESTATUS` capture, which they already do; **do not blanket-add `-e` to a tallying gate.** Document the reason inline so it is not "fixed" into a regression.
   - **Rules 1/2/4:** no violations found in a targeted pass. The scripts show awareness — the mutation checker's header explicitly records fixing the `command -v staticcheck && staticcheck` (rule 1+4) anti-pattern (that header now lives in `cmd/gate/mutation.go`); `scripts/gpu_gate.sh`'s `command -v nvidia-smi` is backend *detection*, not a skipped check; the `grep -c … || true` counts guard the pipe's exit correctly. A full line-by-line pass on the keep-set is deferred with the migration.
@@ -1707,7 +1707,7 @@ Distinct from E7 (which migrates scripts one-for-one): **E8 recognizes that six 
 
 Why Go is *strictly better* here, not just same-language — it dissolves the item-6 audit's footguns by construction: the deliberate-omit-`-e` tally tension vanishes (Go has no abort-on-error — capture `rc`, append, never lose the count); `PIPESTATUS` capture is direct via `os/exec`; the `command -v tool && tool` silent-skip (the one the mutation checker records fixing) can't recur (`exec.LookPath` miss is an explicit error). Backend/asset detection → SKIP-with-reason in Go, where it can't fail open.
 
-**Stays shell (pure glue, per the decides-vs-orchestrates line):** `cuda/build_ptx.sh`, the two `demo/*` asset-build scripts, env-then-run-one-command wrappers. The runner **shells out to** `go test -json` (stdlib `os/exec`) — orchestrates it, doesn't reimplement it; **no new main-`go.mod` dependency.**
+**Stays shell (pure glue, per the decides-vs-orchestrates line):** `backend/cuda/build_ptx.sh`, the two `demo/*` asset-build scripts, env-then-run-one-command wrappers. The runner **shells out to** `go test -json` (stdlib `os/exec`) — orchestrates it, doesn't reimplement it; **no new main-`go.mod` dependency.**
 
 **Acceptance = E7's a–d verbatim** (agree-before-swap incl. the tally-integrity mutation case; delete the script in the same commit; the skip-reason scope line survives). **Sequencing note:** do **not** harden shell you're about to delete — the item-6 `pipefail` fixes for `scripts/bench_compare.sh` and `scripts/mutation_check.sh` were moot (both were on the migration list; mutation_check is now deleted); add `pipefail` only to the surviving glue shells.
 
@@ -1719,8 +1719,8 @@ Why Go is *strictly better* here, not just same-language — it dissolves the it
 |---|---|---|
 | C-05 gemma-4 stride on snapshot restore | **fixed**, with a gate | `decoder/kvsnapshot_gemma4_test.go:TestSnapshot_refusesNonUniformKVWidth_C05` |
 | C-06 unvalidated tensor shapes | **fixed**, break-it-first gate | `decoder/serialize_shapecheck_test.go:TestValidateShapes_catchesArchMismatch` |
-| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:cudaResident.recordUpload` |
-| C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:TestArgmaxTieBreak` |
+| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `backend/cuda/resident.go:cudaResident.recordUpload` |
+| C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `backend/cuda/argmax_tiebreak_test.go:TestArgmaxTieBreak` |
 | C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:ReadTokFile` |
 | C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:maxEmbedInputs` |
 | C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:Main` |

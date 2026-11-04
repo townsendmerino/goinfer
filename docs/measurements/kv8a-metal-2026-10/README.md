@@ -9,14 +9,14 @@ after data.
 ## What carries over from CUDA, and what does not
 
 - **The save point and the bar carry over:** `c = len(prompt)`, no cut; gate 2's bar is bit-identity. Metal promises the property the
-  bar rests on: `metal/backend.go:metalResident.PrefillTailExact` is true, proven for the Gated-DeltaNet pass by
+  bar rests on: `backend/metal/backend.go:metalResident.PrefillTailExact` is true, proven for the Gated-DeltaNet pass by
   `TestDB01_chunkedPrefillMatchesWhole` and `TestMC5_prefillChunkInvariance`. The routing reads the whole prompt's length, so a restore
   at `c` followed by the suffix runs the cold pass's kernels.
 - **The trap to test against** (the 2026-09-27 and 2026-10-04 Metal identity incidents): a warm arm and a cold arm that reuse different
   amounts look like a defect. Every comparison checks `prefill_reused_tokens` on both arms first.
 - **The fast-prefill floor is 16 rows on Metal** (`metalFastPrefillFloor`), not CUDA's 512, so gate 2(a)'s two sizes move.
-- **What the checkpoint holds:** each Gated-DeltaNet layer's conv ring and recurrent state (`metal/deltanet.go:deltaNetLayer`, `win` and
-  `state`), and each Mamba-2 layer's conv window and SSM state (`metal/mamba.go`), copied by one blit into a second buffer set.
+- **What the checkpoint holds:** each Gated-DeltaNet layer's conv ring and recurrent state (`backend/metal/deltanet.go:deltaNetLayer`, `win` and
+  `state`), and each Mamba-2 layer's conv window and SSM state (`backend/metal/mamba.go`), copied by one blit into a second buffer set.
 - **Where it lives:** a private Metal buffer set allocated after KV and scratch and priced by Metal's fit guard. When the guard cannot
   admit it, KV8a declines and the slot behaves as today, as on CUDA. Unified memory: the bytes count against the Mac's 16 GB.
 - **No KV0-H on Metal.** Gate 5's do-nothing arm on CUDA was KV0-H's own readings; nothing equivalent exists on the Mac, so gate M5

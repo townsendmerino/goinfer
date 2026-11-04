@@ -1,9 +1,9 @@
 # L-01 funding cell, real hardware: KILLED — CPU-offloaded MoE experts permanently poison the C′ cache (~11x regression, not the projected win)
 
 Ran `docs/tasks/task-l01-hybrid-moe-cpu-gpu.md` §0's pre-registered funding measurement (fund >=1.3x end-to-end, park <1.15x, 1.15-1.3x ambiguous), after building §9's stated remainder (goroutine-per-expert
-parallel CPU compute alongside the GPU's own async hit-path launches, `cuda/l01_cpu_offload.go`, bit-identical per `TestL01_e2eDecode_matchesBaseline` — race-clean). Qwen3.6-35B-A3B int4 (`qwen3.6-35b-a3b-int4.giw`),
+parallel CPU compute alongside the GPU's own async hit-path launches, `backend/cuda/l01_cpu_offload.go`, bit-identical per `TestL01_e2eDecode_matchesBaseline` — race-clean). Qwen3.6-35B-A3B int4 (`qwen3.6-35b-a3b-int4.giw`),
 CUDA, RTX 2070 SUPER, driver 595.91.07, `-moe-cache-experts` with `GOINFER_MOE_CACHE_SLOTS=64` (the shipped-optimal slot count per `deltanet-residency-shipped`'s own 15.7 tok/s baseline), greedy, one real prompt,
-paired arms (C′ off = the do-nothing arm vs L01 on), committed driver `cuda/l01_funding_cell_test.go`.
+paired arms (C′ off = the do-nothing arm vs L01 on), committed driver `backend/cuda/l01_funding_cell_test.go`.
 
 ## Result: not ambiguous, not close to park — a ~11x regression
 
@@ -23,7 +23,7 @@ output token sequences (same hash) — greedy decode really is bit-identical wit
 
 **The C′ cache can never warm once L01 is on, so 100% of experts route to CPU every token, not the "excess beyond DMA bandwidth" the audit's q* design describes.**
 
-`loadRoutedExperts` (`cuda/resident.go`): for each routed position, `c.admit(e)` provisionally marks a (possibly LRU-evicted) slot as now holding `e` — bookkeeping only, before any bytes move (this is
+`loadRoutedExperts` (`backend/cuda/resident.go`): for each routed position, `c.admit(e)` provisionally marks a (possibly LRU-evicted) slot as now holding `e` — bookkeeping only, before any bytes move (this is
 deliberate, N-09, so a whole layer's DMAs can be issued as one batched upload). On a miss, with `r.l01Enabled`, the code calls `c.unadmit(slot, e)` instead of DMA'ing, and `unadmit`'s own doc comment says exactly
 what it does: **"Rolled back to EMPTY rather than to the evicted expert"** — the slot's bookkeeping goes to EMPTY, not back to whatever expert it held before this call. Two compounding effects, both intended
 behavior for `unadmit`'s ACTUAL purpose (N-09's upload-failure rollback), misapplied here as the normal case:
@@ -51,15 +51,15 @@ slices on every single call, 320+ times per token here) — **not measured or at
 ## Decision, per §0
 
 **KILLED for the AS-WIRED prototype.** Turning L01 on is a ~11x regression on the real target model, not the 1.3x-plus win the isolated microbenchmark(s) projected. `GOINFER_CUDA_L01_CPU_OFFLOAD` stays default-off
-(already true; no user-facing exposure). The goroutine-per-expert parallelization landed this session (`cuda/l01_cpu_offload.go`) is still correct and bit-identical on its own terms — it is a real fix to §9's
+(already true; no user-facing exposure). The goroutine-per-expert parallelization landed this session (`backend/cuda/l01_cpu_offload.go`) is still correct and bit-identical on its own terms — it is a real fix to §9's
 "sequential, not parallel" gap — but it cannot rescue a design that sends 100% of every layer's experts to CPU, forever, by construction.
 
-> **Code removed 2026-09-24** (owner clean-up of code whose record says it didn't pay): `cuda/l01_cpu_offload.go`, its
-> wiring in `cuda/backend.go` / `cuda/resident.go` (the `l01Enabled` fields, scratch, miss hook and merge), its three tests
+> **Code removed 2026-09-24** (owner clean-up of code whose record says it didn't pay): `backend/cuda/l01_cpu_offload.go`, its
+> wiring in `backend/cuda/backend.go` / `backend/cuda/resident.go` (the `l01Enabled` fields, scratch, miss hook and merge), its three tests
 > including the funding-cell driver named below, `decoder/l01_export.go` (`F16BitsToF32`, `CPUExpertWeights`,
 > `ComputeExpertMLP` — exported only for it) and `decoder/l01_expert_bench_test.go`, and the `GOINFER_CUDA_L01_CPU_OFFLOAD`
 > knob. Last present at `8f452a7e`: a re-attempt starts from that tree, and "re-run the same committed driver" below
-> means `git show 8f452a7e:cuda/l01_funding_cell_test.go`.
+> means `git show 8f452a7e:backend/cuda/l01_funding_cell_test.go`.
 
 ## What a real re-attempt needs (not attempted here — a redesign, not a re-roll)
 
@@ -67,7 +67,7 @@ The audit's own q* design (`docs/tasks/task-l01-hybrid-moe-cpu-gpu.md` §0: "q* 
 NORMAL admit+DMA path so the cache stays warm; the shipped prototype implements q*=0 (route every miss to CPU) unconditionally, which is a different, self-defeating regime this measurement was needed to expose.
 A real fix needs, at minimum: (a) still DMA a bounded number of misses per layer normally (keeping `admit`'s bookkeeping intact for them, so the cache actually accumulates residents), and offload only the
 remainder past that bound to CPU; (b) a `pprof` profile of one L01-on token to separate the allocation/GC cost from the lost-overlap cost named above; (c) re-run this SAME committed driver
-(`cuda/l01_funding_cell_test.go`) once (a) exists — it is ready to reuse, not a new instrument.
+(`backend/cuda/l01_funding_cell_test.go`) once (a) exists — it is ready to reuse, not a new instrument.
 
 ## Not established
 

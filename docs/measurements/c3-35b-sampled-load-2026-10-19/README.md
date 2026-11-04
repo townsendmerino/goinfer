@@ -70,7 +70,7 @@ far from full, and the kernel then reclaims from the slice, anonymous pages incl
 
 ### Run 3, 2026-10-19 08:48:54 to 08:49:31 PDT (B36 build `ca0c37cf`, `~/serve-cuda-b36-ca0c37cf`, the guard on, no bypass; `~/goinfer-logs/c3-35b-b36-2026-10-19/`): the load completes
 
-The same job as run 2 on the B36 build, which plans the routed-expert stacks and packs them straight into their pinned buffers when the build uploads (`cuda/pack_stream.go:planWeightStack`, `packStackPinned`). One run, by day, under the timing lock; the sampler now also reads `user-1000.slice` `memory.current` and `memory.events` `high` every 50 ms. Load only: no generation was checked on this build.
+The same job as run 2 on the B36 build, which plans the routed-expert stacks and packs them straight into their pinned buffers when the build uploads (`backend/cuda/pack_stream.go:planWeightStack`, `packStackPinned`). One run, by day, under the timing lock; the sampler now also reads `user-1000.slice` `memory.current` and `memory.events` `high` every 50 ms. Load only: no generation was checked on this build.
 
 | | run 2 (`333407c3`, aborted at layer 23 of 40) | run 3 (B36, ready) |
 |---|---|---|

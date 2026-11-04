@@ -2,7 +2,7 @@
 
 Registered before any run. The owner approved the fix on branch `mellum-rollback-2026-10` (7b0c9a59): an expert-cache load of a
 windowed model takes the rollback grant just before its expert cache is sized, never below the cache's minimum
-(`cuda/kvwindow.go:cudaResident.kvGrantRollback`, and a new method on the branch, expertCacheFloorBytes, that prices the cache's minimum). Before it, such a load kept the
+(`backend/cuda/kvwindow.go:cudaResident.kvGrantRollback`, and a new method on the branch, expertCacheFloorBytes, that prices the cache's minimum). Before it, such a load kept the
 floor rollback (448 positions, up to 512 by the compaction phase), which refuses tack's E0 resend (diverging about 518 back) at every
 size (`docs/queue-performance.md`, P34). Merge needs this probe to show the predicted pattern and the CUDA gate below to pass, then
 the owner's yes.

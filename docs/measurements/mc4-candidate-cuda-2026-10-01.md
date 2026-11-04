@@ -189,7 +189,7 @@ resident access is *guarded* but has no numerics and no real KV slots, so a slot
 **Fix.** The round's verify runs inside `batcher.exclusive` (decoder/spec_ngram.go), so it holds `busy` like every other resident touch.
 
 **Evidence.**
-- In-process on a real CUDA resident (`cuda/spec_adaptive_concurrent_test.go`: 4 concurrent adaptive generations against their lone
+- In-process on a real CUDA resident (`backend/cuda/spec_adaptive_concurrent_test.go`: 4 concurrent adaptive generations against their lone
   references, llama-tiny int4, 6 repeats): **23 of 24 differ without the fix, 0 of 24 with it**, and 5 further runs of the scratch version
   were 0 of 24 each.
 - Served on the real 1.5B (text-level repro, `text-repro/`, same arms as above, 4 clients): candidate **0/8 → 8/8** identical to batch on
@@ -293,7 +293,7 @@ a step with which.
 
 **A reply can differ because part of its prompt's KV was REUSED from rows computed by a different kernel class than the one that would have computed them now.** CUDA prefills a prompt of at least 512 tokens on the fast kernels (`attn_fused`, `gemm_w4a8_mma`) and anything
 shorter on the exact ones (`attn_batched`, the decode-shaped GEMV). A slot left behind by a short request (the warm-up request, or any short chat turn) holds exact-kernel rows. When a later long prompt reuses even a 3-token header of them
-and prefills the rest on the fast kernels, its KV is a mix, and its logits differ from a cold prefill of the same prompt. The kernels themselves are fine. Evidence, from runs in `text-repro/diag-2026-10-02/` and `cuda/prefill_startoffset_test.go`:
+and prefills the rest on the fast kernels, its KV is a mix, and its logits differ from a cold prefill of the same prompt. The kernels themselves are fine. Evidence, from runs in `text-repro/diag-2026-10-02/` and `backend/cuda/prefill_startoffset_test.go`:
 
 1. **The fused kernels ARE start-offset-invariant** (`TestPrefillStartOffset`, the 1.5B, a 941-row prompt). Prefill the first r rows in one call and the rest in a second call at `startPos=r` (what a reuse does), against the whole prompt in one call. With the fast kernels on
    BOTH calls (`GOINFER_CUDA_FAST_PREFILL_FLOOR=0`): **bit-identical at r = 16, 17, 33, 64, 100, 300 and 512 (0 of 151,936 logits differ)**. With the default floor, a first call under 512 rows is exact, and **every r below 512 differs (max |delta| 0.71 to 0.94 on random embeddings)**; r = 512 is

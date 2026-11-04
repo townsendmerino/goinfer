@@ -47,7 +47,7 @@ has been default-on since R2 (2026-09-21) on a PASS that this section finds was 
 
 ### The kernel
 
-`attention_fa_blk<G>` in [`metal/decode_attn_r17_test.go`](../../metal/decode_attn_r17_test.go) (test-only; production
+`attention_fa_blk<G>` in [`backend/metal/decode_attn_r17_test.go`](../../metal/decode_attn_r17_test.go) (test-only; production
 never compiles it). It replaces `attention_fa`'s first pass with the same signature, grid, and partial layout, and reuses
 `attention_fa_combine` unchanged. Per simdgroup:
 
@@ -111,7 +111,7 @@ differed from R2's shipped arm** on prompts 3, 4, 5, 7, 8 and 10 (for example, p
 The shipped arm runs the exact kernel with `attention_fa` off, so it should be identical in both runs.
 
 **Mechanism: the pipelined executor leaks the previous arm's kernel into each arm's first decode step.** `execLoop`
-(`metal/model.go`) pre-encodes token t+1's command buffer right after committing t, reading the resident's state at
+(`backend/metal/model.go`) pre-encodes token t+1's command buffer right after committing t, reading the resident's state at
 that moment: `decodeAttnFA`, the `pAttnFA` pipeline, `canUseAttnFA` at `curNKeys`, and the split grid. It keeps that
 buffer for the next job. `PrefillLast` does not go through the executor. So the first `Forward` after an arm switch runs
 a command buffer encoded under the previous arm. Localised by [`step2-state-leak3.log`](metal-decode-attn-r17-2026-09-25/step2-state-leak3.log),
@@ -174,7 +174,7 @@ inputs, and the gate's verdicts on changes that are accuracy-neutral by construc
 
 ### Kernel accuracy against a float64 reference on real inputs
 
-`TestR17KernelAccuracy` ([`metal/decode_attn_r17_test.go`](../../metal/decode_attn_r17_test.go)) works as follows:
+`TestR17KernelAccuracy` ([`backend/metal/decode_attn_r17_test.go`](../../metal/decode_attn_r17_test.go)) works as follows:
 
 - It uses 3 real prompts from set "a", prefilled at K=3900, and one decode step at pos K encoded **layer by layer**
   with the exact kernel in the trunk.
@@ -328,7 +328,7 @@ belongs on set B under a bar registered first.
 
 ## Production fix: the executor encodes each command buffer for its own job's key count (2026-09-25)
 
-**Defect** (see "Mechanism" under Step 2). `execLoop` (`metal/model.go`) encoded token t+1's command buffer
+**Defect** (see "Mechanism" under Step 2). `execLoop` (`backend/metal/model.go`) encoded token t+1's command buffer
 right after committing token t. The two attention decisions an encode bakes in, attention_fa's depth gate and its
 split grid, read the key count *at that moment*, which was the previous job's. Nothing dropped a pre-encoded buffer
 when a new request began, because `PrefillLast` does not go through the executor. Production consequences:
@@ -352,7 +352,7 @@ So output depended on the previous request.
   construction.
 - Steady decode never mismatches, and costs one struct comparison per token.
 
-**Test** (`TestExecutorAttnPlan`, `metal/exec_plan_test.go`, committed fixture `testdata/llama-attnfa-tiny`, about
+**Test** (`TestExecutorAttnPlan`, `backend/metal/exec_plan_test.go`, committed fixture `testdata/llama-attnfa-tiny`, about
 6 s). A sequence of requests runs through the production adapter (`metalResident.Forward` → executor), never
 flushed, and each is compared bit for bit with the same request run synchronously:
 - a floor crossing;
@@ -455,7 +455,7 @@ engages (≥ `attnFADepthFloor` = 1536 keys), so the path at 128 keys is unchang
 ## R17 step 3: production wiring (2026-09-25)
 
 **What shipped.**
-- The graded kernel moved into `allKernels` (`metal/kernels.go`) as `attention_fa_blk`, instantiated for G = 6 and 7,
+- The graded kernel moved into `allKernels` (`backend/metal/kernels.go`) as `attention_fa_blk`, instantiated for G = 6 and 7,
   between explicit begin/end markers. The move was mechanical, extracted from the test file, with only the unroll macro
   renamed.
 - In `buildResident`, once the attention_fa-eligible `nKV` is known, a resident whose GQA group size is 6 or 7

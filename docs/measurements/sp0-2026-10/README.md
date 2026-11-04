@@ -1,7 +1,7 @@
 # SP0 — the prize per family: acceptance by teacher forcing, verify-row cost, a projected speedup (registered 2026-10-24)
 
 SP0 of track SP (`docs/tasks/task-forward-architecture-2026-10.md` §6a). No product code: the instrument is a test file
-(`cuda/sp0_prize_test.go`) and an offline projection (`project.py`). This page is the registration, committed before any
+(`backend/cuda/sp0_prize_test.go`) and an offline projection (`project.py`). This page is the registration, committed before any
 reading. Readings land below it, on this branch, for the owner's review before anything merges.
 
 ## The rule (the owner's, from §6a; registered before any data)
@@ -86,10 +86,10 @@ reading. Readings land below it, on this branch, for the owner's review before a
 
 ## Prompts (fixed here)
 
-- **code**, 6 prompts, and **math**, 6 prompts: `cuda/default_width_sweep_test.go:widthSweepSuites`, the set the
+- **code**, 6 prompts, and **math**, 6 prompts: `backend/cuda/default_width_sweep_test.go:widthSweepSuites`, the set the
   verify-width sweep used.
 - **edit**, 6 prompts, n-gram only: a code file in the prompt and a small change asked for, with the whole file returned. This
-  is the copy-heavy traffic n-gram exists for (`cuda/sp0_prize_test.go:sp0EditSuite`).
+  is the copy-heavy traffic n-gram exists for (`backend/cuda/sp0_prize_test.go:sp0EditSuite`).
 - **Thinking:**
   - The template's default for every suite: off for Qwen3.5 (the closed `<think>\n\n</think>\n\n`), and the harmony default
     for gpt-oss.

@@ -28,7 +28,7 @@ saving the diagnosis allows, and parks encode-ahead on its measured headroom.
 
 ## 2. Encode-ahead: parked, by its headroom (exploratory)
 
-`TestMC3StepWallVsGPU` (`metal/mc3_step_test.go`), in sequence at depth 128, median of 20 steps:
+`TestMC3StepWallVsGPU` (`backend/metal/mc3_step_test.go`), in sequence at depth 128, median of 20 steps:
 
 | | B = 2 | B = 4 | B = 8 | production token: sync → pipelined |
 |---|---:|---:|---:|---:|

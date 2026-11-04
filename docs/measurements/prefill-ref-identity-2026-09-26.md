@@ -19,7 +19,7 @@ exact arm's pooled KL of 0.485 on set A turned out to be four mismatched prompts
 
 ## Method
 
-`TestPrefillRefIdentity` (`metal/prefill_ref_identity_test.go`):
+`TestPrefillRefIdentity` (`backend/metal/prefill_ref_identity_test.go`):
 
 - For every `S|D7-K<K>-p<i>.bin` file in a set's reference directory, prefill the snapshot prompt's first K tokens on
   Metal and compute KL(the reference's prompt-final logits ‖ the resident's).
@@ -74,10 +74,10 @@ throughout.
 
 Every gate now checks prompt identity per prompt and refuses a mismatched reference:
 
-- the decode gate (`runDecodeFidelityGate`, `metal/r2_gate_test.go`): verdict VOID;
-- the Metal prefill gate (`runPrefillGateSet`, `metal/prefill_gate_ref_test.go`): cell and pooled verdict VOID plus
+- the decode gate (`runDecodeFidelityGate`, `backend/metal/r2_gate_test.go`): verdict VOID;
+- the Metal prefill gate (`runPrefillGateSet`, `backend/metal/prefill_gate_ref_test.go`): cell and pooled verdict VOID plus
   a test error;
-- the CUDA prefill gate (`TestPrefillGateVsReferenceCUDA`, `cuda/prefill_gate_ref_test.go`): cell VOID plus a test
+- the CUDA prefill gate (`TestPrefillGateVsReferenceCUDA`, `backend/cuda/prefill_gate_ref_test.go`): cell VOID plus a test
   error.
 
 The check is KL(reference prompt-final logits ‖ exact arm's) > 1.0.

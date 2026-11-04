@@ -9,8 +9,8 @@ RTX 2070 SUPER, driver 595.91.07, Qwen3-4B int4 target + Qwen3-4B-DFlash (f32) d
 
 The brief names one site. There are two with the identical shape, and every round pays both:
 
-1. `cuda/drafter.go` `DraftTokens` — the drafter head over the block's `M = w−1` rows.
-2. `cuda/prefill.go` `batchedHeadArgmax` — the VERIFY head over `M = w` rows (`PrefillLastNArgmax`), whose own comment
+1. `backend/cuda/drafter.go` `DraftTokens` — the drafter head over the block's `M = w−1` rows.
+2. `backend/cuda/prefill.go` `batchedHeadArgmax` — the VERIFY head over `M = w` rows (`PrefillLastNArgmax`), whose own comment
    already says "a batched argmax kernel is a later, separate ~1 ms".
 
 Prompt prefill is NOT exposed: the batched tail heads only the last row (`tailLast`) unless every row's argmax was
@@ -61,7 +61,7 @@ Two things the phases say individually:
 
 ## Result 2 — the build and the A/B (`TestR14DrafterArgmaxAB`, log `r14-drafter-argmax-2026-09-22-ab.log`)
 
-**Built and shipped, default.** `argmax_rows` (`cuda/argmax.cu`): `argmax_reduce`'s per-thread strided scan and
+**Built and shipped, default.** `argmax_rows` (`backend/cuda/argmax.cu`): `argmax_reduce`'s per-thread strided scan and
 lowest-index tie-break, one block per row, `M` ints out. `argmax.ptx` regenerated at the same NVRTC (12.9.86) it
 was first built with — the existing `argmax_reduce` entry is byte-identical before and after, checked. Both tails
 now go through one `cudaResident.argmaxRows` (`DraftTokens` and `batchedHeadArgmax`): launch, drain, `4·M`-byte

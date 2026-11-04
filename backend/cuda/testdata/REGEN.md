@@ -1,7 +1,7 @@
 # Regenerating `moe.ptx` (and the other audited 12.6 artifacts)
 
 > **STATUS 2026-09-10 (audit M-35): CLOSED via option (a).** `moe.ptx`, `glue.ptx` and
-> `gemv_fwd.ptx` — the three files `cuda/kernels.go` names as the audited set — had each
+> `gemv_fwd.ptx` — the three files `backend/cuda/kernels.go` names as the audited set — had each
 > independently drifted to this box's ambient NVRTC 12.9.86 across three unrelated regens
 > (`moe.ptx` in `610ce7f`, `glue.ptx` in `23c46b13`, `gemv_fwd.ptx` in `5b443834`), none of them
 > at the pinned toolchain. Re-pinned at the genuine 12.6.85 via the procedure below (`/tmp/venv-
@@ -47,7 +47,7 @@ V=/tmp/venv-nvrtc12685/lib/python3.*/site-packages/nvidia
 # 2. CONTROL FIRST — rebuild UNCHANGED and prove the artifact is byte-identical.
 #    If this does not reproduce, STOP: your toolchain is not the one that built the artifact,
 #    and any diff you produce afterwards is a toolchain bump wearing a kernel edit's clothes.
-sha256sum cuda/testdata/moe.ptx                     # record BEFORE
+sha256sum backend/cuda/testdata/moe.ptx                     # record BEFORE
 cd cuda && NVRTC_LIB="$V/cuda_nvrtc/lib" CUDA_INC="$V/cuda_runtime/include" \
     bash build_ptx.sh moe
 sha256sum testdata/moe.ptx                          # MUST equal BEFORE

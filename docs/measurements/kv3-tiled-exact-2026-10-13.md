@@ -11,8 +11,8 @@ Branch `kv3-tiled-2026-10`, from `kv3-cuda-2026-10` (it needs that branch's guar
 2. **Why they decline.** The exact batched attention (`attn_batched`, grid `nH × M`, block 128) keeps one row's scores in shared memory,
    `(nWin + 128)·4` bytes, so it cannot pass 48 KiB (12,160 keys); the fused attention serves head dim 64 and 128 only. Gemma-3 is head dim 256; Gemma-4's
    global layers are 512 (local 256).
-3. **Decode already has the kernel shape.** `splitKVAttnDecode` (`cuda/resident.go`) is three launches (`splitkv_scores`, `splitkv_softmax`, `splitkv_vsum` in
-   `cuda/decode_splitkv.cu`) that hold the scores in a global buffer and are **bit-identical to `attn_batched(M=1)`**, held by `TestSplitKV_bitIdentical`.
+3. **Decode already has the kernel shape.** `splitKVAttnDecode` (`backend/cuda/resident.go`) is three launches (`splitkv_scores`, `splitkv_softmax`, `splitkv_vsum` in
+   `backend/cuda/decode_splitkv.cu`) that hold the scores in a global buffer and are **bit-identical to `attn_batched(M=1)`**, held by `TestSplitKV_bitIdentical`.
    It splits only the independent axes (keys for the scores, output dims for the V fold); the softmax keeps `attn_batched`'s 128-wide partition and
    tree, and each output dim keeps the whole ascending-key fold. Decode takes it exactly where the single block cannot run (`splitKVRequired`).
 4. **The exact class is one class.** `attn_batched`, `gemv_w4a8_rn` and decode's split-KV agree bit for bit (KV0's record); a batched prefill that
@@ -20,7 +20,7 @@ Branch `kv3-tiled-2026-10`, from `kv3-cuda-2026-10` (it needs that branch's guar
 
 ## 2. The change
 
-- **Three row-batched kernels** in a new `cuda/prefill_splitkv.cu` and its own `.ptx` (the `attn_block.cu` isolation pattern: no shipped PTX changes):
+- **Three row-batched kernels** in a new `backend/cuda/prefill_splitkv.cu` and its own `.ptx` (the `attn_block.cu` isolation pattern: no shipped PTX changes):
   `splitkv_scores_rows`, `splitkv_softmax_rows`, `splitkv_vsum_rows`. Each is the decode kernel with a row index in the grid's Z axis. Row `m` of a pass at
   `startPos` attends `nKeys = startPos + m + 1`, window start as `attn_batched` derives it from that `nKeys`, and its own `nWin`; the instruction sequence
   per (row, head) is the decode kernel's, so identity is by construction; only the addressing (a row's `q`, score slice and `ctx` row) is new.
@@ -201,7 +201,7 @@ each part. The tests this branch does not touch that the 2026-10-13 run read gre
 **Decision (the owner, 2026-10-14, option (a) of §10):** a prompt whose attention takes the row-batched kernels runs every pass on the exact kernels, the
 tensor-core GEMM included, so it is bit-identical to the per-token path. The 0.99 bar is not moved; G4's default arm stays recorded as FAILED for the build it read.
 
-**The rule as built** (`cuda/prefill_splitkv.go:cudaResident.prefillPastBoundExact`, read by prefillCore's `forceExactKernels` and by `PrefillSpanScratchBytes`): a prompt has a layer
+**The rule as built** (`backend/cuda/prefill_splitkv.go:cudaResident.prefillPastBoundExact`, read by prefillCore's `forceExactKernels` and by `PrefillSpanScratchBytes`): a prompt has a layer
 past `attn_batched`'s shared-memory bound (its window-clamped span over 12,160 keys) that no fused attention serves (head dim other than 64 and 128, or the fused lever
 off). It is judged on the whole prompt's length, so every chunk of such a prompt is exact, not only the passes past the bound. Below the bound, and on a prompt whose
 past-bound layers the fused attention serves (the 1.5B and the other head-dim-64/128 families: `kv3-cuda-2026-10-13.md` §2.3's fidelity class), nothing changes. The
@@ -253,7 +253,7 @@ reached=36`. Every part ran: the main process 30 PASS, 0 FAIL, 6 SKIP; the four 
 `TestP20ExpertLocality`, `TestResidentDrafter_extendContext`, `TestSpecPagerInteraction`); the drain group 2 PASS, 2 SKIP.
 
 - **Why 36 of 40.** The four listed names that reached no verdict are `TestAudioEncoder_realMatchesCPU`, `TestAudioEncoderSpeed_record`,
-  `TestWhisperSmall_clipsOnDevice` (`cuda/audio_encoder_real_test.go`, `//go:build cuda && realckpt`) and `TestLoRACostMeasure` (`cuda && goinfer_testhooks &&
+  `TestWhisperSmall_clipsOnDevice` (`backend/cuda/audio_encoder_real_test.go`, `//go:build cuda && realckpt`) and `TestLoRACostMeasure` (`cuda && goinfer_testhooks &&
   realckpt`). `suite-rest-main.txt` was built from a test listing that included `realckpt` (487 names at `f7530d01`; 486 at `a0ce6e40`, the source of §10's
   first figure), while the 2026-10-13 suite and this job both build `-tags 'cuda goinfer_testhooks'` (483 names at `f7530d01`), as `cmd/gate gpu`'s CUDA cells do.
   Those four were never in the 2026-10-13 suite's build, so they were not unreached tests of it, and `-run` could not match them. Under the run's own tags the
