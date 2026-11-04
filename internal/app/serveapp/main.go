@@ -184,7 +184,7 @@ func (s modelSpec) explicitQuant(cfg config) string {
 func (s modelSpec) options(cfg config) decoder.Options {
 	ov := loadflags.Overrides{Quant: s.quant, LoRA: s.lora, KV: s.kvPrec, KVQuant: s.kvQuant, Stream: s.stream,
 		WeightCacheGB: s.weightCache, EmbedInt4: s.embedInt4, Ctx: s.ctxSize, Serve: &loadflags.ServeLoad{
-			KVQuant: cfg.kvQuant, KVSessions: cfg.kvSessions, KVSessionsSet: cfg.kvSessionsSet, RecurrentStepSet: cfg.recurrentStepSet, Gemma4StepSet: cfg.gemma4StepSet, PrefillChunk: cfg.prefillChunk,
+			KVQuant: cfg.kvQuant, KVSessions: cfg.kvSessions, KVSessionsSet: cfg.kvSessionsSet, PrefillChunk: cfg.prefillChunk,
 			KVShareOff: cfg.kvShareOff, KVHostBytes: cfg.kvHostBytes, KVDemote: cfg.kvDemote, CPUBatch: cfg.cpuBatch}}
 	if s.head != nil || isClefDir(s.path) { // a decision head (JEV or Clef) loads at the decision models' default unless a quant was chosen
 		q := decide.HeadQuant(s.explicitQuant(cfg), s.quant != nil || cfg.load.QuantSet)
@@ -277,51 +277,49 @@ type config struct {
 	adapters adapterFlag // compute-time LoRA adapters (-adapter, repeatable); each shares a base model's resident weights (#7)
 	// load is the model-loading flags goinfer-chat shares (internal/loadflags): server-global
 	// DEFAULTS, each of which a --model spec can override (see modelSpec / modelFlag.Set).
-	load             loadflags.Flags
-	kvQuant          string // DEPRECATED -kv-quant: CPU KV cache override, "" = follow -kv
-	name             string // -served-model-name (applies only to a single unnamed --model)
-	kvSessions       int
-	kvSessionsSet    bool          // -kv-sessions was given on the command line (flag.Visit after Parse)
-	recurrentStepSet bool          // -recurrent-step was given on the command line
-	gemma4StepSet    bool          // -gemma4-step was given on the command line
-	sessionDir       string        // -session-dir (also where /admin unload snapshots warm KV)
-	kvIdleDemote     time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
-	kvDemotedMax     int           // -kv-demoted-max: cap on the on-disk cold tier
-	maxQueue         int           // -max-queue: bounded per-model queue depth (0 = unbounded)
-	maxConcurrent    int           // -max-concurrent: generations one CPU model may run at once (1 = serialized)
-	cpuBatch         int           // -cpu-batch: decoder.CPUBatchAuto (default) / CPUBatchOn / CPUBatchOff
-	prefillChunk     int           // -prefill-chunk: under concurrent generation, a long prompt arriving while others decode prefills in chunks of this many tokens (default 512); 0 = off
-	kvShare          string        // -kv-share: "on" (default) or "off"
-	kvShareOff       bool          // kvShareOffFor's answer, set once the API key and bind are known
-	kvHostBytesFlag  string        // -kv-host-bytes: auto, 0, or a byte count
-	kvHostBytes      int64         // the resolved budget for prefix snapshots (0: off); a config built without the flag keeps none
-	kvHostBytesHow   string        // how it was reached, for the startup line
-	kvDemote         bool          // the flag names a budget, not auto: released conversations' rows wait in it too
-	jobDir           string        // -job-dir (docs/tasks/task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
-	maxInflight      int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
-	maxBodyBytes     int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
-	unloadDrainWait  time.Duration // -unload-drain-wait: how long an unload waits for in-flight requests to drain before 202 (native free continues detached)
-	spec             string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
-	specAdaptive     bool          // -spec-adaptive: "speculate when alone, batch under load" (needs -spec ngram and a resident that batches; off has no effect otherwise)
-	drafter          string        // -drafter: dir of a pretrained BLOCK drafter (DFlash); resident GPU backends only
-	drafterWidth     int           // -drafter-width: the verify width a greedy request's block-spec rounds run at; 0 = decoder's default
-	allowAdmin       bool          // -allow-admin: enable POST /admin/models/{load,unload}
-	allowedHosts     string        // -allowed-hosts: extra Host names a loopback-bound listener answers (hostGuard)
-	logRequests      bool          // -log-requests: one stderr line per generation request
-	logTokenIDs      string        // -log-token-ids: append one JSON line per generation (prompt hash, generated ids) to this file; "" = off
-	idsKeyFile       string        // -ids-key-file: the key that signs carried token ids; "" = a random key per start
-	noCarryIDs       bool          // -carry-ids=false: do not carry a reply's token ids back in its reasoning item (the zero value carries them)
-	fastAlias        bool          // -fast-alias: serve "<model>-fast", the same model with thinking off, for an agent's side requests
-	haltFile         string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed
-	haltExitCode     int           // -halt-exit-code: nonzero ⇒ halt exits the process with this code after quiescence; 0 = stay up
-	adminSocket      string        // -admin-socket: serve /admin/* on this Unix socket instead of the TCP listener; "" = off
-	web              bool          // -web: serve the local browser UI + its model-pull routes
-	requireBE        bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
-	visionPath       string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
-	noSelfTest       bool          // -no-selftest: skip the startup self-tests (H2)
-	visionMaxPixels  int           // -vision-max-pixels: lowers GLM-OCR's image pixel budget (0 = the model's own 4.82 MP ceiling)
-	visionQuant      string        // -vision-quant: "" (unset: f32; Gemma 3 on cuda may fall back to int8) | "f32" (explicit) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
-	visionDevice     string        // -vision-device: "auto" (default: the backend's device tower when it has one) | "cpu" | "gpu" (also a device tower that is opt-in)
+	load            loadflags.Flags
+	kvQuant         string // DEPRECATED -kv-quant: CPU KV cache override, "" = follow -kv
+	name            string // -served-model-name (applies only to a single unnamed --model)
+	kvSessions      int
+	kvSessionsSet   bool          // -kv-sessions was given on the command line (flag.Visit after Parse)
+	sessionDir      string        // -session-dir (also where /admin unload snapshots warm KV)
+	kvIdleDemote    time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
+	kvDemotedMax    int           // -kv-demoted-max: cap on the on-disk cold tier
+	maxQueue        int           // -max-queue: bounded per-model queue depth (0 = unbounded)
+	maxConcurrent   int           // -max-concurrent: generations one CPU model may run at once (1 = serialized)
+	cpuBatch        int           // -cpu-batch: decoder.CPUBatchAuto (default) / CPUBatchOn / CPUBatchOff
+	prefillChunk    int           // -prefill-chunk: under concurrent generation, a long prompt arriving while others decode prefills in chunks of this many tokens (default 512); 0 = off
+	kvShare         string        // -kv-share: "on" (default) or "off"
+	kvShareOff      bool          // kvShareOffFor's answer, set once the API key and bind are known
+	kvHostBytesFlag string        // -kv-host-bytes: auto, 0, or a byte count
+	kvHostBytes     int64         // the resolved budget for prefix snapshots (0: off); a config built without the flag keeps none
+	kvHostBytesHow  string        // how it was reached, for the startup line
+	kvDemote        bool          // the flag names a budget, not auto: released conversations' rows wait in it too
+	jobDir          string        // -job-dir (docs/tasks/task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
+	maxInflight     int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
+	maxBodyBytes    int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
+	unloadDrainWait time.Duration // -unload-drain-wait: how long an unload waits for in-flight requests to drain before 202 (native free continues detached)
+	spec            string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
+	specAdaptive    bool          // -spec-adaptive: "speculate when alone, batch under load" (needs -spec ngram and a resident that batches; off has no effect otherwise)
+	drafter         string        // -drafter: dir of a pretrained BLOCK drafter (DFlash); resident GPU backends only
+	drafterWidth    int           // -drafter-width: the verify width a greedy request's block-spec rounds run at; 0 = decoder's default
+	allowAdmin      bool          // -allow-admin: enable POST /admin/models/{load,unload}
+	allowedHosts    string        // -allowed-hosts: extra Host names a loopback-bound listener answers (hostGuard)
+	logRequests     bool          // -log-requests: one stderr line per generation request
+	logTokenIDs     string        // -log-token-ids: append one JSON line per generation (prompt hash, generated ids) to this file; "" = off
+	idsKeyFile      string        // -ids-key-file: the key that signs carried token ids; "" = a random key per start
+	noCarryIDs      bool          // -carry-ids=false: do not carry a reply's token ids back in its reasoning item (the zero value carries them)
+	fastAlias       bool          // -fast-alias: serve "<model>-fast", the same model with thinking off, for an agent's side requests
+	haltFile        string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed
+	haltExitCode    int           // -halt-exit-code: nonzero ⇒ halt exits the process with this code after quiescence; 0 = stay up
+	adminSocket     string        // -admin-socket: serve /admin/* on this Unix socket instead of the TCP listener; "" = off
+	web             bool          // -web: serve the local browser UI + its model-pull routes
+	requireBE       bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
+	visionPath      string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
+	noSelfTest      bool          // -no-selftest: skip the startup self-tests (H2)
+	visionMaxPixels int           // -vision-max-pixels: lowers GLM-OCR's image pixel budget (0 = the model's own 4.82 MP ceiling)
+	visionQuant     string        // -vision-quant: "" (unset: f32; Gemma 3 on cuda may fall back to int8) | "f32" (explicit) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
+	visionDevice    string        // -vision-device: "auto" (default: the backend's device tower when it has one) | "cpu" | "gpu" (also a device tower that is opt-in)
 	// decisions (D5, docs/tasks/task-constrained-confidence.md): POST /v1/systemone's label-scoring template, and an
 	// optional calibration.json of per-kind temperatures ("" = none: every answer is uncalibrated).
 	decisionsTemplate string
@@ -351,17 +349,11 @@ type config struct {
 }
 
 // markGivenFlags records, after fs is parsed, which of cfg's flags the command line gave rather than defaulted:
-// -kv-sessions, whose default lowers Metal to 2 GPU KV slots while a given count is kept, and the step flags, which follow
-// the session count until given.
+// -kv-sessions, whose default lowers Metal to 2 GPU KV slots while a given count is kept.
 func markGivenFlags(fs *flag.FlagSet, cfg *config) {
 	fs.Visit(func(f *flag.Flag) {
-		switch f.Name {
-		case "kv-sessions":
+		if f.Name == "kv-sessions" {
 			cfg.kvSessionsSet = true
-		case "recurrent-step":
-			cfg.recurrentStepSet = true
-		case "gemma4-step":
-			cfg.gemma4StepSet = true
 		}
 	})
 }

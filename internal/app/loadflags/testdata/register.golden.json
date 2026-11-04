@@ -52,7 +52,7 @@
       "Name": "gemma4-step",
       "Usage": "In serve, on with 2 or more KV sessions, the default included; off in goinfer-chat and at one session. --gemma4-step or --gemma4-step=false overrides either way. Serve runs a model with a vision tower attached one generation at a time. Metal only: let a Gemma 4 dense model (E2B, E4B and the other dense Gemma 4s) run concurrent requests in one batched decode step, each layer on decode's own kernels with the front of its feed-forward block batched. Output is bit-identical either way. It costs the step's scratch, a few MB (docs/tasks/task-forward-architecture-2026-10.md §4.9). At one KV slot (goinfer-chat) the scratch is allocated but not used: Gemma 4's softcapped logits keep its prompts off the step. Ignored by the other backends and by other models, Gemma 4's MoE (26B-A4B) included",
       "DefValue": "false",
-      "Type": "*flag.boolValue"
+      "Type": "loadflags.givenBool"
     },
     {
       "Name": "kv",
@@ -100,7 +100,7 @@
       "Name": "recurrent-step",
       "Usage": "In serve, on when --kv-sessions is given at 2 or more; off in goinfer-chat and at one session. --recurrent-step or --recurrent-step=false overrides either way. Metal only: let a Qwen3.5-family model (Gated-DeltaNet and gated attention) or a Nemotron-H model (Mamba-2) run concurrent requests in one batched decode step, each on its own KV slot with its own recurrent state, and prefill prompts shorter than 16 tokens on it. A recurrent model keeps one slot unless --kv-sessions asks for more, so plain serve does not batch it, and serve runs a model with a vision tower attached one generation at a time; given in goinfer-chat, which runs one conversation, the flag prefills short prompts on the step. Output is bit-identical either way. Measured 1.58x decode throughput at 4 concurrent requests on Qwen3.5 0.8B (M1 Pro). It costs the step's scratch, a few MB, and each further slot's recurrent state, about 19 MB on Qwen3.5 0.8B and 91 MB on Nemotron-H 4B (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends and by other models",
       "DefValue": "false",
-      "Type": "*flag.boolValue"
+      "Type": "loadflags.givenBool"
     },
     {
       "Name": "stream-weights",
@@ -174,7 +174,7 @@
       "Name": "gemma4-step",
       "Usage": "In serve, on with 2 or more KV sessions, the default included; off in goinfer-chat and at one session. --gemma4-step or --gemma4-step=false overrides either way. Serve runs a model with a vision tower attached one generation at a time. Metal only: let a Gemma 4 dense model (E2B, E4B and the other dense Gemma 4s) run concurrent requests in one batched decode step, each layer on decode's own kernels with the front of its feed-forward block batched. Output is bit-identical either way. It costs the step's scratch, a few MB (docs/tasks/task-forward-architecture-2026-10.md §4.9). At one KV slot (goinfer-chat) the scratch is allocated but not used: Gemma 4's softcapped logits keep its prompts off the step. Ignored by the other backends and by other models, Gemma 4's MoE (26B-A4B) included",
       "DefValue": "false",
-      "Type": "*flag.boolValue"
+      "Type": "loadflags.givenBool"
     },
     {
       "Name": "kv",
@@ -222,7 +222,7 @@
       "Name": "recurrent-step",
       "Usage": "In serve, on when --kv-sessions is given at 2 or more; off in goinfer-chat and at one session. --recurrent-step or --recurrent-step=false overrides either way. Metal only: let a Qwen3.5-family model (Gated-DeltaNet and gated attention) or a Nemotron-H model (Mamba-2) run concurrent requests in one batched decode step, each on its own KV slot with its own recurrent state, and prefill prompts shorter than 16 tokens on it. A recurrent model keeps one slot unless --kv-sessions asks for more, so plain serve does not batch it, and serve runs a model with a vision tower attached one generation at a time; given in goinfer-chat, which runs one conversation, the flag prefills short prompts on the step. Output is bit-identical either way. Measured 1.58x decode throughput at 4 concurrent requests on Qwen3.5 0.8B (M1 Pro). It costs the step's scratch, a few MB, and each further slot's recurrent state, about 19 MB on Qwen3.5 0.8B and 91 MB on Nemotron-H 4B (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends and by other models",
       "DefValue": "false",
-      "Type": "*flag.boolValue"
+      "Type": "loadflags.givenBool"
     },
     {
       "Name": "stream-weights",

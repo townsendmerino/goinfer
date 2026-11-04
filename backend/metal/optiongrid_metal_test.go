@@ -657,9 +657,11 @@ func TestOptionPathMetal_gemma4Step(t *testing.T) {
 	mgStepOption(t, "../../testdata/gemma4-emodel-tiny", func(o *decoder.Options, on bool) { o.ResidentGemma4Step = on }, "the Gemma 4 blocks")
 }
 
-// TestStepFlagDefaults_buildTheStep: serve's defaults as they resolve, through decoder.Load: the batched step is built where a load holds
-// two or more sessions, and not where it holds one, so one session pays no scratch unless the flag is given.
+// TestStepFlagDefaults_buildTheStep: serve's defaults as they resolve from real flags, through decoder.Load: the batched step is built where a
+// load holds two or more sessions, and not where it holds one, so one session pays no scratch unless the flag is given.
 func TestStepFlagDefaults_buildTheStep(t *testing.T) {
+	const qwen, nemotron, gemma = "../../decoder/testdata/qwen3_5-tiny", "../../testdata/nemotron-tiny", "../../testdata/gemma4-emodel-tiny"
+	asked := func(n int) loadflags.ServeLoad { return loadflags.ServeLoad{KVSessions: n, KVSessionsSet: true} }
 	for _, c := range []struct {
 		name, dir string
 		serve     loadflags.ServeLoad
@@ -667,29 +669,17 @@ func TestStepFlagDefaults_buildTheStep(t *testing.T) {
 		wantSlots int
 		wantStep  bool
 	}{
-		{"qwen3_5, the default count", "../../decoder/testdata/qwen3_5-tiny", loadflags.ServeLoad{KVSessions: 4}, nil, 1, false},
-		{"qwen3_5, 2 sessions", "../../decoder/testdata/qwen3_5-tiny", loadflags.ServeLoad{KVSessions: 2, KVSessionsSet: true}, nil, 2, true},
-		{"nemotron, 4 sessions", "../../testdata/nemotron-tiny", loadflags.ServeLoad{KVSessions: 4, KVSessionsSet: true}, nil, 4, true},
-		{"qwen3_5, 2 sessions, given off", "../../decoder/testdata/qwen3_5-tiny", loadflags.ServeLoad{KVSessions: 2, KVSessionsSet: true, RecurrentStepSet: true}, []string{"-recurrent-step=false"}, 2, false},
-		{"qwen3_5, 1 session, given on", "../../decoder/testdata/qwen3_5-tiny", loadflags.ServeLoad{KVSessions: 1, KVSessionsSet: true, RecurrentStepSet: true}, []string{"-recurrent-step"}, 1, true},
-		{"gemma4, the default count", "../../testdata/gemma4-emodel-tiny", loadflags.ServeLoad{KVSessions: 4}, nil, 2, true},
-		{"gemma4, 1 session", "../../testdata/gemma4-emodel-tiny", loadflags.ServeLoad{KVSessions: 1, KVSessionsSet: true}, nil, 1, false},
-		{"gemma4, 2 sessions, given off", "../../testdata/gemma4-emodel-tiny", loadflags.ServeLoad{KVSessions: 2, KVSessionsSet: true, Gemma4StepSet: true}, []string{"-gemma4-step=false"}, 2, false},
+		{"qwen3_5, the default count", qwen, loadflags.ServeLoad{KVSessions: 4}, nil, 1, false},
+		{"qwen3_5, 2 sessions", qwen, asked(2), nil, 2, true},
+		{"nemotron, 4 sessions", nemotron, asked(4), nil, 4, true},
+		{"qwen3_5, 2 sessions, given off", qwen, asked(2), []string{"-recurrent-step=false"}, 2, false},
+		{"qwen3_5, 1 session, given on", qwen, asked(1), []string{"-recurrent-step"}, 1, true},
+		{"gemma4, the default count", gemma, loadflags.ServeLoad{KVSessions: 4}, nil, 2, true},
+		{"gemma4, 1 session", gemma, asked(1), nil, 1, false},
+		{"gemma4, 2 sessions, given off", gemma, asked(2), []string{"-gemma4-step=false"}, 2, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-			lf := loadflags.Register(fs, loadflags.Serve)
-			if err := fs.Parse(append([]string{"-backend", "metal", "-quant", "int4", "-ctx", "1024"}, c.args...)); err != nil {
-				t.Fatal(err)
-			}
-			serve := c.serve
-			m, err := decoder.Load(c.dir, lf.OptionsWith(loadflags.Overrides{Serve: &serve}))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { m.Close() })
-			mgResident(t, m)
-			r := m.ResidentForwardForTest().(*metalResident).r
+			r := mgStepFlagsResident(t, c.dir, c.serve, c.args)
 			if got := r.kvSlotCount(); got != c.wantSlots {
 				t.Errorf("%d KV slots, want %d", got, c.wantSlots)
 			}
@@ -698,4 +688,71 @@ func TestStepFlagDefaults_buildTheStep(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestStepFlagDefaults_grantedSessionsDecide: two sessions asked and memory for one. A defaulted flag leaves the step out, since the granted
+// count is what batches, and a given flag keeps it asked for.
+func TestStepFlagDefaults_grantedSessionsDecide(t *testing.T) {
+	asked := loadflags.ServeLoad{KVSessions: 2, KVSessionsSet: true}
+	for _, c := range []struct {
+		name, dir, given string
+		on               func(*resident) bool
+	}{
+		{"qwen3_5", "../../decoder/testdata/qwen3_5-tiny", "-recurrent-step", func(r *resident) bool { return r.recurrentStep }},
+		{"nemotron", "../../testdata/nemotron-tiny", "-recurrent-step", func(r *resident) bool { return r.recurrentStep }},
+		{"gemma4", "../../testdata/gemma4-emodel-tiny", "-gemma4-step", func(r *resident) bool { return r.gemma4Step }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			two := mgStepFlagsResident(t, c.dir, asked, nil)
+			if two.kvSlotCount() != 2 || !c.on(two) || two.batch == nil {
+				t.Fatalf("with room: %d slots, flag %v, step %v; want 2, on and built", two.kvSlotCount(), c.on(two), two.batch != nil)
+			}
+			m, err := decoder.Load(c.dir, mgStepFlagsOptions(t, asked, nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			need, slot := residentNeedBytes(m), metalSlotBytes(m)
+			m.Close()
+			defer func(v int64) { metalMemoryCeilingForTest = v }(metalMemoryCeilingForTest)
+			metalMemoryCeilingForTest = need + slot/2
+
+			one := mgStepFlagsResident(t, c.dir, asked, nil)
+			if got := one.kvSlotCount(); got != 1 {
+				t.Fatalf("memory for one session granted %d", got)
+			}
+			if c.on(one) || one.batch != nil {
+				t.Errorf("a defaulted flag on the one session memory granted: flag %v, step %v; want off and none", c.on(one), one.batch != nil)
+			}
+			given := mgStepFlagsResident(t, c.dir, asked, []string{c.given})
+			if got := given.kvSlotCount(); got != 1 {
+				t.Fatalf("memory for one session granted %d with the flag given", got)
+			}
+			if !c.on(given) {
+				t.Errorf("%s given, and the build dropped it at one granted session", c.given)
+			}
+		})
+	}
+}
+
+// mgStepFlagsOptions is what serve's flags, args among them, resolve to for a Metal load.
+func mgStepFlagsOptions(t *testing.T, serve loadflags.ServeLoad, args []string) decoder.Options {
+	t.Helper()
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	lf := loadflags.Register(fs, loadflags.Serve)
+	if err := fs.Parse(append([]string{"-backend", "metal", "-quant", "int4", "-ctx", "1024"}, args...)); err != nil {
+		t.Fatal(err)
+	}
+	return lf.OptionsWith(loadflags.Overrides{Serve: &serve})
+}
+
+// mgStepFlagsResident builds the Metal resident serve's flags ask for.
+func mgStepFlagsResident(t *testing.T, dir string, serve loadflags.ServeLoad, args []string) *resident {
+	t.Helper()
+	m, err := decoder.Load(dir, mgStepFlagsOptions(t, serve, args))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	mgResident(t, m)
+	return m.ResidentForwardForTest().(*metalResident).r
 }
