@@ -29,6 +29,9 @@ type BuildQuery struct {
 	// StateBuffers is one KV slot's recurrent and conv state, in bytes per buffer, before any allocator's rounding; nil for a model
 	// with none, or before the config is read.
 	StateBuffers []int64
+	// CheckpointBuffers is the state a resident build keeps one copy of for a rewind, per buffer as StateBuffers: nil for a model whose
+	// layers have none (recurrentCheckpointBuffers).
+	CheckpointBuffers []int64
 }
 
 // BuildDemand is a backend's account, before its build, of what a load on it holds beyond the weights the fit guard prices.
@@ -44,6 +47,10 @@ type BuildDemand struct {
 	PinnedExpertBytes int64
 	// StateBytes is what BuildQuery.StateBuffers takes on this backend, its allocator's rounding included: Plan's state line.
 	StateBytes int64
+	// CheckpointBytes is what BuildQuery.CheckpointBuffers takes on this backend, 0 on one that keeps no checkpoint: Plan.CheckpointBytes.
+	CheckpointBytes int64
+	// CheckpointPerSlot says this backend keeps that checkpoint once per KV slot, where it fits, not once per load: Plan.CheckpointPerSlot.
+	CheckpointPerSlot bool
 }
 
 // BuildDemandFunc is one backend's report.
@@ -120,6 +127,10 @@ func defaultCUDABuildDemand(q BuildQuery) BuildDemand {
 	for _, b := range q.StateBuffers {
 		d.StateBytes += cudaChargedBytes(b)
 	}
+	for _, b := range q.CheckpointBuffers {
+		d.CheckpointBytes += cudaChargedBytes(b)
+	}
+	d.CheckpointPerSlot = d.CheckpointBytes > 0
 	return d
 }
 
@@ -127,7 +138,8 @@ func defaultCUDABuildDemand(q BuildQuery) BuildDemand {
 // unified memory the fit guard prices as Metal allocates it.
 func defaultMetalBuildDemand(q BuildQuery) BuildDemand {
 	o := q.Options
-	return BuildDemand{Resident: o.Backend == "metal" && slices.Contains(CompiledBackends(), "metal") && q.FeaturesCovered, StateBytes: q.StateTotalBytes()}
+	return BuildDemand{Resident: o.Backend == "metal" && slices.Contains(CompiledBackends(), "metal") && q.FeaturesCovered, StateBytes: q.StateTotalBytes(),
+		CheckpointBytes: q.CheckpointTotalBytes()}
 }
 
 // buildDemandFor is the report of opts's backend for a load of cfg (nil before the config is read) with the priced bytes.
@@ -151,7 +163,7 @@ func BuildQueryFor(cfg *Config, opts Options, weightBytes, expertBytes int64, gg
 		c := *cfg
 		if arch, _, err := resolveArchitecture(&c); err == nil {
 			q.FeaturesCovered = residentCovers(arch, opts.Backend)
-			q.StateBuffers = stateBuffers(arch)
+			q.StateBuffers, q.CheckpointBuffers = stateBuffers(arch), recurrentCheckpointBuffers(arch)
 			if arch.MoE != nil && arch.MoE.NumExperts > 0 && arch.MoE.IntermediateDim > 0 {
 				q.MoELayers = max(c.NumLayers-max(c.FirstKDenseReplace, 0), 0)
 				q.NumExperts, q.ExpertIntermediate, q.Hidden = arch.MoE.NumExperts, arch.MoE.IntermediateDim, c.HiddenDim

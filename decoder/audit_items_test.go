@@ -198,14 +198,15 @@ func TestResidentDense_mambaProjectionsAsUploaded(t *testing.T) {
 	if want <= 0 {
 		t.Fatal("VOID: no Mamba-2 projection to compare")
 	}
-	base := m.ResidentDenseWeightBytesFor("cpu")
-	for be, saved := range map[string]int64{"metal": want, "webgpu": want, "cuda": want + m.residentHostSideBytes("cuda"), "cpu": 0} {
+	base := m.ResidentDenseWeightBytes()
+	structs, _ := m.cpuStructBytes()
+	for be, saved := range map[string]int64{"metal": want, "webgpu": want, "cuda": want + m.residentHostSideBytes("cuda"), "cpu": -structs} {
 		if got := base - m.ResidentDenseWeightBytesFor(be); got != saved {
-			t.Errorf("%s: the dense figure is %d under the CPU's, want %d", be, got, saved)
+			t.Errorf("%s: the dense figure is %d under the tensors' sum, want %d", be, got, saved)
 		}
 	}
 	if a, b := m.ResidentNeedBytes("cpu", 0, 64, false, false)-m.ResidentKVBytes("cpu", 64, false, false),
-		m.ResidentNeedBytes("webgpu", 0, 64, false, false)-m.ResidentKVBytes("webgpu", 64, false, false); a-b != want {
-		t.Errorf("WebGPU's need is %d under the CPU's beside KV, want %d", a-b, want)
+		m.ResidentNeedBytes("webgpu", 0, 64, false, false)-m.ResidentKVBytes("webgpu", 64, false, false); a-b != want+structs {
+		t.Errorf("WebGPU's need is %d under the CPU's beside KV, want %d", a-b, want+structs)
 	}
 }

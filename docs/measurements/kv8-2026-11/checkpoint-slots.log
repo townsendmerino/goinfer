@@ -162,3 +162,25 @@ FAIL	github.com/townsendmerino/goinfer/cuda	1.954s
 --- FAIL: TestKV8_aTakenCheckpointIsNotScored (0.01s)
 FAIL	github.com/townsendmerino/goinfer/decoder	0.011s
 # plant a reset keeps its owner NOT APPLIED: text moved
+
+# Merging main with #645: the plan prices one checkpoint a slot on CUDA (Plan.CheckpointPerSlot). 2026-11-03 18:54:50 PST
+builds
+ok  	github.com/townsendmerino/goinfer/internal/memgate	0.003s
+FAIL
+ok  	github.com/townsendmerino/goinfer/cuda	7.498s
+census lines changed against main: 20
+      2 nemotron-tiny int4/slots4
+      2 olmo_hybrid-tiny int4/slots4
+      4 qwen35-tiny int4/slots4
+      4 qwen35vl-tiny int4/slots4
+      2 qwen3_5-tiny int4/slots4
+      2 qwen3_5-tiny-normw int4/slots4
+      2 qwen3_5_moe-tiny int4/slots4
+      2 qwen3next-tiny int4/slots4
+exit 0, PASS 30, FAIL 0
+    sb2_census_test.go:2604: 474 builds held, 155 options declined by CUDA's own build
+ok  	github.com/townsendmerino/goinfer/cuda	163.204s
+# plant: Planned prices one copy on a build of several
+--- FAIL: TestMemGate_cuda (117.24s)
+    sb2_census_test.go:2556: selftestdata/qwen35-tiny int4/slots4: line "state": built: leased 135168 bytes against a plan of 84480: 50688 over, after 0 forgiven by "cuMe
+    sb2_census_test.go:2556: selftestdata/qwen35-tiny int4/slots4: line "state": generated: leased 135168 bytes against a plan of 84480: 50688 over, after 0 forgiven by "

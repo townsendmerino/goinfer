@@ -91,6 +91,11 @@ type Plan struct {
 	KVBytes         int64 // at Ctx, as this backend allocates it (ResidentKVBytes)
 	HostCopyBytes   int64 // Metal only: the host copy of the resident weights unified memory also holds (ResidentHostCopyBytes; 0 when aliased from a .giw)
 	StateBytes      int64 // one KV slot's recurrent and conv state as this backend allocates it (BuildDemand.StateBytes); 0 for a model with none
+	// CheckpointBytes is one recurrent checkpoint this plan's load keeps (BuildDemand.CheckpointBytes), 0 on a declined plan or where it does
+	// not fit beside NeedBytes. It is not in NeedBytes and moves no decision here: a load with no room for it keeps none and still runs.
+	CheckpointBytes int64
+	// CheckpointPerSlot says the load keeps that checkpoint once per KV slot where it fits, not once (BuildDemand.CheckpointPerSlot).
+	CheckpointPerSlot bool
 	AllocSlackBytes int64 // the backend's allocator rounding over the weight buffers (PlanSlack): CUDA's 2 MiB granularity
 	ExtraBytes      int64 // PlanRequest.ExtraBytes, carried through for NeedBytes()/reporting
 
@@ -215,6 +220,9 @@ func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack boo
 		mem.Machine{Free: map[mem.Tier]int64{l.Tier: freeBytes}}, mem.DefaultPolicy())
 	p.Placement, p.Ctx, p.Slots = Placement(d.Placement), d.Ctx, d.Slots
 	p.ExpertBytesUsed, p.KVBytes, p.HostCopyBytes, p.Reason = d.ExpertBytesUsed, d.KVBytes, d.HostCopyBytes, d.Reason
+	if ckpt, perSlot := m.checkpointBytes(backend); p.Placement != PlacementDecline && p.NeedBytes()+ckpt <= freeBytes {
+		p.CheckpointBytes, p.CheckpointPerSlot = ckpt, perSlot
+	}
 	return p
 }
 
@@ -271,7 +279,14 @@ func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceL
 	l := mem.DeviceLoad{Backend: backend, Tier: planTier(backend), DenseBytes: m.ResidentDenseWeightBytesFor(backend), CtxStep: 1,
 		FixedSlack: m.planSlack(backend), StateBytes: m.stateBytes(backend)}
 	if nExperts, topK, isMoE := m.moeGeometry(); isMoE {
-		l.ExpertBytesFull = m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes()
+		l.ExpertBytesFull = m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes() - m.expertBiasBytes()
+		switch backend {
+		case "cpu":
+			_, structs := m.cpuStructBytes()
+			l.ExpertBytesFixed = structs + m.expertBiasBytes()
+		case "metal":
+			l.ExpertBytesFixed = m.expertBiasBytes()
+		}
 		l.NExperts, l.TopK = nExperts, topK
 	}
 	l.HostFixed = m.residentHostCopyFor(backend, 1)

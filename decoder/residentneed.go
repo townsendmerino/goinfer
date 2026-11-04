@@ -104,8 +104,12 @@ func (m *Model) metalKVParts(ctx int) (slot, null int64) {
 // .giw mapping), the KV cache, and one slot's recurrent state. Plan's NeedBytes and Metal's resident guard are this number.
 func (m *Model) ResidentNeedBytes(backend string, slots, ctx int, kvF16, kvI8 bool) int64 {
 	need := m.ResidentWeightBytesPaged(slots) - m.kquantSavings(backend) - m.mambaProjSavings(backend) + m.ResidentKVBytes(backend, ctx, kvF16, kvI8) + m.stateBytes(backend)
-	if backend == "metal" {
+	switch backend {
+	case "metal":
 		need += m.ResidentHostCopyBytes(slots)
+	case "cpu":
+		dense, experts := m.cpuStructBytes()
+		need += dense + experts
 	}
 	return need
 }

@@ -10,5 +10,5 @@ import "github.com/townsendmerino/goinfer/decoder"
 func init() { decoder.RegisterBuildDemand("metal", buildDemand) }
 
 func buildDemand(q decoder.BuildQuery) decoder.BuildDemand {
-	return decoder.BuildDemand{Resident: q.Options.Backend == "metal" && q.FeaturesCovered, StateBytes: q.StateTotalBytes()}
+	return decoder.BuildDemand{Resident: q.Options.Backend == "metal" && q.FeaturesCovered, StateBytes: q.StateTotalBytes(), CheckpointBytes: q.CheckpointTotalBytes()}
 }

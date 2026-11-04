@@ -25,109 +25,10 @@ var cpuGateRowsUpdate = flag.Bool("memgate.cpurows.update", false, "have TestMem
 // cpuRounding is the CPU's allocator as a row sees it: the Go heap's size classes are not in what the walk leases.
 var cpuRounding = PerLease("none: the walk leases each array's own bytes", 0)
 
-// cpuDenseVectorFixtures are the fixtures whose dense line reads over plan on the bare vectors alone.
-var cpuDenseVectorFixtures = []vectorFixture{
-	{"internal/vision/testdata/qwen25vl-vision-tiny", 4, 38},
-	{"selftestdata/gemma3-vl-tiny", 4, 46},
-	{"selftestdata/llama-tiny", 2, 66},
-	{"selftestdata/qwen35-tiny", 2, 90},
-	{"selftestdata/qwen35vl-tiny", 3, 66},
-	{"testdata/bailing_hybrid-tiny", 3, 76},
-	{"testdata/cohere-tiny", 1, 65},
-	{"testdata/cohere2-tiny", 1, 65},
-	{"testdata/deepseek-tiny", 3, 82},
-	{"testdata/gemma1-tiny", 2, 51},
-	{"testdata/gemma1-tiny.gguf", 2, 45},
-	{"testdata/gemma2-hd-tiny", 4, 68},
-	{"testdata/gemma2-hd-tiny.gguf", 4, 60},
-	{"testdata/gemma2-tiny", 4, 68},
-	{"testdata/gemma3-vl-tiny", 4, 46},
-	{"testdata/gguf-split/glm-tiny-00001-of-00004.gguf", 3, 35},
-	{"testdata/glm-ocr-tiny", 4, 45},
-	{"testdata/glm-tiny", 3, 52},
-	{"testdata/glm-tiny-bias", 4, 63},
-	{"testdata/glm-tiny.gguf", 3, 35},
-	{"testdata/gptoss_tiny.gguf", 5, 50},
-	{"testdata/granite-dense-tiny", 2, 66},
-	{"testdata/internlm2-tiny", 2, 43},
-	{"testdata/internlm3-tiny", 2, 51},
-	{"testdata/laguna-m1-tiny", 3, 62},
-	{"testdata/laguna-xs2-tiny", 3, 63},
-	{"testdata/laguna-xs21-tiny", 3, 63},
-	{"testdata/lfm2-tiny", 2, 77},
-	{"testdata/llama-attnfa-tiny", 2, 0},
-	{"testdata/llama-tiny", 2, 66},
-	{"testdata/llama4-tiny", 2, 59},
-	{"testdata/ministral3-tiny", 2, 66},
-	{"testdata/mistral-tiny-window", 2, 44},
-	{"testdata/mixtral-tiny", 2, 69},
-	{"testdata/nemotron-tiny", 2, 83},
-	{"testdata/nemotron3nano-tiny", 3, 71},
-	{"testdata/olmo3-tiny", 4, 68},
-	{"testdata/olmo_hybrid-tiny", 3, 63},
-	{"testdata/phi3-tiny", 2, 43},
-	{"testdata/qwen25vl-tiny", 4, 38},
-	{"testdata/qwen35-tiny", 2, 90},
-	{"testdata/qwen35vl-tiny", 3, 66},
-	{"testdata/qwen3_5-tiny", 2, 88},
-	{"testdata/qwen3_5-tiny-normw", 2, 88},
-	{"testdata/qwen3_5_moe-tiny", 2, 93},
-	{"testdata/qwen3asr-tiny", 3, 42},
-	{"testdata/qwen3moe-tiny", 2, 77},
-	{"testdata/qwen3moe-tiny-k3", 2, 77},
-	{"testdata/qwen3next-tiny", 2, 126},
-	{"testdata/qwen3vlmoe-tiny", 3, 54},
-	{"testdata/smollm3-tiny", 2, 66},
-	{"testdata/spark2-5-tiny", 2, 59},
-	{"testdata/voxtral-tiny", 2, 38},
-}
-
 // cpuMemGaps is the CPU's table of known reds. It may only shrink: the fix that removes a row lowers cpuMemGapsPin.
-var cpuMemGaps = append(denseVectorGaps(cpuDenseVectorFixtures), []Gap{
-	gemma4MoEDenseGap("testdata/gemma4-moe-kv-tiny"), gemma4MoEDenseGap("testdata/gemma4-moe-kv-tiny32"),
-	{Row: "testdata/gptoss_tiny.gguf *", Line: mem.LineExperts, What: "gpt-oss's expert biases are held with its experts, and the plan's expert figure sums weight matrices",
-		Item: "MM8 CPU, gpt-oss experts", Bytes: func(map[string]int64) int64 { return 8192 }},
-}...)
+var cpuMemGaps = cpuKVGaps
 
-// cpuExpertFields are the fixtures whose experts line reads over plan on the struct scalars of their experts' weight matrices, and how many
-// matrices that is.
-var cpuExpertFields = []struct {
-	row      string
-	matrices int
-}{
-	{"selftestdata/qwen35-tiny", 48},
-	{"testdata/bailing_hybrid-tiny", 72},
-	{"testdata/deepseek-tiny", 72},
-	{"testdata/gemma4-moe-kv-tiny", 32},
-	{"testdata/gemma4-moe-kv-tiny32", 32},
-	{"testdata/gguf-split/glm-tiny-00001-of-00004.gguf", 48},
-	{"testdata/glm-tiny", 48},
-	{"testdata/glm-tiny-bias", 48},
-	{"testdata/glm-tiny.gguf", 48},
-	{"testdata/gptoss_tiny.gguf", 48},
-	{"testdata/laguna-m1-tiny", 48},
-	{"testdata/laguna-xs2-tiny", 72},
-	{"testdata/laguna-xs21-tiny", 72},
-	{"testdata/llama4-tiny", 24},
-	{"testdata/mixtral-tiny", 96},
-	{"testdata/nemotron3nano-tiny", 24},
-	{"testdata/qwen35-tiny", 48},
-	{"testdata/qwen3_5_moe-tiny", 48},
-	{"testdata/qwen3moe-tiny", 96},
-	{"testdata/qwen3moe-tiny-k3", 96},
-	{"testdata/qwen3next-tiny", 72},
-	{"testdata/qwen3vlmoe-tiny", 96},
-}
-
-func init() {
-	cpuMemGaps = append(cpuMemGaps, cpuKVGaps...)
-	for _, e := range cpuExpertFields {
-		cpuMemGaps = append(cpuMemGaps, Gap{Row: e.row + " *", Line: mem.LineExperts, What: "an expert's weight matrices hold struct scalars beside their arrays, which the plan's sum of arrays leaves out",
-			Item: "MM8, weight matrix struct fields", Bytes: func(f map[string]int64) int64 { return int64(e.matrices) * f["matrixFields"] }})
-	}
-}
-
-const cpuMemGapsPin = 106
+const cpuMemGapsPin = 28
 
 // cpuKVGaps are the CPU plan's KV figures that a row reads wrong, each in MM8's row. The plan prices ctx positions of K and V on every layer.
 var cpuKVGaps = func() []Gap {
@@ -152,32 +53,6 @@ var cpuKVGaps = func() []Gap {
 	}
 	return out
 }()
-
-// gemma4MoEDenseGap is Gemma 4's MoE block on the dense line, past the bare vectors every family holds: its router's and experts' small
-// tables. Not diagnosed, so it names this fixture's own bytes.
-func gemma4MoEDenseGap(fixture string) Gap {
-	return Gap{Row: fixture + " *", Line: mem.LineDense, What: "Gemma 4's MoE block holds router and expert tables beside the vectors, priced nowhere: not diagnosed",
-		Item: "MM8, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return 10542 }}
-}
-
-func denseVectorGaps(fixtures []vectorFixture) []Gap {
-	var out []Gap
-	for _, v := range fixtures {
-		out = append(out, Gap{Row: v.row + " *", Line: mem.LineDense, What: "the plan's dense figure sums weight matrices, and the norms and biases are held beside them",
-			Item: "MM8, dense vectors", Bytes: func(f map[string]int64) int64 {
-				return int64(v.perLayer)*f["vectorUnit"] + f["vectorBase"] + int64(v.matrixFields)*f["matrixFields"]
-			}})
-	}
-	return out
-}
-
-// vectorFixture is a fixture whose dense line reads over plan on what the plan's sum of weight matrices leaves out: how many hidden-width vectors
-// a layer it holds, and how many matrices' worth of struct scalars (decoder.WeightMatScalarBytesForTest: a weight matrix's own fields).
-type vectorFixture struct {
-	row          string
-	perLayer     int
-	matrixFields int
-}
 
 // cpuGateRow loads fixture path on the CPU, writes cpuGateCtx positions, and returns the row. The CPU has no allocator to account, so its
 // ledger is filled by walking what the model and the cache hold (Model.CPUHoldsForTest). Closed reads that ledger after the model closed and
@@ -207,7 +82,6 @@ func cpuGateRow(t *testing.T, row, path string, o decoder.Options, plant func(*m
 	p := m.Plan("cpu", math.MaxInt64/4, decoder.PlanRequest{Ctx: cpuGateCtx, CtxPinned: true, KVF16: kv == mem.KVF16, KVI8: kv == mem.KVI8})
 	read := Reading{Row: row, KVSlots: 1, Plan: p, Exact: []mem.LineID{mem.LineKV, mem.LineState}, Named: map[mem.LineID]int64{mem.LineScratch: decoder.CPUScratchBudgetForTest}}
 	facts := GeometryOf(m, cpuGateCtx, 1, kv, true).Facts()
-	facts["matrixFields"] = decoder.WeightMatScalarBytesForTest()
 	read.Open = append(read.Open, Snap("generated", &l, facts))
 	m.Close()
 	release()

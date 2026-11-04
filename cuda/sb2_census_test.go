@@ -2142,16 +2142,15 @@ var cudaGapItems = map[string]struct {
 	line             mem.LineID
 	fact, what, item string
 }{
-	"kv-ring":    {mem.LineKV, "kvRing", "the plan's KV figure has the pools and the block tables; the tables' staging ring leases on the line too", "MM8 CUDA, KV staging ring"},
-	"dense":      {mem.LineDense, "denseVectors", "the plan's dense figure sums weight matrices: norms, biases and rotation tables lease on the line too", "MM8 CUDA, dense vectors"},
-	"dense-moe":  {mem.LineDense, "moeVectors", "as the dense vectors, and per-expert vectors past them: gpt-oss's biases and sinks; Gemma 4's are not diagnosed", "MM8 CUDA, dense vectors"},
-	"checkpoint": {mem.LineState, "checkpoint", "the recurrent checkpoint leases on the state line, and the plan prices one slot's state and no checkpoint", "MM8 CUDA, recurrent checkpoint"},
-	"grant":      {mem.LineKV, "windowGrant", "the plan prices the windowed slack it planned; the build then grants more rollback from free VRAM (kvGrantRollback), which the context plan subtracts and the plan's KV figure does not show", "MM8 CUDA, windowed rollback grant"},
+	"kv-ring":   {mem.LineKV, "kvRing", "the plan's KV figure has the pools and the block tables; the tables' staging ring leases on the line too", "MM8 CUDA, KV staging ring"},
+	"dense":     {mem.LineDense, "denseVectors", "the plan's dense figure sums the tensors: rotation tables lease on the line too", "MM8 CUDA, dense vectors"},
+	"dense-moe": {mem.LineDense, "moeVectors", "as the dense row, and what per-expert uploads lease past the plan's tensors: Gemma 4's are not diagnosed", "MM8 CUDA, dense vectors"},
+	"grant":     {mem.LineKV, "windowGrant", "the plan prices the windowed slack it planned; the build then grants more rollback from free VRAM (kvGrantRollback), which the context plan subtracts and the plan's KV figure does not show", "MM8 CUDA, windowed rollback grant"},
 }
 
 // cudaMemGapsPin is the number of rows in cuda/testdata/memgate_gaps.txt. CUDA's table of known reds (MM7) may only shrink: the fix that removes
 // rows deletes them and lowers this. Nothing writes that file, so a new red has to be added by hand and argued.
-const cudaMemGapsPin = 823
+const cudaMemGapsPin = 724
 
 // cudaMemGaps reads the table: one exact row per line, after its item's key and a tab. Each gap's bytes come from the model's shape, and gaps on
 // one row and line add up (Gate's match), so each states only its own.
@@ -2258,7 +2257,8 @@ func cudaGateRow(t testing.TB, row, path string, o decoder.Options) (memgate.Rea
 	read := memgate.Reading{Row: row, KVSlots: r.KVSlots()}
 	read.Plan = m.Plan("cuda", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, Slots: gateSlots(r)})
 	facts := func() map[string]int64 {
-		return map[string]int64{"kvRing": cudaKVRingBytes(r), "denseVectors": cudaDenseVectorBytes(m), "moeVectors": cudaMoEVectorBytes(m, r.nE), "windowGrant": cudaWindowGrantBytes(r), "checkpoint": int64(r.KVSlots()) * r.recurrentStateCharged()}
+		priced := m.PricedDenseVectorBytesForTest("cuda")
+		return map[string]int64{"kvRing": cudaKVRingBytes(r), "denseVectors": max(cudaDenseVectorBytes(m)-priced, 0), "moeVectors": max(cudaMoEVectorBytes(m, r.nE)-priced, 0), "windowGrant": cudaWindowGrantBytes(r)}
 	}
 	read.Open = append(read.Open, memgate.Snap("built", &l.Ledger, facts()))
 	genCtx := context.Background()

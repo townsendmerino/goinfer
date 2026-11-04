@@ -308,3 +308,17 @@ func TestHoldRows(t *testing.T) {
 		}
 	}
 }
+
+// TestPlanned_checkpoint: a load keeps its checkpoint once, or once per KV slot as the plan says, beside each slot's state.
+func TestPlanned_checkpoint(t *testing.T) {
+	for _, c := range []struct {
+		perSlot bool
+		slots   int
+		want    int64
+	}{{false, 1, 130}, {false, 4, 430}, {true, 1, 130}, {true, 4, 520}} {
+		p := decoder.Plan{StateBytes: 100, CheckpointBytes: 30, CheckpointPerSlot: c.perSlot}
+		if got := Planned(p, c.slots)[mem.LineState]; got != c.want {
+			t.Errorf("per slot %v at %d slots: the state line plans %d, want %d", c.perSlot, c.slots, got, c.want)
+		}
+	}
+}

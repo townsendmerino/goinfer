@@ -7052,10 +7052,9 @@ Metal's resident path on a 16 GB machine drove swap to 35.98 GB of 36 GB and nev
 declined, because the only size guard in the tree caps the KV CONTEXT (metal/backend.go), not
 the weights.
 
-It sums the MATRICES, which is where the bytes are; the elementwise norms/biases are [hidden]-
-sized and round to nothing beside them. That makes this a LOWER BOUND on the real footprint,
-which is the safe direction for a guard: it can fail to refuse a marginal model, but it cannot
-refuse one that would have fit.
+It sums every tensor the load holds: the matrices, where the bytes are, and the norms, biases
+and small f32 tables beside them. What a backend derives on top (rotation tables, constants) is
+not in it, and stays named in that backend's table in MM7's gate (`internal/memgate`).
 
 This is a quantity we COMPUTE, deliberately — not the OS's account of free memory. Darwin's UBC
 reclaims under pressure, so "available" reports what survived rather than what can be asked
@@ -7154,8 +7153,7 @@ Moved from `decoder/weightbytes.go` (the comment above `Model.residentWeightByte
 
 ```text
 M-01: qwen3_5_moe's per-layer mixer (DeltaNet or gated-softmax attention) — the three
-dominant projections quantize (WeightMat, 2026-08-19); the rest stay f32 vectors small
-enough to fall under the doc's norms/biases exemption. At most one of these is non-nil.
+dominant projections quantize (WeightMat, 2026-08-19); the rest stay f32 vectors. At most one of these is non-nil.
 ```
 
 ## Model.residentWeightBytesSplit: gemma4moe
@@ -9778,8 +9776,7 @@ is never packed to int4. So this is not a generic multi-quant estimate the way
 decoder/fitguard.go's quantBytesPerElem is for the main model: it prices int8 specifically,
 because that is the one encoding an attach can actually produce today. Per-row scale (one f32
 per row) is included; the norm vectors and RoPE table are f32 already and round to nothing
-beside the matrices, the same exemption ResidentWeightBytes' own doc comment gives the main
-model's norms/biases.
+beside the matrices.
 
 NOT included: the verify/capture buffers NewBlockSpec allocates (SetBatchedCapture's batched
 logits, FuseContext's per-call context scratch) — a few MB at the default verify width against

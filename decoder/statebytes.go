@@ -46,9 +46,27 @@ func stateBuffers(a *Architecture) []int64 {
 	return out
 }
 
+// recurrentCheckpointBuffers is the state a resident build's rewind checkpoint copies, in bytes per buffer: Gated-DeltaNet's and Mamba-2's.
+// A KDA or short-conv model keeps none.
+func recurrentCheckpointBuffers(a *Architecture) []int64 {
+	if a.kda != nil || a.lfm2 != nil {
+		return nil
+	}
+	return stateBuffers(a)
+}
+
 // mamba2StateSpecs is a Mamba-2 layer's conv window and SSM state.
 func mamba2StateSpecs(p mamba2Params) []StateSpec {
 	return []StateSpec{{"window", (p.DConv - 1) * p.mixer().ConvDim()}, {"state", p.NHeads * p.HeadDim * p.DState}}
+}
+
+// CheckpointTotalBytes is CheckpointBuffers' sum: the checkpoint on a backend whose allocator rounds none of it.
+func (q BuildQuery) CheckpointTotalBytes() int64 {
+	var n int64
+	for _, b := range q.CheckpointBuffers {
+		n += b
+	}
+	return n
 }
 
 // StateTotalBytes is StateBuffers' sum: the state on a backend whose allocator rounds none of it.
@@ -63,4 +81,10 @@ func (q BuildQuery) StateTotalBytes() int64 {
 // stateBytes is one KV slot's state on backend, as its report prices it: Plan's state line.
 func (m *Model) stateBytes(backend string) int64 {
 	return buildDemandFor(m.Config(), Options{Backend: backend}, 0, 0, false).StateBytes
+}
+
+// checkpointBytes is the recurrent checkpoint on backend, as its report prices it: Plan.CheckpointBytes.
+func (m *Model) checkpointBytes(backend string) (bytes int64, perSlot bool) {
+	d := buildDemandFor(m.Config(), Options{Backend: backend}, 0, 0, false)
+	return d.CheckpointBytes, d.CheckpointPerSlot
 }
