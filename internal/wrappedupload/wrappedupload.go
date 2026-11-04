@@ -44,10 +44,10 @@ func options(backend string) decoder.Options {
 }
 
 // fixtureDir is fixture with room for the prompt: a directory linking to its files, with max_position_embeddings
-// raised in its config. The caller's working directory is a package directory one below the repository root.
+// raised in its config. The caller's working directory is a package directory two below the repository root (backend/<module>).
 func fixtureDir(t *testing.T, fixture string) string {
 	t.Helper()
-	src, err := filepath.Abs(filepath.Join("..", "testdata", fixture))
+	src, err := filepath.Abs(filepath.Join("..", "..", "testdata", fixture))
 	if err != nil {
 		t.Fatal(err)
 	}
