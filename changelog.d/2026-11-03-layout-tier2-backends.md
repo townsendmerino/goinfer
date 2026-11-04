@@ -2,3 +2,4 @@
   - `github.com/townsendmerino/goinfer/cuda` (and subpaths) -> `github.com/townsendmerino/goinfer/backend/cuda`
   - `github.com/townsendmerino/goinfer/metal` (and subpaths) -> `github.com/townsendmerino/goinfer/backend/metal`
   - `github.com/townsendmerino/goinfer/gpu` (and subpaths) -> `github.com/townsendmerino/goinfer/backend/webgpu` (`package gpu` -> `package webgpu`)
+  - After the move: `demo/agent` still requires `github.com/townsendmerino/goinfer/gpu v0.23.0`, the last published tag. The workspace provides `backend/webgpu`, so builds inside `go.work` are unaffected. A standalone build with `GOWORK=off` stays red until the backend modules are tagged at v0.24.0, and then `demo/agent` bumps its require to `backend/webgpu v0.24.0`.
