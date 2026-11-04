@@ -241,7 +241,7 @@
   {
    "name": "kv-host-bytes",
    "group": "Sessions and KV cache",
-   "summary": "Host memory for prefix snapshots on a GPU-resident model: after a cold first prefill of a long prompt its KV is copied to pinned host memory, and a later request that starts with the same ids restores it instead of prefilling it. `auto` (default) is a tenth of RAM, at most 8 GiB; `0` turns it off; or a byte count with an optional K, M or G. Pinned only while a snapshot is held. Named: also keeps released rows (CUDA; experimental)."
+   "summary": "Host memory for prefix snapshots on a GPU-resident model: after a cold first prefill of a long prompt its KV is copied to pinned host memory, and a later request starting with the same ids restores it. `auto` (default) is a tenth of RAM, at most 8 GiB; `0` turns it off; or a byte count with an optional K, M or G. Pinned only while a snapshot is held. Named: also keeps released rows (CUDA; experimental)."
   },
   {
    "name": "kv-share",

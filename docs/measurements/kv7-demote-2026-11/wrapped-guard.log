@@ -39,3 +39,10 @@ VERDICT: FAIL — touched: 1 of 18 checks failed
 test_touched 0
 canary hits 1
 citation lint 0
+
+# The first round-1 push still failed TestFlagsDoc, at 434 characters of its 420: I pushed without gating on it. The summary is shorter. 17:19:09 PST
+--- PASS: TestFlagsDoc (0.00s)
+--- PASS: TestOneMerge (0.02s)
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.030s
+ok  	github.com/townsendmerino/goinfer/internal/config	0.004s
+citation lint 0
