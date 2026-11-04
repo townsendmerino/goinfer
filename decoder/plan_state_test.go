@@ -84,9 +84,9 @@ func TestPlan_pricesRecurrentState(t *testing.T) {
 	}
 }
 
-// TestPlan_pricesRecurrentCheckpoint: each backend's report prices the checkpoint at one copy of the DeltaNet or Mamba-2 state where it keeps one
-// and at none elsewhere, whether or not this host links the backend. On a plan: every fixture that keeps one reaches an accepted CUDA plan, which
-// shows it; a declined plan and a plan with no room beside its need show none, at the same placement, since it stays out of the need.
+// TestPlan_pricesRecurrentCheckpoint: each backend's report prices the checkpoint at what a forward's state holds where it keeps one and at none elsewhere,
+// whether or not this host links the backend. On a plan: every fixture that keeps one reaches an accepted CUDA plan, which shows it; a plan with no room
+// beside its need shows none at the same placement, since it stays out of the need; and a declined plan on that backend shows none.
 func TestPlan_pricesRecurrentCheckpoint(t *testing.T) {
 	for _, fx := range []struct {
 		dir  string
@@ -98,16 +98,23 @@ func TestPlan_pricesRecurrentCheckpoint(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer m.Close()
+			c := m.NewCache(0)
+			for i := range 16 { // past every fixture's conv kernel
+				if _, err := m.forward(i%m.Config().VocabSize, c); err != nil {
+					t.Fatal(err)
+				}
+			}
+			held := cacheStateBytes(c)
+			if fx.kept && held == 0 {
+				t.Fatalf("VOID: %s holds no state after a forward", fx.dir)
+			}
 			for _, b := range []string{"metal", "cuda", "webgpu", "cpu"} {
 				want := int64(0)
 				if fx.kept && (b == "metal" || b == "cuda") {
-					want = m.stateBytes(b)
-					if want == 0 {
-						t.Fatalf("VOID: %s holds no state on %s", fx.dir, b)
-					}
+					want = held // tiny buffers, under CUDA's rounding quantum
 				}
 				if got := m.checkpointBytes(b); got != want {
-					t.Errorf("%s: the report's checkpoint is %d bytes, want %d", b, got, want)
+					t.Errorf("%s: the report's checkpoint is %d bytes, a forward holds %d", b, got, want)
 				}
 				p := m.Plan(b, 1<<40, PlanRequest{Ctx: 64, CtxPinned: true})
 				if p.Placement == PlacementDecline {
@@ -128,6 +135,15 @@ func TestPlan_pricesRecurrentCheckpoint(t *testing.T) {
 				}
 				if tight.CheckpointBytes != 0 {
 					t.Errorf("%s: with no room beside its need, the plan shows a checkpoint of %d bytes", b, tight.CheckpointBytes)
+				}
+				if b != "cuda" {
+					continue
+				}
+				if under := m.Plan(b, p.NeedBytes()-1, PlanRequest{Ctx: 64, CtxPinned: true}); under.CheckpointBytes != 0 {
+					t.Errorf("%s: a byte under its need, the plan (%v) shows a checkpoint of %d bytes", b, under.Placement, under.CheckpointBytes)
+				}
+				if none := m.Plan(b, 1, PlanRequest{Ctx: 64, CtxPinned: true}); none.Placement != PlacementDecline || none.CheckpointBytes != 0 {
+					t.Errorf("%s: with a byte free, the plan reads %v with a checkpoint of %d bytes", b, none.Placement, none.CheckpointBytes)
 				}
 			}
 		})
@@ -159,6 +175,32 @@ func TestPlan_expertBiasesOnTheLineThatHoldsThem(t *testing.T) {
 	}
 	if got, want := m.ResidentDenseWeightBytesFor("webgpu")-m.ResidentDenseWeightBytes(), bias-m.kquantSavings("webgpu")-m.mambaProjSavings("webgpu"); got != want {
 		t.Errorf("webgpu's dense figure holds %d past the tensors, want %d", got, want)
+	}
+	// Metal's autoMoESlots reads these: one more slot costs an expert alone, and what is left at no slots holds the biases.
+	if perSlot := m.ResidentWeightBytesPaged(2) - m.ResidentWeightBytesPaged(1); perSlot <= 0 || perSlot*int64(m.w.arch.MoE.NumExperts) != full {
+		t.Errorf("one more slot costs %d, the experts alone %d over %d experts", perSlot, full, m.w.arch.MoE.NumExperts)
+	} else if got, want := m.ResidentWeightBytesPaged(1)-perSlot, m.ResidentDenseWeightBytes()+bias; got != want {
+		t.Errorf("the fixed need reads %d, dense and biases %d", got, want)
+	}
+	// The pre-load estimate keeps them out of the expert bytes it scales.
+	g, err := OpenGGUFMmap("testdata/gptoss_tiny.gguf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	var scaled float64
+	for _, name := range g.Names() {
+		if strings.Contains(name, "_exps") && !strings.HasSuffix(name, ".bias") {
+			dims, _ := g.Dims(name)
+			n := 1
+			for _, d := range dims {
+				n *= d
+			}
+			scaled += quantBytesPerElem(quantInt4) * float64(n)
+		}
+	}
+	if _, experts := estimateGGUFWeightBreakdown("testdata/gptoss_tiny.gguf", quantInt4); experts != int64(scaled) || experts == 0 {
+		t.Errorf("the estimate's expert bytes are %d, the expert matrices %d", experts, int64(scaled))
 	}
 	p := m.Plan("cpu", 1<<40, PlanRequest{Ctx: 64, CtxPinned: true})
 	if got, want := m.ResidentNeedBytes("cpu", 0, p.Ctx, false, false), p.NeedBytes(); got != want {

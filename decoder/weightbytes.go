@@ -129,7 +129,18 @@ func (m *Model) denseVectorBytes() int64 {
 		if mb := l.mamba; mb != nil {
 			n += f32SliceBytes(mb.convB, mb.aLog, mb.d, mb.dtBias, mb.normW)
 		}
-		if mo := l.gemma4moe; mo != nil {
+	}
+	return n + m.gemma4MoEVectorBytes()
+}
+
+// gemma4MoEVectorBytes is denseVectorBytes' share in Gemma 4's MoE blocks.
+func (m *Model) gemma4MoEVectorBytes() int64 {
+	if m == nil || m.w == nil {
+		return 0
+	}
+	var n int64
+	for i := range m.w.Layers {
+		if mo := m.w.Layers[i].gemma4moe; mo != nil {
 			n += f32SliceBytes(mo.postFFNNorm1, mo.preFFNNorm2, mo.postFFNNorm2, mo.routerScale, mo.perExpertScale)
 		}
 	}

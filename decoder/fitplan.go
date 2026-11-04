@@ -113,7 +113,7 @@ func (p Plan) NeedBytes() int64 {
 // kvBytesPerPositionAllLayers is Plan's KV-cost rate: per layer (a per-layer-varying family like Gemma 4 is not approximated by one
 // model-level figure, as metal/backend.go's residentKVBytes also sums per layer), K+V, at the requested precision. Bytes per element match
 // kvBytesForCtx in decoder/arch.go (f32 4.0, f16 2, int8 1.125 including scale). The per-layer width is Architecture.kvDimAt: zero for a
-// linear/mamba/conv mixer layer (no position-indexed K/V), MLA's compressed latent width.
+// linear/mamba/conv mixer layer (no position-indexed K/V), MLA's compressed latent width, whose one row stays f32 at any precision.
 //
 // It deliberately does NOT apply kvBytesForCtx's sliding-window cap (kvPositionsAt): this returns a flat per-position rate that the caller
 // multiplies by ctx, while a sliding-window layer's cost flattens at SlidingWindow, so capping it needs tryCtx/chooseCtx to search rather
@@ -139,6 +139,10 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 			kvDim = arch.kvDimAt(l)
 		} else {
 			kvDim = m.KVHeadsAtResident(l) * m.HeadDimAtResident(l)
+		}
+		if arch != nil && arch.mla != nil {
+			perPos += 4 * float64(kvDim)
+			continue
 		}
 		perPos += 2 * float64(kvDim) * perElem // ×2 for K and V
 	}

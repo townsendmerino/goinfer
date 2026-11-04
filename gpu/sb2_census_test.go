@@ -769,8 +769,6 @@ var webgpuMemGaps = func() []memgate.Gap {
 	}
 	moeDense("testdata/gemma4-moe-kv-tiny int8int8", 1128)
 	moeDense("testdata/gemma4-moe-kv-tiny32 int8int8", 1128)
-	out = append(out, memgate.Gap{Row: "testdata/deepseek-tiny *", Line: mem.LineKV, OverPriced: true, What: "an MLA layer holds one latent row, and the plan prices K and V",
-		Item: "MM8, MLA KV counted twice", Bytes: memgate.KVPricedOver})
 	for _, f := range []string{
 		"testdata/olmo3-tiny", "testdata/olmo_hybrid-tiny", "testdata/smollm3-tiny",
 		"internal/vision/testdata/qwen25vl-vision-tiny", "selftestdata/gemma3-vl-tiny", "selftestdata/llama-tiny",
@@ -808,7 +806,7 @@ const webgpuGateRowsPath = "testdata/memgate_rows.txt"
 var webgpuGateRowsUpdate = flag.Bool("memgate.rows.update", false, "have TestMemGate_webgpu rewrite testdata/memgate_rows.txt")
 
 // webgpuMemGapsPin is len(webgpuMemGaps) on this architecture.
-var webgpuMemGapsPin = map[string]int{"arm64": 35}[runtime.GOARCH] + map[bool]int{true: 39}[runtime.GOARCH != "arm64"]
+var webgpuMemGapsPin = map[string]int{"arm64": 34}[runtime.GOARCH] + map[bool]int{true: 38}[runtime.GOARCH != "arm64"]
 
 // webgpuGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; the function it returns
 // runs after that read, so the plant is released before Close and the package's own ledger check stays clean.

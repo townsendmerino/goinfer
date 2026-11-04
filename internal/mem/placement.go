@@ -183,7 +183,7 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 			p.Placement, p.Ctx, p.KVBytes = Resident, ctx, kv
 			p.ExpertBytesUsed, p.HostCopyBytes = l.ExpertBytesFull+l.ExpertBytesFixed, hostAll
 			p.Reason = fmt.Sprintf("dense %.2f GB + experts %.2f GB%s + KV@%d %.2f GB fits %.2f GB free",
-				gbf(l.DenseBytes), gbf(l.ExpertBytesFull), stateNote(l.StateBytes)+slackNote(l.FixedSlack)+hostCopyNote(hostAll), ctx, gbf(kv), gbf(free))
+				gbf(l.DenseBytes), gbf(p.ExpertBytesUsed), stateNote(l.StateBytes)+slackNote(l.FixedSlack)+hostCopyNote(hostAll), ctx, gbf(kv), gbf(free))
 			return p
 		}
 		reserve = 0
@@ -202,7 +202,7 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 				req.Ctx, l.CtxCeiling)
 		}
 		return decline("context %d does not fit even at the %d-position floor: dense %.2f GB%s + KV %.2f GB exceeds %.2f GB free",
-			req.Ctx, floor, gbf(l.DenseBytes), stateNote(l.StateBytes)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), gbf(kv), gbf(free))
+			req.Ctx, floor, gbf(fixed), stateNote(l.StateBytes)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), gbf(kv), gbf(free))
 	}
 	if l.NExperts == 0 {
 		p.Placement = Resident
@@ -216,14 +216,14 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 		p.ExpertBytesUsed = l.ExpertBytesFull + l.ExpertBytesFixed
 		p.HostCopyBytes = hostAll
 		p.Reason = fmt.Sprintf("dense %.2f GB + experts %.2f GB%s + KV@%d %.2f GB fits %.2f GB free",
-			gbf(l.DenseBytes), gbf(l.ExpertBytesFull), stateNote(l.StateBytes)+slackNote(l.FixedSlack)+hostCopyNote(hostAll), ctx, gbf(kv), gbf(free))
+			gbf(l.DenseBytes), gbf(p.ExpertBytesUsed), stateNote(l.StateBytes)+slackNote(l.FixedSlack)+hostCopyNote(hostAll), ctx, gbf(kv), gbf(free))
 		return p
 	}
 	// The largest slot count whose bytes fit beside the fixed terms. A layer's experts are uniform in shape, so this is arithmetic.
 	remaining := free - fixed - l.StateBytes - l.FixedSlack - l.HostFixed - kv - req.ExtraBytes
 	if remaining <= 0 {
 		return decline("dense %.2f GB%s + KV@%d %.2f GB alone exceeds %.2f GB free — no room left for any expert cache",
-			gbf(l.DenseBytes), stateNote(l.StateBytes)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
+			gbf(fixed), stateNote(l.StateBytes)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
 	}
 	perExpert := l.ExpertBytesFull / int64(l.NExperts) // at least 1: unpriced experts declined above
 	slots := int(remaining / perExpert)

@@ -249,3 +249,6 @@ func (m *Model) PricedDenseVectorBytesForTest(backend string) int64 {
 	}
 	return n
 }
+
+// PricedGemma4MoEVectorBytesForTest is PricedDenseVectorBytesForTest's share in Gemma 4's MoE blocks, which Metal's table bounds in that family's own row.
+func (m *Model) PricedGemma4MoEVectorBytesForTest() int64 { return m.gemma4MoEVectorBytes() }
