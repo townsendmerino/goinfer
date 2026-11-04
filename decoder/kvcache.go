@@ -397,6 +397,17 @@ func (c *KVCache) setQuant(q kvQuant, capHint int) {
 	}
 }
 
+// reserveWidths reserves each append-forever f32 layer at width(l) where that is not the cache's kvDim, for a hint of capHint rows. Only f32 needs it:
+// a family with layers of different widths keeps f32 (Architecture.kvF16OK, kvInt8OK; TestNewCache_reservesEachLayersWidth).
+func (c *KVCache) reserveWidths(capHint int, width func(l int) int) {
+	for l := range c.numLayers {
+		if lc := c.appendHint(l, capHint); lc > 0 && width(l) != c.kvDim {
+			c.keys[l] = make([]float32, 0, lc*width(l))
+			c.vals[l] = make([]float32, 0, lc*width(l))
+		}
+	}
+}
+
 // appendHint is the rows of append-forever capacity layer l reserves for a hint of capHint: none for a layer skipAppend names.
 func (c *KVCache) appendHint(l, capHint int) int {
 	if c.skipAppend != nil && c.skipAppend(l) {

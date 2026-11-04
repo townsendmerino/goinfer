@@ -122,6 +122,9 @@ curl -fsSL -o goinfer-serve https://github.com/townsendmerino/goinfer/releases/l
 chmod +x goinfer-serve
 ```
 
+Each release carries `checksums.txt` and a build attestation for every asset. To check that a binary was built by this
+repo's release workflow from that tag, run `gh attestation verify goinfer-serve --repo townsendmerino/goinfer`.
+
 ```bash
 # model included — nothing else to fetch
 ./goinfer-chat-1.5b-darwin-arm64

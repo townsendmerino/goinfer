@@ -463,7 +463,7 @@ func kvBytesForCtx(arch *Architecture, ctx int, kvF16, kvI8 bool) int64 {
 	var total float64
 	for l := 0; l < arch.NumLayers; l++ {
 		dim := arch.kvDimAt(l)
-		if dim == 0 {
+		if dim == 0 || arch.gemma4KVSrcAt(l) != l { // a Gemma 4 E-model's shared layer reads its source's cache
 			continue
 		}
 		positions := arch.kvPositionsAt(l, ctx)
@@ -471,6 +471,10 @@ func kvBytesForCtx(arch *Architecture, ctx int, kvF16, kvI8 bool) int64 {
 		// positions, not W; the int8 ring has no mirror. Priced here so the fit guard counts what is resident.
 		if !kvI8 && arch.SlidingWindow > 0 && !arch.isGlobalLayer(l) && ctx > arch.SlidingWindow {
 			positions += arch.SlidingWindow
+		}
+		if arch.mla != nil { // one latent row, f32 whatever K/V precision the load names
+			total += 4 * float64(dim) * float64(positions)
+			continue
 		}
 		total += 2 * perElem * float64(dim) * float64(positions) // ×2 for K and V
 	}

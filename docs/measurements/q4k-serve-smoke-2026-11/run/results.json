@@ -1,0 +1,106 @@
+{
+ "phi3-default": {
+  "first": {
+   "load_s": 4.509281158447266,
+   "chat_s": 0.2052781581878662,
+   "reply": " The capital of France is Paris.",
+   "reasoning": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 17,
+    "completion_tokens": 7,
+    "total_tokens": 24,
+    "prefill_reused_tokens": 0
+   },
+   "swap_mb": 0
+  },
+  "second": {
+   "load_s": 1.504018783569336,
+   "chat_s": 0.21170902252197266,
+   "reply": " The capital of France is Paris.",
+   "reasoning": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 17,
+    "completion_tokens": 7,
+    "total_tokens": 24,
+    "prefill_reused_tokens": 0
+   },
+   "swap_mb": 0
+  },
+  "written": [
+   "Phi-3-mini-4k-instruct-q4.q4k.e4h.cuda.v17.giw",
+   "Phi-3-mini-4k-instruct-q4.q4k.e4h.cuda.v17.giw.verified"
+  ],
+  "problems": []
+ },
+ "phi3-q4k": {
+  "first": {
+   "load_s": 2.003864288330078,
+   "chat_s": 0.21482467651367188,
+   "reply": " The capital of France is Paris.",
+   "reasoning": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 17,
+    "completion_tokens": 7,
+    "total_tokens": 24,
+    "prefill_reused_tokens": 0
+   },
+   "swap_mb": 0
+  },
+  "second": {
+   "load_s": 2.004316568374634,
+   "chat_s": 0.21874284744262695,
+   "reply": " The capital of France is Paris.",
+   "reasoning": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 17,
+    "completion_tokens": 7,
+    "total_tokens": 24,
+    "prefill_reused_tokens": 0
+   },
+   "swap_mb": 0
+  },
+  "written": [],
+  "problems": [
+   "no .q4k sidecar written: []"
+  ]
+ },
+ "q05b-q4k": {
+  "first": {
+   "load_s": 1.5038270950317383,
+   "chat_s": 0.1286640167236328,
+   "reply": "Paris is the capital of France.",
+   "reasoning": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 42,
+    "completion_tokens": 7,
+    "total_tokens": 49,
+    "prefill_reused_tokens": 0
+   },
+   "swap_mb": 0
+  },
+  "second": {
+   "load_s": 1.0031538009643555,
+   "chat_s": 0.13013577461242676,
+   "reply": "Paris is the capital of France.",
+   "reasoning": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 42,
+    "completion_tokens": 7,
+    "total_tokens": 49,
+    "prefill_reused_tokens": 0
+   },
+   "swap_mb": 0
+  },
+  "written": [
+   "qwen2.5-coder-0.5b-instruct-q4_k_m.q4k.e4h.cuda.v17.giw",
+   "qwen2.5-coder-0.5b-instruct-q4_k_m.q4k.e4h.cuda.v17.giw.verified"
+  ],
+  "problems": []
+ }
+}

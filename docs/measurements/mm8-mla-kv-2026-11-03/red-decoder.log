@@ -1,0 +1,8 @@
+--- FAIL: TestKVBytes_mlaHoldsOneLatentRow (0.01s)
+    fitkv_test.go:209: f32: kvBytesForCtx 12288, the cache holds 6144
+    fitkv_test.go:212: f32: Plan's rate at 16 positions is 12288, the cache holds 6144
+    fitkv_test.go:209: i8: kvBytesForCtx 3456, the cache holds 6144
+    fitkv_test.go:212: i8: Plan's rate at 16 positions is 3456, the cache holds 6144
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.009s
+FAIL

@@ -1,0 +1,47 @@
+# go test -tags goinfer_testhooks -count=1 -v -run '^TestWrappedUpload_' ./metal/, MacBookPro18,3, 2026-11-03, main ae3b7493 with 8784bebf's test file.
+== the planted run, a.SetFloor(a.Bound(), 0) in residentUploadPrefill: red first, expected
+--- PASS: TestWrappedUpload_rows (1.47s)
+    --- PASS: TestWrappedUpload_rows/gemma3-vl-tiny (1.03s)
+    --- PASS: TestWrappedUpload_rows/mistral-tiny-window (0.41s)
+--- FAIL: TestWrappedUpload_reuse (1.22s)
+    --- FAIL: TestWrappedUpload_reuse/gemma3-vl-tiny (0.57s)
+    --- FAIL: TestWrappedUpload_reuse/mistral-tiny-window (0.65s)
+--- FAIL: TestWrappedUpload_turns (0.60s)
+    --- FAIL: TestWrappedUpload_turns/gemma3-vl-tiny (0.29s)
+    --- FAIL: TestWrappedUpload_turns/mistral-tiny-window (0.31s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	3.764s
+FAIL
+== the plain run
+    wrappedupload.go:173: gemma3-vl-tiny: the prompt's end (control), position 256 of floor 255: worst logit gap against a cold prefill 0.00000
+    wrappedupload.go:174: gemma3-vl-tiny: the floor, position 255 of floor 255: worst logit gap against a cold prefill 0.00000
+    wrappedupload.go:175: gemma3-vl-tiny: one row short of the floor, position 254 of floor 255: worst logit gap against a cold prefill 0.09936
+    wrappedupload.go:176: gemma3-vl-tiny: a much shorter prefix, position 128 of floor 255: worst logit gap against a cold prefill 0.53731
+    wrappedupload.go:173: mistral-tiny-window: the prompt's end (control), position 256 of floor 255: worst logit gap against a cold prefill 0.00000
+    wrappedupload.go:174: mistral-tiny-window: the floor, position 255 of floor 255: worst logit gap against a cold prefill 0.00000
+    wrappedupload.go:175: mistral-tiny-window: one row short of the floor, position 254 of floor 255: worst logit gap against a cold prefill 0.07215
+    wrappedupload.go:176: mistral-tiny-window: a much shorter prefix, position 128 of floor 255: worst logit gap against a cold prefill 0.61131
+--- PASS: TestWrappedUpload_rows (1.39s)
+    --- PASS: TestWrappedUpload_rows/gemma3-vl-tiny (0.94s)
+    --- PASS: TestWrappedUpload_rows/mistral-tiny-window (0.41s)
+    wrappedupload.go:211: gemma3-vl-tiny: a much shorter prefix: reused 0 of 136 (floor 255); reply [249 249 249 249 249 153 153 153], cold [249 249 249 249 249 153 153 153]
+    wrappedupload.go:212: gemma3-vl-tiny: one row short of the floor: reused 0 of 262 (floor 255); reply [255 255 255 255 204 204 153 153], cold [255 255 255 255 204 204 153 153]
+    wrappedupload.go:213: gemma3-vl-tiny: the floor: reused 255 of 263 (floor 255); reply [204 255 255 255 213 153 153 153], cold [204 255 255 255 213 153 153 153]
+    wrappedupload.go:214: gemma3-vl-tiny: the whole prompt: reused 256 of 264 (floor 255); reply [204 255 255 213 213 213 76 76], cold [204 255 255 213 213 213 76 76]
+    wrappedupload.go:211: mistral-tiny-window: a much shorter prefix: reused 0 of 136 (floor 255); reply [11 11 11 11 11 11 11 11], cold [11 11 11 11 11 11 11 11]
+    wrappedupload.go:212: mistral-tiny-window: one row short of the floor: reused 0 of 262 (floor 255); reply [25 25 25 25 25 25 25 25], cold [25 25 25 25 25 25 25 25]
+    wrappedupload.go:213: mistral-tiny-window: the floor: reused 255 of 263 (floor 255); reply [11 11 11 11 11 11 11 11], cold [11 11 11 11 11 11 11 11]
+    wrappedupload.go:214: mistral-tiny-window: the whole prompt: reused 256 of 264 (floor 255); reply [11 11 11 11 11 11 11 11], cold [11 11 11 11 11 11 11 11]
+--- PASS: TestWrappedUpload_reuse (1.56s)
+    --- PASS: TestWrappedUpload_reuse/gemma3-vl-tiny (0.75s)
+    --- PASS: TestWrappedUpload_reuse/mistral-tiny-window (0.81s)
+    wrappedupload.go:249: gemma3-vl-tiny: a continuation past the floor: reused 256 of 264 (floor 255); reply [204 255 255 213 213 213 76 76], cold [204 255 255 213 213 213 76 76]
+    wrappedupload.go:251: gemma3-vl-tiny: then a shorter prefix: reused 0 of 136 (floor 255); reply [249 249 249 249 98 98 98 98], cold [249 249 249 249 98 98 98 98]
+    wrappedupload.go:252: gemma3-vl-tiny: then a shorter prefix of the cold prefill: reused 64 of 72 (floor 255); reply [136 157 157 157 157 186 186 186], cold [136 157 157 157 157 186 186 186]
+    wrappedupload.go:249: mistral-tiny-window: a continuation past the floor: reused 256 of 264 (floor 255); reply [11 11 11 11 11 11 11 11], cold [11 11 11 11 11 11 11 11]
+    wrappedupload.go:251: mistral-tiny-window: then a shorter prefix: reused 0 of 136 (floor 255); reply [60 33 11 11 11 11 11 11], cold [60 33 11 11 11 11 11 11]
+    wrappedupload.go:252: mistral-tiny-window: then a shorter prefix of the cold prefill: reused 64 of 72 (floor 255); reply [55 124 124 124 124 124 124 124], cold [55 124 124 124 124 124 124 124]
+--- PASS: TestWrappedUpload_turns (0.71s)
+    --- PASS: TestWrappedUpload_turns/gemma3-vl-tiny (0.35s)
+    --- PASS: TestWrappedUpload_turns/mistral-tiny-window (0.36s)
+ok  	github.com/townsendmerino/goinfer/metal	4.224s

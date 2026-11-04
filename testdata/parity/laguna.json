@@ -14,7 +14,7 @@
     "scripts/pin_slice_oracle.py",
     "decoder/arch_laguna.go"
   ],
-  "deps_hash": "sha256:cad242b60efe41bc3f37fbaea6a6da641ddb5550762d4d3f09f226eba0fbf503",
+  "deps_hash": "sha256:adbbb7fa8995f75f0e47051534d7fe5e761f2cd39c84e9798a70af30c28f1100",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
