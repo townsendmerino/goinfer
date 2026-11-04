@@ -20,10 +20,10 @@ import "unicode"
 // Tested differentially against an independent ordered-alternative matcher, as splitO200k is
 // (split_gpt2orig_test.go).
 func splitGPT2Original(s string) []string {
-	rs := []rune(s)
+	rs, off, s := runeOffsets(s)
 	n := len(rs)
-	var out []string
-	emit := func(a, b int) { out = append(out, string(rs[a:b])) }
+	out := make([]string, 0, n/3+1)
+	emit := func(a, b int) { out = append(out, s[off[a]:off[b]]) }
 
 	isPunct := func(r rune) bool {
 		return !unicode.IsSpace(r) && !unicode.IsLetter(r) && !unicode.IsNumber(r)

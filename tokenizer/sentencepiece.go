@@ -1,7 +1,6 @@
 package tokenizer
 
 import (
-	"container/heap"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -553,11 +552,12 @@ func (t *Tokenizer) encode(text string, addBOS, parseSpecial bool) ([]int, error
 		out = append(out, int32(t.special.BOS))
 	}
 
+	var sc mergeScratch
 	gapStart := 0
 	i := 0
 	flushGap := func(end int) {
 		if end > gapStart {
-			out = append(out, t.bpe(t.normalizeGap(text[gapStart:end]))...)
+			out = append(out, t.bpe(t.normalizeGap(text[gapStart:end]), &sc)...)
 		}
 	}
 	for parseSpecial && i < len(text) {
@@ -701,13 +701,13 @@ func prependMarker(raw json.RawMessage) bool {
 // bpe segments a normalized gap into ids: per-rune initial symbols (byte
 // fallback for out-of-vocab runes), then greedy merge of the lowest-rank
 // adjacent pair (leftmost on ties) until none remain.
-func (t *Tokenizer) bpe(gap string) []int32 {
+func (t *Tokenizer) bpe(gap string, sc *mergeScratch) []int32 {
 	if gap == "" {
 		return nil
 	}
 	syms := make([]string, 0, len(gap))
-	for _, r := range gap {
-		s := string(r)
+	for i, r := range gap {
+		s := runeAt(gap, i, r)
 		if _, ok := t.vocab[s]; ok {
 			syms = append(syms, s)
 			continue
@@ -721,7 +721,7 @@ func (t *Tokenizer) bpe(gap string) []int32 {
 		syms = append(syms, t.unkPiece)
 	}
 
-	syms = t.mergeSymbols(syms)
+	syms = t.mergeSymbols(syms, sc)
 
 	ids := make([]int32, len(syms))
 	for k, s := range syms {
@@ -734,76 +734,99 @@ func (t *Tokenizer) bpe(gap string) []int32 {
 	return ids
 }
 
+// runeAt is string(r) for the rune r found at byte i when ranging over s, without allocating. An invalid byte ranges as
+// U+FFFD, which is not the byte itself.
+func runeAt(s string, i int, r rune) string {
+	if r == utf8.RuneError {
+		return "\uFFFD"
+	}
+	return s[i : i+utf8.RuneLen(r)]
+}
+
 // mergeSymbols is the shared BPE core, called by both families (only the initial symbol
 // construction and the id mapping around it differ): it applies BPE merges to syms in ascending
 // rank order, leftmost first on a tie, until no adjacent pair has a known rank. Behaviorally
 // identical to the naive "rescan for the globally best pair each step" (the golden-parity tests gate
 // this), but O(n log n) via a min-heap over a doubly-linked list instead of O(n²): Gemma has no
 // pretokenizer, so a whole inter-added-token gap arrives here as ONE unit, and a rescan turns a few
-// hundred KB of client text into minutes of CPU.
-func (t *Tokenizer) mergeSymbols(syms []string) []string {
+// hundred KB of client text into minutes of CPU. It returns syms resliced to hold the merged symbols. sc is working memory,
+// reused between calls by the one goroutine that owns it.
+func (t *Tokenizer) mergeSymbols(syms []string, sc *mergeScratch) []string {
 	n := len(syms)
 	if n < 2 {
 		return syms
 	}
-	text := make([]string, n) // node text (grows as pairs merge into the left node)
-	ids := make([]int32, n)   // node text's pieceID, -1 when it has none
-	prev := make([]int32, n)
-	next := make([]int32, n)
-	alive := make([]bool, n)
-	copy(text, syms)
-	for i := range text {
-		ids[i] = t.pieceID(text[i])
-		prev[i] = int32(i - 1)
-		next[i] = int32(i + 1)
-		alive[i] = true
+	if cap(sc.nodes) < n {
+		sc.nodes = make([]mergeNode, n)
 	}
-	next[n-1] = -1
+	nodes := sc.nodes[:n]
+
+	// Every node's text is a range of one string, so a merge moves a boundary and concatenates nothing.
+	size := 0
+	for _, s := range syms {
+		size += len(s)
+	}
+	var b strings.Builder
+	b.Grow(size)
+	for i, s := range syms {
+		nodes[i] = mergeNode{start: b.Len(), end: b.Len() + len(s), id: t.pieceID(s), prev: int32(i - 1), next: int32(i + 1), alive: true}
+		b.WriteString(s)
+	}
+	nodes[n-1].next = -1
+	joined := b.String()
+
+	rank := func(l, r int32) (int32, bool) {
+		ln, rn := &nodes[l], &nodes[r]
+		return t.mergeRank(ln.id, rn.id, joined[ln.start:ln.end], joined[rn.start:rn.end], joined[ln.start:rn.end])
+	}
 
 	// A candidate's key packs (rank, leftNodeIndex) so the heap pops the lowest rank
 	// and, on a tie, the leftmost node — the same choice the rescan made. Node indices
 	// never change, and surviving nodes keep left-to-right order, so leftmost-by-index
 	// == leftmost-in-the-old-array.
-	h := &mergeHeap{}
+	h := sc.heap[:0]
 	pushPair := func(left int32) {
 		if left < 0 {
 			return
 		}
-		r := next[left]
+		r := nodes[left].next
 		if r < 0 {
 			return
 		}
-		if rank, ok := t.mergeRank(ids[left], ids[r], text[left], text[r]); ok {
-			heap.Push(h, mergeCand{key: int64(rank)<<32 | int64(left), left: left, right: r})
+		if rk, ok := rank(left, r); ok {
+			h = pushCand(h, mergeCand{key: int64(rk)<<32 | int64(left), left: left, right: r})
 		}
 	}
 	for i := int32(0); i+1 < int32(n); i++ {
 		pushPair(i)
 	}
-	for h.Len() > 0 {
-		c := heap.Pop(h).(mergeCand)
-		if !alive[c.left] || !alive[c.right] || next[c.left] != c.right {
+	for len(h) > 0 {
+		var c mergeCand
+		h, c = popCand(h)
+		left, right := &nodes[c.left], &nodes[c.right]
+		if !left.alive || !right.alive || left.next != c.right {
 			continue // one endpoint was already merged away
 		}
 		// The left node's text may have grown since this candidate was queued (a fresh
 		// candidate with the correct rank was pushed then); re-derive the rank and drop
 		// this one if it no longer matches.
-		if rank, ok := t.mergeRank(ids[c.left], ids[c.right], text[c.left], text[c.right]); !ok || int64(rank)<<32|int64(c.left) != c.key {
+		if rk, ok := rank(c.left, c.right); !ok || int64(rk)<<32|int64(c.left) != c.key {
 			continue
 		}
-		text[c.left] += text[c.right]
-		ids[c.left] = t.pieceID(text[c.left])
-		alive[c.right] = false
-		next[c.left] = next[c.right]
-		if nr := next[c.right]; nr >= 0 {
-			prev[nr] = c.left
+		left.end = right.end
+		left.id = t.pieceID(joined[left.start:left.end])
+		right.alive = false
+		left.next = right.next
+		if right.next >= 0 {
+			nodes[right.next].prev = c.left
 		}
-		pushPair(prev[c.left]) // the pair to the left now has a new right text
-		pushPair(c.left)       // and this node has a new right neighbor
+		pushPair(left.prev) // the pair to the left now has a new right text
+		pushPair(c.left)    // and this node has a new right neighbor
 	}
+	sc.heap = h
 	out := syms[:0] // node 0 is never a right child, so it stays the live head
-	for i := int32(0); i >= 0; i = next[i] {
-		out = append(out, text[i])
+	for i := int32(0); i >= 0; i = nodes[i].next {
+		out = append(out, joined[nodes[i].start:nodes[i].end])
 	}
 	return out
 }
@@ -811,10 +834,10 @@ func (t *Tokenizer) mergeSymbols(syms []string) []string {
 // mergeRank returns the merge priority of the adjacent pair (left, right): lower rank merges first,
 // leftmost on a tie (the heap packs rank<<32|leftIndex). li and ri are the pieces' pieceIDs. In BPE mode it is the
 // merges rank of the two source pieces; in SPM-scores mode (scoreRank != nil, no merge list) it is the score-rank of the
-// CONCATENATED token left+right, so the highest-scoring merge fires first — the SentencePiece order.
-func (t *Tokenizer) mergeRank(li, ri int32, left, right string) (int32, bool) {
+// CONCATENATED token both (left+right), so the highest-scoring merge fires first — the SentencePiece order.
+func (t *Tokenizer) mergeRank(li, ri int32, left, right, both string) (int32, bool) {
 	if t.scoreRank != nil {
-		if id, ok := t.vocab[left+right]; ok {
+		if id, ok := t.vocab[both]; ok {
 			return t.scoreRank[id], true
 		}
 		return 0, false
@@ -856,18 +879,55 @@ type mergeCand struct {
 	left, right int32
 }
 
-type mergeHeap []mergeCand
+// mergeNode is one symbol in mergeSymbols' linked list. Its text is the merge's joined string from start to end.
+type mergeNode struct {
+	start, end int
+	id         int32 // the text's pieceID, -1 when it has none
+	prev, next int32
+	alive      bool
+}
 
-func (h mergeHeap) Len() int           { return len(h) }
-func (h mergeHeap) Less(i, j int) bool { return h[i].key < h[j].key }
-func (h mergeHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-func (h *mergeHeap) Push(x any)        { *h = append(*h, x.(mergeCand)) }
-func (h *mergeHeap) Pop() any {
-	old := *h
-	n := len(old)
-	c := old[n-1]
-	*h = old[:n-1]
-	return c
+// mergeScratch is the working memory of the merges of one Encode call, reused so a prompt's thousands of short pretokens do
+// not each allocate it. It is not safe to share: a Tokenizer serves concurrent requests, so each call holds its own.
+type mergeScratch struct {
+	syms  []string // the initial symbols of the pretoken being merged, built by appendByteLevel
+	nodes []mergeNode
+	heap  []mergeCand
+}
+
+// pushCand and popCand are container/heap's Push and Pop on the candidate slice, in its sift order, without boxing a
+// candidate in an interface on each call.
+func pushCand(h []mergeCand, c mergeCand) []mergeCand {
+	h = append(h, c)
+	for j := len(h) - 1; ; {
+		i := (j - 1) / 2 // parent
+		if i == j || h[j].key >= h[i].key {
+			break
+		}
+		h[i], h[j] = h[j], h[i]
+		j = i
+	}
+	return h
+}
+
+func popCand(h []mergeCand) ([]mergeCand, mergeCand) {
+	n := len(h) - 1
+	h[0], h[n] = h[n], h[0]
+	for i := 0; ; {
+		j := 2*i + 1 // left child
+		if j >= n {
+			break
+		}
+		if r := j + 1; r < n && h[r].key < h[j].key {
+			j = r
+		}
+		if h[j].key >= h[i].key {
+			break
+		}
+		h[i], h[j] = h[j], h[i]
+		i = j
+	}
+	return h[:n], h[n]
 }
 
 // Decode turns token ids back into text: render each piece (with ▁ → space),
