@@ -75,3 +75,25 @@ Francis's answer of 14:58 PST, relayed by the coordinator: keep the FAIL above o
 - **Reported, not graded:** each turn against the cold one-slot arm, and the first token of a restore.
 - **Void cell, fit check, stopping rule and void conditions:** as above. The fit check also reads the copies kept.
 - **Cost:** the fit check about 1 minute, the five cells about 4. The start and finish times go in the record from `date` when it runs.
+
+### The reading again, 2026-11-03 17:23 to 17:27 PST: PASS by the corrected registration
+
+`served-again-2026-11-03/run.log`, `turns.jsonl`. Serve at `37e1411bd`, driver 595.112.07, load at most 1.33 at a cell's start, about 61 GB available, no void cell, and `fit-check.log`, which keeps two checkpoints (100.5 MiB) at two slots.
+
+| | one slot | two slots | bar |
+|---|---|---|---|
+| follow-up median first token, each pair | 6.93 s, 6.94 s | 0.05 s (ratio **0.008**) | at most 0.5 |
+| follow-ups that reused rows, the at-once round included | | **12 of 12** | all |
+| turns equal to that client's alone on one slot | | **16 of 16**, the at-once round included | all |
+| on the card once loaded | 5,606 MiB | 6,218 MiB (+612) | none |
+| peak `VmSwap` | 0 MB | 0 MB | at most 512 MB |
+
+**Client A's follow-up, the one that reused nothing in the FAIL above, now restores.** On two slots it reuses 1,907 rows and starts in 0.14 s, where it took 6.58 s; its request log reads `ckpt_restore=1907`. The script's own line for restores printed an empty list: its filter was wrong, so the log is the reading.
+
+**Reported, not graded:**
+- 3 of 8 two-slot turns differ from the cold one-slot arm's. **So a reused prompt's reply on this path still differs from a cold prefill's, as it does with one slot:** a property of strict extension, and a real one, which this reading leaves as it found it.
+- The at-once round runs in turn, so its second client waits: 0.51 s here, and 14.7 s on one slot.
+- The second checkpoint costs 50 MiB of the 612.
+
+**What this does not cover:** one prompt shape of about 2,000 tokens, two clients, one card and driver, and no agent's real traffic. It is not a row for `docs/benchmarks.md`. Comparing with each client alone says the slots keep conversations apart; it does not say a reused reply is as good as a cold one.
+
