@@ -436,7 +436,7 @@ func recurrentSlotCheckpoint(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	saved := append([]float32(nil), two.r.ckptBufs[1].Floats()...) // the first layer's state
-	for i, e := range B { // slot 1's state moves on, with no reset, which would free the checkpoint
+	for i, e := range B {                                          // slot 1's state moves on, with no reset, which would free the checkpoint
 		two.r.ForwardEmb(e, len(A)+i)
 	}
 	if err := two.r.useKVSlot(0); err != nil {
