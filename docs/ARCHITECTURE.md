@@ -698,7 +698,7 @@ weight matmuls on the device. `Model.DecodePath()` and serve's banner say which 
 
 The `backend/cuda/` module, built with `-tags cuda` and `CGO_ENABLED=0`.
 
-- **No cgo, and no CUDA toolkit at run time.** The device layer is `aikit/gpu`. It reaches the
+- **No cgo, and no CUDA toolkit at run time.** The device layer is goinfer's own, `backend/cuda/internal/gpudev`. It reaches the
   driver through `eitamring/gocudrv`, which uses `purego` to `dlopen` `libcuda.so.1`. The kernels
   ship as prebuilt PTX modules embedded in the binary, and the driver JIT-compiles them. NVRTC is
   used only offline, to regenerate the PTX (`backend/cuda/build_ptx.sh`).
@@ -732,7 +732,7 @@ The `backend/cuda/` module, built with `-tags cuda` and `CGO_ENABLED=0`.
 
 The `backend/metal/` module, darwin only, with no build tag.
 
-- **No cgo.** `aikit/gpu`'s Metal layer calls the Objective-C runtime through `purego`, and
+- **No cgo.** The Metal device layer (`backend/metal/internal/gpudev`) calls the Objective-C runtime through `purego`, and
   compiles the MSL kernels at run time. Every file is `//go:build darwin`, so a darwin build
   includes the backend without a tag.
 - **Prefill** is batched f16-MMA from **64** tokens (`metalFastPrefillFloor`, lowered from 256 on
@@ -941,7 +941,7 @@ flowchart TB
   subgraph AIKIT["github.com/townsendmerino/aikit  (pure Go)"]
     AK["embed · linalg · mmap · encoder · vision"]
   end
-  subgraph AIKITGPU["github.com/townsendmerino/aikit/gpu  (cgo-free device layer)"]
+  subgraph GPUDEV["goinfer backend/{cuda,metal}/internal/gpudev  (cgo-free device layer)"]
     AG["CUDA via gocudrv (purego dlopen) · Metal via purego + Obj-C"]
   end
   subgraph CUDA["goinfer/backend/cuda  (-tags cuda · cgo-free)"]
@@ -989,8 +989,8 @@ stays out of the root's `go.mod`.
 |---|---|---|
 | `github.com/townsendmerino/goinfer` | everything in the Packages table below except the three backends | `golang.org/x/text` |
 | `github.com/townsendmerino/goinfer/backend/webgpu` | the WebGPU backend (`-tags gpu`), `backend/webgpu/cmd/chat`, `backend/webgpu/cmd/serve` | `oliverbestmann/webgpu` (cgo) |
-| `github.com/townsendmerino/goinfer/backend/cuda` | the CUDA backend (`-tags cuda`), `backend/cuda/cmd/chat`, `backend/cuda/cmd/serve` | `aikit/gpu`, `eitamring/gocudrv` |
-| `github.com/townsendmerino/goinfer/backend/metal` | the Metal backend (darwin), `backend/metal/cmd/chat`, `backend/metal/cmd/serve` | `aikit/gpu` (which brings `purego`), `golang.org/x/sys` |
+| `github.com/townsendmerino/goinfer/backend/cuda` | the CUDA backend (`-tags cuda`), `backend/cuda/cmd/chat`, `backend/cuda/cmd/serve` | `eitamring/gocudrv`, `ebitengine/purego` |
+| `github.com/townsendmerino/goinfer/backend/metal` | the Metal backend (darwin), `backend/metal/cmd/chat`, `backend/metal/cmd/serve` | `ebitengine/purego`, `golang.org/x/sys` |
 | `github.com/townsendmerino/goinfer/demo/agent` | a local RAG coding agent over MCP | the MCP Go SDK; `goinfer/backend/webgpu` for its WebGPU web build |
 | `github.com/townsendmerino/goinfer/sdktest` | (`apps/sdktest`, never tagged) official OpenAI and Anthropic SDK tests against the in-process server | the OpenAI and Anthropic Go SDKs |
 | `github.com/townsendmerino/goinfer/site` | (`apps/site`, never tagged) the website generator (`goinfer.dev`) | stdlib only |
