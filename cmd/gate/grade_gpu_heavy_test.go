@@ -35,8 +35,8 @@ func TestGradeHeavy_plants(t *testing.T) {
 		"a listing that errs":           {from(func(in *heavyInput) { in.ListErr = "exit status 1" }), "found no tests in ./cuda/, so the main tier cannot be partitioned (exit status 1)", false},
 		"a listing of no tests":         {from(func(in *heavyInput) { in.Total = 0 }), "found no tests in ./cuda/, so the main tier cannot be partitioned (<nil>)", false},
 		"a failed partition":            {from(func(in *heavyInput) { in.PartitionErr = "cannot read cuda/x_test.go" }), "heavy tier partition: cannot read cuda/x_test.go", false},
-		"a kernels listing that errs":   {from(func(in *heavyInput) { in.KernelsErr = "exit status 2" }), "found no tests in ./backend/cuda/kernels/ (exit status 2)", false},
-		"a kernels listing of no tests": {from(func(in *heavyInput) { in.Kernels = 0 }), "found no tests in ./backend/cuda/kernels/ (<nil>)", false},
+		"a kernels listing that errs":   {from(func(in *heavyInput) { in.KernelsErr = "exit status 2" }), "found no tests in ./cuda/kernels/ (exit status 2)", false},
+		"a kernels listing of no tests": {from(func(in *heavyInput) { in.Kernels = 0 }), "found no tests in ./cuda/kernels/ (<nil>)", false},
 		"a test in no group":            {from(func(in *heavyInput) { in.Problems = []string{"TestOrphan: names no family"} }), "1 test(s) fit no group", true},
 	}
 	for name, c := range starts {

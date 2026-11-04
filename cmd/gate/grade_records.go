@@ -205,7 +205,7 @@ func (r gpuRecord) changedSince(head string, treeOf func(rev, dir string) (strin
 			return "", fmt.Errorf("could not compare %s/ (%v %v)", d, err1, err2)
 		}
 		if then != now {
-			return d, nil
+			return labelPath(d), nil
 		}
 	}
 	return "", nil
@@ -242,11 +242,11 @@ func (r parityRecord) changedSince(head string, paths []string, objOf func(rev, 
 		}
 		if then != now {
 			for _, d := range parityQualifyingTrees {
-				if p == d {
-					return p + "/", nil
+				if p == d || p == labelPath(d) {
+					return labelPath(p) + "/", nil
 				}
 			}
-			return p, nil
+			return labelPath(p), nil
 		}
 	}
 	return "", nil
@@ -258,3 +258,106 @@ var gpuQualifyingTrees = []string{"backend/metal", "backend/cuda", "backend/webg
 
 // parityQualifyingTrees are the directories whose every file a sweep vouches for, hashed by the manifest or not.
 var parityQualifyingTrees = []string{"decoder", "backend/cuda", "backend/metal", "backend/webgpu"}
+
+// backendMoveMap is the layout Tier 2, PR 1 move: each GPU backend directory's path after the move (key) and before it
+// (value). A commit from before the move names the old path, so git reports the new one as absent there; treeAt and
+// objectAt then read the old name once. Labels printed in reports keep the old names (labelPath), so a golden written
+// before the move replays byte for byte. This is the only pre-move logic in the grader.
+var backendMoveMap = map[string]string{
+	"backend/cuda":   "cuda",
+	"backend/metal":  "metal",
+	"backend/webgpu": "gpu",
+}
+
+// preMovePath returns p with its moved backend prefix replaced by the pre-move one, and whether p had such a prefix.
+func preMovePath(p string) (string, bool) {
+	for nw, old := range backendMoveMap {
+		if p == nw {
+			return old, true
+		}
+		if strings.HasPrefix(p, nw+"/") {
+			return old + p[len(nw):], true
+		}
+	}
+	return p, false
+}
+
+// labelPath is the name a report prints for p: the pre-move name of a moved backend path, else p itself. A leading "./" is
+// kept.
+func labelPath(p string) string {
+	q := strings.TrimPrefix(p, "./")
+	old, _ := preMovePath(q)
+	if q != p {
+		return "./" + old
+	}
+	return old
+}
+
+// absentFromRev reports whether err is git saying a path is not in a revision: `git rev-parse rev:path` says "does not
+// exist" or "exists on disk, but not in" when the working tree still has the path.
+func absentFromRev(err error) bool {
+	return err != nil && (strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "but not in"))
+}
+
+// treeAt is the git tree id of dir at rev, read through lookup. When git says a moved backend path is absent at rev, it
+// reads the pre-move name once.
+func treeAt(lookup func(rev, dir string) (string, error), rev, dir string) (string, error) {
+	id, err := lookup(rev, dir)
+	if err == nil {
+		return id, nil
+	}
+	old, moved := preMovePath(dir)
+	if !moved || !absentFromRev(err) {
+		return id, err
+	}
+	return lookup(rev, old)
+}
+
+// objectAt is the git object id of path at rev, read through lookup. `git ls-tree` prints nothing for a missing path rather
+// than failing, so an empty id counts as absent too; a moved backend path then reads the pre-move name once.
+func objectAt(lookup func(rev, path string) (string, error), rev, path string) (string, error) {
+	id, err := lookup(rev, path)
+	if err == nil && id != "" {
+		return id, nil
+	}
+	old, moved := preMovePath(path)
+	if !moved || (err != nil && !absentFromRev(err)) {
+		return id, err
+	}
+	return lookup(rev, old)
+}
+
+// absentBeforeMove answers a lookup that has no entry in a record, when the record holds the pre-move twin of it: the record
+// was captured before the backend move, so git would say the moved path is absent at that commit, and the grader then reads
+// the pre-move name (treeAt, objectAt). has reports whether a lookup has an entry. handled is false when there is no twin;
+// the caller then fails as before.
+func absentBeforeMove(kind string, args []string, has func(kind string, args ...string) bool) (string, error, bool) {
+	old, moved := mapMovedArgs(args)
+	if !moved || !has(kind, old...) {
+		return "", nil, false
+	}
+	if kind == "object" || (kind == "git" && len(args) > 0 && args[0] == "ls-tree") {
+		return "", nil, true // ls-tree prints nothing for a missing path
+	}
+	return "", fmt.Errorf("fatal: path does not exist"), true
+}
+
+// mapMovedArgs replaces each moved backend path in args (a path, or the path after "rev:") with its pre-move name.
+func mapMovedArgs(args []string) ([]string, bool) {
+	out := make([]string, len(args))
+	moved := false
+	for i, a := range args {
+		if rev, p, ok := strings.Cut(a, ":"); ok {
+			if q, m := preMovePath(p); m {
+				out[i], moved = rev+":"+q, true
+				continue
+			}
+		}
+		if q, m := preMovePath(a); m {
+			out[i], moved = q, true
+			continue
+		}
+		out[i] = a
+	}
+	return out, moved
+}

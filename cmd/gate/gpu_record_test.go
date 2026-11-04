@@ -76,7 +76,7 @@ func TestGPURecord_coversLaterCommitsOnlyIfTheCodeIsUnchanged(t *testing.T) {
 		gitIn(t, dir, "checkout", "-q", "-B", "from-"+d, ran) // each change on its own, from the commit the run was made at
 		head := commit(d+"/f.txt", "code edit")
 		r, why := gpuCoverage(recs, "cuda", head, treeOf)
-		if r != nil || !strings.Contains(why, d+"/ changed since") {
+		if r != nil || !strings.Contains(why, labelPath(d)+"/ changed since") {
 			t.Errorf("a change under %s/ left the run covering the commit (%v, %q)", d, r, why)
 		}
 	}

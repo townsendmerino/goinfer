@@ -192,7 +192,9 @@ func runGPURecords(args []string, w io.Writer) int {
 		fmt.Fprintf(w, "gate gpu-records: %v\n", err)
 		return 2
 	}
-	treeOf := func(rev, dir string) (string, error) { return gitTree(root, rev, dir) }
+	treeOf := func(rev, dir string) (string, error) {
+		return treeAt(func(r, d string) (string, error) { return gitTree(root, r, d) }, rev, dir)
+	}
 	code := 0
 	fmt.Fprintf(w, "GPU gate records in %s, against %s\n", *dir, full[:8])
 	for _, be := range []string{"cuda", "metal"} {
