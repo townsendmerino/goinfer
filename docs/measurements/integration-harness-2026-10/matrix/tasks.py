@@ -1,4 +1,4 @@
-"""The five tasks of I3 (docs/tasks/task-integration-harness-2026-10.md), verbatim, and their mechanical checks. A check
+"""The five tasks of I3 (docs/completed/task-integration-harness-2026-10.md), verbatim, and their mechanical checks. A check
 that needs the tree runs inside the sandbox on the finished fixture copy (the model wrote the code it would run)."""
 import hashlib, json, os, random, re
 

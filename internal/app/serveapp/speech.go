@@ -131,11 +131,11 @@ func clock(sec float64, sep string) string {
 
 // handleTranscriptions is POST /v1/audio/transcriptions (OpenAI's route, multipart/form-data); the accepted fields and what is refused are in the task doc's G-S14i.
 func (s *server) handleTranscriptions(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeErr(w, http.StatusBadRequest, "the request must be multipart/form-data with a file part: "+err.Error())
+	form, ok := parseUpload(w, r, "the request must be multipart/form-data with a file part")
+	if !ok {
 		return
 	}
-	form := r.MultipartForm
+	defer form.RemoveAll()
 	val := func(k string) string {
 		if v := form.Value[k]; len(v) > 0 {
 			return strings.TrimSpace(v[0])
@@ -199,21 +199,23 @@ func (s *server) handleTranscriptions(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "reading file: "+err.Error())
 		return
 	}
-	raw, err := io.ReadAll(fh)
+	raw := make([]byte, files[0].Size)
+	_, err = io.ReadFull(fh, raw)
 	fh.Close()
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "reading file: "+err.Error())
 		return
 	}
-	samples, err := multimodal.DecodeWAVAnyRate(raw)
+	wav, err := multimodal.ParseWAV(raw)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "file: only 16-bit PCM WAV is supported ("+err.Error()+")")
 		return
 	}
-	if len(samples) > speechMaxSeconds*audio.WhisperSampleRate {
-		writeErr(w, http.StatusBadRequest, fmt.Sprintf("the audio clip is %.1f s, over the %d s one request may carry", float64(len(samples))/audio.WhisperSampleRate, speechMaxSeconds))
+	if n := wav.Samples(); n > speechMaxSeconds*audio.WhisperSampleRate {
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("the audio clip is %.1f s, over the %d s one request may carry", float64(n)/audio.WhisperSampleRate, speechMaxSeconds))
 		return
 	}
+	samples := wav.Decode()
 	opts := transcriptionPolicy(temperature)
 	opts.Language, opts.Task, opts.Seed = language, "transcribe", uint64(time.Now().UnixNano())
 	sm.mu.Lock()

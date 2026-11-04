@@ -1,5 +1,5 @@
 #!/bin/bash
-# I3, the real-harness matrix, as an unattended night job (docs/tasks/task-integration-harness-2026-10.md, "I3 run plan,
+# I3, the real-harness matrix, as an unattended night job (docs/completed/task-integration-harness-2026-10.md, "I3 run plan,
 # registered 2026-10-13"). Runs the configurations named in ONLY, in order, from PINNED copies: the serve binary and the
 # harness scripts are copied into $B at queue time, so the tree may move before tonight. Every run is in the sandbox
 # (matrix/sandbox.py), whose self-test must pass first; if it does not, nothing runs. night.py holds the timing lock.

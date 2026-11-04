@@ -1,0 +1,86 @@
+START 11:04:57 commit a628747e dirty-tree tokenizer new vs a628747e
+CELL 1 r1 A load=2.44 reclaimable=5162MiB 11:04:57
+BenchmarkEncode-8                 	    5548	    202318 ns/op	   5.04 MB/s	  130338 B/op	    5320 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     176	   6718629 ns/op	   4.05 MB/s	 4012284 B/op	  165463 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     136	   8956032 ns/op	   3.04 MB/s	 3567683 B/op	  111238 allocs/op
+CELL 2 r1 B load=2.89 reclaimable=4544MiB 11:05:01
+BenchmarkEncode-8                 	   10000	    107088 ns/op	   9.52 MB/s	   40201 B/op	     215 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     346	   4089729 ns/op	   6.66 MB/s	  757537 B/op	    5650 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     175	   6052141 ns/op	   4.50 MB/s	  907217 B/op	    2522 allocs/op
+WAIT load=4.10 reclaimable=4377MiB
+WAIT load=4.51 reclaimable=4565MiB
+CELL 3 r1 B load=3.89 reclaimable=4468MiB 11:05:35
+BenchmarkEncode-8                 	   12553	     95411 ns/op	  10.69 MB/s	   40200 B/op	     215 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     357	   3229772 ns/op	   8.43 MB/s	  757536 B/op	    5650 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     259	   4636559 ns/op	   5.87 MB/s	  907217 B/op	    2522 allocs/op
+CELL 4 r1 A load=3.89 reclaimable=4455MiB 11:05:39
+BenchmarkEncode-8                 	    5961	    190474 ns/op	   5.36 MB/s	  130337 B/op	    5320 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     192	   6224246 ns/op	   4.38 MB/s	 4012285 B/op	  165463 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     145	   8218282 ns/op	   3.31 MB/s	 3567682 B/op	  111238 allocs/op
+WAIT load=4.06 reclaimable=4450MiB
+CELL 5 r2 A load=3.81 reclaimable=4385MiB 11:05:58
+BenchmarkEncode-8                 	    5937	    189538 ns/op	   5.38 MB/s	  130337 B/op	    5320 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     193	   6144688 ns/op	   4.43 MB/s	 4012313 B/op	  165463 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     142	   8515908 ns/op	   3.20 MB/s	 3567683 B/op	  111238 allocs/op
+CELL 6 r2 B load=3.75 reclaimable=4381MiB 11:06:02
+BenchmarkEncode-8                 	   12484	     96934 ns/op	  10.52 MB/s	   40200 B/op	     215 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     374	   3155454 ns/op	   8.63 MB/s	  757536 B/op	    5650 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     261	   4562339 ns/op	   5.97 MB/s	  907216 B/op	    2522 allocs/op
+CELL 7 r2 B load=3.53 reclaimable=4368MiB 11:06:06
+BenchmarkEncode-8                 	   12548	     95565 ns/op	  10.67 MB/s	   40200 B/op	     215 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     382	   3152215 ns/op	   8.64 MB/s	  757536 B/op	    5650 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     256	   4623056 ns/op	   5.89 MB/s	  907216 B/op	    2522 allocs/op
+CELL 8 r2 A load=3.53 reclaimable=4343MiB 11:06:09
+BenchmarkEncode-8                 	    5934	    189641 ns/op	   5.38 MB/s	  130336 B/op	    5320 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     192	   6208829 ns/op	   4.39 MB/s	 4012284 B/op	  165463 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     144	   8267657 ns/op	   3.29 MB/s	 3567683 B/op	  111238 allocs/op
+CELL 9 r3 A load=3.57 reclaimable=4369MiB 11:06:13
+BenchmarkEncode-8                 	    5978	    188304 ns/op	   5.42 MB/s	  130337 B/op	    5320 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     194	   6134683 ns/op	   4.44 MB/s	 4012285 B/op	  165463 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     145	   8225411 ns/op	   3.31 MB/s	 3567684 B/op	  111238 allocs/op
+CELL 10 r3 B load=3.36 reclaimable=4363MiB 11:06:17
+BenchmarkEncode-8                 	   12476	     95887 ns/op	  10.64 MB/s	   40200 B/op	     215 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     378	   3158488 ns/op	   8.62 MB/s	  757537 B/op	    5650 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     258	   4600222 ns/op	   5.92 MB/s	  907216 B/op	    2522 allocs/op
+CELL 11 r3 B load=3.33 reclaimable=4359MiB 11:06:21
+BenchmarkEncode-8                 	   12584	     95491 ns/op	  10.68 MB/s	   40200 B/op	     215 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     381	   3132803 ns/op	   8.69 MB/s	  757536 B/op	    5650 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     261	   4585663 ns/op	   5.94 MB/s	  907216 B/op	    2522 allocs/op
+CELL 12 r3 A load=3.30 reclaimable=4363MiB 11:06:25
+BenchmarkEncode-8                 	    5942	    188966 ns/op	   5.40 MB/s	  130337 B/op	    5320 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     188	   6259719 ns/op	   4.35 MB/s	 4012286 B/op	  165463 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     141	   8398600 ns/op	   3.24 MB/s	 3567686 B/op	  111238 allocs/op
+CELL 13 r4 A load=3.30 reclaimable=4354MiB 11:06:28
+BenchmarkEncode-8                 	    5916	    194284 ns/op	   5.25 MB/s	  130336 B/op	    5320 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     196	   6166982 ns/op	   4.42 MB/s	 4012313 B/op	  165463 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     145	   8198253 ns/op	   3.32 MB/s	 3567684 B/op	  111238 allocs/op
+CELL 14 r4 B load=3.84 reclaimable=4215MiB 11:06:32
+BenchmarkEncode-8                 	   12392	     96970 ns/op	  10.52 MB/s	   40200 B/op	     215 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     379	   3171858 ns/op	   8.59 MB/s	  757537 B/op	    5650 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     256	   4673854 ns/op	   5.83 MB/s	  907216 B/op	    2522 allocs/op
+CELL 15 r4 B load=3.61 reclaimable=4200MiB 11:06:36
+BenchmarkEncode-8                 	   12528	     95522 ns/op	  10.68 MB/s	   40200 B/op	     215 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     374	   3186050 ns/op	   8.55 MB/s	  757537 B/op	    5650 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     252	   4731126 ns/op	   5.76 MB/s	  907216 B/op	    2522 allocs/op
+CELL 16 r4 A load=3.56 reclaimable=4195MiB 11:06:40
+BenchmarkEncode-8                 	    5944	    189421 ns/op	   5.38 MB/s	  130336 B/op	    5320 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     190	   6348376 ns/op	   4.29 MB/s	 4012315 B/op	  165463 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     142	   8443090 ns/op	   3.23 MB/s	 3567684 B/op	  111238 allocs/op
+CELL 17 r5 A load=3.56 reclaimable=3943MiB 11:06:44
+BenchmarkEncode-8                 	    5809	    196879 ns/op	   5.18 MB/s	  130336 B/op	    5320 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     187	   6398590 ns/op	   4.26 MB/s	 4012286 B/op	  165463 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     139	   8770745 ns/op	   3.11 MB/s	 3567683 B/op	  111238 allocs/op
+WAIT load=4.32 reclaimable=3825MiB
+CELL 18 r5 B load=3.71 reclaimable=3501MiB 11:07:03
+BenchmarkEncode-8                 	   10000	    101921 ns/op	  10.01 MB/s	   40200 B/op	     215 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     381	   3133345 ns/op	   8.69 MB/s	  757536 B/op	    5650 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     252	   4573148 ns/op	   5.96 MB/s	  907216 B/op	    2522 allocs/op
+CELL 19 r5 B load=3.73 reclaimable=3445MiB 11:07:06
+BenchmarkEncode-8                 	   12610	     95492 ns/op	  10.68 MB/s	   40200 B/op	     215 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     361	   3161855 ns/op	   8.61 MB/s	  757536 B/op	    5650 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     249	   4646898 ns/op	   5.86 MB/s	  907216 B/op	    2522 allocs/op
+CELL 20 r5 A load=3.83 reclaimable=3422MiB 11:07:10
+BenchmarkEncode-8                 	    5660	    207687 ns/op	   4.91 MB/s	  130336 B/op	    5320 allocs/op
+BenchmarkAudit_EncodeGoSource-8   	     187	   6290153 ns/op	   4.33 MB/s	 4012285 B/op	  165463 allocs/op
+BenchmarkAudit_EncodeGemma-8      	     140	   8533504 ns/op	   3.19 MB/s	 3567684 B/op	  111238 allocs/op
+END 11:07:14

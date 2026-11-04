@@ -137,9 +137,10 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   The pairwise port is therefore most of what stands between a Mac invoice and a few seconds, and it also serves
   Command-R7B and Aya. GLM-OCR's task record is `docs/completed/task-glm-ocr-2026-10.md`.
 - **Olmo 3, Olmo Hybrid and SmolLM3** — no longer a gap: resident on CUDA, Metal and, as of 2026-11-03, WebGPU
-  (`docs/tasks/task-olmo-hybrid-metal-webgpu-2026-11.md`, § WebGPU). On WebGPU, Olmo's prompts run the sequential loop, since the
-  batched pass takes no post-only or whole-vector QK-norm model; SmolLM3's take the pass, whose last row equals the sequential
-  decode's. None has a real-checkpoint reading on WebGPU yet.
+  (`docs/completed/task-olmo-hybrid-metal-webgpu-2026-11.md`, § WebGPU). For Olmo Hybrid, Metal is int4 only (an int8int8 or int8 load
+  declines to the CPU), and WebGPU has been read only on the M1 Pro's adapter (not on Vulkan). On WebGPU, Olmo's prompts run the
+  sequential loop, since the batched pass takes no post-only or whole-vector QK-norm model; SmolLM3's take the pass, whose last row
+  equals the sequential decode's. None has a real-checkpoint reading on WebGPU yet.
 - **Ministral 3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatAttnTemp` (declared
   `decoder/features.go:residentBackendFeatures` for cuda, `decoder/features.go:residentBackendFeatures` for metal, absent from webgpu) —
   a post-RoPE query scale, one scalar per position, folded into the existing rope launch on the

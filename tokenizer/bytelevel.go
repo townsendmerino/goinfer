@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
-	"strings"
 	"unicode"
 	"unicode/utf8"
 
@@ -95,6 +94,15 @@ func buildByteLevelTables() ([256]rune, map[rune]byte) {
 	return enc, dec
 }
 
+// byteLevelSyms[b] is byte b's symbol in a byte-level merge: buildByteLevelTables' rune for b, as a string.
+var byteLevelSyms = func() (syms [256]string) {
+	enc, _ := buildByteLevelTables()
+	for b, r := range enc {
+		syms[b] = string(r)
+	}
+	return syms
+}()
+
 // encodeByteLevel is the byte-level analogue of Encode: split out added/special
 // tokens on the raw text (longest match), NFC-normalize each gap, pretokenize
 // with the GPT-2 regex, then byte-level-BPE each pretoken.
@@ -104,6 +112,7 @@ func (t *Tokenizer) encodeByteLevel(text string, addBOS, parseSpecial bool) ([]i
 		out = append(out, int32(t.special.BOS))
 	}
 
+	var sc mergeScratch
 	gapStart := 0
 	emitGap := func(end int) error {
 		if end <= gapStart {
@@ -120,11 +129,10 @@ func (t *Tokenizer) encodeByteLevel(text string, addBOS, parseSpecial bool) ([]i
 		// segment.
 		for _, seg := range t.digitSegments(gap) {
 			for _, piece := range t.splitPre(seg) {
-				ids, err := t.bpeByteLevel(piece)
-				if err != nil {
+				var err error
+				if out, err = t.appendByteLevel(out, piece, &sc); err != nil {
 					return err
 				}
-				out = append(out, ids...)
 			}
 		}
 		return nil
@@ -158,44 +166,37 @@ func (t *Tokenizer) encodeByteLevel(text string, addBOS, parseSpecial bool) ([]i
 	return res, nil
 }
 
-// bpeByteLevel maps a single pretoken to ids: byte-level-encode it to a string
-// of printable runes, honor ignore_merges (a whole pretoken that is itself a
-// vocab entry wins before any merging), then run the shared merge loop over
-// per-rune symbols.
-func (t *Tokenizer) bpeByteLevel(piece string) ([]int32, error) {
+// appendByteLevel appends a single pretoken's ids to out: byte-level-encode it, honor ignore_merges (a whole pretoken that
+// is itself a vocab entry wins before any merging), then run the shared merge loop over per-byte symbols.
+func (t *Tokenizer) appendByteLevel(out []int32, piece string, sc *mergeScratch) ([]int32, error) {
 	if piece == "" {
-		return nil, nil
+		return out, nil
 	}
-	var enc strings.Builder
-	for _, b := range []byte(piece) {
-		enc.WriteRune(t.byteEncoder[b])
-	}
-	s := enc.String()
-
 	if t.ignoreMerges {
-		if id, ok := t.vocab[s]; ok {
-			return []int32{id}, nil
+		var stack [128]byte
+		enc := stack[:0]
+		for i := range len(piece) {
+			enc = utf8.AppendRune(enc, t.byteEncoder[piece[i]])
+		}
+		if id, ok := t.vocab[string(enc)]; ok {
+			return append(out, id), nil
 		}
 	}
-
-	syms := make([]string, 0, len(s))
-	for _, r := range s {
-		syms = append(syms, string(r))
+	sc.syms = sc.syms[:0]
+	for i := range len(piece) {
+		sc.syms = append(sc.syms, byteLevelSyms[piece[i]])
 	}
-	syms = t.mergeSymbols(syms)
-
-	ids := make([]int32, len(syms))
-	for k, sym := range syms {
+	for _, sym := range t.mergeSymbols(sc.syms, sc) {
 		id, ok := t.vocab[sym]
 		if !ok {
 			// Unreachable for a well-formed byte-level tokenizer: the 256 base
 			// runes and every merge result are vocab entries. Surface it
 			// rather than emit a wrong id.
-			return nil, fmt.Errorf("tokenizer: byte-level symbol %q not in vocab", sym)
+			return out, fmt.Errorf("tokenizer: byte-level symbol %q not in vocab", sym)
 		}
-		ids[k] = id
+		out = append(out, id)
 	}
-	return ids, nil
+	return out, nil
 }
 
 // decodeByteLevel inverts the byte-level map: render each piece (special tokens
@@ -244,6 +245,21 @@ func (t *Tokenizer) splitPre(seg string) []string {
 	return splitGPT2(seg, t.maxDigits)
 }
 
+// runeOffsets returns s's runes, the byte offset of each with len(s) last, and s itself with every invalid byte made U+FFFD,
+// as []rune does. A pretoken cut as s[off[a]:off[b]] is then string(rs[a:b]) on any input, without allocating.
+func runeOffsets(s string) ([]rune, []int, string) {
+	if !utf8.ValidString(s) {
+		s = string([]rune(s))
+	}
+	rs := make([]rune, 0, len(s))
+	off := make([]int, 0, len(s)+1)
+	for i, r := range s {
+		rs = append(rs, r)
+		off = append(off, i)
+	}
+	return rs, append(off, len(s)), s
+}
+
 // splitGPT2 reproduces the Qwen/Llama-3 pretokenizer split — the GPT-2 regex
 //
 //	(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}|
@@ -258,10 +274,10 @@ func (t *Tokenizer) splitPre(seg string) []string {
 // `\p{N}{1,3}` (runs of up to three) for Llama-3 — read from the tokenizer's
 // pretokenizer regex.
 func splitGPT2(s string, maxDigits int) []string {
-	rs := []rune(s)
+	rs, off, s := runeOffsets(s)
 	n := len(rs)
-	var out []string
-	emit := func(a, b int) { out = append(out, string(rs[a:b])) }
+	out := make([]string, 0, n/3+1)
+	emit := func(a, b int) { out = append(out, s[off[a]:off[b]]) }
 
 	isNL := func(r rune) bool { return r == '\r' || r == '\n' }
 	// The [^\s\p{L}\p{N}] class: not whitespace, letter, or number.

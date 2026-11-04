@@ -15,23 +15,22 @@ import (
 // HTTP-shape only: decode, project, translate status vocabulary. Text-only chat scope
 // (docs/tasks/task-work-queue-2026-09.md).
 
-const maxFileUploadMemory = 32 << 20 // in-memory threshold before ParseMultipartForm spills to disk
-
 // --- OpenAI: POST /v1/files, GET /v1/files/{id}, GET /v1/files/{id}/content ---
 
 func (s *server) handleCreateFile(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(maxFileUploadMemory); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid multipart/form-data body: "+err.Error())
+	form, ok := parseUpload(w, r, "invalid multipart/form-data body")
+	if !ok {
 		return
 	}
+	defer form.RemoveAll()
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "missing multipart field \"file\": "+err.Error())
 		return
 	}
 	defer file.Close()
-	data, err := io.ReadAll(file)
-	if err != nil {
+	data := make([]byte, header.Size)
+	if _, err := io.ReadFull(file, data); err != nil {
 		writeErr(w, http.StatusBadRequest, "reading uploaded file: "+err.Error())
 		return
 	}

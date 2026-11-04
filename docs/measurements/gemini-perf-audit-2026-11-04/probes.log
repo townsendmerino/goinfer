@@ -1,0 +1,74 @@
+START 10:29:10 load 3.32 2.92 3.60
+AUDIT wav rate=4000   body=8MiB out_samples=16777216 clip=1049s alloc=80.0MiB wall=267ms | at 256MiB body: alloc=2560MiB wall=8.6s clip=33554s
+AUDIT wav rate=16000  body=8MiB out_samples=4194304 clip=262s alloc=16.0MiB wall=5ms | at 256MiB body: alloc=512MiB wall=0.2s clip=8389s
+AUDIT wav rate=44100  body=8MiB out_samples=1521743 clip=95s alloc=21.9MiB wall=75ms | at 256MiB body: alloc=700MiB wall=2.4s clip=3043s
+--- PASS: TestAudit_wavAmplification (0.35s)
+ok  	github.com/townsendmerino/goinfer/multimodal	0.686s
+AUDIT multipart transcriptions/binary chain (traceRequests+maxBytes)           status=400 leaked_files=1 leaked_MiB=40.0
+AUDIT multipart transcriptions/control, no request copy                        status=400 leaked_files=0 leaked_MiB=0.0
+AUDIT multipart files/binary chain (maxBytes only)                             status=200 leaked_files=0 leaked_MiB=0.0
+AUDIT multipart files/library chain over a real listener (NewHandler's copy)   status=200 leaked_files=1 leaked_MiB=40.0
+AUDIT multipart files/library chain over inproc.Transport                      status=200 leaked_files=1 leaked_MiB=40.0
+--- PASS: TestAudit_multipartTempFiles (0.70s)
+AUDIT chunked systemone       status=400 chunked=true body="{\"error\":{\"message\":\"read body: http: request body too large\",\"type\":\"invalid_request_erro"
+AUDIT chunked files           status=400 chunked=true body="{\"error\":{\"message\":\"invalid multipart/form-data body: http: request body too large\",\"type"
+AUDIT chunked transcriptions  status=400 chunked=true body="{\"error\":{\"message\":\"the request must be multipart/form-data with a file part: http: reque"
+--- PASS: TestAudit_chunkedOverCap (1.51s)
+BenchmarkAudit_sseChunkMap
+BenchmarkAudit_sseChunkMap-8      	    2000	      1875 ns/op	    1204 B/op	      24 allocs/op
+BenchmarkAudit_sseChunkStruct
+BenchmarkAudit_sseChunkStruct-8   	    2000	       566.5 ns/op	     324 B/op	       2 allocs/op
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	2.704s
+BenchmarkAudit_forEachChunkNoop152k     	     300	     10862 ns/op	    1238 B/op	      10 allocs/op
+BenchmarkAudit_forEachChunkNoop152k-8   	     300	      9519 ns/op	    1180 B/op	      10 allocs/op
+BenchmarkAudit_gumbelDraw152k           	     300	   1425603 ns/op	    2037 B/op	      13 allocs/op
+BenchmarkAudit_gumbelDraw152k-8         	     300	   1621203 ns/op	    1938 B/op	      13 allocs/op
+BenchmarkAudit_topP152k                 	     300	    519169 ns/op	   18211 B/op	      13 allocs/op
+BenchmarkAudit_topP152k-8               	     300	    560149 ns/op	   18179 B/op	      13 allocs/op
+ok  	github.com/townsendmerino/goinfer/internal/sampling	1.539s
+BenchmarkAudit_union/N=8/decided=false/Clone-8         	     200	      2413 ns/op	    4400 B/op	      51 allocs/op
+BenchmarkAudit_union/N=8/decided=false/ForcedBytesRun64-8         	     200	    317353 ns/op	    4940 B/op	      72 allocs/op
+BenchmarkAudit_union/N=8/decided=false/Process152k-8              	     200	    452060 ns/op	       4 B/op	       1 allocs/op
+BenchmarkAudit_union/N=8/decided=true/Clone-8                     	     200	       928.3 ns/op	    2624 B/op	      30 allocs/op
+BenchmarkAudit_union/N=8/decided=true/ForcedBytesRun64-8          	     200	      1379 ns/op	    2753 B/op	      32 allocs/op
+BenchmarkAudit_union/N=8/decided=true/Process152k-8               	     200	    437758 ns/op	       2 B/op	       1 allocs/op
+BenchmarkAudit_union/N=32/decided=false/Clone-8                   	     200	      4828 ns/op	   17456 B/op	     195 allocs/op
+BenchmarkAudit_union/N=32/decided=false/ForcedBytesRun64-8        	     200	   1116814 ns/op	   19532 B/op	     240 allocs/op
+BenchmarkAudit_union/N=32/decided=false/Process152k-8             	     200	    618132 ns/op	      12 B/op	       1 allocs/op
+BenchmarkAudit_union/N=32/decided=true/Clone-8                    	     200	      2689 ns/op	    9152 B/op	     102 allocs/op
+BenchmarkAudit_union/N=32/decided=true/ForcedBytesRun64-8         	     200	      3498 ns/op	    9281 B/op	     104 allocs/op
+BenchmarkAudit_union/N=32/decided=true/Process152k-8              	     200	    452059 ns/op	       2 B/op	       1 allocs/op
+ok  	github.com/townsendmerino/goinfer/constrain	1.062s
+BenchmarkEncode-8   	     200	    218906 ns/op	   4.66 MB/s	  130362 B/op	    5320 allocs/op
+BenchmarkEncode-8   	     200	    204683 ns/op	   4.98 MB/s	  130336 B/op	    5320 allocs/op
+BenchmarkEncode-8   	     200	    204213 ns/op	   4.99 MB/s	  130336 B/op	    5320 allocs/op
+ok  	github.com/townsendmerino/goinfer/tokenizer	0.564s
+AUDIT allocs llama-tiny             layers=4  hidden=64    allocs/token=78    KiB/token=8.1      us/token=68
+AUDIT allocs gemma2-tiny            layers=4  hidden=64    allocs/token=78    KiB/token=8.0      us/token=55
+AUDIT allocs gemma4-emodel-tiny     layers=6  hidden=256   allocs/token=117   KiB/token=59.0     us/token=263
+AUDIT allocs gemma4-moe-tiny        layers=2  hidden=256   allocs/token=86    KiB/token=248.1    us/token=330
+AUDIT allocs deepseek-tiny          layers=4  hidden=64    allocs/token=108   KiB/token=25.8     us/token=74
+AUDIT allocs kimi-tiny              layers=4  hidden=256   allocs/token=117   KiB/token=147.9    us/token=826
+AUDIT allocs nemotron-tiny          layers=5  hidden=64    allocs/token=31    KiB/token=6.6      us/token=28
+AUDIT allocs lfm2-tiny              layers=4  hidden=64    allocs/token=44    KiB/token=8.9      us/token=32
+AUDIT allocs qwen35-tiny            layers=4  hidden=64    allocs/token=113   KiB/token=14.4     us/token=49
+AUDIT allocs llama4-tiny            layers=4  hidden=64    allocs/token=59    KiB/token=8.1      us/token=65
+AUDIT allocs mixtral-tiny           layers=4  hidden=64    allocs/token=109   KiB/token=10.0     us/token=90
+AUDIT allocs olmo_hybrid-tiny       layers=4  hidden=64    allocs/token=66    KiB/token=10.7     us/token=52
+--- PASS: TestAudit_allocsPerToken (0.80s)
+ok  	github.com/townsendmerino/goinfer/decoder	1.236s
+END 10:29:32
+--- host sampling, the draw against the serial whole-row reference
+BenchmarkAudit2/noop           	     200	      9308 ns/op	    1284 B/op	      10 allocs/op
+BenchmarkAudit2/noop-8         	     200	     11529 ns/op	    1138 B/op	      10 allocs/op
+BenchmarkAudit2/gumbelDraw_parallel           	     200	   1260016 ns/op	    2217 B/op	      13 allocs/op
+BenchmarkAudit2/gumbelDraw_parallel-8         	     200	   1178585 ns/op	    1924 B/op	      13 allocs/op
+BenchmarkAudit2/GumbelDraw_wholeRow_serial    	     200	   6586344 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAudit2/GumbelDraw_wholeRow_serial-8  	     200	   6563832 ns/op	       0 B/op	       0 allocs/op
+--- what allocating a Gemma 4 token's buffers costs
+BenchmarkAudit3_make_2MiB_kh        	     300	     81388 ns/op	25792.66 MB/s	 2105383 B/op	       1 allocs/op
+BenchmarkAudit3_make_2MiB_kh-8      	     300	     72458 ns/op	28971.47 MB/s	 2105345 B/op	       1 allocs/op
+BenchmarkAudit3_make_24KiB_gate     	     300	      2436 ns/op	10089.36 MB/s	   24576 B/op	       1 allocs/op
+BenchmarkAudit3_make_24KiB_gate-8   	     300	      2615 ns/op	9398.09 MB/s	   24576 B/op	       1 allocs/op
+BenchmarkAudit3_make_8KiB_q         	     300	       385.7 ns/op	21239.49 MB/s	    8192 B/op	       1 allocs/op
+BenchmarkAudit3_make_8KiB_q-8       	     300	       384.9 ns/op	21285.66 MB/s	    8192 B/op	       1 allocs/op

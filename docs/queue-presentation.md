@@ -310,9 +310,24 @@ including where goinfer loses (its own CUDA-vs-native figure is already flagged 
 older than it reads, `docs/positioning.md:26–27`).
 
 **U17 · `goinfer connect` covers three of the eleven agents in the census** — CLI, **OPEN, filed 2026-10-21 (moved from
-`docs/tasks/task-integration-harness-2026-10.md` I2)**
+`docs/completed/task-integration-harness-2026-10.md` I2)**
 
 I2 shipped `connect` for Claude Code, opencode and Codex in v0.23.0 (aa554787, c2c23566). The rest of I2 never started: the
 other eight agents of the census (`docs/measurements/integration-harness-2026-10/harness-census-2026-10-12.md`), reading each
 agent's own config schema rather than writing over it, and a warning when `connect` skips an agent it does not know. Filed
 here because `connect` is the first command a harness user runs.
+
+## Moved here at the archive of the integration-harness task (2026-11-04)
+
+Open rows moved from `docs/completed/task-integration-harness-2026-10.md` (its ledger, as of 2026-10-31). The full history stays in
+the archived doc.
+
+- **I1-v2 · the first live gate of the harness on nobara** (decision). Waits on Francis: its two night jobs (about 4 h of GPU) are his
+  call. Then by day: fit-check the three loads, build the pin, run the pilots (Claude Code's is about 30 min), and queue the two jobs.
+- **I3-page · `docs/integrations/harness-matrix.md`** (blocked). Needs a nobara re-run of the Claude Code cells on current main (owner,
+  2026-10-21) first.
+- **I6 · a Codex release that sends `apply_patch` to an unknown model** (parked, owner 2026-10-21). Trigger only.
+- **§5 · three amendments to the integration-harness doc** (H-c gets I1's shipped rule, H-d gets its lead, and the notes for
+  `task-embed-and-harness-ux.md`). Not yet applied.
+- **harness-next · cherry-pick the owner's 2026-10-13 ruling on Codex's settings** (commit 2726ae99, not on main; it touches a Go comment,
+  so it needs a code PR), then drop the branch.

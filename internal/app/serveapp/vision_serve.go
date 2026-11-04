@@ -345,15 +345,16 @@ const gemma4AudioMaxSeconds = 30
 // either side). The run is generated through GenerateGemma4VL, which splices any media run the same way: rows unscaled, PAD
 // for PLE's token-identity term.
 func (lm *loadedModel) gemma4AudioPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, clip imageRef) (visionInput, error) {
-	samples, err := multimodal.DecodeWAVAnyRate(clip.data)
+	wav, err := multimodal.ParseWAV(clip.data)
 	if err != nil {
 		return visionInput{}, err
 	}
 	// Checked on the samples, not the soft-token count: the extractor itself stops at 30 s, so a longer clip would
 	// otherwise be cut without a word.
-	if len(samples) > gemma4AudioMaxSeconds*audio.Gemma4SampleRate {
-		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the %d s the model reads", float64(len(samples))/audio.Gemma4SampleRate, gemma4AudioMaxSeconds)
+	if n := wav.Samples(); n > gemma4AudioMaxSeconds*audio.Gemma4SampleRate {
+		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the %d s the model reads", float64(n)/audio.Gemma4SampleRate, gemma4AudioMaxSeconds)
 	}
+	samples := wav.Decode()
 	mel, T, err := audio.Gemma4Features(samples)
 	if err != nil {
 		return visionInput{}, fmt.Errorf("audio features: %w", err)
@@ -687,13 +688,14 @@ func (lm *loadedModel) qwenASREncoder() (*audio.QwenASREncoder, error) {
 // model still writes the name and <asr_text>). The encoder runs lazily inside features(). The reply is the model's raw "language <Name><asr_text><transcription>", the word
 // supplied from the prompt via replyPrefix, so completion_tokens does not count it. Text in the user turn is not part of the template and is ignored, the system message is passed through.
 func (lm *loadedModel) qwenASRPrompt(system string, clip imageRef) (visionInput, error) {
-	samples, err := multimodal.DecodeWAVAnyRate(clip.data)
+	wav, err := multimodal.ParseWAV(clip.data)
 	if err != nil {
 		return visionInput{}, err
 	}
-	if len(samples) > qwenASRMaxSeconds*audio.WhisperSampleRate {
-		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the %d s one request may carry", float64(len(samples))/audio.WhisperSampleRate, qwenASRMaxSeconds)
+	if n := wav.Samples(); n > qwenASRMaxSeconds*audio.WhisperSampleRate {
+		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the %d s one request may carry", float64(n)/audio.WhisperSampleRate, qwenASRMaxSeconds)
 	}
+	samples := wav.Decode()
 	f, err := audio.QwenASRFeatures(samples)
 	if err != nil {
 		return visionInput{}, fmt.Errorf("audio features: %w", err)
@@ -742,13 +744,14 @@ func (lm *loadedModel) voxtralEncoder() (*audio.VoxtralAudio, error) {
 // 30 s window at a time (the clip is padded up to whole windows), into the transcription request mistral_common lays out (multimodal.VoxtralPrompt, with no language: the model detects
 // it). The tower and projector run lazily inside features(). The reply is the model's raw text; text in the user turn is ignored, the system message is not used.
 func (lm *loadedModel) voxtralPrompt(clip imageRef) (visionInput, error) {
-	samples, err := multimodal.DecodeWAVAnyRate(clip.data)
+	wav, err := multimodal.ParseWAV(clip.data)
 	if err != nil {
 		return visionInput{}, err
 	}
-	if len(samples) > voxtralMaxSeconds*audio.WhisperSampleRate {
-		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the %d s one request may carry", float64(len(samples))/audio.WhisperSampleRate, voxtralMaxSeconds)
+	if n := wav.Samples(); n > voxtralMaxSeconds*audio.WhisperSampleRate {
+		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the %d s one request may carry", float64(n)/audio.WhisperSampleRate, voxtralMaxSeconds)
 	}
+	samples := wav.Decode()
 	n := multimodal.VoxtralAudioTokens(len(samples))
 	hiddenDim := lm.mdl().Config().HiddenDim
 	features := func() ([]float32, error) {

@@ -190,5 +190,5 @@ The measurements are the product; each rule's evidence is in the timed-run skill
 
 ## Releases
 
-`RELEASING.md` is the authority: five modules, a two-step tag, and a GitHub Release on the root tag only as a non-optional
+`RELEASING.md` is the authority: seven workspace modules (five tagged in a two-step release; `apps/sdktest` and `apps/site` are never tagged), and a GitHub Release on the root tag only as a non-optional
 final step. Do not restate its version numbers; read them with the command it gives. `gh` uses the **townsendmerino** account.

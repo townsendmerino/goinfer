@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"reflect"
 	"strings"
@@ -115,15 +116,46 @@ func requireAuth(key string, h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// bodyTooLarge reports whether err is maxBytes' cap firing during a body read, with the message its 413 carries. The
+// message names the limit and how to raise it: a bare "too large" leaves the operator guessing which of the several caps
+// fired (TestOversizeBody_BackstopBounded pins that a 413 says which bound was hit).
+func bodyTooLarge(err error) (msg string, tooLarge bool) {
+	if mbe, ok := errors.AsType[*http.MaxBytesError](err); ok {
+		return fmt.Sprintf("request body exceeds the %d-byte limit (raise it with -max-body-bytes)", mbe.Limit), true
+	}
+	return "", false
+}
+
+// writeBodyErr answers a request body that could not be read: 413 at the maxBytes cap, else 400 with msg and the error.
+func writeBodyErr(w http.ResponseWriter, msg string, err error) {
+	if tooLarge, ok := bodyTooLarge(err); ok {
+		writeErr(w, http.StatusRequestEntityTooLarge, tooLarge)
+		return
+	}
+	writeErr(w, http.StatusBadRequest, msg+": "+err.Error())
+}
+
+// maxFileUploadMemory is how much of an upload parseUpload holds in memory before spilling to a temp file.
+const maxFileUploadMemory = 32 << 20
+
+// parseUpload parses r's multipart/form-data body; a failure is answered through writeBodyErr with msg, and ok is false.
+// The caller defers the form's RemoveAll: net/http removes a form only when it was parsed on the request the server made,
+// and traceRequests and NewHandler hand handlers a copy, so nothing else deletes the temp files of a large upload.
+func parseUpload(w http.ResponseWriter, r *http.Request, msg string) (form *multipart.Form, ok bool) {
+	if err := r.ParseMultipartForm(maxFileUploadMemory); err != nil {
+		writeBodyErr(w, msg, err)
+		return nil, false
+	}
+	return r.MultipartForm, true
+}
+
 // jsonDecodeMessage shapes a json decode error into a message safe to return to a client: it never echoes the raw
 // error, whose UnmarshalTypeError rendering leaks the Go struct name (e.g. "...Go struct field completionReq.logprobs
 // of type bool"). tooLarge reports the body-cap case, which callers answer with a different status. The OpenAI and
 // Anthropic surfaces share it.
 func jsonDecodeMessage(err error) (msg string, tooLarge bool) {
-	if mbe, ok := errors.AsType[*http.MaxBytesError](err); ok {
-		// Name the limit and how to raise it: a bare "too large" leaves the operator guessing which of the several
-		// caps fired (TestOversizeBody_BackstopBounded pins that a 413 says which bound was hit).
-		return fmt.Sprintf("request body exceeds the %d-byte limit (raise it with -max-body-bytes)", mbe.Limit), true
+	if msg, tooLarge := bodyTooLarge(err); tooLarge {
+		return msg, true
 	}
 	if ute, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
 		// ute.Type is a reflect.Type; for a composite field it renders the internal named type (e.g.

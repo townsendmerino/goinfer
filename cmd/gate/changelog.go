@@ -92,11 +92,18 @@ var placeholderRE = regexp.MustCompile(`\{[^}]*\}`)
 // normRoute reads `POST /v1/jobs/{id}/events` as `POST /v1/jobs/{}/events`.
 func normRoute(r string) string { return placeholderRE.ReplaceAllString(r, "{}") }
 
-// serveRoutes parses the non-test files of internal/serveapp and returns every route literal passed to a HandleFunc or Handle call.
+// serveAppDirs lists where the serve package has lived: a tree before the layout move has it at the second path.
+var serveAppDirs = []string{"internal/app/serveapp", "internal/serveapp"}
+
+// serveRoutes parses the non-test files of the serve package and returns every route literal passed to a HandleFunc or Handle call.
 func serveRoutes(src clSource) (map[string]bool, error) {
-	names, err := src.list("internal/app/serveapp")
-	if err != nil {
-		return nil, err
+	dir := serveAppDirs[0]
+	names, err := src.list(dir)
+	if err != nil || len(names) == 0 {
+		dir = serveAppDirs[1]
+		if names, err = src.list(dir); err != nil {
+			return nil, err
+		}
 	}
 	routes := map[string]bool{}
 	fset := token.NewFileSet()
@@ -104,7 +111,7 @@ func serveRoutes(src clSource) (map[string]bool, error) {
 		if !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
 			continue
 		}
-		b, err := src.read("internal/app/serveapp/" + n)
+		b, err := src.read(dir + "/" + n)
 		if err != nil {
 			return nil, err
 		}

@@ -28,7 +28,7 @@ code are the truth for *what runs where*, and this page does not restate them.
   [prefill](#prefill) · [sampling and constraints](#sampling-and-constraints) ·
   [speculative decoding](#speculative-decoding) · [multimodal](#multimodal) · [LoRA](#lora)
 - [2. Load + memory paths](#2-load--memory-paths): [sources](#sources) ·
-  [the load path](#one-load-path-internalmodelload) · [`.giw`](#giw-prequantized-mapped-aliased) ·
+  [the load path](#one-load-path-internalruntimemodelload) · [`.giw`](#giw-prequantized-mapped-aliased) ·
   [quantization and the CPU kernels](#quantization-and-the-cpu-kernels) · [the KV cache](#the-kv-cache) ·
   [fitting to the machine](#fitting-to-the-machine) · [bigger than RAM](#running-bigger-than-ram)
 - [3. The GPU backends](#3-the-gpu-backends): [registration and the runner seam](#registration-and-the-runner-seam) ·
@@ -133,7 +133,7 @@ Mixtral, Gemma 3 and 4, Phi, GPT-2, gpt-oss and GLM-4.5/4.6.
 - Code: the generic loop (`decoder/model.go`), or an own loop (below).
 
 **Gated DeltaNet hybrid** — Qwen3.5/3.6-MoE (`qwen3_5_moe`), Qwen3.8 (`qwen3_5`), Qwen3-Next and
-Olmo Hybrid.
+Olmo Hybrid (on Metal at int4 only; on WebGPU read only on the M1 Pro's adapter).
 - Cached per layer: K/V on the softmax layers, and a recurrent matrix state (`deltaState`) on the
   linear-attention layers.
 - Code: `decoder/forward_qwen35.go` and `decoder/deltanet.go`.
@@ -294,10 +294,9 @@ Vision in, text out, and on serve only (`--vision`).
 - **Splicing.** The image's embeddings go into the prompt at its placeholder tokens (`GenerateVL`,
   `GenerateQwenVL` with m-RoPE positions, `GenerateGemma4VL`). The text decoder is unchanged.
 - **Qwen3-VL** loads as a text-only decoder, and a `mistral3` checkpoint's tower is ignored.
-- **Where towers run.** Only the SigLIP tower runs resident, on WebGPU and CUDA (`vision.RegisterResident`);
-  Metal runs no tower. The other towers run on the CPU on every backend. aikit has resident modules for the
-  Qwen2.5-VL tower (`gpu/qwencuda`, `gpu/qwenmetal`) and for SigLIP (`gpu/visioncuda`, `gpu/visionmetal`);
-  goinfer imports none of them.
+- **Where towers run.** Resident vision towers live in `backend/cuda/internal/{qwencuda,visioncuda}` and
+  `backend/metal/internal/{qwenmetal,visionmetal}` (plus SigLIP on WebGPU via `vision.RegisterResident`); the other towers run
+  on the CPU.
 - **Where the decode runs after the image.** Resident for Gemma 3, Qwen2.5-VL and Gemma 4 26B/31B (the CPU's
   image-block prefill is uploaded with `UploadKV`; CUDA also prefills the image resident), and for GLM-OCR on CUDA.
   **Not resident:** Qwen3.5+ (a recurrent family refuses every resident branch), Gemma 4 E2B/E4B, and GLM-OCR off CUDA.
@@ -796,7 +795,8 @@ The `backend/webgpu/` module (`package webgpu`), built with `-tags gpu`, and cgo
 ### goinfer-serve
 
 The shape is decided ([positioning.md](positioning.md), [roadmap.md](roadmap.md)): **one generation
-at a time per model**, with no continuous batching and no paged attention. goinfer's niche is one
+at a time per model** by default (`--max-concurrent` widens it to a few slots that share a paged KV
+pool on CUDA and Metal), with no continuous batching. goinfer's niche is one
 user on consumer hardware.
 
 - **Models.** `--model` repeats, as `name=path` plus per-model overrides: `quant`, `lora`, `kv`,
@@ -922,7 +922,7 @@ and, since the M-19 split, none of the backend modules.
 flowchart TB
   subgraph ROOT["github.com/townsendmerino/goinfer  (pure Go, CGO_ENABLED=0)"]
     direction TB
-    APPS["goinfer-chat · goinfer-serve  (demo/chat, cmd/serve → internal/app/chatapp, internal/app/serveapp)<br/>internal/runtime/modelload · loadflags · prequant · giw · fitcmd · pullcmd · servecheck · swapguard<br/>cmd/prequant · cmd/gate · examples/embed"]
+    APPS["goinfer-chat · goinfer-serve  (demo/chat, cmd/serve → internal/app/chatapp, internal/app/serveapp)<br/>internal/app/{loadflags,fitcmd,pullcmd} · internal/runtime/{modelload,prequant,giw} · internal/guard/{servecheck,swapguard}<br/>cmd/prequant · cmd/gate · apps/examples/embed"]
     DEC["decoder<br/>families · forward · quantized weights · KV cache · samplers<br/>speculative · LoRA · loaders · paging · fit · residency seam"]
     TKN["tokenizer"]
     CHT["chat<br/>templates · tool calling"]
@@ -980,9 +980,10 @@ not a binding strategy.
 
 ### Modules
 
-goinfer ships as **five Go modules**. The backends are separate modules so that their dependencies
-never enter a build that did not ask for them. `demo/agent` is separate so that the MCP SDK stays out
-of the root's `go.mod`.
+Seven Go modules live in the workspace (an eighth `go.mod`, `.github/actions/staticcheck`, pins the CI linter build).
+Five are released together with tags, and two (`apps/sdktest` and `apps/site`) are never tagged. The backends are separate
+modules so that their dependencies never enter a build that did not ask for them. `demo/agent` is separate so that the MCP SDK
+stays out of the root's `go.mod`.
 
 | Module | Contents | Requires beyond the root and `aikit` |
 |---|---|---|
@@ -991,9 +992,11 @@ of the root's `go.mod`.
 | `github.com/townsendmerino/goinfer/backend/cuda` | the CUDA backend (`-tags cuda`), `backend/cuda/cmd/chat`, `backend/cuda/cmd/serve` | `aikit/gpu`, `eitamring/gocudrv` |
 | `github.com/townsendmerino/goinfer/backend/metal` | the Metal backend (darwin), `backend/metal/cmd/chat`, `backend/metal/cmd/serve` | `aikit/gpu` (which brings `purego`), `golang.org/x/sys` |
 | `github.com/townsendmerino/goinfer/demo/agent` | a local RAG coding agent over MCP | the MCP Go SDK; `goinfer/backend/webgpu` for its WebGPU web build |
+| `github.com/townsendmerino/goinfer/sdktest` | (`apps/sdktest`, never tagged) official OpenAI and Anthropic SDK tests against the in-process server | the OpenAI and Anthropic Go SDKs |
+| `github.com/townsendmerino/goinfer/site` | (`apps/site`, never tagged) the website generator (`goinfer.dev`) | stdlib only |
 
-**Four of the five are the ones you build against**; `demo/agent` is a demo.
-[api-tiers.md](api-tiers.md) lists all four submodules as Experimental.
+**Four of the five tagged modules are the ones you build against**; `demo/agent` is a demo.
+[api-tiers.md](api-tiers.md) lists all four tagged submodules as Experimental.
 
 **`go.work` is gitignored, but needed for any cross-module change.** Without it, a submodule resolves
 the root from the proxy at its last tag. CI builds throwaway workspaces, and `standalone-build.yml`
@@ -1022,7 +1025,7 @@ proxy resolves a submodule. Bare `vX.Y.Z` tags are the root's. The
 | `prequant` | `cmd/prequant` | builds `.giw` bundles |
 | `gate` | `cmd/gate` | the gate runner over `go test -json`: `census`, `heavy`, `parity`, `composition`, `selector`, `gpu`, `mutation` |
 
-`examples/embed` is the smallest complete program that uses goinfer as a library.
+`apps/examples/embed` is the smallest complete program that uses goinfer as a library.
 
 ### Packages
 
