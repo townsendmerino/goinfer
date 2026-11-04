@@ -18,7 +18,7 @@
 | DX8 | done | — | #513 (2ca87227): `docs/skills-draft/rule-review/SKILL.md`; its dry run's three proposals are with Francis |
 | DX9 | done | — | the three skills moved to `.claude/skills/` (timed-run, model-bring-up, rule-review) by the coordinator, 2026-10-31; `CLAUDE.md`'s two pointers follow; the rule-review dry run is now `docs/measurements/dx-2026-10/rule-review-dry-run-2026-10-30.md` |
 | DX10 | done | — | the two stale Oct 21 worktrees under `goinfer/.claude/worktrees/`: checked 2026-10-30, gone; the one there now is `mm6-gnp4-check-2026-10-30`, today's, locked by its session |
-| DX11 | active | the coordinator reviews and merges the goinfer and tack PRs; Francis or the coordinator picks the slimming option for tack's registration doc | Francis 2026-10-30 10:58 (standing rule 3, through the coordinator) |
+| DX11 | moved | `docs/queue-engineering.md` (2026-11-04) | Francis 2026-10-30 10:58 (standing rule 3, through the coordinator) |
 
 ## Why
 

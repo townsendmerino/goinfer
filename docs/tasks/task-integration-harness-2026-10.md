@@ -31,11 +31,11 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | D1–D3 | done | — | 2dd243e1, 0fd30702, 81791568 |
 | I1 | done | — (v0.23.0) | 94dcda6a |
 | I1-live | done | the first live gate, inside I3: Claude Code FAIL, two VOID | aa17242e, 9e3ddc23 |
-| I1-v2 | decision | waiting on Francis (its night jobs are his call; coordinator, 2026-10-31). Then nobara: by day, fit-check the three loads, build the pin, run the pilots (Claude Code's is about 30 min); the two jobs (about 4 h of GPU) go on the night queue | 6947a759, 415296b8 |
+| I1-v2 | moved | `docs/queue-presentation.md` (2026-11-04) | 6947a759, 415296b8 |
 | I2 | done | — (v0.23.0) | aa554787, c2c23566 |
 | I2-rest | moved | U17 in `docs/queue-presentation.md` | — |
 | I3 | done | graded | i3-night-2026-10-13.md |
-| I3-page | blocked | nobara: re-run the Claude Code cells on current main (owner, 2026-10-21), then write `docs/integrations/harness-matrix.md` | — |
+| I3-page | moved | `docs/queue-presentation.md` (2026-11-04) | — |
 | I4 | done | — | harness-census-2026-10-12.md, -13.md |
 | I4-ttft | killed | answered by KV0 and KV2 | the kv0-traffic and kv2-cuda records |
 | I5 | done | — (v0.23.0) | 9383547f, fabb21d9, 8ee3597d |
@@ -45,8 +45,8 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | I8 | done | — (v0.23.0) | d7a100ba |
 | G-I8-6 | killed | the owner, 2026-10-13 | 5f3203b8 |
 | out-fmt | moved | G49 in `docs/queue-correctness.md` | — |
-| §5 | open | desk: the three amendments not yet applied (H-c gets I1's shipped rule, H-d gets its lead, and the notes for `task-embed-and-harness-ux.md`); S | §5 |
-| harness-next | open | cherry-pick the owner's 2026-10-13 ruling on Codex's settings (2726ae99, not on main; it touches a Go comment, so it needs a code PR, not a docs-only one), then drop the branch | 2726ae99 |
+| §5 | moved | `docs/queue-presentation.md` (2026-11-04) | §5 |
+| harness-next | moved | `docs/queue-presentation.md` (2026-11-04) | 2726ae99 |
 | Codex compaction | killed | the owner kept the cap at 4,096 (2026-10-13 and 2026-10-15) | 2726ae99 |
 | Mellum JSON | killed | read as the model's output; fold into G39 if it recurs | the I3 record |
 

@@ -2254,3 +2254,23 @@ missing step.
 
 **Not fixed.** The emitter needs the promotion rule and the method-name handling repaired before
 `EMIT_MANIFEST=1` is trusted again; until then the flag writes claims the tier gate has to catch.
+
+## Moved here at the archive of the comment diet and the Claude Code hygiene tasks (2026-11-04)
+
+Open rows moved from `docs/completed/task-code-comments-2026-10.md` §10 and `docs/completed/task-claude-code-hygiene-2026-10.md`
+(DX11). The full text stays in the archived docs.
+
+- **Comment diet: CC6 diff mode, warning or refusal.** Owner decision, open since CC4 finished. The pre-push census
+  (`scripts/comment_census.py diff`) is a warning today. Owner (Francis) to choose.
+- **Comment diet: open work with no owning doc.** Each item is still unowned: `backend/webgpu/kv_slots.go:slotsBeforeContext` (a discrete
+  Vulkan measurement); `backend/webgpu/attention.go` (Metal's `float(pos)*invf[dd]` pattern at long context, unmeasured);
+  `backend/metal/batch.go:promptStepAboveFloor` and `backend/metal/paged_fence.go:pagedFenceOn` (off, no queue entry);
+  `backend/cuda/vision_encoder.go:addInPlaceHost` (tower residual add round-trips through the host); `cmd/gate/grade_parity.go:whyNoResult`
+  (build-tag reachability); `tokenizer` `byteLevelKnobs` (GGUF `pre="default"`); `decoder/model.go:Options.LoadAbort` (GGUF direct path only);
+  `decoder/weights.go:LoadWeights` (bf16/f16 widen to f32 on load); `decoder/forwardn.go:Model.specRollbackSafe`;
+  `internal/runtime/mem/probe/physical_linux.go:Physical` (cgroup `memory.max` not read); `chat/tools.go:Template.RenderToolsSegments`;
+  `internal/app/serveapp` (compute-time LoRA not wired into prefix reuse); `decoder/fitguard.go:guardGIWFit` (Metal's per-projection copies).
+- **Comment diet: test-side claims with no owner.** The coverage claims in the CC5 list (see the archived doc) whose bodies do not assert
+  them; each comment now says what its body asserts, but the tests do not yet assert the claimed coverage.
+- **DX11 · Claude Code hygiene, the coordinator's review of the goinfer and tack PRs, and Francis or the coordinator's pick of the slimming
+  option for tack's registration doc.** Active since 2026-10-30.

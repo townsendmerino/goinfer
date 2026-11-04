@@ -9,8 +9,8 @@ One PR per backend.
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| OM | active | Metal: review | this doc, § Metal, readings |
-| OW | active | WebGPU: review; its Linux goldens are in | this doc, § WebGPU, readings |
+| OM | done | — (merged #611, olmo-metal-dn) | this doc, § Metal; `docs/measurements/olmo-hybrid-metal-2026-11/` |
+| OW | done | — (merged #627, ow-olmo-webgpu) | this doc, § WebGPU; `docs/measurements/olmo-hybrid-webgpu-2026-11/` |
 
 ## Metal (OM)
 
