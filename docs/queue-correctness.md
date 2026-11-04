@@ -45,7 +45,7 @@ runtime or host defect, with no standalone reproduction yet to report upstream. 
 set it off again.
 
 **G49 · `/v1/messages` accepts `output_config.format` and ignores it** — `any`, **filed 2026-10-21 (moved from
-`docs/tasks/task-integration-harness-2026-10.md` §0a, which found it and gave it no owner)**
+`docs/completed/task-integration-harness-2026-10.md` §0a, which found it and gave it no owner)**
 
 Anthropic's structured-output field is accepted and dropped: no Go code reads `output_config`, so a client that asks the
 Anthropic route for JSON gets free text, with no warning. The OpenAI routes constrain output through `response_format`.

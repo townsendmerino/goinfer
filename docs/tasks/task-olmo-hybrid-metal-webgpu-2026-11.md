@@ -1,7 +1,7 @@
 # Olmo Hybrid on Metal and WebGPU: NegEigval and ONormEps in their DeltaNet (2026-11)
 
 **Registered 2026-11-02, before any code (mac-sb11m; the commit's time is the registration's).** Francis's direction of 09:52 PST,
-relayed by the coordinator: do on Metal, then on WebGPU, what #604 does on CUDA (`docs/tasks/task-olmo-hybrid-cuda-2026-11.md`).
+relayed by the coordinator: do on Metal, then on WebGPU, what #604 does on CUDA (`docs/completed/task-olmo-hybrid-cuda-2026-11.md`).
 Implement `linear_allow_neg_eigval` (NegEigval, the write gate doubled to [0, 2)) and the output norm's own epsilon (ONormEps) in the
 backend's Gated-DeltaNet, gate it against the CPU, then claim both in the backend's table, so Olmo Hybrid runs resident again.
 One PR per backend.

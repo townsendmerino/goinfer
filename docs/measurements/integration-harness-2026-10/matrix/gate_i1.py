@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""I1's live gate (docs/tasks/task-integration-harness-2026-10.md, "I3 run plan, registered 2026-10-13"): read the `bulk` and `bulkbig`
+"""I1's live gate (docs/completed/task-integration-harness-2026-10.md, "I3 run plan, registered 2026-10-13"): read the `bulk` and `bulkbig`
 runs in records.jsonl and grade each against the rule registered in I1.
 
   gate_i1.py <records.jsonl>

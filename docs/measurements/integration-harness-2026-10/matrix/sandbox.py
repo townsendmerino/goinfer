@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The I3 sandbox (docs/tasks/task-integration-harness-2026-10.md, "I3 sandbox, registered 2026-10-13"): run a command
+"""The I3 sandbox (docs/completed/task-integration-harness-2026-10.md, "I3 sandbox, registered 2026-10-13"): run a command
 a small model is steering, with permission prompts bypassed, where only the run's own directories are writable and the
 only reachable address is goinfer's. Unprivileged bubblewrap: no sudo, no package, no container image.
 

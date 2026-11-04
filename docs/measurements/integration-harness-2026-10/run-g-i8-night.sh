@@ -1,5 +1,5 @@
 #!/bin/bash
-# G-I8-6 on the Mac (docs/tasks/task-integration-harness-2026-10.md, "I8", registered 2026-10-13): is the request the
+# G-I8-6 on the Mac (docs/completed/task-integration-harness-2026-10.md, "I8", registered 2026-10-13): is the request the
 # 7B refused on the night of 2026-10-12 answered once Metal prefills in blocks and admission prices a block? Serve
 # Qwen2.5-7B under --backend metal with -ctx 24576, send one request of Claude Code's first-request size (the client
 # sizes it at 20,199 tokens or more; it was 20,954 last night), read swap before the load and after the answer.

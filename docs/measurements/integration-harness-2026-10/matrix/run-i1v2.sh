@@ -1,5 +1,5 @@
 #!/bin/bash
-# I1-v2's runs (docs/tasks/task-integration-harness-2026-10.md, "I1 live gate, second design (I1-v2)"), unattended, from the pin
+# I1-v2's runs (docs/completed/task-integration-harness-2026-10.md, "I1 live gate, second design (I1-v2)"), unattended, from the pin
 # build-i1v2-pin.sh made in $B. Holds nobara's timing lock for the whole run (a night job's lock is inherited).
 #
 #   PILOT=1 ONLY=i1v2-pilot-cc bash <this script>                                 (by day when the lock is free; about 30 min)

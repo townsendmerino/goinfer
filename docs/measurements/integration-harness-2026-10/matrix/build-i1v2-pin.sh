@@ -1,5 +1,5 @@
 #!/bin/bash
-# I1-v2's pin (docs/tasks/task-integration-harness-2026-10.md, "I1 live gate, second design (I1-v2)"): build the serve binary and
+# I1-v2's pin (docs/completed/task-integration-harness-2026-10.md, "I1 live gate, second design (I1-v2)"): build the serve binary and
 # its planted twin at one main commit REV, and copy the matrix scripts at REV beside them. Refuses a REV that does not contain
 # the merge of kv3-cuda-2026-10 and the tips of connect-cc-window-2026-10 and connect-cc-model-slots-2026-10.
 #
