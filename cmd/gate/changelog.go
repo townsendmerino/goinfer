@@ -52,7 +52,10 @@ func (g gitSource) read(path string) ([]byte, error) {
 	if !moved || !absentFromRev(err) {
 		return nil, err
 	}
-	return g.showOnce(old)
+	if ob, oerr := g.showOnce(old); oerr == nil {
+		return ob, nil
+	}
+	return nil, err // the fallback found nothing: the new path's error is the one to report
 }
 
 func (g gitSource) showOnce(path string) ([]byte, error) {
@@ -78,15 +81,20 @@ func (g gitSource) list(dir string) ([]string, error) {
 	if !moved {
 		return names, err
 	}
-	return g.lsTree(old)
+	if oldNames, oerr := g.lsTree(old); oerr == nil && len(oldNames) > 0 {
+		return oldNames, nil
+	}
+	return names, err // the fallback found nothing: the new path's answer is the one to report
 }
 
 func (g gitSource) lsTree(dir string) ([]string, error) {
 	cmd := exec.Command("git", "ls-tree", "--name-only", g.rev, dir+"/")
 	cmd.Dir = g.root
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("git ls-tree %s %s/: %v: %s", g.rev, dir, err, strings.TrimSpace(stderr.String()))
 	}
 	var names []string
 	for _, ln := range strings.Fields(string(out)) {

@@ -108,6 +108,8 @@ READS = re.compile(r'parser\.Parse(File|Dir)\(|"\*\.go"|"\*\.cu"|\.go"\)|\.cu"\)
 NOT_SOURCE_READERS = {
     "TestCompare_classes": "sides built by hand; the paths it names are strings, and it reads no file",
     "TestGitSource_preMoveRevisionReadsTheInternalRegroup": "a synthetic repo in a temp dir (a pre-move and a post-move commit)",
+    "TestServeRoutes_preMoveRevisionFindsTheRoutes": "a synthetic repo in a temp dir (a pre-move and a post-move commit)",
+    "TestGitSource_newPathErrorIsReportedWhenTheFallbackFindsNothing": "a synthetic repo in a temp dir (a pre-move and a post-move commit)",
     "TestCommentsOnly_gitCommitGreenAndRed": "a synthetic repo in a temp dir",
     "TestCommentsOnly_worktreeMode": "a synthetic repo in a temp dir",
     "TestIdentityDumperTemplate_isGoAndHasItsMarkers": "parses the embedded dumper template",

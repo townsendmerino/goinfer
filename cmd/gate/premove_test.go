@@ -163,3 +163,70 @@ func TestGitSource_preMoveRevisionReadsTheInternalRegroup(t *testing.T) {
 		t.Fatalf("list at the pre-move revision = %v, %v; want [routes.go]", names, err)
 	}
 }
+
+// regroupedRepo is a repository with internal/serveapp/routes.go at the first commit and internal/app/serveapp at the
+// second. It returns the root, the pre-move commit and the post-move commit.
+func regroupedRepo(t *testing.T, body string) (root, pre string) {
+	t.Helper()
+	root = t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-q")
+	if err := os.MkdirAll(filepath.Join(root, "internal", "serveapp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "internal", "serveapp", "routes.go"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "internal")
+	git("commit", "-q", "-m", "before the regroup")
+	pre = git("rev-parse", "HEAD")
+	if err := os.MkdirAll(filepath.Join(root, "internal", "app"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git("mv", "internal/serveapp", "internal/app/serveapp")
+	git("commit", "-q", "-m", "after the regroup")
+	return root, pre
+}
+
+// serveRoutes at a pre-move revision finds the routes under the pre-move directory: the route scan of `gate changelog`
+// at a base tag (mac-rel's v0.23.0 run reported "0 routes" before the fallback).
+func TestServeRoutes_preMoveRevisionFindsTheRoutes(t *testing.T) {
+	root, pre := regroupedRepo(t, `package serveapp
+
+import "net/http"
+
+func register(mux *http.ServeMux) {
+	mux.HandleFunc("POST /v1/jobs/{id}/events", nil)
+}
+`)
+	routes, err := serveRoutes(gitSource{root: root, rev: pre})
+	if err != nil {
+		t.Fatalf("serveRoutes at the pre-move revision: %v", err)
+	}
+	if !routes["POST /v1/jobs/{}/events"] || len(routes) != 1 {
+		t.Fatalf("routes at the pre-move revision = %v; want the one route under internal/serveapp", routes)
+	}
+}
+
+// When the new path and the pre-move path both come back with nothing, the error reported is the new path's: the fallback
+// must not replace it with the pre-move path's (or with an empty result that looks like success).
+func TestGitSource_newPathErrorIsReportedWhenTheFallbackFindsNothing(t *testing.T) {
+	root, _ := regroupedRepo(t, "package serveapp\n")
+	src := gitSource{root: root, rev: "no-such-revision"}
+	if _, err := src.read("internal/app/serveapp/routes.go"); err == nil || !strings.Contains(err.Error(), "internal/app/serveapp/routes.go") {
+		t.Fatalf("read with nothing at either name: error = %v; want the new path's error", err)
+	}
+	if _, err := src.list("internal/app/serveapp"); err == nil || !strings.Contains(err.Error(), "internal/app/serveapp") {
+		t.Fatalf("list with nothing at either name: error = %v; want the new path's error", err)
+	}
+}
