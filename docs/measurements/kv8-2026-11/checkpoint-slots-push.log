@@ -1,0 +1,26 @@
+# Push record, main 0f5cb935a merged, 2026-11-03 15:25:46 PST
+# the parity manifest
+fresh
+# head 73a668b6f, CUDA's slot, KV, recurrent, memory tests, 15:25:47 PST
+ok  	github.com/townsendmerino/goinfer/cuda	624.758s
+PASS: 194, SKIP: 43, FAIL: 0
+exit 0
+# gate identity -backend cuda 0f5cb935a 73a668b6f, 15:36:13 PST
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+exit 0
+# touched.py in a clean worktree, 15:41:50 PST
+  ok   vet cuda (1 pkg) (1.3s)
+  ok   test cuda -run ^(TestB26Verdict_bands|TestBackendAdmiss (259.9s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 16 checks passed (CI runs the rest on push)
+exit 0
+test_touched exit 0
+1
+staticcheck -tags cuda,goinfer_testhooks ./cuda/ exit 0
+staticcheck ./decoder/ exit 0
+staticcheck -tags goinfer_testhooks ./decoder/ exit 0
+untagged vet ./cuda/ exit 0
+darwin vet exit 0
+citation lint exit 0
+# fail=0, 15:47:21 PST
