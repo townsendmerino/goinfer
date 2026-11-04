@@ -31,3 +31,26 @@ after the merge: exit 0, PASS 19, FAIL 0
 ok  	github.com/townsendmerino/goinfer/decoder	0.901s
 citation lint 0
 build 0
+
+# #658's round 1, at 9a8f49a41, main 112e64a75 merged, 2026-11-03 18:26:07 PST
+--- PASS: TestParityManifest_fresh (0.86s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.862s
+ok  	github.com/townsendmerino/goinfer/cuda	636.053s
+PASS: 198, SKIP: 43, FAIL: 0
+exit 0
+# gate identity -backend cuda 112e64a75 9a8f49a41, 18:36:50 PST
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+exit 0
+VERDICT: PASS — touched: 16 checks passed (CI runs the rest on push); did not run: metal
+touched exit 0
+test_touched exit 0
+canary hits 1
+staticcheck -tags cuda,goinfer_testhooks ./cuda/ exit 0
+staticcheck ./decoder/ exit 0
+staticcheck -tags goinfer_testhooks ./decoder/ exit 0
+untagged vet ./cuda/ exit 0
+darwin vet exit 0
+citation lint exit 0
+build exit 0
+# fail=0, 18:48:08 PST
