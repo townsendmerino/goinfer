@@ -115,6 +115,8 @@ The harness's prefill_and_request_s, an earlier stand-in, is not a TTFT reading 
 He accepts gemma3-1b's measured cost, as D-KV4-3 did for KV4. KV5 does not park. gemma3-1b, new/old: at depth 128 / 2,048 / 3,900, 0.995 / 0.975 / 0.963 on round one's code, which is what ships here; 0.980 / 0.975 / 0.963 on round two's, which does not ship and is the set relayed with his answer. Depth 2,048 and 3,900 read the same on both.
 The 7B is still a gate: night job kv5-2-g2-7b reads it, and a miss comes back to him. Reverting this slice would be one PR.
 
+Francis, 2026-11-04 07:32, relayed by the coordinator, on gemma3-1b's repeat: "gemma3-1b's repeat run - i approve". His acceptance now covers the repeat's figures too: 0.970 at depth 2,048 and 0.956 at 3,900, about 4.4% at 3,900.
+
 == THE KILL RULE TRIPPED: what he decided on
 Registered: decode at depth 2,048 or more under 0.98 on the KV5-2 build gets two tuning rounds within a working day; still under, KV5 parks.
 1.5B: under at first (0.973, 0.968, 0.946); after round one 0.990, 0.990, 1.009. MC3 0.984.
