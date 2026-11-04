@@ -436,7 +436,9 @@ func recurrentSlotCheckpoint(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	saved := append([]float32(nil), two.r.ckptBufs[1].Floats()...) // the first layer's state
-	recurrentSolo(two, B)                                          // slot 1's state moves on
+	for i, e := range B { // slot 1's state moves on, with no reset, which would free the checkpoint
+		two.r.ForwardEmb(e, len(A)+i)
+	}
 	if err := two.r.useKVSlot(0); err != nil {
 		t.Fatal(err)
 	}
@@ -454,5 +456,15 @@ func recurrentSlotCheckpoint(t *testing.T, dir string) {
 		if math.Float32bits(live[i]) != math.Float32bits(saved[i]) {
 			t.Fatalf("after the restore, slot 1's state differs from the saved checkpoint at element %d", i)
 		}
+	}
+	if !two.RecurrentCheckpointHeld(1) || two.RecurrentCheckpointHeld(0) {
+		t.Errorf("held: slot 0 %v, slot 1 %v; want slot 1 alone", two.RecurrentCheckpointHeld(0), two.RecurrentCheckpointHeld(1))
+	}
+	two.Reset() // slot 1 is bound: a new sequence, so its checkpoint is no request's
+	if two.RecurrentCheckpointHeld(1) {
+		t.Error("a reset left the slot holding its checkpoint")
+	}
+	if err := two.RestoreRecurrentCheckpoint(); err == nil {
+		t.Error("restoring a checkpoint after the slot's reset was not refused")
 	}
 }

@@ -41,8 +41,7 @@ func (r *cudaResident) allocRecurrentCheckpoint() {
 	if !r.recurrent() {
 		return
 	}
-	bytes := r.recurrentLiveBytes()
-	if bytes == 0 {
+	if r.recurrentLiveBytes() == 0 {
 		return
 	}
 	reserve := r.ckptReserve()
@@ -50,7 +49,8 @@ func (r *cudaResident) allocRecurrentCheckpoint() {
 	if memReadSeenForTest != nil {
 		memReadSeenForTest("ckpt", int64(free), err == nil)
 	}
-	n, d := ckptCopiesFor(r.KVSlots(), bytes, reserve, free, err)
+	charged := r.recurrentStateCharged()
+	n, d := r.ckptCopiesBeside(r.KVSlots(), reserve, free, err)
 	if d != "" {
 		r.ckptDeclined = d
 		fmt.Fprint(os.Stderr, ckptDeclinedLine(d))
@@ -68,7 +68,7 @@ func (r *cudaResident) allocRecurrentCheckpoint() {
 		fmt.Fprintf(os.Stderr, "cuda: recurrent checkpoint: none kept (%s)\n", r.ckptDeclined)
 		return
 	}
-	r.ckptBytes = int64(len(r.ckptCopies)) * bytes
+	r.ckptBytes = int64(len(r.ckptCopies)) * charged
 	r.bindCheckpoint(0)
 	fmt.Fprint(os.Stderr, ckptKeptLine(r.ckptBytes, len(r.ckptCopies)*len(r.ckptSave)))
 }
@@ -134,6 +134,11 @@ func ckptDeclineFor(bytes, reserve int64, free uint64, err error) string {
 		return fmt.Sprintf("%.1f MiB needed beside a %.0f MiB reserve, %.0f MiB free", mib(bytes), mib(reserve), mib(int64(free)))
 	}
 	return ""
+}
+
+// ckptCopiesBeside is ckptCopiesFor for this build's checkpoint, as the card charges it: the one figure the build and the memory plan decide on.
+func (r *cudaResident) ckptCopiesBeside(slots int, reserve int64, free uint64, err error) (int, string) {
+	return ckptCopiesFor(slots, r.recurrentStateCharged(), reserve, free, err)
 }
 
 // ckptCopiesFor is how many checkpoints of bytes each a build of slots KV slots keeps beside reserve, at most one a slot, and why none

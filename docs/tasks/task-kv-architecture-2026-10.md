@@ -1371,7 +1371,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
     - **C-7: PASS** (`docs/measurements/kv8-2026-11/README.md`): 12 of 12 follow-ups reuse rows, 16 of 16 turns equal that client alone, ratio 0.008.
     - **The registered "room for fewer" clause on a served load is not read:** C-3 stands in a card with room for one by its test seam.
     - **#658's review:** with fewer copies than slots, a save took a slot's copy while its record still named the position, so a branch of that conversation picked its slot over an empty one, the restore failed, and the conversation lost its sequence (red on three fixtures: a next turn reused 0 of 38 rows). A load of several slots now scores only a checkpoint its slot holds (`decoder/recurrent_checkpoint.go:ResidentRecurrentCheckpointOwner`), and a reset frees the slot's copy. The least-recently-saved rule has its own test at three slots and two copies. The served reading ran a third time, with both slots restoring.
-    - **With #645:** the plan priced one checkpoint a load, so its `CheckpointPerSlot` field now says when a backend keeps one a slot, as CUDA does (`decoder/fitplan.go:Plan`), and the gate's state line reads it. A plant pricing one copy is red on the `slots2` and `slots4` rows.
+    - **With #645:** the plan priced one checkpoint a load, so its `CheckpointCopies` field now says how many the load keeps: as many as fit on a backend that keeps one a slot, as CUDA does (`decoder/fitplan.go:Plan`), and the gate's state line reads it. A plant pricing one copy is red on the `slots2` and `slots4` rows.
 
 ### KV8a — An end-of-prompt checkpoint on today's single slot (added 2026-10-20)
 

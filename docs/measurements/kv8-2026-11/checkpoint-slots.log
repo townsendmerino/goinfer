@@ -184,3 +184,40 @@ ok  	github.com/townsendmerino/goinfer/cuda	163.204s
 --- FAIL: TestMemGate_cuda (117.24s)
     sb2_census_test.go:2556: selftestdata/qwen35-tiny int4/slots4: line "state": built: leased 135168 bytes against a plan of 84480: 50688 over, after 0 forgiven by "cuMe
     sb2_census_test.go:2556: selftestdata/qwen35-tiny int4/slots4: line "state": generated: leased 135168 bytes against a plan of 84480: 50688 over, after 0 forgiven by "
+
+# #658's second read: copies priced as fit, counted on the charge; Metal's reset frees its checkpoint; fakes model a reset. 2026-11-03 20:15:04 PST
+vets done
+ok  	github.com/townsendmerino/goinfer/internal/memgate	0.003s
+ok  	github.com/townsendmerino/goinfer/decoder	1.339s
+ok  	github.com/townsendmerino/goinfer/cuda	7.417s
+census lines changed against main: 20
+exit 0, PASS 38, FAIL 0
+    sb2_census_test.go:2604: 474 builds held, 155 options declined by CUDA's own build
+ok  	github.com/townsendmerino/goinfer/cuda	162.631s
+# plant: the gate prices one a slot whatever fits
+--- FAIL: TestPlanned_checkpoint (0.00s)
+    memgate_test.go:320: 1 copies at 4 slots: the state line plans 520, want 430
+    memgate_test.go:320: 0 copies at 4 slots: the state line plans 520, want 400
+    memgate_test.go:320: 2 copies at 4 slots: the state line plans 520, want 460
+FAIL	github.com/townsendmerino/goinfer/internal/memgate	0.003s
+# plant: the plan keeps one whenever one fits
+--- FAIL: TestPlan_pricesRecurrentCheckpoint (0.02s)
+    --- FAIL: TestPlan_pricesRecurrentCheckpoint/qwen35-tiny (0.00s)
+        plan_state_test.go:137: cuda with room for 2: the plan keeps 1
+        plan_state_test.go:137: cuda with room for 3: the plan keeps 1
+    --- FAIL: TestPlan_pricesRecurrentCheckpoint/olmo_hybrid-tiny (0.01s)
+        plan_state_test.go:137: cuda with room for 2: the plan keeps 1
+        plan_state_test.go:137: cuda with room for 3: the plan keeps 1
+    --- FAIL: TestPlan_pricesRecurrentCheckpoint/nemotron-tiny (0.00s)
+        plan_state_test.go:137: cuda with room for 2: the plan keeps 1
+        plan_state_test.go:137: cuda with room for 3: the plan keeps 1
+FAIL	github.com/townsendmerino/goinfer/decoder	0.347s
+# plant: the copies are counted on the raw bytes
+    mamba_guards_test.go:658: room for one by the charge: 2 copies, why ""; want 1
+--- FAIL: TestCkptCopies_countTheCharge (0.00s)
+FAIL	github.com/townsendmerino/goinfer/cuda	0.004s
+# plant: the fake's reset keeps its owner
+    kv8a_generate_test.go:440: a reset left the slot holding its checkpoint
+    kv8a_generate_test.go:444: after the reset: 1 restores, restored at 40, declined ""; want none tried
+--- FAIL: TestKV8_aResetFreesTheCheckpoint (0.01s)
+FAIL	github.com/townsendmerino/goinfer/decoder	0.015s

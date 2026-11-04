@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/townsendmerino/goinfer/internal/mem"
 )
@@ -94,10 +95,11 @@ type Plan struct {
 	// CheckpointBytes is one recurrent checkpoint this plan's load keeps (BuildDemand.CheckpointBytes), 0 on a declined plan or where it does
 	// not fit beside NeedBytes. It is not in NeedBytes and moves no decision here: a load with no room for it keeps none and still runs.
 	CheckpointBytes int64
-	// CheckpointPerSlot says the load keeps that checkpoint once per KV slot where it fits, not once (BuildDemand.CheckpointPerSlot).
-	CheckpointPerSlot bool
-	AllocSlackBytes   int64 // the backend's allocator rounding over the weight buffers (PlanSlack): CUDA's 2 MiB granularity
-	ExtraBytes        int64 // PlanRequest.ExtraBytes, carried through for NeedBytes()/reporting
+	// CheckpointCopies is the most checkpoints the load keeps: 1, or as many as fit beside NeedBytes on a backend that keeps one per KV slot
+	// (BuildDemand.CheckpointPerSlot); 0 where CheckpointBytes is. A build keeps at most one a slot, so it is not itself the count.
+	CheckpointCopies int
+	AllocSlackBytes  int64 // the backend's allocator rounding over the weight buffers (PlanSlack): CUDA's 2 MiB granularity
+	ExtraBytes       int64 // PlanRequest.ExtraBytes, carried through for NeedBytes()/reporting
 
 	FreeBytes int64  // what Plan was told is available on this backend/device
 	Reason    string // human-readable justification (admit) or decline message with the numbers
@@ -220,8 +222,11 @@ func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack boo
 		mem.Machine{Free: map[mem.Tier]int64{l.Tier: freeBytes}}, mem.DefaultPolicy())
 	p.Placement, p.Ctx, p.Slots = Placement(d.Placement), d.Ctx, d.Slots
 	p.ExpertBytesUsed, p.KVBytes, p.HostCopyBytes, p.Reason = d.ExpertBytesUsed, d.KVBytes, d.HostCopyBytes, d.Reason
-	if ckpt, perSlot := m.checkpointBytes(backend); p.Placement != PlacementDecline && p.NeedBytes()+ckpt <= freeBytes {
-		p.CheckpointBytes, p.CheckpointPerSlot = ckpt, perSlot
+	if ckpt, perSlot := m.checkpointBytes(backend); ckpt > 0 && p.Placement != PlacementDecline && p.NeedBytes()+ckpt <= freeBytes {
+		p.CheckpointBytes, p.CheckpointCopies = ckpt, 1
+		if perSlot {
+			p.CheckpointCopies = int(min((freeBytes-p.NeedBytes())/ckpt, math.MaxInt32))
+		}
 	}
 	return p
 }

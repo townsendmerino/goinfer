@@ -567,7 +567,7 @@ func TestRecurrentSlots_roomForOneCheckpoint(t *testing.T) {
 	defer func() { ckptFreeVRAM = saved }()
 	room := func(copies int64) {
 		ckptFreeVRAM = func(r *cudaResident) (uint64, error) {
-			return uint64(copies*r.recurrentLiveBytes() + r.ckptReserve()), nil
+			return uint64(copies*r.recurrentStateCharged() + r.ckptReserve()), nil
 		}
 	}
 	for _, fixture := range recurrentSlotFixtures {
@@ -638,6 +638,27 @@ func TestRecurrentSlots_roomForOneCheckpoint(t *testing.T) {
 				t.Errorf("with room for none: %d bytes kept, declined %q", none.RecurrentCheckpointBytes(), none.ckptDeclined)
 			}
 		})
+	}
+}
+
+// TestCkptCopies_countTheCharge, no device: a state buffer past the allocation quantum costs a rounded buffer, so the copies that fit are counted on what the card charges, and two
+// that fit by their raw bytes do not.
+func TestCkptCopies_countTheCharge(t *testing.T) {
+	const reserve = int64(1 << 30)
+	r := &cudaResident{dnet: &dnetParams{convK: 2, convDim: 1, stateElems: 3 << 18}, layers: []cudaLayer{{mixer: decoder.MixerDeltaNet}}}
+	live, charged := r.recurrentLiveBytes(), r.recurrentStateCharged()
+	if live >= charged {
+		t.Fatalf("raw %d, charged %d: the fixture has no rounding to read", live, charged)
+	}
+	free := reserve + 2*charged - 1 // two by the raw bytes, one by the charge
+	if free < reserve+2*live {
+		t.Fatalf("free %d holds no two raw copies: the case reads nothing", free)
+	}
+	if n, why := r.ckptCopiesBeside(2, reserve, uint64(free), nil); n != 1 || why != "" {
+		t.Errorf("room for one by the charge: %d copies, why %q; want 1", n, why)
+	}
+	if n, _ := r.ckptCopiesBeside(2, reserve, uint64(reserve+2*charged), nil); n != 2 {
+		t.Errorf("room for two by the charge: %d copies; want 2", n)
 	}
 }
 
@@ -917,10 +938,13 @@ func TestRecurrentSlots_restoreThroughGenerate(t *testing.T) {
 				replies[c.name] = got
 			}
 			// With room for one copy, Q saves last, so P's slot holds none: its follow-up scores no restore, and prefills from 0.
-			saved := ckptFreeVRAM
-			ckptFreeVRAM = func(r *cudaResident) (uint64, error) { return uint64(r.recurrentLiveBytes() + r.ckptReserve()), nil }
-			short, _ := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
-			ckptFreeVRAM = saved
+			short := func() *decoder.Model {
+				saved := ckptFreeVRAM
+				defer func() { ckptFreeVRAM = saved }()
+				ckptFreeVRAM = func(r *cudaResident) (uint64, error) { return uint64(r.recurrentStateCharged() + r.ckptReserve()), nil }
+				m, _ := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
+				return m
+			}()
 			gen(short, P)
 			gen(short, Q)
 			if _, g := gen(short, fp); g.CheckpointRestored != 0 || g.CheckpointDeclined != "" {
@@ -947,7 +971,7 @@ func recurrentSlotRoom(t *testing.T, copies int64) {
 	saved := ckptFreeVRAM
 	t.Cleanup(func() { ckptFreeVRAM = saved })
 	ckptFreeVRAM = func(r *cudaResident) (uint64, error) {
-		return uint64(copies*r.recurrentLiveBytes() + r.ckptReserve()), nil
+		return uint64(copies*r.recurrentStateCharged() + r.ckptReserve()), nil
 	}
 }
 

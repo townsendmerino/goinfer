@@ -234,6 +234,7 @@ type slottedRecurrentFake struct {
 	*recurrentFake
 	bound        int
 	states, ckpt []uint64
+	held         []bool
 }
 
 func (f *slottedRecurrentFake) KVSlots() int { return len(f.states) }
@@ -242,9 +243,13 @@ func (f *slottedRecurrentFake) UseKVSlot(i int) error {
 	f.st = f.states[i]
 	return nil
 }
-func (f *slottedRecurrentFake) RecurrentCheckpointHeld(int) bool { return true }
+func (f *slottedRecurrentFake) RecurrentCheckpointHeld(slot int) bool { return f.held[slot] }
+func (f *slottedRecurrentFake) Reset() {
+	f.fakeResident.Reset()
+	f.held[f.bound] = false
+}
 func (f *slottedRecurrentFake) SaveRecurrentCheckpoint() error {
-	f.ckpt[f.bound] = f.st
+	f.ckpt[f.bound], f.held[f.bound] = f.st, true
 	return nil
 }
 func (f *slottedRecurrentFake) RestoreRecurrentCheckpoint() error {
@@ -261,7 +266,7 @@ type slottedRecurrentBackend struct {
 func (b *slottedRecurrentBackend) Name() string { return "cuda" } // a table that keeps recurrent state per slot
 func (b *slottedRecurrentBackend) BuildResident(m *Model) (ResidentForward, bool, error) {
 	_, _, _, _, _, _, vocab := m.Dims()
-	b.rf = &slottedRecurrentFake{recurrentFake: &recurrentFake{fakeResident: &fakeResident{vocab: vocab}, keeps: true}, states: make([]uint64, 2), ckpt: make([]uint64, 2)}
+	b.rf = &slottedRecurrentFake{recurrentFake: &recurrentFake{fakeResident: &fakeResident{vocab: vocab}, keeps: true}, states: make([]uint64, 2), ckpt: make([]uint64, 2), held: make([]bool, 2)}
 	return b.rf, true, nil
 }
 func (b *slottedRecurrentBackend) Close() error { return nil }
@@ -347,6 +352,12 @@ func (f *oneCopyRecurrentFake) RestoreRecurrentCheckpoint() error {
 	return nil
 }
 func (f *oneCopyRecurrentFake) RecurrentCheckpointHeld(slot int) bool { return f.owner == slot }
+func (f *oneCopyRecurrentFake) Reset() {
+	f.fakeResident.Reset()
+	if f.owner == f.bound {
+		f.owner = -1
+	}
+}
 
 type oneCopyRecurrentBackend struct {
 	Backend
@@ -356,7 +367,7 @@ type oneCopyRecurrentBackend struct {
 func (b *oneCopyRecurrentBackend) Name() string { return "cuda" }
 func (b *oneCopyRecurrentBackend) BuildResident(m *Model) (ResidentForward, bool, error) {
 	_, _, _, _, _, _, vocab := m.Dims()
-	b.rf = &oneCopyRecurrentFake{slottedRecurrentFake: &slottedRecurrentFake{recurrentFake: &recurrentFake{fakeResident: &fakeResident{vocab: vocab}, keeps: true}, states: make([]uint64, 3), ckpt: make([]uint64, 3)}, owner: -1}
+	b.rf = &oneCopyRecurrentFake{slottedRecurrentFake: &slottedRecurrentFake{recurrentFake: &recurrentFake{fakeResident: &fakeResident{vocab: vocab}, keeps: true}, states: make([]uint64, 3), ckpt: make([]uint64, 3), held: make([]bool, 3)}, owner: -1}
 	return b.rf, true, nil
 }
 func (b *oneCopyRecurrentBackend) Close() error { return nil }
@@ -400,5 +411,39 @@ func TestKV8_aTakenCheckpointIsNotScored(t *testing.T) {
 	ext := append(append(slices.Clone(PA), ra...), 21, 22)
 	if _, g := kv8aRun(t, m, ext); g.PrefillReused != len(PA)+len(ra) {
 		t.Errorf("A's own next turn reused %d of %d rows: the branch took its slot's sequence", g.PrefillReused, len(PA)+len(ra))
+	}
+}
+
+// TestKV8_aResetFreesTheCheckpoint: a reset on the slot that holds the checkpoint starts a new sequence there, so the slot no longer scores it, though its record still names the
+// position until the commit that follows. Nothing tries a restore of it.
+func TestKV8_aResetFreesTheCheckpoint(t *testing.T) {
+	be := &oneCopyRecurrentBackend{}
+	name := fmt.Sprintf("fake-kv8-%d", recurrentFakeBackends.Add(1))
+	RegisterBackend(name, func() (Backend, error) {
+		cpu, err := NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be.Backend = cpu
+		return be, nil
+	})
+	m, err := Load("../testdata/qwen35-tiny", Options{Backend: name, ResidentKVSlots: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	PA, _ := kv8aTurns(m, nil)
+	ra, _ := kv8aRun(t, m, PA)
+	slot := m.kv.Bound()
+	if !m.checkpointHeld(slot) {
+		t.Fatal("the save left the slot holding nothing: the test reads nothing")
+	}
+	m.resident.Reset()
+	if m.checkpointHeld(slot) {
+		t.Error("a reset left the slot holding its checkpoint")
+	}
+	branch := append(slices.Clone(PA), (ra[0]+1)%m.w.arch.VocabSize, 5, 9, 2, 7, 3, 8, 1, 6, 4, 10, 12, 14)
+	if _, g := kv8aRun(t, m, branch); be.rf.restores != 0 || g.CheckpointRestored != 0 || g.CheckpointDeclined != "" {
+		t.Errorf("after the reset: %d restores, restored at %d, declined %q; want none tried", be.rf.restores, g.CheckpointRestored, g.CheckpointDeclined)
 	}
 }

@@ -130,6 +130,17 @@ func TestPlan_pricesRecurrentCheckpoint(t *testing.T) {
 					}
 					continue
 				}
+				if want > 0 && b == "cuda" { // a backend that keeps one a slot prices what fits beside the need
+					for _, room := range []int64{1, 2, 3} {
+						got := m.Plan(b, p.NeedBytes()+room*want, PlanRequest{Ctx: 64, CtxPinned: true})
+						if got.CheckpointCopies != int(room) {
+							t.Errorf("%s with room for %d: the plan keeps %d", b, room, got.CheckpointCopies)
+						}
+					}
+				}
+				if wantCopies := map[bool]int{true: 1, false: 0}[want > 0]; b != "cuda" && p.Placement != PlacementDecline && p.CheckpointCopies != wantCopies {
+					t.Errorf("%s: the plan keeps %d checkpoints, want %d", b, p.CheckpointCopies, wantCopies)
+				}
 				if p.CheckpointBytes != want {
 					t.Errorf("%s: the plan's checkpoint is %d bytes, want %d", b, p.CheckpointBytes, want)
 				}
