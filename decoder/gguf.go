@@ -85,7 +85,7 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 	case "gpt-oss":
 		return ggufGptOssConfig(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma, gemma2, gemma3, gemma4 [wip], mellum, qwen35moe, qwen35, qwen3moe, glm4moe, laguna, granitehybrid, granite, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
+		return nil, errorOfKind(ErrUnsupportedModel, "decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma, gemma2, gemma3, gemma4 [wip], mellum, qwen35moe, qwen35, qwen3moe, glm4moe, laguna, granitehybrid, granite, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
 	}
 }
 

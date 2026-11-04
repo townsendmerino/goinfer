@@ -882,7 +882,7 @@ func (o Options) Validate() error {
 		// compiled in (-tags cuda / -tags metal), because Validate runs before registration
 		// is ever consulted.
 	default:
-		return fmt.Errorf("decoder: invalid backend %q (cpu | webgpu | cuda | metal | auto)", o.Backend)
+		return errorOfKind(ErrUnknownBackend, "decoder: invalid backend %q (cpu | webgpu | cuda | metal | auto)", o.Backend)
 	}
 	switch o.ActQuantGroup {
 	case 0, 32:
@@ -922,7 +922,7 @@ func parseQuant(q string) (quantMode, error) {
 	case "f16":
 		return quantF16, nil
 	default:
-		return quantNone, fmt.Errorf("decoder: unknown quant %q (have: int8, int8int8, int4, int4mix, q4k, bf16, f16)", q)
+		return quantNone, errorOfKind(ErrUnknownQuant, "decoder: unknown quant %q (have: int8, int8int8, int4, int4mix, q4k, bf16, f16)", q)
 	}
 }
 
