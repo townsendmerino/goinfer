@@ -23,7 +23,7 @@ func TestGemvExt_bitIdentical(t *testing.T) {
 	run := func(on bool) ([][]float32, [3]int) {
 		gemvExtOn = on
 		defer func() { gemvExtOn = false }()
-		m, err := decoder.Load(filepath.Join("..", "testdata", "qwen35-tiny"), decoder.Options{Quant: "int4", ResidentContext: 256, ResidentKVSlots: 1})
+		m, err := decoder.Load(filepath.Join("../../testdata/qwen35-tiny"), decoder.Options{Quant: "int4", ResidentContext: 256, ResidentKVSlots: 1})
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}

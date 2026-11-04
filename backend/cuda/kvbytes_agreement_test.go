@@ -136,7 +136,7 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 func TestKVPool_detailNamesThePool(t *testing.T) {
 	requireDeviceAndFixture(t, "../../testdata/llama-tiny")
 	load := func(fixture, kv string, window bool) (*decoder.Model, *cudaResident) {
-		m, err := decoder.Load(filepath.Join("..", "testdata", fixture), decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2, KVPrecision: kv, ResidentWindowedKV: window})
+		m, err := decoder.Load(filepath.Join("../../testdata", fixture), decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2, KVPrecision: kv, ResidentWindowedKV: window})
 		if err != nil {
 			t.Fatalf("%s at %s: load: %v", fixture, kv, err)
 		}

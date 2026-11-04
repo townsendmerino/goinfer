@@ -29,8 +29,8 @@ type specModel struct {
 
 func specModels() []specModel {
 	ms := []specModel{
-		{"qwen35-tiny", filepath.Join("..", "testdata", "qwen35-tiny"), false},
-		{"qwen3next-tiny", filepath.Join("..", "testdata", "qwen3next-tiny"), false},
+		{"qwen35-tiny", filepath.Join("../../testdata/qwen35-tiny"), false},
+		{"qwen3next-tiny", filepath.Join("../../testdata/qwen3next-tiny"), false},
 	}
 	p := os.Getenv("GOINFER_QWEN35_08B")
 	if p == "" {

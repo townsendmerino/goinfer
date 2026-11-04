@@ -32,7 +32,7 @@ func TestMLAResident_guards(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	dir := filepath.Join("..", "testdata", "deepseek-tiny")
+	dir := filepath.Join("../../testdata/deepseek-tiny")
 	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", ResidentKVSlots: 2})
 	if err != nil {
 		t.Fatal(err)

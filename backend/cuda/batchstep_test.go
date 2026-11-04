@@ -35,10 +35,10 @@ func TestCUDAStepBatch_matchesForward(t *testing.T) {
 		tail   string // "softcap" or "logitScale": the host transform the fixture must arm; "" for none
 	}
 	cfgs := []cfg{
-		{filepath.Join("..", "testdata", "llama-tiny"), []int{5, 23, 40, 11}, ""},
-		{filepath.Join("..", "testdata", "mistral-tiny-window"), []int{9, 70, 200, 33}, ""}, // window: some rows past it
-		{filepath.Join("..", "testdata", "gemma4-dense-twogeom-tiny"), []int{5, 23, 40, 11}, "softcap"},
-		{filepath.Join("..", "testdata", "granite-dense-tiny"), []int{5, 23, 40, 11}, "logitScale"},
+		{filepath.Join("../../testdata/llama-tiny"), []int{5, 23, 40, 11}, ""},
+		{filepath.Join("../../testdata/mistral-tiny-window"), []int{9, 70, 200, 33}, ""}, // window: some rows past it
+		{filepath.Join("../../testdata/gemma4-dense-twogeom-tiny"), []int{5, 23, 40, 11}, "softcap"},
+		{filepath.Join("../../testdata/granite-dense-tiny"), []int{5, 23, 40, 11}, "logitScale"},
 	}
 	if p := os.Getenv("GOINFER_CUDA_STEP_MODEL"); p != "" {
 		cfgs = []cfg{{p, []int{120, 2200, 700, 64}, ""}}
@@ -152,7 +152,7 @@ func TestCUDAStepBatch_matchesForward(t *testing.T) {
 // GOINFER_CUDA_STEP_MODEL=<checkpoint> runs it on a real model (int4, 24 tokens per turn) instead of llama-tiny.
 func TestCUDAStepBatch_concurrentMatchesAlone(t *testing.T) {
 	requireCUDADevice(t)
-	path, maxTok, longLen := filepath.Join("..", "testdata", "llama-tiny"), 8, 90
+	path, maxTok, longLen := filepath.Join("../../testdata/llama-tiny"), 8, 90
 	if p := os.Getenv("GOINFER_CUDA_STEP_MODEL"); p != "" {
 		path, maxTok, longLen = p, 24, 700
 	}

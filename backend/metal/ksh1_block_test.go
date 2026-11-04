@@ -173,7 +173,7 @@ func TestKSH1_qwen35AndEModelBlocks(t *testing.T) {
 	}
 	for _, f := range []string{"qwen35-tiny", "gemma4-emodel-tiny"} {
 		t.Run(f, func(t *testing.T) {
-			dir := ksh1Window(t, filepath.Join("..", "testdata", f), 1024)
+			dir := ksh1Window(t, filepath.Join("../../testdata", f), 1024)
 			m, err := decoder.Load(dir, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024})
 			if err != nil {
 				t.Fatal(err)

@@ -18,9 +18,9 @@ var p3Fixtures = []string{"llama-tiny", "qwen3moe-tiny", "gemma2-tiny", "cohere-
 	"nemotron-tiny", "deepseek-tiny"}
 
 func p3FixtureDir(name string) string {
-	dir := filepath.Join("..", "testdata", name)
+	dir := filepath.Join("../../testdata", name)
 	if _, err := os.Stat(dir); err != nil {
-		return filepath.Join("..", "decoder", "testdata", name)
+		return filepath.Join("../../decoder/testdata", name)
 	}
 	return dir
 }

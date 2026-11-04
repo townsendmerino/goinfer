@@ -14,7 +14,7 @@ import (
 // cap, on a pass that would write past it (from position 0, ending inside the cache, or from a negative position), so no internal caller
 // can write beyond the buffers as the public metalResident.checkCap already prevents for the decoder.
 func TestPrefillInternal_refusesPastTheKVCap(t *testing.T) {
-	m, err := decoder.Load(filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Quant: "int4"})
+	m, err := decoder.Load(filepath.Join("../../testdata/llama-tiny"), decoder.Options{Quant: "int4"})
 	if err != nil {
 		t.Skipf("no llama-tiny fixture: %v", err)
 	}

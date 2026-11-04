@@ -150,7 +150,7 @@ func TestWindowedKV_offsetsInvariance(t *testing.T) { eachWindowFixture(t, windo
 
 func windowedOffsetsInvariance(t *testing.T, fx string) {
 	requireCUDADevice(t)
-	g := windowRig(t, filepath.Join("..", "testdata", fx), 0, kv0RandomTokens)
+	g := windowRig(t, filepath.Join("../../testdata", fx), 0, kv0RandomTokens)
 	var arms []windowArm
 	for _, s := range windowOffsetStarts {
 		arms = append(arms, windowArm{name: fmt.Sprintf("split@%d", s), split: s})

@@ -22,7 +22,7 @@ func kv8aLoad(t *testing.T, fixture string) (*decoder.Model, *cudaResident) {
 	if fixture == "nemotron-tiny" {
 		t.Cleanup(nemotronFeaturesForTest())
 	}
-	m, err := decoder.Load(filepath.Join("..", "testdata", fixture), decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 4096})
+	m, err := decoder.Load(filepath.Join("../../testdata", fixture), decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 4096})
 	if err != nil {
 		t.Fatalf("load %s: %v", fixture, err)
 	}
@@ -253,7 +253,7 @@ func TestKV8a_noRoomKeepsNone(t *testing.T) {
 	saved := ckptFreeVRAM
 	ckptFreeVRAM = func(*cudaResident) (uint64, error) { return 1 << 20, nil }
 	defer func() { ckptFreeVRAM = saved }()
-	m, err := decoder.Load(filepath.Join("..", "testdata", "qwen3next-tiny"), decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 4096})
+	m, err := decoder.Load(filepath.Join("../../testdata/qwen3next-tiny"), decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 4096})
 	if err != nil {
 		t.Fatal(err)
 	}

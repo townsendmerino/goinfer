@@ -181,7 +181,7 @@ func TestPairwiseRoPEResidentParityMetal(t *testing.T) {
 	const n, split = 40, 32
 	for _, fx := range []string{"cohere-tiny", "cohere2-tiny"} {
 		t.Run(fx, func(t *testing.T) {
-			ckpt := pwPeakedCheckpoint(t, filepath.Join("..", "testdata", fx), pwPeaked)
+			ckpt := pwPeakedCheckpoint(t, filepath.Join("../../testdata", fx), pwPeaked)
 			mRes, cpuRow, cpu32, a := pwLoad(t, ckpt, "int4")
 			_, _, _, _, _, _, vocab := cpuRow.Dims()
 			prompt := make([]int, n)

@@ -22,7 +22,7 @@ import (
 func TestB35SplitInvariance(t *testing.T) {
 	path := os.Getenv("GOINFER_B35_METAL_MODEL")
 	if path == "" {
-		path = filepath.Join("..", "testdata", "qwen35-tiny")
+		path = filepath.Join("../../testdata/qwen35-tiny")
 	}
 	if _, err := os.Stat(filepath.Join(path, "config.json")); err != nil {
 		t.Skipf("no checkpoint at %s", path)

@@ -36,7 +36,7 @@ func specIDs(t *testing.T, m *decoder.Model, prompt []int, maxTok int) []int {
 }
 
 func TestSpecAdaptiveConcurrentCUDA(t *testing.T) {
-	path := filepath.Join("..", "testdata", "llama-tiny")
+	path := filepath.Join("../../testdata/llama-tiny")
 	requireDeviceAndFixture(t, path)
 	const nCl = 4
 	load := func(slots int) *decoder.Model {

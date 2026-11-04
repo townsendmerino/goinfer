@@ -32,7 +32,7 @@ type lockstepReading struct {
 // exactly one side is all zeros scores 0 (cosF32 would score it 1).
 func residentLockstepCUDA(t *testing.T, dir, quant string, steps int) lockstepReading {
 	t.Helper()
-	path := filepath.Join("..", "testdata", dir)
+	path := filepath.Join("../../testdata", dir)
 	mg, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: quant})
 	if err != nil {
 		t.Fatalf("load (cuda) %s at %s: %v", dir, quant, err)
@@ -109,7 +109,7 @@ func TestNemotronResidentCUDA_tinyAgainstControl(t *testing.T) {
 		t.Errorf("%s: the planted conv defect stayed inside the band: gate M cannot see a broken Mamba kernel", quant)
 	}
 
-	m, err := decoder.Load(filepath.Join("..", "testdata", "nemotron3nano-tiny"), decoder.Options{Backend: "cuda", Quant: quant})
+	m, err := decoder.Load(filepath.Join("../../testdata/nemotron3nano-tiny"), decoder.Options{Backend: "cuda", Quant: quant})
 	if err != nil {
 		t.Fatalf("load nemotron3nano-tiny: %v", err)
 	}
@@ -150,7 +150,7 @@ func greedyReplyCUDA(t *testing.T, rf decoder.ResidentForward, m *decoder.Model,
 func TestNemotronResidentCUDA_slots(t *testing.T) {
 	requireCUDADevice(t)
 	defer nemotronFeaturesForTest()()
-	path := filepath.Join("..", "testdata", "nemotron-tiny")
+	path := filepath.Join("../../testdata/nemotron-tiny")
 	load := func() (*decoder.Model, *cudaResident) {
 		m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 4})
 		if err != nil {
@@ -205,7 +205,7 @@ func TestNemotronResidentCUDA_slots(t *testing.T) {
 func TestNemotronResidentCUDA_int8Declines(t *testing.T) {
 	requireCUDADevice(t)
 	defer nemotronFeaturesForTest()()
-	path := filepath.Join("..", "testdata", "nemotron-tiny")
+	path := filepath.Join("../../testdata/nemotron-tiny")
 	load := func(quant string) (resident bool, why string) {
 		m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: quant})
 		if err != nil {
@@ -238,7 +238,7 @@ func TestNemotronResidentCUDA_int8Declines(t *testing.T) {
 func TestNemotronResidentCUDA_blockKinds(t *testing.T) {
 	requireCUDADevice(t)
 	defer nemotronFeaturesForTest()()
-	m, err := decoder.Load(filepath.Join("..", "testdata", "nemotron-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
+	m, err := decoder.Load(filepath.Join("../../testdata/nemotron-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {
 		t.Fatal(err)
 	}

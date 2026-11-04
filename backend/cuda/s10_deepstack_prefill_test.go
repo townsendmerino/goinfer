@@ -69,7 +69,7 @@ func TestS10DeepstackPrefillCUDA_tiny(t *testing.T) {
 	defer func() { cudaDeepstackPrefillOn = prevDeep }()
 	const merge, steps, bar, gh, gw = 2, 8, 0.9999, 8, 12
 	requireCUDADevice(t)
-	path := filepath.Join("..", "testdata", "qwen3vl-tiny")
+	path := filepath.Join("../../testdata/qwen3vl-tiny")
 	if _, err := os.Stat(filepath.Join(path, "model.safetensors")); err != nil {
 		t.Skipf("no fixture at %s", path) // gitignored (regenerated locally), so a checkout without it skips as its siblings do; GOINFER_REQUIRE_FIXTURES=1 turns the skip red
 	}

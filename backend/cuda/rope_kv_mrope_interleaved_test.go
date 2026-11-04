@@ -18,7 +18,7 @@ import (
 func requireCUDAResidentHybridVL(t *testing.T) (*cudaResident, *decoder.Model) {
 	t.Helper()
 	requireCUDADevice(t)
-	path := filepath.Join("..", "testdata", "qwen35vl-tiny")
+	path := filepath.Join("../../testdata/qwen35vl-tiny")
 	if _, err := os.Stat(filepath.Join(path, "model.safetensors")); err != nil {
 		t.Skipf("no fixture at %s", path)
 	}

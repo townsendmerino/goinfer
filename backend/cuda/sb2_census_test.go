@@ -93,7 +93,7 @@ func buildCUDACensus(t *testing.T) []string {
 		return be, nil
 	})
 	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
-	d, err := sb2census.ReadLayerD("..", "cuda")
+	d, err := sb2census.ReadLayerD("../..", "cuda")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func buildCUDACensus(t *testing.T) []string {
 	}
 	var lines []string
 	for _, f := range d.Fixtures {
-		path, err := sb2census.Path("..", f)
+		path, err := sb2census.Path("../..", f)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -491,7 +491,7 @@ func buildCUDAMemCensusCells(t *testing.T, own bool) []string {
 		return be, nil
 	})
 	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
-	d, err := sb2census.ReadLayerD("..", "cuda")
+	d, err := sb2census.ReadLayerD("../..", "cuda")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -509,7 +509,7 @@ func buildCUDAMemCensusCells(t *testing.T, own bool) []string {
 		case f == memCensusExpertVariant:
 			path = expertVariantFixture(t, "../../testdata/glm-tiny", 16384)
 		default:
-			if path, err = sb2census.Path("..", f); err != nil {
+			if path, err = sb2census.Path("../..", f); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -2326,7 +2326,7 @@ func TestMemGate_cudaPlantsThroughTheTable(t *testing.T) {
 			defer func() { cudaGatePlantForTest = nil }()
 			o := c.o
 			o.Backend, o.Quant, o.ResidentContext = "cuda", "int4", 256
-			path, err := sb2census.Path("..", c.fixture)
+			path, err := sb2census.Path("../..", c.fixture)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -2537,7 +2537,7 @@ func gateSlots(r *cudaResident) int {
 func TestMemGate_cuda(t *testing.T) {
 	requireCUDADevice(t)
 	t.Setenv("GOINFER_SSM_RESIDENT", "")
-	d, err := sb2census.ReadLayerD("..", "cuda")
+	d, err := sb2census.ReadLayerD("../..", "cuda")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2557,7 +2557,7 @@ func TestMemGate_cuda(t *testing.T) {
 	}
 	for i, f := range d.Fixtures {
 		fmt.Fprintf(os.Stderr, "[memgate] fixture %d of %d, %s: %d builds so far, %s elapsed\n", i+1, len(d.Fixtures), f, len(builtRows), time.Since(start).Round(time.Second))
-		path, err := sb2census.Path("..", f)
+		path, err := sb2census.Path("../..", f)
 		if err != nil {
 			t.Fatal(err)
 		}

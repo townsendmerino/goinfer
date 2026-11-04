@@ -18,7 +18,7 @@ import (
 // rows, bit for bit. The pass width is pinned to 64 so a short prompt has several passes. A plant (the restore without the state) must differ.
 func TestB35Snapshot_restoreEqualsCold(t *testing.T) {
 	requireCUDADevice(t)
-	path := filepath.Join("..", "testdata", "qwen3next-tiny")
+	path := filepath.Join("../../testdata/qwen3next-tiny")
 	const (
 		nA, mark, n2 = 640, 576, 720 // turn 1, the mark (a pass boundary), turn 2
 		keepShared   = 600           // turn 2 repeats turn 1's first 600 ids

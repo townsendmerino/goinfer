@@ -230,7 +230,7 @@ func TestKSE3_kvSlotWithAdapter(t *testing.T) {
 		prevOff := kernels.EncodeAheadOffForTest
 		kernels.EncodeAheadOffForTest = off
 		defer func() { kernels.EncodeAheadOffForTest = prevOff }()
-		m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Quant: "int4"}, 2)
+		m, rd := loadWebGPUResident(t, filepath.Join("../../testdata/llama-tiny"), decoder.Options{Quant: "int4"}, 2)
 		defer m.Close()
 		if rd.KVSlots() != 2 {
 			t.Fatalf("%d KV slots, want 2", rd.KVSlots())

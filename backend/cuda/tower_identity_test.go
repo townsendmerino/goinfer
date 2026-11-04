@@ -22,7 +22,7 @@ func TestTowerIdentity_cuda(t *testing.T) {
 		t.Skipf("no CUDA device: %v", err)
 	}
 	d.ReleaseObjects()
-	towerid.Check(t, "..", "cuda", os.Getenv("GOINFER_TOWER_ID_OUT"))
+	towerid.Check(t, "../..", "cuda", os.Getenv("GOINFER_TOWER_ID_OUT"))
 }
 
 var towerUpdate = flag.Bool("towerid.update", false, "rewrite this platform's CUDA tower golden (review the diff)")
@@ -50,11 +50,11 @@ func TestTowerGolden_cuda(t *testing.T) {
 		t.Fatalf("nvidia-smi -i %s named %d GPUs, want the one under test: %q", bus, n+1, smi)
 	}
 	anchor := "cuda " + strings.TrimSpace(string(smi))
-	rec := towerid.Check(t, "..", "cuda", "")
-	golden := towerid.CheckGolden(t, "..", rec, anchor, towerid.FailOtherAnchor, *towerUpdate)
-	towerid.CheckPlants(t, "..", "cuda", golden)
-	towerid.CheckProgramPlants(t, "..", "cuda", golden, "siglip", "qwen3", "glm-ocr", "gemma4", "qwen2.5", "whisper")
-	towerid.CompareBackends(t, "..", "cuda")
+	rec := towerid.Check(t, "../..", "cuda", "")
+	golden := towerid.CheckGolden(t, "../..", rec, anchor, towerid.FailOtherAnchor, *towerUpdate)
+	towerid.CheckPlants(t, "../..", "cuda", golden)
+	towerid.CheckProgramPlants(t, "../..", "cuda", golden, "siglip", "qwen3", "glm-ocr", "gemma4", "qwen2.5", "whisper")
+	towerid.CompareBackends(t, "../..", "cuda")
 }
 
 // TestGridTowerWalkBlock_refusesMisroutedOps: CUDA's tower walker refuses each misrouted op before it queues a kernel.

@@ -205,7 +205,7 @@ func forceNeoXRope(t *testing.T, cr *cudaResident) func() {
 func TestPairwiseRoPEResidentParityCUDA(t *testing.T) {
 	for _, fx := range []string{"cohere-tiny", "cohere2-tiny"} {
 		t.Run(fx, func(t *testing.T) {
-			src := filepath.Join("..", "testdata", fx)
+			src := filepath.Join("../../testdata", fx)
 			requireDeviceAndFixture(t, src)
 			ckpt := peakedCheckpoint(t, src, peakedScale)
 			mRes, err := decoder.Load(ckpt, decoder.Options{Backend: "cuda", Quant: "int8int8"})

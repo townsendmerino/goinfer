@@ -94,7 +94,7 @@ func ksh6cMarginPriced(t *testing.T, models []ksh6cModel) {
 	}
 	kvF16Auto.Store(true) // serve's --kv auto: f16 KV where the family is cleared
 	defer kvF16Auto.Store(false)
-	if w, err := decoder.Load(filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"}); err == nil {
+	if w, err := decoder.Load(filepath.Join("../../testdata/llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"}); err == nil {
 		_ = w.Close() // the startup self-test runs here, once, before any figure below is read
 	}
 	ran := 0

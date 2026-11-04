@@ -18,7 +18,7 @@ func TestG44_deltaNetInt8Declines(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	dir := filepath.Join("..", "testdata", "qwen35-tiny")
+	dir := filepath.Join("../../testdata/qwen35-tiny")
 	build := func(quant string) error {
 		m, err := decoder.Load(dir, decoder.Options{Quant: quant})
 		if err != nil {

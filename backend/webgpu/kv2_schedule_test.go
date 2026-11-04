@@ -28,7 +28,7 @@ type kv2SchedTurn struct {
 // prefilled cold on a fresh model. Schedules (d) and (e) run under MC3.
 func TestKV2_scheduleIndependenceWebGPU(t *testing.T) {
 	const pre, own, maxTok = 200, 70, 8
-	dir := filepath.Join("..", "testdata", "llama-attnfa-tiny")
+	dir := filepath.Join("../../testdata/llama-attnfa-tiny")
 	load := func(slots int) *decoder.Model {
 		m, _ := loadWebGPUResident(t, dir, decoder.Options{Quant: "int4"}, slots)
 		t.Cleanup(func() { m.Close() })

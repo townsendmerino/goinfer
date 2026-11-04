@@ -24,7 +24,7 @@ type lockstep struct {
 // runs it against the CPU model it was built from, in greedy lockstep off the CPU: a fixed seed, then the CPU's argmax.
 func residentLockstep(t *testing.T, dir, quant string, steps int) lockstep {
 	t.Helper()
-	return residentLockstepAt(t, filepath.Join("..", "testdata", dir), decoder.Options{Quant: quant}, steps)
+	return residentLockstepAt(t, filepath.Join("../../testdata", dir), decoder.Options{Quant: quant}, steps)
 }
 
 // residentLockstepAt is residentLockstep on the checkpoint at path, loaded with opts.
@@ -134,7 +134,7 @@ func TestNemotronResident_slots(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	m, err := decoder.Load(filepath.Join("..", "testdata", "nemotron-tiny"), decoder.Options{Quant: "int4", ResidentKVSlots: 4})
+	m, err := decoder.Load(filepath.Join("../../testdata/nemotron-tiny"), decoder.Options{Quant: "int4", ResidentKVSlots: 4})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestNemotronResident_int8Declines(t *testing.T) {
 		t.Skipf("no metal device: %v", err)
 	}
 	build := func(quant string) error {
-		m, err := decoder.Load(filepath.Join("..", "testdata", "nemotron-tiny"), decoder.Options{Quant: quant})
+		m, err := decoder.Load(filepath.Join("../../testdata/nemotron-tiny"), decoder.Options{Quant: quant})
 		if err != nil {
 			t.Fatalf("load at %s: %v", quant, err)
 		}
@@ -205,7 +205,7 @@ func TestNemotronResident_int8Declines(t *testing.T) {
 		t.Errorf("int4: buildResident = %v, want a build", err)
 	}
 	// Through the backend as well: a Metal load at int8int8 runs on the CPU, not resident.
-	m, err := decoder.Load(filepath.Join("..", "testdata", "nemotron-tiny"), decoder.Options{Backend: "metal", Quant: "int8int8"})
+	m, err := decoder.Load(filepath.Join("../../testdata/nemotron-tiny"), decoder.Options{Backend: "metal", Quant: "int8int8"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -20,7 +20,7 @@ import (
 func TestKV2_G0splitInvariance(t *testing.T) {
 	for _, fx := range kv2Fixtures[:3] {
 		t.Run(fx.name, func(t *testing.T) {
-			m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", fx.dir), fx.opts, 2)
+			m, rd := loadWebGPUResident(t, filepath.Join("../../testdata", fx.dir), fx.opts, 2)
 			defer m.Close()
 			const N = 120
 			if len(rd.slots) != 2 || rd.ctxCap < N {

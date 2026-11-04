@@ -24,7 +24,7 @@ func gemma2TinyCosine(t *testing.T, fx, quant string, capOff bool) (worst float6
 	t.Helper()
 	was := decoder.SetAttnSoftcapOffForTest(capOff)
 	defer decoder.SetAttnSoftcapOffForTest(was)
-	ckpt := filepath.Join("..", "testdata", fx)
+	ckpt := filepath.Join("../../testdata", fx)
 	mRes, err := decoder.Load(ckpt, decoder.Options{Backend: "cuda", Quant: quant})
 	if err != nil {
 		t.Fatalf("load cuda: %v", err)
@@ -88,7 +88,7 @@ func TestGemma2Softcap_prefillBitIdentical(t *testing.T) {
 	requireCUDADevice(t)
 	for _, fx := range gemma2Tiny {
 		t.Run(fx, func(t *testing.T) {
-			mc, err := decoder.Load(filepath.Join("..", "testdata", fx), decoder.Options{Backend: "cuda", Quant: "int4"})
+			mc, err := decoder.Load(filepath.Join("../../testdata", fx), decoder.Options{Backend: "cuda", Quant: "int4"})
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
@@ -151,7 +151,7 @@ func TestGemma2Softcap_lanesCUDA(t *testing.T) {
 	requireCUDADevice(t)
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16") // the test binary turns the lane off by default; this turns it on so the control can see it
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "0")
-	mc, err := decoder.Load(filepath.Join("..", "testdata", "gemma2-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
+	mc, err := decoder.Load(filepath.Join("../../testdata/gemma2-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

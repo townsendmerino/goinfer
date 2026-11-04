@@ -42,7 +42,7 @@ func loadWindowedPair(t *testing.T, fixture string, slots int) (full, win *cudaR
 	t.Helper()
 	requireCUDADevice(t)
 	withWindowedKV(t, windowedKVTestSlack, windowedKVTestStep, windowedKVTestSlack-windowedKVTestStep)
-	path := filepath.Join("..", "testdata", fixture)
+	path := filepath.Join("../../testdata", fixture)
 	load := func(on bool) (*decoder.Model, *cudaResident) {
 		m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: slots, ResidentWindowedKV: on})
 		if err != nil {
@@ -83,7 +83,7 @@ func sameBits(a, b []float32) (int, bool) {
 // must be exact.
 func TestWindowedKV_view(t *testing.T) {
 	requireCUDADevice(t)
-	m, err := decoder.Load(filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
+	m, err := decoder.Load(filepath.Join("../../testdata/llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,7 +506,7 @@ func TestWindowedKV_agentTurns(t *testing.T) { eachWindowFixture(t, windowedAgen
 func windowedAgentTurns(t *testing.T, fx string) {
 	_, _, _, mw := loadWindowedPair(t, fx, 1)
 	_, _, _, _, _, _, vocab := mw.Dims()
-	path := filepath.Join("..", "testdata", fx)
+	path := filepath.Join("../../testdata", fx)
 	type turn struct {
 		ids    []int
 		reused int
@@ -577,7 +577,7 @@ func TestWindowedKV_rollbackReuse(t *testing.T) { eachWindowFixture(t, windowedR
 
 func windowedRollbackReuse(t *testing.T, fx string) {
 	full, win, _, mw := loadWindowedPair(t, fx, 1)
-	cm, err := decoder.Load(filepath.Join("..", "testdata", fx), decoder.Options{Backend: "cuda", Quant: "int4"})
+	cm, err := decoder.Load(filepath.Join("../../testdata", fx), decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {
 		t.Fatal(err)
 	}

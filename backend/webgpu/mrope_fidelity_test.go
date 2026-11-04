@@ -169,7 +169,7 @@ func TestS12MRoPEFidelity(t *testing.T) {
 		if p.cell == "small" {
 			pp.MaxPixels = min(pp.MaxPixels, 448*448)
 		}
-		data, err := os.ReadFile(filepath.Join("..", "testdata", filepath.FromSlash(p.image)))
+		data, err := os.ReadFile(filepath.Join("../../testdata", filepath.FromSlash(p.image)))
 		if err != nil {
 			t.Fatal(err)
 		}

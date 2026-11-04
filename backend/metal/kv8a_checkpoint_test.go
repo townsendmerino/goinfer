@@ -19,7 +19,7 @@ var kv8aFixtures = []string{"qwen3next-tiny", "nemotron-tiny"}
 
 func kv8aLoad(t *testing.T, fixture string) (*decoder.Model, *metalResident) {
 	t.Helper()
-	m, err := decoder.Load(filepath.Join("..", "testdata", fixture), decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 4096})
+	m, err := decoder.Load(filepath.Join("../../testdata", fixture), decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 4096})
 	if err != nil {
 		t.Fatalf("load %s: %v", fixture, err)
 	}
@@ -285,7 +285,7 @@ func TestKV8aMetal_noRoomKeepsNone(t *testing.T) {
 	saved := ckptFits
 	ckptFits = func(*decoder.Model, int64) (bool, string) { return false, "no room (test)" }
 	defer func() { ckptFits = saved }()
-	m, err := decoder.Load(filepath.Join("..", "testdata", "qwen3next-tiny"), decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 4096})
+	m, err := decoder.Load(filepath.Join("../../testdata/qwen3next-tiny"), decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 4096})
 	if err != nil {
 		t.Fatal(err)
 	}

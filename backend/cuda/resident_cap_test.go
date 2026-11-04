@@ -437,7 +437,7 @@ func TestCheckKVFits_explicitFailsHard_defaultDeclines(t *testing.T) {
 
 // demandDirs are the tracked tiny checkpoint directories.
 func demandDirs() []string {
-	cfgs, _ := filepath.Glob(filepath.Join("..", "testdata", "*", "config.json"))
+	cfgs, _ := filepath.Glob(filepath.Join("../../testdata/*/config.json"))
 	var dirs []string
 	for _, c := range cfgs {
 		if ws, _ := filepath.Glob(filepath.Join(filepath.Dir(c), "*.safetensors")); len(ws) > 0 {

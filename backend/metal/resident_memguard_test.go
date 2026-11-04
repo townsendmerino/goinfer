@@ -306,7 +306,7 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 // demandConfigs are the configs of the tracked tiny checkpoints that load on the CPU.
 func demandConfigs(t *testing.T) []*decoder.Config {
 	t.Helper()
-	dirs, _ := filepath.Glob(filepath.Join("..", "testdata", "*", "config.json"))
+	dirs, _ := filepath.Glob(filepath.Join("../../testdata/*/config.json"))
 	var cfgs []*decoder.Config
 	for _, c := range dirs {
 		dir := filepath.Dir(c)

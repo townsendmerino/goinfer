@@ -140,7 +140,7 @@ func (g *sp2Rig) sp2Prompts(t *testing.T) []sp2Prompt {
 	}
 	for _, lp := range []struct{ file, ask string }{
 		{"deltanet.cu", "Explain what delta_rule_rows_128 computes, step by step, and write a plain Go reference for one row."},
-		{filepath.Join("..", "decoder", "blockspec.go"), "List every exit of BlockSpec.generate and what it commits."},
+		{filepath.Join("../../decoder/blockspec.go"), "List every exit of BlockSpec.generate and what it commits."},
 	} {
 		add("long", sp2LongText(t, g.tk, lp.file, 2900)+"\n\n"+lp.ask, "off")
 	}
@@ -362,7 +362,7 @@ func sp2Quartiles(xs []float64) (q1, q3 float64) {
 // L = 512 and 4096. The in-scan fold's cost is that verify less a verify with nothing to fold.
 func TestSP2_foldCost(t *testing.T) {
 	g := newSP2Rig(t)
-	text := sp2LongText(t, g.tk, filepath.Join("..", "decoder", "model.go"), 4200)
+	text := sp2LongText(t, g.tk, filepath.Join("../../decoder/model.go"), 4200)
 	fill, err := g.tk.Encode(text, false)
 	if err != nil {
 		t.Fatal(err)
@@ -490,7 +490,7 @@ func TestSP2_speed(t *testing.T) {
 	if os.Getenv("SP2_SMOKE") == "1" {
 		pairs, perCtx = 1, 2
 	}
-	preamble := sp2LongText(t, g.tk, filepath.Join("..", "docs", "benchmarks.md"), 3800)
+	preamble := sp2LongText(t, g.tk, filepath.Join("../../docs/benchmarks.md"), 3800)
 	type ctxSet struct {
 		name    string
 		prompts [][]int

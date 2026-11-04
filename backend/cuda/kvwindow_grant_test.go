@@ -13,7 +13,7 @@ func loadResident(t *testing.T, fx string, opts decoder.Options) (*decoder.Model
 	t.Helper()
 	requireCUDADevice(t)
 	opts.Backend, opts.Quant = "cuda", "int4"
-	m, err := decoder.Load(filepath.Join("..", "testdata", fx), opts)
+	m, err := decoder.Load(filepath.Join("../../testdata", fx), opts)
 	if err != nil {
 		t.Fatalf("load %s: %v", fx, err)
 	}

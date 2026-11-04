@@ -105,7 +105,7 @@ func TestQwen3VLMoe_cudaLogits(t *testing.T) {
 		if _, seen := images[s.Name]; seen {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join("..", "testdata", s.Name))
+		data, err := os.ReadFile(filepath.Join("../../testdata", s.Name))
 		if err != nil {
 			t.Fatal(err)
 		}

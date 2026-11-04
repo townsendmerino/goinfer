@@ -50,7 +50,7 @@ func TestLayerOps_buildTheKindsTheFamilyHas(t *testing.T) {
 		}},
 	} {
 		t.Run(c.fixture, func(t *testing.T) {
-			m, err := decoder.Load(filepath.Join("..", "testdata", c.fixture), decoder.Options{Backend: "cuda", Quant: "int4"})
+			m, err := decoder.Load(filepath.Join("../../testdata", c.fixture), decoder.Options{Backend: "cuda", Quant: "int4"})
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}

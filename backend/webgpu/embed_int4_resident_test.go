@@ -17,7 +17,7 @@ import (
 func TestEmbedInt4_residentDecisionDoesNotChange(t *testing.T) {
 	// A runner with no WebGPU adapter (or a software one) never builds a resident, and then there is nothing for this test to look at: the control model decides, before any
 	// family is judged, so the skip is for the missing device and not for a family that declined.
-	ctl, err := decoder.Load(filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "webgpu", Quant: "int4", EmbedInt4: true, ResidentContext: 64})
+	ctl, err := decoder.Load(filepath.Join("../../testdata/llama-tiny"), decoder.Options{Backend: "webgpu", Quant: "int4", EmbedInt4: true, ResidentContext: 64})
 	if err != nil {
 		t.Skipf("no WebGPU device: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestEmbedInt4_residentDecisionDoesNotChange(t *testing.T) {
 	residentSeen := 0
 	for _, d := range []string{"llama-tiny", "granite-dense-tiny", "nemotron-tiny", "phi3-tiny", "glm-ocr-tiny", "granite-tiny", "llama4-tiny", "gpt2"} {
 		t.Run(d, func(t *testing.T) {
-			dir := filepath.Join("..", "testdata", d)
+			dir := filepath.Join("../../testdata", d)
 			for _, f := range []string{"config.json", "model.safetensors"} {
 				if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 					t.Skipf("no fixture at %s (gitignored, so a CI checkout has none)", dir) // gpt2 and granite-tiny are untracked

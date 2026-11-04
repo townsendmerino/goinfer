@@ -640,7 +640,7 @@ func TestLedger_metalAgreesWithTheDevice(t *testing.T) {
 }
 
 var (
-	llamaTinyI3     = filepath.Join("..", "testdata", "llama-tiny")
+	llamaTinyI3     = filepath.Join("../../testdata/llama-tiny")
 	llamaTinyI3Opts = decoder.Options{Backend: "metal", Quant: "int4"}
 )
 

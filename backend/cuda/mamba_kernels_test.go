@@ -37,7 +37,7 @@ const mambaGateSteps = 72 // at least 64 steps past the conv window (K-1 <= 3)
 
 func loadMambaFixture(t *testing.T, dir string) mambaFixture {
 	t.Helper()
-	path := filepath.Join("..", "testdata", dir)
+	path := filepath.Join("../../testdata", dir)
 	if _, err := os.Stat(filepath.Join(path, "config.json")); err != nil {
 		t.Skipf("no fixture at %s (a gitignored local fixture: copy it from the main checkout, scripts/worktree_fixtures.sh)", path)
 	}

@@ -40,9 +40,9 @@ var kv4bGroups = []struct {
 // kv4bPair loads a tiny fixture twice, at -kv f32 and -kv f16, with the group's options and one slot.
 func kv4bPair(t *testing.T, fx string, opts decoder.Options, windowed bool) (m32, m16 *decoder.Model, r32, r16 *cudaResident) {
 	t.Helper()
-	path := filepath.Join("..", "testdata", fx)
+	path := filepath.Join("../../testdata", fx)
 	if strings.Contains(fx, "/") {
-		path = filepath.Join("..", fx)
+		path = filepath.Join("../..", fx)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture: %v", err)

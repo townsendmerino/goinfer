@@ -14,7 +14,7 @@ import (
 // backends break differently cannot change which experts run.
 func residentLockstepForced(t *testing.T, dir string, steps int) lockstep {
 	t.Helper()
-	m, err := decoder.Load(filepath.Join("..", "testdata", dir), decoder.Options{Quant: "int4"})
+	m, err := decoder.Load(filepath.Join("../../testdata", dir), decoder.Options{Quant: "int4"})
 	if err != nil {
 		t.Fatalf("load %s: %v", dir, err)
 	}

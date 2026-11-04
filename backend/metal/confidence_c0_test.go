@@ -114,7 +114,7 @@ func TestConfidenceC0(t *testing.T) {
 	}
 	dataPath := os.Getenv("GOINFER_C0_DATA")
 	if dataPath == "" {
-		dataPath = filepath.Join("..", "docs", "measurements", "confidence-c0-2026-09-27", "tickets.jsonl")
+		dataPath = filepath.Join("../../docs/measurements/confidence-c0-2026-09-27/tickets.jsonl")
 	}
 	const maxTok = 200
 	if dl, ok := t.Deadline(); ok {

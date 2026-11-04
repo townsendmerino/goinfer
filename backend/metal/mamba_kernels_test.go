@@ -31,7 +31,7 @@ const mambaGateSteps = 72 // at least 64 steps past the conv window (K-1 ≤ 3)
 
 func loadMambaFixture(t *testing.T, dir string) mambaFixture {
 	t.Helper()
-	m, err := decoder.Load(filepath.Join("..", "testdata", dir), decoder.Options{Backend: "cpu"})
+	m, err := decoder.Load(filepath.Join("../../testdata", dir), decoder.Options{Backend: "cpu"})
 	if err != nil {
 		t.Fatalf("load %s: %v", dir, err)
 	}

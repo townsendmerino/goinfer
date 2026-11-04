@@ -52,7 +52,7 @@ func kv7SameRows(t *testing.T, g *kv2Rig, what string, a, b int, end int) {
 func kv7MarkRun(t *testing.T, fx string) {
 	requireCUDADevice(t)
 	withWindowedKV(t, kv7MarkSlack, kv7MarkStep, kv7MarkSlack-kv7MarkStep)
-	g := kv2Load(t, filepath.Join("..", "testdata", fx), decoder.Options{ResidentKVSlots: 4, ResidentWindowedKV: true})
+	g := kv2Load(t, filepath.Join("../../testdata", fx), decoder.Options{ResidentKVSlots: 4, ResidentWindowedKV: true})
 	if !g.r.kvWin {
 		t.Fatalf("windowed KV did not engage (ctxCap %d, window %d)", g.r.ctxCap, g.r.kvWindow)
 	}

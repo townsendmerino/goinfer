@@ -253,7 +253,7 @@ func sb11Attributed(t *testing.T, what string, r cost.Report) {
 //   - The plants: an extra command buffer moves submit and sync by one each, so the golden turns red; a dispatch encoded past
 //     the attribution is one dispatch_other and leaves the attribution equal to the golden.
 func TestCost_metalDecodeExact(t *testing.T) {
-	m, err := decoder.Load(filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "metal", Quant: "int4"})
+	m, err := decoder.Load(filepath.Join("../../testdata/llama-tiny"), decoder.Options{Backend: "metal", Quant: "int4"})
 	if err != nil {
 		t.Fatalf("load llama-tiny: %v", err)
 	}

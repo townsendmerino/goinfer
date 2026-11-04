@@ -95,7 +95,7 @@ func TestKV7_restoreWindowed(t *testing.T) {
 	eachWindowFixture(t, func(t *testing.T, fx string) {
 		requireCUDADevice(t)
 		withWindowedKV(t, windowedKVTestSlack, windowedKVTestStep, windowedKVTestSlack-windowedKVTestStep)
-		g := kv2Load(t, filepath.Join("..", "testdata", fx), decoder.Options{ResidentKVSlots: 3, ResidentWindowedKV: true})
+		g := kv2Load(t, filepath.Join("../../testdata", fx), decoder.Options{ResidentKVSlots: 3, ResidentWindowedKV: true})
 		if !g.r.kvWin {
 			t.Fatalf("windowed KV did not engage (ctxCap %d, window %d)", g.r.ctxCap, g.r.kvWindow)
 		}
@@ -121,7 +121,7 @@ func TestKV7_declines(t *testing.T) {
 	eachWindowFixture(t, func(t *testing.T, fx string) {
 		requireCUDADevice(t)
 		withWindowedKV(t, windowedKVTestSlack, windowedKVTestStep, windowedKVTestSlack-windowedKVTestStep)
-		g := kv2Load(t, filepath.Join("..", "testdata", fx), decoder.Options{ResidentKVSlots: 3, ResidentWindowedKV: true})
+		g := kv2Load(t, filepath.Join("../../testdata", fx), decoder.Options{ResidentKVSlots: 3, ResidentWindowedKV: true})
 		const end = 256
 		pre := g.toks(end+16, 31)
 
@@ -190,7 +190,7 @@ func TestKV7_optionKVHostBytes_resident(t *testing.T) {
 		{"full/f16", "../../testdata/llama-attnfa-tiny", decoder.Options{ResidentKVSlots: 1, ResidentContext: 4096, KVPrecision: "f16"}, false},
 	}
 	for _, name := range windowFixtures {
-		cases = append(cases, fx{"windowed/" + name, filepath.Join("..", "testdata", name), decoder.Options{ResidentKVSlots: 1, ResidentWindowedKV: true}, true})
+		cases = append(cases, fx{"windowed/" + name, filepath.Join("../../testdata", name), decoder.Options{ResidentKVSlots: 1, ResidentWindowedKV: true}, true})
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

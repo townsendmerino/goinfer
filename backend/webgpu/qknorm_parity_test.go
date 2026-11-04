@@ -38,7 +38,7 @@ func TestResidentQKNorm_parity(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	gguf := os.Getenv("GOINFER_QWEN3_GGUF")
 	if gguf == "" {
-		gguf = filepath.Join("..", "testdata", "qwen3-gguf", "Qwen3-1.7B-Q8_0.gguf")
+		gguf = filepath.Join("../../testdata/qwen3-gguf/Qwen3-1.7B-Q8_0.gguf")
 		if _, err := os.Stat(gguf); errors.Is(err, fs.ErrNotExist) {
 			gguf = filepath.Join(home, "models", "qwen3-gguf", "Qwen3-1.7B-Q8_0.gguf")
 		}

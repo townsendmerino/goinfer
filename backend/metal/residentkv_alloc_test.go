@@ -31,7 +31,7 @@ func TestResidentKVBytes_matchesMetalAllocation(t *testing.T) {
 	const ctx = 100
 	for _, c := range cases {
 		t.Run(c.fixture+"/kv="+c.kv, func(t *testing.T) {
-			dir := filepath.Join("..", "testdata", c.fixture)
+			dir := filepath.Join("../../testdata", c.fixture)
 			if _, err := os.Stat(filepath.Join(dir, "model.safetensors")); err != nil {
 				t.Skipf("no fixture: %v", err)
 			}
@@ -71,7 +71,7 @@ func TestResidentKVPrecision_metalReportsWhatRuns(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	dir := filepath.Join("..", "testdata", "llama-tiny")
+	dir := filepath.Join("../../testdata/llama-tiny")
 	if _, err := os.Stat(filepath.Join(dir, "model.safetensors")); err != nil {
 		t.Skipf("no fixture: %v", err)
 	}

@@ -15,7 +15,7 @@ import (
 // kv4LongFixture writes a copy of llama-attnfa-tiny with a context of maxPos positions and returns its directory.
 func kv4LongFixture(t *testing.T, maxPos int) string {
 	t.Helper()
-	src := filepath.Join("..", "testdata", "llama-attnfa-tiny")
+	src := filepath.Join("../../testdata/llama-attnfa-tiny")
 	raw, err := os.ReadFile(filepath.Join(src, "config.json"))
 	if err != nil {
 		t.Skipf("no fixture: %v", err)

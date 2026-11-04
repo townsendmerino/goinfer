@@ -152,7 +152,7 @@ func TestPrefillInt4_matchesWalk(t *testing.T) {
 				t.Run(fmt.Sprintf("%s/%d-rows/%s", f.name, n, kind), func(t *testing.T) {
 					opts := f.opts
 					opts.ResidentContext = 96
-					want, got := prefillInt4Run(t, filepath.Join("..", "testdata", f.dir), opts, n, kind)
+					want, got := prefillInt4Run(t, filepath.Join("../../testdata", f.dir), opts, n, kind)
 					if why := prefillInt4Grade(want, got); why != "" {
 						t.Error(why)
 					}
@@ -170,7 +170,7 @@ func TestPrefillInt4_blocks(t *testing.T) {
 	defer func(old int) { prefillBlockRows = old }(prefillBlockRows)
 	prefillBlockRows = 24
 	for _, n := range []int{24, 25, 70} {
-		want, got := prefillInt4Run(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{ResidentContext: 96}, n, w4MultiAuto)
+		want, got := prefillInt4Run(t, filepath.Join("../../testdata/llama-tiny"), decoder.Options{ResidentContext: 96}, n, w4MultiAuto)
 		if why := prefillInt4Grade(want, got); why != "" {
 			t.Errorf("%d rows in blocks of %d: %s", n, prefillBlockRows, why)
 		}
@@ -186,7 +186,7 @@ func TestPrefillInt4_generate(t *testing.T) {
 	const steps = 12
 	run := func(batched string) (toks []int, passes int64) {
 		t.Setenv("GOINFER_BATCHED_PREFILL", batched)
-		m, err := decoder.Load(filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "webgpu", Quant: "int4", ResidentContext: 96})
+		m, err := decoder.Load(filepath.Join("../../testdata/llama-tiny"), decoder.Options{Backend: "webgpu", Quant: "int4", ResidentContext: 96})
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
@@ -238,7 +238,7 @@ func TestPrefillInt4_plantedDefects(t *testing.T) {
 	for d := 1; d <= 3; d++ {
 		for _, kind := range []kernels.W4MultiKind{kernels.W4MultiRows, kernels.W4MultiTiled} {
 			kernels.PrefillDefectForTest = d
-			want, got := prefillInt4Run(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{ResidentContext: 96}, 40, kind)
+			want, got := prefillInt4Run(t, filepath.Join("../../testdata/llama-tiny"), decoder.Options{ResidentContext: 96}, 40, kind)
 			kernels.PrefillDefectForTest = 0
 			why := prefillInt4Grade(want, got)
 			if why == "" {

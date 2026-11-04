@@ -316,7 +316,7 @@ func TestKV2_copyExact_tiny(t *testing.T) {
 func TestKV2_copyExact_otherLayouts(t *testing.T) {
 	for _, fx := range []string{"deepseek-tiny", "gemma4-emodel-tiny"} {
 		t.Run(fx, func(t *testing.T) {
-			dir := filepath.Join("..", "testdata", fx)
+			dir := filepath.Join("../../testdata", fx)
 			requireDeviceAndFixture(t, dir)
 			g := kv2Load(t, kv2WideFixture(t, dir, 2048), decoder.Options{ResidentKVSlots: 3, ResidentContext: 2048})
 			mla, shared := 0, 0
@@ -361,7 +361,7 @@ func TestKV2_copyWindowed(t *testing.T) { eachWindowFixture(t, kv2CopyWindowed) 
 func kv2CopyWindowed(t *testing.T, fx string) {
 	requireCUDADevice(t)
 	withWindowedKV(t, windowedKVTestSlack, windowedKVTestStep, windowedKVTestSlack-windowedKVTestStep)
-	g := kv2Load(t, filepath.Join("..", "testdata", fx), decoder.Options{ResidentKVSlots: 3, ResidentWindowedKV: true})
+	g := kv2Load(t, filepath.Join("../../testdata", fx), decoder.Options{ResidentKVSlots: 3, ResidentWindowedKV: true})
 	if !g.r.kvWin {
 		t.Fatalf("windowed KV did not engage (ctxCap %d, window %d, slack %d)", g.r.ctxCap, g.r.kvWindow, kvWindowSlack)
 	}

@@ -84,7 +84,7 @@ func TestKV2_copyCost_real(t *testing.T) {
 // expert cache was sized beside is unchanged and a second conversation sharing the first's preamble copies nothing.
 func TestKV2_inertOnExpertCaching(t *testing.T) {
 	requireCUDADevice(t)
-	m, err := decoder.Load(filepath.Join("..", "testdata", "mistral-tiny-window"), decoder.Options{Backend: "cuda", Quant: "int4", MoECacheExperts: true, ResidentKVSlots: 2})
+	m, err := decoder.Load(filepath.Join("../../testdata/mistral-tiny-window"), decoder.Options{Backend: "cuda", Quant: "int4", MoECacheExperts: true, ResidentKVSlots: 2})
 	if err != nil {
 		t.Fatal(err)
 	}

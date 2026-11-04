@@ -29,8 +29,8 @@ import (
 //     the first turn left behind.
 func TestGenerateQwenVL_hybridResidentPrefillMatchesCPU(t *testing.T) {
 	requireCUDADevice(t)
-	path := filepath.Join("..", "testdata", "qwen35vl-tiny")
-	rawG, err := os.ReadFile(filepath.Join("..", "testdata", "qwen35vl_tiny_image_golden.json"))
+	path := filepath.Join("../../testdata/qwen35vl-tiny")
+	rawG, err := os.ReadFile(filepath.Join("../../testdata/qwen35vl_tiny_image_golden.json"))
 	if err != nil {
 		t.Skipf("no golden: %v", err)
 	}

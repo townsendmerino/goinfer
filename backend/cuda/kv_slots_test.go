@@ -156,7 +156,7 @@ func TestCUDAKVSlots_interleavedMatchesAlone(t *testing.T) {
 	}
 	for _, f := range []string{"llama-tiny", "mistral-tiny-window", "deepseek-tiny"} {
 		t.Run(f, func(t *testing.T) {
-			dir := filepath.Join("..", "testdata", f)
+			dir := filepath.Join("../../testdata", f)
 			requireDeviceAndFixture(t, dir)
 			kvSlotsScenario(t, dir, decoder.Options{Quant: "int4"}, 8, 0)
 		})
@@ -169,7 +169,7 @@ func TestCUDAKVSlots_interleavedMatchesAlone(t *testing.T) {
 // live and bind the bound slot's buffers when issued. This pins that: a KV buffer captured into a segment would make
 // a switched-in slot read or write the previous slot's cache, and the interleaved ids would diverge.
 func TestCUDAKVSlots_graphs(t *testing.T) {
-	dir := filepath.Join("..", "testdata", "mistral-tiny-window")
+	dir := filepath.Join("../../testdata/mistral-tiny-window")
 	requireDeviceAndFixture(t, dir)
 	t.Setenv("GOINFER_CUDA_GRAPHS", "1")
 	t.Setenv("GOINFER_CUDA_GRAPHS_UNSAFE", "1")
@@ -206,7 +206,7 @@ func requireCUDADevice(t *testing.T) {
 // reserve, with 4 requested: the build must allocate 2, report 2, and generate on both. This is the clamping load
 // Metal never ran; serve's banner then names the clamp (internal/serveapp's banner test covers the wording).
 func TestCUDAKVSlots_clampedBuild(t *testing.T) {
-	dir := filepath.Join("..", "testdata", "llama-tiny")
+	dir := filepath.Join("../../testdata/llama-tiny")
 	requireDeviceAndFixture(t, dir)
 	orig := cudaFreeVRAM
 	t.Cleanup(func() { cudaFreeVRAM = orig })
@@ -262,7 +262,7 @@ func TestCUDAKVSlots_clampedBuild(t *testing.T) {
 func TestCUDAKVSlots_pricedAgainstWhatIsLeft(t *testing.T) {
 	dir, quant := os.Getenv("GOINFER_CUDA_KVSLOTS_MODEL"), "int4"
 	if dir == "" {
-		dir = filepath.Join("..", "testdata", "llama-tiny")
+		dir = filepath.Join("../../testdata/llama-tiny")
 		requireDeviceAndFixture(t, dir)
 	} else {
 		requireCUDADevice(t)
@@ -348,7 +348,7 @@ func TestCUDAKVSlots_pricedAgainstWhatIsLeft(t *testing.T) {
 // checkKVFits must grant all 4 slots, and at the one-slot context it must not — the thrash the decision removes. A
 // budget where not even the floor holds 4 must return the floor, and an explicit -ctx must be untouched.
 func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
-	dir := filepath.Join("..", "testdata", "llama-tiny")
+	dir := filepath.Join("../../testdata/llama-tiny")
 	requireDeviceAndFixture(t, dir)
 	dev, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -482,7 +482,7 @@ func TestResidentDenseBytes_matchesCUDADevice(t *testing.T) {
 	requireCUDADevice(t)
 	home, _ := os.UserHomeDir()
 	models := []string{
-		filepath.Join("..", "testdata", "llama-tiny"),
+		filepath.Join("../../testdata/llama-tiny"),
 		filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
 		filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"),
 	}
@@ -629,7 +629,7 @@ func TestCUDAKVSlots_buildTrimsTheContext(t *testing.T) {
 // Three slots requested, the seam fails slot 2: the model stays CUDA-resident with two, no device buffer leaks (the ledger equals a plain two-slot build's), and both granted slots decode the same tokens as a plain
 // two-slot build's. The control, no seam: all three slots. Without the recover the build declines and this goes red.
 func TestCUDAKVSlots_oomKeepsTheSlotsThatFit(t *testing.T) {
-	dir := filepath.Join("..", "testdata", "mistral-tiny-window")
+	dir := filepath.Join("../../testdata/mistral-tiny-window")
 	requireDeviceAndFixture(t, dir)
 	load := func(slots, failAt int) (*decoder.Model, *cudaResident) {
 		kvSlotAllocFailAtForTest = failAt
@@ -923,7 +923,7 @@ func TestLedger_closesAgainstDevice(t *testing.T) {
 			"small-allocation pool, so this test's measured delta can read short of the ledger's charge "+
 			"(docs/measurements/sb12-memtests-2026-10-28.md §2)", len(open), strings.Join(open, ", "))
 	}
-	models := append([]string{filepath.Join("..", "testdata", "llama-tiny")}, realSizeModels(t, "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")...)
+	models := append([]string{filepath.Join("../../testdata/llama-tiny")}, realSizeModels(t, "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")...)
 	if len(models) < 2 {
 		t.Log("the 0.5B checkpoint is not on this box: llama-tiny only")
 	}
@@ -1146,7 +1146,7 @@ func countedDecode(t *testing.T, m *decoder.Model, r *cudaResident, id, pos int)
 // (an extra launch, an extra sync) are seen.
 func TestCost_cudaDecodeExact(t *testing.T) {
 	requireCUDADevice(t)
-	m, err := decoder.Load(filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
+	m, err := decoder.Load(filepath.Join("../../testdata/llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1322,7 +1322,7 @@ func cudaGenerate(t *testing.T, m *decoder.Model, prompt []int, n int, c *cost.C
 // Generate's. Under MC3 (a resident shared by generations) nothing is counted: the report is empty.
 func TestCost_cudaGenerateOnTheWire(t *testing.T) {
 	requireCUDADevice(t)
-	m, err := decoder.Load(filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
+	m, err := decoder.Load(filepath.Join("../../testdata/llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1413,7 +1413,7 @@ func TestCost_cudaGenerateOnTheWire(t *testing.T) {
 	}
 
 	// MC3: a resident shared by generations counts nothing for any one of them.
-	m2, err := decoder.Load(filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2})
+	m2, err := decoder.Load(filepath.Join("../../testdata/llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2})
 	if err != nil {
 		t.Fatal(err)
 	}

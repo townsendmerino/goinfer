@@ -62,8 +62,8 @@ func TestS16MRoPEPrefill_tiny(t *testing.T) {
 		{"qwen35vl-tiny", "qwen35vl_tiny_image_golden.json", true, false},
 		{"qwen35vl-tiny", "qwen35vl_tiny_image_golden.json", true, true},
 	} {
-		path := filepath.Join("..", "testdata", fx.dir)
-		raw, err := os.ReadFile(filepath.Join("..", "testdata", fx.golden))
+		path := filepath.Join("../../testdata", fx.dir)
+		raw, err := os.ReadFile(filepath.Join("../../testdata", fx.golden))
 		if err != nil {
 			t.Fatalf("golden: %v", err)
 		}
@@ -522,7 +522,7 @@ func TestS16DeepstackPrefill_tiny(t *testing.T) {
 	defer func(m, d bool) { metalMRoPEPrefillOn, metalDeepstackPrefillOn = m, d }(metalMRoPEPrefillOn, metalDeepstackPrefillOn)
 	metalMRoPEPrefillOn, metalDeepstackPrefillOn = true, true // the gates test both paths whatever production keeps on
 	const merge, steps, bar, gh, gw = 2, 8, 0.9999, 8, 12
-	path := filepath.Join("..", "testdata", "qwen3vl-tiny")
+	path := filepath.Join("../../testdata/qwen3vl-tiny")
 	if _, err := os.Stat(filepath.Join(path, "model.safetensors")); err != nil {
 		t.Skipf("no fixture at %s", path)
 	}

@@ -317,7 +317,7 @@ func kv2ScheduleWindowedDecline(t *testing.T, fx string) {
 	// A's slot; the fixture's context is widened to hold it. The slack holds A's first turn without a compaction and not
 	// its second, so A's base moves past the preamble then.
 	withWindowedKV(t, 800, windowedKVTestStep, 800-windowedKVTestStep)
-	s := &kv2Sched{t: t, path: kv2WideFixture(t, filepath.Join("..", "testdata", fx), 4096),
+	s := &kv2Sched{t: t, path: kv2WideFixture(t, filepath.Join("../../testdata", fx), 4096),
 		opts: decoder.Options{ResidentWindowedKV: true, ResidentContext: 4096}, maxTok: 16, pre: kv2Preamble(256), own: 460}
 	s.colds = map[string]kv2Turn{}
 	coldOK := func(name string, x kv2Turn) {

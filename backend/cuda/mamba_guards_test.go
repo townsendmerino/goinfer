@@ -28,7 +28,7 @@ type guardCase struct {
 
 func loadGuardResident(t *testing.T, c guardCase) (*decoder.Model, *cudaResident) {
 	t.Helper()
-	m, err := decoder.Load(filepath.Join("..", "testdata", c.fixture), decoder.Options{Backend: "cuda", Quant: c.quant, ResidentKVSlots: 2})
+	m, err := decoder.Load(filepath.Join("../../testdata", c.fixture), decoder.Options{Backend: "cuda", Quant: c.quant, ResidentKVSlots: 2})
 	if err != nil {
 		t.Fatalf("load %s: %v", c.fixture, err)
 	}
@@ -219,7 +219,7 @@ func recurrentSlotsLoad(t *testing.T, fixture string, o decoder.Options) (*decod
 	defer nemotronFeaturesForTest()()
 	o.Backend, o.Quant = "cuda", "int4"
 	path := fixture
-	if !strings.HasPrefix(path, "..") {
+	if !strings.HasPrefix(path, "../..") {
 		path = "../../testdata/" + fixture
 	}
 	m, err := decoder.Load(path, o)

@@ -47,7 +47,7 @@ func TestKVDeliveredBytes_Metal(t *testing.T) {
 			if v == "auto" {
 				kv = ""
 			}
-			m, err := decoder.Load(filepath.Join("..", "testdata", f), decoder.Options{Backend: "metal", Quant: "int4", KVPrecision: kv, KVQuant: loadflags.CPUKV("", kv), ResidentContext: 100})
+			m, err := decoder.Load(filepath.Join("../../testdata", f), decoder.Options{Backend: "metal", Quant: "int4", KVPrecision: kv, KVQuant: loadflags.CPUKV("", kv), ResidentContext: 100})
 			var r *decoder.KVRefusal
 			if errors.As(err, &r) {
 				continue // a refused cell allocates nothing

@@ -108,7 +108,7 @@ func TestGlmOcrCUDAResidentRealImage(t *testing.T) {
 	for _, name := range []string{"invoice", "table", "formula"} {
 		t.Run(name, func(t *testing.T) {
 			var g glmOcrRealGolden
-			raw, err := readGolden(filepath.Join("..", "testdata", "glm_ocr", "golden_"+name+".json.gz"))
+			raw, err := readGolden(filepath.Join("../../testdata/glm_ocr/golden_" + name + ".json.gz"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -118,7 +118,7 @@ func TestGlmOcrCUDAResidentRealImage(t *testing.T) {
 			if len(g.InputIDs)+g.NNew > glmOcrResidentCtx {
 				t.Skipf("%d prompt tokens + %d new do not fit the %d-token context this test runs at", len(g.InputIDs), g.NNew, glmOcrResidentCtx)
 			}
-			png, err := os.ReadFile(filepath.Join("..", "testdata", "glm_ocr", name+".png"))
+			png, err := os.ReadFile(filepath.Join("../../testdata/glm_ocr", name+".png"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -238,7 +238,7 @@ func TestGlmOcrCUDAResidentFullBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	png, err := os.ReadFile(filepath.Join("..", "testdata", "glm_ocr", "invoice.png"))
+	png, err := os.ReadFile(filepath.Join("../../testdata/glm_ocr/invoice.png"))
 	if err != nil {
 		t.Fatal(err)
 	}

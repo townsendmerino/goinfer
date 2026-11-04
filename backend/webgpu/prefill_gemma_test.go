@@ -50,7 +50,7 @@ var prefillGemmaFixtures = []struct {
 
 func prefillGemmaDir(t *testing.T, dir string) string {
 	t.Helper()
-	path := filepath.Join("..", "testdata", dir)
+	path := filepath.Join("../../testdata", dir)
 	if _, err := os.Stat(filepath.Join(path, "model.safetensors")); err != nil {
 		t.Skipf("no fixture (%s)", path)
 	}

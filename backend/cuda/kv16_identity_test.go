@@ -286,7 +286,7 @@ func TestKV16_exactInputIdentity_prefillReaders(t *testing.T) {
 // m-RoPE prefill declines. Without the force the same load takes the kernel, so the f16 arm's decline is the guard's doing.
 func TestKV16_pairwiseMRoPENeverF16(t *testing.T) {
 	requireCUDADevice(t)
-	ckpt := filepath.Join("..", "testdata", "glm-ocr-tiny")
+	ckpt := filepath.Join("../../testdata/glm-ocr-tiny")
 	if _, err := os.Stat(ckpt); err != nil {
 		t.Skipf("no fixture: %v", err)
 	}

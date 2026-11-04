@@ -23,7 +23,7 @@ import (
 //     expected to differ; B35 makes every cold prefill cut at the tail too, so the restore and the cold prompt take the same classes.
 func TestB35SplitPrefill(t *testing.T) {
 	requireCUDADevice(t)
-	path := filepath.Join("..", "testdata", "qwen35-tiny")
+	path := filepath.Join("../../testdata/qwen35-tiny")
 	const n = 61
 	type arm struct {
 		logits      []float32

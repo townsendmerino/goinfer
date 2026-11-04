@@ -19,7 +19,7 @@ func TestEmbedInt4_residentDecisionDoesNotChange(t *testing.T) {
 	residentSeen := 0
 	for _, d := range []string{"llama-tiny", "granite-dense-tiny", "phi3-tiny", "glm-ocr-tiny", "granite-tiny", "nemotron-tiny", "nemotron3nano-tiny", "llama4-tiny", "gpt2"} {
 		t.Run(d, func(t *testing.T) {
-			dir := filepath.Join("..", "testdata", d)
+			dir := filepath.Join("../../testdata", d)
 			var path, head [2]string
 			for i, on := range []bool{false, true} {
 				m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4", EmbedInt4: on, ResidentContext: 64})

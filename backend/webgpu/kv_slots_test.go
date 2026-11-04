@@ -208,7 +208,7 @@ func TestWebGPUKVSlots_interleavedMatchesAlone(t *testing.T) {
 		{"deepseek-tiny", "deepseek-tiny", decoder.Options{Quant: "int4"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			kvSlotsScenario(t, filepath.Join("..", "testdata", tc.fixture), tc.opts, 8, 0, "", nil)
+			kvSlotsScenario(t, filepath.Join("../../testdata", tc.fixture), tc.opts, 8, 0, "", nil)
 		})
 	}
 }
@@ -218,7 +218,7 @@ func TestWebGPUKVSlots_interleavedMatchesAlone(t *testing.T) {
 // did not move the adapter would decode A on the base weights (or leave B's runner carrying A's delta).
 func TestWebGPUKVSlots_adapterFollowsTheSwitch(t *testing.T) {
 	adapterDir := buildLlamaTinyLoRAFixtureGPU(t)
-	kvSlotsScenario(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Quant: "int4"}, 8, 0, "a",
+	kvSlotsScenario(t, filepath.Join("../../testdata/llama-tiny"), decoder.Options{Quant: "int4"}, 8, 0, "a",
 		func(m *decoder.Model) {
 			if err := m.LoadAdapter("a", adapterDir); err != nil {
 				t.Fatalf("LoadAdapter: %v", err)
@@ -232,7 +232,7 @@ func TestWebGPUKVSlots_adapterFollowsTheSwitch(t *testing.T) {
 func TestWebGPUKVSlots_recurrentKeepsOne(t *testing.T) {
 	for _, f := range []string{"qwen35-tiny", "nemotron-tiny"} {
 		t.Run(f, func(t *testing.T) {
-			m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", f), decoder.Options{Quant: "int4"}, 4)
+			m, rd := loadWebGPUResident(t, filepath.Join("../../testdata", f), decoder.Options{Quant: "int4"}, 4)
 			defer m.Close()
 			if rd.rm.Dnet == nil && rd.rm.Mamba == nil {
 				t.Fatalf("%s built without recurrent layers — this test no longer covers a recurrent family", f)
@@ -256,7 +256,7 @@ func TestWebGPUKVSlots_slotOwnsItsKV(t *testing.T) {
 		{"deepseek-tiny", decoder.Options{Quant: "int4"}},
 	} {
 		t.Run(tc.fixture, func(t *testing.T) {
-			m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", tc.fixture), tc.opts, 3)
+			m, rd := loadWebGPUResident(t, filepath.Join("../../testdata", tc.fixture), tc.opts, 3)
 			defer m.Close()
 			if len(rd.slots) != 3 {
 				t.Fatalf("%d slots, want 3", len(rd.slots))
@@ -305,7 +305,7 @@ func TestWebGPUKVSlots_slotOwnsItsKV(t *testing.T) {
 // the KV they were built over: slot 0's pool must never serve slot 1. Rows on slot 0, then rows on slot 1, then one
 // more row on slot 0 must equal the same calls on fresh one-slot models, bit for bit.
 func TestWebGPUKVSlots_forwardNFollowsTheSlot(t *testing.T) {
-	dir := filepath.Join("..", "testdata", "llama-tiny")
+	dir := filepath.Join("../../testdata/llama-tiny")
 	opts := decoder.Options{Quant: "int4"}
 	m, rd := loadWebGPUResident(t, dir, opts, 2)
 	defer m.Close()
@@ -374,7 +374,7 @@ func TestWebGPUKVSlots_forwardNFollowsTheSlot(t *testing.T) {
 // TestWebGPUKVSlots_clampedBuild is a real clamping build: slot 2 of 4 fails its allocation halfway through its layers,
 // so 2 are granted, both usable, the half-built slot's buffers are released, and nothing is left allocated after Close.
 func TestWebGPUKVSlots_clampedBuild(t *testing.T) {
-	dir := filepath.Join("..", "testdata", "llama-tiny")
+	dir := filepath.Join("../../testdata/llama-tiny")
 	injected := errors.New("injected allocation failure")
 	slotAllocHook = func(slot, layer int) error {
 		if slot == 2 && layer == 1 {
@@ -416,7 +416,7 @@ func TestWebGPUKVSlots_pricedAgainstMemory(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("the memory pricing applies on darwin only (unified memory); elsewhere a slot is clamped by its allocation")
 	}
-	dir := filepath.Join("..", "testdata", "llama-tiny")
+	dir := filepath.Join("../../testdata/llama-tiny")
 	m, rd := loadWebGPUResident(t, dir, decoder.Options{Quant: "int4"}, 1)
 	perSlot := kvBytesPerSlot(&rd.rm)
 	weights, hostCopy := m.ResidentWeightBytes(), m.ResidentHostCopyBytes(0)
@@ -585,7 +585,7 @@ func TestWebGPUKVSlots_perPositionMatchesTheBuild(t *testing.T) {
 		{"deepseek-tiny-mla", "deepseek-tiny", decoder.Options{Quant: "int4"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", tc.fixture), tc.opts, 1)
+			m, rd := loadWebGPUResident(t, filepath.Join("../../testdata", tc.fixture), tc.opts, 1)
 			defer m.Close()
 			per := kvBytesPerPosition(m, m.KVCacheF16(), m.KVCacheI8())
 			if got, want := kvBytesPerSlot(&rd.rm), per*int64(rd.ctxCap); got != want || got == 0 {
@@ -868,7 +868,7 @@ func TestMain(m *testing.M) {
 // request equal those after the first (I2 within the model's life). The bytes are logged beside the process's VRAM from
 // nvidia-smi, for context only: the Vulkan allocator sub-allocates buffers from large blocks.
 func TestLedger_webgpuAgreesWithRegistry(t *testing.T) {
-	m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Quant: "int4"}, 1)
+	m, rd := loadWebGPUResident(t, filepath.Join("../../testdata/llama-tiny"), decoder.Options{Quant: "int4"}, 1)
 	defer m.Close()
 	var after []int64
 	for range 3 {
@@ -972,7 +972,7 @@ func sb11Attributed(t *testing.T, what string, r cost.Report) {
 //
 // An architecture without a golden runs every check but the golden's and then skips, naming the counts to record.
 func TestCost_webgpuDecodeExact(t *testing.T) {
-	m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Quant: "int4"}, 1)
+	m, rd := loadWebGPUResident(t, filepath.Join("../../testdata/llama-tiny"), decoder.Options{Quant: "int4"}, 1)
 	defer m.Close()
 	rep, _ := countedDecode(t, m, rd, 1, 0)
 	sb11Attributed(t, "the first token", rep)

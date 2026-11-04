@@ -166,7 +166,7 @@ func TestKV4_scrambledTables(t *testing.T) {
 		for _, kv := range []string{"f32", "f16"} {
 			t.Run(fx+"/kv="+kv, func(t *testing.T) {
 				fx, lane, _ := strings.Cut(fx, "+")
-				if _, err := os.Stat(filepath.Join("..", "testdata", fx)); err != nil {
+				if _, err := os.Stat(filepath.Join("../../testdata", fx)); err != nil {
 					t.Skipf("no fixture: %v", err)
 				}
 				opts := decoder.Options{ResidentKVSlots: 2, KVPrecision: kv}
@@ -241,7 +241,7 @@ func TestKV4_scrambledTablesCanFail(t *testing.T) {
 func kv4F16Refusal(t *testing.T, fx string, opts decoder.Options) string {
 	t.Helper()
 	opts.Backend, opts.Quant, opts.KVPrecision = "cuda", "int4", "f16"
-	m, err := decoder.Load(filepath.Join("..", "testdata", fx), opts)
+	m, err := decoder.Load(filepath.Join("../../testdata", fx), opts)
 	if err != nil {
 		var r *decoder.KVRefusal
 		if errors.As(err, &r) {
@@ -257,7 +257,7 @@ func kv4F16Refusal(t *testing.T, fx string, opts decoder.Options) string {
 // of window positions and a context of maxPos, and returns its directory.
 func kv4WindowFixture(t *testing.T, window, maxPos int) string {
 	t.Helper()
-	src := filepath.Join("..", "testdata", "llama-attnfa-tiny")
+	src := filepath.Join("../../testdata/llama-attnfa-tiny")
 	raw, err := os.ReadFile(filepath.Join(src, "config.json"))
 	if err != nil {
 		t.Skipf("no fixture: %v", err)

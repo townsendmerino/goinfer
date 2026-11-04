@@ -91,7 +91,7 @@ var kv2Fixtures = []struct {
 func TestKV2_copyKVExact(t *testing.T) {
 	for _, fx := range kv2Fixtures {
 		t.Run(fx.name, func(t *testing.T) {
-			m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", fx.dir), fx.opts, 3)
+			m, rd := loadWebGPUResident(t, filepath.Join("../../testdata", fx.dir), fx.opts, 3)
 			defer m.Close()
 			if len(rd.slots) != 3 || rd.ctxCap < 64 {
 				t.Skipf("%d slots, a %d-position cache; the test needs 3 and 64", len(rd.slots), rd.ctxCap)
@@ -156,7 +156,7 @@ func TestKV2_copyKVExact(t *testing.T) {
 func TestKV2_copyThenSuffixEqualsWhole(t *testing.T) {
 	for _, fx := range kv2Fixtures {
 		t.Run(fx.name, func(t *testing.T) {
-			m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", fx.dir), fx.opts, 2)
+			m, rd := loadWebGPUResident(t, filepath.Join("../../testdata", fx.dir), fx.opts, 2)
 			defer m.Close()
 			if len(rd.slots) != 2 || rd.ctxCap < 128 {
 				t.Skipf("%d slots, a %d-position cache", len(rd.slots), rd.ctxCap)

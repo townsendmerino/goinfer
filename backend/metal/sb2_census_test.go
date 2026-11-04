@@ -160,7 +160,7 @@ func buildMetalCensus(t *testing.T) []string {
 	registerCensusBackend()
 	be, reg := censusBE, censusReg
 	be.take() // nothing a previous build left behind decides a line here
-	d, err := sb2census.ReadLayerD("..", "metal")
+	d, err := sb2census.ReadLayerD("../..", "metal")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func censusProfileLines(t *testing.T, be *censusBackend, reg string, d sb2census
 	defer restore()
 	var lines []string
 	for _, f := range d.Fixtures {
-		path, err := sb2census.Path("..", f)
+		path, err := sb2census.Path("../..", f)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -830,7 +830,7 @@ func TestMemGate_metal(t *testing.T) {
 		t.Skipf("no metal device: %v", err)
 	}
 	t.Setenv("GOINFER_SSM_RESIDENT", "")
-	d, err := sb2census.ReadLayerD("..", "metal")
+	d, err := sb2census.ReadLayerD("../..", "metal")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -847,7 +847,7 @@ func TestMemGate_metal(t *testing.T) {
 		g.Check(t, read)
 	}
 	for _, f := range d.Fixtures {
-		path, err := sb2census.Path("..", f)
+		path, err := sb2census.Path("../..", f)
 		if err != nil {
 			t.Fatal(err)
 		}
