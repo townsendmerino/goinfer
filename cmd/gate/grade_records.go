@@ -205,7 +205,7 @@ func (r gpuRecord) changedSince(head string, treeOf func(rev, dir string) (strin
 			return "", fmt.Errorf("could not compare %s/ (%v %v)", d, err1, err2)
 		}
 		if then != now {
-			return labelPath(d), nil
+			return d, nil
 		}
 	}
 	return "", nil
@@ -241,12 +241,13 @@ func (r parityRecord) changedSince(head string, paths []string, objOf func(rev, 
 			return "", fmt.Errorf("could not compare %s (%v %v)", p, err1, err2)
 		}
 		if then != now {
+			c := canonicalPath(p)
 			for _, d := range parityQualifyingTrees {
-				if p == d || p == labelPath(d) {
-					return labelPath(p) + "/", nil
+				if c == d {
+					return c + "/", nil
 				}
 			}
-			return labelPath(p), nil
+			return c, nil
 		}
 	}
 	return "", nil
@@ -261,8 +262,8 @@ var parityQualifyingTrees = []string{"decoder", "backend/cuda", "backend/metal",
 
 // backendMoveMap is the layout Tier 2, PR 1 move: each GPU backend directory's path after the move (key) and before it
 // (value). A commit from before the move names the old path, so git reports the new one as absent there; treeAt and
-// objectAt then read the old name once. Labels printed in reports keep the old names (labelPath), so a golden written
-// before the move replays byte for byte. This is the only pre-move logic in the grader.
+// objectAt then read the old name once. A record written before the move names the old path, so canonicalPath maps it
+// to the current name before the grader prints or compares it.
 var backendMoveMap = map[string]string{
 	"backend/cuda":   "cuda",
 	"backend/metal":  "metal",
@@ -282,15 +283,18 @@ func preMovePath(p string) (string, bool) {
 	return p, false
 }
 
-// labelPath is the name a report prints for p: the pre-move name of a moved backend path, else p itself. A leading "./" is
-// kept.
-func labelPath(p string) string {
-	q := strings.TrimPrefix(p, "./")
-	old, _ := preMovePath(q)
-	if q != p {
-		return "./" + old
+// canonicalPath is the current name of p: a pre-move backend path (a record's "cuda/", "metal/", "gpu/") maps to its
+// backend/ name; anything else is p itself.
+func canonicalPath(p string) string {
+	for nw, old := range backendMoveMap {
+		if p == old {
+			return nw
+		}
+		if strings.HasPrefix(p, old+"/") {
+			return nw + p[len(old):]
+		}
 	}
-	return old
+	return p
 }
 
 // absentFromRev reports whether err is git saying a path is not in a revision: `git rev-parse rev:path` says "does not
