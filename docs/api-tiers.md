@@ -84,6 +84,7 @@ than editorial.
 Real, supported, and used in production paths here — but they may change in any release, minor or
 patch. Pin a version if you depend on them. Each graduates when it settles.
 
+- **The library's logger.** `decoder.SetLogger`.
 - **Load's error kinds.** `decoder.ErrUnsupportedModel`, `ErrUnknownQuant`, `ErrUnknownBackend`, for `errors.Is`.
 - **The backend/residency seam.** `decoder.Backend`, `RegisterBackend`, `QuantBackend`,
   `QuantBatchBackend`, `ResidencyBackend`, `Prefiller`, `ResidentForward`, `ResidentGreedy`,

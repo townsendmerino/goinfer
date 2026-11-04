@@ -4,10 +4,11 @@ package metal
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
-	"os"
 	"runtime"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // The greedy chain (docs/audit-metal-2026-09-30.md, C-B01; docs/tasks/task-metal-audit-2026-10.md, Phase 3 item 5).
@@ -100,7 +101,7 @@ func (r *resident) chainEmbedTable() (Buffer, Buffer, string) {
 		r.chainEmbTried = true
 		r.chainEmbW, r.chainEmbS, r.chainEmbWhy = r.buildChainEmbed()
 		if r.chainEmbWhy != "" {
-			fmt.Fprintf(os.Stderr, "metal: greedy chain off for this model: %s\n", r.chainEmbWhy)
+			logs.Warnf("metal: greedy chain off for this model: %s", r.chainEmbWhy)
 		}
 	}
 	return r.chainEmbW, r.chainEmbS, r.chainEmbWhy

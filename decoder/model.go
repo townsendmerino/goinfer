@@ -20,6 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // decodeTiming env-gates per-component decode timing (GOINFER_DECODE_TIMING=1) so
@@ -664,7 +665,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		// Keep the weights out of any fork()ed child (forkinherit_darwin.go): once a GPU backend has wired a page of this private
 		// mapping, a fork would otherwise copy all of it eagerly. Non-fatal: failing it only restores the old behaviour.
 		if perr := protectGIWMapping(data); perr != nil {
-			fmt.Fprintf(os.Stderr, "decoder: minherit(VM_INHERIT_NONE) on the .giw mapping failed (%v) — a fork of this process may copy the whole mapping\n", perr)
+			logs.Warnf("decoder: minherit(VM_INHERIT_NONE) on the .giw mapping failed (%v) — a fork of this process may copy the whole mapping", perr)
 		}
 		weightsBlob, _, gerr := giw.Read(data)
 		if gerr != nil {
@@ -727,7 +728,7 @@ func Load(dir string, opts Options) (*Model, error) {
 			}
 		}
 		if beErr != nil {
-			fmt.Fprintln(os.Stderr, beErr)
+			logs.Warnf("%v", beErr)
 		}
 		if opts.ActQuantGroup == 0 && w.quantLabel() == "q4k" {
 			opts.ActQuantGroup = 32 // a q4k bundle runs per-32 activations, as a direct q4k load does (modelFromOptions)
@@ -744,24 +745,24 @@ func Load(dir string, opts Options) (*Model, error) {
 			// MoE → expert demand-paging (#2); dense → per-layer streaming (#4).
 			if w.arch.MoE != nil {
 				if m.pager = newExpertPager(w, data, opts.WeightCacheBytes, dir, resolveMoEPagerPool(opts.MoEPager, loadKnob(opts, knobMoEPreadCPU))); m.pager != nil {
-					fmt.Fprintln(os.Stderr, "decoder: "+pagerSummary(m.pager))
+					logs.Infof("%s", "decoder: "+pagerSummary(m.pager))
 					// Predict the working-set rate and require an explicit acknowledgement below the registered floor, rather than let a long
 					// run discover it.
 					if predicted, ok := moeWorkingSetPrediction(m); ok {
-						fmt.Fprintf(os.Stderr, "decoder: predicted paged-MoE decode rate ~%.2f tok/s "+
-							"(a prior, not a measurement — see moeHitRatePrior's own doc comment)\n", predicted)
+						logs.Infof("decoder: predicted paged-MoE decode rate ~%.2f tok/s "+
+							"(a prior, not a measurement — see moeHitRatePrior's own doc comment)", predicted)
 						if rerr := moeWorkingSetRefusal(filepath.Base(dir), predicted, opts.AcceptSlowMoE); rerr != nil {
 							m.Close()
 							return nil, rerr
 						}
 					}
 				} else {
-					fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored (no mmap-backed MoE experts to page)")
+					logs.Warnf("decoder: --stream-weights ignored (no mmap-backed MoE experts to page)")
 				}
 			} else if m.layerPager = newLayerPager(w, data, opts.WeightCacheBytes); m.layerPager != nil {
-				fmt.Fprintln(os.Stderr, "decoder: "+layerPagerSummary(m.layerPager))
+				logs.Infof("%s", "decoder: "+layerPagerSummary(m.layerPager))
 			} else {
-				fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored (model fits the budget, or no mmap-backed layer weights)")
+				logs.Warnf("decoder: --stream-weights ignored (model fits the budget, or no mmap-backed layer weights)")
 			}
 		}
 		return m.withResidencyOrAbort()
@@ -815,14 +816,14 @@ func Load(dir string, opts Options) (*Model, error) {
 	}
 	if beErr != nil {
 		// webgpu requested but fell back — not fatal.
-		fmt.Fprintln(os.Stderr, beErr)
+		logs.Warnf("%v", beErr)
 	}
 	if opts.StreamWeights {
 		// Weight streaming pages weights out of the read-only mmap, which only the
 		// .giw path provides; a GGUF/safetensors load dequantizes into the heap, so
 		// there's nothing to page. Make the no-op visible rather than silently
 		// running fully resident (prequant to .giw with cmd/prequant to use it).
-		fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
+		logs.Warnf("decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
 	}
 	// Write the resolved EOS set (config.json plus any extra ids generation_config.json adds) back into w.Cfg.EOSTokenID, not
 	// just onto this Model's eosIDs. w.Cfg is what a .giw bundle serializes (TranscodeGIW, via
@@ -1208,8 +1209,8 @@ func warnPrefillDeclined(n int, err error) {
 	if seen {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "goinfer: batched prefill declined for a %d-token prompt, falling back to "+
-		"the per-token path (slower TTFT; each distinct reason is reported once): %v\n", n, err)
+	logs.Warnf("goinfer: batched prefill declined for a %d-token prompt, falling back to "+
+		"the per-token path (slower TTFT; each distinct reason is reported once): %v", n, err)
 }
 
 // residentPrefillSeed ingests the prompt into the resident KV and returns the last token's logits, the seed for decode. Both
@@ -2092,16 +2093,16 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	}
 	if decodeTiming && clk.n > 0 {
 		ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(clk.n) }
-		fmt.Printf("DECODE TIMING (%d tok, gpu=%v): forward %.1f ms | sample %.2f ms | logitProc %.2f ms | embed %.2f ms /token\n",
+		logs.Debugf("DECODE TIMING (%d tok, gpu=%v): forward %.1f ms | sample %.2f ms | logitProc %.2f ms | embed %.2f ms /token",
 			clk.n, useGPU, ms(clk.fwd), ms(clk.sample), ms(clk.proc), ms(clk.embed))
 		d := func(p *int64) float64 { return ms(time.Duration(atomic.SwapInt64(p, 0))) }
 		a, ml, hd := d(&dtAttn), d(&dtMLP), d(&dtHead)
 		gu, act, ad := d(&dtGU), d(&dtAct), d(&dtActDown)
 		qkv, o, aa := d(&dtQKV), d(&dtO), d(&dtAttnAll)
-		fmt.Printf("DECODE SPLIT: attention %.2f ms | MLP %.2f ms | LM head %.2f ms | residual %.2f ms /token\n",
+		logs.Debugf("DECODE SPLIT: attention %.2f ms | MLP %.2f ms | LM head %.2f ms | residual %.2f ms /token",
 			a, ml, hd, ms(clk.fwd)-a-ml-hd)
-		fmt.Printf("DECODE SPLIT MLP: gate+up matmuls %.2f ms | activation %.2f ms | down matmul %.2f ms /token\n", gu, act, ad-act)
-		fmt.Printf("DECODE SPLIT ATTN: q/k/v matmuls %.2f ms | rope+KV+scores/softmax/AV core %.2f ms | o matmul %.2f ms /token\n", qkv, aa-qkv-o, o)
+		logs.Debugf("DECODE SPLIT MLP: gate+up matmuls %.2f ms | activation %.2f ms | down matmul %.2f ms /token", gu, act, ad-act)
+		logs.Debugf("DECODE SPLIT ATTN: q/k/v matmuls %.2f ms | rope+KV+scores/softmax/AV core %.2f ms | o matmul %.2f ms /token", qkv, aa-qkv-o, o)
 		lastDecodeSplit.fwd, lastDecodeSplit.attn, lastDecodeSplit.mlp, lastDecodeSplit.head = ms(clk.fwd), a, ml, hd
 		lastDecodeSplit.gu, lastDecodeSplit.act, lastDecodeSplit.down = gu, act, ad-act
 		lastDecodeSplit.qkv, lastDecodeSplit.core, lastDecodeSplit.o = qkv, aa-qkv-o, o

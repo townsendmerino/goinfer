@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +12,7 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -203,7 +203,7 @@ func guardFit(f fitCheck) (int, error) {
 		return 0, fitDecline(fit.Decline)
 	}
 	if fit.Line != "" {
-		fmt.Fprintln(os.Stderr, fit.Line)
+		logs.Infof("%s", fit.Line)
 	}
 	return fit.PinCtx, nil
 }
@@ -234,7 +234,7 @@ const giwMemMargin = mem.GIWMargin // 1 GB
 func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
 	d := decideGIWFit(cfg, opts)
 	if d.note != "" {
-		fmt.Fprint(os.Stderr, d.note)
+		logs.InfoText(d.note)
 	}
 	return d.pinCtx, d.err
 }
@@ -301,7 +301,7 @@ func resolveWeightCacheBudget(requested int64) int64 {
 	if b := mem.WeightCacheBudget(0, mem.HostMachine(hostRAMAvailable())); b > 0 {
 		return b
 	}
-	fmt.Fprintln(os.Stderr, "decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)")
+	logs.Warnf("decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)")
 	return 0
 }
 

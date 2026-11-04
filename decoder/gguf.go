@@ -8,11 +8,12 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"os"
 	"path/filepath"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // GGUF loading: read a quantized llama.cpp checkpoint and run it through the generic forward. The GGUF file carries both
@@ -1479,7 +1480,7 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 		return nil, err
 	}
 	if beErr != nil {
-		fmt.Fprintln(os.Stderr, beErr) // webgpu requested but fell back — not fatal (N-03: stderr, not stdout — never contaminate a piped token stream)
+		logs.Warnf("%v", beErr) // webgpu requested but fell back — not fatal (N-03: stderr, not stdout — never contaminate a piped token stream)
 	}
 	m := modelFromOptions(w, be, opts)
 	m.quant = opts.Quant

@@ -21,6 +21,7 @@ import (
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/cost"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -213,8 +214,8 @@ func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slot
 		return oneSlot
 	}
 	if !fits(floor) {
-		fmt.Fprintf(os.Stderr, "cuda: resident context %d (the floor), not %d, for the %d requested KV slots (--kv-sessions); "+
-			"the build grants as many as fit there, and an explicit --ctx keeps a longer context with fewer slots\n",
+		logs.Debugf("cuda: resident context %d (the floor), not %d, for the %d requested KV slots (--kv-sessions); "+
+			"the build grants as many as fit there, and an explicit --ctx keeps a longer context with fewer slots",
 			floor, oneSlot, slots)
 		return floor
 	}
@@ -226,8 +227,8 @@ func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slot
 			hi = mid
 		}
 	}
-	fmt.Fprintf(os.Stderr, "cuda: resident context %d, not %d, so the %d requested KV slots fit (--kv-sessions); an "+
-		"explicit --ctx keeps a longer context with fewer slots\n", lo, oneSlot, slots)
+	logs.Warnf("cuda: resident context %d, not %d, so the %d requested KV slots fit (--kv-sessions); an "+
+		"explicit --ctx keeps a longer context with fewer slots", lo, oneSlot, slots)
 	return lo
 }
 
@@ -1400,7 +1401,7 @@ func (r *cudaResident) allocSlots() error {
 		// bind zero-value device buffers); it is unreachable with any real MoE checkpoint and exists only to fail safe. A
 		// blob that trips it should be declined to the staged/CPU path upstream.
 		r.cacheExperts = false
-		fmt.Fprint(os.Stderr, zeroExpertBytesLine(moeLayers[0]))
+		logs.WarnText(zeroExpertBytesLine(moeLayers[0]))
 		return nil
 	}
 	strides := r.slotStrides(moeLayers[0])
@@ -1414,7 +1415,7 @@ func (r *cudaResident) allocSlots() error {
 	}
 	d := slotsDecision(free, err == nil, r.extraBytes, len(moeLayers), strides, r.topK, r.cacheSlots)
 	for _, l := range d.logs {
-		fmt.Fprint(os.Stderr, l)
+		logs.InfoText(l)
 	}
 	if d.err != nil {
 		return d.err
@@ -2332,7 +2333,7 @@ func (r *cudaResident) checkKVFits() error {
 	d := kvFitDecision(kvFitIn{ctxCap: r.ctxCap, explicit: r.ctxExplicit, slotsReq: r.kvSlotsReq, layers: r.layers,
 		extraBytes: r.extraBytes, margin: r.ctxMargin(), slotState: r.recurrentStateCharged()}, free, err == nil)
 	for _, l := range d.logs {
-		fmt.Fprint(os.Stderr, l)
+		logs.InfoText(l)
 	}
 	r.ctxCap, r.kvSlotsN = d.ctxCap, d.slots
 	return d.err

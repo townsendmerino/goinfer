@@ -6,8 +6,6 @@ package metal
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
-	"github.com/townsendmerino/goinfer/internal/runtime/program"
 	"math"
 	"os"
 	"runtime"
@@ -15,6 +13,10 @@ import (
 	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
@@ -2297,7 +2299,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if paged && modelKnob(m, "GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {
 		rs, rerr := d.NewResidencySet()
 		if rerr != nil {
-			fmt.Fprintf(os.Stderr, "metal: residency set unavailable (%v) — per-submit validation stands\n", rerr)
+			logs.Warnf("metal: residency set unavailable (%v) — per-submit validation stands", rerr)
 		} else {
 			slots := r.slotBuffers()      // GPU-read-only (CPU-written by pread)
 			written := r.writtenBuffers() // GPU-WRITTEN per token: KV cache + intermediates/scratch
@@ -2345,7 +2347,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 
 	r.alias = alias
 	if line := alias.summary(); line != "" {
-		fmt.Fprint(os.Stderr, line)
+		logs.InfoText(line)
 	}
 	// S16: the m-RoPE prefill's per-pair axis table, from the decoder's own layout rule; nil for a model without a
 	// three-way m-RoPE section, whose PrefillMRoPELast then declines.
@@ -3659,7 +3661,7 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 			// depth and a uniform for the new.
 			nSplit := r.attnFASplitFor(r.planNKeys(), g.nKV)
 			if os.Getenv("GOINFER_ATTNFA_DEBUG") == "1" {
-				fmt.Fprintf(os.Stderr, "[ATTNFA] l=%d nKeys=%d nSplit=%d nKV=%d G=%d hd=%d partialLen=%d\n",
+				logs.Debugf("[ATTNFA] l=%d nKeys=%d nSplit=%d nKV=%d G=%d hd=%d partialLen=%d",
 					l, r.planNKeys(), nSplit, g.nKV, r.nH/g.nKV, g.hd, r.attnFAPartial.Len())
 			}
 			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4

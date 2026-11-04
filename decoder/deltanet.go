@@ -1,13 +1,13 @@
 package decoder
 
 import (
-	"fmt"
 	"os"
 	"sync/atomic"
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // deltaNetTiming (GOINFER_DELTANET_TIMING=1) is a diagnostic that splits gatedDeltaNetStep's cost into the three dominant
@@ -63,7 +63,7 @@ func PrintDeltaNetTiming() {
 	if elems > 0 {
 		nsPerElem = float64(recur.Nanoseconds()) / float64(elems)
 	}
-	fmt.Printf("DELTANET TIMING (%d steps): proj %.3f ms/step (%.1f%%) | recurrence %.3f ms/step (%.1f%%) | other %.3f ms/step (%.1f%%) | recurrence %.3f ns/state-elem (Σ %d elems)\n",
+	logs.Debugf("DELTANET TIMING (%d steps): proj %.3f ms/step (%.1f%%) | recurrence %.3f ms/step (%.1f%%) | other %.3f ms/step (%.1f%%) | recurrence %.3f ns/state-elem (Σ %d elems)",
 		n, msPer(proj), pct(proj), msPer(recur), pct(recur), msPer(other), pct(other), nsPerElem, elems)
 }
 

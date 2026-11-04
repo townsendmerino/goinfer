@@ -5,10 +5,10 @@ package cuda
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -52,20 +52,20 @@ func (r *cudaResident) allocRecurrentCheckpoint() {
 	}
 	if d := ckptDeclineFor(bytes, reserve, free, err); d != "" {
 		r.ckptDeclined = d
-		fmt.Fprint(os.Stderr, ckptDeclinedLine(d))
+		logs.WarnText(ckptDeclinedLine(d))
 		return
 	}
 	copies, ok := r.allocCheckpointCopies(live)
 	if !ok {
 		r.ckptDeclined = "the device allocation failed"
-		fmt.Fprintf(os.Stderr, "cuda: recurrent checkpoint: none kept (%s)\n", r.ckptDeclined)
+		logs.Warnf("cuda: recurrent checkpoint: none kept (%s)", r.ckptDeclined)
 		return
 	}
 	r.ckptSave, r.ckptRestore, r.ckptBytes, r.ckptSlot = copies, nil, bytes, -1
 	for _, c := range copies {
 		r.ckptRestore = append(r.ckptRestore, gpu.DeviceCopy{Dst: c.Src, Src: c.Dst, Bytes: c.Bytes})
 	}
-	fmt.Fprint(os.Stderr, ckptKeptLine(bytes, len(live)))
+	logs.InfoText(ckptKeptLine(bytes, len(live)))
 }
 
 // recurrentLiveBytes is every recurrent layer's live state and conv window in bytes: the buffers the checkpoint copies, sized as the

@@ -158,6 +158,8 @@ SCANS = [
     Scan("internal/layout", "TestPackageDocs_namedTestsExist", TREE_GO),
     Scan("internal/layout", "TestArchitecture_importAppendix", F("internal/layout/imports.json", "docs/ARCHITECTURE.md")),
     Scan("internal/guard/prezerolint", "TestPreZero_noDeadZeroingBeforeOverwriteKernels", TREE_NT),
+    # Library code writes through internal/runtime/logs, and no block both reports an error and returns it.
+    Scan("internal/runtime/logs", "TestLibraryOutput_goesThroughLogs", TREE_NT),
     Scan("internal/guard/movedpaths", "TestNoMovedAikitPath", TREE_GO + F("go.mod", "*/go.mod", "go.sum", "*/go.sum")),
     Scan("pull", "TestResolve_callsResolveOfflineBeforeCheckAccess", F("pull/resolve.go")),
     Scan("apps/examples/structured", "TestUseFromGoDoc_codeIsFromExamples", F("apps/examples/*/main.go", "docs/use-from-go.md")),

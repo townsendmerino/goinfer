@@ -4,8 +4,9 @@ package cuda
 
 import (
 	"fmt"
-	"os"
 	"strconv"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // prefillWidths are the default pass widths the build chooses among (prefillWidthFor), widest first; each a multiple of the block
@@ -44,7 +45,7 @@ func (r *cudaResident) choosePrefillWidth() {
 	}
 	var line string
 	r.prefillWidth, line = r.prefillWidthChoice(free)
-	fmt.Fprint(os.Stderr, line)
+	logs.InfoText(line)
 }
 
 // prefillWidthChoice is choosePrefillWidth's decision over the free VRAM it read: the width (prefillWidthFor over a pass's scratch plus

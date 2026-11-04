@@ -4,10 +4,10 @@ package cuda
 
 import (
 	"fmt"
-	"os"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -63,7 +63,6 @@ func (r *cudaResident) PrepareRecurrentSpec(rows int) error {
 		}
 	}
 	if err := r.allocRecurrentSpec(rows); err != nil {
-		fmt.Fprintf(os.Stderr, "cuda: speculative recurrent rows: none kept (%v)\n", err)
 		return err
 	}
 	return nil
@@ -127,7 +126,7 @@ func (r *cudaResident) allocRecurrentSpec(rows int) error {
 	}
 	a.core = take(rows * dp.valueDim)
 	r.dnSpec = a
-	fmt.Fprintf(os.Stderr, "cuda: speculative recurrent rows: %.1f MiB on the device (%d rows x %d DeltaNet layers, SP2)\n",
+	logs.Infof("cuda: speculative recurrent rows: %.1f MiB on the device (%d rows x %d DeltaNet layers, SP2)",
 		mib(a.bytes), rows, len(dnLayers))
 	return nil
 }

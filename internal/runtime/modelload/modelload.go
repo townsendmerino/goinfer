@@ -20,6 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/guard/swapguard"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 	"github.com/townsendmerino/goinfer/pull"
@@ -131,7 +132,7 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 	// Before a sidecar is chosen: a .giw bakes its quant, so this cannot be fixed after the transcode.
 	var msg string
 	if opts.Quant, opts.ActQuantGroup, msg = activationSafeQuant(src, opts.Quant, opts.ActQuantGroup, req.ExplicitQuant, opts.Backend); msg != "" {
-		fmt.Fprintln(os.Stderr, msg)
+		logs.Warnf("%s", msg)
 	}
 	ensureGIW := func() (string, error) {
 		return prequant.EnsureCachedGIW(ctx, src, opts.Quant, opts.Backend, opts.EmbedInt4)
@@ -161,14 +162,14 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 		if p, gerr := ensureGIW(); gerr == nil {
 			loadPath = p
 		} else {
-			fmt.Fprintf(os.Stderr, "note: loading %s directly: its sidecar .giw could not be built (%v)\n", src, gerr)
+			logs.Warnf("note: loading %s directly: its sidecar .giw could not be built (%v)", src, gerr)
 		}
 	default:
 		if opts.StreamWeights && isDir(src) {
 			// M-30: -stream-weights is a no-op for a safetensors directory; say so rather than leave a
 			// later fit refusal reading as "should have worked".
-			fmt.Fprintf(os.Stderr, "note: -stream-weights only applies to a .gguf source; %q is a "+
-				"safetensors directory — see cmd/prequant to build a streamable .giw from it\n", src)
+			logs.Warnf("note: -stream-weights only applies to a .gguf source; %q is a "+
+				"safetensors directory — see cmd/prequant to build a streamable .giw from it", src)
 		}
 	}
 
@@ -194,7 +195,7 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 			!errors.As(err, &fde) || !fde.DenseStreamable {
 			return nil, fmt.Errorf("load model (%s): %w", loadPath, err)
 		}
-		fmt.Fprintf(os.Stderr, "note: %q does not fit resident RAM; automatically retrying with weight streaming (pass --fit=off to keep today's refusal instead)\n", src)
+		logs.Warnf("note: %q does not fit resident RAM; automatically retrying with weight streaming (pass --fit=off to keep today's refusal instead)", src)
 		declineErr := err
 		opts.StreamWeights = true
 		if loadPath, err = ensureGIW(); err != nil {

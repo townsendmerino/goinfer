@@ -146,6 +146,7 @@
       "decoder",
       "internal/audio",
       "internal/cost",
+      "internal/runtime/logs",
       "internal/runtime/mem",
       "internal/runtime/program",
       "internal/runtime/sampling",
@@ -178,6 +179,7 @@
       "internal/audio",
       "internal/cost",
       "internal/runtime/f16",
+      "internal/runtime/logs",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
       "internal/runtime/program",
@@ -209,6 +211,7 @@
       "backend/webgpu/internal/kernels",
       "decoder",
       "internal/cost",
+      "internal/runtime/logs",
       "internal/runtime/mem",
       "internal/runtime/program"
     ],
@@ -255,6 +258,7 @@
       "internal/runtime/giw",
       "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",
+      "internal/runtime/logs",
       "internal/runtime/mamba2",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
@@ -405,6 +409,7 @@
     ],
     "internal/guard/swapguard": [
       "decoder",
+      "internal/runtime/logs",
       "internal/runtime/mem/probe"
     ],
     "internal/runtime/mamba2": [
@@ -414,6 +419,7 @@
       "decoder",
       "internal/guard/swapguard",
       "internal/runtime/giw",
+      "internal/runtime/logs",
       "internal/runtime/mem",
       "internal/runtime/prequant",
       "pull",

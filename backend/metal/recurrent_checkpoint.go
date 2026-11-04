@@ -2,10 +2,10 @@ package metal
 
 import (
 	"fmt"
-	"os"
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // KV8a's recurrent checkpoint on Metal (decoder.ResidentRecurrentCheckpoint; docs/measurements/kv8a-metal-2026-10/README.md): one copy
@@ -41,7 +41,7 @@ func (r *resident) allocRecurrentCheckpoint(m *decoder.Model) {
 	}
 	if ok, why := ckptFits(m, bytes); !ok {
 		r.ckptDeclined = why
-		fmt.Fprintf(os.Stderr, "metal: recurrent checkpoint: none kept (%s); a reply rendered back differently re-prefills the whole prompt\n", why)
+		logs.Warnf("metal: recurrent checkpoint: none kept (%s); a reply rendered back differently re-prefills the whole prompt", why)
 		return
 	}
 	for l := range r.layers { // in recurrentLive's order, which bindCheckpoint pairs them by
@@ -54,14 +54,14 @@ func (r *resident) allocRecurrentCheckpoint(m *decoder.Model) {
 				r.d.ReleaseBuf(b)
 			}
 			r.ckptBufs, r.ckptDeclined = nil, err.Error()
-			fmt.Fprintf(os.Stderr, "metal: recurrent checkpoint: none kept (%v); a reply rendered back differently re-prefills the whole prompt\n", err)
+			logs.Warnf("metal: recurrent checkpoint: none kept (%v); a reply rendered back differently re-prefills the whole prompt", err)
 			return
 		}
 		r.ckptBufs = append(r.ckptBufs, win, state)
 	}
 	r.bindCheckpoint()
 	r.ckptBytes = bytes
-	fmt.Fprintf(os.Stderr, "metal: recurrent checkpoint: %.1f MiB (%d buffers, KV8a)\n", mib(bytes), len(r.ckptBufs))
+	logs.Infof("metal: recurrent checkpoint: %.1f MiB (%d buffers, KV8a)", mib(bytes), len(r.ckptBufs))
 }
 
 func mib(b int64) float64 { return float64(b) / (1 << 20) }
