@@ -97,14 +97,15 @@ func (f Finding) String() string {
 	return fmt.Sprintf("%s: line %q: %s", f.Row, f.Line, f.What)
 }
 
-// Planned is the plan's figure for each line it prices, with this build's KV slots: KV and recurrent state are per slot.
+// Planned is the plan's figure for each line it prices, with this build's KV slots: KV and recurrent state are per slot, and the state line
+// also holds the load's one checkpoint.
 func Planned(p decoder.Plan, kvSlots int) map[mem.LineID]int64 {
 	n := int64(max(kvSlots, 1))
 	return map[mem.LineID]int64{
 		mem.LineDense:     p.DenseBytes,
 		mem.LineExperts:   p.ExpertBytesUsed,
 		mem.LineKV:        p.KVBytes * n,
-		mem.LineState:     p.StateBytes * n,
+		mem.LineState:     p.StateBytes*n + p.CheckpointBytes,
 		mem.LineSlack:     p.AllocSlackBytes,
 		mem.LineCompanion: p.ExtraBytes,
 	}
@@ -183,10 +184,7 @@ func sortedLines(m map[mem.LineID]int64) []mem.LineID {
 // Geometry is the figures a Gap's Bytes may read, each from a model's architecture and config alone, never from the plan or the ledger under
 // test: a bound read from either would widen with the error it bounds.
 type Geometry struct {
-	// VectorUnit is one hidden-width f32 vector on each layer, and VectorBase one each for the final norm and its bias: the plan's dense figure,
-	// a sum of weight matrices, counts neither. A fixture's gap names how many a layer it holds, so a family that holds more goes red.
-	VectorUnit, VectorBase int64
-	// DenseTables is what a resident build uploads on dense beside the vectors: a rotation table a layer and a few constants.
+	// DenseTables is what a resident build derives and uploads on dense: a rotation table a layer and a few constants.
 	DenseTables int64
 	// KVFormula is the figure the plan's formula gives: K and V at ctx positions on each layer that owns a cache, 1/8 of a byte a scale at int8, or
 	// an MLA layer's one f32 latent row.
@@ -204,10 +202,8 @@ type Geometry struct {
 // GeometryOf reads g for m at ctx positions and the KV precision kv, one slot's worth times slots. rings is whether the backend keeps a sliding
 // layer's K/V in a ring.
 func GeometryOf(m *decoder.Model, ctx, slots int, kv string, rings bool) Geometry {
-	cfg := m.Config()
 	_, layers, _, _, headDim, _, _ := m.Dims()
-	hidden := int64(cfg.HiddenDim) * 4
-	g := Geometry{VectorUnit: int64(cfg.NumLayers) * hidden, VectorBase: 2 * hidden, DenseTables: int64(layers) * int64(headDim*2+64)}
+	g := Geometry{DenseTables: int64(layers) * int64(headDim*2+64)}
 	elem := map[string]float64{mem.KVF16: 2, mem.KVI8: 1}[kv]
 	if elem == 0 {
 		elem = 4
@@ -253,7 +249,7 @@ func GeometryOf(m *decoder.Model, ctx, slots int, kv string, rings bool) Geometr
 
 // Facts is g as a Snapshot's facts.
 func (g Geometry) Facts() map[string]int64 {
-	return map[string]int64{"vectorUnit": g.VectorUnit, "vectorBase": g.VectorBase, "tables": g.DenseTables, "kvFormula": g.KVFormula, "kvHeld": g.KVHeld, "mambaTail": g.MambaTail}
+	return map[string]int64{"tables": g.DenseTables, "kvFormula": g.KVFormula, "kvHeld": g.KVHeld, "mambaTail": g.MambaTail}
 }
 
 // HoldRows fails t unless built is exactly the rows path names, one a line: a row that stopped building is as red as one over plan, and a new

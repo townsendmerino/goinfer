@@ -382,6 +382,7 @@ func f32PinnedTensorName(name string) bool {
 		"mixer.in_proj", "mixer.out_proj", "mixer.conv1d", // Nemotron-H Mamba-2 only (see doc comment)
 		"attn_q_a", "attn_q_b", "attn_kv_a", "attn_kv_b",
 		"q_a_proj", "q_b_proj", "kv_a_proj", "kv_b_proj",
+		"_exps.bias", // gpt-oss's expert biases: stacked 2-D in the file, f32 per expert after the load
 	} {
 		if strings.Contains(name, s) {
 			return true
@@ -430,8 +431,7 @@ const gptqAWQPackFactor = 8
 // it at the target quant. Metadata only: no tensor data is touched, so this costs a header parse
 // on a model that is about to be read in full anyway.
 //
-// 1-D tensors (norms, biases) stay f32 whatever the quant, so they are priced as f32. They round
-// to nothing beside the matrices, which is exactly the accounting ResidentWeightBytes documents.
+// 1-D tensors (norms, biases) stay f32 whatever the quant, so they are priced as f32, as ResidentWeightBytes prices them.
 func estimateGGUFWeightBytes(path string, q quantMode) int64 {
 	total, _ := estimateGGUFWeightBreakdown(path, q)
 	return total
@@ -494,7 +494,7 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 			b = kept
 		}
 		sum += b
-		if strings.Contains(name, "_exps") && !strings.HasSuffix(name, ".bias") {
+		if strings.Contains(name, "_exps") {
 			exp += b
 		}
 	}

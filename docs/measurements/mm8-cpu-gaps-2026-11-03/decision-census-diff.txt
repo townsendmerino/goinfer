@@ -1,0 +1,9 @@
+groups 29637 29637 gone 0 added 0
+changed 9828 Counter({'D3': 9063, 'D4': 498, 'D5': 208, 'D1': 59})
+by backend Counter({'cpu': 2965, 'cuda': 2434, 'metal': 2416, 'webgpu': 1307, 'slots': 498, 'FitBudgetSummary': 208})
+same outcome sequence 9828 different 0
+Counter()
+largest first-need move 42016 D3 testdata/qwen3next-tiny q=f32 | cpu ctx=32768 pinned=false kv=f16 extra=0
+
+Outcome-word flips, figures ignored: 0
+

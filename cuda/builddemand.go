@@ -40,5 +40,8 @@ func buildDemand(q decoder.BuildQuery) decoder.BuildDemand {
 	for _, b := range q.StateBuffers {
 		d.StateBytes += gpu.ChargedBytes(b)
 	}
+	for _, b := range q.CheckpointBuffers {
+		d.CheckpointBytes += gpu.ChargedBytes(b)
+	}
 	return d
 }
