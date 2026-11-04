@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -194,5 +195,13 @@ func TestLoadVocabMerges_realQwen3ASR(t *testing.T) {
 	gd, _ := got.Decode(ids)
 	if wd != gd {
 		t.Error("a sweep of ids decodes differently")
+	}
+}
+
+// A missing file is both kinds of error at once: the sentinel a caller branches on, and the OS error underneath it.
+func TestLoadVocabMerges_missingFileAnswersBothKinds(t *testing.T) {
+	_, err := LoadVocabMerges(t.TempDir())
+	if !errors.Is(err, ErrNoVocabMerges) || !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("error %v: want both ErrNoVocabMerges and fs.ErrNotExist", err)
 	}
 }

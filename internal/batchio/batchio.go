@@ -51,7 +51,7 @@ func ParseInput(data []byte) ([]Line, error) {
 		}
 		var l Line
 		if err := json.Unmarshal([]byte(raw), &l); err != nil {
-			return nil, fmt.Errorf("input file line %d: invalid JSON: %s", lineNo, err.Error())
+			return nil, fmt.Errorf("input file line %d: invalid JSON: %w", lineNo, err)
 		}
 		if l.CustomID == "" {
 			return nil, fmt.Errorf("input file line %d: custom_id is required", lineNo)

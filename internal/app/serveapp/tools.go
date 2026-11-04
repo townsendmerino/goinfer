@@ -252,7 +252,7 @@ func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, nam
 	g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced.Parameters)
 	if gerr != nil {
 		if namedForce {
-			return fmt.Errorf("tool_choice forces function %q but its schema cannot be constrained: %v", forced.Name, gerr)
+			return fmt.Errorf("tool_choice forces function %q but its schema cannot be constrained: %w", forced.Name, gerr)
 		}
 		return nil
 	}

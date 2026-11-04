@@ -484,7 +484,7 @@ func staticcheckBinary(qc *quickConfig) (string, error) {
 	}
 	out, err := exec.Command(bin, "-version").CombinedOutput()
 	if err != nil {
-		return bin, fmt.Errorf("%s -version: %v", bin, err)
+		return bin, fmt.Errorf("%s -version: %w", bin, err)
 	}
 	want := pinnedStaticcheck(qc.Root)
 	if !strings.Contains(string(out), want) {

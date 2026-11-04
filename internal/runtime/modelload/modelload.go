@@ -68,7 +68,7 @@ func TokenizerFromTok(raw []byte) (*tokenizer.Tokenizer, error) {
 	}
 	tk, jerr := tokenizer.LoadJSONBytes(raw)
 	if jerr != nil {
-		return nil, fmt.Errorf("not a GGUF (%v) and not tokenizer.json (%v)", gerr, jerr)
+		return nil, fmt.Errorf("not a GGUF (%w) and not tokenizer.json (%w)", gerr, jerr)
 	}
 	return tk, nil
 }

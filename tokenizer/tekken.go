@@ -55,7 +55,7 @@ func LoadTekken(raw []byte) (*Tokenizer, error) { return loadTekken(raw, tekkenO
 func loadTekken(raw []byte, opt tekkenOptions) (*Tokenizer, error) {
 	var f tekkenFile
 	if err := json.Unmarshal(raw, &f); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrNotTekken, err)
+		return nil, fmt.Errorf("%w: %w", ErrNotTekken, err)
 	}
 	if f.Config.Pattern == "" || len(f.Vocab) == 0 || len(f.Special) == 0 {
 		return nil, fmt.Errorf("%w: missing pattern, vocab or special_tokens", ErrNotTekken)
@@ -81,7 +81,7 @@ func loadTekken(raw []byte, opt tekkenOptions) (*Tokenizer, error) {
 		}
 		b, err := base64.StdEncoding.DecodeString(e.TokenBytes)
 		if err != nil || len(b) == 0 {
-			return nil, fmt.Errorf("%w: vocab entry %d token_bytes: %v", ErrNotTekken, i, err)
+			return nil, fmt.Errorf("%w: vocab entry %d token_bytes: %w", ErrNotTekken, i, err)
 		}
 		toks[i] = b
 		ranks[string(b)] = i

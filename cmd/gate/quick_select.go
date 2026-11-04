@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -488,12 +489,12 @@ func loadGraph(qc *quickConfig, overlay string) (*quickGraph, error) {
 		cmd.Stderr = &stderr
 		out, err := cmd.Output()
 		if err != nil {
-			return nil, fmt.Errorf("go list in %s (%s): %v\n%s", m.Name, m.Dir, err, strings.TrimSpace(stderr.String()))
+			return nil, fmt.Errorf("go list in %s (%s): %w\n%s", m.Name, m.Dir, err, strings.TrimSpace(stderr.String()))
 		}
 		dec := json.NewDecoder(bytes.NewReader(out))
 		for {
 			var p goListPkg
-			if err := dec.Decode(&p); err == io.EOF {
+			if err := dec.Decode(&p); errors.Is(err, io.EOF) {
 				break
 			} else if err != nil {
 				return nil, fmt.Errorf("go list in %s: decoding: %w", m.Name, err)
@@ -1090,14 +1091,14 @@ func changedFiles(root, base string) (files []string, baseDesc string, err error
 		cmd.Stderr = &stderr
 		out, err := cmd.Output()
 		if err != nil {
-			return "", fmt.Errorf("git %s: %v %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+			return "", fmt.Errorf("git %s: %w %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 		}
 		return string(out), nil
 	}
 	if base == "" {
 		mb, mbErr := git("merge-base", "HEAD", "origin/main")
 		if mbErr != nil {
-			return nil, "", fmt.Errorf("no base: %v (pass -base REF)", mbErr)
+			return nil, "", fmt.Errorf("no base: %w (pass -base REF)", mbErr)
 		}
 		base = strings.TrimSpace(mb)
 		baseDesc = "merge-base(HEAD, origin/main) = " + shortSHA(base)
