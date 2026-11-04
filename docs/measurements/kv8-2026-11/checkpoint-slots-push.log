@@ -81,3 +81,31 @@ VERDICT: FAIL — citation lint: citations do not resolve (exit 1; the reasons a
 build exit 0
 # fail=1, 19:19:45 PST
 # The one red above was a citation of a struct field; the doc now names the declaration, and the lint passes. 19:20 PST
+
+# #658's second read, at 0aebc98c5, main f384b1699 merged, 2026-11-03 20:18:58 PST
+--- PASS: TestParityManifest_fresh (0.85s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.859s
+ok  	github.com/townsendmerino/goinfer/cuda	622.102s
+PASS: 198, SKIP: 43, FAIL: 0
+exit 0
+# gate identity -backend cuda f384b1699 0aebc98c5, 20:29:23 PST
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+exit 0
+VERDICT: FAIL — touched: 1 of 17 checks failed; did not run: metal
+touched exit 1
+test_touched exit 0
+canary hits 1
+staticcheck -tags cuda,goinfer_testhooks ./cuda/ exit 0
+staticcheck ./decoder/ exit 0
+staticcheck -tags goinfer_testhooks ./decoder/ exit 0
+untagged vet ./cuda/ exit 0
+darwin vet exit 0
+citation lint exit 0
+build exit 0
+# fail=1, 20:37:27 PST
+
+# The one red above was gofmt on a Metal test, whitespace only. touched.py again at a9d184ae1, 20:38:06 PST
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push); did not run: metal
+touched exit 0
+citation lint exit 0
