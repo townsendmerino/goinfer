@@ -499,7 +499,7 @@ func TestPrefillMRoPE_realImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pp.MaxPixels = min(pp.MaxPixels, 448*448)                                         // 256 merged rows: enough to place every axis, and a few seconds of CPU tower
+	pp.MaxPixels = min(pp.MaxPixels, 448*448)                                               // 256 merged rows: enough to place every axis, and a few seconds of CPU tower
 	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "glm_ocr", "table.png")) // a table: where a patch sits matters to the reply
 	if err != nil {
 		t.Fatal(err)
