@@ -1,0 +1,47 @@
+# bisecting the decoder Plan test pair, v0.23.0 (good) .. f5261f4bf (bad), 13:51:26
+running '/tmp/dec-red.sh'
+Bisecting: 995 revisions left to test after this (roughly 10 steps)
+running '/tmp/dec-red.sh'
+Bisecting: 497 revisions left to test after this (roughly 9 steps)
+running '/tmp/dec-red.sh'
+Bisecting: 249 revisions left to test after this (roughly 8 steps)
+running '/tmp/dec-red.sh'
+Bisecting: 125 revisions left to test after this (roughly 7 steps)
+running '/tmp/dec-red.sh'
+Bisecting: 61 revisions left to test after this (roughly 6 steps)
+running '/tmp/dec-red.sh'
+Bisecting: 30 revisions left to test after this (roughly 5 steps)
+running '/tmp/dec-red.sh'
+Bisecting: 15 revisions left to test after this (roughly 4 steps)
+running '/tmp/dec-red.sh'
+Bisecting: 7 revisions left to test after this (roughly 3 steps)
+running '/tmp/dec-red.sh'
+Bisecting: 3 revisions left to test after this (roughly 2 steps)
+running '/tmp/dec-red.sh'
+Bisecting: 0 revisions left to test after this (roughly 1 step)
+running '/tmp/dec-red.sh'
+Bisecting: 0 revisions left to test after this (roughly 0 steps)
+running '/tmp/dec-red.sh'
+commit 61315ebab1cf0e30e1834ffd6d83bab70601e356
+Author: Francis Townsend-Merino <townsendmerino@gmail.com>
+Date:   Tue Oct 27 09:24:14 2026 -0700
+    MM1 MoE reserve (Francis's option A): an MoE placement's experts are reserved before its context grows
+    
+    SolvePlacement tries resident first, with every expert and its host copy
+    reserved, then the expert cache with the top-k reserved; each picks its own
+    context. More memory never gives a worse placement, MoE included, and Metal's
+    context fit no longer falls back to the floor. The top-k reserve alone (the
+    decision as worded) still fell from resident to expert-cached on a load whose
+    experts are under one KV block, so the registered contingency was taken.
+    
+    Census: 3,534 of 29,637 groups change, 1,068 with a placement or class move,
+    all upward and all MoE fixtures (listed in
+    docs/measurements/mm1-moe-reserve-2026-10-27/). 84 of them are D4 (Metal's
+    fit), which G-MA-1's rule as registered calls a failure; the golden is updated
+    and the PR waits for Francis on that point. goinfer fit on CUDA now reports the
+    real 26B and Qwen1.5-MoE as expert-cached instead of declined.
+    
+    Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_0188ACSeUd8TKrTjepzfZDM1
+bisect found first 'bad' commit
+# done 13:52:41

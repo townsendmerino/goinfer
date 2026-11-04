@@ -1,0 +1,30 @@
+# branch release-test-reds-2026-11-04 on f5261f4bf plus the fix, 13:56:46 PST, driver 595.112.07
+# decoder, CPU, fixtures placed
+--- PASS: TestProseSeedAbove (0.00s)
+--- PASS: TestPlan_tableDriven (0.02s)
+--- PASS: TestPlan_extraBytesReservedAheadOfExperts (0.00s)
+    parity_manifest_test.go:420: staleness: 43/43 families enforced (the rest are validated_at:null and carry no hash to check)
+--- PASS: TestParityManifest_fresh (0.89s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.912s
+# all TestPlan* and the prefill/fidelity tests that read prose seeds from decoder/
+ok  	github.com/townsendmerino/goinfer/decoder	8.986s
+# PLANT: the walk looks no higher than the caller's own level (the new test must go red)
+    fidelity_seed_test.go:45: backend/cuda: found "" (false), want "../../testdata/prefill-gate-prose-a/seed.md"
+    fidelity_seed_test.go:45: backend/cuda/kernels: found "" (false), want "../../../testdata/prefill-gate-prose-a/seed.md"
+--- FAIL: TestProseSeedAbove (0.00s)
+FAIL
+ 1 file changed, 27 insertions(+)
+# backend/cuda on the card: TestKV16 (red at 13:48 with all 10 subtests)
+--- PASS: TestKV16_everyAttentionPathStaysCloseToF32 (74.06s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_attn_batched_M=1 (5.60s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_split-KV (4.09s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_flash-decode_lane (4.06s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_attn_fused (3.90s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_attn_batched (4.08s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_attn_batched_M=1 (10.22s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_split-KV (10.67s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_flash-decode_lane (10.53s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_fused (10.30s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_batched (10.61s)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	74.160s
+# done 13:58:32 PST
