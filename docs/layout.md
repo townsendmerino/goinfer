@@ -70,6 +70,21 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 | `backend/{webgpu,cuda,metal}/cmd/{chat,serve}/` | the same two programs built with a backend | the backend module |
 | `demo/agent/cmd/` | `agent-web`, `stdlib-agent`, `ken-stub` | `demo/agent` |
 | `apps/site/cmd/build/` | the website generator (`site.yml` builds and deploys it) | `site` |
+| `apps/examples/{confidence,embed,invoice,structured}/` | runnable library examples, each a `main` package with a test | root |
+
+**Where each binary lives, and why** (decided in PR 3 of the Tier 2 layout move; a move would change the build and install
+paths it names):
+
+- The backend `cmd/` directories (`backend/{webgpu,cuda,metal}/cmd/{chat,serve}`) stay inside their backend module. They
+  import the backend's packages, and the root cannot require its own submodules without a cycle, so they cannot move to the
+  root `cmd/`. The root `cmd/serve` and `cmd/chat` (where `demo/chat` is the CPU chat) are the no-backend builds.
+- `demo/agent/cmd/` stays inside `demo/agent`. That module is published (tags `demo/agent/vX.Y.Z`) and keeps its MCP SDK
+  out of the root `go.mod`; moving its binaries to the root would pull that dependency in.
+- `apps/site/cmd/build/` stays inside `apps/site`. The site is never tagged, and its generator imports its own packages.
+- `demo/chat/` stays. It is a root-module `main` package, and `go install github.com/townsendmerino/goinfer/demo/chat@latest`
+  is a documented install path (README, the release template, and the readme-smoke check). Moving it changes that path for
+  every installer; if it moves later, the install line changes with it.
+- `apps/examples/*` stays. Each example is linked from the docs and tested in place.
 
 ## Satellites
 
