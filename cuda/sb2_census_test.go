@@ -2255,7 +2255,7 @@ func cudaGateRow(t testing.TB, row, path string, o decoder.Options) (memgate.Rea
 		return memgate.Reading{}, false
 	}
 	read := memgate.Reading{Row: row, KVSlots: r.KVSlots()}
-	read.Plan = m.Plan("cuda", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, Slots: gateSlots(r)})
+	read.Plan = m.Plan("cuda", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, Slots: gateSlots(r), KVSlots: r.KVSlots(), CheckpointReserve: r.ckptReserve()})
 	facts := func() map[string]int64 {
 		priced := m.PricedDenseVectorBytesForTest("cuda")
 		return map[string]int64{"kvRing": cudaKVRingBytes(r), "denseVectors": max(cudaDenseVectorBytes(m)-priced, 0), "moeVectors": max(cudaMoEVectorBytes(m, r.nE)-priced, 0), "windowGrant": cudaWindowGrantBytes(r)}

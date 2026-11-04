@@ -457,6 +457,9 @@ func recurrentSlotCheckpoint(t *testing.T, dir string) {
 			t.Fatalf("after the restore, slot 1's state differs from the saved checkpoint at element %d", i)
 		}
 	}
+	if two.RecurrentCheckpointHeld(-1) {
+		t.Error("no slot, -1, holds a checkpoint")
+	}
 	if !two.RecurrentCheckpointHeld(1) || two.RecurrentCheckpointHeld(0) {
 		t.Errorf("held: slot 0 %v, slot 1 %v; want slot 1 alone", two.RecurrentCheckpointHeld(0), two.RecurrentCheckpointHeld(1))
 	}

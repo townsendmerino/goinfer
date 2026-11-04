@@ -221,3 +221,51 @@ FAIL	github.com/townsendmerino/goinfer/cuda	0.004s
     kv8a_generate_test.go:444: after the reset: 1 restores, restored at 40, declined ""; want none tried
 --- FAIL: TestKV8_aResetFreesTheCheckpoint (0.01s)
 FAIL	github.com/townsendmerino/goinfer/decoder	0.015s
+
+# #658 round 3: the plan's copies from the headroom after every slot and the reserve; a save's own copy read; held guards. 2026-11-03 21:18:39 PST
+vets done; gofmt: []
+ok  	github.com/townsendmerino/goinfer/internal/memgate	0.003s
+ok  	github.com/townsendmerino/goinfer/decoder	1.368s
+exit 0, PASS 38, FAIL 0
+    sb2_census_test.go:2604: 474 builds held, 155 options declined by CUDA's own build
+ok  	github.com/townsendmerino/goinfer/cuda	163.470s
+# plant: a save on a slot that holds a copy does not take its own
+    mamba_guards_test.go:1075: slot 1 holds a checkpoint: false; want the holders [1 2]
+--- FAIL: TestRecurrentSlots_leastRecentlySavedGoesFirst (1.92s)
+FAIL	github.com/townsendmerino/goinfer/cuda	1.974s
+# plant: the plan leaves out the further slots
+--- FAIL: TestPlan_pricesRecurrentCheckpoint (0.04s)
+    --- FAIL: TestPlan_pricesRecurrentCheckpoint/qwen35-tiny (0.01s)
+        plan_state_test.go:146: cuda a byte short of room for 1: the plan keeps 3, want 0
+        plan_state_test.go:146: cuda a byte short of room for 2: the plan keeps 3, want 1
+        plan_state_test.go:146: cuda a byte short of room for 3: the plan keeps 3, want 2
+    --- FAIL: TestPlan_pricesRecurrentCheckpoint/olmo_hybrid-tiny (0.01s)
+        plan_state_test.go:146: cuda a byte short of room for 1: the plan keeps 3, want 0
+        plan_state_test.go:146: cuda a byte short of room for 2: the plan keeps 3, want 1
+        plan_state_test.go:146: cuda a byte short of room for 3: the plan keeps 3, want 2
+    --- FAIL: TestPlan_pricesRecurrentCheckpoint/nemotron-tiny (0.00s)
+        plan_state_test.go:146: cuda a byte short of room for 1: the plan keeps 3, want 0
+        plan_state_test.go:146: cuda a byte short of room for 2: the plan keeps 3, want 1
+        plan_state_test.go:146: cuda a byte short of room for 3: the plan keeps 3, want 2
+FAIL	github.com/townsendmerino/goinfer/decoder	0.043s
+# plant: the plan leaves out the reserve
+--- FAIL: TestPlan_pricesRecurrentCheckpoint (0.04s)
+    --- FAIL: TestPlan_pricesRecurrentCheckpoint/qwen35-tiny (0.01s)
+        plan_state_test.go:146: cuda a byte short of room for 1: the plan keeps 1, want 0
+        plan_state_test.go:146: cuda a byte short of room for 2: the plan keeps 2, want 1
+        plan_state_test.go:146: cuda a byte short of room for 3: the plan keeps 3, want 2
+    --- FAIL: TestPlan_pricesRecurrentCheckpoint/olmo_hybrid-tiny (0.01s)
+        plan_state_test.go:146: cuda a byte short of room for 1: the plan keeps 1, want 0
+        plan_state_test.go:146: cuda a byte short of room for 2: the plan keeps 2, want 1
+        plan_state_test.go:146: cuda a byte short of room for 3: the plan keeps 3, want 2
+    --- FAIL: TestPlan_pricesRecurrentCheckpoint/nemotron-tiny (0.00s)
+        plan_state_test.go:146: cuda a byte short of room for 1: the plan keeps 1, want 0
+        plan_state_test.go:146: cuda a byte short of room for 2: the plan keeps 2, want 1
+        plan_state_test.go:146: cuda a byte short of room for 3: the plan keeps 3, want 2
+FAIL	github.com/townsendmerino/goinfer/decoder	0.045s
+# plant: -1 counts as a slot
+    mamba_guards_test.go:1063: no slot, -1, holds a checkpoint
+--- FAIL: TestRecurrentSlots_leastRecentlySavedGoesFirst (1.96s)
+FAIL	github.com/townsendmerino/goinfer/cuda	2.014s
+
+# Not this PR's: TestPlan_tableDriven and TestPlan_extraBytesReservedAheadOfExperts fail with fixtures placed on main f384b1699, and at each older commit sampled back to 937cfe8fb. A clean worktree has no such fixture, so they skip there and in CI.

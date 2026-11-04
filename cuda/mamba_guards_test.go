@@ -1059,12 +1059,25 @@ func TestRecurrentSlots_leastRecentlySavedGoesFirst(t *testing.T) {
 			}
 		}
 	}
+	if r.RecurrentCheckpointHeld(-1) { // every copy is free now, and a free copy's owner reads -1
+		t.Error("no slot, -1, holds a checkpoint")
+	}
 	save(0)
 	save(1)
 	held(0, 1)
 	save(2) // slot 0 saved longest ago
 	held(1, 2)
-	save(1) // slot 1's own copy, so slot 2 is now the oldest
+	// Saving again with no reset writes the slot's own copy. Slot 2 saved last, so taking the oldest instead would take slot 1's.
+	recurrentSlotBind(t, r, 2)
+	if err := r.SaveRecurrentCheckpoint(); err != nil {
+		t.Fatal(err)
+	}
+	held(1, 2)
+	// Slot 1's save makes slot 2's the oldest, so slot 0 takes that.
+	recurrentSlotBind(t, r, 1)
+	if err := r.SaveRecurrentCheckpoint(); err != nil {
+		t.Fatal(err)
+	}
 	held(1, 2)
 	save(0)
 	held(0, 1)

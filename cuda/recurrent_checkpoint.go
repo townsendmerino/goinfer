@@ -222,7 +222,7 @@ func (r *cudaResident) ckptCopyOf(s int) int {
 func (r *cudaResident) RecurrentCheckpointHeld(slot int) bool {
 	held := false
 	_ = r.do(func() error {
-		held = r.ckptCopyOf(slot) >= 0
+		held = slot >= 0 && r.ckptCopyOf(slot) >= 0
 		return nil
 	})
 	return held

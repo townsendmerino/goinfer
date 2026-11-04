@@ -130,12 +130,24 @@ func TestPlan_pricesRecurrentCheckpoint(t *testing.T) {
 					}
 					continue
 				}
-				if want > 0 && b == "cuda" { // a backend that keeps one a slot prices what fits beside the need
-					for _, room := range []int64{1, 2, 3} {
-						got := m.Plan(b, p.NeedBytes()+room*want, PlanRequest{Ctx: 64, CtxPinned: true})
-						if got.CheckpointCopies != int(room) {
-							t.Errorf("%s with room for %d: the plan keeps %d", b, room, got.CheckpointCopies)
+				if want > 0 && b == "cuda" { // a backend that keeps one a slot prices what fits beside every slot's KV and state and the reserve
+					const slots, reserve = 3, int64(1000)
+					beside := p.NeedBytes() + int64(slots-1)*(p.KVBytes+p.StateBytes) + reserve
+					for room, wantCopies := range []int{0, 1, 2, 3, 3} {
+						free := beside + int64(room)*want
+						got := m.Plan(b, free, PlanRequest{Ctx: 64, CtxPinned: true, KVSlots: slots, CheckpointReserve: reserve})
+						if got.CheckpointCopies != wantCopies {
+							t.Errorf("%s with room for %d: the plan keeps %d, want %d", b, room, got.CheckpointCopies, wantCopies)
 						}
+						if used := beside + int64(got.CheckpointCopies)*got.CheckpointBytes; used > free {
+							t.Errorf("%s with room for %d: the plan uses %d bytes of %d", b, room, used, free)
+						}
+						if short := m.Plan(b, free-1, PlanRequest{Ctx: 64, CtxPinned: true, KVSlots: slots, CheckpointReserve: reserve}); room > 0 && room <= slots && short.CheckpointCopies != room-1 {
+							t.Errorf("%s a byte short of room for %d: the plan keeps %d, want %d", b, room, short.CheckpointCopies, room-1)
+						}
+					}
+					if got := m.Plan(b, 1<<40, PlanRequest{Ctx: 64, CtxPinned: true}); got.CheckpointCopies != 1 {
+						t.Errorf("%s asked for no slot count: the plan keeps %d, want one slot's", b, got.CheckpointCopies)
 					}
 				}
 				if wantCopies := map[bool]int{true: 1, false: 0}[want > 0]; b != "cuda" && p.Placement != PlacementDecline && p.CheckpointCopies != wantCopies {

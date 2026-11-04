@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/townsendmerino/goinfer/internal/mem"
 )
@@ -69,6 +68,11 @@ type PlanRequest struct {
 	// (docs/tasks/task-fit-to-hardware.md §0).
 	KVF16, KVI8 bool
 
+	// KVSlots is how many KV slots the load holds, for its checkpoints alone: 0 or 1 plans one slot's. CheckpointReserve is what a build leaves free beside them. A backend that
+	// keeps a checkpoint per slot passes both from its build, so the plan's copies are the ones that build allocates (Plan.CheckpointCopies).
+	KVSlots           int
+	CheckpointReserve int64
+
 	// ExtraBytes prices whatever the model itself does not know about but will share its device: a block drafter's weights and verify/capture
 	// buffers, a vision tower (every allocation is a term of the plan, including the ones that attach after load). Without it an expert cache
 	// is sized before a later --drafter attach claims the room NewBlockSpec then needs. The backend learns the same value out of band through
@@ -95,8 +99,8 @@ type Plan struct {
 	// CheckpointBytes is one recurrent checkpoint this plan's load keeps (BuildDemand.CheckpointBytes), 0 on a declined plan or where it does
 	// not fit beside NeedBytes. It is not in NeedBytes and moves no decision here: a load with no room for it keeps none and still runs.
 	CheckpointBytes int64
-	// CheckpointCopies is the most checkpoints the load keeps: 1, or as many as fit beside NeedBytes on a backend that keeps one per KV slot
-	// (BuildDemand.CheckpointPerSlot); 0 where CheckpointBytes is. A build keeps at most one a slot, so it is not itself the count.
+	// CheckpointCopies is how many checkpoints the load keeps: 1, or on a backend that keeps one per KV slot (BuildDemand.CheckpointPerSlot) one for each of PlanRequest.KVSlots
+	// that fits beside every slot's KV and state and PlanRequest.CheckpointReserve; 0 where CheckpointBytes is.
 	CheckpointCopies int
 	AllocSlackBytes  int64 // the backend's allocator rounding over the weight buffers (PlanSlack): CUDA's 2 MiB granularity
 	ExtraBytes       int64 // PlanRequest.ExtraBytes, carried through for NeedBytes()/reporting
@@ -222,13 +226,25 @@ func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack boo
 		mem.Machine{Free: map[mem.Tier]int64{l.Tier: freeBytes}}, mem.DefaultPolicy())
 	p.Placement, p.Ctx, p.Slots = Placement(d.Placement), d.Ctx, d.Slots
 	p.ExpertBytesUsed, p.KVBytes, p.HostCopyBytes, p.Reason = d.ExpertBytesUsed, d.KVBytes, d.HostCopyBytes, d.Reason
-	if ckpt, perSlot := m.checkpointBytes(backend); ckpt > 0 && p.Placement != PlacementDecline && p.NeedBytes()+ckpt <= freeBytes {
-		p.CheckpointBytes, p.CheckpointCopies = ckpt, 1
-		if perSlot {
-			p.CheckpointCopies = int(min((freeBytes-p.NeedBytes())/ckpt, math.MaxInt32))
+	if ckpt, perSlot := m.checkpointBytes(backend); p.Placement != PlacementDecline {
+		n := max(req.KVSlots, 1)
+		further := int64(n-1) * (p.KVBytes + p.StateBytes)
+		if copies := checkpointCopies(freeBytes-p.NeedBytes()-further-req.CheckpointReserve, ckpt, n, perSlot); copies > 0 {
+			p.CheckpointBytes, p.CheckpointCopies = ckpt, copies
 		}
 	}
 	return p
+}
+
+// checkpointCopies is how many checkpoints of ckpt bytes fit in headroom: at most one for each of n KV slots on a backend that keeps one per slot, else at most one.
+func checkpointCopies(headroom, ckpt int64, n int, perSlot bool) int {
+	if ckpt <= 0 || headroom < ckpt {
+		return 0
+	}
+	if !perSlot {
+		return 1
+	}
+	return int(min(headroom/ckpt, int64(n)))
 }
 
 // planAdmitDecline is the decoder's admission of this model on backend, with its own facts (Admit): "" when the load would reach
