@@ -1,73 +1,17 @@
-touched: 11 .go file(s), 108 changed path(s), 3 module(s), base 0f5cb935
+touched: 5 .go file(s), 59 changed path(s), 1 module(s), base 87b22f26
   ok   gofmt (0.0s)
-  ok   build root (3.7s)
+  ok   build root (6.2s)
   ok   vet root (2 pkg) (1.5s)
   ok   test cmd/gate -run ^(TestGateRunFilter_narrowsTheRealckptPa (1.2s)
-  ok   test cmd/lint -run ^(TestCgoTargets_noPlatformFiles)$ (0.2s)
-  FAIL test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (71.2s)
-      --- FAIL: TestNewCache_reservesEachLayersWidth (0.00s)
-          audit_items_test.go:135: VOID: the architecture without MoE takes neither quantized cache
-      decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
-      census: D1: 8435 groups in 1.9s
-      census: D2: 3948 groups in 6.4s
-      census: loads: 1 groups in 0.2s
-      census: D3: 11760 groups in 10.0s
-      census: D4: 2310 groups in 3.5s
-      census: D5: 2730 groups in 0.9s
-      decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
-      census: D6: 2 groups in 0.0s
-      census: D7: 451 groups in 0.0s
-      census: D1: 8435 groups in 2.5s
-      census: D2: 3948 groups in 9.1s
-      census: loads: 1 groups in 0.1s
-      census: D3: 11760 groups in 13.6s
-      census: D4: 2310 groups in 3.4s
-      census: D5: 2730 groups in 0.9s
-      decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
-      census: D6: 2 groups in 0.0s
-      census: D7: 451 groups in 0.0s
-      FAIL
-      FAIL	github.com/townsendmerino/goinfer/decoder	62.111s
-      FAIL
-
-  ok   test internal/config -run ^(TestInventory|TestInventory_plants)$ (0.4s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (18.0s)
+  ok   test internal/config -run ^(TestInventory|TestInventory_plants)$ (0.6s)
   ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.4s)
   ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (2.5s)
   ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (0.7s)
   ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.5s)
   ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.5s)
-  ok   test internal/memgate (5.2s)
+  ok   test internal/memgate (5.1s)
   ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
   ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.5s)
-  ok   build gpu (2.9s)
-  ok   vet gpu (1 pkg) (1.8s)
-  FAIL test gpu (204.0s)
-          tower_identity_test.go:37: qwen3              [[1 6 8]]                    device=true  values=768     00fd9808404adb6b265767b0fff3767755fb4da73576f92f591a346377615465
-          tower_identity_test.go:37: qwen3              [[1 10 6]]                   device=true  values=960     13b84a4acaa933f2492c1e58c3b9e987e2d4a4152be465dd88a3ba7de4a6552b
-          tower_identity_test.go:37: qwen3              [[1 4 4] [1 6 4]]            device=true  values=640     a49237677969c9109b3029296b526e394560acb6d1ff5f7d8193b40ebbe36993
-          tower_identity_test.go:37: qwen3-deepstack    [[1 4 6]]                    device=true  values=1152    be43c03e20fdfa9f8abb8e6ff448c6dc88d54fbf49f68b09d1ce93f4d70a88d9
-          tower_identity_test.go:37: qwen3-deepstack    [[1 6 4] [1 4 4]]            device=true  values=1920    ff723f46a4b148739f6d8053b1061f413bd670f66237483b6bf88ce6721f4726
-          tower_identity_test.go:37: glm-ocr            [[1 4 4]]                    device=true  values=768     b1477de36440aa56ac1e37f6a10ed4da3af3e4ede7e55fcb20c3996375f65f84
-          tower_identity_test.go:37: glm-ocr            [[1 6 8]]                    device=true  values=2304    96230c8aa93e8e4200836264ce52db94c4e00d99e8b31a39be036510bd48ece8
-          tower_identity_test.go:37: glm-ocr            [[1 10 6]]                   device=true  values=2880    3406ea8fc334d89236f5afe616d949593e355c6b06bf9204a766bf9b1ee0c2b0
-          tower_identity_test.go:37: glm-ocr            [[1 4 4] [1 6 4]]            device=true  values=1920    ab4bb94bda6ff6481d0d6944511f3f17cd8a4102f8dd0debfda26aa65a265a2a
-          tower_identity_test.go:37: gemma4-vision      2x3 pooled                   device=true  values=144     3a13958c4f576537563989367b487c25136d18512b0c7c84229ea53f60bb8293
-          tower_identity_test.go:37: gemma4-vision      3x2 pooled                   device=true  values=144     20f34e5548483f5736f682ebcb0813aa882c171616ae78b076394c27349a4f91
-          tower_identity_test.go:38: ../internal/towerid/testdata/towers.webgpu-linux-amd64.json is anchored to "webgpu vulkan NVIDIA GeForce RTX 2070 SUPER (595.112.07)"; this machine is "webgpu vulkan Intel(R) Iris(R) Plus Graphics 645 (CFL GT3) (Mesa 26.0.8-1ubuntu0.3)": re-anchor it deliberately (-towerid.update, reviewed), never carry it forward
-      --- FAIL: TestUploadKV_gemma4MoE (1.21s)
-          --- FAIL: TestUploadKV_gemma4MoE/kv-f32/past-the-window (0.36s)
-              uploadkv_geom_test.go:131: decode step 0: cosine(sequential, uploaded) = 0.99996568, max |diff| 0.00387
-              uploadkv_geom_test.go:135: decode step 0: cosine 0.99996568, want at least 0.999999
-              uploadkv_geom_test.go:131: decode step 1: cosine(sequential, uploaded) = 0.99997257, max |diff| 0.003109
-              uploadkv_geom_test.go:135: decode step 1: cosine 0.99997257, want at least 0.999999
-              uploadkv_geom_test.go:131: decode step 2: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
-              uploadkv_geom_test.go:131: decode step 3: cosine(sequential, uploaded) = 0.99987322, max |diff| 0.008124
-              uploadkv_geom_test.go:135: decode step 3: cosine 0.99987322, want at least 0.999999
-      FAIL
-      ledger: 617 Context(s) closed in this run
-      FAIL	github.com/townsendmerino/goinfer/gpu	202.498s
-      FAIL
-
-  skip metal: builds on darwin only
-touched: RED (CI runs the rest on push)
-VERDICT: FAIL — touched: 2 of 18 checks failed; did not run: metal
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)

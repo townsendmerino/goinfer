@@ -85,10 +85,9 @@ func TestHostFitKV_sharedLayersOwnNone(t *testing.T) {
 	}
 }
 
-// TestNewCache_reservesEachLayersWidth: a cache reserves each append-forever layer at its own K/V width, at f32 and at f16 and int8, so a wider layer
-// holds its context with no growth, past where the model's kvDim would have run out; a quantized cache keeps no f32 capacity; and a layer that shares
-// another's cache reserves nothing. Gemma 4's MoE keeps f32 on the CPU, so the quantized cases clear MoE on the loaded architecture: they read a
-// reservation and run nothing.
+// TestNewCache_reservesEachLayersWidth: a cache reserves each append-forever layer at its own K/V width, so a wider layer holds its context with no
+// growth, past where the model's kvDim would have run out, and a layer that shares another's cache reserves nothing. Only f32 needs this: Gemma 4's
+// attention is not the kernel a quantized cache requires, whether or not it has MoE, and the test holds that.
 func TestNewCache_reservesEachLayersWidth(t *testing.T) {
 	const ctx, tokens = 64, 8
 	m, err := Load("../testdata/gemma4-moe-kv-tiny", Options{Backend: "cpu", DirectLoad: true})
@@ -122,52 +121,13 @@ func TestNewCache_reservesEachLayersWidth(t *testing.T) {
 		t.Errorf("f32: %d forwards left layer %d at %d and %d floats, not its %d", tokens, wide, cap(c.keys[wide]), cap(c.vals[wide]), want)
 	}
 
+	if a.attnOrder() == attnBatchedAcc64 {
+		t.Error("Gemma 4's attention is the batched kernel, so it can quantize its cache without MoE: setQuant must then reserve each layer at its own width")
+	}
 	shared := loadSharedKVFixture(t) // a separate load: it marks layer 1 shared, and the checks above read it owning
-	sa := shared.w.arch
-	sharedC := shared.NewCache(ctx)
-	if cap(sharedC.keys[1]) != 0 || cap(sharedC.vals[1]) != 0 {
-		t.Errorf("f32: a shared layer reserves %d and %d floats", cap(sharedC.keys[1]), cap(sharedC.vals[1]))
+	if c := shared.NewCache(ctx); cap(c.keys[1]) != 0 || cap(c.vals[1]) != 0 {
+		t.Errorf("a shared layer reserves %d and %d floats", cap(c.keys[1]), cap(c.vals[1]))
 	}
-	for _, mo := range []*Model{m, shared} {
-		mo.w.arch.MoE = nil
-	}
-	if !a.kvF16OK() || !a.kvInt8OK() {
-		t.Fatal("VOID: the architecture without MoE takes neither quantized cache")
-	}
-	floats := func(c *KVCache, l int) int { return cap(c.keys[l]) + cap(c.vals[l]) }
-	m.kvH = true
-	q := m.NewCache(ctx)
-	m.kvH = false
-	if q.quant != kvqF16 {
-		t.Fatalf("VOID: the cache's quant is %v, want f16", q.quant)
-	}
-	if cap(q.keysH[wide]) != want || cap(q.valsH[wide]) != want || floats(q, wide) != 0 {
-		t.Errorf("f16: layer %d reserves %d and %d, want %d, and %d f32", wide, cap(q.keysH[wide]), cap(q.valsH[wide]), want, floats(q, wide))
-	}
-	m.kvI8 = true
-	q = m.NewCache(ctx)
-	m.kvI8 = false
-	if q.quant != kvI8 {
-		t.Fatalf("VOID: the cache's quant is %v, want int8", q.quant)
-	}
-	if cap(q.keysQ[wide]) != want || cap(q.valsQ[wide]) != want || floats(q, wide) != 0 {
-		t.Errorf("int8: layer %d reserves %d and %d, want %d, and %d f32", wide, cap(q.keysQ[wide]), cap(q.valsQ[wide]), want, floats(q, wide))
-	}
-	if heads := ctx * a.kvHeadsAt(wide); cap(q.keyScale[wide]) < heads || cap(q.valScale[wide]) < heads {
-		t.Errorf("int8: layer %d reserves %d and %d scales, under one a head at %d", wide, cap(q.keyScale[wide]), cap(q.valScale[wide]), heads)
-	}
-	if !sa.kvF16OK() {
-		t.Fatal("VOID: the shared fixture takes no quantized cache")
-	}
-	shared.kvH = true
-	if q := shared.NewCache(ctx); cap(q.keysH[1]) != 0 || cap(q.valsH[1]) != 0 {
-		t.Errorf("f16: a shared layer reserves %d and %d", cap(q.keysH[1]), cap(q.valsH[1]))
-	}
-	shared.kvH, shared.kvI8 = false, true
-	if q := shared.NewCache(ctx); cap(q.keysQ[1]) != 0 || cap(q.valsQ[1]) != 0 || cap(q.keyScale[1]) != 0 || cap(q.valScale[1]) != 0 {
-		t.Errorf("int8: a shared layer reserves %d, %d, %d and %d", cap(q.keysQ[1]), cap(q.valsQ[1]), cap(q.keyScale[1]), cap(q.valScale[1]))
-	}
-	shared.kvI8 = false
 }
 
 // TestResidentDense_countsEveryDeltaNetTensor: every f32 tensor of a DeltaNet layer is in the dense figure, since every one is uploaded on

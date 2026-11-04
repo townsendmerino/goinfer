@@ -1036,7 +1036,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	c.scr = newDecodeScratch(a)
 	// Must precede enableRings so local layers inherit the mode.
 	if quant != kvqF32 {
-		c.setQuantWidths(quant, capHint, a.kvDimAt)
+		c.setQuant(quant, capHint)
 	}
 	// Ring-buffer storage on sliding-window (local) layers: keep only the W most recent positions, the only ones a future query
 	// can read. ringLayerAt names them, the same predicate that gave them no reservation above; a family whose forward does not
