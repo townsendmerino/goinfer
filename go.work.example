@@ -5,9 +5,9 @@ go 1.27.2
 
 use (
 	.
-	./gpu
-	./cuda
-	./metal
+	./backend/webgpu
+	./backend/cuda
+	./backend/metal
 	./demo/agent
 	./apps/sdktest
 	./apps/site

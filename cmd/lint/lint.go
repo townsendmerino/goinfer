@@ -34,9 +34,9 @@ type target struct {
 
 var targets = []target{
 	{name: "root", args: []string{"./..."}},
-	{name: "gpu", args: []string{"-tags", "gpu goinfer_testhooks", "./gpu/..."}, workspace: []string{"gpu", "demo/agent"}, cgo: true},
-	{name: "demo/agent", args: []string{"./demo/agent/..."}, workspace: []string{"gpu", "demo/agent"}},
-	{name: "cuda", args: []string{"-tags", "cuda goinfer_testhooks", "./cuda/..."}, workspace: []string{"cuda"}},
+	{name: "gpu", args: []string{"-tags", "gpu goinfer_testhooks", "./backend/webgpu/..."}, workspace: []string{"backend/webgpu", "demo/agent"}, cgo: true},
+	{name: "demo/agent", args: []string{"./demo/agent/..."}, workspace: []string{"backend/webgpu", "demo/agent"}},
+	{name: "cuda", args: []string{"-tags", "cuda goinfer_testhooks", "./backend/cuda/..."}, workspace: []string{"backend/cuda"}},
 }
 
 // ciEnv is the platform CI's staticcheck jobs run on (ubuntu-24.04).

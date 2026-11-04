@@ -10,7 +10,7 @@ pure-Go CPU/WebGPU; CUDA is never the default.
 ```sh
 # build the cuda submodule entrypoint (since v0.10.0 the root cmd/serve builds no backend —
 # a -tags cuda on it fails the build; see the README build section)
-CGO_ENABLED=0 go build -tags cuda -o goinfer-cuda github.com/townsendmerino/goinfer/cuda/cmd/serve   # or …/cuda/cmd/chat
+CGO_ENABLED=0 go build -tags cuda -o goinfer-cuda github.com/townsendmerino/goinfer/backend/cuda/cmd/serve   # or …/backend/cuda/cmd/chat
 
 # select it at runtime
 ./goinfer-cuda --backend cuda --model qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
@@ -49,7 +49,7 @@ N-39 (docs/audit-2026-09-10.md): what happens with `-ctx` UNSET changed under th
 `--fit=off` or `-moe-cache-experts` is set, or the model's own context window is already ≤ 4096, an
 unpinned load tries `min(model context window, 8192)` and uses whatever the fit probe lands on —
 never less than the historical 4096, but often more, on a card with the headroom for it
-(`cuda/resident.go`'s `resolveCtxCapFit`/`fitDefaultCtx`). **4096 is now only a FLOOR** — the value
+(`backend/cuda/resident.go`'s `resolveCtxCapFit`/`fitDefaultCtx`). **4096 is now only a FLOOR** — the value
 used when fit is off, disabled by `-moe-cache-experts` (that mode gives the elastic MoE expert-slot
 cache first claim on free VRAM instead; growing ctx there measured a real regression, see
 `resolveCtxCapFit`'s own comment), or when the fit probe can't get a usable free-VRAM reading — not
@@ -273,9 +273,9 @@ exist in each flavor:
 
 | Backend | Binary (server / REPL) | Platform | cgo |
 |---|---|---|---|
-| WebGPU | `./gpu/cmd/serve`, `./gpu/cmd/chat` (`-tags gpu`) | any GPU (Metal / Vulkan / DX12) | yes (confined to the `gpu` submodule) |
-| CUDA | `./cuda/cmd/serve`, `./cuda/cmd/chat` (`-tags cuda`) | NVIDIA — Linux / Windows x86-64 | **no** — `CGO_ENABLED=0`, dlopens the driver |
-| Metal | `./metal/cmd/serve`, `./metal/cmd/chat` | Apple Silicon | **no** — `CGO_ENABLED=0`, purego / Obj-C |
+| WebGPU | `./backend/webgpu/cmd/serve`, `./backend/webgpu/cmd/chat` (`-tags gpu`) | any GPU (Metal / Vulkan / DX12) | yes (confined to the `backend/webgpu` submodule) |
+| CUDA | `./backend/cuda/cmd/serve`, `./backend/cuda/cmd/chat` (`-tags cuda`) | NVIDIA — Linux / Windows x86-64 | **no** — `CGO_ENABLED=0`, dlopens the driver |
+| Metal | `./backend/metal/cmd/serve`, `./backend/metal/cmd/chat` | Apple Silicon | **no** — `CGO_ENABLED=0`, purego / Obj-C |
 
 The native **CUDA** and **Metal** backends need only the platform's GPU driver —
 **no CUDA toolkit, no Xcode, no Python, no cgo** — and are selected at runtime with
@@ -292,12 +292,12 @@ full module path; nothing else is needed:
 
 ```bash
 # CUDA server / REPL
-CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve
-CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/chat
+CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/backend/cuda/cmd/serve
+CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/backend/cuda/cmd/chat
 # WebGPU (cgo)
-go build -tags gpu   github.com/townsendmerino/goinfer/gpu/cmd/serve
+go build -tags gpu   github.com/townsendmerino/goinfer/backend/webgpu/cmd/serve
 # Metal (darwin; the module is darwin-gated, so no -tags)
-go build             github.com/townsendmerino/goinfer/metal/cmd/serve
+go build             github.com/townsendmerino/goinfer/backend/metal/cmd/serve
 ```
 
 **In-tree** (a checkout) — run straight from the submodule; its `go.mod` resolves the root
@@ -305,11 +305,11 @@ via a `replace`, so no workspace setup is needed:
 
 ```bash
 # NVIDIA — cgo-free native CUDA
-cd cuda && CGO_ENABLED=0 go run -tags cuda ./cmd/serve --backend cuda \
+cd backend/cuda && CGO_ENABLED=0 go run -tags cuda ./cmd/serve --backend cuda \
     --model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf     # or ./cmd/chat for the REPL
 
 # Apple Silicon — cgo-free native Metal (darwin-gated; no -tags needed)
-cd metal && CGO_ENABLED=0 go run ./cmd/serve --backend metal --quant int8int8 \
+cd backend/metal && CGO_ENABLED=0 go run ./cmd/serve --backend metal --quant int8int8 \
     --model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
 ```
 
@@ -321,7 +321,7 @@ binary lists no CUDA library at all.
 
 | | ships | on disk |
 |---|---|---|
-| goinfer (`cuda/cmd/serve`) | one static binary | **14.6 MB** |
+| goinfer (`backend/cuda/cmd/serve`) | one static binary | **14.6 MB** |
 | Ollama v0.32.5 (linux-amd64) | binary + bundled CUDA v12 **and** v13 toolchains | **2.1 GB** (1.42 GB download) |
 
 **Why one small artifact covers every card: goinfer ships PTX, not SASS.** PTX is

@@ -28,7 +28,7 @@ func metalCellGroups(model string) []metalCellGroup {
 	return []metalCellGroup{
 		{
 			Group: "suite", Header: "2. Metal suite",
-			Cell: cell{Name: "metal-suite", Pkgs: []string{"./metal/"}, Serial: true, Extra: []string{"-short"}},
+			Cell: cell{Name: "metal-suite", Pkgs: []string{"./backend/metal/"}, Serial: true, Extra: []string{"-short"}},
 			OK:   "full metal suite", Bad: "metal suite", Detail: failLineRe, Evidence: okLineRe,
 		},
 		{
@@ -37,7 +37,7 @@ func metalCellGroups(model string) []metalCellGroup {
 			// string; a hand-copied pattern here is how gate-shaped tests go unmatched. The cell is filtered, and declares its
 			// timeout, so a timeout is not mistaken for a crash.
 			Group: "parity", Header: "2c. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here)",
-			Cell: cell{Name: "metal-parity", Pkgs: []string{"./metal/"}, Tags: []string{"goinfer_testhooks"}, Run: metalParityRun,
+			Cell: cell{Name: "metal-parity", Pkgs: []string{"./backend/metal/"}, Tags: []string{"goinfer_testhooks"}, Run: metalParityRun,
 				Serial: true, Timeout: "20m", Env: map[string]string{"GOINFER_HEAVY_TESTS": "1"}},
 			VacuousFails: true,
 			OK:           "resident parity gates (dense, gemma3, gemma4 MoE, qwen3.5, mellum, gpt-oss, paging bit-exactness)",
@@ -48,7 +48,7 @@ func metalCellGroups(model string) []metalCellGroup {
 			// The cell sets GOINFER_HEAVY_TESTS itself: its tests call requireHeavyModel and the gate unsets the ambient value
 			// (runGPU), so without it every test skips and the group would pass having run nothing.
 			Group: "lifecycle", Header: "4. lifecycle",
-			Cell: cell{Name: "metal-lifecycle", Pkgs: []string{"./metal/"},
+			Cell: cell{Name: "metal-lifecycle", Pkgs: []string{"./backend/metal/"},
 				Run: "TestMetal_CloseFreesMemory|TestMetal_CloseWithSecondModelAlive",
 				Env: map[string]string{"GOINFER_HEAVY_TESTS": "1"}},
 			NeedsModel: true, VacuousFails: true,
@@ -60,7 +60,7 @@ func metalCellGroups(model string) []metalCellGroup {
 		},
 		{
 			Group: "prefill", Header: "4b. prefill (f16-MMA TTFT — a shipped path, and it shipped NaN)",
-			Cell: cell{Name: "metal-prefill", Pkgs: []string{"./metal/"}, Run: "TestPrefillParity|TestPrefillNoNaN",
+			Cell: cell{Name: "metal-prefill", Pkgs: []string{"./backend/metal/"}, Run: "TestPrefillParity|TestPrefillNoNaN",
 				Env: map[string]string{"GOINFER_METAL_MODEL": model, "GOINFER_HEAVY_TESTS": "1"}},
 			NeedsModel: true, VacuousFails: true,
 			OK: "prefill matches sequential decode and emits finite logits (no NaN)",

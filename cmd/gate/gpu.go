@@ -207,7 +207,7 @@ func detectWebGPU(w io.Writer) webgpuProbe {
 	if os.Getenv("GOINFER_GATE_SKIP_WEBGPU") != "" {
 		return webgpuProbe{optOut: true}
 	}
-	out, err := exec.Command("go", "test", "-tags", "gpu", "./gpu/internal/kernels/", "-run", "TestAdapterProbe", "-v").CombinedOutput()
+	out, err := exec.Command("go", "test", "-tags", "gpu", "./backend/webgpu/internal/kernels/", "-run", "TestAdapterProbe", "-v").CombinedOutput()
 	present, backend, note := classifyAdapterProbe(out, err)
 	if note != "" {
 		fmt.Fprint(w, note)
@@ -443,7 +443,7 @@ func isolatedTests() []string { return markedTests("needsFreshProcess(t,") }
 
 // markedTests returns every top-level test in cuda/*_test.go whose body calls marker.
 func markedTests(marker string) []string {
-	files, _ := filepath.Glob(filepath.Join("cuda", "*_test.go"))
+	files, _ := filepath.Glob(filepath.Join("backend", "cuda", "*_test.go"))
 	sort.Strings(files)
 	set := map[string]bool{}
 	fnRe := regexp.MustCompile(`^func (Test[A-Za-z0-9_]*)\(`)
@@ -558,13 +558,13 @@ func (g *gpuGate) heavyTier(src gpuInputs) error {
 
 // heavyDrainCell and heavyIsoCell are the drain group's process and one fresh-process test's.
 func heavyDrainCell(drain []string) cell {
-	return cell{Name: "cuda-drain", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
+	return cell{Name: "cuda-drain", Pkgs: []string{"./backend/cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
 		Serial: true, Timeout: "20m", Run: "^(" + strings.Join(drain, "|") + ")$",
 		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1", "GOINFER_DRAIN_GROUP": "1"}}
 }
 
 func heavyIsoCell(name string) cell {
-	return cell{Name: "cuda-iso-" + name, Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
+	return cell{Name: "cuda-iso-" + name, Pkgs: []string{"./backend/cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
 		Serial: true, Timeout: "30m", Run: "^" + name + "$",
 		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1"}}
 }
@@ -576,7 +576,7 @@ func (g *gpuGate) readHeavy() heavyInput {
 		return heavyInput{Skipped: true}
 	}
 	in := heavyInput{Drain: drainingTests(), Iso: isolatedTests()}
-	listed, err := listCUDATests("./cuda/")
+	listed, err := listCUDATests("./backend/cuda/")
 	in.Total = len(listed)
 	if err != nil || in.Total == 0 {
 		if err != nil {
@@ -606,7 +606,7 @@ func (g *gpuGate) readHeavy() heavyInput {
 }
 
 // cudaKernelsPkg holds the CUDA kernel-level tests that need nothing from package cuda but its PTX.
-const cudaKernelsPkg = "./cuda/kernels/"
+const cudaKernelsPkg = "./backend/cuda/kernels/"
 
 // listCUDATests lists pkg's top-level tests under the heavy tier's tags.
 func listCUDATests(pkg string) ([]string, error) {
@@ -627,7 +627,7 @@ func listCUDATests(pkg string) ([]string, error) {
 
 // partitionHeavy derives the heavy tier's main-group processes for the listed ./cuda/ tests from the source (heavyPartition).
 func partitionHeavy(listed []string, modelsDir string) ([]heavyGroup, []string, error) {
-	refs, err := testReachableLiterals("cuda", []string{"cuda", "goinfer_testhooks"}, filepath.Join("testdata", "assets.json"))
+	refs, err := testReachableLiterals("backend/cuda", []string{"cuda", "goinfer_testhooks"}, filepath.Join("testdata", "assets.json"))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -646,7 +646,7 @@ func (g *gpuGate) runHeavyGroup(h heavyGroup) (*results, cellResult, string, pro
 	var peak procPeak
 	pkg := h.Pkg
 	if pkg == "" {
-		pkg = "./cuda/"
+		pkg = "./backend/cuda/"
 	}
 	c := cell{
 		Name: "cuda-heavy-" + h.Label, Pkgs: []string{pkg}, Tags: []string{"cuda", "goinfer_testhooks"},
@@ -779,7 +779,7 @@ func probeNVRTC() map[string][2]string {
 			continue
 		}
 		cmd := exec.Command("python3", "nvrtc_compile.py", src, dst, arch, inc)
-		cmd.Dir = "cuda"
+		cmd.Dir = filepath.Join("backend", "cuda")
 		cmd.Env = append(os.Environ(),
 			"LD_LIBRARY_PATH="+lib, "NVRTC_SO="+filepath.Join(lib, "libnvrtc.so.12"))
 		if err := cmd.Run(); err != nil {
@@ -799,7 +799,7 @@ func probeNVRTC() map[string][2]string {
 // does not mutate the tree. A file that differs is written to keepDir when it is set (`gate ptx -keep`). A file is left
 // unverified only when the NVRTC version it records is not installed here or its build failed; nothing is exempted by name.
 func readPTX(keepDir string) ptxInput {
-	st, err := os.Stat(filepath.Join("cuda", "build_ptx.sh"))
+	st, err := os.Stat(filepath.Join("backend", "cuda", "build_ptx.sh"))
 	if why := ptxScriptDecline(st, err, runtime.GOOS); why != "" {
 		return ptxInput{Decline: why}
 	}
@@ -812,7 +812,7 @@ func readPTX(keepDir string) ptxInput {
 		return m
 	}())}
 
-	ptxFiles, _ := filepath.Glob(filepath.Join("cuda", "testdata", "*.ptx"))
+	ptxFiles, _ := filepath.Glob(filepath.Join("backend", "cuda", "testdata", "*.ptx"))
 	sort.Strings(ptxFiles)
 	backup, err := os.MkdirTemp("", "gate_ptx_before")
 	if err != nil {
@@ -832,14 +832,14 @@ func readPTX(keepDir string) ptxInput {
 		// the KV cache as f16, and <k>_cap.ptx and <k>_kv16_cap.ptx are <k>.cu built with the attention softcap (at f32 and at f16
 		// KV); build_ptx.sh writes each whenever it builds <k>.
 		kernel := base
-		if _, err := os.Stat(filepath.Join("cuda", base+".cu")); err != nil {
+		if _, err := os.Stat(filepath.Join("backend", "cuda", base+".cu")); err != nil {
 			for _, suffix := range []string{"_kv16_cap", "_cap", "_kv16"} {
 				if k := strings.TrimSuffix(base, suffix); k != base {
 					kernel = k
 					break
 				}
 			}
-			if _, err := os.Stat(filepath.Join("cuda", kernel+".cu")); kernel == base || err != nil {
+			if _, err := os.Stat(filepath.Join("backend", "cuda", kernel+".cu")); kernel == base || err != nil {
 				continue // no source ⇒ not ours to reproduce
 			}
 		}
@@ -853,7 +853,7 @@ func readPTX(keepDir string) ptxInput {
 			pf.Outcome, pf.Why = "unverified", "needs V"+want
 		default:
 			cmd := exec.Command("./build_ptx.sh", kernel)
-			cmd.Dir = "cuda"
+			cmd.Dir = filepath.Join("backend", "cuda")
 			cmd.Env = append(os.Environ(), "NVRTC_LIB="+ent[0], "CUDA_INC="+ent[1])
 			if err := cmd.Run(); err != nil {
 				pf.Outcome, pf.Why = "unverified", "build failed at V"+want
@@ -933,7 +933,7 @@ func runPTX(w io.Writer, keepDir string) int {
 func buildCgoFree() cgoFreeInput {
 	bin := filepath.Join(os.TempDir(), "gpu_gate_serve")
 	build := exec.Command("go", "build", "-o", bin, "./cmd/serve")
-	build.Dir = "metal"
+	build.Dir = filepath.Join("backend", "metal")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if err := build.Run(); err != nil {
 		return cgoFreeInput{}
@@ -952,7 +952,7 @@ func buildCgoFree() cgoFreeInput {
 func buildCUDACgoFree() cgoFreeInput {
 	bin := filepath.Join(os.TempDir(), "gpu_gate_serve")
 	build := exec.Command("go", "build", "-tags", "cuda", "-o", bin, "./cmd/serve")
-	build.Dir = "cuda"
+	build.Dir = filepath.Join("backend", "cuda")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	out, err := build.CombinedOutput()
 	if err != nil {

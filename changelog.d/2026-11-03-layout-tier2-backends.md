@@ -1,0 +1,4 @@
+- **BREAKING — GPU backend modules moved under `backend/`**: the three GPU backend satellite modules have moved under `backend/` as part of the Tier 2 repository layout reorganization, and the WebGPU package clause is now `package webgpu` instead of `package gpu`:
+  - `github.com/townsendmerino/goinfer/cuda` (and subpaths) -> `github.com/townsendmerino/goinfer/backend/cuda`
+  - `github.com/townsendmerino/goinfer/metal` (and subpaths) -> `github.com/townsendmerino/goinfer/backend/metal`
+  - `github.com/townsendmerino/goinfer/gpu` (and subpaths) -> `github.com/townsendmerino/goinfer/backend/webgpu` (`package gpu` -> `package webgpu`)

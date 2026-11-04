@@ -204,7 +204,7 @@ SERVE = {
     "webgpu": os.environ.get("GOINFER_SERVE_WEBGPU", "/home/francis/bench-v0.15.0/serve-webgpu"),
     # Metal, added 2026-09-04 for the Mac side of docs/tasks/task-peer-benchmarks.md. Built from the
     # `metal/` submodule (M-19: the root cmd/serve builds no backend) -- `go build
-    # github.com/townsendmerino/goinfer/metal/cmd/serve`, darwin-only, no build tag needed. No
+    # github.com/townsendmerino/goinfer/backend/metal/cmd/serve`, darwin-only, no build tag needed. No
     # Linux-box default exists (there is nothing to default to), so this path is DELIBERATELY
     # wrong/absent unless GOINFER_SERVE_METAL is set -- it will only ever be selected by
     # BENCH_BACKENDS=metal on darwin.

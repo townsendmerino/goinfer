@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// Gemma 4 vision tower accelerators (docs/multimodal.md, "Finishing this doc"). A backend module (goinfer/metal) registers a device
+// Gemma 4 vision tower accelerators (docs/multimodal.md, "Finishing this doc"). A backend module (goinfer/backend/metal) registers a device
 // tower built from aikit's export (vision.Gemma4Encoder.Weights) here, and every Gemma 4 tower consumer can use it: Gemma 4's own image
 // input in serve and EmbeddingGemma 2's image embeddings. The tower runs the patch embed and the encoder layers; the pool and
 // projection after them stay aikit's (Gemma4Encoder.FinishHidden).

@@ -447,9 +447,9 @@ def fit_binary(opts):
         elif t.startswith(("-backend=", "--backend=")):
             backend = t.split("=", 1)[1]
     if backend == "cuda":
-        return ["go", "run", "-tags", "cuda", "./cuda/cmd/chat"]
+        return ["go", "run", "-tags", "cuda", "./backend/cuda/cmd/chat"]
     if backend == "metal":
-        return ["go", "run", "./metal/cmd/chat"]
+        return ["go", "run", "./backend/metal/cmd/chat"]
     return ["go", "run", "./demo/chat"]
 
 

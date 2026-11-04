@@ -17,6 +17,9 @@ on:
   push:
     tags:
       - 'v*'
+      - 'backend/webgpu/v*'
+      - 'backend/cuda/v*'
+      - 'backend/metal/v*'
       - 'gpu/v*'
       - 'cuda/v*'
       - 'metal/v*'
@@ -33,11 +36,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - module: gpu
+          - module: backend/webgpu
             tags: gpu
-          - module: cuda
+          - module: backend/cuda
             tags: cuda
-          - module: metal
+          - module: backend/metal
             tags: metal
           - module: demo/agent
             tags: ""
@@ -58,7 +61,7 @@ jobs:
       - name: standalone build (GOWORK=off)
         env:
           GOWORK: "off"
-          GOOS: ${{ matrix.module == 'metal' && 'darwin' || 'linux' }}
+          GOOS: ${{ matrix.module == 'backend/metal' && 'darwin' || 'linux' }}
         run: |
           cd ${{ matrix.module }}
           if [ -n "${{ matrix.tags }}" ]; then

@@ -181,7 +181,7 @@ jobs:
       # requires aikit/gpu since Track AX moved the device package in; cuda's own dependencies are downloaded
       # here into the shared GOMODCACHE, and a pinned record's older aikit/gpu comes through the next step.
       - name: populate module cache for cross-repo citations (cuda's requires)
-        run: cd cuda && go mod download
+        run: cd backend/cuda && go mod download
 
       # A PINNED record's aikit citations are checked at the aikit version the pinned commit required, read from
       # the module cache, and the steps above download only the versions go.mod requires today. The lint lists
@@ -292,7 +292,7 @@ jobs:
       # binding it exists to keep out. Any WebGPU binding in the root is a leak, whoever wrote it.
       - name: cleanliness guard (no webgpu / cuda / metal in root)
         run: |
-          leak='webgpu|eitamring/gocudrv|ebitengine/purego|townsendmerino/aikit/gpu|townsendmerino/goinfer/(gpu|cuda|metal)'
+          leak='webgpu|eitamring/gocudrv|ebitengine/purego|townsendmerino/aikit/gpu|townsendmerino/goinfer/(backend/(webgpu|cuda|metal)|gpu|cuda|metal)'
           if go list -deps ./... | grep -Eiq "$leak"; then
             echo "::error::an opt-in backend dep leaked into the compiled root package set"
             go list -deps ./... | grep -Ei "$leak"
@@ -711,7 +711,7 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          cache-dependency-path: gpu/go.sum
+          cache-dependency-path: backend/webgpu/go.sum
 
       # No X11/GL packages: cogentcore/webgpu needed them; oliverbestmann/webgpu (a16a537d) links only
       # its bundled wgpu_native plus -lm -ldl, and nothing here imports its wgpuglfw. Removed 2026-09-25.
@@ -722,10 +722,10 @@ jobs:
       # (2026-08-15; a committed replace broke `go install …@vX`), so `go work init`
       # is what resolves the root, not a replace.
       - name: workspace (resolve unpublished goinfer locally)
-        run: go work init . ./gpu ./demo/agent
+        run: go work init . ./backend/webgpu ./demo/agent
 
       - name: build -tags gpu
-        run: go build -tags 'gpu goinfer_testhooks' ./gpu/...
+        run: go build -tags 'gpu goinfer_testhooks' ./backend/webgpu/...
 
       # demo/agent is the fifth module and had ZERO CI coverage — the MCP-SDK demo compiled for
       # the first time at tag time, by a human running RELEASING.md Step 2 by hand (M-34). It
@@ -748,30 +748,30 @@ jobs:
       # backend signature drift must fail CI here (it once broke the shipped -tags gpu binary
       # while CI stayed green — audit M-18). Covered by ./gpu/... above, but kept explicit.
       - name: build -tags gpu (wired serve + demo entrypoints)
-        run: go build -tags 'gpu goinfer_testhooks' ./gpu/cmd/serve ./gpu/cmd/chat
+        run: go build -tags 'gpu goinfer_testhooks' ./backend/webgpu/cmd/serve ./backend/webgpu/cmd/chat
 
       - name: vet -tags gpu
-        run: go vet -tags 'gpu goinfer_testhooks' ./gpu/...
+        run: go vet -tags 'gpu goinfer_testhooks' ./backend/webgpu/...
 
       # `gate gpu` builds ./gpu/ and ./gpu/internal/kernels/ under -tags gpu alone: its WebGPU adapter probe and the webgpu-suite
       # cell. A gpu-only test file that needs a testhooks seam breaks that build, and the gate then reads the probe's failure as
       # "no adapter" and skips its WebGPU group (V-21), so it is vetted here under that tag too.
       - name: vet -tags gpu alone (gate gpu's adapter probe and webgpu-suite build)
-        run: go vet -tags gpu ./gpu/...
+        run: go vet -tags gpu ./backend/webgpu/...
 
       # The pinned staticcheck build (Go 1.27.2): see .github/actions/staticcheck.
       - uses: ./.github/actions/staticcheck
         with:
           version: "2026.2.1" # v0.8.1, built against golang.org/x/tools v0.51.0 (Go 1.27.2: see the action)
       - name: staticcheck -tags gpu
-        run: staticcheck -tags 'gpu goinfer_testhooks' ./gpu/...
+        run: staticcheck -tags 'gpu goinfer_testhooks' ./backend/webgpu/...
       - name: staticcheck demo/agent
         run: staticcheck ./demo/agent/...
 
       # GPU tests skip cleanly with no adapter (headless runner); this confirms
       # they compile and the resident-matmul path is exercised where possible.
       - name: test -tags gpu
-        run: go test -short -tags 'gpu goinfer_testhooks' ./gpu/...
+        run: go test -short -tags 'gpu goinfer_testhooks' ./backend/webgpu/...
 
   # sdktest: the official OpenAI and Anthropic Go SDKs against the server served in process (package server), on the
   # committed tiny model. A module of its own so the SDKs never enter the root go.mod; stitched like the others.
@@ -810,32 +810,32 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          cache-dependency-path: cuda/go.sum
+          cache-dependency-path: backend/cuda/go.sum
 
       - name: workspace (resolve unpublished goinfer locally)
-        run: go work init . ./cuda
+        run: go work init . ./backend/cuda
 
       - name: build -tags cuda (backend module)
-        run: CGO_ENABLED=0 go build -tags 'cuda goinfer_testhooks' ./cuda/...
+        run: CGO_ENABLED=0 go build -tags 'cuda goinfer_testhooks' ./backend/cuda/...
 
       # The wired binaries must compile with the cuda backend registered (cuda/cmd/* since M-19).
       - name: build -tags cuda (wired serve + demo entrypoints)
-        run: CGO_ENABLED=0 go build -tags 'cuda goinfer_testhooks' ./cuda/cmd/serve ./cuda/cmd/chat
+        run: CGO_ENABLED=0 go build -tags 'cuda goinfer_testhooks' ./backend/cuda/cmd/serve ./backend/cuda/cmd/chat
 
       - name: vet -tags cuda
-        run: go vet -tags 'cuda goinfer_testhooks' ./cuda/...
+        run: go vet -tags 'cuda goinfer_testhooks' ./backend/cuda/...
 
       # The module must also vet with no tag: gopls, go doc and an untagged `go vet ./...` read it that way, and a file
       # missing its //go:build cuda line breaks them while every tagged step above stays green.
       - name: vet, untagged
-        run: go vet ./cuda/...
+        run: go vet ./backend/cuda/...
 
       # `gate gpu`'s kernel-level suite (check 2a) builds the cuda tests with -tags cuda and NOTHING else, to prove the kernel tests need no
       # test hooks. A _test.go file that uses a helper defined under goinfer_testhooks without its own tag compiles in every step above and
       # fails only there (cuda/kv2_optionoff_test.go did, 2026-10-16: the device gate's 2a was red on a build error CI never saw).
       # `go vet` compiles the tests; this step type-checks that exact tag set.
       - name: vet -tags cuda alone (the device gate's 2a build)
-        run: go vet -tags cuda ./cuda/...
+        run: go vet -tags cuda ./backend/cuda/...
 
       # The pinned staticcheck build (Go 1.27.2): see .github/actions/staticcheck.
       # CGO_ENABLED=0 dropped here: it only affects Go compilation (go build/run/test), and this
@@ -845,11 +845,11 @@ jobs:
         with:
           version: "2026.2.1" # v0.8.1, built against golang.org/x/tools v0.51.0 (Go 1.27.2: see the action)
       - name: staticcheck -tags cuda
-        run: staticcheck -tags 'cuda goinfer_testhooks' ./cuda/...
+        run: staticcheck -tags 'cuda goinfer_testhooks' ./backend/cuda/...
 
       # Compile + skip cleanly on the GPU-less runner (tests t.Skip without a device).
       - name: test -tags cuda
-        run: CGO_ENABLED=0 go test -short -tags 'cuda goinfer_testhooks' ./cuda/...
+        run: CGO_ENABLED=0 go test -short -tags 'cuda goinfer_testhooks' ./backend/cuda/...
 
       # The shipped kernels are the committed cuda/testdata/*.ptx, embedded as they are. Each must rebuild byte for byte
       # from its .cu at the NVRTC version the file records, or a .ptx that does not match its source would ship. NVRTC
@@ -1096,23 +1096,23 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          cache-dependency-path: gpu/go.sum
+          cache-dependency-path: backend/webgpu/go.sum
 
       - name: workspace (resolve unpublished goinfer locally)
-        run: go work init . ./gpu
+        run: go work init . ./backend/webgpu
 
       - name: build -tags gpu
-        run: go build -tags 'gpu goinfer_testhooks' ./gpu/...
+        run: go build -tags 'gpu goinfer_testhooks' ./backend/webgpu/...
 
       # Wired serve + demo compile-check on darwin too (audit M-18) — see the linux gpu job.
       - name: build -tags gpu (wired serve + demo entrypoints)
-        run: go build -tags 'gpu goinfer_testhooks' ./gpu/cmd/serve ./gpu/cmd/chat
+        run: go build -tags 'gpu goinfer_testhooks' ./backend/webgpu/cmd/serve ./backend/webgpu/cmd/chat
 
       - name: vet -tags gpu
-        run: go vet -tags 'gpu goinfer_testhooks' ./gpu/...
+        run: go vet -tags 'gpu goinfer_testhooks' ./backend/webgpu/...
 
       - name: test -tags gpu
-        run: go test -short -tags 'gpu goinfer_testhooks' ./gpu/...
+        run: go test -short -tags 'gpu goinfer_testhooks' ./backend/webgpu/...
 
   # cgo-free Metal module (metal/) on darwin/arm64 — the purego-objc resident decode + f16-MMA
   # prefill kernels. It is its OWN module (metal/go.mod, `replace ../`), so NEITHER the root nor
@@ -1133,7 +1133,7 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          cache-dependency-path: metal/go.sum
+          cache-dependency-path: backend/metal/go.sum
 
       # metal/go.mod `require`s the unpublished root (N-54, docs/audit-2026-09-10.md: this used to
       # say the reverse) but has no `replace` for it, so a standalone build resolves the root from
@@ -1141,10 +1141,10 @@ jobs:
       # workspace supplies the LOCAL root module instead — same ephemeral stitch as gpu-darwin
       # (go.work is gitignored).
       - name: workspace (resolve unpublished goinfer locally)
-        run: go work init . ./metal
+        run: go work init . ./backend/metal
 
       - name: build (metal module)
-        run: go build ./metal/...
+        run: go build ./backend/metal/...
 
       # Compile the WIRED serve + chat entrypoints (metal/cmd/{serve,chat}): the
       # RegisterBackend blank-imports live in the metal submodule cmd/ mains since audit M-19
@@ -1152,10 +1152,10 @@ jobs:
       # A backend signature drift must fail CI here — it once broke the shipped metal binary
       # while CI stayed green (audit M-18). Covered by ./metal/... above, but kept explicit.
       - name: build metal (wired serve + chat entrypoints)
-        run: go build ./metal/cmd/serve ./metal/cmd/chat
+        run: go build ./backend/metal/cmd/serve ./backend/metal/cmd/chat
 
       - name: vet (metal module)
-        run: go vet ./metal/...
+        run: go vet ./backend/metal/...
 
       # G-02: the untagged vet above compiles NONE of the 59 files behind
       # `//go:build darwin && goinfer_testhooks` -- 64 test funcs including every
@@ -1165,7 +1165,7 @@ jobs:
       # until someone hand-ran with the tag. vet COMPILES without running, so this
       # is device-free and safe on the runner whose Metal layer SIGSEGVs.
       - name: vet (metal module, testhooks-tagged — compiles the 59 device-test files)
-        run: go vet -tags goinfer_testhooks ./metal/...
+        run: go vet -tags goinfer_testhooks ./backend/metal/...
 
       # DEVICE TESTS CANNOT RUN HERE. The macos-latest runner's paravirtual Metal/objc layer
       # SIGSEGVs inside purego's objc_msgSend the moment a test touches the device (measured: a
@@ -1180,22 +1180,22 @@ jobs:
       # green while running literally nothing, with no other step in this job to catch it.
       - name: falsifiability gate exists (zero-match guard)
         run: |
-          matched=$(go test -list 'TestParity_NaNCosineFailsTheGate' ./metal/... | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          matched=$(go test -list 'TestParity_NaNCosineFailsTheGate' ./backend/metal/... | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
           if [ -z "$matched" ]; then
             echo "::error::TestParity_NaNCosineFailsTheGate matched NOTHING in ./metal/... — renamed or deleted? the next step would silently report green running nothing, and it is the ONLY test this job runs"
             exit 1
           fi
           # MM2a: Metal's build-demand report against decoder's default copy, also device-free (fixtures load on the CPU).
-          matched=$(go test -list 'TestBuildDemand_matchesDecoderDefault' ./metal/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          matched=$(go test -list 'TestBuildDemand_matchesDecoderDefault' ./backend/metal/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
           if [ -z "$matched" ]; then
             echo "::error::TestBuildDemand_matchesDecoderDefault matched NOTHING in ./metal/ — renamed or deleted?"
             exit 1
           fi
           # MM3c: the source scan that every production MTLBuffer names its plan line; device-free.
-          matched=$(go test -list 'TestLedger_everyMetalAllocationNamesALine' ./metal/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          matched=$(go test -list 'TestLedger_everyMetalAllocationNamesALine' ./backend/metal/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
           if [ -z "$matched" ]; then
             echo "::error::TestLedger_everyMetalAllocationNamesALine matched NOTHING in ./metal/ — renamed or deleted?"
             exit 1
           fi
       - name: test (device-free tests only — the runner's Metal layer SIGSEGVs)
-        run: go test -run 'TestParity_NaNCosineFailsTheGate|TestBuildDemand_matchesDecoderDefault|TestLedger_everyMetalAllocationNamesALine' ./metal/...
+        run: go test -run 'TestParity_NaNCosineFailsTheGate|TestBuildDemand_matchesDecoderDefault|TestLedger_everyMetalAllocationNamesALine' ./backend/metal/...

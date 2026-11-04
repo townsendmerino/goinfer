@@ -497,11 +497,11 @@ func identityModeDesc(o identityOpts) string {
 func identityBuildDesc(backend string) string {
 	switch backend {
 	case "metal":
-		return "dumper in metal/ (registers the backend), ephemeral go.work: . ./metal"
+		return "dumper in backend/metal/ (registers the backend), ephemeral go.work: . ./backend/metal"
 	case "webgpu":
-		return "dumper in gpu/ with -tags gpu, ephemeral go.work: . ./gpu"
+		return "dumper in backend/webgpu/ with -tags gpu, ephemeral go.work: . ./backend/webgpu"
 	case "cuda":
-		return "dumper in cuda/ with -tags cuda, ephemeral go.work: . ./cuda"
+		return "dumper in backend/cuda/ with -tags cuda, ephemeral go.work: . ./backend/cuda"
 	}
 	return "dumper in the root module, GOWORK=off -mod=readonly (CI's root build)"
 }
@@ -571,11 +571,11 @@ func buildIdentitySide(o identityOpts, wd string, s *identitySide) error {
 	set := map[string]string{}
 	switch o.Backend {
 	case "metal":
-		modDir, register = filepath.Join(s.WT, "metal"), `_ "github.com/townsendmerino/goinfer/metal"`
+		modDir, register = filepath.Join(s.WT, "backend", "metal"), `_ "github.com/townsendmerino/goinfer/backend/metal"`
 	case "webgpu":
-		modDir, register, tags = filepath.Join(s.WT, "gpu"), `_ "github.com/townsendmerino/goinfer/gpu"`, "gpu"
+		modDir, register, tags = filepath.Join(s.WT, "backend", "webgpu"), `_ "github.com/townsendmerino/goinfer/backend/webgpu"`, "gpu"
 	case "cuda":
-		modDir, register, tags = filepath.Join(s.WT, "cuda"), `_ "github.com/townsendmerino/goinfer/cuda"`, "cuda"
+		modDir, register, tags = filepath.Join(s.WT, "backend", "cuda"), `_ "github.com/townsendmerino/goinfer/backend/cuda"`, "cuda"
 	}
 	if o.Backend == "cpu" {
 		set["GOWORK"], set["GOFLAGS"] = "off", "-mod=readonly"
@@ -589,7 +589,7 @@ func buildIdentitySide(o identityOpts, wd string, s *identitySide) error {
 			}
 		}
 		work := filepath.Join(s.WT, "go.work")
-		body := fmt.Sprintf("go %s\n\nuse (\n\t.\n\t./%s\n)\n", gov, filepath.Base(modDir))
+		body := fmt.Sprintf("go %s\n\nuse (\n\t.\n\t./backend/%s\n)\n", gov, filepath.Base(modDir))
 		if err := os.WriteFile(work, []byte(body), 0o644); err != nil {
 			return err
 		}

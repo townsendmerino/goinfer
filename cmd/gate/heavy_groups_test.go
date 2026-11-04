@@ -170,7 +170,7 @@ func TestHeavyPartition_cudaTreeFitsTheTable(t *testing.T) {
 	if err != nil {
 		t.Skip(err)
 	}
-	refs, err := testReachableLiterals(filepath.Join(root, "cuda"), []string{"cuda", "goinfer_testhooks"}, filepath.Join(root, "testdata", "assets.json"))
+	refs, err := testReachableLiterals(filepath.Join(root, "backend", "cuda"), []string{"cuda", "goinfer_testhooks"}, filepath.Join(root, "testdata", "assets.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

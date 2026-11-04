@@ -511,10 +511,10 @@ func (v vetTarget) tagSets() []string {
 	switch v.module {
 	case ".":
 		return []string{"", "realckpt goinfer_testhooks"}
-	case "cuda":
+	case "backend/cuda", "cuda":
 		// tagged only: prefill_deltanet.go has no build line but uses types the tagged files define, so an untagged vet cannot build
 		return []string{"cuda goinfer_testhooks"}
-	case "gpu":
+	case "backend/webgpu", "gpu":
 		return []string{"", "gpu goinfer_testhooks"}
 	}
 	return []string{""}
@@ -544,7 +544,7 @@ func touchedPackages(goFiles []string) []vetTarget {
 		}
 		seen[key] = true
 		t := vetTarget{moduleDir: filepath.Join(root, mod), dir: dir, pattern: pat, module: mod}
-		if mod == "metal" {
+		if mod == "backend/metal" || mod == "metal" {
 			t.env = []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0"}
 		}
 		out = append(out, t)

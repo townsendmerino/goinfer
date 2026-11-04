@@ -1,0 +1,155 @@
+//go:build cuda
+
+package kernels
+
+import (
+	"os"
+	"regexp"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
+)
+
+// lintedKernels is the contracted-kernel list TestKernelFMALint checks, and the list
+// TestKernelFMALint_coversEmbeddedPTX holds to the set of kernels actually shipped as PTX. A kernel
+// is not covered by being contracted; it is covered by being in THIS list (router_f32.cu, the
+// pure-f32 Gemma-4 router projection on the production decode path, sat unguarded until it joined).
+//
+// moe.cu is exempt because the shipped moe.ptx is a FROZEN artifact, audited at NVRTC 12.6.85
+// (cuda/kernels.go names moe.ptx, glue.ptx and gemv_fwd.ptx as the audited set; the pin is recorded
+// in cuda/testdata/REGEN.md). moe.cu's bare MACs were never converted to intrinsics, so the
+// exemption stays until they are.
+var lintedKernels = []string{
+	"fused_qkv.cu", "glue.cu", "prefill_batched.cu", "decode_splitkv.cu",
+	"gemv_w4a8_rn.cu", "gemv_w8a8_batched.cu", "gemv_fwd.cu",
+	"router_f32.cu", "gemv_w4f32.cu", "argmax.cu", "attn_block.cu", "gptoss_act.cu", "deltanet.cu",
+	"attn_fused.cu", "attn_fused_bm.cu", "attn_fused_vit.cu", "gemm_w4a8_mma.cu", "lora.cu", "attn_img_prefill.cu", "rope_mrope_prefill.cu", "rope_pairwise.cu",
+	"layernorm_quant.cu", "gelu_quant.cu", "mla.cu", "topk.cu", "gumbel.cu", "decode_fa.cu", "fused_qkv_rows.cu", "fused_gu_rows.cu",
+	"actgroup.cu", "tower_base.cu", "moe_fold.cu", "moe_rows.cu", "audio_encoder.cu", "mamba.cu", "nongated_act.cu", "prefill_splitkv.cu",
+}
+
+// fmaLintExempt lists embedded PTX deliberately outside the lint, with the reason. Anything else
+// that is embedded MUST be linted — see TestKernelFMALint_coversEmbeddedPTX.
+var fmaLintExempt = map[string]string{
+	// See the lintedKernels note: moe.ptx is frozen and audited at NVRTC 12.6.85, but its bare MACs
+	// were never converted to intrinsics, so it stays exempt (option (b), still open) — a future
+	// ambient regen could re-drift this at any time.
+	"moe.cu": "MoE PTX frozen at audited NVRTC 12.6.85 (re-pinned 2026-09-10, M-35): bare MACs, not FMA-linted",
+}
+
+// TestKernelFMALint enforces the bit-identity rule at BUILD TIME: no bare float multiply-accumulate
+// in any kernel under a bit-identity contract. A bare MAC (`x += a*b`, `= a*b + c`) lets the compiler
+// CHOOSE fma vs mul+add, and separately-compiled kernels that share a contract (a decode kernel and
+// its batched counterpart) then compile to ~1 ULP-different, DATA-DEPENDENT numerics — invisible on
+// uniform fixtures, a token-stream divergence on real weights (docs/completed/task-batched-prefill-
+// bitidentity.md). Every MAC must be an explicit intrinsic (__fmaf_rn / __fmul_rn / __fadd_rn) so no
+// compiler discretion remains. This catches the CAUSE at compile time — before any numerical test,
+// and independent of the NVRTC version that JITs the PTX. A new bare MAC fails the build. (aikit's
+// gemv_quant.cu carries the same rule in its own repo — see its header.)
+func TestKernelFMALint(t *testing.T) {
+	files := lintedKernels
+	// Float MAC forms, with the multiply as ` * ` (spaces both sides — so a pointer decl `float* p`
+	// with `*` glued to the type is NOT matched):
+	//   accumulate:  ident += <expr> * <expr>        (facc/ss/dot/acc — the bug class)
+	//   expression:  ... <expr> * <expr> [+-] <expr>  (val = a*b + c ; a*c - b*s)
+	macAccum := regexp.MustCompile(`\b\w[\w.]*\s*\+=\s*[^;/]* \* `)
+	macExpr := regexp.MustCompile(` \* [^;/]* [+\-] `)
+	// ... and the same MAC with the multiply to the RIGHT of the add (c + a * b); without it
+	// prefill_batched.cu's `1.0f + attnTempBeta * log1pf(...)` shipped in a linted kernel.
+	macExprRev := regexp.MustCompile(` [+\-] [^;/()]* \* `) // no parens between: (a - b) * c and c + f(a * b) are not MACs
+	compliant := regexp.MustCompile(`__fmaf_rn|__fmul_rn|__fadd_rn|__fma_rn|__dp4a|__shfl`)
+	arrayIndex := regexp.MustCompile(`\[[^\]]*\]`)        // strip array indices (int arithmetic) before matching
+	kvIndex := regexp.MustCompile(`\bKV_LD\w*\([^()]*\)`) // KV_LD / KV_LD4V / KV_LD2V (kvtype.cuh): the arguments are a pointer and an int index, like an array subscript
+	// KV_ST(p, v) (kvtype.cuh): its pointer argument is pointer-plus-int-index arithmetic; the value argument is kept and linted.
+	kvStore := regexp.MustCompile(`\bKV_ST\((?:[^,()]|\([^()]*\))*,`)
+	// Lines that TEXTUALLY match a MAC but are integer / pointer / index arithmetic, not a float MAC:
+	// a type/pointer declaration, a loop header, or any (long)/(int)/(unsigned) cast (int arithmetic —
+	// float MACs cast with (float) or not at all, which the compliant check already covers).
+	isDeclOrIndex := regexp.MustCompile(`^\s*(const\s+)?(unsigned\s+)?(int|long|short|char|size_t|void|float\*|double\*|__half\*|const int\*|const unsigned)\b|` +
+		`^\s*(const\s+)?[\w]+\s*\*+\s*\w+\s*=|` + // pointer declaration: T* p = ...
+		`\(long\)|\(int\)|\(unsigned`) // int-cast arithmetic
+	// A for-header is INTEGER arithmetic (the init/cond/incr), but the loop BODY on the same line is
+	// not — a single-line `for (…) acc += a[k] * b[k];` carries a real float MAC, and skipping the whole
+	// line would let it pass unseen. Strip only the `for (…)` header, then lint the remaining body.
+	forHeader := regexp.MustCompile(`\bfor\s*\([^)]*\)`)
+	// remaining genuine non-MACs: reduce-adds (no '*'), lone float muls (no +/-), int array indices.
+	whitelist := []string{
+		"red[t] += red[t", "rednf[t] += rednf[t", "qkred[t] += qkred[t", // tree reduce-adds
+		"ss += (double)",                                   // qk-norm double reduction — identical expression in both kernels
+		"= vm[", "= v[", "= km[", "vc[o", "kc[o", "cache[", // stores with int index
+		"+ 2 * wi", "qDim + 2 * kvDim", // int2 pointer arithmetic (gemv_w4a8_rn/_batched) and an integer row bound (fused_qkv)
+	}
+	violations := 0
+	for _, fn := range files {
+		b, err := os.ReadFile("../" + fn)
+		if err != nil {
+			t.Fatalf("read %s: %v", fn, err)
+		}
+		for i, line := range strings.Split(string(b), "\n") {
+			code := line
+			if k := strings.Index(code, "//"); k >= 0 {
+				code = code[:k]
+			}
+			code = forHeader.ReplaceAllString(code, "") // strip the loop header; keep any single-line body (R-04)
+			if strings.TrimSpace(code) == "" || compliant.MatchString(code) || isDeclOrIndex.MatchString(code) {
+				continue
+			}
+			code = arrayIndex.ReplaceAllString(code, "[]") // remove int index arithmetic before MAC match
+			code = kvIndex.ReplaceAllString(code, "KV_LD()")
+			code = kvStore.ReplaceAllString(code, "KV_ST(p,")
+			if !macAccum.MatchString(code) && !macExpr.MatchString(code) && !macExprRev.MatchString(code) {
+				continue
+			}
+			wl := false
+			for _, w := range whitelist {
+				if strings.Contains(code, w) {
+					wl = true
+					break
+				}
+			}
+			if wl {
+				continue
+			}
+			t.Errorf("%s:%d bare float MAC — use __fmaf_rn / __fmul_rn: %s", fn, i+1, strings.TrimSpace(line))
+			violations++
+		}
+	}
+	if violations == 0 {
+		t.Logf("all float MACs in %d contracted kernels are explicit intrinsics ✓", len(files))
+	}
+}
+
+// TestKernelFMALint_coversEmbeddedPTX is the gate on the gate. TestKernelFMALint only checks the
+// kernels someone remembered to list, so nothing connected "this kernel ships" to "this kernel is
+// linted"; this test derives the required set from what kernels.go actually embeds.
+//
+// A new kernel fails here the moment it is embedded without being linted or explicitly exempted,
+// which is the point at which the author is still holding the context to decide which it should be.
+func TestKernelFMALint_coversEmbeddedPTX(t *testing.T) {
+	src, err := os.ReadFile("../kernels.go")
+	if err != nil {
+		t.Fatalf("read kernels.go: %v", err)
+	}
+	embedded := regexp.MustCompile(`//go:embed testdata/([\w]+)\.ptx`).FindAllStringSubmatch(string(src), -1)
+	if len(embedded) == 0 {
+		t.Fatal("no //go:embed testdata/*.ptx found in kernels.go — this test is no longer measuring anything")
+	}
+	linted := make(map[string]bool, len(lintedKernels))
+	for _, f := range lintedKernels {
+		linted[f] = true
+	}
+	for _, m := range embedded {
+		cu := func() string { s, _ := launchgeom.PTXSourceName(m[1]); return s }() + ".cu" // a _kv16, _cap or _kv16_cap twin is its base source built with a define, linted as that source
+		if linted[cu] {
+			continue
+		}
+		if why, ok := fmaLintExempt[cu]; ok {
+			t.Logf("exempt: %s — %s", cu, why)
+			continue
+		}
+		t.Errorf("%s is embedded as production PTX but is neither in lintedKernels nor fmaLintExempt — "+
+			"a bit-identity-contracted kernel shipping without the FMA lint is exactly audit C-16", cu)
+	}
+	t.Logf("%d embedded PTX kernels: %d linted, %d exempt", len(embedded), len(lintedKernels), len(fmaLintExempt))
+}

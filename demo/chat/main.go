@@ -6,9 +6,9 @@
 // the importable internal/chatapp package. Accelerated builds are separate binaries
 // that blank-import a backend first:
 //
-//	go build ./gpu/cmd/chat     # WebGPU  (was: chat -tags gpu)
-//	go build ./cuda/cmd/chat    # CUDA    (was: chat -tags cuda)
-//	go build ./metal/cmd/chat   # Metal   (was: chat -tags metal, darwin)
+//	go build ./backend/webgpu/cmd/chat  # WebGPU  (was: chat -tags gpu)
+//	go build ./backend/cuda/cmd/chat    # CUDA    (was: chat -tags cuda)
+//	go build ./backend/metal/cmd/chat   # Metal   (was: chat -tags metal, darwin)
 package main
 
 import "github.com/townsendmerino/goinfer/internal/chatapp"
