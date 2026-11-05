@@ -610,3 +610,23 @@ func TestQuick_memJobsRunAlone(t *testing.T) {
 		t.Error("no two non-Mem jobs ran together: the rule serialised more than the loaders")
 	}
 }
+
+// -full runs the real-checkpoint cells and every fixture, so its per-cell timeout is longer than the day loop's; a -timeout given on the command line wins.
+func TestResolveQuickTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		full, explicit bool
+		flagValue      string
+		want           string
+	}{
+		{"day loop keeps the day default", false, false, quickDayTimeout, quickDayTimeout},
+		{"-full takes the full tier's", true, false, quickDayTimeout, quickFullTimeout},
+		{"-full with -timeout keeps what was asked, longer", true, true, "90m", "90m"},
+		{"-full with -timeout keeps what was asked, shorter", true, true, "5m", "5m"},
+		{"-timeout without -full is kept", false, true, "30m", "30m"},
+	} {
+		if got := resolveQuickTimeout(tc.full, tc.explicit, tc.flagValue); got != tc.want {
+			t.Errorf("%s: resolveQuickTimeout(full=%v, explicit=%v, %q) = %q, want %q", tc.name, tc.full, tc.explicit, tc.flagValue, got, tc.want)
+		}
+	}
+}

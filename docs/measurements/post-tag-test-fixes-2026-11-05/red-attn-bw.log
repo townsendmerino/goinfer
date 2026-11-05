@@ -1,0 +1,6 @@
+=== RUN   TestAttnBatchedBandwidth
+    attn_bw_test.go:98: launch attn_batched: cuLaunchKernel: CUDA_ERROR_INVALID_VALUE
+--- FAIL: TestAttnBatchedBandwidth (0.41s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/backend/cuda/kernels	0.468s
+FAIL

@@ -243,6 +243,9 @@ func longVariant(t *testing.T, dir string) string {
 		t.Fatal(err)
 	}
 	for _, e := range ents {
+		if e.IsDir() {
+			continue // a downloader's cache folder (.cache) holds no weights and can be neither hard-linked nor read as a file
+		}
 		src, _ := filepath.Abs(filepath.Join(dir, e.Name()))
 		if e.Name() != "config.json" {
 			if err := linkOrCopy(src, filepath.Join(out, e.Name())); err != nil {
