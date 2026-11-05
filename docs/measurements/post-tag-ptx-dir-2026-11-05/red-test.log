@@ -1,0 +1,6 @@
+=== RUN   TestBuildPTX_towerBaseDoesNotDependOnTheCheckoutDirectory
+    gpu_test.go:608: tower_base.ptx built from a checkout in "ccc" differs from the committed file (250118 bytes, want 250036)
+--- FAIL: TestBuildPTX_towerBaseDoesNotDependOnTheCheckoutDirectory (5.26s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	5.259s
+FAIL

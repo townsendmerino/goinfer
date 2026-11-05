@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -57,26 +59,26 @@ func writeMods(t *testing.T, root string, aikit map[string]string, gpu map[strin
 
 func TestRowPins(t *testing.T) {
 	root := t.TempDir()
-	agree := map[string]string{".": "v1.69.0", "gpu": "v1.69.0", "cuda": "v1.69.0", "metal": "v1.69.0", "demo/agent": "v1.69.0"}
+	agree := map[string]string{".": "v1.69.0", "backend/webgpu": "v1.69.0", "backend/cuda": "v1.69.0", "backend/metal": "v1.69.0", "demo/agent": "v1.69.0"}
 	writeMods(t, root, agree, nil)
 	e := liveRelEnv(relEnv{root: root})
 	if r := rowPins(e); r.State != "done" {
 		t.Fatalf("agreeing pins: %+v", r)
 	}
 	// one module on an older aikit
-	bad := map[string]string{".": "v1.69.0", "gpu": "v1.69.0", "cuda": "v1.68.0", "metal": "v1.69.0", "demo/agent": "v1.69.0"}
+	bad := map[string]string{".": "v1.69.0", "backend/webgpu": "v1.69.0", "backend/cuda": "v1.68.0", "backend/metal": "v1.69.0", "demo/agent": "v1.69.0"}
 	writeMods(t, root, bad, nil)
 	if r := rowPins(e); r.State != "OWED" || !strings.Contains(strings.Join(r.Detail, " "), "aikit differs") {
 		t.Errorf("aikit disagreement: %+v", r)
 	}
 	// a module still requiring aikit's gpu module, which goinfer no longer uses
-	writeMods(t, root, agree, map[string]string{"cuda": "v0.35.0"})
+	writeMods(t, root, agree, map[string]string{"backend/cuda": "v0.35.0"})
 	if r := rowPins(e); r.State != "OWED" || !strings.Contains(strings.Join(r.Detail, " "), "aikit/gpu") {
 		t.Errorf("an aikit/gpu require read as done: %+v", r)
 	}
 	// an untagged aikit, agreed by all five modules, is owed at a release (SD3), in each form Go writes a pseudo-version
 	all := func(v string) map[string]string {
-		return map[string]string{".": v, "gpu": v, "cuda": v, "metal": v, "demo/agent": v}
+		return map[string]string{".": v, "backend/webgpu": v, "backend/cuda": v, "backend/metal": v, "demo/agent": v}
 	}
 	for _, v := range []string{"v0.0.0-20261027120000-abcdefabcdef", "v1.77.0-rc.1.0.20261027120000-abcdefabcdef",
 		"v1.76.1-0.20261027120000-abcdefabcdef", "v2.0.1-0.20261027120000-abcdefabcdef+incompatible"} {
@@ -269,7 +271,7 @@ func TestRowGofmtAndLint(t *testing.T) {
 	root := t.TempDir()
 	e := liveRelEnv(relEnv{root: root})
 	e.run = func(dir, name string, args ...string) (string, error) {
-		if name == "gofmt" && strings.HasSuffix(dir, "cuda") {
+		if name == "gofmt" && strings.HasSuffix(filepath.ToSlash(dir), "backend/cuda") { // dir is the joined path: backslashes on Windows
 			return "x.go", nil
 		}
 		return "", nil
@@ -278,7 +280,7 @@ func TestRowGofmtAndLint(t *testing.T) {
 		os.MkdirAll(filepath.Join(root, m), 0o755)
 	}
 	// The row writes repository paths with "/" on every system, so a record replays to the same report anywhere.
-	if r := rowGofmt(e); r.State != "OWED" || r.Detail[0] != "cuda/x.go" {
+	if r := rowGofmt(e); r.State != "OWED" || r.Detail[0] != "backend/cuda/x.go" {
 		t.Errorf("gofmt: %+v", r)
 	}
 	e.run = fakeRun(map[string]string{"python3": "red"}, map[string]error{"python3": fmt.Errorf("exit 1")})
@@ -288,5 +290,37 @@ func TestRowGofmtAndLint(t *testing.T) {
 	e.run = fakeRun(map[string]string{"python3": "green"}, nil)
 	if r := rowLint(e); r.State != "done" {
 		t.Errorf("a green lint: %+v", r)
+	}
+}
+
+// relModules is the list of modules a release tags. It is read from the tree here, not from itself: TestRowPins and TestRowGofmtAndLint build their
+// fixtures from relModules, so a list that names directories the repository no longer has passes both.
+func TestRelModules_areTheTaggedModulesOfTheTree(t *testing.T) {
+	out, err := exec.Command("git", "-C", "../..", "ls-files", "go.mod", "*/go.mod").Output()
+	if err != nil {
+		t.Skipf("git ls-files: %v", err)
+	}
+	// Modules that are never tagged: the SDK tests, the site generator and CI's pinned staticcheck.
+	untagged := map[string]bool{"apps/sdktest": true, "apps/site": true, ".github/actions/staticcheck": true}
+	var inTree []string
+	for _, f := range strings.Fields(string(out)) {
+		dir := strings.TrimSuffix(strings.TrimSuffix(f, "go.mod"), "/")
+		if dir == "" {
+			dir = "."
+		}
+		if !untagged[dir] {
+			inTree = append(inTree, dir)
+		}
+	}
+	sort.Strings(inTree)
+	want := append([]string(nil), relModules...)
+	sort.Strings(want)
+	if strings.Join(inTree, " ") != strings.Join(want, " ") {
+		t.Errorf("relModules = %v, but the tagged modules of the tree are %v", want, inTree)
+	}
+	for _, m := range relModules {
+		if _, err := os.Stat(filepath.Join("..", "..", filepath.FromSlash(m), "go.mod")); err != nil {
+			t.Errorf("relModules names %q, which has no go.mod: %v", m, err)
+		}
 	}
 }

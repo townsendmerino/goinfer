@@ -50,7 +50,17 @@ func TestGemma4EModel_realDeclinesResident(t *testing.T) {
 	if err := program.Metal.Check(m.Program()); err != nil {
 		t.Errorf("metal's table declines the E-model shape although it lists the PLE operation: %v", err)
 	}
-	for _, be := range []string{"cuda", "webgpu"} {
+	// CUDA's admission reads its operation table too (residentBackendFeatures holds WebGPU alone): without the PLE operation it declines the
+	// E-model, and with it it admits.
+	noPLECUDA := *program.CUDA
+	noPLECUDA.Kinds = slices.DeleteFunc(slices.Clone(program.CUDA.Kinds), func(k program.OpKind) bool { return k == program.OpPLE })
+	if noPLECUDA.Check(m.Program()) == nil {
+		t.Errorf("cuda without the PLE operation: real E2B is NOT declined for the E-model shape — it would be admitted and mis-run")
+	}
+	if err := program.CUDA.Check(m.Program()); err != nil {
+		t.Errorf("cuda's table declines the E-model shape although it lists the PLE operation: %v", err)
+	}
+	for _, be := range []string{"webgpu"} {
 		without := map[ResidentFeature]bool{}
 		for f, ok := range residentBackendFeatures[be] {
 			without[f] = ok && f != FeatGemma4EModel
@@ -60,7 +70,7 @@ func TestGemma4EModel_realDeclinesResident(t *testing.T) {
 			t.Errorf("%s without the E-model feature: real E2B is NOT declined for the E-model shape (missing=%v) — it would be admitted and mis-run", be, missing)
 		}
 	}
-	for _, be := range []string{"cuda", "webgpu"} {
+	for _, be := range []string{"webgpu"} {
 		if missing := m.MissingResidentFeatures(residentBackendFeatures[be]); slices.Contains(missing, FeatGemma4EModel) {
 			t.Errorf("%s reports the E-model shape missing (missing=%v) although it declares FeatGemma4EModel", be, missing)
 		}

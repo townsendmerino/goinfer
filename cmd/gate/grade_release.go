@@ -84,6 +84,35 @@ func (e *relEnv) cmd(dir, name string, args ...string) (string, error) {
 	return e.look("run", append([]string{dir, name}, args...)...)
 }
 
+// readMoved is read, and when a moved backend path is absent it reads the pre-move name once: a record captured before the
+// backend move holds the module's go.mod under cuda/, metal/ or gpu/ (objectAt does the same for git objects).
+func (e *relEnv) readMoved(path string) (string, error) {
+	out, err := e.read(path)
+	if err == nil {
+		return out, nil
+	}
+	if old, moved := preMovePath(path); moved {
+		if o, err2 := e.read(old); err2 == nil {
+			return o, nil
+		}
+	}
+	return out, err
+}
+
+// cmdMoved is cmd in a module directory, with the same one retry under the pre-move directory name.
+func (e *relEnv) cmdMoved(dir, name string, args ...string) (string, error) {
+	out, err := e.cmd(dir, name, args...)
+	if err == nil {
+		return out, nil
+	}
+	if old, moved := preMovePath(dir); moved {
+		if o, err2 := e.cmd(old, name, args...); err2 == nil {
+			return o, nil
+		}
+	}
+	return out, err
+}
+
 // glob is the sorted repository-relative paths matching pattern.
 func (e *relEnv) glob(pattern string) []string {
 	out, err := e.look("glob", pattern)
@@ -203,7 +232,7 @@ func rowPending(e *relEnv) relRow {
 
 // ---- row 2: the five modules agree on a tagged aikit, and none requires aikit/gpu ----
 
-var relModules = []string{".", "gpu", "cuda", "metal", "demo/agent"}
+var relModules = []string{".", "backend/webgpu", "backend/cuda", "backend/metal", "demo/agent"}
 
 // rePseudo matches the three pseudo-version forms Go writes (vX.0.0-yyyymmddhhmmss-hash, vX.Y.Z-pre.0.yyyymmddhhmmss-hash,
 // vX.Y.Z-0.yyyymmddhhmmss-hash), with or without build metadata such as +incompatible. goinfer's main may require one
@@ -224,7 +253,7 @@ func rowPins(e *relEnv) relRow {
 	aikit := map[string]string{}
 	var gpuReq []string // aikit's gpu module moved into goinfer (Track AX); a require is a module that did not switch
 	for _, m := range relModules {
-		b, err := e.read(relPath(m, "go.mod"))
+		b, err := e.readMoved(relPath(m, "go.mod"))
 		if err != nil {
 			return owed(name, m+"/go.mod", err.Error())
 		}
@@ -263,7 +292,7 @@ func rowPins(e *relEnv) relRow {
 		bad = append(bad, "requires an untagged aikit (a pseudo-version); a release needs a tagged aikit (SD3): tag aikit and bump to it: "+strings.Join(pseudo, ", "))
 	}
 	if len(gpuReq) > 0 {
-		bad = append(bad, "requires aikit/gpu, which goinfer no longer uses (cuda/internal/gpudev, metal/internal/gpudev): "+strings.Join(gpuReq, ", "))
+		bad = append(bad, "requires aikit/gpu, which goinfer no longer uses (backend/cuda/internal/gpudev, backend/metal/internal/gpudev): "+strings.Join(gpuReq, ", "))
 	}
 	if len(aikit) == 0 {
 		bad = append(bad, "no module requires aikit: the reader found nothing")
@@ -520,7 +549,7 @@ func rowGofmt(e *relEnv) relRow {
 	const name = "gofmt -l is empty in every module"
 	var dirty []string
 	for _, m := range relModules {
-		out, err := e.cmd(m, "gofmt", "-l", ".")
+		out, err := e.cmdMoved(m, "gofmt", "-l", ".")
 		if err != nil {
 			return owed(name, m, err.Error())
 		}

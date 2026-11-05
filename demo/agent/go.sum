@@ -30,10 +30,10 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/townsendmerino/aikit v1.76.0 h1:bQ0KZqOZTGMAFZG/FR+LNjzu0VwxOvQZM1ZRbQ4QVnQ=
 github.com/townsendmerino/aikit v1.76.0/go.mod h1:XXSOKAI6jX/miQdMpMYrcXOBWEdjds2mbUolO3RPerU=
-github.com/townsendmerino/goinfer v0.24.0 h1:OC3KJBWXCBWS6cutu0QQMpdzIwdFk8Rxb53j7ashDNE=
-github.com/townsendmerino/goinfer v0.24.0/go.mod h1:CuDcun/tFvvacbdtf7ZjKQBP9SOQvpDEb+oWE8cyRo8=
-github.com/townsendmerino/goinfer/backend/webgpu v0.24.0 h1:4rw5fTXfprw+eB5RMr5978/7P94xbsk2cnJVeJD7jsM=
-github.com/townsendmerino/goinfer/backend/webgpu v0.24.0/go.mod h1:pgc3GWJ5HokHkFl/QCdo1GvW5AcqW/ZI6adTcpVWUVo=
+github.com/townsendmerino/goinfer v0.24.1 h1:JGA9cJpT+AGlR6zEcKr7sm6cqXKMWMj1PCCz8Tp6lPQ=
+github.com/townsendmerino/goinfer v0.24.1/go.mod h1:CuDcun/tFvvacbdtf7ZjKQBP9SOQvpDEb+oWE8cyRo8=
+github.com/townsendmerino/goinfer/backend/webgpu v0.24.1 h1:hQ8tX6Zbd8xhhXywQdlRLRILBQLRRWilAq+uCrd/uNA=
+github.com/townsendmerino/goinfer/backend/webgpu v0.24.1/go.mod h1:Q9y2ajbshtGclQ4CUQsZmbgAjeH177fQz9Nug/6P2lg=
 github.com/yosida95/uritemplate/v3 v3.0.2 h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zIM+UJPGz4=
 github.com/yosida95/uritemplate/v3 v3.0.2/go.mod h1:ILOh0sOhIJR3+L/8afwt/kE++YT040gmv5BQTMR2HP4=
 golang.org/x/oauth2 v0.35.0 h1:Mv2mzuHuZuY2+bkyWXIHMfhNdJAdwW3FuWeCPYN5GVQ=
