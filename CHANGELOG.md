@@ -17,6 +17,680 @@ any surface may still change.
 
 Each unreleased change is a file in [`changelog.d/`](changelog.d/), collected into the release's section when it is tagged (`scripts/changelog.py release`).
 
+## [v0.24.0] — 2026-11-04
+
+- **v0.24.0: more models on the GPU, more conversations in the same memory.** On the model side, Gemma 4 E-models on Metal use a
+  4-bit per-layer embedding sidecar (`.ple4`, 981 MB smaller on E2B), `--quant q4k` keeps `Q5_K` and `Q6_K` projection weights native on
+  Metal and CUDA and writes a `.giw` sidecar on the first load of every `q4k` `.gguf`, Gemma 2 runs resident on Metal and CUDA, and
+  Olmo Hybrid runs resident on CUDA, Metal (`int4` only) and WebGPU (read only on the M1 Pro's adapter). On the memory side, CUDA and
+  Metal replace fixed per-slot KV reservations with a 64-position paged KV block pool and default-on copy-on-write prefix sharing
+  (`--kv-share`), CUDA hybrid models hold two conversations warm on per-slot recurrent state, and `--kv-host-bytes` adds host-memory
+  prefix snapshots with experimental opt-in CUDA host demotion.
+- **Large uploads no longer leave temp files behind, and an over-long audio clip is refused before it is decoded.** `POST
+  /v1/audio/transcriptions` left a temp file the size of the upload for every form over 32 MiB, and `POST /v1/files` did the
+  same through `server.NewHandler`. A clip over its limit is now refused from its WAV header, on the chat routes' audio too: a
+  256 MiB clip at 4 kHz allocated about 2.5 GiB before its refusal. An over-limit chunked body on `/v1/files`,
+  `/v1/audio/transcriptions` or `/v1/systemone` now answers 413, not 400.
+- **Tokenizing a prompt takes about half the time and allocates far less, with identical token ids.** On an M1 Pro, in process:
+  1.96–1.98× on byte-level tokenizers and 1.79× on Gemma's SentencePiece path, with 25–44× fewer allocations.
+- **On Metal, `serve` now batches Gemma 4 dense and, with `--kv-sessions` 2 or more, Qwen3.5-family and Nemotron-H models by default.**
+  `--gemma4-step` and `--recurrent-step` are on where a load holds two or more sessions: 1.38× decode throughput measured in-process on Gemma 4
+  E2B and 1.58× on Qwen3.5 0.8B at 4 concurrent sequences, with bit-identical output, for about 10 MB of step scratch. Plain `serve` keeps a
+  recurrent model at one session, so it does not batch those without `--kv-sessions`, and `serve` runs a model with a vision tower attached
+  one generation at a time, as before, which includes Qwen3.5 checkpoints that ship one. `goinfer-chat` stays off, since one session has
+  nothing to batch. Either flag overrides, on or `=false`.
+- **Changes behavior. `Q5_K` and `Q6_K` run natively on Metal and CUDA under `--quant q4k`.** On Metal and CUDA, a `.gguf` loaded with
+  `--quant q4k` keeps its `Q5_K` and `Q6_K` projection tensors in their native 256-weight super-block formats instead of widening them to
+  `int8` copies (on Metal the LM head stays `int8`; on CUDA the head runs native too). Outputs change because the projections are read
+  from their `Q5_K`/`Q6_K` super-blocks rather than re-quantized `int8` rows. On `Phi-3-mini-4k-instruct-q4.gguf`, device weight memory
+  drops by 357 MB on Metal and 374.7 MB on CUDA.
+- **The `q4k` `.giw` sidecar is written on the first load of every `q4k` `.gguf`.** Loading a `.gguf` at `--quant q4k` (including Phi-3's
+  default on CUDA) now writes a `.q4k.<target>.v17.giw` sidecar on first load and maps the sidecar on subsequent loads, storing `Q4_K`
+  and native `Q5_K`/`Q6_K` tensors directly in the bundle so the GGUF is not parsed into the Go heap on each start (`--direct-load` or
+  `GOINFER_GGUF_DIRECT` skips the sidecar).
+- **Metal multi-sequence batched decode flags (`--moe-step`, `--recurrent-step`, `--gemma4-step`).** `--moe-step` (on by default on
+  Metal) batches concurrent MoE decode requests and short prompts under 16 tokens into one step (`1.49×` two-client aggregate throughput
+  on Huihui-MoE-5B, bit-identical). `--recurrent-step` batches concurrent Qwen3.5-family and Nemotron-H decode requests on per-slot
+  recurrent state (`1.58×` on Qwen3.5 0.8B, bit-identical). `--gemma4-step` batches concurrent Gemma 4 dense decode requests
+  (`1.38×` on Gemma 4 E2B, bit-identical). In `goinfer-serve`, the two step flags are on when `--kv-sessions` is 2 or more and off at
+  one session; `goinfer-chat` leaves them off. Either flag can be set explicitly (`--recurrent-step=false` overrides the default).
+- **Paged KV on Metal.** Metal's resident KV cache now uses a 64-position block pool with per-slot block tables and copy-on-write prefix
+  sharing (`--kv-share`), bit-identical to contiguous slot storage across all 29 gated families. Decode is within 1% on the 1.5B
+  (`0.990`–`1.009×` across depths 128 to 8,000) and the 7B (`0.997`–`1.018×`), and `gemma3-1b` is about 3–4% slower at long context
+  (`0.975` / `0.970×` at depth 2,048 and `0.963` / `0.956×` at depth 3,900, accepted by Francis).
+- **Internal packages regrouped under `internal/app/`, `internal/guard/`, `internal/diag/`, and `internal/runtime/`.** As part of the
+  Tier 2 repository layout move, root-module internal packages moved from `github.com/townsendmerino/goinfer/internal/<pkg>` to four
+  subtrees (`package` clauses unchanged):
+  - `internal/{serveapp,chatapp,cliutil,fitcmd,decidecmd,pullcmd,inproc,connect,loadflags}` -> `internal/app/<pkg>`
+  - `internal/{swapguard,prezerolint,paritykey,movedpaths,servecheck,memgate}` -> `internal/guard/<pkg>`
+  - `internal/{hwcensus,hwreport,kernelprint,sb2census,towerid}` -> `internal/diag/<pkg>`
+  - `internal/{giw,mem,kvmgr,f16,mamba2,whisper,scheduler,adapter,hybridattn,program,modelload,prequant,diskfree,sampling}` -> `internal/runtime/<pkg>` (`internal/mem/probe` -> `internal/runtime/mem/probe`)
+  - Go enforces `internal/` visibility at the `github.com/townsendmerino/goinfer` module root, so external callers outside the repository could not import these paths; in-tree submodules (`backend/cuda`, `backend/metal`, `backend/webgpu`) updated their imports to the new paths.
+- **Prefix sharing is on by default (`--kv-share`).** `--kv-share` (`on|off`, default `on`) indexes completed full-attention 64-token
+  KV blocks by token-span hash (scoped by model, adapter, and KV precision) so a new conversation that shares a system preamble or prefix
+  with another slot reuses those blocks instead of re-prefilling them (by reference with copy on write on paged CUDA and Metal caches, or
+  by device-to-device copy on non-paged caches). When `goinfer-serve` listens on a non-loopback address without `--api-key`, `--kv-share`
+  is forced off so unauthenticated callers do not share cached prefixes across slots.
+- **Metal and CUDA KV precision (`docs/kv-precision-matrix.md`).** On Metal, `--kv f32` is delivered on every family, and `--kv i8`
+  is delivered on batched prefill and multi-sequence decode (`--moe-step`, `--recurrent-step`, `--gemma4-step`), Gemma 4 E-models
+  included. `--kv auto` stays `f16` on standard families and `f32` on `deepseek_v2` and `deepseek_v3` MLA, which store one compressed
+  latent vector per position and refuse explicit `f16` or `i8`. On CUDA, `--kv f16` is delivered on request for the families the
+  CUDA policy lists (`llama`, `mistral`, `qwen2`, `qwen3`, `phi3`, the MoE families `qwen2_moe`, `qwen3_moe`, `qwen3_vl_moe`, `mixtral`
+  and `gpt-oss`, the sliding-window `gemma2` and `gemma3`, `cohere`, `cohere2`, `qwen2_5_vl`, `qwen3_vl`, the Gated-DeltaNet
+  `qwen3_5`, `qwen3_5_moe` and `qwen3_next`, `gemma4` (including the E-models), and MLA `deepseek_v2`, `deepseek_v3` and `kimi_k2`).
+  Other families refuse an explicit `f16` at load, among them Mamba-2 hybrids (`nemotron_h`), Olmo Hybrid, `glm4_moe` and `mellum`.
+  Every CUDA `--kv i8` load refuses (no int8 KV on CUDA yet). `--kv auto` on CUDA selects `f16` for `llama`, `mistral`, `qwen2`,
+  `qwen3`, `phi3`, `qwen2_5_vl`, `qwen3_vl`, `qwen2_moe`, `qwen3_moe`, `qwen3_vl_moe` and `mixtral`; sliding-window, pairwise RoPE,
+  hybrid and MLA families stay `f32` under auto.
+- **Host KV prefix snapshots (`--kv-host-bytes`) and experimental opt-in CUDA host demotion.** `--kv-host-bytes` (`auto` by default:
+  10% of RAM up to 8 GiB; `0` disables it) snapshots a cold long prefill's KV blocks to pinned host memory on CUDA and Metal so a later
+  conversation with the same prefix restores them from host RAM instead of re-prefilling. Passing an explicit byte size (such as
+  `--kv-host-bytes 1G`) also opts into **experimental** CUDA host demotion (`Options.KVDemote`): when an active conversation borrows an
+  idle slot's blocks, the idle slot's KV rows are copied to pinned host memory before release and promoted back to VRAM when that
+  conversation returns, bit-identical (off under `auto` and `--kv-share off`).
+- **Gemma 4 E-models on Metal at `int4` use a `.ple4` sidecar.** When a Gemma 4 E-model (E2B or E4B) is transcoded to its Metal `int4`
+  sidecar (`.int4.ple4.metal.v17.giw`), its per-layer token embedding table (`per_layer_model_projection` / `ple_embed_tokens`) is stored
+  at 4-bit instead of 8-bit, and `StreamTranscodeGGUF` streams the transcode one layer at a time so the full GGUF is not held in the Go
+  heap. On Gemma 4 E2B on the M1 Pro, the sidecar is 981 MB smaller (`3,649.0 -> 2,668.0 MB`) with 94.25% top-1 agreement (`410/435`
+  positions, mean KL `0.03257` nats) against the `int8` per-layer table.
+- **Gemma 2 runs resident on Metal and CUDA.** Metal and CUDA now apply `attn_logit_softcapping` in decode, batched prefill, and
+  multi-sequence steps, so Gemma 2 (`gemma2`, 2B/9B/27B) runs resident on both GPU backends (and on the CPU under WebGPU, which does not
+  implement attention-logit softcapping).
+- **Block-drafter speculation on recurrent Qwen3.5 hybrids on CUDA and `--drafter-width`.** `--drafter` on CUDA now admits recurrent
+  Qwen3.5 hybrids by checkpointing and restoring the target's `DeltaNet` conv and recurrent state around each verify step (`1.61×`
+  decode on Qwen3.5-4B with a DFlash block drafter, `1.32×` on Qwen3.6-35B-A3B under expert caching, greedy bit-identical).
+  `--drafter-width` sets the verify width for `--drafter` (default `0`, meaning 8; values below 4 are refused).
+- **Paged KV on CUDA.** CUDA's resident KV cache is now a pool of 64-position blocks per layer group (full-attention and sliding-window)
+  behind per-slot block tables, bit-identical to contiguous slot storage. Each slot keeps its guaranteed share while one long
+  conversation can borrow free and idle blocks across the pool (2.71× the single-conversation context on Qwen2.5-7B on an 8 GB card at
+  the default 4 slots). Prefix sharing (`--kv-share`) shares full-group blocks by reference with copy on write instead of copying rows
+  between slots, `/v1/models` and the startup banner report the pool (`kv_share`), responses add `usage.prefill_reuse` (`own`, `shared`,
+  `host`, `disk`, `promoted_blocks`), and `goinfer-serve check` verifies shared-preamble reuse. Four-client batched decode reads `0.973×`
+  against contiguous slots (about 2% slower, accepted by Francis).
+- **On CUDA a hybrid model can hold two conversations, and CUDA and Metal save end-of-prompt recurrent checkpoints.** On CUDA, each KV
+  slot now allocates its own recurrent state (`DeltaNet` conv and recurrent state, and `Mamba-2` conv and SSM state), so a hybrid model
+  with `--kv-sessions 2` or more holds two concurrent conversations warm instead of evicting the other client's state on every turn (on
+  Qwen3.5-9B with two alternating clients, follow-up median TTFT drops from `6.93 s` to `0.05 s`, for `+562 MiB` on the card). On both
+  CUDA and Metal, a hybrid model also checkpoints its recurrent state at the end of the prompt (and at the generation tail on CUDA), so
+  a follow-up turn that strips or edits the assistant's reasoning or reply restores from the checkpoint instead of re-prefilling from
+  token 0.
+- **Exact token carry (`--carry-ids`, `--ids-key-file`), token-ID logging (`--log-token-ids`), and the fast model alias (`--fast-alias`).**
+  `--carry-ids` (on by default) carries signed generated token IDs in `/v1/responses` reasoning items (`encrypted_content`) and
+  `/v1/messages` thinking blocks (`signature`) so an agent turn that echoes prior assistant output reuses the exact generated token IDs
+  instead of re-tokenizing text; `--ids-key-file` persists the signing key across restarts, and `--log-token-ids` appends per-generation
+  JSON lines with prompt length, SHA-256, reuse/slot positions, and generated token IDs for measurement runs. `--fast-alias` (on by
+  default) registers `<model>-fast` on the same weights and KV slot with thinking disabled (`chat_template_kwargs.enable_thinking: false`)
+  for lightweight agent side requests such as title generation, and `goinfer-serve connect` points Claude Code and opencode's small-model
+  settings at it.
+- **Olmo 3, Olmo Hybrid and SmolLM3 run resident on WebGPU.** WebGPU now implements post-only norms, whole-vector QK-norm, layers
+  without position encoding, and Gated-DeltaNet's widened write gate and its own output-norm epsilon. Each holds against the CPU on tiny
+  fixtures at int4, int8 and f32, and at `--kv f16` and `--kv i8`. Olmo's prompts run the per-token path. For Olmo Hybrid, Metal is int4
+  only, and WebGPU has been read only on the M1 Pro's adapter (not on Vulkan), with no real-checkpoint reading on WebGPU yet.
+- **Every release asset carries a build attestation.** The release workflow attests each attached file (the binaries,
+  the model-in-binary builds, the license and notice files) with GitHub's build provenance, signed keyless through
+  Sigstore. `gh attestation verify <file> --repo townsendmerino/goinfer` confirms a download was built by this repo's
+  release workflow from its tag. `checksums.txt` is unchanged.
+- **BREAKING (import-path change) — GPU backend modules moved under `backend/`.** The three GPU backend modules have moved under
+  `backend/` (Tier 2 repository layout reorganization), and the WebGPU package clause is now `package webgpu` instead of `package gpu`.
+  Any downstream caller that imports a GPU backend or installs its `cmd/serve` or `cmd/chat` binary must change its `go.mod` and import
+  paths from the old module path to the new one:
+  - `github.com/townsendmerino/goinfer/cuda` (and subpaths such as `cuda/cmd/serve`, `cuda/cmd/chat`) -> `github.com/townsendmerino/goinfer/backend/cuda` (`backend/cuda/cmd/serve`, `backend/cuda/cmd/chat`)
+  - `github.com/townsendmerino/goinfer/metal` (and subpaths such as `metal/cmd/serve`, `metal/cmd/chat`) -> `github.com/townsendmerino/goinfer/backend/metal` (`backend/metal/cmd/serve`, `backend/metal/cmd/chat`)
+  - `github.com/townsendmerino/goinfer/gpu` (and subpaths such as `gpu/cmd/serve`, `gpu/cmd/chat`) -> `github.com/townsendmerino/goinfer/backend/webgpu` (`backend/webgpu/cmd/serve`, `backend/webgpu/cmd/chat`; `package gpu` -> `package webgpu`)
+  - Until the backend modules are tagged at v0.24.0, `demo/agent` still requires `github.com/townsendmerino/goinfer/gpu v0.23.0` (the last published tag); builds inside `go.work` use `backend/webgpu`, and the two-step release tag bumps `demo/agent` to `backend/webgpu v0.24.0`.
+- **Gemma 3 on Metal prefills with the split attention kernel.** It is the default at head dim 256, and outputs change. Checked on Gemma 3 1B
+  against the CPU at int4: 91.7% top-1 agreement over 96 positions, where the exact kernel it replaces reads 94.8%, and every miss is a
+  near-tie. Its speed on Gemma 3 has not been measured; on Gemma 4 E2B it made a 4,096-token prefill 4.61× faster.
+- **The plan prices three more things as the backends allocate them.** A Gated DeltaNet layer's small f32 weights count, a Gemma 4
+  E-model's KV-shared layers no longer count as owning a cache on the CPU and WebGPU, and Mamba-2 projections held as f32 count as the
+  int8 a resident backend uploads. A planned context can move slightly either way on those families.
+- **`goinfer fit` and the context plan count a hybrid model's recurrent state.** Gated DeltaNet, Mamba-2, KDA and short-conv layers
+  hold a window and a state per KV slot. The plan now prices them on their own line and names them in its reason, so a hybrid's planned
+  context can come out slightly lower. A model without such layers plans exactly as before.
+- **Metal charges the batched step's scratch on every build, and a recurrent model's slot 0 state in its memory guard.** A dense
+  build of two or more KV slots used to build the step's scratch uncharged. It now fits it against the memory guard like every other
+  build. Serve's default slot count gives up a slot to leave room for it, where that makes the step fit. A slot count asked for with `--kv-sessions` keeps its
+  slots, and a miss then turns the batched step off, with a line saying so, rather than refusing the load. `Model.ResidentNeedBytes`
+  counts one slot's recurrent state, so Metal's guard and `Plan` price a one-slot recurrent load the same.
+- **Metal frees the batched step's startup probes.** The check that `simd_sum` matches the batched kernels' addition tree left its
+  544 KiB of buffers allocated for the life of every resident with a batched step. They are now freed when the check ends.
+- **A `--quant q4k` load the fit guard refuses stays refused.** It used to retry with weight streaming, which pages nothing
+  at q4k, so the retry loaded the model with no memory bound. The refusal no longer recommends `-stream-weights` for it either.
+  This reaches `-direct-load`, and platforms with no default sidecar; the default sidecar route does not take that retry.
+- **`pull` refuses a download that will not fit, before fetching anything.** It compares what is left to fetch (a
+  resumed download counts only its tail) with the disk's free space and names both, instead of failing partway through
+  a multi-gigabyte file. Where free space cannot be read, the pull proceeds.
+- **Olmo Hybrid runs resident on CUDA and Metal (`int4` only on Metal).** CUDA's and Metal's Gated DeltaNet kernels now apply
+  Olmo Hybrid's `linear_allow_neg_eigval` (the write gate widened to `[0, 2)`) and its own output-norm epsilon (`1e-5` beside a
+  `1e-6` layer norm), gated against the CPU on `olmo_hybrid-tiny` and the real 7B checkpoint on CUDA. Metal runs Olmo Hybrid at
+  `int4` only (an `int8int8` or `int8` load declines to the CPU), and WebGPU has been read only on the M1 Pro's adapter.
+- **Nemotron-H 4B Instruct renders its own chat template.** `serve` and `chat` now write its turn markers and stop at
+  `<SPECIAL_11>`, byte for byte with HuggingFace's render, instead of a raw prompt whose reply ran on past the answer.
+  Nemotron-Nano-9B-v2 has a different template and still renders raw.
+- **Weight streaming is refused at a quant it cannot page.** Weight paging reads only int8 and int4 weights. At `--quant f32`
+  a `.gguf` the fit guard refuses stays refused rather than retrying, and an explicit `-stream-weights` is refused by name, as at
+  q4k. A tight or refused load at those quants is told what can help instead (a smaller model, `--quant int4`, a smaller `-ctx`).
+- **An f32 `.giw` loads its weight matrices from the mapping, as every other quant does.** They were copied onto the heap, in
+  memory the fit guard treats as file-backed and so did not price. New bundles use a new encoding, and an older f32 sidecar is
+  rebuilt on its next load, once. An older f32 `.giw` you named yourself is refused, by a load and by `goinfer fit`, naming the `cmd/prequant` command that rebuilds it. Output is bit-identical.
+  `-stream-weights` on a `.giw` whose weights no pager reads is refused by name.
+- **Per-turn `timings` on every response, and a `cost` report on request (experimental).** Chat completions,
+  completions, responses, messages, batches and jobs carry a `timings` object beside `usage`: `queue_wait_ms`,
+  `prefill_ms`, `decode_ms` and `ttft_ms`, read at the server's stage boundaries, each absent rather than 0 when its
+  boundary was not crossed. A stream carries it in its final usage event. A request body with `"goinfer": {"cost": true}`
+  also gets `cost`, the turn's per-phase and per-operation counts (calls, bytes, kernel launches, syncs, allocations,
+  time), counted on the CPU and on CUDA's resident `Generate` (with `--max-concurrent 1`; the default MC3 is not counted);
+  other paths answer `cost: {}`. Both are vendor extensions,
+  experimental until v1.0 (`docs/server.md`, "Per-turn timings and cost").
+- **Whisper's audio encoder runs as a program** (SB9 step M, no change in output). The Whisper encoder, which Voxtral
+  shares, now runs each layer by walking one description of its operations (`audio.WhisperProgram`, on the vision
+  tower's program type), on the CPU and on CUDA. Every tower output is bit-identical to its golden, and a defect planted
+  in the program turns exactly the Whisper and Voxtral cases red.
+- **SigLIP's vision block is one program on every backend** (SB9 step M, no change in output). The CPU, CUDA and WebGPU
+  SigLIP towers, and SigLIP2 NaFlex on the CPU, now run each block by walking one description of its operations
+  (`vision.SiglipProgram`) instead of a loop of their own. Every tower output is bit-identical to its golden, and a defect
+  planted in the program turns the SigLIP towers red on each of those backends.
+- **Qwen3-ASR's encoder layer is a program** (SB9 step M, no change in output). The Qwen3-ASR encoder runs each layer by
+  walking one description of its operations (`audio.QwenASRProgram`) on the CPU, its only backend, with the exact (erf)
+  GELU Whisper's program added. The CPU tower golden is unchanged, and each defect planted in the program turns exactly
+  the Qwen3-ASR case red.
+- **Qwen2.5-VL's vision block is a program too** (SB9 step M, no change in output). On the CPU, CUDA and WebGPU, the
+  Qwen2.5-VL tower now runs each block by walking one description of its operations (`vision.Qwen25Program`). Each block
+  still attends over its own windows or, in the full-attention blocks, over the whole frame. Every tower output is
+  bit-identical to its golden, and a defect planted in the program turns exactly the Qwen2.5-VL cases red.
+- **Pixtral's vision block is a program too** (SB9 step M, no change in output). The Pixtral tower runs each block by
+  walking one description of its operations (`vision.PixtralProgram`) on the CPU, its only backend. The CPU tower golden
+  is unchanged, and each defect planted in the program turns exactly the Pixtral case red.
+- **SB9 step M block 1 on Metal (`metal`, `docs/tasks/task-subsystems-2026-10.md` §8)**: Metal's SigLIP tower walks
+  `vision.SiglipProgram` (`gridVAccel.walkBlock`, through the tower's existing LayerNorm, linear, attention and GELU-tanh
+  operations) in place of the grid towers' shared block loop, which keeps Qwen3, GLM-OCR and Qwen2.5-VL
+  (`gridVAccel.loopBlock`). The Metal tower golden is unchanged, and `TestTowerGolden_metal` now runs
+  `towerid.CheckProgramPlants`: each of the three program plants turns the `siglip` cases red on Metal (its golden has no
+  `siglip2-naflex` case). `CheckProgramPlants` now fails a golden with no case of a family that walks the program, and
+  `walkBlock` refuses an op routed to registers its operation does not use or whose widths do not match its weight.
+- **Qwen2.5-VL's vision block is a program on Metal too** (SB9 step M block 4, no change in output). Metal's Qwen2.5-VL
+  tower walks `vision.Qwen25Program` through `gridVAccel.walkBlock`, and the last hand-ordered grid block loop on Metal is
+  gone. The Metal tower golden is unchanged, and each defect planted in the program turns exactly the Qwen2.5-VL cases
+  red on Metal.
+- **SB9 step M block 2 on Metal (`metal`, `docs/tasks/task-subsystems-2026-10.md` §8)**: Metal's Qwen3-VL (with DeepStack)
+  and GLM-OCR towers walk `vision.Qwen3Program` and `vision.GlmOcrProgram` through `gridVAccel.walkBlock`, which gains the
+  RMSNorm form, the per-head norm, the fused qkv (the three split linears), RoPE and the SiLU product. The shared block
+  loop keeps Qwen2.5-VL alone. The Metal tower golden is unchanged, and all four program plants turn exactly each
+  program's families red on Metal.
+  `walkBlock` calls the shared `vision.TowerOp.CheckRegs` before every op, as the other walkers do.
+- **The Qwen3-VL and GLM-OCR vision blocks are programs too** (SB9 step M, no change in output). On the CPU, CUDA and WebGPU,
+  these towers now run each block by walking one description of its operations (`vision.Qwen3Program`,
+  `vision.GlmOcrProgram`), as SigLIP's already did. All three CPU towers share one walker. Every tower output is
+  bit-identical to its golden, and a defect planted in one program turns exactly that program's towers red.
+- **SB9 step M block 3, Gemma 4 vision (`internal/vision`, `metal`, `docs/tasks/task-subsystems-2026-10.md` §8)**:
+  `vision.Gemma4Program` describes Gemma 4 vision's sandwich-norm block, and the CPU tower (`Gemma4Encoder.Forward`)
+  and the Metal tower (`g4vAccel.Hidden`) walk it in place of their own layer loops. The vocabulary gains the residual
+  add, the GELU-tanh product, axial RoPE, the unscaled RMSNorm form and the post-attention and post-MLP norm weights,
+  and the CPU walker applies a tower's linear clamps (Gemma 4's ClippableLinear). The CPU and Metal tower goldens are
+  unchanged, and the four program plants turn exactly `gemma4-vision` red on both. CUDA and WebGPU walk it next
+  (nobara-mm01).
+- **Gemma 4's vision block runs as a program on CUDA and WebGPU too** (SB9 step M, no change in output). The CUDA and
+  WebGPU Gemma 4 vision towers now walk `vision.Gemma4Program` each block, as the CPU and Metal do. Every tower output
+  is bit-identical to its golden, and a defect planted in the program turns exactly the Gemma 4 vision cases red.
+- **Gemma 4 audio's conformer block is a program** (SB9 step M shape 4, no change in output). The CPU and Metal Gemma 4
+  audio towers walk one description of the conformer block (`audio.Gemma4AudioProgram`): the two half-step
+  feed-forwards, local attention with relative-position keys and a softcap, and the GLU and depthwise-conv module. The
+  tower program vocabulary gains SiLU, the GLU, the causal depthwise conv, local attention, the scaled residual add and a
+  2·hidden register. Both towers' goldens are unchanged, and each defect planted in the program turns exactly the Gemma 4
+  audio cases red on the CPU and on Metal.
+- **CUDA's int8 SigLIP tower: exact attention fixed, and the tower walks SigLIP's program** (SB9 step M). The int8 tower
+  (`-vision-quant int8`, or the fallback when the float32 tower does not attach) failed to launch its exact attention
+  kernel. That path is taken for any SigLIP whose head_dim is not 72, and under `GOINFER_CUDA_VISION_ATTN=exact`; it now
+  runs. The tower now walks `vision.SiglipProgram` like every other SigLIP tower. Gemma 3's output is bit-identical on
+  every attention arm, and the tower has a golden of its own on CUDA.
+- **`internal/audio` may import `internal/vision`** (SB13, Francis 2026-10-29). `towers-standalone` in
+  `internal/layout/imports.json` gains its one exception, so the audio towers can walk the tower program type. A rule's
+  new `allow_goinfer` field names the exception exactly. `TestLayout_towersStandalone` holds every other goinfer
+  import from either tower forbidden.
+- **SB1 step 1, Metal batch 7 (`internal/mamba2`, `metal/kernels`, `docs/tasks/task-subsystems-2026-10.md` §8)**: the
+  Mamba-2 mixer between its projections (causal conv, selective scan, grouped gated RMSNorm) moves out of `decoder` into
+  `internal/mamba2`, with `decoder`'s `mamba2Step` calling `mamba2.Mix` so there is a single implementation (`decoder`
+  bit-identical on its Mamba-2, Granite and Nemotron tests and on hashed tiny-fixture logits). `TestMambaGNorm_groups` and
+  `TestActQuant_relu2` move to `metal/kernels`; the two Mamba chain tests stay in `metal`, which still loads the fixtures
+  through `decoder` for their inputs.
+- **`engine.Scripted` moves to `engine/enginetest`** (SB7b), the Go convention for fakes (as `net/http/httptest`).
+  Its behavior is unchanged. The package is Experimental; nothing a client sees changes.
+- **`engine.Engine.Start` returns one `*engine.Stream`** (SB7b), with `Tokens()`, `Report()` and `Close()`, in place
+  of a channel and two functions. `Report()` is nil-safe and `Close()` runs once however often it is called.
+  `NewStream` and `GenerationStream` (over a `*decoder.Generation`) build one; `ReportOf` and `Reporter` are gone.
+  The package is Experimental; nothing a client sees changes.
+- **The `engine` package exports less** (SB7b). `engine.Model`, `BlockDrafter` and the helpers `HandleOf`,
+  `DrafterOf`, `Call`, `IsNil`, `AsDecoder`, `ReportNow` and `LogprobsOf` are gone: the serving shell's model handle is
+  internal again. `Decoder.Model` is a `*decoder.Model` and `Decoder.Drafter` a `*decoder.BlockSpec`, and `engine`'s
+  copies of `SampleInfo`, `TokenLogprob` and `KVScope` give way to `decoder`'s (`Report.Logprobs`, `Request.Scope`).
+  The package is Experimental; nothing a client sees changes.
+- **`engine.Decoder` is now `engine.Local`** (SB7b), with its fields `Spec` → `Speculative` and `Adapter` →
+  `AdapterBound`, and `engine.Request.PlainConstrained` is now `NoSpeculation`, so each name says what it does. The
+  behavior is unchanged. The package is Experimental; nothing a client sees changes.
+- **Image and audio turns run through `engine.Engine`** (SB7b). `engine.Request.Media` carries an image or audio
+  input (`engine.Media`: its `MediaKind`, the placeholder spans, the lazy features and Qwen's grid arguments), and
+  `engine.Local` starts it on the decoder generator its kind names. `engine.Report` gains the image-prefill fields
+  `ImgPrefillResident`, `ImgPrefillDecline` and `DecodeResident`. The serving shell's vision and audio routes start
+  on the engine instead of calling the model, so a fake engine can serve them. No behavior changes.
+- **`TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset, so `gate gpu` runs the 4B whole-model
+  tier-1 cell without an extra environment variable.** When `NEMOTRON_TIER1` is unset and the Qwen2.5-Coder 1.5B control or
+  Nemotron-H-4B-Instruct-128K checkpoint is absent on disk, the test skips naming the checkpoint path so `gate gpu` grades
+  the `nemotron-h` heavy group as a named all-skip group and the 2c skip census lists it. Setting `NEMOTRON_TIER1`
+  explicitly (`4b`, `9bslice`, `9b`) still fails with `VOID` when a requested checkpoint is missing or when a token names
+  an unknown cell. Approved by Francis on 2026-10-29.
+- **Closing a model with an int8 SigLIP image tower on CUDA now releases the tower's device** (SB12). Before, closing the
+  encoder freed the tower's buffers but left its compiled kernels, stream and CUDA context open, both on a normal close and
+  when the tower failed to set up. A server that loads and unloads such a model no longer holds them after each unload.
+- **Per-tower goldens for WebGPU on macOS** (SB9, tests only). The WebGPU backend's 15 tower cases on an Apple M1 Pro are now
+  compared bit for bit with a committed golden. On CI, whose runners have a virtual GPU with no golden of its own, a
+  different adapter skips with a named reason; on any real machine it still fails until the golden is re-recorded.
+- **Per-tower goldens on Metal and the darwin CPU** (SB9, step S, tests only). The Metal backend's 17 tower cases (7
+  families) and the arm64 CPU's 22 are now compared bit for bit with committed goldens on their fixed inputs. The Metal
+  golden names the GPU and the macOS build, since Metal's compiler and driver ship with the OS, and a golden from another
+  build fails until it is deliberately re-recorded. A planted one-ulp change in any tower turns exactly that tower red. On
+  the M1 Pro every Metal tower agrees with the CPU at cosine 0.99999997 or better. No tower's output changed.
+- **The CUDA test suite names any device a test leaves open** (SB12, tests only). Every device a CUDA test creates is
+  counted until it is released. The VRAM ledger test fails at its start, naming the open devices, when an earlier test
+  left one open, because an open device shares its small-buffer pool with later ones and makes the measured memory read
+  short. The suite fails at the end on any device never released. Seven tests that leaked a device now release it.
+- **Metal cost counters attribute the first counted token** (SB11, tests only). Counting one token after uncounted decode
+  now attributes every dispatch to its pipeline. Before, the buffer the previous token had already encoded was reported as
+  unattributed. Nothing extra is recorded while counting is off, and decode outputs are unchanged.
+- **Metal cost counters count at the commit** (SB11, tests only). The device now counts a command buffer's dispatches
+  when the buffer is committed, so a token that commits a buffer encoded before counting began reports those dispatches as
+  unattributed instead of missing them. A buffer allocated and released within a token is still counted as one allocation.
+  Decode outputs are unchanged.
+- **Cost counters on Metal** (SB11, tests only; nothing new on the wire). The Metal device now counts every dispatch encoded,
+  command buffer committed and host wait, and a counted token attributes each dispatch to the pipeline that ran it, with its
+  allocations from the memory ledger. On llama-tiny a decode token is 46 dispatches over 11 pipelines, one command buffer and
+  one wait, with no allocation, checked exactly against a committed golden; a planted extra command buffer turns it red.
+  Logits are unchanged with the counters on.
+- **SB1 step 1, Metal batch 6 (`internal/program`, `metal/kernels`, `docs/tasks/task-subsystems-2026-10.md` §8 and §9)**:
+  the Gated DeltaNet and Qwen 3.5 query/gate CPU reference functions (`GatedDeltaNetStep`, `DeltaNetCore`,
+  `DeltaNetRecurrence`, `L2NormScaledInto`, `L2NormScaled`, `NegExpAFromLog`, `SetDeltaCapHook`, `SplitQGate`,
+  `QGateContext`) move out of `decoder` into `internal/program`, with `decoder` and `decoder/testhooks.go` calling
+  `internal/program` so there is a single implementation (`decoder` bit-identical across its DeltaNet and Qwen 3.5 parity
+  tests). `metal/deltanet_test.go` and `metal/qgate_kernels_test.go` move to `metal/kernels` against `internal/program`,
+  dropping their `decoder` import and `goinfer_testhooks` tag (5 PASS before and after; `metal` ratchet direct 245 → 243,
+  reach 330 → 328).
+- **`internal/hybridattn` (`internal/hybridattn/deltanet.go`, `decoder`, `metal/kernels`, `internal/layout/imports.json`, `docs/ARCHITECTURE.md`)**:
+  Renamed `internal/program` to `internal/hybridattn` (`package hybridattn`) for the shared Gated DeltaNet and Qwen 3.5 q-gate operations used by `decoder` and the kernel tests, reserving `internal/program` for the §9 operation-list package.
+- **`decoder`, `internal/hybridattn` (fix #418 regression)**: `gatedDeltaNetStep` now always passes its `proj` callback
+  (`st.hq.prepare` / `matvecWMPre` / `matvecWM`) instead of guarding it on `be != nil`, restoring CPU projections when
+  `be == nil` on quantized (`int8`, `int4`, `q4k`) or 16-bit (`bf16`, `f16`) `WeightMat`s. `GatedDeltaNetStep`'s nil-`proj`
+  fallback now checks `wm.F32()`'s boolean and panics with a clear message when handed a non-`f32` `WeightMat` rather than
+  computing on a nil slice (`TestGatedDeltaNetStep_nilBackendNonF32`).
+- **`engine.Decoder` treats a typed-nil block drafter as none** (SB7b), as `engine.Call` treats a typed-nil model.
+- **`serve`'s text generation runs through `engine.Engine`** (SB7b). The shell builds an `engine.Request` and starts
+  it on the model's engine. No behavior changes: the wire census reproduces byte for byte.
+- **`engine.Scripted`, a fake engine** (SB7b). It streams fixed token ids within each request's budget and keeps no
+  report, so a serving shell can be tested with no model. `serve`'s own scripted test seam now uses it.
+- **New package `engine` (Experimental)** (SB7b). It holds what the serving shell asks of a model: the `Engine`
+  interface, its `Request` and `Report`, the `Model` handle and the block drafter, plus small helpers. `serve` uses its
+  types; nothing a client sees changes.
+- **`engine.Decoder`, the engine a loaded model generates on** (SB7b). It covers the GPU-resident paths and the CPU
+  session path with its speculative variants, and it moves out of `serve` into the `engine` package behind a
+  `SessionPool` the caller keeps. No behavior changes: the wire census reproduces byte for byte.
+- **Two CUDA tests no longer leave their device open, which had made `TestLedger_closesAgainstDevice` fail in full-package
+  runs.** CUDA packs small buffers into a pool shared by every device in the process. `TestKernelLocalMemoryCensus` and
+  the tests built on `actGroupHarness` never released their device, so a later model's small buffers landed in pages
+  already counted, and its measured device memory read below the ledger's charge (4,194,304 against 4,479,240 bytes on
+  llama-tiny). Both now release what they create, and the ledger test passes in the gate's order with its exact bound
+  unchanged. New: `TestSmallAllocPool_sharedAcrossDevices` records the pool sharing.
+- **CUDA MoE prefill parity on the real 26B is green again** (tests only). `TestPrefillMoE_real26B` compared the batched
+  prefill, which is W4A8, with a sequential leg that decoded on float activations, the Gemma 4 MoE default. The two are
+  different arithmetics by design, so every logit differed. The shared parity helper now selects the W4A8 decode itself.
+  On the real Gemma-4-26B the batched prefill is bit-identical to the sequential W4A8 path (0 of 262,144 logits differ).
+- **`TestAttnFusedTile_defaultBitIdenticalWholeModel` derives its expected chunk count from `prefillPassRows()`** (tests
+  only). It divided the prompt length by a literal `512` from before KS-B8 widened the default CUDA prefill pass to up to
+  `2048` rows when scratch fits. On Qwen2.5-Coder-1.5B (`2048`-row pass, 28 layers) the default path launches the 128-row
+  tile 28 times at `M = 1300` (1 chunk) and 56 times at `M = 3900` (2 chunks), with 0 of 151,936 logits differing from the
+  forced 64x64 path.
+- **`TestBuildDemand_matchesDecoderDefault` holds CUDA's rounding report to 0 only where that is the true figure.** It
+  compared every checkpoint in `testdata`, so a real model placed there by the night gate (llama3.2-1b, qwen2.5-0.5b and
+  six more), whose buffers are far over the 2 MiB quantum, failed it although CUDA prices it correctly. It now compares the
+  checkpoints whose every weight is under the quantum (the committed fixtures, as before) and logs the rest. Pricing is
+  unchanged.
+- **Three more Metal kernel tests run without the decoder** (SB1, metal batch 5). `moe_test.go`, `profile_test.go` and
+  `sa_qv_fusion_test.go` moved from package `metal` to `metal/kernels`, whose tests do not build `decoder`, so a decoder
+  edit no longer rebuilds them; the layout ratchet's metal figure falls from 333 to 330. No test or kernel changed.
+- **`gate gpu` fails the WebGPU group when its adapter probe never answers.** A probe that fails to build, crashes, or
+  exits non-zero before reporting now counts as a failure of the WebGPU group, and the gate's verdict goes red. Before,
+  the gate read it as "no WebGPU adapter" and skipped the group, which let a broken `-tags gpu` test build pass for
+  missing hardware. Set `GOINFER_GATE_SKIP_WEBGPU` to skip the group on purpose. A probe that runs and finds no adapter
+  still skips the group as before. This is a verdict change, approved by Francis on 2026-10-28.
+- **A census of what `serve` sends a client** (SB7). `TestWireCensus` replays 38 requests through the in-process server
+  and checks each response's status, headers and body byte for byte against goldens, SSE streams included. The requests
+  cover chat, completions, responses, messages, tool calls, errors and a mid-stream cancel. A layout test holds
+  `internal/serveapp`'s test files that import `decoder` at 40, to fall as the shell moves onto a fake engine. No
+  behavior changes.
+- **`scripts/touched.py` runs every package's tests every time again** (`-count=1`). The test-cache classification that let
+  Go replay 14 packages' results is removed: it saved about 9 s on a 133 s re-run, and each review round found a new way a
+  hidden input could slip past it and replay a stale pass.
+- **A census of today's scheduling decisions** (SB6). `TestSchedCensus_admission` replays 11 request traces on a virtual
+  clock through `serve`'s admission (turn order, the `-max-queue` bound, cancellation, halts, `-max-concurrent`), and
+  `TestSchedCensus_placement` replays 10 conversation traces through the KV session LRU (reuse, eviction, KV sharing,
+  tiered demotion), against goldens. No behavior changes.
+- **`serve`'s `-max-queue` bound and admission order moved to `internal/scheduler`** (SB6, M2). This covers claiming a queue slot,
+  waiting for a turn, re-checking for a halt once the turn is granted, and giving both back. No behavior changes: the
+  scheduling census reproduces byte for byte.
+- **`internal/scheduler` is documented as a subsystem** (SB6). It gets a `doc.go` contract whose invariants each name their
+  test, design notes in `docs/code-notes/internal-scheduler.md`, and a place in `docs/ARCHITECTURE.md`'s request path and
+  package table.
+- **Per-tower goldens** (SB9, step S, tests only). Every image and audio tower's output on its fixed inputs is now compared
+  bit for bit with a committed golden on the CPU, CUDA and WebGPU. Each golden names what its bits depend on (the CPU's
+  kernel set, the GPU and its driver, the WebGPU adapter), and a device golden from another driver fails until it is
+  deliberately re-recorded. A planted one-ulp change in any tower turns exactly that tower red. On nobara every GPU tower
+  agrees with the CPU at cosine 1.0. No tower's output changed.
+- **Metal's pre-allocation decisions are censused** (`metal/sb2_census_test.go`). On every tiny fixture and option cell the
+  decoder admits, and on each recorded M1 Pro profile, the census holds the answer of the feature check, the explicit-context
+  cap, the fit choice and the memory guard to a golden. A change to what Metal admits or how much context it picks now goes
+  red in the change that makes it.
+- **Cost counters on WebGPU** (SB11, step 3). The `Context` counts the dispatches its decode runners record, the command
+  buffers they submit and their blocking polls (always on, a few atomic adds a token). When a counter is attached, a
+  runner records each submitted dispatch against its pipeline, and the token's waits, submits, new leases and wall time
+  against the phase. Off, the cost is at most 0.1442% of a WebGPU decode token (measured). Nothing new is sent by the
+  server.
+- **Cost counters on CUDA** (SB11, step 2). The device counts its kernel launches and host waits (one atomic add each, always
+  on), and the resident decode, when a counter is attached, records each launch against its kernel, a token's waits as
+  `sync` and its new leases as `alloc`, and the token's wall time as the phase's. Bytes and time per kernel are listed
+  unmeasured, since a launch is asynchronous.
+  Off, the cost is at most 0.0847% of a CUDA decode token (measured). Nothing new is sent by the server.
+- **Cost counters on the CPU** (SB11, step 1). `internal/cost` is the schema: per phase (prefill, decode) and per operation,
+  calls, bytes read and written, launches, syncs, allocations and time, with X1's phase names and a field a backend does not
+  count listed as unmeasured rather than reported as 0. The CPU's program walkers count each operation when a stream carries a
+  counter. Off, the hook is a nil check (at most 0.0035% of a CPU decode token, measured). Nothing new is sent by the server.
+- **The plain decode loop runs over a target of hooks** (SB5). `generateInto`'s loop is now `plainDecodeLoop`, which a
+  scripted fake drives as well as the CPU, CUDA and WebGPU paths, so its contract is checked on every push without a
+  model: the stop id, the processor and its gate, logprobs, the cancel and KV-pool exits, and the commit callback. No
+  token stream changed: llama-tiny's 35 CUDA and 32 WebGPU decode streams, one per fast path, are byte for byte what
+  they were.
+- **The serving shell holds each loaded model through a handle interface** (SB7, H1), and its liveness and unload tests run
+  on a fake model. Four more `internal/serveapp` test files no longer import `decoder`, so the count is now 33. No
+  behavior changes: the wire and scheduling censuses reproduce byte for byte.
+- **The Metal ledger cell reconciles the ledger itself** (MM3c, tests only; corrects the earlier per-buffer check, which
+  compared the device with Metal's allocation size rather than with what the ledger recorded). Every buffer allocation and
+  release is now traced. The ledger's own record, by line and tier, must equal the live buffers' charges. Each large buffer
+  must match the device to the byte. Everything the device counts must be accounted for by traced allocations and frees.
+  Plants for a ledger over-charge, a ledger under-charge and a buffer allocated around the constructors each fail the cell.
+- **The Metal ledger cell reconciles every large buffer to the byte** (MM3c, tests only; Francis's decision of
+  2026-10-27). Its baseline is read at the resident's device creation again. In this cell only, a test hook reads
+  Metal's allocated-memory count around each buffer allocation. Every buffer of 16 KB or more must move it by exactly
+  its ledger charge. Smaller buffers, which Metal counts by shared chunk, are measured and reported. This replaces the
+  earlier baseline move, which had let up to 1.6 MB of over-charging pass. A planted 4 KB over-charge on one large buffer
+  must fail the cell. Production allocation is unchanged.
+- **The Metal ledger cell reads its baseline before the load** (MM3c, tests only). Metal counts small buffers by the
+  shared chunk it packs them into. The cell read its baseline after a chunk was already open, so 3,692 B of llama-tiny's
+  small buffers were charged by the ledger but never counted by the device, and the cell failed. The ledger charges what
+  Metal allocated (`allocatedSize` equals the length on every buffer). The band is unchanged, and the cell passes on an
+  M1 Pro. A diagnostic probe of small-buffer counting and a per-buffer padding log come with it.
+- **The CUDA ledger test reads its own process's device memory** (MM3, tests only). `TestLedger_closesAgainstDevice` measured
+  the device's free VRAM, which moves when another package's device tests allocate beside it. The CUDA device suite runs
+  them side by side, and so it read the test red. The test now grades on the driver's per-process figure. Its bounds are
+  unchanged.
+- **`serve`'s admission and KV session placement moved to `internal/scheduler`** (SB6, M1). This covers the FIFO turn granter
+  and the choices of which resident session a prompt extends, which session donates rows by copy, and which is evicted.
+  `internal/scheduler` imports only the standard library, a rule the layout test enforces. No behavior changes: the
+  scheduling census reproduces byte for byte.
+- **The serving shell keeps image spans as its own type** (SB7), converting them once at the vision generators;
+  `internal/serveapp` test files importing `decoder` are now 31. No behavior changes.
+- **`serve`'s generation goes through an engine seam** (SB7, E1). The token stream comes from an engine: the decoder, with
+  its resident, speculative and session paths, or the scripted seam that tests use. It is no longer chosen inline in the
+  shared generation path. No behavior changes: the wire census reproduces byte for byte.
+- **The serving shell carries a request's sampling as `internal/sampling`'s type** (SB7, E3), converting it only where it
+  calls the decoder. No behavior changes: the wire census reproduces byte for byte.
+- **The serving shell reads a generation's account through its own report type** (SB7, E2), not the decoder's
+  `Generation`. One more `internal/serveapp` test file no longer imports `decoder`. No behavior changes: the wire
+  census reproduces byte for byte.
+- **The serving shell tolerates an engine with no report function** (SB7), and the block drafter is an interface, so
+  `internal/serveapp` test files importing `decoder` are now 32. No behavior changes.
+- **The serving shell's engine interface names no decoder type** (SB7, E3b). A generation's logprobs reach the shell as
+  `internal/sampling`'s type. The wire census gains a logprobs case with an alternative. No behavior changes.
+- **The serving shell keeps a request's KV sharing scope as its own type** (SB7, E4). Two more `internal/serveapp`
+  test files no longer import `decoder`, so the count is now 37. No behavior changes.
+- **CI: a PR's decoder tail no longer waits on the decision census, and a test summary no longer reports a second error.**
+  MM1's two census tests run in their own -race steps in `test-decoder-a` and `test-decoder-d`, so `test-decoder-tail`
+  takes about 8 minutes again instead of 19 to 24 (#325). Every `go test` summary step now runs only when its test step
+  ran, so a failed earlier step reads as one error instead of two. No test was dropped and no required check renamed.
+- **Sampled n-gram speculation is checked lossless in distribution** (SB5). On a fake model, `decoder`'s
+  `TestNgramSpecLoop_sampledIsLosslessOnTheFake` compares 30,000 seeded speculative runs against plain sampling's
+  distribution, computed exactly. It holds the total variation under 0.03, both when drafts are accepted and when they
+  are rejected. No token stream changes.
+- **`gate quick -replay` and `gate identity -replay` refuse a record that has lost what its run had** (SB12, Gemini's
+  review of #373). A quick test job with no stream and no error, an identity dump whose logits file is missing or of the
+  wrong size, and a dump present at the run but gone from the record each exit 2 instead of grading. A live identity run
+  now reads a corrupt logits file as no result rather than as identical. A `-full` quick run's record line is replayed.
+- **Engine policies get a `Forward` interface, a scripted fake model and a census of their token streams** (SB5).
+  `decoder`'s `TestPolicyStreams_census` holds 38 token streams of greedy, n-gram, draft-model, grammar, session and
+  sampled decoding on tiny fixtures, each exact policy's stream equal to plain decoding's. Grammar-constrained,
+  draft-model and n-gram speculation and the session reuse policy each run as one function, shown exact on a fake model
+  whose logits are scripted from the token history (every depth of rejection, argmax-only verifies, a context cap, ring
+  and recurrent KV caches). No token stream changes.
+- **`gate parity -replay` uses the gate lists the sweep ran with** (SB12, Gemini's review). A parity run record now
+  carries `neverConfirmed`, `assetNeverBuilt` and `realckptNotRequired` as they were, so editing those lists does not
+  change an old record's verdict. Each cell's counts are printed from its stream, and the summary-record line from the
+  record. `gate quick -replay` keeps wall-clock times only, and grades a job that failed before it ran by its error.
+- **`gate gpu`'s verdict is a pure function of its tally, and its record holds that tally by name** (SB12, step 7).
+  `gradeGPU` (`cmd/gate/grade_gpu.go`) decides NO_GATE, VACUOUS, EMPTY, FAIL, INCONCLUSIVE or PASS from the check groups'
+  tally and the host, dirty lines and time the runner gathers first. Each `docs/measurements/gpu-gate` record now also
+  holds the groups' names, the vacuous and empty cells and the skip notes, so it can be regraded in full. No verdict
+  changes.
+- **`gate identity` writes a run record, and `gate identity -replay FILE` regrades a run made with `-keep`** (SB12,
+  step 6). `identity_run.json` in the run directory holds what identity printed before its verdict, every cell, and
+  the times, host, HEAD and date its report reads. A replay judges each cell again from the kept dumps and prints
+  exactly what the run printed. The run records of `census`, `heavy`, `parity` and `quick` now refuse a cell with no
+  stream, or a stream that cannot be read, instead of grading it as empty. No verdict changes.
+- **`gate quick` writes a run record, and `gate quick -replay FILE` regrades it** (SB12, step 5). `quick_run.json` in
+  the run directory holds what quick printed before its verdict, each job's stream or lint output and exit code, the
+  hidden failures' log tails, and the run's start and end. The verdict is computed by `gradeQuick`
+  (`cmd/gate/grade_quick.go`), and a replay prints exactly what the run printed. No verdict changes.
+- **`gate heavy -stream` refuses (exit 2) and names `gate heavy -replay FILE`** (SB12; Francis's decision of
+  2026-10-27). A bare `go test -json` stream has no cell exit codes or durations, so it cannot reproduce a heavy run's
+  verdict, and before this change it reported RED with nothing counted. Grade a run's record with `-replay`.
+  `gate census -stream` is unchanged.
+- **SB12's grader goldens check more** (Gemini's review of SB12 step 1). A planted case exercises every verdict of the
+  `.giw` byte-identity judge, including a nondeterministic second transcode. A golden case fails when a git lookup it
+  recorded is no longer asked for. The census of where each gate decides now also catches a reversed comparison, a
+  duplicate row, and a named function that does not exist.
+- **`gate parity` writes a run record, and `gate parity -replay FILE` regrades it** (SB12, step 4). The record carries
+  the cells' streams and everything else the verdict reads: the checkset after `GATE_RUN`, each gate's ledger class,
+  the ledger reconcile text, an `EMIT_MANIFEST` merge's result, and what the sweep printed before the verdict. The
+  verdict is computed by `gradeParity` (`cmd/gate/grade_parity.go`), and a replay prints exactly what the sweep printed.
+  No verdict changes.
+- **A release refuses an untagged aikit** (AX6). `go run ./cmd/gate release vX.Y.Z` now reports its module-pins row
+  OWED when any module requires an aikit pseudo-version (with or without build metadata such as `+incompatible`),
+  naming each module and version. Between weekly aikit tags `main` may require one; a goinfer
+  release still requires a tagged aikit (owner decision SD3, RELEASING.md).
+- **`gate census` and `gate heavy` write a run record, and `-replay FILE` regrades it** (SB12, step 3). Each run leaves
+  `gate_<name>_run.json` beside its streams in `-logdir`: the gate's policy, the provenance, and each cell's exit code,
+  duration and stream. `-replay` prints and exits exactly as the run did (shown byte for byte on mbp2). The grading
+  (`gradeTallyRun`, `reportCensus`, `reportTally`) lives in `grade_*.go` files that read no machine state. No verdict
+  changes.
+- **Four more backend kernel tests no longer re-run on a decoder change** (SB1). `TestGemvRN_bitIdentical` and
+  `TestGemvRNBandwidth` move to `cuda/kernels`. `TestMoEExpertGEMV_indexing`, `TestMoERoute_parity`,
+  `TestMoERoute_pastOldCap` and `TestGumbelDeviceAgreesWithHost` move to `gpu/internal/kernels`. The Gumbel test now calls
+  `internal/sampling`'s reference directly instead of through decoder's test wrapper, so it is held to the same code. The
+  tests themselves are unchanged. These were the last cuda and gpu kernel tests that could move without moving production
+  code first.
+- **The record-reading gates decide in pure graders** (SB12, step 2). The deciding functions of `gate release`'s gpu,
+  parity, quick-full and CI rows, of `gate gpu-records` and of `gate identity -giw bytes` moved unchanged into
+  `cmd/gate/grade_records.go`. `TestGraders_arePure` holds every `grade_*.go` file to no exec, environment, clock or file
+  access and no call outside a grader file. No verdict changes; every golden reproduces.
+- **Replies are read through `internal/codec` too** (SB8, C3). Splitting a reply into reasoning and answer, settling a
+  finished turn's tool calls (the inline parse, a gpt-oss router's calls, and a call read from the reasoning of a turn
+  with no answer) and reconciling streamed prose moved from `goinfer-serve` into the codec; `goinfer-serve` and
+  `goinfer-chat` call it. No reply is read differently: the census's reply and parse tables hold it, run through the codec.
+- **`fit` and `serve check` now judge resident eligibility the way the load does.** `Model.Plan` used to judge eligibility from the
+  architecture alone. It now asks the load's own admission, with the model's own options. Plan's answer changes in five cases:
+  - Nemotron 3 Nano is now planned resident on webgpu. Plan used to call it "not eligible", although the load builds it there.
+  - A dense Nemotron-H at int8 or f32 now declines on every GPU backend unless `GOINFER_SSM_RESIDENT` is set, as the load does,
+    and Metal's context fit treats it as CPU-only.
+  - Per-32 activations (`ActQuantGroup` 32) now decline on metal and webgpu, as the load does.
+  - Phi-3 at per-32 W8A8 on cuda is now planned resident, as the load builds it.
+  - A MoE model whose routed experts are neither int8 nor int4 (an f32 load, say) now declines on webgpu. WebGPU itself now
+    declines it before uploading anything, naming the expert precision, instead of failing partway through the upload. Either
+    way it runs on the CPU, as before.
+
+  A declined backend's reason quotes the admission's own sentence. How a model is placed and priced is unchanged.
+- **`cmd/gate`'s graders are pinned by goldens on recorded inputs** (SB12, step 1). `TestGraderGoldens` regrades
+  `testdata/gate/goldens/`: recorded `go test -json` streams and the committed gpu, parity, quick-full and `.giw`
+  byte-identity records, with every git lookup the grader makes recorded in the case, so it runs on a shallow checkout.
+  `TestGraderCensus_everySubcommand` holds the census of where each gate decides
+  (`docs/measurements/sb12-2026-10.md`) to the subcommands `gate` dispatches. No gate's verdict changes. Found: `gate
+  heavy -stream` has never counted a replayed stream (it reports RED with nothing counted).
+- **`goinfer-serve`, `goinfer-chat` and the decide tool encode prompts through `internal/codec`** (SB8, C2). The text,
+  tool, overflow and vision routes, goinfer-chat's text, batch and image paths, and the decide tool's chat encoding call
+  the codec, where each composed template detection, rendering, the image splice and encoding itself. Same calls, same
+  order: no prompt or token changes. The census's run through the codec is what holds that.
+- **Each loader's output now has a per-tensor identity** (SB4). `decoder`'s `TestLoaderIdentity_table` hashes every
+  tensor a load hands the model (its path, layout, shape and bytes) for each committed tiny fixture, safetensors and
+  GGUF, in each quant mode that loads, and holds them to `testdata/loader_identity.json`; a `.giw` round trip must give
+  the same identities. A loader refactor that leaves every tensor identical leaves the table unchanged, and a loader
+  change names the fixtures it moved. No load changes because of it; the parity key does not read it yet.
+- **The conversation codec has one home, `internal/codec`** (SB8, C1). It holds the path from a conversation to the
+  token IDs a model reads: template detection from a tokenizer, a prompt's segments with or without tools, the image and
+  audio block splice, and the encoding. `chat`'s codec census now also runs through it, against the same goldens. No
+  caller uses it yet, and no prompt, token or public API changes: `chat` and `tokenizer` are as they were.
+- **Each GPU backend's own resident admission is pinned by a census** (SB2). `cuda`'s `TestBackendAdmissionCensus_cuda` and
+  `gpu`'s `TestBackendAdmissionCensus_webgpu` take every tiny fixture and option cell that the decoder admits to a backend.
+  For each, they record what that backend's build decides from the model alone: CUDA's plan-only build, and WebGPU's static
+  gates. No device is opened. WebGPU's static gates now live in one function that `BuildResident` calls first. Its answers
+  are unchanged: the real build gives the same answer on every censused cell before and after the move. No model's
+  admission changes.
+- **Every chat template's prompts, token IDs and parsed tool calls are pinned by a census** (SB8). `chat`'s
+  `TestCodecCensus` records what the serving routes render for 55 template sources, per think mode, tool format and
+  Harmony effort: nine fixed conversations (tool calls and results, a replayed reasoning turn, a user message carrying
+  control-token text, among them), plus an image or audio placeholder where the family has one, so 9 to 11 per source.
+  Token IDs are recorded for the sources that come with a tokenizer (the tracked tokenizers and local models), not for a
+  bare template or a constructor. `TestToolCallParseCensus` records what each family's parser reads from 43 model
+  outputs, malformed ones included, and checks the parsing contract directly. No prompt, token or parsed call changes
+  in this release because of it; it is the before-picture the conversation codec's move to one package must reproduce
+  byte for byte.
+- **gpu: the WebGPU kernel layer moved to `gpu/internal/kernels`** (SB1; goes out in gpu v0.24.0). `gpu`'s twelve exported
+  types (`Context`, `DecodeRunner`, `DeviceBuffer`, `GEMVRunner`, `AttnWeights`, `LayerW`, `ModelW`, `ResidentMatrix`,
+  `ResidentW8A8`, `ResidentW4A8`, `ResidentStackedW8A8`, `VisionEncoder`) are aliases of that package's types and its
+  three functions (`New`, `GPUEverAvailable`, `LiveBufferBytes`) forward to it, so a program written against `gpu`
+  compiles unchanged and the WebGPU backend still registers through `import _ ".../gpu"`. What changes: apidiff reports
+  the twelve types' identity (and `New`'s signature, which names `*Context`) as incompatible, and `%T` and reflection
+  print `kernels.Context` and so on. No new public package: the kernel layer is internal, and no name became exported on
+  a public type. Every kernel's code is the same (`docs/measurements/sb1-gpu-split-2026-10-27/`).
+- **`decoder.ResidentAdapterProj` and `decoder.ResidentAdapterLayer` are aliases now** of the same plain-data types in
+  `internal/adapter`, so a backend's kernel layer can take a LoRA delta without importing `decoder` (SB1). Every caller
+  compiles unchanged; apidiff reports the two Experimental-tier names (and `ResidentAdapter.SetAdapter`, which names one)
+  as a type-identity change, and `%T` and reflection print `adapter.ResidentAdapterLayer`.
+- **The vision and audio towers are goinfer's own code** (`internal/vision`, `internal/audio`: aikit v1.75.0's, unchanged).
+  `multimodal` and `embeddinggemma2`'s Experimental functions that take a tower (`RegisterGemma4Tower`, `Qwen3TowerFeatures`,
+  `RegisterWhisperDevice`, `NewAudioAccelerator` and the rest) now take goinfer's tower types instead of aikit's, which a program
+  outside goinfer cannot name; `multimodal.LoadSiglipTower` and `multimodal.LoadGlmOcrTower` load the two towers the examples
+  use. Every tower's output is bit-identical on the CPU, Metal and WebGPU (`docs/measurements/ax2-2026-10/`).
+- **Changes behavior on macOS. The fit guard's available memory is the kernel's own free percentage** (`kern.memorystatus_level`, the
+  figure `memory_pressure` prints) times physical memory, less 500 MiB (owner's decision, 2026-10-24). It counts app memory as
+  available, since the kernel can compress it. On a 16 GB Mac with the Claude desktop app open it read 12.8 GiB where the free,
+  file-backed and purgeable pages (B41's reading) read 5.9. A timed run's validity keeps B41's reading, `cmd/hostmem -reclaimable`:
+  the night runner's start check, the benchmark harness's and the void rule, since compression under a timed run changes what it
+  measures. Linux keeps `MemAvailable` for both.
+- **Changes behavior for library callers on macOS and Linux. `decoder.Load` of a `.gguf` or a safetensors directory opens its
+  sidecar `.giw`**, transcoding it once beside the source, as `serve` and `chat` already did (MEM1,
+  `docs/tasks/task-memory-campaign-2026-10.md`). The weights are a mapping of that file, not a heap copy: the 0.5B at int4 holds
+  1 MiB of Go heap after a load, against 647 MiB before. A `.gguf` whose sidecar cannot be written is refused, naming the new
+  `Options.DirectLoad`, which restores the direct load. Test binaries keep the direct load. The transcode and the sidecar cache
+  moved from `internal/prequant` into `decoder` (`EnsureCachedGIW`, `TranscodeGIW`, `SidecarPath`, ...; Experimental tier).
+- **Changes behavior on macOS. The fit guard's available memory counts cached files as available** (B41). It is now the free,
+  file-backed and purgeable pages (speculative read-ahead counted once, as file-backed), read through `host_statistics64` without an exec, where it was free + inactive +
+  speculative + purgeable pages from `vm_stat`, which counted the active file cache as used: right after a large model ran, a load
+  could be refused for memory the kernel would hand back at once. Inactive app memory no longer counts as available, so with many
+  apps open it can read lower than before. Linux keeps `MemAvailable`. The night runner and the benchmark harness read the same
+  number through a new `cmd/hostmem`, which also reads a process's own memory (`-pid`, `task_info` `TASK_VM_INFO`).
+- **The Metal memory guard also refuses a load whose Metal allocation exceeds the GPU's `recommendedMaxWorkingSetSize`**, by name.
+- **`logit_bias` on the serve API.** `/v1/chat/completions`, `/v1/completions` and `/v1/responses` take OpenAI's `logit_bias`
+  (token id to a value in [-100,100], added to the logit), and `/v1/messages` takes the same field as an extension. Before, the
+  field was ignored. The sampler already applied a bias, and its on-device fast paths already stand aside for one. A malformed
+  bias is a 400.
+- **Changes behavior. An explicit `--kv f32`, `f16` or `i8` is delivered or the load refuses and says why.** Before, some
+  combinations ran another precision silently. They now refuse when the backend cannot deliver what was asked: `--kv i8` on CUDA
+  (it ran f32), `--kv f16` or `i8` on Metal for MLA (`deepseek_v2` and `deepseek_v3`, whose latent cache stays f32 on Metal),
+  `--kv f16` with `--drafter` on CUDA, and `--kv f16` or `i8` on the CPU
+  for MoE, MLA, Gated-DeltaNet, Mamba, LFM2 and Gemma 3n (they ran f32) or with CPU batched decode switched on. `--kv f32` on Metal
+  is now delivered across every family instead of running f16. One resolver, `decoder.ResolveKV`, answers for every backend's build,
+  the fit guard, the banner (which prints each cache's precision with the one requested) and the request log (a new `kv=` field).
+  `docs/kv-precision-matrix.md` lists every backend, family and request; `TestKVPrecisionDelivered` checks it.
+- **CUDA: an MoE prefill with an expert cache runs each expert's rows in one launch per stage, not one launch set per (row, rank) pair.** The expert-major prefill ran three kernel launches for every pair a chunk routes (about 12,000 per layer per 512 rows), and on Mellum2.1 the expert FFN was 96.7% of a 4096-token cold prefill. Two new kernels (`gemv_w4a8_moe_rows`, `glu_quant_rows`) take an expert's pairs together, each pair keeping the accumulation order and rounding of the per-pair kernel, so the result is the same bits (checked on all 1,179,648 residual elements of 512 rows of the real model, in process). Mellum2.1 on an 8 GB card, served with `--moe-cache-experts -ctx 32768` (53 expert slots per layer): a 16,308-token cold prefill takes 45 s instead of 162 s (44.8 s and 44.9 s against 161.2 s and 162.2 s to the first token, 3.60x, two binaries, order before/after/after/before, `docs/measurements/mellum21-served-16k-2026-10-19/README.md`). `GOINFER_CUDA_MOE_EXPERT_MAJOR=0` still returns to the per-row path. `docs/measurements/mellum21-prefill-ffn-share-2026-10-19/README.md`.
+- A CUDA expert-cache load (`--moe-cache-experts`) packs each routed-expert stack straight into its page-locked host buffer, instead of building it on the Go heap first and registering that. The heap held a second, non-live copy of the stack during the build: on Qwen3.6-35B-A3B the process reached 19.9 GB of anonymous memory 57% through the load and the swap guard stopped it at layer 23; with the stack packed in place the same load completes in 29.5 s with 0.4 GB of anonymous memory, no swap, and the user slice 9.5 GB under its `MemoryHigh`. The pinned bytes are identical. `docs/measurements/c3-35b-sampled-load-2026-10-19/README.md`.
+- A prompt past 12,160 attended keys no longer falls to the sequential prefill on CUDA for a model whose attention the fused kernel does not serve (head dim other than 64 and 128: Gemma 2, 3 and 4, Phi-3, Qwen3.5): row-batched kernels run the exact attention, bit-identical to the single-block kernel and to the per-token path, for text and for an image-block pass.
+- The `.giw` fit guard prices the page-locked host copy of the routed experts that a CUDA expert cache (`--moe-cache-experts`) builds, 18.1 GB for Qwen3.6-35B-A3B, and refuses a load whose box cannot hold it. `FitQuery` reports it as `PinnedExpertBytes`.
+- The load-time swap watch now guards a `.giw` load, not only a direct `.gguf` build: the `.giw` loader and the CUDA resident build stop with a named error when the server's own swap grows past the threshold during the load. The serving swap watch re-baselines after a model loaded through the admin endpoint or the web UI, so swap that load left behind no longer shuts the server to requests for good.
+
+- A CUDA build packs each dense projection's weights in row blocks on a few cores and uploads them as they finish, instead of holding a packed copy of the model on the host. Peak host memory of a 7B load falls from about 4.1 GiB to 0.1 GiB through the sidecar and from 8.7 to 4.2 GiB on the direct `.gguf` path, and the load is faster (0.68x to 0.77x of the previous load time, same-session A B B A). The fit guard prices one packed layer plus the staging blocks.
+
+- The host fit guard prices a CUDA-resident load's KV as VRAM, not host memory, and prices the build's packed copy of the model where there is no source file. A 7B at a 32K context is no longer priced at 11.9 GiB of host against 8.5 GiB measured; the guard's total is within 2% of the measured peak on the 7B and 8% on phi3.
+
+- **A `tool_choice` of `required` (OpenAI) or `any` (Anthropic) on a family with no JSON call form is an error when the reply
+  holds no call,** instead of prose. Those families (Gemma 4, gpt-oss, a model under `-tool-format template`) are parsed, not
+  constrained, so the check runs once the reply is parsed, and no prose streams before it. Each model's `/v1/models` and `/health`
+  entry reports how a forced call is enforced: `forced_tool_call` is `grammar`, `post-check` or `off` (`GOINFER_TOOL_UNION=0`).
+- **On Metal, a prompt past 4,096 tokens stays on the batched prefill for a model whose attention head dim the fused kernel does
+  not take (Gemma 4 E2B and E4B: 256 and 512).** The exact attention kernel held 4,096 scores, and a longer prompt fell back to
+  a pass about 4× slower (E2B at 8,192 tokens: 34 tok/s against 144 at 4,096). Past 4,096 keys it now tiles its scores. A prompt
+  that fits runs the same kernel as before. When an E-model prompt does leave the batched pass, stderr says so once per
+  request, and the `-log-requests` line carries the reason (`prefill_fallback_reason`).
+- **`POST /admin/models/fit` says whether a load would fit, without loading.** It takes the load's body and returns the
+  load's own memory check, priced now (`fits`, the context priced, need, budget, weight and KV bytes, the refusal), the
+  file the load would open, and the decode path where that is known before the weights are opened. A `.gguf` whose sidecar
+  `.giw` is not built yet answers `unknown`, naming the build (`docs/server.md`, "Admin: would this load fit?").
+  For a `.giw` on Metal it also opens the bundle without building a resident and asks Metal's own checks before its build,
+  so `decode_path` says `metal-resident (int4)` with the context the resident would hold (`resident_ctx`), or the CPU path
+  with the decline the load would report. CUDA, a `.gguf` on a GPU backend, and a Metal int8 load still answer `unknown`.
+- **The swap guard watches the server's own swap on Linux.** The 512 MB default now applies to `VmSwap` summed over the server's pid and its descendants, so another process's swap growth (an idle CLI, an editor) no longer halts a run; system-wide swap is a second trip at a fixed 4096 MB backstop. Where `VmSwap` is not readable, and on macOS, the guard stays system-wide at the threshold, and the startup banner names the reader. `GOINFER_SWAP_GUARD` is unchanged.
+- **A request that leaves a sampling field out now gets the model's recommended value, where the checkpoint carries one.**
+  Before, every omitted field fell to temperature 1.0 over the whole vocabulary. The values come from a Hugging Face
+  directory's `generation_config.json` or a GGUF's `general.sampling.*` keys; a bare `.gguf` never reads a
+  `generation_config.json` from its folder. A field the request sends always wins, a greedy request is unchanged, and
+  `repetition_penalty` is named on the load banner and not applied (`docs/server.md`, "Sampling defaults"). Default output
+  changes for the checkpoints that carry values, among those checked: Qwen2.5 0.5B Instruct, Qwen3 0.6B, Qwen3-VL 2B and
+  Qwen2.5-VL 3B, Gemma 3 4B (the Hugging Face directory), Gemma 4 E2B and E4B (GGUF and directory), LFM2.5 2.6B, GLM-OCR and
+  Spark 2.5 1.7B. Unchanged, because they carry none: the Qwen2.5 and Qwen2.5-Coder GGUFs, Phi-3 mini, Gemma 2 2B, Gemma 3
+  4B's GGUF, DeepSeek-V2-Lite, InternLM2, Ministral 3, LFM2.5-VL and Qwen3.5 0.8B. A client that wants the old default
+  sends `temperature: 1, top_p: 1, top_k: 0`. `goinfer-chat --batch` follows the same rule, under its explicit flags.
+- **Tool calls are constrained for real agent tool lists.** A tool whose parameter schema used a keyword the grammar does not
+  check (opencode's own `bash` and `read` use `maximum` and `exclusiveMinimum`), or an untyped property, used to drop the
+  call constraint for every tool in the request, silently, so a malformed call could come back as text. Tool parameters
+  now compile leniently: unchecked assertions are left to the tool, and an untyped or composite value may be any JSON value.
+  A tool list that still cannot be constrained is reported on stderr. `response_format: json_schema` is unchanged.
+- **Constrained decoding skips most of the vocabulary at structural positions.** Before walking the grammar for a token, the
+  masker checks its first byte, and where few bytes are legal its second, against what the grammar accepts next. The mask is
+  unchanged. With opencode's 19 tools, the tokens before a call's tool name cost about 0.5 s per call on nobara; that cost
+  is now a few milliseconds.
+- **On `/v1/messages`, `input_tokens` now counts only the tokens prefilled for that request; reused tokens are reported as
+  `cache_read_input_tokens`, matching Anthropic's definitions.** The prompt is their sum. Before, `input_tokens` was the
+  whole prompt and no reuse was reported, so a cold request reads as before. A client that took `input_tokens` as the prompt
+  size adds `cache_read_input_tokens`, as Claude Code already does. A stream's `message_delta` carries the split, and its
+  `message_start` the whole prompt (`docs/server.md`, "usage on /v1/messages").
+- **`--kv f16` now gives the CPU an f16 KV cache** (half the KV bytes; each stored row rounded to f16) for the generic families
+  without MoE. Other families stay f32 and the banner says why. `--kv auto` and the library default stay f32, the reference.
+  A CPU load given `--kv f16` was priced at f16 over an f32 cache before; it is now priced at what it builds.
+- **DeepSeek-V2 and V3 resident on Metal.** Multi-head latent attention runs on the GPU in its absorbed form, with the latent
+  rows as the KV cache. Gated on tiny models, a kernel check of both rope layouts against float64, and a two-layer slice of
+  DeepSeek-V2-Lite against the CPU. Kimi K2 stays on the CPU: its 384-expert router is past Metal's 256.
+- **.giw files rebuild again (v17).** Each cached sidecar is transcoded once from its source on first load; a bundle named
+  with `--model` or built into a binary must be rebuilt with `cmd/prequant`. From v17 every tensor carries its encoding,
+  so a new encoding no longer needs a format bump (`docs/giw-bundles.md`, "From v17").
+- **Quantized Nemotron-H CPU loads now hold the Mamba projections at int8** (about 12 GB less on the 9B), from a .gguf or
+  a .giw; an f32 load keeps them f32. The GPU backends upload the same codes as before.
+- **Nemotron-H resident on Metal, at int4.** The Mamba-2 mixer and the squared-ReLU MLP run on the GPU; an int8
+  Nemotron-H stays on the CPU rather than re-quantize. Gated on tiny models, a three-layer slice of the real
+  Nemotron-Nano-9B-v2, and the whole 9B against the CPU (min logit cosine 0.929, argmax 27 of 32).
+- **Nemotron-H resident on CUDA, at int4.** The same operations on the 8 GB card: the 4B whole (min logit cosine 0.994,
+  argmax 30 of 32 against the CPU), a three-layer slice of the 9B, and the whole 9B (0.954, 28 of 32; 47 tokens a second,
+  at a 4,096-position context). An int8 Nemotron-H and Nemotron-3-Nano's MoE blocks stay on the CPU; Granite-4.0-H does too.
+- **Faster q4k prefill on Metal.** A model loaded at `--quant q4k` (Phi-3) prefills eight rows a step on the batched
+  step's kernels instead of one token at a time, with bit-identical results: 1.99x on Phi-3 mini at 200 tokens.
+- **The memory-fit guard prices `--quant q4k` at what the load keeps** (Q4_K blocks and int8), not as int4 with its
+  repacks: Phi-3 mini's weights are priced at 2.8 GB, where they were 4.3 GB.
+- **aikit pin is v1.76.0** in every goinfer module that requires it (the root, `backend/cuda`, `backend/metal`, `backend/webgpu` and
+  `demo/agent`); the v1.70.2 bump of 2026-10-15 carried `DequantizeRowInt8` and `WeightMat.Row` length checks that panic on a short
+  destination in every build (no goinfer caller passes one), and an encoder scratch slab shared between attention and MLP for `/v1/embeddings`
+  (about half the scratch, bit-identical).
+
 ## [v0.23.0] — 2026-10-15
 
 ### Highlights

@@ -1,0 +1,23 @@
+{
+ "schema": 1,
+ "os": "linux",
+ "arch": "amd64",
+ "commit": "ccdfb3ad68b8ed9120f5712cc0d91e49cfb59d9f",
+ "date": "2026-11-05T03:20:44Z",
+ "verdict": "FAIL",
+ "dirty": false,
+ "full": true,
+ "pass": 3391,
+ "skip": 555,
+ "fail": 4,
+ "cells": 95,
+ "ran": 90,
+ "cached": 0,
+ "not_run": [
+  "backend/metal",
+  "backend/metal/internal/gpudev",
+  "backend/metal/internal/qwenmetal",
+  "backend/metal/internal/visionmetal",
+  "backend/metal/kernels"
+ ]
+}

@@ -1,0 +1,26 @@
+{
+ "schema": 1,
+ "os": "darwin",
+ "arch": "arm64",
+ "commit": "ccdfb3ad68b8ed9120f5712cc0d91e49cfb59d9f",
+ "date": "2026-11-04T23:21:51Z",
+ "verdict": "FAIL",
+ "dirty": false,
+ "full": true,
+ "pass": 3479,
+ "skip": 651,
+ "fail": 3,
+ "cells": 93,
+ "ran": 85,
+ "cached": 0,
+ "not_run": [
+  "backend/cuda",
+  "backend/cuda/internal/gpudev",
+  "backend/cuda/internal/launchgeom",
+  "backend/cuda/internal/qwencuda",
+  "backend/cuda/internal/visioncuda",
+  "backend/cuda/internal/wpack",
+  "backend/cuda/kernels",
+  "backend/cuda/s4siglip"
+ ]
+}
