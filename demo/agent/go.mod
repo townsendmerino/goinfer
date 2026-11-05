@@ -8,8 +8,8 @@ go 1.27.0
 
 require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
-	github.com/townsendmerino/goinfer v0.23.0
-	github.com/townsendmerino/goinfer/gpu v0.23.0
+	github.com/townsendmerino/goinfer v0.24.0
+	github.com/townsendmerino/goinfer/backend/webgpu v0.24.0
 )
 
 require (
