@@ -251,8 +251,8 @@ func TestSeams_subCaptureRefusedWhereGateSCannotRun(t *testing.T) {
 		}
 	}
 	// The four the owner's condition names; three are gitignored, so a box without them (CI) reports them NOT RUN. gemma4-moe-kv-tiny32 is
-	// gemma4-moe-kv-tiny at CUDA's int4 widths (the windowed-KV expert-cache test's fixture): the same shape, refused for the same reason.
-	want := []string{"gemma4-emodel-tiny", "gemma4-moe-kv-tiny", "gemma4-moe-kv-tiny32", "gemma4-moe-tiny", "gemma4-moe-unified-tiny"}
+	// gemma4-moe-kv-tiny at CUDA's int4 widths (the windowed-KV expert-cache test's fixture): the same shape, refused for the same reason. gemma4-moe-tiny-k3 is the same MoE at top-3 routing.
+	want := []string{"gemma4-emodel-tiny", "gemma4-moe-kv-tiny", "gemma4-moe-kv-tiny32", "gemma4-moe-tiny", "gemma4-moe-tiny-k3", "gemma4-moe-unified-tiny"}
 	wantPresent := 0
 	for _, w := range want {
 		switch {

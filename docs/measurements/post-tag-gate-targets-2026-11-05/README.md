@@ -35,3 +35,11 @@ with `(darwin/arm64)` and show no output.
 
 PR 2 (test fixes) and PR 3 (`build_ptx.sh`) are separate, as asked. The `Mirrors` text of the lint specs still says `./metal/...` and `./cuda/...`;
 that is a label in the report, not in scope.
+
+## The Windows legs (added after CI)
+
+`TestRowGofmtAndLint` was red on both Windows legs: its stub chose the module by `strings.HasSuffix(dir, "backend/cuda")`, and `dir` is the joined path, with backslashes on Windows,
+so the planted dirty file was never returned and the row read `done`. The stub now compares `filepath.ToSlash(dir)`. The failure cannot be reproduced on Linux; `GOOS=windows go vet ./cmd/gate/`
+is clean and `go test ./cmd/gate/` passes here, and the Windows legs on the push are the check. `origin/main` (with #679 and #680) is merged in; the one conflict was two tests appended to the end of
+`quick_test.go`, kept both.
+

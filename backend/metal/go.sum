@@ -2,8 +2,8 @@ github.com/ebitengine/purego v0.10.1 h1:dewVBCBT2GaMu1SrNTYxQhgQBethzfhiwvZiLGP/
 github.com/ebitengine/purego v0.10.1/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/townsendmerino/aikit v1.76.0 h1:bQ0KZqOZTGMAFZG/FR+LNjzu0VwxOvQZM1ZRbQ4QVnQ=
 github.com/townsendmerino/aikit v1.76.0/go.mod h1:XXSOKAI6jX/miQdMpMYrcXOBWEdjds2mbUolO3RPerU=
-github.com/townsendmerino/goinfer v0.24.0 h1:OC3KJBWXCBWS6cutu0QQMpdzIwdFk8Rxb53j7ashDNE=
-github.com/townsendmerino/goinfer v0.24.0/go.mod h1:CuDcun/tFvvacbdtf7ZjKQBP9SOQvpDEb+oWE8cyRo8=
+github.com/townsendmerino/goinfer v0.24.1 h1:JGA9cJpT+AGlR6zEcKr7sm6cqXKMWMj1PCCz8Tp6lPQ=
+github.com/townsendmerino/goinfer v0.24.1/go.mod h1:CuDcun/tFvvacbdtf7ZjKQBP9SOQvpDEb+oWE8cyRo8=
 golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
 golang.org/x/sys v0.47.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
 golang.org/x/text v0.40.0 h1:Ub2Z6/xjgF1WrYQz2nuITOEegKFtiIy+rieRJ5lHZKs=

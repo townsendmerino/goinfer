@@ -1,0 +1,6 @@
+=== RUN   TestDecisionCensus
+census: D1: 11485 groups in 3.1s
+census: D2: 5348 groups in 10.6s
+signal: terminated
+FAIL	github.com/townsendmerino/goinfer/decoder	655.554s
+FAIL

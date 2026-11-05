@@ -1,0 +1,7 @@
+=== RUN   TestGemma4EModel_realDeclinesResident
+    gemma4_emodel_real_test.go:40: E2B resolved: hidden_size_per_layer_input=256 (E-model)
+    gemma4_emodel_real_test.go:65: cuda reports the E-model shape missing (missing=[embed-scale final-logit-softcap gated-gelu gemma4-e-model per-layer-rope qk-norm sandwich-norm sliding-window]) although it declares FeatGemma4EModel
+--- FAIL: TestGemma4EModel_realDeclinesResident (3.11s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	3.137s
+FAIL

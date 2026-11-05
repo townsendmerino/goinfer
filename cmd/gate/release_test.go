@@ -271,7 +271,7 @@ func TestRowGofmtAndLint(t *testing.T) {
 	root := t.TempDir()
 	e := liveRelEnv(relEnv{root: root})
 	e.run = func(dir, name string, args ...string) (string, error) {
-		if name == "gofmt" && strings.HasSuffix(dir, "backend/cuda") {
+		if name == "gofmt" && strings.HasSuffix(filepath.ToSlash(dir), "backend/cuda") { // dir is the joined path: backslashes on Windows
 			return "x.go", nil
 		}
 		return "", nil

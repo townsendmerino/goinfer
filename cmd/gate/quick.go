@@ -56,6 +56,21 @@ type quickOpts struct {
 	Keep func(*quickCell) bool
 }
 
+// quickDayTimeout is the per-cell `go test -timeout` of the day loop; quickFullTimeout is the pre-tag tier's. The full tier runs the real-checkpoint
+// cells and, with every gitignored fixture placed, the decoder cells' own tests add up to more than 20 minutes.
+const (
+	quickDayTimeout  = "20m"
+	quickFullTimeout = "45m"
+)
+
+// resolveQuickTimeout is the timeout a run uses: the flag's value, unless -full was given and the flag was not.
+func resolveQuickTimeout(full, explicit bool, flagValue string) string {
+	if full && !explicit {
+		return quickFullTimeout
+	}
+	return flagValue
+}
+
 func runQuick(argv []string, w io.Writer) int {
 	fs := flag.NewFlagSet("gate quick", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -65,7 +80,7 @@ func runQuick(argv []string, w io.Writer) int {
 	fs.StringVar(&files, "files", "", "comma-separated repo-relative files to treat as the change, instead of the git diff")
 	fs.BoolVar(&o.Count1, "count1", false, "force -count=1 on the affected and observer cells (cache-checked ones still consult the cache)")
 	fs.IntVar(&o.Jobs, "j", max(1, runtime.NumCPU()/2), "jobs run at once (device test cells additionally one at a time)")
-	fs.StringVar(&o.Timeout, "timeout", "20m", "per test cell `go test -timeout`")
+	fs.StringVar(&o.Timeout, "timeout", quickDayTimeout, "per test cell `go test -timeout` (default "+quickDayTimeout+", "+quickFullTimeout+" with -full)")
 	fs.StringVar(&o.LogDir, "logdir", os.TempDir(), "directory the run directory of per-cell logs is created in")
 	fs.BoolVar(&o.HeavyGoldens, "heavy-goldens", false, "run the forward goldens with GOINFER_HEAVY_TESTS=1 (the int8 goldens join, ~70 s more)")
 	fs.StringVar(&o.Overlay, "overlay", "", "pass -overlay=FILE to every go command (test the tree as if files were edited, without editing them)")
@@ -80,6 +95,9 @@ func runQuick(argv []string, w io.Writer) int {
 	if err := fs.Parse(argv); err != nil {
 		return 2
 	}
+	explicitTimeout := false
+	fs.Visit(func(f *flag.Flag) { explicitTimeout = explicitTimeout || f.Name == "timeout" })
+	o.Timeout = resolveQuickTimeout(o.Full, explicitTimeout, o.Timeout)
 	if files != "" {
 		for f := range strings.SplitSeq(files, ",") {
 			if f = strings.TrimSpace(f); f != "" {
