@@ -64,6 +64,22 @@ survives to a tag unless caught here.
 
 **`go run ./cmd/gate release vX.Y.Z` runs the reads below as rows** (pending gates, the module pins, the cold-user record, both GPU-gate records, the hardware matrix and its never-executed diff, unmerged fix branches, the CHANGELOG check, gofmt, the citation lint, CI at HEAD, the §C1 parity sweep's record, the deferred tests' record from each box): each is `done`, `OWED` or `UNKNOWN`, with the record that proves it or is missing, and the exit code is 0 only when all twelve are done. It refuses off `main`, on a dirty tree, or for a tag that exists. The list below is what each row reads and why; the command is the check, so read the rows, not this list, to learn what is owed. (Reads 1 and 2, the API blockers and the audit's "before the tag" set, are historical and are not rows.)
 
+**A red gate record the owner has read and accepted: `docs/releases/vX.Y.Z-accepted.json`.** The GPU-gate, `quick -full` and parity rows are OWED while their newest
+record at HEAD's code is not a PASS. If Francis has read that record's failures and accepted them, the file says so, and the row prints `accepted` with the entries
+instead of `OWED`; it does not count against the tag, it is never `done`, and the report counts it apart ("n of m done, k accepted"). Schema 1:
+
+```json
+{"schema": 1, "release": "vX.Y.Z", "accepted": [
+  {"record": "cuda-20261105T022250Z-ccdfb3ad.json", "item": "cuda-heavy-kernels: TestAttnBatchedBandwidth",
+   "class": "test-bug", "evidence": "docs/measurements/.../README.md", "accepted_by": "Francis", "accepted_on": "2026-11-05"}]}
+```
+
+One entry per accepted failure. `record` is the record's file name; the row builds it from the failing record it judged (backend or system, time, commit), so an entry for a
+different record, or for a rerun, does not match. `class` is one of `test-bug`, `gate-definition`, `fixture`, `toolchain-artifact`, `environment`, `stale-golden`: a product
+defect is not a class, it is fixed or the tag waits. `accepted_by` must read `Francis` and `accepted_on` be a date; an entry that is not complete leaves the row OWED and says why.
+Records hold counts, not the names of what failed, so the gate cannot check that the items listed are all the record's failures: the entries are what the reader of the report is
+shown. Only Francis adds an entry, as with `swap_guard_approved_by`; the commit that adds one cites where he gave the word. Code: `cmd/gate/grade_release_accepted.go`.
+
 1. All §1 API blockers are in (B-08…B-14 — see `docs/completed/audit-2026-08-05.md`; B-09/B-10/B-11/B-13
    landed 2555edc; B-08/B-12 must be done first — they are breaking-to-fix-after-tag).
 2. `docs/completed/audit-2026-08-05.md` §9 "before the tag" set (C-18/C-19 in; confirm nothing regressed).
