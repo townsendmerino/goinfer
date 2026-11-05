@@ -1,0 +1,18 @@
+# gate ptx, fixed build_ptx.sh, in /home/francis/goinfer-bench/post-tag-tests-wt
+
+== 4. PTX reproduces from source, each at the NVRTC it records ==
+  toolchains available: 12.6.85 12.9.86
+  PASS  59/59 PTX regenerate byte-identically at their recorded NVRTC
+
+gate ptx: GREEN
+ M backend/cuda/build_ptx.sh
+
+# gate ptx, the same fixed script copied into the release worktree, whose path read RED before the fix: /home/francis/goinfer-bench/release-v0.24.0-wt
+
+== 4. PTX reproduces from source, each at the NVRTC it records ==
+  toolchains available: 12.6.85 12.9.86
+  PASS  59/59 PTX regenerate byte-identically at their recorded NVRTC
+
+gate ptx: GREEN
+ M backend/cuda/build_ptx.sh
+release worktree restored: 0 changed paths

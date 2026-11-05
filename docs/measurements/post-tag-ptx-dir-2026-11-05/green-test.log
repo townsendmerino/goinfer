@@ -1,0 +1,71 @@
+=== RUN   TestGPURecord_coversLaterCommitsOnlyIfTheCodeIsUnchanged
+--- PASS: TestGPURecord_coversLaterCommitsOnlyIfTheCodeIsUnchanged (0.09s)
+=== RUN   TestGPURecord_onlyACompletePassCounts
+--- PASS: TestGPURecord_onlyACompletePassCounts (0.06s)
+=== RUN   TestGPURecord_theNewestRecordAtTheSameCodeDecides
+--- PASS: TestGPURecord_theNewestRecordAtTheSameCodeDecides (0.03s)
+=== RUN   TestGPURecord_loadRefusesAMalformedRecord
+--- PASS: TestGPURecord_loadRefusesAMalformedRecord (0.00s)
+=== RUN   TestGPURecord_theVerdictWritesTheRecord
+=== RUN   TestGPURecord_theVerdictWritesTheRecord/pass
+=== RUN   TestGPURecord_theVerdictWritesTheRecord/fail
+=== RUN   TestGPURecord_theVerdictWritesTheRecord/dirty
+=== RUN   TestGPURecord_theVerdictWritesTheRecord/heavy_skipped_still_a_PASS_verdict,_flagged
+--- PASS: TestGPURecord_theVerdictWritesTheRecord (0.14s)
+    --- PASS: TestGPURecord_theVerdictWritesTheRecord/pass (0.01s)
+    --- PASS: TestGPURecord_theVerdictWritesTheRecord/fail (0.01s)
+    --- PASS: TestGPURecord_theVerdictWritesTheRecord/dirty (0.10s)
+    --- PASS: TestGPURecord_theVerdictWritesTheRecord/heavy_skipped_still_a_PASS_verdict,_flagged (0.02s)
+=== RUN   TestGPURecord_noDirectoryWritesNothing
+--- PASS: TestGPURecord_noDirectoryWritesNothing (0.00s)
+=== RUN   TestGPU_declaredGroupThatEmitsNothingIsAFailure
+--- PASS: TestGPU_declaredGroupThatEmitsNothingIsAFailure (0.00s)
+=== RUN   TestGPU_undeclaredGroupThatEmitsIsAFailure
+--- PASS: TestGPU_undeclaredGroupThatEmitsIsAFailure (0.00s)
+=== RUN   TestGPU_verdictHasThreeStates
+--- PASS: TestGPU_verdictHasThreeStates (0.03s)
+=== RUN   TestGPU_zeroMatchedTestsIsDetectable
+--- PASS: TestGPU_zeroMatchedTestsIsDetectable (0.00s)
+=== RUN   TestGPU_drainGroupIsDerivedFromTheMarker
+    gpu_test.go:125: no drainsDevice() marker in cuda/ on this checkout — nothing to derive
+--- SKIP: TestGPU_drainGroupIsDerivedFromTheMarker (0.00s)
+=== RUN   TestGPU_detailFallsBackToTheRawTail
+--- PASS: TestGPU_detailFallsBackToTheRawTail (0.00s)
+=== RUN   TestGPU_vramNoteFiresOnlyOnExactZeroCosine
+--- PASS: TestGPU_vramNoteFiresOnlyOnExactZeroCosine (0.00s)
+=== RUN   TestGPU_unescapeCIMatchesPrintfB
+--- PASS: TestGPU_unescapeCIMatchesPrintfB (0.00s)
+=== RUN   TestGPU_everySkipReachesTheNotesBlock
+--- PASS: TestGPU_everySkipReachesTheNotesBlock (0.00s)
+=== RUN   TestGPU_ptxVersionComesFromTheArtifact
+--- PASS: TestGPU_ptxVersionComesFromTheArtifact (0.00s)
+=== RUN   TestGPU_detailNamesTheCrashingTest
+--- PASS: TestGPU_detailNamesTheCrashingTest (0.00s)
+=== RUN   TestGPU_detailKeepsFailingAssertionsAndDropsPassingLogs
+--- PASS: TestGPU_detailKeepsFailingAssertionsAndDropsPassingLogs (0.00s)
+=== RUN   TestGPUGate_emptyFilteredCellIsNotAPass
+--- PASS: TestGPUGate_emptyFilteredCellIsNotAPass (0.22s)
+=== RUN   TestGPUGate_populatedAndUnfilteredCellsAreNotFlagged
+--- PASS: TestGPUGate_populatedAndUnfilteredCellsAreNotFlagged (0.00s)
+=== RUN   TestGPU_isolatedGroupIsDerivedFromTheMarker
+--- PASS: TestGPU_isolatedGroupIsDerivedFromTheMarker (0.03s)
+=== RUN   TestGPU_withGoBinPrependsGOPATHBin
+--- PASS: TestGPU_withGoBinPrependsGOPATHBin (0.01s)
+=== RUN   TestGatePTX_nothingVerifiedIsRed
+--- PASS: TestGatePTX_nothingVerifiedIsRed (0.04s)
+=== RUN   TestGPU_mainTierReconcileFindsMissingAndDoubled
+--- PASS: TestGPU_mainTierReconcileFindsMissingAndDoubled (0.00s)
+=== RUN   TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup
+=== RUN   TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup/the_probe_fails_to_build
+=== RUN   TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup/the_probe_exits_non-zero_before_it_answers
+=== RUN   TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup/the_probe_ran_and_found_no_adapter
+=== RUN   TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup/GOINFER_GATE_SKIP_WEBGPU_opts_out
+--- PASS: TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup (0.00s)
+    --- PASS: TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup/the_probe_fails_to_build (0.00s)
+    --- PASS: TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup/the_probe_exits_non-zero_before_it_answers (0.00s)
+    --- PASS: TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup/the_probe_ran_and_found_no_adapter (0.00s)
+    --- PASS: TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup/GOINFER_GATE_SKIP_WEBGPU_opts_out (0.00s)
+=== RUN   TestBuildPTX_towerBaseDoesNotDependOnTheCheckoutDirectory
+--- PASS: TestBuildPTX_towerBaseDoesNotDependOnTheCheckoutDirectory (1.39s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cmd/gate	2.050s

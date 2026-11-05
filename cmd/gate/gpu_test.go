@@ -561,3 +561,51 @@ func TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup(t *testing.T) {
 		})
 	}
 }
+
+// NVRTC V12.9.86 emits a different PTX text for tower_base.cu depending on the absolute directory it is compiled in
+// (docs/measurements/sb12-cuda-gate-gpu-2026-10-29/ptx-tower-base-path/read.txt), so `gate ptx` read FAIL in some worktrees and PASS in
+// others. build_ptx.sh compiles from one fixed directory; the same sources built from differently named directories must agree, and
+// agree with the committed file. Skips without the V12.9.86 toolchain.
+func TestBuildPTX_towerBaseDoesNotDependOnTheCheckoutDirectory(t *testing.T) {
+	t.Chdir(filepath.Join("..", ".."))
+	ent, ok := probeNVRTC()["12.9.86"]
+	if !ok {
+		t.Skip("no NVRTC V12.9.86 here")
+	}
+	src := filepath.Join("backend", "cuda")
+	committed, err := os.ReadFile(filepath.Join(src, "testdata", "tower_base.ptx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers, _ := filepath.Glob(filepath.Join(src, "*.cuh"))
+	files := append([]string{"build_ptx.sh", "nvrtc_compile.py", "tower_base.cu"}, headers...)
+	root := t.TempDir()
+	for _, name := range []string{"a", "bb", "ccc", "x/y/z", "goinfer-nvrtc-a", "checkout-with-a-longer-name"} {
+		dir := filepath.Join(root, name, "backend", "cuda")
+		if err := os.MkdirAll(filepath.Join(dir, "testdata"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range files {
+			b, err := os.ReadFile(filepath.Join(src, filepath.Base(f)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, filepath.Base(f)), b, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cmd := exec.Command("./build_ptx.sh", "tower_base")
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "NVRTC_LIB="+ent[0], "CUDA_INC="+ent[1])
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("build_ptx.sh in %s: %v\n%s", name, err, out)
+		}
+		got, err := os.ReadFile(filepath.Join(dir, "testdata", "tower_base.ptx"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != string(committed) {
+			t.Errorf("tower_base.ptx built from a checkout in %q differs from the committed file (%d bytes, want %d)", name, len(got), len(committed))
+		}
+	}
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build_ptx.sh — regenerate cuda/testdata/*.ptx from the .cu sources in this directory.
+# build_ptx.sh — regenerate cuda/testdata/*.ptx from the .cu sources in this directory (compiled from a fixed staging directory, see STAGE below).
 #
 # WHY THIS EXISTS
 # ---------------
@@ -65,30 +65,40 @@ echo "build_ptx: CUDA_INC=$CUDA_INC"
 targets=("$@")
 [ ${#targets[@]} -eq 0 ] && targets=($(ls ./*.cu | xargs -n1 basename | sed 's/\.cu$//'))
 
+# The sources are compiled from ONE FIXED DIRECTORY and the results copied back. NVRTC V12.9.86 emits one of several PTX texts for
+# tower_base.cu depending on the absolute directory it compiles in, so building in the checkout made `gate ptx` read FAIL in some
+# checkouts and PASS in others (docs/measurements/sb12-cuda-gate-gpu-2026-10-29/ptx-tower-base-path/read.txt). The path below
+# reproduces every committed PTX; do not change it without regenerating them. One build at a time may use it (flock).
+STAGE=/tmp/goinfer-nvrtc-build/cuda
+mkdir -p "$STAGE/out"
+exec 9>"$STAGE/../lock"
+flock 9
+find "$STAGE" -maxdepth 1 -type f \( -name '*.cu' -o -name '*.cuh' \) -delete
+find "$STAGE/out" -maxdepth 1 -type f -name '*.ptx' -delete
+cp ./*.cu ./*.cuh nvrtc_compile.py "$STAGE"/
+nvrtc() {
+	(cd "$STAGE" && LD_LIBRARY_PATH="$NVRTC_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+		NVRTC_SO="$NVRTC_LIB/libnvrtc.so.12" python3 nvrtc_compile.py "$@")
+}
+
 mkdir -p testdata
 for k in "${targets[@]}"; do
 	src="./${k%.cu}.cu"
 	[ -f "$src" ] || { echo "build_ptx: no such kernel source: $src" >&2; exit 1; }
-	out="testdata/${k%.cu}.ptx"
-	LD_LIBRARY_PATH="$NVRTC_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-		NVRTC_SO="$NVRTC_LIB/libnvrtc.so.12" \
-		python3 nvrtc_compile.py "$src" "$out" "$ARCH" "$CUDA_INC"
+	nvrtc "$src" "out/${k%.cu}.ptx" "$ARCH" "$CUDA_INC"
 	# A source that includes kvtype.cuh is also built with the KV cache as f16: <name>_kv16.ptx, the twin module the resident loads
 	# for an f16 KV build (docs/tasks/task-cuda-f16-kv-2026-10.md). The module above is built WITHOUT the define and must not change.
 	if grep -q 'kvtype.cuh' "$src"; then
-		LD_LIBRARY_PATH="$NVRTC_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-			NVRTC_SO="$NVRTC_LIB/libnvrtc.so.12" \
-			python3 nvrtc_compile.py "$src" "testdata/${k%.cu}_kv16.ptx" "$ARCH" "$CUDA_INC" -DKV_F16
+		nvrtc "$src" "out/${k%.cu}_kv16.ptx" "$ARCH" "$CUDA_INC" -DKV_F16
 	fi
 	# The three modules whose kernels a capped layer takes (attention, attn_batched, splitkv_scores) are also built with the attention
 	# softcap, at both KV types: <name>_cap.ptx and <name>_kv16_cap.ptx (cuda/attnscore.cuh). The plain modules above do not change.
 	case "${k%.cu}" in
 	glue | prefill_batched | decode_splitkv)
 		for variant in "cap:-DATTN_SOFTCAP" "kv16_cap:-DKV_F16 -DATTN_SOFTCAP"; do
-			LD_LIBRARY_PATH="$NVRTC_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-				NVRTC_SO="$NVRTC_LIB/libnvrtc.so.12" \
-				python3 nvrtc_compile.py "$src" "testdata/${k%.cu}_${variant%%:*}.ptx" "$ARCH" "$CUDA_INC" ${variant#*:}
+			nvrtc "$src" "out/${k%.cu}_${variant%%:*}.ptx" "$ARCH" "$CUDA_INC" ${variant#*:}
 		done
 		;;
 	esac
 done
+cp "$STAGE"/out/*.ptx testdata/
