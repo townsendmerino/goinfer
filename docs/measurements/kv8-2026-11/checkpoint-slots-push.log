@@ -200,3 +200,25 @@ ok  	github.com/townsendmerino/goinfer/backend/cuda/s4siglip	0.003s
   GREEN — every family that ran is IDENTICAL
 04:15:11 ALL DONE
 # the full suite log: cuda-suite-after-v0.24.1.log.gz; identity: identity-after-v0.24.1.log
+
+# #658 rerun after #678-#680: origin/main 19778973b merged at ded7594a3 (clean merge), fixtures placed, nobara, 2026-11-05 PST
+11:01:12 START head ded7594a3f7c81951879858f504452b32a40031b, main 19778973b7fecc588b10a8c184e8ee85dff48222, load 0.28, 59 GB available, tree 0 changed paths
+11:01:20 TestParityManifest_fresh rc=0 8 s
+11:01:20 SUITE START: go test -tags 'cuda goinfer_testhooks' ./backend/cuda/... (fixtures placed, no heavy)
+11:21:06 SUITE END rc=0 1186 s: 1264 PASS lines, 0 FAIL lines, 268 SKIP lines (subtests included)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	1112.178s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev	11.404s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom	0.005s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/qwencuda	0.741s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/visioncuda	0.905s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/wpack	0.005s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/kernels	58.306s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/s4siglip	0.003s
+11:21:06 IDENTITY START: gate identity -backend cuda 19778973b7fecc588b10a8c184e8ee85dff48222 ded7594a3f7c81951879858f504452b32a40031b
+11:26:36 IDENTITY END rc=0 330 s
+   ... identity: 4m33s elapsed (started 11:21:07), running qwen3_5_moe (33/39 families, 32 done)
+   ... identity: 5m3s elapsed (started 11:21:07), running qwen3_vl (36/39 families, 35 done)
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  GREEN — every family that ran is IDENTICAL
+11:26:36 ALL DONE
+# the full suite log: cuda-suite-after-678-680.log.gz; identity: identity-after-678-680.log
