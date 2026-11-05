@@ -314,7 +314,7 @@ Every row is a dated record on one machine, not a promise for yours.
 | Greedy decode, Apple Metal (M1 Pro), depth 128, like for like | 1.37× / 1.10× / 1.20× Ollama on the 0.5B / 1.5B / 7B | 2026-10-17 | [benchmarks §B11](docs/benchmarks.md#b11--peer-decode-like-for-like-2026-10-1718) |
 
 Where it is behind: Phi-3 mini decode on CUDA (0.72–0.90× Ollama, 0.89× llama.cpp at depth 128), and against llama.cpp on CUDA at matched
-4-bit quants (0.94× on the 0.5B, 0.95× on gemma3-1b; 2026-10-17). On Metal it is behind mlx-lm's single-request path, 0.67× on the 1.5B and 0.74× on the 7B
+4-bit quants (0.94× on the 0.5B, 0.95× on gemma3-1b; 2026-10-17). On Metal it is behind mlx-lm's single-request path, 0.67× on the 1.5B and 0.75× on the 7B
 (2026-10-18). CPU decode on a Mac against llama.cpp was 0.84× on the 0.5B (2026-09-25). Long-prompt prefill on Metal read level with Ollama at a
 3,900-token prompt on 2026-10-06 (0.98×, 1.5B, [peer refresh](docs/measurements/peer-refresh-2026-10-06.md)) and 0.90× behind mlx-lm there. The Metal decode figures are for the resident GPU path. `--embed-int4` defaults off on
 Metal, because that path does not take an int4 embedding table yet
