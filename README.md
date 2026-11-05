@@ -116,6 +116,9 @@ the [download page](https://goinfer.dev/download/), with sizes and sha256.
 | `goinfer-chat-0.5b-<os>-<arch>` | runtime **and** model in one file — no download, no install |
 | `goinfer-chat-1.5b-<os>-<arch>` | same, with the 1.5B coder model |
 
+Each of the four comes for darwin, linux and windows on amd64 and arm64 (a Windows file ends in `.exe`), 24 binaries in all, beside
+`checksums.txt` and two notice files. macOS and Linux builds carry a GPU backend (below); the Windows builds are CPU only.
+
 ```bash
 # macOS arm64; swap the suffix for your platform
 curl -fsSL -o goinfer-serve https://github.com/townsendmerino/goinfer/releases/latest/download/goinfer-serve-darwin-arm64
@@ -189,7 +192,7 @@ model at all. The HTTP surface (OpenAI, Anthropic, multi-model, vision, embeddin
 [docs/integrations/](docs/integrations). A coding agent's first request is about 11,000 tokens. The default GPU context holds it when the model leaves room for 16384 positions
 in each KV slot (4 on CUDA, 2 on Metal); on a model too big for that the server picks less and says so at startup in a `harness:` line,
 so start the server for an agent with `-ctx 16384` as those recipes do; a longer prompt gets a 400 that names `-ctx`. `serve check` and the `tools:` line of
-`goinfer-chat models` report which checkpoints hold up under a real agent's tool schema. The one measured to: Qwen2.5-7B-Instruct `q4_k_m` on a CUDA GPU with 8 GB or more. Qwen2.5-Coder-7B-Instruct on the same card did not (opencode made no edits), so run `serve check` before trusting a checkpoint for an agent ([measured table](docs/integrations/opencode.md#picking-a-model)).
+`goinfer-chat models` report which checkpoints hold up under a real agent's tool schema. The one measured to: Qwen2.5-7B-Instruct `q4_k_m` on an 8 GB RTX 2070 SUPER (CUDA), the only card it has been tried on. Qwen2.5-Coder-7B-Instruct on the same card did not (opencode made no edits), so run `serve check` before trusting a checkpoint for an agent ([measured table](docs/integrations/opencode.md#picking-a-model)).
 
 `POST /v1/systemone` answers TypeSafe's decisions wire shape, so clients such as jevx work against
 it ([recipe](docs/integrations/typesafe-jevx.md)). By default it scores the option labels with the
@@ -300,16 +303,20 @@ Evidence and caveats: [docs/bigger-than-memory.md](docs/bigger-than-memory.md).
 
 ## Performance next to Ollama
 
-| measure | result | record |
-| --- | --- | --- |
-| Nothing → first answer, M1 Pro / 16 GB | 25 s against Ollama's 33 s, from an 8 MB binary with no daemon | [cold-user run](docs/measurements/cold-user-2026-09-06.md), scenario E |
-| Greedy decode, CUDA (RTX 2070 SUPER), 0.5B / 1.5B / 7B, depth 128 to 8,000 | ahead of Ollama in all 12 cells, 1.05–1.47×; the margin narrows with depth on the 7B | [peer sweep 2026-09-29](docs/measurements/peer-sweep-2026-09-29.md) |
-| Greedy decode, Apple Metal (M1 Pro), 1.5B / 7B, depth 128 to 3,900 | 1.03–1.06× Ollama on the 1.5B, 1.06–1.19× on the 7B (a same-session A/B, not the pre-registered sweep) | [R18b record](docs/measurements/metal-decode-gemv-r18b-2026-09-26.md) |
+Every row is a dated record on one machine, not a promise for yours.
 
-Where it is behind: Phi-3 mini decode on CUDA (0.72–0.90×), and CPU decode on a Mac against
-llama.cpp (0.84× on the 0.5B). Long-prompt prefill on Metal, 1.96× behind Ollama on 2026-09-25, measured
-level at a 3,900-token prompt on 2026-09-30 (0.98×, 1.5B,
-[peer sweep](docs/measurements/peer-sweep-2026-09-29.md) cell h). The Metal decode figures are for the resident GPU path. `--embed-int4` defaults off on
+| measure | result | date | record |
+| --- | --- | --- | --- |
+| Nothing → first answer, M1 Pro / 16 GB | 25 s against Ollama's 33 s, from that day's 8 MB binary with no daemon | 2026-09-06 | [cold-user run](docs/measurements/cold-user-2026-09-06.md), scenario E |
+| Greedy decode, CUDA (RTX 2070 SUPER), 0.5B / 1.5B / 7B, depth 128 to 8,000 | ahead of Ollama in all 12 cells, 1.05–1.47×; the margin narrows with depth on the 7B | 2026-09-29 | [peer sweep](docs/measurements/peer-sweep-2026-09-29.md) |
+| Greedy decode, CUDA, depth 128, every arm sent the same seed, context and sampling fields | 1.33× Ollama on the 0.5B and on gemma3-1b (0.90× on phi3-mini) | 2026-10-17 | [benchmarks §B11](docs/benchmarks.md#b11--peer-decode-like-for-like-2026-10-1718) |
+| Greedy decode, Apple Metal (M1 Pro), 0.5B / 1.5B / 7B, depth 128 / 2,048 / 3,900 | ahead of Ollama in all 12 cells, 1.05–1.40× | 2026-10-04 | [benchmarks, Apple Silicon Metal decode](docs/benchmarks.md) (the 2026-10-05 peer refresh) |
+| Greedy decode, Apple Metal (M1 Pro), depth 128, like for like | 1.37× / 1.10× / 1.20× Ollama on the 0.5B / 1.5B / 7B | 2026-10-17 | [benchmarks §B11](docs/benchmarks.md#b11--peer-decode-like-for-like-2026-10-1718) |
+
+Where it is behind: Phi-3 mini decode on CUDA (0.72–0.90× Ollama, 0.89× llama.cpp at depth 128), and against llama.cpp on CUDA at matched
+4-bit quants (0.94× on the 0.5B, 0.95× on gemma3-1b; 2026-10-17). On Metal it is behind mlx-lm's single-request path, 0.67× on the 1.5B and 0.74× on the 7B
+(2026-10-18). CPU decode on a Mac against llama.cpp was 0.84× on the 0.5B (2026-09-25). Long-prompt prefill on Metal read level with Ollama at a
+3,900-token prompt on 2026-10-06 (0.98×, 1.5B, [peer refresh](docs/measurements/peer-refresh-2026-10-06.md)) and 0.90× behind mlx-lm there. The Metal decode figures are for the resident GPU path. `--embed-int4` defaults off on
 Metal, because that path does not take an int4 embedding table yet
 ([docs/quantization.md](docs/quantization.md)).
 
@@ -344,7 +351,8 @@ in-process. Longer form: [docs/positioning.md](docs/positioning.md).
 
 ## What it runs
 
-- **43 model families** — Gemma 1/2/3/4 (and CodeGemma), Qwen 2.5/3, Llama, Mistral, Mixtral, Phi-3, DeepSeek/MLA,
+- **43 model families** — Gemma 1/2/3/4 (and CodeGemma), the Qwen line (Qwen2, Qwen2.5, Qwen3, Qwen3-MoE, Qwen3-Next, Qwen3.5-MoE, Qwen3.8, Qwen2.5-VL,
+  Qwen3-VL and its MoE, Qwen3-ASR), Llama, Mistral, Mixtral, Phi-3, DeepSeek/MLA,
   GLM, Kimi, Granite, Nemotron, Mellum, Olmo 3, Olmo Hybrid (on Metal at `int4` only; on WebGPU read only on the M1 Pro's adapter) and more; one page each at
   [goinfer.dev/models](https://goinfer.dev/models/), generated from the `decoder` registry
   ([capability-matrix.md](docs/capability-matrix.md)).
@@ -399,7 +407,8 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 
 <!-- END images-and-audio support table -->
 
-Not yet: Qwen3-VL MoE images, video, and vision towers on WebGPU beyond Gemma 3's (opt-in with `--vision-quant f32` or `int8`).
+Not yet: video. Under `--backend webgpu` every image tower stays on the CPU by default (the table's WebGPU column); `--vision-device gpu` puts the Gemma 3, Gemma 4, Qwen2.5-VL, Qwen3.5+, Qwen3-VL and GLM-OCR towers on the GPU there, and the other families' towers have no WebGPU form.
+Qwen3-VL MoE (a 30B model, too large for a 16 GB Mac or an 8 GB card) has been checked against HuggingFace on the CPU; its served check on a GPU has not passed, because a two-image request on CUDA's paged path read as a fail and is still open ([S10q-paged](docs/tasks/task-multimodal-remaining-2026-10.md)).
 
 ## Docs
 
