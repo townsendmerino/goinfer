@@ -133,3 +133,14 @@ The request logs' `ckpt_restore=1978` and `ckpt_restore=2119` agree, in both two
 
 **What it does not cover:** a restore with fewer copies than slots on a served load, which only tests read; one prompt shape; two clients; no agent's real traffic. Not a row for `docs/benchmarks.md`.
 
+
+## The served reading a fourth time, at main after #658 merged, registered 2026-11-05 15:56 PST before any run (nobara-sb01)
+
+**Why:** the third reading above was made at `9a8f49a41` and says so: "before the merge with #645 and the second review read", which changed how the plan and the build count checkpoint copies on tight memory and what the gate reports, and which a load with room for them should not feel. #658 was reviewed through four more rounds and merged. No served reading has been made at the code that shipped. The coordinator's v0.25.0 list (2026-11-05 15:48) names this reading first, re-registered. **This does not replace the three above;** it is a new reading, of the merged build.
+
+- **Tier and instrument:** as the third reading: `served_against_alone.py`, serve built at `6ab62e5b2` (origin/main, #658 and #678 to #687 in; `CGO_ENABLED=0 go build -tags cuda ./backend/cuda/cmd/serve`), `~/models/Qwen3.5-9B-Q4_K_M.gguf` from local NVMe, `--ctx 8192`, greedy, 24 tokens per reply, `--kv-sessions` 1 and 2, the exclusive timing lock. Driver 595.112.07.
+- **Design and decision:** the third registration's, unchanged: one slot two clients, two slots two clients, each client alone, two slots two clients, one slot two clients, with the edit round. **The bars do not move:** the edit round's median first token, two slots over one, at most 0.5; both clients' edit turns reuse exactly their last prompt's rows, on two slots and alone; every follow-up on two slots reuses rows; each reply equals that client's alone; peak `VmSwap` at most 512 MB. PARKED above 0.5 and at most 0.7, FAIL beyond.
+- **Added, reported and not graded:** the fit check's banner at 1 and 2 slots, with the checkpoint copies kept (`--fit-only`); the request logs' `ckpt_restore` against the turns' reuse.
+- **Void cell, fit check, stopping rule, void conditions:** as the first registration. Void cell: one-minute load above 8.0 at its start, re-run once in order and listed.
+- **Cost and times (from `date`):** the fit check about 1 minute, the five cells about 5. Start by 15:58 PST, finish by about 16:06 PST. The lock was free and the night queue empty at 15:53.
+- **Not the question:** a restore with fewer copies than slots on a served load (tests read it), one prompt shape, two clients, an agent's real traffic. No row for `docs/benchmarks.md`.
