@@ -109,7 +109,8 @@
 <section aria-labelledby="o-h" id="ollama" class="ollama">
   <div class="s-head"><div><h2 class="s" id="o-h">Coming from Ollama?</h2>
     <p class="s-sub">{{.Headline}}</p>
-    <p class="s-sub">Pull counts are cumulative, so older models rank higher than their current use; this is a guide to what loads, not a measure of what people run.</p></div></div>
+    <p class="s-sub">Pull counts are cumulative, so older models rank higher than their current use; this is a guide to what loads, not a measure of what people run.</p>
+    <p class="s-sub">The statuses and the notes below are as of {{.Read}}, the day this snapshot was read. goinfer has changed since, so a note may be out of date until the snapshot is read again.</p></div></div>
   {{template "otable" .Top}}
   {{with .Rest}}<details class="orest"><summary>The other {{len .}}</summary>{{template "otable" .}}</details>{{end}}
   <p class="s-sub ofoot">Ollama's library page, read {{.Read}}. The statuses and the figures come from <a href="{{cfg.GitHubURL}}/blob/main/{{.Snapshot}}">the snapshot</a>.</p>
