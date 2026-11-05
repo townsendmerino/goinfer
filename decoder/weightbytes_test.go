@@ -61,9 +61,9 @@ func preM01ResidentWeightBytes(w *Weights) int64 {
 // fixture's dense/embed bytes already exceed the expert sum by coincidence, so that assertion
 // would pass even against the pre-fix code that counts the experts as zero. Asserting against
 // preM01ResidentWeightBytes measures the actual delta instead — it must be positive (something
-// new got counted) and must equal the gemma4moe router+experts exactly (nothing else in this
-// fixture is new: hidden_size_per_layer_input is 0, so no PLE, and gemma4 has no
-// delta/qattn/mla/mamba/shortConv fields to contribute).
+// new got counted) and must equal the gemma4moe router+experts plus the model's 1-D tensors (norms, biases and the router scales, which the
+// plan prices since MM8: denseVectorBytes) exactly. Nothing else in this fixture is new: hidden_size_per_layer_input is 0, so no PLE, and
+// gemma4 has no delta/qattn/mla/mamba/shortConv fields to contribute.
 func TestResidentWeightBytes_countsGemma4MoEExperts(t *testing.T) {
 	m := loadGemma4MoETiny(t)
 
@@ -84,10 +84,14 @@ func TestResidentWeightBytes_countsGemma4MoEExperts(t *testing.T) {
 		t.Fatalf("fixture has no gemma4moe experts to count — did enable_moe_block/num_experts change?")
 	}
 
+	vectors := m.denseVectorBytes()
+	if vectors <= 0 {
+		t.Fatalf("the fixture has no 1-D tensors to price (denseVectorBytes = %d); the expectation below would not tell MM8's term from the experts", vectors)
+	}
 	got, old := m.ResidentWeightBytes(), preM01ResidentWeightBytes(m.w)
-	if delta := got - old; delta != expertOnly {
+	if delta := got - old; delta != expertOnly+vectors {
 		t.Errorf("ResidentWeightBytes() - preM01 delta = %d, want exactly %d (the gemma4moe "+
-			"router+experts) — got %d old %d", delta, expertOnly, got, old)
+			"router+experts %d plus the 1-D tensors %d) — got %d old %d", delta, expertOnly+vectors, expertOnly, vectors, got, old)
 	}
 }
 

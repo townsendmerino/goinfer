@@ -1,0 +1,5 @@
+--- FAIL: TestResolveQuickTimeout (0.00s)
+    quick_test.go:629: -full takes the full tier's: resolveQuickTimeout(full=true, explicit=false, "20m") = "20m", want "45m"
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.005s
+FAIL
