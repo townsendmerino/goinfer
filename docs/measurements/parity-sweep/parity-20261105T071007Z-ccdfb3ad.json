@@ -1,0 +1,48 @@
+{
+ "schema": 1,
+ "commit": "ccdfb3ad68b8ed9120f5712cc0d91e49cfb59d9f",
+ "date": "2026-11-05T07:10:07Z",
+ "host": "Linux x86_64",
+ "verdict": "BLOCKERS",
+ "dirty": false,
+ "realckpt": true,
+ "required": 93,
+ "blockers": 7,
+ "gaps": 2,
+ "first_runs": 0,
+ "cells": [
+  {
+   "name": "./decoder/ ./tokenizer/",
+   "pass": 1211,
+   "skip": 75,
+   "fail": 5,
+   "rc": 1
+  },
+  {
+   "name": "realckpt real-model gates",
+   "pass": 47,
+   "skip": 11,
+   "fail": 0,
+   "rc": 0
+  }
+ ],
+ "paths": {
+  "backend/cuda": "93785cca6b195f06a001ca2411fd714cf998a006",
+  "backend/metal": "2264ae763fe4589f76e51f26f81adf3b2cc13340",
+  "backend/webgpu": "7c29bed61dd0d73d39c15a3284e310bdd442cd2d",
+  "decoder": "723f80baa095cbd1b787cde60d93c03138d2688f",
+  "internal/runtime/hybridattn/deltanet.go": "03a7ea734fe1f4c9eb249c5b3d9eefe0ba6841aa",
+  "internal/runtime/program/program.go": "58623f775ecd9ee581fa5451af54090588231031",
+  "scripts/pin_glm_ocr_tiny.py": "649a5d2edbf8ddbffe8587fb73b515607adb09e1",
+  "scripts/pin_internlm2_tiny.py": "8e8df2f5c167dab7fa1d0a4da3506f59c7f5dcf6",
+  "scripts/pin_laguna_tiny.py": "def2d4c43ce8f61a4960427f14d0b30a8b951c4d",
+  "scripts/pin_olmo_hybrid_real.py": "331b76185119f9538b314dcd43d6b015c388ada5",
+  "scripts/pin_olmo_hybrid_tiny.py": "c98ef68b1411e0102a6340901a8f227f1d582e19",
+  "scripts/pin_qwen3_5_forward.py": "07cbc0702ce24c4066a1f248ba9ca648727f42ff",
+  "scripts/pin_qwen3next_tiny.py": "7337d3b7289c070b72b29f0ea2bdd61cd5a36464",
+  "scripts/pin_qwen3vlmoe_tiny.py": "d859ee3f2a9239770bdab99a5ddfa1c3676ca82b",
+  "scripts/pin_slice_oracle.py": "7bfe74ee34184778bf7bc831bc073ed2ec702caa",
+  "scripts/pin_spark2_5_real.py": "fabdefcdd7bf84aeb76f0814b11f4e2b28a65366",
+  "scripts/pin_spark2_5_tiny.py": "53273a34adddb3a7b97c50d506890693bbf7659e"
+ }
+}

@@ -1,0 +1,194 @@
+{
+ "schema": 1,
+ "backend": "cuda",
+ "commit": "ccdfb3ad68b8ed9120f5712cc0d91e49cfb59d9f",
+ "date": "2026-11-05T02:22:50Z",
+ "host": "Linux x86_64",
+ "gpu": "NVIDIA GeForce RTX 2070 SUPER, 595.112.07, 8192 MiB",
+ "verdict": "VACUOUS",
+ "dirty": false,
+ "heavy_skipped": false,
+ "groups": {
+  "declared": 10,
+  "reported": 10,
+  "pass": 12,
+  "skip": 1,
+  "fail": 2,
+  "ran": 10
+ },
+ "trees": {
+  "backend/cuda": "93785cca6b195f06a001ca2411fd714cf998a006",
+  "backend/metal": "2264ae763fe4589f76e51f26f81adf3b2cc13340",
+  "backend/webgpu": "7c29bed61dd0d73d39c15a3284e310bdd442cd2d",
+  "decoder": "723f80baa095cbd1b787cde60d93c03138d2688f"
+ },
+ "heavy_processes": [
+  {
+   "group": "gemma4-26b",
+   "tests": 17,
+   "wall_s": 1860,
+   "samples": 3720,
+   "vmhwm_mb": 51688,
+   "vmswap_peak_mb": 242
+  },
+  {
+   "group": "qwen3.6-35b",
+   "tests": 4,
+   "wall_s": 334,
+   "samples": 666,
+   "vmhwm_mb": 38896
+  },
+  {
+   "group": "gpt-oss-20b",
+   "tests": 1,
+   "wall_s": 1,
+   "samples": 0
+  },
+  {
+   "group": "qwen1.5-moe",
+   "tests": 1,
+   "wall_s": 0,
+   "samples": 0
+  },
+  {
+   "group": "deepseek-v2-lite",
+   "tests": 1,
+   "wall_s": 0,
+   "samples": 0
+  },
+  {
+   "group": "qwen3.5-9b",
+   "tests": 4,
+   "wall_s": 0,
+   "samples": 0
+  },
+  {
+   "group": "7b-8b",
+   "tests": 26,
+   "wall_s": 662,
+   "samples": 1323,
+   "vmhwm_mb": 15841
+  },
+  {
+   "group": "nemotron-h",
+   "tests": 1,
+   "wall_s": 35,
+   "samples": 67,
+   "vmhwm_mb": 27270
+  },
+  {
+   "group": "mellum2.1",
+   "tests": 1,
+   "wall_s": 76,
+   "samples": 149,
+   "vmhwm_mb": 12901
+  },
+  {
+   "group": "gemma4-e4b",
+   "tests": 4,
+   "wall_s": 694,
+   "samples": 1388,
+   "vmhwm_mb": 42653,
+   "vmswap_peak_mb": 531
+  },
+  {
+   "group": "gemma3-4b",
+   "tests": 26,
+   "wall_s": 1213,
+   "samples": 2424,
+   "vmhwm_mb": 40280,
+   "vmswap_peak_mb": 268
+  },
+  {
+   "group": "qwen3-4b",
+   "tests": 28,
+   "wall_s": 276,
+   "samples": 550,
+   "vmhwm_mb": 14999
+  },
+  {
+   "group": "qwen3-vl-2b",
+   "tests": 7,
+   "wall_s": 865,
+   "samples": 1730,
+   "vmhwm_mb": 10370
+  },
+  {
+   "group": "qwen25vl-3b",
+   "tests": 8,
+   "wall_s": 162,
+   "samples": 324,
+   "vmhwm_mb": 10272
+  },
+  {
+   "group": "glm-ocr",
+   "tests": 9,
+   "wall_s": 82,
+   "samples": 163,
+   "vmhwm_mb": 846
+  },
+  {
+   "group": "gemma4-e2b",
+   "tests": 3,
+   "wall_s": 174,
+   "samples": 347,
+   "vmhwm_mb": 15112
+  },
+  {
+   "group": "small",
+   "tests": 554,
+   "wall_s": 4520,
+   "samples": 9038,
+   "vmhwm_mb": 24422,
+   "vmswap_peak_mb": 296
+  },
+  {
+   "group": "kernels",
+   "tests": 74,
+   "wall_s": 6,
+   "samples": 12,
+   "vmhwm_mb": 11135
+  }
+ ],
+ "expect": [
+  "cleangpu",
+  "seam",
+  "suite",
+  "parity",
+  "heavy",
+  "graphsforced",
+  "cgofree",
+  "ptx",
+  "webgpu",
+  "repo"
+ ],
+ "emitted": [
+  "cgofree",
+  "cleangpu",
+  "graphsforced",
+  "heavy",
+  "parity",
+  "ptx",
+  "repo",
+  "seam",
+  "suite",
+  "webgpu"
+ ],
+ "vacuous_cells": [
+  "cuda-iso-TestR14DrafterArgmaxAB (-run \"^TestR14DrafterArgmaxAB$\", 1 skipped)",
+  "cuda-iso-TestR14DrafterArgmaxProfile (-run \"^TestR14DrafterArgmaxProfile$\", 1 skipped)",
+  "cuda-iso-TestResidentDrafter_extendContext (-run \"^TestResidentDrafter_extendContext$\", 1 skipped)"
+ ],
+ "notes": [
+  "heavy group gpt-oss-20b: all 1 test(s) skipped",
+  "heavy group qwen1.5-moe: all 1 test(s) skipped",
+  "heavy group deepseek-v2-lite: all 1 test(s) skipped",
+  "heavy group qwen3.5-9b: all 4 test(s) skipped",
+  "cuda-iso-TestR14DrafterArgmaxAB: all 1 test(s) skipped — cell proves nothing",
+  "cuda-iso-TestR14DrafterArgmaxProfile: all 1 test(s) skipped — cell proves nothing",
+  "cuda-iso-TestResidentDrafter_extendContext: all 1 test(s) skipped — cell proves nothing",
+  "heavy tier skipped 96 test(s) — see the 2c census for which",
+  "graphs are FORCED in 2d (GOINFER_CUDA_GRAPHS_UNSAFE): this proves the capture/replay CODE, not that graphs are admitted in production — admitGraphs still declines here (DEFAULT compute mode, no MPS).",
+  "SKIPPED: 22 darwin-only CI hygiene step(s) — wrong platform for this host"
+ ]
+}
