@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# ci_docs_only.sh BASE HEAD   -> prints "true" or "false"
+# ci_docs_only.sh BASE HEAD   -> prints "true" (the quick path) or "false" (the full suite)
+# ci_docs_only.sh --classify BASE HEAD -> the CI quick path's wider rule 1 (below): prints docs, records, version, quick (a mix) or full
 # ci_docs_only.sh --read PATH -> prints "read" or "not-read", rule 2's decision for one repo-relative path
 # ci_docs_only.sh --selfcheck -> exits 1 if the read-detection below has stopped catching the
 #                                docs files tests are KNOWN to read (a zero-match guard)
@@ -7,11 +8,16 @@
 # C3 (docs/completed/task-ci-speed-2026-09.md). "true" iff EVERY file changed between BASE and HEAD is
 # on a non-code path AND NONE of them is read by Go code or tests. Two rules, both load-bearing:
 #
-#  1. Only docs/**, RELEASING.md and .claude/** (the repo's agent skills) count. Every other root file
-#     (README.md, CHANGELOG.md, CLAUDE.md, go.mod, ...) and everything else run the full matrix --
-#     readme-smoke exists because a README install line once shipped broken, and Go tests read
-#     README.md, CHANGELOG.md and CLAUDE.md, which rule 2 would catch anyway.
-#
+#  1. The default mode counts only docs/**, RELEASING.md and .claude/** (the direct-push rule in CLAUDE.md and coverage.yml
+#     use it, and it does not widen). --classify, which ci.yml's `changes` job uses, counts these paths as quick (the class
+#     names are for the log; the quick path is one path):
+#       records  docs/measurements/**
+#       docs     the rest of docs/**, RELEASING.md, .claude/**, changelog.d/**, a top-level *.md other than README.md,
+#                and apps/site content (anything under apps/site/ that is not Go, go.mod/go.sum, wrangler.jsonc or cmd/)
+#       version  a go.mod or go.sum (any module except apps/site) whose diff changes only lines for
+#                github.com/townsendmerino/goinfer or goinfer/backend/* module versions
+#     Everything else is the full suite: any Go, script, workflow or testdata file, README.md (readme-smoke reads it,
+#     and so do Go tests), any other dependency's version, a go.mod/go.sum line that is not a goinfer version.
 #  2. A docs file that Go code READS is not "docs-only", whatever its path. Measured 2026-09-22
 #     over the 30 most recent commits on main: 11 were docs-only by rule 1, and 4 of those touched
 #     a file a test reads -- env-vars.md (TestEnvVars_docAndCodeAgree), benchmarks.md
@@ -74,27 +80,87 @@ fi
 
 say_false() { echo false; exit 0; }
 
-base="${1:-}"
-head="${2:-}"
-[ -n "$base" ] && [ -n "$head" ] || say_false
-case "$base" in *[!0-9a-f]*|"") say_false ;; esac   # not a SHA at all
-case "$base" in 0000000000000000000000000000000000000000) say_false ;; esac  # branch creation: no "before"
-
-selfcheck >/dev/null 2>&1 || say_false
-
-files=$(git diff --name-only "$base" "$head" 2>/dev/null) || say_false
-[ -n "$files" ] || say_false
-
-while IFS= read -r f; do
-  case "$f" in
-    docs/*|RELEASING.md|.claude/*) ;;
-    *) say_false ;;
+# class_of PATH -> records | docs | gomod | code
+class_of() {
+  case "$1" in
+    docs/measurements/*) echo records; return ;;
+    docs/*|RELEASING.md|.claude/*) echo docs; return ;;
   esac
-done <<<"$files"
+  [ "$WIDE" = 1 ] || { echo code; return; }
+  case "$1" in
+    README.md) echo code ;;
+    changelog.d/*) echo docs ;;
+    apps/site/cmd/*|apps/site/*.go|apps/site/go.mod|apps/site/go.sum|apps/site/wrangler.jsonc) echo code ;;
+    apps/site/*) echo docs ;;
+    go.mod|go.sum|*/go.mod|*/go.sum) echo gomod ;;
+    */*) echo code ;;
+    *.md) echo docs ;;
+    *) echo code ;;
+  esac
+}
 
-while IFS= read -r f; do
-  read_by_go "$f" && say_false
-done <<<"$files"
+mod_re='github\.com/townsendmerino/goinfer(/[A-Za-z0-9._/-]+)?'
+gomod_line_re="^[+-][[:space:]]*(require[[:space:]]+)?${mod_re}[[:space:]]+v[0-9][^[:space:]]*([[:space:]]+//.*)?\$"
+gosum_line_re="^[+-]${mod_re}[[:space:]]+v[0-9][^[:space:]]*(/go\\.mod)?[[:space:]]+h1:[A-Za-z0-9+/=]+\$"
 
+# version_only BASE HEAD FILE -> exit 0 if the diff of FILE changes only goinfer module versions
+version_only() {
+  local base="$1" head="$2" f="$3" re lines
+  case "$f" in
+    */go.sum|go.sum) re="$gosum_line_re" ;;
+    *) re="$gomod_line_re" ;;
+  esac
+  lines=$(git diff -U0 "$base" "$head" -- "$f" 2>/dev/null | grep -E '^[+-]' | grep -vE '^(\+\+\+|---) ') || return 1
+  [ -n "$lines" ] || return 1
+  ! printf '%s\n' "$lines" | grep -vE -e "$re" | grep -q .
+}
+
+# classify BASE HEAD -> docs | records | version | quick | full  (fail-open: any doubt is "full")
+classify() {
+  local base="$1" head="$2" files f c
+  [ -n "$base" ] && [ -n "$head" ] || { echo full; return; }
+  case "$base" in *[!0-9a-f]*|"") echo full; return ;; esac   # not a SHA at all
+  case "$base" in 0000000000000000000000000000000000000000) echo full; return ;; esac  # branch creation: no "before"
+
+  selfcheck >/dev/null 2>&1 || { echo full; return; }
+
+  files=$(git diff --name-only "$base" "$head" 2>/dev/null) || { echo full; return; }
+  [ -n "$files" ] || { echo full; return; }
+
+  local n_docs=0 n_records=0 n_version=0
+  while IFS= read -r f; do
+    c=$(class_of "$f")
+    case "$c" in
+      records) n_records=$((n_records+1)) ;;
+      docs) n_docs=$((n_docs+1)) ;;
+      gomod)
+        version_only "$base" "$head" "$f" || { echo full; return; }
+        n_version=$((n_version+1)) ;;
+      *) echo full; return ;;
+    esac
+  done <<<"$files"
+
+  # Rule 2 does not apply to a version-only go.mod/go.sum: tests read those files, and a goinfer version line is not
+  # what they read them for. It applies to every other file.
+  while IFS= read -r f; do
+    [ "$(class_of "$f")" = gomod ] && continue
+    read_by_go "$f" && { echo full; return; }
+  done <<<"$files"
+
+  if [ "$n_docs" -gt 0 ] && [ "$n_records" -eq 0 ] && [ "$n_version" -eq 0 ]; then echo docs
+  elif [ "$n_records" -gt 0 ] && [ "$n_docs" -eq 0 ] && [ "$n_version" -eq 0 ]; then echo records
+  elif [ "$n_version" -gt 0 ] && [ "$n_docs" -eq 0 ] && [ "$n_records" -eq 0 ]; then echo version
+  else echo quick
+  fi
+}
+
+WIDE=0
+if [ "${1:-}" = "--classify" ]; then
+  WIDE=1
+  classify "${2:-}" "${3:-}"
+  exit 0
+fi
+
+[ "$(classify "${1:-}" "${2:-}")" = full ] && say_false
 echo true
 exit 0
