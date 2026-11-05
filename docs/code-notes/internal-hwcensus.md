@@ -1,13 +1,13 @@
-# internal/hwcensus: notes moved out of code comments
+# internal/diag/hwcensus: notes moved out of code comments
 
-History, measurements and open work that used to sit in the comments of `internal/hwcensus`, moved here verbatim by the comment diet
-(`docs/tasks/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
+History, measurements and open work that used to sit in the comments of `internal/diag/hwcensus`, moved here verbatim by the comment diet
+(`docs/completed/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
 its guardrails, and points here by heading. This file is off the read path: open it when a pointer sends you. Text is unedited,
 except that a `file.go:NNN` reference inside it names the declaration instead (the line numbers had already gone stale).
 
 ## hardwareCensus.header
 
-Moved from `internal/hwcensus/census_test.go` (the comment above `censusPath`) on 2026-10-09.
+Moved from `internal/diag/hwcensus/census_test.go` (the comment above `censusPath`) on 2026-10-09.
 
 ```text
 H0, the hardware census: a census, deliberately not a verdict, in the shape of decoder/dispatch_census_test.go.

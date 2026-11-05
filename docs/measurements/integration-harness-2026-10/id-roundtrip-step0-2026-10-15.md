@@ -61,7 +61,7 @@ more non-canonical splits is not measured here.
 **Client edits, read from the archive and the live capture, not from the replay** (the replay echoes as Codex does by
 construction):
 - **Reasoning:** all 298 reasoning items in the night's rollouts carry `content` text equal to the decoded `encrypted_content`,
-  which is serve's own bytes. serve reads `encrypted_content` first (`internal/serveapp/reasoning_items.go:reasoningItemText`), so an edit to the
+  which is serve's own bytes. serve reads `encrypted_content` first (`internal/app/serveapp/reasoning_items.go:reasoningItemText`), so an edit to the
   visible text could not reach the prompt anyway.
 - **Calls and messages:** in the 2026-10-14 live capture, the items Codex sent back equal the items serve emitted key for key,
   less `status` (2 reasoning, 2 function calls). The night's 213 full reuses re-rendered exactly, so Codex changed nothing there.
@@ -360,7 +360,7 @@ generation, which no tiny fixture reproduces.
   grade commits them only as `codex-rollouts.tar.gz` was committed: as a tarball, by decision.
 
 **To build with proposal 2 (serve; specified here, not built):**
-1. **Reuse fields on the `-log-requests` line** (`internal/serveapp/reqlog.go:reqTrace`, filled where the first generation
+1. **Reuse fields on the `-log-requests` line** (`internal/app/serveapp/reqlog.go:reqTrace`, filled where the first generation
    reports in). Fields, in order after `total=`:
    - `reused=<n>`: the generation's `PrefillReused`;
    - `slot=<n>`: the length of the bound slot's id record before the request, which needs a decoder accessor beside

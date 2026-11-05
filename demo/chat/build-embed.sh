@@ -26,7 +26,7 @@
 # R6 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): `--version` on a released embed-tier
 # binary had no way to say what quant it actually shipped at, and --help's shared --quant text
 # ("Default int4") does not apply to a PREQUANT build at all — it bakes at a fixed quant chosen
-# HERE, at build time, never reading the --quant flag (internal/chatapp/prequant.go's
+# HERE, at build time, never reading the --quant flag (internal/app/chatapp/prequant.go's
 # loadEmbedded ignores opts.Quant entirely). QUANT below is that single source of truth: it is
 # both what gets baked in and what --version reports, so the two cannot drift apart the way the
 # flag's stated default and the binary's actual behavior had. GOINFER_RELEASE_TAG/GOINFER_TIER
@@ -53,16 +53,16 @@ MODEL="${1:?usage: build-embed.sh [--gguf] [--name <basename>] <model.gguf> [os/
 shift || true
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/../.." && pwd)"
-# The REPL (and its //go:embed directives) live in internal/chatapp since audit M-19;
+# The REPL (and its //go:embed directives) live in internal/app/chatapp since audit M-19;
 # demo/chat is now a thin CPU-only main shim. Stage the embed asset next to the directive
 # there, but keep the built binary + dist under demo/chat.
-PKGDIR="$ROOT/internal/chatapp"
+PKGDIR="$ROOT/internal/app/chatapp"
 
 if [ ! -f "$MODEL" ]; then echo "model not found: $MODEL" >&2; exit 1; fi
 
 # //go:embed needs the asset inside the package dir and does not follow symlinks.
 if [ "$MODE" = prequant ]; then
-  echo "building prequant bundle (quant=$QUANT) -> internal/chatapp/model.giw"
+  echo "building prequant bundle (quant=$QUANT) -> internal/app/chatapp/model.giw"
   # -target canonical (docs/tasks/task-int4-layout-2026-09.md's L2): this ONE bundle is baked once,
   # here, on the host box's own arch — then embedded into every os/arch in the TARGETS loop
   # below (darwin/*, linux/*, windows/*, cross-compiled with CGO_ENABLED=0 regardless of host),
@@ -76,17 +76,17 @@ if [ "$MODE" = prequant ]; then
   # flag has its ordinary effect there) — only the prequant path fixes a quant at build time, so
   # only it injects embeddedQuant. `-X` values cannot contain spaces (go build's own ldflags
   # parser word-splits them), which is the other reason this stays a single token.
-  EMBED_QUANT_LDFLAG="-X github.com/townsendmerino/goinfer/internal/chatapp.embeddedQuant=$QUANT"
+  EMBED_QUANT_LDFLAG="-X github.com/townsendmerino/goinfer/internal/app/chatapp.embeddedQuant=$QUANT"
 else
-  echo "staging $(basename "$MODEL") -> internal/chatapp/model.gguf ($(du -h "$MODEL" | cut -f1))"
+  echo "staging $(basename "$MODEL") -> internal/app/chatapp/model.gguf ($(du -h "$MODEL" | cut -f1))"
   cp "$MODEL" "$PKGDIR/model.gguf"
   TAGS=embed
   EMBED_QUANT_LDFLAG=""
 fi
 
 LDFLAGS="-s -w $EMBED_QUANT_LDFLAG"
-[ -n "$TIER" ] && LDFLAGS="$LDFLAGS -X github.com/townsendmerino/goinfer/internal/chatapp.embeddedTier=$TIER"
-[ -n "${GOINFER_RELEASE_TAG:-}" ] && LDFLAGS="$LDFLAGS -X github.com/townsendmerino/goinfer/internal/chatapp.injectedVersion=$GOINFER_RELEASE_TAG"
+[ -n "$TIER" ] && LDFLAGS="$LDFLAGS -X github.com/townsendmerino/goinfer/internal/app/chatapp.embeddedTier=$TIER"
+[ -n "${GOINFER_RELEASE_TAG:-}" ] && LDFLAGS="$LDFLAGS -X github.com/townsendmerino/goinfer/internal/app/chatapp.injectedVersion=$GOINFER_RELEASE_TAG"
 
 TARGETS=("$@")
 if [ ${#TARGETS[@]} -eq 0 ]; then TARGETS=("$(go env GOOS)/$(go env GOARCH)"); fi

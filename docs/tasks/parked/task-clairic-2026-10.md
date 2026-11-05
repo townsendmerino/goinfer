@@ -35,7 +35,7 @@
 
 - **`POST /v1/systemone`** in TypeSafe's shape, answered three ways: label scoring on the served model
   (`internal/decide`), a trained decision head, or — route C — Cloudflare's Clef (`isClefDir` in
-  `internal/serveapp/systemone_clef.go`; the `internal/clef` package: `Encode`, `LoadHead`, `Head`, `Model`).
+  `internal/app/serveapp/systemone_clef.go`; the `internal/clef` package: `Encode`, `LoadHead`, `Head`, `Model`).
 - **Route C is the template for this doc.** D10–D14 (2026-10-01 to 2026-10-04,
   `docs/completed/task-clef-route-c-2026-10.md`) read Clef-flash's encoder and head contract in full, found by a merge
   check that it is Qwen3.5-9B with its adapters merged — so it **loads as a plain `qwen3_5`** and needed no new decoder

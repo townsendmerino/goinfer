@@ -1,0 +1,576 @@
+package serveapp
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"mime/multipart"
+	"net/http"
+	"reflect"
+	"strings"
+	"sync"
+	"time"
+	"unicode/utf8"
+)
+
+// Request-body size ceilings. Bodies are buffered before validation, so an unbounded body is a memory-exhaustion DoS.
+// Text prompts, tools, embeddings and admin bodies fit in a few MB; the vision endpoints carry base64 image_url data
+// (about 1.33x the raw image), so they get a larger cap.
+const (
+	maxBodyBytes       = 4 << 20  // 4 MiB
+	maxVisionBodyBytes = 32 << 20 // 32 MiB
+	// maxEmbedBodyBytes is /v1/embeddings' own floor, deliberately not derived from any decoder's context window. A
+	// batch embeddings body scales with batch count x input length, which the route already bounds (maxEmbedInputs,
+	// maxEmbedInputBytes), and has nothing to do with a chat model's MaxPositions. Deriving it from the text cap made
+	// the limit arbitrary: on an embed-only server it collapsed to the 4 MiB text floor and rejected a legal 2048 x 4
+	// KiB batch before checkEmbedInputBounds could accept it. 64 MiB covers a realistic maximal RAG batch (2048
+	// inputs x ~32 KiB) while still bounding the read. -max-body-bytes overrides it like the others.
+	maxEmbedBodyBytes = 64 << 20 // 64 MiB
+	// maxBatchFileBytes is POST /v1/files' own floor, independent of the other three the way maxEmbedBodyBytes is: a
+	// batch input file's size scales with line count, not with any one decoder's context window. 64 MiB covers a
+	// realistic batch (thousands of chat-sized lines) while still bounding the read. -max-body-bytes overrides it
+	// like the others.
+	maxBatchFileBytes = 64 << 20 // 64 MiB
+)
+
+// maxBytes wraps a handler so its request body is bounded to n bytes (n <= 0 disables). Two layers:
+//   - a Content-Length pre-check rejects a declared body over the cap with 413 before a byte is read (the case that
+//     matters, and it costs nothing: no allocation, no upload wait);
+//   - http.MaxBytesReader is the backstop for chunked encoding or a lying Content-Length; it fails the read with
+//     *http.MaxBytesError, which the decode helpers render as 413.
+//
+// The 413 names the limit (and the received size when the client declared one). A client still uploading when the
+// pre-check fires may see EPIPE regardless. note, when non-empty, is appended to the 413: a route whose own validator
+// declares limits in different units than the body cap needs it. /v1/embeddings advertises "up to 2048 inputs of up
+// to 1 MiB each", which multiplies out to 2 GiB and can never all be satisfied at once; those are per-dimension
+// bounds, the body cap bounds the total, and a 413 naming only the total leaves the client unable to tell which
+// number it violated.
+func maxBytes(n int64, h http.HandlerFunc, note ...string) http.HandlerFunc {
+	extra := ""
+	if len(note) > 0 && note[0] != "" {
+		extra = " " + note[0]
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		if n > 0 && r.ContentLength > n {
+			writeErr(w, http.StatusRequestEntityTooLarge,
+				fmt.Sprintf("request body is %d bytes, which exceeds the %d-byte limit (raise it with -max-body-bytes)%s", r.ContentLength, n, extra))
+			return
+		}
+		if n > 0 {
+			r.Body = http.MaxBytesReader(w, r.Body, n)
+		}
+		h(w, r)
+	}
+}
+
+// limitInflight caps how many wrapped handlers run concurrently across the whole server, via a shared semaphore. It
+// bounds the pre-queue stage (JSON and base64-image decode, tokenization, template render, the vision-tower Forward,
+// constrain.TokenBytes over the full vocab) that runs before a request reaches the per-model decode queue (lm.enter);
+// without it that stage has unbounded concurrency, and 200 parallel 32 MiB vision requests each allocate before any
+// backpressure applies. A full cap returns 503 + Retry-After (an orchestrator back-off signal), distinct from the
+// per-model 429. sem == nil disables it (-max-inflight 0). The slot is held for the whole handler including
+// generation, a hard ceiling on total concurrent requests that composes with the finer per-model queue.
+func limitInflight(sem chan struct{}, h http.HandlerFunc) http.HandlerFunc {
+	if sem == nil {
+		return h
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case sem <- struct{}{}:
+			defer func() { <-sem }()
+			h(w, r)
+		default:
+			w.Header().Set("Retry-After", "1")
+			writeErr(w, http.StatusServiceUnavailable, "server at capacity (max in-flight requests reached); retry")
+		}
+	}
+}
+
+// requireAuth wraps a handler with an optional shared-secret check. With key == "" it is a pass-through (auth
+// disabled, safe only because -addr defaults to loopback). With a key, the request must present it as `Authorization:
+// Bearer <key>` or `x-api-key: <key>`. The two are compared as SHA-256 digests in constant time: digests are one
+// length, so the time taken says nothing about the key's length or prefix (ConstantTimeCompare on the raw strings
+// returns at once when the lengths differ). A coarse gate (one shared secret, not per-user): enough to keep an
+// exposed port from being open inference, and required whenever -allow-admin is on.
+func requireAuth(key string, h http.HandlerFunc) http.HandlerFunc {
+	if key == "" {
+		return h
+	}
+	want := sha256.Sum256([]byte(key))
+	return func(w http.ResponseWriter, r *http.Request) {
+		got := r.Header.Get("x-api-key")
+		if got == "" {
+			got = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		}
+		if sum := sha256.Sum256([]byte(got)); subtle.ConstantTimeCompare(sum[:], want[:]) != 1 {
+			writeErr(w, http.StatusUnauthorized, "missing or invalid API key")
+			return
+		}
+		h(w, r)
+	}
+}
+
+// bodyTooLarge reports whether err is maxBytes' cap firing during a body read, with the message its 413 carries. The
+// message names the limit and how to raise it: a bare "too large" leaves the operator guessing which of the several caps
+// fired (TestOversizeBody_BackstopBounded pins that a 413 says which bound was hit).
+func bodyTooLarge(err error) (msg string, tooLarge bool) {
+	if mbe, ok := errors.AsType[*http.MaxBytesError](err); ok {
+		return fmt.Sprintf("request body exceeds the %d-byte limit (raise it with -max-body-bytes)", mbe.Limit), true
+	}
+	return "", false
+}
+
+// writeBodyErr answers a request body that could not be read: 413 at the maxBytes cap, else 400 with msg and the error.
+func writeBodyErr(w http.ResponseWriter, msg string, err error) {
+	if tooLarge, ok := bodyTooLarge(err); ok {
+		writeErr(w, http.StatusRequestEntityTooLarge, tooLarge)
+		return
+	}
+	writeErr(w, http.StatusBadRequest, msg+": "+err.Error())
+}
+
+// maxFileUploadMemory is how much of an upload parseUpload holds in memory before spilling to a temp file.
+const maxFileUploadMemory = 32 << 20
+
+// parseUpload parses r's multipart/form-data body; a failure is answered through writeBodyErr with msg, and ok is false.
+// The caller defers the form's RemoveAll: net/http removes a form only when it was parsed on the request the server made,
+// and traceRequests and NewHandler hand handlers a copy, so nothing else deletes the temp files of a large upload.
+func parseUpload(w http.ResponseWriter, r *http.Request, msg string) (form *multipart.Form, ok bool) {
+	if err := r.ParseMultipartForm(maxFileUploadMemory); err != nil {
+		writeBodyErr(w, msg, err)
+		return nil, false
+	}
+	return r.MultipartForm, true
+}
+
+// jsonDecodeMessage shapes a json decode error into a message safe to return to a client: it never echoes the raw
+// error, whose UnmarshalTypeError rendering leaks the Go struct name (e.g. "...Go struct field completionReq.logprobs
+// of type bool"). tooLarge reports the body-cap case, which callers answer with a different status. The OpenAI and
+// Anthropic surfaces share it.
+func jsonDecodeMessage(err error) (msg string, tooLarge bool) {
+	if msg, tooLarge := bodyTooLarge(err); tooLarge {
+		return msg, true
+	}
+	if ute, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
+		// ute.Type is a reflect.Type; for a composite field it renders the internal named type (e.g.
+		// "[]serveapp.chatMessage"), leaking Go type names. Name the expected type only for scalar kinds (bool,
+		// number, string); else stay generic.
+		switch ute.Type.Kind() {
+		case reflect.Bool, reflect.String,
+			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+			reflect.Float32, reflect.Float64:
+			return fmt.Sprintf("invalid request body: field %q has the wrong type (expected %s)", ute.Field, ute.Type.Kind()), false
+		default:
+			return fmt.Sprintf("invalid request body: field %q has the wrong type", ute.Field), false
+		}
+	}
+	if se, ok := errors.AsType[*json.SyntaxError](err); ok {
+		return fmt.Sprintf("invalid request body: malformed JSON at byte %d", se.Offset), false
+	}
+	return "invalid request body", false
+}
+
+// decodeJSON reads the (size-bounded, see maxBytes) request body into v, writing an OpenAI-shaped error on failure: 413
+// when the body exceeded the limit, else 400. It returns false iff it wrote an error.
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		msg, tooLarge := jsonDecodeMessage(err)
+		if tooLarge {
+			writeErr(w, http.StatusRequestEntityTooLarge, msg)
+			return false
+		}
+		writeErr(w, http.StatusBadRequest, msg)
+		return false
+	}
+	return true
+}
+
+// --- SSE ---
+
+// sseWriter owns one SSE response: every frame goes through it, one at a time, under a bounded write deadline. Both
+// the OpenAI and the Anthropic stream paths write through it.
+//
+// It exists because the heartbeat goroutine and the handler write to the same ResponseWriter: the heartbeat owns w
+// while the handler is silent, and the incremental tool paths write prose deltas to it during that same window.
+// net/http's response/bufio.Writer is not safe for concurrent Write and Flush, so concurrent writers produce a ":
+// ping" spliced into a data: line (the client drops or mis-parses the chunk) up to a bufio slice-bounds panic, and a
+// panic in the heartbeat goroutine is outside net/http's per-request recover, so it takes the process.
+//
+// The write deadline is a second defence on the same path. Flush blocks in net.Conn.Write with no deadline, so a
+// client that stops reading without closing would pin the handler inside onText holding the model's queue slot
+// (r.Context() cancels on close, not on a stalled read), and every other request would queue and then 429 for as long
+// as the socket stayed open. It bounds one frame; it is not the server-wide WriteTimeout, which would truncate a
+// legitimately long stream.
+//
+// The first write error is sticky and readable: a stream whose client vanished should stop generating rather than
+// keep pushing frames into a dead socket.
+type sseWriter struct {
+	mu  sync.Mutex
+	w   http.ResponseWriter
+	f   http.Flusher
+	rc  *http.ResponseController
+	err error
+}
+
+// sseWriteTimeout bounds one frame's write+flush. A var so tests can drive it. Generous against a
+// slow but live client, short enough that a stalled one frees the decode worker.
+var sseWriteTimeout = 30 * time.Second
+
+// frame writes one preformatted SSE frame under the lock, and is the ONLY place this package
+// writes to a streaming ResponseWriter.
+func (s *sseWriter) frame(format string, args ...any) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err // sticky: the client is gone, stop trying
+	}
+	if s.rc != nil {
+		// An unsupported controller is not a stream failure — httptest's recorder has no deadline
+		// support — so the error is deliberately dropped rather than made sticky.
+		_ = s.rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
+	}
+	if _, err := fmt.Fprintf(s.w, format, args...); err != nil {
+		s.err = err
+		return err
+	}
+	s.f.Flush()
+	return nil
+}
+
+// Err reports the first write failure. Non-nil means the client is gone.
+func (s *sseWriter) Err() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.err
+}
+
+// newSSEWriter wraps a streaming response. Shared by both protocols' start helpers.
+func newSSEWriter(w http.ResponseWriter, f http.Flusher) *sseWriter {
+	return &sseWriter{w: w, f: f, rc: http.NewResponseController(w)}
+}
+
+// sseJSONSender builds a JSON-payload SSE event sender that calls cancel when a write fails: a stalled-but-open
+// reader is caught by sseWriter.frame's write deadline, not by ctx alone, so cancel here is what stops whatever the
+// caller is streaming progress for. It serves callers that, unlike the two protocol streams, do not already own an
+// sseWriter and a cancelable context together. Marshal errors are dropped: a payload that cannot become JSON has no
+// frame to send or fail.
+func sseJSONSender(w http.ResponseWriter, f http.Flusher, cancel context.CancelFunc) func(event string, payload any) {
+	sw := newSSEWriter(w, f)
+	return func(event string, payload any) {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return
+		}
+		if sw.frame("event: %s\ndata: %s\n\n", event, b) != nil {
+			cancel()
+		}
+	}
+}
+
+func sseStart(w http.ResponseWriter) (*sseWriter, bool) {
+	f, ok := w.(http.Flusher)
+	if !ok {
+		writeErr(w, http.StatusInternalServerError, "streaming unsupported")
+		return nil, false
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	return newSSEWriter(w, f), true
+}
+
+func sseSend(ss *sseWriter, v any) {
+	b, _ := json.Marshal(v)
+	ss.frame("data: %s\n\n", b)
+}
+
+func sseDone(ss *sseWriter) {
+	ss.frame("data: [DONE]\n\n")
+}
+
+// sseErr emits an OpenAI-style error object mid-stream (the response is already 200 with headers flushed, so no
+// status code is available). Callers send it in place of the normal finish chunk when a generation fails.
+func sseErr(ss *sseWriter, msg string) {
+	sseSend(ss, map[string]any{"error": map[string]any{"message": msg, "type": "api_error"}})
+}
+
+// sseHeartbeatInterval is how often a buffered generation emits a keep-alive
+// comment frame. A package var, not a const, so tests can drive the mechanism
+// without waiting on wall-clock. 10s is far inside every harness idle timeout we
+// know of (dsh's default is 300s) and costs 8 bytes per tick.
+var sseHeartbeatInterval = 10 * time.Second
+
+// sseHeartbeat keeps a stream alive while the handler is producing nothing to send. The tool paths must buffer the
+// whole generation before they can parse a tool call, so they would otherwise send zero bytes for the entire
+// generation, longer than a client's idle timeout.
+//
+// A comment frame (":" + text) is the right instrument: protocol-legal, carrying no data, and dropped by every SSE
+// parser, so nothing downstream can mistake a keep-alive for content. The buffering guarantee is untouched.
+//
+// The returned stop joins the goroutine before returning, so nothing ticks after the caller's final frame.
+// Serialization against the handler's writes, including the prose deltas the incremental paths emit while the
+// heartbeat runs, comes from sseWriter's lock, not from the join.
+func sseHeartbeat(ss *sseWriter) (stop func()) {
+	done, finished := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(finished)
+		t := time.NewTicker(sseHeartbeatInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				ss.frame(": ping\n\n")
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		<-finished
+	}
+}
+
+type delta struct {
+	Role    string `json:"role,omitempty"`
+	Content string `json:"content,omitempty"`
+	// ReasoningContent is the model's think-block text (think.go), streamed before the answer's content. llama.cpp and
+	// the DeepSeek API spell it reasoning_content; omitted when the model did not reason.
+	ReasoningContent string `json:"reasoning_content,omitempty"`
+}
+
+func chatChunk(id string, created int64, model string, d delta, finish *string) map[string]any {
+	return map[string]any{
+		"id": id, "object": "chat.completion.chunk", "created": created, "model": model,
+		"choices": []any{map[string]any{"index": 0, "delta": d, "finish_reason": finish}},
+	}
+}
+
+// streamOptions is OpenAI's stream_options. It is named, not anonymous, so every streaming surface can accept it and
+// hand it to sendUsage.
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
+// sendUsage emits the include_usage chunk, if the client asked for one, immediately before sseDone. This is the one
+// place that decision is made: routing every streaming surface (chat, tools, vision, completions) through one helper
+// is what lets a test count the sites, so a new streaming surface cannot be added quietly without one. Agent
+// harnesses, which declare tools on every turn, depend on the usage chunk for context accounting. The chunk carries the
+// turn's timings and, when asked, its cost beside the usage (clock, nil for none).
+func sendUsage(ss *sseWriter, clock *turnClock, so *streamOptions, id string, created int64, model string, u usage) {
+	if so == nil || !so.IncludeUsage {
+		return
+	}
+	sseSend(ss, clock.addTurn(usageChunk(id, created, model, u)))
+}
+
+// usageChunk is the final streaming chunk when stream_options.include_usage is set: empty choices,
+// a usage object. Matches OpenAI, so a client that already understands their stream needs no
+// goinfer-specific handling.
+func usageChunk(id string, created int64, model string, u usage) map[string]any {
+	return map[string]any{
+		"id": id, "object": "chat.completion.chunk", "created": created, "model": model,
+		"choices": []any{}, "usage": u,
+	}
+}
+
+func completionChunk(id string, created int64, model, text string, finish *string) map[string]any {
+	return map[string]any{
+		"id": id, "object": "text_completion", "created": created, "model": model,
+		"choices": []any{map[string]any{"index": 0, "text": text, "finish_reason": finish}},
+	}
+}
+
+// --- JSON responses ---
+
+// jsonWriteTimeout bounds a non-streaming response's write, writeJSON's twin of sseWriteTimeout above: a client that
+// stops reading a large buffered body (logprobs, a long completion) would otherwise block Encode/Write with no
+// deadline, pinning the decode worker, its queue slot and its inflight slot until the client closed. A var so tests
+// can drive it.
+var jsonWriteTimeout = 30 * time.Second
+
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	// An unsupported controller is not a failure (httptest's recorder has no deadline support), so the error is
+	// deliberately dropped, as in sseWriter.frame.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(jsonWriteTimeout))
+	// Encode before the status line goes out: a value JSON cannot carry (a NaN or an infinity in a float) must be a
+	// 500 that says so, not an HTTP 200 with Content-Length 0 from an encoder error nobody read.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	if err := enc.Encode(v); err != nil {
+		msg, _ := json.Marshal("response could not be encoded: " + err.Error()) // a string always encodes
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(w, `{"error":{"message":%s,"type":"api_error"}}`+"\n", msg)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_, _ = w.Write(buf.Bytes())
+}
+
+// statusCancelled is the non-streaming status for an admin-cancelled generation (docs/tasks/task-halt-2026-09.md).
+// 499 is not a registered HTTP status (net/http has no constant for it): it is nginx's "client closed request",
+// repurposed for "the server ended this request on someone's behalf, not a normal 4xx/5xx".
+// http.ResponseWriter.WriteHeader accepts any int, so it works like any other status.
+const statusCancelled = 499
+
+func writeErr(w http.ResponseWriter, code int, msg string) {
+	// Type mirrors the status so typed OpenAI-SDK client retry logic keys off it
+	// (429 → back off, 5xx → retry, 4xx → don't).
+	typ := "invalid_request_error"
+	switch {
+	case code == http.StatusTooManyRequests:
+		typ = "rate_limit_error"
+	case code >= 500:
+		typ = "api_error"
+	}
+	writeJSON(w, code, map[string]any{"error": map[string]any{"message": msg, "type": typ}})
+}
+
+// writeServerErr reports a generation or encode failure as a 500 with type "api_error" (distinct from a bad request's
+// 4xx "invalid_request_error"), before any body is written, on the non-streaming paths.
+func writeServerErr(w http.ResponseWriter, msg string) {
+	writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"message": msg, "type": "api_error"}})
+}
+
+// --- request helpers ---
+
+func deref[T any](p *T, def T) T {
+	if p != nil {
+		return *p
+	}
+	return def
+}
+
+// parseStop reads OpenAI's "stop" (a string or array of strings).
+func parseStop(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var one string
+	if json.Unmarshal(raw, &one) == nil {
+		if one == "" {
+			return nil
+		}
+		return []string{one}
+	}
+	var many []string
+	_ = json.Unmarshal(raw, &many)
+	return many
+}
+
+// singlePromptString accepts the /v1/completions prompt shapes goinfer supports: a
+// string, or a single-element []string. A multi-element batch, a []int / [][]int
+// token-id prompt, or anything else is a 400 rather than silently decoding to "" (a
+// BOS-only generation returned as an unrelated 200).
+func singlePromptString(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 {
+		return "", nil
+	}
+	var one string
+	if json.Unmarshal(raw, &one) == nil {
+		return one, nil
+	}
+	var many []string
+	if json.Unmarshal(raw, &many) == nil {
+		if len(many) == 1 {
+			return many[0], nil
+		}
+		return "", fmt.Errorf("prompt: batch prompts are not supported (%d entries); send a single string", len(many))
+	}
+	return "", fmt.Errorf("prompt: unsupported shape — send a string; token-id arrays and batches are not supported")
+}
+
+// firstStop returns the byte index of the earliest stop string in text (and the
+// string itself, and true), so the caller can truncate there — OpenAI omits the
+// stop sequence, and the Anthropic endpoint reports which one was hit.
+func firstStop(text string, stops []string) (int, string, bool) {
+	cut, which := -1, ""
+	for _, st := range stops {
+		if st == "" {
+			continue
+		}
+		if i := strings.Index(text, st); i >= 0 && (cut < 0 || i < cut) {
+			cut, which = i, st
+		}
+	}
+	if cut < 0 {
+		return 0, "", false
+	}
+	return cut, which, true
+}
+
+// stopTailHold returns the length of the longest suffix of text that is a proper (non-empty, shorter-than-whole)
+// prefix of some stop string: bytes the streamer must hold back, because the next token could extend them into a full
+// stop sequence, which must be removed entirely (prefix included). Without this, a stop of "END" arriving as "E"+"ND"
+// leaks the "E" before the stop is recognized. A full match is a real stop, handled by firstStop, not here.
+func stopTailHold(text string, stops []string) int {
+	hold := 0
+	for _, st := range stops {
+		k := min(
+			// proper prefixes st[:k], 1 <= k < len(st)
+			len(st)-1, len(text))
+		for ; k > hold; k-- {
+			if strings.HasSuffix(text, st[:k]) {
+				hold = k
+				break
+			}
+		}
+	}
+	return hold
+}
+
+// completeUTF8 returns the length of the longest prefix of s ending on a rune
+// boundary, holding back a trailing incomplete multi-byte sequence (a
+// byte-fallback token can split a rune).
+func completeUTF8(s string) int {
+	end := 0
+	for i := 0; i < len(s); {
+		if !utf8.FullRuneInString(s[i:]) {
+			break // incomplete trailing sequence — hold back
+		}
+		_, size := utf8.DecodeRuneInString(s[i:])
+		i += size
+		end = i
+	}
+	return end
+}
+
+// reqID returns an opaque, unguessable id for a response, message or tool call. It is not a counter: sequential ids
+// (even seeded from UnixNano) let a client holding its own `resp_<hex>` walk +-1 onto other clients' ids, and
+// `previous_response_id` continues a stored conversation, so with `-addr 0.0.0.0` and one shared API key a guessed id
+// reads back someone else's turns. crypto/rand, not math/rand, because guessability is the whole property; 16 bytes
+// because these ids go in URLs and logs, and 128 bits is beyond enumeration.
+func reqID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand does not fail on any supported platform; if it somehow does, a panic is
+		// correct — silently falling back to a predictable id restores the defect this exists
+		// to close, and would do so invisibly.
+		panic("serveapp: crypto/rand unavailable: " + err.Error())
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// humanBytes formats a byte count as MiB/GiB for the startup line (whole MiB is exact here —
+// every cap is a multiple of a MiB or a small model-derived product).
+func humanBytes(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GiB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KiB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
+}

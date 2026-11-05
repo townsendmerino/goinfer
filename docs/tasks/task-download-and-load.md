@@ -137,7 +137,7 @@ An empty registry fails rather than passes, so the suite cannot go green having 
   one call site.
 - **No fit-aware recommendation — no longer blocked on `plan` not existing, but still not wired
   up (corrected 2026-09-13).** `task-fit-to-hardware.md`'s Phase 1 `plan()` core and
-  `goinfer-chat fit` dry run landed 2026-09-09 (`decoder/fitplan.go` + `internal/fitcmd`), so the
+  `goinfer-chat fit` dry run landed 2026-09-09 (`decoder/fitplan.go` + `internal/app/fitcmd`), so the
   function this doc was waiting on now exists. But nothing in `pull/` calls it: `models`/`pull`
   still list the registry's static `Needs` string rather than asking `plan()` what fits *this*
   machine. The genuinely useful version — "on *this* machine, run *this* checkpoint" — is still a

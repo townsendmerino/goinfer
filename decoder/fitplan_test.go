@@ -124,7 +124,8 @@ func TestPlan_tableDriven(t *testing.T) {
 		kv := m.ResidentKVBytes("cuda", ctxWant, m.kvF16, false) // what Plan prices for CUDA's paged KV (whole blocks, null blocks, tables)
 		// Room for dense + KV + a bit more than topK experts, but not every expert.
 		budget := dense + kv + perExpert*int64(topK+1)
-		p := m.Plan("cuda", budget, PlanRequest{Ctx: ctxWant})
+		// Pinned: with the context free to shrink, resident-first placement (internal/runtime/mem/placement.go:SolvePlacement) fits this fixture's experts, under a KV block, in a block or four of context.
+		p := m.Plan("cuda", budget, PlanRequest{Ctx: ctxWant, CtxPinned: true})
 		if p.Placement != PlacementExpertCached {
 			t.Fatalf("Placement = %v, want expert-cached: %s", p.Placement, p.Reason)
 		}
@@ -141,7 +142,7 @@ func TestPlan_tableDriven(t *testing.T) {
 		dense := m.ResidentDenseWeightBytes()
 		kv := m.kvBytesPerPositionAllLayers(false, false) * ctxWant
 		// Room for dense + KV and essentially nothing else — not even one expert's worth.
-		p := m.Plan("cuda", dense+kv+1, PlanRequest{Ctx: ctxWant})
+		p := m.Plan("cuda", dense+kv+1, PlanRequest{Ctx: ctxWant, CtxPinned: true})
 		if p.Placement != PlacementDecline {
 			t.Fatalf("Placement = %v, want decline (not even top-k slots fit): %s", p.Placement, p.Reason)
 		}
@@ -256,13 +257,13 @@ func TestPlan_extraBytesReservedAheadOfExperts(t *testing.T) {
 	kv := m.ResidentKVBytes("cuda", 8192, m.kvF16, false) // what Plan prices for CUDA's paged KV (whole blocks, null blocks, tables)
 	budget := dense + kv + perExpert*int64(nExperts)      // enough for EVERY expert with nothing else
 
-	without := m.Plan("cuda", budget, PlanRequest{Ctx: 8192})
+	without := m.Plan("cuda", budget, PlanRequest{Ctx: 8192, CtxPinned: true})
 	if without.Placement != PlacementResident {
 		t.Fatalf("without ExtraBytes: Placement = %v, want resident (every expert fits with room to spare)", without.Placement)
 	}
 
 	// Now reserve a "drafter" that eats exactly the room the last expert needed.
-	withExtra := m.Plan("cuda", budget, PlanRequest{Ctx: 8192, ExtraBytes: perExpert})
+	withExtra := m.Plan("cuda", budget, PlanRequest{Ctx: 8192, CtxPinned: true, ExtraBytes: perExpert})
 	if withExtra.Placement == PlacementResident {
 		t.Fatalf("with ExtraBytes=%d reserved: Placement = %v, want NOT resident — the extra term must "+
 			"be priced ahead of the elastic expert slots, not ignored", perExpert, withExtra.Placement)

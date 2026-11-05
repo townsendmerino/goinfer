@@ -205,7 +205,7 @@ func (r gpuRecord) changedSince(head string, treeOf func(rev, dir string) (strin
 			return "", fmt.Errorf("could not compare %s/ (%v %v)", d, err1, err2)
 		}
 		if then != now {
-			return labelPath(d), nil
+			return d, nil
 		}
 	}
 	return "", nil
@@ -241,12 +241,13 @@ func (r parityRecord) changedSince(head string, paths []string, objOf func(rev, 
 			return "", fmt.Errorf("could not compare %s (%v %v)", p, err1, err2)
 		}
 		if then != now {
+			c := canonicalPath(p)
 			for _, d := range parityQualifyingTrees {
-				if p == d || p == labelPath(d) {
-					return labelPath(p) + "/", nil
+				if c == d {
+					return c + "/", nil
 				}
 			}
-			return labelPath(p), nil
+			return c, nil
 		}
 	}
 	return "", nil
@@ -261,8 +262,60 @@ var parityQualifyingTrees = []string{"decoder", "backend/cuda", "backend/metal",
 
 // backendMoveMap is the layout Tier 2, PR 1 move: each GPU backend directory's path after the move (key) and before it
 // (value). A commit from before the move names the old path, so git reports the new one as absent there; treeAt and
-// objectAt then read the old name once. Labels printed in reports keep the old names (labelPath), so a golden written
-// before the move replays byte for byte. This is the only pre-move logic in the grader.
+// objectAt then read the old name once. A record written before the move names the old path, so canonicalPath maps it
+// to the current name before the grader prints or compares it.
+// internalMoveMap is the layout Tier 2, PR 2 regroup: each internal/ package's path after the move (key) and before it
+// (value). GENERATED from scripts/layout/tier2-2.sh (its MAPPING dict); regenerate from that dict, do not hand-edit.
+var internalMoveMap = map[string]string{
+	"internal/runtime/adapter":    "internal/adapter",
+	"internal/app/chatapp":        "internal/chatapp",
+	"internal/app/cliutil":        "internal/cliutil",
+	"internal/app/connect":        "internal/connect",
+	"internal/app/decidecmd":      "internal/decidecmd",
+	"internal/runtime/diskfree":   "internal/diskfree",
+	"internal/runtime/f16":        "internal/f16",
+	"internal/app/fitcmd":         "internal/fitcmd",
+	"internal/runtime/giw":        "internal/giw",
+	"internal/diag/hwcensus":      "internal/hwcensus",
+	"internal/diag/hwreport":      "internal/hwreport",
+	"internal/runtime/hybridattn": "internal/hybridattn",
+	"internal/app/inproc":         "internal/inproc",
+	"internal/diag/kernelprint":   "internal/kernelprint",
+	"internal/runtime/kvmgr":      "internal/kvmgr",
+	"internal/app/loadflags":      "internal/loadflags",
+	"internal/runtime/mamba2":     "internal/mamba2",
+	"internal/runtime/mem":        "internal/mem",
+	"internal/guard/memgate":      "internal/memgate",
+	"internal/runtime/modelload":  "internal/modelload",
+	"internal/guard/movedpaths":   "internal/movedpaths",
+	"internal/guard/paritykey":    "internal/paritykey",
+	"internal/runtime/prequant":   "internal/prequant",
+	"internal/guard/prezerolint":  "internal/prezerolint",
+	"internal/runtime/program":    "internal/program",
+	"internal/app/pullcmd":        "internal/pullcmd",
+	"internal/runtime/sampling":   "internal/sampling",
+	"internal/diag/sb2census":     "internal/sb2census",
+	"internal/runtime/scheduler":  "internal/scheduler",
+	"internal/app/serveapp":       "internal/serveapp",
+	"internal/guard/servecheck":   "internal/servecheck",
+	"internal/guard/swapguard":    "internal/swapguard",
+	"internal/diag/towerid":       "internal/towerid",
+	"internal/runtime/whisper":    "internal/whisper",
+}
+
+// allMoveMap is backendMoveMap and internalMoveMap together: the moves preMovePath reads through.
+var allMoveMap = mergeMoveMaps(backendMoveMap, internalMoveMap)
+
+func mergeMoveMaps(maps ...map[string]string) map[string]string {
+	out := map[string]string{}
+	for _, m := range maps {
+		for k, v := range m {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 var backendMoveMap = map[string]string{
 	"backend/cuda":   "cuda",
 	"backend/metal":  "metal",
@@ -271,7 +324,7 @@ var backendMoveMap = map[string]string{
 
 // preMovePath returns p with its moved backend prefix replaced by the pre-move one, and whether p had such a prefix.
 func preMovePath(p string) (string, bool) {
-	for nw, old := range backendMoveMap {
+	for nw, old := range allMoveMap {
 		if p == nw {
 			return old, true
 		}
@@ -282,15 +335,18 @@ func preMovePath(p string) (string, bool) {
 	return p, false
 }
 
-// labelPath is the name a report prints for p: the pre-move name of a moved backend path, else p itself. A leading "./" is
-// kept.
-func labelPath(p string) string {
-	q := strings.TrimPrefix(p, "./")
-	old, _ := preMovePath(q)
-	if q != p {
-		return "./" + old
+// canonicalPath is the current name of p: a pre-move backend path (a record's "cuda/", "metal/", "gpu/") maps to its
+// backend/ name; anything else is p itself.
+func canonicalPath(p string) string {
+	for nw, old := range backendMoveMap {
+		if p == old {
+			return nw
+		}
+		if strings.HasPrefix(p, old+"/") {
+			return nw + p[len(old):]
+		}
 	}
-	return old
+	return p
 }
 
 // absentFromRev reports whether err is git saying a path is not in a revision: `git rev-parse rev:path` says "does not

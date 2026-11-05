@@ -67,7 +67,7 @@ a **per-token dequant-on-the-fly** cost. That's a lot of permanent surface for
 "skip the prequant step."
 
 **D — transparent `.giw` cache (the floor; build this, no aikit change). ✅ SHIPPED
-(2026-06-13).** `internal/prequant.EnsureCachedGIW` + serve wiring: `--stream-weights`
+(2026-06-13).** `internal/runtime/prequant.EnsureCachedGIW` + serve wiring: `--stream-weights`
 on a `.gguf` transcodes once to a sidecar `<model>.<quant>.giw`, reuses it after, and
 rebuilds it if the `.gguf` changes (mtime). No aikit change, no per-token cost. On
 `--stream-weights` against a `.gguf` with no cached `.giw`, transcode once (the

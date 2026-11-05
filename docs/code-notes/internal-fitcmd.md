@@ -1,13 +1,13 @@
-# internal/fitcmd: notes moved out of code comments
+# internal/app/fitcmd: notes moved out of code comments
 
-History, measurements and open work that used to sit in the comments of `internal/fitcmd`, moved here verbatim by the comment diet
-(`docs/tasks/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
+History, measurements and open work that used to sit in the comments of `internal/app/fitcmd`, moved here verbatim by the comment diet
+(`docs/completed/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
 its guardrails, and points here by heading. This file is off the read path: open it when a pointer sends you. Text is unedited,
 except that a `file.go:NNN` reference inside it names the declaration instead (the line numbers had already gone stale).
 
 ## TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn
 
-Moved from `internal/fitcmd/defaultctx_test.go` (the comment above `TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn`) on 2026-10-09.
+Moved from `internal/app/fitcmd/defaultctx_test.go` (the comment above `TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn`) on 2026-10-09.
 
 ```text
 The dry run and the real load must agree on the default context: backend/cuda/resident.go's fitDefaultCtx says goinfer-chat fit's -ctx default is "the same
@@ -18,7 +18,7 @@ It must also hold a coding agent's first request: opencode's was 11,137 tokens.
 
 ## TestFreeBytesFor_cpuUsesThePassedInValue
 
-Moved from `internal/fitcmd/fit_test.go` (the comment above `TestFreeBytesFor_cpuUsesThePassedInValue`) on 2026-10-09.
+Moved from `internal/app/fitcmd/fit_test.go` (the comment above `TestFreeBytesFor_cpuUsesThePassedInValue`) on 2026-10-09.
 
 ```text
 TestFreeBytesFor_cpuUsesThePassedInValue is the M-19 gate (docs/audit-2026-09-10.md):
@@ -30,7 +30,7 @@ HostRAMAvailableBytes()-returns-0-means-unknown convention.
 
 ## TestRun_measureRateExcludesPrefill
 
-Moved from `internal/fitcmd/fit_test.go` (the comment above `TestRun_measureRateExcludesPrefill`) on 2026-10-09.
+Moved from `internal/app/fitcmd/fit_test.go` (the comment above `TestRun_measureRateExcludesPrefill`) on 2026-10-09.
 
 ```text
 TestRun_measureRateExcludesPrefill is M-20's behavioral half (docs/audit-2026-09-10.md):
@@ -44,7 +44,7 @@ probeDecode — proving the first step was excluded from the denominator, not ju
 
 ## TestRun_closesFirstLoadBeforeMeasuring
 
-Moved from `internal/fitcmd/fit_test.go` (the comment above `TestRun_closesFirstLoadBeforeMeasuring`) on 2026-10-09.
+Moved from `internal/app/fitcmd/fit_test.go` (the comment above `TestRun_closesFirstLoadBeforeMeasuring`) on 2026-10-09.
 
 ```text
 TestRun_closesFirstLoadBeforeMeasuring is M-20's other half: selfMeasure loads the SAME
@@ -53,14 +53,14 @@ open the whole time means two full quantized copies resident simultaneously on t
 which can itself trip the memory guard the probe exists to measure honestly. The interruption
 that matters (a real large checkpoint tripping the guard) can't be reproduced with this repo's
 tiny fixtures, so this is asserted structurally instead, the same technique
-TestTranscode_writesViaTempThenRenames (internal/prequant) uses for an analogous ordering
+TestTranscode_writesViaTempThenRenames (internal/runtime/prequant) uses for an analogous ordering
 property: parse Run's AST and confirm the statement calling m.Close() appears BEFORE the `if
 *measure` block that calls selfMeasure, not after.
 ```
 
 ## TestFreshSidecar_findsTheOneChatAndServeBuild
 
-Moved from `internal/fitcmd/fit_test.go` (the comment above `TestFreshSidecar_findsTheOneChatAndServeBuild`) on 2026-10-09.
+Moved from `internal/app/fitcmd/fit_test.go` (the comment above `TestFreshSidecar_findsTheOneChatAndServeBuild`) on 2026-10-09.
 
 ```text
 TestFreshSidecar_findsTheOneChatAndServeBuild: a default chat or serve load (--backend cpu) writes this
@@ -71,7 +71,7 @@ target, so it never found that sidecar and did a full direct load of the .gguf i
 
 ## testFreshSidecar
 
-Moved from `internal/fitcmd/fit_test.go` (the comment above `testFreshSidecar`) on 2026-10-09.
+Moved from `internal/app/fitcmd/fit_test.go` (the comment above `testFreshSidecar`) on 2026-10-09.
 
 ```text
 testFreshSidecar builds the sidecar a load with the given --embed-int4 writes, and freshSidecar must find it. With

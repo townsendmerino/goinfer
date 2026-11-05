@@ -1,4 +1,4 @@
-# internal/kernelprint: design notes
+# internal/diag/kernelprint: design notes
 
 The package's contract is in its `doc.go`. This file holds the design: why it has this shape, what it does not cover, and
 where its evidence lives. Plan: `docs/tasks/task-subsystems-2026-10.md` §5.4 (VK1) and §5.8 (VK5, which mixes the
@@ -22,7 +22,7 @@ that leaves every fingerprint alone then carries every validation over.
   goinfer's calling conventions where they matter: `AttendTileFused` gets `MatmulBT` as its matmul, Workspaces get
   goinfer's two decode thresholds (`DefaultDecodeParallelThreshold`, `int4ParThreshold`) beside aikit's default and an
   always-parallel one, the weight and the Workspace carry the same activation group, `SoftmaxRowContractInto` also runs
-  in place (as `internal/whisper` calls it), and the .giw reader's `WrapInt4Row4OnlyF16` is also called where it declines.
+  in place (as `internal/runtime/whisper` calls it), and the .giw reader's `WrapInt4Row4OnlyF16` is also called where it declines.
 - **Inputs are architecture-independent bits.** They come from splitmix64 and exact float32 arithmetic only (sums, and
   products by powers of two inside explicit conversions), because the Go spec lets the compiler fuse `a*b+c` into an FMA,
   which gc does on arm64 and not on amd64; an explicit conversion rounds and prevents it. A fingerprint difference

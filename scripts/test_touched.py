@@ -72,7 +72,7 @@ class PlanSelectsTheScanTests(unittest.TestCase):
         self.assertIn(("decoder", "TestGGUFConfig_everyArchitectureReadsMaxPositions"), selected(["decoder/gguf.go"]))
 
     def test_a_scanner_in_an_untouched_package_runs(self):
-        self.assertIn(("internal/cliutil", "TestLdflagsTargetsExist"), selected(["internal/serveapp/openai.go"]))
+        self.assertIn(("internal/app/cliutil", "TestLdflagsTargetsExist"), selected(["internal/app/serveapp/openai.go"]))
 
     def test_a_kernel_source_change_selects_its_readers_with_no_go_file_changed(self):
         got = selected(["backend/cuda/moe.cu"])
@@ -90,8 +90,8 @@ class PlanSelectsTheScanTests(unittest.TestCase):
 
     def test_a_ci_workflow_change_selects_its_readers(self):
         got = selected([".github/workflows/ci.yml"])
-        for t in [("internal/sampling", "TestSweepCoverage_fullSweepRunsSomewhere"), ("multimodal", "TestRaceSubset_runsInFullSomewhere"),
-                  ("internal/kvmgr", "TestOracle_runsInFullSomewhere"), ("chat", "TestReleasing_standaloneBuildGateExists")]:
+        for t in [("internal/runtime/sampling", "TestSweepCoverage_fullSweepRunsSomewhere"), ("multimodal", "TestRaceSubset_runsInFullSomewhere"),
+                  ("internal/runtime/kvmgr", "TestOracle_runsInFullSomewhere"), ("chat", "TestReleasing_standaloneBuildGateExists")]:
             self.assertIn(t, got)
 
     def test_an_unscanned_change_selects_nothing_extra(self):
@@ -107,6 +107,7 @@ READS = re.compile(r'parser\.Parse(File|Dir)\(|"\*\.go"|"\*\.cu"|\.go"\)|\.cu"\)
 # go.mod or fixtures.
 NOT_SOURCE_READERS = {
     "TestCompare_classes": "sides built by hand; the paths it names are strings, and it reads no file",
+    "TestGitSource_preMoveRevisionReadsTheInternalRegroup": "a synthetic repo in a temp dir (a pre-move and a post-move commit)",
     "TestCommentsOnly_gitCommitGreenAndRed": "a synthetic repo in a temp dir",
     "TestCommentsOnly_worktreeMode": "a synthetic repo in a temp dir",
     "TestIdentityDumperTemplate_isGoAndHasItsMarkers": "parses the embedded dumper template",

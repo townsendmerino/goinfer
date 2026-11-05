@@ -67,11 +67,11 @@
 | **R-01** | the whole conversation, every turn, on every recurrent family, resident path | `decoder/resident_reuse.go:Model.reuseLenOf` refuses `hasRecurrentState()` outright | a full prefill per agent turn (8.85 s at 2.3k tokens on the 7B dense; the 35B-A3B is the model this hits) | phase 0: exact-extension reuse, no snapshot; phase 1: the narrow snapshot via `CopyDeviceBatch`; phase 2: parked checkpoints | **phase 0 fixed 2026-09-03** (exact-extension reuse; CUDA-hardware scenarios unrun); **phase 1 CLOSED 2026-09-23** (spec/09's own measurement, 11.0% of a decode step, killed 2026-08-28 — this doc missed it until now); phase 2 open; L-05 |
 | **R-02** | the prefix, after a cancelled generation | `decoder/model.go` `generateInto`'s `select` on `ctx.Done` returns without committing | the next turn cold-prefills after every interrupt | commit `prompt+generated` at that exit — the cache is consistent there | **fixed 2026-09-03** |
 | **R-03** | the prefix, after any speculative generation | `decoder/spec_eagle.go`, `decoder/spec_ngram.go` forget; R-00's two never clear | a `--drafter`/`--spec` agent loop gets no prefix reuse at all | commit the accepted sequence for attention-only families; forget (or restore, R-01 phase 1) for recurrent ones | **`spec_ngram.go` fixed 2026-09-03**; `spec_eagle.go` never touches resident state — the fix doesn't apply there (see below) |
-| **R-04** | the prefix, when a second conversation interleaves, or a stop string fires | QUEUE §A "single-conversation"; P-18 / L-15 (`internal/serveapp/sessions.go` whole-containment) | a cold prefill per switch; ~8.9 s vs 43 ms to park 257 MiB | park per-conversation KV (+ state, phase 2) in host RAM; ask `rewindForReuse` for the partial prefix | **L-15/P-18 half FIXED 2026-09-23** (`bestExtend` now picks longest-common-prefix, not whole containment, guarded against hijacking a session that merely shares another's system-prompt preamble); the resident-GPU parking half (R-01 phase 2) stays open, pre-registered decision rule below |
+| **R-04** | the prefix, when a second conversation interleaves, or a stop string fires | QUEUE §A "single-conversation"; P-18 / L-15 (`internal/app/serveapp/sessions.go` whole-containment) | a cold prefill per switch; ~8.9 s vs 43 ms to park 257 MiB | park per-conversation KV (+ state, phase 2) in host RAM; ask `rewindForReuse` for the partial prefix | **L-15/P-18 half FIXED 2026-09-23** (`bestExtend` now picks longest-common-prefix, not whole containment, guarded against hijacking a session that merely shares another's system-prompt preamble); the resident-GPU parking half (R-01 phase 2) stays open, pre-registered decision rule below |
 | **R-05** | the int4 nibble unpack, per token, per paged expert | `decoder/moepaging.go:newExpertPager` — a paged tensor is never repacked; the canonical kernel runs every use | row4 vs canonical is 1.33× on the M=1 GEMV; MoE is ~70% of a CPU-paged 35B token | repack into the slot on fetch (the owned-buffer fetch already copies) | **investigated 2026-09-03, not implemented**: the described mechanism belongs to the Metal pager, not this one; the CPU-paged equivalent (`.giw` kind-4 row4) already SHIPPED and its own performance case is UNRESOLVED per this repo's own measurement saga (swung between −49% and +49% across sessions) — see below |
 | **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/program_cpu.go:projQKVToken` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | **wired and measured 2026-09-03/04, PARKED (default-off)**: aikit `MatmulBTW4A8Batch` shipped at v1.34.0; goinfer wired it behind `GOINFER_W4A8_BATCH` (default off) in q/k/v (`attention.go`) and gate/up (`mlp.go`); reproduced on two independent architectures via `bench_peer.py` (n=10 paired, idle-gated) — arm64/Metal 1.071× (stdev 0.009), amd64/CPU 1.066× (stdev 0.0008) — both squarely inside the pre-registered ambiguous zone between the 1.05× park / 1.15× ship thresholds, so it stays off by default per this repo's own "ambiguous → parked" rule. **Follow-up 2026-09-20** (red-october.md R9 step 1's own finding that MLP's token share grows with model size raised the question of whether this does better at 7B): it does not — OFF 58.98 ms/token (stdev 2.10), ON 59.0 (stdev 1.60), a difference an order of magnitude below either arm's own noise — an even cleaner null than the 1.5B result, not a size-dependent win, consistent with the remedy amortizing a roughly fixed per-barrier cost that matters proportionally *less* as the matmuls it's amortized against get bigger. See `docs/measurements/w4a8-batch-7b-2026-09-20.md`. Stays parked. **Superseded 2026-09-27:** `w4a8BatchDefault` is now on for non-arm64 (`decoder/cpu_tuning_other.go`), off on arm64 (`cpu_tuning_arm64.go`); this row's PARKED text is the 09-20 state. Remaining repeats (fused gate+up, MoE, own-forward families, `forwardN`) are R-13 in §5. |
-| **R-07** | one forward per token on the embeddings route; every input tokenised twice | P-17's second half (`decoder/embed.go`, `internal/serveapp/embeddings.go`) | "sequential prefill", ~9× slower than batched | batched prefill through `forwardLayersN`; tokenise once | **fully fixed 2026-09-03**: `decoder/embed.go`'s per-token forward (`hiddenLastBatched`, ~12-14× measured) and `embeddings.go`'s double-tokenize (`embedBatchCounter`) are both done |
-| **R-08** | per token: the whole generated text re-decoded and rescanned for stops; a penalty map rebuilt over the whole history; a full vocabulary sort for `top_logprobs` | P-17 (`internal/serveapp/openai.go` `streamTokens` and three copies), P-15, P-13 | O(n²) in output length; ~1–2 ms/token late in a 64k reply; 10–20 ms/token with logprobs on | incremental: keep the decoded tail, keep the counts, keep a top-k | **ALL FOUR COPIES FIXED.** Serving hot path 2026-09-03 (P-13, P-15, `openai.go` `streamTokens`); `chatapp`/the demo agent 2026-09-11 (`c0ab6ed3`, found already done this pass — this row's own prior text was stale, see below); `gemmaapp` 2026-09-23 (this pass, its own design needed to preserve the leading-space-strip semantic incrementally, as anticipated) |
+| **R-07** | one forward per token on the embeddings route; every input tokenised twice | P-17's second half (`decoder/embed.go`, `internal/app/serveapp/embeddings.go`) | "sequential prefill", ~9× slower than batched | batched prefill through `forwardLayersN`; tokenise once | **fully fixed 2026-09-03**: `decoder/embed.go`'s per-token forward (`hiddenLastBatched`, ~12-14× measured) and `embeddings.go`'s double-tokenize (`embedBatchCounter`) are both done |
+| **R-08** | per token: the whole generated text re-decoded and rescanned for stops; a penalty map rebuilt over the whole history; a full vocabulary sort for `top_logprobs` | P-17 (`internal/app/serveapp/openai.go` `streamTokens` and three copies), P-15, P-13 | O(n²) in output length; ~1–2 ms/token late in a 64k reply; 10–20 ms/token with logprobs on | incremental: keep the decoded tail, keep the counts, keep a top-k | **ALL FOUR COPIES FIXED.** Serving hot path 2026-09-03 (P-13, P-15, `openai.go` `streamTokens`); `chatapp`/the demo agent 2026-09-11 (`c0ab6ed3`, found already done this pass — this row's own prior text was stale, see below); `gemmaapp` 2026-09-23 (this pass, its own design needed to preserve the leading-space-strip semantic incrementally, as anticipated) |
 | **R-09** | the whole `.giw` CRC on every start | P-10 | a full read of a >RAM bundle before the first token | per-layer CRCs | filed, not implemented (disposition 2026-09-03) |
 | **R-10** | every KV head's history re-gathered and transposed per layer per token (Gemma-4 CPU) | P-09 | 2–3× attention traffic at long context | store V transposed at append | filed, contingent |
 | **R-11–R-25** | the same work done twice on one buffer within a call or step: double zeroing, repeated activation quantization, discarded LM heads, redundant host round-trips | §5 (2026-10-05 sweep), all four backends and aikit | per item in §5 | per item in §5; R-11 (aikit output contracts and `NewBufferLen` mismatch) first | **filed 2026-10-05**, unmeasured |
@@ -96,7 +96,7 @@ positions are inherent, not recompute.
 - **Mechanism:** `resIDs` is written only by `residentCommitIDs` at the end of a completed plain
   generation (`decoder/model.go:Model.generateInto`) and read by `residentReuseLen` (through `residentAcquire` since MC1) at the start of the next
   (`decoder/model.go:Model.generateInto`). `serve` routes a greedy request to `BlockSpec.GenerateStream` and a
-  sampled one to `Model.Generate` on the **same** `*Model` (`internal/serveapp/openai.go`, the
+  sampled one to `Model.Generate` on the **same** `*Model` (`internal/app/serveapp/openai.go`, the
   `--drafter` branch). So: plain turn A commits A's ids → greedy turn B prefills B over the same
   positional rows → sampled turn C whose prompt extends A matches A's ids and skips the prefix,
   attending over B's K/V. No error anywhere — exactly the failure `resident_reuse.go`'s header calls
@@ -387,7 +387,7 @@ positions are inherent, not recompute.
 
 - **Where:** QUEUE §A "Resident prefix reuse is single-conversation" (the parked-KV fix: ~257 MiB
   and ~43 ms for a 2.3k-token conversation, against ~8.9 s to recompute); P-18
-  (`internal/serveapp/sessions.go` whole-containment rule; `decoder/session.go` can reuse a partial
+  (`internal/app/serveapp/sessions.go` whole-containment rule; `decoder/session.go` can reuse a partial
   prefix but is never asked; the stop-string tokens the client never sees are committed); L-15.
 - **Fix shape:** per-conversation parking in host RAM (KV now; recurrent state with R-01 phase 2),
   and longest-common-prefix selection instead of whole containment. The shared Claude Code system
@@ -412,7 +412,7 @@ positions are inherent, not recompute.
   prefill," which is the correct, cheap floor to have in place before spending any design effort
   on parking resident device state at all — Phase 2 only has a case to make once that floor
   exists, because it has to beat *that* baseline, not a cold prefill.
-- **L-15/P-18 half FIXED 2026-09-23.** `bestExtend` (`internal/serveapp/sessions.go`) now scores
+- **L-15/P-18 half FIXED 2026-09-23.** `bestExtend` (`internal/app/serveapp/sessions.go`) now scores
   every candidate by `commonPrefix(toks, prompt)` and picks the largest, but only when it beats
   the floor that same candidate shares with every OTHER known session (computed the same way,
   pairwise, inside the same pool) — a session that's nothing but the shared system-prompt preamble
@@ -422,7 +422,7 @@ positions are inherent, not recompute.
   the new part is that a session whose STORED tokens are no longer fully contained in the prompt —
   a stop-string hit's invisible tail, a `max_tokens` cut, or an edited last message — now still
   gets picked and handed to `decoder/session.go`'s `rewindForReuse`, which was already correct and
-  needed no change (confirmed by tracing `internal/serveapp/openai.go:loadedModel.drive`'s
+  needed no change (confirmed by tracing `internal/app/serveapp/openai.go:loadedModel.drive`'s
   `sess := lm.sessions.acquire(gr.promptIDs)` into the very next `sess.Generate(ctx, gr.promptIDs,
   ...)` call: same prompt both times, so `Generate`'s own `rewindForReuse` independently recomputes
   the true common prefix regardless of what `bestExtend` matched — `bestExtend` only decides WHICH
@@ -431,7 +431,7 @@ positions are inherent, not recompute.
   bug; `TestBestExtend_editedLastMessageReuse` added for P-18's other named case. `faultBack`'s
   cold-tier candidates get the same treatment for free (same `bestExtend`), though its floor is
   computed only within the cold pool, not against currently-resident sessions — a real but minor
-  gap, not fixed here. Full `internal/serveapp` suite green (223 tests), `gofmt`/`go vet` clean,
+  gap, not fixed here. Full `internal/app/serveapp` suite green (223 tests), `gofmt`/`go vet` clean,
   `staticcheck` (pinned 0.8.0) clean and confirmed live against a throwaway U1000 case.
 
 ### R-05 · Paged experts are unpacked on every use
@@ -555,15 +555,15 @@ positions are inherent, not recompute.
 ### R-07 · The embeddings route prefills one token at a time
 
 - **Where:** P-17's second half — `decoder/embed.go` runs one forward per token ("the sequential
-  prefill the flags call ~9× slower"); `internal/serveapp/embeddings.go` tokenises each input twice.
+  prefill the flags call ~9× slower"); `internal/app/serveapp/embeddings.go` tokenises each input twice.
 - **Fix:** `forwardLayersN` over the whole input; tokenise once.
 - **Status (2026-09-03): both halves FIXED.** `HiddenLast` now dispatches to `hiddenLastBatched`
   (one `runLayersFromEmbedN` call, `canBatchN`-gated, falling back to the original per-token
   `hiddenLastSequential` for `K==1` and the families that path excludes) — measured ~12-14× at
   K=64 on a real Qwen3-0.6B checkpoint, cosine 1.0000000000 against the old per-token path across
   four sequence lengths.
-  `internal/serveapp/embeddings.go`'s double-tokenize traced to `decoderEmbedder.encodeLocked`
-  (`internal/serveapp/decoder_embedder.go`): it tokenizes to get `ids`, uses them for the forward,
+  `internal/app/serveapp/embeddings.go`'s double-tokenize traced to `decoderEmbedder.encodeLocked`
+  (`internal/app/serveapp/decoder_embedder.go`): it tokenizes to get `ids`, uses them for the forward,
   and discards them; `CountTokens` then re-tokenized the SAME text from scratch purely to report
   `usage.prompt_tokens`. Fixed with a new optional capability, `embedBatchCounter`
   (`EncodeBatchCounted`, mirroring the existing `embedTokenCounter` pattern), that the
@@ -578,12 +578,12 @@ positions are inherent, not recompute.
   vectors bit-identical to `EncodeBatch`, counts identical to `CountTokens`) and
   `TestHandleEmbeddings_prefersEncodeBatchCounted` (portable: a counting fake proves the handler
   actually dispatches to the byproduct path and never calls the two-pass fallback). Both
-  mutation-checked. Full `internal/serveapp` suite green (133 pass / 0 fail / 27 skip).
+  mutation-checked. Full `internal/app/serveapp` suite green (133 pass / 0 fail / 27 skip).
 
 ### R-08 · Three O(n²)-per-token loops in serving
 
 - P-17: `streamTokens` re-decodes the whole generated sequence and rescans it for stop strings on
-  every token (`internal/serveapp/openai.go`, and the same pattern in `chatapp`, `gemmaapp`, the
+  every token (`internal/app/serveapp/openai.go`, and the same pattern in `chatapp`, `gemmaapp`, the
   demo agent) — decode the new piece (`DecodePiece` exists) and scan the tail plus `max(len(stop))−1`
   bytes. P-15: presence/frequency penalties rebuild a `map[int]int` over the whole history every
   token — keep the counts. P-13: `computeLogprobs` full-sorts the vocabulary per token whenever
@@ -591,12 +591,12 @@ positions are inherent, not recompute.
 - **Status (2026-09-03): 3 of 3 pieces addressed; the serving hot path (`openai.go`) is fully
   fixed, the three demo CLIs remain open by deliberate scope choice.** P-13's `computeLogprobs`
   now uses `topKByLogit` plus a small deterministic tie-break sort instead of a full vocabulary
-  sort (`internal/sampling/sampler.go`), proven against a full-sort reference on random and tied-logit
+  sort (`internal/runtime/sampling/sampler.go`), proven against a full-sort reference on random and tied-logit
   inputs. P-15's penalty path now keeps an incrementally-maintained `histCounts map[int]int`
-  through a single `recordHistory` chokepoint (`internal/sampling/sampler.go`), rebuilt from scratch only
+  through a single `recordHistory` chokepoint (`internal/runtime/sampling/sampler.go`), rebuilt from scratch only
   when `RepeatLastN>0` forces a windowed count; mutation-checked by bypassing the chokepoint with
   a raw `append` and confirming the new counts test catches the divergence.
-  **P-17's `streamTokens` (`internal/serveapp/openai.go`) is now fixed.** Two independent
+  **P-17's `streamTokens` (`internal/app/serveapp/openai.go`) is now fixed.** Two independent
   quadratic sources, both removed: (1) `DecodeContinuation(ids)` re-decoded the whole generated
   sequence every token — replaced with `DecodePiece(id)` appended to a `strings.Builder`
   incrementally. Safe because `decode()` (`tokenizer/sentencepiece.go`) has no state that depends
@@ -612,7 +612,7 @@ positions are inherent, not recompute.
   complete or in progress, because `stopTailHold`'s own invariant — hold back every suffix of the
   current text that could be a stop's prefix — means `printed` never advances past the start of a
   still-possible match. Checked empirically, not just argued: `TestStreamTokens_windowedScanMatchesFullRescan`
-  (`internal/serveapp/`) runs 300 random token streams (including matches split across token
+  (`internal/app/serveapp/`) runs 300 random token streams (including matches split across token
   boundaries — "EN"+"D" spelling "END" — near-misses, and a 3-token-split match) through both the
   new windowed implementation and a reference that mirrors the exact pre-fix full-rescan
   algorithm, comparing emitted text and stop-hit byte-for-byte. Both new tests mutation-checked
@@ -621,7 +621,7 @@ positions are inherent, not recompute.
   check that streamTokens never calls the leading-space-stripping `Decode`) needed updating to
   look for `DecodePiece` instead of `DecodeContinuation` — `DecodePiece` is equally non-stripping
   by its own documented contract, so the property it protects is unchanged; re-verified by
-  mutation (swapping in `Decode` makes the guard fail again). Full `internal/serveapp` suite green
+  mutation (swapping in `Decode` makes the guard fail again). Full `internal/app/serveapp` suite green
   (134 pass / 0 fail / 27 skip); `gofmt`/`go vet`/`staticcheck` clean.
   **Correction, 2026-09-23: the "NOT touched" claim above was already stale when this doc last
   said so.** `chatapp` and the demo agent (`demo/agent/agent/agent.go`) were fixed 2026-09-11
@@ -687,7 +687,7 @@ listed so the inventory is complete.
 `residentPrefillSeed`), `decoder/session.go`, `decoder/kvcache.go` (`TruncateTo`,
 `hasRecurrentState`, `resetRecurrent`), `decoder/forwardn.go` (`hasRecurrentState`,
 `specRollbackSafe`), `decoder/blockspec.go`, `decoder/speculative.go`, `decoder/moepaging.go`,
-`decoder/attention.go`, `internal/serveapp/openai.go`; `docs/spec/09-mtp-heads.md` (snapshot
+`decoder/attention.go`, `internal/app/serveapp/openai.go`; `docs/spec/09-mtp-heads.md` (snapshot
 pricing, 2026-08-28); `docs/completed/qwen3_5_moe.md` §"Hybrid cache"; `docs/completed/audit-2026-09-02.md` (C-12,
 P-06, P-09, P-10, P-13, P-15, P-17, P-18, L-05, L-15); `docs/QUEUE.md` §A; aikit
 `backend/webgpu/cuda_copy.go`, `backend/webgpu/metal_copy.go` (`CopyDevice`, `CopyDeviceBatch`), aikit
@@ -717,7 +717,7 @@ P-06, P-09, P-10, P-13, P-15, P-17, P-18, L-05, L-15); `docs/QUEUE.md` §A; aiki
 >   245 cases in the default build and 234 under `aikit_nodotprod`, 0 fail, 0 skip**. `MatmulBT`, `MatmulBTInto`, `MatmulBTQ8Fused*`, `PackSignBits*` clear first, as written; `QuantizeGroupInt4Row` is exactly the pad nibble,
 >   for odd `cols`, as written. The encoder backends' contract is proven on the DEVICE path on both Metal and CUDA (`TestEncMetal_outputContract`, `TestEncCUDA_outputContract`; the CUDA one covers both readback paths), each
 >   shown red by skipping the last element of the copy-back.
-> - **The goinfer lint (the fix below): `internal/prezerolint`.** It reads the `Output contract:` lines from the pinned aikit source and fails on a `clear(x)` or zeroing loop within six statements of a call that takes x
+> - **The goinfer lint (the fix below): `internal/guard/prezerolint`.** It reads the `Output contract:` lines from the pinned aikit source and fails on a `clear(x)` or zeroing loop within six statements of a call that takes x
 >   and whose callee has an overwrite or zeroes-internally contract. It fails (not skips) if the pinned aikit has no contract lines. Shown able to fire: a planted dead clear before `linalg.MatmulBTInto` turns it red. **Survey
 >   result: goinfer has 17 non-test `clear()` calls and none is dead work against an aikit writer** (the audit's "checked and necessary" list holds), so the CPU side had nothing to delete. The lint guards the class; it is
 >   name-and-proximity, so it does not follow a buffer through a helper, see a zeroed `make`, or see GPU-side zero uploads.

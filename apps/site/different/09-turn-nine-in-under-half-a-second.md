@@ -54,8 +54,8 @@ sources:
   - "docs/measurements/concurrency-mc1-cuda-2026-09-27.md"
   - "docs/measurements/spec-vs-batching-metal-2026-09-27.md"
   - "docs/server.md"
-  - "internal/serveapp/sessions.go"
-  - "internal/serveapp/banner.go"
+  - "internal/app/serveapp/sessions.go"
+  - "internal/app/serveapp/banner.go"
 ---
 
 ## The problem

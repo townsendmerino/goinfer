@@ -401,17 +401,17 @@ func runReal(t *testing.T, qc *quickConfig, file, overlay string, keep func(*qui
 // The real-tree (1): internal/cliutil's OnOff flag stops being a bool flag.
 func TestQuick_realLeafMutation(t *testing.T) {
 	qc := realTree(t)
-	file := "internal/cliutil/cliutil.go"
+	file := "internal/app/cliutil/cliutil.go"
 	ov := overlayOf(t, qc.Root, file, "func (f *OnOff) IsBoolFlag() bool { return true }", "func (f *OnOff) IsBoolFlag() bool { return false }")
 	keep := func(c *quickCell) bool {
-		return c.Tier == "affected" && strings.HasSuffix(c.Root.Pkg, "internal/cliutil")
+		return c.Tier == "affected" && strings.HasSuffix(c.Root.Pkg, "internal/app/cliutil")
 	}
 	rc, out := runReal(t, qc, file, ov, keep)
 	if rc != 1 {
 		t.Fatalf("rc=%d, want 1:\n%s", rc, out)
 	}
-	if ln := cellLine(t, out, "internal/cliutil"); !strings.Contains(ln, "FAIL") || !strings.Contains(ln, "affected") {
-		t.Fatalf("internal/cliutil must FAIL as affected:\n  %s", ln)
+	if ln := cellLine(t, out, "internal/app/cliutil"); !strings.Contains(ln, "FAIL") || !strings.Contains(ln, "affected") {
+		t.Fatalf("internal/app/cliutil must FAIL as affected:\n  %s", ln)
 	}
 }
 

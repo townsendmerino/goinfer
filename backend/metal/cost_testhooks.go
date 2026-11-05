@@ -11,7 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/goinfer/internal/cost"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // The resident's cost counters (SB11, internal/cost). gpudev's Device counts, always, the dispatches in each command buffer

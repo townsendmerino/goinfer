@@ -1,1 +1,0 @@
-- **The Metal memory guard also refuses a load whose Metal allocation exceeds the GPU's `recommendedMaxWorkingSetSize`**, by name.

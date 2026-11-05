@@ -27,12 +27,12 @@ instead of restating the stale version.
 the cream palette that was the reason for the change** — web UI, **OPEN, filed 2026-09-15**
 
 [`docs/completed/task-web-ui-ambient.md`](completed/task-web-ui-ambient.md) records the restyle as
-**SHIPPED 2026-09-04** (`internal/serveapp/webui/index.html`, commit `032d5cd`) — AmbientCSS,
+**SHIPPED 2026-09-04** (`internal/app/serveapp/webui/index.html`, commit `032d5cd`) — AmbientCSS,
 light surface, bright blue accent, vendored rather than fetched from the jsdelivr CDN (a network
 fetch would break the offline claim), with contrast checked at archival on the two weakest
 elements: the muted mono metadata rows and the inset user message.
 
-That closed record is scoped to `internal/serveapp/webui/index.html` only. A second, separate
+That closed record is scoped to `internal/app/serveapp/webui/index.html` only. A second, separate
 browser chat UI — `demo/agent/cmd/agent-web/index.html` — still carries the original warm cream
 palette the archived task doc gave as its reason to change (`--bg: #faf9f5`, `--user-bg:
 #f0eee6`, `--border: #e3e0d5`, `demo/agent/cmd/agent-web/index.html:11-12`), which still reads as
@@ -54,7 +54,7 @@ framed as internal tooling** — web UI, **OPEN, filed 2026-09-15**
 
 [`docs/tasks/task-fit-to-hardware.md`](tasks/task-fit-to-hardware.md) — status header: "Phase 1 is
 DONE for its `plan()` core and `goinfer-chat fit` dry run" — names the actual function
-(`decoder/fitplan.go`) and the CLI surface (`internal/fitcmd`, `goinfer-chat fit`) that reads a
+(`decoder/fitplan.go`) and the CLI surface (`internal/app/fitcmd`, `goinfer-chat fit`) that reads a
 machine, picks a placement, and can report what it chose before any weights load. Phase 3
 (WebGPU) is also done as of 2026-09-10 per the same status header. The capability is real and
 already exercises the hardware-fit logic end to end; what does not exist is a *user-facing*
@@ -196,7 +196,7 @@ stance on which quants are recommended, which does not exist yet either.
 **U11 · Load time — no instrumentation exists anywhere, confirmed** — benchmarks / UI, **OPEN,
 filed 2026-09-15**
 
-Confirmed by search: no cold/warm model-load timer exists in `internal/serveapp/` or
+Confirmed by search: no cold/warm model-load timer exists in `internal/app/serveapp/` or
 `decoder/model.go` (the load-time-adjacent code that does exist — the fit guard's VRAM check —
 measures *whether* a model fits, not *how long* loading takes). This is one of the few metrics
 where a single static binary with no runtime dependency has a structural advantage over a peer
@@ -219,7 +219,7 @@ repos/townsendmerino/goinfer/releases/tags/v0.18.0 --jq '.assets | length'` → 
 assets on each of the three releases before it (`v0.17.0`, `v0.17.1`, `v0.17.2`). Its
 `release-assets.yml` run failed at the `cross-compile goinfer-serve per platform` step
 (run `34807285691`, job `runtime binaries`): the windows/amd64 cross-compile failed because
-`internal/serveapp/main.go` referenced `syscall.SIGUSR1`/`SIGUSR2` unconditionally, and those
+`internal/app/serveapp/main.go` referenced `syscall.SIGUSR1`/`SIGUSR2` unconditionally, and those
 signals do not exist on Windows. The chat binaries and both model-embedded builds built
 successfully in that same run but were never attached, because the attach step never runs when
 the job fails upstream.
@@ -230,7 +230,7 @@ release ... every internal gate was green") — recurring, not hypothetical, and
 as its own engineering item (`docs/queue-engineering.md` H1) since nothing noticed the zero-asset
 publish itself, which will recur on the next platform-specific call regardless of this one fix.
 
-**Fixed same day**: `internal/serveapp/haltsignal_unix.go`/`haltsignal_windows.go` move the
+**Fixed same day**: `internal/app/serveapp/haltsignal_unix.go`/`haltsignal_windows.go` move the
 SIGUSR1/SIGUSR2 wiring behind a build tag (Windows gets a no-op; `-halt-file` and the admin
 socket are its equivalents). Verified by cross-compiling all six release targets directly,
 including the one that failed (`GOOS=windows GOARCH=amd64 go build ./cmd/serve` — clean); `go
@@ -310,9 +310,24 @@ including where goinfer loses (its own CUDA-vs-native figure is already flagged 
 older than it reads, `docs/positioning.md:26–27`).
 
 **U17 · `goinfer connect` covers three of the eleven agents in the census** — CLI, **OPEN, filed 2026-10-21 (moved from
-`docs/tasks/task-integration-harness-2026-10.md` I2)**
+`docs/completed/task-integration-harness-2026-10.md` I2)**
 
 I2 shipped `connect` for Claude Code, opencode and Codex in v0.23.0 (aa554787, c2c23566). The rest of I2 never started: the
 other eight agents of the census (`docs/measurements/integration-harness-2026-10/harness-census-2026-10-12.md`), reading each
 agent's own config schema rather than writing over it, and a warning when `connect` skips an agent it does not know. Filed
 here because `connect` is the first command a harness user runs.
+
+## Moved here at the archive of the integration-harness task (2026-11-04)
+
+Open rows moved from `docs/completed/task-integration-harness-2026-10.md` (its ledger, as of 2026-10-31). The full history stays in
+the archived doc.
+
+- **I1-v2 · the first live gate of the harness on nobara** (decision). Waits on Francis: its two night jobs (about 4 h of GPU) are his
+  call. Then by day: fit-check the three loads, build the pin, run the pilots (Claude Code's is about 30 min), and queue the two jobs.
+- **I3-page · `docs/integrations/harness-matrix.md`** (blocked). Needs a nobara re-run of the Claude Code cells on current main (owner,
+  2026-10-21) first.
+- **I6 · a Codex release that sends `apply_patch` to an unknown model** (parked, owner 2026-10-21). Trigger only.
+- **§5 · three amendments to the integration-harness doc** (H-c gets I1's shipped rule, H-d gets its lead, and the notes for
+  `task-embed-and-harness-ux.md`). Not yet applied.
+- **harness-next · cherry-pick the owner's 2026-10-13 ruling on Codex's settings** (commit 2726ae99, not on main; it touches a Go comment,
+  so it needs a code PR), then drop the branch.

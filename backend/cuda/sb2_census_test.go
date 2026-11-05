@@ -23,10 +23,10 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
-	"github.com/townsendmerino/goinfer/internal/memgate"
-	"github.com/townsendmerino/goinfer/internal/program"
-	"github.com/townsendmerino/goinfer/internal/sb2census"
+	"github.com/townsendmerino/goinfer/internal/diag/sb2census"
+	"github.com/townsendmerino/goinfer/internal/guard/memgate"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // Layer B-cuda of the admission and routing census (docs/tasks/task-subsystems-2026-10.md, "SB2 step 2"): CUDA's own static

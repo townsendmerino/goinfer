@@ -53,7 +53,7 @@ sources:
   - "constrain/tools_union.go"
   - "constrain/lazy.go"
   - "constrain/schema.go"
-  - "internal/serveapp/tools.go"
+  - "internal/app/serveapp/tools.go"
 ---
 
 ## The problem

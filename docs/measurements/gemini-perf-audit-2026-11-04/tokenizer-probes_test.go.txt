@@ -1,0 +1,180 @@
+package tokenizer
+
+import (
+	"crypto/sha256"
+	"fmt"
+	"math/rand"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func auditGoSource(b *testing.B) string {
+	src, err := os.ReadFile("testdata/../../decoder/mlp.go")
+	if err != nil {
+		b.Fatal(err)
+	}
+	return string(src)
+}
+
+// A code/English prompt, the shape an agent harness sends each turn, on byte-level BPE.
+func BenchmarkAudit_EncodeGoSource(b *testing.B) {
+	text := auditGoSource(b)
+	tk := tkLoad(b, "testdata/qwen2-0.5b-coder-meta.gguf")
+	b.SetBytes(int64(len(text)))
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := tk.Encode(text, false); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// The same prompt on SentencePiece score merges: Gemma has no pretokenizer, so the whole text is one gap.
+func BenchmarkAudit_EncodeGemma(b *testing.B) {
+	text := auditGoSource(b)
+	tk, err := LoadGGUF(os.Getenv("HOME") + "/models/gemma3-1b-q4_k_m.gguf")
+	if err != nil {
+		b.Skip(err)
+	}
+	b.SetBytes(int64(len(text)))
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := tk.Encode(text, false); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// Old-vs-new differential: the same corpus through every real and tiny tokenizer on this machine, ids hashed per
+// tokenizer and entry point. Each arm prints its hashes; the two logs must be byte-identical.
+func TestAudit_differential(t *testing.T) {
+	home := os.Getenv("HOME")
+	type named struct {
+		name string
+		tk   *Tokenizer
+	}
+	var tks []named
+	add := func(name string, tk *Tokenizer, err error) {
+		if err != nil {
+			fmt.Printf("DIFF skip %s: %.100v\n", name, err)
+			return
+		}
+		tks = append(tks, named{name, tk})
+	}
+	for _, f := range tkFixtures {
+		tk, err := LoadGGUF(f)
+		add(f, tk, err)
+	}
+	ggufs, _ := filepath.Glob(home + "/models/*.gguf")
+	more, _ := filepath.Glob(home + "/models/*/*.gguf")
+	for _, f := range append(ggufs, more...) {
+		tk, err := LoadGGUF(f)
+		add(filepath.Base(f), tk, err)
+	}
+	jsons, _ := filepath.Glob(home + "/models/*/tokenizer.json")
+	deep, _ := filepath.Glob(home + "/models/*/*/tokenizer.json")
+	tiny, _ := filepath.Glob("../testdata/*/tokenizer.json")
+	for _, f := range append(append(jsons, deep...), tiny...) {
+		tk, err := Load(filepath.Dir(f))
+		add(strings.TrimPrefix(f, home+"/models/"), tk, err)
+	}
+
+	var inputs []string
+	inputs = append(inputs, tkCorpus)
+	srcs, _ := filepath.Glob("../decoder/[a-f]*.go")
+	docs, _ := filepath.Glob("../docs/*.md")
+	all := strings.Builder{}
+	for _, f := range append(srcs[:min(60, len(srcs))], docs[:min(40, len(docs))]...) {
+		if b, err := os.ReadFile(f); err == nil {
+			inputs = append(inputs, string(b))
+			all.Write(b)
+		}
+	}
+	r := rand.New(rand.NewSource(20261104))
+	alpha := []rune("abc XYZ019 .,'’\n\n\t  \ufeffé日本語🦊₂Ⅷ٣  ́<|im_start|>�")
+	for range 3000 { // short adversarial strings: rune soup, then raw bytes (invalid UTF-8)
+		n := r.Intn(40) + 1
+		rs := make([]rune, n)
+		for i := range rs {
+			rs[i] = alpha[r.Intn(len(alpha))]
+		}
+		inputs = append(inputs, string(rs))
+		bs := make([]byte, n)
+		r.Read(bs)
+		inputs = append(inputs, string(bs))
+	}
+	huge := all.String() // one long gap, so the scratch grows and a Gemma merge runs over megabytes
+	if len(huge) > 3<<20 {
+		huge = huge[:3<<20]
+	}
+	totalBytes := 0
+	for _, in := range inputs {
+		totalBytes += len(in)
+	}
+	shapes := map[int]int{}
+	fmt.Printf("DIFF tokenizers=%d inputs=%d bytes=%d huge=%d\n", len(tks), len(inputs), totalBytes, len(huge))
+	for _, e := range tks {
+		shapes[int(e.tk.preShape)]++
+		h := sha256.New()
+		n := 0
+		note := func(ids []int, err error) {
+			fmt.Fprintf(h, "%v|%v;", ids, err)
+			n += len(ids)
+		}
+		for _, in := range inputs {
+			note(e.tk.Encode(in, false))
+			note(e.tk.Encode(in, true))
+			note(e.tk.encode(in, false, false))
+			note(e.tk.EncodeSegments([]Segment{{Text: "<|im_start|>", Special: true}, {Text: in}, {Text: "<|im_end|>", Special: true}}, false))
+		}
+		note(e.tk.Encode(huge, false))
+		fmt.Printf("DIFF %-58s mode=%d pre=%d ids=%d sha=%x\n", e.name, e.tk.mode, e.tk.preShape, n, h.Sum(nil)[:12])
+	}
+	fmt.Printf("DIFF shapes=%v\n", shapes)
+}
+
+// The splitters by name, each over the same inputs: the shapes no tokenizer on this machine declares (o200k, GPT-2's own)
+// included. Invalid UTF-8 goes through all of them.
+func TestAudit_splitters(t *testing.T) {
+	var inputs []string
+	inputs = append(inputs, tkCorpus, "")
+	srcs, _ := filepath.Glob("../decoder/[a-f]*.go")
+	docs, _ := filepath.Glob("../docs/*.md")
+	for _, f := range append(srcs[:min(60, len(srcs))], docs[:min(40, len(docs))]...) {
+		if b, err := os.ReadFile(f); err == nil {
+			inputs = append(inputs, string(b))
+		}
+	}
+	r := rand.New(rand.NewSource(20261105))
+	alpha := []rune("ab XY09 .,'’\n\n\t  é日本🦊₂Ⅷ٣  ́")
+	for range 20000 {
+		n := r.Intn(30) + 1
+		rs := make([]rune, n)
+		for i := range rs {
+			rs[i] = alpha[r.Intn(len(alpha))]
+		}
+		inputs = append(inputs, string(rs))
+		bs := make([]byte, n)
+		r.Read(bs)
+		inputs = append(inputs, string(bs))
+	}
+	for name, split := range map[string]func(string) []string{
+		"gpt2-1":   func(s string) []string { return splitGPT2(s, 1) },
+		"gpt2-3":   func(s string) []string { return splitGPT2(s, 3) },
+		"o200k":    splitO200k,
+		"gpt2orig": splitGPT2Original,
+		"tekken":   splitTekken,
+	} {
+		h := sha256.New()
+		n := 0
+		for _, in := range inputs {
+			out := split(in)
+			n += len(out)
+			fmt.Fprintf(h, "%q;", out)
+		}
+		t.Logf("x")
+		fmt.Printf("SPLIT %-9s inputs=%d pieces=%d sha=%x\n", name, len(inputs), n, h.Sum(nil)[:12])
+	}
+}

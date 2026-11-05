@@ -45,18 +45,18 @@ runtime or host defect, with no standalone reproduction yet to report upstream. 
 set it off again.
 
 **G49 · `/v1/messages` accepts `output_config.format` and ignores it** — `any`, **filed 2026-10-21 (moved from
-`docs/tasks/task-integration-harness-2026-10.md` §0a, which found it and gave it no owner)**
+`docs/completed/task-integration-harness-2026-10.md` §0a, which found it and gave it no owner)**
 
 Anthropic's structured-output field is accepted and dropped: no Go code reads `output_config`, so a client that asks the
 Anthropic route for JSON gets free text, with no warning. The OpenAI routes constrain output through `response_format`.
 Next: honor it on that constrained path, or refuse it by name. Either box, S–M.
 
 **Merged as #121.** `{"type": "json_schema",
-"schema": …}` maps onto `response_format` `json_schema` (`internal/serveapp/anthropic.go:anthropicReq.outputFormat`) at
+"schema": …}` maps onto `response_format` `json_schema` (`internal/app/serveapp/anthropic.go:anthropicReq.outputFormat`) at
 every site that reads `anthropicReq.toSampling`: `/v1/messages` text and image turns and its batches, with the
 thinking-off constrained template, and `count_tokens` renders the same way. A 400 naming the field for another `type`, a
 missing or uncompilable schema, and `tools` beside it (one grammar per request). Tier 0: `TestAnthropicOutputFormat*`
-in `internal/serveapp/anthropic_test.go`. Not run: a real model answering Claude Code's title request; its schema was
+in `internal/app/serveapp/anthropic_test.go`. Not run: a real model answering Claude Code's title request; its schema was
 never captured, so whether the compiler takes it is unread. That read is what is left; it closes this entry.
 
 **G48 · The option grid gets CUDA cells for every option** — `cuda`, **filed 2026-10-21 (owner)**
@@ -308,7 +308,7 @@ cache under fast attention keeps the single pass (G43, below).
 
 Found by KV9 step 0 (`docs/measurements/kv9-2026-10/README.md`, Finding 1).
 
-**What happens.** `internal/serveapp/sessions.go:pickSession` gives a new conversation the only idle session that
+**What happens.** `internal/app/serveapp/sessions.go:pickSession` gives a new conversation the only idle session that
 holds the preamble, rewound in place, whenever the prompt keeps more of that session than it discards. So:
 
 - a second conversation sharing a 5.7K preamble with a short tail took over the first's session;

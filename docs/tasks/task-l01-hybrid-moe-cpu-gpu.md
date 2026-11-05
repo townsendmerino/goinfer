@@ -102,7 +102,7 @@ reproduces the measured 16611/5229 hits/misses to the token).
 
 ## 2. New measurement this pass: gemma-4-26B CPU-only decode rate, real hardware
 
-Used `fit -measure` (`internal/fitcmd/fit.go`, shipped this session, Phase 4) exactly as built —
+Used `fit -measure` (`internal/app/fitcmd/fit.go`, shipped this session, Phase 4) exactly as built —
 no new code for this. `~/models/gemma4-26b-int4.giw`, CPU-only build (`demo/chat`), nobara-pc
 (16 cores, 62 GB RAM, model fully resident — no paging, unlike the Mac's catastrophic case for
 this same model class):
@@ -412,7 +412,7 @@ actually warms, and offload only misses past that bound to CPU. Re-run the same 
 Lead 5 (architecture, antagonism risk) · `docs/QUEUE.md` G31–G34 (DMA cost law, overlap ceiling,
 miss classification, block-verify's own infra-gap finding) · `decoder/mlp.go` (`moeMLP`,
 `swiGLUExpert` — the existing sequential CPU expert loop) · aikit `linalg.MatmulBT`/`parallelCols`
-(the existing per-expert core-width parallelism) · `internal/fitcmd/fit.go` (`-measure`, used
+(the existing per-expert core-width parallelism) · `internal/app/fitcmd/fit.go` (`-measure`, used
 as-is for §2's new number) · `docs/measurements/g33-routing-trace.json` (re-read for its
 per-decision distribution, §8) · `backend/cuda/spec_pager_interaction_test.go` (re-run on real hardware
 for §7's confirmation) · `decoder/l01_expert_bench_test.go` (the isolated microbenchmark and the

@@ -1,7 +1,7 @@
 # constrain: notes moved out of code comments
 
 History, measurements and open work that used to sit in the comments of `constrain`, moved here verbatim by the comment diet
-(`docs/tasks/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
+(`docs/completed/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
 its guardrails, and points here by heading. This file is off the read path: open it when a pointer sends you. Text is unedited,
 except that a `file.go:NNN` reference inside it names the declaration instead (the line numbers had already gone stale).
 
@@ -52,7 +52,7 @@ other run of bytes, and a real control-token id can leak into constrained output
 were content. Fixing this needs a DIFFERENT semantics than eosIDs: eosIDs are masked only
 UNTIL canEnd, but a control token must be forbidden ALWAYS, everywhere, including mid-
 string — that is new plumbing (an always-forbidden id set threaded through NewMasker and
-every call site: internal/serveapp/openai.go, internal/chatapp/main.go,
+every call site: internal/app/serveapp/openai.go, internal/app/chatapp/main.go,
 demo/agent/agent/agent.go, plus a tokenizer-side way to enumerate "special/control ids"
 uniformly across byte-level/SentencePiece/WordPiece modes — isAdded exists but is
 unexported and not obviously complete for this purpose), not a local fix to this function.

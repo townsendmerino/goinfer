@@ -15,7 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
-	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
 // TestConfig_giwRoundTrip_nilRawMessage guards the .giw serialize bug where a nil

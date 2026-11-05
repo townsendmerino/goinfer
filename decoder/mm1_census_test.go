@@ -18,7 +18,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/mem/probe"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
 // The decision census (MM1, docs/tasks/task-subsystems-2026-10.md, "MM1's decision census"): every memory decision the fit code

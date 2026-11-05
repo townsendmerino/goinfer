@@ -2,7 +2,7 @@
 
 package decoder
 
-import "github.com/townsendmerino/goinfer/internal/mem/probe"
+import "github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 
 // SelfSwapBytes is the swap this process and every process descended from it hold, in bytes: the sum of VmSwap over the
 // pid and its descendants. It is (0, false) when this process's own VmSwap line is missing (a kernel without swap

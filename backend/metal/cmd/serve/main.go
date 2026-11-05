@@ -14,7 +14,7 @@ package main
 
 import (
 	_ "github.com/townsendmerino/goinfer/backend/metal"
-	"github.com/townsendmerino/goinfer/internal/serveapp"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp"
 )
 
 func main() { serveapp.Main() }

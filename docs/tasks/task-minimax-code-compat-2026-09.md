@@ -27,13 +27,13 @@
 
 | minimax-code sends (openai-completions, custom URL) | goinfer |
 |---|---|
-| system prompt as `role: "developer"` when its thinking toggle is on | treated as `system` (`internal/serveapp/openai.go:messagesToTurns`) |
-| `max_completion_tokens` (its default for an unrecognised URL) | honoured, preferred over `max_tokens`; clamped to the context, not refused; ceiling 131072 (`internal/serveapp/openai.go:maxOutputTokensCeiling`) |
+| system prompt as `role: "developer"` when its thinking toggle is on | treated as `system` (`internal/app/serveapp/openai.go:messagesToTurns`) |
+| `max_completion_tokens` (its default for an unrecognised URL) | honoured, preferred over `max_tokens`; clamped to the context, not refused; ceiling 131072 (`internal/app/serveapp/openai.go:maxOutputTokensCeiling`) |
 | `stream: true` + `stream_options.include_usage` | supported; final usage chunk |
 | `store: false`, `prompt_cache_key`, tools' `strict: false`, `reasoning_effort` | unknown fields ignored (plain `json` decode) |
-| tool calls read from `delta.tool_calls[i]` with `index` | emitted in that shape (`internal/serveapp/tools.go`) |
+| tool calls read from `delta.tool_calls[i]` with `index` | emitted in that shape (`internal/app/serveapp/tools.go`) |
 | `Authorization: Bearer <key>` (its `--api-key-env` is mandatory) | ignored when serve has no `--api-key` |
-| overflow detection by error text (`utils/overflow.ts`, generic `/context[_ ]length[_ ]exceeded/i`) | the 400 reads "… context window of N tokens (context_length_exceeded)" (`internal/serveapp/openai.go:promptByteBudgetError`) — matches, so its compaction should fire |
+| overflow detection by error text (`utils/overflow.ts`, generic `/context[_ ]length[_ ]exceeded/i`) | the 400 reads "… context window of N tokens (context_length_exceeded)" (`internal/app/serveapp/openai.go:promptByteBudgetError`) — matches, so its compaction should fire |
 
 **Will bite, in order of likelihood:**
 
@@ -53,10 +53,10 @@
    convention pi-ai reads, `providers/openai-completions.ts`, `reasoningFields`), so `<think>` text is
    shown as the reply and is resent as assistant history, spending context.
 4. **Images with tools are refused.** minimax-code always sends tools; a pasted screenshot gets goinfer's
-   deliberate 400 "tools are not supported together with image inputs" (`internal/serveapp/openai.go:server.handleChat`,
+   deliberate 400 "tools are not supported together with image inputs" (`internal/app/serveapp/openai.go:server.handleChat`,
    N-16 / R-08).
 5. **The other two formats are unverified.** `openai-responses` sends item types the route declares out
-   of scope ("reasoning items", `internal/serveapp/responses.go` header); `anthropic-messages` sends
+   of scope ("reasoning items", `internal/app/serveapp/responses.go` header); `anthropic-messages` sends
    pi-ai's Anthropic shape (cache_control, thinking config, beta headers) — not traced.
 
 ---
@@ -113,7 +113,7 @@ does not), `--output-limit`, which API format to use (openai-completions until M
 the thinking caveat until M3 lands, the images-with-tools refusal, and M0's measured result — including
 failures, at full value. Link it from the README's harness list and `docs/server.md`.
 
-`internal/servecheck/check.go` already has a harness-scale tools row built from opencode's agent; add a
+`internal/guard/servecheck/check.go` already has a harness-scale tools row built from opencode's agent; add a
 "minimax-code first turn" row: a system prompt and tool set of the size M0 measured, sent against the
 served model's context, reporting `ok` / `won't fit at ctx N` before the user configures anything.
 
@@ -208,7 +208,7 @@ only the night gate's predictions below were made blind. The results follow unde
 
 - **Built** as registered: `decoder/metal_fitctx.go:Model.MetalFitCtx` (the one function the Metal load and
   `goinfer-chat fit` ask), `backend/metal/backend.go:metalFitFor` (chosen once a build), the banner's reason and `harness:`
-  line (`internal/serveapp/banner.go:harnessLine`), the 400's wording, `internal/fitcmd/fit.go:planFor`. The design
+  line (`internal/app/serveapp/banner.go:harnessLine`), the 400's wording, `internal/app/fitcmd/fit.go:planFor`. The design
   notes are in `docs/code-notes/metal.md`, "metalFitFor".
 - **Gate 1, unit tests: PASS.** `decoder`'s six `TestMetalFitCtx_*` (grow and shrink on the 8-position grid, slots
   trade context, a limit only lowers, the three opt-outs with a control, the window, a companion's bytes);
@@ -217,7 +217,7 @@ only the night gate's predictions below were made blind. The results follow unde
   `TestMetalBuildResident_fitByDefault` (a real tiny build holds 16384 in 2 slots and decodes an 11,137-token
   prompt; with room for 20,000 positions it holds 2 slots of 10,000; both are the context `fit`'s function names)
   and `TestMetalBuildResident_pagedMoEKeepsTheDefault` (a tiny MoE grows when resident and keeps 4096 paged);
-  `internal/serveapp`'s banner and 400 tests; `internal/fitcmd`'s `TestPlanFor_metalPlansAtTheLoadsOwnContext`.
+  `internal/app/serveapp`'s banner and 400 tests; `internal/app/fitcmd`'s `TestPlanFor_metalPlansAtTheLoadsOwnContext`.
   - **Mutations, both red:** the paged-MoE case removed from `MetalFitCtx` (`TestMetalFitCtx_optOuts`: ctx 16384,
     want 4096), and `metalPagesMoE` made to return false (the two `-moe-cache-*` loads resolve 16384).
 - **Gate 2, real checkpoints:** the 1.5B at int4 on a 16 GB Mac's static budget resolves **16384** with 2 slots,

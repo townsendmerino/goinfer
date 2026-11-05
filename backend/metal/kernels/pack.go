@@ -3,7 +3,7 @@ package kernels
 import (
 	"math"
 
-	"github.com/townsendmerino/goinfer/internal/f16"
+	"github.com/townsendmerino/goinfer/internal/runtime/f16"
 )
 
 // PackW4A8Row packs one f32 weight row into goinfer's W4A8 layout: group = 32, per-group

@@ -36,7 +36,7 @@ Token counts are under the Qwen2.5 tokenizer and move by a few percent on anothe
 - **Before this branch: a 400 on every turn.** `message 1: role must be "user" or "assistant", got "system"`. Claude
   Code 2.1.268 could not complete one turn against goinfer. The check was deliberate (a wrong-API role must not be
   folded into the conversation) and predates the mid-conversation system message.
-- **With the fix** (`internal/serveapp/anthropic.go:anthropicTurns`: a `system` message after the first is kept in
+- **With the fix** (`internal/app/serveapp/anthropic.go:anthropicTurns`: a `system` message after the first is kept in
   place as user-side text): both requests answer 200. Bare: the reply is `ok`. Full: the 1.5B wrote a tool call as
   text in a code fence, which is the known small-model result and not a route defect.
 - **The full first request does not fit 16,384 positions.** 19,692 tokens is over the window the recipes name, over

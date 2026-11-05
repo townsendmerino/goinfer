@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/townsendmerino/aikit/linalg"
-	"github.com/townsendmerino/goinfer/internal/mamba2"
+	"github.com/townsendmerino/goinfer/internal/runtime/mamba2"
 )
 
 // Mamba-2 selective state-space sequence mixer (Granite-4.0 hybrid). Like Gated DeltaNet (deltanet.go) it is an

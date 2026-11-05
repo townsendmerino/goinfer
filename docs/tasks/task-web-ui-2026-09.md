@@ -19,15 +19,15 @@
 
 ## 0. What exists today
 
-The page is **a small embedded directory** — `//go:embed webui` (`internal/serveapp/webui.go:webUIFS`):
+The page is **a small embedded directory** — `//go:embed webui` (`internal/app/serveapp/webui.go:webUIFS`):
 `index.html` plus `ui/app.css` and `ui/app.js`, hand-written HTML, CSS and vanilla JS, no build
 step, no external stylesheet, font or script. *(Until 2026-09-14 it was one 1,828-line file; §6.1
 records the split.)* That is deliberate and load-bearing: a CDN reference would make the UI of an
 offline-capable engine require the network. It is off by default behind `-web`
-(`internal/serveapp/webui.go:server.webEnabled`), and it is a client of the same `/v1` routes any other client
+(`internal/app/serveapp/webui.go:server.webEnabled`), and it is a client of the same `/v1` routes any other client
 uses — so it cannot drift from the API, because it *is* the API's user.
 
-Two tabs (`internal/serveapp/webui/index.html:13`):
+Two tabs (`internal/app/serveapp/webui/index.html:13`):
 
 - **Chat** — model dropdown, temperature, max tokens, streaming reply, Stop, and per-response
   token count / tok/s / wall time attached to the message itself.
@@ -95,7 +95,7 @@ Ranked by what a person notices in the first five minutes.
 ### W1 — Markdown and code blocks — DONE 2026-09-14
 ~~Today the page renders **plain text only**~~ — model output now renders as Markdown through
 `ui/markdown.js`, a renderer that builds DOM nodes from a fixed element allow-list and never an HTML
-string (the rule is stated at `internal/serveapp/webui/ui/app.js:935`). Paragraphs and line breaks,
+string (the rule is stated at `internal/app/serveapp/webui/ui/app.js:935`). Paragraphs and line breaks,
 headings, fenced code with a language label (an unclosed fence renders as code, so streaming does not
 flicker), inline code, strong/em/strike, links, bare URLs, blockquotes, nested lists and GFM tables.
 Raw HTML in model output is shown as text; links are live only for `http:`/`https:`/`mailto:`; images
@@ -133,7 +133,7 @@ buttons — each shown able to go red by a mutation. **Effort was: S.**
 
 ### W3 — The conversation survives a reload — DONE 2026-09-14
 ~~History is `const history = []` in page memory~~ — the conversation is a `transcript` of turns
-(`internal/serveapp/webui/ui/app.js:309`) saved to `localStorage` under a versioned key, and the
+(`internal/app/serveapp/webui/ui/app.js:309`) saved to `localStorage` under a versioned key, and the
 messages sent to the API are derived from it, so what is shown, saved and sent cannot drift apart.
 On load it is restored and rendered exactly as live turns are — model output through the Markdown
 renderer, the user's text as text — so stored content earns no more trust than fresh output.
@@ -161,7 +161,7 @@ any failure inside a loaded page as a failure. **Effort was: M.**
 
 ### W4 — A system prompt box — DONE 2026-09-14
 ~~There is no way to set a system message at all~~ — a collapsible "System prompt" box in the settings
-card (`internal/serveapp/webui/ui/app.js:623`), whose summary reads "· active" when set so it is
+card (`internal/app/serveapp/webui/ui/app.js:623`), whose summary reads "· active" when set so it is
 visible while collapsed. When non-blank it is sent **first, trimmed**, with every request; blank or
 whitespace-only sends nothing. The route accepts a system message for every family — templates
 without a system role fold it into a user turn server-side (`messagesToTurns`) — so the box needs no
@@ -181,16 +181,16 @@ reload; a hostile prompt inert; tab sync, and a focused box not clobbered. Six m
 ### W5 — Load a model from the page — DONE 2026-09-14
 ~~The pull flow dead-ends on its own success line: *"Downloaded, not loaded — restart the server with
 --model &lt;path&gt; to serve it"*~~ — a finished pull now ends on a **Load it now** button
-(`internal/serveapp/webui/ui/app.js:1581`). It loads the file, shows a heartbeat while the load runs,
+(`internal/app/serveapp/webui/ui/app.js:1581`). It loads the file, shows a heartbeat while the load runs,
 refreshes the model list, and selects the new model, so the next message goes to it. The header
 stats now follow whichever model is selected, not always the first one listed.
 
 **The gate decision: a narrow route, not the admin load.** `POST /admin/models/load`
-(`internal/serveapp/admin.go:server.handleAdminLoad`) takes any caller-named path and stays behind
+(`internal/app/serveapp/admin.go:server.handleAdminLoad`) takes any caller-named path and stays behind
 `-allow-admin`/`-admin-socket`, unchanged. The page gets its own `POST /web/models/load`
-(`internal/serveapp/main.go:Main`), registered only under `-web` and wrapped like pull
+(`internal/app/serveapp/main.go:Main`), registered only under `-web` and wrapped like pull
 (`sameOrigin`, `auth`, body cap). It will load only a **regular `.gguf` file inside the pull cache**
-(`webLoadPath`, `internal/serveapp/webui.go:webLoadPath`). Symlinks are resolved on both the path and the
+(`webLoadPath`, `internal/app/serveapp/webui.go:webLoadPath`). Symlinks are resolved on both the path and the
 cache root *before* the containment check, and the resolved path is what gets loaded, so neither
 `../` nor a symlink planted in the cache can point the loader outside it. The suffix check also
 rejects a half-finished `.part` download. The page can load what it pulled, and nothing else.
@@ -204,7 +204,7 @@ Also decided here:
   for nothing. (A pull, by contrast, still stops when the tab closes and deletes its `.part` file.)
 - **"Already loaded" counts as success.** The page selects that model instead of showing an error.
 - **Loading and publishing are shared with the admin load.** Both go through `loadDecoder` and
-  `publishLoaded` (`internal/serveapp/admin.go:server.publishLoaded`), so the M-24 close-on-race and the session
+  `publishLoaded` (`internal/app/serveapp/admin.go:server.publishLoaded`), so the M-24 close-on-race and the session
   restore live in one place, and a web-loaded model unloads like any other.
 
 **What this settles for W22** (the question was to be answered once, for both): a `-web` route
@@ -213,7 +213,7 @@ may act only on **what the page's own flows created**, behind the same gate stac
 act on generations from any client), so applying the rule to them is W22's own design call. The
 rule is decided; how it applies to W22 is not.
 
-Gates: the confinement table and the route tests in `internal/serveapp/webui_load_test.go` (13 path
+Gates: the confinement table and the route tests in `internal/app/serveapp/webui_load_test.go` (13 path
 cases, a symlinked cache root, streaming and publishing, heartbeat, single-flight, closing the tab
 mid-load), plus the route guards in `webui_test.go` extended to the new route (auth, sameOrigin,
 `-web`-only). Eleven mutations, each red. Phase 8 of `scripts/webui_app_gate.mjs` drives the page
@@ -230,7 +230,7 @@ part of W9/W14.
 ### W6 — Fold the thinking block — DONE 2026-09-14 (page side)
 ~~Reasoning tokens stream inline as body text~~ — a reply's thinking is now folded into a collapsed
 "Thinking…" section above the answer, relabelled "Thought for Ns" when it closes
-(`splitThinking`, `internal/serveapp/webui/ui/app.js:357`). The server did not split
+(`splitThinking`, `internal/app/serveapp/webui/ui/app.js:357`). The server did not split
 thinking from the answer when this was written (`stop_reason` was never `thinking` in v1), so the page did it.
 **Superseded 2026-09-30:** serve now separates it (`reasoning_content`, Anthropic `thinking` blocks —
 `docs/server.md` § Reasoning models), and the page stitches `reasoning_content` back into the `<think>` form this
@@ -280,7 +280,7 @@ and gpt-oss-20b after the stop fix, real token boundaries) are replayed chunk fo
 
 ### W7 — Regenerate, edit-and-resend, delete a turn — DONE 2026-09-14
 ~~None of the three~~ — all three, as buttons on each message's action row next to Copy
-(`internal/serveapp/webui/ui/app.js:841`). History is now addressable: each action changes the
+(`internal/app/serveapp/webui/ui/app.js:841`). History is now addressable: each action changes the
 transcript, re-renders the log from it and saves, so what is shown, saved and sent can't disagree.
 
 - **Regenerate** appears only on the **last** reply, including a stopped or interrupted one. It
@@ -320,13 +320,13 @@ though fewer browsers had leaked then and a collision was much less likely.
 ### W8 — Context meter, and a warning before the wall — DONE 2026-09-14
 ~~You discover the context limit by hitting `400 context_length_exceeded` mid-conversation~~ — the
 composer now shows *"about N of W tokens used (P%)"* with a bar
-(`showContext`, `internal/serveapp/webui/ui/app.js:86`). At 80% it warns that the conversation is
+(`showContext`, `internal/app/serveapp/webui/ui/app.js:86`). At 80% it warns that the conversation is
 nearing the limit. At 95% it says the next message will likely not fit, and what to do: start a new
 chat, or delete earlier exchanges (W7). If a request does hit the wall, the error says the same thing
 in plain words, with the server's own message underneath. Other 400s are left as they are.
 
 **Server: `/v1/models` (and `/health`) publish `context_window`.** It comes from one function,
-`contextWindow` (`internal/serveapp/openai.go:loadedModel.contextWindow`), which `prepare` also uses to enforce the limit,
+`contextWindow` (`internal/app/serveapp/openai.go:loadedModel.contextWindow`), which `prepare` also uses to enforce the limit,
 so the number a client plans against is exactly the one that rejects it. On a resident GPU backend
 that is the resident KV cap, not the model's `MaxPositions`. Measured on this box (CUDA, Qwen3-1.7B):
 `context_window: 8192` rather than Qwen3's native maximum. A prompt of 8192 tokens is rejected naming
@@ -382,7 +382,7 @@ inside the binary.
 ### W18 — Label which turn came from which model — DONE 2026-09-15
 The reply header already showed the model's name. What was missing is what the row names: nothing marked
 a **change** of model, and the per-reply stats had no context to be compared in
-(`labelReply`, `internal/serveapp/webui/ui/app.js:946`).
+(`labelReply`, `internal/app/serveapp/webui/ui/app.js:946`).
 
 - **Each reply records the compute path its model reported when the reply was sent** (`decode_path` from
   `/v1/models`, e.g. `cuda-resident (int4)`). It is shown beside the model name, saved with the reply, and
@@ -404,7 +404,7 @@ exact order of messages and dividers; hostile or over-long stored labels. Ten mu
 **Effort was: S** (less than the M the row estimated, since the name was already there).
 
 ### W17 — Enter sends, ↑ edits last, Esc stops — DONE 2026-09-15
-~~Only Ctrl/Cmd+Enter~~ — as the row asked, **a setting, not a swap** (`internal/serveapp/webui/ui/app.js:1434`).
+~~Only Ctrl/Cmd+Enter~~ — as the row asked, **a setting, not a swap** (`internal/app/serveapp/webui/ui/app.js:1434`).
 Ctrl/Cmd+Enter always sends. **Enter sends** is a checkbox beside the composer, off by default (long
 prompts want Enter for new lines). When on, Enter sends and Shift+Enter is a new line. The placeholder
 says which is in effect. The setting is saved, followed across tabs, and applies to the **edit box** too
@@ -465,7 +465,7 @@ are spaced apart, which was not measured here.
 ### W15 — Dark mode — DONE 2026-09-15
 ~~One light surface; no `prefers-color-scheme` rule anywhere~~ — a **Theme** control in the header:
 **System** (the default, following `prefers-color-scheme`), **Light** or **Dark**, saved per browser,
-followed across tabs, and applied before anything else on load (`internal/serveapp/webui/ui/app.js:7`).
+followed across tabs, and applied before anything else on load (`internal/app/serveapp/webui/ui/app.js:7`).
 
 **Only tokens change.** The dark palette overrides the `--gi-*` tokens in two places: under the system
 preference unless the page is set to Light, and whenever Dark is chosen. `color-scheme` goes with it,
@@ -499,7 +499,7 @@ to a dark preference**, so the light phase sets light explicitly. Eleven mutatio
 
 ### W14 — Export the conversation — DONE 2026-09-14
 ~~Nothing~~ — **Export this chat: Markdown · JSON** beside the Chats heading
-(`chatMarkdown`, `internal/serveapp/webui/ui/app.js:1288`). No share link: that would be a server-side
+(`chatMarkdown`, `internal/app/serveapp/webui/ui/app.js:1288`). No share link: that would be a server-side
 copy, the anti-goal this row names.
 
 - **Markdown** is for reading. A `## You` / `## <model>` section per turn, attached images embedded as
@@ -525,7 +525,7 @@ system prompt, and disabled when empty or busy. Ten mutations, each red.
 ### W13 — Errors that say what to do — DONE 2026-09-14
 ~~Any non-200 becomes the first 400 characters of the response body in a red bubble~~ — every failure
 is explained as what happened and what to do, with a button for the remedy (`problemFor`,
-`internal/serveapp/webui/ui/app.js:122`). The server's own message stays underneath, as text.
+`internal/app/serveapp/webui/ui/app.js:122`). The server's own message stays underneath, as text.
 
 | What the server said | What the page says | Buttons |
 |---|---|---|
@@ -576,7 +576,7 @@ invisible on screen); its check now confirms an unknown state is not written bac
 ### W11 — Image attach for vision models — DONE 2026-09-14
 ~~No control, though `-vision` works on the same route~~ — an **Attach image** button beside Send, plus
 drop anywhere on the chat pane or paste into the message box, with a preview and Remove
-(`internal/serveapp/webui/ui/app.js:205`). The image shows on the message it was sent with, is saved
+(`internal/app/serveapp/webui/ui/app.js:205`). The image shows on the message it was sent with, is saved
 with it, and comes back after a reload.
 
 **Server: `/v1/models` and `/health` publish `vision` per model**, from `visionCapable` — the same check
@@ -586,7 +586,7 @@ server's own answer rather than a guess from the model's name.
 
 What the server allows decided most of the rest:
 - **One image per request, counted across the whole history** (`maxImagesPerTurn` was 1 then; S11 raised it to 8
-  images in the newest message on 2026-10-09, `internal/serveapp/vision_serve.go:maxImagesPerTurn`). The server attaches it to the *latest* user turn, wherever it
+  images in the newest message on 2026-10-09, `internal/app/serveapp/vision_serve.go:maxImagesPerTurn`). The server attaches it to the *latest* user turn, wherever it
   was sent. So the page sends **only the most recent image**, as an `image_url` part on the message it
   came with; earlier ones go as plain text. Follow-up questions about that image still work. Attaching
   a second image says it replaces the first in what the model sees.
@@ -628,11 +628,11 @@ no element marked hidden takes up space (found by W15's screenshot pass).
 ### W10 — Full sampling controls — DONE 2026-09-14
 ~~The page sends `temperature`/`max_tokens` only~~ — a collapsible **Sampling** section beside the
 system prompt adds every other sampling field `/v1/chat/completions` accepts: `top_p`, `top_k`, `seed`,
-`stop`, `frequency_penalty` and `presence_penalty` (`internal/serveapp/webui/ui/app.js:641`).
+`stop`, `frequency_penalty` and `presence_penalty` (`internal/app/serveapp/webui/ui/app.js:641`).
 Temperature and max tokens stay in the top row.
 
 **A correction to what this row used to say:** it listed `logit_bias` among the fields the route
-accepts. It does not. The request struct (`internal/serveapp/openai.go:server.servedNames`) has no such field. The
+accepts. It does not. The request struct (`internal/app/serveapp/openai.go:server.servedNames`) has no such field. The
 sampler supports `LogitBias`, `MinP` and `RepeatPenalty`, but the HTTP route exposes none of them, so
 W10 covers what the route actually takes. Exposing the other three is a server item of its own.
 
@@ -669,7 +669,7 @@ you were in, so it no longer asks first. Each conversation can be opened, rename
 asks, since there is no undo). The list is most-recently-updated first, and the open conversation is
 highlighted. Nothing in the list works while a reply is generating or a message is being edited.
 
-**Storage** (`internal/serveapp/webui/ui/app.js:489`): one localStorage key per conversation,
+**Storage** (`internal/app/serveapp/webui/ui/app.js:489`): one localStorage key per conversation,
 `goinfer.chat.v2.<id>`, holding `{v, id, title, titled, updated, messages}`.
 - **One key each, not one key for all:** the once-a-second save while a reply streams rewrites only
   that conversation, and an unreadable value costs only itself (it is set aside, as in W3).
@@ -681,7 +681,7 @@ highlighted. Nothing in the list works while a reply is generating or a message 
 - **Migration:** W3's single conversation (`goinfer.chat.v1`) is migrated once into a conversation of
   its own, opened, and the old key removed.
 
-**Titles** (`autoTitle`, `internal/serveapp/webui/ui/app.js:1358`). A title starts as the first message,
+**Titles** (`autoTitle`, `internal/app/serveapp/webui/ui/app.js:1358`). A title starts as the first message,
 cut to fit. After the first reply, the model is asked **once**, in the background, with a non-streaming
 24-token request, for a title of at most six words. The reply is cleaned: first line only, no
 "Title:" label, quotes, markup or final period, and it is rejected if it still contains thinking or
@@ -756,17 +756,17 @@ checks that the list is laid out below its heading at full width (found by W15's
      stronger mechanism than proposed here.** Not the curated-names dropdown this entry originally
      asked for (`pull.Curated()`/`CuratedNames()`, `pull/pull.go:Curated`, `:110` — still reachable only
      via `demo:0.5b`, untouched by this work): live HuggingFace search-as-you-type over the same
-     `#repo` box (`internal/serveapp/webui/index.html:98`), typing 4+ characters lists real matching
+     `#repo` box (`internal/app/serveapp/webui/index.html:98`), typing 4+ characters lists real matching
      GGUF repos to pick from, covering the whole hub rather than a handful of pinned names. Server:
      `pull.Search` (`pull/pull.go:Search`, GGUF-only for now via a `kind`→HF-`filter` table built to grow),
-     `POST /web/models/search`. Client: `internal/serveapp/webui/ui/app.js:1920` (`SEARCH_MIN_CHARS`),
+     `POST /web/models/search`. Client: `internal/app/serveapp/webui/ui/app.js:1920` (`SEARCH_MIN_CHARS`),
      debounced, cancels a stale in-flight request via both `AbortController` and a sequence guard
      (two independent mechanisms — gated in `scripts/webui_app_gate.mjs` phase 42, including the
      out-of-order-response race itself, not just the happy path). Known, disclosed limit: HF's
      search is substring, not fuzzy — "quen" does not find "Qwen", only completes a correctly-typed
      prefix.
   2. **The quant/backend a model loads at is invisible and unchangeable from the page.** `-quant`
-     and `-backend` (`internal/serveapp/main.go:registerFlags`, `:502`) are server-startup flags with "no
+     and `-backend` (`internal/app/serveapp/main.go:registerFlags`, `:502`) are server-startup flags with "no
      per-request override" (W5's own decision, §2). That was the right call for *requests*; it is
      what made *this* incident invisible — the page had no way to show what quant was about to be
      used, or that a bigger model would blow the budget under it. Arguably the higher-value half of
@@ -794,7 +794,7 @@ checks that the list is laid out below its heading at full width (found by W15's
 
   **What's actually buildable now, checked against the tree rather than assumed:**
   - **A coarse per-file tag in "List files" — DONE 2026-09-17.** `fitEstimate`
-    (`internal/serveapp/webui.go:fitEstimate`) bands a file's own size against
+    (`internal/app/serveapp/webui.go:fitEstimate`) bands a file's own size against
     `freeBytesForActiveBackend` (`:172` — `decoder.FreeBytesFor`, `decoder/backend.go:FreeBytesFor`, for every
     GPU backend; `decoder.HostRAMAvailableBytes` special-cased for `cpu`/the empty default, which the
     registry has never covered) into *fits / tight / won't fit*, returned per file from
@@ -809,7 +809,7 @@ checks that the list is laid out below its heading at full width (found by W15's
     gutting the disclosure note), each red; 3 more against the Go banding/backend logic (both
     boundary operators, dropping the `cpu` special case), each red. This alone would have caught the
     original incident: the 7B file would have shown "won't fit" before the pull, not after the Load.
-  - **An exact check right after a pull finishes, before Load.** `internal/fitcmd` already computes
+  - **An exact check right after a pull finishes, before Load.** `internal/app/fitcmd` already computes
     the real plan via `decoder.Model.Plan` — but only as a CLI dry run that loads the checkpoint and
     prints to stdout (`Run`, unexported everything else). Extracting that into a library function
     returning a struct, callable from a new `/web/models/fit`-shaped route right after a pull
@@ -824,7 +824,7 @@ checks that the list is laid out below its heading at full width (found by W15's
     for it until that lands; do not conflate the two or promise the exact number pre-download.
   - **Making it changeable, not just visible — the part that actually revisits W5.** The mechanism
     already exists: `--model name=path,quant=…` is a real, already-parsed per-model override
-    (`internal/serveapp/main.go`, the `-quant` flag's own help text). `handleWebLoad` (W5) already
+    (`internal/app/serveapp/main.go`, the `-quant` flag's own help text). `handleWebLoad` (W5) already
     narrows *what path* the page may act on (`webLoadPath`); exposing a quant *choice* on that same
     narrow route is a smaller lift than it sounds, technically — but it is still the load-bearing
     decision this entry keeps deferring, because "the server's own settings, no per-request
@@ -835,7 +835,7 @@ checks that the list is laid out below its heading at full width (found by W15's
   **Recommendation, in build order — the first is now built:** the coarse per-file tag first
   (S — no design decision owed, reuses three things that already exist, closes the exact gap the
   incident exposed) — **DONE**, see above · the exact post-pull check second (M — a real but
-  contained refactor of `internal/fitcmd`, still no new policy) — still open · the changeable quant
+  contained refactor of `internal/app/fitcmd`, still no new policy) — still open · the changeable quant
   control last and separately (needs its own sign-off, not a default) — still open. Not proposing to
   build the remaining two without a further go-ahead.
 
@@ -875,7 +875,7 @@ gating and auth — each shown able to go red by a mutation.
 
 **6.2 W1 is where model output stops being inert, and the current rule must survive it. — HELD
 2026-09-14 (see W1).** The page says it in the source: content goes in via `textContent` or
-`Markdown.render`, never `innerHTML` (`internal/serveapp/webui/ui/app.js:935`), and a test now fails the
+`Markdown.render`, never `innerHTML` (`internal/app/serveapp/webui/ui/app.js:935`), and a test now fails the
 build if that changes. **Build DOM nodes from the parsed tree; never assemble an HTML string.** Otherwise a model — possibly one pulled from a stranger's Hugging Face repo
 minutes earlier, by this very page — gets script execution on the same origin as the API, with the
 user's key in a field on that page. The gate for W1 is a test that feeds the renderer hostile
@@ -883,7 +883,7 @@ markdown (`<img onerror>`, `javascript:` links, raw `<script>`) and asserts no e
 outside the allowed set.
 
 **6.3 Every new mutating route inherits the gates already there** — `sameOrigin`, the `-web`
-opt-in, and the non-loopback `-api-key` rule (`internal/serveapp/webui.go`). V-20 in
+opt-in, and the non-loopback `-api-key` rule (`internal/app/serveapp/webui.go`). V-20 in
 `docs/completed/review-2026-09-04.md` is the record of what it cost to learn that the first time.
 W5's load route was the first real test of them, and takes all of them (W5).
 
@@ -903,11 +903,11 @@ number. It is **W27** below, and the four stale references have been repointed.
 ### W27 — Re-attach to a generation after a reload — DONE 2026-09-15
 ~~Closing the tab still cancels the work~~ — a text reply now submits as a server-side job
 (`POST /v1/jobs`) streamed through J3's `GET /v1/jobs/{id}/events`
-(`internal/serveapp/webui/ui/app.js:1032`, the `asJob` branch of `generate`), instead of the plain
+(`internal/app/serveapp/webui/ui/app.js:1032`, the `asJob` branch of `generate`), instead of the plain
 chat stream. The job id is saved with the reply the moment the server returns it, before anything
 else can go wrong, so a reload — or opening another conversation mid-reply (W29) — no longer loses
 it. Opening a conversation whose last reply is a still-running job re-attaches and replays the job's
-events from the start (`resumeJob`, `internal/serveapp/webui/ui/app.js:1244`, called from
+events from the start (`resumeJob`, `internal/app/serveapp/webui/ui/app.js:1244`, called from
 `openChat`, `:1306`); a job that finished while nobody was watching is filled in from its own
 finished record instead; a job the server no longer has (a restart without `-job-dir`, or
 expiry) is labelled "not finished here" with a Resume button, not left spinning forever. Stop now
@@ -944,16 +944,16 @@ saying it was stopped). **Effort was: M.**
 ~~A busy server is currently an indistinguishable spinner~~ — most of this shipped as part of the
 server's own job-status work this morning (`de0f13c5`) and W27's client, ahead of this doc catching
 up: `GET /v1/jobs/{id}` reports a still-queued job's `queue: {position, waiting, running}`
-(`internal/serveapp/jobs_http.go:server.handleGetJob`, from `lm.turns.position`), and the page polls it once a
+(`internal/app/serveapp/jobs_http.go:server.handleGetJob`, from `lm.turns.position`), and the page polls it once a
 second while nothing has streamed yet, showing *"Waiting for its turn: 2nd in line (3 waiting, 1
-running)."* in place of a spinner (`pollQueue`, `internal/serveapp/webui/ui/app.js:1101`).
+running)."* in place of a spinner (`pollQueue`, `internal/app/serveapp/webui/ui/app.js:1101`).
 **Gate, as anticipated:** this is a field on the page's own request's own state (its W27 job), never
 a `/web/queue` listing every client's requests — the same rule W5 already settled, so nothing new
 needed deciding.
 
 **What was still missing, and is the actual work of this entry: the 429 itself carried no number.**
 W13's *"its request queue is full"* was true but not informative — it didn't say how full, or
-compared to what. `loadedModel.queueFullMsg()` (`internal/serveapp/openai.go:loadedModel.queueFullMsg`) now names the
+compared to what. `loadedModel.queueFullMsg()` (`internal/app/serveapp/openai.go:loadedModel.queueFullMsg`) now names the
 configured depth: `cap(lm.queue)-1`, the one number that is always accurate of a queue reported as
 FULL (a live waiting count would already be stale by the time a client could read it) — *"model "q"
 queue full (max 2 queued); retry"*. All three refusal sites share it: the synchronous chat-route and
@@ -976,15 +976,15 @@ this was the 429's number).
 ~~Submit through `/v1/jobs` rather than the streaming route, leave the page, and the answer is on
 the job when you return~~ — this fell out of W27's own machinery rather than needing its own build:
 once a text reply *is* a job (W27), opening another conversation or hitting New chat mid-reply no
-longer has to block or stop it. `detachReply` (`internal/serveapp/webui/ui/app.js:1234`) saves the
+longer has to block or stop it. `detachReply` (`internal/app/serveapp/webui/ui/app.js:1234`) saves the
 in-flight reply as still-`"generating"` with its job id and lets the local stream go; `openChat`
 and New chat call it instead of refusing when a job-backed reply is running
-(`internal/serveapp/webui/ui/app.js:1306`, `:1333`) — only an image-carrying (non-job) reply still
+(`internal/app/serveapp/webui/ui/app.js:1306`, `:1333`) — only an image-carrying (non-job) reply still
 blocks them, since there is nothing server-side to detach from. The conversation list marks that
-chat *"reply in progress"* while it runs (`internal/serveapp/webui/ui/app.js:1412`), and the list
+chat *"reply in progress"* while it runs (`internal/app/serveapp/webui/ui/app.js:1412`), and the list
 and New chat both stay usable, not disabled, for the whole time it is away.
 
-`resumeJob` (`internal/serveapp/webui/ui/app.js:1244`) is what makes coming back work: still
+`resumeJob` (`internal/app/serveapp/webui/ui/app.js:1244`) is what makes coming back work: still
 running → re-attach and replay from the start (W27); finished while away → filled in from the job's
 own record, labelled *"finished while you were away"*; failed or cancelled while away → shown as
 such, with the server's own reason; the job itself gone (restarted without `-job-dir`) →
@@ -1001,17 +1001,17 @@ W27** — recorded here because the doc had it as a separate M-effort item; in p
 
 ### W30 — A Batch tab — DONE 2026-09-15
 ~~Upload a JSONL, watch it run, download the results~~ — a third tab
-(`internal/serveapp/webui/index.html`, `pane-batch`) over J4's OpenAI-shaped batch API: choose a
+(`internal/app/serveapp/webui/index.html`, `pane-batch`) over J4's OpenAI-shaped batch API: choose a
 `.jsonl` file, **Run batch** uploads it (`POST /v1/files`, multipart — the one request on this page
 that is not JSON, so it gets its own `authHeader()` rather than `headers()`, since fetch will not
 set its own multipart boundary if `Content-Type` is already forced), then submits it
 (`POST /v1/batches`, always `/v1/chat/completions` — the only endpoint the server accepts this
 pass). The Models tab's pull idiom transplants directly: a terminal line and a progress bar
-(`runBatch`, `internal/serveapp/webui/ui/app.js:1830`), just driven by polling
+(`runBatch`, `internal/app/serveapp/webui/ui/app.js:1830`), just driven by polling
 `GET /v1/batches/{id}` once a second instead of pull's SSE stream, since a batch has no single
 connection to stream progress down — lines finish out of order, on their own schedule.
 
-`pollBatch` (`internal/serveapp/webui/ui/app.js:1868`) renders `request_counts` as it arrives —
+`pollBatch` (`internal/app/serveapp/webui/ui/app.js:1868`) renders `request_counts` as it arrives —
 *"N of T done (C ok, F failed)"*, the bar at `(completed+failed)/total` — and on the terminal status
 (`completed` or `cancelled`) stops polling, re-enables the form, and offers downloads: **Download
 results** always (the server always writes an output file, even an empty one), **Download errors**
@@ -1062,9 +1062,9 @@ there is no separate history view to build, the same way W29 turned out to alrea
 *background* — a different conversation than the one on screen — without switching to it first.**
 Before this, the only way to stop it was to reopen that conversation (which re-attaches, W27) and
 then click Stop. Now the chat list's "reply in progress" badge (W29) carries its own **Cancel**
-button (`renderChatList`, `internal/serveapp/webui/ui/app.js:1401`) when that conversation's own
+button (`renderChatList`, `internal/app/serveapp/webui/ui/app.js:1401`) when that conversation's own
 storage holds a job id, wired through `cancelBackgroundJob`
-(`internal/serveapp/webui/ui/app.js:1459`): `DELETE /v1/jobs/{id}` for that job, then — without
+(`internal/app/serveapp/webui/ui/app.js:1459`): `DELETE /v1/jobs/{id}` for that job, then — without
 waiting for the conversation to be reopened — the same outcome `resumeJob` would derive is written
 back into its storage directly (`state: "cancelled"`, `running` cleared), so the badge disappears
 immediately and a later open shows it correctly without ever re-attaching to a job that is no longer
@@ -1117,7 +1117,7 @@ not the page — caught before it could produce a false pass.
 
 **W5 shipped half a door.** ~~nothing on the page can free the first model to make room~~ — a
 `POST /web/models/unload` route now exists over `unloadByName`
-(`internal/serveapp/admin.go:server.unloadByName`), the two-phase unpublish-then-drain `handleAdminUnload` already
+(`internal/app/serveapp/admin.go:server.unloadByName`), the two-phase unpublish-then-drain `handleAdminUnload` already
 did (unpublish under `regMu`, drain-and-close detached) — pulled out into its own function
 specifically so the web route and the admin route share it verbatim, rather than the page getting a
 second, parallel implementation of the same use-after-free-avoiding logic.
@@ -1125,23 +1125,23 @@ second, parallel implementation of the same use-after-free-avoiding logic.
 **No path policy needed here, unlike load.** `webLoadPath` (W5) exists because a load names a
 filesystem path the admin route would otherwise trust unconditionally; unload names nothing but a
 registry key, and the only keys that exist are ones `GET /v1/models` already publishes to every
-client. `handleWebUnload` (`internal/serveapp/webui.go:server.handleWebUnload`) is `sameOrigin(auth(...))` behind
-`-web` — W5's exact gate stack (`internal/serveapp/main.go:Main`) — with `s.models[req.Name]` under
+client. `handleWebUnload` (`internal/app/serveapp/webui.go:server.handleWebUnload`) is `sameOrigin(auth(...))` behind
+`-web` — W5's exact gate stack (`internal/app/serveapp/main.go:Main`) — with `s.models[req.Name]` under
 `regMu` (inside `unloadByName`) as the entire "policy": a name not loaded is a 404, the same shape
 as any other unknown model. `TestWebUI_disabledByDefault` and the AST wiring guard
-(`TestWebUI_listAndPullAreWrappedInSameOrigin`, `internal/serveapp/webui_test.go`) were both
+(`TestWebUI_listAndPullAreWrappedInSameOrigin`, `internal/app/serveapp/webui_test.go`) were both
 extended to this route rather than left to trust it by resemblance.
 
 **The Models tab now lists what is resident** (`renderResidentModels`,
-`internal/serveapp/webui/ui/app.js:213`) — filtered to entries with a decoder (an embedding-only
+`internal/app/serveapp/webui/ui/app.js:213`) — filtered to entries with a decoder (an embedding-only
 entry has nothing to unload) — showing quant, decode path and resident size per row, and marking
 whichever one Chat is pointed at. `quant` and `resident_bytes` are new fields on `pathFields`
-(`internal/serveapp/openai.go:server.pathFields`), the one function `/v1/models` and `/health` already share, so
+(`internal/app/serveapp/openai.go:server.pathFields`), the one function `/v1/models` and `/health` already share, so
 both surfaces gained them for free rather than the page needing a second, web-only request just to
 ask the registry twice. Each row's **Unload** button names its own free-able size.
 
 **"Unloaded" is not "memory freed", stated on screen.** `unloadModel`
-(`internal/serveapp/webui/ui/app.js:237`) reads the response's `status`/`freed` and says exactly one
+(`internal/app/serveapp/webui/ui/app.js:237`) reads the response's `status`/`freed` and says exactly one
 of three things: *"unloading — finishing an in-flight request; its memory frees as that completes"*
 (202: a spinner that resolved here would be lying), *"unloaded — memory freed"* (200, last owner),
 or *"unloaded — its memory is shared with another loaded entry, so it was not freed"* (200, not the
@@ -1155,7 +1155,7 @@ than claiming to observe it: *"A request already in flight elsewhere will finish
 route to it until it is loaded again."* When *this* page's own reply is the one running on that
 model (`generating.model === name`), the wording says so specifically instead.
 
-**The fit refusal now names a way out.** `unloadSuggestion` (`internal/serveapp/webui.go:server.unloadSuggestion`)
+**The fit refusal now names a way out.** `unloadSuggestion` (`internal/app/serveapp/webui.go:server.unloadSuggestion`)
 checks `errors.Is(err, decoder.ErrWontFitResident)` — the exported sentinel `FitDeclineError`
 unwraps to, chosen over `errors.As` on the concrete type specifically so the check (and its test)
 never need that type's unexported fields — and, if something is resident, appends *"Unload
@@ -1181,7 +1181,7 @@ raised it, so the page never implies a fix that doesn't exist.
 Gate: `TestWebUnload_publishesRemoval`, `TestWebUnload_unknownNameIs404`,
 `TestWebUnload_freedTrueForARealModel` (the committed tiny fixture, a real `*decoder.Model`, proving
 `freed:true` end to end rather than only through the already-proven shared function) and
-`TestUnloadSuggestion` (`internal/serveapp/webui_unload_test.go`), plus the two existing route-guard
+`TestUnloadSuggestion` (`internal/app/serveapp/webui_unload_test.go`), plus the two existing route-guard
 tests widened to the new route. Phase 39 of `scripts/webui_app_gate.mjs`, 12 checks: the list
 excludes the embedding-only entry, a row's exact text (quant, decode path, size, the "in Chat"
 mark), the Unload button's own size label, the confirm's two wordings (generic and "your current
@@ -1215,7 +1215,7 @@ stages. The chat page is the only place those ideas can be watched happening rat
 about. No other local chat UI shows this, and for this audience it is worth more than any
 remaining Claude-app parity item.
 
-**It also closes a real gap.** tok/s exists — `internal/serveapp/webui/ui/app.js` writes
+**It also closes a real gap.** tok/s exists — `internal/app/serveapp/webui/ui/app.js` writes
 `N tok · 41.3 tok/s · 6.2s` into the reply's meta line — but only *after* the reply finishes.
 During the generation, which is when someone is actually watching, there is no rate at all.
 
@@ -1224,7 +1224,7 @@ During the generation, which is when someone is actually watching, there is no r
 This is the part that makes W34 cheap: nobody has to invent telemetry.
 
 - **`usage.prefill_reused_tokens`** — already a documented vendor extension
-  (`internal/serveapp/openai.go`, the `usage` struct): how many leading prompt tokens the prefill
+  (`internal/app/serveapp/openai.go`, the `usage` struct): how many leading prompt tokens the prefill
   skipped because they were still resident. That is Chapter 4's KV cache as a number, per turn,
   and it is the single most surprising line a newcomer can be shown.
 - **`prompt_tokens` / `completion_tokens`** — the two sides of Chapter 8's split.
@@ -1330,7 +1330,7 @@ A refusal is the one outcome with no upside. Almost any policy beats it.
 **Elision costs a re-prefill, and prefix reuse is why this page is fast.**
 
 Reuse is longest-common-prefix matching against a resident or stored token sequence
-(`decoder/resident_reuse.go`, `internal/serveapp/sessions.go`). Change a token in the middle of the
+(`decoder/resident_reuse.go`, `internal/app/serveapp/sessions.go`). Change a token in the middle of the
 conversation and the LCP collapses to whatever precedes the change — so eliding turn 3 of 20 means
 the next turn re-prefills everything from turn 3 onward. The book's own CPU number for that is
 101.6 s for a 3,020-token prompt. Recurrent and hybrid families are stricter still: they can reuse
@@ -1453,13 +1453,13 @@ not done: [`../measurements/web-ui-schema-2026-10-02/README.md`](../measurements
 
 ## Sources
 
-`internal/serveapp/webui.go:webUIFS`, `:545` (the embed, the `-web` gate) ·
-`internal/serveapp/webui/ui/app.css:1513` (layout) · `internal/serveapp/webui/index.html:13` (tabs) ·
-`internal/serveapp/webui/ui/app.js:309`, `:935`, `:122`, `:1434`, `:1581`, `:357`, `:841`, `:86`, `:489`, `:1358`, `:641`, `:205`, `:1288`, `:7`, `:946` (the conversation transcript, the
+`internal/app/serveapp/webui.go:webUIFS`, `:545` (the embed, the `-web` gate) ·
+`internal/app/serveapp/webui/ui/app.css:1513` (layout) · `internal/app/serveapp/webui/index.html:13` (tabs) ·
+`internal/app/serveapp/webui/ui/app.js:309`, `:935`, `:122`, `:1434`, `:1581`, `:357`, `:841`, `:86`, `:489`, `:1358`, `:641`, `:205`, `:1288`, `:7`, `:946` (the conversation transcript, the
 rendering rule, the error explanations, the keyboard handling, the load offer that replaced the dead-end line, the thinking split,
-regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:loadedModel.contextWindow` (`contextWindow`) ·
-`internal/serveapp/admin.go:server.handleAdminLoad` (`handleAdminLoad`) ·
-`internal/serveapp/openai.go:sampling` (the sampling fields the page never sends) ·
+regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/app/serveapp/openai.go:loadedModel.contextWindow` (`contextWindow`) ·
+`internal/app/serveapp/admin.go:server.handleAdminLoad` (`handleAdminLoad`) ·
+`internal/app/serveapp/openai.go:sampling` (the sampling fields the page never sends) ·
 `anthropic.go`'s request type (no thinking block in v1; added 2026-09-30) · `pull/pull.go:File` (`Size`, for the
 fit verdict) · `demo/agent/cmd/agent-web/index.html:129`, `:183`, `:198` (the image composer, the
 markdown TODO, the tool chips — all transplantable) ·
@@ -1471,6 +1471,6 @@ markdown TODO, the tool chips — all transplantable) ·
 `docs/completed/review-2026-09-04.md` V-20 (the cross-origin lesson) ·
 *An Empirical Study of Harness Design for Coding Agents* (arXiv:2609.20804) — W35's
 context-management evidence and its recall negative result · `decoder/resident_reuse.go`,
-`internal/serveapp/sessions.go` (the prefix reuse W35's policy is shaped around)
+`internal/app/serveapp/sessions.go` (the prefix reuse W35's policy is shaped around)
 
 <!-- doc-reviewed: 2026-09-13 -->

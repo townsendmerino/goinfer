@@ -25,7 +25,7 @@ Memory needed by a model is computed in several places that were written separat
   `ResidentWeightBytesPaged(slots) + ResidentHostCopyBytes(slots) + residentKVBytes(m)`: the weights, a host copy
   of the weights (Metal's unified memory holds the quantized host `WeightMat` *and* a re-packed device buffer), and KV.
 - `decoder.Model.Plan` (`decoder/fitplan.go`) prices `ResidentDenseWeightBytes()` + experts + KV. No host-copy term.
-- Both judge against the same ceiling (`metalMemoryCeiling`, unified in S4 item 3). So `fit` (`internal/fitcmd`,
+- Both judge against the same ceiling (`metalMemoryCeiling`, unified in S4 item 3). So `fit` (`internal/app/fitcmd`,
   which calls `m.Plan(backend, free, req)`) can report **resident** for a model the Metal guard then **refuses**.
 - Size of the missing term, measured on Linux (it is a decoder method): for a GGUF load it equals the whole dense
   term — **1.29 GB** on qwen2.5-coder-1.5b (dense 1.29 GB), **0.50 GB** on the 0.5B.

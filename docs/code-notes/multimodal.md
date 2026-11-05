@@ -1,7 +1,7 @@
 # multimodal: notes moved out of code comments
 
 History, measurements and open work that used to sit in the comments of `multimodal`, moved here verbatim by the comment diet
-(`docs/tasks/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
+(`docs/completed/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
 its guardrails, and points here by heading. This file is off the read path: open it when a pointer sends you. Text is unedited,
 except that a `file.go:NNN` reference inside it names the declaration instead (the line numbers had already gone stale).
 
@@ -17,7 +17,7 @@ owner decides.
 ```
 
 Note added when this moved (2026-10-09): "not wired in; the owner decides" is no longer true. G-S5e passed with option (b) after this
-comment was written (`docs/completed/task-multimodal-support-2026-10.md`, the S5 follow-up), and `internal/serveapp/vision_serve.go` calls
+comment was written (`docs/completed/task-multimodal-support-2026-10.md`, the S5 follow-up), and `internal/app/serveapp/vision_serve.go` calls
 `DecodeWAVAnyRate` for chat audio. The code comment now says what each function accepts and nothing more.
 
 ## Gemma3PromptBlock
@@ -30,7 +30,7 @@ tokens wrapped in Gemma3ImageBlock, itself wrapped in "\n\n" on both sides (M-38
 audit-2026-09-10) — Gemma 3's own processor (processing_gemma3.py, verified against the real
 transformers source) does exactly this: f"\n\n{boi_token}{image_tokens}{eoi_token}\n\n". Gemma's
 SPM vocab has distinct \n\n/\n\n\n pieces, so the id stream around the sentinel differs from
-HF/llama.cpp's without the wrapping. Shared by internal/serveapp and demo/agent so both build
+HF/llama.cpp's without the wrapping. Shared by internal/app/serveapp and demo/agent so both build
 the identical shape.
 ```
 
@@ -284,7 +284,7 @@ Moved from `multimodal/splice.go` (the comment above `splice.go.header`) on 2026
 
 ```text
 This is the one image-block splice every vision caller shares (goinfer-serve's vision routes, goinfer-chat --image, the
-examples). It lived in internal/serveapp until O5 gave it a second and third caller; serveapp's spliceImageBlock is now a
+examples). It lived in internal/app/serveapp until O5 gave it a second and third caller; serveapp's spliceImageBlock is now a
 one-line delegate and keeps its tests.
 ```
 
@@ -437,7 +437,7 @@ Moved from `multimodal/gemma3_block_test.go` (the comment above `TestGemma3Promp
 TestGemma3PromptBlock is M-38's gate (docs/audit-2026-09-10.md): Gemma 3's own processor
 (processing_gemma3.py, verified against the real transformers source 2026-09-16) wraps the
 image sequence in "\n\n" on BOTH sides — f"\n\n{boi_token}{image_tokens}{eoi_token}\n\n" — a
-shape internal/serveapp and demo/agent used to get wrong (a bare trailing "\n", or nothing).
+shape internal/app/serveapp and demo/agent used to get wrong (a bare trailing "\n", or nothing).
 ```
 
 ## readGolden

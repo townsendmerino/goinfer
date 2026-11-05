@@ -9,7 +9,7 @@ same scripts as that census, in this directory:
    tool. Each harness has its own port (18483 + its index in `PORTS`). The bodies are under `~/harnesses-captures/<harness>/`,
    outside the repo.
 2. **Replay** (`harness_replay.py`): each recorded POST goes to a CPU goinfer (`serve` at `e5267a7c` plus another
-   session's uncommitted edits to `internal/connect/` and `internal/serveapp/responses.go`, built `CGO_ENABLED=0`),
+   session's uncommitted edits to `internal/connect/` and `internal/app/serveapp/responses.go`, built `CGO_ENABLED=0`),
    Qwen2.5-Coder-0.5B q4_k_m, `-ctx 32768`, streaming off, output capped at one token. The size is goinfer's own
    `prompt_tokens`. Log: `replay-nobara-2026-10-13.log`. serve's swap guard tripped twice during the replay
    (other processes on the box grew swap past the guard's 512 MB threshold; it then answers 503 `halted`). Each time

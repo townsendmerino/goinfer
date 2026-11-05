@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/mamba2"
+	"github.com/townsendmerino/goinfer/internal/runtime/mamba2"
 )
 
 // TestMambaGNorm_groups is the K gate for the gated norm at a group count the tiny fixtures lack (both have one group): the

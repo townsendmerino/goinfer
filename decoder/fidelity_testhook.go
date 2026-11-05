@@ -258,11 +258,34 @@ func PrefillGatePromptSetFor(label string) (files []string) {
 	return files
 }
 
+// proseSeedAbove finds a seed named "../testdata/..." from a test that runs deeper than decoder/: a backend's tests run in backend/<name>/, so
+// testdata/ is two levels up, not one. It tries each level above the working directory and returns the first path that exists.
+func proseSeedAbove(f string) (string, bool) {
+	rel, ok := strings.CutPrefix(filepath.ToSlash(f), "../")
+	if !ok {
+		return "", false
+	}
+	dir := ".."
+	for range 4 {
+		dir = filepath.Join(dir, "..")
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p, true
+		}
+	}
+	return "", false
+}
+
 // PrefillGateProseIDsForTest reads f, encodes it with tk, and returns at least minTokens ids, repeating the same real
 // content if the file is too short rather than padding with filler (a repeated real paragraph stays content-dependent).
 func PrefillGateProseIDsForTest(t *testing.T, tk *tokenizer.Tokenizer, f string, minTokens int) []int {
 	t.Helper()
 	raw, err := os.ReadFile(f)
+	if os.IsNotExist(err) {
+		if p, ok := proseSeedAbove(f); ok {
+			raw, err = os.ReadFile(p)
+		}
+	}
 	if err != nil {
 		t.Fatalf("read prose seed %s: %v", f, err)
 	}

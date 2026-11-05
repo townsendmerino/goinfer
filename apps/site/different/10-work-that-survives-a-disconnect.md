@@ -28,15 +28,15 @@ sources:
   - "docs/releases/v0.19.0.md"
   - "docs/ARCHITECTURE.md"
   - "CHANGELOG.md"
-  - "internal/serveapp/jobs_http.go"
-  - "internal/serveapp/jobs_run.go"
-  - "internal/serveapp/job.go"
-  - "internal/serveapp/jobjournal.go"
-  - "internal/serveapp/jobeventlog.go"
-  - "internal/serveapp/batches_http.go"
-  - "internal/serveapp/batches_run.go"
-  - "internal/serveapp/jobs_http_test.go"
-  - "internal/serveapp/job_test.go"
+  - "internal/app/serveapp/jobs_http.go"
+  - "internal/app/serveapp/jobs_run.go"
+  - "internal/app/serveapp/job.go"
+  - "internal/app/serveapp/jobjournal.go"
+  - "internal/app/serveapp/jobeventlog.go"
+  - "internal/app/serveapp/batches_http.go"
+  - "internal/app/serveapp/batches_run.go"
+  - "internal/app/serveapp/jobs_http_test.go"
+  - "internal/app/serveapp/job_test.go"
 ---
 
 ## The problem
@@ -82,7 +82,7 @@ Nothing here has a benchmark. The project's measurement records hold no timing o
 | A job with no final line in the journal comes back as `interrupted`, and stays so on later restarts | `TestJobJournal_crashedJobReconstructsAsInterrupted`, `TestJobJournal_reopenCompletesTheInterruptedRecord` | no |
 | Journal round trip and file permissions | `TestJobJournal_roundTrip`, `TestJobJournal_permissions` | no |
 
-The first two tests are in [jobs_http_test.go](https://github.com/townsendmerino/goinfer/blob/main/internal/serveapp/jobs_http_test.go), the journal tests in [job_test.go](https://github.com/townsendmerino/goinfer/blob/main/internal/serveapp/job_test.go). The project's [work-queue plan](https://github.com/townsendmerino/goinfer/blob/main/docs/tasks/task-work-queue-2026-09.md) records the real-model tests as passing on 2026-09-14 and 2026-09-15. It does not say which machine or model they ran on, and we did not re-run them for this page. The restart case is tested by writing journal lines and reopening the file, not by killing a live server.
+The first two tests are in [jobs_http_test.go](https://github.com/townsendmerino/goinfer/blob/main/internal/app/serveapp/jobs_http_test.go), the journal tests in [job_test.go](https://github.com/townsendmerino/goinfer/blob/main/internal/app/serveapp/job_test.go). The project's [work-queue plan](https://github.com/townsendmerino/goinfer/blob/main/docs/tasks/task-work-queue-2026-09.md) records the real-model tests as passing on 2026-09-14 and 2026-09-15. It does not say which machine or model they ran on, and we did not re-run them for this page. The restart case is tested by writing journal lines and reopening the file, not by killing a live server.
 
 ## Use it
 

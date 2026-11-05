@@ -1,6 +1,6 @@
 package decoder
 
-import "github.com/townsendmerino/goinfer/internal/hybridattn"
+import "github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 
 // The Qwen3.5/3.6 family (qwen3_5_moe, qwen3_5, qwen3_next, olmo_hybrid), a hybrid: most layers are Gated DeltaNet (linear
 // attention, recurrent state in the cache), the rest gated softmax attention (KV cache), each followed by a routed+shared MoE or

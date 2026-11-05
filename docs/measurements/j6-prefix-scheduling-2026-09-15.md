@@ -69,7 +69,7 @@ as specified, and the answer to "does J6 clear the bar on the workload as pre-re
 
 ## Disposition
 
-**Code reverted, not shipped.** `internal/serveapp/admission.go`/`sessions.go`/`openai.go`'s J6
+**Code reverted, not shipped.** `internal/app/serveapp/admission.go`/`sessions.go`/`openai.go`'s J6
 changes (commit `81e62d32`, never pushed to `origin/main`) are reverted via `git revert` rather
 than silently dropped — the attempt stays visible in history, and this document is the record of
 why. J1's plain FIFO (`admission.go`'s `waiters.Front()`) remains the shipped behavior.

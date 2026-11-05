@@ -24,9 +24,42 @@ func DecodeWAV(data []byte) ([]float32, error) { return decodeWAV(data, false) }
 // (Resample) unless already at 16 kHz. A 16 kHz mono file comes out exactly as DecodeWAV's.
 func DecodeWAVAnyRate(data []byte) ([]float32, error) { return decodeWAV(data, true) }
 
+// WAV is a checked RIFF WAV whose samples are not yet decoded, so a caller can refuse a clip over its limit from the
+// header, before paying for the samples and for a resample that can multiply them. It aliases the bytes it was parsed from.
+type WAV struct {
+	pcm      []byte // the data chunk
+	ch, rate int
+}
+
+// ParseWAV checks data as DecodeWAVAnyRate does and returns the clip undecoded.
+func ParseWAV(data []byte) (WAV, error) { return parseWAV(data, true) }
+
+// Samples is the length of Decode's result.
+func (w WAV) Samples() int {
+	return resampledLen(len(w.pcm)/2/w.ch, w.rate, audio.Gemma4SampleRate)
+}
+
+// Decode returns the clip as DecodeWAVAnyRate does.
+func (w WAV) Decode() []float32 {
+	n := len(w.pcm) / 2 / w.ch * w.ch // whole frames only
+	out := make([]float32, n)
+	for i := range n {
+		out[i] = float32(int16(binary.LittleEndian.Uint16(w.pcm[2*i:]))) / 32768
+	}
+	return Resample(Downmix(out, w.ch), w.rate, audio.Gemma4SampleRate)
+}
+
 func decodeWAV(data []byte, anyRate bool) ([]float32, error) {
+	w, err := parseWAV(data, anyRate)
+	if err != nil {
+		return nil, err
+	}
+	return w.Decode(), nil
+}
+
+func parseWAV(data []byte, anyRate bool) (WAV, error) {
 	if len(data) < 12 || string(data[0:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
-		return nil, fmt.Errorf("audio: not a RIFF/WAVE file")
+		return WAV{}, fmt.Errorf("audio: not a RIFF/WAVE file")
 	}
 	var fmtOK bool
 	var ch, rate int
@@ -39,7 +72,7 @@ func decodeWAV(data []byte, anyRate bool) ([]float32, error) {
 		switch id {
 		case "fmt ":
 			if size < 16 {
-				return nil, fmt.Errorf("audio: WAV fmt chunk of %d bytes", size)
+				return WAV{}, fmt.Errorf("audio: WAV fmt chunk of %d bytes", size)
 			}
 			f := data[body : body+size]
 			format, c := binary.LittleEndian.Uint16(f[0:2]), binary.LittleEndian.Uint16(f[2:4])
@@ -48,27 +81,22 @@ func decodeWAV(data []byte, anyRate bool) ([]float32, error) {
 				format = binary.LittleEndian.Uint16(f[24:26])
 			}
 			if !anyRate && (format != 1 || bits != 16 || c != 1 || r != audio.Gemma4SampleRate) {
-				return nil, fmt.Errorf("audio: WAV is format %d, %d-bit, %d channel(s) at %d Hz; want 16-bit PCM mono at 16000 Hz (no resampling is done)", format, bits, c, r)
+				return WAV{}, fmt.Errorf("audio: WAV is format %d, %d-bit, %d channel(s) at %d Hz; want 16-bit PCM mono at 16000 Hz (no resampling is done)", format, bits, c, r)
 			}
 			if format != 1 || bits != 16 || c < 1 || c > wavMaxCh || r < wavMinRate || r > wavMaxRate {
-				return nil, fmt.Errorf("audio: WAV is format %d, %d-bit, %d channel(s) at %d Hz; want 16-bit PCM, 1-%d channels, %d-%d Hz", format, bits, c, r, wavMaxCh, wavMinRate, wavMaxRate)
+				return WAV{}, fmt.Errorf("audio: WAV is format %d, %d-bit, %d channel(s) at %d Hz; want 16-bit PCM, 1-%d channels, %d-%d Hz", format, bits, c, r, wavMaxCh, wavMinRate, wavMaxRate)
 			}
 			if !ResampleSupported(int(r), audio.Gemma4SampleRate) {
-				return nil, fmt.Errorf("audio: a WAV at %d Hz is not supported (resampling it to %d Hz would need an impractically long filter); resample it to %d Hz first", r, audio.Gemma4SampleRate, audio.Gemma4SampleRate)
+				return WAV{}, fmt.Errorf("audio: a WAV at %d Hz is not supported (resampling it to %d Hz would need an impractically long filter); resample it to %d Hz first", r, audio.Gemma4SampleRate, audio.Gemma4SampleRate)
 			}
 			ch, rate, fmtOK = int(c), int(r), true
 		case "data":
 			if !fmtOK {
-				return nil, fmt.Errorf("audio: WAV data before its fmt chunk")
+				return WAV{}, fmt.Errorf("audio: WAV data before its fmt chunk")
 			}
-			n := size / 2 / ch * ch // whole frames only
-			out := make([]float32, n)
-			for i := range n {
-				out[i] = float32(int16(binary.LittleEndian.Uint16(data[body+2*i:]))) / 32768
-			}
-			return Resample(Downmix(out, ch), rate, audio.Gemma4SampleRate), nil
+			return WAV{pcm: data[body : body+size], ch: ch, rate: rate}, nil
 		}
 		off = body + size + size&1
 	}
-	return nil, fmt.Errorf("audio: WAV has no data chunk")
+	return WAV{}, fmt.Errorf("audio: WAV has no data chunk")
 }

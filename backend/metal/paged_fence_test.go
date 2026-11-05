@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/prequant"
+	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 )
 
 // TestPagedFence_bitExactAndNotStale is the fence's gate (M-11 / C-B03, paged_fence.go): on the tiny Gemma 4 MoE as a

@@ -93,7 +93,7 @@ Written and committed before the run. The rules below do not move after the data
 ## Pre-registration (`docs/measurements/noise-registry.md` §8)
 
 - **Tier:** day. **Testing tier:** 1, one small real model.
-  - Tier 0 already covers the pieces: `internal/serveapp/b35_keep_test.go`, `backend/cuda/b35_snapshot_test.go`, and gate 1's route
+  - Tier 0 already covers the pieces: `internal/app/serveapp/b35_keep_test.go`, `backend/cuda/b35_snapshot_test.go`, and gate 1's route
     readings.
   - It cannot show the restore on a real tool-loop conversation, where three requests pass between the save and the restore.
 - **Interleaving:** none needed. The bars are identity and a ratio against a cold control on the same server, as in B35's own

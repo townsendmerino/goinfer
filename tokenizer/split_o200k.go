@@ -39,10 +39,10 @@ func splitTekken(s string) []string { return splitO200kVariant(s, false, 1) }
 
 // splitO200kVariant is the o200k walker with its two family switches: whether contractions attach to the word they follow, and the digit-run cap.
 func splitO200kVariant(s string, contractions bool, maxDigits int) []string {
-	rs := []rune(s)
+	rs, off, s := runeOffsets(s)
 	n := len(rs)
-	var out []string
-	emit := func(a, b int) { out = append(out, string(rs[a:b])) }
+	out := make([]string, 0, n/3+1)
+	emit := func(a, b int) { out = append(out, s[off[a]:off[b]]) }
 
 	isNL := func(r rune) bool { return r == '\r' || r == '\n' }
 	// The word classes. Upper covers Lu/Lt/Lm/Lo/M; lower covers Ll/Lm/Lo/M. Lm, Lo and M are in

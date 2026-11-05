@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/mem/probe"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
 // voidWindow brackets one timed arm with the void rule's two terms (docs/measurements/noise-registry.md §8): the machine's busy

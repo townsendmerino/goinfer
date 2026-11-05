@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/mem/probe"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
 // planVerdict is a Plan eligibility verdict on backend be for a loaded model: true when Plan would decline before pricing.

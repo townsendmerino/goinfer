@@ -5,7 +5,7 @@ package metal
 import (
 	"errors"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
 	"sync"
 

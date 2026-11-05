@@ -4,7 +4,7 @@
 //   node scripts/webui_md_gate.mjs          # exit 0 = pass, 1 = a check failed, 2 = could not run
 //
 // It drives headless Chrome over the DevTools protocol and loads scripts/webui-gate/md-harness.html
-// from file:// — which loads the SHIPPED internal/serveapp/webui/ui/markdown.js, not a copy. Then, in
+// from file:// — which loads the SHIPPED internal/app/serveapp/webui/ui/markdown.js, not a copy. Then, in
 // that real browser:
 //
 //   1. HOSTILE INPUT. Every payload is rendered into a node ATTACHED to the document, so a payload

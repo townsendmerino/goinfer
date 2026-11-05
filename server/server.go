@@ -21,8 +21,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/townsendmerino/goinfer/internal/inproc"
-	"github.com/townsendmerino/goinfer/internal/serveapp"
+	"github.com/townsendmerino/goinfer/internal/app/inproc"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp"
 )
 
 // NewHandler loads the models the flags name and returns the server's HTTP API as a handler. The flags are

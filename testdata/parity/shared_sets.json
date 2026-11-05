@@ -32,14 +32,14 @@
     "decoder/scratch.go",
     "decoder/cost_cpu.go",
     "decoder/wmbytes.go",
-    "internal/program/program.go"
+    "internal/runtime/program/program.go"
   ],
   "deltanet": [
     "decoder/deltanet.go",
     "decoder/deltanet_n.go",
     "decoder/forward_qwen35_n.go",
     "decoder/program_cpu_n_qwen35.go",
-    "internal/hybridattn/deltanet.go"
+    "internal/runtime/hybridattn/deltanet.go"
   ],
   "loaders": [
     "decoder/weights.go",

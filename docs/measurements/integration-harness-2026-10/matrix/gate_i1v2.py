@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""I1-v2's grader (docs/tasks/task-integration-harness-2026-10.md, "I1 live gate, second design (I1-v2)", registered 2026-10-14,
+"""I1-v2's grader (docs/completed/task-integration-harness-2026-10.md, "I1 live gate, second design (I1-v2)", registered 2026-10-14,
 with its amendment 1 of the same day, made before any run).
 
   gate_i1v2.py [--fallback agent,...] <records.jsonl> [...]   grade every `chain` run, then each agent

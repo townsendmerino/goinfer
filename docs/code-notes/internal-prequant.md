@@ -1,13 +1,13 @@
-# internal/prequant: notes moved out of code comments
+# internal/runtime/prequant: notes moved out of code comments
 
-History, measurements and open work that used to sit in the comments of `internal/prequant`, moved here verbatim by the comment diet
-(`docs/tasks/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
+History, measurements and open work that used to sit in the comments of `internal/runtime/prequant`, moved here verbatim by the comment diet
+(`docs/completed/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
 its guardrails, and points here by heading. This file is off the read path: open it when a pointer sends you. Text is unedited,
 except that a `file.go:NNN` reference inside it names the declaration instead (the line numbers had already gone stale).
 
 ## Transcode: the weights half
 
-Moved from `internal/prequant/prequant.go` (the comment in `Transcode`) on 2026-10-09.
+Moved from `internal/runtime/prequant/prequant.go` (the comment in `Transcode`) on 2026-10-09.
 
 ```text
 2) Weights half: transcode the GGUF straight into the bundle, ONE LAYER at a
@@ -19,7 +19,7 @@ build some families used to fall back to is gone.
 
 ## Transcode: the temp file and its name
 
-Moved from `internal/prequant/prequant.go` (the comment in `Transcode`) on 2026-10-09.
+Moved from `internal/runtime/prequant/prequant.go` (the comment in `Transcode`) on 2026-10-09.
 
 ```text
 TEMP + RENAME, not os.Create(out) directly (M-12). giw.WriteStream patches the body
@@ -46,7 +46,7 @@ Transcode again and so never saw it, which is how it stayed green.
 
 ## transcodeDir: the temp file
 
-Moved from `internal/prequant/prequant.go` (the comment in `transcodeDir`) on 2026-10-09.
+Moved from `internal/runtime/prequant/prequant.go` (the comment in `transcodeDir`) on 2026-10-09.
 
 ```text
 TEMP + RENAME, same reason as Transcode's GGUF branch above (M-12/M-33): a write to
@@ -61,7 +61,7 @@ loader at all.
 
 ## residentDirBody: ResidentContext
 
-Moved from `internal/prequant/prequant.go` (the comment in `residentDirBody`) on 2026-10-09.
+Moved from `internal/runtime/prequant/prequant.go` (the comment in `residentDirBody`) on 2026-10-09.
 
 ```text
 ResidentContext 1: a transcode runs no request, so it allocates no KV (selfCheck does the same). Unpinned, the fit
@@ -70,7 +70,7 @@ guard priced the model's full context: on 2026-10-07 it refused Gemma 4 E4B for 
 
 ## EnsureCachedGIW: the free-disk check
 
-Moved from `internal/prequant/prequant.go` (the comment in `EnsureCachedGIW`) on 2026-10-09.
+Moved from `internal/runtime/prequant/prequant.go` (the comment in `EnsureCachedGIW`) on 2026-10-09.
 
 ```text
 S1 (task-never-swap-2026-09.md): a half-written sidecar on a full disk is a failure this
@@ -86,7 +86,7 @@ missing probe must never be the reason a load that would have worked gets refuse
 
 ## SidecarPathIfFresh
 
-Moved from `internal/prequant/prequant.go` (the comment above `SidecarPathIfFresh`) on 2026-10-09.
+Moved from `internal/runtime/prequant/prequant.go` (the comment above `SidecarPathIfFresh`) on 2026-10-09.
 
 ```text
 SidecarPathIfFresh returns the sidecar .giw for ggufPath at quant/backend's target and
@@ -98,7 +98,7 @@ an equally expensive one-time transcode, not for "nearly free" as the brief asks
 
 ## DefaultToSidecar
 
-Moved from `internal/prequant/prequant.go` (the comment above `DefaultToSidecar`) on 2026-10-09.
+Moved from `internal/runtime/prequant/prequant.go` (the comment above `DefaultToSidecar`) on 2026-10-09.
 
 ```text
 DefaultToSidecar reports whether a .gguf source should resolve to its sidecar .giw by default
@@ -113,7 +113,7 @@ GOINFER_GGUF_DIRECT env var; it can only turn the sidecar OFF.
 
 ## cacheFresh
 
-Moved from `internal/prequant/prequant.go` (the comment above `cacheFresh`) on 2026-10-09.
+Moved from `internal/runtime/prequant/prequant.go` (the comment above `cacheFresh`) on 2026-10-09.
 
 ```text
 cacheFresh reports whether cache exists, is newer than src, AND actually loads.
@@ -137,7 +137,7 @@ cacheLayoutCurrent — quant is the cache's own quant, which decides whether tha
 
 ## minInt4CacheGIWVersion
 
-Moved from `internal/prequant/prequant.go` (the comment above `minInt4CacheGIWVersion`) on 2026-10-09.
+Moved from `internal/runtime/prequant/prequant.go` (the comment above `minInt4CacheGIWVersion`) on 2026-10-09.
 The constant and `cacheLayoutCurrent` were removed on 2026-10-10 with weights format v16: the reader reads one
 version, so an older sidecar fails the load check in `cacheFresh` and is rebuilt.
 
@@ -156,7 +156,7 @@ a kind: every bump here costs each user a one-time re-transcode.
 
 ## selfCheck
 
-Moved from `internal/prequant/prequant.go` (the comment above `selfCheck`) on 2026-10-09.
+Moved from `internal/runtime/prequant/prequant.go` (the comment above `selfCheck`) on 2026-10-09.
 
 ```text
 selfCheck verifies a freshly written bundle loads through the real mmap path — the streamed
@@ -180,7 +180,7 @@ printed a "context capped" line belonging to no real load; under tight memory it
 
 ## projectedSidecarBytes
 
-Moved from `internal/prequant/projected.go` (the comment above `projectedSidecarBytes`) on 2026-10-09.
+Moved from `internal/runtime/prequant/projected.go` (the comment above `projectedSidecarBytes`) on 2026-10-09.
 
 ```text
 projectedSidecarBytes is the size a sidecar built at quant will have, projected from the source
@@ -192,7 +192,7 @@ source, int8int8 about 1.6× — so the check passed and the transcode could sti
 
 ## TestGIWRoundTripPreservesRouterBias
 
-Moved from `internal/prequant/stream_test.go` (the comment above `TestGIWRoundTripPreservesRouterBias`) on 2026-10-09.
+Moved from `internal/runtime/prequant/stream_test.go` (the comment above `TestGIWRoundTripPreservesRouterBias`) on 2026-10-09.
 
 ```text
 TestGIWRoundTripPreservesRouterBias guards the .giw serialize format against
@@ -206,7 +206,7 @@ format, so a stream-weights GLM lost its routing bias — caught only by the rea
 
 ## residentLabelFor
 
-Moved from `internal/prequant/stream_test.go` (the comment above `residentLabelFor`) on 2026-10-09.
+Moved from `internal/runtime/prequant/stream_test.go` (the comment above `residentLabelFor`) on 2026-10-09.
 
 ```text
 residentLabelFor is what decoder.(*Weights).quantLabel() actually resolves to for
@@ -232,7 +232,7 @@ inference rather than echoing the request) is unaffected and liveQuant is alread
 
 ## TestGiwQuantLabel_headerAsymmetry
 
-Moved from `internal/prequant/stream_test.go` (the comment above `TestGiwQuantLabel_headerAsymmetry`) on 2026-10-09.
+Moved from `internal/runtime/prequant/stream_test.go` (the comment above `TestGiwQuantLabel_headerAsymmetry`) on 2026-10-09.
 
 ```text
 TestGiwQuantLabel_headerAsymmetry pins a v5 behaviour that until now lived only as a comment in
@@ -248,7 +248,7 @@ test self-skipped in CI and had never once run there.
 
 ## TestStreamTranscodeMatchesResident.fields
 
-Moved from `internal/prequant/stream_test.go` (the comment inside the byte-identity test comment) on 2026-10-09.
+Moved from `internal/runtime/prequant/stream_test.go` (the comment inside the byte-identity test comment) on 2026-10-09.
 
 ```text
 Byte-identity is asserted over everything outside the two fields that MUST differ, and each of
@@ -261,7 +261,7 @@ original diagnosis missed the CRC entirely.
 
 ## TestTranscode_embedInt4Threaded
 
-Moved from `internal/prequant/stream_test.go` (the comment above `TestTranscode_embedInt4Threaded`) on 2026-10-09.
+Moved from `internal/runtime/prequant/stream_test.go` (the comment above `TestTranscode_embedInt4Threaded`) on 2026-10-09.
 
 ```text
 TestTranscode_embedInt4Threaded gates M-31: Transcode's GGUF branch hardcoded `false` for
@@ -273,7 +273,7 @@ input — identical to omitting the flag, with no error. The safetensors-directo
 
 ## TestTranscode_realGGUFSucceedsAndPublishedBundleLoads
 
-Moved from `internal/prequant/stream_test.go` (the comment above `TestTranscode_realGGUFSucceedsAndPublishedBundleLoads`) on 2026-10-09.
+Moved from `internal/runtime/prequant/stream_test.go` (the comment above `TestTranscode_realGGUFSucceedsAndPublishedBundleLoads`) on 2026-10-09.
 
 ```text
 V-01 (docs/review-2026-09-04.md): no existing test ever drove a SUCCESSFUL GGUF Transcode —
@@ -289,7 +289,7 @@ that the file it left behind is loadable.
 
 ## TestTranscodeDir_writesViaTempThenRenames
 
-Moved from `internal/prequant/stream_test.go` (the comment above `TestTranscodeDir_writesViaTempThenRenames`) on 2026-10-09.
+Moved from `internal/runtime/prequant/stream_test.go` (the comment above `TestTranscodeDir_writesViaTempThenRenames`) on 2026-10-09.
 
 ```text
 M-33 (audit-2026-09-10): transcodeDir — the safetensors-directory sibling of Transcode's GGUF
@@ -304,7 +304,7 @@ guard as TestTranscode_writesViaTempThenRenames, targeting transcodeDir instead.
 
 ## TestStreamTranscode_perFamilyBodiesCarryTheirLayers
 
-Moved from `internal/prequant/stream_families_test.go` (the comment above `TestStreamTranscode_perFamilyBodiesCarryTheirLayers`) on 2026-10-09.
+Moved from `internal/runtime/prequant/stream_families_test.go` (the comment above `TestStreamTranscode_perFamilyBodiesCarryTheirLayers`) on 2026-10-09.
 
 ```text
 M-09: StreamTranscodeGGUF wrote a HEADER-ONLY bundle for five GGUF families, and the comment
@@ -326,7 +326,7 @@ do: the tiny fixtures carry no tokenizer, so the full Transcode refuses before t
 
 ## TestStreamTranscode_perFamilyBodiesCarryTheirLayers.gptoss
 
-Moved from `internal/prequant/stream_families_test.go` (the comment inside the per-family table) on 2026-10-09.
+Moved from `internal/runtime/prequant/stream_families_test.go` (the comment inside the per-family table) on 2026-10-09.
 
 ```text
 The regression, historically: a family routed through the resident-build
@@ -340,7 +340,7 @@ header-only, not which path produced it).
 
 ## TestGptOss_streamedMatchesResident
 
-Moved from `internal/prequant/stream_families_test.go` (the comment above `TestGptOss_streamedMatchesResident`) on 2026-10-09.
+Moved from `internal/runtime/prequant/stream_families_test.go` (the comment above `TestGptOss_streamedMatchesResident`) on 2026-10-09.
 
 ```text
 TestGptOss_streamedMatchesResident is S2's own registered gate for the first family moved off
@@ -353,7 +353,7 @@ name which family broke, not force a reader to guess from a shared table's row c
 
 ## TestProjectedSidecarBytes_neverUnderCounts
 
-Moved from `internal/prequant/projected_test.go` (the comment above `TestProjectedSidecarBytes_neverUnderCounts`) on 2026-10-09.
+Moved from `internal/runtime/prequant/projected_test.go` (the comment above `TestProjectedSidecarBytes_neverUnderCounts`) on 2026-10-09.
 
 ```text
 TestProjectedSidecarBytes_neverUnderCounts: the pre-transcode disk check must not pass a sidecar that
@@ -365,7 +365,7 @@ will not fit, so the projection has to be at least what the writer actually prod
 
 ## TestDirSidecar_keepsMRopeSection
 
-Moved from `internal/prequant/dir_sidecar_test.go` (the comment above `TestDirSidecar_keepsMRopeSection`) on 2026-10-09.
+Moved from `internal/runtime/prequant/dir_sidecar_test.go` (the comment above `TestDirSidecar_keepsMRopeSection`) on 2026-10-09.
 
 ```text
 TestDirSidecar_keepsMRopeSection: a Qwen-VL's m-RoPE section survives the sidecar. Real checkpoints carry it in
@@ -379,7 +379,7 @@ self-check and rebuild.
 
 ## dirStreamDiff
 
-Moved from `internal/prequant/dir_stream_test.go` (the comment above `dirStreamDiff`) on 2026-10-09.
+Moved from `internal/runtime/prequant/dir_stream_test.go` (the comment above `dirStreamDiff`) on 2026-10-09.
 
 ```text
 dirStreamDiff compares a resident and a streamed bundle as G-DS1 is amended (2026-10-09, the task doc): byte-identical
@@ -390,7 +390,7 @@ it from the identical tensors. giwSplit checks the pad is zeros and the stored C
 
 ## sidecar_default_test.header
 
-Moved from `internal/prequant/sidecar_default_test.go` (the comment at the top of the file) on 2026-10-09.
+Moved from `internal/runtime/prequant/sidecar_default_test.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
 task-never-swap-2026-09.md S1: sidecar .giw by default on darwin. These gates cover the three

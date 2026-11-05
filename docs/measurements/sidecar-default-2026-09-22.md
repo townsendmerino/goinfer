@@ -48,13 +48,13 @@ Byte-identity: for each model, `decoder.Load` was called directly on the .gguf (
 prompt-comparisons (3 per model × 2 models) matched exactly. The same comparison, run
 deliberately across two genuinely DIFFERENT quants (int8int8 vs int4) as a sanity check that the
 comparison logic is actually sensitive to a real divergence, produced a real mismatch — confirming
-this is not a vacuous pass (see `internal/prequant/sidecar_identity_test.go`'s own doc comment,
+this is not a vacuous pass (see `internal/runtime/prequant/sidecar_identity_test.go`'s own doc comment,
 committed alongside this measurement, for the permanent regression test).
 
 ## A confound found and fixed mid-measurement
 
 Model B's first attempt at a "direct" arm silently fell through a DIFFERENT, PRE-EXISTING
-mechanism: `internal/serveapp/main.go`'s fit-guard auto-retry (task-fit-to-hardware.md's CPU
+mechanism: `internal/app/serveapp/main.go`'s fit-guard auto-retry (task-fit-to-hardware.md's CPU
 placement piece, unrelated to S1) — this machine's tight free RAM at the time made the STATIC fit
 guard refuse the plain resident load, and the pre-existing auto-retry-to-streaming fallback loaded
 it through a `.giw` too, before S1's own new logic ever got a chance to run. `-direct-load` only

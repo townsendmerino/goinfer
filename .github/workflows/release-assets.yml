@@ -73,7 +73,7 @@ jobs:
             ( cd "$root/$dir" \
                 && env "${env[@]}" \
                 go build ${tags:+-tags "$tags"} \
-                -ldflags="-s -w -X github.com/townsendmerino/goinfer/internal/chatapp.injectedVersion=$TAG" \
+                -ldflags="-s -w -X github.com/townsendmerino/goinfer/internal/app/chatapp.injectedVersion=$TAG" \
                 -trimpath -o "$out" "$subpath" )
           }
           build backend/metal metal darwin arm64  ./cmd/chat
@@ -196,7 +196,7 @@ jobs:
             ( cd "$root/$dir" \
                 && env "${env[@]}" \
                 go build ${tags:+-tags "$tags"} \
-                -ldflags="-s -w -X github.com/townsendmerino/goinfer/internal/serveapp.injectedVersion=$TAG" \
+                -ldflags="-s -w -X github.com/townsendmerino/goinfer/internal/app/serveapp.injectedVersion=$TAG" \
                 -trimpath -o "$out" ./cmd/serve )
           }
           build backend/metal metal darwin arm64
@@ -374,7 +374,7 @@ jobs:
         run: |
           set -euo pipefail
           # The committed script, not a reimplementation of it: it stages the prequant .giw next to
-          # the //go:embed directive in internal/chatapp and picks the right build tag. Prequant
+          # the //go:embed directive in internal/app/chatapp and picks the right build tag. Prequant
           # (its default) is what makes the README's "instant boot, <100 MB heap" true — the raw
           # --gguf mode quantizes at launch instead. GOINFER_TIER/GOINFER_RELEASE_TAG (R6,
           # docs/measurements/cold-user-2026-09-06-nobara-pc.md) make the version and the baked

@@ -92,10 +92,28 @@ func runCommentsOnly(argv []string, w io.Writer) int {
 
 	in := commentsOnlyInput{Changes: changes, Files: map[string]commentsOnlyFile{}, NoChecks: *noChecks, Verbose: *verbose}
 	for _, c := range changes {
-		if strings.HasPrefix(c.Path, "docs/") || !strings.HasSuffix(c.Path, ".go") || c.Status != "M" {
+		if strings.HasPrefix(c.Path, "docs/") || !strings.HasSuffix(c.Path, ".go") {
 			continue
 		}
-		old, err1 := showAt(base, c.Path)
+		// --no-renames shows a file moved in layout Tier 2 as a delete of its pre-move path and an add of its new
+		// path. The add is the same file: it is compared with its pre-move content when that content exists at base,
+		// and skipped as a new file when it does not.
+		basePath := c.Path
+		switch c.Status {
+		case "M":
+		case "A":
+			old, moved := preMovePath(c.Path)
+			if !moved {
+				continue
+			}
+			if _, err := showAt(base, old); err != nil {
+				continue
+			}
+			basePath = old
+		default:
+			continue
+		}
+		old, err1 := showAt(base, basePath)
 		cur, err2 := currentContent(c.Path, *worktree)
 		if err1 != nil || err2 != nil {
 			in.Files[c.Path] = commentsOnlyFile{Unreadable: fmt.Sprintf("%s: cannot read both versions (%v, %v)", c.Path, err1, err2)}

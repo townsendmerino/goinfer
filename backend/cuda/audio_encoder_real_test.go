@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/audio"
-	"github.com/townsendmerino/goinfer/internal/whisper"
+	"github.com/townsendmerino/goinfer/internal/runtime/whisper"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 

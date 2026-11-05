@@ -88,9 +88,34 @@ Round two moved nothing and is not in this branch. It is kept as local branch kv
 MC3's RSS, sampled from ps in round one: 107 to 123 MB, except one new cell at 1,079 MB (13:04, with 11,246 pages of swap-ins). The other two new cells on that binary read 117 and 108 MB; not diagnosed. Swap-outs 0 in all six.
 Not read: every 7B cell. Its step refused at 12:57, 5,801 MB free against 4,466 + 2,048 MB, with Francis's apps closed. TTFT, since prefill's kernels do not change until KV5-3.
 
+== G2's night cells, night job kv5-2-g2-7b, 2026-11-03 21:56 to 22:22 PST: THE 7B'S DECODE GATE PASSES
+New a297113d (tuning round one, what shipped in #640) against old f8632013, pinned binaries and harness (run-g2-night.sh), MacBookPro18,3, 16 GB, ~/models, greedy seed 1, int4 from the Metal bundles, on AC, thermal not read. G4 as amended. Median runs. Raw: kv5-2-g2-night.json.gz.
+  7B          128  new  33.0  old  33.1 tok/s  new/old 0.997  PASS  blocks 1.000, 0.995  RSS new-old  +1.6 MB
+  7B         2048  new  29.4  old  29.3 tok/s  new/old 1.001  PASS  blocks 1.061, 1.001  RSS new-old  -4.9 MB
+  7B         3900  new  27.6  old  27.5 tok/s  new/old 1.005  PASS  blocks 0.995, 1.012  RSS new-old  +3.0 MB
+  7B         8000  new  24.0  old  23.6 tok/s  new/old 1.018  PASS  blocks 1.009, 1.016  RSS new-old  -2.2 MB
+One quad a cell. Swap-outs 0.0 MB in every kept cell. RSS: the widest gap between any new and old cell of a depth is 7.6 MB, under the 64 MB rule. Token gate ok in every cell, every cell on metal-resident (int4). Load at a cell's start 0.58 to 2.6. The idle gate's longest wait 47.8 s; busy at most 9.7% against the 10% cap.
+One void, listed: the old arm's block 1 at depth 2,048 read 126.06 MB of swap-outs and re-ran in place; one void, so no stop. Swap-ins are context: at most 13.6 MB a cell. That cell, the old arm's block 0 at depth 2,048, also holds the one slow run, 26.0 tok/s, kept by the rule and the reason block 0 reads 1.061; the cell reads 1.000 without it.
+
+gemma3-1b's repeat, two more quads a cell, context for D-KV5-1, not a gate:
+  gemma3-1b  2048  new  70.1  old  72.3 tok/s  new/old 0.970  AMBIGUOUS  blocks 0.970, 0.969, 0.976, 0.962  RSS new-old  +0.8 MB
+  gemma3-1b  3900  new  63.5  old  66.4 tok/s  new/old 0.956  FAIL       blocks 0.956, 0.957, 0.956, 0.957  RSS new-old  -6.6 MB
+Swap-outs 0.0 MB, no voids. RSS: the widest gap 29.1 MB. This is tighter than the day's reading and a little worse: 3.0% and 4.4% against the 2.5% and 3.7% he accepted.
+
+== G2's prefill TTFT on the shipping code, 2026-11-04 04:02 to 04:22 PST: PASS
+It was left to KV5-3, since prefill's kernels do not change until then, and KV5-3 is out of v0.24.0, so the coordinator asked for it to be read here. Instrument: ttft_ab.py in this directory, committed before the run: KV4's, on Metal, three alternating pairs, a fresh server per run at -ctx 4096, six unique prompts per depth, a warm-up first, client-timed to the first streamed event. New a297113d against old f8632013, pinned binaries and harness, MacBookPro18,3, 16 GB, ~/models, int4, on AC, thermal not read, exclusive lock. Raw: kv5-2-ttft.json.gz. old/new per pair, median:
+  1.5B   K=512    1.009, 0.998, 1.000   median 1.000  PASS   about 496 ms a side
+  1.5B   K=3,900  1.002, 1.001, 0.999   median 1.001  PASS   about 4,150 ms a side
+  7B     K=512    0.999, 1.001, 1.001   median 1.001  PASS   about 2,296 ms a side
+  7B     K=3,900  1.001, 1.001, 1.000   median 1.001  PASS   about 18,790 ms a side
+Swap-outs 0.0 MB in all 12 runs, no voids and no void starts; swap-ins at most 0.31 MB. Load at a run's start 0.20 to 2.76. RSS is sampled after each depth here, not at its peak, and reads 104 to 119 MB, with no pattern by arm.
+The harness's prefill_and_request_s, an earlier stand-in, is not a TTFT reading and is not used: it runs shorter at 8,000 than at 3,900, so those requests are not all cold prefills.
+
 == FRANCIS'S DECISION, 2026-11-03 14:22, relayed by the coordinator: option (b)
 He accepts gemma3-1b's measured cost, as D-KV4-3 did for KV4. KV5 does not park. gemma3-1b, new/old: at depth 128 / 2,048 / 3,900, 0.995 / 0.975 / 0.963 on round one's code, which is what ships here; 0.980 / 0.975 / 0.963 on round two's, which does not ship and is the set relayed with his answer. Depth 2,048 and 3,900 read the same on both.
 The 7B is still a gate: night job kv5-2-g2-7b reads it, and a miss comes back to him. Reverting this slice would be one PR.
+
+Francis, 2026-11-04 07:32, relayed by the coordinator, on gemma3-1b's repeat: "gemma3-1b's repeat run - i approve". His acceptance now covers the repeat's figures too: 0.970 at depth 2,048 and 0.956 at 3,900, about 4.4% at 3,900.
 
 == THE KILL RULE TRIPPED: what he decided on
 Registered: decode at depth 2,048 or more under 0.98 on the KV5-2 build gets two tuning rounds within a working day; still under, KV5 parks.
@@ -109,4 +134,4 @@ Touched: VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
 CI at 6e30abcc, before round one: success.
 Round one's plants, each table read taken out: every one red. Two share their mistake across both arms of a scrambled comparison and need a reference: a row offset inside a block (the fused kernels' single-row check) and i8's value scales (TestAttentionKernelsPastTileBound).
 VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
-THIS RECORD ENDS WITH gemma3-1b's COST ACCEPTED BY FRANCIS AND THE 7B UNREAD, its gate open. The slice is bit-identical.
+THIS RECORD ENDS WITH THE 7B'S DECODE GATE AND G2's PREFILL TTFT PASSED, and gemma3-1b's cost accepted by Francis. The slice is bit-identical.

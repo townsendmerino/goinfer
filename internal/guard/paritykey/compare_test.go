@@ -1,0 +1,347 @@
+package paritykey
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// side is one family "f" with dependency files decoder/arch.go (a builder) and decoder/attention.go (an executor),
+// whose contents are arch and attn, and its program list progs, every listed fixture's fingerprints being fp.
+func side(today, shadow, arch, attn, fp string, progs ...string) Side {
+	fx := map[string]string{}
+	for _, p := range progs {
+		fx[p] = fp
+	}
+	return Side{Tail: "kernel_fingerprints=t",
+		Today: map[string]string{"f": today}, Shadow: map[string]string{"f": shadow},
+		Files:    map[string][]string{"f": {"decoder/arch.go", "decoder/attention.go"}},
+		Programs: map[string][]string{"f": progs}, Fixture: fx,
+		Content: map[string]string{"decoder/arch.go": arch, "decoder/attention.go": attn}}
+}
+
+// loaderSide is side with a loader file: "f" also reads decoder/weights.go, whose contents are weights, and its loader digest stands for
+// that file, over one fixture whose entries are id.
+func loaderSide(today, shadow, weights, id string) Side {
+	s := side(today, shadow, "a1", "x1", "p1", "fx")
+	s.Files["f"] = append(s.Files["f"], "decoder/weights.go")
+	s.Content["decoder/weights.go"] = weights
+	s.Loaders = map[string][]string{"f": {"fx"}}
+	s.Dropped = map[string][]string{"f": {"decoder/weights.go"}}
+	s.LoaderFixture = map[string]string{"fx": id}
+	return s
+}
+
+// TestCompare_classes is W4 and week 3's L4: every class and reason, from sides built by hand.
+func TestCompare_classes(t *testing.T) {
+	base := side("t1", "s1", "a1", "x1", "p1", "fx")
+	cases := []struct {
+		name          string
+		before, after Side
+		class         Class
+		explained     bool
+	}{
+		{"nothing moved", base, side("t1", "s1", "a1", "x1", "p1", "fx"), AgreeFresh, true},
+		{"an executor moved", base, side("t2", "s2", "a1", "x2", "p1", "fx"), AgreeStale, true},
+		{"a builder and its program moved", base, side("t2", "s2", "a2", "x1", "p2", "fx"), AgreeStale, true},
+		{"a builder moved, no program did", base, side("t2", "s1", "a2", "x1", "p1", "fx"), OldOnly, true},
+		{"a builder and an executor moved, the shadow key did not", base, side("t2", "s1", "a2", "x2", "p1", "fx"), OldOnly, false},
+		{"a program moved, no dependency did", base, side("t1", "s2", "a1", "x1", "p2", "fx"), NewOnly, false},
+		{"the program list changed", side("t1", "t1", "a1", "x1", ""), side("t1", "s2", "a1", "x1", "p1", "fx"), NewOnly, true},
+		{"a fixture added to the list, the listed one unchanged", base, func() Side { s := side("t1", "s2", "a1", "x1", "p1", "fx", "fy"); s.Fixture["fy"] = "p9"; return s }(), NewOnly, true},
+		{"a fixture added to the list while the listed one's program moved", base, side("t1", "s2", "a1", "x1", "p2", "fx", "fy"), NewOnly, false},
+		{"today's tail moved, the shadow key did not", base, func() Side { s := side("t2", "s1", "a1", "x1", "p1", "fx"); s.Tail = "kernel_fingerprints=u"; return s }(), OldOnly, false},
+		{"today's key moved, no tracked input did", base, side("t2", "s1", "a1", "x1", "p1", "fx"), OldOnly, false},
+		{"a loader file moved, no identity did", loaderSide("t1", "s1", "w1", "l1"), loaderSide("t2", "s1", "w2", "l1"), OldOnly, true},
+		{"a loader file and a builder moved, no identity or program did", loaderSide("t1", "s1", "w1", "l1"), func() Side {
+			s := loaderSide("t2", "s1", "w2", "l1")
+			s.Content["decoder/arch.go"] = "a2"
+			return s
+		}(), OldOnly, true},
+		{"a loader file moved that this family's digest does not stand for", loaderSide("t1", "s1", "w1", "l1"), func() Side {
+			s := loaderSide("t2", "s1", "w2", "l1")
+			s.Dropped = map[string][]string{"f": {"decoder/gguf.go"}}
+			return s
+		}(), OldOnly, false},
+		{"a loader file and its identity moved", loaderSide("t1", "s1", "w1", "l1"), loaderSide("t2", "s2", "w2", "l2"), AgreeStale, true},
+		{"an identity moved, no dependency did", loaderSide("t1", "s1", "w1", "l1"), loaderSide("t1", "s2", "w1", "l2"), NewOnly, false},
+		{"the loader list changed", loaderSide("t1", "s1", "w1", "l1"), func() Side {
+			s := loaderSide("t1", "s2", "w1", "l1")
+			s.Loaders = map[string][]string{"f": {"fx", "fx.gguf"}}
+			s.LoaderFixture["fx.gguf"] = "l9"
+			return s
+		}(), NewOnly, true},
+		{"a loader fixture left the list, the program list did not change", func() Side {
+			s := loaderSide("t1", "s1", "w1", "l1")
+			s.Loaders = map[string][]string{"f": {"fx", "fx.gguf"}}
+			s.LoaderFixture["fx.gguf"] = "l9"
+			return s
+		}(), loaderSide("t1", "s2", "w1", "l1"), NewOnly, false},
+		{"the family left the rule, the program list did not change", loaderSide("t1", "s1", "w1", "l1"), func() Side {
+			s := loaderSide("t1", "s2", "w1", "l1")
+			s.Loaders, s.Dropped = map[string][]string{}, map[string][]string{}
+			return s
+		}(), NewOnly, false},
+		{"a fixture left the program list and the loader list together", func() Side {
+			s := loaderSide("t1", "s1", "w1", "l1")
+			s.Programs = map[string][]string{"f": {"fx", "gone"}}
+			s.Fixture["gone"] = "p1"
+			s.Loaders = map[string][]string{"f": {"fx", "gone", "gone.gguf"}}
+			s.LoaderFixture["gone"], s.LoaderFixture["gone.gguf"] = "l8", "l9"
+			return s
+		}(), loaderSide("t1", "s2", "w1", "l1"), NewOnly, true},
+		{"the loader list changed while a listed identity moved", loaderSide("t1", "s1", "w1", "l1"), func() Side {
+			s := loaderSide("t1", "s2", "w1", "l2")
+			s.Loaders = map[string][]string{"f": {"fx", "fx.gguf"}}
+			return s
+		}(), NewOnly, false},
+	}
+	for _, c := range cases {
+		v := Compare(c.before, c.after)
+		if len(v) != 1 || v[0].Class != c.class || v[0].Explained != c.explained {
+			t.Errorf("%s: got %+v, want class %s explained %v", c.name, v, c.class, c.explained)
+		}
+	}
+	after := base
+	after.Today = map[string]string{"g": "t"}
+	got := Compare(base, after)
+	if len(got) != 2 || got[0].Family != "f" || got[0].Class != Removed || got[1].Family != "g" || got[1].Class != Added {
+		t.Errorf("added and removed: got %+v", got)
+	}
+}
+
+// TestBuilderFile names the builders and keeps every other file in the key.
+func TestBuilderFile(t *testing.T) {
+	for _, p := range []string{"decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go", "decoder/arch_llama.go", "decoder/gemma12.go"} {
+		if !BuilderFile(p) {
+			t.Errorf("%s is a builder", p)
+		}
+	}
+	for _, p := range []string{"decoder/program_cpu.go", "decoder/attention.go", "decoder/arch_llama_test.go", "decoder/weights.go", "decoder/lfm2.go", "scripts/arch_x.go"} {
+		if BuilderFile(p) {
+			t.Errorf("%s is not a builder", p)
+		}
+	}
+	// It holds the program's types, but also methods that execute (AttentionParams.Start, AttnTempParams.Scale, BatchEligible), and a program
+	// fingerprint hashes a program's data, never a method's body. Listed, a change to one would move today's key and not the shadow key
+	// (docs/measurements/vk5-2026-10.md §10).
+	if BuilderFile("internal/runtime/program/program.go") {
+		t.Error("internal/runtime/program/program.go is not a builder: the shadow key would not see a change to its methods")
+	}
+}
+
+// TestKey_onTheTree hashes every family of the working tree with both keys, so a manifest or table the package cannot
+// read fails here rather than in the shadow job.
+func TestKey_onTheTree(t *testing.T) {
+	src := Dir("../../..")
+	s, err := LoadSide(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(s.Tail, KernelTailPrefix) {
+		t.Errorf("today's tail %q: the tree's key is not on its kernel table", s.Tail)
+	}
+	with := 0
+	for name := range s.Today {
+		has := len(s.Programs[name]) > 0
+		if has {
+			with++
+		}
+		if same := s.Today[name] == s.Shadow[name]; same == has {
+			t.Errorf("%s: %d programs, and today's key equal to the shadow key is %v", name, len(s.Programs[name]), same)
+		}
+	}
+	if with == 0 {
+		t.Fatal("no family has programs")
+	}
+}
+
+// TestManifestJSON_legacyTree reads a tree from before the records (one testdata/parity_manifest.json) unchanged, so
+// gate shadow and the VK0 replay still compare a push that crosses the change.
+func TestManifestJSON_legacyTree(t *testing.T) {
+	dir := t.TempDir()
+	legacy := []byte(`{"shared_sets": {"core": ["a.go"]}, "families": {"f": {"uses": ["core"]}}}`)
+	if err := os.MkdirAll(filepath.Join(dir, "testdata"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, LegacyManifestPath), legacy, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ManifestJSON(Dir(dir))
+	if err != nil || string(got) != string(legacy) {
+		t.Fatalf("legacy tree: %q, %v", got, err)
+	}
+	if _, err := ManifestJSON(Dir(t.TempDir())); err == nil {
+		t.Fatal("a tree with neither layout read as a manifest")
+	}
+}
+
+// TestTodayTail_pinOutOfKey computes today's key with Key and TodayTail over a small tree: under a kernel table, changing
+// only go.mod's aikit pin leaves the key unchanged and changing a fingerprint moves it; in a tree without the table, the
+// pin is the tail and moves it.
+func TestTodayTail_pinOutOfKey(t *testing.T) {
+	dir := t.TempDir()
+	write := func(path, body string) {
+		t.Helper()
+		p := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gomod := func(pin string) {
+		write("go.mod", "module m\n\nrequire (\n\tgithub.com/townsendmerino/aikit "+pin+"\n)\n")
+	}
+	write(SharedSetsFile, `{"core": ["decoder/attention.go"]}`)
+	write(RecordsDir+"/f.json", `{"uses": ["core"], "own": [], "deps_hash": "", "status": "validated"}`)
+	write("decoder/attention.go", "package decoder\n\nvar x = 1\n")
+	key := func() string {
+		t.Helper()
+		src := Dir(dir)
+		m, err := ReadManifest(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tail, err := TodayTail(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		k, err := Key(src, m, m.Families["f"], tail)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+
+	gomod("v1.0.0")
+	write(KernelTablePath, `{"amd64[avx2]": {"k": "sha256:aa"}}`)
+	k1 := key()
+	gomod("v2.0.0")
+	if key() != k1 {
+		t.Error("under the kernel table, changing only the aikit pin moved today's key")
+	}
+	write(KernelTablePath, `{"amd64[avx2]": {"k": "sha256:ab"}}`)
+	if key() == k1 {
+		t.Error("changing a kernel fingerprint left today's key unchanged")
+	}
+
+	if err := os.Remove(filepath.Join(dir, KernelTablePath)); err != nil {
+		t.Fatal(err)
+	}
+	k2 := key()
+	gomod("v3.0.0")
+	if key() == k2 {
+		t.Error("in a tree without the kernel table, changing the aikit pin left today's key unchanged")
+	}
+}
+
+// TestProgramsDigest_needsATable: a family with programs and no table to read them from is an error, never the digest of
+// nothing.
+func TestProgramsDigest_needsATable(t *testing.T) {
+	for _, tab := range []map[string]map[string]string{nil, {}} {
+		if d, err := ProgramsDigest([]string{"testdata/llama-tiny"}, tab); err == nil {
+			t.Errorf("table %v: digest %q, want an error", tab, d)
+		}
+	}
+}
+
+// TestLoaderDigest is SB4's shadow input: the digest reads every GOARCH and mode of the listed fixtures, in any order,
+// moves when one mode's entry moves, ignores fixtures not listed, and refuses an empty table or a missing fixture. The
+// committed table holds every program fixture that has weights.
+func TestLoaderDigest(t *testing.T) {
+	tab := map[string]map[string]map[string]string{
+		"amd64": {"a": {"f32": "1", "int8": "2"}, "b": {"f32": "3"}, "c": {"f32": "9"}},
+		"arm64": {"a": {"f32": "1", "int8": "2"}, "b": {"f32": "3"}},
+	}
+	d1, err := LoaderDigest([]string{"a", "b"}, tab)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d2, _ := LoaderDigest([]string{"b", "a"}, tab); d2 != d1 {
+		t.Error("the digest depends on the fixtures' order")
+	}
+	tab["amd64"]["c"]["f32"] = "10"
+	if d2, _ := LoaderDigest([]string{"a", "b"}, tab); d2 != d1 {
+		t.Error("a fixture not listed moved the digest")
+	}
+	tab["arm64"]["a"]["int8"] = "4"
+	if d2, _ := LoaderDigest([]string{"a", "b"}, tab); d2 == d1 {
+		t.Error("one mode's entry moved and the digest did not")
+	}
+	if _, err := LoaderDigest([]string{"a", "c"}, tab); err == nil {
+		t.Error("c has no arm64 entry, and the digest took it")
+	}
+	if _, err := LoaderDigest(nil, tab); err == nil {
+		t.Error("an empty fixture list gave a digest")
+	}
+	for _, empty := range []map[string]map[string]map[string]string{nil, {}} {
+		if _, err := LoaderDigest([]string{"a"}, empty); err == nil {
+			t.Error("an empty table gave a digest")
+		}
+	}
+
+	src := Dir("../../..")
+	real, err := ReadLoaderTable(src)
+	if err != nil || real == nil {
+		t.Fatalf("read %s: %v", LoaderTablePath, err)
+	}
+	m, err := ReadManifest(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked, gguf := 0, 0
+	for name, fam := range m.Families {
+		var withWeights []string
+		for _, p := range fam.Programs {
+			if _, err := os.Stat(filepath.Join("../../..", p, "model.safetensors")); err == nil {
+				withWeights = append(withWeights, p)
+			}
+			if _, err := os.Stat(filepath.Join("../../..", p+".gguf")); err == nil {
+				withWeights = append(withWeights, p+".gguf")
+				gguf++
+			}
+		}
+		if len(withWeights) == 0 {
+			continue
+		}
+		if _, err := LoaderDigest(withWeights, real); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		checked++
+	}
+	if checked == 0 || gguf == 0 {
+		t.Fatalf("checked %d families, %d GGUF fixtures: the committed table was not exercised", checked, gguf)
+	}
+	t.Logf("%d families, %d of their fixtures GGUF", checked, gguf)
+}
+
+// TestLoaderRule: a family qualifies only with programs all in the table, for every GOARCH; a GGUF fixture beside a program fixture joins
+// its list and lets gguf.go go too.
+func TestLoaderRule(t *testing.T) {
+	entry := map[string]string{"f32": "1"}
+	tab := map[string]map[string]map[string]string{
+		"amd64": {"a": entry, "b": entry, "b.gguf": entry, "only-amd64": entry},
+		"arm64": {"a": entry, "b": entry, "b.gguf": entry},
+	}
+	const weights, gguf = "decoder/weights.go", "decoder/gguf.go"
+	for _, c := range []struct {
+		name     string
+		programs []string
+		fixtures []string
+		dropped  []string
+	}{
+		{"no programs", nil, nil, nil},
+		{"a directory fixture", []string{"a"}, []string{"a"}, []string{weights}},
+		{"a GGUF beside it", []string{"b", "a"}, []string{"a", "b", "b.gguf"}, []string{weights, gguf}},
+		{"a fixture with no entry", []string{"a", "config-only"}, nil, nil},
+		{"a fixture on one GOARCH only", []string{"only-amd64"}, nil, nil},
+	} {
+		fx, dr := LoaderRule(Family{Programs: c.programs}, tab)
+		if strings.Join(fx, ",") != strings.Join(c.fixtures, ",") || strings.Join(dr, ",") != strings.Join(c.dropped, ",") {
+			t.Errorf("%s: fixtures %v, dropped %v; want %v, %v", c.name, fx, dr, c.fixtures, c.dropped)
+		}
+	}
+}

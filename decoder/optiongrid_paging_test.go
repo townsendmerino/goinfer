@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
 // ogRand fills n values from a fixed linear congruential sequence in [-scale, scale): varied enough

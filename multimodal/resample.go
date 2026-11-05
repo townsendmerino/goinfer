@@ -60,7 +60,7 @@ func Resample(x []float32, from, to int) []float32 {
 	h := resamplePolyFilter(up, down)
 	last := len(h) - 1
 	half := last / 2
-	nOut := (len(x)*up + down - 1) / down // ceil(n·up/down)
+	nOut := resampledLen(len(x), from, to)
 	out := make([]float32, nOut)
 	for n := range nOut {
 		// y[n] = sum over k of x[k]·h[n·down − k·up + half]: the upsampled-then-filtered signal at n·down, filter centred.
@@ -77,6 +77,16 @@ func Resample(x []float32, from, to int) []float32 {
 		out[n] = float32(acc)
 	}
 	return out
+}
+
+// resampledLen is the length of Resample's result for n samples: ceil(n·up/down).
+func resampledLen(n, from, to int) int {
+	if from == to {
+		return n
+	}
+	g := gcd(from, to)
+	up, down := to/g, from/g
+	return (n*up + down - 1) / down
 }
 
 // resamplePolyFilter is resample_poly's filter: firwin(2·half+1, 1/max(up, down), window=('kaiser', 5.0)), a windowed sinc

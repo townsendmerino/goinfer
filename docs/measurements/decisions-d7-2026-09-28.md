@@ -12,7 +12,7 @@ kill gate. The calibrated distribution is the product whether or not it is faste
   handful of logits, so t_head ≈ 0 and **t_decision ≈ t_prefill(K)**.
 - **Constrained generation** is plain `Generate` with the grammar as the logit processor. Every output token costs a
   decode step, the forced JSON structure included: only the `--spec` path drafts forced runs
-  (`internal/serveapp/openai.go`, the `lm.spec && gr.masker != nil` case). The first output token comes from the
+  (`internal/app/serveapp/openai.go`, the `lm.spec && gr.masker != nil` case). The first output token comes from the
   prefill's logits, so **t_constrained ≈ t_prefill(K) + n_out · t_decode**, with n_out counted up to but not
   including EOS.
 

@@ -11,7 +11,7 @@ Task: [`task-tool-grammar-union-2026-09.md`](../tasks/task-tool-grammar-union-20
 - `constrain.LazyMasker` — masks nothing until the family's call opener appears in the output, then constrains that call, then
   disarms, so a second call in the turn is constrained independently (T5 decided: repeated wrapper, each constrained). Fails open
   if the bytes after the opener cannot be a call (it cannot take emitted bytes back).
-- Wiring (`internal/serveapp/tools.go`, `constrainToolUnion`), on all three surfaces: **auto** (OpenAI auto, Anthropic auto incl. a
+- Wiring (`internal/app/serveapp/tools.go`, `constrainToolUnion`), on all three surfaces: **auto** (OpenAI auto, Anthropic auto incl. a
   lone tool) → the lazy union, as a LogitProcessor only; **required** (OpenAI required, Anthropic any) with 2+ tools → the union
   from token 1, with the fused-spec masker (closes N-18). llama3 (no opener) is NOT armed under auto — the task's option (b).
   `GOINFER_TOOL_UNION=0` restores the pre-T1 behaviour exactly.

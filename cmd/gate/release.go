@@ -13,7 +13,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/townsendmerino/goinfer/internal/paritykey"
+	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
 // `gate release vX.Y.Z`: RELEASING.md's pre-flight as one command. Each read is a row that is `done`, `OWED` or `UNKNOWN` (a read that could

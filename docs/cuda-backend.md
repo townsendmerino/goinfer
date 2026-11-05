@@ -68,7 +68,7 @@ fit-by-default did) is rejected with a clean HTTP 400
 used to say there was; that was true when written (`ca29d6c`, 2026-08-09) and stopped being true
 once a later audit (R-10) found the fallback attempt produced a 500 leaking an internal "use the
 staged path" hint on the stateless resident path, and replaced it with the clean 400 instead
-(`internal/serveapp/openai.go`). The decline below is a DIFFERENT decision — whether the whole
+(`internal/app/serveapp/openai.go`). The decline below is a DIFFERENT decision — whether the whole
 model builds resident at all, made once at load — not a per-request prompt-length check.
 
 The cap costs VRAM linearly and it is **not** small: **24.0 KB/position** on qwen2.5-coder-0.5b

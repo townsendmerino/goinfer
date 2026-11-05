@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
-	"github.com/townsendmerino/goinfer/internal/sampling"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestGumbelDeviceAgreesWithHost is the WebGPU kernel gate for the Gumbel-max sampler, under the

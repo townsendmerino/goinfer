@@ -369,7 +369,7 @@ unobserved.
 ### D. Structural work, sequenced
 
 **D3 · Promote the expert-cache env vars to CLI flags** — **SHIPPED.** `--moe-cache-experts` and
-`--moe-cache-slots` are real `serve` flags (internal/serveapp/main.go). This entry read "ready to
+`--moe-cache-slots` are real `serve` flags (internal/app/serveapp/main.go). This entry read "ready to
 rebase" months after the work landed (N-40).
 
 **This entry's own description was wrong at the source, not stale.** It read as a "parked flag-pair"
@@ -663,7 +663,7 @@ demoting unfinished work to clear a release hollows out the tier permanently.
 | freeze **plus other** | **P1** KV re-gather / V re-transpose | freeze **+** a new aikit row-pitch API **+** E6's deferred aikit release |
 
 Everything else touching a frozen path has **landed** (P6 `eea7f29`, P7 `91f359f`) or only references
-those paths as instances (B6, P8 — `internal/sampling/sampler_chunked.go` is not in the manifest).
+those paths as instances (B6, P8 — `internal/runtime/sampling/sampler_chunked.go` is not in the manifest).
 
 **So the freeze-only column is TWO items — and that is the answer to what an unfreeze buys.** It is
 smaller than it looks, because both are landable *today* under the goldens exception, exactly as P6

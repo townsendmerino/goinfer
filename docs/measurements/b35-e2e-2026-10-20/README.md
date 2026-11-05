@@ -2,7 +2,7 @@
 
 B35 (docs/queue-engineering.md) keeps a recurrent model's state at KVScope.Keep, the point the next chat turn's prompt repeats, so turn 2
 of a conversation stops re-prefilling the whole prompt. The tier 0 gates passed: the decoder's hash fake (`decoder/b35_snapshot_test.go`),
-the serve routes' Keep (`internal/serveapp/b35_keep_test.go`), and on CUDA a restore equal to a cold prefill on `qwen3next-tiny`
+the serve routes' Keep (`internal/app/serveapp/b35_keep_test.go`), and on CUDA a restore equal to a cold prefill on `qwen3next-tiny`
 (`backend/cuda/b35_snapshot_test.go`, nobara 2026-10-20 08:16, PASS with its plant red). This is the merge gate Francis set: the real model
 through `/v1/chat/completions`, where turns 2 and 3 reuse the saved state with a time to first token near a warm one, and match a cold
 run bit for bit. Merge needs Francis's yes after it.

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/towerid"
+	"github.com/townsendmerino/goinfer/internal/diag/towerid"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 

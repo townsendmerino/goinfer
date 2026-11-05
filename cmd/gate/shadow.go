@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/townsendmerino/goinfer/internal/paritykey"
+	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
 // gate shadow: VK5's shadow mode (docs/tasks/task-subsystems-2026-10.md §5.8). For one push, from before to after, it

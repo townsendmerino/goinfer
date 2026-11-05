@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/mem/probe"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
 // TestFitQueryAvailable_isFitQueryAtThatReading (MM6 gate G-MM6-1): FitQueryAvailable with a reading answers as FitQuery

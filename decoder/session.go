@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/constrain"
-	"github.com/townsendmerino/goinfer/internal/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 // Session couples a KVCache with the token sequence currently materialized in

@@ -22,7 +22,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/cost"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // TestMetalKVSlots_interleavedMatchesAlone is MC1's gate (docs/tasks/task-concurrency-2026-09.md): with two resident KV

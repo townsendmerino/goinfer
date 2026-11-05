@@ -2,7 +2,7 @@
 //
 //   node scripts/webui_app_gate.mjs        # exit 0 pass / 1 a check failed / 2 could not drive a browser
 //
-// Loads the SHIPPED internal/serveapp/webui/index.html from file:// in headless Chrome and drives the
+// Loads the SHIPPED internal/app/serveapp/webui/index.html from file:// in headless Chrome and drives the
 // page through its own code: fetch is replaced with a fake that streams SSE, and the gate calls the
 // page's real send(). Nothing here reimplements page logic. Each W-item that ships adds its checks.
 //
@@ -79,7 +79,7 @@ import { createServer } from "node:http";
 import { openPage, report, finishOrExit } from "./webui-gate/cdp.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const page = await openPage(pathToFileURL(resolve(here, "..", "internal", "serveapp", "webui", "index.html")).href);
+const page = await openPage(pathToFileURL(resolve(here, "..", "internal", "app", "serveapp", "webui", "index.html")).href);
 
 // Shared by every phase: result recording, the model option, and a fetch stub that streams SSE.
 // (No template literals in page code: this text is itself inside Node template strings.)

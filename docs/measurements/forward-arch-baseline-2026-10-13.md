@@ -106,7 +106,7 @@ func main() {
 
 **The configuration it reads** is the matrix's model-free default: `residentGateReason` passes `actSafe = false`. A loaded
 model can differ, because `decoder/admit.go:Admit` reads the model's own configuration.
-- On CUDA, a Phi-3/4 GGUF loads at `--quant q4k` (`internal/modelload/modelload.go:activationSafeQuant`) and runs resident.
+- On CUDA, a Phi-3/4 GGUF loads at `--quant q4k` (`internal/runtime/modelload/modelload.go:activationSafeQuant`) and runs resident.
 - On Metal it runs resident only at an explicit `--quant q4k`.
 - `representativeConfig("nemotron_h")` is dense (`MoE == nil`), so the matrix shows it resident on WebGPU. A Nemotron-H MoE
   checkpoint (Nemotron 3 Nano) fails `decoder/residency.go:Architecture.decodeRunnerEligible` on CUDA and Metal, and WebGPU

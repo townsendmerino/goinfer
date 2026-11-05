@@ -585,7 +585,7 @@ func fix(e ast.Expr) ast.Expr {
 				switch pn.Imported().Path() {
 				case kernelsPath:
 					return x.Sel
-				case "github.com/townsendmerino/goinfer/internal/adapter":
+				case "github.com/townsendmerino/goinfer/internal/runtime/adapter":
 					return &ast.SelectorExpr{X: ast.NewIdent("decoder"), Sel: x.Sel}
 				}
 			}

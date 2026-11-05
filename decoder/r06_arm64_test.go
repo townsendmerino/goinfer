@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/goinfer/internal/mem/probe"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
 // TestR06_speed is R-06's re-measure on the current tree (docs/measurements/r06-arm64-2026-10-25.md): w4a8BatchEnabled on

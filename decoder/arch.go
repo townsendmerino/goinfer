@@ -1,6 +1,6 @@
 package decoder
 
-import "github.com/townsendmerino/goinfer/internal/program"
+import "github.com/townsendmerino/goinfer/internal/runtime/program"
 
 // Architecture is the resolved, family-agnostic description of a decoder LLM's structure. The generic forward pass
 // (the program walkers, program_cpu.go and program_cpu_n.go) reads it; per-family adapters (registry.go) populate it from that family's

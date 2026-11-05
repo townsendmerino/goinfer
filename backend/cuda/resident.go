@@ -21,9 +21,9 @@ import (
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/cost"
-	"github.com/townsendmerino/goinfer/internal/mem"
-	"github.com/townsendmerino/goinfer/internal/program"
-	"github.com/townsendmerino/goinfer/internal/sampling"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // cudaResident implements the decoder's resident-decode interfaces; the compile-time checks below keep that true.

@@ -367,14 +367,14 @@ jobs:
       - name: shard exists (zero-match guard)
         run: |
           pattern='TestSampleFromTopK_matchesFullPath'
-          matched=$(go test -list "$pattern" ./internal/sampling/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          matched=$(go test -list "$pattern" ./internal/runtime/sampling/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
           if [ -z "$matched" ]; then
-            echo "::error::pattern '$pattern' matched NO test in ./internal/sampling/ — renamed or deleted? the next step would silently run nothing"
+            echo "::error::pattern '$pattern' matched NO test in ./internal/runtime/sampling/ — renamed or deleted? the next step would silently run nothing"
             exit 1
           fi
       - name: test (decoder shard a)
         id: test
-        run: go test -race -timeout 25m -tags goinfer_testhooks -json -run 'TestSampleFromTopK_matchesFullPath' ./internal/sampling/ > test.json
+        run: go test -race -timeout 25m -tags goinfer_testhooks -json -run 'TestSampleFromTopK_matchesFullPath' ./internal/runtime/sampling/ > test.json
       - name: test summary
         if: always() && steps.test.outcome != 'skipped'
         run: |
@@ -441,14 +441,14 @@ jobs:
       - name: shard exists (zero-match guard)
         run: |
           pattern='TestSample_DrawIdentity|TestEnvVars_docAndCodeAgree'
-          matched=$(go test -list "$pattern" ./decoder/ ./internal/sampling/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          matched=$(go test -list "$pattern" ./decoder/ ./internal/runtime/sampling/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
           if [ -z "$matched" ]; then
-            echo "::error::pattern '$pattern' matched NO test in ./decoder/ or ./internal/sampling/ — renamed or deleted? the next step would silently run nothing"
+            echo "::error::pattern '$pattern' matched NO test in ./decoder/ or ./internal/runtime/sampling/ — renamed or deleted? the next step would silently run nothing"
             exit 1
           fi
       - name: test (decoder shard b)
         id: test
-        run: go test -race -timeout 25m -tags goinfer_testhooks -json -run 'TestSample_DrawIdentity|TestEnvVars_docAndCodeAgree' ./decoder/ ./internal/sampling/ > test.json
+        run: go test -race -timeout 25m -tags goinfer_testhooks -json -run 'TestSample_DrawIdentity|TestEnvVars_docAndCodeAgree' ./decoder/ ./internal/runtime/sampling/ > test.json
       - name: test summary
         if: always() && steps.test.outcome != 'skipped'
         run: |
@@ -464,15 +464,15 @@ jobs:
       - name: sampler gates exist (zero-match guard)
         run: |
           pattern='TestTopFilterLogits_MatchesReference|TestSampleFromTopK_matchesFullPath|TestSample_DrawIdentity|TestSamplingThroughputGate|TestSweepCoverage'
-          matched=$(go test -list "$pattern" ./decoder/ ./internal/sampling/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          matched=$(go test -list "$pattern" ./decoder/ ./internal/runtime/sampling/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
           if [ -z "$matched" ]; then
-            echo "::error::pattern '$pattern' matched NO test in ./decoder/ or ./internal/sampling/ — renamed or deleted? the next step would silently report green running nothing"
+            echo "::error::pattern '$pattern' matched NO test in ./decoder/ or ./internal/runtime/sampling/ — renamed or deleted? the next step would silently report green running nothing"
             exit 1
           fi
           echo "matched:"
           echo "$matched"
       - name: sampler gates (no -race)
-        run: go test -count=1 -run 'TestTopFilterLogits_MatchesReference|TestSampleFromTopK_matchesFullPath|TestSample_DrawIdentity|TestSamplingThroughputGate|TestSweepCoverage' ./internal/sampling/
+        run: go test -count=1 -run 'TestTopFilterLogits_MatchesReference|TestSampleFromTopK_matchesFullPath|TestSample_DrawIdentity|TestSamplingThroughputGate|TestSweepCoverage' ./internal/runtime/sampling/
 
   test-decoder-c:
     needs: changes
@@ -502,14 +502,14 @@ jobs:
       - name: shard exists (zero-match guard)
         run: |
           pattern='TestTopFilterLogits_MatchesReference|TestSampleFromTopK_deviceRoundedZ|TestChunkedSoftmax_MatchesReference|TestTopK1_MatchesGreedy|TestGumbelDraw_edgeRows|TestChunkedSoftmax_MachineIndependent'
-          matched=$(go test -list "$pattern" ./internal/sampling/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          matched=$(go test -list "$pattern" ./internal/runtime/sampling/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
           if [ -z "$matched" ]; then
-            echo "::error::pattern '$pattern' matched NO test in ./internal/sampling/ — renamed or deleted? the next step would silently run nothing"
+            echo "::error::pattern '$pattern' matched NO test in ./internal/runtime/sampling/ — renamed or deleted? the next step would silently run nothing"
             exit 1
           fi
       - name: test (decoder shard c)
         id: test
-        run: go test -race -timeout 25m -tags goinfer_testhooks -json -run 'TestTopFilterLogits_MatchesReference|TestSampleFromTopK_deviceRoundedZ|TestChunkedSoftmax_MatchesReference|TestTopK1_MatchesGreedy|TestGumbelDraw_edgeRows|TestChunkedSoftmax_MachineIndependent' ./internal/sampling/ > test.json
+        run: go test -race -timeout 25m -tags goinfer_testhooks -json -run 'TestTopFilterLogits_MatchesReference|TestSampleFromTopK_deviceRoundedZ|TestChunkedSoftmax_MatchesReference|TestTopK1_MatchesGreedy|TestGumbelDraw_edgeRows|TestChunkedSoftmax_MachineIndependent' ./internal/runtime/sampling/ > test.json
       - name: test summary
         if: always() && steps.test.outcome != 'skipped'
         run: |
@@ -522,7 +522,7 @@ jobs:
       # test is caught by exactly one step, as the decoder tail does for ./decoder.
       - name: test (sampling tail)
         id: sampling_tail
-        run: go test -race -timeout 25m -tags goinfer_testhooks -json -skip 'TestSampleFromTopK_matchesFullPath|TestSample_DrawIdentity|TestTopFilterLogits_MatchesReference|TestSampleFromTopK_deviceRoundedZ|TestChunkedSoftmax_MatchesReference|TestTopK1_MatchesGreedy|TestGumbelDraw_edgeRows|TestChunkedSoftmax_MachineIndependent|TestGumbelDraw_largeVocabTailAndHead|TestGumbelDraw_equivalentToLegacyDistribution|TestGumbelDraw_goodnessOfFit|TestDistVectorHistMatchesSampler|TestChunkedSoftmax_ChunkBoundaryDraws' ./internal/sampling/ > test-tail.json
+        run: go test -race -timeout 25m -tags goinfer_testhooks -json -skip 'TestSampleFromTopK_matchesFullPath|TestSample_DrawIdentity|TestTopFilterLogits_MatchesReference|TestSampleFromTopK_deviceRoundedZ|TestChunkedSoftmax_MatchesReference|TestTopK1_MatchesGreedy|TestGumbelDraw_edgeRows|TestChunkedSoftmax_MachineIndependent|TestGumbelDraw_largeVocabTailAndHead|TestGumbelDraw_equivalentToLegacyDistribution|TestGumbelDraw_goodnessOfFit|TestDistVectorHistMatchesSampler|TestChunkedSoftmax_ChunkBoundaryDraws' ./internal/runtime/sampling/ > test-tail.json
       - name: test summary (sampling tail)
         if: always() && steps.sampling_tail.outcome != 'skipped'
         run: |
@@ -558,14 +558,14 @@ jobs:
       - name: shard exists (zero-match guard)
         run: |
           pattern='TestGumbelDraw_largeVocabTailAndHead|TestGumbelDraw_equivalentToLegacyDistribution|TestGumbelDraw_goodnessOfFit|TestDistVectorHistMatchesSampler|TestChunkedSoftmax_ChunkBoundaryDraws'
-          matched=$(go test -list "$pattern" ./internal/sampling/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          matched=$(go test -list "$pattern" ./internal/runtime/sampling/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
           if [ -z "$matched" ]; then
-            echo "::error::pattern '$pattern' matched NO test in ./internal/sampling/ — renamed or deleted? the next step would silently run nothing"
+            echo "::error::pattern '$pattern' matched NO test in ./internal/runtime/sampling/ — renamed or deleted? the next step would silently run nothing"
             exit 1
           fi
       - name: test (decoder shard d)
         id: test
-        run: go test -race -timeout 25m -tags goinfer_testhooks -json -run 'TestGumbelDraw_largeVocabTailAndHead|TestGumbelDraw_equivalentToLegacyDistribution|TestGumbelDraw_goodnessOfFit|TestDistVectorHistMatchesSampler|TestChunkedSoftmax_ChunkBoundaryDraws' ./internal/sampling/ > test.json
+        run: go test -race -timeout 25m -tags goinfer_testhooks -json -run 'TestGumbelDraw_largeVocabTailAndHead|TestGumbelDraw_equivalentToLegacyDistribution|TestGumbelDraw_goodnessOfFit|TestDistVectorHistMatchesSampler|TestChunkedSoftmax_ChunkBoundaryDraws' ./internal/runtime/sampling/ > test.json
       - name: test summary
         if: always() && steps.test.outcome != 'skipped'
         run: |
@@ -669,7 +669,7 @@ jobs:
       - name: test (everything but decoder)
         id: test
         run: |
-          pkgs=$(go list ./... | grep -v -e '^github.com/townsendmerino/goinfer/decoder$' -e '^github.com/townsendmerino/goinfer/internal/sampling$')
+          pkgs=$(go list ./... | grep -v -e '^github.com/townsendmerino/goinfer/decoder$' -e '^github.com/townsendmerino/goinfer/internal/runtime/sampling$')
           go test -race -timeout 25m -tags goinfer_testhooks -json $pkgs > test.json
       - name: test summary
         if: always() && steps.test.outcome != 'skipped'

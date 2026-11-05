@@ -3,7 +3,7 @@
 package kernels
 
 import (
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
 
 	"github.com/oliverbestmann/webgpu/wgpu"

@@ -11,7 +11,7 @@ import (
 	"weak"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
-	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // Every buffer this package or the gpu package creates is a lease on its Context's mem.Ledger (MM3), made by the lined

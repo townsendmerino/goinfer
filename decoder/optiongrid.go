@@ -104,18 +104,20 @@ func ogMerge(ms ...map[ogPath]ogCell) map[ogPath]ogCell {
 // ogLoadOnly is an Options field consumed while loading (planning, pricing, refusing, merging) and
 // read by no execution path afterwards. Every path is n/a for it, for the reason given.
 var ogLoadOnly = map[string]string{
-	"noSelfTest":                 "the resident self-test's own fixture loads; read by the self-test at load",
-	"planResidency":              "FitQuery's open of a .giw, which builds no resident and is closed before it runs anything",
-	"DirectLoad":                 "chooses the file Load opens (the source or its sidecar .giw); the paths run whatever was opened",
-	"LoRA":                       "merged into the base weights at load (\"merged into the base at load\"), so every path runs the merged weights; compute-time adapters are Session state, in the cache-state grid",
-	"AcceptSlowMoE":              "an acknowledgement checked when a paged-MoE load is planned; a no-op afterwards",
-	"DisableFit":                 "selects load-time fit-by-default behaviour (resolveCtxCapFit, guardFit)",
-	"ExtraResidentBytes":         "prices a companion allocation when the resident is planned",
-	"ExtraResidentKVPerPosition": "prices a companion allocation's K/V when the resident context is chosen",
-	"Drafter":                    "tells ResolveKV at load that a block drafter will attach: auto stays f32 on CUDA, and an explicit f16 refuses",
-	"LoadAbort":                  "checked between layers during a GGUF weight build, a .giw load and a backend's resident build; nil afterwards in effect",
-	"BackendAuto":                "tells a backend at load that \"auto\" chose it, so it may decline a precision it would requantize",
-	"ResidentKVSlotsDefault":     "tells the backend at load that ResidentKVSlots is the caller's default, not a chosen count",
+	"noSelfTest":                   "the resident self-test's own fixture loads; read by the self-test at load",
+	"planResidency":                "FitQuery's open of a .giw, which builds no resident and is closed before it runs anything",
+	"DirectLoad":                   "chooses the file Load opens (the source or its sidecar .giw); the paths run whatever was opened",
+	"LoRA":                         "merged into the base weights at load (\"merged into the base at load\"), so every path runs the merged weights; compute-time adapters are Session state, in the cache-state grid",
+	"AcceptSlowMoE":                "an acknowledgement checked when a paged-MoE load is planned; a no-op afterwards",
+	"DisableFit":                   "selects load-time fit-by-default behaviour (resolveCtxCapFit, guardFit)",
+	"ExtraResidentBytes":           "prices a companion allocation when the resident is planned",
+	"ExtraResidentKVPerPosition":   "prices a companion allocation's K/V when the resident context is chosen",
+	"Drafter":                      "tells ResolveKV at load that a block drafter will attach: auto stays f32 on CUDA, and an explicit f16 refuses",
+	"LoadAbort":                    "checked between layers during a GGUF weight build, a .giw load and a backend's resident build; nil afterwards in effect",
+	"BackendAuto":                  "tells a backend at load that \"auto\" chose it, so it may decline a precision it would requantize",
+	"ResidentKVSlotsDefault":       "tells the backend at load that ResidentKVSlots is the caller's default, not a chosen count",
+	"ResidentRecurrentStepDefault": "tells the backend at load that ResidentRecurrentStep is the caller's default, not a choice",
+	"ResidentGemma4StepDefault":    "tells the backend at load that ResidentGemma4Step is the caller's default, not a choice",
 }
 
 // ogGrid is the declaration for every Options field that reaches a path.

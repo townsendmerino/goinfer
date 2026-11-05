@@ -16,10 +16,10 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/chat"
-	"github.com/townsendmerino/goinfer/internal/hybridattn"
-	"github.com/townsendmerino/goinfer/internal/kvmgr"
-	"github.com/townsendmerino/goinfer/internal/mamba2"
-	"github.com/townsendmerino/goinfer/internal/sampling"
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/mamba2"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 

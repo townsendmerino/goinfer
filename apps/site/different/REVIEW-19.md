@@ -6,9 +6,9 @@ Draft: `site/different/19-find-out-before-your-agent-does.md` (body ~890 words c
 
 | Claim | Source |
 |---|---|
-| `goinfer-serve check [url]`, default http://127.0.0.1:8080, starts nothing, flags `-api-key` (env GOINFER_API_KEY), `-model`, `-long-prompt` (2000, 0 skips), `-timeout` | `internal/servecheck/cmd.go` (`Run`, usage string) |
-| Dispatched as `check` first arg of goinfer-serve | `internal/serveapp/main.go` ~line 319 |
-| Row `tools, harness-scale`: 12 tools, nested params, temp 0, max_tokens 96, first turn only (no result round trip); `ok` line text `call get_weather(...) among 12 tools` | `internal/servecheck/check.go` `ToolsHarness`, `harnessScaleTools`, `toolCall` |
+| `goinfer-serve check [url]`, default http://127.0.0.1:8080, starts nothing, flags `-api-key` (env GOINFER_API_KEY), `-model`, `-long-prompt` (2000, 0 skips), `-timeout` | `internal/guard/servecheck/cmd.go` (`Run`, usage string) |
+| Dispatched as `check` first arg of goinfer-serve | `internal/app/serveapp/main.go` ~line 319 |
+| Row `tools, harness-scale`: 12 tools, nested params, temp 0, max_tokens 96, first turn only (no result round trip); `ok` line text `call get_weather(...) among 12 tools` | `internal/guard/servecheck/check.go` `ToolsHarness`, `harnessScaleTools`, `toolCall` |
 | Skip text (`model did not call the tool under a harness-scale (12-tool) schema — ...`), skip is not a fail; only FAIL exits non-zero | `check.go` `toolCall`, `cmd.go` end of `Run` |
 | Ok/skip sample output (7B) | `docs/integrations/opencode.md` ("Run serve check before opencode") |
 | Skip sample output (1.5B, Mac CPU, 2026-09-07, v0.17.1) | `docs/measurements/cold-user-2026-09-07-macbook-arm64.md` Scenario B |
@@ -18,7 +18,7 @@ Draft: `site/different/19-find-out-before-your-agent-does.md` (body ~890 words c
 | 0.5B opencode 2026-09-18: first request 9,917 tokens, never completed | `docs/measurements/cold-user-2026-09-18-nobara-pc.md` Scenario B |
 | Mac 1.5B skip; Mac 3B skip, "not a memory problem" | 09-07 Mac record; `task-first-hour.md` R13-follow-on "fourth live data point" |
 | Mac 7B q3_k_m: load check said "79% of budget", opencode then swapped ~9.7 GB | 09-07 Mac record; the guard was later rewritten (`task-first-hour.md` R13-follow-on) |
-| `fit`: `goinfer-chat fit <path>` (chat binary only), per-backend PLACEMENT + reason, default ctx 8192, `-ctx` refused not shrunk, `-measure`, accepts `hf:` refs | `internal/fitcmd/fit.go`; dispatch in `internal/chatapp/main.go` ~line 137 |
+| `fit`: `goinfer-chat fit <path>` (chat binary only), per-backend PLACEMENT + reason, default ctx 8192, `-ctx` refused not shrunk, `-measure`, accepts `hf:` refs | `internal/app/fitcmd/fit.go`; dispatch in `internal/app/chatapp/main.go` ~line 137 |
 | `fit` loads the checkpoint (32.4s on gpt-oss-20b), output sample lines | `cold-user-2026-09-18-nobara-pc.md` Scenario D |
 | fit said "fits" but the real load swapped; load-time guard changed afterwards | `CHANGELOG.md` Unreleased entry "Loading a large .gguf ... drove real, incremental swap growth" |
 | Models page tool line is measured, never guessed | `pull/registry.go` comment on `Tools`; `site/internal/site/model.go` ~line 351 |

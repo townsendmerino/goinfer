@@ -13,7 +13,7 @@
 >   `op1-cuda-declare-2026-10`; day gates pass, night gates not run (§4.6a). On WebGPU, not started.
 > - **OP3:** complete as of 2026-10-30 (§4.8). Every family's per-token forward walks the program (OP3a–OP3k, OP3z part
 >   1); OP3z part 2 deleted the old loops, and OP3t (#506) moved the two batched twins onto the batched walker.
-> - **OP4 on Metal** (§4.9, gates registered 2026-10-30): merged through d6b. a (#525, `internal/program`), b1/b2 (#539,
+> - **OP4 on Metal** (§4.9, gates registered 2026-10-30): merged through d6b. a (#525, `internal/runtime/program`), b1/b2 (#539,
 >   #540, #544: layer shape and per-layer steps from the program), c (#545, #547, #548: `program.Metal` read by the
 >   walker and by `Admit`), d1/d2 (#553, #554: batched prefill and the multi-sequence step walk the steps, admitted by
 >   `program.MetalStep`), d3 (#560, #565, #567: MoE in the step, `--moe-step`; 1.4873× on Huihui-MoE-5B), d4a–c (#570,
@@ -116,7 +116,7 @@
 | prefill | the largest share of an agent turn. Claude Code's first request is 19,692–20,199 tokens, and its thread switches re-prefilled 8,000 to 17,000 tokens each, 78% of its request time | `docs/measurements/kv0-traffic-2026-10-13.md` | the KV doc, RF |
 | decode | one GPU forward per token | `docs/benchmarks.md` | OP, RF |
 | host gap per token | 0.58–0.66 ms on Metal; the run-ahead chain hides it where it applies (1.010–1.160× decode) | `CHANGELOG.md`, "the next token's forward is queued on the GPU" | HL (small) |
-| **fallbacks** | a model on the CPU decodes about 15× slower; a declined shape runs a slower path (above) | `internal/loadflags/loadflags.go` (`-ctx`'s help); the KV doc §8 Q2 | **OP, RF** |
+| **fallbacks** | a model on the CPU decodes about 15× slower; a declined shape runs a slower path (above) | `internal/app/loadflags/loadflags.go` (`-ctx`'s help); the KV doc §8 Q2 | **OP, RF** |
 
 - **There is no per-phase timing on the wire today.** `docs/tasks/task-turn-telemetry-2026-09.md` (X1–X8) is scoped and
   unstarted, so the split of a real turn is inferred, not read. RF0 builds its X1.
@@ -227,7 +227,7 @@ generator showed: Spark-X2.5 (the activation, below) and Kimi K2 on Metal (a rou
   already declares its SSM feature (`docs/hardware-matrix.md`'s note). CUDA and Metal also lack SSM.
 - **A numerics guard, read in one configuration.** Phi-3/4's activation outliers are rounded away by per-row int8 activation
   scales (`decoder/actquant_hazard.go:ActivationQuantHazard`). The matrix shows CPU everywhere, but the loader picks a safe
-  configuration (`internal/modelload/modelload.go:activationSafeQuant`):
+  configuration (`internal/runtime/modelload/modelload.go:activationSafeQuant`):
   - **On CUDA,** a Phi-3/4 GGUF loads at `--quant q4k` and runs resident: 112.6 tok/s at depth 128 on the 8 GB card
     (`docs/measurements/peer-sweep-2026-09-29.md`). Its batched prefill declines to the sequential path.
   - **On Metal,** it runs resident at an explicit `--quant q4k`, a lane built 2026-10-08 (`docs/tasks/task-metal-q4k-2026-10.md`).
@@ -1126,8 +1126,8 @@ fit-checked by day before it is queued.
 - **KV2** (the Mac's `kv2-2026-10`, nobara's `kv2-cuda-2026-10`):
   - `decoder/model.go`, `decoder/resident_reuse.go` and `decoder/blockspec.go`, plus the decoder's session and VL
     generate files;
-  - `internal/kvmgr/`;
-  - `internal/serveapp/` (main, openai, sessions);
+  - `internal/runtime/kvmgr/`;
+  - `internal/app/serveapp/` (main, openai, sessions);
   - a new KV-copy file in each of `metal/`, `gpu/` and `cuda/`;
   - on CUDA, also `backend/cuda/resident.go`.
 - **KV3:** CUDA's half on `kv3-cuda-2026-10` (`backend/cuda/prefill.go` and the prefill scratch). Metal's half is KV-pre's
@@ -1140,7 +1140,7 @@ fit-checked by day before it is queued.
   - KV4, paged CUDA storage: every CUDA KV kernel goes through a block table, including `mla_attn` in `backend/cuda/mla.cu`;
   - KV5, the same on Metal;
   - KV8, a recurrent state pool.
-- **Proposal 2** (the integration harness's id carry, nobara's next build): `internal/serveapp/` and one accessor on the
+- **Proposal 2** (the integration harness's id carry, nobara's next build): `internal/app/serveapp/` and one accessor on the
   decoder's `Generation`. It shares serve's files with KV2 and no file with OP.
 
 #### OP2 — the next operations by demand
@@ -2574,7 +2574,7 @@ admission declines on an operation the walker lacks, naming it.
   DeltaNet, Mamba-2, MLA, Gemma 4's), one PR each. The memory planner (KV3's admission, generalised) comes last, per §4.7.
 
 **Design question for OP4m-a (Francis's call before its code):** where the program lives for backends.
-- (a) **Extract `internal/program`** from decoder: the operation kinds, parameters and the per-layer list. Decoder builds it
+- (a) **Extract `internal/runtime/program`** from decoder: the operation kinds, parameters and the per-layer list. Decoder builds it
   from the `Architecture`, and backends import it. The `metal` module can import a root-module `internal/` package, since Go's
   rule is by import path.
   - Pros: one vocabulary for decoder, Metal, CUDA and WebGPU. SB1's kit and SB9's towers deferred this package to OP4
@@ -2586,12 +2586,12 @@ admission declines on an operation the walker lacks, naming it.
   - Cons: the vocabulary stays in decoder. SB1's kit, whose kernel tests leave packages that import decoder (SB13's ratchet only
     falls), cannot share it, and neither can SB9's towers.
 - **Recommendation:** (a).
-- **Francis's decision (2026-10-30 09:22): (a).** Extract `internal/program` from decoder (the operation kinds, their
+- **Francis's decision (2026-10-30 09:22): (a).** Extract `internal/runtime/program` from decoder (the operation kinds, their
   parameters and the per-layer list). Decoder builds it, `metal` imports it, and `cuda` and `gpu` follow later. The move is
   mechanical and census-gated: OP4m-a changes no dispatch, and M1 and M3 must read unchanged.
 
 **OP4m-a's registration, 2026-10-30, before its code (mac-sb11m; Francis's (a) of 09:22).**
-- **What moves into `internal/program`:**
+- **What moves into `internal/runtime/program`:**
   - the program (its per-layer operation lists, the embedding and head stages), the operation kinds and registers, each
     kind's parameter struct, and the methods that only read a program (`subCaptureUncovered`, `anyOp`, `kindsIn`,
     `attnOrderIs`, `anySoftcap`, and the kind's `String` and `recurrent`);
@@ -2623,7 +2623,7 @@ admission declines on an operation the walker lacks, naming it.
 
 **OP4m-a: readings, 2026-10-30 (mac-sb11m, branch `op4m-a-program-2026-10-30`).** Step 1 (`b780beba`) exported the fields and
 read-only methods inside decoder with `gopls`, type-checked under `goinfer_testhooks` and `realckpt`. Step 2 (`e214ae73`) moved
-the declarations to `internal/program`, with decoder's aliases, `Model.Program`, and the Metal resident's view.
+the declarations to `internal/runtime/program`, with decoder's aliases, `Model.Program`, and the Metal resident's view.
 - **A1: PASS.** `TestProgramFingerprint_table` passes against `testdata/program_fingerprints.json` unchanged (37 fixture
   programs, arm64), with no `-update`.
 - **A2: PASS.** `gate identity 2b04148f e214ae73`, CPU: 37 IDENTICAL, 0 DIFFERENT, the same 6 NOT RUN as OP3 (45 s). Metal:
@@ -2636,7 +2636,7 @@ the declarations to `internal/program`, with decoder's aliases, `Model.Program`,
   is green. It is **NOT RUN on this Mac**, where it fails on
   main's code too: its `longVariant` helper copies a fixture directory's subdirectories as files (`testdata/gpt2/.cache` and
   `onnx`, `testdata/tiny-qwen2-moe/.cache`). With those moved aside, the run was killed at 59 s, after D1 and D2, with the Mac
-  at about 2 GB reclaimable. Both are for MM1's owner. The parity core set now lists `internal/program/program.go`, since the
+  at about 2 GB reclaimable. Both are for MM1's owner. The parity core set now lists `internal/runtime/program/program.go`, since the
   program's numeric methods (`AttentionParams.Start`, `AttnTempParams.Scale`) moved there.
 - **A4: PASS, with one change from the registration.** `TestResident_holdsTheModelsProgram` (in `backend/metal/resident_memguard_test.go`,
   which already imports decoder, so SB13's ratchet does not move) checks a synthetic dense model the test writes (2 layers, 18
@@ -2644,11 +2644,11 @@ the declarations to `internal/program`, with decoder's aliases, `Model.Program`,
   synthetic model is written by the test, so it is always present.
 - **A5: PASS.** `touched.py`; `go run ./cmd/lint` (VERDICT: PASS, 7 of 7); vet on darwin and linux/amd64 under the three tags,
   and `gpu` and `cuda` with theirs; `TestLayout_arrows` and `TestArchitecture_importAppendix`, after `-update` added the two new
-  arrows (decoder and metal into `internal/program`) as the test asks; the citation lint; one goldens-gated parity refresh (43
+  arrows (decoder and metal into `internal/runtime/program`) as the test asks; the citation lint; one goldens-gated parity refresh (43
   passed, 0 failed).
 - **#525's review (Gemini, after the merge), fixed in the follow-up PR:**
   - `OpKind.String`'s fallback had become `"Op(%d)"`, because the move's rename reached a string literal. It is `"op(%d)"`
-    again, and a check of every string literal in `internal/program/program.go` against decoder's sources before the move finds
+    again, and a check of every string literal in `internal/runtime/program/program.go` against decoder's sources before the move finds
     no other change outside the `fp` tags.
   - `TestResident_holdsTheModelsProgram` fails, rather than skips, when either fixture is missing (both are tracked or written
     by the test), and it releases its probe device.
@@ -2863,7 +2863,7 @@ it lacks. Today's admission constrains where that check can live.
     why the declarations live in decoder and not in the build-tagged backends (the comment on `residentBackendFeatures`).
   - Beside the features sit `residentGateReasons`' non-feature gates (activation hazard, router capacity, per-layer attention
     geometry) and `buildResident`'s numeric declines (widths not a multiple of 8, the q4k lane's shape), §4.5 item 6.
-- **(a) An operation table in `internal/program`, read by decoder's admission and by Metal's walker.**
+- **(a) An operation table in `internal/runtime/program`, read by decoder's admission and by Metal's walker.**
   - The table: which operation kinds Metal has a step for, and which parameter values each step's block implements (norm form
     and AddOne, FFN form and activation, rotary form and width, attention window, softcap, sinks and temperature, the embedding
     scale, the head's softcap and logit scale).
@@ -2895,13 +2895,13 @@ it lacks. Today's admission constrains where that check can live.
 
 **OP4m-c registered 2026-10-31, before its code (mac-sb11m).**
 - **The design: (a)** (the coordinator under Francis's standing rule, 2026-10-30 20:50; the item is on Francis's end-of-day
-  list). An operation-and-parameter table in `internal/program`, read by decoder's `Admit` and by Metal's walker, with a tier-0
+  list). An operation-and-parameter table in `internal/runtime/program`, read by decoder's `Admit` and by Metal's walker, with a tier-0
   test that the two agree.
 - **Split in two, as OP4m-b was.** c1 builds the table, makes the walker read it and proves it equals today's admission. c2
   moves Metal's admission onto it: `Admit` declines Metal on the table, Metal's entry in `residentBackendFeatures` goes, and
   the decline texts change (M3's named step, every message old and new). c1 changes no decline text.
 - **c1, what changes.**
-  - `internal/program/support.go`: `Support`, a backend's table. It lists the operation kinds the backend has a step for and
+  - `internal/runtime/program/support.go`: `Support`, a backend's table. It lists the operation kinds the backend has a step for and
     the FFN forms with each form's activations. It also gives the QK-norm forms, the rotation kernels, and whether a chunked
     attention, a residual scale and DeltaNet's widened write gate or own output-norm epsilon are implemented. `Support.Check` names the first
     layer, operation and parameter outside it. `program.Metal` is Metal's.
@@ -2938,7 +2938,7 @@ it lacks. Today's admission constrains where that check can live.
 - **Void if:** as §4.9. **Stopping rule:** one run each. **Cost basis:** seconds for C1-1 to C1-3; C1-4 about 1.5 minutes.
 
 **OP4m-c1: readings, 2026-10-31 (mac-sb11m, branch `op4m-c-2026-10-31`, code at `926b446f`; every run under the shared timing
-lock).** `internal/program/support.go` holds `Support` and `program.Metal`; `backend/metal/layer_steps.go:resident.buildLayerSteps`
+lock).** `internal/runtime/program/support.go` holds `Support` and `program.Metal`; `backend/metal/layer_steps.go:resident.buildLayerSteps`
 checks each layer against it before deriving the steps. The fixture runs use the 56 tiny checkpoints b1 and b2 read (the
 worktree's gitignored fixtures cloned in; the 4.2 GB mellum slice is NOT RUN, as in b1).
 - **C1-1: PASS, after one walker fix.** The first run went red on the four Laguna and Spark-X2.5 fixtures: the walker counted
@@ -2964,7 +2964,7 @@ worktree's gitignored fixtures cloned in; the 4.2 GB mellum slice is NOT RUN, as
   now with the table's message. The 15 NOT RUN are b2's 14 and Olmo Hybrid, whose int8int8 cell declined in both builds. Log:
   `docs/measurements/op4-2026-10/op4m-c1-identity-metal.log`.
 - **C1-5: PASS.** `touched.py` (16 checks, after `TestLayout_arrows -update` added the decoder test's arrow into
-  `internal/program`, as the test asks); `go run ./cmd/lint` 7/7; vet of `metal`, `decoder` and `internal/program` plain,
+  `internal/runtime/program`, as the test asks); `go run ./cmd/lint` 7/7; vet of `metal`, `decoder` and `internal/runtime/program` plain,
   with `goinfer_testhooks` and `realckpt`, and for linux; the citation lint.
 - **Two Metal tests follow the Olmo Hybrid change.** `TestOlmoHybridResidentSmokeMetal`, which required the model to go
   resident, is now `TestOlmoHybridDeclinesOnMetal`: the int4 load runs on the CPU and the decline names `NegEigval`. KS-D3's
@@ -3193,7 +3193,7 @@ its steps through them. `backend/metal/layer_steps.go:prefillStepsDecline` decli
 **OP4m-d2: readings, 2026-10-31 (mac-sb11m, branch `op4m-d2-2026-10-31`, stacked on #553; every run under the timing lock,
 exclusive for D2-4).**
 - **What was built.**
-  - `internal/program/support.go:MetalStep` is the step's table.
+  - `internal/runtime/program/support.go:MetalStep` is the step's table.
   - `Support` gains the placement and form fields its limits need (sandwich and post-only norms, the parallel block,
     LayerNorm, the output bias, the whole QK-norm, the attention window and softcap, learned positions), checked on the
     embedding and head stages too. `program.Metal` sets them all true.
@@ -3687,7 +3687,7 @@ registration's): Mamba-2 (Nemotron-H) in the multi-sequence step, opt-in.** It f
   - The checkpoint saved on slot 1 is refused on slot 0 and restores on slot 1.
   - A reset with slot 1 bound zeroes slot 1's state and leaves slot 0's.
 - **Changed on purpose:** gate S (`TestNemotronResident_slots`) now expects the 4 slots asked for, not 1. The step still declines Nemotron-H, and the turn-taking check and its plant are unchanged.
-- **Checks:** the Metal recurrent, Nemotron, KV8a, guard and option tests (72 pass); `internal/program`; the decoder's slot and recurrent tests; `touched.py` 16/16 and the lint 7/7. Log: `docs/measurements/op4-2026-10/op4m-d6a-tier0.log`, which ends in PASS.
+- **Checks:** the Metal recurrent, Nemotron, KV8a, guard and option tests (72 pass); `internal/runtime/program`; the decoder's slot and recurrent tests; `touched.py` 16/16 and the lint 7/7. Log: `docs/measurements/op4-2026-10/op4m-d6a-tier0.log`, which ends in PASS.
 
 **OP4m-d6b: tier-0 readings, 2026-11-01 (mac-sb11m, branch `op4m-d6b-2026-11-01`, stacked on d6a's #590; under the shared Mac lock). D6b-5, the timed cell, waits on its checkpoint.**
 - **The change.**
@@ -3709,7 +3709,7 @@ registration's): Mamba-2 (Nemotron-H) in the multi-sequence step, opt-in.** It f
 - **D6b-3: PASS.** `gate identity -backend metal 8e4beaa0 a6e2da73` (d6a's head against d6b's): 28 IDENTICAL, 0 DIFFERENT, 15 NOT RUN, of 43 families. `TestBackendAdmissionCensus_metal` and the decoder's census are unchanged. The parity refresh: 43 passed, 0 refreshed.
 - **D6b-4: PASS.** `TestOptionPathMetal_recurrentStepMamba` covers nemotron-tiny through `decoder.Load` and `Generate`. Generations equal the blocks-off model's at one and two slots, and two concurrent generations on the step each equal their own run. `TestOptionPathMetal_recurrentNoChain` holds nemotron-tiny off both chains.
 - **The option:** `--recurrent-step`'s help, `Options.ResidentRecurrentStep`, the option grid and the flag's summary in `docs/flags.meta.json` name Nemotron-H. The register golden, `docs/option-state-grid.md` and `docs/flags.md` were regenerated. `docs/flags.md` is built from the metadata's summary, not the help, so it changed only with the summary, in the review fixes below; this line first said it had been regenerated when the regeneration had changed nothing.
-- **Checks:** the Metal MC3, option, slot, Nemotron, KV8a, guard and admission-census tests (176 pass); the decoder's option-grid, slot, recurrent and census tests; `internal/program`, loadflags, serveapp and config; `touched.py` 17/17 and the lint 7/7. Log: `docs/measurements/op4-2026-10/op4m-d6b-tier0.log`, which ends in PASS.
+- **Checks:** the Metal MC3, option, slot, Nemotron, KV8a, guard and admission-census tests (176 pass); the decoder's option-grid, slot, recurrent and census tests; `internal/runtime/program`, loadflags, serveapp and config; `touched.py` 17/17 and the lint 7/7. Log: `docs/measurements/op4-2026-10/op4m-d6b-tier0.log`, which ends in PASS.
 - **Gemini's review of #590, folded in here:**
   - **[test]** `TestMC3Step_gemma4ScratchPriced` now re-prices three cases, each requiring the terms it names to grow by at least a page:
     - the fixture's widths: guB;
@@ -3737,16 +3737,16 @@ and its size go to Francis through the coordinator before any code. Read at main
 **OP4cu-…**, so they do not collide with Metal's OP4m-… names.
 
 **Preconditions, both met.**
-- **OP3 is merged**, and so is Metal's OP4m-a. `internal/program` exists, `decoder.Model.Program()` returns a model's
-  program, and `internal/program.Support` is the operation table.
+- **OP3 is merged**, and so is Metal's OP4m-a. `internal/runtime/program` exists, `decoder.Model.Program()` returns a model's
+  program, and `internal/runtime/program.Support` is the operation table.
 - **KV4a is merged** (#138, 2026-10-22). §4.7 put CUDA's walk after KV4a, so that the walk and KV4's block tables rebase
   onto each other once. The walk inherits the block tables as they are: the bound slot's `kvTabSlot`, read through
   `decodeAttnGap`.
 
 **What KV4 still leaves, checked in the tree today.** None of it is on OP4's path:
 - §5.16's vendor extension saying where a reuse came from is absent. `usage.prefill_reused_tokens` is the only reuse field
-  (`internal/serveapp/openai.go`).
-- §5.16's `serve check` row is absent: `internal/servecheck` has no reuse or preamble row.
+  (`internal/app/serveapp/openai.go`).
+- §5.16's `serve check` row is absent: `internal/guard/servecheck` has no reuse or preamble row.
 - The pool banner is partial. `backend/cuda/kvpool.go:cudaResident.kvPoolLine` names the positions, blocks and conversations, but not
   the precision, bytes, groups or sharing scope.
 
@@ -3789,7 +3789,7 @@ These three are KV4's own close-out (S, serve-side, tier 0 plus one served check
 
 **The steps, each its own PR with its own reading:**
 - **OP4cu-a, the program reaches CUDA.** The resident holds `decoder.Model.Program()` at build, read-only, as Metal's
-  `resident.prog` does, and dispatches nothing from it. `cuda` imports `internal/program`, a new arrow in
+  `resident.prog` does, and dispatches nothing from it. `cuda` imports `internal/runtime/program`, a new arrow in
   `internal/layout/imports.json`, permitted by §9's table.
 - **OP4cu-b1, the shape comes from the program.** A function in `cuda` derives the model-level placements and each layer's
   mixer and FFN from the program, as OP4m-b1 did for Metal (`backend/metal/program_shape.go`). `buildResidentMode` stops calling
@@ -3826,7 +3826,7 @@ step a PR from `main`, which the coordinator reviews (with Gemini) and merges.
 
 **Design questions (Francis's call, through the coordinator, before the step that needs each):**
 1. **Where CUDA reads the program from.** Decided for every backend by OP4m-a's (a), Francis, 2026-10-30 09:22:
-   `internal/program`, through `decoder.Model.Program()`. Nothing new to decide. One CUDA detail: `ResidentLayerOps` is
+   `internal/runtime/program`, through `decoder.Model.Program()`. Nothing new to decide. One CUDA detail: `ResidentLayerOps` is
    then derived, not read. It stays in decoder while Metal and WebGPU call it.
 2. **How the walk keeps CUDA graphs** (before OP4cu-b2).
    - (a) **The fusion table's entries are today's segments.** Each step carries a static or dynamic mark, and capture wraps
@@ -3904,8 +3904,8 @@ No step needs a night job, and none needs a guard threshold changed.
 
 **OP4cu-a registered 2026-11-01 13:52 PST, before its code (nobara-sb01).**
 - **What changes.** `cudaResident` gains `prog *program.Program`, set in the build from `decoder.Model.Program()`. It is
-  read-only by contract, and nothing is launched from it. `cuda` imports `internal/program`, and `internal/layout/imports.json`
-  gains the arrow (`cuda → internal/program`), which `-update` writes.
+  read-only by contract, and nothing is launched from it. `cuda` imports `internal/runtime/program`, and `internal/layout/imports.json`
+  gains the arrow (`cuda → internal/runtime/program`), which `-update` writes.
 - **A-1, the view (tier 0, the card).** `TestResident_holdsTheModelsProgram` in `cuda`, tags `cuda goinfer_testhooks`, builds
   two tracked tiny fixtures through `decoder.Load` with backend `cuda` and quant `int4`: `testdata/llama-tiny` (dense) and
   `testdata/qwen35-tiny` (DeltaNet and MoE).
@@ -3944,18 +3944,18 @@ No step needs a night job, and none needs a guard threshold changed.
   - `go vet -tags 'cuda goinfer_testhooks' ./cuda/...` is clean. Staticcheck 2026.2.1 (0.8.1) with CI's tags (`cuda
     goinfer_testhooks`) is clean, and its canary is red (`op4cu-a-a3-staticcheck-vet.log`). The `-tags cuda`-only variant,
     which CI does not run, lists 19 U1000s on test hooks; `prog` is not among them.
-  - `TestLayout_arrows` and `TestArchitecture_importAppendix` pass after `-update` added `cuda → internal/program`.
+  - `TestLayout_arrows` and `TestArchitecture_importAppendix` pass after `-update` added `cuda → internal/runtime/program`.
   - The citation lint is green.
 - **Card time:** about 11 minutes so far, of the 2 hours: the two identity runs (4m11s and 5m45s), `touched.py` (about a minute) and three A-1 runs of seconds each.
 
 **OP4cu-b1 registered 2026-11-01 14:17 PST, before its code (nobara-sb01; design (a), the coordinator's word, received at 14:17).**
 - **What moves.** Metal's layer-shape derivation (`backend/metal/program_shape.go`: `denseShapeOf`, its plants, the agreement and Olmo
-  Hybrid rules) moves verbatim into `internal/program` as `Shape` and `ShapeOf`, with exported fields. Its plants become a
+  Hybrid rules) moves verbatim into `internal/runtime/program` as `Shape` and `ShapeOf`, with exported fields. Its plants become a
   package test hook, `program.ShapePlantForTest`, which is zero in production.
-  - `internal/program` gains `MixerOf(ops)`: a layer's mixer (attention, DeltaNet, Mamba-2, MLA or none) and whether an FFN
+  - `internal/runtime/program` gains `MixerOf(ops)`: a layer's mixer (attention, DeltaNet, Mamba-2, MLA or none) and whether an FFN
     follows. It is the program's form of `decoder.Model.ResidentLayerOps`, with a third plant (an FFN-only block read as
     attention).
-  - Metal's pure `denseShapeOf` tests move to `internal/program` with only the names changed. Metal's fixture test
+  - Metal's pure `denseShapeOf` tests move to `internal/runtime/program` with only the names changed. Metal's fixture test
     (`TestDenseShape_matchesTheAccessors`) stays in `metal` and calls `program.ShapeOf`.
 - **The metal/ edit.** `backend/metal/model.go`'s two callers and their field reads take the exported names. No Metal dispatch
   changes.
@@ -3969,7 +3969,7 @@ No step needs a night job, and none needs a guard threshold changed.
     - Each of the three plants is red on at least one fixture.
     - **Narrowed from §4.9a's table:** the config-only programs are not compared, because the accessors are methods of a
       loaded `Model`. Metal's B1-1 reading compared the loadable fixtures too.
-  - **B-1m:** the moved pure tests pass in `internal/program`, and their assertions are unchanged.
+  - **B-1m:** the moved pure tests pass in `internal/runtime/program`, and their assertions are unchanged.
   - **B-2 (U1, the card).** `gate identity -backend cuda` from this step's base (`7ae1e1920`, OP4cu-a's head) to the
     step is IDENTICAL on every family that runs. The fixtures are placed first with absolute paths. Every cell's outcome must
     be the same in both builds, compared from the per-cell logs as in A-2.
@@ -3978,7 +3978,7 @@ No step needs a night job, and none needs a guard threshold changed.
     - vet with `GOOS=darwin` on `./metal/...`;
     - Metal's M1 (`gate identity -backend metal`) is run by a Mac session after the merge. The coordinator arranges it, and
       it is owed in the reading.
-  - **B-4 (U8):** `touched.py`; vet and the pinned staticcheck on `./cuda/...` and `./internal/program/` (canary red);
+  - **B-4 (U8):** `touched.py`; vet and the pinned staticcheck on `./cuda/...` and `./internal/runtime/program/` (canary red);
     `internal/layout`; the citation lint.
 - **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; another CUDA process on the card
   during B-2.
@@ -4001,7 +4001,7 @@ of the timing lock, 14:57–15:04 PST, with only `kwin_wayland` on the card befo
 - **B-3, Metal: in part.** The vet above passes. CI's `metal-darwin` and `gpu-darwin` jobs read on the PR. **Owed:** Metal's
   M1 (`gate identity -backend metal`) by a Mac session after the merge, which the coordinator arranges.
 - **B-4: PASS.** `touched.py` passed 17 checks; it skips metal off darwin (`op4cu-b1-b4-touched.log`). Under the shared lock (15:25),
-  the pinned staticcheck is clean on `./cuda/...` with CI's tags and on `./internal/program/` and `./decoder/`, and its canary is red.
+  the pinned staticcheck is clean on `./cuda/...` with CI's tags and on `./internal/runtime/program/` and `./decoder/`, and its canary is red.
   On `./metal/...` (darwin, untagged) it lists only the three production-looking prefill functions SB11d left for their owner
   (`prefillEModel`, `prefillG4Paged`, `prefillMoEPaged`). `go vet` on `./cuda/...` is clean (`op4cu-b1-b4-staticcheck-vet.log`).
   The citation lint is green.
@@ -4028,8 +4028,8 @@ of the timing lock, 14:57–15:04 PST, with only `kwin_wayland` on the card befo
   4. **The red count** is 13 of 63 (above).
   5. `Mixer.Resident` is `x <= MixerMLA`. `Mixer` has a `String`, and CUDA declines a mixer no resident runs by its name,
      where it printed `ResidentMixer(255)` before.
-  - **The checks:** `internal/program` tagged and untagged; B-1 (63 compared, each plant red on 2); darwin vet for metal
-    with and without the tag; vet and staticcheck on `decoder` and `internal/program` both ways and on `./cuda/...` with CI's
+  - **The checks:** `internal/runtime/program` tagged and untagged; B-1 (63 compared, each plant red on 2); darwin vet for metal
+    with and without the tag; vet and staticcheck on `decoder` and `internal/runtime/program` both ways and on `./cuda/...` with CI's
     tags, canary red; gofmt; `touched.py` 17 checks. All pass.
 
 **OP4cu-b2 registered 2026-11-01 17:02 PST, before its code (nobara-sb01; the coordinator's go after #584 merged; Q2 (a)).**
@@ -4084,13 +4084,13 @@ of the timing lock, 14:57–15:04 PST, with only `kwin_wayland` on the card befo
     census test (`TestBackendAdmissionCensus_cuda`, which `touched.py` runs).
   - **B2-8, U8:** `touched.py`; vet and the pinned staticcheck on `./cuda/...` with CI's tags (canary red); the citation lint.
 - **Amended 2026-11-01 17:13 PST, before any claims code (the coordinator's (a), received at 17:13).** The claims check is not a
-  second, CUDA-only model. Metal's sublayer derivation moves into `internal/program`:
+  second, CUDA-only model. Metal's sublayer derivation moves into `internal/runtime/program`:
   - What moves from `backend/metal/layer_steps.go`: `layerStepsOf`, `checkStepClaims` and `stepClaims`, with the step kinds, spans
     and form table. They become `Sublayer`, `SublayerSpan`, `SublayersOf(ops, backend)` and `CheckSublayerClaims(ops, spans)`.
     The plant becomes `ShapePlantClaimOneMore`, behind `SetShapePlantForTest` like b1's.
   - Metal keeps aliases for the old names, and only the span fields are renamed. Its decline texts are unchanged:
     `SublayersOf` takes the backend name they print.
-  - Metal's pure claims tests (`TestCheckStepClaims_spans` and the decline table) move to `internal/program`. Its fixture
+  - Metal's pure claims tests (`TestCheckStepClaims_spans` and the decline table) move to `internal/runtime/program`. Its fixture
     test (`TestLayerSteps_consumeEveryOperationOnce`, with both plants) moves to `decoder`, tagged `goinfer_testhooks`, as
     B-1 did. Their assertions are unchanged.
   - **CUDA** derives each layer's sublayers with `SublayersOf` and checks them with `CheckSublayerClaims`. One table maps
@@ -4101,7 +4101,7 @@ of the timing lock, 14:57–15:04 PST, with only `kwin_wayland` on the card befo
     CUDA build declines the layer, naming it. Shown on a CPU-built program by `cudaStepsOf`'s unit test, and on the card
     by one fixture's build.
   - **B-3 again:** Metal's M1 on a Mac after the merge, batched with #584's, as the coordinator arranges. CI's
-    `metal-darwin` job does not run Metal's step tests, which is why the pure ones move to `internal/program`.
+    `metal-darwin` job does not run Metal's step tests, which is why the pure ones move to `internal/runtime/program`.
 - **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; any card cell run without the
   timing lock or beside another timed run.
 - **Card time, estimated before the run:** B2-1 about 2 min per run, run 5 times with the plants; B2-3 about 6 min; B2-4
@@ -4113,7 +4113,7 @@ its amendment `c716b22df`; the walker `5a8866713`; the claims check `fd7c61ded`,
 B2-6 `db97f33fe`; the layout data `6915deb0a`. Logs: `docs/measurements/op4-cuda-2026-11/op4cu-b2-*`. Every run was under
 nobara's timing lock, shared, except B2-6, which ran exclusive. Only `kwin_wayland` was on the card before and after each run.
 - **The compile and CPU checks: PASS** at `e1b16d671` (`op4cu-b2-checks.log`): vet on `cuda`, on darwin `metal` with and without
-  the tag, and on `decoder` and `internal/program`; the `internal/program` tests; B-1; and the moved fixture test. The first
+  the tag, and on `decoder` and `internal/runtime/program`; the `internal/runtime/program` tests; B-1; and the moved fixture test. The first
   run failed on gofmt alone (`op4cu-b2-checks-gofmt-red.log`).
   - **The moved fixture test:** 63 fixtures, 8 declined for an operation with no step. The claim plant is red on 50, the
     table plant on 1.
@@ -4208,7 +4208,7 @@ nobara's timing lock, shared, except B2-6, which ran exclusive. Only `kwin_wayla
 **OP4cu-c1 registered 2026-11-01 20:43 PST, before its code (nobara-sb01; the coordinator's go, received before 20:43, under Francis's GO).** The
 CUDA half of OP4m-c1: CUDA's operation-and-parameter table.
 - **What changes:**
-  - `internal/program/support.go` gains `program.CUDA`, the operation kinds and parameter values CUDA's walker implements. The
+  - `internal/runtime/program/support.go` gains `program.CUDA`, the operation kinds and parameter values CUDA's walker implements. The
     kinds: the norm, q/k/v, the QK-norm, rope, the query temperature, attention, the output projection, the FFN, the residual,
     MLA, Mamba-2, DeltaNet, gated attention, Gemma 4's attention and MoE block, PLE and the layer scale.
   - Its FFN forms, each with its activations: gated (SiLU, tanh GELU), non-gated (ReLU²), MoE and gpt-oss's (SiLU), and Gemma
@@ -4609,8 +4609,8 @@ to 06:49:01 PST, load 0.31 at its start, `kwin_wayland` the only other CUDA cont
   - A gated processor already keeps the single-token fast path armed. Only the chains refuse it, because "a gated one would need
     the full row mid-chain".
   - In auto mode, a turn that declares tools attaches the lazy tool union, a gated processor that is on by default
-    (`internal/serveapp/tools.go:constrainToolUnion`). A turn with a thinking budget attaches another
-    (`internal/serveapp/budget.go`). So agent turns lose the chain.
+    (`internal/app/serveapp/tools.go:constrainToolUnion`). A turn with a thinking budget attaches another
+    (`internal/app/serveapp/budget.go`). So agent turns lose the chain.
   - CUDA has no chain at all.
 - **The change on Metal:** run ahead while the gate is closed.
   - When the gate opens at token t, the host reads step t's full row and applies the mask.
@@ -5174,7 +5174,7 @@ Code, read at `9593bd70`:
     `decoder/features.go:ResidentBackendFeatures`;
   - added by OP0: `decoder/residency.go:Architecture.runnerShapeDecline`, `decoder/features.go:residentGateReasons`,
     `decoder/features.go:Architecture.residentFeatures`, `decoder/residency.go:Model.GatedActResident`;
-  - `decoder/actquant_hazard.go:ActivationQuantHazard`, `internal/modelload/modelload.go:activationSafeQuant`.
+  - `decoder/actquant_hazard.go:ActivationQuantHazard`, `internal/runtime/modelload/modelload.go:activationSafeQuant`.
 - **The seam and the decode loop:** `decoder/residency.go:ResidentForward`, `decoder/residency.go:ResidentGreedyChain`,
   `decoder/residency.go:ResidentSampleChain`, `decoder/model.go:Model.generateInto`.
 - **The runners:**
@@ -5183,7 +5183,7 @@ Code, read at `9593bd70`:
   - `backend/metal/model.go:residLayer`, `backend/metal/backend.go:metalBackend.BuildResident`, `backend/metal/batch.go:metalResident.StepBatch`,
     `backend/metal/batch_rows.go`;
   - `backend/webgpu/internal/kernels/decoderunner.go:RunLayer`, `backend/webgpu/residency.go:webgpuBackend.BuildResident`.
-- **Serve:** `internal/serveapp/tools.go:constrainToolUnion`, `internal/serveapp/budget.go`, `internal/loadflags/loadflags.go`.
+- **Serve:** `internal/app/serveapp/tools.go:constrainToolUnion`, `internal/app/serveapp/budget.go`, `internal/app/loadflags/loadflags.go`.
 
 Docs and records:
 - `docs/ARCHITECTURE.md`, `docs/hardware-matrix.md`, `docs/benchmarks.md`, `CHANGELOG.md`;

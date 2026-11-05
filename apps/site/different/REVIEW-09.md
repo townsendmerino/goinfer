@@ -10,11 +10,11 @@ Draft, `reviewed:` empty. Body about 840 words (tables and code included). Site 
 | Machine/date: nobara-pc, RTX 2070 SUPER, driver 595.91.07, 2026-09-09, goinfer `b22e080e` dirty, greedy, 7B Q4_K_M as int4, CUDA resident | same section "Provenance"; JSON `header` |
 | "Time to first token" = wall clock of a `max_tokens:1` non-streaming request, because forced tool calls do not stream | same section ("Why TTFT here is from two non-streaming requests"); `scripts/bench_peer_transcript.py` docstring |
 | Without reuse turns 1-3 8.86, 9.01, 9.13 s; with reuse 8.80, 0.58, 0.42 s; 25 tool schemas, 7B, RTX 2070 SUPER, verified 2026-09-02 | `docs/integrations/claude-code.md`, "What to expect" table and top "Verified end to end 2026-09-02" |
-| CPU path: LRU of sessions, longest shared prefix, beats what it shares with other sessions, rewound and suffix prefilled | `internal/serveapp/sessions.go` (`acquire` comment, `bestExtend`, `pickSession`) |
+| CPU path: LRU of sessions, longest shared prefix, beats what it shares with other sessions, rewound and suffix prefilled | `internal/app/serveapp/sessions.go` (`acquire` comment, `bestExtend`, `pickSession`) |
 | GPU path: `--kv-sessions` = KV slots, binds slot holding the prefix, new conversation takes empty slot else LRU; memory guard clamps; ~117 MB (1.5B, 4k, Metal) | `docs/server.md` "On Metal, CUDA and WebGPU, several conversations stay resident" |
 | `usage.prefill_reused_tokens` | `docs/server.md`; `docs/tasks/task-turn-telemetry-2026-09.md` section 1 |
-| Default 4, 0 disables, `--session-dir` persists warm sessions | `internal/serveapp/main.go` flag definitions (`kv-sessions`, `session-dir`); `docs/server.md` |
-| Banner strings | `internal/serveapp/banner.go` lines ~176-193 |
+| Default 4, 0 disables, `--session-dir` persists warm sessions | `internal/app/serveapp/main.go` flag definitions (`kv-sessions`, `session-dir`); `docs/server.md` |
+| Banner strings | `internal/app/serveapp/banner.go` lines ~176-193 |
 | Tokens prefilled turns 2-6: 26, 27, 24, 20, 27 at 1/2/4 clients (new), 187, 342, 494, 642, 797 (old, Metal 4 clients) | `docs/measurements/concurrency-mc1-2026-09-26.md` Results table (M1 Pro 16 GB, macOS 26.6.2, qwen2.5-coder-1.5b q4_k_m int4) |
 | Same on CUDA; old 4-client 176, 331, 483, 631, 786 (the record prints these for the 2-client old cell, and the 4-client old cell prints the same list) | `docs/measurements/concurrency-mc1-cuda-2026-09-27.md` Results table |
 | CPU thrash: `e1c867f6` 2026-09-23, 7 tokens reused per turn, 0.69× at 2 clients, live 3 days, fix 27.4 → 43.3 tok/s | `docs/measurements/concurrency-mc0-2026-09-26.md` header bullets and "The CPU bug" |
@@ -23,7 +23,7 @@ Draft, `reviewed:` empty. Body about 840 words (tables and code included). Site 
 | Limit: 7B on 8 GB CUDA at 8192 got 2 of 4 slots, 55.8 against 55.5 tok/s, 896 MB per slot | `docs/measurements/concurrency-mc1-cuda-2026-09-27.md` header and "The 7B: the clamp binds" |
 | Limit: recurrent/hybrid keep one slot, reuse only an exact strict extension | `docs/server.md` ("One slot: the recurrent families"); `decoder/resident_reuse.go` comment at the `hasRecurrentState` rule |
 | Limit: CPU fast prefill attention, suffix >= 512 tokens not bit-identical, `GOINFER_CPU_FAST_ATTENTION=0` makes it exact, 1.43x on a cold 2048-token turn | `docs/server.md` "Prompt-prefix KV caching" |
-| Edited early message = prefilled again after the change | `docs/integrations/claude-code.md` ("Reuse is skipped whenever the prompt diverges..."); `internal/serveapp/sessions.go` (`acquire` doc) |
+| Edited early message = prefilled again after the change | `docs/integrations/claude-code.md` ("Reuse is skipped whenever the prompt diverges..."); `internal/app/serveapp/sessions.go` (`acquire` doc) |
 | `--embed-int4=false` on Metal | `docs/quantization.md` "Known issue" (line ~134) |
 | Command line, replay script | `docs/server.md` line ~513; `scripts/bench_peer_transcript.py` argparse (`out`, `--model`, `--backend`) |
 

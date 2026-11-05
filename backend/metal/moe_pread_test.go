@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/prequant"
+	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 )
 
 // TestMoEPagingPread_matchesByteCopy is TestMoEPaging_matchesNonPaged's twin for the PREAD staging

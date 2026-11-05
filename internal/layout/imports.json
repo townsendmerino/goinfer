@@ -50,7 +50,7 @@
     {
       "name": "probe-standalone",
       "from": [
-        "internal/mem/probe"
+        "internal/runtime/mem/probe"
       ],
       "tests": true,
       "forbid_goinfer": [
@@ -87,7 +87,7 @@
     {
       "name": "scheduler-standard-library",
       "from": [
-        "internal/scheduler"
+        "internal/runtime/scheduler"
       ],
       "tests": true,
       "forbid_goinfer": [
@@ -104,8 +104,8 @@
       ],
       "tests": true,
       "forbid_goinfer": [
-        "internal/serveapp",
-        "internal/chatapp",
+        "internal/app/serveapp",
+        "internal/app/chatapp",
         "cmd"
       ],
       "why": "The engine package (SB7) is what the serving shell asks of a model; the shell imports it and its fakes, never the reverse, so a fake engine needs no server."
@@ -146,28 +146,28 @@
       "decoder",
       "internal/audio",
       "internal/cost",
-      "internal/mem",
-      "internal/program",
-      "internal/sampling",
+      "internal/runtime/mem",
+      "internal/runtime/program",
+      "internal/runtime/sampling",
       "internal/vision",
       "multimodal"
     ],
     "backend/cuda/cmd/chat": [
       "backend/cuda",
-      "internal/chatapp"
+      "internal/app/chatapp"
     ],
     "backend/cuda/cmd/serve": [
       "backend/cuda",
-      "internal/serveapp"
+      "internal/app/serveapp"
     ],
     "backend/cuda/internal/qwencuda": [
       "backend/cuda/internal/gpudev",
-      "internal/mem",
+      "internal/runtime/mem",
       "internal/vision"
     ],
     "backend/cuda/internal/visioncuda": [
       "backend/cuda/internal/gpudev",
-      "internal/mem",
+      "internal/runtime/mem",
       "internal/vision"
     ],
     "backend/metal": [
@@ -177,53 +177,53 @@
       "embeddinggemma2",
       "internal/audio",
       "internal/cost",
-      "internal/f16",
-      "internal/mem",
-      "internal/mem/probe",
-      "internal/program",
+      "internal/runtime/f16",
+      "internal/runtime/mem",
+      "internal/runtime/mem/probe",
+      "internal/runtime/program",
       "internal/vision",
       "multimodal"
     ],
     "backend/metal/cmd/chat": [
       "backend/metal",
-      "internal/chatapp"
+      "internal/app/chatapp"
     ],
     "backend/metal/cmd/serve": [
       "backend/metal",
-      "internal/serveapp"
+      "internal/app/serveapp"
     ],
     "backend/metal/internal/qwenmetal": [
       "backend/metal/internal/gpudev",
-      "internal/mem",
+      "internal/runtime/mem",
       "internal/vision"
     ],
     "backend/metal/internal/visionmetal": [
       "backend/metal/internal/gpudev",
-      "internal/mem",
+      "internal/runtime/mem",
       "internal/vision"
     ],
     "backend/metal/kernels": [
-      "internal/f16"
+      "internal/runtime/f16"
     ],
     "backend/webgpu": [
       "backend/webgpu/internal/kernels",
       "decoder",
       "internal/cost",
-      "internal/mem",
-      "internal/program"
+      "internal/runtime/mem",
+      "internal/runtime/program"
     ],
     "backend/webgpu/cmd/chat": [
       "backend/webgpu",
-      "internal/chatapp"
+      "internal/app/chatapp"
     ],
     "backend/webgpu/cmd/serve": [
       "backend/webgpu",
-      "internal/serveapp"
+      "internal/app/serveapp"
     ],
     "backend/webgpu/internal/kernels": [
-      "internal/adapter",
       "internal/cost",
-      "internal/mem",
+      "internal/runtime/adapter",
+      "internal/runtime/mem",
       "internal/vision",
       "multimodal"
     ],
@@ -231,35 +231,35 @@
       "tokenizer"
     ],
     "cmd/gate": [
-      "internal/mem/probe",
-      "internal/paritykey",
+      "internal/guard/paritykey",
+      "internal/runtime/mem/probe",
       "tokenizer"
     ],
     "cmd/hostmem": [
-      "internal/mem/probe"
+      "internal/runtime/mem/probe"
     ],
     "cmd/prequant": [
       "decoder",
-      "internal/prequant"
+      "internal/runtime/prequant"
     ],
     "cmd/serve": [
-      "internal/serveapp"
+      "internal/app/serveapp"
     ],
     "decoder": [
       "chat",
       "constrain",
-      "internal/adapter",
       "internal/cost",
-      "internal/diskfree",
-      "internal/f16",
-      "internal/giw",
-      "internal/hybridattn",
-      "internal/kvmgr",
-      "internal/mamba2",
-      "internal/mem",
-      "internal/mem/probe",
-      "internal/program",
-      "internal/sampling",
+      "internal/runtime/adapter",
+      "internal/runtime/diskfree",
+      "internal/runtime/f16",
+      "internal/runtime/giw",
+      "internal/runtime/hybridattn",
+      "internal/runtime/kvmgr",
+      "internal/runtime/mamba2",
+      "internal/runtime/mem",
+      "internal/runtime/mem/probe",
+      "internal/runtime/program",
+      "internal/runtime/sampling",
       "tokenizer"
     ],
     "demo/agent/agent": [
@@ -279,7 +279,7 @@
       "demo/agent/internal/embedmodel"
     ],
     "demo/chat": [
-      "internal/chatapp"
+      "internal/app/chatapp"
     ],
     "embeddinggemma2": [
       "internal/audio",
@@ -295,28 +295,77 @@
     "engine/enginetest": [
       "engine"
     ],
-    "internal/audio": [
-      "internal/vision"
-    ],
-    "internal/chatapp": [
+    "internal/app/chatapp": [
       "chat",
       "constrain",
       "decoder",
+      "internal/app/cliutil",
+      "internal/app/decidecmd",
+      "internal/app/fitcmd",
+      "internal/app/loadflags",
+      "internal/app/pullcmd",
       "internal/batchio",
-      "internal/cliutil",
       "internal/codec",
-      "internal/decidecmd",
-      "internal/fitcmd",
-      "internal/giw",
-      "internal/hwreport",
-      "internal/loadflags",
-      "internal/modelload",
-      "internal/prequant",
-      "internal/pullcmd",
+      "internal/diag/hwreport",
+      "internal/runtime/giw",
+      "internal/runtime/modelload",
+      "internal/runtime/prequant",
       "internal/vision",
       "multimodal",
       "pull",
       "tokenizer"
+    ],
+    "internal/app/decidecmd": [
+      "decoder",
+      "internal/app/loadflags",
+      "internal/decide",
+      "internal/runtime/modelload",
+      "internal/runtime/prequant"
+    ],
+    "internal/app/fitcmd": [
+      "decoder",
+      "internal/runtime/modelload",
+      "internal/runtime/prequant"
+    ],
+    "internal/app/loadflags": [
+      "decoder",
+      "internal/app/cliutil",
+      "internal/config"
+    ],
+    "internal/app/pullcmd": [
+      "pull"
+    ],
+    "internal/app/serveapp": [
+      "chat",
+      "constrain",
+      "decoder",
+      "embeddinggemma2",
+      "engine",
+      "engine/enginetest",
+      "internal/app/cliutil",
+      "internal/app/connect",
+      "internal/app/loadflags",
+      "internal/app/pullcmd",
+      "internal/audio",
+      "internal/batchio",
+      "internal/clef",
+      "internal/codec",
+      "internal/cost",
+      "internal/decide",
+      "internal/guard/servecheck",
+      "internal/guard/swapguard",
+      "internal/runtime/modelload",
+      "internal/runtime/prequant",
+      "internal/runtime/sampling",
+      "internal/runtime/scheduler",
+      "internal/runtime/whisper",
+      "internal/vision",
+      "multimodal",
+      "pull",
+      "tokenizer"
+    ],
+    "internal/audio": [
+      "internal/vision"
     ],
     "internal/clef": [
       "decoder",
@@ -334,94 +383,45 @@
       "internal/confidence",
       "tokenizer"
     ],
-    "internal/decidecmd": [
+    "internal/diag/hwreport": [
       "decoder",
-      "internal/decide",
-      "internal/loadflags",
-      "internal/modelload",
-      "internal/prequant"
+      "internal/app/fitcmd"
     ],
-    "internal/fitcmd": [
-      "decoder",
-      "internal/modelload",
-      "internal/prequant"
-    ],
-    "internal/hwreport": [
-      "decoder",
-      "internal/fitcmd"
-    ],
-    "internal/loadflags": [
-      "decoder",
-      "internal/cliutil",
-      "internal/config"
-    ],
-    "internal/mamba2": [
-      "internal/hybridattn"
-    ],
-    "internal/memgate": [
-      "decoder",
-      "internal/mem"
-    ],
-    "internal/modelload": [
-      "decoder",
-      "internal/giw",
-      "internal/mem",
-      "internal/prequant",
-      "internal/swapguard",
-      "pull",
-      "tokenizer"
-    ],
-    "internal/prequant": [
-      "decoder"
-    ],
-    "internal/pullcmd": [
-      "pull"
-    ],
-    "internal/serveapp": [
-      "chat",
-      "constrain",
-      "decoder",
-      "embeddinggemma2",
-      "engine",
-      "engine/enginetest",
-      "internal/audio",
-      "internal/batchio",
-      "internal/clef",
-      "internal/cliutil",
-      "internal/codec",
-      "internal/connect",
-      "internal/cost",
-      "internal/decide",
-      "internal/loadflags",
-      "internal/modelload",
-      "internal/prequant",
-      "internal/pullcmd",
-      "internal/sampling",
-      "internal/scheduler",
-      "internal/servecheck",
-      "internal/swapguard",
-      "internal/vision",
-      "internal/whisper",
-      "multimodal",
-      "pull",
-      "tokenizer"
-    ],
-    "internal/servecheck": [
-      "decoder",
-      "internal/hwreport"
-    ],
-    "internal/swapguard": [
-      "decoder",
-      "internal/mem/probe"
-    ],
-    "internal/towerid": [
+    "internal/diag/towerid": [
       "embeddinggemma2",
       "internal/audio",
-      "internal/kernelprint",
+      "internal/diag/kernelprint",
       "internal/vision",
       "multimodal"
     ],
-    "internal/whisper": [
+    "internal/guard/memgate": [
+      "decoder",
+      "internal/runtime/mem"
+    ],
+    "internal/guard/servecheck": [
+      "decoder",
+      "internal/diag/hwreport"
+    ],
+    "internal/guard/swapguard": [
+      "decoder",
+      "internal/runtime/mem/probe"
+    ],
+    "internal/runtime/mamba2": [
+      "internal/runtime/hybridattn"
+    ],
+    "internal/runtime/modelload": [
+      "decoder",
+      "internal/guard/swapguard",
+      "internal/runtime/giw",
+      "internal/runtime/mem",
+      "internal/runtime/prequant",
+      "pull",
+      "tokenizer"
+    ],
+    "internal/runtime/prequant": [
+      "decoder"
+    ],
+    "internal/runtime/whisper": [
       "internal/audio",
       "tokenizer"
     ],
@@ -434,11 +434,11 @@
       "tokenizer"
     ],
     "pull": [
-      "internal/diskfree"
+      "internal/runtime/diskfree"
     ],
     "server": [
-      "internal/inproc",
-      "internal/serveapp"
+      "internal/app/inproc",
+      "internal/app/serveapp"
     ]
   },
   "test_arrows": {
@@ -459,21 +459,21 @@
       "chat",
       "decoder",
       "embeddinggemma2",
+      "internal/app/loadflags",
       "internal/audio",
       "internal/clef",
       "internal/cost",
-      "internal/giw",
-      "internal/loadflags",
-      "internal/mem",
-      "internal/mem/probe",
-      "internal/memgate",
-      "internal/modelload",
-      "internal/program",
-      "internal/sampling",
-      "internal/sb2census",
-      "internal/towerid",
+      "internal/diag/sb2census",
+      "internal/diag/towerid",
+      "internal/guard/memgate",
+      "internal/runtime/giw",
+      "internal/runtime/mem",
+      "internal/runtime/mem/probe",
+      "internal/runtime/modelload",
+      "internal/runtime/program",
+      "internal/runtime/sampling",
+      "internal/runtime/whisper",
       "internal/vision",
-      "internal/whisper",
       "internal/wrappedupload",
       "multimodal",
       "tokenizer"
@@ -489,9 +489,9 @@
       "backend/cuda/internal/gpudev",
       "backend/cuda/internal/launchgeom",
       "backend/cuda/internal/wpack",
-      "internal/hybridattn",
-      "internal/mamba2",
-      "internal/sampling"
+      "internal/runtime/hybridattn",
+      "internal/runtime/mamba2",
+      "internal/runtime/sampling"
     ],
     "backend/cuda/s4siglip": [
       "backend/cuda/internal/visioncuda",
@@ -504,21 +504,21 @@
       "constrain",
       "decoder",
       "embeddinggemma2",
+      "internal/app/loadflags",
       "internal/audio",
       "internal/confidence",
       "internal/cost",
-      "internal/f16",
+      "internal/diag/sb2census",
+      "internal/diag/towerid",
       "internal/fidelity",
-      "internal/giw",
-      "internal/loadflags",
-      "internal/mem",
-      "internal/mem/probe",
-      "internal/memgate",
-      "internal/modelload",
-      "internal/prequant",
-      "internal/program",
-      "internal/sb2census",
-      "internal/towerid",
+      "internal/guard/memgate",
+      "internal/runtime/f16",
+      "internal/runtime/giw",
+      "internal/runtime/mem",
+      "internal/runtime/mem/probe",
+      "internal/runtime/modelload",
+      "internal/runtime/prequant",
+      "internal/runtime/program",
       "internal/vision",
       "internal/wrappedupload",
       "multimodal",
@@ -534,33 +534,33 @@
     ],
     "backend/metal/kernels": [
       "backend/metal/internal/gpudev",
-      "internal/f16",
-      "internal/hybridattn",
-      "internal/mamba2",
-      "internal/sampling"
+      "internal/runtime/f16",
+      "internal/runtime/hybridattn",
+      "internal/runtime/mamba2",
+      "internal/runtime/sampling"
     ],
     "backend/webgpu": [
       "backend/webgpu/internal/kernels",
       "chat",
       "decoder",
       "internal/cost",
+      "internal/diag/sb2census",
+      "internal/diag/towerid",
       "internal/fidelity",
-      "internal/giw",
-      "internal/mem",
-      "internal/mem/probe",
-      "internal/memgate",
-      "internal/program",
-      "internal/sb2census",
-      "internal/towerid",
+      "internal/guard/memgate",
+      "internal/runtime/giw",
+      "internal/runtime/mem",
+      "internal/runtime/mem/probe",
+      "internal/runtime/program",
       "internal/vision",
       "internal/wrappedupload",
       "multimodal",
       "tokenizer"
     ],
     "backend/webgpu/internal/kernels": [
-      "internal/hybridattn",
-      "internal/mem",
-      "internal/sampling",
+      "internal/runtime/hybridattn",
+      "internal/runtime/mem",
+      "internal/runtime/sampling",
       "internal/vision",
       "multimodal"
     ],
@@ -570,10 +570,10 @@
       "tokenizer"
     ],
     "cmd/gate": [
-      "internal/paritykey"
+      "internal/guard/paritykey"
     ],
     "cmd/hostmem": [
-      "internal/mem/probe"
+      "internal/runtime/mem/probe"
     ],
     "constrain": [
       "tokenizer"
@@ -584,12 +584,12 @@
       "internal/audio",
       "internal/cost",
       "internal/fidelity",
-      "internal/giw",
-      "internal/kvmgr",
-      "internal/mem",
-      "internal/mem/probe",
-      "internal/paritykey",
-      "internal/program",
+      "internal/guard/paritykey",
+      "internal/runtime/giw",
+      "internal/runtime/kvmgr",
+      "internal/runtime/mem",
+      "internal/runtime/mem/probe",
+      "internal/runtime/program",
       "internal/vision",
       "multimodal",
       "tokenizer"
@@ -613,10 +613,7 @@
     "engine/enginetest": [
       "engine"
     ],
-    "internal/audio": [
-      "internal/vision"
-    ],
-    "internal/chatapp": [
+    "internal/app/chatapp": [
       "chat",
       "constrain",
       "decoder",
@@ -625,76 +622,79 @@
       "multimodal",
       "tokenizer"
     ],
-    "internal/clef": [
+    "internal/app/fitcmd": [
       "decoder",
-      "internal/modelload",
-      "tokenizer"
+      "internal/runtime/giw"
     ],
-    "internal/config": [
-      "decoder",
-      "internal/loadflags"
-    ],
-    "internal/decide": [
-      "decoder",
-      "tokenizer"
-    ],
-    "internal/fitcmd": [
-      "decoder",
-      "internal/giw"
-    ],
-    "internal/hwreport": [
-      "decoder"
-    ],
-    "internal/loadflags": [
+    "internal/app/loadflags": [
       "decoder",
       "internal/config"
     ],
-    "internal/memgate": [
-      "decoder",
-      "internal/mem",
-      "internal/sb2census"
-    ],
-    "internal/modelload": [
-      "decoder",
-      "internal/prequant",
-      "tokenizer"
-    ],
-    "internal/pullcmd": [
+    "internal/app/pullcmd": [
       "pull"
     ],
-    "internal/serveapp": [
+    "internal/app/serveapp": [
       "chat",
       "constrain",
       "decoder",
       "embeddinggemma2",
       "engine",
+      "internal/app/chatapp",
+      "internal/app/connect",
+      "internal/app/inproc",
+      "internal/app/loadflags",
       "internal/audio",
-      "internal/chatapp",
       "internal/clef",
       "internal/config",
-      "internal/connect",
       "internal/cost",
       "internal/decide",
-      "internal/giw",
-      "internal/inproc",
-      "internal/kvmgr",
-      "internal/loadflags",
-      "internal/modelload",
-      "internal/prequant",
-      "internal/swapguard",
+      "internal/guard/swapguard",
+      "internal/runtime/giw",
+      "internal/runtime/kvmgr",
+      "internal/runtime/modelload",
+      "internal/runtime/prequant",
+      "internal/runtime/whisper",
       "internal/vision",
-      "internal/whisper",
       "multimodal",
       "pull",
       "tokenizer"
     ],
-    "internal/swapguard": [
-      "decoder"
-    ],
-    "internal/towerid": [
+    "internal/audio": [
       "internal/vision"
     ],
-    "internal/whisper": [
+    "internal/clef": [
+      "decoder",
+      "internal/runtime/modelload",
+      "tokenizer"
+    ],
+    "internal/config": [
+      "decoder",
+      "internal/app/loadflags"
+    ],
+    "internal/decide": [
+      "decoder",
+      "tokenizer"
+    ],
+    "internal/diag/hwreport": [
+      "decoder"
+    ],
+    "internal/diag/towerid": [
+      "internal/vision"
+    ],
+    "internal/guard/memgate": [
+      "decoder",
+      "internal/diag/sb2census",
+      "internal/runtime/mem"
+    ],
+    "internal/guard/swapguard": [
+      "decoder"
+    ],
+    "internal/runtime/modelload": [
+      "decoder",
+      "internal/runtime/prequant",
+      "tokenizer"
+    ],
+    "internal/runtime/whisper": [
       "internal/audio",
       "multimodal"
     ],

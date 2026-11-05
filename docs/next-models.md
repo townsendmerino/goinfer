@@ -22,7 +22,7 @@ From the watch list: **Ling 3.0 landed** as `bailing_hybrid` (v0.17.0) — KDA b
 sequence-mixing family, the exact thing the old text said would be "natural" and told us to
 verify the weights for first. **Qwen3.8** (the dense 27B) landed. From Tier B, **InternLM2** and
 **`qwen3_moe`** landed. Of the seven families in v0.17.0 (`qwen3_moe`, dense Granite, Ministral 3,
-SmolLM3, Olmo 3, Olmo Hybrid, Ling 3.0), none came from this doc's tiers — they came from
+SmolLM3, Olmo 3, Olmo Hybrid — where Metal is int4 only and WebGPU is read only on the M1 Pro's adapter — and Ling 3.0), none came from this doc's tiers — they came from
 `docs/completed/task-families-2026-09.md` and the G-series. That is the actual finding of the period: this doc
 stopped being where families came from once the axes were covered, which is what it predicted.
 

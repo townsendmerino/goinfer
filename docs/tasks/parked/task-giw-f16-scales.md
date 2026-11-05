@@ -75,7 +75,7 @@ needed narrowing.
   field — there are two version counters at two layers:**
   - `decoder/serialize.go` `giwVersion = 1` — the `GINFW` **weight-bundle**, which
     owns the `q4s` dtype. **This is the one to bump (→ 2).**
-  - `internal/giw/bundle.go` `bundleVersion = 2` — the `GINFB` **container
+  - `internal/runtime/giw/bundle.go` `bundleVersion = 2` — the `GINFB` **container
     wrapper**, *already* at v2 for the u64-length ceiling fix (reads v1 u32 / v2
     u64). **Leave it alone.**
 

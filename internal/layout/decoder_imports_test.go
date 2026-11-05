@@ -310,7 +310,7 @@ const serveappDecoderTests = 31
 func TestServeappTests_decoderImportsOnlyFall(t *testing.T) {
 	var got []string
 	for _, f := range scanTree(t) {
-		if f.dir != "internal/serveapp" || !f.test {
+		if f.dir != "internal/app/serveapp" || !f.test {
 			continue
 		}
 		for _, q := range f.imports {
@@ -323,9 +323,9 @@ func TestServeappTests_decoderImportsOnlyFall(t *testing.T) {
 	sort.Strings(got)
 	switch n := len(got); {
 	case n > serveappDecoderTests:
-		t.Errorf("%d internal/serveapp test files import decoder, above the ratchet's %d: test the serving shell on the fake engine instead (docs/tasks/task-subsystems-2026-10.md, SB7). Files: %s",
+		t.Errorf("%d internal/app/serveapp test files import decoder, above the ratchet's %d: test the serving shell on the fake engine instead (docs/tasks/task-subsystems-2026-10.md, SB7). Files: %s",
 			n, serveappDecoderTests, strings.Join(got, ", "))
 	case n < serveappDecoderTests:
-		t.Errorf("%d internal/serveapp test files import decoder, below the ratchet's %d: lower serveappDecoderTests to %d in this change", n, serveappDecoderTests, n)
+		t.Errorf("%d internal/app/serveapp test files import decoder, below the ratchet's %d: lower serveappDecoderTests to %d in this change", n, serveappDecoderTests, n)
 	}
 }

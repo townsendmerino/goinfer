@@ -29,10 +29,10 @@ and runs them **in-process**. What makes it different — you don't have to choo
   not maintained by hand — [`docs/hardware-matrix.md`](hardware-matrix.md). As of 2026-09-12 that
   table reads 27 of 36 families resident on Metal, 26 on CUDA, 23 on WebGPU, 19 on all three;
   the recurrent families (Mamba-2, Gated DeltaNet) and MoE are among them. The gaps are specific:
-  MLA (DeepSeek-V2/V3, Kimi K2) and Nemotron-H are WebGPU-only; Gemma 4, Command-R, Olmo,
-  SmolLM3 and Ministral 3 are CUDA/Metal-only (correction 2026-10-01: Command-R is now CUDA-only, its Metal
+  Gemma 4, Command-R and Ministral 3 are CUDA/Metal-only (correction 2026-10-01: Command-R is now CUDA-only, its Metal
   resident ran a NeoX rotation on a GPT-J pairwise family and is declined until its kernels are ported;
-  see `docs/measurements/cuda-pairwise-rope-2026-10-01.md`); Llama 4, Granite-4.0-H, LFM2.5, Laguna and Ling 3.0
+  see `docs/measurements/cuda-pairwise-rope-2026-10-01.md`; update 2026-11-03: Olmo 3, Olmo Hybrid and SmolLM3 also run resident on
+  WebGPU, with Olmo Hybrid on Metal at int4 only and on WebGPU read only on the M1 Pro's adapter); DeepSeek-V2/V3 (MLA) and Nemotron-H run resident on Metal and CUDA as well as WebGPU (Kimi K2 stays on the CPU on Metal); Llama 4, Granite-4.0-H, LFM2.5, Laguna and Ling 3.0
   run on the CPU path everywhere. Going fast never costs you the single binary.
 - **36 model families, one binary.** All six attention / sequence-mixing families —
   softmax·GQA, gated-linear (DeltaNet, KDA), state-space (Mamba-2), short-conv (LFM2),
@@ -41,7 +41,7 @@ and runs them **in-process**. What makes it different — you don't have to choo
   maintained by hand: `docs/capability-matrix.md` is emitted from the `decoder` registry, so it
   cannot drift from the code (Gemma 3/4, Qwen 2.5/3/3.5/3.8/Next and the Qwen VL pair, Llama and
   Llama 4, Mistral/Ministral, Mixtral, Qwen-MoE, GLM-4.5/4.6, DeepSeek-V2/V3 + Kimi, Phi-3/4,
-  Granite, Nemotron-H, gpt-oss, Command-R, Olmo 3 and Olmo Hybrid, SmolLM3, InternLM2, Mellum2,
+  Granite, Nemotron-H, gpt-oss, Command-R, Olmo 3 and Olmo Hybrid — Metal is int4 only, WebGPU read only on the M1 Pro's adapter — SmolLM3, InternLM2, Mellum2,
   GPT-2, and more). From safetensors, GGUF, GPTQ, or AWQ; f32 / bf16 / f16 + int8 / int4.
 - **Parity-gated against the reference implementation.** Every forward pass is parity-gated
   against the HuggingFace reference (argmax-exact + logit cosine). A shared feature taxonomy
@@ -64,10 +64,10 @@ Metal backend compiles its MSL at runtime with the OS's own shader toolchain, so
 for a given machine and OS version, not between them. The parity *gates* are what is portable;
 the bytes are not.
 
-It is **not a serving engine.** There is no continuous batching and no paged attention. A few
+It is **not a serving engine.** There is no continuous batching. A few
 concurrent conversations are served, with limits:
 - a CPU model runs up to 4 generations at once, and a model of 2 GiB or more batches their decode tokens;
-- a dense Metal- or CUDA-resident model runs up to 4, each on its own GPU KV slot, their decode tokens joined into
+- a dense Metal- or CUDA-resident model runs up to 4 on a shared paged KV pool, their decode tokens joined into
   shared steps that are bit-identical to serving each alone. Measured on Metal at 1.59× the serialized aggregate at 4
   clients ([`measurements/concurrency-mc3-2026-09-26.md`](measurements/concurrency-mc3-2026-09-26.md)), and on CUDA at
   1.38× (1.5B) and 1.83× (7B) ([`measurements/concurrency-mc3-cuda-2026-09-27.md`](measurements/concurrency-mc3-cuda-2026-09-27.md)).

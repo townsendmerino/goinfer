@@ -138,7 +138,7 @@ arm64 and does NOT inherit amd64's dead end.
 ### Zero-cost, shipped
 
 `-quant int8int8` is now called out as faster than the `int4` default on Apple Silicon CPU in three
-places: `README.md` (the server quickstart), `internal/serveapp/main.go`'s `--quant -h` help text,
+places: `README.md` (the server quickstart), `internal/app/serveapp/main.go`'s `--quant -h` help text,
 and this doc's own numbers folded into `docs/benchmarks.md`'s Apple Silicon CPU table (which
 previously had `—` in its peer column).
 

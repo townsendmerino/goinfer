@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 // donorFake is copyFake with a sliding window per slot (ResidentReusableKVSlot): held[s] is how many of a slot's first

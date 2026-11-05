@@ -1,7 +1,7 @@
 # pull: notes moved out of code comments
 
 History, measurements and open work that used to sit in the comments of `pull`, moved here verbatim by the comment diet
-(`docs/tasks/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
+(`docs/completed/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
 its guardrails, and points here by heading. This file is off the read path: open it when a pointer sends you. Text is unedited,
 except that a `file.go:NNN` reference inside it names the declaration instead (the line numbers had already gone stale).
 
@@ -177,7 +177,7 @@ carries the tower (docs/multimodal.md, P9(d)).
 Moved from `pull/registry.go` (the comment in `Checkpoint`) on 2026-10-09.
 
 ```text
-Tools records what `internal/servecheck`'s two tools rows measured for this checkpoint
+Tools records what `internal/guard/servecheck`'s two tools rows measured for this checkpoint
 (R11, docs/measurements/cold-user-2026-09-06-nobara-pc.md): "tools, OpenAI" is a
 one-function schema, "tools, harness-scale" a dozen-tool schema shaped like a real agent's
 — the shape that broke under opencode with a server whose minimal-schema row was green.

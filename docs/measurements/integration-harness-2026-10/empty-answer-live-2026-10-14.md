@@ -3,7 +3,7 @@
 Owner check (b): an empty answer that carries goinfer's empty-answer reason (docs/server.md, "Empty answers say why") must
 not make a coding agent error out or retry-loop.
 
-- **Setup.** nobara-pc, no GPU: `TestScriptedServe_forHarness` (internal/serveapp/scripted_serve_test.go) serves a scripted
+- **Setup.** nobara-pc, no GPU: `TestScriptedServe_forHarness` (internal/app/serveapp/scripted_serve_test.go) serves a scripted
   model on Mellum2.1's chat template whose every turn is `<think>\nThe file is unreadable, but Add surely returns 5.\n`
   and then the end of turn, so every reply is `ended_in_reasoning`. No real model ends a turn that way on demand. Clients
   as in the I3 harness, from `~/harnesses`: Codex 0.162.1 (`exec --json`, `/v1/responses`) and opencode 1.19.0 (`run

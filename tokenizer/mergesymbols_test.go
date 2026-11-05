@@ -35,6 +35,7 @@ func naiveMergeSymbols(pr map[bigram]int32, syms []string) []string {
 // leftmost-on-a-tie choice and stale-candidate handling.
 func TestMergeSymbols_matchesNaive(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
+	var sc mergeScratch // shared by every trial: nothing a merge leaves behind may reach the next one
 	for trial := range 3000 {
 		n := 2 + rng.Intn(7) // up to 8 single-char symbols
 		syms := make([]string, n)
@@ -75,10 +76,68 @@ func TestMergeSymbols_matchesNaive(t *testing.T) {
 			for k, r := range pr {
 				tok.merges.add(tok, k.left, k.right, r)
 			}
-			got := tok.mergeSymbols(append([]string(nil), syms...))
+			got := tok.mergeSymbols(append([]string(nil), syms...), &sc)
 			if !slices.Equal(got, want) {
 				t.Fatalf("trial %d (vocab %v): syms=%v\n got=%v\nwant=%v", trial, withVocab, syms, got, want)
 			}
+		}
+	}
+}
+
+// naiveScoreMerge is the SentencePiece rescan: repeatedly merge the adjacent pair whose concatenation is in the vocabulary
+// with the lowest score rank, leftmost on a tie.
+func naiveScoreMerge(vocab map[string]int32, scoreRank []int32, syms []string) []string {
+	syms = append([]string(nil), syms...)
+	for len(syms) >= 2 {
+		const maxRank = int32(1<<31 - 1)
+		bestRank, bestI := maxRank, -1
+		for i := 0; i+1 < len(syms); i++ {
+			if id, ok := vocab[syms[i]+syms[i+1]]; ok && scoreRank[id] < bestRank {
+				bestRank, bestI = scoreRank[id], i
+			}
+		}
+		if bestI < 0 {
+			break
+		}
+		syms[bestI] += syms[bestI+1]
+		syms = append(syms[:bestI+1], syms[bestI+2:]...)
+	}
+	return syms
+}
+
+// The score-rank path (gemma-family GGUFs, no merge list) against its own rescan: no committed fixture takes this path, so
+// the concatenation mergeRank looks up is pinned here, with multi-byte symbols so a range cut on the wrong boundary shows.
+func TestMergeSymbols_scoreRankMatchesNaive(t *testing.T) {
+	rng := rand.New(rand.NewSource(2))
+	var sc mergeScratch
+	alphabet := []string{"a", "b", "é", "日", "<0x41>"}
+	for trial := range 3000 {
+		n := 2 + rng.Intn(9)
+		syms := make([]string, n)
+		for i := range syms {
+			syms[i] = alphabet[rng.Intn(len(alphabet))]
+		}
+		tok := &Tokenizer{vocab: map[string]int32{}}
+		add := func(s string) {
+			if _, ok := tok.vocab[s]; !ok {
+				tok.vocab[s] = int32(len(tok.idToPiece))
+				tok.idToPiece = append(tok.idToPiece, s)
+				tok.scoreRank = append(tok.scoreRank, int32(rng.Intn(5))) // few ranks: many ties
+			}
+		}
+		for _, s := range syms {
+			add(s)
+		}
+		for i := range syms {
+			for j := i + 2; j <= len(syms); j++ {
+				if rng.Intn(2) == 0 {
+					add(strings.Join(syms[i:j], ""))
+				}
+			}
+		}
+		want := naiveScoreMerge(tok.vocab, tok.scoreRank, syms)
+		if got := tok.mergeSymbols(append([]string(nil), syms...), &sc); !slices.Equal(got, want) {
+			t.Fatalf("trial %d: %q: merged %q, the rescan gives %q", trial, syms, got, want)
 		}
 	}
 }

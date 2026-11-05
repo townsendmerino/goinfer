@@ -1,0 +1,34 @@
+DIFF skip mmproj-model-f16.gguf: tokenizer.LoadGGUF ~/models/gemma-3-4b-it-gguf/mmproj-model-f16.gguf: mi
+DIFF tokenizers=30 inputs=6101 bytes=2422339 huge=2267152
+DIFF testdata/qwen2-0.5b-coder-meta.gguf                        mode=1 pre=1 ids=3929856 sha=24618594c95e7817b9a2ffce
+DIFF testdata/granite-dbrx-meta.gguf                            mode=1 pre=1 ids=3812043 sha=dab8e4c8ff3533abe8f9ac01
+DIFF testdata/chatml-tiny.gguf                                  mode=1 pre=1 ids=11365266 sha=8ae0a8a741e30f1a7d0670cf
+DIFF gemma-2-2b-it-Q8_0.gguf                                    mode=0 pre=0 ids=4147629 sha=d7baaba3a08f303e18428a23
+DIFF gemma3-1b-q4_k_m.gguf                                      mode=0 pre=0 ids=4178708 sha=07ddfd7545b1b33298ee08a3
+DIFF qwen2.5-7b-instruct-q4_k_m.gguf                            mode=1 pre=1 ids=3929856 sha=24618594c95e7817b9a2ffce
+DIFF qwen2.5-coder-0.5b-instruct-q4_k_m.gguf                    mode=1 pre=1 ids=3929856 sha=24618594c95e7817b9a2ffce
+DIFF qwen2.5-coder-1.5b-instruct-q4_k_m.gguf                    mode=1 pre=1 ids=3929856 sha=24618594c95e7817b9a2ffce
+DIFF DeepSeek-V2-Lite-Chat-Q4_K_M.slice-0-1.gguf                mode=1 pre=0 ids=4304210 sha=09f911ab8fe78e3464310f75
+DIFF gemma-3-4b-it-Q4_K_M.gguf                                  mode=0 pre=0 ids=4178708 sha=07ddfd7545b1b33298ee08a3
+DIFF gemma-4-E2B_q4_0-it.gguf                                   mode=0 pre=0 ids=4161366 sha=e0d29ee56944d023f43873bc
+DIFF gemma-4-E4B_q4_0-it.gguf                                   mode=0 pre=0 ids=4161366 sha=e0d29ee56944d023f43873bc
+DIFF Phi-3-mini-4k-instruct-q4.gguf                             mode=0 pre=0 ids=4629016 sha=69e63f1d01b4804630a80fd8
+DIFF JEV-9B-tokenizer/tokenizer.json                            mode=1 pre=1 ids=3993599 sha=891944f8dedd0f92fd58dfd2
+DIFF embeddinggemma-2/tokenizer.json                            mode=0 pre=0 ids=4161366 sha=e0d29ee56944d023f43873bc
+DIFF glm-ocr/tokenizer.json                                     mode=1 pre=1 ids=4281853 sha=7c5d818df92b5aeb0a1e970d
+DIFF lfm2.5-2.6b/tokenizer.json                                 mode=1 pre=1 ids=3873349 sha=03eefec440b6eb7fff1d754c
+DIFF lfm25-vl-1.6b/tokenizer.json                               mode=1 pre=1 ids=4046500 sha=402897ec5457c3ec7b8214cf
+DIFF nemotron-h-4b-instruct-128k/tokenizer.json                 mode=1 pre=4 ids=4118797 sha=4d62af9a02c4112d4e85e989
+DIFF qwen2.5-0.5b-instruct/tokenizer.json                       mode=1 pre=1 ids=3923755 sha=a091bb93ab9bf1c0b2d381ab
+DIFF qwen25vl-3b-instruct/tokenizer.json                        mode=1 pre=1 ids=3923755 sha=a091bb93ab9bf1c0b2d381ab
+DIFF qwen3-0.6b-bf16/tokenizer.json                             mode=1 pre=1 ids=3923755 sha=a091bb93ab9bf1c0b2d381ab
+DIFF qwen3-0.6b-fp8/tokenizer.json                              mode=1 pre=1 ids=3923755 sha=a091bb93ab9bf1c0b2d381ab
+DIFF qwen3-vl-2b-instruct/tokenizer.json                        mode=1 pre=1 ids=3923755 sha=a091bb93ab9bf1c0b2d381ab
+DIFF qwen3.5-0.8b/tokenizer.json                                mode=1 pre=1 ids=3993599 sha=891944f8dedd0f92fd58dfd2
+DIFF spark25-1.7b/tokenizer.json                                mode=1 pre=0 ids=4280750 sha=e45c80c600189df1e4f2d746
+DIFF mlx-community/Qwen2.5-7B-Instruct-4bit/tokenizer.json      mode=1 pre=1 ids=3923755 sha=a091bb93ab9bf1c0b2d381ab
+DIFF mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit/tokenizer.json mode=1 pre=1 ids=3923755 sha=a091bb93ab9bf1c0b2d381ab
+DIFF ../testdata/gpt2/tokenizer.json                            mode=1 pre=0 ids=4546326 sha=343119a2c98cc68f20f1fa11
+DIFF ../testdata/tiny-qwen2-moe/tokenizer.json                  mode=1 pre=1 ids=3923764 sha=e3efb0e5ff6ef545a208cfac
+DIFF shapes=map[0:10 1:19 4:1]
+PASS

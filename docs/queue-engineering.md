@@ -527,8 +527,8 @@ KV8a night plan: after a 9B load exits, macOS keeps the model's `.giw` pages as 
 used, and the next 9B job's start check read 8.13 GB against an 8.7 GB need until a `purge`, `docs/measurements/kv8a-metal-2026-10/README.md`,
 "The day checks"). **Not started; not for tonight** (the night's jobs purge first, on Francis's sudoers rule).
 - **How each backend reads the file today** (traced at `9a22d909`):
-  - **serve loads a `.giw` by default:** on darwin and linux a `.gguf` goes through the sidecar (`internal/modelload/modelload.go:routeFor`,
-    `internal/prequant/prequant.go:EnsureCachedGIW`), so the cases below are the `.giw` ones; the direct GGUF path (`-direct-load`,
+  - **serve loads a `.giw` by default:** on darwin and linux a `.gguf` goes through the sidecar (`internal/runtime/modelload/modelload.go:routeFor`,
+    `internal/runtime/prequant/prequant.go:EnsureCachedGIW`), so the cases below are the `.giw` ones; the direct GGUF path (`-direct-load`,
     `--quant q4k`) copies every tensor to the heap and unmaps the file when loading returns.
   - **The `.giw` stays mapped until `decoder/model.go:Model.Close`** (`decoder/giwmap_darwin.go:mapGIW`: `MAP_SHARED` on darwin, aikit's
     `MAP_PRIVATE` elsewhere), and the host weights alias it: int8 and int4 codes and their scales are views into the mapping, not copies.
@@ -623,9 +623,9 @@ checkout. The M1 cell is re-queued night-only with its exit 75 on a fit refusal.
 
 **B37 · The in-process real-model harnesses load with `decoder.Options` that are not serve's, so their expert cache and KV plan differ from the server's at the same flags** — filed 2026-10-19 (owner, from the Mellum2.1 16k reading). **DONE: merged 2026-10-19 as #109 (`504da5ab`; the build is `4e8610ee`).** `serveOptions` and `loadLikeServe` (`backend/cuda/serve_options_test.go`) build serve's options for the same flags and VOID a load whose memory-moving fields differ; the Mellum2.1 moe-rows harness, `prefill_decomp`, `prefill_longprompt`, `p20_expert_locality` and the 26B in `prefill_moe` load through them. Gate (a) passed: the harness planned 53 expert slots, the server's figure (26 before); (b) and (c) are `TestServeOptions_carryServesDefaults` and `TestServeOptions_guardVoidsTheB37HarnessOptions` (the plant). Not moved: `gptoss_real20b_test.go` (a parity gate, not timed) and the KV-policy readings still write their own options. The scoping below is the record.
 - **Measured:** `TestMoERows_realMellumIdentityAndAB` at `-ctx 32768 --moe-cache-experts` planned 26 expert slots per layer (3.1 GB free after the build) on a quiet card (only `kwin_wayland`) in two sessions; the server planned 53 (5.8 GB free) with the same flags minutes apart (`docs/measurements/mellum21-served-16k-2026-10-19/README.md`).
-- **Cause:** `Options.ResidentWindowedKV`. Serve sets it from `--windowed-kv` (default true, `internal/loadflags/loadflags.go`); the library default is false and the harness does not set it, so Mellum2.1's 21 sliding-window layers kept the whole context instead of window + 512 positions: 21 x (32,768 - 1,536) x 4,096 B = 2.686 GB, against the observed 2.7 GB gap. Arithmetic match to three figures; the first gate below turns it into a run.
+- **Cause:** `Options.ResidentWindowedKV`. Serve sets it from `--windowed-kv` (default true, `internal/app/loadflags/loadflags.go`); the library default is false and the harness does not set it, so Mellum2.1's 21 sliding-window layers kept the whole context instead of window + 512 positions: 21 x (32,768 - 1,536) x 4,096 B = 2.686 GB, against the observed 2.7 GB gap. Arithmetic match to three figures; the first gate below turns it into a run.
 - **Affected:** every `cuda/*_test.go` harness that loads a real checkpoint through `decoder.Load` with hand-written options (`moe_rows_real_test.go`, `prefill_decomp_test.go`, `prefill_longprompt_test.go`, the P20 and KV-policy readings, `gptoss_real20b_test.go`), for any model with sliding-window layers; other options that move memory (KV slots, the KV element type, act-quant group, embed-int4) are the same class and unchecked.
-- **The fix, scoped:** (1) a helper `serveOptions(base)` for the cuda tests that starts from `internal/loadflags`'s defaults (the code serve runs) and overlays the harness's own fields (`MoECacheExperts`, `ResidentContext`), so a flag added to serve reaches the harness; (2) the real-model harnesses use it; (3) a guard in each timed harness: print the build's plan line (`r.cacheSlots`, the C' line) and VOID when the model has sliding-window layers and `ResidentWindowedKV()` is false, instead of timing it.
+- **The fix, scoped:** (1) a helper `serveOptions(base)` for the cuda tests that starts from `internal/app/loadflags`'s defaults (the code serve runs) and overlays the harness's own fields (`MoECacheExperts`, `ResidentContext`), so a flag added to serve reaches the harness; (2) the real-model harnesses use it; (3) a guard in each timed harness: print the build's plan line (`r.cacheSlots`, the C' line) and VOID when the model has sliding-window layers and `ResidentWindowedKV()` is false, instead of timing it.
 - **Gates (tier 0/1, pre-registered when built):** (a) on Mellum2.1 at `-ctx 32768`, the harness's load plans the same slot count as the server's banner on a quiet card (53 on 2026-10-19), a load of a few seconds; (b) a unit test that diffs the helper's options against `loadflags` defaults on the memory-moving fields, and goes red when the helper drops `ResidentWindowedKV` (the plant); (c) the guard VOIDs a harness that leaves windowed KV off on a windowed model.
 - **Size:** S.
 **B36 · A `--moe-cache-experts` load of a `.giw` packs each expert twice on the Go heap, so its anonymous memory runs a third to a half above the pinned copy the guard prices** — filed 2026-10-19 (owner, from the sampled 35B load). **DONE: merged 2026-10-19 as #103 (`2f375a10`; the build is `ca0c37cf`).** Not built: option (4) below, skipping the whole-file pre-read (`coldReadThrough` still runs). Tier-0 gates green (pinned bytes identical; 6 KB of heap against 4.7 MB pinned; the staged plant allocates 15 MB and goes red; a decline allocates nothing; the abort poll reaches the packer). The 35B load on the guard-on build completes in 29.5 s with peak `RssAnon` 0.40 GB, no swap and no slice reclaim (`docs/measurements/c3-35b-sampled-load-2026-10-19/README.md`, run 3).
@@ -666,7 +666,7 @@ checkout. The M1 cell is re-queued night-only with its exit 75 on a fit refusal.
 
 **B33 · The load-time swap watch is not armed on a `.giw` load, and a `.giw` load has nowhere to abort** — filed 2026-10-18 (owner, from the
 cuda-stream-pack scoping). **DONE: merged to main in #101 (333407c3), 2026-10-19**, with B34 step 1, as one change (branch `swap-giw-load-watch`). Brief: `docs/completed/task-never-swap-2026-09.md`, "Addendum, 2026-10-18: arm the load-time swap watch on the `.giw` path (B33)".
-- **What happens:** `internal/modelload/modelload.go:loadGuarded` arms the load-time watch only for a direct `.gguf` build and prints
+- **What happens:** `internal/runtime/modelload/modelload.go:loadGuarded` arms the load-time watch only for a direct `.gguf` build and prints
   "swap guard (load): not armed for <path>" for a `.giw` (or streamed, or HF-directory) load. `Options.LoadAbort` has one consumer, `parallelLayers` in the direct GGUF weight
   build, so arming it elsewhere would log a trip and keep loading.
 - **Scope, once approved:** (1) arm the watch on the `.giw` path (the sources, per-process `VmSwap` with the system backstop, are path-agnostic);
@@ -688,7 +688,7 @@ watch's baseline was taken before the load). It was filed under B33 at the same 
 `-stream-weights`. Premise moved since filing: q4k has a `.giw` form now (kind 8), so the transcode would succeed, and what the
 retry then loaded was paged by neither pager (`TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers`; the same held at f32, fixed with it); `routeFor` already refused that combination
 when asked directly. The text below is the entry as filed.**
-- **What happens:** `internal/modelload/modelload.go:Load` retries a refused dense `.gguf` with weight streaming. It prints
+- **What happens:** `internal/runtime/modelload/modelload.go:Load` retries a refused dense `.gguf` with weight streaming. It prints
   "automatically retrying with weight streaming" and starts a sidecar `.giw` transcode
   ("stream-weights: transcoding … → ….q4k.metal.v17.giw"). The transcode then fails, because `--quant q4k` has no `.giw` form
   (`decoder/serialize.go`: "--quant q4k has no .giw form yet; load the .gguf directly").
@@ -973,7 +973,7 @@ release assets (`gh api repos/townsendmerino/goinfer/releases/tags/v0.18.0 --jq 
 → `0`), against 27 on each of the three releases before it. `release-assets.yml`'s `runtime
 binaries` job failed at `cross-compile goinfer-serve per platform` (run `34807285691`) — a real
 build failure, referencing `syscall.SIGUSR1`/`SIGUSR2` unconditionally, which do not exist on
-`GOOS=windows`. **Fixed forward** (build-tagged `internal/serveapp/haltsignal_unix.go:startHaltSignalLoop`/
+`GOOS=windows`. **Fixed forward** (build-tagged `internal/app/serveapp/haltsignal_unix.go:startHaltSignalLoop`/
 `haltsignal_windows.go`, same commit that filed this) — that half is done.
 
 **This entry is about the OTHER half: nothing noticed.** The chat binaries and both
@@ -1721,9 +1721,9 @@ Why Go is *strictly better* here, not just same-language — it dissolves the it
 | C-06 unvalidated tensor shapes | **fixed**, break-it-first gate | `decoder/serialize_shapecheck_test.go:TestValidateShapes_catchesArchMismatch` |
 | C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `backend/cuda/resident.go:cudaResident.recordUpload` |
 | C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `backend/cuda/argmax_tiebreak_test.go:TestArgmaxTieBreak` |
-| C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:ReadTokFile` |
-| C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:maxEmbedInputs` |
-| C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:Main` |
+| C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/runtime/giw/bundle.go:ReadTokFile` |
+| C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/app/serveapp/embeddings.go:maxEmbedInputs` |
+| C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/app/serveapp/main.go:Main` |
 | C-30 no mutex in the paging paths | **fixed** — both pagers carry an internal mutex, each citing the audit finding | `decoder/layerpaging.go:layerPager` |
 
 **These are correctness and security items, so a wrong entry costs more here than in P or B — in both
@@ -1973,7 +1973,7 @@ write the v5 quant-label field on `wr.sink == nil` — "are we the buffered writ
 transcode (which writes the header on an all-zero `Layers` slice before any layer streams in — see
 below for why that path genuinely can't resolve a label). They **disagree** for a caller that
 already holds a fully-loaded `*Weights` and simply chooses the streaming API for its I/O shape:
-`internal/prequant` and the qwen35 GGUF branch (a dedicated loader that fully materializes `w`,
+`internal/runtime/prequant` and the qwen35 GGUF branch (a dedicated loader that fully materializes `w`,
 *then* calls `SerializeWeightsTo`) both do exactly this, and both — along with this test — were
 needlessly dropping a field the buffered path wrote.
 
@@ -2022,7 +2022,7 @@ What still stands:
 
 1. ~~There is no basis yet for saying which side is correct.~~ **RESOLVED above** — the streamed
    side was correct to omit the field where it genuinely lacked the data (the true transcode); it
-   was wrong to omit it where it had the data in hand (this test, `internal/prequant`, qwen35).
+   was wrong to omit it where it had the data in hand (this test, `internal/runtime/prequant`, qwen35).
 2. ~~If the streamed path is the short one, anything it has written may be affected.~~
    **RESOLVED.** All five real `.giw` files on this box (`gemma4-26b-int4`, `GLM-4.5-Air-Q2_K.int4`,
    `mellum2.int4`, both `qwen3.6-35b-a3b-int4*`) were hand-parsed at the header: every one is
@@ -2254,3 +2254,23 @@ missing step.
 
 **Not fixed.** The emitter needs the promotion rule and the method-name handling repaired before
 `EMIT_MANIFEST=1` is trusted again; until then the flag writes claims the tier gate has to catch.
+
+## Moved here at the archive of the comment diet and the Claude Code hygiene tasks (2026-11-04)
+
+Open rows moved from `docs/completed/task-code-comments-2026-10.md` §10 and `docs/completed/task-claude-code-hygiene-2026-10.md`
+(DX11). The full text stays in the archived docs.
+
+- **Comment diet: CC6 diff mode, warning or refusal.** Owner decision, open since CC4 finished. The pre-push census
+  (`scripts/comment_census.py diff`) is a warning today. Owner (Francis) to choose.
+- **Comment diet: open work with no owning doc.** Each item is still unowned: `backend/webgpu/kv_slots.go:slotsBeforeContext` (a discrete
+  Vulkan measurement); `backend/webgpu/attention.go` (Metal's `float(pos)*invf[dd]` pattern at long context, unmeasured);
+  `backend/metal/batch.go:promptStepAboveFloor` and `backend/metal/paged_fence.go:pagedFenceOn` (off, no queue entry);
+  `backend/cuda/vision_encoder.go:addInPlaceHost` (tower residual add round-trips through the host); `cmd/gate/grade_parity.go:whyNoResult`
+  (build-tag reachability); `tokenizer` `byteLevelKnobs` (GGUF `pre="default"`); `Options.LoadAbort` in the decoder package (GGUF direct path only);
+  `decoder/weights.go:LoadWeights` (bf16/f16 widen to f32 on load); `decoder/forwardn.go:Model.specRollbackSafe`;
+  `internal/runtime/mem/probe/physical_linux.go:Physical` (cgroup `memory.max` not read); `chat/tools.go:Template.RenderToolsSegments`;
+  `internal/app/serveapp` (compute-time LoRA not wired into prefix reuse); `decoder/fitguard.go:guardGIWFit` (Metal's per-projection copies).
+- **Comment diet: test-side claims with no owner.** The coverage claims in the CC5 list (see the archived doc) whose bodies do not assert
+  them; each comment now says what its body asserts, but the tests do not yet assert the claimed coverage.
+- **DX11 · Claude Code hygiene, the coordinator's review of the goinfer and tack PRs, and Francis or the coordinator's pick of the slimming
+  option for tack's registration doc.** Active since 2026-10-30.

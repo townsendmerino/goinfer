@@ -1,0 +1,8 @@
+# regenerate, 13:44:03 PST, driver 595.112.07
+    kv_slots_test.go:812: 63 groups, 63 changed, 462 cells move to a decline (a cell is a group at one free reading; the readings are nobara's two and
+--- PASS: TestPlanSlack_realSizeDiff (24.16s)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	24.313s
+# hold it, without the update flag, 13:44:35 PST
+--- PASS: TestPlanSlack_realSizeDiff (24.55s)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	24.677s
+# done 13:45:00 PST

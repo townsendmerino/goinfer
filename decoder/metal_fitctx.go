@@ -1,6 +1,6 @@
 package decoder
 
-import "github.com/townsendmerino/goinfer/internal/mem"
+import "github.com/townsendmerino/goinfer/internal/runtime/mem"
 
 // MetalDefaultKVSlots is how many resident KV slots Metal keeps when the count asked is the caller's default, not the operator's
 // (Options.ResidentKVSlotsDefault). `goinfer-chat fit` prices the same count, so its answer is the one a default serve load reaches.

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/paritykey"
+	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
 // The parity sweep's record and the release row that reads it (parity_record.go), registered here before the code: no
@@ -158,7 +158,7 @@ func TestParityRecord_coversLaterCommitsOnlyIfTheHashedCodeIsUnchanged(t *testin
 			name = f[:i] + "/"
 		}
 		r, why := parityCoverage(recs, head, paths, objOf)
-		if r != nil || !strings.Contains(why, labelPath(name)+" changed since") {
+		if r != nil || !strings.Contains(why, name+" changed since") {
 			t.Errorf("a change to %s left the sweep covering the commit (covered=%v, %q)", f, r != nil, why)
 		}
 	}

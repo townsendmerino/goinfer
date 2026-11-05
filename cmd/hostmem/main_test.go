@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/mem/probe"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
 // TestFigure: -reclaimable picks Reclaimable and the default Available, each in bytes or with -mb in MiB rounded down.

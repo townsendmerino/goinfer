@@ -1,0 +1,5 @@
+SPLIT gpt2-1    inputs=40102 pieces=966543 sha=e5fd6021893baba04c60f86f
+SPLIT gpt2-3    inputs=40102 pieces=916657 sha=2b5f568066e0aa721cff1f6f
+SPLIT gpt2orig  inputs=40102 pieces=991037 sha=91259ac01baf537d06cc8bcc
+SPLIT o200k     inputs=40102 pieces=933291 sha=ec371ddec07de47d4f52707d
+SPLIT tekken    inputs=40102 pieces=986061 sha=802c55da688b59051e902e71

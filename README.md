@@ -335,17 +335,17 @@ measured on one device so far ([docs/server.md](docs/server.md)). `goinfer-serve
 goinfer targets **single-user local inference**: one process, one machine,
 deployed by copying a file.
 
-It is **not a serving engine**: no continuous batching and no paged attention. A server can run a
-few generations of one model at once (`--max-concurrent`, default 4, each on its own KV), and on
-Metal and CUDA a dense resident model batches their decode steps, but requests beyond that wait in
-a bounded queue ([docs/server.md](docs/server.md)). To saturate a datacentre GPU with concurrent
+It is **not a serving engine**: there is no continuous batching. A server can run a
+few generations of one model at once (`--max-concurrent`, default 4, sharing a paged KV pool on
+CUDA and Metal), and on Metal and CUDA a resident model can batch their decode steps, but requests
+beyond that wait in a bounded queue ([docs/server.md](docs/server.md)). To saturate a datacentre GPU with concurrent
 requests, use vLLM. It is also not a provider-orchestration library; it runs the weights itself,
 in-process. Longer form: [docs/positioning.md](docs/positioning.md).
 
 ## What it runs
 
 - **43 model families** — Gemma 1/2/3/4 (and CodeGemma), Qwen 2.5/3, Llama, Mistral, Mixtral, Phi-3, DeepSeek/MLA,
-  GLM, Kimi, Granite, Nemotron, Mellum and more; one page each at
+  GLM, Kimi, Granite, Nemotron, Mellum, Olmo 3, Olmo Hybrid (on Metal at `int4` only; on WebGPU read only on the M1 Pro's adapter) and more; one page each at
   [goinfer.dev/models](https://goinfer.dev/models/), generated from the `decoder` registry
   ([capability-matrix.md](docs/capability-matrix.md)).
 - **All four sequence-mixing families** — softmax·GQA, gated-linear (DeltaNet), state-space
