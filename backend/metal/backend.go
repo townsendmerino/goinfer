@@ -1495,7 +1495,12 @@ func (a *metalResident) TruncateTo(pos int) {}
 // Reset zeroes every Gated-DeltaNet layer's causal-conv ring and recurrent matrix state (no-op for every other family; a.r.dnet is
 // nil). Unlike KV positions this state compounds, so a fresh sequence on the same resident must reset it or it keeps decaying the
 // previous sequence's state (resetDeltaNet).
-func (a *metalResident) Reset() { a.r.resetRecurrent() }
+func (a *metalResident) Reset() {
+	if a.r.ckptSlot == a.r.kvSlot { // a new sequence on the slot: what the checkpoint holds is no request's
+		a.r.ckptSlot = -1
+	}
+	a.r.resetRecurrent()
+}
 
 var _ decoder.ResidentGreedyChain = (*metalResident)(nil)
 

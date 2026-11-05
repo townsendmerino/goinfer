@@ -84,6 +84,7 @@ func (m *Model) stateBytes(backend string) int64 {
 }
 
 // checkpointBytes is the recurrent checkpoint on backend, as its report prices it: Plan.CheckpointBytes.
-func (m *Model) checkpointBytes(backend string) int64 {
-	return buildDemandFor(m.Config(), Options{Backend: backend}, 0, 0, false).CheckpointBytes
+func (m *Model) checkpointBytes(backend string) (bytes int64, perSlot bool) {
+	d := buildDemandFor(m.Config(), Options{Backend: backend}, 0, 0, false)
+	return d.CheckpointBytes, d.CheckpointPerSlot
 }

@@ -878,7 +878,8 @@ type cudaResident struct {
 	ckptBytes             int64
 	ckptSave, ckptRestore []gpu.DeviceCopy
 	ckptDeclined          string
-	ckptSlot              int   // the KV slot whose state the checkpoint holds, -1 before a save
+	ckptCopies            []ckptCopy
+	ckptSaves             uint64
 	extraBytes            int64 // decoder.Model.ExtraResidentBytes() at construction — a companion allocation (--drafter) reserved out of every free-VRAM check this resident makes after it (checkWeightsFit, checkKVFits, allocSlots)
 	lmW                   cudaWQ
 	finalNorm             Buffer
@@ -2777,6 +2778,9 @@ func (r *cudaResident) Reset() {
 // the goroutine that services reqCh and deadlocks — a hang, not an error, and one that only appears
 // once graphs are actually admitted for a recurrent model.
 func (r *cudaResident) resetState() error {
+	if k := r.ckptCopyOf(r.kvSlot); k >= 0 { // a new sequence: what the copy holds is no request's, so a later save takes it first
+		r.ckptCopies[k].slot = -1
+	}
 	if e := r.resetMambaState(); e != nil {
 		return e
 	}

@@ -49,6 +49,8 @@ type BuildDemand struct {
 	StateBytes int64
 	// CheckpointBytes is what BuildQuery.CheckpointBuffers takes on this backend, 0 on one that keeps no checkpoint: Plan.CheckpointBytes.
 	CheckpointBytes int64
+	// CheckpointPerSlot says this backend keeps that checkpoint once per KV slot, where it fits, not once per load: Plan.CheckpointPerSlot.
+	CheckpointPerSlot bool
 }
 
 // BuildDemandFunc is one backend's report.
@@ -128,6 +130,7 @@ func defaultCUDABuildDemand(q BuildQuery) BuildDemand {
 	for _, b := range q.CheckpointBuffers {
 		d.CheckpointBytes += cudaChargedBytes(b)
 	}
+	d.CheckpointPerSlot = d.CheckpointBytes > 0
 	return d
 }
 

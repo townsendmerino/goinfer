@@ -20,6 +20,19 @@ type ResidentRecurrentCheckpoint interface {
 	RestoreRecurrentCheckpoint() error
 }
 
+// ResidentRecurrentCheckpointOwner is the optional capability of a resident with several KV slots to say whether a slot holds a checkpoint now. A checkpoint can be taken from
+// a slot, by another slot's save or by a reset, while the slot's record still names its position, so a load of several slots scores only a checkpoint its slot holds: a
+// restore that fails has already cost that slot its sequence. A resident without this scores none on such a load.
+type ResidentRecurrentCheckpointOwner interface {
+	RecurrentCheckpointHeld(slot int) bool
+}
+
+// checkpointHeld reports whether slot holds a checkpoint a request on a load of several slots may score.
+func (m *Model) checkpointHeld(slot int) bool {
+	o, ok := m.recurrentCheckpointer().(ResidentRecurrentCheckpointOwner)
+	return ok && o.RecurrentCheckpointHeld(slot)
+}
+
 // recurrentCheckpointer is the resident's checkpoint, or nil when the model has no recurrent state or the resident keeps none.
 func (m *Model) recurrentCheckpointer() ResidentRecurrentCheckpoint {
 	if m.resident == nil || !m.hasRecurrentState() {

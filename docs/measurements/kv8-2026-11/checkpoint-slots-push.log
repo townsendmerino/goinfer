@@ -1,0 +1,224 @@
+# Push record, main 0f5cb935a merged, 2026-11-03 15:25:46 PST
+# the parity manifest
+fresh
+# head 73a668b6f, CUDA's slot, KV, recurrent, memory tests, 15:25:47 PST
+ok  	github.com/townsendmerino/goinfer/cuda	624.758s
+PASS: 194, SKIP: 43, FAIL: 0
+exit 0
+# gate identity -backend cuda 0f5cb935a 73a668b6f, 15:36:13 PST
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+exit 0
+# touched.py in a clean worktree, 15:41:50 PST
+  ok   vet cuda (1 pkg) (1.3s)
+  ok   test cuda -run ^(TestB26Verdict_bands|TestBackendAdmiss (259.9s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 16 checks passed (CI runs the rest on push)
+exit 0
+test_touched exit 0
+1
+staticcheck -tags cuda,goinfer_testhooks ./cuda/ exit 0
+staticcheck ./decoder/ exit 0
+staticcheck -tags goinfer_testhooks ./decoder/ exit 0
+untagged vet ./cuda/ exit 0
+darwin vet exit 0
+citation lint exit 0
+# fail=0, 15:47:21 PST
+
+# After merging main at 37e1411bd
+vet 0
+after the merge: exit 0, PASS 19, FAIL 0
+ok  	github.com/townsendmerino/goinfer/decoder	0.901s
+citation lint 0
+build 0
+
+# #658's round 1, at 9a8f49a41, main 112e64a75 merged, 2026-11-03 18:26:07 PST
+--- PASS: TestParityManifest_fresh (0.86s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.862s
+ok  	github.com/townsendmerino/goinfer/cuda	636.053s
+PASS: 198, SKIP: 43, FAIL: 0
+exit 0
+# gate identity -backend cuda 112e64a75 9a8f49a41, 18:36:50 PST
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+exit 0
+VERDICT: PASS — touched: 16 checks passed (CI runs the rest on push); did not run: metal
+touched exit 0
+test_touched exit 0
+canary hits 1
+staticcheck -tags cuda,goinfer_testhooks ./cuda/ exit 0
+staticcheck ./decoder/ exit 0
+staticcheck -tags goinfer_testhooks ./decoder/ exit 0
+untagged vet ./cuda/ exit 0
+darwin vet exit 0
+citation lint exit 0
+build exit 0
+# fail=0, 18:48:08 PST
+
+# #658 with #645 merged, at eac236a20, main f384b1699 merged, 2026-11-03 19:00:50 PST
+--- PASS: TestParityManifest_fresh (0.88s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.881s
+ok  	github.com/townsendmerino/goinfer/cuda	634.837s
+PASS: 198, SKIP: 43, FAIL: 0
+exit 0
+# gate identity -backend cuda f384b1699 eac236a20, 19:11:35 PST
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+exit 0
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push); did not run: metal
+touched exit 0
+test_touched exit 0
+canary hits 1
+staticcheck -tags cuda,goinfer_testhooks ./cuda/ exit 0
+staticcheck ./decoder/ exit 0
+staticcheck -tags goinfer_testhooks ./decoder/ exit 0
+untagged vet ./cuda/ exit 0
+darwin vet exit 0
+citation lint exit 1
+queue_citation_lint: docs/QUEUE.md citations are not sound:
+  docs/tasks/task-kv-architecture-2026-10.md|decoder/fitplan.go:Plan.CheckpointPerSlot  SYMBOL GONE — decoder/fitplan.go declares no `Plan.CheckpointPerSlot` (renamed, moved to another file, or delete
+VERDICT: FAIL — citation lint: citations do not resolve (exit 1; the reasons are printed above); the pre-push hook refuses this push
+build exit 0
+# fail=1, 19:19:45 PST
+# The one red above was a citation of a struct field; the doc now names the declaration, and the lint passes. 19:20 PST
+
+# #658's second read, at 0aebc98c5, main f384b1699 merged, 2026-11-03 20:18:58 PST
+--- PASS: TestParityManifest_fresh (0.85s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.859s
+ok  	github.com/townsendmerino/goinfer/cuda	622.102s
+PASS: 198, SKIP: 43, FAIL: 0
+exit 0
+# gate identity -backend cuda f384b1699 0aebc98c5, 20:29:23 PST
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+exit 0
+VERDICT: FAIL — touched: 1 of 17 checks failed; did not run: metal
+touched exit 1
+test_touched exit 0
+canary hits 1
+staticcheck -tags cuda,goinfer_testhooks ./cuda/ exit 0
+staticcheck ./decoder/ exit 0
+staticcheck -tags goinfer_testhooks ./decoder/ exit 0
+untagged vet ./cuda/ exit 0
+darwin vet exit 0
+citation lint exit 0
+build exit 0
+# fail=1, 20:37:27 PST
+
+# The one red above was gofmt on a Metal test, whitespace only. touched.py again at a9d184ae1, 20:38:06 PST
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push); did not run: metal
+touched exit 0
+citation lint exit 0
+
+# #658 round 3, at 4f262ee2e, main f384b1699 merged, 2026-11-03 21:22:39 PST
+gofmt: []
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push); did not run: metal
+touched exit 0
+test_touched exit 0
+canary hits 1
+staticcheck -tags cuda,goinfer_testhooks ./cuda/ exit 0
+staticcheck ./decoder/ exit 0
+staticcheck -tags goinfer_testhooks ./decoder/ exit 0
+untagged vet exit 0
+darwin vet exit 0
+citation lint exit 0
+
+# #658 round 4, at 37b3f1a8f, main f384b1699 merged, 2026-11-04 00:08:34 PST
+gofmt: []
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push); did not run: metal
+touched exit 0
+test_touched exit 0
+canary hits 1
+staticcheck -tags cuda,goinfer_testhooks ./cuda/ exit 0
+staticcheck ./decoder/ exit 0
+staticcheck -tags goinfer_testhooks ./decoder/ exit 0
+untagged vet exit 0
+darwin vet exit 0
+citation lint exit 0
+
+# #658's final verification, after round 4 and layout PR 1, at 3759082bb, main 9c496e22a merged, 2026-11-04 04:02:56 PST
+gofmt: []
+--- PASS: TestParityManifest_fresh (0.85s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.859s
+# the full CUDA suite, with fixtures placed, 04:03:03 PST
+tests: 1252 passed, 12 failed, 268 skipped; failed packages: ['github.com/townsendmerino/goinfer/backend/cuda']
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_attn_batched_M=1
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_split-KV
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_flash-decode_lane
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_attn_fused
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_attn_batched
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_attn_batched_M=1
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_split-KV
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_flash-decode_lane
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_fused
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_batched
+  FAIL cuda TestKV16_everyAttentionPathStaysCloseToF32
+  FAIL cuda TestPlanSlack_realSizeDiff
+suite exit 1
+# gate identity -backend cuda 9c496e22a 3759082bb, 04:23:20 PST
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+  logs     /tmp/gate-identity-20261104-042321-2290787702/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+identity exit 0
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push); did not run: metal
+touched exit 0
+test_touched exit 0
+canary hits 1
+staticcheck -tags cuda,goinfer_testhooks ./backend/cuda/ exit 0
+staticcheck ./decoder/ exit 0
+staticcheck -tags goinfer_testhooks ./decoder/ exit 0
+untagged vet exit 0
+darwin vet exit 0
+citation lint exit 0
+# fail=1, 04:35:39 PST
+
+# Reading the suite's 12 failures against main at 9c496e22a, the merged base, with fixtures placed (2026-11-04). Neither test touches this branch's change, and both fail on main the same way:
+# - TestKV16_everyAttentionPathStaysCloseToF32 (the parent and its 10 subtests): decoder/fidelity_testhook.go opens "../testdata/prefill-gate-prose-...", and the test now runs two levels down, in backend/cuda. By the path, from layout PR 1. Run on main: the same 10 failures, the same message.
+# - TestPlanSlack_realSizeDiff: its golden of real-size plan cells. Run on main: 63 groups, 63 changed, 462 cells, the same as here. Bisected: ok at 937cfe8fb, FAIL at 3a899d303 ("MM8: the plan prices dense vectors"), and at each commit sampled after it, up to #645's merge.
+# So at this head: 1,252 passed, 0 failed but those. It reads the same on main, and #658 adds no failure to the full suite.
+
+
+# #658 after v0.24.1: origin/main 93262c27e merged at a9138dda0 (clean merge), fixtures placed, nobara, 2026-11-05 PST
+03:49:03 START head a9138dda0cba1cd95ad71fa310c43b36a54b5bf2, main 93262c27e8f5421d1d7c72fd1267923cb2364350, load 1.40, 59 GB available, tree 0 changed paths
+03:49:11 TestParityManifest_fresh rc=0 8 s
+03:49:11 SUITE START: go test -tags 'cuda goinfer_testhooks' ./backend/cuda/... (fixtures placed, no heavy)
+04:09:28 SUITE END rc=0 1217 s: 1264 PASS lines, 0 FAIL lines, 268 SKIP lines (subtests included)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	1132.885s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev	11.539s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom	0.004s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/qwencuda	0.732s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/visioncuda	0.902s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/wpack	0.005s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/kernels	59.062s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/s4siglip	0.003s
+04:09:28 IDENTITY START: gate identity -backend cuda 93262c27e8f5421d1d7c72fd1267923cb2364350 a9138dda0cba1cd95ad71fa310c43b36a54b5bf2
+04:15:11 IDENTITY END rc=0 343 s
+   ... identity: 5m7s elapsed (started 04:09:29), running qwen3_next (35/39 families, 34 done)
+   ... identity: 5m37s elapsed (started 04:09:29), running smollm3 (38/39 families, 37 done)
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  GREEN — every family that ran is IDENTICAL
+04:15:11 ALL DONE
+# the full suite log: cuda-suite-after-v0.24.1.log.gz; identity: identity-after-v0.24.1.log
+
+# #658 rerun after #678-#680: origin/main 19778973b merged at ded7594a3 (clean merge), fixtures placed, nobara, 2026-11-05 PST
+11:01:12 START head ded7594a3f7c81951879858f504452b32a40031b, main 19778973b7fecc588b10a8c184e8ee85dff48222, load 0.28, 59 GB available, tree 0 changed paths
+11:01:20 TestParityManifest_fresh rc=0 8 s
+11:01:20 SUITE START: go test -tags 'cuda goinfer_testhooks' ./backend/cuda/... (fixtures placed, no heavy)
+11:21:06 SUITE END rc=0 1186 s: 1264 PASS lines, 0 FAIL lines, 268 SKIP lines (subtests included)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	1112.178s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev	11.404s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom	0.005s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/qwencuda	0.741s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/visioncuda	0.905s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/wpack	0.005s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/kernels	58.306s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/s4siglip	0.003s
+11:21:06 IDENTITY START: gate identity -backend cuda 19778973b7fecc588b10a8c184e8ee85dff48222 ded7594a3f7c81951879858f504452b32a40031b
+11:26:36 IDENTITY END rc=0 330 s
+   ... identity: 4m33s elapsed (started 11:21:07), running qwen3_5_moe (33/39 families, 32 done)
+   ... identity: 5m3s elapsed (started 11:21:07), running qwen3_vl (36/39 families, 35 done)
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  GREEN — every family that ran is IDENTICAL
+11:26:36 ALL DONE
+# the full suite log: cuda-suite-after-678-680.log.gz; identity: identity-after-678-680.log

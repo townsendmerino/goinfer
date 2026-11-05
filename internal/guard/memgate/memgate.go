@@ -98,14 +98,15 @@ func (f Finding) String() string {
 }
 
 // Planned is the plan's figure for each line it prices, with this build's KV slots: KV and recurrent state are per slot, and the state line
-// also holds the load's one checkpoint.
+// also holds the load's checkpoints: at most one a slot, and at most what the plan says fits.
 func Planned(p decoder.Plan, kvSlots int) map[mem.LineID]int64 {
 	n := int64(max(kvSlots, 1))
+	checkpoints := min(n, int64(p.CheckpointCopies))
 	return map[mem.LineID]int64{
 		mem.LineDense:     p.DenseBytes,
 		mem.LineExperts:   p.ExpertBytesUsed,
 		mem.LineKV:        p.KVBytes * n,
-		mem.LineState:     p.StateBytes*n + p.CheckpointBytes,
+		mem.LineState:     p.StateBytes*n + p.CheckpointBytes*checkpoints,
 		mem.LineSlack:     p.AllocSlackBytes,
 		mem.LineCompanion: p.ExtraBytes,
 	}

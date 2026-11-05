@@ -527,11 +527,11 @@ func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, 
 	scores, lens, firsts, uses := make([]int, n), make([]int, n), make([]int, n), make([]uint64, n)
 	bound := a.Bound()
 	if bound >= len(busy) || !busy[bound] { // a busy slot is never picked, and its record is another generation's
-		scores[bound] = m.boundReuseLen(prompt, imgs, lora, sc.Namespace, false) // adopts the bound record first, and asks its window
+		scores[bound] = m.boundReuseLen(prompt, imgs, lora, sc.Namespace, sc.checkpoint && m.checkpointHeld(bound)) // adopts the bound record first, and asks its window
 	}
 	for i := range n {
 		if i != bound {
-			scores[i] = m.reuseLenOf(i, prompt, imgs, lora, sc.Namespace, false)
+			scores[i] = m.reuseLenOf(i, prompt, imgs, lora, sc.Namespace, sc.checkpoint && m.checkpointHeld(i))
 		}
 		lens[i], uses[i] = a.Len(i), a.Use(i)
 		if a.KeepsFirst(i, prompt) {

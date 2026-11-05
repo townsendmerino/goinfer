@@ -68,6 +68,12 @@ type PlanRequest struct {
 	// (docs/tasks/task-fit-to-hardware.md §0).
 	KVF16, KVI8 bool
 
+	// KVSlots is how many KV slots the load holds, and it reaches only Plan.CheckpointCopies: Placement and NeedBytes stay one slot's, because a caller that sizes a context for
+	// several prices the further slots through ExtraBytes (a multi-slot fit decides that itself). CheckpointReserve is what a build leaves free beside its checkpoints for what it
+	// allocates after them: the expert cache and the companion included, so with a reserve named those two leave the need the copies are counted beside.
+	KVSlots           int
+	CheckpointReserve int64
+
 	// ExtraBytes prices whatever the model itself does not know about but will share its device: a block drafter's weights and verify/capture
 	// buffers, a vision tower (every allocation is a term of the plan, including the ones that attach after load). Without it an expert cache
 	// is sized before a later --drafter attach claims the room NewBlockSpec then needs. The backend learns the same value out of band through
@@ -91,11 +97,14 @@ type Plan struct {
 	KVBytes         int64 // at Ctx, as this backend allocates it (ResidentKVBytes)
 	HostCopyBytes   int64 // Metal only: the host copy of the resident weights unified memory also holds (ResidentHostCopyBytes; 0 when aliased from a .giw)
 	StateBytes      int64 // one KV slot's recurrent and conv state as this backend allocates it (BuildDemand.StateBytes); 0 for a model with none
-	// CheckpointBytes is the one recurrent checkpoint this plan's load keeps (BuildDemand.CheckpointBytes), 0 on a declined plan or where it does
+	// CheckpointBytes is one recurrent checkpoint this plan's load keeps (BuildDemand.CheckpointBytes), 0 on a declined plan or where it does
 	// not fit beside NeedBytes. It is not in NeedBytes and moves no decision here: a load with no room for it keeps none and still runs.
 	CheckpointBytes int64
-	AllocSlackBytes int64 // the backend's allocator rounding over the weight buffers (PlanSlack): CUDA's 2 MiB granularity
-	ExtraBytes      int64 // PlanRequest.ExtraBytes, carried through for NeedBytes()/reporting
+	// CheckpointCopies is how many checkpoints the load keeps: 1, or on a backend that keeps one per KV slot (BuildDemand.CheckpointPerSlot) one for each of PlanRequest.KVSlots
+	// that fits beside every slot's KV and state and PlanRequest.CheckpointReserve; 0 where CheckpointBytes is.
+	CheckpointCopies int
+	AllocSlackBytes  int64 // the backend's allocator rounding over the weight buffers (PlanSlack): CUDA's 2 MiB granularity
+	ExtraBytes       int64 // PlanRequest.ExtraBytes, carried through for NeedBytes()/reporting
 
 	FreeBytes int64  // what Plan was told is available on this backend/device
 	Reason    string // human-readable justification (admit) or decline message with the numbers
@@ -218,10 +227,36 @@ func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack boo
 		mem.Machine{Free: map[mem.Tier]int64{l.Tier: freeBytes}}, mem.DefaultPolicy())
 	p.Placement, p.Ctx, p.Slots = Placement(d.Placement), d.Ctx, d.Slots
 	p.ExpertBytesUsed, p.KVBytes, p.HostCopyBytes, p.Reason = d.ExpertBytesUsed, d.KVBytes, d.HostCopyBytes, d.Reason
-	if ckpt := m.checkpointBytes(backend); p.Placement != PlacementDecline && p.NeedBytes()+ckpt <= freeBytes {
-		p.CheckpointBytes = ckpt
+	if ckpt, perSlot := m.checkpointBytes(backend); p.Placement != PlacementDecline {
+		if copies := checkpointCopies(checkpointHeadroom(p, freeBytes, req), ckpt, max(req.KVSlots, 1), perSlot); copies > 0 {
+			p.CheckpointBytes, p.CheckpointCopies = ckpt, copies
+		}
 	}
 	return p
+}
+
+// checkpointHeadroom is the room p's load has for checkpoints, in the build's order: beside the weights, every KV slot and its state. A build allocates them before it sizes the
+// expert cache and attaches a companion, and holds room for those in its reserve, so a named reserve stands in for them here rather than adding to them.
+func checkpointHeadroom(p Plan, free int64, req PlanRequest) int64 {
+	need := p.NeedBytes()
+	if req.CheckpointReserve > 0 {
+		need -= p.ExtraBytes
+		if p.Placement == PlacementExpertCached {
+			need -= p.ExpertBytesUsed
+		}
+	}
+	return free - need - int64(max(req.KVSlots, 1)-1)*(p.KVBytes+p.StateBytes) - req.CheckpointReserve
+}
+
+// checkpointCopies is how many checkpoints of ckpt bytes fit in headroom: at most one for each of n KV slots on a backend that keeps one per slot, else at most one.
+func checkpointCopies(headroom, ckpt int64, n int, perSlot bool) int {
+	if ckpt <= 0 || headroom < ckpt {
+		return 0
+	}
+	if !perSlot {
+		return 1
+	}
+	return int(min(headroom/ckpt, int64(n)))
 }
 
 // planAdmitDecline is the decoder's admission of this model on backend, with its own facts (Admit): "" when the load would reach
