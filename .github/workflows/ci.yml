@@ -34,11 +34,14 @@ concurrency:
   cancel-in-progress: ${{ !(github.ref == 'refs/heads/main' && github.event_name == 'push') }}
 
 jobs:
-  # C3 (docs/completed/task-ci-speed-2026-09.md): change detection, at the JOB level. A push that
-  # changes only docs/**, RELEASING.md or .claude/** -- and none that Go code or tests READ (scripts/ci_docs_only.sh
-  # decides; 477da08a is the precedent: a docs-only env-vars.md fix flipped
+  # C3 (docs/completed/task-ci-speed-2026-09.md): change detection, at the JOB level. A push or pull request
+  # whose every changed file is on the quick path -- docs (docs/**, RELEASING.md, .claude/**, changelog.d/**, a top-level
+  # *.md other than README.md, apps/site content), records (docs/measurements/**), or a go.mod/go.sum change that only
+  # moves goinfer or goinfer/backend/* versions -- and none of them a file Go code or tests READ (scripts/ci_docs_only.sh
+  # decides, and prints the class; 477da08a is the precedent: a docs-only env-vars.md fix flipped
   # TestEnvVars_docAndCodeAgree, so "docs-only" cannot mean "skip tests" without that read check)
-  # -- runs `lint` alone. Every other job `needs:` this one and skips when docs_only == 'true'.
+  # -- runs `lint` alone (gofmt, build, vets, staticcheck, citation lint, book link lint). Every other job `needs:` this
+  # one and skips when docs_only == 'true'. A skipped job reports success, so a required check never goes missing.
   #
   # It sits in front of everything, so it is the cheapest job in the file: one checkout (full
   # history -- measured 6s median here, and the diff needs github.event.before to be present) and
@@ -59,6 +62,7 @@ jobs:
       actions: read # to read the BASE commit's own ci conclusion (the second condition below)
     outputs:
       docs_only: ${{ steps.gate.outputs.docs_only }}
+      class: ${{ steps.gate.outputs.class }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -83,16 +87,20 @@ jobs:
           HEAD: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          v=$(scripts/ci_docs_only.sh "$BASE" "$HEAD")
+          class=$(scripts/ci_docs_only.sh --classify "$BASE" "$HEAD") || class=full
+          v=false
+          [ "$class" != "full" ] && [ -n "$class" ] && v=true
           base_run="(not checked)"
           if [ "$v" = "true" ]; then
             base_run=$(gh run list --workflow ci.yml --commit "$BASE" --json conclusion --jq '.[0].conclusion' 2>/dev/null || true)
             if [ "$base_run" != "success" ]; then
               v=false
+              class=full
             fi
           fi
           echo "docs_only=$v" >> "$GITHUB_OUTPUT"
-          echo "docs_only=$v  (base=$BASE head=$HEAD; base's last ci run: '${base_run:-none}')"
+          echo "class=${class:-full}" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$v class=${class:-full}  (base=$BASE head=$HEAD; base's last ci run: '${base_run:-none}')"
 
   # Root module: the pure-Go runtime (decoder / tokenizer / constrain / demo).
   # Resolves the published aikit from the proxy — no workspace needed.
@@ -688,7 +696,7 @@ jobs:
   readme-smoke:
     name: readme-smoke (a stranger's install, from an empty dir)
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3 (root README.md is NOT docs/, so a README push still runs this)
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3 (README.md is never on the quick path, so a README push still runs this)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
