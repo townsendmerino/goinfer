@@ -178,3 +178,25 @@ citation lint exit 0
 # - TestPlanSlack_realSizeDiff: its golden of real-size plan cells. Run on main: 63 groups, 63 changed, 462 cells, the same as here. Bisected: ok at 937cfe8fb, FAIL at 3a899d303 ("MM8: the plan prices dense vectors"), and at each commit sampled after it, up to #645's merge.
 # So at this head: 1,252 passed, 0 failed but those. It reads the same on main, and #658 adds no failure to the full suite.
 
+
+# #658 after v0.24.1: origin/main 93262c27e merged at a9138dda0 (clean merge), fixtures placed, nobara, 2026-11-05 PST
+03:49:03 START head a9138dda0cba1cd95ad71fa310c43b36a54b5bf2, main 93262c27e8f5421d1d7c72fd1267923cb2364350, load 1.40, 59 GB available, tree 0 changed paths
+03:49:11 TestParityManifest_fresh rc=0 8 s
+03:49:11 SUITE START: go test -tags 'cuda goinfer_testhooks' ./backend/cuda/... (fixtures placed, no heavy)
+04:09:28 SUITE END rc=0 1217 s: 1264 PASS lines, 0 FAIL lines, 268 SKIP lines (subtests included)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	1132.885s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev	11.539s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom	0.004s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/qwencuda	0.732s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/visioncuda	0.902s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/wpack	0.005s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/kernels	59.062s
+ok  	github.com/townsendmerino/goinfer/backend/cuda/s4siglip	0.003s
+04:09:28 IDENTITY START: gate identity -backend cuda 93262c27e8f5421d1d7c72fd1267923cb2364350 a9138dda0cba1cd95ad71fa310c43b36a54b5bf2
+04:15:11 IDENTITY END rc=0 343 s
+   ... identity: 5m7s elapsed (started 04:09:29), running qwen3_next (35/39 families, 34 done)
+   ... identity: 5m37s elapsed (started 04:09:29), running smollm3 (38/39 families, 37 done)
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  GREEN — every family that ran is IDENTICAL
+04:15:11 ALL DONE
+# the full suite log: cuda-suite-after-v0.24.1.log.gz; identity: identity-after-v0.24.1.log
