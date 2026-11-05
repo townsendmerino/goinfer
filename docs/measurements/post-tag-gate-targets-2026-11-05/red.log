@@ -1,0 +1,13 @@
+--- FAIL: TestQuickModules_nativeOnlyModulesLintOnTheirTarget (0.00s)
+    quick_test.go:637: metal: lint step "metal-darwin: go build ./metal/..." has target "", want "darwin/arm64" (the module builds only on darwin)
+    quick_test.go:637: metal: lint step "metal-darwin: go vet ./metal/..." has target "", want "darwin/arm64" (the module builds only on darwin)
+    quick_test.go:637: metal: lint step "metal-darwin: go vet -tags goinfer_testhooks ./metal/..." has target "", want "darwin/arm64" (the module builds only on darwin)
+    quick_test.go:637: metal: lint step "(not in CI) staticcheck -tags goinfer_testhooks ./metal/..." has target "", want "darwin/arm64" (the module builds only on darwin)
+--- FAIL: TestRelModules_areTheTaggedModulesOfTheTree (0.01s)
+    release_test.go:319: relModules = [. cuda demo/agent gpu metal], but the tagged modules of the tree are [. backend/cuda backend/metal backend/webgpu demo/agent]
+    release_test.go:323: relModules names "gpu", which has no go.mod: stat ../../gpu/go.mod: no such file or directory
+    release_test.go:323: relModules names "cuda", which has no go.mod: stat ../../cuda/go.mod: no such file or directory
+    release_test.go:323: relModules names "metal", which has no go.mod: stat ../../metal/go.mod: no such file or directory
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.011s
+FAIL

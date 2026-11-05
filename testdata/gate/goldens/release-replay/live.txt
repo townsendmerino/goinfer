@@ -3,7 +3,7 @@ gate release v0.99.0 (previous tag v0.23.0)
              record: cmd/gate/parity.go awaitingFirstConfirmation
              nothing pending since before v0.23.0 (2026-10-15)
  2. done    the modules agree on the aikit pins
-             record: go.mod of ., gpu, cuda, metal, demo/agent
+             record: go.mod of ., backend/webgpu, backend/cuda, backend/metal, demo/agent
              aikit v1.76.0 in 5 modules; no aikit/gpu
  3. OWED    a cold-user record for the previous tag (v0.23.0)
              record: docs/measurements/cold-user-<date>.md

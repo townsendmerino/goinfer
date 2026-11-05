@@ -82,7 +82,7 @@ func TestReleaseReplay_plants(t *testing.T) {
 					in.Looks[i].Out = strings.Replace(l.Out, "github.com/townsendmerino/aikit v1.76.0", "github.com/townsendmerino/aikit v1.75.0", 1)
 				}
 			}
-		}, 2, "OWED", "aikit differs: v1.75.0: cuda | v1.76.0: ., demo/agent, gpu, metal"},
+		}, 2, "OWED", "aikit differs: v1.75.0: backend/cuda | v1.76.0: ., backend/metal, backend/webgpu, demo/agent"},
 		"a dirty gofmt": {func(t *testing.T, in *releaseInputs) {
 			setRead(t, in, "run", []string{"cuda", "gofmt", "-l", "."}, "x.go", false)
 		}, 8, "OWED", "cuda/x.go"},
@@ -110,7 +110,7 @@ func TestReleaseReplay_plants(t *testing.T) {
 			}
 		}
 	})
-	if rc != 2 || !strings.Contains(report, "holds no answer for: read metal/go.mod") || strings.Contains(report, "gate release v") {
+	if rc != 2 || !strings.Contains(report, "holds no answer for: read backend/metal/go.mod") || strings.Contains(report, "gate release v") {
 		t.Errorf("a read the record lacks: exit %d\n%s", rc, report)
 	}
 }
