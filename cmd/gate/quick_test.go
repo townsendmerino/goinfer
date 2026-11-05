@@ -610,3 +610,35 @@ func TestQuick_memJobsRunAlone(t *testing.T) {
 		t.Error("no two non-Mem jobs ran together: the rule serialised more than the loaders")
 	}
 }
+
+// A module that builds only on one OS names that OS's target on every lint step. A step with no target runs on the host, and
+// on any other OS the module's own packages do not build: backend/metal's four steps failed on Linux with `undefined: DeviceCopy`
+// until they named darwin/arm64.
+func TestQuickModules_nativeOnlyModulesLintOnTheirTarget(t *testing.T) {
+	root, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	qc, err := realQuickConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, m := range qc.Modules {
+		if m.NativeGOOS == "" {
+			continue
+		}
+		if m.CrossTarget == "" {
+			t.Errorf("%s: NativeGOOS %q without a CrossTarget", m.Name, m.NativeGOOS)
+		}
+		for _, spec := range m.Lint {
+			checked++
+			if spec.Target != m.CrossTarget {
+				t.Errorf("%s: lint step %q has target %q, want %q (the module builds only on %s)", m.Name, spec.Mirrors, spec.Target, m.CrossTarget, m.NativeGOOS)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no lint step of a native-only module was checked")
+	}
+}

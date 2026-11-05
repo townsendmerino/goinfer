@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -288,5 +290,37 @@ func TestRowGofmtAndLint(t *testing.T) {
 	e.run = fakeRun(map[string]string{"python3": "green"}, nil)
 	if r := rowLint(e); r.State != "done" {
 		t.Errorf("a green lint: %+v", r)
+	}
+}
+
+// relModules is the list of modules a release tags. It is read from the tree here, not from itself: TestRowPins and TestRowGofmtAndLint build their
+// fixtures from relModules, so a list that names directories the repository no longer has passes both.
+func TestRelModules_areTheTaggedModulesOfTheTree(t *testing.T) {
+	out, err := exec.Command("git", "-C", "../..", "ls-files", "go.mod", "*/go.mod").Output()
+	if err != nil {
+		t.Skipf("git ls-files: %v", err)
+	}
+	// Modules that are never tagged: the SDK tests, the site generator and CI's pinned staticcheck.
+	untagged := map[string]bool{"apps/sdktest": true, "apps/site": true, ".github/actions/staticcheck": true}
+	var inTree []string
+	for _, f := range strings.Fields(string(out)) {
+		dir := strings.TrimSuffix(strings.TrimSuffix(f, "go.mod"), "/")
+		if dir == "" {
+			dir = "."
+		}
+		if !untagged[dir] {
+			inTree = append(inTree, dir)
+		}
+	}
+	sort.Strings(inTree)
+	want := append([]string(nil), relModules...)
+	sort.Strings(want)
+	if strings.Join(inTree, " ") != strings.Join(want, " ") {
+		t.Errorf("relModules = %v, but the tagged modules of the tree are %v", want, inTree)
+	}
+	for _, m := range relModules {
+		if _, err := os.Stat(filepath.Join("..", "..", filepath.FromSlash(m), "go.mod")); err != nil {
+			t.Errorf("relModules names %q, which has no go.mod: %v", m, err)
+		}
 	}
 }
