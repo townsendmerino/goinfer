@@ -6,7 +6,7 @@ Asked for by the coordinator after v0.24.0 was tagged: the four Metal lint specs
 ## What was wrong
 
 - `cmd/gate/quick_select.go`: backend/metal's four lint steps (build, vet, vet with `goinfer_testhooks`, staticcheck) had Target `""`, the host's. On
-  Linux they built a darwin-only module natively and failed: `backend/metal/internal/gpudev/copy_coalesce.go:32:24: undefined: DeviceCopy`
+  Linux they built a darwin-only module natively and failed: `undefined: DeviceCopy` in the gpudev package's copy_coalesce.go
   (`metal-lint-by-hand.log`, last command). They failed in every Linux `quick -full`, including v0.24.0's (nobara, 2026-11-04, accepted for that tag).
 - `cmd/gate/grade_release.go`: `relModules` still listed `gpu`, `cuda` and `metal`, which the layout moved to `backend/`. Rows 2 and 8 would have read
   directories that do not exist. `TestRowPins` and `TestRowGofmtAndLint` build their fixtures from `relModules`, so they passed on the stale list.
