@@ -1,6 +1,12 @@
 package decoder
 
-import "slices"
+import (
+	"slices"
+	"sync/atomic"
+)
+
+// buildProgramCalls counts the programs buildProgram builds, so a test can see that a fit search builds none per probe.
+var buildProgramCalls atomic.Int64
 
 // mlaOpParamsAt is layer l's opMLA parameters.
 func (a *Architecture) mlaOpParamsAt(l int) mlaOpParams {
@@ -11,6 +17,7 @@ func (a *Architecture) mlaOpParamsAt(l int) mlaOpParams {
 // buildProgram builds a's program. experts reports whether layer l carries MoE experts: a MoE family's leading dense layers
 // (first_k_dense_replace) do not, and only the weights say so.
 func buildProgram(a *Architecture, experts func(l int) bool) *layerProgram {
+	buildProgramCalls.Add(1)
 	p := &layerProgram{
 		Embed: embedParams{Scale: a.embedScale(), LearnedPos: a.LearnedPosEmbed, PLE: a.gemma4 != nil && a.gemma4.HiddenSizePerLayerInput > 0},
 		Head: headParams{

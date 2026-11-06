@@ -12,7 +12,7 @@ import (
 // One batch may hold maxBatchLines requests; the body cap alone admits millions of minimal lines, each a goroutine and a parsed request.
 // No model is needed: the 413 is decided before any line runs.
 func TestBatches_lineCountIsCapped(t *testing.T) {
-	srv := &server{files: newFileStore(8), batches: newBatchStore(8)}
+	srv := &server{files: newFileStore(8, 0), batches: newBatchStore(8)}
 	ts := httptest.NewServer(batchesTestMux(srv))
 	defer ts.Close()
 

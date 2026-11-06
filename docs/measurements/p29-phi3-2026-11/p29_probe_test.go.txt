@@ -1,0 +1,169 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"fmt"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+// P29 diagnosis probe (scratch; not part of the product): per-token cost of Forward vs a B-row step on one model, with the
+// dispatch/submit/wait counts and the per-pipeline dispatch counts of one token and of one 8-row step.
+//
+//	GOINFER_P29_PROBE=<gguf> go test -count=1 -tags goinfer_testhooks -timeout 30m -run '^TestP29Probe$' -v .
+func TestP29Probe(t *testing.T) {
+	path := os.Getenv("GOINFER_P29_PROBE")
+	if path == "" {
+		t.Skip("set GOINFER_P29_PROBE=<gguf>")
+	}
+	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
+		t.Fatalf("%s is on the archive", path)
+	}
+	ctx := 2048
+	m, err := decoder.Load(path, decoder.Options{Quant: "q4k", Backend: "metal", ResidentContext: ctx, ResidentKVSlots: 1})
+	if err != nil {
+		t.Skipf("load: %v", err)
+	}
+	t.Cleanup(func() { m.Close() })
+	if why := residentMemoryDecline(m); why != "" {
+		t.Skipf("memory guard: %s", why)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { r.Close() })
+	a := &metalResident{r: r, hidden: r.H}
+	if !r.q4kLane || !a.stepPrefill() {
+		t.Fatalf("not the step route: q4kLane %v stepPrefill %v", r.q4kLane, a.stepPrefill())
+	}
+	H, nL, nH, nKV, hd, I, V := m.Dims()
+	fmt.Fprintf(os.Stderr, "[probe] %s: H=%d layers=%d nH=%d nKV=%d hd=%d I=%d V=%d\n", path, H, nL, nH, nKV, hd, I, V)
+	const n = 512
+	embs, _ := oneSlotEmbs(r, 2929, n)
+
+	seqAt := func(p0, cnt int) time.Duration {
+		t0 := time.Now()
+		for i := 0; i < cnt; i++ {
+			if _, err := a.Forward(embs[p0+i], p0+i); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return time.Since(t0)
+	}
+	stepAt := func(p0, B int, mode multiOut) time.Duration {
+		seqs := make([]batchSeq, B)
+		for i := range B {
+			seqs[i] = batchSeq{slot: r.kvSlot, pos: p0 + i, emb: embs[p0+i]}
+		}
+		t0 := time.Now()
+		if _, _, err := r.forwardMultiOut(seqs, mode); err != nil {
+			t.Fatal(err)
+		}
+		return time.Since(t0)
+	}
+	med := func(f func() time.Duration, reps int) float64 {
+		var v []float64
+		for range reps {
+			v = append(v, f().Seconds()*1000)
+		}
+		sort.Float64s(v)
+		return v[len(v)/2]
+	}
+	// warm
+	seqAt(0, 16)
+	stepAt(0, 8, multiNoHead)
+
+	fmt.Fprintf(os.Stderr, "[probe] ms per token / per row, by position window (median of 5 reps; each rep times 8 rows):\n")
+	for _, p0 := range []int{0, 128, 256, 448} {
+		seq := med(func() time.Duration { return seqAt(p0, 8) }, 5) / 8
+		line := fmt.Sprintf("[probe] pos %3d: Forward %.2f ms/token", p0, seq)
+		for _, B := range []int{2, 4, 8} {
+			stepMs := med(func() time.Duration { return stepAt(p0, B, multiNoHead) }, 5)
+			line += fmt.Sprintf(" | step B=%d %.1f ms (%.2f ms/row, %.2fx Forward/row)", B, stepMs, stepMs/float64(B), stepMs/float64(B)/seq)
+		}
+		fmt.Fprintln(os.Stderr, line)
+	}
+
+	// dispatch / submit / wait counts and per-pipeline dispatches for one Forward and one 8-row step
+	names := r.pipelineNames()
+	count := func(label string, work func()) {
+		per := map[string]int{}
+		r.d.SetDispatchHook(func(pl Pipeline) {
+			nm, ok := names[pl]
+			if !ok {
+				nm = "?"
+			}
+			per[nm]++
+		})
+		d0, s0, w0 := r.d.Activity()
+		t0 := time.Now()
+		work()
+		wall := time.Since(t0)
+		d1, s1, w1 := r.d.Activity()
+		r.d.SetDispatchHook(nil)
+		gb, kt := r.LastGPUTimes()
+		var ks []string
+		for k, v := range per {
+			ks = append(ks, k+"="+strconv.Itoa(v))
+		}
+		sort.Strings(ks)
+		fmt.Fprintf(os.Stderr, "[probe] %s: wall %.1f ms; dispatches %d, command buffers %d, host waits %d; last cb GPU-busy %.1f ms, kernel window %.1f ms\n[probe]   by pipeline: %s\n",
+			label, wall.Seconds()*1000, d1-d0, s1-s0, w1-w0, gb*1000, kt*1000, strings.Join(ks, " "))
+	}
+	count("one Forward at pos 300", func() { seqAt(300, 1) })
+	count("one 8-row step (multiNoHead) at pos 300", func() { stepAt(300, 8, multiNoHead) })
+	count("one 2-row step (multiNoHead) at pos 300", func() { stepAt(300, 2, multiNoHead) })
+
+	// per-kernel: layer 0's four GEMV groups through q4kStepGemv at B = 1..8, 20 repeats in one command buffer each
+	stepAt(0, 8, multiNoHead) // fills the step's activation buffers with real values
+	b := r.batch
+	L := &r.layers[0]
+	nHhd := b.nHhd
+	type grp struct {
+		name string
+		segs []q4kSeg
+		run  func(e *Encoder, B int)
+	}
+	groups := []grp{
+		{"qkv", L.qkvSegs, func(e *Encoder, B int) { r.q4kStepGemv(e, B, L.qkvSegs, L.qkvBias, b.axB, H, b.qkvB, b.qkvRows, r.uH) }},
+		{"o+resid", L.oSegs, func(e *Encoder, B int) {
+			r.q4kStepGemv(e, B, L.oSegs, Buffer{}, b.ctxB, nHhd, b.xB, H, r.batch.uLd[nHhd], true)
+		}},
+		{"gate|up", L.guSegs, func(e *Encoder, B int) { r.q4kStepGemv(e, B, L.guSegs, Buffer{}, b.axB, H, b.guB, 2*I, r.uH) }},
+		{"down+resid", L.dSegs, func(e *Encoder, B int) { r.q4kStepGemv(e, B, L.dSegs, Buffer{}, b.swB, I, b.xB, H, r.uI, true) }},
+	}
+	const reps = 20
+	for _, g := range groups {
+		var kinds []string
+		for _, sg := range g.segs {
+			kinds = append(kinds, fmt.Sprintf("%s:%d", sg.kind, sg.rows))
+		}
+		line := fmt.Sprintf("[probe] layer0 %-10s segs %v GPU ms per call by B:", g.name, kinds)
+		for B := 1; B <= 8; B++ {
+			var best float64 = 1e9
+			for rep := 0; rep < 3; rep++ {
+				e := r.q.Begin()
+				for i := 0; i < reps; i++ {
+					g.run(e, B)
+				}
+				e.End()
+				if err := e.Err(); err != nil {
+					t.Fatal(err)
+				}
+				if v := (e.GPUEnd() - e.GPUStart()) * 1000 / reps; v < best {
+					best = v
+				}
+			}
+			line += fmt.Sprintf(" B%d=%.3f", B, best)
+		}
+		fmt.Fprintln(os.Stderr, line)
+	}
+}

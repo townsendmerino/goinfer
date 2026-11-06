@@ -309,7 +309,7 @@ func TestResidentAdmission_matrix(t *testing.T) {
 				if err != nil {
 					t.Fatalf("%s: %v", name, err)
 				}
-				if residentCovers(a, be) {
+				if residentCovers(a, nil, be) {
 					admits = append(admits, be)
 				}
 				continue
