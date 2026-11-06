@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -105,45 +106,81 @@ func TestMambaHostCopy_deviceBytesIdenticalToPackWeight(t *testing.T) {
 	}
 }
 
-// procAnonPeak samples this process's anonymous resident bytes and swap until stop is closed, and returns their peaks in kB.
-func procAnonPeak(stop <-chan struct{}) (anon, swap func() int64) {
-	var pa, ps int64
-	done := make(chan struct{})
-	read := func() (a, s int64) {
-		b, err := os.ReadFile("/proc/self/status")
-		if err != nil {
-			return 0, 0
-		}
-		for _, ln := range strings.Split(string(b), "\n") {
-			var v int64
-			switch {
-			case strings.HasPrefix(ln, "RssAnon:"):
-				fmt.Sscanf(strings.TrimSpace(strings.TrimPrefix(ln, "RssAnon:")), "%d", &v)
-				a = v
-			case strings.HasPrefix(ln, "VmSwap:"):
-				fmt.Sscanf(strings.TrimSpace(strings.TrimPrefix(ln, "VmSwap:")), "%d", &v)
-				s = v
-			}
-		}
-		return
+// anonSampler samples this process's anonymous resident bytes and swap every 50 ms, whole-process and inside one window (the build's: planStartForTest to the
+// end of the load).
+type anonSampler struct {
+	mu                sync.Mutex
+	peak, swapPeak    int64
+	winStart, winPeak int64
+	inWin             bool
+	stop              chan struct{}
+	done              chan struct{}
+}
+
+func readProcKB() (anon, swap int64) {
+	b, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return 0, 0
 	}
+	for _, ln := range strings.Split(string(b), "\n") {
+		var v int64
+		switch {
+		case strings.HasPrefix(ln, "RssAnon:"):
+			fmt.Sscanf(strings.TrimSpace(strings.TrimPrefix(ln, "RssAnon:")), "%d", &v)
+			anon = v
+		case strings.HasPrefix(ln, "VmSwap:"):
+			fmt.Sscanf(strings.TrimSpace(strings.TrimPrefix(ln, "VmSwap:")), "%d", &v)
+			swap = v
+		}
+	}
+	return
+}
+
+func startAnonSampler() *anonSampler {
+	s := &anonSampler{stop: make(chan struct{}), done: make(chan struct{})}
 	go func() {
-		defer close(done)
+		defer close(s.done)
 		for {
-			a, s := read()
-			pa, ps = max(pa, a), max(ps, s)
+			a, w := readProcKB()
+			s.mu.Lock()
+			s.peak, s.swapPeak = max(s.peak, a), max(s.swapPeak, w)
+			if s.inWin {
+				s.winPeak = max(s.winPeak, a)
+			}
+			s.mu.Unlock()
 			select {
-			case <-stop:
+			case <-s.stop:
 				return
 			case <-time.After(50 * time.Millisecond):
 			}
 		}
 	}()
-	return func() int64 { <-done; return pa }, func() int64 { return ps }
+	return s
 }
 
-// G-3 (tier 1): Nemotron-Nano-9B-v2 whole on CUDA, the cell TestNemotronResidentCUDA_tier1 calls "9b" (token table at int4, ctx 4096): the load's peak anonymous
-// resident bytes and peak swap, and 16 greedy tokens. The README's A/B runs this on main and on the branch and compares.
+func (s *anonSampler) beginWindow() {
+	a, _ := readProcKB()
+	s.mu.Lock()
+	s.winStart, s.winPeak, s.inWin = a, a, true
+	s.mu.Unlock()
+}
+
+func (s *anonSampler) finish() (peak, swap, winStart, winPeak int64) {
+	a, _ := readProcKB()
+	s.mu.Lock()
+	if s.inWin {
+		s.winPeak = max(s.winPeak, a)
+	}
+	s.inWin = false
+	s.mu.Unlock()
+	close(s.stop)
+	<-s.done
+	return s.peak, s.swapPeak, s.winStart, s.winPeak
+}
+
+// G-3 (tier 1): Nemotron-Nano-9B-v2 whole on CUDA, the cell TestNemotronResidentCUDA_tier1 calls "9b" (token table at int4, ctx 4096). It logs the load's whole-process
+// peak anonymous resident bytes and peak swap, and the same inside the build's window: RssAnon when BuildResident begins planning its layers, its peak from there
+// to the end of the load, and the growth between them (G-3b); then 16 greedy tokens. The README's A/B runs this on main and on the branch.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -c -tags 'cuda goinfer_testhooks' -o /tmp/cuda.test ./backend/cuda/ && /tmp/cuda.test -test.run '^TestMambaHostCopy_tier1PeakAnon$' -test.v
 func TestMambaHostCopy_tier1PeakAnon(t *testing.T) {
@@ -153,20 +190,22 @@ func TestMambaHostCopy_tier1PeakAnon(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s", path)
 	}
-	stop := make(chan struct{})
-	peakAnon, peakSwap := procAnonPeak(stop)
+	smp := startAnonSampler()
+	oldStart := planStartForTest
+	planStartForTest = smp.beginWindow
+	t.Cleanup(func() { planStartForTest = oldStart })
 	mg, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", EmbedInt4: true, ResidentContext: 4096})
 	if err != nil {
-		close(stop)
+		smp.finish()
 		t.Fatalf("load (cuda) %s: %v", path, err)
 	}
 	defer mg.Close()
+	peak, swap, winStart, winPeak := smp.finish()
 	rf := mg.ResidentForwardForTest()
 	if rf == nil {
-		close(stop)
 		t.Fatalf("VOID: the cuda resident declined %s (%s): %s", path, mg.DecodePath(), mg.ResidentDecline())
 	}
 	tokens := greedyReplyCUDA(t, rf, mg, g2rSeed(t, path)[:4], 16)
-	close(stop)
-	t.Logf("TIER1 peak RssAnon %d MiB, peak VmSwap %d MiB, decode path %s, 16 greedy tokens %v", peakAnon()/1024, peakSwap()/1024, mg.DecodePath(), tokens)
+	t.Logf("TIER1 peak RssAnon %d MiB, peak VmSwap %d MiB; build window: RssAnon at plan start %d MiB, peak in window %d MiB, growth %d MiB; decode path %s, 16 greedy tokens %v",
+		peak/1024, swap/1024, winStart/1024, winPeak/1024, (winPeak-winStart)/1024, mg.DecodePath(), tokens)
 }

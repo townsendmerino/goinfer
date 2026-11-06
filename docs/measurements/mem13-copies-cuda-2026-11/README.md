@@ -28,3 +28,30 @@ Registered after the tier 0 tests were written red first (`red.log`) and before 
 - **Not the question:** speed (the plan is the same; the upload streams the same bytes), the first-token time, other families.
 - **Cost and times (from `date`):** tier 0 seconds; G-3 two loads of a 9.4 GB checkpoint at about 3 to 6 minutes each; G-4 about 6 minutes. Stated again with the clock when each runs.
 - **Void if:** a card run outside the lock, a NOT RUN counted as a pass, a bar moved after a reading.
+
+## G-3 read once, 2026-11-05 16:04 PST: FAIL by the rule as registered
+
+`g3-first/` (`g3-before.log`, `g3-after.log`, `summary.txt`). Main's test binary, then the branch's, one run each, the exclusive timing lock (free), one-minute load 0.54 and 1.72, 59 GB available, no void run. Both resident, **the same 16 greedy tokens**, peak `VmSwap` 0 MiB.
+
+| | main | branch |
+|---|---|---|
+| peak `RssAnon` of the whole test process | 16,345 MiB | 16,577 MiB |
+
+**No fall (+232 MiB), against a bar of at least 2 GiB: FAIL.** It stays on record as it ran. The load took 16 s and 12 s, so the checkpoint came from a cached sidecar, and the whole-process peak was set elsewhere than where the Mamba projections sit: `decoder.Load` builds the host model before `BuildResident` plans the layers, and a peak over the whole process reads that phase. The instrument could not see the packed copies, whatever they weigh. The survey's 4 GB was arithmetic, and this reading neither confirms nor refutes it.
+
+## G-3b: the build's own window, registered 2026-11-05 16:10 PST before the reading
+
+**What it adds, and why:** the same test, with a window opened where `BuildResident` begins planning its layers (`planStartForTest`) and closed when the load returns. It logs `RssAnon` at the window's start (the host model, loaded), the peak inside it, and the growth between them. The packed copies, if they exist, sit on top of the loaded model inside this window. **This is a new reading with a corrected instrument, after a FAIL; it does not replace G-3 above.**
+
+- **Instrument:** `TestMambaHostCopy_tier1PeakAnon` with the window, built from main plus only that file (`cuda-mem13-before2.test`) and from the branch (`cuda-mem13-after2.test`); the same checkpoint, options and 16 tokens; one run each, main first; the exclusive timing lock.
+- **Decision, on the window's growth (peak in window minus `RssAnon` at its start):**
+
+| | |
+|---|---|
+| **PASS** | the branch's growth is at least 2 GiB below main's; the 16 tokens equal; each run's peak `VmSwap` at most 512 MB; both resident |
+| **PARKED** | a fall of at least 0.5 GiB and under 2 GiB, the others holding: reported with the figure, not the arithmetic's |
+| **FAIL** | a fall under 0.5 GiB, different tokens, or a swap peak over 512 MB |
+
+If main's own growth is under 2 GiB the bar cannot be met by any change, and the reading says so: that is a finding about the ledger's arithmetic, not a pass.
+- **Void and stopping rule:** as above; one run each, no repeat unless a run is void.
+- **Cost:** about 20 s a run. Start from `date` at the run.
