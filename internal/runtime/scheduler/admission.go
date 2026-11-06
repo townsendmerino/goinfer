@@ -107,14 +107,14 @@ func (a *Admission) Position(id string) (place, waiting int, running, ok bool) {
 }
 
 // Release hands the turn to the front waiter, if any, or gives it back. A hand-off leaves the held count unchanged, so
-// a concurrent Enter never sees a free turn with waiters queued and admits itself out of order.
+// a concurrent Enter never sees a free turn with waiters queued and admits itself out of order. It closes ready under mu,
+// where Enter's cancel path reads it: a waiter leaving is either still queued, or sees its grant and gives the turn back.
 func (a *Admission) Release() {
 	a.mu.Lock()
 	if front := a.waiters.Front(); front != nil {
 		a.waiters.Remove(front)
-		w := front.Value.(*turnWaiter)
+		close(front.Value.(*turnWaiter).ready)
 		a.mu.Unlock()
-		close(w.ready)
 		return
 	}
 	a.held--
