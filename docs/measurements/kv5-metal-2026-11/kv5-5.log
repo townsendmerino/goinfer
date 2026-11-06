@@ -32,3 +32,10 @@ Lint: VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclu
 No timed decode or TTFT read: no kernel changed, and a write that shares nothing (every write in serving until a copy) costs one table lookup on the host.
 
 THIS RECORD ENDS WITH KV5-5's SHARING BY REFERENCE PASSING G3b ON THE 1.5B AND G1a's SECOND SLOT, EVERY PLANT RED.
+
+== Gemini's review of #707, 2026-11-06: four test gaps, fixed
+1. TestKVPages_shareByReferenceLayerMajor now reads back the writing slot too: slot 0's K/V over rows 0 to 119 after its rewind into the shared block 1 (its copy must keep rows 64 to 99) and its rewind logits, both equal to the unshared reference. A plant keeping one row too few in the copy on write (kvKeepShortForTest) turns it red, beside the existing copy-on-write-off plant.
+2. The greedy chain now starts at 190 and runs past 192, out of block 2 into block 3, both still shared, so it must own a block it has not reached when it opens; slot 2's decode rewind moves to 100 (block 1, still shared). The plant "chainOpen owns only its first block" (kvOwn to q.pos+1) is red.
+3. UploadKV's contract is written into its comment: one call is one layer's part of a pass that uploads, for every layer that owns K/V, every row that layer reads (its own live range, as decoder.residentUploadPrefill does), since the call maps the slot's blocks for all layers at once. A layer's base may differ (a windowed layer's starts later); a layer never reads below its own base, so the rows the first call does not keep are rows no layer reads.
+4. kvBlocksInUse answers 0 on a resident with no pools; the sentence repeated in TestKVPages_shareByReference's comment is gone.
+Plants after the changes, 9 of 9 red (06:00 to 06:07): the chain plant above and the eight write-site plants. touched.py 13 PASS; lint 7/7.

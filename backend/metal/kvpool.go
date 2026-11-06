@@ -251,6 +251,9 @@ func (r *resident) kvWrite(s, lo, hi int) error {
 		}
 		if old != 0 {
 			if keep := lo - b*decoder.KVBlockRows; keep > 0 {
+				if kvKeepShortForTest {
+					keep--
+				}
 				if err := gpu.CopyDeviceBatch(r.kvBlockCopies(old, nb, keep)); err != nil {
 					return fmt.Errorf("metal: copy on write of KV block %d: %w", old, err)
 				}

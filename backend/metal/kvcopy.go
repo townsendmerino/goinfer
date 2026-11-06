@@ -65,6 +65,9 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 // TestKVPages_shareByReference must catch.
 var kvOwnOffForTest bool
 
+// kvKeepShortForTest makes a copy on write keep one row too few: the plant TestKVPages_shareByReferenceLayerMajor must catch.
+var kvKeepShortForTest bool
+
 // kvBlockCopies is the copies of block from's first rows rows into block to, in every layer that owns K/V, its int8 scales with it.
 // Buffer.At sets an absolute offset, so each block is addressed from its pool's start, where the null block is.
 func (r *resident) kvBlockCopies(from, to uint32, rows int) []gpu.DeviceCopy {
