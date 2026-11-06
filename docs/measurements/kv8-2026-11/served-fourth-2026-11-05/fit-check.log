@@ -1,0 +1,14 @@
+1 slot(s): loaded in 14.5 s, 5582 MiB on the card
+  cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+  cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+  cuda: recurrent checkpoint: 50.2 MiB on the device (48 buffers, KV8a)
+    fit: 8192-token cap needs 0.5 GB KV (weights 4.7 GB, budget 41.6 GB, 41.1 GB left for a request's own prefill)
+    KV plan: 1 conversation x 8192 positions (--ctx 8192)
+  "Qwen3.5-9B-Q4_K_M" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+2 slot(s): loaded in 10.5 s, 6194 MiB on the card
+  cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+  cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+  cuda: recurrent checkpoint: 100.5 MiB on the device (96 buffers, KV8a)
+    fit: 8192-token cap needs 0.5 GB KV (weights 4.7 GB, budget 41.6 GB, 41.1 GB left for a request's own prefill)
+    KV plan: 2 conversations x 8192 positions (--ctx 8192)
+  "Qwen3.5-9B-Q4_K_M" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
