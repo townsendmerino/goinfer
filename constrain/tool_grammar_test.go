@@ -13,6 +13,7 @@ var weatherParams = []byte(`{"type":"object","additionalProperties":false,
 // TestToolGrammar_property: every constrained generation is exactly the family
 // wrapper around a JSON object that names the tool and whose arguments conform.
 func TestToolGrammar_property(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, prefix, suffix, argsKey string
 		array                         bool
