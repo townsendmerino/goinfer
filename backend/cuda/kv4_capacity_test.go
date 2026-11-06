@@ -2193,6 +2193,20 @@ func TestKV4_batchedStepEvictsTheLeastRecentlyWrittenIdleSlot(t *testing.T) {
 	if free := len(r.kvPools[kvGroupFull].free); free != 0 {
 		t.Fatalf("%d blocks are free before the step; the case needs the pool full", free)
 	}
+	held := func() (h [4]int, free int) {
+		_ = r.do(func() error {
+			for s := range h {
+				h[s] = r.kvHeld(s)
+			}
+			free = len(r.kvPools[kvGroupFull].free)
+			return nil
+		})
+		return h, free
+	}
+	before, _ := held()
+	if before[0] != conv0/kvBlock || before[3] != conv3/kvBlock || before[1] != run || before[2] != run {
+		t.Fatalf("blocks held before the step %v, want [%d %d %d %d]", before, conv0/kvBlock, run, run, conv3/kvBlock)
+	}
 	r.SetKVSlotBusy(1, true)
 	r.SetKVSlotBusy(2, true)
 	if err := r.UseKVSlot(0); err != nil { // bind the idle, least recently written slot without writing it
@@ -2202,9 +2216,13 @@ func TestKV4_batchedStepEvictsTheLeastRecentlyWrittenIdleSlot(t *testing.T) {
 	if _, err := r.StepBatch([]decoder.ResidentBatchSeq{{Slot: 1, Pos: run * kvBlock, Emb: emb(1)}, {Slot: 2, Pos: run * kvBlock, Emb: emb(2)}}); err != nil {
 		t.Fatalf("the batched step: %v", err)
 	}
-	var held0, held3 int
-	_ = r.do(func() error { held0, held3 = r.kvHeld(0), r.kvHeld(3); return nil })
-	if held0 != 0 || held3 == 0 {
-		t.Errorf("after the step slot 0 (least recently written, bound, idle) holds %d blocks and slot 3 (written later) holds %d; want slot 0 released and slot 3 kept", held0, held3)
+	// Slot 0 (least recently written, bound, idle) is released whole; slot 3 (written later) is untouched; each running row took the one
+	// block its write crossed into; the rest of slot 0's blocks are free.
+	after, free := held()
+	if want := [4]int{0, run + 1, run + 1, before[3]}; after != want {
+		t.Errorf("blocks held after the step %v, want %v", after, want)
+	}
+	if want := before[0] - 2; free != want {
+		t.Errorf("%d blocks free after the step, want %d (slot 0's %d less the two the rows took)", free, want, before[0])
 	}
 }
