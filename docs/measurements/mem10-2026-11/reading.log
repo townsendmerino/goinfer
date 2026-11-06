@@ -1,0 +1,6 @@
+at_listen {'VmLck': 0, 'VmHWM': 26345, 'RssAnon': 188, 'RssFile': 13681, 'RssShmem': 12345, 'VmSwap': 0} MiB
+after_5s {'VmLck': 0, 'VmHWM': 26345, 'RssAnon': 191, 'RssFile': 13681, 'RssShmem': 12345, 'VmSwap': 0} MiB
+after_request {'VmLck': 0, 'VmHWM': 26345, 'RssAnon': 220, 'RssFile': 13681, 'RssShmem': 12345, 'VmSwap': 0} MiB
+peak_during_all {'VmLck': 0, 'VmHWM': 26345, 'RssAnon': 320, 'RssFile': 13681, 'RssShmem': 12345, 'VmSwap': 0} MiB
+decode path: ['decode path: cuda-resident (int4)']
+load 21.0 s; device 6942 MiB; load avg 1.14 ; available 61500 MB; completion ' the capital of France is the capital of France is the capital of France is the'
