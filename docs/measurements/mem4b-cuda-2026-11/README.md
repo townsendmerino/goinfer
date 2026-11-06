@@ -29,3 +29,15 @@ The bar below is TWR-G3's, carried over unchanged; it was not set from that run.
 
 - **Reported, not graded:** the first-turn peak and what the process holds after the first image turn, in both arms.
 - **Stopping rule:** one run per arm. **Cost:** about 3 minutes. **Void if:** a card run outside the lock, a bar moved after a reading.
+
+## The first registered run, and why one run per arm is not enough (2026-11-06 03:48 to 03:50 PST)
+
+`reading/` (`readings.json`, `serve-*.log`, `../reading.log`). Load average 1.49 and 1.10, no void arm. After the second image turn plus 10 s, `RssAnon`: **release 473.8 MiB (0.46 GiB), no-release 2,015.5 MiB (1.97 GiB)**; the difference **1,541.7 MiB**, above the 922.6 MiB bar; the replies equal. By the rule as registered that is a PASS.
+
+**It is not a result I can stand on.** The development run before it, on the same two binaries, read the no-release arm at 438.9 MiB after the second turn (difference −7.6 MiB, NOT NEEDED by the same rule). The two runs' logs are the same in content (no fallback, no device error, the same two images encoded), and the release arm agreed with itself (446.5 and 473.8 MiB). The no-release arm ended turn 2 at 433 MiB in one and 2,014 MiB in the other, from the same binary. If the host blocks (1,153.2 MiB) were live in that arm they could not be absent in the first run; so something other than the release decides the process's anonymous memory at the read, most likely when the Go runtime collects and returns the tower build's garbage. One run per arm cannot tell the two apart.
+
+## MEM4(b)-CUDA-G3, amended 2026-11-06 (time from `date` below), before the further runs
+
+- **What is added:** five more pairs of the same two binaries, the same instrument and flags, the release arm first in each pair, each pair its own server start, each in its own `reading-N/`. The first registered run is `reading/` (pair 1) and counts; the development run is listed and **not** counted. Six pairs in all.
+- **The rule is unchanged** (the 922.6 MiB bar, the 100 MiB NOT NEEDED line, the replies equal) **and is applied to the median of each arm's `RssAnon` 10 s after the second turn over the six pairs**, with every pair's figures in the table. If the arms' figures overlap (some no-release value under some release value, or a spread above 1,000 MiB in either arm), the verdict is **INCONCLUSIVE**, not a pass: the release's effect would then not be separable from the collector's timing.
+- **Void:** as above, per pair. **Cost:** about 3 minutes a pair.
