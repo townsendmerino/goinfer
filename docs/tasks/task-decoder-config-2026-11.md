@@ -10,7 +10,7 @@
 | DC1b | open | after DC1a: move `config.go` and the `Config` methods to `decoder/config`; alias `decoder.Config`; `paritykey.BuilderFile` learns the new path | §3 |
 | DC2 | blocked | `Options` only when a subsystem needs it (it drags `Backend`, `Drafter`, `Knobs`) | §4 |
 | DC3 | blocked | no: `Architecture` is the hub (§5); continue `internal/runtime/program` instead | §5 |
-| DC4 | decision | the aliases in `decoder` are the published API and stay (T3-fit question a) | §6 |
+| DC4 | done | the aliases in `decoder` are the published API and stay (T3-fit question a); kept, Francis 2026-11-06 | §5 |
 
 ## 1. What is there (files naming each type, `2fd3a644`; decoder has 206 non-test and 606 test files)
 

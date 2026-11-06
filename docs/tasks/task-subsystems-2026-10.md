@@ -120,7 +120,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
 | SD4 | done | decided 2026-10-26: auto-merge, with the checks required on `main` | §14 |
 | SD2, SD3, SD5–SD8 | done | decided 2026-10-26, one at a time (§14) | §14 |
-| T3-fit | decision | 2026-11-06 (mac-fit): steps 1–3 merged (#688 the exchange types in `decoder/fit`, #692 callers name `fit.X`, #697 the checkpoint-byte estimators, KV rate and classifiers over neutral inputs). What is left in `decoder` is the `Config`/`Options`/`Architecture`/`BuildDemand` adapter, since the decisions are already in `internal/runtime/mem`; moving it needs those types out of `decoder` first. Open for Francis: (a) keep `decoder/fitalias.go` as the published names (recommended) or delete it as a breaking rename; (b) whether `Config`/`Options` extraction is the next Tier 3 subsystem | `docs/layout.md` "Tier 3"; proposal for (b): `docs/tasks/task-decoder-config-2026-11.md` |
+| T3-fit | done | 2026-11-06 (mac-fit): `decoder/fit` is finished: #688 the exchange types, #692 callers name `fit.X`, #697 the checkpoint-byte estimators, KV rate and classifiers over neutral inputs, #708 the record. The rest of the fit code is the `Config`/`Options`/`Architecture`/`BuildDemand` adapter, which stays in `decoder` (the decisions are already in `internal/runtime/mem`). (a) `decoder/fitalias.go` kept as the published names (Francis, 2026-11-06). (b) extracting `Config`/`Options`/`Architecture` is DC0 in `docs/tasks/task-decoder-config-2026-11.md`, open for Francis | `docs/layout.md` "Tier 3"; `docs/tasks/task-decoder-config-2026-11.md` |
 
 ## 0. Summary
 

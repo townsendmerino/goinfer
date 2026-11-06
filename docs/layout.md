@@ -84,9 +84,9 @@ In the other direction 13 non-test `decoder` files call it (`model.go`, `prefill
    `fitCheck` struct to `fit` would only relocate fields that `mem.HostLoad` already carries, at the price of rewriting about ten
    test files that build it by field name, so it is not planned. Moving the adapter needs `Config`, `Options` and `Architecture`
    out of `decoder` first; that is the next Tier 3 subsystem (a `decoder/config`-style package), not part of `fit`.
-4. **The aliases stay for now.** `decoder.Plan`, `PlanRequest`, `Placement*`, `FitAnswer`, `FitDeclineError` and `ErrWontFitResident`
-   are the library's published names (`Model.Plan` returns a `Plan`); deleting `decoder/fitalias.go` breaks every external importer
-   and means renaming them in the 13 non-test and 20 test files in `decoder` that use them. The decision to delete is Francis's, not a cleanup.
+4. **The aliases stay.** `decoder.Plan`, `PlanRequest`, `Placement*`, `FitAnswer`, `FitDeclineError` and `ErrWontFitResident` are the library's
+   published names (`Model.Plan` returns a `Plan`), and `decoder/fitalias.go` keeps them (Francis, 2026-11-06). Whether `Config`, `Options` and
+   `Architecture` leave `decoder` next is `docs/tasks/task-decoder-config-2026-11.md`.
 
 ## GPU backend modules
 
