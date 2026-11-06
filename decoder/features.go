@@ -381,10 +381,13 @@ func residentDeclared(backend string) bool {
 }
 
 // residentCovers reports whether backend implements everything a needs: its feature set, or its table and the features outside
-// the program.
-func residentCovers(a *Architecture, backend string) bool {
+// the program. prog is a's program, nil to build it.
+func residentCovers(a *Architecture, prog *layerProgram, backend string) bool {
 	if t := residentBackendTables[backend]; t != nil {
-		return t.Check(buildProgram(a, configExperts(a))) == nil && len(a.featuresOutsideProgram()) == 0
+		if prog == nil {
+			prog = buildProgram(a, configExperts(a))
+		}
+		return t.Check(prog) == nil && len(a.featuresOutsideProgram()) == 0
 	}
 	return len(missingFeatures(a.residentFeatures(), residentBackendFeatures[backend])) == 0
 }

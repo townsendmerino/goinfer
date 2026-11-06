@@ -156,11 +156,7 @@ func buildDemandFor(cfg *Config, opts Options, weightBytes, expertBytes int64, g
 // BuildQueryFor is the query the fit guard asks opts's backend for a load of cfg (nil before the config is read) with the
 // priced bytes: the facts decoder resolves from the config, and the options.
 func BuildQueryFor(cfg *Config, opts Options, weightBytes, expertBytes int64, gguf bool) BuildQuery {
-	var a archFacts
-	if cfg != nil {
-		a = archFactsFor(cfg, opts.Backend)
-	}
-	return buildQuery(cfg, a, opts, weightBytes, expertBytes, gguf)
+	return buildQuery(cfg, new(fitMemo).factsFor(cfg, opts.Backend), opts, weightBytes, expertBytes, gguf)
 }
 
 // buildQuery is BuildQueryFor with the config's facts already derived (a, zero for a nil config).
@@ -189,13 +185,9 @@ type archFacts struct {
 	moeLayers, numExperts, expertIntermediate, hidden int
 }
 
-func archFactsFor(cfg *Config, backend string) archFacts {
-	c := *cfg
-	arch, _, err := resolveArchitecture(&c)
-	if err != nil {
-		return archFacts{}
-	}
-	a := archFacts{resolved: true, covered: residentCovers(arch, backend), state: stateBuffers(arch), checkpoint: recurrentCheckpointBuffers(arch)}
+// configFacts is archFacts without covered: what c resolved to says on any backend.
+func configFacts(c *Config, arch *Architecture) archFacts {
+	a := archFacts{resolved: true, state: stateBuffers(arch), checkpoint: recurrentCheckpointBuffers(arch)}
 	if arch.MoE != nil && arch.MoE.NumExperts > 0 && arch.MoE.IntermediateDim > 0 {
 		a.moeLayers = max(c.NumLayers-max(c.FirstKDenseReplace, 0), 0)
 		a.numExperts, a.expertIntermediate, a.hidden = arch.MoE.NumExperts, arch.MoE.IntermediateDim, c.HiddenDim
@@ -203,13 +195,48 @@ func archFactsFor(cfg *Config, backend string) archFacts {
 	return a
 }
 
-// fitMemo keeps, for one model, what Plan derives from the model alone on every probe of a fit search: the config's facts per
-// backend, and the program admission checks the architecture against. Both are properties of the loaded config and
-// architecture, which do not change after load. A nil fitMemo, on a Model built by hand, derives them every time.
+// fitMemo keeps, for one model, what Plan derives from the model alone on every probe of a fit search: the config resolved
+// again (as BuildQueryFor resolves it), its facts and its program, each backend's facts, and the loaded architecture's program
+// that admission checks. A program is built only for a backend with an operation table. All of it is a property of the loaded
+// config and architecture, which do not change after load. A Model built by hand has none and derives them on every call.
 type fitMemo struct {
-	mu    sync.Mutex
-	facts map[string]archFacts
-	prog  *layerProgram
+	mu sync.Mutex
+
+	derived  bool          // arch, base and archProg below have been looked at
+	arch     *Architecture // the config resolved again; nil when it does not resolve
+	base     archFacts     // configFacts of arch, covered unset
+	archProg *layerProgram // arch's program, for coverage
+	facts    map[string]archFacts
+
+	prog *layerProgram // the loaded architecture's program, for admission
+}
+
+// factsFor is cfg's facts on backend (zero for a nil cfg or one that does not resolve), from the memo where it has them.
+func (memo *fitMemo) factsFor(cfg *Config, backend string) archFacts {
+	memo.mu.Lock()
+	defer memo.mu.Unlock()
+	if a, ok := memo.facts[backend]; ok {
+		return a
+	}
+	if !memo.derived && cfg != nil {
+		c := *cfg
+		if arch, _, err := resolveArchitecture(&c); err == nil {
+			memo.arch, memo.base = arch, configFacts(&c, arch)
+		}
+	}
+	memo.derived = true
+	a := memo.base
+	if memo.arch != nil {
+		if memo.archProg == nil && residentBackendTables[backend] != nil {
+			memo.archProg = buildProgram(memo.arch, configExperts(memo.arch))
+		}
+		a.covered = residentCovers(memo.arch, memo.archProg, backend)
+	}
+	if memo.facts == nil {
+		memo.facts = map[string]archFacts{}
+	}
+	memo.facts[backend] = a
+	return a
 }
 
 // buildDemand is buildDemandFor on this model's config with nothing priced, the report Plan's state and checkpoint lines read.
@@ -221,35 +248,28 @@ func (m *Model) buildDemand(backend string) BuildDemand {
 	if f == nil {
 		return BuildDemand{}
 	}
-	cfg := m.Config()
-	var a archFacts
-	if memo := m.fitOf; memo == nil {
-		a = archFactsFor(cfg, backend)
-	} else {
-		memo.mu.Lock()
-		var ok bool
-		if a, ok = memo.facts[backend]; !ok {
-			a = archFactsFor(cfg, backend)
-			if memo.facts == nil {
-				memo.facts = map[string]archFacts{}
-			}
-			memo.facts[backend] = a
-		}
-		memo.mu.Unlock()
+	cfg, memo := m.Config(), m.fitOf
+	if memo == nil {
+		memo = new(fitMemo)
 	}
-	return f(buildQuery(cfg, a, Options{Backend: backend}, 0, 0, false))
+	return f(buildQuery(cfg, memo.factsFor(cfg, backend), Options{Backend: backend}, 0, 0, false))
 }
 
-// admitProgram is the program of m's architecture that admission checks a backend's operation table against.
-func (m *Model) admitProgram() *layerProgram {
+// admitProgram is the program of m's architecture that admission checks backend's operation table against: nil for a backend
+// with no table, whose admission reads features, and for a Model with no architecture.
+func (m *Model) admitProgram(backend string) *layerProgram {
+	if residentBackendTables[backend] == nil || m.w == nil || m.w.arch == nil {
+		return nil
+	}
+	build := func() *layerProgram { return buildProgram(m.w.arch, configExperts(m.w.arch)) }
 	memo := m.fitOf
 	if memo == nil {
-		return buildProgram(m.w.arch, configExperts(m.w.arch))
+		return build()
 	}
 	memo.mu.Lock()
 	defer memo.mu.Unlock()
 	if memo.prog == nil {
-		memo.prog = buildProgram(m.w.arch, configExperts(m.w.arch))
+		memo.prog = build()
 	}
 	return memo.prog
 }

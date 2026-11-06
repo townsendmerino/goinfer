@@ -293,39 +293,69 @@ func TestPlan_unrecognisedBackendDeclinesEvenForAFeatureFreeArch(t *testing.T) {
 	}
 }
 
-// A fit search calls Plan once per probe. What Plan derives from the model alone (the config's facts and the program admission
-// checks) is derived once per model and backend and then read from the model's memo: the memo's answers are what the same model
-// gives without one, and after each backend's first probe the rest build no program.
+// A fit search calls Plan once per probe. What Plan derives from the model alone (the config's facts, and the programs coverage
+// and admission check) comes from the model's memo after the first probe. A plan is the same from a cold memo, from one every
+// backend has warmed, and from none (a hand-built Model's). Coverage reaches a plan only where the backend is compiled, so the
+// warm memo's facts are also held to fresh ones on every backend. A model's first probes build at most its two programs, none for
+// webgpu, which has no operation table, and later probes build none. Not parallel: buildProgramCalls counts the whole process,
+// and a test that is not parallel runs alone.
 func TestPlan_derivesTheModelsOwnFactsOnce(t *testing.T) {
 	backends := []string{"cuda", "metal", "webgpu"}
-	for _, path := range []string{"../testdata/llama-tiny", "../testdata/qwen3next-tiny", "../testdata/bailing_hybrid-tiny"} { // dense; recurrent MoE; refused by cuda's and metal's operation tables
+	reqs := []PlanRequest{{Ctx: 2048}, {Ctx: 32768, KVF16: true}}
+	frees := []int64{1 << 26, 1 << 30, 1 << 36}
+	// Dense; recurrent MoE; refused by cuda's and metal's operation tables; covered by cuda and metal and not webgpu.
+	for _, path := range []string{"../testdata/llama-tiny", "../testdata/qwen3next-tiny", "../testdata/bailing_hybrid-tiny", "../testdata/cohere-tiny"} {
 		m, err := Load(path, Options{Backend: "cpu"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		memo := m.fitOf
-		if memo == nil {
+		defer m.Close()
+		if m.fitOf == nil {
 			t.Fatal("Load built a model without the fit memo")
 		}
+		warm := new(fitMemo)
 		for _, be := range backends {
-			for range 2 { // the first fills the memo, the second reads it
-				m.fitOf = memo
-				demand, decline := m.buildDemand(be), m.planAdmitDecline(be)
-				m.fitOf = nil
-				if want := m.buildDemand(be); !reflect.DeepEqual(demand, want) {
-					t.Errorf("%s on %s: the memo's report is %+v, without it %+v", path, be, demand, want)
-				}
-				if want := m.planAdmitDecline(be); decline != want {
-					t.Errorf("%s on %s: admission with the memo says %q, without it %q", path, be, decline, want)
+			m.fitOf = warm
+			m.Plan(be, 1<<30, reqs[0])
+		}
+		for _, be := range backends {
+			if got, want := warm.factsFor(m.Config(), be), new(fitMemo).factsFor(m.Config(), be); !reflect.DeepEqual(got, want) {
+				t.Errorf("%s on %s: the warm memo's facts are %+v, fresh ones %+v", path, be, got, want)
+			}
+		}
+		for _, be := range backends {
+			for _, req := range reqs {
+				for _, free := range frees {
+					m.fitOf = new(fitMemo)
+					cold := m.Plan(be, free, req)
+					m.fitOf = warm
+					fromWarm := m.Plan(be, free, req)
+					m.fitOf = nil
+					none := m.Plan(be, free, req)
+					if !reflect.DeepEqual(cold, fromWarm) || !reflect.DeepEqual(cold, none) {
+						t.Errorf("%s on %s, %+v with %d free: a cold memo plans\n%+v\na warm one\n%+v\nand none\n%+v", path, be, req, free, cold,
+							fromWarm, none)
+					}
 				}
 			}
-			m.fitOf = memo
-			m.Plan(be, 1<<30, PlanRequest{Ctx: 2048})
+		}
+
+		m.fitOf = new(fitMemo)
+		before := buildProgramCalls.Load()
+		m.Plan("webgpu", 1<<30, reqs[0])
+		if n := buildProgramCalls.Load() - before; n != 0 {
+			t.Errorf("%s: a webgpu probe built %d programs", path, n)
+		}
+		for _, be := range backends {
+			m.Plan(be, 1<<30, reqs[0])
+		}
+		if n := buildProgramCalls.Load() - before; n > 2 {
+			t.Errorf("%s: the first probe on each backend built %d programs, want at most coverage's and admission's", path, n)
 		}
 		before, probes := buildProgramCalls.Load(), 0
 		for free := int64(1) << 26; free <= 1<<36; free <<= 1 {
 			for _, be := range backends {
-				m.Plan(be, free, PlanRequest{Ctx: 2048})
+				m.Plan(be, free, reqs[0])
 				probes++
 			}
 		}
