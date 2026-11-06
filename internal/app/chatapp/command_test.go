@@ -92,7 +92,7 @@ func TestCommand_demoRunsOneTurnAndRestoresTheJSONSetting(t *testing.T) {
 	}
 	s.plain, s.maxTok, s.sp.Temperature = true, 4, 0
 	quietly(t, func() { s.out = os.Stdout; s.command("/demo " + jsonDemo) })
-	if len(s.history) != 2 || s.history[0].role != "user" || s.history[1].role != "assistant" || s.history[1].content == "" {
+	if len(s.history) != 2 || s.history[0] != (msg{"user", demoPrompt(t, jsonDemo)}) || s.history[1].role != "assistant" || s.history[1].content == "" {
 		t.Fatalf("history after /demo: %+v, want the demo's prompt and a reply", s.history)
 	}
 	if reply := s.history[1].content; !opensJSONValue(reply) {
@@ -102,9 +102,13 @@ func TestCommand_demoRunsOneTurnAndRestoresTheJSONSetting(t *testing.T) {
 		t.Error("the JSON demo left JSON output on")
 	}
 	s.history = nil
-	quietly(t, func() { s.out = os.Stdout; s.command("/demo " + plainDemo(t)) })
-	if len(s.history) != 2 || opensJSONValue(s.history[1].content) {
-		t.Errorf("a demo without JSON replied %+v, as a constrained turn would: the check above cannot tell the two apart", s.history)
+	plain := plainDemo(t)
+	quietly(t, func() { s.out = os.Stdout; s.command("/demo " + plain) })
+	if len(s.history) != 2 || s.history[0] != (msg{"user", demoPrompt(t, plain)}) || s.history[1].content == "" {
+		t.Fatalf("history after the plain /demo: %+v, want its prompt and a reply", s.history)
+	}
+	if opensJSONValue(s.history[1].content) {
+		t.Errorf("a demo without JSON replied %q, as a constrained turn would: the check above cannot tell the two apart", s.history[1].content)
 	}
 }
 
@@ -124,4 +128,16 @@ func plainDemo(t *testing.T) string {
 func opensJSONValue(s string) bool {
 	s = strings.TrimLeft(s, " \t\r\n")
 	return s != "" && strings.ContainsRune(`{["-0123456789tfn`, rune(s[0]))
+}
+
+// demoPrompt is the named demo's prompt.
+func demoPrompt(t *testing.T, name string) string {
+	t.Helper()
+	for _, d := range demos {
+		if d.name == name {
+			return d.prompt
+		}
+	}
+	t.Fatalf("no demo %q", name)
+	return ""
 }
