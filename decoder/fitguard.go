@@ -432,7 +432,7 @@ func kvBytesPerPosition(cfg *Config, kvF16, kvI8 bool) int64 {
 	if cfg == nil {
 		return 0
 	}
-	return fit.KVBytesPerPosition(cfg.NumLayers, cfg.NumKVHeads, cfg.headDim(), kvF16, kvI8)
+	return fit.KVBytesPerPosition(cfg.NumLayers, cfg.NumKVHeads, cfg.EffectiveHeadDim(), kvF16, kvI8)
 }
 
 // estimateKVBytes is the KV cache at ctx positions. ctx is the caller's job to choose (fitCheckFor picks opts.ResidentContext when pinned,

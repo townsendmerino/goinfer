@@ -11,7 +11,7 @@
   "programs": [
     "testdata/voxtral-tiny"
   ],
-  "deps_hash": "sha256:97fb232b7f47492a40ea05a613fe94dba4c4853c11129c84bef6796174bc5faa",
+  "deps_hash": "sha256:617e68e463a32c9a2ba5add6baa0470096816de36beed185f2c721949db4df0c",
   "status": "validated",
   "validated_at": "8494de25",
   "date": "2026-10-09",

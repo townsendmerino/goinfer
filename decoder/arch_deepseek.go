@@ -18,7 +18,7 @@ import (
 // topk_group of n_group groups (noaux_tc), while V2/V2-Lite use softmax + plain greedy
 // top-k. first_k_dense_replace dense-MLP prefix, ungated shared expert (the GLM path).
 func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if err := cfg.validateDeepseek(); err != nil {
+	if err := cfg.ValidateDeepseek(); err != nil {
 		return nil, nil, err
 	}
 	// RoPE: the tiny synthetic carries rope_parameters {rope_theta, rope_type}; the real

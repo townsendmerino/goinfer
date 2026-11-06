@@ -16,10 +16,10 @@ import (
 //     fields otherwise) rather than qwen35Architecture's nested-only parseRopeFlat, which hard-errors on an empty rope_parameters
 //     (parseRopeSpec refuses it).
 func qwen3NextArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if err := cfg.normalizeQwen3NextLayerTypes(); err != nil {
+	if err := cfg.NormalizeQwen3NextLayerTypes(); err != nil {
 		return nil, nil, err
 	}
-	if err := cfg.validateQwen3Next(); err != nil {
+	if err := cfg.ValidateQwen3Next(); err != nil {
 		return nil, nil, err
 	}
 	var base float64

@@ -234,7 +234,7 @@ func TestLagunaGating_allThreeSpellings(t *testing.T) {
 			if tc.raw != "" {
 				cfg.Gating = json.RawMessage(tc.raw)
 			}
-			enabled, perHead, err := cfg.lagunaGatePerHead()
+			enabled, perHead, err := cfg.LagunaGatePerHead()
 			if tc.wantParseFail {
 				if err == nil {
 					t.Fatalf("gating=%s parsed as (%v,%v), want an error", tc.raw, enabled, perHead)
@@ -274,7 +274,7 @@ func TestLagunaFirstKDense_contiguousOnly(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &Config{NumLayers: 40, MlpOnlyLayers: tc.layers}
-			got, err := cfg.lagunaFirstKDense()
+			got, err := cfg.LagunaFirstKDense()
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("mlp_only_layers=%v → %d, want an error", tc.layers, got)
@@ -317,7 +317,7 @@ func TestLagunaFirstKDense_mlpLayerTypes(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &Config{NumLayers: 4, MlpLayerTypes: tc.types, MlpOnlyLayers: tc.only}
-			got, err := cfg.lagunaFirstKDense()
+			got, err := cfg.LagunaFirstKDense()
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("mlp_layer_types=%v → %d, want an error", tc.types, got)

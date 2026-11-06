@@ -23,10 +23,10 @@ func cohereArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "cohere"); err != nil {
 		return nil, nil, err
 	}
-	if err := cfg.validateCohere(); err != nil {
+	if err := cfg.ValidateCohere(); err != nil {
 		return nil, nil, err
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	return &Architecture{
 		Name:            "cohere",
 		HiddenDim:       cfg.HiddenDim,
@@ -46,7 +46,7 @@ func cohereArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		layerIsGlobal:   nil,
 		RoPELocalBase:   cfg.RoPEGlobalBase, // single base (rope_theta)
 		RoPEGlobalBase:  cfg.RoPEGlobalBase,
-		RotaryDim:       cfg.rotaryDim(), // 0 = full head_dim
+		RotaryDim:       cfg.RotaryDim(), // 0 = full head_dim
 		ropeInterleave:  true,            // GPT-J pairwise rotation (rope_gptj), not NeoX
 		EmbedScale:      0,
 		LogitScale:      1.0 / cfg.LogitScale, // reciprocal: HF multiplies, goinfer divides

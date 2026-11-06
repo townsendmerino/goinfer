@@ -10,7 +10,7 @@ import (
 // MoE on every layer. The descriptor marks the per-layer kind (layerIsLinear) and carries the DeltaNet geometry; the softmax layers reuse the
 // uniform attention fields. See docs/completed/qwen3_5_moe.md.
 func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if err := cfg.validateQwen35(); err != nil {
+	if err := cfg.ValidateQwen35(); err != nil {
 		return nil, nil, err
 	}
 	spec, partialRotary, err := parseRopeFlat(cfg.RopeParameters)

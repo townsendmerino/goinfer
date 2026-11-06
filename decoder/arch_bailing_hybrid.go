@@ -24,10 +24,10 @@ import (
 // No YaRN/rope_scaling override is wired (the mscale/mscale_all_dim ratio deepseekArchitecture applies): the released config carries
 // rope_scaling: null, so a Bailing checkpoint that sets YaRN would need it added.
 func bailingHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if err := cfg.normalizeBailingLayerTypes(); err != nil {
+	if err := cfg.NormalizeBailingLayerTypes(); err != nil {
 		return nil, nil, err
 	}
-	if err := cfg.validateBailingHybrid(); err != nil {
+	if err := cfg.ValidateBailingHybrid(); err != nil {
 		return nil, nil, err
 	}
 	if !cfg.NoKDALora {

@@ -34,14 +34,14 @@ import (
 // (swa_attention_sink_enabled absent), so that branch of the vendor code has no
 // counterpart here. See docs/completed/task-laguna.md for the config verification.
 func lagunaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if err := cfg.validateLaguna(); err != nil {
+	if err := cfg.ValidateLaguna(); err != nil {
 		return nil, nil, err
 	}
-	gateOn, gatePerHead, err := cfg.lagunaGatePerHead()
+	gateOn, gatePerHead, err := cfg.LagunaGatePerHead()
 	if err != nil {
 		return nil, nil, err
 	}
-	firstKDense, err := cfg.lagunaFirstKDense()
+	firstKDense, err := cfg.LagunaFirstKDense()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -52,7 +52,7 @@ func lagunaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if full == nil {
 		return nil, nil, fmt.Errorf("decoder(laguna): rope_parameters.full_attention is required")
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 
 	// partial_rotary_factor precedence. It appears BOTH top-level and inside each
 	// rope_parameters[layer_type], and the vendor documents that HF's
