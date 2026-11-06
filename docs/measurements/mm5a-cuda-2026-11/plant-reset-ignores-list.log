@@ -1,0 +1,30 @@
+=== RUN   TestRecurrentState_everyBufferReadsTheList
+=== RUN   TestRecurrentState_everyBufferReadsTheList/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:1248: layer 0: float 384 of 392 is 1 after a reset; the reset left part of the buffer
+    mamba_guards_test.go:1248: layer 1: float 384 of 392 is 1 after a reset; the reset left part of the buffer
+    mamba_guards_test.go:1248: layer 2: float 384 of 392 is 1 after a reset; the reset left part of the buffer
+=== RUN   TestRecurrentState_everyBufferReadsTheList/olmo_hybrid-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:1248: layer 0: float 384 of 392 is 1 after a reset; the reset left part of the buffer
+    mamba_guards_test.go:1248: layer 1: float 384 of 392 is 1 after a reset; the reset left part of the buffer
+    mamba_guards_test.go:1248: layer 2: float 384 of 392 is 1 after a reset; the reset left part of the buffer
+=== RUN   TestRecurrentState_everyBufferReadsTheList/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (8 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- FAIL: TestRecurrentState_everyBufferReadsTheList (2.35s)
+    --- FAIL: TestRecurrentState_everyBufferReadsTheList/qwen35-tiny (1.76s)
+    --- FAIL: TestRecurrentState_everyBufferReadsTheList/olmo_hybrid-tiny (0.25s)
+    --- PASS: TestRecurrentState_everyBufferReadsTheList/nemotron-tiny (0.23s)
+FAIL
+ledger: 7 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	2.412s
+FAIL

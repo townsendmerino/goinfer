@@ -142,7 +142,7 @@ func TestGemma4GlobalGeometry(t *testing.T) {
 		if c.plc != "" {
 			cfg.PerLayerConfig = json.RawMessage(c.plc)
 		}
-		hd, kv, err := cfg.gemma4GlobalGeometry()
+		hd, kv, err := cfg.Gemma4GlobalGeometry()
 		switch {
 		case c.err != "":
 			if err == nil || !strings.Contains(err.Error(), c.err) {

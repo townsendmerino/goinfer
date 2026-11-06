@@ -2284,9 +2284,12 @@ func cudaGateRow(t testing.TB, row, path string, o decoder.Options) (memgate.Rea
 	// The plan has no line for these. Scratch is the margin's allocated share: the margin also holds the free VRAM cuMemAlloc will not
 	// hand out, which no lease can reach. The pinned host copy holds the routed experts, and only an expert-cache build has one.
 	read.Named = map[mem.LineID]int64{mem.LineScratch: r.ctxMargin() - allocFloorBytes}
-	if r.kvTabStage != nil {
-		read.Named[mem.LineStaging] = cudaKVRingBytes(r) // the block tables' pinned host ring: host memory, not the plan's device KV
+	// The block tables' pinned host ring: every resident build allocates it (kvAllocPools), so its figure is the geometry's and the build
+	// is red if it holds none.
+	if r.kvTabStage == nil {
+		t.Errorf("%s: the build holds no block-table staging ring", row)
 	}
+	read.Named[mem.LineStaging] = cudaKVRingBytes(r)
 	if r.cacheExperts {
 		read.Named[mem.LinePinnedExperts] = read.Plan.ExpertBytesFull
 	}

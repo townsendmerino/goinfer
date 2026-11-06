@@ -99,7 +99,8 @@ func (r *cudaResident) allocRecurrentSpec(rows int) error {
 				if !mem.DeviceAllocFailed(v) {
 					panic(v)
 				}
-				err = fmt.Errorf("the device allocation failed")
+				err = fmt.Errorf("cuda: speculative recurrent rows (%d rows x %d DeltaNet layers, %.1f MiB): %v", rows, len(dnLayers),
+					mib(int64(total)*4), v)
 			}
 		}()
 		a.buf = r.af(total)

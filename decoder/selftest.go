@@ -62,8 +62,9 @@ var (
 	selfTestResults = map[string]SelfTestResult{}
 	selfTestSkipped atomic.Bool
 	cpuSelfTestOnce sync.Once
-	// selfTestWarn is where a failing self-test announces itself; a variable so a test can capture it.
-	selfTestWarn = func(msg string) { logs.Warnf("%s", msg) }
+	// selfTestWarn, when set, takes a failing self-test's line in place of the log: a test's capture. RecordSelfTest calls logs
+	// itself otherwise, so the record names it as the source.
+	selfTestWarn func(msg string)
 )
 
 // RecordSelfTest stores a backend's result and, if it is not a clean pass, prints one WARN line naming what mismatched. Backends call it from their own startup self-test.
@@ -72,7 +73,11 @@ func RecordSelfTest(r SelfTestResult) {
 	selfTestResults[r.Backend] = r
 	selfTestMu.Unlock()
 	if r.Status == SelfTestRepaired || r.Status == SelfTestDeclined {
-		selfTestWarn("WARN: self-test: " + r.Summary())
+		if msg := "WARN: self-test: " + r.Summary(); selfTestWarn != nil {
+			selfTestWarn(msg)
+		} else {
+			logs.Warnf("%s", msg)
+		}
 	}
 }
 

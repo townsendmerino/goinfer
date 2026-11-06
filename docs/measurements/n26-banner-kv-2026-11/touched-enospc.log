@@ -1,0 +1,21 @@
+touched: 2 .go file(s), 5 changed path(s), 1 module(s), base 8683c750
+  ok   gofmt (0.0s)
+  ok   build root (4.5s)
+  ok   vet root (2 pkg) (1.4s)
+  FAIL test decoder -run ^(TestAdmitPrefillMemory_admitsARequestT (76.2s)
+      --- FAIL: TestDecisionCensus (59.11s)
+          mm1_census_test.go:320: write /tmp/TestDecisionCensus493778629/077/qwen3next-q3next-slice/model.safetensors: no space left on device
+      FAIL
+      FAIL	github.com/townsendmerino/goinfer/decoder	69.273s
+      FAIL
+
+  ok   test internal/app/serveapp -run ^(TestBanner_concurrency|TestBanner_cont (3.4s)
+  ok   test internal/diag/hwcensus -run ^(TestHardwareCensus)$ (0.4s)
+  ok   test internal/diag/kernelprint -run ^(TestCompute_reachesCensus)$ (3.5s)
+  ok   test internal/guard/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/guard/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (1.5s)
+  ok   test internal/runtime/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.6s)
+  ok   test internal/runtime/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.6s)
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 1 of 12 checks failed

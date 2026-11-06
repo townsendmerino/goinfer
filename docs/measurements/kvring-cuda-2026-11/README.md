@@ -7,3 +7,9 @@ The gate (`TestMemGate_cuda`, MM7) compared each plan line with every lease on i
 - **Green** (`green.log`): `TestMemGate_*` pass: the 474-build table, the plants through it, the invariants. Two test changes follow from the line now having a figure: the "no figure" invariant case used `LineStaging` as its example and now uses `LineTest`; a plant of 3 MiB on `LineStaging` is red through the new figure (`TestMemGate_cudaPlantsThroughTheTable/staging`). A first full run of the neighbouring KV, ledger, windowed and recurrent-slot tests had that one invariant case red for exactly this reason (`green-first-try-invariants-red.log`); the other 160 passed.
 - `touched.py` 16 checks pass; `cmd/lint` result in `lint.log`.
 - The windowed grant (`grant`, 1 row) and the dense-vector rows (332) stay in the table.
+
+## Review round 1 (2026-11-06)
+
+- **Merged `origin/main`** (a conflict in the MM8/MM5a rows of `task-subsystems-2026-10.md` from #716; main's wording kept and the KV-staging-ring phrase re-applied). The parity manifest is fresh (`TestParityManifest_fresh`, `TestParityKey*`), so no refresh. `green-after-merge.log`: `TestPlanMemory_*` under `-tags cuda`; `TestMemGate_*`, `TestRecurrentState_*` and `TestLoRAUploadOOM_*` under `-tags 'cuda goinfer_testhooks'`.
+- **The MM8 row's grant figure** was stale: the logs show the windowed rollback grant on `mistral-tiny-window` at 8,192 at 884,736 bytes over the plan once the ring is off the KV line, and 888,832 with the ring's 4,096 on it (`red.log`, `green.log`). The row now says that.
+- **The staging figure is geometry's, not a presence guard's:** every resident build allocates the ring (`kvAllocPools` allocates it unconditionally), so the gate names `cudaKVRingBytes(r)` for every row and is red if a build holds no ring.

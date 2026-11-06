@@ -1,0 +1,25 @@
+=== RUN   TestRecurrentState_everyBufferReadsTheList
+=== RUN   TestRecurrentState_everyBufferReadsTheList/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+WARN: self-test: cuda declined (1088.7 ms), worst cosine 0.99992 (floor 0.995), worst relative L2 0.0124 (ceiling 0.10) over 4 fixtures; qwen35vl-tiny decode: the resident forward failed at position 0: cuda: upload of 1568 bytes at offset 0 overruns a 1536-byte buffer; qwen35-tiny decode: the resident forward failed at position 0: cuda: upload of 1568 bytes at offset 0 overruns a 1536-byte buffer
+[resident] startup self-test declined this backend: qwen35vl-tiny decode: the resident forward failed at position 0: cuda: upload of 1568 bytes at offset 0 overruns a 1536-byte buffer; qwen35-tiny decode: the resident forward failed at position 0: cuda: upload of 1568 bytes at offset 0 overruns a 1536-byte buffer — continuing on the CPU/staged path
+    mamba_guards_test.go:1163: the model did not build a CUDA resident (got <nil>): the build declined; see the [resident] line above
+=== RUN   TestRecurrentState_everyBufferReadsTheList/olmo_hybrid-tiny
+[resident] startup self-test declined this backend: qwen35vl-tiny decode: the resident forward failed at position 0: cuda: upload of 1568 bytes at offset 0 overruns a 1536-byte buffer; qwen35-tiny decode: the resident forward failed at position 0: cuda: upload of 1568 bytes at offset 0 overruns a 1536-byte buffer — continuing on the CPU/staged path
+    mamba_guards_test.go:1163: the model did not build a CUDA resident (got <nil>): the build declined; see the [resident] line above
+=== RUN   TestRecurrentState_everyBufferReadsTheList/nemotron-tiny
+[resident] startup self-test declined this backend: qwen35vl-tiny decode: the resident forward failed at position 0: cuda: upload of 1568 bytes at offset 0 overruns a 1536-byte buffer; qwen35-tiny decode: the resident forward failed at position 0: cuda: upload of 1568 bytes at offset 0 overruns a 1536-byte buffer — continuing on the CPU/staged path
+    mamba_guards_test.go:1163: the model did not build a CUDA resident (got <nil>): the build declined; see the [resident] line above
+--- FAIL: TestRecurrentState_everyBufferReadsTheList (1.21s)
+    --- FAIL: TestRecurrentState_everyBufferReadsTheList/qwen35-tiny (1.09s)
+    --- FAIL: TestRecurrentState_everyBufferReadsTheList/olmo_hybrid-tiny (0.00s)
+    --- FAIL: TestRecurrentState_everyBufferReadsTheList/nemotron-tiny (0.00s)
+FAIL
+ledger: 4 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	1.270s
+FAIL

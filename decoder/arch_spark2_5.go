@@ -25,7 +25,7 @@ import (
 //   - inv_freq is recomputed per forward in the reference (not a cached persistent=False buffer), so there is no internlm2-class
 //     fast-init corruption risk on this family.
 func spark25Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	if hd != 256 {
 		// Not a hard architectural requirement — but every released Spark-X2.5 config sets it,
 		// and a silently-different value would mean this doc comment's verified claims about the
