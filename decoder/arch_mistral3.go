@@ -27,7 +27,7 @@ func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "mistral3"); err != nil {
 		return nil, nil, err
 	}
-	if err := cfg.validateLlama(); err != nil {
+	if err := cfg.ValidateLlama(); err != nil {
 		return nil, nil, err
 	}
 	base, scaling, err := ropeBaseFlatOrNested(cfg, "mistral3")
@@ -61,7 +61,7 @@ func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}
 	_ = json.Unmarshal(cfg.RopeParameters, &attnTemp)
 
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	var layerIsGlobal func(int) bool
 	if cfg.SlidingWindow > 0 {
 		layerIsGlobal = func(int) bool { return false }
@@ -88,7 +88,7 @@ func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		layerIsGlobal:      layerIsGlobal,
 		RoPELocalBase:      base,
 		RoPEGlobalBase:     base,
-		RotaryDim:          cfg.rotaryDim(),
+		RotaryDim:          cfg.RotaryDim(),
 		ropeScaling:        scaling,
 		EmbedScale:         0,
 		TiedLMHead:         false, // finalized from lm_head.weight presence at load

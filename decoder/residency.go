@@ -14,6 +14,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/adapter"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // isWebGPUBackend reports whether a Backend.Name() string names the webgpu backend. NOT a plain
@@ -798,7 +799,7 @@ func (m *Model) Gemma4MoEResidentLayer(l int) (b Gemma4MoEResidentBundle, ok boo
 		// loaded non-f32) surfaces as this instead of the caller's unrelated "gate/up/down
 		// proj zero-shape" error further down — the same reasoning as cuda/backend.go's own
 		// "router is %q, not f32" decline for the generic (non-gemma4) MoE path.
-		fmt.Fprintf(os.Stderr, "[resident] gemma4 MoE layer %d: router is %q, not f32 — declining\n", l, gm.routerProj.Kind())
+		logs.Warnf("[resident] gemma4 MoE layer %d: router is %q, not f32 — declining", l, gm.routerProj.Kind())
 		return b, false
 	}
 	if len(gm.routerScale) != m.w.arch.HiddenDim {
@@ -1192,7 +1193,7 @@ func (m *Model) withResidency() *Model {
 	// producing wrong numbers silently.
 	if r, ran := gpuProbeBeforeResident(m); ran && r.Status == SelfTestDeclined {
 		m.resDecline = describeProbe(r)
-		fmt.Fprintf(os.Stderr, "[resident] %s — continuing on the CPU/staged path\n", m.resDecline)
+		logs.Infof("[resident] %s — continuing on the CPU/staged path", m.resDecline)
 		return m
 	}
 	rf, ok, err := rb.BuildResident(m)
@@ -1204,7 +1205,7 @@ func (m *Model) withResidency() *Model {
 	if err != nil || !ok {
 		// Unconditional, for the same reason as the cuda side: a decline moves the entire forward to
 		// CPU, and the runtime's contract is to say so rather than quietly get slower.
-		fmt.Fprintf(os.Stderr, "[resident] BuildResident declined (ok=%v err=%v) — continuing on the CPU/staged path\n", ok, err)
+		logs.Warnf("[resident] BuildResident declined (ok=%v err=%v) — continuing on the CPU/staged path", ok, err)
 		// Falls back for correctness (a decline must never be fatal mid-load) but keeps the REASON: on a GPU backend this
 		// is the whole forward moving to CPU.
 		m.resDecline = buildDeclineReason(err)

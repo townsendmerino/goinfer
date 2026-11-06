@@ -17,6 +17,9 @@ import (
 
 // --- OpenAI: POST /v1/files, GET /v1/files/{id}, GET /v1/files/{id}/content ---
 
+// fileNotFound answers an id the store does not hold. A client may hold one the server really gave it, so it says why that can happen.
+const fileNotFound = "file not found: an unknown id, or a file dropped to stay within the store's limits (256 files, -max-file-store-bytes)"
+
 func (s *server) handleCreateFile(w http.ResponseWriter, r *http.Request) {
 	form, ok := parseUpload(w, r, "invalid multipart/form-data body")
 	if !ok {
@@ -52,7 +55,7 @@ func fileObject(f *storedFile) map[string]any {
 func (s *server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 	f := s.files.get(r.PathValue("id"))
 	if f == nil {
-		writeErr(w, http.StatusNotFound, "file not found")
+		writeErr(w, http.StatusNotFound, fileNotFound)
 		return
 	}
 	writeJSON(w, http.StatusOK, fileObject(f))
@@ -61,7 +64,7 @@ func (s *server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleGetFileContent(w http.ResponseWriter, r *http.Request) {
 	f := s.files.get(r.PathValue("id"))
 	if f == nil {
-		writeErr(w, http.StatusNotFound, "file not found")
+		writeErr(w, http.StatusNotFound, fileNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")

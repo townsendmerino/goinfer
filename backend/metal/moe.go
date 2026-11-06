@@ -11,10 +11,12 @@ package metal
 import (
 	"errors"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"os"
 	"strconv"
 	"sync"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -239,7 +241,7 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 			if f, err := os.Open(p); err == nil {
 				mo.giwFile = f
 			} else {
-				fmt.Fprintf(os.Stderr, "metal MoE: open(%s) failed (%v) — using mmap byte-copy\n", p, err)
+				logs.Warnf("metal MoE: open(%s) failed (%v) — using mmap byte-copy", p, err)
 			}
 		}
 	}

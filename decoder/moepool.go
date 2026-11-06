@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -127,7 +128,7 @@ func preadFull(f *os.File, dst []byte, off int64) error {
 		n, err := f.ReadAt(dst[done:], off+int64(done))
 		done += n
 		if err != nil {
-			if err == io.EOF && done >= len(dst) {
+			if errors.Is(err, io.EOF) && done >= len(dst) {
 				break
 			}
 			return err

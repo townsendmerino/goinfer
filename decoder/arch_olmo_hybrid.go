@@ -26,7 +26,7 @@ import (
 //
 // No MoE variant exists; the FFN is a plain dense SwiGLU on every layer, with the same tensor names as olmo3/llama.
 func olmoHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if err := cfg.validateOlmoHybrid(); err != nil {
+	if err := cfg.ValidateOlmoHybrid(); err != nil {
 		return nil, nil, err
 	}
 	// rope_parameters on this family is always the FLAT {"rope_theta": ...} shape (never Olmo 3's
@@ -51,7 +51,7 @@ func olmoHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		}
 		scaling = sc
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	linearPlacement := NormPre2
 	return &Architecture{
 		Name:                "olmo_hybrid",

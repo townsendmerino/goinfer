@@ -138,3 +138,30 @@ are kernel tests on real devices, real-binary tests and layout guards.
 - **The 2^15 config probe swapped the Mac** during that gate (load 72), because it was run without a memory bound.
 - **Three tests skip on CI because their fixture is gitignored:** `TestGranite_textParity`, `TestQwen3VL_textParity` and
   `TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped`. They ran here on cloned fixtures.
+
+## Follow-up, 2026-11-06
+
+A review of the merged branch found four gaps, all closed on `test-followups-2026-11`, each shown red on a planted defect:
+
+- **`TestRequestLog_wiredIntoTheGenerationRoutes` did not check that `-log-requests` turns logging on.** It passed its own writer to
+  the route table, and both entry points decided that writer from the flag themselves. The route table now decides it from the
+  config, and the test builds the table from the parsed flags, on and off.
+- **The Qwen3 limits still admitted about 1.6 GB of pixel values per image** (`temporal_patch_size` 4 at a 32 Mi-pixel budget), and
+  the fuzz target capped the budget before preprocessing, so it could not see that. The limits are now the largest released config's
+  (temporal 2, a 2^24-pixel budget), the Qwen2.5-VL loader checks them too, and the fuzz target checks the grid for any admitted image
+  size against the Qwen3.5 config's largest, by arithmetic.
+- **No case reached the `patch_size * merge_size` clause:** each one had a factor past the limit on its own. 64 x 32 does.
+- **`qwen3_next`'s `deps_hash` did not cover `textParity`**, where its text-parity check moved. Its record now lists
+  `decoder/text_parity_test.go`, and `TestTextParity_hashedWithItsUsers` holds any record that lists a user of the helper to it.
+
+Working the second gap turned up a worse request-side case: `smart_resize` floors a thin image's short side to one cell without shrinking
+the long side, so under the shipped Qwen3.5 config a 1 x 1,048,576 PNG resized to a 32 x 4,194,304 grid. `QwenPreprocess` now refuses
+an aspect ratio past 200, as HF's `smart_resize` does (transformers 5.9.0, Qwen2-VL's and GLM-4V's), and any grid past 2^24 pixels.
+
+A second review, of the follow-up branch, found more. Fixed: `qwenResizeGrid` let a 0 x 0 size through to `qwenSmartResize`, which
+divided by its zero area; the Qwen2.5-VL loader accepted a zero in `image_std`, which only the Qwen3 parser refused (both now go
+through `checkLimits`); no case reached `checkLimits`' positive-size clause. Each fix is red on its plant. The fuzz target's
+property holds through `qwenResizeGrid`'s grid cap when one limit is loosened, so its doc now says the table and aspect tests pin
+the limits, not the fuzz seeds. Not changed: `TestTextParity_hashedWithItsUsers` checks only records that list a `textParity`
+user. A record hashes the sources its numerics depend on; 33 of 43 list no test file, so a change to any of their tests,
+the helper included, does not re-stale them, and that is the manifest's policy rather than this test's gap.

@@ -14,7 +14,7 @@ import (
 // mscale) on the full layers and plain RoPE on the sliding layers, both at theta
 // 500000.
 func mellumArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if err := cfg.validateMellum(); err != nil {
+	if err := cfg.ValidateMellum(); err != nil {
 		return nil, nil, err
 	}
 	full, sliding, err := parseRopeParameters(cfg.RopeParameters)
@@ -24,7 +24,7 @@ func mellumArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if full == nil || sliding == nil {
 		return nil, nil, fmt.Errorf("decoder(mellum): rope_parameters needs full_attention + sliding_attention")
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	normTopK := true
 	if cfg.NormTopKProb != nil {
 		normTopK = *cfg.NormTopKProb
@@ -57,7 +57,7 @@ func mellumArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		RoPELocalBase:    sliding.base,      // sliding_attention layers (same theta, plain)
 		ropeScaling:      full.scaling,      // YaRN on full layers
 		ropeScalingLocal: sliding.scaling,   // nil (plain) on sliding layers
-		RotaryDim:        cfg.rotaryDim(),
+		RotaryDim:        cfg.RotaryDim(),
 		EmbedScale:       0,
 		TiedLMHead:       false, // finalized from lm_head.weight presence at load
 	}, &mellumTensorSchema, nil

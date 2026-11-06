@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -245,7 +246,7 @@ func (jb *quickJob) runLint() {
 	out, err := cmd.CombinedOutput()
 	jb.Out = string(out)
 	if err != nil {
-		if _, isExit := err.(*exec.ExitError); !isExit {
+		if _, isExit := errors.AsType[*exec.ExitError](err); !isExit {
 			jb.Err = err // could not start: a red, never a silent skip
 		}
 		jb.RC = exitCode(err)
@@ -256,7 +257,7 @@ func exitCode(err error) int {
 	if err == nil {
 		return 0
 	}
-	if ee, ok := err.(*exec.ExitError); ok {
+	if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 		return ee.ExitCode()
 	}
 	return -1

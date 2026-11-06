@@ -52,8 +52,11 @@ func QwenDefaultPreprocess() QwenPreprocessConfig {
 // while a stripped checkpoint still works on the standard defaults.
 func LoadQwenPreprocessConfig(dir string) (QwenPreprocessConfig, error) {
 	cfg := QwenDefaultPreprocess()
-	raw, err := os.ReadFile(filepath.Join(dir, "preprocessor_config.json"))
+	raw, found, err := readOptionalConfig(dir, "preprocessor_config.json")
 	if err != nil {
+		return cfg, fmt.Errorf("multimodal(qwen): %w", err)
+	}
+	if !found {
 		return cfg, nil // no file: standard Qwen2.5-VL defaults
 	}
 	var pc struct {
@@ -88,6 +91,9 @@ func LoadQwenPreprocessConfig(dir string) (QwenPreprocessConfig, error) {
 	}
 	if len(pc.ImageStd) == 3 {
 		cfg.Std = [3]float32{pc.ImageStd[0], pc.ImageStd[1], pc.ImageStd[2]}
+	}
+	if err := cfg.checkLimits(); err != nil {
+		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen): %w", err)
 	}
 	return cfg, nil
 }
@@ -164,36 +170,75 @@ func ParseQwen3PreprocessConfig(raw []byte) (QwenPreprocessConfig, error) {
 		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): preprocessor_config is missing patch_size/merge_size/temporal_patch_size")
 	case len(pc.ImageMean) != 3 || len(pc.ImageStd) != 3:
 		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): preprocessor_config is missing image_mean/image_std")
-	case pc.PatchSize > qwenMaxPatchFactor || pc.MergeSize > qwenMaxPatchFactor || pc.PatchSize*pc.MergeSize > qwenMaxPatchFactor || pc.TemporalPatchSize > qwenMaxTemporalPatch:
-		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): preprocessor_config patch_size %d, merge_size %d, temporal_patch_size %d: patch_size*merge_size may be at most %d and temporal_patch_size at most %d",
-			pc.PatchSize, pc.MergeSize, pc.TemporalPatchSize, qwenMaxPatchFactor, qwenMaxTemporalPatch)
-	case pc.Size.Longest > qwenMaxInputPixels || pc.Size.Shortest > pc.Size.Longest:
-		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): preprocessor_config size %d to %d pixels: want shortest_edge at most longest_edge, and longest_edge at most %d",
-			pc.Size.Shortest, pc.Size.Longest, qwenMaxInputPixels)
 	}
-	if slices.Contains(pc.ImageStd, 0) {
-		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): image_std has a zero")
-	}
-	return QwenPreprocessConfig{
+	cfg := QwenPreprocessConfig{
 		PatchSize: pc.PatchSize, MergeSize: pc.MergeSize, TemporalPatchSize: pc.TemporalPatchSize,
 		MinPixels: pc.Size.Shortest, MaxPixels: pc.Size.Longest,
 		Mean:           [3]float32{pc.ImageMean[0], pc.ImageMean[1], pc.ImageMean[2]},
 		Std:            [3]float32{pc.ImageStd[0], pc.ImageStd[1], pc.ImageStd[2]},
 		FusedNormalize: true,
-	}, nil
+	}
+	if err := cfg.checkLimits(); err != nil {
+		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): %w", err)
+	}
+	return cfg, nil
 }
 
 // qwenMaxInputPixels bounds the raw (pre-resize) image area QwenPreprocess will allocate for, independent of cfg.MaxPixels (which
 // caps only the resized output). ~33.5 MP: above any real camera image, below the memory a decompression bomb would demand.
 const qwenMaxInputPixels = 32 * 1024 * 1024
 
-// A config sizes every image's allocations: each image resizes to at least one patch_size*merge_size cell a side, and the output
-// holds a patch's pixels per temporal frame. These bound what ParseQwen3PreprocessConfig accepts, above any released config's
-// (16*2 and 2), so a hostile or corrupt file is an error at load and not a crash on the first image.
+// The largest values a released Qwen VL processor config sets: patch_size*merge_size 32, temporal_patch_size 2, and a 2^24-pixel
+// budget (Qwen3-VL's and Qwen3.5's longest_edge). With checkLimits and qwenResizeGrid, one image's pixel_values are never larger
+// than under the Qwen3.5 config's own budget.
 const (
 	qwenMaxPatchFactor   = 1 << 10
-	qwenMaxTemporalPatch = 1 << 2
+	qwenMaxTemporalPatch = 2
+	qwenMaxPixelBudget   = 1 << 24
 )
+
+// checkLimits refuses a config whose sizes no released model has, or whose image_std has a zero (normalization divides by it), so a
+// hostile or corrupt preprocessor_config.json is an error at load, not a crash or an unbounded allocation on the first image.
+func (c QwenPreprocessConfig) checkLimits() error {
+	switch {
+	case slices.Contains(c.Std[:], 0):
+		return fmt.Errorf("preprocessor_config image_std %v has a zero", c.Std)
+	case c.PatchSize <= 0 || c.MergeSize <= 0 || c.TemporalPatchSize <= 0 || c.MinPixels <= 0:
+		return fmt.Errorf("preprocessor_config patch_size %d, merge_size %d, temporal_patch_size %d and min pixels %d must be positive",
+			c.PatchSize, c.MergeSize, c.TemporalPatchSize, c.MinPixels)
+	case c.PatchSize > qwenMaxPatchFactor || c.MergeSize > qwenMaxPatchFactor || c.PatchSize*c.MergeSize > qwenMaxPatchFactor || c.TemporalPatchSize > qwenMaxTemporalPatch:
+		return fmt.Errorf("preprocessor_config patch_size %d, merge_size %d, temporal_patch_size %d: patch_size*merge_size may be at most %d and temporal_patch_size at most %d",
+			c.PatchSize, c.MergeSize, c.TemporalPatchSize, qwenMaxPatchFactor, qwenMaxTemporalPatch)
+	case c.MaxPixels > qwenMaxPixelBudget || c.MinPixels > c.MaxPixels:
+		return fmt.Errorf("preprocessor_config pixel budget %d to %d: want the minimum at most the maximum, and the maximum at most %d",
+			c.MinPixels, c.MaxPixels, qwenMaxPixelBudget)
+	}
+	return nil
+}
+
+// qwenMaxAspect is the aspect ratio past which HF's smart_resize raises instead of returning a size.
+const qwenMaxAspect = 200
+
+// qwenResizeGrid is the size an h x w image resizes to under cfg, and refuses an empty size. Like HF's smart_resize it refuses an aspect ratio past
+// qwenMaxAspect: smart_resize floors a short side to one cell without shrinking the long side to match, so a thinner image would
+// resize to many times the config's budget. It also refuses a grid past qwenMaxPixelBudget, which a config whose cell is large
+// against its budget can still reach.
+func qwenResizeGrid(h, w int, cfg QwenPreprocessConfig) (hb, wb int, err error) {
+	if err := cfg.checkLimits(); err != nil {
+		return 0, 0, fmt.Errorf("multimodal(qwen): %w", err)
+	}
+	if h <= 0 || w <= 0 {
+		return 0, 0, fmt.Errorf("multimodal(qwen): a %dx%d image is empty", w, h)
+	}
+	if max(h, w) > qwenMaxAspect*min(h, w) {
+		return 0, 0, fmt.Errorf("multimodal(qwen): a %dx%d image has an aspect ratio past %d", w, h, qwenMaxAspect)
+	}
+	hb, wb = qwenSmartResize(h, w, cfg.PatchSize*cfg.MergeSize, cfg.MinPixels, cfg.MaxPixels)
+	if int64(hb)*int64(wb) > qwenMaxPixelBudget {
+		return 0, 0, fmt.Errorf("multimodal(qwen): a %dx%d image resizes to %dx%d, past the %d-pixel limit", w, h, wb, hb, qwenMaxPixelBudget)
+	}
+	return hb, wb, nil
+}
 
 // QwenPreprocess turns image bytes into the Qwen2.5-VL vision input. Returns the
 // flattened pixel_values and grid_thw = (1, grid_h, grid_w) for a single image.
@@ -226,8 +271,10 @@ func QwenPreprocess(data []byte, cfg QwenPreprocessConfig) ([]float32, [3]int, e
 	if int64(h)*int64(w) > qwenMaxInputPixels {
 		return nil, [3]int{}, fmt.Errorf("multimodal(qwen): image %dx%d exceeds %d-pixel input limit", w, h, qwenMaxInputPixels)
 	}
-	factor := cfg.PatchSize * cfg.MergeSize
-	hb, wb := qwenSmartResize(h, w, factor, cfg.MinPixels, cfg.MaxPixels)
+	hb, wb, err := qwenResizeGrid(h, w, cfg)
+	if err != nil {
+		return nil, [3]int{}, err
+	}
 
 	// norm[(y*wb+x)*3+c] = resized, rescaled, CLIP-normalized channel value.
 	norm := qwenResizeNormalize(img, h, w, hb, wb, cfg)
@@ -274,10 +321,8 @@ func qwenSmartResize(h, w, factor, minPixels, maxPixels int) (int, int) {
 	wb := max(factor, roundF(w))
 	if hb*wb > maxPixels {
 		beta := math.Sqrt(float64(h*w) / float64(maxPixels))
-		// HF's smart_resize raises ValueError past aspect ratio 200 instead of returning a shape; this function returns (int, int) with no
-		// error, and changing that ripples through every caller for what upstream treats as a malformed-input rejection. max(factor, …) below
-		// is the deliberate choice: an extreme ratio would floor a dimension to 0 and give empty pixel_values with no error, so it floors to one
-		// cell, a degraded but non-crashing grid on an input real models do not produce.
+		// HF's smart_resize raises ValueError past aspect ratio 200; qwenResizeGrid makes that refusal before calling this. max(factor, …)
+		// keeps a side that would floor to 0, which gives empty pixel_values with no error, at one cell.
 		hb = max(factor, int(math.Floor(float64(h)/beta/float64(factor)))*factor)
 		wb = max(factor, int(math.Floor(float64(w)/beta/float64(factor)))*factor)
 	} else if hb*wb < minPixels {

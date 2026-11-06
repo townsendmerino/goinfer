@@ -1,0 +1,9 @@
+=== RUN   TestBanner_fitLineAfterADeclineIsClampedToTheModelWindow
+[resident] BuildResident declined (ok=false err=resident path declined: no card in this test) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: no card in this test) — continuing on the CPU/staged path
+    banner_test.go:396: a pin of 1024 past the window 128 after a decline: fit ctx 1024, KV 786432 bytes; want ctx 128, KV 98304
+    banner_test.go:399: the banner's fit line prices a context other than the window 128: "fit: 1024-token cap needs 0.0 GB KV (weights 0.0 GB, budget 42.0 GB, 42.0 GB left for a request's own prefill)"
+--- FAIL: TestBanner_fitLineAfterADeclineIsClampedToTheModelWindow (0.01s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/app/serveapp	0.011s
+FAIL

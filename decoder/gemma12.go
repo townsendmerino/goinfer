@@ -25,7 +25,7 @@ import (
 // base, the attention-score softcap (attn_logit_softcapping, 50 on the releases) and the final-logit softcap
 // (final_logit_softcapping, 30).
 
-func (c *Config) validateGemma12(arch string) error {
+func (c *Config) ValidateGemma12(arch string) error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.HeadDim == 0 || c.IntermediateDim == 0:
 		return fmt.Errorf("decoder(%s): missing required dim (hidden=%d layers=%d heads=%d head_dim=%d inter=%d)",
@@ -99,7 +99,7 @@ func gemmaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.HeadDim == 0 {
 		cfg.HeadDim = 256 // GemmaConfig's default; both releases set it
 	}
-	if err := cfg.validateGemma12("gemma"); err != nil {
+	if err := cfg.ValidateGemma12("gemma"); err != nil {
 		return nil, nil, err
 	}
 	if cfg.FinalLogitSoftcap != 0 || cfg.AttnLogitSoftcap != 0 || cfg.SlidingWindow != 0 {
@@ -129,7 +129,7 @@ func gemma2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if len(cfg.LayerTypes) == 0 && cfg.SlidingWindowPattern == 0 {
 		cfg.SlidingWindowPattern = 2 // before layer_types: every other layer from 0 is sliding (HF's layer_idx % 2 == 0)
 	}
-	if err := cfg.validateGemma12("gemma2"); err != nil {
+	if err := cfg.ValidateGemma12("gemma2"); err != nil {
 		return nil, nil, err
 	}
 	if cfg.SlidingWindow <= 0 {

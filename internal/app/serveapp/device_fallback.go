@@ -3,9 +3,9 @@ package serveapp
 import (
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
@@ -15,14 +15,6 @@ import (
 // (or the process) is worse than a slower tower. Only a device memory failure triggers it: any other error is the
 // caller's. Under -require-backend there is no fallback: the request fails with the reason and the device tower stays
 // (a smaller image may fit), because -require-backend means "never run off the requested backend", at load or later.
-
-func isDeviceMemoryError(err error) bool {
-	if err == nil {
-		return false
-	}
-	m := err.Error()
-	return strings.Contains(m, "OUT_OF_MEMORY") || strings.Contains(m, "device allocation failed")
-}
 
 // deviceFallback guards one grid tower's accelerator. Calls through the accelerator are serialized here (the accelerators serialize themselves anyway); the CPU path is not.
 type deviceFallback struct {
@@ -44,7 +36,7 @@ func (f *deviceFallback) run(family string, require bool, accp *multimodal.GridT
 		return fn(nil)
 	}
 	out, err := recoverDeviceTower(family, func() ([]float32, error) { return fn(acc) })
-	if err == nil || !isDeviceMemoryError(err) {
+	if !mem.DeviceOutOfMemory(err) {
 		f.mu.Unlock()
 		return out, err
 	}

@@ -182,32 +182,21 @@ type censusFamily struct {
 	dir        bool
 }
 
-// censusFamilies lists every tracked tiny checkpoint: directories with a config.json and weights, and the tiny .gguf files.
+// censusFamilies is censusFixtures, each of which must be on disk: a missing one is a red run, not a smaller census.
 func censusFamilies(t *testing.T) []censusFamily {
 	t.Helper()
 	var fams []censusFamily
-	for _, root := range []string{"../testdata", "testdata", "selftestdata", "../internal/vision/testdata"} {
-		ents, err := os.ReadDir(root)
-		if err != nil {
-			continue
-		}
-		for _, e := range ents {
-			p := filepath.Join(root, e.Name())
-			switch {
-			case e.IsDir():
-				ws, _ := filepath.Glob(filepath.Join(p, "*.safetensors"))
-				if _, err := os.Stat(filepath.Join(p, "config.json")); err != nil || len(ws) == 0 {
-					continue
-				}
-				fams = append(fams, censusFamily{name: censusName(p), path: p, dir: true})
-			case strings.HasSuffix(e.Name(), ".gguf"):
-				fams = append(fams, censusFamily{name: censusName(p), path: p})
+	for _, p := range censusFixtures {
+		f := censusFamily{name: censusName(p), path: p, dir: !strings.HasSuffix(p, ".gguf")}
+		if f.dir {
+			ws, _ := filepath.Glob(filepath.Join(p, "*.safetensors"))
+			if _, err := os.Stat(filepath.Join(p, "config.json")); err != nil || len(ws) == 0 {
+				t.Fatalf("census fixture %s has no config.json and weights here", p)
 			}
+		} else if _, err := os.Stat(p); err != nil {
+			t.Fatalf("census fixture %s: %v", p, err)
 		}
-	}
-	split := filepath.Join("..", "testdata", "gguf-split", "glm-tiny-00001-of-00004.gguf")
-	if _, err := os.Stat(split); err == nil {
-		fams = append(fams, censusFamily{name: "testdata/gguf-split/glm-tiny-00001-of-00004.gguf", path: split})
+		fams = append(fams, f)
 	}
 	sort.Slice(fams, func(i, j int) bool { return fams[i].name < fams[j].name })
 	return fams
