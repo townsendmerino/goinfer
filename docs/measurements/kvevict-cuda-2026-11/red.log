@@ -1,0 +1,16 @@
+=== RUN   TestKV4_batchedStepEvictsTheLeastRecentlyWrittenIdleSlot
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6808 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: released slot 3's 240 blocks (idle, the least recently used) for slot 1, which is past its share of 256
+    kv4_capacity_test.go:2208: after the step slot 0 (least recently written, bound, idle) holds 240 blocks and slot 3 (written later) holds 0; want slot 0 released and slot 3 kept
+--- FAIL: TestKV4_batchedStepEvictsTheLeastRecentlyWrittenIdleSlot (2.52s)
+FAIL
+ledger: 6 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	2.586s
+FAIL

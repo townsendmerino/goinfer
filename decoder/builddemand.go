@@ -211,14 +211,18 @@ type fitMemo struct {
 	prog *layerProgram // the loaded architecture's program, for admission
 }
 
-// factsFor is cfg's facts on backend (zero for a nil cfg or one that does not resolve), from the memo where it has them.
+// factsFor is cfg's facts on backend (zero for one that does not resolve), from the memo where it has them. A nil cfg gets zero
+// facts and leaves the memo as it was.
 func (memo *fitMemo) factsFor(cfg *Config, backend string) archFacts {
+	if cfg == nil {
+		return archFacts{}
+	}
 	memo.mu.Lock()
 	defer memo.mu.Unlock()
 	if a, ok := memo.facts[backend]; ok {
 		return a
 	}
-	if !memo.derived && cfg != nil {
+	if !memo.derived {
 		memo.derived = true
 		c := *cfg
 		if arch, _, err := resolveArchitecture(&c); err == nil {
