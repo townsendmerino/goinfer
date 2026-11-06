@@ -17,7 +17,7 @@
 
 ## CUDA read, 2026-11-06 05:36 to 05:57 PST: 26 of 26 PASS, no skip, no red
 
-`reading.log`, `reading/<group>.log` (go test -v). The exclusive timing lock, nobara's 2070 SUPER, `GOINFER_HEAVY_TESTS=1`; wall 20 min 39 s (05:36:42 to 05:57:21) against the 2 h cap (the registered expectation was 1 to 1.5 h; the 4B/drafter tests take 13 to 30 s each, and the longest, `TestDefaultVerifyWidth_sweep`, 244 s).
+`reading-first.log`, `reading-first/<group>.log` (go test -v). The exclusive timing lock, nobara's 2070 SUPER, `GOINFER_HEAVY_TESTS=1`; wall 20 min 39 s (05:36:42 to 05:57:21) against the 2 h cap (the registered expectation was 1 to 1.5 h; the 4B/drafter tests take 13 to 30 s each, and the longest, `TestDefaultVerifyWidth_sweep`, 244 s).
 
 | group | tests (top-level) | result | go test wall |
 |---|---|---|---|
@@ -37,3 +37,7 @@ The nine `backend/metal` functions are un-skipped too and were not run (sb11m, o
 
 Review of this PR (no product bug found) asked for four fixes, all in this commit: (1) `AssetPathForTest` and the decoder gates' `assetPath` fail the test (`t.Fatal`) when the registry cannot be read or parsed, and still skip for absent weights (`TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip`, red in `red-fatal.log`, green in `green-fatal.log`); (2) the four `TestAssetRegistry_*` scan rules in `scripts/touched_scans.py` also trigger on `decoder/assets.go` (and the new one on `testdata/assets.json`); (3) `run-cuda-read.sh` makes `reading/` itself and takes the exclusive timing lock itself (it re-runs under `timing_lock.py` unless a holder's token is in the environment); (4) `assetRoot()` looks in the working directory first, with a repository-root case in `TestAssetRegistry_resolvesFromEveryCallerDir` (red in `red-root.log`, green in `green2.log`). `touched2.log`: 12 checks green.
 **The CUDA read is run again** on the final tree through the amended script (the first read, above, ran the earlier `assetRoot`, and the script's lock step is new): same seven groups, same timeouts, same rule, cost about 21 minutes, expected done by about 21 minutes after the start below. The first read stays on record.
+
+### The second CUDA read, 2026-11-06 06:23:37 to 06:43:42 PST: 26 of 26 PASS again, no skip, no red
+
+`reading.log`, `reading/<group>.log`, through the amended script (it took the exclusive lock itself and made `reading/`), on the final tree: mrope 3, qwen35vl 1, qwen25vl 2, glmocr 3, gptoss 1, cohere 1, drafters 15, all PASS, zero `--- SKIP` and zero `--- FAIL`; wall 20 min 5 s. Nothing to classify. The first read is `reading-first.log` and `reading-first/`.

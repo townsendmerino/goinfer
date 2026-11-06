@@ -1,0 +1,25 @@
+=== RUN   TestGptOssResidentParityCUDA
+decoder: fit is tight — gpt-oss-20b-MXFP4.gguf needs ~32.0 GB of host memory while building the CUDA expert cache (11.0 GB weights + 11.0 GB packed copy + 10.0 GB pinned copy of the experts); this machine currently has 59.9 GB of memory available (budget 41.9 GB = 70% of that) (76% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[cuda] C′ cache: 32 slots/layer would need 10.8 GB VRAM but only 5.9 GB free — capping to 16 (5.4 GB)
+cuda: prefill width 2048 rows (194 MiB of scratch; 282 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[gptoss-cuda] resident built in 22s
+decoder: context capped at 91702 (model allows 131072) so that KV fits: weights 11.0 GB + KV 4.2 GB of budget 26.5 GB — pass -ctx to choose, or -stream-weights to lift
+[gptoss-cuda] step 1/8 cos=0.997083 elapsed=32s
+[gptoss-cuda] step 2/8 cos=0.999195 elapsed=32s
+[gptoss-cuda] step 3/8 cos=0.998675 elapsed=32s
+[gptoss-cuda] step 4/8 cos=0.997838 elapsed=33s
+[gptoss-cuda] step 5/8 cos=0.997010 elapsed=33s
+[gptoss-cuda] step 6/8 cos=0.995484 elapsed=33s
+[gptoss-cuda] step 7/8 cos=0.998602 elapsed=33s
+[gptoss-cuda] step 8/8 cos=0.997096 elapsed=33s
+    gptoss_real20b_test.go:88: gpt-oss-20b REAL resident parity (cuda, --moe-cache-experts): 7/8 argmax-exact, min cosine 0.995484
+--- PASS: TestGptOssResidentParityCUDA (35.32s)
+PASS
+ledger: 5 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	36.925s
