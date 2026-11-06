@@ -58,7 +58,7 @@ func TestKSD2_steelHeadDims(t *testing.T) {
 						out := NewBufferU16s(d, make([]uint16, Mpad*qDim))
 						args := []Buffer{bQ, bK, bV, out, NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, uint32(hd)),
 							NewBufferU32(d, uint32(start)), NewBufferFloats(d, []float32{scale}), NewBufferU32(d, uint32(stride)),
-							NewBufferU32(d, uint32(window)), NewBufferU32(d, uint32(M))}
+							NewBufferU32(d, uint32(window)), NewBufferU32(d, uint32(M)), kvIdentityTable(d)}
 						e := q.Begin()
 						if steel {
 							e.Dispatch(pSteel, nH*((M+31)/32)*128, 128, args...)
