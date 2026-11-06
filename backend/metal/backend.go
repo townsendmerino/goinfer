@@ -480,7 +480,7 @@ func metalKVSlots(m *decoder.Model) int {
 	if err != nil || ram == 0 {
 		return 1
 	}
-	budget, need := metalMemoryCeiling(ram), residentNeedBytes(m)
+	budget, need := metalMemoryCeiling(ram), residentNeedBytes(m)+metalRaisedTableBytes(m, n)
 	got := kvSlotsWithin(n, budget, need, metalSlotBytes(m))
 	// An unpinned slot count gives up a slot for the batched step's scratch, since a default slot is worth less than batched prefill,
 	// but only where the step then fits. A count the caller asked for keeps its slots, and the step declines if it no longer fits.
@@ -496,6 +496,16 @@ func metalKVSlots(m *decoder.Model) int {
 			got, n, float64(metalSlotBytes(m))/(1<<20), got)
 	}
 	return got
+}
+
+// metalRaisedTableBytes is what n slots' block tables add at one conversation's raised cap (decoder.Model.MetalKVTableRaiseBytes), priced
+// for the most slots asked: fewer raise the cap less.
+func metalRaisedTableBytes(m *decoder.Model, n int) int64 {
+	ctxCap, err := resolveMetalCtxCap(m)
+	if err != nil {
+		ctxCap = metalCtxCapMax
+	}
+	return m.MetalKVTableRaiseBytes(n, ctxCap)
 }
 
 // metalSlotBytes is what each KV slot after the first costs: its KV at the resident context, and its own recurrent state
@@ -1450,7 +1460,7 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	if e := a.checkCap(base, n); e != nil {
 		return e
 	}
-	a.r.kvQuiesce(a.r.kvSlot, base+n)
+	a.r.stopExec() // it writes K/V from the host beside the executor, whose pipelined forward may still be in flight
 	if err := a.r.kvWrite(a.r.kvSlot, base, base+n); err != nil {
 		return err
 	}

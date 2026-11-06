@@ -81,7 +81,7 @@ func (r *resident) prefillEModelSrc(src rowSource, startPos int, head bool) (log
 		}
 	}()
 	r.emodelLayerMajorRuns++
-	r.kvQuiesce(r.kvSlot, startPos+src.n)
+	r.stopExec() // the pass runs beside the executor: a pipelined forward may be in flight reading the table or K/V
 	if err := r.kvWrite(r.kvSlot, startPos, startPos+src.n); err != nil {
 		r.recordExecErr(err)
 		return nil

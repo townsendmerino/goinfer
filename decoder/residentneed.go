@@ -53,9 +53,35 @@ func (m *Model) MetalKVSlotBytes(ctx int) int64 {
 	return slot
 }
 
-// MetalKVBytes is the KV a metal load of slots resident slots holds at ctx positions: the pools' null blocks once, every slot's blocks.
+// MetalKVBytes is the KV a metal load of slots resident slots holds at ctx positions: the pools' null blocks once, every slot's blocks,
+// and every slot's block table at one conversation's cap (MetalKVTableRaiseBytes).
 func (m *Model) MetalKVBytes(slots, ctx int) int64 {
-	return m.ResidentKVBytes("metal", ctx, false, false) + int64(slots-1)*m.MetalKVSlotBytes(ctx)
+	return m.ResidentKVBytes("metal", ctx, false, false) + int64(slots-1)*m.MetalKVSlotBytes(ctx) + m.MetalKVTableRaiseBytes(slots, ctx)
+}
+
+// MetalKVCap is one conversation's cap on a metal load of slots KV slots at a planned per-slot context of share positions: the pool's
+// positions (every slot's share in whole blocks), within the model's window and MetalCtxCeiling, so one conversation may borrow from
+// the others. It is share for one slot, a context the caller or the fit guard pinned, a load that prices KV per position beside the pool
+// (a drafter's), and an int8 cache, whose prefill dequantizes the whole context into an f16 scratch the fit does not price.
+func (m *Model) MetalKVCap(slots, share int) int {
+	if slots < 2 || m.ResidentContextRequest() > 0 || m.ExtraResidentKVPerPosition() != 0 || m.KVDeliveredFor("metal") == kvPrecI8 {
+		return share
+	}
+	c := min(slots*((share+KVBlockRows-1)/KVBlockRows)*KVBlockRows, MetalCtxCeiling)
+	if w := m.Config().MaxPositions; w > 0 {
+		c = min(c, w)
+	}
+	return max(c, share)
+}
+
+// MetalKVTableRaiseBytes is what slots slots' block tables hold past the per-slot price at ctx when one conversation's cap is raised
+// (MetalKVCap): each table addresses the cap, 4 B a block. 0 for a model with no KV.
+func (m *Model) MetalKVTableRaiseBytes(slots, ctx int) int64 {
+	if ctx <= 0 || m.MetalKVSlotBytes(ctx) == 0 {
+		return 0
+	}
+	blocks := func(n int) int64 { return int64((n + KVBlockRows - 1) / KVBlockRows) }
+	return int64(slots) * (blocks(m.MetalKVCap(slots, ctx)) - blocks(ctx)) * 4
 }
 
 // metalKVParts is one slot's KV on Metal, at the precision ResolveKV delivers, and its pools' null blocks, once per load: per 64-row

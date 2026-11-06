@@ -51,7 +51,7 @@ func (r *resident) prefillG4PagedSrc(src rowSource, startPos int, head bool) (lo
 		}
 	}()
 	r.g4LayerMajorRuns++
-	r.kvQuiesce(r.kvSlot, startPos+src.n)
+	r.stopExec() // the pass runs beside the executor: a pipelined forward may be in flight reading the table or K/V
 	if err := r.kvWrite(r.kvSlot, startPos, startPos+src.n); err != nil {
 		r.recordExecErr(err)
 		return nil
@@ -262,7 +262,7 @@ func (r *resident) prefillMoEPagedSrc(src rowSource, startPos int, head bool) (l
 		}
 	}()
 	r.moeLayerMajorRuns++
-	r.kvQuiesce(r.kvSlot, startPos+src.n)
+	r.stopExec() // the pass runs beside the executor: a pipelined forward may be in flight reading the table or K/V
 	if err := r.kvWrite(r.kvSlot, startPos, startPos+src.n); err != nil {
 		r.recordExecErr(err)
 		return nil

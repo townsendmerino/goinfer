@@ -1970,7 +1970,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		// The tables start unmapped and take blocks as the slots write (kvWrite).
 		slots := max(kvSlots, 1)
 		r.kvShareCtx, r.kvShareBlocks = r.ctxCap, kvBlocksFor(r.ctxCap)
-		r.ctxCap = kvRaise(m, slots, r.kvShareBlocks, r.kvShareCtx)
+		r.ctxCap = kvRaise(m, slots, r.kvShareCtx)
 		r.kvTabBlocks = kvBlocksFor(r.ctxCap)
 		r.kvTab = NewBufferUint32sOn(mem.LineKV, d, make([]uint32, slots*r.kvTabBlocks))
 		r.kvRefs = make([]int32, 1+slots*r.kvShareBlocks)

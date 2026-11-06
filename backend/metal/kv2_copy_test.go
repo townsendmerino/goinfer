@@ -125,8 +125,8 @@ func kv2Resident(t *testing.T, i8 bool) (*metalResident, *resident) {
 
 // TestKV2_copyKVExact is G2 on Metal (docs/measurements/kv2-2026-10-14.md): after CopyKV(src, dst, start, end) dst's
 // rows in the range equal src's byte for byte, its rows below the range and every other slot are unchanged, and its sequence ends where
-// src's does: a copy that ends a longer one gives dst's blocks past the range back (they read as block 0, zero), and a shorter one leaves
-// the rows above as they were. A range past the cache is declined with nothing written. Each slot's rows are read through its table, and the scrambled arm hands blocks
+// src's does, so it holds no row past the range: a copy that ends a longer destination gives its blocks there back (they read as block
+// 0, zero). A range past the cache is declined with nothing written. Each slot's rows are read through its table, and the scrambled arm hands blocks
 // out reversed and interleaved across slots, so the copy must move a sequence's blocks, not a slot's byte range.
 func TestKV2_copyKVExact(t *testing.T) {
 	for _, c := range []struct {
@@ -156,7 +156,6 @@ func TestKV2_copyKVExact(t *testing.T) {
 			rb := kv2RowBytes(r)
 			for _, tc := range []struct{ src, dst, start, end int }{{0, 1, 0, 64}, {0, 1, 0, 1024}, {1, 2, 256, 1024}} {
 				before := [][][]byte{kv2Slot(t, r, 0, rows), kv2Slot(t, r, 1, rows), kv2Slot(t, r, 2, rows)}
-				longer := r.kvSlotSt[tc.dst].valid > tc.end // the copy ends a longer sequence of dst's
 				if err := a.CopyKV(tc.src, tc.dst, tc.start, tc.end); err != nil {
 					t.Fatalf("CopyKV%v: %v", tc, err)
 				}
@@ -167,15 +166,12 @@ func TestKV2_copyKVExact(t *testing.T) {
 				if b, p := kv2RowsEqual(after[tc.dst], before[tc.dst], rb, 0, tc.start); b >= 0 {
 					t.Errorf("CopyKV%v: dst buffer %d row %d below the range changed", tc, b, p)
 				}
-				above := before[tc.dst]
-				if longer {
-					above = make([][]byte, len(above))
-					for i := range above {
-						above[i] = make([]byte, len(before[tc.dst][i]))
-					}
+				zero := make([][]byte, len(before[tc.dst]))
+				for i := range zero {
+					zero[i] = make([]byte, len(before[tc.dst][i]))
 				}
-				if b, p := kv2RowsEqual(after[tc.dst], above, rb, tc.end, rows); b >= 0 {
-					t.Errorf("CopyKV%v: dst buffer %d row %d above the range is not %s", tc, b, p, map[bool]string{false: "as it was", true: "released (zero)"}[longer])
+				if b, p := kv2RowsEqual(after[tc.dst], zero, rb, tc.end, rows); b >= 0 {
+					t.Errorf("CopyKV%v: dst buffer %d row %d above the range is not released (zero)", tc, b, p)
 				}
 				for s := range 3 {
 					if s != tc.dst {
@@ -643,5 +639,57 @@ func TestKVPages_rewindQuiesces(t *testing.T) {
 	}
 	if r.execReq != nil {
 		t.Error("a prefill of 40 rows from 10, after 70 pipelined positions across a block edge, did not stop the executor first")
+	}
+}
+
+// TestKVPages_prefillAndUploadStopTheExecutor: a prefill and an upload stop the executor before they write, whatever their range: they
+// run beside it, not on it, and a pipelined forward's buffer may still be in flight reading the table or the K/V they change. Slot 0
+// takes block 0 from slot 1 by CopyKV and pipelines positions 64 to 69; a prefill from 10 to 70 (a copy on write into block 0, nothing
+// past its end) stops it; so does an upload at 70 after more pipelined positions.
+func TestKVPages_prefillAndUploadStopTheExecutor(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	bind := func(s int) {
+		t.Helper()
+		if err := r.useKVSlot(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pipe := func(from, to int) {
+		t.Helper()
+		embs := kv2Embs(r, to, 11)
+		for p := from; p < to; p++ {
+			if err := a.ForwardNoLogits(embs[p], p); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if r.execReq == nil {
+			t.Fatal("ForwardNoLogits did not run on the executor: the test reads nothing")
+		}
+	}
+	bind(1)
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 64, 1), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CopyKV(1, 0, 0, 64); err != nil {
+		t.Fatal(err)
+	}
+	bind(0)
+	pipe(64, 70)
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 60, 12), 10); err != nil {
+		t.Fatal(err)
+	}
+	if r.execReq != nil {
+		t.Error("a prefill from 10 to 70 into a shared block, after pipelined positions 64 to 69, did not stop the executor first")
+	}
+	pipe(70, 75)
+	for l := range r.layers {
+		if g := r.layers[l].geom; g != nil && !r.layers[l].kvShared {
+			if err := a.UploadKV(l, 75, make([]float32, g.kvDim), make([]float32, g.kvDim)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if r.execReq != nil {
+		t.Error("an upload at 75, after pipelined positions 70 to 74, did not stop the executor first")
 	}
 }

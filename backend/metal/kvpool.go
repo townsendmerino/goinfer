@@ -36,19 +36,9 @@ type kvSlotState struct {
 	valid    int    // positions [0, valid) hold the slot's sequence
 }
 
-// kvRaise is the cap one conversation may reach: the pool's tokens, within the model's window and metalCtxCapMax, unless a context
-// was requested (an operator's -ctx or the fit guard's auto-pin, as CUDA's kvRaise) or the load prices KV per position beside the
-// pool (a drafter's). share is the planned per-slot context. One slot borrows from nothing, so it keeps its share.
-func kvRaise(m *decoder.Model, slots, shareBlocks, share int) int {
-	if slots < 2 || m.ResidentContextRequest() > 0 || m.ExtraResidentKVPerPosition() != 0 {
-		return share
-	}
-	c := min(slots*shareBlocks*decoder.KVBlockRows, metalCtxCapMax)
-	if w := m.Config().MaxPositions; w > 0 {
-		c = min(c, w)
-	}
-	return max(c, share)
-}
+// kvRaise is the cap one conversation may reach on a load of slots slots whose planned per-slot context is share
+// (decoder.Model.MetalKVCap, the rule the plan prices).
+func kvRaise(m *decoder.Model, slots, share int) int { return m.MetalKVCap(slots, share) }
 
 // kvBlockOrder is the order kvFreeBlock scans the pool's blocks: ascending, or with kvScrambleForTest, alternately from the two ends,
 // so a sequence's consecutive blocks are physically far apart and out of order.
@@ -157,9 +147,10 @@ func (r *resident) kvTrim(s, end int) {
 	}
 }
 
-// kvQuiesce stops the executor and any open chain when a write of slot s ending at hi would give a block past hi back (a rewind): a
-// pipelined forward's command buffer, still in flight after its ack, may write a row there. Every entry point calls it before kvWrite,
-// on the caller's thread; the executor's and the chain's own writes never rewind past a forward still in flight.
+// kvQuiesce stops the executor and any open chain when a decode write of slot s ending at hi would give a block past hi back (a rewind):
+// a pipelined forward's command buffer, still in flight after its ack, may write a row there. The decode entry points call it before
+// kvWrite, on the caller's thread; a decode that does not rewind runs on the executor, whose forwards in flight read only rows and table
+// entries below it (a block they write is never shared). Every other writer stops the executor outright.
 func (r *resident) kvQuiesce(s, hi int) {
 	for b := kvBlocksFor(hi); b < r.kvTabBlocks; b++ {
 		if *r.kvRow(s, b) != 0 {
@@ -297,6 +288,47 @@ func (r *resident) kvWrite(s, lo, hi int) error {
 		*r.kvRow(s, b) = nb
 	}
 	st.valid = hi
+	return nil
+}
+
+// kvMapStep maps the K/V block of every row of a batched step before anything is encoded: the rows that write within their slot's share
+// first, then the ones that borrow, so the pool gives its blocks as running the rows alone would. When a row finds none, or a row's take
+// reclaimed another's (kvStepAbort), each slot goes back to the sequence it had before its first row in the step, and the step must
+// launch nothing; a refusal is decoder.ErrKVPoolFull, which the decoder answers by running each row alone. A release or reclaim the step
+// caused stands, as it would alone.
+func (r *resident) kvMapStep(seqs []batchSeq) error {
+	r.kvStepAbort = false
+	share := r.kvShareBlocks * decoder.KVBlockRows
+	first := map[int]int{} // each slot's first row in the step
+	for _, q := range seqs {
+		if p, ok := first[q.slot]; !ok || q.pos < p {
+			first[q.slot] = q.pos
+		}
+	}
+	undo := func() {
+		for s, p := range first {
+			if s < len(r.kvSlotSt) {
+				st := &r.kvSlotSt[s]
+				st.valid = min(st.valid, p)
+				r.kvTrim(s, st.valid)
+			}
+		}
+	}
+	for _, within := range []bool{true, false} {
+		for _, q := range seqs {
+			if (q.pos < share) != within {
+				continue
+			}
+			if err := r.kvWrite(q.slot, q.pos, q.pos+1); err != nil {
+				undo()
+				return err
+			}
+		}
+	}
+	if r.kvStepAbort {
+		undo()
+		return fmt.Errorf("metal: batched step: a row's blocks were reclaimed while the step mapped its rows: %w", decoder.ErrKVPoolFull)
+	}
 	return nil
 }
 

@@ -42,8 +42,11 @@ func (m *Model) MetalFitCtx(in MetalFitInput) MetalFit {
 	if w := m.Config().MaxPositions; w > 0 && candidate > w {
 		candidate = w
 	}
+	load := m.deviceLoad("metal", false, false, true)
+	kv := load.KV
+	load.KV = func(ctx int) int64 { return kv(ctx) + m.MetalKVTableRaiseBytes(in.KVSlots, ctx) } // the tables at the raised cap, once
 	a := mem.SolveMetalCtx(mem.MetalCtxLoad{
-		Load: m.deviceLoad("metal", false, false, true), KVSlot: m.MetalKVSlotBytes, Floor: MetalCtxDefault, Candidate: candidate, Lower: in.Lower, Slots: in.KVSlots,
+		Load: load, KVSlot: m.MetalKVSlotBytes, Floor: MetalCtxDefault, Candidate: candidate, Lower: in.Lower, Slots: in.KVSlots,
 		FitDisabled: m.FitDisabled(), PagedMoE: in.PagedMoE, FreeKnown: in.FreeKnown, Ineligible: m.planIneligible("metal", PlanRequest{}) != "",
 		ExtraBytes: m.ExtraResidentBytes(), ExtraKVPerPosition: m.ExtraResidentKVPerPosition(), Pad: metalKVPad,
 	}, mem.Machine{Free: map[mem.Tier]int64{mem.Unified: in.FreeBytes}}, mem.DefaultPolicy())

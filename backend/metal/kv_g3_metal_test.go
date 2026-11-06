@@ -694,6 +694,9 @@ func TestKVPages_pressureFollowsD5(t *testing.T) {
 	if !kvNullZero(t, r) {
 		t.Error("the step launched with a row whose blocks were taken back: block 0 was written")
 	}
+	if held, n := r.kvHeld(2), a.ReusableKVSlot(2, 1); held != 0 || n != 0 {
+		t.Errorf("after the step launched nothing slot 2 holds %d blocks and answers %d for its first row; want 0 and 0", held, n)
+	}
 	alone := kvCapIds(conv, 7, vocab)
 	got, err := kvCapPrefill(m, a, 2, alone, 0)
 	if err != nil {
@@ -872,5 +875,56 @@ func TestKVPages_truncationReleasesTheTail(t *testing.T) {
 	}
 	if held, used := r.kvHeld(2), r.kvBlocksInUse(); held != 2 || used != 2 {
 		t.Errorf("after a copy of 120 rows ends slot 2's 640 it holds %d blocks and the pool %d; want 2 and 2 (shared with slot 0)", held, used)
+	}
+}
+
+// TestKVPages_stepMapsGuaranteedRowsFirst: a batched step maps the rows that write within their slot's share before the rows that borrow,
+// so it gives the pool's blocks as running the rows alone would: one free block, a borrower's row and a guaranteed row each needing one.
+// The guaranteed row takes it, the borrower's finds none, and the step launches nothing (ErrKVPoolFull) with the pool as it was and the
+// borrower's sequence kept; mapped the other way, the guaranteed row would have reclaimed the borrower's blocks and stopped it.
+func TestKVPages_stepMapsGuaranteedRowsFirst(t *testing.T) {
+	m, a := kvCapLoad(t, 2, 20000, "")
+	r, vocab := a.r, m.Config().VocabSize
+	share := r.kvShareBlocks * decoder.KVBlockRows
+	in := share - 5*decoder.KVBlockRows                                      // slot 1 within its share, at a block edge
+	past := (len(r.kvRefs)-1)*decoder.KVBlockRows - in - decoder.KVBlockRows // slot 0 past its share, leaving one free block
+	if _, err := kvCapPrefill(m, a, 1, kvCapIds(in, 1, vocab), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kvCapPrefill(m, a, 0, kvCapIds(past, 2, vocab), 0); err != nil {
+		t.Fatal(err)
+	}
+	a.SetKVSlotBusy(0, true)
+	a.SetKVSlotBusy(1, true)
+	used := r.kvBlocksInUse()
+	emb := slices.Clone(m.EmbedResidentForTest(5))
+	_, _, err := r.forwardMulti([]batchSeq{{slot: 0, pos: past, emb: emb}, {slot: 1, pos: in, emb: emb}})
+	if !errors.Is(err, decoder.ErrKVPoolFull) {
+		t.Fatalf("the step with one free block for two rows: got %v, want ErrKVPoolFull", err)
+	}
+	if got, n := r.kvBlocksInUse(), a.ReusableKVSlot(0, past); got != used || n != past {
+		t.Errorf("after the step the pool holds %d blocks (%d before) and the borrower answers %d for its %d rows; want them unchanged", got, used, n, past)
+	}
+}
+
+// TestMetalKVBytes_pricesTheRaisedTables: decoder.Model.MetalKVBytes prices what a load of several slots builds, the block tables at one
+// conversation's raised cap included, exactly: two and four slots at f16. An int8 cache does not raise the cap (its prefill dequantizes
+// the whole context into a scratch the fit does not price), and its KV is priced exactly too.
+func TestMetalKVBytes_pricesTheRaisedTables(t *testing.T) {
+	for _, c := range []struct {
+		slots, positions int
+		kv               string
+		raised           bool
+	}{{2, 20000, "", true}, {4, 4 * decoder.MetalCtxDefault, "", true}, {2, 20000, "i8", false}} {
+		t.Run(fmt.Sprintf("slots=%d/kv=%s", c.slots, c.kv), func(t *testing.T) {
+			m, a := kvCapLoad(t, c.slots, c.positions, c.kv)
+			r := a.r
+			if raised := r.ctxCap > r.kvShareCtx; raised != c.raised {
+				t.Fatalf("cap %d over a %d-position share: raised %v, want %v", r.ctxCap, r.kvShareCtx, raised, c.raised)
+			}
+			if got, want := a.KVPool().Bytes, m.MetalKVBytes(c.slots, r.kvShareCtx); got != want {
+				t.Errorf("the pools and tables take %d B; MetalKVBytes(%d, %d) prices %d B", got, c.slots, r.kvShareCtx, want)
+			}
+		})
 	}
 }
