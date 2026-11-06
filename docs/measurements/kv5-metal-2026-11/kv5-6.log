@@ -63,4 +63,21 @@ G3c ran on 7dcc921a, before these fixes; it re-runs on the final tree (the secon
 Plants, 8 of 8 red (09:53 to 09:55): the batched prefill not stopping the executor; UploadKV not stopping it; the step not rolling back; the step mapping in arrival order (its first form did not build: re-planted so it does, red); a copy keeping dst rows past the range; the raised tables unpriced; an int8 cache raising; the fit leaving the raised tables out (red in decoder's TestMetalFitCtx_slotsTradeContext). Not planted: the build guard's addend, which only makes admission a few KB more conservative.
 The KV, pricing and memory-gate tests after the fixes: 109 passed, 0 failed, 2 skipped (GOINFER_METAL_MC3); decoder's Metal fit and plan tests 11 of 11; fitcmd ok.
 
-== G2 and G4: PENDING
+The pricing moves MM1's decision census (testdata/mm1_census.json.gz), so it is re-recorded for both host classes: arm64 on this Mac and amd64 under Rosetta, which reproduces CI's class (main 4db6cd19's amd64 census matches the committed golden under Rosetta, 29,637 groups). On both, main's and the branch's full dumps differ in 7,244 lines of 399,765, and with the byte figures taken out they are identical: no decision moved, no context, slot count or reason. Each changed line's kv figure rises by what the raised tables add, 256 B to 6,144 B, and the free edges where a decision turns move with it. TestMetalFit_agreesWithSlotPricing now holds the fit and the build guard to the same bytes with the guard's addend in them.
+Closing checks on 0b2c9bd0 (main 4db6cd19 merged), 09:59 to 10:20 PST, shared lock: touched.py VERDICT: PASS (15 checks, after the census and the slot-pricing test); lint VERDICT: PASS (7/7); the Metal package 448 passed, 220 skipped, 1 failed before the slot-pricing test's change (that test, which now passes); identity 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (the same 14); parity manifest fresh.
+
+== G2, decode by day, 2026-11-06 09:19 to 09:32 PST (lock 09:19:44 to about 09:41, when I stopped the run before its MC3 and TTFT cells): new 2ffc982e against old f8632013, exclusive lock, on AC
+bench_peer.py (run_g2_kv5_6_day.py, committed before it ran), MacBookPro18,3, 16 GB, ~/models, int4 from the Metal bundles, greedy seed 1, one A B B A quad a cell, G4 as amended. A first try at 09:01 was refused by the harness's own idle gate (17.1% of CPUs busy, cap 10%, another session's go test): nothing measured. new/old is the median of every run of each arm; blocks are each A B B A half.
+  1.5B        128  new  97.9  old  99.0 tok/s  new/old 0.989  PASS       blocks 0.990, 0.984  RSS new-old  -2.4 MB
+  1.5B       2048  new  90.3  old  91.1 tok/s  new/old 0.991  PASS       blocks 0.974, 1.011  RSS new-old  +2.3 MB
+  1.5B       3900  new  84.8  old  84.3 tok/s  new/old 1.006  PASS       blocks 1.008, 1.005  RSS new-old  +2.1 MB
+  1.5B       8000  new  73.5  old  75.1 tok/s  new/old 0.978  AMBIGUOUS  blocks 0.969, 0.989  RSS new-old  +6.1 MB
+  gemma3-1b   128  new  78.9  old  83.7 tok/s  new/old 0.942  FAIL       blocks 0.962, 0.911  RSS new-old  -0.8 MB
+  gemma3-1b  2048  new  67.7  old  69.2 tok/s  new/old 0.978  AMBIGUOUS  blocks 0.971, 0.988  RSS new-old +20.2 MB
+  gemma3-1b  3900  new  61.4  old  63.5 tok/s  new/old 0.967  FAIL       blocks 0.967, 0.946  RSS new-old +15.9 MB
+Swap-outs 0.0 MB in every cell; swap-ins at most 0.4 MB. Load at a cell's start 0.89 to 3.47; the idle gate passed every cell (busy 6.3% to 7.7%). RSS within 64 MB of old in every cell.
+The second review pass does not touch the decode path (the decode entries, setPos, kvWrite), so these cells stand for the final build; MC3 and TTFT, whose paths it changes, re-read on 0b2c9bd0.
+gemma3-1b at 3,900 sits inside what Francis accepted for KV5-2 (D-KV5-1: as low as 0.956 at 3,900). At 128 it does not: KV5-2 read 0.995 and 0.980 there. The cell's runs: new 79.4, 79.2 (block 0) and 78.3, 78.5 (block 1), steady; old 82.7, 82.2 and 87.3, 84.7. So the new arm is slower in both halves, and the old arm's halves differ by 4%. Not yet attributed: old is f8632013, so the gap holds KV5-1 to KV5-6 and everything else on main since 2026-11-03. An A/B of the same cell, main 4db6cd19 (no KV5-6) against this build, follows.
+
+== G2, MC3 and TTFT, and G3c again: PENDING
+== G2, the 7B: the Saturday night job kv5-6-g2-7b

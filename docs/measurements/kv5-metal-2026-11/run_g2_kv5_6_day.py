@@ -4,15 +4,16 @@ pinned binaries and harness under ~/goinfer-work/kv5-6: the 1.5B's decode at 128
 and 3,900 (bench_peer.py, A B B A, one quad a cell, G4 as amended); MC3 at 4 clients on the 1.5B (bench_w7_plain.py, 6 turns of 128
 greedy tokens, cells old new new old old new, every turn's content_sha compared); prefill TTFT on the 1.5B and the 7B at K = 512 and
 3,900 (ttft_ab.py, three alternating pairs). The 7B's decode cells are the night job run-g2-kv5-6-7b.sh.
-new: 2ffc982e (KV5-6's product code, with its review's fixes); old: f8632013 (main just before KV5-1's merge). Run it under the exclusive timing lock, on AC:
+new: 0b2c9bd0 (KV5-6's product code with both review passes, main merged); old: f8632013 (main just before KV5-1's merge). The decode
+steps (qwen15, deep15, gemma) ran on 2ffc982e, whose decode path the second review pass does not touch; MC3 and TTFT read 0b2c9bd0. Run it under the exclusive timing lock, on AC:
   python3 scripts/timing_lock.py run --wait 1800 --label kv5-6-g2-day -- python3 docs/measurements/kv5-metal-2026-11/run_g2_kv5_6_day.py
 Each step that exists in the output directory is skipped, so a rerun resumes."""
 import os, subprocess, sys, time
 
 D = os.path.expanduser("~/goinfer-work/kv5-6")
 NEW, OLD = f"{D}/serve-new", os.path.expanduser("~/goinfer-work/kv5-2-g2/serve-old")
-SCRIPTS = f"{D}/new-2ffc982e/scripts"
-TTFT = f"{D}/new-2ffc982e/docs/measurements/kv5-metal-2026-11/ttft_ab.py"
+SCRIPTS = f"{D}/new-0b2c9bd0/scripts"
+TTFT = f"{D}/new-0b2c9bd0/docs/measurements/kv5-metal-2026-11/ttft_ab.py"
 OUT = f"{D}/g2-day"
 
 
@@ -45,7 +46,7 @@ def main():
     if "AC Power" not in batt:
         sys.exit(f"not on AC power: {batt}")
     os.makedirs(f"{OUT}/serve-logs", exist_ok=True)
-    say(f"new 2ffc982e, old f8632013; {batt}")
+    say(f"new 0b2c9bd0, old f8632013; {batt}")
     peer = {"BENCH_DEPTH_BACKEND": "metal", "BENCH_ENGINES": "goinfer,goinfer_old", "BENCH_BACKENDS": "metal", "BENCH_REQUIRE_BACKEND": "1",
             "BENCH_SERVE_LOG_DIR": f"{OUT}/serve-logs", "BENCH_LOAD_TIMEOUT": "420", "GOINFER_SERVE_METAL": NEW, "GOINFER_SERVE_METAL_OLD": OLD,
             "BENCH_SWAPOUT_VOID_MB": "0", "BENCH_SWAP_VOID_STOP": "3", "BENCH_IDLE_WAIT": "180", "BENCH_ABBA": "1"}

@@ -213,15 +213,16 @@ func TestMetalFit_agreesWithSlotPricing(t *testing.T) {
 			if err != nil || ctx != fit.Ctx || ctx <= metalCtxCapDefault {
 				t.Fatalf("ctx %d (%v), fit %d: want them equal and past the default %d", ctx, err, fit.Ctx, metalCtxCapDefault)
 			}
-			need, each := residentNeedBytes(m), metalSlotBytes(m)
+			// The guard adds every slot's table at the raised cap to its fixed need (metalKVSlots), as the fit adds it to the load's KV.
+			need, each, raise := residentNeedBytes(m), metalSlotBytes(m), metalRaisedTableBytes(m, slots)
 			further := fit.KVBytes - m.ResidentKVBytes("metal", ctx, false, false)
-			if further != int64(slots-1)*each {
-				t.Errorf("the fit prices %d B past the first slot, metalSlotBytes %d B each", further, each)
+			if raise <= 0 || further != int64(slots-1)*each+raise {
+				t.Errorf("the fit prices %d B past the first slot, metalSlotBytes %d B each and the raised tables %d B", further, each, raise)
 			}
-			if got := kvSlotsWithin(slots, need+further, need, each); got != slots {
+			if got := kvSlotsWithin(slots, need+further, need+raise, each); got != slots {
 				t.Errorf("a budget of exactly the fit's bytes grants %d slots", got)
 			}
-			if got := kvSlotsWithin(slots, need+further-1, need, each); got != slots-1 {
+			if got := kvSlotsWithin(slots, need+further-1, need+raise, each); got != slots-1 {
 				t.Errorf("a byte under the fit's bytes grants %d slots, want %d", got, slots-1)
 			}
 		})
