@@ -1,0 +1,4 @@
+Running as unit: run-p3241285-i3255075.scope; invocation ID: b9ddb297823143859c2dbb7c0a267bcb
+=== RUN   TestDecisionCensus
+census: D1: 11485 groups in 3.1s
+census: D2: 5348 groups in 10.6s

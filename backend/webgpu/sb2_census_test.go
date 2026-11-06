@@ -20,6 +20,7 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/diag/sb2census"
 	"github.com/townsendmerino/goinfer/internal/guard/memgate"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
@@ -185,7 +186,7 @@ var planCells = append(append([]sb2census.Cell(nil), sb2census.Cells...), sb2cen
 // planVsLoadWebGPU compares Plan's webgpu verdict, with the request req builds for each cell, to what the load does on webgpu:
 // the decoder's admission, then staticResidentDecline. Plan reads a CPU load of the cell without its KV options, priced against
 // far more memory than any fixture needs, so only its eligibility can decline. A cell with no CPU model must not reach the build.
-func planVsLoadWebGPU(t *testing.T, req func(c sb2census.Cell) decoder.PlanRequest) (diffs []string, cells, noModel int) {
+func planVsLoadWebGPU(t *testing.T, req func(c sb2census.Cell) fit.PlanRequest) (diffs []string, cells, noModel int) {
 	t.Helper()
 	t.Setenv("GOINFER_SSM_RESIDENT", "")
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
@@ -232,7 +233,7 @@ func planVsLoadWebGPU(t *testing.T, req func(c sb2census.Cell) decoder.PlanReque
 			}
 			p := cpuM.Plan("webgpu", 64<<30, req(c))
 			cpuM.Close()
-			if planned := p.Placement != decoder.PlacementDecline; planned != loads {
+			if planned := p.Placement != fit.PlacementDecline; planned != loads {
 				diffs = append(diffs, fmt.Sprintf("%s %s: Plan places=%v (%s), the load goes resident=%v (%s)", f, c.Name, planned, p.Reason, loads, ans))
 			}
 		}
@@ -245,8 +246,8 @@ func planVsLoadWebGPU(t *testing.T, req func(c sb2census.Cell) decoder.PlanReque
 // ignores the KV request.
 func TestPlanAgreesWithLoad_webgpu(t *testing.T) {
 	// Plan's KV request is the serving flag's precision (KVPrecision).
-	diffs, cells, noModel := planVsLoadWebGPU(t, func(c sb2census.Cell) decoder.PlanRequest {
-		return decoder.PlanRequest{Ctx: 4096, KVF16: c.KVPrec == "f16", KVI8: c.KVPrec == "i8"}
+	diffs, cells, noModel := planVsLoadWebGPU(t, func(c sb2census.Cell) fit.PlanRequest {
+		return fit.PlanRequest{Ctx: 4096, KVF16: c.KVPrec == "f16", KVI8: c.KVPrec == "i8"}
 	})
 	if len(diffs) > 0 {
 		t.Errorf("Plan disagrees with the webgpu load in %d of %d cells:\n%s", len(diffs), cells, strings.Join(diffs[:min(len(diffs), 30)], "\n"))
@@ -254,7 +255,7 @@ func TestPlanAgreesWithLoad_webgpu(t *testing.T) {
 	t.Logf("%d cells: Plan and the webgpu load agree (%d with no CPU model)", cells, noModel)
 
 	// The plant: a Plan asked without the KV request must disagree on the lossy-KV cells of the families webgpu declines, and only there.
-	planted, _, _ := planVsLoadWebGPU(t, func(sb2census.Cell) decoder.PlanRequest { return decoder.PlanRequest{Ctx: 4096} })
+	planted, _, _ := planVsLoadWebGPU(t, func(sb2census.Cell) fit.PlanRequest { return fit.PlanRequest{Ctx: 4096} })
 	if len(planted) == 0 {
 		t.Fatal("a Plan that ignores the KV request agrees everywhere: the comparison cannot go red")
 	}
@@ -837,7 +838,7 @@ func webgpuGateRow(t *testing.T, row, path string, o decoder.Options, census boo
 	l := rd.c.Ledger()
 	read := memgate.Reading{Row: row, KVSlots: rd.KVSlots()}
 	kv := m.KVDeliveredFor("webgpu") // what the build allocated: Options.KVQuant is the CPU's, and a family can refuse what was asked
-	read.Plan = m.Plan("webgpu", math.MaxInt64/4, decoder.PlanRequest{Ctx: rd.ctxCap, CtxPinned: true, KVF16: kv == mem.KVF16, KVI8: kv == mem.KVI8})
+	read.Plan = m.Plan("webgpu", math.MaxInt64/4, fit.PlanRequest{Ctx: rd.ctxCap, CtxPinned: true, KVF16: kv == mem.KVF16, KVI8: kv == mem.KVI8})
 	read.Exact = []mem.LineID{mem.LineKV, mem.LineState}
 	facts := memgate.GeometryOf(m, rd.ctxCap, rd.KVSlots(), kv, false).Facts()
 	read.Open = append(read.Open, memgate.Snap("built", l, facts))

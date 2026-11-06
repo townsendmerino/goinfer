@@ -113,7 +113,11 @@ func TestPlan_pricesRecurrentCheckpoint(t *testing.T) {
 				if fx.kept && (b == "metal" || b == "cuda") {
 					want = held // tiny buffers, under CUDA's rounding quantum
 				}
-				if got := m.checkpointBytes(b); got != want {
+				got, perSlot := m.checkpointBytes(b)
+				if wantPerSlot := b == "cuda" && want > 0; perSlot != wantPerSlot {
+					t.Errorf("%s on %s: a checkpoint per slot %v, want %v", fx.dir, b, perSlot, wantPerSlot)
+				}
+				if got != want {
 					t.Errorf("%s: the report's checkpoint is %d bytes, a forward holds %d", b, got, want)
 				}
 				p := m.Plan(b, 1<<40, PlanRequest{Ctx: 64, CtxPinned: true})
@@ -125,6 +129,29 @@ func TestPlan_pricesRecurrentCheckpoint(t *testing.T) {
 						t.Fatalf("VOID: CUDA declines %s, so no plan shows its checkpoint: %s", fx.dir, p.Reason)
 					}
 					continue
+				}
+				if want > 0 && b == "cuda" { // a backend that keeps one a slot prices what fits beside every slot's KV and state and the reserve
+					const slots, reserve = 3, int64(1000)
+					beside := p.NeedBytes() + int64(slots-1)*(p.KVBytes+p.StateBytes) + reserve
+					for room, wantCopies := range []int{0, 1, 2, 3, 3} {
+						free := beside + int64(room)*want
+						got := m.Plan(b, free, PlanRequest{Ctx: 64, CtxPinned: true, KVSlots: slots, CheckpointReserve: reserve})
+						if got.CheckpointCopies != wantCopies {
+							t.Errorf("%s with room for %d: the plan keeps %d, want %d", b, room, got.CheckpointCopies, wantCopies)
+						}
+						if used := beside + int64(got.CheckpointCopies)*got.CheckpointBytes; used > free {
+							t.Errorf("%s with room for %d: the plan uses %d bytes of %d", b, room, used, free)
+						}
+						if short := m.Plan(b, free-1, PlanRequest{Ctx: 64, CtxPinned: true, KVSlots: slots, CheckpointReserve: reserve}); room > 0 && room <= slots && short.CheckpointCopies != room-1 {
+							t.Errorf("%s a byte short of room for %d: the plan keeps %d, want %d", b, room, short.CheckpointCopies, room-1)
+						}
+					}
+					if got := m.Plan(b, 1<<40, PlanRequest{Ctx: 64, CtxPinned: true}); got.CheckpointCopies != 1 {
+						t.Errorf("%s asked for no slot count: the plan keeps %d, want one slot's", b, got.CheckpointCopies)
+					}
+				}
+				if wantCopies := map[bool]int{true: 1, false: 0}[want > 0]; b != "cuda" && p.Placement != PlacementDecline && p.CheckpointCopies != wantCopies {
+					t.Errorf("%s: the plan keeps %d checkpoints, want %d", b, p.CheckpointCopies, wantCopies)
 				}
 				if p.CheckpointBytes != want {
 					t.Errorf("%s: the plan's checkpoint is %d bytes, want %d", b, p.CheckpointBytes, want)
@@ -267,5 +294,30 @@ func TestStateBuffers_kdaPerStream(t *testing.T) {
 	win, s := int64((3-1)*2*8)*4, int64(2*8*8)*4
 	if got, want := stateBuffers(a), []int64{win, win, win, s}; !slices.Equal(got, want) {
 		t.Errorf("KDA's state buffers: %v, want %v", got, want)
+	}
+}
+
+// TestCheckpointHeadroom_followsTheBuildsOrder: a build allocates checkpoints before it sizes the expert cache and attaches a companion, and its reserve holds room for both, so a named
+// reserve replaces them in the need rather than counting them twice. Experts that are resident whole are allocated first, so they stay in it. With no reserve named, the plan counts
+// everything it knows.
+func TestCheckpointHeadroom_followsTheBuildsOrder(t *testing.T) {
+	base := Plan{DenseBytes: 1000, StateBytes: 10, KVBytes: 100, ExpertBytesUsed: 500, ExtraBytes: 70}
+	cached, whole := base, base
+	cached.Placement, whole.Placement = PlacementExpertCached, PlacementResident
+	const free = 10000
+	for _, c := range []struct {
+		name string
+		p    Plan
+		req  PlanRequest
+		want int64
+	}{
+		{"one slot, no reserve: everything counts", cached, PlanRequest{}, free - 1680},
+		{"a cached load with a reserve: the cache and the companion are in the reserve", cached, PlanRequest{CheckpointReserve: 300}, free - 1110 - 300},
+		{"whole experts with a reserve: they stay, the companion is in the reserve", whole, PlanRequest{CheckpointReserve: 300}, free - 1610 - 300},
+		{"two more slots add their KV and state", cached, PlanRequest{KVSlots: 3, CheckpointReserve: 300}, free - 1110 - 220 - 300},
+	} {
+		if got := checkpointHeadroom(c.p, free, c.req); got != c.want {
+			t.Errorf("%s: headroom %d, want %d", c.name, got, c.want)
+		}
 	}
 }

@@ -29,16 +29,23 @@ func kv2Embs(r *resident, n int, seed uint32) [][]float32 {
 	return out
 }
 
-// kv2Slot is every byte of slot s's K, V and (int8) scale rows [0, rows), layer by layer.
+// kv2Slot is every byte of slot s's K, V and (int8) scale rows [0, rows), layer by layer, gathered block by block through the
+// slot's table, so it reads a sequence's rows whatever blocks hold them.
 func kv2Slot(t *testing.T, r *resident, s, rows int) [][]byte {
 	t.Helper()
 	var out [][]byte
-	read := func(b Buffer, n int) []byte {
-		h := make([]byte, n)
-		if err := gpu.Download(b, h); err != nil {
-			t.Fatal(err)
+	tab := r.kvTab.U32s()
+	gather := func(base Buffer, rowBytes int) []byte {
+		block := decoder.KVBlockRows * rowBytes
+		h := make([]byte, 0, kvBlocksFor(rows)*block)
+		for b := range kvBlocksFor(rows) {
+			part := make([]byte, block)
+			if err := gpu.Download(base.At(int(tab[s*r.kvTabBlocks+b])*block), part); err != nil {
+				t.Fatal(err)
+			}
+			h = append(h, part...)
 		}
-		return h
+		return h[:rows*rowBytes]
 	}
 	elem := 2
 	if r.kvI8 {
@@ -49,10 +56,10 @@ func kv2Slot(t *testing.T, r *resident, s, rows int) [][]byte {
 		if L.kvShared || L.geom == nil || r.kvSlotBytes[l] == 0 {
 			continue
 		}
-		n := rows * L.geom.kvDim * elem
-		out = append(out, read(r.kvRows(s, l, false, 0), n), read(r.kvRows(s, l, true, 0), n))
+		row := L.geom.kvDim * elem
+		out = append(out, gather(r.kc[l], row), gather(r.vc[l], row))
 		if r.kvI8 {
-			out = append(out, read(r.kvSlotBufs[s].ks[l], rows*L.geom.nKV*4), read(r.kvSlotBufs[s].vs[l], rows*L.geom.nKV*4))
+			out = append(out, gather(r.ks[l], L.geom.nKV*4), gather(r.vs[l], L.geom.nKV*4))
 		}
 	}
 	return out
@@ -118,12 +125,18 @@ func kv2Resident(t *testing.T, i8 bool) (*metalResident, *resident) {
 
 // TestKV2_copyKVExact is G2 on Metal (docs/measurements/kv2-2026-10-14.md): after CopyKV(src, dst, start, end) dst's
 // rows in the range equal src's byte for byte, dst's other rows and every other slot are unchanged, and a range past the
-// cache is declined with nothing written.
+// cache is declined with nothing written. Each slot's rows are read through its table, and the scrambled arm hands blocks
+// out reversed and interleaved across slots, so the copy must move a sequence's blocks, not a slot's byte range.
 func TestKV2_copyKVExact(t *testing.T) {
-	for _, i8 := range []bool{false, true} {
-		name := map[bool]string{false: "f16", true: "i8"}[i8]
+	for _, c := range []struct {
+		i8, scramble bool
+	}{{false, false}, {true, false}, {false, true}, {true, true}} {
+		i8 := c.i8
+		name := map[bool]string{false: "f16", true: "i8"}[i8] + map[bool]string{false: "", true: "/scrambled"}[c.scramble]
 		t.Run(name, func(t *testing.T) {
+			kvScrambleForTest = c.scramble
 			a, r := kv2Resident(t, i8)
+			kvScrambleForTest = false
 			const rows = 1024
 			for s, n := range []int{1000, 1000, 300} {
 				if err := r.useKVSlot(s); err != nil {

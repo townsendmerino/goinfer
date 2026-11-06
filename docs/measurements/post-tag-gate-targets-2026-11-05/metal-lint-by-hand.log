@@ -1,0 +1,16 @@
+# backend/metal's four lint steps run by hand as the quick cells now run them (GOOS=darwin GOARCH=arm64 CGO_ENABLED=0), on linux/amd64, in a worktree with go.work
+$ go build -o /dev/null ./backend/metal/...
+rc=0
+$ go vet ./backend/metal/...
+rc=0
+$ go vet -tags goinfer_testhooks ./backend/metal/...
+rc=0
+$ staticcheck -tags goinfer_testhooks ./backend/metal/...
+rc=0
+# the same build with no target, which is what the steps ran before:
+$ go build -o /dev/null ./backend/metal/...
+# github.com/townsendmerino/goinfer/backend/metal/internal/gpudev
+backend/metal/internal/gpudev/copy_coalesce.go:32:24: undefined: DeviceCopy
+backend/metal/internal/gpudev/copy_coalesce.go:36:16: undefined: DeviceCopy
+backend/metal/internal/gpudev/copy_coalesce.go:41:30: undefined: adjacent
+rc=1

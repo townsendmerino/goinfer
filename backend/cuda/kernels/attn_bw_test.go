@@ -71,9 +71,15 @@ func TestAttnBatchedBandwidth(t *testing.T) {
 	defer dCtx.Close()
 	dKvt := gcKVIdentityTab(t, cx, M)
 	defer dKvt.Close()
-	_ = copyHtoD(bg, dQ, q)
-	_ = copyHtoD(bg, dKc, kc)
-	_ = copyHtoD(bg, dVc, vc)
+	must := func(what string, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+	}
+	must("upload q", copyHtoD(bg, dQ, q))
+	must("upload k", copyHtoD(bg, dKc, kc))
+	must("upload v", copyHtoD(bg, dVc, vc))
 
 	maxNWin := M
 	if window > 0 && window < maxNWin {
@@ -82,21 +88,22 @@ func TestAttnBatchedBandwidth(t *testing.T) {
 	cfg := gc.LaunchConfig{GridX: nH, GridY: M, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
 		SharedMemBytes: uint32((maxNWin + 128) * 4)}
 	launch := func() {
-		_ = fn.LaunchOn(bg, stream, cfg,
+		t.Helper()
+		must("launch attn_batched", fn.LaunchOn(bg, stream, cfg,
 			gc.Arg(dQ), gc.Arg(dKc), gc.Arg(dVc), gc.Arg(dKvt), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)),
 			gc.ArgValue(int32(hd)), gc.ArgValue(int32(0)), gc.ArgValue(scale), gc.ArgValue(int32(window)),
-			gc.ArgValue(int32(M)), gc.Arg(dCtx))
+			gc.ArgValue(int32(M)), gc.Arg(dCtx), gc.ArgDevicePtr(0))) // the 13th parameter is the learned sinks (none here)
 	}
 	for range 3 {
 		launch()
 	}
-	_ = stream.Synchronize(bg)
+	must("synchronize after the warm-up launches", stream.Synchronize(bg))
 	const reps = 10
 	t0 := time.Now()
 	for range reps {
 		launch()
 	}
-	_ = stream.Synchronize(bg)
+	must("synchronize after the timed launches", stream.Synchronize(bg))
 	per := time.Since(t0) / reps
 	// causal attention MACs: sum_m (m+1) keys × nH × hd × 2 (QK + AV)
 	macs := float64(M) * float64(M) / 2 * float64(nH) * float64(hd) * 2

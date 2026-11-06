@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -50,7 +51,7 @@ func Snap(label string, l *mem.Ledger, facts map[string]int64) Snapshot {
 // Reading is one row: a build's ledger, and the plan for the same load.
 type Reading struct {
 	Row     string // fixture, quant, options: what Gap.Row matches
-	Plan    decoder.Plan
+	Plan    fit.Plan
 	KVSlots int // the slots the build holds: the plan's KV and state lines are one slot's
 	// Open is the account while the model is loaded: after the build, and after whatever the row ran.
 	Open []Snapshot
@@ -98,14 +99,15 @@ func (f Finding) String() string {
 }
 
 // Planned is the plan's figure for each line it prices, with this build's KV slots: KV and recurrent state are per slot, and the state line
-// also holds the load's one checkpoint.
-func Planned(p decoder.Plan, kvSlots int) map[mem.LineID]int64 {
+// also holds the load's checkpoints: at most one a slot, and at most what the plan says fits.
+func Planned(p fit.Plan, kvSlots int) map[mem.LineID]int64 {
 	n := int64(max(kvSlots, 1))
+	checkpoints := min(n, int64(p.CheckpointCopies))
 	return map[mem.LineID]int64{
 		mem.LineDense:     p.DenseBytes,
 		mem.LineExperts:   p.ExpertBytesUsed,
 		mem.LineKV:        p.KVBytes * n,
-		mem.LineState:     p.StateBytes*n + p.CheckpointBytes,
+		mem.LineState:     p.StateBytes*n + p.CheckpointBytes*checkpoints,
 		mem.LineSlack:     p.AllocSlackBytes,
 		mem.LineCompanion: p.ExtraBytes,
 	}
@@ -117,7 +119,7 @@ func Check(r Reading, a Allowance) []Finding {
 	add := func(kind Kind, line mem.LineID, excess int64, facts map[string]int64, format string, args ...any) {
 		out = append(out, Finding{Row: r.Row, Kind: kind, Line: line, Excess: excess, Facts: facts, What: fmt.Sprintf(format, args...)})
 	}
-	if r.Plan.Placement == decoder.PlacementDecline {
+	if r.Plan.Placement == fit.PlacementDecline {
 		add(Invariant, "", 0, nil, "the build went resident, and the plan declines it: %s", r.Plan.Reason)
 	}
 	planned := Planned(r.Plan, r.KVSlots)

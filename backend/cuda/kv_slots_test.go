@@ -4,9 +4,6 @@ package cuda
 
 import (
 	"context"
-	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
-	"github.com/townsendmerino/goinfer/internal/cost"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
 	"os"
 	"path/filepath"
@@ -16,16 +13,22 @@ import (
 	"testing"
 	"time"
 
+	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/cost"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
-	gc "github.com/eitamring/gocudrv/cuda"
-	"github.com/townsendmerino/goinfer/decoder"
 	"sort"
 	"strings"
+
+	gc "github.com/eitamring/gocudrv/cuda"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 )
 
 // kvSlotTurn is one generation of the MC1 identity scenario: its token ids and PrefillReused.
@@ -729,7 +732,7 @@ func TestPlanSlack_matchesTheBuild(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s: not resident: %s", p, m.ResidentDecline())
 		}
-		plan := m.Plan("cuda", 64<<30, decoder.PlanRequest{Ctx: 4096})
+		plan := m.Plan("cuda", 64<<30, fit.PlanRequest{Ctx: 4096})
 		t.Logf("%s: plan slack %d, build packedAllocSlack %d, build's slack %d", filepath.Base(p), planned, built, r.allocSlackBytes)
 		if planned != built || planned <= 0 || plan.AllocSlackBytes != built || r.allocSlackBytes != built {
 			t.Errorf("%s: the plan prices %d (Plan %d), the build's buffers round by %d", filepath.Base(p), planned, plan.AllocSlackBytes, built)
@@ -765,17 +768,17 @@ func TestPlanSlack_realSizeDiff(t *testing.T) {
 						if extra > 0 && (pinned || kv != "f32") {
 							continue
 						}
-						req := decoder.PlanRequest{Ctx: ctx, CtxPinned: pinned, KVF16: kv == "f16", KVI8: kv == "i8", ExtraBytes: extra}
+						req := fit.PlanRequest{Ctx: ctx, CtxPinned: pinned, KVF16: kv == "f16", KVI8: kv == "i8", ExtraBytes: extra}
 						g := fmt.Sprintf("D3 %s | cuda ctx=%d pinned=%v kv=%s extra=%d", name, ctx, pinned, kv, extra)
 						groups++
-						sum := func(pl decoder.Plan) string { return fmt.Sprintf("%s %d %d", pl.Placement, pl.Ctx, pl.Slots) }
+						sum := func(pl fit.Plan) string { return fmt.Sprintf("%s %d %d", pl.Placement, pl.Ctx, pl.Slots) }
 						edges := map[int64]bool{}
 						for _, f := range frees {
 							edges[f] = true
 						}
-						for _, side := range []func(int64) decoder.Plan{
-							func(f int64) decoder.Plan { return m.PlanWithoutSlackForTest("cuda", f, req) },
-							func(f int64) decoder.Plan { return m.Plan("cuda", f, req) },
+						for _, side := range []func(int64) fit.Plan{
+							func(f int64) fit.Plan { return m.PlanWithoutSlackForTest("cuda", f, req) },
+							func(f int64) fit.Plan { return m.Plan("cuda", f, req) },
 						} {
 							for _, e := range changePointsOf(0, 1<<36, 8, func(f int64) string { return sum(side(f)) }) {
 								edges[e], edges[e-1] = true, true
@@ -794,7 +797,7 @@ func TestPlanSlack_realSizeDiff(t *testing.T) {
 							if bl != al {
 								diff = true
 							}
-							if a.Placement == decoder.PlacementDecline && b.Placement != decoder.PlacementDecline {
+							if a.Placement == fit.PlacementDecline && b.Placement != fit.PlacementDecline {
 								toDecline++
 								summary = append(summary, fmt.Sprintf("TO DECLINE: %s at free %d: was %s ctx %d, now %s", g, f, b.Placement, b.Ctx, a.Reason))
 							}
@@ -871,7 +874,7 @@ func TestPlanSlack_realSizeDiff(t *testing.T) {
 	}
 }
 
-func planLineOf(p decoder.Plan) string {
+func planLineOf(p fit.Plan) string {
 	return fmt.Sprintf("%s ctx %d slots %d dense %d slack %d expertUsed %d kv %d extra %d free %d need %d | %s",
 		p.Placement, p.Ctx, p.Slots, p.DenseBytes, p.AllocSlackBytes, p.ExpertBytesUsed, p.KVBytes, p.ExtraBytes, p.FreeBytes, p.NeedBytes(), p.Reason)
 }

@@ -7,7 +7,7 @@
 > a future reader, it was missed at archival — see the doc-closeout rule in
 > `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
 
-> Closed 2026-11-04: CUDA's Gated DeltaNet applies Olmo Hybrid's NegEigval and ONormEps and is gated against the CPU (#604, merged). The tree says so in program.CUDA and changelog.d/2026-11-01-olmo-hybrid-cuda-cpu.md. Not owned here: real-checkpoint WebGPU reading (see docs/tasks/task-olmo-hybrid-metal-webgpu-2026-11.md, archived alongside).
+> Closed 2026-11-04: CUDA's Gated DeltaNet applies Olmo Hybrid's NegEigval and ONormEps and is gated against the CPU (#604, merged). The tree says so in program.CUDA and changelog.d/2026-11-01-olmo-hybrid-cuda-cpu.md. Not owned here: real-checkpoint WebGPU reading (see docs/completed/task-olmo-hybrid-metal-webgpu-2026-11.md, archived alongside).
 
 **Registered 2026-11-02 06:56 PST, before any code (nobara-sb01).** Francis's direction of 06:31, relayed by the coordinator: implement
 `linear_allow_neg_eigval` (NegEigval) and the output norm's own epsilon (ONormEps) in CUDA's Gated-DeltaNet, gate it against the CPU,

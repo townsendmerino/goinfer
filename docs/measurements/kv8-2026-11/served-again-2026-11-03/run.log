@@ -1,0 +1,58 @@
+[17:23:12] cell A1: 1 slot(s), load 1.32, 61147 MB available, 453 MiB on the card
+[17:23:30]   A1 round 0 A: 1907 tokens, reused 0, first token 6.47 s
+[17:23:37]   A1 round 0 B: 2047 tokens, reused 0, first token 6.99 s
+[17:23:44]   A1 round 1 A: 1942 tokens, reused 0, first token 6.58 s
+[17:23:52]   A1 round 1 B: 2083 tokens, reused 0, first token 7.14 s
+[17:23:59]   A1 round 2 A: 1978 tokens, reused 0, first token 6.72 s
+[17:24:07]   A1 round 2 B: 2119 tokens, reused 0, first token 7.27 s
+[17:24:22]   A1 both at once A: reused 0, first token 6.87 s
+[17:24:22]   A1 both at once B: reused 0, first token 14.69 s
+[17:24:22]   A1: loaded in 11.0 s, 5606 MiB on the card, peak VmSwap 0 MB, VmHWM 4828 MB
+[17:24:25] cell B1: 2 slot(s), load 1.15, 61209 MB available, 453 MiB on the card
+[17:24:43]   B1 round 0 A: 1907 tokens, reused 0, first token 6.46 s
+[17:24:50]   B1 round 0 B: 2047 tokens, reused 0, first token 7.00 s
+[17:24:51]   B1 round 1 A: 1942 tokens, reused 1907, first token 0.14 s
+[17:24:51]   B1 round 1 B: 2083 tokens, reused 2071, first token 0.05 s
+[17:24:52]   B1 round 2 A: 1978 tokens, reused 1966, first token 0.05 s
+[17:24:52]   B1 round 2 B: 2119 tokens, reused 2107, first token 0.05 s
+[17:24:53]   B1 both at once A: reused 2002, first token 0.05 s
+[17:24:53]   B1 both at once B: reused 2143, first token 0.51 s
+[17:24:53]   B1: loaded in 11.0 s, 6218 MiB on the card, peak VmSwap 0 MB, VmHWM 4817 MB
+[17:24:56] cell alone-A: one slot, client A alone, load 1.00, 61250 MB available, 453 MiB on the card
+[17:25:14]   alone-A round 0: 1907 tokens, reused 0, first token 6.46 s
+[17:25:15]   alone-A round 1: 1942 tokens, reused 1907, first token 0.14 s
+[17:25:15]   alone-A round 2: 1978 tokens, reused 1966, first token 0.05 s
+[17:25:16]   alone-A round both: 2014 tokens, reused 2002, first token 0.05 s
+[17:25:19] cell alone-B: one slot, client B alone, load 1.18, 61241 MB available, 453 MiB on the card
+[17:25:38]   alone-B round 0: 2047 tokens, reused 0, first token 7.03 s
+[17:25:38]   alone-B round 1: 2083 tokens, reused 2071, first token 0.05 s
+[17:25:38]   alone-B round 2: 2119 tokens, reused 2107, first token 0.05 s
+[17:25:39]   alone-B round both: 2155 tokens, reused 2143, first token 0.05 s
+[17:25:42] cell B2: 2 slot(s), load 1.22, 61242 MB available, 453 MiB on the card
+[17:26:00]   B2 round 0 A: 1907 tokens, reused 0, first token 6.47 s
+[17:26:08]   B2 round 0 B: 2047 tokens, reused 0, first token 7.00 s
+[17:26:08]   B2 round 1 A: 1942 tokens, reused 1907, first token 0.14 s
+[17:26:09]   B2 round 1 B: 2083 tokens, reused 2071, first token 0.05 s
+[17:26:09]   B2 round 2 A: 1978 tokens, reused 1966, first token 0.05 s
+[17:26:09]   B2 round 2 B: 2119 tokens, reused 2107, first token 0.05 s
+[17:26:10]   B2 both at once A: reused 2002, first token 0.05 s
+[17:26:10]   B2 both at once B: reused 2143, first token 0.51 s
+[17:26:11]   B2: loaded in 11.0 s, 6218 MiB on the card, peak VmSwap 0 MB, VmHWM 4799 MB
+[17:26:14] cell A2: 1 slot(s), load 1.33, 61247 MB available, 453 MiB on the card
+[17:26:32]   A2 round 0 A: 1907 tokens, reused 0, first token 6.47 s
+[17:26:39]   A2 round 0 B: 2047 tokens, reused 0, first token 6.99 s
+[17:26:46]   A2 round 1 A: 1942 tokens, reused 0, first token 6.58 s
+[17:26:54]   A2 round 1 B: 2083 tokens, reused 0, first token 7.14 s
+[17:27:01]   A2 round 2 A: 1978 tokens, reused 0, first token 6.75 s
+[17:27:09]   A2 round 2 B: 2119 tokens, reused 0, first token 7.30 s
+[17:27:24]   A2 both at once A: reused 0, first token 6.88 s
+[17:27:24]   A2 both at once B: reused 0, first token 14.74 s
+[17:27:24]   A2: loaded in 11.5 s, 5606 MiB on the card, peak VmSwap 0 MB, VmHWM 4790 MB
+pair 1: follow-up median first token, one slot 6.93 s, two slots 0.05 s, ratio 0.008
+pair 2: follow-up median first token, one slot 6.94 s, two slots 0.05 s, ratio 0.008
+two slots: 0 of 12 follow-ups reused nothing, the at-once round included
+0 of 4 conversations differ from that client alone; 16 turns compared
+reported: 3 of 8 two-slot turns differ from the cold one-slot arm's, whose prompts diverge after the first
+reported: first token of each turn that restored its checkpoint: []
+peak VmSwap 0 MB (the bar: 512)
+VERDICT: PASS (worst ratio 0.008)

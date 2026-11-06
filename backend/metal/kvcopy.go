@@ -12,9 +12,9 @@ import (
 var _ decoder.ResidentKVCopier = (*metalResident)(nil)
 
 // CopyKV (decoder.ResidentKVCopier) copies rows [start, end) of every layer's K and V, and the int8 scales, from slot
-// src to slot dst. A slot's blocks are consecutive in its pool, position-major ([pos][kvDim]), and every layer holds the whole context,
-// so each buffer's rows are one byte range. On unified memory the copy is a memcpy of mapped pages (gpu.CopyDeviceBatch), so
-// nothing may be in flight on the GPU: the executor and any open chain are stopped first, as useKVSlot does.
+// src to slot dst, block by block: block b of src's table onto block b of dst's (kvBlockRuns), whatever blocks the tables name.
+// On unified memory the copy is a memcpy of mapped pages (gpu.CopyDeviceBatch), so nothing may be in flight on the GPU: the
+// executor and any open chain are stopped first, as useKVSlot does.
 func (a *metalResident) CopyKV(src, dst, start, end int) error {
 	r := a.r
 	n := r.kvSlotCount()
@@ -35,41 +35,45 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 	if start == end {
 		return nil
 	}
-	elem := 2
-	if r.kvI8 {
-		elem = 1
-	} else if r.kvF32 {
-		elem = 4
-	}
+	runs := r.kvBlockRuns(src, dst, start/decoder.KVBlockRows, end/decoder.KVBlockRows)
 	var copies []gpu.DeviceCopy
 	for l := range r.layers {
 		L := &r.layers[l]
 		if L.kvShared || L.geom == nil || r.kvSlotBytes[l] == 0 {
 			continue // a shared layer aliases its source's cache, copied with it; a layer with no attention has none
 		}
-		row := L.geom.kvDim * elem
-		copies = append(copies,
-			gpu.DeviceCopy{Dst: r.kvRows(dst, l, false, start*row), Src: r.kvRows(src, l, false, start*row), Bytes: (end - start) * row},
-			gpu.DeviceCopy{Dst: r.kvRows(dst, l, true, start*row), Src: r.kvRows(src, l, true, start*row), Bytes: (end - start) * row})
-		if r.kvI8 {
-			sb := L.geom.nKV * 4                                                                // one float32 scale per KV head per position
-			at := func(b Buffer, s int) Buffer { return b.At(4*r.kvScaleOff(s, l) + start*sb) } // from the allocation: At is absolute
-			ks, vs := r.kvSlotBufs[0].ks[l], r.kvSlotBufs[0].vs[l]
-			copies = append(copies,
-				gpu.DeviceCopy{Dst: at(ks, dst), Src: at(ks, src), Bytes: (end - start) * sb},
-				gpu.DeviceCopy{Dst: at(vs, dst), Src: at(vs, src), Bytes: (end - start) * sb})
+		// Buffer.At sets an absolute offset, so every block is addressed from its pool's start, where the null block is.
+		pools := []Buffer{r.kc[l], r.vc[l]}
+		block := []int{r.kvNullBytes[l], r.kvNullBytes[l]}
+		if r.kvI8 { // one float32 scale per KV head per position, block for block
+			pools = append(pools, r.ks[l], r.vs[l])
+			block = append(block, decoder.KVBlockRows*L.geom.nKV*4, decoder.KVBlockRows*L.geom.nKV*4)
+		}
+		for i, b := range pools {
+			for _, run := range runs {
+				copies = append(copies, gpu.DeviceCopy{Dst: b.At(run.dst * block[i]), Src: b.At(run.src * block[i]), Bytes: run.n * block[i]})
+			}
 		}
 	}
 	r.stopExec()
 	return gpu.CopyDeviceBatch(copies)
 }
 
-// kvRows is slot s's K (v false) or V cache of layer l at byte off within the slot. Buffer.At sets an absolute offset, so the layer is
-// addressed from its pool's base, past the null block.
-func (r *resident) kvRows(s, l int, v bool, off int) Buffer {
-	b := r.kvSlotBufs[0].kc[l]
-	if v {
-		b = r.kvSlotBufs[0].vc[l]
+// kvBlockRun is n blocks consecutive in both pools: src's from block src, dst's from block dst.
+type kvBlockRun struct{ src, dst, n int }
+
+// kvBlockRuns pairs logical blocks [from, to) of slot src's table with the same blocks of slot dst's, merging neighbours that are
+// consecutive in both, so in-order tables give one run.
+func (r *resident) kvBlockRuns(src, dst, from, to int) []kvBlockRun {
+	tab := r.kvTab.U32s()
+	var runs []kvBlockRun
+	for b := from; b < to; b++ {
+		s, d := int(tab[src*r.kvTabBlocks+b]), int(tab[dst*r.kvTabBlocks+b])
+		if k := len(runs) - 1; k >= 0 && runs[k].src+runs[k].n == s && runs[k].dst+runs[k].n == d {
+			runs[k].n++
+			continue
+		}
+		runs = append(runs, kvBlockRun{s, d, 1})
 	}
-	return b.At(r.kvNullBytes[l] + s*r.kvSlotBytes[l] + off)
+	return runs
 }

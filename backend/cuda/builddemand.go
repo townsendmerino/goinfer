@@ -43,5 +43,6 @@ func buildDemand(q decoder.BuildQuery) decoder.BuildDemand {
 	for _, b := range q.CheckpointBuffers {
 		d.CheckpointBytes += gpu.ChargedBytes(b)
 	}
+	d.CheckpointPerSlot = d.CheckpointBytes > 0
 	return d
 }

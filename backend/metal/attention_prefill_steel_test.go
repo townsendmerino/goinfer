@@ -65,7 +65,7 @@ func TestAttentionPrefillSteelMatchesFloat64(t *testing.T) {
 						u := func(v int) Buffer { return NewBufferU32(d, uint32(v)) }
 						e := cq.Begin()
 						e.Dispatch(pipe, g.nH*((M+31)/32)*128, 128, NewBufferU16s(d, qkv), NewBufferU16s(d, kc), NewBufferU16s(d, vc),
-							outB, u(g.nH), u(g.nKV), u(hd), u(startPos), NewBufferFloats(d, []float32{scale}), u(stride), u(window), u(M))
+							outB, u(g.nH), u(g.nKV), u(hd), u(startPos), NewBufferFloats(d, []float32{scale}), u(stride), u(window), u(M), kvIdentityTable(d))
 						e.End()
 						if err := e.Err(); err != nil {
 							t.Fatalf("%s: dispatch: %v", name, err)

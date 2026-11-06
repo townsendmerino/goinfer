@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -23,7 +23,7 @@ func usage(leases ...[3]any) Snapshot {
 
 // reading is a row of that one snapshot, closed cleanly.
 func reading(open Snapshot) Reading {
-	return Reading{Row: "fx int4", KVSlots: 1, Plan: decoder.Plan{DenseBytes: 1000, KVBytes: 500, StateBytes: 100},
+	return Reading{Row: "fx int4", KVSlots: 1, Plan: fit.Plan{DenseBytes: 1000, KVBytes: 500, StateBytes: 100},
 		Open: []Snapshot{open}, Closed: mem.Usage{Reserved: open.Usage.Reserved}}
 }
 
@@ -85,7 +85,7 @@ func TestCheck_lines(t *testing.T) {
 		}, "no known line"},
 		{"the plan declines what was built", func() Reading {
 			r := reading(usage())
-			r.Plan.Placement, r.Plan.Reason = decoder.PlacementDecline, "no room"
+			r.Plan.Placement, r.Plan.Reason = fit.PlacementDecline, "no room"
 			return r
 		}, "no room"},
 		{"something built without being charged", func() Reading {
@@ -305,6 +305,19 @@ func TestHoldRows(t *testing.T) {
 		HoldRows(rec, path, c.built, false)
 		if rec.failed != c.want {
 			t.Errorf("%s: %d failures, want %d", c.name, rec.failed, c.want)
+		}
+	}
+}
+
+// TestPlanned_checkpoint: the state line holds a slot's state each, and the checkpoints the plan says the load keeps: at most one a slot, at most what fits.
+func TestPlanned_checkpoint(t *testing.T) {
+	for _, c := range []struct {
+		copies, slots int
+		want          int64
+	}{{1, 1, 130}, {1, 4, 430}, {0, 4, 400}, {4, 4, 520}, {2, 4, 460}, {100, 2, 260}} {
+		p := fit.Plan{StateBytes: 100, CheckpointBytes: 30, CheckpointCopies: c.copies}
+		if got := Planned(p, c.slots)[mem.LineState]; got != c.want {
+			t.Errorf("%d copies at %d slots: the state line plans %d, want %d", c.copies, c.slots, got, c.want)
 		}
 	}
 }

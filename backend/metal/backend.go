@@ -1426,17 +1426,14 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	if e := a.checkCap(base, n); e != nil {
 		return e
 	}
-	off := base * kvDim
+	// Each position goes to its row through the bound slot's table (kvHostRow), the pool's contents indexed from its start.
 	if a.r.kvI8 {
 		nKV := g.nKV
 		hd := g.hd
-		// the bound slot's codes and scales, when the slots are one allocation (MC3 S3; kvScaleOff)
-		kc := a.r.kc[layer].Int8s()[a.r.kvHostOff(layer, 1):]
-		vc := a.r.vc[layer].Int8s()[a.r.kvHostOff(layer, 1):]
-		ks := a.r.ks[layer].Floats()[a.r.kvScaleOff(a.r.kvSlot, layer):]
-		vs := a.r.vs[layer].Floats()[a.r.kvScaleOff(a.r.kvSlot, layer):]
+		kc, vc := a.r.kc[layer].Int8s(), a.r.vc[layer].Int8s()
+		ks, vs := a.r.ks[layer].Floats(), a.r.vs[layer].Floats()
 		for p := range n {
-			pos := base + p
+			row := a.r.kvHostRow(base + p)
 			for h := range nKV {
 				kHead := keys[p*kvDim+h*hd : p*kvDim+(h+1)*hd]
 				vHead := vals[p*kvDim+h*hd : p*kvDim+(h+1)*hd]
@@ -1459,26 +1456,30 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 				if scV == 0 {
 					scV = 1.0
 				}
-				ks[pos*nKV+h] = scK
-				vs[pos*nKV+h] = scV
+				ks[row*nKV+h] = scK
+				vs[row*nKV+h] = scV
 				invK := 1.0 / scK
 				invV := 1.0 / scV
 				for d := range hd {
-					kc[pos*kvDim+h*hd+d] = int8(math.Round(float64(kHead[d] * invK)))
-					vc[pos*kvDim+h*hd+d] = int8(math.Round(float64(vHead[d] * invV)))
+					kc[row*kvDim+h*hd+d] = int8(math.Round(float64(kHead[d] * invK)))
+					vc[row*kvDim+h*hd+d] = int8(math.Round(float64(vHead[d] * invV)))
 				}
 			}
 		}
-	} else if a.r.kvF32 {
-		off += a.r.kvHostOff(layer, 4) // the bound slot's start, when the slots are one allocation (MC3 S3)
-		copy(a.r.kc[layer].Floats()[off:off+len(keys)], keys)
-		copy(a.r.vc[layer].Floats()[off:off+len(vals)], vals)
 	} else {
-		off += a.r.kvHostOff(layer, 2)
-		kc := a.r.kc[layer].U16s()[off : off+len(keys)]
-		vc := a.r.vc[layer].U16s()[off : off+len(vals)]
-		parallelF32ToF16(kc, keys)
-		parallelF32ToF16(vc, vals)
+		// A run of positions inside one block is consecutive rows, so each block's run is one copy.
+		for p := 0; p < n; {
+			run := min(n-p, decoder.KVBlockRows-(base+p)%decoder.KVBlockRows)
+			at, src := a.r.kvHostRow(base+p)*kvDim, p*kvDim
+			if a.r.kvF32 {
+				copy(a.r.kc[layer].Floats()[at:at+run*kvDim], keys[src:src+run*kvDim])
+				copy(a.r.vc[layer].Floats()[at:at+run*kvDim], vals[src:src+run*kvDim])
+			} else {
+				parallelF32ToF16(a.r.kc[layer].U16s()[at:at+run*kvDim], keys[src:src+run*kvDim])
+				parallelF32ToF16(a.r.vc[layer].U16s()[at:at+run*kvDim], vals[src:src+run*kvDim])
+			}
+			p += run
+		}
 	}
 	return nil
 }
@@ -1495,7 +1496,12 @@ func (a *metalResident) TruncateTo(pos int) {}
 // Reset zeroes every Gated-DeltaNet layer's causal-conv ring and recurrent matrix state (no-op for every other family; a.r.dnet is
 // nil). Unlike KV positions this state compounds, so a fresh sequence on the same resident must reset it or it keeps decaying the
 // previous sequence's state (resetDeltaNet).
-func (a *metalResident) Reset() { a.r.resetRecurrent() }
+func (a *metalResident) Reset() {
+	if a.r.ckptSlot == a.r.kvSlot { // a new sequence on the slot: what the checkpoint holds is no request's
+		a.r.ckptSlot = -1
+	}
+	a.r.resetRecurrent()
+}
 
 var _ decoder.ResidentGreedyChain = (*metalResident)(nil)
 

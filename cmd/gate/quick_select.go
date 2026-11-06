@@ -190,11 +190,11 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			// that need nothing from decoder live in metal/kernels, where the test cache alone keeps them off a decoder diff.
 			Slow: `^(TestWeightAlias_closeCycles|TestProfileKernels)$`,
 			Lint: []lintSpec{
-				{"build", nil, "", "affected", "metal-darwin: go build ./metal/..."},
-				{"vet", nil, "", "affected", "metal-darwin: go vet ./metal/..."},
-				{"vet", testhooks, "", "affected", "metal-darwin: go vet -tags goinfer_testhooks ./metal/..."},
+				{"build", nil, "darwin/arm64", "affected", "metal-darwin: go build ./metal/..."},
+				{"vet", nil, "darwin/arm64", "affected", "metal-darwin: go vet ./metal/..."},
+				{"vet", testhooks, "darwin/arm64", "affected", "metal-darwin: go vet -tags goinfer_testhooks ./metal/..."},
 				// Not a CI step. Run because a local staticcheck is the only one this module gets.
-				{"staticcheck", testhooks, "", "changed", "(not in CI) staticcheck -tags goinfer_testhooks ./metal/..."},
+				{"staticcheck", testhooks, "darwin/arm64", "changed", "(not in CI) staticcheck -tags goinfer_testhooks ./metal/..."},
 			},
 		},
 		{

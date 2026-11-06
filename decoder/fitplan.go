@@ -6,109 +6,10 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// Each Placement equals internal/mem's of the same name, so Plan converts one to the other; a compile error here means they
-// drifted.
-var (
-	_ [int(PlacementResident) - int(mem.Resident)]struct{}
-	_ [int(PlacementExpertCached) - int(mem.ExpertCached)]struct{}
-	_ [int(PlacementHostComputedExperts) - int(mem.HostComputedExperts)]struct{}
-	_ [int(PlacementWeightPaged) - int(mem.WeightPaged)]struct{}
-	_ [int(PlacementDecline) - int(mem.Declined)]struct{}
-	_ [int(mem.Resident) - int(PlacementResident)]struct{}
-	_ [int(mem.ExpertCached) - int(PlacementExpertCached)]struct{}
-	_ [int(mem.HostComputedExperts) - int(PlacementHostComputedExperts)]struct{}
-	_ [int(mem.WeightPaged) - int(PlacementWeightPaged)]struct{}
-	_ [int(mem.Declined) - int(PlacementDecline)]struct{}
-)
-
-// Placement is which of docs/tasks/task-fit-to-hardware.md's five strategies Plan chose for one backend. PlacementHostComputedExperts is
-// reserved and never chosen, so adding it later does not rewrite the type.
-type Placement int
-
-const (
-	PlacementResident Placement = iota
-	PlacementExpertCached
-	PlacementHostComputedExperts // reserved: misses computed on CPU from a pinned host copy; never chosen
-	PlacementWeightPaged
-	PlacementDecline
-)
-
-func (p Placement) String() string {
-	switch p {
-	case PlacementResident:
-		return "resident"
-	case PlacementExpertCached:
-		return "expert-cached"
-	case PlacementHostComputedExperts:
-		return "host-computed-experts"
-	case PlacementWeightPaged:
-		return "weight-paged"
-	case PlacementDecline:
-		return "decline"
-	default:
-		return fmt.Sprintf("Placement(%d)", int(p))
-	}
-}
-
 // ctxPlanFloor is the smallest context Plan will shrink to before giving up (docs/tasks/task-fit-to-hardware.md §2: shrink context
 // toward a floor before moving anything else). It is not fitguard.go's ctxFloor, the CPU staged-load guard's own floor: the two guards are
 // independent by design, so a change to one floor must not silently move the other's.
 const ctxPlanFloor = mem.PlanCtxFloor
-
-// PlanRequest is what the user asked for, with every default already resolved by the CALLER (docs/tasks/task-fit-to-hardware.md §2).
-// Plan itself invents no defaults, so a caller (goinfer-chat fit, the startup banner, a table test) can see and vary exactly what it asked
-// for rather than a default buried inside the function under test.
-type PlanRequest struct {
-	Ctx       int  // requested context; Plan may shrink it toward ctxPlanFloor unless CtxPinned
-	CtxPinned bool // true for an explicit -ctx: refuse (PlacementDecline) rather than silently shrink
-	Slots     int  // an explicit --moe-cache-slots / GOINFER_METAL_MOE_SLOTS; 0 means "let Plan choose"
-
-	// KVF16/KVI8 select a lossy KV precision; both false means f32 (bit-exact, the default). They must come from an explicit flag the caller
-	// read, never be set by Plan on its own initiative: the plan never selects a lossy precision to make something fit without saying so
-	// (docs/tasks/task-fit-to-hardware.md §0).
-	KVF16, KVI8 bool
-
-	// ExtraBytes prices whatever the model itself does not know about but will share its device: a block drafter's weights and verify/capture
-	// buffers, a vision tower (every allocation is a term of the plan, including the ones that attach after load). Without it an expert cache
-	// is sized before a later --drafter attach claims the room NewBlockSpec then needs. The backend learns the same value out of band through
-	// Options.ExtraResidentBytes / Model.ExtraResidentBytes(), and resolveCtxCapFit passes it here when it asks Plan for an unpinned ctx, so
-	// Plan's dry run and the real load price a drafter identically.
-	ExtraBytes int64
-}
-
-// Plan is one backend's placement decision, with every number that justified it — so a decline
-// message, a dry-run printout, and a unit test assertion all read the same fields rather than
-// three independent re-derivations of the same arithmetic.
-type Plan struct {
-	Backend   string
-	Placement Placement
-	Ctx       int // the context actually used — may be smaller than PlanRequest.Ctx
-	Slots     int // expert-cache slot count actually used; 0 when N/A (dense) or "every expert" (unpaged)
-
-	DenseBytes      int64 // decoder.Model.ResidentDenseWeightBytesFor(backend) — the fixed, never-shrinks term
-	ExpertBytesFull int64 // every routed expert, unpaged — reported even when Slots caps what's actually resident
-	ExpertBytesUsed int64 // what Slots actually keeps resident (equals ExpertBytesFull when Slots==0/unpaged/dense)
-	KVBytes         int64 // at Ctx, as this backend allocates it (ResidentKVBytes)
-	HostCopyBytes   int64 // Metal only: the host copy of the resident weights unified memory also holds (ResidentHostCopyBytes; 0 when aliased from a .giw)
-	StateBytes      int64 // one KV slot's recurrent and conv state as this backend allocates it (BuildDemand.StateBytes); 0 for a model with none
-	// CheckpointBytes is the one recurrent checkpoint this plan's load keeps (BuildDemand.CheckpointBytes), 0 on a declined plan or where it does
-	// not fit beside NeedBytes. It is not in NeedBytes and moves no decision here: a load with no room for it keeps none and still runs.
-	CheckpointBytes int64
-	AllocSlackBytes int64 // the backend's allocator rounding over the weight buffers (PlanSlack): CUDA's 2 MiB granularity
-	ExtraBytes      int64 // PlanRequest.ExtraBytes, carried through for NeedBytes()/reporting
-
-	FreeBytes int64  // what Plan was told is available on this backend/device
-	Reason    string // human-readable justification (admit) or decline message with the numbers
-}
-
-// NeedBytes is the total this Plan actually asks the device to hold — DenseBytes + whatever the
-// chosen Slots keeps of the experts + KV at the chosen Ctx + (Metal) the host copy + the caller's own
-// extra terms and the recurrent state. Never ExpertBytesFull: that field exists for reporting what was capped, not what is
-// resident. Without ExtraBytes it equals Model.ResidentNeedBytes at the same Slots and Ctx — the number Metal's resident guard
-// judges — which TestPlan_metalAgreesWithResidentNeedBytes and TestResidentNeedBytes_countsRecurrentState pin.
-func (p Plan) NeedBytes() int64 {
-	return p.DenseBytes + p.StateBytes + p.AllocSlackBytes + p.ExpertBytesUsed + p.KVBytes + p.HostCopyBytes + p.ExtraBytes
-}
 
 // kvBytesPerPositionAllLayers is Plan's KV-cost rate: per layer (a per-layer-varying family like Gemma 4 is not approximated by one
 // model-level figure, as metal/backend.go's residentKVBytes also sums per layer), K+V, at the requested precision. Bytes per element match
@@ -218,10 +119,36 @@ func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack boo
 		mem.Machine{Free: map[mem.Tier]int64{l.Tier: freeBytes}}, mem.DefaultPolicy())
 	p.Placement, p.Ctx, p.Slots = Placement(d.Placement), d.Ctx, d.Slots
 	p.ExpertBytesUsed, p.KVBytes, p.HostCopyBytes, p.Reason = d.ExpertBytesUsed, d.KVBytes, d.HostCopyBytes, d.Reason
-	if ckpt := m.checkpointBytes(backend); p.Placement != PlacementDecline && p.NeedBytes()+ckpt <= freeBytes {
-		p.CheckpointBytes = ckpt
+	if ckpt, perSlot := m.checkpointBytes(backend); p.Placement != PlacementDecline {
+		if copies := checkpointCopies(checkpointHeadroom(p, freeBytes, req), ckpt, max(req.KVSlots, 1), perSlot); copies > 0 {
+			p.CheckpointBytes, p.CheckpointCopies = ckpt, copies
+		}
 	}
 	return p
+}
+
+// checkpointHeadroom is the room p's load has for checkpoints, in the build's order: beside the weights, every KV slot and its state. A build allocates them before it sizes the
+// expert cache and attaches a companion, and holds room for those in its reserve, so a named reserve stands in for them here rather than adding to them.
+func checkpointHeadroom(p Plan, free int64, req PlanRequest) int64 {
+	need := p.NeedBytes()
+	if req.CheckpointReserve > 0 {
+		need -= p.ExtraBytes
+		if p.Placement == PlacementExpertCached {
+			need -= p.ExpertBytesUsed
+		}
+	}
+	return free - need - int64(max(req.KVSlots, 1)-1)*(p.KVBytes+p.StateBytes) - req.CheckpointReserve
+}
+
+// checkpointCopies is how many checkpoints of ckpt bytes fit in headroom: at most one for each of n KV slots on a backend that keeps one per slot, else at most one.
+func checkpointCopies(headroom, ckpt int64, n int, perSlot bool) int {
+	if ckpt <= 0 || headroom < ckpt {
+		return 0
+	}
+	if !perSlot {
+		return 1
+	}
+	return int(min(headroom/ckpt, int64(n)))
 }
 
 // planAdmitDecline is the decoder's admission of this model on backend, with its own facts (Admit): "" when the load would reach

@@ -1,0 +1,56 @@
+[
+ {
+  "arm": "direct",
+  "load_s": 1.2,
+  "load_avg": 0.62,
+  "after_load": {
+   "VmHWM": 1422069760,
+   "RssAnon": 687386624,
+   "RssFile": 107106304,
+   "RssShmem": 98803712,
+   "VmSwap": 0
+  },
+  "after_request": {
+   "VmHWM": 1422069760,
+   "RssAnon": 701059072,
+   "RssFile": 107565056,
+   "RssShmem": 98803712,
+   "VmSwap": 0
+  },
+  "vram_mib": 966,
+  "text": "numbers []int) int {\n    sum := 0\n    for _, number",
+  "usage": {
+   "prompt_tokens": 18,
+   "completion_tokens": 16,
+   "total_tokens": 34,
+   "prefill_reused_tokens": 0
+  }
+ },
+ {
+  "arm": "sidecar",
+  "load_s": 1.2,
+  "load_avg": 0.57,
+  "after_load": {
+   "VmHWM": 792260608,
+   "RssAnon": 63660032,
+   "RssFile": 580415488,
+   "RssShmem": 98803712,
+   "VmSwap": 0
+  },
+  "after_request": {
+   "VmHWM": 792260608,
+   "RssAnon": 71991296,
+   "RssFile": 582696960,
+   "RssShmem": 98803712,
+   "VmSwap": 0
+  },
+  "vram_mib": 990,
+  "text": "numbers []int) int {\n    sum := 0\n    for _, number",
+  "usage": {
+   "prompt_tokens": 18,
+   "completion_tokens": 16,
+   "total_tokens": 34,
+   "prefill_reused_tokens": 0
+  }
+ }
+]

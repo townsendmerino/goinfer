@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -17,8 +18,8 @@ import (
 // and decoder.MetalFitMarginBytes.
 func fitBudget(t *testing.T, m *decoder.Model, positions int) int64 {
 	t.Helper()
-	p := m.Plan("metal", 1<<40, decoder.PlanRequest{Ctx: metalCtxCapDefault, CtxPinned: true})
-	if p.Placement != decoder.PlacementResident {
+	p := m.Plan("metal", 1<<40, fit.PlanRequest{Ctx: metalCtxCapDefault, CtxPinned: true})
+	if p.Placement != fit.PlacementResident {
 		t.Fatalf("the tiny model does not plan resident on metal: %s", p.Reason)
 	}
 	kv := m.ResidentKVBytes("metal", positions, false, false)

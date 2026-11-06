@@ -1,0 +1,13 @@
+=== RUN   TestMambaHostCopy_tier1PeakAnon
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: none kept (165.8 MiB needed beside a 680 MiB reserve, 635 MiB free); a reply rendered back differently re-prefills the whole prompt
+cuda: prefill width 1024 rows (286 MiB of scratch; 462 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+    mamba_host_copy_test.go:171: TIER1 peak RssAnon 16577 MiB, peak VmSwap 0 MiB, decode path cuda-resident (int4), 16 greedy tokens [1278 4857 6086 1395 11238 1044 1407 4358 1626 1885 74045 3318 1784 8961 1307 1278]
+--- PASS: TestMambaHostCopy_tier1PeakAnon (11.47s)
+PASS
+ledger: 5 device(s) released in this run

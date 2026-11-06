@@ -94,6 +94,11 @@ func (r *resident) bindCheckpoint() {
 	}
 }
 
+// RecurrentCheckpointHeld implements decoder.ResidentRecurrentCheckpointOwner: the one copy is the slot's that last saved it.
+func (a *metalResident) RecurrentCheckpointHeld(slot int) bool {
+	return slot >= 0 && len(a.r.ckptBufs) > 0 && a.r.ckptSlot == slot
+}
+
 // SaveRecurrentCheckpoint copies every recurrent layer's live conv window and state, the bound slot's, into the checkpoint,
 // after the work in flight, so it holds what the last prefill left. The checkpoint is one copy: it then belongs to that slot.
 func (a *metalResident) SaveRecurrentCheckpoint() error {

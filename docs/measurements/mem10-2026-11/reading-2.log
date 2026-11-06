@@ -1,0 +1,7 @@
+at_listen: VmLck 0.0 MiB (0.00 GiB), VmHWM 26,328.0 MiB (25.71 GiB), RssAnon 171.6 MiB (0.17 GiB), RssFile 13,680.5 MiB (13.36 GiB), RssShmem 12,345.5 MiB (12.06 GiB), VmSwap 0.0 MiB (0.00 GiB)
+after_5s: VmLck 0.0 MiB (0.00 GiB), VmHWM 26,328.0 MiB (25.71 GiB), RssAnon 174.0 MiB (0.17 GiB), RssFile 13,680.6 MiB (13.36 GiB), RssShmem 12,345.5 MiB (12.06 GiB), VmSwap 0.0 MiB (0.00 GiB)
+after_request: VmLck 0.0 MiB (0.00 GiB), VmHWM 26,328.0 MiB (25.71 GiB), RssAnon 202.6 MiB (0.20 GiB), RssFile 13,680.7 MiB (13.36 GiB), RssShmem 12,345.5 MiB (12.06 GiB), VmSwap 0.0 MiB (0.00 GiB)
+peak_sampled: VmLck 0.0 MiB (0.00 GiB), VmHWM 26,329.4 MiB (25.71 GiB), RssAnon 304.7 MiB (0.30 GiB), RssFile 13,680.7 MiB (13.36 GiB), RssShmem 12,345.5 MiB (12.06 GiB), VmSwap 0.0 MiB (0.00 GiB)
+largest mappings at listen:
+   13,574.2 MiB rss (13.26 GiB) anon 0.0  r--p  /home/francis/models/gemma4-26b-q4_k_m.int4.e4h.cuda.v17.giw
+load 18.0 s; device 6,942 MiB (6.78 GiB); load avg 1.70; 61,186 MiB available at start; ['decode path: cuda-resident (int4)']; completion ' the capital of France is the capital of France is the capital of France is the'

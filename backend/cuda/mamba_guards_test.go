@@ -15,6 +15,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -172,7 +173,7 @@ func TestNemotronResidentCUDA_pricing(t *testing.T) {
 	if got, w := m.ResidentKVBytes("cuda", ctx, r.kvF16, false), want+tabs+kvPoolNullBytes(r.layers); got != w {
 		t.Errorf("the decoder's ResidentKVBytes(cuda, %d) = %d, want %d", ctx, got, w)
 	}
-	if got := m.Plan("cuda", 1<<40, decoder.PlanRequest{Ctx: ctx}).StateBytes; got != stateBytes {
+	if got := m.Plan("cuda", 1<<40, fit.PlanRequest{Ctx: ctx}).StateBytes; got != stateBytes {
 		t.Errorf("the plan's state line is %d, the %d Mamba layers' state buffers are %d bytes", got, nMamba, stateBytes)
 	}
 	t.Logf("nemotron-tiny: %d attention layers of %d price %d KV bytes at %d positions; %d Mamba layers' state is %d bytes", attn, len(r.layers), want, ctx, nMamba, stateBytes)
@@ -507,14 +508,14 @@ func TestRecurrentSlots_stateLinePerSlot(t *testing.T) {
 			if n := r.KVSlots(); n != slots {
 				t.Fatalf("%s: %d slots, asked for %d", fixture, n, slots)
 			}
-			one := m.Plan("cuda", 1<<40, decoder.PlanRequest{Ctx: 1}).StateBytes
+			one := m.Plan("cuda", 1<<40, fit.PlanRequest{Ctx: 1}).StateBytes
 			if one <= 0 || one != r.recurrentStateCharged() {
 				t.Errorf("%s: the plan prices %d bytes of state for a slot, the build charges %d", fixture, one, r.recurrentStateCharged())
 			}
-			want := int64(slots) * one
-			if r.RecurrentCheckpointBytes() > 0 {
-				want += one
+			if n := len(r.ckptCopies); n != slots {
+				t.Fatalf("%s at %d slots keeps %d checkpoints (%s)", fixture, slots, n, r.ckptDeclined)
 			}
+			want := 2 * int64(slots) * one // each slot's state and its checkpoint
 			got := stateLine(r)
 			t.Logf("%s at %d slots: %d bytes on the state line, one slot's %d", fixture, slots, got, one)
 			if got != want {
@@ -560,22 +561,31 @@ func TestRecurrentSlots_fitPricesTheState(t *testing.T) {
 	}
 }
 
-// TestRecurrentSlots_checkpointStaysWithItsSlot is S-4: one copy, saved from the bound slot. A restore before any save, or with
-// another slot bound, is refused; on its own slot it brings back that slot's state, so the sequence continues as if never moved.
-func TestRecurrentSlots_checkpointStaysWithItsSlot(t *testing.T) {
+// TestRecurrentSlots_roomForOneCheckpoint is KV8's C-3: a card with room for one keeps one, and it is today's behaviour: a save takes it, and the other slot's restore
+// is refused and changes nothing, before any save too. On its own slot the restore brings the sequence back. A card with room for none keeps none, and says why.
+func TestRecurrentSlots_roomForOneCheckpoint(t *testing.T) {
+	saved := ckptFreeVRAM
+	defer func() { ckptFreeVRAM = saved }()
+	room := func(copies int64) {
+		ckptFreeVRAM = func(r *cudaResident) (uint64, error) {
+			return uint64(copies*r.recurrentStateCharged() + r.ckptReserve()), nil
+		}
+	}
 	for _, fixture := range recurrentSlotFixtures {
 		t.Run(fixture, func(t *testing.T) {
+			room(1)
 			m, r := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
-			if r.RecurrentCheckpointBytes() <= 0 {
-				t.Fatalf("the load kept no recurrent checkpoint: %s", r.ckptDeclined)
+			if n := len(r.ckptCopies); n != 1 {
+				t.Fatalf("with room for one, the build keeps %d (%s)", n, r.ckptDeclined)
 			}
+			ckptFreeVRAM = saved
 			_, one := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 1})
 			A, B := recurrentSlotSeqs(m, 12)
 			refA := recurrentSlotSolo(t, one, A)
 			if err := r.RestoreRecurrentCheckpoint(); err == nil {
 				t.Error("restoring a checkpoint before any save was not refused")
 			}
-			half := len(A) / 2
+			const half = 6
 			recurrentSlotBind(t, r, 1)
 			r.Reset()
 			for i := range half {
@@ -613,7 +623,84 @@ func TestRecurrentSlots_checkpointStaysWithItsSlot(t *testing.T) {
 					t.Fatalf("after the restore, position %d: %d logits differ from the sequence's solo run", i, d)
 				}
 			}
+			// The other slot saves, so the one copy is taken from slot 1.
+			recurrentSlotBind(t, r, 0)
+			if err := r.SaveRecurrentCheckpoint(); err != nil {
+				t.Fatal(err)
+			}
+			recurrentSlotBind(t, r, 1)
+			if err := r.RestoreRecurrentCheckpoint(); err == nil {
+				t.Error("slot 1 restored a checkpoint slot 0 has since taken")
+			}
+			room(0)
+			_, none := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
+			ckptFreeVRAM = saved
+			if none.RecurrentCheckpointBytes() != 0 || !strings.Contains(none.ckptDeclined, "needed beside") {
+				t.Errorf("with room for none: %d bytes kept, declined %q", none.RecurrentCheckpointBytes(), none.ckptDeclined)
+			}
 		})
+	}
+}
+
+// TestCkptCopies_countTheCharge, no device: a state buffer past the allocation quantum costs a rounded buffer, so the copies that fit are counted on what the card charges, and two
+// that fit by their raw bytes do not.
+func TestCkptCopies_countTheCharge(t *testing.T) {
+	const reserve = int64(1 << 30)
+	r := &cudaResident{dnet: &dnetParams{convK: 2, convDim: 1, stateElems: 3 << 18}, layers: []cudaLayer{{mixer: decoder.MixerDeltaNet}}}
+	live, charged := r.recurrentLiveBytes(), r.recurrentStateCharged()
+	if live >= charged {
+		t.Fatalf("raw %d, charged %d: the fixture has no rounding to read", live, charged)
+	}
+	free := reserve + 2*charged - 1 // two by the raw bytes, one by the charge
+	if free < reserve+2*live {
+		t.Fatalf("free %d holds no two raw copies: the case reads nothing", free)
+	}
+	if n, why := r.ckptCopiesBeside(2, reserve, uint64(free), nil); n != 1 || why != "" {
+		t.Errorf("room for one by the charge: %d copies, why %q; want 1", n, why)
+	}
+	if n, _ := r.ckptCopiesBeside(2, reserve, uint64(reserve+2*charged), nil); n != 2 {
+		t.Errorf("room for two by the charge: %d copies; want 2", n)
+	}
+}
+
+// TestRecurrentSlots_aFailedCopyIsNotCounted: a device that fails part way through a copy leaves the copies already kept, releases the partial one, and reports what it holds, on the ledger
+// and in RecurrentCheckpointBytes. Later sizing in the build reads free VRAM again, so nothing past this carries a count of the copies it asked for; the memory plan runs before any
+// allocation and cannot see this.
+func TestRecurrentSlots_aFailedCopyIsNotCounted(t *testing.T) {
+	r := func() *cudaResident {
+		ckptAllocFailAfterForTest = 1
+		defer func() { ckptAllocFailAfterForTest = 0 }()
+		_, r := recurrentSlotsLoad(t, "qwen35-tiny", decoder.Options{ResidentKVSlots: 2})
+		return r
+	}()
+	if n := len(r.ckptCopies); n != 1 {
+		t.Fatalf("the build keeps %d checkpoints, want the 1 before the failure", n)
+	}
+	charged := r.recurrentStateCharged()
+	if got := r.RecurrentCheckpointBytes(); got != charged {
+		t.Errorf("it reports %d checkpoint bytes, holds %d", got, charged)
+	}
+	l, ok := r.dev.Leaser().(*deviceLedger)
+	if !ok {
+		t.Fatal("the device has no ledger")
+	}
+	if got, want := l.Usage().ByLine[mem.LineState], 3*charged; got != want {
+		t.Errorf("the state line holds %d bytes, want %d: two slots' state and one copy, and the partial copy released", got, want)
+	}
+}
+
+// TestCkptCopiesFor is C-3's arithmetic, no device: as many as fit beside the reserve, at most one a slot.
+func TestCkptCopiesFor(t *testing.T) {
+	const b, reserve = int64(100), int64(1000)
+	for _, c := range []struct {
+		slots int
+		free  int64
+		want  int
+	}{{2, 1200, 2}, {2, 1199, 1}, {4, 1300, 3}, {2, 1 << 20, 2}, {1, 1 << 20, 1}, {0, 1 << 20, 1}, {2, 1099, 0}} {
+		n, why := ckptCopiesFor(c.slots, b, reserve, uint64(c.free), nil)
+		if n != c.want || (c.want == 0) != (why != "") {
+			t.Errorf("%d slots, %d free: %d copies, why %q; want %d", c.slots, c.free, n, why, c.want)
+		}
 	}
 }
 
@@ -768,5 +855,291 @@ func TestRecurrentSlots_markedRowsFoldIntoTheirSlot(t *testing.T) {
 	})
 	if d := logitsDiffer(got, want); d != 0 {
 		t.Errorf("after the slot switch, %d logits differ from one slot's", d)
+	}
+}
+
+// TestRecurrentSlots_eachSlotKeepsItsCheckpoint is KV8's C-1: two sequences on two slots each save, move on, and restore their own, and each then continues as its solo
+// run, bit for bit.
+func TestRecurrentSlots_eachSlotKeepsItsCheckpoint(t *testing.T) {
+	for _, fixture := range recurrentSlotFixtures {
+		t.Run(fixture, func(t *testing.T) {
+			m, r := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
+			_, one := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 1})
+			A, B := recurrentSlotSeqs(m, 12)
+			refs := [][][]float32{recurrentSlotSolo(t, one, A), recurrentSlotSolo(t, one, B)}
+			seqs := [][][]float32{A, B}
+			const half = 6
+			forward := func(emb [][]float32, from, to int) {
+				t.Helper()
+				for i := from; i < to; i++ {
+					if _, err := r.Forward(emb[i], i); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			for s := range seqs {
+				recurrentSlotBind(t, r, s)
+				r.Reset()
+				forward(seqs[s], 0, half)
+				if err := r.SaveRecurrentCheckpoint(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for s := range seqs { // each slot's state moves past its save, on the other's rows, so a restore has something to undo
+				recurrentSlotBind(t, r, s)
+				forward(seqs[1-s], half, half+2)
+			}
+			for s := range seqs {
+				recurrentSlotBind(t, r, s)
+				if err := r.RestoreRecurrentCheckpoint(); err != nil {
+					t.Fatalf("slot %d restoring its own checkpoint: %v", s, err)
+				}
+				for i := half; i < len(seqs[s]); i++ {
+					l, err := r.Forward(seqs[s][i], i)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if d := logitsDiffer(l, refs[s][i]); d != 0 {
+						t.Fatalf("slot %d after its restore, position %d: %d logits differ from the sequence's solo run", s, i, d)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestRecurrentSlots_restoreThroughGenerate is KV8's C-2: two conversations in turn through Generate, each follow-up diverging at its prompt's end, as a reply rendered
+// back differently does. Each restores at its own prompt's end, and each reply equals that client's alone on one slot.
+func TestRecurrentSlots_restoreThroughGenerate(t *testing.T) {
+	for _, fixture := range recurrentSlotFixtures {
+		t.Run(fixture, func(t *testing.T) {
+			m, _ := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
+			_, _, _, _, _, _, vocab := m.Dims()
+			gen := func(md *decoder.Model, prompt []int) ([]int, *decoder.Generation) {
+				t.Helper()
+				ch, g := md.Generate(context.Background(), prompt, 6, decoder.SamplingParams{})
+				var toks []int
+				for tok := range ch {
+					toks = append(toks, tok)
+				}
+				if err := g.Err(); err != nil {
+					t.Fatal(err)
+				}
+				return toks, g
+			}
+			seq := func(n, a, b int) []int {
+				s := make([]int, n)
+				for i := range s {
+					s[i] = (i*a + b) % vocab
+				}
+				return s
+			}
+			const first, more = 32, 32
+			P, Q := seq(first, 31, 7), seq(first, 17, 101)
+			follow := func(p []int, reply []int, seed int) []int {
+				out := slices.Clone(p)
+				for i := range more {
+					v := (i*13 + seed) % vocab
+					if i == 0 && v == reply[0] { // it must diverge at the prompt's end
+						v = (v + 1) % vocab
+					}
+					out = append(out, v)
+				}
+				return out
+			}
+			type turn struct {
+				name    string
+				prompt  []int
+				restore int
+			}
+			replies := map[string][]int{}
+			rp, _ := gen(m, P)
+			rq, _ := gen(m, Q)
+			fp, fq := follow(P, rp, 3), follow(Q, rq, 5)
+			for _, c := range []turn{{"P", fp, first}, {"Q", fq, first}} {
+				got, g := gen(m, c.prompt)
+				t.Logf("%s: restored at %d, reused %d, declined %q; reply %v", c.name, g.CheckpointRestored, g.PrefillReused, g.CheckpointDeclined, got)
+				if g.CheckpointRestored != c.restore {
+					t.Errorf("%s: restored at %d (declined %q), want its prompt's end, %d", c.name, g.CheckpointRestored, g.CheckpointDeclined, c.restore)
+				}
+				replies[c.name] = got
+			}
+			// With room for one copy, Q saves last, so P's slot holds none: its follow-up scores no restore, and prefills from 0.
+			short := func() *decoder.Model {
+				saved := ckptFreeVRAM
+				defer func() { ckptFreeVRAM = saved }()
+				ckptFreeVRAM = func(r *cudaResident) (uint64, error) { return uint64(r.recurrentStateCharged() + r.ckptReserve()), nil }
+				m, _ := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
+				return m
+			}()
+			gen(short, P)
+			gen(short, Q)
+			if _, g := gen(short, fp); g.CheckpointRestored != 0 || g.CheckpointDeclined != "" {
+				t.Errorf("with one copy, the client that saved first restored at %d, declined %q; want no restore tried", g.CheckpointRestored, g.CheckpointDeclined)
+			}
+			for name, c := range map[string][2][]int{"P": {P, fp}, "Q": {Q, fq}} {
+				alone, _ := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 1})
+				gen(alone, c[0])
+				want, g := gen(alone, c[1])
+				if g.CheckpointRestored != first {
+					t.Errorf("%s alone restored at %d, want %d: the comparison reads something else", name, g.CheckpointRestored, first)
+				}
+				if !slices.Equal(replies[name], want) {
+					t.Errorf("%s: the reply %v differs from that client's alone on one slot, %v", name, replies[name], want)
+				}
+			}
+		})
+	}
+}
+
+// recurrentSlotRoom makes the checkpoints' free-VRAM reading hold copies copies, until the test ends.
+func recurrentSlotRoom(t *testing.T, copies int64) {
+	t.Helper()
+	saved := ckptFreeVRAM
+	t.Cleanup(func() { ckptFreeVRAM = saved })
+	ckptFreeVRAM = func(r *cudaResident) (uint64, error) {
+		return uint64(copies*r.recurrentStateCharged() + r.ckptReserve()), nil
+	}
+}
+
+// TestRecurrentSlots_aTakenCheckpointIsNotScored is the card's half of decoder's test of that name: three slots and one copy through Generate. A branch of the conversation
+// whose copy was taken takes the empty slot and attempts no restore, and that conversation's next turn still continues its own state, with the reply it gets alone.
+func TestRecurrentSlots_aTakenCheckpointIsNotScored(t *testing.T) {
+	for _, fixture := range recurrentSlotFixtures {
+		t.Run(fixture, func(t *testing.T) {
+			recurrentSlotRoom(t, 1)
+			m, r := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 3})
+			if n := len(r.ckptCopies); n != 1 {
+				t.Fatalf("the build keeps %d checkpoints, want 1 (%s)", n, r.ckptDeclined)
+			}
+			_, _, _, _, _, _, vocab := m.Dims()
+			gen := func(md *decoder.Model, prompt []int) ([]int, *decoder.Generation) {
+				t.Helper()
+				ch, g := md.Generate(context.Background(), prompt, 6, decoder.SamplingParams{})
+				var toks []int
+				for tok := range ch {
+					toks = append(toks, tok)
+				}
+				if err := g.Err(); err != nil {
+					t.Fatal(err)
+				}
+				return toks, g
+			}
+			seq := func(n, a, b int) []int {
+				s := make([]int, n)
+				for i := range s {
+					s[i] = (i*a + b) % vocab
+				}
+				return s
+			}
+			P, Q := seq(32, 31, 7), seq(32, 17, 101)
+			rp, _ := gen(m, P)
+			gen(m, Q)
+			branch := append(slices.Clone(P), (rp[0]+1)%vocab)
+			branch = append(branch, seq(32, 13, 3)...)
+			_, g := gen(m, branch)
+			t.Logf("%s: the branch restored at %d, reused %d, declined %q", fixture, g.CheckpointRestored, g.PrefillReused, g.CheckpointDeclined)
+			if g.CheckpointRestored != 0 || g.CheckpointDeclined != "" {
+				t.Errorf("a restore was scored on a slot with no checkpoint: restored at %d, declined %q", g.CheckpointRestored, g.CheckpointDeclined)
+			}
+			ext := append(append(slices.Clone(P), rp...), seq(8, 5, 9)...)
+			got, g2 := gen(m, ext)
+			if g2.PrefillReused != len(P)+len(rp) {
+				t.Errorf("P's next turn reused %d of %d rows: the branch took its slot", g2.PrefillReused, len(P)+len(rp))
+			}
+			ckptFreeVRAM = func(r *cudaResident) (uint64, error) { return uint64(1 << 40), nil }
+			alone, _ := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 1})
+			gen(alone, P)
+			want, _ := gen(alone, ext)
+			if !slices.Equal(got, want) {
+				t.Errorf("P's next turn replied %v, alone %v", got, want)
+			}
+		})
+	}
+}
+
+// TestRecurrentSlots_leastRecentlySavedGoesFirst: three slots and two copies, so the third save has a choice to make. It takes the copy saved longest ago, and a slot that
+// saved again in between keeps its own.
+func TestRecurrentSlots_leastRecentlySavedGoesFirst(t *testing.T) {
+	recurrentSlotRoom(t, 2)
+	m, r := recurrentSlotsLoad(t, "qwen35-tiny", decoder.Options{ResidentKVSlots: 3})
+	if n := len(r.ckptCopies); n != 2 {
+		t.Fatalf("the build keeps %d checkpoints, want 2 (%s)", n, r.ckptDeclined)
+	}
+	A, _ := recurrentSlotSeqs(m, 2)
+	save := func(s int) {
+		t.Helper()
+		recurrentSlotBind(t, r, s)
+		r.Reset()
+		if _, err := r.Forward(A[0], 0); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.SaveRecurrentCheckpoint(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	held := func(want ...int) {
+		t.Helper()
+		for s := range 3 {
+			if got := r.RecurrentCheckpointHeld(s); got != slices.Contains(want, s) {
+				t.Errorf("slot %d holds a checkpoint: %v; want the holders %v", s, got, want)
+			}
+		}
+	}
+	if r.RecurrentCheckpointHeld(-1) { // every copy is free now, and a free copy's owner reads -1
+		t.Error("no slot, -1, holds a checkpoint")
+	}
+	save(0)
+	save(1)
+	held(0, 1)
+	save(2) // slot 0 saved longest ago
+	held(1, 2)
+	// Saving again with no reset writes the slot's own copy. Slot 2 saved last, so taking the oldest instead would take slot 1's.
+	recurrentSlotBind(t, r, 2)
+	if err := r.SaveRecurrentCheckpoint(); err != nil {
+		t.Fatal(err)
+	}
+	held(1, 2)
+	// Slot 1's save makes slot 2's the oldest, so slot 0 takes that.
+	recurrentSlotBind(t, r, 1)
+	if err := r.SaveRecurrentCheckpoint(); err != nil {
+		t.Fatal(err)
+	}
+	held(1, 2)
+	save(0)
+	held(0, 1)
+}
+
+// TestRecurrentSlots_resetFreesTheSlotsCheckpoint: a reset starts a new sequence on the slot, so its checkpoint holds nothing a request can use, and the copy is free: a
+// later save takes it before it takes another slot's.
+func TestRecurrentSlots_resetFreesTheSlotsCheckpoint(t *testing.T) {
+	recurrentSlotRoom(t, 2)
+	m, r := recurrentSlotsLoad(t, "qwen35-tiny", decoder.Options{ResidentKVSlots: 3})
+	A, _ := recurrentSlotSeqs(m, 2)
+	for _, s := range []int{0, 1} {
+		recurrentSlotBind(t, r, s)
+		r.Reset()
+		if _, err := r.Forward(A[0], 0); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.SaveRecurrentCheckpoint(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recurrentSlotBind(t, r, 1) // the most recently saved
+	r.Reset()
+	if r.RecurrentCheckpointHeld(1) {
+		t.Error("a reset left the slot's checkpoint held")
+	}
+	recurrentSlotBind(t, r, 2)
+	r.Reset()
+	if _, err := r.Forward(A[0], 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SaveRecurrentCheckpoint(); err != nil {
+		t.Fatal(err)
+	}
+	if !r.RecurrentCheckpointHeld(0) {
+		t.Error("a save took slot 0's checkpoint with a free copy available")
 	}
 }

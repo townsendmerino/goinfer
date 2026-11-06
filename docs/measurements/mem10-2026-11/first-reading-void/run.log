@@ -1,0 +1,5 @@
+at_listen {'VmLck': 0, 'VmHWM': 25133, 'RssAnon': 15258, 'RssFile': 9728, 'RssShmem': 17, 'VmSwap': 0} MiB
+after_5s {'VmLck': 0, 'VmHWM': 25133, 'RssAnon': 15262, 'RssFile': 9728, 'RssShmem': 17, 'VmSwap': 0} MiB
+after_request {'VmLck': 0, 'VmHWM': 26638, 'RssAnon': 15512, 'RssFile': 11110, 'RssShmem': 17, 'VmSwap': 0} MiB
+peak_during_all {'VmLck': 0, 'VmHWM': 26621, 'RssAnon': 15506, 'RssFile': 13341, 'RssShmem': 96, 'VmSwap': 0} MiB
+load 54.6 s; device None MiB; load avg 0.69 ; available 61404 MB; completion ' capital of France.\n8. 8. 8. 8.'

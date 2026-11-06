@@ -20,6 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
@@ -150,8 +151,8 @@ func resolveCtxCapFitFree(m *decoder.Model, request, modelCtx, slots int, margin
 	// ctx this call asks of Plan: Plan only shrinks from the value it is given (fitplan.go, "never GROW past what was
 	// asked"), so that can over-estimate the real cost but never under-price it.
 	extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate)
-	p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: candidate, ExtraBytes: extraBytes})
-	if p.Placement == decoder.PlacementDecline || p.Ctx < floor {
+	p := m.Plan("cuda", marginedFree, fit.PlanRequest{Ctx: candidate, ExtraBytes: extraBytes})
+	if p.Placement == fit.PlacementDecline || p.Ctx < floor {
 		return floor, margin(floor) // Plan could not confidently improve on the floor
 	}
 	c := p.Ctx
@@ -204,11 +205,11 @@ var planFreeSeenForTest func(free int64)
 // binary search finds the edge. Plan's weight figure is conservative, so the result can land lower than the build
 // would allow (docs/code-notes/cuda.md#ctxForSlots).
 func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slots, floor int) int {
-	stateBytes := m.Plan("cuda", 1<<40, decoder.PlanRequest{Ctx: 1}).StateBytes // the plan's own line is one slot's
+	stateBytes := m.Plan("cuda", 1<<40, fit.PlanRequest{Ctx: 1}).StateBytes // the plan's own line is one slot's
 	fits := func(ctx int) bool {
 		more := int64(slots-1) * (m.CUDAKVSlotBytes(ctx, m.KVCacheF16()) + stateBytes) // each further slot, at the load's own KV precision (decoder/kv16_cuda.go), with its recurrent state
-		p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extraBytes + more})
-		return p.Placement != decoder.PlacementDecline
+		p := m.Plan("cuda", marginedFree, fit.PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extraBytes + more})
+		return p.Placement != fit.PlacementDecline
 	}
 	if fits(oneSlot) {
 		return oneSlot
@@ -879,7 +880,8 @@ type cudaResident struct {
 	ckptBytes             int64
 	ckptSave, ckptRestore []gpu.DeviceCopy
 	ckptDeclined          string
-	ckptSlot              int   // the KV slot whose state the checkpoint holds, -1 before a save
+	ckptCopies            []ckptCopy
+	ckptSaves             uint64
 	extraBytes            int64 // decoder.Model.ExtraResidentBytes() at construction — a companion allocation (--drafter) reserved out of every free-VRAM check this resident makes after it (checkWeightsFit, checkKVFits, allocSlots)
 	lmW                   cudaWQ
 	finalNorm             Buffer
@@ -2778,6 +2780,9 @@ func (r *cudaResident) Reset() {
 // the goroutine that services reqCh and deadlocks — a hang, not an error, and one that only appears
 // once graphs are actually admitted for a recurrent model.
 func (r *cudaResident) resetState() error {
+	if k := r.ckptCopyOf(r.kvSlot); k >= 0 { // a new sequence: what the copy holds is no request's, so a later save takes it first
+		r.ckptCopies[k].slot = -1
+	}
 	if e := r.resetMambaState(); e != nil {
 		return e
 	}

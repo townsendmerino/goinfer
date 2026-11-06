@@ -13,36 +13,34 @@ import (
 )
 
 // KV8a's recurrent checkpoint on CUDA (decoder.ResidentRecurrentCheckpoint; docs/measurements/kv8a-2026-10/README.md, "Where the
-// checkpoint lives on CUDA"): one device copy of every recurrent layer's state and conv window, DeltaNet (dnWin, dnState) and
-// Mamba-2 (mbWin, mbSSM). It lives in device memory because the save runs on every request, and a device-to-device copy keeps
-// that cheap; there is no host fallback. A load whose free VRAM cannot hold it keeps none, and the slot behaves as before KV8a. With
-// several KV slots it is still one copy, the bound slot's when it is saved: a restore on another slot is refused.
+// checkpoint lives on CUDA"): device copies of every recurrent layer's state and conv window, DeltaNet (dnWin, dnState) and
+// Mamba-2 (mbWin, mbSSM), one per KV slot when they fit. They live in device memory because the save runs on every request, and a
+// device-to-device copy keeps that cheap; there is no host fallback. A slot saves into its own copy; with fewer copies than slots,
+// a save takes a free one and then the least recently saved, and a slot whose copy was taken has its restore refused. A load whose free
+// VRAM cannot hold one keeps none, and the slot behaves as before KV8a.
+
+// ckptCopy is one checkpoint: a buffer per live one, in recurrentPair order by layer, and the slot whose state it holds, -1 for none.
+type ckptCopy struct {
+	bufs  []Buffer
+	slot  int
+	saved uint64 // the save count when it was last saved: the least recently saved goes first
+}
 
 var _ decoder.ResidentRecurrentCheckpoint = (*cudaResident)(nil)
 
 // ckptFreeVRAM is allocRecurrentCheckpoint's free-VRAM probe, a variable so a test can stand in a card with no room.
 var ckptFreeVRAM = func(r *cudaResident) (uint64, error) { return cudaFreeVRAM(r) }
 
-// allocRecurrentCheckpoint allocates the checkpoint once the core, the KV and the scratch are up, and before the expert cache and the
-// windowed grant are sized from what is left, so both are sized around it. It keeps none, and says why on stderr, when free VRAM less
-// the reserve those two and every request's prefill need cannot hold it. Called inside the setup job.
+// allocRecurrentCheckpoint allocates the checkpoints once the core, the KV and the scratch are up, and before the expert cache and the
+// windowed grant are sized from what is left, so both are sized around them: one per KV slot, as many as free VRAM less the reserve
+// those two and every request's prefill need can hold. It keeps none, and says why on stderr, when it cannot hold one. Called inside
+// the setup job.
 func (r *cudaResident) allocRecurrentCheckpoint() {
 	defer r.onLine(mem.LineState)()
 	if !r.recurrent() {
 		return
 	}
-	var live []Buffer
-	for l := range r.layers {
-		Ly := &r.layers[l]
-		switch {
-		case Ly.isDeltaNet():
-			live = append(live, Ly.dnWin, Ly.dnState)
-		case Ly.mixer == decoder.MixerMamba:
-			live = append(live, Ly.mbWin, Ly.mbSSM)
-		}
-	}
-	bytes := r.recurrentLiveBytes()
-	if bytes == 0 {
+	if r.recurrentLiveBytes() == 0 {
 		return
 	}
 	reserve := r.ckptReserve()
@@ -50,22 +48,28 @@ func (r *cudaResident) allocRecurrentCheckpoint() {
 	if memReadSeenForTest != nil {
 		memReadSeenForTest("ckpt", int64(free), err == nil)
 	}
-	if d := ckptDeclineFor(bytes, reserve, free, err); d != "" {
+	charged := r.recurrentStateCharged()
+	n, d := r.ckptCopiesBeside(r.KVSlots(), reserve, free, err)
+	if d != "" {
 		r.ckptDeclined = d
 		logs.WarnText(ckptDeclinedLine(d))
 		return
 	}
-	copies, ok := r.allocCheckpointCopies(live)
-	if !ok {
+	for range n {
+		bufs, ok := r.allocCheckpointCopy()
+		if !ok {
+			break
+		}
+		r.ckptCopies = append(r.ckptCopies, ckptCopy{bufs: bufs, slot: -1})
+	}
+	if len(r.ckptCopies) == 0 {
 		r.ckptDeclined = "the device allocation failed"
 		logs.Warnf("cuda: recurrent checkpoint: none kept (%s)", r.ckptDeclined)
 		return
 	}
-	r.ckptSave, r.ckptRestore, r.ckptBytes, r.ckptSlot = copies, nil, bytes, -1
-	for _, c := range copies {
-		r.ckptRestore = append(r.ckptRestore, gpu.DeviceCopy{Dst: c.Src, Src: c.Dst, Bytes: c.Bytes})
-	}
-	logs.InfoText(ckptKeptLine(bytes, len(live)))
+	r.ckptBytes = int64(len(r.ckptCopies)) * charged
+	r.bindCheckpoint(0)
+	logs.InfoText(ckptKeptLine(r.ckptBytes, len(r.ckptCopies)*len(r.ckptSave)))
 }
 
 // recurrentLiveBytes is every recurrent layer's live state and conv window in bytes: the buffers the checkpoint copies, sized as the
@@ -131,6 +135,20 @@ func ckptDeclineFor(bytes, reserve int64, free uint64, err error) string {
 	return ""
 }
 
+// ckptCopiesBeside is ckptCopiesFor for this build's checkpoint, as the card charges it: the one figure the build and the memory plan decide on.
+func (r *cudaResident) ckptCopiesBeside(slots int, reserve int64, free uint64, err error) (int, string) {
+	return ckptCopiesFor(slots, r.recurrentStateCharged(), reserve, free, err)
+}
+
+// ckptCopiesFor is how many checkpoints of bytes each a build of slots KV slots keeps beside reserve, at most one a slot, and why none
+// when it keeps none.
+func ckptCopiesFor(slots int, bytes, reserve int64, free uint64, err error) (int, string) {
+	if d := ckptDeclineFor(bytes, reserve, free, err); d != "" {
+		return 0, d
+	}
+	return min(max(slots, 1), int((int64(free)-reserve)/bytes)), ""
+}
+
 // ckptDeclinedLine and ckptKeptLine are the lines the build logs for its checkpoint decision.
 func ckptDeclinedLine(why string) string {
 	return fmt.Sprintf("cuda: recurrent checkpoint: none kept (%s); a reply rendered back differently re-prefills the whole prompt\n", why)
@@ -140,38 +158,45 @@ func ckptKeptLine(bytes int64, buffers int) string {
 	return fmt.Sprintf("cuda: recurrent checkpoint: %.1f MiB on the device (%d buffers, KV8a)\n", mib(bytes), buffers)
 }
 
-// allocCheckpointCopies allocates a device buffer the size of each live one and returns the save copies (live into checkpoint), all or
-// none: a failed allocation releases what it made.
-func (r *cudaResident) allocCheckpointCopies(live []Buffer) (copies []gpu.DeviceCopy, ok bool) {
+// ckptAllocFailAfterForTest, when above 0, fails allocCheckpointCopy part way once that many copies are kept, as a fragmented device would. Only a test sets it.
+var ckptAllocFailAfterForTest int
+
+// allocCheckpointCopy allocates a device buffer the size of each live one, all or none: a failed allocation releases what it made.
+func (r *cudaResident) allocCheckpointCopy() (bufs []Buffer, ok bool) {
 	defer r.onLine(mem.LineState)()
-	var made []Buffer
 	defer func() {
 		if v := recover(); v != nil {
 			if !mem.DeviceAllocFailed(v) {
 				panic(v)
 			}
-			for _, b := range made {
+			for _, b := range bufs {
 				r.dev.ReleaseBuf(b)
 			}
-			copies, ok = nil, false
+			bufs, ok = nil, false
 		}
 	}()
-	for _, b := range live {
-		c := r.af(b.Len())
-		made = append(made, c)
-		copies = append(copies, gpu.DeviceCopy{Dst: c, Src: b, Bytes: b.Len() * 4})
+	for l := range r.layers {
+		if L := &r.layers[l]; L.isRecurrent() {
+			p := L.recurrentLive()
+			for _, b := range []Buffer{p.win, p.state} {
+				bufs = append(bufs, r.af(b.Len()))
+				if ckptAllocFailAfterForTest > 0 && len(r.ckptCopies) >= ckptAllocFailAfterForTest {
+					panic("cuda: device allocation failed (test seam): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY")
+				}
+			}
+		}
 	}
-	return copies, true
+	return bufs, true
 }
 
 func mib(b int64) float64 { return float64(b) / (1 << 20) }
 
-// RecurrentCheckpointBytes (decoder.ResidentRecurrentCheckpoint) is the checkpoint's device bytes, 0 when the load kept none.
+// RecurrentCheckpointBytes (decoder.ResidentRecurrentCheckpoint) is every checkpoint's device bytes together, 0 when the load kept none.
 func (r *cudaResident) RecurrentCheckpointBytes() int64 { return r.ckptBytes }
 
-// bindCheckpoint points the save and restore copies at the bound slot's live state, in the order allocRecurrentCheckpoint made them.
-// Runs on the executor.
-func (r *cudaResident) bindCheckpoint() {
+// bindCheckpoint points the save and restore copies at checkpoint k and the bound slot's live state. Runs on the executor.
+func (r *cudaResident) bindCheckpoint(k int) {
+	r.ckptSave, r.ckptRestore = r.ckptSave[:0], r.ckptRestore[:0]
 	i := 0
 	for l := range r.layers {
 		L := &r.layers[l]
@@ -179,43 +204,83 @@ func (r *cudaResident) bindCheckpoint() {
 			continue
 		}
 		p := L.recurrentLive()
-		r.ckptSave[i].Src, r.ckptRestore[i].Dst = p.win, p.win
-		r.ckptSave[i+1].Src, r.ckptRestore[i+1].Dst = p.state, p.state
-		i += 2
+		for _, live := range []Buffer{p.win, p.state} {
+			c := r.ckptCopies[k].bufs[i]
+			r.ckptSave = append(r.ckptSave, gpu.DeviceCopy{Dst: c, Src: live, Bytes: live.Len() * 4})
+			r.ckptRestore = append(r.ckptRestore, gpu.DeviceCopy{Dst: live, Src: c, Bytes: live.Len() * 4})
+			i++
+		}
 	}
 }
 
-// SaveRecurrentCheckpoint copies every recurrent layer's live state and conv window, the bound slot's, into the checkpoint, after the
-// stream's queued work, so it holds what the last prefill left. The checkpoint then belongs to that slot.
+// ckptCopyOf is the checkpoint slot s holds, or -1.
+func (r *cudaResident) ckptCopyOf(s int) int {
+	for k := range r.ckptCopies {
+		if r.ckptCopies[k].slot == s {
+			return k
+		}
+	}
+	return -1
+}
+
+// RecurrentCheckpointHeld implements decoder.ResidentRecurrentCheckpointOwner.
+func (r *cudaResident) RecurrentCheckpointHeld(slot int) bool {
+	held := false
+	_ = r.do(func() error {
+		held = slot >= 0 && r.ckptCopyOf(slot) >= 0
+		return nil
+	})
+	return held
+}
+
+// ckptCopyFor is the checkpoint a save on slot s writes: its own, then a free one, then the least recently saved.
+func (r *cudaResident) ckptCopyFor(s int) int {
+	if k := r.ckptCopyOf(s); k >= 0 {
+		return k
+	}
+	if k := r.ckptCopyOf(-1); k >= 0 {
+		return k
+	}
+	oldest := 0
+	for k := range r.ckptCopies {
+		if r.ckptCopies[k].saved < r.ckptCopies[oldest].saved {
+			oldest = k
+		}
+	}
+	return oldest
+}
+
+// SaveRecurrentCheckpoint copies every recurrent layer's live state and conv window, the bound slot's, into that slot's checkpoint, after
+// the stream's queued work, so it holds what the last prefill left.
 func (r *cudaResident) SaveRecurrentCheckpoint() error {
-	if len(r.ckptSave) == 0 {
+	if len(r.ckptCopies) == 0 {
 		return errNoCheckpoint
 	}
 	return r.do(func() error {
-		r.bindCheckpoint()
+		k := r.ckptCopyFor(r.kvSlot)
+		r.ckptCopies[k].slot = -1 // a partial copy holds no slot's state
+		r.bindCheckpoint(k)
 		if e := r.copyCheckpointNow(r.ckptSave); e != nil {
-			r.ckptSlot = -1 // a partial copy holds no slot's state
 			return e
 		}
-		r.ckptSlot = r.kvSlot
+		r.ckptSaves++
+		r.ckptCopies[k].slot, r.ckptCopies[k].saved = r.kvSlot, r.ckptSaves
 		return nil
 	})
 }
 
-// RestoreRecurrentCheckpoint copies the checkpoint back into the live state; the next prefill continues from it. It refuses before
-// any save, and when another slot is bound than the one saved; the decoder then prefills from the start.
+// RestoreRecurrentCheckpoint copies the bound slot's checkpoint back into the live state; the next prefill continues from it. It refuses
+// when the slot holds none, because it never saved or its copy was taken; the decoder then prefills from the start.
 func (r *cudaResident) RestoreRecurrentCheckpoint() error {
-	if len(r.ckptRestore) == 0 {
+	if len(r.ckptCopies) == 0 {
 		return errNoCheckpoint
 	}
 	return r.do(func() error {
-		if r.ckptSlot < 0 {
-			return fmt.Errorf("cuda: no recurrent checkpoint saved")
+		k := r.ckptCopyOf(r.kvSlot)
+		if k < 0 {
+			return fmt.Errorf("cuda: KV slot %d holds no recurrent checkpoint", r.kvSlot)
 		}
-		if r.ckptSlot != r.kvSlot {
-			return fmt.Errorf("cuda: the recurrent checkpoint holds KV slot %d's state, and slot %d is bound", r.ckptSlot, r.kvSlot)
-		}
-		r.bindCheckpoint()
+		r.bindCheckpoint(k)
 		return r.copyCheckpointNow(r.ckptRestore)
 	})
 }

@@ -1,0 +1,17 @@
+# gate ptx in /home/francis/goinfer-bench/release-v0.24.0-wt
+
+== 4. PTX reproduces from source, each at the NVRTC it records ==
+  toolchains available: 12.6.85 12.9.86
+      DIFFERS: tower_base.ptx (rebuilt at its recorded V12.9.86)
+  FAIL  1 PTX differ from their committed form — the shipped kernels do not match their .cu
+
+gate ptx: RED  (1 failed, 0 not verified)
+exit status 1
+
+# gate ptx in /home/francis/goinfer-bench/post-tag-tests-wt (the other path, same files):
+
+== 4. PTX reproduces from source, each at the NVRTC it records ==
+  toolchains available: 12.6.85 12.9.86
+  PASS  59/59 PTX regenerate byte-identically at their recorded NVRTC
+
+gate ptx: GREEN

@@ -48,6 +48,7 @@ func runAttnPrefill(rig prefillRig, kernel string, c attnPrefillCase, qkv, kc, v
 	if tile > 0 {
 		args = append(args, NewBufferU32(d, uint32(tile)))
 	}
+	args = append(args, kvIdentityTable(d))
 	rig.run(rig.pipe(kernel), c.M*c.nH*tgReduceAttn, tgReduceAttn, args...)
 	return append([]uint16(nil), out.U16s()[:c.M*c.nH*c.hd]...)
 }

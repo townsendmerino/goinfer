@@ -72,14 +72,15 @@ func recurrentInt8Load(m *decoder.Model) bool {
 	return false
 }
 
-// hostMamba is one Mamba-2 layer's packed weights and small tables, before upload.
+// hostMamba is one Mamba-2 layer's planned projections and small tables, before upload. The projections are planned, not packed (planWeight): upW streams them
+// to the device in row blocks, so the host holds no packed copy of them.
 type hostMamba struct {
 	in, out                    hostW
 	convW, convB, headP, normW []float32
 }
 
-// packMambaLayer packs layer l's Mamba-2 weights: in_proj [projDim, hidden] and out_proj [hidden, dInner] as per-row int8 (the codes the load holds, or
-// quantized here from the f32, the same codes either way), and headP = {-exp(aLog) in f64, dtBias, D} per head.
+// packMambaLayer plans layer l's Mamba-2 weights: in_proj [projDim, hidden] and out_proj [hidden, dInner] as per-row int8 (the codes the load holds, or
+// quantized at upload from the f32, the same codes either way), and packs headP = {-exp(aLog) in f64, dtBias, D} per head.
 func packMambaLayer(m *decoder.Model, l, hidden int, p *mambaParams) (hostMamba, error) {
 	inProj, convW, convB, aLog, dW, dtBias, normW, outProj := m.GraniteMambaWeights(l)
 	var inWM, outWM linalg.WeightMat
@@ -106,10 +107,10 @@ func packMambaLayer(m *decoder.Model, l, hidden int, p *mambaParams) (hostMamba,
 	}
 	var hm hostMamba
 	var err error
-	if hm.in, err = packWeight(&inWM); err != nil {
+	if hm.in, err = planWeight(&inWM); err != nil {
 		return hostMamba{}, fmt.Errorf("layer %d in_proj: %w", l, err)
 	}
-	if hm.out, err = packWeight(&outWM); err != nil {
+	if hm.out, err = planWeight(&outWM); err != nil {
 		return hostMamba{}, fmt.Errorf("layer %d out_proj: %w", l, err)
 	}
 	if hm.in.kind != "int8" || hm.out.kind != "int8" {

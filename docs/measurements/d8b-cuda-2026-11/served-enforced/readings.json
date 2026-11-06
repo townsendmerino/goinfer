@@ -1,0 +1,62 @@
+[
+ {
+  "arm": "direct",
+  "load_s": 1.5,
+  "load_avg": 0.22,
+  "after_load": {
+   "VmHWM": 1423826944,
+   "RssAnon": 689065984,
+   "RssFile": 106975232,
+   "RssShmem": 98803712,
+   "VmSwap": 0
+  },
+  "after_request": {
+   "VmHWM": 1423826944,
+   "RssAnon": 703520768,
+   "RssFile": 107433984,
+   "RssShmem": 98803712,
+   "VmSwap": 0
+  },
+  "vram_mib": 966,
+  "text": "numbers []int) int {\n    sum := 0\n    for _, number",
+  "usage": {
+   "prompt_tokens": 18,
+   "completion_tokens": 16,
+   "total_tokens": 34,
+   "prefill_reused_tokens": 0
+  },
+  "decode_path": [
+   "decode path: cuda-resident (q4k)"
+  ]
+ },
+ {
+  "arm": "sidecar",
+  "load_s": 1.2,
+  "load_avg": 0.28,
+  "after_load": {
+   "VmHWM": 794574848,
+   "RssAnon": 59711488,
+   "RssFile": 580411392,
+   "RssShmem": 98803712,
+   "VmSwap": 0
+  },
+  "after_request": {
+   "VmHWM": 794574848,
+   "RssAnon": 66297856,
+   "RssFile": 582705152,
+   "RssShmem": 98803712,
+   "VmSwap": 0
+  },
+  "vram_mib": 990,
+  "text": "numbers []int) int {\n    sum := 0\n    for _, number",
+  "usage": {
+   "prompt_tokens": 18,
+   "completion_tokens": 16,
+   "total_tokens": 34,
+   "prefill_reused_tokens": 0
+  },
+  "decode_path": [
+   "decode path: cuda-resident (q4k)"
+  ]
+ }
+]

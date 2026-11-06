@@ -16,6 +16,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
@@ -943,7 +944,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		}
 	}
 	if recurrentStatePlannedForTest != nil && mp == nil {
-		recurrentStatePlannedForTest(m.Plan("cuda", 1<<40, decoder.PlanRequest{Ctx: 1}).StateBytes) // the state does not grow with the context
+		recurrentStatePlannedForTest(m.Plan("cuda", 1<<40, fit.PlanRequest{Ctx: 1}).StateBytes) // the state does not grow with the context
 	}
 	r.ctxCap, r.ctxMarginBytes = resolveCtxCapFitFree(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq,
 		func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -727,6 +728,88 @@ func mc3IdentityDiff(t *testing.T, r *resident, depths []int) int {
 		}
 	}
 	return diff
+}
+
+// TestMC3Step_recurrentMatchesDecodeOnServeHistories: the recurrent step against production's single-token forward when each slot's
+// history is built the way serve builds it, by single-token decodes or by PrefillLast, as well as by ForwardBatch. Slots 0 and 1 run
+// the step and their twins 2 and 3 the decode, from the same history; each side then decodes 40 tokens greedily on its own choices.
+// Every step row must equal its twin's decode bit for bit. It prints, per fixture and history, the widest logit difference, how many
+// rows' argmax agree and how many greedy tokens agree before the first divergence.
+func TestMC3Step_recurrentMatchesDecodeOnServeHistories(t *testing.T) {
+	const depth, steps = 20, 40
+	for _, fx := range recurrentStepFixtures {
+		for _, how := range []string{"decode", "PrefillLast", "ForwardBatch", "decode-bound"} {
+			t.Run(filepath.Base(fx.dir)+"/"+how, func(t *testing.T) {
+				r := recurrentStepResidentSlots(t, fx, true, 4)
+				if r.batch == nil {
+					t.Fatalf("no batched step: %s", r.batchIneligible())
+				}
+				for s := range 4 {
+					if err := r.useKVSlot(s); err != nil {
+						t.Fatal(err)
+					}
+					embs := make([][]float32, depth)
+					for i := range embs {
+						embs[i] = mc3Emb(r, (i*37+(s%2)*11+5)%r.V) // slots s and s+2 get the same history
+					}
+					switch how {
+					case "decode", "decode-bound":
+						for i, e := range embs {
+							r.ForwardEmb(e, i)
+						}
+					case "PrefillLast":
+						r.PrefillLast(embs, 0)
+					case "ForwardBatch":
+						if _, err := r.ForwardBatch(embs, 0); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				tokStep, tokDec := []int{3, 9}, []int{3, 9}
+				worst, argAgree, rows, agreeUntil := 0.0, 0, 0, -1
+				for st := range steps {
+					seqs := []batchSeq{{slot: 0, pos: depth + st, emb: mc3Emb(r, tokStep[0])}, {slot: 1, pos: depth + st, emb: mc3Emb(r, tokStep[1])}}
+					dec := make([][]float32, 2)
+					for m := range 2 {
+						if err := r.useKVSlot(2 + m); err != nil {
+							t.Fatal(err)
+						}
+						dec[m] = slices.Clone(r.ForwardEmb(mc3Emb(r, tokDec[m]), depth+st))
+					}
+					if how == "decode-bound" { // the step then runs on the bound slot, as serve's step does
+						if err := r.useKVSlot(0); err != nil {
+							t.Fatal(err)
+						}
+					}
+					got := mc3Step(t, r, seqs)
+					same := tokStep[0] == tokDec[0] && tokStep[1] == tokDec[1]
+					for m := range 2 {
+						if same {
+							for i := range got[m] {
+								worst = max(worst, math.Abs(float64(got[m][i]-dec[m][i])))
+							}
+							rows++
+							if argmaxF32(got[m]) == argmaxF32(dec[m]) {
+								argAgree++
+							}
+						}
+						tokStep[m], tokDec[m] = argmaxF32(got[m]), argmaxF32(dec[m])
+					}
+					if agreeUntil < 0 && (tokStep[0] != tokDec[0] || tokStep[1] != tokDec[1]) {
+						agreeUntil = st
+					}
+				}
+				if agreeUntil < 0 {
+					agreeUntil = steps
+				}
+				fmt.Fprintf(os.Stderr, "[recurrent-step] %-14s %-12s max |step-decode| %.3g over %d rows on one history, argmax agree %d/%d, greedy tokens agree for %d of %d steps\n",
+					filepath.Base(fx.dir), how, worst, rows, argAgree, rows, agreeUntil, steps)
+				if worst != 0 {
+					t.Errorf("the step's rows differ from production's single-token forward (max %.3g; greedy agrees for %d of %d steps)", worst, agreeUntil, steps)
+				}
+			})
+		}
+	}
 }
 
 // TestMC3Step_recurrentBitIdentical is OP4m-d4b's D4b-1 and OP4m-d6b's D6b-1 (docs/tasks/task-forward-architecture-2026-10.md
@@ -1801,6 +1884,170 @@ func TestKVPages_decodeThroughTheTable(t *testing.T) {
 			}
 			if n := differ(inOrder, run(false, true)); n == 0 {
 				t.Error("two table entries swapped under a filled cache moved no logit: the kernels do not read the table")
+			}
+		})
+	}
+}
+
+// TestKVPages_prefillThroughTheTable: a resident's prefill stores and reads KV through the table, so blocks handed out reversed and
+// interleaved across slots give the in-order layout's logits bit for bit. Each of three slots prefills a 300-token prompt (its pass
+// crosses block edges and takes the multi-row kernels) and decodes past it; then each takes a second turn whose prefill starts inside a
+// block, and a batched step runs over all three. It runs at f16 and int8 KV on each prefill attention kernel the fixture can take,
+// and asserts by the pass's own launches that the kernel ran. The plant swaps two entries of slot 0's table under a filled cache, which
+// must move the second turn's prefill logits. Keys this fixture's attention gives no weight cannot move a logit here, so the kernel
+// tests above hold each key row on its own.
+func TestKVPages_prefillThroughTheTable(t *testing.T) {
+	const ctx, slots, prompt, decodeN, turn2 = 1024, 3, 300, 8, 70
+	for _, kv := range []string{"", "i8"} {
+		for _, arm := range []struct {
+			name, kernel string
+			set          func(t *testing.T, r *resident)
+		}{
+			{"steel", "attention_prefill_steel", nil},
+			{"fused", "attention_prefill_fused", func(t *testing.T, r *resident) {
+				prefillSteelAttnOff = true
+				t.Cleanup(func() { prefillSteelAttnOff = false })
+			}},
+			{"exact", "attention_prefill", func(t *testing.T, r *resident) { setResidentKnob(t, r, "GOINFER_METAL_FUSED_ATTENTION", "0") }},
+			{"tiled", "attention_prefill_tiled", func(t *testing.T, r *resident) {
+				setResidentKnob(t, r, "GOINFER_METAL_FUSED_ATTENTION", "0")
+				exactAttnTileForTest = 48
+				t.Cleanup(func() { exactAttnTileForTest = 0 })
+			}},
+		} {
+			t.Run("kv="+kv+"/"+arm.name, func(t *testing.T) {
+				mc3TestKV = kv
+				defer func() { mc3TestKV = "" }()
+				run := func(scramble, plant bool) [][]float32 {
+					kvScrambleForTest = scramble
+					defer func() { kvScrambleForTest = false }()
+					_, r := mc3Resident(t, slots, ctx)
+					if arm.set != nil {
+						arm.set(t, r)
+					}
+					prefillAttnRanForTest = map[string]int{}
+					defer func() { prefillAttnRanForTest = nil }()
+					var out [][]float32
+					add := func(l []float32) { out = append(out, slices.Clone(l)) }
+					bind := func(s int) {
+						t.Helper()
+						if err := r.useKVSlot(s); err != nil {
+							t.Fatal(err)
+						}
+					}
+					embs := func(seed, n int) [][]float32 {
+						e := make([][]float32, n)
+						for i := range e {
+							e[i] = mc3Emb(r, (i*7+seed*13+1)%r.V)
+						}
+						return e
+					}
+					for s := range slots {
+						bind(s)
+						add(r.PrefillLast(embs(s, prompt), 0))
+						for i := range decodeN {
+							add(r.ForwardEmb(mc3Emb(r, (i*5+s+3)%r.V), prompt+i))
+						}
+					}
+					if plant {
+						r.stopExec()
+						tab := r.kvTab.U32s()
+						tab[0], tab[1] = tab[1], tab[0] // the first block: this fixture's attention is too peaked for a later block's keys to move a logit
+					}
+					at := prompt + decodeN
+					for s := range slots {
+						bind(s)
+						add(r.PrefillLast(embs(s+7, turn2), at))
+					}
+					seqs := []batchSeq{{slot: 2, pos: at + turn2, emb: mc3Emb(r, 5)}, {slot: 0, pos: at + turn2, emb: mc3Emb(r, 7)}, {slot: 1, pos: at + turn2, emb: mc3Emb(r, 9)}}
+					for _, l := range mc3Step(t, r, seqs) {
+						add(l)
+					}
+					if prefillAttnRanForTest[arm.kernel] == 0 {
+						t.Fatalf("the passes never launched %s; they launched %v", arm.kernel, prefillAttnRanForTest)
+					}
+					return out
+				}
+				differ := func(a, b [][]float32) int {
+					n := 0
+					for i := range a {
+						for j := range a[i] {
+							if math.Float32bits(a[i][j]) != math.Float32bits(b[i][j]) {
+								n++
+							}
+						}
+					}
+					return n
+				}
+				inOrder := run(false, false)
+				if n := differ(inOrder, run(true, false)); n != 0 {
+					t.Errorf("%d logits differ between scrambled and in-order blocks", n)
+				}
+				// The second turns' prefill logits alone: the step after them reads the table too.
+				turn2At := slots * (1 + decodeN)
+				if n := differ(inOrder[turn2At:turn2At+slots], run(false, true)[turn2At:turn2At+slots]); n == 0 {
+					t.Error("two table entries swapped under a filled cache moved no second-turn prefill logit: prefill does not read the table")
+				}
+			})
+		}
+	}
+}
+
+// TestKVPages_uploadKVThroughTheTable: UploadKV writes each position's K and V (and int8 scales) at its row through the bound slot's
+// table, so rows uploaded into blocks handed out reversed and interleaved across slots decode as in-order ones bit for bit, at every
+// KV precision, on two slots, with uploads that start inside a block and cross block edges.
+func TestKVPages_uploadKVThroughTheTable(t *testing.T) {
+	const ctx, slots, rows = 512, 2, 150
+	for _, kv := range []string{"", "i8", "f32"} {
+		t.Run("kv="+kv, func(t *testing.T) {
+			mc3TestKV = kv
+			defer func() { mc3TestKV = "" }()
+			run := func(scramble bool) [][]float32 {
+				kvScrambleForTest = scramble
+				defer func() { kvScrambleForTest = false }()
+				_, r := mc3Resident(t, slots, ctx)
+				a := &metalResident{r: r, hidden: r.H}
+				var out [][]float32
+				for s := range slots {
+					if err := r.useKVSlot(s); err != nil {
+						t.Fatal(err)
+					}
+					for l := range r.layers {
+						g := r.layers[l].geom
+						if g == nil || r.layers[l].kvShared {
+							continue
+						}
+						rng := rand.New(rand.NewSource(int64(100*s + l)))
+						vals := func(n int) []float32 {
+							v := make([]float32, n)
+							for i := range v {
+								v[i] = float32(rng.NormFloat64())
+							}
+							return v
+						}
+						// two uploads: rows [0, 40), then [40, rows), the second starting inside a block
+						for _, span := range [][2]int{{0, 40}, {40, rows}} {
+							n := span[1] - span[0]
+							if err := a.UploadKV(l, span[0], vals(n*g.kvDim), vals(n*g.kvDim)); err != nil {
+								t.Fatal(err)
+							}
+						}
+					}
+					out = append(out, slices.Clone(r.ForwardEmb(mc3Emb(r, 11+s), rows)))
+				}
+				return out
+			}
+			a, b := run(false), run(true)
+			n := 0
+			for i := range a {
+				for j := range a[i] {
+					if math.Float32bits(a[i][j]) != math.Float32bits(b[i][j]) {
+						n++
+					}
+				}
+			}
+			if n != 0 {
+				t.Errorf("%d logits differ between uploads into scrambled and in-order blocks", n)
 			}
 		})
 	}

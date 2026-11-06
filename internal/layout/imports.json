@@ -2,6 +2,22 @@
   "_about": "SB13's package layout (docs/tasks/task-subsystems-2026-10.md §8 and §9). arrows and test_arrows: every import from one goinfer package to another, by repository-relative directory, from non-test and from test files; TestLayout_arrows fails on one the tree makes that is not here, and on one here the tree no longer makes. rules: the protected separations, which no import, made or recorded, may break; they are edited by hand only.",
   "rules": [
     {
+      "name": "fit-leaf",
+      "from": [
+        "decoder/fit"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "decoder/fit": [
+          "internal/runtime/mem"
+        ]
+      },
+      "why": "decoder/fit (Tier 3, docs/layout.md) holds the fit guard's and the planner's exchange types so a caller can name them without importing the loader. It sits below decoder, which re-exports them: it imports internal/runtime/mem and no other goinfer package, decoder included."
+    },
+    {
       "name": "towers-standalone",
       "from": [
         "internal/vision",
@@ -144,6 +160,7 @@
       "backend/cuda/internal/launchgeom",
       "backend/cuda/internal/wpack",
       "decoder",
+      "decoder/fit",
       "internal/audio",
       "internal/cost",
       "internal/runtime/logs",
@@ -251,6 +268,7 @@
     "decoder": [
       "chat",
       "constrain",
+      "decoder/fit",
       "internal/cost",
       "internal/runtime/adapter",
       "internal/runtime/diskfree",
@@ -265,6 +283,9 @@
       "internal/runtime/program",
       "internal/runtime/sampling",
       "tokenizer"
+    ],
+    "decoder/fit": [
+      "internal/runtime/mem"
     ],
     "demo/agent/agent": [
       "chat",
@@ -328,6 +349,7 @@
     ],
     "internal/app/fitcmd": [
       "decoder",
+      "decoder/fit",
       "internal/runtime/modelload",
       "internal/runtime/prequant"
     ],
@@ -343,6 +365,7 @@
       "chat",
       "constrain",
       "decoder",
+      "decoder/fit",
       "embeddinggemma2",
       "engine",
       "engine/enginetest",
@@ -401,6 +424,7 @@
     ],
     "internal/guard/memgate": [
       "decoder",
+      "decoder/fit",
       "internal/runtime/mem"
     ],
     "internal/guard/servecheck": [
@@ -417,6 +441,7 @@
     ],
     "internal/runtime/modelload": [
       "decoder",
+      "decoder/fit",
       "internal/guard/swapguard",
       "internal/runtime/giw",
       "internal/runtime/logs",
@@ -465,6 +490,7 @@
       "backend/cuda/internal/launchgeom",
       "chat",
       "decoder",
+      "decoder/fit",
       "embeddinggemma2",
       "internal/app/loadflags",
       "internal/audio",
@@ -510,6 +536,7 @@
       "chat",
       "constrain",
       "decoder",
+      "decoder/fit",
       "embeddinggemma2",
       "internal/app/loadflags",
       "internal/audio",
@@ -550,6 +577,7 @@
       "backend/webgpu/internal/kernels",
       "chat",
       "decoder",
+      "decoder/fit",
       "internal/cost",
       "internal/diag/sb2census",
       "internal/diag/towerid",
@@ -631,6 +659,7 @@
     ],
     "internal/app/fitcmd": [
       "decoder",
+      "decoder/fit",
       "internal/runtime/giw"
     ],
     "internal/app/loadflags": [
@@ -644,6 +673,7 @@
       "chat",
       "constrain",
       "decoder",
+      "decoder/fit",
       "embeddinggemma2",
       "engine",
       "internal/app/chatapp",
@@ -691,6 +721,7 @@
     ],
     "internal/guard/memgate": [
       "decoder",
+      "decoder/fit",
       "internal/diag/sb2census",
       "internal/runtime/mem"
     ],
@@ -699,6 +730,7 @@
     ],
     "internal/runtime/modelload": [
       "decoder",
+      "decoder/fit",
       "internal/runtime/prequant",
       "tokenizer"
     ],

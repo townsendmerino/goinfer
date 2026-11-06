@@ -74,19 +74,17 @@
       "id": "qwen2.5-coder-0.5b/mac/decode",
       "checkpoint": "qwen2.5-coder-0.5b",
       "machine": "mac",
-      "basis": "median-of-3",
-      "value": 171.2,
-      "peer": 144.5,
-      "runs": "172.7 / 171.2 / 167.7",
-      "peer_runs": "144.5 / 144.7 / 144.4",
-      "ratio_raw": "1.183",
-      "ratio": "1.18×",
+      "basis": "none",
+      "value": 198.5,
+      "peer": 145.2,
+      "ratio_raw": "1.366",
+      "ratio": "1.37×",
       "verdict": "ahead",
-      "why": "From the 2026-09-25 pre-registered sweep. The Metal decode kernels changed on 2026-09-26.",
-      "date": "2026-09-25",
+      "why": "Greedy, the median of 3 pairs. Every arm was sent the same seed, context (4096) and sampling fields.",
+      "date": "2026-10-17",
       "source": {
-        "path": "docs/measurements/peer-claim-2026-09-25.md",
-        "heading": "Cells g–i in detail (MacBook, 2026-09-25)"
+        "path": "docs/measurements/peer-notrunc-2026-10-17.md",
+        "heading": "Results: Metal (the Mac, read 2026-10-17)"
       }
     },
     {
@@ -131,17 +129,17 @@
       "id": "qwen2.5-coder-1.5b/mac/decode",
       "checkpoint": "qwen2.5-coder-1.5b",
       "machine": "mac",
-      "basis": "mean",
-      "value": 89.3,
-      "peer": 84.3,
-      "ratio_raw": "1.059",
-      "ratio": "1.06×",
+      "basis": "none",
+      "value": 93.4,
+      "peer": 85.1,
+      "ratio_raw": "1.099",
+      "ratio": "1.10×",
       "verdict": "ahead",
-      "why": "After the R18b kernel change, a same-session A/B against Ollama. Not the pre-registered sweep.",
-      "date": "2026-09-26",
+      "why": "Greedy, the median of 3 pairs. Every arm was sent the same seed, context (4096) and sampling fields.",
+      "date": "2026-10-17",
       "source": {
-        "path": "docs/measurements/metal-decode-gemv-r18b-2026-09-26.md",
-        "heading": "End to end against Ollama (reported, not deciding)"
+        "path": "docs/measurements/peer-notrunc-2026-10-17.md",
+        "heading": "Results: Metal (the Mac, read 2026-10-17)"
       }
     },
     {

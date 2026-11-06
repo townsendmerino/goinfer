@@ -1,0 +1,5 @@
+=== RUN   TestAttnBatchedBandwidth
+    attn_bw_test.go:110: attn_batched  nH=12 hd=128 M=2048  |  29.71662ms/launch  → 6.4 GMAC/launch, 0.22 TMAC/s (4.8% of ~4.5T)
+--- PASS: TestAttnBatchedBandwidth (0.79s)
+PASS
+ok  	github.com/townsendmerino/goinfer/backend/cuda/kernels	0.846s
