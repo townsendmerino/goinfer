@@ -1,0 +1,245 @@
+=== RUN   TestGenerateBlockSpec_production
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (368 MiB of scratch; 2164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    blockspec_test.go:104: LOSSLESS: 96 tokens identical to plain greedy
+    blockspec_test.go:105: 17 rounds (5.65 tok/round) | spec 492 ms vs greedy 752 ms => 1.53x
+--- PASS: TestGenerateBlockSpec_production (19.77s)
+=== RUN   TestBlockSpecStream
+cuda: prefill width 2048 rows (368 MiB of scratch; 2164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    blockspec_test.go:179: stream == direct: 48 tokens, 13 rounds, spec stats rounds=13 accepted=34
+    blockspec_test.go:199: cancelled after 3 tokens, stream closed at 3 (full run is 48)
+--- PASS: TestBlockSpecStream (14.38s)
+=== RUN   TestDefaultVerifyWidth_sweep
+cuda: prefill width 1024 rows (186 MiB of scratch; 336 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+    default_width_sweep_test.go:141: === int4 / code (n=12 per width) ===
+    default_width_sweep_test.go:146:    width 5     163.1 tok/s  (sd 32.2)
+    default_width_sweep_test.go:146:    width 6     172.2 tok/s  (sd 37.5)
+    default_width_sweep_test.go:146:    width 7     180.8 tok/s  (sd 41.3)
+    default_width_sweep_test.go:146:    width 8     167.3 tok/s  (sd 39.2)
+    default_width_sweep_test.go:146:    width 9     167.1 tok/s  (sd 47.7)
+    default_width_sweep_test.go:146:    width 10    160.7 tok/s  (sd 46.6)
+    default_width_sweep_test.go:167:    -> best width 7;  7-vs-8 POOLED +8.1%  |  PAIRED +8.4% (sd 6.4), 7 wins 12/12 pairs
+    default_width_sweep_test.go:141: === int4 / math (n=12 per width) ===
+    default_width_sweep_test.go:146:    width 5     197.5 tok/s  (sd 14.3)
+    default_width_sweep_test.go:146:    width 6     211.4 tok/s  (sd 18.7)
+    default_width_sweep_test.go:146:    width 7     217.4 tok/s  (sd 18.7)
+    default_width_sweep_test.go:146:    width 8     215.2 tok/s  (sd 25.3)
+    default_width_sweep_test.go:146:    width 9     210.6 tok/s  (sd 33.9)
+    default_width_sweep_test.go:146:    width 10    210.1 tok/s  (sd 35.8)
+    default_width_sweep_test.go:167:    -> best width 7;  7-vs-8 POOLED +1.0%  |  PAIRED +1.6% (sd 7.8), 7 wins 6/12 pairs
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (368 MiB of scratch; 622 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    default_width_sweep_test.go:141: === int8 / code (n=12 per width) ===
+    default_width_sweep_test.go:146:    width 5      94.2 tok/s  (sd 15.6)
+    default_width_sweep_test.go:146:    width 6      98.3 tok/s  (sd 16.8)
+    default_width_sweep_test.go:146:    width 7      98.4 tok/s  (sd 18.5)
+    default_width_sweep_test.go:146:    width 8      90.3 tok/s  (sd 20.1)
+    default_width_sweep_test.go:146:    width 9      87.7 tok/s  (sd 23.9)
+    default_width_sweep_test.go:146:    width 10     83.9 tok/s  (sd 25.5)
+    default_width_sweep_test.go:167:    -> best width 7;  7-vs-8 POOLED +9.0%  |  PAIRED +9.7% (sd 8.2), 7 wins 10/12 pairs
+    default_width_sweep_test.go:141: === int8 / math (n=12 per width) ===
+    default_width_sweep_test.go:146:    width 5     103.6 tok/s  (sd 13.7)
+    default_width_sweep_test.go:146:    width 6     111.7 tok/s  (sd 17.5)
+    default_width_sweep_test.go:146:    width 7     113.3 tok/s  (sd 21.4)
+    default_width_sweep_test.go:146:    width 8     112.4 tok/s  (sd 25.9)
+    default_width_sweep_test.go:146:    width 9     102.6 tok/s  (sd 25.2)
+    default_width_sweep_test.go:146:    width 10    101.0 tok/s  (sd 24.6)
+    default_width_sweep_test.go:167:    -> best width 7;  7-vs-8 POOLED +0.8%  |  PAIRED +1.8% (sd 6.5), 7 wins 8/12 pairs
+    default_width_sweep_test.go:175: === best width per (quant, suite) ===
+    default_width_sweep_test.go:177:    int4  math  -> 7
+    default_width_sweep_test.go:177:    int8  code  -> 7
+    default_width_sweep_test.go:177:    int8  math  -> 7
+    default_width_sweep_test.go:177:    int4  code  -> 7
+--- PASS: TestDefaultVerifyWidth_sweep (244.28s)
+=== RUN   TestResidentDrafter_fuseContextReleasesScratch
+cuda: prefill width 2048 rows (368 MiB of scratch; 2164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    drafter_leak_test.go:99: free VRAM before ramp: 1892220928, after: 1888026624 (drop 4194304 bytes; one call's own buffers ≈ 4751616 bytes)
+--- PASS: TestResidentDrafter_fuseContextReleasesScratch (13.45s)
+=== RUN   TestDFlashLoop_lossless
+cuda: prefill width 2048 rows (368 MiB of scratch; 2164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    drafter_loop_test.go:168: spec loop: 25 tokens in 10 rounds, 296 ms (2.50 tok/round)
+    drafter_loop_test.go:200: LOSSLESS: 25 tokens identical to plain greedy
+--- PASS: TestDFlashLoop_lossless (13.91s)
+=== RUN   TestDFlashLoop_gate3
+cuda: prefill width 2048 rows (368 MiB of scratch; 2164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    drafter_loop_test.go:293: code k=7: 193 tokens, 41 rounds (4.71 tok/round) | spec 1058 ms vs greedy 1565 ms => 1.48x
+    drafter_loop_test.go:293: math k=8: 194 tokens, 33 rounds (5.88 tok/round) | spec 972 ms vs greedy 1593 ms => 1.64x
+    drafter_loop_test.go:293: chat k=4: 196 tokens, 100 rounds (1.96 tok/round) | spec 1871 ms vs greedy 1193 ms => 0.64x
+--- PASS: TestDFlashLoop_gate3 (21.68s)
+=== RUN   TestResidentDrafter_fuseParity
+cuda: prefill width 2048 rows (368 MiB of scratch; 2164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    drafter_test.go:73: drafter attached: 5 layers, hidden 2560, fc 2560x12800
+    drafter_test.go:123: row 0: cosine 0.999653
+    drafter_test.go:123: row 1: cosine 0.999684
+    drafter_test.go:123: row 2: cosine 0.999703
+    drafter_test.go:123: row 3: cosine 0.999705
+    drafter_test.go:123: row 4: cosine 0.999699
+    drafter_test.go:123: row 5: cosine 0.999679
+--- PASS: TestResidentDrafter_fuseParity (13.86s)
+=== RUN   TestResidentDrafter_extendContext
+    drafter_test.go:144: ISOLATED-RUN: AttachDrafter's second resident hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone
+cuda: prefill width 2048 rows (368 MiB of scratch; 2164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    drafter_test.go:237: incremental (4+4) is BIT-IDENTICAL to one-shot (8) across 8192 K values
+--- PASS: TestResidentDrafter_extendContext (14.10s)
+=== RUN   TestResidentDrafter_blockParity
+cuda: prefill width 2048 rows (368 MiB of scratch; 2164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    drafter_test.go:340: row  0: cosine 0.998299
+    drafter_test.go:340: row  1: cosine 0.998422
+    drafter_test.go:340: row  2: cosine 0.998363
+    drafter_test.go:340: row  3: cosine 0.998656
+    drafter_test.go:340: row  4: cosine 0.998657
+    drafter_test.go:340: row  5: cosine 0.998392
+    drafter_test.go:340: row  6: cosine 0.998381
+    drafter_test.go:340: row  7: cosine 0.997858
+    drafter_test.go:340: row  8: cosine 0.997839
+    drafter_test.go:340: row  9: cosine 0.998039
+    drafter_test.go:340: row 10: cosine 0.997463
+    drafter_test.go:340: row 11: cosine 0.997717
+    drafter_test.go:340: row 12: cosine 0.997758
+    drafter_test.go:340: row 13: cosine 0.997278
+    drafter_test.go:340: row 14: cosine 0.998087
+    drafter_test.go:340: row 15: cosine 0.998247
+    drafter_test.go:342: worst row cosine 0.997278 over 16 rows, ctx=24, 5 layers
+--- PASS: TestResidentDrafter_blockParity (14.76s)
+=== RUN   TestResidentDrafter_streamedAttachMatchesHeld
+cuda: prefill width 2048 rows (368 MiB of scratch; 2164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestResidentDrafter_streamedAttachMatchesHeld (14.40s)
+=== RUN   TestDrafterVsOff_perSuite
+cuda: prefill width 2048 rows (368 MiB of scratch; 2164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestDrafterVsOff_perSuite/chat
+    drafter_vs_off_test.go:204: === suite chat (ratios vs OFF = plain greedy, no drafter; off mean 119.0 tok/s) ===
+    drafter_vs_off_test.go:217:    static4    1.070x
+    drafter_vs_off_test.go:217:    static3    1.065x
+    drafter_vs_off_test.go:217:    static5    1.039x
+    drafter_vs_off_test.go:217:    static6    1.020x
+    drafter_vs_off_test.go:217:    static7    0.995x
+    drafter_vs_off_test.go:217:    static2    0.984x
+    drafter_vs_off_test.go:217:    static8    0.962x
+    drafter_vs_off_test.go:217:    static10   0.895x
+    drafter_vs_off_test.go:217:    static12   0.833x
+    drafter_vs_off_test.go:217:    static16   0.642x
+=== RUN   TestDrafterVsOff_perSuite/code
+    drafter_vs_off_test.go:204: === suite code (ratios vs OFF = plain greedy, no drafter; off mean 123.3 tok/s) ===
+    drafter_vs_off_test.go:217:    static7    1.610x
+    drafter_vs_off_test.go:217:    static6    1.526x
+    drafter_vs_off_test.go:217:    static8    1.519x
+    drafter_vs_off_test.go:217:    static5    1.441x
+    drafter_vs_off_test.go:217:    static10   1.432x
+    drafter_vs_off_test.go:217:    static4    1.415x
+    drafter_vs_off_test.go:217:    static12   1.406x
+    drafter_vs_off_test.go:217:    static16   1.257x
+    drafter_vs_off_test.go:217:    static3    1.049x
+    drafter_vs_off_test.go:217:    static2    0.975x
+=== RUN   TestDrafterVsOff_perSuite/math
+    drafter_vs_off_test.go:204: === suite math (ratios vs OFF = plain greedy, no drafter; off mean 121.6 tok/s) ===
+    drafter_vs_off_test.go:217:    static7    1.844x
+    drafter_vs_off_test.go:217:    static6    1.833x
+    drafter_vs_off_test.go:217:    static8    1.831x
+    drafter_vs_off_test.go:217:    static12   1.743x
+    drafter_vs_off_test.go:217:    static5    1.712x
+    drafter_vs_off_test.go:217:    static10   1.668x
+    drafter_vs_off_test.go:217:    static4    1.592x
+    drafter_vs_off_test.go:217:    static16   1.453x
+    drafter_vs_off_test.go:217:    static3    1.149x
+    drafter_vs_off_test.go:217:    static2    0.975x
+=== RUN   TestDrafterVsOff_perSuite/mixed
+    drafter_vs_off_test.go:204: === suite mixed (ratios vs OFF = plain greedy, no drafter; off mean 117.8 tok/s) ===
+    drafter_vs_off_test.go:217:    static6    1.064x
+    drafter_vs_off_test.go:217:    static4    1.059x
+    drafter_vs_off_test.go:217:    static3    1.055x
+    drafter_vs_off_test.go:217:    static5    1.053x
+    drafter_vs_off_test.go:217:    static7    1.000x
+    drafter_vs_off_test.go:217:    static8    0.959x
+    drafter_vs_off_test.go:217:    static2    0.946x
+    drafter_vs_off_test.go:217:    static10   0.933x
+    drafter_vs_off_test.go:217:    static12   0.825x
+    drafter_vs_off_test.go:217:    static16   0.737x
+    drafter_vs_off_test.go:234:    [window] no structural marker found for "Explain in two sentences why hash tables" — window not measured
+    drafter_vs_off_test.go:234:    [window] no structural marker found for "Briefly describe what binary search does" — window not measured
+    drafter_vs_off_test.go:234:    [window] no structural marker found for "In one sentence, say what a CSV file is." — window not measured
+--- PASS: TestDrafterVsOff_perSuite (76.99s)
+    --- PASS: TestDrafterVsOff_perSuite/chat (14.05s)
+    --- PASS: TestDrafterVsOff_perSuite/code (13.64s)
+    --- PASS: TestDrafterVsOff_perSuite/math (12.08s)
+    --- PASS: TestDrafterVsOff_perSuite/mixed (23.56s)
+=== RUN   TestFlashDecodeBlockSpecLane
+=== RUN   TestFlashDecodeBlockSpecLane/multirow-verify
+cuda: prefill width 1024 rows (186 MiB of scratch; 300 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+    flash_decode_spec_test.go:448: multirow-verify: block speculation == plain LANE over 96 tokens; 18 rounds; multi-row launches 972, lane launches 972 inside
+=== RUN   TestFlashDecodeBlockSpecLane/optionA-scope
+cuda: prefill width 1024 rows (186 MiB of scratch; 300 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+    flash_decode_spec_test.go:448: optionA-scope: block speculation == plain EXACT over 96 tokens; 17 rounds; multi-row launches 0, lane launches 0 inside
+--- PASS: TestFlashDecodeBlockSpecLane (30.46s)
+    --- PASS: TestFlashDecodeBlockSpecLane/multirow-verify (15.41s)
+    --- PASS: TestFlashDecodeBlockSpecLane/optionA-scope (15.05s)
+=== RUN   TestR14DrafterArgmaxAB
+    r14_drafter_argmax_ab_test.go:22: ISOLATED-RUN: prefill scratch out of device memory (M=26) in the one-process heavy tier; passes alone
+cuda: prefill width 2048 rows (368 MiB of scratch; 2164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    r14_drafter_argmax_ab_test.go:96: bit-identical: 582 device argmax calls matched the host loop row-for-row; emitted sequences equal on 2 prompts
+    r14_drafter_argmax_ab_test.go:114: pair 0: host 1277 ms | device 1027 ms | speedup 1.243x
+    r14_drafter_argmax_ab_test.go:114: pair 1: host 1269 ms | device 1026 ms | speedup 1.237x
+    r14_drafter_argmax_ab_test.go:114: pair 2: host 1267 ms | device 1026 ms | speedup 1.235x
+    r14_drafter_argmax_ab_test.go:114: pair 3: host 1280 ms | device 1025 ms | speedup 1.249x
+    r14_drafter_argmax_ab_test.go:114: pair 4: host 1268 ms | device 1025 ms | speedup 1.237x
+    r14_drafter_argmax_ab_test.go:114: pair 5: host 1279 ms | device 1024 ms | speedup 1.249x
+    r14_drafter_argmax_ab_test.go:125: paired median speedup 1.240x (min 1.235, max 1.249) over 6 pairs; pooled host 7640 vs device 6153 ms — SHIP (>=2%)
+--- PASS: TestR14DrafterArgmaxAB (32.66s)
+=== RUN   TestR14DrafterArgmaxProfile
+    r14_drafter_argmax_profile_test.go:22: ISOLATED-RUN: prefill scratch out of device memory (M=23) in the one-process heavy tier; passes alone
+cuda: prefill width 2048 rows (368 MiB of scratch; 2164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    r14_drafter_argmax_profile_test.go:96: code w=7: 193 tokens, 41 rounds, spec wall 1052 ms (25.66 ms/round)
+    r14_drafter_argmax_profile_test.go:97:   head→argmax tails: 84 calls (582 rows, 6.9 rows/call, vocab 151936): sync 169.802ms | D2H 4.796ms | host argmax 0s | total 174.597ms
+    r14_drafter_argmax_profile_test.go:100:   per round: sync 4.142 ms | D2H 0.117 ms | host 0.000 ms | D2H+host 0.117 ms = 0.5% of the round (sync 16.1%)
+    r14_drafter_argmax_profile_test.go:103:   D2H bandwidth 73.76 GB/s; host argmax 0.0 ns/element
+    r14_drafter_argmax_profile_test.go:96: math w=8: 194 tokens, 33 rounds, spec wall 979 ms (29.67 ms/round)
+    r14_drafter_argmax_profile_test.go:97:   head→argmax tails: 68 calls (557 rows, 8.2 rows/call, vocab 151936): sync 174.387ms | D2H 3.759ms | host argmax 0s | total 178.146ms
+    r14_drafter_argmax_profile_test.go:100:   per round: sync 5.284 ms | D2H 0.114 ms | host 0.000 ms | D2H+host 0.114 ms = 0.4% of the round (sync 17.8%)
+    r14_drafter_argmax_profile_test.go:103:   D2H bandwidth 90.05 GB/s; host argmax 0.0 ns/element
+--- PASS: TestR14DrafterArgmaxProfile (15.88s)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1
+cuda: prefill width 512 rows (97 MiB of scratch; 148 MiB free beyond the 173 MiB kept beside a pass); passes take up to 512 rows
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-Generate
+cuda: prefill width 1024 rows (186 MiB of scratch; 336 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+    spec_twoturn_test.go:238: block-spec, turn2=Generate: turn1 1 tok (reused 0), turn2 1 tok (reused 24, want 24, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-GenerateStream
+cuda: prefill width 1024 rows (186 MiB of scratch; 336 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+    spec_twoturn_test.go:242: block-spec, turn2=GenerateStream: turn1 1 tok (reused 0), turn2 1 tok (reused 0, want 24, checked=false)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17
+cuda: prefill width 512 rows (97 MiB of scratch; 148 MiB free beyond the 173 MiB kept beside a pass); passes take up to 512 rows
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-Generate
+cuda: prefill width 1024 rows (186 MiB of scratch; 336 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+    spec_twoturn_test.go:238: block-spec, turn2=Generate: turn1 17 tok (reused 0), turn2 17 tok (reused 40, want 40, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-GenerateStream
+cuda: prefill width 1024 rows (186 MiB of scratch; 336 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+    spec_twoturn_test.go:242: block-spec, turn2=GenerateStream: turn1 17 tok (reused 0), turn2 17 tok (reused 0, want 40, checked=false)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48
+cuda: prefill width 512 rows (97 MiB of scratch; 148 MiB free beyond the 173 MiB kept beside a pass); passes take up to 512 rows
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-Generate
+cuda: prefill width 1024 rows (186 MiB of scratch; 336 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+    spec_twoturn_test.go:238: block-spec, turn2=Generate: turn1 48 tok (reused 0), turn2 48 tok (reused 71, want 71, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-GenerateStream
+cuda: prefill width 1024 rows (186 MiB of scratch; 336 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+    spec_twoturn_test.go:242: block-spec, turn2=GenerateStream: turn1 48 tok (reused 0), turn2 48 tok (reused 0, want 71, checked=false)
+--- PASS: TestBlockSpec_twoTurnsMatchPlain (130.24s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1 (42.86s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-Generate (14.41s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-GenerateStream (14.33s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17 (42.28s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-Generate (13.96s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-GenerateStream (14.35s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48 (44.77s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-Generate (15.02s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-GenerateStream (15.31s)
+PASS
+ledger: 45 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	670.958s

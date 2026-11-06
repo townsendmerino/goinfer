@@ -1,0 +1,126 @@
+[
+ {
+  "arm": "release",
+  "load_avg_1min": 0.88,
+  "load_s": 7.0,
+  "after_load": {
+   "VmHWM_mib": 1274.0,
+   "RssAnon_mib": 108.8,
+   "RssFile_mib": 1029.7,
+   "RssShmem_mib": 94.2,
+   "VmSwap_mib": 0.0
+  },
+  "turns": [
+   {
+    "turn": 1,
+    "secs": 3.6,
+    "at_end": {
+     "VmHWM_mib": 3540.1,
+     "RssAnon_mib": 1626.1,
+     "RssFile_mib": 1807.2,
+     "RssShmem_mib": 94.2,
+     "VmSwap_mib": 0.0
+    },
+    "plus_10s": {
+     "VmHWM_mib": 3540.1,
+     "RssAnon_mib": 1626.5,
+     "RssFile_mib": 1807.2,
+     "RssShmem_mib": 94.2,
+     "VmSwap_mib": 0.0
+    },
+    "text": "Color."
+   },
+   {
+    "turn": 2,
+    "secs": 3.1,
+    "at_end": {
+     "VmHWM_mib": 3540.1,
+     "RssAnon_mib": 481.7,
+     "RssFile_mib": 1807.2,
+     "RssShmem_mib": 94.2,
+     "VmSwap_mib": 0.0
+    },
+    "plus_10s": {
+     "VmHWM_mib": 3540.1,
+     "RssAnon_mib": 490.9,
+     "RssFile_mib": 1807.2,
+     "RssShmem_mib": 94.2,
+     "VmSwap_mib": 0.0
+    },
+    "text": "Color."
+   }
+  ],
+  "tower_lines": [
+   "Qwen3-VL vision for \"qwen3-vl-2b-instruct\": tower (CUDA) loads on first image (merge 2, image-pad id 151655, <= 1024 tokens/image) from /home/francis/models/qwen3-vl-2b-instruct"
+  ],
+  "peak_sampled": {
+   "VmHWM_mib": 3540.1,
+   "RssAnon_mib": 1627.2,
+   "RssFile_mib": 1807.2,
+   "RssShmem_mib": 96.2,
+   "VmSwap_mib": 0
+  }
+ },
+ {
+  "arm": "norelease",
+  "load_avg_1min": 1.54,
+  "load_s": 6.5,
+  "after_load": {
+   "VmHWM_mib": 1282.6,
+   "RssAnon_mib": 118.8,
+   "RssFile_mib": 1029.8,
+   "RssShmem_mib": 94.2,
+   "VmSwap_mib": 0.0
+  },
+  "turns": [
+   {
+    "turn": 1,
+    "secs": 3.6,
+    "at_end": {
+     "VmHWM_mib": 3546.8,
+     "RssAnon_mib": 1630.8,
+     "RssFile_mib": 1807.4,
+     "RssShmem_mib": 94.2,
+     "VmSwap_mib": 0.0
+    },
+    "plus_10s": {
+     "VmHWM_mib": 3546.8,
+     "RssAnon_mib": 1636.5,
+     "RssFile_mib": 1807.4,
+     "RssShmem_mib": 94.2,
+     "VmSwap_mib": 0.0
+    },
+    "text": "Color."
+   },
+   {
+    "turn": 2,
+    "secs": 3.1,
+    "at_end": {
+     "VmHWM_mib": 3546.8,
+     "RssAnon_mib": 523.4,
+     "RssFile_mib": 1807.4,
+     "RssShmem_mib": 94.2,
+     "VmSwap_mib": 0.0
+    },
+    "plus_10s": {
+     "VmHWM_mib": 3546.8,
+     "RssAnon_mib": 524.6,
+     "RssFile_mib": 1807.4,
+     "RssShmem_mib": 94.2,
+     "VmSwap_mib": 0.0
+    },
+    "text": "Color."
+   }
+  ],
+  "tower_lines": [
+   "Qwen3-VL vision for \"qwen3-vl-2b-instruct\": tower (CUDA) loads on first image (merge 2, image-pad id 151655, <= 1024 tokens/image) from /home/francis/models/qwen3-vl-2b-instruct"
+  ],
+  "peak_sampled": {
+   "VmHWM_mib": 3546.8,
+   "RssAnon_mib": 1636.5,
+   "RssFile_mib": 1807.4,
+   "RssShmem_mib": 96.2,
+   "VmSwap_mib": 0
+  }
+ }
+]

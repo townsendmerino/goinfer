@@ -1,0 +1,10 @@
+=== RUN   TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip
+=== RUN   TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip/no_registry_above_the_directory
+=== RUN   TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip/registry_does_not_parse
+=== RUN   TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip/registered_asset,_weights_absent
+--- PASS: TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip (0.00s)
+    --- PASS: TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip/no_registry_above_the_directory (0.00s)
+    --- PASS: TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip/registry_does_not_parse (0.00s)
+    --- PASS: TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip/registered_asset,_weights_absent (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.005s

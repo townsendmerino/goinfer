@@ -73,13 +73,20 @@ In the other direction 13 non-test `decoder` files call it (`model.go`, `prefill
 **Order.**
 1. **Types** (done): `Placement`, `PlanRequest`, `Plan`, `FitAnswer`, `FitDeclineError`, `ErrWontFitResident` in `decoder/fit`, aliased
    in `decoder/fitalias.go`. No behavior change; the files outside `decoder/` that name them compile unchanged.
-2. **Move the callers' imports** (mechanical, per module): backends, `internal/app/*`, `modelload` and `memgate` name `fit.X`
-   instead of `decoder.X`; each module's `decoderRatchet` figure falls with it.
-3. **Price from neutral inputs.** The checkpoint-byte estimators (`estimateGGUFWeightBreakdown`, `estimateSafetensorsWeightBytes`) and
-   the KV and GIW pricing take a small struct (tensor name, dims, dtype; per-layer KV widths; the bytes-per-element function) that
-   `decoder` fills from `Config`, `Architecture` and the quantizer, and move to `decoder/fit`. This is the step that needs
-   the loader's quantizer behind a function value; the test files (`fit*_test.go`, 13) follow their subjects.
-4. `Model.Plan` and `FitQuery` stay in `decoder` as thin adapters (they hold a `*Model`/`Options`); delete the aliases.
+2. **Callers' imports** (done): backends, `internal/app/*`, `modelload` and `memgate` name `fit.X` instead of `decoder.X`.
+3. **Price from neutral inputs** (done as far as it can go without a larger move). The checkpoint-byte estimators, the flat KV rate and the
+   tensor-name classifiers are in `decoder/fit/weights.go` over tensor names, shapes and `fit.Rates`. The guard's *decisions* were
+   never in `decoder`: `fitCheck.check()` hands plain numbers to `mem.HostCheck`, `decideGIWFitAt` to `mem.SolveGIW`, and
+   `internal/runtime/mem` imports no goinfer package. What is left in `fitguard.go`, `fitplan.go` and `fitquery.go` is the adapter
+   from `Config`, `Options`, `Architecture`, `BuildDemand` and `ResolveKV` to those numbers (`fitCheckFor`, `priceCtxAndKV`,
+   `kvPricingFor`, `denseStreamable`, `estimateKVBytes`, `fitRates` and `quantBytesPerElem`, which measure the per-element prices through
+   the loader's quantizer, `Model.Plan`, `FitQuery`) plus the stderr line `guardFit` prints. Moving the
+   `fitCheck` struct to `fit` would only relocate fields that `mem.HostLoad` already carries, at the price of rewriting about ten
+   test files that build it by field name, so it is not planned. Moving the adapter needs `Config`, `Options` and `Architecture`
+   out of `decoder` first; that is the next Tier 3 subsystem (a `decoder/config`-style package), not part of `fit`.
+4. **The aliases stay.** `decoder.Plan`, `PlanRequest`, `Placement*`, `FitAnswer`, `FitDeclineError` and `ErrWontFitResident` are the library's
+   published names (`Model.Plan` returns a `Plan`), and `decoder/fitalias.go` keeps them (Francis, 2026-11-06). Whether `Config`, `Options` and
+   `Architecture` leave `decoder` next is `docs/tasks/task-decoder-config-2026-11.md`.
 
 ## GPU backend modules
 

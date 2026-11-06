@@ -10,6 +10,7 @@ package decoder
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,12 +28,35 @@ type assetSpec struct {
 	Note       string   `json:"note"`
 }
 
-// repoRoot is "..": every package that uses this helper is one level below the checkout root, which
-// is also what the existing "../testdata/..." golden paths throughout these tests assume.
+// repoRoot is ".." for the packages one level below the checkout root, which is what the "../testdata/..." golden paths in
+// decoder's own tests assume. A test in a deeper directory (backend/cuda) gets its root from assetRoot.
 const repoRoot = ".."
 
+// assetRoot is the path from the working directory to the nearest directory, itself first and then each ancestor, that holds
+// testdata/assets.json, written as ".", "..", "../.." and so on; repoRoot when none does.
+func assetRoot() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return repoRoot
+	}
+	rel := "."
+	for d := dir; ; d = filepath.Dir(d) {
+		if _, err := os.Stat(filepath.Join(d, "testdata/assets.json")); err == nil {
+			return rel
+		}
+		if d == filepath.Dir(d) {
+			return repoRoot
+		}
+		rel = filepath.Join(rel, "..")
+	}
+}
+
+// errRegistryUnreadable marks a registry that cannot be read or parsed. The file is tracked, so that is a broken harness, not an
+// absent asset, and the test wrappers fail on it instead of skipping.
+var errRegistryUnreadable = errors.New("asset registry unreadable")
+
 func loadAssetRegistry() ([]assetSpec, error) {
-	raw, err := os.ReadFile(filepath.Join(repoRoot, "testdata/assets.json"))
+	raw, err := os.ReadFile(filepath.Join(assetRoot(), "testdata/assets.json"))
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +83,7 @@ func modelsRoot() string {
 func expandCandidate(c string) string {
 	switch {
 	case strings.HasPrefix(c, "$REPO/"):
-		return filepath.Join(repoRoot, strings.TrimPrefix(c, "$REPO/"))
+		return filepath.Join(assetRoot(), strings.TrimPrefix(c, "$REPO/"))
 	case strings.HasPrefix(c, "$MODELS/"):
 		return filepath.Join(modelsRoot(), strings.TrimPrefix(c, "$MODELS/"))
 	}
@@ -124,7 +148,7 @@ func satisfiesAsset(a assetSpec, p string) (bool, string) {
 func lookupAsset(env string) (string, error) {
 	assets, err := loadAssetRegistry()
 	if err != nil {
-		return "", fmt.Errorf("asset registry unreadable: %w", err)
+		return "", fmt.Errorf("%w: %w", errRegistryUnreadable, err)
 	}
 	for _, a := range assets {
 		if a.Env != env {

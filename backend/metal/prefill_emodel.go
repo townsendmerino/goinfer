@@ -81,6 +81,7 @@ func (r *resident) prefillEModelSrc(src rowSource, startPos int, head bool) (log
 		}
 	}()
 	r.emodelLayerMajorRuns++
+	r.kvOwn(r.kvSlot, startPos, startPos+src.n)
 	for c := 0; c < src.n; c += emodelChunk {
 		end := min(c+emodelChunk, src.n)
 		logits = r.emodelRows(src.rows(c, end), startPos+c, head && end == src.n)

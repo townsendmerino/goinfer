@@ -1,0 +1,13 @@
+=== RUN   TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip
+=== RUN   TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip/no_registry_above_the_directory
+    asset_registry_hook_test.go:49: an unreadable registry did not fail the test (skip="asset GOINFER_DFLASH_F32: asset registry unreadable: open ../testdata/assets.json: no such file or directory")
+=== RUN   TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip/registry_does_not_parse
+    asset_registry_hook_test.go:66: an unparsable registry did not fail the test (skip="asset GOINFER_DFLASH_F32: asset registry unreadable: unexpected end of JSON input")
+=== RUN   TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip/registered_asset,_weights_absent
+--- FAIL: TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip (0.00s)
+    --- FAIL: TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip/no_registry_above_the_directory (0.00s)
+    --- FAIL: TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip/registry_does_not_parse (0.00s)
+    --- PASS: TestAssetPathForTest_unreadableRegistryFailsAndMissingWeightsSkip/registered_asset,_weights_absent (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.005s
+FAIL
