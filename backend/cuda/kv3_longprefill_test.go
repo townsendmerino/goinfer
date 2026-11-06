@@ -3,8 +3,10 @@
 package cuda
 
 import (
+	"context"
 	"fmt"
 	"github.com/townsendmerino/goinfer/decoder"
+	"hash/fnv"
 	"math"
 	"os"
 	"path/filepath"
@@ -344,6 +346,86 @@ func TestKV3_chunkerKeepsPassStartsOnTheGrid(t *testing.T) {
 			if last := ps[len(ps)-1]; chunk >= 2*attnFusedMinRows && last.m < attnFusedMinRows {
 				t.Fatalf("chunk %d, M=%d: last pass of %d rows", chunk, M, last.m)
 			}
+		}
+	}
+}
+
+// MEM6 on CUDA (docs/measurements/mem6-cuda-2026-11/README.md): a resident prefill reads the suffix's embeddings a pass at a time into one reused slab
+// (decoder.ResidentPrefillRows), so the host holds a pass of them, not the suffix. The most embedding rows the decoder holds at once during a prefill of 2,048
+// rows is at most one pass (prefillPassRows), and the last logits and 32 decode steps after them are byte-equal to the slice entry point's.
+//
+//	go test -count=1 -tags 'cuda goinfer_testhooks' -run '^TestMEM6_cudaPrefillHostRows$' -v ./backend/cuda/
+func TestMEM6_cudaPrefillHostRows(t *testing.T) {
+	requireCUDADevice(t)
+	dir := kv3LongContextCopy(t, filepath.Join("../../testdata", "llama-tiny"), 4096)
+	m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 2112})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("not the CUDA resident: %s", m.ResidentDecline())
+	}
+	_, _, _, _, _, _, vocab := m.Dims()
+	// A tiny fixture runs a prompt this long in one pass; a real model's pass is a few hundred rows, which the learned chunk cap stands in for.
+	a.prefillChunkCap.Store(256)
+	defer a.prefillChunkCap.Store(0)
+	pass := a.prefillPassRows()
+	if pass != 256 {
+		t.Fatalf("the pass is %d rows, want the 256 the test set", pass)
+	}
+	held := 0
+	decoder.SetEmbedRowsObserverForTest(func(rows int) { held = max(held, rows) })
+	defer decoder.SetEmbedRowsObserverForTest(nil)
+	hash := func(lg []float32, n int) uint64 {
+		h := fnv.New64a()
+		put := func(l []float32) {
+			for _, x := range l {
+				b := math.Float32bits(x)
+				h.Write([]byte{byte(b), byte(b >> 8), byte(b >> 16), byte(b >> 24)})
+			}
+		}
+		put(lg)
+		next := argmaxF(lg)
+		for j := range 32 {
+			l, err := a.Forward(m.EmbedResidentForTest(next), n+j)
+			if err != nil {
+				t.Fatal(err)
+			}
+			put(l)
+			next = argmaxF(l)
+		}
+		return h.Sum64()
+	}
+	for _, n := range []int{1024, 2048} {
+		ids := make([]int, n)
+		for i := range ids {
+			ids[i] = (i*37 + 11) % vocab
+		}
+		// the slice entry point: every row embedded up front, as the decoder did before
+		a.Reset()
+		emb := make([][]float32, n)
+		for i, id := range ids {
+			emb[i] = m.EmbedResidentForTest(id)
+		}
+		lgSlice, err := a.PrefillLast(context.Background(), emb, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := hash(lgSlice, n)
+		held = 0
+		a.Reset()
+		lg, err := m.ResidentPrefillSeedForTest(context.Background(), ids)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("%d rows: at most %d embedding rows held at once (one pass is %d)", n, held, pass)
+		if held > pass {
+			t.Errorf("%d rows: the decoder held %d embedding rows at once, want at most one pass (%d)", n, held, pass)
+		}
+		if got := hash(lg, n); got != want {
+			t.Errorf("%d rows: the last logits and 32 decode steps differ from the slice entry point's (%#x, want %#x)", n, got, want)
 		}
 	}
 }
