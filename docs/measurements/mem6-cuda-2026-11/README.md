@@ -52,3 +52,25 @@ The bar was 64 MiB. The 1.5B misses it by 4 MiB (the PARKED band) and **the 7B, 
 **A tier 0 gate added after the first green reading, and its bar:** `TestMEM6_cudaPrefillAllocatesNoRowCopy` reads the Go bytes a 2,048-row prefill allocates against a 1,024-row one on `llama-tiny` (pass 256): the slope per prompt row must stay under one embedding row. Red before the change (`red-alloc.log`: 437 B a row against a 256 B embedding row, 1.71); 180 B after. **Its first bar, an eighth of an embedding row (as Metal's G1 used), read 180 B against 32 B and was wrong for a 64-wide fixture, where other per-row costs (about 181 B) exceed a row; I replaced it with one row, the copy that was removed, after seeing that figure.** This gate points at the mechanism and is not the verdict; MEM6-C4b is.
 
 **MEM6-C4b:** MEM6-C4 again, unchanged in everything but the build: `serve-mem6-after2` (the branch with both changes) against the same `serve-mem6-before`, one run each, before first, the exclusive timing lock. **The bar does not move:** `RssAnon` 10 s after the request within **64 MiB** of its value after load on both models (PARKED within 128, FAIL beyond), the same reply, void and stopping rules as above. The first reading is not replaced. Cost about 3 minutes. MEM6-C6 (`gate identity`) after it.
+
+### MEM6-C4b, 2026-11-05 16:44 to 16:46 PST: the 1.5B passes, the 7B is PARKED
+
+`c4b/` (`beforeb/`, `afterb/`, `c4b-before.log`, `c4b-after.log`, `summary-b.txt`). `serve-mem6-before` (main) against `serve-mem6-after2` (the branch, both changes), the exclusive timing lock, load 1.69 and 1.23, 60 GB available, no void cell, 20,201 prompt tokens each, peak `VmSwap` 0.
+
+| `RssAnon`, MiB | after load | peak | +10 s | held | bar (64) |
+|---|---|---|---|---|---|
+| 1.5B main | 111 | 346 | 346 | **+235** | |
+| 1.5B branch | 107 | 140 | 140 | **+33** | **PASS** |
+| 7B main | 93 | 547 | 547 | **+453** | |
+| 7B branch | 120 | 201 | 201 | **+81** | **PARKED** (over 64, within 128) |
+
+**By the registered rule the 7B is PARKED, not a pass**, and this README does not call it one. The change returns 86% (1.5B) and 82% (7B) of what main holds after a 20K prompt, and the held memory no longer grows with the prompt.
+**What the +81 MiB probably is, by arithmetic and not measured:** the two buffers the change keeps or leaves as fresh garbage are pass-wide: the embedding slab (freed after the request, returned by the runtime's own schedule) and `xhostBuf` (kept for the resident's life). At the 1.5B's hidden width (1,536) and a 2,048-row pass those are 12.6 MiB each, which matches the 12.3 MiB the profile showed for the slab and most of the +33; the 7B's hidden width is 2.3 times that. Three levers could close the rest if the owner wants the 64 MiB bar met on the 7B: a narrower embedding pass, releasing `xhostBuf` when a prefill ends, or `debug.FreeOSMemory` after a long prefill. Each trades something (a smaller pass is slower, a release re-allocates on the next long prompt, a forced GC costs a pause), so none is made here.
+
+### The other gates
+
+- **C1, C2, C3, C-alloc:** `red.log`, `red-alloc.log`, `green.log` (final): rows held 1,024 and 2,048 → 256 (one pass), the last logits and 32 decode steps byte-equal to the slice entry point's, 40 tests of the prefill, KV3, resident and MEM6 families pass; the allocation slope 437 → 180 B per prompt row.
+- **C5 (the reply text): NOT RUN.** `mem0_linux.py` records the usage and not the reply, so the cells cannot say the two servers answered alike; the identity claim rests on C2 and C6.
+- **C6:** `gate identity -backend cuda be595d7fe 201a1f75d` (`identity.log`), 16:46:43 to 16:52:11 PST: **29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN**, GREEN. (The "before" servers were built at `6ab62e5b2`; main had moved to `be595d7fe` by the identity run, by docs and other PRs.)
+
+**Verdict:** the CUDA half of MEM6 is built and gated at tier 0; the `RssAnon` return gate is met on the 1.5B and PARKED on the 7B. The ledger row says so. Not covered: Gemma 4 E2B (its cell is not run here; its per-pass PLE block `pleHost` is allocated fresh each pass and was not changed), a CPU cell, Metal (done 2026-10-22).

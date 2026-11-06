@@ -19,7 +19,7 @@
 
 - **P36 · The memory campaign's CUDA cells, on nobara — a pointer, filed 2026-10-31 (coordinator).** `linux`.
   The rows live in `docs/tasks/task-memory-campaign-2026-10.md`'s ledger, which stays the record; this entry only puts
-  them in a queue. Take them from the ledger: MEM6 (the CUDA cells and the `RssAnon` gate), MEM10 (a pre-permuted
+  them in a queue. Take them from the ledger: MEM6 (CUDA built 2026-11-05; the 7B's `RssAnon` gate is PARKED, the owner's call), MEM10 (a pre-permuted
   `cuda` target registered from the mapping), D8b-cuda (after D8b-build merges) and MEM13-copies-CUDA (the whole-tensor
   host packing in `backend/cuda/resident.go:packWeight`). Close a row there, in the same commit as the work, and strike it here.
 
