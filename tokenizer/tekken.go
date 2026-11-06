@@ -80,8 +80,11 @@ func loadTekken(raw []byte, opt tekkenOptions) (*Tokenizer, error) {
 			return nil, fmt.Errorf("%w: vocab entry %d carries rank %d", ErrNotTekken, i, e.Rank)
 		}
 		b, err := base64.StdEncoding.DecodeString(e.TokenBytes)
-		if err != nil || len(b) == 0 {
+		if err != nil {
 			return nil, fmt.Errorf("%w: vocab entry %d token_bytes: %w", ErrNotTekken, i, err)
+		}
+		if len(b) == 0 {
+			return nil, fmt.Errorf("%w: vocab entry %d has empty token_bytes", ErrNotTekken, i)
 		}
 		toks[i] = b
 		ranks[string(b)] = i

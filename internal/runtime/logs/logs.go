@@ -33,26 +33,14 @@ var logger atomic.Pointer[slog.Logger]
 // Set sends every message to l; nil restores stderr. Safe to call while messages are being written.
 func Set(l *slog.Logger) { logger.Store(l) }
 
-// Debugf is routine bookkeeping an operator rarely wants: per-request KV moves, timing diagnostics.
-func Debugf(format string, args ...any) {
-	if enabled(slog.LevelDebug) {
-		write(slog.LevelDebug, fmt.Sprintf(format, args...))
-	}
-}
+// Debugf is routine bookkeeping an operator rarely wants: per-request KV moves.
+func Debugf(format string, args ...any) { logf(slog.LevelDebug, format, args...) }
 
-// Infof is what a load or a path decided.
-func Infof(format string, args ...any) {
-	if enabled(slog.LevelInfo) {
-		write(slog.LevelInfo, fmt.Sprintf(format, args...))
-	}
-}
+// Infof is what a load or a path decided, and a diagnostic an operator turned on (a timing or debug variable).
+func Infof(format string, args ...any) { logf(slog.LevelInfo, format, args...) }
 
 // Warnf is something working worse than asked: a decline, a fallback, a setting ignored.
-func Warnf(format string, args ...any) {
-	if enabled(slog.LevelWarn) {
-		write(slog.LevelWarn, fmt.Sprintf(format, args...))
-	}
-}
+func Warnf(format string, args ...any) { logf(slog.LevelWarn, format, args...) }
 
 // DebugText, InfoText and WarnText are the levels for a string that already holds its own newlines.
 func DebugText(text string) { writeText(slog.LevelDebug, text) }
@@ -63,17 +51,16 @@ func InfoText(text string) { writeText(slog.LevelInfo, text) }
 // WarnText is Warnf for a string that already holds its own newlines.
 func WarnText(text string) { writeText(slog.LevelWarn, text) }
 
-func enabled(level slog.Level) bool {
+// logf loads the logger once, so a Set while it runs cannot hand a record to a logger whose level was not checked.
+func logf(level slog.Level, format string, args ...any) {
 	l := logger.Load()
-	return l == nil || l.Enabled(context.Background(), level)
-}
-
-func write(level slog.Level, msg string) {
-	if l := logger.Load(); l != nil {
-		record(l, level, msg)
+	if l == nil {
+		fmt.Fprintln(os.Stderr, fmt.Sprintf(format, args...))
 		return
 	}
-	fmt.Fprintln(os.Stderr, msg)
+	if l.Enabled(context.Background(), level) {
+		record(l, level, fmt.Sprintf(format, args...))
+	}
 }
 
 func writeText(level slog.Level, text string) {
@@ -90,6 +77,6 @@ func writeText(level slog.Level, text string) {
 // record must be called two frames below the level function: the source it reports is that function's caller.
 func record(l *slog.Logger, level slog.Level, msg string) {
 	var pcs [1]uintptr
-	runtime.Callers(4, pcs[:]) // Callers, record, write or writeText, the level function
+	runtime.Callers(4, pcs[:]) // Callers, record, logf or writeText, the level function
 	_ = l.Handler().Handle(context.Background(), slog.NewRecord(time.Now(), level, msg, pcs[0]))
 }

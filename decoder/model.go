@@ -2093,16 +2093,16 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	}
 	if decodeTiming && clk.n > 0 {
 		ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(clk.n) }
-		logs.Debugf("DECODE TIMING (%d tok, gpu=%v): forward %.1f ms | sample %.2f ms | logitProc %.2f ms | embed %.2f ms /token",
+		logs.Infof("DECODE TIMING (%d tok, gpu=%v): forward %.1f ms | sample %.2f ms | logitProc %.2f ms | embed %.2f ms /token",
 			clk.n, useGPU, ms(clk.fwd), ms(clk.sample), ms(clk.proc), ms(clk.embed))
 		d := func(p *int64) float64 { return ms(time.Duration(atomic.SwapInt64(p, 0))) }
 		a, ml, hd := d(&dtAttn), d(&dtMLP), d(&dtHead)
 		gu, act, ad := d(&dtGU), d(&dtAct), d(&dtActDown)
 		qkv, o, aa := d(&dtQKV), d(&dtO), d(&dtAttnAll)
-		logs.Debugf("DECODE SPLIT: attention %.2f ms | MLP %.2f ms | LM head %.2f ms | residual %.2f ms /token",
+		logs.Infof("DECODE SPLIT: attention %.2f ms | MLP %.2f ms | LM head %.2f ms | residual %.2f ms /token",
 			a, ml, hd, ms(clk.fwd)-a-ml-hd)
-		logs.Debugf("DECODE SPLIT MLP: gate+up matmuls %.2f ms | activation %.2f ms | down matmul %.2f ms /token", gu, act, ad-act)
-		logs.Debugf("DECODE SPLIT ATTN: q/k/v matmuls %.2f ms | rope+KV+scores/softmax/AV core %.2f ms | o matmul %.2f ms /token", qkv, aa-qkv-o, o)
+		logs.Infof("DECODE SPLIT MLP: gate+up matmuls %.2f ms | activation %.2f ms | down matmul %.2f ms /token", gu, act, ad-act)
+		logs.Infof("DECODE SPLIT ATTN: q/k/v matmuls %.2f ms | rope+KV+scores/softmax/AV core %.2f ms | o matmul %.2f ms /token", qkv, aa-qkv-o, o)
 		lastDecodeSplit.fwd, lastDecodeSplit.attn, lastDecodeSplit.mlp, lastDecodeSplit.head = ms(clk.fwd), a, ml, hd
 		lastDecodeSplit.gu, lastDecodeSplit.act, lastDecodeSplit.down = gu, act, ad-act
 		lastDecodeSplit.qkv, lastDecodeSplit.core, lastDecodeSplit.o = qkv, aa-qkv-o, o

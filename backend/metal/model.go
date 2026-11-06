@@ -3631,7 +3631,7 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 			// depth and a uniform for the new.
 			nSplit := r.attnFASplitFor(r.planNKeys(), g.nKV)
 			if os.Getenv("GOINFER_ATTNFA_DEBUG") == "1" {
-				logs.Debugf("[ATTNFA] l=%d nKeys=%d nSplit=%d nKV=%d G=%d hd=%d partialLen=%d",
+				logs.Infof("[ATTNFA] l=%d nKeys=%d nSplit=%d nKV=%d G=%d hd=%d partialLen=%d",
 					l, r.planNKeys(), nSplit, g.nKV, r.nH/g.nKV, g.hd, r.attnFAPartial.Len())
 			}
 			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4

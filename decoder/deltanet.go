@@ -63,7 +63,7 @@ func PrintDeltaNetTiming() {
 	if elems > 0 {
 		nsPerElem = float64(recur.Nanoseconds()) / float64(elems)
 	}
-	logs.Debugf("DELTANET TIMING (%d steps): proj %.3f ms/step (%.1f%%) | recurrence %.3f ms/step (%.1f%%) | other %.3f ms/step (%.1f%%) | recurrence %.3f ns/state-elem (Σ %d elems)",
+	logs.Infof("DELTANET TIMING (%d steps): proj %.3f ms/step (%.1f%%) | recurrence %.3f ms/step (%.1f%%) | other %.3f ms/step (%.1f%%) | recurrence %.3f ns/state-elem (Σ %d elems)",
 		n, msPer(proj), pct(proj), msPer(recur), pct(recur), msPer(other), pct(other), nsPerElem, elems)
 }
 

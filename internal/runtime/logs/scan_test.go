@@ -5,8 +5,10 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -15,12 +17,15 @@ import (
 // progress and the internal/app command-line front ends (and internal/guard/servecheck, internal/diag/hwreport: subcommands), whose output
 // is their interface. cmd directories under a root are binaries, and are skipped.
 var libraryRoots = []string{
-	"backend/cuda", "backend/metal", "backend/webgpu", "chat", "constrain", "decoder", "engine", "multimodal", "tokenizer",
-	"internal/audio", "internal/batchio", "internal/clef", "internal/codec", "internal/config", "internal/confidence", "internal/cost",
-	"internal/decide", "internal/fidelity", "internal/guard/swapguard", "internal/runtime", "internal/vision",
+	"backend/cuda", "backend/metal", "backend/webgpu", "chat", "constrain", "decoder", "embeddinggemma2", "engine", "multimodal", "server",
+	"tokenizer", "internal/audio", "internal/batchio", "internal/clef", "internal/codec", "internal/config", "internal/confidence",
+	"internal/cost", "internal/decide", "internal/fidelity", "internal/guard/memgate", "internal/guard/paritykey", "internal/guard/swapguard",
+	"internal/runtime", "internal/vision", "internal/wrappedupload",
 }
 
-var errName = regexp.MustCompile(`^(err|e)$|^[a-z]*[eE]rr[A-Za-z0-9]*$`)
+// errName is what the scan takes for an error variable, by name (it parses and does not type-check): err and e, a one-letter prefix
+// and e (le, ge), and any name containing err or Err.
+var errName = regexp.MustCompile(`^[a-z]?e$|^[a-z]*[eE]rr[A-Za-z0-9]*$`)
 
 // Library code reaches stderr, stdout and any logger through this package only, which is what makes decoder.SetLogger true. And no block
 // both reports an error and returns it: the caller reports it again, and one failure reads as two.
@@ -54,17 +59,27 @@ func TestLibraryOutput_goesThroughLogs(t *testing.T) {
 	}
 }
 
-func scanOutput(t *testing.T, path string) {
+func scanOutput(t *testing.T, file string) {
 	t.Helper()
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+	f, err := parser.ParseFile(fset, file, nil, parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatal(err)
+	}
+	logPkgs := map[string]bool{} // the names this file imports log and log/slog under
+	for _, im := range f.Imports {
+		if p := strings.Trim(im.Path.Value, `"`); p == "log" || p == "log/slog" {
+			name := path.Base(p)
+			if im.Name != nil {
+				name = im.Name.Name
+			}
+			logPkgs[name] = true
+		}
 	}
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CallExpr:
-			if what := directOutput(x); what != "" {
+			if what := directOutput(x, logPkgs); what != "" {
 				t.Errorf("%s: %s: library code writes through internal/runtime/logs", fset.Position(x.Pos()), what)
 			}
 		case *ast.BlockStmt:
@@ -76,7 +91,10 @@ func scanOutput(t *testing.T, path string) {
 	})
 }
 
-func directOutput(c *ast.CallExpr) string {
+// directOutput names the output a call writes outside this package: print and println, any call into log or log/slog (under
+// whatever name the file imports them; a *slog.Logger a library holds comes from one, or from its caller), fmt's printing to
+// stdout or a standard stream, and a write to one.
+func directOutput(c *ast.CallExpr, logPkgs map[string]bool) string {
 	switch f := c.Fun.(type) {
 	case *ast.Ident:
 		if f.Name == "print" || f.Name == "println" {
@@ -84,18 +102,16 @@ func directOutput(c *ast.CallExpr) string {
 		}
 	case *ast.SelectorExpr:
 		x, ok := f.X.(*ast.Ident)
-		if ok {
-			switch x.Name {
-			case "log", "slog":
-				return x.Name + "." + f.Sel.Name
-			case "fmt":
-				switch f.Sel.Name {
-				case "Print", "Printf", "Println":
-					return "fmt." + f.Sel.Name
-				case "Fprint", "Fprintf", "Fprintln":
-					if len(c.Args) > 0 && isStdStream(c.Args[0]) {
-						return "fmt." + f.Sel.Name + " to a standard stream"
-					}
+		if ok && logPkgs[x.Name] {
+			return x.Name + "." + f.Sel.Name
+		}
+		if ok && x.Name == "fmt" {
+			switch f.Sel.Name {
+			case "Print", "Printf", "Println":
+				return "fmt." + f.Sel.Name
+			case "Fprint", "Fprintf", "Fprintln":
+				if len(c.Args) > 0 && isStdStream(c.Args[0]) {
+					return "fmt." + f.Sel.Name + " to a standard stream"
 				}
 			}
 		}
@@ -115,43 +131,141 @@ func isStdStream(e ast.Expr) bool {
 	return ok && x.Name == "os" && (s.Sel.Name == "Stderr" || s.Sel.Name == "Stdout")
 }
 
-// checkReportAndReturn: a logs call naming an error, then a return of that error, in one statement list.
+// checkReportAndReturn: a logs call naming an error, then a return of that error, in one statement list. A report inside an if
+// statement's branch counts for the statements after it when the branch falls through, unless the if statement declared the
+// name; assigning the name again clears it.
 func checkReportAndReturn(t *testing.T, fset *token.FileSet, list []ast.Stmt) {
 	t.Helper()
 	reported := map[string]token.Pos{}
 	for _, st := range list {
 		switch s := st.(type) {
 		case *ast.ExprStmt:
-			c, ok := s.X.(*ast.CallExpr)
-			if !ok {
-				continue
+			for name, pos := range logsReports(s) {
+				reported[name] = pos
 			}
-			sel, ok := c.Fun.(*ast.SelectorExpr)
-			if !ok {
-				continue
-			}
-			if x, ok := sel.X.(*ast.Ident); !ok || x.Name != "logs" {
-				continue
-			}
-			for _, a := range c.Args {
-				ast.Inspect(a, func(n ast.Node) bool {
-					if id, ok := n.(*ast.Ident); ok && errName.MatchString(id.Name) {
-						reported[id.Name] = c.Pos()
+		case *ast.IfStmt:
+			declared := assigned(s.Init, token.DEFINE)
+			for _, branch := range []ast.Stmt{s.Body, s.Else} {
+				if b, ok := branch.(*ast.BlockStmt); ok && !terminates(b.List) {
+					for name, pos := range logsReports(b) {
+						if !declared[name] {
+							reported[name] = pos
+						}
 					}
-					return true
-				})
+				}
+			}
+		case *ast.AssignStmt:
+			for name := range assigned(s, token.ASSIGN, token.DEFINE) {
+				delete(reported, name)
 			}
 		case *ast.ReturnStmt:
 			for _, res := range s.Results {
-				ast.Inspect(res, func(n ast.Node) bool {
-					if id, ok := n.(*ast.Ident); ok {
-						if pos, hit := reported[id.Name]; hit {
-							t.Errorf("%s: reports %s and returns it at line %d: the caller reports it again", fset.Position(pos), id.Name, fset.Position(s.Pos()).Line)
-						}
+				for _, id := range returnedErrors(res) {
+					if pos, hit := reported[id.Name]; hit {
+						t.Errorf("%s: reports %s and returns it at line %d: the caller reports it again", fset.Position(pos), id.Name, fset.Position(s.Pos()).Line)
 					}
-					return true
-				})
+				}
 			}
 		}
 	}
+}
+
+// returnedErrors is the names a return result hands back as an error: the result itself, a composite literal's fields (an error
+// type wrapping it), or the arguments of the fmt.Errorf or errors.Join that wraps it. A name passed to any other call is an argument,
+// not the error returned.
+func returnedErrors(res ast.Expr) []*ast.Ident {
+	if u, ok := res.(*ast.UnaryExpr); ok && u.Op == token.AND {
+		res = u.X
+	}
+	switch x := res.(type) {
+	case *ast.Ident:
+		return []*ast.Ident{x}
+	case *ast.CompositeLit: // an error type wrapping it
+		var out []*ast.Ident
+		for _, e := range x.Elts {
+			if kv, ok := e.(*ast.KeyValueExpr); ok {
+				e = kv.Value
+			}
+			if id, ok := e.(*ast.Ident); ok {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	c, ok := res.(*ast.CallExpr)
+	if !ok {
+		return nil
+	}
+	sel, ok := c.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return nil
+	}
+	if x, ok := sel.X.(*ast.Ident); !ok || !(x.Name == "fmt" && sel.Sel.Name == "Errorf" || x.Name == "errors" && sel.Sel.Name == "Join") {
+		return nil
+	}
+	var out []*ast.Ident
+	for _, a := range c.Args {
+		if id, ok := a.(*ast.Ident); ok {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// logsReports is the error names a logs call within n passes, where each was reported; function literals are not looked in.
+func logsReports(n ast.Node) map[string]token.Pos {
+	out := map[string]token.Pos{}
+	ast.Inspect(n, func(n ast.Node) bool {
+		if _, ok := n.(*ast.FuncLit); ok {
+			return false
+		}
+		c, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if sel, ok := c.Fun.(*ast.SelectorExpr); ok {
+			if x, ok := sel.X.(*ast.Ident); ok && x.Name == "logs" {
+				for _, a := range c.Args {
+					ast.Inspect(a, func(n ast.Node) bool {
+						if id, ok := n.(*ast.Ident); ok && errName.MatchString(id.Name) {
+							out[id.Name] = c.Pos()
+						}
+						return true
+					})
+				}
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// assigned is the names st, an assignment with one of toks, assigns.
+func assigned(st ast.Stmt, toks ...token.Token) map[string]bool {
+	out := map[string]bool{}
+	if a, ok := st.(*ast.AssignStmt); ok && slices.Contains(toks, a.Tok) {
+		for _, l := range a.Lhs {
+			if id, ok := l.(*ast.Ident); ok {
+				out[id.Name] = true
+			}
+		}
+	}
+	return out
+}
+
+// terminates reports whether a statement list ends in a return, a panic, or a branch out of it.
+func terminates(list []ast.Stmt) bool {
+	if len(list) == 0 {
+		return false
+	}
+	switch s := list[len(list)-1].(type) {
+	case *ast.ReturnStmt, *ast.BranchStmt:
+		return true
+	case *ast.ExprStmt:
+		if c, ok := s.X.(*ast.CallExpr); ok {
+			id, ok := c.Fun.(*ast.Ident)
+			return ok && id.Name == "panic"
+		}
+	}
+	return false
 }

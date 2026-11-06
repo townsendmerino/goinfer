@@ -72,3 +72,22 @@ see follow-up 7. `gpudev`'s new test passed there too. The 8 heavy tests did not
    reads red for this reason alone; `GOOS=linux` builds it.
 7. **`TestPlanSlack_realSizeDiff` fails on `main`,** seen on nobara at ab4cea76: all 63 groups differ from its golden. Not investigated: a stale golden after a plan change is one explanation, a real change in
    what the planner decides is another. The subsystems doc names it as a gate (G-GF2-3, G-MA-4).
+
+## Review round, 2026-11-06
+
+A review of PR #700 found these; each is fixed on the branch.
+
+- **`loadTekken` wrapped a nil error** when `token_bytes` decoded to nothing, printing `%!w(<nil>)`. The two cases are now separate errors
+  (`TestTekken_refusesABadTokenBytesEntry`, red on the old code).
+- **The level functions loaded the logger twice**, once to check the level and once to write, so a `Set` between the two could hand a record
+  to a logger whose level was never checked. Each now loads it once.
+- **The opt-in diagnostics** (`GOINFER_DECODE_TIMING`, `GOINFER_DELTANET_TIMING`, `GOINFER_ATTNFA_DEBUG`) were at Debug, so a logger at its
+  default level dropped what the operator had turned on. They are at Info, and `docs/env-vars.md` says so.
+- **`TestLibraryOutput_goesThroughLogs` had blind spots.** It now finds `log` and `log/slog` under any import name, carries a report out of an
+  `if` branch that falls through, clears a name that is assigned again, takes `le`-style names as errors, and counts a return as returning
+  an error only when the result is the error or wraps it. Five more roots are scanned: `embeddinggemma2`, `server`,
+  `internal/guard/memgate`, `internal/guard/paritykey` and `internal/wrappedupload`. A planted file was flagged on its four defects and on
+  none of its three controls. It still parses without type-checking, so it knows an error by its name.
+- **`gpudev`'s test held a copy of the words**, so rewording `mem`'s text failed nothing there. `gpudev` may import nothing of goinfer's,
+  so the check moved to `backend/cuda` (`TestAllocFailedPanic_isWhatMemReads`), which calls `mem.DeviceAllocFailed` on `gpudev`'s panic,
+  and the copy is gone. It runs on Linux under `-tags cuda` only, so CI's cuda job is its first run.
