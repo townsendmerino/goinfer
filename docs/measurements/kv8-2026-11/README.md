@@ -133,3 +133,35 @@ The request logs' `ckpt_restore=1978` and `ckpt_restore=2119` agree, in both two
 
 **What it does not cover:** a restore with fewer copies than slots on a served load, which only tests read; one prompt shape; two clients; no agent's real traffic. Not a row for `docs/benchmarks.md`.
 
+
+## The served reading a fourth time, at main after #658 merged, registered 2026-11-05 15:56 PST before any run (nobara-sb01)
+
+**Why:** the third reading above was made at `9a8f49a41` and says so: "before the merge with #645 and the second review read", which changed how the plan and the build count checkpoint copies on tight memory and what the gate reports, and which a load with room for them should not feel. #658 was reviewed through four more rounds and merged. No served reading has been made at the code that shipped. The coordinator's v0.25.0 list (2026-11-05 15:48) names this reading first, re-registered. **This does not replace the three above;** it is a new reading, of the merged build.
+
+- **Tier and instrument:** as the third reading: `served_against_alone.py`, serve built at `6ab62e5b2` (origin/main, #658 and #678 to #687 in; `CGO_ENABLED=0 go build -tags cuda ./backend/cuda/cmd/serve`), `~/models/Qwen3.5-9B-Q4_K_M.gguf` from local NVMe, `--ctx 8192`, greedy, 24 tokens per reply, `--kv-sessions` 1 and 2, the exclusive timing lock. Driver 595.112.07.
+- **Design and decision:** the third registration's, unchanged: one slot two clients, two slots two clients, each client alone, two slots two clients, one slot two clients, with the edit round. **The bars do not move:** the edit round's median first token, two slots over one, at most 0.5; both clients' edit turns reuse exactly their last prompt's rows, on two slots and alone; every follow-up on two slots reuses rows; each reply equals that client's alone; peak `VmSwap` at most 512 MB. PARKED above 0.5 and at most 0.7, FAIL beyond.
+- **Added, reported and not graded:** the fit check's banner at 1 and 2 slots, with the checkpoint copies kept (`--fit-only`); the request logs' `ckpt_restore` against the turns' reuse.
+- **Void cell, fit check, stopping rule, void conditions:** as the first registration. Void cell: one-minute load above 8.0 at its start, re-run once in order and listed.
+- **Cost and times (from `date`):** the fit check about 1 minute, the five cells about 5. Start by 15:58 PST, finish by about 16:06 PST. The lock was free and the night queue empty at 15:53.
+- **Not the question:** a restore with fewer copies than slots on a served load (tests read it), one prompt shape, two clients, an agent's real traffic. No row for `docs/benchmarks.md`.
+
+### The fourth reading, 2026-11-05 15:53 to 15:58 PST: PASS, at the code that shipped
+
+`served-fourth-2026-11-05/run.log`, `turns.jsonl`, `fit-check.log`. Serve at `6ab62e5b2` (origin/main), `~/models/Qwen3.5-9B-Q4_K_M.gguf` from NVMe, driver 595.112.07, the exclusive timing lock (free at the start, night queue empty), one-minute load 1.05 to 1.60 and about 61 GB available at every cell's start, no void cell. The registration above said the start would be by 15:58 and the finish about 16:06: the run began at 15:53:54 (the fit check 15:53:16) and ended at 15:58:31, because the registration's cost estimate was for the build too.
+
+The fit check keeps one copy at one slot (50.2 MiB, 48 buffers) and two at two slots (100.5 MiB, 96 buffers), as the plan prices them.
+
+| | one slot | two slots | bar |
+|---|---|---|---|
+| **the edit round's median first token, a restore on each slot** | 7.15 s, 7.18 s | **0.15 s** (ratio **0.021**, both pairs) | at most 0.5 |
+| rounds 1 and 2's median first token | 6.92 s, 6.93 s | 0.05 s (ratio 0.007, 0.008) | at most 0.5 |
+| edit turns reusing exactly their last prompt's rows | | **4 of 4**: 1,978 and 2,119 in both two-slot cells, and the same alone | all |
+| follow-ups that reused rows | | 16 of 16 | all |
+| conversations equal to that client alone | | 4 of 4 (20 turns) | all |
+| peak `VmSwap` | 0 MB | 0 MB | at most 512 MB |
+
+Each two-slot server's request log reads `ckpt_restore=1907`, `1978` and `2119`: client A's first follow-up and both clients' edit turns. They agree with the turns' reuse.
+
+**Same as the third reading, to the figure** (0.15 s on both slots, ratio 0.021, 4 of 4, 16 of 16). The merge with #645, the four review rounds and the layout moves changed nothing a served load of this size reads. **Reported, not graded:** 4 of 10 two-slot turns differ from the cold one-slot arm's, as before; and in the at-once round client A's first token read 0.47 s in the second two-slot cell, against 0.05 s elsewhere, a request that waited behind the other's (the batched step declines a recurrent mixer).
+
+**What it does not cover:** as the third reading: a restore with fewer copies than slots on a served load, one prompt shape, two clients, no agent's traffic. Not a row for `docs/benchmarks.md`.
