@@ -517,6 +517,19 @@ func TestResidentDrafter_streamedAttachMatchesHeld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("attach opened: %v", err)
 	}
+	requireSameDrafterDeviceBytes(t, r, a, b, held.DrafterGeometry())
+	if err := opened.ReleaseHostWeights(); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if _, err := r.AttachDrafter(opened); err == nil {
+		t.Error("a second attach of the released drafter was accepted")
+	}
+}
+
+// requireSameDrafterDeviceBytes fails for every buffer of drafter b (fc, both trunk norms, each layer's seven matrices and four
+// norms) whose device bytes differ from a's.
+func requireSameDrafterDeviceBytes(t *testing.T, r *cudaResident, a, b *residentDrafter, geo decoder.DrafterGeometry) {
+	t.Helper()
 	get := func(buf gpu.Buffer, n int) []byte {
 		out := make([]byte, n)
 		if err := r.do(func() error { return gpu.Download(buf, out) }); err != nil {
@@ -536,7 +549,6 @@ func TestResidentDrafter_streamedAttachMatchesHeld(t *testing.T) {
 		same(name+".W", x.W, y.W, x.N*(x.K/4)*4)
 		same(name+".ws", x.ws, y.ws, x.N*4)
 	}
-	geo := held.DrafterGeometry()
 	wq("fc", a.fc, b.fc)
 	same("hiddenNorm", a.hiddenNorm, b.hiddenNorm, geo.Hidden*4)
 	same("finalNorm", a.finalNorm, b.finalNorm, geo.Hidden*4)
@@ -550,10 +562,55 @@ func TestResidentDrafter_streamedAttachMatchesHeld(t *testing.T) {
 		same(fmt.Sprintf("layer %d inputNorm", i), x.inputNorm, y.inputNorm, geo.Hidden*4)
 		same(fmt.Sprintf("layer %d postAttnNorm", i), x.postAttnNorm, y.postAttnNorm, geo.Hidden*4)
 	}
-	if err := opened.ReleaseHostWeights(); err != nil {
-		t.Fatalf("release: %v", err)
+}
+
+// TestResidentDrafter_bf16AttachMatchesF32 attaches the bf16 DFlash checkpoint, held and opened to stream, and its f32 conversion
+// (the same values, widened exactly): the device bytes are equal buffer by buffer, so a bf16 drafter's rows are widened, planned
+// and quantized as the f32 file's are.
+func TestResidentDrafter_bf16AttachMatchesF32(t *testing.T) {
+	requireHeavyModel(t)
+	tgt := os.Getenv("GOINFER_CUDA_MODEL")
+	if tgt == "" {
+		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
 	}
-	if _, err := r.AttachDrafter(opened); err == nil {
-		t.Error("a second attach of the released drafter was accepted")
+	f32dir := decoder.AssetPathForTest(t, "GOINFER_DFLASH_F32")
+	bf16dir := decoder.AssetPathForTest(t, "GOINFER_DFLASH_BF16")
+	if _, err := os.Stat(tgt); err != nil {
+		t.Skipf("no target at %s", tgt)
+	}
+	mc, err := decoder.Load(tgt, fourBLoadOpts())
+	if err != nil {
+		t.Fatalf("load target: %v", err)
+	}
+	defer mc.Close()
+	r, ok := mc.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatal("resident did not engage")
+	}
+	ref, err := decoder.LoadDFlashDrafter(f32dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ref.Close()
+	a, err := r.AttachDrafter(ref)
+	if err != nil {
+		t.Fatalf("attach f32: %v", err)
+	}
+	held, err := decoder.LoadDFlashDrafter(bf16dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	opened, err := decoder.OpenDFlashDrafter(bf16dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	for name, w := range map[string]decoder.BlockDrafterWeights{"held": held, "opened": opened} {
+		b, err := r.AttachDrafter(w)
+		if err != nil {
+			t.Fatalf("attach bf16 %s: %v", name, err)
+		}
+		t.Run(name, func(t *testing.T) { requireSameDrafterDeviceBytes(t, r, a, b, ref.DrafterGeometry()) })
 	}
 }
