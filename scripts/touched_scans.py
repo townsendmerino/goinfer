@@ -151,6 +151,8 @@ SCANS = [
     # SB7: internal/app/serveapp test files importing decoder may only fall.
     Scan("internal/layout", "TestServeappTests_decoderImportsOnlyFall", TREE_GO),
     # SB13: every goinfer-to-goinfer import against internal/layout/imports.json, and the root go.mod against its rules.
+    # Every fuzz target is in the weekly matrix, under the directory it lives in now.
+    Scan("internal/layout", "TestFuzzWeekly_listsEveryTarget", TREE_T + F(".github/workflows/fuzz-weekly.yml")),
     Scan("internal/layout", "TestLayout_arrows", TREE_GO + F("internal/layout/imports.json", "go.mod")),
     # SB13: towers-standalone's one exception (internal/audio may import internal/vision), read from imports.json.
     Scan("internal/layout", "TestLayout_towersStandalone", F("internal/layout/imports.json")),

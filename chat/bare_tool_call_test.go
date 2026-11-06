@@ -204,3 +204,20 @@ func FuzzParseToolCallsFor(f *testing.F) {
 		}
 	})
 }
+
+// A model's reply is arbitrary text, and SplitThink is on every template's way out.
+func FuzzSplitThink(f *testing.F) {
+	for _, s := range []string{
+		"", "plain", "<think>r</think>a", "<think>unterminated", "</think>a", "<think><think>x</think></think>", "<|channel|>analysis<|message|>r<|end|>a", "<think>\xff</think>",
+	} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, reply string) {
+		for fam, tmpl := range allTemplates() {
+			reasoning, content := tmpl.SplitThink(reply)
+			if len(reasoning)+len(content) > len(reply) {
+				t.Fatalf("%s: %q split into more than it was: %q and %q", fam, reply, reasoning, content)
+			}
+		}
+	})
+}
