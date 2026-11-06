@@ -17,7 +17,7 @@
 
 ## CUDA read, 2026-11-06 05:36 to 05:57 PST: 26 of 26 PASS, no skip, no red
 
-`reading.log`, `reading/<group>.log` (go test -v). The exclusive timing lock, nobara's 2070 SUPER, `GOINFER_HEAVY_TESTS=1`; wall 20 min 48 s against the 2 h cap (the registered expectation was 1 to 1.5 h; the 4B/drafter tests take 13 to 30 s each, and the longest, `TestDefaultVerifyWidth_sweep`, 244 s).
+`reading.log`, `reading/<group>.log` (go test -v). The exclusive timing lock, nobara's 2070 SUPER, `GOINFER_HEAVY_TESTS=1`; wall 20 min 39 s (05:36:42 to 05:57:21) against the 2 h cap (the registered expectation was 1 to 1.5 h; the 4B/drafter tests take 13 to 30 s each, and the longest, `TestDefaultVerifyWidth_sweep`, 244 s).
 
 | group | tests (top-level) | result | go test wall |
 |---|---|---|---|
