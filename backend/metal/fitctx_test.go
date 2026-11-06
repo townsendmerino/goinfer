@@ -80,7 +80,8 @@ func TestResolveMetalCtxCap_fitByDefault(t *testing.T) {
 // default, no -ctx) under two memory figures. Roomy, it holds decoder.MetalFitDefaultCtx positions in two slots, says so
 // in its ContextNote, and decodes a prompt of a coding agent's first-request length, which the old 4096 default refused.
 // With room for 20000 positions of KV it holds two slots of 10000. In both, the context is the one `goinfer-chat fit`
-// computes for the same figure (decoder.Model.MetalFitCtx with Metal's default slots).
+// computes for the same figure (decoder.Model.MetalFitCtx with Metal's default slots) as each slot's share, and one conversation's
+// cap is the pool the two shares make.
 func TestMetalBuildResident_fitByDefault(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -114,8 +115,10 @@ func TestMetalBuildResident_fitByDefault(t *testing.T) {
 			if !ok {
 				t.Fatalf("the build declined: %s", m.ResidentDecline())
 			}
-			if got := a.ContextCap(); got != c.wantCtx {
-				t.Fatalf("ContextCap = %d, want %d", got, c.wantCtx)
+			// The fit sizes each slot's share; one conversation's cap is the pool the shares make together (kvRaise).
+			pool := metalDefaultKVSlots * kvBlocksFor(c.wantCtx) * decoder.KVBlockRows
+			if got := a.ContextCap(); a.r.kvShareCtx != c.wantCtx || got != min(pool, metalCtxCapMax) {
+				t.Fatalf("share %d, ContextCap %d; want %d and the pool's %d", a.r.kvShareCtx, got, c.wantCtx, min(pool, metalCtxCapMax))
 			}
 			if got := a.r.kvSlotCount(); got != metalDefaultKVSlots {
 				t.Errorf("%d KV slots, want Metal's default %d", got, metalDefaultKVSlots)
@@ -125,8 +128,8 @@ func TestMetalBuildResident_fitByDefault(t *testing.T) {
 				t.Errorf("ContextNote = %q, want %q", got, wantNote)
 			}
 			fit := m.MetalFitCtx(decoder.MetalFitInput{FreeBytes: c.budget, FreeKnown: true, KVSlots: decoder.MetalDefaultKVSlots})
-			if fit.Ctx != a.ContextCap() {
-				t.Errorf("fit plans ctx %d for this memory figure; the load took %d", fit.Ctx, a.ContextCap())
+			if fit.Ctx != a.r.kvShareCtx {
+				t.Errorf("fit plans ctx %d for this memory figure; the load's share is %d", fit.Ctx, a.r.kvShareCtx)
 			}
 			// The KV the fit priced is the KV the build leased: a ledger line rounds each lease up by under a page, no more.
 			nL := m.Config().NumLayers

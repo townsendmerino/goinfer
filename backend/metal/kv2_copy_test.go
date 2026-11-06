@@ -124,8 +124,8 @@ func kv2Resident(t *testing.T, i8 bool) (*metalResident, *resident) {
 }
 
 // TestKV2_copyKVExact is G2 on Metal (docs/measurements/kv2-2026-10-14.md): after CopyKV(src, dst, start, end) dst's
-// rows in the range equal src's byte for byte, dst's other rows and every other slot are unchanged, and a range past the
-// cache is declined with nothing written. Each slot's rows are read through its table, and the scrambled arm hands blocks
+// rows in the range equal src's byte for byte, dst's other rows and every other slot are unchanged, dst's sequence ends where src's
+// does, and a range past the cache is declined with nothing written. Each slot's rows are read through its table, and the scrambled arm hands blocks
 // out reversed and interleaved across slots, so the copy must move a sequence's blocks, not a slot's byte range.
 func TestKV2_copyKVExact(t *testing.T) {
 	for _, c := range []struct {
@@ -175,6 +175,10 @@ func TestKV2_copyKVExact(t *testing.T) {
 						}
 					}
 				}
+			}
+			// A copy hands dst the source's sequence, no further: slot 0 wrote 1,000 rows, so 1,024 rows of whole blocks reach 1,000.
+			if got, past := a.ReusableKVSlot(2, 1000), a.ReusableKVSlot(2, 1001); got != 1000 || past != 0 {
+				t.Errorf("after the copies slot 2 answers %d for 1,000 rows and %d for 1,001; want 1000 and 0", got, past)
 			}
 			before := kv2Slot(t, r, 2, rows)
 			var d *decoder.KVCopyDecline
