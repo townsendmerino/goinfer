@@ -79,13 +79,14 @@ In the other direction 13 non-test `decoder` files call it (`model.go`, `prefill
    never in `decoder`: `fitCheck.check()` hands plain numbers to `mem.HostCheck`, `decideGIWFitAt` to `mem.SolveGIW`, and
    `internal/runtime/mem` imports no goinfer package. What is left in `fitguard.go`, `fitplan.go` and `fitquery.go` is the adapter
    from `Config`, `Options`, `Architecture`, `BuildDemand` and `ResolveKV` to those numbers (`fitCheckFor`, `priceCtxAndKV`,
-   `kvPricingFor`, `denseStreamable`, `estimateKVBytes`, `Model.Plan`, `FitQuery`) plus the stderr line `guardFit` prints. Moving the
+   `kvPricingFor`, `denseStreamable`, `estimateKVBytes`, `fitRates` and `quantBytesPerElem`, which measure the per-element prices through
+   the loader's quantizer, `Model.Plan`, `FitQuery`) plus the stderr line `guardFit` prints. Moving the
    `fitCheck` struct to `fit` would only relocate fields that `mem.HostLoad` already carries, at the price of rewriting about ten
    test files that build it by field name, so it is not planned. Moving the adapter needs `Config`, `Options` and `Architecture`
    out of `decoder` first; that is the next Tier 3 subsystem (a `decoder/config`-style package), not part of `fit`.
-4. **The aliases stay for now.** `decoder.Plan`, `PlanRequest`, `Placement*`, `FitAnswer`, `FitDeclineError` and `ErrWontFitResident`
-   are the library's published names (`Model.Plan` returns a `Plan`); deleting `decoder/fitalias.go` breaks every external importer
-   and means renaming them in the 19 `decoder` files that use them. The decision to delete is Francis's, not a cleanup.
+4. **The aliases stay.** `decoder.Plan`, `PlanRequest`, `Placement*`, `FitAnswer`, `FitDeclineError` and `ErrWontFitResident` are the library's
+   published names (`Model.Plan` returns a `Plan`), and `decoder/fitalias.go` keeps them (Francis, 2026-11-06). Whether `Config`, `Options` and
+   `Architecture` leave `decoder` next is `docs/tasks/task-decoder-config-2026-11.md`.
 
 ## GPU backend modules
 
