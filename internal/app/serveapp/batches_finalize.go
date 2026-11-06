@@ -25,9 +25,14 @@ func (s *server) finalizeBatch(id string) {
 	b.CompletedAt = &now
 	if b.Kind == "openai_chat" {
 		out, errs := assembleOpenAIOutput(b)
-		b.OutputFileID = s.files.put(id+"_output.jsonl", "batch_output", out).ID
+		files := []newFile{{id + "_output.jsonl", "batch_output", out}}
 		if len(errs) > 0 {
-			b.ErrorFileID = s.files.put(id+"_error.jsonl", "batch_error", errs).ID
+			files = append(files, newFile{id + "_error.jsonl", "batch_error", errs})
+		}
+		stored := s.files.putAll(files...) // one put: storing the error file must not evict the output
+		b.OutputFileID = stored[0].ID
+		if len(stored) > 1 {
+			b.ErrorFileID = stored[1].ID
 		}
 	}
 	// anthropic: b.Results IS the output — handleGetMessageBatchResults reads it directly, no

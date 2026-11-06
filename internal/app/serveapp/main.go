@@ -277,49 +277,50 @@ type config struct {
 	adapters adapterFlag // compute-time LoRA adapters (-adapter, repeatable); each shares a base model's resident weights (#7)
 	// load is the model-loading flags goinfer-chat shares (internal/loadflags): server-global
 	// DEFAULTS, each of which a --model spec can override (see modelSpec / modelFlag.Set).
-	load            loadflags.Flags
-	kvQuant         string // DEPRECATED -kv-quant: CPU KV cache override, "" = follow -kv
-	name            string // -served-model-name (applies only to a single unnamed --model)
-	kvSessions      int
-	kvSessionsSet   bool          // -kv-sessions was given on the command line (flag.Visit after Parse)
-	sessionDir      string        // -session-dir (also where /admin unload snapshots warm KV)
-	kvIdleDemote    time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
-	kvDemotedMax    int           // -kv-demoted-max: cap on the on-disk cold tier
-	maxQueue        int           // -max-queue: bounded per-model queue depth (0 = unbounded)
-	maxConcurrent   int           // -max-concurrent: generations one CPU model may run at once (1 = serialized)
-	cpuBatch        int           // -cpu-batch: decoder.CPUBatchAuto (default) / CPUBatchOn / CPUBatchOff
-	prefillChunk    int           // -prefill-chunk: under concurrent generation, a long prompt arriving while others decode prefills in chunks of this many tokens (default 512); 0 = off
-	kvShare         string        // -kv-share: "on" (default) or "off"
-	kvShareOff      bool          // kvShareOffFor's answer, set once the API key and bind are known
-	kvHostBytesFlag string        // -kv-host-bytes: auto, 0, or a byte count
-	kvHostBytes     int64         // the resolved budget for prefix snapshots (0: off); a config built without the flag keeps none
-	kvHostBytesHow  string        // how it was reached, for the startup line
-	kvDemote        bool          // the flag names a budget, not auto: released conversations' rows wait in it too
-	jobDir          string        // -job-dir (docs/tasks/task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
-	maxInflight     int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
-	maxBodyBytes    int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
-	unloadDrainWait time.Duration // -unload-drain-wait: how long an unload waits for in-flight requests to drain before 202 (native free continues detached)
-	spec            string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
-	specAdaptive    bool          // -spec-adaptive: "speculate when alone, batch under load" (needs -spec ngram and a resident that batches; off has no effect otherwise)
-	drafter         string        // -drafter: dir of a pretrained BLOCK drafter (DFlash); resident GPU backends only
-	drafterWidth    int           // -drafter-width: the verify width a greedy request's block-spec rounds run at; 0 = decoder's default
-	allowAdmin      bool          // -allow-admin: enable POST /admin/models/{load,unload}
-	allowedHosts    string        // -allowed-hosts: extra Host names a loopback-bound listener answers (hostGuard)
-	logRequests     bool          // -log-requests: one stderr line per generation request
-	logTokenIDs     string        // -log-token-ids: append one JSON line per generation (prompt hash, generated ids) to this file; "" = off
-	idsKeyFile      string        // -ids-key-file: the key that signs carried token ids; "" = a random key per start
-	noCarryIDs      bool          // -carry-ids=false: do not carry a reply's token ids back in its reasoning item (the zero value carries them)
-	fastAlias       bool          // -fast-alias: serve "<model>-fast", the same model with thinking off, for an agent's side requests
-	haltFile        string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed
-	haltExitCode    int           // -halt-exit-code: nonzero ⇒ halt exits the process with this code after quiescence; 0 = stay up
-	adminSocket     string        // -admin-socket: serve /admin/* on this Unix socket instead of the TCP listener; "" = off
-	web             bool          // -web: serve the local browser UI + its model-pull routes
-	requireBE       bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
-	visionPath      string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
-	noSelfTest      bool          // -no-selftest: skip the startup self-tests (H2)
-	visionMaxPixels int           // -vision-max-pixels: lowers GLM-OCR's image pixel budget (0 = the model's own 4.82 MP ceiling)
-	visionQuant     string        // -vision-quant: "" (unset: f32; Gemma 3 on cuda may fall back to int8) | "f32" (explicit) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
-	visionDevice    string        // -vision-device: "auto" (default: the backend's device tower when it has one) | "cpu" | "gpu" (also a device tower that is opt-in)
+	load              loadflags.Flags
+	kvQuant           string // DEPRECATED -kv-quant: CPU KV cache override, "" = follow -kv
+	name              string // -served-model-name (applies only to a single unnamed --model)
+	kvSessions        int
+	kvSessionsSet     bool          // -kv-sessions was given on the command line (flag.Visit after Parse)
+	sessionDir        string        // -session-dir (also where /admin unload snapshots warm KV)
+	kvIdleDemote      time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
+	kvDemotedMax      int           // -kv-demoted-max: cap on the on-disk cold tier
+	maxQueue          int           // -max-queue: bounded per-model queue depth (0 = unbounded)
+	maxConcurrent     int           // -max-concurrent: generations one CPU model may run at once (1 = serialized)
+	cpuBatch          int           // -cpu-batch: decoder.CPUBatchAuto (default) / CPUBatchOn / CPUBatchOff
+	prefillChunk      int           // -prefill-chunk: under concurrent generation, a long prompt arriving while others decode prefills in chunks of this many tokens (default 512); 0 = off
+	kvShare           string        // -kv-share: "on" (default) or "off"
+	kvShareOff        bool          // kvShareOffFor's answer, set once the API key and bind are known
+	kvHostBytesFlag   string        // -kv-host-bytes: auto, 0, or a byte count
+	kvHostBytes       int64         // the resolved budget for prefix snapshots (0: off); a config built without the flag keeps none
+	kvHostBytesHow    string        // how it was reached, for the startup line
+	kvDemote          bool          // the flag names a budget, not auto: released conversations' rows wait in it too
+	jobDir            string        // -job-dir (docs/tasks/task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
+	maxInflight       int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
+	maxBodyBytes      int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
+	maxFileStoreBytes int64         // -max-file-store-bytes: what uploaded files and batch results may hold in memory (0 = no limit on bytes)
+	unloadDrainWait   time.Duration // -unload-drain-wait: how long an unload waits for in-flight requests to drain before 202 (native free continues detached)
+	spec              string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
+	specAdaptive      bool          // -spec-adaptive: "speculate when alone, batch under load" (needs -spec ngram and a resident that batches; off has no effect otherwise)
+	drafter           string        // -drafter: dir of a pretrained BLOCK drafter (DFlash); resident GPU backends only
+	drafterWidth      int           // -drafter-width: the verify width a greedy request's block-spec rounds run at; 0 = decoder's default
+	allowAdmin        bool          // -allow-admin: enable POST /admin/models/{load,unload}
+	allowedHosts      string        // -allowed-hosts: extra Host names a loopback-bound listener answers (hostGuard)
+	logRequests       bool          // -log-requests: one stderr line per generation request
+	logTokenIDs       string        // -log-token-ids: append one JSON line per generation (prompt hash, generated ids) to this file; "" = off
+	idsKeyFile        string        // -ids-key-file: the key that signs carried token ids; "" = a random key per start
+	noCarryIDs        bool          // -carry-ids=false: do not carry a reply's token ids back in its reasoning item (the zero value carries them)
+	fastAlias         bool          // -fast-alias: serve "<model>-fast", the same model with thinking off, for an agent's side requests
+	haltFile          string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed
+	haltExitCode      int           // -halt-exit-code: nonzero ⇒ halt exits the process with this code after quiescence; 0 = stay up
+	adminSocket       string        // -admin-socket: serve /admin/* on this Unix socket instead of the TCP listener; "" = off
+	web               bool          // -web: serve the local browser UI + its model-pull routes
+	requireBE         bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
+	visionPath        string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
+	noSelfTest        bool          // -no-selftest: skip the startup self-tests (H2)
+	visionMaxPixels   int           // -vision-max-pixels: lowers GLM-OCR's image pixel budget (0 = the model's own 4.82 MP ceiling)
+	visionQuant       string        // -vision-quant: "" (unset: f32; Gemma 3 on cuda may fall back to int8) | "f32" (explicit) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
+	visionDevice      string        // -vision-device: "auto" (default: the backend's device tower when it has one) | "cpu" | "gpu" (also a device tower that is opt-in)
 	// decisions (D5, docs/tasks/task-constrained-confidence.md): POST /v1/systemone's label-scoring template, and an
 	// optional calibration.json of per-kind temperatures ("" = none: every answer is uncalibrated).
 	decisionsTemplate string
@@ -446,6 +447,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.StringVar(&cfg.kvShare, "kv-share", "on", "on|off: whether a conversation may reuse KV rows another conversation computed, such as a shared system prompt, on a GPU-resident model (on: a new conversation copies the shared rows instead of prefilling them; off: a request reuses only its own conversation's rows). Sharing makes time to first token reveal something about what another client sent, so it is off whatever this says when the server answers the network without -api-key (an -allowed-hosts name on a loopback bind)")
 	fs.IntVar(&cfg.prefillChunk, "prefill-chunk", 512, "on a GPU-resident model running several generations at once (MC3), prefill a long prompt that arrives while others are decoding in chunks of this many tokens, one decode step between chunks, instead of stalling them for the whole prompt (replies are unchanged: Metal's prefill is chunk-invariant; 512 graded 2026-09-27: the decoders' longest stall 0.23x); 0 = off")
 	fs.IntVar(&cfg.maxInflight, "max-inflight", 128, "global cap on concurrent inference requests, bounding the pre-queue stage (JSON+image decode, tokenization, template render, vision Forward) that runs before the per-model queue; a full cap returns 503 Retry-After (0 = unbounded)")
+	fs.Int64Var(&cfg.maxFileStoreBytes, "max-file-store-bytes", 1<<30, "cap on the bytes of uploaded files and batch results held in memory. The oldest go first, and the newest upload or batch's result files are always kept, so a dropped file's id answers 404: download a batch's results before uploading much more. 0 = no limit on bytes (the store still keeps at most 256 files)")
 	fs.Int64Var(&cfg.maxBodyBytes, "max-body-bytes", 0, "cap on request body size in bytes; a larger body is rejected 413 before it is read. 0 = derive from the model's context window (a body that could never fit is rejected up front). The vision endpoints get at least 32 MiB on top for base64 image data")
 	fs.DurationVar(&cfg.unloadDrainWait, "unload-drain-wait", 5*time.Second, "how long POST /admin/models/unload waits for in-flight requests to drain before returning 202 (native memory is freed as they finish either way; the model is unroutable immediately). ?wait=false returns 202 at once")
 	fs.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth. Wins on copy-heavy traffic (code edits / RAG / agent loops) on the CPU and Metal backends; output is identical (greedy bit-exact, sampled in-distribution incl. temperature/top-k/p/min-p + repetition penalties + logit bias). On greedy constrained/tool requests (response_format / tool grammar) it switches to grammar-fused drafting — the grammar's forced bytes are drafted for free, fused with the n-gram source. Auto-falls back to plain decode per-request when the sampler isn't yet supported on the spec path (e.g. constrained + temperature>0) goinfer-chat has the same --spec ngram, and additionally --draft (a separate small draft model).")
@@ -516,6 +518,9 @@ func (cfg config) validate() error {
 	if cfg.drafterWidth < 0 || (cfg.drafterWidth > 0 && cfg.drafterWidth < minDrafterWidth) {
 		return fmt.Errorf("-drafter-width %d: want 0 (the default) or at least %d: under %d a round commits too few tokens for the "+
 			"acceptance guard's bar, so most turns fall back to plain decode", cfg.drafterWidth, minDrafterWidth, minDrafterWidth)
+	}
+	if cfg.maxFileStoreBytes < 0 {
+		return fmt.Errorf("-max-file-store-bytes %d: want a size in bytes, or 0 for no limit on bytes", cfg.maxFileStoreBytes)
 	}
 	if _, ok := chat.ParseThinkMode(cfg.thinking); !ok {
 		return fmt.Errorf("-thinking %q: want asis, template, on or off", cfg.thinking)
@@ -994,7 +999,7 @@ func newServer(cfg config) (*server, error) {
 		jobs:      jobs,
 		// 256 matches the bounds above: no dedicated -file-cap/-batch-cap flag, and a record past this many old is only evicted
 		// once terminal.
-		files:   newFileStore(256),
+		files:   newFileStore(256, cfg.maxFileStoreBytes),
 		batches: newBatchStore(256),
 	}
 	if !cfg.noCarryIDs {
