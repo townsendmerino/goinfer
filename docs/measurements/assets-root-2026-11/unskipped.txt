@@ -36,3 +36,9 @@ q4k_phi3_real_test.go	TestQ4KLane_realPhi3NonInferiority	[darwin && goinfer_test
 ## also through requireCUDAResidentMRoPE (backend/cuda/rope_kv_mrope_batched_test.go)
 rope_kv_mrope_batched_test.go	TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel
 rope_kv_mrope_batched_test.go	TestRopeKVMRoPEBatched_matchesCPUReference
+
+## second switches (reported by the Mac read, checked against the test sources)
+The asset is not the only switch on four of the nine Metal functions; with GOINFER_HEAVY_TESTS=1 alone they still skip:
+TestOneSlotStep_phi3PrefillAB	GOINFER_P29_AB=1
+TestKSC1_phi3Speed	GOINFER_KSC1_TIMING=1
+TestKSO1_speed, TestKSO1a_phi3Speed	GOINFER_KSO1_TIMING=1 (a timed run, under the timing lock)

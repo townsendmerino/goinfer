@@ -41,3 +41,20 @@ Review of this PR (no product bug found) asked for four fixes, all in this commi
 ### The second CUDA read, 2026-11-06 06:23:37 to 06:43:42 PST: 26 of 26 PASS again, no skip, no red
 
 `reading.log`, `reading/<group>.log`, through the amended script (it took the exclusive lock itself and made `reading/`), on the final tree: mrope 3, qwen35vl 1, qwen25vl 2, glmocr 3, gptoss 1, cohere 1, drafters 15, all PASS, zero `--- SKIP` and zero `--- FAIL`; wall 20 min 5 s. Nothing to classify. The first read is `reading-first.log` and `reading-first/`.
+
+## The Metal read, relayed from the Mac session (mac-sb11m, 2026-11-06; not run or re-checked by nobara-sb01)
+
+Reported: MacBookPro18,3, 16 GB, an archive of this PR's head `35ba1b35`, one test per invocation, exclusive timing lock, on AC, `~/models` only; the files are `~/goinfer-logs/pr709-metal-2026-11-06/` on the Mac (`README.md` is the table, one log per test). Their account:
+
+| test | result |
+|---|---|
+| `TestKSO1_referenceMatchesAikitPhi3` | PASS (within 1e-6 of aikit's dequantizer on 32 Q5_K and 17 Q6_K tensors) |
+| `TestKSO1_laneBytesPhi3` | PASS |
+| `TestQ4KLane_realPhi3NonInferiority` | PASS (+4.39 points) |
+| `TestKSC1_phi3Speed` | PASS (0.530) |
+| `TestKSO1a_phi3Speed` | PASS (0.809, bit-identical) |
+| `TestKSO1_speed` | **FAIL as registered**: O1-G7 KILL (0.9806 and 1.0145), the KILL the owner overrode on 2026-10-24 |
+| `TestOneSlotStep_phi3PrefillAB` | PASS (it only reports): median 0.213, the step route 4.7x slower than sequential, sent to the coordinator as a product reading |
+| `TestGptOssResidentParityReal20B`, `TestGptOssResidentMemGuardDeclines` | not run: the checkpoint is not on that Mac |
+
+So the Metal side of this fix un-skips no correctness failure; the one FAIL is a registered speed gate whose KILL was already overridden, and the 0.213 is a reading about a product route, not a harness result. Four of the nine need a second switch beyond the asset (`unskipped.txt`).
