@@ -2143,7 +2143,6 @@ var cudaGapItems = map[string]struct {
 	line             mem.LineID
 	fact, what, item string
 }{
-	"kv-ring":   {mem.LineKV, "kvRing", "the plan's KV figure has the pools and the block tables; the tables' staging ring leases on the line too", "MM8 CUDA, KV staging ring"},
 	"dense":     {mem.LineDense, "denseVectors", "the plan's dense figure sums the tensors: rotation tables lease on the line too", "MM8 CUDA, dense vectors"},
 	"dense-moe": {mem.LineDense, "moeVectors", "as the dense row, and what per-expert uploads lease past the plan's tensors: Gemma 4's are not diagnosed", "MM8 CUDA, dense vectors"},
 	"grant":     {mem.LineKV, "windowGrant", "the plan prices the windowed slack it planned; the build then grants more rollback from free VRAM (kvGrantRollback), which the context plan subtracts and the plan's KV figure does not show", "MM8 CUDA, windowed rollback grant"},
@@ -2151,7 +2150,7 @@ var cudaGapItems = map[string]struct {
 
 // cudaMemGapsPin is the number of rows in cuda/testdata/memgate_gaps.txt. CUDA's table of known reds (MM7) may only shrink: the fix that removes
 // rows deletes them and lowers this. Nothing writes that file, so a new red has to be added by hand and argued.
-const cudaMemGapsPin = 724
+const cudaMemGapsPin = 333
 
 // cudaMemGaps reads the table: one exact row per line, after its item's key and a tab. Each gap's bytes come from the model's shape, and gaps on
 // one row and line add up (Gate's match), so each states only its own.
@@ -2196,8 +2195,7 @@ func cudaMoEVectorBytes(m *decoder.Model, nE int) int64 {
 }
 
 // cudaWindowGrantBytes is what the windowed pools hold past the plan's slack when the grant is the largest it can be, as it is where the row fixes
-// free VRAM: each slot's blocks at the granted slack, less those at the planned, from the windowed layers' shape. Exact, so that this gap is needed
-// beside the staging ring's and fixing one leaves the other's bytes only.
+// free VRAM: each slot's blocks at the granted slack, less those at the planned, from the windowed layers' shape. Exact.
 func cudaWindowGrantBytes(r *cudaResident) int64 {
 	var perBlock int64
 	var window int
@@ -2266,7 +2264,7 @@ func cudaGateRow(t testing.TB, row, path string, o decoder.Options) (memgate.Rea
 	read.Plan = m.Plan("cuda", planFree, fit.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, Slots: gateSlots(r), KVSlots: r.KVSlots(), CheckpointReserve: r.ckptReserve()})
 	facts := func() map[string]int64 {
 		priced := m.PricedDenseVectorBytesForTest("cuda")
-		return map[string]int64{"kvRing": cudaKVRingBytes(r), "denseVectors": max(cudaDenseVectorBytes(m)-priced, 0), "moeVectors": max(cudaMoEVectorBytes(m, r.nE)-priced, 0), "windowGrant": cudaWindowGrantBytes(r)}
+		return map[string]int64{"denseVectors": max(cudaDenseVectorBytes(m)-priced, 0), "moeVectors": max(cudaMoEVectorBytes(m, r.nE)-priced, 0), "windowGrant": cudaWindowGrantBytes(r)}
 	}
 	read.Open = append(read.Open, memgate.Snap("built", &l.Ledger, facts()))
 	genCtx := context.Background()
@@ -2286,6 +2284,12 @@ func cudaGateRow(t testing.TB, row, path string, o decoder.Options) (memgate.Rea
 	// The plan has no line for these. Scratch is the margin's allocated share: the margin also holds the free VRAM cuMemAlloc will not
 	// hand out, which no lease can reach. The pinned host copy holds the routed experts, and only an expert-cache build has one.
 	read.Named = map[mem.LineID]int64{mem.LineScratch: r.ctxMargin() - allocFloorBytes}
+	// The block tables' pinned host ring: every resident build allocates it (kvAllocPools), so its figure is the geometry's and the build
+	// is red if it holds none.
+	if r.kvTabStage == nil {
+		t.Errorf("%s: the build holds no block-table staging ring", row)
+	}
+	read.Named[mem.LineStaging] = cudaKVRingBytes(r)
 	if r.cacheExperts {
 		read.Named[mem.LinePinnedExperts] = read.Plan.ExpertBytesFull
 	}
@@ -2327,6 +2331,7 @@ func TestMemGate_cudaPlantsThroughTheTable(t *testing.T) {
 		{"testdata/glm-tiny", "int4/expert-cache", mem.LinePinnedExperts, 3 << 20, decoder.Options{MoECacheExperts: true}},
 		{llama, "int4", mem.LineSlack, 3 << 20, decoder.Options{}},
 		{llama, "int4", mem.LineCompanion, 3 << 20, decoder.Options{}},
+		{llama, "int4", mem.LineStaging, 3 << 20, decoder.Options{}},  // past the block tables' ring, whose figure is the geometry's
 		{llama, "int4", mem.LineScratch, 64 << 20, decoder.Options{}}, // the margin's allowance for decode's transients is 16 MiB
 	} {
 		t.Run(string(c.line), func(t *testing.T) {
@@ -2423,7 +2428,7 @@ func TestMemGate_cudaInvariantsGoRed(t *testing.T) {
 		want  string
 	}{
 		{"unknown line", func() { cudaGatePlant("a line nobody declared", 1<<20) }, "on an unknown line"},
-		{"no figure", func() { cudaGatePlant(mem.LineStaging, 1<<20) }, "no figure"},
+		{"no figure", func() { cudaGatePlant(mem.LineTest, 1<<20) }, "no figure"},
 		{"a pinned host copy with no expert cache", func() { cudaGatePlant(mem.LinePinnedExperts, 1<<20) }, "no figure"},
 		// A buffer closes with its device, so the plant is a lease no buffer holds.
 		{"open after Close", func() {
