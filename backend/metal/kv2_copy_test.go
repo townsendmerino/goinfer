@@ -192,6 +192,250 @@ func TestKV2_copyKVExact(t *testing.T) {
 // from a slot that prefilled a longer prompt sharing them, then the rest prefilled from 960, gives the KV and the last
 // logits of the prompt prefilled whole, bit for bit, both for a 40-row suffix and for a 5-row one (Metal's short
 // continuation is exact, PrefillTailExact). The control changes one token before the split and must differ.
+// chainSkipLogged keeps TestKVPages_shareByReference's note that the chain did not run to one line.
+var chainSkipLogged bool
+
+// TestKVPages_shareByReference is KV5-5's G3b and G1a's second slot on Metal: slot 0 prefills a 640-row preamble and slots 1 and 2
+// take it by CopyKV, by reference, so the pool holds it once (its own count, kvBlocksInUse, drops by the 20 blocks the copies freed).
+// Each slot then prefills its own suffix from 640 and decodes. Then slots 0 and 1 rewind into blocks the others still share, by every
+// writer in turn (a prefill, the step, ForwardBatch, the verify, UploadKV, a decode, the greedy chain), each a copy on write. Every logit
+// equals the reference, and so does every slot's K/V over its own history, read through its table. Every logit equals the reference, a fresh resident where each slot prefilled the preamble
+// itself, at f16 and int8 KV, on in-order and scrambled tables. With kvOwn planted off, slot 0's rewrite lands in the shared block and
+// the other slots' logits move.
+func TestKVPages_shareByReference(t *testing.T) {
+	const pre, suffix = 640, 70
+	for _, c := range []struct{ i8, scramble bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
+		t.Run(map[bool]string{false: "f16", true: "i8"}[c.i8]+map[bool]string{false: "", true: "/scrambled"}[c.scramble], func(t *testing.T) {
+			run := func(share, plant bool) ([][]float32, [][][]byte, int) {
+				kvScrambleForTest, kvOwnOffForTest = c.scramble, plant
+				defer func() { kvScrambleForTest, kvOwnOffForTest = false, false }()
+				a, r := kv2Resident(t, c.i8)
+				var out [][]float32
+				add := func(l []float32, err error) {
+					t.Helper()
+					if err != nil {
+						t.Fatal(err)
+					}
+					out = append(out, slices.Clone(l))
+				}
+				bind := func(s int) {
+					t.Helper()
+					if err := r.useKVSlot(s); err != nil {
+						t.Fatal(err)
+					}
+				}
+				preamble := kv2Embs(r, pre, 7)
+				before := r.kvBlocksInUse()
+				for s := range 3 {
+					bind(s)
+					if s == 0 || !share {
+						add(a.PrefillLast(context.Background(), preamble, 0))
+					} else {
+						if err := a.CopyKV(0, s, 0, pre); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				held := before - r.kvBlocksInUse()
+				for s := range 3 {
+					bind(s)
+					add(a.PrefillLast(context.Background(), kv2Embs(r, suffix, uint32(20+s)), pre))
+					add(a.Forward(kv2Embs(r, 1, uint32(30+s))[0], pre+suffix))
+				}
+				// Rewinds: a write at p ends a sequence at p (a copy on write keeps the rows below it), so each slot that writes again
+				// does so further back, and decodes right after its last write. Each write lands in a block the other slots still share.
+				// After each, every slot's K/V over its valid history so far (n), gathered through its table, is kept: a write into a
+				// block another slot still shares changes that slot's rows whether or not its attention weighs them.
+				n := []int{pre + suffix + 1, pre + suffix + 1, pre + suffix + 1}
+				var kv [][][]byte
+				snap := func(s, to int) {
+					n[s] = to
+					for q := range 3 {
+						kv = append(kv, kv2Slot(t, r, q, n[q]))
+					}
+				}
+				bind(0) // slot 0, the source: a prefill from 600 (block 9), the step at 500 (block 7), ForwardBatch at 400 (block 6)
+				add(a.PrefillLast(context.Background(), kv2Embs(r, 50, 41), 600))
+				snap(0, 650)
+				rows, _, err := r.forwardMulti([]batchSeq{{slot: 0, pos: 500, emb: kv2Embs(r, 1, 61)[0]}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				out = append(out, slices.Clone(rows[0]))
+				snap(0, 501)
+				br, err := r.ForwardBatch(kv2Embs(r, 2, 63), 400)
+				if err != nil {
+					t.Fatal(err)
+				}
+				out = append(out, slices.Clone(br[1]))
+				snap(0, 402)
+				add(a.Forward(kv2Embs(r, 1, 64)[0], 402))
+				snap(0, 403)
+				bind(1) // slot 1: the verify at 340 (block 5), UploadKV at 280 (block 4)
+				vr, err := a.ForwardN(kv2Embs(r, 4, 62), 340)
+				if err != nil {
+					t.Fatal(err)
+				}
+				out = append(out, slices.Clone(vr[3]))
+				snap(1, 344)
+				for l := range r.layers {
+					if g := r.layers[l].geom; g != nil && !r.layers[l].kvShared {
+						up := make([]float32, g.kvDim)
+						for i := range up {
+							up[i] = float32(i%7) * 0.25
+						}
+						if err := a.UploadKV(l, 280, up, up); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				snap(1, 281)
+				add(a.Forward(kv2Embs(r, 1, 65)[0], 281))
+				snap(1, 282)
+				bind(2) // slot 2: a decode at 200 (block 3), then the greedy chain from 150 (block 2) where the build has one
+				add(a.Forward(kv2Embs(r, 1, 66)[0], 200))
+				snap(2, 201)
+				if why := r.greedyChainWhyNot(); why == "" {
+					if err := r.chainStart(5, 150); err != nil {
+						t.Fatal(err)
+					}
+					for range 3 {
+						if _, err := r.chainNext(); err != nil {
+							t.Fatal(err)
+						}
+					}
+					r.stopChain()
+					snap(2, 151) // the chain's first forward wrote position 150; how far it ran past it is not this check's
+				} else if !chainSkipLogged {
+					chainSkipLogged = true
+					t.Logf("no greedy chain on this resident (%s): its write site is not exercised here", why)
+				}
+				return out, kv, held
+			}
+			differ := func(a, b [][]float32) int {
+				n := 0
+				for i := range a {
+					for j := range a[i] {
+						if math.Float32bits(a[i][j]) != math.Float32bits(b[i][j]) {
+							n++
+						}
+					}
+				}
+				return n
+			}
+			kvDiffer := func(a, b [][][]byte) int {
+				n := 0
+				for s := range a {
+					for i := range a[s] {
+						if !slices.Equal(a[s][i], b[s][i]) {
+							n++
+						}
+					}
+				}
+				return n
+			}
+			ref, refKV, refHeld := run(false, false)
+			got, gotKV, held := run(true, false)
+			if refHeld != 0 || held != 2*pre/decoder.KVBlockRows {
+				t.Errorf("sharing freed %d blocks (no sharing: %d); want %d, the preamble held once", held, refHeld, 2*pre/decoder.KVBlockRows)
+			}
+			// The reference prefilled the preamble on slots 1 and 2 as well, so its rows are the shared run's minus those two prefills.
+			ref = append(ref[:1], ref[3:]...)
+			if n := differ(ref, got); n != 0 {
+				t.Errorf("%d logits differ between the shared preamble and each slot's own", n)
+			}
+			if n := kvDiffer(refKV, gotKV); n != 0 {
+				t.Errorf("%d per-layer K/V buffers differ, over each slot's own history, between the shared preamble and each slot's own", n)
+			}
+			// The K/V check is the one a missing copy on write must trip: this fixture's attention is too peaked for every leaked row
+			// to move a logit.
+			if _, plantedKV, _ := run(true, true); kvDiffer(refKV, plantedKV) == 0 {
+				t.Error("with kvOwn off, the rewinds into shared blocks moved no other slot's K/V: the test cannot see a missing copy on write")
+			}
+		})
+	}
+}
+
+// TestKVPages_G3bRealPreamble is KV5-5's G3b on a real checkpoint (GOINFER_METAL_MC3=1, the 1.5B by default; tier 1, under the
+// exclusive lock): four conversations share a 16,384-token preamble, prefilled once and taken by CopyKV, by reference. The pool holds it
+// once (its own count, kvBlocksInUse, falls by the 768 blocks the three copies freed), and each conversation's 16 greedy tokens after
+// its own 64-token suffix equal that conversation run alone on a slot of its own, token for token. Both arms prefill in the same
+// 1,024-row passes, so the comparison is of sharing alone.
+func TestKVPages_G3bRealPreamble(t *testing.T) {
+	const pre, suffix, gen, pass = 16384, 64, 16, 1024
+	start := time.Now()
+	progress := func(what string) {
+		fmt.Fprintf(os.Stderr, "[G3b] %s (elapsed %s)\n", what, time.Since(start).Round(time.Second))
+	}
+	_, r := mc3LoadCheckpoint(t, 4, pre+suffix+gen+64)
+	a := &metalResident{r: r, hidden: r.H}
+	prefill := func(embs [][]float32, at int) []float32 {
+		t.Helper()
+		var l []float32
+		for c := 0; c < len(embs); c += pass {
+			var err error
+			if l, err = a.PrefillLast(context.Background(), embs[c:min(c+pass, len(embs))], at+c); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return slices.Clone(l)
+	}
+	greedy := func(l []float32, at int) []int {
+		t.Helper()
+		var toks []int
+		for i := range gen {
+			tok := argmaxF32(l)
+			toks = append(toks, tok)
+			var err error
+			if l, err = a.Forward(mc3Emb(r, tok), at+i); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return toks
+	}
+	bind := func(s int) {
+		t.Helper()
+		if err := r.useKVSlot(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	preamble := kv2Embs(r, pre, 7)
+	suffixes := make([][][]float32, 4)
+	for s := range suffixes {
+		suffixes[s] = kv2Embs(r, suffix, uint32(100+s))
+	}
+	// Each conversation alone, on slot 0 (a fresh sequence each time: the prefill starts at position 0).
+	alone := make([][]int, 4)
+	for s := range 4 {
+		bind(0)
+		prefill(preamble, 0)
+		alone[s] = greedy(prefill(suffixes[s], pre), pre+suffix)
+		progress(fmt.Sprintf("conversation %d alone", s))
+	}
+	// The four together: slot 0 prefills the preamble, slots 1 to 3 take it by reference.
+	bind(0)
+	prefill(preamble, 0)
+	before := r.kvBlocksInUse()
+	for s := 1; s < 4; s++ {
+		if err := a.CopyKV(0, s, 0, pre); err != nil {
+			t.Fatal(err)
+		}
+	}
+	freed := before - r.kvBlocksInUse()
+	progress(fmt.Sprintf("preamble shared: %d blocks freed, %d in use", freed, r.kvBlocksInUse()))
+	for s := range 4 {
+		bind(s)
+		got := greedy(prefill(suffixes[s], pre), pre+suffix)
+		if !slices.Equal(got, alone[s]) {
+			t.Errorf("conversation %d: %v with the preamble shared, %v alone", s, got, alone[s])
+		}
+	}
+	if want := 3 * pre / decoder.KVBlockRows; freed != want {
+		t.Errorf("sharing the preamble freed %d blocks, want %d: it is not held once", freed, want)
+	}
+	progress("done")
+}
+
 func TestKV2_copyThenSuffixEqualsWhole(t *testing.T) {
 	a := mc3PrefillResident(t, 2, 2048)
 	r := a.r

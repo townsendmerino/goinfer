@@ -154,47 +154,7 @@ func TestKVPages_everyResidentFixture(t *testing.T) {
 		t.Skip("no tiny fixtures")
 	}
 	const ctx, prompt, decodeN, turn2, verify = 1024, 300, 64, 70, 4
-	// long copies a fixture with its window raised to 2,048 positions, so a 300-token prompt fits a tiny model's cache; the weights are
-	// hard-linked where the filesystem allows it, else copied.
-	long := func(dir string) string {
-		out := filepath.Join(t.TempDir(), filepath.Base(dir))
-		if err := os.Mkdir(out, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		ents, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, e := range ents {
-			if e.IsDir() {
-				continue
-			}
-			src, dst := filepath.Join(dir, e.Name()), filepath.Join(out, e.Name())
-			b, err := os.ReadFile(src)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if e.Name() == "config.json" {
-				var raw map[string]any
-				if err := json.Unmarshal(b, &raw); err != nil {
-					t.Fatal(err)
-				}
-				raw["max_position_embeddings"] = 2048
-				if tc, ok := raw["text_config"].(map[string]any); ok {
-					tc["max_position_embeddings"] = 2048
-				}
-				if b, err = json.Marshal(raw); err != nil {
-					t.Fatal(err)
-				}
-			} else if os.Link(src, dst) == nil {
-				continue
-			}
-			if err := os.WriteFile(dst, b, 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-		return out
-	}
+	long := func(dir string) string { return kvLongFixture(t, dir) }
 	type arm struct {
 		logits  [][]float32
 		refused []string
@@ -366,4 +326,131 @@ func TestKVPages_everyResidentFixture(t *testing.T) {
 		t.Fatal("no fixture built a Metal resident")
 	}
 	fmt.Fprintf(os.Stderr, "[G1a] %d of %d fixtures compared; prefill kernels covered %v\n", compared, len(fixtures), slices.Sorted(maps.Keys(covered)))
+}
+
+// kvLongFixture copies a fixture with its window raised to 2,048 positions, so a prompt of a few hundred rows fits a tiny model's cache;
+// the weights are hard-linked where the filesystem allows it, else copied.
+func kvLongFixture(t *testing.T, dir string) string {
+	out := filepath.Join(t.TempDir(), filepath.Base(dir))
+	if err := os.Mkdir(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		if e.IsDir() {
+			continue
+		}
+		src, dst := filepath.Join(dir, e.Name()), filepath.Join(out, e.Name())
+		b, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e.Name() == "config.json" {
+			var raw map[string]any
+			if err := json.Unmarshal(b, &raw); err != nil {
+				t.Fatal(err)
+			}
+			raw["max_position_embeddings"] = 2048
+			if tc, ok := raw["text_config"].(map[string]any); ok {
+				tc["max_position_embeddings"] = 2048
+			}
+			if b, err = json.Marshal(raw); err != nil {
+				t.Fatal(err)
+			}
+		} else if os.Link(src, dst) == nil {
+			continue
+		}
+		if err := os.WriteFile(dst, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return out
+}
+
+// TestKVPages_shareByReferenceLayerMajor is TestKVPages_shareByReference's write site check for the two layer-major prefills, which run
+// only on their own families: Gemma 4's E-model prefill (gemma4-emodel-tiny) and the paged generic MoE's (mixtral-tiny, paged at 3 slots).
+// Slot 0 prefills a 128-row preamble and slot 1 takes it by CopyKV; slot 1 prefills a suffix; slot 0 rewinds by a prefill from 100,
+// inside the shared block 1. Slot 1's K/V over its history, read through its table, equals the reference where slot 1 prefilled the
+// preamble itself, and with kvOwn planted off it does not; the layer-major pass's own counter shows it ran.
+func TestKVPages_shareByReferenceLayerMajor(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	for _, c := range []struct{ name, dir, moeSlots string }{
+		{"emodel", "../../testdata/gemma4-emodel-tiny", ""}, {"paged-moe", "../../testdata/mixtral-tiny", "3"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := os.Stat(c.dir); err != nil {
+				t.Skipf("no fixture: %v", err)
+			}
+			if c.moeSlots != "" {
+				t.Setenv("GOINFER_METAL_MOE_SLOTS", c.moeSlots)
+			} else {
+				t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "100000") // the E-model's batched pass declines, so its layer-major pass runs
+			}
+			dir := kvLongFixture(t, c.dir)
+			run := func(share, plant bool) [][]byte {
+				kvOwnOffForTest = plant
+				defer func() { kvOwnOffForTest = false }()
+				m, err := decoder.Load(dir, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 512, ResidentKVSlots: 2})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer m.Close()
+				a, ok := m.ResidentForwardForTest().(*metalResident)
+				if !ok || a.r.kvSlotCount() < 2 {
+					t.Fatalf("no two-slot Metal resident: %s", m.ResidentDecline())
+				}
+				r := a.r
+				lm := func() int { return r.emodelLayerMajorRuns + r.moeLayerMajorRuns }
+				_, _, _, _, _, _, vocab := m.Dims()
+				embs := func(seed, n int) [][]float32 {
+					out := make([][]float32, n)
+					for i := range out {
+						out[i] = m.EmbedResidentForTest((i*97 + seed*13 + 3) % vocab)
+					}
+					return out
+				}
+				prefill := func(s int, e [][]float32, at int) {
+					t.Helper()
+					if err := r.useKVSlot(s); err != nil {
+						t.Fatal(err)
+					}
+					before := lm()
+					if _, err := a.PrefillLast(context.Background(), e, at); err != nil {
+						t.Fatal(err)
+					}
+					if lm() == before {
+						t.Fatalf("slot %d's prefill at %d did not take the layer-major pass", s, at)
+					}
+				}
+				preamble := embs(1, 128)
+				prefill(0, preamble, 0)
+				if share {
+					if err := a.CopyKV(0, 1, 0, 128); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					prefill(1, preamble, 0)
+				}
+				prefill(1, embs(2, 20), 128)
+				prefill(0, embs(3, 20), 100) // slot 0 rewinds into block 1, which slot 1 shares
+				var kv [][]byte
+				for _, b := range kv2Slot(t, r, 1, 148) {
+					kv = append(kv, b)
+				}
+				return kv
+			}
+			ref := run(false, false)
+			if got := run(true, false); !slices.EqualFunc(ref, got, slices.Equal) {
+				t.Error("slot 1's K/V differs between the shared preamble and its own")
+			}
+			if planted := run(true, true); slices.EqualFunc(ref, planted, slices.Equal) {
+				t.Error("with kvOwn off, slot 0's rewind into the shared block left slot 1's K/V as it was: the test cannot see a missing copy on write")
+			}
+		})
+	}
 }

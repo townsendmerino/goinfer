@@ -257,6 +257,7 @@ func (r *resident) prefillMoEPagedSrc(src rowSource, startPos int, head bool) (l
 		}
 	}()
 	r.moeLayerMajorRuns++
+	r.kvOwn(r.kvSlot, startPos, startPos+src.n)
 	for c := 0; c < src.n; c += g4LayerMajorChunk {
 		end := min(c+g4LayerMajorChunk, src.n)
 		logits = r.moeLayerMajorRows(src.rows(c, end), startPos+c, head && end == src.n)
