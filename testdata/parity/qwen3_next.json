@@ -12,6 +12,7 @@
     "decoder/qwen3next_real_test.go",
     "decoder/qwen3next_slice_test.go",
     "decoder/qwen3next_test.go",
+    "decoder/text_parity_test.go",
     "scripts/pin_qwen3next_tiny.py",
     "scripts/pin_slice_oracle.py",
     "decoder/arch_qwen3_next.go"

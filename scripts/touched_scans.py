@@ -72,6 +72,8 @@ SCANS = [
     Scan("decoder", "TestParityManifest_adapterFilesOwned", NT("decoder") + F("testdata/parity/*.json")),
     # VK2's forward census: every file the forward reaches is in a hash set or an own list.
     Scan("decoder", "TestParityManifest_coreClosed", NT("decoder") + F("testdata/parity/*.json")),
+    # A record that hashes a test file running through textParity hashes the helper too.
+    Scan("decoder", "TestTextParity_hashedWithItsUsers", T("decoder") + F("testdata/parity/*.json")),
     Scan("decoder", "TestTranscode_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestTranscodeDir_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestGGUFConfig_everyArchitectureReadsMaxPositions", F("decoder/gguf.go")),
