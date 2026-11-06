@@ -204,6 +204,13 @@ func TestCensusFixtures_areTheCommittedOnes(t *testing.T) {
 		if !strings.Contains(path.Base(p), "tiny") {
 			t.Errorf("censusFixtures lists %s, whose name has no \"tiny\": touched_scans.py would not run the census when it changes", p)
 		}
+		for f := range committed { // a committed file of a directory fixture (its index, a weight) gone from disk changes what is read
+			if strings.HasPrefix(f, p+"/") {
+				if _, err := os.Stat(f); err != nil {
+					t.Errorf("censusFixtures lists %s, whose committed %s is not on disk here, so the census here is not CI's", p, f)
+				}
+			}
+		}
 		files, err := censusFixtureFiles(p)
 		if err != nil {
 			t.Errorf("censusFixtures lists %s: %v", p, err)
