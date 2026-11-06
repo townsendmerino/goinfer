@@ -1,0 +1,63 @@
+//go:build cuda && goinfer_testhooks
+
+// D8b-cuda's cell (README.md here). It is kept as text, not in backend/cuda, because it is a measurement and a test that names this checkpoint would be
+// filed by cmd/gate's heavy partition. To run it, copy it to backend/cuda/d8b_cuda_cell_test.go, build the test binary, and run it once per arm:
+//
+//	GOINFER_HEAVY_TESTS=1 CGO_ENABLED=0 go test -c -tags 'cuda goinfer_testhooks' -o /tmp/cuda.test ./backend/cuda/
+//	D8B_ARM=direct  /tmp/cuda.test -test.run '^TestD8bCUDA_cell$' -test.v
+//	D8B_ARM=sidecar /tmp/cuda.test -test.run '^TestD8bCUDA_cell$' -test.v
+
+package cuda
+
+import (
+	"fmt"
+	"os"
+	"runtime"
+	"runtime/debug"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+func d8bStatusMiB(field string) int {
+	b, _ := os.ReadFile("/proc/self/status")
+	for _, ln := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(ln, field+":") {
+			var v int
+			fmt.Sscanf(strings.TrimSpace(strings.TrimPrefix(ln, field+":")), "%d", &v)
+			return v / 1024
+		}
+	}
+	return -1
+}
+
+func TestD8bCUDA_cell(t *testing.T) {
+	requireHeavyModel(t)
+	requireCUDADevice(t)
+	arm := os.Getenv("D8B_ARM")
+	if arm != "direct" && arm != "sidecar" {
+		t.Skip("set D8B_ARM=direct or sidecar")
+	}
+	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no checkpoint at %s", path)
+	}
+	opts := decoder.Options{Backend: "cuda", Quant: "q4k", DirectLoad: arm == "direct"}
+	m, err := decoder.Load(path, opts)
+	if err != nil {
+		t.Fatalf("load (%s): %v", arm, err)
+	}
+	defer m.Close()
+	rf := m.ResidentForwardForTest()
+	if rf == nil {
+		t.Fatalf("VOID: the cuda resident declined (%s): %s", m.DecodePath(), m.ResidentDecline())
+	}
+	runtime.GC()
+	debug.FreeOSMemory()
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	heap, anon, file := int(ms.HeapInuse>>20), d8bStatusMiB("RssAnon"), d8bStatusMiB("RssFile")
+	tokens := greedyReplyCUDA(t, rf, m, g2rSeed(t, path)[:4], 16)
+	t.Logf("D8B-CUDA arm=%s heap_in_use=%d MiB RssAnon=%d MiB RssFile=%d MiB decode_path=%q tokens=%v", arm, heap, anon, file, m.DecodePath(), tokens)
+}
