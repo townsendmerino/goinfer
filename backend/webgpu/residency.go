@@ -6,12 +6,14 @@ package webgpu
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
+	"slices"
+
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
-	"math"
-	"slices"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/aikit/linalg"
@@ -686,7 +688,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				kc, e1 := c.NewKVCache(nil, ctxCap*kvDim)
 				vc, e2 := c.NewKVCache(nil, ctxCap*kvDim)
 				if e1 != nil || e2 != nil {
-					return fail(fmt.Errorf("gpu: nemotron KV alloc (layer %d): %v %v", i, e1, e2))
+					return fail(fmt.Errorf("gpu: nemotron KV alloc (layer %d): %w", i, errors.Join(e1, e2)))
 				}
 				keepF(kc.Release)
 				keepF(vc.Release)
@@ -829,7 +831,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			kc, e1 := c.NewKVCache(nil, ctxCap*kvDim)
 			vc, e2 := c.NewKVCache(nil, ctxCap*kvDim)
 			if e1 != nil || e2 != nil {
-				return fail(fmt.Errorf("gpu: qwen35 KV alloc (layer %d): %v %v", i, e1, e2))
+				return fail(fmt.Errorf("gpu: qwen35 KV alloc (layer %d): %w", i, errors.Join(e1, e2)))
 			}
 			keepF(kc.Release)
 			keepF(vc.Release)
@@ -898,7 +900,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			latDim := kvLoRA + qkRope
 			lc, e1 := c.NewKVCache(nil, ctxCap*latDim)
 			if e1 != nil {
-				return fail(fmt.Errorf("gpu: residency latent alloc (layer %d): %v", i, e1))
+				return fail(fmt.Errorf("gpu: residency latent alloc (layer %d): %w", i, e1))
 			}
 			keepF(lc.Release)
 			rl.LatCache = (*kernels.DeviceBufferBuf(lc))
@@ -1007,7 +1009,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 					vc, e2 = c.NewKVCache(nil, ctxCap*lkvDim)
 				}
 				if e1 != nil || e2 != nil {
-					return fail(fmt.Errorf("gpu: residency KV alloc (layer %d): %v %v", i, e1, e2))
+					return fail(fmt.Errorf("gpu: residency KV alloc (layer %d): %w", i, errors.Join(e1, e2)))
 				}
 				// Cross-file invariant guard: the decode runner indexes this cache with strides of g.kvDim = gnKV·ghd up to ctxCap
 				// positions. The alloc above derives lkvDim from the same tuple, so this holds by construction; a builder that sized the

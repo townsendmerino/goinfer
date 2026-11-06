@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
@@ -56,8 +57,8 @@ func TestDeviceFallback(t *testing.T) {
 	if _, err = f.run("X", false, &a, func(multimodal.GridTowerAccelerator) ([]float32, error) { return nil, boom }); !errors.Is(err, boom) || acc2.closed || a == nil {
 		t.Errorf("a non-memory error: err %v closed %v acc %v; want it passed through with the accelerator kept", err, acc2.closed, a)
 	}
-	if !isDeviceMemoryError(oom) || isDeviceMemoryError(boom) || isDeviceMemoryError(nil) {
-		t.Error("isDeviceMemoryError misclassifies")
+	if !mem.DeviceOutOfMemory(oom) || mem.DeviceOutOfMemory(boom) || mem.DeviceOutOfMemory(nil) {
+		t.Error("mem.DeviceOutOfMemory misclassifies")
 	}
 }
 

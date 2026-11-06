@@ -8,6 +8,7 @@ import (
 
 	gc "github.com/eitamring/gocudrv/cuda"
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // CUDA graph replay (r.graphs) is bit-exact to live launch only under EXCLUSIVE_PROCESS device tenancy or active CUDA
@@ -116,12 +117,12 @@ func (r *cudaResident) admitGraphs() error {
 	reason, ok := r.graphsTenancySafe()
 	switch {
 	case ok:
-		fmt.Fprintf(os.Stderr, "[cuda] CUDA graphs enabled: %s\n", reason)
+		logs.Infof("[cuda] CUDA graphs enabled: %s", reason)
 	case unsafe:
-		fmt.Fprintf(os.Stderr, "[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: %s — "+
-			"replay may not be bit-exact under context contention\n", reason)
+		logs.Warnf("[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: %s — "+
+			"replay may not be bit-exact under context contention", reason)
 	default:
-		fmt.Fprintf(os.Stderr, "[cuda] CUDA graphs requested but DECLINED: %s\n", reason)
+		logs.Warnf("[cuda] CUDA graphs requested but DECLINED: %s", reason)
 		r.graphs = false
 		return nil
 	}
@@ -129,7 +130,7 @@ func (r *cudaResident) admitGraphs() error {
 		return fmt.Errorf("graph capture: %w", e)
 	}
 	if e := r.do(func() error { return r.graphsSelfTest() }); e != nil {
-		fmt.Fprintf(os.Stderr, "[cuda] CUDA graphs DECLINED: startup bit-exactness self-test failed: %v\n", e)
+		logs.Warnf("[cuda] CUDA graphs DECLINED: startup bit-exactness self-test failed: %v", e)
 		r.graphs = false
 	}
 	return nil

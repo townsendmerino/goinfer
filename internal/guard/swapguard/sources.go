@@ -3,11 +3,11 @@ package swapguard
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // BackstopMB is the system-wide swap growth that trips the guard on a machine where the per-process figure is read (CLAUDE.md, "guard
@@ -85,9 +85,9 @@ func Start(srcs []Source, resumeAfter time.Duration, onTrip func(src Source, use
 				used, ok := src.Read()
 				once.Do(func() {
 					if ok {
-						fmt.Fprintf(os.Stderr, "swap guard: baseline %.2f GB (%s)\n", float64(used)/1e9, src.Name)
+						logs.Infof("swap guard: baseline %.2f GB (%s)", float64(used)/1e9, src.Name)
 					} else {
-						fmt.Fprintf(os.Stderr, "swap guard: the %s probe reports unknown on the first sample; that source will not trip until it reports a real reading\n", src.Name)
+						logs.Warnf("swap guard: the %s probe reports unknown on the first sample; that source will not trip until it reports a real reading", src.Name)
 					}
 				})
 				return used, ok

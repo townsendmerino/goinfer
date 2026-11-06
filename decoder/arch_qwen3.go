@@ -11,7 +11,7 @@ func qwen3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "qwen3"); err != nil {
 		return nil, nil, err
 	}
-	if err := cfg.validateQwen3(); err != nil {
+	if err := cfg.ValidateQwen3(); err != nil {
 		return nil, nil, err
 	}
 	return &Architecture{

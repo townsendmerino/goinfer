@@ -1,11 +1,14 @@
 package decoder
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -105,5 +108,38 @@ func (c textParity) run(t *testing.T) {
 			t.Errorf("Generate continuation[%d] mismatch: got %v want %v (batched-prefill / canBatchN?)", i, gen, g.ContinuationIDs)
 			break
 		}
+	}
+}
+
+// A family's deps_hash covers the test files its record lists, so that a change to its parity check re-stales it. A test that runs
+// through textParity keeps that check here, so a record listing such a test file must list this file too.
+func TestTextParity_hashedWithItsUsers(t *testing.T) {
+	m, err := loadParityManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const helper = "decoder/text_parity_test.go"
+	users := 0
+	for name, fam := range m.Families {
+		deps := familyDepFiles(m, fam)
+		for _, f := range deps {
+			if !strings.HasSuffix(f, "_test.go") || f == helper {
+				continue
+			}
+			src, err := os.ReadFile(repoPath(f))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(src, []byte("textParity{")) {
+				continue
+			}
+			users++
+			if !slices.Contains(deps, helper) {
+				t.Errorf("%s's deps_hash covers %s, whose parity test runs through textParity, and not %s", name, f, helper)
+			}
+		}
+	}
+	if users == 0 {
+		t.Error("no parity record lists a test file that uses textParity, so this check matched nothing")
 	}
 }

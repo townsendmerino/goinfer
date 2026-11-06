@@ -18,14 +18,14 @@ func internlm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "internlm2"); err != nil {
 		return nil, nil, err
 	}
-	if err := cfg.validateLlama(); err != nil {
+	if err := cfg.ValidateLlama(); err != nil {
 		return nil, nil, fmt.Errorf("decoder(internlm2): %w", err)
 	}
 	scaling, err := parseRopeScaling(cfg.RopeScaling)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(internlm2): %w", err)
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	return &Architecture{
 		Name:            "internlm2",
 		HiddenDim:       cfg.HiddenDim,

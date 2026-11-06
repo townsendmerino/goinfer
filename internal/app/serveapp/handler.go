@@ -69,11 +69,7 @@ func NewHandler(args []string) (http.Handler, io.Closer, error) {
 		return nil, nil, err
 	}
 	srv.restoreSessions(cfg)
-	var reqLog io.Writer
-	if cfg.logRequests {
-		reqLog = os.Stderr
-	}
-	mux, _ := srv.routes(cfg, *sf.apiKey, reqLog)
+	mux, _ := srv.routes(cfg, *sf.apiKey, os.Stderr)
 	// Every request's context is a child of life, as the binary's are of its server context, so Close cancels the
 	// generations in flight instead of waiting for them.
 	life, stop := context.WithCancel(context.Background())

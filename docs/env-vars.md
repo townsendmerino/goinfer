@@ -235,6 +235,9 @@ and `release-assets.yml`), and unset it skips.
 
 ## Diagnostics, probes & parity debugging
 
+The lines these turn on in library code (`GOINFER_DECODE_TIMING`, `GOINFER_DELTANET_TIMING`, `GOINFER_ATTNFA_DEBUG`) go to stderr,
+or under `decoder.SetLogger` to that logger at Info, which a logger at its default level shows.
+
 <!-- generated: table diagnostics -->
 | Var | Purpose |
 |---|---|

@@ -241,6 +241,11 @@
    "summary": "Cap on request-body size in bytes; a larger body is rejected with 413 before it is read. 0 derives the cap from the model's context window."
   },
   {
+   "name": "max-file-store-bytes",
+   "group": "Concurrency and queues",
+   "summary": "Cap on the bytes of uploaded files and batch results held in memory (1 GiB). The oldest go first and the newest upload or batch's result files are always kept, so a dropped file's id answers 404. 0 means no limit on bytes."
+  },
+  {
    "name": "kv-host-bytes",
    "group": "Sessions and KV cache",
    "summary": "Host memory for prefix snapshots on a GPU-resident model: after a cold first prefill of a long prompt its KV is copied to pinned host memory, and a later request starting with the same ids restores it. `auto` (default) is a tenth of RAM, at most 8 GiB; `0` turns it off; or a byte count with an optional K, M or G. Pinned only while a snapshot is held. Named: also keeps released rows (CUDA; experimental)."

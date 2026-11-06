@@ -12,14 +12,14 @@ import (
 // per-expert logit bias (LayerWeights.RouterBias). A resident backend admits the family only by declaring FeatAttnSink and FeatOutBias
 // (features.go).
 func gptOssArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if err := cfg.validateGptOss(); err != nil {
+	if err := cfg.ValidateGptOss(); err != nil {
 		return nil, nil, err
 	}
 	scaling, err := parseRopeScaling(cfg.RopeScaling)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(gpt-oss): %w", err)
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	nExperts := cfg.NumLocalExperts
 	if nExperts == 0 {
 		nExperts = cfg.NumExperts
@@ -52,7 +52,7 @@ func gptOssArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		RoPELocalBase:    cfg.RoPEGlobalBase, // one RoPE for both attention types
 		ropeScaling:      scaling,
 		ropeScalingLocal: scaling, // same YaRN table on sliding + full layers
-		RotaryDim:        cfg.rotaryDim(),
+		RotaryDim:        cfg.RotaryDim(),
 		MoE: &MoEConfig{
 			NumExperts:      nExperts,
 			TopK:            cfg.NumExpertsPerTok,

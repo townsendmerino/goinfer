@@ -14,14 +14,14 @@ func qwen2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "qwen2"); err != nil {
 		return nil, nil, err
 	}
-	if err := cfg.validateQwen2(); err != nil {
+	if err := cfg.ValidateQwen2(); err != nil {
 		return nil, nil, err
 	}
 	scaling, err := parseRopeScaling(cfg.RopeScaling) // linear + llama3 (Qwen2.5 leaves it null)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(qwen2): %w", err)
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	return &Architecture{
 		Name:            "qwen2",
 		HiddenDim:       cfg.HiddenDim,
@@ -43,7 +43,7 @@ func qwen2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		layerIsGlobal:   nil, // all-global
 		RoPELocalBase:   cfg.RoPEGlobalBase,
 		RoPEGlobalBase:  cfg.RoPEGlobalBase,
-		RotaryDim:       cfg.rotaryDim(),
+		RotaryDim:       cfg.RotaryDim(),
 		ropeScaling:     scaling,
 		EmbedScale:      0,
 		TiedLMHead:      false, // finalized from lm_head.weight presence at load

@@ -79,7 +79,7 @@ func newWebGPUBackend(who string) (*webgpuBackend, error) {
 	if err != nil {
 		// No adapter (headless / no driver): surface as an error so the
 		// caller's registry falls back to CPU with a note.
-		return nil, fmt.Errorf("gpu: no WebGPU adapter for %s (%v)", who, err)
+		return nil, fmt.Errorf("gpu: no WebGPU adapter for %s (%w)", who, err)
 	}
 	return &webgpuBackend{
 		ctx:        ctx,

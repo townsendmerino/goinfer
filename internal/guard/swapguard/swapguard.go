@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
@@ -39,7 +40,7 @@ func ThresholdBytes() (thresholdBytes, thresholdMB int64, ok bool) {
 		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil && parsed > 0 {
 			mb = parsed
 		} else {
-			fmt.Fprintf(os.Stderr, "swap guard: GOINFER_SWAP_GUARD=%q is neither \"off\" nor a positive integer (MB) — using the %d MB default\n", v, defaultMB)
+			logs.Warnf("swap guard: GOINFER_SWAP_GUARD=%q is neither \"off\" nor a positive integer (MB) — using the %d MB default", v, defaultMB)
 		}
 	}
 	return mb * 1024 * 1024, mb, true
@@ -97,7 +98,7 @@ func armLoad(loadPath string, opts decoder.Options, advice string, srcs []Source
 	var trippedName string
 	var trippedUsed, trippedDelta int64
 
-	fmt.Fprintf(os.Stderr, "swap guard (load): armed for %s: %s\n", loadPath, banner)
+	logs.Infof("swap guard (load): armed for %s: %s", loadPath, banner)
 	watch := Start(srcs, 0, func(src Source, used, delta int64) {
 		mu.Lock()
 		first := !tripped
@@ -108,7 +109,7 @@ func armLoad(loadPath string, opts decoder.Options, advice string, srcs []Source
 		if first {
 			close(abortCh) // the actual signal parallelLayers' abort select observes
 		}
-		fmt.Fprintf(os.Stderr, "swap guard (load): TRIPPED — %s grew %.2f GB over baseline (%.2f GB used now); aborting the load of %s\n", src.Name, float64(delta)/1e9, float64(used)/1e9, loadPath)
+		logs.Warnf("swap guard (load): TRIPPED — %s grew %.2f GB over baseline (%.2f GB used now); aborting the load of %s", src.Name, float64(delta)/1e9, float64(used)/1e9, loadPath)
 	}, nil)
 
 	wrap := func(err error) error {
