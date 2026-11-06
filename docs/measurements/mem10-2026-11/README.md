@@ -11,3 +11,12 @@ Read, not graded; it sets the size of what a build would save, or says there is 
 - **What it answers:** how much anonymous or pinned host memory the 26B holds beyond the mapped weights, which is what the ledger's "registered from the mapping" would remove (the pinned copy shows as `RssShmem`/`VmLck`, the heap copy as `RssAnon`).
 - **Void:** the one-minute load above 8.0 at the start, or the swap tripwire closing the load. **One run.** Cost about 2 minutes.
 - **Nothing is decided on this reading:** whether a build is worth its size is the coordinator's and the owner's call; this README adds the figures and the arithmetic of what could be saved.
+
+## The first reading was void (2026-11-05 17:41 PST)
+
+`first-reading-void/`. Started at serve's defaults with `--backend cuda --ctx 4096`, the 26B's CUDA build **declined** (`cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY` in `upExperts`: the whole expert stack does not fit an 8 GB card) and the server fell back to the CPU path (`decode path: cpu (int4)`, `serve.log`). Its 15.3 GB `RssAnon` and 9.7 GB `RssFile` are the CPU model's, not the CUDA expert cache's. It measures nothing about MEM10. The cell needs `--moe-cache-experts` (the elastic expert-slot mode, `docs/cuda-backend.md`).
+
+## MEM10-G0 again, registered 2026-11-05 17:44 PST (the time from `date` at the run) before the reading
+
+As above with **`--moe-cache-experts`** added to the server's flags, and the script now reads `decode path:` from the log. **A run whose log says the decode path is not `cuda` is void**, not a reading. One run, the exclusive timing lock, read and not graded.
+

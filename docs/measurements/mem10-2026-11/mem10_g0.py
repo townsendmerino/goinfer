@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MEM10-G0 (README.md here): the host footprint of the Gemma 4 26B-A4B on CUDA as `serve` loads it today. One server, started at serve's defaults except --backend cuda and --ctx 4096;
+"""MEM10-G0 (README.md here): the host footprint of the Gemma 4 26B-A4B on CUDA as `serve` loads it today. One server, started at serve's defaults except --backend cuda, --ctx 4096 and --moe-cache-experts;
 /proc/<pid>/status is read every 250 ms until the server answers /v1/models, again 5 s after, and after one 16-token greedy completion; the process's device memory from nvidia-smi.
 
   python3 mem10_g0.py --serve <bin> --model <gguf> --out <dir>
@@ -43,7 +43,7 @@ def main():
     load0 = float(open("/proc/loadavg").read().split()[0])
     avail0 = [int(l.split()[1]) for l in open("/proc/meminfo") if l.startswith("MemAvailable")][0] // 1024
     log = open(os.path.join(a.out, "serve.log"), "w")
-    p = subprocess.Popen([a.serve, "--model", a.model, "--backend", "cuda", "--ctx", "4096", "--addr", f"127.0.0.1:{PORT}"], stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+    p = subprocess.Popen([a.serve, "--model", a.model, "--backend", "cuda", "--ctx", "4096", "--moe-cache-experts", "--addr", f"127.0.0.1:{PORT}"], stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
     peak = {}
     stop = threading.Event()
 
@@ -68,6 +68,7 @@ def main():
             except Exception:
                 time.sleep(0.5)
         rec["load_s"] = round(time.time() - t0, 1)
+        rec["decode_path"] = [l.strip() for l in open(os.path.join(a.out, "serve.log")) if "decode path:" in l]
         rec["at_listen"] = status(p.pid)
         time.sleep(5)
         rec["after_5s"] = status(p.pid)
@@ -88,6 +89,7 @@ def main():
     json.dump(rec, open(os.path.join(a.out, "reading.json"), "w"), indent=1)
     for k in ("at_listen", "after_5s", "after_request", "peak_during_all"):
         print(k, {x: round(v / MiB) for x, v in rec[k].items()}, "MiB")
+    print("decode path:", rec.get("decode_path"))
     print("load", rec["load_s"], "s; device", rec["vram_mib"], "MiB; load avg", rec["load_avg"], "; available", rec["mem_available_mb"], "MB; completion", repr(rec["completion"]))
 
 
