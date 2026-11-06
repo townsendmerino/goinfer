@@ -609,6 +609,7 @@
     "decoder": [
       "chat",
       "constrain",
+      "decoder/fit",
       "internal/audio",
       "internal/cost",
       "internal/fidelity",
