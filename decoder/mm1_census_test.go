@@ -328,6 +328,7 @@ func TestDecisionCensus(t *testing.T) {
 		}
 		t.Fatalf("two runs in one process differ (G-MM1-C2): %s, %s\n%s", c1.total(), c2.total(), strings.Join(diff, "\n"))
 	}
+	censusTotalHere = c1.total()
 	checkCensusCoverage(t, c1)
 	class := censusHostClass()
 	t.Logf("host class %q; %d groups; census %s", class, len(c1.groups), c1.total())
@@ -368,6 +369,10 @@ func TestDecisionCensus(t *testing.T) {
 		len(diffs), strings.Join(diffs[:min(len(diffs), 40)], "\n  "))
 }
 
+// censusTotalHere is the total of the census TestDecisionCensus built in this process, once it has. A whole-package run has both tests in
+// one process, so the second need not pay for a third build; a census is minutes on CI's slower hosts.
+var censusTotalHere string
+
 // TestDecisionCensus_secondProcess (G-MM1-C2) runs the census in a fresh process and requires the same total as this one.
 func TestDecisionCensus_secondProcess(t *testing.T) {
 	if os.Getenv("GOINFER_CENSUS_CHILD") == "1" {
@@ -378,7 +383,10 @@ func TestDecisionCensus_secondProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	here := buildCensus(t).total()
+	here := censusTotalHere
+	if here == "" {
+		here = buildCensus(t).total()
+	}
 	cmd := newCensusChild(exe)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

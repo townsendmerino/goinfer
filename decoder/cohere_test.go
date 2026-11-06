@@ -129,47 +129,55 @@ func TestCohere_forwardParity(t *testing.T) {
 // the streaming one. Independent of the HF golden — a pure internal consistency
 // check that runs whenever the tiny checkpoint is present.
 func TestCohere_batchedPrefillMatchesSequential(t *testing.T) {
-	const ckpt = "../testdata/cohere-tiny"
-	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no tiny checkpoint (%s) — run scripts/pin_cohere_tiny.py", ckpt)
-	}
-	m, err := Load(ckpt, Options{Quant: "f32"})
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	defer m.Close()
+	for _, c := range []struct {
+		name, ckpt, pin string
+		ids             []int
+	}{
+		{"cohere", "../testdata/cohere-tiny", "scripts/pin_cohere_tiny.py", []int{3, 141, 7, 88, 219, 14, 66, 190}},
+		// forwardN's parallel + NoPE + sliding path: long enough that the prefill can't silently diverge on the sliding/NoPE interleave.
+		{"cohere2", "../testdata/cohere2-tiny", "scripts/pin_cohere2_tiny.py", []int{3, 141, 7, 88, 219, 14, 66, 190, 42, 5, 133, 201, 17, 250, 99, 60}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := os.Stat(c.ckpt); errors.Is(err, fs.ErrNotExist) {
+				t.Skipf("no tiny checkpoint (%s) — run %s", c.ckpt, c.pin)
+			}
+			m, err := Load(c.ckpt, Options{Quant: "f32"})
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			defer m.Close()
 
-	ids := []int{3, 141, 7, 88, 219, 14, 66, 190}
+			// Sequential last-token logits.
+			seqCache := m.NewCache(len(c.ids))
+			for _, id := range c.ids[:len(c.ids)-1] {
+				if _, err := m.runLayers(id, seqCache); err != nil {
+					t.Fatalf("seq runLayers: %v", err)
+				}
+			}
+			seq, err := m.forward(c.ids[len(c.ids)-1], seqCache)
+			if err != nil {
+				t.Fatalf("seq forward: %v", err)
+			}
 
-	// Sequential last-token logits.
-	seqCache := m.NewCache(len(ids))
-	for _, id := range ids[:len(ids)-1] {
-		if _, err := m.runLayers(id, seqCache); err != nil {
-			t.Fatalf("seq runLayers: %v", err)
-		}
-	}
-	seq, err := m.forward(ids[len(ids)-1], seqCache)
-	if err != nil {
-		t.Fatalf("seq forward: %v", err)
-	}
-
-	// Batched prefill: forwardN returns per-position logits; take the last row.
-	rows, err := m.forwardN(context.Background(), ids, m.NewCache(len(ids)))
-	if err != nil {
-		t.Fatalf("batched forwardN: %v", err)
-	}
-	batchLogits := rows[len(rows)-1]
-	if len(batchLogits) != len(seq) {
-		t.Fatalf("batched %d logits, sequential %d", len(batchLogits), len(seq))
-	}
-	var maxAbs float64
-	for i := range seq {
-		if d := math.Abs(float64(seq[i]) - float64(batchLogits[i])); d > maxAbs {
-			maxAbs = d
-		}
-	}
-	t.Logf("batched vs sequential maxAbs=%.3e", maxAbs)
-	if maxAbs > 1e-4 {
-		t.Errorf("batched prefill diverged from sequential: maxAbs %.3e > 1e-4", maxAbs)
+			// Batched prefill: forwardN returns per-position logits; take the last row.
+			rows, err := m.forwardN(context.Background(), c.ids, m.NewCache(len(c.ids)))
+			if err != nil {
+				t.Fatalf("batched forwardN: %v", err)
+			}
+			batchLogits := rows[len(rows)-1]
+			if len(batchLogits) != len(seq) {
+				t.Fatalf("batched %d logits, sequential %d", len(batchLogits), len(seq))
+			}
+			var maxAbs float64
+			for i := range seq {
+				if d := math.Abs(float64(seq[i]) - float64(batchLogits[i])); d > maxAbs {
+					maxAbs = d
+				}
+			}
+			t.Logf("batched vs sequential maxAbs=%.3e", maxAbs)
+			if maxAbs > 1e-4 {
+				t.Errorf("batched prefill diverged from sequential: maxAbs %.3e > 1e-4", maxAbs)
+			}
+		})
 	}
 }

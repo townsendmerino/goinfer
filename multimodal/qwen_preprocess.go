@@ -167,6 +167,12 @@ func ParseQwen3PreprocessConfig(raw []byte) (QwenPreprocessConfig, error) {
 		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): preprocessor_config is missing patch_size/merge_size/temporal_patch_size")
 	case len(pc.ImageMean) != 3 || len(pc.ImageStd) != 3:
 		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): preprocessor_config is missing image_mean/image_std")
+	case pc.PatchSize > qwenMaxPatchFactor || pc.MergeSize > qwenMaxPatchFactor || pc.PatchSize*pc.MergeSize > qwenMaxPatchFactor || pc.TemporalPatchSize > qwenMaxTemporalPatch:
+		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): preprocessor_config patch_size %d, merge_size %d, temporal_patch_size %d: patch_size*merge_size may be at most %d and temporal_patch_size at most %d",
+			pc.PatchSize, pc.MergeSize, pc.TemporalPatchSize, qwenMaxPatchFactor, qwenMaxTemporalPatch)
+	case pc.Size.Longest > qwenMaxInputPixels || pc.Size.Shortest > pc.Size.Longest:
+		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): preprocessor_config size %d to %d pixels: want shortest_edge at most longest_edge, and longest_edge at most %d",
+			pc.Size.Shortest, pc.Size.Longest, qwenMaxInputPixels)
 	}
 	if slices.Contains(pc.ImageStd, 0) {
 		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): image_std has a zero")
@@ -183,6 +189,14 @@ func ParseQwen3PreprocessConfig(raw []byte) (QwenPreprocessConfig, error) {
 // qwenMaxInputPixels bounds the raw (pre-resize) image area QwenPreprocess will allocate for, independent of cfg.MaxPixels (which
 // caps only the resized output). ~33.5 MP: above any real camera image, below the memory a decompression bomb would demand.
 const qwenMaxInputPixels = 32 * 1024 * 1024
+
+// A config sizes every image's allocations: each image resizes to at least one patch_size*merge_size cell a side, and the output
+// holds a patch's pixels per temporal frame. These bound what ParseQwen3PreprocessConfig accepts, above any released config's
+// (16*2 and 2), so a hostile or corrupt file is an error at load and not a crash on the first image.
+const (
+	qwenMaxPatchFactor   = 1 << 10
+	qwenMaxTemporalPatch = 1 << 2
+)
 
 // QwenPreprocess turns image bytes into the Qwen2.5-VL vision input. Returns the
 // flattened pixel_values and grid_thw = (1, grid_h, grid_w) for a single image.

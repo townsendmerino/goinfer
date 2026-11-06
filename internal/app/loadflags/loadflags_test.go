@@ -286,25 +286,25 @@ func TestBackend_autoOnThisTestBinary(t *testing.T) {
 }
 
 // --windowed-kv is on by default and --windowed-kv=false turns it off; both reach Options.
-func TestWindowedKV_defaultOnAndOptOut(t *testing.T) {
-	_, def := parse(t, Chat)
-	if !def.Options().ResidentWindowedKV {
-		t.Fatal("windowed KV must be on by default")
-	}
-	_, off := parse(t, Chat, "--windowed-kv=false")
-	if off.Options().ResidentWindowedKV {
-		t.Fatal("--windowed-kv=false must turn it off")
-	}
-}
-
 // --moe-step is on by default and --moe-step=false turns it off; both reach Options.
-func TestMoEStep_defaultOnAndOptOut(t *testing.T) {
-	_, def := parse(t, Serve)
-	if !def.Options().ResidentMoEStep {
-		t.Fatal("the MoE step must be on by default")
-	}
-	_, off := parse(t, Serve, "--moe-step=false")
-	if off.Options().ResidentMoEStep {
-		t.Fatal("--moe-step=false must turn it off")
+// Each of these is on by default, and its flag turns it off.
+func TestDefaultOn_flagOptsOut(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		app  App
+		flag string
+		on   func(decoder.Options) bool
+	}{
+		{"windowed KV", Chat, "--windowed-kv=false", func(o decoder.Options) bool { return o.ResidentWindowedKV }},
+		{"MoE step", Serve, "--moe-step=false", func(o decoder.Options) bool { return o.ResidentMoEStep }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if _, def := parse(t, c.app); !c.on(def.Options()) {
+				t.Fatalf("%s must be on by default", c.name)
+			}
+			if _, off := parse(t, c.app, c.flag); c.on(off.Options()) {
+				t.Fatalf("%s must turn it off", c.flag)
+			}
+		})
 	}
 }

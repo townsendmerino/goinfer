@@ -158,29 +158,10 @@ func TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional(t *testing.T) {
 // reports the same finish_reason as an ordinary EOS-terminated one.
 func TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped(t *testing.T) {
 	m, g := loadGemma4VLBidirTiny(t)
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
-	rf.capPos = len(g.InputIDs) + 2
-	m.resident = rf
-
-	const maxNew = 5
 	features := func() ([]float32, error) { return g.ImageFeatures, nil }
-	stream, gen := m.GenerateGemma4VL(context.Background(), g.InputIDs, g.ImageTokenStart, g.NImageTokens, 0, features, maxNew, SamplingParams{Temperature: 0})
-	var got []int
-	for id := range stream {
-		got = append(got, id)
-	}
-	if err := gen.Err(); err != nil {
-		t.Fatalf("GenerateGemma4VL: %v", err)
-	}
-	if !gen.BudgetClamped {
-		t.Error("BudgetClamped = false, want true — the resident cap bound this turn, not the request")
-	}
-	if gen.Budget != 2 {
-		t.Errorf("Budget = %d, want 2 (capPos %d − prompt %d)", gen.Budget, rf.capPos, len(g.InputIDs))
-	}
-	if len(got) > gen.Budget {
-		t.Errorf("streamed %d tokens, more than the published Budget %d", len(got), gen.Budget)
-	}
+	checkResidentCapPublishesBudgetClamped(t, m, len(g.InputIDs), func(maxNew int) (<-chan int, *Generation) {
+		return m.GenerateGemma4VL(context.Background(), g.InputIDs, g.ImageTokenStart, g.NImageTokens, 0, features, maxNew, SamplingParams{Temperature: 0})
+	})
 }
 
 // TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU is the decline half: an UploadKV
