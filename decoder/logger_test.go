@@ -59,3 +59,18 @@ func TestSetLogger_takesWhatALoadWrites(t *testing.T) {
 	}
 	t.Errorf("no record of the ignored flag among %d", len(h.records))
 }
+
+// A failing self-test's line is attributed to RecordSelfTest, which writes it, not to a wrapper around the log.
+func TestRecordSelfTest_attributesItsLineToItself(t *testing.T) {
+	h := &recordsHandler{}
+	SetLogger(slog.New(h))
+	t.Cleanup(func() { SetLogger(nil) })
+	t.Cleanup(func() { selfTestMu.Lock(); delete(selfTestResults, "attribution-test"); selfTestMu.Unlock() })
+	RecordSelfTest(SelfTestResult{Backend: "attribution-test", Status: SelfTestDeclined, Mismatches: []string{"x"}})
+	if len(h.records) != 1 {
+		t.Fatalf("%d records, want the one WARN line", len(h.records))
+	}
+	if f, _ := runtime.CallersFrames([]uintptr{h.records[0].PC}).Next(); !strings.HasSuffix(f.Function, "decoder.RecordSelfTest") {
+		t.Errorf("attributed to %s (%s:%d), not RecordSelfTest", f.Function, f.File, f.Line)
+	}
+}
