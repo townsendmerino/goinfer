@@ -1,0 +1,53 @@
+=== RUN   TestCohereRealResidentParityCUDA
+=== RUN   TestCohereRealResidentParityCUDA/aya-expanse-8b
+    cohere_real_resident_test.go:74: [   0.0s] loading CUDA resident (int4, context 512)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (532 MiB of scratch; 2024 MiB free beyond the 173 MiB kept beside a pass); passes take up to 512 rows
+    cohere_real_resident_test.go:74: [  23.9s] loading CPU model (int4)
+    cohere_real_resident_test.go:74: [  34.9s] golden prompt: sequential decode, resident vs CPU every position
+    cohere_real_resident_test.go:195: GOLDEN PROMPT (6 tokens), resident vs CPU int4:
+    cohere_real_resident_test.go:177:   sequential decode: mean cosine 0.999422, worst 0.998727 (pos 2), worst relL2 0.0516 | pre-registered tight tier (cos >= 0.995, relL2 <= 0.15) met
+    cohere_real_resident_test.go:197:   last token vs HF f32 golden: resident cosine 0.997293 | CPU int4 cosine 0.997058 | argmax resident 5641 CPU 5641 golden 5641
+    cohere_real_resident_test.go:184:   batched prefill: last-token cosine 0.999101 relL2 0.0426 (bar cosine >= 0.98)
+    cohere_real_resident_test.go:74: [  36.2s] 48-token prompt: sequential decode, resident vs CPU every position
+    cohere_real_resident_test.go:208: 48-TOKEN PROMPT, resident vs CPU int4:
+    cohere_real_resident_test.go:177:   sequential decode: mean cosine 0.997507, worst 0.940916 (pos 7), worst relL2 0.4023 | pre-registered tight tier (cos >= 0.995, relL2 <= 0.15) NOT met (int4 noise on this model; see the header)
+    cohere_real_resident_test.go:184:   batched prefill: last-token cosine 0.996979 relL2 0.0781 (bar cosine >= 0.98)
+    cohere_real_resident_test.go:74: [  46.6s] greedy continuation, teacher-forced on the CPU's tokens
+    cohere_real_resident_test.go:236:   step 4: resident picks 1671, CPU picks 6090; the CPU's own gap between them is 0.1718% of its logit range (near-tie rule: 3%)
+    cohere_real_resident_test.go:236:   step 5: resident picks 1812, CPU picks 1709; the CPU's own gap between them is 0.0693% of its logit range (near-tie rule: 3%)
+    cohere_real_resident_test.go:256: GREEDY CONTINUATION (8 tokens, resident teacher-forced on the CPU's tokens): 2 argmax flip(s) vs the CPU int4, CPU == HF golden 8/8
+    cohere_real_resident_test.go:257:   golden [5641 21 2332 1801 6090 1709 1690 6427] | CPU [5641 21 2332 1801 6090 1709 1690 6427]
+    cohere_real_resident_test.go:74: [  49.6s] control: NeoX rope kernels forced into the same resident, 48-token prompt
+    cohere_real_resident_test.go:265: NEOX CONTROL, 48-token prompt, resident vs CPU int4: decode mean cosine 0.579542 worst -0.041113 (pos 34) worst relL2 1.4745 | batched prefill last-token cosine 0.772594 relL2 0.6607 (2026-10-01 reference worst decode cosine: -0.075 R7B / -0.041 Aya)
+    cohere_real_resident_test.go:74: [  50.4s] done
+=== RUN   TestCohereRealResidentParityCUDA/command-r7b
+    cohere_real_resident_test.go:74: [   0.0s] loading CUDA resident (int4, context 512)
+cuda: prefill width 2048 rows (532 MiB of scratch; 2024 MiB free beyond the 173 MiB kept beside a pass); passes take up to 512 rows
+    cohere_real_resident_test.go:74: [  23.5s] loading CPU model (int4)
+    cohere_real_resident_test.go:74: [  31.4s] golden prompt: sequential decode, resident vs CPU every position
+    cohere_real_resident_test.go:195: GOLDEN PROMPT (6 tokens), resident vs CPU int4:
+    cohere_real_resident_test.go:177:   sequential decode: mean cosine 0.995605, worst 0.987022 (pos 3), worst relL2 0.1844 | pre-registered tight tier (cos >= 0.995, relL2 <= 0.15) NOT met (int4 noise on this model; see the header)
+    cohere_real_resident_test.go:197:   last token vs HF f32 golden: resident cosine 0.976092 | CPU int4 cosine 0.966724 | argmax resident 5641 CPU 5641 golden 5641
+    cohere_real_resident_test.go:184:   batched prefill: last-token cosine 0.994122 relL2 0.1084 (bar cosine >= 0.98)
+    cohere_real_resident_test.go:74: [  32.8s] 48-token prompt: sequential decode, resident vs CPU every position
+    cohere_real_resident_test.go:208: 48-TOKEN PROMPT, resident vs CPU int4:
+    cohere_real_resident_test.go:177:   sequential decode: mean cosine 0.996714, worst 0.987022 (pos 3), worst relL2 0.1844 | pre-registered tight tier (cos >= 0.995, relL2 <= 0.15) NOT met (int4 noise on this model; see the header)
+    cohere_real_resident_test.go:184:   batched prefill: last-token cosine 0.993572 relL2 0.1137 (bar cosine >= 0.98)
+    cohere_real_resident_test.go:74: [  43.2s] greedy continuation, teacher-forced on the CPU's tokens
+    cohere_real_resident_test.go:256: GREEDY CONTINUATION (8 tokens, resident teacher-forced on the CPU's tokens): 0 argmax flip(s) vs the CPU int4, CPU == HF golden 2/8
+    cohere_real_resident_test.go:257:   golden [5641 19 1671 5079 4376 1794 2517 3015] | CPU [5641 21 1896 5079 1801 6090 1812 1690]
+    cohere_real_resident_test.go:74: [  46.2s] control: NeoX rope kernels forced into the same resident, 48-token prompt
+    cohere_real_resident_test.go:265: NEOX CONTROL, 48-token prompt, resident vs CPU int4: decode mean cosine 0.545042 worst -0.075327 (pos 46) worst relL2 1.5687 | batched prefill last-token cosine 0.827705 relL2 1.0165 (2026-10-01 reference worst decode cosine: -0.075 R7B / -0.041 Aya)
+    cohere_real_resident_test.go:74: [  47.0s] done
+--- PASS: TestCohereRealResidentParityCUDA (98.09s)
+    --- PASS: TestCohereRealResidentParityCUDA/aya-expanse-8b (50.72s)
+    --- PASS: TestCohereRealResidentParityCUDA/command-r7b (47.37s)
+PASS
+ledger: 6 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	98.825s

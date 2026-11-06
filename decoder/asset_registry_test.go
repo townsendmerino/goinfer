@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +23,9 @@ import (
 func assetPath(tb testing.TB, env string) string {
 	tb.Helper()
 	p, err := lookupAsset(env)
+	if errors.Is(err, errRegistryUnreadable) {
+		tb.Fatalf("asset %s: %v", env, err)
+	}
 	if err != nil {
 		tb.Skipf("asset %s: %v", env, err)
 	}
@@ -154,5 +158,45 @@ func TestAssetRegistry_agreesWithPreflight(t *testing.T) {
 					a.Env, pabs, gabs)
 			}
 		}
+	}
+}
+
+// TestAssetRegistry_resolvesFromEveryCallerDir — every directory with a test that asks the registry for an asset (AssetPathForTest,
+// lookupAsset) finds testdata/assets.json from its own working directory, and a $REPO/ candidate resolves to a directory that
+// exists. A caller two levels down (backend/cuda) used to open "../testdata/assets.json", fail, and skip, printing ok.
+func TestAssetRegistry_resolvesFromEveryCallerDir(t *testing.T) {
+	callers := map[string]bool{}
+	for p, src := range goTestFiles(t) {
+		if strings.Contains(src, "AssetPathForTest(") || strings.Contains(src, "lookupAsset(") {
+			abs, err := filepath.Abs(filepath.Dir(p))
+			if err != nil {
+				t.Fatal(err)
+			}
+			callers[abs] = true
+		}
+	}
+	// The checkout root itself: a run from there must not look above it.
+	root, err := filepath.Abs(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callers[root] = true
+	if len(callers) < 4 {
+		t.Fatalf("found %d caller directories, want at least the root, decoder, backend/cuda and backend/metal", len(callers))
+	}
+	for dir := range callers {
+		name := strings.TrimPrefix(strings.TrimPrefix(dir, root), "/")
+		if name == "" {
+			name = "(root)"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Chdir(dir)
+			if _, err := loadAssetRegistry(); err != nil {
+				t.Fatalf("from %s: %v", dir, err)
+			}
+			if fi, err := os.Stat(expandCandidate("$REPO/testdata")); err != nil || !fi.IsDir() {
+				t.Fatalf("from %s: $REPO/testdata resolves to %q: %v", dir, expandCandidate("$REPO/testdata"), err)
+			}
+		})
 	}
 }

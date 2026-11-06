@@ -1,0 +1,70 @@
+=== RUN   TestGlmOcrCUDAContextFit
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (202 MiB of scratch; 6370 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    glm_ocr_real_image_test.go:66: ResidentContext   2048: resident=true cap=2048 decline="" path=cuda-resident (int4)
+cuda: prefill width 2048 rows (202 MiB of scratch; 6114 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    glm_ocr_real_image_test.go:66: ResidentContext   4096: resident=true cap=4096 decline="" path=cuda-resident (int4)
+cuda: prefill width 2048 rows (202 MiB of scratch; 5602 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    glm_ocr_real_image_test.go:66: ResidentContext   8192: resident=true cap=8192 decline="" path=cuda-resident (int4)
+cuda: prefill width 2048 rows (202 MiB of scratch; 5090 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    glm_ocr_real_image_test.go:66: ResidentContext  12288: resident=true cap=12288 decline="" path=cuda-resident (int4)
+cuda: prefill width 2048 rows (202 MiB of scratch; 4578 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    glm_ocr_real_image_test.go:66: ResidentContext  16384: resident=true cap=16384 decline="" path=cuda-resident (int4)
+cuda: prefill width 2048 rows (202 MiB of scratch; 3552 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    glm_ocr_real_image_test.go:66: ResidentContext  24576: resident=true cap=24576 decline="" path=cuda-resident (int4)
+cuda: prefill width 2048 rows (202 MiB of scratch; 2528 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    glm_ocr_real_image_test.go:66: ResidentContext  32768: resident=true cap=32768 decline="" path=cuda-resident (int4)
+[resident] BuildResident declined (ok=false err=cuda: resident context 65536 positions needs 8.66 GB of KV (129.0 KB/position across 16 layers) but only 7.19 GB is free on the device beside the weights (plus 230 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model) — continuing on the CPU/staged path
+    glm_ocr_real_image_test.go:66: ResidentContext  65536: resident=false cap=0 decline="backend failed to build a resident path: cuda: resident context 65536 positions needs 8.66 GB of KV (129.0 KB/position across 16 layers) but only 7.19 GB is free on the device beside the weights (plus 230 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model" path=cpu (int4) — requested cuda → running on cpu: backend failed to build a resident path: cuda: resident context 65536 positions needs 8.66 GB of KV (129.0 KB/position across 16 layers) but only 7.19 GB is free on the device beside the weights (plus 230 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model, and cuda has no staged decode path
+--- PASS: TestGlmOcrCUDAContextFit (22.90s)
+=== RUN   TestGlmOcrCUDAResidentRealImage
+cuda: prefill width 2048 rows (202 MiB of scratch; 6114 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    glm_ocr_real_image_test.go:94: CUDA resident: cuda-resident (int4) (cap 4096)
+=== RUN   TestGlmOcrCUDAResidentRealImage/invoice
+[glm-ocr cuda] invoice: tower 44s
+[glm-ocr cuda] invoice: CPU prefill 9s
+    glm_ocr_real_image_test.go:157: prefill last-token logits, CUDA resident vs CPU (int4 both): cosine 0.998299, argmax resident 1330 CPU 1330 HF 1330; cosine to HF f32: CPU 0.980200 resident 0.981324
+[glm-ocr cuda] invoice: resident generate 0s
+[glm-ocr cuda] invoice: cpu generate 11s
+    glm_ocr_real_image_test.go:197: greedy 64 tokens: resident vs CPU identical=true (first divergence -1); resident vs HF f32 first divergence 4, CPU int4 vs HF f32 first divergence 4
+    glm_ocr_real_image_test.go:203: TEXT resident int4 : "INVOICE\n\nDate: 2026-09-18\nDue: 2026-10-18\n\nFrom:\nHarbor Light Supply Co.\n88 Quay Street\nPortland, OR 97209\n\nBill To:\nNorthwind Printing"
+        TEXT cpu int4      : "INVOICE\n\nDate: 2026-09-18\nDue: 2026-10-18\n\nFrom:\nHarbor Light Supply Co.\n88 Quay Street\nPortland, OR 97209\n\nBill To:\nNorthwind Printing"
+        TEXT HF f32        : "INVOICE\n\nInvoice No: INV-2026-0417\nDate: 2026-09-18\nDue: 2026-10-18\n\nFrom: Harbor Light Supply Co.\n88 Quay Street\nPort"
+=== RUN   TestGlmOcrCUDAResidentRealImage/table
+[glm-ocr cuda] table: tower 33s
+[glm-ocr cuda] table: CPU prefill 7s
+    glm_ocr_real_image_test.go:157: prefill last-token logits, CUDA resident vs CPU (int4 both): cosine 0.998201, argmax resident 41681 CPU 41681 HF 41681; cosine to HF f32: CPU 0.976410 resident 0.976510
+[glm-ocr cuda] table: resident generate 0s
+[glm-ocr cuda] table: cpu generate 9s
+    glm_ocr_real_image_test.go:197: greedy 64 tokens: resident vs CPU identical=true (first divergence -1); resident vs HF f32 first divergence -1, CPU int4 vs HF f32 first divergence -1
+    glm_ocr_real_image_test.go:203: TEXT resident int4 : "<table class=\"table table-bordered\"><thead><tr><th>Region</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Total</th></tr></thead><tbody><tr><td>North</"
+        TEXT cpu int4      : "<table class=\"table table-bordered\"><thead><tr><th>Region</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Total</th></tr></thead><tbody><tr><td>North</"
+        TEXT HF f32        : "<table class=\"table table-bordered\"><thead><tr><th>Region</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Total</th></tr></thead><tbody><tr><td>North</"
+=== RUN   TestGlmOcrCUDAResidentRealImage/formula
+[glm-ocr cuda] formula: tower 40s
+[glm-ocr cuda] formula: CPU prefill 8s
+    glm_ocr_real_image_test.go:157: prefill last-token logits, CUDA resident vs CPU (int4 both): cosine 0.997714, argmax resident 13628 CPU 13628 HF 13628; cosine to HF f32: CPU 0.973597 resident 0.973745
+[glm-ocr cuda] formula: resident generate 0s
+[glm-ocr cuda] formula: cpu generate 10s
+    glm_ocr_real_image_test.go:197: greedy 64 tokens: resident vs CPU identical=true (first divergence -1); resident vs HF f32 first divergence 54, CPU int4 vs HF f32 first divergence 54
+    glm_ocr_real_image_test.go:203: TEXT resident int4 : "$$\n\\begin{array}{l} \\int_ {- \\infty} ^ {\\infty} e ^ {- x ^ {2}} d x = \\sqrt {\\pi} (1) \\\\ \\mathrm {M o r e g e n e r l y, f o r a > 0 t h"
+        TEXT cpu int4      : "$$\n\\begin{array}{l} \\int_ {- \\infty} ^ {\\infty} e ^ {- x ^ {2}} d x = \\sqrt {\\pi} (1) \\\\ \\mathrm {M o r e g e n e r l y, f o r a > 0 t h"
+        TEXT HF f32        : "$$\n\\begin{array}{l} \\int_ {- \\infty} ^ {\\infty} e ^ {- x ^ {2}} d x = \\sqrt {\\pi} (1) \\\\ \\mathrm {M o r e g e n e r l y , f o r a > 0 t h"
+--- PASS: TestGlmOcrCUDAResidentRealImage (177.10s)
+    --- PASS: TestGlmOcrCUDAResidentRealImage/invoice (64.67s)
+    --- PASS: TestGlmOcrCUDAResidentRealImage/table (49.58s)
+    --- PASS: TestGlmOcrCUDAResidentRealImage/formula (58.95s)
+=== RUN   TestGlmOcrCUDAResidentFullBudget
+cuda: prefill width 2048 rows (202 MiB of scratch; 5602 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[glm-ocr cuda] full budget: CPU prefill of 6156 tokens 50s
+    glm_ocr_real_image_test.go:303: 6156-token prompt (6144 image tokens, grid [1 128 192]): resident vs CPU prefill logits cosine 0.998775, argmax resident 1330 CPU 1330
+    glm_ocr_real_image_test.go:321: GenerateQwenVL 16 tokens: resident ImgPrefillResident=true, identical to CPU int4: true (first divergence -1)
+--- PASS: TestGlmOcrCUDAResidentFullBudget (149.95s)
+PASS
+ledger: 14 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	350.052s

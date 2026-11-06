@@ -1,0 +1,44 @@
+## backend/cuda: 24 test functions
+blockspec_test.go	TestGenerateBlockSpec_production	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+blockspec_test.go	TestBlockSpecStream	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+cohere_real_resident_test.go	TestCohereRealResidentParityCUDA	[cuda && goinfer_testhooks]	
+default_width_sweep_test.go	TestDefaultVerifyWidth_sweep	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+drafter_leak_test.go	TestResidentDrafter_fuseContextReleasesScratch	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+drafter_loop_test.go	TestDFlashLoop_lossless	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+drafter_loop_test.go	TestDFlashLoop_gate3	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+drafter_test.go	TestResidentDrafter_fuseParity	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+drafter_test.go	TestResidentDrafter_extendContext	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+drafter_test.go	TestResidentDrafter_blockParity	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+drafter_test.go	TestResidentDrafter_streamedAttachMatchesHeld	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+drafter_vs_off_test.go	TestDrafterVsOff_perSuite	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+flash_decode_spec_test.go	TestFlashDecodeBlockSpecLane	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+glm_ocr_real_image_test.go	TestGlmOcrCUDAContextFit	[cuda && goinfer_testhooks]	GOINFER_GLM_OCR
+glm_ocr_real_image_test.go	TestGlmOcrCUDAResidentRealImage	[cuda && goinfer_testhooks]	GOINFER_GLM_OCR
+glm_ocr_real_image_test.go	TestGlmOcrCUDAResidentFullBudget	[cuda && goinfer_testhooks]	GOINFER_GLM_OCR
+gptoss_real20b_test.go	TestGptOssResidentParityCUDA	[cuda && goinfer_testhooks]	GOINFER_GPTOSS_GGUF
+lora_cost_measure_test.go	TestLoRACostMeasure	[cuda && goinfer_testhooks && realckpt]	GOINFER_QWEN3_4B
+qwen25vl_mrope_prefill_resident_real_test.go	TestQwen25VLMRoPEPrefillResidentReal_gate	[cuda && goinfer_testhooks]	GOINFER_QWEN25VL_3B
+qwen25vl_resident_real_test.go	TestQwen25VLResidentReal_gate	[cuda && goinfer_testhooks]	GOINFER_QWEN25VL_3B
+qwen35vl_real_resident_test.go	TestQwen35VLReal_residentImagePrefillMatchesCPU	[cuda && goinfer_testhooks]	GOINFER_QWEN35VL_08B,GOINFER_QWEN35VL_G2
+r14_drafter_argmax_ab_test.go	TestR14DrafterArgmaxAB	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+r14_drafter_argmax_profile_test.go	TestR14DrafterArgmaxProfile	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+spec_twoturn_test.go	TestBlockSpec_twoTurnsMatchPlain	[cuda && goinfer_testhooks]	GOINFER_DFLASH_F32
+## backend/metal: 9 test functions
+gptoss_real20b_test.go	TestGptOssResidentParityReal20B	[darwin && goinfer_testhooks]	GOINFER_GPTOSS_GGUF
+gptoss_real20b_test.go	TestGptOssResidentMemGuardDeclines	[darwin && goinfer_testhooks]	GOINFER_GPTOSS_GGUF
+ksc1_gemv_test.go	TestKSC1_phi3Speed	[darwin && goinfer_testhooks]	GOINFER_PHI3_GGUF
+kso1_native_test.go	TestKSO1_referenceMatchesAikitPhi3	[darwin && goinfer_testhooks]	GOINFER_PHI3_GGUF
+kso1_native_test.go	TestKSO1_laneBytesPhi3	[darwin && goinfer_testhooks]	GOINFER_PHI3_GGUF
+kso1_native_test.go	TestKSO1_speed	[darwin && goinfer_testhooks]	GOINFER_PHI3_GGUF
+kso1a_test.go	TestKSO1a_phi3Speed	[darwin && goinfer_testhooks]	GOINFER_PHI3_GGUF
+one_slot_step_phi3_test.go	TestOneSlotStep_phi3PrefillAB	[darwin && goinfer_testhooks]	GOINFER_PHI3_GGUF
+q4k_phi3_real_test.go	TestQ4KLane_realPhi3NonInferiority	[darwin && goinfer_testhooks]	GOINFER_PHI3_GGUF
+## also through requireCUDAResidentMRoPE (backend/cuda/rope_kv_mrope_batched_test.go)
+rope_kv_mrope_batched_test.go	TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel
+rope_kv_mrope_batched_test.go	TestRopeKVMRoPEBatched_matchesCPUReference
+
+## second switches (reported by the Mac read, checked against the test sources)
+The asset is not the only switch on four of the nine Metal functions; with GOINFER_HEAVY_TESTS=1 alone they still skip:
+TestOneSlotStep_phi3PrefillAB	GOINFER_P29_AB=1
+TestKSC1_phi3Speed	GOINFER_KSC1_TIMING=1
+TestKSO1_speed, TestKSO1a_phi3Speed	GOINFER_KSO1_TIMING=1 (a timed run, under the timing lock)

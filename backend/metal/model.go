@@ -515,6 +515,10 @@ type resident struct {
 	kvNullBytes []int
 	kvTab, kt   Buffer
 	kvTabBlocks int
+	// kvRefs counts the table entries that name each block (kvcopy.go): above one, slots share the block (CopyKV), and a slot about to
+	// write into it first takes its own (kvOwn). kvFree lists the blocks no entry names. Block 0, the null block, is never counted.
+	kvRefs []int32
+	kvFree []int32
 	// batch: MC3's batched decode step over those slots (batch.go); nil when this resident cannot batch. preciseMath
 	// is the build's fast-math choice, which the batched kernels must share to round like the kernels they reproduce.
 	batch       *batchState
@@ -1955,7 +1959,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	if slices.ContainsFunc(r.kvNullBytes, func(n int) bool { return n > 0 }) {
 		r.kvTabBlocks = kvBlocksFor(r.ctxCap)
-		r.kvTab = NewBufferUint32sOn(mem.LineKV, d, kvTableIDs(max(kvSlots, 1), r.kvTabBlocks))
+		ids := kvTableIDs(max(kvSlots, 1), r.kvTabBlocks)
+		r.kvTab = NewBufferUint32sOn(mem.LineKV, d, ids)
+		r.kvRefs = make([]int32, 1+len(ids))
+		for _, id := range ids {
+			r.kvRefs[id]++
+		}
 		r.kt = r.kvTab
 		for s := range r.kvSlotBufs {
 			r.kvSlotBufs[s].kt = r.kvTab.At(4 * s * r.kvTabBlocks)
@@ -2412,6 +2421,7 @@ func (r *resident) setPos(pos int, ropePos ...int) {
 		rp = ropePos[0]
 	}
 	r.curNKeys = pos + 1
+	r.kvOwn(r.kvSlot, pos, pos+1) // the token's K/V row, in a block of the bound slot's own
 	r.writePosUniforms(posUniforms{r.uPos, r.uNKeys, r.uRopePos, r.uQTempScale, r.uAttnFANSplit}, pos, rp)
 }
 
@@ -3696,6 +3706,7 @@ func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float
 	if n == 0 {
 		return nil, nil
 	}
+	r.kvOwn(r.kvSlot, startPos, startPos+n)
 
 	// This path drives encodeAttentionResidualWith with its own per-token r.batchUNKeys[m] buffers, never through
 	// setPos, so r.curNKeys (planNKeys, canUseAttnFA's depth gate) would otherwise stay stale from whatever a

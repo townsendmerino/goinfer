@@ -1,0 +1,19 @@
+=== RUN   TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (344 MiB of scratch; 3824 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel (13.00s)
+=== RUN   TestRopeKVMRoPEBatched_matchesCPUReference
+cuda: prefill width 2048 rows (344 MiB of scratch; 3824 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRopeKVMRoPEBatched_matchesCPUReference (10.57s)
+=== RUN   TestRopeKVMRoPEBatched_interleavedModeMatchesCPUReference
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 512 rows
+--- PASS: TestRopeKVMRoPEBatched_interleavedModeMatchesCPUReference (0.29s)
+PASS
+ledger: 9 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	23.927s
