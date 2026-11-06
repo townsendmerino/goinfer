@@ -1029,11 +1029,17 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	r.stopExec()
+	r.kvStepAbort = false
 	for _, q := range seqs {
 		if q.pos == 0 { // a new sequence: its slot's recurrent state starts zeroed, as Forward at position 0 does
 			r.resetRecurrentSlot(q.slot)
 		}
-		r.kvOwn(q.slot, q.pos, q.pos+1) // the row's K/V, in a block of its slot's own
+		if err := r.kvWrite(q.slot, q.pos, q.pos+1); err != nil { // the row's K/V block, before anything is encoded
+			return nil, nil, err
+		}
+	}
+	if r.kvStepAbort { // a row's slot gave blocks back while another row mapped: launch nothing, and the decoder runs each row alone
+		return nil, nil, fmt.Errorf("metal: batched step: a row's blocks were reclaimed while the step mapped its rows: %w", decoder.ErrKVPoolFull)
 	}
 	if r.attnFANKV > 0 {
 		r.uAttnFAG.SetU32(uint32(r.nH / r.attnFANKV))

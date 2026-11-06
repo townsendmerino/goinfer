@@ -95,7 +95,11 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		res.ctxCeilKey = m // the entry lives as long as the resident (resident.Close deletes it)
 	}
 	b.resident = &metalResident{r: res, hidden: res.H, exact: m.ExactPrefill(), need: func() int64 { return residentNeedBytes(m) }}
-	b.resident.ctxNote = metalContextNote(m, fit, res.ctxCap, res.kvSlotCount())
+	share := res.ctxCap // the note prices the context the plan sized each slot for, not the cap one conversation may borrow up to
+	if res.kvShareCtx > 0 {
+		share = res.kvShareCtx
+	}
+	b.resident.ctxNote = metalContextNote(m, fit, share, res.kvSlotCount())
 	if got, want := b.resident.embLen(), m.ResidentEmbedLen(); got != want {
 		_ = res.Close()
 		b.resident = nil
@@ -715,6 +719,9 @@ func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]f
 		// A fresh sequence re-zeroes any recurrent state (DeltaNet, Mamba-2) left by a prior Generate on this resident (no-op for other families).
 		a.Reset()
 	}
+	if e := a.r.kvWrite(a.r.kvSlot, pos, pos+1); e != nil { // its block, before the forward is encoded (setPos's kvWriteMust then holds)
+		return nil, e
+	}
 	logits := a.r.ForwardEmbMRoPEPipe(embedding, pos, ropePos)
 	if err := a.r.takeExecErr(); err != nil {
 		return nil, err // a command buffer aborted: surface it, never return stale logits
@@ -737,6 +744,12 @@ func (a *metalResident) SampleAvailable() bool { return a.r != nil && a.r.Sample
 func (a *metalResident) ForwardSample(embedding []float32, pos int, temperature float64, seed, draw uint64) (int, error) {
 	if len(embedding) != a.embLen() {
 		return 0, fmt.Errorf("metal: embedding len %d != %d (hidden %d + PLE inputs)", len(embedding), a.embLen(), a.hidden)
+	}
+	if e := a.checkCap(pos, 1); e != nil {
+		return 0, e
+	}
+	if e := a.r.kvWrite(a.r.kvSlot, pos, pos+1); e != nil {
+		return 0, e
 	}
 	return a.r.ForwardSample(embedding, pos, temperature, seed, draw)
 }
@@ -764,6 +777,9 @@ func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {
 	}
 	if pos == 0 {
 		a.Reset() // fresh sequence — same reason as Forward
+	}
+	if e := a.r.kvWrite(a.r.kvSlot, pos, pos+1); e != nil {
+		return e
 	}
 	a.r.ForwardEmbNoLogitsPipe(embedding, pos)
 	return a.r.takeExecErr() // a command buffer aborted: surface it
@@ -1426,7 +1442,9 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	if e := a.checkCap(base, n); e != nil {
 		return e
 	}
-	a.r.kvOwn(a.r.kvSlot, base, base+n)
+	if err := a.r.kvWrite(a.r.kvSlot, base, base+n); err != nil {
+		return err
+	}
 	// Each position goes to its row through the bound slot's table (kvHostRow), the pool's contents indexed from its start.
 	if a.r.kvI8 {
 		nKV := g.nKV

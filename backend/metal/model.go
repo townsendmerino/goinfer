@@ -515,10 +515,18 @@ type resident struct {
 	kvNullBytes []int
 	kvTab, kt   Buffer
 	kvTabBlocks int
-	// kvRefs counts the table entries that name each block (kvcopy.go): above one, slots share the block (CopyKV), and a slot about to
-	// write into it first takes its own (kvOwn). kvFree lists the blocks no entry names. Block 0, the null block, is never counted.
-	kvRefs []int32
-	kvFree []int32
+	// The pool's state (kvpool.go): kvRefs counts the table entries that name each block (above one, slots share it, CopyKV), kvInUse the
+	// blocks some entry names, kvOrder the order a take scans for a free one. Each slot is guaranteed kvShareBlocks (kvShareCtx
+	// positions, the planned per-slot context); kvSlotSt is each slot's standing, kvUseTick the write clock, kvEvictions a count of
+	// slots released to make room, and kvStepAbort tells a batched step a row's blocks were reclaimed while it mapped.
+	kvRefs                    []int32
+	kvInUse                   int
+	kvOrder                   []uint32
+	kvShareCtx, kvShareBlocks int
+	kvSlotSt                  []kvSlotState
+	kvUseTick                 uint64
+	kvEvictions               int
+	kvStepAbort               bool
 	// batch: MC3's batched decode step over those slots (batch.go); nil when this resident cannot batch. preciseMath
 	// is the build's fast-math choice, which the batched kernels must share to round like the kernels they reproduce.
 	batch       *batchState
@@ -1958,13 +1966,16 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.kvSlotBufs = make([]kvSlotBuf, 1)
 	}
 	if slices.ContainsFunc(r.kvNullBytes, func(n int) bool { return n > 0 }) {
+		// The pools above hold every slot's share, the context the plan priced; one conversation's cap may then rise past it (kvRaise).
+		// The tables start unmapped and take blocks as the slots write (kvWrite).
+		slots := max(kvSlots, 1)
+		r.kvShareCtx, r.kvShareBlocks = r.ctxCap, kvBlocksFor(r.ctxCap)
+		r.ctxCap = kvRaise(m, slots, r.kvShareBlocks, r.kvShareCtx)
 		r.kvTabBlocks = kvBlocksFor(r.ctxCap)
-		ids := kvTableIDs(max(kvSlots, 1), r.kvTabBlocks)
-		r.kvTab = NewBufferUint32sOn(mem.LineKV, d, ids)
-		r.kvRefs = make([]int32, 1+len(ids))
-		for _, id := range ids {
-			r.kvRefs[id]++
-		}
+		r.kvTab = NewBufferUint32sOn(mem.LineKV, d, make([]uint32, slots*r.kvTabBlocks))
+		r.kvRefs = make([]int32, 1+slots*r.kvShareBlocks)
+		r.kvOrder = kvBlockOrder(slots * r.kvShareBlocks)
+		r.kvSlotSt = make([]kvSlotState, slots)
 		r.kt = r.kvTab
 		for s := range r.kvSlotBufs {
 			r.kvSlotBufs[s].kt = r.kvTab.At(4 * s * r.kvTabBlocks)
@@ -2421,7 +2432,7 @@ func (r *resident) setPos(pos int, ropePos ...int) {
 		rp = ropePos[0]
 	}
 	r.curNKeys = pos + 1
-	r.kvOwn(r.kvSlot, pos, pos+1) // the token's K/V row, in a block of the bound slot's own
+	r.kvWriteMust(r.kvSlot, pos, pos+1) // the token's K/V row; the entry points map it first, where an error can go back (kvMap)
 	r.writePosUniforms(posUniforms{r.uPos, r.uNKeys, r.uRopePos, r.uQTempScale, r.uAttnFANSplit}, pos, rp)
 }
 
@@ -2811,25 +2822,10 @@ func kvBlocksFor(positions int) int {
 	return (positions + decoder.KVBlockRows - 1) / decoder.KVBlockRows
 }
 
-// kvScrambleForTest hands every slot's blocks out reversed and interleaved across slots, so a sequence's consecutive blocks are
-// physically far apart and out of order. Bit-identity against the in-order layout is what shows every kernel addressing KV goes through
-// the table.
+// kvScrambleForTest hands blocks out alternately from the two ends of the pool and skips each slot's home block (kvTake), so a
+// sequence's consecutive blocks are physically far apart and out of order. Bit-identity against the in-order layout is what shows every
+// kernel addressing KV goes through the table.
 var kvScrambleForTest = false
-
-// kvTableIDs is slots tables of blocks entries each. In order, block i of slot s is 1 + s*blocks + i: the slots' own consecutive rows.
-func kvTableIDs(slots, blocks int) []uint32 {
-	ids := make([]uint32, slots*blocks)
-	for s := range slots {
-		for i := range blocks {
-			if kvScrambleForTest {
-				ids[s*blocks+i] = uint32(slots*blocks - (i*slots + s))
-			} else {
-				ids[s*blocks+i] = uint32(1 + s*blocks + i)
-			}
-		}
-	}
-	return ids
-}
 
 // kvHostRow is the row position pos of the bound slot occupies in a layer's pool, counted from the pool's start as the host sees
 // its contents (the null block is rows 0 to 63): the block the slot's table names, at the position's offset inside it. Positions
@@ -3706,7 +3702,9 @@ func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float
 	if n == 0 {
 		return nil, nil
 	}
-	r.kvOwn(r.kvSlot, startPos, startPos+n)
+	if err := r.kvWrite(r.kvSlot, startPos, startPos+n); err != nil {
+		return nil, err
+	}
 
 	// This path drives encodeAttentionResidualWith with its own per-token r.batchUNKeys[m] buffers, never through
 	// setPos, so r.curNKeys (planNKeys, canUseAttnFA's depth gate) would otherwise stay stale from whatever a
