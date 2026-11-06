@@ -89,5 +89,5 @@ A review of PR #700 found these; each is fixed on the branch.
   `internal/guard/memgate`, `internal/guard/paritykey` and `internal/wrappedupload`. A planted file was flagged on its four defects and on
   none of its three controls. It still parses without type-checking, so it knows an error by its name.
 - **`gpudev`'s test held a copy of the words**, so rewording `mem`'s text failed nothing there. `gpudev` may import nothing of goinfer's,
-  so the check moved to `backend/cuda` (`TestAllocFailedPanic_isWhatMemReads`), which calls `mem.DeviceAllocFailed` on `gpudev`'s panic,
+  so the check moved to `backend/cuda/kernels` (`TestAllocFailedPanic_isWhatMemReads`, there because it imports `gpudev` and not `decoder`), which calls `mem.DeviceAllocFailed` on `gpudev`'s panic,
   and the copy is gone. It runs on Linux under `-tags cuda` only, so CI's cuda job is its first run.

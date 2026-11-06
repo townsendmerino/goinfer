@@ -6,7 +6,7 @@ import (
 )
 
 // The device failures are told apart by their text. A failed cuMemAlloc reaches a caller as the panic gpudev's MustBufOn raises, a
-// string, and a failed launch as the driver's error name. backend/cuda's TestAllocFailedPanic_isWhatMemReads holds gpudev's panic to
+// string, and a failed launch as the driver's error name. backend/cuda/kernels' TestAllocFailedPanic_isWhatMemReads holds gpudev's panic to
 // DeviceAllocFailed. Typing the panic, so this can be errors.As, is the follow-up in
 // docs/measurements/error-hygiene-audit-2026-11-04/README.md.
 const (

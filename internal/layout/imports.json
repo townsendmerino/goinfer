@@ -524,6 +524,7 @@
       "backend/cuda/internal/wpack",
       "internal/runtime/hybridattn",
       "internal/runtime/mamba2",
+      "internal/runtime/mem",
       "internal/runtime/sampling"
     ],
     "backend/cuda/s4siglip": [
