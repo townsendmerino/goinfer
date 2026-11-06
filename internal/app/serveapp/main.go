@@ -546,10 +546,14 @@ func (cfg config) validate() error {
 }
 
 // routes builds the server's route table: every endpoint behind its auth check, halt gate, inflight cap and body cap.
-// authKey "" disables the auth check, and reqLog nil the per-request log lines. It returns the mux and the text body cap,
-// which the admin socket's routes share. The listener's own concerns (the Host guard, TLS, timeouts, signals) are the
-// caller's.
-func (srv *server) routes(cfg config, authKey string, reqLog io.Writer) (*http.ServeMux, int64) {
+// authKey "" disables the auth check. With cfg.logRequests set, each generation request writes its line to stderr. It returns
+// the mux and the text body cap, which the admin socket's routes share. The listener's own concerns (the Host guard, TLS,
+// timeouts, signals) are the caller's.
+func (srv *server) routes(cfg config, authKey string, stderr io.Writer) (*http.ServeMux, int64) {
+	var reqLog io.Writer
+	if cfg.logRequests {
+		reqLog = stderr
+	}
 	// Every POST body is size-bounded: the chat/messages endpoints carry base64 image_url data, so they get the larger
 	// vision cap; the rest a few MB. auth wraps a handler with the optional shared-secret check (no-op when authKey is "");
 	// every route below goes through it so a set key protects the whole surface.
@@ -809,11 +813,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	}
 	srv.restoreSessions(cfg)
 
-	var reqLogOut io.Writer
-	if cfg.logRequests {
-		reqLogOut = os.Stderr
-	}
-	mux, textCap := srv.routes(cfg, authKey, reqLogOut)
+	mux, textCap := srv.routes(cfg, authKey, os.Stderr)
 
 	// The admin socket (docs/tasks/task-halt-2026-09.md). closeAdminSock is a no-op when -admin-socket is unset, so the
 	// shutdown handler below can call it unconditionally.
