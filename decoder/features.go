@@ -295,7 +295,7 @@ func residentGateReason(a *Architecture, backend string) string {
 // that clears ActivationQuantHazard on a backend that implements it (cuda, actgroup.cu), since the hazard is the per-vector activation
 // scale.
 func residentGateReasonAct(a *Architecture, backend string, actSafe bool) string {
-	if g := residentGateReasons(a, backend, actSafe); len(g) > 0 {
+	if g := residentGateReasons(a, nil, backend, actSafe); len(g) > 0 {
 		return g[0].Reason
 	}
 	return ""
@@ -321,8 +321,9 @@ const (
 
 // residentGateReasons is every gate after the runner-shape one that refuses a on backend, in the order admission applies them; empty
 // when all admit. Admission reports the first (residentGateReasonAct). The hardware matrix prints all of them, because the first
-// refusal says nothing about the rest: a family that lacks one feature may also exceed the router's capacity.
-func residentGateReasons(a *Architecture, backend string, actSafe bool) []residentGate {
+// refusal says nothing about the rest: a family that lacks one feature may also exceed the router's capacity. prog is a's program
+// when the caller has it built; nil builds it here.
+func residentGateReasons(a *Architecture, prog *layerProgram, backend string, actSafe bool) []residentGate {
 	impl, ok := residentBackendFeatures[backend]
 	table := residentBackendTables[backend]
 	if !ok && table == nil {
@@ -336,7 +337,10 @@ func residentGateReasons(a *Architecture, backend string, actSafe bool) []reside
 			Reason: "every resident " + backend + " projection quantizes activations to int8, and " + why})
 	}
 	if table != nil {
-		if gaps := table.Gaps(buildProgram(a, configExperts(a))); len(gaps) > 0 {
+		if prog == nil {
+			prog = buildProgram(a, configExperts(a))
+		}
+		if gaps := table.Gaps(prog); len(gaps) > 0 {
 			out = append(out, residentGate{Kind: residentGateOperations, Reason: strings.Join(gaps, "; ")})
 		}
 		if missing := a.featuresOutsideProgram(); len(missing) > 0 {
@@ -377,10 +381,13 @@ func residentDeclared(backend string) bool {
 }
 
 // residentCovers reports whether backend implements everything a needs: its feature set, or its table and the features outside
-// the program.
-func residentCovers(a *Architecture, backend string) bool {
+// the program. prog is a's program, nil to build it.
+func residentCovers(a *Architecture, prog *layerProgram, backend string) bool {
 	if t := residentBackendTables[backend]; t != nil {
-		return t.Check(buildProgram(a, configExperts(a))) == nil && len(a.featuresOutsideProgram()) == 0
+		if prog == nil {
+			prog = buildProgram(a, configExperts(a))
+		}
+		return t.Check(prog) == nil && len(a.featuresOutsideProgram()) == 0
 	}
 	return len(missingFeatures(a.residentFeatures(), residentBackendFeatures[backend])) == 0
 }
