@@ -2,16 +2,16 @@
 # KV5-6's G2 cells that need a quiet Mac (docs/tasks/task-kv-architecture-2026-10.md, KV5's plan: G2 and G4 whole at KV5-6): the 7B's
 # decode cells at depths 128, 2,048, 3,900 and 8,000, A B B A, one quad a cell. G4 as amended: any swap-out voids a cell, swap-ins are
 # recorded, three voids in a row stop the run. Pinned binaries and harness under ~/goinfer-work/kv5-6, so the tree may move.
-# new: 7dcc921a (KV5-6's product code, built from an archive of the commit); old: f8632013 (main just before KV5-1's merge, KV5-2's serve-old).
+# new: 2ffc982e (KV5-6's product code with its review's fixes, built from an archive of the commit); old: f8632013 (main just before KV5-1's merge, KV5-2's serve-old).
 # Exits 75 when the box refuses a cell for memory or load, so night.py retries, and each retry resumes from the cells already done.
 D="$HOME/goinfer-work/kv5-6"
 OLD="$HOME/goinfer-work/kv5-2-g2/serve-old"
-cd "$D/new-7dcc921a/scripts" || exit 1
+cd "$D/new-2ffc982e/scripts" || exit 1
 for f in "$D/serve-new" "$OLD" "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf"; do
   [ -e "$f" ] || { echo "missing $f"; exit 1; }
 done
 mkdir -p "$D/g2-night/serve-logs"
-echo "new 7dcc921a, old f8632013"
+echo "new 2ffc982e, old f8632013"
 pmset -g batt | head -1
 uptime
 date '+start %H:%M'
