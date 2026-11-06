@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -289,5 +290,47 @@ func TestPlan_unrecognisedBackendDeclinesEvenForAFeatureFreeArch(t *testing.T) {
 	if p.Placement != PlacementDecline {
 		t.Fatalf("Placement = %v, want decline — a feature-free arch on an unregistered backend name "+
 			"must still decline (M-08), not fall through to resident: %s", p.Placement, p.Reason)
+	}
+}
+
+// A fit search calls Plan once per probe. What Plan derives from the model alone (the config's facts and the program admission
+// checks) is derived once per model and backend and then read from the model's memo: the memo's answers are what the same model
+// gives without one, and after each backend's first probe the rest build no program.
+func TestPlan_derivesTheModelsOwnFactsOnce(t *testing.T) {
+	backends := []string{"cuda", "metal", "webgpu"}
+	for _, path := range []string{"../testdata/llama-tiny", "../testdata/qwen3next-tiny", "../testdata/bailing_hybrid-tiny"} { // dense; recurrent MoE; refused by cuda's and metal's operation tables
+		m, err := Load(path, Options{Backend: "cpu"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		memo := m.fitOf
+		if memo == nil {
+			t.Fatal("Load built a model without the fit memo")
+		}
+		for _, be := range backends {
+			for range 2 { // the first fills the memo, the second reads it
+				m.fitOf = memo
+				demand, decline := m.buildDemand(be), m.planAdmitDecline(be)
+				m.fitOf = nil
+				if want := m.buildDemand(be); !reflect.DeepEqual(demand, want) {
+					t.Errorf("%s on %s: the memo's report is %+v, without it %+v", path, be, demand, want)
+				}
+				if want := m.planAdmitDecline(be); decline != want {
+					t.Errorf("%s on %s: admission with the memo says %q, without it %q", path, be, decline, want)
+				}
+			}
+			m.fitOf = memo
+			m.Plan(be, 1<<30, PlanRequest{Ctx: 2048})
+		}
+		before, probes := buildProgramCalls.Load(), 0
+		for free := int64(1) << 26; free <= 1<<36; free <<= 1 {
+			for _, be := range backends {
+				m.Plan(be, free, PlanRequest{Ctx: 2048})
+				probes++
+			}
+		}
+		if n := buildProgramCalls.Load() - before; n != 0 {
+			t.Errorf("%s: %d programs built over %d probes after each backend's first", path, n, probes)
+		}
 	}
 }

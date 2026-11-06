@@ -78,7 +78,7 @@ func TestGatedAct_metalModelPathAndGemma4MoE(t *testing.T) {
 		m := &Model{w: &Weights{arch: &a}}
 		out := m.FeaturesOutsideProgram()
 		var reasons []string
-		for _, g := range residentGateReasons(&a, "metal", false) {
+		for _, g := range residentGateReasons(&a, nil, "metal", false) {
 			reasons = append(reasons, g.Reason)
 		}
 		switch {
