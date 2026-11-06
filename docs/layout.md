@@ -73,13 +73,15 @@ In the other direction 13 non-test `decoder` files call it (`model.go`, `prefill
 **Order.**
 1. **Types** (done): `Placement`, `PlanRequest`, `Plan`, `FitAnswer`, `FitDeclineError`, `ErrWontFitResident` in `decoder/fit`, aliased
    in `decoder/fitalias.go`. No behavior change; the files outside `decoder/` that name them compile unchanged.
-2. **Move the callers' imports** (mechanical, per module): backends, `internal/app/*`, `modelload` and `memgate` name `fit.X`
-   instead of `decoder.X`; each module's `decoderRatchet` figure falls with it.
-3. **Price from neutral inputs.** The checkpoint-byte estimators (`estimateGGUFWeightBreakdown`, `estimateSafetensorsWeightBytes`) and
-   the KV and GIW pricing take a small struct (tensor name, dims, dtype; per-layer KV widths; the bytes-per-element function) that
-   `decoder` fills from `Config`, `Architecture` and the quantizer, and move to `decoder/fit`. This is the step that needs
-   the loader's quantizer behind a function value; the test files (`fit*_test.go`, 13) follow their subjects.
-4. `Model.Plan` and `FitQuery` stay in `decoder` as thin adapters (they hold a `*Model`/`Options`); delete the aliases.
+2. **Callers' imports** (done): backends, `internal/app/*`, `modelload` and `memgate` name `fit.X` instead of `decoder.X`.
+3. **Price from neutral inputs.** Done for the checkpoint-byte estimators and the flat KV rate: `fit.GGUFWeightBytes`,
+   `fit.SafetensorsWeightBytes` take tensor names and shapes plus `fit.Rates` (the per-element prices, which `decoder` measures
+   through the loader's quantizer in `fitRates`), and `fit.KVBytesPerPosition` takes the geometry; the tensor-name classifiers
+   moved with them. Still in `decoder`, each because it holds a `Config`, `Options`, `Model` or the quantizer: `fitCheck` and
+   `guardFit`, `guardGIWFit`/`decideGIWFit`, `fitCheckFor`, `quantBytesPerElem`, the per-layer `estimateKVBytes`, `Model.Plan`
+   and `FitQuery`. Next: give `fitCheck` and the GIW decision a neutral input struct (the machine reading, the weight and KV
+   figures, the pins) so they move; the `fit*_test.go` files follow their subjects.
+4. `Model.Plan` and `FitQuery` stay in `decoder` as thin adapters (they hold a `*Model`/`Options`); delete the aliases once no caller names them.
 
 ## GPU backend modules
 

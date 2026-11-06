@@ -120,7 +120,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
 | SD4 | done | decided 2026-10-26: auto-merge, with the checks required on `main` | §14 |
 | SD2, SD3, SD5–SD8 | done | decided 2026-10-26, one at a time (§14) | §14 |
-| T3-fit | active | 2026-11-05 (mac-fit; Francis: Tier 3 subpackages live under `decoder/`, `decoder/fit` first): step 1 built, the exchange types in `decoder/fit` aliased from `decoder` (PR open, not auto-merged: the coordinator merges); steps 2–4 in `docs/layout.md` "Tier 3". The whole-file move is not one PR: `fit` needs 43 `decoder` identifiers and 13 non-test `decoder` files call it | `docs/layout.md` "Tier 3" |
+| T3-fit | active | 2026-11-05 (mac-fit; Francis: Tier 3 subpackages live under `decoder/`, `decoder/fit` first): step 1 merged (#688, the exchange types in `decoder/fit`, aliased), step 2 merged (#692, callers name `fit.X`); step 3 part 1 built (the checkpoint-byte estimators, the flat KV rate and the tensor-name classifiers moved to `decoder/fit/weights.go` over neutral inputs); left: `fitCheck`/`guardFit`/GIW decision on a neutral input, then step 4 (delete the aliases) | `docs/layout.md` "Tier 3" |
 
 ## 0. Summary
 
