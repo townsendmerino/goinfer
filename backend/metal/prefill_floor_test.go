@@ -42,12 +42,13 @@ func TestPrefillFloor(t *testing.T) {
 		name := fmt.Sprintf("floor knob %q, startPos %d, M %d", c.knob, c.startPos, c.M)
 		a := tinyPrefillResident(t, decoder.Options{Quant: "int4",
 			Knobs: &decoder.Knobs{"GOINFER_METAL_FAST_PREFILL_FLOOR": c.knob}}, 2048)
-		// Nothing has written the cached prefix; zero it so an admitted call reads defined keys. The KV buffers are
-		// byte-sized, so Int8s is the view whose length matches them.
+		// Nothing has written the cached prefix; zero it so an admitted call reads defined keys, and map its blocks, since a write
+		// starts where the slot's sequence ends. The KV buffers are byte-sized, so Int8s is the view whose length matches them.
 		for l := range a.r.kc {
 			clear(a.r.kc[l].Int8s())
 			clear(a.r.vc[l].Int8s())
 		}
+		a.r.kvWriteMust(a.r.kvSlot, 0, c.startPos)
 		want := "GOINFER_METAL_FAST_PREFILL_FLOOR=0"
 		if floor := metalFastPrefillFloorFor(c.knob); floor > 0 {
 			want = fmt.Sprintf("above %d prompt tokens", floor)

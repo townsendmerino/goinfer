@@ -518,7 +518,7 @@ type resident struct {
 	// The pool's state (kvpool.go): kvRefs counts the table entries that name each block (above one, slots share it, CopyKV), kvInUse the
 	// blocks some entry names, kvOrder the order a take scans for a free one. Each slot is guaranteed kvShareBlocks (kvShareCtx
 	// positions, the planned per-slot context); kvSlotSt is each slot's standing, kvUseTick the write clock, kvEvictions a count of
-	// slots released to make room, and kvStepAbort tells a batched step a row's blocks were reclaimed while it mapped.
+	// slots released to make room, and kvReclaimed the slots a reclaim stopped while a batched step mapped its rows (kvMapStep).
 	kvRefs                    []int32
 	kvInUse                   int
 	kvOrder                   []uint32
@@ -526,7 +526,7 @@ type resident struct {
 	kvSlotSt                  []kvSlotState
 	kvUseTick                 uint64
 	kvEvictions               int
-	kvStepAbort               bool
+	kvReclaimed               []int
 	// batch: MC3's batched decode step over those slots (batch.go); nil when this resident cannot batch. preciseMath
 	// is the build's fast-math choice, which the batched kernels must share to round like the kernels they reproduce.
 	batch       *batchState

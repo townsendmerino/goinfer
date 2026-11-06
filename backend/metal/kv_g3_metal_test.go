@@ -202,13 +202,27 @@ func TestKVPages_everyResidentFixture(t *testing.T) {
 			}
 			out.logits = append(out.logits, slices.Clone(l))
 		}
+		// prefill is PrefillLast, or for a family without a batched prefill the rows decoded one at a time, as the decoder fills them: a
+		// write must start where the slot's sequence ends, so a declined prefill cannot be skipped.
+		prefill := func(s int, e [][]float32, at int, what string) {
+			l, err := a.PrefillLast(context.Background(), e, at)
+			if err != nil {
+				out.refused = append(out.refused, what+": "+err.Error())
+				for i, x := range e {
+					if l, err = a.Forward(x, at+i); err != nil {
+						break
+					}
+				}
+				what += " decoded"
+			}
+			add(what, l, err)
+		}
 		slots := r.kvSlotCount()
 		for s := range slots {
 			if err := r.useKVSlot(s); err != nil {
 				return nil, err.Error()
 			}
-			l, err := a.PrefillLast(context.Background(), embs(s, prompt), 0)
-			add(fmt.Sprintf("slot %d prefill", s), l, err)
+			prefill(s, embs(s, prompt), 0, fmt.Sprintf("slot %d prefill", s))
 			for i := range decodeN {
 				l, err := a.Forward(emb(s+5, i), prompt+i)
 				add(fmt.Sprintf("slot %d decode %d", s, i), l, err)
@@ -219,8 +233,7 @@ func TestKVPages_everyResidentFixture(t *testing.T) {
 			if err := r.useKVSlot(s); err != nil {
 				return nil, err.Error()
 			}
-			l, err := a.PrefillLast(context.Background(), embs(s+9, turn2), at)
-			add(fmt.Sprintf("slot %d second turn", s), l, err)
+			prefill(s, embs(s+9, turn2), at, fmt.Sprintf("slot %d second turn", s))
 			rows, err := a.ForwardN(embs(s+11, verify), at+turn2)
 			if err != nil {
 				add(fmt.Sprintf("slot %d verify", s), nil, err)
@@ -926,5 +939,93 @@ func TestMetalKVBytes_pricesTheRaisedTables(t *testing.T) {
 				t.Errorf("the pools and tables take %d B; MetalKVBytes(%d, %d) prices %d B", got, c.slots, r.kvShareCtx, want)
 			}
 		})
+	}
+}
+
+// TestKVPages_stepReclaimOutsideItLaunches: a batched step whose guaranteed row reclaims from a borrower the step does not name launches:
+// only a reclaim of one of the step's own slots leaves a row without its block. Three slots of 4,096: slot 2, running but not in the
+// step, borrows 40 blocks past its share; slot 1's row needs none; slot 0's row, within its share, needs one, and the pool is full.
+func TestKVPages_stepReclaimOutsideItLaunches(t *testing.T) {
+	m, a := kvCapLoad(t, 3, 3*decoder.MetalCtxDefault, "")
+	r, vocab := a.r, m.Config().VocabSize
+	B := decoder.KVBlockRows
+	if r.kvShareBlocks != 64 {
+		t.Skipf("the fixture's share is %d blocks; the case is laid out for 64", r.kvShareBlocks)
+	}
+	for _, c := range []struct{ slot, rows int }{{2, 104 * B}, {1, 60*B - 10}, {0, 28 * B}} {
+		if _, err := kvCapPrefill(m, a, c.slot, kvCapIds(c.rows, c.slot, vocab), 0); err != nil {
+			t.Fatalf("slot %d: %v", c.slot, err)
+		}
+	}
+	if free := len(r.kvRefs) - 1 - r.kvBlocksInUse(); free != 0 {
+		t.Fatalf("%d blocks free; the case needs a full pool", free)
+	}
+	for s := range 3 {
+		a.SetKVSlotBusy(s, true)
+	}
+	emb := slices.Clone(m.EmbedResidentForTest(5))
+	if _, _, err := r.forwardMulti([]batchSeq{{slot: 0, pos: 28 * B, emb: emb}, {slot: 1, pos: 60*B - 10, emb: emb}}); err != nil {
+		t.Fatalf("a step whose row reclaimed from slot 2, which it does not name: %v, want it to launch", err)
+	}
+	if n := a.ReusableKVSlot(2, B); n != 0 {
+		t.Errorf("the reclaimed borrower answers %d for its first block, want 0 (stopped)", n)
+	}
+}
+
+// TestKVPages_stepRewindTrimsFirst: a slot whose step row rewinds into its own share gives its borrowed tail back before another row looks
+// for a block, as its own write would alone: the other row takes a block that tail held, and nothing is reclaimed. Two slots of 9,984:
+// slot 1 borrows 44 blocks past its share and rewinds to 5,000; slot 0, within its share, needs a block; the pool is full.
+func TestKVPages_stepRewindTrimsFirst(t *testing.T) {
+	m, a := kvCapLoad(t, 2, 20000, "")
+	r, vocab := a.r, m.Config().VocabSize
+	B := decoder.KVBlockRows
+	borrow := (r.kvShareBlocks + 44) * B
+	rest := (len(r.kvRefs)-1)*B - borrow
+	if _, err := kvCapPrefill(m, a, 1, kvCapIds(borrow, 1, vocab), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kvCapPrefill(m, a, 0, kvCapIds(rest, 2, vocab), 0); err != nil {
+		t.Fatal(err)
+	}
+	a.SetKVSlotBusy(0, true)
+	a.SetKVSlotBusy(1, true)
+	emb := slices.Clone(m.EmbedResidentForTest(5))
+	if _, _, err := r.forwardMulti([]batchSeq{{slot: 0, pos: rest, emb: emb}, {slot: 1, pos: 5000, emb: emb}}); err != nil {
+		t.Fatalf("a step with slot 1 rewinding into its share: %v, want it to launch", err)
+	}
+	if n := a.ReusableKVSlot(1, 5001); n != 5001 {
+		t.Errorf("slot 1 answers %d for the 5,001 rows its rewind left, want 5001 (not stopped)", n)
+	}
+}
+
+// TestKVPages_writePastTheSequenceRefused: a write that starts past a slot's sequence is refused, since the rows between would read block
+// 0; an upload, whose windowed layer may start past the rows the slot holds, maps from the sequence's end instead.
+func TestKVPages_writePastTheSequenceRefused(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 64, 1), 0); err != nil {
+		t.Fatal(err)
+	}
+	used := r.kvBlocksInUse()
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 40, 2), 200); err == nil {
+		t.Error("a prefill from 200 into a slot that holds 64 rows was accepted")
+	}
+	if got, n := r.kvBlocksInUse(), a.ReusableKVSlot(0, 64); got != used || n != 64 {
+		t.Errorf("after the refused prefill the pool holds %d blocks (%d before) and slot 0 answers %d for its 64 rows", got, used, n)
+	}
+	if err := r.useKVSlot(1); err != nil {
+		t.Fatal(err)
+	}
+	for l := range r.layers {
+		if g := r.layers[l].geom; g != nil && !r.layers[l].kvShared {
+			if err := a.UploadKV(l, 70, make([]float32, g.kvDim), make([]float32, g.kvDim)); err != nil {
+				t.Fatalf("an upload at 70 into an empty slot (a windowed layer's base): %v", err)
+			}
+		}
+	}
+	if n := a.ReusableKVSlot(1, 71); n != 71 {
+		t.Errorf("after the upload slot 1 answers %d for 71 rows, want 71", n)
 	}
 }

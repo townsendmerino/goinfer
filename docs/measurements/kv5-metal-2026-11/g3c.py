@@ -7,10 +7,10 @@ For each model: start main's serve at its defaults (no -ctx; -require-backend, s
 CPU), read its context line, stop it; start this build's serve the same way, read its context and KV plan lines; then send one chat
 request whose prompt plus max_tokens is this build's cap, greedy, and read its status, usage and finish_reason. The prompt is a filler
 text, its length calibrated against the server's own prompt_tokens; the request itself starts on another word, so it shares no prefix
-with the calibration and prefills cold. PASS: main's context and this build's both read, this build's at least twice main's, the
-request (prompt_tokens + max_tokens) at least twice main's, status 200, and this build's decode path on Metal. The server log's
-fallback and decline lines are kept for reading. vm_stat's swap-outs are recorded around the request as context. Run under the
-exclusive timing lock, on AC.
+with the calibration and prefills cold. PASS: main's context and this build's both read, this build's at least twice main's; the
+request completing at least twice main's (status 200, prompt_tokens + completion_tokens, finish_reason length or stop); this build's
+decode path on Metal; no line of its server log naming a fallback or a decline; and no swap-out during the request (vm_stat). Run under
+the exclusive timing lock, on AC.
 
   python3 g3c.py SERVE_MAIN SERVE_NEW OUT.json [MODEL ...]   (models: 1.5B 7B; default both)
 """
@@ -129,8 +129,10 @@ def main():
         m, n = row["main"]["context"], row["new"]["context"]
         req = row.get("request", {})
         u = req.get("usage") or {}
-        row["verdict"] = ("PASS" if m and n >= 2 * m and req.get("status") == 200 and u.get("prompt_tokens", 0) + GEN >= 2 * m
-                          and "metal" in row["new"]["decode_path_line"] else "FAIL")
+        done = u.get("prompt_tokens", 0) + u.get("completion_tokens", 0)
+        row["verdict"] = ("PASS" if m and n >= 2 * m and req.get("status") == 200 and done >= 2 * m and req.get("finish_reason") in ("length", "stop")
+                          and "metal" in row["new"]["decode_path_line"] and not row["new"]["cpu_fallback_lines"]
+                          and req.get("swapout_pages") == 0 else "FAIL")
         for l in row["new"]["cpu_fallback_lines"]:
             say(f"{key} new, a fallback or decline line to read: {l.strip()[:200]}")
         say(f"{key}: main {m}, new {n} ({n / m if m else 0:.2f}x); {row['verdict']}")

@@ -1461,7 +1461,12 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 		return e
 	}
 	a.r.stopExec() // it writes K/V from the host beside the executor, whose pipelined forward may still be in flight
-	if err := a.r.kvWrite(a.r.kvSlot, base, base+n); err != nil {
+	// A windowed layer's base may lie past the rows the slot holds: map from where they end, for the layers that read from 0.
+	lo := base
+	if s := a.r.kvSlot; s < len(a.r.kvSlotSt) {
+		lo = min(base, a.r.kvSlotSt[s].valid)
+	}
+	if err := a.r.kvWrite(a.r.kvSlot, lo, base+n); err != nil {
 		return err
 	}
 	// Each position goes to its row through the bound slot's table (kvHostRow), the pool's contents indexed from its start.

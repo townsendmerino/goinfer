@@ -194,8 +194,8 @@ func (r *resident) kvEvictIdle(s int) bool {
 }
 
 // kvReclaim stops the slot other than s that holds the most blocks past its share, busy or not, giving those blocks back, and reports
-// whether there was one. Its next write past position 0 is decoder.ErrKVPoolFull (kvWrite), and a batched step in progress is told to
-// launch nothing (kvStepAbort), since one of its rows may be that borrower.
+// whether there was one. Its next write past position 0 is decoder.ErrKVPoolFull (kvWrite), and it joins kvReclaimed, which a batched
+// step mapping its rows reads (kvMapStep).
 func (r *resident) kvReclaim(s int) bool {
 	t, most := -1, 0
 	for c := range r.kvSlotSt {
@@ -222,15 +222,15 @@ func (r *resident) kvReclaim(s int) bool {
 	}
 	st := &r.kvSlotSt[t]
 	st.stopped, st.valid = true, min(st.valid, r.kvShareBlocks*decoder.KVBlockRows)
-	r.kvStepAbort = true
+	r.kvReclaimed = append(r.kvReclaimed, t)
 	return true
 }
 
 // kvWrite maps the blocks slot s needs to write positions [lo, hi): an unmapped entry takes a block (kvTake), and an entry another
 // table also names takes a copy of its rows below lo (copy on write; rows at or past lo are the write's). The write ends the slot's
 // sequence at hi, so the blocks wholly past hi go back first, where the takes can have them; a write at 0 also clears released and
-// stopped. A write past 0 on a stopped slot is decoder.ErrKVPoolFull, and on a released one an error (a caller that reused rows
-// ReusableKV did not offer). A failure leaves the slot its sequence below lo (none for a write at 0) and no block past it, and the
+// stopped. A write past 0 on a stopped slot is decoder.ErrKVPoolFull, and on a released one, or one starting past the slot's sequence,
+// an error (a caller that reused rows ReusableKV did not offer). A failure leaves the slot its sequence below lo (none for a write at 0) and no block past it, and the
 // caller must not encode the write. Nothing of the resident may be in flight that reads a block this copies into, which every caller
 // ensures.
 func (r *resident) kvWrite(s, lo, hi int) error {
@@ -243,6 +243,8 @@ func (r *resident) kvWrite(s, lo, hi int) error {
 		return fmt.Errorf("metal: KV slot %d was stopped to give its blocks past its share back: %w", s, decoder.ErrKVPoolFull)
 	case lo > 0 && st.released:
 		return fmt.Errorf("metal: KV slot %d's blocks were released to make room; its sequence starts again at position 0, not %d", s, lo)
+	case lo > st.valid:
+		return fmt.Errorf("metal: KV slot %d holds rows to %d; a write from %d would leave the rows between unmapped", s, st.valid, lo)
 	}
 	if lo == 0 {
 		st.released, st.stopped = false, false
@@ -291,18 +293,25 @@ func (r *resident) kvWrite(s, lo, hi int) error {
 	return nil
 }
 
-// kvMapStep maps the K/V block of every row of a batched step before anything is encoded: the rows that write within their slot's share
-// first, then the ones that borrow, so the pool gives its blocks as running the rows alone would. When a row finds none, or a row's take
-// reclaimed another's (kvStepAbort), each slot goes back to the sequence it had before its first row in the step, and the step must
+// kvMapStep maps the K/V block of every row of a batched step before anything is encoded, as running the rows alone would: each slot's
+// sequence first ends past its last row (a rewinding borrower gives its tail back before another row looks for a block), then the rows
+// that write within their slot's share map, then the ones that borrow. When a row finds none, or a take reclaimed one of the step's own
+// slots (whose rows would then lack blocks), each slot goes back to the sequence it had before its first row in the step, and the step must
 // launch nothing; a refusal is decoder.ErrKVPoolFull, which the decoder answers by running each row alone. A release or reclaim the step
-// caused stands, as it would alone.
+// caused stands, as it would alone; a reclaim of a slot outside the step does not stop it.
 func (r *resident) kvMapStep(seqs []batchSeq) error {
-	r.kvStepAbort = false
+	r.kvReclaimed = r.kvReclaimed[:0]
 	share := r.kvShareBlocks * decoder.KVBlockRows
-	first := map[int]int{} // each slot's first row in the step
+	first, last := map[int]int{}, map[int]int{} // each slot's first row in the step, and one past its last
 	for _, q := range seqs {
 		if p, ok := first[q.slot]; !ok || q.pos < p {
 			first[q.slot] = q.pos
+		}
+		last[q.slot] = max(last[q.slot], q.pos+1)
+	}
+	for s, hi := range last {
+		if s < len(r.kvSlotSt) {
+			r.kvTrim(s, hi)
 		}
 	}
 	undo := func() {
@@ -325,16 +334,23 @@ func (r *resident) kvMapStep(seqs []batchSeq) error {
 			}
 		}
 	}
-	if r.kvStepAbort {
-		undo()
-		return fmt.Errorf("metal: batched step: a row's blocks were reclaimed while the step mapped its rows: %w", decoder.ErrKVPoolFull)
+	for _, t := range r.kvReclaimed {
+		if _, ok := first[t]; ok {
+			undo()
+			return fmt.Errorf("metal: batched step: slot %d's blocks were reclaimed while the step mapped its rows: %w", t, decoder.ErrKVPoolFull)
+		}
 	}
 	return nil
 }
 
-// kvWriteMust is kvWrite where no caller can take an error back (the executor's commit, which the entry points map ahead of): a failure
-// there is a missed entry point, named rather than written through an unmapped block.
+// kvWriteMust is kvWrite where no caller can take an error back: setPos, reached from the executor's commit and the synchronous forwards,
+// which the entry points map ahead of, and from a test hook or kernel test that calls setPos at a position of its choosing. It maps from
+// the slot's sequence's end when the write starts past it (a no-op after an entry point, which leaves it past pos), so a direct caller's
+// rows land in blocks of the slot's own; any other failure is a missed entry point, named rather than written through an unmapped block.
 func (r *resident) kvWriteMust(s, lo, hi int) {
+	if s < len(r.kvSlotSt) {
+		lo = min(lo, r.kvSlotSt[s].valid)
+	}
 	if err := r.kvWrite(s, lo, hi); err != nil {
 		panic(fmt.Sprintf("metal: an unmapped KV write reached the encoder: %v", err))
 	}
