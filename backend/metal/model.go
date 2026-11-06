@@ -2432,7 +2432,7 @@ func (r *resident) setPos(pos int, ropePos ...int) {
 		rp = ropePos[0]
 	}
 	r.curNKeys = pos + 1
-	r.kvWriteMust(r.kvSlot, pos, pos+1) // the token's K/V row; the entry points map it first, where an error can go back (kvMap)
+	r.kvWriteMust(r.kvSlot, pos, pos+1) // the token's K/V row; the entry points map it first, where an error can go back
 	r.writePosUniforms(posUniforms{r.uPos, r.uNKeys, r.uRopePos, r.uQTempScale, r.uAttnFANSplit}, pos, rp)
 }
 

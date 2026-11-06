@@ -372,8 +372,9 @@ func kvLongFixture(t *testing.T, dir string) string {
 	return out
 }
 
-// TestKVPages_shareByReferenceLayerMajor is TestKVPages_shareByReference's write site check for the two layer-major prefills, which run
-// only on their own families: Gemma 4's E-model prefill (gemma4-emodel-tiny) and the paged generic MoE's (mixtral-tiny, paged at 3 slots).
+// TestKVPages_shareByReferenceLayerMajor is TestKVPages_shareByReference's write site check for the three layer-major prefills, which run
+// only on their own families: Gemma 4's E-model prefill (gemma4-emodel-tiny), the paged generic MoE's (mixtral-tiny, paged at 3 slots) and
+// the paged Gemma 4 MoE's (gemma4-moe-tiny, paged at 3 slots).
 // Slot 0 prefills a 128-row preamble and slot 1 takes it by CopyKV; slot 1 prefills a suffix; slot 0 rewinds by a prefill from 100,
 // inside the shared block 1. Slot 1's K/V over its history, slot 0's over rows 0 to 119 (its copy of block 1 kept rows 64 to 99) and slot
 // 0's rewind logits equal the reference where slot 1 prefilled the preamble itself; with the copy on write planted off slot 1's K/V moves,
@@ -384,6 +385,7 @@ func TestKVPages_shareByReferenceLayerMajor(t *testing.T) {
 	}
 	for _, c := range []struct{ name, dir, moeSlots string }{
 		{"emodel", "../../testdata/gemma4-emodel-tiny", ""}, {"paged-moe", "../../testdata/mixtral-tiny", "3"},
+		{"paged-g4", "../../testdata/gemma4-moe-tiny", "3"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if _, err := os.Stat(c.dir); err != nil {
@@ -410,7 +412,7 @@ func TestKVPages_shareByReferenceLayerMajor(t *testing.T) {
 					t.Fatalf("no two-slot Metal resident: %s", m.ResidentDecline())
 				}
 				r := a.r
-				lm := func() int { return r.emodelLayerMajorRuns + r.moeLayerMajorRuns }
+				lm := func() int { return r.emodelLayerMajorRuns + r.moeLayerMajorRuns + r.g4LayerMajorRuns }
 				_, _, _, _, _, _, vocab := m.Dims()
 				embs := func(seed, n int) [][]float32 {
 					out := make([][]float32, n)
@@ -461,7 +463,7 @@ func TestKVPages_shareByReferenceLayerMajor(t *testing.T) {
 				t.Error("slot 0's rewind logits differ between the shared preamble and its own")
 			}
 			if p1, _, _ := run(true, "cow-off"); eq(ref1, p1) {
-				t.Error("with kvOwn off, slot 0's rewind into the shared block left slot 1's K/V as it was: the test cannot see a missing copy on write")
+				t.Error("with the copy on write off, slot 0's rewind into the shared block left slot 1's K/V as it was: the test cannot see a missing copy on write")
 			}
 			if _, p0, _ := run(true, "keep-1"); eq(ref0, p0) {
 				t.Error("with the copy on write keeping one row too few, slot 0's K/V was as it should be: the test cannot see a short copy")

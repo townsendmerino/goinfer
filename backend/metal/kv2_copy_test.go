@@ -205,8 +205,8 @@ var chainSkipLogged bool
 // Each slot then prefills its own suffix from 640 and decodes. Then slots 0 and 1 rewind into blocks the others still share, by every
 // writer in turn (a prefill, the step, ForwardBatch, the verify, UploadKV, the greedy chain across a block edge, a decode), each a copy
 // on write. Every logit, and every slot's K/V over its own history read through its table after each write, equals the reference: a
-// fresh resident where each slot prefilled the preamble itself, at f16 and int8 KV, on in-order and scrambled tables. With kvOwn
-// planted off, a rewind lands in a shared block and another slot's K/V moves.
+// fresh resident where each slot prefilled the preamble itself, at f16 and int8 KV, on in-order and scrambled tables. With the copy
+// on write planted off, a rewind lands in a shared block and another slot's K/V moves.
 func TestKVPages_shareByReference(t *testing.T) {
 	const pre, suffix = 640, 70
 	for _, c := range []struct{ i8, scramble bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
@@ -358,7 +358,7 @@ func TestKVPages_shareByReference(t *testing.T) {
 			// The K/V check is the one a missing copy on write must trip: this fixture's attention is too peaked for every leaked row
 			// to move a logit.
 			if _, plantedKV, _ := run(true, true); kvDiffer(refKV, plantedKV) == 0 {
-				t.Error("with kvOwn off, the rewinds into shared blocks moved no other slot's K/V: the test cannot see a missing copy on write")
+				t.Error("with the copy on write off, the rewinds into shared blocks moved no other slot's K/V: the test cannot see a missing copy on write")
 			}
 		})
 	}
