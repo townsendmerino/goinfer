@@ -199,13 +199,14 @@ func (r *cudaResident) kvReclaim(s int) bool {
 	return true
 }
 
-// kvEvictIdle releases every block of the least recently written slot that is not s, not bound, not held by a running generation
+// kvEvictIdle releases every block of the least recently written slot that is not s (the slot being written: a batched step writes through
+// each row's slot and leaves the binding where it was, so the bound slot is no shield), not held by a running generation
 // (kvSlotBusy) and holds any, and marks it released, so it answers 0 to every reuse question until it starts a new sequence. False
 // when there is none.
 func (r *cudaResident) kvEvictIdle(s int) bool {
 	best := -1
 	for t := range r.kvTabs {
-		if t == s || t == r.kvSlot || r.kvSlotBusy[t] || (r.kvHeld(t) == 0 && !r.kvHoldsWindow(t)) {
+		if t == s || r.kvSlotBusy[t] || (r.kvHeld(t) == 0 && !r.kvHoldsWindow(t)) {
 			continue
 		}
 		if best < 0 || r.kvSlotUse[t] < r.kvSlotUse[best] {
