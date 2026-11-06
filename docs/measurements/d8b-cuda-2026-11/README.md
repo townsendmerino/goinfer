@@ -28,9 +28,9 @@ sidecar, hold the host heap down the same way, and decode the same tokens.
 
 `first-attempt-void/`. Both arms read 585 MiB of Go heap in use and the same 16 tokens, resident. That is not a result: a test binary loads a `.gguf` **directly** whatever `DirectLoad` says (`decoder/sidecar.go`'s `testing.Testing() && !sidecarInTests`, and `sidecarInTests` is unexported), so the "sidecar" arm was a second direct load. The instrument could not run the path the cell is about, and it is replaced; this attempt decides nothing.
 
-## The cell, registered again 2026-11-05 17:03 PST before the reading, on the served path
+## The cell, registered again 2026-11-05 16:58 PST before the reading, on the served path (the time from `date`; the commit before this one guessed 17:03)
 
-- **Instrument:** `d8b_cuda_served.py` here: `serve` (built from main, `be595d7fe`, `CGO_ENABLED=0 go build -tags cuda ./backend/cuda/cmd/serve`, which is not a test binary), `--backend cuda --quant q4k --ctx 4096`, the same checkpoint, one server per arm, direct first: `-direct-load`, then the default (the sidecar `~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.q4k.e4h.cuda.v17.giw`, built 2026-11-03). Per arm: `/proc/<pid>/status` (`RssAnon`, `RssFile`, `RssShmem`, `VmSwap`) two seconds after the server listens; then one greedy completion of 16 tokens on a fixed prompt, and the process's device memory from `nvidia-smi`.
+- **Instrument:** `d8b_cuda_served.py` here: `serve` (built at `67bed4dbe`, which is main `be595d7fe` plus this branch's docs, `CGO_ENABLED=0 go build -tags cuda ./backend/cuda/cmd/serve`; not a test binary), `--backend cuda --quant q4k --ctx 4096`, the same checkpoint, one server per arm, direct first: `-direct-load`, then the default (the sidecar `~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.q4k.e4h.cuda.v17.giw`, built 2026-11-03). Per arm: `/proc/<pid>/status` (`RssAnon`, `RssFile`, `RssShmem`, `VmSwap`) two seconds after the server listens; then one greedy completion of 16 tokens on a fixed prompt, and the process's device memory from `nvidia-smi`.
 - **What replaces "Go heap in use":** `RssAnon` after load. The server does not expose its heap; MEM0's table reads the same (`docs/measurements/mem0-2026-10/README.md`). A CUDA context's own anonymous memory is a floor under the sidecar arm (MEM0 read 84 to 140 MiB after load), so the ratio is judged against the direct arm's figure.
 - **Decision (D8B-G4's bar carried over to `RssAnon`):**
 
@@ -43,3 +43,24 @@ sidecar, hold the host heap down the same way, and decode the same tokens.
 - **Reported, not graded:** `RssFile` and `RssShmem` (the aliased weights are mapped file pages), the load times, device memory.
 - **Void:** the one-minute load above 8.0 at a server's start. **Stopping rule:** one run each, direct first. **Cost:** about 1 minute. **Void if:** a run outside the lock, a NOT RUN counted as a pass, a bar moved after a reading.
 
+
+## The reading, 2026-11-05 16:58:44 PST: PASS
+
+`served/` (`run.log`, `readings.json`, `serve-direct.log`, `serve-sidecar.log`). The exclusive timing lock (free), one-minute load 0.62 and 0.57, no void arm, one run each, direct first.
+
+| | `-direct-load` | default (the sidecar) | bar |
+|---|---|---|---|
+| `RssAnon` after load | **656 MiB** | **61 MiB** | sidecar at most 0.25 × direct |
+| ratio | | **0.093** | PASS |
+| `RssFile` | 102 MiB | 554 MiB | reported (the aliased weights are mapped file pages) |
+| `RssShmem` | 94 MiB | 94 MiB | reported |
+| `VmSwap` | 0 | 0 | |
+| device memory | 966 MiB | 990 MiB | reported |
+| load time | 1.2 s | 1.2 s | reported |
+| the 16-token completion | `numbers []int) int {\n    sum := 0\n    for _, number` | the same | equal |
+
+Both servers started on the CUDA resident and answered. The sidecar arm holds 595 MiB less anonymous memory; the 0.5B checkpoint's Q4_K bytes are the difference (the sidecar's tensors are kind 8, aliased from the mapping, and the CUDA upload streams them from it). The sidecar arm's `RssAnon` of 61 MiB is under MEM0's 84 to 140 MiB after-load figures for the larger models, which had a different load path; it is a floor of this binary and this model, not a model-independent number. **Device memory is 24 MiB higher on the sidecar arm** (990 against 966): not graded, not explained here; one run each does not say whether it is noise.
+
+**Not covered:** other q4k checkpoints and sizes (the 0.5B only; the Mac's cell used the same file), a Q5_K/Q6_K mix (the kquant lanes upload their own forms), speculative or multi-slot loads, and the first-load transcode cost (the sidecar already existed). Gemma 4 and the MoE families at q4k were not run.
+
+**Verdict: PASS.** The ledger row D8b-cuda closes with this change (`docs/tasks/task-memory-campaign-2026-10.md`), and P36 in `docs/queue-performance.md` drops it.

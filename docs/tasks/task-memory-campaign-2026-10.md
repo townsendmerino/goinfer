@@ -57,7 +57,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | MEM13-heapquant | moved | D8a-build and D8b-build below (D8 decided: build both) | §4 MEM13, "Heap-only quant, after MEM1" |
 | D8a-build | done | — | branch `d8a-single-copy-2026-10`; D8A-G1..G4 PASS, `docs/measurements/d8a-2026-10/README.md` |
 | D8b-build | done | — | branch `d8b-q4k-giw-2026-10` at v17 (D9); D8B-G1..G4 PASS, `docs/measurements/d8b-2026-10/README.md` |
-| D8b-cuda | open | nobara: D8b's CUDA cell, after D8b-build merges; queued as P36 in `docs/queue-performance.md` (a pointer) | — |
+| D8b-cuda | done | — (2026-11-05, nobara-sb01: `serve --backend cuda --quant q4k` on the 0.5B Q4_K_M checkpoint, `RssAnon` after load 656 MiB with `-direct-load` against 61 MiB through the sidecar, ratio 0.093 against the 0.25 bar; the same 16-token completion; `docs/measurements/d8b-cuda-2026-11/README.md`) | branch `v025-d8b-cuda-2026-11-05` |
 | MEM13-copies-Metal | done | — (removed before the decision was recorded: the int4 lane writes each part into its device buffers) | 1cc27f17 (2026-10-18); `backend/metal/int4_upload_alloc_test.go` |
 | MEM13-copies-CUDA | open | nobara: the dense projections already stream to the device (`backend/cuda/pack_stream.go:planWeight`, `backend/cuda/pack_stream.go:cudaResident.streamW`), so what is left of the decision is the whole-tensor host packing (`backend/cuda/resident.go:packWeight`) of shared experts, Mamba-2 projections and drafter weights, held until upload: about 4 GB of int8 host copies on Nemotron-H 9B by the survey's arithmetic (re-scoped 2026-10-22, kernel survey §3); S–M; queued as P36 in `docs/queue-performance.md` (a pointer) | — |
 | MEM14, MEM15, MEM16 | done | — | aikit v1.71.0 |
