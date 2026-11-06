@@ -50,8 +50,9 @@ func TestSetLogger_takesWhatALoadWrites(t *testing.T) {
 		if rec.Level != slog.LevelWarn {
 			t.Errorf("level %v, want warn", rec.Level)
 		}
+		// A frame's File is slash-separated on every OS, Windows included.
 		f, _ := runtime.CallersFrames([]uintptr{rec.PC}).Next()
-		if !strings.HasSuffix(f.File, filepath.Join("decoder", "model.go")) {
+		if !strings.HasSuffix(f.File, "/decoder/model.go") {
 			t.Errorf("attributed to %s:%d, not the line in decoder/model.go that wrote it", f.File, f.Line)
 		}
 		return
