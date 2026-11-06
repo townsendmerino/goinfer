@@ -63,8 +63,9 @@ func kvPagedRows[T any](src []T, width int, perm []uint32) []T {
 
 // TestKVPages_prefillKernelsReadTheTable: every prefill attention kernel reads a key through its block table. Rows laid out block by
 // block in a scrambled order, with the table that names them, give the in-order layout's output bit for bit; the same pool under a
-// table with two entries swapped does not; and each of a set of key rows on either side of a block edge moves the output alone, which
-// both arms would share a wrong offset inside a block for. The window case starts a row's keys inside a block.
+// table with two entries swapped does not; and each of a set of key rows on either side of a block edge, and the value row at each,
+// moves the output alone, which both arms would share a wrong offset inside a block for. The window case starts a row's keys inside
+// a block.
 func TestKVPages_prefillKernelsReadTheTable(t *testing.T) {
 	d, pipeOf, cq := kvPrefillLib(t)
 	const nKV, G = 2, 2
@@ -145,6 +146,13 @@ func TestKVPages_prefillKernelsReadTheTable(t *testing.T) {
 					kl[row*kvDim] = k0
 					if n == 0 {
 						t.Errorf("a change to key row %d alone moved no output: the kernel does not read that row", row)
+					}
+					v0 := vl[row*kvDim]
+					vl[row*kvDim] = f32ToF16(f16ToF32(v0) + 8)
+					n = u16Differ(want, run(kvpInOrder, false))
+					vl[row*kvDim] = v0
+					if n == 0 {
+						t.Errorf("a change to value row %d alone moved no output: the kernel does not read that row", row)
 					}
 				}
 			})

@@ -43,10 +43,10 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 			continue // a shared layer aliases its source's cache, copied with it; a layer with no attention has none
 		}
 		// Buffer.At sets an absolute offset, so every block is addressed from its pool's start, where the null block is.
-		pools := []Buffer{r.kvSlotBufs[0].kc[l], r.kvSlotBufs[0].vc[l]}
+		pools := []Buffer{r.kc[l], r.vc[l]}
 		block := []int{r.kvNullBytes[l], r.kvNullBytes[l]}
 		if r.kvI8 { // one float32 scale per KV head per position, block for block
-			pools = append(pools, r.kvSlotBufs[0].ks[l], r.kvSlotBufs[0].vs[l])
+			pools = append(pools, r.ks[l], r.vs[l])
 			block = append(block, decoder.KVBlockRows*L.geom.nKV*4, decoder.KVBlockRows*L.geom.nKV*4)
 		}
 		for i, b := range pools {

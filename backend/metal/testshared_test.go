@@ -77,3 +77,16 @@ func assertParity(t *testing.T, what string, st parityStats, minCosBar float64) 
 
 // f16ToF32 widens an f16 bit pattern to f32 (f16.ToF32).
 func f16ToF32(h uint16) float32 { return f16.ToF32(h) }
+
+// kvHostOff is where the bound slot's KV starts, in elements of elemBytes, within layer l's pool as the host sees it, when its table
+// is in order (kvScrambleForTest off): its blocks are then consecutive from block 1 + slot*kvTabBlocks. Production code goes through
+// kvHostRow.
+func (r *resident) kvHostOff(l, elemBytes int) int {
+	return (r.kvNullBytes[l] + r.kvSlot*r.kvSlotBytes[l]) / elemBytes
+}
+
+// kvScaleOff is where slot s's int8 scales start, in floats, within layer l's scale pool, under the same in-order tables: a slot
+// holds kvDim int8s and nKV scales per position, so its scales sit at its code offset over head_dim.
+func (r *resident) kvScaleOff(s, l int) int {
+	return (r.kvNullBytes[l] + s*r.kvSlotBytes[l]) / r.layers[l].geom.hd
+}
