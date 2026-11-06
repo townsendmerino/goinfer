@@ -91,39 +91,49 @@ func queueWaiters(t *testing.T, a *Admission, ctx context.Context, ids ...string
 }
 
 // Waiters are granted in arrival order, and Position reports each one's place among them (1 is next), how many wait, and
-// whether a turn is held; an id nobody waits under, a granted one, or "" is not found.
+// whether a turn is held; an id nobody waits under, a granted one, or "" is not found, though a waiter with no id is queued.
+// Whether a later waiter is still waiting is read from the queue (Position and Load, under its lock), not from its channel,
+// whose send would race the waiter's wakeup.
 func TestAdmission_fifoAndPosition(t *testing.T) {
 	var a Admission
 	if !a.Enter(context.Background(), Record{}) {
 		t.Fatal("the holder was refused a free turn")
 	}
-	waiters := queueWaiters(t, &a, context.Background(), "w1", "w2", "w3")
-	if place, waiting, running, ok := a.Position("w2"); place != 2 || waiting != 3 || !running || !ok {
-		t.Errorf("Position(w2) = (%d, %d, %v, %v), want (2, 3, true, true)", place, waiting, running, ok)
+	order := []string{"w1", "", "w2", "w3"} // "" is a waiter nothing asks about
+	waiters := queueWaiters(t, &a, context.Background(), order...)
+	if place, waiting, running, ok := a.Position("w2"); place != 3 || waiting != 4 || !running || !ok {
+		t.Errorf("Position(w2) = (%d, %d, %v, %v), want (3, 4, true, true)", place, waiting, running, ok)
 	}
 	for _, id := range []string{"", "nobody"} {
 		if _, _, _, ok := a.Position(id); ok {
 			t.Errorf("Position(%q) found a waiter", id)
 		}
 	}
-	for _, id := range []string{"w1", "w2", "w3"} {
+	for i, id := range order {
 		a.Release() // the holder's turn, then each waiter's in turn
 		select {
 		case ok := <-waiters[id]:
 			if !ok {
-				t.Fatalf("%s was refused when its turn came", id)
+				t.Fatalf("%q was refused when its turn came", id)
 			}
 		case <-time.After(5 * time.Second):
-			t.Fatalf("%s was not granted within 5 s of its turn", id)
+			t.Fatalf("%q was not granted within 5 s of its turn", id)
 		}
-		if _, _, _, ok := a.Position(id); ok {
-			t.Errorf("Position(%s) found it after its grant", id)
+		rest := order[i+1:]
+		if n := a.Load(); n != 1+len(rest) {
+			t.Fatalf("after %q's grant: Load %d, want %d (its turn and %d still waiting)", id, n, 1+len(rest), len(rest))
 		}
-		for _, later := range []string{"w1", "w2", "w3"} {
-			select {
-			case <-waiters[later]:
-				t.Fatalf("%s was granted before its turn, after %s", later, id)
-			default:
+		for place, later := range rest {
+			if later == "" {
+				continue
+			}
+			if p, _, _, ok := a.Position(later); !ok || p != place+1 {
+				t.Fatalf("after %q's grant, %s is at place %d (found %v), want still waiting at %d", id, later, p, ok, place+1)
+			}
+		}
+		if id != "" {
+			if _, _, _, ok := a.Position(id); ok {
+				t.Errorf("Position(%s) found it after its grant", id)
 			}
 		}
 	}
