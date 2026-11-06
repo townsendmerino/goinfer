@@ -202,8 +202,7 @@ func TestKVPages_everyResidentFixture(t *testing.T) {
 		slots   int
 		step    bool
 		// stepRows is how many of logits' last rows are the batched step's.
-		stepRows  int
-		recurrent bool
+		stepRows int
 	}
 	run := func(dir string, scramble, decodeRef bool) (*arm, string) {
 		kvScrambleForTest = scramble
@@ -273,9 +272,11 @@ func TestKVPages_everyResidentFixture(t *testing.T) {
 			for s := range min(3, slots) {
 				seqs = append(seqs, batchSeq{slot: s, pos: at + turn2 + verify, emb: emb(s+13, 0)})
 			}
-			rows, _, err := r.forwardMulti(seqs)
-			if decodeRef { // the reference: each row decoded on its own slot instead
-				rows, err = nil, nil
+			var rows [][]float32
+			var err error
+			if !decodeRef {
+				rows, _, err = r.forwardMulti(seqs)
+			} else { // the reference: each row decoded on its own slot instead, from the same history (no step first: it would advance a recurrent state)
 				for _, q := range seqs {
 					if err := r.useKVSlot(q.slot); err != nil {
 						return nil, err.Error()
@@ -296,7 +297,7 @@ func TestKVPages_everyResidentFixture(t *testing.T) {
 			}
 			out.stepRows = len(rows)
 		}
-		out.ran, out.slots, out.step, out.recurrent = maps.Clone(prefillAttnRanForTest), slots, r.batch != nil && slots >= 2, r.recurrentModel()
+		out.ran, out.slots, out.step = maps.Clone(prefillAttnRanForTest), slots, r.batch != nil && slots >= 2
 		return out, ""
 	}
 	start, covered, compared := time.Now(), map[string]bool{}, 0
@@ -337,9 +338,7 @@ func TestKVPages_everyResidentFixture(t *testing.T) {
 			}
 		}
 		// A row bound to another slot's table is a mistake both arms share, so each step row is also held to its own slot's decode.
-		// Not on a recurrent model: there a step row continuing a decode-built history differs from that slot's decode on main too
-		// (docs/measurements/kv5-metal-2026-11/kv5-4.log, "Open"), and its step is held to decode by TestMC3Step_recurrentBitIdentical.
-		if in.stepRows > 0 && !in.recurrent {
+		if in.stepRows > 0 {
 			ref, why := run(dir, false, true)
 			if ref == nil || len(ref.logits) != len(in.logits) || ref.stepRows != in.stepRows {
 				t.Errorf("%s: the decode reference did not run as the step did: %s", name, why)

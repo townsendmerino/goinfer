@@ -9,7 +9,7 @@ The pools' bytes are unchanged, so ResidentKVBytes, the fit and the memory gate 
 == G1a whole: TestKVPages_everyResidentFixture (backend/metal, -tags goinfer_testhooks)
 Every tiny fixture under testdata and decoder/testdata with a config and weights, copied with its window raised to 2,048 positions, loaded at -ctx 1024 with 3 KV slots and every batched step on (MoE, recurrent, Gemma 4), in-order against scrambled tables.
 Per slot: a 300-token prompt (PrefillLast), 64 decodes, a second turn of 70 rows from position 364 (inside a block), a 4-row verify (ForwardN); then the batched step over up to three slots.
-Held: every logit bit-identical; the same cases refused by both arms; the same prefill attention launches (prefillAttnRanForTest). Each step row is also held to a decode of the same token on its own slot, since a row bound to another slot's table is a mistake both arms share.
+Held: every logit bit-identical; the same cases refused by both arms; the same prefill attention launches (prefillAttnRanForTest). Each step row is also held to a decode of the same token on its own slot, from the same history in another build, since a row bound to another slot's table is a mistake both arms share.
 Result, 33 of 54 fixtures compared, all PASS. 21 NOT RUN, each because Metal declines the fixture or the decoder does not load it (vision and audio towers, an embedding model): listed in the test's output. The step ran on 21 fixtures. Prefill kernels covered: attention_prefill, attention_prefill_fused, attention_prefill_steel, attention_prefill_steel_hd64. Six fixtures (MLA, Gemma 4 MoE and two-geometry, olmo_hybrid, kimi) refuse their 6 verify rows identically in both arms.
 First reads, kept here because each changed the test:
   - At each fixture's own window, 26 fixtures refused every case (prompts past their caches) and the comparison passed vacuously; the long copies fixed it, and a fixture that builds a resident but runs no case now fails.
@@ -23,8 +23,10 @@ The first two runs had the step plants green: before the steps were on, and befo
 == Gemini's point on #694
 TestKVPages_prefillKernelsReadTheTable now perturbs the value row at each checked position as well as the key row, so an offset inside a block on the V side cannot be shared by both arms. Green on all 8 kernels.
 
-== Open, not KV5-4's: the recurrent step against decode
-On the six recurrent hybrids (nemotron-tiny, qwen35-tiny, qwen35vl-tiny, qwen3next-tiny, qwen3_5-tiny, qwen3_5_moe-tiny), a batched step row differs from decoding the same token on its own slot, on every logit, when the slot's history was built by single-token decodes or PrefillLast. The same on main at 89bd22e8 with this slice's code put back, at 20-token prompts, with prefill and verify replaced by decodes, and with ForwardEmb or metalResident.Forward as the reference. TestMC3Step_recurrentBitIdentical passes; it builds its histories with ForwardBatch on mirror slots. Not chased here: G1a's decode reference skips recurrent fixtures and says why, and their scrambled-against-in-order comparison still runs. Raised with the coordinator.
+== RETRACTED: the recurrent step against decode
+This record's first version reported, as open and on main too, that on the six recurrent hybrids a batched step row differs from its slot's decode. That was a bug in G1a's reference arm: it ran the batched step and then decoded each row, discarding the step's rows. On an attention-only model the decode rewrites the same KV row, so nothing showed; on a recurrent model the step had already advanced each slot's recurrent state, and the reference decoded one token ahead. The reference arm no longer runs the step.
+With that fixed, G1a holds every step row to its slot's decode on all 21 step fixtures, the six recurrent hybrids included: PASS.
+Measured before the cause was found, at the coordinator's request, by TestMC3Step_recurrentMatchesDecodeOnServeHistories (backend/metal), which builds each slot's history the way serve does: on qwen35-tiny, qwen3next-tiny, qwen3_5-tiny and nemotron-tiny, with histories by single-token decode, by PrefillLast, by ForwardBatch, and with the step's own slot bound, then 40 greedy tokens on twin slots: max |step - decode| 0, argmax 80 of 80, greedy tokens agree 40 of 40, in all 16 cells. The step is bit-identical to decode; --recurrent-step's default is not implicated. No real recurrent model was run for it.
 
 == closing checks at 84fe23d8
 Metal package whole: 434 passed, 220 skipped, 0 failed. Kernels package: passes.
@@ -34,4 +36,4 @@ Touched: VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
 Lint: VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
 TTFT and decode cells: not re-read; no kernel changed, and the stopping rule re-reads only cells whose code changed.
 
-THIS RECORD ENDS WITH KV5-4 BIT-IDENTICAL, G1a WHOLE PASSING ON 33 FIXTURES AND EVERY PLANT RED, WITH ONE OPEN FINDING ON THE RECURRENT STEP THAT MAIN SHARES.
+THIS RECORD ENDS WITH KV5-4 BIT-IDENTICAL, G1a WHOLE PASSING ON 33 FIXTURES, STEP ROWS HELD TO DECODE ON ALL 21 STEP FIXTURES, AND EVERY PLANT RED. ITS FIRST VERSION'S RECURRENT FINDING IS RETRACTED ABOVE.
