@@ -104,8 +104,8 @@ At two clients the step costs the same as serving the two requests one after the
 - The **full unroll** over the rows was the cliff: with the row loop not unrolled, 9.8 → 2.6 (`ablation.log`).
 - It is **not** the weight conversion (hoisting it changed nothing), the **row stride** (padding the activation rows by 16 to 128 floats: 10.1, 10.2, 10.3, 10.3, 10.3), or the **device loads** (staging the activations in threadgroup memory, patch kept: 10.7).
 - My first "all rows read the same activation row" run, 0.39, was invalid: the compiler merges identical rows.
-- **The ceiling is the sequential loop's.** Run one row at a time, the new kernel's 8 rows cost 1.85 ms; the decode kernel run eight times costs 1.86 ms. Tiles of 2 or 4 rows with the weights converted once were no faster (2.2 to 7.4, `rowtile-hoisted.log`), and 3 to 4 output rows a simdgroup match 2 (6 and 8 are slower, 2.5 and 5.5 ms). The per-(activation row × super-block) work is the floor, and it cannot be cut without changing the arithmetic order. What the step wins over the loop on Phi-3 comes from the narrow projections (the o-projection 0.36 ms against 0.68–0.82 for eight decode calls: decode's 8 output rows a simdgroup leave 384 simdgroups) and from one command buffer for the whole prompt, not from sharing weight reads.
-- That also says something about decode: at N = 3,072 the decode rows kernel at 8 rows a simdgroup is 1.8–2.2× slower than 2 rows a simdgroup (0.085–0.102 against 0.047 ms, one row). Not pursued here.
+- **The ceiling is the sequential loop's.** Run one row at a time, the new kernel's 8 rows cost 1.85 ms; the decode kernel run eight times costs 1.86 ms. Tiles of 2 or 4 rows with the weights converted once were no faster (2.2 to 7.4, `rowtile-hoisted.log`), and 3 to 4 output rows a simdgroup match 2 (6 and 8 are slower, 2.5 and 5.5 ms). The per-(activation row × super-block) work is the floor, and it cannot be cut without changing the arithmetic order. Where the step's remaining 14% on Phi-3 comes from I did not measure: the GEMV groups are at parity (and the o-projection, with the decode kernel at 0.052 ms a call, is 0.36 against 0.42 ms for eight calls), so it is the work the loop does per token and the step does once or not at all: the head on every token, and a command buffer committed, waited on and read back per token (the step runs one command buffer per 8 rows and no head before the last). Unmeasured; the A/B's head caveat applies.
+- **Retracted (2026-11-06): "decode's 8-rows-a-simdgroup kernel is 1.8–2.2× slower than 2 rows at N = 3,072".** It came from a decode baseline timed first on each shape, on a cold GPU and cold pages (0.085 and 0.102 ms for the o-projection; the steady figure is 0.052 ms, `fix/decode-r-sweep.log`). The follow-up sweep of decode's own rows kernels is below.
 
 ### The kernel-timing logs, as run
 These are synthetic-weight kernel timings (no model is loaded, buffers under 100 MB), so the memory term of the void rule does not apply; their scripts (`fix/timing_new.sh`, run through `retry.sh`) gate the 1-minute load average at the start only (load ≤ 4.0), not per cell.
@@ -115,3 +115,21 @@ These are synthetic-weight kernel timings (no model is loaded, buffers under 100
 - `fix/ab.log` has a gate line per cell (load and reclaimable memory) and is the only log that carries a claim of this README's headline.
 
 Experiment sources: `fix/rows_timing_test.go.txt`, `fix/rowpass_experiment_test.go.txt`, `fix/ab_test.go.txt` (scratch; not in the tree, which a layout ratchet protects).
+
+### Decode's rows-per-simdgroup choice (follow-up, 2026-11-06 14:16–14:18, load1 1.4, two runs)
+Decode's Q4_K, Q5_K and Q6_K rows kernels at R = 1..8 on the q4k lane's real shapes, one activation row, GPU ms per call, 40 calls in one command buffer, best of 3 (`fix/decode-r-sweep.log`, scratch source `fix/decode_r_sweep_test.go.txt`; the R = 1 entry is the first timed on each shape and runs high on the first run, 0.085 against 0.065 ms on the Phi-3 o-projection, which is how the retracted figure arose). The shipped R is q4k 8, q5k 4, q6k 4.
+
+| shape | shipped R | shipped | best R | best | gap |
+|---|---|---|---|---|---|
+| Phi-3 qkv (q5k 9,216 × 3,072) | 4 | 0.141 | 6 | 0.138 | 2% |
+| Phi-3 o (q4k 3,072 × 3,072) | 8 | 0.052 | 4 | 0.049 | 6% |
+| Phi-3 gate\|up (q4k 16,384 × 3,072) | 8 | 0.232 | 6–8 | 0.232 | 0 |
+| Phi-3 down (q6k 3,072 × 8,192) | 4 | 0.139 | 2 | 0.137 | 1% |
+| 1.5B qkv (q4k 1,792 × 1,536) | 8 | 0.030 | 6 | 0.024–0.026 | 17–20% |
+| 1.5B o (q4k 1,536 × 1,536) | 8 | 0.029–0.030 | 5–6 | 0.024–0.025 | 17–20% |
+| 1.5B gate\|up (q4k 17,920 × 1,536) | 8 | 0.169 | 6 | 0.166 | 2% |
+| 1.5B down (q6k 1,536 × 8,960) | 4 | 0.085 | 2 | 0.078 | 8% |
+| 7B-ish o (q4k 3,584 × 3,584) | 8 | 0.086 | 4 | 0.070 | 19% |
+| 7B-ish gate\|up (q4k 37,888 × 3,584) | 8 | 0.683 | 6–8 | 0.683 | 0 |
+
+**There is no regression; the choice is within 0 to 8% of the best on every shape that dominates a token, and 17–20% on the small q4k projections (N ≤ 3,584).** Summed over a token's GEMVs that is about 0.5 ms of the 1.5B's 14.3 ms (3–4%) and under 0.1 ms of Phi-3's 23 ms (0.3%). A rule like "R = 4 for q4k with N ≤ 4,096" would be bit-identical (R only sets how many output rows a simdgroup computes; every variant measured bit-identical to the production kernel in the experiment above) and worth a few percent on mid-size models at most. Not pursued; Francis decides whether a few percent on the small projections is worth a build-time table.
