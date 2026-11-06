@@ -1,0 +1,94 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+// Scratch: the P29 A/B on a named model (the same body as TestOneSlotStep_phi3PrefillAB, via oneSlotPrefillAB).
+func TestZZAB(t *testing.T) {
+	p := os.Getenv("GOINFER_ZZ_AB")
+	if p == "" {
+		t.Skip("set GOINFER_ZZ_AB=<gguf>")
+	}
+	oneSlotPrefillAB(t, p, 2048)
+}
+
+// Scratch: MC3 concurrent decode at two clients: one step of two rows on two slots against two Forwards, both with the head,
+// 10 pairs alternating order, at positions 64..80.
+func TestZZMC3Two(t *testing.T) {
+	p := os.Getenv("GOINFER_ZZ_MC3")
+	if p == "" {
+		t.Skip("set GOINFER_ZZ_MC3=<gguf>")
+	}
+	if strings.HasPrefix(p, "/Volumes/") || strings.HasPrefix(p, "/srv/models") {
+		t.Fatalf("%s is on the archive", p)
+	}
+	m, err := decoder.Load(p, decoder.Options{Quant: "q4k", Backend: "metal", ResidentContext: 1024, ResidentKVSlots: 2})
+	if err != nil {
+		t.Skipf("load: %v", err)
+	}
+	t.Cleanup(func() { m.Close() })
+	if why := residentMemoryDecline(m); why != "" {
+		t.Skipf("memory guard: %s", why)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { r.Close() })
+	a := &metalResident{r: r, hidden: r.H}
+	if len(r.kvSlotBufs) < 2 || r.batch == nil {
+		t.Fatalf("no two-slot step: %d slots", len(r.kvSlotBufs))
+	}
+	embs, _ := oneSlotEmbs(r, 2929, 128)
+	seq := func(p0 int) time.Duration {
+		t0 := time.Now()
+		for s := 0; s < 2; s++ {
+			if err := r.useKVSlot(s); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := a.Forward(embs[p0], p0); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return time.Since(t0)
+	}
+	step := func(p0 int) time.Duration {
+		seqs := []batchSeq{{slot: 0, pos: p0, emb: embs[p0]}, {slot: 1, pos: p0, emb: embs[p0]}}
+		t0 := time.Now()
+		if _, _, err := r.forwardMulti(seqs); err != nil {
+			t.Fatal(err)
+		}
+		return time.Since(t0)
+	}
+	for i := 0; i < 8; i++ { // fill both slots' history and warm
+		seq(i)
+		step(i)
+	}
+	var ratios []float64
+	for k := 0; k < 10; k++ {
+		p0 := 64 + k
+		var s, b time.Duration
+		if k%2 == 0 {
+			s, b = seq(p0), step(p0)
+		} else {
+			b, s = step(p0), seq(p0)
+		}
+		ratios = append(ratios, s.Seconds()/b.Seconds())
+		fmt.Fprintf(os.Stderr, "[mc3-2] pair %d: two Forwards %.1f ms, one 2-row step %.1f ms, ratio %.3f\n", k+1, s.Seconds()*1000, b.Seconds()*1000, ratios[k])
+	}
+	sort.Float64s(ratios)
+	fmt.Fprintf(os.Stderr, "[mc3-2] %s: two Forwards ÷ one 2-row step over 10 pairs: median %.3f (min %.3f, max %.3f)\n", filepath.Base(p), ratios[5], ratios[0], ratios[9])
+	_ = context.Background
+}
