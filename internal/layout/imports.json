@@ -2,6 +2,22 @@
   "_about": "SB13's package layout (docs/tasks/task-subsystems-2026-10.md §8 and §9). arrows and test_arrows: every import from one goinfer package to another, by repository-relative directory, from non-test and from test files; TestLayout_arrows fails on one the tree makes that is not here, and on one here the tree no longer makes. rules: the protected separations, which no import, made or recorded, may break; they are edited by hand only.",
   "rules": [
     {
+      "name": "fit-leaf",
+      "from": [
+        "decoder/fit"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "decoder/fit": [
+          "internal/runtime/mem"
+        ]
+      },
+      "why": "decoder/fit (Tier 3, docs/layout.md) holds the fit guard's and the planner's exchange types so a caller can name them without importing the loader. It sits below decoder, which re-exports them: it imports internal/runtime/mem and no other goinfer package, decoder included."
+    },
+    {
       "name": "towers-standalone",
       "from": [
         "internal/vision",
@@ -248,6 +264,7 @@
     "decoder": [
       "chat",
       "constrain",
+      "decoder/fit",
       "internal/cost",
       "internal/runtime/adapter",
       "internal/runtime/diskfree",
@@ -261,6 +278,9 @@
       "internal/runtime/program",
       "internal/runtime/sampling",
       "tokenizer"
+    ],
+    "decoder/fit": [
+      "internal/runtime/mem"
     ],
     "demo/agent/agent": [
       "chat",

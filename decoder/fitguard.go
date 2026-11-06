@@ -1,7 +1,6 @@
 package decoder
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -141,26 +141,6 @@ func (f fitCheck) arithmetic() string { return f.check().Arithmetic() }
 // warning is what the banner prints when the load fits but only just.
 func (f fitCheck) warning() string { return f.check().Warning() }
 
-// ErrWontFitResident is wrapped into every load-time fit-guard refusal (declineErr), so a caller
-// can detect the refusal with errors.Is/errors.As instead of parsing the message text — e.g. to
-// decide whether an automatic -stream-weights retry is worth attempting (see FitDeclineError).
-var ErrWontFitResident = errors.New("decoder: model will not fit resident RAM")
-
-// FitDeclineError is what declineErr returns instead of a bare error.
-type FitDeclineError struct {
-	msg string
-
-	// DenseStreamable is true when a -stream-weights retry after this refusal would engage decoder/layerpaging.go's windowed dense pager, the
-	// path measured as sound for an automatic retry (docs/tasks/task-fit-to-hardware.md, docs/tasks/task-gpu-paths-2026-09.md). It is false for
-	// MoE models and own-forward families: MoE CPU weight streaming is a documented, measured failure (docs/benchmarks.md "M35/M26 on the
-	// Mac": a real 20 GB MoE through the CPU-staged path ran for hours with no completions, re-reading weights from disk on essentially every
-	// token), so there the retry stays a manual, explicit choice and is never something the guard does on the caller's behalf.
-	DenseStreamable bool
-}
-
-func (e *FitDeclineError) Error() string { return e.msg }
-func (e *FitDeclineError) Unwrap() error { return ErrWontFitResident }
-
 // denseStreamable mirrors newLayerPager's own exclusions (decoder/layerpaging.go) exactly, so the fit guard's retry decision and the
 // pager's decision to build one cannot disagree: an MoE model uses expertPager instead (see FitDeclineError.DenseStreamable), and a
 // family whose layers are not all generic operations (Architecture.genericKindsOnly) gets no layerPager. cfg == nil (header unreadable) answers false: don't know must not attempt a retry the guard cannot
@@ -185,7 +165,7 @@ func fitDecline(d *mem.Decline) *FitDeclineError {
 	if d == nil {
 		return nil
 	}
-	return &FitDeclineError{msg: d.Msg, DenseStreamable: d.DenseStreamable}
+	return fit.NewDeclineError(d.Msg, d.DenseStreamable)
 }
 
 // guardFit runs the check. It returns the context to PIN (0 meaning leave the caller's request alone, nonzero meaning the guard chose this
