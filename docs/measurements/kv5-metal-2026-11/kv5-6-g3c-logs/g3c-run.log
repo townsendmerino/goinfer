@@ -1,0 +1,20 @@
+07:01:40 G3c: models ['1.5B', '7B']; power: Now drawing from 'AC Power'
+07:01:40 1.5B main: starting /Users/francistownsend-merino/goinfer-work/kv5-6/serve-main
+07:01:44 1.5B main: ready; context: 16384 tokens (fit: 2 slots, 0.9 GB KV; model maximum 32768 — raise with --ctx) · KV f16 (requested auto: auto is f16 on Metal)
+07:01:44 1.5B main: KV plan: 2 conversations x 16384 positions (4 asked for)
+07:01:44 1.5B new: starting /Users/francistownsend-merino/goinfer-work/kv5-6/serve-new
+07:01:46 1.5B new: ready; context: 32768 tokens (model maximum) · KV f16 (requested auto: auto is f16 on Metal)
+07:01:46 1.5B new: KV plan: a 32768-position pool for 2 conversations; each is guaranteed 16384, and one can use up to 32768 (4 asked for)
+07:03:01 1.5B new: the request, 6555 filler items (calibrated 32762 prompt tokens) + max_tokens 8, against cap 32768
+07:04:17 1.5B new: status 200, usage {'prompt_tokens': 32763, 'completion_tokens': 5, 'total_tokens': 32768, 'prefill_reused_tokens': 0}, finish length, wall 76 s, swap-out pages 0
+07:04:17 1.5B: main 16384, new 32768 (2.00x); PASS
+07:04:17 7B main: starting /Users/francistownsend-merino/goinfer-work/kv5-6/serve-main
+07:04:21 7B main: ready; context: 16384 tokens (fit: 2 slots, 1.8 GB KV; model maximum 32768 — raise with --ctx) · KV f16 (requested auto: auto is f16 on Metal)
+07:04:21 7B main: KV plan: 2 conversations x 16384 positions (4 asked for)
+07:04:21 7B new: starting /Users/francistownsend-merino/goinfer-work/kv5-6/serve-new
+07:04:22 7B new: ready; context: 32768 tokens (model maximum) · KV f16 (requested auto: auto is f16 on Metal)
+07:04:22 7B new: KV plan: a 32768-position pool for 2 conversations; each is guaranteed 16384, and one can use up to 32768 (4 asked for)
+07:08:57 7B new: the request, 6555 filler items (calibrated 32762 prompt tokens) + max_tokens 8, against cap 32768
+07:13:30 7B new: status 200, usage {'prompt_tokens': 32763, 'completion_tokens': 5, 'total_tokens': 32768, 'prefill_reused_tokens': 0}, finish length, wall 274 s, swap-out pages 0
+07:13:30 7B: main 16384, new 32768 (2.00x); PASS
+07:13:30 done
