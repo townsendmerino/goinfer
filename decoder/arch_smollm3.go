@@ -18,14 +18,14 @@ func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "smollm3"); err != nil {
 		return nil, nil, err
 	}
-	if err := cfg.validateLlama(); err != nil {
+	if err := cfg.ValidateLlama(); err != nil {
 		return nil, nil, err
 	}
 	scaling, err := parseRopeScaling(cfg.RopeScaling)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(smollm3): %w", err)
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	noRope := cfg.NoRopeLayers
 	if len(noRope) == 0 {
 		interval := cfg.NoRopeLayerInterval
@@ -61,7 +61,7 @@ func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		layerNoPE:       layerNoPE,
 		RoPELocalBase:   cfg.RoPEGlobalBase,
 		RoPEGlobalBase:  cfg.RoPEGlobalBase,
-		RotaryDim:       cfg.rotaryDim(),
+		RotaryDim:       cfg.RotaryDim(),
 		ropeScaling:     scaling,
 		EmbedScale:      0,
 		TiedLMHead:      false, // finalized from lm_head.weight presence at load

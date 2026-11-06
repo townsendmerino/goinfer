@@ -115,7 +115,7 @@ Each must-fix below is graded by the run, not re-argued here. "Checked" is this 
 | M6 | d | `Model.Close` during a generation | Hard | yes, structurally: `metal.(*resident).Close` (`backend/metal/model.go:resident.Close`) releases the device with no wait for an open chain (`chainOpen`, `backend/metal/greedy_chain.go:resident.chainOpen`) | Close waits for, or cancels and drains, in-flight generations; write the contract |
 | M7 | d | GPU-resident `Model.Generate` concurrency | Hard (`Generate`); `CPUConcurrentSafe` unlisted | no | one written statement on `Model`: concurrent calls are safe; extras decode on the CPU while the resident KV is claimed |
 | M8 | d | `Generate` / `Generation.Err` cancellation | Hard | no | document that `Err` wraps `ctx.Err()` and the prefill check granularity |
-| M9 | d | `decoder.Load` error kinds | `Load` Hard; `ResidentDeclineError` unlisted | no | typed errors for unsupported family, quant and backend; an `Options` way to make a backend decline an error |
+| M9 | d | `decoder.Load` error kinds | `Load` Hard; `ResidentDeclineError` unlisted | no | typed errors for unsupported family, quant and backend (done: `decoder/load_errors.go`); still open: an `Options` way to make a backend decline an error |
 
 **Unlisted surfaces the five programs needed** (each a kind-d finding by §3's own rule, to be placed before v1.0):
 `constrain.JSONSchema`, `constrain.GrammarFromStruct`, the tool-grammar set in M4, `decoder.FitDeclineError` and

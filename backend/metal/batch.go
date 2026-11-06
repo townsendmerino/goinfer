@@ -5,13 +5,15 @@ package metal
 import (
 	"context"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
-	"github.com/townsendmerino/goinfer/internal/runtime/program"
 	"maps"
 	"math"
 	"os"
 	"runtime"
 	"slices"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -546,7 +548,7 @@ func (r *resident) buildBatch() {
 			r.stepDecline = fmt.Sprintf("the batched step's %.1f MB of scratch does not fit beside %d KV slot(s) (the memory guard leaves %.1f MB)",
 				float64(need)/(1<<20), len(r.kvSlotBufs), float64(r.stepHeadroom)/(1<<20))
 		}
-		fmt.Fprintf(os.Stderr, "metal: batched step off: %s; prompts prefill one token at a time\n", r.stepDecline)
+		logs.Warnf("metal: batched step off: %s; prompts prefill one token at a time", r.stepDecline)
 		return
 	}
 	compile := r.d.CompileLibrary
@@ -555,7 +557,7 @@ func (r *resident) buildBatch() {
 	}
 	lib, err := compile(batchKernelsHeader+batchKernels, MSL3_1) // its own small library: allKernels is compiled once, above
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "metal: batched decode off (compile: %v)\n", err)
+		logs.Warnf("metal: batched decode off (compile: %v)", err)
 		return
 	}
 	p := func(n string) Pipeline {
@@ -566,7 +568,7 @@ func (r *resident) buildBatch() {
 		return pp
 	}
 	if !batchSimdSumTreeOK(r.d, p("mc3_sstree")) {
-		fmt.Fprintf(os.Stderr, "metal: batched decode off — this GPU's simd_sum is not the xor tree the batched kernels reproduce, so their output would not be bit-identical\n")
+		logs.Warnf("metal: batched decode off — this GPU's simd_sum is not the xor tree the batched kernels reproduce, so their output would not be bit-identical")
 		return
 	}
 	d, g0 := r.d, r.layers[r.stepGeomLayer()].geom
@@ -895,7 +897,7 @@ func (r *resident) calibrateRows() {
 	if attnInt8 {
 		b.rowsQKV = batchMaxSeqs
 	}
-	fmt.Fprintf(os.Stderr, "metal: batched step: qkv as per-row GEMVs at B <= %d (GEMV %.3f ms, fragment %.3f ms), gate|up at B <= %d (%.3f, %.3f); 0 = always the fragment\n",
+	logs.Debugf("metal: batched step: qkv as per-row GEMVs at B <= %d (GEMV %.3f ms, fragment %.3f ms), gate|up at B <= %d (%.3f, %.3f); 0 = always the fragment",
 		b.rowsQKV, best[1]*1e3, best[0]*1e3, b.rowsGU, best[3]*1e3, best[2]*1e3)
 }
 

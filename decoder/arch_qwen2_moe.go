@@ -13,14 +13,14 @@ import (
 // shared_expert_intermediate_size scaled by sigmoid(shared_gate·h). The tensor
 // schema is qwen2MoeTensorSchema.
 func qwen2MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if err := cfg.validateQwen2Moe(); err != nil {
+	if err := cfg.ValidateQwen2Moe(); err != nil {
 		return nil, nil, err
 	}
 	scaling, err := parseRopeScaling(cfg.RopeScaling)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(qwen2_moe): %w", err)
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	normTopK := false // HF Qwen2MoeConfig default (norm_topk_prob false)
 	if cfg.NormTopKProb != nil {
 		normTopK = *cfg.NormTopKProb
@@ -53,7 +53,7 @@ func qwen2MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		layerIsGlobal:  nil,
 		RoPELocalBase:  cfg.RoPEGlobalBase,
 		RoPEGlobalBase: cfg.RoPEGlobalBase,
-		RotaryDim:      cfg.rotaryDim(),
+		RotaryDim:      cfg.RotaryDim(),
 		ropeScaling:    scaling,
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load

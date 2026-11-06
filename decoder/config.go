@@ -391,7 +391,7 @@ func (c *Config) IsLinearLayer(i int) bool {
 // for Gemma heads*head_dim != hidden, so the field is load-bearing there);
 // many Llama/Mistral configs omit it, where hidden_size/num_attention_heads
 // is the definition.
-func (c *Config) headDim() int {
+func (c *Config) EffectiveHeadDim() int {
 	if c.HeadDim > 0 {
 		return c.HeadDim
 	}
@@ -435,7 +435,7 @@ func (c *Config) ValidateAssumptions() error {
 
 // validateQwen3 pins the assumptions the qwen3 forward path makes (dense, SwiGLU, GQA, single-base RoPE); validateQwen3Moe
 // layers the sparse-MoE checks over it.
-func (c *Config) validateQwen3() error {
+func (c *Config) ValidateQwen3() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.HeadDim == 0:
 		return fmt.Errorf("decoder(qwen3): missing required dim (hidden=%d layers=%d heads=%d headDim=%d)",
@@ -460,8 +460,8 @@ func (c *Config) validateQwen3() error {
 // (dense, SwiGLU, GQA, single-base RoPE, no QK-norm, derived head_dim) but with
 // q/k/v projection bias. Sliding-window attention (use_sliding_window) is a
 // follow-up — reject it rather than silently run full attention.
-func (c *Config) validateQwen2() error {
-	if err := c.validateLlama(); err != nil {
+func (c *Config) ValidateQwen2() error {
+	if err := c.ValidateLlama(); err != nil {
 		return err
 	}
 	if c.UseSlidingWindow {
@@ -473,8 +473,8 @@ func (c *Config) validateQwen2() error {
 // validateMixtral pins the Mixtral assumptions: the llama dense constraints
 // (reused) plus a valid MoE config — top-k experts of num_local_experts, both
 // positive and k ≤ E.
-func (c *Config) validateMixtral() error {
-	if err := c.validateLlama(); err != nil {
+func (c *Config) ValidateMixtral() error {
+	if err := c.ValidateLlama(); err != nil {
 		return err
 	}
 	switch {
@@ -489,8 +489,8 @@ func (c *Config) validateMixtral() error {
 // validateQwen3Moe pins the Qwen3-MoE assumptions (model_type "qwen3_moe"): the qwen3 dense constraints (QK-norm, no q/k/v
 // bias, single-base RoPE) plus a valid sparse MoE on every layer (num_experts / num_experts_per_tok / moe_intermediate_size).
 // Unlike qwen2_moe there is no shared expert: the released config has no shared_expert_intermediate_size.
-func (c *Config) validateQwen3Moe() error {
-	if err := c.validateQwen3(); err != nil {
+func (c *Config) ValidateQwen3Moe() error {
+	if err := c.ValidateQwen3(); err != nil {
 		return err
 	}
 	switch {
@@ -509,8 +509,8 @@ func (c *Config) validateQwen3Moe() error {
 // num_experts_per_tok / moe_intermediate_size) and an always-on shared expert
 // (shared_expert_intermediate_size). decoder_sparse_step must be 1 (every layer
 // sparse) — the only configuration shipped by the Qwen-MoE family.
-func (c *Config) validateQwen2Moe() error {
-	if err := c.validateLlama(); err != nil {
+func (c *Config) ValidateQwen2Moe() error {
+	if err := c.ValidateLlama(); err != nil {
 		return err
 	}
 	switch {
@@ -529,7 +529,7 @@ func (c *Config) validateQwen2Moe() error {
 // validateGemma4MoE pins the Gemma 4 26B-A4B MoE config, checked only when enable_moe_block is set (the dense E2B/E4B/12B
 // variants never reach here): num_experts > 0, 1 <= top_k_experts <= num_experts, moe_intermediate_size > 0. The
 // router.scale / per_expert_scale tensors are checked at load (docs/completed/task-gemma4-moe.md).
-func (c *Config) validateGemma4MoE() error {
+func (c *Config) ValidateGemma4MoE() error {
 	switch {
 	case c.NumExperts <= 0:
 		return fmt.Errorf("decoder(gemma4-moe): num_experts must be >0, got %d", c.NumExperts)
@@ -546,7 +546,7 @@ func (c *Config) validateGemma4MoE() error {
 // the alternating local layers. The attention (GQA + biases + per-head sinks) and
 // YaRN RoPE are validated by the generic head-dim checks + parseRopeScaling at
 // resolve time.
-func (c *Config) validateGptOss() error {
+func (c *Config) ValidateGptOss() error {
 	nExperts := c.NumLocalExperts
 	if nExperts == 0 {
 		nExperts = c.NumExperts
@@ -575,7 +575,7 @@ func (c *Config) validateGptOss() error {
 // shared expert (n_shared_experts ≥ 1), and a first_k_dense_replace in [0, num_layers)
 // dense prefix. The attention is qwen3-like (QK-norm, partial RoPE, no bias) and is
 // validated by the generic head-dim/layer checks at resolve time.
-func (c *Config) validateGlm4Moe() error {
+func (c *Config) ValidateGlm4Moe() error {
 	switch {
 	case c.NRoutedExperts <= 0:
 		return fmt.Errorf("decoder(glm4_moe): n_routed_experts must be >0, got %d", c.NRoutedExperts)
@@ -596,7 +596,7 @@ func (c *Config) validateGlm4Moe() error {
 // (n_routed_experts / num_experts_per_tok / moe_intermediate_size + n_shared_experts ≥ 1,
 // a first_k_dense_replace dense prefix). q_lora_rank 0/absent is the V2-Lite direct-q
 // path. Group-limited routing (n_group/topk_group) is optional (≤1 ⇒ plain top-k).
-func (c *Config) validateDeepseek() error {
+func (c *Config) ValidateDeepseek() error {
 	switch {
 	case c.KVLoRARank <= 0:
 		return fmt.Errorf("decoder(%s): kv_lora_rank must be >0, got %d", c.ModelType, c.KVLoRARank)
@@ -625,7 +625,7 @@ func (c *Config) validateDeepseek() error {
 // validateBailingHybrid pins Bailing Hybrid's (Ling 3.0) assumptions: a valid MLA geometry (the checks of validateDeepseek), a
 // valid KDA geometry (conv kernel, per-head dim), and a routed+shared MoE using this family's own field spellings
 // (num_experts/num_shared_experts, not DeepSeek's n_routed_experts/n_shared_experts).
-func (c *Config) validateBailingHybrid() error {
+func (c *Config) ValidateBailingHybrid() error {
 	switch {
 	case c.KVLoRARank <= 0:
 		return fmt.Errorf("decoder(bailing_hybrid): kv_lora_rank must be >0, got %d", c.KVLoRARank)
@@ -658,7 +658,7 @@ func (c *Config) validateBailingHybrid() error {
 // validateLFM2 checks the LFM2/LFM2.5 shape before anything is loaded. Each case is a real way a checkpoint can differ:
 // layer_types drives which mixer every layer runs, conv_L_cache is the kernel width the rolling state is sized from, and
 // conv_bias true would need a bias tensor no released checkpoint ships, so accepting it silently would drop a term.
-func (c *Config) validateLFM2() error {
+func (c *Config) ValidateLFM2() error {
 	switch {
 	case len(c.LayerTypes) != c.NumLayers:
 		return fmt.Errorf("decoder(lfm2): layer_types has %d entries, want %d", len(c.LayerTypes), c.NumLayers)
@@ -692,7 +692,7 @@ func (c *Config) validateLFM2() error {
 // validateGranite pins the Granite-4.0-H (granitemoehybrid) assumptions: a layer_types list covering every layer
 // (mamba | attention), a valid Mamba-2 geometry, and a routed+shared MoE (num_local_experts / num_experts_per_tok /
 // intermediate_size / shared_intermediate_size).
-func (c *Config) validateGranite() error {
+func (c *Config) ValidateGranite() error {
 	switch {
 	case len(c.LayerTypes) != c.NumLayers:
 		return fmt.Errorf("decoder(granite): layer_types has %d entries, want %d", len(c.LayerTypes), c.NumLayers)
@@ -713,11 +713,11 @@ func (c *Config) validateGranite() error {
 // generic forward path cannot apply (granitemoehybrid's own forward does, via graniteParams; see
 // graniteDenseArchitecture); every released 4.2 size ships 1.0, so anything else is rejected loudly rather than silently
 // dropped.
-func (c *Config) validateGraniteDense() error {
+func (c *Config) ValidateGraniteDense() error {
 	switch {
-	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.headDim() == 0:
+	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.EffectiveHeadDim() == 0:
 		return fmt.Errorf("decoder(granite): missing required dim (hidden=%d layers=%d heads=%d headDim=%d)",
-			c.HiddenDim, c.NumLayers, c.NumHeads, c.headDim())
+			c.HiddenDim, c.NumLayers, c.NumHeads, c.EffectiveHeadDim())
 	case c.NumKVHeads == 0 || c.NumHeads%c.NumKVHeads != 0:
 		return fmt.Errorf("decoder(granite): num_heads %d not a multiple of num_kv_heads %d (GQA)", c.NumHeads, c.NumKVHeads)
 	case c.VocabSize == 0:
@@ -747,7 +747,7 @@ func (c *Config) validateGraniteDense() error {
 // 0-indexed i, so layer 3 (not layer 4) is the first full-attention layer at the default interval=4. A no-op if LayerTypes
 // is already populated (a transformers-instantiated config carries it directly, the same asymmetry normalizeNemotronBlocks
 // handles).
-func (c *Config) normalizeQwen3NextLayerTypes() error {
+func (c *Config) NormalizeQwen3NextLayerTypes() error {
 	if len(c.LayerTypes) > 0 || c.FullAttentionInterval == 0 {
 		return nil
 	}
@@ -777,7 +777,7 @@ func (c *Config) normalizeQwen3NextLayerTypes() error {
 // 0-indexed i. The second clause is a tail-cleanup for a NumLayers that is not a multiple of LayerGroupSize, replicated
 // rather than dropped because the vendor's formula is the authority. "full_attention" (this tree's spelling) stands for HF's
 // "attention", so IsGlobalLayer/IsLinearLayer read it with no new predicate. A no-op if LayerTypes is already populated.
-func (c *Config) normalizeBailingLayerTypes() error {
+func (c *Config) NormalizeBailingLayerTypes() error {
 	if len(c.LayerTypes) > 0 || c.LayerGroupSize == 0 {
 		return nil
 	}
@@ -807,7 +807,7 @@ func (c *Config) normalizeBailingLayerTypes() error {
 // An unrecognized character is an error, not a mamba block: nemotronhArchitecture's kind switch defaults unknown strings to
 // mamba, and inheriting that here would turn one typo in a 56-character string into a silently different model that still
 // generates text.
-func (c *Config) normalizeNemotronBlocks() error {
+func (c *Config) NormalizeNemotronBlocks() error {
 	if len(c.LayersBlockType) > 0 || c.HybridOverridePattern == "" {
 		return nil
 	}
@@ -835,7 +835,7 @@ func (c *Config) normalizeNemotronBlocks() error {
 // covering every layer (mamba | attention | mlp | moe), a valid Mamba-2 geometry, a
 // usable mlp width + layer-norm eps, and — only when the pattern actually contains an
 // "moe" block (Nemotron 3 Nano; plain Nemotron-H never does) — a usable MoE shape.
-func (c *Config) validateNemotron() error {
+func (c *Config) ValidateNemotron() error {
 	switch {
 	case len(c.LayersBlockType) != c.NumLayers:
 		return fmt.Errorf("decoder(nemotron_h): layers_block_type has %d entries, want %d", len(c.LayersBlockType), c.NumLayers)
@@ -872,7 +872,7 @@ func (c *Config) validateNemotron() error {
 // per-attention-type rope_parameters (full_attention YaRN + sliding plain), and
 // the explicit layer_types interleave. The dense FFN axes (RMSNorm, SwiGLU,
 // derived head_dim) are the same as llama and resolved there.
-func (c *Config) validateMellum() error {
+func (c *Config) ValidateMellum() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.NumKVHeads == 0:
 		return fmt.Errorf("decoder(mellum): missing core dims (hidden/layers/heads)")
@@ -893,7 +893,7 @@ func (c *Config) validateMellum() error {
 // validateQwen35Dense pins Qwen3.8 (model_type qwen3_5). It is validateQwen35 minus the MoE checks plus one addition:
 // intermediate_size is load-bearing here, where the MoE sibling treats it as vestigial (its experts carry their own width). A
 // zero there would silently build a dense FFN of width 0 rather than fail.
-func (c *Config) validateQwen35Dense() error {
+func (c *Config) ValidateQwen35Dense() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.HeadDim == 0:
 		return fmt.Errorf("decoder(qwen3_5): missing core dims (hidden=%d layers=%d heads=%d headDim=%d)",
@@ -923,7 +923,7 @@ func (c *Config) validateQwen35Dense() error {
 // validateOlmoHybrid checks Olmo Hybrid's (model_type olmo_hybrid) core dims: the same Gated-DeltaNet geometry checks as
 // qwen3_5, and no MoE (it is a dense hybrid with no num_experts field). The released sizes are MHA, but any GQA-divisible
 // head count passes.
-func (c *Config) validateOlmoHybrid() error {
+func (c *Config) ValidateOlmoHybrid() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0:
 		return fmt.Errorf("decoder(olmo_hybrid): missing core dims (hidden=%d layers=%d heads=%d)",
@@ -953,7 +953,7 @@ func (c *Config) validateOlmoHybrid() error {
 // validateQwen35 pins the qwen3_5_moe assumptions: a 3:1 linear/full layer mix (layer_types), the Gated DeltaNet dims (GVA:
 // value-head count a multiple of the key-head count), per-attention-type RoPE in rope_parameters, QK-norm softmax layers,
 // and a routed + shared MoE on every layer.
-func (c *Config) validateQwen35() error {
+func (c *Config) ValidateQwen35() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.HeadDim == 0:
 		return fmt.Errorf("decoder(qwen3_5_moe): missing core dims (hidden=%d layers=%d heads=%d headDim=%d)",
@@ -984,7 +984,7 @@ func (c *Config) validateQwen35() error {
 // RoPE check: the released config carries a flat rope_theta and no rope_parameters object, so requiring it (as
 // validateQwen35 does) would reject every real Qwen3-Next checkpoint. Accepts either shape, matching qwen3NextArchitecture's
 // dual-path RoPE resolution.
-func (c *Config) validateQwen3Next() error {
+func (c *Config) ValidateQwen3Next() error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.HeadDim == 0:
 		return fmt.Errorf("decoder(qwen3_next): missing core dims (hidden=%d layers=%d heads=%d headDim=%d)",
@@ -1014,7 +1014,7 @@ func (c *Config) validateQwen3Next() error {
 // validateGPT2 pins the assumptions the gpt2 forward path makes: LayerNorm,
 // learned absolute positions (no RoPE), a non-gated GELU MLP, fused q/k/v with
 // bias, and tied embeddings. GPT-2's config uses the n_embd/n_head/n_layer keys.
-func (c *Config) validateGPT2() error {
+func (c *Config) ValidateGPT2() error {
 	switch {
 	case c.NEmbd == 0 || c.NLayer == 0 || c.NHead == 0:
 		return fmt.Errorf("decoder(gpt2): missing required dim (n_embd=%d n_layer=%d n_head=%d)", c.NEmbd, c.NLayer, c.NHead)
@@ -1036,11 +1036,11 @@ func (c *Config) validateGPT2() error {
 // attn+MLP block, gated SiLU MLP, tied 256k embeddings, GPT-J interleaved RoPE, and the logit_scale multiplier. use_qk_norm
 // (Command-R+ only) is deferred: Cohere's QK-norm is LayerNorm-style, distinct from the RMSNorm QK-norm hook, so admitting
 // it would run silently wrong; it is rejected loudly here rather than mis-normalized.
-func (c *Config) validateCohere() error {
+func (c *Config) ValidateCohere() error {
 	switch {
-	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.headDim() == 0:
+	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.EffectiveHeadDim() == 0:
 		return fmt.Errorf("decoder(cohere): missing required dim (hidden=%d layers=%d heads=%d headDim=%d)",
-			c.HiddenDim, c.NumLayers, c.NumHeads, c.headDim())
+			c.HiddenDim, c.NumLayers, c.NumHeads, c.EffectiveHeadDim())
 	case c.NumKVHeads == 0 || c.NumHeads%c.NumKVHeads != 0:
 		return fmt.Errorf("decoder(cohere): num_heads %d not a multiple of num_kv_heads %d (GQA)", c.NumHeads, c.NumKVHeads)
 	case c.VocabSize == 0:
@@ -1072,11 +1072,11 @@ func (c *Config) validateCohere() error {
 // layers where the full (global) layers are NoPE. Unlike cohere1 there is NO
 // QK-norm at all. Requires the sliding-window interleave to be expressible (either
 // explicit layer_types or a sliding_window_pattern).
-func (c *Config) validateCohere2() error {
+func (c *Config) ValidateCohere2() error {
 	switch {
-	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.headDim() == 0:
+	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.EffectiveHeadDim() == 0:
 		return fmt.Errorf("decoder(cohere2): missing required dim (hidden=%d layers=%d heads=%d headDim=%d)",
-			c.HiddenDim, c.NumLayers, c.NumHeads, c.headDim())
+			c.HiddenDim, c.NumLayers, c.NumHeads, c.EffectiveHeadDim())
 	case c.NumKVHeads == 0 || c.NumHeads%c.NumKVHeads != 0:
 		return fmt.Errorf("decoder(cohere2): num_heads %d not a multiple of num_kv_heads %d (GQA)", c.NumHeads, c.NumKVHeads)
 	case c.VocabSize == 0:
@@ -1106,11 +1106,11 @@ func (c *Config) validateCohere2() error {
 // validateLlama pins the assumptions the llama forward path makes (dense, SwiGLU, GQA, single-base RoPE, no QK-norm). It
 // differs from validateQwen3 by allowing head_dim to be derived (headDim()). RoPE scaling is handled by the adapter via
 // parseRopeScaling; attention bias is rejected. Plain Llama-2/3 and Mistral checkpoints pass.
-func (c *Config) validateLlama() error {
+func (c *Config) ValidateLlama() error {
 	switch {
-	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.headDim() == 0:
+	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.EffectiveHeadDim() == 0:
 		return fmt.Errorf("decoder(llama): missing required dim (hidden=%d layers=%d heads=%d headDim=%d)",
-			c.HiddenDim, c.NumLayers, c.NumHeads, c.headDim())
+			c.HiddenDim, c.NumLayers, c.NumHeads, c.EffectiveHeadDim())
 	case c.NumKVHeads == 0 || c.NumHeads%c.NumKVHeads != 0:
 		return fmt.Errorf("decoder(llama): num_heads %d not a multiple of num_kv_heads %d (GQA)", c.NumHeads, c.NumKVHeads)
 	case c.VocabSize == 0:
@@ -1131,9 +1131,9 @@ func (c *Config) validateLlama() error {
 
 // rotaryDim returns the number of head dims RoPE rotates: partial_rotary_factor
 // × head_dim when set (Phi), else 0 (the descriptor reads that as full head_dim).
-func (c *Config) rotaryDim() int {
+func (c *Config) RotaryDim() int {
 	if c.PartialRotaryFactor > 0 && c.PartialRotaryFactor < 1 {
-		return int(c.PartialRotaryFactor * float64(c.headDim()))
+		return int(c.PartialRotaryFactor * float64(c.EffectiveHeadDim()))
 	}
 	return 0
 }
@@ -1144,7 +1144,7 @@ func (c *Config) rotaryDim() int {
 // partial_rotary_factor (which is Phi's spelling and absent here). Prefers the
 // top-level value when present (GGUF injects it there); else reads the nested one.
 // 0 ⇒ the global layer is NoPE.
-func (c *Config) gemma4PartialRotary() float64 {
+func (c *Config) Gemma4PartialRotary() float64 {
 	if c.PartialRotaryFactor > 0 {
 		return c.PartialRotaryFactor
 	}
@@ -1165,7 +1165,7 @@ func (c *Config) gemma4PartialRotary() float64 {
 // 5.16). A config saved by 5.16 or later carries per_layer_config instead, so a re-saved checkpoint would otherwise read 0 and
 // load every layer at the local geometry. goinfer has exactly two attention geometries, so the overrides must name only
 // full-attention layers and agree with each other; anything else is refused rather than half-applied.
-func (c *Config) gemma4GlobalGeometry() (headDim, kvHeads int, err error) {
+func (c *Config) Gemma4GlobalGeometry() (headDim, kvHeads int, err error) {
 	headDim, kvHeads = c.GlobalHeadDim, c.NumGlobalKVHeads
 	if len(c.PerLayerConfig) == 0 || string(c.PerLayerConfig) == "null" {
 		return headDim, kvHeads, nil
@@ -1223,7 +1223,7 @@ func (c *Config) gemma4GlobalGeometry() (headDim, kvHeads int, err error) {
 // carry the flat fields. Prefer the flat values, fall back to the nested ones. Base 0
 // (both absent) makes every RoPE frequency 0/NaN and the model emits garbage, so the
 // nested fallback is load-bearing, not cosmetic.
-func (c *Config) gemma4RopeBases() (local, global float64) {
+func (c *Config) Gemma4RopeBases() (local, global float64) {
 	local, global = c.RoPELocalBase, c.RoPEGlobalBase
 	if (local > 0 && global > 0) || len(c.RopeParameters) == 0 {
 		return
@@ -1345,7 +1345,7 @@ func loadConfig(fsys fs.FS, name string) (*Config, error) {
 //
 // `true` and "per-element" are the same path and only "per-head" differs. Returns (enabled, perHead, error). An absent field
 // is HF's default of true (gating on, per-element); a checkpoint that means "no gating" must say `false` explicitly.
-func (c *Config) lagunaGatePerHead() (enabled, perHead bool, err error) {
+func (c *Config) LagunaGatePerHead() (enabled, perHead bool, err error) {
 	if len(c.Gating) == 0 || string(c.Gating) == "null" {
 		return true, false, nil // HF default: gating=True ⇒ per-element
 	}
@@ -1374,7 +1374,7 @@ func (c *Config) lagunaGatePerHead() (enabled, perHead bool, err error) {
 // as MoE and demand expert tensors that do not exist. So mlp_layer_types wins when present. Either way the dense layers must
 // form a contiguous prefix, which is all FirstKDense can express; a non-contiguous layout is rejected rather than silently
 // truncated.
-func (c *Config) lagunaFirstKDense() (int, error) {
+func (c *Config) LagunaFirstKDense() (int, error) {
 	if len(c.MlpLayerTypes) > 0 {
 		if n := len(c.MlpLayerTypes); n != c.NumLayers {
 			return 0, fmt.Errorf("decoder(laguna): mlp_layer_types has %d entries, want %d (num_hidden_layers)", n, c.NumLayers)
@@ -1414,11 +1414,11 @@ func (c *Config) lagunaFirstKDense() (int, error) {
 
 // validateLaguna pins the assumptions the Laguna forward is built on, read against the three released configs
 // (docs/completed/task-laguna.md).
-func (c *Config) validateLaguna() error {
+func (c *Config) ValidateLaguna() error {
 	switch {
 	case c.HiddenDim <= 0 || c.NumLayers <= 0 || c.NumHeads <= 0 || c.NumKVHeads <= 0:
 		return fmt.Errorf("decoder(laguna): hidden_size/num_hidden_layers/num_attention_heads/num_key_value_heads must all be >0")
-	case c.headDim() <= 0:
+	case c.EffectiveHeadDim() <= 0:
 		return fmt.Errorf("decoder(laguna): head_dim must be >0")
 	case c.NumExperts <= 0:
 		return fmt.Errorf("decoder(laguna): num_experts must be >0, got %d", c.NumExperts)
@@ -1454,9 +1454,9 @@ func (c *Config) validateLaguna() error {
 			return fmt.Errorf("decoder(laguna): layer_types has sliding_attention but sliding_window=%d", c.SlidingWindow)
 		}
 	}
-	if _, _, err := c.lagunaGatePerHead(); err != nil {
+	if _, _, err := c.LagunaGatePerHead(); err != nil {
 		return err
 	}
-	_, err := c.lagunaFirstKDense()
+	_, err := c.LagunaFirstKDense()
 	return err
 }

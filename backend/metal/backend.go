@@ -21,6 +21,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -109,7 +110,7 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		b.resident.quant = m.Quant()
 	}
 	if ctx, _ := resolveMetalCtxCap(m); ctx < from || m.ExtraResidentBytes() > 0 {
-		fmt.Fprint(os.Stderr, metalKVPlanLine(res.kvSlotCount(), ctx, from, m.ExtraResidentBytes()))
+		logs.InfoText(metalKVPlanLine(res.kvSlotCount(), ctx, from, m.ExtraResidentBytes()))
 	}
 	return b.resident, true, nil
 }
@@ -135,7 +136,6 @@ func residentPreBuild(m *decoder.Model) (fit decoder.MetalFit, from int, err err
 	// makes "available" report what survived, so a guard keyed on it inverts when it is needed. Evidence:
 	// docs/code-notes/metal.md#metalBackend.BuildResident.guard.
 	if _, cerr := resolveMetalCtxCap(m); cerr != nil {
-		fmt.Fprintf(os.Stderr, "[metal] %v\n", cerr)
 		return fit, 0, cerr
 	}
 	// The unpinned context is chosen once, here: its budget is live, and every later reader in this build (the guard, the
@@ -467,7 +467,7 @@ func residentFitsMemory(m *decoder.Model) bool { return residentMemoryDecline(m)
 func metalKVSlots(m *decoder.Model) int {
 	n := metalKVSlotsWanted(m)
 	if asked := m.ResidentKVSlotsRequestFor("metal"); n < asked {
-		fmt.Fprintf(os.Stderr, "metal: %d resident KV slots (Metal's default; %d asked by default, -kv-sessions N keeps N if memory allows)\n",
+		logs.Infof("metal: %d resident KV slots (Metal's default; %d asked by default, -kv-sessions N keeps N if memory allows)",
 			n, asked)
 	}
 	if n <= 1 {
@@ -486,13 +486,13 @@ func metalKVSlots(m *decoder.Model) int {
 	// but only where the step then fits. A count the caller asked for keeps its slots, and the step declines if it no longer fits.
 	if reserve := metalStepScratchReserve(m); m.ResidentKVSlotsIsDefault() && reserve > 0 && need+reserve <= budget {
 		if within := kvSlotsWithin(n, budget-reserve, need, metalSlotBytes(m)); within < got {
-			fmt.Fprintf(os.Stderr, "metal: %d resident KV slots of %d by default, which leaves room for the batched step's %.1f MB of scratch; -kv-sessions N keeps N if memory allows\n",
+			logs.Infof("metal: %d resident KV slots of %d by default, which leaves room for the batched step's %.1f MB of scratch; -kv-sessions N keeps N if memory allows",
 				within, n, float64(reserve)/(1<<20))
 			return within
 		}
 	}
 	if got < n {
-		fmt.Fprintf(os.Stderr, "metal: %d resident KV slots of %d requested — each costs %.0f MB (KV at the resident context, and any recurrent state), and the memory guard allows %d\n",
+		logs.Infof("metal: %d resident KV slots of %d requested — each costs %.0f MB (KV at the resident context, and any recurrent state), and the memory guard allows %d",
 			got, n, float64(metalSlotBytes(m))/(1<<20), got)
 	}
 	return got

@@ -60,8 +60,11 @@ func Lfm2VLDefaultPreprocess() Lfm2VLPreprocessConfig {
 // when the file is absent), overlaying only the fields it sets.
 func LoadLfm2VLPreprocessConfig(dir string) (Lfm2VLPreprocessConfig, error) {
 	c := Lfm2VLDefaultPreprocess()
-	raw, err := os.ReadFile(filepath.Join(dir, "processor_config.json"))
+	raw, found, err := readOptionalConfig(dir, "processor_config.json")
 	if err != nil {
+		return c, fmt.Errorf("lfm2-vl: %w", err)
+	}
+	if !found {
 		return c, nil
 	}
 	var w struct {

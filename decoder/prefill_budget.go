@@ -144,6 +144,9 @@ func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes i
 		}
 		ctx = cfg.MaxPositions
 	}
+	if cfg != nil && cfg.MaxPositions > 0 && ctx > cfg.MaxPositions {
+		ctx = cfg.MaxPositions // a pin past the model's own window prices no higher than the window, as the load-time guard does
+	}
 	kvBytes = estimateKVBytes(cfg, ctx, m.hostKVF16(), m.kvI8)
 	return ctx, kvBytes, weightBytes, budgetBytes, true
 }

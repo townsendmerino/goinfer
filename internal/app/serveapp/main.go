@@ -529,7 +529,7 @@ func (cfg config) validate() error {
 		return fmt.Errorf("-tool-format %q: want hermes or template", cfg.toolFormat)
 	}
 	if _, err := parseBudgetFlag(cfg.reasoningBudget); err != nil {
-		return fmt.Errorf("-reasoning-budget %q: %v", cfg.reasoningBudget, err)
+		return fmt.Errorf("-reasoning-budget %q: %w", cfg.reasoningBudget, err)
 	}
 	if _, ok := parseReasoningFormat(cfg.reasoningFmt); !ok {
 		return fmt.Errorf("-reasoning-format %q: want deepseek, deepseek-legacy or none", cfg.reasoningFmt)
@@ -544,7 +544,7 @@ func (cfg config) validate() error {
 			err = fmt.Errorf("fitted under template %q, not -decisions-template %q", cal.Template, cfg.decisionsTemplate)
 		}
 		if err != nil {
-			return fmt.Errorf("-decisions-calibration %s: %v", cfg.decisionsCal, err)
+			return fmt.Errorf("-decisions-calibration %s: %w", cfg.decisionsCal, err)
 		}
 	}
 	return nil

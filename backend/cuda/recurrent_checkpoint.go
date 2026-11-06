@@ -5,11 +5,10 @@ package cuda
 import (
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -53,7 +52,7 @@ func (r *cudaResident) allocRecurrentCheckpoint() {
 	n, d := r.ckptCopiesBeside(r.KVSlots(), reserve, free, err)
 	if d != "" {
 		r.ckptDeclined = d
-		fmt.Fprint(os.Stderr, ckptDeclinedLine(d))
+		logs.WarnText(ckptDeclinedLine(d))
 		return
 	}
 	for range n {
@@ -65,12 +64,12 @@ func (r *cudaResident) allocRecurrentCheckpoint() {
 	}
 	if len(r.ckptCopies) == 0 {
 		r.ckptDeclined = "the device allocation failed"
-		fmt.Fprintf(os.Stderr, "cuda: recurrent checkpoint: none kept (%s)\n", r.ckptDeclined)
+		logs.Warnf("cuda: recurrent checkpoint: none kept (%s)", r.ckptDeclined)
 		return
 	}
 	r.ckptBytes = int64(len(r.ckptCopies)) * charged
 	r.bindCheckpoint(0)
-	fmt.Fprint(os.Stderr, ckptKeptLine(r.ckptBytes, len(r.ckptCopies)*len(r.ckptSave)))
+	logs.InfoText(ckptKeptLine(r.ckptBytes, len(r.ckptCopies)*len(r.ckptSave)))
 }
 
 // recurrentLiveBytes is every recurrent layer's live state and conv window in bytes: the buffers the checkpoint copies, sized as the
@@ -78,11 +77,8 @@ func (r *cudaResident) allocRecurrentCheckpoint() {
 func (r *cudaResident) recurrentLiveBytes() int64 {
 	var n int64
 	for l := range r.layers {
-		switch Ly := &r.layers[l]; {
-		case Ly.isDeltaNet():
-			n += int64(r.dnet.winFloats() + r.dnet.stateElems)
-		case Ly.mixer == decoder.MixerMamba:
-			n += int64(r.mamba.winFloats() + r.mamba.ssmFloats())
+		if r.layers[l].isRecurrent() {
+			n += int64(r.recFloats[l].win + r.recFloats[l].state)
 		}
 	}
 	return 4 * n
@@ -93,11 +89,8 @@ func (r *cudaResident) recurrentLiveBytes() int64 {
 func (r *cudaResident) recurrentStateCharged() int64 {
 	var n int64
 	for l := range r.layers {
-		switch Ly := &r.layers[l]; {
-		case Ly.isDeltaNet():
-			n += chargedBytes(int64(r.dnet.winFloats())*4) + chargedBytes(int64(r.dnet.stateElems)*4)
-		case Ly.mixer == decoder.MixerMamba:
-			n += chargedBytes(int64(r.mamba.winFloats())*4) + chargedBytes(int64(r.mamba.ssmFloats())*4)
+		if r.layers[l].isRecurrent() {
+			n += chargedBytes(int64(r.recFloats[l].win)*4) + chargedBytes(int64(r.recFloats[l].state)*4)
 		}
 	}
 	return n
@@ -167,7 +160,7 @@ func (r *cudaResident) allocCheckpointCopy() (bufs []Buffer, ok bool) {
 	defer r.onLine(mem.LineState)()
 	defer func() {
 		if v := recover(); v != nil {
-			if !strings.Contains(fmt.Sprint(v), "device allocation failed") {
+			if !mem.DeviceAllocFailed(v) {
 				panic(v)
 			}
 			for _, b := range bufs {

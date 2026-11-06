@@ -12,14 +12,14 @@ import (
 // Mixtral uses full attention (the config's sliding_window is vestigial), so
 // this does too. The tensor schema is mixtralTensorSchema.
 func mixtralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if err := cfg.validateMixtral(); err != nil {
+	if err := cfg.ValidateMixtral(); err != nil {
 		return nil, nil, err
 	}
 	scaling, err := parseRopeScaling(cfg.RopeScaling)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(mixtral): %w", err)
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	normTopK := true // HF MixtralConfig default
 	if cfg.NormTopKProb != nil {
 		normTopK = *cfg.NormTopKProb
@@ -50,7 +50,7 @@ func mixtralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		layerIsGlobal:  nil,
 		RoPELocalBase:  cfg.RoPEGlobalBase,
 		RoPEGlobalBase: cfg.RoPEGlobalBase,
-		RotaryDim:      cfg.rotaryDim(),
+		RotaryDim:      cfg.RotaryDim(),
 		ropeScaling:    scaling,
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load

@@ -1,0 +1,4 @@
+# github.com/townsendmerino/goinfer/backend/cuda [github.com/townsendmerino/goinfer/backend/cuda.test]
+./lora.go:172:3: declared and not used: complete
+FAIL	github.com/townsendmerino/goinfer/backend/cuda [build failed]
+FAIL

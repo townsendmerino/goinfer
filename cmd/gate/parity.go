@@ -192,7 +192,7 @@ func parseGateRun(raw string) (*regexp.Regexp, error) {
 	}
 	re, err := regexp.Compile(raw)
 	if err != nil {
-		return nil, fmt.Errorf("GATE_RUN=%q does not compile as a regexp: %v — refusing rather than silently running the full sweep", raw, err)
+		return nil, fmt.Errorf("GATE_RUN=%q does not compile as a regexp: %w — refusing rather than silently running the full sweep", raw, err)
 	}
 	return re, nil
 }

@@ -1,0 +1,22 @@
+=== RUN   TestLoRAUploadOOM_returnsEveryBuffer
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestLoRAUploadOOM_returnsEveryBuffer (1.93s)
+=== RUN   TestLoRAUploadOOM_afterAnAdapterIsBound
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestLoRAUploadOOM_afterAnAdapterIsBound (0.47s)
+=== RUN   TestLoRAUploadOOM_anyPanicReturnsTheBuffers
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    lora_cache_test.go:265: panic at allocation 2: 115 device allocations remain, want 114 (leaked 1)
+    lora_cache_test.go:265: panic at allocation 5: 119 device allocations remain, want 114 (leaked 5)
+    lora_cache_test.go:265: panic at allocation 20: 138 device allocations remain, want 114 (leaked 24)
+--- FAIL: TestLoRAUploadOOM_anyPanicReturnsTheBuffers (0.24s)
+FAIL
+ledger: 7 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	2.683s
+FAIL

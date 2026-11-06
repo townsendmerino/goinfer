@@ -13,7 +13,7 @@ import (
 // head is dropped (only num_hidden_layers load). The tensor schema is glm4moeTensorSchema. See
 // docs/completed/task-model-families-glm-granite.md.
 func glm4moeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if err := cfg.validateGlm4Moe(); err != nil {
+	if err := cfg.ValidateGlm4Moe(); err != nil {
 		return nil, nil, err
 	}
 	// GLM nests rope_theta + partial_rotary_factor inside rope_parameters
@@ -22,7 +22,7 @@ func glm4moeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(glm4_moe): %w", err)
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	rotaryDim := 0
 	if partialRotary > 0 && partialRotary < 1 {
 		rotaryDim = int(partialRotary * float64(hd))

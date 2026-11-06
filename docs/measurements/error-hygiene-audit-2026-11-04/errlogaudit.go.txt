@@ -1,0 +1,756 @@
+// errlogaudit is a type-aware census of error handling and output. One-off audit tool: it lives in a scratchpad.
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"go/ast"
+	"go/constant"
+	"go/token"
+	"go/types"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
+	"golang.org/x/tools/go/packages"
+)
+
+type Finding struct {
+	Kind  string `json:"kind"`
+	File  string `json:"file"`
+	Line  int    `json:"line"`
+	Col   int    `json:"col"`
+	Pkg   string `json:"pkg"`
+	Test  bool   `json:"test"`
+	Main  bool   `json:"main"`
+	Func  string `json:"fn,omitempty"`
+	Text  string `json:"text"`
+	Extra string `json:"extra,omitempty"`
+	Cond  string `json:"cond,omitempty"`
+}
+
+var (
+	root     string
+	all      = map[string]Finding{}
+	scanned  = map[string]bool{}
+	errIface = types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
+	lines    = map[string][]string{}
+)
+
+func srcLine(file string, n int) string {
+	ls, ok := lines[file]
+	if !ok {
+		b, err := os.ReadFile(file)
+		if err != nil {
+			return ""
+		}
+		ls = strings.Split(string(b), "\n")
+		lines[file] = ls
+	}
+	if n-1 < 0 || n-1 >= len(ls) {
+		return ""
+	}
+	s := strings.TrimSpace(ls[n-1])
+	if len(s) > 220 {
+		s = s[:220]
+	}
+	return s
+}
+
+func isErr(t types.Type) bool {
+	if t == nil {
+		return false
+	}
+	if _, isTuple := t.(*types.Tuple); isTuple {
+		return false
+	}
+	if b, ok := t.(*types.Basic); ok && b.Kind() == types.UntypedNil {
+		return false
+	}
+	return types.Implements(t, errIface)
+}
+
+type walker struct {
+	pkg   *packages.Package
+	fset  *token.FileSet
+	info  *types.Info
+	stack []ast.Node
+}
+
+func (w *walker) add(kind string, pos token.Pos, extra string) {
+	p := w.fset.Position(pos)
+	abs := p.Filename
+	if !strings.HasPrefix(abs, root+"/") {
+		return
+	}
+	rel := strings.TrimPrefix(abs, root+"/")
+	f := Finding{Kind: kind, File: rel, Line: p.Line, Col: p.Column, Pkg: w.pkg.PkgPath, Test: strings.HasSuffix(rel, "_test.go"),
+		Main: w.pkg.Name == "main", Text: srcLine(abs, p.Line), Extra: extra, Func: w.enclosingName(), Cond: w.enclosingCond()}
+	f.Pkg = strings.TrimSuffix(strings.Split(f.Pkg, " ")[0], "_test")
+	all[fmt.Sprintf("%s|%s|%d|%d", kind, rel, p.Line, p.Column)] = f
+}
+
+func (w *walker) enclosingName() string {
+	for i := len(w.stack) - 1; i >= 0; i-- {
+		if d, ok := w.stack[i].(*ast.FuncDecl); ok {
+			return d.Name.Name
+		}
+	}
+	return ""
+}
+
+// enclosingCond is the nearest enclosing if's condition in this function, for reading whether output is gated.
+func (w *walker) enclosingCond() string {
+	var conds []string
+	for i := len(w.stack) - 1; i >= 0; i-- {
+		switch n := w.stack[i].(type) {
+		case *ast.IfStmt:
+			conds = append(conds, w.exprText(n.Cond))
+		case *ast.FuncDecl, *ast.FuncLit:
+			return strings.Join(conds, " && ")
+		}
+	}
+	return strings.Join(conds, " && ")
+}
+
+func (w *walker) exprText(e ast.Expr) string {
+	p := w.fset.Position(e.Pos())
+	q := w.fset.Position(e.End())
+	ls := lines[p.Filename]
+	if ls == nil {
+		srcLine(p.Filename, 1)
+		ls = lines[p.Filename]
+	}
+	if p.Line == q.Line && p.Line-1 < len(ls) && q.Column-1 <= len(ls[p.Line-1]) {
+		return ls[p.Line-1][p.Column-1 : q.Column-1]
+	}
+	return "(multi-line)"
+}
+
+func (w *walker) callee(call *ast.CallExpr) (pkgPath, recv, name string) {
+	var id *ast.Ident
+	switch f := ast.Unparen(call.Fun).(type) {
+	case *ast.Ident:
+		id = f
+	case *ast.SelectorExpr:
+		id = f.Sel
+	default:
+		return
+	}
+	switch o := w.info.Uses[id].(type) {
+	case *types.Func:
+		if o.Pkg() != nil {
+			pkgPath = o.Pkg().Path()
+		}
+		name = o.Name()
+		if s, ok := o.Type().(*types.Signature); ok && s.Recv() != nil {
+			recv = types.TypeString(s.Recv().Type(), nil)
+		}
+	case *types.Builtin:
+		pkgPath, name = "builtin", o.Name()
+	}
+	return
+}
+
+func (w *walker) isDotError(e ast.Expr) bool {
+	c, ok := ast.Unparen(e).(*ast.CallExpr)
+	if !ok || len(c.Args) != 0 {
+		return false
+	}
+	s, ok := ast.Unparen(c.Fun).(*ast.SelectorExpr)
+	return ok && s.Sel.Name == "Error" && isErr(w.info.TypeOf(s.X))
+}
+
+func (w *walker) containsDotError(e ast.Expr) bool {
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		if x, ok := n.(ast.Expr); ok && w.isDotError(x) {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+var verbRe = regexp.MustCompile(`%(\[\d+\])?[+\-# 0]*(\*|\d+)?(\.(\*|\d+))?(\[\d+\])?([a-zA-Z%])`)
+
+// fmtVerbs maps each argument index (0-based, after the format) to its verb.
+func fmtVerbs(format string) map[int]byte {
+	out := map[int]byte{}
+	arg := 0
+	for _, m := range verbRe.FindAllStringSubmatch(format, -1) {
+		if m[6] == "%" {
+			continue
+		}
+		if m[2] == "*" {
+			arg++
+		}
+		if m[4] == "*" {
+			arg++
+		}
+		idx := m[5]
+		if idx == "" {
+			idx = m[1]
+		}
+		if idx != "" {
+			fmt.Sscanf(idx, "[%d]", &arg)
+			arg--
+		}
+		out[arg] = m[6][0]
+		arg++
+	}
+	return out
+}
+
+func (w *walker) constString(e ast.Expr) (string, bool) {
+	tv, ok := w.info.Types[e]
+	if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
+		return "", false
+	}
+	return constant.StringVal(tv.Value), true
+}
+
+// outputClass classifies a call as program output. writer is the Fprint target's text.
+func (w *walker) outputClass(call *ast.CallExpr) string {
+	pkg, recv, name := w.callee(call)
+	switch pkg {
+	case "fmt":
+		switch name {
+		case "Print", "Printf", "Println":
+			return "fmt.Print->stdout"
+		case "Fprint", "Fprintf", "Fprintln":
+			if len(call.Args) == 0 {
+				return ""
+			}
+			switch w.exprText(call.Args[0]) {
+			case "os.Stderr":
+				return "fmt.Fprint->stderr"
+			case "os.Stdout":
+				return "fmt.Fprint->stdout"
+			}
+		}
+	case "log":
+		if recv != "" {
+			return "log.Logger"
+		}
+		return "log.std"
+	case "log/slog":
+		return "slog"
+	case "builtin":
+		if name == "print" || name == "println" {
+			return "builtin-print"
+		}
+	case "os":
+		if recv == "*os.File" && strings.HasPrefix(name, "Write") {
+			if s, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr); ok {
+				switch w.exprText(s.X) {
+				case "os.Stderr":
+					return "os.Stderr.Write"
+				case "os.Stdout":
+					return "os.Stdout.Write"
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func (w *walker) usesObj(e ast.Node, objs map[types.Object]bool) bool {
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok {
+			if o := w.info.Uses[id]; o != nil && objs[o] {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+func (w *walker) errObjsIn(e ast.Node) map[types.Object]bool {
+	objs := map[types.Object]bool{}
+	ast.Inspect(e, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok {
+			if o := w.info.Uses[id]; o != nil {
+				if v, isVar := o.(*types.Var); isVar && isErr(v.Type()) {
+					objs[o] = true
+				}
+			}
+		}
+		return true
+	})
+	return objs
+}
+
+var logishName = regexp.MustCompile(`(?i)^(log|warn|debug|info|note|trace)f?(ln)?$|^(log|warn|debug|note|trace)[A-Z]`)
+
+func (w *walker) isLogCall(call *ast.CallExpr) string {
+	if c := w.outputClass(call); c != "" && c != "fmt.Print->stdout" && c != "fmt.Fprint->stdout" {
+		return c
+	}
+	if c := w.outputClass(call); c != "" {
+		return c
+	}
+	// a project helper named like a logger
+	switch f := ast.Unparen(call.Fun).(type) {
+	case *ast.Ident:
+		if logishName.MatchString(f.Name) {
+			return "helper:" + f.Name
+		}
+	case *ast.SelectorExpr:
+		if logishName.MatchString(f.Sel.Name) {
+			return "helper:" + f.Sel.Name
+		}
+	}
+	return ""
+}
+
+// logAndReturn looks at one statement list: a log call naming an error, then a return of that error, in the same list.
+func (w *walker) logAndReturn(list []ast.Stmt) {
+	for r, st := range list {
+		ret, ok := st.(*ast.ReturnStmt)
+		if !ok || len(ret.Results) == 0 {
+			continue
+		}
+		objs := map[types.Object]bool{}
+		for _, res := range ret.Results {
+			if !isErr(w.info.TypeOf(res)) {
+				continue
+			}
+			for o := range w.errObjsIn(res) {
+				objs[o] = true
+			}
+		}
+		if len(objs) == 0 {
+			continue
+		}
+		for i := 0; i < r; i++ {
+			es, ok := list[i].(*ast.ExprStmt)
+			if !ok {
+				continue
+			}
+			call, ok := ast.Unparen(es.X).(*ast.CallExpr)
+			if !ok {
+				continue
+			}
+			class := w.isLogCall(call)
+			if class == "" {
+				continue
+			}
+			if w.usesObj(call, objs) {
+				w.add("log-and-return", call.Pos(), class)
+			}
+		}
+	}
+}
+
+func (w *walker) visit(n ast.Node) {
+	switch x := n.(type) {
+	case *ast.CallExpr:
+		pkg, recv, name := w.callee(x)
+		if pkg == "fmt" && name == "Errorf" && len(x.Args) >= 1 {
+			w.add("errorf", x.Pos(), "")
+			format, ok := w.constString(x.Args[0])
+			if ok {
+				verbs := fmtVerbs(format)
+				hasW := false
+				for _, v := range verbs {
+					if v == 'w' {
+						hasW = true
+					}
+				}
+				if hasW {
+					w.add("errorf-wrap", x.Pos(), format)
+				}
+				for i, a := range x.Args[1:] {
+					v, has := verbs[i]
+					if !has {
+						continue
+					}
+					if isErr(w.info.TypeOf(a)) && v != 'w' {
+						w.add("errorf-nowrap", a.Pos(), fmt.Sprintf("%%%c %s", v, format))
+					}
+					if w.isDotError(a) {
+						w.add("errorf-dotError", a.Pos(), format)
+					}
+				}
+				if len(verbs) == 0 {
+					w.add("errorf-noargs", x.Pos(), format)
+				}
+			} else {
+				w.add("errorf-nonconst", x.Pos(), "")
+			}
+		}
+		if pkg == "errors" && name == "New" && len(x.Args) == 1 {
+			if w.containsDotError(x.Args[0]) {
+				w.add("errorsnew-dotError", x.Pos(), "")
+			}
+			if c, ok := ast.Unparen(x.Args[0]).(*ast.CallExpr); ok {
+				if p, _, nm := w.callee(c); p == "fmt" && nm == "Sprintf" {
+					w.add("errorsnew-sprintf", x.Pos(), "")
+				}
+			}
+			if !w.inTopLevelVar() {
+				w.add("errorsnew-inline", x.Pos(), "")
+			}
+		}
+		if pkg == "errors" && (name == "Is" || name == "As" || name == "AsType") {
+			w.add("errors-"+name, x.Pos(), "")
+		}
+		if pkg == "strings" && len(x.Args) > 0 {
+			switch name {
+			case "Contains", "HasPrefix", "HasSuffix", "EqualFold", "Index", "Count", "ContainsAny", "Cut", "TrimPrefix", "TrimSuffix", "Split", "Fields", "ReplaceAll":
+				for _, a := range x.Args {
+					if w.isDotError(a) || w.isErrStringVar(a) {
+						w.add("err-string-match", x.Pos(), "strings."+name)
+					}
+				}
+			}
+		}
+		if (pkg == "regexp") && recv != "" && len(x.Args) > 0 {
+			for _, a := range x.Args {
+				if w.isDotError(a) {
+					w.add("err-string-match", x.Pos(), "regexp."+name)
+				}
+			}
+		}
+		if pkg == "os" && name == "Exit" {
+			w.add("os-exit", x.Pos(), "")
+		}
+		if pkg == "log" && (strings.HasPrefix(name, "Fatal") || strings.HasPrefix(name, "Panic")) {
+			w.add("log-fatal", x.Pos(), name)
+		}
+		if c := w.outputClass(x); c != "" {
+			msg := ""
+			for _, a := range x.Args {
+				if s, ok := w.constString(a); ok {
+					msg = s
+					break
+				}
+			}
+			w.add("output", x.Pos(), c+"\t"+msg)
+		}
+	case *ast.BinaryExpr:
+		if x.Op == token.EQL || x.Op == token.NEQ {
+			xNil := w.isNil(x.X)
+			yNil := w.isNil(x.Y)
+			if !xNil && !yNil && isErr(w.info.TypeOf(x.X)) && isErr(w.info.TypeOf(x.Y)) {
+				w.add("err-eq-compare", x.Pos(), w.exprText(x.X)+" "+x.Op.String()+" "+w.exprText(x.Y))
+			}
+			if w.isDotError(x.X) || w.isDotError(x.Y) || w.isErrStringVar(x.X) || w.isErrStringVar(x.Y) {
+				w.add("err-string-match", x.Pos(), "==")
+			}
+		}
+	case *ast.TypeAssertExpr:
+		if x.Type != nil && isErr(w.info.TypeOf(x.X)) {
+			w.add("err-type-assert", x.Pos(), w.exprText(x.Type))
+		}
+	case *ast.SwitchStmt:
+		if x.Tag != nil {
+			if w.isDotError(x.Tag) {
+				w.add("err-string-match", x.Pos(), "switch")
+			} else if isErr(w.info.TypeOf(x.Tag)) {
+				w.add("err-eq-compare", x.Pos(), "switch "+w.exprText(x.Tag))
+			}
+		}
+	case *ast.TypeSwitchStmt:
+		var e ast.Expr
+		switch a := x.Assign.(type) {
+		case *ast.ExprStmt:
+			e = a.X
+		case *ast.AssignStmt:
+			if len(a.Rhs) == 1 {
+				e = a.Rhs[0]
+			}
+		}
+		if ta, ok := e.(*ast.TypeAssertExpr); ok && isErr(w.info.TypeOf(ta.X)) {
+			w.add("err-type-switch", x.Pos(), "")
+		}
+	case *ast.BlockStmt:
+		w.logAndReturn(x.List)
+	case *ast.CaseClause:
+		w.logAndReturn(x.Body)
+	case *ast.IfStmt:
+		w.swallow(x)
+	}
+}
+
+// isErrStringVar: an identifier defined in this function as x := err.Error().
+func (w *walker) isErrStringVar(e ast.Expr) bool {
+	id, ok := ast.Unparen(e).(*ast.Ident)
+	if !ok {
+		return false
+	}
+	o := w.info.Uses[id]
+	if o == nil {
+		return false
+	}
+	found := false
+	for i := len(w.stack) - 1; i >= 0 && !found; i-- {
+		var body *ast.BlockStmt
+		switch f := w.stack[i].(type) {
+		case *ast.FuncDecl:
+			body = f.Body
+		case *ast.FuncLit:
+			body = f.Body
+		}
+		if body == nil {
+			continue
+		}
+		ast.Inspect(body, func(n ast.Node) bool {
+			if a, ok := n.(*ast.AssignStmt); ok && len(a.Lhs) == len(a.Rhs) {
+				for j, l := range a.Lhs {
+					if lid, ok := l.(*ast.Ident); ok && w.info.Defs[lid] == o && w.isDotError(a.Rhs[j]) {
+						found = true
+					}
+				}
+			}
+			return !found
+		})
+		break
+	}
+	return found
+}
+
+func (w *walker) inTopLevelVar() bool {
+	for i := len(w.stack) - 1; i >= 0; i-- {
+		switch w.stack[i].(type) {
+		case *ast.FuncDecl, *ast.FuncLit:
+			return false
+		}
+	}
+	return true
+}
+
+func (w *walker) isNil(e ast.Expr) bool {
+	tv, ok := w.info.Types[e]
+	return ok && tv.IsNil()
+}
+
+// swallow: if err != nil { return ..., nil } in a function whose last result is an error.
+func (w *walker) swallow(x *ast.IfStmt) {
+	b, ok := x.Cond.(*ast.BinaryExpr)
+	if !ok || b.Op != token.NEQ {
+		return
+	}
+	var ev ast.Expr
+	if w.isNil(b.Y) && isErr(w.info.TypeOf(b.X)) {
+		ev = b.X
+	} else {
+		return
+	}
+	if len(x.Body.List) != 1 {
+		return
+	}
+	ret, ok := x.Body.List[0].(*ast.ReturnStmt)
+	if !ok || len(ret.Results) == 0 {
+		return
+	}
+	last := ret.Results[len(ret.Results)-1]
+	if !w.isNil(last) || !isErr(w.resultType()) {
+		return
+	}
+	for _, res := range ret.Results {
+		if w.usesObj(res, w.errObjsIn(ev)) {
+			return
+		}
+	}
+	w.add("err-swallowed", x.Pos(), w.exprText(ev))
+}
+
+func (w *walker) resultType() types.Type {
+	for i := len(w.stack) - 1; i >= 0; i-- {
+		var ft *ast.FuncType
+		switch f := w.stack[i].(type) {
+		case *ast.FuncDecl:
+			ft = f.Type
+		case *ast.FuncLit:
+			ft = f.Type
+		}
+		if ft != nil {
+			if ft.Results == nil || len(ft.Results.List) == 0 {
+				return nil
+			}
+			return w.info.TypeOf(ft.Results.List[len(ft.Results.List)-1].Type)
+		}
+	}
+	return nil
+}
+
+func (w *walker) file(f *ast.File) {
+	w.stack = w.stack[:0]
+	ast.Inspect(f, func(n ast.Node) bool {
+		if n == nil {
+			w.stack = w.stack[:len(w.stack)-1]
+			return true
+		}
+		w.visit(n)
+		w.stack = append(w.stack, n)
+		return true
+	})
+}
+
+// typeLevel: package-level sentinels and error types.
+func typeLevel(p *packages.Package, fset *token.FileSet) {
+	scope := p.Types.Scope()
+	for _, name := range scope.Names() {
+		o := scope.Lookup(name)
+		pos := fset.Position(o.Pos())
+		if !strings.HasPrefix(pos.Filename, root+"/") {
+			continue
+		}
+		rel := strings.TrimPrefix(pos.Filename, root+"/")
+		base := Finding{File: rel, Line: pos.Line, Col: pos.Column, Pkg: strings.TrimSuffix(strings.Split(p.PkgPath, " ")[0], "_test"), Test: strings.HasSuffix(rel, "_test.go"), Main: p.Name == "main", Text: srcLine(pos.Filename, pos.Line)}
+		switch t := o.(type) {
+		case *types.Var:
+			if types.Identical(t.Type(), types.Universe.Lookup("error").Type()) {
+				f := base
+				f.Kind, f.Extra = "sentinel", name
+				all[fmt.Sprintf("%s|%s|%d|%d", f.Kind, rel, pos.Line, pos.Column)] = f
+			}
+		case *types.TypeName:
+			if t.IsAlias() {
+				continue
+			}
+			named := t.Type()
+			if !types.Implements(named, errIface) && !types.Implements(types.NewPointer(named), errIface) {
+				continue
+			}
+			if _, isIface := named.Underlying().(*types.Interface); isIface {
+				continue
+			}
+			f := base
+			f.Kind, f.Extra = "error-type", name
+			hasUnwrap := hasMethod(named, "Unwrap")
+			hasIs := hasMethod(named, "Is")
+			errField := ""
+			if s, ok := named.Underlying().(*types.Struct); ok {
+				for i := range s.NumFields() {
+					if isErr(s.Field(i).Type()) {
+						errField = s.Field(i).Name()
+					}
+				}
+			}
+			f.Extra = fmt.Sprintf("%s unwrap=%v is=%v errfield=%q", name, hasUnwrap, hasIs, errField)
+			all[fmt.Sprintf("%s|%s|%d|%d", f.Kind, rel, pos.Line, pos.Column)] = f
+			if errField != "" && !hasUnwrap {
+				g := f
+				g.Kind = "errtype-no-unwrap"
+				all[fmt.Sprintf("%s|%s|%d|%d", g.Kind, rel, pos.Line, pos.Column)] = g
+			}
+		}
+	}
+}
+
+func hasMethod(t types.Type, name string) bool {
+	ms := types.NewMethodSet(types.NewPointer(t))
+	for i := range ms.Len() {
+		if ms.At(i).Obj().Name() == name {
+			return true
+		}
+	}
+	return false
+}
+
+type variant struct {
+	name, dir string
+	tags      string
+	env       []string
+	patterns  []string
+}
+
+func main() {
+	rootFlag := flag.String("root", "", "repo root")
+	out := flag.String("out", "", "findings json")
+	fixture := flag.Bool("fixture", false, "self-test on one directory")
+	flag.Parse()
+	root = strings.TrimRight(*rootFlag, "/")
+	var vs []variant
+	if *fixture {
+		vs = []variant{{name: "fixture", dir: root, patterns: []string{"./..."}}}
+	} else {
+		linux := []string{"GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0"}
+		vs = []variant{
+			{name: "root", dir: root, patterns: []string{"./..."}},
+			{name: "root+tags", dir: root, tags: "realckpt goinfer_testhooks", patterns: []string{"./..."}},
+			{name: "root/linux", dir: root, tags: "realckpt goinfer_testhooks", env: linux, patterns: []string{"./..."}},
+			{name: "metal", dir: root + "/backend/metal", patterns: []string{"./..."}},
+			{name: "metal+tags", dir: root + "/backend/metal", tags: "metal goinfer_testhooks", patterns: []string{"./..."}},
+			{name: "webgpu", dir: root + "/backend/webgpu", tags: "gpu goinfer_testhooks", patterns: []string{"./..."}},
+			{name: "cuda", dir: root + "/backend/cuda", tags: "cuda goinfer_testhooks", env: linux, patterns: []string{"./..."}},
+			{name: "demo", dir: root + "/demo/agent", patterns: []string{"./..."}},
+			{name: "site", dir: root + "/apps/site", patterns: []string{"./..."}},
+			{name: "sdktest", dir: root + "/apps/sdktest", patterns: []string{"./..."}},
+		}
+	}
+	t0 := time.Now()
+	for _, v := range vs {
+		start := time.Now()
+		fmt.Fprintf(os.Stderr, "[%s] start %s\n", time.Since(t0).Round(time.Second), v.name)
+		cfg := &packages.Config{
+			Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedTypes | packages.NeedTypesSizes | packages.NeedSyntax | packages.NeedTypesInfo,
+			Dir:  v.dir, Tests: true, Env: append(os.Environ(), v.env...),
+		}
+		if v.tags != "" {
+			cfg.BuildFlags = []string{"-tags=" + v.tags}
+		}
+		pkgs, err := packages.Load(cfg, v.patterns...)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[%s] %s LOAD ERROR: %v\n", time.Since(t0).Round(time.Second), v.name, err)
+			continue
+		}
+		bad, files := 0, 0
+		for _, p := range pkgs {
+			if len(p.Errors) > 0 {
+				bad++
+				if bad <= 4 {
+					fmt.Fprintf(os.Stderr, "    package error %s: %.170v\n", p.ID, p.Errors[0])
+				}
+			}
+			if p.TypesInfo == nil || p.Types == nil {
+				continue
+			}
+			w := &walker{pkg: p, fset: p.Fset, info: p.TypesInfo}
+			for _, f := range p.Syntax {
+				name := p.Fset.Position(f.Pos()).Filename
+				if !strings.HasPrefix(name, root+"/") || ast.IsGenerated(f) {
+					continue
+				}
+				files++
+				if len(p.Errors) == 0 {
+					scanned[strings.TrimPrefix(name, root+"/")] = true
+				}
+				w.file(f)
+			}
+			typeLevel(p, p.Fset)
+		}
+		fmt.Fprintf(os.Stderr, "[%s] done %s in %s: %d packages (%d with errors), %d file visits, %d distinct files clean, %d findings\n",
+			time.Since(t0).Round(time.Second), v.name, time.Since(start).Round(time.Second), len(pkgs), bad, files, len(scanned), len(all))
+	}
+	var list []Finding
+	for _, f := range all {
+		list = append(list, f)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].File != list[j].File {
+			return list[i].File < list[j].File
+		}
+		return list[i].Line < list[j].Line
+	})
+	b, _ := json.Marshal(list)
+	if err := os.WriteFile(*out, b, 0o644); err != nil {
+		panic(err)
+	}
+	var sc []string
+	for f := range scanned {
+		sc = append(sc, f)
+	}
+	sort.Strings(sc)
+	b, _ = json.Marshal(sc)
+	_ = os.WriteFile(filepath.Join(filepath.Dir(*out), filepath.Base(*out)+".scanned"), b, 0o644)
+}

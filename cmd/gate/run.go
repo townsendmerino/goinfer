@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -194,7 +195,7 @@ func runCell(c cell, cfg *gateConfig, res *results, logDir string) cellResult {
 
 	rc := 0
 	if waitErr != nil {
-		if ee, ok := waitErr.(*exec.ExitError); ok {
+		if ee, ok := errors.AsType[*exec.ExitError](waitErr); ok {
 			rc = ee.ExitCode()
 		} else {
 			rc = -1
