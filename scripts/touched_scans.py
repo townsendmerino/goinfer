@@ -63,10 +63,13 @@ def _matches(kind, arg, path):
 SCANS = [
     # decoder
     Scan("decoder", "TestDispatchCensus", NT("decoder")),
-    # MM1's decision census pins every fit decision: a change to the fit code or the machine zoo runs it.
+    # MM1's decision census pins every fit decision: a change to the fit code, the machine zoo or a fixture it reads runs it. Every
+    # censusFixtures entry has "tiny" in its name (TestCensusFixtures_areTheCommittedOnes).
     Scan("decoder", "TestDecisionCensus", F("decoder/fitguard.go", "decoder/fitplan.go", "decoder/fitquery.go", "decoder/prefill_budget.go",
                                             "decoder/weightbytes.go", "decoder/residentneed.go", "decoder/kvresolve.go", "decoder/kvpolicy.go",
-                                            "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/mm1_census.json.gz") +
+                                            "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/mm1_census.json.gz",
+                                            "decoder/mm1_census_fixtures_test.go", "testdata/*tiny*", "decoder/testdata/*tiny*",
+                                            "decoder/selftestdata/*tiny*", "internal/vision/testdata/*tiny*") +
          NT("internal/runtime/mem")),
     # The census reads a declared fixture list, which must match the committed fixtures: a fixture added or removed runs it.
     Scan("decoder", "TestCensusFixtures_areTheCommittedOnes", F("decoder/mm1_census_fixtures_test.go", "testdata/*", "decoder/testdata/*",

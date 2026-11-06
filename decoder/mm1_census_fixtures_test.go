@@ -1,9 +1,12 @@
 package decoder
 
 import (
+	"fmt"
 	"os/exec"
 	"path"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -85,59 +88,68 @@ var censusFixtures = []string{
 	"testdata/spark2-5-tiny",
 }
 
-// committedCensusFixtures is every committed file under the census's roots that would be a fixture by censusFixtures' rule.
-func committedCensusFixtures(t *testing.T) []string {
+// censusFixtureRoots are the directories, from this package, that hold the census's fixtures.
+var censusFixtureRoots = []string{"../testdata", "testdata", "selftestdata", "../internal/vision/testdata"}
+
+// ggufShard matches a split GGUF's shard name: its number and the shard count.
+var ggufShard = regexp.MustCompile(`-(\d{5})-of-(\d{5})\.gguf$`)
+
+// committedCensusFixtures is every committed fixture under censusFixtureRoots, at any depth, by censusFixtures' rule: a directory
+// holding a config.json and a .safetensors file, and a .gguf file, a split one by its first shard. It also returns the tracked files
+// that the working tree is missing. It skips without a git checkout.
+func committedCensusFixtures(t *testing.T) (fixtures, deleted []string) {
 	t.Helper()
-	roots := []string{"../testdata", "testdata", "selftestdata", "../internal/vision/testdata"}
-	out, err := exec.Command("git", append([]string{"ls-files", "--"}, roots...)...).Output()
-	if err != nil {
-		t.Skipf("git ls-files: %v: this check needs a git checkout", err)
+	lsFiles := func(flags ...string) []string {
+		out, err := exec.Command("git", append(append([]string{"ls-files", "-z"}, flags...), append([]string{"--"}, censusFixtureRoots...)...)...).Output()
+		if err != nil {
+			t.Skipf("git ls-files: %v: this check needs a git checkout", err)
+		}
+		return strings.FieldsFunc(string(out), func(r rune) bool { return r == 0 })
 	}
-	type entry struct{ config, weights, file bool }
-	entries := map[string]*entry{}
-	for _, f := range strings.Fields(string(out)) {
-		for _, root := range roots {
-			rest, ok := strings.CutPrefix(f, root+"/")
-			if !ok {
-				continue
+	files := lsFiles()
+	type dir struct{ config, weights bool }
+	dirs := map[string]*dir{}
+	for _, f := range files {
+		d, base := path.Split(f)
+		if dirs[d] == nil {
+			dirs[d] = &dir{}
+		}
+		switch m := ggufShard.FindStringSubmatch(base); {
+		case base == "config.json":
+			dirs[d].config = true
+		case path.Ext(base) == ".safetensors":
+			dirs[d].weights = true
+		case m != nil && m[1] == "00001":
+			fixtures = append(fixtures, f)
+			n, _ := strconv.Atoi(m[2])
+			for k := 2; k <= n; k++ {
+				if shard := strings.TrimSuffix(f, m[0]) + fmt.Sprintf("-%05d-of-%s.gguf", k, m[2]); !slices.Contains(files, shard) {
+					t.Errorf("%s is committed and its shard %s is not", f, shard)
+				}
 			}
-			name, inside, isDir := strings.Cut(rest, "/")
-			p := root + "/" + name
-			e := entries[p]
-			if e == nil {
-				e = &entry{}
-				entries[p] = e
-			}
-			switch {
-			case !isDir:
-				e.file = true
-			case inside == "config.json":
-				e.config = true
-			case !strings.Contains(inside, "/") && path.Ext(inside) == ".safetensors":
-				e.weights = true
-			}
+		case m == nil && path.Ext(base) == ".gguf":
+			fixtures = append(fixtures, f)
 		}
 	}
-	var got []string
-	for p, e := range entries {
-		if (e.config && e.weights) || (e.file && strings.HasSuffix(p, ".gguf")) {
-			got = append(got, p)
+	for d, e := range dirs {
+		if e.config && e.weights {
+			fixtures = append(fixtures, strings.TrimSuffix(d, "/"))
 		}
 	}
-	const split = "../testdata/gguf-split/glm-tiny-00001-of-00004.gguf"
-	if slices.Contains(strings.Fields(string(out)), split) {
-		got = append(got, split)
-	}
-	slices.Sort(got)
-	return got
+	slices.Sort(fixtures)
+	return fixtures, lsFiles("--deleted")
 }
 
 // The census reads a declared list so that a box's extra fixtures cannot move it. A committed fixture left off the list would
-// leave the census quietly, and a listed one that is not committed would be red on CI only.
+// leave the census quietly, and a listed one that is not committed would be red on CI only. scripts/touched_scans.py runs the
+// census when a file under a fixture whose name has "tiny" in it changes, so every fixture's does.
 func TestCensusFixtures_areTheCommittedOnes(t *testing.T) {
-	committed := committedCensusFixtures(t)
+	committed, deleted := committedCensusFixtures(t)
 	if len(committed) < 20 {
 		t.Fatalf("git lists %d census fixtures: this read the wrong tree", len(committed))
+	}
+	if !slices.IsSorted(censusFixtures) || len(slices.Compact(slices.Clone(censusFixtures))) != len(censusFixtures) {
+		t.Errorf("censusFixtures is not sorted, or lists a fixture twice")
 	}
 	for _, p := range committed {
 		if !slices.Contains(censusFixtures, p) {
@@ -147,6 +159,14 @@ func TestCensusFixtures_areTheCommittedOnes(t *testing.T) {
 	for _, p := range censusFixtures {
 		if !slices.Contains(committed, p) {
 			t.Errorf("censusFixtures lists %s, which is not committed: CI does not have it", p)
+		}
+		if !strings.Contains(path.Base(p), "tiny") {
+			t.Errorf("censusFixtures lists %s, whose name has no \"tiny\": touched_scans.py would not run the census when it changes", p)
+		}
+	}
+	for _, f := range deleted {
+		if slices.ContainsFunc(censusFixtures, func(p string) bool { return f == p || strings.HasPrefix(f, p+"/") || path.Ext(f) == ".gguf" }) {
+			t.Errorf("%s is committed and missing from the working tree, so the census here is not CI's", f)
 		}
 	}
 }
