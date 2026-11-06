@@ -74,3 +74,8 @@ The bar was 64 MiB. The 1.5B misses it by 4 MiB (the PARKED band) and **the 7B, 
 - **C6:** `gate identity -backend cuda be595d7fe 201a1f75d` (`identity.log`), 16:46:43 to 16:52:11 PST: **29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN**, GREEN. (The "before" servers were built at `6ab62e5b2`; main had moved to `be595d7fe` by the identity run, by docs and other PRs.)
 
 **Verdict:** the CUDA half of MEM6 is built and gated at tier 0; the `RssAnon` return gate is met on the 1.5B and PARKED on the 7B. The ledger row says so. Not covered: Gemma 4 E2B (its cell is not run here; its per-pass PLE block `pleHost` is allocated fresh each pass and was not changed), a CPU cell, Metal (done 2026-10-22).
+
+## Decision, 2026-11-05 17:43 (coordinator): PARKED stands
+
+The 7B stays PARKED at +81 MiB against the 64 MiB bar. The bar does not move and no lever is pulled; the PR stays open, marked PARKED in its title and in the ledger row. It comes back after D8b with a mechanism, not a new bar. The levers and what each costs, so the owner can choose: (1) a narrower embedding pass: less host staging, slower prefill; (2) release `xhostBuf` when a prefill ends: the held block goes, the next long prompt re-allocates it; (3) `debug.FreeOSMemory` after a long prefill: returns the slab's garbage, at the cost of a forced-GC pause on the request path.
+
