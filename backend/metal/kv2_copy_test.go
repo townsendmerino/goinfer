@@ -196,7 +196,8 @@ func TestKV2_copyKVExact(t *testing.T) {
 var chainSkipLogged bool
 
 // TestKVPages_shareByReference is KV5-5's G3b and G1a's second slot on Metal: slot 0 prefills a 640-row preamble and slots 1 and 2
-// take it by CopyKV, by reference, so the pool holds it once (its own count, kvBlocksInUse, drops by the 20 blocks the copies freed).
+// take it by CopyKV, by reference, so the pool holds it once (its own count, kvBlocksInUse, is the preamble's 10 blocks after the
+// copies, against 30 when each slot prefills it).
 // Each slot then prefills its own suffix from 640 and decodes. Then slots 0 and 1 rewind into blocks the others still share, by every
 // writer in turn (a prefill, the step, ForwardBatch, the verify, UploadKV, the greedy chain across a block edge, a decode), each a copy
 // on write. Every logit, and every slot's K/V over its own history read through its table after each write, equals the reference: a
@@ -236,7 +237,7 @@ func TestKVPages_shareByReference(t *testing.T) {
 						}
 					}
 				}
-				held := before - r.kvBlocksInUse()
+				held := r.kvBlocksInUse() - before
 				for s := range 3 {
 					bind(s)
 					add(a.PrefillLast(context.Background(), kv2Embs(r, suffix, uint32(20+s)), pre))
@@ -339,8 +340,8 @@ func TestKVPages_shareByReference(t *testing.T) {
 			}
 			ref, refKV, refHeld := run(false, false)
 			got, gotKV, held := run(true, false)
-			if refHeld != 0 || held != 2*pre/decoder.KVBlockRows {
-				t.Errorf("sharing freed %d blocks (no sharing: %d); want %d, the preamble held once", held, refHeld, 2*pre/decoder.KVBlockRows)
+			if want := pre / decoder.KVBlockRows; held != want || refHeld != 3*want {
+				t.Errorf("the preamble takes %d blocks shared (%d unshared); want %d, held once (%d)", held, refHeld, want, 3*want)
 			}
 			// The reference prefilled the preamble on slots 1 and 2 as well, so its rows are the shared run's minus those two prefills.
 			ref = append(ref[:1], ref[3:]...)
@@ -361,7 +362,8 @@ func TestKVPages_shareByReference(t *testing.T) {
 
 // TestKVPages_G3bRealPreamble is KV5-5's G3b on a real checkpoint (GOINFER_METAL_MC3=1, the 1.5B by default; tier 1, under the
 // exclusive lock): four conversations share a 16,384-token preamble, prefilled once and taken by CopyKV, by reference. The pool holds it
-// once (its own count, kvBlocksInUse, falls by the 768 blocks the three copies freed), and each conversation's 16 greedy tokens after
+// once (its own count, kvBlocksInUse, stays at the preamble's 256 blocks across the three copies, and each conversation then takes only
+// the blocks its own tail writes), and each conversation's 16 greedy tokens after
 // its own 64-token suffix equal that conversation run alone on a slot of its own, token for token. Both arms prefill in the same
 // 1,024-row passes, so the comparison is of sharing alone.
 func TestKVPages_G3bRealPreamble(t *testing.T) {
@@ -424,8 +426,8 @@ func TestKVPages_G3bRealPreamble(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	freed := before - r.kvBlocksInUse()
-	progress(fmt.Sprintf("preamble shared: %d blocks freed, %d in use", freed, r.kvBlocksInUse()))
+	shared := r.kvBlocksInUse()
+	progress(fmt.Sprintf("preamble shared: %d blocks in use before the copies, %d after", before, shared))
 	for s := range 4 {
 		bind(s)
 		got := greedy(prefill(suffixes[s], pre), pre+suffix)
@@ -433,8 +435,10 @@ func TestKVPages_G3bRealPreamble(t *testing.T) {
 			t.Errorf("conversation %d: %v with the preamble shared, %v alone", s, got, alone[s])
 		}
 	}
-	if want := 3 * pre / decoder.KVBlockRows; freed != want {
-		t.Errorf("sharing the preamble freed %d blocks, want %d: it is not held once", freed, want)
+	tail := kvBlocksFor(pre+suffix+gen) - pre/decoder.KVBlockRows
+	if want, end := pre/decoder.KVBlockRows, r.kvBlocksInUse(); before != want || shared != want || end != want+4*tail {
+		t.Errorf("blocks in use: %d before the copies, %d after, %d at the end; want %d, %d, %d: the preamble is not held once",
+			before, shared, end, want, want, want+4*tail)
 	}
 	progress("done")
 }

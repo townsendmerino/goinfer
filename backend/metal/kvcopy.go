@@ -13,8 +13,8 @@ var _ decoder.ResidentKVCopier = (*metalResident)(nil)
 
 // CopyKV (decoder.ResidentKVCopier) makes rows [start, end) of slot dst those of slot src, by reference (KV4a-2's rule): each of dst's
 // table entries in the range names src's block for it, counted in kvRefs, and the block dst held there is released. No row moves; a
-// slot that later writes into a block another slot also names first takes its own (kvWrite). It declines rows src does not hold. Tables are read when a command buffer runs,
-// so nothing may be in flight: the executor and any open chain are stopped first, as useKVSlot does.
+// slot that later writes into a block another slot also names first takes its own (kvWrite). It declines a range src holds no block for, or a src
+// whose blocks went to make room. Tables are read when a command buffer runs, so nothing may be in flight: the executor and any open chain are stopped first, as useKVSlot does.
 func (a *metalResident) CopyKV(src, dst, start, end int) error {
 	r := a.r
 	n := r.kvSlotCount()
@@ -35,8 +35,13 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 	if start == end {
 		return nil
 	}
-	if held := r.kvReusable(src, end); held < end {
-		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d holds no rows up to %d (its blocks were released, or it never wrote them)", src, end)}
+	if st := &r.kvSlotSt[src]; st.released || st.stopped {
+		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's blocks were released or reclaimed to make room", src)}
+	}
+	for b := start / decoder.KVBlockRows; b < end/decoder.KVBlockRows; b++ {
+		if *r.kvRow(src, b) == 0 {
+			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d holds no block for rows from %d", src, b*decoder.KVBlockRows)}
+		}
 	}
 	r.stopExec()
 	for b := start / decoder.KVBlockRows; b < end/decoder.KVBlockRows; b++ {
@@ -54,7 +59,7 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 		st.released, st.stopped = false, false
 	}
 	if start <= st.valid || start == 0 {
-		st.valid = end
+		st.valid = min(end, max(r.kvSlotSt[src].valid, start))
 	}
 	r.kvUseTick++
 	st.use = r.kvUseTick
