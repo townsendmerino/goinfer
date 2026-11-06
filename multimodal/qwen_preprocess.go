@@ -52,8 +52,11 @@ func QwenDefaultPreprocess() QwenPreprocessConfig {
 // while a stripped checkpoint still works on the standard defaults.
 func LoadQwenPreprocessConfig(dir string) (QwenPreprocessConfig, error) {
 	cfg := QwenDefaultPreprocess()
-	raw, err := os.ReadFile(filepath.Join(dir, "preprocessor_config.json"))
+	raw, found, err := readOptionalConfig(dir, "preprocessor_config.json")
 	if err != nil {
+		return cfg, fmt.Errorf("multimodal(qwen): %w", err)
+	}
+	if !found {
 		return cfg, nil // no file: standard Qwen2.5-VL defaults
 	}
 	var pc struct {

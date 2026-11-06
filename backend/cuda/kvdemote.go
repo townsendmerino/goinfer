@@ -4,9 +4,9 @@ package cuda
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // An idle conversation's rows move to pinned host memory when the pool releases its blocks, and come back when it returns
@@ -44,7 +44,7 @@ func (r *cudaResident) kvDemote(s, taker int) {
 		return
 	}
 	if r.kvFloor[s] > 0 {
-		fmt.Fprintf(os.Stderr, "cuda: KV pool: slot %d's rows not kept in host memory: its upload holds rows only for prefixes of at least %d\n", s, r.kvFloor[s])
+		logs.Warnf("cuda: KV pool: slot %d's rows not kept in host memory: its upload holds rows only for prefixes of at least %d", s, r.kvFloor[s])
 		return
 	}
 	if !r.kvHostReserve(bytes, s, taker) {
@@ -60,13 +60,13 @@ func (r *cudaResident) kvDemote(s, taker int) {
 	}
 	if err != nil {
 		r.kvHost.Release(bytes)
-		fmt.Fprintf(os.Stderr, "cuda: KV pool: slot %d's rows not kept in host memory: %v\n", s, err)
+		logs.Warnf("cuda: KV pool: slot %d's rows not kept in host memory: %v", s, err)
 		return
 	}
 	r.kvDropDemoted(s)
 	r.kvDemoted[s] = snap
 	r.kvHost.Kept()
-	fmt.Fprintf(os.Stderr, "cuda: KV pool: kept slot %d's %d rows in host memory (%d MiB)\n", s, end, bytes>>20)
+	logs.Debugf("cuda: KV pool: kept slot %d's %d rows in host memory (%d MiB)", s, end, bytes>>20)
 }
 
 // kvHostReserve charges bytes for slot s's copy: the longest idle copies go first, never the bound slot's, taker's or a copy's source, and then

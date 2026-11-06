@@ -3,6 +3,7 @@ package constrain
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -53,7 +54,7 @@ func TemplateFromSchema(schema []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("constrain: parse schema: %w", err)
 	}
-	if _, err := dec.Token(); err != io.EOF {
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return "", fmt.Errorf("constrain: parse schema: unexpected data after the top-level value")
 	}
 	n, err := templateNode(doc, 0)

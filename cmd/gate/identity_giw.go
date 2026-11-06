@@ -189,7 +189,7 @@ func buildIdentityPrequant(o identityOpts, wd string, s *identitySide) error {
 	_ = os.WriteFile(log, append([]byte("go "+strings.Join(args, " ")+"\n"), out...), 0o644)
 	if err != nil {
 		s.Log = log
-		return fmt.Errorf("go build ./cmd/prequant: %v", err)
+		return fmt.Errorf("go build ./cmd/prequant: %w", err)
 	}
 	return nil
 }

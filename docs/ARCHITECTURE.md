@@ -1086,20 +1086,20 @@ Every import from one goinfer package to another, by repository-relative directo
 | `apps/examples/structured` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
 | `apps/sdktest` |  | `server` |
 | `apps/site/cmd/build` | `site/internal/site` |  |
-| `backend/cuda` | `backend/cuda/internal/gpudev`, `backend/cuda/internal/launchgeom`, `backend/cuda/internal/wpack`, `decoder`, `decoder/fit`, `internal/audio`, `internal/cost`, `internal/runtime/mem`, `internal/runtime/program`, `internal/runtime/sampling`, `internal/vision`, `multimodal` | `chat`, `embeddinggemma2`, `internal/app/loadflags`, `internal/clef`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/mem/probe`, `internal/runtime/modelload`, `internal/runtime/whisper`, `internal/wrappedupload`, `tokenizer` |
+| `backend/cuda` | `backend/cuda/internal/gpudev`, `backend/cuda/internal/launchgeom`, `backend/cuda/internal/wpack`, `decoder`, `decoder/fit`, `internal/audio`, `internal/cost`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/program`, `internal/runtime/sampling`, `internal/vision`, `multimodal` | `chat`, `embeddinggemma2`, `internal/app/loadflags`, `internal/clef`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/mem/probe`, `internal/runtime/modelload`, `internal/runtime/whisper`, `internal/wrappedupload`, `tokenizer` |
 | `backend/cuda/cmd/chat` | `backend/cuda`, `internal/app/chatapp` |  |
 | `backend/cuda/cmd/serve` | `backend/cuda`, `internal/app/serveapp` |  |
 | `backend/cuda/internal/qwencuda` | `backend/cuda/internal/gpudev`, `internal/runtime/mem`, `internal/vision` |  |
 | `backend/cuda/internal/visioncuda` | `backend/cuda/internal/gpudev`, `internal/runtime/mem`, `internal/vision` |  |
-| `backend/cuda/kernels` |  | `backend/cuda/internal/gpudev`, `backend/cuda/internal/launchgeom`, `backend/cuda/internal/wpack`, `internal/runtime/hybridattn`, `internal/runtime/mamba2`, `internal/runtime/sampling` |
+| `backend/cuda/kernels` |  | `backend/cuda/internal/gpudev`, `backend/cuda/internal/launchgeom`, `backend/cuda/internal/wpack`, `internal/runtime/hybridattn`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/sampling` |
 | `backend/cuda/s4siglip` |  | `backend/cuda/internal/visioncuda`, `internal/vision` |
-| `backend/metal` | `backend/metal/internal/gpudev`, `backend/metal/kernels`, `decoder`, `embeddinggemma2`, `internal/audio`, `internal/cost`, `internal/runtime/f16`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/program`, `internal/vision`, `multimodal` | `chat`, `constrain`, `decoder/fit`, `internal/app/loadflags`, `internal/confidence`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/fidelity`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/modelload`, `internal/runtime/prequant`, `internal/wrappedupload`, `tokenizer` |
+| `backend/metal` | `backend/metal/internal/gpudev`, `backend/metal/kernels`, `decoder`, `embeddinggemma2`, `internal/audio`, `internal/cost`, `internal/runtime/f16`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/program`, `internal/vision`, `multimodal` | `chat`, `constrain`, `decoder/fit`, `internal/app/loadflags`, `internal/confidence`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/fidelity`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/modelload`, `internal/runtime/prequant`, `internal/wrappedupload`, `tokenizer` |
 | `backend/metal/cmd/chat` | `backend/metal`, `internal/app/chatapp` |  |
 | `backend/metal/cmd/serve` | `backend/metal`, `internal/app/serveapp` |  |
 | `backend/metal/internal/qwenmetal` | `backend/metal/internal/gpudev`, `internal/runtime/mem`, `internal/vision` |  |
 | `backend/metal/internal/visionmetal` | `backend/metal/internal/gpudev`, `internal/runtime/mem`, `internal/vision` |  |
 | `backend/metal/kernels` | `internal/runtime/f16` | `backend/metal/internal/gpudev`, `internal/runtime/hybridattn`, `internal/runtime/mamba2`, `internal/runtime/sampling` |
-| `backend/webgpu` | `backend/webgpu/internal/kernels`, `decoder`, `internal/cost`, `internal/runtime/mem`, `internal/runtime/program` | `chat`, `decoder/fit`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/fidelity`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/mem/probe`, `internal/vision`, `internal/wrappedupload`, `multimodal`, `tokenizer` |
+| `backend/webgpu` | `backend/webgpu/internal/kernels`, `decoder`, `internal/cost`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/program` | `chat`, `decoder/fit`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/fidelity`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/mem/probe`, `internal/vision`, `internal/wrappedupload`, `multimodal`, `tokenizer` |
 | `backend/webgpu/cmd/chat` | `backend/webgpu`, `internal/app/chatapp` |  |
 | `backend/webgpu/cmd/serve` | `backend/webgpu`, `internal/app/serveapp` |  |
 | `backend/webgpu/internal/kernels` | `internal/cost`, `internal/runtime/adapter`, `internal/runtime/mem`, `internal/vision`, `multimodal` | `internal/runtime/hybridattn`, `internal/runtime/sampling` |
@@ -1109,7 +1109,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `cmd/prequant` | `decoder`, `internal/runtime/prequant` |  |
 | `cmd/serve` | `internal/app/serveapp` |  |
 | `constrain` |  | `tokenizer` |
-| `decoder` | `chat`, `constrain`, `decoder/fit`, `internal/cost`, `internal/runtime/adapter`, `internal/runtime/diskfree`, `internal/runtime/f16`, `internal/runtime/giw`, `internal/runtime/hybridattn`, `internal/runtime/kvmgr`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/program`, `internal/runtime/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/guard/paritykey`, `internal/vision`, `multimodal` |
+| `decoder` | `chat`, `constrain`, `decoder/fit`, `internal/cost`, `internal/runtime/adapter`, `internal/runtime/diskfree`, `internal/runtime/f16`, `internal/runtime/giw`, `internal/runtime/hybridattn`, `internal/runtime/kvmgr`, `internal/runtime/logs`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/program`, `internal/runtime/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/guard/paritykey`, `internal/vision`, `multimodal` |
 | `decoder/fit` | `internal/runtime/mem` |  |
 | `demo/agent/agent` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
 | `demo/agent/cmd/agent-web` | `backend/webgpu`, `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |
@@ -1123,7 +1123,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/app/fitcmd` | `decoder`, `decoder/fit`, `internal/runtime/modelload`, `internal/runtime/prequant` | `internal/runtime/giw` |
 | `internal/app/loadflags` | `decoder`, `internal/app/cliutil`, `internal/config` |  |
 | `internal/app/pullcmd` | `pull` |  |
-| `internal/app/serveapp` | `chat`, `constrain`, `decoder`, `decoder/fit`, `embeddinggemma2`, `engine`, `engine/enginetest`, `internal/app/cliutil`, `internal/app/connect`, `internal/app/loadflags`, `internal/app/pullcmd`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/codec`, `internal/cost`, `internal/decide`, `internal/guard/servecheck`, `internal/guard/swapguard`, `internal/runtime/modelload`, `internal/runtime/prequant`, `internal/runtime/sampling`, `internal/runtime/scheduler`, `internal/runtime/whisper`, `internal/vision`, `multimodal`, `pull`, `tokenizer` | `internal/app/chatapp`, `internal/app/inproc`, `internal/config`, `internal/runtime/giw`, `internal/runtime/kvmgr` |
+| `internal/app/serveapp` | `chat`, `constrain`, `decoder`, `decoder/fit`, `embeddinggemma2`, `engine`, `engine/enginetest`, `internal/app/cliutil`, `internal/app/connect`, `internal/app/loadflags`, `internal/app/pullcmd`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/codec`, `internal/cost`, `internal/decide`, `internal/guard/servecheck`, `internal/guard/swapguard`, `internal/runtime/mem`, `internal/runtime/modelload`, `internal/runtime/prequant`, `internal/runtime/sampling`, `internal/runtime/scheduler`, `internal/runtime/whisper`, `internal/vision`, `multimodal`, `pull`, `tokenizer` | `internal/app/chatapp`, `internal/app/inproc`, `internal/config`, `internal/runtime/giw`, `internal/runtime/kvmgr` |
 | `internal/audio` | `internal/vision` |  |
 | `internal/clef` | `decoder`, `tokenizer` | `internal/runtime/modelload` |
 | `internal/codec` | `chat`, `multimodal`, `tokenizer` |  |
@@ -1133,9 +1133,9 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/diag/towerid` | `embeddinggemma2`, `internal/audio`, `internal/diag/kernelprint`, `internal/vision`, `multimodal` |  |
 | `internal/guard/memgate` | `decoder`, `decoder/fit`, `internal/runtime/mem` | `internal/diag/sb2census` |
 | `internal/guard/servecheck` | `decoder`, `internal/diag/hwreport` |  |
-| `internal/guard/swapguard` | `decoder`, `internal/runtime/mem/probe` |  |
+| `internal/guard/swapguard` | `decoder`, `internal/runtime/logs`, `internal/runtime/mem/probe` |  |
 | `internal/runtime/mamba2` | `internal/runtime/hybridattn` |  |
-| `internal/runtime/modelload` | `decoder`, `decoder/fit`, `internal/guard/swapguard`, `internal/runtime/giw`, `internal/runtime/mem`, `internal/runtime/prequant`, `pull`, `tokenizer` |  |
+| `internal/runtime/modelload` | `decoder`, `decoder/fit`, `internal/guard/swapguard`, `internal/runtime/giw`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/prequant`, `pull`, `tokenizer` |  |
 | `internal/runtime/prequant` | `decoder` |  |
 | `internal/runtime/whisper` | `internal/audio`, `tokenizer` | `multimodal` |
 | `internal/wrappedupload` | `decoder` |  |

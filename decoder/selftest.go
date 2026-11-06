@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -10,6 +9,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // Startup self-tests (docs/tasks/task-hardware-coverage-2026-10.md, H2). goinfer is built and measured on two machines, and a wrong kernel on hardware nobody here owns does not crash: it
@@ -62,7 +63,7 @@ var (
 	selfTestSkipped atomic.Bool
 	cpuSelfTestOnce sync.Once
 	// selfTestWarn is where a failing self-test announces itself; a variable so a test can capture it.
-	selfTestWarn = func(msg string) { fmt.Fprintln(os.Stderr, msg) }
+	selfTestWarn = func(msg string) { logs.Warnf("%s", msg) }
 )
 
 // RecordSelfTest stores a backend's result and, if it is not a clean pass, prints one WARN line naming what mismatched. Backends call it from their own startup self-test.

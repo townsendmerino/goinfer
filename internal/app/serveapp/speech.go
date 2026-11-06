@@ -50,7 +50,7 @@ func loadSpeech(spec modelSpec, cfg config) (*speechModel, error) {
 					continue
 				}
 			}
-			return nil, fmt.Errorf("--model %q: a Whisper directory needs %s (%v)", spec.path, f, err)
+			return nil, fmt.Errorf("--model %q: a Whisper directory needs %s (%w)", spec.path, f, err)
 		}
 	}
 	t0 := time.Now()

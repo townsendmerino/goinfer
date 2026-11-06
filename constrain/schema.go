@@ -3,6 +3,7 @@ package constrain
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -111,7 +112,7 @@ func JSONSchema(schema []byte) (Grammar, error) {
 	// object. A silently ignored piece of input is worse than a loud compile error: a caller who
 	// concatenates or truncates a schema string must not get a Grammar that quietly compiled a
 	// PREFIX of it.
-	if _, err := dec.Token(); err != io.EOF {
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("constrain: parse schema: unexpected data after the top-level value")
 	}
 	n, err := compile(doc, 0)

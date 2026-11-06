@@ -236,7 +236,7 @@ func NewBackend(name string) (Backend, error) {
 		// Options.Validate accepts "metal", so an untagged build reaching here falls back to CPU rather than returning a nil backend.
 		return &cpuBackend{}, fmt.Errorf("decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/backend/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu")
 	}
-	return nil, fmt.Errorf("decoder: unknown backend %q (have: cpu, webgpu, cuda, metal)", name)
+	return nil, errorOfKind(ErrUnknownBackend, "decoder: unknown backend %q (have: cpu, webgpu, cuda, metal)", name)
 }
 
 // cpuBackend dispatches the matmul to linalg.MatmulBT (SIMD dot kernels parallelized across output columns).
