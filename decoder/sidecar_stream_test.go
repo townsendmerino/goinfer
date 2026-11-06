@@ -61,16 +61,7 @@ func TestStreamTranscode_ctxCancel_M21(t *testing.T) {
 	if _, err := os.Stat(gguf); err != nil {
 		t.Skipf("no tiny GLM GGUF at %s — run scripts/pin_glm_tiny_gguf.py", gguf)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // pre-cancelled
-	var body bytes.Buffer
-	n, err := StreamTranscodeGGUF(ctx, gguf, &body, "int4", false, GIWTargetNone, "glm-tiny")
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("StreamTranscodeGGUF with a cancelled ctx = (%d, %v); want a context.Canceled error", n, err)
-	}
-	if body.Len() != 0 {
-		t.Errorf("wrote %d bytes after cancellation; want 0 (the transcode must abort before writing)", body.Len())
-	}
+	checkStreamTranscodeCancelled(t, gguf, "glm-tiny")
 }
 
 // giwSplit splits a .giw bundle at the v5 quant-label field and verifies the trailing CRC32-IEEE is
@@ -629,5 +620,21 @@ func TestTranscodeDir_failedWriteLeavesNoFinalFile(t *testing.T) {
 	matches, _ := filepath.Glob(filepath.Join(filepath.Dir(out), "*.tmp.giw"))
 	if len(matches) != 0 {
 		t.Errorf("leftover temp file(s) after a failed transcodeDir: %v", matches)
+	}
+}
+
+// checkStreamTranscodeCancelled holds M-21's contract on one fixture: an already-cancelled context aborts with the context error, and
+// nothing reaches the sink.
+func checkStreamTranscodeCancelled(t *testing.T, gguf, name string) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancelled
+	var body bytes.Buffer
+	n, err := StreamTranscodeGGUF(ctx, gguf, &body, "int4", false, GIWTargetNone, name)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("StreamTranscodeGGUF with a cancelled ctx = (%d, %v); want a context.Canceled error", n, err)
+	}
+	if body.Len() != 0 {
+		t.Errorf("wrote %d bytes after cancellation; want 0 (the transcode must abort before writing)", body.Len())
 	}
 }

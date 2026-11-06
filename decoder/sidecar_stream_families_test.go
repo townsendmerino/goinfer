@@ -3,7 +3,6 @@ package decoder
 import (
 	"bytes"
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -113,14 +112,5 @@ func TestStreamTranscode_ctxCancel_gptoss(t *testing.T) {
 	if _, err := os.Stat(gguf); err != nil {
 		t.Skipf("no tiny gpt-oss GGUF at %s", gguf)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // pre-cancelled
-	var body bytes.Buffer
-	n, err := StreamTranscodeGGUF(ctx, gguf, &body, "int4", false, GIWTargetNone, "gptoss-tiny")
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("StreamTranscodeGGUF with a cancelled ctx = (%d, %v); want a context.Canceled error", n, err)
-	}
-	if body.Len() != 0 {
-		t.Errorf("wrote %d bytes after cancellation; want 0 (the transcode must abort before writing)", body.Len())
-	}
+	checkStreamTranscodeCancelled(t, gguf, "gptoss-tiny")
 }

@@ -1,10 +1,6 @@
 package decoder
 
 import (
-	"encoding/json"
-	"errors"
-	"io/fs"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -140,70 +136,14 @@ func TestLFM2_declinesResidentRunner(t *testing.T) {
 // plausibly reproduce. The 256-wide logit vector is what actually discriminates. The
 // continuation is kept as a cheap regression tripwire, not as the proof.
 func TestLFM2_textParity(t *testing.T) {
-	const golden = "../testdata/lfm2_tiny_text_golden.json"
-	const ckpt = "../testdata/lfm2-tiny"
-	raw, err := os.ReadFile(golden)
-	if errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no golden — run scripts/pin_lfm2_tiny.py")
-	}
-	if err != nil {
-		t.Fatalf("read golden: %v", err)
-	}
-	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no checkpoint at %s — run scripts/pin_lfm2_tiny.py", ckpt)
-	}
-	var g struct {
-		PromptIDs       []int     `json:"prompt_ids"`
-		Argmax          int       `json:"argmax"`
-		LastLogits      []float32 `json:"last_logits"`
-		NNew            int       `json:"n_new"`
-		ContinuationIDs []int     `json:"continuation_ids"`
-	}
-	if err := json.Unmarshal(raw, &g); err != nil {
-		t.Fatalf("parse golden: %v", err)
-	}
-
-	m, err := Load(ckpt, Options{})
-	if err != nil {
-		t.Fatalf("Load(%s): %v", ckpt, err)
-	}
-	defer m.Close()
-
-	cache := m.NewCache(len(g.PromptIDs) + g.NNew)
-	var logits []float32
-	for _, id := range g.PromptIDs {
-		if logits, err = m.forward(id, cache); err != nil {
-			t.Fatalf("forward: %v", err)
-		}
-	}
-	gotArg := argmax(logits)
-	cos := logitCosine(logits, g.LastLogits)
-	t.Logf("lfm2 text parity: argmax got=%d want=%d | logit cosine=%.6f", gotArg, g.Argmax, cos)
-	if gotArg != g.Argmax {
-		t.Errorf("last argmax = %d, want %d", gotArg, g.Argmax)
-	}
-	if cos < 0.9999 {
-		t.Errorf("last-logit cosine %.6f < 0.9999", cos)
-	}
-
-	got := make([]int, 0, g.NNew)
-	for range g.NNew {
-		id := argmax(logits)
-		got = append(got, id)
-		if logits, err = m.forward(id, cache); err != nil {
-			t.Fatalf("continuation forward: %v", err)
-		}
-	}
-	for i := range g.ContinuationIDs {
-		if got[i] != g.ContinuationIDs[i] {
-			t.Errorf("continuation[%d] = %d, want %d (got %v want %v)", i, got[i], g.ContinuationIDs[i], got, g.ContinuationIDs)
-			break
-		}
-	}
-
-	// A tiny-golden is SUB-T3 and the merge derives status from the method, so this lands as "experimental", the
-	// honest tier for a family whose only committed numeric gate is a seeded 4-layer fixture. The released
-	// LFM2.5-2.6B was differenced against HF by hand with no committed gate, so it is NOT claimed here.
-	emitParityRow(t, "lfm2", "tiny-golden", "HF f32 (lfm2-tiny seeded fixture)",
-		100.0, float64(cos), float64(cos))
+	textParity{
+		golden: "../testdata/lfm2_tiny_text_golden.json", ckpt: "../testdata/lfm2-tiny", pin: "scripts/pin_lfm2_tiny.py",
+		label: "lfm2 text parity",
+		// A tiny-golden is SUB-T3 and the merge derives status from the method, so this lands as "experimental", the
+		// honest tier for a family whose only committed numeric gate is a seeded 4-layer fixture. The released
+		// LFM2.5-2.6B was differenced against HF by hand with no committed gate, so it is NOT claimed here.
+		row: func(t *testing.T, cos float64) {
+			emitParityRow(t, "lfm2", "tiny-golden", "HF f32 (lfm2-tiny seeded fixture)", 100.0, cos, cos)
+		},
+	}.run(t)
 }
