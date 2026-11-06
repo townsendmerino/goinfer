@@ -1,0 +1,19 @@
+# MM8 CUDA, dense vectors: the plan prices the tables CUDA derives (nobara-sb01, 2026-11-06)
+
+**Status: DRAFT. The decision census golden for the amd64 host class has to be regenerated before this can merge** (see "Not done"). Everything else here is green.
+
+The CUDA skip table held 332 `dense` rows: the build leased a few hundred bytes on the dense line over the plan's figure. Two small tables, derived from the load and uploaded by CUDA, were priced nowhere:
+
+1. each attention or MLA layer's RoPE inverse-frequency table (`hl.invFreq`: `RopeInvFreqLayerResident(l)`, or a zero table of half the rotary dim in a Mamba-2 hybrid, whose attention is NoPE): `4 * hd/2` bytes a layer (llama-tiny: 4 x 32 = 128 bytes over; mistral-tiny-window: 3 x 64 = 192);
+2. a MoE layer's router bias as zeros when the checkpoint has none (`moe_route` reads one unconditionally; `routerBs = make([]float32, nE)`): `4 * nE` bytes a layer (mixtral-tiny, qwen3moe-tiny: 4 x 32 = 128 over; gpt-oss-tiny; Gemma 4 has none by construction).
+
+- **Found by experiment** (`experiment.log`, `experiment2.log`): the 314 `dense` rows removed from the table and the first table priced, every non-MoE row was green and only the three MoE fixtures (27 rows) stayed at 128 over; with the second priced, the gate reported the `dense` rows and gpt-oss's `dense-moe` rows as "no longer fires on any row".
+- **Red first** (`red.log`): the rows removed (and the pin lowered) with the plan unchanged: 332 `dense` rows red, by 48 to 256 bytes.
+- **Change:** `decoder/weightbytes.go:Model.cudaDerivedTableBytes`, added to `ResidentDenseWeightBytesFor("cuda")` (and to `PricedDenseVectorBytesForTest("cuda")`, so what the table still bounds is what is left). The table drops 333 to 10 rows: the windowed rollback grant (1) and `gemma4-moe-kv-tiny32`'s 9 `dense-moe` rows, 2,560 bytes over on a 2-layer fixture, still not diagnosed (its item is renamed for that).
+- **Tests whose arithmetic moves with the figure,** each updated to include the derived tables: `TestResidentDense_mambaProjectionsAsUploaded`, `TestPlan_extraBytesReservedAheadOfExperts` (decoder), and the real-size golden `backend/cuda/testdata/mm2b_realsize.json.gz` (`TestPlanSlack_realSizeDiff`, regenerated with `-planslack.update` on nobara: all 63 groups' hashes move, because the change points of every real-size model shift by a few hundred bytes; `mm2b-update.log`).
+- **Green** (`green.log`, `decoder-tests.log`): `TestMemGate_*` (474 builds), `TestResidentDenseBytes_matchesCUDADevice` (the real-size dense figure against the device), `TestPlanSlack_*`, `TestPlanMemory_*` under `-tags cuda`, the recurrent-state tests, and the decoder plan, fit, resident and parity-manifest tests (the manifest is fresh). `cmd/lint` 7/7 (`lint.log`).
+- **Tried and not kept:** the dense line as an exact line (plan must also not exceed the lease, `exact-try.log`): 284 builds are red, the plan over-pricing the dense line in f32/int8int8 cells and on `qwen35-tiny` (plan 88,296 against 83,032 leased) where the plan prices tensors CUDA does not upload that way. That is a separate gap in the opposite direction, not part of this change.
+
+## Not done
+
+`TestDecisionCensus` (`decoder/mm1_census_test.go`) holds the CUDA backend's plan arithmetic per host class to `decoder/testdata/mm1_census.json.gz`; this change moves the CUDA dense figure in the census's `cuda` and `cuda-unlinked` lines, so the golden for each amd64 host class changes. I was told not to run the census on nobara (32 GiB `/tmp`, 97 GiB of scratch, over 10 minutes), so it is **not regenerated and not read here**. The regeneration is `go test ./decoder -run TestDecisionCensus -census.update` on a host of each affected class, then review of which groups changed (only `cuda`/`cuda-unlinked` plan lines should move, by the derived tables' bytes). Until then CI's decoder job will be red on the census.

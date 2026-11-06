@@ -256,8 +256,8 @@ func TestPlan_extraBytesReservedAheadOfExperts(t *testing.T) {
 	dense := m.ResidentDenseWeightBytes()
 	full := m.ResidentWeightBytesPaged(0) - dense
 	perExpert := full / int64(nExperts)
-	kv := m.ResidentKVBytes("cuda", 8192, m.kvF16, false) // what Plan prices for CUDA's paged KV (whole blocks, null blocks, tables)
-	budget := dense + kv + perExpert*int64(nExperts)      // enough for EVERY expert with nothing else
+	kv := m.ResidentKVBytes("cuda", 8192, m.kvF16, false)                        // what Plan prices for CUDA's paged KV (whole blocks, null blocks, tables)
+	budget := dense + m.cudaDerivedTableBytes() + kv + perExpert*int64(nExperts) // enough for EVERY expert with nothing else
 
 	without := m.Plan("cuda", budget, PlanRequest{Ctx: 8192, CtxPinned: true})
 	if without.Placement != PlacementResident {

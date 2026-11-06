@@ -2143,14 +2143,13 @@ var cudaGapItems = map[string]struct {
 	line             mem.LineID
 	fact, what, item string
 }{
-	"dense":     {mem.LineDense, "denseVectors", "the plan's dense figure sums the tensors: rotation tables lease on the line too", "MM8 CUDA, dense vectors"},
-	"dense-moe": {mem.LineDense, "moeVectors", "as the dense row, and what per-expert uploads lease past the plan's tensors: Gemma 4's are not diagnosed", "MM8 CUDA, dense vectors"},
+	"dense-moe": {mem.LineDense, "moeVectors", "what Gemma 4's MoE block leases on the line past the plan's tensors and derived tables: not diagnosed", "MM8 CUDA, Gemma 4 MoE dense"},
 	"grant":     {mem.LineKV, "windowGrant", "the plan prices the windowed slack it planned; the build then grants more rollback from free VRAM (kvGrantRollback), which the context plan subtracts and the plan's KV figure does not show", "MM8 CUDA, windowed rollback grant"},
 }
 
 // cudaMemGapsPin is the number of rows in cuda/testdata/memgate_gaps.txt. CUDA's table of known reds (MM7) may only shrink: the fix that removes
 // rows deletes them and lowers this. Nothing writes that file, so a new red has to be added by hand and argued.
-const cudaMemGapsPin = 333
+const cudaMemGapsPin = 10
 
 // cudaMemGaps reads the table: one exact row per line, after its item's key and a tab. Each gap's bytes come from the model's shape, and gaps on
 // one row and line add up (Gate's match), so each states only its own.
@@ -2264,7 +2263,7 @@ func cudaGateRow(t testing.TB, row, path string, o decoder.Options) (memgate.Rea
 	read.Plan = m.Plan("cuda", planFree, fit.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, Slots: gateSlots(r), KVSlots: r.KVSlots(), CheckpointReserve: r.ckptReserve()})
 	facts := func() map[string]int64 {
 		priced := m.PricedDenseVectorBytesForTest("cuda")
-		return map[string]int64{"denseVectors": max(cudaDenseVectorBytes(m)-priced, 0), "moeVectors": max(cudaMoEVectorBytes(m, r.nE)-priced, 0), "windowGrant": cudaWindowGrantBytes(r)}
+		return map[string]int64{"moeVectors": max(cudaMoEVectorBytes(m, r.nE)-priced, 0), "windowGrant": cudaWindowGrantBytes(r)}
 	}
 	read.Open = append(read.Open, memgate.Snap("built", &l.Ledger, facts()))
 	genCtx := context.Background()
