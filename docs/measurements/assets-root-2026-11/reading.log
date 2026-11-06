@@ -1,0 +1,71 @@
+=== 05:36:42 group mrope (timeout 5m)
+=== 05:37:11 group mrope rc=0
+--- PASS: TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel (13.00s)
+--- PASS: TestRopeKVMRoPEBatched_matchesCPUReference (10.57s)
+--- PASS: TestRopeKVMRoPEBatched_interleavedModeMatchesCPUReference (0.29s)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	23.927s
+=== 05:37:11 group qwen35vl (timeout 10m)
+=== 05:37:27 group qwen35vl rc=0
+--- PASS: TestQwen35VLReal_residentImagePrefillMatchesCPU (15.84s)
+    --- PASS: TestQwen35VLReal_residentImagePrefillMatchesCPU/A (3.63s)
+    --- PASS: TestQwen35VLReal_residentImagePrefillMatchesCPU/B (4.11s)
+    --- PASS: TestQwen35VLReal_residentImagePrefillMatchesCPU/C (4.96s)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	15.961s
+=== 05:37:27 group qwen25vl (timeout 10m)
+=== 05:37:56 group qwen25vl rc=0
+--- PASS: TestQwen25VLMRoPEPrefillResidentReal_gate (16.13s)
+--- PASS: TestQwen25VLResidentReal_gate (11.23s)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	27.534s
+=== 05:37:56 group glmocr (timeout 15m)
+=== 05:43:50 group glmocr rc=0
+--- PASS: TestGlmOcrCUDAContextFit (24.50s)
+--- PASS: TestGlmOcrCUDAResidentRealImage (178.11s)
+    --- PASS: TestGlmOcrCUDAResidentRealImage/invoice (65.29s)
+    --- PASS: TestGlmOcrCUDAResidentRealImage/table (49.79s)
+    --- PASS: TestGlmOcrCUDAResidentRealImage/formula (58.86s)
+--- PASS: TestGlmOcrCUDAResidentFullBudget (150.52s)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	353.239s
+=== 05:43:50 group gptoss (timeout 15m)
+=== 05:44:28 group gptoss rc=0
+--- PASS: TestGptOssResidentParityCUDA (35.32s)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	36.925s
+=== 05:44:28 group cohere (timeout 25m)
+=== 05:46:08 group cohere rc=0
+--- PASS: TestCohereRealResidentParityCUDA (98.09s)
+    --- PASS: TestCohereRealResidentParityCUDA/aya-expanse-8b (50.72s)
+    --- PASS: TestCohereRealResidentParityCUDA/command-r7b (47.37s)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	98.825s
+=== 05:46:08 group drafters (timeout 40m)
+=== 05:57:21 group drafters rc=0
+--- PASS: TestGenerateBlockSpec_production (19.77s)
+--- PASS: TestBlockSpecStream (14.38s)
+--- PASS: TestDefaultVerifyWidth_sweep (244.28s)
+--- PASS: TestResidentDrafter_fuseContextReleasesScratch (13.45s)
+--- PASS: TestDFlashLoop_lossless (13.91s)
+--- PASS: TestDFlashLoop_gate3 (21.68s)
+--- PASS: TestResidentDrafter_fuseParity (13.86s)
+--- PASS: TestResidentDrafter_extendContext (14.10s)
+--- PASS: TestResidentDrafter_blockParity (14.76s)
+--- PASS: TestResidentDrafter_streamedAttachMatchesHeld (14.40s)
+--- PASS: TestDrafterVsOff_perSuite (76.99s)
+    --- PASS: TestDrafterVsOff_perSuite/chat (14.05s)
+    --- PASS: TestDrafterVsOff_perSuite/code (13.64s)
+    --- PASS: TestDrafterVsOff_perSuite/math (12.08s)
+    --- PASS: TestDrafterVsOff_perSuite/mixed (23.56s)
+--- PASS: TestFlashDecodeBlockSpecLane (30.46s)
+    --- PASS: TestFlashDecodeBlockSpecLane/multirow-verify (15.41s)
+    --- PASS: TestFlashDecodeBlockSpecLane/optionA-scope (15.05s)
+--- PASS: TestR14DrafterArgmaxAB (32.66s)
+--- PASS: TestR14DrafterArgmaxProfile (15.88s)
+--- PASS: TestBlockSpec_twoTurnsMatchPlain (130.24s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1 (42.86s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-Generate (14.41s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-GenerateStream (14.33s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17 (42.28s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-Generate (13.96s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-GenerateStream (14.35s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48 (44.77s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-Generate (15.02s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-GenerateStream (15.31s)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	670.958s
+=== 05:57:21 done

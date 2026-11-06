@@ -14,3 +14,21 @@
 
 `run-cuda-read.sh`: the CUDA tests above, with `GOINFER_HEAVY_TESTS=1`, one `go test` process per model family (mrope, qwen35vl, qwen25vl, glmocr, gptoss, cohere, drafters), the exclusive timing lock for the whole script, nobara's card. **Cap:** the group timeouts sum to 2 h (5+10+10+15+15+25+40 minutes); a group that hits its timeout is reported as a timeout and the read goes on. Expected about 1 to 1.5 h. `TestLoRACostMeasure` (`realckpt`, a measurement, not a gate) is not in the read.
 **Rule:** the test's own verdict. A SKIP is counted and read (why). Each red is classified with evidence as a test bug, a stale golden or a product failure, and a product failure goes to the coordinator, not into this PR. Nothing is re-skipped to make a group green. No bar moves.
+
+## CUDA read, 2026-11-06 05:36 to 05:57 PST: 26 of 26 PASS, no skip, no red
+
+`reading.log`, `reading/<group>.log` (go test -v). The exclusive timing lock, nobara's 2070 SUPER, `GOINFER_HEAVY_TESTS=1`; wall 20 min 48 s against the 2 h cap (the registered expectation was 1 to 1.5 h; the 4B/drafter tests take 13 to 30 s each, and the longest, `TestDefaultVerifyWidth_sweep`, 244 s).
+
+| group | tests (top-level) | result | go test wall |
+|---|---|---|---|
+| mrope | `TestRopeKVMRoPEBatched_*` (3: the two listed and an interleaved-mode sibling) | 3 PASS | 23.9 s |
+| qwen35vl | `TestQwen35VLReal_residentImagePrefillMatchesCPU` (A, B, C) | PASS | 16.0 s |
+| qwen25vl | `TestQwen25VLResidentReal_gate`, `TestQwen25VLMRoPEPrefillResidentReal_gate` | 2 PASS | 27.5 s |
+| glmocr | `TestGlmOcrCUDAContextFit`, `...ResidentRealImage` (invoice, table, formula), `...ResidentFullBudget` | 3 PASS | 353.2 s |
+| gptoss | `TestGptOssResidentParityCUDA` | PASS | 36.9 s |
+| cohere | `TestCohereRealResidentParityCUDA` (aya-expanse-8b, command-r7b) | PASS | 98.8 s |
+| drafters | 15: block spec, width sweep, resident drafter (fuse, extend, block, streamed-vs-held, scratch), DFlash loop (lossless, gate3), drafter vs off, flash-decode lane, R14 argmax A/B and profile, two-turn | 15 PASS | 671.0 s |
+
+`TestLoRACostMeasure` (`realckpt`, a measurement) was not run, as registered. Zero `--- SKIP` lines and zero `--- FAIL` in any log. So the tests that skipped silently for three days all pass on their first real run: **nothing to classify, no product red, no test bug, no stale golden.** This reads the tests, not the numbers inside them: the sweeps and A/B tests print figures that were not compared to any earlier record here.
+
+The nine `backend/metal` functions are un-skipped too and were not run (sb11m, on the Mac).
