@@ -1,12 +1,12 @@
 # Task: take Config, Options and Architecture out of decoder? A split proposal (DC1–DC4) — 2026-11
 
-> **Status 2026-11-06: PROPOSAL, for Francis (T3-fit question b).** Written by mac-fit from a count of the tree at `2fd3a644`. Recommendation: **extract `Config` only (DC1a, DC1b); leave `Options` and `Architecture` where they are (DC2, DC3 parked).** Extraction is not needed for `decoder/fit`, which is finished (`docs/layout.md` "Tier 3").
+> **Status 2026-11-06: DC1 approved (Francis, 2026-11-06: DC1 yes; DC2/DC3 parked).** Written by mac-fit from a count of the tree at `2fd3a644`. Recommendation: **extract `Config` only (DC1a, DC1b); leave `Options` and `Architecture` where they are (DC2, DC3 parked).** Extraction is not needed for `decoder/fit`, which is finished (`docs/layout.md` "Tier 3").
 
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| DC0 | decision | Francis: take DC1 or park the whole doc | this proposal |
-| DC1a | open | export `Config`'s unexported methods in place (`headDim`→`HeadDim`, `validateX`→`ValidateX`, …); ~40 `arch_*.go` call sites; parity refresh | §3 |
+| DC0 | done | Francis 2026-11-06: DC1 yes; DC2/DC3 parked | this proposal |
+| DC1a | active | export `Config`'s unexported methods in place (`headDim`→`HeadDim`, `validateX`→`ValidateX`, …); ~40 `arch_*.go` call sites; parity refresh | §3 |
 | DC1b | open | after DC1a: move `config.go` and the `Config` methods to `decoder/config`; alias `decoder.Config`; `paritykey.BuilderFile` learns the new path | §3 |
 | DC2 | blocked | `Options` only when a subsystem needs it (it drags `Backend`, `Drafter`, `Knobs`) | §4 |
 | DC3 | blocked | no: `Architecture` is the hub (§5); continue `internal/runtime/program` instead | §5 |
@@ -50,6 +50,6 @@ DC1a (a day, ~40 files) → DC1b (a day, one package, ~25 files touched with tes
 - **Decision census:** `TestDecisionCensus` hash `706b6759…` on this Mac (the golden compare skips here; the hash equality is the evidence, as in #697). Config is not an input of the census's arithmetic, so it must not move.
 - **Layout data:** `internal/layout/imports.json` gains the arrows and a `config-leaf` rule; `decoderRatchet` counts are unaffected (the aliases keep `decoder` imported).
 
-## 7. Decision for Francis
+## 7. Decision (Francis, 2026-11-06)
 
-Take DC1 (a config package, test isolation for ~9 test files, no other consumer found) or park this doc with `decoder/fit` finished. I recommend parking unless seconds-long config tests are wanted, because DC1 pays in parity-refresh toil and moves no other subsystem; DC2 and DC3 should not start without a consumer.
+DC1 goes ahead: `Config` only. DC2 (`Options`) and DC3 (`Architecture`) stay parked until a subsystem names a consumer. DC1a is its own PR from `origin/main`, kept to the method renames so it merges around the open decoder PRs; DC1b follows. Each PR: a red-first test where behavior could change (DC1b: a layout rule that `decoder/config` imports no goinfer package), the program fingerprints and the census hash unchanged as the no-numerics proof, one parity refresh at the end, `touched.py` and `cmd/lint`, no auto-merge. Before DC1b changes `paritykey.BuilderFile`, check whether VK5's week-3 shadow key is still running and tell the coordinator, who decides whether DC1b waits for the week to end.
