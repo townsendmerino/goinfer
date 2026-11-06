@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 )
 
 // ExitRefused is fit -profile's exit code for a load the recorded machine would refuse; 0 is a load that proceeds (it fits,
@@ -22,14 +23,14 @@ type machineProfile struct {
 
 // profileVerdict is fit -profile -json's output.
 type profileVerdict struct {
-	Profile        string            `json:"profile"`
-	AvailableBytes int64             `json:"available_bytes"`
-	Verdict        string            `json:"verdict"` // fits, capped, refused, unpriced
-	Answer         decoder.FitAnswer `json:"answer"`
+	Profile        string        `json:"profile"`
+	AvailableBytes int64         `json:"available_bytes"`
+	Verdict        string        `json:"verdict"` // fits, capped, refused, unpriced
+	Answer         fit.FitAnswer `json:"answer"`
 }
 
 // verdictOf names a FitAnswer's outcome.
-func verdictOf(a decoder.FitAnswer) string {
+func verdictOf(a fit.FitAnswer) string {
 	switch {
 	case !a.Fits:
 		return "refused"

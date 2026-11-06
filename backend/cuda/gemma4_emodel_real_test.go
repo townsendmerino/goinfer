@@ -16,6 +16,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -426,7 +427,7 @@ func TestGemma4EModel_realE4BF32Dump(t *testing.T) {
 		t.Fatal(err)
 	}
 	mc, err := decoder.Load(dir, decoder.Options{Quant: "f32", ResidentContext: 512})
-	if errors.Is(err, decoder.ErrWontFitResident) {
+	if errors.Is(err, fit.ErrWontFitResident) {
 		t.Skipf("the float32 load does not fit this process's fit budget; run this test alone (go test -run '^TestGemma4EModel_realE4BF32Dump$'), where the budget is the box's: %v", err)
 	}
 	if err != nil {

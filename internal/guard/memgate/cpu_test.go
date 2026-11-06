@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/diag/sb2census"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
@@ -79,7 +80,7 @@ func cpuGateRow(t *testing.T, row, path string, o decoder.Options, plant func(*m
 		plant(&l)
 	}
 	kv := m.KVDeliveredFor("cpu") // what the cache really is: Options.KVPrecision is the GPU's, and a family can refuse what was asked
-	p := m.Plan("cpu", math.MaxInt64/4, decoder.PlanRequest{Ctx: cpuGateCtx, CtxPinned: true, KVF16: kv == mem.KVF16, KVI8: kv == mem.KVI8})
+	p := m.Plan("cpu", math.MaxInt64/4, fit.PlanRequest{Ctx: cpuGateCtx, CtxPinned: true, KVF16: kv == mem.KVF16, KVI8: kv == mem.KVI8})
 	read := Reading{Row: row, KVSlots: 1, Plan: p, Exact: []mem.LineID{mem.LineKV, mem.LineState}, Named: map[mem.LineID]int64{mem.LineScratch: decoder.CPUScratchBudgetForTest}}
 	facts := GeometryOf(m, cpuGateCtx, 1, kv, true).Facts()
 	read.Open = append(read.Open, Snap("generated", &l, facts))

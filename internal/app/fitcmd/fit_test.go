@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
@@ -328,8 +329,8 @@ func TestPlanFor_metalPlansAtTheLoadsOwnContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	base := m.Plan("metal", 1<<40, decoder.PlanRequest{Ctx: decoder.MetalCtxDefault, CtxPinned: true})
-	if base.Placement != decoder.PlacementResident {
+	base := m.Plan("metal", 1<<40, fit.PlanRequest{Ctx: decoder.MetalCtxDefault, CtxPinned: true})
+	if base.Placement != fit.PlacementResident {
 		t.Fatalf("llama-tiny does not plan resident on metal: %s", base.Reason)
 	}
 	perBlock := m.MetalKVSlotBytes(decoder.KVBlockRows)
@@ -341,19 +342,19 @@ func TestPlanFor_metalPlansAtTheLoadsOwnContext(t *testing.T) {
 		positions, want int
 	}{{80000, decoder.MetalFitDefaultCtx}, {20000, 9984}, {5000, decoder.MetalCtxDefault}} {
 		free := budget(c.positions)
-		p := planFor(m, "metal", free, decoder.PlanRequest{Ctx: defaultCtx})
+		p := planFor(m, "metal", free, fit.PlanRequest{Ctx: defaultCtx})
 		load := m.MetalFitCtx(decoder.MetalFitInput{FreeBytes: free, FreeKnown: true, KVSlots: decoder.MetalDefaultKVSlots})
 		if p.Ctx != load.Ctx || p.Ctx != c.want {
 			t.Errorf("room for %d positions: fit plans ctx %d, the load takes %d, want %d", c.positions, p.Ctx, load.Ctx, c.want)
 		}
-		if p.Placement != decoder.PlacementResident || !strings.Contains(p.Reason, fmt.Sprintf("an unpinned load takes %d positions (%s)", load.Ctx, load.Why)) {
+		if p.Placement != fit.PlacementResident || !strings.Contains(p.Reason, fmt.Sprintf("an unpinned load takes %d positions (%s)", load.Ctx, load.Why)) {
 			t.Errorf("room for %d positions: %v, %q; want resident and the load's own reason", c.positions, p.Placement, p.Reason)
 		}
 	}
-	if p := planFor(m, "metal", budget(80000), decoder.PlanRequest{Ctx: 24000, CtxPinned: true}); p.Ctx != 24000 || strings.Contains(p.Reason, "unpinned") {
+	if p := planFor(m, "metal", budget(80000), fit.PlanRequest{Ctx: 24000, CtxPinned: true}); p.Ctx != 24000 || strings.Contains(p.Reason, "unpinned") {
 		t.Errorf("a pinned -ctx 24000: ctx %d, %q; want it planned as asked", p.Ctx, p.Reason)
 	}
-	if p, want := planFor(m, "cpu", budget(80000), decoder.PlanRequest{Ctx: defaultCtx}), m.Plan("cpu", budget(80000), decoder.PlanRequest{Ctx: defaultCtx}); p.Ctx != want.Ctx || p.Reason != want.Reason {
+	if p, want := planFor(m, "cpu", budget(80000), fit.PlanRequest{Ctx: defaultCtx}), m.Plan("cpu", budget(80000), fit.PlanRequest{Ctx: defaultCtx}); p.Ctx != want.Ctx || p.Reason != want.Reason {
 		t.Errorf("cpu: planFor changed Plan's answer (%d, %q) to (%d, %q)", want.Ctx, want.Reason, p.Ctx, p.Reason)
 	}
 }
