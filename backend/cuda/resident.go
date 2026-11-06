@@ -509,6 +509,9 @@ type cudaResident struct {
 	costNames map[Pipeline]string // each kernel's name, cached
 	costNamed int64               // launches counted through r.launch, for launch_other
 	line      string              // the plan line (a mem line) the allocation helpers lease on: onLine sets it
+	// recFloats is each recurrent layer's conv window and state in floats, read from stateSpecsOf when the layer is uploaded; zero on a
+	// layer with none. Every recurrent buffer (live, further slots, checkpoint, reset) and every price of them reads it.
+	recFloats []recurrentFloats
 
 	// pk is the staging block streamW packs through; the build's setup job drops it when it ends.
 	pk *packPool
@@ -2795,18 +2798,16 @@ func (r *cudaResident) resetState() error {
 	if r.dnet == nil {
 		return nil
 	}
-	dp := r.dnet
-	winZ := make([]float32, (dp.convK-1)*dp.convDim)
-	stZ := make([]float32, dp.stateElems)
+	zero := zeroFloats()
 	for i := range r.layers {
 		L := &r.layers[i]
 		if !L.isDeltaNet() {
 			continue
 		}
-		if e := gpu.Upload(L.dnWin, winZ); e != nil {
+		if e := gpu.Upload(L.dnWin, zero(r.recFloats[i].win)); e != nil {
 			return e
 		}
-		if e := gpu.Upload(L.dnState, stZ); e != nil {
+		if e := gpu.Upload(L.dnState, zero(r.recFloats[i].state)); e != nil {
 			return e
 		}
 	}
