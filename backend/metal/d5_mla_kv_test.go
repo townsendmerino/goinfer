@@ -9,6 +9,7 @@ import (
 	"hash/fnv"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -86,8 +87,8 @@ func TestD5_mlaOnMetal(t *testing.T) {
 	}
 }
 
-// TestKVPages_mlaOneSlot: a one-slot MLA build holds its pool as every other build does. kvRows finds slot 0's latent rows past the zero
-// null block, and the logits are the first slot's of a two-slot build.
+// TestKVPages_mlaOneSlot: a one-slot MLA build holds its pool as every other build does. Slot 0's table names its latent rows past the
+// zero null block, and the logits are the first slot's of a two-slot build.
 func TestKVPages_mlaOneSlot(t *testing.T) {
 	dir := p3FixtureDir("deepseek-tiny")
 	if _, err := os.Stat(dir); err != nil {
@@ -138,15 +139,81 @@ func TestKVPages_mlaOneSlot(t *testing.T) {
 		if !bytes.Equal(read(r.kc[l].At(0), null), make([]byte, null)) {
 			t.Errorf("layer %d: the null block is not zero", l)
 		}
-		written := read(r.kvRows(0, l, false, 0), n)
+		written := read(r.kc[l].At(int(r.kvTab.U32s()[0])*null), n) // the first block slot 0's table names
 		if bytes.Equal(written, make([]byte, n)) {
-			t.Errorf("layer %d: kvRows reads %d zero bytes where decode wrote latent rows", l, n)
+			t.Errorf("layer %d: slot 0's first block holds %d zero bytes where decode wrote latent rows", l, n)
 		}
 		if !bytes.Equal(written, read(r.kc[l].At(null), n)) {
-			t.Errorf("layer %d: kvRows is not slot 0's rows past the null block", l)
+			t.Errorf("layer %d: slot 0's first block is not the rows past the null block", l)
 		}
 	}
 	if !seen {
 		t.Fatal("no MLA layer holds a pool")
+	}
+}
+
+// TestKVPages_mlaThroughTheTable: an MLA build stores and reads its latent rows through the table, so blocks handed out reversed and
+// interleaved across slots decode as in-order blocks bit for bit, on two slots in turn past a block edge. The plant swaps slot 0's first
+// two entries under a filled cache and must move the next token's logits.
+func TestKVPages_mlaThroughTheTable(t *testing.T) {
+	dir := p3FixtureDir("deepseek-tiny")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no fixture: %v", err)
+	}
+	const depth = 80
+	run := func(scramble, plant bool) [][]float32 {
+		kvScrambleForTest = scramble
+		defer func() { kvScrambleForTest = false }()
+		o := d5Opts("auto")
+		o.ResidentKVSlots, o.ResidentContext = 2, 256
+		m, err := decoder.Load(dir, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		a, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok {
+			t.Fatalf("not Metal-resident: %s", m.ResidentDecline())
+		}
+		r := a.r
+		if r.mla == nil || r.kvSlotCount() != 2 {
+			t.Fatalf("MLA %v, %d KV slots; want MLA and 2", r.mla != nil, r.kvSlotCount())
+		}
+		var out [][]float32
+		for s := range 2 {
+			if err := r.useKVSlot(s); err != nil {
+				t.Fatal(err)
+			}
+			for pos := range depth {
+				out = append(out, slices.Clone(r.ForwardEmb(mc3Emb(r, (pos*7+s*13+1)%r.V), pos)))
+			}
+		}
+		if err := r.useKVSlot(0); err != nil {
+			t.Fatal(err)
+		}
+		if plant {
+			r.stopExec()
+			tab := r.kvTab.U32s()
+			tab[0], tab[1] = tab[1], tab[0]
+		}
+		return append(out, slices.Clone(r.ForwardEmb(mc3Emb(r, 3), depth)))
+	}
+	differ := func(a, b [][]float32) int {
+		n := 0
+		for i := range a {
+			for j := range a[i] {
+				if math.Float32bits(a[i][j]) != math.Float32bits(b[i][j]) {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	inOrder := run(false, false)
+	if n := differ(inOrder, run(true, false)); n != 0 {
+		t.Errorf("%d logits differ between scrambled and in-order blocks", n)
+	}
+	if n := differ(inOrder, run(false, true)); n == 0 {
+		t.Error("two table entries swapped under a filled cache moved no logit: MLA does not read the table")
 	}
 }

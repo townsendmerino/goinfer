@@ -7,7 +7,7 @@ package kernels
 const PrefillKernels = `
 #include <metal_stdlib>
 using namespace metal;
-` + AttnScoreMSL + `
+` + AttnScoreMSL + KVRowMSL + `
 // gemm_w4f16_store: blocked int4→f16 MMA GEMM with a fused epilogue (mode 0 = plain store, 1 =
 // +bias for fused QKV, 2 = +residual for o-proj/down) — C[M×N] = A[M×K](f16) · Wᵀ, W = resident
 // int4/W4A8 (packed nibbles + f16 group scales), dequanted in-kernel. Dispatched as a 2-D grid of
@@ -615,6 +615,7 @@ kernel void attention_prefill(device const half* qkv[[buffer(0)]], device const 
     device const half* vc[[buffer(2)]], device half* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& startPos[[buffer(7)]],
     constant float& scale[[buffer(8)]], constant uint& qStride[[buffer(9)]], constant uint& window[[buffer(10)]],
+    device const uint* kt[[buffer(11)]],
     uint gid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
     uint tgs[[threads_per_threadgroup]]) {
     uint m = gid / nH, qh = gid % nH;
@@ -628,7 +629,7 @@ kernel void attention_prefill(device const half* qkv[[buffer(0)]], device const 
     threadgroup float sc[4096];
     threadgroup float red[128];
     for (uint s=winStart+tid; s<nKeys; s+=tgs) {
-        float a=0; device const half* k=kb+s*kvDim; uint d=0;
+        float a=0; device const half* k=kb+kv_row(kt,s)*kvDim; uint d=0;
         // half4 vectorized K-read (coalescing fix, bit-identical; guarded on hd%4==0, scalar tail).
         if ((hd&3u)==0u) for (; d<hd; d+=4u){ half4 k4=*((device const half4*)(k+d)); a+=float(qr[d])*float(k4.x); a+=float(qr[d+1u])*float(k4.y); a+=float(qr[d+2u])*float(k4.z); a+=float(qr[d+3u])*float(k4.w); }
         for (; d<hd; d++) a += float(qr[d])*float(k[d]);
@@ -648,7 +649,7 @@ kernel void attention_prefill(device const half* qkv[[buffer(0)]], device const 
     red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint st=tgs/2u; st>0u; st>>=1u){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
     float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[m*qDim + qh*hd + d]=half(a/sum); }
+    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[kv_row(kt,s)*kvDim+d]); out[m*qDim + qh*hd + d]=half(a/sum); }
 }
 
 // attention_prefill_tiled: attention_prefill for a pass past its 4,096-score buffer (P28). The scores go through sc[] one tile of
@@ -668,7 +669,7 @@ kernel void attention_prefill_tiled(device const half* qkv[[buffer(0)]], device 
     device const half* vc[[buffer(2)]], device half* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& startPos[[buffer(7)]],
     constant float& scale[[buffer(8)]], constant uint& qStride[[buffer(9)]], constant uint& window[[buffer(10)]],
-    constant uint& tile[[buffer(11)]],
+    constant uint& tile[[buffer(11)]], device const uint* kt[[buffer(12)]],
     uint gid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
     uint tgs[[threads_per_threadgroup]]) {
     uint m = gid / nH, qh = gid % nH;
@@ -682,7 +683,7 @@ kernel void attention_prefill_tiled(device const half* qkv[[buffer(0)]], device 
     threadgroup float sc[4096];
     threadgroup float red[128];
     float mmax=-INFINITY;
-    for (uint s=winStart+tid; s<nKeys; s+=tgs) mmax=max(mmax, prefill_score(qr, kb+s*kvDim, hd, scale));
+    for (uint s=winStart+tid; s<nKeys; s+=tgs) mmax=max(mmax, prefill_score(qr, kb+kv_row(kt,s)*kvDim, hd, scale));
     mmax = simd_max(mmax);
     uint sgidA = tid >> 5u, laneA = tid & 31u;
     if (laneA == 0) red[sgidA] = mmax;
@@ -696,9 +697,9 @@ kernel void attention_prefill_tiled(device const half* qkv[[buffer(0)]], device 
     for (uint t0=winStart; t0<nKeys; t0+=tile) {
         uint t1 = min(t0+tile, nKeys);
         uint own = t0 + (tid + tgs - (t0-winStart)%tgs) % tgs; // this thread's first key in the tile: s - winStart == tid mod tgs
-        for (uint s=own; s<t1; s+=tgs){ float p=exp(prefill_score(qr, kb+s*kvDim, hd, scale)-mx); sc[s-t0]=p; ls+=p; }
+        for (uint s=own; s<t1; s+=tgs){ float p=exp(prefill_score(qr, kb+kv_row(kt,s)*kvDim, hd, scale)-mx); sc[s-t0]=p; ls+=p; }
         threadgroup_barrier(mem_flags::mem_threadgroup);
-        for (uint j=0u, d=tid; d<hd; j++, d+=tgs){ float a=acc[j]; for(uint s=t0;s<t1;s++) a += sc[s-t0]*float(vb[s*kvDim+d]); acc[j]=a; }
+        for (uint j=0u, d=tid; d<hd; j++, d+=tgs){ float a=acc[j]; for(uint s=t0;s<t1;s++) a += sc[s-t0]*float(vb[kv_row(kt,s)*kvDim+d]); acc[j]=a; }
         threadgroup_barrier(mem_flags::mem_threadgroup);
     }
     red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -717,7 +718,7 @@ kernel void attention_prefill_img(device const half* qkv[[buffer(0)]], device co
     device const half* vc[[buffer(2)]], device half* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& startPos[[buffer(7)]],
     constant float& scale[[buffer(8)]], constant uint& qStride[[buffer(9)]], constant uint& window[[buffer(10)]],
-    device const uint2* blocks[[buffer(11)]], constant uint& nBlocks[[buffer(12)]],
+    device const uint2* blocks[[buffer(11)]], constant uint& nBlocks[[buffer(12)]], device const uint* kt[[buffer(13)]],
     uint gid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
     uint tgs[[threads_per_threadgroup]]) {
     uint m = gid / nH, qh = gid % nH;
@@ -734,7 +735,7 @@ kernel void attention_prefill_img(device const half* qkv[[buffer(0)]], device co
     threadgroup float sc[4096];
     threadgroup float red[128];
     for (uint s=winStart+tid; s<nKeys; s+=tgs) {
-        float a=0; device const half* k=kb+s*kvDim; uint d=0;
+        float a=0; device const half* k=kb+kv_row(kt,s)*kvDim; uint d=0;
         if ((hd&3u)==0u) for (; d<hd; d+=4u){ half4 k4=*((device const half4*)(k+d)); a+=float(qr[d])*float(k4.x); a+=float(qr[d+1u])*float(k4.y); a+=float(qr[d+2u])*float(k4.z); a+=float(qr[d+3u])*float(k4.w); }
         for (; d<hd; d++) a += float(qr[d])*float(k[d]);
         sc[s]=attn_score(a*scale);
@@ -753,7 +754,7 @@ kernel void attention_prefill_img(device const half* qkv[[buffer(0)]], device co
     red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint st=tgs/2u; st>0u; st>>=1u){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
     float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[m*qDim + qh*hd + d]=half(a/sum); }
+    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[kv_row(kt,s)*kvDim+d]); out[m*qDim + qh*hd + d]=half(a/sum); }
 }
 
 // attention_prefill_fused: the simdgroup_matrix (MMA) flash-attention twin of attention_prefill
@@ -789,7 +790,7 @@ kernel void attention_prefill_fused(device const half* qkv[[buffer(0)]], device 
     device const half* vc[[buffer(2)]], device half* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& startPos[[buffer(7)]],
     constant float& scale[[buffer(8)]], constant uint& qStride[[buffer(9)]], constant uint& window[[buffer(10)]],
-    constant uint& M[[buffer(11)]],
+    constant uint& M[[buffer(11)]], device const uint* kt[[buffer(12)]],
     uint tgid[[threadgroup_position_in_grid]], uint sgid[[simdgroup_index_in_threadgroup]],
     uint sgpt[[simdgroups_per_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
     uint numRowTiles = (M + 7u) / 8u;
@@ -832,7 +833,7 @@ kernel void attention_prefill_fused(device const half* qkv[[buffer(0)]], device 
             simdgroup_float8x8 Sacc = make_filled_simdgroup_matrix<float,8,8>(0.0);
             for (uint kk=0; kk<hdTiles; kk++) {
                 simdgroup_half8x8 kT;
-                simdgroup_load(kT, kBase + j0*kvDim + kk*8u, kvDim, ulong2(0,0), true);
+                simdgroup_load(kT, kBase + kv_row(kt,j0)*kvDim + kk*8u, kvDim, ulong2(0,0), true);
                 simdgroup_multiply_accumulate(Sacc, qTile[kk], kT, Sacc);
             }
             simdgroup_store(Sacc, sScr[sgid] + sub*8u, ATTN_KTILE);
@@ -876,7 +877,7 @@ kernel void attention_prefill_fused(device const half* qkv[[buffer(0)]], device 
             for (uint sub=0; sub<nsub; sub++) {
                 simdgroup_half8x8 pTile, vTile;
                 simdgroup_load(pTile, pScr[sgid] + sub*8u, ATTN_KTILE);
-                simdgroup_load(vTile, vBase + (j0s+sub*8u)*kvDim + cc*8u, kvDim);
+                simdgroup_load(vTile, vBase + kv_row(kt,j0s+sub*8u)*kvDim + cc*8u, kvDim);
                 simdgroup_multiply_accumulate(pvAcc, pTile, vTile, pvAcc);
             }
             simdgroup_store(pvAcc, sScr[sgid], 8); // scratch reuse: this group's scores are consumed
@@ -919,7 +920,7 @@ kernel void attention_prefill_steel(device const half* qkv[[buffer(0)]], device 
     device const half* vc[[buffer(2)]], device half* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& startPos[[buffer(7)]],
     constant float& scale[[buffer(8)]], constant uint& qStride[[buffer(9)]], constant uint& window[[buffer(10)]],
-    constant uint& M[[buffer(11)]],
+    constant uint& M[[buffer(11)]], device const uint* kt[[buffer(12)]],
     uint tgid[[threadgroup_position_in_grid]], ushort sgid[[simdgroup_index_in_threadgroup]],
     ushort lane[[thread_index_in_simdgroup]], ushort tid[[thread_index_in_threadgroup]]) {
     constexpr ushort LD = HD + 8;
@@ -971,8 +972,9 @@ kernel void attention_prefill_steel(device const half* qkv[[buffer(0)]], device 
             uint j = j0 + key;
             half4 kv4 = half4(0.0h), vv4 = half4(0.0h);
             if (j < jEnd) {
-                kv4 = *(device const half4*)(kc + j * kvDim + kvh * HD + d4);
-                vv4 = *(device const half4*)(vc + j * kvDim + kvh * HD + d4);
+                uint jr = kv_row(kt, j);
+                kv4 = *(device const half4*)(kc + jr * kvDim + kvh * HD + d4);
+                vv4 = *(device const half4*)(vc + jr * kvDim + kvh * HD + d4);
             }
             *(threadgroup half4*)(Ks + key * LD + d4) = kv4;
             *(threadgroup half4*)(Vs + key * LD + d4) = vv4;
@@ -1058,7 +1060,7 @@ kernel void attention_prefill_steel_split(device const half* qkv[[buffer(0)]], d
     device const half* vc[[buffer(2)]], device half* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& startPos[[buffer(7)]],
     constant float& scale[[buffer(8)]], constant uint& qStride[[buffer(9)]], constant uint& window[[buffer(10)]],
-    constant uint& M[[buffer(11)]],
+    constant uint& M[[buffer(11)]], device const uint* kt[[buffer(12)]],
     uint tgid[[threadgroup_position_in_grid]], ushort sgid[[simdgroup_index_in_threadgroup]],
     ushort lane[[thread_index_in_simdgroup]], ushort tid[[thread_index_in_threadgroup]]) {
     constexpr ushort NS = HD / 128, NR = 8 / NS, BQ = NR * 8;
@@ -1109,8 +1111,9 @@ kernel void attention_prefill_steel_split(device const half* qkv[[buffer(0)]], d
             uint j = j0 + key;
             half4 kv4 = half4(0.0h), vv4 = half4(0.0h);
             if (j < jEnd) {
-                kv4 = *(device const half4*)(kc + j * kvDim + kvh * HD + d4);
-                vv4 = *(device const half4*)(vc + j * kvDim + kvh * HD + d4);
+                uint jr = kv_row(kt, j);
+                kv4 = *(device const half4*)(kc + jr * kvDim + kvh * HD + d4);
+                vv4 = *(device const half4*)(vc + jr * kvDim + kvh * HD + d4);
             }
             *(threadgroup half4*)(Ks + key * LD + d4) = kv4;
             *(threadgroup half4*)(Vs + key * LD + d4) = vv4;
@@ -1199,12 +1202,12 @@ template [[host_name("attention_prefill_steel_hd512")]] kernel decltype(attentio
 kernel void kv_store_f16(device const half* qkv[[buffer(0)]], device half* kc[[buffer(1)]],
     device half* vc[[buffer(2)]], device const uint* positions[[buffer(3)]],
     constant uint& kvDim[[buffer(4)]], constant uint& stride[[buffer(5)]],
-    constant uint& kOff[[buffer(6)]], constant uint& vOff[[buffer(7)]],
+    constant uint& kOff[[buffer(6)]], constant uint& vOff[[buffer(7)]], device const uint* kt[[buffer(8)]],
     uint gid[[thread_position_in_grid]]) {
     uint m = gid / kvDim, i = gid % kvDim;
-    uint pos = positions[m];
-    kc[pos*kvDim + i] = qkv[m*stride + kOff + i];
-    vc[pos*kvDim + i] = qkv[m*stride + vOff + i];
+    uint row = kv_row(kt, positions[m]);
+    kc[row*kvDim + i] = qkv[m*stride + kOff + i];
+    vc[row*kvDim + i] = qkv[m*stride + vOff + i];
 }
 
 // router_gemm_f16: batched router projection — normF[M×H](f16) · routerWᵀ[nE×H](f32) → logits[M×nE](f32).

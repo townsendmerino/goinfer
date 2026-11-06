@@ -8,18 +8,17 @@ package metal
 //   - kv_store_i8_prefill stores a block's K/V rows into the int8 cache. It is kv_store_i8's source with each K/V read widened
 //     from the pass's half values (one thread per row and KV head), so its codes and scales are the ones kv_store_i8 writes
 //     for those values.
-//   - kv_dequant_i8_f16 writes rows [0, n) of a layer's int8 cache, as half(code × scale), into the f16 scratch the pass's
-//     attention kernels then read in place of the cache.
+//   - kv_dequant_i8_f16 writes positions [0, n) of a layer's int8 cache, read through its block table, as half(code × scale), into
+//     the contiguous f16 scratch the pass's attention kernels then read, through an identity table, in place of the cache.
 var kvI8PrefillKernels = deriveKVI8PrefillKernels()
 
 func deriveKVI8PrefillKernels() string {
 	store := edit(extractKernel(allKernels, "kv_store_i8"),
 		"kernel void kv_store_i8(device const float* k[[buffer(0)]], device const float* v[[buffer(1)]],",
 		"kernel void kv_store_i8_prefill(device const half* qkv[[buffer(0)]], device const uint* positions[[buffer(1)]],",
-		"uint row = kv_row(kt, pos);", "uint row = pos;",
 		"constant uint& pos[[buffer(8)]], device const uint* kt[[buffer(9)]], uint kvh[[thread_position_in_grid]]) {",
 		"constant uint& stride[[buffer(8)]], constant uint& kOff[[buffer(9)]], constant uint& vOff[[buffer(10)]],\n"+
-			"    constant uint& rowsM[[buffer(11)]], uint gid[[thread_position_in_grid]]) {\n"+
+			"    constant uint& rowsM[[buffer(11)]], device const uint* kt[[buffer(12)]], uint gid[[thread_position_in_grid]]) {\n"+
 			"    uint m = gid / nKV; if (m >= rowsM) return; uint kvh = gid % nKV;\n"+
 			"    device const half* k = qkv + m*stride + kOff; device const half* v = qkv + m*stride + vOff; uint pos = positions[m];",
 		"abs(k[base + d])", "abs(float(k[base + d]))",
@@ -31,12 +30,12 @@ kernel void kv_dequant_i8_f16(device const char* kc[[buffer(0)]], device const c
     device const float* ks[[buffer(2)]], device const float* vs[[buffer(3)]],
     device half* kOut[[buffer(4)]], device half* vOut[[buffer(5)]],
     constant uint& nKV[[buffer(6)]], constant uint& hd[[buffer(7)]], constant uint& n[[buffer(8)]],
-    uint gid[[thread_position_in_grid]]) {
+    device const uint* kt[[buffer(9)]], uint gid[[thread_position_in_grid]]) {
     uint kvDim = nKV * hd;
     if (gid >= n * kvDim) return;
-    uint pos = gid / kvDim, h = (gid % kvDim) / hd;
-    kOut[gid] = half(float(kc[gid]) * ks[pos * nKV + h]);
-    vOut[gid] = half(float(vc[gid]) * vs[pos * nKV + h]);
+    uint i = gid % kvDim, row = kv_row(kt, gid / kvDim), h = i / hd;
+    kOut[gid] = half(float(kc[row * kvDim + i]) * ks[row * nKV + h]);
+    vOut[gid] = half(float(vc[row * kvDim + i]) * vs[row * nKV + h]);
 }
 `
 }

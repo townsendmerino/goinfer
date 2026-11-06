@@ -2848,9 +2848,18 @@ func kvTableIDs(slots, blocks int) []uint32 {
 }
 
 // kvHostOff is where the bound slot's KV starts, in elements of elemBytes, within layer l's buffer contents as the host
-// sees them (Floats/U16s start at the allocation, not at a view's offset).
+// sees them (Floats/U16s start at the allocation, not at a view's offset). It holds only while the slot's table is in order;
+// host code that writes or reads a position goes through kvHostRow.
 func (r *resident) kvHostOff(l, elemBytes int) int {
 	return (r.kvNullBytes[l] + r.kvSlot*r.kvSlotBytes[l]) / elemBytes
+}
+
+// kvHostRow is the row position pos of the bound slot occupies in a layer's pool, counted from the pool's start as the host sees
+// its contents (the null block is rows 0 to 63): the block the slot's table names, at the position's offset inside it. Positions
+// pos to the end of its block are the consecutive rows after it.
+func (r *resident) kvHostRow(pos int) int {
+	tab := r.kvTab.U32s()
+	return int(tab[r.kvSlot*r.kvTabBlocks+pos/decoder.KVBlockRows])*decoder.KVBlockRows + pos%decoder.KVBlockRows
 }
 
 // kvElemBytes is one element of the K/V cache: 1 for int8, 4 for f32, 2 for f16.
