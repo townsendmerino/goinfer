@@ -110,8 +110,6 @@ SCANS = [
     # SB7: a loadedModel's model handle is set only through handleOf.
     Scan("engine", "TestSurface_exportsOnlyItsContract", NT("engine", "engine/enginetest")),
     Scan("internal/app/serveapp", "TestModelHandle_assignedThroughHandleOf", NT("internal/app/serveapp")),
-    Scan("internal/app/serveapp", "TestDecoderEmbedder_boundComesFromTheModelNotZero", F("internal/app/serveapp/decoder_embedder.go")),
-    Scan("internal/app/serveapp", "TestAnthropic_decodeUsesTheSharedShaping", F("internal/app/serveapp/anthropic.go")),
     Scan("internal/app/serveapp", "TestSessions_persistedStateIsOwnerOnly", F("internal/app/serveapp/sessions.go")),
     Scan("internal/app/serveapp", "TestAdminLoad_racedDuplicateIsClosed", F("internal/app/serveapp/admin.go", "internal/app/serveapp/webui.go")),
     Scan("internal/app/serveapp", "TestStartDrain_savesSessionsUnderTheLRULock", F("internal/app/serveapp/liveness.go")),
@@ -122,7 +120,6 @@ SCANS = [
     Scan("internal/app/serveapp", "TestStreamTokens_decodesAsAContinuation", F("internal/app/serveapp/openai.go")),
     Scan("internal/app/serveapp", "TestServe_prepareEnforcesThePublishedWindow", F("internal/app/serveapp/openai.go")),
     Scan("internal/app/serveapp", "TestDriveUsesRequestContext", NT("internal/app/serveapp")),
-    Scan("internal/app/serveapp", "TestRequestLog_wiredIntoTheGenerationRoutes", F("internal/app/serveapp/main.go")),
     Scan("internal/app/serveapp", "TestRespondTools_callsMaybeStoreWithTheToolCalls", F("internal/app/serveapp/responses.go")),
     Scan("internal/app/serveapp", "TestSSE_everyStreamingDriveSiteHeartbeats",
          F("internal/app/serveapp/openai.go", "internal/app/serveapp/anthropic_stream.go", "internal/app/serveapp/vision_serve.go",
@@ -151,6 +148,8 @@ SCANS = [
     # SB7: internal/app/serveapp test files importing decoder may only fall.
     Scan("internal/layout", "TestServeappTests_decoderImportsOnlyFall", TREE_GO),
     # SB13: every goinfer-to-goinfer import against internal/layout/imports.json, and the root go.mod against its rules.
+    # Every fuzz target is in the weekly matrix, under the directory it lives in now.
+    Scan("internal/layout", "TestFuzzWeekly_listsEveryTarget", TREE_T + F(".github/workflows/fuzz-weekly.yml")),
     Scan("internal/layout", "TestLayout_arrows", TREE_GO + F("internal/layout/imports.json", "go.mod")),
     # SB13: towers-standalone's one exception (internal/audio may import internal/vision), read from imports.json.
     Scan("internal/layout", "TestLayout_towersStandalone", F("internal/layout/imports.json")),

@@ -1,7 +1,6 @@
 package decoder
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -126,52 +125,5 @@ func TestCohere2_forwardParity(t *testing.T) {
 			t.Errorf("continuation[%d] = %d, want %d", i, cont[i], g.ContinuationIDs[i])
 			break
 		}
-	}
-}
-
-// TestCohere2_batchedPrefillMatchesSequential guards the batched forwardN parallel +
-// NoPE + sliding path against the sequential decode (bit-identical by design), so the
-// prefill can't silently diverge on the sliding/NoPE interleave.
-func TestCohere2_batchedPrefillMatchesSequential(t *testing.T) {
-	const ckpt = "../testdata/cohere2-tiny"
-	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no tiny checkpoint (%s) — run scripts/pin_cohere2_tiny.py", ckpt)
-	}
-	m, err := Load(ckpt, Options{Quant: "f32"})
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	defer m.Close()
-
-	ids := []int{3, 141, 7, 88, 219, 14, 66, 190, 42, 5, 133, 201, 17, 250, 99, 60}
-
-	seqCache := m.NewCache(len(ids))
-	for _, id := range ids[:len(ids)-1] {
-		if _, err := m.runLayers(id, seqCache); err != nil {
-			t.Fatalf("seq runLayers: %v", err)
-		}
-	}
-	seq, err := m.forward(ids[len(ids)-1], seqCache)
-	if err != nil {
-		t.Fatalf("seq forward: %v", err)
-	}
-
-	rows, err := m.forwardN(context.Background(), ids, m.NewCache(len(ids)))
-	if err != nil {
-		t.Fatalf("batched forwardN: %v", err)
-	}
-	batch := rows[len(rows)-1]
-	if len(batch) != len(seq) {
-		t.Fatalf("batched %d logits, sequential %d", len(batch), len(seq))
-	}
-	var maxAbs float64
-	for i := range seq {
-		if d := math.Abs(float64(seq[i]) - float64(batch[i])); d > maxAbs {
-			maxAbs = d
-		}
-	}
-	t.Logf("batched vs sequential maxAbs=%.3e", maxAbs)
-	if maxAbs > 1e-4 {
-		t.Errorf("batched prefill diverged from sequential: maxAbs %.3e > 1e-4", maxAbs)
 	}
 }

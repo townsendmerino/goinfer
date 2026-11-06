@@ -32,19 +32,35 @@ jobs:
           - { pkg: decoder, fn: FuzzParseQuantConfig }
           - { pkg: decoder, fn: FuzzGPTQReconstruct }
           - { pkg: decoder, fn: FuzzAWQReconstruct }
-          - { pkg: internal/giw, fn: FuzzGIWRead }
-          - { pkg: internal/giw, fn: FuzzGIWRoundTrip }
+          - { pkg: decoder, fn: FuzzLoadConfig }
+          - { pkg: internal/runtime/giw, fn: FuzzGIWRead }
+          - { pkg: internal/runtime/giw, fn: FuzzGIWRoundTrip }
           - { pkg: tokenizer, fn: FuzzParseTokenizerJSON }
+          - { pkg: tokenizer, fn: FuzzReadGGUFMeta }
+          - { pkg: tokenizer, fn: FuzzLoadTekken }
+          - { pkg: multimodal, fn: FuzzParseQwen3PreprocessConfig }
           # serving request parsers (a panic here is a remote DoS on the server)
-          - { pkg: internal/serveapp, fn: FuzzServeChatRequest }
-          - { pkg: internal/serveapp, fn: FuzzServeMessagesRequest }
-          - { pkg: internal/serveapp, fn: FuzzServeImageParts }
-          - { pkg: internal/serveapp, fn: FuzzServeResponsesInput }
+          - { pkg: internal/app/serveapp, fn: FuzzServeChatRequest }
+          - { pkg: internal/app/serveapp, fn: FuzzServeMessagesRequest }
+          - { pkg: internal/app/serveapp, fn: FuzzServeImageParts }
+          - { pkg: internal/app/serveapp, fn: FuzzServeResponsesInput }
+          - { pkg: internal/app/serveapp, fn: FuzzParseIDsBlob }
+          - { pkg: internal/app/serveapp, fn: FuzzServeEmbeddingsInput }
+          - { pkg: internal/app/serveapp, fn: FuzzServeSystemOne }
+          - { pkg: internal/vision, fn: FuzzPreprocess }
+          - { pkg: multimodal, fn: FuzzParseWAV }
+          - { pkg: internal/batchio, fn: FuzzParseInput }
+          - { pkg: internal/clef, fn: FuzzParse }
+          - { pkg: tokenizer, fn: FuzzEncode }
+          - { pkg: pull, fn: FuzzParseRef }
           # constrained-decoding compilers (untrusted JSON Schema / grammar bytes)
           - { pkg: constrain, fn: FuzzJSONSchema }
           - { pkg: constrain, fn: FuzzSchemaGrammarBytes }
+          - { pkg: constrain, fn: FuzzToolCallsGrammar }
           # tool-call parsing of MODEL output, incl. the bare-call path (a wrong call executes a tool)
           - { pkg: chat, fn: FuzzParseToolCallsFor }
+          - { pkg: chat, fn: FuzzFencedToolCall }
+          - { pkg: chat, fn: FuzzSplitThink }
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0

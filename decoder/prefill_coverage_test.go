@@ -37,12 +37,12 @@ func TestPrefillCoverageAudit(t *testing.T) {
 	for _, fam := range names {
 		cfg := representativeConfig(families[fam])
 		if cfg == nil {
-			t.Logf("%-18s %-10s  no representativeConfig", fam, "SKIP")
+			t.Errorf("%s: no representativeConfig, so the table below leaves out a validated family", fam)
 			continue
 		}
 		arch, _, err := resolveArchitecture(cfg)
 		if err != nil {
-			t.Logf("%-18s %-10s  resolveArchitecture: %v", fam, "SKIP", err)
+			t.Errorf("%s: resolveArchitecture: %v, so the table below leaves out a validated family", fam, err)
 			continue
 		}
 		// The guards, in PrefillLast order. Not-resident is the prior gate (never reaches PrefillLast).

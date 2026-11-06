@@ -330,6 +330,7 @@ var programParamNeeds = map[string]string{
 // must change every fixture they run whose per-token logits it changes: a walker that read the parameter from elsewhere would
 // keep that fixture's logits.
 func TestProgram_L_everyParameterIsLive(t *testing.T) {
+	t.Parallel()
 	fx := programFixtures(t)
 	type tally struct {
 		changed, errored, same []string

@@ -341,3 +341,27 @@ func cosineF32(a, b []float32) float64 {
 	}
 	return dot / (math.Sqrt(na) * math.Sqrt(nb))
 }
+
+// The wiring itself: the embedder's bound is the model's context window, not 0. The arithmetic test in limits_test.go passes for any non-zero
+// bound, so this is what pins the source of it.
+func TestDecoderEmbedder_boundComesFromTheModelNotZero(t *testing.T) {
+	p := tinyChatCheckpoint(t)
+	tk, err := modelload.Tokenizer(p)
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	m, err := decoder.Load(p, decoder.Options{Backend: "cpu", Quant: "int8int8"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	want := m.Config().MaxPositions
+	if want <= 0 {
+		t.Fatalf("the fixture's MaxPositions is %d: this test proves nothing", want)
+	}
+	if got := newDecoderEmbedder(m, tk, "", "").maxTokens; got != want {
+		t.Errorf("maxTokens %d, want the model's max_position_embeddings %d: 0 leaves only the request's byte cap between a request "+
+			"and about 500k positions of sequential forward under the embed mutex (audit-2026-09-02 C-07), and Architecture.MaxPositions "+
+			"is the GPT-2 learned-position table, 0 for every RoPE family", got, want)
+	}
+}

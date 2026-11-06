@@ -951,8 +951,8 @@ func (r *resident) canUseAttnFAAt(l, nKeys int) bool {
 
 // forwardMulti runs one decode token for each of seqs — 1..batchMaxSeqs sequences, each on its own resident KV slot at
 // its own position — in one command buffer. It returns each row's logits (fresh slices), or, for a row that carries a
-// draw, the id ForwardSample would have drawn (ids[m] >= 0, logits[m] nil); ids[m] is -1 for a logits row. It never
-// touches the bound slot (r.kc/r.vc); every sequence's KV is addressed through kvSlotBufs. The pipelined executor is
+// draw, the id ForwardSample would have drawn (ids[m] >= 0, logits[m] nil); ids[m] is -1 for a logits row. It leaves the bound
+// slot's table (r.kt) bound; every sequence's KV is addressed through its own slot's table. The pipelined executor is
 // stopped first: a command buffer it pre-encoded would otherwise run after this one's writes with its own stale plan.
 func (r *resident) forwardMulti(seqs []batchSeq) (logits [][]float32, ids []int, err error) {
 	return r.forwardMultiInto(seqs, false)
@@ -1127,9 +1127,9 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		e.Dispatch(r.pRope2Rows, B*(r.nH*g.half+g.nKV*g.half), 64, b.qkvB, L.invf, g.uHd, b.posB, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, b.qtB, b.uQKV, b.uM)
 		// KV store and attention, each row over its OWN sequence's blocks: one pool, read from its start, and the row's table in kvTab
 		// (tabOffB). One dispatch stores every row's K/V; one runs every per-head-kernel row's attention.
-		kcPool, vcPool := r.kvSlotBufs[0].kc[l].At(0), r.kvSlotBufs[0].vc[l].At(0)
+		kcPool, vcPool := r.kc[l].At(0), r.vc[l].At(0)
 		if r.kvI8 { // one thread per (row, KV head), as kv_store_i8 is one per head
-			e.Dispatch(r.pKvI8Rows, B*g.nKV, 32, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcPool, vcPool, r.kvSlotBufs[0].ks[l].At(0), r.kvSlotBufs[0].vs[l].At(0), g.uNKV, g.uHd, b.posB, b.uQKV, b.uM, r.kvTab, b.tabOffB)
+			e.Dispatch(r.pKvI8Rows, B*g.nKV, 32, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0), g.uNKV, g.uHd, b.posB, b.uQKV, b.uM, r.kvTab, b.tabOffB)
 		} else {
 			e.Dispatch(r.pKvRows, B*g.kvDim, 64, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcPool, vcPool, g.uKvDim, b.posB, b.uQKV, b.uM, r.kvTab, b.tabOffB)
 		}
@@ -1152,7 +1152,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, f32(b.ctxB, m, nHhd), r.uAttnFAG, g.uHd, b.uFANSplit[m])
 		}
 		if nPlain > 0 && r.kvI8 {
-			e.Dispatch(r.pAttnI8Rows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcPool, vcPool, r.kvSlotBufs[0].ks[l].At(0), r.kvSlotBufs[0].vs[l].At(0),
+			e.Dispatch(r.pAttnI8Rows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0),
 				b.ctxB, r.uNH, g.uNKV, g.uHd, b.nKeysB, r.uScale, L.uWindow, b.uCount[nPlain], b.rowmapB, r.kvTab, b.tabOffB)
 		} else if nPlain > 0 {
 			e.Dispatch(r.pAttnRows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcPool, vcPool, b.ctxB, r.uNH, g.uNKV, g.uHd,
@@ -1212,7 +1212,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		if r.stepWholeLayer(l) {
 			// Decode's layer encoder on each row in turn (OP4m-d5a): the row's position uniforms, its slot's K/V, its attention
 			// plan and its per-layer embedding input bound at encode time, all restored after.
-			kc, vc, ks, vs, kt, pleIn := r.kc, r.vc, r.ks, r.vs, r.kt, r.pleIn
+			kt, pleIn := r.kt, r.pleIn
 			// steps runs layer l's steps from..to-1 on each row in turn, with that row's binding.
 			steps := func(from, to int) {
 				for m, q := range seqs {
@@ -1220,8 +1220,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 					if stepAttnRow0PlantForTest {
 						src = 0
 					}
-					sb := r.kvSlotBufs[q.slot]
-					r.kc, r.vc, r.ks, r.vs, r.kt = sb.kc, sb.vc, sb.ks, sb.vs, sb.kt
+					r.kt = r.kvSlotBufs[q.slot].kt
 					r.encNKeys = seqs[src].pos + 1
 					if r.attnFANKV > 0 {
 						r.encFANSplit = b.uFANSplit[src]
@@ -1245,7 +1244,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			} else {
 				steps(0, len(L.steps))
 			}
-			r.kc, r.vc, r.ks, r.vs, r.kt, r.pleIn = kc, vc, ks, vs, kt, pleIn
+			r.kt, r.pleIn = kt, pleIn
 			r.encNKeys, r.encFANSplit = 0, Buffer{}
 			continue
 		}
@@ -1258,21 +1257,20 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 				}
 				// decode's gated attention on each row in turn: the row's own position uniforms, its slot's K/V bound and
 				// its key count as the attention plan's, all at encode time, restored after.
-				kc, vc, ks, vs, kt := r.kc, r.vc, r.ks, r.vs, r.kt
+				kt := r.kt
 				for m, q := range seqs {
 					src := m
 					if stepAttnRow0PlantForTest {
 						src = 0
 					}
-					sb := r.kvSlotBufs[q.slot]
-					r.kc, r.vc, r.ks, r.vs, r.kt = sb.kc, sb.vc, sb.ks, sb.vs, sb.kt
+					r.kt = r.kvSlotBufs[q.slot].kt
 					r.encNKeys = seqs[src].pos + 1
 					if r.attnFANKV > 0 {
 						r.encFANSplit = b.uFANSplit[src]
 					}
 					r.encodeAttentionResidualWith(e, l, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src])
 				}
-				r.kc, r.vc, r.ks, r.vs, r.kt = kc, vc, ks, vs, kt
+				r.kt = kt
 				r.encNKeys, r.encFANSplit = 0, Buffer{}
 			case stepDeltaNet:
 				for m, q := range seqs { // decode's DeltaNet mixer on each row in turn, on the row's own slot state (OP4m-d4a)
