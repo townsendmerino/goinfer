@@ -69,11 +69,20 @@ func (r *cudaResident) releaseLoraLayers(layers []cudaLoraLayer) {
 // production). It counts down as buffers are allocated.
 var loraAllocFailAfterForTest int
 
+// loraPanicAfterForTest, when > 0, makes the Nth LoRA buffer allocation of a bind panic with a value that is not a device allocation
+// failure (test seam; zero in production).
+var loraPanicAfterForTest int
+
 // upLora uploads one LoRA matrix.
 func (r *cudaResident) upLora(v []float32) Buffer {
 	if loraAllocFailAfterForTest > 0 {
 		if loraAllocFailAfterForTest--; loraAllocFailAfterForTest == 0 {
 			panic("cuda: device allocation failed (test seam): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY")
+		}
+	}
+	if loraPanicAfterForTest > 0 {
+		if loraPanicAfterForTest--; loraPanicAfterForTest == 0 {
+			panic("lora: test seam panic that is not an allocation failure")
 		}
 	}
 	return r.up32(v)
@@ -160,13 +169,19 @@ func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 		r.releaseLoraLayers(r.lora.cache) // a different adapter: return the cached one first
 		r.lora.cache, r.lora.key = nil, nil
 		built := make([]cudaLoraLayer, len(layers))
+		complete := false
+		defer func() {
+			if !complete {
+				r.releaseLoraLayers(built) // whatever the failed or panicking upload had already allocated
+			}
+		}()
 		if err := r.uploadLoraLayers(built, layers); err != nil {
-			r.releaseLoraLayers(built) // whatever the failed upload had already allocated
 			return err
 		}
 		r.lora.uploads++
 		r.lora.cache, r.lora.key = built, key
 		r.loraLayers = built
+		complete = true
 		return nil
 	})
 }

@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -187,5 +188,84 @@ func TestLoRAUploadOOM_returnsEveryBuffer(t *testing.T) {
 	}
 	if got := ledger() - before; got != total {
 		t.Errorf("the bind after the failures allocated %d buffers, want %d", got, total)
+	}
+}
+
+// loraOOMRig loads llama-tiny on the card with the adapters "a" and "b" registered, and returns the resident, the model and a
+// ledger-count reader.
+func loraOOMRig(t *testing.T) (*decoder.Model, *cudaResident, func() int) {
+	t.Helper()
+	const ckpt = "../../testdata/llama-tiny"
+	requireDeviceAndFixture(t, ckpt)
+	m, err := decoder.Load(ckpt, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load cuda: %v", err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	for name, dir := range map[string]string{"a": buildLlamaTinyLoRAFixtureCUDA(t), "b": buildLlamaTinyLoRAFixtureCUDASeeded(t, 1000)} {
+		if err := m.LoadAdapter(name, dir); err != nil {
+			t.Fatalf("LoadAdapter %s: %v", name, err)
+		}
+	}
+	cr, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("resident is %T, not *cudaResident", m.ResidentForwardForTest())
+	}
+	return m, cr, func() int { a, _ := cr.dev.LedgerLen(); return a }
+}
+
+// TestLoRAUploadOOM_afterAnAdapterIsBound: switching from a bound adapter A to B, a B upload that fails partway leaves nothing bound
+// (not A, whose buffers the switch returned first) and the ledger at the level before any adapter was bound, at every failure point.
+func TestLoRAUploadOOM_afterAnAdapterIsBound(t *testing.T) {
+	m, cr, ledger := loraOOMRig(t)
+	before := ledger()
+	if err := cr.SetAdapter(m.ResidentAdapterLayersForTest("a")); err != nil {
+		t.Fatal(err)
+	}
+	total := ledger() - before
+	if total < 4 {
+		t.Fatalf("a bind allocates %d buffers", total)
+	}
+	defer func() { loraAllocFailAfterForTest = 0 }()
+	for n := 1; n <= total; n++ {
+		if err := cr.SetAdapter(m.ResidentAdapterLayersForTest("a")); err != nil { // A is bound again and cached
+			t.Fatalf("rebind a: %v", err)
+		}
+		if cr.loraLayers == nil {
+			t.Fatal("a is not bound before the switch")
+		}
+		loraAllocFailAfterForTest = n
+		if err := cr.SetAdapter(m.ResidentAdapterLayersForTest("b")); err == nil {
+			t.Fatalf("switch to b failing at allocation %d of %d: no error", n, total)
+		}
+		loraAllocFailAfterForTest = 0
+		if cr.loraLayers != nil || cr.lora.cache != nil {
+			t.Errorf("switch to b failing at %d of %d: an adapter or cache is still bound (loraLayers nil: %v)", n, total, cr.loraLayers == nil)
+		}
+		if got := ledger(); got != before {
+			t.Errorf("switch to b failing at %d of %d: %d device allocations remain, want %d", n, total, got, before)
+		}
+	}
+}
+
+// TestLoRAUploadOOM_anyPanicReturnsTheBuffers: a panic that is not a device allocation failure, partway through an upload, still returns
+// every buffer the upload had allocated; the job reports it as an error.
+func TestLoRAUploadOOM_anyPanicReturnsTheBuffers(t *testing.T) {
+	m, cr, ledger := loraOOMRig(t)
+	before := ledger()
+	defer func() { loraPanicAfterForTest = 0 }()
+	for _, n := range []int{2, 5, 20} {
+		loraPanicAfterForTest = n
+		err := cr.SetAdapter(m.ResidentAdapterLayersForTest("a"))
+		loraPanicAfterForTest = 0
+		if err == nil || !strings.Contains(err.Error(), "test seam panic") {
+			t.Fatalf("panic at allocation %d: err = %v, want the job's error naming the panic", n, err)
+		}
+		if got := ledger(); got != before {
+			t.Errorf("panic at allocation %d: %d device allocations remain, want %d (leaked %d)", n, got, before, got-before)
+		}
+		if cr.loraLayers != nil || cr.lora.cache != nil {
+			t.Errorf("panic at allocation %d: an adapter or cache is still bound", n)
+		}
 	}
 }
