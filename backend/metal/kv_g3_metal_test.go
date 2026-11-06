@@ -628,8 +628,8 @@ func kvPressureIdle(t *testing.T) (*decoder.Model, *metalResident, int, map[int]
 // prefilled again gives the logits it gave before; (2) the borrower, with no idle slot left and another slot running within its share,
 // gets ErrKVPoolFull; (3) a running conversation within its share whose first token arrives in a batched step beside the borrower's
 // takes the borrower's blocks back, and the step launches nothing (ErrKVPoolFull, block 0 still zero); its prompt then gets the logits
-// it gets alone, and the borrower answers no reuse, declines as a CopyKV source and gets ErrKVPoolFull on its next write. With
-// kvEvictOrderPlantForTest (most recently written first), (1) goes red.
+// it gets alone, and the borrower answers no reuse, declines as a CopyKV source and gets ErrKVPoolFull on its next write, a prefill or
+// any decode entry point. With kvEvictOrderPlantForTest (most recently written first), (1) goes red.
 func TestKVPages_pressureFollowsD5(t *testing.T) {
 	func() {
 		kvEvictOrderPlantForTest = true
@@ -708,6 +708,16 @@ func TestKVPages_pressureFollowsD5(t *testing.T) {
 	}
 	if _, err := kvCapPrefill(m, a, 0, grow[need:need+64], need); !errors.Is(err, decoder.ErrKVPoolFull) {
 		t.Errorf("the stopped borrower's next write: got %v, want ErrKVPoolFull", err)
+	}
+	// Decode's entry points map before they encode, so the borrower's next token gets ErrKVPoolFull from each of them.
+	if _, err := a.Forward(emb(5), need); !errors.Is(err, decoder.ErrKVPoolFull) {
+		t.Errorf("the stopped borrower's Forward: got %v, want ErrKVPoolFull", err)
+	}
+	if err := a.ForwardNoLogits(emb(5), need); !errors.Is(err, decoder.ErrKVPoolFull) {
+		t.Errorf("the stopped borrower's ForwardNoLogits: got %v, want ErrKVPoolFull", err)
+	}
+	if _, err := a.ForwardSample(emb(5), need, 0, 1, 0); !errors.Is(err, decoder.ErrKVPoolFull) {
+		t.Errorf("the stopped borrower's ForwardSample: got %v, want ErrKVPoolFull", err)
 	}
 	t.Logf("share %d positions; the borrower held %d blocks when the conversation within its share arrived", share, held)
 }
