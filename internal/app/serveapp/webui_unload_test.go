@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,7 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 )
 
 // postUnload posts {"name": name} to handleWebUnload directly, mirroring postLoad.
@@ -125,12 +127,12 @@ func TestUnloadSuggestion(t *testing.T) {
 	if got := empty.unloadSuggestion(other); got != "" {
 		t.Errorf("non-fit error: suggestion = %q, want \"\"", got)
 	}
-	if got := empty.unloadSuggestion(decoder.ErrWontFitResident); got != "" {
+	if got := empty.unloadSuggestion(fit.ErrWontFitResident); got != "" {
 		t.Errorf("fit error, nothing resident: suggestion = %q, want \"\" (no fix to offer)", got)
 	}
 
 	s, lm := tinyServed(t)
-	wrapped := fmt.Errorf("decoder: won't fit: %w", decoder.ErrWontFitResident)
+	wrapped := fmt.Errorf("decoder: won't fit: %w", fit.ErrWontFitResident)
 	got := s.unloadSuggestion(wrapped)
 	want := lm.model.ResidentWeightBytes() + lm.model.ExtraResidentBytes()
 	if !strings.Contains(got, `Unload "tiny"`) || !strings.Contains(got, fmt.Sprintf("%.1f GB", float64(want)/(1<<30))) {

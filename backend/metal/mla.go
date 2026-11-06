@@ -160,7 +160,8 @@ func buildMLAScratch(d *Device, m *decoder.Model, p *mlaParams) *mlaScratch {
 var mlaKVCopyDeclineOffForTest bool
 
 // encodeMLAMixer is an MLA layer's attention block: the input norm, q (q-LoRA or direct) and the KV down-projection, the
-// latent stored at uPos, q absorbed through W_UK and its rope slice rotated, attention over the slot's latent rows, the lift
+// latent stored at uPos, q absorbed through W_UK and its rope slice rotated, attention over the slot's latent rows (the pool from its
+// start, through the bound slot's table), the lift
 // through W_UV, the output projection, and the residual add into x.
 func (r *resident) encodeMLAMixer(e *Encoder, l int, L *residLayer, x, uPos, uRopePos, uNKeys Buffer) {
 	p, M, s := r.mla, L.mla, r.mlaS
@@ -173,10 +174,10 @@ func (r *resident) encodeMLAMixer(e *Encoder, l int, L *residLayer, x, uPos, uRo
 		e.Dispatch(r.pGemvW8, p.nH*p.qkHead*32, 32, r.aq, r.aSc, M.qW, M.qS, s.q, r.uH)
 	}
 	e.Dispatch(r.pGemvW8, p.latDim*32, 32, r.aq, r.aSc, M.kvAW, M.kvAS, s.kv, r.uH)
-	e.Dispatch(r.pMlaStore, 64, 64, s.kv, M.kvANorm, s.invf, r.kc[l], s.uStore, uPos, uRopePos, r.uEps, s.uRopeScale)
+	e.Dispatch(r.pMlaStore, 64, 64, s.kv, M.kvANorm, s.invf, r.kc[l].At(0), s.uStore, uPos, uRopePos, r.uEps, s.uRopeScale, r.kt)
 	e.Dispatch(r.pMlaHeadMV, p.nH*p.rank*32, 256, s.q, M.wuk, s.qAbs, s.uAbsorb)
 	e.Dispatch(r.pMlaQRope, p.nH*(p.qkRope/2), 64, s.q, s.invf, s.qAbs, s.uQRope, uRopePos, s.uRopeScale)
-	e.Dispatch(r.pMlaAttn, p.nH*128, 128, s.qAbs, r.kc[l], s.wsum, s.uAttn, uNKeys, s.uScale)
+	e.Dispatch(r.pMlaAttn, p.nH*128, 128, s.qAbs, r.kc[l].At(0), s.wsum, s.uAttn, uNKeys, s.uScale, r.kt)
 	e.Dispatch(r.pMlaHeadMV, p.nH*p.vHead*32, 256, s.wsum, M.wuv, s.ctx, s.uLift)
 	e.Dispatch(r.pQv, 256, 256, s.ctx, s.ctxQ, s.ctxSc, s.uOK)
 	e.Dispatch(r.pGemvW8, r.H*32, 32, s.ctxQ, s.ctxSc, M.oW, M.oS, r.dO, s.uOK)

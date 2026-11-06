@@ -82,7 +82,7 @@ func kmlaWorst(t *testing.T, src string, interleave bool) (store, qrope float64)
 		e := q.Begin()
 		e.Dispatch(pStore, 64, 64, NewBufferFloats(d, kv), NewBufferFloats(d, normW), NewBufferFloats(d, invf), lat,
 			NewBufferUint32s(d, []uint32{kmlaRank, kmlaQKRope, il}), NewBufferU32(d, uint32(pos)), NewBufferU32(d, uint32(pos)),
-			NewBufferFloats(d, []float32{eps}), NewBufferFloats(d, []float32{1}))
+			NewBufferFloats(d, []float32{eps}), NewBufferFloats(d, []float32{1}), kvIdentityTable(d))
 		e.End()
 		var ss float64
 		for i := range kmlaRank {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -164,7 +165,7 @@ func sampleW8Decode(t *testing.T, path string, a w8Arm, prompt []int, n int) w8S
 	nativeInt8, w8FastMath = a.native, a.fastMath
 	defer func() { nativeInt8, w8FastMath = prev, prevFast }()
 	m, err := decoder.Load(path, decoder.Options{Backend: a.backend, Quant: "int8int8", ResidentContext: len(prompt) + n + 64})
-	if errors.Is(err, decoder.ErrWontFitResident) {
+	if errors.Is(err, fit.ErrWontFitResident) {
 		return w8Sample{Note: "the fit guard refused the load: " + err.Error()}
 	}
 	if err != nil {
@@ -274,7 +275,7 @@ func ttftW8(t *testing.T, path string, a w8Arm, prompt []int) (cold, warm float6
 	nativeInt8, w8FastMath = a.native, a.fastMath
 	defer func() { nativeInt8, w8FastMath = prev, prevFast }()
 	m, err := decoder.Load(path, decoder.Options{Backend: a.backend, Quant: "int8int8", ResidentContext: len(prompt) + 64})
-	if errors.Is(err, decoder.ErrWontFitResident) {
+	if errors.Is(err, fit.ErrWontFitResident) {
 		return 0, 0, "the fit guard refused the load"
 	}
 	if err != nil {

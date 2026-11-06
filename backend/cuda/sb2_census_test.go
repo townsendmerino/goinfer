@@ -23,6 +23,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/diag/sb2census"
 	"github.com/townsendmerino/goinfer/internal/guard/memgate"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
@@ -2262,7 +2263,7 @@ func cudaGateRow(t testing.TB, row, path string, o decoder.Options) (memgate.Rea
 	if cudaGatePlanFreeForTest != nil {
 		planFree = cudaGatePlanFreeForTest(m, r)
 	}
-	read.Plan = m.Plan("cuda", planFree, decoder.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, Slots: gateSlots(r), KVSlots: r.KVSlots(), CheckpointReserve: r.ckptReserve()})
+	read.Plan = m.Plan("cuda", planFree, fit.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, Slots: gateSlots(r), KVSlots: r.KVSlots(), CheckpointReserve: r.ckptReserve()})
 	facts := func() map[string]int64 {
 		priced := m.PricedDenseVectorBytesForTest("cuda")
 		return map[string]int64{"kvRing": cudaKVRingBytes(r), "denseVectors": max(cudaDenseVectorBytes(m)-priced, 0), "moeVectors": max(cudaMoEVectorBytes(m, r.nE)-priced, 0), "windowGrant": cudaWindowGrantBytes(r)}
@@ -2505,7 +2506,7 @@ func TestMemGate_cudaTightCheckpointRoom(t *testing.T) {
 		return rd, state
 	}
 	rd, found := read(t, func(m *decoder.Model, r *cudaResident) int64 {
-		req := decoder.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, KVSlots: r.KVSlots(), CheckpointReserve: r.ckptReserve()}
+		req := fit.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, KVSlots: r.KVSlots(), CheckpointReserve: r.ckptReserve()}
 		p := m.Plan("cuda", math.MaxInt64/4, req)
 		return p.NeedBytes() + int64(r.KVSlots()-1)*(p.KVBytes+p.StateBytes) + r.ckptReserve() + p.CheckpointBytes
 	})

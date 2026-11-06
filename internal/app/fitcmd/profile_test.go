@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 )
 
 // writeProfile writes a machine profile with avail bytes available to a temp file.
@@ -59,7 +60,7 @@ func longCopy(t *testing.T, src string) string {
 func TestProfile_answersAsFitQueryAvailable(t *testing.T) {
 	dir := longCopy(t, filepath.Join("../../../testdata/llama-tiny"))
 	opts := decoder.Options{Quant: "int4"}
-	at := func(avail int64) decoder.FitAnswer {
+	at := func(avail int64) fit.FitAnswer {
 		a, err := decoder.FitQueryAvailable(dir, opts, avail)
 		if err != nil {
 			t.Fatal(err)

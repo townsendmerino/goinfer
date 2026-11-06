@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -67,7 +68,7 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 	cpu := func(quant string, f16KV bool, forced [][]int) (out [][][]float32, kl [][]float64, toks [][]int) {
 		defer debug.FreeOSMemory()
 		m, err := decoder.Load(path, decoder.Options{Quant: quant, ResidentContext: 1024})
-		if errors.Is(err, decoder.ErrWontFitResident) {
+		if errors.Is(err, fit.ErrWontFitResident) {
 			t.Skipf("the fit guard refused the CPU %q load on this machine now: %v", quant, err)
 		}
 		if err != nil {
