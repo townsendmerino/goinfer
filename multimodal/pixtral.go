@@ -46,7 +46,11 @@ func LoadPixtralPreprocessConfig(dir string) (PixtralPreprocessConfig, error) {
 	var top struct {
 		SpatialMergeSize int `json:"spatial_merge_size"`
 	}
-	if raw, err := os.ReadFile(filepath.Join(dir, "config.json")); err == nil {
+	raw, found, err := readOptionalConfig(dir, "config.json")
+	if err != nil {
+		return c, fmt.Errorf("pixtral: %w", err)
+	}
+	if found {
 		if err := json.Unmarshal(raw, &top); err != nil {
 			return c, fmt.Errorf("pixtral: parse config.json: %w", err)
 		}
@@ -63,8 +67,11 @@ func LoadPixtralPreprocessConfig(dir string) (PixtralPreprocessConfig, error) {
 		} `json:"size"`
 	}
 	for _, name := range []string{"processor_config.json", "preprocessor_config.json"} {
-		raw, err := os.ReadFile(filepath.Join(dir, name))
+		raw, found, err := readOptionalConfig(dir, name)
 		if err != nil {
+			return c, fmt.Errorf("pixtral: %w", err)
+		}
+		if !found {
 			continue
 		}
 		var w struct {

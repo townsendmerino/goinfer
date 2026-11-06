@@ -4,13 +4,15 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"os"
 
-	"github.com/townsendmerino/aikit/linalg"
 	"hash/crc32"
 	"io"
 	"math"
 	"unsafe"
+
+	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // This file defines the binary format of an already-quantized *Weights bundle (a ".giw", goinfer weights), so the
@@ -898,7 +900,7 @@ func NewModelWithOptions(w *Weights, opts Options) (*Model, error) {
 	}
 	be, beErr := NewBackend(opts.Backend)
 	if beErr != nil {
-		fmt.Fprintln(os.Stderr, beErr) // webgpu/cuda requested but fell back — not fatal.
+		logs.Warnf("%v", beErr) // webgpu/cuda requested but fell back — not fatal.
 	}
 	return modelFromOptions(w, be, opts).withBackendNames(opts.Backend, beErr).bindKnobs(opts.Knobs.values()).withResidency(), nil
 }

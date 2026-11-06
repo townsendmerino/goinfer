@@ -17,6 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/decoder/fit"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -178,7 +179,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		// The reason names the cause and what to try; a recovered panic's stack goes to stderr beside it.
 		reason, detail := declineAdvice(e.Error(), m.MoECacheExperts())
 		if detail != "" {
-			fmt.Fprintf(os.Stderr, "[cuda] resident build failure, detail:\n%s\n", detail)
+			logs.Infof("[cuda] resident build failure, detail:\n%s", detail)
 		}
 		return nil, false, decoder.DeclineResident("cuda: %s", reason)
 	}
@@ -1368,7 +1369,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 						if maxHd <= 0 {
 							// Never attempt the allocation on a degenerate size: that is the exact
 							// failure above, and it takes the entire resident path down with it.
-							fmt.Fprintf(os.Stderr, "[cuda] GOINFER_SPLITKV_VSUM_SPLIT ignored: no positive head dim\n")
+							logs.Warnf("[cuda] GOINFER_SPLITKV_VSUM_SPLIT ignored: no positive head dim")
 						} else {
 							loadSK(&r.skVsumPartial, "splitkv_vsum_partial")
 							loadSK(&r.skVsumCombine, "splitkv_vsum_combine")
@@ -1966,9 +1967,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			}
 			r.xF, r.dF, r.moeGLUF = r.af(H), r.af(max(maxI, 1)), r.af(moeInter)
 			r.floatAct = true
-			fmt.Fprintf(os.Stderr, "cuda: decode activations: f32 into every int4 projection (gemv_w4f32)\n")
+			logs.Debugf("cuda: decode activations: f32 into every int4 projection (gemv_w4f32)")
 		} else if r.gemma4Moe {
-			fmt.Fprintf(os.Stderr, "cuda: decode activations: int8 (W4A8): %s\n", why)
+			logs.Debugf("cuda: decode activations: int8 (W4A8): %s", why)
 		}
 		r.dO, r.logits = r.af(H), r.af(vocab)
 		r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)

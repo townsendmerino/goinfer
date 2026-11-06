@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"errors"
 	"fmt"
 	"math"
 
@@ -118,7 +119,7 @@ func (e *QwenASREncoder) walkBlock(prog vision.TowerBlock, ly *qwenASRLayer, r *
 			k, err2 := view(vision.TowerK)
 			v, err3 := view(vision.TowerV)
 			if err1 != nil || err2 != nil || err3 != nil {
-				return fmt.Errorf("op %d (%s): %v %v %v", i, op.Kind, err1, err2, err3)
+				return fmt.Errorf("op %d (%s): %w", i, op.Kind, errors.Join(err1, err2, err3))
 			}
 			e.attendWindowed(q, k, v, out, n, window, float32(op.Scale))
 		case vision.TowerGELUErf:

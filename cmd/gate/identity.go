@@ -400,11 +400,11 @@ func resolveIdentitySides(o identityOpts, sides ...*identitySide) string {
 // would not; calling it twice is safe. extra names one more subdirectory to remove.
 func identityRunDir(o identityOpts, t0 time.Time, old, nw *identitySide, extra string) (wd, logs string, cleanup func(), err error) {
 	if err := os.MkdirAll(o.LogDir, 0o755); err != nil {
-		return "", "", nil, fmt.Errorf("logdir: %v", err)
+		return "", "", nil, fmt.Errorf("logdir: %w", err)
 	}
 	wd, err = os.MkdirTemp(o.LogDir, "gate-identity-"+t0.Format("20060102-150405")+"-")
 	if err != nil {
-		return "", "", nil, fmt.Errorf("run dir: %v", err)
+		return "", "", nil, fmt.Errorf("run dir: %w", err)
 	}
 	if r, err := filepath.EvalSymlinks(wd); err == nil {
 		wd = r
@@ -544,7 +544,7 @@ func gitOut(dir string, args ...string) (string, error) {
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return strings.TrimSpace(string(out)), fmt.Errorf("git %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		return strings.TrimSpace(string(out)), fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -620,7 +620,7 @@ func buildIdentitySide(o identityOpts, wd string, s *identitySide) error {
 	out, err := cmd.CombinedOutput()
 	_ = os.WriteFile(s.Log, append([]byte("go "+strings.Join(args, " ")+"\n"), out...), 0o644)
 	if err != nil {
-		return fmt.Errorf("go build: %v", err)
+		return fmt.Errorf("go build: %w", err)
 	}
 	return nil
 }

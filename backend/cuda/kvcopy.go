@@ -5,9 +5,9 @@ package cuda
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 var (
@@ -140,10 +140,10 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
 		return err
 	}
 	if r.kvWin {
-		fmt.Fprintf(os.Stderr, "cuda: kv copy: slot %d -> %d, rows [%d, %d); windowed layers: slot %d's base %d, slot %d's base %d after the copy; %s\n",
+		logs.Debugf("cuda: kv copy: slot %d -> %d, rows [%d, %d); windowed layers: slot %d's base %d, slot %d's base %d after the copy; %s",
 			src, dst, start, end, src, r.kvBases[src], dst, lo, r.kvBudgetText())
 	}
-	fmt.Fprintf(os.Stderr, "cuda: kv copy: slot %d -> %d shares rows [%d, %d), %d blocks; %d of %d full-pool blocks in use\n",
+	logs.Debugf("cuda: kv copy: slot %d -> %d shares rows [%d, %d), %d blocks; %d of %d full-pool blocks in use",
 		src, dst, start, end, (end-start)/kvBlock, r.kvPools[kvGroupFull].inUse(), r.kvPools[kvGroupFull].blocks-1)
 	return nil
 }
@@ -172,7 +172,7 @@ func (r *cudaResident) ReusableKVSlot(slot, prefix int) int {
 		}
 		if r.kvWin && !kvWindowReusable(r.kvBases[slot], prefix, r.kvWindow) {
 			out = 0
-			fmt.Fprintf(os.Stderr, "cuda: kv copy: slot %d's windowed layers hold rows from %d; continuing at %d needs them from %d; %s\n",
+			logs.Debugf("cuda: kv copy: slot %d's windowed layers hold rows from %d; continuing at %d needs them from %d; %s",
 				slot, r.kvBases[slot], prefix, prefix-(r.kvWindow-1), r.kvBudgetText())
 		}
 		return nil

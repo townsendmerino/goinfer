@@ -4,10 +4,9 @@ package cuda
 
 import (
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -63,7 +62,7 @@ func (r *cudaResident) kvWindowSetup(m *decoder.Model) {
 		}
 	}
 	if r.kvWin {
-		fmt.Fprintf(os.Stderr, "cuda: windowed KV: sliding-window layers hold %d positions (window %d + %d slack; a follow-up may diverge %d before the newest and reuse its prefix) instead of the context's %d\n",
+		logs.Infof("cuda: windowed KV: sliding-window layers hold %d positions (window %d + %d slack; a follow-up may diverge %d before the newest and reuse its prefix) instead of the context's %d",
 			r.kvWindow+r.kvSlack, r.kvWindow, r.kvSlack, r.kvRollback(), r.ctxCap)
 	}
 }
@@ -108,7 +107,7 @@ func (r *cudaResident) kvGrantRollback(holdBack int64) {
 		return
 	}
 	r.kvSlack += extra
-	fmt.Fprint(os.Stderr, r.kvGrantLine(extra, perPos, free))
+	logs.DebugText(r.kvGrantLine(extra, perPos, free))
 }
 
 // kvGrantFor is kvGrantRollback's decision over the free VRAM it read: the positions to add to the windowed slack (kvWindowGrant over
@@ -184,7 +183,7 @@ func (r *cudaResident) kvReallocWindowed(slack int) (ok bool) {
 	var made []swap
 	defer func() {
 		if v := recover(); v != nil {
-			if !strings.Contains(fmt.Sprint(v), "device allocation failed") {
+			if !mem.DeviceAllocFailed(v) {
 				panic(v)
 			}
 			for _, m := range made {

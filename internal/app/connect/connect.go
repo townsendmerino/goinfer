@@ -172,7 +172,7 @@ func patchJSON(old []byte, edit func(*object) error) ([]byte, error) {
 	if len(bytes.TrimSpace(old)) > 0 {
 		var err error
 		if o, err = parseObject(old); err != nil {
-			return nil, fmt.Errorf("it is not plain JSON (%v); a file with comments cannot be patched without losing them", err)
+			return nil, fmt.Errorf("it is not plain JSON (%w); a file with comments cannot be patched without losing them", err)
 		}
 	}
 	if err := edit(&o); err != nil {
@@ -210,7 +210,7 @@ func probe(c *http.Client, url, key, model string) (settings, error) {
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		return settings{}, fmt.Errorf("no goinfer server answered at %s: %v", url, err)
+		return settings{}, fmt.Errorf("no goinfer server answered at %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -226,7 +226,7 @@ func probe(c *http.Client, url, key, model string) (settings, error) {
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &list); err != nil {
-		return settings{}, fmt.Errorf("GET %s/v1/models: not a model list: %v", url, err)
+		return settings{}, fmt.Errorf("GET %s/v1/models: not a model list: %w", url, err)
 	}
 	var ids []string
 	for _, m := range list.Data {
@@ -279,7 +279,7 @@ func write(h harness, path string, s settings) error {
 	}
 	next, err := h.patch(old, s)
 	if err != nil {
-		return fmt.Errorf("%s: %v", path, err)
+		return fmt.Errorf("%s: %w", path, err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -331,7 +331,7 @@ func undo(path string, force bool) error {
 	if rec.Existed {
 		orig, err := os.ReadFile(backupPath(path))
 		if err != nil {
-			return fmt.Errorf("the backup is missing: %v", err)
+			return fmt.Errorf("the backup is missing: %w", err)
 		}
 		if err := os.WriteFile(path, orig, 0o600); err != nil {
 			return err
