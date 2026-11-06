@@ -17,7 +17,7 @@ func gpt2Act(name string) ActKind {
 // attention output bias, and tied embeddings. The Conv1D weight layout and fused projections need a dedicated loader (buildGPT2Weights), so
 // this returns gpt2TensorSchema as a marker; its field names are unused.
 func gpt2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if err := cfg.validateGPT2(); err != nil {
+	if err := cfg.ValidateGPT2(); err != nil {
 		return nil, nil, err
 	}
 	hd := cfg.NEmbd / cfg.NHead

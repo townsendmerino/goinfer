@@ -6,11 +6,12 @@ package webgpu
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
-	"os"
 	"runtime"
 	"slices"
+
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -273,8 +274,8 @@ func ctxWhereSlotsFit(oneSlot, want int, fits func(ctx int) bool) int {
 		return oneSlot
 	}
 	if !fits(webgpuSlotCtxFloor) {
-		fmt.Fprintf(os.Stderr, "webgpu: resident context %d (the floor), not %d, for the %d requested KV slots (--kv-sessions); "+
-			"the build grants as many as fit there, and an explicit --ctx keeps a longer context with fewer slots\n",
+		logs.Debugf("webgpu: resident context %d (the floor), not %d, for the %d requested KV slots (--kv-sessions); "+
+			"the build grants as many as fit there, and an explicit --ctx keeps a longer context with fewer slots",
 			webgpuSlotCtxFloor, oneSlot, want)
 		return webgpuSlotCtxFloor
 	}
@@ -286,8 +287,8 @@ func ctxWhereSlotsFit(oneSlot, want int, fits func(ctx int) bool) int {
 			hi = mid
 		}
 	}
-	fmt.Fprintf(os.Stderr, "webgpu: resident context %d, not %d, so the %d requested KV slots fit (--kv-sessions); an "+
-		"explicit --ctx keeps a longer context with fewer slots\n", lo, oneSlot, want)
+	logs.Warnf("webgpu: resident context %d, not %d, so the %d requested KV slots fit (--kv-sessions); an "+
+		"explicit --ctx keeps a longer context with fewer slots", lo, oneSlot, want)
 	return lo
 }
 
@@ -313,8 +314,8 @@ func (rd *residentDecoder) buildKVSlots(m *decoder.Model, want int, avail0 int64
 	weights, hostCopy := m.ResidentWeightBytes(), m.ResidentHostCopyBytes(0)
 	n := slotsGranted(want, darwin, hostRAMBytes(), avail0, weights, hostCopy, perSlot, 0, false) // no free-VRAM figure: see slotsGranted
 	if darwin && n < want {
-		fmt.Fprintf(os.Stderr, "webgpu: %d resident KV slots of %d requested — each costs %.0f MB of KV at the resident context (%d positions); "+
-			"with %.0f MB of weights (+%.0f MB host copy), %.0f%% of %.0f MB RAM and %.0f MB available before the build allow %d\n",
+		logs.Infof("webgpu: %d resident KV slots of %d requested — each costs %.0f MB of KV at the resident context (%d positions); "+
+			"with %.0f MB of weights (+%.0f MB host copy), %.0f%% of %.0f MB RAM and %.0f MB available before the build allow %d",
 			n, want, float64(perSlot)/(1<<20), rd.ctxCap, float64(weights)/(1<<20), float64(hostCopy)/(1<<20),
 			100*decoder.WeightsMemFraction, float64(hostRAMBytes())/(1<<20), float64(avail0)/(1<<20), n)
 	}
@@ -322,7 +323,7 @@ func (rd *residentDecoder) buildKVSlots(m *decoder.Model, want int, avail0 int64
 	for s := 1; s < n; s++ {
 		sl, frees, err := rd.newKVSlot(s)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "webgpu: %d resident KV slots of %d requested — slot %d (%.0f MB of KV at %d positions) did not fit: %v\n",
+			logs.Infof("webgpu: %d resident KV slots of %d requested — slot %d (%.0f MB of KV at %d positions) did not fit: %v",
 				s, want, s, float64(perSlot)/(1<<20), rd.ctxCap, err)
 			break
 		}

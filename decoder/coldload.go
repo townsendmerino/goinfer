@@ -1,10 +1,9 @@
 package decoder
 
 import (
-	"fmt"
-	"os"
 	"path/filepath"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
@@ -140,7 +139,7 @@ func prepareColdLoad(path string, mapping []byte, arch *Architecture, opts Optio
 		paged:          opts.StreamWeights,
 	}) {
 	case coldLoadReadFirst:
-		fmt.Fprintf(os.Stderr, "decoder: %s is not in memory: reading its %.1f GB once before the load\n",
+		logs.Infof("decoder: %s is not in memory: reading its %.1f GB once before the load",
 			filepath.Base(path), float64(len(mapping))/1e9)
 		coldReadThrough(mapping)
 	case coldLoadNoReadAround:

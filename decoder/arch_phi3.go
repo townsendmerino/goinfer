@@ -14,13 +14,13 @@ import (
 // carrying it fails loudly at parseRopeScaling. Phi-4 (14B) and Phi-3-mini-4k use full
 // rotary + no scaling. The tensor schema is the phi3TensorSchema marker.
 func phi3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	// RoPE: transformers ≥5.11 saves the flat rope_parameters {rope_theta,
 	// partial_rotary_factor, rope_type}; the released Phi-4/Phi-3 configs use a
 	// top-level rope_theta (+ rope_scaling for the 128k longrope variants). Accept both.
 	var base float64
 	var scaling *ropeScaling
-	rotaryDim := cfg.rotaryDim()
+	rotaryDim := cfg.RotaryDim()
 	if len(cfg.RopeParameters) > 0 {
 		spec, partial, err := parseRopeFlat(cfg.RopeParameters)
 		if err != nil {

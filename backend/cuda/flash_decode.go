@@ -4,13 +4,13 @@ package cuda
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -70,23 +70,23 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 		}
 	}
 	if maxHd <= 0 {
-		fmt.Fprintf(os.Stderr, "[cuda] flash-decode lane unavailable (exact decode attention used): no positive head dim\n")
+		logs.Warnf("[cuda] flash-decode lane unavailable (exact decode attention used): no positive head dim")
 		return
 	}
 	mod, e := r.dev.CompileLibrary(r.kvPTX(decodeFAPTX, decodeFAKV16PTX))
 	if e != nil {
-		fmt.Fprintf(os.Stderr, "[cuda] flash-decode lane unavailable (exact decode attention used): %v\n", e)
+		logs.Warnf("[cuda] flash-decode lane unavailable (exact decode attention used): %v", e)
 		return
 	}
 	var pipes [3]Pipeline
 	for i, name := range []string{"fa_partial_64", "fa_partial_128", "fa_partial_256"} {
 		if pipes[i], e = r.dev.NewComputePipeline(mod, name); e != nil {
-			fmt.Fprintf(os.Stderr, "[cuda] flash-decode lane unavailable (exact decode attention used): %v\n", e)
+			logs.Warnf("[cuda] flash-decode lane unavailable (exact decode attention used): %v", e)
 			return
 		}
 	}
 	if r.faCombine, e = r.dev.NewComputePipeline(mod, "fa_combine"); e != nil {
-		fmt.Fprintf(os.Stderr, "[cuda] flash-decode lane unavailable (exact decode attention used): %v\n", e)
+		logs.Warnf("[cuda] flash-decode lane unavailable (exact decode attention used): %v", e)
 		return
 	}
 	r.faPartial = pipes
@@ -97,7 +97,7 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 		for g := 1; g <= 8 && rowsOK; g++ {
 			p, le := r.dev.NewComputePipeline(mod, fmt.Sprintf("fa_partial_rows_%d_g%d", hd, g))
 			if le != nil {
-				fmt.Fprintf(os.Stderr, "[cuda] flash-decode multi-row kernel fa_partial_rows_%d_g%d not loaded (verify lane off): %v\n", hd, g, le)
+				logs.Warnf("[cuda] flash-decode multi-row kernel fa_partial_rows_%d_g%d not loaded (verify lane off): %v", hd, g, le)
 				rowsOK = false
 				break
 			}
@@ -106,7 +106,7 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 	}
 	if rowsOK {
 		if r.faCombineRows, e = r.dev.NewComputePipeline(mod, "fa_combine_rows"); e != nil {
-			fmt.Fprintf(os.Stderr, "[cuda] flash-decode fa_combine_rows not loaded (verify lane off): %v\n", e)
+			logs.Warnf("[cuda] flash-decode fa_combine_rows not loaded (verify lane off): %v", e)
 			rowsOK = false
 		}
 	}

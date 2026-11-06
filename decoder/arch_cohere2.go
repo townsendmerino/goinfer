@@ -20,10 +20,10 @@ func cohere2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "cohere2"); err != nil {
 		return nil, nil, err
 	}
-	if err := cfg.validateCohere2(); err != nil {
+	if err := cfg.ValidateCohere2(); err != nil {
 		return nil, nil, err
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	// Snapshot the classifier inputs so the closure doesn't retain cfg. Global =
 	// full-attention layer = NoPE; local = sliding + RoPE (Config.IsGlobalLayer is
 	// the authoritative layer_types-then-pattern rule).
@@ -58,7 +58,7 @@ func cohere2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		layerNoPE:       isGlobal, // global (full) layers are NoPE; sliding layers keep RoPE
 		RoPELocalBase:   cfg.RoPEGlobalBase,
 		RoPEGlobalBase:  cfg.RoPEGlobalBase,
-		RotaryDim:       cfg.rotaryDim(),
+		RotaryDim:       cfg.RotaryDim(),
 		ropeInterleave:  true, // GPT-J pairwise on the sliding (RoPE) layers
 		EmbedScale:      0,
 		LogitScale:      1.0 / cfg.LogitScale,

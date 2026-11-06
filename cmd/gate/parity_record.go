@@ -72,7 +72,7 @@ func parityQualifyingPaths(manifest []byte) ([]string, error) {
 		} `json:"families"`
 	}
 	if err := json.Unmarshal(manifest, &m); err != nil {
-		return nil, fmt.Errorf("%s: %v", parityManifestPath, err)
+		return nil, fmt.Errorf("%s: %w", parityManifestPath, err)
 	}
 	set := map[string]bool{}
 	hashed := 0

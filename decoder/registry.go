@@ -81,7 +81,7 @@ var registry = map[string]archAdapter{
 func resolveArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	adapter, ok := registry[cfg.ModelType]
 	if !ok {
-		return nil, nil, fmt.Errorf("decoder: unsupported model_type %q (have: %s)", cfg.ModelType, knownModelTypes())
+		return nil, nil, errorOfKind(ErrUnsupportedModel, "decoder: unsupported model_type %q (have: %s)", cfg.ModelType, knownModelTypes())
 	}
 	// Bound the config before the adapter runs: several adapters allocate NumLayers-sized slices with only a `> 0` check and loadConfig has no
 	// bound, so a hostile config (num_hidden_layers: 68719476736) is a fatal out-of-memory that no recover() catches, not the typed error

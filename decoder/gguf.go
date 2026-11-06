@@ -4,14 +4,16 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
-	"os"
 	"path/filepath"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // GGUF loading: read a quantized llama.cpp checkpoint and run it through the generic forward. The GGUF file carries both
@@ -84,7 +86,7 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 	case "gpt-oss":
 		return ggufGptOssConfig(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma, gemma2, gemma3, gemma4 [wip], mellum, qwen35moe, qwen35, qwen3moe, glm4moe, laguna, granitehybrid, granite, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
+		return nil, errorOfKind(ErrUnsupportedModel, "decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma, gemma2, gemma3, gemma4 [wip], mellum, qwen35moe, qwen35, qwen3moe, glm4moe, laguna, granitehybrid, granite, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
 	}
 }
 
@@ -1478,7 +1480,7 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 		return nil, err
 	}
 	if beErr != nil {
-		fmt.Fprintln(os.Stderr, beErr) // webgpu requested but fell back — not fatal (N-03: stderr, not stdout — never contaminate a piped token stream)
+		logs.Warnf("%v", beErr) // webgpu requested but fell back — not fatal (N-03: stderr, not stdout — never contaminate a piped token stream)
 	}
 	m := modelFromOptions(w, be, opts)
 	m.quant = opts.Quant
@@ -1969,7 +1971,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			up, uerr := stackedExperts(p+"ffn_up_exps.weight", expInter, hidden, arch.MoE.NumExperts)
 			down, derr := stackedExperts(p+"ffn_down_exps.weight", hidden, expInter, arch.MoE.NumExperts)
 			if gerr != nil || uerr != nil || derr != nil {
-				return fmt.Errorf("decoder(gguf-qwen35): experts layer %d: %v / %v / %v", i, gerr, uerr, derr)
+				return fmt.Errorf("decoder(gguf-qwen35): experts layer %d: %w", i, errors.Join(gerr, uerr, derr))
 			}
 			l.Experts = make([]expertWeights, arch.MoE.NumExperts)
 			for ei := range arch.MoE.NumExperts {
@@ -2086,13 +2088,13 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			up, ue := stackedExperts(p+"ffn_up_exps.weight", expInter, hidden, nExp)
 			down, de := stackedExperts(p+"ffn_down_exps.weight", hidden, expInter, nExp)
 			if ge != nil || ue != nil || de != nil {
-				return fmt.Errorf("decoder(gguf-gptoss): experts layer %d: %v / %v / %v", i, ge, ue, de)
+				return fmt.Errorf("decoder(gguf-gptoss): experts layer %d: %w", i, errors.Join(ge, ue, de))
 			}
 			gb, gbe := stackedExpertBias(p+"ffn_gate_exps.bias", expInter)
 			ub, ube := stackedExpertBias(p+"ffn_up_exps.bias", expInter)
 			db, dbe := stackedExpertBias(p+"ffn_down_exps.bias", hidden)
 			if gbe != nil || ube != nil || dbe != nil {
-				return fmt.Errorf("decoder(gguf-gptoss): expert biases layer %d: %v / %v / %v", i, gbe, ube, dbe)
+				return fmt.Errorf("decoder(gguf-gptoss): expert biases layer %d: %w", i, errors.Join(gbe, ube, dbe))
 			}
 			l.Experts = make([]expertWeights, nExp)
 			for ei := range nExp {
@@ -2209,7 +2211,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			up, ue := stackedExperts(p+"ffn_up_exps.weight", expInter, hidden, moe.NumExperts)
 			down, de := stackedExperts(p+"ffn_down_exps.weight", hidden, expInter, moe.NumExperts)
 			if ge != nil || ue != nil || de != nil {
-				return fmt.Errorf("decoder(gguf-laguna): experts layer %d: %v / %v / %v", i, ge, ue, de)
+				return fmt.Errorf("decoder(gguf-laguna): experts layer %d: %w", i, errors.Join(ge, ue, de))
 			}
 			l.Experts = make([]expertWeights, moe.NumExperts)
 			for ei := range moe.NumExperts {
@@ -2342,7 +2344,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			up, ue := stackedExperts(p+"ffn_up_exps.weight", expInter, hidden, arch.MoE.NumExperts)
 			down, de := stackedExperts(p+"ffn_down_exps.weight", hidden, expInter, arch.MoE.NumExperts)
 			if ge != nil || ue != nil || de != nil {
-				return fmt.Errorf("decoder(gguf-granite): experts layer %d: %v / %v / %v", i, ge, ue, de)
+				return fmt.Errorf("decoder(gguf-granite): experts layer %d: %w", i, errors.Join(ge, ue, de))
 			}
 			l.Experts = make([]expertWeights, arch.MoE.NumExperts)
 			for ei := range arch.MoE.NumExperts {
@@ -2742,7 +2744,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			up, ue := stackedExperts(p+"ffn_up_exps.weight", expInter, hidden, nE)
 			down, de := stackedExperts(p+"ffn_down_exps.weight", hidden, expInter, nE)
 			if ge != nil || ue != nil || de != nil {
-				return fmt.Errorf("decoder(gguf-llama4): experts layer %d: %v / %v / %v", i, ge, ue, de)
+				return fmt.Errorf("decoder(gguf-llama4): experts layer %d: %w", i, errors.Join(ge, ue, de))
 			}
 			l.Experts = make([]expertWeights, nE)
 			for x := range l.Experts {
@@ -2841,7 +2843,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				kb, ke := vec(p+"attn_k.bias", kvDim)
 				vb, ve := vec(p+"attn_v.bias", kvDim)
 				if qe != nil || ke != nil || ve != nil {
-					return fmt.Errorf("decoder(gguf): qkv bias layer %d: %v / %v / %v", i, qe, ke, ve)
+					return fmt.Errorf("decoder(gguf): qkv bias layer %d: %w", i, errors.Join(qe, ke, ve))
 				}
 				if permuteQK {
 					qb = ggufInvPermute(qb, qDim, 1, arch.NumHeads)
@@ -2908,7 +2910,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			up, uerr := stackedExperts(p+"ffn_up_exps.weight", expInter, hidden, arch.MoE.NumExperts)
 			down, derr := stackedExperts(p+"ffn_down_exps.weight", hidden, expInter, arch.MoE.NumExperts)
 			if gerr != nil || uerr != nil || derr != nil {
-				return fmt.Errorf("decoder(gguf): experts layer %d: %v / %v / %v", i, gerr, uerr, derr)
+				return fmt.Errorf("decoder(gguf): experts layer %d: %w", i, errors.Join(gerr, uerr, derr))
 			}
 			l.Experts = make([]expertWeights, arch.MoE.NumExperts)
 			for e := range arch.MoE.NumExperts {

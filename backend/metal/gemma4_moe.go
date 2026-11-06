@@ -4,12 +4,14 @@ package metal
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"os"
 	"slices"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"golang.org/x/sys/unix"
@@ -176,11 +178,11 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 				// so it is not re-proposed: a cold A/B measured no effect (docs/code-notes/metal.md#buildGemma4MoE.nocache).
 				if modelKnob(m, "GOINFER_MOE_NOCACHE") == "1" {
 					if _, err := unix.FcntlInt(f.Fd(), unix.F_NOCACHE, 1); err != nil {
-						fmt.Fprintf(os.Stderr, "metal gemma4 MoE: F_NOCACHE failed (%v) — pread stays buffered\n", err)
+						logs.Warnf("metal gemma4 MoE: F_NOCACHE failed (%v) — pread stays buffered", err)
 					}
 				}
 			} else {
-				fmt.Fprintf(os.Stderr, "metal gemma4 MoE: open(%s) failed (%v) — using mmap byte-copy\n", p, err)
+				logs.Warnf("metal gemma4 MoE: open(%s) failed (%v) — using mmap byte-copy", p, err)
 			}
 		}
 	}

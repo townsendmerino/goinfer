@@ -18,6 +18,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/runtime/diskfree"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -159,11 +160,11 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	var tokBytes []byte
 	if b, rerr := os.ReadFile(filepath.Join(dir, "tokenizer.json")); rerr == nil {
 		if _, lerr := tokenizer.LoadJSONBytes(b); lerr != nil {
-			fmt.Fprintf(os.Stderr, "prequant: note: %s/tokenizer.json present but not goinfer-loadable (%v); bundle carries it, but serve may need the original tokenizer\n", dir, lerr)
+			logs.Infof("prequant: note: %s/tokenizer.json present but not goinfer-loadable (%v); bundle carries it, but serve may need the original tokenizer", dir, lerr)
 		}
 		tokBytes = b
 	} else {
-		fmt.Fprintf(os.Stderr, "prequant: note: no tokenizer.json in %s — weights-only bundle (serve needs a separate tokenizer)\n", dir)
+		logs.Infof("prequant: note: no tokenizer.json in %s — weights-only bundle (serve needs a separate tokenizer)", dir)
 	}
 	id := filepath.Base(dir)
 	var side []byte
@@ -191,7 +192,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 		body = func(w io.Writer) (int64, error) {
 			n, serr := StreamTranscodeDir(ctx, dir, w, quant, embedInt4, target, id)
 			if IsDirNoStream(serr) && n == 0 {
-				fmt.Fprintf(os.Stderr, "prequant: streams: no (%v); building it resident\n", serr)
+				logs.Infof("prequant: streams: no (%v); building it resident", serr)
 				return residentDirBody(w, dir, lora, quant, embedInt4, target, id)
 			}
 			return n, serr
@@ -283,7 +284,7 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embed
 				filepath.Base(ggufPath), float64(need)/1e9, float64(free)/1e9)
 		}
 	}
-	fmt.Fprintf(os.Stderr, "stream-weights: transcoding %s → %s (%s, one-time — minutes + ~model-size on disk)…\n",
+	logs.Infof("stream-weights: transcoding %s → %s (%s, one-time — minutes + ~model-size on disk)…",
 		filepath.Base(ggufPath), filepath.Base(cache), sidecarQuantLabel(quant))
 	t0 := time.Now()
 	ph, err := TranscodeGIWTimed(ctx, ggufPath, cache, quant, embedInt4, target)
@@ -291,11 +292,11 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embed
 		return "", err
 	}
 	if fi, e := os.Stat(cache); e == nil {
-		fmt.Fprintf(os.Stderr, "stream-weights: cache ready (%.0f MB) in %s: %s\n",
+		logs.Infof("stream-weights: cache ready (%.0f MB) in %s: %s",
 			float64(fi.Size())/1048576, time.Since(t0).Round(time.Second), ph)
 	}
 	if lf, e := os.Stat(legacyCachePath(ggufPath, quant, embedInt4, target)); e == nil {
-		fmt.Fprintf(os.Stderr, "stream-weights: note: %s (%.0f MB) is from a build that wrote unversioned sidecar names; this build leaves it alone. Delete it once no such build is in use.\n",
+		logs.Infof("stream-weights: note: %s (%.0f MB) is from a build that wrote unversioned sidecar names; this build leaves it alone. Delete it once no such build is in use.",
 			filepath.Base(legacyCachePath(ggufPath, quant, embedInt4, target)), float64(lf.Size())/1048576)
 	}
 	return cache, nil
@@ -391,7 +392,7 @@ func sidecarRoute(src string, opts Options) (string, error) {
 	case DirSidecarApplies(src, opts) && DefaultToSidecar(false):
 		p, err := ensure()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "decoder: loading %s directly: its sidecar .giw could not be built (%v)\n", src, err)
+			logs.Warnf("decoder: loading %s directly: its sidecar .giw could not be built (%v)", src, err)
 			return src, nil
 		}
 		return p, nil
@@ -506,7 +507,7 @@ func adoptLegacy(cache, legacy, src string) bool {
 		return false
 	}
 	_ = os.Link(GIWVerifiedMarkerPath(legacy), GIWVerifiedMarkerPath(cache)) // best effort: the marker keeps the first load off a whole-file CRC
-	fmt.Fprintf(os.Stderr, "stream-weights: using %s as %s (the same file: already this build's format)\n", filepath.Base(legacy), filepath.Base(cache))
+	logs.Infof("stream-weights: using %s as %s (the same file: already this build's format)", filepath.Base(legacy), filepath.Base(cache))
 	return true
 }
 
@@ -528,8 +529,8 @@ func cacheFresh(cache, src string) bool {
 		return false
 	}
 	if err := selfCheck(cache); err != nil {
-		fmt.Fprintf(os.Stderr, "stream-weights: cache %s is newer than the source but does not "+
-			"load (%v) — rebuilding\n", filepath.Base(cache), err)
+		logs.Warnf("stream-weights: cache %s is newer than the source but does not "+
+			"load (%v) — rebuilding", filepath.Base(cache), err)
 		return false
 	}
 	return true

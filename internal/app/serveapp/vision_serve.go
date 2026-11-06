@@ -12,6 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/internal/codec"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -186,7 +187,7 @@ type residentTower interface {
 // tower (the encoder then runs aikit's CPU path) and runs the image again there; under require (-require-backend) it fails the request instead and keeps the tower.
 func qwenDeviceForward(t residentTower, require bool, forward func() ([]float32, error)) ([]float32, error) {
 	out, err := recoverDeviceTower("Qwen2.5-VL", forward)
-	if err == nil || !t.ResidentEnabled() || !isDeviceMemoryError(err) {
+	if !t.ResidentEnabled() || !mem.DeviceOutOfMemory(err) {
 		return out, err
 	}
 	if require {
@@ -207,7 +208,7 @@ func recoverDeviceTower(family string, fn func() ([]float32, error)) (out []floa
 	defer func() {
 		if r := recover(); r != nil {
 			hint := ""
-			if isDeviceMemoryError(fmt.Errorf("%v", r)) {
+			if mem.DeviceOutOfMemory(fmt.Errorf("%v", r)) {
 				hint = ": the input needs more device memory than the decoder left it; lower -ctx or -kv-sessions, resize the image, or use -vision-device cpu"
 			}
 			out, err = nil, fmt.Errorf("the %s tower failed (%v)%s", family, r, hint)

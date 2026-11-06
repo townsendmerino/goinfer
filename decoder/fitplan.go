@@ -161,7 +161,7 @@ func (m *Model) planAdmitDecline(backend string) string {
 		return fmt.Sprintf("%s: no resident path is declared for this backend — use the staged/CPU path", backend)
 	}
 	f := m.admitFacts()
-	f.Backend, f.Residency = backend, true
+	f.Backend, f.Residency, f.program = backend, true, m.admitProgram(backend)
 	if why := Admit(f).Why; why != "" {
 		return fmt.Sprintf("%s: %s — use the staged/CPU path", backend, why)
 	}

@@ -3,6 +3,7 @@
 package kernels
 
 import (
+	"errors"
 	"fmt"
 	"math"
 
@@ -221,7 +222,7 @@ func (ve *VisionEncoder) attend(q, k, v *DeviceBuffer, scale float32, mark func(
 		vt, e3 := htrack(ve.gatherHead(v, np, hd, hidden, off, 2)) // [hd, np]
 		if e1 != nil || e2 != nil || e3 != nil {
 			hrel()
-			return att, fmt.Errorf("gather: %v %v %v", e1, e2, e3)
+			return att, fmt.Errorf("gather: %w", errors.Join(e1, e2, e3))
 		}
 		mark("per head: gather q, k, v")
 		scores, e := htrack(c.matmulF32Device(qh.buf, kh.buf, np, hd, np)) // [np,np]

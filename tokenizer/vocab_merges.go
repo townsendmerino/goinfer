@@ -28,7 +28,7 @@ var ErrNoVocabMerges = errors.New("tokenizer: no tokenizer.json, and no vocab.js
 func LoadVocabMerges(dir string) (*Tokenizer, error) {
 	cfgRaw, err := os.ReadFile(filepath.Join(dir, "tokenizer_config.json"))
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrNoVocabMerges, err)
+		return nil, fmt.Errorf("%w: %w", ErrNoVocabMerges, err)
 	}
 	var cfg struct {
 		Class string `json:"tokenizer_class"`
@@ -49,7 +49,7 @@ func LoadVocabMerges(dir string) (*Tokenizer, error) {
 	}
 	vocabRaw, err := os.ReadFile(filepath.Join(dir, "vocab.json"))
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrNoVocabMerges, err)
+		return nil, fmt.Errorf("%w: %w", ErrNoVocabMerges, err)
 	}
 	vocab := map[string]int32{}
 	if err := json.Unmarshal(vocabRaw, &vocab); err != nil {
@@ -57,7 +57,7 @@ func LoadVocabMerges(dir string) (*Tokenizer, error) {
 	}
 	mf, err := os.Open(filepath.Join(dir, "merges.txt"))
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrNoVocabMerges, err)
+		return nil, fmt.Errorf("%w: %w", ErrNoVocabMerges, err)
 	}
 	defer mf.Close()
 	var merges [][2]string

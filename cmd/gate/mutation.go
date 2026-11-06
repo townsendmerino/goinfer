@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -121,7 +122,7 @@ func runMutation(argv []string, w io.Writer) int {
 	mutated, err := exec.Command("sed", sedArgs(expr, file)...).Output()
 	if err != nil {
 		msg := err.Error()
-		if ee, ok := err.(*exec.ExitError); ok {
+		if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 			msg = strings.TrimSpace(string(ee.Stderr))
 		}
 		fmt.Fprintf(w, "  %sFAIL%s: sed failed: %s\n", red, off, msg)
@@ -164,7 +165,7 @@ func runQuiet(argv []string) int {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
 	if err := cmd.Run(); err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
+		if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 			return ee.ExitCode()
 		}
 		return -1 // could not start at all: not a green run

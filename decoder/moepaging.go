@@ -2,13 +2,14 @@ package decoder
 
 import (
 	"fmt"
-	"os"
 	"runtime"
 	"sync"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/aikit/mmap"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // expertPager bounds the resident RAM of a MoE model's expert weights by paging them on demand out of the read-only
@@ -190,7 +191,7 @@ func newExpertPager(w *Weights, mapping []byte, budget int64, giwPath string, po
 	if pool && giwPath != "" && len(poolMembers) == len(members) {
 		pool, err := newExpertBufferPool(giwPath, poolMembers, budget, w.arch.MoE.TopK)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "decoder: MoE pread pool init failed (%v), falling back to mmap paging\n", err)
+			logs.Warnf("decoder: MoE pread pool init failed (%v), falling back to mmap paging", err)
 		} else {
 			return &expertPager{pool: pool, nExperts: len(poolMembers), total: total,
 				minfltBase: minfltBase, majfltBase: majfltBase, faultsOK: faultsOK}
@@ -221,7 +222,7 @@ func (p *expertPager) touch(key unsafe.Pointer) {
 			// a pread failure mid-forward isn't recoverable at this call depth. Leaving the
 			// WeightMat fields at their last-good contents and logging is the least-bad
 			// option; this should only happen on real I/O failure or on-disk corruption.
-			fmt.Fprintf(os.Stderr, "decoder: MoE pread refill failed for expert: %v\n", err)
+			logs.Warnf("decoder: MoE pread refill failed for expert: %v", err)
 		}
 		return
 	}

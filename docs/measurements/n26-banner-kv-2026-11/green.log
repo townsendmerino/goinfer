@@ -1,0 +1,85 @@
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/resident,_sessions_configured
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/resident,_sessions_off
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/resident,_resident_reuse_switched_off
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/staged,_sessions_configured
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/staged,_sessions_off
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/resident,_4_KV_slots
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/resident,_4_asked,_guard_allowed_2
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/resident,_-kv-sessions_not_given,_Metal's_default_2
+--- PASS: TestBanner_sessionReuseMatchesTheDecodePath (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/resident,_sessions_configured (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/resident,_sessions_off (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/resident,_resident_reuse_switched_off (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/staged,_sessions_configured (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/staged,_sessions_off (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/resident,_4_KV_slots (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/resident,_4_asked,_guard_allowed_2 (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/resident,_-kv-sessions_not_given,_Metal's_default_2 (0.00s)
+=== RUN   TestBanner_reportsResolvedNotRequested
+--- PASS: TestBanner_reportsResolvedNotRequested (0.00s)
+=== RUN   TestBanner_contextAndKV
+--- PASS: TestBanner_contextAndKV (0.00s)
+=== RUN   TestBanner_contextIsTheEnforcedWindow
+--- PASS: TestBanner_contextIsTheEnforcedWindow (0.01s)
+=== RUN   TestBanner_toolSupportIsNotAssumed
+--- PASS: TestBanner_toolSupportIsNotAssumed (0.00s)
+=== RUN   TestBanner_concurrency
+=== RUN   TestBanner_concurrency/default
+=== RUN   TestBanner_concurrency/four
+=== RUN   TestBanner_concurrency/capped
+=== RUN   TestBanner_concurrency/asked,_not_eligible
+=== RUN   TestBanner_concurrency/resident,_batched
+=== RUN   TestBanner_concurrency/resident,_batched,_chunked_prefill
+=== RUN   TestBanner_concurrency/resident,_capped_by_slots
+=== RUN   TestBanner_concurrency/resident,_cannot_batch
+--- PASS: TestBanner_concurrency (0.00s)
+    --- PASS: TestBanner_concurrency/default (0.00s)
+    --- PASS: TestBanner_concurrency/four (0.00s)
+    --- PASS: TestBanner_concurrency/capped (0.00s)
+    --- PASS: TestBanner_concurrency/asked,_not_eligible (0.00s)
+    --- PASS: TestBanner_concurrency/resident,_batched (0.00s)
+    --- PASS: TestBanner_concurrency/resident,_batched,_chunked_prefill (0.00s)
+    --- PASS: TestBanner_concurrency/resident,_capped_by_slots (0.00s)
+    --- PASS: TestBanner_concurrency/resident,_cannot_batch (0.00s)
+=== RUN   TestBanner_cpuContextIsACeiling
+--- PASS: TestBanner_cpuContextIsACeiling (0.00s)
+=== RUN   TestFactsOf_carriesTheResidentDecline
+[resident] BuildResident declined (ok=false err=resident path declined: no card in this test) — continuing on the CPU/staged path
+--- PASS: TestFactsOf_carriesTheResidentDecline (0.00s)
+=== RUN   TestBanner_fitLineAfterADeclineIsClampedToTheModelWindow
+[resident] BuildResident declined (ok=false err=resident path declined: no card in this test) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: no card in this test) — continuing on the CPU/staged path
+--- PASS: TestBanner_fitLineAfterADeclineIsClampedToTheModelWindow (0.00s)
+=== RUN   TestFactsOf_aPlainCPULoadDeclinedNothing
+--- PASS: TestFactsOf_aPlainCPULoadDeclinedNothing (0.00s)
+=== RUN   TestBanner_sessionReuseNamesMetalOnlyOnMetal
+--- PASS: TestBanner_sessionReuseNamesMetalOnlyOnMetal (0.00s)
+=== RUN   TestBanner_contextWhenTheModelDeclaresNoMaximum
+--- PASS: TestBanner_contextWhenTheModelDeclaresNoMaximum (0.00s)
+=== RUN   TestBanner_headTable
+--- PASS: TestBanner_headTable (0.00s)
+=== RUN   TestFactsOf_headTableFollowsEmbedInt4
+--- PASS: TestFactsOf_headTableFollowsEmbedInt4 (0.00s)
+=== RUN   TestBanner_f16KVDecline
+--- PASS: TestBanner_f16KVDecline (0.00s)
+=== RUN   TestBanner_contextSaysWhyAndWarnsAHarness
+--- PASS: TestBanner_contextSaysWhyAndWarnsAHarness (0.00s)
+=== RUN   TestBanner_cpuKVBothCaches
+--- PASS: TestBanner_cpuKVBothCaches (0.00s)
+=== RUN   TestBanner_kvPoolLine
+=== RUN   TestBanner_kvPoolLine/one_conversation_can_use_all_of_it
+=== RUN   TestBanner_kvPoolLine/one_slot:_nothing_to_share_with
+=== RUN   TestBanner_kvPoolLine/resident_reuse_off
+=== RUN   TestBanner_kvPoolLine/a_cap_below_the_pool,_sharing_off,_both_groups
+=== RUN   TestBanner_kvPoolLine/a_pure_sliding-window_pool:_named,_in_MB,_never_all_one_conversation's,_and_the_pool_no_smaller_than_a_share
+=== RUN   TestBanner_kvPoolLine/no_pool:_no_line
+--- PASS: TestBanner_kvPoolLine (0.00s)
+    --- PASS: TestBanner_kvPoolLine/one_conversation_can_use_all_of_it (0.00s)
+    --- PASS: TestBanner_kvPoolLine/one_slot:_nothing_to_share_with (0.00s)
+    --- PASS: TestBanner_kvPoolLine/resident_reuse_off (0.00s)
+    --- PASS: TestBanner_kvPoolLine/a_cap_below_the_pool,_sharing_off,_both_groups (0.00s)
+    --- PASS: TestBanner_kvPoolLine/a_pure_sliding-window_pool:_named,_in_MB,_never_all_one_conversation's,_and_the_pool_no_smaller_than_a_share (0.00s)
+    --- PASS: TestBanner_kvPoolLine/no_pool:_no_line (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/app/serveapp	0.022s

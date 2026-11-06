@@ -450,6 +450,12 @@ func (d *Device) MustBuf(nBytes, n int, what string) Buffer {
 	return d.MustBufOn(UnlinedLine, nBytes, n, what)
 }
 
+// AllocFailedPanic is the value MustBufOn panics with when the device has no memory. Callers that can degrade recover it and tell it
+// from a bug by this text (internal/runtime/mem.DeviceAllocFailed).
+func AllocFailedPanic(what string, nBytes int, err error) string {
+	return fmt.Sprintf("cuda: device allocation failed (%s, %d bytes): %v", what, nBytes, err)
+}
+
 // MustBufOn is MustBuf leasing the bytes on plan line line.
 func (d *Device) MustBufOn(line string, nBytes, n int, what string) Buffer {
 	if d.cx == nil {
@@ -457,7 +463,7 @@ func (d *Device) MustBufOn(line string, nBytes, n int, what string) Buffer {
 	}
 	buf, err := gc.Alloc[uint8](d.cx, nBytes)
 	if err != nil {
-		panic(fmt.Sprintf("cuda: device allocation failed (%s, %d bytes): %v", what, nBytes, err))
+		panic(AllocFailedPanic(what, nBytes, err))
 	}
 	release := d.lease(true, line, int64(nBytes), ChargedBytes(int64(nBytes)))
 	d.mu.Lock()
