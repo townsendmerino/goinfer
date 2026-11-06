@@ -1,0 +1,76 @@
+=== RUN   TestLoRAAdapterCacheCUDA
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestLoRAAdapterCacheCUDA (1.84s)
+=== RUN   TestLoRAUploadOOM_returnsEveryBuffer
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    lora_oom_test.go:57: failing allocation 2 of 56: 115 device allocations remain, want 114 (leaked 1)
+    lora_oom_test.go:57: failing allocation 3 of 56: 115 device allocations remain, want 114 (leaked 1)
+    lora_oom_test.go:57: failing allocation 4 of 56: 116 device allocations remain, want 114 (leaked 2)
+    lora_oom_test.go:57: failing allocation 5 of 56: 116 device allocations remain, want 114 (leaked 2)
+    lora_oom_test.go:57: failing allocation 6 of 56: 117 device allocations remain, want 114 (leaked 3)
+    lora_oom_test.go:57: failing allocation 7 of 56: 117 device allocations remain, want 114 (leaked 3)
+    lora_oom_test.go:57: failing allocation 8 of 56: 118 device allocations remain, want 114 (leaked 4)
+    lora_oom_test.go:57: failing allocation 9 of 56: 118 device allocations remain, want 114 (leaked 4)
+    lora_oom_test.go:57: failing allocation 10 of 56: 119 device allocations remain, want 114 (leaked 5)
+    lora_oom_test.go:57: failing allocation 11 of 56: 119 device allocations remain, want 114 (leaked 5)
+    lora_oom_test.go:57: failing allocation 12 of 56: 120 device allocations remain, want 114 (leaked 6)
+    lora_oom_test.go:57: failing allocation 13 of 56: 120 device allocations remain, want 114 (leaked 6)
+    lora_oom_test.go:57: failing allocation 14 of 56: 121 device allocations remain, want 114 (leaked 7)
+    lora_oom_test.go:57: failing allocation 15 of 56: 121 device allocations remain, want 114 (leaked 7)
+    lora_oom_test.go:57: failing allocation 16 of 56: 122 device allocations remain, want 114 (leaked 8)
+    lora_oom_test.go:57: failing allocation 17 of 56: 122 device allocations remain, want 114 (leaked 8)
+    lora_oom_test.go:57: failing allocation 18 of 56: 123 device allocations remain, want 114 (leaked 9)
+    lora_oom_test.go:57: failing allocation 19 of 56: 123 device allocations remain, want 114 (leaked 9)
+    lora_oom_test.go:57: failing allocation 20 of 56: 124 device allocations remain, want 114 (leaked 10)
+    lora_oom_test.go:57: failing allocation 21 of 56: 124 device allocations remain, want 114 (leaked 10)
+    lora_oom_test.go:57: failing allocation 22 of 56: 125 device allocations remain, want 114 (leaked 11)
+    lora_oom_test.go:57: failing allocation 23 of 56: 125 device allocations remain, want 114 (leaked 11)
+    lora_oom_test.go:57: failing allocation 24 of 56: 126 device allocations remain, want 114 (leaked 12)
+    lora_oom_test.go:57: failing allocation 25 of 56: 126 device allocations remain, want 114 (leaked 12)
+    lora_oom_test.go:57: failing allocation 26 of 56: 127 device allocations remain, want 114 (leaked 13)
+    lora_oom_test.go:57: failing allocation 27 of 56: 127 device allocations remain, want 114 (leaked 13)
+    lora_oom_test.go:57: failing allocation 28 of 56: 128 device allocations remain, want 114 (leaked 14)
+    lora_oom_test.go:57: failing allocation 29 of 56: 128 device allocations remain, want 114 (leaked 14)
+    lora_oom_test.go:57: failing allocation 30 of 56: 129 device allocations remain, want 114 (leaked 15)
+    lora_oom_test.go:57: failing allocation 31 of 56: 129 device allocations remain, want 114 (leaked 15)
+    lora_oom_test.go:57: failing allocation 32 of 56: 130 device allocations remain, want 114 (leaked 16)
+    lora_oom_test.go:57: failing allocation 33 of 56: 130 device allocations remain, want 114 (leaked 16)
+    lora_oom_test.go:57: failing allocation 34 of 56: 131 device allocations remain, want 114 (leaked 17)
+    lora_oom_test.go:57: failing allocation 35 of 56: 131 device allocations remain, want 114 (leaked 17)
+    lora_oom_test.go:57: failing allocation 36 of 56: 132 device allocations remain, want 114 (leaked 18)
+    lora_oom_test.go:57: failing allocation 37 of 56: 132 device allocations remain, want 114 (leaked 18)
+    lora_oom_test.go:57: failing allocation 38 of 56: 133 device allocations remain, want 114 (leaked 19)
+    lora_oom_test.go:57: failing allocation 39 of 56: 133 device allocations remain, want 114 (leaked 19)
+    lora_oom_test.go:57: failing allocation 40 of 56: 134 device allocations remain, want 114 (leaked 20)
+    lora_oom_test.go:57: failing allocation 41 of 56: 134 device allocations remain, want 114 (leaked 20)
+    lora_oom_test.go:57: failing allocation 42 of 56: 135 device allocations remain, want 114 (leaked 21)
+    lora_oom_test.go:57: failing allocation 43 of 56: 135 device allocations remain, want 114 (leaked 21)
+    lora_oom_test.go:57: failing allocation 44 of 56: 136 device allocations remain, want 114 (leaked 22)
+    lora_oom_test.go:57: failing allocation 45 of 56: 136 device allocations remain, want 114 (leaked 22)
+    lora_oom_test.go:57: failing allocation 46 of 56: 137 device allocations remain, want 114 (leaked 23)
+    lora_oom_test.go:57: failing allocation 47 of 56: 137 device allocations remain, want 114 (leaked 23)
+    lora_oom_test.go:57: failing allocation 48 of 56: 138 device allocations remain, want 114 (leaked 24)
+    lora_oom_test.go:57: failing allocation 49 of 56: 138 device allocations remain, want 114 (leaked 24)
+    lora_oom_test.go:57: failing allocation 50 of 56: 139 device allocations remain, want 114 (leaked 25)
+    lora_oom_test.go:57: failing allocation 51 of 56: 139 device allocations remain, want 114 (leaked 25)
+    lora_oom_test.go:57: failing allocation 52 of 56: 140 device allocations remain, want 114 (leaked 26)
+    lora_oom_test.go:57: failing allocation 53 of 56: 140 device allocations remain, want 114 (leaked 26)
+    lora_oom_test.go:57: failing allocation 54 of 56: 141 device allocations remain, want 114 (leaked 27)
+    lora_oom_test.go:57: failing allocation 55 of 56: 141 device allocations remain, want 114 (leaked 27)
+    lora_oom_test.go:57: failing allocation 56 of 56: 142 device allocations remain, want 114 (leaked 28)
+    lora_oom_test.go:67: the bind after the failures allocated 84 buffers, want 56
+--- FAIL: TestLoRAUploadOOM_returnsEveryBuffer (0.35s)
+=== RUN   TestLoRAResidentParityCUDA
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    lora_resident_parity_test.go:93: resident-with-adapter vs CPU-with-adapter: cosine=0.999963 maxAbs=0.005082 argmax_match=true
+--- PASS: TestLoRAResidentParityCUDA (0.27s)
+FAIL
+ledger: 7 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	2.534s
+FAIL

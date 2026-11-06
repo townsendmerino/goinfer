@@ -129,3 +129,63 @@ func TestLoRAAdapterCacheCUDA(t *testing.T) {
 	bind("")
 	same("clear with the cache disabled", base, run())
 }
+
+// TestLoRAUploadOOM_returnsEveryBuffer — a device allocation that fails partway through an adapter upload (at every buffer in turn)
+// leaves the device's allocation ledger where it was before the bind, no adapter bound and no half-built cache, and the next bind
+// of the same adapter works.
+func TestLoRAUploadOOM_returnsEveryBuffer(t *testing.T) {
+	const ckpt = "../../testdata/llama-tiny"
+	requireDeviceAndFixture(t, ckpt)
+	dir := buildLlamaTinyLoRAFixtureCUDA(t)
+	m, err := decoder.Load(ckpt, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load cuda: %v", err)
+	}
+	defer m.Close()
+	if err := m.LoadAdapter("a", dir); err != nil {
+		t.Fatalf("LoadAdapter: %v", err)
+	}
+	cr, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("resident is %T, not *cudaResident", m.ResidentForwardForTest())
+	}
+	ledger := func() int { a, _ := cr.dev.LedgerLen(); return a }
+	before := ledger()
+
+	// A successful bind sizes the upload and proves the failure points below are inside it.
+	if err := cr.SetAdapter(m.ResidentAdapterLayersForTest("a")); err != nil {
+		t.Fatalf("SetAdapter: %v", err)
+	}
+	total := ledger() - before
+	if total < 4 {
+		t.Fatalf("a bind allocates %d buffers; want a few, so a failure can land after some succeeded", total)
+	}
+	if err := cr.SetAdapter(nil); err != nil {
+		t.Fatal(err)
+	}
+	cr.doOn("", func() error { cr.releaseLoraLayers(cr.lora.cache); cr.lora.cache, cr.lora.key = nil, nil; return nil })
+	if got := ledger(); got != before {
+		t.Fatalf("releasing the cached adapter left %d allocations, want %d", got, before)
+	}
+
+	defer func() { loraAllocFailAfterForTest = 0 }()
+	for n := 1; n <= total; n++ {
+		loraAllocFailAfterForTest = n
+		if err := cr.SetAdapter(m.ResidentAdapterLayersForTest("a")); err == nil {
+			t.Fatalf("failing allocation %d of %d: SetAdapter returned no error", n, total)
+		}
+		loraAllocFailAfterForTest = 0
+		if got := ledger(); got != before {
+			t.Errorf("failing allocation %d of %d: %d device allocations remain, want %d (leaked %d)", n, total, got, before, got-before)
+		}
+		if cr.loraLayers != nil || cr.lora.cache != nil {
+			t.Errorf("failing allocation %d of %d: an adapter or cache is still bound", n, total)
+		}
+	}
+	if err := cr.SetAdapter(m.ResidentAdapterLayersForTest("a")); err != nil {
+		t.Fatalf("a bind after the failures: %v", err)
+	}
+	if got := ledger() - before; got != total {
+		t.Errorf("the bind after the failures allocated %d buffers, want %d", got, total)
+	}
+}
