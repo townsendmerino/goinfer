@@ -15,7 +15,7 @@ const (
 	LineSlack         = "slack"          // the allocator's rounding the plan prices (DeviceLoad.FixedSlack)
 	LineCompanion     = "companion"      // a drafter's or a tower's bytes (PlanRequest.ExtraBytes)
 	LineScratch       = "scratch"        // per-pass activations: the margin's share
-	LineStaging       = "staging"        // a build's host staging (BuildDemand.HostPackBytes)
+	LineStaging       = "staging"        // host staging: a build's (BuildDemand.HostPackBytes), and CUDA's pinned ring for the KV block tables
 	LinePinnedExperts = "pinned-experts" // the page-locked host copy of the routed experts
 	LineTest          = "test"           // a test's own buffers
 )

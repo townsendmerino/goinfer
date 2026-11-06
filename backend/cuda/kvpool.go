@@ -304,7 +304,7 @@ func (r *cudaResident) kvAllocPools(slots int) error {
 	}
 	r.kvTabDev = r.ai(slots * kvGroups * r.kvMaxBlocks())
 	if r.kvTabStage == nil {
-		stage, e := gpu.NewHostBufferOn[uint8](r.dev, mem.LineKV, kvTabRing*r.kvMaxBlocks()*4)
+		stage, e := gpu.NewHostBufferOn[uint8](r.dev, mem.LineStaging, kvTabRing*r.kvMaxBlocks()*4)
 		if e != nil {
 			return e
 		}

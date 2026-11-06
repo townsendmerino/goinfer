@@ -1,0 +1,9 @@
+# MM8 CUDA, KV staging ring: 391 skip-table rows removed (nobara-sb01, 2026-11-06)
+
+The gate (`TestMemGate_cuda`, MM7) compared each plan line with every lease on it. CUDA's block-table staging ring (`kvTabStage`, `kvTabRing` entries of a table's bytes each) is **pinned host memory**, leased on the `kv` line beside the device pools, so the KV line read above the plan's device figure by the ring on every row with paged KV; 391 rows sat in `memgate_gaps.txt` as `kv-ring`.
+
+- **Red first** (`red.log`): the 391 rows removed, the pin lowered 724 to 333, and the ring named as its own figure on the staging line (`read.Named[LineStaging] = cudaKVRingBytes(r)`, the geometry's figure `kvTabRing * blocks * 4`, not read from the ledger). `TestMemGate_cuda` FAILs, `line "kv": leased 98384 bytes against a plan of 98320: 64 over` on `qwen25vl-vision-tiny` and every other paged row.
+- **Change:** `backend/cuda/kvpool.go` leases the ring on `mem.LineStaging`, the host staging line (`internal/runtime/mem/ledger.go` says so). No allocation changed size or place; only the line it is accounted on.
+- **Green** (`green.log`): `TestMemGate_*` pass: the 474-build table, the plants through it, the invariants. Two test changes follow from the line now having a figure: the "no figure" invariant case used `LineStaging` as its example and now uses `LineTest`; a plant of 3 MiB on `LineStaging` is red through the new figure (`TestMemGate_cudaPlantsThroughTheTable/staging`). A first full run of the neighbouring KV, ledger, windowed and recurrent-slot tests had that one invariant case red for exactly this reason (`green-first-try-invariants-red.log`); the other 160 passed.
+- `touched.py` 16 checks pass; `cmd/lint` result in `lint.log`.
+- The windowed grant (`grant`, 1 row) and the dense-vector rows (332) stay in the table.
