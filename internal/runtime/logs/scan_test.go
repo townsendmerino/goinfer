@@ -152,8 +152,9 @@ func checkReportAndReturn(t *testing.T, fset *token.FileSet, list []ast.Stmt) {
 	}
 }
 
-// stmtReports updates reported for one statement that does not return: a logs call adds its error names, an if adds what its
-// falling-through branches report, a block adds what it reports when it falls through, and an assignment clears what it assigns.
+// stmtReports updates reported for one statement that does not return: a logs call adds its error names, an if clears what its
+// init assigns and adds what its falling-through branches report, a block adds what it reports when it falls through, and an
+// assignment clears what it assigns.
 func stmtReports(st ast.Stmt, reported map[string]token.Pos) {
 	switch s := st.(type) {
 	case *ast.ExprStmt:
@@ -161,6 +162,9 @@ func stmtReports(st ast.Stmt, reported map[string]token.Pos) {
 			reported[name] = pos
 		}
 	case *ast.IfStmt:
+		for name := range assigned(s.Init, token.ASSIGN) { // if err = f(); ... assigns the outer err
+			delete(reported, name)
+		}
 		for name, pos := range ifReports(s) {
 			reported[name] = pos
 		}
