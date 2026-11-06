@@ -115,7 +115,7 @@ func buildSB2Census(t *testing.T) []string {
 		for _, be := range []string{"webgpu", "cuda", "metal"} {
 			gates := func(actSafe bool) string {
 				var gs []string
-				for _, g := range residentGateReasons(arch, be, actSafe) {
+				for _, g := range residentGateReasons(arch, nil, be, actSafe) {
 					gs = append(gs, g.Kind+": "+g.Reason)
 				}
 				return strings.Join(gs, " | ")

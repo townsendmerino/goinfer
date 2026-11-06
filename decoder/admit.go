@@ -13,6 +13,8 @@ type AdmitFacts struct {
 	ActGroup    int    // Options.ActQuantGroup
 	ProjsInt4   bool   // the resident projections load as int4 (Model.residentProjsInt4)
 	SSMResident bool   // the GOINFER_SSM_RESIDENT knob is set for this load: Granite's bring-up gate, Nemotron-H's int8 opt-in
+
+	program *layerProgram // Arch's program when the caller has it (Model.admitProgram); nil, Admit builds it
 }
 
 // Admission is Admit's answer: whether the backend may build its resident path, and the gates the published matrices print.
@@ -38,7 +40,7 @@ func Admit(f AdmitFacts) Admission {
 	}
 	ad := Admission{Shape: f.Arch.runnerShapeDeclineSSM(f.SSMResident)}
 	if residentDeclared(key) {
-		ad.Gates = residentGateReasons(f.Arch, key, admitActSafe(f, key))
+		ad.Gates = residentGateReasons(f.Arch, f.program, key, admitActSafe(f, key))
 	}
 	ad.Why = admitWhy(f, ad)
 	return ad

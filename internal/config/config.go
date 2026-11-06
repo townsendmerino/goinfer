@@ -130,6 +130,7 @@ var Settings = []Setting{
 	{Name: "cpu-batch", Flag: "cpu-batch", Apps: Serve, Option: "CPUBatchDecode", Doc: "docs/flags.md"},
 	{Name: "prefill-chunk", Flag: "prefill-chunk", Apps: Serve, Option: "ResidentPrefillChunk", Default: "512", Doc: "docs/flags.md"},
 	{Name: "max-body-bytes", Flag: "max-body-bytes", Apps: Serve, Default: "0", Doc: "docs/flags.md"},
+	{Name: "max-file-store-bytes", Flag: "max-file-store-bytes", Apps: Serve, Default: "1073741824", Doc: "docs/flags.md"},
 	{Name: "kv-host-bytes", Flag: "kv-host-bytes", Apps: Serve, Option: "KVHostBytes", Default: "auto", Doc: "docs/flags.md"},
 	{Name: "kv-share", Flag: "kv-share", Apps: Serve, Option: "KVShareOff", Default: "on", Doc: "docs/flags.md"},
 	{Name: "kv-sessions", Flag: "kv-sessions", Apps: Serve, Option: "ResidentKVSlots", Default: "4", Doc: "docs/flags.md"},
