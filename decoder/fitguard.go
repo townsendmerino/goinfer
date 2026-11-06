@@ -361,11 +361,12 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 	// q4k prices each tensor at what its load keeps: a dense projection stored as Q4_K at its own super-blocks
 	// (q4kKeptBytes), every other matrix at int8 W8A8, which q4k makes of them (streamQuantizedRow4).
 	r := fitRates(q)
-	r.Matrix = quantBytesPerElem(q)
+	price := q
 	if q == quantQ4K && !q4kPriceAsInt4ForTest {
-		r.Matrix = quantBytesPerElem(quantInt8I8)
+		price = quantInt8I8
 		r.Kept = func(name string, dims []int) (float64, bool) { return q4kKeptBytes(g, name, dims) }
 	}
+	r.Matrix = quantBytesPerElem(price)
 	ggufArch, _ := g.Str("general.architecture")
 	return fit.GGUFWeightBytes(g.Names(), g.Dims, ggufArch, r)
 }

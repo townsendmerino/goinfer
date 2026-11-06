@@ -110,6 +110,8 @@ func TestKVBytesPerPosition(t *testing.T) {
 		{2, 4, 8, true, true, int64(2 * 1.125 * 32 * 2)}, // int8 wins over f16
 		{0, 4, 8, false, false, 0},
 		{2, 0, 8, false, false, 0},
+		{2, 4, 0, false, false, 0},
+		{2, 4, -8, false, false, 0}, // unknown geometry is 0, never negative
 	} {
 		if got := KVBytesPerPosition(c.layers, c.heads, c.dim, c.f16, c.i8); got != c.want {
 			t.Errorf("%+v: got %d", c, got)
@@ -127,10 +129,28 @@ func TestTensorNameClassifiers(t *testing.T) {
 			t.Errorf("F32PinnedTensorName(%q) = %v", name, got)
 		}
 	}
-	if MLAInt8TensorName("blk.0.attn_kv_b.weight") || !MLAInt8TensorName("blk.0.attn_kv_a_mqa.weight") {
-		t.Error("MLAInt8TensorName: kv_b stays f32, kv_a_mqa is int8")
+	if mlaInt8TensorName("blk.0.attn_kv_b.weight") || !mlaInt8TensorName("blk.0.attn_kv_a_mqa.weight") {
+		t.Error("mlaInt8TensorName: kv_b stays f32, kv_a_mqa is int8")
 	}
 	if !embeddingTensorName("model.embed_tokens.weight") || !embeddingTensorName("output.weight") || embeddingTensorName("model.layers.0.embed_tokens.weight.bias") {
 		t.Error("embeddingTensorName")
+	}
+}
+
+// TestGGUFWeightBytes_sums checks that total and the expert share accumulate across tensors, with distinct counts.
+func TestGGUFWeightBytes_sums(t *testing.T) {
+	dims := map[string][]int{
+		"blk.0.attn_q.weight":        {2, 3},    // 6 * 0.5 = 3
+		"blk.0.attn_norm.weight":     {7},       // 28
+		"blk.0.ffn_gate_exps.weight": {4, 5, 2}, // 40 * 0.5 = 20, expert
+		"blk.1.ffn_up_exps.weight":   {2, 9},    // 18 * 0.5 = 9, expert
+		"blk.0.ssm_in.weight":        {5, 3},    // 60, f32 pinned, not expert
+		"blk.0.scalar":               {},        // 4
+	}
+	names := []string{"blk.0.attn_q.weight", "blk.0.attn_norm.weight", "blk.0.ffn_gate_exps.weight", "blk.1.ffn_up_exps.weight", "blk.0.ssm_in.weight", "blk.0.scalar", "blk.0.missing.weight"}
+	get := func(n string) ([]int, bool) { d, ok := dims[n]; return d, ok }
+	total, exp := GGUFWeightBytes(names, get, "llama", rates)
+	if total != 3+28+20+9+60+4 || exp != 20+9 {
+		t.Errorf("total %d experts %d, want %d and %d", total, exp, 3+28+20+9+60+4, 20+9)
 	}
 }

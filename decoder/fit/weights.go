@@ -19,7 +19,8 @@ type Rates struct {
 	Kept func(name string, dims []int) (bytes float64, ok bool)
 }
 
-// elems is the element count of a tensor of the given shape, 0 for an empty or non-positive dimension.
+// elems is the element count of a tensor of the given shape: 1 for an empty shape (a 0-D scalar holds one element, priced as f32 by the
+// callers), 0 when any dimension is not positive.
 func elems(dims []int) int {
 	n := 1
 	for _, d := range dims {
@@ -54,7 +55,7 @@ func GGUFWeightBytes(names []string, dims func(name string) ([]int, bool), arch 
 			sum += r.Int8 * float64(n)
 			continue
 		}
-		if r.MLAProjInt8 && MLAInt8TensorName(name) {
+		if r.MLAProjInt8 && mlaInt8TensorName(name) {
 			sum += r.Int8 * float64(n)
 			continue
 		}
@@ -108,7 +109,7 @@ func SafetensorsWeightBytes(names []string, shape func(name string) ([]int, bool
 			total += r.Int8 * float64(n)
 			continue
 		}
-		if r.MLAProjInt8 && MLAInt8TensorName(name) {
+		if r.MLAProjInt8 && mlaInt8TensorName(name) {
 			total += r.Int8 * float64(n)
 			continue
 		}
@@ -133,7 +134,7 @@ func SafetensorsWeightBytes(names []string, shape func(name string) ([]int, bool
 // (1.125 bytes per element including the per-row scale) when asked. It is 0 when the geometry is unknown. A model whose layers differ
 // (hybrid, sliding-window, MLA) is priced per layer by the caller instead; this is the fallback for a geometry with no architecture.
 func KVBytesPerPosition(layers, kvHeads, headDim int, kvF16, kvI8 bool) int64 {
-	if layers <= 0 || kvHeads <= 0 {
+	if layers <= 0 || kvHeads <= 0 || headDim <= 0 {
 		return 0
 	}
 	perElem := 4.0
@@ -156,7 +157,7 @@ func KVBytesPerPosition(layers, kvHeads, headDim int, kvF16, kvI8 bool) int64 {
 // Nemotron-H's Mamba-2 in_proj/out_proj/conv1d ARE matched, via the full "mixer.in_proj"/"mixer.out_proj"/"mixer.conv1d" compound
 // (never bare "mixer." or bare "in_proj"), which no other Nemotron block kind contains.
 //
-// A load armed for int8 MLA holds its q-LoRA pair and kv-A at int8 instead (MLAInt8TensorName, checked first).
+// A load armed for int8 MLA holds its q-LoRA pair and kv-A at int8 instead (mlaInt8TensorName, checked first).
 //
 // KNOWN RESIDUAL GAP, left unfixed rather than over-matched: MLA's output projection (self_attn.o_proj.weight / Bailing's dense.weight)
 // and a LoRA-less q_proj are held f32, but "o_proj"/"q_proj"/"dense.weight" are ordinary quantizable tensor names in every non-MLA
@@ -177,9 +178,9 @@ func F32PinnedTensorName(name string) bool {
 	return false
 }
 
-// MLAInt8TensorName reports whether name is an MLA q-LoRA or kv-A projection, which a load armed for int8 MLA holds as per-row int8.
+// mlaInt8TensorName reports whether name is an MLA q-LoRA or kv-A projection, which a load armed for int8 MLA holds as per-row int8.
 // kv_b is not one: it stays f32.
-func MLAInt8TensorName(name string) bool {
+func mlaInt8TensorName(name string) bool {
 	for _, s := range []string{"attn_q_a.", "attn_q_b.", "attn_kv_a_mqa.", "q_a_proj.", "q_b_proj.", "kv_a_proj"} {
 		if strings.Contains(name, s) {
 			return true
