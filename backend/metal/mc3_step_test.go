@@ -730,6 +730,88 @@ func mc3IdentityDiff(t *testing.T, r *resident, depths []int) int {
 	return diff
 }
 
+// TestMC3Step_recurrentMatchesDecodeOnServeHistories: the recurrent step against production's single-token forward when each slot's
+// history is built the way serve builds it, by single-token decodes or by PrefillLast, as well as by ForwardBatch. Slots 0 and 1 run
+// the step and their twins 2 and 3 the decode, from the same history; each side then decodes 40 tokens greedily on its own choices.
+// Every step row must equal its twin's decode bit for bit. It prints, per fixture and history, the widest logit difference, how many
+// rows' argmax agree and how many greedy tokens agree before the first divergence.
+func TestMC3Step_recurrentMatchesDecodeOnServeHistories(t *testing.T) {
+	const depth, steps = 20, 40
+	for _, fx := range recurrentStepFixtures {
+		for _, how := range []string{"decode", "PrefillLast", "ForwardBatch", "decode-bound"} {
+			t.Run(filepath.Base(fx.dir)+"/"+how, func(t *testing.T) {
+				r := recurrentStepResidentSlots(t, fx, true, 4)
+				if r.batch == nil {
+					t.Fatalf("no batched step: %s", r.batchIneligible())
+				}
+				for s := range 4 {
+					if err := r.useKVSlot(s); err != nil {
+						t.Fatal(err)
+					}
+					embs := make([][]float32, depth)
+					for i := range embs {
+						embs[i] = mc3Emb(r, (i*37+(s%2)*11+5)%r.V) // slots s and s+2 get the same history
+					}
+					switch how {
+					case "decode", "decode-bound":
+						for i, e := range embs {
+							r.ForwardEmb(e, i)
+						}
+					case "PrefillLast":
+						r.PrefillLast(embs, 0)
+					case "ForwardBatch":
+						if _, err := r.ForwardBatch(embs, 0); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				tokStep, tokDec := []int{3, 9}, []int{3, 9}
+				worst, argAgree, rows, agreeUntil := 0.0, 0, 0, -1
+				for st := range steps {
+					seqs := []batchSeq{{slot: 0, pos: depth + st, emb: mc3Emb(r, tokStep[0])}, {slot: 1, pos: depth + st, emb: mc3Emb(r, tokStep[1])}}
+					dec := make([][]float32, 2)
+					for m := range 2 {
+						if err := r.useKVSlot(2 + m); err != nil {
+							t.Fatal(err)
+						}
+						dec[m] = slices.Clone(r.ForwardEmb(mc3Emb(r, tokDec[m]), depth+st))
+					}
+					if how == "decode-bound" { // the step then runs on the bound slot, as serve's step does
+						if err := r.useKVSlot(0); err != nil {
+							t.Fatal(err)
+						}
+					}
+					got := mc3Step(t, r, seqs)
+					same := tokStep[0] == tokDec[0] && tokStep[1] == tokDec[1]
+					for m := range 2 {
+						if same {
+							for i := range got[m] {
+								worst = max(worst, math.Abs(float64(got[m][i]-dec[m][i])))
+							}
+							rows++
+							if argmaxF32(got[m]) == argmaxF32(dec[m]) {
+								argAgree++
+							}
+						}
+						tokStep[m], tokDec[m] = argmaxF32(got[m]), argmaxF32(dec[m])
+					}
+					if agreeUntil < 0 && (tokStep[0] != tokDec[0] || tokStep[1] != tokDec[1]) {
+						agreeUntil = st
+					}
+				}
+				if agreeUntil < 0 {
+					agreeUntil = steps
+				}
+				fmt.Fprintf(os.Stderr, "[recurrent-step] %-14s %-12s max |step-decode| %.3g over %d rows on one history, argmax agree %d/%d, greedy tokens agree for %d of %d steps\n",
+					filepath.Base(fx.dir), how, worst, rows, argAgree, rows, agreeUntil, steps)
+				if worst != 0 {
+					t.Errorf("the step's rows differ from production's single-token forward (max %.3g; greedy agrees for %d of %d steps)", worst, agreeUntil, steps)
+				}
+			})
+		}
+	}
+}
+
 // TestMC3Step_recurrentBitIdentical is OP4m-d4b's D4b-1 and OP4m-d6b's D6b-1 (docs/tasks/task-forward-architecture-2026-10.md
 // §4.9): with the step's recurrent blocks on, each tracked recurrent fixture builds the batched step. Four sequences at
 // different depths, each on its own slot with its own recurrent state, stepped together 12 times, equal production's

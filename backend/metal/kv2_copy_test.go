@@ -57,9 +57,9 @@ func kv2Slot(t *testing.T, r *resident, s, rows int) [][]byte {
 			continue
 		}
 		row := L.geom.kvDim * elem
-		out = append(out, gather(r.kvSlotBufs[0].kc[l], row), gather(r.kvSlotBufs[0].vc[l], row))
+		out = append(out, gather(r.kc[l], row), gather(r.vc[l], row))
 		if r.kvI8 {
-			out = append(out, gather(r.kvSlotBufs[0].ks[l], L.geom.nKV*4), gather(r.kvSlotBufs[0].vs[l], L.geom.nKV*4))
+			out = append(out, gather(r.ks[l], L.geom.nKV*4), gather(r.vs[l], L.geom.nKV*4))
 		}
 	}
 	return out
