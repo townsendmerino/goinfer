@@ -241,15 +241,16 @@ func TestKSC1_stepMatchesDecodeKernels(t *testing.T) {
 	ksc1StepRows(t, true)
 }
 
-// TestKSC1_stepRowsPlantIsRed plants a reordered accumulation (the high-nibble term first) in the step's Q4_K rows kernel: the property
-// above must see it, B = 1..8, or it proves nothing about those kernels.
+// TestKSC1_stepRowsPlantIsRed plants a reordered accumulation in the step's Q4_K rows kernel (the four lane groups are
+// rotated by one, so simd_sum adds different partial sums together; reversing them is not a plant, the butterfly sum is symmetric under it): the comparison above must see it, B = 1..8,
+// or it proves nothing about those kernels.
 func TestKSC1_stepRowsPlantIsRed(t *testing.T) {
-	const good = "acc[n] += d*sc0*dlo + d*sc1*dhi - dm*(m0*slo + m1*shi);"
+	const good = "const uint NB = K >> 8u, ix = lane >> 3u, j = (lane & 7u) >> 1u, h = lane & 1u;\n    _Pragma(\"clang loop unroll(disable)\") for (uint r = 0u; r < B; r++) {\n        float acc[NR];\n        SA_ROWS_UNROLL for (uint n = 0u; n < NR; n++) acc[n] = 0.0f;\n        for (uint b = ix; b < NB; b += 4u) {\n            device const float4* alo4"
 	if strings.Count(mc3RowsKernels, good) != 1 {
 		t.Fatal("the plant's target is not in the q4k rows kernel")
 	}
 	prev := mc3RowsKernels
-	mc3RowsKernels = strings.Replace(prev, good, "acc[n] += d*sc1*dhi + d*sc0*dlo - dm*(m0*slo + m1*shi);", 1)
+	mc3RowsKernels = strings.Replace(prev, good, strings.Replace(good, "ix = lane >> 3u", "ix = ((lane >> 3u) + 1u) & 3u", 1), 1)
 	t.Cleanup(func() { mc3RowsKernels = prev })
 	if n := ksc1StepRows(t, false); n == 0 {
 		t.Error("the reordered rows kernel still matches decode's: the comparison cannot see a reorder")
@@ -341,7 +342,8 @@ func ksc1StepRows(t *testing.T, report bool) (total int) {
 						}
 					}
 					fmt.Fprintf(os.Stderr, "[C1-G2k] %s K=%d mode %d B=%d: %d of %d differ\n", fam, K, mode, B, diff, B*N)
-					if diff != 0 {
+					total += diff
+					if diff != 0 && report {
 						t.Errorf("%s K=%d mode %d B=%d: %d outputs differ between the step and decode", fam, K, mode, B, diff)
 					}
 				}
