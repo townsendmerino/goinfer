@@ -1,0 +1,8 @@
+=== RUN   TestRecordFileName
+--- PASS: TestRecordFileName (0.00s)
+=== RUN   TestRowsAccepted
+--- PASS: TestRowsAccepted (0.00s)
+=== RUN   TestReportRelease_acceptedDoesNotBlock
+--- PASS: TestReportRelease_acceptedDoesNotBlock (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cmd/gate	0.006s

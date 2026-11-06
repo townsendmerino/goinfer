@@ -1,0 +1,26 @@
+=== RUN   TestMambaHostCopy_planningHoldsNoPackedWords
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_host_copy_test.go:51: layer 0 in_proj holds 2856 packed words before upload, want 0 (a planned weight is packed at upload)
+    mamba_host_copy_test.go:54: layer 0 in_proj is not a planned weight: it names no source for the upload to stream
+    mamba_host_copy_test.go:51: layer 0 out_proj holds 1088 packed words before upload, want 0 (a planned weight is packed at upload)
+    mamba_host_copy_test.go:54: layer 0 out_proj is not a planned weight: it names no source for the upload to stream
+    mamba_host_copy_test.go:51: layer 3 in_proj holds 2856 packed words before upload, want 0 (a planned weight is packed at upload)
+    mamba_host_copy_test.go:54: layer 3 in_proj is not a planned weight: it names no source for the upload to stream
+    mamba_host_copy_test.go:51: layer 3 out_proj holds 1088 packed words before upload, want 0 (a planned weight is packed at upload)
+    mamba_host_copy_test.go:54: layer 3 out_proj is not a planned weight: it names no source for the upload to stream
+--- FAIL: TestMambaHostCopy_planningHoldsNoPackedWords (1.89s)
+=== RUN   TestMambaHostCopy_deviceBytesIdenticalToPackWeight
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestMambaHostCopy_deviceBytesIdenticalToPackWeight (0.23s)
+FAIL
+ledger: 7 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	2.175s
+FAIL

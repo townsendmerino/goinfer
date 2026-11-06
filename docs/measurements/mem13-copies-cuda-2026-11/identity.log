@@ -1,0 +1,30 @@
+  mistral            method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mistral3           method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mixtral            method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 1 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  nemotron_h         method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 1 cell(s); today: real-model-oracle @ 0b74e671 (linux-amd64)
+  olmo3              method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  olmo_hybrid        method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen2              method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen2_5_vl         method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen3              method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen3_5            method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  qwen3_5_moe        method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen3_moe          method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  qwen3_next         method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 1 cell(s); today: real-model-oracle @ 426ca57d (linux-amd64)
+  qwen3_vl           method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7ee05f0a (linux-amd64)
+  smollm3            method "identity-inherited from 6ab62e5b2" at f9746e6bf — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  NOTE old 6ab62e5b2 is not the validated_at of 29 of these: identity inherits only what 6ab62e5b2 itself carries —
+       chain through the revs that were checked, or pass the family's validated_at as <old-rev>:
+       cohere@7b50947a cohere2@7b50947a deepseek_v3@d5c5a1d53 gemma@7b50947a gemma2@7b50947a
+       gemma3@7b50947a gemma4@310a2e44 glm4_moe@7b50947a glm_ocr@7b50947a gpt-oss@960ef65a7
+       granite@7b50947a internlm2@7b50947a kimi_k2@d5c5a1d53 llama@7b50947a mistral@7b50947a
+       mistral3@7b50947a mixtral@7b50947a nemotron_h@0b74e671 olmo3@7b50947a olmo_hybrid@7b50947a
+       qwen2@7b50947a qwen2_5_vl@7b50947a qwen3@7b50947a qwen3_5@7b50947a qwen3_5_moe@7b50947a
+       qwen3_moe@7b50947a qwen3_next@426ca57d qwen3_vl@7ee05f0a smollm3@7b50947a
+  scope: this machine (Linux/x86_64) and backend (cuda) only — identity is per machine and per backend (the CPU reference is bit-identical within an arch, not across).
+
+== verdict ==
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  wall     5m43s (16:06:53 → 16:12:36): builds 4s, runs 5m40s
+  logs     /tmp/gate-identity-20261105-160653-687911131/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  GREEN — every family that ran is IDENTICAL

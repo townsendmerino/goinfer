@@ -1,0 +1,5 @@
+[2026-11-05 16:06:16 PST] G-3b before START: load 0.89, 59 GB available, swap used 1461 MB
+[2026-11-05 16:06:29 PST] G-3b before END rc=0 13 s:     mamba_host_copy_test.go:209: TIER1 peak RssAnon 16325 MiB, peak VmSwap 0 MiB; build window: RssAnon at plan start 6523 MiB, peak in window 14199 MiB, growth 7675 MiB; decode path cuda-resident (int4), 16 greedy tokens [1278 4857 6086 1395 11238 1044 1407 4358 1626 1885 74045 3318 1784 8961 1307 
+[2026-11-05 16:06:29 PST] G-3b after START: load 2.47, 59 GB available, swap used 1465 MB
+[2026-11-05 16:06:40 PST] G-3b after END rc=0 11 s:     mamba_host_copy_test.go:209: TIER1 peak RssAnon 15976 MiB, peak VmSwap 0 MiB; build window: RssAnon at plan start 6527 MiB, peak in window 6592 MiB, growth 65 MiB; decode path cuda-resident (int4), 16 greedy tokens [1278 4857 6086 1395 11238 1044 1407 4358 1626 1885 74045 3318 1784 8961 1307 127
+[2026-11-05 16:06:40 PST] ALL DONE

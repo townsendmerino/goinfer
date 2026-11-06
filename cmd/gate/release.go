@@ -127,6 +127,12 @@ func relLiveRead(e *relEnv, kind string, args []string) (string, error) {
 	case "read":
 		b, err := os.ReadFile(filepath.Join(e.root, args[0]))
 		return string(b), err
+	case "accepted":
+		b, err := os.ReadFile(filepath.Join(e.root, filepath.FromSlash(acceptedDirDefault), args[0]+"-accepted.json"))
+		if os.IsNotExist(err) {
+			return "", nil // a release with no accepted file has nothing accepted
+		}
+		return string(b), err
 	case "glob":
 		files, err := filepath.Glob(filepath.Join(e.root, args[0]))
 		if err != nil {
