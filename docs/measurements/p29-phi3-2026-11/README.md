@@ -87,17 +87,17 @@ Sequential loop ÷ step on a 512-token prompt at one KV slot, `oneSlotPrefillAB`
 Every new pair beats every old pair (the largest old Phi-3 pair is 0.248; the smallest new one 1.131). Phi-3 goes from 4.7× slower than the loop to 1.14–1.15× faster, about 5.3× the old step. **Caveat, like for like:** the step runs no head on its first 511 tokens and the loop runs the head on all of them, so each ratio includes the skipped head work. That is small on Phi-3 (32,064 × 3,072) and larger on the 1.5B and 0.5B (151,936-wide vocabulary); I did not measure the split, so read the 1.5B and 0.5B gains as "up to this much from kernels". Phi-3's 1.14× is the most conservative of the three.
 
 ### MC3 concurrent decode, two clients on Phi-3 (reported, not graded)
-Two single-token `Forward`s ÷ one two-row step on two slots, both with the head, 10 pairs in alternating order, positions 64–73, `ctx 1024`:
+Two single-token `Forward`s ÷ one two-row step on two slots, both with the head, 10 pairs in alternating order, positions 64–73, `ctx 1024`. The medians are the mean of the two middle pairs (0.7735, 0.726, 0.9985, 0.9975); the harness as run logged the upper-middle pair alone (0.778, 0.727, 0.999, 0.998), and `fix/ab_test.go.txt` is fixed:
 
 | arm | median | range |
 |---|---|---|
-| old, run 1 / run 2 | 0.778 / 0.727 | 0.721 to 0.958 |
+| old, run 1 / run 2 | 0.774 / 0.726 | 0.721 to 0.958 |
 | new, run 1 / run 2 | **0.999 / 0.998** | 0.994 to 1.010 |
 
 At two clients the step costs the same as serving the two requests one after the other; before, it cost about 1.3–1.4× as much. No gain at two clients, no loss.
 
 ### Bits and the registered bar
-- `TestKSC1_stepMatchesDecodeKernels` (Q4_K and int8, B = 1..8, K = 256, 1536, 3072, 4864, three modes, byte-equal against decode's rows kernels), `TestKSO1_stepMatchesDecode` (Q5_K and Q6_K, B = 1..8), `TestKSO1a_q4kBitsUnchanged`, `TestOneSlotStep_*` and `TestQ4KStep_*` all pass. `TestKSC1_stepRowsPlantIsRed` rotates the lane groups in the Q4_K kernel and 116,499 outputs differ. (Reversing the groups is not a plant: `simd_sum` is symmetric under it; two other first plants, swapping two terms of a sum and regrouping it, did not change a bit either.)
+- `TestKSC1_stepMatchesDecodeKernels` (Q4_K and int8, B = 1..8, K = 256, 1536, 3072, 4864, N = 999, 1000, 1001, three modes: 576 cells), `TestKSO1_stepMatchesDecode` (Q5_K and Q6_K, B = 1..8, five K, N = 996, 997: 480 cells), all byte-equal against decode's rows kernels, 0 of 1,056 cells differ, `TestKSO1a_q4kBitsUnchanged`, `TestOneSlotStep_*` and `TestQ4KStep_*` all pass. `TestKSC1_stepRowsPlantIsRed` rotates the lane groups in the Q4_K kernel and every cell with K >= 1536 differs (the 72 cells at K = 256 do not move); `TestKSO1_stepRowsPlantsAreRed` does the same for Q5_K (48 cells at K = 256 do not move), and the write-guard plants (`<` made `<=`, seen through a canary word after the output) go red at the odd row counts only. (The first 116,499 figure counted the N = 1000 run alone.) (Reversing the groups is not a plant: `simd_sum` is symmetric under it; two other first plants, swapping two terms of a sum and regrouping it, did not change a bit either.)
 - CLAUDE.md's bit-identical rule: bit-identical, yes; scratch and allocated memory not higher (the kernels add no buffer or threadgroup memory); faster on 10 of 10 timed pairs on Phi-3 against the loop (and against every old pair); it replaces the two kernels rather than adding a second path. All four hold.
 
 ### What the kernel work found (all GPU ms per call, Phi-3 gate|up, B = 8 unless noted; logs in `fix/`)

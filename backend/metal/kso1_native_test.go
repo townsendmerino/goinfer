@@ -253,6 +253,7 @@ func kso1StepRows(t *testing.T, report bool) map[string]int {
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
+	defer d.ReleaseAll() // the helper runs three times per test binary (the property and two plants)
 	lib, err := d.CompileLibrary(allKernels+mc3RowsKernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
@@ -281,7 +282,7 @@ func kso1StepRows(t *testing.T, report bool) map[string]int {
 			for i, c := range raw {
 				iv[i] = int8(c)
 			}
-			bias, init, act := make([]float32, N), make([]float32, 8*N), make([]float32, 8*K)
+			bias, init, act := make([]float32, N+1), make([]float32, 8*N), make([]float32, 8*K) // bias has a word past N: the write-guard plants read bias[N] in mode 1
 			for i := range bias {
 				bias[i] = float32(rng.NormFloat64())
 			}
@@ -909,7 +910,9 @@ func stepGridFor(kind string, N int) int {
 
 // TestKSO1_stepRowsPlantsAreRed plants a lane-group rotation and a write-guard off-by-one in the step's Q5_K kernel; the comparison
 // must see the rotation in every cell with six or more super-blocks, and the guard (through the canary word after the output) at the
-// odd row count in the modes that store, and not at the even one.
+// odd row count in the modes that store, and not at the even one. The guard plant is racy by construction, as the Q4_K one in
+// ksc1_gemv_test.go is (an extra write onto the next activation row's first output, a bias[N] read in mode 1, which the bias buffer
+// has a word for); only the canary and the even-N cells are asserted.
 func TestKSO1_stepRowsPlantsAreRed(t *testing.T) {
 	const ix = "const uint NB = K >> 8u, ix = lane >> 3u, j = (lane & 7u) >> 1u, h = lane & 1u;\n    _Pragma(\"clang loop unroll(disable)\") for (uint r = 0u; r < B; r++) {\n        float acc[NR];\n        SA_ROWS_UNROLL for (uint n = 0u; n < NR; n++) acc[n] = 0.0f;\n        for (uint b = ix; b < NB; b += 4u) {\n            float4 al[4], ah[4]; float slo, shi;"
 	stepPlantRed(t, "q5k", ix, strings.Replace(ix, "ix = lane >> 3u", "ix = ((lane >> 3u) + 1u) & 3u", 1), 1, func() map[string]int { return kso1StepRows(t, false) })

@@ -89,6 +89,7 @@ func TestZZMC3Two(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "[mc3-2] pair %d: two Forwards %.1f ms, one 2-row step %.1f ms, ratio %.3f\n", k+1, s.Seconds()*1000, b.Seconds()*1000, ratios[k])
 	}
 	sort.Float64s(ratios)
-	fmt.Fprintf(os.Stderr, "[mc3-2] %s: two Forwards ÷ one 2-row step over 10 pairs: median %.3f (min %.3f, max %.3f)\n", filepath.Base(p), ratios[5], ratios[0], ratios[9])
+	med := (ratios[4] + ratios[5]) / 2 // ten pairs: the median is the mean of the two middle ones (the first runs of this scratch logged ratios[5] alone; fix/ab.log)
+	fmt.Fprintf(os.Stderr, "[mc3-2] %s: two Forwards ÷ one 2-row step over 10 pairs: median %.3f (min %.3f, max %.3f)\n", filepath.Base(p), med, ratios[0], ratios[9])
 	_ = context.Background
 }

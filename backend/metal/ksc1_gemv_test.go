@@ -269,7 +269,10 @@ func TestKSC1_stepRowsPlantIsRed(t *testing.T) {
 // TestKSC1_stepRowsGuardPlantsAreRed plants an off-by-one in the write guard of the step's two-rows-a-simdgroup Q4_K kernel
 // (`row0 + n < N` made `<=`). The extra write lands on the next activation row's first output (overwritten by that row's pass) or,
 // in the last row, on the canary word after the output: only the canary sees it, only at an odd row count and only in the modes that
-// store (a residual `+= 0` leaves it alone). The cells at N = 999 and 1001 must go red in modes 0 and 1; N = 1000 must not.
+// store (a residual `+= 0` leaves it alone). The cells at N = 999 and 1001 must go red in modes 0 and 1; N = 1000 must not. The plant
+// is racy by construction and not a clean mutation: the edge row's extra write lands on the next activation row's first output while
+// another simdgroup writes it, and mode 1 reads bias[N] (the test's bias buffer is one word longer for that); only the canary and the
+// even-N cells are asserted.
 func TestKSC1_stepRowsGuardPlantsAreRed(t *testing.T) {
 	const guard = "if (lane==0 && row0 + n < N) {"
 	prev := mc3RowsKernels
@@ -329,6 +332,7 @@ func ksc1StepRows(t *testing.T, report bool) (cells map[string]int) {
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
+	defer d.ReleaseAll() // the helper runs three times per test binary (the property and two plants)
 	lib, err := d.CompileLibrary(allKernels+mc3RowsKernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
@@ -353,7 +357,7 @@ func ksc1StepRows(t *testing.T, report bool) (cells map[string]int) {
 			for i := range w8.Int8s()[:N*K] {
 				w8.Int8s()[i] = int8(rng.Intn(255) - 127)
 			}
-			sc, bias, init := make([]float32, N), make([]float32, N), make([]float32, 8*N)
+			sc, bias, init := make([]float32, N), make([]float32, N+1), make([]float32, 8*N) // bias has a word past N: the write-guard plants read bias[N] in mode 1
 			for i := range sc {
 				sc[i], bias[i] = float32(0.001+0.01*rng.Float64()), float32(rng.NormFloat64())
 			}
@@ -376,6 +380,9 @@ func ksc1StepRows(t *testing.T, report bool) (cells map[string]int) {
 							e.Dispatch(pipe(fmt.Sprintf("mc3_gemv_w8_f32_rows%d", B)), N*32, 256, w8, bS, bA, step, uK, uN, uLda, uLdo, bB, NewBufferU32(d, uint32(mode)))
 						}
 						e.End()
+						if err := e.Err(); err != nil {
+							t.Fatalf("%s N=%d K=%d mode %d B=%d: step dispatch: %v", fam, N, K, mode, B, err)
+						}
 						diff := stepCanaryHits(step, B, N)
 						for b := range B {
 							out := NewBufferFloats(d, slices.Clone(init[b*N:(b+1)*N]))
@@ -397,6 +404,9 @@ func ksc1StepRows(t *testing.T, report bool) (cells map[string]int) {
 								e.Dispatch(pipe(fmt.Sprintf("gemv_w8_f32%s_rows%d", variant, R)), (N+R-1)/R*32, 256, args...)
 							}
 							e.End()
+							if err := e.Err(); err != nil {
+								t.Fatalf("%s N=%d K=%d mode %d B=%d row %d: decode dispatch: %v", fam, N, K, mode, B, b, err)
+							}
 							got, want := step.U32s()[b*N:(b+1)*N], out.U32s()[:N]
 							for i := range want {
 								if got[i] != want[i] {
