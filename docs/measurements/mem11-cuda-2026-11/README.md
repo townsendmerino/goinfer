@@ -30,3 +30,7 @@ loads the f32 conversion (`GOINFER_DFLASH_F32`); none attaches the bf16 checkpoi
   - the streamed route, `decoder/dflash.go:stRows` widening with a mantissa bit forced on: `opened` FAILs, `held` and the f32 streamed-against-held test PASS;
   - the held route, the packer's `default` branch in `backend/cuda/pack_stream.go` (`h.src.Row`, where a held bf16 island's rows are widened into the stage) with `src[i*K] += 1` after the read: `held` FAILs, `opened` PASSes.
   Each defect turns red only the route it is in; the unplanted run is green (15.4 s).
+
+## From a clean checkout, 2026-11-06 07:33 PST (after #709)
+
+Main merged into this branch (`39a04c362`), no untracked file, no symlink, `GOINFER_HEAVY_TESTS=1`, the exclusive timing lock (`g1-clean-checkout.log`): `TestResidentDrafter_bf16AttachMatchesF32` PASS (15.1 s), `/held` PASS (1.5 s), `/opened` PASS (1.1 s); `TestResidentDrafter_streamedAttachMatchesHeld` PASS (15.5 s). No skip. The ledger row for MEM11-bf16 is marked from this reading.
