@@ -382,11 +382,13 @@ func TestFitMemo_aNilConfigDoesNotLatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	memo := new(fitMemo)
-	if a := memo.factsFor(nil, "webgpu"); a.resolved {
-		t.Fatalf("no config resolved: %+v", a)
-	}
-	if a := memo.factsFor(cfg, "cuda"); !a.resolved {
-		t.Error("after a call with no config, the memo never resolved the config it was given")
+	for _, second := range []string{"cuda", "webgpu"} { // the same backend as the nil call, and another
+		memo := new(fitMemo)
+		if a := memo.factsFor(nil, "cuda"); a.resolved {
+			t.Fatalf("no config resolved: %+v", a)
+		}
+		if a := memo.factsFor(cfg, second); !a.resolved {
+			t.Errorf("after a call with no config on cuda, the memo never resolved the config it was given on %s", second)
+		}
 	}
 }
