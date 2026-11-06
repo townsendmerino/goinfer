@@ -39,7 +39,7 @@ Registered after the tier 0 tests were written red first (`red.log`) and before 
 
 **No fall (+232 MiB), against a bar of at least 2 GiB: FAIL.** It stays on record as it ran. The load took 16 s and 12 s, so the checkpoint came from a cached sidecar, and the whole-process peak was set elsewhere than where the Mamba projections sit: `decoder.Load` builds the host model before `BuildResident` plans the layers, and a peak over the whole process reads that phase. The instrument could not see the packed copies, whatever they weigh. The survey's 4 GB was arithmetic, and this reading neither confirms nor refutes it.
 
-## G-3b: the build's own window, registered 2026-11-05 16:10 PST before the reading
+## G-3b: the build's own window, registered 2026-11-05 16:06 PST before the reading (the time from `date`; the commit before this one wrote 16:10 by guess)
 
 **What it adds, and why:** the same test, with a window opened where `BuildResident` begins planning its layers (`planStartForTest`) and closed when the load returns. It logs `RssAnon` at the window's start (the host model, loaded), the peak inside it, and the growth between them. The packed copies, if they exist, sit on top of the loaded model inside this window. **This is a new reading with a corrected instrument, after a FAIL; it does not replace G-3 above.**
 
