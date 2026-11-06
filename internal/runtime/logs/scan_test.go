@@ -1,6 +1,7 @@
 package logs
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -66,6 +67,20 @@ func scanOutput(t *testing.T, file string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, fd := range scanFile(fset, f) {
+		t.Errorf("%s", fd.msg)
+	}
+}
+
+// finding is one place the scan flags: the line it names (a direct write's call, or the return of a reported error) and why.
+type finding struct {
+	line int
+	msg  string
+}
+
+// scanFile is every finding in one parsed file.
+func scanFile(fset *token.FileSet, f *ast.File) []finding {
+	var out []finding
 	logPkgs := map[string]bool{} // the names this file imports log and log/slog under
 	for _, im := range f.Imports {
 		if p := strings.Trim(im.Path.Value, `"`); p == "log" || p == "log/slog" {
@@ -80,15 +95,17 @@ func scanOutput(t *testing.T, file string) {
 		switch x := n.(type) {
 		case *ast.CallExpr:
 			if what := directOutput(x, logPkgs); what != "" {
-				t.Errorf("%s: %s: library code writes through internal/runtime/logs", fset.Position(x.Pos()), what)
+				out = append(out, finding{fset.Position(x.Pos()).Line,
+					fmt.Sprintf("%s: %s: library code writes through internal/runtime/logs", fset.Position(x.Pos()), what)})
 			}
 		case *ast.BlockStmt:
-			checkReportAndReturn(t, fset, x.List)
+			out = append(out, checkReportAndReturn(fset, x.List)...)
 		case *ast.CaseClause:
-			checkReportAndReturn(t, fset, x.Body)
+			out = append(out, checkReportAndReturn(fset, x.Body)...)
 		}
 		return true
 	})
+	return out
 }
 
 // directOutput names the output a call writes outside this package: print and println, any call into log or log/slog (under
@@ -134,15 +151,16 @@ func isStdStream(e ast.Expr) bool {
 // checkReportAndReturn: a logs call naming an error, then a return of that error, in one statement list. A report inside an if
 // statement, in any branch of its else-if chain and at any depth of nested ifs, counts for the statements after it when its own
 // branch falls through, unless that if declared the name; assigning the name again clears it.
-func checkReportAndReturn(t *testing.T, fset *token.FileSet, list []ast.Stmt) {
-	t.Helper()
+func checkReportAndReturn(fset *token.FileSet, list []ast.Stmt) []finding {
+	var out []finding
 	reported := map[string]token.Pos{}
 	for _, st := range list {
 		if s, ok := st.(*ast.ReturnStmt); ok {
 			for _, res := range s.Results {
 				for _, id := range returnedErrors(res) {
 					if pos, hit := reported[id.Name]; hit {
-						t.Errorf("%s: reports %s and returns it at line %d: the caller reports it again", fset.Position(pos), id.Name, fset.Position(s.Pos()).Line)
+						line := fset.Position(s.Pos()).Line
+						out = append(out, finding{line, fmt.Sprintf("%s: reports %s and returns it at line %d: the caller reports it again", fset.Position(pos), id.Name, line)})
 					}
 				}
 			}
@@ -150,6 +168,7 @@ func checkReportAndReturn(t *testing.T, fset *token.FileSet, list []ast.Stmt) {
 		}
 		stmtReports(st, reported)
 	}
+	return out
 }
 
 // stmtReports updates reported for one statement that does not return: a logs call adds its error names, an if clears what its
@@ -303,3 +322,121 @@ func terminates(list []ast.Stmt) bool {
 	}
 	return false
 }
+
+// The scan flags exactly the lines marked FLAG in scanCases: a write through log under another name, and a report followed by a
+// return of the same error, through a branch that falls through (else-if included), under a short name, or wrapped (at any
+// depth, or in a composite literal). It flags none of the controls: a reporting branch that returns, nested or in an else-if; the
+// name assigned again, in a statement or in an if's init; and an if that declares its own err.
+func TestScan_flagsWhatItShouldAndNothingElse(t *testing.T) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "cases.go", scanCases, parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want, got []int
+	for i, line := range strings.Split(scanCases, "\n") {
+		if strings.Contains(line, "// FLAG") {
+			want = append(want, i+1)
+		}
+	}
+	for _, fd := range scanFile(fset, f) {
+		got = append(got, fd.line)
+	}
+	slices.Sort(got)
+	if len(want) < 7 || !slices.Equal(got, want) {
+		t.Errorf("flagged lines %v, want the FLAG lines %v", got, want)
+	}
+}
+
+const scanCases = `package cases
+
+import stdlog "log"
+
+func alias() { stdlog.Printf("x") } // FLAG
+
+func fallThrough(err error) error {
+	if err != nil {
+		logs.Warnf("x: %v", err)
+	}
+	return err // FLAG
+}
+
+func shortName(le error) error {
+	logs.Warnf("x: %v", le)
+	return le // FLAG
+}
+
+func composite(err error) error {
+	logs.Warnf("x: %v", err)
+	return &wrapErr{Err: err} // FLAG
+}
+
+func elseIf(a bool, err error) error {
+	if a {
+		next()
+	} else if err != nil {
+		logs.Warnf("x: %v", err)
+	}
+	return err // FLAG
+}
+
+func wrappedTwice(err error) error {
+	logs.Warnf("x: %v", err)
+	return fmt.Errorf("a: %w", fmt.Errorf("b: %w", err)) // FLAG
+}
+
+func wrappedInComposite(err error) error {
+	logs.Warnf("x: %v", err)
+	return &wrapErr{Err: fmt.Errorf("b: %w", err)} // FLAG
+}
+
+func branchReturns(err error) error {
+	if err != nil {
+		logs.Warnf("x: %v", err)
+		return nil
+	}
+	return err
+}
+
+func assignedAgain(err error) error {
+	logs.Warnf("x: %v", err)
+	err = next()
+	return err
+}
+
+func ifDeclares() error {
+	if err := next(); err != nil {
+		logs.Warnf("x: %v", err)
+	}
+	var err error
+	return err
+}
+
+func nestedReturns(a bool, err error) error {
+	if a {
+		if err != nil {
+			logs.Warnf("x: %v", err)
+			return nil
+		}
+	}
+	return err
+}
+
+func elseIfReturns(a bool, err error) error {
+	if a {
+		next()
+	} else if err != nil {
+		logs.Warnf("x: %v", err)
+		return nil
+	}
+	return err
+}
+
+func initAssigns(err error) error {
+	logs.Warnf("x: %v", err)
+	if err = next(); err != nil {
+		return err
+	}
+	return err
+}
+`
