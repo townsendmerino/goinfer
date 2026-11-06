@@ -21,7 +21,10 @@ const mainArgsEnv = "CHATAPP_TEST_MAIN_ARGS"
 
 func TestMain(m *testing.M) {
 	if args, ok := os.LookupEnv(mainArgsEnv); ok {
-		os.Args = append([]string{"goinfer-chat"}, strings.Split(args, "\n")...)
+		os.Args = []string{"goinfer-chat"}
+		if args != "" {
+			os.Args = append(os.Args, strings.Split(args, "\n")...)
+		}
 		Main()
 		os.Exit(0)
 	}
@@ -29,7 +32,7 @@ func TestMain(m *testing.M) {
 }
 
 // runMain runs goinfer-chat with args and stdin in a child process, and returns its exit code and output. A child gets a
-// minute.
+// minute. Under go test -cover the child's coverage counts: the parent's environment carries GOCOVERDIR, which it inherits.
 func runMain(t *testing.T, stdin string, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -73,15 +76,23 @@ func TestMain_oneShotPromptAnswersOnStdoutAlone(t *testing.T) {
 	}
 }
 
-// The REPL reads commands and prompts from stdin: /max sets the reply length the next prompt gets, and /quit ends it, exit 0.
+// The REPL reads commands and prompts from stdin: after /temp 0 and /max 6 a prompt gets the reply -p gives the same prompt at
+// those settings, 6 tokens long, and /quit ends it, exit 0. Both run with no system prompt, and the prompt is one whose reply
+// from this model is its own: behind the default system prompt, or for a short prompt, its replies to different prompts can
+// agree, and then a reply to another prompt would match.
 func TestMain_replTakesCommandsAndPromptsFromStdin(t *testing.T) {
+	const prompt = "The quick brown fox jumps over the lazy dog"
 	dir := tinyChatModel(t)
-	code, stdout, stderr := runMain(t, "/temp 0\n/max 3\nhello\n/quit\n", "--model", dir, "--no-selftest")
-	if code != 0 || strings.TrimSpace(stdout) == "" {
-		t.Fatalf("exit %d, stdout %q\nstderr:\n%s", code, stdout, stderr)
+	code, want, stderr := runMain(t, "", "--model", dir, "--no-selftest", "--system", "", "-p", prompt, "--max", "6", "--temp", "0")
+	if want = strings.TrimSpace(want); code != 0 || want == "" {
+		t.Fatalf("-p for the expected reply: exit %d, stdout %q\nstderr:\n%s", code, want, stderr)
 	}
-	if !strings.Contains(stderr, "[3 tok") {
-		t.Errorf("the reply after /max 3 was not 3 tokens\nstderr:\n%s", stderr)
+	code, stdout, stderr := runMain(t, "/temp 0\n/max 6\n"+prompt+"\n/quit\n", "--model", dir, "--no-selftest", "--system", "")
+	if code != 0 || !strings.Contains(stdout, want) {
+		t.Fatalf("exit %d; stdout %q does not hold the reply %q\nstderr:\n%s", code, stdout, want, stderr)
+	}
+	if !strings.Contains(stderr, "[6 tok") {
+		t.Errorf("the reply after /max 6 was not 6 tokens\nstderr:\n%s", stderr)
 	}
 }
 
@@ -134,7 +145,7 @@ func TestMain_batchWritesEachLineAndResumes(t *testing.T) {
 			}
 			switch {
 			case l.Response != nil && len(l.Response.Body.Choices) == 1:
-				got[l.CustomID] = fmt.Sprintf("%d %q", l.Response.StatusCode, l.Response.Body.Choices[0].Message.Content)
+				got[l.CustomID] = fmt.Sprintf("%d %q", l.Response.StatusCode, strings.TrimSpace(l.Response.Body.Choices[0].Message.Content))
 			case l.Error != nil:
 				got[l.CustomID] = l.Error.Message
 			default:
@@ -143,9 +154,19 @@ func TestMain_batchWritesEachLineAndResumes(t *testing.T) {
 		}
 		return got
 	}
-	got := results(out)
-	if len(got) != 2 || !strings.HasPrefix(got["a"], "200 ") || got["a"] != got["b"] {
-		t.Errorf("-o holds %v, want a and b at 200 with the same greedy reply", got)
+	// A batch line sends its own messages and no system prompt, so its reply is -p's with the system prompt empty, as JSON carries
+	// it (an invalid UTF-8 byte of noise becomes U+FFFD).
+	code, reply, stderr := runMain(t, "", "--model", dir, "--no-selftest", "--system", "", "-p", "hi", "--max", "4", "--temp", "0")
+	if reply = strings.TrimSpace(reply); code != 0 || reply == "" {
+		t.Fatalf("-p for the expected reply: exit %d, stdout %q\nstderr:\n%s", code, reply, stderr)
+	}
+	enc, _ := json.Marshal(reply)
+	if err := json.Unmarshal(enc, &reply); err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("200 %q", strings.TrimSpace(reply))
+	if got := results(out); len(got) != 2 || got["a"] != want || got["b"] != want {
+		t.Errorf("-o holds %v, want a and b at %s", got, want)
 	}
 	if got := results(strings.TrimSuffix(out, ".jsonl") + ".errors.jsonl"); len(got) != 1 || !strings.Contains(got["c"], "n must be 1") {
 		t.Errorf("the errors file holds %v, want c refused for n", got)
