@@ -719,6 +719,7 @@ func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]f
 		// A fresh sequence re-zeroes any recurrent state (DeltaNet, Mamba-2) left by a prior Generate on this resident (no-op for other families).
 		a.Reset()
 	}
+	a.r.kvQuiesce(a.r.kvSlot, pos+1)
 	if e := a.r.kvWrite(a.r.kvSlot, pos, pos+1); e != nil { // its block, before the forward is encoded (setPos's kvWriteMust then holds)
 		return nil, e
 	}
@@ -748,6 +749,7 @@ func (a *metalResident) ForwardSample(embedding []float32, pos int, temperature 
 	if e := a.checkCap(pos, 1); e != nil {
 		return 0, e
 	}
+	a.r.kvQuiesce(a.r.kvSlot, pos+1)
 	if e := a.r.kvWrite(a.r.kvSlot, pos, pos+1); e != nil {
 		return 0, e
 	}
@@ -778,6 +780,7 @@ func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {
 	if pos == 0 {
 		a.Reset() // fresh sequence — same reason as Forward
 	}
+	a.r.kvQuiesce(a.r.kvSlot, pos+1)
 	if e := a.r.kvWrite(a.r.kvSlot, pos, pos+1); e != nil {
 		return e
 	}
@@ -1447,6 +1450,7 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	if e := a.checkCap(base, n); e != nil {
 		return e
 	}
+	a.r.kvQuiesce(a.r.kvSlot, base+n)
 	if err := a.r.kvWrite(a.r.kvSlot, base, base+n); err != nil {
 		return err
 	}

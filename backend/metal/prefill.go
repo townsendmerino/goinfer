@@ -563,6 +563,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 			"(metalResident.checkCap guards the decoder's path; this caller skipped it)", src.n, startPos, c))
 	}
 	r.ensurePrefill()
+	r.kvQuiesce(r.kvSlot, startPos+src.n)
 	if err := r.kvWrite(r.kvSlot, startPos, startPos+src.n); err != nil {
 		r.recordExecErr(err)
 		return nil

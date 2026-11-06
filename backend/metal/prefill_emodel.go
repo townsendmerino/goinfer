@@ -81,6 +81,7 @@ func (r *resident) prefillEModelSrc(src rowSource, startPos int, head bool) (log
 		}
 	}()
 	r.emodelLayerMajorRuns++
+	r.kvQuiesce(r.kvSlot, startPos+src.n)
 	if err := r.kvWrite(r.kvSlot, startPos, startPos+src.n); err != nil {
 		r.recordExecErr(err)
 		return nil

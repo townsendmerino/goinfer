@@ -51,6 +51,7 @@ func (r *resident) prefillG4PagedSrc(src rowSource, startPos int, head bool) (lo
 		}
 	}()
 	r.g4LayerMajorRuns++
+	r.kvQuiesce(r.kvSlot, startPos+src.n)
 	if err := r.kvWrite(r.kvSlot, startPos, startPos+src.n); err != nil {
 		r.recordExecErr(err)
 		return nil
@@ -261,6 +262,7 @@ func (r *resident) prefillMoEPagedSrc(src rowSource, startPos int, head bool) (l
 		}
 	}()
 	r.moeLayerMajorRuns++
+	r.kvQuiesce(r.kvSlot, startPos+src.n)
 	if err := r.kvWrite(r.kvSlot, startPos, startPos+src.n); err != nil {
 		r.recordExecErr(err)
 		return nil

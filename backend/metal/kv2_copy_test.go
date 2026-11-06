@@ -124,8 +124,9 @@ func kv2Resident(t *testing.T, i8 bool) (*metalResident, *resident) {
 }
 
 // TestKV2_copyKVExact is G2 on Metal (docs/measurements/kv2-2026-10-14.md): after CopyKV(src, dst, start, end) dst's
-// rows in the range equal src's byte for byte, dst's other rows and every other slot are unchanged, dst's sequence ends where src's
-// does, and a range past the cache is declined with nothing written. Each slot's rows are read through its table, and the scrambled arm hands blocks
+// rows in the range equal src's byte for byte, its rows below the range and every other slot are unchanged, and its sequence ends where
+// src's does: a copy that ends a longer one gives dst's blocks past the range back (they read as block 0, zero), and a shorter one leaves
+// the rows above as they were. A range past the cache is declined with nothing written. Each slot's rows are read through its table, and the scrambled arm hands blocks
 // out reversed and interleaved across slots, so the copy must move a sequence's blocks, not a slot's byte range.
 func TestKV2_copyKVExact(t *testing.T) {
 	for _, c := range []struct {
@@ -155,6 +156,7 @@ func TestKV2_copyKVExact(t *testing.T) {
 			rb := kv2RowBytes(r)
 			for _, tc := range []struct{ src, dst, start, end int }{{0, 1, 0, 64}, {0, 1, 0, 1024}, {1, 2, 256, 1024}} {
 				before := [][][]byte{kv2Slot(t, r, 0, rows), kv2Slot(t, r, 1, rows), kv2Slot(t, r, 2, rows)}
+				longer := r.kvSlotSt[tc.dst].valid > tc.end // the copy ends a longer sequence of dst's
 				if err := a.CopyKV(tc.src, tc.dst, tc.start, tc.end); err != nil {
 					t.Fatalf("CopyKV%v: %v", tc, err)
 				}
@@ -165,8 +167,15 @@ func TestKV2_copyKVExact(t *testing.T) {
 				if b, p := kv2RowsEqual(after[tc.dst], before[tc.dst], rb, 0, tc.start); b >= 0 {
 					t.Errorf("CopyKV%v: dst buffer %d row %d below the range changed", tc, b, p)
 				}
-				if b, p := kv2RowsEqual(after[tc.dst], before[tc.dst], rb, tc.end, rows); b >= 0 {
-					t.Errorf("CopyKV%v: dst buffer %d row %d above the range changed", tc, b, p)
+				above := before[tc.dst]
+				if longer {
+					above = make([][]byte, len(above))
+					for i := range above {
+						above[i] = make([]byte, len(before[tc.dst][i]))
+					}
+				}
+				if b, p := kv2RowsEqual(after[tc.dst], above, rb, tc.end, rows); b >= 0 {
+					t.Errorf("CopyKV%v: dst buffer %d row %d above the range is not %s", tc, b, p, map[bool]string{false: "as it was", true: "released (zero)"}[longer])
 				}
 				for s := range 3 {
 					if s != tc.dst {
@@ -550,4 +559,89 @@ func TestKV2_copyCost(t *testing.T) {
 		bytes += b * rows
 	}
 	fmt.Fprintf(os.Stderr, "[kv2-g7 metal] CopyKV of %d rows (%.0f MB): median %.2f ms of %v\n", rows, float64(bytes)/1e6, ms[2], ms)
+}
+
+// TestKVPages_chainReopensAfterAFailedTake: a greedy chain whose look-ahead finds no block (every take refused, nothing to release) still
+// answers the token in flight, and a chain opened again once blocks can be had runs: a failed take ends that opening (each runs its own
+// chainLoop), not the resident's chain.
+func TestKVPages_chainReopensAfterAFailedTake(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if why := r.greedyChainWhyNot(); why != "" {
+		t.Skipf("no greedy chain on this resident: %s", why)
+	}
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 63, 7), 0); err != nil {
+		t.Fatal(err)
+	}
+	run := func(refuse bool) int {
+		t.Helper()
+		if err := r.chainStart(5, 63); err != nil {
+			t.Fatal(err)
+		}
+		defer r.stopChain()
+		kvTakeFailForTest = refuse // the look-ahead at 64 opens block 1
+		defer func() { kvTakeFailForTest = false }()
+		id, err := r.chainNext()
+		if err != nil {
+			t.Fatalf("the token in flight at 63 (takes refused: %v): %v", refuse, err)
+		}
+		return id
+	}
+	first := run(true)
+	if held := r.kvHeld(0); held != 1 {
+		t.Fatalf("slot 0 holds %d blocks after the refused look-ahead; want 1: the take was not refused, and the test reads nothing", held)
+	}
+	if got := run(false); got != first {
+		t.Errorf("the chain opened again answers %d at 63, the first opening %d", got, first)
+	}
+	if held := r.kvHeld(0); held != 2 {
+		t.Errorf("slot 0 holds %d blocks after the second opening's look-ahead; want 2", held)
+	}
+}
+
+// TestKVPages_rewindQuiesces: a write that gives blocks back (a rewind past a pipelined forward's block) first stops the executor, whose
+// last command buffer may still be in flight writing there; a write that appends does not. Read by the executor's identity: after 70
+// pipelined positions, a decode at 70 keeps it, a decode at 10 and a prefill of 40 rows from 10 stop it.
+func TestKVPages_rewindQuiesces(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	embs := kv2Embs(r, 72, 11)
+	pipe := func() {
+		t.Helper()
+		for p := range 70 {
+			if err := a.ForwardNoLogits(embs[p], p); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if r.execReq == nil {
+			t.Fatal("ForwardNoLogits did not run on the executor: the test reads nothing")
+		}
+	}
+	pipe()
+	done := r.execDone
+	if _, err := a.Forward(embs[70], 70); err != nil {
+		t.Fatal(err)
+	}
+	if r.execDone != done {
+		t.Error("a decode that appends stopped the executor")
+	}
+	pipe()
+	done = r.execDone
+	if _, err := a.Forward(embs[71], 10); err != nil {
+		t.Fatal(err)
+	}
+	if r.execDone == done {
+		t.Error("a decode at 10, after 70 pipelined positions across a block edge, did not stop the executor first")
+	}
+	pipe()
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 40, 12), 10); err != nil {
+		t.Fatal(err)
+	}
+	if r.execReq != nil {
+		t.Error("a prefill of 40 rows from 10, after 70 pipelined positions across a block edge, did not stop the executor first")
+	}
 }

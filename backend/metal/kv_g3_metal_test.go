@@ -674,8 +674,15 @@ func TestKVPages_pressureFollowsD5(t *testing.T) {
 	if _, err := kvCapPrefill(m, a, 0, grow[need:], need); !errors.Is(err, decoder.ErrKVPoolFull) {
 		t.Fatalf("the borrower past every idle slot: got %v, want ErrKVPoolFull", err)
 	}
+	// The refused pass gave back the blocks it took. Refill the pool to mid-block, so the borrower's next row needs no block.
+	at := r.kvSlotSt[0].valid
+	fill := (len(r.kvRefs)-1-r.kvBlocksInUse())*decoder.KVBlockRows - 32
+	if _, err := kvCapPrefill(m, a, 0, grow[at:at+fill], at); err != nil {
+		t.Fatalf("the borrower filling the pool: %v", err)
+	}
+	at += fill
 	// (3) a conversation within its share arrives while the borrower holds the pool, its first token in a step beside the borrower's.
-	held, at := r.kvHeld(0), r.kvSlotSt[0].valid
+	held := r.kvHeld(0)
 	a.SetKVSlotBusy(2, true)
 	emb := func(id int) []float32 { return slices.Clone(m.EmbedResidentForTest(id)) }
 	if why := r.batchIneligible(); why != "" {
@@ -746,5 +753,124 @@ func TestKVPages_poolDetail(t *testing.T) {
 				t.Errorf("KVShareState = %q (%s), want on", st, why)
 			}
 		})
+	}
+}
+
+// TestKVPages_failedWriteHoldsNoBlocks: a write past 0 that the pool refuses partway (a borrower past its share, the other slot running)
+// leaves the pool as it was: the blocks it took before the refusal go back, and the slot keeps the sequence it had. A copy on write whose
+// copy fails gives back the block it took, and the shared block stays mapped.
+func TestKVPages_failedWriteHoldsNoBlocks(t *testing.T) {
+	m, a := kvCapLoad(t, 2, 20000, "")
+	r, vocab := a.r, m.Config().VocabSize
+	share := r.kvShareBlocks * decoder.KVBlockRows
+	if _, err := kvCapPrefill(m, a, 1, kvCapIds(share-5*decoder.KVBlockRows, 1, vocab), 0); err != nil {
+		t.Fatal(err)
+	}
+	a.SetKVSlotBusy(1, true)
+	ids := kvCapIds(share+10*decoder.KVBlockRows, 2, vocab)
+	if _, err := kvCapPrefill(m, a, 0, ids[:share], 0); err != nil {
+		t.Fatal(err)
+	}
+	before := r.kvBlocksInUse()
+	// One pass of ten blocks from the share's end: five are free, and then nothing is.
+	if _, err := kvCapPrefill(m, a, 0, ids[share:], share); !errors.Is(err, decoder.ErrKVPoolFull) {
+		t.Fatalf("the write past every free block: got %v, want ErrKVPoolFull", err)
+	}
+	if got, held := r.kvBlocksInUse(), r.kvHeld(0); got != before || held != r.kvShareBlocks {
+		t.Errorf("after the refused write the pool holds %d blocks (%d before) and slot 0 %d (want %d)", got, before, held, r.kvShareBlocks)
+	}
+	if got := a.ReusableKVSlot(0, share); got != share {
+		t.Errorf("slot 0 answers %d for the %d rows it held before the refused write", got, share)
+	}
+
+	// The copy on write's failure, on a block slot 1 shares with slot 0.
+	m2, a2 := kvCapLoad(t, 2, 20000, "")
+	r2 := a2.r
+	pre := kvCapIds(2*decoder.KVBlockRows, 3, vocab)
+	if _, err := kvCapPrefill(m2, a2, 0, pre, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := a2.CopyKV(0, 1, 0, 2*decoder.KVBlockRows); err != nil {
+		t.Fatal(err)
+	}
+	before, shared := r2.kvBlocksInUse(), *r2.kvRow(1, 1)
+	kvCopyFailForTest = true
+	_, err := kvCapPrefill(m2, a2, 1, kvCapIds(20, 4, vocab), 100)
+	kvCopyFailForTest = false
+	if err == nil {
+		t.Fatal("a copy on write whose copy failed: no error")
+	}
+	if got := r2.kvBlocksInUse(); got != before || *r2.kvRow(1, 1) != shared {
+		t.Errorf("after the failed copy the pool holds %d blocks (%d before), and slot 1's block 1 is %d (the shared block %d)",
+			got, before, *r2.kvRow(1, 1), shared)
+	}
+}
+
+// TestKVPages_stepReleasesAnIdleBoundSlot: a batched step writes rows for the slots it names, not the bound one, so the bound slot is
+// released like any other when it is idle and the least recently written. Three slots of 4,096: slot 2 (bound, idle) and slot 1 (idle)
+// hold 3,072 rows each, slot 2 written first; slot 0, running, holds the rest; its next row needs a block, and slot 2's go.
+func TestKVPages_stepReleasesAnIdleBoundSlot(t *testing.T) {
+	m, a := kvCapLoad(t, 3, 3*decoder.MetalCtxDefault, "")
+	r, vocab := a.r, m.Config().VocabSize
+	share := r.kvShareBlocks * decoder.KVBlockRows
+	conv := share - 1024
+	for _, s := range []int{2, 1} {
+		if _, err := kvCapPrefill(m, a, s, kvCapIds(conv, s, vocab), 0); err != nil {
+			t.Fatalf("slot %d: %v", s, err)
+		}
+	}
+	rest := (len(r.kvRefs)-1)*decoder.KVBlockRows - 2*conv
+	if _, err := kvCapPrefill(m, a, 0, kvCapIds(rest, 9, vocab), 0); err != nil {
+		t.Fatalf("slot 0 to the pool's end: %v", err)
+	}
+	a.SetKVSlotBusy(0, true)
+	if err := r.useKVSlot(2); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.forwardMulti([]batchSeq{{slot: 0, pos: rest, emb: slices.Clone(m.EmbedResidentForTest(5))}}); err != nil {
+		t.Fatalf("slot 0's step row past the pool's end: %v", err)
+	}
+	if got1, got2 := a.ReusableKVSlot(1, conv), a.ReusableKVSlot(2, conv); got1 != conv || got2 != 0 {
+		t.Errorf("slot 1 answers %d and slot 2 %d for their %d rows; want %d and 0 (slot 2, bound and idle, was written first)", got1, got2, conv, conv)
+	}
+}
+
+// TestKVPages_truncationReleasesTheTail: a slot maps no block past its sequence. A write past 0 that ends a longer sequence (a prefix
+// reuse) gives back the blocks past its end; a copy that ends a longer destination does the same; a copy declines rows its source does not
+// hold any more, and a start its destination does not reach.
+func TestKVPages_truncationReleasesTheTail(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	bind := func(s int) {
+		t.Helper()
+		if err := r.useKVSlot(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bind(0)
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 640, 1), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 20, 2), 100); err != nil {
+		t.Fatal(err)
+	}
+	if held, used := r.kvHeld(0), r.kvBlocksInUse(); held != 2 || used != 2 {
+		t.Errorf("after a write ends slot 0's 640 rows at 120 it holds %d blocks and the pool %d; want 2 and 2", held, used)
+	}
+	var d *decoder.KVCopyDecline
+	if err := a.CopyKV(0, 1, 0, 640); !errors.As(err, &d) {
+		t.Errorf("a copy of 640 rows from a slot that holds 120: %v, want a KVCopyDecline", err)
+	}
+	if err := a.CopyKV(0, 1, 64, 128); !errors.As(err, &d) {
+		t.Errorf("a copy from 64 into a slot that holds nothing: %v, want a KVCopyDecline", err)
+	}
+	bind(2)
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 640, 3), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CopyKV(0, 2, 0, 128); err != nil {
+		t.Fatal(err)
+	}
+	if held, used := r.kvHeld(2), r.kvBlocksInUse(); held != 2 || used != 2 {
+		t.Errorf("after a copy of 120 rows ends slot 2's 640 it holds %d blocks and the pool %d; want 2 and 2 (shared with slot 0)", held, used)
 	}
 }

@@ -3702,9 +3702,6 @@ func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float
 	if n == 0 {
 		return nil, nil
 	}
-	if err := r.kvWrite(r.kvSlot, startPos, startPos+n); err != nil {
-		return nil, err
-	}
 
 	// This path drives encodeAttentionResidualWith with its own per-token r.batchUNKeys[m] buffers, never through
 	// setPos, so r.curNKeys (planNKeys, canUseAttnFA's depth gate) would otherwise stay stale from whatever a
@@ -3716,6 +3713,9 @@ func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float
 	// Drain and stop the pipelined executor so we have exclusive, synchronous access to the queue
 	// and no in-flight or pre-encoded command buffers conflict with our batch.
 	r.stopExec()
+	if err := r.kvWrite(r.kvSlot, startPos, startPos+n); err != nil {
+		return nil, err
+	}
 
 	r.ensureBatchCap(n)
 

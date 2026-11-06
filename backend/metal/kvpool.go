@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"errors"
 	"fmt"
 	"sync/atomic"
 
@@ -117,7 +118,7 @@ func (r *resident) kvFreeBlock() (uint32, bool) {
 // as they did before the pool; kvScrambleForTest skips it), else any free one, else one made free (the package comment's order). cow
 // marks a copy on write, which holds no more blocks after it, so a slot at its share still counts as within it.
 func (r *resident) kvTake(s, b int, cow bool) (uint32, error) {
-	if !kvScrambleForTest && b < r.kvShareBlocks {
+	if !kvScrambleForTest && !kvTakeFailForTest && b < r.kvShareBlocks {
 		if h := uint32(1 + s*r.kvShareBlocks + b); r.kvRefs[h] == 0 {
 			return r.kvClaim(h), nil
 		}
@@ -136,11 +137,37 @@ func (r *resident) kvTake(s, b int, cow bool) (uint32, error) {
 	}
 }
 
-// kvTakeFailForTest makes kvFreeBlock find nothing, so a take goes straight to the release order.
+// kvTakeFailForTest makes a take find no free block, its home block included, so it goes straight to the release order.
 var kvTakeFailForTest bool
+
+// kvCopyFailForTest makes a copy on write's copy fail.
+var kvCopyFailForTest bool
 
 // kvEvictOrderPlantForTest releases the MOST recently written idle slot first: the plant TestKVPages_pressureFollowsD5 must catch.
 var kvEvictOrderPlantForTest bool
+
+// kvTrim unmaps every entry of slot s's table wholly at or past position end. Every write and copy keeps a slot to its sequence this way
+// (kvSlotState.valid): no block past it is held, counted in kvHeld and kvInUse, or offered to CopyKV.
+func (r *resident) kvTrim(s, end int) {
+	for b := kvBlocksFor(end); b < r.kvTabBlocks; b++ {
+		if e := r.kvRow(s, b); *e != 0 {
+			r.kvUnref(*e)
+			*e = 0
+		}
+	}
+}
+
+// kvQuiesce stops the executor and any open chain when a write of slot s ending at hi would give a block past hi back (a rewind): a
+// pipelined forward's command buffer, still in flight after its ack, may write a row there. Every entry point calls it before kvWrite,
+// on the caller's thread; the executor's and the chain's own writes never rewind past a forward still in flight.
+func (r *resident) kvQuiesce(s, hi int) {
+	for b := kvBlocksFor(hi); b < r.kvTabBlocks; b++ {
+		if *r.kvRow(s, b) != 0 {
+			r.stopExec()
+			return
+		}
+	}
+}
 
 // kvReleaseAll unmaps every entry of slot s's table.
 func (r *resident) kvReleaseAll(s int) {
@@ -151,13 +178,14 @@ func (r *resident) kvReleaseAll(s int) {
 	}
 }
 
-// kvEvictIdle releases every block of the least recently written slot that is not s, not bound, not busy and holds some, and reports
-// whether there was one. The released slot answers no reuse until it starts a sequence again (kvReusable).
+// kvEvictIdle releases every block of the least recently written slot that is not s, not busy and holds some, and reports whether there
+// was one. The bound slot is no exception: every writer but the batched step writes the bound slot (so it is s), and the step names its
+// rows' slots, which the decoder marks busy. The released slot answers no reuse until it starts a sequence again (kvReusable).
 func (r *resident) kvEvictIdle(s int) bool {
 	t := -1
 	for c := range r.kvSlotSt {
 		st := &r.kvSlotSt[c]
-		if c == s || c == r.kvSlot || st.busy.Load() || r.kvHeld(c) == 0 {
+		if c == s || st.busy.Load() || r.kvHeld(c) == 0 {
 			continue
 		}
 		if t < 0 || (st.use < r.kvSlotSt[t].use) != kvEvictOrderPlantForTest {
@@ -208,11 +236,12 @@ func (r *resident) kvReclaim(s int) bool {
 }
 
 // kvWrite maps the blocks slot s needs to write positions [lo, hi): an unmapped entry takes a block (kvTake), and an entry another
-// table also names takes a copy of its rows below lo (copy on write; rows at or past lo are the write's). A write at 0 starts a
-// sequence: it clears released and stopped and releases the slot's blocks wholly past hi. A write past 0 on a stopped slot is
-// decoder.ErrKVPoolFull, and on a released one an error (a caller that reused rows ReusableKV did not offer). On a failure nothing a
-// kernel would write through is left unmapped below the write: the caller must not encode it. Nothing of the resident may be in flight
-// that reads a block this copies into, which every caller ensures.
+// table also names takes a copy of its rows below lo (copy on write; rows at or past lo are the write's). The write ends the slot's
+// sequence at hi, so the blocks wholly past hi go back first, where the takes can have them; a write at 0 also clears released and
+// stopped. A write past 0 on a stopped slot is decoder.ErrKVPoolFull, and on a released one an error (a caller that reused rows
+// ReusableKV did not offer). A failure leaves the slot its sequence below lo (none for a write at 0) and no block past it, and the
+// caller must not encode the write. Nothing of the resident may be in flight that reads a block this copies into, which every caller
+// ensures.
 func (r *resident) kvWrite(s, lo, hi int) error {
 	if len(r.kvRefs) == 0 || hi <= lo || s >= len(r.kvSlotSt) {
 		return nil
@@ -226,11 +255,17 @@ func (r *resident) kvWrite(s, lo, hi int) error {
 	}
 	if lo == 0 {
 		st.released, st.stopped = false, false
-		for b := kvBlocksFor(hi); b < r.kvTabBlocks; b++ {
-			e := r.kvRow(s, b)
-			r.kvUnref(*e)
-			*e = 0
+	}
+	r.kvTrim(s, hi)
+	fail := func(err error) error {
+		if lo == 0 {
+			r.kvReleaseAll(s)
+			st.valid = 0
+		} else {
+			st.valid = min(st.valid, lo)
+			r.kvTrim(s, st.valid)
 		}
+		return err
 	}
 	r.kvUseTick++
 	st.use = r.kvUseTick
@@ -241,21 +276,20 @@ func (r *resident) kvWrite(s, lo, hi int) error {
 		}
 		nb, err := r.kvTake(s, b, old != 0)
 		if err != nil {
-			if lo == 0 {
-				r.kvReleaseAll(s)
-				st.valid = 0
-			} else {
-				st.valid = min(st.valid, lo)
-			}
-			return err
+			return fail(err)
 		}
 		if old != 0 {
 			if keep := lo - b*decoder.KVBlockRows; keep > 0 {
 				if kvKeepShortForTest {
 					keep--
 				}
-				if err := gpu.CopyDeviceBatch(r.kvBlockCopies(old, nb, keep)); err != nil {
-					return fmt.Errorf("metal: copy on write of KV block %d: %w", old, err)
+				err := gpu.CopyDeviceBatch(r.kvBlockCopies(old, nb, keep))
+				if kvCopyFailForTest {
+					err = errors.New("planted copy failure")
+				}
+				if err != nil {
+					r.kvUnref(nb) // the entry still names old, which holds the rows below lo
+					return fail(fmt.Errorf("metal: copy on write of KV block %d: %w", old, err))
 				}
 			}
 			r.kvUnref(old)

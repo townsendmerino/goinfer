@@ -13,8 +13,8 @@ var _ decoder.ResidentKVCopier = (*metalResident)(nil)
 
 // CopyKV (decoder.ResidentKVCopier) makes rows [start, end) of slot dst those of slot src, by reference (KV4a-2's rule): each of dst's
 // table entries in the range names src's block for it, counted in kvRefs, and the block dst held there is released. No row moves; a
-// slot that later writes into a block another slot also names first takes its own (kvWrite). It declines a range src holds no block for, or a src
-// whose blocks went to make room. Tables are read when a command buffer runs, so nothing may be in flight: the executor and any open chain are stopped first, as useKVSlot does.
+// slot that later writes into a block another slot also names first takes its own (kvWrite). It declines a range src holds no block for (a slot
+// maps none past its sequence), a src whose blocks went to make room, and a start past dst's sequence. Tables are read when a command buffer runs, so nothing may be in flight: the executor and any open chain are stopped first, as useKVSlot does.
 func (a *metalResident) CopyKV(src, dst, start, end int) error {
 	r := a.r
 	n := r.kvSlotCount()
@@ -38,6 +38,9 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 	if st := &r.kvSlotSt[src]; st.released || st.stopped {
 		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's blocks were released or reclaimed to make room", src)}
 	}
+	if st := &r.kvSlotSt[dst]; start > 0 && (st.released || st.stopped || st.valid < start) {
+		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d holds no rows up to %d, where the copy starts", dst, start)}
+	}
 	for b := start / decoder.KVBlockRows; b < end/decoder.KVBlockRows; b++ {
 		if *r.kvRow(src, b) == 0 {
 			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d holds no block for rows from %d", src, b*decoder.KVBlockRows)}
@@ -53,14 +56,14 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 		r.kvUnref(*d)
 		*d = s
 	}
-	// dst now holds [start, end) as src does; below start it holds what it held, so its sequence runs to end only if that reached start.
+	// dst now holds [start, end) as src does and below start what it held: its sequence ends where src's does, within the range, and the
+	// blocks of a longer one go back.
 	st := &r.kvSlotSt[dst]
 	if start == 0 {
 		st.released, st.stopped = false, false
 	}
-	if start <= st.valid || start == 0 {
-		st.valid = min(end, max(r.kvSlotSt[src].valid, start))
-	}
+	st.valid = min(end, max(r.kvSlotSt[src].valid, start))
+	r.kvTrim(dst, st.valid)
 	r.kvUseTick++
 	st.use = r.kvUseTick
 	return nil
