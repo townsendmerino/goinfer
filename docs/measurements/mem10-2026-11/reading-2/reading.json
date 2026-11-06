@@ -1,0 +1,55 @@
+{
+ "load_avg_1min": 1.7,
+ "mem_available_mib": 61186,
+ "load_s": 18.0,
+ "decode_path": [
+  "decode path: cuda-resident (int4)"
+ ],
+ "at_listen": {
+  "VmLck_mib": 0.0,
+  "VmHWM_mib": 26328.0,
+  "RssAnon_mib": 171.6,
+  "RssFile_mib": 13680.5,
+  "RssShmem_mib": 12345.5,
+  "VmSwap_mib": 0.0
+ },
+ "big_mappings_at_listen": [
+  {
+   "range": "7fabfaa00000-7faf4bf52000",
+   "perms": "r--p",
+   "path": "/home/francis/models/gemma4-26b-q4_k_m.int4.e4h.cuda.v17.giw",
+   "rss_mib": 13574.2,
+   "shared_clean_mib": 0.0,
+   "shared_dirty_mib": 0.0,
+   "private_clean_mib": 13574.2,
+   "private_dirty_mib": 0.0,
+   "anonymous_mib": 0.0
+  }
+ ],
+ "after_5s": {
+  "VmLck_mib": 0.0,
+  "VmHWM_mib": 26328.0,
+  "RssAnon_mib": 174.0,
+  "RssFile_mib": 13680.6,
+  "RssShmem_mib": 12345.5,
+  "VmSwap_mib": 0.0
+ },
+ "device_mib": 6942,
+ "completion": " the capital of France is the capital of France is the capital of France is the",
+ "after_request": {
+  "VmLck_mib": 0.0,
+  "VmHWM_mib": 26328.0,
+  "RssAnon_mib": 202.6,
+  "RssFile_mib": 13680.7,
+  "RssShmem_mib": 12345.5,
+  "VmSwap_mib": 0.0
+ },
+ "peak_sampled": {
+  "VmLck_mib": 0,
+  "VmHWM_mib": 26329.4,
+  "RssAnon_mib": 304.7,
+  "RssFile_mib": 13680.7,
+  "RssShmem_mib": 12345.5,
+  "VmSwap_mib": 0
+ }
+}
