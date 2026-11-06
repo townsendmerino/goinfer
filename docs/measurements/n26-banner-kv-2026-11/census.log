@@ -1,0 +1,84 @@
+=== RUN   TestDecisionCensus
+census: D1: 11485 groups in 3.1s
+census: D2: 5348 groups in 10.5s
+panic: test timed out after 10m0s
+	running tests:
+		TestDecisionCensus (10m0s)
+
+goroutine 771 [running]:
+testing.(*M).startAlarm.func1()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/testing/testing.go:2961 +0x34a
+created by time.goFunc
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/time/sleep.go:182 +0x2d
+
+goroutine 1 [chan receive, 10 minutes]:
+testing.(*T).Run(0x1deb5f7e4b48, {0xd450de?, 0x1deb5f8eda60?}, 0x18f39b8)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/testing/testing.go:2268 +0x4f2
+testing.runTests.func1(0x1deb5f7e4b48)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/testing/testing.go:2744 +0x37
+testing.tRunner(0x1deb5f7e4b48, 0x1deb5f8edb88)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/testing/testing.go:2195 +0xea
+testing.runTests({0xd6054d, 0x21}, {0xd71586, 0x29}, 0x1deb5f6f6198, {0x19393f0, 0x4cb, 0x4cb}, {0xc2b3a027729cb566, 0x8bb2d88064, ...})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/testing/testing.go:2742 +0x510
+testing.(*M).Run(0x1deb5f7b3cc0)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/testing/testing.go:2602 +0x6af
+github.com/townsendmerino/goinfer/decoder.TestMain(0x1deb5f7b3cc0)
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/suite_main_test.go:17 +0x36
+main.main()
+	_testmain.go:2596 +0xa5
+
+goroutine 7 [wait for GC cycle]:
+runtime.GC()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/runtime/mgc.go:550 +0x25
+runtime/debug.freeOSMemory()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/runtime/mheap.go:1805 +0x13
+runtime/debug.FreeOSMemory(...)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/runtime/debug/garbage.go:102
+github.com/townsendmerino/goinfer/decoder.startMemReclaimer.func2()
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/suite_main_test.go:70 +0x6c
+created by github.com/townsendmerino/goinfer/decoder.startMemReclaimer in goroutine 1
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/suite_main_test.go:62 +0x9f
+
+goroutine 8 [runnable]:
+github.com/townsendmerino/aikit/embed.DequantMXFP4Split({0x7fbee35ab1e0?, 0x1e01aeace000?, 0x1deb5fc18808?}, {0x7fbf2059723e?, 0x489b5a?, 0x1debcf538830?}, 0x5a, {0x1e01b084d900, 0xb40, 0x891c0})
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit@v1.76.0/embed/mxfp4.go:107 +0x441
+github.com/townsendmerino/goinfer/decoder.buildGptOssWeights.func3.1(0x1debcf538868?, 0x48e069?, {0x1e01b084d900?, 0x184d668?, 0x1debcf538c01?})
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/gptoss_safetensors.go:94 +0xb8
+github.com/townsendmerino/goinfer/decoder.buildGptOssWeights.func6(0xa31?, {0x1e01b084d900?, 0xb40?, 0xbe8c0?})
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/gptoss_safetensors.go:176 +0x38
+github.com/townsendmerino/goinfer/decoder.streamQuantizedRow4(_, _, _, _, _)
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/weightmat.go:200 +0x759
+github.com/townsendmerino/goinfer/decoder.streamQuantized(...)
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/weightmat.go:127
+github.com/townsendmerino/goinfer/decoder.streamQuantizedLayer(_, _, _, _, _, _)
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/weightmat.go:663 +0x1a6
+github.com/townsendmerino/goinfer/decoder.buildGptOssWeights.func2(...)
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/gptoss_safetensors.go:44
+github.com/townsendmerino/goinfer/decoder.buildGptOssWeights(0x1deb6a556108, 0x1deb6592c000, 0x1deb60fc1740, 0x0, 0x0, 0x0, 0x0)
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/gptoss_safetensors.go:175 +0x19b4
+github.com/townsendmerino/goinfer/decoder.buildWeightsFromSafetensorsTo(0xb?, 0x1deb5fa4e198?, 0x1000000?, 0x4893fa?, 0x66?, 0x66?, 0x66?, 0x66?, 0x3fe8000000000000?, 0x0, ...)
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/weights.go:702 +0x779
+github.com/townsendmerino/goinfer/decoder.buildWeightsFromSafetensors(...)
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/weights.go:559
+github.com/townsendmerino/goinfer/decoder.loadWeights({0x1deb5fb3d260, 0x56}, 0x0, 0x0, 0x0, 0x0, 0x0, 0x3?)
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/weights.go:413 +0x20c
+github.com/townsendmerino/goinfer/decoder.Load({_, _}, {0x0, {0xd38218, 0x3}, {0xd3820f, 0x3}, {0x0, 0x0}, 0x0, ...})
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/model.go:811 +0x1245
+github.com/townsendmerino/goinfer/decoder.censusLoad({0x1deb5fb3d260, 0x56}, {0xd3820f, 0x3})
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/mm1_census_build_test.go:69 +0x14c
+github.com/townsendmerino/goinfer/decoder.censusLoadAll(0x1deb5f7e4d88, 0x1deb5f6f62b8, 0x1deb5f8dc1e0, {0x1deb5f9c6008, 0xb9, 0x1deb66f178a0?})
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/mm1_census_build_test.go:364 +0x1bc
+github.com/townsendmerino/goinfer/decoder.buildCensus.func4()
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/mm1_census_build_test.go:136 +0x34
+github.com/townsendmerino/goinfer/decoder.buildCensus.func1({0xd38c14, 0x5}, 0x1deb66f17b70)
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/mm1_census_build_test.go:130 +0x7e
+github.com/townsendmerino/goinfer/decoder.buildCensus(0x1deb5f7e4d88)
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/mm1_census_build_test.go:136 +0x89a
+github.com/townsendmerino/goinfer/decoder.TestDecisionCensus(0x1deb5f7e4d88)
+	/home/francis/goinfer-bench/v025-accepted-wt/decoder/mm1_census_test.go:320 +0x2a
+testing.tRunner(0x1deb5f7e4d88, 0x18f39b8)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/testing/testing.go:2195 +0xea
+created by testing.(*T).Run in goroutine 1
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.linux-amd64/src/testing/testing.go:2260 +0x4d4
+FAIL	github.com/townsendmerino/goinfer/decoder	623.661s
+FAIL
