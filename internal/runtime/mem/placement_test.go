@@ -3,8 +3,10 @@ package mem
 import (
 	"fmt"
 	"math/rand/v2"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -119,65 +121,108 @@ func placementRank(p Placement) int {
 // steps over 16 MiB before each of a draw's first change points, where a KV step's sawtooth lives. searched counts the Metal
 // draws whose answer passed the floor.
 func monotoneBreak(n int, solve func(DeviceLoad, PlanRequest, Machine, Policy) DevicePlan) (brk string, searched int) {
+	type draw struct {
+		l   DeviceLoad
+		req PlanRequest
+		mc  MetalCtxLoad
+	}
 	r := rand.New(rand.NewPCG(13, 7))
-	p := DefaultPolicy()
-	const steps, step, fine, fineSteps = 4096, int64(16 << 20), int64(64 << 10), 256
-	for i := range n {
+	draws := make([]draw, n)
+	for i := range draws {
 		l, req := genDevice(r)
-		mc := genMetalCtx(r)
-		reached := false
-		walk := func(frees []int64) (string, []int64) {
-			var prev DevicePlan
-			var prevM MetalCtx
-			var changes []int64
-			for j, f := range frees {
-				m := Machine{Free: map[Tier]int64{HostAnon: f, VRAM: f, Unified: f}}
-				d, a := solve(l, req, m, p), SolveMetalCtx(mc, m, p)
-				reached = reached || a.Ctx > mc.Floor
-				if j == 0 {
-					prev, prevM = d, a
-					continue
+		draws[i] = draw{l, req, genMetalCtx(r)}
+	}
+	// The walks share nothing the generators did not fix above, so they take every core, and the answer is still the lowest break.
+	type result struct {
+		brk     string
+		reached bool
+	}
+	results := make([]result, n)
+	var next, lowest atomic.Int64
+	lowest.Store(int64(n))
+	var wg sync.WaitGroup
+	for range runtime.GOMAXPROCS(0) {
+		wg.Go(func() {
+			for {
+				i := next.Add(1) - 1
+				if i >= int64(n) || i > lowest.Load() {
+					return
 				}
-				if d != prev || a != prevM {
-					changes = append(changes, f)
+				d := draws[i]
+				results[i].brk, results[i].reached = walkLoad(int(i), d.l, d.req, d.mc, solve)
+				for results[i].brk != "" {
+					low := lowest.Load()
+					if i >= low || lowest.CompareAndSwap(low, i) {
+						break
+					}
 				}
-				was := frees[j-1]
-				switch {
-				case placementRank(d.Placement) < placementRank(prev.Placement):
-					return fmt.Sprintf("input %d: the plan got worse from %d to %d free: %s -> %s", i, was, f, planAnswer(prev), planAnswer(d)), nil
-				case d.Placement == prev.Placement && (d.Placement == Resident || d.Placement == ExpertCached) && d.Ctx < prev.Ctx:
-					return fmt.Sprintf("input %d: the context shrank within a placement from %d to %d free: %s -> %s", i, was, f, planAnswer(prev), planAnswer(d)), nil
-				case d.Placement == prev.Placement && d.Ctx == prev.Ctx && d.Slots < prev.Slots:
-					return fmt.Sprintf("input %d: slots fell at the same context from %d to %d free: %s -> %s", i, was, f, planAnswer(prev), planAnswer(d)), nil
-				case a.Ctx < prevM.Ctx:
-					return fmt.Sprintf("input %d: the Metal context fell from %d to %d free: %s -> %s", i, was, f, metalAnswer(prevM), metalAnswer(a)), nil
-				}
-				prev, prevM = d, a
 			}
-			return "", changes
+		})
+	}
+	wg.Wait()
+	for _, res := range results {
+		if res.brk != "" {
+			return res.brk, searched
 		}
-		coarse := make([]int64, steps)
-		for j := range coarse {
-			coarse[j] = int64(j) * step
-		}
-		b, changes := walk(coarse)
-		if b != "" {
-			return b, searched
-		}
-		for _, c := range changes[:min(len(changes), 6)] {
-			ladder := make([]int64, fineSteps+1)
-			for j := range ladder {
-				ladder[j] = c - step + int64(j)*fine
-			}
-			if b, _ := walk(ladder); b != "" {
-				return b, searched
-			}
-		}
-		if reached {
+		if res.reached {
 			searched++
 		}
 	}
 	return "", searched
+}
+
+// walkLoad is monotoneBreak on input i: its break, or "", and whether its Metal answer passed the floor.
+func walkLoad(i int, l DeviceLoad, req PlanRequest, mc MetalCtxLoad, solve func(DeviceLoad, PlanRequest, Machine, Policy) DevicePlan) (brk string, reached bool) {
+	p := DefaultPolicy()
+	const steps, step, fine, fineSteps = 4096, int64(16 << 20), int64(64 << 10), 256
+	walk := func(frees []int64) (string, []int64) {
+		var prev DevicePlan
+		var prevM MetalCtx
+		var changes []int64
+		for j, f := range frees {
+			m := Machine{Free: map[Tier]int64{HostAnon: f, VRAM: f, Unified: f}}
+			d, a := solve(l, req, m, p), SolveMetalCtx(mc, m, p)
+			reached = reached || a.Ctx > mc.Floor
+			if j == 0 {
+				prev, prevM = d, a
+				continue
+			}
+			if d != prev || a != prevM {
+				changes = append(changes, f)
+			}
+			was := frees[j-1]
+			switch {
+			case placementRank(d.Placement) < placementRank(prev.Placement):
+				return fmt.Sprintf("input %d: the plan got worse from %d to %d free: %s -> %s", i, was, f, planAnswer(prev), planAnswer(d)), nil
+			case d.Placement == prev.Placement && (d.Placement == Resident || d.Placement == ExpertCached) && d.Ctx < prev.Ctx:
+				return fmt.Sprintf("input %d: the context shrank within a placement from %d to %d free: %s -> %s", i, was, f, planAnswer(prev), planAnswer(d)), nil
+			case d.Placement == prev.Placement && d.Ctx == prev.Ctx && d.Slots < prev.Slots:
+				return fmt.Sprintf("input %d: slots fell at the same context from %d to %d free: %s -> %s", i, was, f, planAnswer(prev), planAnswer(d)), nil
+			case a.Ctx < prevM.Ctx:
+				return fmt.Sprintf("input %d: the Metal context fell from %d to %d free: %s -> %s", i, was, f, metalAnswer(prevM), metalAnswer(a)), nil
+			}
+			prev, prevM = d, a
+		}
+		return "", changes
+	}
+	coarse := make([]int64, steps)
+	for j := range coarse {
+		coarse[j] = int64(j) * step
+	}
+	b, changes := walk(coarse)
+	if b != "" {
+		return b, false
+	}
+	for _, c := range changes[:min(len(changes), 6)] {
+		ladder := make([]int64, fineSteps+1)
+		for j := range ladder {
+			ladder[j] = c - step + int64(j)*fine
+		}
+		if b, _ := walk(ladder); b != "" {
+			return b, false
+		}
+	}
+	return "", reached
 }
 
 // TestSolvePlacement_monotone (G-MA-2): monotoneBreak finds no break over 1,500 loads, at least a third of the Metal draws reach

@@ -49,30 +49,24 @@ func TestAnthropicTurns_systemArrayAndMerge(t *testing.T) {
 	}
 }
 
-func TestAnthropicTurns_cacheControlAndUnknownIgnored(t *testing.T) {
-	// cache_control on a block and an unknown block type are both silently ignored.
-	req := &anthropicReq{Messages: []anthropicMessage{{Role: "user",
-		Content: json.RawMessage(`[{"type":"text","text":"x","cache_control":{"type":"ephemeral"}},{"type":"mystery","foo":1}]`)}}}
-	_, turns, aerr := anthropicTurns(req)
-	if aerr != nil {
-		t.Fatalf("aerr: %v", aerr)
-	}
-	if len(turns) != 1 || turns[0].Content != "x" {
-		t.Errorf("turns = %+v, want one user turn 'x'", turns)
-	}
-}
-
 // anthropicTurns SKIPS image blocks (anthropicImages collects them and routes them to the vision path; the
 // handler 400s an image when no vision tower is loaded), so turn-building drops the image and keeps the text.
-func TestAnthropicTurns_imageSkipped(t *testing.T) {
-	req := &anthropicReq{Messages: []anthropicMessage{{Role: "user",
-		Content: json.RawMessage(`[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"x"}},{"type":"text","text":"caption it"}]`)}}}
-	_, turns, aerr := anthropicTurns(req)
-	if aerr != nil {
-		t.Fatalf("image block should be skipped, not error: %v", aerr)
-	}
-	if len(turns) != 1 || turns[0].Content != "caption it" {
-		t.Errorf("turns = %+v, want one user turn 'caption it'", turns)
+// A block the turn cannot use is left out without an error: cache_control on a text block, an unknown block type, and an image.
+func TestAnthropicTurns_ignoredBlocks(t *testing.T) {
+	for _, c := range []struct{ name, content, want string }{
+		{"cache control and unknown type", `[{"type":"text","text":"x","cache_control":{"type":"ephemeral"}},{"type":"mystery","foo":1}]`, "x"},
+		{"image", `[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"x"}},{"type":"text","text":"caption it"}]`, "caption it"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			req := &anthropicReq{Messages: []anthropicMessage{{Role: "user", Content: json.RawMessage(c.content)}}}
+			_, turns, aerr := anthropicTurns(req)
+			if aerr != nil {
+				t.Fatalf("aerr: %v", aerr)
+			}
+			if len(turns) != 1 || turns[0].Content != c.want {
+				t.Errorf("turns = %+v, want one user turn %q", turns, c.want)
+			}
+		})
 	}
 }
 

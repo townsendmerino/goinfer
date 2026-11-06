@@ -131,6 +131,7 @@ func TestMasker_stopWhenComplete(t *testing.T) {
 // ever accepted an invalid sequence, json.Valid would catch it; if it ever
 // dead-ended (no legal token while incomplete), the loop fails explicitly.
 func TestConstrainedDecode_alwaysValidJSON(t *testing.T) {
+	t.Parallel()
 	// A vocabulary rich enough to build nested JSON. (No \u escapes — surrogate
 	// validation is the one spot a byte grammar and encoding/json can disagree.)
 	vocab := bytesVocab(

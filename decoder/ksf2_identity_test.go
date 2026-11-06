@@ -281,6 +281,7 @@ func attendQueryPRef(p attentionParams, q, ctx, scores []float32, cache *KVCache
 // short, shows here and not in the one-call cells. attendQueryP shares the scratch, as a cache's layers do: it scores into the scratch's
 // scoresBuf, the buffer attendSinksToken also uses when one worker serves, and must stay on its path.
 func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
+	t.Parallel()
 	for _, sh := range []ksf2Shape{{64, 8, 64}, {16, 2, 128}} {
 		r := rand.New(rand.NewSource(int64(sh.nH)))
 		arch := &Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}

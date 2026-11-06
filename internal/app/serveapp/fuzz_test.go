@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 )
 
@@ -126,5 +127,100 @@ func FuzzServeResponsesInput(f *testing.F) {
 			}
 		}
 		_ = contentText(json.RawMessage(data))
+	})
+}
+
+// FuzzParseIDsBlob: encrypted_content comes back from the client and is parsed before its MAC is checked. A blob that parses writes
+// back to the same fields, and one that verifies has every signed field of the blob the key sealed. The seeds change each signed
+// field in turn and keep the MAC, so a field left out of signed is red on every test run, not only under -fuzz.
+func FuzzParseIDsBlob(f *testing.F) {
+	k := newIDsKey([]byte("fuzz key"))
+	sealed := func() *idsBlob {
+		b := &idsBlob{whole: true, model: "m", ns: "n", text: "t", ids: []int{0, 1, 300, 1<<31 - 1}}
+		k.seal(b)
+		return b
+	}
+	for _, edit := range []func(b *idsBlob){
+		func(*idsBlob) {},
+		func(b *idsBlob) { b.whole = false },
+		func(b *idsBlob) { b.keyID[0] ^= 1 },
+		func(b *idsBlob) { b.model = "x" },
+		func(b *idsBlob) { b.ns = "x" },
+		func(b *idsBlob) { b.ids[0] = 1 },
+		func(b *idsBlob) { b.ids = b.ids[:3] },
+		func(b *idsBlob) { b.text = "edited, and outside the MAC" },
+		func(b *idsBlob) { b.mac = nil },
+	} {
+		b := sealed()
+		edit(b)
+		f.Add(b.String())
+	}
+	f.Add((&idsBlob{}).String())
+	f.Add(reasoningBlobV2Prefix)
+	f.Add(reasoningBlobV2Prefix + "AgA=")
+	f.Add("")
+	want := sealed()
+	f.Fuzz(func(t *testing.T, enc string) {
+		b, err := parseIDsBlob(enc)
+		if err != nil {
+			return
+		}
+		again, err := parseIDsBlob(b.String())
+		if err != nil {
+			t.Fatalf("a blob that parsed does not parse once rewritten: %v", err)
+		}
+		if again.String() != b.String() {
+			t.Fatalf("a blob does not rewrite as itself: %q then %q", b.String(), again.String())
+		}
+		if k.verifyMAC(b) && (b.whole != want.whole || b.keyID != want.keyID || b.model != want.model || b.ns != want.ns || !slices.Equal(b.ids, want.ids)) {
+			t.Fatalf("a blob with changed signed fields verified: %q", enc)
+		}
+	})
+}
+
+// FuzzServeEmbeddingsInput: /v1/embeddings' input may be a string, tokens, a list or multimodal items, all attacker-supplied.
+func FuzzServeEmbeddingsInput(f *testing.F) {
+	for _, s := range []string{
+		`"text"`, `["a","b"]`, `[1,2,3]`, `[[1,2],[3]]`, `[{"text":"x"}]`, `[{"image":"data:image/png;base64,AAAA"}]`, `[{"audio":"AAAA"}]`,
+		`[{"image_url":{"url":"http://x"}}]`, `[]`, `null`, `{}`, `3`, ``,
+	} {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		_, _ = parseEmbedInput(data)
+		_, _ = parseEmbedItems(data)
+		_, _ = decodeEmbedImage(string(data), true)
+		_, _ = decodeEmbedAudio(data)
+	})
+}
+
+// FuzzServeSystemOne: the model-free half of POST /v1/systemone, whose questions are read in the client's key order by a hand walk.
+func FuzzServeSystemOne(f *testing.F) {
+	for _, s := range []string{
+		`{"state":"s","questions":{"q":{"type":"choice","instructions":"i","criteria":{"a":"x","b":"y"}}}}`,
+		`{"state":{"k":[1]},"questions":{"q":{"type":"score","criteria":["low","high"]},"q":{"type":"bool"}}}`,
+		`{"questions":[]}`, `{"questions":{"":{}}}`, `{"state":null,"questions":null}`, `{`, `[]`,
+	} {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		var req struct {
+			State     json.RawMessage `json:"state"`
+			Questions json.RawMessage `json:"questions"`
+		}
+		if json.Unmarshal(data, &req) != nil {
+			return
+		}
+		state := jsonText(req.State)
+		names, raws, err := orderedObject(req.Questions)
+		if err != nil {
+			return
+		}
+		if len(names) != len(raws) {
+			t.Fatalf("%d names, %d values", len(names), len(raws))
+		}
+		for i, name := range names {
+			_, _ = systemOneRequest(name, state, raws[i])
+		}
 	})
 }

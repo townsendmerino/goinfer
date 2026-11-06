@@ -2,9 +2,6 @@ package decoder
 
 import (
 	"encoding/json"
-	"errors"
-	"io/fs"
-	"os"
 	"testing"
 )
 
@@ -58,70 +55,21 @@ func TestGlm4Moe_descriptor(t *testing.T) {
 // cosine 1.0, the bias / no-QK-norm forward is correct and any real-model roughness
 // is quantization, not a loader bug. Fixture: scripts/pin_glm_tiny_bias.py.
 func TestGlm4Moe_biasParity(t *testing.T) {
-	const golden = "../testdata/glm_tiny_bias_text_golden.json"
-	const ckpt = "../testdata/glm-tiny-bias"
-	raw, err := os.ReadFile(golden)
-	if errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no golden — run scripts/pin_glm_tiny_bias.py")
-	}
-	if err != nil {
-		t.Fatalf("read golden: %v", err)
-	}
-	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no checkpoint at %s — run scripts/pin_glm_tiny_bias.py", ckpt)
-	}
-	var g struct {
-		PromptIDs       []int     `json:"prompt_ids"`
-		Argmax          int       `json:"argmax"`
-		LastLogits      []float32 `json:"last_logits"`
-		NNew            int       `json:"n_new"`
-		ContinuationIDs []int     `json:"continuation_ids"`
-	}
-	if err := json.Unmarshal(raw, &g); err != nil {
-		t.Fatalf("parse golden: %v", err)
-	}
-	m, err := Load(ckpt, Options{})
-	if err != nil {
-		t.Fatalf("Load(%s): %v", ckpt, err)
-	}
-	defer m.Close()
-	if !m.w.arch.QKVBias || m.w.arch.QKNorm {
-		t.Fatalf("arch flags QKVBias=%v QKNorm=%v, want true/false", m.w.arch.QKVBias, m.w.arch.QKNorm)
-	}
-	cache := m.NewCache(len(g.PromptIDs) + g.NNew)
-	var logits []float32
-	for _, id := range g.PromptIDs {
-		if logits, err = m.forward(id, cache); err != nil {
-			t.Fatalf("forward: %v", err)
-		}
-	}
-	gotArg := argmax(logits)
-	cos := logitCosine(logits, g.LastLogits)
-	t.Logf("glm4_moe bias parity: argmax got=%d want=%d | logit cosine=%.6f", gotArg, g.Argmax, cos)
-	if gotArg != g.Argmax {
-		t.Errorf("last argmax = %d, want %d", gotArg, g.Argmax)
-	}
-	if cos < 0.9999 {
-		t.Errorf("last-logit cosine %.6f < 0.9999", cos)
-	}
-	got := make([]int, 0, g.NNew)
-	for range g.NNew {
-		id := argmax(logits)
-		got = append(got, id)
-		if logits, err = m.forward(id, cache); err != nil {
-			t.Fatalf("continuation forward: %v", err)
-		}
-	}
-	for i := range g.ContinuationIDs {
-		if got[i] != g.ContinuationIDs[i] {
-			t.Errorf("continuation[%d] = %d, want %d (got %v want %v)", i, got[i], g.ContinuationIDs[i], got, g.ContinuationIDs)
-			break
-		}
-	}
-	// tiny-golden: goinfer vs the HF f32 forward of the seeded glm-tiny — exact numeric oracle for
-	// the sigmoid-routing + shared-expert + first_k_dense forward (real GLM-4.5-Air is 106B, bf16
-	// ~212 GB > 62 GB RAM, so a real-model forward is infeasible on this box).
-	emitParityRow(t, "glm4_moe", "tiny-golden", "HF f32 (glm-tiny seeded fixture)", 100.0, float64(cos), float64(cos))
+	textParity{
+		golden: "../testdata/glm_tiny_bias_text_golden.json", ckpt: "../testdata/glm-tiny-bias", pin: "scripts/pin_glm_tiny_bias.py",
+		label: "glm4_moe bias parity",
+		check: func(t *testing.T, m *Model) {
+			if !m.w.arch.QKVBias || m.w.arch.QKNorm {
+				t.Fatalf("arch flags QKVBias=%v QKNorm=%v, want true/false", m.w.arch.QKVBias, m.w.arch.QKNorm)
+			}
+		},
+		// tiny-golden: goinfer vs the HF f32 forward of the seeded glm-tiny — exact numeric oracle for
+		// the sigmoid-routing + shared-expert + first_k_dense forward (real GLM-4.5-Air is 106B, bf16
+		// ~212 GB > 62 GB RAM, so a real-model forward is infeasible on this box).
+		row: func(t *testing.T, cos float64) {
+			emitParityRow(t, "glm4_moe", "tiny-golden", "HF f32 (glm-tiny seeded fixture)", 100.0, cos, cos)
+		},
+	}.run(t)
 }
 
 // TestGlm4Moe_textParity loads the tiny-random Glm4MoeForCausalLM checkpoint and
@@ -129,69 +77,14 @@ func TestGlm4Moe_biasParity(t *testing.T) {
 // the HF golden. Exercises every GLM seam at once: dense layer 0, sigmoid routing
 // with e_score_correction_bias, the ungated shared expert, partial RoPE and QK-norm.
 func TestGlm4Moe_textParity(t *testing.T) {
-	const golden = "../testdata/glm_tiny_text_golden.json"
-	const ckpt = "../testdata/glm-tiny"
-	raw, err := os.ReadFile(golden)
-	if errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no golden — run scripts/pin_glm_tiny.py")
-	}
-	if err != nil {
-		t.Fatalf("read golden: %v", err)
-	}
-	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no checkpoint at %s — run scripts/pin_glm_tiny.py", ckpt)
-	}
-	var g struct {
-		PromptIDs       []int     `json:"prompt_ids"`
-		Argmax          int       `json:"argmax"`
-		LastLogits      []float32 `json:"last_logits"`
-		NNew            int       `json:"n_new"`
-		ContinuationIDs []int     `json:"continuation_ids"`
-	}
-	if err := json.Unmarshal(raw, &g); err != nil {
-		t.Fatalf("parse golden: %v", err)
-	}
-
-	m, err := Load(ckpt, Options{})
-	if err != nil {
-		t.Fatalf("Load(%s): %v", ckpt, err)
-	}
-	defer m.Close()
-
-	cache := m.NewCache(len(g.PromptIDs) + g.NNew)
-	var logits []float32
-	for _, id := range g.PromptIDs {
-		if logits, err = m.forward(id, cache); err != nil {
-			t.Fatalf("forward: %v", err)
-		}
-	}
-	gotArg := argmax(logits)
-	cos := logitCosine(logits, g.LastLogits)
-	t.Logf("glm4_moe text parity: argmax got=%d want=%d | logit cosine=%.6f", gotArg, g.Argmax, cos)
-	if gotArg != g.Argmax {
-		t.Errorf("last argmax = %d, want %d", gotArg, g.Argmax)
-	}
-	if cos < 0.9999 {
-		t.Errorf("last-logit cosine %.6f < 0.9999", cos)
-	}
-
-	// Greedy continuation must match the HF golden token-for-token.
-	got := make([]int, 0, g.NNew)
-	for range g.NNew {
-		id := argmax(logits)
-		got = append(got, id)
-		if logits, err = m.forward(id, cache); err != nil {
-			t.Fatalf("continuation forward: %v", err)
-		}
-	}
-	for i := range g.ContinuationIDs {
-		if got[i] != g.ContinuationIDs[i] {
-			t.Errorf("continuation[%d] = %d, want %d (got %v want %v)", i, got[i], g.ContinuationIDs[i], got, g.ContinuationIDs)
-			break
-		}
-	}
-	// tiny-golden: goinfer vs the HF f32 forward of the seeded glm-tiny — exact numeric oracle for
-	// the sigmoid-routing + shared-expert + first_k_dense forward (real GLM-4.5-Air is 106B, bf16
-	// ~212 GB > 62 GB RAM, so a real-model forward is infeasible on this box).
-	emitParityRow(t, "glm4_moe", "tiny-golden", "HF f32 (glm-tiny seeded fixture)", 100.0, float64(cos), float64(cos))
+	textParity{
+		golden: "../testdata/glm_tiny_text_golden.json", ckpt: "../testdata/glm-tiny", pin: "scripts/pin_glm_tiny.py",
+		label: "glm4_moe text parity",
+		// tiny-golden: goinfer vs the HF f32 forward of the seeded glm-tiny — exact numeric oracle for
+		// the sigmoid-routing + shared-expert + first_k_dense forward (real GLM-4.5-Air is 106B, bf16
+		// ~212 GB > 62 GB RAM, so a real-model forward is infeasible on this box).
+		row: func(t *testing.T, cos float64) {
+			emitParityRow(t, "glm4_moe", "tiny-golden", "HF f32 (glm-tiny seeded fixture)", 100.0, cos, cos)
+		},
+	}.run(t)
 }

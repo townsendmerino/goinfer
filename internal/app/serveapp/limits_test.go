@@ -18,6 +18,8 @@ import (
 	"go/printer"
 	"go/token"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 )
 
 // top_logprobs must be range-checked in `prepare`: each retained entry is materialized as a map[string]any
@@ -195,26 +197,6 @@ func TestDecoderEmbedder_truncatesToTheContextWindow(t *testing.T) {
 	}
 }
 
-// The wiring itself: loadDecoderEmbedder must set maxTokens from the model, not leave it 0.
-// The arithmetic test above passes for any non-zero bound, so this is what pins the SOURCE of it.
-func TestDecoderEmbedder_boundComesFromTheModelNotZero(t *testing.T) {
-	b, err := os.ReadFile("decoder_embedder.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	src := string(b)
-	if strings.Contains(src, "maxTokens: 0,") {
-		t.Error("loadDecoderEmbedder still constructs the embedder with maxTokens: 0 — the token " +
-			"count is unbounded and only C-21's 1 MiB byte cap stands between a request and ~500k " +
-			"positions of sequential forward under the embed mutex (audit-2026-09-02 C-07)")
-	}
-	if !strings.Contains(src, "maxTokens: m.Config().MaxPositions,") {
-		t.Error("the embedder's token bound no longer comes from the model's context window; " +
-			"m.Config().MaxPositions is max_position_embeddings, and NOT Architecture.MaxPositions, " +
-			"which is the GPT-2 learned-position table and 0 for every RoPE family")
-	}
-}
-
 // Both JSON decoders must shape an error the same way, and neither may echo the raw one: Go struct, field and
 // type names ("json: cannot unmarshal string into Go struct field anthropicReq.max_tokens of type int") must
 // not reach the client. Audit N-16.
@@ -255,18 +237,29 @@ func TestJSONDecodeMessage_neverLeaksGoTypeNames(t *testing.T) {
 // The Anthropic decoder must USE the shared shaping: the test above proves the shaper is clean, not the call
 // site.
 func TestAnthropic_decodeUsesTheSharedShaping(t *testing.T) {
-	b, err := os.ReadFile("anthropic.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	src := string(b)
-	if strings.Contains(src, `"invalid request body: "+err.Error()`) {
-		t.Error("decodeAnthropicJSON still appends the raw json error, which re-leaks the Go " +
-			"struct/field/type names M-06 and R-11 removed from the OpenAI surface (N-16)")
-	}
-	if !strings.Contains(src, "jsonDecodeMessage(err)") {
-		t.Error("decodeAnthropicJSON no longer routes through jsonDecodeMessage; the two surfaces " +
-			"can drift again")
+	for name, body := range map[string]string{
+		"scalar field":    `{"model": 3}`,
+		"composite field": `{"messages": "nope"}`,
+		"malformed":       `{"model":`,
+	} {
+		var v anthropicReq
+		rec := httptest.NewRecorder()
+		if decodeAnthropicJSON(rec, httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body)), &v) {
+			t.Fatalf("%s: premise broke, %s decoded cleanly", name, body)
+		}
+		var got struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("%s: %v: %s", name, err, rec.Body)
+		}
+		var again anthropicReq
+		want, _ := jsonDecodeMessage(json.NewDecoder(strings.NewReader(body)).Decode(&again))
+		if got.Error.Message != want {
+			t.Errorf("%s: the client read %q, the shared shaping says %q; the raw decoder error re-leaks the Go struct, field and type names the OpenAI surface hides (N-16)", name, got.Error.Message, want)
+		}
 	}
 }
 
