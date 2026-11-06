@@ -198,10 +198,10 @@ var chainSkipLogged bool
 // TestKVPages_shareByReference is KV5-5's G3b and G1a's second slot on Metal: slot 0 prefills a 640-row preamble and slots 1 and 2
 // take it by CopyKV, by reference, so the pool holds it once (its own count, kvBlocksInUse, drops by the 20 blocks the copies freed).
 // Each slot then prefills its own suffix from 640 and decodes. Then slots 0 and 1 rewind into blocks the others still share, by every
-// writer in turn (a prefill, the step, ForwardBatch, the verify, UploadKV, a decode, the greedy chain), each a copy on write. Every logit
-// equals the reference, and so does every slot's K/V over its own history, read through its table. Every logit equals the reference, a fresh resident where each slot prefilled the preamble
-// itself, at f16 and int8 KV, on in-order and scrambled tables. With kvOwn planted off, slot 0's rewrite lands in the shared block and
-// the other slots' logits move.
+// writer in turn (a prefill, the step, ForwardBatch, the verify, UploadKV, the greedy chain across a block edge, a decode), each a copy
+// on write. Every logit, and every slot's K/V over its own history read through its table after each write, equals the reference: a
+// fresh resident where each slot prefilled the preamble itself, at f16 and int8 KV, on in-order and scrambled tables. With kvOwn
+// planted off, a rewind lands in a shared block and another slot's K/V moves.
 func TestKVPages_shareByReference(t *testing.T) {
 	const pre, suffix = 640, 70
 	for _, c := range []struct{ i8, scramble bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
@@ -292,24 +292,27 @@ func TestKVPages_shareByReference(t *testing.T) {
 				snap(1, 281)
 				add(a.Forward(kv2Embs(r, 1, 65)[0], 281))
 				snap(1, 282)
-				bind(2) // slot 2: a decode at 200 (block 3), then the greedy chain from 150 (block 2) where the build has one
-				add(a.Forward(kv2Embs(r, 1, 66)[0], 200))
-				snap(2, 201)
+				// slot 2: the greedy chain from 190, where the build has one: it runs past position 192, out of block 2 into block 3,
+				// both still shared by all three slots, so it must own a block it has not reached when it opens. Then a decode at 100
+				// (block 1, still shared).
+				bind(2)
 				if why := r.greedyChainWhyNot(); why == "" {
-					if err := r.chainStart(5, 150); err != nil {
+					if err := r.chainStart(5, 190); err != nil {
 						t.Fatal(err)
 					}
-					for range 3 {
+					for range 4 {
 						if _, err := r.chainNext(); err != nil {
 							t.Fatal(err)
 						}
 					}
 					r.stopChain()
-					snap(2, 151) // the chain's first forward wrote position 150; how far it ran past it is not this check's
+					snap(2, 191) // the chain's first forward wrote position 190; how far it ran past it is not this check's
 				} else if !chainSkipLogged {
 					chainSkipLogged = true
 					t.Logf("no greedy chain on this resident (%s): its write site is not exercised here", why)
 				}
+				add(a.Forward(kv2Embs(r, 1, 66)[0], 100))
+				snap(2, 101)
 				return out, kv, held
 			}
 			differ := func(a, b [][]float32) int {

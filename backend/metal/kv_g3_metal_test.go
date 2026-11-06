@@ -373,8 +373,9 @@ func kvLongFixture(t *testing.T, dir string) string {
 // TestKVPages_shareByReferenceLayerMajor is TestKVPages_shareByReference's write site check for the two layer-major prefills, which run
 // only on their own families: Gemma 4's E-model prefill (gemma4-emodel-tiny) and the paged generic MoE's (mixtral-tiny, paged at 3 slots).
 // Slot 0 prefills a 128-row preamble and slot 1 takes it by CopyKV; slot 1 prefills a suffix; slot 0 rewinds by a prefill from 100,
-// inside the shared block 1. Slot 1's K/V over its history, read through its table, equals the reference where slot 1 prefilled the
-// preamble itself, and with kvOwn planted off it does not; the layer-major pass's own counter shows it ran.
+// inside the shared block 1. Slot 1's K/V over its history, slot 0's over rows 0 to 119 (its copy of block 1 kept rows 64 to 99) and slot
+// 0's rewind logits equal the reference where slot 1 prefilled the preamble itself; with the copy on write planted off slot 1's K/V moves,
+// and with it keeping one row too few slot 0's does. The layer-major pass's own counter shows it ran.
 func TestKVPages_shareByReferenceLayerMajor(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -392,9 +393,11 @@ func TestKVPages_shareByReferenceLayerMajor(t *testing.T) {
 				t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "100000") // the E-model's batched pass declines, so its layer-major pass runs
 			}
 			dir := kvLongFixture(t, c.dir)
-			run := func(share, plant bool) [][]byte {
-				kvOwnOffForTest = plant
-				defer func() { kvOwnOffForTest = false }()
+			// run returns slot 1's K/V over its history, slot 0's over rows 0 to 119 after its rewind, and slot 0's rewind logits.
+			// plant is "", "cow-off" (kvOwnOffForTest) or "keep-1" (kvKeepShortForTest).
+			run := func(share bool, plant string) (kv1, kv0 [][]byte, rewind []float32) {
+				kvOwnOffForTest, kvKeepShortForTest = plant == "cow-off", plant == "keep-1"
+				defer func() { kvOwnOffForTest, kvKeepShortForTest = false, false }()
 				m, err := decoder.Load(dir, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 512, ResidentKVSlots: 2})
 				if err != nil {
 					t.Fatal(err)
@@ -414,18 +417,20 @@ func TestKVPages_shareByReferenceLayerMajor(t *testing.T) {
 					}
 					return out
 				}
-				prefill := func(s int, e [][]float32, at int) {
+				prefill := func(s int, e [][]float32, at int) []float32 {
 					t.Helper()
 					if err := r.useKVSlot(s); err != nil {
 						t.Fatal(err)
 					}
 					before := lm()
-					if _, err := a.PrefillLast(context.Background(), e, at); err != nil {
+					l, err := a.PrefillLast(context.Background(), e, at)
+					if err != nil {
 						t.Fatal(err)
 					}
 					if lm() == before {
 						t.Fatalf("slot %d's prefill at %d did not take the layer-major pass", s, at)
 					}
+					return slices.Clone(l)
 				}
 				preamble := embs(1, 128)
 				prefill(0, preamble, 0)
@@ -437,19 +442,27 @@ func TestKVPages_shareByReferenceLayerMajor(t *testing.T) {
 					prefill(1, preamble, 0)
 				}
 				prefill(1, embs(2, 20), 128)
-				prefill(0, embs(3, 20), 100) // slot 0 rewinds into block 1, which slot 1 shares
-				var kv [][]byte
-				for _, b := range kv2Slot(t, r, 1, 148) {
-					kv = append(kv, b)
-				}
-				return kv
+				// Slot 0 rewinds into block 1, which slot 1 shares: its copy of the block must keep rows 64 to 99 (the rows below the write).
+				rewind = prefill(0, embs(3, 20), 100)
+				return kv2Slot(t, r, 1, 148), kv2Slot(t, r, 0, 120), rewind
 			}
-			ref := run(false, false)
-			if got := run(true, false); !slices.EqualFunc(ref, got, slices.Equal) {
+			eq := func(a, b [][]byte) bool { return slices.EqualFunc(a, b, slices.Equal) }
+			ref1, ref0, refRewind := run(false, "")
+			got1, got0, gotRewind := run(true, "")
+			if !eq(ref1, got1) {
 				t.Error("slot 1's K/V differs between the shared preamble and its own")
 			}
-			if planted := run(true, true); slices.EqualFunc(ref, planted, slices.Equal) {
+			if !eq(ref0, got0) {
+				t.Error("slot 0's K/V after its rewind into the shared block differs from its own preamble's: the copy on write lost rows")
+			}
+			if !slices.Equal(refRewind, gotRewind) {
+				t.Error("slot 0's rewind logits differ between the shared preamble and its own")
+			}
+			if p1, _, _ := run(true, "cow-off"); eq(ref1, p1) {
 				t.Error("with kvOwn off, slot 0's rewind into the shared block left slot 1's K/V as it was: the test cannot see a missing copy on write")
+			}
+			if _, p0, _ := run(true, "keep-1"); eq(ref0, p0) {
+				t.Error("with the copy on write keeping one row too few, slot 0's K/V was as it should be: the test cannot see a short copy")
 			}
 		})
 	}

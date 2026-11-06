@@ -59,9 +59,17 @@ func (r *resident) kvUnref(id uint32) {
 // kvOwnOffForTest makes kvOwn a no-op, so a slot writes into a block it shares: the plant TestKVPages_shareByReference must catch.
 var kvOwnOffForTest bool
 
+// kvKeepShortForTest makes a copy on write keep one row too few: the plant TestKVPages_shareByReferenceLayerMajor must catch.
+var kvKeepShortForTest bool
+
 // kvBlocksInUse is how many blocks some table names, the null block not counted: the pool's own count of what its slots hold, a
 // block several slots share counted once.
-func (r *resident) kvBlocksInUse() int { return len(r.kvRefs) - 1 - len(r.kvFree) }
+func (r *resident) kvBlocksInUse() int {
+	if len(r.kvRefs) == 0 {
+		return 0 // no pools
+	}
+	return len(r.kvRefs) - 1 - len(r.kvFree)
+}
 
 // kvOwn gives slot s a block of its own for every block overlapping positions [lo, hi) that another table also names, which the caller
 // is about to write: a block from kvFree holding a copy of the shared one's rows below lo (copy on write); rows at or past lo are the
@@ -85,6 +93,9 @@ func (r *resident) kvOwn(s, lo, hi int) {
 		r.kvFree = r.kvFree[:len(r.kvFree)-1]
 		r.kvRefs[nb] = 1
 		if keep := lo - b*decoder.KVBlockRows; keep > 0 {
+			if kvKeepShortForTest {
+				keep--
+			}
 			if err := gpu.CopyDeviceBatch(r.kvBlockCopies(*e, nb, keep)); err != nil {
 				panic(fmt.Sprintf("metal: copy on write of KV block %d: %v", *e, err))
 			}
