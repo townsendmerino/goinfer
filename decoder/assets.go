@@ -10,6 +10,7 @@ package decoder
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,15 +32,15 @@ type assetSpec struct {
 // decoder's own tests assume. A test in a deeper directory (backend/cuda) gets its root from assetRoot.
 const repoRoot = ".."
 
-// assetRoot is the path from the working directory to the nearest ancestor that holds testdata/assets.json, written as "..",
-// "../.." and so on; repoRoot when none does.
+// assetRoot is the path from the working directory to the nearest directory, itself first and then each ancestor, that holds
+// testdata/assets.json, written as ".", "..", "../.." and so on; repoRoot when none does.
 func assetRoot() string {
-	rel := ".."
 	dir, err := os.Getwd()
 	if err != nil {
 		return repoRoot
 	}
-	for d := filepath.Dir(dir); ; d = filepath.Dir(d) {
+	rel := "."
+	for d := dir; ; d = filepath.Dir(d) {
 		if _, err := os.Stat(filepath.Join(d, "testdata/assets.json")); err == nil {
 			return rel
 		}
@@ -49,6 +50,10 @@ func assetRoot() string {
 		rel = filepath.Join(rel, "..")
 	}
 }
+
+// errRegistryUnreadable marks a registry that cannot be read or parsed. The file is tracked, so that is a broken harness, not an
+// absent asset, and the test wrappers fail on it instead of skipping.
+var errRegistryUnreadable = errors.New("asset registry unreadable")
 
 func loadAssetRegistry() ([]assetSpec, error) {
 	raw, err := os.ReadFile(filepath.Join(assetRoot(), "testdata/assets.json"))
@@ -143,7 +148,7 @@ func satisfiesAsset(a assetSpec, p string) (bool, string) {
 func lookupAsset(env string) (string, error) {
 	assets, err := loadAssetRegistry()
 	if err != nil {
-		return "", fmt.Errorf("asset registry unreadable: %w", err)
+		return "", fmt.Errorf("%w: %w", errRegistryUnreadable, err)
 	}
 	for _, a := range assets {
 		if a.Env != env {

@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +23,9 @@ import (
 func assetPath(tb testing.TB, env string) string {
 	tb.Helper()
 	p, err := lookupAsset(env)
+	if errors.Is(err, errRegistryUnreadable) {
+		tb.Fatalf("asset %s: %v", env, err)
+	}
 	if err != nil {
 		tb.Skipf("asset %s: %v", env, err)
 	}
@@ -171,11 +175,21 @@ func TestAssetRegistry_resolvesFromEveryCallerDir(t *testing.T) {
 			callers[abs] = true
 		}
 	}
-	if len(callers) < 3 {
-		t.Fatalf("found %d caller directories, want at least decoder, backend/cuda and backend/metal", len(callers))
+	// The checkout root itself: a run from there must not look above it.
+	root, err := filepath.Abs(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callers[root] = true
+	if len(callers) < 4 {
+		t.Fatalf("found %d caller directories, want at least the root, decoder, backend/cuda and backend/metal", len(callers))
 	}
 	for dir := range callers {
-		t.Run(filepath.Base(filepath.Dir(dir))+"/"+filepath.Base(dir), func(t *testing.T) {
+		name := strings.TrimPrefix(strings.TrimPrefix(dir, root), "/")
+		if name == "" {
+			name = "(root)"
+		}
+		t.Run(name, func(t *testing.T) {
 			t.Chdir(dir)
 			if _, err := loadAssetRegistry(); err != nil {
 				t.Fatalf("from %s: %v", dir, err)

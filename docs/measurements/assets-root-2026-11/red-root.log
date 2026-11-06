@@ -1,0 +1,14 @@
+=== RUN   TestAssetRegistry_resolvesFromEveryCallerDir
+=== RUN   TestAssetRegistry_resolvesFromEveryCallerDir/.
+    asset_registry_test.go:187: from /home/francis/goinfer-bench/v025-accepted-wt: open ../testdata/assets.json: no such file or directory
+=== RUN   TestAssetRegistry_resolvesFromEveryCallerDir/backend/cuda.
+=== RUN   TestAssetRegistry_resolvesFromEveryCallerDir/decoder.
+=== RUN   TestAssetRegistry_resolvesFromEveryCallerDir/backend/metal.
+--- FAIL: TestAssetRegistry_resolvesFromEveryCallerDir (0.23s)
+    --- FAIL: TestAssetRegistry_resolvesFromEveryCallerDir/. (0.00s)
+    --- PASS: TestAssetRegistry_resolvesFromEveryCallerDir/backend/cuda. (0.00s)
+    --- PASS: TestAssetRegistry_resolvesFromEveryCallerDir/decoder. (0.00s)
+    --- PASS: TestAssetRegistry_resolvesFromEveryCallerDir/backend/metal. (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.235s
+FAIL
