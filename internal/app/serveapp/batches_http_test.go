@@ -432,7 +432,7 @@ func TestBatches_cancelStopsQueuedLines(t *testing.T) {
 // request by that id, so a batch that accepted a duplicate would hand back two results nobody could tell apart. No model is
 // needed: the 400 is decided before any line runs.
 func TestBatches_duplicateCustomIDIsRefused(t *testing.T) {
-	srv := &server{files: newFileStore(8), batches: newBatchStore(8)}
+	srv := &server{files: newFileStore(8, 0), batches: newBatchStore(8)}
 	ts := httptest.NewServer(batchesTestMux(srv))
 	defer ts.Close()
 

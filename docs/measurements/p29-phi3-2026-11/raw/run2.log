@@ -1,0 +1,50 @@
+start 2026-11-06 07:28:35  load: 5.02 4.69 4.20
+free (reclaimable): 6109052928
+== fit check (phi3, q4k, ctx 2048)
+decoder: fit is tight — Phi-3-mini-4k-instruct-q4.gguf needs ~2.6 GB resident at quant q4k + 3.0 GB KV + 2.2 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 7.9 GB; this machine currently has 12.8 GB of memory available (budget 9.0 GB = 70% of that) (88% of budget). -stream-weights will not help at --quant q4k: weight paging reads only int8 and int4 weights. Or run a smaller model, or pass a smaller -ctx.
+/Users/francistownsend-merino/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf @ q4k, ctx=2048 (pinned — refused rather than shrunk if it doesn't fit)
+
+cpu     RESIDENT
+        dense 2.62 GB + KV@2048 1.50 GB fits 12.79 GB free
+metal   RESIDENT
+        dense 2.29 GB + host copy 2.62 GB + KV@2048 0.77 GB fits 11.20 GB free
+== build
+== probe Phi-3-mini-4k-instruct-q4.gguf  07:28:45  load: 4.48 4.59 4.17
+[probe] /Users/francistownsend-merino/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf: H=3072 layers=32 nH=32 nKV=32 hd=96 I=8192 V=32064
+[probe] ms per token / per row, by position window (median of 5 reps; each rep times 8 rows):
+[probe] pos   0: Forward 23.24 ms/token | step B=2 61.8 ms (30.90 ms/row, 1.33x Forward/row) | step B=4 138.4 ms (34.61 ms/row, 1.49x Forward/row) | step B=8 912.6 ms (114.08 ms/row, 4.91x Forward/row)
+[probe] pos 128: Forward 23.65 ms/token | step B=2 63.4 ms (31.71 ms/row, 1.34x Forward/row) | step B=4 146.1 ms (36.52 ms/row, 1.54x Forward/row) | step B=8 911.4 ms (113.93 ms/row, 4.82x Forward/row)
+[probe] pos 256: Forward 24.13 ms/token | step B=2 64.5 ms (32.25 ms/row, 1.34x Forward/row) | step B=4 143.7 ms (35.92 ms/row, 1.49x Forward/row) | step B=8 920.5 ms (115.06 ms/row, 4.77x Forward/row)
+[probe] pos 448: Forward 25.22 ms/token | step B=2 66.5 ms (33.24 ms/row, 1.32x Forward/row) | step B=4 147.7 ms (36.92 ms/row, 1.46x Forward/row) | step B=8 936.1 ms (117.02 ms/row, 4.64x Forward/row)
+[probe] one Forward at pos 300: wall 62.4 ms; dispatches 322, command buffers 1, host waits 1; last cb GPU-busy 24.7 ms, kernel window 36.6 ms
+[probe]   by pipeline: pAttn=32 pGemvW8=1 pKv=32 pQ4K=32 pQ4KResid=48 pQ5K[2]=32 pQ6K[1]=16 pRmsF32Out=65 pRope2=32 pSwF32=32
+[probe] one 8-row step (multiNoHead) at pos 300: wall 974.3 ms; dispatches 320, command buffers 1, host waits 1; last cb GPU-busy 973.0 ms, kernel window 0.2 ms
+[probe]   by pipeline: pAttnRows=32 pKvRows=32 pQ4KRows[8]=80 pQ5KRows[8]=32 pQ6KRows[8]=16 pRmsF32OutRows=64 pRope2Rows=32 pSwF32Rows=32
+[probe] one 2-row step (multiNoHead) at pos 300: wall 67.0 ms; dispatches 320, command buffers 1, host waits 1; last cb GPU-busy 66.0 ms, kernel window 0.1 ms
+[probe]   by pipeline: pAttnRows=32 pKvRows=32 pQ4KRows[2]=80 pQ5KRows[2]=32 pQ6KRows[2]=16 pRmsF32OutRows=64 pRope2Rows=32 pSwF32Rows=32
+[probe] layer0 qkv        segs [q5k:9216] GPU ms per call by B: B1=0.192 B2=0.458 B3=0.671 B4=1.040 B5=1.764 B6=2.913 B7=6.282 B8=7.647
+[probe] layer0 o+resid    segs [q4k:3072] GPU ms per call by B: B1=0.065 B2=0.154 B3=0.238 B4=0.388 B5=0.853 B6=1.532 B7=2.223 B8=2.616
+[probe] layer0 gate|up    segs [q4k:16384] GPU ms per call by B: B1=0.320 B2=0.797 B3=1.172 B4=1.958 B5=4.485 B6=7.910 B7=11.737 B8=13.831
+[probe] layer0 down+resid segs [q6k:3072] GPU ms per call by B: B1=0.187 B2=0.381 B3=0.418 B4=0.528 B5=0.622 B6=0.775 B7=0.915 B8=1.028
+--- PASS: TestP29Probe (39.12s)
+PASS
+== probe qwen2.5-coder-0.5b-instruct-q4_k_m.gguf  07:29:25  load: 3.16 4.25 4.07
+[probe] /Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: H=896 layers=24 nH=14 nKV=2 hd=64 I=4864 V=151936
+[probe] ms per token / per row, by position window (median of 5 reps; each rep times 8 rows):
+[probe] pos   0: Forward 4.90 ms/token | step B=2 5.3 ms (2.65 ms/row, 0.54x Forward/row) | step B=4 9.4 ms (2.34 ms/row, 0.48x Forward/row) | step B=8 26.2 ms (3.27 ms/row, 0.67x Forward/row)
+[probe] pos 128: Forward 5.21 ms/token | step B=2 5.7 ms (2.83 ms/row, 0.54x Forward/row) | step B=4 10.0 ms (2.49 ms/row, 0.48x Forward/row) | step B=8 26.8 ms (3.35 ms/row, 0.64x Forward/row)
+[probe] pos 256: Forward 5.56 ms/token | step B=2 5.9 ms (2.94 ms/row, 0.53x Forward/row) | step B=4 10.7 ms (2.67 ms/row, 0.48x Forward/row) | step B=8 27.8 ms (3.47 ms/row, 0.62x Forward/row)
+[probe] pos 448: Forward 5.96 ms/token | step B=2 6.4 ms (3.20 ms/row, 0.54x Forward/row) | step B=4 11.5 ms (2.88 ms/row, 0.48x Forward/row) | step B=8 29.4 ms (3.67 ms/row, 0.62x Forward/row)
+[probe] one Forward at pos 300: wall 6.0 ms; dispatches 242, command buffers 1, host waits 1; last cb GPU-busy 5.2 ms, kernel window 0.1 ms
+[probe]   by pipeline: pAttn=24 pGemvW8=1 pKv=24 pQ4KResid=12 pQ6K[1]=12 pRmsF32Out=49 pRope2=24 pSwF32=24 pW8F32=24 pW8F32Bias=24 pW8F32Resid=24
+[probe] one 8-row step (multiNoHead) at pos 300: wall 28.8 ms; dispatches 240, command buffers 1, host waits 1; last cb GPU-busy 27.6 ms, kernel window 0.1 ms
+[probe]   by pipeline: pAttnRows=24 pKvRows=24 pQ4KRows[8]=12 pQ6KRows[8]=12 pRmsF32OutRows=48 pRope2Rows=24 pSwF32Rows=24 pW8F32Rows[8]=72
+[probe] one 2-row step (multiNoHead) at pos 300: wall 6.4 ms; dispatches 240, command buffers 1, host waits 1; last cb GPU-busy 5.5 ms, kernel window 0.1 ms
+[probe]   by pipeline: pAttnRows=24 pKvRows=24 pQ4KRows[2]=12 pQ6KRows[2]=12 pRmsF32OutRows=48 pRope2Rows=24 pSwF32Rows=24 pW8F32Rows[2]=72
+[probe] layer0 qkv        segs [int8:1152] GPU ms per call by B: B1=0.007 B2=0.010 B3=0.013 B4=0.016 B5=0.021 B6=0.026 B7=0.031 B8=0.039
+[probe] layer0 o+resid    segs [int8:896] GPU ms per call by B: B1=0.006 B2=0.009 B3=0.012 B4=0.014 B5=0.016 B6=0.019 B7=0.025 B8=0.031
+[probe] layer0 gate|up    segs [int8:9728] GPU ms per call by B: B1=0.033 B2=0.052 B3=0.080 B4=0.115 B5=0.163 B6=0.218 B7=0.275 B8=0.347
+[probe] layer0 down+resid segs [q6k:896] GPU ms per call by B: B1=0.033 B2=0.069 B3=0.084 B4=0.112 B5=0.160 B6=0.164 B7=0.184 B8=0.194
+--- PASS: TestP29Probe (2.92s)
+PASS
+end 2026-11-06 07:29:28
