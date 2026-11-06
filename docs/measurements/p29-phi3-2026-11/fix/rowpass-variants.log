@@ -1,0 +1,29 @@
+start 2026-11-06 10:22:12 load1 2.21
+[zzx] phi3 gate|up (N=16384 K=3072), GPU ms/call by B=1..8; 'bits' = identical to the production kernel
+[zzx]   decode gemv_q4k_f32_rows8, one row: 0.232 ms (x8 = 1.859)
+[zzx]   production: B1=0.323 B2=0.793 B3=1.171 B4=1.894 B5=3.659 B6=5.609 B7=8.329 B8=9.765 bits=true
+[zzx]   G=1 NR=1: B1=0.324 B2=0.674 B3=1.039 B4=1.407 B5=1.774 B6=2.139 B7=2.506 B8=2.876 bits=true
+[zzx]   G=1 NR=2: B1=0.242 B2=0.470 B3=0.701 B4=0.931 B5=1.162 B6=1.391 B7=1.621 B8=1.853 bits=true
+[zzx]   G=1 NR=3: B1=0.241 B2=0.481 B3=0.713 B4=0.945 B5=1.181 B6=1.407 B7=1.640 B8=1.873 bits=true
+[zzx]   G=1 NR=4: B1=0.248 B2=0.476 B3=0.708 B4=0.936 B5=1.166 B6=1.413 B7=1.623 B8=1.861 bits=true
+[zzx]   G=1 NR=6: B1=0.262 B2=0.629 B3=0.922 B4=1.228 B5=1.521 B6=1.824 B7=2.119 B8=2.452 bits=true
+[zzx]   G=1 NR=8: B1=0.655 B2=1.377 B3=2.071 B4=2.754 B5=3.433 B6=4.119 B7=4.808 B8=5.492 bits=true
+[zzx] phi3 o (N=3072 K=3072), GPU ms/call by B=1..8; 'bits' = identical to the production kernel
+[zzx]   decode gemv_q4k_f32_rows8, one row: 0.085 ms (x8 = 0.683)
+[zzx]   production: B1=0.089 B2=0.153 B3=0.227 B4=0.366 B5=0.705 B6=1.068 B7=1.602 B8=1.865 bits=true
+[zzx]   G=1 NR=1: B1=0.065 B2=0.133 B3=0.203 B4=0.274 B5=0.343 B6=0.415 B7=0.486 B8=0.557 bits=true
+[zzx]   G=1 NR=2: B1=0.047 B2=0.095 B3=0.138 B4=0.182 B5=0.227 B6=0.271 B7=0.316 B8=0.360 bits=true
+[zzx]   G=1 NR=3: B1=0.050 B2=0.101 B3=0.147 B4=0.194 B5=0.242 B6=0.287 B7=0.334 B8=0.380 bits=true
+[zzx]   G=1 NR=4: B1=0.051 B2=0.096 B3=0.141 B4=0.187 B5=0.230 B6=0.279 B7=0.320 B8=0.366 bits=true
+[zzx]   G=1 NR=6: B1=0.054 B2=0.129 B3=0.187 B4=0.246 B5=0.304 B6=0.364 B7=0.422 B8=0.482 bits=true
+[zzx]   G=1 NR=8: B1=0.145 B2=0.302 B3=0.451 B4=0.597 B5=0.741 B6=0.888 B7=1.033 B8=1.180 bits=true
+[zzx] 1.5B gate|up (N=17920 K=1536), GPU ms/call by B=1..8; 'bits' = identical to the production kernel
+[zzx]   decode gemv_q4k_f32_rows8, one row: 0.170 ms (x8 = 1.356)
+[zzx]   production: B1=0.213 B2=0.427 B3=0.727 B4=1.157 B5=2.208 B6=3.280 B7=5.026 B8=5.984 bits=true
+[zzx]   G=1 NR=1: B1=0.214 B2=0.400 B3=0.592 B4=0.784 B5=0.981 B6=1.185 B7=1.392 B8=1.602 bits=true
+[zzx]   G=1 NR=2: B1=0.179 B2=0.358 B3=0.529 B4=0.700 B5=0.870 B6=1.041 B7=1.210 B8=1.378 bits=true
+[zzx]   G=1 NR=3: B1=0.180 B2=0.364 B3=0.539 B4=0.712 B5=0.885 B6=1.048 B7=1.219 B8=1.387 bits=true
+[zzx]   G=1 NR=4: B1=0.186 B2=0.360 B3=0.534 B4=0.706 B5=0.876 B6=1.057 B7=1.213 B8=1.387 bits=true
+[zzx]   G=1 NR=6: B1=0.194 B2=0.472 B3=0.692 B4=0.905 B5=1.106 B6=1.318 B7=1.527 B8=1.753 bits=true
+[zzx]   G=1 NR=8: B1=0.453 B2=0.972 B3=1.460 B4=1.939 B5=2.411 B6=2.892 B7=3.374 B8=3.856 bits=true
+end 2026-11-06 10:23:14 load1 2.07

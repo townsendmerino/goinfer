@@ -11,7 +11,7 @@ Diagnosis only; no product change. Question (coordinator, from sb11m's reading o
 ### What it is not (measured)
 - **Not a fallback, a re-upload or a sync per row.** One token: 322 dispatches, 1 command buffer, 1 host wait. One 8-row step: 320 dispatches, 1 command buffer, 1 host wait. GPU-busy is 951.8 ms of a 952.9 ms wall (run 1): no host bubble.
 - **Not per-row dequantization on the host, and not attention.** The same 8-row step costs 944 → 958 ms from position 0 to 448 (+1.5%), and `pAttnRows` is 32 dispatches of the 320. Phi-3's head dim 96 keeps it off flash-decode (`attnFAHeadDimOK` takes only 128, or 64 at group 7), but both arms then run the plain kernels and position barely moves the step.
-- **Not the step's fixed cost.** B = 1 through the same rows kernels sums to 24.4 ms (32 layers × 0.764 ms, run 2), within about a millisecond of `Forward`'s 23.0 ms.
+- **Not the step's fixed cost.** The four GEMV groups at B = 1 sum to 24.4 ms over 32 layers (0.764 ms a layer, run 2), about all of `Forward`'s 23.0 ms token (run 1): the body GEMVs are essentially the whole token, and at B = 1 the rows kernels cost what `Forward` costs.
 
 ### What it is (measured)
 Phi-3 (run 1, the valid cell; ms; the 5.1/4.9/4.8/4.6× column is step ÷ (B × Forward)):
@@ -23,7 +23,7 @@ Phi-3 (run 1, the valid cell; ms; the 5.1/4.9/4.8/4.6× column is step ÷ (B × 
 | 256 | 24.4 | 65.2 | 147.0 | 953.4 | 4.88× |
 | 448 | 25.5 | 66.9 | 150.1 | 958.0 | 4.70× |
 
-The step is already slower per row at B = 2 (1.31–1.37×) and B = 4 (1.47–1.54×), then jumps 6.6× from B = 4 to B = 8. No B beats the sequential loop. Layer 0, GPU ms per call, by B (run 2 / run 3 agree within 12%; both are void by the rule, below, so read the shape):
+The step is already slower per row at B = 2 (1.32–1.37×) and B = 4 (1.47–1.54×), then jumps 6.6× from B = 4 to B = 8. No B beats the sequential loop. Layer 0, GPU ms per call, by B (run 2 / run 3 agree within 12%; both are void by the rule, below, so read the shape):
 
 | group (kernel, rows) | B=1 | B=2 | B=4 | B=5 | B=8 | B=8 ÷ B=1 |
 |---|---|---|---|---|---|---|
@@ -60,13 +60,76 @@ Both slow kernels unroll the row loop fully (`SA_ROWS_UNROLL` is `clang loop unr
 Capping the step at 4 rows does not help: B = 4 is already 1.5× slower per row on Phi-3 and 1.0× on the 1.5B. My reading: 1 now, because it is small, reversible and restores the sequential speed, then 3 as its own tracked item with 2 as the fallback if the kernel's order cannot be kept.
 
 ## Risks outside this question (not measured)
-- **Concurrent decode (MC3) and the n-gram verify use the same rows kernels** (`StepBatch`, `PrefillLastNArgmax`, `stepVerifyCost`). At two clients on Phi-3 the step costs 1.33× per row what the sequential token does, so batching two q4k clients may be slower than serving them one after the other; on the 1.5B B = 2 is 0.86×. I measured the kernels, not the served path.
+- **Concurrent decode (MC3) and the n-gram verify use the same rows kernels** (`StepBatch`, `PrefillLastNArgmax`, `stepVerifyCost`). At two clients on Phi-3 the step costs 1.37× per row what the sequential token does (run 1), so batching two q4k clients may be slower than serving them one after the other; on the 1.5B B = 2 is 0.86×. I measured the kernels, not the served path.
 - The registered P29 bands (`docs/queue-performance.md`) are written on the 0.5B; Phi-3's reading would be OFF (median under 1.00) by them, and its A/B passes only because it asserts no band.
 
 ## Runs, voids, and what is not clean
 - **Run 1 (`raw/run1.log`, 07:13): valid.** Load 2.68, 8.19 GB reclaimable against a need of 5.68 GB + 2 GB. The probe then lacked the per-kernel section.
-- **Run 2 (`raw/run2.log`, 07:28): VOID by the load rule** (1-minute load 5.02 > 4.0; the rule is half the Mac's 8 cores), kept because its shape matches runs 1 and 3 (steps within 3%, per-kernel within 12%); its memory was not recorded. Read its per-kernel table for shape, not magnitude.
+- **Run 2 (`raw/run2.log`, 07:28): VOID by the load rule** (1-minute load 5.02 > 4.0; the rule is half the Mac's 8 cores), kept because its shape matches runs 1 and 3 (steps within 3%, per-kernel within 12%); it recorded 6.11 GB reclaimable, also under the 7.68 GB needed, so it is void twice. Read its per-kernel table for shape, not magnitude.
 - **Run 3 (`raw/run3.log`, 07:31): Phi-3 cell VOID by the memory rule** (6.84 GB reclaimable below the 7.68 GB needed; load 3.76). Its 0.5B and 1.5B cells are valid (load 3.79 and 3.65, 8.64 and 8.41 GB reclaimable). Listed, not averaged.
 - **Run 4 (`raw/run4.sh`): aborted, no reading.** It was meant to re-take the Phi-3 cell once load was at most 4.0 and 7.7 GB were reclaimable. It polled for those inside the exclusive lock, so it held the lock for 14 minutes (07:34 to 07:48) while memory sat near 4.4 GB and other sessions' builds were refused; I stopped it. A re-take should poll outside the lock and take it only when both gates hold. Until then Phi-3's per-kernel magnitudes rest on voided cells and its step table on run 1.
 - The pre-existing A/B (0.213) and this probe agree: 8 rows at 944–958 ms is 118–120 ms a row against 23–25 ms, 0.19–0.21.
 - Other sessions' loaders ran beside the lock at times (touched.py, a Metal package test), as the lock status showed; none held it exclusive during a cell.
+
+## Outcome: the kernel fix (Francis's option 3, 2026-11-06)
+
+**Fixed, to parity or better.** Branch `p29-rows-kernels-2026-11`: the step's Q4_K and Q5_K rows kernels (`backend/metal/batch_rows.go`) now loop over the B activation rows (a loop the compiler is told not to unroll) and compute two output rows per simdgroup (`stepRowsNR`). Same arithmetic for every (output row, activation row), same lane map, so the bits are decode's. Q6_K was already healthy and is unchanged.
+
+### End-to-end A/B (exclusive lock, 11:31–12:01 PST, order old new new old)
+Sequential loop ÷ step on a 512-token prompt at one KV slot, `oneSlotPrefillAB` (the body of `TestOneSlotStep_phi3PrefillAB`, called through a scratch test with each model's `~/models` path), 5 pairs per run, two runs per arm; "old" is the kernels at `origin/main`. Above 1 the step is faster. Every cell started at load1 ≤ 2.8 and with ≥ 8.6 GB reclaimable (Phi-3 needs 7.68), listed in `fix/ab.log`; none void.
+
+| model | old, run 1 / run 2 (medians) | new, run 1 / run 2 | new's 10 pairs |
+|---|---|---|---|
+| Phi-3 mini 4k q4 | 0.213 / 0.215 | **1.140 / 1.151** | 1.131 to 1.162, all above 1 |
+| qwen2.5-coder-1.5b q4_k_m | 0.344 / 0.343 | **1.561 / 1.592** | 1.554 to 1.593 |
+| qwen2.5-coder-0.5b q4_k_m | 1.632 / 1.636 | **2.373 / 2.395** | 2.260 to 2.409 |
+
+Every new pair beats every old pair (the largest old Phi-3 pair is 0.248; the smallest new one 1.131). Phi-3 goes from 4.7× slower than the loop to 1.14–1.15× faster, about 5.3× the old step. **Caveat, like for like:** the step runs no head on its first 511 tokens and the loop runs the head on all of them, so each ratio includes the skipped head work. That is small on Phi-3 (32,064 × 3,072) and larger on the 1.5B and 0.5B (151,936-wide vocabulary); I did not measure the split, so read the 1.5B and 0.5B gains as "up to this much from kernels". Phi-3's 1.14× is the most conservative of the three.
+
+### MC3 concurrent decode, two clients on Phi-3 (reported, not graded)
+Two single-token `Forward`s ÷ one two-row step on two slots, both with the head, 10 pairs in alternating order, positions 64–73, `ctx 1024`:
+
+| arm | median | range |
+|---|---|---|
+| old, run 1 / run 2 | 0.778 / 0.727 | 0.721 to 0.958 |
+| new, run 1 / run 2 | **0.999 / 0.998** | 0.994 to 1.010 |
+
+At two clients the step costs the same as serving the two requests one after the other; before, it cost about 1.3–1.4× as much. No gain at two clients, no loss.
+
+### Bits and the registered bar
+- `TestKSC1_stepMatchesDecodeKernels` (Q4_K and int8, B = 1..8, K = 256, 1536, 3072, 4864, three modes, byte-equal against decode's rows kernels), `TestKSO1_stepMatchesDecode` (Q5_K and Q6_K, B = 1..8), `TestKSO1a_q4kBitsUnchanged`, `TestOneSlotStep_*` and `TestQ4KStep_*` all pass. `TestKSC1_stepRowsPlantIsRed` rotates the lane groups in the Q4_K kernel and 116,499 outputs differ. (Reversing the groups is not a plant: `simd_sum` is symmetric under it; two other first plants, swapping two terms of a sum and regrouping it, did not change a bit either.)
+- CLAUDE.md's bit-identical rule: bit-identical, yes; scratch and allocated memory not higher (the kernels add no buffer or threadgroup memory); faster on 10 of 10 timed pairs on Phi-3 against the loop (and against every old pair); it replaces the two kernels rather than adding a second path. All four hold.
+
+### What the kernel work found (all GPU ms per call, Phi-3 gate|up, B = 8 unless noted; logs in `fix/`)
+- The **full unroll** over the rows was the cliff: with the row loop not unrolled, 9.8 → 2.6 (`ablation.log`).
+- It is **not** the weight conversion (hoisting it changed nothing), the **row stride** (padding the activation rows by 16 to 128 floats: 10.1, 10.2, 10.3, 10.3, 10.3), or the **device loads** (staging the activations in threadgroup memory, patch kept: 10.7).
+- My first "all rows read the same activation row" run, 0.39, was invalid: the compiler merges identical rows.
+- **The ceiling is the sequential loop's.** Run one row at a time, the new kernel's 8 rows cost 1.85 ms; the decode kernel run eight times costs 1.86 ms. Tiles of 2 or 4 rows with the weights converted once were no faster (2.2 to 7.4, `rowtile-hoisted.log`), and 3 to 4 output rows a simdgroup match 2 (6 and 8 are slower, 2.5 and 5.5 ms). The per-(activation row × super-block) work is the floor, and it cannot be cut without changing the arithmetic order. Where the step's remaining 14% on Phi-3 comes from I did not measure: the GEMV groups are at parity (and the o-projection, with the decode kernel at 0.052 ms a call, is 0.36 against 0.42 ms for eight calls), so it is the work the loop does per token and the step does once or not at all: the head on every token, and a command buffer committed, waited on and read back per token (the step runs one command buffer per 8 rows and no head before the last). Unmeasured; the A/B's head caveat applies.
+- **Retracted (2026-11-06): "decode's 8-rows-a-simdgroup kernel is 1.8–2.2× slower than 2 rows at N = 3,072".** It came from a decode baseline timed first on each shape, on a cold GPU and cold pages (0.085 and 0.102 ms for the o-projection; the steady figure is 0.052 ms, `fix/decode-r-sweep.log`). The follow-up sweep of decode's own rows kernels is below.
+
+### The kernel-timing logs, as run
+These are synthetic-weight kernel timings (no model is loaded, buffers under 100 MB), so the memory term of the void rule does not apply; their scripts (`fix/timing_new.sh`, run through `retry.sh`) gate the 1-minute load average at the start only (load ≤ 4.0), not per cell.
+- `fix/ablation.log`: **void at its end**: load 3.02 at the start, 4.13 at the end, so its later cells ran past the 4.0 line and were not gated. Kept because its conclusion is a within-run contrast (the not-unrolled variant against the base kernel, same process); read it for the shape.
+- `fix/kernel-timing-old-vs-nr2.log` (08:57, load 3.75 to 3.04, old new new old): **predates `unroll(disable)`**. Its "new" arm is the first attempt, two output rows a simdgroup with the row loop still fully unrolled, not the shipped kernel; it is where the B = 3 and 4 regression at two rows a simdgroup showed up.
+- `fix/threadgroup-staging.log` (load 3.69 to 2.90) times the rejected threadgroup-staging patch; `fix/rowpass-variants.log` (2.21 to 2.07) and `fix/rowtile-hoisted.log` (0.30 to 1.10) are within the limit; the stride-padding readings (10.1 to 10.3 ms at every pad) were printed to the terminal and not kept as a log.
+- `fix/ab.log` has a gate line per cell (load and reclaimable memory) and is the only log that carries a claim of this README's headline.
+
+Experiment sources: `fix/rows_timing_test.go.txt`, `fix/rowpass_experiment_test.go.txt`, `fix/ab_test.go.txt` (scratch; not in the tree, which a layout ratchet protects).
+
+### Decode's rows-per-simdgroup choice (follow-up, 2026-11-06 14:16–14:18, load1 1.4, two runs)
+Decode's Q4_K, Q5_K and Q6_K rows kernels at R = 1..8 on the q4k lane's real shapes, one activation row, GPU ms per call, 40 calls in one command buffer, best of 3 (`fix/decode-r-sweep.log`, scratch source `fix/decode_r_sweep_test.go.txt`; the R = 1 entry is the first timed on each shape and runs high on the first run, 0.085 against 0.065 ms on the Phi-3 o-projection, which is how the retracted figure arose). The shipped R is q4k 8, q5k 4, q6k 4.
+
+| shape | shipped R | shipped | best R | best | gap |
+|---|---|---|---|---|---|
+| Phi-3 qkv (q5k 9,216 × 3,072) | 4 | 0.141 | 6 | 0.138 | 2% |
+| Phi-3 o (q4k 3,072 × 3,072) | 8 | 0.052 | 4 | 0.049 | 6% |
+| Phi-3 gate\|up (q4k 16,384 × 3,072) | 8 | 0.232 | 6–8 | 0.232 | 0 |
+| Phi-3 down (q6k 3,072 × 8,192) | 4 | 0.139 | 2 | 0.137 | 1% |
+| 1.5B qkv (q4k 1,792 × 1,536) | 8 | 0.030 | 6 | 0.024–0.026 | 17–20% |
+| 1.5B o (q4k 1,536 × 1,536) | 8 | 0.029–0.030 | 5–6 | 0.024–0.025 | 17–20% |
+| 1.5B gate\|up (q4k 17,920 × 1,536) | 8 | 0.169 | 6 | 0.166 | 2% |
+| 1.5B down (q6k 1,536 × 8,960) | 4 | 0.085 | 2 | 0.078 | 8% |
+| 7B-ish o (q4k 3,584 × 3,584) | 8 | 0.086 | 4 | 0.070 | 19% |
+| 7B-ish gate\|up (q4k 37,888 × 3,584) | 8 | 0.683 | 6–8 | 0.683 | 0 |
+
+**There is no regression; the choice is within 0 to 8% of the best on every shape that dominates a token, and 17–20% on the small q4k projections (N ≤ 3,584).** Summed over a token's GEMVs that is about 0.5 ms of the 1.5B's 14.3 ms (3–4%) and under 0.1 ms of Phi-3's 23 ms (0.3%). A rule like "R = 4 for q4k with N ≤ 4,096" would be bit-identical (R only sets how many output rows a simdgroup computes; every variant measured bit-identical to the production kernel in the experiment above) and worth a few percent on mid-size models at most. Not pursued; Francis decides whether a few percent on the small projections is worth a build-time table.

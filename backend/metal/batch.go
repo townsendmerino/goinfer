@@ -1431,6 +1431,10 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 	return logits, ids, nil
 }
 
+// stepRowsGrid is the threads a Q4_K or Q5_K step GEMV over rows output rows is dispatched on: stepRowsNR rows a simdgroup, rounded up
+// so a last partial tile gets its simdgroup (the kernels guard the rows past N).
+func stepRowsGrid(rows int) int { return (rows + stepRowsNR - 1) / stepRowsNR * 32 }
+
 // q4kStepGemv is q4kGemv for the B rows of a batched step: activation row m at ax + m*lda floats, output row m at
 // out + m*ldo, each segment into its own rows of every output row, each weight row read once for all B rows. A non-empty
 // bias is added per row, as decode's bias variant does; resid accumulates. Every row is decode's arithmetic
@@ -1455,9 +1459,9 @@ func (r *resident) q4kStepGemv(e *Encoder, B int, segs []q4kSeg, bias, ax Buffer
 		}
 		switch sg.kind {
 		case "q4k":
-			e.Dispatch(r.pQ4KRows[B], sg.rows*32, 256, sg.w, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
+			e.Dispatch(r.pQ4KRows[B], stepRowsGrid(sg.rows), 256, sg.w, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
 		case "q5k":
-			e.Dispatch(r.pQ5KRows[B], sg.rows*32, 256, sg.w, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
+			e.Dispatch(r.pQ5KRows[B], stepRowsGrid(sg.rows), 256, sg.w, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
 		case "q6k":
 			e.Dispatch(r.pQ6KRows[B], sg.rows*32, 256, sg.w, ax, o, uK, sg.uN, uLda, uLdo, bs, mode)
 		default:

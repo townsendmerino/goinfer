@@ -1,0 +1,115 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"fmt"
+	"math/rand"
+	"os"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// Scratch: GPU time per call of the step's Q4_K / Q5_K / Q6_K rows kernels at B = 1..8 on Phi-3 and 1.5B shapes, synthetic weights,
+// 20 calls in one command buffer, best of 3 (the same method as the P29 probe's per-kernel table, without loading a model).
+func TestZZStepRowsTiming(t *testing.T) {
+	if os.Getenv("GOINFER_ZZ_ROWS") == "" {
+		t.Skip("set GOINFER_ZZ_ROWS=1")
+	}
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skip(err)
+	}
+	variants := map[string]string{"base": mc3RowsKernels}
+	if os.Getenv("GOINFER_ZZ_X") != "" {
+		rep := func(old, nw string) string {
+			if !strings.Contains(mc3RowsKernels, old) {
+				t.Fatalf("variant: %q not in the kernel source", old)
+			}
+			return strings.Replace(mc3RowsKernels, old, nw, 1)
+		}
+		// all in the q4k rows kernel (the first occurrence of each); diagnostics only, not bit-identical
+		variants["A1-no-act-sums"] = rep("slo += (al[i].x + al[i].y) + (al[i].z + al[i].w);\n                shi += (ah[i].x + ah[i].y) + (ah[i].z + ah[i].w);", "slo = al[i].x; shi = ah[i].x;")
+		variants["A2-no-dots"] = rep("dlo += dot(float4(float(w & 15u), float((w >> 8u) & 15u), float((w >> 16u) & 15u), float((w >> 24u) & 15u)), al[i]);\n                dhi += dot(float4(float((w >> 4u) & 15u), float((w >> 12u) & 15u), float((w >> 20u) & 15u), float(w >> 28u)), ah[i]);", "dlo += al[i].x * float(w & 15u); dhi += ah[i].x * float(w >> 28u);")
+		variants["A3-one-load-per-row"] = rep("al[i] = alo4[i]; ah[i] = alo4[8u + i];", "al[i] = alo4[0u]; ah[i] = alo4[8u];")
+		variants["A4-no-unroll-rows"] = rep("SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {\n            device const float4* alo4", "_Pragma(\"clang loop unroll(disable)\") for (uint r = 0u; r < B; r++) {\n            device const float4* alo4")
+	}
+	for vname, vsrc := range variants {
+		lib, err := d.CompileLibrary(allKernels+vsrc, MSL3_1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pipe := func(n string) Pipeline {
+			p, e := d.NewComputePipeline(lib, n)
+			if e != nil {
+				t.Fatal(e)
+			}
+			return p
+		}
+		q := d.NewCommandQueue()
+		rng := rand.New(rand.NewSource(7))
+		nr := 1
+		if v, ok := any(stepRowsNRForTiming()).(int); ok {
+			nr = v
+		}
+		for _, s := range []struct {
+			name, kind string
+			N, K       int
+		}{
+			{"phi3 gate|up", "q4k", 16384, 3072}, {"phi3 o", "q4k", 3072, 3072}, {"phi3 qkv", "q5k", 9216, 3072}, {"phi3 down", "q6k", 3072, 8192},
+			{"1.5B gate|up", "q4k", 17920, 1536}, {"1.5B o", "q4k", 1536, 1536},
+		} {
+			var raw []byte
+			switch s.kind {
+			case "q4k":
+				raw = ksc1Q4KRaw(rng, s.N, s.K)
+			case "q5k":
+				raw = kso1Q5KRaw(rng, s.N, s.K)
+			default:
+				raw = kso1Q6KPlanes(kso1Q6KGGUF(rng, s.N, s.K), s.N, s.K)
+			}
+			w := d.NewBufferBytes(len(raw))
+			for i, c := range raw {
+				w.Int8s()[i] = int8(c)
+			}
+			pad := 0
+		if v := os.Getenv("GOINFER_ZZ_PAD"); v != "" {
+			fmt.Sscan(v, &pad)
+		}
+		act := make([]float32, 8*(s.K+pad))
+			for i := range act {
+				act[i] = float32(rng.NormFloat64())
+			}
+			init := make([]float32, 8*s.N)
+			bA, bB := NewBufferFloats(d, act), NewBufferFloats(d, make([]float32, s.N))
+			uK, uN, uLda, uLdo := NewBufferU32(d, uint32(s.K)), NewBufferU32(d, uint32(s.N)), NewBufferU32(d, uint32(s.K+pad)), NewBufferU32(d, uint32(s.N))
+			grid := s.N * 32
+			if s.kind != "q6k" {
+				grid = (s.N + nr - 1) / nr * 32
+			}
+			line := fmt.Sprintf("[zz] %s NR=%d %-13s %s N=%d K=%d GPU ms/call by B:", vname, nr, s.name, s.kind, s.N, s.K)
+			for B := 1; B <= 8; B++ {
+				p := pipe(fmt.Sprintf("mc3_gemv_%s_f32_rows%d", s.kind, B))
+				out := NewBufferFloats(d, slices.Clone(init[:B*s.N]))
+				best := 1e9
+				for rep := 0; rep < 3; rep++ {
+					e := q.Begin()
+					for i := 0; i < 20; i++ {
+						e.Dispatch(p, grid, 256, w, bA, out, uK, uN, uLda, uLdo, bB, NewBufferU32(d, 0))
+					}
+					e.End()
+					if err := e.Err(); err != nil {
+						t.Fatal(err)
+					}
+					if v := (e.GPUEnd() - e.GPUStart()) * 1000 / 20; v < best {
+						best = v
+					}
+				}
+				line += fmt.Sprintf(" B%d=%.3f", B, best)
+			}
+			fmt.Fprintln(os.Stderr, line)
+			d.ReleaseAll()
+		}
+	}
+}
