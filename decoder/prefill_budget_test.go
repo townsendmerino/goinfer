@@ -178,6 +178,40 @@ func TestFitBudgetSummary_pricesAgainstAvailableNotTotalRAM(t *testing.T) {
 	}
 }
 
+// FitBudgetSummary prices a context pin at the pin when the pin is within the model's window, and at the window when it is past it
+// (the load-time guard's rule): the banner's fit line must not state a KV cost for a context the model cannot reach.
+func TestFitBudgetSummary_clampsAPinToTheModelWindow(t *testing.T) {
+	const gguf = "testdata/gptoss_tiny.gguf"
+	defer injectHostRAM(t, 64<<30)()
+	defer injectHostRAMAvailable(t, 32<<30)()
+	summary := func(pin int) (ctx int, kv int64) {
+		t.Helper()
+		m, err := Load(gguf, Options{Quant: "int4", ResidentContext: pin})
+		if err != nil {
+			t.Fatalf("Load(pin %d): %v", pin, err)
+		}
+		defer m.Close()
+		c, k, _, _, known := m.FitBudgetSummary()
+		if !known {
+			t.Fatalf("pin %d: FitBudgetSummary reported unknown", pin)
+		}
+		return c, k
+	}
+	wctx, wkv := summary(0) // unpinned: priced at the window
+	if wctx <= 1 {
+		t.Fatalf("the unpinned summary prices a context of %d; the case reads nothing", wctx)
+	}
+	if c, k := summary(wctx * 8); c != wctx || k != wkv {
+		t.Errorf("a pin of %d past the window %d: ctx %d, KV %d bytes; want ctx %d, KV %d", wctx*8, wctx, c, k, wctx, wkv)
+	}
+	if c, k := summary(wctx); c != wctx || k != wkv {
+		t.Errorf("a pin at the window %d: ctx %d, KV %d bytes; want ctx %d, KV %d", wctx, c, k, wctx, wkv)
+	}
+	if c, k := summary(wctx / 2); c != wctx/2 || k >= wkv {
+		t.Errorf("a pin of %d inside the window %d: ctx %d, KV %d bytes; want that ctx and less than %d", wctx/2, wctx, c, k, wkv)
+	}
+}
+
 // prefillScratchBytes must scale with prompt length (the MLP term) and never fall below the
 // real, already-enforced attention scratch cap.
 func TestPrefillScratchBytes_scalesWithPromptLength(t *testing.T) {

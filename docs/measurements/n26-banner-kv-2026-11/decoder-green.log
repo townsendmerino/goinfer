@@ -1,0 +1,24 @@
+=== RUN   TestParityManifest_adapterFilesOwned
+--- PASS: TestParityManifest_adapterFilesOwned (0.08s)
+=== RUN   TestParityManifest_coreClosed
+    parity_core_test.go:138: core reaches 331 functions in 49 files
+--- PASS: TestParityManifest_coreClosed (1.61s)
+=== RUN   TestParityManifest_merge
+    parity_manifest_test.go:166: set -merge-rows <file> to merge collected PARITY_ROW lines
+--- SKIP: TestParityManifest_merge (0.00s)
+=== RUN   TestParityManifest_fresh
+    parity_manifest_test.go:420: staleness: 43/43 families enforced (the rest are validated_at:null and carry no hash to check)
+--- PASS: TestParityManifest_fresh (0.85s)
+=== RUN   TestParityManifest_methodTier
+--- PASS: TestParityManifest_methodTier (0.00s)
+=== RUN   TestParityKey_matchesFreshDepsHash
+--- PASS: TestParityKey_matchesFreshDepsHash (1.77s)
+=== RUN   TestParityKey_shadowMatchesDecoder
+    paritykey_test.go:203: 43 families, 31 with programs, 30 under the loader rule
+--- PASS: TestParityKey_shadowMatchesDecoder (1.97s)
+=== RUN   TestFitBudgetSummary_pricesAgainstAvailableNotTotalRAM
+--- PASS: TestFitBudgetSummary_pricesAgainstAvailableNotTotalRAM (0.00s)
+=== RUN   TestFitBudgetSummary_clampsAPinToTheModelWindow
+--- PASS: TestFitBudgetSummary_clampsAPinToTheModelWindow (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	6.323s
