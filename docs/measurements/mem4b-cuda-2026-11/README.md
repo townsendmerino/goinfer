@@ -41,3 +41,30 @@ The bar below is TWR-G3's, carried over unchanged; it was not set from that run.
 - **What is added:** five more pairs of the same two binaries, the same instrument and flags, the release arm first in each pair, each pair its own server start, each in its own `reading-N/`. The first registered run is `reading/` (pair 1) and counts; the development run is listed and **not** counted. Six pairs in all.
 - **The rule is unchanged** (the 922.6 MiB bar, the 100 MiB NOT NEEDED line, the replies equal) **and is applied to the median of each arm's `RssAnon` 10 s after the second turn over the six pairs**, with every pair's figures in the table. If the arms' figures overlap (some no-release value under some release value, or a spread above 1,000 MiB in either arm), the verdict is **INCONCLUSIVE**, not a pass: the release's effect would then not be separable from the collector's timing.
 - **Void:** as above, per pair. **Cost:** about 3 minutes a pair.
+
+## MEM4(b)-CUDA-G3 read, 2026-11-06 03:50 to 03:57 PST: INCONCLUSIVE by the amended rule
+
+`reading/` (pair 1), `reading-2/` to `reading-6/` (pairs 2 to 6) and their `.log` files. Load average 0.52 to 2.10 at every arm's start, no void arm, the replies equal ("Color.") in all six pairs. `RssAnon` 10 s after the second image turn, MiB:
+
+| pair | release | no-release | no-release minus release |
+|---|---|---|---|
+| 1 (the first registered run) | 473.8 | 2,015.5 | +1,541.7 |
+| 2 | 498.5 | 424.0 | −74.5 |
+| 3 | 462.8 | 537.1 | +74.3 |
+| 4 | 490.9 | 524.6 | +33.7 |
+| 5 | 504.3 | 452.3 | −52.0 |
+| 6 | 527.8 | 517.5 | −10.3 |
+| median | 494.7 | 521.1 | +26.3 |
+| range | 462.8 to 527.8 | 424.0 to 2,015.5 | |
+
+**Verdict: INCONCLUSIVE, as the amended rule says.** The medians differ by 26.3 MiB, which alone would be NOT NEEDED (under 100 MiB), but the no-release arm's spread (1,591.5 MiB) is over the 1,000 MiB line and its range overlaps the release arm's, so the rule does not let the median stand. The development run's 438.9 MiB is not counted; it agrees with five of the six.
+
+**What the six pairs show, and what they do not.**
+- Five of six no-release readings sit within 75 MiB of the release arm's. One pair (pair 1) read 2,015.5 MiB in the no-release arm and nothing else differs in that run. Whatever put 1.5 GiB in `RssAnon` there is not the tower's blocks being present in every no-release run, because the other five no-release runs ended near 520 MiB, below the 1,153.2 MiB the blocks measured on the Mac.
+- `RssFile` is the same in both arms in every pair (1,807.2 against 1,807.5 MiB after turn 2): the weights are file pages in both, so a release cannot show in `RssFile` either.
+- After turn 1 both arms usually hold about 1.6 GiB of `RssAnon` (1,616 to 1,695 MiB in 9 of 12 arm-runs); it is back near 500 MiB after turn 2, or already after turn 1 in two runs (pair 2 no-release 390.8, pair 3 release-arm turn 1 455.9 against its 462.8 at the end). That is the same in both arms, so it is the tower build's transient garbage waiting for the runtime to return it (the MEM6 finding's shape), not the blocks. Whether a `debug.FreeOSMemory` after a build would remove it was not measured here and is a separate question from MEM4(b).
+- Not shown: that the release does nothing for this model. The instrument reads `RssAnon` once, 10 s after a turn, and the runtime's return of freed pages decides that reading in a way one pair cannot separate from the release.
+
+**State of the work.** The release is already in `main` for CUDA: `releaseTowerBlocks` is called after the device tower is built for Qwen2.5-VL, Qwen3.5/Qwen3-VL, GLM-OCR and Gemma 4, and `internal/app/serveapp/tower_release_test.go` already pins, with a fake accelerator that is not Metal-specific, that the call is made once per attach and that a fallback onto reloaded blocks gives the same tower (`TestTowerRelease_gridTowersFallBackOnReloadedBlocks`, `TestTowerRelease_startupTowers`). So there is no code to add for CUDA, and a red-first test for a call that is already made and pinned would be red against nothing. The ledger's MEM4(b) row stays done (Mac gates TWR-G1 to G3); this adds the CUDA record. No claim that the CUDA host copy is saved is made, and none that it is not.
+
+**If this is to be settled,** it needs a reading that does not depend on collector timing: a `debug.FreeOSMemory` (or `runtime.ReadMemStats` heap-in-use) taken after the second turn in each arm, through a test hook, in more than one pair. That is a change to `serve` or a test hook and is the coordinator's call; it was not started.
