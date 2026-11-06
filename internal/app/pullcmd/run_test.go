@@ -98,19 +98,25 @@ func (rt toHub) RoundTrip(r *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(r2)
 }
 
-// withHub serves h for the test's HTTP and gives the user cache dir a temp home. Tests that call it are not parallel: it
-// replaces http.DefaultClient's transport, which pull uses.
-func withHub(t *testing.T, h *hub) {
+// withHub serves h for the test's HTTP and gives the user cache dir a temp home, which it returns, with no HuggingFace token in
+// the environment. Tests that call it are not parallel: it replaces http.DefaultClient's transport, which pull uses.
+func withHub(t *testing.T, h *hub) (home string) {
 	t.Helper()
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	prev := http.DefaultClient.Transport
 	http.DefaultClient.Transport = toHub{t: t, base: strings.TrimPrefix(srv.URL, "http://")}
 	t.Cleanup(func() { http.DefaultClient.Transport = prev })
-	home := t.TempDir()
+	home = t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
 	t.Setenv("LocalAppData", filepath.Join(home, "AppData", "Local"))
+	for _, token := range []string{"HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"} {
+		t.Setenv(token, "") // registers the restore
+		os.Unsetenv(token)
+	}
+	return home
 }
 
 // run calls f with stdout and stderr captured, and returns its exit code and what each stream got.
@@ -127,8 +133,10 @@ func run(t *testing.T, f func([]string) int, args ...string) (code int, stdout, 
 	}
 	prevOut, prevErr := os.Stdout, os.Stderr
 	os.Stdout, os.Stderr = out, errf
-	code = f(args)
-	os.Stdout, os.Stderr = prevOut, prevErr
+	func() {
+		defer func() { os.Stdout, os.Stderr = prevOut, prevErr }()
+		code = f(args)
+	}()
 	out.Close()
 	errf.Close()
 	o, _ := os.ReadFile(out.Name())
@@ -231,8 +239,8 @@ func TestRun_embedRefusesASplitSetBeforeFetching(t *testing.T) {
 	}
 }
 
-// Malformed command lines exit 2 before any request: no ref, an os/arch target without -embed, and an unknown selector's
-// listing is not reached either.
+// Malformed command lines exit 2 before any request: no ref, an os/arch target without -embed, and a ref that is neither
+// owner/repo nor a known model name (which also lists the known names).
 func TestRun_commandLineErrorsExit2WithoutARequest(t *testing.T) {
 	h := &hub{repos: map[string]map[string]hubFile{}}
 	withHub(t, h)
@@ -242,6 +250,7 @@ func TestRun_commandLineErrorsExit2WithoutARequest(t *testing.T) {
 	}{
 		{nil, "pull <owner/repo>"},
 		{[]string{"o/r:q4_k_m", "linux/amd64"}, "only meaningful with -embed"},
+		{[]string{"no-such-model-name"}, "known model names"},
 	} {
 		code, _, stderr := run(t, Run, c.args...)
 		if code != 2 || !strings.Contains(stderr, c.want) {
@@ -253,18 +262,28 @@ func TestRun_commandLineErrorsExit2WithoutARequest(t *testing.T) {
 	}
 }
 
-// A pull with no -o lands in the user cache, and the cache command then lists it, complete, with the path to pass to --model.
+// A pull with no -o lands in the user cache under the home it is given, prints the --model path to run it, and the cache command
+// then lists that path, complete.
 func TestRun_pullLandsInTheCacheThatCacheLists(t *testing.T) {
 	q4 := []byte("q4 weights")
-	withHub(t, &hub{repos: map[string]map[string]hubFile{"o/r": {"m-Q4_K_M.gguf": {q4, digest(q4)}}}})
+	home := withHub(t, &hub{repos: map[string]map[string]hubFile{"o/r": {"m-Q4_K_M.gguf": {q4, digest(q4)}}}})
 	if code, stdout, _ := run(t, RunCache); code != 0 || !strings.Contains(stdout, "holds no models") {
 		t.Fatalf("an empty cache: exit %d, stdout:\n%s", code, stdout)
 	}
-	if code, _, stderr := run(t, Run, "o/r:q4_k_m"); code != 0 {
+	code, stdout, stderr := run(t, Run, "o/r:q4_k_m")
+	if code != 0 {
 		t.Fatalf("pull: exit %d, stderr:\n%s", code, stderr)
 	}
-	code, stdout, _ := run(t, RunCache)
-	if code != 0 || !strings.Contains(stdout, "o/r") || !strings.Contains(stdout, "m-Q4_K_M.gguf") || strings.Contains(stdout, "INCOMPLETE") ||
+	_, after, ok := strings.Cut(stdout, "--model ")
+	path := strings.TrimSpace(after)
+	if !ok || !strings.HasPrefix(path, home) || filepath.Base(path) != "m-Q4_K_M.gguf" {
+		t.Fatalf("the pull's --model path %q (found %v) is not the file under the temp home %s\nstdout:\n%s", path, ok, home, stdout)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != string(q4) {
+		t.Fatalf("the cached file: %q (%v)", got, err)
+	}
+	code, stdout, _ = run(t, RunCache)
+	if code != 0 || !strings.Contains(stdout, "o/r") || !strings.Contains(stdout, path) || strings.Contains(stdout, "INCOMPLETE") ||
 		!strings.Contains(stdout, "1 model(s)") {
 		t.Errorf("cache after the pull: exit %d, stdout:\n%s", code, stdout)
 	}
@@ -344,11 +363,13 @@ func TestRun_listsASafetensorsRepoAndEmbedRefusesIt(t *testing.T) {
 		!strings.Contains(stdout, "o/r:safetensors") {
 		t.Errorf("listing: exit %d, stdout:\n%s", code, stdout)
 	}
+	fresh := &hub{repos: h.repos}
+	withHub(t, fresh)
 	code, _, stderr := run(t, Run, "o/r:safetensors", "-embed")
 	if code != 2 || !strings.Contains(stderr, "-embed bakes one GGUF file") {
 		t.Errorf("-embed on a checkpoint: exit %d, stderr:\n%s", code, stderr)
 	}
-	if h.asked("/o/r/resolve/main/model.safetensors") {
-		t.Errorf("the weights were asked for: %v", h.asks)
+	if len(fresh.asks) != 1 || fresh.asks[0] != "/api/models/o/r" { // the access check, then the refusal
+		t.Errorf("-embed on a checkpoint asked %v, want only the access check", fresh.asks)
 	}
 }
