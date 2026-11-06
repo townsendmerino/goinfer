@@ -1,0 +1,135 @@
+{
+ "load_avg_1min": 1.13,
+ "mem_available_mib": 61299,
+ "load_s": 18.0,
+ "decode_path": [
+  "decode path: cuda-resident (int4)"
+ ],
+ "at_listen": {
+  "VmLck_mib": 0.0,
+  "VmHWM_mib": 26347.7,
+  "RssAnon_mib": 190.9,
+  "RssFile_mib": 13680.6,
+  "RssShmem_mib": 12345.5,
+  "VmSwap_mib": 0.0
+ },
+ "big_mappings_at_listen": [
+  {
+   "range": "7ff3c2a00000-7ff713f52000",
+   "perms": "r--p",
+   "path": "/home/francis/models/gemma4-26b-q4_k_m.int4.e4h.cuda.v17.giw",
+   "rss_mib": 13574.2,
+   "shared_clean_mib": 0.0,
+   "shared_dirty_mib": 0.0,
+   "private_clean_mib": 13574.2,
+   "private_dirty_mib": 0.0,
+   "anonymous_mib": 0.0
+  }
+ ],
+ "rss_by_path_at_listen": [
+  {
+   "path": "/home/francis/models/gemma4-26b-q4_k_m.int4.e4h.cuda.v17.giw",
+   "mappings": 1,
+   "rss_mib": 13574.2,
+   "anonymous_mib": 0.0,
+   "perms": [
+    "r--p"
+   ]
+  },
+  {
+   "path": "/dev/zero (deleted)",
+   "mappings": 126,
+   "rss_mib": 12261.0,
+   "anonymous_mib": 0.0,
+   "perms": [
+    "rw-s"
+   ]
+  },
+  {
+   "path": "[anon: Go: heap]",
+   "mappings": 1,
+   "rss_mib": 106.8,
+   "anonymous_mib": 106.8,
+   "perms": [
+    "rw-p"
+   ]
+  },
+  {
+   "path": "/dev/nvidiactl",
+   "mappings": 27,
+   "rss_mib": 65.5,
+   "anonymous_mib": 0.0,
+   "perms": [
+    "r--s",
+    "rw-s"
+   ]
+  },
+  {
+   "path": "(anonymous)",
+   "mappings": 214,
+   "rss_mib": 52.3,
+   "anonymous_mib": 52.3,
+   "perms": [
+    "---p",
+    "rw-p"
+   ]
+  },
+  {
+   "path": "/home/francis/goinfer-bench/v025-bin/serve-mem10",
+   "mappings": 3,
+   "rss_mib": 27.9,
+   "anonymous_mib": 0.1,
+   "perms": [
+    "r--p",
+    "r-xp",
+    "rw-p"
+   ]
+  },
+  {
+   "path": "[heap]",
+   "mappings": 1,
+   "rss_mib": 26.3,
+   "anonymous_mib": 26.3,
+   "perms": [
+    "rw-p"
+   ]
+  },
+  {
+   "path": "/usr/lib64/libcuda.so.595.112.07",
+   "mappings": 5,
+   "rss_mib": 9.8,
+   "anonymous_mib": 1.2,
+   "perms": [
+    "r--p",
+    "r-xp",
+    "rw-p"
+   ]
+  }
+ ],
+ "after_5s": {
+  "VmLck_mib": 0.0,
+  "VmHWM_mib": 26347.7,
+  "RssAnon_mib": 194.2,
+  "RssFile_mib": 13680.6,
+  "RssShmem_mib": 12345.5,
+  "VmSwap_mib": 0.0
+ },
+ "device_mib": 6942,
+ "completion": " the capital of France is the capital of France is the capital of France is the",
+ "after_request": {
+  "VmLck_mib": 0.0,
+  "VmHWM_mib": 26347.7,
+  "RssAnon_mib": 224.3,
+  "RssFile_mib": 13680.7,
+  "RssShmem_mib": 12345.5,
+  "VmSwap_mib": 0.0
+ },
+ "peak_sampled": {
+  "VmLck_mib": 0,
+  "VmHWM_mib": 26347.7,
+  "RssAnon_mib": 319.9,
+  "RssFile_mib": 13680.7,
+  "RssShmem_mib": 12345.5,
+  "VmSwap_mib": 0
+ }
+}

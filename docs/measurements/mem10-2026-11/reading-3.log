@@ -1,0 +1,16 @@
+at_listen: VmLck 0.0 MiB (0.00 GiB), VmHWM 26,347.7 MiB (25.73 GiB), RssAnon 190.9 MiB (0.19 GiB), RssFile 13,680.6 MiB (13.36 GiB), RssShmem 12,345.5 MiB (12.06 GiB), VmSwap 0.0 MiB (0.00 GiB)
+after_5s: VmLck 0.0 MiB (0.00 GiB), VmHWM 26,347.7 MiB (25.73 GiB), RssAnon 194.2 MiB (0.19 GiB), RssFile 13,680.6 MiB (13.36 GiB), RssShmem 12,345.5 MiB (12.06 GiB), VmSwap 0.0 MiB (0.00 GiB)
+after_request: VmLck 0.0 MiB (0.00 GiB), VmHWM 26,347.7 MiB (25.73 GiB), RssAnon 224.3 MiB (0.22 GiB), RssFile 13,680.7 MiB (13.36 GiB), RssShmem 12,345.5 MiB (12.06 GiB), VmSwap 0.0 MiB (0.00 GiB)
+peak_sampled: VmLck 0.0 MiB (0.00 GiB), VmHWM 26,347.7 MiB (25.73 GiB), RssAnon 319.9 MiB (0.31 GiB), RssFile 13,680.7 MiB (13.36 GiB), RssShmem 12,345.5 MiB (12.06 GiB), VmSwap 0.0 MiB (0.00 GiB)
+largest mappings at listen:
+   13,574.2 MiB rss (13.26 GiB) anon 0.0  r--p  /home/francis/models/gemma4-26b-q4_k_m.int4.e4h.cuda.v17.giw
+Rss summed by pathname at listen:
+   13,574.2 MiB (13.26 GiB) in 1 mapping(s), anon 0.0 MiB  r--p  /home/francis/models/gemma4-26b-q4_k_m.int4.e4h.cuda.v17.giw
+   12,261.0 MiB (11.97 GiB) in 126 mapping(s), anon 0.0 MiB  rw-s  /dev/zero (deleted)
+      106.8 MiB (0.10 GiB) in 1 mapping(s), anon 106.8 MiB  rw-p  [anon: Go: heap]
+       65.5 MiB (0.06 GiB) in 27 mapping(s), anon 0.0 MiB  r--s,rw-s  /dev/nvidiactl
+       52.3 MiB (0.05 GiB) in 214 mapping(s), anon 52.3 MiB  ---p,rw-p  (anonymous)
+       27.9 MiB (0.03 GiB) in 3 mapping(s), anon 0.1 MiB  r--p,r-xp,rw-p  /home/francis/goinfer-bench/v025-bin/serve-mem10
+       26.3 MiB (0.03 GiB) in 1 mapping(s), anon 26.3 MiB  rw-p  [heap]
+        9.8 MiB (0.01 GiB) in 5 mapping(s), anon 1.2 MiB  r--p,r-xp,rw-p  /usr/lib64/libcuda.so.595.112.07
+load 18.0 s; device 6,942 MiB (6.78 GiB); load avg 1.13; 61,299 MiB available at start; ['decode path: cuda-resident (int4)']; completion ' the capital of France is the capital of France is the capital of France is the'

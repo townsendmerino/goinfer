@@ -1,46 +1,57 @@
 # MEM10: the 26B's host footprint on CUDA today (2026-11, nobara-sb01)
 
-MEM10 (`docs/tasks/task-memory-campaign-2026-10.md`, P36 in `docs/queue-performance.md`): "a pre-permuted `cuda` target registered from the mapping; M–L". Its row says B36 (#103) covered the rest, and §1.1's problem text (the whole expert
-stack in a fresh heap copy registered as pinned host memory, M26 12.85 GB) predates #95 and #103. Before an M–L build, a reading of what is left.
+**Units.** Every size here is in MiB (1 MiB = 1,048,576 bytes) or GiB (1 GiB = 1,024 MiB), with the unit written. An earlier version of this README divided MiB by 1,000 and called the result GB, which is neither;
+it is retracted and every figure below is restated. The raw JSON of the first two runs (`first-reading-void/`, `reading/`) is in bytes, as that version of the script wrote it; `reading-2/` and `reading-3/` are in MiB (`_mib` keys).
+The one figure quoted from elsewhere, the ledger's "M26 12.85 GB", is the ledger's own unit: decimal GB, 12.85 × 10^9 bytes = 12,254 MiB = 11.97 GiB.
 
-## MEM10-G0, a reading, registered 2026-11-05 (time from `date` at the run) before it ran
+MEM10 (`docs/tasks/task-memory-campaign-2026-10.md`, P36 in `docs/queue-performance.md`): "a pre-permuted `cuda` target registered from the mapping; M–L". Its row says B36 (#103) covered the rest, and §1.1's problem text (the whole expert stack in
+a fresh heap copy registered as pinned host memory, 12.85 GB decimal) predates #95 and #103. Before an M–L build, a reading of what is left. **A reading, not a build.**
 
-Read, not graded; it sets the size of what a build would save, or says there is nothing left.
+## MEM10-G0, a reading, registered 2026-11-05 before it ran
 
-- **Instrument:** `mem10_g0.py` here: `serve` (built from main, `CGO_ENABLED=0 go build -tags cuda ./backend/cuda/cmd/serve`) at its defaults except `--backend cuda --ctx 4096`, `~/models/gemma4-26b-q4_k_m.gguf` (local NVMe, through its `.giw` sidecar `gemma4-26b-q4_k_m.int4.e4h.cuda.v17.giw`), the exclusive timing lock. `/proc/<pid>/status` (`RssAnon`, `RssFile`, `RssShmem`, `VmLck`, `VmSwap`, `VmHWM`) when the server listens, 5 s after, after one 16-token greedy completion, and the peak sampled every 250 ms; device memory from `nvidia-smi`.
-- **What it answers:** how much anonymous or pinned host memory the 26B holds beyond the mapped weights, which is what the ledger's "registered from the mapping" would remove (the pinned copy shows as `RssShmem`/`VmLck`, the heap copy as `RssAnon`).
-- **Void:** the one-minute load above 8.0 at the start, or the swap tripwire closing the load. **One run.** Cost about 2 minutes.
-- **Nothing is decided on this reading:** whether a build is worth its size is the coordinator's and the owner's call; this README adds the figures and the arithmetic of what could be saved.
+Read, not graded. It sets the size of what a build would save, or says there is nothing left.
 
-## The first reading was void (2026-11-05 17:41 PST)
+- **Instrument:** `mem10_g0.py` here: `serve` (built from main) at its defaults except `--backend cuda --ctx 4096 --moe-cache-experts`, `~/models/gemma4-26b-q4_k_m.gguf` (local NVMe) through its sidecar `gemma4-26b-q4_k_m.int4.e4h.cuda.v17.giw` (13.27 GiB by `ls`), the exclusive timing lock. `/proc/<pid>/status` when the server listens, 5 s after, after one 16-token greedy completion, sampled every 250 ms for the peak; `/proc/<pid>/smaps` once at listen (the largest mappings, and `Rss` summed by pathname); device memory from `nvidia-smi`.
+- **Void, enforced by the script (a plant proves each):** the one-minute load average above 8.0 when the server is started; a server that does not start; a server whose log does not say `decode path: cuda-resident`. `plants.log`: with the load limit set to 0.0 the run is `VOID` before a server starts; with the decode-path check asking for a string the log never says, it is `VOID` after the server has started.
+- **Known limits of the instrument:** one run per reading; `/proc` is read from outside the process, so a peak shorter than 250 ms can be missed; `nvidia-smi` lists a process's device memory only when it reports compute apps (otherwise `device_mib` is null, printed n/a, as in the void run); a swap tripwire closing the load is not detected, only `VmSwap` is reported (0 in every run here).
 
-`first-reading-void/`. Started at serve's defaults with `--backend cuda --ctx 4096`, the 26B's CUDA build **declined** (`cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY` in `upExperts`: the whole expert stack does not fit an 8 GB card) and the server fell back to the CPU path (`decode path: cpu (int4)`, `serve.log`). Its 15.3 GB `RssAnon` and 9.7 GB `RssFile` are the CPU model's, not the CUDA expert cache's. It measures nothing about MEM10. The cell needs `--moe-cache-experts` (the elastic expert-slot mode, `docs/cuda-backend.md`).
+## The first run was void (2026-11-05 17:41 PST)
 
-## MEM10-G0 again, registered 2026-11-05 17:44 PST (the time from `date` at the run) before the reading
+`first-reading-void/`. Without `--moe-cache-experts` the 26B's CUDA build **declined** (`cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY` in `upExperts`: the whole expert stack does not fit an 8 GiB card) and the server fell back to the CPU path (`decode path: cpu (int4)`).
+Its `RssAnon` 15,258 MiB (14.90 GiB) and `RssFile` 9,728 MiB (9.50 GiB) are the CPU model's. It measures nothing about MEM10. That version of the script printed the decode path and did not enforce it; this one does.
 
-As above with **`--moe-cache-experts`** added to the server's flags, and the script now reads `decode path:` from the log. **A run whose log says the decode path is not `cuda` is void**, not a reading. One run, the exclusive timing lock, read and not graded.
+## The readings, 2026-11-05 (the exclusive timing lock, free; `serve` built from main; `decode path: cuda-resident (int4)` in every log)
 
+`reading/` (17:43, the first valid run; bytes), `reading-2/` (19:15, MiB), `reading-3/` (19:16, MiB; adds the `Rss`-by-pathname table). Load average 1.14, 1.70 and 1.13 at the start, about 60,000 MiB available. Three runs of one configuration, read and not graded; they agree to within 100 MiB on every row below.
 
-### The reading, 2026-11-05 17:43:25 to 17:43:55 PST
+`reading-3/`, MiB (GiB):
 
-`reading/` (`reading.json`, `serve.log`), `reading.log`. `serve` at `1822c6f09` (main), `--backend cuda --ctx 4096 --moe-cache-experts`, `~/models/gemma4-26b-q4_k_m.gguf` through its sidecar, the exclusive timing lock (free), load 1.14, 61.5 GB available. The log reads `decode path: cuda-resident (int4)`: a valid run. One run, read and not graded.
+| `/proc/<pid>/status` | at listen (18 s) | after one 16-token completion | peak sampled |
+|---|---|---|---|
+| `RssAnon` | 172 (0.17) | 224 (0.22) | 320 (0.31) |
+| `RssFile` | **13,681 (13.36)** | 13,681 (13.36) | 13,681 (13.36) |
+| `RssShmem` | **12,346 (12.06)** | 12,346 (12.06) | 12,346 (12.06) |
+| `VmLck` | 0 | 0 | 0 |
+| `VmSwap` | 0 | 0 | 0 |
+| `VmHWM` | **26,348 (25.73)** | 26,348 (25.73) | 26,348 (25.73) |
+| device memory (`nvidia-smi`) | 6,942 (6.78) | | |
 
-| `/proc/<pid>/status`, MiB | at listen (21 s) | 5 s later | after one 16-token completion | peak sampled |
-|---|---|---|---|---|
-| `RssAnon` | 188 | 191 | 220 | 320 |
-| `RssFile` | **13,681** | 13,681 | 13,681 | 13,681 |
-| `RssShmem` | **12,345** | 12,345 | 12,345 | 12,345 |
-| `VmLck` | 0 | 0 | 0 | |
-| `VmSwap` | 0 | 0 | 0 | 0 |
-| `VmHWM` | 26,345 | 26,345 | 26,345 | 26,345 |
-| device memory (`nvidia-smi`) | 6,942 | | | |
+`Rss` summed by pathname at listen (`smaps`, `reading-3/reading.json`):
 
-**What it says.** The 26B's sidecar is 13.27 GiB (`ls`) and it is mapped (`RssFile` 13.7 GB, which also holds the binary and libraries). The expert cache also holds **12.3 GB of `RssShmem`**: the host copy the experts are served from (the ledger's "M26 12.85 GB pinned host"; this is the same memory, now shown as shared-memory pages rather than heap, which is why `RssAnon` is only 188 MiB). So the experts are in host memory **twice**, as the file's pages and as that copy, and the process's `VmHWM` is **26.3 GB for a 13.6 GB model**. A pre-permuted target registered from the mapping would remove the second copy: up to 12.3 GB of host memory on this box, which is the ledger's saving, **and #103 did not remove it** (its row says "B36 (#103) covered the rest"; what it removed is the heap copy).
+| pathname | mappings | `Rss` MiB (GiB) | what it is |
+|---|---|---|---|
+| `…/gemma4-26b-q4_k_m.int4.e4h.cuda.v17.giw` | 1 | 13,574 (13.26) | the sidecar, mapped read-only: `RssFile` |
+| `/dev/zero (deleted)` | 126 | **12,261 (11.97)**, `rw-s` | a shared anonymous region: `RssShmem` |
+| `[anon: Go: heap]` | 1 | 107 (0.10) | the Go heap: `RssAnon` |
+| `/dev/nvidiactl` | 27 | 66 (0.06) | the driver's mappings |
 
-**What this reading does not say, and the build's risks:**
-- Whether CUDA can register a file-backed mapping as page-locked and serve the expert slots' uploads from it at the same speed is not known. `upExperts`'s own comment records that a zero-copy direct read of a host stack was tried and mis-read by `gemv_w4a8_moe` at width; the registered-from-the-mapping plan uploads from the pages (a copy per slot fill, as today) and is a different question, but it is untested. A tier 0 probe (register a mapped file, upload slots from it, byte-compare with today's packing) is the first step and is small.
-- `VmLck` reads 0, so the 12.3 GB is not counted as locked by the kernel; whether it is pinned by the driver in a way `/proc` does not show was not checked.
-- The `.giw`'s `cuda` target still writes the canonical kind, so the sidecar's bytes are not in the layout the upload wants; a pre-permuted target changes the file format's cuda variant (version 17's "new encoding needs no new version" rule applies) and every cached cuda sidecar.
-- This is one run on one box, 8 GB card, 62 GB RAM. On a smaller-RAM box the second copy decides whether the model loads at all.
+**What it says.** The sidecar is mapped (13.26 GiB of file pages) and the process also holds a **11.97 GiB shared anonymous region in 126 mappings of `/dev/zero (deleted)`**, so the experts' bytes are in host memory twice, and `VmHWM` is 25.73 GiB for a 13.27 GiB sidecar. The Go heap is 0.10 GiB: the heap copy is gone, as #103's row says. The ledger's "12.85 GB" (decimal) is 12,254 MiB; this region is 12,261 MiB, 7 MiB more, which matches by size. A pre-permuted target registered from the mapping would remove it: up to about 12 GiB of host memory on this box.
 
-**No build is started on this reading.** MEM10 stays open in the ledger with this figure; whether a 12.3 GB saving justifies an M–L change to the sidecar format is the coordinator's and the owner's call.
+**What the reading does not show.**
+- That the region is the expert cache. `smaps` names a pathname, `/dev/zero (deleted)`, and a size; it does not name the allocator. Calling it the expert cache rests on the size match with the ledger's figure and on `upExperts`'s own comment, not on a call stack.
+- Whether CUDA can register a file-backed mapping as page-locked and serve the expert slots' uploads from it at today's speed. `upExperts` records that a zero-copy direct read of a host stack was tried and mis-read by `gemv_w4a8_moe` at width; the registered-from-the-mapping plan uploads from the pages, a different question, untested here. A tier 0 probe (register a mapped file, upload slots from it, byte-compare with today's packing) is the first step and is small.
+- `VmLck` reads 0, so the kernel does not count the region as locked; how the driver pins it was not checked.
+- The `.giw`'s `cuda` target still writes the canonical kind, so a pre-permuted target changes that variant of the file format (version 17's "a new encoding needs no new version" applies) and every cached cuda sidecar.
+- One box, an 8 GiB card, 62 GiB of RAM. On a box with less RAM the second copy decides whether the model loads at all.
+
+**No build is started on this reading.** Whether a saving of about 12 GiB justifies an M–L change to the sidecar format is the coordinator's and the owner's call.
