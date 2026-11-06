@@ -24,10 +24,10 @@ func (r gpuRecord) valid() (bool, string) {
 	return true, ""
 }
 
-// gpuCoverage is, for one backend, whether the records cover head. The newest record made at the same code (every
+// gpuCoverageR is, for one backend, whether the records cover head. The newest record made at the same code (every
 // gpuQualifyingTrees directory identical) decides, whatever its verdict: a later FAIL at unchanged code is not hidden by an
 // earlier PASS. With no record at the same code, the reason names the newest record and what changed since it.
-func gpuCoverage(recs []gpuRecord, backend, head string, treeOf func(rev, dir string) (string, error)) (*gpuRecord, string) {
+func gpuCoverageR(recs []gpuRecord, backend, head string, treeOf func(rev, dir string) (string, error)) (cover, failed *gpuRecord, why string) {
 	var newest *gpuRecord
 	var newestWhy string
 	for i := len(recs) - 1; i >= 0; i-- {
@@ -37,22 +37,28 @@ func gpuCoverage(recs []gpuRecord, backend, head string, treeOf func(rev, dir st
 		}
 		changed, err := r.changedSince(head, treeOf)
 		if err != nil {
-			return nil, err.Error()
+			return nil, nil, err.Error()
 		}
 		if changed == "" {
 			if ok, why := r.valid(); !ok {
-				return nil, fmt.Sprintf("the newest record at this code (%s @ %s) does not count: %s", r.Date, r.Commit[:8], why)
+				return nil, r, fmt.Sprintf("the newest record at this code (%s @ %s) does not count: %s", r.Date, r.Commit[:8], why)
 			}
-			return r, ""
+			return r, nil, ""
 		}
 		if newest == nil {
 			newest, newestWhy = r, fmt.Sprintf("newest record %s @ %s: %s/ changed since", r.Date, r.Commit[:8], changed)
 		}
 	}
 	if newest == nil {
-		return nil, "no record"
+		return nil, nil, "no record"
 	}
-	return nil, newestWhy
+	return nil, nil, newestWhy
+}
+
+// gpuCoverage is gpuCoverageR without the record that failed to count.
+func gpuCoverage(recs []gpuRecord, backend, head string, treeOf func(rev, dir string) (string, error)) (*gpuRecord, string) {
+	cover, _, why := gpuCoverageR(recs, backend, head, treeOf)
+	return cover, why
 }
 
 // valid says whether the run itself is one a release can lean on: no blocker, on a clean tree, with the real-checkpoint tier
@@ -71,31 +77,37 @@ func (r parityRecord) valid() (bool, string) {
 	return true, ""
 }
 
-// parityCoverage is whether the records cover head. The newest record made at the same code decides, whatever its verdict: a
+// parityCoverageR is whether the records cover head. The newest record made at the same code decides, whatever its verdict: a
 // later sweep with blockers at unchanged code is not hidden by an earlier clean one. With no record at the same code, the reason
 // names the newest record and what changed since it.
-func parityCoverage(recs []parityRecord, head string, paths []string, objOf func(rev, path string) (string, error)) (*parityRecord, string) {
+func parityCoverageR(recs []parityRecord, head string, paths []string, objOf func(rev, path string) (string, error)) (cover, failed *parityRecord, why string) {
 	newestWhy := ""
 	for i := len(recs) - 1; i >= 0; i-- {
 		r := &recs[i]
 		changed, err := r.changedSince(head, paths, objOf)
 		if err != nil {
-			return nil, err.Error()
+			return nil, nil, err.Error()
 		}
 		if changed == "" {
 			if ok, why := r.valid(); !ok {
-				return nil, fmt.Sprintf("the newest record at this code (%s @ %s) does not count: %s", r.Date, short8(r.Commit), why)
+				return nil, r, fmt.Sprintf("the newest record at this code (%s @ %s) does not count: %s", r.Date, short8(r.Commit), why)
 			}
-			return r, ""
+			return r, nil, ""
 		}
 		if newestWhy == "" {
 			newestWhy = fmt.Sprintf("newest record %s @ %s: %s changed since", r.Date, short8(r.Commit), changed)
 		}
 	}
 	if newestWhy == "" {
-		return nil, "no record"
+		return nil, nil, "no record"
 	}
-	return nil, newestWhy
+	return nil, nil, newestWhy
+}
+
+// parityCoverage is parityCoverageR without the record that failed to count.
+func parityCoverage(recs []parityRecord, head string, paths []string, objOf func(rev, path string) (string, error)) (*parityRecord, string) {
+	cover, _, why := parityCoverageR(recs, head, paths, objOf)
+	return cover, why
 }
 
 // valid says whether the run is one a release can lean on: every cell run, green, on a clean tree.
@@ -113,10 +125,10 @@ func (r quickRecord) valid() (bool, string) {
 	return true, ""
 }
 
-// quickCoverage is, for one operating system, whether the records cover head. The newest record made there at the
+// quickCoverageR is, for one operating system, whether the records cover head. The newest record made there at the
 // same code decides, whatever its verdict, so a later FAIL at unchanged code is not hidden by an earlier PASS.
 // changed lists the paths that differ between two revisions.
-func quickCoverage(recs []quickRecord, goos, head string, changed func(from, to string) ([]string, error)) (*quickRecord, string) {
+func quickCoverageR(recs []quickRecord, goos, head string, changed func(from, to string) ([]string, error)) (cover, failed *quickRecord, why string) {
 	var newestWhy string
 	for i := len(recs) - 1; i >= 0; i-- {
 		r := &recs[i]
@@ -125,7 +137,7 @@ func quickCoverage(recs []quickRecord, goos, head string, changed func(from, to 
 		}
 		paths, err := changed(r.Commit, head)
 		if err != nil {
-			return nil, fmt.Sprintf("could not compare %s with HEAD: %v", r.Commit[:8], err)
+			return nil, nil, fmt.Sprintf("could not compare %s with HEAD: %v", r.Commit[:8], err)
 		}
 		first := ""
 		for _, p := range paths {
@@ -136,18 +148,24 @@ func quickCoverage(recs []quickRecord, goos, head string, changed func(from, to 
 		}
 		if first == "" {
 			if ok, why := r.valid(); !ok {
-				return nil, fmt.Sprintf("the newest record at this code (%s @ %s) does not count: %s", r.Date, r.Commit[:8], why)
+				return nil, r, fmt.Sprintf("the newest record at this code (%s @ %s) does not count: %s", r.Date, r.Commit[:8], why)
 			}
-			return r, ""
+			return r, nil, ""
 		}
 		if newestWhy == "" {
 			newestWhy = fmt.Sprintf("newest record %s @ %s: %s changed since", r.Date, r.Commit[:8], first)
 		}
 	}
 	if newestWhy == "" {
-		return nil, "no record"
+		return nil, nil, "no record"
 	}
-	return nil, newestWhy
+	return nil, nil, newestWhy
+}
+
+// quickCoverage is quickCoverageR without the record that failed to count.
+func quickCoverage(recs []quickRecord, goos, head string, changed func(from, to string) ([]string, error)) (*quickRecord, string) {
+	cover, _, why := quickCoverageR(recs, goos, head, changed)
+	return cover, why
 }
 
 // ciVerdict reads the runs for the full sha: the ci workflow must be completed (at the RUN level, not job by job) and successful.

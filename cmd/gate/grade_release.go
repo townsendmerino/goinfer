@@ -16,7 +16,7 @@ import (
 // relRow is one pre-flight read.
 type relRow struct {
 	Name   string
-	State  string // "done", "OWED" or "UNKNOWN"
+	State  string // "done", "accepted" (red, and accepted in the release's accepted file), "OWED" or "UNKNOWN"
 	Detail []string
 	Record string // the path that proves it, or that is missing
 }
@@ -60,6 +60,9 @@ func relReplayLook(looks []relLookup, missing *[]string) func(kind string, args 
 	}
 	return func(kind string, args ...string) (string, error) {
 		l, ok := ans[relLookupKey(kind, args)]
+		if !ok && kind == "accepted" {
+			return "", nil // a record made before the accepted file existed holds no answer: nothing was accepted
+		}
 		if !ok {
 			if out, err, handled := absentBeforeMove(kind, args, func(k string, a ...string) bool {
 				_, ok := ans[relLookupKey(k, a)]
@@ -351,16 +354,35 @@ func rowGPU(e *relEnv) relRow {
 	treeOf := func(rev, d string) (string, error) {
 		return treeAt(func(r, dd string) (string, error) { return e.git("rev-parse", r+":"+dd) }, rev, d)
 	}
-	var bad, ok []string
+	var bad, ok, acc []string
 	for _, be := range []string{"cuda", "metal"} {
-		if r, why := gpuCoverage(recs, be, head, treeOf); r != nil {
+		r, failed, why := gpuCoverageR(recs, be, head, treeOf)
+		switch {
+		case r != nil:
 			ok = append(ok, fmt.Sprintf("%s: %s @ %s", be, r.Date, r.Commit[:8]))
-		} else {
+		case failed != nil:
+			file := recordFileName(failed.Backend, failed.Date, failed.Commit)
+			if ents, problem := acceptedFor(e, file); len(ents) > 0 {
+				if ok, short := coversReds(ents, gpuReds(failed)); ok {
+					acc = append(acc, acceptedLines(be+" "+file, ents)...)
+				} else {
+					bad = append(bad, be+": "+why, "  "+short)
+				}
+			} else {
+				bad = append(bad, be+": "+why)
+				if problem != "" {
+					bad = append(bad, "  "+problem)
+				}
+			}
+		default:
 			bad = append(bad, be+": "+why)
 		}
 	}
 	if len(bad) > 0 {
-		return owed(name, gpuRecordDirDefault+"/<backend>-<time>-<commit>.json", append(bad, "run `go run ./cmd/gate gpu` on that box (cuda: about 83 minutes, queue it at night) and commit the record")...)
+		return owed(name, gpuRecordDirDefault+"/<backend>-<time>-<commit>.json", append(append(bad, acc...), "run `go run ./cmd/gate gpu` on that box (cuda: about 83 minutes, queue it at night) and commit the record")...)
+	}
+	if len(acc) > 0 {
+		return accepted(name, gpuRecordDirDefault, append(ok, acc...)...)
 	}
 	return done(name, gpuRecordDirDefault, ok...)
 }
@@ -635,7 +657,21 @@ func rowParity(e *relEnv) relRow {
 	if err != nil {
 		return owed(name, want, err.Error())
 	}
-	r, why := parityCoverage(recs, head, paths, e.gitObject)
+	r, failed, why := parityCoverageR(recs, head, paths, e.gitObject)
+	if r == nil && failed != nil {
+		file := recordFileName("parity", failed.Date, failed.Commit)
+		ents, problem := acceptedFor(e, file)
+		if ok, short := coversReds(ents, parityReds(failed)); len(ents) > 0 && !ok {
+			return owed(name, want, why, short, how)
+		}
+		if len(ents) > 0 {
+			return accepted(name, parityRecordDirDefault, append([]string{fmt.Sprintf("%s @ %s on %s: verdict %s, %d blocker(s)", failed.Date, short8(failed.Commit), failed.Host, failed.Verdict, failed.Blockers)},
+				acceptedLines(file, ents)...)...)
+		}
+		if problem != "" {
+			return owed(name, want, why, problem, how)
+		}
+	}
 	if r == nil {
 		return owed(name, want, why, how)
 	}
@@ -678,17 +714,36 @@ func rowQuickFull(e *relEnv) relRow {
 		}
 		return strings.Split(out, "\n"), nil
 	}
-	var bad, ok []string
+	var bad, ok, acc []string
 	for _, goos := range quickRecordSystems {
-		if r, why := quickCoverage(recs, goos, head, changed); r != nil {
+		r, failed, why := quickCoverageR(recs, goos, head, changed)
+		switch {
+		case r != nil:
 			ok = append(ok, fmt.Sprintf("%s: %s @ %s (%d pass, %d skip)", goos, r.Date, r.Commit[:8], r.Pass, r.Skip))
-		} else {
+		case failed != nil:
+			file := recordFileName(failed.OS+"-"+failed.Arch, failed.Date, failed.Commit)
+			if ents, problem := acceptedFor(e, file); len(ents) > 0 {
+				if ok, short := coversReds(ents, quickReds(failed)); ok {
+					acc = append(acc, acceptedLines(goos+" "+file, ents)...)
+				} else {
+					bad = append(bad, goos+": "+why, "  "+short)
+				}
+			} else {
+				bad = append(bad, goos+": "+why)
+				if problem != "" {
+					bad = append(bad, "  "+problem)
+				}
+			}
+		default:
 			bad = append(bad, goos+": "+why)
 		}
 	}
 	if len(bad) > 0 {
 		return owed(name, quickRecordDirDefault+"/<os>-<arch>-<time>-<commit>.json",
-			append(bad, "run `go run ./cmd/gate quick -full -base <the previous tag>` on that box (about 10 minutes on the Mac; queue it at night) and commit the record")...)
+			append(append(bad, acc...), "run `go run ./cmd/gate quick -full -base <the previous tag>` on that box (about 10 minutes on the Mac; queue it at night) and commit the record")...)
+	}
+	if len(acc) > 0 {
+		return accepted(name, quickRecordDirDefault, append(ok, acc...)...)
 	}
 	return done(name, quickRecordDirDefault, ok...)
 }
@@ -701,7 +756,7 @@ var releaseRows = []func(*relEnv) relRow{rowPending, rowPins, rowColdUser, rowGP
 // reportRelease runs the rows in order, prints them and returns the exit code.
 func reportRelease(w io.Writer, e *relEnv, rows []func(*relEnv) relRow) int {
 	fmt.Fprintf(w, "gate release %s (previous tag %s)\n", e.tag, e.prev)
-	code, nDone := 0, 0
+	code, nDone, nAccepted := 0, 0, 0
 	for i, f := range rows {
 		r := f(e)
 		fmt.Fprintf(w, "%2d. %-7s %s\n", i+1, r.State, r.Name)
@@ -711,13 +766,19 @@ func reportRelease(w io.Writer, e *relEnv, rows []func(*relEnv) relRow) int {
 		for _, d := range r.Detail {
 			fmt.Fprintf(w, "             %s\n", d)
 		}
-		if r.State == "done" {
+		switch r.State {
+		case "done":
 			nDone++
-		} else {
+		case "accepted":
+			nAccepted++
+		default:
 			code = 1
 		}
 	}
 	fmt.Fprintf(w, "%d of %d done", nDone, len(rows))
+	if nAccepted > 0 {
+		fmt.Fprintf(w, ", %d accepted", nAccepted)
+	}
 	if code != 0 {
 		fmt.Fprint(w, "; not ready to tag")
 	}

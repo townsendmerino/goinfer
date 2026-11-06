@@ -1,0 +1,19 @@
+--- FAIL: TestRowsAccepted_oneEntryDoesNotCoverTwoReds (0.00s)
+    grade_release_accepted_test.go:180: gpu: one entry for a record with 2 reds: state "accepted", want OWED naming "2 red item(s), 1 accepted: 1 unlisted"
+        metal: 2026-11-04T20:00:00Z @ ccdfb3ad
+        accepted cuda cuda-20261105T022250Z-ccdfb3ad.json: the red already read [test-bug] — docs/measurements/x/README.md (accepted by Francis, 2026-11-05)
+    grade_release_accepted_test.go:185: gpu: 1 entries for 2 reds read "accepted"
+    grade_release_accepted_test.go:189: gpu: a repeated item counted twice, state "accepted"
+    grade_release_accepted_test.go:180: quick: one entry for a record with 4 reds: state "accepted", want OWED naming "4 red item(s), 1 accepted: 3 unlisted"
+        darwin: 2026-11-04T20:00:00Z @ ccdfb3ad (100 pass, 0 skip)
+        accepted linux linux-amd64-20261105T032044Z-ccdfb3ad.json: the red already read [test-bug] — docs/measurements/x/README.md (accepted by Francis, 2026-11-05)
+    grade_release_accepted_test.go:185: quick: 3 entries for 4 reds read "accepted"
+    grade_release_accepted_test.go:189: quick: a repeated item counted twice, state "accepted"
+    grade_release_accepted_test.go:180: parity: one entry for a record with 7 reds: state "accepted", want OWED naming "7 red item(s), 1 accepted: 6 unlisted"
+        2026-11-05T07:10:07Z @ ccdfb3ad on : verdict BLOCKERS, 7 blocker(s)
+        accepted parity-20261105T071007Z-ccdfb3ad.json: the red already read [test-bug] — docs/measurements/x/README.md (accepted by Francis, 2026-11-05)
+    grade_release_accepted_test.go:185: parity: 6 entries for 7 reds read "accepted"
+    grade_release_accepted_test.go:189: parity: a repeated item counted twice, state "accepted"
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.008s
+FAIL

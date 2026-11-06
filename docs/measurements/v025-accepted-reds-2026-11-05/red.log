@@ -1,0 +1,31 @@
+--- FAIL: TestRowsAccepted (0.00s)
+    grade_release_accepted_test.go:113: parity with its entry: state "OWED"
+        the newest record at this code (2026-11-05T07:10:07Z @ ccdfb3ad) does not count: verdict BLOCKERS
+        run `go run ./cmd/gate parity -logdir <durable dir>` on nobara, at night (it takes hours), and commit the record it writes
+    grade_release_accepted_test.go:113: gpu with its entry: state "OWED"
+        cuda: the newest record at this code (2026-11-05T02:22:50Z @ ccdfb3ad) does not count: verdict FAIL
+        run `go run ./cmd/gate gpu` on that box (cuda: about 83 minutes, queue it at night) and commit the record
+    grade_release_accepted_test.go:113: quick with its entry: state "OWED"
+        linux: the newest record at this code (2026-11-05T03:20:44Z @ ccdfb3ad) does not count: verdict FAIL
+        run `go run ./cmd/gate quick -full -base <the previous tag>` on that box (about 10 minutes on the Mac; queue it at night) and commit the record
+    grade_release_accepted_test.go:132: a rejected entry does not say why:
+        cuda: the newest record at this code (2026-11-05T02:22:50Z @ ccdfb3ad) does not count: verdict FAIL
+        run `go run ./cmd/gate gpu` on that box (cuda: about 83 minutes, queue it at night) and commit the record
+--- FAIL: TestReportRelease_acceptedDoesNotBlock (0.00s)
+    grade_release_accepted_test.go:142: exit 1 with only an accepted row
+        gate release v0.25.0 (previous tag v0.24.0)
+         1. OWED    the GPU gate on both backends covers HEAD
+                     record: docs/measurements/gpu-gate/<backend>-<time>-<commit>.json
+                     cuda: the newest record at this code (2026-11-05T02:22:50Z @ ccdfb3ad) does not count: verdict FAIL
+                     run `go run ./cmd/gate gpu` on that box (cuda: about 83 minutes, queue it at night) and commit the record
+        0 of 1 done; not ready to tag
+    grade_release_accepted_test.go:145: the report:
+        gate release v0.25.0 (previous tag v0.24.0)
+         1. OWED    the GPU gate on both backends covers HEAD
+                     record: docs/measurements/gpu-gate/<backend>-<time>-<commit>.json
+                     cuda: the newest record at this code (2026-11-05T02:22:50Z @ ccdfb3ad) does not count: verdict FAIL
+                     run `go run ./cmd/gate gpu` on that box (cuda: about 83 minutes, queue it at night) and commit the record
+        0 of 1 done; not ready to tag
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.006s
+FAIL
