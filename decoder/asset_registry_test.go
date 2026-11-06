@@ -156,3 +156,33 @@ func TestAssetRegistry_agreesWithPreflight(t *testing.T) {
 		}
 	}
 }
+
+// TestAssetRegistry_resolvesFromEveryCallerDir — every directory with a test that asks the registry for an asset (AssetPathForTest,
+// lookupAsset) finds testdata/assets.json from its own working directory, and a $REPO/ candidate resolves to a directory that
+// exists. A caller two levels down (backend/cuda) used to open "../testdata/assets.json", fail, and skip, printing ok.
+func TestAssetRegistry_resolvesFromEveryCallerDir(t *testing.T) {
+	callers := map[string]bool{}
+	for p, src := range goTestFiles(t) {
+		if strings.Contains(src, "AssetPathForTest(") || strings.Contains(src, "lookupAsset(") {
+			abs, err := filepath.Abs(filepath.Dir(p))
+			if err != nil {
+				t.Fatal(err)
+			}
+			callers[abs] = true
+		}
+	}
+	if len(callers) < 3 {
+		t.Fatalf("found %d caller directories, want at least decoder, backend/cuda and backend/metal", len(callers))
+	}
+	for dir := range callers {
+		t.Run(filepath.Base(filepath.Dir(dir))+"/"+filepath.Base(dir), func(t *testing.T) {
+			t.Chdir(dir)
+			if _, err := loadAssetRegistry(); err != nil {
+				t.Fatalf("from %s: %v", dir, err)
+			}
+			if fi, err := os.Stat(expandCandidate("$REPO/testdata")); err != nil || !fi.IsDir() {
+				t.Fatalf("from %s: $REPO/testdata resolves to %q: %v", dir, expandCandidate("$REPO/testdata"), err)
+			}
+		})
+	}
+}

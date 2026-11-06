@@ -92,6 +92,7 @@ SCANS = [
     Scan("decoder", "TestOptionGrid_cellsCarryEvidence", TREE_GO),
     Scan("decoder", "TestAssetRegistry_usedByExists", TREE_T + F("testdata/assets.json")),
     Scan("decoder", "TestAssetRegistry_noDirectReads", TREE_T + F("testdata/assets.json")),
+    Scan("decoder", "TestAssetRegistry_resolvesFromEveryCallerDir", TREE_T),
     # Two computations of one key over the same files: only the two implementations or the manifest can split them.
     Scan("decoder", "TestParityKey_matchesFreshDepsHash", F("decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json") + NT("internal/guard/paritykey")),
     Scan("decoder", "TestParityKey_shadowMatchesDecoder", F("testdata/loader_identity.json", "decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json", "testdata/program_fingerprints.json") + NT("internal/guard/paritykey", "decoder")),
