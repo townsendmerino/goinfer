@@ -312,7 +312,7 @@ func mambaLayersOf(t *testing.T) (m *decoder.Model, layers []int, p *mambaParams
 	return m, layers, p, hidden
 }
 
-// G-1: packMambaLayer plans its two projections and holds no packed words; the buffers it names are the sizes packWeight would make.
+// packMambaLayer plans its two projections and holds no packed words; the buffers it names are the sizes packWeight would make.
 func TestMambaHostCopy_planningHoldsNoPackedWords(t *testing.T) {
 	m, layers, p, hidden := mambaLayersOf(t)
 	for _, l := range layers {
@@ -340,7 +340,7 @@ func TestMambaHostCopy_planningHoldsNoPackedWords(t *testing.T) {
 	}
 }
 
-// G-2: the device bytes a Mamba layer's projections get are the packed upload's, at one staging block and at several.
+// The device bytes a Mamba layer's projections get are the packed upload's, at one staging block and at several.
 func TestMambaHostCopy_deviceBytesIdenticalToPackWeight(t *testing.T) {
 	r := streamRig(t)
 	m, layers, p, hidden := mambaLayersOf(t)
@@ -351,7 +351,7 @@ func TestMambaHostCopy_deviceBytesIdenticalToPackWeight(t *testing.T) {
 		}
 		for name, h := range map[string]hostW{"in_proj": hm.in, "out_proj": hm.out} {
 			if h.src == nil {
-				continue // G-1 reports it
+				continue // the planning test reports it
 			}
 			eager, err := packWeight(h.src)
 			if err != nil {
