@@ -74,14 +74,18 @@ In the other direction 13 non-test `decoder` files call it (`model.go`, `prefill
 1. **Types** (done): `Placement`, `PlanRequest`, `Plan`, `FitAnswer`, `FitDeclineError`, `ErrWontFitResident` in `decoder/fit`, aliased
    in `decoder/fitalias.go`. No behavior change; the files outside `decoder/` that name them compile unchanged.
 2. **Callers' imports** (done): backends, `internal/app/*`, `modelload` and `memgate` name `fit.X` instead of `decoder.X`.
-3. **Price from neutral inputs.** Done for the checkpoint-byte estimators and the flat KV rate: `fit.GGUFWeightBytes`,
-   `fit.SafetensorsWeightBytes` take tensor names and shapes plus `fit.Rates` (the per-element prices, which `decoder` measures
-   through the loader's quantizer in `fitRates`), and `fit.KVBytesPerPosition` takes the geometry; the tensor-name classifiers
-   moved with them. Still in `decoder`, each because it holds a `Config`, `Options`, `Model` or the quantizer: `fitCheck` and
-   `guardFit`, `guardGIWFit`/`decideGIWFit`, `fitCheckFor`, `quantBytesPerElem`, the per-layer `estimateKVBytes`, `Model.Plan`
-   and `FitQuery`. Next: give `fitCheck` and the GIW decision a neutral input struct (the machine reading, the weight and KV
-   figures, the pins) so they move; the `fit*_test.go` files follow their subjects.
-4. `Model.Plan` and `FitQuery` stay in `decoder` as thin adapters (they hold a `*Model`/`Options`); delete the aliases once no caller names them.
+3. **Price from neutral inputs** (done as far as it can go without a larger move). The checkpoint-byte estimators, the flat KV rate and the
+   tensor-name classifiers are in `decoder/fit/weights.go` over tensor names, shapes and `fit.Rates`. The guard's *decisions* were
+   never in `decoder`: `fitCheck.check()` hands plain numbers to `mem.HostCheck`, `decideGIWFitAt` to `mem.SolveGIW`, and
+   `internal/runtime/mem` imports no goinfer package. What is left in `fitguard.go`, `fitplan.go` and `fitquery.go` is the adapter
+   from `Config`, `Options`, `Architecture`, `BuildDemand` and `ResolveKV` to those numbers (`fitCheckFor`, `priceCtxAndKV`,
+   `kvPricingFor`, `denseStreamable`, `estimateKVBytes`, `Model.Plan`, `FitQuery`) plus the stderr line `guardFit` prints. Moving the
+   `fitCheck` struct to `fit` would only relocate fields that `mem.HostLoad` already carries, at the price of rewriting about ten
+   test files that build it by field name, so it is not planned. Moving the adapter needs `Config`, `Options` and `Architecture`
+   out of `decoder` first; that is the next Tier 3 subsystem (a `decoder/config`-style package), not part of `fit`.
+4. **The aliases stay for now.** `decoder.Plan`, `PlanRequest`, `Placement*`, `FitAnswer`, `FitDeclineError` and `ErrWontFitResident`
+   are the library's published names (`Model.Plan` returns a `Plan`); deleting `decoder/fitalias.go` breaks every external importer
+   and means renaming them in the 19 `decoder` files that use them. The decision to delete is Francis's, not a cleanup.
 
 ## GPU backend modules
 
