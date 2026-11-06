@@ -1030,7 +1030,7 @@ goinfer-chat --model ~/models/qwen2.5-7b-instruct-q4_k_m.gguf --batch in.jsonl -
 ```
 
 Uploaded files and batch results are held in memory. The server keeps at most 256 of them and `--max-file-store-bytes` of their contents (1 GiB), dropping the oldest
-first and always keeping the newest, so download a batch's results before uploading much more. A dropped file's id answers 404.
+first and always keeping the newest upload, or the newest batch's output and error files together, so download a batch's results before uploading much more. A dropped file's id answers 404.
 
 The output is the real API's: `out.jsonl` holds a line per request that produced a response, `{"custom_id", "response":
 {"status_code", "body"}, "error": null}`, and the lines that failed — `{"custom_id", "response": null, "error": {"code",

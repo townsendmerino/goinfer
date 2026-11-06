@@ -243,7 +243,7 @@
   {
    "name": "max-file-store-bytes",
    "group": "Concurrency and queues",
-   "summary": "Cap on the bytes of uploaded files and batch results held in memory (1 GiB). The oldest go first and the newest is always kept, so a dropped file's id answers 404. 0 means no limit on bytes."
+   "summary": "Cap on the bytes of uploaded files and batch results held in memory (1 GiB). The oldest go first and the newest upload or batch's result files are always kept, so a dropped file's id answers 404. 0 means no limit on bytes."
   },
   {
    "name": "kv-host-bytes",

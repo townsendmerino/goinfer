@@ -101,9 +101,38 @@ func TestFileStore_countLimitKeepsTheByteAccountRight(t *testing.T) {
 	if fs.get(b.ID) != nil || fs.get(c.ID) == nil || fs.get(d.ID) == nil {
 		t.Fatal("the count limit dropped the wrong file")
 	}
-	e := putBytes(fs, 30) // c and e are 60, well under 100: only the count limit acts
+	e := putBytes(fs, 30) // the count limit drops c; d and e are 60, well under 100
 	if fs.get(d.ID) == nil || fs.get(e.ID) == nil {
 		t.Fatal("a stale byte account dropped a file the store has room for")
+	}
+}
+
+// A finished batch with both successes and failures stores an output and an error file. Over the byte limit, together or each
+// alone, storing the error file must not evict the output: the older file goes and both of the batch's stay.
+func TestFinalizeBatch_keepsBothResultFilesOverTheByteLimit(t *testing.T) {
+	s := &server{files: newFileStore(0, 50), batches: newBatchStore(4)}
+	older := putBytes(s.files, 10)
+	b := s.batches.create("openai_chat", "/v1/chat/completions", "24h", "f", []string{"ok", "bad"})
+	setResult(b, 0, batchLineResult{CustomID: "ok", StatusCode: 200, Body: map[string]any{"content": strings.Repeat("x", 200)}})
+	setResult(b, 1, lineError("bad", 400, "invalid_request_error", strings.Repeat("y", 200)))
+	b.wg.Done()
+	b.wg.Done()
+	s.finalizeBatch(b.ID)
+	b.mu.Lock()
+	outID, errID := b.OutputFileID, b.ErrorFileID
+	b.mu.Unlock()
+	out, errs := s.files.get(outID), s.files.get(errID)
+	if out == nil || errs == nil {
+		t.Fatalf("output file kept %v, error file kept %v: a batch's result files must survive their own storing", out != nil, errs != nil)
+	}
+	if len(out.Bytes) <= 50 || len(errs.Bytes) <= 50 {
+		t.Fatalf("output %d and error %d bytes: each must be over the 50-byte limit for this to test it", len(out.Bytes), len(errs.Bytes))
+	}
+	if s.files.get(older.ID) != nil {
+		t.Error("the older file was kept over the limit")
+	}
+	if c := putBytes(s.files, 10); s.files.get(outID) != nil || s.files.get(errID) != nil || s.files.get(c.ID) == nil {
+		t.Error("the next put did not evict the batch's files, oldest first")
 	}
 }
 

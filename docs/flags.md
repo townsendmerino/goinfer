@@ -99,7 +99,7 @@ How many requests run at once, and what happens to the rest.
 | `--cpu-batch` | `auto \| on \| off` | — | Whether concurrent CPU generations of one model join their decode tokens into one batched forward (replies are bit-identical either way). `auto` batches models with at least 2 GiB of dense weights. |
 | `--prefill-chunk` | `int` | `512` | On a GPU-resident model serving several generations, prefill a long prompt that arrives mid-decode in chunks of this many tokens, with a decode step between chunks. 0 = off. |
 | `--max-body-bytes` | `int` | `0` | Cap on request-body size in bytes; a larger body is rejected with 413 before it is read. 0 derives the cap from the model's context window. |
-| `--max-file-store-bytes` | `int` | `1073741824` | Cap on the bytes of uploaded files and batch results held in memory (1 GiB). The oldest go first and the newest is always kept, so a dropped file's id answers 404. 0 means no limit on bytes. |
+| `--max-file-store-bytes` | `int` | `1073741824` | Cap on the bytes of uploaded files and batch results held in memory (1 GiB). The oldest go first and the newest upload or batch's result files are always kept, so a dropped file's id answers 404. 0 means no limit on bytes. |
 
 ## Sessions and KV cache
 
