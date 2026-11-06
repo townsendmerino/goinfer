@@ -68,6 +68,9 @@ SCANS = [
                                             "decoder/weightbytes.go", "decoder/residentneed.go", "decoder/kvresolve.go", "decoder/kvpolicy.go",
                                             "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/mm1_census.json.gz") +
          NT("internal/runtime/mem")),
+    # The census reads a declared fixture list, which must match the committed fixtures: a fixture added or removed runs it.
+    Scan("decoder", "TestCensusFixtures_areTheCommittedOnes", F("decoder/mm1_census_fixtures_test.go", "testdata/*", "decoder/testdata/*",
+                                                                "decoder/selftestdata/*", "internal/vision/testdata/*")),
     # VK2's census: each family's own list covers its registry adapter's file and the arch_*.go files it reaches.
     Scan("decoder", "TestParityManifest_adapterFilesOwned", NT("decoder") + F("testdata/parity/*.json")),
     # VK2's forward census: every file the forward reaches is in a hash set or an own list.
