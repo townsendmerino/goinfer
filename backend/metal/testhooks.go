@@ -193,19 +193,17 @@ func (r *resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 		// Inject goinfer's post-RoPE K and raw V — matched KV history. f32 cache (Gemma) takes the
 		// values verbatim; the f16 cache narrows them (still cos 1.0 for the CORRECT values — the
 		// crater is walked-value drift, not storage of the right ones).
-		if r.kvF32 {
-			o := r.kvHostOff(layer, 4)
-			kc, vc := r.kc[layer].Floats()[o:], r.vc[layer].Floats()[o:]
-			copy(kc[:len(kHist)], kHist)
-			copy(vc[:len(vHist)], vHist)
-		} else {
-			o := r.kvHostOff(layer, 2)
-			kc, vc := r.kc[layer].U16s()[o:], r.vc[layer].U16s()[o:]
-			for i := range kHist {
-				kc[i] = f32ToF16(kHist[i])
+		// Each position goes to its row through the bound slot's table (kvHostRow).
+		for p := range len(kHist) / g.kvDim {
+			at, src := r.kvHostRow(p)*g.kvDim, p*g.kvDim
+			if r.kvF32 {
+				copy(r.kc[layer].Floats()[at:at+g.kvDim], kHist[src:src+g.kvDim])
+				copy(r.vc[layer].Floats()[at:at+g.kvDim], vHist[src:src+g.kvDim])
+				continue
 			}
-			for i := range vHist {
-				vc[i] = f32ToF16(vHist[i])
+			kc, vc := r.kc[layer].U16s()[at:at+g.kvDim], r.vc[layer].U16s()[at:at+g.kvDim]
+			for i := range g.kvDim {
+				kc[i], vc[i] = f32ToF16(kHist[src+i]), f32ToF16(vHist[src+i])
 			}
 		}
 	}

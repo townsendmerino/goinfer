@@ -5,12 +5,12 @@ package kernels
 // then its rope key, rotated at store time. Per-head K and V are never built: the query is absorbed through W_UK into rank
 // space, scored against each latent row, and the rank-space weighted sum is lifted through W_UV.
 //
-//   - mla_store: one threadgroup of 64 writes position pos's latent row at pos*latDim.
+//   - mla_store: one threadgroup of 64 writes position pos's latent row at its row through the block table (kv_row).
 //   - mla_head_mv: a per-head matvec, one simdgroup per output element: W_UK's absorb (into qAbs, rank values a head at
 //     stride latDim) and W_UV's lift.
 //   - mla_qrope: q's rope slice of each head, rotated into qAbs after the head's rank values.
-//   - mla_attn: one threadgroup of 128 per head, an online softmax over the nKeys latent rows, scores over all latDim values
-//     and the weighted sum over the first rank.
+//   - mla_attn: one threadgroup of 128 per head, an online softmax over the nKeys latent rows read through the table, scores over
+//     all latDim values and the weighted sum over the first rank.
 //
 // p[] packs the per-model shape so a dispatch binds one buffer for it: see each kernel's comment for its layout.
 const MLAKernels = `
@@ -18,9 +18,9 @@ const MLAKernels = `
 kernel void mla_store(device const float* kvDown [[buffer(0)]], device const float* normW [[buffer(1)]],
     device const float* invFreq [[buffer(2)]], device float* lat [[buffer(3)]], constant uint* p [[buffer(4)]],
     constant uint& pos [[buffer(5)]], constant uint& ropePos [[buffer(6)]], constant float& eps [[buffer(7)]],
-    constant float& ropeScale [[buffer(8)]], uint t [[thread_position_in_threadgroup]]) {
+    constant float& ropeScale [[buffer(8)]], device const uint* kt [[buffer(9)]], uint t [[thread_position_in_threadgroup]]) {
     uint rank = p[0], qkRope = p[1], interleave = p[2];
-    uint base = pos * (rank + qkRope);
+    uint base = kv_row(kt, pos) * (rank + qkRope);
     threadgroup float sh[64];
     float ss = 0.0f;
     for (uint i = t; i < rank; i += 64u) { float v = kvDown[i]; ss += v * v; }
@@ -81,7 +81,7 @@ kernel void mla_qrope(device const float* q [[buffer(0)]], device const float* i
 // mla_attn p: [nH, latDim, rank]. One threadgroup of 128 per head; rank <= 1024 (8 values a lane).
 kernel void mla_attn(device const float* qAbs [[buffer(0)]], device const float* lat [[buffer(1)]], device float* wsum [[buffer(2)]],
     constant uint* p [[buffer(3)]], constant uint& nKeys [[buffer(4)]], constant float& scale [[buffer(5)]],
-    uint h [[threadgroup_position_in_grid]], uint t [[thread_position_in_threadgroup]],
+    device const uint* kt [[buffer(6)]], uint h [[threadgroup_position_in_grid]], uint t [[thread_position_in_threadgroup]],
     uint sgid [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
     uint nH = p[0], latDim = p[1], rank = p[2];
     if (h >= nH) return;
@@ -90,7 +90,7 @@ kernel void mla_attn(device const float* qAbs [[buffer(0)]], device const float*
     float acc[8] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     float m = -1e30f, l = 0.0f;
     for (uint j = 0u; j < nKeys; j++) {
-        device const float* k = lat + j * latDim;
+        device const float* k = lat + kv_row(kt, j) * latDim;
         float part = 0.0f;
         for (uint d = t; d < latDim; d += 128u) part += q[d] * k[d];
         part = simd_sum(part);

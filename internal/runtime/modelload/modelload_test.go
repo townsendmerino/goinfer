@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -190,7 +191,7 @@ func TestLoad_retriesOnlyAStreamableRefusal(t *testing.T) {
 	const retried = "auto weight-streaming retry"
 	for _, streamable := range []bool{false, true} {
 		firstLoad = func(string, decoder.Options, string) (*decoder.Model, error) {
-			return nil, &decoder.FitDeclineError{DenseStreamable: streamable}
+			return nil, &fit.FitDeclineError{DenseStreamable: streamable}
 		}
 		src := filepath.Join(t.TempDir(), "m.gguf")
 		if err := os.WriteFile(src, []byte("not a gguf"), 0o644); err != nil {

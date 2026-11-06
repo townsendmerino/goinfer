@@ -20,6 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
@@ -149,8 +150,8 @@ func resolveCtxCapFitFree(m *decoder.Model, request, modelCtx, slots int, margin
 	// ctx this call asks of Plan: Plan only shrinks from the value it is given (fitplan.go, "never GROW past what was
 	// asked"), so that can over-estimate the real cost but never under-price it.
 	extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate)
-	p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: candidate, ExtraBytes: extraBytes})
-	if p.Placement == decoder.PlacementDecline || p.Ctx < floor {
+	p := m.Plan("cuda", marginedFree, fit.PlanRequest{Ctx: candidate, ExtraBytes: extraBytes})
+	if p.Placement == fit.PlacementDecline || p.Ctx < floor {
 		return floor, margin(floor) // Plan could not confidently improve on the floor
 	}
 	c := p.Ctx
@@ -203,11 +204,11 @@ var planFreeSeenForTest func(free int64)
 // binary search finds the edge. Plan's weight figure is conservative, so the result can land lower than the build
 // would allow (docs/code-notes/cuda.md#ctxForSlots).
 func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slots, floor int) int {
-	stateBytes := m.Plan("cuda", 1<<40, decoder.PlanRequest{Ctx: 1}).StateBytes // the plan's own line is one slot's
+	stateBytes := m.Plan("cuda", 1<<40, fit.PlanRequest{Ctx: 1}).StateBytes // the plan's own line is one slot's
 	fits := func(ctx int) bool {
 		more := int64(slots-1) * (m.CUDAKVSlotBytes(ctx, m.KVCacheF16()) + stateBytes) // each further slot, at the load's own KV precision (decoder/kv16_cuda.go), with its recurrent state
-		p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extraBytes + more})
-		return p.Placement != decoder.PlacementDecline
+		p := m.Plan("cuda", marginedFree, fit.PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extraBytes + more})
+		return p.Placement != fit.PlacementDecline
 	}
 	if fits(oneSlot) {
 		return oneSlot

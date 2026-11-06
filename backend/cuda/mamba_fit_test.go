@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 )
 
 // OP2b on CUDA, gate F (docs/tasks/task-forward-architecture-2026-10.md §4.7): the resident's own fit plan for the real Nemotron-H checkpoints, read once and
@@ -55,7 +56,7 @@ func TestNemotronResidentCUDA_fitPlan(t *testing.T) {
 		kv := kvBytesForCap(r.ctxCap, r.layers)
 		t.Logf("F ctx request %d: RESIDENT (%s), load %.1fs; planned ctx %d, final ctx %d, %d KV slot(s), KV %.1f MiB a slot; Mamba state %.1f MiB (%d layers); "+
 			"free VRAM %.0f MiB before, %.0f MiB after (the load took %.0f MiB)", ctx, m.DecodePath(), took.Seconds(), r.ctxPlanned, r.ctxCap, r.KVSlots(), float64(kv)/(1<<20),
-			float64(m.Plan("cuda", 1<<40, decoder.PlanRequest{Ctx: r.ctxCap}).StateBytes)/(1<<20), nMamba, float64(freeBefore)/(1<<20), float64(freeAfter)/(1<<20), float64(freeBefore-freeAfter)/(1<<20))
+			float64(m.Plan("cuda", 1<<40, fit.PlanRequest{Ctx: r.ctxCap}).StateBytes)/(1<<20), nMamba, float64(freeBefore)/(1<<20), float64(freeAfter)/(1<<20), float64(freeBefore-freeAfter)/(1<<20))
 		m.Close()
 	}
 }

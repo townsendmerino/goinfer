@@ -225,20 +225,20 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 			e.Dispatch(pf.pRope, M*g0.nKV*g0.half, 128, qkvF, L.invf, g0.uHd, posB, uTotalK, uStride, uBaseK, g0.uHalf, L.mscale)
 		}},
 		{name: "kv store", enc: func(e *Encoder, l int) {
-			e.Dispatch(pf.pKv, M*kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, g0.uKvDim, uStride, uKOff, uVOff)
+			e.Dispatch(pf.pKv, M*kvDim, 128, qkvF, r.kc[l].At(0), r.vc[l].At(0), posB, g0.uKvDim, uStride, uKOff, uVOff, r.kt)
 		}},
 		{name: "attention", enc: func(e *Encoder, l int) {
 			L := &r.layers[l]
 			if attnProtoOn {
-				e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedSGPT*32, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal)
+				e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedSGPT*32, qkvF, r.kc[l].At(0), r.vc[l].At(0), ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal, r.kt)
 				return
 			}
 			if useSteelAttn {
-				e.Dispatch(pf.steelFor(g0.hd), r.nH*((M+31)/32)*128, 128, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal)
+				e.Dispatch(pf.steelFor(g0.hd), r.nH*((M+31)/32)*128, 128, qkvF, r.kc[l].At(0), r.vc[l].At(0), ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal, r.kt)
 			} else if useFusedAttn {
-				e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedSGPT*32, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal)
+				e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedSGPT*32, qkvF, r.kc[l].At(0), r.vc[l].At(0), ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal, r.kt)
 			} else {
-				e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow)
+				e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, r.kc[l].At(0), r.vc[l].At(0), ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow, r.kt)
 			}
 		}},
 		{name: "GEMM o (+residual)", flops: gemmFlops(H, qDim), enc: func(e *Encoder, l int) {

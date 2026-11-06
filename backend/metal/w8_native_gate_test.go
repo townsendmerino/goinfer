@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 )
 
 // Gates F2 and F3 of docs/tasks/task-metal-int8-2026-10.md, pre-registered: does a dense int8 model on
@@ -147,7 +148,7 @@ func cpuLogitsAt(t *testing.T, path, quant string, seed []int, steps int, forced
 func cpuLogitsAtKV(t *testing.T, path, quant string, seed []int, steps int, forced []int, f16KV bool) ([][]float32, []int) {
 	t.Helper()
 	m, err := decoder.Load(path, decoder.Options{Quant: quant, ResidentContext: 1024})
-	if errors.Is(err, decoder.ErrWontFitResident) { // the machine's memory right now, not the gate's answer
+	if errors.Is(err, fit.ErrWontFitResident) { // the machine's memory right now, not the gate's answer
 		t.Skipf("the fit guard refused the CPU %q load on this machine now: %v", quant, err)
 	}
 	if err != nil {

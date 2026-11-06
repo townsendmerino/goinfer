@@ -63,7 +63,7 @@ func TestKSD1_splitKernel(t *testing.T) {
 						e := q.Begin()
 						e.Dispatch(p, nH*((rows+bq-1)/bq)*256, 256, bQ.At(rowOff*stride*2), bK, bV, out, NewBufferU32(d, nH),
 							NewBufferU32(d, nKV), NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(st)), NewBufferFloats(d, []float32{scale}),
-							NewBufferU32(d, uint32(stride)), NewBufferU32(d, uint32(window)), NewBufferU32(d, uint32(rows)))
+							NewBufferU32(d, uint32(stride)), NewBufferU32(d, uint32(window)), NewBufferU32(d, uint32(rows)), kvIdentityTable(d))
 						e.End()
 						return slices.Clone(out.U16s()[:rows*qDim])
 					}

@@ -15,6 +15,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -172,7 +173,7 @@ func TestNemotronResidentCUDA_pricing(t *testing.T) {
 	if got, w := m.ResidentKVBytes("cuda", ctx, r.kvF16, false), want+tabs+kvPoolNullBytes(r.layers); got != w {
 		t.Errorf("the decoder's ResidentKVBytes(cuda, %d) = %d, want %d", ctx, got, w)
 	}
-	if got := m.Plan("cuda", 1<<40, decoder.PlanRequest{Ctx: ctx}).StateBytes; got != stateBytes {
+	if got := m.Plan("cuda", 1<<40, fit.PlanRequest{Ctx: ctx}).StateBytes; got != stateBytes {
 		t.Errorf("the plan's state line is %d, the %d Mamba layers' state buffers are %d bytes", got, nMamba, stateBytes)
 	}
 	t.Logf("nemotron-tiny: %d attention layers of %d price %d KV bytes at %d positions; %d Mamba layers' state is %d bytes", attn, len(r.layers), want, ctx, nMamba, stateBytes)
@@ -507,7 +508,7 @@ func TestRecurrentSlots_stateLinePerSlot(t *testing.T) {
 			if n := r.KVSlots(); n != slots {
 				t.Fatalf("%s: %d slots, asked for %d", fixture, n, slots)
 			}
-			one := m.Plan("cuda", 1<<40, decoder.PlanRequest{Ctx: 1}).StateBytes
+			one := m.Plan("cuda", 1<<40, fit.PlanRequest{Ctx: 1}).StateBytes
 			if one <= 0 || one != r.recurrentStateCharged() {
 				t.Errorf("%s: the plan prices %d bytes of state for a slot, the build charges %d", fixture, one, r.recurrentStateCharged())
 			}

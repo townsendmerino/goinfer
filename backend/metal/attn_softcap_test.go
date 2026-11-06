@@ -257,7 +257,7 @@ func TestAttnSoftcap_prefillKernel(t *testing.T) {
 						e := cq.Begin()
 						e.Dispatch(pipe, c.M*nH*tgReduceAttn, tgReduceAttn, NewBufferU16s(d, qh), NewBufferU16s(d, kh), NewBufferU16s(d, vh), out,
 							NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(c.startPos)),
-							NewBufferFloats(d, []float32{scale}), NewBufferU32(d, uint32(qStride)), NewBufferU32(d, uint32(c.window)))
+							NewBufferFloats(d, []float32{scale}), NewBufferU32(d, uint32(qStride)), NewBufferU32(d, uint32(c.window)), kvIdentityTable(d))
 						e.End()
 						if err := e.Err(); err != nil {
 							t.Fatalf("%s: dispatch: %v", name, err)

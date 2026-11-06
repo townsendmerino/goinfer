@@ -81,12 +81,12 @@ func TestAttentionPrefillFused(t *testing.T) {
 
 			q := d.NewCommandQueue()
 			e := q.Begin()
-			e.Dispatch(pExact, c.M*c.nH*128, 128, dQkv, dKc, dVc, dOutExact, uNH, uNKV, uHd, uStartPos, uScale, uQStride, uWindow)
+			e.Dispatch(pExact, c.M*c.nH*128, 128, dQkv, dKc, dVc, dOutExact, uNH, uNKV, uHd, uStartPos, uScale, uQStride, uWindow, kvIdentityTable(d))
 			numRowTiles := (c.M + 7) / 8
 			const sgpt = 4
 			total := c.nH * numRowTiles
 			total = (total + sgpt - 1) / sgpt * sgpt * 32
-			e.Dispatch(pFused, total, sgpt*32, dQkv, dKc, dVc, dOutFused, uNH, uNKV, uHd, uStartPos, uScale, uQStride, uWindow, uM)
+			e.Dispatch(pFused, total, sgpt*32, dQkv, dKc, dVc, dOutFused, uNH, uNKV, uHd, uStartPos, uScale, uQStride, uWindow, uM, kvIdentityTable(d))
 			e.End()
 
 			exact := dOutExact.U16s()
