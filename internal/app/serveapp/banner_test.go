@@ -357,6 +357,49 @@ func TestFactsOf_carriesTheResidentDecline(t *testing.T) {
 	}
 }
 
+// Through the real banner: a context pin past the model's own window, on a load whose GPU backend declined, is priced at the window,
+// as the load-time guard prices it. The fit: line is read off modelBanner of a real model, and compared with the same model loaded
+// with no pin (priced at its maximum).
+func TestBanner_fitLineAfterADeclineIsClampedToTheModelWindow(t *testing.T) {
+	p := filepath.Join("../../../testdata/glm-tiny.gguf")
+	if _, err := os.Stat(p); err != nil {
+		t.Skipf("no committed tiny fixture at %s", p)
+	}
+	name := "fake-declines-n26"
+	decoder.RegisterBackend(name, func() (decoder.Backend, error) {
+		cpu, err := decoder.NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		return &decliningBackend{Backend: cpu}, nil
+	})
+	load := func(pin int) *loadedModel {
+		m, err := decoder.Load(p, decoder.Options{Backend: name, Quant: "int8int8", ResidentContext: pin})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = m.Close() })
+		return &loadedModel{name: "declined", model: m}
+	}
+	unpinned := load(0)
+	window := unpinned.model.Config().MaxPositions
+	if window <= 0 {
+		t.Skip("the fixture declares no window")
+	}
+	want := factsOf(unpinned)
+	if !want.fitKnown || want.fitCtx != window {
+		t.Fatalf("unpinned decline: fitKnown=%v fitCtx=%d, want the window %d", want.fitKnown, want.fitCtx, window)
+	}
+	pinned := load(window * 8)
+	got := factsOf(pinned)
+	if !got.fitKnown || got.fitCtx != window || got.fitKVBytes != want.fitKVBytes {
+		t.Errorf("a pin of %d past the window %d after a decline: fit ctx %d, KV %d bytes; want ctx %d, KV %d", window*8, window, got.fitCtx, got.fitKVBytes, window, want.fitKVBytes)
+	}
+	if line := bannerLine(modelBanner(pinned, config{}), "fit:"); !strings.Contains(line, fmt.Sprintf("fit: %d-token cap", window)) {
+		t.Errorf("the banner's fit line prices a context other than the window %d: %q", window, line)
+	}
+}
+
 // A plain CPU load is not a decline: the CPU was the choice. decoder sets ResidentDecline for it too ("backend
 // does not implement residency (… the CPU backend)"), so the banner must not report that as a GPU load that
 // fell through.
