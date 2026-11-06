@@ -1,6 +1,3 @@
-=== RUN   TestNemotronResidentCUDA_fitPlan
-    mamba_fit_test.go:24: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
---- SKIP: TestNemotronResidentCUDA_fitPlan (0.00s)
 === RUN   TestNemotronResidentCUDA_guards
 cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
 cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
@@ -15,22 +12,14 @@ cuda: prefill width 2048 rows (6 MiB of scratch; 7050 MiB free beyond the 173 Mi
 === RUN   TestNemotronResidentCUDA_guards/qwen35-tiny
 cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
 cuda: prefill width 2048 rows (8 MiB of scratch; 6914 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
---- PASS: TestNemotronResidentCUDA_guards (1.97s)
+--- PASS: TestNemotronResidentCUDA_guards (1.90s)
     --- PASS: TestNemotronResidentCUDA_guards/nemotron-tiny (0.03s)
-    --- PASS: TestNemotronResidentCUDA_guards/qwen35-tiny (0.03s)
+    --- PASS: TestNemotronResidentCUDA_guards/qwen35-tiny (0.04s)
 === RUN   TestNemotronResidentCUDA_pricing
 cuda: recurrent checkpoint: 0.0 MiB on the device (8 buffers, KV8a)
 cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
     mamba_guards_test.go:178: nemotron-tiny: 2 attention layers of 5 price 262144 KV bytes at 512 positions; 2 Mamba layers' state is 10496 bytes
---- PASS: TestNemotronResidentCUDA_pricing (0.24s)
-=== RUN   TestMambaHostCopy_planningHoldsNoPackedWords
-cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
-cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
---- PASS: TestMambaHostCopy_planningHoldsNoPackedWords (0.25s)
-=== RUN   TestMambaHostCopy_deviceBytesIdenticalToPackWeight
-cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
-cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
---- PASS: TestMambaHostCopy_deviceBytesIdenticalToPackWeight (0.25s)
+--- PASS: TestNemotronResidentCUDA_pricing (0.25s)
 === RUN   TestNemotronResidentCUDA_tinyAgainstControl
 cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
 cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
@@ -39,7 +28,7 @@ cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 Mi
 cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
 cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
     mamba_resident_test.go:106: int4: plant (mamba_conv input shifted one element, CUDA only): min cosine -0.044934, argmax 3/32 -> fails, as it must
---- PASS: TestNemotronResidentCUDA_tinyAgainstControl (0.86s)
+--- PASS: TestNemotronResidentCUDA_tinyAgainstControl (0.72s)
 === RUN   TestNemotronResidentCUDA_slots
 cuda: recurrent checkpoint: 0.0 MiB on the device (16 buffers, KV8a)
 cuda: prefill width 2048 rows (6 MiB of scratch; 7058 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
@@ -51,7 +40,7 @@ cuda: prefill width 2048 rows (6 MiB of scratch; 7024 MiB free beyond the 173 Mi
 cuda: recurrent checkpoint: 0.0 MiB on the device (16 buffers, KV8a)
 cuda: prefill width 2048 rows (6 MiB of scratch; 7006 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
     mamba_resident_test.go:195: plant (reset leaves the Mamba-2 state): turns A [232 32 135 140 84 27 208 244 27 121], B [8 146 166 26 6 243 104 47 53 68], A [232 26 6 94 185 127 70 122 251 117]
---- PASS: TestNemotronResidentCUDA_slots (0.37s)
+--- PASS: TestNemotronResidentCUDA_slots (0.36s)
 === RUN   TestNemotronResidentCUDA_int8Declines
 cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
 cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
@@ -63,9 +52,17 @@ cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 Mi
 [resident] BuildResident declined (ok=false err=resident path declined: cuda: Nemotron-H runs resident at int4 only; its int8 projections would be re-quantized to int4 here, so it runs on the CPU) — continuing on the CPU/staged path
 cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
 cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
---- PASS: TestNemotronResidentCUDA_int8Declines (1.51s)
+--- PASS: TestNemotronResidentCUDA_int8Declines (1.49s)
+=== RUN   TestMambaHostCopy_planningHoldsNoPackedWords
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestMambaHostCopy_planningHoldsNoPackedWords (0.24s)
+=== RUN   TestMambaHostCopy_deviceBytesIdenticalToPackWeight
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestMambaHostCopy_deviceBytesIdenticalToPackWeight (0.28s)
 === RUN   TestPackStream_deviceBytesIdenticalToPackWeight
---- PASS: TestPackStream_deviceBytesIdenticalToPackWeight (0.22s)
+--- PASS: TestPackStream_deviceBytesIdenticalToPackWeight (0.23s)
 === RUN   TestPackStream_hostBytesAreTheStagingBlockNotTheTensor
 --- PASS: TestPackStream_hostBytesAreTheStagingBlockNotTheTensor (0.32s)
 === RUN   TestPackStream_planningPacksNothing
@@ -76,7 +73,7 @@ cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 Mi
 cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
 --- PASS: TestPackStream_buildAllocatesNothingBeforeEveryLayerIsAccepted (0.25s)
 === RUN   TestPackStream_rowSourceBytesIdenticalToPackWeight
---- PASS: TestPackStream_rowSourceBytesIdenticalToPackWeight (0.21s)
+--- PASS: TestPackStream_rowSourceBytesIdenticalToPackWeight (0.20s)
 PASS
 ledger: 28 device(s) released in this run
-ok  	github.com/townsendmerino/goinfer/backend/cuda	6.727s
+ok  	github.com/townsendmerino/goinfer/backend/cuda	6.538s

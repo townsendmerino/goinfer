@@ -1,0 +1,17 @@
+touched: 2 .go file(s), 16 changed path(s), 2 module(s), base 6ab62e5b
+  ok   gofmt (0.0s)
+  ok   test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (0.7s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (4.9s)
+  ok   test internal/diag/hwcensus -run ^(TestHardwareCensus)$ (0.4s)
+  ok   test internal/diag/kernelprint -run ^(TestCompute_reachesCensus)$ (3.4s)
+  ok   test internal/guard/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/guard/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (0.8s)
+  ok   test internal/runtime/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.6s)
+  ok   test internal/runtime/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.6s)
+  ok   build backend/cuda (0.7s)
+  ok   vet backend/cuda (1 pkg) (0.9s)
+  ok   test backend/cuda -run ^(TestLedger_everyAllocationNamesALine|T (12.0s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 13 checks passed (CI runs the rest on push)
+python3 scripts/touched.py  42.73s user 8.43s system 196% cpu 25.995 total

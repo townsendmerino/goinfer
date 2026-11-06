@@ -55,3 +55,37 @@ Registered after the tier 0 tests were written red first (`red.log`) and before 
 If main's own growth is under 2 GiB the bar cannot be met by any change, and the reading says so: that is a finding about the ledger's arithmetic, not a pass.
 - **Void and stopping rule:** as above; one run each, no repeat unless a run is void.
 - **Cost:** about 20 s a run. Start from `date` at the run.
+
+### G-3b read, 2026-11-05 16:06 PST: PASS
+
+`g3b/` (`g3b-before.log`, `g3b-after.log`, `summary-b.txt`). The exclusive timing lock, one-minute load 0.89 and 2.47, 59 GB available, no void run, one run each, main first (`cuda-mem13-before2.test`: main plus only the test file; `cuda-mem13-after2.test`: the branch).
+
+| | main | branch | bar |
+|---|---|---|---|
+| `RssAnon` when `BuildResident` begins planning | 6,523 MiB | 6,527 MiB | |
+| peak `RssAnon` inside the build window | 14,199 MiB | 6,592 MiB | |
+| **growth over the build window** | **7,675 MiB** | **65 MiB** | the branch at least 2 GiB below main's |
+| whole-process peak `RssAnon` | 16,325 MiB | 15,976 MiB | reported |
+| peak `VmSwap` | 0 MiB | 0 MiB | at most 512 MB |
+| 16 greedy tokens | the same on both | | equal |
+
+**A fall of 7,610 MiB, 7.4 GiB, against a bar of 2 GiB.** The survey's arithmetic said about 4 GB; main's growth over the window is 7.7 GB, so the packed Mamba-2 projections and what they carried cost nearly twice that, and the branch's 65 MiB is the staging block and headers (`TestPackStream_hostBytesAreTheStagingBlockNotTheTensor`'s shape). Both resident; same tokens.
+
+**What it does not do:** the whole-process peak falls only 349 MiB (16,325 to 15,976), because the peak is set earlier, in `decoder.Load` building the host model (about 16 GB at its worst here), before the build starts. That phase is a different item (MEM1, the heap-only paths, not this row). On a box where the load's own peak is the binding number, this change helps the build, not the load.
+
+### G-4, G-2b: PASS
+
+- **G-4:** `gate identity -backend cuda 6ab62e5b2 f9746e6bf` (`identity.log`), 16:06:53 to 16:12:37 PST: **29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN**, GREEN.
+- **G-1, G-2, G-2b:** `green.log`: the two new tier 0 gates, the Nemotron resident tests and `TestPackStream_*` pass.
+
+**Verdict: PASS.** The ledger row MEM13-copies-CUDA closes with this commit (`docs/tasks/task-memory-campaign-2026-10.md`), and P36 in `docs/queue-performance.md` drops it.
+
+Not covered: Metal (it had no such copy, MEM13-copies-Metal), speed, other Mamba-2 families (Granite-4.0-H declines on CUDA by name), a bf16-kept projection on a build other than int4.
+
+## Where the tests live
+
+G-1 and G-2 are in `backend/cuda/mamba_resident_test.go` (an existing file: `internal/layout`'s ratchet on CUDA test files that import `decoder` does not grow). The tier 1 instrument is
+kept as `mamba_host_copy_tier1_test.go.txt` beside this file, not in the package: a test that names the 9B checkpoint is filed in the `nemotron-h` heavy group by `cmd/gate/heavy_groups.go`
+(`TestHeavyPartition_cudaTreeFitsTheTable` was red on it), and it is a measurement, not a gate. To run it, copy it to `backend/cuda/mamba_host_copy_tier1_test.go` and build the test binary;
+both readings above were made that way. `green-touched.log` is `python3 scripts/touched.py` over the final change: 13 checks passed.
+
