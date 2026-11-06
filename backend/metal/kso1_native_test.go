@@ -284,10 +284,10 @@ func TestKSO1_stepMatchesDecode(t *testing.T) {
 		}
 		bB, bA, uK, uN, uLda, uLdo := NewBufferFloats(d, bias), NewBufferFloats(d, act), NewBufferU32(d, uint32(K)), NewBufferU32(d, N), NewBufferU32(d, uint32(K)), NewBufferU32(d, N)
 		for mode := range 3 {
-			for _, B := range []int{1, 2, 4, 8} {
+			for _, B := range []int{1, 2, 3, 4, 5, 6, 7, 8} {
 				step := NewBufferFloats(d, slices.Clone(init[:B*N]))
 				e := q.Begin()
-				e.Dispatch(pipe(fmt.Sprintf("mc3_gemv_%s_f32_rows%d", kind, B)), N*32, 256, w, bA, step, uK, uN, uLda, uLdo, bB, NewBufferU32(d, uint32(mode)))
+				e.Dispatch(pipe(fmt.Sprintf("mc3_gemv_%s_f32_rows%d", kind, B)), stepGrid(kind, N), 256, w, bA, step, uK, uN, uLda, uLdo, bB, NewBufferU32(d, uint32(mode)))
 				e.End()
 				if err := e.Err(); err != nil {
 					t.Fatalf("step %s B=%d: dispatch: %v", kind, B, err)
@@ -884,4 +884,13 @@ func TestKSO1_speed(t *testing.T) {
 	if verdict != "SHIP" {
 		t.Errorf("O1-G7 %s: Phi-3 median %.4f (%d of 10 pairs faster), the 1.5B's %.4f", verdict, pm, pb, qm)
 	}
+}
+
+// stepGrid is the threads the step's rows kernel of kind is dispatched over for N output rows (batch.go:q4kStepGemv): Q4_K and Q5_K
+// take stepRowsNR output rows a simdgroup, Q6_K one.
+func stepGrid(kind string, N int) int {
+	if kind == "q6k" {
+		return N * 32
+	}
+	return (N + stepRowsNR - 1) / stepRowsNR * 32
 }
