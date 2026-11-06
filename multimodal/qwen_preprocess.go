@@ -59,32 +59,26 @@ func LoadQwenPreprocessConfig(dir string) (QwenPreprocessConfig, error) {
 	if !found {
 		return cfg, nil // no file: standard Qwen2.5-VL defaults
 	}
-	var pc struct {
-		MinPixels         int       `json:"min_pixels"`
-		MaxPixels         int       `json:"max_pixels"`
-		PatchSize         int       `json:"patch_size"`
-		MergeSize         int       `json:"merge_size"`
-		TemporalPatchSize int       `json:"temporal_patch_size"`
+	var pc struct { // a size the file sets is taken as it is, for checkLimits to judge; one it leaves out keeps the default
+		MinPixels         *int      `json:"min_pixels"`
+		MaxPixels         *int      `json:"max_pixels"`
+		PatchSize         *int      `json:"patch_size"`
+		MergeSize         *int      `json:"merge_size"`
+		TemporalPatchSize *int      `json:"temporal_patch_size"`
 		ImageMean         []float32 `json:"image_mean"`
 		ImageStd          []float32 `json:"image_std"`
 	}
 	if err := json.Unmarshal(raw, &pc); err != nil {
 		return cfg, fmt.Errorf("multimodal(qwen): parse preprocessor_config: %w", err)
 	}
-	if pc.MinPixels > 0 {
-		cfg.MinPixels = pc.MinPixels
-	}
-	if pc.MaxPixels > 0 {
-		cfg.MaxPixels = pc.MaxPixels
-	}
-	if pc.PatchSize > 0 {
-		cfg.PatchSize = pc.PatchSize
-	}
-	if pc.MergeSize > 0 {
-		cfg.MergeSize = pc.MergeSize
-	}
-	if pc.TemporalPatchSize > 0 {
-		cfg.TemporalPatchSize = pc.TemporalPatchSize
+	for _, f := range []struct {
+		from *int
+		to   *int
+	}{{pc.MinPixels, &cfg.MinPixels}, {pc.MaxPixels, &cfg.MaxPixels}, {pc.PatchSize, &cfg.PatchSize}, {pc.MergeSize, &cfg.MergeSize},
+		{pc.TemporalPatchSize, &cfg.TemporalPatchSize}} {
+		if f.from != nil {
+			*f.to = *f.from
+		}
 	}
 	if len(pc.ImageMean) == 3 {
 		cfg.Mean = [3]float32{pc.ImageMean[0], pc.ImageMean[1], pc.ImageMean[2]}

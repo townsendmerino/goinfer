@@ -132,33 +132,13 @@ func isStdStream(e ast.Expr) bool {
 }
 
 // checkReportAndReturn: a logs call naming an error, then a return of that error, in one statement list. A report inside an if
-// statement's branch counts for the statements after it when the branch falls through, unless the if statement declared the
-// name; assigning the name again clears it.
+// statement, in any branch of its else-if chain and at any depth of nested ifs, counts for the statements after it when its own
+// branch falls through, unless that if declared the name; assigning the name again clears it.
 func checkReportAndReturn(t *testing.T, fset *token.FileSet, list []ast.Stmt) {
 	t.Helper()
 	reported := map[string]token.Pos{}
 	for _, st := range list {
-		switch s := st.(type) {
-		case *ast.ExprStmt:
-			for name, pos := range logsReports(s) {
-				reported[name] = pos
-			}
-		case *ast.IfStmt:
-			declared := assigned(s.Init, token.DEFINE)
-			for _, branch := range []ast.Stmt{s.Body, s.Else} {
-				if b, ok := branch.(*ast.BlockStmt); ok && !terminates(b.List) {
-					for name, pos := range logsReports(b) {
-						if !declared[name] {
-							reported[name] = pos
-						}
-					}
-				}
-			}
-		case *ast.AssignStmt:
-			for name := range assigned(s, token.ASSIGN, token.DEFINE) {
-				delete(reported, name)
-			}
-		case *ast.ReturnStmt:
+		if s, ok := st.(*ast.ReturnStmt); ok {
 			for _, res := range s.Results {
 				for _, id := range returnedErrors(res) {
 					if pos, hit := reported[id.Name]; hit {
@@ -166,48 +146,98 @@ func checkReportAndReturn(t *testing.T, fset *token.FileSet, list []ast.Stmt) {
 					}
 				}
 			}
+			continue
+		}
+		stmtReports(st, reported)
+	}
+}
+
+// stmtReports updates reported for one statement that does not return: a logs call adds its error names, an if adds what its
+// falling-through branches report, a block adds what it reports when it falls through, and an assignment clears what it assigns.
+func stmtReports(st ast.Stmt, reported map[string]token.Pos) {
+	switch s := st.(type) {
+	case *ast.ExprStmt:
+		for name, pos := range logsReports(s) {
+			reported[name] = pos
+		}
+	case *ast.IfStmt:
+		for name, pos := range ifReports(s) {
+			reported[name] = pos
+		}
+	case *ast.BlockStmt:
+		for name, pos := range listReports(s.List) {
+			reported[name] = pos
+		}
+	case *ast.AssignStmt:
+		for name := range assigned(s, token.ASSIGN, token.DEFINE) {
+			delete(reported, name)
 		}
 	}
 }
 
-// returnedErrors is the names a return result hands back as an error: the result itself, a composite literal's fields (an error
-// type wrapping it), or the arguments of the fmt.Errorf or errors.Join that wraps it. A name passed to any other call is an argument,
-// not the error returned.
+// listReports is what a statement list has reported, and not assigned again, by its end: nothing when it ends by leaving.
+func listReports(list []ast.Stmt) map[string]token.Pos {
+	out := map[string]token.Pos{}
+	if terminates(list) {
+		return out
+	}
+	for _, st := range list {
+		stmtReports(st, out)
+	}
+	return out
+}
+
+// ifReports is what an if statement's branches report when they fall through, through its else-if chain, without the names its
+// own init declared.
+func ifReports(s *ast.IfStmt) map[string]token.Pos {
+	out := listReports(s.Body.List)
+	var rest map[string]token.Pos
+	switch e := s.Else.(type) {
+	case *ast.BlockStmt:
+		rest = listReports(e.List)
+	case *ast.IfStmt:
+		rest = ifReports(e)
+	}
+	for name, pos := range rest {
+		out[name] = pos
+	}
+	for name := range assigned(s.Init, token.DEFINE) {
+		delete(out, name)
+	}
+	return out
+}
+
+// returnedErrors is the names a return result hands back as an error, at any depth of wrapping: the result itself, a composite
+// literal's fields (an error type wrapping it), or the arguments of a fmt.Errorf or errors.Join. A name passed to any other call is
+// an argument, not the error returned.
 func returnedErrors(res ast.Expr) []*ast.Ident {
 	if u, ok := res.(*ast.UnaryExpr); ok && u.Op == token.AND {
 		res = u.X
 	}
+	var inner []ast.Expr
 	switch x := res.(type) {
 	case *ast.Ident:
 		return []*ast.Ident{x}
 	case *ast.CompositeLit: // an error type wrapping it
-		var out []*ast.Ident
 		for _, e := range x.Elts {
 			if kv, ok := e.(*ast.KeyValueExpr); ok {
 				e = kv.Value
 			}
-			if id, ok := e.(*ast.Ident); ok {
-				out = append(out, id)
-			}
+			inner = append(inner, e)
 		}
-		return out
-	}
-	c, ok := res.(*ast.CallExpr)
-	if !ok {
-		return nil
-	}
-	sel, ok := c.Fun.(*ast.SelectorExpr)
-	if !ok {
-		return nil
-	}
-	if x, ok := sel.X.(*ast.Ident); !ok || !(x.Name == "fmt" && sel.Sel.Name == "Errorf" || x.Name == "errors" && sel.Sel.Name == "Join") {
-		return nil
+	case *ast.CallExpr:
+		sel, ok := x.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return nil
+		}
+		if pkg, ok := sel.X.(*ast.Ident); !ok || !(pkg.Name == "fmt" && sel.Sel.Name == "Errorf" || pkg.Name == "errors" && sel.Sel.Name == "Join") {
+			return nil
+		}
+		inner = x.Args
 	}
 	var out []*ast.Ident
-	for _, a := range c.Args {
-		if id, ok := a.(*ast.Ident); ok {
-			out = append(out, id)
-		}
+	for _, e := range inner {
+		out = append(out, returnedErrors(e)...)
 	}
 	return out
 }
