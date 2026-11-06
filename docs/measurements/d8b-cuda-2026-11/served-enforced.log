@@ -1,0 +1,4 @@
+direct: load 1.5 s (load avg 0.22); after load RssAnon 657 MiB, RssFile 102, RssShmem 94, VmSwap 0; device 966 MiB; ['decode path: cuda-resident (q4k)']; text 'numbers []int) int {\n    sum := 0\n    for _, number'
+sidecar: load 1.2 s (load avg 0.28); after load RssAnon 57 MiB, RssFile 554, RssShmem 94, VmSwap 0; device 990 MiB; ['decode path: cuda-resident (q4k)']; text 'numbers []int) int {\n    sum := 0\n    for _, number'
+RssAnon after load, sidecar over direct: 0.087; the 16-token completions equal
+VERDICT: PASS (ratio 0.087)

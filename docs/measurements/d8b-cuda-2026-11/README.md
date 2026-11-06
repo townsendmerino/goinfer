@@ -64,3 +64,11 @@ Both servers started on the CUDA resident and answered. The sidecar arm holds 59
 **Not covered:** other q4k checkpoints and sizes (the 0.5B only; the Mac's cell used the same file), a Q5_K/Q6_K mix (the kquant lanes upload their own forms), speculative or multi-slot loads, and the first-load transcode cost (the sidecar already existed). Gemma 4 and the MoE families at q4k were not run.
 
 **Verdict: PASS.** The ledger row D8b-cuda closes with this change (`docs/tasks/task-memory-campaign-2026-10.md`), and P36 in `docs/queue-performance.md` drops it.
+
+## Review: the void gates the README claimed are now enforced (coordinator, 2026-11-05 17:57, from Gemini)
+
+`d8b_cuda_served.py` said a run with the one-minute load above 8.0, or whose server was not CUDA-resident, was void, and checked neither: the load average was recorded and the decode path was not read. The script now enforces both at each arm's start and after the server listens (`Void`, exit 2): the load above `LOAD_VOID` (8.0), or a server log that does not say `decode path: cuda-resident`. The decode path is printed and kept in `readings.json`.
+
+- **Plants** (`plants.log`, throwaway copies, not committed): with `LOAD_VOID = 0.0` the run is `VERDICT: VOID` before any server starts; with the decode-path check asking for a string the log never says, the first arm is `VOID` after its server has started. Each gate goes red.
+- **The reading above checked against its logs** (it was made before the enforcement): both `serve-direct.log` and `serve-sidecar.log` say `decode path: cuda-resident (q4k)`, and the load averages were 0.62 and 0.57. So the 16:58 reading met both gates.
+- **The cell run again with the enforcing script** (`served-enforced/`, `served-enforced.log`, 17:52:43 PST, the same binary, the exclusive timing lock, load 0.22 and 0.28): `RssAnon` after load **657 MiB direct, 57 MiB through the sidecar, ratio 0.087**; both `decode path: cuda-resident (q4k)`; the same 16-token completion; `VERDICT: PASS`. The first reading (0.093) stands beside it; the two agree. This repeats an arm whose build is unchanged, to give the committed script a run of its own; it is not a second chance at the bar.
