@@ -2,69 +2,100 @@ package fit
 
 import "testing"
 
-// pricing drives both estimators over a synthetic tensor table, so each branch is asserted on bytes it alone can produce.
-func TestWeightBytes_branches(t *testing.T) {
-	dims := map[string][]int{
-		"blk.0.attn_q.weight":        {10, 10}, // matrix: 100 * Matrix
-		"blk.0.attn_norm.weight":     {10},     // 1-D: f32
-		"blk.0.ssm_in.weight":        {10, 10}, // f32 pinned (ssm_), or Int8 on a quantized Nemotron-H
-		"blk.0.attn_q_a.weight":      {10, 10}, // f32 pinned MLA, or Int8 with MLAProjInt8
-		"blk.0.ffn_gate_exps.weight": {10, 10}, // matrix and counted as experts
-		"blk.0.kept.weight":          {10, 10}, // Kept overrides Matrix
-		"blk.0.empty.weight":         {10, 0},  // zero elements: skipped
-	}
-	names := []string{}
-	for n := range dims {
-		names = append(names, n)
-	}
-	get := func(n string) ([]int, bool) { d, ok := dims[n]; return d, ok }
-	r := Rates{Matrix: 0.5, Int8: 1, Embedding: 1}
+// Every case prices ONE tensor with its own element count and checks the bytes that branch alone produces, so a swapped or dropped
+// branch moves that case's number. Rates: matrix 0.5, embedding 2, int8 1, f32 4 bytes per element.
+type tensorCase struct {
+	name  string
+	dims  []int // nil: the tensor is unknown to the reader (ok false)
+	rates func(*Rates)
+	want  int64
+}
 
-	total, exp := GGUFWeightBytes(names, get, "llama", r)
-	// attn_q 50 + norm 40 + ssm_in f32 400 + attn_q_a f32 400 + experts 50 + kept 50 (no Kept yet)
-	if want := int64(50 + 40 + 400 + 400 + 50 + 50); total != want || exp != 50 {
-		t.Errorf("plain: total %d experts %d, want %d and 50", total, exp, want)
-	}
+var rates = Rates{Matrix: 0.5, Embedding: 2, Int8: 1}
 
-	r.MambaProjInt8, r.MLAProjInt8 = true, true
-	r.Kept = func(name string, _ []int) (float64, bool) { return 7, name == "blk.0.kept.weight" }
-	total, _ = GGUFWeightBytes(names, get, "nemotron_h", r)
-	// ssm_in at Int8 (100), attn_q_a at Int8 (100), kept 7
-	if want := int64(50 + 40 + 100 + 100 + 50 + 7); total != want {
-		t.Errorf("nemotron_h int8: total %d, want %d", total, want)
+func (c tensorCase) rate() Rates {
+	r := rates
+	if c.rates != nil {
+		c.rates(&r)
 	}
-	total, _ = GGUFWeightBytes(names, get, "llama", r)
-	// Mamba int8 applies only to the nemotron architectures; MLA int8 applies anywhere
-	if want := int64(50 + 40 + 400 + 100 + 50 + 7); total != want {
-		t.Errorf("llama with MLA int8: total %d, want %d", total, want)
+	return r
+}
+
+func TestGGUFWeightBytes_branches(t *testing.T) {
+	kept := func(r *Rates) {
+		r.Kept = func(name string, _ []int) (float64, bool) { return 7, name == "blk.0.attn_q.weight" }
+	}
+	mamba := func(r *Rates) { r.MambaProjInt8 = true }
+	mla := func(r *Rates) { r.MLAProjInt8 = true }
+	for _, c := range []struct {
+		tensorCase
+		arch    string
+		experts int64
+	}{
+		{tensorCase{"blk.0.attn_q.weight", []int{2, 3}, nil, 3}, "llama", 0},               // matrix: 6 * 0.5
+		{tensorCase{"blk.0.attn_norm.weight", []int{7}, nil, 28}, "llama", 0},              // 1-D: f32
+		{tensorCase{"blk.0.ssm_in.weight", []int{5, 3}, nil, 60}, "nemotron_h", 0},         // f32 pinned: 15 * 4
+		{tensorCase{"blk.0.ssm_in.weight", []int{6, 7}, mamba, 42}, "nemotron_h", 0},       // int8: 42 * 1
+		{tensorCase{"blk.0.ssm_out.weight", []int{3, 11}, mamba, 33}, "nemotron_h_moe", 0}, // int8: 33 * 1
+		{tensorCase{"blk.0.ssm_in.weight", []int{6, 7}, mamba, 168}, "llama", 0},           // not Nemotron-H: stays f32
+		{tensorCase{"blk.0.attn_q_a.weight", []int{4, 6}, mla, 24}, "deepseek2", 0},        // MLA int8: 24 * 1
+		{tensorCase{"blk.0.attn_q_a.weight", []int{4, 6}, nil, 96}, "deepseek2", 0},        // MLA f32 pinned: 24 * 4
+		{tensorCase{"blk.0.attn_kv_b.weight", []int{3, 5}, mla, 60}, "deepseek2", 0},       // kv_b stays f32 under MLAProjInt8
+		{tensorCase{"blk.0.ffn_gate_exps.weight", []int{4, 5, 2}, nil, 20}, "llama", 20},   // matrix 40 * 0.5, all expert
+		{tensorCase{"blk.0.ffn_gate_exps.bias", []int{3, 4}, nil, 48}, "llama", 0},         // f32 pinned, not counted as expert
+		{tensorCase{"blk.0.attn_q.weight", []int{2, 3}, kept, 7}, "llama", 0},              // Kept overrides the matrix price
+		{tensorCase{"blk.0.attn_k.weight", []int{2, 3}, kept, 3}, "llama", 0},              // Kept false: matrix price
+		{tensorCase{"blk.0.zero.weight", []int{10, 0}, nil, 0}, "llama", 0},                // zero elements
+		{tensorCase{"blk.0.neg.weight", []int{-1, 4}, nil, 0}, "llama", 0},                 // non-positive dimension
+		{tensorCase{"blk.0.unknown.weight", nil, nil, 0}, "llama", 0},                      // shape unreadable
+	} {
+		get := func(n string) ([]int, bool) { return c.dims, c.dims != nil }
+		total, exp := GGUFWeightBytes([]string{c.name}, get, c.arch, c.rate())
+		if total != c.want || exp != c.experts {
+			t.Errorf("%s %v arch %s: total %d experts %d, want %d and %d", c.name, c.dims, c.arch, total, exp, c.want, c.experts)
+		}
 	}
 }
 
 func TestSafetensorsWeightBytes_branches(t *testing.T) {
-	shapes := map[string][]int{
-		"model.layers.0.q.weight":             {10, 10},
-		"model.layers.0.norm.weight":          {10},
-		"model.embed_tokens.weight":           {10, 10},
-		"lm_head.weight":                      {10, 10},
-		"model.layers.0.x.qweight":            {10, 10}, // packed: 8x
-		"model.layers.0.x.scales":             {10, 10}, // GPTQ aux: zero
-		"vision_tower.blocks.0.w":             {10, 10}, // f32
-		"model.layers.0.mixer.in_proj.weight": {10, 10}, // f32 pinned, or Int8 with MambaProjInt8
+	mamba := func(r *Rates) { r.MambaProjInt8 = true }
+	mla := func(r *Rates) { r.MLAProjInt8 = true }
+	for _, c := range []tensorCase{
+		{"model.layers.0.q.weight", []int{2, 3}, nil, 3},                // matrix: 6 * 0.5
+		{"model.layers.0.norm.weight", []int{7}, nil, 28},               // 1-D: f32
+		{"model.embed_tokens.weight", []int{4, 5}, nil, 40},             // embedding: 20 * 2
+		{"lm_head.weight", []int{2, 11}, nil, 44},                       // embedding: 22 * 2
+		{"model.layers.0.x.qweight", []int{3, 2}, nil, 24},              // packed: 6 * 8 * 0.5
+		{"model.layers.0.x.scales", []int{9, 9}, nil, 0},                // GPTQ aux: never resident
+		{"model.layers.0.x.qzeros", []int{9, 9}, nil, 0},                // GPTQ aux
+		{"model.layers.0.x.g_idx", []int{9, 9}, nil, 0},                 // GPTQ aux
+		{"vision_tower.blocks.0.w", []int{3, 13}, nil, 156},             // f32: 39 * 4
+		{"multi_modal_projector.w", []int{3, 17}, nil, 204},             // f32: 51 * 4
+		{"model.layers.0.mixer.conv1d.weight", []int{5, 3}, nil, 60},    // f32 pinned: 15 * 4
+		{"model.layers.0.mixer.in_proj.weight", []int{6, 7}, mamba, 42}, // int8: 42 * 1
+		{"model.layers.0.mixer.out_proj.weight", []int{3, 11}, mamba, 33},
+		{"model.layers.0.mixer.in_proj.weight", []int{6, 7}, nil, 168},      // not armed: f32 pinned
+		{"model.layers.0.self_attn.q_a_proj.weight", []int{4, 6}, mla, 24},  // MLA int8: 24 * 1
+		{"model.layers.0.self_attn.q_a_proj.weight", []int{4, 6}, nil, 96},  // MLA f32 pinned: 24 * 4
+		{"model.layers.0.self_attn.kv_b_proj.weight", []int{3, 5}, mla, 60}, // kv_b stays f32
+		{"model.layers.0.zero.weight", []int{10, 0}, nil, 0},                // zero elements
+		{"model.layers.0.neg.weight", []int{-1, 4}, nil, 0},                 // non-positive dimension
+		{"model.layers.0.unknown.weight", nil, nil, 0},                      // shape unreadable
+	} {
+		get := func(n string) ([]int, bool) { return c.dims, c.dims != nil }
+		if got := SafetensorsWeightBytes([]string{c.name}, get, c.rate()); got != c.want {
+			t.Errorf("%s %v: got %d, want %d", c.name, c.dims, got, c.want)
+		}
 	}
-	names := []string{}
-	for n := range shapes {
-		names = append(names, n)
-	}
+}
+
+// TestSafetensorsWeightBytes_sums checks that tensors add, with distinct counts so no two orderings agree.
+func TestSafetensorsWeightBytes_sums(t *testing.T) {
+	shapes := map[string][]int{"a.weight": {2, 3}, "b.weight": {7}, "model.embed_tokens.weight": {4, 5}}
 	get := func(n string) ([]int, bool) { s, ok := shapes[n]; return s, ok }
-	r := Rates{Matrix: 0.5, Embedding: 2, Int8: 1}
-	got := SafetensorsWeightBytes(names, get, r)
-	// q 50 + norm 40 + embed 200 + head 200 + qweight 100*8*0.5=400 + vision 400 + mixer f32 400
-	if want := int64(50 + 40 + 200 + 200 + 400 + 400 + 400); got != want {
+	names := []string{"a.weight", "b.weight", "model.embed_tokens.weight", "missing.weight"}
+	if got, want := SafetensorsWeightBytes(names, get, rates), int64(3+28+40); got != want {
 		t.Errorf("total %d, want %d", got, want)
-	}
-	r.MambaProjInt8 = true
-	if got, want := SafetensorsWeightBytes(names, get, r), int64(50+40+200+200+400+400+100); got != want {
-		t.Errorf("mamba int8: total %d, want %d", got, want)
 	}
 }
 
