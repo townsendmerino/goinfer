@@ -897,6 +897,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	// The context margin, on the planned geometry, before the context is planned (ctxMarginFor): the setup job replaces r.layers,
 	// and the fused-attention flags are set again where the modules load.
 	r.layers = planLayerGeometry(m, hls, nH, r)
+	if e := r.readRecurrentFloats(m); e != nil {
+		return declined(e)
+	}
 	r.pleP, r.eModel = pleP, pleP > 0
 	for l := range r.layers {
 		r.eModel = r.eModel || r.layers[l].kvShared
@@ -1600,23 +1603,15 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				if h.dnONormEps != 0 {
 					L.dnGNormEps = h.dnONormEps
 				}
-				rf, err := r.setRecurrentFloats(m, l, nLayers)
-				if err != nil {
-					return err
-				}
-				L.dnWin = r.upOn(mem.LineState, make([]float32, rf.win))
-				L.dnState = r.upOn(mem.LineState, make([]float32, rf.state))
+				L.dnWin = r.upOn(mem.LineState, make([]float32, r.recFloats[l].win))
+				L.dnState = r.upOn(mem.LineState, make([]float32, r.recFloats[l].state))
 			} else if h.mixer == decoder.MixerMamba {
 				// Nemotron-H Mamba-2 block: the two int8 projections, the small tables, and the conv window and SSM state, zeroed at build and by resetState.
 				L.mbIn, L.mbOut = r.upW(h.mamba.in), r.upW(h.mamba.out)
 				L.mbConvW, L.mbConvB = r.up32(h.mamba.convW), r.up32(h.mamba.convB)
 				L.mbHeadP, L.mbNormW = r.up32(h.mamba.headP), r.up32(h.mamba.normW)
-				rf, err := r.setRecurrentFloats(m, l, nLayers)
-				if err != nil {
-					return err
-				}
-				L.mbWin = r.upOn(mem.LineState, make([]float32, rf.win))
-				L.mbSSM = r.upOn(mem.LineState, make([]float32, rf.state))
+				L.mbWin = r.upOn(mem.LineState, make([]float32, r.recFloats[l].win))
+				L.mbSSM = r.upOn(mem.LineState, make([]float32, r.recFloats[l].state))
 			} else if h.mixer == decoder.MixerNone {
 				// A feed-forward-only block has no attention weights to upload (u and d follow below).
 			} else if h.mixer == decoder.MixerMLA {

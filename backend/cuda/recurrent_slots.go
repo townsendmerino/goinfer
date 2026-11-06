@@ -26,17 +26,21 @@ func recurrentFloatsOf(m *decoder.Model, l int) (recurrentFloats, error) {
 	return recurrentFloats{win: specs[0].Floats, state: specs[1].Floats}, nil
 }
 
-// setRecurrentFloats records layer l's window and state sizes from the list, for the upload and everything after it.
-func (r *cudaResident) setRecurrentFloats(m *decoder.Model, l, nLayers int) (recurrentFloats, error) {
-	rf, err := recurrentFloatsOf(m, l)
-	if err != nil {
-		return rf, err
+// readRecurrentFloats records every recurrent layer's window and state sizes from the list. It runs where the planned layer geometry is
+// made, before the context is planned, because the plan prices the state (recurrentStateCharged) before any layer is uploaded.
+func (r *cudaResident) readRecurrentFloats(m *decoder.Model) error {
+	r.recFloats = make([]recurrentFloats, len(r.layers))
+	for l := range r.layers {
+		if !r.layers[l].isRecurrent() {
+			continue
+		}
+		rf, err := recurrentFloatsOf(m, l)
+		if err != nil {
+			return err
+		}
+		r.recFloats[l] = rf
 	}
-	if r.recFloats == nil {
-		r.recFloats = make([]recurrentFloats, nLayers)
-	}
-	r.recFloats[l] = rf
-	return rf, nil
+	return nil
 }
 
 // zeroFloats returns a function giving n zeroed floats from one buffer grown to the largest n asked for; each result is read, not kept.

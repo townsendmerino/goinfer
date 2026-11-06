@@ -646,7 +646,7 @@ func TestRecurrentSlots_roomForOneCheckpoint(t *testing.T) {
 // that fit by their raw bytes do not.
 func TestCkptCopies_countTheCharge(t *testing.T) {
 	const reserve = int64(1 << 30)
-	r := &cudaResident{dnet: &dnetParams{convK: 2, convDim: 1, stateElems: 3 << 18}, layers: []cudaLayer{{mixer: decoder.MixerDeltaNet}}, recFloats: []recurrentFloats{{win: 1, state: 3 << 18}}}
+	r := &cudaResident{layers: []cudaLayer{{mixer: decoder.MixerDeltaNet}}, recFloats: []recurrentFloats{{win: 1, state: 3 << 18}}}
 	live, charged := r.recurrentLiveBytes(), r.recurrentStateCharged()
 	if live >= charged {
 		t.Fatalf("raw %d, charged %d: the fixture has no rounding to read", live, charged)
@@ -1279,5 +1279,31 @@ func TestRecurrentState_listEqualsKernelGeometry(t *testing.T) {
 		if seen == 0 {
 			t.Errorf("%s: no recurrent layer", fixture)
 		}
+	}
+}
+
+// TestRecurrentFloatsOf_refusesAListThatIsNotAWindowAndAState: a recurrent layer's list must be exactly a window then a state; any other
+// shape is an error the build declines on, not sizes guessed.
+func TestRecurrentFloatsOf_refusesAListThatIsNotAWindowAndAState(t *testing.T) {
+	t.Cleanup(func() { stateSpecsOf = (*decoder.Model).StateSpecs })
+	for name, specs := range map[string][]decoder.StateSpec{
+		"none":        nil,
+		"one":         {{Name: "window", Floats: 4}},
+		"three":       {{Name: "window", Floats: 4}, {Name: "state", Floats: 4}, {Name: "state", Floats: 4}},
+		"swapped":     {{Name: "state", Floats: 4}, {Name: "window", Floats: 4}},
+		"kda windows": {{Name: "window-q", Floats: 4}, {Name: "state", Floats: 4}},
+	} {
+		stateSpecsOf = func(*decoder.Model, int) []decoder.StateSpec { return specs }
+		if rf, err := recurrentFloatsOf(nil, 3); err == nil {
+			t.Errorf("%s: got %+v, want an error", name, rf)
+		} else if !strings.Contains(err.Error(), "layer 3") {
+			t.Errorf("%s: the error does not name the layer: %v", name, err)
+		}
+	}
+	stateSpecsOf = func(*decoder.Model, int) []decoder.StateSpec {
+		return []decoder.StateSpec{{Name: "window", Floats: 5}, {Name: "state", Floats: 7}}
+	}
+	if rf, err := recurrentFloatsOf(nil, 0); err != nil || rf != (recurrentFloats{5, 7}) {
+		t.Errorf("a window and a state: %+v, %v", rf, err)
 	}
 }
