@@ -344,6 +344,7 @@ func TestMambaHostCopy_planningHoldsNoPackedWords(t *testing.T) {
 func TestMambaHostCopy_deviceBytesIdenticalToPackWeight(t *testing.T) {
 	r := streamRig(t)
 	m, layers, p, hidden := mambaLayersOf(t)
+	planned := 0
 	for _, l := range layers {
 		hm, err := packMambaLayer(m, l, hidden, p)
 		if err != nil {
@@ -351,17 +352,24 @@ func TestMambaHostCopy_deviceBytesIdenticalToPackWeight(t *testing.T) {
 		}
 		for name, h := range map[string]hostW{"in_proj": hm.in, "out_proj": hm.out} {
 			if h.src == nil {
-				continue // the planning test reports it
+				t.Fatalf("layer %d %s is packed eagerly, not planned: there is no streamed upload to compare with the packed one", l, name)
 			}
+			planned++
 			eager, err := packWeight(h.src)
 			if err != nil {
 				t.Fatalf("layer %d %s: packWeight: %v", l, name, err)
 			}
 			want := devBytes(t, r.upW(eager), h)
+			if len(want) == 0 {
+				t.Fatalf("layer %d %s: the packed upload read back no device buffers", l, name)
+			}
 			for _, words := range []int{1 << 20, 64, 1} {
 				withStage(t, words)
 				r.pk = nil
 				got := devBytes(t, r.upW(h), h)
+				if len(got) != len(want) {
+					t.Fatalf("layer %d %s, staging %d words: the streamed upload read back %d device buffers, the packed one %d", l, name, words, len(got), len(want))
+				}
 				for k, b := range want {
 					if string(got[k]) != string(b) {
 						t.Errorf("layer %d %s, staging %d words: device buffer %s differs from the packed upload's", l, name, words, k)
@@ -369,6 +377,9 @@ func TestMambaHostCopy_deviceBytesIdenticalToPackWeight(t *testing.T) {
 				}
 			}
 		}
+	}
+	if planned == 0 {
+		t.Fatal("no planned weight was compared")
 	}
 	if r.setupErr != nil {
 		t.Fatalf("upload error: %v", r.setupErr)

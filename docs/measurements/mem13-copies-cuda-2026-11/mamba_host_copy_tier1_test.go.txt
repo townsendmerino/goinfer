@@ -88,6 +88,8 @@ func (s *anonSampler) finish() (peak, swap, winStart, winPeak int64) {
 	s.mu.Unlock()
 	close(s.stop)
 	<-s.done
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.peak, s.swapPeak, s.winStart, s.winPeak
 }
 
