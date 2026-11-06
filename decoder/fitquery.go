@@ -10,37 +10,6 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
-// FitAnswer is what Load's own memory check says of loading a path with given options, priced against the memory
-// available now, without loading anything. FitQuery computes it with the functions Load calls (fitCheckFor and guardFit's
-// decision for a .gguf or safetensors directory, decideGIWFit for a .giw), so the two cannot disagree.
-type FitAnswer struct {
-	// Guard names the check that priced it: "resident" (weights, KV and the mapped source, against 70% of available memory)
-	// or "giw" (KV and scratch against available memory less 1 GB: a .giw's weights are file-backed).
-	Guard string
-	// Fits is whether Load proceeds. Load proceeds when the check cannot price the load; Unpriced then says why.
-	Fits     bool
-	Unpriced string
-	// Ctx is the context priced; when CtxCapped, the smaller one Load would pin an unpinned request to.
-	Ctx                                                      int
-	CtxPinned                                                bool
-	CtxCapped                                                bool
-	MaxCtx                                                   int // the model's own window, 0 when it declares none
-	NeedBytes, BudgetBytes, WeightBytes, KVBytes, AvailBytes int64
-	// PinnedExpertBytes is the page-locked host copy of the routed experts that a CUDA expert cache (--moe-cache-experts) builds from a .giw, priced into
-	// NeedBytes; 0 for every other load.
-	PinnedExpertBytes int64
-	Decline           string // Load's refusal when it does not fit, "" otherwise
-	// Streamable is the refusal's DenseStreamable: modelload.Load retries such a .gguf with weight streaming.
-	Streamable bool
-	// DecodePath is the decode path Load would report: "cpu (<quant>)", as DecodePath begins, when the load runs on the CPU,
-	// or, for a .giw on a backend whose pre-build checks can be asked (ResidencyPricer), the resident or the decline they
-	// decide. "" when only the load can tell; DecodeUnknown then says why.
-	DecodePath    string
-	DecodeUnknown string
-	// ResidentCtx is the context a resident decode path would hold, when DecodePath names one (0 otherwise).
-	ResidentCtx int
-}
-
 // FitQuery answers FitAnswer for path and opts. An error is a load that would fail before its memory check, for a reason
 // other than memory (an unreadable .giw, an unknown quant).
 func FitQuery(path string, opts Options) (FitAnswer, error) {

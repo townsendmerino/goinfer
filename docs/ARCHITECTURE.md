@@ -1109,7 +1109,8 @@ Every import from one goinfer package to another, by repository-relative directo
 | `cmd/prequant` | `decoder`, `internal/runtime/prequant` |  |
 | `cmd/serve` | `internal/app/serveapp` |  |
 | `constrain` |  | `tokenizer` |
-| `decoder` | `chat`, `constrain`, `internal/cost`, `internal/runtime/adapter`, `internal/runtime/diskfree`, `internal/runtime/f16`, `internal/runtime/giw`, `internal/runtime/hybridattn`, `internal/runtime/kvmgr`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/program`, `internal/runtime/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/guard/paritykey`, `internal/vision`, `multimodal` |
+| `decoder` | `chat`, `constrain`, `decoder/fit`, `internal/cost`, `internal/runtime/adapter`, `internal/runtime/diskfree`, `internal/runtime/f16`, `internal/runtime/giw`, `internal/runtime/hybridattn`, `internal/runtime/kvmgr`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/program`, `internal/runtime/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/guard/paritykey`, `internal/vision`, `multimodal` |
+| `decoder/fit` | `internal/runtime/mem` |  |
 | `demo/agent/agent` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
 | `demo/agent/cmd/agent-web` | `backend/webgpu`, `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |
 | `demo/agent/cmd/stdlib-agent` | `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |
@@ -1148,6 +1149,7 @@ No import, made or recorded, may break one; they are edited by hand in `imports.
 
 | rule | packages | may not import | why |
 |---|---|---|---|
+| fit-leaf | `decoder/fit`, tests included | any goinfer package; (`decoder/fit` may import `internal/runtime/mem`) | decoder/fit (Tier 3, docs/layout.md) holds the fit guard's and the planner's exchange types so a caller can name them without importing the loader. It sits below decoder, which re-exports them: it imports internal/runtime/mem and no other goinfer package, decoder included. |
 | towers-standalone | `internal/vision`, `internal/audio`, tests included | any goinfer package; (`internal/audio` may import `internal/vision`); anything outside the standard library but `github.com/townsendmerino/aikit/linalg`, `github.com/townsendmerino/aikit/embed` | The towers moved from aikit (AX) as model semantics over aikit's kernels: no goinfer package, and from outside the standard library only aikit's linalg and embed. One exception: internal/audio may import internal/vision, whose tower program type the audio towers walk (Francis, 2026-10-29). |
 | gpudev-standalone | `backend/cuda/internal/gpudev`, `backend/metal/internal/gpudev`, tests included | any goinfer package | The device substrate (AX) sits under every backend package and imports none of them, nor anything else of goinfer's. |
 | kernels-free-of-decoder | `backend/cuda/kernels`, `backend/metal/kernels`, `backend/webgpu/internal/kernels`, tests included | `decoder` | Backend kernel tests left the packages that import decoder (SB1 step 1) so a decoder edit stops re-running them. |
