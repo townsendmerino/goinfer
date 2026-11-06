@@ -1,0 +1,6 @@
+=== RUN   TestD8bCUDA_cell
+cuda: prefill width 2048 rows (155 MiB of scratch; 6032 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    d8b_cuda_cell_test.go:62: D8B-CUDA arm=sidecar heap_in_use=585 MiB RssAnon=619 MiB RssFile=100 MiB decode_path="cuda-resident (q4k)" tokens=[279 6722 315 279 6722 315 279 6722 315 279 6722 315 279 6722 315 279]
+--- PASS: TestD8bCUDA_cell (1.14s)
+PASS
+ledger: 2 device(s) released in this run
