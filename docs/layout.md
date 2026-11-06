@@ -39,6 +39,7 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 | Path | What it is |
 |---|---|
 | `decoder/` | the decoder-only transformer runtime: loaders, forward passes, KV cache, fit guards, the `.giw` sidecar |
+| `decoder/fit/` | the types the fit guard and the placement planner hand their callers (`Plan`, `PlanRequest`, `Placement`, `FitAnswer`, `FitDeclineError`); a leaf over `internal/runtime/mem` |
 | `engine/` | what the serving shell asks of a model: a generation from a prepared request |
 | `server/` | the HTTP API (OpenAI and Anthropic routes, web UI) as a library handler |
 | `chat/` | chat templates and tool-call rendering and parsing, no Jinja engine |
@@ -48,6 +49,37 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 | `embeddinggemma2/` | the EmbeddingGemma 2 text encoder |
 | `pull/` | resumable checkpoint download from HuggingFace |
 | `internal/` | packages private to the root module, grouped under `internal/app/` (CLI/server apps and wiring), `internal/guard/` (lint/CI/memory/parity guards), `internal/diag/` (hardware census and reports), and `internal/runtime/` (execution, memory, KV, scheduler, model loading, sampling, and runtime kernels), plus top-level domain packages (`audio`, `batchio`, `clef`, `codec`, `confidence`, `config`, `cost`, `decide`, `fidelity`, `layout`, `vision`, `wrappedupload`); `internal/layout` holds repository-shape checks as tests |
+
+## Tier 3: subpackages of `decoder/`
+
+`decoder/` is one package of ~800 files. Tier 3 splits it one subsystem at a time, `decoder/fit` first (Francis, 2026-11-05;
+`docs/releases/v0.25.0-plan.md` §2, ledger row T3-fit in `docs/tasks/task-subsystems-2026-10.md`). A subpackage lives
+**under** `decoder/`, named for the subsystem.
+
+**The rule for what may import what.** A subpackage never imports `decoder` (that is a cycle: the loader calls it).
+`decoder` imports the subpackage and re-exports its public types as aliases (`type Plan = fit.Plan`), so a move changes no
+caller until the caller chooses to name the subpackage, and a backend that does so stops depending on the loader (the
+`decoderRatchet` in `internal/layout`). Each subpackage has a rule in `internal/layout/imports.json` naming the goinfer
+packages it may import; `TestLayout_arrows` enforces it. Aliases are deleted when the last caller has moved.
+
+**Why `fit` cannot move whole.** The three files (`fitguard.go`, `fitplan.go`, `fitquery.go`) are the loader's front
+end, not a leaf. Moving them and reading the compiler's errors names 43 identifiers they need from `decoder`:
+`Config`, `Options`, `Model` and `quantMode` (43 uses); `resolveArchitecture`, `ResolveKV`, `kvBytesForCtx`, `buildDemandFor`,
+`Admit`, `loadKnob`; the loader's own quantizer (`quantizeWM`, `wmBytes`, `parseQuant`, `mlaProjInt8`, `mambaProjInt8`);
+and the checkpoint openers (`openCheckpointMmap`, `OpenGGUFMmap`, `ggufConfig`, `loadConfig`, `mapGIW`, `readGIWHeadReader`).
+In the other direction 13 non-test `decoder` files call it (`model.go`, `prefill_budget.go`, `sidecar.go`, `weights.go`,
+`metal_fitctx.go`, `residency.go`, ...), and 40 files outside `decoder/` (17 non-test) name its exported API. The decisions are already in `internal/runtime/mem`, which imports no goinfer package.
+
+**Order.**
+1. **Types** (done): `Placement`, `PlanRequest`, `Plan`, `FitAnswer`, `FitDeclineError`, `ErrWontFitResident` in `decoder/fit`, aliased
+   in `decoder/fitalias.go`. No behavior change; the files outside `decoder/` that name them compile unchanged.
+2. **Move the callers' imports** (mechanical, per module): backends, `internal/app/*`, `modelload` and `memgate` name `fit.X`
+   instead of `decoder.X`; each module's `decoderRatchet` figure falls with it.
+3. **Price from neutral inputs.** The checkpoint-byte estimators (`estimateGGUFWeightBreakdown`, `estimateSafetensorsWeightBytes`) and
+   the KV and GIW pricing take a small struct (tensor name, dims, dtype; per-layer KV widths; the bytes-per-element function) that
+   `decoder` fills from `Config`, `Architecture` and the quantizer, and move to `decoder/fit`. This is the step that needs
+   the loader's quantizer behind a function value; the test files (`fit*_test.go`, 13) follow their subjects.
+4. `Model.Plan` and `FitQuery` stay in `decoder` as thin adapters (they hold a `*Model`/`Options`); delete the aliases.
 
 ## GPU backend modules
 
