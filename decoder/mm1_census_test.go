@@ -187,16 +187,16 @@ func censusFamilies(t *testing.T) []censusFamily {
 	t.Helper()
 	var fams []censusFamily
 	for _, p := range censusFixtures {
-		f := censusFamily{name: censusName(p), path: p, dir: !strings.HasSuffix(p, ".gguf")}
-		if f.dir {
-			ws, _ := filepath.Glob(filepath.Join(p, "*.safetensors"))
-			if _, err := os.Stat(filepath.Join(p, "config.json")); err != nil || len(ws) == 0 {
-				t.Fatalf("census fixture %s has no config.json and weights here", p)
-			}
-		} else if _, err := os.Stat(p); err != nil {
-			t.Fatalf("census fixture %s: %v", p, err)
+		files, err := censusFixtureFiles(p)
+		if err != nil {
+			t.Fatalf("census fixture %v", err)
 		}
-		fams = append(fams, f)
+		for _, f := range files {
+			if _, err := os.Stat(f); err != nil {
+				t.Fatalf("census fixture %s: %v", p, err)
+			}
+		}
+		fams = append(fams, censusFamily{name: censusName(p), path: p, dir: !strings.HasSuffix(p, ".gguf")})
 	}
 	sort.Slice(fams, func(i, j int) bool { return fams[i].name < fams[j].name })
 	return fams

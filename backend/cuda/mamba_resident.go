@@ -226,18 +226,16 @@ func (r *cudaResident) resetMambaState() error {
 	if r.mamba == nil || mambaResetSkipForTest {
 		return nil
 	}
-	p := r.mamba
-	winZ := make([]float32, (p.dConv-1)*p.convDim)
-	ssmZ := make([]float32, p.nHeads*p.headDim*p.dState)
+	zero := zeroFloats()
 	for i := range r.layers {
 		L := &r.layers[i]
 		if L.mixer != decoder.MixerMamba {
 			continue
 		}
-		if e := gpu.Upload(L.mbWin, winZ); e != nil {
+		if e := gpu.Upload(L.mbWin, zero(r.recFloats[i].win)); e != nil {
 			return e
 		}
-		if e := gpu.Upload(L.mbSSM, ssmZ); e != nil {
+		if e := gpu.Upload(L.mbSSM, zero(r.recFloats[i].state)); e != nil {
 			return e
 		}
 	}

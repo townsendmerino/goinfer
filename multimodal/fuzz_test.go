@@ -85,6 +85,9 @@ func TestQwenPreprocessConfigs_refuseSizesNoRealModelHas(t *testing.T) {
 		"patch times merge past the limit, each within it": {65536, 1 << 24, 64, 32, 2},
 		"budget past the largest released":                 {65536, 1<<24 + 1, 16, 2, 2},
 		"minimum above the maximum":                        {1 << 24, 1 << 16, 16, 2, 2},
+		"negative patch":                                   {65536, 1 << 24, -16, 2, 2},
+		"zero merge":                                       {65536, 1 << 24, 16, 0, 2},
+		"negative minimum":                                 {-1, 1 << 24, 16, 2, 2},
 	} {
 		if qwen3(s, norm) == nil {
 			t.Errorf("%s: the Qwen3 loader accepted it", name)

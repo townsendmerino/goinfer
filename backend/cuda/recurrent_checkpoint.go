@@ -77,11 +77,8 @@ func (r *cudaResident) allocRecurrentCheckpoint() {
 func (r *cudaResident) recurrentLiveBytes() int64 {
 	var n int64
 	for l := range r.layers {
-		switch Ly := &r.layers[l]; {
-		case Ly.isDeltaNet():
-			n += int64(r.dnet.winFloats() + r.dnet.stateElems)
-		case Ly.mixer == decoder.MixerMamba:
-			n += int64(r.mamba.winFloats() + r.mamba.ssmFloats())
+		if r.layers[l].isRecurrent() {
+			n += int64(r.recFloats[l].win + r.recFloats[l].state)
 		}
 	}
 	return 4 * n
@@ -92,11 +89,8 @@ func (r *cudaResident) recurrentLiveBytes() int64 {
 func (r *cudaResident) recurrentStateCharged() int64 {
 	var n int64
 	for l := range r.layers {
-		switch Ly := &r.layers[l]; {
-		case Ly.isDeltaNet():
-			n += chargedBytes(int64(r.dnet.winFloats())*4) + chargedBytes(int64(r.dnet.stateElems)*4)
-		case Ly.mixer == decoder.MixerMamba:
-			n += chargedBytes(int64(r.mamba.winFloats())*4) + chargedBytes(int64(r.mamba.ssmFloats())*4)
+		if r.layers[l].isRecurrent() {
+			n += chargedBytes(int64(r.recFloats[l].win)*4) + chargedBytes(int64(r.recFloats[l].state)*4)
 		}
 	}
 	return n

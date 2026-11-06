@@ -202,7 +202,7 @@ func configFacts(c *Config, arch *Architecture) archFacts {
 type fitMemo struct {
 	mu sync.Mutex
 
-	derived  bool          // arch, base and archProg below have been looked at
+	derived  bool          // a config has been resolved into arch and base below
 	arch     *Architecture // the config resolved again; nil when it does not resolve
 	base     archFacts     // configFacts of arch, covered unset
 	archProg *layerProgram // arch's program, for coverage
@@ -219,12 +219,12 @@ func (memo *fitMemo) factsFor(cfg *Config, backend string) archFacts {
 		return a
 	}
 	if !memo.derived && cfg != nil {
+		memo.derived = true
 		c := *cfg
 		if arch, _, err := resolveArchitecture(&c); err == nil {
 			memo.arch, memo.base = arch, configFacts(&c, arch)
 		}
 	}
-	memo.derived = true
 	a := memo.base
 	if memo.arch != nil {
 		if memo.archProg == nil && residentBackendTables[backend] != nil {

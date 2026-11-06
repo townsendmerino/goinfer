@@ -144,7 +144,8 @@ func TestFileStore_zeroBytesIsNoByteLimit(t *testing.T) {
 	}
 }
 
-// The limit through the flag and the route: the oldest upload is gone, and the 404 says why it might be, since the client holds an id it was given.
+// The limit through the flag and both routes that read a file, its object and its content: the oldest upload is gone from each, and
+// the 404 says why it might be, since the client holds an id it was given.
 func TestFiles_byteLimitThroughFlagAndRoute(t *testing.T) {
 	fs := flag.NewFlagSet("t", flag.ContinueOnError)
 	sf := registerFlags(fs)
@@ -181,17 +182,26 @@ func TestFiles_byteLimitThroughFlagAndRoute(t *testing.T) {
 		}
 		return f.ID
 	}
-	get := func(id string) *httptest.ResponseRecorder {
+	get := func(path string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/files/"+id+"/content", nil))
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		return rec
 	}
 	first, second := upload(), upload()
-	if rec := get(first); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "-max-file-store-bytes") {
-		t.Errorf("a dropped file: %d %q, want a 404 naming the limit", rec.Code, rec.Body)
+	for _, path := range []string{"/v1/files/" + first, "/v1/files/" + first + "/content"} {
+		if rec := get(path); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "-max-file-store-bytes") {
+			t.Errorf("GET %s, a dropped file: %d %q, want a 404 naming the limit", path, rec.Code, rec.Body)
+		}
 	}
-	if rec := get(second); rec.Code != http.StatusOK || rec.Body.Len() != 100 {
-		t.Errorf("the newest file: %d, %d bytes", rec.Code, rec.Body.Len())
+	if rec := get("/v1/files/" + second + "/content"); rec.Code != http.StatusOK || rec.Body.Len() != 100 {
+		t.Errorf("the newest file's content: %d, %d bytes", rec.Code, rec.Body.Len())
+	}
+	var obj struct {
+		ID    string `json:"id"`
+		Bytes int    `json:"bytes"`
+	}
+	if rec := get("/v1/files/" + second); rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &obj) != nil || obj.ID != second || obj.Bytes != 100 {
+		t.Errorf("the newest file's object: %d %q", rec.Code, rec.Body)
 	}
 }
 
