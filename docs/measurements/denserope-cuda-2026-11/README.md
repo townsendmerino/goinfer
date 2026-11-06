@@ -17,3 +17,11 @@ The CUDA skip table held 332 `dense` rows: the build leased a few hundred bytes 
 ## Not done
 
 `TestDecisionCensus` (`decoder/mm1_census_test.go`) holds the CUDA backend's plan arithmetic per host class to `decoder/testdata/mm1_census.json.gz`; this change moves the CUDA dense figure in the census's `cuda` and `cuda-unlinked` lines, so the golden for each amd64 host class changes. I was told not to run the census on nobara (32 GiB `/tmp`, 97 GiB of scratch, over 10 minutes), so it is **not regenerated and not read here**. The regeneration is `go test ./decoder -run TestDecisionCensus -census.update` on a host of each affected class, then review of which groups changed (only `cuda`/`cuda-unlinked` plan lines should move, by the derived tables' bytes). Until then CI's decoder job will be red on the census.
+
+## CI round 1 (run 42287698773, 2026-11-06)
+
+CI on the draft failed in three places; two are fixed here, one is the census golden.
+
+- **`TestWebGPUDeviceBuffers_sumToTheModel`** (decoder, `goinfer_testhooks`; red on every box): it uses `ResidentDenseWeightBytesFor("cuda")` as "the dense bytes less the host-side tables as CUDA prices them", and that figure now holds the derived tables WebGPU does not upload. Fixed in the test: `- m.cudaDerivedTableBytes()` (`decoder-tests-hooks.log`; passes).
+- **`TestBackendMemoryCensus_cuda`** (the `cuda` job; `backend/cuda/testdata/sb2_cuda_mem_census.amd64.txt.gz`, 748 lines): regenerated here with `-sb2memcensus.update` (`memcensus-update.log`; the census, its plants and the site plants pass after). Read against the old file: all 748 lines change, **none in its words and none in a decision**: `ctxPlanned` is identical on every line, and the changed numbers are the `weightsOpen`/`plan`/`weights` figures on 4 lines and the `derived(...)` section on the rest.
+- **`TestDecisionCensus`** (`testdata/mm1_census.json.gz`; red on `test-decoder-a`, `root-darwin`, `root-linux-arm64`, `root-windows`, `root-windows-arm64`): 2,408 of 29,637 groups differ on the amd64 class. Not regenerated (see "Not done"). It needs both classes: the amd64 one and the arm64 one (the Mac), each with `-census.update` on a host of that class.
