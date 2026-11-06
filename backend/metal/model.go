@@ -514,8 +514,10 @@ type resident struct {
 	// A layer's pool is one allocation: block 0, zero-filled and never handed out (kvNullBytes), then every slot's blocks. kvTab holds
 	// each slot's table in one allocation, kvTabBlocks entries a slot, and kt is the bound slot's view of it. An entry is the block a
 	// sequence's 64 positions are in, so a kernel bound to a table reads the pool from its start (Buffer.At(0)) (kv_row, KVRowMSL).
+	// kvTabU32 is kvTab's shared contents, taken once: Buffer.U32s asks Metal for them on every call, and the pool reads entries per row.
 	kvNullBytes []int
 	kvTab, kt   Buffer
+	kvTabU32    []uint32
 	kvTabBlocks int
 	// The pool's state (kvpool.go): kvRefs counts the table entries that name each block (above one, slots share it, CopyKV), kvInUse the
 	// blocks some entry names, kvOrder the order a take scans for a free one. Each slot is guaranteed kvShareBlocks (kvShareCtx
@@ -1975,6 +1977,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.ctxCap = kvRaise(m, slots, r.kvShareCtx)
 		r.kvTabBlocks = kvBlocksFor(r.ctxCap)
 		r.kvTab = NewBufferUint32sOn(mem.LineKV, d, make([]uint32, slots*r.kvTabBlocks))
+		r.kvTabU32 = r.kvTab.U32s()
 		r.kvRefs = make([]int32, 1+slots*r.kvShareBlocks)
 		r.kvOrder = kvBlockOrder(slots * r.kvShareBlocks)
 		r.kvSlotSt = make([]kvSlotState, slots)
@@ -2833,8 +2836,7 @@ var kvScrambleForTest = false
 // its contents (the null block is rows 0 to 63): the block the slot's table names, at the position's offset inside it. Positions
 // pos to the end of its block are the consecutive rows after it.
 func (r *resident) kvHostRow(pos int) int {
-	tab := r.kvTab.U32s()
-	return int(tab[r.kvSlot*r.kvTabBlocks+pos/decoder.KVBlockRows])*decoder.KVBlockRows + pos%decoder.KVBlockRows
+	return int(r.kvTabU32[r.kvSlot*r.kvTabBlocks+pos/decoder.KVBlockRows])*decoder.KVBlockRows + pos%decoder.KVBlockRows
 }
 
 // kvElemBytes is one element of the K/V cache: 1 for int8, 4 for f32, 2 for f16.

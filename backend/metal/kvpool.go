@@ -81,7 +81,7 @@ func (r *resident) kvUnref(id uint32) {
 func (r *resident) kvBlocksInUse() int { return r.kvInUse }
 
 // kvRow is slot s's table entry for its block b.
-func (r *resident) kvRow(s, b int) *uint32 { return &r.kvTab.U32s()[s*r.kvTabBlocks+b] }
+func (r *resident) kvRow(s, b int) *uint32 { return &r.kvTabU32[s*r.kvTabBlocks+b] }
 
 // kvHeld is how many entries slot s's table maps, shared blocks included.
 func (r *resident) kvHeld(s int) int {
