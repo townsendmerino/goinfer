@@ -57,7 +57,7 @@ func acceptedEnv(t *testing.T, gpu []gpuRecord, quick []quickRecord, parity []pa
 
 func failingRecords() (gpu []gpuRecord, quick []quickRecord, parity []parityRecord) {
 	gpu = []gpuRecord{
-		{Schema: 1, Backend: "cuda", Commit: acceptedTestHead, Date: "2026-11-05T02:22:50Z", Verdict: "FAIL"},
+		{Schema: 1, Backend: "cuda", Commit: acceptedTestHead, Date: "2026-11-05T02:22:50Z", Verdict: "FAIL", Groups: gpuRecordGroups{Fail: 2}},
 		{Schema: 1, Backend: "metal", Commit: acceptedTestHead, Date: "2026-11-04T20:00:00Z", Verdict: "PASS", Trees: map[string]string{}},
 	}
 	quick = []quickRecord{
@@ -75,6 +75,15 @@ func acceptedJSON(release string, entries ...acceptedEntry) string {
 
 func goodEntry(record, item string) acceptedEntry {
 	return acceptedEntry{Record: record, Item: item, Class: "test-bug", Evidence: "docs/measurements/x/README.md", AcceptedBy: "Francis", AcceptedOn: "2026-11-05"}
+}
+
+// entriesFor is n distinct good entries for a record, as a record with n red items needs.
+func entriesFor(record string, n int) []acceptedEntry {
+	var out []acceptedEntry
+	for i := 1; i <= n; i++ {
+		out = append(out, goodEntry(record, fmt.Sprintf("red item %d", i)))
+	}
+	return out
 }
 
 func TestRecordFileName(t *testing.T) {
@@ -98,6 +107,7 @@ func TestRowsAccepted(t *testing.T) {
 	par := recordFileName("parity", parity[0].Date, parity[0].Commit)
 	rows := map[string]func(*relEnv) relRow{"gpu": rowGPU, "quick": rowQuickFull, "parity": rowParity}
 	record := map[string]string{"gpu": cuda, "quick": linux, "parity": par}
+	reds := map[string]int{"gpu": 2, "quick": 4, "parity": 7} // the failing records' own counts
 
 	for name, row := range rows {
 		// no accepted file: OWED, as before
@@ -106,10 +116,10 @@ func TestRowsAccepted(t *testing.T) {
 			t.Errorf("%s with no accepted file: %+v", name, r)
 		}
 		// the entry for this record: accepted, with the entry printed
-		e = acceptedEnv(t, gpu, quick, parity, acceptedJSON("v0.25.0", goodEntry(record[name], "the red cell")))
+		e = acceptedEnv(t, gpu, quick, parity, acceptedJSON("v0.25.0", entriesFor(record[name], reds[name])...))
 		r := row(e)
 		d := strings.Join(r.Detail, "\n")
-		if r.State != "accepted" || !strings.Contains(d, "the red cell") || !strings.Contains(d, "test-bug") || !strings.Contains(d, "Francis") {
+		if r.State != "accepted" || !strings.Contains(d, "red item 1") || !strings.Contains(d, "test-bug") || !strings.Contains(d, "Francis") {
 			t.Errorf("%s with its entry: state %q\n%s", name, r.State, d)
 		}
 		for why, text := range map[string]string{
@@ -136,7 +146,7 @@ func TestRowsAccepted(t *testing.T) {
 // The report counts an accepted row apart, prints it, and exits 0 when nothing else is owed.
 func TestReportRelease_acceptedDoesNotBlock(t *testing.T) {
 	gpu, quick, parity := failingRecords()
-	e := acceptedEnv(t, gpu, quick, parity, acceptedJSON("v0.25.0", goodEntry(recordFileName("cuda", gpu[0].Date, gpu[0].Commit), "cuda-heavy-kernels: TestAttnBatchedBandwidth")))
+	e := acceptedEnv(t, gpu, quick, parity, acceptedJSON("v0.25.0", entriesFor(recordFileName("cuda", gpu[0].Date, gpu[0].Commit), 2)...))
 	var out bytes.Buffer
 	if code := reportRelease(&out, e, []func(*relEnv) relRow{rowGPU}); code != 0 {
 		t.Errorf("exit %d with only an accepted row\n%s", code, out.String())
@@ -146,8 +156,49 @@ func TestReportRelease_acceptedDoesNotBlock(t *testing.T) {
 	}
 	// with a second row still owed the tag is not ready, and the accepted row is still shown as accepted
 	out.Reset()
-	e = acceptedEnv(t, gpu, quick, parity, acceptedJSON("v0.25.0", goodEntry(recordFileName("cuda", gpu[0].Date, gpu[0].Commit), "x")))
+	e = acceptedEnv(t, gpu, quick, parity, acceptedJSON("v0.25.0", entriesFor(recordFileName("cuda", gpu[0].Date, gpu[0].Commit), 2)...))
 	if code := reportRelease(&out, e, []func(*relEnv) relRow{rowGPU, rowParity}); code != 1 || !strings.Contains(out.String(), "not ready to tag") {
 		t.Errorf("exit %d with a row still owed\n%s", code, out.String())
+	}
+}
+
+// One entry does not accept a record with two reds: the new red would hide behind the old one. Each red item needs its own entry (the record's count of failed groups,
+// failed tests or blockers), and the row names how many are unlisted. Two entries for the same item are one.
+func TestRowsAccepted_oneEntryDoesNotCoverTwoReds(t *testing.T) {
+	gpu, quick, parity := failingRecords()
+	file := map[string]string{
+		"gpu": recordFileName("cuda", gpu[0].Date, gpu[0].Commit), "quick": recordFileName("linux-amd64", quick[0].Date, quick[0].Commit),
+		"parity": recordFileName("parity", parity[0].Date, parity[0].Commit)}
+	rows := map[string]func(*relEnv) relRow{"gpu": rowGPU, "quick": rowQuickFull, "parity": rowParity}
+	reds := map[string]int{"gpu": 2, "quick": 4, "parity": 7}
+	for name, row := range rows {
+		one := acceptedEnv(t, gpu, quick, parity, acceptedJSON("v0.25.0", goodEntry(file[name], "the red already read")))
+		r := row(one)
+		d := strings.Join(r.Detail, "\n")
+		want := fmt.Sprintf("%d red item(s), %d accepted: %d unlisted", reds[name], 1, reds[name]-1)
+		if r.State != "OWED" || !strings.Contains(d, want) {
+			t.Errorf("%s: one entry for a record with %d reds: state %q, want OWED naming %q\n%s", name, reds[name], r.State, want, d)
+		}
+		// one fewer than the record's reds is still short, and the same item twice counts once
+		short := acceptedJSON("v0.25.0", entriesFor(file[name], reds[name]-1)...)
+		if r := row(acceptedEnv(t, gpu, quick, parity, short)); r.State != "OWED" {
+			t.Errorf("%s: %d entries for %d reds read %q", name, reds[name]-1, reds[name], r.State)
+		}
+		dup := acceptedJSON("v0.25.0", append(entriesFor(file[name], reds[name]-1), goodEntry(file[name], "red item 1"))...)
+		if r := row(acceptedEnv(t, gpu, quick, parity, dup)); r.State != "OWED" {
+			t.Errorf("%s: a repeated item counted twice, state %q", name, r.State)
+		}
+		// as many distinct entries as reds, or more
+		more := acceptedJSON("v0.25.0", entriesFor(file[name], reds[name]+1)...)
+		if r := row(acceptedEnv(t, gpu, quick, parity, more)); r.State != "accepted" {
+			t.Errorf("%s: %d entries for %d reds read %q, want accepted", name, reds[name]+1, reds[name], r.State)
+		}
+	}
+	// a non-pass record with no count of reds (a dirty tree, a narrowed run) is one red item
+	g := []gpuRecord{{Schema: 1, Backend: "cuda", Commit: acceptedTestHead, Date: "2026-11-05T02:22:50Z", Verdict: "INCONCLUSIVE", Dirty: true},
+		{Schema: 1, Backend: "metal", Commit: acceptedTestHead, Date: "2026-11-04T20:00:00Z", Verdict: "PASS", Trees: map[string]string{}}}
+	one := acceptedJSON("v0.25.0", goodEntry(recordFileName("cuda", g[0].Date, g[0].Commit), "the dirty-tree run"))
+	if r := rowGPU(acceptedEnv(t, g, quick, parity, one)); r.State != "accepted" {
+		t.Errorf("a record that is red for no counted failure needs one entry; state %q\n%s", r.State, strings.Join(r.Detail, "\n"))
 	}
 }

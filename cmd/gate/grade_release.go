@@ -363,7 +363,11 @@ func rowGPU(e *relEnv) relRow {
 		case failed != nil:
 			file := recordFileName(failed.Backend, failed.Date, failed.Commit)
 			if ents, problem := acceptedFor(e, file); len(ents) > 0 {
-				acc = append(acc, acceptedLines(be+" "+file, ents)...)
+				if ok, short := coversReds(ents, gpuReds(failed)); ok {
+					acc = append(acc, acceptedLines(be+" "+file, ents)...)
+				} else {
+					bad = append(bad, be+": "+why, "  "+short)
+				}
 			} else {
 				bad = append(bad, be+": "+why)
 				if problem != "" {
@@ -657,6 +661,9 @@ func rowParity(e *relEnv) relRow {
 	if r == nil && failed != nil {
 		file := recordFileName("parity", failed.Date, failed.Commit)
 		ents, problem := acceptedFor(e, file)
+		if ok, short := coversReds(ents, parityReds(failed)); len(ents) > 0 && !ok {
+			return owed(name, want, why, short, how)
+		}
 		if len(ents) > 0 {
 			return accepted(name, parityRecordDirDefault, append([]string{fmt.Sprintf("%s @ %s on %s: verdict %s, %d blocker(s)", failed.Date, short8(failed.Commit), failed.Host, failed.Verdict, failed.Blockers)},
 				acceptedLines(file, ents)...)...)
@@ -716,7 +723,11 @@ func rowQuickFull(e *relEnv) relRow {
 		case failed != nil:
 			file := recordFileName(failed.OS+"-"+failed.Arch, failed.Date, failed.Commit)
 			if ents, problem := acceptedFor(e, file); len(ents) > 0 {
-				acc = append(acc, acceptedLines(goos+" "+file, ents)...)
+				if ok, short := coversReds(ents, quickReds(failed)); ok {
+					acc = append(acc, acceptedLines(goos+" "+file, ents)...)
+				} else {
+					bad = append(bad, goos+": "+why, "  "+short)
+				}
 			} else {
 				bad = append(bad, goos+": "+why)
 				if problem != "" {

@@ -17,8 +17,9 @@ import (
 //	   "accepted_by": "Francis", "accepted_on": "2026-11-05"}]}
 //
 // An entry names the record by its file name, which holds the backend or system, the time and the commit; the row builds that name from the failing
-// record it judged, so an entry for another record, or for a rerun, does not match. Records carry counts, not the names of what failed, so the gate
-// cannot check that the items listed are all the record's failures: that is what the reader of the report is shown.
+// record it judged, so an entry for another record, or for a rerun, does not match. A record is accepted only when its entries name as many distinct items
+// as it has reds (coversReds), so a second, new red is never hidden behind an accepted one. Records carry counts, not the names of what failed: the gate
+// compares counts, and the report shows the entries for the reader to match.
 const acceptedDirDefault = "docs/releases"
 
 // acceptedClasses are the classes an entry may name. A product defect is not among them: it is fixed, or the tag waits.
@@ -125,4 +126,26 @@ func isAcceptedClass(c string) bool {
 		}
 	}
 	return false
+}
+
+// A record's reds are counted from what it holds: a GPU record's failed groups and its vacuous and empty cells, a quick -full record's failed tests, a parity
+// record's blockers; a record that is not a PASS with none of those (a dirty tree, a narrowed run) has one red item. An accepted file covers a record only when it
+// names that many distinct items: one entry for one red does not hide a second, new one.
+func gpuReds(r *gpuRecord) int     { return max(r.Groups.Fail+len(r.VacuousCells)+len(r.EmptyCells), 1) }
+func quickReds(r *quickRecord) int { return max(r.Fail, 1) }
+func parityReds(r *parityRecord) int {
+	return max(r.Blockers, 1)
+}
+
+// coversReds says whether entries name at least reds distinct items, and when they do not, how many are unlisted. The records carry counts, not names, so the count
+// is what the gate can compare.
+func coversReds(entries []acceptedEntry, reds int) (bool, string) {
+	items := map[string]bool{}
+	for _, a := range entries {
+		items[strings.TrimSpace(a.Item)] = true
+	}
+	if len(items) >= reds {
+		return true, ""
+	}
+	return false, fmt.Sprintf("the record has %d red item(s), %d accepted: %d unlisted (it carries counts, not names)", reds, len(items), reds-len(items))
 }

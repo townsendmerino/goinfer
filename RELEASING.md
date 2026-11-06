@@ -77,8 +77,10 @@ instead of `OWED`; it does not count against the tag, it is never `done`, and th
 One entry per accepted failure. `record` is the record's file name; the row builds it from the failing record it judged (backend or system, time, commit), so an entry for a
 different record, or for a rerun, does not match. `class` is one of `test-bug`, `gate-definition`, `fixture`, `toolchain-artifact`, `environment`, `stale-golden`: a product
 defect is not a class, it is fixed or the tag waits. `accepted_by` must read `Francis` and `accepted_on` be a date; an entry that is not complete leaves the row OWED and says why.
-Records hold counts, not the names of what failed, so the gate cannot check that the items listed are all the record's failures: the entries are what the reader of the report is
-shown. Only Francis adds an entry, as with `swap_guard_approved_by`; the commit that adds one cites where he gave the word. Code: `cmd/gate/grade_release_accepted.go`.
+**A record is accepted only when its entries name as many distinct items as it has reds**: a GPU record's failed groups plus its vacuous and empty cells, a `quick -full` record's failed
+tests, a parity record's blockers (a record that is not a PASS with none of those, a dirty tree or a narrowed run, has one). Fewer entries leave the row OWED and name how many are unlisted, so a new red
+is never hidden behind an accepted one. Records hold counts, not the names of what failed, so the gate compares counts and cannot match the items to the failures: the entries are what the reader of
+the report is shown. Only Francis adds an entry, as with `swap_guard_approved_by`; the commit that adds one cites where he gave the word. Code: `cmd/gate/grade_release_accepted.go`.
 
 1. All §1 API blockers are in (B-08…B-14 — see `docs/completed/audit-2026-08-05.md`; B-09/B-10/B-11/B-13
    landed 2555edc; B-08/B-12 must be done first — they are breaking-to-fix-after-tag).
