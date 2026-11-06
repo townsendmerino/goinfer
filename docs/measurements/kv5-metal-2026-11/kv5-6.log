@@ -22,8 +22,12 @@ KV5-5's write sites, re-aimed at kvWrite, 8 of 8 red (06:31 to 06:39): decode (i
 The last four, 4 of 4 red (07:00 to 07:01): each decode entry point's kvWrite alone (Forward, ForwardSample, ForwardNoLogits: setPos's kvWriteMust then panics on G3d's stopped borrower rather than return ErrKVPoolFull), and the paged Gemma 4 prefill's alone (the paged-g4 case added to TestKVPages_shareByReferenceLayerMajor for it; the paged-MoE plant above had covered both sites at once, red through mixtral only).
 22 of 22 in all.
 
-== closing checks
-PENDING
+== closing checks at b9bbea5e (main c1182f99 merged in), 07:16 to 07:28 PST, shared lock
+Touched: VERDICT: PASS — touched: 13 checks passed (CI runs the rest on push)
+Lint: VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
+Citation lint: PASS.
+Metal package whole, -tags goinfer_testhooks: 440 passed, 221 skipped, 0 failed (334 s). Its first run, before the fit test's fix, had one red, TestMetalBuildResident_fitByDefault (above).
+gate identity -backend metal c1182f99 (main) against the slice: families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass). The 14 are Metal declines main shares (bailing_hybrid's kda, the K%32 concat panic on glm_ocr, qwen3_asr and voxtral, phi3's activation outliers, lfm2's arch, ...) and real-checkpoint assets absent from this worktree's testdata (qwen2 0.5b, qwen3 1.7b), the same 14 KV5-5 read.
 
 == G3c on the 1.5B and the 7B, serve's defaults, 2026-11-06 07:01:40 to 07:13:30 PST (lock requested 07:01:39, released 07:13:30): PASS on both
 Instrument: g3c.py in this directory, committed before it ran (1a16b499). serve-main from an archive of main 2fd3a644, serve-new from one of 7dcc921a (this slice's product code), both at their defaults (no -ctx) with -require-backend, one session, MacBookPro18,3, 16 GB, on AC, exclusive lock, ~/models (the int4 Metal bundles beside each .gguf). One cold request of the new cap each: a filler prompt calibrated against the server's prompt_tokens, then started on another word so it shares no prefix with the calibration, greedy, max_tokens 8. Raw: kv5-6-g3c.json and kv5-6-g3c-logs/.
