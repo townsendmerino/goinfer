@@ -23,7 +23,7 @@ import (
 //
 // rope fields are NESTED under rope_parameters on this release, which parseRopeFlat reads.
 func qwen35DenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if err := cfg.validateQwen35Dense(); err != nil {
+	if err := cfg.ValidateQwen35Dense(); err != nil {
 		return nil, nil, err
 	}
 	spec, partialRotary, err := parseRopeFlat(cfg.RopeParameters)

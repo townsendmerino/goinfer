@@ -17,24 +17,24 @@ import "math"
 // The forward pass (the Gemma 4 program walk) consumes the per-layer deltas; E2B/E4B and
 // the 12B dense (K=V) variants are parity-gated against the HF bf16 oracle.
 func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	globalHeadDim, globalKVHeads, err := cfg.gemma4GlobalGeometry()
+	globalHeadDim, globalKVHeads, err := cfg.Gemma4GlobalGeometry()
 	if err != nil {
 		return nil, nil, err
 	}
 	globalRotary := 0
-	if prf := cfg.gemma4PartialRotary(); prf > 0 && globalHeadDim > 0 {
+	if prf := cfg.Gemma4PartialRotary(); prf > 0 && globalHeadDim > 0 {
 		globalRotary = int(prf * float64(globalHeadDim))
 	}
 	// The real unified 26B keeps the RoPE bases nested in rope_parameters (no top-level
 	// rope_theta / rope_local_base_freq); resolve them so the frequencies aren't 0/NaN.
-	localBase, globalBase := cfg.gemma4RopeBases()
+	localBase, globalBase := cfg.Gemma4RopeBases()
 	// Gemma 4 26B-A4B: enable_moe_block turns on the parallel dense+MoE FFN sub-block. The dense E2B/E4B/12B variants leave it false, so MoE
 	// stays nil and their forward is unchanged. The router semantics (softmax-all → top-k → UNCONDITIONAL renorm, a weightless-norm/
 	// learned-scale pre-projection, a per-expert scale) are pinned in docs/completed/task-gemma4-moe.md Phase 1a. The gemma4 forward reads
 	// these; the generic moeMLP/swiGLUExpert are NOT reused (experts are gelu-tanh, not SiLU).
 	var moe *MoEConfig
 	if cfg.EnableMoeBlock {
-		if err := cfg.validateGemma4MoE(); err != nil {
+		if err := cfg.ValidateGemma4MoE(); err != nil {
 			return nil, nil, err
 		}
 		moe = &MoEConfig{
