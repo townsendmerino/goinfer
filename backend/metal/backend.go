@@ -1397,6 +1397,11 @@ func (a *metalResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error 
 // position base..base+n-1, where n = len(keys)/kvDim. Used by decoder.residentUploadPrefill
 // to push a CPU-computed prefill's KV into the resident GPU cache, letting GenerateVL and
 // GenerateQwenVL run text decode on resident GPU rather than dropping to CPU.
+//
+// The contract: one call is one layer's part of a pass that uploads, for every layer that owns K/V, every row that layer reads
+// ([base, base+n), its own live range; residentUploadPrefill's loop). A block table serves every layer, so the call maps the bound
+// slot's blocks for all of them at once (kvOwn): a block another slot shares is copied for the rows below base, and the rest of it is
+// the pass's to write. A layer whose rows the pass leaves out inside that range would read stale rows there.
 func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	if a.r == nil {
 		return fmt.Errorf("metal: resident is nil")
@@ -1426,6 +1431,7 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	if e := a.checkCap(base, n); e != nil {
 		return e
 	}
+	a.r.kvOwn(a.r.kvSlot, base, base+n)
 	// Each position goes to its row through the bound slot's table (kvHostRow), the pool's contents indexed from its start.
 	if a.r.kvI8 {
 		nKV := g.nKV

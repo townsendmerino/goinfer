@@ -73,7 +73,7 @@ func TestKVPricingFor_pricesWhatTheBackendAllocates(t *testing.T) {
 	var declined string
 	for _, mt := range []string{"bailing_hybrid", "laguna", "lfm2"} {
 		arch, _, err := resolveArchitecture(a3Config(mt))
-		if err == nil && !residentCovers(arch, "metal") {
+		if err == nil && !residentCovers(arch, nil, "metal") {
 			declined = mt
 			break
 		}

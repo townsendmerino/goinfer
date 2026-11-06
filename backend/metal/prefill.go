@@ -563,6 +563,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 			"(metalResident.checkCap guards the decoder's path; this caller skipped it)", src.n, startPos, c))
 	}
 	r.ensurePrefill()
+	r.kvOwn(r.kvSlot, startPos, startPos+src.n)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	d, pf := r.d, r.pf

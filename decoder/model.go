@@ -42,6 +42,7 @@ var lastDecodeSplit struct{ fwd, attn, mlp, head, gu, act, down, qkv, core, o fl
 // single KVCache is not shared.
 type Model struct {
 	planSlackOf *planSlackMemo // PlanSlack per backend, asked once; nil on a Model built by hand (asked every time)
+	fitOf       *fitMemo       // what Plan derives from the config and architecture alone; nil on a Model built by hand
 	w           *Weights
 	be          Backend
 	eosIDs      []int           // end-of-sequence ids from config (generation stops on these)
@@ -601,7 +602,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 			}
 		}
 	}
-	return &Model{planSlackOf: &planSlackMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), kvOpts: opts,
+	return &Model{planSlackOf: &planSlackMemo{}, fitOf: &fitMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), kvOpts: opts,
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
 		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, moeStep: opts.ResidentMoEStep, recurStep: opts.ResidentRecurrentStep, recurStepDef: opts.ResidentRecurrentStepDefault, gemma4StepDef: opts.ResidentGemma4StepDefault, gemma4Step: opts.ResidentGemma4Step, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), kvDemote: opts.KVDemote, disableFit: opts.DisableFit,

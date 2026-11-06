@@ -12,6 +12,7 @@
     "decoder/qwen3next_real_test.go",
     "decoder/qwen3next_slice_test.go",
     "decoder/qwen3next_test.go",
+    "decoder/text_parity_test.go",
     "scripts/pin_qwen3next_tiny.py",
     "scripts/pin_slice_oracle.py",
     "decoder/arch_qwen3_next.go"
@@ -19,7 +20,7 @@
   "programs": [
     "testdata/qwen3next-tiny"
   ],
-  "deps_hash": "sha256:0456c784373c9637579f3bb6f3fce23c40af597e931ac99bd31f453453d86c56",
+  "deps_hash": "sha256:77c1f793d32cec93cb277653da2c3b20eb93364de942887934a2666c9e0cb846",
   "status": "validated",
   "validated_at": "426ca57d",
   "date": "2026-09-29",

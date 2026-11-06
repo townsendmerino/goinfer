@@ -30,7 +30,7 @@ func TestGatedAct_onlyTanhAndSiLUAdmitted(t *testing.T) {
 			admitted := ResidentEligible(a, be)
 			if residentBackendTables[be] != nil {
 				// A table backend's build checks the table, not a feature set (metal/backend.go's residentPreBuild).
-				if covered := residentCovers(a, be); admitted != covered {
+				if covered := residentCovers(a, nil, be); admitted != covered {
 					t.Errorf("act %d on %s: ResidentEligible=%v but the table covers it %v", act, be, admitted, covered)
 				}
 			} else if missing := m.MissingResidentFeatures(ResidentBackendFeatures(be)); admitted != (len(missing) == 0) {
@@ -78,7 +78,7 @@ func TestGatedAct_metalModelPathAndGemma4MoE(t *testing.T) {
 		m := &Model{w: &Weights{arch: &a}}
 		out := m.FeaturesOutsideProgram()
 		var reasons []string
-		for _, g := range residentGateReasons(&a, "metal", false) {
+		for _, g := range residentGateReasons(&a, nil, "metal", false) {
 			reasons = append(reasons, g.Reason)
 		}
 		switch {

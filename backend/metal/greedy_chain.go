@@ -173,6 +173,8 @@ func (r *resident) chainOpen(q chainReq) error {
 		return fmt.Errorf("metal: no greedy chain on this resident: %s", why)
 	}
 	r.stopExec() // the encode-ahead executor and any earlier chain
+	// The chain commits buffers ahead of the host, so it owns every block it may write before the first: the rest of the slot's table.
+	r.kvOwn(r.kvSlot, q.pos, r.kvCap())
 	r.chainGW, r.chainGS = gw, gs
 	if r.chainTok[0] == (Buffer{}) {
 		for k := range r.chainSets {

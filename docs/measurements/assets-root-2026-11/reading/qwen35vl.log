@@ -1,0 +1,19 @@
+=== RUN   TestQwen35VLReal_residentImagePrefillMatchesCPU
+cuda: recurrent checkpoint: 19.3 MiB on the device (36 buffers, KV8a)
+cuda: prefill width 2048 rows (377 MiB of scratch; 6156 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestQwen35VLReal_residentImagePrefillMatchesCPU/A
+    qwen35vl_real_resident_test.go:94: A: 84 prompt tokens, resident vs CPU last-token logits cosine 0.972841, argmax 1919 vs 1919
+    qwen35vl_real_resident_test.go:123: A: the continuations agree on the first 16 of 16 tokens
+=== RUN   TestQwen35VLReal_residentImagePrefillMatchesCPU/B
+    qwen35vl_real_resident_test.go:94: B: 116 prompt tokens, resident vs CPU last-token logits cosine 0.975090, argmax 1919 vs 1919
+    qwen35vl_real_resident_test.go:123: B: the continuations agree on the first 16 of 16 tokens
+=== RUN   TestQwen35VLReal_residentImagePrefillMatchesCPU/C
+    qwen35vl_real_resident_test.go:94: C: 180 prompt tokens, resident vs CPU last-token logits cosine 0.955991, argmax 1919 vs 1919
+    qwen35vl_real_resident_test.go:123: C: the continuations agree on the first 16 of 16 tokens
+--- PASS: TestQwen35VLReal_residentImagePrefillMatchesCPU (15.71s)
+    --- PASS: TestQwen35VLReal_residentImagePrefillMatchesCPU/A (3.64s)
+    --- PASS: TestQwen35VLReal_residentImagePrefillMatchesCPU/B (4.05s)
+    --- PASS: TestQwen35VLReal_residentImagePrefillMatchesCPU/C (4.91s)
+PASS
+ledger: 1 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	15.774s

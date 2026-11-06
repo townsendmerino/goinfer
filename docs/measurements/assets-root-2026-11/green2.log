@@ -1,0 +1,18 @@
+=== RUN   TestAssetRegistry_usedByExists
+--- PASS: TestAssetRegistry_usedByExists (0.43s)
+=== RUN   TestAssetRegistry_noDirectReads
+--- PASS: TestAssetRegistry_noDirectReads (0.56s)
+=== RUN   TestAssetRegistry_agreesWithPreflight
+--- PASS: TestAssetRegistry_agreesWithPreflight (0.08s)
+=== RUN   TestAssetRegistry_resolvesFromEveryCallerDir
+=== RUN   TestAssetRegistry_resolvesFromEveryCallerDir/(root)
+=== RUN   TestAssetRegistry_resolvesFromEveryCallerDir/backend/metal
+=== RUN   TestAssetRegistry_resolvesFromEveryCallerDir/decoder
+=== RUN   TestAssetRegistry_resolvesFromEveryCallerDir/backend/cuda
+--- PASS: TestAssetRegistry_resolvesFromEveryCallerDir (0.07s)
+    --- PASS: TestAssetRegistry_resolvesFromEveryCallerDir/(root) (0.00s)
+    --- PASS: TestAssetRegistry_resolvesFromEveryCallerDir/backend/metal (0.00s)
+    --- PASS: TestAssetRegistry_resolvesFromEveryCallerDir/decoder (0.00s)
+    --- PASS: TestAssetRegistry_resolvesFromEveryCallerDir/backend/cuda (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	1.148s
