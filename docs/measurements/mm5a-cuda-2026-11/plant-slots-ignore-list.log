@@ -1,0 +1,30 @@
+=== RUN   TestRecurrentState_everyBufferReadsTheList
+=== RUN   TestRecurrentState_everyBufferReadsTheList/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:1201: slot 1's buffers are [384 1040 384 1040 384 1040] floats; the moved list holds [392 1040 392 1040 392 1040]
+    mamba_guards_test.go:1219: the state line holds 68640 bytes; 4 copies (slots and checkpoints) of the moved list charge 68736
+=== RUN   TestRecurrentState_everyBufferReadsTheList/olmo_hybrid-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:1201: slot 1's buffers are [384 528 384 528 384 528] floats; the moved list holds [392 528 392 528 392 528]
+    mamba_guards_test.go:1219: the state line holds 44064 bytes; 4 copies (slots and checkpoints) of the moved list charge 44160
+=== RUN   TestRecurrentState_everyBufferReadsTheList/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (8 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:1201: slot 1's buffers are [288 1040 288 1040] floats; the moved list holds [296 1040 296 1040]
+    mamba_guards_test.go:1219: the state line holds 42688 bytes; 4 copies (slots and checkpoints) of the moved list charge 42752
+--- FAIL: TestRecurrentState_everyBufferReadsTheList (2.41s)
+    --- FAIL: TestRecurrentState_everyBufferReadsTheList/qwen35-tiny (1.77s)
+    --- FAIL: TestRecurrentState_everyBufferReadsTheList/olmo_hybrid-tiny (0.25s)
+    --- FAIL: TestRecurrentState_everyBufferReadsTheList/nemotron-tiny (0.29s)
+FAIL
+ledger: 7 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	2.473s
+FAIL

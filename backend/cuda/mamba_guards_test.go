@@ -646,7 +646,7 @@ func TestRecurrentSlots_roomForOneCheckpoint(t *testing.T) {
 // that fit by their raw bytes do not.
 func TestCkptCopies_countTheCharge(t *testing.T) {
 	const reserve = int64(1 << 30)
-	r := &cudaResident{dnet: &dnetParams{convK: 2, convDim: 1, stateElems: 3 << 18}, layers: []cudaLayer{{mixer: decoder.MixerDeltaNet}}}
+	r := &cudaResident{dnet: &dnetParams{convK: 2, convDim: 1, stateElems: 3 << 18}, layers: []cudaLayer{{mixer: decoder.MixerDeltaNet}}, recFloats: []recurrentFloats{{win: 1, state: 3 << 18}}}
 	live, charged := r.recurrentLiveBytes(), r.recurrentStateCharged()
 	if live >= charged {
 		t.Fatalf("raw %d, charged %d: the fixture has no rounding to read", live, charged)
@@ -1141,5 +1141,143 @@ func TestRecurrentSlots_resetFreesTheSlotsCheckpoint(t *testing.T) {
 	}
 	if !r.RecurrentCheckpointHeld(0) {
 		t.Error("a save took slot 0's checkpoint with a free copy available")
+	}
+}
+
+// TestRecurrentState_everyBufferReadsTheList: the live pair, every further slot's pair, the checkpoint's copy and the reset are all
+// sized from the one list (decoder.Model.StateSpecs). Moving both of its entries, unequally so a window sized as a state would show,
+// moves every buffer of each copy, makes a reset zero all of it, and the state line then holds exactly the slots' and checkpoints' copies of the moved list.
+func TestRecurrentState_everyBufferReadsTheList(t *testing.T) {
+	requireCUDADevice(t)
+	const extra = 8
+	stateSpecsOf = func(m *decoder.Model, l int) []decoder.StateSpec {
+		specs := slices.Clone(m.StateSpecs(l))
+		for i := range specs {
+			specs[i].Floats += extra * (i + 1)
+		}
+		return specs
+	}
+	t.Cleanup(func() { stateSpecsOf = (*decoder.Model).StateSpecs })
+	for _, fixture := range recurrentSlotFixtures {
+		t.Run(fixture, func(t *testing.T) {
+			m, r := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
+			if r.KVSlots() != 2 || len(r.ckptCopies) == 0 {
+				t.Fatalf("%d slots and %d checkpoint copies (%s); this case needs a second slot and a checkpoint", r.KVSlots(), len(r.ckptCopies), r.ckptDeclined)
+			}
+			var want []int
+			var chargedOne int64
+			for l := range r.layers {
+				if !r.layers[l].isRecurrent() {
+					continue
+				}
+				for _, s := range stateSpecsOf(m, l) {
+					want = append(want, s.Floats)
+					chargedOne += chargedBytes(4 * int64(s.Floats))
+				}
+			}
+			if len(want) == 0 {
+				t.Fatal("no recurrent layer")
+			}
+			lens := func(bufs []Buffer) []int {
+				out := make([]int, len(bufs))
+				for i, b := range bufs {
+					out[i] = b.Len()
+				}
+				return out
+			}
+			var live, slot1 []Buffer
+			for l := range r.layers {
+				if L := &r.layers[l]; L.isRecurrent() {
+					p := L.recurrentLive()
+					live = append(live, p.win, p.state)
+					if len(L.recSlots) != 2 {
+						t.Fatalf("layer %d holds %d slot pairs, want 2", l, len(L.recSlots))
+					}
+					slot1 = append(slot1, L.recSlots[1].win, L.recSlots[1].state)
+				}
+			}
+			for name, bufs := range map[string][]Buffer{"the live pair": live, "slot 1": slot1, "the checkpoint": r.ckptCopies[0].bufs} {
+				if got := lens(bufs); !slices.Equal(got, want) {
+					t.Errorf("%s's buffers are %v floats; the moved list holds %v", name, got, want)
+				}
+			}
+			if got := r.recurrentStateCharged(); got != chargedOne {
+				t.Errorf("recurrentStateCharged is %d bytes; the moved list charges %d", got, chargedOne)
+			}
+			if got, want := r.recurrentLiveBytes(), func() int64 {
+				var n int64
+				for _, f := range want {
+					n += 4 * int64(f)
+				}
+				return n
+			}(); got != want {
+				t.Errorf("recurrentLiveBytes is %d; the moved list holds %d", got, want)
+			}
+			if l, ok := r.dev.Leaser().(*deviceLedger); !ok {
+				t.Fatal("the device has no ledger")
+			} else if copies := int64(r.KVSlots() + len(r.ckptCopies)); l.Usage().ByLine[mem.LineState] != copies*chargedOne {
+				t.Errorf("the state line holds %d bytes; %d copies (slots and checkpoints) of the moved list charge %d", l.Usage().ByLine[mem.LineState], copies, copies*chargedOne)
+			}
+			// A reset zeroes the whole of each live buffer, not the first floats of it.
+			for l := range r.layers {
+				if L := &r.layers[l]; L.isRecurrent() {
+					p := L.recurrentLive()
+					for _, b := range []Buffer{p.win, p.state} {
+						ones := make([]float32, b.Len())
+						for i := range ones {
+							ones[i] = 1
+						}
+						if err := r.do(func() error { return gpu.Upload(b, ones) }); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+			}
+			if err := r.do(r.resetState); err != nil {
+				t.Fatal(err)
+			}
+			for l := range r.layers {
+				if L := &r.layers[l]; L.isRecurrent() {
+					p := L.recurrentLive()
+					for _, b := range []Buffer{p.win, p.state} {
+						got := make([]float32, b.Len())
+						if err := r.do(func() error { return gpu.Download(b, got) }); err != nil {
+							t.Fatal(err)
+						}
+						if i := slices.IndexFunc(got, func(v float32) bool { return v != 0 }); i >= 0 {
+							t.Errorf("layer %d: float %d of %d is %v after a reset; the reset left part of the buffer", l, i, len(got), got[i])
+							break
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestRecurrentState_listEqualsKernelGeometry: with the list unmoved, the sizes the build allocates from it are the sizes the kernels'
+// geometry (dnetParams, mambaParams) implies, layer by layer, so reading the list changed no buffer.
+func TestRecurrentState_listEqualsKernelGeometry(t *testing.T) {
+	for _, fixture := range recurrentSlotFixtures {
+		_, r := recurrentSlotsLoad(t, fixture, decoder.Options{})
+		seen := 0
+		for l := range r.layers {
+			var want recurrentFloats
+			switch L := &r.layers[l]; {
+			case L.isDeltaNet():
+				want = recurrentFloats{r.dnet.winFloats(), r.dnet.stateElems}
+			case L.mixer == decoder.MixerMamba:
+				want = recurrentFloats{r.mamba.winFloats(), r.mamba.ssmFloats()}
+			default:
+				continue
+			}
+			seen++
+			if r.recFloats[l] != want {
+				t.Errorf("%s layer %d: the list gives %+v, the kernels' geometry %+v", fixture, l, r.recFloats[l], want)
+			}
+		}
+		if seen == 0 {
+			t.Errorf("%s: no recurrent layer", fixture)
+		}
 	}
 }

@@ -3,10 +3,52 @@
 package cuda
 
 import (
+	"fmt"
+
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
+
+// stateSpecsOf is the list every recurrent buffer on this backend is sized from and priced from. A variable so a test can move the
+// list and see which buffers follow it.
+var stateSpecsOf = (*decoder.Model).StateSpecs
+
+// recurrentFloats is one recurrent layer's conv window and state, in floats, as the list gives them.
+type recurrentFloats struct{ win, state int }
+
+// recurrentFloatsOf reads layer l's window and state from stateSpecsOf. Gated-DeltaNet and Mamba-2 both keep exactly those two.
+func recurrentFloatsOf(m *decoder.Model, l int) (recurrentFloats, error) {
+	specs := stateSpecsOf(m, l)
+	if len(specs) != 2 || specs[0].Name != "window" || specs[1].Name != "state" {
+		return recurrentFloats{}, fmt.Errorf("cuda: layer %d's recurrent state is %v, and the block holds a window and a state", l, specs)
+	}
+	return recurrentFloats{win: specs[0].Floats, state: specs[1].Floats}, nil
+}
+
+// setRecurrentFloats records layer l's window and state sizes from the list, for the upload and everything after it.
+func (r *cudaResident) setRecurrentFloats(m *decoder.Model, l, nLayers int) (recurrentFloats, error) {
+	rf, err := recurrentFloatsOf(m, l)
+	if err != nil {
+		return rf, err
+	}
+	if r.recFloats == nil {
+		r.recFloats = make([]recurrentFloats, nLayers)
+	}
+	r.recFloats[l] = rf
+	return rf, nil
+}
+
+// zeroFloats returns a function giving n zeroed floats from one buffer grown to the largest n asked for; each result is read, not kept.
+func zeroFloats() func(n int) []float32 {
+	var z []float32
+	return func(n int) []float32 {
+		if len(z) < n {
+			z = make([]float32, n)
+		}
+		return z[:n]
+	}
+}
 
 // recurrentPair is one KV slot's copy of a recurrent layer's two compounding buffers: the conv window and the matrix or SSM state.
 type recurrentPair struct{ win, state Buffer }
@@ -70,13 +112,7 @@ func (r *cudaResident) allocRecurrentSlots(slots int) {
 		if !L.isRecurrent() {
 			continue
 		}
-		var win, state int
-		if L.mixer == decoder.MixerMamba {
-			win, state = r.mamba.winFloats(), r.mamba.ssmFloats()
-		}
-		if L.isDeltaNet() {
-			win, state = r.dnet.winFloats(), r.dnet.stateElems
-		}
+		win, state := r.recFloats[l].win, r.recFloats[l].state
 		L.recSlots = []recurrentPair{L.recurrentLive()}
 		for range slots - 1 {
 			L.recSlots = append(L.recSlots, recurrentPair{win: r.up32(make([]float32, win))})
