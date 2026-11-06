@@ -120,7 +120,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
 | SD4 | done | decided 2026-10-26: auto-merge, with the checks required on `main` | §14 |
 | SD2, SD3, SD5–SD8 | done | decided 2026-10-26, one at a time (§14) | §14 |
-| T3-fit | active | 2026-11-05 (mac-fit; Francis: Tier 3 subpackages live under `decoder/`, `decoder/fit` first): step 1 merged (#688, the exchange types in `decoder/fit`, aliased), step 2 merged (#692, callers name `fit.X`); step 3 part 1 built (the checkpoint-byte estimators, the flat KV rate and the tensor-name classifiers moved to `decoder/fit/weights.go` over neutral inputs); left: `fitCheck`/`guardFit`/GIW decision on a neutral input, then step 4 (delete the aliases) | `docs/layout.md` "Tier 3" |
+| T3-fit | decision | 2026-11-06 (mac-fit): steps 1–3 merged (#688 the exchange types in `decoder/fit`, #692 callers name `fit.X`, #697 the checkpoint-byte estimators, KV rate and classifiers over neutral inputs). What is left in `decoder` is the `Config`/`Options`/`Architecture`/`BuildDemand` adapter, since the decisions are already in `internal/runtime/mem`; moving it needs those types out of `decoder` first. Open for Francis: (a) keep `decoder/fitalias.go` as the published names (recommended) or delete it as a breaking rename; (b) whether `Config`/`Options` extraction is the next Tier 3 subsystem | `docs/layout.md` "Tier 3" |
 
 ## 0. Summary
 
