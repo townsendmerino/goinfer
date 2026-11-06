@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -275,7 +276,7 @@ func recurrentSlotPrice(t *testing.T, dir string) {
 	if state <= 0 || metalSlotBytes(m) != m.MetalKVSlotBytes(ctxCap)+state {
 		t.Fatalf("per-slot price %d with a recurrent state of %d and KV of %d", metalSlotBytes(m), state, m.MetalKVSlotBytes(ctxCap))
 	}
-	if plan := m.Plan("metal", 1<<50, decoder.PlanRequest{Ctx: 64, CtxPinned: true}).StateBytes; plan != state {
+	if plan := m.Plan("metal", 1<<50, fit.PlanRequest{Ctx: 64, CtxPinned: true}).StateBytes; plan != state {
 		t.Errorf("Plan prices one slot's state at %d bytes; metalRecurrentSlotBytes prices %d", plan, state)
 	}
 	metalMemoryCeilingForTest = residentNeedBytes(m) + metalSlotBytes(m)

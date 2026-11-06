@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/pull"
 )
 
@@ -282,7 +283,7 @@ func TestWebLoad_checkpointFitDecline(t *testing.T) {
 	var got string
 	webLoadDecoder = func(_ context.Context, spec modelSpec, _ config) (*loadedModel, error) {
 		got = spec.path
-		return nil, fmt.Errorf("decoder: needs 9.1 GB resident, 4.0 GB free: %w", decoder.ErrWontFitResident)
+		return nil, fmt.Errorf("decoder: needs 9.1 GB resident, 4.0 GB free: %w", fit.ErrWontFitResident)
 	}
 	s := &server{models: map[string]*loadedModel{}}
 	s.cfg.web = true

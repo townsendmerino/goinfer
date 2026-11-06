@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 )
@@ -133,7 +134,7 @@ func Run(args []string) int {
 		return 1
 	}
 
-	req := decoder.PlanRequest{Ctx: *ctx, CtxPinned: ctxPinned, KVF16: *kvF16, KVI8: *kvI8, Slots: *slots}
+	req := fit.PlanRequest{Ctx: *ctx, CtxPinned: ctxPinned, KVF16: *kvF16, KVI8: *kvI8, Slots: *slots}
 	via := ""
 	if loadPath != path {
 		via = " (read through its sidecar " + filepath.Base(loadPath) + ")"
@@ -149,7 +150,7 @@ func Run(args []string) int {
 		}
 		p := planFor(m, backend, free, req)
 		fmt.Printf("%-6s  %s\n        %s\n", backend, strings.ToUpper(p.Placement.String()), p.Reason)
-		if p.Placement != decoder.PlacementDecline {
+		if p.Placement != fit.PlacementDecline {
 			admitted = append(admitted, backend)
 		}
 	}
@@ -172,7 +173,7 @@ func Run(args []string) int {
 // it: it asks decoder.Model.MetalFitCtx, which also holds Metal's default KV slots and its margin, so `fit` asks the same
 // function and plans at its answer. The further slots' KV is priced as ExtraBytes when the context grew for them; at the
 // default the build grants the slots that fit, and the plan prices one as it always has.
-func planFor(m *decoder.Model, backend string, free int64, req decoder.PlanRequest) decoder.Plan {
+func planFor(m *decoder.Model, backend string, free int64, req fit.PlanRequest) fit.Plan {
 	if backend != "metal" || req.CtxPinned {
 		return m.Plan(backend, free, req)
 	}
