@@ -1,0 +1,92 @@
+=== RUN   TestResidentDrafter_streamedAttachMatchesHeld
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (368 MiB of scratch; 2164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestResidentDrafter_streamedAttachMatchesHeld (15.37s)
+=== RUN   TestResidentDrafter_bf16AttachMatchesF32
+cuda: prefill width 2048 rows (368 MiB of scratch; 2164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestResidentDrafter_bf16AttachMatchesF32/held
+=== RUN   TestResidentDrafter_bf16AttachMatchesF32/opened
+    drafter_test.go:551: fc.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: fc.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 0 q.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 0 q.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 0 k.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 0 k.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 0 v.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 0 v.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 0 o.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 0 o.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 0 gate.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 0 gate.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 0 up.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 0 up.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 0 down.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 0 down.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 1 q.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 1 q.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 1 k.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 1 k.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 1 v.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 1 v.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 1 o.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 1 o.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 1 gate.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 1 gate.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 1 up.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 1 up.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 1 down.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 1 down.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 2 q.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 2 q.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 2 k.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 2 k.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 2 v.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 2 v.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 2 o.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 2 o.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 2 gate.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 2 gate.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 2 up.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 2 up.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 2 down.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 2 down.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 3 q.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 3 q.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 3 k.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 3 k.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 3 v.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 3 v.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 3 o.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 3 o.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 3 gate.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 3 gate.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 3 up.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 3 up.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 3 down.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 3 down.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 4 q.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 4 q.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 4 k.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 4 k.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 4 v.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 4 v.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 4 o.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 4 o.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 4 gate.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 4 gate.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 4 up.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 4 up.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 4 down.W: the bf16 opened attach's device bytes differ from the f32 attach's
+    drafter_test.go:551: layer 4 down.ws: the bf16 opened attach's device bytes differ from the f32 attach's
+--- FAIL: TestResidentDrafter_bf16AttachMatchesF32 (14.67s)
+    --- PASS: TestResidentDrafter_bf16AttachMatchesF32/held (0.83s)
+    --- FAIL: TestResidentDrafter_bf16AttachMatchesF32/opened (1.09s)
+FAIL
+ledger: 6 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	30.153s
+FAIL

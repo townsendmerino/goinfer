@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"reflect"
 	"testing"
 	"time"
 
@@ -517,7 +518,7 @@ func TestResidentDrafter_streamedAttachMatchesHeld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("attach opened: %v", err)
 	}
-	requireSameDrafterDeviceBytes(t, r, a, b, held.DrafterGeometry())
+	requireSameDrafterDeviceBytes(t, r, a, b, held.DrafterGeometry(), opened.DrafterGeometry(), "held", "streamed")
 	if err := opened.ReleaseHostWeights(); err != nil {
 		t.Fatalf("release: %v", err)
 	}
@@ -527,9 +528,17 @@ func TestResidentDrafter_streamedAttachMatchesHeld(t *testing.T) {
 }
 
 // requireSameDrafterDeviceBytes fails for every buffer of drafter b (fc, both trunk norms, each layer's seven matrices and four
-// norms) whose device bytes differ from a's.
-func requireSameDrafterDeviceBytes(t *testing.T, r *cudaResident, a, b *residentDrafter, geo decoder.DrafterGeometry) {
+// norms) whose device bytes differ from a's. The two drafters' geometries and layer counts must be equal first; aName and bName
+// say what each attach was, for the messages.
+func requireSameDrafterDeviceBytes(t *testing.T, r *cudaResident, a, b *residentDrafter, geoA, geoB decoder.DrafterGeometry, aName, bName string) {
 	t.Helper()
+	if !reflect.DeepEqual(geoA, geoB) {
+		t.Fatalf("%s and %s drafters have different geometries: %+v against %+v", aName, bName, geoA, geoB)
+	}
+	if len(a.layers) != geoA.Layers || len(b.layers) != geoA.Layers {
+		t.Fatalf("attached layers: %s %d, %s %d, geometry %d", aName, len(a.layers), bName, len(b.layers), geoA.Layers)
+	}
+	geo := geoA
 	get := func(buf gpu.Buffer, n int) []byte {
 		out := make([]byte, n)
 		if err := r.do(func() error { return gpu.Download(buf, out) }); err != nil {
@@ -539,12 +548,12 @@ func requireSameDrafterDeviceBytes(t *testing.T, r *cudaResident, a, b *resident
 	}
 	same := func(name string, x, y gpu.Buffer, n int) {
 		if !bytes.Equal(get(x, n), get(y, n)) {
-			t.Errorf("%s: the streamed attach's device bytes differ from the held attach's", name)
+			t.Errorf("%s: the %s attach's device bytes differ from the %s attach's", name, bName, aName)
 		}
 	}
 	wq := func(name string, x, y cudaWQ) {
 		if x.N != y.N || x.K != y.K || x.kind != y.kind {
-			t.Fatalf("%s: %s %dx%d streamed, %s %dx%d held", name, y.kind, y.N, y.K, x.kind, x.N, x.K)
+			t.Fatalf("%s: %s attach %s %dx%d, %s attach %s %dx%d", name, bName, y.kind, y.N, y.K, aName, x.kind, x.N, x.K)
 		}
 		same(name+".W", x.W, y.W, x.N*(x.K/4)*4)
 		same(name+".ws", x.ws, y.ws, x.N*4)
@@ -596,21 +605,37 @@ func TestResidentDrafter_bf16AttachMatchesF32(t *testing.T) {
 	if err != nil {
 		t.Fatalf("attach f32: %v", err)
 	}
-	held, err := decoder.LoadDFlashDrafter(bf16dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer held.Close()
-	opened, err := decoder.OpenDFlashDrafter(bf16dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer opened.Close()
-	for name, w := range map[string]decoder.BlockDrafterWeights{"held": held, "opened": opened} {
-		b, err := r.AttachDrafter(w)
-		if err != nil {
-			t.Fatalf("attach bf16 %s: %v", name, err)
-		}
-		t.Run(name, func(t *testing.T) { requireSameDrafterDeviceBytes(t, r, a, b, ref.DrafterGeometry()) })
+	// A fixed order, each mode in its own subtest: a failure in one does not hide the other.
+	for _, c := range []struct {
+		name string
+		open func(string) (decoder.BlockDrafterWeights, func(), error)
+	}{
+		{"held", func(dir string) (decoder.BlockDrafterWeights, func(), error) {
+			d, err := decoder.LoadDFlashDrafter(dir)
+			if err != nil {
+				return nil, nil, err
+			}
+			return d, func() { d.Close() }, nil
+		}},
+		{"opened", func(dir string) (decoder.BlockDrafterWeights, func(), error) {
+			d, err := decoder.OpenDFlashDrafter(dir)
+			if err != nil {
+				return nil, nil, err
+			}
+			return d, func() { d.Close() }, nil
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			w, closeW, err := c.open(bf16dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer closeW()
+			b, err := r.AttachDrafter(w)
+			if err != nil {
+				t.Fatalf("attach bf16 %s: %v", c.name, err)
+			}
+			requireSameDrafterDeviceBytes(t, r, a, b, ref.DrafterGeometry(), w.DrafterGeometry(), "f32", "bf16 "+c.name)
+		})
 	}
 }
