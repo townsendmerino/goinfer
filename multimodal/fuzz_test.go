@@ -43,13 +43,13 @@ func FuzzParseWAV(f *testing.F) {
 // Both Qwen loaders refuse the sizes no released config has.
 func TestQwenPreprocessConfigs_refuseSizesNoRealModelHas(t *testing.T) {
 	type sizes struct{ shortest, longest, patch, merge, temporal int64 }
-	const norm = `"image_mean":[0.5,0.5,0.5],"image_std":[0.5,0.5,0.5]`
-	qwen3 := func(s sizes) error {
+	const norm, zeroStd = `"image_mean":[0.5,0.5,0.5],"image_std":[0.5,0.5,0.5]`, `"image_mean":[0.5,0.5,0.5],"image_std":[0.5,0,0.5]`
+	qwen3 := func(s sizes, norm string) error {
 		_, err := ParseQwen3PreprocessConfig([]byte(fmt.Sprintf(`{"size":{"shortest_edge":%d,"longest_edge":%d},"patch_size":%d,"merge_size":%d,"temporal_patch_size":%d,%s}`,
 			s.shortest, s.longest, s.patch, s.merge, s.temporal, norm)))
 		return err
 	}
-	qwen25 := func(s sizes) error {
+	qwen25 := func(s sizes, norm string) error {
 		dir := t.TempDir()
 		raw := fmt.Sprintf(`{"min_pixels":%d,"max_pixels":%d,"patch_size":%d,"merge_size":%d,"temporal_patch_size":%d,%s}`,
 			s.shortest, s.longest, s.patch, s.merge, s.temporal, norm)
@@ -64,11 +64,14 @@ func TestQwenPreprocessConfigs_refuseSizesNoRealModelHas(t *testing.T) {
 		"Qwen2.5-VL":                    {3136, 12845056, 14, 2, 2},
 		"GLM-OCR":                       {12544, 9633792, 14, 2, 2},
 	} {
-		if err := qwen3(s); err != nil {
+		if err := qwen3(s, norm); err != nil {
 			t.Errorf("%s's sizes: the Qwen3 loader refused them: %v", name, err)
 		}
-		if err := qwen25(s); err != nil {
+		if err := qwen25(s, norm); err != nil {
 			t.Errorf("%s's sizes: the Qwen2.5-VL loader refused them: %v", name, err)
+		}
+		if qwen3(s, zeroStd) == nil || qwen25(s, zeroStd) == nil {
+			t.Errorf("%s's sizes with a zero in image_std: a loader accepted them", name)
 		}
 	}
 	if _, err := LoadQwenPreprocessConfig(t.TempDir()); err != nil {
@@ -83,11 +86,29 @@ func TestQwenPreprocessConfigs_refuseSizesNoRealModelHas(t *testing.T) {
 		"budget past the largest released":                 {65536, 1<<24 + 1, 16, 2, 2},
 		"minimum above the maximum":                        {1 << 24, 1 << 16, 16, 2, 2},
 	} {
-		if qwen3(s) == nil {
+		if qwen3(s, norm) == nil {
 			t.Errorf("%s: the Qwen3 loader accepted it", name)
 		}
-		if qwen25(s) == nil {
+		if qwen25(s, norm) == nil {
 			t.Errorf("%s: the Qwen2.5-VL loader accepted it", name)
+		}
+	}
+	// The loaders refuse or default a size that is not positive before checkLimits sees it, so its own clause is tested directly.
+	if err := Qwen35FamilyPreprocessConfig().checkLimits(); err != nil {
+		t.Fatalf("the Qwen3.5 config: %v", err)
+	}
+	for name, edit := range map[string]func(*QwenPreprocessConfig){
+		"zero patch":       func(c *QwenPreprocessConfig) { c.PatchSize = 0 },
+		"negative merge":   func(c *QwenPreprocessConfig) { c.MergeSize = -2 },
+		"zero temporal":    func(c *QwenPreprocessConfig) { c.TemporalPatchSize = 0 },
+		"zero minimum":     func(c *QwenPreprocessConfig) { c.MinPixels = 0 },
+		"negative minimum": func(c *QwenPreprocessConfig) { c.MinPixels = -1 },
+		"a zero std":       func(c *QwenPreprocessConfig) { c.Std[2] = 0 },
+	} {
+		c := Qwen35FamilyPreprocessConfig()
+		edit(&c)
+		if c.checkLimits() == nil {
+			t.Errorf("%s: checkLimits accepted it", name)
 		}
 	}
 }
@@ -114,6 +135,11 @@ func TestQwenPreprocess_refusesTheAspectRatiosHFRefuses(t *testing.T) {
 	if _, _, err := qwenResizeGrid(1, 1<<20, cfg); err == nil {
 		t.Error("1 x 1048576 under the Qwen3.5 config was accepted")
 	}
+	for _, hw := range [][2]int{{0, 0}, {0, 7}, {-1, -1}} {
+		if _, _, err := qwenResizeGrid(hw[0], hw[1], cfg); err == nil {
+			t.Errorf("an empty %d x %d size was accepted", hw[1], hw[0])
+		}
+	}
 	// At the aspect limit, a config with the largest cell the loaders accept still resizes past the released budget.
 	big := cfg
 	big.PatchSize, big.MergeSize = 32, 32
@@ -123,7 +149,9 @@ func TestQwenPreprocess_refusesTheAspectRatiosHFRefuses(t *testing.T) {
 }
 
 // Whatever ParseQwen3PreprocessConfig accepts must resize any image the input limit admits to no more pixels and frames than the
-// Qwen3.5 config's largest image, and must preprocess a small image into the grid it reports, or fail with an error.
+// Qwen3.5 config's largest image, and must preprocess a small image into the grid it reports, or fail with an error. qwenResizeGrid's
+// grid cap keeps that bound when a single limit is loosened, so the limits themselves are pinned by
+// TestQwenPreprocessConfigs_refuseSizesNoRealModelHas and TestQwenPreprocess_refusesTheAspectRatiosHFRefuses.
 func FuzzParseQwen3PreprocessConfig(f *testing.F) {
 	shipped := Qwen35FamilyPreprocessConfig()
 	most := int64(shipped.MaxPixels) * int64(shipped.TemporalPatchSize)
@@ -142,7 +170,7 @@ func FuzzParseQwen3PreprocessConfig(f *testing.F) {
 		`{"image_mean":[0],"image_std":[0,0,0]}`, `{}`, `[`,
 	}
 	for _, c := range configs {
-		for _, hw := range [][2]uint32{{9, 16}, {1, 1 << 20}, {1 << 25, 1}, {300, 60000}, {5792, 5792}} {
+		for _, hw := range [][2]uint32{{9, 16}, {1, 1 << 20}, {1 << 25, 1}, {300, 60000}, {5792, 5792}, {0, 0}} {
 			f.Add([]byte(c), hw[0], hw[1])
 		}
 	}
@@ -156,7 +184,7 @@ func FuzzParseQwen3PreprocessConfig(f *testing.F) {
 			return
 		}
 		// The bound, by arithmetic on the grid QwenPreprocess would allocate for: preprocessing an image at a legal maximum takes seconds.
-		if h > 0 && w > 0 && uint64(h)*uint64(w) <= qwenMaxInputPixels {
+		if uint64(h)*uint64(w) <= qwenMaxInputPixels {
 			if hb, wb, err := qwenResizeGrid(int(h), int(w), cfg); err == nil {
 				factor := cfg.PatchSize * cfg.MergeSize
 				if hb <= 0 || wb <= 0 || hb%factor != 0 || wb%factor != 0 {
@@ -168,7 +196,8 @@ func FuzzParseQwen3PreprocessConfig(f *testing.F) {
 				}
 			}
 		}
-		// The grid it reports, on a small image with the budget capped for the same reason.
+		// The grid it reports, on a small image. With the budget capped, the grid is one cell when the cell is larger than 2^14 pixels,
+		// at most 2^20 under the limits.
 		cfg.MaxPixels, cfg.MinPixels = min(cfg.MaxPixels, 1<<14), min(cfg.MinPixels, 1<<14)
 		out, grid, err := QwenPreprocess(img.Bytes(), cfg)
 		if err != nil {

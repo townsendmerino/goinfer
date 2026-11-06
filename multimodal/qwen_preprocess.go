@@ -168,9 +168,6 @@ func ParseQwen3PreprocessConfig(raw []byte) (QwenPreprocessConfig, error) {
 	case len(pc.ImageMean) != 3 || len(pc.ImageStd) != 3:
 		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): preprocessor_config is missing image_mean/image_std")
 	}
-	if slices.Contains(pc.ImageStd, 0) {
-		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): image_std has a zero")
-	}
 	cfg := QwenPreprocessConfig{
 		PatchSize: pc.PatchSize, MergeSize: pc.MergeSize, TemporalPatchSize: pc.TemporalPatchSize,
 		MinPixels: pc.Size.Shortest, MaxPixels: pc.Size.Longest,
@@ -197,10 +194,12 @@ const (
 	qwenMaxPixelBudget   = 1 << 24
 )
 
-// checkLimits refuses a config whose sizes no released model has, so a hostile or corrupt preprocessor_config.json is an error at
-// load, not a crash or an unbounded allocation on the first image.
+// checkLimits refuses a config whose sizes no released model has, or whose image_std has a zero (normalization divides by it), so a
+// hostile or corrupt preprocessor_config.json is an error at load, not a crash or an unbounded allocation on the first image.
 func (c QwenPreprocessConfig) checkLimits() error {
 	switch {
+	case slices.Contains(c.Std[:], 0):
+		return fmt.Errorf("preprocessor_config image_std %v has a zero", c.Std)
 	case c.PatchSize <= 0 || c.MergeSize <= 0 || c.TemporalPatchSize <= 0 || c.MinPixels <= 0:
 		return fmt.Errorf("preprocessor_config patch_size %d, merge_size %d, temporal_patch_size %d and min pixels %d must be positive",
 			c.PatchSize, c.MergeSize, c.TemporalPatchSize, c.MinPixels)
@@ -217,13 +216,16 @@ func (c QwenPreprocessConfig) checkLimits() error {
 // qwenMaxAspect is the aspect ratio past which HF's smart_resize raises instead of returning a size.
 const qwenMaxAspect = 200
 
-// qwenResizeGrid is the size an h x w image resizes to under cfg. Like HF's smart_resize it refuses an aspect ratio past
+// qwenResizeGrid is the size an h x w image resizes to under cfg, and refuses an empty size. Like HF's smart_resize it refuses an aspect ratio past
 // qwenMaxAspect: smart_resize floors a short side to one cell without shrinking the long side to match, so a thinner image would
 // resize to many times the config's budget. It also refuses a grid past qwenMaxPixelBudget, which a config whose cell is large
 // against its budget can still reach.
 func qwenResizeGrid(h, w int, cfg QwenPreprocessConfig) (hb, wb int, err error) {
 	if err := cfg.checkLimits(); err != nil {
 		return 0, 0, fmt.Errorf("multimodal(qwen): %w", err)
+	}
+	if h <= 0 || w <= 0 {
+		return 0, 0, fmt.Errorf("multimodal(qwen): a %dx%d image is empty", w, h)
 	}
 	if max(h, w) > qwenMaxAspect*min(h, w) {
 		return 0, 0, fmt.Errorf("multimodal(qwen): a %dx%d image has an aspect ratio past %d", w, h, qwenMaxAspect)
