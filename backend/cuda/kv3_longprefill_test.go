@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -427,5 +428,51 @@ func TestMEM6_cudaPrefillHostRows(t *testing.T) {
 		if got := hash(lg, n); got != want {
 			t.Errorf("%d rows: the last logits and 32 decode steps differ from the slice entry point's (%#x, want %#x)", n, got, want)
 		}
+	}
+}
+
+// The Go bytes a prompt row adds to a resident prefill stay under one embedding row. With the slab alone the batched pass still copied each pass's
+// embeddings into a fresh contiguous host block, so a 20K prompt left its whole size in garbage that the runtime holds resident after the request (MEM0's +218 MiB
+// on the 1.5B): the block is one reused buffer now. The slope is read between two lengths so the fixed costs of a prefill drop out.
+func TestMEM6_cudaPrefillAllocatesNoRowCopy(t *testing.T) {
+	requireCUDADevice(t)
+	dir := kv3LongContextCopy(t, filepath.Join("../../testdata", "llama-tiny"), 4096)
+	m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 2112})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("not the CUDA resident: %s", m.ResidentDecline())
+	}
+	_, _, _, _, _, _, vocab := m.Dims()
+	a.prefillChunkCap.Store(256)
+	defer a.prefillChunkCap.Store(0)
+	bytesFor := func(n int) uint64 {
+		ids := make([]int, n)
+		for i := range ids {
+			ids[i] = (i*37 + 11) % vocab
+		}
+		a.Reset()
+		if _, err := m.ResidentPrefillSeedForTest(context.Background(), ids); err != nil { // warm: the first pass sizes any reused buffer
+			t.Fatal(err)
+		}
+		a.Reset()
+		runtime.GC()
+		var s0, s1 runtime.MemStats
+		runtime.ReadMemStats(&s0)
+		if _, err := m.ResidentPrefillSeedForTest(context.Background(), ids); err != nil {
+			t.Fatal(err)
+		}
+		runtime.ReadMemStats(&s1)
+		return s1.TotalAlloc - s0.TotalAlloc
+	}
+	b1, b2 := bytesFor(1024), bytesFor(2048)
+	perRow := float64(int64(b2)-int64(b1)) / 1024
+	embRow := float64(4 * m.ResidentEmbedLen())
+	t.Logf("Go bytes allocated by the prefill: %d at 1,024 rows, %d at 2,048; %.0f B per prompt row against %.0f B per embedding row (%.2f)", b1, b2, perRow, embRow, perRow/embRow)
+	if perRow > embRow {
+		t.Errorf("a prompt row adds %.0f B of Go allocation, over one embedding row (%.0f B): a pass copies its embeddings again", perRow, embRow)
 	}
 }

@@ -28,3 +28,27 @@ A pass retried at half the width asks for its range again. The marked, image, sp
 - **Void if:** a card run outside the lock, a NOT RUN counted as a pass, a bar moved after a reading.
 
 Registered 2026-11-05 16:24 PST (the time from `date`), after MEM6-C1 to C3 were written and read (`red.log`, `green.log`) and before MEM6-C4 ran.
+
+
+## MEM6-C4 read once, 2026-11-05 16:24 to 16:26 PST: FAIL by the rule as registered
+
+`c4-first/` (`before/`, `after/`, `c4-before.log`, `c4-after.log`, `summary.txt`). `mem0_linux.py`'s cells on `serve-mem6-before` (main, `6ab62e5b2`) and `serve-mem6-after` (the branch with `PrefillLastRows` alone), the exclusive timing lock, load 2.22 and 1.33, 59 GB available, no void cell; the prompt tokenized to 20,201 on every run, `max_tokens` 8.
+
+| `RssAnon`, MiB | after load | peak | +10 s | held (+10 s over after load) |
+|---|---|---|---|---|
+| 1.5B main | 102 | 303 | 303 | **+201** |
+| 1.5B branch | 127 | 195 | 195 | **+68** |
+| 7B main | 96 | 639 | 639 | **+543** |
+| 7B branch | 118 | 262 | 261 | **+143** |
+
+The bar was 64 MiB. The 1.5B misses it by 4 MiB (the PARKED band) and **the 7B, at +143 MiB, is over 128: FAIL as registered.** It stays on record. The embedding slab fixed about 70% of the held memory and something else held the rest.
+
+**Diagnosis (a throwaway test on the 1.5B at int4, deleted):** after the 20K prefill `RssAnon` was +137 MiB; `runtime.GC` brought the heap in use back to its after-load figure and left `RssAnon` where it was; `debug.FreeOSMemory` returned it to within 3 MiB of after load. So the residue was Go garbage the runtime had not returned, not live memory. The allocation profile between load and the end of the prefill (`runtime.MemProfileRate = 4096`, a GC before each profile, `pprof -base`) put **118 MiB of 136 MiB in `prefillCore.func1`**, the line `xhost := make([]float32, M*hidden)`: every pass copied its embeddings into a fresh contiguous block before the upload, so a 20K prompt allocated its whole size again as garbage, one pass at a time. The slab itself was 12 MiB.
+
+## The second change and MEM6-C4b, registered 2026-11-05 16:44 PST before the reading
+
+**The change:** `prefillCore` stages a pass's embeddings in one block grown to the widest pass and kept (`cudaResident.xhostBuf`; a row shorter than hidden is zero-filled, as the fresh block was), not a new block per pass.
+
+**A tier 0 gate added after the first green reading, and its bar:** `TestMEM6_cudaPrefillAllocatesNoRowCopy` reads the Go bytes a 2,048-row prefill allocates against a 1,024-row one on `llama-tiny` (pass 256): the slope per prompt row must stay under one embedding row. Red before the change (`red-alloc.log`: 437 B a row against a 256 B embedding row, 1.71); 180 B after. **Its first bar, an eighth of an embedding row (as Metal's G1 used), read 180 B against 32 B and was wrong for a 64-wide fixture, where other per-row costs (about 181 B) exceed a row; I replaced it with one row, the copy that was removed, after seeing that figure.** This gate points at the mechanism and is not the verdict; MEM6-C4b is.
+
+**MEM6-C4b:** MEM6-C4 again, unchanged in everything but the build: `serve-mem6-after2` (the branch with both changes) against the same `serve-mem6-before`, one run each, before first, the exclusive timing lock. **The bar does not move:** `RssAnon` 10 s after the request within **64 MiB** of its value after load on both models (PARKED within 128, FAIL beyond), the same reply, void and stopping rules as above. The first reading is not replaced. Cost about 3 minutes. MEM6-C6 (`gate identity`) after it.

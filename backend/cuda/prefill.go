@@ -1199,9 +1199,13 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 
 		// Upload the M embeddings contiguously as xB[M, hidden] (already FeatEmbedScale-scaled by the
 		// caller, exactly as Forward/ForwardNoLogits receive them).
-		xhost := make([]float32, M*hidden)
+		if cap(r.xhostBuf) < M*hidden {
+			r.xhostBuf = make([]float32, M*hidden) // grown to the widest pass and kept: a fresh block per pass left the prompt's size in garbage
+		}
+		xhost := r.xhostBuf[:M*hidden]
 		for m, e := range embeddings {
-			copy(xhost[m*hidden:(m+1)*hidden], e)
+			n := copy(xhost[m*hidden:(m+1)*hidden], e)
+			clear(xhost[m*hidden+n : (m+1)*hidden])
 		}
 		if e := gpu.Upload(xB, xhost); e != nil {
 			return e

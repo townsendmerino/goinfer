@@ -39,7 +39,7 @@ cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 Mi
 cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
 cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
 cuda: prefill width 2048 rows (26 MiB of scratch; 7002 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
-    kv3_longprefill_test.go:172: KV precision f32
+    kv3_longprefill_test.go:173: KV precision f32
 [kv3] tiny f32 n=12400 seed=0      cosine 0.999861 argmax equal true (reference margin 0.1151, near tie false), fused attention launches 14
 [kv3] tiny f32 n=12400 seed=0      control (last 8 tokens replaced) cosine 0.823451: the comparison sees it
 [kv3] tiny f32 n=12400 seed=1      cosine 0.999872 argmax equal true (reference margin 0.1346, near tie false), fused attention launches 14
@@ -60,7 +60,7 @@ cuda: prefill width 2048 rows (26 MiB of scratch; 7002 MiB free beyond the 173 M
 [kv3] tiny f32 n=16384 seed=2      control (last 8 tokens replaced) cosine 0.759240: the comparison sees it
 === RUN   TestKV3_batchedPrefillPastTheSpanBound_tiny/f16
 cuda: prefill width 2048 rows (26 MiB of scratch; 7034 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
-    kv3_longprefill_test.go:172: KV precision f16
+    kv3_longprefill_test.go:173: KV precision f16
 [kv3] tiny f16 n=12400 seed=0      cosine 0.999911 argmax equal true (reference margin 0.1353, near tie false), fused attention launches 14
 [kv3] tiny f16 n=12400 seed=0      control (last 8 tokens replaced) cosine 0.822103: the comparison sees it
 [kv3] tiny f16 n=12400 seed=1      cosine 0.999911 argmax equal true (reference margin 0.1234, near tie false), fused attention launches 14
@@ -79,33 +79,37 @@ cuda: prefill width 2048 rows (26 MiB of scratch; 7034 MiB free beyond the 173 M
 [kv3] tiny f16 n=16384 seed=1      control (last 8 tokens replaced) cosine 0.782679: the comparison sees it
 [kv3] tiny f16 n=16384 seed=2      cosine 0.999954 argmax equal true (reference margin 0.1191, near tie false), fused attention launches 16
 [kv3] tiny f16 n=16384 seed=2      control (last 8 tokens replaced) cosine 0.760013: the comparison sees it
---- PASS: TestKV3_batchedPrefillPastTheSpanBound_tiny (148.14s)
-    --- PASS: TestKV3_batchedPrefillPastTheSpanBound_tiny/f32 (74.74s)
-    --- PASS: TestKV3_batchedPrefillPastTheSpanBound_tiny/f16 (73.29s)
+--- PASS: TestKV3_batchedPrefillPastTheSpanBound_tiny (147.48s)
+    --- PASS: TestKV3_batchedPrefillPastTheSpanBound_tiny/f32 (74.49s)
+    --- PASS: TestKV3_batchedPrefillPastTheSpanBound_tiny/f16 (72.88s)
 === RUN   TestKV3_batchedPrefillPastTheSpanBound_real1p5B
-    kv3_longprefill_test.go:190: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+    kv3_longprefill_test.go:191: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
 --- SKIP: TestKV3_batchedPrefillPastTheSpanBound_real1p5B (0.00s)
 === RUN   TestKV3_prefillScratchBytes_matchesThePass
 cuda: prefill width 2048 rows (26 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
-    kv3_longprefill_test.go:226: KV precision f16
+    kv3_longprefill_test.go:227: KV precision f16
 [kv3] tiny M=16: scratch 209152 B (0.2 MiB) = the pass's allocations
 [kv3] tiny M=300: scratch 3921600 B (3.7 MiB) = the pass's allocations
 [kv3] tiny M=512: scratch 6692864 B (6.4 MiB) = the pass's allocations
---- PASS: TestKV3_prefillScratchBytes_matchesThePass (0.28s)
+--- PASS: TestKV3_prefillScratchBytes_matchesThePass (0.26s)
 === RUN   TestKV3_residentReportsItsChunks
 cuda: prefill width 2048 rows (26 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
-    kv3_longprefill_test.go:246: KV precision f16
---- PASS: TestKV3_residentReportsItsChunks (0.25s)
+    kv3_longprefill_test.go:247: KV precision f16
+--- PASS: TestKV3_residentReportsItsChunks (0.26s)
 === RUN   TestKV3_admissionPricesTheChunk
-    kv3_longprefill_test.go:274: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+    kv3_longprefill_test.go:275: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
 --- SKIP: TestKV3_admissionPricesTheChunk (0.00s)
 === RUN   TestKV3_chunkerKeepsPassStartsOnTheGrid
 --- PASS: TestKV3_chunkerKeepsPassStartsOnTheGrid (0.01s)
 === RUN   TestMEM6_cudaPrefillHostRows
 cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
-    kv3_longprefill_test.go:423: 1024 rows: at most 256 embedding rows held at once (one pass is 256)
-    kv3_longprefill_test.go:423: 2048 rows: at most 256 embedding rows held at once (one pass is 256)
---- PASS: TestMEM6_cudaPrefillHostRows (0.30s)
+    kv3_longprefill_test.go:424: 1024 rows: at most 256 embedding rows held at once (one pass is 256)
+    kv3_longprefill_test.go:424: 2048 rows: at most 256 embedding rows held at once (one pass is 256)
+--- PASS: TestMEM6_cudaPrefillHostRows (0.31s)
+=== RUN   TestMEM6_cudaPrefillAllocatesNoRowCopy
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv3_longprefill_test.go:474: Go bytes allocated by the prefill: 291984 at 1,024 rows, 475888 at 2,048; 180 B per prompt row against 256 B per embedding row (0.70)
+--- PASS: TestMEM6_cudaPrefillAllocatesNoRowCopy (0.28s)
 === RUN   TestResidentDenseBytes_matchesCUDADevice
 cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
 === RUN   TestResidentDenseBytes_matchesCUDADevice/llama-tiny
@@ -120,10 +124,10 @@ cuda: prefill width 2048 rows (155 MiB of scratch; 6132 MiB free beyond the 173 
 cuda: prefill width 2048 rows (280 MiB of scratch; 5016 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
     kv_slots_test.go:537: probe read 2: 1008 MB more on the device than at checkKVFits; the KV pools charge 1008 MB (1 slots at context 16384)
     kv_slots_test.go:544: device before KV 1054 MB; Plan's CUDA dense 927 MB (all dense, host tables included, 1150 MB) + allocation slack 122 MB; under by 5 MB (margin 248 MB)
---- PASS: TestResidentDenseBytes_matchesCUDADevice (5.86s)
-    --- PASS: TestResidentDenseBytes_matchesCUDADevice/llama-tiny (0.03s)
-    --- PASS: TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (1.51s)
-    --- PASS: TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (4.14s)
+--- PASS: TestResidentDenseBytes_matchesCUDADevice (6.01s)
+    --- PASS: TestResidentDenseBytes_matchesCUDADevice/llama-tiny (0.04s)
+    --- PASS: TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (1.58s)
+    --- PASS: TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (4.20s)
 === RUN   TestResidentKVBytes_matchesCUDAAllocation
 === RUN   TestResidentKVBytes_matchesCUDAAllocation/llama-tiny
 cuda: prefill width 2048 rows (6 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
@@ -151,18 +155,18 @@ cuda: prefill width 2048 rows (155 MiB of scratch; 5614 MiB free beyond the 173 
 === RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma3-1b-q4_k_m.gguf
 cuda: KV pool: 32768 positions (512 blocks of 64) for 2 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
 cuda: prefill width 2048 rows (290 MiB of scratch; 4494 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
---- PASS: TestResidentKVBytes_matchesCUDAAllocation (4.53s)
+--- PASS: TestResidentKVBytes_matchesCUDAAllocation (4.63s)
     --- PASS: TestResidentKVBytes_matchesCUDAAllocation/llama-tiny (0.04s)
     --- SKIP: TestResidentKVBytes_matchesCUDAAllocation/phi3-tiny (0.00s)
-    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/mistral-tiny-window (0.03s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/mistral-tiny-window (0.04s)
     --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma3-vl-tiny (0.03s)
     --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma4-dense-twogeom-tiny (0.04s)
-    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma4-moe-tiny (0.06s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma4-moe-tiny (0.05s)
     --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma4-emodel-tiny (0.06s)
     --- PASS: TestResidentKVBytes_matchesCUDAAllocation/qwen35-tiny (0.04s)
-    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/deepseek-tiny (0.05s)
-    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (1.59s)
-    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma3-1b-q4_k_m.gguf (2.59s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/deepseek-tiny (0.04s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (1.58s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma3-1b-q4_k_m.gguf (2.70s)
 === RUN   TestResidentCloseFreesVRAM_7B
     lifecycle7b_test.go:32: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
 --- SKIP: TestResidentCloseFreesVRAM_7B (0.00s)
@@ -170,15 +174,15 @@ cuda: prefill width 2048 rows (290 MiB of scratch; 4494 MiB free beyond the 173 
     lifecycle_test.go:26: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
 --- SKIP: TestResidentCloseFreesVRAM (0.00s)
 === RUN   TestPrefillCoreCallsMropePosWindow
---- PASS: TestPrefillCoreCallsMropePosWindow (0.00s)
+--- PASS: TestPrefillCoreCallsMropePosWindow (0.01s)
 === RUN   TestPrefillCancel
 cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
 cuda: prefill width 2048 rows (292 MiB of scratch; 6116 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
-    prefill_cancel_test.go:69: uncancelled prefill of 512 rows: 600ms
+    prefill_cancel_test.go:69: uncancelled prefill of 512 rows: 594ms
 === RUN   TestPrefillCancel/already-cancelled
 === RUN   TestPrefillCancel/cancelled-mid-flight
-    prefill_cancel_test.go:94: cancelled at ~120ms, returned after 129ms (uncancelled: 600ms)
---- PASS: TestPrefillCancel (4.00s)
+    prefill_cancel_test.go:94: cancelled at ~119ms, returned after 128ms (uncancelled: 594ms)
+--- PASS: TestPrefillCancel (3.42s)
     --- PASS: TestPrefillCancel/already-cancelled (0.00s)
     --- PASS: TestPrefillCancel/cancelled-mid-flight (0.13s)
 === RUN   TestPrefillCancel_dense
@@ -222,7 +226,7 @@ cuda: prefill width 2048 rows (11 MiB of scratch; 6932 MiB free beyond the 173 M
     prefill_e2e_test.go:162: DECODE BYTE-IDENTICAL: 64 greedy tokens match ([94 115 115 115 115 115 115 115 32 32 32 32 32 67 88 88 88 66 79 88 66 79 87 87 113 100 79 117 79 117 79 49 101 117 117 117 89 13 89 13 89 13 89 75 113 75 113 75 113 113 113 54 113 54 54 93 11 11 11 11 11 11 11 51])
     prefill_e2e_test.go:163: MILESTONE-2 GATE GREEN: batched prefill ≡ sequential (KV all layers×rows + logits + 64-token decode), window engaged
 --- PASS: TestPrefillLast_e2e (0.58s)
-    --- PASS: TestPrefillLast_e2e/int4 (0.07s)
+    --- PASS: TestPrefillLast_e2e/int4 (0.06s)
     --- PASS: TestPrefillLast_e2e/int8int8 (0.51s)
 === RUN   TestPrefillGateVsReferenceCUDA
     prefill_gate_ref_test.go:50: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs Phase A's reference files)
@@ -265,9 +269,9 @@ cuda: decode activations: int8 (W4A8): turned off by a test
 cuda: prefill width 2048 rows (292 MiB of scratch; 6116 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
 [moe-prefill] ../../testdata/gemma4-moe-scaled: layers=4 moe=4 (r.moe=true r.gemma4Moe=true cacheExperts=false)
 [moe-prefill] ../../testdata/gemma4-moe-scaled: 0/4096 logits differ (max |diff| 0)
---- PASS: TestPrefillMoE_bitIdentical (2.82s)
+--- PASS: TestPrefillMoE_bitIdentical (2.81s)
     --- SKIP: TestPrefillMoE_bitIdentical/gemma4-moe-kv-tiny (0.00s)
-    --- PASS: TestPrefillMoE_bitIdentical/gemma4-moe-scaled (2.82s)
+    --- PASS: TestPrefillMoE_bitIdentical/gemma4-moe-scaled (2.81s)
 === RUN   TestPrefillMoE_real26B
     prefill_moe_test.go:50: set GOINFER_HEAVY_TESTS=1 (loads the 26B, ~2m11s)
 --- SKIP: TestPrefillMoE_real26B (0.00s)
@@ -287,7 +291,7 @@ cuda: prefill width 2048 rows (292 MiB of scratch; 6116 MiB free beyond the 173 
 cuda: prefill width 2048 rows (124 MiB of scratch; 6608 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
 [nonuniform] layers=12 non-uniform-vs-L0=2 kEqV=2 (L0 hd=256 kvDim=512)
 [nonuniform] 0/256 logits differ (max |diff| 0)
---- PASS: TestPrefillNonUniform_bitIdentical (0.61s)
+--- PASS: TestPrefillNonUniform_bitIdentical (0.60s)
 === RUN   TestPrefillPartial_windowedResumesAfterTheCommittedPasses
 === RUN   TestPrefillPartial_windowedResumesAfterTheCommittedPasses/mistral-tiny-window
 cuda: prefill width 2048 rows (11 MiB of scratch; 6932 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
@@ -298,9 +302,9 @@ cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack
 === RUN   TestPrefillPartial_windowedResumesAfterTheCommittedPasses/cohere2-tiny
 cuda: prefill width 2048 rows (6 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
 cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
---- PASS: TestPrefillPartial_windowedResumesAfterTheCommittedPasses (0.22s)
+--- PASS: TestPrefillPartial_windowedResumesAfterTheCommittedPasses (0.23s)
     --- PASS: TestPrefillPartial_windowedResumesAfterTheCommittedPasses/mistral-tiny-window (0.07s)
-    --- PASS: TestPrefillPartial_windowedResumesAfterTheCommittedPasses/gemma3-vl-tiny (0.06s)
+    --- PASS: TestPrefillPartial_windowedResumesAfterTheCommittedPasses/gemma3-vl-tiny (0.08s)
     --- PASS: TestPrefillPartial_windowedResumesAfterTheCommittedPasses/cohere2-tiny (0.09s)
 === RUN   TestPrefillPartial_windowedGenerationAfterADecline
 === RUN   TestPrefillPartial_windowedGenerationAfterADecline/mistral-tiny-window
@@ -313,9 +317,9 @@ cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack
 === RUN   TestPrefillPartial_windowedGenerationAfterADecline/cohere2-tiny
 cuda: prefill width 2048 rows (6 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
 cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
---- PASS: TestPrefillPartial_windowedGenerationAfterADecline (0.29s)
+--- PASS: TestPrefillPartial_windowedGenerationAfterADecline (0.30s)
     --- PASS: TestPrefillPartial_windowedGenerationAfterADecline/mistral-tiny-window (0.09s)
-    --- PASS: TestPrefillPartial_windowedGenerationAfterADecline/gemma3-vl-tiny (0.09s)
+    --- PASS: TestPrefillPartial_windowedGenerationAfterADecline/gemma3-vl-tiny (0.10s)
     --- PASS: TestPrefillPartial_windowedGenerationAfterADecline/cohere2-tiny (0.11s)
 === RUN   TestPrefillLast_qwen3
     prefill_qwen3_test.go:23: set GOINFER_HEAVY_TESTS=1 (loads Qwen3-1.7B)
@@ -325,11 +329,11 @@ cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack;
 --- SKIP: TestPrefillStartOffset (0.00s)
 === RUN   TestPrefillTails_bitIdenticalToTheRecordedBaseline
 cuda: prefill width 2048 rows (124 MiB of scratch; 6608 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    prefill_tails_identity_test.go:170: gemma4-dense-scaled PrefillLastN         23582069bf4deaa5
     prefill_tails_identity_test.go:170: gemma4-dense-scaled PrefillLastNArgmax   [1 7 42 100 5 20
     prefill_tails_identity_test.go:170: gemma4-dense-scaled HiddenLast           a98b5d207121a7ea
     prefill_tails_identity_test.go:170: gemma4-dense-scaled ResidualAll          33a6886fc95a3918
     prefill_tails_identity_test.go:170: gemma4-dense-scaled PrefillLast+decode   a4ae7110352345dc
-    prefill_tails_identity_test.go:170: gemma4-dense-scaled PrefillLastN         23582069bf4deaa5
 cuda: decode activations: int8 (W4A8): turned off by a test
 cuda: prefill width 2048 rows (292 MiB of scratch; 5778 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
     prefill_tails_identity_test.go:170: gemma4-moe-scaled PrefillLast+decode   f27e51b7756e828a
@@ -338,13 +342,13 @@ cuda: prefill width 2048 rows (292 MiB of scratch; 5778 MiB free beyond the 173 
     prefill_tails_identity_test.go:170: gemma4-moe-scaled HiddenLast           f652972d4e52a701
     prefill_tails_identity_test.go:170: gemma4-moe-scaled ResidualAll          d85a3d0f49d1e690
 cuda: prefill width 2048 rows (5 MiB of scratch; 5776 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
-    prefill_tails_identity_test.go:170: qwen3moe-tiny-k3 ResidualAll          4eded318ef20dff8
     prefill_tails_identity_test.go:170: qwen3moe-tiny-k3 PrefillLast+decode   96f18e78b8f4f111
     prefill_tails_identity_test.go:170: qwen3moe-tiny-k3 PrefillLastN         d19ce2efbc679570
     prefill_tails_identity_test.go:170: qwen3moe-tiny-k3 PrefillLastNArgmax   [139 88 295 295 
     prefill_tails_identity_test.go:170: qwen3moe-tiny-k3 HiddenLast           49a4564a2ba42039
+    prefill_tails_identity_test.go:170: qwen3moe-tiny-k3 ResidualAll          4eded318ef20dff8
     prefill_tails_identity_test.go:199: baseline is for NVIDIA GeForce RTX 2070 SUPER / 595.91.07, this is NVIDIA GeForce RTX 2070 SUPER / 595.112.07: the bit comparison was NOT made
---- PASS: TestPrefillTails_bitIdenticalToTheRecordedBaseline (3.40s)
+--- PASS: TestPrefillTails_bitIdenticalToTheRecordedBaseline (3.38s)
 === RUN   TestPrefillTTFT
     prefill_ttft_test.go:42: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
 --- SKIP: TestPrefillTTFT (0.00s)
@@ -408,8 +412,8 @@ cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
 cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
     sb2_census_test.go:1172: 4 layers, 24 operations
 --- PASS: TestResident_holdsTheModelsProgram (0.11s)
-    --- PASS: TestResident_holdsTheModelsProgram/llama-tiny (0.06s)
-    --- PASS: TestResident_holdsTheModelsProgram/qwen35-tiny (0.05s)
+    --- PASS: TestResident_holdsTheModelsProgram/llama-tiny (0.07s)
+    --- PASS: TestResident_holdsTheModelsProgram/qwen35-tiny (0.04s)
 === RUN   TestPrefillSteps_equalTheFlags
 cuda: prefill width 2048 rows (6 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
 cuda: prefill width 2048 rows (6 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
@@ -537,7 +541,7 @@ cuda: prefill width 2048 rows (15 MiB of scratch; 6940 MiB free beyond the 173 M
 cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
 cuda: prefill width 2048 rows (15 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
     sb2_census_test.go:2028: 46 fixtures built resident (46 of them again with the build's step checks on), 43 batched by the flags' guards, 43 with a batched prefill, 218 layers with batched steps checked
---- PASS: TestPrefillSteps_equalTheFlags (35.35s)
+--- PASS: TestPrefillSteps_equalTheFlags (34.61s)
 === RUN   TestPrefillSteps_buildDeclinesAStepLessLayer
 [resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: layer 1: the batched prefill's guards admit the model and the program gives the layer no batched steps) — continuing on the CPU/staged path
     sb2_census_test.go:2063: declined: cuda: cuda: layer 1: the batched prefill's guards admit the model and the program gives the layer no batched steps
@@ -612,7 +616,7 @@ cuda: prefill width 2048 rows (15 MiB of scratch; 6940 MiB free beyond the 173 M
     sb2_census_test.go:2129: plant "the MoE step dropped": red on 12 of the 12 fixtures it applies to (43 with a batched prefill)
     sb2_census_test.go:2129: plant "the DeltaNet step dropped": red on 7 of the 7 fixtures it applies to (43 with a batched prefill)
     sb2_census_test.go:2129: plant "the FFN step before the mixer's": red on 43 of the 43 fixtures it applies to (43 with a batched prefill)
---- PASS: TestPrefillWalk_plantsGoRed (18.18s)
+--- PASS: TestPrefillWalk_plantsGoRed (18.15s)
 === RUN   TestResidentSelfTest_passesOnHealthyCUDA
 cuda: prefill width 2048 rows (6 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
 cuda: prefill width 2048 rows (6 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
@@ -622,14 +626,14 @@ cuda: prefill width 2048 rows (6 MiB of scratch; 6936 MiB free beyond the 173 Mi
 cuda: prefill width 2048 rows (6 MiB of scratch; 6936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
 cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
 cuda: prefill width 2048 rows (8 MiB of scratch; 6936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
-    selftest_probe_test.go:28: int4: cuda pass (660.1 ms), worst cosine 0.99939 (floor 0.995), worst relative L2 0.0350 (ceiling 0.10) over 4 fixtures (wall 660.109071ms)
+    selftest_probe_test.go:28: int4: cuda pass (649.0 ms), worst cosine 0.99939 (floor 0.995), worst relative L2 0.0350 (ceiling 0.10) over 4 fixtures (wall 648.999233ms)
 cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
 cuda: prefill width 2048 rows (21 MiB of scratch; 6936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
 cuda: prefill width 2048 rows (6 MiB of scratch; 6936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
 cuda: prefill width 2048 rows (6 MiB of scratch; 6936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
 [resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
-    selftest_probe_test.go:28: int8int8: cuda pass (439.5 ms), worst cosine 0.99986 (floor 0.995), worst relative L2 0.0168 (ceiling 0.10) over 3 fixtures; qwen35-tiny: did not go resident on cuda: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") (wall 439.534902ms)
---- PASS: TestResidentSelfTest_passesOnHealthyCUDA (1.17s)
+    selftest_probe_test.go:28: int8int8: cuda pass (413.6 ms), worst cosine 0.99986 (floor 0.995), worst relative L2 0.0168 (ceiling 0.10) over 3 fixtures; qwen35-tiny: did not go resident on cuda: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") (wall 413.559019ms)
+--- PASS: TestResidentSelfTest_passesOnHealthyCUDA (1.14s)
 === RUN   TestResidentSelfTest_goesRedOnWrongResidentInputs
 cuda: prefill width 2048 rows (6 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
 === RUN   TestResidentSelfTest_goesRedOnWrongResidentInputs/rms_epsilon
@@ -639,7 +643,7 @@ cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 Mi
 cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
 cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
 cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
-    selftest_probe_test.go:58: cuda declined (682.5 ms), worst cosine 0.67057 (floor 0.995), worst relative L2 0.9830 (ceiling 0.10) over 4 fixtures; qwen35vl-tiny decode, 264 positions: worst cosine 0.6706 (floor 0.995, at position 1), worst relative L2 0.983 (ceiling 0.10); qwen35vl-tiny batched prefill: cosine 0.9109 (floor 0.995), relative L2 0.980 (ceiling 0.10)
+    selftest_probe_test.go:58: cuda declined (657.5 ms), worst cosine 0.67057 (floor 0.995), worst relative L2 0.9830 (ceiling 0.10) over 4 fixtures; qwen35vl-tiny decode, 264 positions: worst cosine 0.6706 (floor 0.995, at position 1), worst relative L2 0.983 (ceiling 0.10); qwen35vl-tiny batched prefill: cosine 0.9109 (floor 0.995), relative L2 0.980 (ceiling 0.10)
 === RUN   TestResidentSelfTest_goesRedOnWrongResidentInputs/rope_base
 cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
 cuda: prefill width 2048 rows (21 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
@@ -647,16 +651,16 @@ cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 Mi
 cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
 cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
 cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
-    selftest_probe_test.go:58: cuda declined (661.7 ms), worst cosine 0.92499 (floor 0.995), worst relative L2 0.3875 (ceiling 0.10) over 4 fixtures; qwen35vl-tiny decode, 264 positions: worst cosine 0.9250 (floor 0.995, at position 21), worst relative L2 0.388 (ceiling 0.10); qwen35vl-tiny batched prefill: cosine 0.9945 (floor 0.995), relative L2 0.105 (ceiling 0.10)
---- PASS: TestResidentSelfTest_goesRedOnWrongResidentInputs (1.38s)
-    --- PASS: TestResidentSelfTest_goesRedOnWrongResidentInputs/rms_epsilon (0.68s)
+    selftest_probe_test.go:58: cuda declined (655.1 ms), worst cosine 0.92499 (floor 0.995), worst relative L2 0.3875 (ceiling 0.10) over 4 fixtures; qwen35vl-tiny decode, 264 positions: worst cosine 0.9250 (floor 0.995, at position 21), worst relative L2 0.388 (ceiling 0.10); qwen35vl-tiny batched prefill: cosine 0.9945 (floor 0.995), relative L2 0.105 (ceiling 0.10)
+--- PASS: TestResidentSelfTest_goesRedOnWrongResidentInputs (1.35s)
+    --- PASS: TestResidentSelfTest_goesRedOnWrongResidentInputs/rms_epsilon (0.66s)
     --- PASS: TestResidentSelfTest_goesRedOnWrongResidentInputs/rope_base (0.66s)
 === RUN   TestPrefillCoreAndDraftBlockCallTheShmemGuards
 === RUN   TestPrefillCoreAndDraftBlockCallTheShmemGuards/prefillCore/checkPrefillShmem
 === RUN   TestPrefillCoreAndDraftBlockCallTheShmemGuards/DraftBlock/checkDrafterShmem
 --- PASS: TestPrefillCoreAndDraftBlockCallTheShmemGuards (0.01s)
-    --- PASS: TestPrefillCoreAndDraftBlockCallTheShmemGuards/prefillCore/checkPrefillShmem (0.00s)
+    --- PASS: TestPrefillCoreAndDraftBlockCallTheShmemGuards/prefillCore/checkPrefillShmem (0.01s)
     --- PASS: TestPrefillCoreAndDraftBlockCallTheShmemGuards/DraftBlock/checkDrafterShmem (0.00s)
 PASS
-ledger: 217 device(s) released in this run
-ok  	github.com/townsendmerino/goinfer/backend/cuda	228.538s
+ledger: 218 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	227.022s
