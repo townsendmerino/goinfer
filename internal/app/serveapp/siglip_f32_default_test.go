@@ -60,10 +60,11 @@ func TestTowerReserve_gemma3(t *testing.T) {
 // its backend, int8 included, and zero where the tower runs on the CPU. A table over family x -vision-quant x backend. Gemma 3 under cuda is the case that matters: its
 // shipped default (the int8 device tower) was priced at zero.
 func TestTowerReserve_everyDeviceTower(t *testing.T) {
-	old, oldM := cudaTowerRegistered, metalTowerRegistered // stand in for cuda and metal builds, whose imports fill the tower registries
+	old, oldM, oldW := cudaTowerRegistered, metalTowerRegistered, webgpuTowerRegistered // stand in for cuda, metal and gpu builds, whose imports fill the tower registries
 	cudaTowerRegistered = func(string) bool { return true }
 	metalTowerRegistered = func(string) bool { return true }
-	t.Cleanup(func() { cudaTowerRegistered, metalTowerRegistered = old, oldM })
+	webgpuTowerRegistered = func(string) bool { return true }
+	t.Cleanup(func() { cudaTowerRegistered, metalTowerRegistered, webgpuTowerRegistered = old, oldM, oldW })
 	cfgs := map[string]string{
 		"gemma3":     `{"model_type":"gemma3","vision_config":{"hidden_size":1152,"intermediate_size":4304,"num_hidden_layers":27,"patch_size":14,"image_size":896,"num_channels":3}}`,
 		"gemma4":     `{"model_type":"gemma4","vision_config":{"hidden_size":768,"intermediate_size":3072,"num_hidden_layers":16,"patch_size":16,"position_embedding_size":10240,"default_output_length":280,"pooling_kernel_size":3}}`,
@@ -81,10 +82,17 @@ func TestTowerReserve_everyDeviceTower(t *testing.T) {
 			for _, backend := range []string{"cuda", "metal", "webgpu", "cpu"} {
 				c := config{visionPath: dir, visionQuant: quant}
 				c.load.Backend = backend
+				if backend == "webgpu" {
+					c.visionDevice = "gpu" // WebGPU's device towers are opt-in: only an asked-for one holds device memory
+					if un := (config{visionPath: dir, visionQuant: "", load: c.load}); fam != "gemma3" && towerReserve(un, dir) != 0 {
+						t.Errorf("%s on webgpu with nothing asked is the CPU's tower but towerReserve = %d", fam, towerReserve(un, dir))
+					}
+				}
 				got := towerReserve(c, dir)
 				// a device tower on CUDA: every family in float32; Gemma 3 also as the int8 device tower (the shipped default and -vision-quant int8)
-				// S18 on the Mac (G-S18c-Mac): the same on Metal, whose int8 device tower is Gemma 3's alone (tower_gemm_w8)
-				wantDevice := (backend == "cuda" || backend == "metal") && (!towerInt8(fam, quant, backend) || fam == "gemma3")
+				// S18 on the Mac (G-S18c-Mac): the same on Metal, whose int8 device tower is Gemma 3's alone (tower_gemm_w8); and on WebGPU when asked for
+				// (-vision-device gpu), Gemma 3's int8 one included
+				wantDevice := (backend == "cuda" || backend == "metal" || backend == "webgpu") && (!towerInt8(fam, quant, backend) || fam == "gemma3")
 				if wantDevice && got <= 0 {
 					t.Errorf("%s quant %q on %s has a device tower but towerReserve = %d", fam, quant, backend, got)
 				}
