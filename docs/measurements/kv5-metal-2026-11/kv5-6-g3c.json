@@ -35,7 +35,7 @@
    },
    "finish_reason": "length",
    "error": null,
-   "wall_s": 76.0,
+   "wall_s": 73.8,
    "swapout_pages": 0
   },
   "verdict": "PASS"
@@ -76,7 +76,7 @@
    },
    "finish_reason": "length",
    "error": null,
-   "wall_s": 273.5,
+   "wall_s": 247.0,
    "swapout_pages": 0
   },
   "verdict": "PASS"
