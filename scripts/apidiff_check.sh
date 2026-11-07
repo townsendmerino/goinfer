@@ -42,16 +42,42 @@ aliased() {
 		from="${body#*: changed from }"
 		to="${from#* to }"
 		from="${from%% to *}"
-		[ "$from" = "$to" ] && printf '%s' "$from" | grep -qw -- "$name" && return 0
+		[ "$from" = "$to" ] || continue
+		# The result is the alias, and every other type in the signature is a builtin: another named type's identity could have
+		# moved too, and the text would not show it.
+		local params
+		case "$from" in
+		"func("*") *$name") params="${from#func(}" params="${params%) \*"$name"}" ;;
+		"func("*") $name") params="${from#func(}" params="${params%) "$name"}" ;;
+		*) continue ;;
+		esac
+		case "$params" in *"("* | *")"*) continue ;; esac
+		printf '%s' "$params" | grep -oE '[A-Za-z_][A-Za-z0-9_.]*' |
+			grep -qvxE 'bool|string|error|any|byte|rune|uintptr|u?int(8|16|32|64)?|float(32|64)|complex(64|128)' && continue
+		return 0
 	done < "$ALIASES"
 	return 1
+}
+
+# hardname PKG NAME succeeds when the Hard list names NAME, or NAME is a field or method of a type the list names as "T.*" (every
+# member T had at the baseline).
+hardname() {
+	local p="$1" name="$2" t
+	grep -qxF "$p $name" "$HARD" && return 0
+	case "$name" in
+	"(*"*")."*) t="${name#(\*}" t="${t%%)*}" ;;
+	"("*")."*) t="${name#(}" t="${t%%)*}" ;;
+	*.*) t="${name%%.*}" ;;
+	*) return 1 ;;
+	esac
+	grep -qxF "$p $t.*" "$HARD"
 }
 
 # classify PKG LINE prints one of HARD, ALIAS, EXPERIMENTAL for one line of apidiff's "Incompatible changes" list.
 classify() {
 	local p="$1" line="$2" name
 	name="$(printf '%s' "$line" | sed 's/^- //; s/:.*//')"
-	if ! grep -qxF "$p $name" "$HARD"; then
+	if ! hardname "$p" "$name"; then
 		echo EXPERIMENTAL
 	elif aliased "$p" "$line"; then
 		echo ALIAS
@@ -125,6 +151,33 @@ for p in $PKGS; do
 		esac
 	done <<< "$inc"
 done
+
+# A listed alias's members live in its new package, which the baseline does not have: compare the baseline's old package with
+# the new one, and judge only the alias's own lines there (the type, its fields and methods), against the Hard list's entries
+# for the new package. So a field removed from decoder/config's Config fails as it would have in decoder.
+if [ -f "$ALIASES" ]; then
+	while read -r ap aname eq atarget _; do
+		case "$ap" in '' | \#*) continue ;; esac
+		[ "$eq" = "=" ] || continue
+		npkg="${atarget%.*}"
+		out="$("$APIDIFF" "$WORK/$ap.base" "$MOD/$npkg" 2>&1)" || { echo "  $npkg: apidiff failed against $ap's baseline" >&2; exit 1; }
+		inc="$(printf '%s\n' "$out" | awk '/^Incompatible changes:/{f=1;next} /^Compatible changes:/{f=0} f' | sed '/^$/d')"
+		n=0
+		while IFS= read -r line; do
+			[ -z "$line" ] && continue
+			name="$(printf '%s' "$line" | sed 's/^- //; s/:.*//')"
+			case "$name" in "$aname" | "$aname".* | "(*$aname)."* | "($aname)."*) ;; *) continue ;; esac
+			n=$((n + 1))
+			if [ "$(classify "$npkg" "$line")" = HARD ]; then
+				echo "  $npkg: HARD-TIER BREAK  $line   ($ap.$aname's members, since $BASE)"
+				fatal=$((fatal + 1))
+			else
+				echo "  $npkg: (experimental)   $line"
+			fi
+		done <<< "$inc"
+		[ "$n" -eq 0 ] && echo "  $npkg: no incompatible change to $aname's members since $BASE ($ap.$aname)"
+	done < "$ALIASES"
+fi
 
 if [ "$fatal" -gt 0 ]; then
 	echo

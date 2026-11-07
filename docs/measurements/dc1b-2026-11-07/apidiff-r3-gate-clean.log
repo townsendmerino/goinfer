@@ -1,0 +1,31 @@
+apidiff_check: installing apidiff into <tmp>
+== apidiff: v0.13.0 -> 034cfa812 ==
+  decoder: (listed alias)   - (*Model).Config: changed from func() *Config to func() *Config
+  decoder: (experimental)   - (*Model).GenerateEagleSpeculative: removed
+  decoder: (experimental)   - (*Model).GenerateEagleSpeculativeTree: removed
+  decoder: (experimental)   - (*Model).GenerateQwenVL: changed from func(context.Context, []int, []float32, int, int, [][3]int, int, int, int, SamplingParams) (<-chan int, *Generation) to func(context.Context, []int, int, int, uint64, func() ([]float32, error), [][3]int, int, int, int, SamplingParams) (<-chan int, *Generation)
+  decoder: (experimental)   - (*Model).GenerateVL: changed from func(context.Context, []int, []float32, int, int, int, SamplingParams) (<-chan int, *Generation) to func(context.Context, []int, int, int, uint64, func() ([]float32, error), int, SamplingParams) (<-chan int, *Generation)
+  decoder: (experimental)   - ActGeluTanh: changed from ActKind to github.com/townsendmerino/goinfer/internal/runtime/program.ActKind
+  decoder: (experimental)   - ActKind: changed from ActKind to github.com/townsendmerino/goinfer/internal/runtime/program.ActKind
+  decoder: (experimental)   - ActReLU2: changed from ActKind to github.com/townsendmerino/goinfer/internal/runtime/program.ActKind
+  decoder: (experimental)   - ActSiLU: changed from ActKind to github.com/townsendmerino/goinfer/internal/runtime/program.ActKind
+  decoder: (experimental)   - AdaptiveDepth: old is comparable, new is not
+  decoder: (experimental)   - Architecture.Act: changed from ActKind to github.com/townsendmerino/goinfer/internal/runtime/program.ActKind
+  decoder: (experimental)   - Architecture.MoE: changed from *MoEConfig to *MoEConfig
+  decoder: (listed alias)   - Config: changed from Config to github.com/townsendmerino/goinfer/decoder/config.Config
+  decoder: (experimental)   - EagleHead: removed
+  decoder: (experimental)   - EagleState: removed
+  decoder: (experimental)   - LoadEagleHead: removed
+  decoder: (experimental)   - MoEConfig: changed from MoEConfig to github.com/townsendmerino/goinfer/internal/runtime/program.MoEConfig
+  decoder: (experimental)   - NewKVCache: changed from func(int, int, int, int, int) *KVCache to func(int, int, int, int, int, func(l int) bool) *KVCache
+  decoder: (experimental)   - NgramDrafter: old is comparable, new is not
+  decoder: (experimental)   - Prefiller.PrefillLast: changed from func([][]float32, int) ([]float32, error) to func(context.Context, [][]float32, int) ([]float32, error)
+  decoder: (experimental)   - ResidentForward.UploadKV: changed from func(int, []float32, []float32) error to func(int, int, []float32, []float32) error
+  decoder: (experimental)   - StreamTranscodeGGUF: changed from func(context.Context, string, io.Writer, string, bool, string) (int64, error) to func(context.Context, string, io.Writer, string, bool, GIWTarget, string) (int64, error)
+  decoder: (experimental)   - TreeDraft: removed
+  decoder: (experimental)   - Weights.Cfg: changed from Config to github.com/townsendmerino/goinfer/decoder/config.Config
+  tokenizer: no incompatible changes
+  chat: no incompatible changes
+  constrain: no incompatible changes
+  decoder/config: no incompatible change to Config's members since v0.13.0 (decoder.Config)
+PASS — no incompatible change to any Hard-tier name since v0.13.0.

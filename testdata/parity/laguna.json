@@ -7,6 +7,7 @@
   ],
   "own": [
     "decoder/laguna_config_test.go",
+    "decoder/config/validators_test.go",
     "decoder/laguna_test.go",
     "decoder/laguna_slice_test.go",
     "decoder/laguna_gguf_test.go",

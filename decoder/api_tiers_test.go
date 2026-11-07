@@ -45,7 +45,7 @@ func TestAPITiers_hardListMatchesDoc(t *testing.T) {
 	}
 	hard := text[start:end]
 
-	wantPkgs := map[string]bool{"decoder": true, "tokenizer": true, "chat": true, "constrain": true}
+	wantPkgs := map[string]bool{"decoder": true, "decoder/config": true, "tokenizer": true, "chat": true, "constrain": true}
 	n := 0
 	sc := bufio.NewScanner(strings.NewReader(string(raw)))
 	for sc.Scan() {
@@ -64,7 +64,8 @@ func TestAPITiers_hardListMatchesDoc(t *testing.T) {
 		n++
 		// The bare identifier: "(*Model).Close" → "Close", "Options.Quant" → "Options.Quant"
 		// (the doc writes the field qualified), plain names unchanged.
-		bare := name
+		// "T.*" (every member T had at the baseline) is named where the document names T.
+		bare := strings.TrimSuffix(name, ".*")
 		if i := strings.Index(bare, ")."); i >= 0 {
 			bare = bare[i+2:]
 		}
