@@ -6,9 +6,11 @@ import (
 	"context"
 	"errors"
 	"math"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // G1 of CUDA int8 KV (docs/tasks/task-kv-precision-everywhere-2026-10.md §4; docs/measurements/cuda-kv-i8-2026-11/scope.md): on a cache that holds int8 values times
@@ -230,4 +232,238 @@ func kv8Context(t *testing.T) *gc.Context {
 		t.Skipf("primary ctx: %v", err)
 	}
 	return cx
+}
+
+// attnBatchedBothWays runs prefill_batched.cu's attn_batched (M query rows over startPos+M keys) on the f32 module over the f32 values and on the i8 module over the int8
+// values and scales, under the same scrambled block table.
+func attnBatchedBothWays(t *testing.T, cx *gc.Context, c kv8Case, nH, startPos, M, window int, sinks bool) (f32Out, i8Out []float32) {
+	t.Helper()
+	table, kq, vq, ksc, vsc, kf, vf := c.scrambled()
+	qDim := nH * c.hd
+	q := make([]float32, M*qDim)
+	for i := range q {
+		q[i] = float32(int(i*7%13)-6) / 16
+	}
+	bg := context.Background()
+	stream := mustStream(t, cx)
+	defer stream.Close()
+	var sinkVals []float32
+	if sinks {
+		sinkVals = make([]float32, nH)
+		for h := range sinkVals {
+			sinkVals[h] = float32(h%3) - 1
+		}
+	}
+	run := func(ptx []byte, i8 bool) []float32 {
+		mod, err := cx.LoadModule(ptx)
+		if err != nil {
+			t.Fatalf("LoadModule: %v", err)
+		}
+		fn, err := mod.Function("attn_batched")
+		if err != nil {
+			t.Fatalf("Function(attn_batched): %v", err)
+		}
+		dq := mustAlloc[float32](t, cx, len(q))
+		dt := mustAlloc[int32](t, cx, len(table))
+		dc := mustAlloc[float32](t, cx, M*qDim)
+		for _, e := range []error{copyHtoD(bg, dq, q), copyHtoD(bg, dt, table)} {
+			if e != nil {
+				t.Fatal(e)
+			}
+		}
+		defer func() { dq.Close(); dt.Close(); dc.Close() }()
+		sinkArg := gc.ArgDevicePtr(0)
+		if sinks {
+			ds := mustAlloc[float32](t, cx, nH)
+			defer ds.Close()
+			if e := copyHtoD(bg, ds, sinkVals); e != nil {
+				t.Fatal(e)
+			}
+			sinkArg = gc.Arg(ds)
+		}
+		args := []gc.KernelArg{gc.Arg(dq)}
+		var tail []gc.KernelArg
+		if i8 {
+			dk, dv := mustAlloc[int8](t, cx, len(kq)), mustAlloc[int8](t, cx, len(vq))
+			dks, dvs := mustAlloc[float32](t, cx, len(ksc)), mustAlloc[float32](t, cx, len(vsc))
+			defer func() { dk.Close(); dv.Close(); dks.Close(); dvs.Close() }()
+			for _, e := range []error{copyHtoD(bg, dk, kq), copyHtoD(bg, dv, vq), copyHtoD(bg, dks, ksc), copyHtoD(bg, dvs, vsc)} {
+				if e != nil {
+					t.Fatal(e)
+				}
+			}
+			args = append(args, gc.Arg(dk), gc.Arg(dv))
+			tail = []gc.KernelArg{gc.Arg(dks), gc.Arg(dvs)}
+		} else {
+			dk, dv := mustAlloc[float32](t, cx, len(kf)), mustAlloc[float32](t, cx, len(vf))
+			defer func() { dk.Close(); dv.Close() }()
+			for _, e := range []error{copyHtoD(bg, dk, kf), copyHtoD(bg, dv, vf)} {
+				if e != nil {
+					t.Fatal(e)
+				}
+			}
+			args = append(args, gc.Arg(dk), gc.Arg(dv))
+		}
+		maxNWin := startPos + M
+		if window > 0 && window < maxNWin {
+			maxNWin = window
+		}
+		cfg := gc.LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}
+		args = append(args, gc.Arg(dt), gc.ArgValue(int32(nH)), gc.ArgValue(int32(c.nKV)), gc.ArgValue(int32(c.hd)), gc.ArgValue(int32(startPos)),
+			gc.ArgValue(float32(0.125)), gc.ArgValue(int32(window)), gc.ArgValue(int32(M)), gc.Arg(dc), sinkArg)
+		args = append(args, tail...)
+		if e := fn.LaunchOn(bg, stream, cfg, args...); e != nil {
+			t.Fatalf("launch: %v", e)
+		}
+		if e := stream.Synchronize(bg); e != nil {
+			t.Fatal(e)
+		}
+		out := make([]float32, M*qDim)
+		if e := gc.CopyDtoH(bg, out, dc); e != nil {
+			t.Fatal(e)
+		}
+		return out
+	}
+	return run(prefillBatchedPTX, false), run(prefillBatchedKV8PTX, true)
+}
+
+// TestKV8_exactInputIdentity_attnBatched is G1 for the batched-prefill attention: the same shapes, a fresh prompt and a warm cache, windows that reach back past
+// the cache seam, with and without attention sinks, and a scrambled block table.
+func TestKV8_exactInputIdentity_attnBatched(t *testing.T) {
+	cx := kv8Context(t)
+	defer cx.Close()
+	for _, g := range []struct{ nH, nKV, hd int }{{12, 2, 64}, {8, 2, 128}, {4, 4, 64}} {
+		for _, tc := range []struct{ startPos, M, window int }{{0, 16, 0}, {7, 40, 0}, {0, 70, 33}, {65, 70, 33}, {3, 130, 0}} {
+			for _, sinks := range []bool{false, true} {
+				c := newKV8Case(tc.startPos+tc.M, g.nKV, g.hd, uint32(41+tc.startPos+tc.M+g.hd))
+				a, b := attnBatchedBothWays(t, cx, c, g.nH, tc.startPos, tc.M, tc.window, sinks)
+				diff, nz := kv8CountDiff(a, b)
+				if nz == 0 {
+					t.Errorf("%+v %+v sinks=%v: the f32 context is all zero, the comparison is vacuous", g, tc, sinks)
+				}
+				if diff != 0 {
+					t.Errorf("%+v %+v sinks=%v: %d/%d context elements differ between the i8 reader and the f32 original", g, tc, sinks, diff, len(a))
+				}
+			}
+		}
+	}
+}
+
+// TestKV8_store_matchesTheCPUQuantizer holds kv8_store to the scheme every other backend's int8 cache uses (aikit linalg.QuantizeRowInt8): the same int8 bytes and the same
+// f32 scale for every (token, head), over data with zero heads, an outlier, values on the rounding tie, and sign changes, stored under a scrambled block table at
+// positions that cross a block edge. A store that rounded differently, scaled a head by another head's absmax, or addressed the wrong row or scale cannot match.
+func TestKV8_store_matchesTheCPUQuantizer(t *testing.T) {
+	cx := kv8Context(t)
+	defer cx.Close()
+	bg := context.Background()
+	stream := mustStream(t, cx)
+	defer stream.Close()
+	mod, err := cx.LoadModule(kv8StorePTX)
+	if err != nil {
+		t.Fatalf("LoadModule: %v", err)
+	}
+	fn, err := mod.Function("kv8_store")
+	if err != nil {
+		t.Fatalf("Function(kv8_store): %v", err)
+	}
+	for _, g := range []struct{ nKV, hd, startPos, M int }{{2, 64, 0, 5}, {4, 128, 60, 9}, {2, 80, 127, 3}, {1, 256, 1, 2}} {
+		kvDim := g.nKV * g.hd
+		k, v := make([]float32, g.M*kvDim), make([]float32, g.M*kvDim)
+		s := uint32(g.hd*7 + g.startPos)
+		next := func() float32 { s = s*1664525 + 1013904223; return float32(int32(s>>8)%2001-1000) / 137 }
+		for i := range k {
+			k[i], v[i] = next(), next()
+		}
+		for m := 0; m < g.M; m++ {
+			for h := 0; h < g.nKV; h++ {
+				o := m*kvDim + h*g.hd
+				switch (m + h) % 4 {
+				case 0: // a zero head
+					clear(k[o : o+g.hd])
+					clear(v[o : o+g.hd])
+				case 1: // absmax 127 makes the scale 1 and 1/scale 1, so 2.5 and -3.5 are exact rounding ties: half away from zero gives 3 and -4, half to even 2 and -4
+					k[o+1], k[o+5] = 127, 2.5
+					v[o+2], v[o+5], v[o+6] = -127, -3.5, 0.5
+				}
+			}
+		}
+		pos := g.startPos + g.M
+		blocks := (pos + kv8Block - 1) / kv8Block
+		table := make([]int32, blocks)
+		for b := range table {
+			table[b] = int32((b*3 + 1) % (blocks + 3))
+		}
+		phys := (blocks + 3) * kv8Block
+		dk, dv := mustAlloc[float32](t, cx, len(k)), mustAlloc[float32](t, cx, len(v))
+		dkc, dvc := mustAlloc[int8](t, cx, phys*kvDim), mustAlloc[int8](t, cx, phys*kvDim)
+		dks, dvs := mustAlloc[float32](t, cx, phys*g.nKV), mustAlloc[float32](t, cx, phys*g.nKV)
+		dt := mustAlloc[int32](t, cx, len(table))
+		for _, e := range []error{copyHtoD(bg, dk, k), copyHtoD(bg, dv, v), copyHtoD(bg, dt, table), copyHtoD(bg, dkc, make([]int8, phys*kvDim)), copyHtoD(bg, dvc, make([]int8, phys*kvDim)),
+			copyHtoD(bg, dks, make([]float32, phys*g.nKV)), copyHtoD(bg, dvs, make([]float32, phys*g.nKV))} {
+			if e != nil {
+				t.Fatal(e)
+			}
+		}
+		if e := fn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32(g.nKV), GridY: uint32(g.M), GridZ: 1, BlockX: 32, BlockY: 1, BlockZ: 1},
+			gc.Arg(dk), gc.Arg(dv), gc.Arg(dkc), gc.Arg(dvc), gc.Arg(dks), gc.Arg(dvs), gc.Arg(dt),
+			gc.ArgValue(int32(g.nKV)), gc.ArgValue(int32(g.hd)), gc.ArgValue(int32(g.startPos)), gc.ArgValue(int32(g.M))); e != nil {
+			t.Fatalf("launch: %v", e)
+		}
+		if e := stream.Synchronize(bg); e != nil {
+			t.Fatal(e)
+		}
+		gotKq, gotVq := make([]int8, phys*kvDim), make([]int8, phys*kvDim)
+		gotKs, gotVs := make([]float32, phys*g.nKV), make([]float32, phys*g.nKV)
+		for _, e := range []error{gc.CopyDtoH(bg, gotKq, dkc), gc.CopyDtoH(bg, gotVq, dvc), gc.CopyDtoH(bg, gotKs, dks), gc.CopyDtoH(bg, gotVs, dvs)} {
+			if e != nil {
+				t.Fatal(e)
+			}
+		}
+		bad, checked := 0, 0
+		for m := 0; m < g.M; m++ {
+			p := g.startPos + m
+			row := int(table[p/kv8Block])*kv8Block + p%kv8Block
+			for h := 0; h < g.nKV; h++ {
+				for which, src := range [][]float32{k, v} {
+					wq := make([]int8, g.hd)
+					ws := linalg.QuantizeRowInt8(src[m*kvDim+h*g.hd:m*kvDim+(h+1)*g.hd], wq)
+					gq, gs := gotKq, gotKs
+					if which == 1 {
+						gq, gs = gotVq, gotVs
+					}
+					checked++
+					if math.Float32bits(gs[row*g.nKV+h]) != math.Float32bits(ws) || !slices.Equal(gq[row*kvDim+h*g.hd:row*kvDim+(h+1)*g.hd], wq) {
+						bad++
+						if bad <= 3 {
+							t.Errorf("%+v token %d head %d %c: scale %v want %v", g, m, h, "KV"[which], gs[row*g.nKV+h], ws)
+						}
+					}
+				}
+			}
+		}
+		if bad != 0 {
+			t.Errorf("%+v: %d of %d (token, head, K/V) differ from the CPU quantizer", g, bad, checked)
+		}
+		// nothing is written outside the stored rows
+		for r := 0; r < phys; r++ {
+			stored := false
+			for m := 0; m < g.M; m++ {
+				p := g.startPos + m
+				if r == int(table[p/kv8Block])*kv8Block+p%kv8Block {
+					stored = true
+				}
+			}
+			if stored {
+				continue
+			}
+			for _, b := range gotKq[r*kvDim : (r+1)*kvDim] {
+				if b != 0 {
+					t.Fatalf("%+v: the store wrote row %d, which no token maps to", g, r)
+				}
+			}
+		}
+		for _, b := range []interface{ Close() error }{dk, dv, dkc, dvc, dks, dvs, dt} {
+			_ = b.Close()
+		}
+	}
 }

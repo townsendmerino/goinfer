@@ -243,4 +243,11 @@ func TestKV8_glueTwinIsBuiltAtTheAuditedToolchain(t *testing.T) {
 	if got, want := banner(glueKV8PTX), banner(gluePTX); got == "" || got != want {
 		t.Errorf("glue_kv8.ptx was built by %q, glue.ptx by %q", got, want)
 	}
+	// prefill_batched and the store are not among the audited modules: their twins and the store are built at the toolchain their base records.
+	if got, want := banner(prefillBatchedKV8PTX), banner(prefillBatchedPTX); got == "" || got != want {
+		t.Errorf("prefill_batched_kv8.ptx was built by %q, prefill_batched.ptx by %q", got, want)
+	}
+	if banner(kv8StorePTX) == "" {
+		t.Error("kv8_store.ptx has no NVRTC banner")
+	}
 }

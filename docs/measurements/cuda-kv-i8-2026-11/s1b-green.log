@@ -1,0 +1,24 @@
+=== RUN   TestKernelFMALint
+    kernel_fma_lint_test.go:119: all float MACs in 38 contracted kernels are explicit intrinsics ✓
+--- PASS: TestKernelFMALint (0.04s)
+=== RUN   TestKernelFMALint_coversEmbeddedPTX
+    kernel_fma_lint_test.go:148: exempt: moe.cu — MoE PTX frozen at audited NVRTC 12.6.85 (re-pinned 2026-09-10, M-35): bare MACs, not FMA-linted
+    kernel_fma_lint_test.go:154: 59 embedded PTX kernels: 38 linted, 1 exempt
+--- PASS: TestKernelFMALint_coversEmbeddedPTX (0.00s)
+=== RUN   TestKV8_exactInputIdentity_glueAttention
+--- PASS: TestKV8_exactInputIdentity_glueAttention (0.43s)
+=== RUN   TestKV8_exactInputIdentity_plant
+--- PASS: TestKV8_exactInputIdentity_plant (0.25s)
+=== RUN   TestKV8_exactInputIdentity_attnBatched
+--- PASS: TestKV8_exactInputIdentity_attnBatched (0.35s)
+=== RUN   TestKV8_store_matchesTheCPUQuantizer
+--- PASS: TestKV8_store_matchesTheCPUQuantizer (0.21s)
+PASS
+ok  	github.com/townsendmerino/goinfer/backend/cuda/kernels	1.335s
+=== RUN   TestPTX_matchesSourcesAndBindings
+    ptx_consistency_test.go:101: 59 .cu/.ptx pairs, 289 kernels checked by name and signature; 117 bound kernel names resolved
+--- PASS: TestPTX_matchesSourcesAndBindings (0.05s)
+=== RUN   TestKV8_glueTwinIsBuiltAtTheAuditedToolchain
+--- PASS: TestKV8_glueTwinIsBuiltAtTheAuditedToolchain (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/backend/cuda	0.057s
