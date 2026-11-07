@@ -79,12 +79,15 @@ func darwinKVSlots(want int, ram, avail0, weights, hostCopy, perSlot int64) int 
 	if ram <= 0 {
 		return 1
 	}
-	n := kvSlotsWithin(want, int64(decoder.WeightsMemFraction*float64(ram)), weights+hostCopy+perSlot, perSlot)
+	n := kvSlotsWithin(want, ramShare(ram), weights+hostCopy+perSlot, perSlot)
 	if avail0 > 0 {
 		n = min(n, kvSlotsWithin(want, avail0, weights+perSlot, perSlot))
 	}
 	return n
 }
+
+// ramShare is the fit guard's share of physical RAM, the one ceiling both darwin slot functions read.
+func ramShare(ram int64) int64 { return int64(decoder.WeightsMemFraction * float64(ram)) }
 
 // darwinSlotsFit says whether want slots fit RAM without clamping: darwinKVSlots would grant all of them. Unlike darwinKVSlots, which
 // never grants fewer than one, it can say that a single slot does not fit, which is how a priced companion shortens a one-slot
@@ -94,7 +97,7 @@ func darwinSlotsFit(want int, ram, avail0, weights, hostCopy, perSlot int64) boo
 		return true
 	}
 	n := int64(max(1, want))
-	if weights+hostCopy+n*perSlot > int64(decoder.WeightsMemFraction*float64(ram)) {
+	if weights+hostCopy+n*perSlot > ramShare(ram) {
 		return false
 	}
 	return avail0 <= 0 || weights+n*perSlot <= avail0
