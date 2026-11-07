@@ -18,6 +18,8 @@ func TestBuffers_stateIsF32(t *testing.T) {
 	for k := OpNorm; k <= OpLayerScale; k++ {
 		for _, b := range Buffers(Op{Kind: k, G4: Gemma4AttnParams{OwnsKV: true}}, s) {
 			switch {
+			case b.Unit != PerSlot && b.Unit != PerPosition:
+				t.Errorf("operation %d declares %q with no unit, which no consumer reads", k, b.Name)
 			case b.Unit == PerSlot && b.Prec != PrecF32:
 				t.Errorf("operation %d declares state %q at precision %d, not f32", k, b.Name, b.Prec)
 			case b.Unit == PerSlot:
@@ -27,8 +29,8 @@ func TestBuffers_stateIsF32(t *testing.T) {
 			}
 		}
 	}
-	if slots < 4 {
-		t.Fatalf("only %d state buffers declared across the operation kinds; the test reads too little", slots)
+	if slots != 9 { // DeltaNet's window and state, Mamba-2's, KDA's three windows and state, short conv's window
+		t.Errorf("the operation kinds declare %d state buffers, want 9", slots)
 	}
 }
 
