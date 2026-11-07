@@ -874,6 +874,96 @@ func TestMemGate_metal(t *testing.T) {
 	g.Finish(t)
 }
 
+// TestMM5_poolsAreTheDeclaredRows is G-MP2 on Metal (docs/tasks/task-forward-architecture-2026-10.md §4.9b): every census fixture's int4
+// build at two slots, with an f16 and an int8 cache, sizes each layer's KV pool from the row its operations declare
+// (decoder.Model.LayerBuffers), the null block and every slot's blocks at the cache's element size (f32 for MLA's latent), and a layer
+// that declares no row holds no pool of its own. The build's whole KV, every pool, int8's scales and the tables, is what MetalKVBytes
+// prices, to the byte: a term priced twice or not at all is red either way.
+func TestMM5_poolsAreTheDeclaredRows(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	d, err := sb2census.ReadLayerD("../..", "metal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pools, models, int8s := 0, 0, 0
+	for _, f := range d.Fixtures {
+		if !d.Resident[f+" int4"] {
+			continue
+		}
+		path, err := sb2census.Path("../..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, kv := range []string{"", "i8"} {
+			m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", KVPrecision: kv, ResidentContext: 256, ResidentKVSlots: 2})
+			if err != nil && kv != "" {
+				continue // a family Metal cannot give an int8 cache (an MLA model's latent rows are f32)
+			} else if err != nil {
+				t.Fatalf("%s: %v", f, err)
+			}
+			if a, ok := m.ResidentForwardForTest().(*metalResident); ok {
+				models++
+				if a.r.kvI8 {
+					int8s++
+				}
+				pools += mm5CheckPools(t, f+" kv="+kv, m, a.r)
+			}
+			m.Close()
+		}
+	}
+	t.Logf("%d pools on %d builds (%d with an int8 cache) held to their declared rows and to MetalKVBytes", pools, models, int8s)
+	if pools < 80 || int8s < 10 {
+		t.Fatalf("only %d pools and %d int8 builds checked: the test reads too little", pools, int8s)
+	}
+}
+
+// mm5CheckPools holds r's KV pools to m's declared rows and its whole KV allocation to MetalKVBytes, and returns the pools it checked.
+func mm5CheckPools(t *testing.T, f string, m *decoder.Model, r *resident) int {
+	t.Helper()
+	pools, total := 0, int64(0)
+	for l := range r.layers {
+		if r.layers[l].kvShared {
+			continue
+		}
+		row, elem := 0, r.kvElemBytes()
+		for _, b := range m.LayerBuffers(l) {
+			if b.Unit == program.PerPosition && (b.Name == "k" || b.Name == "latent") {
+				row = b.Elems
+				if b.Prec == program.PrecF32 {
+					elem = 4
+				}
+			}
+		}
+		if row == 0 {
+			if r.kc[l] != (Buffer{}) {
+				t.Errorf("%s layer %d declares no KV row but holds a %d-byte pool", f, l, r.kc[l].Len())
+			}
+			continue
+		}
+		want := (1 + kvBlocksFor(r.ctxCap)*r.kvSlotCount()) * decoder.KVBlockRows * row * elem
+		if got := r.kc[l].Len(); got != want {
+			t.Errorf("%s layer %d: its pool holds %d bytes; the declared %d-element row at %d B over %d slots is %d", f, l, got, row, elem, r.kvSlotCount(), want)
+		}
+		total += int64(r.kc[l].Len())
+		if r.vc[l] != r.kc[l] {
+			total += int64(r.vc[l].Len())
+		}
+		if r.kvI8 && r.ks[l] != (Buffer{}) {
+			total += 4 * int64(r.ks[l].Len()+r.vs[l].Len()) // one f32 scale per position and head
+		}
+		pools++
+	}
+	if pools > 0 {
+		total += 4 * int64(r.kvSlotCount()*r.kvTabBlocks) // the tables, one entry a block
+		if want := m.MetalKVBytes(r.kvSlotCount(), r.ctxCap); total != want {
+			t.Errorf("%s: the build holds %d bytes of KV, MetalKVBytes(%d, %d) prices %d", f, total, r.kvSlotCount(), r.ctxCap, want)
+		}
+	}
+	return pools
+}
+
 // A wrapped upload on the shared bridge: the same tests every resident backend runs (internal/wrappedupload).
 func TestWrappedUpload_rows(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
