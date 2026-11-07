@@ -264,7 +264,7 @@ func runR2GateCell(t *testing.T, rf *metalResident, m *decoder.Model, ids []int,
 		r.stopExec()
 		if fa {
 			// every continuation position is past the floor; confirm the toggle engages
-			r.setPos(K)
+			r.setPosAheadForTest(K)
 			for l := 0; l < r.nL; l++ {
 				if !r.canUseAttnFA(l) {
 					t.Fatalf("layer %d: canUseAttnFA false at curNKeys=%d with the toggle on", l, r.curNKeys)
