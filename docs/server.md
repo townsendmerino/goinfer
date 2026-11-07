@@ -557,9 +557,9 @@ was available.** Per family:*
 **The tower-quant and placement rule, as `towerInt8` and the placement functions in `main.go` apply them.** `-vision-quant int8` gives an int8 tower;
 unset, **every family's tower is float32**, Gemma 3's included. A float32 tower runs on the GPU under `--backend cuda`, `--backend metal` and
 `--backend webgpu` when the binary registers one for the family; `-vision-device cpu` keeps any tower on the CPU while the model keeps its backend,
-and `-vision-device gpu` is the same as the default. An int8 tower is a device tower only for Gemma 3; every other int8 tower is the CPU's. On an M1 Pro
+and `-vision-device gpu` is the same as the default, except that it also puts on the device the towers the default keeps on the CPU under WebGPU (a discrete GPU, and a Qwen3.5+ `.gguf` mmproj tower). An int8 tower is a device tower only for Gemma 3; every other int8 tower is the CPU's. On an M1 Pro
 each WebGPU tower encodes a large image in 0.36 to 0.49 of its CPU tower's time (five interleaved pairs each, 2026-10-11; Gemma 3's float32 tower 10.5 s against
-24.3 s), which made them the default under `--backend webgpu` on 2026-11-07; they were opt-in (`-vision-device gpu`) before (the 33 s and 43 s an image this page
+24.3 s), which made them the default under `--backend webgpu` on a unified-memory Mac on 2026-11-07 (a discrete GPU keeps the CPU tower until its memory can be priced); they were opt-in (`-vision-device gpu`) before (the 33 s and 43 s an image this page
 once quoted for Gemma 3 were measured before the tower's matmul was rewritten, and no longer describe it).
 
 **Where a tower cannot be placed.** CUDA and Metal price the tower into the resident plan (`towerReserve`), so the KV plan leaves room for it. WebGPU prices its device tower the same way, before the
@@ -569,7 +569,7 @@ context; the check afterwards is the physical backstop (the tower must fit what 
 is not refused by the share (the context floor logs a warning). If the tower does not fit, serve **refuses the load** and says how much it needs: a float32 CPU tower would hold the same RAM, so moving
 it is not a fallback. Free memory, lower `-ctx` or `-kv-sessions`, or pass `-vision-device cpu` to run the CPU tower anyway; for Gemma 3 only, `-vision-quant int8` is a smaller device tower (lossy). The
 reserve stays counted if the tower later falls back to the CPU, which only leaves more room than needed. A Qwen3.5+ `.gguf` mmproj tower has no `config.json` to price, so under WebGPU it stays on the CPU
-unless `-vision-device gpu` asks for the device (then nothing is reserved for it). A discrete GPU has no free-memory figure under WebGPU, so there a tower that cannot start is warned about at startup
+unless `-vision-device gpu` asks for the device (then nothing is reserved for it). A discrete GPU has no free-memory figure under WebGPU, so the towers are **not** the default there: the CPU tower runs unless `-vision-device gpu` (or an explicit `-vision-quant`) asks for the device, and an asked-for tower that cannot start is warned about at startup
 (Gemma 3, Qwen2.5-VL, Gemma 4) and runs on the CPU, or refuses under `--require-backend`; the Qwen2.5-VL, Qwen3.5+, Qwen3-VL and GLM-OCR towers also fall back to the CPU for good at the first image that
 runs them out of device memory (a message on stderr), while Gemma 3's and Gemma 4's fail that one request, naming `-vision-device cpu`.
 

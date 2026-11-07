@@ -320,7 +320,7 @@ type config struct {
 	noSelfTest        bool          // -no-selftest: skip the startup self-tests (H2)
 	visionMaxPixels   int           // -vision-max-pixels: lowers GLM-OCR's image pixel budget (0 = the model's own 4.82 MP ceiling)
 	visionQuant       string        // -vision-quant: "" (unset: f32; Gemma 3 on cuda may fall back to int8) | "f32" (explicit) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
-	visionDevice      string        // -vision-device: "auto" (default: the backend's device tower when it has one) | "cpu" | "gpu" (the same as auto; kept so a command line that asks for the device tower still runs)
+	visionDevice      string        // -vision-device: "auto" (default: the backend's device tower when it has one) | "cpu" | "gpu" (as auto, and it also puts on the device the towers auto keeps on the CPU under webgpu: on a discrete GPU, and a Qwen3.5+ .gguf mmproj tower)
 	// decisions (D5, docs/tasks/task-constrained-confidence.md): POST /v1/systemone's label-scoring template, and an
 	// optional calibration.json of per-kind temperatures ("" = none: every answer is uncalibrated).
 	decisionsTemplate string
@@ -400,7 +400,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.StringVar(&cfg.reasoningFmt, "reasoning-format", "deepseek", "how a reply's reasoning reaches the client: deepseek (content is the clean answer, reasoning goes in reasoning_content / Anthropic thinking blocks), deepseek-legacy (reasoning_content is filled and content keeps the raw <think> tags), or none (nothing is separated: the raw text is the content). A request may override it with reasoning_format.")
 	fs.BoolVar(&cfg.noSelfTest, "no-selftest", false, "skip the startup self-tests: a kernel check against a reference that steps a CPU kernel tier down, or declines a GPU backend, when its output disagrees. On by default; skip it only if it misjudges a healthy machine (and tell us: `check --hardware` prints what it found).")
 	fs.IntVar(&cfg.visionMaxPixels, "vision-max-pixels", 0, "GLM-OCR only: lower the image pixel budget to this many pixels (0 = the model's own ceiling, 4.82 MP; it is never raised). The CPU tower costs about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP on an M1 Pro.")
-	fs.StringVar(&cfg.visionDevice, "vision-device", "auto", "where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: auto (default: on the --backend's GPU when this binary has one there, else the CPU; under --backend webgpu that is Gemma 3's, Gemma 4's, Qwen2.5-VL's, Qwen3.5+'s, Qwen3-VL's and GLM-OCR's towers, in float32) | cpu (the CPU whatever the backend; the language model keeps its own backend) | gpu (the same as auto)")
+	fs.StringVar(&cfg.visionDevice, "vision-device", "auto", "where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: auto (default: on the --backend's GPU when this binary has one there, else the CPU; under --backend webgpu that is Gemma 3's, Gemma 4's, Qwen2.5-VL's, Qwen3.5+'s, Qwen3-VL's and GLM-OCR's towers, in float32, on a unified-memory Mac; a discrete GPU and a Qwen3.5+ .gguf mmproj tower keep the CPU) | cpu (the CPU whatever the backend; the language model keeps its own backend) | gpu (as auto, and it also puts on the device the towers auto keeps on the CPU under webgpu: on a discrete GPU, and a Qwen3.5+ .gguf mmproj tower)")
 	fs.StringVar(&cfg.visionQuant, "vision-quant", "", "vision encoder weight quant: f32 (bit-exact) | int8 (W8A8; lossy: relative L2 0.14-0.52 against f32, docs/measurements/vision-tower-int8-fidelity-*) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash. Unset (the default) is f32 everywhere; on CUDA Gemma 3 is int8 instead (with a note) if the card cannot hold the decoder, one KV slot and the float32 tower, or if that tower fails to attach (an explicit f32 never falls back). Under --backend webgpu Gemma 3's unset default is the float32 tower on the GPU; int8 given explicitly puts the int8 one there")
 	fs.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m), hf:<owner>/<repo>:safetensors (a safetensors checkpoint, fetched as a verified set) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
@@ -1126,10 +1126,17 @@ func (s *server) loadAdapters(cfg config) error {
 // tower on the CPU, which also isolates the tower in a served comparison with the language model on the same backend in
 // both arms (docs/tasks/task-multimodal-support-2026-10.md).
 func (cfg config) towerBackend() string {
-	if cfg.visionDevice == "cpu" {
+	if cfg.visionDevice == "cpu" || cfg.defaultsToCPUTower() {
 		return "cpu"
 	}
 	return cfg.load.Backend
+}
+
+// defaultsToCPUTower says that, under --backend webgpu on a discrete GPU, the vision tower stays on the CPU unless the device is
+// asked for (-vision-device gpu, or an explicit -vision-quant): WebGPU has no free-VRAM query, so the tower's device bytes cannot
+// be priced against the card's budget there (towerReserve and webgpuTowerFits only have a figure on unified memory).
+func (cfg config) defaultsToCPUTower() bool {
+	return cfg.load.Backend == "webgpu" && cfg.visionDevice != "gpu" && cfg.visionQuant == "" && !webgpuTowerUnified()
 }
 
 // mmprojTowerBackend is the backend a Qwen3.5+ GGUF mmproj tower runs on: the tower backend, except that under webgpu it stays on the
@@ -1151,6 +1158,9 @@ func (s *server) loadVisionTower(cfg config) error {
 	case "", "auto", "cpu", "gpu": // "" (a config built without flags) is auto
 	default:
 		return fmt.Errorf("-vision-device %q: want auto, cpu or gpu", cfg.visionDevice)
+	}
+	if cfg.defaultsToCPUTower() && cfg.visionDevice != "cpu" {
+		fmt.Fprintln(os.Stderr, "note: under --backend webgpu on a discrete GPU the vision tower runs on the CPU: its device memory cannot be priced against the card, so --vision-device gpu puts it on the GPU")
 	}
 	dir := cfg.visionPath
 	if dir == "" {
@@ -1200,6 +1210,9 @@ func (s *server) loadVisionTower(cfg config) error {
 	}
 	if fi, err := os.Stat(dir); err == nil && !fi.IsDir() && strings.HasSuffix(strings.ToLower(dir), ".gguf") {
 		be := mmprojTowerBackend(cfg)
+		if be == "cpu" && cfg.towerBackend() == "webgpu" {
+			fmt.Fprintln(os.Stderr, "note: a Qwen3.5+ .gguf mmproj tower runs on the CPU under --backend webgpu (it has no config.json to price); --vision-device gpu puts it on WebGPU")
+		}
 		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, be), be, cfg.requireBE)
 	}
 	mt := visionModelType(dir)

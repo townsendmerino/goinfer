@@ -193,3 +193,34 @@ func TestMMProjTowerBackend(t *testing.T) {
 		}
 	}
 }
+
+// The same default placement reaches towerReserve and the mmproj path through towerBackend: a discrete GPU's default is the CPU, an
+// asked-for device tower is the device.
+func TestTowerBackend_webgpuDiscreteDefault(t *testing.T) {
+	for _, c := range []struct {
+		name, device, quant string
+		unified             bool
+		want                string
+	}{
+		{"unified default", "", "", true, "webgpu"},
+		{"discrete default", "", "", false, "cpu"},
+		{"discrete auto", "auto", "", false, "cpu"},
+		{"discrete, -vision-device gpu", "gpu", "", false, "webgpu"},
+		{"discrete, -vision-quant", "", "int8", false, "webgpu"},
+		{"discrete, -vision-device cpu", "cpu", "", false, "cpu"},
+	} {
+		stubWebGPU(t, c.unified, 1<<40)
+		cfg := config{visionDevice: c.device, visionQuant: c.quant}
+		cfg.load.Backend = "webgpu"
+		if got := cfg.towerBackend(); got != c.want {
+			t.Errorf("%s: tower backend %q, want %q", c.name, got, c.want)
+		}
+	}
+	// another backend is never moved by the machine
+	stubWebGPU(t, false, 0)
+	cfg := config{}
+	cfg.load.Backend = "cuda"
+	if got := cfg.towerBackend(); got != "cuda" {
+		t.Errorf("cuda tower backend %q, want cuda", got)
+	}
+}

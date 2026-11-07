@@ -64,6 +64,9 @@ func TestTowerReserve_everyDeviceTower(t *testing.T) {
 	metalTowerRegistered = func(string) bool { return true }
 	webgpuTowerRegistered = func(string) bool { return true }
 	t.Cleanup(func() { cudaTowerRegistered, metalTowerRegistered, webgpuTowerRegistered = old, oldM, oldW })
+	oldU := webgpuTowerUnified
+	webgpuTowerUnified = func() bool { return true } // WebGPU's default placement reads the machine
+	t.Cleanup(func() { webgpuTowerUnified = oldU })
 	cfgs := map[string]string{
 		"gemma3":     `{"model_type":"gemma3","vision_config":{"hidden_size":1152,"intermediate_size":4304,"num_hidden_layers":27,"patch_size":14,"image_size":896,"num_channels":3}}`,
 		"gemma4":     `{"model_type":"gemma4","vision_config":{"hidden_size":768,"intermediate_size":3072,"num_hidden_layers":16,"patch_size":16,"position_embedding_size":10240,"default_output_length":280,"pooling_kernel_size":3}}`,

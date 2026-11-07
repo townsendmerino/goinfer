@@ -44,7 +44,7 @@
   {
    "name": "vision-device",
    "group": "Choosing models",
-   "summary": "Where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: `auto` (on the `--backend` GPU when this binary has a tower there, `--backend webgpu` included, where the towers with a WebGPU form run in float32), `cpu` (the model keeps its own backend) or `gpu` (the same as `auto`).",
+   "summary": "Where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: `auto` (on the `--backend` GPU when this binary has a tower there; under `--backend webgpu` a discrete GPU and a Qwen3.5+ `.gguf` mmproj tower keep the CPU), `cpu` (the model keeps its own backend) or `gpu` (as `auto`, and it also puts those on the device).",
    "type": "auto | cpu | gpu"
   },
   {
