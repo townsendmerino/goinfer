@@ -1,17 +1,17 @@
 # Task: low-bit read formats, NVFP4 first, and a fit planner that prices them (2026-11)
 
 **Status 2026-11-06: planned, nothing built.** The owner decided on 2026-11-06 to read low-bit formats, NVFP4 first, and
-to plan and estimate the rest here. It is v0.26.0 work (`docs/releases/v0.25.0-plan.md` §7, §8). This doc replaces the
-format half of `docs/tasks/task-fp4-formats.md` (its items B and C). Item A there (a native MXFP4 CPU kernel) and item D
-(Blackwell FP4 tensor cores) are not this doc's subject.
+to plan and estimate the rest here. It is v0.26.0 work (`docs/releases/v0.25.0-plan.md` §7, §8). This doc replaces item C
+(NVFP4 read support) of `docs/tasks/task-fp4-formats.md`, which links here. Items A (a native MXFP4 CPU kernel), B (MXFP4
+beyond gpt-oss) and D (Blackwell FP4 tensor cores) stay there and are not this doc's subject.
 
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| LB0 | open | count the real files per format (NVFP4 safetensors and GGUF, the IQ types in Unsloth's dynamic quants), and read the NVFP4 GGUF type id and block layout from `ggml-common.h` at a pinned llama.cpp build | §1, §2 |
+| LB0 | open | the Bonsai guard (a named decline for a Hadamard-rotated GGUF, keyed on its metadata, with a test); count the real files per format (NVFP4 safetensors and GGUF, the IQ types in Unsloth's dynamic quants); read the NVFP4 GGUF type id and block layout from `ggml-common.h` at a pinned llama.cpp build, and ModelOpt's nibble order from its exporter | §1, §2 |
 | LB1 | open | NVFP4 dequant in aikit (`embed`), for safetensors and GGUF; tier 0 against the reference | §1 |
-| LB2 | open | NVFP4 loader admission in goinfer (safetensors dtype and scale tensors; GGUF type); tier 1 on one small file | §1 |
-| LB3 | open | the Bonsai guard: a named decline for a Hadamard-rotated GGUF, keyed on metadata, before any `Q2_0`/`TQ*` reader lands | §2 |
+| LB2 | open | NVFP4 loader admission in goinfer (safetensors: the packed `[N, K/2]` weight and its scale tensors; GGUF type), and the fit's pricing of the packed shape; tier 0 for the pricing, tier 1 on one small file | §1 |
+| LB3 | moved | into LB0: the Bonsai guard ships first, since a rotated file can load today | §2 |
 | LB4 | open | IQ2_XXS, IQ2_XS, IQ3_XXS dequant (aikit), tier 0 each; Bolt's experts | §2 |
 | LB5 | open | IQ1_S, IQ1_M, TQ1_0, TQ2_0, and the legacy Q4_1/Q5_1 | §2 |
 | LB6 | open | fit F1: price the source bytes per stored type; F2: say what the stored format does and does not change | §3 |
@@ -41,6 +41,25 @@ format half of `docs/tasks/task-fp4-formats.md` (its items B and C). Item A ther
 Bolt's 24 GB build) is llama.cpp's own type. **Read its id, block size and nibble order from `ggml-common.h`, never by
 analogy:** MXFP4's nibbles are sequential in safetensors and split in GGML (`decoder.buildGptOssWeights`), and a wrong
 order loads finite, plausible, wrong weights.
+
+**How the loader reads the safetensors shape (LB2).** The `weight` tensor's stored shape is not the matrix's: a uint8
+`[N, K/2]` holds two e2m1 values per byte, so the loader takes the logical shape `[N, K]` and admits the tensor only when
+`weight_scale` is `F8_E4M3` `[N, K/16]` and `weight_scale_2` is a one-element fp32, both naming the same N and K, and when
+`[N, K]` matches the shape the architecture expects for that weight. Any other combination is a load error that names
+the tensor, never a guess. The nibble order within a byte (which element sits in the low nibble) is ModelOpt's and is
+read in LB0. The loader dequantizes each block to f32 through the existing e2m1 table and `fp8E4M3ToF32`, multiplies by
+`weight_scale_2`, and requantizes to the load's `--quant` as every read format does. `input_scale` is read and ignored.
+
+**How fit and admission price it (LB2, LB6).** The resident bytes are set by `--quant`, as for every read-only format
+(§3). The shape-only estimator (`fit.SafetensorsWeightBytes`, through `decoder.estimateSafetensorsWeightBytes`) counts
+elements from the stored shape, so today it would count a packed weight as `N·K/2` elements, half the matrix, and
+underprice the load in the accepting direction, and it would price each 2-D `weight_scale` as a matrix at the load's
+quant. LB2 changes it as GPTQ's `.qweight` already is: a `.weight` whose sibling `.weight_scale` is present counts
+`N·K` elements (pack factor 2), and `.weight_scale`, `.weight_scale_2` and `.input_scale` are skipped as consumed during
+the dequant, as `gptqAWQAuxSuffix` skips GPTQ's auxiliaries. A tier 0 test prices a synthetic NVFP4 index against the
+same model in bf16 and requires equal resident bytes. The source term (F1, the mapped file and the `.giw` transcode) is
+priced at the stored bytes: 8 bytes of nibbles plus one e4m3 scale byte per 16 weights, 0.5625 bytes (4.5 bits) per
+weight, plus 4 bytes per tensor for `weight_scale_2` and 4 for `input_scale`, which are negligible.
 
 **What reading it needs, per backend.**
 
@@ -73,14 +92,18 @@ All are read-only (dequant in aikit, no backend work) unless LB7 says otherwise.
 | IQ2_XS | 2.31 | Unsloth dynamic quants | ½ day after IQ2_XXS (512-entry grid) | LB4 |
 | IQ3_XXS | 3.06 | Unsloth dynamic quants | ½ day | LB4 |
 | IQ1_S, IQ1_M | 1.56, 1.75 | Unsloth's smallest builds of large MoEs | 1 day both (2048-entry grid, the delta term) | LB5 |
-| TQ1_0, TQ2_0 | 1.69, 2.06 | ternary models (BitNet-style) | ½ day both | LB5, after LB3 |
+| TQ1_0, TQ2_0 | 1.69, 2.06 | ternary models (BitNet-style) | ½ day both | LB5 (the guard is in LB0) |
 | Q4_1, Q5_1 | 5.0, 6.0 | older GGUFs | 2 hours both | LB5, whenever |
 
-**The Bonsai guard comes first (LB3).** PrismML's Ternary Bonsai 2 folds a blockwise Hadamard rotation into its weights,
-so a correct dequant of its `Q2_0`/`TQ1_0`-labelled tensors still produces garbage without the runtime activation
-transform (`docs/next-models.md`, "Next up" item 2, and item 2 of "Changes to items already in Next up and Watching"). Today those files fail on the unknown type
-id. The moment a `TQ*` or `Q2_0` reader lands they would load silently wrong, so the guard is a named decline on the GGUF
-metadata, with a test, before LB5. Supporting the rotation is out of scope until it is upstream.
+**The Bonsai guard comes first, in LB0.** PrismML's Ternary Bonsai 2 folds a blockwise Hadamard rotation into its
+weights, so a correct dequant of its tensors still produces garbage without the runtime activation transform
+(`docs/next-models.md`, "Next up" item 2, and item 2 of "Changes to items already in Next up and Watching"). Its
+architecture is `qwen35`, which goinfer runs, so the tensor type is the only thing standing between a rotated file and a
+silently wrong load: a rotated tensor stored in a type goinfer already reads, or a third-party build requantized from the
+rotated weights to one (a `Q4_K`, say), loads today and generates garbage. The guard therefore does not wait for a
+`Q2_0` or `TQ*` reader. It is a named decline keyed on the GGUF metadata that marks the rotation (the key is read from
+PrismML's files and llama.cpp's `b11556` loader in LB0), checked before any tensor is read, with a test on a synthetic
+GGUF carrying that key. Supporting the rotation is out of scope until it is upstream.
 
 ## 3. Fit
 
@@ -116,6 +139,6 @@ then CUDA (dequant in the kernel on Turing), each with its own parity bar; rough
 
 ## 5. Order and size
 
-LB0 (½ day) → LB3 (½ day, guard) → LB1 + LB2 NVFP4 (2 to 3 days) → LB4 IQ2_XXS/IQ2_XS/IQ3_XXS (2 days; with NVFP4 this
+LB0 (1 day, the Bonsai guard included) → LB1 + LB2 NVFP4 (2 to 3 days) → LB4 IQ2_XXS/IQ2_XS/IQ3_XXS (2 days; with NVFP4 this
 reads Bolt's 24 GB build) → LB6 fit F1 and F2 (1 day) → LB5 (2 days). About two weeks of read work, all at tier 0 and
 tier 1. LB7, if chosen, is per format per backend and gets its own registration.
