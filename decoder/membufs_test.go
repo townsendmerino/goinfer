@@ -1,12 +1,62 @@
 package decoder
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
+
+// TestMM5_noFamilySwitchInPricing is G-MP4 (docs/tasks/task-forward-architecture-2026-10.md §4.9b): Metal's KV pricing and the state lists
+// read the operations' declarations, so none of them names a mixer, a family or a family's parameters. CUDA's KV pricing (cudaKVParts)
+// joins the list with CUDA's half.
+func TestMM5_noFamilySwitchInPricing(t *testing.T) {
+	banned := []string{"ResidentLayerOps", "Mixer", "KVSrcAtResident", "MLAResidentParams", "HeadDimAtResident", "KVHeadsAtResident",
+		".qwen35", ".lfm2", ".kda", ".granite", ".nemotron", ".gemma4", ".mla", "isLinearLayer", "isConvLayer", "isMambaLayer"}
+	for file, funcs := range map[string][]string{
+		"residentneed.go": {"metalKVParts", "MetalKVRowBytes"},
+		"statebytes.go":   {"stateSpecs", "stateBuffers", "recurrentCheckpointBuffers"},
+	} {
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fs := token.NewFileSet()
+		f, err := parser.ParseFile(fs, file, src, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := map[string]bool{}
+		for _, d := range f.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			for _, name := range funcs {
+				if fn.Name.Name != name {
+					continue
+				}
+				found[name] = true
+				body := string(src[fs.Position(fn.Body.Pos()).Offset:fs.Position(fn.Body.End()).Offset])
+				for _, b := range banned {
+					if strings.Contains(body, b) {
+						t.Errorf("%s: %s names %q: KV and state pricing reads the operations' declarations (LayerBuffers), not the family", file, name, b)
+					}
+				}
+			}
+		}
+		for _, name := range funcs {
+			if !found[name] {
+				t.Errorf("%s: no func %s to scan; the scan reads nothing for it", file, name)
+			}
+		}
+	}
+}
 
 // stateSpecsByFamily is the family-keyed state list the operations' declarations replace: the oracle TestStateSpecs_fromTheOperations
 // holds them to.

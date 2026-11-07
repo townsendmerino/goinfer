@@ -26,6 +26,25 @@ func layerShapeOf(a *Architecture, l int, ops []op) program.LayerShape {
 	return s
 }
 
+// LayerBuffers is what layer l of the loaded model declares beyond its weights (program.Buffers): the list a backend sizes its KV pools
+// from and the plan prices. It is read once per model where the model keeps a fit memo; a caller must not modify it.
+func (m *Model) LayerBuffers(l int) []program.Buf {
+	a := m.w.arch
+	memo := m.fitOf
+	if memo == nil {
+		return layerBuffers(a, l)
+	}
+	memo.mu.Lock()
+	defer memo.mu.Unlock()
+	if memo.bufs == nil {
+		memo.bufs = make([][]program.Buf, a.NumLayers)
+		for i := range a.NumLayers {
+			memo.bufs[i] = layerBuffers(a, i)
+		}
+	}
+	return memo.bufs[l]
+}
+
 // layerBuffers is what layer l's operations declare beyond their weights. The FFN's form declares none, so the layer is read without
 // its experts, and nothing here builds a whole program (a fit probe on a backend with no operation table builds none).
 func layerBuffers(a *Architecture, l int) []program.Buf {

@@ -874,6 +874,70 @@ func TestMemGate_metal(t *testing.T) {
 	g.Finish(t)
 }
 
+// TestMM5_poolsAreTheDeclaredRows is G-MP2 on Metal (docs/tasks/task-forward-architecture-2026-10.md §4.9b): every census fixture's int4
+// build at two slots sizes each layer's KV pool from the row its operations declare (decoder.Model.LayerBuffers), the null block and
+// every slot's blocks at the cache's element size (f32 for MLA's latent), and a layer that declares no row holds no pool of its own.
+func TestMM5_poolsAreTheDeclaredRows(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	d, err := sb2census.ReadLayerD("../..", "metal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pools, models := 0, 0
+	for _, f := range d.Fixtures {
+		if !d.Resident[f+" int4"] {
+			continue
+		}
+		path, err := sb2census.Path("../..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 256, ResidentKVSlots: 2})
+		if err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		a, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok {
+			m.Close()
+			continue
+		}
+		r := a.r
+		models++
+		for l := range r.layers {
+			if r.layers[l].kvShared {
+				continue
+			}
+			row, elem := 0, r.kvElemBytes()
+			for _, b := range m.LayerBuffers(l) {
+				if b.Unit == program.PerPosition && (b.Name == "k" || b.Name == "latent") {
+					row = b.Elems
+					if b.Prec == program.PrecF32 {
+						elem = 4
+					}
+				}
+			}
+			if row == 0 {
+				if r.kc[l] != (Buffer{}) {
+					t.Errorf("%s layer %d declares no KV row but holds a %d-byte pool", f, l, r.kc[l].Len())
+				}
+				continue
+			}
+			want := (1 + kvBlocksFor(r.ctxCap)*r.kvSlotCount()) * decoder.KVBlockRows * row * elem
+			if got := r.kc[l].Len(); got != want {
+				t.Errorf("%s layer %d: its pool holds %d bytes; the declared %d-element row at %d B over %d slots is %d", f, l, got, row, elem, r.kvSlotCount(), want)
+			}
+			pools++
+		}
+		m.Close()
+	}
+	t.Logf("%d pools on %d builds held to their declared rows", pools, models)
+	if pools < 40 {
+		t.Fatalf("only %d pools checked: the test reads too little", pools)
+	}
+}
+
 // A wrapped upload on the shared bridge: the same tests every resident backend runs (internal/wrappedupload).
 func TestWrappedUpload_rows(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {

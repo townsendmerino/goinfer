@@ -4537,6 +4537,11 @@ already generic (every tensor the load holds); Metal's step scratch is already a
 **Gates.** All tier 0, seconds. Ordinary engineering: nothing computed changes, and the census decides.
 - **G-MP1:** MM1's decision census unchanged byte for byte, arm64 and amd64 (Rosetta reproduces CI's class). A moved row is a red
   run, not a re-record.
+  - **Amended 2026-11-07, on the Metal half's first census:** no decision may move, and every byte figure that moves is explained
+    in the PR and re-recorded (`internal/runtime/mem/CLAUDE.md`'s rule). Mechanism: 88 D4 rows on lfm2-tiny and bailing_hybrid-tiny
+    move by their kv figure alone, a quarter of what they were, and no context, slot count or reason moves. The old `metalKVParts`
+    took each layer's mixer from `ResidentLayerOps`, which calls LFM2's short-conv layers attention and bailing_hybrid's KDA layers
+    MLA, so it charged rows those layers do not hold. No GPU backend builds either family.
 - **G-MP2:** the list is what builds. Per backend, MM7's allocation-vs-plan gate stays green on every tiny fixture, and each layer's
   allocated pool and state equal its listed bytes.
 - **G-MP3:** demand from the program alone. For every tiny fixture with KV or state, the demand computed from its `Program` and
