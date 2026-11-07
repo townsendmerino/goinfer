@@ -123,11 +123,11 @@ func TestLoadVisionTower_gemma3FloatDefaultFallsBackToInt8(t *testing.T) {
 	}
 }
 
-// TestLoadVisionTower_gemma3WebGPUDefault: under --backend webgpu Gemma 3's SigLIP tower, with nothing asked, attaches the float32
-// device tower (G-S12.3a-4, medians 0.430 of the CPU tower, S12-defaults). -vision-quant int8 attaches the int8 device tower,
-// -vision-device gpu is the same as the default, and -vision-device cpu attaches no device tower at all. It runs through
-// loadVisionTower with a fake WebGPU resident that tells float32 from int8 by whether the encoder holds int8 weights.
-func TestLoadVisionTower_gemma3WebGPUDefault(t *testing.T) {
+// TestLoadVisionTower_gemma3WebGPUPlacement: under --backend webgpu Gemma 3's SigLIP tower runs on the CPU unless asked: nothing asked
+// (the flag unset or "auto") attaches no device tower, -vision-device gpu and -vision-quant f32 attach the float32 one, -vision-quant
+// int8 the int8 one, and -vision-device cpu none. It runs through loadVisionTower with a fake WebGPU resident that tells float32
+// from int8 by whether the encoder holds int8 weights.
+func TestLoadVisionTower_gemma3WebGPUPlacement(t *testing.T) {
 	stubWebGPU(t, false, 0) // a discrete GPU: the unified-memory guard has no figure and proceeds
 	var f32Tries, int8Tries int
 	vision.RegisterResident(func(e *vision.Encoder) (vision.ResidentEncoder, error) {
@@ -144,7 +144,8 @@ func TestLoadVisionTower_gemma3WebGPUDefault(t *testing.T) {
 		name, quant, device string
 		wantF32, wantInt8   int
 	}{
-		{"nothing asked", "", "", 1, 0},
+		{"nothing asked", "", "", 0, 0},
+		{"-vision-device auto", "", "auto", 0, 0},
 		{"-vision-quant f32", "f32", "", 1, 0},
 		{"-vision-device gpu", "", "gpu", 1, 0},
 		{"-vision-quant int8", "int8", "", 0, 1},

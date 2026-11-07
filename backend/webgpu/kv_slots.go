@@ -295,7 +295,7 @@ func ctxWhereSlotsFit(oneSlot, want int, fits func(ctx int) bool) int {
 	}
 	if !fits(webgpuSlotCtxFloor) {
 		if want <= 1 {
-			logs.Debugf("webgpu: resident context %d (the floor), not %d, to leave room for the vision tower; an explicit --ctx keeps a longer context", webgpuSlotCtxFloor, oneSlot)
+			logs.Warnf("webgpu: resident context %d (the floor), not %d, to leave room for the companion priced beside the weights (a vision tower or drafter), and it still does not fit the fit guard's share of RAM; an explicit --ctx keeps a longer context", webgpuSlotCtxFloor, oneSlot)
 			return webgpuSlotCtxFloor
 		}
 		logs.Debugf("webgpu: resident context %d (the floor), not %d, for the %d requested KV slots (--kv-sessions); "+
@@ -312,7 +312,7 @@ func ctxWhereSlotsFit(oneSlot, want int, fits func(ctx int) bool) int {
 		}
 	}
 	if want <= 1 {
-		logs.Warnf("webgpu: resident context %d, not %d, so the vision tower fits beside the weights and the KV; an explicit --ctx keeps a longer context", lo, oneSlot)
+		logs.Warnf("webgpu: resident context %d, not %d, so the companion priced beside the weights (a vision tower or drafter) fits beside the weights and the KV; an explicit --ctx keeps a longer context", lo, oneSlot)
 		return lo
 	}
 	logs.Warnf("webgpu: resident context %d, not %d, so the %d requested KV slots fit (--kv-sessions); an "+

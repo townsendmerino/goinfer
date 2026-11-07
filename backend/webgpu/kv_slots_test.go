@@ -1187,7 +1187,10 @@ func TestSlotPricing_countsTheCompanion(t *testing.T) {
 	}
 	// no overcommit: at the context it chose (or the floor, where the slot clamp takes over) the slots fit RAM with the tower counted
 	w, h := residentRAMTerms(tower)
-	if ctx > webgpuSlotCtxFloor && darwinKVSlots(4, ram, 0, w, h, perPos*int64(ctx)) < 4 {
+	if ctx <= webgpuSlotCtxFloor {
+		t.Errorf("the context fell to the floor %d; four slots and a 6 MiB tower fit well above it", ctx)
+	}
+	if darwinKVSlots(4, ram, 0, w, h, perPos*int64(ctx)) < 4 {
 		t.Errorf("context %d does not fit four slots beside the weights and the tower", ctx)
 	}
 	if got := grantedSlots(tower, 4, true, ram, 0, perPos*ctxCap); got >= 4 {

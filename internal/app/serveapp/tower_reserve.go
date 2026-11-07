@@ -142,7 +142,7 @@ func metalTowerEstimate(mt string, d towerDims, maxPixels int, int8 bool) int64 
 }
 
 // towerReserve is what to add to Options.ExtraResidentBytes for this model's device vision tower: zero unless the tower will run on
-// CUDA, Metal or WebGPU (the backend is one of them, -vision-device is not cpu, the tower is float32 or Gemma 3's int8 one, and this
+// CUDA, Metal or WebGPU (the backend is one of them, -vision-device is not cpu and, under WebGPU, asks for the device, the tower is float32 or Gemma 3's int8 one, and this
 // binary registers a device tower for the family). WebGPU's figure is the arithmetic form, uncalibrated against a WebGPU run.
 func towerReserve(cfg config, modelPath string) int64 {
 	if be := cfg.towerBackend(); be != "cuda" && be != "metal" && be != "webgpu" {
@@ -171,7 +171,8 @@ func towerReserve(cfg config, modelPath string) int64 {
 	}
 	if cfg.towerBackend() == "webgpu" {
 		// WebGPU's device towers are float32, except Gemma 3's int8 one; every other int8 tower is the CPU's and holds no device memory.
-		if !webgpuTowerRegistered(mt) {
+		// A tower runs on the device only when asked for, so an unasked one (the CPU's) is priced at zero.
+		if !webgpuTowerRegistered(mt) || !webgpuTowerAsked(cfg, mt) {
 			return 0
 		}
 		d, ok := readTowerDims(dir)
@@ -207,6 +208,16 @@ func towerReserve(cfg config, modelPath string) int64 {
 		return 0
 	}
 	return towerVRAMEstimate(mt, d, cfg.visionMaxPixels)
+}
+
+// webgpuTowerAsked says whether the WebGPU device tower is the choice for this family: -vision-device gpu for any family, and for
+// Gemma 3 also an explicit -vision-quant (f32 or int8), the same rule loadVisionTower places the towers by. Without either the
+// tower is the CPU's, which holds no device memory.
+func webgpuTowerAsked(cfg config, mt string) bool {
+	if cfg.visionDevice == "cpu" {
+		return false
+	}
+	return cfg.visionDevice == "gpu" || (mt == "gemma3" && cfg.visionQuant != "")
 }
 
 // towerInt8VRAMEstimate is the Gemma 3 W8A8 SigLIP tower's footprint on the device: the block weights at one byte, the patch

@@ -7,8 +7,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// WebGPU's vision towers are the default under --backend webgpu (docs/tasks/task-multimodal-remaining-2026-10.md, S12-defaults), so
-// each default image load puts a float32 tower beside the decoder in the same device memory. WebGPU has no free-device-memory query
+// A WebGPU vision tower placed on the device (docs/tasks/task-multimodal-remaining-2026-10.md, S12-defaults) puts a float32 tower beside the decoder in the same device memory. WebGPU has no free-device-memory query
 // (backend/webgpu/kv_slots.go), so the one place a figure exists is a unified-memory machine (darwin), where the device's buffers are
 // host RAM.
 //
