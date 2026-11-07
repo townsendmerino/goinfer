@@ -1,0 +1,12 @@
+== mutation[b4-TestProgramFingerprint_table] ==
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  PASS: b4-TestProgramFingerprint_table is falsifiable
+== mutation[b4-TestParityManifest_fresh] ==
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  PASS: b4-TestParityManifest_fresh is falsifiable

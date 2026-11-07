@@ -1,0 +1,13 @@
+=== RUN   TestParityManifest_fresh
+    parity_manifest_test.go:449: parity stale for 1 validated family(ies) — numerics changed since the noted commit:
+          llama            stale since 7b50947a  [covers: core+loaders+quant+own(decoder/arch_llama.go)]
+        Fix: re-run T3 (go run ./cmd/gate parity) then -update; or, for a provably non-numeric core edit (a guarded diagnostic seam, comment, rename), scripts/refresh_parity_hashes.sh.
+--- FAIL: TestParityManifest_fresh (0.54s)
+=== RUN   TestProgramFingerprint_table
+    program_fingerprint_test.go:100: amd64 program fingerprints changed for 1 fixture(s); if the change is meant, run -update and say which programs moved:
+          testdata/llama-tiny sha256:0e9959fccd287644b181722fb3827ab8404240a2384970f45643808848e8f8f1
+    program_fingerprint_test.go:103: 37 fixture programs (amd64)
+--- FAIL: TestProgramFingerprint_table (0.40s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.951s
+FAIL

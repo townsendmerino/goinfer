@@ -1,0 +1,12 @@
+=== RUN   TestParityManifest_fresh
+    parity_manifest_test.go:459: staleness: 43/43 families enforced (the rest are validated_at:null and carry no hash to check)
+--- PASS: TestParityManifest_fresh (0.54s)
+=== RUN   TestParityKey_matchesFreshDepsHash
+--- PASS: TestParityKey_matchesFreshDepsHash (1.06s)
+=== RUN   TestParityKey_shadowMatchesDecoder
+    paritykey_test.go:212: 43 families, 31 with programs, 30 under the loader rule
+--- PASS: TestParityKey_shadowMatchesDecoder (1.33s)
+=== RUN   TestParityLoaders_mapping
+--- PASS: TestParityLoaders_mapping (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	2.946s
