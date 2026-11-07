@@ -1,6 +1,9 @@
 package decoder
 
-import "github.com/townsendmerino/goinfer/internal/runtime/mem"
+import (
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
+)
 
 // One memory-accounting path per backend (docs/tasks/task-memory-accounting-2026-09.md).
 //
@@ -59,43 +62,34 @@ func (m *Model) MetalKVBytes(slots, ctx int) int64 {
 }
 
 // metalKVParts is one slot's KV on Metal, at the precision ResolveKV delivers, and its pools' null blocks, once per load: per 64-row
-// block, K and V, or an MLA layer's one latent row, with int8's per-head scales, on every layer that holds its own; and the slot's table,
-// 4 B a block.
+// block, every row its layers declare (LayerBuffers) at Metal's size for it (MetalKVRowBytes), and the slot's table, 4 B a block.
 func (m *Model) metalKVParts(ctx int) (slot, null int64) {
 	blocks := int64((ctx + KVBlockRows - 1) / KVBlockRows)
 	delivered := m.KVDeliveredFor("metal")
-	i8 := delivered == kvPrecI8
-	elem := int64(2) // f16
-	if delivered == kvPrecF32 {
-		elem = 4
-	}
-	_, nLayers, _, _, _, _, _ := m.Dims()
 	var perBlock int64
-	for l := range nLayers {
-		mixer, _ := m.ResidentLayerOps(l)
-		if mixer == MixerMLA { // the latent rows, f32 (metal/mla.go)
-			_, kvLoRA, _, qkRope, _, _, _, _, _ := m.MLAResidentParams()
-			perBlock += KVBlockRows * int64(kvLoRA+qkRope) * 4
-			continue
+	for l := range m.w.arch.NumLayers {
+		for _, b := range m.LayerBuffers(l) {
+			if b.Unit == program.PerPosition {
+				perBlock += KVBlockRows * MetalKVRowBytes(b, delivered)
+			}
 		}
-		if mixer != MixerAttention {
-			continue // no KV cache on a recurrent or mixer-less layer (metal/model.go leaves r.kc[l]/r.vc[l] zero)
-		}
-		if m.KVSrcAtResident(l) != l {
-			continue // a Gemma 4 E-model KV-shared layer aliases its source's cache (metal/model.go)
-		}
-		nKV := int64(m.KVHeadsAtResident(l))
-		kvDim := nKV * int64(m.HeadDimAtResident(l))
-		if i8 {
-			perBlock += 2*KVBlockRows*kvDim + 2*KVBlockRows*nKV*4 // K and V payload at 1 byte/elem, and their per-head f32 scales
-			continue
-		}
-		perBlock += 2 * KVBlockRows * kvDim * elem // K and V, f16 or f32
 	}
 	if perBlock == 0 {
 		return 0, 0
 	}
 	return blocks*perBlock + blocks*4, perBlock
+}
+
+// MetalKVRowBytes is one position's row of b in Metal's KV pools when the cache is delivered at precision delivered (ResolveKV's
+// "f16", "f32" or "i8"): an f32 buffer at 4 bytes an element, else int8 codes and one f32 scale per head, f32, or f16.
+func MetalKVRowBytes(b program.Buf, delivered string) int64 {
+	switch {
+	case b.Prec == program.PrecF32 || delivered == kvPrecF32:
+		return int64(b.Elems) * 4
+	case delivered == kvPrecI8:
+		return int64(b.Elems) + int64(b.Heads)*4
+	}
+	return int64(b.Elems) * 2
 }
 
 // ResidentNeedBytes is what a resident build on backend asks the device (or, on Metal, unified memory)
