@@ -1,0 +1,6 @@
+== mutation[b5-drop-definition] ==
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  PASS: b5-drop-definition is falsifiable
