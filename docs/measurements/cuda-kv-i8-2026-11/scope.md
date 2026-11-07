@@ -55,3 +55,22 @@ int8 is symmetric per (position, KV head) with one f32 scale each for K and V (t
 - Repo rules met: `kv8_store.cu` is in the FMA lint (index arithmetic is written as separate offsets, not `a*b + c`); `gate ptx` is 60/60 at the NVRTC each module records (`prefill_batched_kv8` and `kv8_store` at the ambient 12.9.86 with their bases).
 
 **Readers still to convert for dense decode and prefill:** `decode_fa` (flash decode, 6 sites), `decode_splitkv` (2), `attn_fused` (2), `attn_fused_bm` (2, the tensor-core tiles, which stage K/V as f16: `KV_LDH`), `prefill_splitkv` (5). Image, pairwise-RoPE, m-RoPE and MLA kernels are outside the dense families (S5).
+
+## S1 as it stands (2026-11-07): which readers it converts
+
+S1 is the kernel stage and nothing in it reaches a user: the `_kv8` modules are built, embedded, identity-tested and bound to nothing; `--kv i8` stays refused by name on CUDA, and no resident, plan or flag reads them.
+
+**Converted, each with a G1 identity test (int8 x 2^e values against the f32 original, scrambled block table, `backend/cuda/kernels/kv8_identity_test.go`):**
+| reader | module | test |
+|---|---|---|
+| decode attention, short contexts | `glue.cu` `attention` (`glue_kv8`, at the audited NVRTC 12.6.85) | `TestKV8_exactInputIdentity_glueAttention` |
+| batched-prefill attention | `prefill_batched.cu` `attn_batched` | `..._attnBatched` |
+| flash decode, single row | `decode_fa.cu` `fa_partial_{64,128,256}` + `fa_combine` | `..._flashDecode` |
+| flash decode, multi-row verify lane | `decode_fa.cu` `fa_partial_rows_<hd>_g<G>` + `fa_combine_rows` | `..._flashDecodeRows` |
+| exact long-context decode | `decode_splitkv.cu` `splitkv_scores`, `splitkv_vsum`, `splitkv_vsum_partial`/`_combine` | `..._splitKV` |
+| row-batched long-context prefill | `prefill_splitkv.cu` `splitkv_scores_rows`, `splitkv_vsum_rows` | `..._splitKVRows` |
+| the store | `kv8_store.cu` (new module): K and V quantized per (token, head), equal to aikit `QuantizeRowInt8` bit for bit | `TestKV8_store_matchesTheCPUQuantizer` |
+
+**Not converted in S1, so S2 must route around them or convert them (the dispatcher may not select them on an i8 cache):** `attn_fused.cu` and `attn_fused_bm.cu` (the tensor-core tiles, with their vectorized `stage_tile_vec` that reads 16 bytes of cache at a time and stages f16 halves: they need per-row scales in the staging loops), `attn_img_prefill.cu`, `rope_mrope_prefill.cu`, `rope_pairwise.cu` (the rope/store kernels for m-RoPE and pairwise RoPE: their `KV_ST` sites are no-ops in an i8 build and the families they serve are S5), `gemv_fwd.cu`'s rope_kv, `mla.cu`. Dense attention prefill on an i8 cache therefore goes through `attn_batched` or the split-KV rows lane until the fused tiles are converted; whether that costs a speed the bar forbids is S4's reading.
+
+**Gates this meets:** `go run ./cmd/gate ptx` 65/65 (the gate now also reproduces `<k>_kv8.ptx` from `<k>.cu` at the NVRTC each records), `touched.py` and `cmd/lint` pass (`touched-s1f.log`, `lint-s1e.log`); the frozen glue modules, and every existing `.ptx`, are byte-identical (`git status` shows no changed `.ptx`).
