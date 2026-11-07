@@ -19,6 +19,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/runtime/mamba2"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -152,6 +153,15 @@ func (m *Model) ResidentCommitIDsForTest(ids []int) { m.residentCommitIDs(ids, n
 // compared against.
 func (m *Model) ResidentUploadPrefillForTest(cache *KVCache) error {
 	return m.residentUploadPrefill(cache)
+}
+
+// SetLayerBuffersForTest makes LayerBuffers answer bufs for layer l, so a backend test can build against a declaration its kernels do
+// not address. The model needs its fit memo (a Model from Load has one).
+func (m *Model) SetLayerBuffersForTest(l int, bufs []program.Buf) {
+	m.LayerBuffers(l) // fills the memo
+	m.fitOf.mu.Lock()
+	defer m.fitOf.mu.Unlock()
+	m.fitOf.bufs[l] = bufs
 }
 
 // ApplyMRoPEForTest wraps applyMRoPE, the CPU m-RoPE reference a resident kernel's own rotation must match bit-for-bit.
