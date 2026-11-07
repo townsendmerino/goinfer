@@ -141,10 +141,11 @@ func metalTowerEstimate(mt string, d towerDims, maxPixels int, int8 bool) int64 
 	return proj*2 + head*4 + scratch
 }
 
-// towerReserve is what to add to Options.ExtraResidentBytes for this model's CUDA vision tower: zero unless the tower will run on CUDA (the backend is cuda, -vision-device is
-// not cpu, the tower is float32 and this binary registers a CUDA tower for the family).
+// towerReserve is what to add to Options.ExtraResidentBytes for this model's device vision tower: zero unless the tower will run on
+// CUDA, Metal or WebGPU (the backend is one of them, -vision-device is not cpu, the tower is float32 or Gemma 3's int8 one, and this
+// binary registers a device tower for the family). WebGPU's figure is the arithmetic form, uncalibrated against a WebGPU run.
 func towerReserve(cfg config, modelPath string) int64 {
-	if cfg.towerBackend() != "cuda" && cfg.towerBackend() != "metal" {
+	if be := cfg.towerBackend(); be != "cuda" && be != "metal" && be != "webgpu" {
 		return 0
 	}
 	dir := cfg.visionPath
@@ -167,6 +168,24 @@ func towerReserve(cfg config, modelPath string) int64 {
 			return 0
 		}
 		return metalTowerEstimate(mt, d, cfg.visionMaxPixels, i8)
+	}
+	if cfg.towerBackend() == "webgpu" {
+		// WebGPU's device towers are float32, except Gemma 3's int8 one; every other int8 tower is the CPU's and holds no device memory.
+		if !webgpuTowerRegistered(mt) {
+			return 0
+		}
+		d, ok := readTowerDims(dir)
+		if !ok {
+			return 0
+		}
+		if towerInt8(mt, cfg.visionQuant, "webgpu") {
+			if mt == "gemma3" {
+				return towerInt8VRAMEstimate(d)
+			}
+			return 0
+		}
+		params, scratch := towerParts(mt, d, cfg.visionMaxPixels)
+		return params*4 + scratch
 	}
 	if towerInt8(mt, cfg.visionQuant, "cuda") {
 		// Gemma 3's SigLIP is the one family with an int8 DEVICE tower on CUDA (chosen when the card is too tight for float32,
@@ -217,6 +236,24 @@ var cudaTowerRegistered = func(mt string) bool {
 		return slices.Contains(multimodal.GlmOcrTowers(), "cuda")
 	case "qwen2_5_vl":
 		return true // aikit's qwencuda registers through the vision package, not multimodal's registry; a cuda binary imports it
+	}
+	return false
+}
+
+// webgpuTowerRegistered says whether this binary has a WebGPU device tower for the model type: a gpu build registers them in its
+// init, so a plain build (and a unit test) sees none. A variable so a table test can stand in for a gpu build.
+var webgpuTowerRegistered = func(mt string) bool {
+	switch mt {
+	case "gemma3":
+		return slices.Contains(multimodal.ResidentTowers(multimodal.TowerSigLIP), "webgpu")
+	case "qwen2_5_vl":
+		return slices.Contains(multimodal.ResidentTowers(multimodal.TowerQwen25VL), "webgpu")
+	case "gemma4":
+		return slices.Contains(multimodal.Gemma4Towers(), "webgpu")
+	case "qwen3_5", "qwen3_5_moe", "qwen3_vl", "qwen3_vl_moe":
+		return slices.Contains(multimodal.Qwen3Towers(), "webgpu")
+	case "glm_ocr":
+		return slices.Contains(multimodal.GlmOcrTowers(), "webgpu")
 	}
 	return false
 }

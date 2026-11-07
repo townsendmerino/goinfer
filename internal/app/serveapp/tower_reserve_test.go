@@ -55,7 +55,9 @@ func TestTowerReserve_zeroCases(t *testing.T) {
 	cpuDev.visionDevice = "cpu"
 	metal := cuda
 	metal.load.Backend = "metal"
-	for name, c := range map[string]config{"cuda but no CUDA tower registered in this binary": cuda, "-vision-device cpu": cpuDev, "metal": metal} {
+	webgpu := cuda
+	webgpu.load.Backend = "webgpu"
+	for name, c := range map[string]config{"cuda but no CUDA tower registered in this binary": cuda, "-vision-device cpu": cpuDev, "metal": metal, "webgpu but no WebGPU tower registered in this binary": webgpu} {
 		if got := towerReserve(c, dir); got != 0 {
 			t.Errorf("%s: reserve %d, want 0", name, got)
 		}

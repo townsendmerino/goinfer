@@ -1183,6 +1183,12 @@ func (s *server) loadVisionTower(cfg config) error {
 	if len(cfg.models) != 1 {
 		return fmt.Errorf("-vision needs exactly one --model (got %d)", len(cfg.models))
 	}
+	// A WebGPU tower is the default and shares the decoder's device memory: on a unified-memory machine it is priced against the
+	// fit guard's budget first (webgpu_tower_fit.go) and kept on the CPU, with the reason, when it does not fit.
+	var ferr error
+	if cfg, ferr = webgpuTowerFits(cfg, dir, os.Stderr); ferr != nil {
+		return ferr
+	}
 	if fi, err := os.Stat(dir); err == nil && !fi.IsDir() && strings.HasSuffix(strings.ToLower(dir), ".gguf") {
 		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, cfg.towerBackend()), cfg.towerBackend(), cfg.requireBE)
 	}
