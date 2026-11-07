@@ -227,4 +227,17 @@ Both at 0.98 or more: the final build decodes gemma3-1b as the accepted tree doe
 Plants, 4 of 4 red: abort's give-back unguarded (block 64 at -1), the upload outside a pass written from base, the second start run, the cut without the copy on write's old entry. The Metal package whole 477 passed, 220 skipped, 0 failed; touched.py PASS (16), lint 7/7, identity 29 IDENTICAL / 0 DIFFERENT against 0e5a78d1.
 What round 8 changes on the decode path: abort, which runs only after a mapping is refused; the copy hook, one comparison a copy on write; the chain's start guard, one check a chain opened. A successful token runs none of them differently, and the upload is not decode. G2's runner, the 7B night job and a repeat of the gemma3-1b A/B move to 9b184adf (serve-bis-9b184adf), committed before the A/B runs.
 
+== gemma3-1b, the accepted tree against 9b184adf (round 8), 2026-11-07 14:35 to 14:57 PST, exclusive lock, on AC: the build that merges reads as accepted
+gemma_bisect.py ab as above, old e2762eb0, new 9b184adf (serve-bis-9b184adf), 5 quads at 128 and 2,048, the same decision rule. No void start; swap-outs 0.0 MB. Main's merges since 3f47e833 (#736, #744, #745: the program types' file split, WebGPU's KV slots, the serve vision-tower fit) touch nothing Metal text decode runs, so 9b184adf stands for the merged build.
+  128    new 85.5  old 85.2 tok/s  new/old 1.004 (20 runs an arm)  halves 1.006 1.012 1.037 1.004 1.021 0.976 1.013 0.968 0.989 0.943
+  2048   new 68.6  old 69.2 tok/s  new/old 0.992 (20 runs an arm)  halves 1.003 0.998 0.998 1.019 0.979 1.007 0.993 0.967 1.010 0.987
+Both at 0.98 or more.
+
+== G2, the 7B's prefill TTFT on 9b184adf, 2026-11-07 15:08 to 15:25 PST, exclusive lock, on AC (g2-final4): reported, not a gate on #711
+Taken under Francis's override of the heavy-load void rule, 2026-11-07 15:08: reclaimable 4.9 GB against the 6.5 GB the rule asks (the 7B's fit need 4,466 MB plus 2,048 MB), at the cell's first server start; 7.1 to 7.6 GB at its other five. Two attempts under the rule had refused without measuring (14:57 to 15:08, and 13:40 to 13:50 on 255c8f22), at 3.8 to 4.8 GB. The override is this cell only: ttft_7b_override.py (in ~/goinfer-work/kv5-6) runs ttft_ab.py with the rule's free-memory clause off and its load clause on, after checking hostmem's available figure (12,443 MB) against the load's 6,514 MB; the rule's code is unchanged. Swap-outs 0.0 MB in every run; swap-ins at most 1.66 MB.
+ttft_ab.py, new 9b184adf against old f8632013, three alternating pairs, six prompts a depth, -ctx 4096:
+  K = 512    pairs old/new 1.026 0.887 0.882, median 0.887 FAIL (accepted on e2762eb0: 0.999)
+  K = 3,900  pairs old/new 0.882 0.997 0.996, median 0.996 PASS (accepted 0.998)
+Every request answered. The old arm reads as it did on 2026-11-06 (at 512, about 2.59 s for each server's first two prompts and 2.29 s after; at 3,900, 18.79 to 18.83 s). The new arm's slow runs follow the server, not the depth: pair 1's new server is normal at 512 and about 2.5 s slow at every 3,900 prompt; pairs 2 and 3's are 250 to 350 ms slow at every 512 prompt and near normal at 3,900 (two of pair 3's at 20.0 s). A cost a request pays the same way each time would show at both depths; this does not, and the 1.5B's TTFT on 255c8f22 read 0.999 and 0.994. Whether it is the build or this session is not settled by one cell; a same-session A/B of the accepted tree against 9b184adf would place it, as the gemma3-1b A/B did.
+
 == G2, the 7B: the night job kv5-6-g2-7b (pinned to 9b184adf), reported, not a gate on the merge
