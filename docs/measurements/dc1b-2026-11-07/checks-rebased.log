@@ -1,0 +1,37 @@
+ok  	github.com/townsendmerino/goinfer/decoder/config	0.003s
+ok  	github.com/townsendmerino/goinfer/internal/layout	1.272s
+ok  	github.com/townsendmerino/goinfer/internal/guard/paritykey	1.304s
+=== RUN   TestDecisionCensus
+census: D1: 8435 groups in 3.9s
+census: D2: 3948 groups in 40.3s
+census: loads: 1 groups in 0.2s
+census: D3: 11760 groups in 5.3s
+census: D4: 2310 groups in 1.4s
+census: D5: 2730 groups in 0.9s
+decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+census: D6: 2 groups in 0.0s
+census: D7: 451 groups in 0.0s
+census: D1: 8435 groups in 2.9s
+census: D2: 3948 groups in 27.1s
+census: loads: 1 groups in 0.1s
+census: D3: 11760 groups in 3.4s
+census: D4: 2310 groups in 0.7s
+census: D5: 2730 groups in 0.9s
+decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+census: D6: 2 groups in 0.0s
+census: D7: 451 groups in 0.0s
+    mm1_census_test.go:323: host class "amd64 f32=4.000000 int8=1.015625 int4=0.562500 int4mix=0.562500 int8int8=1.015625 q4k=0.562500 bf16=2.000000 f16=2.000000"; 29637 groups; census 30ba76895b695ff677fd611009c60c8a4bf61f5a9987968e97bab84fcc3072e9
+--- PASS: TestDecisionCensus (88.65s)
+=== RUN   TestParityManifest_fresh
+    parity_manifest_test.go:459: staleness: 43/43 families enforced (the rest are validated_at:null and carry no hash to check)
+--- PASS: TestParityManifest_fresh (0.50s)
+=== RUN   TestParityKey_matchesFreshDepsHash
+--- PASS: TestParityKey_matchesFreshDepsHash (1.05s)
+=== RUN   TestParityKey_shadowMatchesDecoder
+    paritykey_test.go:213: 43 families, 31 with programs, 30 under the loader rule
+--- PASS: TestParityKey_shadowMatchesDecoder (1.20s)
+=== RUN   TestProgramFingerprint_table
+    program_fingerprint_test.go:103: 37 fixture programs (amd64)
+--- PASS: TestProgramFingerprint_table (0.40s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	91.861s

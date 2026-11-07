@@ -63,7 +63,8 @@ DC1 goes ahead: `Config` only. DC2 (`Options`) and DC3 (`Architecture`) stay par
   stay in `decoder` and call the wrappers.
 - **Red first.** `internal/layout`'s `config-leaf` rule fails `TestLayout_arrows` on a plant that imports `internal/runtime/program` from
   `decoder/config`, and passes without it.
-- **No numerics moved.** `TestProgramFingerprint_table` passes unchanged, and `TestDecisionCensus`'s golden compare passes on amd64 (29,637 groups).
+- **No numerics moved.** `TestProgramFingerprint_table` passes unchanged, and `TestDecisionCensus`'s golden compare passes on amd64 (29,637 groups), its hash
+  `30ba7689…` the same with and without this change (on its base, §10's fix, and on its head, after the rebase onto `main`).
 - **Parity.** `paritykey.BuilderFile` and decoder's `isBuilder` list `decoder/config/config.go`, which joins `core`. Under the builder switch
   (`docs/measurements/vk5-2026-10.md` §13) only the 12 families with no programs re-stale; one goldens-gated refresh moved their 12 `deps_hash` lines.
 - **Comments.** Every comment naming a `Config` method by its old unexported name now names the exported one.
