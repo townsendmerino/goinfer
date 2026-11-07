@@ -13,7 +13,7 @@ import (
 // fake's restore to anything but the snapshot's own end corrupts the history, as a DeltaNet state from another position would, so a restore
 // the decoder should have refused changes the reply.
 
-// recurrentSnapFake is snapFake whose snapshots carry the state (decoder.ResidentRecurrentSnapshots) when carries is set. declineRestore
+// recurrentSnapFake is snapFake whose snapshots carry the state (ResidentKVSnapshotter.KVSnapshotRecurrent) when carries is set. declineRestore
 // makes every restore decline, as a backend that cannot serve one does, so a prompt that shares a held point prefills cold.
 type recurrentSnapFake struct {
 	*snapFake

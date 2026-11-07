@@ -19,7 +19,10 @@ func newCkptResident() *ckptResident {
 	return &ckptResident{slotResident: &slotResident{n: 1}, bytes: 4096, live: []float32{1, 2, 3}}
 }
 
-func (r *ckptResident) RecurrentCheckpointBytes() int64 { return r.bytes }
+var _ ResidentRecurrentCheckpoint = (*ckptResident)(nil)
+
+func (r *ckptResident) RecurrentCheckpointBytes() int64  { return r.bytes }
+func (r *ckptResident) RecurrentCheckpointHeld(int) bool { return false }
 func (r *ckptResident) SaveRecurrentCheckpoint() error {
 	if r.failSave {
 		return errors.New("ckptResident: forced save failure")
