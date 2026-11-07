@@ -288,11 +288,26 @@ func TestStateBuffers_granite(t *testing.T) {
 	}
 }
 
-// TestStateBuffers_kdaPerStream: a KDA layer's three conv windows are three buffers, so a backend's allocator rounds each on its own.
+// TestStateBuffers_kdaPerStream: a KDA layer's three conv windows are three buffers, so a backend's allocator rounds each on its own. On
+// Bailing Hybrid, the one family with KDA layers (MLA on the rest, which hold no state): the architecture is resolved from its config,
+// since a layer's state is what its operations declare and the program builds KDA only beside MLA.
 func TestStateBuffers_kdaPerStream(t *testing.T) {
-	a := &Architecture{NumLayers: 2, kda: &kdaParams{HeadDim: 8, NumHeads: 2, ConvKernel: 3}, layerIsLinear: func(l int) bool { return l == 1 }}
-	win, s := int64((3-1)*2*8)*4, int64(2*8*8)*4
-	if got, want := stateBuffers(a), []int64{win, win, win, s}; !slices.Equal(got, want) {
+	a, _, err := resolveArchitecture(representativeConfig("bailing_hybrid"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := a.kda
+	win, s := int64((p.ConvKernel-1)*p.NumHeads*p.HeadDim)*4, int64(p.NumHeads*p.HeadDim*p.HeadDim)*4
+	var want []int64
+	for l := range a.NumLayers {
+		if a.isLinearLayer(l) {
+			want = append(want, win, win, win, s)
+		}
+	}
+	if len(want) == 0 {
+		t.Fatal("the config has no KDA layer; the test reads nothing")
+	}
+	if got := stateBuffers(a); !slices.Equal(got, want) {
 		t.Errorf("KDA's state buffers: %v, want %v", got, want)
 	}
 }

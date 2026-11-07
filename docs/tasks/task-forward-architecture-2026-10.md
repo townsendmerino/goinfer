@@ -4512,6 +4512,55 @@ to 06:49:01 PST, load 0.31 at its start, `kwin_wayland` the only other CUDA cont
         `BatchStepRange` at two slots.
   - **Card time:** about 7 minutes. OP4 on CUDA ends at about 154 of the 153 Francis set at 11:50.
 
+### 4.9b OP4's memory planner: design (2026-11-07, before any code; revised the same day on Gemini's review of #738)
+
+The planner is MM5 (`docs/tasks/task-subsystems-2026-10.md` §6.5): demand derived from the program, each operation declaring its
+buffers. Today a load's KV and recurrent state are priced by family-keyed code and sized a second time by each backend's build:
+`decoder.Model.metalKVParts` and `cudaKVParts` take each layer's mixer from `ResidentLayerOps`, `decoder.stateSpecs` switches on the family
+(MM5a made it the one list both backends' state allocates from), and Metal's build sizes each layer's pool from its own geometry.
+Weights are already generic (every tensor the load holds).
+
+**The declaration.** `program.Buffers(op, LayerShape)` lists what one operation needs beyond its weights, one entry per buffer, each with
+its own unit, precision and window: per position, the K and V rows of `OpAttention`, `OpGatedAttn` and `OpGemma4Attn` at the layer's KV
+width with its head count (none on a KV-shared layer) and window, and `OpMLA`'s latent row, f32 at any KV precision and without per-head
+scales; per slot, the state of `OpDeltaNet`, `OpMamba2`, `OpKDA` and `OpShortConv`, f32, each marked checkpointed or not. `LayerShape`
+carries one layer's widths; the decoder fills it per layer from the Architecture where the walker reads them. Pricing is per layer and
+per buffer, never one program-wide row: a backend sizes each entry with its own rule (Metal: f16, f32, or int8 codes plus one f32 scale
+per head, for 64-row blocks over the whole context; CUDA: the same rows, a windowed one in window-plus-slack blocks).
+
+**What moves, and whose:**
+1. **Shared, mac-sb11m (#739):** the declaration; `stateSpecs` and `recurrentCheckpointBuffers` as sums over it (a non-f32 state entry is
+   refused).
+2. **Metal, mac-sb11m (#741):** `metalKVParts` and Metal's pool sizes from the per-position entries, a build refused where an entry's
+   width or heads differ from what the layer's kernels address. Then Metal's decode scratch, the third Metal step: it is MM5's (§6.5's
+   per-step scratch), and MM7's known-gap rows for it close with it.
+3. **CUDA, nobara-sb01, once #739 is merged:** `cudaKVParts` and CUDA's pool sizes from the same entries, with its windowed and table
+   terms. CUDA's step scratch stays with OP4 on CUDA (the coordinator's 2026-11-06 split), not here.
+4. **Later, not in this pass:** the CPU's and WebGPU's KV pricing and the host fit's `kvBytesForCtx`.
+
+**Gates.** All tier 0, seconds. Ordinary engineering: nothing computed changes. Each gate checks the list against something that does not
+read it.
+- **G-MP1, the plan:** MM1's decision census, arm64 and amd64 (Rosetta reproduces CI's class). No decision may move. A byte figure that
+  moves is explained in the PR and re-recorded (`internal/runtime/mem/CLAUDE.md`'s rule). Amended the same day from "unchanged byte for
+  byte", on the Metal half's first census: 88 D4 rows on lfm2-tiny and bailing_hybrid-tiny move by their kv figure alone, to a quarter,
+  because the old pricing charged rows to layers `ResidentLayerOps` miscalls attention (LFM2's short conv) or MLA (Bailing Hybrid's KDA).
+- **G-MP2, the allocation and the kernels:** per backend, at a pinned context and slot count, the KV the build allocates (every pool,
+  int8's scales, the tables) equals what the plan prices, to the byte, both ways (MM7's gate fails only an under-price), with an f16 and an
+  int8 cache; and the build refuses an entry whose width or heads differ from what its kernels address. The context crosses every
+  windowed fixture's window (256 positions against gemma2-tiny's 4 and mistral-tiny-window's 16). Fit-dependent leases (rollback grants,
+  the room-sized checkpoint) are not on this line.
+- **G-MP3, a hand table:** for llama-tiny, deepseek-tiny (MLA), qwen35-tiny (DeltaNet beside attention) and gemma2-tiny (windowed), the KV
+  bytes per block and the state bytes per slot are written in the test as arithmetic on the config's numbers, and the plan's figures
+  must equal them.
+- **G-MP4, the scan:** `stateSpecs`, `stateBuffers`, `recurrentCheckpointBuffers`, `metalKVParts` and `MetalKVRowBytes` (and `cudaKVParts`
+  with CUDA's half) name no mixer, family or family parameter.
+- **G-MP5:** `gate identity` per backend, all IDENTICAL.
+- **G-MP6, the CPU:** each layer's declared rows equal what the CPU's own cache holds after a prefill (the walker sizes it without the
+  list), on dense, windowed, MLA, DeltaNet, KV-shared, short-conv and KDA fixtures.
+- **Plants:** an entry declared one element short (G-MP2 and G-MP3 red), and a backend term counted twice (G-MP2 red).
+
+**Not in it:** weights, the arbiter (MM4). SB11a's operation records ride on OP4's walker, not on this.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
