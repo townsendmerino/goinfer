@@ -736,7 +736,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				}
 				keepF(rl.ExpDown.Release)
 				// Gated on shInter > 0, like the generic branch below: n_shared_experts == 0 is a valid config (ValidateNemotron in
-				// decoder/config.go rejects only the opposite combination), and the CPU path in decoder/forward_nemotron.go gates the add on
+				// decoder/config's Config.ValidateNemotron rejects only the opposite combination), and the CPU path in decoder/forward_nemotron.go gates the add on
 				// moe.SharedIntermediateDim > 0. Projecting a zero-value SharedExpert would fail with "unsupported projection precision" and
 				// fall back to CPU with the wrong stated reason.
 				if shInter > 0 {

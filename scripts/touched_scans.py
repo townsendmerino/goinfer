@@ -110,6 +110,13 @@ SCANS = [
     Scan("decoder", "TestParityKey_matchesFreshDepsHash", F("decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json") + NT("internal/guard/paritykey")),
     Scan("decoder", "TestParityKey_shadowMatchesDecoder", F("testdata/loader_identity.json", "decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json", "testdata/program_fingerprints.json") + NT("internal/guard/paritykey", "decoder")),
     Scan("decoder", "TestParityPrograms_mapping", F("testdata/parity/*.json", "testdata/program_fingerprints.json", "testdata/*/config.json") + NT("decoder")),
+    # decoder's config tests exercise decoder/config through decoder's wrappers (loadConfig, resolveEOSIDs) and real fixtures, so an
+    # edit in decoder/config runs them; touched.py alone would run only decoder/config's own tests.
+    *[Scan("decoder", n, NT("decoder/config")) for n in (
+        "TestValidateConfigBounds_hostileCountsAreRefusedBeforeAllocation", "TestGGUFLayerCount_boundsTheLagunaPath", "FuzzLoadConfig",
+        "TestConfigSnapshot_M23", "TestLagunaArchitecture_realConfigs", "TestLagunaGating_allThreeSpellings",
+        "TestLagunaFirstKDense_contiguousOnly", "TestLagunaFirstKDense_mlpLayerTypes", "TestMellum21_configResolves", "TestEOSIDs",
+        "TestResolveEOSIDs", "TestNemotronH_attentionHeadDim", "TestRecommendedSampling_sources")],
     Scan("decoder", "TestParityLoaders_mapping", F("testdata/parity/*.json", "testdata/loader_identity.json") + NT("internal/guard/paritykey")),
     Scan("internal/guard/paritykey", "TestBuilderFile_programTypesDeclareOnly", F("internal/runtime/program/program.go")),
     # The fixture censuses walk testdata/: a new or changed model fixture must be listed or excluded in each (8ec704c3).

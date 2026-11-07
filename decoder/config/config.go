@@ -249,7 +249,7 @@ type Config struct {
 	MRopeSection []int `json:"mrope_section,omitempty"`
 
 	// PartialRotaryFactor is the fraction of head_dim RoPE rotates (Phi: 0.4);
-	// 0/absent means full rotary. Consumed via Config.rotaryDim.
+	// 0/absent means full rotary. Consumed via Config.RotaryDim.
 	PartialRotaryFactor float64 `json:"partial_rotary_factor"`
 
 	// Gemma 4 attention deltas (HF model_type "gemma4_unified_text"; GGUF
@@ -386,7 +386,7 @@ func (c *Config) IsLinearLayer(i int) bool {
 	return i >= 0 && i < len(c.LayerTypes) && c.LayerTypes[i] == "linear_attention"
 }
 
-// headDim returns the per-head dimension, falling back to hidden/heads when
+// EffectiveHeadDim returns the per-head dimension, falling back to hidden/heads when
 // config.json omits head_dim. Gemma and Qwen3 always set it explicitly (and
 // for Gemma heads*head_dim != hidden, so the field is load-bearing there);
 // many Llama/Mistral configs omit it, where hidden_size/num_attention_heads
@@ -1129,7 +1129,7 @@ func (c *Config) ValidateLlama() error {
 	return nil
 }
 
-// rotaryDim returns the number of head dims RoPE rotates: partial_rotary_factor
+// RotaryDim returns the number of head dims RoPE rotates: partial_rotary_factor
 // × head_dim when set (Phi), else 0 (the descriptor reads that as full head_dim).
 func (c *Config) RotaryDim() int {
 	if c.PartialRotaryFactor > 0 && c.PartialRotaryFactor < 1 {
