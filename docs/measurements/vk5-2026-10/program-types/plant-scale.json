@@ -1,0 +1,354 @@
+{
+  "Before": "a910dff4b800e46cb7e70444c63cadb472f3c841",
+  "After": "893a0ea22a3348fbdf0d80b6278c356041da2f59",
+  "Outcome": "OK",
+  "Counts": {
+    "agree-stale": 43
+  },
+  "Verdicts": [
+    {
+      "family": "bailing_hybrid",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "cohere",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "cohere2",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "deepseek_v2",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "deepseek_v3",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "gemma",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "gemma2",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "gemma3",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "gemma4",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "glm4_moe",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "glm_ocr",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "gpt-oss",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "gpt2",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "granite",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "granitemoehybrid",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "internlm2",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "kimi_k2",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "laguna",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "lfm2",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "llama",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "llama4_text",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "mellum",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "mistral",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "mistral3",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "mixtral",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "nemotron_h",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "olmo3",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "olmo_hybrid",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "phi3",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen2",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen2_5_vl",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen2_moe",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_5",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_5_moe",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_asr",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_moe",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_next",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_vl",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_vl_moe",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "smollm3",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "spark2_5",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "voxtral",
+      "class": "agree-stale",
+      "moved": [
+        "internal/runtime/program/methods.go"
+      ],
+      "explained": true
+    }
+  ]
+}
