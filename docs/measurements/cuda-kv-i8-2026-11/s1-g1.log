@@ -1,0 +1,17 @@
+=== RUN   TestKV8_exactInputIdentity_glueAttention
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8_identity_test.go:204: nH=4 nKV=4 hd=64 nKeys=300 window=0: 256/256 context elements differ between the i8 reader and the f32 original on int8 x 2^e values
+--- FAIL: TestKV8_exactInputIdentity_glueAttention (2.15s)
+=== RUN   TestKV8_exactInputIdentity_plant
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestKV8_exactInputIdentity_plant (0.24s)
+FAIL
+ledger: 6 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	2.448s
+FAIL

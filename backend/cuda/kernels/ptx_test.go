@@ -51,6 +51,7 @@ var (
 	glueKV16CapPTX           = readPTX("glue_kv16_cap")
 	glueKV16PTX              = readPTX("glue_kv16")
 	gluePTX                  = readPTX("glue")
+	glueKV8PTX               = readPTX("glue_kv8")
 	gptOssActPTX             = readPTX("gptoss_act")
 	layernormQuantPTX        = readPTX("layernorm_quant")
 	mlaPTX                   = readPTX("mla")
