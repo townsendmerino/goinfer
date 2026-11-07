@@ -57,6 +57,15 @@ the tower is attached once, at startup, to the sole `--model`. The Models tab's 
 lists everything the pull cache holds, pulled in this session or not, with sizes, sidecars and whether each pull
 finished, and loads any complete one; `goinfer-chat cache` prints the same list.
 
+Each load of a `.gguf` (and of a safetensors directory, by default) writes a `.giw` sidecar beside the model, named with
+the format version (`<model>.<quant>.<target>.v<N>.giw`). A build that reads a newer format writes a new one and never
+opens the old, which stays on disk. `goinfer-chat cache prune-sidecars` lists those older versions under the pull cache
+and the space they hold; `-apply` deletes them with their `.verified` markers, and `-dir <dir>` looks under another
+models directory instead. It never touches this build's version or a newer one, a legacy name without a version (an older
+build still reads it), or a transcode in progress. A sidecar hard-linked to a name that stays is listed as freeing nothing.
+A symlinked `-dir` or cache root is followed; a root it cannot read is an error, not an empty list. Run `-apply` while no
+load is writing to that directory: it re-checks each file just before removing it, which narrows the race but does not close it.
+
 `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages`
 (Anthropic — see below), `/v1/models`, and `GET /health` — which is **auth-gated like every
 other route**, so a liveness probe must send the API key when one is configured (N-36). Each `/v1/models`

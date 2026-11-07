@@ -279,7 +279,7 @@ func TestRun_commandLineErrorsExit2WithoutARequest(t *testing.T) {
 func TestRun_pullLandsInTheCacheThatCacheLists(t *testing.T) {
 	q4 := []byte("q4 weights")
 	home := withHub(t, &hub{repos: map[string]map[string]hubFile{"o/r": {"m-Q4_K_M.gguf": {q4, digest(q4)}}}})
-	if code, stdout, _ := run(t, RunCache); code != 0 || !strings.Contains(stdout, "holds no models") {
+	if code, stdout, _ := run(t, runCacheV17); code != 0 || !strings.Contains(stdout, "holds no models") {
 		t.Fatalf("an empty cache: exit %d, stdout:\n%s", code, stdout)
 	}
 	code, stdout, stderr := run(t, Run, "o/r:q4_k_m")
@@ -294,12 +294,12 @@ func TestRun_pullLandsInTheCacheThatCacheLists(t *testing.T) {
 	if got, err := os.ReadFile(path); err != nil || string(got) != string(q4) {
 		t.Fatalf("the cached file: %q (%v)", got, err)
 	}
-	code, stdout, _ = run(t, RunCache)
+	code, stdout, _ = run(t, runCacheV17)
 	if code != 0 || !strings.Contains(stdout, "o/r") || !strings.Contains(stdout, path) || strings.Contains(stdout, "INCOMPLETE") ||
 		!strings.Contains(stdout, "1 model(s)") {
 		t.Errorf("cache after the pull: exit %d, stdout:\n%s", code, stdout)
 	}
-	if code, _, stderr := run(t, RunCache, "extra"); code != 2 || !strings.Contains(stderr, "takes no arguments") {
+	if code, _, stderr := run(t, runCacheV17, "extra"); code != 2 || !strings.Contains(stderr, "takes no arguments") {
 		t.Errorf("cache with an argument: exit %d, stderr:\n%s", code, stderr)
 	}
 }
@@ -383,5 +383,41 @@ func TestRun_listsASafetensorsRepoAndEmbedRefusesIt(t *testing.T) {
 	}
 	if len(fresh.asks) != 1 || fresh.asks[0] != "/api/models/o/r" { // the access check, then the refusal
 		t.Errorf("-embed on a checkpoint asked %v, want only the access check", fresh.asks)
+	}
+}
+
+// runCacheV17 is RunCache under a build that reads .giw v17.
+func runCacheV17(args []string) int { return RunCache(args, 17) }
+
+// TestRunCache_pruneSidecars drives `cache prune-sidecars` against a temp directory: the dry run lists the stale version and
+// deletes nothing, -apply deletes it and leaves the current one.
+func TestRunCache_pruneSidecars(t *testing.T) {
+	dir := t.TempDir()
+	oldGIW := filepath.Join(dir, "m.int4.cpu.v16.giw")
+	curGIW := filepath.Join(dir, "m.int4.cpu.v17.giw")
+	for _, p := range []string{oldGIW, curGIW} {
+		if err := os.WriteFile(p, make([]byte, 2048), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, stdout, _ := run(t, runCacheV17, "prune-sidecars", "-dir", dir)
+	if code != 0 || !strings.Contains(stdout, oldGIW) || strings.Contains(stdout, curGIW) || !strings.Contains(stdout, "-apply") {
+		t.Fatalf("dry run: exit %d, stdout:\n%s", code, stdout)
+	}
+	if _, err := os.Stat(oldGIW); err != nil {
+		t.Fatalf("the dry run deleted %s: %v", oldGIW, err)
+	}
+	code, stdout, _ = run(t, runCacheV17, "prune-sidecars", "-apply", "-dir", dir)
+	if code != 0 || !strings.Contains(stdout, "removed") {
+		t.Fatalf("-apply: exit %d, stdout:\n%s", code, stdout)
+	}
+	if _, err := os.Stat(oldGIW); !os.IsNotExist(err) {
+		t.Errorf("-apply left %s (stat err %v)", oldGIW, err)
+	}
+	if _, err := os.Stat(curGIW); err != nil {
+		t.Errorf("-apply touched the current version %s: %v", curGIW, err)
+	}
+	if code, stdout, _ = run(t, runCacheV17, "prune-sidecars", "-dir", dir); code != 0 || !strings.Contains(stdout, "No stale") {
+		t.Errorf("after -apply: exit %d, stdout:\n%s", code, stdout)
 	}
 }
