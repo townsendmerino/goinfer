@@ -128,6 +128,19 @@ func TestCompare_classes(t *testing.T) {
 			s.Definition = DefinitionPrograms
 			return s
 		}(), OldOnly, true},
+		{"under the builder rule, the program's types file moved and today's key moved, the shadow key did not", func() Side {
+			s := side("t1", "s1", "a1", "x1", "p1", "fx")
+			s.Definition = DefinitionPrograms
+			s.Files["f"] = append(s.Files["f"], ProgramTypesFile)
+			s.Content[ProgramTypesFile] = "p1"
+			return s
+		}(), func() Side {
+			s := side("t2", "s1", "a1", "x1", "p1", "fx")
+			s.Definition = DefinitionPrograms
+			s.Files["f"] = append(s.Files["f"], ProgramTypesFile)
+			s.Content[ProgramTypesFile] = "p2"
+			return s
+		}(), OldOnly, false},
 		{"the key's definition changed for a family with no programs", side("t1", "t1", "a1", "x1", ""), func() Side {
 			s := side("t2", "t1", "a1", "x1", "")
 			s.Definition = DefinitionPrograms
@@ -136,33 +149,34 @@ func TestCompare_classes(t *testing.T) {
 	}
 	// reasons is each case's Reason: its start, or "" for a verdict that carries none.
 	reasons := map[string]string{
-		"nothing moved":                                                                         "",
-		"an executor moved":                                                                     "",
-		"a builder and its program moved":                                                       "",
-		"a builder moved, no program did":                                                       "only builder or loader files moved",
-		"a builder and an executor moved, the shadow key did not":                               "today's key moved on an input the shadow key also reads",
-		"a program moved, no dependency did":                                                    "the shadow key moved while today's did not",
-		"the program list changed":                                                              "the family's program or loader list changed",
-		"a fixture added to the list, the listed one unchanged":                                 "the family's program or loader list changed",
-		"a fixture added to the list while the listed one's program moved":                      "the shadow key moved while today's did not",
-		"today's tail moved, the shadow key did not":                                            "today's key moved on an input the shadow key also reads",
-		"today's key moved, no tracked input did":                                               "today's key moved on an input the shadow key also reads",
-		"a loader file moved, no identity did":                                                  "only builder or loader files moved",
-		"a loader file and a builder moved, no identity or program did":                         "only builder or loader files moved",
-		"a loader file moved that this family's digest does not stand for":                      "today's key moved on an input the shadow key also reads",
-		"a loader file and its identity moved":                                                  "",
-		"an identity moved, no dependency did":                                                  "the shadow key moved while today's did not",
-		"the loader list changed":                                                               "the family's program or loader list changed",
-		"a loader fixture left the list, the program list did not change":                       "a loader fixture left the family's list",
-		"the family left the rule, the program list did not change":                             "a loader fixture left the family's list",
-		"a fixture left the program list and the loader list together":                          "the family's program or loader list changed",
-		"the loader list changed while a listed identity moved":                                 "the shadow key moved while today's did not",
-		"the key's definition changed, no input did":                                            "the key's definition changed (files -> programs); no input it reads moved",
-		"the key's definition changed and an executor moved, the shadow key did not":            "today's key moved on an input the shadow key also reads",
-		"under the builder rule, a builder moved and today's key moved, the shadow key did not": "today's key moved on an input the shadow key also reads",
-		"the key's definition changed and a builder moved, the shadow key did not":              "the key's definition changed (files -> programs), and the other inputs that moved (decoder/arch.go) are builder or loader files",
-		"the key's definition changed and a loader file moved, no identity did":                 "the key's definition changed (files -> programs), and the other inputs that moved (decoder/weights.go) are builder or loader files",
-		"the key's definition changed for a family with no programs":                            "today's key moved on an input the shadow key also reads",
+		"nothing moved":                                                                                        "",
+		"an executor moved":                                                                                    "",
+		"a builder and its program moved":                                                                      "",
+		"a builder moved, no program did":                                                                      "only builder or loader files moved",
+		"a builder and an executor moved, the shadow key did not":                                              "today's key moved on an input the shadow key also reads",
+		"a program moved, no dependency did":                                                                   "the shadow key moved while today's did not",
+		"the program list changed":                                                                             "the family's program or loader list changed",
+		"a fixture added to the list, the listed one unchanged":                                                "the family's program or loader list changed",
+		"a fixture added to the list while the listed one's program moved":                                     "the shadow key moved while today's did not",
+		"today's tail moved, the shadow key did not":                                                           "today's key moved on an input the shadow key also reads",
+		"today's key moved, no tracked input did":                                                              "today's key moved on an input the shadow key also reads",
+		"a loader file moved, no identity did":                                                                 "only builder or loader files moved",
+		"a loader file and a builder moved, no identity or program did":                                        "only builder or loader files moved",
+		"a loader file moved that this family's digest does not stand for":                                     "today's key moved on an input the shadow key also reads",
+		"a loader file and its identity moved":                                                                 "",
+		"an identity moved, no dependency did":                                                                 "the shadow key moved while today's did not",
+		"the loader list changed":                                                                              "the family's program or loader list changed",
+		"a loader fixture left the list, the program list did not change":                                      "a loader fixture left the family's list",
+		"the family left the rule, the program list did not change":                                            "a loader fixture left the family's list",
+		"a fixture left the program list and the loader list together":                                         "the family's program or loader list changed",
+		"the loader list changed while a listed identity moved":                                                "the shadow key moved while today's did not",
+		"the key's definition changed, no input did":                                                           "the key's definition changed (files -> programs); no input it reads moved",
+		"the key's definition changed and an executor moved, the shadow key did not":                           "today's key moved on an input the shadow key also reads",
+		"under the builder rule, a builder moved and today's key moved, the shadow key did not":                "today's key moved on an input the shadow key also reads",
+		"the key's definition changed and a builder moved, the shadow key did not":                             "the key's definition changed (files -> programs), and the other inputs that moved (decoder/arch.go) are builder or loader files",
+		"the key's definition changed and a loader file moved, no identity did":                                "the key's definition changed (files -> programs), and the other inputs that moved (decoder/weights.go) are builder or loader files",
+		"under the builder rule, the program's types file moved and today's key moved, the shadow key did not": "today's key moved on an input the shadow key also reads",
+		"the key's definition changed for a family with no programs":                                           "today's key moved on an input the shadow key also reads",
 	}
 	for _, c := range cases {
 		v := Compare(c.before, c.after)
@@ -204,15 +218,19 @@ func TestBuilderFile(t *testing.T) {
 	if BuilderFile("internal/runtime/program/methods.go") {
 		t.Error("internal/runtime/program/methods.go is not a builder: no program fingerprint sees a method's body")
 	}
+	if BuilderFile("internal/runtime/program/values.go") {
+		t.Error("internal/runtime/program/values.go is not a builder: no program fingerprint sees what a constant means to its readers")
+	}
 }
 
-// TestBuilderFile_programTypesDeclareOnly holds ProgramTypesFile to what makes it a builder. It allows type and const
-// declarations only: what a program holds, which its fingerprint hashes. Everything else fails: a func or method, a var, and an
-// import (another package's type would bring that package's methods, and an import runs its init), since no program fingerprint
-// sees their bodies and a change to one would leave today's key fresh (docs/measurements/vk5-2026-10.md §10).
+// TestBuilderFile_programTypesDeclareOnly holds ProgramTypesFile to what makes it a builder. It allows type declarations only:
+// the shapes a program's values take, which its fingerprint hashes. A func or method, a var, an import (another package's type
+// brings that package's methods, and an import runs its init) and a const (a constant a builder or an executor reads changes what
+// runs while every program stays the same; the constants live in values.go, in every key) each fail it, and so does a directive
+// comment (//go:..., //line, // +build), which can change what is compiled or linked without a declaration.
 func TestBuilderFile_programTypesDeclareOnly(t *testing.T) {
 	path := filepath.Join("..", "..", "..", ProgramTypesFile)
-	f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,11 +239,18 @@ func TestBuilderFile_programTypesDeclareOnly(t *testing.T) {
 		case *ast.FuncDecl:
 			t.Errorf("%s declares func %s: move it to methods.go, which stays in every key", ProgramTypesFile, d.Name.Name)
 		case *ast.GenDecl:
-			if d.Tok != token.TYPE && d.Tok != token.CONST {
-				t.Errorf("%s has a declaration of kind %s: it may declare only types and constants", ProgramTypesFile, d.Tok)
+			if d.Tok != token.TYPE {
+				t.Errorf("%s has a declaration of kind %s: it may declare only types", ProgramTypesFile, d.Tok)
 			}
 		default:
-			t.Errorf("%s has a %T declaration: it may declare only types and constants", ProgramTypesFile, d)
+			t.Errorf("%s has a %T declaration: it may declare only types", ProgramTypesFile, d)
+		}
+	}
+	for _, g := range f.Comments {
+		for _, c := range g.List {
+			if strings.HasPrefix(c.Text, "//go:") || strings.HasPrefix(c.Text, "//line ") || strings.HasPrefix(c.Text, "/*line ") || strings.HasPrefix(c.Text, "// +build") {
+				t.Errorf("%s carries the directive %q: it may declare only types", ProgramTypesFile, c.Text)
+			}
 		}
 	}
 }

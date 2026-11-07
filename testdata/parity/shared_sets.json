@@ -33,7 +33,8 @@
     "decoder/cost_cpu.go",
     "decoder/wmbytes.go",
     "internal/runtime/program/methods.go",
-    "internal/runtime/program/program.go"
+    "internal/runtime/program/program.go",
+    "internal/runtime/program/values.go"
   ],
   "deltanet": [
     "decoder/deltanet.go",
