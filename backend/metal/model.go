@@ -1673,7 +1673,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				return nil, e
 			}
 			L.mla = ML
-			r.kvNullBytes[l] = decoder.KVBlockRows * r.mla.latDim * 4
+			lat, _, e := kvDeclaredRow(m, l, "latent", r.mla.latDim)
+			if e != nil {
+				return nil, e
+			}
+			r.kvNullBytes[l] = decoder.KVBlockRows * lat * 4
 			kvBytes := kvBlocksFor(r.ctxCap) * r.kvNullBytes[l]
 			r.kvContig = true
 			r.kvSlotBytes[l] = kvBytes
@@ -1923,7 +1927,21 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			// load; a tile lies inside a block, so that read stays in the block. An int8 cache keeps one f32 scale per position and
 			// head beside its one-byte codes, block for block.
 			blocks := kvBlocksFor(r.ctxCap)
-			r.kvNullBytes[l] = decoder.KVBlockRows * L.geom.kvDim * r.kvElemBytes()
+			if L.kvShared {
+				r.kvNullBytes[l] = r.kvNullBytes[L.kvSrc]
+			} else {
+				kw, kh, e := kvDeclaredRow(m, l, "k", L.geom.kvDim)
+				if e == nil {
+					_, _, e = kvDeclaredRow(m, l, "v", L.geom.kvDim)
+				}
+				if e == nil && kh != L.geom.nKV {
+					e = fmt.Errorf("metal: layer %d: the program declares K rows of %d heads, the layer's kernels address %d", l, kh, L.geom.nKV)
+				}
+				if e != nil {
+					return nil, e
+				}
+				r.kvNullBytes[l] = decoder.KVBlockRows * kw * r.kvElemBytes()
+			}
 			kvBytes := blocks * r.kvNullBytes[l]
 			allocSlots := kvSlots
 			r.kvContig = true
@@ -2842,6 +2860,22 @@ func (r *resident) kvHostRow(pos int) int {
 }
 
 // kvElemBytes is one element of the K/V cache: 1 for int8, 4 for f32, 2 for f16.
+// kvDeclaredRow is the per-position row named name that layer l's operations declare (decoder.Model.LayerBuffers): its width in
+// elements and its heads. The width must be want, the one the layer's kernels address: a pool sized from one and written by kernels
+// sized from the other would overflow.
+func kvDeclaredRow(m *decoder.Model, l int, name string, want int) (elems, heads int, err error) {
+	for _, b := range m.LayerBuffers(l) {
+		if b.Unit != program.PerPosition || b.Name != name {
+			continue
+		}
+		if b.Elems != want {
+			return 0, 0, fmt.Errorf("metal: layer %d: the program declares %s rows of %d elements, the layer's kernels address %d", l, name, b.Elems, want)
+		}
+		return b.Elems, b.Heads, nil
+	}
+	return 0, 0, fmt.Errorf("metal: layer %d: the program declares no %s rows", l, name)
+}
+
 func (r *resident) kvElemBytes() int {
 	switch {
 	case r.kvI8:
