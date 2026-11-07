@@ -131,12 +131,32 @@ func TestStateSpecs_fromTheOperations(t *testing.T) {
 
 // TestLayerShape_kvRowsAreWhatTheCPUCacheHolds: every layer's per-position rows (layerBuffers, through layerShapeOf) are what the CPU's own
 // cache holds after a prefill: K and V of the width the walker writes on a layer that owns them, MLA's latent row on an MLA layer, and
-// nothing on a recurrent or KV-shared layer. Each fixture is loaded with its weights and prefilled 6 positions.
+// nothing on a recurrent one. Each committed fixture is loaded with its weights and prefilled 6 positions. No committed fixture shares KV
+// across layers, so that case is held on Gemma 4's representative config at four layers with the last two sharing: the two that own
+// their KV declare K and V, the two that read another's declare no row.
 func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
+	g4 := representativeConfig("gemma4")
+	g4.NumLayers, g4.SharedKVLayers = 4, 2
+	g4.LayerTypes = []string{"sliding_attention", "full_attention", "sliding_attention", "full_attention"}
+	a4, _, err := resolveArchitecture(g4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for l := range a4.NumLayers {
+		rows := 0
+		for _, b := range layerBuffers(a4, l) {
+			if b.Unit == program.PerPosition {
+				rows++
+			}
+		}
+		if owns := a4.gemma4KVSrcAt(l) == l; owns != (l < 2) || (owns && rows != 2) || (!owns && rows != 0) {
+			t.Errorf("Gemma 4 layer %d (reads layer %d's KV): declares %d rows; want K and V on layers 0 and 1, none on 2 and 3", l, a4.gemma4KVSrcAt(l), rows)
+		}
+	}
 	const n = 6
 	kinds := map[string]int{}
 	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/gemma2-tiny", "../testdata/mistral-tiny-window", "selftestdata/qwen35-tiny",
-		"../testdata/deepseek-tiny", "../testdata/gemma4-emodel-tiny", "../testdata/lfm2-tiny", "../testdata/bailing_hybrid-tiny"} {
+		"../testdata/deepseek-tiny", "../testdata/lfm2-tiny", "../testdata/bailing_hybrid-tiny"} {
 		m, err := Load(dir, Options{Backend: "cpu", Quant: "f32"})
 		if err != nil {
 			t.Fatalf("%s: %v", dir, err)
