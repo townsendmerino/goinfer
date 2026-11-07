@@ -242,3 +242,48 @@ func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
 		t.Fatalf("layers compared %v: each kind (K/V, MLA latent, none) must appear", kinds)
 	}
 }
+
+// TestMM5_handTable is G-MP3 (docs/tasks/task-forward-architecture-2026-10.md §4.9b): on four fixtures, Metal's f16 KV per 64-row block and
+// the recurrent state per slot are written here as arithmetic on each config's numbers, and the plan's figures (metalKVParts' null block,
+// stateBuffers) must equal them. The numbers the table uses are checked against each config, so a fixture that changes is red, not stale.
+func TestMM5_handTable(t *testing.T) {
+	for _, c := range []struct {
+		dir, kv                         string // kv: the precision Metal delivers the cache at
+		layers, kvHeads, headDim        int
+		latent, convK, keyH, keyD, valH int // MLA's kv_lora_rank + qk_rope_head_dim; DeltaNet's conv kernel, key heads and width, value heads
+		perBlock, state                 int64
+	}{
+		// four attention layers, K and V of 2 heads × 16, f16
+		{"../testdata/llama-tiny", kvPrecF16, 4, 2, 16, 0, 0, 0, 0, 0, 4 * 2 * (2 * 16) * 2 * 64, 0},
+		// four MLA layers, one latent row of 16 + 8, f32 (Metal keeps an MLA cache in f32)
+		{"../testdata/deepseek-tiny", kvPrecF32, 4, 4, 8, 16 + 8, 0, 0, 0, 0, 4 * (16 + 8) * 4 * 64, 0},
+		// one full-attention layer's K and V; three DeltaNet layers' conv window (3 rows of 2·32 + 64) and state (4 × 16 × 16), f32
+		{"selftestdata/qwen35-tiny", kvPrecF16, 4, 2, 16, 0, 4, 2, 16, 4, 1 * 2 * (2 * 16) * 2 * 64, 3 * ((4-1)*(2*(2*16)+4*16) + 4*16*16) * 4},
+		// two sliding and two full layers, each holding the whole context on Metal
+		{"../testdata/gemma2-tiny", kvPrecF16, 4, 2, 32, 0, 0, 0, 0, 0, 4 * 2 * (2 * 32) * 2 * 64, 0},
+	} {
+		m, err := Load(c.dir, Options{Backend: "cpu", Quant: "f32"})
+		if err != nil {
+			t.Fatalf("%s: %v", c.dir, err)
+		}
+		cfg := m.Config()
+		if cfg.NumLayers != c.layers || cfg.NumKVHeads != c.kvHeads || cfg.HeadDim != c.headDim || (c.latent > 0 && cfg.KVLoRARank+cfg.QKRopeHeadDim != c.latent) ||
+			(c.convK > 0 && (cfg.LinearConvKernelDim != c.convK || cfg.LinearNumKeyHeads != c.keyH || cfg.LinearKeyHeadDim != c.keyD || cfg.LinearNumValueHeads != c.valH)) {
+			t.Errorf("%s: the config no longer has the numbers the table is written from", c.dir)
+		}
+		if d := m.KVDeliveredFor("metal"); d != c.kv {
+			t.Errorf("%s: Metal delivers %s, the table is %s", c.dir, d, c.kv)
+		}
+		if _, perBlock := m.metalKVParts(4096); perBlock != c.perBlock {
+			t.Errorf("%s: the plan prices %d B of KV a block; the hand table %d", c.dir, perBlock, c.perBlock)
+		}
+		var state int64
+		for _, b := range stateBuffers(m.w.arch) {
+			state += b
+		}
+		if state != c.state {
+			t.Errorf("%s: the plan prices %d B of state a slot; the hand table %d", c.dir, state, c.state)
+		}
+		m.Close()
+	}
+}
