@@ -66,6 +66,7 @@ var (
 	prefillBatchedPTX        = readPTX("prefill_batched")
 	prefillSplitKVKV16PTX    = readPTX("prefill_splitkv_kv16")
 	prefillSplitKVPTX        = readPTX("prefill_splitkv")
+	prefillSplitKVKV8PTX     = readPTX("prefill_splitkv_kv8")
 	ropeMRopePrefillPTX      = readPTX("rope_mrope_prefill")
 	ropePairwisePTX          = readPTX("rope_pairwise")
 )

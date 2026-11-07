@@ -362,6 +362,11 @@ var prefillBatchedKV8PTX []byte
 //go:embed testdata/kv8_store.ptx
 var kv8StorePTX []byte
 
+// prefillSplitKVKV8PTX: prefill_splitkv.cu built with -DKV_I8 (the row-batched long-context prefill attention), at the ambient NVRTC like prefill_splitkv.ptx.
+//
+//go:embed testdata/prefill_splitkv_kv8.ptx
+var prefillSplitKVKV8PTX []byte
+
 // decodeSplitKVKV8PTX: decode_splitkv.cu built with -DKV_I8 (the exact long-context decode path), at the ambient NVRTC like decode_splitkv.ptx.
 //
 //go:embed testdata/decode_splitkv_kv8.ptx

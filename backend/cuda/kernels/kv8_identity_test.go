@@ -726,3 +726,61 @@ func TestKV8_exactInputIdentity_splitKV(t *testing.T) {
 		}
 	}
 }
+
+// TestKV8_exactInputIdentity_splitKVRows is G1 for prefill_splitkv.cu: splitkv_scores_rows (K), the f32 softmax_rows, splitkv_vsum_rows (V), over n query rows from a start
+// position, with and without a window, at several head dimensions and group sizes.
+func TestKV8_exactInputIdentity_splitKVRows(t *testing.T) {
+	cx := kv8Context(t)
+	defer cx.Close()
+	bg := context.Background()
+	for _, g := range []struct{ nH, nKV, hd int }{{8, 2, 64}, {12, 2, 128}, {4, 4, 80}} {
+		for _, tc := range []struct{ startPos, n, window int }{{0, 9, 0}, {70, 11, 0}, {70, 11, 40}, {130, 5, 100}} {
+			total := tc.startPos + tc.n
+			stride := total
+			c := newKV8Case(total, g.nKV, g.hd, uint32(81+total+g.hd))
+			launch := func(_ *gc.Function, mod *gc.Module, a kv8Args, st *gc.Stream) []float32 {
+				fn := func(name string) *gc.Function {
+					f, err := mod.Function(name)
+					if err != nil {
+						t.Fatalf("Function(%s): %v", name, err)
+					}
+					return f
+				}
+				sc := mustAlloc[float32](t, cx, tc.n*g.nH*stride)
+				inv := mustAlloc[float32](t, cx, tc.n*g.nH)
+				ctx := mustAlloc[float32](t, cx, tc.n*g.nH*g.hd)
+				defer func() { sc.Close(); inv.Close(); ctx.Close() }()
+				run := func(name string, cfg gc.LaunchConfig, args ...gc.KernelArg) {
+					if e := fn(name).LaunchOn(bg, st, cfg, args...); e != nil {
+						t.Fatalf("%s: %v", name, e)
+					}
+				}
+				run("splitkv_scores_rows", gc.LaunchConfig{GridX: uint32(g.nH), GridY: uint32((total + 127) / 128), GridZ: uint32(tc.n), BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(g.hd * 4)},
+					append([]gc.KernelArg{gc.Arg(a.q), a.kc, gc.Arg(a.table), gc.ArgValue(int32(g.nH)), gc.ArgValue(int32(g.nKV)), gc.ArgValue(int32(g.hd)), gc.ArgValue(int32(tc.startPos)),
+						gc.ArgValue(int32(tc.window)), gc.ArgValue(int32(0)), gc.ArgValue(float32(0.125)), gc.Arg(sc), gc.ArgValue(int32(stride)), gc.ArgDevicePtr(0), gc.ArgValue(int32(0))}, a.tail...)...)
+				run("splitkv_softmax_rows", gc.LaunchConfig{GridX: uint32(g.nH), GridY: uint32(tc.n), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4},
+					gc.Arg(sc), gc.ArgValue(int32(g.nH)), gc.ArgValue(int32(tc.startPos)), gc.ArgValue(int32(tc.window)), gc.ArgValue(int32(0)), gc.ArgValue(int32(stride)),
+					gc.Arg(inv), gc.ArgDevicePtr(0), gc.ArgDevicePtr(0), gc.ArgValue(int32(0)))
+				run("splitkv_vsum_rows", gc.LaunchConfig{GridX: uint32(g.nH), GridY: uint32((g.hd + 31) / 32), GridZ: uint32(tc.n), BlockX: 32, BlockY: 1, BlockZ: 1},
+					append([]gc.KernelArg{gc.Arg(sc), a.vc, gc.Arg(a.table), gc.Arg(inv), gc.ArgValue(int32(g.nH)), gc.ArgValue(int32(g.nKV)), gc.ArgValue(int32(g.hd)),
+						gc.ArgValue(int32(tc.startPos)), gc.ArgValue(int32(tc.window)), gc.ArgValue(int32(0)), gc.ArgValue(int32(stride)), gc.Arg(ctx), gc.ArgDevicePtr(0), gc.ArgValue(int32(0))}, a.tail...)...)
+				if e := st.Synchronize(bg); e != nil {
+					t.Fatal(e)
+				}
+				out := make([]float32, tc.n*g.nH*g.hd)
+				if e := gc.CopyDtoH(bg, out, ctx); e != nil {
+					t.Fatal(e)
+				}
+				return out
+			}
+			a, b := kv8Both(t, cx, c, kv8Query(tc.n*g.nH*g.hd), prefillSplitKVPTX, prefillSplitKVKV8PTX, "splitkv_scores_rows", launch)
+			diff, nz := kv8CountDiff(a, b)
+			if nz == 0 {
+				t.Errorf("%+v %+v: the f32 context is all zero, the comparison is vacuous", g, tc)
+			}
+			if diff != 0 {
+				t.Errorf("%+v %+v: %d/%d context elements differ between the i8 reader and the f32 original", g, tc, diff, len(a))
+			}
+		}
+	}
+}

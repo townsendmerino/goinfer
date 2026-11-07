@@ -95,7 +95,7 @@ for k in "${targets[@]}"; do
 	# head) f32 scales: <name>_kv8.ptx (docs/measurements/cuda-kv-i8-2026-11/scope.md). A module joins this list only when it is ready; the others
 	# do not compile under -DKV_I8 and are not built.
 	case "${k%.cu}" in
-	glue | prefill_batched | decode_fa | decode_splitkv) nvrtc "$src" "out/${k%.cu}_kv8.ptx" "$ARCH" "$CUDA_INC" -DKV_I8 ;;
+	glue | prefill_batched | decode_fa | decode_splitkv | prefill_splitkv) nvrtc "$src" "out/${k%.cu}_kv8.ptx" "$ARCH" "$CUDA_INC" -DKV_I8 ;;
 	esac
 	# The three modules whose kernels a capped layer takes (attention, attn_batched, splitkv_scores) are also built with the attention
 	# softcap, at both KV types: <name>_cap.ptx and <name>_kv16_cap.ptx (cuda/attnscore.cuh). The plain modules above do not change.
