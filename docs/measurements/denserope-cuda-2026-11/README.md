@@ -1,6 +1,6 @@
 # MM8 CUDA, dense vectors: the plan prices the tables CUDA derives (nobara-sb01, 2026-11-06)
 
-**Status: DRAFT. The decision census golden for the amd64 host class has to be regenerated before this can merge** (see "Not done"). Everything else here is green.
+**Status: DRAFT until the arm64 census class is added (the Mac).** The amd64 class is regenerated (see the last section); the "Not done" section below is the state before that and is kept as written.
 
 The CUDA skip table held 332 `dense` rows: the build leased a few hundred bytes on the dense line over the plan's figure. Two small tables, derived from the load and uploaded by CUDA, were priced nowhere:
 
