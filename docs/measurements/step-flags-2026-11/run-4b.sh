@@ -40,4 +40,9 @@ rc=$?
 read -r i1 o1 < <(swap)
 date "+arms done %H:%M:%S rc=$rc; swap-ins $((i1-i0)) pages, swap-outs $((o1-o0)) pages"
 grep -E '^--- ' "$D/nemotron-4b.log" | cut -c1-80
+# The bundle is written and loaded: the weights' source goes, as nobara holds it. Config and tokenizer stay beside the bundle.
+if [ "$rc" = 0 ] && [ -s "$G" ] && [ -e "$G.verified" ] && grep -q '"generated_total"' "$D/nemotron-4b.jsonl"; then
+  rm -f "$M"/model-*.safetensors
+  echo "removed the 4B's safetensors; disk: $(df -g "$HOME" | awk 'NR==2{print $4}') GiB free"
+fi
 exit "$rc"
