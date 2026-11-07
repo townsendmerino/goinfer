@@ -1,0 +1,18 @@
+--- FAIL: TestParityManifest_fresh (0.56s)
+    parity_manifest_test.go:449: parity stale for 12 validated family(ies) — numerics changed since the noted commit:
+          deepseek_v2      stale since d5c5a1d53  [covers: core+loaders+quant+moe+own(decoder/forward_deepseek.go,decoder/arch_deepseek.go,decoder/mla_int8.go)]
+          gpt-oss          stale since 960ef65a7  [covers: core+loaders+quant+moe+own(decoder/forward_gptoss.go,decoder/gptoss120_test.go,decoder/gptoss_safetensors.go,decoder/gptoss_safetensors_test.go,decoder/arch_gpt_oss.go)]
+          gpt2             stale since 7b50947a  [covers: core+loaders+quant+own(decoder/arch_gpt2.go)]
+          granitemoehybrid stale since 7b50947a  [covers: core+loaders+quant+moe+mamba2+own(decoder/forward_granite.go,decoder/arch_granitemoehybrid.go)]
+          internlm2        stale since 7b50947a  [covers: core+loaders+quant+own(decoder/internlm2.go,decoder/internlm2_test.go,scripts/pin_internlm2_tiny.py,decoder/arch_internlm2.go)]
+          kimi_k2          stale since d5c5a1d53  [covers: core+loaders+quant+moe+own(decoder/forward_deepseek.go,decoder/arch_deepseek.go,decoder/mla_int8.go)]
+          laguna           stale since 7b50947a  [covers: core+loaders+quant+moe+own(decoder/laguna_config_test.go,decoder/laguna_test.go,decoder/laguna_slice_test.go,decoder/laguna_gguf_test.go,scripts/pin_laguna_tiny.py,scripts/pin_slice_oracle.py,decoder/arch_laguna.go)]
+          qwen2            stale since 7b50947a  [covers: core+loaders+quant+own(decoder/arch_qwen2.go)]
+          qwen2_moe        stale since 7b50947a  [covers: core+loaders+quant+moe+own(decoder/arch_qwen2_moe.go)]
+          qwen3            stale since 7b50947a  [covers: core+loaders+quant+own(decoder/arch_qwen3.go)]
+          qwen3_vl         stale since 7ee05f0a  [covers: core+loaders+quant+own(decoder/arch_qwen3_vl.go,decoder/arch_qwen3.go)]
+          spark2_5         stale since 7b50947a  [covers: core+loaders+quant+own(decoder/spark25_test.go,decoder/spark25_real_test.go,scripts/pin_spark2_5_tiny.py,scripts/pin_spark2_5_real.py,decoder/arch_spark2_5.go)]
+        Fix: re-run T3 (go run ./cmd/gate parity) then -update; or, for a provably non-numeric core edit (a guarded diagnostic seam, comment, rename), scripts/refresh_parity_hashes.sh.
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.565s
+FAIL
