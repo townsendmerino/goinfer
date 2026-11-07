@@ -11,6 +11,7 @@
     "decoder/registry.go",
     "decoder/arch.go",
     "decoder/config.go",
+    "decoder/config/config.go",
     "decoder/backend.go",
     "decoder/blockspec.go",
     "decoder/cpu_gateup_fused.go",

@@ -9,7 +9,12 @@
 # docs/api-tiers.md. A name added to one and not the other is the failure this pair exists to stop —
 # a promise in prose that no gate checks, or a gate checking a promise nobody documented.
 #
-# Format: <pkg> <apidiff-name>.  Comments and blank lines ignored.
+# Format: <pkg> <apidiff-name>, or <pkg> <Type>.* for every field and method of Type.  Comments and blank lines ignored.
+
+# --- decoder/config: the type decoder.Config aliases, and its members as decoder.Config had them at the baseline -------
+# (apidiff_check.sh compares the baseline's decoder with decoder/config for this; "T.*" is every field and method of T)
+decoder/config Config
+decoder/config Config.*
 
 # --- decoder: load and generate -------------------------------------------------------------
 decoder Load

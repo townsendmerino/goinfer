@@ -9,7 +9,7 @@ import (
 // Latent Attention (MLA) alternating with Kimi Delta Attention (KDA) linear-attention layers, every LayerGroupSize-th layer being MLA, over a
 // DeepSeekMoE FFN. Checked against the real modeling_bailing_moe_v3.py and a real checkpoint's safetensors header:
 //
-//   - layer_types is NOT a config.json field for this family: the pattern is computed from layer_group_size (normalizeBailingLayerTypes,
+//   - layer_types is NOT a config.json field for this family: the pattern is computed from layer_group_size (NormalizeBailingLayerTypes,
 //     including a tail-cleanup clause).
 //   - MLA is reused via mlaAttentionWith UNCHANGED, parameterized for two departures: both mixers are named self.attention (mlaParams.AttnPrefix)
 //     and the output projection is self.dense (mlaParams.DenseSuffix). An optional per-head sigmoid output gate
@@ -19,7 +19,7 @@ import (
 //     expert_bias.
 //   - KDA (kda.go) is the one new primitive: a delta-rule recurrence like Gated DeltaNet with a PER-CHANNEL decay (from fla-org/
 //     flash-linear-attention's source, not HF's opaque Triton-kernel call). Only the no_kda_lora + kda_safe_gate variant Ling-3.0-tiny's
-//     config selects is implemented; validateBailingHybrid refuses anything else rather than silently mis-running it.
+//     config selects is implemented; ValidateBailingHybrid refuses anything else rather than silently mis-running it.
 //
 // No YaRN/rope_scaling override is wired (the mscale/mscale_all_dim ratio deepseekArchitecture applies): the released config carries
 // rope_scaling: null, so a Bailing checkpoint that sets YaRN would need it added.

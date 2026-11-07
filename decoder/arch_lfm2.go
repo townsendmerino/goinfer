@@ -68,7 +68,7 @@ func lfm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		RotaryDim:       0, // full rotary
 		TiedLMHead:      true,
 		// conv_dim is optional and absent from Lfm2Config-written checkpoints; hidden_size is
-		// what upstream's Lfm2ShortConv actually uses. validateLFM2 has already refused any
+		// what upstream's Lfm2ShortConv actually uses. ValidateLFM2 has already refused any
 		// non-zero conv_dim that disagrees with hidden_size, so this is a default, not a guess.
 		lfm2:        &lfm2Params{ConvDim: cfg.HiddenDim, ConvLCache: cfg.ConvLCache},
 		layerIsConv: func(i int) bool { return i < len(types) && types[i] == "conv" },

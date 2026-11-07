@@ -7,6 +7,7 @@
   ],
   "own": [
     "decoder/laguna_config_test.go",
+    "decoder/config/validators_test.go",
     "decoder/laguna_test.go",
     "decoder/laguna_slice_test.go",
     "decoder/laguna_gguf_test.go",
@@ -14,7 +15,7 @@
     "scripts/pin_slice_oracle.py",
     "decoder/arch_laguna.go"
   ],
-  "deps_hash": "sha256:8dd60cdc0a06c5311181a132dbbafaabff431c48d4eb42d4311773f3ba4da61a",
+  "deps_hash": "sha256:ef470ded61f1547759443407659b5ed0e3e46d9a2cd59c2c82d15b1ec50e5808",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

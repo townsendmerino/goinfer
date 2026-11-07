@@ -18,6 +18,17 @@
       "why": "decoder/fit (Tier 3, docs/layout.md) holds the fit guard's and the planner's exchange types so a caller can name them without importing the loader. It sits below decoder, which re-exports them: it imports internal/runtime/mem and no other goinfer package, decoder included."
     },
     {
+      "name": "config-leaf",
+      "from": [
+        "decoder/config"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "decoder/config holds a checkpoint's Config, its validators and its loader, so they test in seconds without compiling decoder (DC1, docs/tasks/task-decoder-config-2026-11.md). It sits below decoder, which aliases Config: it imports no goinfer package, decoder included."
+    },
+    {
       "name": "towers-standalone",
       "from": [
         "internal/vision",
@@ -268,6 +279,7 @@
     "decoder": [
       "chat",
       "constrain",
+      "decoder/config",
       "decoder/fit",
       "internal/cost",
       "internal/runtime/adapter",

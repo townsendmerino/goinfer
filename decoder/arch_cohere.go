@@ -16,7 +16,7 @@ import "math"
 // (ropeInterleave). logit_scale MULTIPLIES the logits in HF; goinfer's LogitScale
 // divides, so we store its reciprocal and reuse the Granite logit-scale kernel.
 // use_qk_norm (Command-R+) and sliding_window (that's cohere2) are rejected in
-// validateCohere, so reaching here implies a plain cohere1 checkpoint.
+// ValidateCohere, so reaching here implies a plain cohere1 checkpoint.
 func cohereArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// Older CohereLabs configs carry rope_theta top-level; transformers ≥5 nests it
 	// under rope_parameters. Backfill the flat field so both load identically.
@@ -40,7 +40,7 @@ func cohereArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		NormEps:         cfg.LayerNormEps,
 		NormPlacement:   NormParallel, // one input norm → attn + mlp → single residual add
 		Act:             ActSiLU,
-		QKNorm:          false, // cohere1 use_qk_norm is rejected in validateCohere
+		QKNorm:          false, // cohere1 use_qk_norm is rejected in ValidateCohere
 		AttnScale:       math.Pow(float64(hd), -0.5),
 		SlidingWindow:   0, // cohere1: full attention (sliding_window ⇒ cohere2, rejected)
 		layerIsGlobal:   nil,

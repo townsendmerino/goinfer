@@ -1995,7 +1995,7 @@ func TestKVPages_prefillThroughTheTable(t *testing.T) {
 
 // TestKVPages_uploadKVThroughTheTable: UploadKV writes each position's K and V (and int8 scales) at its row through the bound slot's
 // table, so rows uploaded into blocks handed out reversed and interleaved across slots decode as in-order ones bit for bit, at every
-// KV precision, on two slots, with uploads that start inside a block and cross block edges.
+// KV precision, on two slots, with uploads (each slot one pass, as the decoder uploads) that cross block edges.
 func TestKVPages_uploadKVThroughTheTable(t *testing.T) {
 	const ctx, slots, rows = 512, 2, 150
 	for _, kv := range []string{"", "i8", "f32"} {
@@ -2012,6 +2012,9 @@ func TestKVPages_uploadKVThroughTheTable(t *testing.T) {
 					if err := r.useKVSlot(s); err != nil {
 						t.Fatal(err)
 					}
+					if err := a.BeginKVUpload(); err != nil {
+						t.Fatal(err)
+					}
 					for l := range r.layers {
 						g := r.layers[l].geom
 						if g == nil || r.layers[l].kvShared {
@@ -2025,13 +2028,12 @@ func TestKVPages_uploadKVThroughTheTable(t *testing.T) {
 							}
 							return v
 						}
-						// two uploads: rows [0, 40), then [40, rows), the second starting inside a block
-						for _, span := range [][2]int{{0, 40}, {40, rows}} {
-							n := span[1] - span[0]
-							if err := a.UploadKV(l, span[0], vals(n*g.kvDim), vals(n*g.kvDim)); err != nil {
-								t.Fatal(err)
-							}
+						if err := a.UploadKV(l, 0, vals(rows*g.kvDim), vals(rows*g.kvDim)); err != nil {
+							t.Fatal(err)
 						}
+					}
+					if err := a.EndKVUpload(false); err != nil {
+						t.Fatal(err)
 					}
 					out = append(out, slices.Clone(r.ForwardEmb(mc3Emb(r, 11+s), rows)))
 				}

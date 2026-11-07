@@ -184,6 +184,8 @@ jobs:
       # own name used to claim otherwise).
       - name: apidiff (Hard tier vs the v0.13.0 API-freeze baseline)
         run: scripts/apidiff_check.sh v0.13.0
+      - name: apidiff_check.sh's classification (the alias list's two licensed lines, and plants that stay fatal)
+        run: python3 -B scripts/test_apidiff_check.py
 
       # The lint resolves a cross-repo citation at the version a go.mod requires today. No goinfer module
       # requires aikit/gpu since Track AX moved the device package in; cuda's own dependencies are downloaded

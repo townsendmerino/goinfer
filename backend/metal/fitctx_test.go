@@ -80,7 +80,8 @@ func TestResolveMetalCtxCap_fitByDefault(t *testing.T) {
 // default, no -ctx) under two memory figures. Roomy, it holds decoder.MetalFitDefaultCtx positions in two slots, says so
 // in its ContextNote, and decodes a prompt of a coding agent's first-request length, which the old 4096 default refused.
 // With room for 20000 positions of KV it holds two slots of 10000. In both, the context is the one `goinfer-chat fit`
-// computes for the same figure (decoder.Model.MetalFitCtx with Metal's default slots).
+// computes for the same figure (decoder.Model.MetalFitCtx with Metal's default slots) as each slot's share, and one conversation's
+// cap is the pool the two shares make.
 func TestMetalBuildResident_fitByDefault(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -114,8 +115,10 @@ func TestMetalBuildResident_fitByDefault(t *testing.T) {
 			if !ok {
 				t.Fatalf("the build declined: %s", m.ResidentDecline())
 			}
-			if got := a.ContextCap(); got != c.wantCtx {
-				t.Fatalf("ContextCap = %d, want %d", got, c.wantCtx)
+			// The fit sizes each slot's share; one conversation's cap is the pool the shares make together (kvRaise).
+			pool := metalDefaultKVSlots * kvBlocksFor(c.wantCtx) * decoder.KVBlockRows
+			if got := a.ContextCap(); a.r.kvShareCtx != c.wantCtx || got != min(pool, metalCtxCapMax) {
+				t.Fatalf("share %d, ContextCap %d; want %d and the pool's %d", a.r.kvShareCtx, got, c.wantCtx, min(pool, metalCtxCapMax))
 			}
 			if got := a.r.kvSlotCount(); got != metalDefaultKVSlots {
 				t.Errorf("%d KV slots, want Metal's default %d", got, metalDefaultKVSlots)
@@ -125,8 +128,8 @@ func TestMetalBuildResident_fitByDefault(t *testing.T) {
 				t.Errorf("ContextNote = %q, want %q", got, wantNote)
 			}
 			fit := m.MetalFitCtx(decoder.MetalFitInput{FreeBytes: c.budget, FreeKnown: true, KVSlots: decoder.MetalDefaultKVSlots})
-			if fit.Ctx != a.ContextCap() {
-				t.Errorf("fit plans ctx %d for this memory figure; the load took %d", fit.Ctx, a.ContextCap())
+			if fit.Ctx != a.r.kvShareCtx {
+				t.Errorf("fit plans ctx %d for this memory figure; the load's share is %d", fit.Ctx, a.r.kvShareCtx)
 			}
 			// The KV the fit priced is the KV the build leased: a ledger line rounds each lease up by under a page, no more.
 			nL := m.Config().NumLayers
@@ -210,15 +213,16 @@ func TestMetalFit_agreesWithSlotPricing(t *testing.T) {
 			if err != nil || ctx != fit.Ctx || ctx <= metalCtxCapDefault {
 				t.Fatalf("ctx %d (%v), fit %d: want them equal and past the default %d", ctx, err, fit.Ctx, metalCtxCapDefault)
 			}
-			need, each := residentNeedBytes(m), metalSlotBytes(m)
+			// The guard adds every slot's table at the raised cap to its fixed need (metalKVSlots), as the fit adds it to the load's KV.
+			need, each, raise := residentNeedBytes(m), metalSlotBytes(m), metalRaisedTableBytes(m, slots)
 			further := fit.KVBytes - m.ResidentKVBytes("metal", ctx, false, false)
-			if further != int64(slots-1)*each {
-				t.Errorf("the fit prices %d B past the first slot, metalSlotBytes %d B each", further, each)
+			if raise <= 0 || further != int64(slots-1)*each+raise {
+				t.Errorf("the fit prices %d B past the first slot, metalSlotBytes %d B each and the raised tables %d B", further, each, raise)
 			}
-			if got := kvSlotsWithin(slots, need+further, need, each); got != slots {
+			if got := kvSlotsWithin(slots, need+further, need+raise, each); got != slots {
 				t.Errorf("a budget of exactly the fit's bytes grants %d slots", got)
 			}
-			if got := kvSlotsWithin(slots, need+further-1, need, each); got != slots-1 {
+			if got := kvSlotsWithin(slots, need+further-1, need+raise, each); got != slots-1 {
 				t.Errorf("a byte under the fit's bytes grants %d slots, want %d", got, slots-1)
 			}
 		})

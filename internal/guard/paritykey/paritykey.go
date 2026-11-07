@@ -281,8 +281,12 @@ func TodayDefinition(src Source) (string, error) {
 }
 
 // TodayKey is the family's key as the staleness gate computes it under def (TodayDefinition): under DefinitionPrograms a
-// family with programs hashes its files less the builders, then "programs=<ProgramsDigest>", then tail; otherwise Key.
+// family with programs hashes its files less the builders, then "programs=<ProgramsDigest>", then tail; otherwise Key. Any
+// other def is an error.
 func TodayKey(src Source, m *Manifest, fam Family, def, tail string, programs map[string]map[string]string) (string, error) {
+	if def != DefinitionFiles && def != DefinitionPrograms {
+		return "", fmt.Errorf("today's key: unknown definition %q", def)
+	}
 	if def != DefinitionPrograms || len(fam.Programs) == 0 {
 		return Key(src, m, fam, tail)
 	}
@@ -305,7 +309,7 @@ const ProgramTypesFile = "internal/runtime/program/program.go"
 // which the program fingerprints cover. The executors, which compute each op, are not builders and stay in every key.
 func BuilderFile(path string) bool {
 	switch path {
-	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go",
+	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/config/config.go", "decoder/registry.go",
 		"decoder/gemma12.go", // gemma's and gemma2's adapters, under another name
 		ProgramTypesFile:
 		return true

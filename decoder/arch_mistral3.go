@@ -21,8 +21,8 @@ import (
 // key parseRopeScaling reads. Left unhandled, its default (0.1·ln(16)+1 ≈ 1.277) would silently override the correct 1.0, so it is
 // overridden the way deepseekArchitecture does.
 func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	// backfillFlatRope BEFORE validateLlama: the released checkpoints carry ONLY a nested
-	// rope_parameters (no flat rope_theta), and validateLlama itself requires RoPEGlobalBase > 0
+	// backfillFlatRope BEFORE ValidateLlama: the released checkpoints carry ONLY a nested
+	// rope_parameters (no flat rope_theta), and ValidateLlama itself requires RoPEGlobalBase > 0
 	// — the same ordering mistralArchitecture uses, for the same reason.
 	if err := backfillFlatRope(cfg, "mistral3"); err != nil {
 		return nil, nil, err

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// validLlamaConfig is a tiny validateLlama-clean llama config for descriptor
+// validLlamaConfig is a tiny ValidateLlama-clean llama config for descriptor
 // tests (no checkpoint needed). Deliberately omits head_dim to exercise the
 // hidden/heads fallback, the way many real Llama configs do.
 func validLlamaConfig() *Config {

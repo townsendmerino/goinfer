@@ -52,9 +52,9 @@ func TestExecutorAttnPlan(t *testing.T) {
 	if !r.decodeAttnFA {
 		t.Fatalf("attention_fa is off by default — this test cannot see the attention plan")
 	}
-	r.setPos(attnFADepthFloor - 1)
+	r.setPosAheadForTest(attnFADepthFloor - 1)
 	engaged := r.canUseAttnFA(0)
-	r.setPos(attnFADepthFloor - 2)
+	r.setPosAheadForTest(attnFADepthFloor - 2)
 	declined := !r.canUseAttnFA(0)
 	if !engaged || !declined {
 		t.Fatalf("fixture no longer straddles the floor: engages at %d keys=%v, declines at %d=%v",

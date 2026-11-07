@@ -1,0 +1,16 @@
+test_experimental_names_stay_informational (__main__.ClassifyTest.test_experimental_names_stay_informational) ... ok
+test_listed_alias_is_compatible (__main__.ClassifyTest.test_listed_alias_is_compatible) ... ok
+test_listed_alias_removed_stays_fatal (__main__.ClassifyTest.test_listed_alias_removed_stays_fatal) ... ok
+test_listed_entry_with_a_different_name_stays_fatal (__main__.ClassifyTest.test_listed_entry_with_a_different_name_stays_fatal) ... ok
+test_listed_name_into_another_package_stays_fatal (__main__.ClassifyTest.test_listed_name_into_another_package_stays_fatal) ... ok
+test_method_whose_text_changed_stays_fatal (__main__.ClassifyTest.test_method_whose_text_changed_stays_fatal) ... ok
+test_method_whose_text_is_unchanged_through_the_alias_is_compatible (__main__.ClassifyTest.test_method_whose_text_is_unchanged_through_the_alias_is_compatible) ... ok
+test_unchanged_text_naming_no_listed_alias_stays_fatal (__main__.ClassifyTest.test_unchanged_text_naming_no_listed_alias_stays_fatal) ... ok
+test_unchanged_text_on_a_field_stays_fatal (__main__.ClassifyTest.test_unchanged_text_on_a_field_stays_fatal) ... ok
+test_unlisted_alias_stays_fatal (__main__.ClassifyTest.test_unlisted_alias_stays_fatal) ... ok
+test_without_the_list_the_alias_is_fatal (__main__.ClassifyTest.test_without_the_list_the_alias_is_fatal) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.098s
+
+OK

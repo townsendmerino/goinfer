@@ -574,10 +574,13 @@ func TestAttentionKernels_tiledPathReadsTheTable(t *testing.T) {
 	}
 }
 
-// kvSeedRows writes every slot's rows [0, depth) on the host through the table, each element a function of its layer, slot, row and index
-// alone, at the cache's precision. It costs no decode, so a test can stand at any depth.
+// kvSeedRows maps every slot's blocks for rows [0, depth) and writes those rows on the host through the table, each element a function of
+// its layer, slot, row and index alone, at the cache's precision. It costs no decode, so a test can stand at any depth.
 func kvSeedRows(r *resident, depth int) {
 	r.stopExec()
+	for s := range r.kvSlotCount() {
+		r.kvWriteMust(s, 0, depth)
+	}
 	tab := r.kvTab.U32s()
 	for l := range r.layers {
 		L := &r.layers[l]

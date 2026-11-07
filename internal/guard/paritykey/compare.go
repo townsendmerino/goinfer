@@ -127,19 +127,25 @@ func Compare(before, after Side) []Verdict {
 			v.Class = OldOnly
 			// A builder explains today's key moving alone only where today's key reads the builders and the shadow key does not:
 			// a family with programs, on a side keyed by DefinitionFiles. Under the builder rule neither key reads them.
-			builders := len(after.Programs[name]) > 0 && (before.Definition != DefinitionPrograms || after.Definition != DefinitionPrograms)
+			// Under the builder rule on both sides, a family with programs has its builders in neither key: one that moved neither
+			// explains nor refutes the verdict, and something else must explain it.
+			hasPrograms := len(after.Programs[name]) > 0
+			builderRule := before.Definition == DefinitionPrograms && after.Definition == DefinitionPrograms
+			builders := hasPrograms && !builderRule
 			defChanged, others := false, []string(nil)
-			v.Explained = len(v.Moved) > 0
+			v.Explained = true
 			for _, m := range v.Moved {
 				switch {
 				case m == "key definition":
 					defChanged = true
+				case hasPrograms && builderRule && BuilderFile(m):
 				case builders && BuilderFile(m), slices.Contains(after.Dropped[name], m):
 					others = append(others, m)
 				default:
 					v.Explained = false
 				}
 			}
+			v.Explained = v.Explained && (defChanged || len(others) > 0)
 			switch {
 			case !v.Explained:
 				v.Reason = "today's key moved on an input the shadow key also reads"

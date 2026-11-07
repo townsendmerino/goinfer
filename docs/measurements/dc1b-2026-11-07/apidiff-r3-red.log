@@ -1,0 +1,69 @@
+FF......F..F.....
+======================================================================
+FAIL: test_a_changed_method_of_the_aliased_type_is_fatal (__main__.ClassifyTest.test_a_changed_method_of_the_aliased_type_is_fatal)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/scripts/test_apidiff_check.py", line 97, in test_a_changed_method_of_the_aliased_type_is_fatal
+    self.assertEqual((rc, v), (1, ["HARD"]))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Tuples differ: (0, ['EXPERIMENTAL']) != (1, ['HARD'])
+
+First differing element 0:
+0
+1
+
+- (0, ['EXPERIMENTAL'])
++ (1, ['HARD'])
+
+======================================================================
+FAIL: test_a_removed_field_of_the_aliased_type_is_fatal (__main__.ClassifyTest.test_a_removed_field_of_the_aliased_type_is_fatal)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/scripts/test_apidiff_check.py", line 93, in test_a_removed_field_of_the_aliased_type_is_fatal
+    self.assertEqual((rc, v), (1, ["HARD"]))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Tuples differ: (0, ['EXPERIMENTAL']) != (1, ['HARD'])
+
+First differing element 0:
+0
+1
+
+- (0, ['EXPERIMENTAL'])
++ (1, ['HARD'])
+
+======================================================================
+FAIL: test_method_taking_the_alias_stays_fatal (__main__.ClassifyTest.test_method_taking_the_alias_stays_fatal)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/scripts/test_apidiff_check.py", line 84, in test_method_taking_the_alias_stays_fatal
+    self.assertEqual((rc, v), (1, ["HARD"]))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Tuples differ: (0, ['ALIAS']) != (1, ['HARD'])
+
+First differing element 0:
+0
+1
+
+- (0, ['ALIAS'])
++ (1, ['HARD'])
+
+======================================================================
+FAIL: test_method_with_another_type_in_its_signature_stays_fatal (__main__.ClassifyTest.test_method_with_another_type_in_its_signature_stays_fatal)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/scripts/test_apidiff_check.py", line 80, in test_method_with_another_type_in_its_signature_stays_fatal
+    self.assertEqual((rc, v), (1, ["HARD"]))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Tuples differ: (0, ['ALIAS']) != (1, ['HARD'])
+
+First differing element 0:
+0
+1
+
+- (0, ['ALIAS'])
++ (1, ['HARD'])
+
+----------------------------------------------------------------------
+Ran 17 tests in 0.178s
+
+FAILED (failures=4)
