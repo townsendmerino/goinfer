@@ -2738,6 +2738,8 @@ func (r *cudaResident) TruncateTo(pos int) {}
 // issued, so binding points the layer at them, and marked rows fold into the slot that marked them first.
 func (r *cudaResident) KVSlots() int { return max(1, len(r.kvTabs)) }
 
+// UseKVSlot binds slot i for the calls that follow. The binding shields nothing: kvEvictIdle releases an idle bound slot like any other,
+// and only a running generation (SetKVSlotBusy) or the slot being written is skipped.
 func (r *cudaResident) UseKVSlot(i int) error {
 	if i < 0 || i >= r.KVSlots() {
 		return fmt.Errorf("cuda: KV slot %d out of range (%d allocated)", i, r.KVSlots())

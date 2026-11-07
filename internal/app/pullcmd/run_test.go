@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/pull"
 )
 
 // hubFile is one file the fake hub serves: its bytes, and the sha256 its tree listing declares ("" for none, as HF lists a
@@ -259,6 +261,16 @@ func TestRun_commandLineErrorsExit2WithoutARequest(t *testing.T) {
 	}
 	if len(h.asks) != 0 {
 		t.Errorf("a malformed command line reached the hub: %v", h.asks)
+	}
+	_, _, stderr := run(t, Run, "no-such-model-name")
+	names := pull.RecommendedNames()
+	if len(names) == 0 {
+		t.Fatal("no known model names to list")
+	}
+	for _, name := range names {
+		if !strings.Contains(stderr, "\n  "+name+"\n") {
+			t.Errorf("the unknown-name error does not list %q\nstderr:\n%s", name, stderr)
+		}
 	}
 }
 

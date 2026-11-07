@@ -90,3 +90,20 @@ func TestBits_roundsHalfUpAcrossTheRange(t *testing.T) {
 		t.Errorf("Bits(MaxFloat32) = %#04x, want +Inf", got)
 	}
 }
+
+// Below half the smallest subnormal half (2^-25), every float32 rounds to zero of its sign: the f32 subnormals, and the normal
+// f32s from 2^-126 up to the f32 just below 2^-25.
+func TestBits_flushesWhatIsBelowHalfTheSmallestHalf(t *testing.T) {
+	for _, v := range []float32{math.SmallestNonzeroFloat32, math.Float32frombits(0x007FFFFF), 0x1p-126, 0x1p-40, 0x1p-26,
+		math.Nextafter32(0x1p-25, 0)} {
+		if got := Bits(v); got != 0 {
+			t.Errorf("Bits(%g) = %#04x, want +0", v, got)
+		}
+		if got := Bits(-v); got != 0x8000 {
+			t.Errorf("Bits(%g) = %#04x, want -0", -v, got)
+		}
+	}
+	if got := Bits(0x1p-25); got != 1 {
+		t.Errorf("Bits(2^-25), half the smallest subnormal, = %#04x, want it rounded up to 0x0001", got)
+	}
+}
