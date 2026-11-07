@@ -12,7 +12,7 @@
     "decoder/gptoss_safetensors_test.go",
     "decoder/arch_gpt_oss.go"
   ],
-  "deps_hash": "sha256:c8d287c273edcf6e44979b135e91cf1b58dee7787925122e3ad0d27c2351db02",
+  "deps_hash": "sha256:0e3d67aeda8699d86ed0fbd0d9c97d1073b0cc13c2e319f9308c77dda1118c21",
   "status": "validated",
   "validated_at": "960ef65a7",
   "date": "2026-10-26",
