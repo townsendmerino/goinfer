@@ -63,6 +63,8 @@ opens the old, which stays on disk. `goinfer-chat cache prune-sidecars` lists th
 and the space they hold; `-apply` deletes them with their `.verified` markers, and `-dir <dir>` looks under another
 models directory instead. It never touches this build's version or a newer one, a legacy name without a version (an older
 build still reads it), or a transcode in progress. A sidecar hard-linked to a name that stays is listed as freeing nothing.
+A symlinked `-dir` or cache root is followed; a root it cannot read is an error, not an empty list. Run `-apply` while no
+load is writing to that directory: it re-checks each file just before removing it, which narrows the race but does not close it.
 
 `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages`
 (Anthropic — see below), `/v1/models`, and `GET /health` — which is **auth-gated like every

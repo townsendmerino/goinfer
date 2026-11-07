@@ -112,7 +112,7 @@ func runPruneSidecars(args []string, giwVersion int) int {
 			note = fmt.Sprintf("  (the same file as %s: frees nothing)", s.SharedWith)
 		}
 		if *apply {
-			if err := pull.RemoveStaleSidecar(s, giwVersion); err != nil {
+			if err := pull.RemoveStaleSidecar(root, s, giwVersion); err != nil {
 				fmt.Printf("  FAILED  %s: %v\n", s.Path, err)
 				failed++
 				continue

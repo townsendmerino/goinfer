@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // StaleSidecar is a versioned .giw sidecar in a format older than the one this build reads, which no load of this build
@@ -36,15 +37,25 @@ var versionedSidecar = regexp.MustCompile(`\.v(\d+)\.giw$`)
 
 // StaleSidecars lists the versioned .giw sidecars under root older than current (decoder.GIWFormatVersion), sorted by
 // path. A sidecar at current or newer (a newer build's, on the same box) is never listed, nor is a legacy unversioned
-// name, which an older build still reads and rewrites. It reads names and sizes only. A missing root is an empty list.
+// name, which an older build still reads and rewrites. It reads names and sizes only. A symlinked root is resolved first
+// and the paths listed are under the resolved one. A missing root is an empty list; any other error reaching the root is
+// returned. An unreadable directory below the root is skipped: it holds nothing this can prune.
 func StaleSidecars(root string, current int) ([]StaleSidecar, error) {
+	resolved, err := filepath.EvalSymlinks(root)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	root = resolved
 	var out []StaleSidecar
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
-			if p == root && os.IsNotExist(err) {
-				return filepath.SkipAll
+			if p == root {
+				return err
 			}
-			return nil // an unreadable subtree holds nothing this can prune
+			return nil
 		}
 		if !d.Type().IsRegular() {
 			return nil
@@ -105,23 +116,59 @@ func sameFileIn(p string, stale map[string]bool) string {
 	return ""
 }
 
-// RemoveStaleSidecar deletes s and its verified marker. It re-checks the name first, so a path that is no longer a stale
-// versioned sidecar (renamed, or replaced since the listing) is refused rather than removed.
-func RemoveStaleSidecar(s StaleSidecar, current int) error {
+// RemoveStaleSidecar deletes s and its verified marker, and refuses (removing nothing) unless s.Path is a stale versioned
+// sidecar name inside root (both resolved through symlinks) and s.Marker is "" or s.Path+".verified". Just before each
+// removal it re-reads the name with Lstat and refuses one that is no longer a regular file (replaced by a symlink or a
+// directory since the listing). That narrows the window between listing and removal; it does not close it, since a
+// rename between the Lstat and the remove is still possible. Run it only on a cache no load is writing.
+func RemoveStaleSidecar(root string, s StaleSidecar, current int) error {
+	refuse := func(p string) error { return &os.PathError{Op: "prune", Path: p, Err: os.ErrInvalid} }
 	m := versionedSidecar.FindStringSubmatch(filepath.Base(s.Path))
 	if m == nil {
-		return &os.PathError{Op: "prune", Path: s.Path, Err: os.ErrInvalid}
+		return refuse(s.Path)
 	}
 	if v, err := strconv.Atoi(m[1]); err != nil || v >= current {
-		return &os.PathError{Op: "prune", Path: s.Path, Err: os.ErrInvalid}
+		return refuse(s.Path)
 	}
-	if err := os.Remove(s.Path); err != nil {
+	if s.Marker != "" && s.Marker != s.Path+".verified" {
+		return refuse(s.Marker)
+	}
+	if !insideRoot(root, s.Path) {
+		return refuse(s.Path)
+	}
+	if err := removeRegular(s.Path); err != nil {
 		return err
 	}
 	if s.Marker != "" {
-		if err := os.Remove(s.Marker); err != nil && !os.IsNotExist(err) {
+		if err := removeRegular(s.Marker); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
 	return nil
+}
+
+// insideRoot reports whether p's directory, resolved through symlinks, is root or below it.
+func insideRoot(root, p string) bool {
+	r, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return false
+	}
+	d, err := filepath.EvalSymlinks(filepath.Dir(p))
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(r, d)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// removeRegular removes p when it is a regular file now, and refuses anything else.
+func removeRegular(p string) error {
+	fi, err := os.Lstat(p)
+	if err != nil {
+		return err
+	}
+	if !fi.Mode().IsRegular() {
+		return &os.PathError{Op: "prune", Path: p, Err: os.ErrInvalid}
+	}
+	return os.Remove(p)
 }

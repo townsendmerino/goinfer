@@ -76,7 +76,7 @@ func TestRemoveStaleSidecar_keepsEverythingElse(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range got {
-		if err := RemoveStaleSidecar(s, 17); err != nil {
+		if err := RemoveStaleSidecar(root, s, 17); err != nil {
 			t.Fatalf("RemoveStaleSidecar(%s): %v", s.Path, err)
 		}
 	}
@@ -104,7 +104,7 @@ func TestRemoveStaleSidecar_refusesTheCurrentVersion(t *testing.T) {
 		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if err := RemoveStaleSidecar(StaleSidecar{Path: p, Version: 1}, 17); err == nil {
+		if err := RemoveStaleSidecar(dir, StaleSidecar{Path: p, Version: 1}, 17); err == nil {
 			t.Errorf("RemoveStaleSidecar(%s) at current 17 succeeded, want a refusal", name)
 		}
 		if _, err := os.Stat(p); err != nil {
@@ -139,5 +139,117 @@ func TestStaleSidecars_noRoot(t *testing.T) {
 	got, err := StaleSidecars(filepath.Join(t.TempDir(), "absent"), 17)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("StaleSidecars(absent) = %v, %v; want empty, nil", got, err)
+	}
+}
+
+// TestStaleSidecars_rootErrorReturned: a root that cannot be walked (here a path through a regular file) is an error, not
+// an empty list that reads as "nothing to prune".
+func TestStaleSidecars_rootErrorReturned(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := StaleSidecars(filepath.Join(f, "cache"), 17); err == nil {
+		t.Fatalf("StaleSidecars(<file>/cache) = %v, nil; want an error", got)
+	}
+}
+
+// TestStaleSidecars_symlinkedRoot: a root that is a symlink to the cache is walked as the cache, not skipped as one entry.
+func TestStaleSidecars_symlinkedRoot(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	stale, _ := pruneFixture(t, real)
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	got, err := StaleSidecars(link, 17)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(stale) {
+		t.Fatalf("StaleSidecars(symlink) listed %d, want %d: %+v", len(got), len(stale), got)
+	}
+	for _, s := range got {
+		if err := RemoveStaleSidecar(link, s, 17); err != nil {
+			t.Errorf("RemoveStaleSidecar(%s) through the symlinked root: %v", s.Path, err)
+		}
+	}
+}
+
+// TestRemoveStaleSidecar_refusesABadMarker: a Marker that is not <Path>.verified (another file, or one outside the root)
+// is refused before anything is removed.
+func TestRemoveStaleSidecar_refusesABadMarker(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "cache")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(root, "m.int4.cpu.v16.giw")
+	other := filepath.Join(root, "m.gguf")
+	outside := filepath.Join(base, "precious")
+	for _, f := range []string{p, other, outside} {
+		if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, marker := range []string{other, outside, p + ".verified.bak"} {
+		if err := RemoveStaleSidecar(root, StaleSidecar{Path: p, Version: 16, Marker: marker}, 17); err == nil {
+			t.Errorf("RemoveStaleSidecar with Marker %s succeeded, want a refusal", marker)
+		}
+	}
+	for _, f := range []string{p, other, outside} {
+		if _, err := os.Stat(f); err != nil {
+			t.Errorf("%s removed: %v", f, err)
+		}
+	}
+}
+
+// TestRemoveStaleSidecar_refusesOutsideTheRoot: a stale-named sidecar outside the root it is given is refused.
+func TestRemoveStaleSidecar_refusesOutsideTheRoot(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "cache")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(base, "m.int4.cpu.v16.giw")
+	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveStaleSidecar(root, StaleSidecar{Path: p, Version: 16}, 17); err == nil {
+		t.Error("RemoveStaleSidecar outside its root succeeded, want a refusal")
+	}
+	if _, err := os.Stat(p); err != nil {
+		t.Errorf("%s removed: %v", p, err)
+	}
+}
+
+// TestRemoveStaleSidecar_refusesAReplacedPath: a listed path that is no longer a regular file when removal comes (here a
+// symlink put in its place since the listing) is refused, and the symlink's target stays.
+func TestRemoveStaleSidecar_refusesAReplacedPath(t *testing.T) {
+	root := t.TempDir()
+	p := filepath.Join(root, "m.int4.cpu.v16.giw")
+	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := StaleSidecars(root, 17)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("StaleSidecars = %+v, %v", got, err)
+	}
+	target := filepath.Join(root, "m.gguf")
+	if err := os.WriteFile(target, []byte("model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, p); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	if err := RemoveStaleSidecar(root, got[0], 17); err == nil {
+		t.Error("RemoveStaleSidecar of a path now a symlink succeeded, want a refusal")
+	}
+	if _, err := os.Lstat(p); err != nil {
+		t.Errorf("the symlink was removed: %v", err)
 	}
 }
