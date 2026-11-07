@@ -1,0 +1,6 @@
+=== RUN   TestBuilderFile
+--- PASS: TestBuilderFile (0.00s)
+=== RUN   TestBuilderFile_programTypesDeclareOnly
+--- PASS: TestBuilderFile_programTypesDeclareOnly (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/guard/paritykey	0.002s

@@ -149,9 +149,10 @@ func TestBuilderFile(t *testing.T) {
 	}
 }
 
-// TestBuilderFile_programTypesDeclareOnly holds ProgramTypesFile to what makes it a builder: types and constants, no function
-// and no variable. A method or a variable there would execute, and no program fingerprint sees its body, so a change to it
-// would leave today's key fresh (docs/measurements/vk5-2026-10.md §10).
+// TestBuilderFile_programTypesDeclareOnly holds ProgramTypesFile to what makes it a builder. It allows type and const
+// declarations only: what a program holds, which its fingerprint hashes. Everything else fails: a func or method, a var, and an
+// import (another package's type would bring that package's methods, and an import runs its init), since no program fingerprint
+// sees their bodies and a change to one would leave today's key fresh (docs/measurements/vk5-2026-10.md §10).
 func TestBuilderFile_programTypesDeclareOnly(t *testing.T) {
 	path := filepath.Join("..", "..", "..", ProgramTypesFile)
 	f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
@@ -163,13 +164,11 @@ func TestBuilderFile_programTypesDeclareOnly(t *testing.T) {
 		case *ast.FuncDecl:
 			t.Errorf("%s declares func %s: move it to methods.go, which stays in every key", ProgramTypesFile, d.Name.Name)
 		case *ast.GenDecl:
-			if d.Tok == token.VAR {
-				for _, sp := range d.Specs {
-					for _, n := range sp.(*ast.ValueSpec).Names {
-						t.Errorf("%s declares var %s: move it to methods.go, which stays in every key", ProgramTypesFile, n.Name)
-					}
-				}
+			if d.Tok != token.TYPE && d.Tok != token.CONST {
+				t.Errorf("%s has a declaration of kind %s: it may declare only types and constants", ProgramTypesFile, d.Tok)
 			}
+		default:
+			t.Errorf("%s has a %T declaration: it may declare only types and constants", ProgramTypesFile, d)
 		}
 	}
 }
