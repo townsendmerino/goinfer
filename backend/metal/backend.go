@@ -725,13 +725,14 @@ func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]f
 	if e := a.checkCap(pos, 1); e != nil {
 		return nil, e
 	}
-	if pos == 0 {
-		// A fresh sequence re-zeroes any recurrent state (DeltaNet, Mamba-2) left by a prior Generate on this resident (no-op for other families).
-		a.Reset()
-	}
 	a.r.kvQuiesce(a.r.kvSlot, pos+1)
 	if e := a.r.kvWrite(a.r.kvSlot, pos, pos+1); e != nil { // its block, before the forward is encoded (setPos's kvWriteMust then holds)
 		return nil, e
+	}
+	if pos == 0 {
+		// A fresh sequence re-zeroes any recurrent state (DeltaNet, Mamba-2) left by a prior Generate on this resident (no-op for other
+		// families), once its write is mapped: a refused one leaves the slot as it was.
+		a.Reset()
 	}
 	logits := a.r.ForwardEmbMRoPEPipe(embedding, pos, ropePos)
 	if err := a.r.takeExecErr(); err != nil {
@@ -787,12 +788,12 @@ func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {
 	if e := a.checkCap(pos, 1); e != nil {
 		return e
 	}
-	if pos == 0 {
-		a.Reset() // fresh sequence — same reason as Forward
-	}
 	a.r.kvQuiesce(a.r.kvSlot, pos+1)
 	if e := a.r.kvWrite(a.r.kvSlot, pos, pos+1); e != nil {
 		return e
+	}
+	if pos == 0 {
+		a.Reset() // a fresh sequence, once its write is mapped, as Forward does
 	}
 	a.r.ForwardEmbNoLogitsPipe(embedding, pos)
 	return a.r.takeExecErr() // a command buffer aborted: surface it

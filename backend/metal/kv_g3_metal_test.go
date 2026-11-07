@@ -877,6 +877,121 @@ func TestKVPages_refusedWriteLeavesTheSlot(t *testing.T) {
 	same("(b) the write refused after its first copy", tab, 128, used)
 }
 
+// TestKVPages_stepCopiesASharedBlockOnce: two slots of one batched step that share a block both write into it; the first takes a copy and
+// gives its reference back at once, so the second holds the block alone and writes it in place, as running the rows one at a time
+// would: one block more in the pool, not two.
+func TestKVPages_stepCopiesASharedBlockOnce(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 64, 1), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CopyKV(0, 1, 0, 64); err != nil {
+		t.Fatal(err)
+	}
+	shared, used := *r.kvRow(0, 0), r.kvBlocksInUse()
+	if *r.kvRow(1, 0) != shared || r.kvRefs[shared] != 2 {
+		t.Fatalf("slots 0 and 1 map %d and %d, held %d times; the test needs one block both hold", shared, *r.kvRow(1, 0), r.kvRefs[shared])
+	}
+	for _, s := range []int{0, 1} {
+		a.SetKVSlotBusy(s, true)
+		defer a.SetKVSlotBusy(s, false)
+	}
+	if err := r.kvMapStep([]batchSeq{{slot: 0, pos: 40}, {slot: 1, pos: 40}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.kvBlocksInUse(); got != used+1 || *r.kvRow(1, 0) != shared || *r.kvRow(0, 0) == shared || r.kvRefs[shared] != 1 {
+		t.Errorf("after the step the pool holds %d blocks (%d before), slot 0 maps %d and slot 1 %d (the block they shared: %d, held %d times); "+
+			"want one block more, slot 0 on its copy and slot 1 on the shared block alone", got, used, *r.kvRow(0, 0), *r.kvRow(1, 0), shared, r.kvRefs[shared])
+	}
+}
+
+// TestKVPages_failedUploadPassLeavesTheSlot: an upload pass that fails before any layer has written leaves the slot as it was, its blocks
+// and its sequence (I2): a full-attention layer's first upload starting past position 0 is refused, and the pass ends failed.
+func TestKVPages_failedUploadPassLeavesTheSlot(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if err := r.useKVSlot(1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 128, 1), 0); err != nil {
+		t.Fatal(err)
+	}
+	tab, used := [2]uint32{*r.kvRow(1, 0), *r.kvRow(1, 1)}, r.kvBlocksInUse()
+	if err := a.BeginKVUpload(); err != nil {
+		t.Fatal(err)
+	}
+	l := kvUploadLayers(r)[0]
+	n := r.layers[l].geom.kvDim
+	if err := a.UploadKV(l, 64, make([]float32, n), make([]float32, n)); err == nil {
+		t.Fatal("a full-attention layer's upload from 64 in a pass was accepted")
+	}
+	if err := a.EndKVUpload(true); err != nil {
+		t.Fatal(err)
+	}
+	if got := [2]uint32{*r.kvRow(1, 0), *r.kvRow(1, 1)}; got != tab || r.kvSlotSt[1].valid != 128 || r.kvBlocksInUse() != used {
+		t.Errorf("after the failed pass slot 1 maps %v with %d rows and the pool holds %d blocks; before it %v, 128 and %d", got,
+			r.kvSlotSt[1].valid, r.kvBlocksInUse(), tab, used)
+	}
+}
+
+// TestKVPages_refusedFreshWriteKeepsTheState: a decode entry point at position 0 zeroes the slot's recurrent state only once its write is
+// mapped, so a refused write leaves the state as it was. On qwen35-tiny (DeltaNet) whose slot lost its blocks to the pool after a turn,
+// Forward and ForwardNoLogits at 0 with no block to be had.
+func TestKVPages_refusedFreshWriteKeepsTheState(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	m, err := decoder.Load("../../decoder/selftestdata/qwen35-tiny", decoder.Options{Quant: "int4", ResidentContext: 256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	a := &metalResident{r: r, hidden: r.H}
+	state := func() []float32 {
+		var out []float32
+		for i := range r.layers {
+			if d := r.layers[i].delta; d != nil {
+				out = append(out, d.state.Floats()...)
+				out = append(out, d.win.Floats()...)
+			}
+		}
+		return out
+	}
+	var embs [][]float32
+	for _, id := range []int{5, 9, 13} {
+		embs = append(embs, slices.Clone(m.EmbedResidentForTest(id)))
+	}
+	for p, e := range embs {
+		if _, err := a.Forward(e, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.stopExec()
+	before := slices.Clone(state())
+	if !slices.ContainsFunc(before, func(f float32) bool { return f != 0 }) {
+		t.Fatal("the DeltaNet state is all zeros after three tokens; the test reads nothing")
+	}
+	r.kvReleaseAll(r.kvSlot) // the pool took the slot's blocks back
+	r.kvSlotSt[r.kvSlot].released, r.kvSlotSt[r.kvSlot].valid = true, 0
+	kvTakeFailForTest = true
+	_, ferr := a.Forward(embs[0], 0)
+	nerr := a.ForwardNoLogits(embs[0], 0)
+	kvTakeFailForTest = false
+	if ferr == nil || nerr == nil {
+		t.Fatalf("a write at 0 with no block to be had was accepted (Forward %v, ForwardNoLogits %v)", ferr, nerr)
+	}
+	if !slices.Equal(state(), before) {
+		t.Error("a refused write at position 0 zeroed the recurrent state")
+	}
+}
+
 // TestKVPages_abortedStepLeavesItsSlots: a batched step that cannot map every row leaves each of its slots as it was, a slot that rewinds
 // in it included: its sequence and its blocks are those it had before the step.
 func TestKVPages_abortedStepLeavesItsSlots(t *testing.T) {

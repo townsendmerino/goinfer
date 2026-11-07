@@ -32,6 +32,7 @@ var (
 type kvUploadPass struct {
 	s, end  int
 	reached map[int]int // the end each layer has landed, by layer
+	wrote   bool        // the first layer mapped the slot and wrote its rows: a failed pass has changed the slot
 }
 
 // BeginKVUpload (decoder.ResidentKVUploadPass) starts one write of the bound slot from position 0: the UploadKV calls until EndKVUpload
@@ -46,7 +47,8 @@ func (a *metalResident) BeginKVUpload() error {
 }
 
 // EndKVUpload (decoder.ResidentKVUploadPass) ends the pass. The slot holds the rows only if some layer landed some and every layer that
-// owns K/V landed the same end; otherwise, and when failed, it holds none, as a failed write from position 0 leaves it.
+// owns K/V landed the same end. Otherwise, and when failed, a pass that wrote leaves it holding none, since its rows are part one
+// sequence's and part another's; one that failed before its first layer wrote leaves it as it was.
 func (a *metalResident) EndKVUpload(failed bool) error {
 	r := a.r
 	if r == nil || r.kvUpload == nil {
@@ -55,7 +57,7 @@ func (a *metalResident) EndKVUpload(failed bool) error {
 	p := r.kvUpload
 	r.kvUpload = nil
 	drop := func(err error) error {
-		if len(r.kvRefs) > 0 && p.s < len(r.kvSlotSt) {
+		if p.wrote && len(r.kvRefs) > 0 && p.s < len(r.kvSlotSt) {
 			r.kvReleaseAll(p.s)
 			r.kvSlotSt[p.s].valid = 0
 		}
@@ -101,7 +103,7 @@ func (r *resident) kvUploadMap(layer, base, end int) error {
 		if err := r.kvWrite(p.s, 0, end); err != nil {
 			return err
 		}
-		p.end = end
+		p.end, p.wrote = end, true
 	}
 	p.reached[layer] = end
 	return nil
@@ -341,12 +343,35 @@ func (r *resident) kvWrite(s, lo, hi int) error {
 	if len(r.kvRefs) == 0 || hi <= lo || s >= len(r.kvSlotSt) {
 		return nil
 	}
+	if r.kvWriteInPlace(s, lo, hi) {
+		return nil
+	}
 	tx := r.kvBegin()
 	if err := tx.write(s, lo, hi); err != nil {
 		tx.abort()
 		return err
 	}
 	return tx.commit()
+}
+
+// kvWriteInPlace is kvWrite with nothing to map, most decode tokens: every entry the write reaches holds a block of the slot's alone,
+// none lies past hi, and the slot is neither released nor stopped, so the write only moves the sequence's end. It reports whether it
+// applied; anything else, a refusal included, is the transaction's.
+func (r *resident) kvWriteInPlace(s, lo, hi int) bool {
+	st := &r.kvSlotSt[s]
+	if lo > st.valid || st.stopped || st.released {
+		return false
+	}
+	for b := lo / decoder.KVBlockRows; b < r.kvTabBlocks; b++ {
+		e := *r.kvRow(s, b)
+		if past := b >= kvBlocksFor(hi); (past && e != 0) || (!past && (e == 0 || (r.kvRefs[e] > 1 && !kvOwnOffForTest))) {
+			return false
+		}
+	}
+	st.valid = hi
+	r.kvUseTick++
+	st.use = r.kvUseTick
+	return true
 }
 
 // kvTx is one mapping of slots' table entries in progress (kvWrite, kvMapStep). It records every entry it changes and each slot's standing
@@ -362,11 +387,12 @@ type kvTx struct {
 	freed   map[uint32]bool // blocks the mapping's own trims gave back, which a take may reuse
 }
 
-// kvTxEdit is one entry change: slot s's entry b named prev and now names next; take marks next as a block a take handed the entry.
+// kvTxEdit is one entry change: slot s's entry b named prev and now names next; take marks next as a block a take handed the entry, and
+// cow a take whose entry gave its reference to prev back (a copy on write).
 type kvTxEdit struct {
 	s, b       int
 	prev, next uint32
-	take       bool
+	take, cow  bool
 }
 
 type kvTxStanding struct {
@@ -374,8 +400,7 @@ type kvTxStanding struct {
 	released, stopped bool
 }
 
-// kvTxCOW is a copy on write to run at commit: the first keep rows of block from into block to, which slot s's entry b now names. The
-// entry's reference to from goes at commit.
+// kvTxCOW is a copy on write to run at commit: the first keep rows of block from into block to, which slot s's entry b now names.
 type kvTxCOW struct {
 	s, b     int
 	from, to uint32
@@ -442,9 +467,12 @@ func (tx *kvTx) write(s, lo, hi int) error {
 		if err != nil {
 			return err
 		}
-		tx.log = append(tx.log, kvTxEdit{s: s, b: b, prev: old, next: nb, take: true})
+		tx.log = append(tx.log, kvTxEdit{s: s, b: b, prev: old, next: nb, take: true, cow: old != 0})
 		*r.kvRow(s, b) = nb
 		if old != 0 {
+			// The entry's reference goes now, so a later row of the mapping finds the block as running the rows alone would: another slot's
+			// alone, which that slot writes in place. A shared block keeps a reference, so its rows stay as they are until the copy at commit.
+			r.kvUnref(old)
 			keep := max(lo-b*decoder.KVBlockRows, 0)
 			if kvKeepShortForTest && keep > 0 {
 				keep--
@@ -468,11 +496,14 @@ func (tx *kvTx) abort() {
 	for i := len(tx.log) - 1; i >= 0; i-- {
 		e := tx.log[i]
 		if e.take {
-			r.kvUnref(e.next) // a copy on write's entry kept its reference to prev throughout
-		} else if r.kvRefs[e.prev] == 0 {
-			r.kvClaim(e.prev) // a trim gave it back and nothing kept it
-		} else {
-			r.kvRefs[e.prev]++
+			r.kvUnref(e.next)
+		}
+		if !e.take || e.cow { // a trim or a copy on write gave its reference to prev back: take it again
+			if r.kvRefs[e.prev] == 0 {
+				r.kvClaim(e.prev)
+			} else {
+				r.kvRefs[e.prev]++
+			}
 		}
 		*r.kvRow(e.s, e.b) = e.prev
 	}
@@ -523,9 +554,6 @@ func (tx *kvTx) commit() error {
 			}
 			return fmt.Errorf("metal: copy on write of KV block %d: %w", c.from, err)
 		}
-	}
-	for _, c := range tx.cows {
-		r.kvUnref(c.from)
 	}
 	for s, p := range tx.pending {
 		st := &r.kvSlotSt[s]
