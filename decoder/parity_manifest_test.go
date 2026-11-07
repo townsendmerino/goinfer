@@ -9,7 +9,8 @@ package decoder
 //   - STRUCTURE: every path in every shared set and every family's `own` list must exist on disk (catches renames).
 //   - COVERAGE: the manifest's family keys must equal the capability matrix's family set (a family added without a
 //     manifest row fails CI).
-//   - HASH/ENFORCEMENT: for each family, re-hash the SORTED, DEDUPED union of its dependency files plus the digest of
+//   - HASH/ENFORCEMENT: for each family, re-hash the SORTED, DEDUPED union of its dependency files (less the program
+//     builders, for a family with programs, whose program fingerprints stand for them) plus the digest of
 //     the kernel fingerprint table (testdata/kernel_fingerprints.json); for VALIDATED families a mismatch against the recorded deps_hash fails ("parity stale"),
 //     pending families do not.
 //
@@ -57,7 +58,7 @@ type parityManifest struct {
 type familyParity struct {
 	Uses        []string        `json:"uses"`
 	Own         []string        `json:"own"`
-	Programs    []string        `json:"programs,omitempty"` // fixture directories whose program fingerprints stand for the builders in VK5's shadow key
+	Programs    []string        `json:"programs,omitempty"` // fixture directories whose program fingerprints stand for the builders in the parity key
 	DepsHash    string          `json:"deps_hash"`
 	Status      string          `json:"status"`
 	ValidatedAt json.RawMessage `json:"validated_at"`
@@ -229,9 +230,6 @@ func familyDepFiles(m *parityManifest, fam familyParity) []string {
 	return out
 }
 
-// freshDepsHash computes the deterministic content hash over a family's
-// dependency set: for each path (sorted) write path + NUL + file bytes + NUL,
-// then mix in the kernel fingerprint table's digest. Returns "sha256:" + hex.
 // goCodeTokens reduces a Go source file to what the compiler reads: its token stream with
 // ordinary comments and layout dropped, so an edit to a comment or to formatting does not
 // re-stale a validated family. Directive comments (`//go:…`, `// +build`) are kept, because
@@ -266,9 +264,16 @@ func goCodeTokens(name string, src []byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+// freshDepsHash is a family's key as the staleness gate computes it: for each dependency path (sorted) write path + NUL +
+// content + NUL, then a tail, and return "sha256:" + hex. A family with programs leaves the builders out (isBuilder) and
+// its tail starts "programs=" and its fixtures' program fingerprints for every GOARCH (familyProgramsDigest), which stand
+// for them; every family's tail ends with the kernel fingerprint table's digest.
 func freshDepsHash(m *parityManifest, fam familyParity) (string, error) {
 	h := sha256.New()
 	for _, p := range familyDepFiles(m, fam) {
+		if len(fam.Programs) > 0 && isBuilder(p) {
+			continue
+		}
 		b, err := os.ReadFile(repoPath(p))
 		if err != nil {
 			return "", err
@@ -283,12 +288,46 @@ func freshDepsHash(m *parityManifest, fam familyParity) (string, error) {
 		h.Write(b)
 		h.Write([]byte{0})
 	}
+	if len(fam.Programs) > 0 {
+		d, err := familyProgramsDigest(fam.Programs)
+		if err != nil {
+			return "", err
+		}
+		h.Write([]byte("programs=" + d + "\n"))
+	}
 	tab, err := paritykey.ReadKernelTable(paritykey.Dir(repoPath(".")))
 	if err != nil {
 		return "", err
 	}
 	h.Write([]byte("kernel_fingerprints=" + paritykey.KernelTableDigest(tab)))
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// familyProgramsDigest is the digest of fixtures' entries in the program table, computed here: each GOARCH in sorted order
+// and a newline, then "fixture=fingerprint" lines in sorted fixture order. A fixture with no entry for a GOARCH is an error.
+func familyProgramsDigest(fixtures []string) (string, error) {
+	b, err := os.ReadFile(programFingerprintsPath)
+	if err != nil {
+		return "", err
+	}
+	var tab map[string]map[string]string
+	if err := json.Unmarshal(b, &tab); err != nil {
+		return "", err
+	}
+	fx := append([]string(nil), fixtures...)
+	sort.Strings(fx)
+	d := sha256.New()
+	for _, a := range sortedKeys(tab) {
+		d.Write([]byte(a + "\n"))
+		for _, f := range fx {
+			fp, ok := tab[a][f]
+			if !ok {
+				return "", fmt.Errorf("%s has no %s entry for %s", programFingerprintsPath, a, f)
+			}
+			d.Write([]byte(f + "=" + fp + "\n"))
+		}
+	}
+	return hex.EncodeToString(d.Sum(nil)), nil
 }
 
 func TestParityManifest_fresh(t *testing.T) {

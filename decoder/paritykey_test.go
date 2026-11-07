@@ -16,8 +16,9 @@ import (
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
-// TestParityKey_matchesFreshDepsHash is VK5's P1 (docs/tasks/task-subsystems-2026-10.md §5.8): internal/paritykey's
-// today key equals freshDepsHash for every family, so the shadow job's "today" column is the gate's own hash.
+// TestParityKey_matchesFreshDepsHash is VK5's P1 and the builder switch's B1 (docs/tasks/task-subsystems-2026-10.md §5.8):
+// paritykey's today key, read under the tree's key marker, equals freshDepsHash for every family, so the shadow job's
+// "today" column is the gate's own hash.
 func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 	raw, err := parityManifestJSON()
 	if err != nil {
@@ -36,6 +37,14 @@ func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	def, err := paritykey.TodayDefinition(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	progs, err := paritykey.ReadProgramTable(src)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(m.Families) == 0 || len(pm.Families) != len(m.Families) {
 		t.Fatalf("%d families in the manifest, %d read by paritykey", len(m.Families), len(pm.Families))
 	}
@@ -44,7 +53,7 @@ func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := paritykey.Key(src, pm, pm.Families[name], tail)
+		got, err := paritykey.TodayKey(src, pm, pm.Families[name], def, tail, progs)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -55,7 +64,7 @@ func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 }
 
 // isBuilder is the decoder's own statement of which files build programs (paritykey.BuilderFile's list, written again so
-// W1 compares two computations): the program builder, the block spec, the architecture and config types, the registry,
+// P1 and W1 compare two computations): the program builder, the block spec, the architecture and config types, the registry,
 // and every architecture adapter (gemma12.go holds gemma's and gemma2's).
 func isBuilder(p string) bool {
 	switch p {

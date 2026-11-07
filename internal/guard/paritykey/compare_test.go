@@ -33,7 +33,7 @@ func loaderSide(today, shadow, weights, id string) Side {
 	return s
 }
 
-// TestCompare_classes is W4 and week 3's L4: every class and reason, from sides built by hand.
+// TestCompare_classes is W4, week 3's L4 and the builder switch's B5 classifier: every class and reason, from sides built by hand.
 func TestCompare_classes(t *testing.T) {
 	base := side("t1", "s1", "a1", "x1", "p1", "fx")
 	cases := []struct {
@@ -96,6 +96,21 @@ func TestCompare_classes(t *testing.T) {
 			s.Loaders = map[string][]string{"f": {"fx", "fx.gguf"}}
 			return s
 		}(), NewOnly, false},
+		{"the key's definition changed, no input did", base, func() Side {
+			s := side("t2", "s1", "a1", "x1", "p1", "fx")
+			s.Definition = DefinitionPrograms
+			return s
+		}(), OldOnly, true},
+		{"the key's definition changed and an executor moved, the shadow key did not", base, func() Side {
+			s := side("t2", "s1", "a1", "x2", "p1", "fx")
+			s.Definition = DefinitionPrograms
+			return s
+		}(), OldOnly, false},
+		{"the key's definition changed for a family with no programs", side("t1", "t1", "a1", "x1", ""), func() Side {
+			s := side("t2", "t1", "a1", "x1", "")
+			s.Definition = DefinitionPrograms
+			return s
+		}(), OldOnly, false},
 	}
 	for _, c := range cases {
 		v := Compare(c.before, c.after)
@@ -142,18 +157,22 @@ func TestKey_onTheTree(t *testing.T) {
 	if !strings.HasPrefix(s.Tail, KernelTailPrefix) {
 		t.Errorf("today's tail %q: the tree's key is not on its kernel table", s.Tail)
 	}
-	with := 0
+	if s.Definition != DefinitionPrograms {
+		t.Errorf("the tree's key definition is %q, want %q", s.Definition, DefinitionPrograms)
+	}
+	// Today's key takes the builder rule, so only the loader rule separates the two keys.
+	ruled := 0
 	for name := range s.Today {
-		has := len(s.Programs[name]) > 0
-		if has {
-			with++
+		under := len(s.Loaders[name]) > 0
+		if under {
+			ruled++
 		}
-		if same := s.Today[name] == s.Shadow[name]; same == has {
-			t.Errorf("%s: %d programs, and today's key equal to the shadow key is %v", name, len(s.Programs[name]), same)
+		if same := s.Today[name] == s.Shadow[name]; same == under {
+			t.Errorf("%s: %d loader fixtures, and today's key equal to the shadow key is %v", name, len(s.Loaders[name]), same)
 		}
 	}
-	if with == 0 {
-		t.Fatal("no family has programs")
+	if ruled == 0 {
+		t.Fatal("no family is under the loader rule")
 	}
 }
 
@@ -235,6 +254,86 @@ func TestTodayTail_pinOutOfKey(t *testing.T) {
 	gomod("v3.0.0")
 	if key() == k2 {
 		t.Error("in a tree without the kernel table, changing the aikit pin left today's key unchanged")
+	}
+}
+
+// TestTodayKey_builderRule is the builder switch's rule on a tree: with the key marker, a builder edit leaves a family with
+// programs fresh and re-stales one without, a fingerprint edit re-stales the family with programs, and without the marker a
+// builder edit re-stales both. A marker with any other value is an error.
+func TestTodayKey_builderRule(t *testing.T) {
+	dir := t.TempDir()
+	write := func(path, body string) {
+		t.Helper()
+		p := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(SharedSetsFile, `{"core": ["decoder/attention.go", "decoder/arch.go"]}`)
+	write(RecordsDir+"/p.json", `{"uses": ["core"], "own": [], "programs": ["testdata/p-tiny"], "deps_hash": "", "status": "validated"}`)
+	write(RecordsDir+"/n.json", `{"uses": ["core"], "own": [], "deps_hash": "", "status": "validated"}`)
+	write("decoder/attention.go", "package decoder\n\nvar x = 1\n")
+	write("decoder/arch.go", "package decoder\n\nvar a = 1\n")
+	write(KernelTablePath, `{"amd64[avx2]": {"k": "sha256:aa"}}`)
+	write(ProgramTablePath, `{"amd64": {"testdata/p-tiny": "sha256:p1"}}`)
+	keys := func() (p, n string) {
+		t.Helper()
+		src := Dir(dir)
+		m, err := ReadManifest(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tail, err := TodayTail(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		def, err := TodayDefinition(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		progs, err := ReadProgramTable(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p, err = TodayKey(src, m, m.Families["p"], def, tail, progs); err != nil {
+			t.Fatal(err)
+		}
+		if n, err = TodayKey(src, m, m.Families["n"], def, tail, progs); err != nil {
+			t.Fatal(err)
+		}
+		return p, n
+	}
+
+	write(KeyDefinitionPath, `{"today": "programs"}`)
+	p1, n1 := keys()
+	write("decoder/arch.go", "package decoder\n\nvar a = 2\n")
+	p2, n2 := keys()
+	if p2 != p1 {
+		t.Error("under the marker, a builder edit moved the key of a family with programs")
+	}
+	if n2 == n1 {
+		t.Error("under the marker, a builder edit left the key of a family with no programs unchanged")
+	}
+	write(ProgramTablePath, `{"amd64": {"testdata/p-tiny": "sha256:p2"}}`)
+	if p3, _ := keys(); p3 == p2 {
+		t.Error("under the marker, a program fingerprint edit left the key of a family with programs unchanged")
+	}
+
+	if err := os.Remove(filepath.Join(dir, KeyDefinitionPath)); err != nil {
+		t.Fatal(err)
+	}
+	p4, _ := keys()
+	write("decoder/arch.go", "package decoder\n\nvar a = 3\n")
+	if p5, _ := keys(); p5 == p4 {
+		t.Error("without the marker, a builder edit left the key of a family with programs unchanged")
+	}
+
+	write(KeyDefinitionPath, `{"today": "program"}`)
+	if def, err := TodayDefinition(Dir(dir)); err == nil {
+		t.Errorf("a marker naming %q read as %q, want an error", "program", def)
 	}
 }
 
