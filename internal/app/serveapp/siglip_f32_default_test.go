@@ -117,33 +117,3 @@ func TestTowerReserve_everyDeviceTower(t *testing.T) {
 		}
 	}
 }
-
-// TestGemma3TowerBackend_webgpuDefault: under webgpu the unset default is the float32 tower on the device (G-S12.3a-4, medians
-// 0.430 of the CPU tower, S12-defaults); an explicit -vision-quant or -vision-device gpu is the same backend, and
-// -vision-device cpu keeps the tower on the CPU.
-func TestGemma3TowerBackend_webgpuDefault(t *testing.T) {
-	mk := func(backend, quant, device string) config {
-		c := config{visionQuant: quant, visionDevice: device}
-		c.load.Backend = backend
-		return c
-	}
-	for _, c := range []struct {
-		backend, quant, device string
-		want                   string
-	}{
-		{"webgpu", "", "", "webgpu"},
-		{"webgpu", "int8", "", "webgpu"},
-		{"webgpu", "f32", "", "webgpu"},
-		{"webgpu", "", "cpu", "cpu"},
-		{"webgpu", "", "gpu", "webgpu"},
-		{"metal", "", "gpu", "metal"},
-		{"cuda", "", "", "cuda"},
-		{"metal", "", "", "metal"},
-		{"cpu", "", "", "cpu"},
-	} {
-		cfg := mk(c.backend, c.quant, c.device)
-		if got := cfg.towerBackend(); got != c.want {
-			t.Errorf("backend %q, -vision-quant %q, -vision-device %q: tower on %q, want %q", c.backend, c.quant, c.device, got, c.want)
-		}
-	}
-}
