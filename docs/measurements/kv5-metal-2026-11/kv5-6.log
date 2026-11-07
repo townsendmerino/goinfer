@@ -192,6 +192,6 @@ Plants, 5 of 5 red; a sixth, on abort's restore of a standing, cannot go red alo
 3. Forward and ForwardNoLogits zeroed recurrent state at position 0 before the write, so a refused write still cleared it. They reset once the write is mapped. Red first: TestKVPages_refusedFreshWriteKeepsTheState (qwen35-tiny's DeltaNet state).
 Also kvWriteInPlace: a write whose every entry already holds a block of the slot's alone, with nothing past it to trim, only moves the sequence's end and skips the transaction; the review counted the transaction's allocations twice a decode token.
 Plants, 4 of 4 red, the in-place write taking a shared block as its own among them (red in TestKVPages_shareByReferenceLayerMajor).
-Rounds 4 to 6 change the decode path, so G2 reads again on 1af92cc4 by day (below), and the 7B night job is pinned to it.
+Rounds 4 to 6 change the decode path, so G2 reads again by day on 3fd4b072, the branch with main 3f47e833 merged (below), and the 7B night job is pinned to it.
 
-== G2, the 7B: the night job kv5-6-g2-7b (pinned to 1af92cc4), reported, not a gate on the merge
+== G2, the 7B: the night job kv5-6-g2-7b (pinned to 3fd4b072), reported, not a gate on the merge
