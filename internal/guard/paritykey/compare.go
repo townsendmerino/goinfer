@@ -102,8 +102,8 @@ type Verdict struct {
 }
 
 // Compare classes every family across a push from before to after. An old-only verdict is explained when every moved
-// input is the key's definition (today's key took the builders out), a builder file (BuilderFile; only a push keyed by
-// DefinitionFiles can move today's key on one alone), or a loader file this family's loader digest stands for (Dropped); a
+// input is the key's definition (today's key took the builders out), a builder file of a family with programs on a push
+// with a side keyed by DefinitionFiles (BuilderFile; under the builder rule neither key reads one), or a loader file this family's loader digest stands for (Dropped); a
 // change on a path no fixture exercises reads the same, so a grade reads those pushes' diffs. A new-only verdict is explained when the only moved inputs are the family's program and loader lists, and no loader fixture left
 // its list while its program stayed (loaderListShrank). Every other disagreement is unexplained.
 func Compare(before, after Side) []Verdict {
@@ -126,8 +126,11 @@ func Compare(before, after Side) []Verdict {
 		case oldStale:
 			v.Class = OldOnly
 			v.Explained = len(v.Moved) > 0
+			// A builder explains today's key moving alone only where today's key reads the builders and the shadow key does not:
+			// a family with programs, on a side keyed by DefinitionFiles. Under the builder rule neither key reads them.
+			builders := len(after.Programs[name]) > 0 && (before.Definition != DefinitionPrograms || after.Definition != DefinitionPrograms)
 			for _, m := range v.Moved {
-				if m != "key definition" && !BuilderFile(m) && !slices.Contains(after.Dropped[name], m) {
+				if m != "key definition" && !(builders && BuilderFile(m)) && !slices.Contains(after.Dropped[name], m) {
 					v.Explained = false
 				}
 			}

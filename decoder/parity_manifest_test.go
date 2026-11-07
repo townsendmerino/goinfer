@@ -314,6 +314,15 @@ func familyProgramsDigest(fixtures []string) (string, error) {
 	if err := json.Unmarshal(b, &tab); err != nil {
 		return "", err
 	}
+	return programsDigestOf(fixtures, tab)
+}
+
+// programsDigestOf is familyProgramsDigest over an already-read table. A missing or empty table is an error, never the
+// digest of nothing.
+func programsDigestOf(fixtures []string, tab map[string]map[string]string) (string, error) {
+	if len(tab) == 0 {
+		return "", fmt.Errorf("%s is missing or empty, so it cannot stand for the builders", programFingerprintsPath)
+	}
 	fx := append([]string(nil), fixtures...)
 	sort.Strings(fx)
 	d := sha256.New()

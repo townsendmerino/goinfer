@@ -106,6 +106,15 @@ func TestCompare_classes(t *testing.T) {
 			s.Definition = DefinitionPrograms
 			return s
 		}(), OldOnly, false},
+		{"under the builder rule, a builder moved and today's key moved, the shadow key did not", func() Side {
+			s := side("t1", "s1", "a1", "x1", "p1", "fx")
+			s.Definition = DefinitionPrograms
+			return s
+		}(), func() Side {
+			s := side("t2", "s1", "a2", "x1", "p1", "fx")
+			s.Definition = DefinitionPrograms
+			return s
+		}(), OldOnly, false},
 		{"the key's definition changed for a family with no programs", side("t1", "t1", "a1", "x1", ""), func() Side {
 			s := side("t2", "t1", "a1", "x1", "")
 			s.Definition = DefinitionPrograms
