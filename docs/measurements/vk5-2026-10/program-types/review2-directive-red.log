@@ -1,0 +1,5 @@
+--- FAIL: TestBuilderFile_programTypesDeclareOnly (0.00s)
+    compare_test.go:252: internal/runtime/program/program.go carries the directive "//go:generate echo planted": it may declare only types
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/guard/paritykey	0.002s
+FAIL
