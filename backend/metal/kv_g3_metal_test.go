@@ -822,6 +822,58 @@ func TestKVPages_failedWriteHoldsNoBlocks(t *testing.T) {
 	}
 }
 
+// TestKVPages_failedCopyCutsAReusedTrimBlock: a write whose copy on write fails is undone, and a block the write's trim gave back while
+// another slot still shared it, freed when the take released that slot and then taken as the copy's target, no longer holds the rows the
+// undo maps it for: the slot ends before it, and every row it still claims is the row it had. The pool is full and three slots share it:
+// slot 0, idle, holds half the pool, its first three blocks shared with slot 1; slot 2, running, holds the rest. Slot 1 rewinds into
+// its block 1, so the write trims its block 2 (still slot 0's) and needs a copy of block 1; the take releases slot 0, which frees block 2.
+func TestKVPages_failedCopyCutsAReusedTrimBlock(t *testing.T) {
+	m, a := kvCapLoad(t, 3, 3*decoder.MetalCtxDefault, "")
+	r, vocab := a.r, m.Config().VocabSize
+	B, N := decoder.KVBlockRows, len(r.kvRefs)-1
+	if N/2 > r.kvTabBlocks || N-N/2 > r.kvTabBlocks {
+		t.Fatalf("a slot reaches %d blocks; the case needs two slots of %d and %d to fill the pool of %d", r.kvTabBlocks, N/2, N-N/2, N)
+	}
+	if _, err := kvCapPrefill(m, a, 0, kvCapIds(N/2*B, 0, vocab), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CopyKV(0, 1, 0, 3*B); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kvCapPrefill(m, a, 2, kvCapIds((N-N/2)*B, 2, vocab), 0); err != nil {
+		t.Fatal(err)
+	}
+	if free := N - r.kvBlocksInUse(); free != 0 {
+		t.Fatalf("%d blocks free; the case needs a full pool", free)
+	}
+	reused := *r.kvRow(1, 2)
+	if reused != *r.kvRow(0, 2) || r.kvRefs[reused] != 2 {
+		t.Fatalf("slot 1's block 2 is %d with %d references; the case needs slot 0's block 2, shared", reused, r.kvRefs[reused])
+	}
+	for _, s := range []int{1, 2} {
+		a.SetKVSlotBusy(s, true)
+		defer a.SetKVSlotBusy(s, false)
+	}
+	rb, before := kv2RowBytes(r), kv2Slot(t, r, 1, 3*B)
+	kvCopyFailForTest = true
+	err := r.kvWrite(1, B+6, B+7)
+	kvCopyFailForTest = false
+	if err == nil {
+		t.Fatal("a write whose copy on write failed: no error")
+	}
+	if !r.kvSlotSt[0].released {
+		t.Fatal("slot 0 was not released for the copy's block, so the copy did not write its block 2: the case reads nothing")
+	}
+	st := &r.kvSlotSt[1]
+	if st.valid != 2*B || *r.kvRow(1, 2) != 0 {
+		t.Errorf("after the failed copy slot 1 holds %d rows and maps block %d at 2; want %d and none: the copy wrote that block", st.valid,
+			*r.kvRow(1, 2), 2*B)
+	}
+	if buf, row := kv2RowsEqual(before, kv2Slot(t, r, 1, st.valid), rb, 0, st.valid); buf >= 0 {
+		t.Errorf("after the failed copy slot 1's row %d (buffer %d) is not the row it had", row, buf)
+	}
+}
+
 // TestKVPages_refusedWriteLeavesTheSlot: a refused write leaves the slot as it was, its sequence, its blocks and what it shares, however
 // far it had got: (a) a rewind into a shared block whose copy on write finds no block; (b) a write from inside a shared block through the
 // next one and past, whose first copy is taken and whose second take is refused.
@@ -1147,7 +1199,7 @@ func TestKVPages_stepReclaimOutsideItLaunches(t *testing.T) {
 	r, vocab := a.r, m.Config().VocabSize
 	B := decoder.KVBlockRows
 	if r.kvShareBlocks != 64 {
-		t.Skipf("the fixture's share is %d blocks; the case is laid out for 64", r.kvShareBlocks)
+		t.Fatalf("the fixture's share is %d blocks; the case is laid out for 64", r.kvShareBlocks)
 	}
 	for _, c := range []struct{ slot, rows int }{{2, 104 * B}, {1, 60*B - 10}, {0, 28 * B}} {
 		if _, err := kvCapPrefill(m, a, c.slot, kvCapIds(c.rows, c.slot, vocab), 0); err != nil {

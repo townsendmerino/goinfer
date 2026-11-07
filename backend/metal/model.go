@@ -385,7 +385,8 @@ type resident struct {
 	chainTok     [2]Buffer
 	chainServed  int // tokens chainNext has returned since the build (tests read it)
 	// chainSlot is the open chain's KV slot; chainEnd, written by the chain's goroutine, is where its caller's sequence ends: after the
-	// newest forward whose token the chain returned, or at the start position before any. stopChain ends the slot's sequence there.
+	// newest forward whose token the chain returned, at the start position once its first write maps, and where the slot's sequence
+	// already ended before that (a refused first write wrote nothing). stopChain ends the slot's sequence there.
 	chainSlot, chainEnd int
 	// The untied head's gather table (C-B01): the int8 embedding table on the device, made the first time a chain is
 	// asked for (chainEmbedTable), aliased from the .giw mapping where it can be. A tied head's gather reads lmW/lmS.

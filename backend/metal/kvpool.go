@@ -384,7 +384,6 @@ type kvTx struct {
 	saved   map[int]kvTxStanding // each slot's standing before the mapping
 	pending map[int]kvTxStanding // and as the mapping leaves it
 	cows    []kvTxCOW
-	freed   map[uint32]bool // blocks the mapping's own trims gave back, which a take may reuse
 }
 
 // kvTxEdit is one entry change: slot s's entry b named prev and now names next; take marks next as a block a take handed the entry, and
@@ -410,7 +409,7 @@ type kvTxCOW struct {
 // kvBegin starts a mapping.
 func (r *resident) kvBegin() *kvTx {
 	r.kvReclaimed = r.kvReclaimed[:0]
-	return &kvTx{r: r, saved: map[int]kvTxStanding{}, pending: map[int]kvTxStanding{}, freed: map[uint32]bool{}}
+	return &kvTx{r: r, saved: map[int]kvTxStanding{}, pending: map[int]kvTxStanding{}}
 }
 
 // standing is slot s's standing as the mapping leaves it so far.
@@ -435,9 +434,6 @@ func (tx *kvTx) trim(s, end int) {
 		}
 		id := *e
 		r.kvUnref(id)
-		if r.kvRefs[id] == 0 {
-			tx.freed[id] = true
-		}
 		tx.log = append(tx.log, kvTxEdit{s: s, b: b, prev: id})
 		*e = 0
 	}
@@ -523,8 +519,10 @@ func (tx *kvTx) abort() {
 	}
 }
 
-// commit runs the copies on write and lets each slot's new standing stand. A copy that fails on the device undoes the mapping; a block a
-// trim gave back and a failed copy wrote into no longer holds its old rows, so its slot's sequence then ends before it.
+// commit runs the copies on write and lets each slot's new standing stand. A copy that fails on the device undoes the mapping. A copy
+// that ran, the failed one included, wrote a block that was free when taken, so an entry the undo maps to it again (a trim's, or a copy
+// on write's old entry) gave it back during the mapping, whoever held it then: that block no longer holds the entry's rows, and the
+// entry's slot ends before it.
 func (tx *kvTx) commit() error {
 	r := tx.r
 	for s, p := range tx.saved {
@@ -533,7 +531,7 @@ func (tx *kvTx) commit() error {
 			return fmt.Errorf("metal: KV slot %d was released or reclaimed while its blocks were mapped: %w", s, decoder.ErrKVPoolFull)
 		}
 	}
-	for _, c := range tx.cows {
+	for i, c := range tx.cows {
 		if c.keep == 0 {
 			continue
 		}
@@ -543,12 +541,10 @@ func (tx *kvTx) commit() error {
 		}
 		if err != nil {
 			tx.abort()
-			for _, d := range tx.cows {
-				if tx.freed[d.to] {
-					for _, e := range tx.log {
-						if !e.take && e.prev == d.to {
-							r.kvEndAt(e.s, e.b*decoder.KVBlockRows)
-						}
+			for _, d := range tx.cows[:i+1] {
+				for _, e := range tx.log {
+					if d.keep > 0 && (!e.take || e.cow) && e.prev == d.to {
+						r.kvEndAt(e.s, e.b*decoder.KVBlockRows)
 					}
 				}
 			}

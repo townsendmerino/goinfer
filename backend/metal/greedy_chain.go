@@ -190,6 +190,9 @@ func (r *resident) chainOpen(q chainReq) error {
 	}
 	r.chainReq, r.chainResp, r.chainDone = make(chan chainReq), make(chan chainResp), make(chan struct{})
 	r.chainSlot, r.chainEnd = r.kvSlot, q.pos
+	if r.kvSlot < len(r.kvSlotSt) {
+		r.chainEnd = r.kvSlotSt[r.kvSlot].valid // until the first write maps (chainLoop's commit)
+	}
 	go r.chainLoop()
 	r.chainReq <- q
 	return (<-r.chainResp).err
@@ -314,6 +317,9 @@ func (r *resident) chainLoop() {
 		// for a position past the prompt is a fresh block, never a copy into one they read.
 		if kvErr = r.kvWrite(r.kvSlot, next, next+1); kvErr != nil {
 			return
+		}
+		if next == pos0 {
+			r.chainEnd = pos0
 		}
 		k := next & 1
 		r.writePosUniforms(r.chainSets[k], next, next)

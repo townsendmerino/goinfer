@@ -639,6 +639,68 @@ func TestKVPages_chainRetriesAFailedLookAhead(t *testing.T) {
 	}
 }
 
+// TestKVPages_refusedChainOpenLeavesTheSlot: a chain whose first write finds no block has written nothing, so while it is open and after it
+// stops the slot is as it was: its sequence, its table and its blocks' references. The open rewinds into a block another slot shares, so the
+// write needs a copy, and every take is refused (the sharing slot is busy, so nothing is released to make room). The same open with a
+// block to be had, stopped before a token is taken, ends the slot at its start.
+func TestKVPages_refusedChainOpenLeavesTheSlot(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if why := r.greedyChainWhyNot(); why != "" {
+		t.Skipf("no greedy chain on this resident: %s", why)
+	}
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 128, 7), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.useKVSlot(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CopyKV(0, 1, 0, 128); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []int{0, 1} {
+		a.SetKVSlotBusy(s, true)
+		defer a.SetKVSlotBusy(s, false)
+	}
+	tab := [2]uint32{*r.kvRow(1, 0), *r.kvRow(1, 1)}
+	refs, used := [2]int32{r.kvRefs[tab[0]], r.kvRefs[tab[1]]}, r.kvBlocksInUse()
+	if tab[0] == 0 || tab[1] == 0 || refs != [2]int32{2, 2} {
+		t.Fatalf("slot 1's table %v with references %v after the copy; want two blocks shared with slot 0", tab, refs)
+	}
+	kvTakeFailForTest = true
+	defer func() { kvTakeFailForTest = false }()
+	if err := r.chainStart(5, 60); err != nil {
+		t.Fatal(err)
+	}
+	_, err := r.chainNext()
+	if !errors.Is(err, decoder.ErrKVPoolFull) {
+		r.stopChain()
+		t.Fatalf("the token at 60, its block's copy refused: got %v, want ErrKVPoolFull (the test reads nothing)", err)
+	}
+	if got := r.kvReusable(1, 128); got != 128 {
+		t.Errorf("while the refused chain is open ReusableKV(128) on its slot answers %d; want 128, the slot's sequence", got)
+	}
+	r.stopChain()
+	st := &r.kvSlotSt[1]
+	if gotTab := [2]uint32{*r.kvRow(1, 0), *r.kvRow(1, 1)}; st.valid != 128 || gotTab != tab {
+		t.Errorf("after the refused chain stopped slot 1 holds %d rows in %v; want 128 in %v", st.valid, gotTab, tab)
+	}
+	if got := [2]int32{r.kvRefs[tab[0]], r.kvRefs[tab[1]]}; got != refs || r.kvBlocksInUse() != used {
+		t.Errorf("after the refused chain stopped the blocks' references are %v with %d in use; want %v with %d", got, r.kvBlocksInUse(), refs, used)
+	}
+	// The same open with blocks to be had writes at 60, so a stop before any token is taken ends the slot at 60: that row is look-ahead.
+	kvTakeFailForTest = false
+	if err := r.chainStart(5, 60); err != nil {
+		t.Fatal(err)
+	}
+	r.stopChain()
+	if st.valid != 60 {
+		t.Errorf("a chain opened at 60 and stopped before a token leaves slot 1 with %d rows; want 60", st.valid)
+	}
+}
+
 // TestKVPages_entryEndsTheChainFirst: while a chain is open only the chain touches its slot's KV state. A decode entry point ends it
 // before it reads or writes the slot, so it judges the caller's sequence, not the look-ahead's: a forward one past it is refused rather
 // than reaching setPos, and one whose block cannot be had leaves no chain open. ReusableKV answers the caller's sequence too.
