@@ -95,42 +95,68 @@ func runPruneSidecars(args []string, giwVersion int) int {
 		}
 		root = r
 	}
-	stale, err := pull.StaleSidecars(root, giwVersion)
+	listing, err := pull.StaleSidecars(root, giwVersion)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s cache prune-sidecars: %v\n", self(), err)
 		return 1
 	}
-	if len(stale) == 0 {
-		fmt.Printf("No stale .giw sidecars under %s (this build reads v%d).\n", root, giwVersion)
-		return 0
+	root, stale := listing.Root, listing.Stale
+	// An unreadable directory may hold stale sidecars this run cannot see, so the listing is incomplete and the exit is 1.
+	for _, e := range listing.Unreadable {
+		fmt.Fprintf(os.Stderr, "%s cache prune-sidecars: could not read %v\n", self(), e)
 	}
-	var freed int64
+	incomplete := ""
+	if n := len(listing.Unreadable); n > 0 {
+		incomplete = fmt.Sprintf(" The listing is incomplete: %d path(s) under it could not be read (above).", n)
+	}
+	if len(stale) == 0 {
+		fmt.Printf("No stale .giw sidecars under %s (this build reads v%d).%s\n", root, giwVersion, incomplete)
+		return exitIncomplete(incomplete)
+	}
+	var removed []pull.StaleSidecar
 	failed := 0
 	for _, s := range stale {
 		note := ""
 		if s.SharedWith != "" {
 			note = fmt.Sprintf("  (the same file as %s: frees nothing)", s.SharedWith)
 		}
-		if *apply {
-			if err := pull.RemoveStaleSidecar(root, s, giwVersion); err != nil {
-				fmt.Printf("  FAILED  %s: %v\n", s.Path, err)
-				failed++
-				continue
-			}
-			fmt.Printf("  removed v%d  %10s  %s%s\n", s.Version, pull.HumanBytes(s.Bytes), s.Path, note)
-		} else {
+		if !*apply {
 			fmt.Printf("  v%d  %10s  %s%s\n", s.Version, pull.HumanBytes(s.Bytes), s.Path, note)
+			continue
 		}
-		freed += s.Freed()
+		gone, err := pull.RemoveStaleSidecar(root, s, giwVersion)
+		if len(gone) > 0 { // the sidecar itself is gone, whatever happened to its marker
+			removed = append(removed, s)
+			fmt.Printf("  removed v%d  %10s  %s%s\n", s.Version, pull.HumanBytes(s.Bytes), s.Path, note)
+		}
+		if err != nil {
+			if len(gone) > 0 {
+				fmt.Printf("  FAILED  marker not removed: %v\n", err)
+			} else {
+				fmt.Printf("  FAILED  %s: %v\n", s.Path, err)
+			}
+			failed++
+		}
 	}
 	switch {
 	case !*apply:
-		fmt.Printf("\n%d stale sidecar(s), %s to reclaim (this build reads v%d). Re-run with -apply to delete them.\n", len(stale), pull.HumanBytes(freed), giwVersion)
+		fmt.Printf("\n%d stale sidecar(s), %s to reclaim (this build reads v%d). Re-run with -apply to delete them.%s\n",
+			len(stale), pull.HumanBytes(pull.Reclaimed(stale, stale)), giwVersion, incomplete)
+		return exitIncomplete(incomplete)
 	case failed > 0:
-		fmt.Printf("\n%d of %d removed; %d failed.\n", len(stale)-failed, len(stale), failed)
+		fmt.Printf("\n%d of %d sidecar(s) removed, %s reclaimed; %d failed.%s\n",
+			len(removed), len(stale), pull.HumanBytes(pull.Reclaimed(stale, removed)), failed, incomplete)
 		return 1
 	default:
-		fmt.Printf("\n%d stale sidecar(s) removed, %s reclaimed.\n", len(stale), pull.HumanBytes(freed))
+		fmt.Printf("\n%d stale sidecar(s) removed, %s reclaimed.%s\n", len(removed), pull.HumanBytes(pull.Reclaimed(stale, removed)), incomplete)
+		return exitIncomplete(incomplete)
+	}
+}
+
+// exitIncomplete is 1 when the listing was incomplete (a non-empty note), else 0.
+func exitIncomplete(note string) int {
+	if note != "" {
+		return 1
 	}
 	return 0
 }

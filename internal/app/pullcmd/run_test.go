@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -392,7 +393,10 @@ func runCacheV17(args []string) int { return RunCache(args, 17) }
 // TestRunCache_pruneSidecars drives `cache prune-sidecars` against a temp directory: the dry run lists the stale version and
 // deletes nothing, -apply deletes it and leaves the current one.
 func TestRunCache_pruneSidecars(t *testing.T) {
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir()) // the form the command prints paths in
+	if err != nil {
+		t.Fatal(err)
+	}
 	oldGIW := filepath.Join(dir, "m.int4.cpu.v16.giw")
 	curGIW := filepath.Join(dir, "m.int4.cpu.v17.giw")
 	for _, p := range []string{oldGIW, curGIW} {
@@ -419,5 +423,60 @@ func TestRunCache_pruneSidecars(t *testing.T) {
 	}
 	if code, stdout, _ = run(t, runCacheV17, "prune-sidecars", "-dir", dir); code != 0 || !strings.Contains(stdout, "No stale") {
 		t.Errorf("after -apply: exit %d, stdout:\n%s", code, stdout)
+	}
+}
+
+// TestRunCache_pruneSidecarsRefusesAFileDir: -dir naming a regular file is refused up front, dry run and -apply alike.
+func TestRunCache_pruneSidecarsRefusesAFileDir(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "m.int4.cpu.v16.giw")
+	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"prune-sidecars", "-dir", f}, {"prune-sidecars", "-apply", "-dir", f}} {
+		code, stdout, stderr := run(t, runCacheV17, args...)
+		if code == 0 || !strings.Contains(stderr, "not a directory") {
+			t.Errorf("%v: exit %d, stdout:\n%s\nstderr:\n%s", args, code, stdout, stderr)
+		}
+	}
+	if _, err := os.Stat(f); err != nil {
+		t.Errorf("%s removed: %v", f, err)
+	}
+}
+
+// TestRunCache_pruneSidecarsMarkerFailure: a sidecar removed whose marker could not be is reported as removed, with the
+// marker's failure, and the command exits 1.
+func TestRunCache_pruneSidecarsMarkerFailure(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "m.int4.cpu.v16.giw")
+	if err := os.WriteFile(p, make([]byte, 2048), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(p+".verified", "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, _ := run(t, runCacheV17, "prune-sidecars", "-apply", "-dir", dir)
+	if code != 1 || !strings.Contains(stdout, "removed v16") || !strings.Contains(stdout, "marker not removed") {
+		t.Errorf("-apply with an unremovable marker: exit %d, stdout:\n%s", code, stdout)
+	}
+}
+
+// TestRunCache_pruneSidecarsReportsUnreadable: a directory under -dir that cannot be read is named on stderr, the summary
+// calls the listing incomplete, and the exit is 1.
+func TestRunCache_pruneSidecarsReportsUnreadable(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("directory permissions do not deny reads here")
+	}
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked")
+	if err := os.MkdirAll(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	code, stdout, stderr := run(t, runCacheV17, "prune-sidecars", "-dir", dir)
+	if code != 1 || !strings.Contains(stderr, "locked") || !strings.Contains(stdout, "incomplete") {
+		t.Errorf("unreadable subdirectory: exit %d, stdout:\n%s\nstderr:\n%s", code, stdout, stderr)
 	}
 }
