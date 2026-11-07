@@ -32,6 +32,7 @@
     "decoder/scratch.go",
     "decoder/cost_cpu.go",
     "decoder/wmbytes.go",
+    "internal/runtime/program/methods.go",
     "internal/runtime/program/program.go"
   ],
   "deltanet": [

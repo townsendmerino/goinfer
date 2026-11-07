@@ -297,12 +297,17 @@ func TodayKey(src Source, m *Manifest, fam Family, def, tail string, programs ma
 // TestProgramFingerprint_table holds each GOARCH's entry to the programs the fixtures' configs build.
 const ProgramTablePath = "testdata/program_fingerprints.json"
 
+// ProgramTypesFile holds the program's types and constants and nothing that executes (TestBuilderFile_programTypesDeclareOnly):
+// the values a program holds in them are what a program fingerprint hashes. Their methods live in methods.go beside it.
+const ProgramTypesFile = "internal/runtime/program/program.go"
+
 // BuilderFile reports whether path is a program builder: a file whose effect on numerics is the program it builds,
 // which the program fingerprints cover. The executors, which compute each op, are not builders and stay in every key.
 func BuilderFile(path string) bool {
 	switch path {
 	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go",
-		"decoder/gemma12.go": // gemma's and gemma2's adapters, under another name
+		"decoder/gemma12.go", // gemma's and gemma2's adapters, under another name
+		ProgramTypesFile:
 		return true
 	}
 	return strings.HasPrefix(path, "decoder/arch_") && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go")

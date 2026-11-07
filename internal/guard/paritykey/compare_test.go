@@ -1,6 +1,9 @@
 package paritykey
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,11 +141,36 @@ func TestBuilderFile(t *testing.T) {
 			t.Errorf("%s is not a builder", p)
 		}
 	}
-	// It holds the program's types, but also methods that execute (AttentionParams.Start, AttnTempParams.Scale, BatchEligible), and a program
-	// fingerprint hashes a program's data, never a method's body. Listed, a change to one would move today's key and not the shadow key
-	// (docs/measurements/vk5-2026-10.md §10).
-	if BuilderFile("internal/runtime/program/program.go") {
-		t.Error("internal/runtime/program/program.go is not a builder: the shadow key would not see a change to its methods")
+	if !BuilderFile(ProgramTypesFile) {
+		t.Errorf("%s is a builder: the program fingerprints hash the values its types hold", ProgramTypesFile)
+	}
+	if BuilderFile("internal/runtime/program/methods.go") {
+		t.Error("internal/runtime/program/methods.go is not a builder: no program fingerprint sees a method's body")
+	}
+}
+
+// TestBuilderFile_programTypesDeclareOnly holds ProgramTypesFile to what makes it a builder: types and constants, no function
+// and no variable. A method or a variable there would execute, and no program fingerprint sees its body, so a change to it
+// would leave today's key fresh (docs/measurements/vk5-2026-10.md §10).
+func TestBuilderFile_programTypesDeclareOnly(t *testing.T) {
+	path := filepath.Join("..", "..", "..", ProgramTypesFile)
+	f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range f.Decls {
+		switch d := d.(type) {
+		case *ast.FuncDecl:
+			t.Errorf("%s declares func %s: move it to methods.go, which stays in every key", ProgramTypesFile, d.Name.Name)
+		case *ast.GenDecl:
+			if d.Tok == token.VAR {
+				for _, sp := range d.Specs {
+					for _, n := range sp.(*ast.ValueSpec).Names {
+						t.Errorf("%s declares var %s: move it to methods.go, which stays in every key", ProgramTypesFile, n.Name)
+					}
+				}
+			}
+		}
 	}
 }
 

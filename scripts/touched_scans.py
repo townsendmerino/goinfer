@@ -111,6 +111,7 @@ SCANS = [
     Scan("decoder", "TestParityKey_shadowMatchesDecoder", F("testdata/loader_identity.json", "decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json", "testdata/program_fingerprints.json") + NT("internal/guard/paritykey", "decoder")),
     Scan("decoder", "TestParityPrograms_mapping", F("testdata/parity/*.json", "testdata/program_fingerprints.json", "testdata/*/config.json") + NT("decoder")),
     Scan("decoder", "TestParityLoaders_mapping", F("testdata/parity/*.json", "testdata/loader_identity.json") + NT("internal/guard/paritykey")),
+    Scan("internal/guard/paritykey", "TestBuilderFile_programTypesDeclareOnly", F("internal/runtime/program/program.go")),
     # The fixture censuses walk testdata/: a new or changed model fixture must be listed or excluded in each (8ec704c3).
     Scan("decoder", "TestSerializeCensus_everyFixtureIsListedOrExcluded", F("testdata/*/config.json")),
     Scan("decoder", "TestSeams_subCaptureRefusedWhereGateSCannotRun", F("testdata/*/config.json")),
