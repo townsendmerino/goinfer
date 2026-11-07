@@ -71,5 +71,12 @@ DC1 goes ahead: `Config` only. DC2 (`Options`) and DC3 (`Architecture`) stay par
 - **Evidence.** Logs in `docs/measurements/dc1b-2026-11-07/`. `touched.py`'s two reds there are not this change's: `cmd/gate`'s
   `TestProcSampler_findsTheTestBinaryUnderItsParent` and `backend/webgpu`'s `TestUploadKV_gemma4MoE/kv-f32/past-the-window` fail the same way on
   `origin/main` on mbp2 (its webgpu device is an Intel iGPU).
+- **The API gate (Francis, 2026-11-07 11:49).** apidiff read `Config` and `(*Model).Config` as Hard-tier breaks: the alias moves the type's
+  identity, though every source use compiles unchanged (what does change is `%T`, `reflect` `String`/`PkgPath` and gob names). Francis
+  chose an exception over a tier change: `testdata/apidiff/hard_tier_aliases.txt` lists `decoder Config = decoder/config.Config`, and
+  `scripts/apidiff_check.sh` treats that name's "changed from Config to …/decoder/config.Config" line, and a Hard-tier method whose
+  signature text is unchanged and names it, as compatible, and nothing else. `scripts/test_apidiff_check.py` (in CI) holds the rule: red
+  first on the two licensed lines; an unlisted alias, a listed name into another package or under another name, a changed signature
+  and a field all stay fatal, and a mutation loosening the match turns two of them red. `docs/api-tiers.md` names what changes.
 - **VK5.** The week-3 shadow week is over (graded early, 2026-11-07); this change went after the builder switch, as §7 asked.
 
