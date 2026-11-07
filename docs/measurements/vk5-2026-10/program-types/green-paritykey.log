@@ -1,0 +1,10 @@
+=== RUN   TestCompare_classes
+--- PASS: TestCompare_classes (0.00s)
+=== RUN   TestBuilderFile
+--- PASS: TestBuilderFile (0.00s)
+=== RUN   TestBuilderFile_programTypesDeclareOnly
+--- PASS: TestBuilderFile_programTypesDeclareOnly (0.00s)
+=== RUN   TestKey_onTheTree
+--- PASS: TestKey_onTheTree (0.98s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/guard/paritykey	0.988s

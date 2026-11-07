@@ -1,0 +1,21 @@
+=== RUN   TestBuilderFile
+    compare_test.go:145: internal/runtime/program/program.go is a builder: the program fingerprints hash the values its types hold
+--- FAIL: TestBuilderFile (0.00s)
+=== RUN   TestBuilderFile_programTypesDeclareOnly
+    compare_test.go:164: internal/runtime/program/program.go declares func Recurrent: move it to methods.go, which stays in every key
+    compare_test.go:169: internal/runtime/program/program.go declares var GenericKinds: move it to methods.go, which stays in every key
+    compare_test.go:164: internal/runtime/program/program.go declares func String: move it to methods.go, which stays in every key
+    compare_test.go:164: internal/runtime/program/program.go declares func SubCaptureUncovered: move it to methods.go, which stays in every key
+    compare_test.go:164: internal/runtime/program/program.go declares func Start: move it to methods.go, which stays in every key
+    compare_test.go:164: internal/runtime/program/program.go declares func Scale: move it to methods.go, which stays in every key
+    compare_test.go:164: internal/runtime/program/program.go declares func AnySoftcap: move it to methods.go, which stays in every key
+    compare_test.go:164: internal/runtime/program/program.go declares func MultiStepEligible: move it to methods.go, which stays in every key
+    compare_test.go:164: internal/runtime/program/program.go declares func BatchEligible: move it to methods.go, which stays in every key
+    compare_test.go:164: internal/runtime/program/program.go declares func AnyOp: move it to methods.go, which stays in every key
+    compare_test.go:164: internal/runtime/program/program.go declares func KindsIn: move it to methods.go, which stays in every key
+    compare_test.go:164: internal/runtime/program/program.go declares func AttnOrderIs: move it to methods.go, which stays in every key
+    compare_test.go:164: internal/runtime/program/program.go declares func String: move it to methods.go, which stays in every key
+--- FAIL: TestBuilderFile_programTypesDeclareOnly (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/guard/paritykey	0.003s
+FAIL
