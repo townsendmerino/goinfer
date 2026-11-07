@@ -249,7 +249,7 @@ func TestMetalDecodeDecomp(t *testing.T) {
 			for rep := 0; rep < reps; rep++ {
 				for si, sv := range splits {
 					r.attnFASplitOverride = sv
-					r.setPos(D) // setPos writes uAttnFANSplit from attnFASplitFor, like every decode step
+					r.setPosAheadForTest(D) // setPos writes uAttnFANSplit from attnFASplitFor, like every decode step
 					f := arm(nil)
 					w := arm(attnPipes)
 					res[si].full = append(res[si].full, f)

@@ -81,7 +81,11 @@ func (r *resident) prefillEModelSrc(src rowSource, startPos int, head bool) (log
 		}
 	}()
 	r.emodelLayerMajorRuns++
-	r.kvOwn(r.kvSlot, startPos, startPos+src.n)
+	r.stopExec() // the pass runs beside the executor: a pipelined forward may be in flight reading the table or K/V
+	if err := r.kvWrite(r.kvSlot, startPos, startPos+src.n); err != nil {
+		r.recordExecErr(err)
+		return nil
+	}
 	for c := 0; c < src.n; c += emodelChunk {
 		end := min(c+emodelChunk, src.n)
 		logits = r.emodelRows(src.rows(c, end), startPos+c, head && end == src.n)

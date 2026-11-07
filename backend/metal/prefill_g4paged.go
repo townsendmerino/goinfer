@@ -51,6 +51,11 @@ func (r *resident) prefillG4PagedSrc(src rowSource, startPos int, head bool) (lo
 		}
 	}()
 	r.g4LayerMajorRuns++
+	r.stopExec() // the pass runs beside the executor: a pipelined forward may be in flight reading the table or K/V
+	if err := r.kvWrite(r.kvSlot, startPos, startPos+src.n); err != nil {
+		r.recordExecErr(err)
+		return nil
+	}
 	for c := 0; c < src.n; c += g4LayerMajorChunk {
 		end := min(c+g4LayerMajorChunk, src.n)
 		logits = r.g4LayerMajorRows(src.rows(c, end), startPos+c, head && end == src.n)
@@ -257,7 +262,11 @@ func (r *resident) prefillMoEPagedSrc(src rowSource, startPos int, head bool) (l
 		}
 	}()
 	r.moeLayerMajorRuns++
-	r.kvOwn(r.kvSlot, startPos, startPos+src.n)
+	r.stopExec() // the pass runs beside the executor: a pipelined forward may be in flight reading the table or K/V
+	if err := r.kvWrite(r.kvSlot, startPos, startPos+src.n); err != nil {
+		r.recordExecErr(err)
+		return nil
+	}
 	for c := 0; c < src.n; c += g4LayerMajorChunk {
 		end := min(c+g4LayerMajorChunk, src.n)
 		logits = r.moeLayerMajorRows(src.rows(c, end), startPos+c, head && end == src.n)

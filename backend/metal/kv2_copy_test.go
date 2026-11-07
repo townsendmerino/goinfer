@@ -124,8 +124,9 @@ func kv2Resident(t *testing.T, i8 bool) (*metalResident, *resident) {
 }
 
 // TestKV2_copyKVExact is G2 on Metal (docs/measurements/kv2-2026-10-14.md): after CopyKV(src, dst, start, end) dst's
-// rows in the range equal src's byte for byte, dst's other rows and every other slot are unchanged, and a range past the
-// cache is declined with nothing written. Each slot's rows are read through its table, and the scrambled arm hands blocks
+// rows in the range equal src's byte for byte, its rows below the range and every other slot are unchanged, and its sequence ends where
+// src's does, so it holds no row past the range: a copy that ends a longer destination gives its blocks there back (they read as block
+// 0, zero). A range past the cache is declined with nothing written. Each slot's rows are read through its table, and the scrambled arm hands blocks
 // out reversed and interleaved across slots, so the copy must move a sequence's blocks, not a slot's byte range.
 func TestKV2_copyKVExact(t *testing.T) {
 	for _, c := range []struct {
@@ -165,8 +166,12 @@ func TestKV2_copyKVExact(t *testing.T) {
 				if b, p := kv2RowsEqual(after[tc.dst], before[tc.dst], rb, 0, tc.start); b >= 0 {
 					t.Errorf("CopyKV%v: dst buffer %d row %d below the range changed", tc, b, p)
 				}
-				if b, p := kv2RowsEqual(after[tc.dst], before[tc.dst], rb, tc.end, rows); b >= 0 {
-					t.Errorf("CopyKV%v: dst buffer %d row %d above the range changed", tc, b, p)
+				zero := make([][]byte, len(before[tc.dst]))
+				for i := range zero {
+					zero[i] = make([]byte, len(before[tc.dst][i]))
+				}
+				if b, p := kv2RowsEqual(after[tc.dst], zero, rb, tc.end, rows); b >= 0 {
+					t.Errorf("CopyKV%v: dst buffer %d row %d above the range is not released (zero)", tc, b, p)
 				}
 				for s := range 3 {
 					if s != tc.dst {
@@ -175,6 +180,10 @@ func TestKV2_copyKVExact(t *testing.T) {
 						}
 					}
 				}
+			}
+			// A copy hands dst the source's sequence, no further: slot 0 wrote 1,000 rows, so 1,024 rows of whole blocks reach 1,000.
+			if got, past := a.ReusableKVSlot(2, 1000), a.ReusableKVSlot(2, 1001); got != 1000 || past != 0 {
+				t.Errorf("after the copies slot 2 answers %d for 1,000 rows and %d for 1,001; want 1000 and 0", got, past)
 			}
 			before := kv2Slot(t, r, 2, rows)
 			var d *decoder.KVCopyDecline
@@ -196,12 +205,13 @@ func TestKV2_copyKVExact(t *testing.T) {
 var chainSkipLogged bool
 
 // TestKVPages_shareByReference is KV5-5's G3b and G1a's second slot on Metal: slot 0 prefills a 640-row preamble and slots 1 and 2
-// take it by CopyKV, by reference, so the pool holds it once (its own count, kvBlocksInUse, drops by the 20 blocks the copies freed).
+// take it by CopyKV, by reference, so the pool holds it once (its own count, kvBlocksInUse, is the preamble's 10 blocks after the
+// copies, against 30 when each slot prefills it).
 // Each slot then prefills its own suffix from 640 and decodes. Then slots 0 and 1 rewind into blocks the others still share, by every
 // writer in turn (a prefill, the step, ForwardBatch, the verify, UploadKV, the greedy chain across a block edge, a decode), each a copy
 // on write. Every logit, and every slot's K/V over its own history read through its table after each write, equals the reference: a
-// fresh resident where each slot prefilled the preamble itself, at f16 and int8 KV, on in-order and scrambled tables. With kvOwn
-// planted off, a rewind lands in a shared block and another slot's K/V moves.
+// fresh resident where each slot prefilled the preamble itself, at f16 and int8 KV, on in-order and scrambled tables. With the copy
+// on write planted off, a rewind lands in a shared block and another slot's K/V moves.
 func TestKVPages_shareByReference(t *testing.T) {
 	const pre, suffix = 640, 70
 	for _, c := range []struct{ i8, scramble bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
@@ -236,7 +246,7 @@ func TestKVPages_shareByReference(t *testing.T) {
 						}
 					}
 				}
-				held := before - r.kvBlocksInUse()
+				held := r.kvBlocksInUse() - before
 				for s := range 3 {
 					bind(s)
 					add(a.PrefillLast(context.Background(), kv2Embs(r, suffix, uint32(20+s)), pre))
@@ -339,8 +349,8 @@ func TestKVPages_shareByReference(t *testing.T) {
 			}
 			ref, refKV, refHeld := run(false, false)
 			got, gotKV, held := run(true, false)
-			if refHeld != 0 || held != 2*pre/decoder.KVBlockRows {
-				t.Errorf("sharing freed %d blocks (no sharing: %d); want %d, the preamble held once", held, refHeld, 2*pre/decoder.KVBlockRows)
+			if want := pre / decoder.KVBlockRows; held != want || refHeld != 3*want {
+				t.Errorf("the preamble takes %d blocks shared (%d unshared); want %d, held once (%d)", held, refHeld, want, 3*want)
 			}
 			// The reference prefilled the preamble on slots 1 and 2 as well, so its rows are the shared run's minus those two prefills.
 			ref = append(ref[:1], ref[3:]...)
@@ -353,7 +363,7 @@ func TestKVPages_shareByReference(t *testing.T) {
 			// The K/V check is the one a missing copy on write must trip: this fixture's attention is too peaked for every leaked row
 			// to move a logit.
 			if _, plantedKV, _ := run(true, true); kvDiffer(refKV, plantedKV) == 0 {
-				t.Error("with kvOwn off, the rewinds into shared blocks moved no other slot's K/V: the test cannot see a missing copy on write")
+				t.Error("with the copy on write off, the rewinds into shared blocks moved no other slot's K/V: the test cannot see a missing copy on write")
 			}
 		})
 	}
@@ -361,7 +371,8 @@ func TestKVPages_shareByReference(t *testing.T) {
 
 // TestKVPages_G3bRealPreamble is KV5-5's G3b on a real checkpoint (GOINFER_METAL_MC3=1, the 1.5B by default; tier 1, under the
 // exclusive lock): four conversations share a 16,384-token preamble, prefilled once and taken by CopyKV, by reference. The pool holds it
-// once (its own count, kvBlocksInUse, falls by the 768 blocks the three copies freed), and each conversation's 16 greedy tokens after
+// once (its own count, kvBlocksInUse, stays at the preamble's 256 blocks across the three copies, and each conversation then takes only
+// the blocks its own tail writes), and each conversation's 16 greedy tokens after
 // its own 64-token suffix equal that conversation run alone on a slot of its own, token for token. Both arms prefill in the same
 // 1,024-row passes, so the comparison is of sharing alone.
 func TestKVPages_G3bRealPreamble(t *testing.T) {
@@ -424,8 +435,8 @@ func TestKVPages_G3bRealPreamble(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	freed := before - r.kvBlocksInUse()
-	progress(fmt.Sprintf("preamble shared: %d blocks freed, %d in use", freed, r.kvBlocksInUse()))
+	shared := r.kvBlocksInUse()
+	progress(fmt.Sprintf("preamble shared: %d blocks in use before the copies, %d after", before, shared))
 	for s := range 4 {
 		bind(s)
 		got := greedy(prefill(suffixes[s], pre), pre+suffix)
@@ -433,8 +444,10 @@ func TestKVPages_G3bRealPreamble(t *testing.T) {
 			t.Errorf("conversation %d: %v with the preamble shared, %v alone", s, got, alone[s])
 		}
 	}
-	if want := 3 * pre / decoder.KVBlockRows; freed != want {
-		t.Errorf("sharing the preamble freed %d blocks, want %d: it is not held once", freed, want)
+	tail := kvBlocksFor(pre+suffix+gen) - pre/decoder.KVBlockRows
+	if want, end := pre/decoder.KVBlockRows, r.kvBlocksInUse(); before != want || shared != want || end != want+4*tail {
+		t.Errorf("blocks in use: %d before the copies, %d after, %d at the end; want %d, %d, %d: the preamble is not held once",
+			before, shared, end, want, want, want+4*tail)
 	}
 	progress("done")
 }
@@ -542,4 +555,182 @@ func TestKV2_copyCost(t *testing.T) {
 		bytes += b * rows
 	}
 	fmt.Fprintf(os.Stderr, "[kv2-g7 metal] CopyKV of %d rows (%.0f MB): median %.2f ms of %v\n", rows, float64(bytes)/1e6, ms[2], ms)
+}
+
+// TestKVPages_chainReopensAfterAFailedTake: a greedy chain whose look-ahead finds no block (every take refused, nothing to release) still
+// answers the token in flight, and a chain opened again once blocks can be had runs: a failed take ends that opening (each runs its own
+// chainLoop), not the resident's chain. The stop gives the look-ahead's block back: it lies past the last token taken.
+func TestKVPages_chainReopensAfterAFailedTake(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if why := r.greedyChainWhyNot(); why != "" {
+		t.Skipf("no greedy chain on this resident: %s", why)
+	}
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 63, 7), 0); err != nil {
+		t.Fatal(err)
+	}
+	run := func(refuse bool) (id, during int) {
+		t.Helper()
+		if err := r.chainStart(5, 63); err != nil {
+			t.Fatal(err)
+		}
+		defer r.stopChain()
+		kvTakeFailForTest = refuse // the look-ahead at 64 opens block 1
+		defer func() { kvTakeFailForTest = false }()
+		id, err := r.chainNext()
+		if err != nil {
+			t.Fatalf("the token in flight at 63 (takes refused: %v): %v", refuse, err)
+		}
+		return id, r.kvHeld(0)
+	}
+	first, _ := run(true)
+	if held := r.kvHeld(0); held != 1 {
+		t.Fatalf("slot 0 holds %d blocks after the refused look-ahead; want 1: the take was not refused, and the test reads nothing", held)
+	}
+	got, during := run(false)
+	if got != first {
+		t.Errorf("the chain opened again answers %d at 63, the first opening %d", got, first)
+	}
+	if during != 2 {
+		t.Errorf("slot 0 holds %d blocks while the second opening's look-ahead is in flight; want 2", during)
+	}
+	if held, st := r.kvHeld(0), &r.kvSlotSt[0]; held != 1 || st.valid != 64 {
+		t.Errorf("slot 0 holds %d blocks and %d rows after the chain stopped; want 1 and 64: the look-ahead at 64 is past the last token taken", held, st.valid)
+	}
+}
+
+// TestKVPages_copyJudgesTheSourceAfterTheChainStops: CopyKV stops an open chain before it reads either slot, so it judges src by the
+// sequence the stop leaves. With a turn's look-ahead at 64 in flight, block 1 is mapped until the chain stops and gives it back, so a copy of
+// rows [0, 128) declines, and no table entry names the null block.
+func TestKVPages_copyJudgesTheSourceAfterTheChainStops(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if why := r.greedyChainWhyNot(); why != "" {
+		t.Skipf("no greedy chain on this resident: %s", why)
+	}
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 63, 7), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.chainStart(5, 63); err != nil {
+		t.Fatal(err)
+	}
+	defer r.stopChain()
+	if _, err := r.chainNext(); err != nil {
+		t.Fatal(err)
+	}
+	if held := r.kvHeld(0); held != 2 {
+		t.Fatalf("slot 0 holds %d blocks with the look-ahead at 64 in flight; want 2, or the test reads nothing", held)
+	}
+	err := a.CopyKV(0, 1, 0, 128)
+	var d *decoder.KVCopyDecline
+	if !errors.As(err, &d) {
+		t.Errorf("CopyKV of rows [0, 128) with the chain open returned %v; want a decline: once the chain stops slot 0 holds rows to 64", err)
+	}
+	if r.chainReq != nil {
+		t.Error("the chain is still open after CopyKV")
+	}
+	if n := r.kvRefs[0]; n != 0 {
+		t.Errorf("the null block counts %d references; a table entry copied it as a block", n)
+	}
+}
+
+// TestKVPages_rewindQuiesces: a write that gives blocks back (a rewind past a pipelined forward's block) first stops the executor, whose
+// last command buffer may still be in flight writing there; a write that appends does not. Read by the executor's identity: after 70
+// pipelined positions, a decode at 70 keeps it, a decode at 10 and a prefill of 40 rows from 10 stop it.
+func TestKVPages_rewindQuiesces(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	embs := kv2Embs(r, 72, 11)
+	pipe := func() {
+		t.Helper()
+		for p := range 70 {
+			if err := a.ForwardNoLogits(embs[p], p); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if r.execReq == nil {
+			t.Fatal("ForwardNoLogits did not run on the executor: the test reads nothing")
+		}
+	}
+	pipe()
+	done := r.execDone
+	if _, err := a.Forward(embs[70], 70); err != nil {
+		t.Fatal(err)
+	}
+	if r.execDone != done {
+		t.Error("a decode that appends stopped the executor")
+	}
+	pipe()
+	done = r.execDone
+	if _, err := a.Forward(embs[71], 10); err != nil {
+		t.Fatal(err)
+	}
+	if r.execDone == done {
+		t.Error("a decode at 10, after 70 pipelined positions across a block edge, did not stop the executor first")
+	}
+	pipe()
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 40, 12), 10); err != nil {
+		t.Fatal(err)
+	}
+	if r.execReq != nil {
+		t.Error("a prefill of 40 rows from 10, after 70 pipelined positions across a block edge, did not stop the executor first")
+	}
+}
+
+// TestKVPages_prefillAndUploadStopTheExecutor: a prefill and an upload stop the executor before they write, whatever their range: they
+// run beside it, not on it, and a pipelined forward's buffer may still be in flight reading the table or the K/V they change. Slot 0
+// takes block 0 from slot 1 by CopyKV and pipelines positions 64 to 69; a prefill from 10 to 70 (a copy on write into block 0, nothing
+// past its end) stops it; so does an upload at 70 after more pipelined positions.
+func TestKVPages_prefillAndUploadStopTheExecutor(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	bind := func(s int) {
+		t.Helper()
+		if err := r.useKVSlot(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pipe := func(from, to int) {
+		t.Helper()
+		embs := kv2Embs(r, to, 11)
+		for p := from; p < to; p++ {
+			if err := a.ForwardNoLogits(embs[p], p); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if r.execReq == nil {
+			t.Fatal("ForwardNoLogits did not run on the executor: the test reads nothing")
+		}
+	}
+	bind(1)
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 64, 1), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CopyKV(1, 0, 0, 64); err != nil {
+		t.Fatal(err)
+	}
+	bind(0)
+	pipe(64, 70)
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 60, 12), 10); err != nil {
+		t.Fatal(err)
+	}
+	if r.execReq != nil {
+		t.Error("a prefill from 10 to 70 into a shared block, after pipelined positions 64 to 69, did not stop the executor first")
+	}
+	pipe(70, 75)
+	for l := range r.layers {
+		if g := r.layers[l].geom; g != nil && !r.layers[l].kvShared {
+			if err := a.UploadKV(l, 75, make([]float32, g.kvDim), make([]float32, g.kvDim)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if r.execReq != nil {
+		t.Error("an upload at 75, after pipelined positions 70 to 74, did not stop the executor first")
+	}
 }

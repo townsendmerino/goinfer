@@ -173,8 +173,6 @@ func (r *resident) chainOpen(q chainReq) error {
 		return fmt.Errorf("metal: no greedy chain on this resident: %s", why)
 	}
 	r.stopExec() // the encode-ahead executor and any earlier chain
-	// The chain commits buffers ahead of the host, so it owns every block it may write before the first: the rest of the slot's table.
-	r.kvOwn(r.kvSlot, q.pos, r.kvCap())
 	r.chainGW, r.chainGS = gw, gs
 	if r.chainTok[0] == (Buffer{}) {
 		for k := range r.chainSets {
@@ -191,6 +189,7 @@ func (r *resident) chainOpen(q chainReq) error {
 		}
 	}
 	r.chainReq, r.chainResp, r.chainDone = make(chan chainReq), make(chan chainResp), make(chan struct{})
+	r.chainSlot, r.chainEnd = r.kvSlot, q.pos
 	go r.chainLoop()
 	r.chainReq <- q
 	return (<-r.chainResp).err
@@ -217,7 +216,8 @@ func (r *resident) chainAsk(q chainReq) (int, error) {
 	return a.id, a.err
 }
 
-// stopChain closes the chain, if one is open, and blocks until no buffer of it is in flight.
+// stopChain closes the chain, if one is open, and blocks until no buffer of it is in flight. The slot's sequence then ends where its
+// caller's does (chainEnd): the look-ahead queued past the last token taken goes back, with any block it opened.
 func (r *resident) stopChain() {
 	if r.chainReq == nil {
 		return
@@ -225,6 +225,7 @@ func (r *resident) stopChain() {
 	close(r.chainReq)
 	r.chainReq = nil
 	<-r.chainDone
+	r.kvEndAt(r.chainSlot, r.chainEnd)
 }
 
 // chainFallbackAtForTest, when >= 0, makes the sampled chain's draw at that position read a row of -inf instead of the
@@ -304,8 +305,14 @@ func (r *resident) chainLoop() {
 	var fifo []inflight
 	next, sinceDrain := 0, 0
 	sampled, pos0, draw0 := false, 0, uint64(0)
+	var kvErr error // a block the next forward needed could not be had: speculation stops, and the request that reaches it says why
 	commit := func() {
-		if next >= r.ctxCap { // nothing to speculate into: the next position is past the resident KV
+		if next >= r.ctxCap || kvErr != nil { // nothing to speculate into: the next position is past the resident KV, or its block
+			return
+		}
+		// The chain maps a block as its forward enters it. The forwards in flight read only this slot's blocks below next, and a take
+		// for a position past the prompt is a fresh block, never a copy into one they read.
+		if kvErr = r.kvWrite(r.kvSlot, next, next+1); kvErr != nil {
 			return
 		}
 		k := next & 1
@@ -382,7 +389,11 @@ func (r *resident) chainLoop() {
 			r.chainResp <- chainResp{}
 		case chainOpNext:
 			if len(fifo) == 0 {
-				r.chainResp <- chainResp{err: fmt.Errorf("metal: greedy chain: no forward in flight")}
+				err := kvErr
+				if err == nil {
+					err = fmt.Errorf("metal: greedy chain: no forward in flight")
+				}
+				r.chainResp <- chainResp{err: err}
 				continue
 			}
 			if q.sampled != sampled {
@@ -399,7 +410,7 @@ func (r *resident) chainLoop() {
 				drain()
 				id := 0
 				if err == nil {
-					id = pick(f)
+					id, r.chainEnd = pick(f), f.pos+1
 					if len(fifo) == 0 {
 						commit()
 					}
@@ -411,7 +422,7 @@ func (r *resident) chainLoop() {
 			f, err := oldest()
 			id := 0
 			if err == nil {
-				id = pick(f)
+				id, r.chainEnd = pick(f), f.pos+1
 			}
 			r.chainResp <- chainResp{id: id, err: err}
 		case chainOpStop:
