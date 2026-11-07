@@ -8506,6 +8506,6 @@ green. Merged as `d642d060e`.
 
 ## 17. When this closes
 
-Each track closes when its ledger rows are done, killed or moved. The doc closes when PW6's re-count is graded against §1.
+Each track closes when its ledger rows are done, killed or moved. The doc closes when its remaining work rows close. AX7's and PW6's re-count on 2026-11-26 (the coordinator's scheduled check) is reported, not a closing condition (Francis, 2026-11-07).
 
 <!-- doc-reviewed: 2026-10-26 -->
