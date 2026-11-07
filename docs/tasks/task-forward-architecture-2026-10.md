@@ -4,32 +4,30 @@
 > Every speculative path in goinfer refuses both kinds of model today (`decoder/forwardn.go:Model.specRollbackSafe`).
 > Added on the owner's word ("yes both please").
 
-> **Status 2026-11-02.**
+> **Status 2026-11-07.** What changed since 2026-11-02 is marked **new**.
 >
-> - **OP0:** done 2026-10-13. Its summary is under §4.4, its feature census is §4.5, and its prior-art reading is §10a.
-> - **OP1:** gates registered (§4.6). On Metal, step 1 and the softcap's mechanism are on main and pass their day gates;
->   the softcap is not declared, because its tiny parity gate failed as registered, and the real Gemma 2 2B gate decides
->   it (the three night gates passed 2026-10-14). On CUDA, steps 1 and 2 are built and the softcap is declared on branch
->   `op1-cuda-declare-2026-10`; day gates pass, night gates not run (§4.6a). On WebGPU, not started.
-> - **OP3:** complete as of 2026-10-30 (§4.8). Every family's per-token forward walks the program (OP3a–OP3k, OP3z part
->   1); OP3z part 2 deleted the old loops, and OP3t (#506) moved the two batched twins onto the batched walker.
-> - **OP4 on Metal** (§4.9, gates registered 2026-10-30): merged through d6b. a (#525, `internal/runtime/program`), b1/b2 (#539,
->   #540, #544: layer shape and per-layer steps from the program), c (#545, #547, #548: `program.Metal` read by the
->   walker and by `Admit`), d1/d2 (#553, #554: batched prefill and the multi-sequence step walk the steps, admitted by
->   `program.MetalStep`), d3 (#560, #565, #567: MoE in the step, `--moe-step`; 1.4873× on Huihui-MoE-5B), d4a–c (#570,
->   #573, #574: per-slot Gated-DeltaNet state and Qwen3.5's blocks, `--recurrent-step`; 1.5799× on Qwen3.5 0.8B), d5a–c
->   (#579, #581, #583: Gemma 4's dense layers, `--gemma4-step`; 1.3794× on Gemma 4 E2B), d6a/b (#590, #591: per-slot
->   Mamba-2 state, Mamba-2 and the ReLU² FFN under `--recurrent-step`). Metal M1 identity across #584/#588/#598: 28
->   identical, 0 different. Left: D6b-5 (the timed Nemotron-H 4B cell, waits on its checkpoint), per-operation dispatch
+> - **OP0:** done 2026-10-13 (§4.4, census §4.5, prior art §10a).
+> - **OP1:** Gemma 2 is resident on **Metal and CUDA** (**new**: `docs/hardware-matrix.md`, generated and drift-tested, lists its only
+>   remaining decline as WebGPU, `attn-logit-softcap`). Gates and mechanism: §4.6 and §4.6a. WebGPU is not started.
+> - **OP3:** complete as of 2026-10-30 (§4.8). Every family's per-token forward walks the program (OP3a–OP3k, OP3z part 1); OP3z part 2
+>   deleted the old loops; OP3t (#506) moved the two batched twins onto the batched walker.
+> - **OP4 on Metal** (§4.9): merged through d6b (#525 to #591: layer shape and per-layer steps, `program.Metal` read by the walker and
+>   `Admit`, batched prefill and the multi-sequence step, MoE in the step 1.4873×, per-slot Gated-DeltaNet state 1.5799×, Gemma 4's dense
+>   layers 1.3794×, per-slot Mamba-2 state). Left: D6b-5 (the timed Nemotron-H 4B cell, waits on its checkpoint), per-operation dispatch
 >   inside mixer steps, and the memory planner (§4.7).
-> - **OP4 on CUDA** (§4.9a, scoped in #580; Francis's go 2026-11-01: Q2a fusion table, Q3a `program.CUDA`, Q4a stop at
->   d2): merged a (#582), b1 (#584: `ShapeOf`/`MixerOf` shared with Metal), b2 (#588: decode walks the fusion table;
->   0.5B/1.5B medians 0.9999×/1.0006×), c1 (#598: `program.CUDA`). Open: c2 (#599, `Admit` on `program.CUDA`), d2 (#602,
->   the step on `program.CUDAStep`), d1 (#603, batched prefill walks the steps). Card budget about 153 min (raised by
->   Francis).
-> - **Olmo Hybrid** (`NegEigval`/`ONormEps` in DeltaNet): declined to the CPU on Metal (#547) and CUDA (#598) because
->   neither backend read them; fixed on CUDA in #604; Metal and WebGPU being fixed.
-> - **Other tracks:** SP's SP2 on CUDA merged (#232, §6a); every other RF/HL/OP5/OP6 phase not started.
+> - **OP4 on CUDA** (§4.9a; Francis's go 2026-11-01: Q2a fusion table, Q3a `program.CUDA`, **Q4a stop at d2**): **new, all merged:** a (#582),
+>   b1 (#584), b2 (#588: decode walks the fusion table; 0.5B/1.5B medians 0.9999×/1.0006×), c1 (#598: `program.CUDA`), c2 (#599: `Admit` reads
+>   `program.CUDA`, 2026-11-02), d2 (#602: MC3's step admitted by `program.CUDAStep`) and d1 (#603: batched prefill walks the steps), the last
+>   two on 2026-11-02. **OP4 on CUDA is therefore at Francis's d2 stop;** the CUDA step does not carry MoE or recurrent blocks, and there is no
+>   phase for them until he says so.
+> - **Olmo Hybrid** (`NegEigval`/`ONormEps` in DeltaNet): **new, done on all three:** CUDA #604, Metal #611, WebGPU #627.
+> - **OP6:** its Metal half is built (the q4k lane joins MC3's step, 2026-10-15; its kernels were 4.7× slower than the loop on Phi-3 until
+>   #722 fixed them on 2026-11-06, `docs/measurements/p29-phi3-2026-11/README.md`). The default-load switch, the CUDA half and WebGPU are not done.
+> - **RF0:** half built (**new** in this reading): the per-turn `timings` block is on the wire (`internal/app/serveapp/turn_timings.go`) and the cost
+>   counters exist (`internal/cost`, SB11); the shape × family × backend census is `docs/measurements/forward-arch-baseline-2026-10-13.md`,
+>   stale against program-based admission.
+> - **Not started:** RF1–RF6, HL, OP5, OP6's CUDA half, default switch and WebGPU, OP1 on WebGPU, OP4 on WebGPU. §7a sizes them.
+> - **Other tracks:** SP's SP2 on CUDA merged (#232, §6a).
 >
 > Written on the owner's ask after a Cowork conversation the same day ("we have spent a bunch of time on decode, prefill
 > and now kv cache. in terms of time spent by goinfer on a query, where is there any room to re-architect to a cleaner
@@ -4865,6 +4863,52 @@ SP0 → SP1 → SP2 → SP3. Nothing here waits on KV4 or RF2. RF6 (speculation 
 - **The structural work** comes after OP1 and OP2 have shown the operation boundary holds: OP3, then OP4, then OP5.
 - **Every phase is bit-identical where it says so, and ships alone.** A track that stops early leaves the tree consistent,
   because the adapters keep the old paths working.
+
+### 7a. What is not started: size, order and what it decides (read 2026-11-07, docs only)
+
+**Unit and anchors.** A session-day is one session working one day on one box, review rounds included. Anchors from this doc's own dates: OP1 on
+Metal 2 days (gates registered 10-13, night gates passed 10-14); OP6's Metal half 1 day to a tier 1 pass (10-15); OP3 14 days (10-16 to
+10-30, about 13 sub-phases); OP4 on Metal about 4 days (gates 10-30, through d6b by 11-02, about 20 PRs); OP4 on CUDA about 2 days to the d2 stop
+(7 PRs). Work that needs a **night** or the card is slower than its code: OP1 on CUDA's night gates and OP6's M1 peer cell have each waited
+weeks. A range is wide where a kernel's tuning decides it (RF2, RF4) and narrow where the pattern exists (OP5 after the first family).
+
+| phase | needs | unblocks | session-days | box |
+|---|---|---|---|---|
+| **RF0** close-out | the `timings` block and cost counters exist; refresh the census against program-based admission | RF1's and RF2's registered bands | 0.5–1 | Mac |
+| **RF1** one `Step(batch)` over today's entry points | RF0. Today `decoder` declares 49 `Resident*` interfaces (34 optional ones on 10-13); no kernel change, identity by construction | RF2; a smaller `decoder` seam (Tier 3 modularization, `decoder/residency.go` 1,975 lines) | 4–8 | either |
+| **RF2** ragged attention over paged KV, CUDA | KV4 (done), RF1; a new kernel; speed bands per shape (decode depth 0.98, TTFT 0.97, MC3 0.98) with a kill rule | RF3, RF6; CUDA's row-by-row step attention (`stepAttnRows`) goes | 10–20 | nobara |
+| **RF3** mixed steps (token-budget scheduler), CUDA | RF2 | stall-free agent turns (`bench_prefill_stall`); RF4 | 5–8 | nobara |
+| **RF4** the same on Metal | RF3; KV5 (active, mac-sb11m: KV5-1 to KV5-3 merged, KV5-4 to KV5-6 in flight) | RF5; Metal's mixed steps | 10–16 | Mac |
+| **RF5** retire the old entry points; images and hidden outputs as row attributes | RF4 (WebGPU keeps the RF1 adapter, D3) | the 49 interfaces collapse; the biggest `decoder` simplification here | 5–8 | Mac |
+| **RF6** speculation inside a batch | RF3 for CUDA, RF4 for Metal; MC4's identity gate | speculation without a pause for the other conversations | 5–8 | both |
+| **HL** run-ahead under a gated logit processor (Metal), a chain on CUDA | nothing (independent) | prose speed on tool and thinking-budget turns (the chain gave plain turns 1.010–1.160×) | 4–8 (Metal 2–4, CUDA 2–4) | both |
+| **OP5** Spark-X2.5, LFM2.5, Granite-4.0-H, Laguna | OP4 on the backend (Metal done; CUDA at d2, enough for decode and the step); OP2(b) done | each family resident; their rows leave `hardware-matrix.md`'s "Why a cell reads CPU" | Metal 12–20, CUDA 10–18 (3–6 a family-backend; the first family is dearest, later cells reuse its operations) | both |
+| **OP6** Phi-3/4 | Metal default `--quant q4k` needs the peer cell M1 (a night); the CUDA q4k batched prefill (declines to the sequential path today, §3.2); WebGPU needs per-32 activations or a q4k lane | Phi-3/4 resident by default on Metal; a CUDA prefill for q4k | Metal switch 1–2, CUDA 3–6, WebGPU 5–10 (optional) | both |
+| **OP1 on WebGPU** | cells registered from nobara (Vulkan) before code (§4.6); softcap routed through every WGSL attention variant (`backend/webgpu/internal/kernels/attention.go` and the keys/rows/wide files) | Gemma 2 resident on WebGPU, the one decline left | 3–6 | nobara |
+| *OP4 on WebGPU* (not asked) | the program walked by `DecodeRunner`; WebGPU keeps its slots (D3) | OP5 families on WebGPU | 4–8 | *not recommended: E4 keeps WebGPU on the RF1 adapter* |
+
+**Parked, not counted:** Llama 4 and Ling 3.0's KDA (OP2c) wait for a checkpoint a box holds (§4.7: 6–10 days each if a random-init
+reference is accepted); Kimi K2's 384-expert router on Metal; Command-R, GPT-2 and Ministral 3's `attn-temp` on WebGPU.
+
+**Totals.** Sum of the rows above, without OP4-on-WebGPU: **about 80–140 session-days.** By box: nobara 33–62 (RF2, RF3, OP5-CUDA, HL-CUDA,
+OP6-CUDA, OP1-WebGPU), the Mac 31–51 (RF4, RF5, OP5-Metal, HL-Metal, OP6-Metal, RF0), either 14–26 (RF1, RF6, OP6-WebGPU).
+**The critical path is the RF chain:** RF1 → RF2 → RF3 → RF4 → RF5 is **34–60 sequential session-days** (RF4 also waits on KV5). OP5, HL and OP6
+run beside it. With one session on each box and 5–6 productive session-days a week (the night queue, the timing lock and review rounds take the
+rest), that is **about 7–14 weeks to finish everything, 6–12 for the RF chain alone.** Dropping RF5, RF6 and everything WebGPU leaves about 60–105
+session-days, 5–10 weeks. These are estimates from the anchors, not measurements; RF2's kill rule is the one place the number can
+move a lot (a tuning budget that fails keeps the old decode call and shortens RF2 and RF3).
+
+**Order, and why.**
+1. **Now, beside whatever the boxes are doing:** RF0 close-out, HL (Metal then CUDA) and OP6's Metal switch (one night). They need nothing.
+2. **RF1 next, on whichever box is free:** it has no kernel change, it starts the `decoder` seam collapse, and RF2 needs its call shape.
+3. **Then two lanes.** nobara: RF2 → RF3, with OP6's CUDA half in the gaps while the card is busy elsewhere. Mac: OP5 on Metal
+   (Spark-X2.5, LFM2.5, Granite-4.0-H, Laguna; order by what the Mac can measure, §4.7), then RF4 once RF3 and KV5 are in.
+4. **OP5 on CUDA** after RF3 (the same families, the operations already written for Metal); **RF5 and RF6** last; **OP1 on WebGPU** is a filler for
+   a nobara gap, since its only gain is Gemma 2 on WebGPU.
+
+**What this decides.** The structural modularization that is not finished is the RF chain (the 49 interfaces and the CUDA step's row-by-row
+attention), and the weeks above are mostly its length. Everything else is breadth (more families resident) and can stop at any phase: each
+ships alone and the adapters keep the old paths (§7).
 
 ## 8. Owner decisions
 
