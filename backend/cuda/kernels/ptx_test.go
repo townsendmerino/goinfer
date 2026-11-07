@@ -35,6 +35,7 @@ var (
 	attnImgPrefillPTX        = readPTX("attn_img_prefill")
 	decodeFAKV16PTX          = readPTX("decode_fa_kv16")
 	decodeFAPTX              = readPTX("decode_fa")
+	decodeFAKV8PTX           = readPTX("decode_fa_kv8")
 	decodeSplitKVCapPTX      = readPTX("decode_splitkv_cap")
 	decodeSplitKVKV16CapPTX  = readPTX("decode_splitkv_kv16_cap")
 	decodeSplitKVKV16PTX     = readPTX("decode_splitkv_kv16")

@@ -45,6 +45,7 @@ __device__ __forceinline__ float2 kv_ld2(const __half* p) {
 #define KV_LD4VS(p, i, sc) KV_LD4V(p, i)
 #define KV_LD2VS(p, i, sc) KV_LD2V(p, i)
 #define KV_SCALE_PARAMS
+#define KV_SCALE_ARGS
 #elif defined(KV_I8)
 typedef signed char KV_T;
 // KV_LDS(p, sc): the element widened to f32 and multiplied by its (position, head) scale. For a scale that is a power of two the product
@@ -66,6 +67,7 @@ __device__ __forceinline__ float2 kv_ld2_s8(const signed char* p, float sc) {
 #define KV_LD4VS(p, i, sc) kv_ld4_s8((p) + 4 * (i), (sc))
 #define KV_LD2VS(p, i, sc) kv_ld2_s8((p) + 2 * (i), (sc))
 #define KV_SCALE_PARAMS , const float* __restrict__ kscl, const float* __restrict__ vscl
+#define KV_SCALE_ARGS , kscl, vscl
 #else
 typedef float KV_T;
 #define KV_LD(p) (*(p))
@@ -77,5 +79,6 @@ typedef float KV_T;
 #define KV_LD4VS(p, i, sc) KV_LD4V(p, i)
 #define KV_LD2VS(p, i, sc) KV_LD2V(p, i)
 #define KV_SCALE_PARAMS
+#define KV_SCALE_ARGS
 #endif
 #endif

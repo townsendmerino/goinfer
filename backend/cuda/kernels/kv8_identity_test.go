@@ -5,12 +5,14 @@ package kernels
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 )
 
 // G1 of CUDA int8 KV (docs/tasks/task-kv-precision-everywhere-2026-10.md §4; docs/measurements/cuda-kv-i8-2026-11/scope.md): on a cache that holds int8 values times
@@ -464,6 +466,194 @@ func TestKV8_store_matchesTheCPUQuantizer(t *testing.T) {
 		}
 		for _, b := range []interface{ Close() error }{dk, dv, dkc, dvc, dks, dvs, dt} {
 			_ = b.Close()
+		}
+	}
+}
+
+// kv8Args are the device buffers a both-ways launch shares: the query, the scrambled block table, the K and V caches (f32 values, or int8) and, for the i8 arm, the two
+// scale pools as the trailing kernel arguments.
+type kv8Args struct {
+	q     *gc.Buffer[float32]
+	table *gc.Buffer[int32]
+	kc    gc.KernelArg
+	vc    gc.KernelArg
+	tail  []gc.KernelArg // the K and V scale pools on the i8 arm; nil on the f32 arm
+}
+
+// kv8Both runs launch once on the f32 module over the f32 values and once on the i8 module over the int8 values and scales, under the case's scrambled block table, and
+// returns what each returns. launch gets the function, the shared buffers and the stream; it allocates and reads back its own outputs.
+func kv8Both(t *testing.T, cx *gc.Context, c kv8Case, q []float32, f32PTX, i8PTX []byte, name string, launch func(fn *gc.Function, a kv8Args, st *gc.Stream) []float32) (f32Out, i8Out []float32) {
+	t.Helper()
+	table, kq, vq, ksc, vsc, kf, vf := c.scrambled()
+	bg := context.Background()
+	st := mustStream(t, cx)
+	defer st.Close()
+	run := func(ptx []byte, i8 bool) []float32 {
+		mod, err := cx.LoadModule(ptx)
+		if err != nil {
+			t.Fatalf("LoadModule: %v", err)
+		}
+		fn, err := mod.Function(name)
+		if err != nil {
+			t.Fatalf("Function(%s): %v", name, err)
+		}
+		a := kv8Args{q: mustAlloc[float32](t, cx, len(q)), table: mustAlloc[int32](t, cx, len(table))}
+		defer func() { a.q.Close(); a.table.Close() }()
+		for _, e := range []error{copyHtoD(bg, a.q, q), copyHtoD(bg, a.table, table)} {
+			if e != nil {
+				t.Fatal(e)
+			}
+		}
+		if i8 {
+			dk, dv := mustAlloc[int8](t, cx, len(kq)), mustAlloc[int8](t, cx, len(vq))
+			dks, dvs := mustAlloc[float32](t, cx, len(ksc)), mustAlloc[float32](t, cx, len(vsc))
+			defer func() { dk.Close(); dv.Close(); dks.Close(); dvs.Close() }()
+			for _, e := range []error{copyHtoD(bg, dk, kq), copyHtoD(bg, dv, vq), copyHtoD(bg, dks, ksc), copyHtoD(bg, dvs, vsc)} {
+				if e != nil {
+					t.Fatal(e)
+				}
+			}
+			a.kc, a.vc, a.tail = gc.Arg(dk), gc.Arg(dv), []gc.KernelArg{gc.Arg(dks), gc.Arg(dvs)}
+			return launch(fn, a, st)
+		}
+		dk, dv := mustAlloc[float32](t, cx, len(kf)), mustAlloc[float32](t, cx, len(vf))
+		defer func() { dk.Close(); dv.Close() }()
+		for _, e := range []error{copyHtoD(bg, dk, kf), copyHtoD(bg, dv, vf)} {
+			if e != nil {
+				t.Fatal(e)
+			}
+		}
+		a.kc, a.vc = gc.Arg(dk), gc.Arg(dv)
+		return launch(fn, a, st)
+	}
+	return run(f32PTX, false), run(i8PTX, true)
+}
+
+func kv8Query(n int) []float32 {
+	q := make([]float32, n)
+	for i := range q {
+		q[i] = float32(int(i*7%13)-6) / 16
+	}
+	return q
+}
+
+// TestKV8_exactInputIdentity_flashDecode is G1 for decode_fa.cu's single-row lane (fa_partial_{64,128,256} then fa_combine): head dimensions 64, 128 and 256, GQA group
+// sizes, key counts around block edges, a window, S key splits.
+func TestKV8_exactInputIdentity_flashDecode(t *testing.T) {
+	cx := kv8Context(t)
+	defer cx.Close()
+	bg := context.Background()
+	const split = 4
+	for _, g := range []struct{ nH, nKV, hd int }{{8, 2, 64}, {12, 2, 128}, {4, 1, 256}, {6, 6, 64}} {
+		for _, tc := range []struct{ nKeys, winStart int }{{1, 0}, {63, 0}, {64, 0}, {65, 0}, {300, 0}, {300, 140}} {
+			c := newKV8Case(tc.nKeys, g.nKV, g.hd, uint32(51+tc.nKeys+g.hd))
+			G := g.nH / g.nKV
+			which := map[int]string{64: "fa_partial_64", 128: "fa_partial_128", 256: "fa_partial_256"}[g.hd]
+			launch := func(ptxCombine []byte) func(fn *gc.Function, a kv8Args, st *gc.Stream) []float32 {
+				return func(fn *gc.Function, a kv8Args, st *gc.Stream) []float32 {
+					part := mustAlloc[float32](t, cx, g.nH*split*8*(g.hd+4)*2)
+					ctx := mustAlloc[float32](t, cx, g.nH*g.hd)
+					defer func() { part.Close(); ctx.Close() }()
+					cfg := gc.LaunchConfig{GridX: uint32(g.nKV), GridY: split, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((G*g.hd + 8*64) * 4)}
+					args := []gc.KernelArg{gc.Arg(a.q), a.kc, a.vc, gc.Arg(a.table), gc.ArgValue(int32(g.nH)), gc.ArgValue(int32(g.nKV)), gc.ArgValue(int32(tc.winStart)),
+						gc.ArgValue(int32(tc.nKeys)), gc.ArgValue(float32(0.125)), gc.ArgValue(int32(split)), gc.Arg(part)}
+					args = append(args, a.tail...)
+					if e := fn.LaunchOn(bg, st, cfg, args...); e != nil {
+						t.Fatalf("fa_partial: %v", e)
+					}
+					mod, err := cx.LoadModule(ptxCombine)
+					if err != nil {
+						t.Fatal(err)
+					}
+					comb, err := mod.Function("fa_combine")
+					if err != nil {
+						t.Fatal(err)
+					}
+					if e := comb.LaunchOn(bg, st, gc.LaunchConfig{GridX: uint32(g.nH), GridY: 1, GridZ: 1, BlockX: uint32(g.hd), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(3 * split * 8 * 4)},
+						gc.Arg(part), gc.ArgValue(int32(g.hd)), gc.ArgValue(int32(split*8)), gc.Arg(ctx)); e != nil {
+						t.Fatalf("fa_combine: %v", e)
+					}
+					if e := st.Synchronize(bg); e != nil {
+						t.Fatal(e)
+					}
+					out := make([]float32, g.nH*g.hd)
+					if e := gc.CopyDtoH(bg, out, ctx); e != nil {
+						t.Fatal(e)
+					}
+					return out
+				}
+			}(decodeFAPTX)
+			a, b := kv8Both(t, cx, c, kv8Query(g.nH*g.hd), decodeFAPTX, decodeFAKV8PTX, which, launch)
+			diff, nz := kv8CountDiff(a, b)
+			if nz == 0 {
+				t.Errorf("%+v %+v: the f32 context is all zero, the comparison is vacuous", g, tc)
+			}
+			if diff != 0 {
+				t.Errorf("%+v %+v: %d/%d context elements differ between the i8 reader and the f32 original", g, tc, diff, len(a))
+			}
+		}
+	}
+}
+
+// TestKV8_exactInputIdentity_flashDecodeRows is G1 for the multi-row verify lane (fa_partial_rows_<hd>_g<G> then fa_combine_rows): one run of consecutive rows, a window, and
+// each head dimension at two group sizes.
+func TestKV8_exactInputIdentity_flashDecodeRows(t *testing.T) {
+	cx := kv8Context(t)
+	defer cx.Close()
+	bg := context.Background()
+	const split = 4
+	for _, g := range []struct{ nH, nKV, hd int }{{8, 2, 64}, {6, 2, 64}, {12, 2, 128}, {8, 2, 128}, {4, 1, 256}, {2, 1, 256}} {
+		G := g.nH / g.nKV
+		R := launchgeom.FaRowsPerCTA(g.hd, G)
+		for _, tc := range []struct{ n0, m, window int }{{70, 5, 0}, {200, 7, 90}} {
+			runs := launchgeom.FaRowRuns(tc.n0, tc.m, tc.window, split*launchgeom.FaWarps)
+			total := tc.n0 + tc.m
+			c := newKV8Case(total, g.nKV, g.hd, uint32(61+total+g.hd))
+			name := fmt.Sprintf("fa_partial_rows_%d_g%d", g.hd, G)
+			launch := func(fn *gc.Function, a kv8Args, st *gc.Stream) []float32 {
+				part := mustAlloc[float32](t, cx, launchgeom.FaMaxRows*g.nH*split*8*(g.hd+4))
+				ctx := mustAlloc[float32](t, cx, tc.m*g.nH*g.hd)
+				defer func() { part.Close(); ctx.Close() }()
+				mod, err := cx.LoadModule(decodeFAPTX)
+				if err != nil {
+					t.Fatal(err)
+				}
+				comb, err := mod.Function("fa_combine_rows")
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, run := range runs {
+					grid := uint32((run.N + R - 1) / R)
+					cfg := gc.LaunchConfig{GridX: uint32(g.nKV), GridY: split, GridZ: grid, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((R*G*g.hd + 8*R*64) * 4)}
+					args := []gc.KernelArg{gc.Arg(a.q), a.kc, a.vc, gc.Arg(a.table), gc.ArgValue(int32(g.nH)), gc.ArgValue(int32(g.nKV)), gc.ArgValue(int32(run.WinStart)),
+						gc.ArgValue(int32(run.NKeys0)), gc.ArgValue(int32(run.Per)), gc.ArgValue(float32(0.125)), gc.ArgValue(int32(split)),
+						gc.ArgValue(int32(run.N)), gc.ArgValue(int32(run.Row0)), gc.Arg(part)}
+					args = append(args, a.tail...)
+					if e := fn.LaunchOn(bg, st, cfg, args...); e != nil {
+						t.Fatalf("%s: %v", name, e)
+					}
+					if e := comb.LaunchOn(bg, st, gc.LaunchConfig{GridX: uint32(g.nH), GridY: uint32(run.N), GridZ: 1, BlockX: uint32(g.hd), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(3 * split * 8 * 4)},
+						gc.Arg(part), gc.ArgValue(int32(g.nH)), gc.ArgValue(int32(g.hd)), gc.ArgValue(int32(split*8)), gc.ArgValue(int32(run.Row0)), gc.Arg(ctx)); e != nil {
+						t.Fatalf("fa_combine_rows: %v", e)
+					}
+					if e := st.Synchronize(bg); e != nil {
+						t.Fatal(e)
+					}
+				}
+				out := make([]float32, tc.m*g.nH*g.hd)
+				if e := gc.CopyDtoH(bg, out, ctx); e != nil {
+					t.Fatal(e)
+				}
+				return out
+			}
+			a, b := kv8Both(t, cx, c, kv8Query(tc.m*g.nH*g.hd), decodeFAPTX, decodeFAKV8PTX, name, launch)
+			diff, nz := kv8CountDiff(a, b)
+			if nz == 0 {
+				t.Errorf("%+v %+v: the f32 context is all zero, the comparison is vacuous", g, tc)
+			}
+			if diff != 0 {
+				t.Errorf("%+v %+v: %d/%d context elements differ between the i8 rows reader and the f32 original", g, tc, diff, len(a))
+			}
 		}
 	}
 }

@@ -362,6 +362,11 @@ var prefillBatchedKV8PTX []byte
 //go:embed testdata/kv8_store.ptx
 var kv8StorePTX []byte
 
+// decodeFAKV8PTX: decode_fa.cu built with -DKV_I8 (the flash-decode lane's int8 readers), at the ambient NVRTC like decode_fa.ptx.
+//
+//go:embed testdata/decode_fa_kv8.ptx
+var decodeFAKV8PTX []byte
+
 // attnPTX is kvPTX for the three modules that hold a kernel a capped layer takes (attention, attn_batched, splitkv_scores): a model with
 // an attention softcap loads the variant built with -DATTN_SOFTCAP (cuda/attnscore.cuh), every other model the plain module.
 func (r *cudaResident) attnPTX(f32, kv16, capF32, capKV16 []byte) []byte {
