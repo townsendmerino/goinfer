@@ -2,23 +2,23 @@
 # KV5-6's G2 cells that need a quiet Mac (docs/tasks/task-kv-architecture-2026-10.md, KV5's plan: G2 and G4 whole at KV5-6): the 7B's
 # decode cells at depths 128, 2,048, 3,900 and 8,000, A B B A, one quad a cell. G4 as amended: any swap-out voids a cell, swap-ins are
 # recorded, three voids in a row stop the run. Pinned binaries and harness under ~/goinfer-work/kv5-6, so the tree may move.
-# new: e2762eb0 (KV5-6's final tree: all three review passes, the block table read through a slice taken once, main 8b7e9941 merged;
-# built from an archive of the commit as serve-final2); old: f8632013 (main just before KV5-1's merge, KV5-2's serve-old).
+# new: eb90144b (KV5-6 with round 4: the chain's stop, CopyKV's order and the upload pass, over e2762eb0 and main 8b7e9941;
+# built from an archive of the commit as serve-bis-eb90144b); old: f8632013 (main just before KV5-1's merge, KV5-2's serve-old).
 # Exits 75 when the box refuses a cell for memory or load, so night.py retries, and each retry resumes from the cells already done.
 D="$HOME/goinfer-work/kv5-6"
 OLD="$HOME/goinfer-work/kv5-2-g2/serve-old"
-cd "$D/new-e2762eb0/scripts" || exit 1
-for f in "$D/serve-final2" "$OLD" "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf"; do
+cd "$D/bis-eb90144b/scripts" || exit 1
+for f in "$D/serve-bis-eb90144b" "$OLD" "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf"; do
   [ -e "$f" ] || { echo "missing $f"; exit 1; }
 done
 mkdir -p "$D/g2-night/serve-logs"
-echo "new e2762eb0, old f8632013"
+echo "new eb90144b, old f8632013"
 pmset -g batt | head -1
 uptime
 date '+start %H:%M'
 pmset -g batt | head -1 | grep -q 'AC Power' || { echo "on battery: refused"; exit 75; }
 export BENCH_DEPTH_BACKEND=metal BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=metal BENCH_REQUIRE_BACKEND=1
-export BENCH_SERVE_LOG_DIR="$D/g2-night/serve-logs" BENCH_LOAD_TIMEOUT=420 GOINFER_SERVE_METAL="$D/serve-final2" GOINFER_SERVE_METAL_OLD="$OLD"
+export BENCH_SERVE_LOG_DIR="$D/g2-night/serve-logs" BENCH_LOAD_TIMEOUT=420 GOINFER_SERVE_METAL="$D/serve-bis-eb90144b" GOINFER_SERVE_METAL_OLD="$OLD"
 export BENCH_SWAPOUT_VOID_MB=0 BENCH_SWAP_VOID_STOP=3 BENCH_IDLE_WAIT=180
 unset BENCH_SWAPIN_VOID_MB
 step() { # name env...
