@@ -5,6 +5,33 @@ import (
 	"testing"
 )
 
+// TestBuffers_stateIsF32: every per-slot buffer any operation declares is f32, the precision every backend holds and prices state in
+// (decoder.stateFloats refuses any other), and every per-position one says which precision it takes.
+func TestBuffers_stateIsF32(t *testing.T) {
+	var s LayerShape
+	s.KVHeads, s.HeadDim, s.MLALatent = 2, 8, 24
+	s.DeltaNet.KeyHeads, s.DeltaNet.KeyHeadDim, s.DeltaNet.ValueHeads, s.DeltaNet.ValueHeadDim, s.DeltaNet.ConvKernel = 2, 4, 3, 5, 4
+	s.Mamba2.Heads, s.Mamba2.HeadDim, s.Mamba2.DState, s.Mamba2.ConvDim, s.Mamba2.ConvKernel = 2, 3, 4, 20, 4
+	s.KDA.Heads, s.KDA.HeadDim, s.KDA.ConvKernel = 2, 4, 3
+	s.ShortConv.Dim, s.ShortConv.LCache = 16, 3
+	slots := 0
+	for k := OpNorm; k <= OpLayerScale; k++ {
+		for _, b := range Buffers(Op{Kind: k, G4: Gemma4AttnParams{OwnsKV: true}}, s) {
+			switch {
+			case b.Unit == PerSlot && b.Prec != PrecF32:
+				t.Errorf("operation %d declares state %q at precision %d, not f32", k, b.Name, b.Prec)
+			case b.Unit == PerSlot:
+				slots++
+			case b.Prec != PrecKV && b.Prec != PrecF32:
+				t.Errorf("operation %d declares row %q with no precision", k, b.Name)
+			}
+		}
+	}
+	if slots < 4 {
+		t.Fatalf("only %d state buffers declared across the operation kinds; the test reads too little", slots)
+	}
+}
+
 // TestBuffers_eachOperation: what each operation declares beyond its weights, at a shape with every width set, and that the rest declare
 // nothing. A KV-shared Gemma 4 layer declares no rows; a windowed one carries its window.
 func TestBuffers_eachOperation(t *testing.T) {
