@@ -307,7 +307,7 @@ func (r *resident) chainLoop() {
 	}
 	var fifo []inflight
 	next, sinceDrain := 0, 0
-	sampled, pos0, draw0 := false, 0, uint64(0)
+	sampled, pos0, draw0, started := false, 0, uint64(0), false
 	var kvErr error // a block the next forward needed could not be had: speculation stops, and the request that reaches it says why
 	commit := func() {
 		if next >= r.ctxCap || kvErr != nil { // nothing to speculate into: the next position is past the resident KV, or its block
@@ -380,7 +380,11 @@ func (r *resident) chainLoop() {
 	for q := range r.chainReq {
 		switch q.op {
 		case chainOpStart:
-			drain()
+			if started { // a loop starts once: chainOpen opens a fresh one, after stopChain has ended the old one's slot
+				r.chainResp <- chainResp{err: fmt.Errorf("metal: greedy chain: already started")}
+				continue
+			}
+			started = true
 			next, sampled, pos0, draw0 = q.pos, q.sampled, q.pos, q.draw
 			if sampled {
 				r.chainInvT.Floats()[0] = q.invT

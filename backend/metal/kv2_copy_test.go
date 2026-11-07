@@ -281,23 +281,29 @@ func TestKVPages_shareByReference(t *testing.T) {
 				snap(0, 402)
 				add(a.Forward(kv2Embs(r, 1, 64)[0], 402))
 				snap(0, 403)
-				bind(1) // slot 1: the verify at 340 (block 5), UploadKV at 280 (block 4)
+				bind(1) // slot 1: the verify at 340 (block 5), then an upload pass of rows [0, 281) (blocks 0 to 4)
 				vr, err := a.ForwardN(kv2Embs(r, 4, 62), 340)
 				if err != nil {
 					t.Fatal(err)
 				}
 				out = append(out, slices.Clone(vr[3]))
 				snap(1, 344)
+				if err := a.BeginKVUpload(); err != nil {
+					t.Fatal(err)
+				}
 				for l := range r.layers {
 					if g := r.layers[l].geom; g != nil && !r.layers[l].kvShared {
-						up := make([]float32, g.kvDim)
+						up := make([]float32, 281*g.kvDim)
 						for i := range up {
 							up[i] = float32(i%7) * 0.25
 						}
-						if err := a.UploadKV(l, 280, up, up); err != nil {
+						if err := a.UploadKV(l, 0, up, up); err != nil {
 							t.Fatal(err)
 						}
 					}
+				}
+				if err := a.EndKVUpload(false); err != nil {
+					t.Fatal(err)
 				}
 				snap(1, 281)
 				add(a.Forward(kv2Embs(r, 1, 65)[0], 281))
@@ -701,6 +707,32 @@ func TestKVPages_refusedChainOpenLeavesTheSlot(t *testing.T) {
 	}
 }
 
+// TestKVPages_chainStartsOnce: an open chain's loop refuses a second start, which would begin from the old run's speculation state (a
+// refused look-ahead's error, where the slot's sequence ends), and carries on as it was. chainOpen never sends one: it stops the old chain,
+// whose stop ends the slot, and opens a fresh loop.
+func TestKVPages_chainStartsOnce(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if why := r.greedyChainWhyNot(); why != "" {
+		t.Skipf("no greedy chain on this resident: %s", why)
+	}
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 63, 7), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.chainStart(5, 63); err != nil {
+		t.Fatal(err)
+	}
+	defer r.stopChain()
+	if _, err := r.chainAsk(chainReq{op: chainOpStart, id: 5, pos: 63}); err == nil {
+		t.Error("a second start on the open chain was accepted")
+	}
+	if _, err := r.chainNext(); err != nil {
+		t.Errorf("the token at 63 after the refused second start: %v", err)
+	}
+}
+
 // TestKVPages_entryEndsTheChainFirst: while a chain is open only the chain touches its slot's KV state. A decode entry point ends it
 // before it reads or writes the slot, so it judges the caller's sequence, not the look-ahead's: a forward one past it is refused rather
 // than reaching setPos, and one whose block cannot be had leaves no chain open. ReusableKV answers the caller's sequence too.
@@ -845,7 +877,7 @@ func TestKVPages_rewindQuiesces(t *testing.T) {
 // TestKVPages_prefillAndUploadStopTheExecutor: a prefill and an upload stop the executor before they write, whatever their range: they
 // run beside it, not on it, and a pipelined forward's buffer may still be in flight reading the table or the K/V they change. Slot 0
 // takes block 0 from slot 1 by CopyKV and pipelines positions 64 to 69; a prefill from 10 to 70 (a copy on write into block 0, nothing
-// past its end) stops it; so does an upload at 70 after more pipelined positions.
+// past its end) stops it; so does an upload pass after more pipelined positions.
 func TestKVPages_prefillAndUploadStopTheExecutor(t *testing.T) {
 	a, r := kv2Resident(t, false)
 	bind := func(s int) {
@@ -882,14 +914,20 @@ func TestKVPages_prefillAndUploadStopTheExecutor(t *testing.T) {
 		t.Error("a prefill from 10 to 70 into a shared block, after pipelined positions 64 to 69, did not stop the executor first")
 	}
 	pipe(70, 75)
+	if err := a.BeginKVUpload(); err != nil {
+		t.Fatal(err)
+	}
 	for l := range r.layers {
 		if g := r.layers[l].geom; g != nil && !r.layers[l].kvShared {
-			if err := a.UploadKV(l, 75, make([]float32, g.kvDim), make([]float32, g.kvDim)); err != nil {
+			if err := a.UploadKV(l, 0, make([]float32, 76*g.kvDim), make([]float32, 76*g.kvDim)); err != nil {
 				t.Fatal(err)
 			}
 		}
 	}
+	if err := a.EndKVUpload(false); err != nil {
+		t.Fatal(err)
+	}
 	if r.execReq != nil {
-		t.Error("an upload at 75, after pipelined positions 70 to 74, did not stop the executor first")
+		t.Error("an upload pass of 76 rows, after pipelined positions 70 to 74, did not stop the executor first")
 	}
 }

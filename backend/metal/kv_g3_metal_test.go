@@ -874,6 +874,209 @@ func TestKVPages_failedCopyCutsAReusedTrimBlock(t *testing.T) {
 	}
 }
 
+// kvRefsAgree is "" when every block's reference count is the number of table entries naming it and the in-use count is the number of
+// blocks some entry names, or else the first disagreement.
+func kvRefsAgree(r *resident) string {
+	named := make([]int32, len(r.kvRefs))
+	for s := range r.kvSlotSt {
+		for b := range r.kvTabBlocks {
+			named[*r.kvRow(s, b)]++
+		}
+	}
+	used := 0
+	for id := 1; id < len(named); id++ {
+		if named[id] != r.kvRefs[id] {
+			return fmt.Sprintf("block %d has %d references and %d entries name it", id, r.kvRefs[id], named[id])
+		}
+		if named[id] > 0 {
+			used++
+		}
+	}
+	if used != r.kvInUse {
+		return fmt.Sprintf("the pool counts %d blocks in use and %d are named", r.kvInUse, used)
+	}
+	return ""
+}
+
+// TestKVPages_abortedStepUndoesAReleasedSlot: a batched step undone after one of its takes released another of its slots leaves every count
+// true: the release gave back the blocks that slot held, the one it took in the step included, and the undo gives none back twice. The
+// released slot holds nothing and answers no reuse. Slot 0, idle, takes the pool's last free block for its row; slot 1's row, past its
+// share, then finds none and the take releases slot 0, so the step cannot launch.
+func TestKVPages_abortedStepUndoesAReleasedSlot(t *testing.T) {
+	m, a := kvCapLoad(t, 3, 3*decoder.MetalCtxDefault, "")
+	r, vocab := a.r, m.Config().VocabSize
+	B, S, N := decoder.KVBlockRows, r.kvShareBlocks, len(r.kvRefs)-1
+	one, two := S+40, N-2-(S+40)
+	if one > r.kvTabBlocks || two > r.kvTabBlocks {
+		t.Fatalf("a slot reaches %d blocks; the case needs %d and %d", r.kvTabBlocks, one, two)
+	}
+	for _, c := range []struct{ slot, blocks int }{{0, 1}, {1, one}, {2, two}} {
+		if _, err := kvCapPrefill(m, a, c.slot, kvCapIds(c.blocks*B, c.slot, vocab), 0); err != nil {
+			t.Fatalf("slot %d: %v", c.slot, err)
+		}
+	}
+	if free := N - r.kvBlocksInUse(); free != 1 {
+		t.Fatalf("%d blocks free; the case needs one", free)
+	}
+	for _, s := range []int{1, 2} {
+		a.SetKVSlotBusy(s, true)
+		defer a.SetKVSlotBusy(s, false)
+	}
+	tab := slices.Clone(r.kvTabU32[r.kvTabBlocks : 2*r.kvTabBlocks])
+	err := r.kvMapStep([]batchSeq{{slot: 0, pos: B}, {slot: 1, pos: one * B}})
+	if !errors.Is(err, decoder.ErrKVPoolFull) {
+		t.Fatalf("the step whose take released one of its slots: got %v, want ErrKVPoolFull", err)
+	}
+	if st := &r.kvSlotSt[0]; !st.released || st.valid != 0 || r.kvHeld(0) != 0 {
+		t.Errorf("slot 0 after the step: released %v, %d rows, %d blocks; want released, 0 and none", st.released, st.valid, r.kvHeld(0))
+	}
+	if !slices.Equal(r.kvTabU32[r.kvTabBlocks:2*r.kvTabBlocks], tab) || r.kvSlotSt[1].valid != one*B {
+		t.Errorf("slot 1 after the undone step holds %d rows, its table changed %v; want %d and unchanged", r.kvSlotSt[1].valid,
+			!slices.Equal(r.kvTabU32[r.kvTabBlocks:2*r.kvTabBlocks], tab), one*B)
+	}
+	if why := kvRefsAgree(r); why != "" {
+		t.Errorf("after the undone step %s", why)
+	}
+}
+
+// TestKVPages_abortedStepUndoesAStoppedSlot: a batched step undone because a take reclaimed one of its own slots leaves that slot stopped,
+// holding its share and nothing past it, and every count true. Slot 0, running and in the step, borrows 40 blocks past its share and
+// writes at its end; slot 1's row, within its share, needs a block, and the pool is full, so its take reclaims slot 0.
+func TestKVPages_abortedStepUndoesAStoppedSlot(t *testing.T) {
+	m, a := kvCapLoad(t, 3, 3*decoder.MetalCtxDefault, "")
+	r, vocab := a.r, m.Config().VocabSize
+	B, S, N := decoder.KVBlockRows, r.kvShareBlocks, len(r.kvRefs)-1
+	zero, one := S+40, 30
+	two := N - zero - one
+	if zero > r.kvTabBlocks || one >= S || two > S {
+		t.Fatalf("the share is %d blocks of a pool of %d, and a slot reaches %d; the case needs slot 0 at %d past its share, and slots 1 and 2 "+
+			"(%d, %d) within theirs", S, N, r.kvTabBlocks, zero, one, two)
+	}
+	for _, c := range []struct{ slot, blocks int }{{0, zero}, {1, one}, {2, two}} {
+		if _, err := kvCapPrefill(m, a, c.slot, kvCapIds(c.blocks*B, c.slot, vocab), 0); err != nil {
+			t.Fatalf("slot %d: %v", c.slot, err)
+		}
+	}
+	if free := N - r.kvBlocksInUse(); free != 0 {
+		t.Fatalf("%d blocks free; the case needs a full pool", free)
+	}
+	for s := range 3 {
+		a.SetKVSlotBusy(s, true)
+		defer a.SetKVSlotBusy(s, false)
+	}
+	tab := slices.Clone(r.kvTabU32[r.kvTabBlocks : 2*r.kvTabBlocks])
+	err := r.kvMapStep([]batchSeq{{slot: 0, pos: zero * B}, {slot: 1, pos: one * B}})
+	if !errors.Is(err, decoder.ErrKVPoolFull) {
+		t.Fatalf("the step whose take reclaimed one of its slots: got %v, want ErrKVPoolFull", err)
+	}
+	if st := &r.kvSlotSt[0]; !st.stopped || st.valid != S*B || r.kvHeld(0) != S {
+		t.Errorf("slot 0 after the step: stopped %v, %d rows, %d blocks; want stopped, %d and %d", st.stopped, st.valid, r.kvHeld(0), S*B, S)
+	}
+	if !slices.Equal(r.kvTabU32[r.kvTabBlocks:2*r.kvTabBlocks], tab) || r.kvSlotSt[1].valid != one*B {
+		t.Errorf("slot 1 after the undone step holds %d rows, its table changed %v; want %d and unchanged", r.kvSlotSt[1].valid,
+			!slices.Equal(r.kvTabU32[r.kvTabBlocks:2*r.kvTabBlocks], tab), one*B)
+	}
+	if why := kvRefsAgree(r); why != "" {
+		t.Errorf("after the undone step %s", why)
+	}
+	if got := r.kvBlocksInUse(); got != N-40 {
+		t.Errorf("after the undone step the pool holds %d blocks; want %d, the reclaimed 40 given back", got, N-40)
+	}
+}
+
+// TestKVPages_failedCopyCutsAnUndoneCopy: a batched step whose second copy on write fails is undone, and a copy's old entry the undo maps
+// again, to a block the second copy wrote, ends its slot before that block. Four slots: slot 0, idle, holds half the pool, its first two
+// blocks shared with slot 1; slot 2's three blocks are shared with slot 3, running, which holds the rest. Slot 1 writes at 70, a copy of its
+// block 1; the take releases slot 0, and the copy's reference to block 1 is then its last, so the block is free. Slot 2 writes at 130, a
+// copy of its block 2, into that block, and that copy fails.
+func TestKVPages_failedCopyCutsAnUndoneCopy(t *testing.T) {
+	m, a := kvCapLoad(t, 4, 4*decoder.MetalCtxDefault, "")
+	r, vocab := a.r, m.Config().VocabSize
+	B, N := decoder.KVBlockRows, len(r.kvRefs)-1
+	if N/2 > r.kvTabBlocks {
+		t.Fatalf("a slot reaches %d blocks; the case needs two of %d", r.kvTabBlocks, N/2)
+	}
+	if _, err := kvCapPrefill(m, a, 0, kvCapIds(N/2*B, 0, vocab), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CopyKV(0, 1, 0, 2*B); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kvCapPrefill(m, a, 2, kvCapIds(3*B, 2, vocab), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CopyKV(2, 3, 0, 3*B); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kvCapPrefill(m, a, 3, kvCapIds((N-N/2-3)*B, 3, vocab), 3*B); err != nil {
+		t.Fatal(err)
+	}
+	if free := N - r.kvBlocksInUse(); free != 0 {
+		t.Fatalf("%d blocks free; the case needs a full pool", free)
+	}
+	for _, s := range []int{1, 2, 3} {
+		a.SetKVSlotBusy(s, true)
+		defer a.SetKVSlotBusy(s, false)
+	}
+	reused, z := *r.kvRow(1, 1), *r.kvRow(2, 2)
+	rb, before := kv2RowBytes(r), kv2Slot(t, r, 1, 2*B)
+	kvCopyFailAfterForTest = 1
+	err := r.kvMapStep([]batchSeq{{slot: 1, pos: B + 6}, {slot: 2, pos: 2*B + 2}})
+	kvCopyFailAfterForTest = -1
+	if err == nil {
+		t.Fatal("a step whose second copy on write failed: no error")
+	}
+	if !r.kvSlotSt[0].released {
+		t.Fatal("slot 0 was not released for slot 1's copy, so the second copy did not write slot 1's old block: the case reads nothing")
+	}
+	st := &r.kvSlotSt[1]
+	if st.valid != B || *r.kvRow(1, 1) != 0 {
+		t.Errorf("after the failed copy slot 1 holds %d rows and maps block %d at 1 (its old block %d); want %d and none: the second copy wrote that block",
+			st.valid, *r.kvRow(1, 1), reused, B)
+	}
+	if buf, row := kv2RowsEqual(before, kv2Slot(t, r, 1, st.valid), rb, 0, st.valid); buf >= 0 {
+		t.Errorf("after the failed copy slot 1's row %d (buffer %d) is not the row it had", row, buf)
+	}
+	if r.kvSlotSt[2].valid != 3*B || *r.kvRow(2, 2) != z {
+		t.Errorf("after the failed copy slot 2 holds %d rows and maps %d at 2; want %d and its block %d", r.kvSlotSt[2].valid, *r.kvRow(2, 2), 3*B, z)
+	}
+	if why := kvRefsAgree(r); why != "" {
+		t.Errorf("after the failed copy %s", why)
+	}
+}
+
+// TestKVPages_uploadOutsideAPassRefused: on a paged pool an upload outside a pass is refused and leaves the slot as it was: the table is
+// every layer's, so one layer's write would map rows the others have not landed. Slot 1 shares slot 0's two blocks; one layer's upload of
+// rows [0, 70) outside a pass would have copied them and claimed 70 rows.
+func TestKVPages_uploadOutsideAPassRefused(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 128, 1), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CopyKV(0, 1, 0, 128); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.useKVSlot(1); err != nil {
+		t.Fatal(err)
+	}
+	tab, used := [2]uint32{*r.kvRow(1, 0), *r.kvRow(1, 1)}, r.kvBlocksInUse()
+	l := kvUploadLayers(r)[0]
+	n := 70 * r.layers[l].geom.kvDim
+	if err := a.UploadKV(l, 0, make([]float32, n), make([]float32, n)); err == nil {
+		t.Error("one layer's upload outside a pass was accepted")
+	}
+	if got := [2]uint32{*r.kvRow(1, 0), *r.kvRow(1, 1)}; got != tab || r.kvSlotSt[1].valid != 128 || r.kvBlocksInUse() != used {
+		t.Errorf("after the upload slot 1 maps %v with %d rows and the pool holds %d blocks; before it %v, 128 and %d", got,
+			r.kvSlotSt[1].valid, r.kvBlocksInUse(), tab, used)
+	}
+	if why := kvRefsAgree(r); why != "" {
+		t.Errorf("after the upload %s", why)
+	}
+}
+
 // TestKVPages_refusedWriteLeavesTheSlot: a refused write leaves the slot as it was, its sequence, its blocks and what it shares, however
 // far it had got: (a) a rewind into a shared block whose copy on write finds no block; (b) a write from inside a shared block through the
 // next one and past, whose first copy is taken and whose second take is refused.

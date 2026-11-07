@@ -77,14 +77,18 @@ func (a *metalResident) EndKVUpload(failed bool) error {
 	return nil
 }
 
-// kvUploadMap maps the bound slot's blocks for an upload of layer's rows [base, end). Outside a pass the upload is a write from base, which
-// may not start past the slot's sequence (kvWrite). In a pass the slot is written from position 0: its first layer maps it through end, and
-// each layer lands once, ends where the first did, and starts at 0, or, for a windowed layer, where its rows still cover its window
-// (a CPU ring that has wrapped). The rows below that base are other layers' to write, and the decoder's reuse floor keeps a prefix off them.
+// kvUploadMap maps the bound slot's blocks for an upload of layer's rows [base, end). On a paged pool an upload outside a pass is refused:
+// the slot's table is every layer's, so one layer's mapping would claim rows the other layers have not landed. In a pass the slot is written
+// from position 0: its first layer maps it through end, and each layer lands once, ends where the first did, and starts at 0, or, for a
+// windowed layer, where its rows still cover its window (a CPU ring that has wrapped). The rows below that base are other layers' to
+// write, and the decoder's reuse floor keeps a prefix off them.
 func (r *resident) kvUploadMap(layer, base, end int) error {
 	p := r.kvUpload
 	if p == nil {
-		return r.kvWrite(r.kvSlot, base, end)
+		if len(r.kvRefs) == 0 {
+			return nil
+		}
+		return fmt.Errorf("metal: UploadKV of layer %d outside an upload pass (BeginKVUpload) on a paged KV pool", layer)
 	}
 	win := int(r.layers[layer].window)
 	switch _, again := p.reached[layer]; {
@@ -222,8 +226,11 @@ var kvTakeFailForTest bool
 // kvTakeFailAfterForTest, when not negative, lets that many takes find blocks and makes every later one behave as kvTakeFailForTest.
 var kvTakeFailAfterForTest = -1
 
-// kvCopyFailForTest makes a copy on write's copy fail.
+// kvCopyFailForTest makes a copy on write's copy fail, after it has run.
 var kvCopyFailForTest bool
+
+// kvCopyFailAfterForTest, when not negative, lets that many copies on write succeed and makes every later one behave as kvCopyFailForTest.
+var kvCopyFailAfterForTest = -1
 
 // kvEvictOrderPlantForTest releases the MOST recently written idle slot first: the plant TestKVPages_pressureFollowsD5 must catch.
 var kvEvictOrderPlantForTest bool
@@ -491,7 +498,7 @@ func (tx *kvTx) abort() {
 	r := tx.r
 	for i := len(tx.log) - 1; i >= 0; i-- {
 		e := tx.log[i]
-		if e.take {
+		if e.take && *r.kvRow(e.s, e.b) == e.next { // a release or reclaim meanwhile gave next back with the entry
 			r.kvUnref(e.next)
 		}
 		if !e.take || e.cow { // a trim or a copy on write gave its reference to prev back: take it again
@@ -536,8 +543,10 @@ func (tx *kvTx) commit() error {
 			continue
 		}
 		err := gpu.CopyDeviceBatch(r.kvBlockCopies(c.from, c.to, c.keep))
-		if kvCopyFailForTest {
+		if kvCopyFailForTest || kvCopyFailAfterForTest == 0 {
 			err = errors.New("planted copy failure")
+		} else if kvCopyFailAfterForTest > 0 {
+			kvCopyFailAfterForTest--
 		}
 		if err != nil {
 			tx.abort()

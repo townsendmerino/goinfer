@@ -34,6 +34,24 @@ func resolveUploadKVModel(t *testing.T) string {
 	return ""
 }
 
+// uploadPass opens an upload pass on rf, as the decoder's upload does, and returns the call that ends it.
+func uploadPass(t *testing.T, rf decoder.ResidentForward) func() {
+	t.Helper()
+	p, ok := rf.(decoder.ResidentKVUploadPass)
+	if !ok {
+		t.Fatal("the resident has no upload pass")
+	}
+	if err := p.BeginKVUpload(); err != nil {
+		t.Fatal(err)
+	}
+	return func() {
+		t.Helper()
+		if err := p.EndKVUpload(false); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // TestUploadKV_matchesSequentialForward is UploadKV's FIRST real correctness test on the Metal backend.
 // The CUDA twin lives in cuda/uploadkv_parity_test.go; the WebGPU twin lives in gpu/uploadkv_parity_test.go.
 //
@@ -106,6 +124,7 @@ func TestUploadKV_matchesSequentialForward(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CPU prefill: %v", err)
 			}
+			end := uploadPass(t, rf)
 			for l := range nLayers {
 				k, v, base := cache.LayerKVForTest(l)
 				if len(k) == 0 {
@@ -115,6 +134,7 @@ func TestUploadKV_matchesSequentialForward(t *testing.T) {
 					t.Fatalf("UploadKV layer %d (base=%d, len(k)=%d): %v", l, base, len(k), err)
 				}
 			}
+			end()
 			gotDecode := make([][]float32, nDecode)
 			tok = argmaxF(cpuLogits)
 			for i := range nDecode {
@@ -206,12 +226,14 @@ func TestUploadKV_offsetBase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CPU prefill: %v", err)
 	}
+	end := uploadPass(t, rf)
 	for l := range nLayers {
 		k, v, base := cache.LayerKVForTest(l)
 		if err := rf.UploadKV(l, base, k, v); err != nil {
 			t.Fatalf("UploadKV layer %d (base=%d, len(k)=%d): %v", l, base, len(k), err)
 		}
 	}
+	end()
 	gotDecode := make([][]float32, nDecode)
 	tok = argmaxF(cpuLogits)
 	for i := range nDecode {
@@ -289,12 +311,14 @@ func TestUploadKV_matchesSequentialForward_KVI8(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CPU prefill: %v", err)
 	}
+	end := uploadPass(t, rf)
 	for l := range nLayers {
 		k, v, base := cache.LayerKVForTest(l)
 		if err := rf.UploadKV(l, base, k, v); err != nil {
 			t.Fatalf("UploadKV layer %d: %v", l, err)
 		}
 	}
+	end()
 
 	gotDecode := make([][]float32, nDecode)
 	tok = argmaxF(cpuLogits)
