@@ -178,6 +178,20 @@ The 7B's decode cells stay the Saturday-night job, reported when read and not a 
 5. Decode's two kvWrite calls a token: NOT TAKEN. setPos's write is the guard for paths that reach it without an entry point; dropping either is not free.
 Plants, 8 of 8 red: stopChain not ending the slot; CopyKV stopping after it reads; an upload outside a pass mapping from the sequence's end; a full-attention layer starting late in a pass; EndKVUpload not checking every layer; a layer ending elsewhere; a layer uploading twice; setPos mapping from the sequence's end.
 The Metal package whole (-tags goinfer_testhooks, eb90144b): 457 passed, 220 skipped, 0 failed.
-The decode path changed (the chain's stop, setPos's write), so the 7B night job is re-pinned to eb90144b.
+The decode path changed (the chain's stop, setPos's write), so the 7B night job was re-pinned to eb90144b (since moved, below).
 
-== G2, the 7B: the Saturday night job kv5-6-g2-7b (re-pinned to eb90144b), reported, not a gate on the merge
+== Gemini's fifth pass on #711, 2026-11-07 (bd01acc7): two invariants instead of point fixes
+Each pass had found another ordering bug where the greedy chain, the executor and the pool meet; the three this time had two causes, each fixed once.
+I1, one writer while a chain is open: kvQuiesce, which every decode entry point calls before it reads or writes the slot, ends any open chain first; ReusableKV and ReusableKVSlot answer the caller's sequence while one is open; a look-ahead that found no block ends that speculation, and the next token asks for the block again. Red first: TestKVPages_chainRetriesAFailedLookAhead, TestKVPages_entryEndsTheChainFirst.
+I2, all-or-nothing mapping: kvWrite and kvMapStep are one transaction (kvTx), which changes only tables, counts and standings until it commits, when the copies on write run; a refusal undoes it and leaves every slot as it was. Red first: TestKVPages_refusedWriteLeavesTheSlot (a refused rewind cut a slot from 128 rows to 10; a refused multi-block write left an unshared copy), TestKVPages_abortedStepLeavesItsSlots.
+Plants, 5 of 5 red; a sixth, on abort's restore of a standing, cannot go red alone, since the standing is written only at commit. The Metal package whole 461 passed, 220 skipped, 0 failed; touched.py PASS (16), lint 7/7, identity 29 IDENTICAL / 0 DIFFERENT.
+
+== Gemini's sixth pass on #711, 2026-11-07 (1af92cc4): three points in the transaction and the upload pass, red first
+1. A copy on write kept its reference to the shared block until commit, so a second slot of the same step still saw the block shared and copied it too: two blocks, and the shared one then held by no one. The reference goes as the copy is taken, and abort takes it back. Red first: TestKVPages_stepCopiesASharedBlockOnce.
+2. EndKVUpload released the slot whenever a pass failed, even one that failed before its first layer wrote. A pass now drops the slot only once it has written. Red first: TestKVPages_failedUploadPassLeavesTheSlot.
+3. Forward and ForwardNoLogits zeroed recurrent state at position 0 before the write, so a refused write still cleared it. They reset once the write is mapped. Red first: TestKVPages_refusedFreshWriteKeepsTheState (qwen35-tiny's DeltaNet state).
+Also kvWriteInPlace: a write whose every entry already holds a block of the slot's alone, with nothing past it to trim, only moves the sequence's end and skips the transaction; the review counted the transaction's allocations twice a decode token.
+Plants, 4 of 4 red, the in-place write taking a shared block as its own among them (red in TestKVPages_shareByReferenceLayerMajor).
+Rounds 4 to 6 change the decode path, so G2 reads again on 1af92cc4 by day (below), and the 7B night job is pinned to it.
+
+== G2, the 7B: the night job kv5-6-g2-7b (pinned to 1af92cc4), reported, not a gate on the merge
