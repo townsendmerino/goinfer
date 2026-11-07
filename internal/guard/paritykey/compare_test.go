@@ -14,7 +14,7 @@ func side(today, shadow, arch, attn, fp string, progs ...string) Side {
 	for _, p := range progs {
 		fx[p] = fp
 	}
-	return Side{Tail: "kernel_fingerprints=t",
+	return Side{Definition: DefinitionFiles, Tail: "kernel_fingerprints=t",
 		Today: map[string]string{"f": today}, Shadow: map[string]string{"f": shadow},
 		Files:    map[string][]string{"f": {"decoder/arch.go", "decoder/attention.go"}},
 		Programs: map[string][]string{"f": progs}, Fixture: fx,
@@ -115,16 +115,64 @@ func TestCompare_classes(t *testing.T) {
 			s.Definition = DefinitionPrograms
 			return s
 		}(), OldOnly, false},
+		{"the key's definition changed and a builder moved, the shadow key did not", base, func() Side {
+			s := side("t2", "s1", "a2", "x1", "p1", "fx")
+			s.Definition = DefinitionPrograms
+			return s
+		}(), OldOnly, true},
+		{"the key's definition changed and a loader file moved, no identity did", loaderSide("t1", "s1", "w1", "l1"), func() Side {
+			s := loaderSide("t2", "s1", "w2", "l1")
+			s.Definition = DefinitionPrograms
+			return s
+		}(), OldOnly, true},
 		{"the key's definition changed for a family with no programs", side("t1", "t1", "a1", "x1", ""), func() Side {
 			s := side("t2", "t1", "a1", "x1", "")
 			s.Definition = DefinitionPrograms
 			return s
 		}(), OldOnly, false},
 	}
+	// reasons is each case's Reason: its start, or "" for a verdict that carries none.
+	reasons := map[string]string{
+		"nothing moved":                                                                         "",
+		"an executor moved":                                                                     "",
+		"a builder and its program moved":                                                       "",
+		"a builder moved, no program did":                                                       "only builder or loader files moved",
+		"a builder and an executor moved, the shadow key did not":                               "today's key moved on an input the shadow key also reads",
+		"a program moved, no dependency did":                                                    "the shadow key moved while today's did not",
+		"the program list changed":                                                              "the family's program or loader list changed",
+		"a fixture added to the list, the listed one unchanged":                                 "the family's program or loader list changed",
+		"a fixture added to the list while the listed one's program moved":                      "the shadow key moved while today's did not",
+		"today's tail moved, the shadow key did not":                                            "today's key moved on an input the shadow key also reads",
+		"today's key moved, no tracked input did":                                               "today's key moved on an input the shadow key also reads",
+		"a loader file moved, no identity did":                                                  "only builder or loader files moved",
+		"a loader file and a builder moved, no identity or program did":                         "only builder or loader files moved",
+		"a loader file moved that this family's digest does not stand for":                      "today's key moved on an input the shadow key also reads",
+		"a loader file and its identity moved":                                                  "",
+		"an identity moved, no dependency did":                                                  "the shadow key moved while today's did not",
+		"the loader list changed":                                                               "the family's program or loader list changed",
+		"a loader fixture left the list, the program list did not change":                       "a loader fixture left the family's list",
+		"the family left the rule, the program list did not change":                             "a loader fixture left the family's list",
+		"a fixture left the program list and the loader list together":                          "the family's program or loader list changed",
+		"the loader list changed while a listed identity moved":                                 "the shadow key moved while today's did not",
+		"the key's definition changed, no input did":                                            "the key's definition changed (files -> programs); no input it reads moved",
+		"the key's definition changed and an executor moved, the shadow key did not":            "today's key moved on an input the shadow key also reads",
+		"under the builder rule, a builder moved and today's key moved, the shadow key did not": "today's key moved on an input the shadow key also reads",
+		"the key's definition changed and a builder moved, the shadow key did not":              "the key's definition changed (files -> programs), and the other inputs that moved (decoder/arch.go) are builder or loader files",
+		"the key's definition changed and a loader file moved, no identity did":                 "the key's definition changed (files -> programs), and the other inputs that moved (decoder/weights.go) are builder or loader files",
+		"the key's definition changed for a family with no programs":                            "today's key moved on an input the shadow key also reads",
+	}
 	for _, c := range cases {
 		v := Compare(c.before, c.after)
 		if len(v) != 1 || v[0].Class != c.class || v[0].Explained != c.explained {
 			t.Errorf("%s: got %+v, want class %s explained %v", c.name, v, c.class, c.explained)
+			continue
+		}
+		want, ok := reasons[c.name]
+		switch {
+		case !ok:
+			t.Errorf("%s: no expected reason listed", c.name)
+		case want == "" && v[0].Reason != "", want != "" && !strings.HasPrefix(v[0].Reason, want):
+			t.Errorf("%s: reason %q, want it to start %q", c.name, v[0].Reason, want)
 		}
 	}
 	after := base
