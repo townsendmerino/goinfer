@@ -1,6 +1,7 @@
 # Task — FP4 microscaling formats: native MXFP4 compute, and NVFP4
 
-**Status:** proposed, gates before code. Filed 2026-09-02.
+**Status:** proposed, gates before code. Filed 2026-09-02. Item C (NVFP4 read support) is replaced by
+`docs/tasks/task-lowbit-formats-2026-11.md` (its §1 and items LB0 to LB2); items A, B and D stay here.
 **Venue:** `mac` and `linux` for the reachable half; a Blackwell-class device for the rest.
 **Relates to:** `docs/completed/task-mxfp4-gptoss.md` (the existing MXFP4 work, archived
 2026-09-13 — every item it scoped shipped; this doc extends it, does not replace it).
@@ -53,7 +54,7 @@ So the work splits cleanly:
 |---|---|---|
 | A. Native MXFP4 SIMD kernel on CPU | **no** | the anticipated kernel, unmeasured |
 | B. MXFP4 beyond gpt-oss | **no** | loader/registry scope, not arithmetic |
-| C. NVFP4 read support | **no** | load checkpoints published in NVFP4 |
+| C. NVFP4 read support | **no** | load checkpoints published in NVFP4 (replaced: `docs/tasks/task-lowbit-formats-2026-11.md`) |
 | D. NVFP4/MXFP4 native tensor-core compute | **yes — Blackwell** | the actual industry win |
 
 **Only A, B and C are in scope.** D is recorded here so the reasoning survives, and so that if the
@@ -101,6 +102,9 @@ This is scoping work, not a kernel change. It may be small. Find out before comm
 ---
 
 ## C — NVFP4 read support
+
+**Replaced by `docs/tasks/task-lowbit-formats-2026-11.md` §1.** The text below is the original scoping; the plan, the
+layout to verify and the gates are there.
 
 NVFP4 and MXFP4 are both 4-bit microscaling formats and they are **not the same format**. Verify
 the following against the OCP Microscaling spec and NVIDIA's own documentation before building
