@@ -1,13 +1,13 @@
 # Task: take Config, Options and Architecture out of decoder? A split proposal (DC1–DC4) — 2026-11
 
-> **Status 2026-11-06: DC1 approved (Francis, 2026-11-06: DC1 yes; DC2/DC3 parked).** Written by mac-fit from a count of the tree at `2fd3a644`. Recommendation: **extract `Config` only (DC1a, DC1b); leave `Options` and `Architecture` where they are (DC2, DC3 parked).** Extraction is not needed for `decoder/fit`, which is finished (`docs/layout.md` "Tier 3").
+> **Status 2026-11-07: DC1 done (DC1a #714, DC1b 2026-11-07); DC2/DC3 parked (Francis, 2026-11-06).** Written by mac-fit from a count of the tree at `2fd3a644`. Recommendation: **extract `Config` only (DC1a, DC1b); leave `Options` and `Architecture` where they are (DC2, DC3 parked).** Extraction is not needed for `decoder/fit`, which is finished (`docs/layout.md` "Tier 3").
 
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
 | DC0 | done | Francis 2026-11-06: DC1 yes; DC2/DC3 parked | this proposal |
-| DC1a | active | export `Config`'s unexported methods in place (`headDim`→`HeadDim`, `validateX`→`ValidateX`, …); ~40 `arch_*.go` call sites; parity refresh | §3 |
-| DC1b | open | after DC1a: move `config.go` and the `Config` methods to `decoder/config`; alias `decoder.Config`; `paritykey.BuilderFile` learns the new path | §3 |
+| DC1a | done | `Config`'s cross-file methods exported in place (`headDim`→`EffectiveHeadDim`, `validateX`→`ValidateX`, …), merged in #714 (2026-11-06) | §3; #714 |
+| DC1b | done | 2026-11-07 (mbp2-vk5): `decoder/config` holds `Config`, all its methods (`ValidateGemma12`, `ValidateGlmOcr` moved in), `Load`, `ResolveEOSIDs`, `LenientJSON` and `RecommendedSampling`; `decoder.Config` and `decoder.RecommendedSampling` are aliases, `loadConfig`/`resolveEOSIDs` one-line wrappers; layout rule `config-leaf` (red under a plant); `paritykey.BuilderFile` learns `decoder/config/config.go`; program fingerprints and the decision census unchanged; one parity refresh, 12 `deps_hash` lines (the families with no programs; the 31 with programs stay fresh under the builder switch) | §3; §8 |
 | DC2 | blocked | `Options` only when a subsystem needs it (it drags `Backend`, `Drafter`, `Knobs`) | §4 |
 | DC3 | blocked | no: `Architecture` is the hub (§5); continue `internal/runtime/program` instead | §5 |
 | DC4 | done | the aliases in `decoder` are the published API and stay (T3-fit question a); kept, Francis 2026-11-06 | §5 |
@@ -53,3 +53,22 @@ DC1a (a day, ~40 files) → DC1b (a day, one package, ~25 files touched with tes
 ## 7. Decision (Francis, 2026-11-06)
 
 DC1 goes ahead: `Config` only. DC2 (`Options`) and DC3 (`Architecture`) stay parked until a subsystem names a consumer. DC1a is its own PR from `origin/main`, kept to the method renames so it merges around the open decoder PRs; DC1b follows. Each PR: a red-first test where behavior could change (DC1b: a layout rule that `decoder/config` imports no goinfer package), the program fingerprints and the census hash unchanged as the no-numerics proof, one parity refresh at the end, `touched.py` and `cmd/lint`, no auto-merge. Before DC1b changes `paritykey.BuilderFile`, check whether VK5's week-3 shadow key is still running and tell the coordinator, who decides whether DC1b waits for the week to end.
+
+## 8. DC1b, done 2026-11-07
+
+- **The move.** `decoder/config/config.go` (from `decoder/config.go`, with `ValidateGemma12` from `gemma12.go` and `ValidateGlmOcr` from
+  `arch_glm_ocr.go`), `nonfinite.go` (from `decoder/config_nonfinite.go`) and `sampling.go` (`RecommendedSampling`, `Applied`, `Normalized` and the
+  generation_config reader, from `decoder/recommended_sampling.go`; `ggufSampling` stays in `decoder`, since it reads a `GGUFFile`). `loadConfig` is
+  `config.Load`, `resolveEOSIDs` `config.ResolveEOSIDs`. Two config-only test files moved with it (`nonfinite_test.go`, `sampling_test.go`); the rest
+  stay in `decoder` and call the wrappers.
+- **Red first.** `internal/layout`'s `config-leaf` rule fails `TestLayout_arrows` on a plant that imports `internal/runtime/program` from
+  `decoder/config`, and passes without it.
+- **No numerics moved.** `TestProgramFingerprint_table` passes unchanged, and `TestDecisionCensus`'s golden compare passes on amd64 (29,637 groups).
+- **Parity.** `paritykey.BuilderFile` and decoder's `isBuilder` list `decoder/config/config.go`, which joins `core`. Under the builder switch
+  (`docs/measurements/vk5-2026-10.md` §13) only the 12 families with no programs re-stale; one goldens-gated refresh moved their 12 `deps_hash` lines.
+- **Comments.** Every comment naming a `Config` method by its old unexported name now names the exported one.
+- **Evidence.** Logs in `docs/measurements/dc1b-2026-11-07/`. `touched.py`'s two reds there are not this change's: `cmd/gate`'s
+  `TestProcSampler_findsTheTestBinaryUnderItsParent` and `backend/webgpu`'s `TestUploadKV_gemma4MoE/kv-f32/past-the-window` fail the same way on
+  `origin/main` on mbp2 (its webgpu device is an Intel iGPU).
+- **VK5.** The week-3 shadow week is over (graded early, 2026-11-07); this change went after the builder switch, as §7 asked.
+
