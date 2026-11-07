@@ -551,12 +551,14 @@ each WebGPU tower encodes a large image in 0.36 to 0.49 of its CPU tower's time 
 24.3 s), which made them the default under `--backend webgpu` on 2026-11-07; they were opt-in (`-vision-device gpu`) before (the 33 s and 43 s an image this page
 once quoted for Gemma 3 were measured before the tower's matmul was rewritten, and no longer describe it).
 
-**Where a tower cannot be placed.** CUDA and Metal price the tower into the resident plan (`towerReserve`), so the KV plan leaves room for it. WebGPU
-prices it too, and on a Mac (unified memory) serve keeps the WebGPU tower on the CPU, saying why, when it exceeds the fit guard's budget of the memory left
-(`--require-backend` refuses instead) and counts it against RAM when it prices KV slots. A discrete GPU has no free-memory figure under WebGPU, so there a tower
-that cannot start is warned about at startup (Gemma 3, Qwen2.5-VL, Gemma 4) and runs on the CPU, or refuses under `--require-backend`; the Qwen2.5-VL, Qwen3.5+,
-Qwen3-VL and GLM-OCR towers also fall back to the CPU for good at the first image that runs them out of device memory (a message on stderr), while Gemma 3's and
-Gemma 4's fail that one request, naming `-vision-device cpu`.
+**Where a tower cannot be placed.** CUDA and Metal price the tower into the resident plan (`towerReserve`), so the KV plan leaves room for it. WebGPU prices it
+too, before the decoder loads, and on a Mac (unified memory, where the device's buffers are host RAM) counts it with the weights when it sizes the KV slots and the
+context, then checks once the decoder is resident that the tower fits the fit guard's budget of the memory left. If it does not, serve **refuses the load** and says
+how much it needs: a float32 CPU tower would hold the same RAM, so moving it is not a fallback. Free memory, lower `-ctx` or `-kv-sessions`, use `-vision-quant int8`
+(smaller, lossy), or pass `-vision-device cpu` to run the CPU tower anyway. A discrete GPU has no free-memory figure under WebGPU, so there a tower that cannot start is
+warned about at startup (Gemma 3, Qwen2.5-VL, Gemma 4) and runs on the CPU, or refuses under `--require-backend`; the Qwen2.5-VL, Qwen3.5+, Qwen3-VL and GLM-OCR
+towers also fall back to the CPU for good at the first image that runs them out of device memory (a message on stderr), while Gemma 3's and Gemma 4's fail that one
+request, naming `-vision-device cpu`.
 
 **The int8 forms.** Qwen2.5-VL, Qwen3.5+, Gemma 4 and GLM-OCR keep an int8 tower on the CPU: until 2026-10-02 the first three were forced to int8 under cuda/webgpu, which
 was not faster and was not close to f32 (relative L2 0.21 / 0.14 / 0.31 against each tower's own f32 on one image; `docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`),

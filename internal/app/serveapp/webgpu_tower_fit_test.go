@@ -1,7 +1,6 @@
 package serveapp
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,32 +72,31 @@ func TestTowerReserve_webgpu(t *testing.T) {
 	}
 }
 
-// A load that fits only without the tower: the tower stays on the CPU with the reason named, or the load is refused under
-// -require-backend. Only a unified-memory machine has a figure to compare; a discrete GPU and an unreadable figure proceed.
+// A load whose tower exceeds the fit guard's budget is refused on a unified-memory machine (the CPU float32 tower holds the same RAM,
+// so it is not a fallback); a discrete GPU, an unreadable figure, -vision-device cpu and a tower that fits proceed.
 func TestWebgpuTowerFits(t *testing.T) {
 	c, dir := webgpuCfg(t, gemma3Cfg, "")
-	need := towerReserve(func() config { stubWebGPU(t, true, 1<<40); return c }(), dir)
+	stubWebGPU(t, true, 1<<40)
+	need := towerReserve(c, dir)
 	if need <= 0 {
 		t.Fatalf("test setup: the tower is priced at %d", need)
 	}
-	budget := func(avail int64) int64 { return int64(0.70 * float64(avail)) }
 	cases := []struct {
 		name    string
 		unified bool
 		avail   int64
 		mod     func(*config)
-		onCPU   bool // the tower is kept on the CPU
-		err     bool
+		refuse  bool
 	}{
-		{"unified, plenty available", true, 8 << 30, nil, false, false},
-		{"unified, the budget just covers it", true, need*10/7 + 1<<20, nil, false, false},
-		{"unified, the budget is one MiB short: the load fits only without the tower", true, need*10/7 - 1<<20, nil, true, false},
-		{"unified, little available", true, 1 << 30, nil, true, false},
-		{"unified, little available, -require-backend refuses", true, 1 << 30, func(c *config) { c.requireBE = true }, false, true},
-		{"unified, the available memory cannot be read: proceeds", true, 0, nil, false, false},
-		{"discrete GPU: no figure, proceeds", false, 1 << 20, nil, false, false},
-		{"unified, already -vision-device cpu", true, 1 << 20, func(c *config) { c.visionDevice = "cpu" }, true, false},
-		{"unified, int8 Gemma 3 (558 MiB) fits where float32 does not", true, 1 << 30, func(c *config) { c.visionQuant = "int8" }, false, false},
+		{"unified, plenty available", true, 8 << 30, nil, false},
+		{"unified, the budget just covers it", true, need*10/7 + 1<<20, nil, false},
+		{"unified, the budget is one MiB short: the load fits only without the tower", true, need*10/7 - 1<<20, nil, true},
+		{"unified, little available", true, 1 << 30, nil, true},
+		{"unified, little available, -require-backend refuses the same", true, 1 << 30, func(c *config) { c.requireBE = true }, true},
+		{"unified, the available memory cannot be read: proceeds", true, 0, nil, false},
+		{"discrete GPU: no figure, proceeds", false, 1 << 20, nil, false},
+		{"unified, -vision-device cpu is the user's own choice: proceeds", true, 1 << 20, func(c *config) { c.visionDevice = "cpu" }, false},
+		{"unified, int8 Gemma 3 (558 MiB) fits where float32 does not", true, 1 << 30, func(c *config) { c.visionQuant = "int8" }, false},
 	}
 	for _, tc := range cases {
 		stubWebGPU(t, tc.unified, tc.avail)
@@ -106,29 +104,19 @@ func TestWebgpuTowerFits(t *testing.T) {
 		if tc.mod != nil {
 			tc.mod(&cfg)
 		}
-		var note bytes.Buffer
-		got, err := webgpuTowerFits(cfg, dir, &note)
+		err := webgpuTowerFits(cfg, dir)
 		switch {
-		case tc.err:
-			if err == nil || !strings.Contains(err.Error(), "-require-backend") || !strings.Contains(err.Error(), "WebGPU vision tower needs about") {
-				t.Errorf("%s: err %v, want a -require-backend refusal naming the tower's size", tc.name, err)
-			}
-			continue
-		case err != nil:
+		case tc.refuse && (err == nil || !strings.Contains(err.Error(), "WebGPU vision tower needs about") || !strings.Contains(err.Error(), "not a fallback") ||
+			!strings.Contains(err.Error(), "-vision-device cpu")):
+			t.Errorf("%s: err %v, want a refusal that names the tower's size, says the CPU is not a fallback and names the way out", tc.name, err)
+		case !tc.refuse && err != nil:
 			t.Errorf("%s: unexpected error %v", tc.name, err)
-			continue
-		}
-		if onCPU := got.towerBackend() == "cpu"; onCPU != tc.onCPU {
-			t.Errorf("%s: tower on cpu %v, want %v (need %.2f GB, budget %.2f GB)", tc.name, onCPU, tc.onCPU, float64(need)/gbF, float64(budget(tc.avail))/gbF)
-		}
-		if fell := strings.Contains(note.String(), "the tower runs on the CPU"); fell != (tc.onCPU && cfg.visionDevice != "cpu") {
-			t.Errorf("%s: note %q, want a fallback note exactly when the guard moved the tower", tc.name, note.String())
 		}
 	}
 }
 
 // loadVisionTower asks the guard: a Qwen2.5-VL tower that fits is attached on the device (its host blocks are released once), one
-// that does not stays on the CPU and releases nothing.
+// that does not refuses the load and attaches nothing.
 func TestLoadVisionTower_webgpuTowerGuard(t *testing.T) {
 	got := countReleases(t)
 	vision.RegisterQwenResident(func(*vision.QwenVisionEncoder) (vision.QwenResidentEncoder, error) {
@@ -136,17 +124,19 @@ func TestLoadVisionTower_webgpuTowerGuard(t *testing.T) {
 	})
 	t.Cleanup(func() { vision.RegisterQwenResident(nil) })
 	for _, c := range []struct {
-		name  string
-		avail int64
-		want  int
-	}{{"fits", 1 << 40, 1}, {"does not fit", 1 << 10, 0}} {
+		name   string
+		avail  int64
+		want   int
+		refuse bool
+	}{{"fits", 1 << 40, 1, false}, {"does not fit", 1 << 10, 0, true}} {
 		stubWebGPU(t, true, c.avail)
 		cfg := config{visionPath: "../../../testdata/qwen25vl-tiny", models: []modelSpec{{name: "m", path: "../../../testdata/qwen25vl-tiny"}}}
 		cfg.load.Backend = "webgpu"
 		s := &server{models: map[string]*loadedModel{}}
 		before := got["Qwen2.5-VL"]
-		if err := s.loadVisionTower(cfg); err != nil {
-			t.Fatalf("%s: %v", c.name, err)
+		err := s.loadVisionTower(cfg)
+		if c.refuse != (err != nil) {
+			t.Fatalf("%s: loadVisionTower error %v, want an error: %v", c.name, err, c.refuse)
 		}
 		if n := got["Qwen2.5-VL"] - before; n != c.want {
 			t.Errorf("%s: %d tower releases, want %d (1 means the device tower attached)", c.name, n, c.want)

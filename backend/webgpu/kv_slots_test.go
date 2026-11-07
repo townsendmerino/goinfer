@@ -1141,35 +1141,52 @@ func TestCost_webgpuOffShare(t *testing.T) {
 	}
 }
 
-// TestResidentRAMTerms_countsTheCompanion: a vision tower or drafter priced into Options.ExtraResidentBytes counts with the
-// weights when a darwin build prices its KV slots against RAM, so a build with a tower coming grants fewer slots at a RAM size where
-// it would otherwise grant them all. No device needed: the model is the CPU load of a tiny fixture.
-func TestResidentRAMTerms_countsTheCompanion(t *testing.T) {
-	dir := "../../testdata/llama-tiny"
-	if _, err := os.Stat(filepath.Join(dir, "model.safetensors")); err != nil {
-		t.Skipf("fixture %s has no model.safetensors on this machine (gitignored; regenerate it): %v", dir, err)
+// fakeSlotModel is a model for the slot pricing: 2 layers of 2 KV heads of 8 dims (256 bytes of f32 KV a position), 10 MiB of weights,
+// no host copy, and extra bytes of companion (a vision tower or drafter, decoder.Model.ExtraResidentBytes).
+type fakeSlotModel struct{ extra int64 }
+
+func (fakeSlotModel) ResidentKVSlotsRequest() int           { return 4 }
+func (fakeSlotModel) ResidentContextPinned() bool           { return false }
+func (fakeSlotModel) ResidentWeightBytes() int64            { return 10 << 20 }
+func (f fakeSlotModel) ExtraResidentBytes() int64           { return f.extra }
+func (fakeSlotModel) ResidentHostCopyBytes(slots int) int64 { return 0 }
+func (fakeSlotModel) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
+	return 16, 2, 2, 2, 8, 32, 100
+}
+func (fakeSlotModel) MLAResidentParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool) {
+	return
+}
+
+// TestSlotPricing_countsTheCompanion: a companion priced into ExtraResidentBytes (a vision tower, which serve prices before the load)
+// takes the same RAM as the weights on darwin, so a build with one coming gets a shorter context (slotsBeforeContextOn) and fewer
+// slots (grantedSlots, which buildKVSlots calls) than the same build without it, never an overcommit. With 40 MiB of RAM the fit
+// guard's share is 28 MiB: 10 MiB of weights and four 4 MiB slots (the 16384-position cap) fit; 6 MiB more of tower does not.
+func TestSlotPricing_countsTheCompanion(t *testing.T) {
+	const ram, ctxCap, perPos = 40 << 20, 16384, 256
+	ramOf := func() int64 { return ram }
+	base, tower := fakeSlotModel{}, fakeSlotModel{extra: 6 << 20}
+
+	if got := slotsBeforeContextOn(true, ramOf, base, ctxCap, false, false, 0); got != ctxCap {
+		t.Fatalf("test setup: without a companion the context is %d, want the cap %d", got, ctxCap)
 	}
-	const perSlot, extra, want = 16 << 20, 40 << 20, 4
-	base, err := decoder.Load(dir, decoder.Options{Quant: "int4"})
-	if err != nil {
-		t.Fatal(err)
+	if got := grantedSlots(base, 4, true, ram, 0, perPos*ctxCap); got != 4 {
+		t.Fatalf("test setup: without a companion the build grants %d of 4 slots", got)
 	}
-	defer base.Close()
-	with, err := decoder.Load(dir, decoder.Options{Quant: "int4", ExtraResidentBytes: extra})
-	if err != nil {
-		t.Fatal(err)
+
+	ctx := slotsBeforeContextOn(true, ramOf, tower, ctxCap, false, false, 0)
+	if ctx >= ctxCap {
+		t.Errorf("with a 6 MiB tower coming the context is %d, want less than the cap %d", ctx, ctxCap)
 	}
-	defer with.Close()
-	w0, h0 := residentRAMTerms(base)
-	w1, h1 := residentRAMTerms(with)
-	if w1-w0 != extra || h1 != h0 {
-		t.Fatalf("the terms with a 40 MB companion are (%d, %d), without (%d, %d): want the weights %d higher and the host copy equal", w1, h1, w0, h0, extra)
+	// no overcommit: at the context it chose (or the floor, where the slot clamp takes over) the slots fit RAM with the tower counted
+	w, h := residentRAMTerms(tower)
+	if ctx > webgpuSlotCtxFloor && darwinKVSlots(4, ram, 0, w, h, perPos*int64(ctx)) < 4 {
+		t.Errorf("context %d does not fit four slots beside the weights and the tower", ctx)
 	}
-	ram := int64(float64(w0+h0+want*perSlot)/decoder.WeightsMemFraction) + 1<<10 // the RAM at which the base build just fits every slot
-	if got := darwinKVSlots(want, ram, 0, w0, h0, perSlot); got != want {
-		t.Fatalf("test setup: the build without a companion grants %d of %d slots at %d bytes of RAM", got, want, ram)
+	if got := grantedSlots(tower, 4, true, ram, 0, perPos*ctxCap); got >= 4 {
+		t.Errorf("with a 6 MiB tower coming the build grants %d of 4 slots at the full context, want fewer", got)
 	}
-	if got := darwinKVSlots(want, ram, 0, w1, h1, perSlot); got >= want {
-		t.Errorf("a 40 MB companion left the grant at %d of %d slots: the tower is not priced against the RAM ceiling", got, want)
+	// a discrete GPU has no RAM figure and is unchanged either way
+	if got := slotsBeforeContextOn(false, ramOf, tower, ctxCap, false, false, 0); got != ctxCap {
+		t.Errorf("a non-darwin build's context is %d, want the cap", got)
 	}
 }
