@@ -281,8 +281,12 @@ func TodayDefinition(src Source) (string, error) {
 }
 
 // TodayKey is the family's key as the staleness gate computes it under def (TodayDefinition): under DefinitionPrograms a
-// family with programs hashes its files less the builders, then "programs=<ProgramsDigest>", then tail; otherwise Key.
+// family with programs hashes its files less the builders, then "programs=<ProgramsDigest>", then tail; otherwise Key. Any
+// other def is an error.
 func TodayKey(src Source, m *Manifest, fam Family, def, tail string, programs map[string]map[string]string) (string, error) {
+	if def != DefinitionFiles && def != DefinitionPrograms {
+		return "", fmt.Errorf("today's key: unknown definition %q", def)
+	}
 	if def != DefinitionPrograms || len(fam.Programs) == 0 {
 		return Key(src, m, fam, tail)
 	}

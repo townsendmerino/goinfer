@@ -107,8 +107,10 @@ SCANS = [
     Scan("decoder", "TestAssetRegistry_noDirectReads", TREE_T + F("testdata/assets.json", "decoder/assets.go")),
     Scan("decoder", "TestAssetRegistry_resolvesFromEveryCallerDir", TREE_T + F("testdata/assets.json", "decoder/assets.go")),
     # Two computations of one key over the same files: only the two implementations or the manifest can split them.
-    Scan("decoder", "TestParityKey_matchesFreshDepsHash", F("decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json") + NT("internal/guard/paritykey")),
-    Scan("decoder", "TestParityKey_shadowMatchesDecoder", F("testdata/loader_identity.json", "decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json", "testdata/program_fingerprints.json") + NT("internal/guard/paritykey", "decoder")),
+    Scan("decoder", "TestParityKey_matchesFreshDepsHash", F("decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json", "testdata/parity_key.json", "testdata/program_fingerprints.json") + NT("internal/guard/paritykey")),
+    Scan("decoder", "TestParityKey_shadowMatchesDecoder", F("testdata/loader_identity.json", "decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json", "testdata/program_fingerprints.json", "testdata/parity_key.json") + NT("internal/guard/paritykey", "decoder")),
+    # Both keys of every family over the working tree, from the tables they read.
+    Scan("internal/guard/paritykey", "TestKey_onTheTree", F("testdata/parity/*.json", "testdata/parity_key.json", "testdata/program_fingerprints.json", "testdata/loader_identity.json", "testdata/kernel_fingerprints.json")),
     Scan("decoder", "TestParityPrograms_mapping", F("testdata/parity/*.json", "testdata/program_fingerprints.json", "testdata/*/config.json") + NT("decoder")),
     # decoder's config tests exercise decoder/config through decoder's wrappers (loadConfig, resolveEOSIDs) and real fixtures, so an
     # edit in decoder/config runs them; touched.py alone would run only decoder/config's own tests (where Config's validator tests live).
