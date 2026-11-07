@@ -2,6 +2,7 @@ package multimodal
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -75,7 +76,7 @@ func LoadProjector(dir string) (*Projector, error) {
 	normW, e1 := st.TensorF32("multi_modal_projector.mm_soft_emb_norm.weight")
 	projW, e2 := st.TensorF32("multi_modal_projector.mm_input_projection_weight") // [visionHidden, textHidden]
 	if e1 != nil || e2 != nil {
-		return nil, fmt.Errorf("multimodal: projector weights: %v %v", e1, e2)
+		return nil, fmt.Errorf("multimodal: projector weights: %w", errors.Join(e1, e2))
 	}
 	// Validate the norm tensor's length like the projection tensor below: Forward indexes normW by vision-hidden channel, so a
 	// checkpoint whose config says visionHidden=N but ships a shorter mm_soft_emb_norm.weight would load cleanly and then panic "index

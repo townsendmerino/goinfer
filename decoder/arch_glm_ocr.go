@@ -28,8 +28,8 @@ import (
 // validateResolved exists because an omitted field in a hand-built struct literal loads clean and
 // computes something else.
 func glmOcrArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	hd := cfg.headDim()
-	if err := cfg.validateGlmOcr(hd); err != nil {
+	hd := cfg.EffectiveHeadDim()
+	if err := cfg.ValidateGlmOcr(hd); err != nil {
 		return nil, nil, err
 	}
 	spec, partial, err := parseRopeFlat(cfg.RopeParameters)
@@ -95,7 +95,7 @@ func glmOcrArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 
 // validateGlmOcr rejects a config the glm_ocr descriptor does not implement, instead of loading it
 // and computing something else. hd is the resolved head_dim.
-func (c *Config) validateGlmOcr(hd int) error {
+func (c *Config) ValidateGlmOcr(hd int) error {
 	switch {
 	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || hd == 0:
 		return fmt.Errorf("decoder(glm_ocr): missing required dim (hidden=%d layers=%d heads=%d headDim=%d)",

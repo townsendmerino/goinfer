@@ -15,8 +15,14 @@
 //	admission order, refusals and timing are today's   serveapp's TestSchedCensus_admission
 //	placement decisions are today's                    serveapp's TestSchedCensus_placement
 //	a cancelled waiter leaves without the holder       serveapp's TestAdmission_waiterLeavesOnContextCancelWithoutWaitingForHolder
+//	a cancel racing the hand-off loses no turn         TestAdmission_cancelDuringHandoffLosesNoTurn (-race)
+//	waiters are granted in arrival order; Position     TestAdmission_fifoAndPosition
 //	any halt after the grant refuses and frees both    TestAdmit_haltWithNoReasonRefuses
+//	a full queue or an ended wait gives the slot back  TestAdmit_refusalsGiveBackTheirSlot
 //	-max-queue 0 is unbounded; turns count as 1 or more TestNewQueue_unboundedAtZero
+//	a shared preamble alone never wins a session       TestBestExtend_choosesAMatchPastTheSharedPreamble
+//	the room rule and the rollback exception           TestPickSession_roomRuleAndTheRollbackException
+//	the coldest idle session is the least recent       TestColdestIdle_isTheLeastRecentIdleSession
 //	a short or nil busy slice marks sessions idle       TestPickDonor_shortBusy
 //	Capacity is race-free beside SetCap and Enter      TestAdmission_capacityUnderConcurrentSetCap (-race)
 //	the standard library only                          layout's TestLayout_arrows (rule scheduler-standard-library)

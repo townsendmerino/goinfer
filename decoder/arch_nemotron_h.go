@@ -16,7 +16,7 @@ func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	// Released checkpoints spell the layer sequence as hybrid_override_pattern; only
 	// transformers-instantiated configs carry layers_block_type. Normalize to the latter
 	// before anything reads it.
-	if err := cfg.normalizeNemotronBlocks(); err != nil {
+	if err := cfg.NormalizeNemotronBlocks(); err != nil {
 		return nil, nil, err
 	}
 	// Nemotron-H's config has no num_hidden_layers — the layer count IS the length
@@ -24,13 +24,13 @@ func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NumLayers == 0 {
 		cfg.NumLayers = len(cfg.LayersBlockType)
 	}
-	if err := cfg.validateNemotron(); err != nil {
+	if err := cfg.ValidateNemotron(); err != nil {
 		return nil, nil, err
 	}
 	if cfg.AttentionHeadDim > 0 {
 		cfg.HeadDim = cfg.AttentionHeadDim // NVIDIA's key; without it the width would fall back to hidden/heads, which is not this family's
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	kind := make([]uint8, cfg.NumLayers)
 	hasMoE := false
 	for i, t := range cfg.LayersBlockType {

@@ -1,0 +1,8 @@
+start 2026-11-06 09:57:15 load1 3.69
+[zz] base NR=1 phi3 gate|up  q4k N=16384 K=3072 GPU ms/call by B: B1=0.325 B2=0.517 B3=1.068 B4=2.377 B5=3.613 B6=6.448 B7=8.335 B8=10.718
+[zz] base NR=1 phi3 o        q4k N=3072 K=3072 GPU ms/call by B: B1=0.102 B2=0.129 B3=0.201 B4=0.451 B5=0.703 B6=1.223 B7=1.585 B8=2.030
+[zz] base NR=1 phi3 qkv      q5k N=9216 K=3072 GPU ms/call by B: B1=0.194 B2=0.301 B3=0.624 B4=0.964 B5=2.037 B6=3.481 B7=4.400 B8=6.122
+[zz] base NR=1 phi3 down     q6k N=3072 K=8192 GPU ms/call by B: B1=0.184 B2=0.383 B3=0.511 B4=0.699 B5=0.963 B6=1.090 B7=1.310 B8=1.158
+[zz] base NR=1 1.5B gate|up  q4k N=17920 K=1536 GPU ms/call by B: B1=0.234 B2=0.375 B3=0.773 B4=1.683 B5=2.833 B6=4.493 B7=5.886 B8=7.529
+[zz] base NR=1 1.5B o        q4k N=1536 K=1536 GPU ms/call by B: B1=0.074 B2=0.090 B3=0.101 B4=0.156 B5=0.256 B6=0.397 B7=0.526 B8=0.673
+end 2026-11-06 09:58:03 load1 2.90

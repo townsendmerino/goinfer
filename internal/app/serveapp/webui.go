@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/pull"
 )
 
@@ -739,7 +740,7 @@ type webUnloadReq struct {
 // nothing is resident to suggest freeing (a fresh server's first load is a real refusal with no fix on this page, and the
 // message should not imply one exists).
 func (s *server) unloadSuggestion(err error) string {
-	if !errors.Is(err, decoder.ErrWontFitResident) {
+	if !errors.Is(err, fit.ErrWontFitResident) {
 		return ""
 	}
 	s.regMu.RLock()

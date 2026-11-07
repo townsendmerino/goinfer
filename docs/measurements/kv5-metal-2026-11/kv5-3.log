@@ -1,0 +1,41 @@
+# KV5-3, the Mac, 2026-11-05: prefill's stores and readers, the int8 dequantize, MLA, UploadKV and CopyKV through the block table. Shared lock for every build and test; the TTFT read under the exclusive lock, on AC.
+
+== what changed
+Prefill (prefill.go, the batched pass): kv_store_f16 and kv_store_i8_prefill write a position's row through the bound slot's table, and every prefill attention kernel (attention_prefill, _tiled, _img, _fused, _steel at 64 and 128, _steel_hd256, _steel_hd512) reads a key's row through it, the pool bound from its start. An int8 cache's kv_dequant_i8_f16 reads through the table into contiguous scratch, which the attention kernels then read through an identity table (kvIdentityTab, priced in prefillScratchBytes: 4 bytes a 64-row block, 128 bytes at 2,048 rows).
+MLA (mla.go): mla_store and mla_attn take the table.
+Host: UploadKV writes each block's run of positions at its row (kvHostRow); CopyKV copies block by block through both slots' tables, merging runs consecutive in both (kvBlockRuns), so in-order tables still make one copy a buffer; attnConfirmForTest's injection goes through kvHostRow.
+Tests that dispatch these kernels directly now bind an identity table. One of them, TestAttentionPrefillTiled_bitIdenticalToTheExactKernel, had passed with nothing bound, since both its arms read the same unbound buffer.
+The slot views stay (KV5-4 removes them), so in-order tables are still the shipped layout and kvHostOff still holds for the tests that use it.
+
+== red on main 6ab62e5b, green on the branch
+TestKVPages_prefillKernelsReadTheTable (backend/metal/kernels): 8 kernels, each with and without a window starting inside a block: scrambled blocks give the in-order output bit for bit, two swapped entries move it, and each key row of 0, 63, 64, 127, 128, 191, 192, 236, 255, 256, 299 moves it alone. On main: every subtest red on all three checks.
+TestKVPages_prefillStoreWritesTheTable (kernels), TestKVPages_prefillI8StoreWritesTheTable, TestKVPages_prefillDequantReadsTheTable: red on main, green here.
+TestKVPages_prefillThroughTheTable (a real resident, the MC3 fixture): 3 slots, a 300-token prompt each and 8 decoded tokens, a second turn of 70 rows from position 308, inside a block, then a batched step over the three; f16 and int8 KV, on attention_prefill_steel, _fused, attention_prefill and _tiled, each asserted by the pass's own launches (prefillAttnRanForTest). On main: 614,400 of 614,400 logits differ under scrambled blocks, and the plant moves no second-turn logit.
+  The fixture's attention is too peaked for keys past the first block to move a logit: swapping blocks 1 and 2 under a filled cache moved nothing even where the table is read. So the plant moves block 0, and the kernel tests hold each key row on its own.
+TestKVPages_mlaThroughTheTable (deepseek-tiny, 2 slots past a block edge): on main the scrambled arm matches, since main's MLA wrote and read the slot view alike, and the plant moves no logit: red. Green here.
+TestKVPages_uploadKVThroughTheTable (f16, int8, f32; uploads of [0, 40) and [40, 150)): red on main in all three, green here.
+TestKV2_copyKVExact, new scrambled arms (rows read through the table, kv2Slot): red on main at f16 and int8, green here; the in-order arms pass on both.
+
+== plants, 25 of 25 red (plants-2 run, 16:32 to 16:38, after the tests moved to their final files)
+Each moves one lookup or store by a block, alone, and runs the slice's tests in both packages. Every one went red:
+attention_prefill K, V; tiled K in its max pass, K in its tile pass, V; img K, V; fused K, V; steel K, V; steel_split K, V; kv_store_f16 K, V; kv_store_i8_prefill's row; kv_dequant_i8_f16's row; mla_store's row; mla_attn's row; prefill binding the slot view instead of the pool; the int8 readers taking the cache's table instead of the identity; UploadKV's f16/f32 row; UploadKV's int8 row; CopyKV's destination block; CopyKV's source block.
+Which test catches what: at int8 KV, a reader's offset inside the identity table is shared by both arms of the resident test, so only the kernel tests see it; the same holds for every reader's row offset inside a block. Both arms share those mistakes, and the kernel tests' single-row checks are the reference.
+
+== closing checks
+Metal package whole, -tags goinfer_testhooks, at d31ec537: 432 passed, 220 skipped; two failed, TestMEM7_blockFitsTheBudget and TestI8_blockRows, each pinning int8 prefill scratch at the dequantize buffers alone, 128 bytes short: the identity table. Both now count it. Kernels package: passes. TestMemGate_metal: passes.
+gate identity -backend metal 6ab62e5b d31ec537: families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (Metal declines those families on main too; a skip is not a pass). Later commits move test files only.
+Layout ratchet (TestBackendTests_decoderImportsOnlyFall): the first layout added two test files to backend/metal and went red at 243 and 330; the kernel tests moved to backend/metal/kernels and the rest into existing files, back to 241 and 328.
+Lint: VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
+Touched: VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
+Parity refresh: not needed, no non-test decoder file changed.
+
+== G2's prefill TTFT at KV5-3, 2026-11-05 16:59 to 17:19 PST (lock taken 16:44:56, released 17:19:28): PASS
+Registered (KV5's plan, G2): prefill TTFT at K = 512 and 3,900, old/new, 1.5B and 7B: PASS at 0.97 or more, AMBIGUOUS 0.96 to 0.97, FAIL under 0.96. Instrument: ttft_ab.py in this directory, unchanged since KV5-2; run by run-ttft-kv5-3.sh. Old 6ab62e5b (main), new 814cf172 (this slice's code), pinned serve binaries, both vcs.modified=false; harness from a detached worktree at 6ab62e5b. MacBookPro18,3, 16 GB, ~/models, int4, on AC, thermal not read, exclusive lock. Raw: kv5-3-ttft.json.gz. old/new per pair, median:
+  1.5B   K=512    1.002, 0.999, 0.998   median 0.999  PASS   about 499 ms a side
+  1.5B   K=3,900  1.086, 0.994, 0.993   median 0.994  PASS   about 4,200 ms old, 4,229 new
+  7B     K=512    1.000, 0.999, 0.998   median 0.999  PASS   about 2,300 ms a side
+  7B     K=3,900  0.997, 0.930, 0.998   median 0.997  PASS   about 18,850 ms a side
+Swap-outs 0.0 MB and swap-ins 0.0 MB in all 12 runs; no voids and no void starts; load at a run's start 0.25 to 1.75.
+Read beside the medians: the 1.5B at 3,900 shows a steady cost of about 0.7% in its two clean pairs (4,201 and 4,200 ms old against 4,229 and 4,229 new); its first pair's old run was the slow one (4,591 ms). The 7B's 0.930 is one new run at 20,300 ms against 18,940 and 18,839 for the others. Neither moves a verdict; the 1.5B's 0.7% is the slice's prefill cost as far as one reading shows it.
+
+THIS RECORD ENDS WITH KV5-3 BIT-IDENTICAL, EVERY PLANT RED AND G2's PREFILL TTFT PASSED.

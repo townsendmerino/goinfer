@@ -13,14 +13,14 @@ func llamaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "llama"); err != nil {
 		return nil, nil, err
 	}
-	if err := cfg.validateLlama(); err != nil {
+	if err := cfg.ValidateLlama(); err != nil {
 		return nil, nil, err
 	}
 	scaling, err := parseRopeScaling(cfg.RopeScaling) // G4: linear + llama3; unsupported types error here
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(llama): %w", err)
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	return &Architecture{
 		Name:            "llama",
 		HiddenDim:       cfg.HiddenDim,
@@ -41,7 +41,7 @@ func llamaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		layerIsGlobal:   nil,                // all-global
 		RoPELocalBase:   cfg.RoPEGlobalBase, // single base (rope_theta)
 		RoPEGlobalBase:  cfg.RoPEGlobalBase,
-		RotaryDim:       cfg.rotaryDim(), // 0 = full head_dim (Llama); partial for Phi
+		RotaryDim:       cfg.RotaryDim(), // 0 = full head_dim (Llama); partial for Phi
 		ropeScaling:     scaling,         // llama3 (3.1+/3.2) / linear; nil = none
 		EmbedScale:      0,               // none
 		TiedLMHead:      false,           // finalized from lm_head.weight presence at load

@@ -21,6 +21,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -105,7 +106,7 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		b.resident.quant = m.Quant()
 	}
 	if ctx, _ := resolveMetalCtxCap(m); ctx < from || m.ExtraResidentBytes() > 0 {
-		fmt.Fprint(os.Stderr, metalKVPlanLine(res.kvSlotCount(), ctx, from, m.ExtraResidentBytes()))
+		logs.InfoText(metalKVPlanLine(res.kvSlotCount(), ctx, from, m.ExtraResidentBytes()))
 	}
 	return b.resident, true, nil
 }
@@ -131,7 +132,6 @@ func residentPreBuild(m *decoder.Model) (fit decoder.MetalFit, from int, err err
 	// makes "available" report what survived, so a guard keyed on it inverts when it is needed. Evidence:
 	// docs/code-notes/metal.md#metalBackend.BuildResident.guard.
 	if _, cerr := resolveMetalCtxCap(m); cerr != nil {
-		fmt.Fprintf(os.Stderr, "[metal] %v\n", cerr)
 		return fit, 0, cerr
 	}
 	// The unpinned context is chosen once, here: its budget is live, and every later reader in this build (the guard, the
@@ -463,7 +463,7 @@ func residentFitsMemory(m *decoder.Model) bool { return residentMemoryDecline(m)
 func metalKVSlots(m *decoder.Model) int {
 	n := metalKVSlotsWanted(m)
 	if asked := m.ResidentKVSlotsRequestFor("metal"); n < asked {
-		fmt.Fprintf(os.Stderr, "metal: %d resident KV slots (Metal's default; %d asked by default, -kv-sessions N keeps N if memory allows)\n",
+		logs.Infof("metal: %d resident KV slots (Metal's default; %d asked by default, -kv-sessions N keeps N if memory allows)",
 			n, asked)
 	}
 	if n <= 1 {
@@ -482,13 +482,13 @@ func metalKVSlots(m *decoder.Model) int {
 	// but only where the step then fits. A count the caller asked for keeps its slots, and the step declines if it no longer fits.
 	if reserve := metalStepScratchReserve(m); m.ResidentKVSlotsIsDefault() && reserve > 0 && need+reserve <= budget {
 		if within := kvSlotsWithin(n, budget-reserve, need, metalSlotBytes(m)); within < got {
-			fmt.Fprintf(os.Stderr, "metal: %d resident KV slots of %d by default, which leaves room for the batched step's %.1f MB of scratch; -kv-sessions N keeps N if memory allows\n",
+			logs.Infof("metal: %d resident KV slots of %d by default, which leaves room for the batched step's %.1f MB of scratch; -kv-sessions N keeps N if memory allows",
 				within, n, float64(reserve)/(1<<20))
 			return within
 		}
 	}
 	if got < n {
-		fmt.Fprintf(os.Stderr, "metal: %d resident KV slots of %d requested — each costs %.0f MB (KV at the resident context, and any recurrent state), and the memory guard allows %d\n",
+		logs.Infof("metal: %d resident KV slots of %d requested — each costs %.0f MB (KV at the resident context, and any recurrent state), and the memory guard allows %d",
 			got, n, float64(metalSlotBytes(m))/(1<<20), got)
 	}
 	return got
@@ -1397,6 +1397,11 @@ func (a *metalResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error 
 // position base..base+n-1, where n = len(keys)/kvDim. Used by decoder.residentUploadPrefill
 // to push a CPU-computed prefill's KV into the resident GPU cache, letting GenerateVL and
 // GenerateQwenVL run text decode on resident GPU rather than dropping to CPU.
+//
+// The contract: one call is one layer's part of a pass that uploads, for every layer that owns K/V, every row that layer reads
+// ([base, base+n), its own live range; residentUploadPrefill's loop). A block table serves every layer, so the call maps the bound
+// slot's blocks for all of them at once (kvOwn): a block another slot shares is copied for the rows below base, and the rest of it is
+// the pass's to write. A layer whose rows the pass leaves out inside that range would read stale rows there.
 func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	if a.r == nil {
 		return fmt.Errorf("metal: resident is nil")
@@ -1426,17 +1431,15 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	if e := a.checkCap(base, n); e != nil {
 		return e
 	}
-	off := base * kvDim
+	a.r.kvOwn(a.r.kvSlot, base, base+n)
+	// Each position goes to its row through the bound slot's table (kvHostRow), the pool's contents indexed from its start.
 	if a.r.kvI8 {
 		nKV := g.nKV
 		hd := g.hd
-		// the bound slot's codes and scales, when the slots are one allocation (MC3 S3; kvScaleOff)
-		kc := a.r.kc[layer].Int8s()[a.r.kvHostOff(layer, 1):]
-		vc := a.r.vc[layer].Int8s()[a.r.kvHostOff(layer, 1):]
-		ks := a.r.ks[layer].Floats()[a.r.kvScaleOff(a.r.kvSlot, layer):]
-		vs := a.r.vs[layer].Floats()[a.r.kvScaleOff(a.r.kvSlot, layer):]
+		kc, vc := a.r.kc[layer].Int8s(), a.r.vc[layer].Int8s()
+		ks, vs := a.r.ks[layer].Floats(), a.r.vs[layer].Floats()
 		for p := range n {
-			pos := base + p
+			row := a.r.kvHostRow(base + p)
 			for h := range nKV {
 				kHead := keys[p*kvDim+h*hd : p*kvDim+(h+1)*hd]
 				vHead := vals[p*kvDim+h*hd : p*kvDim+(h+1)*hd]
@@ -1459,26 +1462,30 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 				if scV == 0 {
 					scV = 1.0
 				}
-				ks[pos*nKV+h] = scK
-				vs[pos*nKV+h] = scV
+				ks[row*nKV+h] = scK
+				vs[row*nKV+h] = scV
 				invK := 1.0 / scK
 				invV := 1.0 / scV
 				for d := range hd {
-					kc[pos*kvDim+h*hd+d] = int8(math.Round(float64(kHead[d] * invK)))
-					vc[pos*kvDim+h*hd+d] = int8(math.Round(float64(vHead[d] * invV)))
+					kc[row*kvDim+h*hd+d] = int8(math.Round(float64(kHead[d] * invK)))
+					vc[row*kvDim+h*hd+d] = int8(math.Round(float64(vHead[d] * invV)))
 				}
 			}
 		}
-	} else if a.r.kvF32 {
-		off += a.r.kvHostOff(layer, 4) // the bound slot's start, when the slots are one allocation (MC3 S3)
-		copy(a.r.kc[layer].Floats()[off:off+len(keys)], keys)
-		copy(a.r.vc[layer].Floats()[off:off+len(vals)], vals)
 	} else {
-		off += a.r.kvHostOff(layer, 2)
-		kc := a.r.kc[layer].U16s()[off : off+len(keys)]
-		vc := a.r.vc[layer].U16s()[off : off+len(vals)]
-		parallelF32ToF16(kc, keys)
-		parallelF32ToF16(vc, vals)
+		// A run of positions inside one block is consecutive rows, so each block's run is one copy.
+		for p := 0; p < n; {
+			run := min(n-p, decoder.KVBlockRows-(base+p)%decoder.KVBlockRows)
+			at, src := a.r.kvHostRow(base+p)*kvDim, p*kvDim
+			if a.r.kvF32 {
+				copy(a.r.kc[layer].Floats()[at:at+run*kvDim], keys[src:src+run*kvDim])
+				copy(a.r.vc[layer].Floats()[at:at+run*kvDim], vals[src:src+run*kvDim])
+			} else {
+				parallelF32ToF16(a.r.kc[layer].U16s()[at:at+run*kvDim], keys[src:src+run*kvDim])
+				parallelF32ToF16(a.r.vc[layer].U16s()[at:at+run*kvDim], vals[src:src+run*kvDim])
+			}
+			p += run
+		}
 	}
 	return nil
 }

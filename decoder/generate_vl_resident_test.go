@@ -109,29 +109,10 @@ func TestGenerateVL_residentDecodeEngagesAndUploadsKV(t *testing.T) {
 // "ordinary path" (residentUploadPrefill) site.
 func TestGenerateVL_residentContextCapPublishesBudgetClamped(t *testing.T) {
 	m, g := loadGemma3VLTiny(t)
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
-	rf.capPos = len(g.InputIDs) + 2
-	m.resident = rf
-
-	const maxNew = 5
 	features := func() ([]float32, error) { return g.ImageFeatures, nil }
-	stream, gen := m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, 0, features, maxNew, SamplingParams{Temperature: 0})
-	var got []int
-	for id := range stream {
-		got = append(got, id)
-	}
-	if err := gen.Err(); err != nil {
-		t.Fatalf("GenerateVL: %v", err)
-	}
-	if !gen.BudgetClamped {
-		t.Error("BudgetClamped = false, want true — the resident cap bound this turn, not the request")
-	}
-	if gen.Budget != 2 {
-		t.Errorf("Budget = %d, want 2 (capPos %d − prompt %d)", gen.Budget, rf.capPos, len(g.InputIDs))
-	}
-	if len(got) > gen.Budget {
-		t.Errorf("streamed %d tokens, more than the published Budget %d", len(got), gen.Budget)
-	}
+	checkResidentCapPublishesBudgetClamped(t, m, len(g.InputIDs), func(maxNew int) (<-chan int, *Generation) {
+		return m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, 0, features, maxNew, SamplingParams{Temperature: 0})
+	})
 }
 
 // TestGenerateVL_residentBusyDeclinesToCPU is the other half: a resident already claimed by a
@@ -291,30 +272,11 @@ func TestGenerateQwenVL_residentDecodeUsesForwardMRoPE(t *testing.T) {
 // (M-02, docs/audit-2026-09-10.md) — same fix, same site shape, different function.
 func TestGenerateQwenVL_residentContextCapPublishesBudgetClamped(t *testing.T) {
 	m, g := loadQwen25VLTiny(t)
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
-	rf.capPos = len(g.InputIDs) + 2
-	m.resident = rf
-
-	const maxNew = 5
 	features := func() ([]float32, error) { return g.ImageFeatures, nil }
-	stream, gen := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImageTokens, 0, features,
-		g.GridTHW, 2, g.ImageToken, maxNew, SamplingParams{Temperature: 0})
-	var got []int
-	for id := range stream {
-		got = append(got, id)
-	}
-	if err := gen.Err(); err != nil {
-		t.Fatalf("GenerateQwenVL: %v", err)
-	}
-	if !gen.BudgetClamped {
-		t.Error("BudgetClamped = false, want true — the resident cap bound this turn, not the request")
-	}
-	if gen.Budget != 2 {
-		t.Errorf("Budget = %d, want 2 (capPos %d − prompt %d)", gen.Budget, rf.capPos, len(g.InputIDs))
-	}
-	if len(got) > gen.Budget {
-		t.Errorf("streamed %d tokens, more than the published Budget %d", len(got), gen.Budget)
-	}
+	checkResidentCapPublishesBudgetClamped(t, m, len(g.InputIDs), func(maxNew int) (<-chan int, *Generation) {
+		return m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImageTokens, 0, features,
+			g.GridTHW, 2, g.ImageToken, maxNew, SamplingParams{Temperature: 0})
+	})
 }
 
 // TestGenerateQwenVL_declinesResidentWithoutMRoPE: a resident that satisfies ResidentForward but
@@ -429,47 +391,10 @@ func TestGenerateVL_imageReuseFastPath_sameImageSkipsTower(t *testing.T) {
 // fallback.
 func TestGenerateVL_imageReuseFastPath_declinesPastResidentCap(t *testing.T) {
 	m, g := loadGemma3VLTiny(t)
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
-	m.resident = rf
-
-	towerCalls := 0
-	features := func() ([]float32, error) {
-		towerCalls++
-		return g.ImageFeatures, nil
-	}
 	const imgHash = 42
-	const maxNew = 3
-
-	// Turn 1: cold — commits the image block to the resident KV (capPos unbounded so far).
-	stream1, gen1 := m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, imgHash, features, maxNew, SamplingParams{Temperature: 0})
-	var gen1IDs []int
-	for id := range stream1 {
-		gen1IDs = append(gen1IDs, id)
-	}
-	if err := gen1.Err(); err != nil {
-		t.Fatalf("turn 1 GenerateVL: %v", err)
-	}
-	if towerCalls != 1 {
-		t.Fatalf("turn 1: tower called %d times, want 1", towerCalls)
-	}
-
-	// Turn 2: the same image resent as a strict extension — P9a's full-reuse condition is
-	// satisfied — but the cap is now set to just BELOW prompt2's length, so the fast path must
-	// decline instead of committing to a prefill that would overrun it.
-	prompt2 := append(append([]int{}, g.InputIDs...), gen1IDs...)
-	prompt2 = append(prompt2, g.InputIDs[len(g.InputIDs)-1])
-	rf.capPos = len(prompt2) - 1
-
-	stream2, gen2 := m.GenerateVL(context.Background(), prompt2, g.ImageTokenStart, g.MMTokens, imgHash, features, maxNew, SamplingParams{Temperature: 0})
-	for range stream2 {
-	}
-	if err := gen2.Err(); err != nil {
-		t.Fatalf("turn 2 GenerateVL past the resident cap: %v (want a clean decline, not an error)", err)
-	}
-	if towerCalls != 2 {
-		t.Errorf("turn 2: tower called %d times total, want 2 — the P9a fast path must decline (past "+
-			"the cap) and fall through to the ordinary path, which runs the tower again", towerCalls)
-	}
+	checkImageReuseDeclinesPastResidentCap(t, m, g.InputIDs, g.ImageFeatures, 3, func(ids []int, features func() ([]float32, error), maxNew int) (<-chan int, *Generation) {
+		return m.GenerateVL(context.Background(), ids, g.ImageTokenStart, g.MMTokens, imgHash, features, maxNew, SamplingParams{Temperature: 0})
+	})
 }
 
 // TestGenerateVL_imageReuseFastPath_differentImageDoesNotSkipTower is the atomicity kill
@@ -578,45 +503,11 @@ func TestGenerateQwenVL_imageReuseFastPath_sameImageUsesForwardMRoPE(t *testing.
 // fast path (M-01, docs/audit-2026-09-10.md) — same decline, same fallthrough, different function.
 func TestGenerateQwenVL_imageReuseFastPath_declinesPastResidentCap(t *testing.T) {
 	m, g := loadQwen25VLTiny(t)
-	rf := &fakeResident{vocab: m.w.arch.VocabSize}
-	m.resident = rf
-
-	towerCalls := 0
-	features := func() ([]float32, error) {
-		towerCalls++
-		return g.ImageFeatures, nil
-	}
 	const imgHash = 7
-	maxNew := len(g.Continuation)
-
-	stream1, gen1 := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImageTokens, imgHash, features,
-		g.GridTHW, 2, g.ImageToken, maxNew, SamplingParams{Temperature: 0})
-	var gen1IDs []int
-	for id := range stream1 {
-		gen1IDs = append(gen1IDs, id)
-	}
-	if err := gen1.Err(); err != nil {
-		t.Fatalf("turn 1 GenerateQwenVL: %v", err)
-	}
-	if towerCalls != 1 {
-		t.Fatalf("turn 1: tower called %d times, want 1", towerCalls)
-	}
-
-	prompt2 := append(append([]int{}, g.InputIDs...), gen1IDs...)
-	prompt2 = append(prompt2, g.InputIDs[len(g.InputIDs)-1])
-	rf.capPos = len(prompt2) - 1
-
-	stream2, gen2 := m.GenerateQwenVL(context.Background(), prompt2, g.ImageStart, g.NImageTokens, imgHash, features,
-		g.GridTHW, 2, g.ImageToken, maxNew, SamplingParams{Temperature: 0})
-	for range stream2 {
-	}
-	if err := gen2.Err(); err != nil {
-		t.Fatalf("turn 2 GenerateQwenVL past the resident cap: %v (want a clean decline, not an error)", err)
-	}
-	if towerCalls != 2 {
-		t.Errorf("turn 2: tower called %d times total, want 2 — the P9a fast path must decline (past "+
-			"the cap) and fall through to the ordinary path, which runs the tower again", towerCalls)
-	}
+	checkImageReuseDeclinesPastResidentCap(t, m, g.InputIDs, g.ImageFeatures, len(g.Continuation), func(ids []int, features func() ([]float32, error), maxNew int) (<-chan int, *Generation) {
+		return m.GenerateQwenVL(context.Background(), ids, g.ImageStart, g.NImageTokens, imgHash, features,
+			g.GridTHW, 2, g.ImageToken, maxNew, SamplingParams{Temperature: 0})
+	})
 }
 
 // residentForwardOnly exposes exactly decoder.ResidentForward from a *fakeResident, without
@@ -638,3 +529,75 @@ func (r *residentForwardOnly) TruncateTo(pos int) { r.fakeResident.TruncateTo(po
 func (r *residentForwardOnly) Reset()             { r.fakeResident.Reset() }
 func (r *residentForwardOnly) Close() error       { return r.fakeResident.Close() }
 func (r *residentForwardOnly) ContextCap() int    { return r.fakeResident.ContextCap() }
+
+// checkResidentCapPublishesBudgetClamped: capPos leaves a prompt of promptLen room for exactly 2 decode tokens and generate asks for
+// more, so the turn must publish the clamp and stream no more than it published.
+func checkResidentCapPublishesBudgetClamped(t *testing.T, m *Model, promptLen int, generate func(maxNew int) (<-chan int, *Generation)) {
+	t.Helper()
+	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf.capPos = promptLen + 2
+	m.resident = rf
+
+	stream, gen := generate(5)
+	var got []int
+	for id := range stream {
+		got = append(got, id)
+	}
+	if err := gen.Err(); err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if !gen.BudgetClamped {
+		t.Error("BudgetClamped = false, want true — the resident cap bound this turn, not the request")
+	}
+	if gen.Budget != 2 {
+		t.Errorf("Budget = %d, want 2 (capPos %d − prompt %d)", gen.Budget, rf.capPos, promptLen)
+	}
+	if len(got) > gen.Budget {
+		t.Errorf("streamed %d tokens, more than the published Budget %d", len(got), gen.Budget)
+	}
+}
+
+// checkImageReuseDeclinesPastResidentCap runs a cold turn, then resends the same image as a strict extension with the cap just below
+// the new prompt, so the fast path's own full-reuse condition holds. It must decline and fall through: the tower runs again and the
+// turn ends with no error.
+func checkImageReuseDeclinesPastResidentCap(t *testing.T, m *Model, inputIDs []int, imageFeatures []float32, maxNew int,
+	generate func(ids []int, features func() ([]float32, error), maxNew int) (<-chan int, *Generation),
+) {
+	t.Helper()
+	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	m.resident = rf
+
+	towerCalls := 0
+	features := func() ([]float32, error) {
+		towerCalls++
+		return imageFeatures, nil
+	}
+
+	// Turn 1: cold — commits the image block to the resident KV (capPos unbounded so far).
+	stream1, gen1 := generate(inputIDs, features, maxNew)
+	var gen1IDs []int
+	for id := range stream1 {
+		gen1IDs = append(gen1IDs, id)
+	}
+	if err := gen1.Err(); err != nil {
+		t.Fatalf("turn 1: %v", err)
+	}
+	if towerCalls != 1 {
+		t.Fatalf("turn 1: tower called %d times, want 1", towerCalls)
+	}
+
+	prompt2 := append(append([]int{}, inputIDs...), gen1IDs...)
+	prompt2 = append(prompt2, inputIDs[len(inputIDs)-1])
+	rf.capPos = len(prompt2) - 1
+
+	stream2, gen2 := generate(prompt2, features, maxNew)
+	for range stream2 {
+	}
+	if err := gen2.Err(); err != nil {
+		t.Fatalf("turn 2 past the resident cap: %v (want a clean decline, not an error)", err)
+	}
+	if towerCalls != 2 {
+		t.Errorf("turn 2: tower called %d times total, want 2 — the P9a fast path must decline (past "+
+			"the cap) and fall through to the ordinary path, which runs the tower again", towerCalls)
+	}
+}

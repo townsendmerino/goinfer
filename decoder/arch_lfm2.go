@@ -30,7 +30,7 @@ func lfm2FFNDim(cfg *Config) int {
 // block_multiple_of, so the block_ffn_dim_multiplier / block_multiple_of machinery is inert here and is not read.
 // LFM2-VL's text_config sets block_auto_adjust_ff_dim, in which case the width is computed (lfm2FFNDim: 12288 -> 8192).
 func lfm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
-	if err := cfg.validateLFM2(); err != nil {
+	if err := cfg.ValidateLFM2(); err != nil {
 		return nil, nil, err
 	}
 	cfg.IntermediateDim = lfm2FFNDim(cfg)

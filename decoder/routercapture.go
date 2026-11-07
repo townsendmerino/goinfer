@@ -1,9 +1,9 @@
 package decoder
 
 import (
-	"fmt"
-	"os"
 	"sync"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // routerCapture is a test seam (default off; tests set it directly): when on, gemma4MoEFFN appends each MoE-layer call's
@@ -73,8 +73,8 @@ func routerCaptureDo(fn func()) {
 	if len(routerCaptureBuf) >= routerCaptureMax {
 		if !routerCaptureOff {
 			routerCaptureOff = true
-			fmt.Fprintf(os.Stderr, "[goinfer] GOINFER_ROUTER_CAPTURE: reached %d decisions; "+
-				"capture stopped (it is a diagnostic, not a log — unset the variable)\n",
+			logs.Infof("[goinfer] GOINFER_ROUTER_CAPTURE: reached %d decisions; "+
+				"capture stopped (it is a diagnostic, not a log — unset the variable)",
 				routerCaptureMax)
 		}
 		return

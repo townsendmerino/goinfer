@@ -63,15 +63,23 @@ def _matches(kind, arg, path):
 SCANS = [
     # decoder
     Scan("decoder", "TestDispatchCensus", NT("decoder")),
-    # MM1's decision census pins every fit decision: a change to the fit code or the machine zoo runs it.
+    # MM1's decision census pins every fit decision: a change to the fit code, the machine zoo or a fixture it reads runs it. Every
+    # censusFixtures entry has "tiny" in its name (TestCensusFixtures_areTheCommittedOnes).
     Scan("decoder", "TestDecisionCensus", F("decoder/fitguard.go", "decoder/fitplan.go", "decoder/fitquery.go", "decoder/prefill_budget.go",
                                             "decoder/weightbytes.go", "decoder/residentneed.go", "decoder/kvresolve.go", "decoder/kvpolicy.go",
-                                            "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/mm1_census.json.gz") +
+                                            "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/mm1_census.json.gz",
+                                            "decoder/mm1_census_fixtures_test.go", "testdata/*tiny*", "decoder/testdata/*tiny*",
+                                            "decoder/selftestdata/*tiny*", "internal/vision/testdata/*tiny*") +
          NT("internal/runtime/mem")),
+    # The census reads a declared fixture list, which must match the committed fixtures: a fixture added or removed runs it.
+    Scan("decoder", "TestCensusFixtures_areTheCommittedOnes", F("decoder/mm1_census_fixtures_test.go", "testdata/*", "decoder/testdata/*",
+                                                                "decoder/selftestdata/*", "internal/vision/testdata/*")),
     # VK2's census: each family's own list covers its registry adapter's file and the arch_*.go files it reaches.
     Scan("decoder", "TestParityManifest_adapterFilesOwned", NT("decoder") + F("testdata/parity/*.json")),
     # VK2's forward census: every file the forward reaches is in a hash set or an own list.
     Scan("decoder", "TestParityManifest_coreClosed", NT("decoder") + F("testdata/parity/*.json")),
+    # A record that hashes a test file running through textParity hashes the helper too.
+    Scan("decoder", "TestTextParity_hashedWithItsUsers", T("decoder") + F("testdata/parity/*.json")),
     Scan("decoder", "TestTranscode_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestTranscodeDir_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestGGUFConfig_everyArchitectureReadsMaxPositions", F("decoder/gguf.go")),
@@ -90,8 +98,9 @@ SCANS = [
     Scan("internal/app/serveapp", "TestFlagsDoc", F("docs/flags.md", "docs/flags.meta.json") + NT("internal/app/serveapp")),
     Scan("decoder", "TestGoldenNames_matchTheFileOnDisk", TREE_T),
     Scan("decoder", "TestOptionGrid_cellsCarryEvidence", TREE_GO),
-    Scan("decoder", "TestAssetRegistry_usedByExists", TREE_T + F("testdata/assets.json")),
-    Scan("decoder", "TestAssetRegistry_noDirectReads", TREE_T + F("testdata/assets.json")),
+    Scan("decoder", "TestAssetRegistry_usedByExists", TREE_T + F("testdata/assets.json", "decoder/assets.go")),
+    Scan("decoder", "TestAssetRegistry_noDirectReads", TREE_T + F("testdata/assets.json", "decoder/assets.go")),
+    Scan("decoder", "TestAssetRegistry_resolvesFromEveryCallerDir", TREE_T + F("testdata/assets.json", "decoder/assets.go")),
     # Two computations of one key over the same files: only the two implementations or the manifest can split them.
     Scan("decoder", "TestParityKey_matchesFreshDepsHash", F("decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json") + NT("internal/guard/paritykey")),
     Scan("decoder", "TestParityKey_shadowMatchesDecoder", F("testdata/loader_identity.json", "decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json", "testdata/program_fingerprints.json") + NT("internal/guard/paritykey", "decoder")),
@@ -110,8 +119,6 @@ SCANS = [
     # SB7: a loadedModel's model handle is set only through handleOf.
     Scan("engine", "TestSurface_exportsOnlyItsContract", NT("engine", "engine/enginetest")),
     Scan("internal/app/serveapp", "TestModelHandle_assignedThroughHandleOf", NT("internal/app/serveapp")),
-    Scan("internal/app/serveapp", "TestDecoderEmbedder_boundComesFromTheModelNotZero", F("internal/app/serveapp/decoder_embedder.go")),
-    Scan("internal/app/serveapp", "TestAnthropic_decodeUsesTheSharedShaping", F("internal/app/serveapp/anthropic.go")),
     Scan("internal/app/serveapp", "TestSessions_persistedStateIsOwnerOnly", F("internal/app/serveapp/sessions.go")),
     Scan("internal/app/serveapp", "TestAdminLoad_racedDuplicateIsClosed", F("internal/app/serveapp/admin.go", "internal/app/serveapp/webui.go")),
     Scan("internal/app/serveapp", "TestStartDrain_savesSessionsUnderTheLRULock", F("internal/app/serveapp/liveness.go")),
@@ -122,7 +129,6 @@ SCANS = [
     Scan("internal/app/serveapp", "TestStreamTokens_decodesAsAContinuation", F("internal/app/serveapp/openai.go")),
     Scan("internal/app/serveapp", "TestServe_prepareEnforcesThePublishedWindow", F("internal/app/serveapp/openai.go")),
     Scan("internal/app/serveapp", "TestDriveUsesRequestContext", NT("internal/app/serveapp")),
-    Scan("internal/app/serveapp", "TestRequestLog_wiredIntoTheGenerationRoutes", F("internal/app/serveapp/main.go")),
     Scan("internal/app/serveapp", "TestRespondTools_callsMaybeStoreWithTheToolCalls", F("internal/app/serveapp/responses.go")),
     Scan("internal/app/serveapp", "TestSSE_everyStreamingDriveSiteHeartbeats",
          F("internal/app/serveapp/openai.go", "internal/app/serveapp/anthropic_stream.go", "internal/app/serveapp/vision_serve.go",
@@ -151,6 +157,8 @@ SCANS = [
     # SB7: internal/app/serveapp test files importing decoder may only fall.
     Scan("internal/layout", "TestServeappTests_decoderImportsOnlyFall", TREE_GO),
     # SB13: every goinfer-to-goinfer import against internal/layout/imports.json, and the root go.mod against its rules.
+    # Every fuzz target is in the weekly matrix, under the directory it lives in now.
+    Scan("internal/layout", "TestFuzzWeekly_listsEveryTarget", TREE_T + F(".github/workflows/fuzz-weekly.yml")),
     Scan("internal/layout", "TestLayout_arrows", TREE_GO + F("internal/layout/imports.json", "go.mod")),
     # SB13: towers-standalone's one exception (internal/audio may import internal/vision), read from imports.json.
     Scan("internal/layout", "TestLayout_towersStandalone", F("internal/layout/imports.json")),
@@ -158,6 +166,8 @@ SCANS = [
     Scan("internal/layout", "TestPackageDocs_namedTestsExist", TREE_GO),
     Scan("internal/layout", "TestArchitecture_importAppendix", F("internal/layout/imports.json", "docs/ARCHITECTURE.md")),
     Scan("internal/guard/prezerolint", "TestPreZero_noDeadZeroingBeforeOverwriteKernels", TREE_NT),
+    # Library code writes through internal/runtime/logs, and no block both reports an error and returns it.
+    Scan("internal/runtime/logs", "TestLibraryOutput_goesThroughLogs", TREE_NT),
     Scan("internal/guard/movedpaths", "TestNoMovedAikitPath", TREE_GO + F("go.mod", "*/go.mod", "go.sum", "*/go.sum")),
     Scan("pull", "TestResolve_callsResolveOfflineBeforeCheckAccess", F("pull/resolve.go")),
     Scan("apps/examples/structured", "TestUseFromGoDoc_codeIsFromExamples", F("apps/examples/*/main.go", "docs/use-from-go.md")),

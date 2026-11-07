@@ -15,14 +15,14 @@ func mistralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "mistral"); err != nil {
 		return nil, nil, err
 	}
-	if err := cfg.validateLlama(); err != nil {
+	if err := cfg.ValidateLlama(); err != nil {
 		return nil, nil, err
 	}
 	scaling, err := parseRopeScaling(cfg.RopeScaling)
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(mistral): %w", err)
 	}
-	hd := cfg.headDim()
+	hd := cfg.EffectiveHeadDim()
 	// All layers local when a window is set; else all global (full attention).
 	var layerIsGlobal func(int) bool
 	if cfg.SlidingWindow > 0 {
@@ -48,7 +48,7 @@ func mistralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		layerIsGlobal:   layerIsGlobal,     // all-local when windowed
 		RoPELocalBase:   cfg.RoPEGlobalBase,
 		RoPEGlobalBase:  cfg.RoPEGlobalBase,
-		RotaryDim:       cfg.rotaryDim(),
+		RotaryDim:       cfg.RotaryDim(),
 		ropeScaling:     scaling,
 		EmbedScale:      0,
 		TiedLMHead:      false, // finalized from lm_head.weight presence at load

@@ -1,0 +1,105 @@
+# MEM13-copies-CUDA: a Mamba-2 layer's projections stream to the device (2026-11, nobara-sb01)
+
+## Verdict, stated plainly (revised 2026-11-05 after review)
+
+- **The registered tier 1 gate, G-3, FAILED.** The whole-process peak `RssAnon` of the 9B load fell 349 MiB (16,325 → 15,976) against a bar of 2 GiB. `decoder.Load` builds the host model before `BuildResident` runs, and that is where the peak is set.
+- **G-3b is exploratory, not the gate.** It was chosen after G-3's reading, with the build window as the instrument, so by this record's own rule it does not turn the FAIL into a pass. It reads the build window's host growth at 7,675 MiB on main and 65 MiB on the branch: the copy this change removes is gone from the build, and the whole-process peak barely moves.
+- **What the change is:** a 6-line change that makes the Mamba-2 projections' upload streamed like every other projection, **bit-identical** (device bytes byte-equal at three staging sizes, `gate identity -backend cuda` 29 IDENTICAL, 0 DIFFERENT, the same 16 tokens). It is worth merging for that; it is not a 2 GiB win on the process's peak.
+- **The next lever is `decoder.Load`'s own peak** (about 16 GB on the 9B here), a different item (MEM1, the heap-only paths); nothing in this change touches it.
+- **Regression protection:** G-1 and G-2 (tier 0, on the card, `mamba_resident_test.go`) are the only gates that stay in the tree. The tier 1 instrument is a one-off kept as text (see the end): CI never compiles it, so nothing guards the 7,675 → 65 MiB reading.
+
+The ledger row (`docs/tasks/task-memory-campaign-2026-10.md`, MEM13-copies-CUDA; P36 in `docs/queue-performance.md`): the dense projections already stream to the device in row blocks through one staging block
+(`backend/cuda/pack_stream.go:planWeight`, `cudaResident.streamW`), and what was left of the whole-tensor host packing is `backend/cuda/resident.go:packWeight`, "about 4 GB of int8 host copies on Nemotron-H 9B
+by the survey's arithmetic". **Read against the code at `6ab62e5b2`, the only caller left is `packMambaLayer`** (`backend/cuda/mamba_resident.go`): every Mamba-2 layer's `in_proj` and `out_proj` are packed whole into
+host memory while the build walks the layers, and held until `upW` uploads them. The shared experts and the drafter's weights the row names are already planned (`planWeight`, `planRows`); `packWeight` has no other caller outside tests.
+
+## The change
+
+`packMambaLayer` plans the two projections (`planWeight`) instead of packing them. A planned weight names its source and the sizes of the device buffers, and `upW` streams it (`h.src != nil`), exactly as it does every
+attention and MLP projection. The kind check (`int8`, gemv_w8a8) reads the plan's kind, which `planWeight` gives as `packWeight` does for the same weight.
+
+## Gates
+
+Registered after the tier 0 tests were written red first (`red.log`) and before the tier 1 run.
+
+| gate | tier | instrument | PASS iff |
+|---|---|---|---|
+| G-1 plans, packs nothing | 0 | `TestMambaHostCopy_planningHoldsNoPackedWords`: `packMambaLayer` on every Mamba-2 layer of `nemotron-tiny` | `in` and `out` hold 0 packed words, name a source, and name the buffer sizes `packWeight` makes. **Red first:** 2,856 and 1,088 words held per layer today |
+| G-2 same device bytes | 0, the card | `TestMambaHostCopy_deviceBytesIdenticalToPackWeight`: each layer's projections uploaded planned against `packWeight`+`upW`, at one staging block and at several (64 words, 1 word) | every device buffer byte-equal |
+| G-2b neighbours | 0, the card | `TestNemotronResidentCUDA_{tinyAgainstControl,slots,guards,pricing,int8Declines}`, `TestPackStream_*` | pass as on main |
+| G-3 host peak | 1, the card | `TestMambaHostCopy_tier1PeakAnon`: Nemotron-Nano-9B-v2 Q8_0 whole (`~/models/nemotron/nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf`, local NVMe), `Backend: "cuda"`, int4, token table at int4, ctx 4096 (the tier 1 test's "9b" cell): the load's **peak `RssAnon` and peak `VmSwap`** of the test process, sampled every 50 ms, and 16 greedy tokens after the first four of the cell's seed. The test binary is built from main plus only this test file, and from the branch; one run each, main first | the branch's peak `RssAnon` is at least **2 GiB** below main's (half the survey's 4 GB, which was arithmetic, not a measurement); the 16 tokens are equal; each run's peak `VmSwap` at most 512 MB; both resident (not declined) |
+| G-4 identity | 1, the card | `go run ./cmd/gate identity -backend cuda <main> <branch>` | every family that ran IDENTICAL |
+
+**PARKED:** a fall between 0.5 and 2 GiB, the others holding: reported, not shipped as the arithmetic's number. **FAIL:** a fall under 0.5 GiB, different tokens, or a swap peak over 512 MB.
+
+- **Void:** a run with the one-minute load above 8.0 at its start, or the exclusive timing lock not held. Re-run once in order and listed.
+- **Not the question:** speed (the plan is the same; the upload streams the same bytes), the first-token time, other families.
+- **Cost and times (from `date`):** tier 0 seconds; G-3 two loads of a 9.4 GB checkpoint at about 3 to 6 minutes each; G-4 about 6 minutes. Stated again with the clock when each runs.
+- **Void if:** a card run outside the lock, a NOT RUN counted as a pass, a bar moved after a reading.
+
+## G-3 read once, 2026-11-05 16:04 PST: FAIL by the rule as registered
+
+`g3-first/` (`g3-before.log`, `g3-after.log`, `summary.txt`). Main's test binary, then the branch's, one run each, the exclusive timing lock (free), one-minute load 0.54 and 1.72, 59 GB available, no void run. Both resident, **the same 16 greedy tokens**, peak `VmSwap` 0 MiB.
+
+| | main | branch |
+|---|---|---|
+| peak `RssAnon` of the whole test process | 16,345 MiB | 16,577 MiB |
+
+**No fall (+232 MiB), against a bar of at least 2 GiB: FAIL.** It stays on record as it ran. The load took 16 s and 12 s, so the checkpoint came from a cached sidecar, and the whole-process peak was set elsewhere than where the Mamba projections sit: `decoder.Load` builds the host model before `BuildResident` plans the layers, and a peak over the whole process reads that phase. The instrument could not see the packed copies, whatever they weigh. The survey's 4 GB was arithmetic, and this reading neither confirms nor refutes it.
+
+## G-3b: the build's own window, registered 2026-11-05 16:06 PST before the reading (the time from `date`; the commit before this one wrote 16:10 by guess)
+
+**What it adds, and why:** the same test, with a window opened where `BuildResident` begins planning its layers (`planStartForTest`) and closed when the load returns. It logs `RssAnon` at the window's start (the host model, loaded), the peak inside it, and the growth between them. The packed copies, if they exist, sit on top of the loaded model inside this window. **This is a new reading with a corrected instrument, after a FAIL; it does not replace G-3 above.**
+
+- **Instrument:** `TestMambaHostCopy_tier1PeakAnon` with the window, built from main plus only that file (`cuda-mem13-before2.test`) and from the branch (`cuda-mem13-after2.test`); the same checkpoint, options and 16 tokens; one run each, main first; the exclusive timing lock.
+- **Decision, on the window's growth (peak in window minus `RssAnon` at its start):**
+
+| | |
+|---|---|
+| **PASS** | the branch's growth is at least 2 GiB below main's; the 16 tokens equal; each run's peak `VmSwap` at most 512 MB; both resident |
+| **PARKED** | a fall of at least 0.5 GiB and under 2 GiB, the others holding: reported with the figure, not the arithmetic's |
+| **FAIL** | a fall under 0.5 GiB, different tokens, or a swap peak over 512 MB |
+
+If main's own growth is under 2 GiB the bar cannot be met by any change, and the reading says so: that is a finding about the ledger's arithmetic, not a pass.
+- **Void and stopping rule:** as above; one run each, no repeat unless a run is void.
+- **Cost:** about 20 s a run. Start from `date` at the run.
+
+### G-3b read, 2026-11-05 16:06 PST: exploratory (chosen after the G-3 reading; not a gate)
+
+`g3b/` (`g3b-before.log`, `g3b-after.log`, `summary-b.txt`). The exclusive timing lock, one-minute load 0.89 and 2.47, 59 GB available, no void run, one run each, main first (`cuda-mem13-before2.test`: main plus only the test file; `cuda-mem13-after2.test`: the branch).
+
+| | main | branch | bar |
+|---|---|---|---|
+| `RssAnon` when `BuildResident` begins planning | 6,523 MiB | 6,527 MiB | |
+| peak `RssAnon` inside the build window | 14,199 MiB | 6,592 MiB | |
+| **growth over the build window** | **7,675 MiB** | **65 MiB** | the branch at least 2 GiB below main's |
+| whole-process peak `RssAnon` | 16,325 MiB | 15,976 MiB | reported |
+| peak `VmSwap` | 0 MiB | 0 MiB | at most 512 MB |
+| 16 greedy tokens | the same on both | | equal |
+
+**A fall of 7,610 MiB, 7.4 GiB, in the build window; this is the exploratory reading, not a pass of the registered 2 GiB bar, which was on the whole-process peak (above: FAIL).** The survey's arithmetic said about 4 GB; main's growth over the window is 7.7 GB, so the packed Mamba-2 projections and what they carried cost nearly twice that, and the branch's 65 MiB is the staging block and headers (`TestPackStream_hostBytesAreTheStagingBlockNotTheTensor`'s shape). Both resident; same tokens.
+
+**What it does not do:** the whole-process peak falls only 349 MiB (16,325 to 15,976), because the peak is set earlier, in `decoder.Load` building the host model (about 16 GB at its worst here), before the build starts. That phase is a different item (MEM1, the heap-only paths, not this row). On a box where the load's own peak is the binding number, this change helps the build, not the load.
+
+### G-4, G-2: PASS
+
+- **G-4:** `gate identity -backend cuda 6ab62e5b2 f9746e6bf` (`identity.log`), 16:06:53 to 16:12:37 PST: **29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN**, GREEN.
+- **G-1, G-2, G-2b:** `green.log`: the two new tier 0 gates, the Nemotron resident tests and `TestPackStream_*` pass.
+
+**Verdict: G-3 FAILED as registered; G-4 and the tier 0 gates pass; the change is bit-identical and removes the build-window copy.** The ledger row MEM13-copies-CUDA closes with this commit as built, with the whole-process peak left to the next lever (`docs/tasks/task-memory-campaign-2026-10.md`), and P36 in `docs/queue-performance.md` drops it.
+
+Not covered: Metal (it had no such copy, MEM13-copies-Metal), speed, other Mamba-2 families (Granite-4.0-H declines on CUDA by name), a bf16-kept projection on a build other than int4.
+
+## Where the tests live
+
+G-1 and G-2 are in `backend/cuda/mamba_resident_test.go` (an existing file: `internal/layout`'s ratchet on CUDA test files that import `decoder` does not grow). The tier 1 instrument is a one-off, with no regression protection, and is
+kept as `mamba_host_copy_tier1_test.go.txt` beside this file, not in the package: a test that names the 9B checkpoint is filed in the `nemotron-h` heavy group by `cmd/gate/heavy_groups.go`
+(`TestHeavyPartition_cudaTreeFitsTheTable` was red on it), and it is a measurement, not a gate. To run it, copy it to `backend/cuda/mamba_host_copy_tier1_test.go` and build the test binary;
+both readings above were made that way. `green-touched.log` is `python3 scripts/touched.py` over the final change: 13 checks passed.
+
+## Review changes (coordinator, 2026-11-05 17:12, from Gemini's read)
+
+- **G-2 passed vacuously** (`if h.src == nil { continue }` skipped every comparison when a weight was packed eagerly, and it passed on main). It now fails on a weight that is packed eagerly, counts the planned weights it compared (at least one), and checks that the packed upload read back device buffers and that the streamed one read back as many. Red on main's `mamba_resident.go` (`red-g2-on-main.log`: both tier 0 tests fail, G-2 with "packed eagerly, not planned"), green on the branch (`green-g2.log`).
+- **The G-3 FAIL is the verdict and G-3b is exploratory,** as restated at the top; the PR, the ledger row and this README no longer carry the 7,675 → 65 MiB figure as a headline.
+- **The tier 1 instrument** stays a one-off text file; the README says so. Its sampler now reads its results under the mutex.
+

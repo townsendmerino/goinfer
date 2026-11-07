@@ -60,7 +60,7 @@ func (o object) get(key string) (object, error) {
 		if m.key == key {
 			sub, err := parseObject(m.val)
 			if err != nil {
-				return nil, fmt.Errorf("%q is not an object: %v", key, err)
+				return nil, fmt.Errorf("%q is not an object: %w", key, err)
 			}
 			return sub, nil
 		}

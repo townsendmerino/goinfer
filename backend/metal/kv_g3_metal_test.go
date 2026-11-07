@@ -3,12 +3,17 @@
 package metal
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
@@ -123,4 +128,342 @@ func TestKVDeliveredBytes_Metal(t *testing.T) {
 		t.Fatalf("only %d Metal cells were read back", checked)
 	}
 	fmt.Fprintf(os.Stderr, "[G3 metal] %d cells read back, %d build no resident\n", checked, len(notBuilt))
+}
+
+// TestKVPages_everyResidentFixture is KV5's G1a over every tiny fixture Metal builds a resident for (KV5-4): free blocks handed out
+// reversed and interleaved across slots give the in-order tables' logits bit for bit. Each slot prefills a 300-token prompt (the pass
+// crosses block edges and takes its multi-row kernels) and decodes 64 tokens; then each takes a second turn's prefill from inside a
+// block and a 4-row verify; then a batched step runs over up to three slots where the build has one. Both arms must launch the same
+// prefill attention kernels (prefillAttnRanForTest), so a case asserts which kernels it ran. A fixture with no Metal resident is
+// listed, not counted; a case a build refuses (an error) must be refused by both arms.
+func TestKVPages_everyResidentFixture(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	var fixtures []string
+	for _, root := range []string{"../../testdata", "../../decoder/testdata"} {
+		dirs, _ := filepath.Glob(filepath.Join(root, "*-tiny"))
+		for _, d := range dirs {
+			ws, _ := filepath.Glob(filepath.Join(d, "*.safetensors"))
+			if _, err := os.Stat(filepath.Join(d, "config.json")); err == nil && len(ws) > 0 {
+				fixtures = append(fixtures, d)
+			}
+		}
+	}
+	if len(fixtures) == 0 {
+		t.Skip("no tiny fixtures")
+	}
+	const ctx, prompt, decodeN, turn2, verify = 1024, 300, 64, 70, 4
+	long := func(dir string) string { return kvLongFixture(t, dir) }
+	type arm struct {
+		logits  [][]float32
+		refused []string
+		ran     map[string]int
+		slots   int
+		step    bool
+		// stepRows is how many of logits' last rows are the batched step's.
+		stepRows int
+	}
+	run := func(dir string, scramble, decodeRef bool) (*arm, string) {
+		kvScrambleForTest = scramble
+		defer func() { kvScrambleForTest = false }()
+		m, err := decoder.Load(dir, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: ctx, ResidentKVSlots: 3,
+			ResidentMoEStep: true, ResidentRecurrentStep: true, ResidentGemma4Step: true}) // every step the build can take
+		if err != nil {
+			return nil, "load: " + err.Error()
+		}
+		defer m.Close()
+		a, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok {
+			return nil, "no Metal resident: " + m.ResidentDecline()
+		}
+		r := a.r
+		if r.kvTabBlocks == 0 {
+			return nil, "no KV pool (no attention layer)"
+		}
+		_, _, _, _, _, _, vocab := m.Dims()
+		emb := func(seed, i int) []float32 { return m.EmbedResidentForTest((i*97 + seed*13 + 3) % vocab) }
+		embs := func(seed, n int) [][]float32 {
+			out := make([][]float32, n)
+			for i := range out {
+				out[i] = emb(seed, i)
+			}
+			return out
+		}
+		out := &arm{}
+		prefillAttnRanForTest = map[string]int{}
+		defer func() { prefillAttnRanForTest = nil }()
+		add := func(what string, l []float32, err error) {
+			if err != nil {
+				out.refused = append(out.refused, what+": "+err.Error())
+				return
+			}
+			out.logits = append(out.logits, slices.Clone(l))
+		}
+		slots := r.kvSlotCount()
+		for s := range slots {
+			if err := r.useKVSlot(s); err != nil {
+				return nil, err.Error()
+			}
+			l, err := a.PrefillLast(context.Background(), embs(s, prompt), 0)
+			add(fmt.Sprintf("slot %d prefill", s), l, err)
+			for i := range decodeN {
+				l, err := a.Forward(emb(s+5, i), prompt+i)
+				add(fmt.Sprintf("slot %d decode %d", s, i), l, err)
+			}
+		}
+		at := prompt + decodeN
+		for s := range slots {
+			if err := r.useKVSlot(s); err != nil {
+				return nil, err.Error()
+			}
+			l, err := a.PrefillLast(context.Background(), embs(s+9, turn2), at)
+			add(fmt.Sprintf("slot %d second turn", s), l, err)
+			rows, err := a.ForwardN(embs(s+11, verify), at+turn2)
+			if err != nil {
+				add(fmt.Sprintf("slot %d verify", s), nil, err)
+			}
+			for _, l := range rows {
+				out.logits = append(out.logits, slices.Clone(l))
+			}
+		}
+		if r.batch != nil && slots >= 2 {
+			var seqs []batchSeq
+			for s := range min(3, slots) {
+				seqs = append(seqs, batchSeq{slot: s, pos: at + turn2 + verify, emb: emb(s+13, 0)})
+			}
+			var rows [][]float32
+			var err error
+			if !decodeRef {
+				rows, _, err = r.forwardMulti(seqs)
+			} else { // the reference: each row decoded on its own slot instead, from the same history (no step first: it would advance a recurrent state)
+				for _, q := range seqs {
+					if err := r.useKVSlot(q.slot); err != nil {
+						return nil, err.Error()
+					}
+					l, e := a.Forward(q.emb, q.pos)
+					if e != nil {
+						err = e
+						break
+					}
+					rows = append(rows, slices.Clone(l)) // Forward's slice is the resident's logits buffer, overwritten by the next
+				}
+			}
+			if err != nil {
+				add("batched step", nil, err)
+			}
+			for _, l := range rows {
+				out.logits = append(out.logits, slices.Clone(l))
+			}
+			out.stepRows = len(rows)
+		}
+		out.ran, out.slots, out.step = maps.Clone(prefillAttnRanForTest), slots, r.batch != nil && slots >= 2
+		return out, ""
+	}
+	start, covered, compared := time.Now(), map[string]bool{}, 0
+	for i, dir := range fixtures {
+		name := filepath.Base(dir)
+		dir = long(dir)
+		in, why := run(dir, false, false)
+		if in == nil {
+			fmt.Fprintf(os.Stderr, "[G1a] %d/%d %-28s NOT RUN: %s (elapsed %s)\n", i+1, len(fixtures), name, why, time.Since(start).Round(time.Second))
+			continue
+		}
+		sc, why := run(dir, true, false)
+		if sc == nil {
+			t.Errorf("%s: the in-order arm built and the scrambled one did not: %s", name, why)
+			continue
+		}
+		compared++
+		switch {
+		case len(in.logits) == 0:
+			t.Errorf("%s builds a resident and ran none of its cases (first refusal: %q): the comparison would be vacuous", name, in.refused[0])
+		case !slices.Equal(in.refused, sc.refused):
+			t.Errorf("%s: the arms refused different cases: in order %q, scrambled %q", name, in.refused, sc.refused)
+		case !maps.Equal(in.ran, sc.ran):
+			t.Errorf("%s: the arms launched different prefill kernels: in order %v, scrambled %v", name, in.ran, sc.ran)
+		case len(in.logits) != len(sc.logits):
+			t.Errorf("%s: %d logit rows in order, %d scrambled", name, len(in.logits), len(sc.logits))
+		default:
+			n := 0
+			for j := range in.logits {
+				for k := range in.logits[j] {
+					if math.Float32bits(in.logits[j][k]) != math.Float32bits(sc.logits[j][k]) {
+						n++
+					}
+				}
+			}
+			if n != 0 {
+				t.Errorf("%s: %d logits differ between scrambled and in-order blocks", name, n)
+			}
+		}
+		// A row bound to another slot's table is a mistake both arms share, so each step row is also held to its own slot's decode.
+		if in.stepRows > 0 {
+			ref, why := run(dir, false, true)
+			if ref == nil || len(ref.logits) != len(in.logits) || ref.stepRows != in.stepRows {
+				t.Errorf("%s: the decode reference did not run as the step did: %s", name, why)
+			} else {
+				n := 0
+				for j := len(in.logits) - in.stepRows; j < len(in.logits); j++ {
+					for k := range in.logits[j] {
+						if math.Float32bits(in.logits[j][k]) != math.Float32bits(ref.logits[j][k]) {
+							n++
+						}
+					}
+				}
+				if n != 0 {
+					t.Errorf("%s: %d of the batched step's logits differ from each row decoded on its own slot", name, n)
+				}
+			}
+		}
+		for k := range in.ran {
+			covered[k] = true
+		}
+		fmt.Fprintf(os.Stderr, "[G1a] %d/%d %-28s %d logit rows, %d slots, step %v, prefill kernels %v, refused %d (elapsed %s)\n", i+1, len(fixtures), name,
+			len(in.logits), in.slots, in.step, in.ran, len(in.refused), time.Since(start).Round(time.Second))
+	}
+	if compared == 0 {
+		t.Fatal("no fixture built a Metal resident")
+	}
+	fmt.Fprintf(os.Stderr, "[G1a] %d of %d fixtures compared; prefill kernels covered %v\n", compared, len(fixtures), slices.Sorted(maps.Keys(covered)))
+}
+
+// kvLongFixture copies a fixture with its window raised to 2,048 positions, so a prompt of a few hundred rows fits a tiny model's cache;
+// the weights are hard-linked where the filesystem allows it, else copied.
+func kvLongFixture(t *testing.T, dir string) string {
+	out := filepath.Join(t.TempDir(), filepath.Base(dir))
+	if err := os.Mkdir(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		if e.IsDir() {
+			continue
+		}
+		src, dst := filepath.Join(dir, e.Name()), filepath.Join(out, e.Name())
+		b, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e.Name() == "config.json" {
+			var raw map[string]any
+			if err := json.Unmarshal(b, &raw); err != nil {
+				t.Fatal(err)
+			}
+			raw["max_position_embeddings"] = 2048
+			if tc, ok := raw["text_config"].(map[string]any); ok {
+				tc["max_position_embeddings"] = 2048
+			}
+			if b, err = json.Marshal(raw); err != nil {
+				t.Fatal(err)
+			}
+		} else if os.Link(src, dst) == nil {
+			continue
+		}
+		if err := os.WriteFile(dst, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return out
+}
+
+// TestKVPages_shareByReferenceLayerMajor is TestKVPages_shareByReference's write site check for the two layer-major prefills, which run
+// only on their own families: Gemma 4's E-model prefill (gemma4-emodel-tiny) and the paged generic MoE's (mixtral-tiny, paged at 3 slots).
+// Slot 0 prefills a 128-row preamble and slot 1 takes it by CopyKV; slot 1 prefills a suffix; slot 0 rewinds by a prefill from 100,
+// inside the shared block 1. Slot 1's K/V over its history, slot 0's over rows 0 to 119 (its copy of block 1 kept rows 64 to 99) and slot
+// 0's rewind logits equal the reference where slot 1 prefilled the preamble itself; with the copy on write planted off slot 1's K/V moves,
+// and with it keeping one row too few slot 0's does. The layer-major pass's own counter shows it ran.
+func TestKVPages_shareByReferenceLayerMajor(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	for _, c := range []struct{ name, dir, moeSlots string }{
+		{"emodel", "../../testdata/gemma4-emodel-tiny", ""}, {"paged-moe", "../../testdata/mixtral-tiny", "3"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := os.Stat(c.dir); err != nil {
+				t.Skipf("no fixture: %v", err)
+			}
+			if c.moeSlots != "" {
+				t.Setenv("GOINFER_METAL_MOE_SLOTS", c.moeSlots)
+			} else {
+				t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "100000") // the E-model's batched pass declines, so its layer-major pass runs
+			}
+			dir := kvLongFixture(t, c.dir)
+			// run returns slot 1's K/V over its history, slot 0's over rows 0 to 119 after its rewind, and slot 0's rewind logits.
+			// plant is "", "cow-off" (kvOwnOffForTest) or "keep-1" (kvKeepShortForTest).
+			run := func(share bool, plant string) (kv1, kv0 [][]byte, rewind []float32) {
+				kvOwnOffForTest, kvKeepShortForTest = plant == "cow-off", plant == "keep-1"
+				defer func() { kvOwnOffForTest, kvKeepShortForTest = false, false }()
+				m, err := decoder.Load(dir, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 512, ResidentKVSlots: 2})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer m.Close()
+				a, ok := m.ResidentForwardForTest().(*metalResident)
+				if !ok || a.r.kvSlotCount() < 2 {
+					t.Fatalf("no two-slot Metal resident: %s", m.ResidentDecline())
+				}
+				r := a.r
+				lm := func() int { return r.emodelLayerMajorRuns + r.moeLayerMajorRuns }
+				_, _, _, _, _, _, vocab := m.Dims()
+				embs := func(seed, n int) [][]float32 {
+					out := make([][]float32, n)
+					for i := range out {
+						out[i] = m.EmbedResidentForTest((i*97 + seed*13 + 3) % vocab)
+					}
+					return out
+				}
+				prefill := func(s int, e [][]float32, at int) []float32 {
+					t.Helper()
+					if err := r.useKVSlot(s); err != nil {
+						t.Fatal(err)
+					}
+					before := lm()
+					l, err := a.PrefillLast(context.Background(), e, at)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if lm() == before {
+						t.Fatalf("slot %d's prefill at %d did not take the layer-major pass", s, at)
+					}
+					return slices.Clone(l)
+				}
+				preamble := embs(1, 128)
+				prefill(0, preamble, 0)
+				if share {
+					if err := a.CopyKV(0, 1, 0, 128); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					prefill(1, preamble, 0)
+				}
+				prefill(1, embs(2, 20), 128)
+				// Slot 0 rewinds into block 1, which slot 1 shares: its copy of the block must keep rows 64 to 99 (the rows below the write).
+				rewind = prefill(0, embs(3, 20), 100)
+				return kv2Slot(t, r, 1, 148), kv2Slot(t, r, 0, 120), rewind
+			}
+			eq := func(a, b [][]byte) bool { return slices.EqualFunc(a, b, slices.Equal) }
+			ref1, ref0, refRewind := run(false, "")
+			got1, got0, gotRewind := run(true, "")
+			if !eq(ref1, got1) {
+				t.Error("slot 1's K/V differs between the shared preamble and its own")
+			}
+			if !eq(ref0, got0) {
+				t.Error("slot 0's K/V after its rewind into the shared block differs from its own preamble's: the copy on write lost rows")
+			}
+			if !slices.Equal(refRewind, gotRewind) {
+				t.Error("slot 0's rewind logits differ between the shared preamble and its own")
+			}
+			if p1, _, _ := run(true, "cow-off"); eq(ref1, p1) {
+				t.Error("with kvOwn off, slot 0's rewind into the shared block left slot 1's K/V as it was: the test cannot see a missing copy on write")
+			}
+			if _, p0, _ := run(true, "keep-1"); eq(ref0, p0) {
+				t.Error("with the copy on write keeping one row too few, slot 0's K/V was as it should be: the test cannot see a short copy")
+			}
+		})
+	}
 }

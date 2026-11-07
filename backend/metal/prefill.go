@@ -21,6 +21,10 @@ var prefillSteelAttnOff bool
 // dispatch, so a timed pass without it prices attention. The pass's output is then meaningless.
 var prefillAttnSkipForTest bool
 
+// prefillAttnRanForTest, when a test sets it, counts the batched pass's attention launches by kernel name, so a test can
+// assert which kernel ran rather than which it meant to select. Not safe for concurrent passes; nil in production.
+var prefillAttnRanForTest map[string]int
+
 // gemmTilePolicy picks gemmTile's rule: "" the default (D-B02's padding rule below), "a01" A-P01's rule as it shipped,
 // "shipped" every GEMM on gemm_w4f16_store's 64 × 64 tile, "bm32" / "bn32" only A-P01's 32-token / 32-feature rule.
 // Test-only: the arms of the grades (docs/tasks/task-metal-audit-2026-10.md); not an option or an environment variable.
@@ -366,6 +370,7 @@ func (r *resident) prefillScratchBytes(M int) int64 {
 	}
 	if r.kvI8 { // the f16 K and V scratch one layer's int8 cache is dequantized into, the padded context long (kvI8Scratch)
 		n += 4 * int64(r.kvI8ScratchRows()) * int64(r.prefillGeom().kvDim)
+		n += 4 * int64(kvBlocksFor(r.kvI8ScratchRows())) // its identity table (kvIdentityTab)
 	}
 	if dp := r.dnet; dp != nil {
 		g0 := r.prefillGeom()
@@ -377,6 +382,16 @@ func (r *resident) prefillScratchBytes(M int) int64 {
 		n += r.prefillMambaBytes(m, mp)
 	}
 	return n
+}
+
+// kvIdentityTab is a block table naming blocks 0, 1, ... in order over rows rows of contiguous scratch, so a kernel that reads keys
+// through a table reads that scratch as it lies. Counted with the pass's scratch (prefillScratch).
+func kvIdentityTab(d *Device, rows int) Buffer {
+	b := prefillScratch[uint32](d, kvBlocksFor(rows))
+	for i, u := 0, b.U32s(); i < len(u); i++ {
+		u[i] = uint32(i)
+	}
+	return b
 }
 
 // kvI8ScratchRows is the rows of an int8 cache's dequantize scratch: the cache's own padded capacity, so the attention
@@ -402,6 +417,14 @@ func (r *resident) prefillAttnKernels() (fused, steel bool) {
 // 128, but a head dim is admitted only after a model at it passes set A's pooled gate (R19 for 128, KS-D2 for 64; the
 // survey's KS-D2 row has 80 and 96's state).
 func steelHeadDim(hd int) bool { return hd == 128 || hd == 64 }
+
+// steelName is steelFor's kernel name.
+func steelName(hd int) string {
+	if hd == 64 {
+		return "attention_prefill_steel_hd64"
+	}
+	return "attention_prefill_steel"
+}
 
 // steelFor is the steel pipeline for head dim hd, one of steelHeadDim's.
 func (pf *prefillState) steelFor(hd int) Pipeline {
@@ -540,6 +563,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 			"(metalResident.checkCap guards the decoder's path; this caller skipped it)", src.n, startPos, c))
 	}
 	r.ensurePrefill()
+	r.kvOwn(r.kvSlot, startPos, startPos+src.n)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	d, pf := r.d, r.pf
@@ -631,10 +655,12 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	// such uniform because its Go-side dispatch grid is already sized off the real M.
 	uMReal := NewBufferU32On(mem.LineScratch, d, uint32(M))
 	// An int8 cache: each layer's rows [0, startPos+M) are dequantized into these f16 buffers before its attention (D9 (b)).
-	var kScrI8, vScrI8, uEndI8 Buffer
+	// The attention kernels read that scratch through idTab, an identity table, as they read the cache through its own.
+	var kScrI8, vScrI8, uEndI8, idTab Buffer
 	if r.kvI8 {
 		kScrI8, vScrI8 = prefillScratchU16(d, r.kvI8ScratchRows()*kvDim), prefillScratchU16(d, r.kvI8ScratchRows()*kvDim)
 		uEndI8 = NewBufferU32On(mem.LineScratch, d, uint32(startPos+M))
+		idTab = kvIdentityTab(d, r.kvI8ScratchRows())
 	}
 	attnTile := exactAttnTile(startPos + M) // > 0: the exact-attention layers take attention_prefill_tiled
 	uTile := NewBufferU32On(mem.LineScratch, d, uint32(max(attnTile, 1)))
@@ -688,7 +714,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		scratch = append(scratch, moeLogits, moeIdx, moeWgt, expertIn, expertDown, rowIdxBuf, rowWgtBuf)
 	}
 	if r.kvI8 {
-		scratch = append(scratch, kScrI8, vScrI8, uEndI8)
+		scratch = append(scratch, kScrI8, vScrI8, uEndI8, idTab)
 	}
 	// S17: the scaled residual's 1/s, for residual_f16_scaled, and the eps of the norms that read the residual, eps/s², so
 	// that x/s / sqrt(ms/s² + eps/s²) is x / sqrt(ms + eps) exactly (s is a power of two).
@@ -823,6 +849,10 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	if emodelBatchDefect == 1 {
 		zeroKV = prefillScratchU16(d, (startPos+Mpad+8)*qkvDim)
 		scratch = append(scratch, zeroKV)
+		if idTab == (Buffer{}) {
+			idTab = kvIdentityTab(d, startPos+Mpad+8)
+			scratch = append(scratch, idTab)
+		}
 	}
 
 	e := r.q.Begin()
@@ -907,39 +937,51 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 				e.Dispatch(pf.pRope, M*lu.g.nKV*lu.g.half, 128, qkvF, L.invf, lu.g.uHd, posB, lu.uTotalK, lu.uStride, lu.uBaseK, lu.g.uHalf, L.mscale)
 			}
 		}
-		// scatter K,V to cache; a KV-shared layer stores nothing (its cache is its source's)
+		// scatter K,V to cache; a KV-shared layer stores nothing (its cache is its source's). The cache is the layer's pool,
+		// bound from its start (Buffer.At is absolute), and a position's row is the bound slot's table's (kv_row).
+		kcPool, vcPool := r.kc[l].At(0), r.vc[l].At(0)
 		if !L.kvShared && r.kvI8 {
-			e.Dispatch(pf.pKvI8, M*lu.g.nKV, 32, qkvF, posB, r.kc[l], r.vc[l], r.ks[l], r.vs[l], lu.g.uNKV, lu.g.uHd, lu.uStride, lu.uKOff, lu.uVOff, uMReal)
+			e.Dispatch(pf.pKvI8, M*lu.g.nKV, 32, qkvF, posB, kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0), lu.g.uNKV, lu.g.uHd, lu.uStride, lu.uKOff, lu.uVOff, uMReal, r.kt)
 		} else if !L.kvShared {
-			e.Dispatch(pf.pKv, M*lu.kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, lu.g.uKvDim, lu.uStride, lu.uKOff, lu.uVOff)
+			e.Dispatch(pf.pKv, M*lu.kvDim, 128, qkvF, kcPool, vcPool, posB, lu.g.uKvDim, lu.uStride, lu.uKOff, lu.uVOff, r.kt)
 		}
-		kc, vc := r.kc[l], r.vc[l]
-		if r.kvI8 { // the attention kernels read f16: this layer's cache, dequantized
-			e.Dispatch(pf.pDeqI8, (startPos+M)*lu.kvDim, 256, r.kc[l], r.vc[l], r.ks[l], r.vs[l], kScrI8, vScrI8, lu.g.uNKV, lu.g.uHd, uEndI8)
-			kc, vc = kScrI8, vScrI8
+		kc, vc, kt := kcPool, vcPool, r.kt
+		if r.kvI8 { // the attention kernels read f16: this layer's cache, dequantized into contiguous rows read through an identity table
+			e.Dispatch(pf.pDeqI8, (startPos+M)*lu.kvDim, 256, kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0), kScrI8, vScrI8, lu.g.uNKV, lu.g.uHd, uEndI8, r.kt)
+			kc, vc, kt = kScrI8, vScrI8, idTab
 		}
 		if L.kvShared && emodelBatchDefect == 1 {
-			kc, vc = zeroKV, zeroKV
+			kc, vc, kt = zeroKV, zeroKV, idTab
 		}
 		// causal attention → ctx (per-layer window: 0 = full causal on a global layer)
+		ran := ""
 		if prefillAttnSkipForTest {
 			// no attention: ctxF keeps what it held (KS-D1's share measurement)
 		} else if imgB != (Buffer{}) {
-			e.Dispatch(pf.pAttnImg, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, imgB, imgN)
+			ran = "attention_prefill_img"
+			e.Dispatch(pf.pAttnImg, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, imgB, imgN, kt)
 		} else if lu.steel {
-			e.Dispatch(pf.steelFor(lu.g.hd), r.nH*((M+31)/32)*128, 128, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
+			ran = steelName(lu.g.hd)
+			e.Dispatch(pf.steelFor(lu.g.hd), r.nH*((M+31)/32)*128, 128, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal, kt)
 		} else if lu.split { // KS-D1: 32 query rows a threadgroup at head dim 256, 16 at 512
 			p, bq := pf.pAttnSteel256, 32
 			if lu.g.hd == 512 {
 				p, bq = pf.pAttnSteel512, 16
 			}
-			e.Dispatch(p, r.nH*((M+bq-1)/bq)*256, 256, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
+			ran = fmt.Sprintf("attention_prefill_steel_hd%d", lu.g.hd)
+			e.Dispatch(p, r.nH*((M+bq-1)/bq)*256, 256, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal, kt)
 		} else if lu.fused {
-			e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedTg, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
+			ran = "attention_prefill_fused"
+			e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedTg, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal, kt)
 		} else if attnTile > 0 {
-			e.Dispatch(pf.pAttnTiled, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uTile)
+			ran = "attention_prefill_tiled"
+			e.Dispatch(pf.pAttnTiled, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uTile, kt)
 		} else {
-			e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow)
+			ran = "attention_prefill"
+			e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, kt)
+		}
+		if prefillAttnRanForTest != nil && ran != "" {
+			prefillAttnRanForTest[ran]++
 		}
 		if L.qGate { // ctx *= sigmoid(gate), before o-proj, as decode does
 			e.Dispatch(pf.pAttnGate, M*nHhd, 256, ctxF, gateF, uGateN)

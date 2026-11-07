@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"fmt"
+	"strings"
 	"unsafe"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
@@ -62,6 +63,29 @@ func (r *cudaResident) releaseLoraLayers(layers []cudaLoraLayer) {
 			r.dev.ReleaseBuf(p.b)
 		}
 	}
+}
+
+// loraAllocFailAfterForTest, when > 0, makes the Nth LoRA buffer allocation of a bind fail as a device OOM (test seam; zero in
+// production). It counts down as buffers are allocated.
+var loraAllocFailAfterForTest int
+
+// loraPanicAfterForTest, when > 0, makes the Nth LoRA buffer allocation of a bind panic with a value that is not a device allocation
+// failure (test seam; zero in production).
+var loraPanicAfterForTest int
+
+// upLora uploads one LoRA matrix.
+func (r *cudaResident) upLora(v []float32) Buffer {
+	if loraAllocFailAfterForTest > 0 {
+		if loraAllocFailAfterForTest--; loraAllocFailAfterForTest == 0 {
+			panic("cuda: device allocation failed (test seam): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY")
+		}
+	}
+	if loraPanicAfterForTest > 0 {
+		if loraPanicAfterForTest--; loraPanicAfterForTest == 0 {
+			panic("lora: test seam panic that is not an allocation failure")
+		}
+	}
+	return r.up32(v)
 }
 
 // loraCacheDisabled is the escape hatch / A-B switch for the adapter device cache, in the convention of
@@ -145,31 +169,57 @@ func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 		r.releaseLoraLayers(r.lora.cache) // a different adapter: return the cached one first
 		r.lora.cache, r.lora.key = nil, nil
 		built := make([]cudaLoraLayer, len(layers))
-		for i := range layers {
-			projs := projForCUDA(&layers[i])
-			dst := []**cudaLoraProj{&built[i].q, &built[i].k, &built[i].v, &built[i].o, &built[i].gate, &built[i].up, &built[i].down}
-			for j, proj := range projs {
-				if proj == nil {
-					continue
-				}
-				if proj.R <= 0 || proj.R > loraRMax {
-					r.releaseLoraLayers(built[:i+1])
-					return fmt.Errorf("cuda: SetAdapter: LoRA rank %d out of range (want 1..%d)", proj.R, loraRMax)
-				}
-				*dst[j] = &cudaLoraProj{a: r.up32(proj.A), b: r.up32(proj.B), rank: proj.R, outn: proj.Out, scale: proj.Scale}
-				if r.setupErr != nil {
-					err := r.setupErr
-					r.setupErr = nil
-					r.releaseLoraLayers(built[:i+1])
-					return fmt.Errorf("cuda: SetAdapter: uploading layer %d projection %d: %w", i, j, err)
-				}
+		complete := false
+		defer func() {
+			if !complete {
+				r.releaseLoraLayers(built) // whatever the failed or panicking upload had already allocated
 			}
+		}()
+		if err := r.uploadLoraLayers(built, layers); err != nil {
+			return err
 		}
 		r.lora.uploads++
 		r.lora.cache, r.lora.key = built, key
 		r.loraLayers = built
+		complete = true
 		return nil
 	})
+}
+
+// uploadLoraLayers uploads every projection of layers into built. Each projection is stored in built before its buffers are
+// allocated, so on any error the caller's releaseLoraLayers(built) returns every buffer allocated so far. A device allocation
+// failure, which the allocator reports by panicking, is returned as an error; any other panic propagates.
+func (r *cudaResident) uploadLoraLayers(built []cudaLoraLayer, layers []decoder.ResidentAdapterLayer) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			if !strings.Contains(fmt.Sprint(v), "device allocation failed") {
+				panic(v)
+			}
+			err = fmt.Errorf("cuda: SetAdapter: %v", v)
+		}
+	}()
+	for i := range layers {
+		projs := projForCUDA(&layers[i])
+		dst := []**cudaLoraProj{&built[i].q, &built[i].k, &built[i].v, &built[i].o, &built[i].gate, &built[i].up, &built[i].down}
+		for j, proj := range projs {
+			if proj == nil {
+				continue
+			}
+			if proj.R <= 0 || proj.R > loraRMax {
+				return fmt.Errorf("cuda: SetAdapter: LoRA rank %d out of range (want 1..%d)", proj.R, loraRMax)
+			}
+			p := &cudaLoraProj{rank: proj.R, outn: proj.Out, scale: proj.Scale}
+			*dst[j] = p
+			p.a = r.upLora(proj.A)
+			p.b = r.upLora(proj.B)
+			if r.setupErr != nil {
+				err := r.setupErr
+				r.setupErr = nil
+				return fmt.Errorf("cuda: SetAdapter: uploading layer %d projection %d: %w", i, j, err)
+			}
+		}
+	}
+	return nil
 }
 
 // applyLora dispatches one projection's compute-time LoRA delta into dst, ADDITIVELY — no-op if

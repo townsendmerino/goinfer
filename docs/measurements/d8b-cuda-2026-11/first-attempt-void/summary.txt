@@ -1,0 +1,5 @@
+[2026-11-05 16:57:29 PST] D8b direct START: load 0.71, 59 GB available
+[2026-11-05 16:57:30 PST] D8b direct END rc=0 1 s:     d8b_cuda_cell_test.go:62: D8B-CUDA arm=direct heap_in_use=585 MiB RssAnon=617 MiB RssFile=100 MiB decode_path="cuda-resident (q4k)" tokens=[279 6722 315 279 6722 315 279 6722 315 279 6722 315 279 6722 315 279] --- PASS: TestD8bCUDA_cell (1.35s) 
+[2026-11-05 16:57:30 PST] D8b sidecar START: load 0.71, 59 GB available
+[2026-11-05 16:57:31 PST] D8b sidecar END rc=0 1 s:     d8b_cuda_cell_test.go:62: D8B-CUDA arm=sidecar heap_in_use=585 MiB RssAnon=619 MiB RssFile=100 MiB decode_path="cuda-resident (q4k)" tokens=[279 6722 315 279 6722 315 279 6722 315 279 6722 315 279 6722 315 279] --- PASS: TestD8bCUDA_cell (1.14s) 
+[2026-11-05 16:57:31 PST] ALL DONE

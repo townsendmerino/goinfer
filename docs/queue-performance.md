@@ -19,9 +19,10 @@
 
 - **P36 · The memory campaign's CUDA cells, on nobara — a pointer, filed 2026-10-31 (coordinator).** `linux`.
   The rows live in `docs/tasks/task-memory-campaign-2026-10.md`'s ledger, which stays the record; this entry only puts
-  them in a queue. Take them from the ledger: MEM6 (CUDA built 2026-11-05; the 7B's `RssAnon` gate is PARKED, the owner's call), MEM10 (a pre-permuted
-  `cuda` target registered from the mapping), D8b-cuda (after D8b-build merges) and MEM13-copies-CUDA (the whole-tensor
-  host packing in `backend/cuda/resident.go:packWeight`). Close a row there, in the same commit as the work, and strike it here.
+  them in a queue. State at 2026-11-06, from the ledger: MEM13-copies-CUDA and D8b-cuda are done (2026-11-05); MEM10 has its G0
+  reading (`docs/measurements/mem10-2026-11/README.md`) and no build, which is the coordinator's and the owner's call; MEM6 (the
+  CUDA cells and the `RssAnon` gate) is PR #691, merged as is by Francis 2026-11-06 21:32 (7B 81 MiB against the 64 MiB bar; the three levers not taken); MEM4(b) on CUDA is
+  read INCONCLUSIVE (`docs/measurements/mem4b-cuda-2026-11/README.md`), its release already wired. Close a row there, in the same commit as the work, and strike it here.
 
 - **P35 · Gemma-4 prefill falls back to one token at a time past about 12k attended keys on a 48 KB shared-memory card
   (sm_75) — SUPERSEDED 2026-10-18: branch `kv3-tiled-2026-10` already covers it, and nobara is bringing that branch onto

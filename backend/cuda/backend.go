@@ -16,6 +16,8 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -177,7 +179,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		// The reason names the cause and what to try; a recovered panic's stack goes to stderr beside it.
 		reason, detail := declineAdvice(e.Error(), m.MoECacheExperts())
 		if detail != "" {
-			fmt.Fprintf(os.Stderr, "[cuda] resident build failure, detail:\n%s\n", detail)
+			logs.Infof("[cuda] resident build failure, detail:\n%s", detail)
 		}
 		return nil, false, decoder.DeclineResident("cuda: %s", reason)
 	}
@@ -896,6 +898,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	// The context margin, on the planned geometry, before the context is planned (ctxMarginFor): the setup job replaces r.layers,
 	// and the fused-attention flags are set again where the modules load.
 	r.layers = planLayerGeometry(m, hls, nH, r)
+	if e := r.readRecurrentFloats(m); e != nil {
+		return declined(e)
+	}
 	r.pleP, r.eModel = pleP, pleP > 0
 	for l := range r.layers {
 		r.eModel = r.eModel || r.layers[l].kvShared
@@ -942,7 +947,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		}
 	}
 	if recurrentStatePlannedForTest != nil && mp == nil {
-		recurrentStatePlannedForTest(m.Plan("cuda", 1<<40, decoder.PlanRequest{Ctx: 1}).StateBytes) // the state does not grow with the context
+		recurrentStatePlannedForTest(m.Plan("cuda", 1<<40, fit.PlanRequest{Ctx: 1}).StateBytes) // the state does not grow with the context
 	}
 	r.ctxCap, r.ctxMarginBytes = resolveCtxCapFitFree(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq,
 		func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },
@@ -1367,7 +1372,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 						if maxHd <= 0 {
 							// Never attempt the allocation on a degenerate size: that is the exact
 							// failure above, and it takes the entire resident path down with it.
-							fmt.Fprintf(os.Stderr, "[cuda] GOINFER_SPLITKV_VSUM_SPLIT ignored: no positive head dim\n")
+							logs.Warnf("[cuda] GOINFER_SPLITKV_VSUM_SPLIT ignored: no positive head dim")
 						} else {
 							loadSK(&r.skVsumPartial, "splitkv_vsum_partial")
 							loadSK(&r.skVsumCombine, "splitkv_vsum_combine")
@@ -1591,7 +1596,6 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				// Gated-DeltaNet mixer layer: no q/k/v/o, rope table or KV cache. It has two persistent state buffers instead, zeroed at
 				// build and re-zeroed per generation: the recurrence compounds, so unlike a KV cache the next sequence cannot overwrite
 				// it.
-				dp := r.dnet
 				L.dnQKV, L.dnZ, L.dnOut = r.upW(h.dnQKV), r.upW(h.dnZ), r.upW(h.dnOut)
 				L.dnB, L.dnA = r.upW(h.dnB), r.upW(h.dnA)
 				L.dnConvW, L.dnDtBias = r.up32(h.dnConvW), r.up32(h.dnDtBias)
@@ -1600,15 +1604,15 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				if h.dnONormEps != 0 {
 					L.dnGNormEps = h.dnONormEps
 				}
-				L.dnWin = r.upOn(mem.LineState, make([]float32, dp.winFloats()))
-				L.dnState = r.upOn(mem.LineState, make([]float32, dp.stateElems))
+				L.dnWin = r.upOn(mem.LineState, make([]float32, r.recFloats[l].win))
+				L.dnState = r.upOn(mem.LineState, make([]float32, r.recFloats[l].state))
 			} else if h.mixer == decoder.MixerMamba {
 				// Nemotron-H Mamba-2 block: the two int8 projections, the small tables, and the conv window and SSM state, zeroed at build and by resetState.
 				L.mbIn, L.mbOut = r.upW(h.mamba.in), r.upW(h.mamba.out)
 				L.mbConvW, L.mbConvB = r.up32(h.mamba.convW), r.up32(h.mamba.convB)
 				L.mbHeadP, L.mbNormW = r.up32(h.mamba.headP), r.up32(h.mamba.normW)
-				L.mbWin = r.upOn(mem.LineState, make([]float32, mambaP.winFloats()))
-				L.mbSSM = r.upOn(mem.LineState, make([]float32, mambaP.ssmFloats()))
+				L.mbWin = r.upOn(mem.LineState, make([]float32, r.recFloats[l].win))
+				L.mbSSM = r.upOn(mem.LineState, make([]float32, r.recFloats[l].state))
 			} else if h.mixer == decoder.MixerNone {
 				// A feed-forward-only block has no attention weights to upload (u and d follow below).
 			} else if h.mixer == decoder.MixerMLA {
@@ -1965,9 +1969,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			}
 			r.xF, r.dF, r.moeGLUF = r.af(H), r.af(max(maxI, 1)), r.af(moeInter)
 			r.floatAct = true
-			fmt.Fprintf(os.Stderr, "cuda: decode activations: f32 into every int4 projection (gemv_w4f32)\n")
+			logs.Debugf("cuda: decode activations: f32 into every int4 projection (gemv_w4f32)")
 		} else if r.gemma4Moe {
-			fmt.Fprintf(os.Stderr, "cuda: decode activations: int8 (W4A8): %s\n", why)
+			logs.Debugf("cuda: decode activations: int8 (W4A8): %s", why)
 		}
 		r.dO, r.logits = r.af(H), r.af(vocab)
 		r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)

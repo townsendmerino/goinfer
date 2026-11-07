@@ -14,7 +14,7 @@ func qwen3MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "qwen3_moe"); err != nil {
 		return nil, nil, err
 	}
-	if err := cfg.validateQwen3Moe(); err != nil {
+	if err := cfg.ValidateQwen3Moe(); err != nil {
 		return nil, nil, err
 	}
 	scaling, err := parseRopeScaling(cfg.RopeScaling)
@@ -52,7 +52,7 @@ func qwen3MoeArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		layerIsGlobal:  nil,
 		RoPELocalBase:  cfg.RoPEGlobalBase,
 		RoPEGlobalBase: cfg.RoPEGlobalBase,
-		RotaryDim:      cfg.rotaryDim(),
+		RotaryDim:      cfg.RotaryDim(),
 		ropeScaling:    scaling,
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load

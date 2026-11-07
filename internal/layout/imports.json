@@ -160,8 +160,10 @@
       "backend/cuda/internal/launchgeom",
       "backend/cuda/internal/wpack",
       "decoder",
+      "decoder/fit",
       "internal/audio",
       "internal/cost",
+      "internal/runtime/logs",
       "internal/runtime/mem",
       "internal/runtime/program",
       "internal/runtime/sampling",
@@ -194,6 +196,7 @@
       "internal/audio",
       "internal/cost",
       "internal/runtime/f16",
+      "internal/runtime/logs",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
       "internal/runtime/program",
@@ -225,6 +228,7 @@
       "backend/webgpu/internal/kernels",
       "decoder",
       "internal/cost",
+      "internal/runtime/logs",
       "internal/runtime/mem",
       "internal/runtime/program"
     ],
@@ -272,6 +276,7 @@
       "internal/runtime/giw",
       "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",
+      "internal/runtime/logs",
       "internal/runtime/mamba2",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
@@ -344,6 +349,7 @@
     ],
     "internal/app/fitcmd": [
       "decoder",
+      "decoder/fit",
       "internal/runtime/modelload",
       "internal/runtime/prequant"
     ],
@@ -359,6 +365,7 @@
       "chat",
       "constrain",
       "decoder",
+      "decoder/fit",
       "embeddinggemma2",
       "engine",
       "engine/enginetest",
@@ -374,6 +381,7 @@
       "internal/decide",
       "internal/guard/servecheck",
       "internal/guard/swapguard",
+      "internal/runtime/mem",
       "internal/runtime/modelload",
       "internal/runtime/prequant",
       "internal/runtime/sampling",
@@ -416,6 +424,7 @@
     ],
     "internal/guard/memgate": [
       "decoder",
+      "decoder/fit",
       "internal/runtime/mem"
     ],
     "internal/guard/servecheck": [
@@ -424,6 +433,7 @@
     ],
     "internal/guard/swapguard": [
       "decoder",
+      "internal/runtime/logs",
       "internal/runtime/mem/probe"
     ],
     "internal/runtime/mamba2": [
@@ -431,8 +441,10 @@
     ],
     "internal/runtime/modelload": [
       "decoder",
+      "decoder/fit",
       "internal/guard/swapguard",
       "internal/runtime/giw",
+      "internal/runtime/logs",
       "internal/runtime/mem",
       "internal/runtime/prequant",
       "pull",
@@ -478,6 +490,7 @@
       "backend/cuda/internal/launchgeom",
       "chat",
       "decoder",
+      "decoder/fit",
       "embeddinggemma2",
       "internal/app/loadflags",
       "internal/audio",
@@ -511,6 +524,7 @@
       "backend/cuda/internal/wpack",
       "internal/runtime/hybridattn",
       "internal/runtime/mamba2",
+      "internal/runtime/mem",
       "internal/runtime/sampling"
     ],
     "backend/cuda/s4siglip": [
@@ -523,6 +537,7 @@
       "chat",
       "constrain",
       "decoder",
+      "decoder/fit",
       "embeddinggemma2",
       "internal/app/loadflags",
       "internal/audio",
@@ -563,6 +578,7 @@
       "backend/webgpu/internal/kernels",
       "chat",
       "decoder",
+      "decoder/fit",
       "internal/cost",
       "internal/diag/sb2census",
       "internal/diag/towerid",
@@ -601,6 +617,7 @@
     "decoder": [
       "chat",
       "constrain",
+      "decoder/fit",
       "internal/audio",
       "internal/cost",
       "internal/fidelity",
@@ -644,6 +661,7 @@
     ],
     "internal/app/fitcmd": [
       "decoder",
+      "decoder/fit",
       "internal/runtime/giw"
     ],
     "internal/app/loadflags": [
@@ -657,6 +675,7 @@
       "chat",
       "constrain",
       "decoder",
+      "decoder/fit",
       "embeddinggemma2",
       "engine",
       "internal/app/chatapp",
@@ -671,6 +690,7 @@
       "internal/guard/swapguard",
       "internal/runtime/giw",
       "internal/runtime/kvmgr",
+      "internal/runtime/mem",
       "internal/runtime/modelload",
       "internal/runtime/prequant",
       "internal/runtime/whisper",
@@ -703,6 +723,7 @@
     ],
     "internal/guard/memgate": [
       "decoder",
+      "decoder/fit",
       "internal/diag/sb2census",
       "internal/runtime/mem"
     ],
@@ -711,6 +732,7 @@
     ],
     "internal/runtime/modelload": [
       "decoder",
+      "decoder/fit",
       "internal/runtime/prequant",
       "tokenizer"
     ],

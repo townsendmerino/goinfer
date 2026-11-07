@@ -20,7 +20,9 @@ import (
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/cost"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -149,8 +151,8 @@ func resolveCtxCapFitFree(m *decoder.Model, request, modelCtx, slots int, margin
 	// ctx this call asks of Plan: Plan only shrinks from the value it is given (fitplan.go, "never GROW past what was
 	// asked"), so that can over-estimate the real cost but never under-price it.
 	extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate)
-	p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: candidate, ExtraBytes: extraBytes})
-	if p.Placement == decoder.PlacementDecline || p.Ctx < floor {
+	p := m.Plan("cuda", marginedFree, fit.PlanRequest{Ctx: candidate, ExtraBytes: extraBytes})
+	if p.Placement == fit.PlacementDecline || p.Ctx < floor {
 		return floor, margin(floor) // Plan could not confidently improve on the floor
 	}
 	c := p.Ctx
@@ -203,18 +205,18 @@ var planFreeSeenForTest func(free int64)
 // binary search finds the edge. Plan's weight figure is conservative, so the result can land lower than the build
 // would allow (docs/code-notes/cuda.md#ctxForSlots).
 func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slots, floor int) int {
-	stateBytes := m.Plan("cuda", 1<<40, decoder.PlanRequest{Ctx: 1}).StateBytes // the plan's own line is one slot's
+	stateBytes := m.Plan("cuda", 1<<40, fit.PlanRequest{Ctx: 1}).StateBytes // the plan's own line is one slot's
 	fits := func(ctx int) bool {
 		more := int64(slots-1) * (m.CUDAKVSlotBytes(ctx, m.KVCacheF16()) + stateBytes) // each further slot, at the load's own KV precision (decoder/kv16_cuda.go), with its recurrent state
-		p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extraBytes + more})
-		return p.Placement != decoder.PlacementDecline
+		p := m.Plan("cuda", marginedFree, fit.PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extraBytes + more})
+		return p.Placement != fit.PlacementDecline
 	}
 	if fits(oneSlot) {
 		return oneSlot
 	}
 	if !fits(floor) {
-		fmt.Fprintf(os.Stderr, "cuda: resident context %d (the floor), not %d, for the %d requested KV slots (--kv-sessions); "+
-			"the build grants as many as fit there, and an explicit --ctx keeps a longer context with fewer slots\n",
+		logs.Debugf("cuda: resident context %d (the floor), not %d, for the %d requested KV slots (--kv-sessions); "+
+			"the build grants as many as fit there, and an explicit --ctx keeps a longer context with fewer slots",
 			floor, oneSlot, slots)
 		return floor
 	}
@@ -226,8 +228,8 @@ func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slot
 			hi = mid
 		}
 	}
-	fmt.Fprintf(os.Stderr, "cuda: resident context %d, not %d, so the %d requested KV slots fit (--kv-sessions); an "+
-		"explicit --ctx keeps a longer context with fewer slots\n", lo, oneSlot, slots)
+	logs.Warnf("cuda: resident context %d, not %d, so the %d requested KV slots fit (--kv-sessions); an "+
+		"explicit --ctx keeps a longer context with fewer slots", lo, oneSlot, slots)
 	return lo
 }
 
@@ -509,6 +511,9 @@ type cudaResident struct {
 	costNames map[Pipeline]string // each kernel's name, cached
 	costNamed int64               // launches counted through r.launch, for launch_other
 	line      string              // the plan line (a mem line) the allocation helpers lease on: onLine sets it
+	// recFloats is each recurrent layer's conv window and state in floats, read from stateSpecsOf when the layer is uploaded; zero on a
+	// layer with none. Every recurrent buffer (live, further slots, checkpoint, reset) and every price of them reads it.
+	recFloats []recurrentFloats
 
 	// pk is the staging block streamW packs through; the build's setup job drops it when it ends.
 	pk *packPool
@@ -1403,7 +1408,7 @@ func (r *cudaResident) allocSlots() error {
 		// bind zero-value device buffers); it is unreachable with any real MoE checkpoint and exists only to fail safe. A
 		// blob that trips it should be declined to the staged/CPU path upstream.
 		r.cacheExperts = false
-		fmt.Fprint(os.Stderr, zeroExpertBytesLine(moeLayers[0]))
+		logs.WarnText(zeroExpertBytesLine(moeLayers[0]))
 		return nil
 	}
 	strides := r.slotStrides(moeLayers[0])
@@ -1417,7 +1422,7 @@ func (r *cudaResident) allocSlots() error {
 	}
 	d := slotsDecision(free, err == nil, r.extraBytes, len(moeLayers), strides, r.topK, r.cacheSlots)
 	for _, l := range d.logs {
-		fmt.Fprint(os.Stderr, l)
+		logs.InfoText(l)
 	}
 	if d.err != nil {
 		return d.err
@@ -2335,7 +2340,7 @@ func (r *cudaResident) checkKVFits() error {
 	d := kvFitDecision(kvFitIn{ctxCap: r.ctxCap, explicit: r.ctxExplicit, slotsReq: r.kvSlotsReq, layers: r.layers,
 		extraBytes: r.extraBytes, margin: r.ctxMargin(), slotState: r.recurrentStateCharged()}, free, err == nil)
 	for _, l := range d.logs {
-		fmt.Fprint(os.Stderr, l)
+		logs.InfoText(l)
 	}
 	r.ctxCap, r.kvSlotsN = d.ctxCap, d.slots
 	return d.err
@@ -2735,6 +2740,8 @@ func (r *cudaResident) TruncateTo(pos int) {}
 // issued, so binding points the layer at them, and marked rows fold into the slot that marked them first.
 func (r *cudaResident) KVSlots() int { return max(1, len(r.kvTabs)) }
 
+// UseKVSlot binds slot i for the calls that follow. The binding shields nothing: kvEvictIdle releases an idle bound slot like any other,
+// and only a running generation (SetKVSlotBusy) or the slot being written is skipped.
 func (r *cudaResident) UseKVSlot(i int) error {
 	if i < 0 || i >= r.KVSlots() {
 		return fmt.Errorf("cuda: KV slot %d out of range (%d allocated)", i, r.KVSlots())
@@ -2795,18 +2802,16 @@ func (r *cudaResident) resetState() error {
 	if r.dnet == nil {
 		return nil
 	}
-	dp := r.dnet
-	winZ := make([]float32, (dp.convK-1)*dp.convDim)
-	stZ := make([]float32, dp.stateElems)
+	zero := zeroFloats()
 	for i := range r.layers {
 		L := &r.layers[i]
 		if !L.isDeltaNet() {
 			continue
 		}
-		if e := gpu.Upload(L.dnWin, winZ); e != nil {
+		if e := gpu.Upload(L.dnWin, zero(r.recFloats[i].win)); e != nil {
 			return e
 		}
-		if e := gpu.Upload(L.dnState, stZ); e != nil {
+		if e := gpu.Upload(L.dnState, zero(r.recFloats[i].state)); e != nil {
 			return e
 		}
 	}
@@ -2994,7 +2999,7 @@ func (r *cudaResident) describeLaunchErr(f Pipeline, e error) error {
 	// far the largest operator-controlled VRAM consumer on this path. Deliberately does NOT suggest
 	// a specific safe value — the computation that would produce one (capSlots) is the thing under
 	// suspicion, and printing a number from it would launder a suspect figure into advice.
-	if r.cacheExperts && strings.Contains(e.Error(), "OUT_OF_MEMORY") {
+	if r.cacheExperts && mem.DeviceOutOfMemory(e) {
 		// Name the REQUESTED and EFFECTIVE counts both. They differ when the cap fires, and naming
 		// only the effective one sends a user who set 48 to lower it to 40 — which caps to the same
 		// value, fails identically, and makes the advice look wrong.

@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -194,6 +196,24 @@ func TestTekken_splitMatchesPattern(t *testing.T) {
 				t.Errorf("splitTekken(%q) = %q, want %q", c.in, got, c.want)
 				break
 			}
+		}
+	}
+}
+
+// A vocab entry whose token_bytes is not base64, or decodes to nothing, is refused as not Tekken, with a message that names the entry
+// and, for bad base64, carries the decoder's error.
+func TestTekken_refusesABadTokenBytesEntry(t *testing.T) {
+	file := func(tokenBytes string) []byte {
+		return []byte(`{"config":{"pattern":"\\w+","default_vocab_size":2,"default_num_special_tokens":1},` +
+			`"vocab":[{"rank":0,"token_bytes":"` + tokenBytes + `"}],"special_tokens":[{"rank":0,"token_str":"<s>","is_control":true}]}`)
+	}
+	if _, err := LoadTekken(file("YQ==")); err != nil {
+		t.Fatalf("a one-entry vocab was refused: %v", err)
+	}
+	for name, tb := range map[string]string{"empty": "", "not base64": "!!"} {
+		_, err := LoadTekken(file(tb))
+		if !errors.Is(err, ErrNotTekken) || strings.Contains(err.Error(), "%!") || !strings.Contains(err.Error(), "vocab entry 0") {
+			t.Errorf("%s token_bytes: %v; want ErrNotTekken naming vocab entry 0, with no misformatted verb", name, err)
 		}
 	}
 }

@@ -6,8 +6,6 @@ package metal
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
-	"github.com/townsendmerino/goinfer/internal/runtime/program"
 	"math"
 	"os"
 	"runtime"
@@ -15,6 +13,10 @@ import (
 	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
@@ -496,17 +498,17 @@ type resident struct {
 	layers                   []residLayer
 	finalNorm, finalNormBias Buffer // finalNormBias: GPT-2 ln_f's LayerNorm bias (unused for RMS families)
 	lmW, lmS                 Buffer
-	kc, vc                   []Buffer
-	ks, vs                   []Buffer // int8 KV scales (paddedCtxCap * nKV floats)
-	// kvSlotBufs: MC1's resident KV slots (docs/tasks/task-concurrency-2026-09.md), each a full copy of the per-layer
-	// kc/vc (and int8 ks/vs) buffers; kc/vc/ks/vs above are the BOUND slot's, and useKVSlot rebinds them. One entry for one
-	// contiguous slot, so the batched step can prefill a prompt on it; nil for one slot that is not (int8 KV, MLA).
+	// kc/vc are each layer's K and V pools and ks/vs an int8 cache's scale pools (one f32 per position and KV head), each one
+	// allocation every slot's blocks live in; a KV-shared layer's entries alias its source's. Host code addresses a position
+	// through the bound slot's table (kvHostRow).
+	kc, vc []Buffer
+	ks, vs []Buffer
+	// kvSlotBufs: MC1's resident KV slots (docs/tasks/task-concurrency-2026-09.md), each its block table; useKVSlot binds one
+	// by binding its table (kt). One entry for one slot with a pool, so the batched step can prefill a prompt on it.
 	// kvSlot is the bound index.
 	kvSlotBufs []kvSlotBuf
 	kvSlot     int
-	// kvContig: the slots of each layer are one allocation (kc/vc are views into it at kvSlot*kvSlotBytes[l]) — MC3
-	// S3. Host code indexing a KV buffer's contents must add kvHostOff: aikit's Floats/U16s views ignore a view's
-	// offset and start at the allocation.
+	// kvContig: some layer holds a KV pool. kvSlotBytes[l] is one slot's share of layer l's pool, in bytes.
 	kvContig    bool
 	kvSlotBytes []int
 	// A layer's pool is one allocation: block 0, zero-filled and never handed out (kvNullBytes), then every slot's blocks. kvTab holds
@@ -515,6 +517,10 @@ type resident struct {
 	kvNullBytes []int
 	kvTab, kt   Buffer
 	kvTabBlocks int
+	// kvRefs counts the table entries that name each block (kvcopy.go): above one, slots share the block (CopyKV), and a slot about to
+	// write into it first takes its own (kvOwn). kvFree lists the blocks no entry names. Block 0, the null block, is never counted.
+	kvRefs []int32
+	kvFree []int32
 	// batch: MC3's batched decode step over those slots (batch.go); nil when this resident cannot batch. preciseMath
 	// is the build's fast-math choice, which the batched kernels must share to round like the kernels they reproduce.
 	batch       *batchState
@@ -1671,7 +1677,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			kvBytes := kvBlocksFor(r.ctxCap) * r.kvNullBytes[l]
 			r.kvContig = true
 			r.kvSlotBytes[l] = kvBytes
-			r.kc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*kvSlots).At(r.kvNullBytes[l])
+			r.kc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*kvSlots)
 			r.vc[l] = r.kc[l]
 		} else if mixer == decoder.MixerNone {
 			// A feed-forward-only block (Nemotron-H's MLP): no mixer to build.
@@ -1935,52 +1941,32 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				continue
 			}
 			r.kvSlotBytes[l] = kvBytes
-			r.kc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*allocSlots).At(r.kvNullBytes[l])
-			r.vc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*allocSlots).At(r.kvNullBytes[l])
+			r.kc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*allocSlots)
+			r.vc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*allocSlots)
 			if r.kvI8 {
 				scaleFloats := (1 + blocks*allocSlots) * decoder.KVBlockRows * L.geom.nKV
-				nullScales := 4 * decoder.KVBlockRows * L.geom.nKV
-				r.ks[l] = d.NewBufferLenOn(mem.LineKV, scaleFloats).At(nullScales)
-				r.vs[l] = d.NewBufferLenOn(mem.LineKV, scaleFloats).At(nullScales)
+				r.ks[l] = d.NewBufferLenOn(mem.LineKV, scaleFloats)
+				r.vs[l] = d.NewBufferLenOn(mem.LineKV, scaleFloats)
 			}
 		}
 		r.layers[l] = L
 	}
-	// MC1: further resident KV slots, each a copy of the per-layer buffers just allocated (kvSlots: the model's
-	// request, clamped to what the memory guard allows, priced at the top of this build; 1 for a family with
-	// recurrent state).
-	if n := kvSlots; n > 1 {
-		r.kvSlotBufs = make([]kvSlotBuf, n)
-		r.kvSlotBufs[0] = kvSlotBuf{kc: r.kc, vc: r.vc, ks: r.ks, vs: r.vs}
-		for s := 1; s < n; s++ {
-			b := kvSlotBuf{kc: make([]Buffer, nL), vc: make([]Buffer, nL)}
-			if r.ks != nil {
-				b.ks, b.vs = make([]Buffer, nL), make([]Buffer, nL)
-			}
-			for l := range nL {
-				if L := &r.layers[l]; L.kvShared { // S1.4: alias this slot's source buffers (src < l, already set)
-					b.kc[l], b.vc[l] = b.kc[L.kvSrc], b.vc[L.kvSrc]
-					if r.ks != nil {
-						b.ks[l], b.vs[l] = b.ks[L.kvSrc], b.vs[L.kvSrc]
-					}
-					continue
-				}
-				if r.kc[l] != (Buffer{}) {
-					off := r.kvNullBytes[l] + s*r.kvSlotBytes[l]
-					b.kc[l], b.vc[l] = r.kc[l].At(off), r.vc[l].At(off)
-				}
-				if r.ks != nil && r.ks[l] != (Buffer{}) {
-					b.ks[l], b.vs[l] = r.ks[l].At(4*r.kvScaleOff(s, l)), r.vs[l].At(4*r.kvScaleOff(s, l))
-				}
-			}
-			r.kvSlotBufs[s] = b
-		}
-	} else if r.kvContig {
-		r.kvSlotBufs = []kvSlotBuf{{kc: r.kc, vc: r.vc, ks: r.ks, vs: r.vs}}
+	// MC1: the resident KV slots (kvSlots: the model's request, clamped to what the memory guard allows, priced at the top of this
+	// build; 1 for a family with recurrent state). A slot is its block table over the layers' shared pools, set below.
+	switch {
+	case kvSlots > 1:
+		r.kvSlotBufs = make([]kvSlotBuf, kvSlots)
+	case r.kvContig:
+		r.kvSlotBufs = make([]kvSlotBuf, 1)
 	}
 	if slices.ContainsFunc(r.kvNullBytes, func(n int) bool { return n > 0 }) {
 		r.kvTabBlocks = kvBlocksFor(r.ctxCap)
-		r.kvTab = NewBufferUint32sOn(mem.LineKV, d, kvTableIDs(max(kvSlots, 1), r.kvTabBlocks))
+		ids := kvTableIDs(max(kvSlots, 1), r.kvTabBlocks)
+		r.kvTab = NewBufferUint32sOn(mem.LineKV, d, ids)
+		r.kvRefs = make([]int32, 1+len(ids))
+		for _, id := range ids {
+			r.kvRefs[id]++
+		}
 		r.kt = r.kvTab
 		for s := range r.kvSlotBufs {
 			r.kvSlotBufs[s].kt = r.kvTab.At(4 * s * r.kvTabBlocks)
@@ -2297,7 +2283,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if paged && modelKnob(m, "GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {
 		rs, rerr := d.NewResidencySet()
 		if rerr != nil {
-			fmt.Fprintf(os.Stderr, "metal: residency set unavailable (%v) — per-submit validation stands\n", rerr)
+			logs.Warnf("metal: residency set unavailable (%v) — per-submit validation stands", rerr)
 		} else {
 			slots := r.slotBuffers()      // GPU-read-only (CPU-written by pread)
 			written := r.writtenBuffers() // GPU-WRITTEN per token: KV cache + intermediates/scratch
@@ -2345,7 +2331,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 
 	r.alias = alias
 	if line := alias.summary(); line != "" {
-		fmt.Fprint(os.Stderr, line)
+		logs.InfoText(line)
 	}
 	// S16: the m-RoPE prefill's per-pair axis table, from the decoder's own layout rule; nil for a model without a
 	// three-way m-RoPE section, whose PrefillMRoPELast then declines.
@@ -2437,6 +2423,7 @@ func (r *resident) setPos(pos int, ropePos ...int) {
 		rp = ropePos[0]
 	}
 	r.curNKeys = pos + 1
+	r.kvOwn(r.kvSlot, pos, pos+1) // the token's K/V row, in a block of the bound slot's own
 	r.writePosUniforms(posUniforms{r.uPos, r.uNKeys, r.uRopePos, r.uQTempScale, r.uAttnFANSplit}, pos, rp)
 }
 
@@ -2816,10 +2803,9 @@ func (r *resident) writtenBuffers() []Buffer {
 	return append(r.kvBuffers(), r.scratchBuffers()...)
 }
 
-// kvSlotBuf is one resident KV slot's per-layer views and its table (MC1).
+// kvSlotBuf is one resident KV slot (MC1): its block table, a view of kvTab.
 type kvSlotBuf struct {
-	kc, vc, ks, vs []Buffer
-	kt             Buffer
+	kt Buffer
 }
 
 // kvBlocksFor is how many 64-row blocks hold positions rows.
@@ -2847,10 +2833,12 @@ func kvTableIDs(slots, blocks int) []uint32 {
 	return ids
 }
 
-// kvHostOff is where the bound slot's KV starts, in elements of elemBytes, within layer l's buffer contents as the host
-// sees them (Floats/U16s start at the allocation, not at a view's offset).
-func (r *resident) kvHostOff(l, elemBytes int) int {
-	return (r.kvNullBytes[l] + r.kvSlot*r.kvSlotBytes[l]) / elemBytes
+// kvHostRow is the row position pos of the bound slot occupies in a layer's pool, counted from the pool's start as the host sees
+// its contents (the null block is rows 0 to 63): the block the slot's table names, at the position's offset inside it. Positions
+// pos to the end of its block are the consecutive rows after it.
+func (r *resident) kvHostRow(pos int) int {
+	tab := r.kvTab.U32s()
+	return int(tab[r.kvSlot*r.kvTabBlocks+pos/decoder.KVBlockRows])*decoder.KVBlockRows + pos%decoder.KVBlockRows
 }
 
 // kvElemBytes is one element of the K/V cache: 1 for int8, 4 for f32, 2 for f16.
@@ -2862,12 +2850,6 @@ func (r *resident) kvElemBytes() int {
 		return 4
 	}
 	return 2
-}
-
-// kvScaleOff is where slot s's int8 scales start, in floats, within layer l's scale allocation: a slot holds kvDim int8s and
-// nKV scales per position, so its scales sit at its code offset over head_dim.
-func (r *resident) kvScaleOff(s, l int) int {
-	return (r.kvNullBytes[l] + s*r.kvSlotBytes[l]) / r.layers[l].geom.hd
 }
 
 // kvSlotCount is how many resident KV slots were allocated (at least 1).
@@ -2885,7 +2867,7 @@ func (r *resident) useKVSlot(i int) error {
 	}
 	r.stopExec()
 	b := r.kvSlotBufs[i]
-	r.kc, r.vc, r.ks, r.vs, r.kt = b.kc, b.vc, b.ks, b.vs, b.kt
+	r.kt = b.kt
 	for l := range r.layers { // a recurrent layer's window and state are the slot's own (allocRecurrentSlots)
 		if D := r.layers[l].delta; D != nil && i < len(D.slotWin) {
 			D.win, D.state = D.slotWin[i], D.slotState[i]
@@ -3659,7 +3641,7 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 			// depth and a uniform for the new.
 			nSplit := r.attnFASplitFor(r.planNKeys(), g.nKV)
 			if os.Getenv("GOINFER_ATTNFA_DEBUG") == "1" {
-				fmt.Fprintf(os.Stderr, "[ATTNFA] l=%d nKeys=%d nSplit=%d nKV=%d G=%d hd=%d partialLen=%d\n",
+				logs.Infof("[ATTNFA] l=%d nKeys=%d nSplit=%d nKV=%d G=%d hd=%d partialLen=%d",
 					l, r.planNKeys(), nSplit, g.nKV, r.nH/g.nKV, g.hd, r.attnFAPartial.Len())
 			}
 			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
@@ -3726,6 +3708,7 @@ func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float
 	if n == 0 {
 		return nil, nil
 	}
+	r.kvOwn(r.kvSlot, startPos, startPos+n)
 
 	// This path drives encodeAttentionResidualWith with its own per-token r.batchUNKeys[m] buffers, never through
 	// setPos, so r.curNKeys (planNKeys, canUseAttnFA's depth gate) would otherwise stay stale from whatever a

@@ -1,0 +1,42 @@
+{
+ "load_avg": 1.14,
+ "mem_available_mb": 61500,
+ "load_s": 21.0,
+ "decode_path": [
+  "decode path: cuda-resident (int4)"
+ ],
+ "at_listen": {
+  "VmLck": 0,
+  "VmHWM": 27624660992,
+  "RssAnon": 197218304,
+  "RssFile": 14345084928,
+  "RssShmem": 12945170432,
+  "VmSwap": 0
+ },
+ "after_5s": {
+  "VmLck": 0,
+  "VmHWM": 27624660992,
+  "RssAnon": 199757824,
+  "RssFile": 14345084928,
+  "RssShmem": 12945170432,
+  "VmSwap": 0
+ },
+ "vram_mib": 6942,
+ "completion": " the capital of France is the capital of France is the capital of France is the",
+ "after_request": {
+  "VmLck": 0,
+  "VmHWM": 27624660992,
+  "RssAnon": 230305792,
+  "RssFile": 14345150464,
+  "RssShmem": 12945170432,
+  "VmSwap": 0
+ },
+ "peak_during_all": {
+  "VmLck": 0,
+  "VmHWM": 27624660992,
+  "RssAnon": 336015360,
+  "RssFile": 14345150464,
+  "RssShmem": 12945170432,
+  "VmSwap": 0
+ }
+}

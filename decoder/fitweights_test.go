@@ -37,7 +37,7 @@ func TestFitEstimate_f32PinnedMixersAgreeWithResident(t *testing.T) {
 					}
 					ratio := float64(est) / float64(actual)
 					// Same band as the dense estimate-vs-accountant tests. MLA's floor is a hair lower (0.80, not 0.85):
-					// f32PinnedTensorName's doc comment documents a deliberate residual gap, MLA's output projection
+					// F32PinnedTensorName's doc comment documents a deliberate residual gap, MLA's output projection
 					// (o_proj/dense.weight) is ALSO f32-pinned but shares its name with every ordinary family's quantizable o_proj, so
 					// it is left unmatched rather than risk a much larger false positive elsewhere. 0.80 is that gap's size, not a
 					// loosened bar to paper over a regression.

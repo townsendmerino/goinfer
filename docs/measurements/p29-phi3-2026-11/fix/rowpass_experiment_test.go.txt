@@ -1,0 +1,186 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"fmt"
+	"math/rand"
+	"os"
+	"slices"
+	"testing"
+)
+
+const zzExpSrc = `
+template <uint B, uint G, uint NR>
+kernel void mcx_q4k(device const uchar* wq[[buffer(0)]], device const float* ax_rows[[buffer(1)]],
+    device float* out_rows[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
+    constant uint& lda[[buffer(5)]], constant uint& ldo[[buffer(6)]], device const float* bias[[buffer(7)]],
+    constant uint& mode[[buffer(8)]], uint tgid[[threadgroup_position_in_grid]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+#pragma clang fp reassociate(off)
+    uint row0 = (tgid*8u + sgid)*NR;
+    if (row0 >= N) return;
+    const uint NB = K >> 8u, ix = lane >> 3u, j = (lane & 7u) >> 1u, h = lane & 1u;
+    _Pragma("clang loop unroll(disable)") for (uint g = 0u; g < B; g += G) {
+        float acc[NR][G];
+        SA_ROWS_UNROLL for (uint n = 0u; n < NR; n++) { SA_ROWS_UNROLL for (uint rr = 0u; rr < G; rr++) acc[n][rr] = 0.0f; }
+        for (uint b = ix; b < NB; b += 4u) {
+            half2 dd[NR]; float sc0[NR], m0[NR], sc1[NR], m1[NR]; uint4 q[NR]; float4 wl[NR][4], wh[NR][4];
+            SA_ROWS_UNROLL for (uint n = 0u; n < NR; n++) {
+                dd[n] = half2(0.0h); sc0[n] = 0.0f; m0[n] = 0.0f; sc1[n] = 0.0f; m1[n] = 0.0f; q[n] = uint4(0u);
+                if (row0 + n < N) {
+                    device const uchar* blk = wq + (ulong)(row0 + n)*(ulong)NB*144ul + b*144u;
+                    dd[n] = as_type<half2>(*(device const uint*)blk);
+                    q4k_scale_min2(j, blk + 4, sc0[n], m0[n], sc1[n], m1[n]);
+                    q[n] = *(device const uint4*)(blk + 16u + j*32u + h*16u);
+                }
+                for (uint i = 0u; i < 4u; i++) {
+                    uint w = q[n][i];
+                    wl[n][i] = float4(float(w & 15u), float((w >> 8u) & 15u), float((w >> 16u) & 15u), float((w >> 24u) & 15u));
+                    wh[n][i] = float4(float((w >> 4u) & 15u), float((w >> 12u) & 15u), float((w >> 20u) & 15u), float(w >> 28u));
+                }
+            }
+            SA_ROWS_UNROLL for (uint rr = 0u; rr < G; rr++) {
+                if (g + rr >= B) break;
+                device const float4* alo4 = (device const float4*)(ax_rows + (g + rr)*lda + b*256u + j*64u + h*16u);
+                float4 al[4], ah[4];
+                float slo = 0.0f, shi = 0.0f;
+                for (uint i = 0u; i < 4u; i++) {
+                    al[i] = alo4[i]; ah[i] = alo4[8u + i];
+                    slo += (al[i].x + al[i].y) + (al[i].z + al[i].w);
+                    shi += (ah[i].x + ah[i].y) + (ah[i].z + ah[i].w);
+                }
+                SA_ROWS_UNROLL for (uint n = 0u; n < NR; n++) {
+                    float dlo = 0.0f, dhi = 0.0f;
+                    for (uint i = 0u; i < 4u; i++) {
+                        dlo += dot(wl[n][i], al[i]);
+                        dhi += dot(wh[n][i], ah[i]);
+                    }
+                    float d = float(dd[n].x), dm = float(dd[n].y);
+                    acc[n][rr] += d*sc0[n]*dlo + d*sc1[n]*dhi - dm*(m0[n]*slo + m1[n]*shi);
+                }
+            }
+        }
+        SA_ROWS_UNROLL for (uint n = 0u; n < NR; n++) {
+            SA_ROWS_UNROLL for (uint rr = 0u; rr < G; rr++) {
+                float s = simd_sum(acc[n][rr]);
+                if (g + rr < B && lane == 0 && row0 + n < N) {
+                    device float* out = out_rows + (g + rr)*ldo;
+                    if (mode == 0u) out[row0 + n] = s;
+                    else if (mode == 1u) out[row0 + n] = s + bias[row0 + n];
+                    else out[row0 + n] += s;
+                }
+            }
+        }
+    }
+}
+`
+
+func zzExpInst() string {
+	out := ""
+	for B := 1; B <= 8; B++ {
+		for _, g := range []int{1, 2, 4} {
+			for _, n := range []int{1, 2} {
+				out += fmt.Sprintf("template [[host_name(\"mcx_G%dN%d_rows%d\")]] kernel decltype(mcx_q4k<%d, %d, %d>) mcx_q4k<%d, %d, %d>;\n", g, n, B, B, g, n, B, g, n)
+			}
+		}
+	}
+	return out
+}
+
+func TestZZExp(t *testing.T) {
+	if os.Getenv("GOINFER_ZZ_EXP") == "" {
+		t.Skip("set GOINFER_ZZ_EXP=1")
+	}
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skip(err)
+	}
+	lib, err := d.CompileLibrary(allKernels+mc3RowsKernels+zzExpSrc+zzExpInst(), MSL3_1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pipe := func(n string) Pipeline {
+		p, e := d.NewComputePipeline(lib, n)
+		if e != nil {
+			t.Fatalf("%s: %v", n, e)
+		}
+		return p
+	}
+	q := d.NewCommandQueue()
+	rng := rand.New(rand.NewSource(7))
+	for _, s := range []struct {
+		name string
+		N, K int
+	}{{"phi3 gate|up", 16384, 3072}, {"phi3 o", 3072, 3072}, {"1.5B gate|up", 17920, 1536}} {
+		raw := ksc1Q4KRaw(rng, s.N, s.K)
+		w := d.NewBufferBytes(len(raw))
+		for i, c := range raw {
+			w.Int8s()[i] = int8(c)
+		}
+		act := make([]float32, 8*s.K)
+		for i := range act {
+			act[i] = float32(rng.NormFloat64())
+		}
+		bA, bB := NewBufferFloats(d, act), NewBufferFloats(d, make([]float32, s.N))
+		uK, uN, uLda, uLdo := NewBufferU32(d, uint32(s.K)), NewBufferU32(d, uint32(s.N)), NewBufferU32(d, uint32(s.K)), NewBufferU32(d, uint32(s.N))
+		time := func(name string, B, nr int) (float64, []uint32) {
+			p := pipe(name)
+			out := NewBufferFloats(d, make([]float32, B*s.N))
+			grid := (s.N + nr - 1) / nr * 32
+			best := 1e9
+			for rep := 0; rep < 3; rep++ {
+				e := q.Begin()
+				for i := 0; i < 20; i++ {
+					e.Dispatch(p, grid, 256, w, bA, out, uK, uN, uLda, uLdo, bB, NewBufferU32(d, 0))
+				}
+				e.End()
+				if err := e.Err(); err != nil {
+					t.Fatal(err)
+				}
+				if v := (e.GPUEnd() - e.GPUStart()) * 1000 / 20; v < best {
+					best = v
+				}
+			}
+			return best, slices.Clone(out.U32s()[:B*s.N])
+		}
+		fmt.Fprintf(os.Stderr, "[zzx] %s (N=%d K=%d), GPU ms/call by B=1..8; 'bits' = identical to the production kernel\n", s.name, s.N, s.K)
+		{
+			p := pipe("gemv_q4k_f32_rows8")
+			out := NewBufferFloats(d, make([]float32, s.N))
+			best := 1e9
+			for rep := 0; rep < 3; rep++ {
+				e := q.Begin()
+				for i := 0; i < 20; i++ {
+					e.Dispatch(p, (s.N+7)/8*32, 256, w, bA, out, uK, uN)
+				}
+				e.End()
+				if v := (e.GPUEnd() - e.GPUStart()) * 1000 / 20; v < best {
+					best = v
+				}
+			}
+			fmt.Fprintf(os.Stderr, "[zzx]   decode gemv_q4k_f32_rows8, one row: %.3f ms (x8 = %.3f)\n", best, 8*best)
+		}
+		for _, cfg := range [][2]int{{0, 0}, {1, 2}, {2, 1}, {2, 2}, {4, 1}, {4, 2}} {
+			line := fmt.Sprintf("[zzx]   G=%d NR=%d:", cfg[0], cfg[1])
+			if cfg[0] == 0 {
+				line = "[zzx]   production:"
+			}
+			allSame := true
+			for B := 1; B <= 8; B++ {
+				name, nr := fmt.Sprintf("mc3_gemv_q4k_f32_rows%d", B), 1
+				if cfg[0] != 0 {
+					name, nr = fmt.Sprintf("mcx_G%dN%d_rows%d", cfg[0], cfg[1], B), cfg[1]
+				}
+				ms, got := time(name, B, nr)
+				_, want := time(fmt.Sprintf("mc3_gemv_q4k_f32_rows%d", B), B, 1)
+				if !slices.Equal(got, want) {
+					allSame = false
+				}
+				line += fmt.Sprintf(" B%d=%.3f", B, ms)
+			}
+			fmt.Fprintf(os.Stderr, "%s bits=%v\n", line, allSame)
+		}
+		d.ReleaseAll()
+	}
+}

@@ -118,6 +118,7 @@ func (d *policyScriptDrafter) Draft(ctx []int, k int) []int {
 // completing (its stop token) inside a draft. It also holds TestGrammarSpecParity's claim, which needed a checkpoint CI
 // does not have.
 func TestGrammarSpecLoop_exactOnTheFake(t *testing.T) {
+	t.Parallel()
 	const vocab = 256
 	eos := []int{0}
 	isStop := func(tok int) bool { return slices.Contains(eos, tok) }

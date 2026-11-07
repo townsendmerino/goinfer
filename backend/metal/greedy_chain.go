@@ -4,10 +4,11 @@ package metal
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
-	"os"
 	"runtime"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // The greedy chain (docs/audit-metal-2026-09-30.md, C-B01; docs/tasks/task-metal-audit-2026-10.md, Phase 3 item 5).
@@ -100,7 +101,7 @@ func (r *resident) chainEmbedTable() (Buffer, Buffer, string) {
 		r.chainEmbTried = true
 		r.chainEmbW, r.chainEmbS, r.chainEmbWhy = r.buildChainEmbed()
 		if r.chainEmbWhy != "" {
-			fmt.Fprintf(os.Stderr, "metal: greedy chain off for this model: %s\n", r.chainEmbWhy)
+			logs.Warnf("metal: greedy chain off for this model: %s", r.chainEmbWhy)
 		}
 	}
 	return r.chainEmbW, r.chainEmbS, r.chainEmbWhy
@@ -172,6 +173,8 @@ func (r *resident) chainOpen(q chainReq) error {
 		return fmt.Errorf("metal: no greedy chain on this resident: %s", why)
 	}
 	r.stopExec() // the encode-ahead executor and any earlier chain
+	// The chain commits buffers ahead of the host, so it owns every block it may write before the first: the rest of the slot's table.
+	r.kvOwn(r.kvSlot, q.pos, r.kvCap())
 	r.chainGW, r.chainGS = gw, gs
 	if r.chainTok[0] == (Buffer{}) {
 		for k := range r.chainSets {

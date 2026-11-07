@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/diag/sb2census"
 	"github.com/townsendmerino/goinfer/internal/guard/memgate"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
@@ -337,7 +338,7 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 		return memgate.Reading{}, false
 	}
 	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount()}
-	read.Plan = m.Plan("metal", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
+	read.Plan = m.Plan("metal", math.MaxInt64/4, fit.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
 	facts := func() map[string]int64 {
 		return map[string]int64{"tables": max(metalDenseVectorBytes(m, r)-m.PricedDenseVectorBytesForTest("metal")+m.PricedGemma4MoEVectorBytesForTest(), 0), "decode": metalDecodeScratchBytes(m, r)}
 	}

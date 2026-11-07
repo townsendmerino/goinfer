@@ -282,3 +282,106 @@ func TestNemotronResidentCUDA_blockKinds(t *testing.T) {
 		t.Errorf("VOID: nemotron-tiny no longer has all three block kinds (%v)", count)
 	}
 }
+
+// MEM13-copies-CUDA (docs/measurements/mem13-copies-cuda-2026-11/README.md): a Mamba-2 layer's in_proj and out_proj are planned while the build walks the
+// layers and streamed to the device at upload, like every other dense projection (pack_stream.go), so the host holds no packed copy of them.
+//
+//	go test -count=1 -tags 'cuda goinfer_testhooks' -run '^TestMambaHostCopy_' -v ./backend/cuda/
+
+// mambaLayersOf loads the nemotron-tiny fixture on CUDA and returns, for each Mamba-2 layer, what the build's walk makes of it.
+func mambaLayersOf(t *testing.T) (m *decoder.Model, layers []int, p *mambaParams, hidden int) {
+	t.Helper()
+	var err error
+	m, err = decoder.Load(filepath.Join("../../testdata", "nemotron-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load nemotron-tiny: %v", err)
+	}
+	t.Cleanup(func() { m.Close() })
+	if p, err = buildMambaParams(m); err != nil || p == nil {
+		t.Fatalf("nemotron-tiny has no Mamba-2 geometry: %v", err)
+	}
+	hidden, _, _, _, _, _, _ = m.Dims()
+	for l, ly := range m.Program().Layers {
+		if mix, _, ok := cudaMixerOf(ly); ok && mix == decoder.MixerMamba {
+			layers = append(layers, l)
+		}
+	}
+	if len(layers) == 0 {
+		t.Fatal("nemotron-tiny has no Mamba-2 layer to read")
+	}
+	return m, layers, p, hidden
+}
+
+// packMambaLayer plans its two projections and holds no packed words; the buffers it names are the sizes packWeight would make.
+func TestMambaHostCopy_planningHoldsNoPackedWords(t *testing.T) {
+	m, layers, p, hidden := mambaLayersOf(t)
+	for _, l := range layers {
+		hm, err := packMambaLayer(m, l, hidden, p)
+		if err != nil {
+			t.Fatalf("layer %d: %v", l, err)
+		}
+		for name, h := range map[string]hostW{"in_proj": hm.in, "out_proj": hm.out} {
+			if n := len(h.wpk) + len(h.ws) + len(h.ws16); n != 0 {
+				t.Errorf("layer %d %s holds %d packed words before upload, want 0 (a planned weight is packed at upload)", l, name, n)
+			}
+			if h.src == nil {
+				t.Errorf("layer %d %s is not a planned weight: it names no source for the upload to stream", l, name)
+				continue
+			}
+			eager, err := packWeight(h.src)
+			if err != nil {
+				t.Fatalf("layer %d %s: packWeight: %v", l, name, err)
+			}
+			if h.kind != eager.kind || h.nWpk != len(eager.wpk) || h.nWs != len(eager.ws) || h.nWs16 != len(eager.ws16) {
+				t.Errorf("layer %d %s: the plan names kind %s buffers %d/%d/%d, the packed weight is kind %s buffers %d/%d/%d", l, name,
+					h.kind, h.nWpk, h.nWs, h.nWs16, eager.kind, len(eager.wpk), len(eager.ws), len(eager.ws16))
+			}
+		}
+	}
+}
+
+// The device bytes a Mamba layer's projections get are the packed upload's, at one staging block and at several.
+func TestMambaHostCopy_deviceBytesIdenticalToPackWeight(t *testing.T) {
+	r := streamRig(t)
+	m, layers, p, hidden := mambaLayersOf(t)
+	planned := 0
+	for _, l := range layers {
+		hm, err := packMambaLayer(m, l, hidden, p)
+		if err != nil {
+			t.Fatalf("layer %d: %v", l, err)
+		}
+		for name, h := range map[string]hostW{"in_proj": hm.in, "out_proj": hm.out} {
+			if h.src == nil {
+				t.Fatalf("layer %d %s is packed eagerly, not planned: there is no streamed upload to compare with the packed one", l, name)
+			}
+			planned++
+			eager, err := packWeight(h.src)
+			if err != nil {
+				t.Fatalf("layer %d %s: packWeight: %v", l, name, err)
+			}
+			want := devBytes(t, r.upW(eager), h)
+			if len(want) == 0 {
+				t.Fatalf("layer %d %s: the packed upload read back no device buffers", l, name)
+			}
+			for _, words := range []int{1 << 20, 64, 1} {
+				withStage(t, words)
+				r.pk = nil
+				got := devBytes(t, r.upW(h), h)
+				if len(got) != len(want) {
+					t.Fatalf("layer %d %s, staging %d words: the streamed upload read back %d device buffers, the packed one %d", l, name, words, len(got), len(want))
+				}
+				for k, b := range want {
+					if string(got[k]) != string(b) {
+						t.Errorf("layer %d %s, staging %d words: device buffer %s differs from the packed upload's", l, name, words, k)
+					}
+				}
+			}
+		}
+	}
+	if planned == 0 {
+		t.Fatal("no planned weight was compared")
+	}
+	if r.setupErr != nil {
+		t.Fatalf("upload error: %v", r.setupErr)
+	}
+}

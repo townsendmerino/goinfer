@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -1222,7 +1223,7 @@ func readRepo() repoInput {
 	in.LintOK, in.LintOut = err == nil, string(out)
 	rows, err := exec.Command("python3", "scripts/ci_checks.py").Output()
 	in.RowsOK, in.Rows = err == nil, string(rows)
-	if ee, ok := err.(*exec.ExitError); ok {
+	if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 		in.RowsErr = strings.ReplaceAll(strings.TrimSpace(string(ee.Stderr)), "\n", " ")
 	} else if err != nil {
 		in.RowsErr = err.Error()

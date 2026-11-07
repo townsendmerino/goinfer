@@ -1,0 +1,299 @@
+=== RUN   TestCUDAStepBatch_matchesForward
+=== RUN   TestCUDAStepBatch_matchesForward/llama-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:138: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:138: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:138: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:138: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70])
+    batchstep_test.go:138: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70 200])
+    batchstep_test.go:138: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70 200 33])
+=== RUN   TestCUDAStepBatch_matchesForward/gemma4-dense-twogeom-tiny
+cuda: prefill width 2048 rows (64 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:138: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:138: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:138: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/granite-dense-tiny
+cuda: prefill width 2048 rows (5 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:138: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:138: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:138: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+--- PASS: TestCUDAStepBatch_matchesForward (2.68s)
+    --- PASS: TestCUDAStepBatch_matchesForward/llama-tiny (1.88s)
+    --- PASS: TestCUDAStepBatch_matchesForward/mistral-tiny-window (0.26s)
+    --- PASS: TestCUDAStepBatch_matchesForward/gemma4-dense-twogeom-tiny (0.26s)
+    --- PASS: TestCUDAStepBatch_matchesForward/granite-dense-tiny (0.27s)
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone/greedy
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:241: runs 27, steps 27 (tokens 96), solo tokens 0, straggler runs 0, step sizes [0 0 3 6 18]
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone/sampled
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:241: runs 29, steps 25 (tokens 92), solo tokens 4, straggler runs 0, step sizes [0 0 1 6 18]
+--- PASS: TestCUDAStepBatch_concurrentMatchesAlone (1.11s)
+    --- PASS: TestCUDAStepBatch_concurrentMatchesAlone/greedy (0.55s)
+    --- PASS: TestCUDAStepBatch_concurrentMatchesAlone/sampled (0.56s)
+=== RUN   TestKV4_oneConversationUsesThePool
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6808 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_capacity_test.go:52: share 16384 positions, pool 65536, one conversation's cap 65536
+    kv4_capacity_test.go:67: reached 65536 positions (100.0% of the pool), budget 2048 clamped true
+--- PASS: TestKV4_oneConversationUsesThePool (8.98s)
+=== RUN   TestKV4_pressureFollowsD5
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6808 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: released slot 1's 240 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: released slot 2's 240 blocks (idle, the least recently used) for slot 1, which is past its share of 256
+cuda: KV pool: released slot 1's 240 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 0, 520 blocks past its share of 256, for slot 2 within its share
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6540 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_capacity_test.go:157: share 16384 positions; the borrower held 776 blocks when the conversation within its share arrived
+--- PASS: TestKV4_pressureFollowsD5 (1.73s)
+=== RUN   TestKV4_batchedStepEvictsTheLeastRecentlyWrittenIdleSlot
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6808 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: released slot 0's 240 blocks (idle, the least recently used) for slot 1, which is past its share of 256
+--- PASS: TestKV4_batchedStepEvictsTheLeastRecentlyWrittenIdleSlot (0.91s)
+=== RUN   TestKV4_scrambledTables
+=== RUN   TestKV4_scrambledTables/llama-tiny/kv=f32
+cuda: prefill width 2048 rows (6 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/llama-tiny/kv=f16
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7062 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/llama-attnfa-tiny/kv=f32
+cuda: prefill width 2048 rows (26 MiB of scratch; 7034 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 6990 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/llama-attnfa-tiny/kv=f16
+cuda: prefill width 2048 rows (26 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7022 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/mistral-tiny-window/kv=f32
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/mistral-tiny-window/kv=f16
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/gemma3-vl-tiny/kv=f32
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/gemma3-vl-tiny/kv=f16
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/cohere2-tiny/kv=f32
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/cohere2-tiny/kv=f16
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/gemma2-tiny/kv=f32
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/gemma2-tiny/kv=f16
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/cohere-tiny/kv=f32
+cuda: prefill width 2048 rows (6 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/cohere-tiny/kv=f16
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7062 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen25vl-tiny/kv=f32
+cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7058 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen25vl-tiny/kv=f16
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen3moe-tiny/kv=f32
+cuda: prefill width 2048 rows (5 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6930 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen3moe-tiny/kv=f16
+cuda: prefill width 2048 rows (5 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/deepseek-tiny/kv=f32
+cuda: prefill width 2048 rows (6 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/deepseek-tiny/kv=f16
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen35-tiny/kv=f32
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen35-tiny/kv=f16
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/gemma4-moe-kv-tiny32/kv=f32
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6904 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6862 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/gemma4-moe-kv-tiny32/kv=f16
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6922 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6922 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6898 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/llama-attnfa-tiny+flash/kv=f32
+cuda: prefill width 2048 rows (26 MiB of scratch; 7026 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 false; flash-decode launches 174, split-KV 0
+=== RUN   TestKV4_scrambledTables/llama-attnfa-tiny+flash/kv=f16
+cuda: prefill width 2048 rows (26 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7008 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 true; flash-decode launches 174, split-KV 0
+=== RUN   TestKV4_scrambledTables/llama-attnfa-tiny+splitkv/kv=f32
+cuda: prefill width 2048 rows (26 MiB of scratch; 7034 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 6990 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 172
+=== RUN   TestKV4_scrambledTables/llama-attnfa-tiny+splitkv/kv=f16
+cuda: prefill width 2048 rows (26 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7022 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 172
+=== RUN   TestKV4_scrambledTables/mixtral-tiny/kv=f32
+cuda: prefill width 2048 rows (6 MiB of scratch; 6910 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6876 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/mixtral-tiny/kv=f16
+cuda: prefill width 2048 rows (6 MiB of scratch; 6928 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6928 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6910 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen3moe-tiny+experts/kv=f32
+cuda: prefill width 2048 rows (5 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 78 steps, 1 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen3moe-tiny+experts/kv=f16
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 78 steps, 1 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+--- PASS: TestKV4_scrambledTables (18.19s)
+    --- PASS: TestKV4_scrambledTables/llama-tiny/kv=f32 (0.33s)
+    --- PASS: TestKV4_scrambledTables/llama-tiny/kv=f16 (0.58s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny/kv=f32 (0.33s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny/kv=f16 (0.58s)
+    --- PASS: TestKV4_scrambledTables/mistral-tiny-window/kv=f32 (0.35s)
+    --- PASS: TestKV4_scrambledTables/mistral-tiny-window/kv=f16 (0.60s)
+    --- PASS: TestKV4_scrambledTables/gemma3-vl-tiny/kv=f32 (0.36s)
+    --- PASS: TestKV4_scrambledTables/gemma3-vl-tiny/kv=f16 (0.57s)
+    --- PASS: TestKV4_scrambledTables/cohere2-tiny/kv=f32 (0.37s)
+    --- PASS: TestKV4_scrambledTables/cohere2-tiny/kv=f16 (0.60s)
+    --- PASS: TestKV4_scrambledTables/gemma2-tiny/kv=f32 (0.39s)
+    --- PASS: TestKV4_scrambledTables/gemma2-tiny/kv=f16 (0.65s)
+    --- PASS: TestKV4_scrambledTables/cohere-tiny/kv=f32 (0.32s)
+    --- PASS: TestKV4_scrambledTables/cohere-tiny/kv=f16 (0.57s)
+    --- PASS: TestKV4_scrambledTables/qwen25vl-tiny/kv=f32 (0.32s)
+    --- PASS: TestKV4_scrambledTables/qwen25vl-tiny/kv=f16 (0.51s)
+    --- PASS: TestKV4_scrambledTables/qwen3moe-tiny/kv=f32 (0.51s)
+    --- PASS: TestKV4_scrambledTables/qwen3moe-tiny/kv=f16 (0.78s)
+    --- PASS: TestKV4_scrambledTables/deepseek-tiny/kv=f32 (0.94s)
+    --- PASS: TestKV4_scrambledTables/deepseek-tiny/kv=f16 (1.18s)
+    --- PASS: TestKV4_scrambledTables/qwen35-tiny/kv=f32 (0.66s)
+    --- PASS: TestKV4_scrambledTables/qwen35-tiny/kv=f16 (0.88s)
+    --- PASS: TestKV4_scrambledTables/gemma4-moe-kv-tiny32/kv=f32 (0.59s)
+    --- PASS: TestKV4_scrambledTables/gemma4-moe-kv-tiny32/kv=f16 (0.85s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny+flash/kv=f32 (0.36s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny+flash/kv=f16 (0.67s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny+splitkv/kv=f32 (0.33s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny+splitkv/kv=f16 (0.59s)
+    --- PASS: TestKV4_scrambledTables/mixtral-tiny/kv=f32 (0.57s)
+    --- PASS: TestKV4_scrambledTables/mixtral-tiny/kv=f16 (0.75s)
+    --- PASS: TestKV4_scrambledTables/qwen3moe-tiny+experts/kv=f32 (0.43s)
+    --- PASS: TestKV4_scrambledTables/qwen3moe-tiny+experts/kv=f16 (0.66s)
+=== RUN   TestKV4_scrambledTablesCanFail
+cuda: prefill width 2048 rows (6 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:233: the planted defect shows at step 0 (prompt)
+--- PASS: TestKV4_scrambledTablesCanFail (0.32s)
+=== RUN   TestKV4_windowedFlashAndSplitKV
+=== RUN   TestKV4_windowedFlashAndSplitKV/f32/flash
+cuda: prefill width 2048 rows (26 MiB of scratch; 6994 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 4608 positions (window 4096 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+cuda: windowed KV: 576 more positions from free VRAM (2 MB of 7133 MB free); a follow-up may now diverge 1024 before the newest
+    kv4_identity_test.go:363: base 3881, 60 blocks behind it released; f16 false
+=== RUN   TestKV4_windowedFlashAndSplitKV/f32/splitkv
+cuda: prefill width 2048 rows (26 MiB of scratch; 7002 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 4608 positions (window 4096 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+cuda: windowed KV: 576 more positions from free VRAM (2 MB of 7147 MB free); a follow-up may now diverge 1024 before the newest
+    kv4_identity_test.go:363: base 3881, 60 blocks behind it released; f16 false
+=== RUN   TestKV4_windowedFlashAndSplitKV/f16/flash
+cuda: prefill width 2048 rows (26 MiB of scratch; 7026 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 4608 positions (window 4096 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+cuda: windowed KV: 576 more positions from free VRAM (1 MB of 7173 MB free); a follow-up may now diverge 1024 before the newest
+    kv4_identity_test.go:363: base 3881, 60 blocks behind it released; f16 true
+=== RUN   TestKV4_windowedFlashAndSplitKV/f16/splitkv
+cuda: prefill width 2048 rows (26 MiB of scratch; 7034 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 4608 positions (window 4096 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+cuda: windowed KV: 576 more positions from free VRAM (1 MB of 7187 MB free); a follow-up may now diverge 1024 before the newest
+    kv4_identity_test.go:363: base 3881, 60 blocks behind it released; f16 true
+--- PASS: TestKV4_windowedFlashAndSplitKV (2.33s)
+    --- PASS: TestKV4_windowedFlashAndSplitKV/f32/flash (0.58s)
+    --- PASS: TestKV4_windowedFlashAndSplitKV/f32/splitkv (0.59s)
+    --- PASS: TestKV4_windowedFlashAndSplitKV/f16/flash (0.58s)
+    --- PASS: TestKV4_windowedFlashAndSplitKV/f16/splitkv (0.58s)
+=== RUN   TestKV4_sharedPreambleStoredOnce
+cuda: prefill width 2048 rows (26 MiB of scratch; 6746 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: kv copy: slot 0 -> 1 shares rows [0, 16384), 256 blocks; 258 of 1280 full-pool blocks in use
+cuda: kv copy: slot 0 -> 2 shares rows [0, 16384), 256 blocks; 260 of 1280 full-pool blocks in use
+cuda: kv copy: slot 0 -> 3 shares rows [0, 16384), 256 blocks; 262 of 1280 full-pool blocks in use
+    kv4_share_test.go:112: full pool: 264 blocks in use after 4 conversations sharing a 16384-token preamble (limit 268; 1032 if each stored its own)
+cuda: prefill width 2048 rows (26 MiB of scratch; 6654 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestKV4_sharedPreambleStoredOnce (1.02s)
+=== RUN   TestMC3CUDAS0_batchedRowsVsDecode
+    mc3_cuda_s0_test.go:33: set GOINFER_HEAVY_TESTS=1 (loads a real model)
+--- SKIP: TestMC3CUDAS0_batchedRowsVsDecode (0.00s)
+PASS
+ledger: 112 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	37.383s

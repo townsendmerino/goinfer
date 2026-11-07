@@ -1,0 +1,5 @@
+# plant 1: LOAD_VOID = 0.0 (every arm starts over the limit)
+VERDICT: VOID (direct: one-minute load average 0.86 over 0.0 at the arm's start)
+exit 
+# plant 2: the decode-path check asks for a string the log never says
+VERDICT: VOID (direct: the server's log does not say `decode path: cuda-resident` (it says ['decode path: cuda-resident (q4k)']))

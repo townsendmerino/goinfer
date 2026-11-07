@@ -60,7 +60,7 @@ func TestResidentAdmission_declinesBeforeBuildAndNamesTheGate(t *testing.T) {
 			continue
 		}
 		eligible := m.w.arch.decodeRunnerEligible()
-		covered := residentCovers(m.w.arch, "metal")
+		covered := residentCovers(m.w.arch, nil, "metal")
 		m.Close()
 		switch {
 		case eligible && !covered && needsMore == "":

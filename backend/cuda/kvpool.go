@@ -4,11 +4,10 @@ package cuda
 
 import (
 	"fmt"
-	"os"
-	"strings"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -196,17 +195,18 @@ func (r *cudaResident) kvReclaim(s int) bool {
 	r.kvTabs[best].dirty[kvGroupFull] = true
 	r.kvStopped[best], r.kvStepAbort = true, true
 	r.kvValid[best] = min(r.kvValid[best], r.kvShareBlocks*kvBlock)
-	fmt.Fprintf(os.Stderr, "cuda: KV pool: stopped slot %d, %d blocks past its share of %d, for slot %d within its share\n", best, most, r.kvShareBlocks, s)
+	logs.Warnf("cuda: KV pool: stopped slot %d, %d blocks past its share of %d, for slot %d within its share", best, most, r.kvShareBlocks, s)
 	return true
 }
 
-// kvEvictIdle releases every block of the least recently written slot that is not s, not bound, not held by a running generation
+// kvEvictIdle releases every block of the least recently written slot that is not s (the slot being written: a batched step writes through
+// each row's slot and leaves the binding where it was, so the bound slot is no shield), not held by a running generation
 // (kvSlotBusy) and holds any, and marks it released, so it answers 0 to every reuse question until it starts a new sequence. False
 // when there is none.
 func (r *cudaResident) kvEvictIdle(s int) bool {
 	best := -1
 	for t := range r.kvTabs {
-		if t == s || t == r.kvSlot || r.kvSlotBusy[t] || (r.kvHeld(t) == 0 && !r.kvHoldsWindow(t)) {
+		if t == s || r.kvSlotBusy[t] || (r.kvHeld(t) == 0 && !r.kvHoldsWindow(t)) {
 			continue
 		}
 		if best < 0 || r.kvSlotUse[t] < r.kvSlotUse[best] {
@@ -224,7 +224,7 @@ func (r *cudaResident) kvEvictIdle(s int) bool {
 	if r.kvDemoted[best] == nil {
 		r.kvValid[best] = 0
 	}
-	fmt.Fprintf(os.Stderr, "cuda: KV pool: released slot %d's %d blocks (idle, the least recently used) for slot %d, which is past its share of %d\n",
+	logs.Debugf("cuda: KV pool: released slot %d's %d blocks (idle, the least recently used) for slot %d, which is past its share of %d",
 		best, n, s, r.kvShareBlocks)
 	return true
 }
@@ -305,7 +305,7 @@ func (r *cudaResident) kvAllocPools(slots int) error {
 	}
 	r.kvTabDev = r.ai(slots * kvGroups * r.kvMaxBlocks())
 	if r.kvTabStage == nil {
-		stage, e := gpu.NewHostBufferOn[uint8](r.dev, mem.LineKV, kvTabRing*r.kvMaxBlocks()*4)
+		stage, e := gpu.NewHostBufferOn[uint8](r.dev, mem.LineStaging, kvTabRing*r.kvMaxBlocks()*4)
 		if e != nil {
 			return e
 		}
@@ -567,7 +567,7 @@ func (r *cudaResident) kvAllocPoolsFit() error {
 		}
 		if ok {
 			if n < want {
-				fmt.Fprintf(os.Stderr, "cuda: %d of %d resident KV slots granted: the device ran out of memory allocating the KV pools beside the build's own scratch\n", n, want)
+				logs.Warnf("cuda: %d of %d resident KV slots granted: the device ran out of memory allocating the KV pools beside the build's own scratch", n, want)
 			}
 			r.kvSlotsN = n
 			return r.kvAfterRaise()
@@ -580,7 +580,7 @@ func (r *cudaResident) kvAllocPoolsFit() error {
 func (r *cudaResident) kvTryAllocPools(slots int) (ok bool, err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			if !strings.Contains(fmt.Sprint(v), "device allocation failed") {
+			if !mem.DeviceAllocFailed(v) {
 				panic(v)
 			}
 			r.kvReleasePools()
@@ -644,7 +644,7 @@ func (r *cudaResident) kvAfterRaise() error {
 		r.dev.ReleaseBuf(r.skScoreBuf)
 		r.skScoreBuf = r.af(r.nH * r.ctxCap)
 	}
-	fmt.Fprint(os.Stderr, r.kvPoolLine())
+	logs.InfoText(r.kvPoolLine())
 	return nil
 }
 

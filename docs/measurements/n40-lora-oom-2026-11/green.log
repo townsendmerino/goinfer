@@ -1,0 +1,19 @@
+=== RUN   TestLoRAAdapterCacheCUDA
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestLoRAAdapterCacheCUDA (1.92s)
+=== RUN   TestLoRAUploadOOM_returnsEveryBuffer
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestLoRAUploadOOM_returnsEveryBuffer (0.32s)
+=== RUN   TestLoRAResidentParityCUDA
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    lora_resident_parity_test.go:93: resident-with-adapter vs CPU-with-adapter: cosine=0.999963 maxAbs=0.005082 argmax_match=true
+--- PASS: TestLoRAResidentParityCUDA (0.24s)
+PASS
+ledger: 7 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	2.542s

@@ -55,7 +55,7 @@ func BenchmarkAttentionPrefill(b *testing.B) {
 	run := func() {
 		e := q_.Begin()
 		for range reps {
-			e.Dispatch(pipe, M*nH*128, 128, dQkv, dKc, dVc, dOut, uNH, uNKV, uHd, uStartPos, uScale, uQStride, uWindow)
+			e.Dispatch(pipe, M*nH*128, 128, dQkv, dKc, dVc, dOut, uNH, uNKV, uHd, uStartPos, uScale, uQStride, uWindow, kvIdentityTable(d))
 		}
 		e.End()
 	}
@@ -128,7 +128,7 @@ func benchAttentionPrefillFused(b *testing.B, M int) {
 	run := func() {
 		e := q_.Begin()
 		for range reps {
-			e.Dispatch(pipe, total, sgpt*32, dQkv, dKc, dVc, dOut, uNH, uNKV, uHd, uStartPos, uScale, uQStride, uWindow, uM)
+			e.Dispatch(pipe, total, sgpt*32, dQkv, dKc, dVc, dOut, uNH, uNKV, uHd, uStartPos, uScale, uQStride, uWindow, uM, kvIdentityTable(d))
 		}
 		e.End()
 	}
@@ -197,7 +197,7 @@ func BenchmarkAttentionPrefillLongCtx(b *testing.B) {
 	run := func() {
 		e := q_.Begin()
 		for range reps {
-			e.Dispatch(pipe, M*nH*128, 128, dQkv, dKc, dVc, dOut, uNH, uNKV, uHd, uStartPos, uScale, uQStride, uWindow)
+			e.Dispatch(pipe, M*nH*128, 128, dQkv, dKc, dVc, dOut, uNH, uNKV, uHd, uStartPos, uScale, uQStride, uWindow, kvIdentityTable(d))
 		}
 		e.End()
 	}

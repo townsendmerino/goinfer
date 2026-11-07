@@ -1,7 +1,6 @@
 package decoder
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +12,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 
 	"github.com/townsendmerino/goinfer/decoder/fit"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -183,7 +183,7 @@ func guardFit(f fitCheck) (int, error) {
 		return 0, fitDecline(fit.Decline)
 	}
 	if fit.Line != "" {
-		fmt.Fprintln(os.Stderr, fit.Line)
+		logs.Infof("%s", fit.Line)
 	}
 	return fit.PinCtx, nil
 }
@@ -214,7 +214,7 @@ const giwMemMargin = mem.GIWMargin // 1 GB
 func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
 	d := decideGIWFit(cfg, opts)
 	if d.note != "" {
-		fmt.Fprint(os.Stderr, d.note)
+		logs.InfoText(d.note)
 	}
 	return d.pinCtx, d.err
 }
@@ -281,7 +281,7 @@ func resolveWeightCacheBudget(requested int64) int64 {
 	if b := mem.WeightCacheBudget(0, mem.HostMachine(hostRAMAvailable())); b > 0 {
 		return b
 	}
-	fmt.Fprintln(os.Stderr, "decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)")
+	logs.Warnf("decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)")
 	return 0
 }
 
@@ -340,73 +340,6 @@ func measureBytesPerElem(q quantMode) float64 {
 	return 4
 }
 
-// f32PinnedTensorName reports whether a checkpoint tensor name is one the loaders ALWAYS keep resident at f32 regardless of the requested
-// quant: a Mamba-2 mixer (Granite-4.0-H's "mamba.*" prefix, GGUF "ssm_*") or an MLA attention projection (GGUF
-// "attn_q_a"/"attn_q_b"/"attn_kv_a_mqa"/"attn_kv_b", safetensors "q_a_proj"/"q_b_proj"/"kv_a_proj"/"kv_b_proj").
-//
-// DELIBERATELY NOT a bare "mixer."/"in_proj"/"out_proj" match: Nemotron-H shares the "mixer." prefix across its Mamba-2 (f32), attention,
-// MLP and MoE layer types, and bare "in_proj"/"out_proj" collide with LFM2's conv mixer and qwen3.5/qwen3_next's DeltaNet hybrid, where
-// SOME "linear_attn.in_proj_*" sub-tensors are f32 and OTHERS are genuinely quantized, so a name-only classifier cannot tell them apart.
-// Nemotron-H's Mamba-2 in_proj/out_proj/conv1d ARE matched, via the full "mixer.in_proj"/"mixer.out_proj"/"mixer.conv1d" compound
-// (never bare "mixer." or bare "in_proj"), which no other Nemotron block kind contains.
-//
-// A load armed for int8 MLA (mlaProjInt8, tests only) holds its q-LoRA pair and kv-A at int8 instead (mlaInt8TensorName, checked first).
-//
-// KNOWN RESIDUAL GAP, left unfixed rather than over-matched: MLA's output projection (self_attn.o_proj.weight / Bailing's dense.weight)
-// and a LoRA-less q_proj are held f32, but "o_proj"/"q_proj"/"dense.weight" are ordinary quantizable tensor names in every non-MLA
-// family, so they are priced at the load's rate: a small, honest under-estimate at int4
-// (TestFitEstimate_f32PinnedMixersAgreeWithResident).
-func f32PinnedTensorName(name string) bool {
-	for _, s := range []string{
-		"ssm_", "mamba.",
-		"mixer.in_proj", "mixer.out_proj", "mixer.conv1d", // Nemotron-H Mamba-2 only (see doc comment)
-		"attn_q_a", "attn_q_b", "attn_kv_a", "attn_kv_b",
-		"q_a_proj", "q_b_proj", "kv_a_proj", "kv_b_proj",
-		"_exps.bias", // gpt-oss's expert biases: stacked 2-D in the file, f32 per expert after the load
-	} {
-		if strings.Contains(name, s) {
-			return true
-		}
-	}
-	return false
-}
-
-// mlaInt8TensorName reports whether name is an MLA q-LoRA or kv-A projection, which a load armed for int8 MLA holds as per-row int8
-// (mlaProjInt8). kv_b is not one: it stays f32.
-func mlaInt8TensorName(name string) bool {
-	for _, s := range []string{"attn_q_a.", "attn_q_b.", "attn_kv_a_mqa.", "q_a_proj.", "q_b_proj.", "kv_a_proj"} {
-		if strings.Contains(name, s) {
-			return true
-		}
-	}
-	return false
-}
-
-// visionTowerTensorName reports whether name belongs to a bundled multimodal vision tower or projector rather than the text decoder.
-// decoder/weights.go's text loader never requests these names, but this estimator walks EVERY tensor in the checkpoint's metadata, so it
-// must exclude them explicitly or they are swept into the text model's per-element quant price.
-func visionTowerTensorName(name string) bool {
-	return strings.Contains(name, "vision_tower.") || strings.Contains(name, "multi_modal_projector.")
-}
-
-// gptqAWQAuxSuffix reports whether name is a GPTQ/AWQ auxiliary tensor (qzeros/g_idx/scales, decoder/gptq.go, decoder/awq.go) that is fully
-// consumed during the one-time reconstruct-then-requantize step and never itself kept resident: pricing it as an ordinary weight matrix at
-// the target quant's rate would double-count storage the real load path discards.
-func gptqAWQAuxSuffix(name string) bool {
-	for _, s := range []string{".qzeros", ".g_idx", ".scales"} {
-		if strings.HasSuffix(name, s) {
-			return true
-		}
-	}
-	return false
-}
-
-// gptqAWQPackFactor is how many 4-bit codes GPTQ/AWQ pack into each element along qweight's packed dimension (decoder/gptq.go: 8 4-bit codes
-// per int32), so qweight's ON-DISK shape under-counts the logical [in,out] matrix by exactly this factor. The checkpoint is fully unpacked
-// and re-quantized to the requested resident quant at load time (decoder/weights.go's loadProj), so the estimator must correct for it or
-// lands ~8x low.
-const gptqAWQPackFactor = 8
-
 // estimateGGUFWeightBytes sums every tensor's element count from the GGUF's metadata and prices
 // it at the target quant. Metadata only: no tensor data is touched, so this costs a header parse
 // on a model that is about to be read in full anyway.
@@ -427,58 +360,24 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 	defer g.Close()
 	// q4k prices each tensor at what its load keeps: a dense projection stored as Q4_K at its own super-blocks
 	// (q4kKeptBytes), every other matrix at int8 W8A8, which q4k makes of them (streamQuantizedRow4).
+	r := fitRates(q)
 	price := q
 	if q == quantQ4K && !q4kPriceAsInt4ForTest {
 		price = quantInt8I8
+		r.Kept = func(name string, dims []int) (float64, bool) { return q4kKeptBytes(g, name, dims) }
 	}
+	r.Matrix = quantBytesPerElem(price)
 	ggufArch, _ := g.Str("general.architecture")
-	nemoInt8 := (ggufArch == "nemotron_h" || ggufArch == "nemotron_h_moe") && mambaProjInt8(q)
-	var sum, exp float64
-	for _, name := range g.Names() {
-		dims, ok := g.Dims(name)
-		if !ok {
-			continue
-		}
-		n := 1
-		for _, d := range dims {
-			if d <= 0 {
-				n = 0
-				break
-			}
-			n *= d
-		}
-		if n == 0 {
-			continue
-		}
-		if len(dims) < 2 {
-			sum += 4 * float64(n)
-			continue
-		}
-		// A quantized Nemotron-H holds its two Mamba projections at int8 (mambaProjInt8).
-		if nemoInt8 && (strings.HasSuffix(name, ".ssm_in.weight") || strings.HasSuffix(name, ".ssm_out.weight")) {
-			sum += quantBytesPerElem(quantInt8I8) * float64(n)
-			continue
-		}
-		// A load armed for int8 MLA holds its q (or q-LoRA pair) and kv-A projections at int8 (mlaProjInt8).
-		if mlaProjInt8(q) && mlaInt8TensorName(name) {
-			sum += quantBytesPerElem(quantInt8I8) * float64(n)
-			continue
-		}
-		// Mamba-2/MLA tensors stay f32 regardless of the requested quant: price them at what they cost, not the ambient rate.
-		if f32PinnedTensorName(name) {
-			sum += 4 * float64(n)
-			continue
-		}
-		b := quantBytesPerElem(price) * float64(n)
-		if kept, ok := q4kKeptBytes(g, name, dims); ok && q == quantQ4K && !q4kPriceAsInt4ForTest {
-			b = kept
-		}
-		sum += b
-		if strings.Contains(name, "_exps") {
-			exp += b
-		}
+	return fit.GGUFWeightBytes(g.Names(), g.Dims, ggufArch, r)
+}
+
+// fitRates are the per-element prices of q's load, measured through the loader's quantizer. Matrix is left for the caller to set.
+func fitRates(q quantMode) fit.Rates {
+	r := fit.Rates{MambaProjInt8: mambaProjInt8(q), MLAProjInt8: mlaProjInt8(q)}
+	if r.MambaProjInt8 || r.MLAProjInt8 {
+		r.Int8 = quantBytesPerElem(quantInt8I8)
 	}
-	return int64(sum), int64(exp)
+	return r
 }
 
 // q4kDenseProj matches the dense layer projections a q4k load keeps as Q4_K when the GGUF stores them so (q4kMat's load
@@ -515,101 +414,25 @@ func estimateSafetensorsWeightBytes(dir string, q quantMode) int64 {
 		return 0 // unknown ⇒ proceed
 	}
 	defer st.Close()
-	var total float64
-	for _, name := range st.Names() {
+	r := fitRates(q)
+	r.Matrix = quantBytesPerElem(q)
+	// The token embedding and LM head are held at q.embedding() (int8 under int4), not at q.
+	r.Embedding = quantBytesPerElem(q.embedding())
+	return fit.SafetensorsWeightBytes(st.Names(), func(name string) ([]int, bool) {
 		t, err := st.Tensor(name)
 		if err != nil {
-			continue
+			return nil, false
 		}
-		n := 1
-		for _, d := range t.Shape {
-			if d <= 0 {
-				n = 0
-				break
-			}
-			n *= d
-		}
-		if n == 0 {
-			continue
-		}
-		// A GPTQ/AWQ auxiliary tensor is fully consumed during reconstruction and never kept resident: price it at zero, not as a weight matrix.
-		if gptqAWQAuxSuffix(name) {
-			continue
-		}
-		// A bundled vision tower/projector loads at its own precision, independent of the text
-		// model's requested quant (aikit/vision.LoadEncoder's own -vision-quant knob, invisible
-		// here) — price it at f32, the default the text loader never touches it at, rather than
-		// blending it into the text quant rate.
-		if visionTowerTensorName(name) {
-			total += 4 * float64(n)
-			continue
-		}
-		if len(t.Shape) < 2 {
-			total += 4 * float64(n)
-			continue
-		}
-		// Mamba-2/MLA tensors stay f32 regardless of the requested quant.
-		// A quantized Nemotron-H holds its two Mamba projections at int8 (mambaProjInt8); these compound names are its alone.
-		if mambaProjInt8(q) && (strings.HasSuffix(name, "mixer.in_proj.weight") || strings.HasSuffix(name, "mixer.out_proj.weight")) {
-			total += quantBytesPerElem(quantInt8I8) * float64(n)
-			continue
-		}
-		if mlaProjInt8(q) && mlaInt8TensorName(name) {
-			total += quantBytesPerElem(quantInt8I8) * float64(n)
-			continue
-		}
-		if f32PinnedTensorName(name) {
-			total += 4 * float64(n)
-			continue
-		}
-		// A GPTQ/AWQ qweight tensor's ON-DISK shape is the packed [in/8, out] layout, not the
-		// logical [in, out] matrix it is unpacked and re-quantized to at load time — correct for
-		// the pack factor before pricing at the target quant's rate, or this under-counts ~8x.
-		if strings.HasSuffix(name, ".qweight") {
-			n *= gptqAWQPackFactor
-		}
-		// The token embedding and LM head are held at q.embedding() (int8 under int4), not at q: pricing
-		// them at q under-counted every big-vocabulary small model, and binary16 int4 scales (aikit
-		// v1.50.0) pushed the tiny fixtures' estimate below the 0.85 band.
-		if embeddingTensorName(name) {
-			total += quantBytesPerElem(q.embedding()) * float64(n)
-			continue
-		}
-		total += quantBytesPerElem(q) * float64(n)
-	}
-	return int64(total)
-}
-
-// embeddingTensorName reports a checkpoint tensor the loaders keep at the embedding precision
-// (quantMode.embedding()): a token-embedding table or an untied LM head, under the names the supported
-// safetensors families use.
-func embeddingTensorName(name string) bool {
-	if name == "output.weight" { // InternLM2's LM head
-		return true
-	}
-	for _, s := range []string{"embed_tokens.weight", "lm_head.weight", "tok_embeddings.weight", "wte.weight", "word_embeddings.weight", "embed_in.weight", "embed_out.weight"} {
-		if name == s || strings.HasSuffix(name, "."+s) {
-			return true
-		}
-	}
-	return false
+		return t.Shape, true
+	}, r)
 }
 
 // kvBytesPerPosition is the KV cost of ONE position, so estimateKVBytes and smallerFittingContext share the identical per-position rate.
 func kvBytesPerPosition(cfg *Config, kvF16, kvI8 bool) int64 {
-	if cfg == nil || cfg.NumLayers <= 0 || cfg.NumKVHeads <= 0 {
+	if cfg == nil {
 		return 0
 	}
-	perElem := 4.0
-	switch {
-	case kvI8:
-		perElem = 1.125 // int8 payload + per-row f32 scale
-	case kvF16:
-		perElem = 2
-	}
-	kvDim := cfg.NumKVHeads * cfg.headDim()
-	// ×2 for K and V.
-	return int64(2 * perElem * float64(kvDim) * float64(cfg.NumLayers))
+	return fit.KVBytesPerPosition(cfg.NumLayers, cfg.NumKVHeads, cfg.EffectiveHeadDim(), kvF16, kvI8)
 }
 
 // estimateKVBytes is the KV cache at ctx positions. ctx is the caller's job to choose (fitCheckFor picks opts.ResidentContext when pinned,

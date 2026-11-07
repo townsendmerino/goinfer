@@ -3,10 +3,10 @@ package serveapp
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -118,21 +118,41 @@ func TestRequestLog_oneLinePerGenerationRequest(t *testing.T) {
 	}
 }
 
-// The wiring half, as source: the flag exists and the four generation routes are wrapped with it, outermost. (The mux is built inside the serve entry point,
-// so the middleware above is proven by calling it and this proves something calls it.)
+// The wiring half: the binary's route table, built from the config the flags parse to, logs each generation route through the
+// request log, outermost, so a request the auth gate turns away is logged with its status; without -log-requests it logs nothing.
 func TestRequestLog_wiredIntoTheGenerationRoutes(t *testing.T) {
-	src, err := os.ReadFile("main.go")
+	srv, err := newServer(config{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := string(src)
-	if !strings.Contains(body, `"log-requests"`) || !strings.Contains(body, "cfg.logRequests") {
-		t.Error("the -log-requests flag is not registered into cfg.logRequests")
-	}
-	for _, route := range []string{"/v1/chat/completions", "/v1/completions", "/v1/responses", "/v1/messages"} {
-		want := `mux.HandleFunc("POST ` + route + `", rl(auth(`
-		if !strings.Contains(body, want) {
-			t.Errorf("%s is not wrapped with the request log (want %q)", route, want)
+	for _, args := range [][]string{{"-log-requests"}, nil} {
+		fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+		sf := registerFlags(fs)
+		if err := fs.Parse(args); err != nil {
+			t.Fatal(err)
+		}
+		on := len(args) > 0
+		var log bytes.Buffer
+		mux, _ := srv.routes(sf.cfg, "a key this request does not send", &log)
+		for _, route := range []string{"/v1/chat/completions", "/v1/completions", "/v1/responses", "/v1/messages", "/v1/audio/transcriptions"} {
+			log.Reset()
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, route, strings.NewReader(`{}`)))
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("%s: status %d, want 401: this request was to stop at the auth gate", route, rec.Code)
+			}
+			line := log.String()
+			switch {
+			case !on && line != "":
+				t.Errorf("without -log-requests, %s logged %q", route, line)
+			case on && (!strings.HasPrefix(line, "request: POST "+route+" ") || !strings.Contains(line, "status=401")):
+				t.Errorf("with -log-requests, %s logged %q, want one line for it with status=401", route, line)
+			}
+		}
+		log.Reset()
+		mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/health", nil))
+		if log.Len() != 0 {
+			t.Errorf("/health is not a generation route, and it logged %q", log.String())
 		}
 	}
 }

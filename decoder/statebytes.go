@@ -80,11 +80,11 @@ func (q BuildQuery) StateTotalBytes() int64 {
 
 // stateBytes is one KV slot's state on backend, as its report prices it: Plan's state line.
 func (m *Model) stateBytes(backend string) int64 {
-	return buildDemandFor(m.Config(), Options{Backend: backend}, 0, 0, false).StateBytes
+	return m.buildDemand(backend).StateBytes
 }
 
 // checkpointBytes is the recurrent checkpoint on backend, as its report prices it: Plan.CheckpointBytes.
 func (m *Model) checkpointBytes(backend string) (bytes int64, perSlot bool) {
-	d := buildDemandFor(m.Config(), Options{Backend: backend}, 0, 0, false)
+	d := m.buildDemand(backend)
 	return d.CheckpointBytes, d.CheckpointPerSlot
 }

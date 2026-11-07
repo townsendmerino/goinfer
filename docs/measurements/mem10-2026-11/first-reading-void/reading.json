@@ -1,0 +1,39 @@
+{
+ "load_avg": 0.69,
+ "mem_available_mb": 61404,
+ "load_s": 54.6,
+ "at_listen": {
+  "VmLck": 0,
+  "VmHWM": 26354208768,
+  "RssAnon": 15998668800,
+  "RssFile": 10200805376,
+  "RssShmem": 17428480,
+  "VmSwap": 0
+ },
+ "after_5s": {
+  "VmLck": 0,
+  "VmHWM": 26354208768,
+  "RssAnon": 16003141632,
+  "RssFile": 10200870912,
+  "RssShmem": 17428480,
+  "VmSwap": 0
+ },
+ "vram_mib": null,
+ "completion": " capital of France.\n8. 8. 8. 8.",
+ "after_request": {
+  "VmLck": 0,
+  "VmHWM": 27932098560,
+  "RssAnon": 16265461760,
+  "RssFile": 11649208320,
+  "RssShmem": 17428480,
+  "VmSwap": 0
+ },
+ "peak_during_all": {
+  "VmLck": 0,
+  "VmHWM": 27914403840,
+  "RssAnon": 16258883584,
+  "RssFile": 13989429248,
+  "RssShmem": 100864000,
+  "VmSwap": 0
+ }
+}

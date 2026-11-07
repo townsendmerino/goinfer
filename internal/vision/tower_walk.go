@@ -1,6 +1,7 @@
 package vision
 
 import (
+	"errors"
 	"fmt"
 	"math"
 
@@ -188,7 +189,7 @@ func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerE
 			k, err2 := view(TowerK)
 			v, err3 := view(TowerV)
 			if err1 != nil || err2 != nil || err3 != nil {
-				return fmt.Errorf("op %d (%s): %v %v %v", i, op.Kind, err1, err2, err3)
+				return fmt.Errorf("op %d (%s): %w", i, op.Kind, errors.Join(err1, err2, err3))
 			}
 			if err := env.attend(q, k, v, out, op.Scale); err != nil {
 				return err

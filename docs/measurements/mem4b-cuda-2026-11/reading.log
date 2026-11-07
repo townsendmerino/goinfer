@@ -1,0 +1,9 @@
+release: load 7.0 s (load avg 1.49); after load RssAnon 105.0 MiB; peak 1,620.3 MiB
+  turn 1: 3.6 s; RssAnon at end 1,619.1 MiB, +10 s 1,620.3 MiB (1.58 GiB); text 'Color.'
+  turn 2: 3.1 s; RssAnon at end 467.7 MiB, +10 s 473.8 MiB (0.46 GiB); text 'Color.'
+  tower lines: ['Qwen3-VL vision for "qwen3-vl-2b-instruct": tower (CUDA) loads on first image (merge 2, image-pad id 151655, <= 1024 tokens/image) from /home/francis/models/qwen3-vl-2b-instruct']
+norelease: load 6.5 s (load avg 1.10); after load RssAnon 117.3 MiB; peak 2,015.5 MiB
+  turn 1: 3.7 s; RssAnon at end 1,688.6 MiB, +10 s 1,694.9 MiB (1.66 GiB); text 'Color.'
+  turn 2: 3.1 s; RssAnon at end 2,013.9 MiB, +10 s 2,015.5 MiB (1.97 GiB); text 'Color.'
+  tower lines: ['Qwen3-VL vision for "qwen3-vl-2b-instruct": tower (CUDA) loads on first image (merge 2, image-pad id 151655, <= 1024 tokens/image) from /home/francis/models/qwen3-vl-2b-instruct']
+RssAnon 10 s after the second image turn, no-release minus release: 1,541.7 MiB (1.51 GiB); the replies equal

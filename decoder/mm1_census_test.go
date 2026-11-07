@@ -182,32 +182,21 @@ type censusFamily struct {
 	dir        bool
 }
 
-// censusFamilies lists every tracked tiny checkpoint: directories with a config.json and weights, and the tiny .gguf files.
+// censusFamilies is censusFixtures, each of which must be on disk: a missing one is a red run, not a smaller census.
 func censusFamilies(t *testing.T) []censusFamily {
 	t.Helper()
 	var fams []censusFamily
-	for _, root := range []string{"../testdata", "testdata", "selftestdata", "../internal/vision/testdata"} {
-		ents, err := os.ReadDir(root)
+	for _, p := range censusFixtures {
+		files, err := censusFixtureFiles(p)
 		if err != nil {
-			continue
+			t.Fatalf("census fixture %v", err)
 		}
-		for _, e := range ents {
-			p := filepath.Join(root, e.Name())
-			switch {
-			case e.IsDir():
-				ws, _ := filepath.Glob(filepath.Join(p, "*.safetensors"))
-				if _, err := os.Stat(filepath.Join(p, "config.json")); err != nil || len(ws) == 0 {
-					continue
-				}
-				fams = append(fams, censusFamily{name: censusName(p), path: p, dir: true})
-			case strings.HasSuffix(e.Name(), ".gguf"):
-				fams = append(fams, censusFamily{name: censusName(p), path: p})
+		for _, f := range files {
+			if _, err := os.Stat(f); err != nil {
+				t.Fatalf("census fixture %s: %v", p, err)
 			}
 		}
-	}
-	split := filepath.Join("..", "testdata", "gguf-split", "glm-tiny-00001-of-00004.gguf")
-	if _, err := os.Stat(split); err == nil {
-		fams = append(fams, censusFamily{name: "testdata/gguf-split/glm-tiny-00001-of-00004.gguf", path: split})
+		fams = append(fams, censusFamily{name: censusName(p), path: p, dir: !strings.HasSuffix(p, ".gguf")})
 	}
 	sort.Slice(fams, func(i, j int) bool { return fams[i].name < fams[j].name })
 	return fams
@@ -328,6 +317,7 @@ func TestDecisionCensus(t *testing.T) {
 		}
 		t.Fatalf("two runs in one process differ (G-MM1-C2): %s, %s\n%s", c1.total(), c2.total(), strings.Join(diff, "\n"))
 	}
+	censusTotalHere = c1.total()
 	checkCensusCoverage(t, c1)
 	class := censusHostClass()
 	t.Logf("host class %q; %d groups; census %s", class, len(c1.groups), c1.total())
@@ -368,6 +358,10 @@ func TestDecisionCensus(t *testing.T) {
 		len(diffs), strings.Join(diffs[:min(len(diffs), 40)], "\n  "))
 }
 
+// censusTotalHere is the total of the census TestDecisionCensus built in this process, once it has. A whole-package run has both tests in
+// one process, so the second need not pay for a third build; a census is minutes on CI's slower hosts.
+var censusTotalHere string
+
 // TestDecisionCensus_secondProcess (G-MM1-C2) runs the census in a fresh process and requires the same total as this one.
 func TestDecisionCensus_secondProcess(t *testing.T) {
 	if os.Getenv("GOINFER_CENSUS_CHILD") == "1" {
@@ -378,7 +372,10 @@ func TestDecisionCensus_secondProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	here := buildCensus(t).total()
+	here := censusTotalHere
+	if here == "" {
+		here = buildCensus(t).total()
+	}
 	cmd := newCensusChild(exe)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
