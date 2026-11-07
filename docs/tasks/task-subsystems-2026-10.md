@@ -731,6 +731,27 @@ takes (`sb4-2026-10.md` §4 names GPTQ, AWQ, a sharded set, a GGUF quant type no
 waits until a fixture covers that path. An early end needs Francis's word. The switch is its own PR and its own decision. **The week starts at the first `vk-shadow` run on
 main after this PR merges; earlier runs are not graded.**
 
+#### The builder switch's gates, registered 2026-11-07 before the code (mbp2-vk5; Francis, 09:19, via the coordinator: option B)
+
+Week 3 was graded on an early read with no disagreement (`docs/measurements/vk5-2026-10.md` §12): three real builder-only pushes, 93 old-only
+verdicts, all classed, no finding. Francis chose option B: the builder half of the shadow key goes into today's key, and the loader rule keeps
+shadowing until a loader-only push decides a verdict.
+- **Today's key** for a family with programs hashes its dependency files less the builders (`paritykey.BuilderFile`), then
+  `programs=<its fixtures' program fingerprints, every GOARCH>`, then the kernel table's digest: week 2's shadow key, unchanged. `decoder/weights.go`
+  and `decoder/gguf.go` stay in it. A family with no programs keeps its key.
+- **The shadow key** is today's key plus week 3's loader rule, unchanged.
+- **A tree says which definition it uses:** a committed marker, `testdata/parity_key.json`. `paritykey` keys a tree without it as before, so
+  `gate shadow` still reads a push from before the switch, and the switch push itself, by the keys they had.
+- **The shadow job** explains an old-only family whose only moved input is the key's definition.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| B1 equivalence | P1 (`TestParityKey_matchesFreshDepsHash`): `paritykey`'s today key equals decoder's `freshDepsHash`, which computes the builder rule itself, for all 43 families; W1 (`TestParityKey_shadowMatchesDecoder`) still holds. Red once: `freshDepsHash` changed first, `paritykey` not | — | one run | seconds |
+| B2 a one-time re-stale | before the refresh, `TestParityManifest_fresh` names exactly the 31 families with programs stale; `scripts/refresh_parity_hashes.sh` (goldens-gated) then changes those 31 `deps_hash` lines and nothing else, and P1 holds | a golden red before the change | one run | minutes |
+| B3 the builders are out | a throwaway commit adding an unused constant to `decoder/arch.go`: `TestParityManifest_fresh` names only the 12 families with no programs stale, and `gate shadow` reads 12 agree-stale, 31 agree-fresh. Red once: the same commit on the parent of the switch names all 43 | — | one run each | about a minute |
+| B4 a program change re-stales | `gate mutation` editing one fixture's program fingerprint in `testdata/program_fingerprints.json` turns `TestProgramFingerprint_table` red, and `TestParityManifest_fresh` red for exactly the families listing that fixture | — | one run each | seconds |
+| B5 the shadow job across the switch | `gate shadow <origin/main> <switch head>`: the 31 families with programs old-only, each explained by the key's change of definition; 12 agree-fresh; none unexplained. Red once: a mutation dropping that explanation reads 31 unexplained, exit 1 | — | one run each | about a minute |
+
 **Possible later week (option C), not started.** A numerics fingerprint of decoder's own ops (a VK1-style suite over the
 executor's op kinds on fixed inputs) would let the executor files leave the key the way the kernel table let the aikit pin
 leave it. The hand-written forwards are whole-model paths, so they would need family-level fixtures. It needs its own
