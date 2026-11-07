@@ -1,0 +1,51 @@
+{
+ "cell": "cuda-7b",
+ "model_file": "/home/francis/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+ "swap_before": 1544413184,
+ "mem_available_before": 64406241280,
+ "started": "2026-11-05T16:44:26",
+ "load_secs": 10.0,
+ "after_load": {
+  "VmHWM": 4332150784,
+  "VmRSS": 4286509056,
+  "RssAnon": 97771520,
+  "RssFile": 4089933824,
+  "RssShmem": 98803712,
+  "VmSwap": 0
+ },
+ "vram_after_load": 6564085760,
+ "request_secs": 19.4,
+ "usage": {
+  "prompt_tokens": 20201,
+  "completion_tokens": 1,
+  "total_tokens": 20202,
+  "prefill_reused_tokens": 0
+ },
+ "at_end": {
+  "VmHWM": 6027902976,
+  "VmRSS": 6027902976,
+  "RssAnon": 572899328,
+  "RssFile": 4200144896,
+  "RssShmem": 1254858752,
+  "VmSwap": 0
+ },
+ "peak_during_request": {
+  "VmHWM": 6028062720,
+  "VmRSS": 6028062720,
+  "RssAnon": 573059072,
+  "RssFile": 4200144896,
+  "RssShmem": 1254858752,
+  "VmSwap": 0
+ },
+ "after_10s": {
+  "VmHWM": 6028062720,
+  "VmRSS": 6028062720,
+  "RssAnon": 573059072,
+  "RssFile": 4200144896,
+  "RssShmem": 1254858752,
+  "VmSwap": 0
+ },
+ "vram_peak": 7191134208,
+ "vram_after_10s": 6564085760,
+ "swap_after": 1544409088
+}

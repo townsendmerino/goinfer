@@ -3,12 +3,15 @@
 package cuda
 
 import (
+	"context"
 	"fmt"
 	"github.com/townsendmerino/goinfer/decoder"
+	"hash/fnv"
 	"math"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -345,5 +348,133 @@ func TestKV3_chunkerKeepsPassStartsOnTheGrid(t *testing.T) {
 				t.Fatalf("chunk %d, M=%d: last pass of %d rows", chunk, M, last.m)
 			}
 		}
+	}
+}
+
+// MEM6 on CUDA (docs/measurements/mem6-cuda-2026-11/README.md): a resident prefill reads the suffix's embeddings a pass at a time into one reused slab
+// (decoder.ResidentPrefillRows), so the host holds a pass of them, not the suffix. The most embedding rows the decoder holds at once during a prefill of 2,048
+// rows is at most one pass (prefillPassRows), and the last logits and 32 decode steps after them are byte-equal to the slice entry point's.
+//
+//	go test -count=1 -tags 'cuda goinfer_testhooks' -run '^TestMEM6_cudaPrefillHostRows$' -v ./backend/cuda/
+func TestMEM6_cudaPrefillHostRows(t *testing.T) {
+	requireCUDADevice(t)
+	dir := kv3LongContextCopy(t, filepath.Join("../../testdata", "llama-tiny"), 4096)
+	m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 2112})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("not the CUDA resident: %s", m.ResidentDecline())
+	}
+	_, _, _, _, _, _, vocab := m.Dims()
+	// A tiny fixture runs a prompt this long in one pass; a real model's pass is a few hundred rows, which the learned chunk cap stands in for.
+	a.prefillChunkCap.Store(256)
+	defer a.prefillChunkCap.Store(0)
+	pass := a.prefillPassRows()
+	if pass != 256 {
+		t.Fatalf("the pass is %d rows, want the 256 the test set", pass)
+	}
+	held := 0
+	decoder.SetEmbedRowsObserverForTest(func(rows int) { held = max(held, rows) })
+	defer decoder.SetEmbedRowsObserverForTest(nil)
+	hash := func(lg []float32, n int) uint64 {
+		h := fnv.New64a()
+		put := func(l []float32) {
+			for _, x := range l {
+				b := math.Float32bits(x)
+				h.Write([]byte{byte(b), byte(b >> 8), byte(b >> 16), byte(b >> 24)})
+			}
+		}
+		put(lg)
+		next := argmaxF(lg)
+		for j := range 32 {
+			l, err := a.Forward(m.EmbedResidentForTest(next), n+j)
+			if err != nil {
+				t.Fatal(err)
+			}
+			put(l)
+			next = argmaxF(l)
+		}
+		return h.Sum64()
+	}
+	for _, n := range []int{1024, 2048} {
+		ids := make([]int, n)
+		for i := range ids {
+			ids[i] = (i*37 + 11) % vocab
+		}
+		// the slice entry point: every row embedded up front, as the decoder did before
+		a.Reset()
+		emb := make([][]float32, n)
+		for i, id := range ids {
+			emb[i] = m.EmbedResidentForTest(id)
+		}
+		lgSlice, err := a.PrefillLast(context.Background(), emb, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := hash(lgSlice, n)
+		held = 0
+		a.Reset()
+		lg, err := m.ResidentPrefillSeedForTest(context.Background(), ids)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("%d rows: at most %d embedding rows held at once (one pass is %d)", n, held, pass)
+		// The observer must have fired: a prefill that never called it would read 0 and pass "at most one pass" without reading anything. The
+		// prompt is longer than a pass, so the most rows held at once is exactly one pass.
+		if held != pass {
+			t.Errorf("%d rows: the decoder held at most %d embedding rows at once, want exactly one pass (%d): at most it, and not 0 because the observer never fired", n, held, pass)
+		}
+		if got := hash(lg, n); got != want {
+			t.Errorf("%d rows: the last logits and 32 decode steps differ from the slice entry point's (%#x, want %#x)", n, got, want)
+		}
+	}
+}
+
+// The Go bytes a prompt row adds to a resident prefill stay under one embedding row. With the slab alone the batched pass still copied each pass's
+// embeddings into a fresh contiguous host block, so a 20K prompt left its whole size in garbage that the runtime holds resident after the request (MEM0's +218 MiB
+// on the 1.5B): the block is one reused buffer now. The slope is read between two lengths so the fixed costs of a prefill drop out.
+func TestMEM6_cudaPrefillAllocatesNoRowCopy(t *testing.T) {
+	requireCUDADevice(t)
+	dir := kv3LongContextCopy(t, filepath.Join("../../testdata", "llama-tiny"), 4096)
+	m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 2112})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("not the CUDA resident: %s", m.ResidentDecline())
+	}
+	_, _, _, _, _, _, vocab := m.Dims()
+	a.prefillChunkCap.Store(256)
+	defer a.prefillChunkCap.Store(0)
+	bytesFor := func(n int) uint64 {
+		ids := make([]int, n)
+		for i := range ids {
+			ids[i] = (i*37 + 11) % vocab
+		}
+		a.Reset()
+		if _, err := m.ResidentPrefillSeedForTest(context.Background(), ids); err != nil { // warm: the first pass sizes any reused buffer
+			t.Fatal(err)
+		}
+		a.Reset()
+		runtime.GC()
+		var s0, s1 runtime.MemStats
+		runtime.ReadMemStats(&s0)
+		if _, err := m.ResidentPrefillSeedForTest(context.Background(), ids); err != nil {
+			t.Fatal(err)
+		}
+		runtime.ReadMemStats(&s1)
+		return s1.TotalAlloc - s0.TotalAlloc
+	}
+	b1, b2 := bytesFor(1024), bytesFor(2048)
+	perRow := float64(int64(b2)-int64(b1)) / 1024
+	embRow := float64(4 * m.ResidentEmbedLen())
+	t.Logf("Go bytes allocated by the prefill: %d at 1,024 rows, %d at 2,048; %.0f B per prompt row against %.0f B per embedding row (%.2f)", b1, b2, perRow, embRow, perRow/embRow)
+	if perRow > embRow {
+		t.Errorf("a prompt row adds %.0f B of Go allocation, over one embedding row (%.0f B): a pass copies its embeddings again", perRow, embRow)
 	}
 }
