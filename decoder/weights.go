@@ -1430,7 +1430,7 @@ func loadQwen35Attn(i int, l *LayerWeights, arch *Architecture, hidden int,
 // "attention." prefix (BailingMoeV3DecoderLayer assigns BOTH its MLA and KDA mixers to
 // self.attention, not self.self_attn — see mlaParams.AttnPrefix's own comment). Only the
 // no_kda_lora path (a single f_proj/g_proj linear per gate) is implemented — see kdaArchitecture's
-// own "what was deliberately not done" for the LoRA'd a/b-split variant, which validateBailingHybrid
+// own "what was deliberately not done" for the LoRA'd a/b-split variant, which ValidateBailingHybrid
 // refuses before this is ever reached.
 func loadBailingKDA(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Architecture, hidden int,
 	tn func(int, string) string, mkQ func(string, int, int) (linalg.WeightMat, error)) error {

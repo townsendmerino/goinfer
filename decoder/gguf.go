@@ -650,7 +650,7 @@ func ggufLagunaConfig(g *embed.GGUFFile) (*Config, error) {
 			}
 		}
 	}
-	// leading_dense_block_count → the mlp_layer_types spelling lagunaFirstKDense reads,
+	// leading_dense_block_count → the mlp_layer_types spelling LagunaFirstKDense reads,
 	// so the GGUF and safetensors paths converge on one code path.
 	if k := u("leading_dense_block_count"); k > 0 {
 		cfg.MlpLayerTypes = make([]string, numLayers)

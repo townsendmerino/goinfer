@@ -49,7 +49,7 @@ func loadQwen35Slice(t *testing.T, dir string, nLayer int) (*Model, func()) {
 	}
 	cfg.NumLayers = nLayer // load only the slice
 	if len(cfg.LayerTypes) >= nLayer {
-		cfg.LayerTypes = cfg.LayerTypes[:nLayer] // validateQwen35 wants len==NumLayers
+		cfg.LayerTypes = cfg.LayerTypes[:nLayer] // ValidateQwen35 wants len==NumLayers
 	}
 	arch, schema, err := resolveArchitecture(cfg)
 	if err != nil {

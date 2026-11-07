@@ -96,7 +96,7 @@ func TestNemotronMoEResidentParityWebGPU(t *testing.T) {
 
 // TestNemotronMoEResident_noSharedExpertBuilds pins that a Nemotron-H MoE block with
 // n_shared_experts=0 builds resident. That is a real, validator-accepted config shape
-// (decoder/config.go's validateNemotron only errors on the opposite combination,
+// (decoder/config's Config.ValidateNemotron only errors on the opposite combination,
 // n_shared_experts>0 with the intermediate size unset), yet the case-3 branch of the per-layer
 // switch once projected SharedExpert.Up/.Down unconditionally, so a zero-value SharedExpert hit
 // proj() with nothing to wrap and BuildResident failed with "unsupported projection precision".

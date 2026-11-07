@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// validGPT2Config is a tiny validateGPT2-clean GPT-2 config (no checkpoint).
+// validGPT2Config is a tiny ValidateGPT2-clean GPT-2 config (no checkpoint).
 func validGPT2Config() *Config {
 	return &Config{
 		ModelType: "gpt2", VocabSize: 64, NEmbd: 16, NHead: 4, NLayer: 2,

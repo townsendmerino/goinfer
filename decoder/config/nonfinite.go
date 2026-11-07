@@ -1,12 +1,12 @@
-package decoder
+package config
 
 import "bytes"
 
-// lenientConfigJSON rewrites the bare tokens Infinity, -Infinity and NaN that Python's json.dump writes into a model's config.json
+// LenientJSON rewrites the bare tokens Infinity, -Infinity and NaN that Python's json.dump writes into a model's config.json
 // (Nemotron-H's time_step_limit is [0.0, Infinity]) into JSON a Go decoder accepts: the largest finite float64, its negation, and null.
 // Only tokens outside strings are touched, and only whole tokens. It is for model config files; request bodies are decoded strictly and
 // never pass through it. A config without those tokens is returned as it came.
-func lenientConfigJSON(b []byte) []byte {
+func LenientJSON(b []byte) []byte {
 	if !bytes.Contains(b, []byte("Infinity")) && !bytes.Contains(b, []byte("NaN")) {
 		return b
 	}
