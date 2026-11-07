@@ -831,10 +831,10 @@ func readPTX(keepDir string) ptxInput {
 		base := strings.TrimSuffix(filepath.Base(f), ".ptx")
 		// kernel is what build_ptx.sh is asked for. <k>_kv16.ptx has no source of its own name: it is <k>.cu built with
 		// the KV cache as f16, and <k>_cap.ptx and <k>_kv16_cap.ptx are <k>.cu built with the attention softcap (at f32 and at f16
-		// KV); build_ptx.sh writes each whenever it builds <k>.
+		// KV); <k>_kv8.ptx is <k>.cu built with the KV cache as int8 (-DKV_I8). build_ptx.sh writes each whenever it builds <k>.
 		kernel := base
 		if _, err := os.Stat(filepath.Join("backend", "cuda", base+".cu")); err != nil {
-			for _, suffix := range []string{"_kv16_cap", "_cap", "_kv16"} {
+			for _, suffix := range []string{"_kv16_cap", "_cap", "_kv16", "_kv8"} {
 				if k := strings.TrimSuffix(base, suffix); k != base {
 					kernel = k
 					break
