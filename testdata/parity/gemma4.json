@@ -14,7 +14,7 @@
     "testdata/gemma4-moe-kv-tiny",
     "testdata/gemma4-moe-kv-tiny32"
   ],
-  "deps_hash": "sha256:0a9a9b0a9cbb48b006c6ada83878f08a57b3862ce7dd3020a6523b03204d16c2",
+  "deps_hash": "sha256:ef7f5b4dd9c1e2d52b39eaa54250b2082117d224fe08e5ded143464d1e1289d3",
   "status": "validated",
   "validated_at": "310a2e44",
   "date": "2026-09-28",

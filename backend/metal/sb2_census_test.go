@@ -874,6 +874,102 @@ func TestMemGate_metal(t *testing.T) {
 	g.Finish(t)
 }
 
+// TestMM5_buildRefusesADeclarationItsKernelsDoNotAddress: Metal's build checks each layer's declared rows against what its kernels address
+// before it sizes a pool from them, and refuses a mismatch: on the MC3 fixture's layer 0, V declared with one head too many, K at f32, a
+// row no pool has, and K declared twice; on qwen35-tiny, a DeltaNet layer, which holds no pool, declaring K and V. The declarations as
+// built pass.
+func TestMM5_buildRefusesADeclarationItsKernelsDoNotAddress(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	m, err := decoder.Load(mc3FixtureWriter(t, 4096), decoder.Options{Quant: mc3TestQuant, ResidentContext: 2048})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	orig := slices.Clone(m.LayerBuffers(0))
+	if len(orig) != 2 || orig[0].Name != "k" || orig[1].Name != "v" {
+		t.Fatalf("layer 0 declares %+v; the test needs its K and V", orig)
+	}
+	edit := func(f func([]program.Buf) []program.Buf) []program.Buf { return f(slices.Clone(orig)) }
+	for _, c := range []struct {
+		name string
+		bufs []program.Buf
+	}{
+		{"V with one head too many", edit(func(b []program.Buf) []program.Buf { b[1].Heads++; return b })},
+		{"K at f32", edit(func(b []program.Buf) []program.Buf { b[0].Prec = program.PrecF32; return b })},
+		{"a row no pool has", edit(func(b []program.Buf) []program.Buf {
+			return append(b, program.Buf{Name: "x", Unit: program.PerPosition, Prec: program.PrecKV, Elems: b[0].Elems})
+		})},
+		{"K twice", edit(func(b []program.Buf) []program.Buf { return append(b, b[0]) })},
+	} {
+		m.SetLayerBuffersForTest(0, c.bufs)
+		if r, err := buildResident(m); err == nil {
+			r.Close()
+			t.Errorf("%s: the build accepted it", c.name)
+		}
+	}
+	m.SetLayerBuffersForTest(0, orig)
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatalf("the declaration as built: %v", err)
+	}
+	r.Close()
+	// A layer that holds no pool (qwen35-tiny's DeltaNet layer 0) declaring K and V rows: priced, never allocated.
+	q, err := decoder.Load("../../decoder/selftestdata/qwen35-tiny", decoder.Options{Quant: "int4", ResidentContext: 256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+	if r, err := buildResident(q); err != nil {
+		t.Fatalf("qwen35-tiny as built: %v", err)
+	} else {
+		r.Close()
+	}
+	q.SetLayerBuffersForTest(0, append(slices.Clone(q.LayerBuffers(0)), orig...))
+	if r, err := buildResident(q); err == nil {
+		r.Close()
+		t.Error("a DeltaNet layer declaring K and V rows: the build accepted it")
+	}
+}
+
+// TestMM5_kvCheckRows: the check the build runs on each layer's declared rows (kvCheckRows), on every kind of layer, a KV-shared one and a
+// layer with no pool included, which no committed fixture builds.
+func TestMM5_kvCheckRows(t *testing.T) {
+	k := program.Buf{Name: "k", Unit: program.PerPosition, Prec: program.PrecKV, Elems: 32, Heads: 2}
+	v := k
+	v.Name = "v"
+	lat := program.Buf{Name: "latent", Unit: program.PerPosition, Prec: program.PrecF32, Elems: 24}
+	st := program.Buf{Name: "state", Unit: program.PerSlot, Prec: program.PrecF32, Elems: 99}
+	owner, mla, none := kvLayerWant{kvDim: 32, nKV: 2}, kvLayerWant{latent: 24}, kvLayerWant{}
+	with := func(b program.Buf, f func(*program.Buf)) program.Buf { f(&b); return b }
+	for _, c := range []struct {
+		name string
+		bufs []program.Buf
+		want kvLayerWant
+		ok   bool
+	}{
+		{"an owner's K and V", []program.Buf{k, v}, owner, true},
+		{"an owner's K and V beside state", []program.Buf{k, st, v}, owner, true},
+		{"an owner missing V", []program.Buf{k}, owner, false},
+		{"V a column short", []program.Buf{k, with(v, func(b *program.Buf) { b.Elems-- })}, owner, false},
+		{"V with a head too many", []program.Buf{k, with(v, func(b *program.Buf) { b.Heads++ })}, owner, false},
+		{"K at f32", []program.Buf{with(k, func(b *program.Buf) { b.Prec = program.PrecF32 }), v}, owner, false},
+		{"K twice", []program.Buf{k, v, k}, owner, false},
+		{"an MLA latent", []program.Buf{lat}, mla, true},
+		{"an MLA latent at the KV precision", []program.Buf{with(lat, func(b *program.Buf) { b.Prec = program.PrecKV })}, mla, false},
+		{"an MLA layer with K and V", []program.Buf{k, v}, mla, false},
+		{"a KV-shared layer with none", nil, kvLayerWant{shared: true}, true},
+		{"a KV-shared layer declaring K and V", []program.Buf{k, v}, kvLayerWant{shared: true}, false},
+		{"a layer with no pool and only state", []program.Buf{st}, none, true},
+		{"a layer with no pool declaring K and V", []program.Buf{k, v}, none, false},
+	} {
+		if _, err := kvCheckRows(0, c.bufs, c.want); (err == nil) != c.ok {
+			t.Errorf("%s: kvCheckRows says %v; want ok %v", c.name, err, c.ok)
+		}
+	}
+}
+
 // TestMM5_poolsAreTheDeclaredRows is G-MP2 on Metal (docs/tasks/task-forward-architecture-2026-10.md §4.9b): every census fixture's int4
 // build at two slots, with an f16 and an int8 cache, sizes each layer's KV pool from the row its operations declare
 // (decoder.Model.LayerBuffers), the null block and every slot's blocks at the cache's element size (f32 for MLA's latent), and a layer
@@ -898,10 +994,10 @@ func TestMM5_poolsAreTheDeclaredRows(t *testing.T) {
 		}
 		for _, kv := range []string{"", "i8"} {
 			m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", KVPrecision: kv, ResidentContext: 256, ResidentKVSlots: 2})
-			if err != nil && kv != "" {
-				continue // a family Metal cannot give an int8 cache (an MLA model's latent rows are f32)
+			if err != nil && kv != "" && strings.Contains(err.Error(), "an MLA model keeps its latent cache in f32") {
+				continue // the one family Metal does not give an int8 cache
 			} else if err != nil {
-				t.Fatalf("%s: %v", f, err)
+				t.Fatalf("%s kv=%s: %v", f, kv, err)
 			}
 			if a, ok := m.ResidentForwardForTest().(*metalResident); ok {
 				models++
@@ -924,7 +1020,15 @@ func mm5CheckPools(t *testing.T, f string, m *decoder.Model, r *resident) int {
 	t.Helper()
 	pools, total := 0, int64(0)
 	for l := range r.layers {
-		if r.layers[l].kvShared {
+		if L := &r.layers[l]; L.kvShared { // it declares no row and reads its source's pool, which is counted there
+			for _, b := range m.LayerBuffers(l) {
+				if b.Unit == program.PerPosition {
+					t.Errorf("%s layer %d reads layer %d's KV but declares a %q row", f, l, L.kvSrc, b.Name)
+				}
+			}
+			if r.kc[l] != r.kc[L.kvSrc] || r.vc[l] != r.vc[L.kvSrc] {
+				t.Errorf("%s layer %d reads layer %d's KV but holds pools of its own", f, l, L.kvSrc)
+			}
 			continue
 		}
 		row, elem := 0, r.kvElemBytes()

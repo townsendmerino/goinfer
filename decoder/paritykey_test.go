@@ -391,3 +391,13 @@ func TestParityPrograms_mapping(t *testing.T) {
 	}
 	t.Logf("%d fixtures mapped to families", len(owner))
 }
+
+// TestFamilyProgramsDigest_needsATable: decoder's own programs digest refuses a missing or empty table, as
+// paritykey.ProgramsDigest does, so the key never stands for nothing.
+func TestFamilyProgramsDigest_needsATable(t *testing.T) {
+	for _, tab := range []map[string]map[string]string{nil, {}} {
+		if d, err := programsDigestOf([]string{"testdata/llama-tiny"}, tab); err == nil {
+			t.Errorf("table %v: digest %q, want an error", tab, d)
+		}
+	}
+}

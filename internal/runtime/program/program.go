@@ -20,38 +20,8 @@ type Program struct {
 // OpKind is one kind of operation. The set is closed: a walker returns an error for a kind it does not implement.
 type OpKind uint8
 
-const (
-	OpNorm       OpKind = iota + 1 // in → out, the normalisation (or a copy, for post-only placement)
-	OpProjQKV                      // in → the stream's q, k, v
-	OpQKNorm                       // q, k in place
-	OpRope                         // q, k in place
-	OpAttnTemp                     // q in place
-	OpAttention                    // stores this position's k, v; q → the stream's attention context
-	OpOutGate                      // context in place, gated by a projection of in
-	OpProjO                        // context → out
-	OpFFN                          // in → out
-	OpResidual                     // the residual += regA (and regB)
-	OpMLA                          // in → out, the whole Multi-head Latent Attention sublayer (mlaAttentionWith)
-	OpKDA                          // in → out, the whole Kimi Delta Attention mixer (kdaMixerStep), on the layer's recurrent state
-	OpShortConv                    // in → out, LFM2's gated short convolution (shortConvStep), on the layer's conv window
-	OpMamba2                       // in → out, the Mamba-2 selective-scan mixer (mamba2Step), on the layer's SSM state
-	OpDeltaNet                     // in → out, the Gated DeltaNet mixer (gatedDeltaNetStep), on the layer's recurrent state
-	OpGatedAttn                    // in → out, qwen3.5's gated attention sublayer: [query ‖ gate] q_proj, QK-norm, rope, attendQuery, ×sigmoid(gate), o_proj
-	OpGemma4Attn                   // in → out, Gemma 4's attention sublayer (gemma4AttnToken): per-layer widths, shared KV, scale-less v-norm
-	OpGemma4MoE                    // the residual in place: Gemma 4's parallel dense ‖ MoE block, which returns the whole layer output
-	OpPLE                          // the residual in place: Gemma 4's per-layer-embedding branch
-	OpLayerScale                   // the residual in place: × the layer's learned output scalar, when it has one
-)
-
 // Reg names a per-stream buffer an operation reads or writes.
 type Reg uint8
-
-const (
-	RegH Reg = iota // the residual stream
-	RegX            // a sublayer's input
-	RegA            // a sublayer's output
-	RegB            // the parallel block's second output
-)
 
 // Op is one operation: its kind, its operands, and the parameters of its kind (the other kinds' fields are zero).
 type Op struct {
@@ -79,22 +49,8 @@ type Op struct {
 // NormSlot selects which of a layer's norm weights an opNorm applies.
 type NormSlot uint8
 
-const (
-	SlotPreAttn NormSlot = iota + 1
-	SlotPreMLP
-	SlotPostAttn
-	SlotPostMLP
-	SlotFinal
-)
-
 // NormForm is the normalisation an opNorm computes. normCopy is post-only placement's input: the raw residual, unnormed.
 type NormForm uint8
-
-const (
-	NormRMS NormForm = iota + 1
-	NormLayer
-	NormCopy
-)
 
 // The parameter structs' fields are exported so gate L can set each one by reflection.
 type NormParams struct {
@@ -110,11 +66,6 @@ type ProjParams struct{ Bias bool }
 // QKNormForm is the QK-norm an opQKNorm computes.
 type QKNormForm uint8
 
-const (
-	QKRMS QKNormForm = iota + 1 // weighted RMSNorm (rmsNorm), four-way sums
-	QKL2                        // Llama 4: parameter-free RMS over each head, sequential float64 (l2NormHeads)
-)
-
 type QKNormParams struct {
 	Form   QKNormForm
 	Whole  bool // one statistic over all heads, not one per head (qkRMS)
@@ -124,11 +75,6 @@ type QKNormParams struct {
 
 // RopeKernel is the rotation an opRope computes.
 type RopeKernel uint8
-
-const (
-	RopeAtKernel  RopeKernel = iota + 1 // ropeAt: NeoX or GPT-J pairing, m-RoPE
-	RopeMLAKernel                       // mlaRope: GPT-J pairing by de-interleaving, then NeoX (Llama 4, MLA)
-)
 
 type RopeParams struct {
 	Kernel           RopeKernel
@@ -148,14 +94,6 @@ type AttnTempParams struct {
 // AttnOrder is the CPU's reduction order for attention. Families compute attention in different orders today and OP3 moves no
 // number, so each keeps its own; a GPU backend ignores it.
 type AttnOrder uint8
-
-const (
-	AttnBatchedAcc64 AttnOrder = iota + 1 // attendBatchedHeads with float64 accumulation
-	AttnSinksF64                          // attendSinksToken: inline float64 dots and float32 AV with a learned sink per head; gpt-oss's order before KS-O4, kept as its fidelity gate's exact arm
-	AttnQuery                             // attendQuery: float64 dots, float32 accumulation of the values
-	AttnMLA                               // the family attends through opMLA, over a latent cache
-	AttnGemma4                            // the family attends through opGemma4Attn (gemma4Attend: float32 matmuls)
-)
 
 type AttentionParams struct {
 	Window  int // 0 attends every stored key; else the most recent Window positions
@@ -190,16 +128,6 @@ type KDAOpParams struct {
 }
 
 type FFNForm uint8
-
-const (
-	FfnGated FFNForm = iota + 1
-	FfnNonGated
-	FfnMoE
-	FfnGptOss      // gpt-oss: a router with a logit bias, softmax over the top k, clamped SwiGLU experts with biases (gptOssMoEWith)
-	FfnLlama4MoE   // Llama 4: top-k by logit, each expert's INPUT scaled by sigmoid(logit), plus an ungated shared expert (llama4MoEWith)
-	FfnNemotronMoE // Nemotron 3 Nano: routeExperts over non-gated relu² experts, plus an ungated shared expert (nemotronMoEWith)
-	FfnGemma4Dense // Gemma 4's dense GeGLU at the layer's own width, in its own call form (gemma4DenseFFN)
-)
 
 type FFNParams struct {
 	Form         FFNForm
@@ -313,17 +241,3 @@ type MoEConfig struct {
 // ActKind selects the MLP activation. GeluTanh = Gemma's GeGLU; SiLU = the
 // SwiGLU used by Llama/Mistral/Qwen. Gelu/ReLU2/non-gated MLPs are later G's.
 type ActKind int
-
-const (
-	ActGeluTanh ActKind = iota
-	ActSiLU
-	ActReLU2 // ReLU-squared (relu(x)²) — Nemotron-H's non-gated MLP
-	// ActGelu is the EXACT erf GELU — HF's "gelu", a different function from
-	// "gelu_new"/"gelu_pytorch_tanh" (ActGeluTanh) rather than a spelling of it.
-	// Appended deliberately: GatedActResident passes the ordinal straight to resident
-	// kernels that know 0 (GELU-tanh) and 1 (SiLU), so the existing values cannot be
-	// renumbered. Gated and non-gated archs both use it, and no resident kernel
-	// implements it: residentFeatures derives FeatGatedGELUErf or FeatNonGatedGELUErf,
-	// which no backend declares.
-	ActGelu
-)

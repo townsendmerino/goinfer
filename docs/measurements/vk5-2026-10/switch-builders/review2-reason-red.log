@@ -1,0 +1,6 @@
+--- FAIL: TestCompare_classes (0.00s)
+    compare_test.go:175: the key's definition changed and a builder moved, the shadow key did not: reason "only builder or loader files moved, and no program or loader identity of the family did: a refactor, or a change on a path no fixture exercises", want it to start "the key's definition changed (files -> programs), and the other inputs that moved (decoder/arch.go) are builder or loader files"
+    compare_test.go:175: the key's definition changed and a loader file moved, no identity did: reason "only builder or loader files moved, and no program or loader identity of the family did: a refactor, or a change on a path no fixture exercises", want it to start "the key's definition changed (files -> programs), and the other inputs that moved (decoder/weights.go) are builder or loader files"
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/guard/paritykey	0.002s
+FAIL

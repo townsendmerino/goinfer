@@ -1,0 +1,4 @@
+=== RUN   TestKV8_exactInputIdentity_splitKV
+--- PASS: TestKV8_exactInputIdentity_splitKV (0.66s)
+PASS
+ok  	github.com/townsendmerino/goinfer/backend/cuda/kernels	0.713s

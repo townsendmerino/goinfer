@@ -118,7 +118,8 @@ SCANS = [
         "TestLagunaFirstKDense_contiguousOnly", "TestLagunaFirstKDense_mlpLayerTypes", "TestMellum21_configResolves", "TestEOSIDs",
         "TestResolveEOSIDs", "TestNemotronH_attentionHeadDim", "TestRecommendedSampling_sources")],
     Scan("decoder", "TestParityLoaders_mapping", F("testdata/parity/*.json", "testdata/loader_identity.json") + NT("internal/guard/paritykey")),
-    Scan("internal/guard/paritykey", "TestBuilderFile_programTypesDeclareOnly", F("internal/runtime/program/program.go")),
+    # It polices one file of the program package, and a declaration can move into it from any other.
+    Scan("internal/guard/paritykey", "TestBuilderFile_programTypesDeclareOnly", NT("internal/runtime/program")),
     # The fixture censuses walk testdata/: a new or changed model fixture must be listed or excluded in each (8ec704c3).
     Scan("decoder", "TestSerializeCensus_everyFixtureIsListedOrExcluded", F("testdata/*/config.json")),
     Scan("decoder", "TestSeams_subCaptureRefusedWhereGateSCannotRun", F("testdata/*/config.json")),

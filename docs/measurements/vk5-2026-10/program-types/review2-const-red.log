@@ -1,0 +1,13 @@
+--- FAIL: TestBuilderFile_programTypesDeclareOnly (0.00s)
+    compare_test.go:243: internal/runtime/program/program.go has a declaration of kind const: it may declare only types
+    compare_test.go:243: internal/runtime/program/program.go has a declaration of kind const: it may declare only types
+    compare_test.go:243: internal/runtime/program/program.go has a declaration of kind const: it may declare only types
+    compare_test.go:243: internal/runtime/program/program.go has a declaration of kind const: it may declare only types
+    compare_test.go:243: internal/runtime/program/program.go has a declaration of kind const: it may declare only types
+    compare_test.go:243: internal/runtime/program/program.go has a declaration of kind const: it may declare only types
+    compare_test.go:243: internal/runtime/program/program.go has a declaration of kind const: it may declare only types
+    compare_test.go:243: internal/runtime/program/program.go has a declaration of kind const: it may declare only types
+    compare_test.go:243: internal/runtime/program/program.go has a declaration of kind const: it may declare only types
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/guard/paritykey	0.002s
+FAIL
