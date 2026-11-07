@@ -3,7 +3,7 @@
 gate. bench_peer.py's phase A on gemma3-1b at depth 128 (phase A) and 3,900 (phase B), goinfer against goinfer_old, BENCH_ABBA quads, from e2762eb0's tree.
   prep C ...                 an archive of each commit and its serve binary, serve-bis-<c>; run under the shared timing lock
   ab NAME OLD NEW [QUADS]    OLD and NEW are binary paths or commits prepared above; writes gemma-bisect/NAME.json and .log; run under
-                             the exclusive timing lock, on AC
+                             the exclusive timing lock, on AC; GB_DEPTHS sets phase B's depths (default 3900)
   sum [NAME ...]             new/old median over every run of each arm, each quad's two halves, swap-outs, RSS"""
 import glob, io, json, os, statistics as S, subprocess, sys, tarfile
 
@@ -55,7 +55,7 @@ def ab(name, old, new, quads):
     env = dict(os.environ, BENCH_DEPTH_BACKEND='metal', BENCH_ENGINES='goinfer,goinfer_old', BENCH_BACKENDS='metal', BENCH_REQUIRE_BACKEND='1',
                BENCH_SERVE_LOG_DIR=f'{OUT}/serve-logs', BENCH_LOAD_TIMEOUT='420', GOINFER_SERVE_METAL=binary(new),
                GOINFER_SERVE_METAL_OLD=binary(old), BENCH_SWAPOUT_VOID_MB='0', BENCH_SWAP_VOID_STOP='3', BENCH_IDLE_WAIT='300',
-               BENCH_ABBA=str(quads), BENCH_MODELS='gemma3-1b', BENCH_DEPTHS='3900')
+               BENCH_ABBA=str(quads), BENCH_MODELS='gemma3-1b', BENCH_DEPTHS=os.environ.get('GB_DEPTHS', '3900'))
     env.pop('BENCH_SWAPIN_VOID_MB', None)
     for b in (env['GOINFER_SERVE_METAL'], env['GOINFER_SERVE_METAL_OLD']):
         if not os.path.exists(b):
@@ -72,7 +72,7 @@ def ab(name, old, new, quads):
 
 def summary(names):
     for name in names or sorted(os.path.basename(f)[:-5] for f in glob.glob(f'{OUT}/*.json')):
-      for dep in (128, 3900):
+      for dep in (128, 2048, 3900):
         d = [c for c in json.load(open(f'{OUT}/{name}.json')) if c.get('engine') and c.get('depth') == dep]
         if not d:
             continue

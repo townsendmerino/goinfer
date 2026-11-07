@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """KV5-6's timed cells on the final build, by day, each step its own hold of the exclusive timing lock (so another session can take a
-turn between them), on AC. new: serve-bis-255c8f22 at 255c8f22 (rounds 1 to 7 of review, main 3f47e833 merged at 3fd4b072); old: f8632013 (main just
+turn between them), on AC. new: serve-bis-9b184adf at 9b184adf (rounds 1 to 8 of review, main 3f47e833 merged at 3fd4b072); old: f8632013 (main just
 before KV5-1's merge) for G2; main: serve-main-final2 at 8b7e9941 for G3c. Runs on e2762eb0 (g2-final2) and bf5e0a59 (g2-final) came first;
-rounds 4 to 7 changed the decode path, so every cell reads again. A first run of
+rounds 4 to 7 changed the decode path, so every cell read again on 255c8f22 (g2-final3); round 8 moves the pins to its build. A first run of
 this file on bf5e0a59 (serve-final, b727c55e) is in g2-final; the table fix changed the decode path, so every cell reads again. Pinned binaries and harness under ~/goinfer-work/kv5-6.
 Steps (python3 run_g2_kv5_6_final.py STEP):
   decode  G2's decode cells: the 1.5B at 128, 2,048, 3,900 and 8,000, gemma3-1b at 128, 2,048 and 3,900 (bench_peer.py, A B B A, one
@@ -15,10 +15,10 @@ A step whose output exists is skipped, so a rerun resumes. The 7B's decode cells
 import os, subprocess, sys, time
 
 D = os.path.expanduser("~/goinfer-work/kv5-6")
-NEW, OLD, MAIN = f"{D}/serve-bis-255c8f22", os.path.expanduser("~/goinfer-work/kv5-2-g2/serve-old"), f"{D}/serve-main-final2"
-TREE = f"{D}/bis-255c8f22"
+NEW, OLD, MAIN = f"{D}/serve-bis-9b184adf", os.path.expanduser("~/goinfer-work/kv5-2-g2/serve-old"), f"{D}/serve-main-final2"
+TREE = f"{D}/bis-9b184adf"
 SCRIPTS, KV5 = f"{TREE}/scripts", f"{TREE}/docs/measurements/kv5-metal-2026-11"
-OUT = f"{D}/g2-final3"
+OUT = f"{D}/g2-final4"
 
 
 def say(s):
@@ -49,7 +49,7 @@ def main():
     if "AC Power" not in batt:
         sys.exit(f"not on AC power: {batt}")
     os.makedirs(f"{OUT}/serve-logs", exist_ok=True)
-    say(f"{step}: new 255c8f22, old f8632013, main 8b7e9941; {batt}")
+    say(f"{step}: new 9b184adf, old f8632013, main 8b7e9941; {batt}")
     if step == "decode":
         peer = {"BENCH_DEPTH_BACKEND": "metal", "BENCH_ENGINES": "goinfer,goinfer_old", "BENCH_BACKENDS": "metal", "BENCH_REQUIRE_BACKEND": "1",
                 "BENCH_SERVE_LOG_DIR": f"{OUT}/serve-logs", "BENCH_LOAD_TIMEOUT": "420", "GOINFER_SERVE_METAL": NEW, "GOINFER_SERVE_METAL_OLD": OLD,
