@@ -40,8 +40,8 @@ func (m *Model) hiddenLast(ids []int) ([]float32, error) {
 		return nil, err
 	}
 	// On a GPU box this arch may decode resident, so try the resident backend first, under the same resBusy claim Generate
-	// uses: a loser (a generation already in flight on this Model) falls through to the CPU path below. resIDs is left
-	// unknown either way (residentForgetIDs), since a HiddenLast prefill leaves nothing durable to reuse in the next
+	// uses: a loser (a generation already in flight on this Model) falls through to the CPU path below. The slot it
+	// writes is left unknown (residentForgetScratch), since a HiddenLast prefill leaves nothing durable to reuse in the next
 	// Generate call.
 	if m.resident != nil {
 		if rh, ok := m.resident.(ResidentHiddenLast); ok && m.tryClaimResident() {
@@ -68,7 +68,7 @@ func (m *Model) hiddenLast(ids []int) ([]float32, error) {
 // backend's ResidentHiddenLast in one call, starting at position 0 — HiddenLast never reuses a
 // previous resident KV (each call is a fresh sequence), unlike Generate's prefix reuse.
 func (m *Model) hiddenLastResident(ctx context.Context, rh ResidentHiddenLast, ids []int) ([]float32, error) {
-	m.residentForgetIDs()
+	m.residentForgetScratch()
 	embs := make([][]float32, len(ids))
 	for i, id := range ids {
 		embs[i] = m.embedResident(id)
