@@ -4535,7 +4535,9 @@ per head, for 64-row blocks over the whole context; CUDA: the same rows, a windo
    refused).
 2. **Metal, mac-sb11m (#741):** `metalKVParts` and Metal's pool sizes from the per-position entries, a build refused where an entry's
    width or heads differ from what the layer's kernels address. Then Metal's decode scratch, the third Metal step: it is MM5's (§6.5's
-   per-step scratch), and MM7's known-gap rows for it close with it.
+   per-step scratch), and MM7's known-gap rows for it close with it. Its declaration is a third unit, per step, sized by the rows a step
+   runs; a step's scratch is the high-water mark over its operations, not their sum, since each operation's buffers are free once the
+   next reads them. That step registers its own gates before it starts.
 3. **CUDA, nobara-sb01, once #739 is merged:** `cudaKVParts` and CUDA's pool sizes from the same entries, with its windowed and table
    terms. CUDA's step scratch stays with OP4 on CUDA (the coordinator's 2026-11-06 split), not here.
 4. **Later, not in this pass:** the CPU's and WebGPU's KV pricing and the host fit's `kvBytesForCtx`.
@@ -4551,15 +4553,19 @@ read it.
   int8 cache; and the build refuses an entry whose width or heads differ from what its kernels address. The context crosses every
   windowed fixture's window (256 positions against gemma2-tiny's 4 and mistral-tiny-window's 16). Fit-dependent leases (rollback grants,
   the room-sized checkpoint) are not on this line.
-- **G-MP3, a hand table:** for llama-tiny, deepseek-tiny (MLA), qwen35-tiny (DeltaNet beside attention) and gemma2-tiny (windowed), the KV
-  bytes per block and the state bytes per slot are written in the test as arithmetic on the config's numbers, and the plan's figures
-  must equal them.
+- **G-MP3, a hand table:** for llama-tiny, deepseek-tiny (MLA), qwen35-tiny (DeltaNet beside attention), gemma2-tiny (windowed), lfm2-tiny
+  (short conv) and nemotron-tiny (Mamba-2), the KV bytes per block, the state bytes per slot and the checkpoint bytes per slot are written
+  in the test as arithmetic on the config's numbers, and the plan's figures (`recurrentCheckpointBuffers` included) must equal them. A
+  short-conv model's checkpoint is 0 beside its state; DeltaNet's and Mamba-2's equal their state.
 - **G-MP4, the scan:** `stateSpecs`, `stateBuffers`, `recurrentCheckpointBuffers`, `metalKVParts` and `MetalKVRowBytes` (and `cudaKVParts`
-  with CUDA's half) name no mixer, family or family parameter.
+  with CUDA's half) name no mixer, family or family parameter. A backend's build still branches by mixer to build each layer's kernels,
+  so the scan does not read it; its pool sizes come from the list through one function (`kvDeclaredRow` on Metal), and G-MP2 holds them.
 - **G-MP5:** `gate identity` per backend, all IDENTICAL.
-- **G-MP6, the CPU:** each layer's declared rows equal what the CPU's own cache holds after a prefill (the walker sizes it without the
-  list), on dense, windowed, MLA, DeltaNet, KV-shared, short-conv and KDA fixtures.
-- **Plants:** an entry declared one element short (G-MP2 and G-MP3 red), and a backend term counted twice (G-MP2 red).
+- **G-MP6, the CPU:** each layer's declarations equal what the CPU walker's own cache holds after a prefill, which it sizes without the
+  list: its rows (width, KV heads, precision, the ring's window) and its state (each entry against the walker's own, conv windows full), on
+  dense, windowed, MLA, DeltaNet, Mamba-2, short-conv and KDA fixtures, and a KV-shared layer on a built Gemma 4 config.
+- **Plants:** a row declared one element short (G-MP2's kernel check, G-MP3 and G-MP6 red); a state entry declared short or with its
+  checkpoint mark flipped (G-MP3 and G-MP6 red, the mark G-MP3 alone); a backend term counted twice (G-MP2 red).
 
 **Not in it:** weights, the arbiter (MM4). SB11a's operation records ride on OP4's walker, not on this.
 
