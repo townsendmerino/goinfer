@@ -141,6 +141,25 @@ func TestCompare_classes(t *testing.T) {
 			s.Content[ProgramTypesFile] = "p2"
 			return s
 		}(), OldOnly, false},
+		{"under the builder rule, a loader file and a builder moved, no identity or program did", func() Side {
+			s := loaderSide("t1", "s1", "w1", "l1")
+			s.Definition = DefinitionPrograms
+			return s
+		}(), func() Side {
+			s := loaderSide("t2", "s1", "w2", "l1")
+			s.Definition = DefinitionPrograms
+			s.Content["decoder/arch.go"] = "a2"
+			return s
+		}(), OldOnly, true},
+		{"under the builder rule, a loader file moved, no identity did", func() Side {
+			s := loaderSide("t1", "s1", "w1", "l1")
+			s.Definition = DefinitionPrograms
+			return s
+		}(), func() Side {
+			s := loaderSide("t2", "s1", "w2", "l1")
+			s.Definition = DefinitionPrograms
+			return s
+		}(), OldOnly, true},
 		{"the key's definition changed for a family with no programs", side("t1", "t1", "a1", "x1", ""), func() Side {
 			s := side("t2", "t1", "a1", "x1", "")
 			s.Definition = DefinitionPrograms
@@ -176,6 +195,8 @@ func TestCompare_classes(t *testing.T) {
 		"the key's definition changed and a builder moved, the shadow key did not":                             "the key's definition changed (files -> programs), and the other inputs that moved (decoder/arch.go) are builder or loader files",
 		"the key's definition changed and a loader file moved, no identity did":                                "the key's definition changed (files -> programs), and the other inputs that moved (decoder/weights.go) are builder or loader files",
 		"under the builder rule, the program's types file moved and today's key moved, the shadow key did not": "today's key moved on an input the shadow key also reads",
+		"under the builder rule, a loader file and a builder moved, no identity or program did":                "only builder or loader files moved",
+		"under the builder rule, a loader file moved, no identity did":                                         "only builder or loader files moved",
 		"the key's definition changed for a family with no programs":                                           "today's key moved on an input the shadow key also reads",
 	}
 	for _, c := range cases {
@@ -438,6 +459,10 @@ func TestTodayKey_builderRule(t *testing.T) {
 	write("decoder/arch.go", "package decoder\n\nvar a = 3\n")
 	if p5, _ := keys(); p5 == p4 {
 		t.Error("without the marker, a builder edit left the key of a family with programs unchanged")
+	}
+
+	if _, err := TodayKey(Dir(dir), &Manifest{}, Family{Programs: []string{"testdata/p-tiny"}}, "programz", "t", nil); err == nil {
+		t.Error("TodayKey keyed a family under an unknown definition, want an error")
 	}
 
 	write(KeyDefinitionPath, `{"today": "program"}`)
