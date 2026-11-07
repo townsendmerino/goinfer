@@ -24,7 +24,88 @@ var (
 	_ decoder.ResidentKVSlotActivity = (*metalResident)(nil)
 	_ decoder.ResidentReusableKV     = (*metalResident)(nil)
 	_ decoder.ResidentReusableKVSlot = (*metalResident)(nil)
+	_ decoder.ResidentKVUploadPass   = (*metalResident)(nil)
 )
+
+// kvUploadPass is an upload in progress (decoder.ResidentKVUploadPass): one write of slot s from position 0, which its first layer maps
+// through end and every layer that owns K/V must land.
+type kvUploadPass struct {
+	s, end  int
+	reached map[int]int // the end each layer has landed, by layer
+}
+
+// BeginKVUpload (decoder.ResidentKVUploadPass) starts one write of the bound slot from position 0: the UploadKV calls until EndKVUpload
+// are its layers.
+func (a *metalResident) BeginKVUpload() error {
+	if a.r == nil {
+		return fmt.Errorf("metal: resident is nil")
+	}
+	a.r.stopExec()
+	a.r.kvUpload = &kvUploadPass{s: a.r.kvSlot, reached: map[int]int{}}
+	return nil
+}
+
+// EndKVUpload (decoder.ResidentKVUploadPass) ends the pass. The slot holds the rows only if some layer landed some and every layer that
+// owns K/V landed the same end; otherwise, and when failed, it holds none, as a failed write from position 0 leaves it.
+func (a *metalResident) EndKVUpload(failed bool) error {
+	r := a.r
+	if r == nil || r.kvUpload == nil {
+		return nil
+	}
+	p := r.kvUpload
+	r.kvUpload = nil
+	drop := func(err error) error {
+		if len(r.kvRefs) > 0 && p.s < len(r.kvSlotSt) {
+			r.kvReleaseAll(p.s)
+			r.kvSlotSt[p.s].valid = 0
+		}
+		return err
+	}
+	switch {
+	case failed:
+		return drop(nil)
+	case p.end == 0:
+		return drop(fmt.Errorf("metal: upload pass: no layer uploaded any rows"))
+	}
+	for l := range r.layers {
+		if L := &r.layers[l]; L.geom != nil && !L.kvShared && r.kc[l] != (Buffer{}) && p.reached[l] != p.end {
+			return drop(fmt.Errorf("metal: upload pass: layer %d reached %d of the pass's %d rows", l, p.reached[l], p.end))
+		}
+	}
+	return nil
+}
+
+// kvUploadMap maps the bound slot's blocks for an upload of layer's rows [base, end). Outside a pass the upload is a write from base, which
+// may not start past the slot's sequence (kvWrite). In a pass the slot is written from position 0: its first layer maps it through end, and
+// each layer lands once, ends where the first did, and starts at 0, or, for a windowed layer, where its rows still cover its window
+// (a CPU ring that has wrapped). The rows below that base are other layers' to write, and the decoder's reuse floor keeps a prefix off them.
+func (r *resident) kvUploadMap(layer, base, end int) error {
+	p := r.kvUpload
+	if p == nil {
+		return r.kvWrite(r.kvSlot, base, end)
+	}
+	win := int(r.layers[layer].window)
+	switch _, again := p.reached[layer]; {
+	case r.kvSlot != p.s:
+		return fmt.Errorf("metal: upload pass: slot %d is bound, the pass writes slot %d", r.kvSlot, p.s)
+	case again:
+		return fmt.Errorf("metal: upload pass: layer %d uploaded twice", layer)
+	case base > 0 && win == 0:
+		return fmt.Errorf("metal: upload pass: full-attention layer %d starts at %d, not position 0", layer, base)
+	case base > 0 && end-(win-1) < base:
+		return fmt.Errorf("metal: upload pass: layer %d's rows [%d, %d) do not cover its %d-row window", layer, base, end, win)
+	case p.end != 0 && end != p.end:
+		return fmt.Errorf("metal: upload pass: layer %d ends at %d, the pass's first layer at %d", layer, end, p.end)
+	}
+	if p.end == 0 {
+		if err := r.kvWrite(p.s, 0, end); err != nil {
+			return err
+		}
+		p.end = end
+	}
+	p.reached[layer] = end
+	return nil
+}
 
 // kvSlotState is one slot's standing in the pool. busy is set from the decoder's goroutines (SetKVSlotBusy); the rest only where
 // writes are encoded.
@@ -157,6 +238,17 @@ func (r *resident) kvQuiesce(s, hi int) {
 			r.stopExec()
 			return
 		}
+	}
+}
+
+// kvEndAt ends slot s's sequence at end when it runs past it, giving the blocks past end back. Nothing of the resident may be in flight.
+func (r *resident) kvEndAt(s, end int) {
+	if len(r.kvRefs) == 0 || s >= len(r.kvSlotSt) {
+		return
+	}
+	if st := &r.kvSlotSt[s]; st.valid > end {
+		st.valid = end
+		r.kvTrim(s, end)
 	}
 }
 
@@ -344,16 +436,23 @@ func (r *resident) kvMapStep(seqs []batchSeq) error {
 }
 
 // kvWriteMust is kvWrite where no caller can take an error back: setPos, reached from the executor's commit and the synchronous forwards,
-// which the entry points map ahead of, and from a test hook or kernel test that calls setPos at a position of its choosing. It maps from
-// the slot's sequence's end when the write starts past it (a no-op after an entry point, which leaves it past pos), so a direct caller's
-// rows land in blocks of the slot's own; any other failure is a missed entry point, named rather than written through an unmapped block.
+// which the entry points map ahead of. A failure, a write past the slot's sequence included, is a missed entry point, named rather than
+// written through an unmapped block or over stale rows. A test that picks the depth maps first (setPosAheadForTest).
 func (r *resident) kvWriteMust(s, lo, hi int) {
-	if s < len(r.kvSlotSt) {
-		lo = min(lo, r.kvSlotSt[s].valid)
-	}
 	if err := r.kvWrite(s, lo, hi); err != nil {
 		panic(fmt.Sprintf("metal: an unmapped KV write reached the encoder: %v", err))
 	}
+}
+
+// setPosAheadForTest is setPos for a test that picks the depth: it first maps the bound slot's blocks from its sequence's end through pos,
+// since setPos's own write does not start past the sequence.
+func (r *resident) setPosAheadForTest(pos int, ropePos ...int) {
+	if s := r.kvSlot; s < len(r.kvSlotSt) && pos > r.kvSlotSt[s].valid {
+		if err := r.kvWrite(s, r.kvSlotSt[s].valid, pos+1); err != nil {
+			panic(fmt.Sprintf("metal: setPosAheadForTest(%d): %v", pos, err))
+		}
+	}
+	r.setPos(pos, ropePos...)
 }
 
 // kvReusable is how much of prefix slot s can serve from its own rows: prefix, or 0 when its blocks were released or reclaimed or it

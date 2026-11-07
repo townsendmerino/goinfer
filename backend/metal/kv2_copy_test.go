@@ -559,7 +559,7 @@ func TestKV2_copyCost(t *testing.T) {
 
 // TestKVPages_chainReopensAfterAFailedTake: a greedy chain whose look-ahead finds no block (every take refused, nothing to release) still
 // answers the token in flight, and a chain opened again once blocks can be had runs: a failed take ends that opening (each runs its own
-// chainLoop), not the resident's chain.
+// chainLoop), not the resident's chain. The stop gives the look-ahead's block back: it lies past the last token taken.
 func TestKVPages_chainReopensAfterAFailedTake(t *testing.T) {
 	a, r := kv2Resident(t, false)
 	if why := r.greedyChainWhyNot(); why != "" {
@@ -571,7 +571,7 @@ func TestKVPages_chainReopensAfterAFailedTake(t *testing.T) {
 	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 63, 7), 0); err != nil {
 		t.Fatal(err)
 	}
-	run := func(refuse bool) int {
+	run := func(refuse bool) (id, during int) {
 		t.Helper()
 		if err := r.chainStart(5, 63); err != nil {
 			t.Fatal(err)
@@ -583,17 +583,58 @@ func TestKVPages_chainReopensAfterAFailedTake(t *testing.T) {
 		if err != nil {
 			t.Fatalf("the token in flight at 63 (takes refused: %v): %v", refuse, err)
 		}
-		return id
+		return id, r.kvHeld(0)
 	}
-	first := run(true)
+	first, _ := run(true)
 	if held := r.kvHeld(0); held != 1 {
 		t.Fatalf("slot 0 holds %d blocks after the refused look-ahead; want 1: the take was not refused, and the test reads nothing", held)
 	}
-	if got := run(false); got != first {
+	got, during := run(false)
+	if got != first {
 		t.Errorf("the chain opened again answers %d at 63, the first opening %d", got, first)
 	}
+	if during != 2 {
+		t.Errorf("slot 0 holds %d blocks while the second opening's look-ahead is in flight; want 2", during)
+	}
+	if held, st := r.kvHeld(0), &r.kvSlotSt[0]; held != 1 || st.valid != 64 {
+		t.Errorf("slot 0 holds %d blocks and %d rows after the chain stopped; want 1 and 64: the look-ahead at 64 is past the last token taken", held, st.valid)
+	}
+}
+
+// TestKVPages_copyJudgesTheSourceAfterTheChainStops: CopyKV stops an open chain before it reads either slot, so it judges src by the
+// sequence the stop leaves. With a turn's look-ahead at 64 in flight, block 1 is mapped until the chain stops and gives it back, so a copy of
+// rows [0, 128) declines, and no table entry names the null block.
+func TestKVPages_copyJudgesTheSourceAfterTheChainStops(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if why := r.greedyChainWhyNot(); why != "" {
+		t.Skipf("no greedy chain on this resident: %s", why)
+	}
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 63, 7), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.chainStart(5, 63); err != nil {
+		t.Fatal(err)
+	}
+	defer r.stopChain()
+	if _, err := r.chainNext(); err != nil {
+		t.Fatal(err)
+	}
 	if held := r.kvHeld(0); held != 2 {
-		t.Errorf("slot 0 holds %d blocks after the second opening's look-ahead; want 2", held)
+		t.Fatalf("slot 0 holds %d blocks with the look-ahead at 64 in flight; want 2, or the test reads nothing", held)
+	}
+	err := a.CopyKV(0, 1, 0, 128)
+	var d *decoder.KVCopyDecline
+	if !errors.As(err, &d) {
+		t.Errorf("CopyKV of rows [0, 128) with the chain open returned %v; want a decline: once the chain stops slot 0 holds rows to 64", err)
+	}
+	if r.chainReq != nil {
+		t.Error("the chain is still open after CopyKV")
+	}
+	if n := r.kvRefs[0]; n != 0 {
+		t.Errorf("the null block counts %d references; a table entry copied it as a block", n)
 	}
 }
 

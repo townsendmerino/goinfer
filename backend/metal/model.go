@@ -384,6 +384,9 @@ type resident struct {
 	chainSets    [2]posUniforms
 	chainTok     [2]Buffer
 	chainServed  int // tokens chainNext has returned since the build (tests read it)
+	// chainSlot is the open chain's KV slot; chainEnd, written by the chain's goroutine, is where its caller's sequence ends: after the
+	// newest forward whose token the chain returned, or at the start position before any. stopChain ends the slot's sequence there.
+	chainSlot, chainEnd int
 	// The untied head's gather table (C-B01): the int8 embedding table on the device, made the first time a chain is
 	// asked for (chainEmbedTable), aliased from the .giw mapping where it can be. A tied head's gather reads lmW/lmS.
 	// chainEmbBase is the memory guard's price of this build (weights, host copy, every KV slot), which the table is
@@ -531,6 +534,7 @@ type resident struct {
 	kvUseTick                 uint64
 	kvEvictions               int
 	kvReclaimed               []int
+	kvUpload                  *kvUploadPass // the upload in progress between BeginKVUpload and EndKVUpload, nil when none
 	// batch: MC3's batched decode step over those slots (batch.go); nil when this resident cannot batch. preciseMath
 	// is the build's fast-math choice, which the batched kernels must share to round like the kernels they reproduce.
 	batch       *batchState

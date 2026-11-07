@@ -1233,7 +1233,7 @@ func TestR17KernelAccuracy(t *testing.T) {
 			r.stopExec()
 			copy(r.x.Floats(), m.EmbedResidentForTest(tok))
 			r.addLearnedPos(K)
-			r.setPos(K)
+			r.setPosAheadForTest(K)
 			nKeys := K + 1
 			for l := 0; l < r.nL; l++ {
 				e := r.q.Begin()
@@ -1436,7 +1436,7 @@ func TestR17KernelAccuracy(t *testing.T) {
 						}
 					}
 				}
-				r.setPos(K) // restore the production split uniform for the next layer's encode
+				r.setPosAheadForTest(K) // restore the production split uniform for the next layer's encode
 			}
 			fmt.Fprintf(os.Stderr, "[r17-acc] prompt %d/%d depth %d done (decode token %d at pos %d)\n", pi+1, nPrompts, K, tok, K)
 		}

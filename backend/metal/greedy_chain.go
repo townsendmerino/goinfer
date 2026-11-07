@@ -189,6 +189,7 @@ func (r *resident) chainOpen(q chainReq) error {
 		}
 	}
 	r.chainReq, r.chainResp, r.chainDone = make(chan chainReq), make(chan chainResp), make(chan struct{})
+	r.chainSlot, r.chainEnd = r.kvSlot, q.pos
 	go r.chainLoop()
 	r.chainReq <- q
 	return (<-r.chainResp).err
@@ -215,7 +216,8 @@ func (r *resident) chainAsk(q chainReq) (int, error) {
 	return a.id, a.err
 }
 
-// stopChain closes the chain, if one is open, and blocks until no buffer of it is in flight.
+// stopChain closes the chain, if one is open, and blocks until no buffer of it is in flight. The slot's sequence then ends where its
+// caller's does (chainEnd): the look-ahead queued past the last token taken goes back, with any block it opened.
 func (r *resident) stopChain() {
 	if r.chainReq == nil {
 		return
@@ -223,6 +225,7 @@ func (r *resident) stopChain() {
 	close(r.chainReq)
 	r.chainReq = nil
 	<-r.chainDone
+	r.kvEndAt(r.chainSlot, r.chainEnd)
 }
 
 // chainFallbackAtForTest, when >= 0, makes the sampled chain's draw at that position read a row of -inf instead of the
@@ -407,7 +410,7 @@ func (r *resident) chainLoop() {
 				drain()
 				id := 0
 				if err == nil {
-					id = pick(f)
+					id, r.chainEnd = pick(f), f.pos+1
 					if len(fifo) == 0 {
 						commit()
 					}
@@ -419,7 +422,7 @@ func (r *resident) chainLoop() {
 			f, err := oldest()
 			id := 0
 			if err == nil {
-				id = pick(f)
+				id, r.chainEnd = pick(f), f.pos+1
 			}
 			r.chainResp <- chainResp{id: id, err: err}
 		case chainOpStop:

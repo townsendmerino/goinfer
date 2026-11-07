@@ -999,7 +999,7 @@ func TestKVPages_stepRewindTrimsFirst(t *testing.T) {
 }
 
 // TestKVPages_writePastTheSequenceRefused: a write that starts past a slot's sequence is refused, since the rows between would read block
-// 0; an upload, whose windowed layer may start past the rows the slot holds, maps from the sequence's end instead.
+// 0 or stale rows; so is an upload outside a pass (TestKVPages_uploadPass has the pass, where a windowed layer may start late).
 func TestKVPages_writePastTheSequenceRefused(t *testing.T) {
 	a, r := kv2Resident(t, false)
 	if err := r.useKVSlot(0); err != nil {
@@ -1018,14 +1018,153 @@ func TestKVPages_writePastTheSequenceRefused(t *testing.T) {
 	if err := r.useKVSlot(1); err != nil {
 		t.Fatal(err)
 	}
+	used = r.kvBlocksInUse()
 	for l := range r.layers {
 		if g := r.layers[l].geom; g != nil && !r.layers[l].kvShared {
-			if err := a.UploadKV(l, 70, make([]float32, g.kvDim), make([]float32, g.kvDim)); err != nil {
-				t.Fatalf("an upload at 70 into an empty slot (a windowed layer's base): %v", err)
+			if err := a.UploadKV(l, 70, make([]float32, g.kvDim), make([]float32, g.kvDim)); err == nil {
+				t.Errorf("layer %d: an upload at 70 into an empty slot, outside a pass, was accepted", l)
 			}
 		}
 	}
-	if n := a.ReusableKVSlot(1, 71); n != 71 {
-		t.Errorf("after the upload slot 1 answers %d for 71 rows, want 71", n)
+	if got, n := r.kvBlocksInUse(), a.ReusableKVSlot(1, 71); got != used || n != 0 {
+		t.Errorf("after the refused uploads the pool holds %d blocks (%d before) and slot 1 answers %d for 71 rows; want no block taken and 0", got, used, n)
+	}
+}
+
+// kvUploadLayers is every layer of r that owns K/V: the layers an upload pass must land.
+func kvUploadLayers(r *resident) []int {
+	var ls []int
+	for l := range r.layers {
+		if r.layers[l].geom != nil && !r.layers[l].kvShared && r.kc[l] != (Buffer{}) {
+			ls = append(ls, l)
+		}
+	}
+	return ls
+}
+
+// TestKVPages_uploadPass: the UploadKV calls between BeginKVUpload and EndKVUpload are one write of the bound slot from position 0
+// (decoder.ResidentKVUploadPass). On the MC3 fixture, every layer full attention: the slot holds the rows once every layer has landed the same
+// end; a full-attention layer that starts past 0, a layer uploaded twice, or one ending elsewhere is refused at its call; a pass a layer
+// missed, or one the caller fails, leaves the slot holding no block and answering 0. TestUploadKV_slidingLayerStartsLate has a windowed
+// layer starting late through the decoder's own pass.
+func TestKVPages_uploadPass(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	p, ok := any(a).(decoder.ResidentKVUploadPass)
+	if !ok {
+		t.Fatal("Metal's resident has no upload pass (decoder.ResidentKVUploadPass)")
+	}
+	ls := kvUploadLayers(r)
+	if len(ls) < 2 {
+		t.Fatalf("the fixture has %d layers that own K/V; the test needs 2", len(ls))
+	}
+	rows := func(l, n int) []float32 { return make([]float32, n*r.layers[l].geom.kvDim) }
+	if err := r.useKVSlot(1); err != nil {
+		t.Fatal(err)
+	}
+	empty := func(what string) {
+		t.Helper()
+		if held, n := r.kvHeld(1), a.ReusableKVSlot(1, 71); held != 0 || n != 0 {
+			t.Errorf("%s: slot 1 holds %d blocks and answers %d for 71 rows; want none and 0", what, held, n)
+		}
+	}
+	// A whole pass.
+	if err := p.BeginKVUpload(); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range ls {
+		if err := a.UploadKV(l, 0, rows(l, 71), rows(l, 71)); err != nil {
+			t.Fatalf("layer %d: %v", l, err)
+		}
+	}
+	if err := p.EndKVUpload(false); err != nil {
+		t.Fatalf("a whole pass: %v", err)
+	}
+	if n := a.ReusableKVSlot(1, 71); n != 71 || r.kvHeld(1) != 2 {
+		t.Errorf("after a whole pass slot 1 answers %d for 71 rows in %d blocks; want 71 in 2", n, r.kvHeld(1))
+	}
+	// Each refusal at its call, then the caller fails the pass.
+	for _, c := range []struct {
+		name string
+		call func() error
+	}{
+		{"a full-attention layer from 64", func() error { return a.UploadKV(ls[1], 64, rows(ls[1], 7), rows(ls[1], 7)) }},
+		{"a layer twice", func() error { return a.UploadKV(ls[0], 0, rows(ls[0], 71), rows(ls[0], 71)) }},
+		{"a layer ending elsewhere", func() error { return a.UploadKV(ls[1], 0, rows(ls[1], 80), rows(ls[1], 80)) }},
+	} {
+		if err := p.BeginKVUpload(); err != nil {
+			t.Fatal(err)
+		}
+		if err := a.UploadKV(ls[0], 0, rows(ls[0], 71), rows(ls[0], 71)); err != nil {
+			t.Fatalf("%s: the first layer: %v", c.name, err)
+		}
+		if err := c.call(); err == nil {
+			t.Errorf("%s: accepted", c.name)
+		}
+		if err := p.EndKVUpload(true); err != nil {
+			t.Errorf("%s: a failed pass's end: %v", c.name, err)
+		}
+		empty(c.name)
+	}
+	// A pass a layer missed.
+	if err := p.BeginKVUpload(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.UploadKV(ls[0], 0, rows(ls[0], 71), rows(ls[0], 71)); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.EndKVUpload(false); err == nil {
+		t.Error("a pass that left layers out ended without an error")
+	}
+	empty("a pass a layer missed")
+}
+
+// TestKVPages_setPosPastTheSequencePanics: setPos's own write (kvWriteMust) refuses to start past the slot's sequence, as any unmapped write
+// does: production reaches setPos only after an entry point mapped the row. setPosAheadForTest maps first, for a test that picks the depth.
+func TestKVPages_setPosPastTheSequencePanics(t *testing.T) {
+	_, r := kv2Resident(t, false)
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("setPos(200) on an empty slot mapped the rows to 200 instead of panicking")
+			}
+		}()
+		r.setPos(200)
+	}()
+	if held, st := r.kvHeld(0), &r.kvSlotSt[0]; held != 0 || st.valid != 0 {
+		t.Errorf("after the refused setPos slot 0 holds %d blocks and %d rows; want none", held, st.valid)
+	}
+	r.setPosAheadForTest(200)
+	if held, st := r.kvHeld(0), &r.kvSlotSt[0]; held != 4 || st.valid != 201 {
+		t.Errorf("setPosAheadForTest(200) left slot 0 %d blocks and %d rows; want 4 and 201", held, st.valid)
+	}
+}
+
+// TestKVPages_chainEndsAtTheLastTokenTaken: a greedy turn decoded through the chain ends the slot's sequence where the decoder's does (the
+// prompt and every token it emitted, each fed: residentCommitIDs), and holds no block past it. A 62-token prompt and 2 tokens: the decoder's
+// sequence is positions 0 to 63, and the chain's look-ahead at 64, queued past the last token taken, opens block 1 until the turn stops it.
+func TestKVPages_chainEndsAtTheLastTokenTaken(t *testing.T) {
+	m, a := kvCapLoad(t, 2, 2*decoder.MetalCtxDefault, "")
+	r := a.r
+	if why := r.greedyChainWhyNot(); why != "" {
+		t.Skipf("no greedy chain on this resident: %s", why)
+	}
+	served := r.chainServed
+	out, gen := m.Generate(context.Background(), kvCapIds(62, 5, m.Config().VocabSize), 2, decoder.SamplingParams{Temperature: 0})
+	n := 0
+	for range out {
+		n++
+	}
+	if err := gen.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 || r.chainServed == served {
+		t.Fatalf("emitted %d tokens, %d of them through the chain; want 2, some through it, or the test reads nothing", n, r.chainServed-served)
+	}
+	s := r.kvSlot
+	if held, st := r.kvHeld(s), &r.kvSlotSt[s]; held != 1 || st.valid != 64 {
+		t.Errorf("slot %d holds %d blocks and %d rows after the turn; want 1 and 64 (the decoder's sequence, positions 0 to 63)", s, held, st.valid)
 	}
 }

@@ -216,7 +216,7 @@ func TestR2_perLayerCtxDiff(t *testing.T) {
 		pos := prefillLen + s
 		copy(r.x.Floats(), stepEmbs[s])
 		r.addLearnedPos(pos)
-		r.setPos(pos)
+		r.setPosAheadForTest(pos)
 		if mode == modeFA {
 			r.decodeAttnFA = true
 			for l := 0; l < nL; l++ {
