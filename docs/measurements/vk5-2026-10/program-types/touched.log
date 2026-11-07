@@ -1,0 +1,32 @@
+touched: 8 .go file(s), 82 changed path(s), 1 module(s), base 084d73c1
+  ok   gofmt (0.0s)
+  ok   build root (6.6s)
+  ok   vet root (4 pkg) (1.7s)
+  FAIL test cmd/gate (55.1s)
+      --- FAIL: TestProcSampler_findsTheTestBinaryUnderItsParent (0.01s)
+          heavy_groups_test.go:240: sampled {PID:0 HWMKB:0 SwapPeakKB:0 Samples:0 ByTest:map[]}; want the grandchild's VmHWM
+      usage: gate mutation <name> <file> <sed-expr> <verify-cmd...>
+      mutation[nofile]: no such file: no/such/file.go
+      gate quick: /tmp/TestQuickReplay_reproducesTheRun1320897306/005/gate-quick-20261107-093344-3080468833/quick_run.json: test job "sub" has neither a stream nor an error
+      gate: ../../testdata/gate/goldens/heavy-narrowed/run.json is a record of "heavy", not "census"
+      gate identity: /tmp/TestIdentityReplay_plantsan_old_dumps_logits_were_lost397227280/001/identity_run.json: the old dump of llama__tiny__f32: the result's logits are unreadable: open /tmp/TestIdentityReplay_plantsan_old_dumps_logits_were_lost397227280/001/dumps/old/llama/llama__tiny__f32.bin: no such file or directory, but the run had it
+      gate identity: /tmp/TestIdentityReplay_plantsa_new_dumps_logits_were_cut_short129939331/001/identity_run.json: the new1 dump of llama__tiny__int4: the result's logits are 16380 bytes, its prompts' steps call for 16384, but the run had it
+      gate identity: /tmp/TestIdentityReplay_plantsa_dumps_result_was_lost607800103/001/identity_run.json: the new2 dump of llama__tiny__int8int8: no result written, but the run had it
+      gate identity: /tmp/TestIdentityReplay_plantsthe_dumps_were_not_kept798178367/001/identity_run.json was recorded without -keep, so its dumps are gone and it cannot be regraded
+      FAIL
+      FAIL	github.com/townsendmerino/goinfer/cmd/gate	53.183s
+      FAIL
+
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (18.2s)
+  ok   test internal/diag/hwcensus -run ^(TestHardwareCensus)$ (0.5s)
+  ok   test internal/diag/kernelprint -run ^(TestCompute_reachesCensus)$ (3.0s)
+  ok   test internal/guard/movedpaths -run ^(TestNoMovedAikitPath)$ (0.3s)
+  ok   test internal/guard/paritykey (1.2s)
+  ok   test internal/guard/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (1.2s)
+  ok   test internal/runtime/logs -run ^(TestLibraryOutput_goesThroughLogs)$ (0.4s)
+  ok   test internal/runtime/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.6s)
+  ok   test internal/runtime/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.6s)
+  ok   test internal/runtime/program (0.3s)
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 1 of 15 checks failed
