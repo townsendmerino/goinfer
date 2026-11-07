@@ -391,23 +391,23 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 
 | family (`model_type`) | CPU | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
-| Gemma 3 (`gemma3`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
-| Gemma 4 E2B, E4B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
+| Gemma 3 (`gemma3`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
+| Gemma 4 E2B, E4B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
 | Gemma 4 E2B, E4B audio (`gemma4`) | CPU / CPU | CPU / GPU | GPU / GPU | CPU / GPU |
-| Gemma 4 26B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
-| Gemma 4 31B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
-| Qwen2.5-VL (`qwen2_5_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
-| Qwen3.5+ dense (`qwen3_5`) | CPU / CPU | GPU / GPU | GPU / CPU | CPU / CPU |
-| Qwen3.5+ MoE (`qwen3_5_moe`) | CPU / CPU | GPU / CPU | GPU / CPU | CPU / CPU |
-| Qwen3-VL (`qwen3_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
-| Qwen3-VL MoE (`qwen3_vl_moe`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
-| GLM-OCR (`glm_ocr`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / CPU |
+| Gemma 4 26B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
+| Gemma 4 31B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
+| Qwen2.5-VL (`qwen2_5_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
+| Qwen3.5+ dense (`qwen3_5`) | CPU / CPU | GPU / GPU | GPU / CPU | GPU / CPU |
+| Qwen3.5+ MoE (`qwen3_5_moe`) | CPU / CPU | GPU / CPU | GPU / CPU | GPU / CPU |
+| Qwen3-VL (`qwen3_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
+| Qwen3-VL MoE (`qwen3_vl_moe`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
+| GLM-OCR (`glm_ocr`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / CPU |
 | LFM2.5-VL (`lfm2_vl`) | CPU / CPU | CPU / CPU | CPU / CPU | CPU / CPU |
 | Ministral 3 (`mistral3`) | CPU / CPU | CPU / GPU | CPU / GPU | CPU / CPU |
 
 <!-- END images-and-audio support table -->
 
-Not yet: video. Under `--backend webgpu` every image tower stays on the CPU by default (the table's WebGPU column); `--vision-device gpu` puts the Gemma 3, Gemma 4, Qwen2.5-VL, Qwen3.5+, Qwen3-VL and GLM-OCR towers on the GPU there, and the other families' towers have no WebGPU form.
+Not yet: video. Under `--backend webgpu` the Gemma 3, Gemma 4, Qwen2.5-VL, Qwen3.5+, Qwen3-VL and GLM-OCR towers run on the GPU by default (the table's WebGPU column; `--vision-device cpu` keeps them on the CPU), and the other families' towers have no WebGPU form.
 Qwen3-VL MoE (a 30B model, too large for a 16 GB Mac or an 8 GB card) has been checked against HuggingFace on the CPU; its served check on a GPU has not passed, because a two-image request on CUDA's paged path read as a fail and is still open ([S10q-paged](docs/tasks/task-multimodal-remaining-2026-10.md)).
 
 ## Docs

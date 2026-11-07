@@ -1,7 +1,6 @@
 package serveapp
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -117,9 +116,9 @@ func TestTowerReserve_everyDeviceTower(t *testing.T) {
 	}
 }
 
-// TestGemma3TowerBackend_webgpuDefault: under webgpu the unset default is the float32 tower on the CPU, said in one
-// note and not as a failed attach; an explicit -vision-quant or -vision-device gpu keeps the tower on webgpu, and
-// -vision-device cpu and the other backends are untouched.
+// TestGemma3TowerBackend_webgpuDefault: under webgpu the unset default is the float32 tower on the device (G-S12.3a-4, medians
+// 0.430 of the CPU tower, S12-defaults); an explicit -vision-quant or -vision-device gpu is the same backend, and
+// -vision-device cpu keeps the tower on the CPU.
 func TestGemma3TowerBackend_webgpuDefault(t *testing.T) {
 	mk := func(backend, quant, device string) config {
 		c := config{visionQuant: quant, visionDevice: device}
@@ -129,23 +128,20 @@ func TestGemma3TowerBackend_webgpuDefault(t *testing.T) {
 	for _, c := range []struct {
 		backend, quant, device string
 		want                   string
-		note                   bool
 	}{
-		{"webgpu", "", "", "cpu", true},
-		{"webgpu", "int8", "", "webgpu", false},
-		{"webgpu", "f32", "", "webgpu", false},
-		{"webgpu", "", "cpu", "cpu", false},
-		{"webgpu", "", "gpu", "webgpu", false},
-		{"metal", "", "gpu", "metal", false},
-		{"cuda", "", "", "cuda", false},
-		{"metal", "", "", "metal", false},
-		{"cpu", "", "", "cpu", false},
+		{"webgpu", "", "", "webgpu"},
+		{"webgpu", "int8", "", "webgpu"},
+		{"webgpu", "f32", "", "webgpu"},
+		{"webgpu", "", "cpu", "cpu"},
+		{"webgpu", "", "gpu", "webgpu"},
+		{"metal", "", "gpu", "metal"},
+		{"cuda", "", "", "cuda"},
+		{"metal", "", "", "metal"},
+		{"cpu", "", "", "cpu"},
 	} {
 		cfg := mk(c.backend, c.quant, c.device)
-		var note bytes.Buffer
-		got := gemma3TowerBackend(cfg, towerInt8("gemma3", c.quant, cfg.towerBackend()), &note)
-		if got != c.want || (note.Len() > 0) != c.note {
-			t.Errorf("backend %q, -vision-quant %q, -vision-device %q: tower on %q with note %q; want %q, a note: %v", c.backend, c.quant, c.device, got, note.String(), c.want, c.note)
+		if got := cfg.towerBackend(); got != c.want {
+			t.Errorf("backend %q, -vision-quant %q, -vision-device %q: tower on %q, want %q", c.backend, c.quant, c.device, got, c.want)
 		}
 	}
 }

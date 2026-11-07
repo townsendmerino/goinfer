@@ -146,14 +146,14 @@ func TestTowerRelease_startupTowers(t *testing.T) {
 		want    int
 	}{{"metal", 1}, {"", 0}} {
 		before := got["Gemma 4"]
-		if err := s.loadGemma4VisionTower("../../../testdata/gemma4-vision-tiny", false, c.backend, false, false); err != nil {
+		if err := s.loadGemma4VisionTower("../../../testdata/gemma4-vision-tiny", false, c.backend, false); err != nil {
 			t.Fatal(err)
 		}
 		if n := got["Gemma 4"] - before; n != c.want {
 			t.Errorf("Gemma 4 on %q: %d releases, want %d", c.backend, n, c.want)
 		}
 		before = got["Qwen2.5-VL"]
-		if err := s.loadQwenVisionTower("../../../testdata/qwen25vl-tiny", false, c.backend, false, false); err != nil {
+		if err := s.loadQwenVisionTower("../../../testdata/qwen25vl-tiny", false, c.backend, false); err != nil {
 			t.Fatal(err)
 		}
 		if n := got["Qwen2.5-VL"] - before; n != c.want {

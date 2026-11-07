@@ -16,33 +16,31 @@ func TestPlanGridTower(t *testing.T) {
 		registered []string
 		int8       bool
 		backend    string
-		asked      bool // -vision-device gpu
 		require    bool
 		device     string
 		where      string
 		err        string
 	}{
-		{"cpu backend", metal, false, "cpu", false, false, "", "CPU", ""},
-		{"cuda backend, only a Metal tower registered", metal, false, "cuda", false, false, "", "CPU (no CUDA tower in this binary)", ""},
-		{"cuda backend, only a Metal tower registered, require", metal, false, "cuda", false, true, "", "", "no CUDA"},
-		{"cuda", []string{"cuda"}, false, "cuda", false, false, "cuda", "CUDA", ""},
-		{"cuda require", []string{"cuda"}, false, "cuda", false, true, "cuda", "CUDA", ""},
-		{"cuda int8", []string{"cuda"}, true, "cuda", false, false, "", "CPU (-vision-quant int8; the CUDA tower is float32)", ""},
-		{"cuda int8 require", []string{"cuda"}, true, "cuda", false, true, "", "", "CUDA tower is float32"},
-		{"metal backend, only a CUDA tower registered", []string{"cuda"}, false, "metal", false, false, "", "CPU (no Metal tower in this binary)", ""},
-		{"webgpu, not asked: the CPU tower by choice, under -require-backend too", []string{"metal", "cuda", "webgpu"}, false, "webgpu", false, true, "", "CPU (-vision-device gpu puts it on WebGPU)", ""},
-		{"webgpu asked", []string{"webgpu"}, false, "webgpu", true, false, "webgpu", "WebGPU", ""},
-		{"webgpu asked, int8", []string{"webgpu"}, true, "webgpu", true, false, "", "CPU (-vision-quant int8; the WebGPU tower is float32)", ""},
-		{"webgpu asked, not in this binary", []string{"metal"}, false, "webgpu", true, false, "", "CPU (no WebGPU tower in this binary)", ""},
-		{"webgpu asked, not in this binary, require", []string{"metal"}, false, "webgpu", true, true, "", "", "no WebGPU"},
-		{"metal", metal, false, "metal", false, false, "metal", "Metal", ""},
-		{"metal int8", metal, true, "metal", false, false, "", "CPU (-vision-quant int8; the Metal tower is float32)", ""},
-		{"metal int8 require", metal, true, "metal", false, true, "", "", "float32"},
-		{"not registered", nil, false, "metal", false, false, "", "CPU (no Metal tower in this binary)", ""},
-		{"not registered require", nil, false, "metal", false, true, "", "", "no Metal"},
+		{"cpu backend", metal, false, "cpu", false, "", "CPU", ""},
+		{"cuda backend, only a Metal tower registered", metal, false, "cuda", false, "", "CPU (no CUDA tower in this binary)", ""},
+		{"cuda backend, only a Metal tower registered, require", metal, false, "cuda", true, "", "", "no CUDA"},
+		{"cuda", []string{"cuda"}, false, "cuda", false, "cuda", "CUDA", ""},
+		{"cuda require", []string{"cuda"}, false, "cuda", true, "cuda", "CUDA", ""},
+		{"cuda int8", []string{"cuda"}, true, "cuda", false, "", "CPU (-vision-quant int8; the CUDA tower is float32)", ""},
+		{"cuda int8 require", []string{"cuda"}, true, "cuda", true, "", "", "CUDA tower is float32"},
+		{"metal backend, only a CUDA tower registered", []string{"cuda"}, false, "metal", false, "", "CPU (no Metal tower in this binary)", ""},
+		{"webgpu: the device tower is the default, under -require-backend too", []string{"metal", "cuda", "webgpu"}, false, "webgpu", true, "webgpu", "WebGPU", ""},
+		{"webgpu, not in this binary", []string{"metal"}, false, "webgpu", false, "", "CPU (no WebGPU tower in this binary)", ""},
+		{"webgpu, int8", []string{"webgpu"}, true, "webgpu", false, "", "CPU (-vision-quant int8; the WebGPU tower is float32)", ""},
+		{"webgpu, not in this binary, require", []string{"metal"}, false, "webgpu", true, "", "", "no WebGPU"},
+		{"metal", metal, false, "metal", false, "metal", "Metal", ""},
+		{"metal int8", metal, true, "metal", false, "", "CPU (-vision-quant int8; the Metal tower is float32)", ""},
+		{"metal int8 require", metal, true, "metal", true, "", "", "float32"},
+		{"not registered", nil, false, "metal", false, "", "CPU (no Metal tower in this binary)", ""},
+		{"not registered require", nil, false, "metal", true, "", "", "no Metal"},
 	}
 	for _, c := range cases {
-		p, err := planGridTower("Qwen3.5", c.registered, c.int8, c.backend, c.asked, c.require)
+		p, err := planGridTower("Qwen3.5", c.registered, c.int8, c.backend, c.require)
 		if c.err != "" {
 			if err == nil || !strings.Contains(err.Error(), c.err) {
 				t.Errorf("%s: err %v, want one containing %q", c.name, err, c.err)
@@ -90,24 +88,22 @@ func TestChooseGemma4Tower_placement(t *testing.T) {
 		name    string
 		int8    bool
 		backend string
-		asked   bool // -vision-device gpu
 		require bool
 		where   string
 		errPart string
 	}{
-		{"cpu", false, "cpu", false, true, "CPU", ""},
-		{"webgpu, not asked: the CPU tower by choice, under -require-backend too", false, "webgpu", false, true, "CPU (-vision-device gpu puts it on WebGPU)", ""},
-		{"webgpu asked, int8", true, "webgpu", true, false, "CPU (-vision-quant int8; the WebGPU tower is float32)", ""},
-		{"webgpu asked, not in this binary", false, "webgpu", true, false, "CPU (no WebGPU tower in this binary)", ""},
-		{"webgpu asked, not in this binary, require", false, "webgpu", true, true, "", "no WebGPU Gemma 4 tower"},
-		{"cuda int8", true, "cuda", false, false, "CPU (-vision-quant int8; the CUDA tower is float32)", ""},
-		{"cuda int8 require", true, "cuda", false, true, "", "Gemma 4 CUDA tower is float32"},
-		{"cuda not in this binary", false, "cuda", false, false, "CPU (no CUDA tower in this binary)", ""},
-		{"cuda not in this binary, require", false, "cuda", false, true, "", "no CUDA Gemma 4 tower"},
-		{"metal int8", true, "metal", false, false, "CPU (-vision-quant int8; the Metal tower is float32)", ""},
+		{"cpu", false, "cpu", true, "CPU", ""},
+		{"webgpu, int8", true, "webgpu", false, "CPU (-vision-quant int8; the WebGPU tower is float32)", ""},
+		{"webgpu, not in this binary", false, "webgpu", false, "CPU (no WebGPU tower in this binary)", ""},
+		{"webgpu, not in this binary, require: the device tower is the default, so require refuses", false, "webgpu", true, "", "no WebGPU Gemma 4 tower"},
+		{"cuda int8", true, "cuda", false, "CPU (-vision-quant int8; the CUDA tower is float32)", ""},
+		{"cuda int8 require", true, "cuda", true, "", "Gemma 4 CUDA tower is float32"},
+		{"cuda not in this binary", false, "cuda", false, "CPU (no CUDA tower in this binary)", ""},
+		{"cuda not in this binary, require", false, "cuda", true, "", "no CUDA Gemma 4 tower"},
+		{"metal int8", true, "metal", false, "CPU (-vision-quant int8; the Metal tower is float32)", ""},
 	}
 	for _, c := range cases {
-		acc, where, err := chooseGemma4Tower(nil, c.int8, c.backend, c.asked, c.require)
+		acc, where, err := chooseGemma4Tower(nil, c.int8, c.backend, c.require)
 		if c.errPart != "" {
 			if err == nil || !strings.Contains(err.Error(), c.errPart) {
 				t.Errorf("%s: err %v, want one containing %q", c.name, err, c.errPart)
