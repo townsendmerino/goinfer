@@ -8,7 +8,7 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| S12-defaults | decision | Francis: the five WebGPU device-tower speed gates read SHIP on 2026-10-12 (median 0.355 to 0.488 of the CPU towers), and their registered consequence, each device tower the default under `--backend webgpu`, is not applied: it edits `decoder/support_table_test.go`, so its timing is the owner's. The towers stay opt-in (`-vision-device gpu`) | record, S12, "The registered consequence is not applied yet" |
+| S12-defaults | done | 2026-11-07 (Francis decided 2026-11-06 21:32): each WebGPU device vision tower is the default under `--backend webgpu` (Gemma 3, Gemma 4, Qwen2.5-VL, Qwen3.5+, Qwen3-VL, GLM-OCR); `multimodal.DefaultTowerOnDevice` is now the declaration, `-vision-device cpu` keeps the CPU towers, `-vision-device gpu` is kept as the same as `auto`, `-vision-quant int8` still picks the int8 Gemma 3 tower. The support table and its test, README, `docs/server.md`, the flag help, a changelog fragment. The v0.25.0 plan's name for this, "the `--vision-int8` default", was wrong | record, S12, "The registered consequence is not applied yet" |
 | S10q-paged | open | nobara: Qwen3-VL MoE's paged CUDA arm read FAIL on the two-image request twice (G-S10q-d, G-S10q-d3). The instrument the owner chose, G-S10q-e (the paged path's teacher-forced logits against HF float32), is built; its first run made no reading (c75a283a), and no later reading is recorded | record, S10, "G-S10q-e" |
 | S13-full | open | the full peer comparison; S13-lite (one model per box) is done. Not started | record, S13 |
 | S15 | blocked | parked (owner, 2026-10-11: "leave video parked"); video is in scope but has no phase work | record, S15 |

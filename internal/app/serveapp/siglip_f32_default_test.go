@@ -1,7 +1,6 @@
 package serveapp
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -60,10 +59,11 @@ func TestTowerReserve_gemma3(t *testing.T) {
 // its backend, int8 included, and zero where the tower runs on the CPU. A table over family x -vision-quant x backend. Gemma 3 under cuda is the case that matters: its
 // shipped default (the int8 device tower) was priced at zero.
 func TestTowerReserve_everyDeviceTower(t *testing.T) {
-	old, oldM := cudaTowerRegistered, metalTowerRegistered // stand in for cuda and metal builds, whose imports fill the tower registries
+	old, oldM, oldW := cudaTowerRegistered, metalTowerRegistered, webgpuTowerRegistered // stand in for cuda, metal and gpu builds, whose imports fill the tower registries
 	cudaTowerRegistered = func(string) bool { return true }
 	metalTowerRegistered = func(string) bool { return true }
-	t.Cleanup(func() { cudaTowerRegistered, metalTowerRegistered = old, oldM })
+	webgpuTowerRegistered = func(string) bool { return true }
+	t.Cleanup(func() { cudaTowerRegistered, metalTowerRegistered, webgpuTowerRegistered = old, oldM, oldW })
 	cfgs := map[string]string{
 		"gemma3":     `{"model_type":"gemma3","vision_config":{"hidden_size":1152,"intermediate_size":4304,"num_hidden_layers":27,"patch_size":14,"image_size":896,"num_channels":3}}`,
 		"gemma4":     `{"model_type":"gemma4","vision_config":{"hidden_size":768,"intermediate_size":3072,"num_hidden_layers":16,"patch_size":16,"position_embedding_size":10240,"default_output_length":280,"pooling_kernel_size":3}}`,
@@ -83,8 +83,9 @@ func TestTowerReserve_everyDeviceTower(t *testing.T) {
 				c.load.Backend = backend
 				got := towerReserve(c, dir)
 				// a device tower on CUDA: every family in float32; Gemma 3 also as the int8 device tower (the shipped default and -vision-quant int8)
-				// S18 on the Mac (G-S18c-Mac): the same on Metal, whose int8 device tower is Gemma 3's alone (tower_gemm_w8)
-				wantDevice := (backend == "cuda" || backend == "metal") && (!towerInt8(fam, quant, backend) || fam == "gemma3")
+				// S18 on the Mac (G-S18c-Mac): the same on Metal, whose int8 device tower is Gemma 3's alone (tower_gemm_w8); and on WebGPU since its towers
+				// are the default (S12-defaults), Gemma 3's int8 one included
+				wantDevice := (backend == "cuda" || backend == "metal" || backend == "webgpu") && (!towerInt8(fam, quant, backend) || fam == "gemma3")
 				if wantDevice && got <= 0 {
 					t.Errorf("%s quant %q on %s has a device tower but towerReserve = %d", fam, quant, backend, got)
 				}
@@ -113,39 +114,6 @@ func TestTowerReserve_everyDeviceTower(t *testing.T) {
 		t.Logf("gemma3 Metal tower reserve (quant %q): %.0f MB, measured %.0f MB", m.quant, got, m.measured)
 		if got < 0.75*m.measured || got > 1.25*m.measured {
 			t.Errorf("gemma3 Metal reserve (quant %q) %.0f MB, outside 25%% of the measured %.0f MB", m.quant, got, m.measured)
-		}
-	}
-}
-
-// TestGemma3TowerBackend_webgpuDefault: under webgpu the unset default is the float32 tower on the CPU, said in one
-// note and not as a failed attach; an explicit -vision-quant or -vision-device gpu keeps the tower on webgpu, and
-// -vision-device cpu and the other backends are untouched.
-func TestGemma3TowerBackend_webgpuDefault(t *testing.T) {
-	mk := func(backend, quant, device string) config {
-		c := config{visionQuant: quant, visionDevice: device}
-		c.load.Backend = backend
-		return c
-	}
-	for _, c := range []struct {
-		backend, quant, device string
-		want                   string
-		note                   bool
-	}{
-		{"webgpu", "", "", "cpu", true},
-		{"webgpu", "int8", "", "webgpu", false},
-		{"webgpu", "f32", "", "webgpu", false},
-		{"webgpu", "", "cpu", "cpu", false},
-		{"webgpu", "", "gpu", "webgpu", false},
-		{"metal", "", "gpu", "metal", false},
-		{"cuda", "", "", "cuda", false},
-		{"metal", "", "", "metal", false},
-		{"cpu", "", "", "cpu", false},
-	} {
-		cfg := mk(c.backend, c.quant, c.device)
-		var note bytes.Buffer
-		got := gemma3TowerBackend(cfg, towerInt8("gemma3", c.quant, cfg.towerBackend()), &note)
-		if got != c.want || (note.Len() > 0) != c.note {
-			t.Errorf("backend %q, -vision-quant %q, -vision-device %q: tower on %q with note %q; want %q, a note: %v", c.backend, c.quant, c.device, got, note.String(), c.want, c.note)
 		}
 	}
 }

@@ -259,7 +259,7 @@ func slotsBeforeContextOn(darwin bool, ram func() int64, m *decoder.Model, ctxCa
 	if perPos <= 0 || ramBytes <= 0 {
 		return ctxCap
 	}
-	weights, hostCopy := m.ResidentWeightBytes(), m.ResidentHostCopyBytes(0)
+	weights, hostCopy := residentRAMTerms(m)
 	fits := func(ctx int) bool {
 		return darwinKVSlots(want, ramBytes, avail0, weights, hostCopy, perPos*int64(ctx)) >= want
 	}
@@ -292,6 +292,13 @@ func ctxWhereSlotsFit(oneSlot, want int, fits func(ctx int) bool) int {
 	return lo
 }
 
+// residentRAMTerms are the weight and host-copy bytes darwinKVSlots prices a build against. A companion that will share the device
+// (a vision tower, a drafter: decoder.Model.ExtraResidentBytes, which serve prices before the load) counts with the weights, since on
+// darwin it takes the same RAM, so a build with a tower coming grants fewer slots rather than leaving the tower nothing.
+func residentRAMTerms(m *decoder.Model) (weights, hostCopy int64) {
+	return m.ResidentWeightBytes() + m.ExtraResidentBytes(), m.ResidentHostCopyBytes(0)
+}
+
 // availBeforeBuild is the memory available before BuildResident's first upload, for darwinKVSlots — read only on
 // darwin and only when more than one slot is requested, else 0.
 func availBeforeBuild(m *decoder.Model) int64 {
@@ -311,11 +318,11 @@ func (rd *residentDecoder) buildKVSlots(m *decoder.Model, want int, avail0 int64
 	}
 	perSlot := kvBytesPerSlot(&rd.rm)
 	darwin := runtime.GOOS == "darwin"
-	weights, hostCopy := m.ResidentWeightBytes(), m.ResidentHostCopyBytes(0)
+	weights, hostCopy := residentRAMTerms(m)
 	n := slotsGranted(want, darwin, hostRAMBytes(), avail0, weights, hostCopy, perSlot, 0, false) // no free-VRAM figure: see slotsGranted
 	if darwin && n < want {
 		logs.Infof("webgpu: %d resident KV slots of %d requested — each costs %.0f MB of KV at the resident context (%d positions); "+
-			"with %.0f MB of weights (+%.0f MB host copy), %.0f%% of %.0f MB RAM and %.0f MB available before the build allow %d",
+			"with %.0f MB of weights and reserved companions (+%.0f MB host copy), %.0f%% of %.0f MB RAM and %.0f MB available before the build allow %d",
 			n, want, float64(perSlot)/(1<<20), rd.ctxCap, float64(weights)/(1<<20), float64(hostCopy)/(1<<20),
 			100*decoder.WeightsMemFraction, float64(hostRAMBytes())/(1<<20), float64(avail0)/(1<<20), n)
 	}

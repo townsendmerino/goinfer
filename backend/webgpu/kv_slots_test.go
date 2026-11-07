@@ -1140,3 +1140,36 @@ func TestCost_webgpuOffShare(t *testing.T) {
 		t.Errorf("the off path costs %.3f%% of a decode token, at or over the registered 0.5%%", 100*share)
 	}
 }
+
+// TestResidentRAMTerms_countsTheCompanion: a vision tower or drafter priced into Options.ExtraResidentBytes counts with the
+// weights when a darwin build prices its KV slots against RAM, so a build with a tower coming grants fewer slots at a RAM size where
+// it would otherwise grant them all. No device needed: the model is the CPU load of a tiny fixture.
+func TestResidentRAMTerms_countsTheCompanion(t *testing.T) {
+	dir := "../../testdata/llama-tiny"
+	if _, err := os.Stat(filepath.Join(dir, "model.safetensors")); err != nil {
+		t.Skipf("fixture %s has no model.safetensors on this machine (gitignored; regenerate it): %v", dir, err)
+	}
+	const perSlot, extra, want = 16 << 20, 40 << 20, 4
+	base, err := decoder.Load(dir, decoder.Options{Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	with, err := decoder.Load(dir, decoder.Options{Quant: "int4", ExtraResidentBytes: extra})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer with.Close()
+	w0, h0 := residentRAMTerms(base)
+	w1, h1 := residentRAMTerms(with)
+	if w1-w0 != extra || h1 != h0 {
+		t.Fatalf("the terms with a 40 MB companion are (%d, %d), without (%d, %d): want the weights %d higher and the host copy equal", w1, h1, w0, h0, extra)
+	}
+	ram := int64(float64(w0+h0+want*perSlot)/decoder.WeightsMemFraction) + 1<<10 // the RAM at which the base build just fits every slot
+	if got := darwinKVSlots(want, ram, 0, w0, h0, perSlot); got != want {
+		t.Fatalf("test setup: the build without a companion grants %d of %d slots at %d bytes of RAM", got, want, ram)
+	}
+	if got := darwinKVSlots(want, ram, 0, w1, h1, perSlot); got >= want {
+		t.Errorf("a 40 MB companion left the grant at %d of %d slots: the tower is not priced against the RAM ceiling", got, want)
+	}
+}
