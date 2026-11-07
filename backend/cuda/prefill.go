@@ -483,7 +483,19 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 // prefillChunkedMarked is prefillChunked that calls at(mark) after the non-final pass that ends at position mark (none with mark <= 0). at runs on the
 // caller's goroutine with no pass in flight, so a snapshot it takes is an executor job ordered after the pass that wrote the rows.
 func (r *cudaResident) prefillChunkedMarked(ctx context.Context, embeddings [][]float32, startPos int, finalTail int, mropePos [][3]int, mark int, at func(pos int)) ([]float32, error) {
-	M := len(embeddings)
+	return r.prefillChunkedRows(ctx, len(embeddings), func(lo, hi int) [][]float32 { return embeddings[lo:hi] }, startPos, finalTail, mropePos, mark, at)
+}
+
+var _ decoder.ResidentPrefillRows = (*cudaResident)(nil)
+
+// PrefillLastRows (decoder.ResidentPrefillRows) is PrefillLast for n rows at startPos that reads the suffix's embeddings a pass at a time from rows, so the host holds one
+// pass of them. A pass that is retried at half the width asks for its range again; each range is used before the next is read.
+func (r *cudaResident) PrefillLastRows(ctx context.Context, n, startPos int, rows func(lo, hi int) [][]float32) ([]float32, error) {
+	return r.prefillChunkedRows(ctx, n, rows, startPos, tailLastLogits, nil, 0, nil)
+}
+
+// prefillChunkedRows is prefillChunkedMarked over m rows read by rows(lo, hi): rows [lo, hi) of the suffix, valid until the next call.
+func (r *cudaResident) prefillChunkedRows(ctx context.Context, M int, rows func(lo, hi int) [][]float32, startPos int, finalTail int, mropePos [][3]int, mark int, at func(pos int)) ([]float32, error) {
 	markLateFired := false
 	if M == 0 {
 		return nil, fmt.Errorf("cuda prefill: empty prompt")
@@ -498,7 +510,7 @@ func (r *cudaResident) prefillChunkedMarked(ctx context.Context, embeddings [][]
 		return nil, e
 	}
 	if M <= chunk {
-		outs, _, err := r.prefillCore(ctx, embeddings, startPos, finalTail, nil, mropePos, nil)
+		outs, _, err := r.prefillCore(ctx, rows(0, M), startPos, finalTail, nil, mropePos, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -542,7 +554,7 @@ func (r *cudaResident) prefillChunkedMarked(ctx context.Context, embeddings [][]
 		if pass == prefillDeclinePassForTest {
 			err = fmt.Errorf("cuda prefill: pass %d declined by the test seam: %w", pass, errPrefillDeclined)
 		} else {
-			outs, _, err = r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tail, nil, mropePos, nil)
+			outs, _, err = r.prefillCore(ctx, rows(i, i+n), startPos+i, tail, nil, mropePos, nil)
 		}
 		if err != nil {
 			if errors.Is(err, errPrefillOOM) && chunk > prefillMinChunk {
@@ -1187,9 +1199,13 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 
 		// Upload the M embeddings contiguously as xB[M, hidden] (already FeatEmbedScale-scaled by the
 		// caller, exactly as Forward/ForwardNoLogits receive them).
-		xhost := make([]float32, M*hidden)
+		if cap(r.xhostBuf) < M*hidden {
+			r.xhostBuf = make([]float32, M*hidden) // grown to the widest pass and kept: a fresh block per pass left the prompt's size in garbage
+		}
+		xhost := r.xhostBuf[:M*hidden]
 		for m, e := range embeddings {
-			copy(xhost[m*hidden:(m+1)*hidden], e)
+			n := copy(xhost[m*hidden:(m+1)*hidden], e)
+			clear(xhost[m*hidden+n : (m+1)*hidden])
 		}
 		if e := gpu.Upload(xB, xhost); e != nil {
 			return e

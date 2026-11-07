@@ -1,0 +1,32 @@
+start 2026-11-06 10:09:51 load1 3.02
+[zz] A1-no-act-sums NR=1 phi3 gate|up  q4k N=16384 K=3072 GPU ms/call by B: B1=0.322 B2=1.125 B3=1.560 B4=2.127 B5=2.966 B6=3.935 B7=4.599 B8=4.585
+[zz] A1-no-act-sums NR=1 phi3 o        q4k N=3072 K=3072 GPU ms/call by B: B1=0.094 B2=0.215 B3=0.298 B4=0.399 B5=0.552 B6=0.738 B7=0.857 B8=0.841
+[zz] A1-no-act-sums NR=1 phi3 qkv      q5k N=9216 K=3072 GPU ms/call by B: B1=0.193 B2=0.450 B3=0.647 B4=0.978 B5=1.644 B6=2.396 B7=4.494 B8=5.499
+[zz] A1-no-act-sums NR=1 phi3 down     q6k N=3072 K=8192 GPU ms/call by B: B1=0.184 B2=0.380 B3=0.510 B4=0.699 B5=0.976 B6=1.107 B7=1.333 B8=1.182
+[zz] A1-no-act-sums NR=1 1.5B gate|up  q4k N=17920 K=1536 GPU ms/call by B: B1=0.212 B2=0.413 B3=0.690 B4=0.969 B5=1.362 B6=1.847 B7=2.185 B8=2.083
+[zz] A1-no-act-sums NR=1 1.5B o        q4k N=1536 K=1536 GPU ms/call by B: B1=0.059 B2=0.080 B3=0.064 B4=0.085 B5=0.117 B6=0.157 B7=0.180 B8=0.168
+[zz] A2-no-dots NR=1 phi3 gate|up  q4k N=16384 K=3072 GPU ms/call by B: B1=0.321 B2=0.802 B3=1.472 B4=1.949 B5=3.004 B6=4.361 B7=6.347 B8=7.902
+[zz] A2-no-dots NR=1 phi3 o        q4k N=3072 K=3072 GPU ms/call by B: B1=0.086 B2=0.156 B3=0.279 B4=0.363 B5=0.581 B6=0.838 B7=1.214 B8=1.517
+[zz] A2-no-dots NR=1 phi3 qkv      q5k N=9216 K=3072 GPU ms/call by B: B1=0.227 B2=0.455 B3=0.650 B4=0.988 B5=1.616 B6=2.426 B7=4.495 B8=5.463
+[zz] A2-no-dots NR=1 phi3 down     q6k N=3072 K=8192 GPU ms/call by B: B1=0.184 B2=0.382 B3=0.510 B4=0.701 B5=0.965 B6=1.098 B7=1.319 B8=1.178
+[zz] A2-no-dots NR=1 1.5B gate|up  q4k N=17920 K=1536 GPU ms/call by B: B1=0.213 B2=0.392 B3=0.612 B4=0.848 B5=1.814 B6=2.603 B7=3.799 B8=5.029
+[zz] A2-no-dots NR=1 1.5B o        q4k N=1536 K=1536 GPU ms/call by B: B1=0.072 B2=0.101 B3=0.105 B4=0.077 B5=0.173 B6=0.248 B7=0.356 B8=0.457
+[zz] A3-one-load-per-row NR=1 phi3 gate|up  q4k N=16384 K=3072 GPU ms/call by B: B1=0.245 B2=0.574 B3=0.935 B4=1.170 B5=1.511 B6=1.682 B7=1.351 B8=3.601
+[zz] A3-one-load-per-row NR=1 phi3 o        q4k N=3072 K=3072 GPU ms/call by B: B1=0.078 B2=0.113 B3=0.181 B4=0.228 B5=0.295 B6=0.323 B7=0.266 B8=0.697
+[zz] A3-one-load-per-row NR=1 phi3 qkv      q5k N=9216 K=3072 GPU ms/call by B: B1=0.194 B2=0.452 B3=0.648 B4=0.987 B5=1.655 B6=2.423 B7=4.484 B8=5.461
+[zz] A3-one-load-per-row NR=1 phi3 down     q6k N=3072 K=8192 GPU ms/call by B: B1=0.184 B2=0.382 B3=0.511 B4=0.696 B5=0.975 B6=1.105 B7=1.314 B8=1.178
+[zz] A3-one-load-per-row NR=1 1.5B gate|up  q4k N=17920 K=1536 GPU ms/call by B: B1=0.169 B2=0.247 B3=0.424 B4=0.576 B5=0.791 B6=0.769 B7=0.839 B8=2.090
+[zz] A3-one-load-per-row NR=1 1.5B o        q4k N=1536 K=1536 GPU ms/call by B: B1=0.054 B2=0.080 B3=0.136 B4=0.055 B5=0.076 B6=0.075 B7=0.082 B8=0.199
+[zz] A4-no-unroll-rows NR=1 phi3 gate|up  q4k N=16384 K=3072 GPU ms/call by B: B1=0.321 B2=0.640 B3=0.954 B4=1.276 B5=1.603 B6=1.925 B7=2.248 B8=2.572
+[zz] A4-no-unroll-rows NR=1 phi3 o        q4k N=3072 K=3072 GPU ms/call by B: B1=0.089 B2=0.157 B3=0.185 B4=0.244 B5=0.310 B6=0.374 B7=0.436 B8=0.499
+[zz] A4-no-unroll-rows NR=1 phi3 qkv      q5k N=9216 K=3072 GPU ms/call by B: B1=0.195 B2=0.452 B3=0.647 B4=0.982 B5=1.647 B6=2.413 B7=4.502 B8=5.449
+[zz] A4-no-unroll-rows NR=1 phi3 down     q6k N=3072 K=8192 GPU ms/call by B: B1=0.185 B2=0.381 B3=0.512 B4=0.699 B5=0.968 B6=1.081 B7=1.317 B8=1.184
+[zz] A4-no-unroll-rows NR=1 1.5B gate|up  q4k N=17920 K=1536 GPU ms/call by B: B1=0.215 B2=0.386 B3=0.551 B4=0.716 B5=0.879 B6=1.047 B7=1.223 B8=1.395
+[zz] A4-no-unroll-rows NR=1 1.5B o        q4k N=1536 K=1536 GPU ms/call by B: B1=0.060 B2=0.100 B3=0.071 B4=0.071 B5=0.086 B6=0.101 B7=0.118 B8=0.132
+[zz] base NR=1 phi3 gate|up  q4k N=16384 K=3072 GPU ms/call by B: B1=0.323 B2=0.793 B3=1.171 B4=1.915 B5=3.674 B6=5.577 B7=8.330 B8=9.779
+[zz] base NR=1 phi3 o        q4k N=3072 K=3072 GPU ms/call by B: B1=0.110 B2=0.153 B3=0.227 B4=0.367 B5=0.706 B6=1.066 B7=1.599 B8=1.866
+[zz] base NR=1 phi3 qkv      q5k N=9216 K=3072 GPU ms/call by B: B1=0.201 B2=0.452 B3=0.648 B4=0.999 B5=1.612 B6=2.422 B7=4.492 B8=5.462
+[zz] base NR=1 phi3 down     q6k N=3072 K=8192 GPU ms/call by B: B1=0.181 B2=0.382 B3=0.512 B4=0.697 B5=0.972 B6=1.100 B7=1.325 B8=1.192
+[zz] base NR=1 1.5B gate|up  q4k N=17920 K=1536 GPU ms/call by B: B1=0.215 B2=0.428 B3=0.726 B4=1.161 B5=2.203 B6=3.289 B7=5.022 B8=5.996
+[zz] base NR=1 1.5B o        q4k N=1536 K=1536 GPU ms/call by B: B1=0.073 B2=0.112 B3=0.073 B4=0.114 B5=0.211 B6=0.307 B7=0.460 B8=0.543
+end 2026-11-06 10:13:18 load1 4.13

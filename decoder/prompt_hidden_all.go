@@ -81,7 +81,7 @@ func (m *Model) promptHiddenAll(ctx context.Context, prompt []int) ([][]float32,
 // final norm to each returned residual row in f32. The caller holds the resident claim.
 func (m *Model) residualAllResident(ctx context.Context, rr ResidentResidualAll, ids []int) ([][]float32, error) {
 	a := m.w.arch
-	m.residentForgetIDs()
+	m.residentForgetScratch()
 	embs := make([][]float32, len(ids))
 	for i, id := range ids {
 		embs[i] = m.embedResident(id)

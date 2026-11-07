@@ -1,0 +1,14 @@
+# go test at origin/main 084d73c14, mbp2 (Linux amd64), 2026-11-07
+=== RUN   TestParityKey_matchesFreshDepsHash
+--- PASS: TestParityKey_matchesFreshDepsHash (1.41s)
+=== RUN   TestParityKey_shadowMatchesDecoder
+    paritykey_test.go:203: 43 families, 31 with programs, 30 under the loader rule
+--- PASS: TestParityKey_shadowMatchesDecoder (1.61s)
+=== RUN   TestParityLoaders_mapping
+--- PASS: TestParityLoaders_mapping (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	3.049s
+=== RUN   TestCompare_classes
+--- PASS: TestCompare_classes (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/guard/paritykey	0.002s

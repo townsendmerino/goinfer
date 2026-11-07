@@ -762,6 +762,29 @@ func (m *Model) residentForgetIDs() {
 	}
 }
 
+// residentForgetScratch prepares the resident for a call that writes from position 0 and keeps nothing (HiddenLast,
+// PromptHidden, PromptHiddenAll): it binds an empty slot, else the least recently used one, and forgets that slot's
+// record, so a chat parked in another slot keeps its rows for its next turn. With one slot the chat's rows are lost to the
+// call; its next turn prefills cold. A failed bind leaves the previous binding, forgotten. Call it under the exclusive
+// resident claim (tryClaimResident).
+func (m *Model) residentForgetScratch() {
+	if n := m.residentSlotCount(); n > 1 {
+		a := m.kvSlots()
+		a.Resize(n)
+		lens, uses := make([]int, n), make([]uint64, n)
+		for i := range n {
+			lens[i], uses[i] = a.Len(i), a.Use(i)
+		}
+		if pick := pickResidentSlot(make([]int, n), lens, uses, nil); pick >= 0 && !scratchSlotPlantForTest {
+			_ = m.residentBind(pick) // on an error the resident keeps its binding, which the forget below makes cold
+		}
+	}
+	m.residentForgetIDs()
+}
+
+// scratchSlotPlantForTest makes residentForgetScratch write the bound slot, for the test that shows its gate red.
+var scratchSlotPlantForTest bool
+
 // residentWritesFromZero says the bound slot's next write starts at position 0, so no rows stay missing below a wrapped upload's floor
 // (kvmgr.Slots.SetFloor). Its caller has forgotten the slot's record, so a write that fails part way grants nothing. A path that
 // writes from 0 and does not say so only keeps a floor it could have dropped: the slot re-prefills a prefix it could have reused.

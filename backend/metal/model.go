@@ -1687,7 +1687,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				return nil, e
 			}
 			L.mla = ML
-			r.kvNullBytes[l] = decoder.KVBlockRows * r.mla.latDim * 4
+			lat, e := kvCheckRows(l, m.LayerBuffers(l), kvLayerWant{latent: r.mla.latDim})
+			if e != nil {
+				return nil, e
+			}
+			r.kvNullBytes[l] = decoder.KVBlockRows * lat * 4
 			kvBytes := kvBlocksFor(r.ctxCap) * r.kvNullBytes[l]
 			r.kvContig = true
 			r.kvSlotBytes[l] = kvBytes
@@ -1937,7 +1941,15 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			// load; a tile lies inside a block, so that read stays in the block. An int8 cache keeps one f32 scale per position and
 			// head beside its one-byte codes, block for block.
 			blocks := kvBlocksFor(r.ctxCap)
-			r.kvNullBytes[l] = decoder.KVBlockRows * L.geom.kvDim * r.kvElemBytes()
+			want := kvLayerWant{kvDim: L.geom.kvDim, nKV: L.geom.nKV, shared: L.kvShared}
+			kw, e := kvCheckRows(l, m.LayerBuffers(l), want)
+			if e != nil {
+				return nil, e
+			}
+			r.kvNullBytes[l] = decoder.KVBlockRows * kw * r.kvElemBytes()
+			if L.kvShared {
+				r.kvNullBytes[l] = r.kvNullBytes[L.kvSrc]
+			}
 			kvBytes := blocks * r.kvNullBytes[l]
 			allocSlots := kvSlots
 			r.kvContig = true
@@ -1964,6 +1976,13 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			}
 		}
 		r.layers[l] = L
+	}
+	for l := range r.layers { // a layer with no pool of its own declares no row: the plan prices what the build holds
+		if r.kc[l] == (Buffer{}) && !r.layers[l].kvShared {
+			if _, e := kvCheckRows(l, m.LayerBuffers(l), kvLayerWant{}); e != nil {
+				return nil, e
+			}
+		}
 	}
 	// MC1: the resident KV slots (kvSlots: the model's request, clamped to what the memory guard allows, priced at the top of this
 	// build; 1 for a family with recurrent state). A slot is its block table over the layers' shared pools, set below.
@@ -2844,6 +2863,58 @@ func (r *resident) kvHostRow(pos int) int {
 }
 
 // kvElemBytes is one element of the K/V cache: 1 for int8, 4 for f32, 2 for f16.
+// kvLayerWant is what one layer's kernels address in the KV pools: an MLA layer's latent row (latent elements, f32), an attention
+// layer's K and V rows (kvDim elements in nKV heads, at the KV precision), or none, for a layer that reads another's KV (shared) or holds no
+// pool.
+type kvLayerWant struct {
+	latent, kvDim, nKV int
+	shared             bool
+}
+
+// kvCheckRows checks layer l's declared per-position rows (decoder.Model.LayerBuffers) against want, and returns the width the layer's
+// pool is sized from (0 for none). Every row's name, width, heads and precision must be what the kernels address, with no row missing,
+// extra or declared twice: a pool sized from the list and written by kernels sized otherwise would overflow. State entries are not rows.
+func kvCheckRows(l int, bufs []program.Buf, want kvLayerWant) (int, error) {
+	rows := map[string]program.Buf{}
+	for _, b := range bufs {
+		if b.Unit != program.PerPosition {
+			continue
+		}
+		if _, again := rows[b.Name]; again {
+			return 0, fmt.Errorf("metal: layer %d: the program declares %s rows twice", l, b.Name)
+		}
+		rows[b.Name] = b
+	}
+	var need map[string]program.Buf
+	switch {
+	case want.shared || (want.latent == 0 && want.kvDim == 0):
+		need = map[string]program.Buf{}
+	case want.latent > 0:
+		need = map[string]program.Buf{"latent": {Prec: program.PrecF32, Elems: want.latent}}
+	default:
+		need = map[string]program.Buf{"k": {Prec: program.PrecKV, Elems: want.kvDim, Heads: want.nKV}, "v": {Prec: program.PrecKV, Elems: want.kvDim, Heads: want.nKV}}
+	}
+	for name, b := range rows {
+		w, ok := need[name]
+		switch {
+		case !ok:
+			return 0, fmt.Errorf("metal: layer %d: the program declares %s rows, which its kernels have no pool for", l, name)
+		case b.Elems != w.Elems || b.Prec != w.Prec || (w.Heads > 0 && b.Heads != w.Heads):
+			return 0, fmt.Errorf("metal: layer %d: the program declares %s rows of %d elements in %d heads at precision %d; the kernels address %d in %d at %d",
+				l, name, b.Elems, b.Heads, b.Prec, w.Elems, w.Heads, w.Prec)
+		}
+	}
+	for name := range need {
+		if _, ok := rows[name]; !ok {
+			return 0, fmt.Errorf("metal: layer %d: the program declares no %s rows", l, name)
+		}
+	}
+	if want.latent > 0 {
+		return rows["latent"].Elems, nil
+	}
+	return rows["k"].Elems, nil
+}
+
 func (r *resident) kvElemBytes() int {
 	switch {
 	case r.kvI8:

@@ -1,0 +1,146 @@
+diff --git a/backend/metal/batch_rows.go b/backend/metal/batch_rows.go
+index b794fc05..c3e38d66 100644
+--- a/backend/metal/batch_rows.go
++++ b/backend/metal/batch_rows.go
+@@ -311,46 +311,68 @@ kernel void mc3_gemv_w8a8_rows(device const char* bq[[buffer(0)]], device const
+ 	return b.String()
+ }
+ 
+-const q4kRowsSrc = `template <uint B>
++const q4kRowsSrc = `// The step's Q4_K and Q5_K GEMVs stage the activation rows in threadgroup memory: the threadgroup's 8 simdgroups (8 output
++// rows) read the same B activation rows, which as per-lane device loads re-streamed B*K floats per output row through the
++// cache. A slab is 4 super-blocks (1024 floats) of each row, loaded once and coalesced; a lane then reads its q4k_lane_act
++// share (float4 k of its 8) from the slab, at an index swizzled so the lanes of a simdgroup spread over the banks. Only where
++// the data comes from changes: every lane still takes its super-blocks b = ix, ix+4, ... in order and runs the same
++// arithmetic per row, so the bits are decode's.
++inline uint mc3_swz(uint f) { return f ^ ((((f >> 4u) & 3u)*2u + (f >> 6u)) & 7u); }
++template <uint B>
++inline void mc3_stage(threadgroup float4 (*sl)[256], device const float* ax_rows, uint lda, uint K, uint slab, uint tid, uint tgsz) {
++    for (uint f4 = tid; f4 < 256u; f4 += tgsz) {
++        uint g = slab*1024u + f4*4u;
++        SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) sl[r][mc3_swz(f4)] = (g < K) ? *(device const float4*)(ax_rows + r*lda + g) : float4(0.0f);
++    }
++}
++template <uint B>
+ kernel void mc3_gemv_q4k_f32_rows(device const uchar* wq[[buffer(0)]], device const float* ax_rows[[buffer(1)]],
+     device float* out_rows[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
+     constant uint& lda[[buffer(5)]], constant uint& ldo[[buffer(6)]], device const float* bias[[buffer(7)]],
+     constant uint& mode[[buffer(8)]], uint tgid[[threadgroup_position_in_grid]],
+-    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
++    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]],
++    uint tid[[thread_index_in_threadgroup]], uint tgsz[[threads_per_threadgroup]]) {
+ #pragma clang fp reassociate(off)
++    threadgroup float4 sl[B][256];
+     uint row = tgid*8u + sgid;
+-    if (row >= N) return;
++    const bool live = row < N;
+     const uint NB = K >> 8u, ix = lane >> 3u, j = (lane & 7u) >> 1u, h = lane & 1u;
+-    device const uchar* wr = wq + (ulong)row*(ulong)NB*144ul;
++    device const uchar* wr = wq + (ulong)(live ? row : 0u)*(ulong)NB*144ul;
+     float acc[B];
+     SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) acc[r] = 0.0f;
+-    for (uint b = ix; b < NB; b += 4u) {
+-        device const uchar* blk = wr + b*144u;
+-        half2 dd = as_type<half2>(*(device const uint*)blk);
+-        float sc0, m0, sc1, m1; q4k_scale_min2(j, blk + 4, sc0, m0, sc1, m1);
+-        uint4 q = *(device const uint4*)(blk + 16u + j*32u + h*16u);
+-        float d = float(dd.x), dm = float(dd.y);
+-        SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
+-            device const float4* alo4 = (device const float4*)(ax_rows + r*lda + b*256u + j*64u + h*16u);
+-            float4 al[4], ah[4];
+-            float slo = 0.0f, shi = 0.0f;
+-            for (uint i = 0u; i < 4u; i++) {
+-                al[i] = alo4[i]; ah[i] = alo4[8u + i];
+-                slo += (al[i].x + al[i].y) + (al[i].z + al[i].w);
+-                shi += (ah[i].x + ah[i].y) + (ah[i].z + ah[i].w);
++    for (uint slab = 0u; slab*4u < NB; slab++) {
++        threadgroup_barrier(mem_flags::mem_threadgroup);
++        mc3_stage<B>(sl, ax_rows, lda, K, slab, tid, tgsz);
++        threadgroup_barrier(mem_flags::mem_threadgroup);
++        const uint b = slab*4u + ix;
++        if (live && b < NB) {
++            device const uchar* blk = wr + b*144u;
++            half2 dd = as_type<half2>(*(device const uint*)blk);
++            float sc0, m0, sc1, m1; q4k_scale_min2(j, blk + 4, sc0, m0, sc1, m1);
++            uint4 q = *(device const uint4*)(blk + 16u + j*32u + h*16u);
++            float d = float(dd.x), dm = float(dd.y);
++            const uint base = ix*64u + j*16u + h*4u;
++            SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
++                float4 al[4], ah[4];
++                float slo = 0.0f, shi = 0.0f;
++                for (uint i = 0u; i < 4u; i++) {
++                    al[i] = sl[r][mc3_swz(base + i)]; ah[i] = sl[r][mc3_swz(base + 8u + i)];
++                    slo += (al[i].x + al[i].y) + (al[i].z + al[i].w);
++                    shi += (ah[i].x + ah[i].y) + (ah[i].z + ah[i].w);
++                }
++                float dlo = 0.0f, dhi = 0.0f;
++                for (uint i = 0u; i < 4u; i++) {
++                    uint w = q[i];
++                    dlo += dot(float4(float(w & 15u), float((w >> 8u) & 15u), float((w >> 16u) & 15u), float((w >> 24u) & 15u)), al[i]);
++                    dhi += dot(float4(float((w >> 4u) & 15u), float((w >> 12u) & 15u), float((w >> 20u) & 15u), float(w >> 28u)), ah[i]);
++                }
++                acc[r] += d*sc0*dlo + d*sc1*dhi - dm*(m0*slo + m1*shi);
+             }
+-            float dlo = 0.0f, dhi = 0.0f;
+-            for (uint i = 0u; i < 4u; i++) {
+-                uint w = q[i];
+-                dlo += dot(float4(float(w & 15u), float((w >> 8u) & 15u), float((w >> 16u) & 15u), float((w >> 24u) & 15u)), al[i]);
+-                dhi += dot(float4(float((w >> 4u) & 15u), float((w >> 12u) & 15u), float((w >> 20u) & 15u), float(w >> 28u)), ah[i]);
+-            }
+-            acc[r] += d*sc0*dlo + d*sc1*dhi - dm*(m0*slo + m1*shi);
+         }
+     }
+     SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
+         float s = simd_sum(acc[r]);
+-        if (lane==0) {
++        if (live && lane==0) {
+             device float* out = out_rows + r*ldo;
+             if (mode == 0u) out[row] = s;
+             else if (mode == 1u) out[row] = s + bias[row];
+@@ -387,24 +409,37 @@ kernel void mc3_gemv_q5k_f32_rows(device const uchar* wq[[buffer(0)]], device co
+     device float* out_rows[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
+     constant uint& lda[[buffer(5)]], constant uint& ldo[[buffer(6)]], device const float* bias[[buffer(7)]],
+     constant uint& mode[[buffer(8)]], uint tgid[[threadgroup_position_in_grid]],
+-    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
++    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]],
++    uint tid[[thread_index_in_threadgroup]], uint tgsz[[threads_per_threadgroup]]) {
+ #pragma clang fp reassociate(off)
++    threadgroup float4 sl[B][256];
+     uint row = tgid*8u + sgid;
+-    if (row >= N) return;
++    const bool live = row < N;
+     const uint NB = K >> 8u, ix = lane >> 3u, j = (lane & 7u) >> 1u, h = lane & 1u;
+-    device const uchar* wr = wq + (ulong)row*(ulong)NB*176ul;
++    device const uchar* wr = wq + (ulong)(live ? row : 0u)*(ulong)NB*176ul;
+     float acc[B];
+     SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) acc[r] = 0.0f;
+-    for (uint b = ix; b < NB; b += 4u) {
+-        SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
+-            float4 al[4], ah[4]; float slo, shi;
+-            q4k_lane_act(ax_rows + r*lda, b, j, h, al, ah, slo, shi);
+-            acc[r] += q5k_blk(wr + b*176u, j, h, al, ah, slo, shi);
++    for (uint slab = 0u; slab*4u < NB; slab++) {
++        threadgroup_barrier(mem_flags::mem_threadgroup);
++        mc3_stage<B>(sl, ax_rows, lda, K, slab, tid, tgsz);
++        threadgroup_barrier(mem_flags::mem_threadgroup);
++        const uint b = slab*4u + ix;
++        if (live && b < NB) {
++            const uint base = ix*64u + j*16u + h*4u;
++            SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
++                float4 al[4], ah[4]; float slo = 0.0f, shi = 0.0f;
++                for (uint i = 0u; i < 4u; i++) {
++                    al[i] = sl[r][mc3_swz(base + i)]; ah[i] = sl[r][mc3_swz(base + 8u + i)];
++                    slo += (al[i].x + al[i].y) + (al[i].z + al[i].w);
++                    shi += (ah[i].x + ah[i].y) + (ah[i].z + ah[i].w);
++                }
++                acc[r] += q5k_blk(wr + b*176u, j, h, al, ah, slo, shi);
++            }
+         }
+     }
+     SA_ROWS_UNROLL for (uint r = 0u; r < B; r++) {
+         float s = simd_sum(acc[r]);
+-        if (lane==0) {
++        if (live && lane==0) {
+             device float* out = out_rows + r*ldo;
+             if (mode == 0u) out[row] = s;
+             else if (mode == 1u) out[row] = s + bias[row];

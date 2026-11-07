@@ -15,16 +15,19 @@ import (
 	"time"
 )
 
-// mainArgsEnv, when set, makes the test binary run Main with these arguments (one per line) instead of the tests, so a test can
-// drive the goinfer-chat command line in a child process: Main reads os.Args and may call os.Exit.
+// mainArgsEnv, when set, makes the test binary run Main with these arguments (a JSON array, so an empty or multi-line argument
+// survives) instead of the tests, so a test can drive the goinfer-chat command line in a child process: Main reads os.Args and
+// may call os.Exit.
 const mainArgsEnv = "CHATAPP_TEST_MAIN_ARGS"
 
 func TestMain(m *testing.M) {
-	if args, ok := os.LookupEnv(mainArgsEnv); ok {
-		os.Args = []string{"goinfer-chat"}
-		if args != "" {
-			os.Args = append(os.Args, strings.Split(args, "\n")...)
+	if raw, ok := os.LookupEnv(mainArgsEnv); ok {
+		var args []string
+		if err := json.Unmarshal([]byte(raw), &args); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", mainArgsEnv, err)
+			os.Exit(2)
 		}
+		os.Args = append([]string{"goinfer-chat"}, args...)
 		Main()
 		os.Exit(0)
 	}
@@ -38,11 +41,15 @@ func runMain(t *testing.T, stdin string, args ...string) (code int, stdout, stde
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, os.Args[0])
-	cmd.Env = append(os.Environ(), mainArgsEnv+"="+strings.Join(args, "\n"))
+	enc, err := json.Marshal(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.Env = append(os.Environ(), mainArgsEnv+"="+string(enc))
 	cmd.Stdin = strings.NewReader(stdin)
 	var o, e bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &o, &e
-	err := cmd.Run()
+	err = cmd.Run()
 	var exit *exec.ExitError
 	switch {
 	case err == nil:
@@ -77,7 +84,7 @@ func TestMain_oneShotPromptAnswersOnStdoutAlone(t *testing.T) {
 }
 
 // The REPL reads commands and prompts from stdin: after /temp 0 and /max 6 a prompt gets the reply -p gives the same prompt at
-// those settings, 6 tokens long, and /quit ends it, exit 0. Both run with no system prompt, and the prompt is one whose reply
+// those settings, 6 tokens long, and /quit ends it, exit 0, before the prompt typed after it is answered. Both run with no system prompt, and the prompt is one whose reply
 // from this model is its own: behind the default system prompt, or for a short prompt, its replies to different prompts can
 // agree, and then a reply to another prompt would match.
 func TestMain_replTakesCommandsAndPromptsFromStdin(t *testing.T) {
@@ -87,12 +94,12 @@ func TestMain_replTakesCommandsAndPromptsFromStdin(t *testing.T) {
 	if want = strings.TrimSpace(want); code != 0 || want == "" {
 		t.Fatalf("-p for the expected reply: exit %d, stdout %q\nstderr:\n%s", code, want, stderr)
 	}
-	code, stdout, stderr := runMain(t, "/temp 0\n/max 6\n"+prompt+"\n/quit\n", "--model", dir, "--no-selftest", "--system", "")
+	code, stdout, stderr := runMain(t, "/temp 0\n/max 6\n"+prompt+"\n/quit\nzzzz\n", "--model", dir, "--no-selftest", "--system", "")
 	if code != 0 || !strings.Contains(stdout, want) {
 		t.Fatalf("exit %d; stdout %q does not hold the reply %q\nstderr:\n%s", code, stdout, want, stderr)
 	}
-	if !strings.Contains(stderr, "[6 tok") {
-		t.Errorf("the reply after /max 6 was not 6 tokens\nstderr:\n%s", stderr)
+	if n := strings.Count(stderr, "[6 tok"); n != 1 {
+		t.Errorf("%d replies of 6 tokens, want 1: the one before /quit, and none to the prompt after it\nstderr:\n%s", n, stderr)
 	}
 }
 
@@ -121,7 +128,7 @@ func TestMain_batchWritesEachLineAndResumes(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer f.Close()
-		got := map[string]string{}
+		got, seen := map[string]string{}, map[string]int{}
 		sc := bufio.NewScanner(f)
 		for sc.Scan() {
 			var l struct {
@@ -151,6 +158,12 @@ func TestMain_batchWritesEachLineAndResumes(t *testing.T) {
 			default:
 				got[l.CustomID] = "neither a response nor an error: " + sc.Text()
 			}
+			if seen[l.CustomID]++; seen[l.CustomID] > 1 {
+				t.Errorf("%s holds custom_id %q twice", path, l.CustomID)
+			}
+		}
+		if err := sc.Err(); err != nil {
+			t.Fatalf("reading %s: %v", path, err)
 		}
 		return got
 	}

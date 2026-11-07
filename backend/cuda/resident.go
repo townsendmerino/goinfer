@@ -501,6 +501,8 @@ func (r *cudaResident) knobValue(name string) string { v, _ := r.lookupKnob(name
 // round-trip per token. BuildResident decides which families it takes (dense, MoE, MLA, Gated-DeltaNet, ...), with
 // mixed int4/int8/f32 weights as the real q4_k_m checkpoint stores them.
 type cudaResident struct {
+	// xhostBuf is the contiguous host block a batched pass stages its embeddings in before the upload (prefillCore), grown to the widest pass and reused.
+	xhostBuf []float32
 	// prog is the model's program (decoder.Model.Program), shared and read-only; nothing is launched from it yet.
 	prog *program.Program
 	// cost, when set, counts the token in progress into costPhase (SB11, cost.go); nil is off. Executor goroutine only.
@@ -2738,6 +2740,8 @@ func (r *cudaResident) TruncateTo(pos int) {}
 // issued, so binding points the layer at them, and marked rows fold into the slot that marked them first.
 func (r *cudaResident) KVSlots() int { return max(1, len(r.kvTabs)) }
 
+// UseKVSlot binds slot i for the calls that follow. The binding shields nothing: kvEvictIdle releases an idle bound slot like any other,
+// and only a running generation (SetKVSlotBusy) or the slot being written is skipped.
 func (r *cudaResident) UseKVSlot(i int) error {
 	if i < 0 || i >= r.KVSlots() {
 		return fmt.Errorf("cuda: KV slot %d out of range (%d allocated)", i, r.KVSlots())

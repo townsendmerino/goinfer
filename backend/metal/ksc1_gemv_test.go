@@ -235,13 +235,104 @@ func TestKSC1_gemvTiming(t *testing.T) {
 }
 
 // TestKSC1_stepMatchesDecodeKernels checks C1-G2's property at kernel level, in the decode library's fast-math build: the
-// batched step's mc3_gemv_q4k_f32_rows<B> and mc3_gemv_w8_f32_rows<B> (B = 1, 2, 4, 8; mode 0, 1, 2) against decode's rows
-// kernels at the resident's R on the same weights and each activation row alone. Byte-equal.
+// batched step's mc3_gemv_q4k_f32_rows<B> and mc3_gemv_w8_f32_rows<B> (B = 1..8; mode 0, 1, 2) against decode's rows
+// kernels at the resident's R on the same weights and each activation row alone, at 1, 6, 12 and 19 super-blocks a row and
+// 999, 1000 and 1001 rows (the step's Q4_K kernel takes two rows a simdgroup, so an odd count has a partial last tile). Byte-equal.
 func TestKSC1_stepMatchesDecodeKernels(t *testing.T) {
+	ksc1StepRows(t, true)
+}
+
+// replaceNth replaces the n-th (1-based) occurrence of old in s; it fails the test if there are fewer.
+func replaceNth(t *testing.T, s, old, nw string, n int) string {
+	t.Helper()
+	at := -1
+	for k := 0; k < n; k++ {
+		i := strings.Index(s[at+1:], old)
+		if i < 0 {
+			t.Fatalf("the plant's target is not in the kernel source (occurrence %d of %q)", n, old)
+		}
+		at += 1 + i
+	}
+	return s[:at] + nw + s[at+len(old):]
+}
+
+// TestKSC1_stepRowsPlantIsRed plants a reordered accumulation in the step's Q4_K rows kernel (the four lane groups are rotated by
+// one, so simd_sum adds different partial sums together; reversing them is not a plant, the butterfly sum is symmetric under it):
+// the comparison above must see it in EVERY cell with B >= 1 of 6 or more super-blocks. At one super-block only one lane group has
+// work, so the rotation moves the same eight partial sums to other lanes: it may not move a bit there, and the cells are logged
+// rather than required.
+func TestKSC1_stepRowsPlantIsRed(t *testing.T) {
+	const good = "const uint NB = K >> 8u, ix = lane >> 3u, j = (lane & 7u) >> 1u, h = lane & 1u;\n    _Pragma(\"clang loop unroll(disable)\") for (uint r = 0u; r < B; r++) {\n        float acc[NR];\n        SA_ROWS_UNROLL for (uint n = 0u; n < NR; n++) acc[n] = 0.0f;\n        for (uint b = ix; b < NB; b += 4u) {\n            device const float4* alo4"
+	stepPlantRed(t, "q4k", good, strings.Replace(good, "ix = lane >> 3u", "ix = ((lane >> 3u) + 1u) & 3u", 1), 1, func() map[string]int { return ksc1StepRows(t, false) })
+}
+
+// TestKSC1_stepRowsGuardPlantsAreRed plants an off-by-one in the write guard of the step's two-rows-a-simdgroup Q4_K kernel
+// (`row0 + n < N` made `<=`). The extra write lands on the next activation row's first output (overwritten by that row's pass) or,
+// in the last row, on the canary word after the output: only the canary sees it, only at an odd row count and only in the modes that
+// store (a residual `+= 0` leaves it alone). The cells at N = 999 and 1001 must go red in modes 0 and 1; N = 1000 must not. The plant
+// is racy by construction and not a clean mutation: the edge row's extra write lands on the next activation row's first output while
+// another simdgroup writes it, and mode 1 reads bias[N] (the test's bias buffer is one word longer for that); only the canary and the
+// even-N cells are asserted.
+func TestKSC1_stepRowsGuardPlantsAreRed(t *testing.T) {
+	const guard = "if (lane==0 && row0 + n < N) {"
+	prev := mc3RowsKernels
+	defer func() { mc3RowsKernels = prev }()
+	mc3RowsKernels = replaceNth(t, prev, guard, "if (lane==0 && row0 + n <= N) {", 1)
+	red, even := 0, 0
+	for k, v := range ksc1StepRows(t, false) {
+		if !strings.HasPrefix(k, "q4k") {
+			continue
+		}
+		odd := strings.Contains(k, "N=999") || strings.Contains(k, "N=1001")
+		stores := strings.Contains(k, "mode=0") || strings.Contains(k, "mode=1")
+		switch {
+		case odd && stores && v == 0:
+			t.Errorf("the write guard made <= is not seen at an odd row count: %s", k)
+		case odd && stores:
+			red++
+		case !odd && v != 0:
+			even++
+			t.Errorf("an even row count differs under the guard plant: %s (%d)", k, v)
+		}
+	}
+	t.Logf("guard plant: %d odd-N store cells red, %d even-N cells moved", red, even)
+}
+
+// stepPlantRed applies a plant to the n-th occurrence of good in the kernel source, runs cells, and requires a differing output in
+// every q4k cell that has at least six super-blocks (K >= 1536); the cells at K = 256 are logged.
+func stepPlantRed(t *testing.T, kind, good, bad string, n int, cells func() map[string]int) {
+	t.Helper()
+	prev := mc3RowsKernels
+	defer func() { mc3RowsKernels = prev }()
+	mc3RowsKernels = replaceNth(t, prev, good, bad, n)
+	missed, short := 0, 0
+	for k, v := range cells() {
+		if !strings.HasPrefix(k, kind) {
+			continue
+		}
+		if strings.Contains(k, "K=256 ") {
+			if v == 0 {
+				short++
+			}
+			continue
+		}
+		if v == 0 {
+			missed++
+			t.Errorf("the planted reorder still matches decode's: %s", k)
+		}
+	}
+	t.Logf("%s planted reorder: every K >= 1536 cell differs (%d missed); %d K=256 cells did not move", kind, missed, short)
+}
+
+// ksc1StepRows runs the comparison and returns how many outputs differ; report makes each differing case an error.
+func ksc1StepRows(t *testing.T, report bool) (cells map[string]int) {
+	cells = map[string]int{}
+	t.Helper()
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
+	defer d.ReleaseAll() // the helper runs three times per test binary (the property and two plants)
 	lib, err := d.CompileLibrary(allKernels+mc3RowsKernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
@@ -255,74 +346,85 @@ func TestKSC1_stepMatchesDecodeKernels(t *testing.T) {
 	}
 	q := d.NewCommandQueue()
 	rng := rand.New(rand.NewSource(59))
-	const N, K = 1000, 3072
-	raw := ksc1Q4KRaw(rng, N, K)
-	wq := d.NewBufferBytes(len(raw))
-	for i, c := range raw {
-		wq.Int8s()[i] = int8(c)
-	}
-	w8 := d.NewBufferBytes(N * K)
-	for i := range w8.Int8s()[:N*K] {
-		w8.Int8s()[i] = int8(rng.Intn(255) - 127)
-	}
-	sc, bias, init := make([]float32, N), make([]float32, N), make([]float32, 8*N)
-	for i := range sc {
-		sc[i], bias[i] = float32(0.001+0.01*rng.Float64()), float32(rng.NormFloat64())
-	}
-	for i := range init {
-		init[i] = float32(rng.NormFloat64())
-	}
-	act := make([]float32, 8*K)
-	for i := range act {
-		act[i] = float32(rng.NormFloat64())
-	}
-	bS, bB, bA, uK, uN, uLda, uLdo := NewBufferFloats(d, sc), NewBufferFloats(d, bias), NewBufferFloats(d, act), NewBufferU32(d, K), NewBufferU32(d, N), NewBufferU32(d, K), NewBufferU32(d, N)
-	for _, fam := range []string{"q4k", "w8"} {
-		for mode := range 3 {
-			for _, B := range []int{1, 2, 4, 8} {
-				step := NewBufferFloats(d, slices.Clone(init[:B*N]))
-				e := q.Begin()
-				if fam == "q4k" {
-					e.Dispatch(pipe(fmt.Sprintf("mc3_gemv_q4k_f32_rows%d", B)), N*32, 256, wq, bA, step, uK, uN, uLda, uLdo, bB, NewBufferU32(d, uint32(mode)))
-				} else {
-					e.Dispatch(pipe(fmt.Sprintf("mc3_gemv_w8_f32_rows%d", B)), N*32, 256, w8, bS, bA, step, uK, uN, uLda, uLdo, bB, NewBufferU32(d, uint32(mode)))
-				}
-				e.End()
-				diff := 0
-				for b := range B {
-					out := NewBufferFloats(d, slices.Clone(init[b*N:(b+1)*N]))
-					variant := []string{"", "_bias", "_resid"}[mode]
-					e := q.Begin()
-					if fam == "q4k" {
-						R := q4kGemvRows
-						args := []Buffer{wq, bA.At(b * K * 4), out, uK, uN}
-						if mode == 1 {
-							args = append(args, bB)
+	for _, N := range []int{999, 1000, 1001} {
+		for _, K := range []int{256, 1536, 3072, 4864} { // 1, 6, 12 and 19 super-blocks: 19 is not a multiple of the four lane groups
+			raw := ksc1Q4KRaw(rng, N, K)
+			wq := d.NewBufferBytes(len(raw))
+			for i, c := range raw {
+				wq.Int8s()[i] = int8(c)
+			}
+			w8 := d.NewBufferBytes(N * K)
+			for i := range w8.Int8s()[:N*K] {
+				w8.Int8s()[i] = int8(rng.Intn(255) - 127)
+			}
+			sc, bias, init := make([]float32, N), make([]float32, N+1), make([]float32, 8*N) // bias has a word past N: the write-guard plants read bias[N] in mode 1
+			for i := range sc {
+				sc[i], bias[i] = float32(0.001+0.01*rng.Float64()), float32(rng.NormFloat64())
+			}
+			for i := range init {
+				init[i] = float32(rng.NormFloat64())
+			}
+			act := make([]float32, 8*K)
+			for i := range act {
+				act[i] = float32(rng.NormFloat64())
+			}
+			bS, bB, bA, uK, uN, uLda, uLdo := NewBufferFloats(d, sc), NewBufferFloats(d, bias), NewBufferFloats(d, act), NewBufferU32(d, uint32(K)), NewBufferU32(d, uint32(N)), NewBufferU32(d, uint32(K)), NewBufferU32(d, uint32(N))
+			for _, fam := range []string{"q4k", "w8"} {
+				for mode := range 3 {
+					for _, B := range []int{1, 2, 3, 4, 5, 6, 7, 8} {
+						step := NewBufferFloats(d, append(slices.Clone(init[:B*N]), stepCanary...))
+						e := q.Begin()
+						if fam == "q4k" {
+							e.Dispatch(pipe(fmt.Sprintf("mc3_gemv_q4k_f32_rows%d", B)), stepRowsGrid(N), 256, wq, bA, step, uK, uN, uLda, uLdo, bB, NewBufferU32(d, uint32(mode)))
+						} else {
+							e.Dispatch(pipe(fmt.Sprintf("mc3_gemv_w8_f32_rows%d", B)), N*32, 256, w8, bS, bA, step, uK, uN, uLda, uLdo, bB, NewBufferU32(d, uint32(mode)))
 						}
-						e.Dispatch(pipe(fmt.Sprintf("gemv_q4k_f32%s_rows%d", variant, R)), (N+R-1)/R*32, 256, args...)
-					} else {
-						R := w8F32GemvRows
-						args := []Buffer{w8, bS, bA.At(b * K * 4), out, uK, uN}
-						if mode == 1 {
-							args = append(args, bB)
+						e.End()
+						if err := e.Err(); err != nil {
+							t.Fatalf("%s N=%d K=%d mode %d B=%d: step dispatch: %v", fam, N, K, mode, B, err)
 						}
-						e.Dispatch(pipe(fmt.Sprintf("gemv_w8_f32%s_rows%d", variant, R)), (N+R-1)/R*32, 256, args...)
+						diff := stepCanaryHits(step, B, N)
+						for b := range B {
+							out := NewBufferFloats(d, slices.Clone(init[b*N:(b+1)*N]))
+							variant := []string{"", "_bias", "_resid"}[mode]
+							e := q.Begin()
+							if fam == "q4k" {
+								R := q4kGemvRows
+								args := []Buffer{wq, bA.At(b * K * 4), out, uK, uN}
+								if mode == 1 {
+									args = append(args, bB)
+								}
+								e.Dispatch(pipe(fmt.Sprintf("gemv_q4k_f32%s_rows%d", variant, R)), (N+R-1)/R*32, 256, args...)
+							} else {
+								R := w8F32GemvRows
+								args := []Buffer{w8, bS, bA.At(b * K * 4), out, uK, uN}
+								if mode == 1 {
+									args = append(args, bB)
+								}
+								e.Dispatch(pipe(fmt.Sprintf("gemv_w8_f32%s_rows%d", variant, R)), (N+R-1)/R*32, 256, args...)
+							}
+							e.End()
+							if err := e.Err(); err != nil {
+								t.Fatalf("%s N=%d K=%d mode %d B=%d row %d: decode dispatch: %v", fam, N, K, mode, B, b, err)
+							}
+							got, want := step.U32s()[b*N:(b+1)*N], out.U32s()[:N]
+							for i := range want {
+								if got[i] != want[i] {
+									diff++
+								}
+							}
+						}
+						fmt.Fprintf(os.Stderr, "[C1-G2k] %s N=%d K=%d mode %d B=%d: %d of %d differ\n", fam, N, K, mode, B, diff, B*N)
+						cells[fmt.Sprintf("%s N=%d K=%d mode=%d B=%d", fam, N, K, mode, B)] = diff
+						if diff != 0 && report {
+							t.Errorf("%s N=%d K=%d mode %d B=%d: %d outputs differ between the step and decode", fam, N, K, mode, B, diff)
+						}
 					}
-					e.End()
-					got, want := step.U32s()[b*N:(b+1)*N], out.U32s()[:N]
-					for i := range want {
-						if got[i] != want[i] {
-							diff++
-						}
-					}
-				}
-				fmt.Fprintf(os.Stderr, "[C1-G2k] %s mode %d B=%d: %d of %d differ\n", fam, mode, B, diff, B*N)
-				if diff != 0 {
-					t.Errorf("%s mode %d B=%d: %d outputs differ between the step and decode", fam, mode, B, diff)
 				}
 			}
 		}
 	}
+	return cells
 }
 
 // TestKSC1_phi3Speed is C1-G4: Phi-3 mini 4k at --quant q4k (the registered GOINFER_PHI3_GGUF asset), one resident, its
@@ -420,4 +522,18 @@ func TestKSC1_phi3Speed(t *testing.T) {
 	}
 	slices.Sort(ratios)
 	fmt.Fprintf(os.Stderr, "[C1-G4] median new/old %.4f, %d of 10 pairs below 1\n", (ratios[4]+ratios[5])/2, below)
+}
+
+// stepCanary is written after a step's output rows and must come back unchanged: a kernel that writes one row past N (a
+// partial tile's guard off by one) lands on it in the last activation row, where no later row overwrites it.
+var stepCanary = []float32{math.Float32frombits(0x3fabcdef), math.Float32frombits(0x3f123457), math.Float32frombits(0x40490fdb), math.Float32frombits(0x3e99999a)}
+
+// stepCanaryHits counts the canary words a step's buffer (B rows of N, then the canary) no longer holds.
+func stepCanaryHits(step Buffer, B, N int) (n int) {
+	for i, c := range stepCanary {
+		if step.U32s()[B*N+i] != math.Float32bits(c) {
+			n++
+		}
+	}
+	return n
 }

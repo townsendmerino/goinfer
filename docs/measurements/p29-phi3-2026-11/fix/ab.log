@@ -1,0 +1,167 @@
+start 2026-11-06 11:31:36
+-- cell prelude start 11:31:36 load1 1.85 reclaimable 8675016704
+-- cell old/phi3 start 11:31:44 load1 2.34 reclaimable 8635072512
+[p29-ab] pair 1 (sequential first): sequential 12.14 s (42 tok/s), step 58.07 s (9 tok/s), ratio 0.209
+[p29-ab] pair 2 (step first): sequential 12.18 s (42 tok/s), step 57.83 s (9 tok/s), ratio 0.211
+[p29-ab] pair 3 (sequential first): sequential 12.19 s (42 tok/s), step 52.93 s (10 tok/s), ratio 0.230
+[p29-ab] pair 4 (step first): sequential 12.22 s (42 tok/s), step 49.19 s (10 tok/s), ratio 0.248
+[p29-ab] pair 5 (sequential first): sequential 12.32 s (42 tok/s), step 57.85 s (9 tok/s), ratio 0.213
+    one_slot_step_test.go:303: P29 tier 1: sequential ÷ step over 5 pairs at 512 tokens: median 0.213, pairs [0.20909591295054913 0.2105848245013084 0.23036243558675965 0.2483889603140567 0.21295020625288305]
+--- PASS: TestZZAB (413.23s)
+PASS
+-- cell old/q15 start 11:38:38 load1 0.37 reclaimable 10796777472
+[p29-ab] pair 1 (sequential first): sequential 7.62 s (67 tok/s), step 22.19 s (23 tok/s), ratio 0.343
+[p29-ab] pair 2 (step first): sequential 7.62 s (67 tok/s), step 22.19 s (23 tok/s), ratio 0.343
+[p29-ab] pair 3 (sequential first): sequential 7.63 s (67 tok/s), step 22.19 s (23 tok/s), ratio 0.344
+[p29-ab] pair 4 (step first): sequential 7.62 s (67 tok/s), step 22.19 s (23 tok/s), ratio 0.344
+[p29-ab] pair 5 (sequential first): sequential 7.63 s (67 tok/s), step 22.19 s (23 tok/s), ratio 0.344
+    one_slot_step_test.go:303: P29 tier 1: sequential ÷ step over 5 pairs at 512 tokens: median 0.344, pairs [0.3432197657241725 0.3434149282407405 0.3438026728004575 0.3435053413147229 0.34369526466277256]
+--- PASS: TestZZAB (178.25s)
+PASS
+-- cell old/q05 start 11:41:36 load1 0.50 reclaimable 10120724480
+[p29-ab] pair 1 (sequential first): sequential 2.87 s (178 tok/s), step 1.76 s (291 tok/s), ratio 1.631
+[p29-ab] pair 2 (step first): sequential 2.87 s (178 tok/s), step 1.76 s (291 tok/s), ratio 1.633
+[p29-ab] pair 3 (sequential first): sequential 3.03 s (169 tok/s), step 1.84 s (279 tok/s), ratio 1.650
+[p29-ab] pair 4 (step first): sequential 2.86 s (179 tok/s), step 1.76 s (292 tok/s), ratio 1.630
+[p29-ab] pair 5 (sequential first): sequential 2.87 s (179 tok/s), step 1.76 s (292 tok/s), ratio 1.632
+    one_slot_step_test.go:303: P29 tier 1: sequential ÷ step over 5 pairs at 512 tokens: median 1.632, pairs [1.631493053127839 1.6333964393959592 1.649659436144294 1.6301739853081785 1.6319546004379053]
+--- PASS: TestZZAB (29.13s)
+PASS
+-- cell old/mc3-two-phi3 start 11:42:05 load1 0.48 reclaimable 9936994304
+[mc3-2] pair 1: two Forwards 53.4 ms, one 2-row step 71.5 ms, ratio 0.746
+[mc3-2] pair 2: two Forwards 52.9 ms, one 2-row step 65.1 ms, ratio 0.814
+[mc3-2] pair 3: two Forwards 65.1 ms, one 2-row step 68.0 ms, ratio 0.958
+[mc3-2] pair 4: two Forwards 54.1 ms, one 2-row step 68.1 ms, ratio 0.794
+[mc3-2] pair 5: two Forwards 50.9 ms, one 2-row step 65.5 ms, ratio 0.778
+[mc3-2] pair 6: two Forwards 51.9 ms, one 2-row step 67.5 ms, ratio 0.769
+[mc3-2] pair 7: two Forwards 55.9 ms, one 2-row step 68.1 ms, ratio 0.820
+[mc3-2] pair 8: two Forwards 49.9 ms, one 2-row step 67.8 ms, ratio 0.735
+[mc3-2] pair 9: two Forwards 47.3 ms, one 2-row step 64.1 ms, ratio 0.739
+[mc3-2] pair 10: two Forwards 46.1 ms, one 2-row step 63.9 ms, ratio 0.722
+[mc3-2] Phi-3-mini-4k-instruct-q4.gguf: two Forwards ÷ one 2-row step over 10 pairs: median 0.778 (min 0.722, max 0.958)
+--- PASS: TestZZMC3Two (7.58s)
+PASS
+-- cell new/phi3 start 11:42:13 load1 0.60 reclaimable 11469996032
+[p29-ab] pair 1 (sequential first): sequential 12.31 s (42 tok/s), step 10.72 s (48 tok/s), ratio 1.148
+[p29-ab] pair 2 (step first): sequential 12.29 s (42 tok/s), step 10.78 s (47 tok/s), ratio 1.140
+[p29-ab] pair 3 (sequential first): sequential 12.24 s (42 tok/s), step 10.67 s (48 tok/s), ratio 1.147
+[p29-ab] pair 4 (step first): sequential 12.23 s (42 tok/s), step 10.78 s (47 tok/s), ratio 1.135
+[p29-ab] pair 5 (sequential first): sequential 12.19 s (42 tok/s), step 10.77 s (48 tok/s), ratio 1.132
+    one_slot_step_test.go:303: P29 tier 1: sequential ÷ step over 5 pairs at 512 tokens: median 1.140, pairs [1.1480380325526103 1.1399160368925159 1.146997189123868 1.1349330065571022 1.1317729654657689]
+--- PASS: TestZZAB (143.23s)
+PASS
+-- cell new/q15 start 11:44:38 load1 1.09 reclaimable 11403427840
+[p29-ab] pair 1 (sequential first): sequential 7.48 s (68 tok/s), step 4.79 s (107 tok/s), ratio 1.561
+[p29-ab] pair 2 (step first): sequential 7.58 s (68 tok/s), step 4.78 s (107 tok/s), ratio 1.584
+[p29-ab] pair 3 (sequential first): sequential 7.56 s (68 tok/s), step 4.80 s (107 tok/s), ratio 1.575
+[p29-ab] pair 4 (step first): sequential 7.49 s (68 tok/s), step 4.80 s (107 tok/s), ratio 1.561
+[p29-ab] pair 5 (sequential first): sequential 7.44 s (69 tok/s), step 4.79 s (107 tok/s), ratio 1.554
+    one_slot_step_test.go:303: P29 tier 1: sequential ÷ step over 5 pairs at 512 tokens: median 1.561, pairs [1.5614578880086412 1.583767774314213 1.574779052038435 1.5610268875330666 1.553943542766123]
+--- PASS: TestZZAB (78.58s)
+PASS
+-- cell new/q05 start 11:45:57 load1 1.17 reclaimable 9903439872
+[p29-ab] pair 1 (sequential first): sequential 2.86 s (179 tok/s), step 1.21 s (423 tok/s), ratio 2.367
+[p29-ab] pair 2 (step first): sequential 2.86 s (179 tok/s), step 1.21 s (424 tok/s), ratio 2.373
+[p29-ab] pair 3 (sequential first): sequential 2.97 s (172 tok/s), step 1.32 s (389 tok/s), ratio 2.260
+[p29-ab] pair 4 (step first): sequential 2.86 s (179 tok/s), step 1.20 s (425 tok/s), ratio 2.374
+[p29-ab] pair 5 (sequential first): sequential 2.87 s (178 tok/s), step 1.21 s (425 tok/s), ratio 2.379
+    one_slot_step_test.go:303: P29 tier 1: sequential ÷ step over 5 pairs at 512 tokens: median 2.373, pairs [2.367426680282188 2.3732751683953874 2.259614476226071 2.374055400871603 2.3792165785583257]
+--- PASS: TestZZAB (25.40s)
+PASS
+-- cell new/mc3-two-phi3 start 11:46:22 load1 1.53 reclaimable 9764012032
+[mc3-2] pair 1: two Forwards 46.1 ms, one 2-row step 46.2 ms, ratio 0.999
+[mc3-2] pair 2: two Forwards 46.1 ms, one 2-row step 46.1 ms, ratio 0.999
+[mc3-2] pair 3: two Forwards 46.4 ms, one 2-row step 46.2 ms, ratio 1.003
+[mc3-2] pair 4: two Forwards 46.2 ms, one 2-row step 46.2 ms, ratio 1.001
+[mc3-2] pair 5: two Forwards 46.2 ms, one 2-row step 46.4 ms, ratio 0.996
+[mc3-2] pair 6: two Forwards 46.2 ms, one 2-row step 46.1 ms, ratio 1.004
+[mc3-2] pair 7: two Forwards 46.2 ms, one 2-row step 46.4 ms, ratio 0.996
+[mc3-2] pair 8: two Forwards 46.1 ms, one 2-row step 46.2 ms, ratio 0.998
+[mc3-2] pair 9: two Forwards 46.1 ms, one 2-row step 46.2 ms, ratio 0.998
+[mc3-2] pair 10: two Forwards 46.1 ms, one 2-row step 46.3 ms, ratio 0.996
+[mc3-2] Phi-3-mini-4k-instruct-q4.gguf: two Forwards ÷ one 2-row step over 10 pairs: median 0.999 (min 0.996, max 1.004)
+--- PASS: TestZZMC3Two (7.05s)
+PASS
+-- cell new/phi3 start 11:46:30 load1 1.72 reclaimable 11626446848
+[p29-ab] pair 1 (sequential first): sequential 12.23 s (42 tok/s), step 10.80 s (47 tok/s), ratio 1.132
+[p29-ab] pair 2 (step first): sequential 12.18 s (42 tok/s), step 10.77 s (48 tok/s), ratio 1.131
+[p29-ab] pair 3 (sequential first): sequential 12.47 s (41 tok/s), step 10.76 s (48 tok/s), ratio 1.159
+[p29-ab] pair 4 (step first): sequential 12.29 s (42 tok/s), step 10.68 s (48 tok/s), ratio 1.151
+[p29-ab] pair 5 (sequential first): sequential 12.39 s (41 tok/s), step 10.66 s (48 tok/s), ratio 1.162
+    one_slot_step_test.go:303: P29 tier 1: sequential ÷ step over 5 pairs at 512 tokens: median 1.151, pairs [1.1321615491142862 1.1308870143846905 1.1588389080319943 1.1508080756299708 1.1617473383527264]
+--- PASS: TestZZAB (142.00s)
+PASS
+-- cell new/q15 start 11:48:52 load1 2.80 reclaimable 11253547008
+[p29-ab] pair 1 (sequential first): sequential 7.64 s (67 tok/s), step 4.80 s (107 tok/s), ratio 1.593
+[p29-ab] pair 2 (step first): sequential 7.56 s (68 tok/s), step 4.79 s (107 tok/s), ratio 1.579
+[p29-ab] pair 3 (sequential first): sequential 7.62 s (67 tok/s), step 4.79 s (107 tok/s), ratio 1.590
+[p29-ab] pair 4 (step first): sequential 7.63 s (67 tok/s), step 4.79 s (107 tok/s), ratio 1.592
+[p29-ab] pair 5 (sequential first): sequential 7.63 s (67 tok/s), step 4.79 s (107 tok/s), ratio 1.592
+    one_slot_step_test.go:303: P29 tier 1: sequential ÷ step over 5 pairs at 512 tokens: median 1.592, pairs [1.5925419096039877 1.5791669073066184 1.5902177431226874 1.5916357199427762 1.5924216339936053]
+--- PASS: TestZZAB (79.24s)
+PASS
+-- cell new/q05 start 11:50:11 load1 1.09 reclaimable 10092380160
+[p29-ab] pair 1 (sequential first): sequential 2.87 s (178 tok/s), step 1.21 s (424 tok/s), ratio 2.382
+[p29-ab] pair 2 (step first): sequential 2.89 s (177 tok/s), step 1.20 s (426 tok/s), ratio 2.409
+[p29-ab] pair 3 (sequential first): sequential 2.99 s (171 tok/s), step 1.28 s (400 tok/s), ratio 2.338
+[p29-ab] pair 4 (step first): sequential 2.89 s (177 tok/s), step 1.20 s (425 tok/s), ratio 2.395
+[p29-ab] pair 5 (sequential first): sequential 2.89 s (177 tok/s), step 1.20 s (427 tok/s), ratio 2.405
+    one_slot_step_test.go:303: P29 tier 1: sequential ÷ step over 5 pairs at 512 tokens: median 2.395, pairs [2.382064184117541 2.408550708421696 2.3378738306851217 2.3954517070027346 2.404705662624491]
+--- PASS: TestZZAB (25.44s)
+PASS
+-- cell new/mc3-two-phi3 start 11:50:37 load1 0.86 reclaimable 10064150528
+[mc3-2] pair 1: two Forwards 46.2 ms, one 2-row step 46.3 ms, ratio 0.997
+[mc3-2] pair 2: two Forwards 46.1 ms, one 2-row step 46.4 ms, ratio 0.994
+[mc3-2] pair 3: two Forwards 46.2 ms, one 2-row step 46.5 ms, ratio 0.995
+[mc3-2] pair 4: two Forwards 46.1 ms, one 2-row step 46.3 ms, ratio 0.997
+[mc3-2] pair 5: two Forwards 46.3 ms, one 2-row step 46.3 ms, ratio 0.999
+[mc3-2] pair 6: two Forwards 46.2 ms, one 2-row step 46.2 ms, ratio 1.001
+[mc3-2] pair 7: two Forwards 46.4 ms, one 2-row step 46.5 ms, ratio 0.998
+[mc3-2] pair 8: two Forwards 46.0 ms, one 2-row step 46.3 ms, ratio 0.995
+[mc3-2] pair 9: two Forwards 46.7 ms, one 2-row step 46.2 ms, ratio 1.010
+[mc3-2] pair 10: two Forwards 46.3 ms, one 2-row step 46.3 ms, ratio 1.001
+[mc3-2] Phi-3-mini-4k-instruct-q4.gguf: two Forwards ÷ one 2-row step over 10 pairs: median 0.998 (min 0.994, max 1.010)
+--- PASS: TestZZMC3Two (6.80s)
+PASS
+-- cell old/phi3 start 11:50:44 load1 1.33 reclaimable 11590057984
+[p29-ab] pair 1 (sequential first): sequential 12.33 s (42 tok/s), step 57.46 s (9 tok/s), ratio 0.215
+[p29-ab] pair 2 (step first): sequential 12.20 s (42 tok/s), step 56.14 s (9 tok/s), ratio 0.217
+[p29-ab] pair 3 (sequential first): sequential 12.28 s (42 tok/s), step 57.96 s (9 tok/s), ratio 0.212
+[p29-ab] pair 4 (step first): sequential 12.29 s (42 tok/s), step 53.03 s (10 tok/s), ratio 0.232
+[p29-ab] pair 5 (sequential first): sequential 12.33 s (42 tok/s), step 58.05 s (9 tok/s), ratio 0.212
+    one_slot_step_test.go:303: P29 tier 1: sequential ÷ step over 5 pairs at 512 tokens: median 0.215, pairs [0.21465121044390764 0.2172253834030446 0.2118830449785257 0.23179513135001742 0.21245143988022788]
+--- PASS: TestZZAB (416.16s)
+PASS
+-- cell old/q15 start 11:57:41 load1 1.38 reclaimable 10705682432
+[p29-ab] pair 1 (sequential first): sequential 7.65 s (67 tok/s), step 22.26 s (23 tok/s), ratio 0.344
+[p29-ab] pair 2 (step first): sequential 7.64 s (67 tok/s), step 22.25 s (23 tok/s), ratio 0.344
+[p29-ab] pair 3 (sequential first): sequential 7.65 s (67 tok/s), step 22.26 s (23 tok/s), ratio 0.343
+[p29-ab] pair 4 (step first): sequential 7.64 s (67 tok/s), step 22.26 s (23 tok/s), ratio 0.343
+[p29-ab] pair 5 (sequential first): sequential 7.64 s (67 tok/s), step 22.26 s (23 tok/s), ratio 0.343
+    one_slot_step_test.go:303: P29 tier 1: sequential ÷ step over 5 pairs at 512 tokens: median 0.343, pairs [0.3435536392940769 0.3435531089564229 0.34347340620020206 0.34338158810685987 0.3433221733719348]
+--- PASS: TestZZAB (180.84s)
+PASS
+-- cell old/q05 start 12:00:42 load1 0.36 reclaimable 10093953024
+[p29-ab] pair 1 (sequential first): sequential 2.88 s (178 tok/s), step 1.76 s (291 tok/s), ratio 1.637
+[p29-ab] pair 2 (step first): sequential 2.88 s (178 tok/s), step 1.76 s (291 tok/s), ratio 1.638
+[p29-ab] pair 3 (sequential first): sequential 2.95 s (173 tok/s), step 2.07 s (247 tok/s), ratio 1.423
+[p29-ab] pair 4 (step first): sequential 2.88 s (178 tok/s), step 1.88 s (272 tok/s), ratio 1.531
+[p29-ab] pair 5 (sequential first): sequential 2.88 s (178 tok/s), step 1.76 s (291 tok/s), ratio 1.636
+    one_slot_step_test.go:303: P29 tier 1: sequential ÷ step over 5 pairs at 512 tokens: median 1.636, pairs [1.6374122077074784 1.638138707058585 1.4230427615547194 1.5310966696491675 1.63647379449877]
+--- PASS: TestZZAB (29.05s)
+PASS
+-- cell old/mc3-two-phi3 start 12:01:11 load1 0.29 reclaimable 10038116352
+[mc3-2] pair 1: two Forwards 46.0 ms, one 2-row step 63.8 ms, ratio 0.721
+[mc3-2] pair 2: two Forwards 46.2 ms, one 2-row step 63.6 ms, ratio 0.727
+[mc3-2] pair 3: two Forwards 46.5 ms, one 2-row step 63.7 ms, ratio 0.729
+[mc3-2] pair 4: two Forwards 46.3 ms, one 2-row step 63.7 ms, ratio 0.728
+[mc3-2] pair 5: two Forwards 46.0 ms, one 2-row step 63.8 ms, ratio 0.722
+[mc3-2] pair 6: two Forwards 46.3 ms, one 2-row step 63.5 ms, ratio 0.729
+[mc3-2] pair 7: two Forwards 46.6 ms, one 2-row step 64.1 ms, ratio 0.727
+[mc3-2] pair 8: two Forwards 46.2 ms, one 2-row step 63.8 ms, ratio 0.723
+[mc3-2] pair 9: two Forwards 46.3 ms, one 2-row step 63.8 ms, ratio 0.725
+[mc3-2] pair 10: two Forwards 46.2 ms, one 2-row step 63.8 ms, ratio 0.724
+[mc3-2] Phi-3-mini-4k-instruct-q4.gguf: two Forwards ÷ one 2-row step over 10 pairs: median 0.727 (min 0.721, max 0.729)
+--- PASS: TestZZMC3Two (6.93s)
+PASS
+end 2026-11-06 12:01:18

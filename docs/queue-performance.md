@@ -21,7 +21,7 @@
   The rows live in `docs/tasks/task-memory-campaign-2026-10.md`'s ledger, which stays the record; this entry only puts
   them in a queue. State at 2026-11-06, from the ledger: MEM13-copies-CUDA and D8b-cuda are done (2026-11-05); MEM10 has its G0
   reading (`docs/measurements/mem10-2026-11/README.md`) and no build, which is the coordinator's and the owner's call; MEM6 (the
-  CUDA cells and the `RssAnon` gate) is open as the parked PR #691, with no lever until a mechanism is named; MEM4(b) on CUDA is
+  CUDA cells and the `RssAnon` gate) is PR #691, merged as is by Francis 2026-11-06 21:32 (7B 81 MiB against the 64 MiB bar; the three levers not taken); MEM4(b) on CUDA is
   read INCONCLUSIVE (`docs/measurements/mem4b-cuda-2026-11/README.md`), its release already wired. Close a row there, in the same commit as the work, and strike it here.
 
 - **P35 · Gemma-4 prefill falls back to one token at a time past about 12k attended keys on a 48 KB shared-memory card

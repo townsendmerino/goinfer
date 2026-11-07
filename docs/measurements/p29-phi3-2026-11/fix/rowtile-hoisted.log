@@ -1,0 +1,28 @@
+REFUSED: another timed run holds the timing lock (/Users/francistownsend-merino/.goinfer-timing.lock): pid 88969 on Franciss-MacBook-Pro.local, `python3 -u docs/measurements/kv5-metal-2026-11/run_g2_kv5_6_day.py`, started 2026-11-06T10:35:46-08:00, 27 min ago, label 'kv5-6-g2-mc3-ttft'. One timed run per box (TE9).
+retry 1 (rc 75)
+start 2026-11-06 11:11:50 load1 0.30
+[zzx] phi3 gate|up (N=16384 K=3072), GPU ms/call by B=1..8; 'bits' = identical to the production kernel
+[zzx]   decode gemv_q4k_f32_rows8, one row: 0.233 ms (x8 = 1.867)
+[zzx]   production: B1=0.323 B2=0.793 B3=1.169 B4=1.893 B5=3.663 B6=5.604 B7=8.327 B8=9.781 bits=true
+[zzx]   G=1 NR=2: B1=0.242 B2=0.470 B3=0.701 B4=0.929 B5=1.161 B6=1.392 B7=1.620 B8=1.851 bits=true
+[zzx]   G=2 NR=1: B1=0.322 B2=0.794 B3=0.994 B4=1.720 B5=1.692 B6=2.687 B7=2.391 B8=3.662 bits=true
+[zzx]   G=2 NR=2: B1=0.241 B2=0.511 B3=0.744 B4=1.074 B5=1.170 B6=1.685 B7=1.602 B8=2.245 bits=true
+[zzx]   G=4 NR=1: B1=0.322 B2=0.795 B3=1.051 B4=1.886 B5=1.649 B6=2.560 B7=2.298 B8=4.291 bits=true
+[zzx]   G=4 NR=2: B1=0.241 B2=0.510 B3=1.945 B4=3.718 B5=1.240 B6=4.094 B7=1.574 B8=7.435 bits=true
+[zzx] phi3 o (N=3072 K=3072), GPU ms/call by B=1..8; 'bits' = identical to the production kernel
+[zzx]   decode gemv_q4k_f32_rows8, one row: 0.102 ms (x8 = 0.815)
+[zzx]   production: B1=0.089 B2=0.152 B3=0.227 B4=0.369 B5=0.707 B6=1.067 B7=1.602 B8=1.861 bits=true
+[zzx]   G=1 NR=2: B1=0.047 B2=0.095 B3=0.139 B4=0.183 B5=0.228 B6=0.271 B7=0.316 B8=0.360 bits=true
+[zzx]   G=2 NR=1: B1=0.065 B2=0.155 B3=0.193 B4=0.330 B5=0.329 B6=0.519 B7=0.463 B8=0.705 bits=true
+[zzx]   G=2 NR=2: B1=0.047 B2=0.098 B3=0.150 B4=0.219 B5=0.234 B6=0.335 B7=0.314 B8=0.445 bits=true
+[zzx]   G=4 NR=1: B1=0.065 B2=0.153 B3=0.201 B4=0.367 B5=0.320 B6=0.477 B7=0.443 B8=0.814 bits=true
+[zzx]   G=4 NR=2: B1=0.047 B2=0.098 B3=0.384 B4=0.730 B5=0.249 B6=0.811 B7=0.317 B8=1.453 bits=true
+[zzx] 1.5B gate|up (N=17920 K=1536), GPU ms/call by B=1..8; 'bits' = identical to the production kernel
+[zzx]   decode gemv_q4k_f32_rows8, one row: 0.169 ms (x8 = 1.351)
+[zzx]   production: B1=0.213 B2=0.427 B3=0.725 B4=1.157 B5=2.218 B6=3.277 B7=5.029 B8=5.982 bits=true
+[zzx]   G=1 NR=2: B1=0.178 B2=0.357 B3=0.528 B4=0.700 B5=0.868 B6=1.038 B7=1.207 B8=1.376 bits=true
+[zzx]   G=2 NR=1: B1=0.211 B2=0.429 B3=0.583 B4=0.896 B5=0.939 B6=1.359 B7=1.310 B8=1.837 bits=true
+[zzx]   G=2 NR=2: B1=0.177 B2=0.317 B3=0.555 B4=0.714 B5=0.866 B6=1.106 B7=1.166 B8=1.465 bits=true
+[zzx]   G=4 NR=1: B1=0.211 B2=0.430 B3=0.628 B4=1.159 B5=0.915 B6=1.287 B7=1.246 B8=2.724 bits=true
+[zzx]   G=4 NR=2: B1=0.177 B2=0.317 B3=1.222 B4=2.405 B5=0.928 B6=2.986 B7=1.146 B8=4.873 bits=true
+end 2026-11-06 11:12:48 load1 1.10

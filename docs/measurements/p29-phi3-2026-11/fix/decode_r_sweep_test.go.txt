@@ -1,0 +1,99 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"fmt"
+	"math/rand"
+	"os"
+	"testing"
+)
+
+// Scratch: decode's rows kernels (gemv_q4k/q5k/q6k_f32_rows<R>) at R = 1..8 on the q4k lane's real shapes, GPU ms per call.
+func TestZZDecodeR(t *testing.T) {
+	if os.Getenv("GOINFER_ZZ_DECR") == "" {
+		t.Skip("set GOINFER_ZZ_DECR=1")
+	}
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skip(err)
+	}
+	extra := ""
+	for _, kind := range []string{"q4k", "q5k", "q6k"} {
+		for _, R := range []int{1, 2, 3, 4, 5, 6, 8} {
+			if (kind == "q4k" && (R == 1 || R == 2 || R == 4 || R == 8)) || ((kind == "q5k" || kind == "q6k") && R == 4) {
+				continue // already in the library under gemv_<kind>_f32_rows<R>
+			}
+			extra += fmt.Sprintf("template [[host_name(\"zzd_%s_r%d\")]] kernel decltype(gemv_%s_f32_rows<%d>) gemv_%s_f32_rows<%d>;\n", kind, R, kind, R, kind, R)
+		}
+	}
+	lib, err := d.CompileLibrary(allKernels+extra, MSL3_1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pipe := func(n string) Pipeline {
+		p, e := d.NewComputePipeline(lib, n)
+		if e != nil {
+			t.Fatalf("%s: %v", n, e)
+		}
+		return p
+	}
+	q := d.NewCommandQueue()
+	rng := rand.New(rand.NewSource(11))
+	shapes := []struct {
+		model, name, kind string
+		N, K              int
+		curR              int
+	}{
+		{"phi3", "qkv", "q5k", 9216, 3072, q5kGemvRows}, {"phi3", "o", "q4k", 3072, 3072, q4kGemvRows}, {"phi3", "gate|up", "q4k", 16384, 3072, q4kGemvRows}, {"phi3", "down", "q6k", 3072, 8192, q6kGemvRows},
+		{"1.5B", "qkv q4k", "q4k", 1792, 1536, q4kGemvRows}, {"1.5B", "o", "q4k", 1536, 1536, q4kGemvRows}, {"1.5B", "gate|up", "q4k", 17920, 1536, q4kGemvRows}, {"1.5B", "down", "q6k", 1536, 8960, q6kGemvRows},
+		{"7B-ish", "o", "q4k", 3584, 3584, q4kGemvRows}, {"7B-ish", "gate|up", "q4k", 37888, 3584, q4kGemvRows},
+	}
+	for _, s := range shapes {
+		var raw []byte
+		switch s.kind {
+		case "q4k":
+			raw = ksc1Q4KRaw(rng, s.N, s.K)
+		case "q5k":
+			raw = kso1Q5KRaw(rng, s.N, s.K)
+		default:
+			raw = kso1Q6KPlanes(kso1Q6KGGUF(rng, s.N, s.K), s.N, s.K)
+		}
+		w := d.NewBufferBytes(len(raw))
+		for i, c := range raw {
+			w.Int8s()[i] = int8(c)
+		}
+		act := make([]float32, s.K)
+		for i := range act {
+			act[i] = float32(rng.NormFloat64())
+		}
+		bA := NewBufferFloats(d, act)
+		out := NewBufferFloats(d, make([]float32, s.N))
+		uK, uN := NewBufferU32(d, uint32(s.K)), NewBufferU32(d, uint32(s.N))
+		line := fmt.Sprintf("[zzd] %-6s %-9s %s N=%-5d K=%-4d (now R=%d) GPU ms/call by R:", s.model, s.name, s.kind, s.N, s.K, s.curR)
+		for _, R := range []int{1, 2, 3, 4, 5, 6, 8} {
+			name := fmt.Sprintf("zzd_%s_r%d", s.kind, R)
+			if (s.kind == "q4k" && (R == 1 || R == 2 || R == 4 || R == 8)) || ((s.kind == "q5k" || s.kind == "q6k") && R == 4) {
+				name = fmt.Sprintf("gemv_%s_f32_rows%d", s.kind, R)
+			}
+			p := pipe(name)
+			best := 1e9
+			for rep := 0; rep < 3; rep++ {
+				e := q.Begin()
+				for i := 0; i < 40; i++ {
+					e.Dispatch(p, (s.N+R-1)/R*32, 256, w, bA, out, uK, uN)
+				}
+				e.End()
+				if err := e.Err(); err != nil {
+					t.Fatal(err)
+				}
+				if v := (e.GPUEnd() - e.GPUStart()) * 1000 / 40; v < best {
+					best = v
+				}
+			}
+			line += fmt.Sprintf(" R%d=%.4f", R, best)
+		}
+		fmt.Fprintln(os.Stderr, line)
+		d.ReleaseAll()
+	}
+}

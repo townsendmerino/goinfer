@@ -3,6 +3,8 @@ package decoder
 import (
 	"slices"
 	"sync"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // BuildQuery is a load as the fit guard sees it before the build: the options, the facts decoder resolves from the config,
@@ -208,7 +210,8 @@ type fitMemo struct {
 	archProg *layerProgram // arch's program, for coverage
 	facts    map[string]archFacts
 
-	prog *layerProgram // the loaded architecture's program, for admission
+	prog *layerProgram   // the loaded architecture's program, for admission
+	bufs [][]program.Buf // the loaded architecture's declared buffers, by layer (Model.LayerBuffers)
 }
 
 // factsFor is cfg's facts on backend (zero for one that does not resolve), from the memo where it has them. A nil cfg gets zero

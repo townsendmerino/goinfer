@@ -107,6 +107,7 @@ READS = re.compile(r'parser\.Parse(File|Dir)\(|"\*\.go"|"\*\.cu"|\.go"\)|\.cu"\)
 # go.mod or fixtures.
 NOT_SOURCE_READERS = {
     "TestLogger_getsLevelTextAndCaller": "compares a stack frame's file name; it reads no file",
+    "TestScan_flagsWhatItShouldAndNothingElse": "parses a Go source held in the test as a string; it reads no file",
     "TestSetLogger_takesWhatALoadWrites": "compares a stack frame's file name; it reads no file",
     "TestCompare_classes": "sides built by hand; the paths it names are strings, and it reads no file",
     "TestGitSource_preMoveRevisionReadsTheInternalRegroup": "a synthetic repo in a temp dir (a pre-move and a post-move commit)",
