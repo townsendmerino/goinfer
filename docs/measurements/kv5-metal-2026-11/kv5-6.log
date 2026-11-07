@@ -166,4 +166,9 @@ gemma_bisect.py ab, old main 8b7e9941 (serve-main-final2), new e2762eb0 (serve-f
   3900  new 63.4  old 63.2 tok/s  new/old 1.003 (20 runs an arm)  halves 0.992 1.009 1.001 0.984 0.997 1.021 0.998 1.036 1.008 1.017
 So the gate's gemma3-1b cells on KV5-6 read what main reads without it: the FAIL at 3,900 is KV5-2's accepted cost and the drift since on main, not this slice.
 
-== G2, the 7B: the Saturday night job kv5-6-g2-7b (re-pinned to e2762eb0)
+== Francis's decision, 2026-11-06 21:20, relayed by the coordinator: accepted over G2 at these readings, KV5-6 ships
+Accepted by Francis 2026-11-06 21:20 over G2 at those readings: on the final tree e2762eb0, gemma3-1b decode at 3,900 0.947 (FAIL, under the 0.956 accepted for KV5-2 by D-KV5-1), at 128 0.975 (AMBIGUOUS), and MC3 at 4 slots 0.979 (AMBIGUOUS). Every other G2 cell, G3c and TTFT passed on that tree.
+The ladder as it stood when he decided, all five rungs finished (16:08 to 17:21 PST), median new/old against f8632013 at 128 / 3,900: KV5-2 031feff2 0.967 / 0.958; KV5-4 0730d410 0.949 / 0.958; KV5-5 c1182f99 1.035 / 0.954; main 8b7e9941 0.993 / 0.951; KV5-6 e2762eb0 0.987 / 0.949. The direct A/B finished too (18:20 to 18:38): main 8b7e9941 against e2762eb0, 1.010 at 128 and 1.003 at 3,900. MC3 on the final tree: main against it 0.992, raised against pinned 0.997.
+The 7B's decode cells stay the Saturday-night job, reported when read and not a gate on this merge.
+
+== G2, the 7B: the Saturday night job kv5-6-g2-7b (re-pinned to e2762eb0), reported, not a gate on the merge
