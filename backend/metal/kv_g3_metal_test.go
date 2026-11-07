@@ -822,6 +822,88 @@ func TestKVPages_failedWriteHoldsNoBlocks(t *testing.T) {
 	}
 }
 
+// TestKVPages_refusedWriteLeavesTheSlot: a refused write leaves the slot as it was, its sequence, its blocks and what it shares, however
+// far it had got: (a) a rewind into a shared block whose copy on write finds no block; (b) a write from inside a shared block through the
+// next one and past, whose first copy is taken and whose second take is refused.
+func TestKVPages_refusedWriteLeavesTheSlot(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 128, 1), 0); err != nil {
+		t.Fatal(err)
+	}
+	a.SetKVSlotBusy(0, true) // running, so a refused take cannot release it: a release a mapping causes stands
+	defer a.SetKVSlotBusy(0, false)
+	same := func(what string, tab [2]uint32, valid, used int) {
+		t.Helper()
+		if got := [2]uint32{*r.kvRow(1, 0), *r.kvRow(1, 1)}; got != tab || r.kvSlotSt[1].valid != valid || r.kvBlocksInUse() != used {
+			t.Errorf("%s: slot 1 maps %v with %d rows and the pool holds %d blocks; before the refused write %v, %d and %d", what, got,
+				r.kvSlotSt[1].valid, r.kvBlocksInUse(), tab, valid, used)
+		}
+	}
+	// (a) slot 1 shares slot 0's block 0 and holds its own block 1.
+	if err := a.CopyKV(0, 1, 0, 64); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.useKVSlot(1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 64, 2), 64); err != nil {
+		t.Fatal(err)
+	}
+	tab, used := [2]uint32{*r.kvRow(1, 0), *r.kvRow(1, 1)}, r.kvBlocksInUse()
+	if tab[0] != *r.kvRow(0, 0) || tab[1] == 0 || r.kvSlotSt[1].valid != 128 {
+		t.Fatalf("slot 1 maps %v with %d rows; the test needs slot 0's block 0, a block of its own and 128 rows", tab, r.kvSlotSt[1].valid)
+	}
+	kvTakeFailForTest = true
+	err := r.kvWrite(1, 10, 11)
+	kvTakeFailForTest = false
+	if err == nil {
+		t.Fatal("(a) a rewind into the shared block with no block to copy into was accepted")
+	}
+	same("(a) the refused rewind", tab, 128, used)
+	// (b) slot 1 shares both of slot 0's blocks.
+	if err := a.CopyKV(0, 1, 0, 128); err != nil {
+		t.Fatal(err)
+	}
+	tab, used = [2]uint32{*r.kvRow(1, 0), *r.kvRow(1, 1)}, r.kvBlocksInUse()
+	kvTakeFailAfterForTest = 1
+	err = r.kvWrite(1, 10, 200)
+	kvTakeFailAfterForTest = -1
+	if err == nil {
+		t.Fatal("(b) a write whose second take was refused was accepted")
+	}
+	same("(b) the write refused after its first copy", tab, 128, used)
+}
+
+// TestKVPages_abortedStepLeavesItsSlots: a batched step that cannot map every row leaves each of its slots as it was, a slot that rewinds
+// in it included: its sequence and its blocks are those it had before the step.
+func TestKVPages_abortedStepLeavesItsSlots(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 128, 1), 0); err != nil {
+		t.Fatal(err)
+	}
+	tab, used := [2]uint32{*r.kvRow(0, 0), *r.kvRow(0, 1)}, r.kvBlocksInUse()
+	for _, s := range []int{0, 1} { // the step's slots, which the decoder marks busy
+		a.SetKVSlotBusy(s, true)
+		defer a.SetKVSlotBusy(s, false)
+	}
+	kvTakeFailForTest = true // slot 0's row needs no block; slot 1's, its first, finds none
+	err := r.kvMapStep([]batchSeq{{slot: 0, pos: 10}, {slot: 1, pos: 0}})
+	kvTakeFailForTest = false
+	if !errors.Is(err, decoder.ErrKVPoolFull) {
+		t.Fatalf("the step whose row found no block: got %v, want ErrKVPoolFull", err)
+	}
+	if got := [2]uint32{*r.kvRow(0, 0), *r.kvRow(0, 1)}; got != tab || r.kvSlotSt[0].valid != 128 || r.kvBlocksInUse() != used || r.kvHeld(1) != 0 {
+		t.Errorf("after the aborted step slot 0 maps %v with %d rows, slot 1 holds %d blocks and the pool %d; before it %v, 128, 0 and %d",
+			got, r.kvSlotSt[0].valid, r.kvHeld(1), r.kvBlocksInUse(), tab, used)
+	}
+}
+
 // TestKVPages_stepReleasesAnIdleBoundSlot: a batched step writes rows for the slots it names, not the bound one, so the bound slot is
 // released like any other when it is idle and the least recently written. Three slots of 4,096: slot 2 (bound, idle) and slot 1 (idle)
 // hold 3,072 rows each, slot 2 written first; slot 0, running, holds the rest; its next row needs a block, and slot 2's go.

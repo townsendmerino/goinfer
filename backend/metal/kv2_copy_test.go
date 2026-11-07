@@ -601,6 +601,103 @@ func TestKVPages_chainReopensAfterAFailedTake(t *testing.T) {
 	}
 }
 
+// TestKVPages_chainRetriesAFailedLookAhead: a look-ahead that found no block ends that speculation, not the chain: the next token asks for
+// the block again, and gets it once one can be had, the token a chain that never failed gives there.
+func TestKVPages_chainRetriesAFailedLookAhead(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if why := r.greedyChainWhyNot(); why != "" {
+		t.Skipf("no greedy chain on this resident: %s", why)
+	}
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 63, 7), 0); err != nil {
+		t.Fatal(err)
+	}
+	two := func(refuse bool) [2]int {
+		t.Helper()
+		if err := r.chainStart(5, 63); err != nil {
+			t.Fatal(err)
+		}
+		defer r.stopChain()
+		kvTakeFailForTest = refuse // the look-ahead at 64 opens block 1
+		var out [2]int
+		var err error
+		out[0], err = r.chainNext()
+		kvTakeFailForTest = false
+		if err != nil {
+			t.Fatalf("the token at 63 (takes refused: %v): %v", refuse, err)
+		}
+		if out[1], err = r.chainNext(); err != nil {
+			t.Fatalf("the token at 64, a block free again (the look-ahead refused: %v): %v", refuse, err)
+		}
+		return out
+	}
+	want := two(false)
+	if got := two(true); got != want {
+		t.Errorf("after a refused look-ahead the chain answers %v at 63 and 64, a chain that was not refused %v", got, want)
+	}
+}
+
+// TestKVPages_entryEndsTheChainFirst: while a chain is open only the chain touches its slot's KV state. A decode entry point ends it
+// before it reads or writes the slot, so it judges the caller's sequence, not the look-ahead's: a forward one past it is refused rather
+// than reaching setPos, and one whose block cannot be had leaves no chain open. ReusableKV answers the caller's sequence too.
+func TestKVPages_entryEndsTheChainFirst(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	if why := r.greedyChainWhyNot(); why != "" {
+		t.Skipf("no greedy chain on this resident: %s", why)
+	}
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PrefillLast(context.Background(), kv2Embs(r, 63, 7), 0); err != nil {
+		t.Fatal(err)
+	}
+	open := func() {
+		t.Helper()
+		if err := r.chainStart(5, 63); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.chainNext(); err != nil { // the caller's sequence ends at 64; the look-ahead at 64 maps block 1
+			t.Fatal(err)
+		}
+	}
+	open()
+	if got, past := a.ReusableKV(64), a.ReusableKV(65); got != 64 || past != 0 {
+		t.Errorf("with the chain open ReusableKV answers %d for 64 rows and %d for 65; want 64 and 0 (the look-ahead's row is not the caller's)", got, past)
+	}
+	func() {
+		defer func() {
+			if p := recover(); p != nil {
+				t.Errorf("a forward at 65, one past the caller's sequence, reached setPos and panicked: %v", p)
+			}
+		}()
+		if _, err := a.Forward(kv2Embs(r, 1, 9)[0], 65); err == nil {
+			t.Error("a forward at 65, one past the caller's sequence, was accepted")
+		}
+	}()
+	if r.chainReq != nil {
+		t.Error("the chain is still open after the refused forward")
+	}
+	r.stopChain()
+	if err := r.chainStart(5, 63); err != nil {
+		t.Fatal(err)
+	}
+	kvTakeFailForTest = true // the look-ahead at 64 finds no block, and neither does the forward at 64
+	_, err := r.chainNext()
+	if err == nil {
+		_, err = a.Forward(kv2Embs(r, 1, 9)[0], 64)
+	}
+	kvTakeFailForTest = false
+	if err == nil {
+		t.Error("a forward at 64 with no block to be had was accepted")
+	}
+	if r.chainReq != nil {
+		t.Error("a forward refused for its block left the chain open")
+		r.stopChain()
+	}
+}
+
 // TestKVPages_copyJudgesTheSourceAfterTheChainStops: CopyKV stops an open chain before it reads either slot, so it judges src by the
 // sequence the stop leaves. With a turn's look-ahead at 64 in flight, block 1 is mapped until the chain stops and gives it back, so a copy of
 // rows [0, 128) declines, and no table entry names the null block.

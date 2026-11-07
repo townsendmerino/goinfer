@@ -388,6 +388,10 @@ func (r *resident) chainLoop() {
 			commit()
 			r.chainResp <- chainResp{}
 		case chainOpNext:
+			if len(fifo) == 0 && kvErr != nil {
+				kvErr = nil // the look-ahead found no block; one may be had now
+				commit()
+			}
 			if len(fifo) == 0 {
 				err := kvErr
 				if err == nil {

@@ -189,13 +189,19 @@ func (r *resident) kvFreeBlock() (uint32, bool) {
 // as they did before the pool; kvScrambleForTest skips it), else any free one, else one made free (the package comment's order). cow
 // marks a copy on write, which holds no more blocks after it, so a slot at its share still counts as within it.
 func (r *resident) kvTake(s, b int, cow bool) (uint32, error) {
-	if !kvScrambleForTest && !kvTakeFailForTest && b < r.kvShareBlocks {
+	refuse := kvTakeFailForTest
+	if kvTakeFailAfterForTest == 0 {
+		refuse = true
+	} else if kvTakeFailAfterForTest > 0 {
+		kvTakeFailAfterForTest--
+	}
+	if !kvScrambleForTest && !refuse && b < r.kvShareBlocks {
 		if h := uint32(1 + s*r.kvShareBlocks + b); r.kvRefs[h] == 0 {
 			return r.kvClaim(h), nil
 		}
 	}
 	for {
-		if id, ok := r.kvFreeBlock(); ok && !kvTakeFailForTest {
+		if id, ok := r.kvFreeBlock(); ok && !refuse {
 			return r.kvClaim(id), nil
 		}
 		if r.kvEvictIdle(s) {
@@ -210,6 +216,9 @@ func (r *resident) kvTake(s, b int, cow bool) (uint32, error) {
 
 // kvTakeFailForTest makes a take find no free block, its home block included, so it goes straight to the release order.
 var kvTakeFailForTest bool
+
+// kvTakeFailAfterForTest, when not negative, lets that many takes find blocks and makes every later one behave as kvTakeFailForTest.
+var kvTakeFailAfterForTest = -1
 
 // kvCopyFailForTest makes a copy on write's copy fail.
 var kvCopyFailForTest bool
@@ -228,11 +237,14 @@ func (r *resident) kvTrim(s, end int) {
 	}
 }
 
-// kvQuiesce stops the executor and any open chain when a decode write of slot s ending at hi would give a block past hi back (a rewind):
-// a pipelined forward's command buffer, still in flight after its ack, may write a row there. The decode entry points call it before
-// kvWrite, on the caller's thread; a decode that does not rewind runs on the executor, whose forwards in flight read only rows and table
-// entries below it (a block they write is never shared). Every other writer stops the executor outright.
+// kvQuiesce readies slot s for a decode write ending at hi. While a greedy chain is open only the chain touches a slot's KV state, so
+// it first ends the chain, which leaves the slot at its caller's sequence (stopChain). Then it stops the executor when the write would
+// give a block past hi back (a rewind): a pipelined forward's command buffer, still in flight after its ack, may write a row there. The
+// decode entry points call it before kvWrite, on the caller's thread; a decode that does not rewind runs on the executor, whose forwards
+// in flight read only rows and table entries below it (a block they write is never shared). Every other writer stops the executor
+// outright, which ends the chain too.
 func (r *resident) kvQuiesce(s, hi int) {
+	r.stopChain()
 	for b := kvBlocksFor(hi); b < r.kvTabBlocks; b++ {
 		if *r.kvRow(s, b) != 0 {
 			r.stopExec()
@@ -322,38 +334,105 @@ func (r *resident) kvReclaim(s int) bool {
 // table also names takes a copy of its rows below lo (copy on write; rows at or past lo are the write's). The write ends the slot's
 // sequence at hi, so the blocks wholly past hi go back first, where the takes can have them; a write at 0 also clears released and
 // stopped. A write past 0 on a stopped slot is decoder.ErrKVPoolFull, and on a released one, or one starting past the slot's sequence,
-// an error (a caller that reused rows ReusableKV did not offer). A failure leaves the slot its sequence below lo (none for a write at 0) and no block past it, and the
+// an error (a caller that reused rows ReusableKV did not offer). It is one mapping (kvTx): a refusal leaves the slot as it was, and the
 // caller must not encode the write. Nothing of the resident may be in flight that reads a block this copies into, which every caller
 // ensures.
 func (r *resident) kvWrite(s, lo, hi int) error {
 	if len(r.kvRefs) == 0 || hi <= lo || s >= len(r.kvSlotSt) {
 		return nil
 	}
-	st := &r.kvSlotSt[s]
-	switch {
-	case lo > 0 && st.stopped:
-		return fmt.Errorf("metal: KV slot %d was stopped to give its blocks past its share back: %w", s, decoder.ErrKVPoolFull)
-	case lo > 0 && st.released:
-		return fmt.Errorf("metal: KV slot %d's blocks were released to make room; its sequence starts again at position 0, not %d", s, lo)
-	case lo > st.valid:
-		return fmt.Errorf("metal: KV slot %d holds rows to %d; a write from %d would leave the rows between unmapped", s, st.valid, lo)
-	}
-	if lo == 0 {
-		st.released, st.stopped = false, false
-	}
-	r.kvTrim(s, hi)
-	fail := func(err error) error {
-		if lo == 0 {
-			r.kvReleaseAll(s)
-			st.valid = 0
-		} else {
-			st.valid = min(st.valid, lo)
-			r.kvTrim(s, st.valid)
-		}
+	tx := r.kvBegin()
+	if err := tx.write(s, lo, hi); err != nil {
+		tx.abort()
 		return err
 	}
-	r.kvUseTick++
-	st.use = r.kvUseTick
+	return tx.commit()
+}
+
+// kvTx is one mapping of slots' table entries in progress (kvWrite, kvMapStep). It records every entry it changes and each slot's standing
+// before it, and changes only tables, counts and standings until it commits, when the copies on write run: a mapping that cannot finish
+// is undone (abort) and leaves every slot it touched as it was, having written no row. A release or reclaim of another slot that one of
+// its takes caused stands, as it would for a mapping that finished, and a slot of the mapping that a reclaim stopped stays stopped.
+type kvTx struct {
+	r       *resident
+	log     []kvTxEdit
+	saved   map[int]kvTxStanding // each slot's standing before the mapping
+	pending map[int]kvTxStanding // and as the mapping leaves it
+	cows    []kvTxCOW
+	freed   map[uint32]bool // blocks the mapping's own trims gave back, which a take may reuse
+}
+
+// kvTxEdit is one entry change: slot s's entry b named prev and now names next; take marks next as a block a take handed the entry.
+type kvTxEdit struct {
+	s, b       int
+	prev, next uint32
+	take       bool
+}
+
+type kvTxStanding struct {
+	valid             int
+	released, stopped bool
+}
+
+// kvTxCOW is a copy on write to run at commit: the first keep rows of block from into block to, which slot s's entry b now names. The
+// entry's reference to from goes at commit.
+type kvTxCOW struct {
+	s, b     int
+	from, to uint32
+	keep     int
+}
+
+// kvBegin starts a mapping.
+func (r *resident) kvBegin() *kvTx {
+	r.kvReclaimed = r.kvReclaimed[:0]
+	return &kvTx{r: r, saved: map[int]kvTxStanding{}, pending: map[int]kvTxStanding{}, freed: map[uint32]bool{}}
+}
+
+// standing is slot s's standing as the mapping leaves it so far.
+func (tx *kvTx) standing(s int) kvTxStanding {
+	if p, ok := tx.pending[s]; ok {
+		return p
+	}
+	st := &tx.r.kvSlotSt[s]
+	p := kvTxStanding{valid: st.valid, released: st.released, stopped: st.stopped}
+	tx.saved[s], tx.pending[s] = p, p
+	return p
+}
+
+// trim unmaps every entry of slot s wholly at or past end, and ends its sequence there.
+func (tx *kvTx) trim(s, end int) {
+	r := tx.r
+	p := tx.standing(s)
+	for b := kvBlocksFor(end); b < r.kvTabBlocks; b++ {
+		e := r.kvRow(s, b)
+		if *e == 0 {
+			continue
+		}
+		id := *e
+		r.kvUnref(id)
+		if r.kvRefs[id] == 0 {
+			tx.freed[id] = true
+		}
+		tx.log = append(tx.log, kvTxEdit{s: s, b: b, prev: id})
+		*e = 0
+	}
+	p.valid = min(p.valid, end)
+	tx.pending[s] = p
+}
+
+// write maps slot s's blocks for positions [lo, hi), as kvWrite describes.
+func (tx *kvTx) write(s, lo, hi int) error {
+	r := tx.r
+	p := tx.standing(s)
+	switch {
+	case lo > 0 && p.stopped:
+		return fmt.Errorf("metal: KV slot %d was stopped to give its blocks past its share back: %w", s, decoder.ErrKVPoolFull)
+	case lo > 0 && p.released:
+		return fmt.Errorf("metal: KV slot %d's blocks were released to make room; its sequence starts again at position 0, not %d", s, lo)
+	case lo > p.valid:
+		return fmt.Errorf("metal: KV slot %d holds rows to %d; a write from %d would leave the rows between unmapped", s, p.valid, lo)
+	}
+	tx.trim(s, hi)
 	for b := lo / decoder.KVBlockRows; b < min(kvBlocksFor(hi), r.kvTabBlocks); b++ {
 		old := *r.kvRow(s, b)
 		if old != 0 && (r.kvRefs[old] <= 1 || kvOwnOffForTest) {
@@ -361,78 +440,137 @@ func (r *resident) kvWrite(s, lo, hi int) error {
 		}
 		nb, err := r.kvTake(s, b, old != 0)
 		if err != nil {
-			return fail(err)
+			return err
 		}
-		if old != 0 {
-			if keep := lo - b*decoder.KVBlockRows; keep > 0 {
-				if kvKeepShortForTest {
-					keep--
-				}
-				err := gpu.CopyDeviceBatch(r.kvBlockCopies(old, nb, keep))
-				if kvCopyFailForTest {
-					err = errors.New("planted copy failure")
-				}
-				if err != nil {
-					r.kvUnref(nb) // the entry still names old, which holds the rows below lo
-					return fail(fmt.Errorf("metal: copy on write of KV block %d: %w", old, err))
-				}
-			}
-			r.kvUnref(old)
-		}
+		tx.log = append(tx.log, kvTxEdit{s: s, b: b, prev: old, next: nb, take: true})
 		*r.kvRow(s, b) = nb
+		if old != 0 {
+			keep := max(lo-b*decoder.KVBlockRows, 0)
+			if kvKeepShortForTest && keep > 0 {
+				keep--
+			}
+			tx.cows = append(tx.cows, kvTxCOW{s: s, b: b, from: old, to: nb, keep: keep})
+		}
 	}
-	st.valid = hi
+	p = tx.pending[s]
+	if lo == 0 {
+		p.released, p.stopped = false, false
+	}
+	p.valid = hi
+	tx.pending[s] = p
 	return nil
 }
 
-// kvMapStep maps the K/V block of every row of a batched step before anything is encoded, as running the rows alone would: each slot's
-// sequence first ends past its last row (a rewinding borrower gives its tail back before another row looks for a block), then the rows
-// that write within their slot's share map, then the ones that borrow. When a row finds none, or a take reclaimed one of the step's own
-// slots (whose rows would then lack blocks), each slot goes back to the sequence it had before its first row in the step, and the step must
-// launch nothing; a refusal is decoder.ErrKVPoolFull, which the decoder answers by running each row alone. A release or reclaim the step
-// caused stands, as it would alone; a reclaim of a slot outside the step does not stop it.
-func (r *resident) kvMapStep(seqs []batchSeq) error {
-	r.kvReclaimed = r.kvReclaimed[:0]
-	share := r.kvShareBlocks * decoder.KVBlockRows
-	first, last := map[int]int{}, map[int]int{} // each slot's first row in the step, and one past its last
-	for _, q := range seqs {
-		if p, ok := first[q.slot]; !ok || q.pos < p {
-			first[q.slot] = q.pos
+// abort undoes the mapping, newest change first, and puts each slot's standing back, except a slot a take released or stopped meanwhile
+// (a release or reclaim stands): released, it holds nothing; stopped, nothing past its share.
+func (tx *kvTx) abort() {
+	r := tx.r
+	for i := len(tx.log) - 1; i >= 0; i-- {
+		e := tx.log[i]
+		if e.take {
+			r.kvUnref(e.next) // a copy on write's entry kept its reference to prev throughout
+		} else if r.kvRefs[e.prev] == 0 {
+			r.kvClaim(e.prev) // a trim gave it back and nothing kept it
+		} else {
+			r.kvRefs[e.prev]++
 		}
+		*r.kvRow(e.s, e.b) = e.prev
+	}
+	share := r.kvShareBlocks * decoder.KVBlockRows
+	for s, p := range tx.saved {
+		st := &r.kvSlotSt[s]
+		switch evicted, reclaimed := st.released && !p.released, st.stopped && !p.stopped; {
+		case evicted: // a take released it meanwhile: it holds nothing
+			r.kvReleaseAll(s)
+			st.valid = 0
+		case reclaimed: // a take stopped it meanwhile: nothing past its share
+			st.valid = min(p.valid, share)
+			r.kvTrim(s, share)
+		default:
+			st.valid, st.released, st.stopped = p.valid, p.released, p.stopped
+		}
+	}
+}
+
+// commit runs the copies on write and lets each slot's new standing stand. A copy that fails on the device undoes the mapping; a block a
+// trim gave back and a failed copy wrote into no longer holds its old rows, so its slot's sequence then ends before it.
+func (tx *kvTx) commit() error {
+	r := tx.r
+	for s, p := range tx.saved {
+		if st := &r.kvSlotSt[s]; st.released != p.released || st.stopped != p.stopped {
+			tx.abort()
+			return fmt.Errorf("metal: KV slot %d was released or reclaimed while its blocks were mapped: %w", s, decoder.ErrKVPoolFull)
+		}
+	}
+	for _, c := range tx.cows {
+		if c.keep == 0 {
+			continue
+		}
+		err := gpu.CopyDeviceBatch(r.kvBlockCopies(c.from, c.to, c.keep))
+		if kvCopyFailForTest {
+			err = errors.New("planted copy failure")
+		}
+		if err != nil {
+			tx.abort()
+			for _, d := range tx.cows {
+				if tx.freed[d.to] {
+					for _, e := range tx.log {
+						if !e.take && e.prev == d.to {
+							r.kvEndAt(e.s, e.b*decoder.KVBlockRows)
+						}
+					}
+				}
+			}
+			return fmt.Errorf("metal: copy on write of KV block %d: %w", c.from, err)
+		}
+	}
+	for _, c := range tx.cows {
+		r.kvUnref(c.from)
+	}
+	for s, p := range tx.pending {
+		st := &r.kvSlotSt[s]
+		st.valid, st.released, st.stopped = p.valid, p.released, p.stopped
+		r.kvUseTick++
+		st.use = r.kvUseTick
+	}
+	return nil
+}
+
+// kvMapStep maps the K/V block of every row of a batched step before anything is encoded, as running the rows alone would, as one mapping
+// (kvTx): each slot's sequence first ends past its last row (a rewinding borrower gives its tail back before another row looks for a
+// block), then the rows that write within their slot's share map, then the ones that borrow. When a row finds none, or a take reclaimed
+// one of the step's own slots (whose rows would then lack blocks), the mapping is undone and the step must launch nothing; a refusal is
+// decoder.ErrKVPoolFull, which the decoder answers by running each row alone. A reclaim of a slot outside the step does not stop it.
+func (r *resident) kvMapStep(seqs []batchSeq) error {
+	tx := r.kvBegin()
+	share := r.kvShareBlocks * decoder.KVBlockRows
+	last := map[int]int{} // one past each slot's last row in the step
+	for _, q := range seqs {
 		last[q.slot] = max(last[q.slot], q.pos+1)
 	}
 	for s, hi := range last {
 		if s < len(r.kvSlotSt) {
-			r.kvTrim(s, hi)
-		}
-	}
-	undo := func() {
-		for s, p := range first {
-			if s < len(r.kvSlotSt) {
-				st := &r.kvSlotSt[s]
-				st.valid = min(st.valid, p)
-				r.kvTrim(s, st.valid)
-			}
+			tx.trim(s, hi)
 		}
 	}
 	for _, within := range []bool{true, false} {
 		for _, q := range seqs {
-			if (q.pos < share) != within {
+			if (q.pos < share) != within || q.slot >= len(r.kvSlotSt) {
 				continue
 			}
-			if err := r.kvWrite(q.slot, q.pos, q.pos+1); err != nil {
-				undo()
+			if err := tx.write(q.slot, q.pos, q.pos+1); err != nil {
+				tx.abort()
 				return err
 			}
 		}
 	}
 	for _, t := range r.kvReclaimed {
-		if _, ok := first[t]; ok {
-			undo()
+		if _, ok := last[t]; ok {
+			tx.abort()
 			return fmt.Errorf("metal: batched step: slot %d's blocks were reclaimed while the step mapped its rows: %w", t, decoder.ErrKVPoolFull)
 		}
 	}
-	return nil
+	return tx.commit()
 }
 
 // kvWriteMust is kvWrite where no caller can take an error back: setPos, reached from the executor's commit and the synchronous forwards,
@@ -456,12 +594,18 @@ func (r *resident) setPosAheadForTest(pos int, ropePos ...int) {
 }
 
 // kvReusable is how much of prefix slot s can serve from its own rows: prefix, or 0 when its blocks were released or reclaimed or it
-// holds fewer rows (ResidentReusableKV's contract: prefix or 0, never another positive value).
+// holds fewer rows (ResidentReusableKV's contract: prefix or 0, never another positive value). A slot with a greedy chain open holds its
+// caller's sequence, not the look-ahead's (chainEnd).
 func (r *resident) kvReusable(s, prefix int) int {
 	if len(r.kvRefs) == 0 || s >= len(r.kvSlotSt) {
 		return prefix
 	}
-	if st := &r.kvSlotSt[s]; st.released || st.stopped || prefix > st.valid {
+	st := &r.kvSlotSt[s]
+	valid := st.valid
+	if r.chainReq != nil && s == r.chainSlot {
+		valid = min(valid, r.chainEnd)
+	}
+	if st.released || st.stopped || prefix > valid {
 		return 0
 	}
 	return prefix
