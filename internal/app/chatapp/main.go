@@ -170,7 +170,7 @@ func Main() {
 	// binary IS the only tool the person running it has).
 	// `cache` lists what `pull` has put on disk (task-checkpoint-fetch-2026-09.md P8).
 	if len(os.Args) > 1 && os.Args[1] == "cache" {
-		os.Exit(pullcmd.RunCache(os.Args[2:]))
+		os.Exit(pullcmd.RunCache(os.Args[2:], decoder.GIWFormatVersion))
 	}
 	if len(os.Args) > 1 && os.Args[1] == "fit" {
 		os.Exit(fitcmd.Run(os.Args[2:]))
@@ -250,6 +250,7 @@ or download goinfer-serve-<os>-<arch> from the latest release. It installs as `+
   %[1]s models                          what to download, and what each one costs
   %[1]s pull <name>                     fetch one, sha256-verified
   %[1]s cache                           what pull has put on disk, and the --model path for each
+  %[1]s cache prune-sidecars [-apply]   list (or delete) .giw sidecars in a format this build no longer reads
   %[1]s fit <file.gguf|dir>             will this fit, and how — per backend, before you load it
   %[1]s decide --model <f> in.jsonl     decisions: a distribution over each line's options, one prefill each
   %[1]s --model <f> --batch in.jsonl -o out.jsonl   run a batch file locally; resumable
