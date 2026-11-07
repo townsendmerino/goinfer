@@ -13,7 +13,7 @@ import (
 // The fixture's config.json is deliberately rewritten (by the pin script,
 // automatically) to the REAL release's shape — full_attention_interval and a
 // top-level rope_theta, no layer_types, no rope_parameters — so this test
-// exercises normalizeQwen3NextLayerTypes and the flat-RoPE path directly, the
+// exercises NormalizeQwen3NextLayerTypes and the flat-RoPE path directly, the
 // two real deltas from qwen3_5_moe this family exists to test, not just the
 // already-populated shape qwen3_5_moe's own fixture already covers.
 func TestQwen3Next_textParity(t *testing.T) {

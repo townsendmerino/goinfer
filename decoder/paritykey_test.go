@@ -68,7 +68,7 @@ func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 // every architecture adapter (gemma12.go holds gemma's and gemma2's), and the program's types.
 func isBuilder(p string) bool {
 	switch p {
-	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go", "decoder/gemma12.go",
+	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/config/config.go", "decoder/registry.go", "decoder/gemma12.go",
 		"internal/runtime/program/program.go":
 		return true
 	}

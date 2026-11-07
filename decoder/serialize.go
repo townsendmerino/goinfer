@@ -363,7 +363,7 @@ func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func
 	}
 
 	if cfg.Sampling != nil {
-		cfg.Sampling = cfg.Sampling.normalized() // the bundle's bytes are input, held to the same ranges as the checkpoint's
+		cfg.Sampling = cfg.Sampling.Normalized() // the bundle's bytes are input, held to the same ranges as the checkpoint's
 	}
 	arch, _, err := resolveArchitecture(&cfg)
 	if err != nil {

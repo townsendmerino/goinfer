@@ -43,7 +43,7 @@ func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			localBase = sliding.base
 			scalingLocal = sliding.scaling
 		}
-		cfg.RoPEGlobalBase = base // so validateLlama's rope_theta>0 check sees a populated base
+		cfg.RoPEGlobalBase = base // so ValidateLlama's rope_theta>0 check sees a populated base
 	} else {
 		sc, err := parseRopeScaling(cfg.RopeScaling)
 		if err != nil {

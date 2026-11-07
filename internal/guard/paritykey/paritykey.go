@@ -305,7 +305,7 @@ const ProgramTypesFile = "internal/runtime/program/program.go"
 // which the program fingerprints cover. The executors, which compute each op, are not builders and stay in every key.
 func BuilderFile(path string) bool {
 	switch path {
-	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go",
+	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/config/config.go", "decoder/registry.go",
 		"decoder/gemma12.go", // gemma's and gemma2's adapters, under another name
 		ProgramTypesFile:
 		return true

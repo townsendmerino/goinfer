@@ -39,7 +39,7 @@ func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			// "full_attention" is transformers' own canonicalized spelling (configuration_nemotron_h.py's remap_legacy_layer_types/_pattern_to_list): a
 			// checkpoint saved through a current transformers carries it, not "attention", even when "attention" was passed in (layers_block_type came
 			// back ["linear_attention","moe","full_attention",...] from ["mamba","moe","attention",...]). The real NVIDIA release ships
-			// hybrid_override_pattern (parsed independently by normalizeNemotronBlocks) and is unaffected, but any checkpoint re-saved through
+			// hybrid_override_pattern (parsed independently by NormalizeNemotronBlocks) and is unaffected, but any checkpoint re-saved through
 			// transformers hits this, so it is a real alias, not a fixture-only workaround.
 			kind[i] = nemoAttn
 		case "mlp":

@@ -63,7 +63,7 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// all three released sizes (3b/8b/30b), which all ship embedding_multiplier and
 	// logits_scaling at their identity value 1.0 (FeatEmbedScale/FeatLogitScale only trigger
 	// above/away-from 1, per their own derivation in this file), and residual_multiplier is
-	// forced to 1.0 by validateGraniteDense. attention_multiplier is NOT gated by any
+	// forced to 1.0 by ValidateGraniteDense. attention_multiplier is NOT gated by any
 	// ResidentFeature flag at all — it is baked into AttnScale, which every backend already
 	// reads generically regardless of value. RequiredResidentFeatures still derives the true
 	// per-model requirement, so a future release with a non-identity multiplier is caught
