@@ -1,0 +1,5 @@
+[2026-11-05 16:24:21 PST] C4 before START: load 2.22, 59 GB available
+[2026-11-05 16:25:31 PST] C4 before END rc=0
+[2026-11-05 16:25:31 PST] C4 after START: load 1.33, 59 GB available
+[2026-11-05 16:26:38 PST] C4 after END rc=0
+[2026-11-05 16:26:38 PST] ALL DONE
