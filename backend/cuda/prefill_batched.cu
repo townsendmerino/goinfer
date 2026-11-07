@@ -175,7 +175,7 @@ __global__ void rope_kv_batched(
 __global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict__ kc,
                              const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd, int startPos,
                              float scale, int window, int M, float* __restrict__ ctx,
-                             const float* __restrict__ sinks ATTN_CAP_PARAM) {
+                             const float* __restrict__ sinks ATTN_CAP_PARAM KV_SCALE_PARAMS) {
     int h = blockIdx.x; if (h >= nH) return;
     int m = blockIdx.y; if (m >= M) return;
     int nKeys = startPos + m + 1;
@@ -204,13 +204,13 @@ __global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict
         int d4 = hd >> 2;
         const float4* q4 = (const float4*)qh;
         for (int i = 0; i < d4; i++) {
-            float4 qq = q4[i], kk = KV_LD4V(ks, i);
+            float4 qq = q4[i], kk = KV_LD4VS(ks, i, kscl[row * nKV + kvh]);
             dot = __fmaf_rn(qq.x, kk.x, dot);
             dot = __fmaf_rn(qq.y, kk.y, dot);
             dot = __fmaf_rn(qq.z, kk.z, dot);
             dot = __fmaf_rn(qq.w, kk.w, dot);
         }
-        for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], KV_LD(ks + d), dot);
+        for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], KV_LDS(ks + d, kscl[row * nKV + kvh]), dot);
         dot = attn_score(dot, scale ATTN_CAP_ARG); sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
@@ -246,7 +246,7 @@ __global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict
         for (int s = winStart; s < nKeys;) {
             const int e = KV_RUN_END(s, nKeys);
             const KV_T* vp = vc + KV_ROW(kvt, s) * kvDim + kvh * hd + d;
-            for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp), acc);
+            for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], KV_LDS(vp, vscl[KV_ROW(kvt, s) * nKV + kvh]), acc);
         }
 #endif
         ctx[(long)m * qDim + h * hd + d] = acc * inv;
