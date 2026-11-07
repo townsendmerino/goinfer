@@ -205,7 +205,7 @@ __global__ void rope(float* __restrict__ vec, const float* __restrict__ invFreq,
 // against the 48 KB per-block limit.
 __global__ void attention(const float* __restrict__ q, const KV_T* __restrict__ kc,
                           const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd, int nKeys,
-                          float scale, int window, float* __restrict__ ctx ATTN_CAP_PARAM) {
+                          float scale, int window, float* __restrict__ ctx ATTN_CAP_PARAM KV_SCALE_PARAMS) {
     extern __shared__ float sm[];       // [nWin] scores/weights + [blockDim] reduce
     int winStart = (window > 0 && nKeys > window) ? nKeys - window : 0;
     int nWin = nKeys - winStart;
@@ -225,7 +225,7 @@ __global__ void attention(const float* __restrict__ q, const KV_T* __restrict__ 
         if (s + nt < nKeys) rowNext = KV_ROW(kvt, s + nt);
         const KV_T* ks = kc + row * kvDim + kvh * hd;
         float dot = 0.f;
-        for (int d = 0; d < hd; d++) dot = __fmaf_rn(qh[d], KV_LD(ks + d), dot);
+        for (int d = 0; d < hd; d++) dot = __fmaf_rn(qh[d], KV_LDS(ks + d, kscl[row * nKV + kvh]), dot);
         dot = attn_score(dot, scale ATTN_CAP_ARG); sc[s - winStart] = dot; lm = fmaxf(lm, dot);
     }
     red[t] = lm; __syncthreads();
@@ -243,7 +243,7 @@ __global__ void attention(const float* __restrict__ q, const KV_T* __restrict__ 
         for (int s = winStart; s < nKeys;) {
             const int e = KV_RUN_END(s, nKeys);
             const KV_T* vp = vc + KV_ROW(kvt, s) * kvDim + kvh * hd + d;
-            for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp), acc);
+            for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], KV_LDS(vp, vscl[KV_ROW(kvt, s) * nKV + kvh]), acc);
         }
         ctx[h * hd + d] = acc * inv;
     }

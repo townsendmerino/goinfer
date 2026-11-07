@@ -1,0 +1,8 @@
+=== RUN   TestKV8_exactInputIdentity_glueAttention
+--- PASS: TestKV8_exactInputIdentity_glueAttention (0.43s)
+=== RUN   TestKV8_exactInputIdentity_plant
+--- PASS: TestKV8_exactInputIdentity_plant (0.22s)
+=== RUN   TestKV8_exactInputIdentity_attnBatched
+--- PASS: TestKV8_exactInputIdentity_attnBatched (0.48s)
+PASS
+ok  	github.com/townsendmerino/goinfer/backend/cuda/kernels	1.177s

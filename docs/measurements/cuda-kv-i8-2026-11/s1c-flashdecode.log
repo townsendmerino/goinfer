@@ -1,0 +1,6 @@
+=== RUN   TestKV8_exactInputIdentity_flashDecode
+--- PASS: TestKV8_exactInputIdentity_flashDecode (0.94s)
+=== RUN   TestKV8_exactInputIdentity_flashDecodeRows
+--- PASS: TestKV8_exactInputIdentity_flashDecodeRows (0.49s)
+PASS
+ok  	github.com/townsendmerino/goinfer/backend/cuda/kernels	1.494s
