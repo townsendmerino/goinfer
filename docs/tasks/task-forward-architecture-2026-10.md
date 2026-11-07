@@ -4514,6 +4514,39 @@ to 06:49:01 PST, load 0.31 at its start, `kwin_wayland` the only other CUDA cont
         `BatchStepRange` at two slots.
   - **Card time:** about 7 minutes. OP4 on CUDA ends at about 154 of the 153 Francis set at 11:50.
 
+### 4.9b OP4's memory planner: design (2026-11-07, before any code)
+
+The planner is MM5 (`docs/tasks/task-subsystems-2026-10.md` §6.5): demand derived from the program, each operation declaring its
+buffers. Today a load's KV and recurrent state are priced by family-keyed code and sized a second time by each backend's build:
+`decoder.Model.metalKVParts` and `cudaKVParts` switch on the mixer, `decoder.stateSpecs` on the family (MM5a made it the one list the
+state of both backends allocates from), and Metal's build sizes each layer's pool from its own geometry (`kvNullBytes`). Weights are
+already generic (every tensor the load holds); Metal's step scratch is already a list (MM5a); decode's scratch is MM7's open gap.
+
+**What moves:**
+1. **Shared, mac-sb11m, first PR.** `program.Buffers`: each operation's buffers as element counts and a unit. Per position: the K and V
+   rows of `OpAttention`, `OpGatedAttn` and `OpGemma4Attn` at the layer's KV width (none on a KV-shared Gemma 4 layer), and `OpMLA`'s
+   latent row. Per slot: the state of `OpDeltaNet`, `OpMamba2`, `OpKDA` and `OpShortConv`, each marked checkpointed or not. Widths come
+   from a `program.LayerShape` the decoder fills from the Architecture once, so `program` still imports nothing from goinfer.
+   `stateSpecs` and the mixer switches become sums over the list at the backend's element size.
+2. **Metal half, mac-sb11m.** `metalKVParts` is the per-position sum plus Metal's own terms: 64-row blocks, the null block once, 4 B a
+   table entry, the raised tables, int8's per-head scales. The build sizes each layer's pool from the same list.
+3. **CUDA half, nobara-sb01, in parallel once the shared PR's vocabulary is merged.** `cudaKVParts` is the sum plus CUDA's terms (a
+   windowed layer's window-plus-slack blocks, two tables; the 2 MiB rounding stays `FixedSlack`), and CUDA's build sizes its pools from
+   the list. CUDA's step scratch joins it there (OP4 on CUDA, the coordinator's 2026-11-06 split).
+
+**Gates.** All tier 0, seconds. Ordinary engineering: nothing computed changes, and the census decides.
+- **G-MP1:** MM1's decision census unchanged byte for byte, arm64 and amd64 (Rosetta reproduces CI's class). A moved row is a red
+  run, not a re-record.
+- **G-MP2:** the list is what builds. Per backend, MM7's allocation-vs-plan gate stays green on every tiny fixture, and each layer's
+  allocated pool and state equal its listed bytes.
+- **G-MP3:** demand from the program alone. For every tiny fixture with KV or state, the demand computed from its `Program` and
+  `LayerShape`s, with no Architecture, equals what the build leases.
+- **G-MP4:** a source scan finds no family or mixer switch in KV and state pricing.
+- **G-MP5:** `gate identity` per backend, all IDENTICAL.
+- **Plants:** an operation declaring one buffer short (G-MP2 and G-MP3 red), and a backend term counted twice (G-MP1 red).
+
+**Not in it:** weights, decode's scratch (MM7), the arbiter (MM4). SB11a's operation records ride on OP4's walker, not on this.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
