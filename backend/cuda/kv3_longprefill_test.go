@@ -422,8 +422,10 @@ func TestMEM6_cudaPrefillHostRows(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Logf("%d rows: at most %d embedding rows held at once (one pass is %d)", n, held, pass)
-		if held > pass {
-			t.Errorf("%d rows: the decoder held %d embedding rows at once, want at most one pass (%d)", n, held, pass)
+		// The observer must have fired: a prefill that never called it would read 0 and pass "at most one pass" without reading anything. The
+		// prompt is longer than a pass, so the most rows held at once is exactly one pass.
+		if held != pass {
+			t.Errorf("%d rows: the decoder held at most %d embedding rows at once, want exactly one pass (%d): at most it, and not 0 because the observer never fired", n, held, pass)
 		}
 		if got := hash(lg, n); got != want {
 			t.Errorf("%d rows: the last logits and 32 decode steps differ from the slice entry point's (%#x, want %#x)", n, got, want)

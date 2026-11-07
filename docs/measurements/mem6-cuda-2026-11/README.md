@@ -79,3 +79,9 @@ The bar was 64 MiB. The 1.5B misses it by 4 MiB (the PARKED band) and **the 7B, 
 
 The 7B stays PARKED at +81 MiB against the 64 MiB bar. The bar does not move and no lever is pulled; the PR stays open, marked PARKED in its title and in the ledger row. It comes back after D8b with a mechanism, not a new bar. The levers and what each costs, so the owner can choose: (1) a narrower embedding pass: less host staging, slower prefill; (2) release `xhostBuf` when a prefill ends: the held block goes, the next long prompt re-allocates it; (3) `debug.FreeOSMemory` after a long prefill: returns the slab's garbage, at the cost of a forced-GC pause on the request path.
 
+
+## Decision, 2026-11-06 21:32 (Francis): merged as is
+
+**7B 81 MiB against the 64 MiB bar, merged as is by Francis 2026-11-06 21:32; the three levers not taken.** The bar did not move and the registered verdict stands: the 1.5B passed (+33 MiB), the 7B was PARKED by the rule (+81 MiB, over 64 and within 128), and it is not called a pass here. The change is merged on the owner's decision, not because the gate met. The PARKED mark leaves the PR title; the record above is unchanged.
+
+On the return (2026-11-07), `TestMEM6_cudaPrefillHostRows`'s observer hook was made non-vacuous (Gemini's finding on this PR): it asserted only "at most one pass", which a prefill that never called the observer would satisfy with 0 rows read. It now requires the most rows held at once to be exactly one pass (the prompts are longer than a pass), and is red when the observer never fires (`observer-plant.log`, with `suffixRows`' call to it disabled; green `observer-fix.log`). `origin/main` is merged in (a conflict in P36's paragraph of `docs/queue-performance.md`, resolved to main's wording with the MEM6 clause updated); the parity manifest is fresh.
