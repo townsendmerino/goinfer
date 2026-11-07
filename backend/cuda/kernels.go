@@ -362,6 +362,11 @@ var prefillBatchedKV8PTX []byte
 //go:embed testdata/kv8_store.ptx
 var kv8StorePTX []byte
 
+// decodeSplitKVKV8PTX: decode_splitkv.cu built with -DKV_I8 (the exact long-context decode path), at the ambient NVRTC like decode_splitkv.ptx.
+//
+//go:embed testdata/decode_splitkv_kv8.ptx
+var decodeSplitKVKV8PTX []byte
+
 // decodeFAKV8PTX: decode_fa.cu built with -DKV_I8 (the flash-decode lane's int8 readers), at the ambient NVRTC like decode_fa.ptx.
 //
 //go:embed testdata/decode_fa_kv8.ptx

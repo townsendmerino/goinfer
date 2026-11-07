@@ -482,7 +482,7 @@ type kv8Args struct {
 
 // kv8Both runs launch once on the f32 module over the f32 values and once on the i8 module over the int8 values and scales, under the case's scrambled block table, and
 // returns what each returns. launch gets the function, the shared buffers and the stream; it allocates and reads back its own outputs.
-func kv8Both(t *testing.T, cx *gc.Context, c kv8Case, q []float32, f32PTX, i8PTX []byte, name string, launch func(fn *gc.Function, a kv8Args, st *gc.Stream) []float32) (f32Out, i8Out []float32) {
+func kv8Both(t *testing.T, cx *gc.Context, c kv8Case, q []float32, f32PTX, i8PTX []byte, name string, launch func(fn *gc.Function, mod *gc.Module, a kv8Args, st *gc.Stream) []float32) (f32Out, i8Out []float32) {
 	t.Helper()
 	table, kq, vq, ksc, vsc, kf, vf := c.scrambled()
 	bg := context.Background()
@@ -514,7 +514,7 @@ func kv8Both(t *testing.T, cx *gc.Context, c kv8Case, q []float32, f32PTX, i8PTX
 				}
 			}
 			a.kc, a.vc, a.tail = gc.Arg(dk), gc.Arg(dv), []gc.KernelArg{gc.Arg(dks), gc.Arg(dvs)}
-			return launch(fn, a, st)
+			return launch(fn, mod, a, st)
 		}
 		dk, dv := mustAlloc[float32](t, cx, len(kf)), mustAlloc[float32](t, cx, len(vf))
 		defer func() { dk.Close(); dv.Close() }()
@@ -524,7 +524,7 @@ func kv8Both(t *testing.T, cx *gc.Context, c kv8Case, q []float32, f32PTX, i8PTX
 			}
 		}
 		a.kc, a.vc = gc.Arg(dk), gc.Arg(dv)
-		return launch(fn, a, st)
+		return launch(fn, mod, a, st)
 	}
 	return run(f32PTX, false), run(i8PTX, true)
 }
@@ -549,8 +549,8 @@ func TestKV8_exactInputIdentity_flashDecode(t *testing.T) {
 			c := newKV8Case(tc.nKeys, g.nKV, g.hd, uint32(51+tc.nKeys+g.hd))
 			G := g.nH / g.nKV
 			which := map[int]string{64: "fa_partial_64", 128: "fa_partial_128", 256: "fa_partial_256"}[g.hd]
-			launch := func(ptxCombine []byte) func(fn *gc.Function, a kv8Args, st *gc.Stream) []float32 {
-				return func(fn *gc.Function, a kv8Args, st *gc.Stream) []float32 {
+			launch := func(ptxCombine []byte) func(fn *gc.Function, mod *gc.Module, a kv8Args, st *gc.Stream) []float32 {
+				return func(fn *gc.Function, _ *gc.Module, a kv8Args, st *gc.Stream) []float32 {
 					part := mustAlloc[float32](t, cx, g.nH*split*8*(g.hd+4)*2)
 					ctx := mustAlloc[float32](t, cx, g.nH*g.hd)
 					defer func() { part.Close(); ctx.Close() }()
@@ -610,7 +610,7 @@ func TestKV8_exactInputIdentity_flashDecodeRows(t *testing.T) {
 			total := tc.n0 + tc.m
 			c := newKV8Case(total, g.nKV, g.hd, uint32(61+total+g.hd))
 			name := fmt.Sprintf("fa_partial_rows_%d_g%d", g.hd, G)
-			launch := func(fn *gc.Function, a kv8Args, st *gc.Stream) []float32 {
+			launch := func(fn *gc.Function, _ *gc.Module, a kv8Args, st *gc.Stream) []float32 {
 				part := mustAlloc[float32](t, cx, launchgeom.FaMaxRows*g.nH*split*8*(g.hd+4))
 				ctx := mustAlloc[float32](t, cx, tc.m*g.nH*g.hd)
 				defer func() { part.Close(); ctx.Close() }()
@@ -653,6 +653,75 @@ func TestKV8_exactInputIdentity_flashDecodeRows(t *testing.T) {
 			}
 			if diff != 0 {
 				t.Errorf("%+v %+v: %d/%d context elements differ between the i8 rows reader and the f32 original", g, tc, diff, len(a))
+			}
+		}
+	}
+}
+
+// TestKV8_exactInputIdentity_splitKV is G1 for decode_splitkv.cu's exact long-context path: splitkv_scores (K), the f32 softmax, then splitkv_vsum (V, one thread per output
+// dim folding the keys in ascending order) and the opt-in split variant (splitkv_vsum_partial then its combine), across head dimensions, group sizes, a window, and key counts
+// around block edges.
+func TestKV8_exactInputIdentity_splitKV(t *testing.T) {
+	cx := kv8Context(t)
+	defer cx.Close()
+	bg := context.Background()
+	for _, g := range []struct{ nH, nKV, hd int }{{8, 2, 64}, {12, 2, 128}, {4, 4, 80}, {6, 2, 96}} {
+		for _, tc := range []struct{ nKeys, winStart int }{{1, 0}, {63, 0}, {64, 0}, {65, 0}, {300, 0}, {300, 140}} {
+			for _, split := range []int{0, 3} {
+				nWin := tc.nKeys - tc.winStart
+				c := newKV8Case(tc.nKeys, g.nKV, g.hd, uint32(71+tc.nKeys+g.hd))
+				launch := func(_ *gc.Function, mod *gc.Module, a kv8Args, st *gc.Stream) []float32 {
+					fn := func(name string) *gc.Function {
+						f, err := mod.Function(name)
+						if err != nil {
+							t.Fatalf("Function(%s): %v", name, err)
+						}
+						return f
+					}
+					sc := mustAlloc[float32](t, cx, g.nH*nWin)
+					inv := mustAlloc[float32](t, cx, g.nH)
+					ctx := mustAlloc[float32](t, cx, g.nH*g.hd)
+					part := mustAlloc[float32](t, cx, g.nH*g.hd*max(split, 1))
+					defer func() { sc.Close(); inv.Close(); ctx.Close(); part.Close() }()
+					run := func(name string, cfg gc.LaunchConfig, args ...gc.KernelArg) {
+						if e := fn(name).LaunchOn(bg, st, cfg, args...); e != nil {
+							t.Fatalf("%s: %v", name, e)
+						}
+					}
+					run("splitkv_scores", gc.LaunchConfig{GridX: uint32(g.nH), GridY: uint32((nWin + 127) / 128), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(g.hd * 4)},
+						append([]gc.KernelArg{gc.Arg(a.q), a.kc, gc.Arg(a.table), gc.ArgValue(int32(g.nH)), gc.ArgValue(int32(g.nKV)), gc.ArgValue(int32(g.hd)), gc.ArgValue(int32(tc.winStart)),
+							gc.ArgValue(int32(tc.nKeys)), gc.ArgValue(float32(0.125)), gc.Arg(sc), gc.ArgValue(int32(nWin))}, a.tail...)...)
+					run("splitkv_softmax", gc.LaunchConfig{GridX: uint32(g.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4},
+						gc.Arg(sc), gc.ArgValue(int32(g.nH)), gc.ArgValue(int32(nWin)), gc.Arg(inv), gc.ArgDevicePtr(0))
+					dy := uint32((g.hd + 31) / 32)
+					if split == 0 {
+						run("splitkv_vsum", gc.LaunchConfig{GridX: uint32(g.nH), GridY: dy, GridZ: 1, BlockX: 32, BlockY: 1, BlockZ: 1},
+							append([]gc.KernelArg{gc.Arg(sc), a.vc, gc.Arg(a.table), gc.Arg(inv), gc.ArgValue(int32(g.nH)), gc.ArgValue(int32(g.nKV)), gc.ArgValue(int32(g.hd)),
+								gc.ArgValue(int32(tc.winStart)), gc.ArgValue(int32(tc.nKeys)), gc.ArgValue(int32(nWin)), gc.Arg(ctx)}, a.tail...)...)
+					} else {
+						run("splitkv_vsum_partial", gc.LaunchConfig{GridX: uint32(g.nH), GridY: dy, GridZ: uint32(split), BlockX: 32, BlockY: 1, BlockZ: 1},
+							append([]gc.KernelArg{gc.Arg(sc), a.vc, gc.Arg(a.table), gc.ArgValue(int32(g.nH)), gc.ArgValue(int32(g.nKV)), gc.ArgValue(int32(g.hd)),
+								gc.ArgValue(int32(tc.winStart)), gc.ArgValue(int32(tc.nKeys)), gc.ArgValue(int32(nWin)), gc.ArgValue(int32(split)), gc.Arg(part)}, a.tail...)...)
+						run("splitkv_vsum_combine", gc.LaunchConfig{GridX: uint32(g.nH), GridY: dy, GridZ: 1, BlockX: 32, BlockY: 1, BlockZ: 1},
+							gc.Arg(part), gc.Arg(inv), gc.ArgValue(int32(g.nH)), gc.ArgValue(int32(g.hd)), gc.ArgValue(int32(split)), gc.Arg(ctx))
+					}
+					if e := st.Synchronize(bg); e != nil {
+						t.Fatal(e)
+					}
+					out := make([]float32, g.nH*g.hd)
+					if e := gc.CopyDtoH(bg, out, ctx); e != nil {
+						t.Fatal(e)
+					}
+					return out
+				}
+				a, b := kv8Both(t, cx, c, kv8Query(g.nH*g.hd), decodeSplitKVPTX, decodeSplitKVKV8PTX, "splitkv_scores", launch)
+				diff, nz := kv8CountDiff(a, b)
+				if nz == 0 {
+					t.Errorf("%+v %+v split=%d: the f32 context is all zero, the comparison is vacuous", g, tc, split)
+				}
+				if diff != 0 {
+					t.Errorf("%+v %+v split=%d: %d/%d context elements differ between the i8 reader and the f32 original", g, tc, split, diff, len(a))
+				}
 			}
 		}
 	}

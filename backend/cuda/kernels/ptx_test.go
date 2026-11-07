@@ -40,6 +40,7 @@ var (
 	decodeSplitKVKV16CapPTX  = readPTX("decode_splitkv_kv16_cap")
 	decodeSplitKVKV16PTX     = readPTX("decode_splitkv_kv16")
 	decodeSplitKVPTX         = readPTX("decode_splitkv")
+	decodeSplitKVKV8PTX      = readPTX("decode_splitkv_kv8")
 	deltaNetPTX              = readPTX("deltanet")
 	fusedQKVPTX              = readPTX("fused_qkv")
 	geluQuantPTX             = readPTX("gelu_quant")

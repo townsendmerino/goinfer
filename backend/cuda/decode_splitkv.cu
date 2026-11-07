@@ -23,7 +23,7 @@
 extern "C" __global__ void splitkv_scores(
     const float* __restrict__ q, const KV_T* __restrict__ kc, const int* __restrict__ kvt,
     int nH, int nKV, int hd, int winStart, int nKeys, float scale,
-    float* __restrict__ scStore, int nWin ATTN_CAP_PARAM) {
+    float* __restrict__ scStore, int nWin ATTN_CAP_PARAM KV_SCALE_PARAMS) {
     int h = blockIdx.x; if (h >= nH) return;   // block-uniform: safe before the barrier below
 
     // q IS BLOCK-INVARIANT — it depends only on h = blockIdx.x — but every one of the 128 threads
@@ -50,13 +50,13 @@ extern "C" __global__ void splitkv_scores(
     int d4 = hd >> 2;
     const float4* q4 = (const float4*)qs;
     for (int j = 0; j < d4; j++) {
-        float4 qq = q4[j], kk = KV_LD4V(ks, j);
+        float4 qq = q4[j], kk = KV_LD4VS(ks, j, kscl[KV_ROW(kvt, s) * nKV + kvh]);
         dot = __fmaf_rn(qq.x, kk.x, dot);
         dot = __fmaf_rn(qq.y, kk.y, dot);
         dot = __fmaf_rn(qq.z, kk.z, dot);
         dot = __fmaf_rn(qq.w, kk.w, dot);
     }
-    for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qs[d], KV_LD(ks + d), dot);
+    for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qs[d], KV_LDS(ks + d, kscl[KV_ROW(kvt, s) * nKV + kvh]), dot);
     scStore[(long)h * nWin + i] = attn_score(dot, scale ATTN_CAP_ARG);
 }
 
@@ -125,14 +125,14 @@ extern "C" __global__ void splitkv_softmax(
 extern "C" __global__ void splitkv_vsum(
     const float* __restrict__ scStore, const KV_T* __restrict__ vc, const int* __restrict__ kvt,
     const float* __restrict__ invStore, int nH, int nKV, int hd, int winStart, int nKeys,
-    int nWin, float* __restrict__ ctx) {
+    int nWin, float* __restrict__ ctx KV_SCALE_PARAMS) {
     int h = blockIdx.x; if (h >= nH) return;
     int d = blockIdx.y * blockDim.x + threadIdx.x;
     if (d >= hd) return;
     int kvDim = nKV * hd, group = nH / nKV, kvh = h / group;
     const float* sc = scStore + (long)h * nWin;
     float acc = 0.f;
-    KV_SUM_RUNS(vc + (long)kvh * hd + d, kvt, kvDim, winStart, nKeys, acc, sc[s - winStart])
+    KV_SUM_RUNS_S(vc + (long)kvh * hd + d, kvt, kvDim, winStart, nKeys, acc, sc[s - winStart], vscl[KV_ROW(kvt, s) * nKV + kvh])
     ctx[(long)h * hd + d] = acc * invStore[h];
 }
 
@@ -155,7 +155,7 @@ extern "C" __global__ void splitkv_vsum(
 extern "C" __global__ void splitkv_vsum_partial(
     const float* __restrict__ scStore, const KV_T* __restrict__ vc, const int* __restrict__ kvt,
     int nH, int nKV, int hd, int winStart, int nKeys, int nWin, int nSplit,
-    float* __restrict__ partials) {
+    float* __restrict__ partials KV_SCALE_PARAMS) {
     int h = blockIdx.x; if (h >= nH) return;
     int d = blockIdx.y * blockDim.x + threadIdx.x;
     if (d >= hd) return;
@@ -170,7 +170,7 @@ extern "C" __global__ void splitkv_vsum_partial(
     int lo = winStart + sp * per;
     int hi = lo + per; if (hi > nKeys) hi = nKeys;
     float acc = 0.f;
-    KV_SUM_RUNS(vc + (long)kvh * hd + d, kvt, kvDim, lo, hi, acc, sc[s - winStart])
+    KV_SUM_RUNS_S(vc + (long)kvh * hd + d, kvt, kvDim, lo, hi, acc, sc[s - winStart], vscl[KV_ROW(kvt, s) * nKV + kvh])
     partials[((long)h * hd + d) * nSplit + sp] = acc;
 }
 

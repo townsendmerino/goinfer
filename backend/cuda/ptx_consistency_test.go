@@ -250,6 +250,9 @@ func TestKV8_glueTwinIsBuiltAtTheAuditedToolchain(t *testing.T) {
 	if got, want := banner(decodeFAKV8PTX), banner(decodeFAPTX); got == "" || got != want {
 		t.Errorf("decode_fa_kv8.ptx was built by %q, decode_fa.ptx by %q", got, want)
 	}
+	if got, want := banner(decodeSplitKVKV8PTX), banner(decodeSplitKVPTX); got == "" || got != want {
+		t.Errorf("decode_splitkv_kv8.ptx was built by %q, decode_splitkv.ptx by %q", got, want)
+	}
 	if banner(kv8StorePTX) == "" {
 		t.Error("kv8_store.ptx has no NVRTC banner")
 	}

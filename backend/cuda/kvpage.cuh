@@ -28,4 +28,16 @@
             kvsp_ = kvsn_;                                                                                                   \
         }                                                                                                                    \
     }
+// KV_SUM_RUNS_S: KV_SUM_RUNS for a cache that may be int8: scx is the scale of row s (an expression of s), ignored and not evaluated in the f32 and f16 builds.
+#define KV_SUM_RUNS_S(base, t, stride, lo, hi, acc, w, scx)                                                                          \
+    {                                                                                                                        \
+        const KV_T* kvsb_ = (base);                                                                                          \
+        const KV_T* kvsp_ = kvsb_ + KV_ROW(t, lo) * (stride);                                                               \
+        for (int s = (lo); s < (hi);) {                                                                                      \
+            const int e_ = KV_RUN_END(s, hi);                                                                                \
+            const KV_T* kvsn_ = (e_ < (hi)) ? kvsb_ + (long)(t)[e_ >> 6] * 64 * (stride) : kvsp_;                           \
+            _Pragma("unroll 64") for (; s < e_; s++, kvsp_ += (stride)) acc = __fmaf_rn(w, KV_LDS(kvsp_, scx), acc);                \
+            kvsp_ = kvsn_;                                                                                                   \
+        }                                                                                                                    \
+    }
 #endif
