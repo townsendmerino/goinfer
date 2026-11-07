@@ -305,32 +305,46 @@ func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
 	}
 }
 
-// TestMM5_handTable is G-MP3 (docs/tasks/task-forward-architecture-2026-10.md §4.9b): on four fixtures, Metal's f16 KV per 64-row block and
-// the recurrent state per slot are written here as arithmetic on each config's numbers, and the plan's figures (metalKVParts' null block,
-// stateBuffers) must equal them. The numbers the table uses are checked against each config, so a fixture that changes is red, not stale.
+// TestMM5_handTable is G-MP3 (docs/tasks/task-forward-architecture-2026-10.md §4.9b): on six fixtures, Metal's KV per 64-row block, the
+// recurrent state per slot and its checkpoint per slot are written here as arithmetic on each config's numbers, and the plan's figures
+// (metalKVParts' null block, stateBuffers, recurrentCheckpointBuffers) must equal them. Each row checks the config numbers it uses, so a
+// fixture that changes is red, not stale.
 func TestMM5_handTable(t *testing.T) {
 	for _, c := range []struct {
-		dir, kv                         string // kv: the precision Metal delivers the cache at
-		layers, kvHeads, headDim        int
-		latent, convK, keyH, keyD, valH int // MLA's kv_lora_rank + qk_rope_head_dim; DeltaNet's conv kernel, key heads and width, value heads
-		perBlock, state                 int64
+		dir, kv                     string // kv: the precision Metal delivers the cache at
+		numbers                     func(*Config) bool
+		perBlock, state, checkpoint int64
 	}{
 		// four attention layers, K and V of 2 heads × 16, f16
-		{"../testdata/llama-tiny", kvPrecF16, 4, 2, 16, 0, 0, 0, 0, 0, 4 * 2 * (2 * 16) * 2 * 64, 0},
+		{"../testdata/llama-tiny", kvPrecF16, func(c *Config) bool { return c.NumLayers == 4 && c.NumKVHeads == 2 && c.HeadDim == 16 },
+			4 * 2 * (2 * 16) * 2 * 64, 0, 0},
 		// four MLA layers, one latent row of 16 + 8, f32 (Metal keeps an MLA cache in f32)
-		{"../testdata/deepseek-tiny", kvPrecF32, 4, 4, 8, 16 + 8, 0, 0, 0, 0, 4 * (16 + 8) * 4 * 64, 0},
-		// one full-attention layer's K and V; three DeltaNet layers' conv window (3 rows of 2·32 + 64) and state (4 × 16 × 16), f32
-		{"selftestdata/qwen35-tiny", kvPrecF16, 4, 2, 16, 0, 4, 2, 16, 4, 1 * 2 * (2 * 16) * 2 * 64, 3 * ((4-1)*(2*(2*16)+4*16) + 4*16*16) * 4},
+		{"../testdata/deepseek-tiny", kvPrecF32, func(c *Config) bool { return c.NumLayers == 4 && c.KVLoRARank == 16 && c.QKRopeHeadDim == 8 },
+			4 * (16 + 8) * 4 * 64, 0, 0},
+		// one full-attention layer's K and V; three DeltaNet layers' conv window (3 rows of 2·32 + 64) and state (4 × 16 × 16), f32, all
+		// checkpointed
+		{"selftestdata/qwen35-tiny", kvPrecF16, func(c *Config) bool {
+			return c.NumLayers == 4 && c.NumKVHeads == 2 && c.HeadDim == 16 && c.LinearConvKernelDim == 4 && c.LinearNumKeyHeads == 2 &&
+				c.LinearKeyHeadDim == 16 && c.LinearNumValueHeads == 4 && c.LinearValueHeadDim == 16
+		}, 1 * 2 * (2 * 16) * 2 * 64, 3 * ((4-1)*(2*(2*16)+4*16) + 4*16*16) * 4, 3 * ((4-1)*(2*(2*16)+4*16) + 4*16*16) * 4},
 		// two sliding and two full layers, each holding the whole context on Metal
-		{"../testdata/gemma2-tiny", kvPrecF16, 4, 2, 32, 0, 0, 0, 0, 0, 4 * 2 * (2 * 32) * 2 * 64, 0},
+		{"../testdata/gemma2-tiny", kvPrecF16, func(c *Config) bool { return c.NumLayers == 4 && c.NumKVHeads == 2 && c.HeadDim == 32 },
+			4 * 2 * (2 * 32) * 2 * 64, 0, 0},
+		// one attention layer (2 heads × 64/4); three short-conv layers' window of 2 rows of 64, which no checkpoint copies
+		{"../testdata/lfm2-tiny", kvPrecF16, func(c *Config) bool {
+			return c.NumLayers == 4 && c.NumKVHeads == 2 && c.HiddenDim == 64 && c.NumHeads == 4 && c.ConvLCache == 3
+		}, 1 * 2 * (2 * 16) * 2 * 64, 3 * (3 - 1) * 64 * 4, 0},
+		// two attention layers; two Mamba-2 layers' conv window (3 rows of 8·8 + 2·1·16) and SSM state (8 × 8 × 16), checkpointed
+		{"../testdata/nemotron-tiny", kvPrecF16, func(c *Config) bool {
+			return c.NumKVHeads == 2 && c.HeadDim == 16 && c.MambaNumHeads == 8 && c.MambaHeadDim == 8 && c.SSMStateSize == 16 && c.NGroups == 1 &&
+				c.ConvKernel == 4
+		}, 2 * 2 * (2 * 16) * 2 * 64, 2 * ((4-1)*(8*8+2*1*16) + 8*8*16) * 4, 2 * ((4-1)*(8*8+2*1*16) + 8*8*16) * 4},
 	} {
 		m, err := Load(c.dir, Options{Backend: "cpu", Quant: "f32"})
 		if err != nil {
 			t.Fatalf("%s: %v", c.dir, err)
 		}
-		cfg := m.Config()
-		if cfg.NumLayers != c.layers || cfg.NumKVHeads != c.kvHeads || cfg.HeadDim != c.headDim || (c.latent > 0 && cfg.KVLoRARank+cfg.QKRopeHeadDim != c.latent) ||
-			(c.convK > 0 && (cfg.LinearConvKernelDim != c.convK || cfg.LinearNumKeyHeads != c.keyH || cfg.LinearKeyHeadDim != c.keyD || cfg.LinearNumValueHeads != c.valH)) {
+		if !c.numbers(m.Config()) {
 			t.Errorf("%s: the config no longer has the numbers the table is written from", c.dir)
 		}
 		if d := m.KVDeliveredFor("metal"); d != c.kv {
@@ -339,12 +353,14 @@ func TestMM5_handTable(t *testing.T) {
 		if _, perBlock := m.metalKVParts(4096); perBlock != c.perBlock {
 			t.Errorf("%s: the plan prices %d B of KV a block; the hand table %d", c.dir, perBlock, c.perBlock)
 		}
-		var state int64
-		for _, b := range stateBuffers(m.w.arch) {
-			state += b
+		sum := func(bs []int64) (n int64) {
+			for _, b := range bs {
+				n += b
+			}
+			return n
 		}
-		if state != c.state {
-			t.Errorf("%s: the plan prices %d B of state a slot; the hand table %d", c.dir, state, c.state)
+		if state, ckpt := sum(stateBuffers(m.w.arch)), sum(recurrentCheckpointBuffers(m.w.arch)); state != c.state || ckpt != c.checkpoint {
+			t.Errorf("%s: the plan prices %d B of state and %d B of checkpoint a slot; the hand table %d and %d", c.dir, state, ckpt, c.state, c.checkpoint)
 		}
 		m.Close()
 	}
