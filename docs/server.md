@@ -547,12 +547,12 @@ was available.** Per family:*
 
 | family | the vision tower | the decoder after the image |
 |---|---|---|
-| **Gemma 3** (SigLIP) | CPU, f32. **On `--backend cuda` a resident CUDA tower (goinfer's own), on `--backend webgpu` a resident WebGPU tower**, both int8; Metal: CPU | CUDA and WebGPU: resident decode; CUDA also a resident image prefill. Metal: resident decode through the `UploadKV` bridge (read, unrun) |
-| **Gemma 4 E2B, E4B** | CPU, f32 unless `-vision-quant int8` | **CPU for the whole model on every backend** (no backend implements the E-model features) |
-| **Gemma 4 26B-A4B, 31B** | CPU, f32 unless `-vision-quant int8` | CUDA: resident bidirectional image prefill and decode (S19, 2026-10-23; 26B-A4B run, 31B unverified). Elsewhere: CPU bidirectional prefill, then resident decode through the bridge (Metal and WebGPU unverified) |
-| **Qwen2.5-VL** | CPU, f32 unless `-vision-quant int8`: aikit has `gpu/qwencuda` and `gpu/qwenmetal`, goinfer does not use them | CUDA: resident m-RoPE prefill and decode; WebGPU and Metal: CPU prefill, then resident decode |
-| **Qwen3.5+ dense** (0.8B, 9B gated; MoE sizes accepted but never run) | CPU, f32 unless `-vision-quant int8`, loaded on the first image, at most 1,024 image tokens per image; from a checkpoint directory or a GGUF `mmproj` (below) | **CUDA: resident image prefill and decode** since 2026-10-06 (P26b; dense only); every other backend: CPU prefill and CPU decode (a recurrent family refuses the other resident branches); a repeated image does not re-run the tower (the feature cache) |
-| **GLM-OCR** | CPU, **f32 on every backend** | CUDA: resident (pairwise rope); WebGPU: staged (no resident KV); Metal: CPU |
+| **Gemma 3** (SigLIP) | A device tower on CUDA, Metal and WebGPU, float32 by default (CUDA drops to int8 when the card cannot hold float32; `-vision-quant int8` asks for the int8 one); CPU, f32 under `-vision-device cpu` | CUDA and WebGPU: resident decode; CUDA also a resident image prefill. Metal: resident decode through the `UploadKV` bridge (read, unrun) |
+| **Gemma 4 E2B, E4B** | A float32 device tower on CUDA, Metal and WebGPU; CPU, f32 under `-vision-device cpu` (int8 under `-vision-quant int8`) | **CPU for the whole model on every backend** (no backend implements the E-model features) |
+| **Gemma 4 26B-A4B, 31B** | A float32 device tower on CUDA, Metal and WebGPU; CPU as above | CUDA: resident bidirectional image prefill and decode (S19, 2026-10-23; 26B-A4B run, 31B unverified). Elsewhere: CPU bidirectional prefill, then resident decode through the bridge (Metal and WebGPU unverified) |
+| **Qwen2.5-VL** | A float32 device tower on CUDA, Metal and WebGPU; CPU as above | CUDA: resident m-RoPE prefill and decode; WebGPU and Metal: CPU prefill, then resident decode |
+| **Qwen3.5+ dense** (0.8B, 9B gated; MoE sizes accepted but never run) | A float32 device tower on CUDA, Metal and WebGPU (CPU as above), loaded on the first image, at most 1,024 image tokens per image; from a checkpoint directory or a GGUF `mmproj` (below) | **CUDA: resident image prefill and decode** since 2026-10-06 (P26b; dense only); every other backend: CPU prefill and CPU decode (a recurrent family refuses the other resident branches); a repeated image does not re-run the tower (the feature cache) |
+| **GLM-OCR** | A float32 device tower on CUDA, Metal and WebGPU; CPU, f32 under `-vision-device cpu` | CUDA: resident (pairwise rope); WebGPU: staged (no resident KV); Metal: CPU |
 
 **The tower-quant rule, exactly as `towerInt8` in `main.go` applies it.** `-vision-quant int8` gives an int8 tower. Unset, **Gemma 3's
 tower is float32 on every backend**: on the GPU under `--backend cuda` (which falls back to its int8 device tower when the card cannot hold float32) and `--backend metal`, and on the CPU under
@@ -564,6 +564,18 @@ not close to f32 (relative L2 0.21 / 0.14 / 0.31 against each tower's own f32 on
 on the real checkpoint. The f32 tower holds more host memory. `EnableResident` is called in one place only (the Gemma 3 tower on cuda/webgpu); if it fails, serve warns and runs that tower on
 the CPU rather than refusing to start. `-vision-quant int8` (default `f32`) is a CPU option: `docs/completed/task-cpu-vision-prefill.md` found it speeds the compute-bound
 prefill only on AVX512-VNNI hardware and measures a wash on plain AVX2, which is why f32 is the default.
+
+**Where a tower cannot be placed.** CUDA and Metal price the tower into the resident plan (`towerReserve`), so the KV plan leaves room for it. WebGPU prices a device tower the same way
+when one is asked for (`-vision-device gpu`, or Gemma 3 with `-vision-quant`; an unasked tower is the CPU's and priced at zero), before the decoder loads. On a Mac (unified memory, where the
+device's buffers are host RAM) the tower is counted with the weights when the KV slots and the context are sized (a single-slot build too: its context gives way, down to 4096, until slot,
+weights and tower fit), then checked once the decoder is resident against the memory available now. The 70% share of RAM is the sizing target for slots and context; the check afterwards is
+the physical backstop (the tower must fit what is available) and applies no second fraction, so an explicit `-ctx`, or a floor context that still overshoots the share, is not refused by the share (the
+context floor logs a warning). If the tower does not fit, serve **refuses the load** and says how much it needs: a float32 CPU tower would hold the same RAM, so moving it is not a fallback. Free memory,
+lower `-ctx` or `-kv-sessions`, or pass `-vision-device cpu` to run the CPU tower anyway; for Gemma 3 only, `-vision-quant int8` is a smaller device tower (lossy). The reserve stays
+counted if the tower later falls back to the CPU, which only leaves more room than needed. Not priced: a Qwen3.5+ `.gguf` mmproj tower (`-vision-device gpu` puts it on WebGPU with nothing reserved). A discrete GPU
+has no free-memory figure under WebGPU, so there a tower that cannot start is warned about at startup (Gemma 3, Qwen2.5-VL, Gemma 4) and runs on the CPU, or refuses under `--require-backend`; the Qwen2.5-VL,
+Qwen3.5+, Qwen3-VL and GLM-OCR towers also fall back to the CPU for good at the first image that runs them out of device memory (a message on stderr), while Gemma 3's and Gemma 4's fail that one
+request, naming `-vision-device cpu`.
 
 **Speed, each figure with its record.** CPU SigLIP tower ~31.3 s/image at 896² (recorded 2026-09-08, `docs/benchmarks.md` §A "Vision tower CPU prefill", not re-measured). CUDA Gemma 3 tower
 **4.1 s/image** (recorded 2026-09-21: 26.0 s with the exact attention kernel, 6.4x with the fused one that is the default since the owner's override; `GOINFER_CUDA_VISION_ATTN=exact`

@@ -122,3 +122,43 @@ func TestLoadVisionTower_gemma3FloatDefaultFallsBackToInt8(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadVisionTower_gemma3WebGPUPlacement: under --backend webgpu Gemma 3's SigLIP tower runs on the CPU unless asked: nothing asked
+// (the flag unset or "auto") attaches no device tower, -vision-device gpu and -vision-quant f32 attach the float32 one, -vision-quant
+// int8 the int8 one, and -vision-device cpu none. It runs through loadVisionTower with a fake WebGPU resident that tells float32
+// from int8 by whether the encoder holds int8 weights.
+func TestLoadVisionTower_gemma3WebGPUPlacement(t *testing.T) {
+	stubWebGPU(t, false, 0) // a discrete GPU: the unified-memory guard has no figure and proceeds
+	var f32Tries, int8Tries int
+	vision.RegisterResident(func(e *vision.Encoder) (vision.ResidentEncoder, error) {
+		if _, err := e.GPUWeights(); err == nil {
+			int8Tries++
+		} else {
+			f32Tries++
+		}
+		return fakeSiglipResident{}, nil
+	})
+	t.Cleanup(func() { vision.RegisterResident(nil) })
+	dir := gemma3RealLayoutTiny(t)
+	for _, tc := range []struct {
+		name, quant, device string
+		wantF32, wantInt8   int
+	}{
+		{"nothing asked", "", "", 0, 0},
+		{"-vision-device auto", "", "auto", 0, 0},
+		{"-vision-quant f32", "f32", "", 1, 0},
+		{"-vision-device gpu", "", "gpu", 1, 0},
+		{"-vision-quant int8", "int8", "", 0, 1},
+		{"-vision-device cpu", "", "cpu", 0, 0},
+	} {
+		f32Tries, int8Tries = 0, 0
+		cfg := config{visionPath: dir, visionQuant: tc.quant, visionDevice: tc.device, models: modelFlag{{path: "m"}}}
+		cfg.load.Backend = "webgpu"
+		if err := (&server{}).loadVisionTower(cfg); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if f32Tries != tc.wantF32 || int8Tries != tc.wantInt8 {
+			t.Errorf("%s: WebGPU attach tried float32 %d times and int8 %d, want %d and %d", tc.name, f32Tries, int8Tries, tc.wantF32, tc.wantInt8)
+		}
+	}
+}
