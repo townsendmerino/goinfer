@@ -1,0 +1,15 @@
+# Hard-tier names that became aliases of a type in another package, keeping their name and every source use.
+#
+# scripts/apidiff_check.sh treats exactly two apidiff lines for a listed entry as compatible: "NAME: changed from NAME to
+# <module>/PATH.NAME", and a Hard-tier method whose signature text is unchanged, whose result is NAME and whose other types are all
+# builtins, because only NAME's identity moved (decoder's (*Model).Config). Every other incompatible change to a Hard-tier name
+# stays fatal. The promise moves with the type: the gate also compares the baseline's package with PATH and judges NAME's own
+# lines there against hard_tier.txt's entries for PATH (decoder/config Config and Config.*), so a field or method of the type
+# that goes away still fails. What an alias does change,
+# a value's %T and reflect String/PkgPath (and so gob's names), is stated in docs/api-tiers.md.
+#
+# EACH ENTRY IS FRANCIS'S CALL, recorded with who decided and when. Never add one to make the gate pass.
+#
+# Format: <pkg> <name> = <package path below the module>.<name>   # decided by, date
+
+decoder Config = decoder/config.Config   # Francis, 2026-11-07 11:49 (DC1b, docs/tasks/task-decoder-config-2026-11.md)

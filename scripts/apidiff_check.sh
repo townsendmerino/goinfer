@@ -6,6 +6,8 @@
 # purpose — the backend/residency seam, family descriptors and drafters MOVE, by design, and a gate
 # that failed on those would be turned off within a minor. testdata/apidiff/hard_tier.txt is the
 # machine-readable half of that document; incompatible changes outside it are REPORTED, not fatal.
+# testdata/apidiff/hard_tier_aliases.txt licenses two lines for a Hard-tier name that became a same-name alias (each entry
+# Francis's call); scripts/test_apidiff_check.py holds those rules and the plants that must stay fatal.
 #
 # Usage:
 #   scripts/apidiff_check.sh                 # baseline v0.13.0 (deliberately frozen — the
@@ -20,10 +22,84 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-BASE="${1:-v0.13.0}"
 PKGS="decoder tokenizer chat constrain"
 MOD="github.com/townsendmerino/goinfer"
-HARD="$ROOT/testdata/apidiff/hard_tier.txt"
+HARD="${APIDIFF_HARD:-$ROOT/testdata/apidiff/hard_tier.txt}"
+ALIASES="${APIDIFF_ALIASES:-$ROOT/testdata/apidiff/hard_tier_aliases.txt}"
+
+# aliased PKG LINE succeeds when LINE is one of the two lines hard_tier_aliases.txt licenses for an entry "PKG NAME = PATH.NAME":
+# "NAME: changed from NAME to <module>/PATH.NAME", or a method whose old and new signature text are the same and name NAME as a
+# whole word, because only that type's identity moved (such as (*Model).Config). Nothing else.
+aliased() {
+	local p="$1" body="${2#- }" ep name target from to
+	[ -f "$ALIASES" ] || return 1
+	while read -r ep name eq target _; do
+		case "$ep" in '' | \#*) continue ;; esac
+		[ "$ep" = "$p" ] && [ "$eq" = "=" ] || continue
+		[ "${target##*.}" = "$name" ] || continue # the alias keeps its name
+		[ "$body" = "$name: changed from $name to $MOD/$target" ] && return 0
+		case "$body" in "("*")."*": changed from func("*" to func("*) ;; *) continue ;; esac # a method, its signature
+		from="${body#*: changed from }"
+		to="${from#* to }"
+		from="${from%% to *}"
+		[ "$from" = "$to" ] || continue
+		# The result is the alias, and every other type in the signature is a builtin: another named type's identity could have
+		# moved too, and the text would not show it.
+		local params
+		case "$from" in
+		"func("*") *$name") params="${from#func(}" params="${params%) \*"$name"}" ;;
+		"func("*") $name") params="${from#func(}" params="${params%) "$name"}" ;;
+		*) continue ;;
+		esac
+		case "$params" in *"("* | *")"*) continue ;; esac
+		printf '%s' "$params" | grep -oE '[A-Za-z_][A-Za-z0-9_.]*' |
+			grep -qvxE 'bool|string|error|any|byte|rune|uintptr|u?int(8|16|32|64)?|float(32|64)|complex(64|128)' && continue
+		return 0
+	done < "$ALIASES"
+	return 1
+}
+
+# hardname PKG NAME succeeds when the Hard list names NAME, or NAME is a field or method of a type the list names as "T.*" (every
+# member T had at the baseline).
+hardname() {
+	local p="$1" name="$2" t
+	grep -qxF "$p $name" "$HARD" && return 0
+	case "$name" in
+	"(*"*")."*) t="${name#(\*}" t="${t%%)*}" ;;
+	"("*")."*) t="${name#(}" t="${t%%)*}" ;;
+	*.*) t="${name%%.*}" ;;
+	*) return 1 ;;
+	esac
+	grep -qxF "$p $t.*" "$HARD"
+}
+
+# classify PKG LINE prints one of HARD, ALIAS, EXPERIMENTAL for one line of apidiff's "Incompatible changes" list.
+classify() {
+	local p="$1" line="$2" name
+	name="$(printf '%s' "$line" | sed 's/^- //; s/:.*//')"
+	if ! hardname "$p" "$name"; then
+		echo EXPERIMENTAL
+	elif aliased "$p" "$line"; then
+		echo ALIAS
+	else
+		echo HARD
+	fi
+}
+
+# --classify PKG: classify apidiff's incompatible lines from stdin, one verdict and the line per output line; exit 1 when one is HARD.
+# scripts/test_apidiff_check.py drives it with planted lines and its own copies of the two lists (APIDIFF_HARD, APIDIFF_ALIASES).
+if [ "${1:-}" = "--classify" ]; then
+	bad=0
+	while IFS= read -r line; do
+		[ -z "$line" ] && continue
+		v="$(classify "$2" "$line")"
+		echo "$v $line"
+		[ "$v" = HARD ] && bad=1
+	done
+	exit "$bad"
+fi
+
+BASE="${1:-v0.13.0}"
 
 if ! git rev-parse -q --verify "refs/tags/$BASE" >/dev/null; then
 	echo "apidiff_check: baseline tag $BASE not present locally (shallow clone?). Cannot compare." >&2
@@ -61,15 +137,47 @@ for p in $PKGS; do
 	# Split the incompatible changes by tier. The NAME is everything before the first ": ".
 	while IFS= read -r line; do
 		[ -z "$line" ] && continue
-		name="$(printf '%s' "$line" | sed 's/^- //; s/:.*//')"
-		if grep -qxF "$p $name" "$HARD"; then
+		case "$(classify "$p" "$line")" in
+		HARD)
 			echo "  $p: HARD-TIER BREAK  $line"
 			fatal=$((fatal + 1))
-		else
+			;;
+		ALIAS)
+			echo "  $p: (listed alias)   $line"
+			;;
+		*)
 			echo "  $p: (experimental)   $line"
-		fi
+			;;
+		esac
 	done <<< "$inc"
 done
+
+# A listed alias's members live in its new package, which the baseline does not have: compare the baseline's old package with
+# the new one, and judge only the alias's own lines there (the type, its fields and methods), against the Hard list's entries
+# for the new package. So a field removed from decoder/config's Config fails as it would have in decoder.
+if [ -f "$ALIASES" ]; then
+	while read -r ap aname eq atarget _; do
+		case "$ap" in '' | \#*) continue ;; esac
+		[ "$eq" = "=" ] || continue
+		npkg="${atarget%.*}"
+		out="$("$APIDIFF" "$WORK/$ap.base" "$MOD/$npkg" 2>&1)" || { echo "  $npkg: apidiff failed against $ap's baseline" >&2; exit 1; }
+		inc="$(printf '%s\n' "$out" | awk '/^Incompatible changes:/{f=1;next} /^Compatible changes:/{f=0} f' | sed '/^$/d')"
+		n=0
+		while IFS= read -r line; do
+			[ -z "$line" ] && continue
+			name="$(printf '%s' "$line" | sed 's/^- //; s/:.*//')"
+			case "$name" in "$aname" | "$aname".* | "(*$aname)."* | "($aname)."*) ;; *) continue ;; esac
+			n=$((n + 1))
+			if [ "$(classify "$npkg" "$line")" = HARD ]; then
+				echo "  $npkg: HARD-TIER BREAK  $line   ($ap.$aname's members, since $BASE)"
+				fatal=$((fatal + 1))
+			else
+				echo "  $npkg: (experimental)   $line"
+			fi
+		done <<< "$inc"
+		[ "$n" -eq 0 ] && echo "  $npkg: no incompatible change to $aname's members since $BASE ($ap.$aname)"
+	done < "$ALIASES"
+fi
 
 if [ "$fatal" -gt 0 ]; then
 	echo

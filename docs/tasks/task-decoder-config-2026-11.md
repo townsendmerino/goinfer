@@ -1,13 +1,13 @@
 # Task: take Config, Options and Architecture out of decoder? A split proposal (DC1–DC4) — 2026-11
 
-> **Status 2026-11-06: DC1 approved (Francis, 2026-11-06: DC1 yes; DC2/DC3 parked).** Written by mac-fit from a count of the tree at `2fd3a644`. Recommendation: **extract `Config` only (DC1a, DC1b); leave `Options` and `Architecture` where they are (DC2, DC3 parked).** Extraction is not needed for `decoder/fit`, which is finished (`docs/layout.md` "Tier 3").
+> **Status 2026-11-07: DC1 done (DC1a #714, DC1b 2026-11-07); DC2/DC3 parked (Francis, 2026-11-06).** Written by mac-fit from a count of the tree at `2fd3a644`. Recommendation: **extract `Config` only (DC1a, DC1b); leave `Options` and `Architecture` where they are (DC2, DC3 parked).** Extraction is not needed for `decoder/fit`, which is finished (`docs/layout.md` "Tier 3").
 
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
 | DC0 | done | Francis 2026-11-06: DC1 yes; DC2/DC3 parked | this proposal |
-| DC1a | active | export `Config`'s unexported methods in place (`headDim`→`HeadDim`, `validateX`→`ValidateX`, …); ~40 `arch_*.go` call sites; parity refresh | §3 |
-| DC1b | open | after DC1a: move `config.go` and the `Config` methods to `decoder/config`; alias `decoder.Config`; `paritykey.BuilderFile` learns the new path | §3 |
+| DC1a | done | `Config`'s cross-file methods exported in place (`headDim`→`EffectiveHeadDim`, `validateX`→`ValidateX`, …), merged in #714 (2026-11-06) | §3; #714 |
+| DC1b | done | 2026-11-07 (mbp2-vk5): `decoder/config` holds `Config`, all its methods (`ValidateGemma12`, `ValidateGlmOcr` moved in), `Load`, `ResolveEOSIDs`, `LenientJSON` and `RecommendedSampling`; `decoder.Config` and `decoder.RecommendedSampling` are aliases, `loadConfig`/`resolveEOSIDs` one-line wrappers; layout rule `config-leaf` (red under a plant); `paritykey.BuilderFile` learns `decoder/config/config.go`; program fingerprints and the decision census unchanged; one parity refresh, 12 `deps_hash` lines (the families with no programs; the 31 with programs stay fresh under the builder switch) | §3; §8 |
 | DC2 | blocked | `Options` only when a subsystem needs it (it drags `Backend`, `Drafter`, `Knobs`) | §4 |
 | DC3 | blocked | no: `Architecture` is the hub (§5); continue `internal/runtime/program` instead | §5 |
 | DC4 | done | the aliases in `decoder` are the published API and stay (T3-fit question a); kept, Francis 2026-11-06 | §5 |
@@ -53,3 +53,44 @@ DC1a (a day, ~40 files) → DC1b (a day, one package, ~25 files touched with tes
 ## 7. Decision (Francis, 2026-11-06)
 
 DC1 goes ahead: `Config` only. DC2 (`Options`) and DC3 (`Architecture`) stay parked until a subsystem names a consumer. DC1a is its own PR from `origin/main`, kept to the method renames so it merges around the open decoder PRs; DC1b follows. Each PR: a red-first test where behavior could change (DC1b: a layout rule that `decoder/config` imports no goinfer package), the program fingerprints and the census hash unchanged as the no-numerics proof, one parity refresh at the end, `touched.py` and `cmd/lint`, no auto-merge. Before DC1b changes `paritykey.BuilderFile`, check whether VK5's week-3 shadow key is still running and tell the coordinator, who decides whether DC1b waits for the week to end.
+
+## 8. DC1b, done 2026-11-07
+
+- **The move.** `decoder/config/config.go` (from `decoder/config.go`, with `ValidateGemma12` from `gemma12.go` and `ValidateGlmOcr` from
+  `arch_glm_ocr.go`), `nonfinite.go` (from `decoder/config_nonfinite.go`) and `sampling.go` (`RecommendedSampling`, `Applied`, `Normalized` and the
+  generation_config reader, from `decoder/recommended_sampling.go`; `ggufSampling` stays in `decoder`, since it reads a `GGUFFile`). `loadConfig` is
+  `config.Load`, `resolveEOSIDs` `config.ResolveEOSIDs`. Two config-only test files moved with it (`nonfinite_test.go`, `sampling_test.go`); the rest
+  stay in `decoder` and call the wrappers.
+- **Red first.** `internal/layout`'s `config-leaf` rule fails `TestLayout_arrows` on a plant that imports `internal/runtime/program` from
+  `decoder/config`, and passes without it.
+- **No numerics moved.** `TestProgramFingerprint_table` passes unchanged, and `TestDecisionCensus`'s golden compare passes on amd64 (29,637 groups), its hash
+  `30ba7689…` the same with and without this change (on its base, §10's fix, and on its head, after the rebase onto `main`).
+- **Parity.** `paritykey.BuilderFile` and decoder's `isBuilder` list `decoder/config/config.go`, which joins `core`. Under the builder switch
+  (`docs/measurements/vk5-2026-10.md` §13) only the 12 families with no programs re-stale; one goldens-gated refresh moved their 12 `deps_hash` lines.
+- **Comments.** Every comment naming a `Config` method by its old unexported name now names the exported one.
+- **Evidence.** Logs in `docs/measurements/dc1b-2026-11-07/`. `touched.py`'s two reds there are not this change's: `cmd/gate`'s
+  `TestProcSampler_findsTheTestBinaryUnderItsParent` and `backend/webgpu`'s `TestUploadKV_gemma4MoE/kv-f32/past-the-window` fail the same way on
+  `origin/main` on mbp2 (its webgpu device is an Intel iGPU).
+- **The API gate (Francis, 2026-11-07 11:49).** apidiff read `Config` and `(*Model).Config` as Hard-tier breaks: the alias moves the type's
+  identity, though every source use compiles unchanged (what does change is `%T`, `reflect` `String`/`PkgPath` and gob names). Francis
+  chose an exception over a tier change: `testdata/apidiff/hard_tier_aliases.txt` lists `decoder Config = decoder/config.Config`, and
+  `scripts/apidiff_check.sh` treats that name's "changed from Config to …/decoder/config.Config" line, and a Hard-tier method whose
+  signature text is unchanged and names it, as compatible, and nothing else. `scripts/test_apidiff_check.py` (in CI) holds the rule: red
+  first on the two licensed lines; an unlisted alias, a listed name into another package or under another name, a changed signature
+  and a field all stay fatal, and a mutation loosening the match turns two of them red. `docs/api-tiers.md` names what changes.
+- **The gate's hole, closed (the coordinator's 13:52 round).** With `Config`'s identity line licensed, a later break to its fields or
+  methods would have gone unseen: they live in `decoder/config`, which the gate did not read. The gate now also compares the baseline's
+  `decoder` with `decoder/config` and judges `Config`'s own lines there; `hard_tier.txt` lists `decoder/config Config` and
+  `decoder/config Config.*` (every field and method `decoder.Config` had at v0.13.0), named in `docs/api-tiers.md`'s new
+  `decoder/config` subsection. A real plant removing `Config.TopkMethod` fails the gate on that line, and the clean tree passes. The
+  licensed method line now also needs the alias as its result and only builtins elsewhere in the signature. Red first: four cases in
+  `scripts/test_apidiff_check.py` (a removed field and a changed method of `Config`, a method with another named type, a method taking
+  the alias), 17 cases in all. (Before DC1b, `decoder Config` covered only the type line, not its fields: apidiff names them
+  `Config.X`.)
+- **Validator tests moved with `Config`.** The tests that read only `Config`'s own API (`TestConfigEOSIDs_nullIsAbsent`, `TestEOSIDs`,
+  `TestResolveEOSIDs`, `TestGemma4GlobalGeometry`, the three Laguna gating and first-k-dense tests, `TestValidateAssumptions`) now live
+  in `decoder/config/validators_test.go`; the rest need `decoder`'s architecture or loader and stay, run by `touched.py` on a
+  `decoder/config` edit. That edit, or one under `internal/runtime/program`, also runs P1, W1, `TestProgramFingerprint_table` and
+  `TestParityPrograms_mapping`.
+- **VK5.** The week-3 shadow week is over (graded early, 2026-11-07); this change went after the builder switch, as §7 asked.
+

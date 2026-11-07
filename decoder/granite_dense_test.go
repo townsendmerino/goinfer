@@ -13,7 +13,7 @@ import (
 // plain llama skeleton plus three of Granite's four scalar multipliers (embedding_multiplier,
 // attention_multiplier, logits_scaling — all already generic on Architecture; residual_multiplier
 // stays at its identity 1.0, the only value any released 4.2 size ships and the only value
-// validateGraniteDense accepts). Loads a tiny seeded GraniteForCausalLM with NON-trivial
+// ValidateGraniteDense accepts). Loads a tiny seeded GraniteForCausalLM with NON-trivial
 // multipliers through the generic forward and matches the HF float32 oracle, so a forward that
 // drops any one of them fails parity.
 //

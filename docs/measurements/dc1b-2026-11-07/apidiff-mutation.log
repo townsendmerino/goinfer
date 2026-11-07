@@ -1,0 +1,37 @@
+...FF......
+======================================================================
+FAIL: test_listed_entry_with_a_different_name_stays_fatal (__main__.ClassifyTest.test_listed_entry_with_a_different_name_stays_fatal)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/scripts/test_apidiff_check.py", line 50, in test_listed_entry_with_a_different_name_stays_fatal
+    self.assertEqual((rc, v), (1, ["HARD"]))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Tuples differ: (0, ['ALIAS']) != (1, ['HARD'])
+
+First differing element 0:
+0
+1
+
+- (0, ['ALIAS'])
++ (1, ['HARD'])
+
+======================================================================
+FAIL: test_listed_name_into_another_package_stays_fatal (__main__.ClassifyTest.test_listed_name_into_another_package_stays_fatal)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/scripts/test_apidiff_check.py", line 54, in test_listed_name_into_another_package_stays_fatal
+    self.assertEqual((rc, v), (1, ["HARD"]))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Tuples differ: (0, ['ALIAS']) != (1, ['HARD'])
+
+First differing element 0:
+0
+1
+
+- (0, ['ALIAS'])
++ (1, ['HARD'])
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.099s
+
+FAILED (failures=2)

@@ -1,4 +1,4 @@
-package decoder
+package config
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 )
 
 // Released Nemotron-H checkpoints write config.json with Python's json.dump, which emits bare Infinity: the 4B's time_step_limit is
-// [0.0, Infinity], and Go's encoding/json refuses the whole file. loadConfig accepts those tokens, outside strings only, and only there:
+// [0.0, Infinity], and Go's encoding/json refuses the whole file. Load accepts those tokens, outside strings only, and only there:
 // the serve request decoders stay strict (internal/serveapp's TestRequestJSON_nonFiniteStaysRejected).
 
 func TestLenientConfigJSON_tokens(t *testing.T) {
@@ -36,7 +36,7 @@ func TestLenientConfigJSON_tokens(t *testing.T) {
 	}
 	for _, c := range cases {
 		var d doc
-		err := json.Unmarshal(lenientConfigJSON([]byte(c.in)), &d)
+		err := json.Unmarshal(LenientJSON([]byte(c.in)), &d)
 		if (err != nil) != c.wantErr {
 			t.Errorf("%s: error %v, want error %v", c.name, err, c.wantErr)
 			continue
@@ -62,14 +62,14 @@ func TestLenientConfigJSON_tokens(t *testing.T) {
 // A config without the tokens comes back as it came, byte for byte.
 func TestLenientConfigJSON_cleanInputUntouched(t *testing.T) {
 	in := []byte(`{"model_type":"llama","hidden_size":64,"note":"no tokens here"}`)
-	if got := lenientConfigJSON(in); string(got) != string(in) {
+	if got := LenientJSON(in); string(got) != string(in) {
 		t.Errorf("changed a clean config: %s", got)
 	}
 }
 
-// The real 4B config: plain encoding/json refuses it (so the fixture really carries the token), loadConfig reads it.
+// The real 4B config: plain encoding/json refuses it (so the fixture really carries the token), Load reads it.
 func TestLoadConfig_realNemotronH4B(t *testing.T) {
-	raw, err := os.ReadFile("../testdata/nemotron-h-configs/h-4b-instruct-128k.config.json")
+	raw, err := os.ReadFile("../../testdata/nemotron-h-configs/h-4b-instruct-128k.config.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,9 +77,9 @@ func TestLoadConfig_realNemotronH4B(t *testing.T) {
 	if json.Unmarshal(raw, &plain) == nil {
 		t.Fatal("VOID: the fixture parses with encoding/json, so it no longer carries the token this test exists for")
 	}
-	cfg, err := loadConfig(fstest.MapFS{"config.json": {Data: raw}}, "config.json")
+	cfg, err := Load(fstest.MapFS{"config.json": {Data: raw}}, "config.json")
 	if err != nil {
-		t.Fatalf("loadConfig on the released 4B config: %v", err)
+		t.Fatalf("Load on the released 4B config: %v", err)
 	}
 	if cfg.ModelType != "nemotron_h" || cfg.HiddenDim != 3072 || cfg.NumHeads != 32 || cfg.MambaNumHeads != 112 {
 		t.Errorf("parsed fields wrong: model_type %q, hidden %d, heads %d, mamba heads %d", cfg.ModelType, cfg.HiddenDim, cfg.NumHeads, cfg.MambaNumHeads)

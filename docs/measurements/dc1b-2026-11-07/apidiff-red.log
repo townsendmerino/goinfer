@@ -1,0 +1,37 @@
+.F....F...
+======================================================================
+FAIL: test_listed_alias_is_compatible (__main__.ClassifyTest.test_listed_alias_is_compatible)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/scripts/test_apidiff_check.py", line 38, in test_listed_alias_is_compatible
+    self.assertEqual((rc, v), (0, ["ALIAS"]))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Tuples differ: (1, ['HARD']) != (0, ['ALIAS'])
+
+First differing element 0:
+1
+0
+
+- (1, ['HARD'])
++ (0, ['ALIAS'])
+
+======================================================================
+FAIL: test_method_whose_text_is_unchanged_through_the_alias_is_compatible (__main__.ClassifyTest.test_method_whose_text_is_unchanged_through_the_alias_is_compatible)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/scripts/test_apidiff_check.py", line 42, in test_method_whose_text_is_unchanged_through_the_alias_is_compatible
+    self.assertEqual((rc, v), (0, ["ALIAS"]))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Tuples differ: (1, ['HARD']) != (0, ['ALIAS'])
+
+First differing element 0:
+1
+0
+
+- (1, ['HARD'])
++ (0, ['ALIAS'])
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.094s
+
+FAILED (failures=2)

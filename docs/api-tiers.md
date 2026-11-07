@@ -29,7 +29,15 @@ From v1.0 these follow semver: no breaking change before a v2.0.
 - `decoder.Model`: `Close`, `Config`, `Dims`, `Quant`, `NewCache`, `NewSession`, `Generate`
 - `decoder.Session`: `Generate`, `Reset`, `Tokens`, `Snapshot`, and `Model.LoadSession`
 - `decoder.SamplingParams`, `decoder.Generation` (`Err`), `decoder.ErrClosed`, `decoder.KVCache` as an opaque handle
-- `decoder.Config` as a READ surface (what a loaded model reports)
+- `decoder.Config` as a READ surface (what a loaded model reports). It is an alias of `decoder/config.Config`, listed in
+  `testdata/apidiff/hard_tier_aliases.txt`: every source use is unchanged, but a value's `%T`, its `reflect` `String` and `PkgPath`,
+  and so gob's type names, read `config.Config` and `.../decoder/config`, not `decoder.Config`.
+
+### `decoder/config`
+
+- `config.Config`, the type `decoder.Config` aliases: every field and method `decoder.Config` had at the baseline (`Config.*` in
+  the list). The promise moved with the type: `scripts/apidiff_check.sh` compares the baseline's `decoder` with `decoder/config`
+  and judges `Config`'s own lines there. Users of `decoder.Config` reach no other name in this package.
 
 ### `tokenizer`
 

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// GPT-2's activation_function must select the function it NAMES. validateGPT2 accepts both "gelu_new" and "gelu", so
+// GPT-2's activation_function must select the function it NAMES. ValidateGPT2 accepts both "gelu_new" and "gelu", so
 // gpt2Architecture must not hardcode ActGeluTanh: a checkpoint declaring HF's exact "gelu" would silently run the tanh
 // approximation. In HF these are different entries (ACT2FN["gelu"] is the exact erf, ACT2FN["gelu_new"] the tanh form),
 // not two spellings of one function. The next GPT-2-family checkpoint that declares "gelu" must get the function it

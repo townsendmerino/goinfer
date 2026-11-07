@@ -1002,7 +1002,7 @@ func (m *Model) LayerRopeGlobal(i int) bool { return m.w.arch.isGlobalLayer(i) }
 // A RESIDENT-ONLY accessor: the CPU forward skips ropeAt for a NoPE layer.
 //
 // A whole-model no-RoPE arch (rope_theta absent, arch.NoPositionEncoding) never populates ropeInvFreqGlobal/Local,
-// so ropeInvFreq(i) is empty for every layer. The table is then rotaryDim()/2 wide, the width every resident rope
+// so ropeInvFreq(i) is empty for every layer. The table is then RotaryDim()/2 wide, the width every resident rope
 // kernel launch expects (rhalf): a zero-length table would be a 0-byte device allocation, a hard error on CUDA
 // (docs/tasks/task-gpu-paths-2026-09.md, G5; docs/code-notes/decoder.md#Model.RopeInvFreqLayer).
 func (m *Model) RopeInvFreqLayer(i int) []float32 {
