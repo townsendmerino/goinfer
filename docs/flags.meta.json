@@ -44,13 +44,13 @@
   {
    "name": "vision-device",
    "group": "Choosing models",
-   "summary": "Where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: `auto` (on the `--backend` GPU when this binary has a tower there; under `--backend webgpu` the vision towers stay on the CPU), `cpu` (the model keeps its own backend) or `gpu` (as `auto`, and under `--backend webgpu` the towers with a WebGPU form run on the GPU in float32).",
+   "summary": "Where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: `auto` (on the `--backend` GPU when this binary has a tower there, `--backend webgpu` included, where the towers with a WebGPU form run in float32), `cpu` (the model keeps its own backend) or `gpu` (the same as `auto`).",
    "type": "auto | cpu | gpu"
   },
   {
    "name": "vision-quant",
    "group": "Choosing models",
-   "summary": "Vision encoder precision: `f32` (bit-exact) or `int8`, which only speeds up the vision encoder on AVX512-VNNI CPUs. Unset is `f32` everywhere. On CUDA Gemma 3 is `int8` instead, with a note, if the card cannot hold decoder, a KV slot and the float32 tower; explicit `f32` never falls back. Under `--backend webgpu` Gemma 3's unset default runs on the CPU, and an explicit `f32` or `int8` puts that tower on the GPU.",
+   "summary": "Vision encoder precision: `f32` (bit-exact) or `int8`, which only speeds up the vision encoder on AVX512-VNNI CPUs. Unset is `f32` everywhere. On CUDA Gemma 3 is `int8` instead, with a note, if the card cannot hold decoder, a KV slot and the float32 tower; explicit `f32` never falls back. Under `--backend webgpu` Gemma 3's unset default is the float32 tower on the GPU, and `int8` puts the int8 one there.",
    "type": "f32 | int8"
   },
   {

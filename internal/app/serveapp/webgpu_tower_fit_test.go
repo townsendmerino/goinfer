@@ -9,9 +9,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// A WebGPU device tower holds device memory, so the fit guard has to see it: towerReserve prices one that is placed on the device
-// (-vision-device gpu, or Gemma 3 with an explicit -vision-quant), and on a unified-memory machine webgpuTowerFits refuses the load,
-// with the reason, when the tower needs more than the memory available. A tower on the CPU is priced at zero.
+// The WebGPU towers are the default (S12-defaults), so the fit guard has to see them: towerReserve prices a WebGPU tower, and on a
+// unified-memory machine webgpuTowerFits refuses the load, with the reason, when the tower needs more than the memory available.
 
 const (
 	gibF      = float64(1 << 30)
@@ -24,7 +23,7 @@ func webgpuCfg(t *testing.T, js, quant string) (config, string) {
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(js), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c := config{visionPath: dir, visionQuant: quant, visionDevice: "gpu"} // -vision-device gpu: the device tower is asked for
+	c := config{visionPath: dir, visionQuant: quant}
 	c.load.Backend = "webgpu"
 	return c, dir
 }
@@ -42,7 +41,7 @@ func stubWebGPU(t *testing.T, unified bool, avail int64) {
 func TestTowerReserve_webgpu(t *testing.T) {
 	stubWebGPU(t, true, 0)
 	c, dir := webgpuCfg(t, gemma3Cfg, "")
-	// the float32 tower: the same arithmetic the CUDA figure uses (about 2 GiB for Gemma 3 4B)
+	// the default is the float32 tower: the same arithmetic the CUDA figure uses (about 2 GiB for Gemma 3 4B)
 	if got := float64(towerReserve(c, dir)) / gibF; got < 1.7 || got > 2.3 {
 		t.Errorf("Gemma 3 float32 WebGPU reserve %.2f GiB, want 1.7-2.3", got)
 	}
@@ -50,22 +49,6 @@ func TestTowerReserve_webgpu(t *testing.T) {
 	c.visionQuant = "int8"
 	if mib := float64(towerReserve(c, dir)) / (1 << 20); mib < 520 || mib > 640 {
 		t.Errorf("Gemma 3 int8 WebGPU reserve %.0f MiB, want 520-640", mib)
-	}
-	// a tower nobody asked to put on the device is the CPU's and reserves nothing; Gemma 3's explicit -vision-quant asks for the device
-	c.visionQuant = ""
-	unasked := c
-	unasked.visionDevice = ""
-	if got := towerReserve(unasked, dir); got != 0 {
-		t.Errorf("an unasked tower (the CPU's) reserves %d, want 0", got)
-	}
-	unasked.visionQuant = "f32"
-	if got := towerReserve(unasked, dir); got != towerReserve(c, dir) {
-		t.Errorf("Gemma 3 with -vision-quant f32 reserves %d, want the device tower's %d", got, towerReserve(c, dir))
-	}
-	qu, qudir := webgpuCfg(t, `{"model_type":"qwen2_5_vl","vision_config":{"depth":32,"hidden_size":1280,"in_channels":3,"intermediate_size":3420,"patch_size":14,"spatial_merge_size":2,"temporal_patch_size":2}}`, "f32")
-	qu.visionDevice = ""
-	if got := towerReserve(qu, qudir); got != 0 {
-		t.Errorf("Qwen2.5-VL with only -vision-quant f32 stays on the CPU and reserves %d, want 0", got)
 	}
 	// -vision-device cpu, a binary with no WebGPU tower for the family, and another family's int8 tower (the CPU's) hold nothing
 	c.visionQuant = ""
@@ -177,7 +160,7 @@ func TestLoadVisionTower_webgpuTowerGuard(t *testing.T) {
 		refuse bool
 	}{{"fits", 1 << 40, 1, false}, {"does not fit", 1 << 10, 0, true}} {
 		stubWebGPU(t, true, c.avail)
-		cfg := config{visionPath: "../../../testdata/qwen25vl-tiny", visionDevice: "gpu", models: []modelSpec{{name: "m", path: "../../../testdata/qwen25vl-tiny"}}}
+		cfg := config{visionPath: "../../../testdata/qwen25vl-tiny", models: []modelSpec{{name: "m", path: "../../../testdata/qwen25vl-tiny"}}}
 		cfg.load.Backend = "webgpu"
 		s := &server{models: map[string]*loadedModel{}}
 		before := got["Qwen2.5-VL"]
@@ -187,6 +170,26 @@ func TestLoadVisionTower_webgpuTowerGuard(t *testing.T) {
 		}
 		if n := got["Qwen2.5-VL"] - before; n != c.want {
 			t.Errorf("%s: %d tower releases, want %d (1 means the device tower attached)", c.name, n, c.want)
+		}
+	}
+}
+
+// A Qwen3.5+ GGUF mmproj tower has no config.json, so towerReserve cannot price it: under webgpu it stays on the CPU unless
+// -vision-device gpu asks for the device, and the other backends and -vision-device cpu are untouched.
+func TestMMProjTowerBackend(t *testing.T) {
+	for _, c := range []struct{ backend, device, want string }{
+		{"webgpu", "", "cpu"},
+		{"webgpu", "auto", "cpu"},
+		{"webgpu", "gpu", "webgpu"},
+		{"webgpu", "cpu", "cpu"},
+		{"metal", "", "metal"},
+		{"cuda", "", "cuda"},
+		{"cpu", "", "cpu"},
+	} {
+		cfg := config{visionDevice: c.device}
+		cfg.load.Backend = c.backend
+		if got := mmprojTowerBackend(cfg); got != c.want {
+			t.Errorf("backend %q, -vision-device %q: mmproj tower on %q, want %q", c.backend, c.device, got, c.want)
 		}
 	}
 }

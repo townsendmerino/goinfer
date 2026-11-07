@@ -57,10 +57,20 @@ func TestTowerReserve_zeroCases(t *testing.T) {
 	metal.load.Backend = "metal"
 	webgpu := cuda
 	webgpu.load.Backend = "webgpu"
-	for name, c := range map[string]config{"cuda but no CUDA tower registered in this binary": cuda, "-vision-device cpu": cpuDev, "metal": metal, "webgpu but no WebGPU tower registered in this binary": webgpu} {
+	// the registries are what a build's imports fill: stand in for a binary with none, so these cases do not depend on the build tags
+	oldC, oldM, oldW := cudaTowerRegistered, metalTowerRegistered, webgpuTowerRegistered
+	none := func(string) bool { return false }
+	cudaTowerRegistered, metalTowerRegistered, webgpuTowerRegistered = none, none, none
+	t.Cleanup(func() { cudaTowerRegistered, metalTowerRegistered, webgpuTowerRegistered = oldC, oldM, oldW })
+	for name, c := range map[string]config{"cuda but no CUDA tower registered in this binary": cuda, "-vision-device cpu": cpuDev, "metal but no Metal tower registered in this binary": metal, "webgpu but no WebGPU tower registered in this binary": webgpu} {
 		if got := towerReserve(c, dir); got != 0 {
 			t.Errorf("%s: reserve %d, want 0", name, got)
 		}
+	}
+	// the converse, so the zeros above are the registry's doing and not an unreadable config: registered, the same config is priced
+	webgpuTowerRegistered = func(string) bool { return true }
+	if got := towerReserve(webgpu, dir); got <= 0 {
+		t.Errorf("webgpu with a registered Gemma 4 tower: reserve %d, want a positive figure", got)
 	}
 	if got := towerReserve(cuda, filepath.Join(dir, "model.gguf")); got != 0 {
 		t.Errorf("an unresolved path: reserve %d, want 0", got)
