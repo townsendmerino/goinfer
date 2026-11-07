@@ -1,0 +1,8 @@
+=== RUN   TestLayout_arrows
+    arrows_test.go:232: rule "config-leaf": decoder/config → github.com/townsendmerino/goinfer/internal/runtime/program (decoder/config/zz_plant.go). decoder/config holds a checkpoint's Config, its validators and its loader, so they test in seconds without compiling decoder (DC1, docs/tasks/task-decoder-config-2026-11.md). It sits below decoder, which aliases Config: it imports no goinfer package, decoder included.
+    arrows_test.go:301: a new import arrow decoder/config → internal/runtime/program (decoder/config/zz_plant.go) is not in imports.json: add it to the data in the change that makes it (-update), so the review sees it
+    arrows_test.go:311: 231 arrows and 195 test arrows between goinfer packages; 9 rules
+--- FAIL: TestLayout_arrows (0.09s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/layout	0.092s
+FAIL
