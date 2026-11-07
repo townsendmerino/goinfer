@@ -13,8 +13,8 @@ import (
 // unified-memory machine webgpuTowerFits keeps it on the CPU, with the reason, when it exceeds the fit guard's budget.
 
 const (
+	gibF      = float64(1 << 30)
 	gemma3Cfg = `{"model_type":"gemma3","vision_config":{"hidden_size":1152,"intermediate_size":4304,"num_hidden_layers":27,"patch_size":14,"image_size":896,"num_channels":3}}`
-	gbF       = float64(1 << 30)
 )
 
 func webgpuCfg(t *testing.T, js, quant string) (config, string) {
@@ -41,9 +41,9 @@ func stubWebGPU(t *testing.T, unified bool, avail int64) {
 func TestTowerReserve_webgpu(t *testing.T) {
 	stubWebGPU(t, true, 0)
 	c, dir := webgpuCfg(t, gemma3Cfg, "")
-	// the default is the float32 tower: the same arithmetic the CUDA figure uses (about 2 GB for Gemma 3 4B)
-	if got := float64(towerReserve(c, dir)) / 1e9; got < 1.9 || got > 2.5 {
-		t.Errorf("Gemma 3 float32 WebGPU reserve %.2f GB, want 1.9-2.5", got)
+	// the default is the float32 tower: the same arithmetic the CUDA figure uses (about 2 GiB for Gemma 3 4B)
+	if got := float64(towerReserve(c, dir)) / gibF; got < 1.7 || got > 2.3 {
+		t.Errorf("Gemma 3 float32 WebGPU reserve %.2f GiB, want 1.7-2.3", got)
 	}
 	// Gemma 3's explicit int8 is a WebGPU device tower too, at the int8 figure
 	c.visionQuant = "int8"
@@ -67,13 +67,15 @@ func TestTowerReserve_webgpu(t *testing.T) {
 		t.Errorf("Qwen2.5-VL's int8 tower is the CPU's, reserves %d, want 0", got)
 	}
 	q.visionQuant = ""
-	if got := float64(towerReserve(q, qdir)) / 1e9; got < 2 {
-		t.Errorf("Qwen2.5-VL's float32 WebGPU tower reserves %.2f GB, want its weights and scratch (over 2 GB)", got)
+	if got := float64(towerReserve(q, qdir)) / gibF; got < 2 {
+		t.Errorf("Qwen2.5-VL's float32 WebGPU tower reserves %.2f GiB, want its weights and scratch (over 2 GiB)", got)
 	}
 }
 
-// A load whose tower exceeds the fit guard's budget is refused on a unified-memory machine (the CPU float32 tower holds the same RAM,
-// so it is not a fallback); a discrete GPU, an unreadable figure, -vision-device cpu and a tower that fits proceed.
+// A tower that needs more than the memory available now is refused on a unified-memory machine (the CPU float32 tower holds the same
+// RAM, so it is not a fallback); there is one budget, the backend's, and this is its physical backstop, so the boundary is the tower's
+// own size and not a second fraction of what is left. A discrete GPU, an unreadable figure, -vision-device cpu and a tower that fits
+// proceed.
 func TestWebgpuTowerFits(t *testing.T) {
 	c, dir := webgpuCfg(t, gemma3Cfg, "")
 	stubWebGPU(t, true, 1<<40)
@@ -89,8 +91,8 @@ func TestWebgpuTowerFits(t *testing.T) {
 		refuse  bool
 	}{
 		{"unified, plenty available", true, 8 << 30, nil, false},
-		{"unified, the budget just covers it", true, need*10/7 + 1<<20, nil, false},
-		{"unified, the budget is one MiB short: the load fits only without the tower", true, need*10/7 - 1<<20, nil, true},
+		{"unified, exactly the tower's size is available: no second discount", true, need, nil, false},
+		{"unified, one MiB short: the load fits only without the tower", true, need - 1<<20, nil, true},
 		{"unified, little available", true, 1 << 30, nil, true},
 		{"unified, little available, -require-backend refuses the same", true, 1 << 30, func(c *config) { c.requireBE = true }, true},
 		{"unified, the available memory cannot be read: proceeds", true, 0, nil, false},
@@ -111,6 +113,34 @@ func TestWebgpuTowerFits(t *testing.T) {
 			t.Errorf("%s: err %v, want a refusal that names the tower's size, says the CPU is not a fallback and names the way out", tc.name, err)
 		case !tc.refuse && err != nil:
 			t.Errorf("%s: unexpected error %v", tc.name, err)
+		}
+	}
+}
+
+// The refusal advises -vision-quant int8 only for Gemma 3, whose int8 form is a gated WebGPU device tower. For every other family it
+// moves the tower to the CPU's lossy int8 path (ungated for GLM-OCR) and prices it at zero, so it is not offered.
+func TestWebgpuTowerFits_int8AdviceIsGemma3Only(t *testing.T) {
+	stubWebGPU(t, true, 1<<20)
+	for _, tc := range []struct {
+		name, js string
+		advise   bool
+	}{
+		{"gemma3", gemma3Cfg, true},
+		{"qwen2_5_vl", `{"model_type":"qwen2_5_vl","vision_config":{"depth":32,"hidden_size":1280,"in_channels":3,"intermediate_size":3420,"patch_size":14,"spatial_merge_size":2,"temporal_patch_size":2}}`, false},
+		{"glm_ocr", `{"model_type":"glm_ocr","vision_config":{"depth":24,"hidden_size":1024,"in_channels":3,"intermediate_size":4096,"patch_size":14,"spatial_merge_size":2,"temporal_patch_size":2}}`, false},
+		{"gemma4", `{"model_type":"gemma4","vision_config":{"hidden_size":768,"intermediate_size":3072,"num_hidden_layers":16,"patch_size":16,"position_embedding_size":10240,"default_output_length":280,"pooling_kernel_size":3}}`, false},
+	} {
+		c, dir := webgpuCfg(t, tc.js, "")
+		err := webgpuTowerFits(c, dir)
+		if err == nil {
+			t.Errorf("%s: no refusal with 1 MiB available", tc.name)
+			continue
+		}
+		if got := strings.Contains(err.Error(), "-vision-quant int8"); got != tc.advise {
+			t.Errorf("%s: advises int8 %v, want %v: %v", tc.name, got, tc.advise, err)
+		}
+		if !strings.Contains(err.Error(), "lower -ctx or -kv-sessions") || !strings.Contains(err.Error(), "-vision-device cpu") {
+			t.Errorf("%s: the refusal does not name a smaller context and the CPU tower: %v", tc.name, err)
 		}
 	}
 }

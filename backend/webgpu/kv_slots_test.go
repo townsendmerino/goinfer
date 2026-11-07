@@ -1143,9 +1143,17 @@ func TestCost_webgpuOffShare(t *testing.T) {
 
 // fakeSlotModel is a model for the slot pricing: 2 layers of 2 KV heads of 8 dims (256 bytes of f32 KV a position), 10 MiB of weights,
 // no host copy, and extra bytes of companion (a vision tower or drafter, decoder.Model.ExtraResidentBytes).
-type fakeSlotModel struct{ extra int64 }
+type fakeSlotModel struct {
+	extra int64
+	slots int // the slots requested; zero is four
+}
 
-func (fakeSlotModel) ResidentKVSlotsRequest() int           { return 4 }
+func (f fakeSlotModel) ResidentKVSlotsRequest() int {
+	if f.slots == 0 {
+		return 4
+	}
+	return f.slots
+}
 func (fakeSlotModel) ResidentContextPinned() bool           { return false }
 func (fakeSlotModel) ResidentWeightBytes() int64            { return 10 << 20 }
 func (f fakeSlotModel) ExtraResidentBytes() int64           { return f.extra }
@@ -1190,3 +1198,37 @@ func TestSlotPricing_countsTheCompanion(t *testing.T) {
 		t.Errorf("a non-darwin build's context is %d, want the cap", got)
 	}
 }
+
+// TestSlotPricing_singleSlotYieldsContextToTheCompanion: the default build asks for one KV slot, which keeps its context when nothing
+// else is priced. With a vision tower priced beside it, the one slot's context gives way until slot, weights and tower fit RAM, so the
+// load that fits only at a shorter context gets that context instead of a refusal or an overcommit. With 40 MiB of RAM the fit
+// guard's share is 28 MiB: 10 MiB of weights and a 4 MiB slot (the 16384-position cap) fit; 16 MiB more of tower fits only at a shorter context.
+func TestSlotPricing_singleSlotYieldsContextToTheCompanion(t *testing.T) {
+	const ram, ctxCap, perPos = 40 << 20, 16384, 256
+	ramOf := func() int64 { return ram }
+	base, tower := fakeSlotModel{slots: 1}, fakeSlotModel{slots: 1, extra: 16 << 20}
+
+	if got := slotsBeforeContextOn(true, ramOf, base, ctxCap, false, false, 0); got != ctxCap {
+		t.Fatalf("a single slot with no companion has context %d, want the cap %d", got, ctxCap)
+	}
+	ctx := slotsBeforeContextOn(true, ramOf, tower, ctxCap, false, false, 0)
+	if ctx >= ctxCap || ctx < webgpuSlotCtxFloor {
+		t.Fatalf("a single slot with a 16 MiB tower priced has context %d, want between the floor %d and the cap %d", ctx, webgpuSlotCtxFloor, ctxCap)
+	}
+	w, h := residentRAMTerms(tower)
+	if !darwinSlotsFit(1, ram, 0, w, h, perPos*int64(ctx)) {
+		t.Errorf("the chosen context %d does not fit the slot beside the weights and the tower", ctx)
+	}
+	// the largest such context: one more position does not fit
+	if darwinSlotsFit(1, ram, 0, w, h, perPos*int64(ctx+1)) {
+		t.Errorf("context %d also fits, but the search stopped at %d", ctx+1, ctx)
+	}
+	// a pinned context (an explicit --ctx) is never shortened
+	if got := slotsBeforeContextOn(true, ramOf, pinnedSlotModel{tower}, ctxCap, false, false, 0); got != ctxCap {
+		t.Errorf("a pinned context became %d, want %d", got, ctxCap)
+	}
+}
+
+type pinnedSlotModel struct{ fakeSlotModel }
+
+func (pinnedSlotModel) ResidentContextPinned() bool { return true }

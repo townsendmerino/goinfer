@@ -86,6 +86,20 @@ func darwinKVSlots(want int, ram, avail0, weights, hostCopy, perSlot int64) int 
 	return n
 }
 
+// darwinSlotsFit says whether want slots fit RAM without clamping: darwinKVSlots would grant all of them. Unlike darwinKVSlots, which
+// never grants fewer than one, it can say that a single slot does not fit, which is how a priced companion shortens a one-slot
+// build's context.
+func darwinSlotsFit(want int, ram, avail0, weights, hostCopy, perSlot int64) bool {
+	if ram <= 0 {
+		return true
+	}
+	n := int64(max(1, want))
+	if weights+hostCopy+n*perSlot > int64(decoder.WeightsMemFraction*float64(ram)) {
+		return false
+	}
+	return avail0 <= 0 || weights+n*perSlot <= avail0
+}
+
 // discreteKVSlots is the slot count a discrete GPU grants of want over free, its free VRAM after slot 0's build: the most whose
 // further slots, at perSlot each, each leave webgpuSlotHeadroom (newKVSlot's probe), and never below 1.
 func discreteKVSlots(want int, free, perSlot int64) int {
@@ -237,7 +251,8 @@ func kvBytesPerPosition(m slotModel, kvF16, kvI8 bool) int64 {
 // slotsBeforeContext is MC1's "slots before context" on WebGPU (the rule CUDA's ctxForSlots applies): when more than one KV
 // slot is requested and the caller did not choose the context (decoder.Model.ResidentContextPinned: a fit-guard auto-pin is a
 // one-slot ceiling, not a choice), give up context, down to webgpuSlotCtxFloor, until every requested slot fits; below the
-// floor the slot count is clamped instead, by buildKVSlots as always. An explicit -ctx is never shrunk.
+// floor the slot count is clamped instead, by buildKVSlots as always. A single slot keeps its context, unless a companion is priced
+// into ExtraResidentBytes: then it gives way the same way. An explicit -ctx is never shrunk.
 //
 // darwin only: there the device's memory is host RAM and darwinKVSlots can price a context before anything is allocated. A
 // discrete GPU has no free-memory query on this backend, so what fits is learned only by allocating, and no context
@@ -251,7 +266,9 @@ func slotsBeforeContext(m *decoder.Model, ctxCap int, kvF16, kvI8 bool, avail0 i
 // machine profile's (ram is read only when a context would be priced).
 func slotsBeforeContextOn(darwin bool, ram func() int64, m slotModel, ctxCap int, kvF16, kvI8 bool, avail0 int64) int {
 	want := m.ResidentKVSlotsRequest()
-	if !darwin || want <= 1 || m.ResidentContextPinned() || ctxCap <= webgpuSlotCtxFloor {
+	// A single slot is the build's floor and keeps its context, unless a companion is priced (a vision tower, decoder.Model.ExtraResidentBytes):
+	// then the one slot's context gives way until slot, weights and companion fit RAM, as a multi-slot build's does for its slots.
+	if !darwin || m.ResidentContextPinned() || ctxCap <= webgpuSlotCtxFloor || (want <= 1 && m.ExtraResidentBytes() == 0) {
 		return ctxCap
 	}
 	perPos := kvBytesPerPosition(m, kvF16, kvI8)
@@ -261,7 +278,7 @@ func slotsBeforeContextOn(darwin bool, ram func() int64, m slotModel, ctxCap int
 	}
 	weights, hostCopy := residentRAMTerms(m)
 	fits := func(ctx int) bool {
-		return darwinKVSlots(want, ramBytes, avail0, weights, hostCopy, perPos*int64(ctx)) >= want
+		return darwinSlotsFit(want, ramBytes, avail0, weights, hostCopy, perPos*int64(ctx))
 	}
 	return ctxWhereSlotsFit(ctxCap, want, fits)
 }
@@ -274,6 +291,10 @@ func ctxWhereSlotsFit(oneSlot, want int, fits func(ctx int) bool) int {
 		return oneSlot
 	}
 	if !fits(webgpuSlotCtxFloor) {
+		if want <= 1 {
+			logs.Debugf("webgpu: resident context %d (the floor), not %d, to leave room for the vision tower; an explicit --ctx keeps a longer context", webgpuSlotCtxFloor, oneSlot)
+			return webgpuSlotCtxFloor
+		}
 		logs.Debugf("webgpu: resident context %d (the floor), not %d, for the %d requested KV slots (--kv-sessions); "+
 			"the build grants as many as fit there, and an explicit --ctx keeps a longer context with fewer slots",
 			webgpuSlotCtxFloor, oneSlot, want)
@@ -286,6 +307,10 @@ func ctxWhereSlotsFit(oneSlot, want int, fits func(ctx int) bool) int {
 		} else {
 			hi = mid
 		}
+	}
+	if want <= 1 {
+		logs.Warnf("webgpu: resident context %d, not %d, so the vision tower fits beside the weights and the KV; an explicit --ctx keeps a longer context", lo, oneSlot)
+		return lo
 	}
 	logs.Warnf("webgpu: resident context %d, not %d, so the %d requested KV slots fit (--kv-sessions); an "+
 		"explicit --ctx keeps a longer context with fewer slots", lo, oneSlot, want)
@@ -318,9 +343,9 @@ func residentRAMTerms(m slotModel) (weights, hostCopy int64) {
 }
 
 // availBeforeBuild is the memory available before BuildResident's first upload, for darwinKVSlots — read only on
-// darwin and only when more than one slot is requested, else 0.
+// darwin and only when more than one slot is requested or a companion is priced (slotsBeforeContextOn), else 0.
 func availBeforeBuild(m *decoder.Model) int64 {
-	if runtime.GOOS != "darwin" || m.ResidentKVSlotsRequest() <= 1 {
+	if runtime.GOOS != "darwin" || (m.ResidentKVSlotsRequest() <= 1 && m.ExtraResidentBytes() == 0) {
 		return 0
 	}
 	return hostRAMAvailable()
