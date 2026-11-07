@@ -1,0 +1,5 @@
+[2026-11-05 16:44:01 PST] C4b before START: load 1.69, 60 GB available
+[2026-11-05 16:45:09 PST] C4b before END rc=0
+[2026-11-05 16:45:09 PST] C4b after START: load 1.23, 60 GB available
+[2026-11-05 16:46:15 PST] C4b after END rc=0
+[2026-11-05 16:46:15 PST] ALL DONE

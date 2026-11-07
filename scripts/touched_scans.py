@@ -69,8 +69,13 @@ SCANS = [
                                             "decoder/weightbytes.go", "decoder/residentneed.go", "decoder/kvresolve.go", "decoder/kvpolicy.go",
                                             "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/mm1_census.json.gz",
                                             "decoder/mm1_census_fixtures_test.go", "testdata/*tiny*", "decoder/testdata/*tiny*",
-                                            "decoder/selftestdata/*tiny*", "internal/vision/testdata/*tiny*") +
+                                            "decoder/selftestdata/*tiny*", "internal/vision/testdata/*tiny*",
+                                            # MM5: KV and state are priced from each layer's operations' declarations
+                                            "decoder/statebytes.go", "decoder/membufs.go", "decoder/program.go",
+                                            "internal/runtime/program/buffers.go") +
          NT("internal/runtime/mem")),
+    # MM5's G-MP4: KV and state pricing names no family or mixer.
+    Scan("decoder", "TestMM5_noFamilySwitchInPricing", F("decoder/residentneed.go", "decoder/statebytes.go")),
     # The census reads a declared fixture list, which must match the committed fixtures: a fixture added or removed runs it.
     Scan("decoder", "TestCensusFixtures_areTheCommittedOnes", F("decoder/mm1_census_fixtures_test.go", "testdata/*", "decoder/testdata/*",
                                                                 "decoder/selftestdata/*", "internal/vision/testdata/*")),
