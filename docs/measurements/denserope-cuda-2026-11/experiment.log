@@ -1,0 +1,912 @@
+=== RUN   TestMemGate_cuda
+[memgate] fixture 1 of 70, internal/vision/testdata/gemma4-vision-tiny: 0 builds so far, 0s elapsed
+[memgate] fixture 2 of 70, internal/vision/testdata/glm-ocr-vision-tiny: 0 builds so far, 0s elapsed
+[memgate] fixture 3 of 70, internal/vision/testdata/pixtral-vision-tiny: 0 builds so far, 0s elapsed
+[memgate] fixture 4 of 70, internal/vision/testdata/qwen25vl-vision-tiny: 0 builds so far, 0s elapsed
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[memgate] fixture 5 of 70, internal/vision/testdata/qwen35vl-vision-tiny: 14 builds so far, 6s elapsed
+[memgate] fixture 6 of 70, internal/vision/testdata/qwen3vl-vision-tiny: 14 builds so far, 6s elapsed
+[memgate] fixture 7 of 70, internal/vision/testdata/siglip-tiny: 14 builds so far, 6s elapsed
+[memgate] fixture 8 of 70, internal/vision/testdata/siglip2-naflex-tiny: 14 builds so far, 6s elapsed
+[memgate] fixture 9 of 70, selftestdata/gemma3-vl-tiny: 14 builds so far, 6s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 10 of 70, selftestdata/llama-tiny: 28 builds so far, 9s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[memgate] fixture 11 of 70, selftestdata/qwen35-tiny: 42 builds so far, 12s elapsed
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.1 MiB on the device (24 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 12 of 70, selftestdata/qwen35vl-tiny: 51 builds so far, 15s elapsed
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.1 MiB on the device (24 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[memgate] fixture 13 of 70, testdata/bailing_hybrid-tiny: 62 builds so far, 17s elapsed
+[memgate] fixture 14 of 70, testdata/cohere-tiny: 62 builds so far, 17s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[memgate] fixture 15 of 70, testdata/cohere2-tiny: 73 builds so far, 20s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[memgate] fixture 16 of 70, testdata/deepseek-tiny: 84 builds so far, 23s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 17 of 70, testdata/embeddinggemma2-tiny: 93 builds so far, 25s elapsed
+[memgate] fixture 18 of 70, testdata/gemma1-tiny: 93 builds so far, 25s elapsed
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 19 of 70, testdata/gemma1-tiny.gguf: 106 builds so far, 28s elapsed
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 20 of 70, testdata/gemma2-hd-tiny: 119 builds so far, 31s elapsed
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 21 of 70, testdata/gemma2-hd-tiny.gguf: 133 builds so far, 34s elapsed
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 22 of 70, testdata/gemma2-tiny: 147 builds so far, 37s elapsed
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 23 of 70, testdata/gemma3-vl-tiny: 161 builds so far, 41s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 24 of 70, testdata/gemma4-audio-tiny: 175 builds so far, 44s elapsed
+[memgate] fixture 25 of 70, testdata/gemma4-moe-kv-tiny: 175 builds so far, 44s elapsed
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[memgate] fixture 26 of 70, testdata/gemma4-moe-kv-tiny32: 175 builds so far, 44s elapsed
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4: line "dense": built: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4: line "dense": generated: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: gemma4 experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: gemma4 experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/ssm: line "dense": built: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/ssm: line "dense": generated: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/kv-f16: line "dense": built: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/kv-f16: line "dense": generated: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/kv-i8: line "dense": built: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/kv-i8: line "dense": generated: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/windowed: line "dense": built: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/windowed: line "dense": generated: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/expert-cache: line "dense": built: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/expert-cache: line "dense": generated: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/slots4: line "dense": built: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/slots4: line "dense": generated: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/windowed+expert-cache: line "dense": built: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/windowed+expert-cache: line "dense": generated: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/slots2: line "dense": built: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: known gap (MM8 CUDA, dense vectors): testdata/gemma4-moe-kv-tiny32 int4/slots2: line "dense": generated: leased 220448 bytes against a plan of 217824: 2624 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+[memgate] fixture 27 of 70, testdata/gemma4-vision-tiny: 184 builds so far, 46s elapsed
+[memgate] fixture 28 of 70, testdata/gguf-split/glm-tiny-00001-of-00004.gguf: 184 builds so far, 46s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[memgate] fixture 29 of 70, testdata/glm-ocr-tiny: 192 builds so far, 48s elapsed
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations need hidden (48) and FFN width (144) to be multiples of 32) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations need hidden (48) and FFN width (144) to be multiples of 32) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations need hidden (48) and FFN width (144) to be multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[memgate] fixture 30 of 70, testdata/glm-ocr-vision-tiny: 194 builds so far, 49s elapsed
+[memgate] fixture 31 of 70, testdata/glm-tiny: 194 builds so far, 49s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[memgate] fixture 32 of 70, testdata/glm-tiny-bias: 202 builds so far, 51s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[memgate] fixture 33 of 70, testdata/glm-tiny.gguf: 210 builds so far, 53s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[memgate] fixture 34 of 70, testdata/gptoss_tiny.gguf: 218 builds so far, 55s elapsed
+cuda: prefill width 2048 rows (3 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (3 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (3 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (3 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (3 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (3 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (3 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (3 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (3 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[memgate] fixture 35 of 70, testdata/granite-dense-tiny: 227 builds so far, 57s elapsed
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 36 of 70, testdata/internlm2-tiny: 240 builds so far, 1m0s elapsed
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[memgate] fixture 37 of 70, testdata/internlm3-tiny: 253 builds so far, 1m3s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[memgate] fixture 38 of 70, testdata/laguna-m1-tiny: 267 builds so far, 1m6s elapsed
+[memgate] fixture 39 of 70, testdata/laguna-xs2-tiny: 267 builds so far, 1m6s elapsed
+[memgate] fixture 40 of 70, testdata/laguna-xs21-tiny: 267 builds so far, 1m6s elapsed
+[memgate] fixture 41 of 70, testdata/lfm2-tiny: 267 builds so far, 1m6s elapsed
+[memgate] fixture 42 of 70, testdata/llama-attnfa-tiny: 267 builds so far, 1m6s elapsed
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[memgate] fixture 43 of 70, testdata/llama-tiny: 281 builds so far, 1m9s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[memgate] fixture 44 of 70, testdata/llama4-tiny: 295 builds so far, 1m13s elapsed
+[memgate] fixture 45 of 70, testdata/ministral3-tiny: 295 builds so far, 1m13s elapsed
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 46 of 70, testdata/mistral-tiny-window: 308 builds so far, 1m16s elapsed
+cuda: prefill width 2048 rows (11 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[memgate] fixture 47 of 70, testdata/mixtral-tiny: 322 builds so far, 1m19s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4: line "dense": built: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4: line "dense": generated: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/ssm: line "dense": built: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/ssm: line "dense": generated: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/kv-f16: line "dense": built: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/kv-f16: line "dense": generated: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/kv-i8: line "dense": built: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/kv-i8: line "dense": generated: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/windowed: line "dense": built: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/windowed: line "dense": generated: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/expert-cache: line "dense": built: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/expert-cache: line "dense": generated: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/slots4: line "dense": built: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/slots4: line "dense": generated: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/windowed+expert-cache: line "dense": built: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/windowed+expert-cache: line "dense": generated: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/slots2: line "dense": built: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/mixtral-tiny int4/slots2: line "dense": generated: leased 82368 bytes against a plan of 82240: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+[memgate] fixture 48 of 70, testdata/nemotron-tiny: 331 builds so far, 1m21s elapsed
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (16 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (8 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[memgate] fixture 49 of 70, testdata/nemotron3nano-tiny: 340 builds so far, 1m23s elapsed
+[memgate] fixture 50 of 70, testdata/olmo3-tiny: 340 builds so far, 1m23s elapsed
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 51 of 70, testdata/olmo_hybrid-tiny: 350 builds so far, 1m26s elapsed
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (24 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 52 of 70, testdata/phi3-tiny: 360 builds so far, 1m28s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[memgate] fixture 53 of 70, testdata/qwen25vl-tiny: 362 builds so far, 1m29s elapsed
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+[memgate] fixture 54 of 70, testdata/qwen35-tiny: 376 builds so far, 1m32s elapsed
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.1 MiB on the device (24 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 55 of 70, testdata/qwen35vl-tiny: 385 builds so far, 1m34s elapsed
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.1 MiB on the device (24 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[memgate] fixture 56 of 70, testdata/qwen3_5-tiny: 396 builds so far, 1m37s elapsed
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.1 MiB on the device (24 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[memgate] fixture 57 of 70, testdata/qwen3_5-tiny-normw: 407 builds so far, 1m39s elapsed
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.1 MiB on the device (24 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[memgate] fixture 58 of 70, testdata/qwen3_5_moe-tiny: 418 builds so far, 1m42s elapsed
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.1 MiB on the device (24 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[memgate] fixture 59 of 70, testdata/qwen3asr-tiny: 427 builds so far, 1m44s elapsed
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations need hidden (24) and FFN width (48) to be multiples of 32) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (2 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations need hidden (24) and FFN width (48) to be multiples of 32) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (2 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations need hidden (24) and FFN width (48) to be multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+[memgate] fixture 60 of 70, testdata/qwen3moe-tiny: 429 builds so far, 1m45s elapsed
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/ssm: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/ssm: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/kv-f16: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/kv-f16: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/kv-i8: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/kv-i8: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/windowed: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/windowed: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/expert-cache: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/expert-cache: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/slots4: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/slots4: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/windowed+expert-cache: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/windowed+expert-cache: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/slots2: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny int4/slots2: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+[memgate] fixture 61 of 70, testdata/qwen3moe-tiny-k3: 438 builds so far, 1m47s elapsed
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/ssm: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/ssm: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/kv-f16: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/kv-f16: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/kv-i8: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/kv-i8: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/windowed: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/windowed: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/expert-cache: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/expert-cache: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/slots4: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/slots4: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/windowed+expert-cache: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/windowed+expert-cache: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/slots2: line "dense": built: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2617: testdata/qwen3moe-tiny-k3 int4/slots2: line "dense": generated: leased 68800 bytes against a plan of 68672: 128 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+[memgate] fixture 62 of 70, testdata/qwen3next-tiny: 447 builds so far, 1m49s elapsed
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (40 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (20 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[memgate] fixture 63 of 70, testdata/qwen3vl-vision-tiny: 456 builds so far, 1m51s elapsed
+[memgate] fixture 64 of 70, testdata/qwen3vlmoe-tiny: 456 builds so far, 1m51s elapsed
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[memgate] fixture 65 of 70, testdata/siglip-tiny: 456 builds so far, 1m51s elapsed
+[memgate] fixture 66 of 70, testdata/smollm3-tiny: 456 builds so far, 1m51s elapsed
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[memgate] fixture 67 of 70, testdata/spark2-5-tiny: 469 builds so far, 1m55s elapsed
+[memgate] fixture 68 of 70, testdata/voxtral-tiny: 469 builds so far, 1m55s elapsed
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations need hidden (48) and FFN width (96) to be multiples of 32) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations need hidden (48) and FFN width (96) to be multiples of 32) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: per-32 activations need hidden (48) and FFN width (96) to be multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[memgate] fixture 69 of 70, testdata/whisper-tiny-rand: 471 builds so far, 1m55s elapsed
+[memgate] fixture 70 of 70, testdata/whisper-tiny-ts: 471 builds so far, 1m55s elapsed
+cuda: windowed KV: sliding-window layers hold 528 positions (window 16 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 8192
+cuda: windowed KV: 576 more positions from free VRAM (1 MB of 8192 MB free); a follow-up may now diverge 1024 before the newest
+    sb2_census_test.go:2662: known gap (MM8 CUDA, windowed rollback grant): testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: line "kv": built: leased 1967104 bytes against a plan of 1082368: 884736 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2662: known gap (MM8 CUDA, windowed rollback grant): testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: line "kv": generated: leased 1967104 bytes against a plan of 1082368: 884736 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2663: testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: 1 slots, kv leased 1967104 against a plan of 1082368
+cuda: prefill width 2048 rows (6 MiB of scratch; 7026 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:2663: testdata/llama-tiny@window32768 int4/slots4/ctx8192: 4 slots, kv leased 50335744 against a plan of 33820672
+cuda: prefill width 2048 rows (6 MiB of scratch; 6924 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:2663: testdata/glm-tiny@experts16384 int4/expert-cache: 1 slots, kv leased 2130432 against a plan of 2130432
+    sb2_census_test.go:2665: 474 builds held, 155 options declined by CUDA's own build
+    sb2_census_test.go:2669: known gap on line "dense" (MM8 CUDA, dense vectors, as the dense row, and what per-expert uploads lease past the plan's tensors: Gemma 4's are not diagnosed) no longer fires on any row: remove it from the table and lower the pin
+    sb2_census_test.go:2669: known gap on line "dense" (MM8 CUDA, dense vectors, as the dense row, and what per-expert uploads lease past the plan's tensors: Gemma 4's are not diagnosed) no longer fires on any row: remove it from the table and lower the pin
+    sb2_census_test.go:2669: known gap on line "dense" (MM8 CUDA, dense vectors, as the dense row, and what per-expert uploads lease past the plan's tensors: Gemma 4's are not diagnosed) no longer fires on any row: remove it from the table and lower the pin
+    sb2_census_test.go:2669: known gap on line "dense" (MM8 CUDA, dense vectors, as the dense row, and what per-expert uploads lease past the plan's tensors: Gemma 4's are not diagnosed) no longer fires on any row: remove it from the table and lower the pin
+    sb2_census_test.go:2669: known gap on line "dense" (MM8 CUDA, dense vectors, as the dense row, and what per-expert uploads lease past the plan's tensors: Gemma 4's are not diagnosed) no longer fires on any row: remove it from the table and lower the pin
+    sb2_census_test.go:2669: known gap on line "dense" (MM8 CUDA, dense vectors, as the dense row, and what per-expert uploads lease past the plan's tensors: Gemma 4's are not diagnosed) no longer fires on any row: remove it from the table and lower the pin
+    sb2_census_test.go:2669: known gap on line "dense" (MM8 CUDA, dense vectors, as the dense row, and what per-expert uploads lease past the plan's tensors: Gemma 4's are not diagnosed) no longer fires on any row: remove it from the table and lower the pin
+    sb2_census_test.go:2669: known gap on line "dense" (MM8 CUDA, dense vectors, as the dense row, and what per-expert uploads lease past the plan's tensors: Gemma 4's are not diagnosed) no longer fires on any row: remove it from the table and lower the pin
+    sb2_census_test.go:2669: known gap on line "dense" (MM8 CUDA, dense vectors, as the dense row, and what per-expert uploads lease past the plan's tensors: Gemma 4's are not diagnosed) no longer fires on any row: remove it from the table and lower the pin
+--- FAIL: TestMemGate_cuda (116.23s)
+FAIL
+ledger: 481 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	116.341s
+FAIL

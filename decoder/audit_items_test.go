@@ -200,7 +200,7 @@ func TestResidentDense_mambaProjectionsAsUploaded(t *testing.T) {
 	}
 	base := m.ResidentDenseWeightBytes()
 	structs, _ := m.cpuStructBytes()
-	for be, saved := range map[string]int64{"metal": want, "webgpu": want, "cuda": want + m.residentHostSideBytes("cuda"), "cpu": -structs} {
+	for be, saved := range map[string]int64{"metal": want, "webgpu": want, "cuda": want + m.residentHostSideBytes("cuda") - m.cudaDerivedTableBytes(), "cpu": -structs} {
 		if got := base - m.ResidentDenseWeightBytesFor(be); got != saved {
 			t.Errorf("%s: the dense figure is %d under the tensors' sum, want %d", be, got, saved)
 		}

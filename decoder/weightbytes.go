@@ -4,6 +4,8 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // mmapAliasedBytes is wmBytes' quantized-kind sum counting only bytes that alias m's .giw mmap region (MmapByteOffset): a
@@ -103,6 +105,42 @@ func (m *Model) ResidentDenseWeightBytesFor(backend string) int64 {
 		n += dense
 	case "cuda", "webgpu":
 		n += m.expertBiasBytes()
+	}
+	if backend == "cuda" {
+		n += m.cudaDerivedTableBytes()
+	}
+	return n
+}
+
+// cudaDerivedTableBytes is the small tables CUDA derives from the load and uploads on the dense line, beside the tensors the load holds:
+// the per-layer RoPE inverse-frequency table of each attention or MLA layer (Gemma 4's per-layer one; a zero table of half the rotary
+// dim in a Mamba-2 hybrid, whose attention is NoPE), and a MoE layer's router bias as zeros when the checkpoint has none (moe_route
+// reads one unconditionally). No other layer kind uploads either.
+func (m *Model) cudaDerivedTableBytes() int64 {
+	if m == nil || m.w == nil {
+		return 0
+	}
+	prog := m.Program()
+	layers := prog.Layers
+	hybrid := false
+	for _, ops := range layers {
+		if x, _ := program.MixerOf(ops); x == program.MixerMamba {
+			hybrid = true
+		}
+	}
+	nE, _, _, _, _, _, _, _, _, _, isMoE := m.MoEResidentParams()
+	var n int64
+	for l, ops := range layers {
+		if x, _ := program.MixerOf(ops); x == program.MixerAttention || x == program.MixerMLA {
+			if hybrid {
+				n += 4 * int64(m.RotaryDimAtResident(l)/2)
+			} else {
+				n += 4 * int64(len(m.RopeInvFreqLayerResident(l)))
+			}
+		}
+		if lw := &m.w.Layers[l]; isMoE && (len(lw.Experts) > 0 || lw.gemma4moe != nil) && len(lw.RouterBias) == 0 {
+			n += 4 * int64(nE)
+		}
 	}
 	return n
 }

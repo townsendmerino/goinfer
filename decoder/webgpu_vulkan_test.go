@@ -27,7 +27,7 @@ func TestWebGPUDeviceBuffers_sumToTheModel(t *testing.T) {
 		}
 		const ctx = 512
 		_, slotKV, weights := m.webgpuDeviceBuffers(ctx, false, false)
-		if want := m.ResidentDenseWeightBytesFor("cuda") + m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes() - m.denseVectorBytes() - 2*m.expertBiasBytes(); weights != want { // a matrix walk: no vectors or biases
+		if want := m.ResidentDenseWeightBytesFor("cuda") - m.cudaDerivedTableBytes() + m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes() - m.denseVectorBytes() - 2*m.expertBiasBytes(); weights != want { // a matrix walk: no vectors or biases
 			t.Errorf("%s: the list's matrices %d, the planner's walk %d", c.dir, weights, want)
 		}
 		if c.attnOnly {
