@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -10,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // TestMM5_noFamilySwitchInPricing is G-MP4 (docs/tasks/task-forward-architecture-2026-10.md §4.9b): Metal's KV pricing and the state lists
@@ -103,9 +106,10 @@ func checkpointByFamily(a *Architecture) []int64 {
 
 // TestStateSpecs_fromTheOperations is MM5's state half (docs/tasks/task-forward-architecture-2026-10.md §4.9b): every family's state,
 // derived from its layers' operations (layerBuffers, program.Buffers), is the list the family switch gave, layer by layer, and so is the
-// checkpoint, on every registered model type's representative config and on every fixture under testdata with a config.
+// checkpoint, on every registered model type's representative config (each must resolve) and on every fixture under testdata whose config
+// resolves (the others are named). Each of the five families with state is compared, by name.
 func TestStateSpecs_fromTheOperations(t *testing.T) {
-	withState := 0
+	families := map[string]bool{}
 	check := func(name string, a *Architecture) {
 		t.Helper()
 		layers := 0
@@ -121,8 +125,14 @@ func TestStateSpecs_fromTheOperations(t *testing.T) {
 		if got, want := recurrentCheckpointBuffers(a), checkpointByFamily(a); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: the checkpoint from the operations is %v, the family switch's %v", name, got, want)
 		}
-		if layers > 0 {
-			withState++
+		if layers == 0 {
+			return
+		}
+		for fam, on := range map[string]bool{"DeltaNet": a.qwen35 != nil, "short conv": a.lfm2 != nil, "KDA": a.kda != nil, "Granite Mamba-2": a.granite != nil,
+			"Nemotron-H Mamba-2": a.nemotron != nil} {
+			if on {
+				families[fam] = true
+			}
 		}
 	}
 	keys := make([]string, 0, len(registry))
@@ -133,28 +143,102 @@ func TestStateSpecs_fromTheOperations(t *testing.T) {
 	for _, mt := range keys {
 		cfg := representativeConfig(mt)
 		if cfg == nil {
+			t.Errorf("model type %q has no representative config", mt)
 			continue
 		}
-		if a, _, err := resolveArchitecture(cfg); err == nil {
-			check(mt, a)
+		a, _, err := resolveArchitecture(cfg)
+		if err != nil {
+			t.Errorf("model type %q: %v", mt, err)
+			continue
 		}
+		check(mt, a)
 	}
 	dirs, err := filepath.Glob("../testdata/*/config.json")
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(dirs) == 0 {
+		t.Fatalf("no testdata configs (%v)", err)
 	}
+	var unresolved []string
 	for _, p := range dirs {
 		dir := filepath.Dir(p)
 		cfg, err := loadConfig(os.DirFS(dir), "config.json")
+		var a *Architecture
+		if err == nil {
+			a, _, err = resolveArchitecture(cfg)
+		}
 		if err != nil {
+			unresolved = append(unresolved, filepath.Base(dir)) // a tower, an encoder or a family the decoder does not load
 			continue
 		}
-		if a, _, err := resolveArchitecture(cfg); err == nil {
-			check(filepath.Base(dir), a)
+		check(filepath.Base(dir), a)
+	}
+	t.Logf("%d testdata configs do not resolve to a decoder architecture: %v", len(unresolved), unresolved)
+	for _, fam := range []string{"DeltaNet", "short conv", "KDA", "Granite Mamba-2", "Nemotron-H Mamba-2"} {
+		if !families[fam] {
+			t.Errorf("no config with %s state was compared", fam)
 		}
 	}
-	t.Logf("%d configs with recurrent or conv state compared", withState)
-	if withState < 5 {
-		t.Fatalf("only %d configs carry state; the test reads too little to hold the five families' declarations", withState)
+}
+
+// TestLayerShape_kvRowsAreWhatTheCPUCacheHolds: every layer's per-position rows (layerBuffers, through layerShapeOf) are what the CPU's own
+// cache holds after a prefill: K and V of the width the walker writes on a layer that owns them, MLA's latent row on an MLA layer, and
+// nothing on a recurrent or KV-shared layer. Each fixture is loaded with its weights and prefilled 6 positions.
+func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
+	const n = 6
+	kinds := map[string]int{}
+	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/gemma2-tiny", "../testdata/mistral-tiny-window", "selftestdata/qwen35-tiny",
+		"../testdata/deepseek-tiny", "../testdata/gemma4-emodel-tiny", "../testdata/lfm2-tiny", "../testdata/bailing_hybrid-tiny"} {
+		m, err := Load(dir, Options{Backend: "cpu", Quant: "f32"})
+		if err != nil {
+			t.Fatalf("%s: %v", dir, err)
+		}
+		a := m.w.arch
+		ids := make([]int, n)
+		for i := range ids {
+			ids[i] = (i*7 + 1) % m.Config().VocabSize
+		}
+		cache := m.NewCache(n)
+		if _, err := m.prefillLogits(context.Background(), ids, cache); err != nil {
+			m.Close()
+			t.Fatalf("%s: prefill: %v", dir, err)
+		}
+		for l := range a.NumLayers {
+			var k, v, lat int
+			for _, b := range layerBuffers(a, l) {
+				if b.Unit != program.PerPosition {
+					continue
+				}
+				switch b.Name {
+				case "k":
+					k = b.Elems
+				case "v":
+					v = b.Elems
+				case "latent":
+					lat = b.Elems
+				}
+			}
+			var gotK, gotV, gotLat int
+			if ck, cv, base := cache.LayerKV(l); len(ck) > 0 && n > base {
+				gotK, gotV = len(ck)/(n-base), len(cv)/(n-base)
+			}
+			if l < len(cache.mlaLatent) && len(cache.mlaLatent[l]) > 0 {
+				gotLat = len(cache.mlaLatent[l]) / n
+			}
+			if k != gotK || v != gotV || lat != gotLat {
+				t.Errorf("%s layer %d: declares K %d, V %d, latent %d; the CPU cache holds K %d, V %d, latent %d a position", dir, l, k, v, lat, gotK, gotV, gotLat)
+			}
+			switch {
+			case lat > 0:
+				kinds["latent"]++
+			case k > 0:
+				kinds["k/v"]++
+			default:
+				kinds["none"]++
+			}
+		}
+		m.Close()
+	}
+	t.Logf("layers compared: %v", kinds)
+	if kinds["latent"] == 0 || kinds["k/v"] == 0 || kinds["none"] == 0 {
+		t.Fatalf("layers compared %v: each kind (K/V, MLA latent, none) must appear", kinds)
 	}
 }

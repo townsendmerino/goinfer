@@ -1,6 +1,10 @@
 package decoder
 
-import "github.com/townsendmerino/goinfer/internal/runtime/program"
+import (
+	"fmt"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
+)
 
 // StateSpec is one buffer of a recurrent or conv mixer's state, for one KV slot, before any allocator's rounding.
 type StateSpec struct {
@@ -14,10 +18,19 @@ func stateSpecs(a *Architecture, l int) []StateSpec {
 	var out []StateSpec
 	for _, b := range layerBuffers(a, l) {
 		if b.Unit == program.PerSlot {
-			out = append(out, StateSpec{b.Name, b.Elems})
+			out = append(out, StateSpec{b.Name, stateFloats(b)})
 		}
 	}
 	return out
+}
+
+// stateFloats is per-slot buffer b's size in floats. State is held and priced in f32 on every backend; a declaration at another precision
+// is a programming error, refused here rather than priced as floats (TestBuffers_stateIsF32 holds every declaration to it).
+func stateFloats(b program.Buf) int {
+	if b.Prec != program.PrecF32 {
+		panic(fmt.Sprintf("decoder: state buffer %q is declared at precision %d; recurrent state is f32", b.Name, b.Prec))
+	}
+	return b.Elems
 }
 
 // StateSpecs is layer l's recurrent or conv state on this model, nil for a layer with none.
@@ -44,7 +57,7 @@ func recurrentCheckpointBuffers(a *Architecture) []int64 {
 	for l := range a.NumLayers {
 		for _, b := range layerBuffers(a, l) {
 			if b.Unit == program.PerSlot && b.Checkpointed && b.Elems > 0 {
-				out = append(out, int64(b.Elems)*4)
+				out = append(out, int64(stateFloats(b))*4)
 			}
 		}
 	}
