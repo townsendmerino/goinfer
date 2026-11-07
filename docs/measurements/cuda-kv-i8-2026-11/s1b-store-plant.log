@@ -1,0 +1,20 @@
+=== RUN   TestKV8_store_matchesTheCPUQuantizer
+    kv8_identity_test.go:438: {nKV:2 hd:64 startPos:0 M:5} token 0 head 1 K: scale 1 want 1
+    kv8_identity_test.go:438: {nKV:2 hd:64 startPos:0 M:5} token 0 head 1 V: scale 1 want 1
+    kv8_identity_test.go:438: {nKV:2 hd:64 startPos:0 M:5} token 1 head 0 K: scale 1 want 1
+    kv8_identity_test.go:445: {nKV:2 hd:64 startPos:0 M:5}: 6 of 20 (token, head, K/V) differ from the CPU quantizer
+    kv8_identity_test.go:438: {nKV:4 hd:128 startPos:60 M:9} token 0 head 1 K: scale 1 want 1
+    kv8_identity_test.go:438: {nKV:4 hd:128 startPos:60 M:9} token 0 head 1 V: scale 1 want 1
+    kv8_identity_test.go:438: {nKV:4 hd:128 startPos:60 M:9} token 1 head 0 K: scale 1 want 1
+    kv8_identity_test.go:445: {nKV:4 hd:128 startPos:60 M:9}: 18 of 72 (token, head, K/V) differ from the CPU quantizer
+    kv8_identity_test.go:438: {nKV:2 hd:80 startPos:127 M:3} token 0 head 1 K: scale 1 want 1
+    kv8_identity_test.go:438: {nKV:2 hd:80 startPos:127 M:3} token 0 head 1 V: scale 1 want 1
+    kv8_identity_test.go:438: {nKV:2 hd:80 startPos:127 M:3} token 1 head 0 K: scale 1 want 1
+    kv8_identity_test.go:445: {nKV:2 hd:80 startPos:127 M:3}: 4 of 12 (token, head, K/V) differ from the CPU quantizer
+    kv8_identity_test.go:438: {nKV:1 hd:256 startPos:1 M:2} token 1 head 0 K: scale 1 want 1
+    kv8_identity_test.go:438: {nKV:1 hd:256 startPos:1 M:2} token 1 head 0 V: scale 1 want 1
+    kv8_identity_test.go:445: {nKV:1 hd:256 startPos:1 M:2}: 2 of 4 (token, head, K/V) differ from the CPU quantizer
+--- FAIL: TestKV8_store_matchesTheCPUQuantizer (0.27s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/backend/cuda/kernels	0.304s
+FAIL

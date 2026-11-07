@@ -347,6 +347,21 @@ var decodeSplitKVCapPTX []byte
 //go:embed testdata/decode_splitkv_kv16_cap.ptx
 var decodeSplitKVKV16CapPTX []byte
 
+// glueKV8PTX: gluePTX built with the KV cache as int8 and per-(position, head) f32 scales (-DKV_I8, kvtype.cuh). Only `attention` reads the cache;
+// S1 of docs/measurements/cuda-kv-i8-2026-11/scope.md. Built at the pinned NVRTC 12.6.85 beside the audited glue modules, which stay byte-identical.
+//
+//go:embed testdata/glue_kv8.ptx
+var glueKV8PTX []byte
+
+// prefillBatchedKV8PTX and kv8StorePTX: the int8 cache's batched-prefill attention (prefill_batched.cu built with -DKV_I8) and its quantizing store
+// (kv8_store.cu). S1 of docs/measurements/cuda-kv-i8-2026-11/scope.md: built and tested, bound to nothing yet.
+//
+//go:embed testdata/prefill_batched_kv8.ptx
+var prefillBatchedKV8PTX []byte
+
+//go:embed testdata/kv8_store.ptx
+var kv8StorePTX []byte
+
 // attnPTX is kvPTX for the three modules that hold a kernel a capped layer takes (attention, attn_batched, splitkv_scores): a model with
 // an attention softcap loads the variant built with -DATTN_SOFTCAP (cuda/attnscore.cuh), every other model the plain module.
 func (r *cudaResident) attnPTX(f32, kv16, capF32, capKV16 []byte) []byte {

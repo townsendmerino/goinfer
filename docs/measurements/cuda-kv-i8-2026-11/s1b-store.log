@@ -1,0 +1,4 @@
+=== RUN   TestKV8_store_matchesTheCPUQuantizer
+--- PASS: TestKV8_store_matchesTheCPUQuantizer (0.37s)
+PASS
+ok  	github.com/townsendmerino/goinfer/backend/cuda/kernels	0.414s
