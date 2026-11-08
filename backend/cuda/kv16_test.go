@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -402,13 +403,20 @@ func TestKV8_deliveredBytes(t *testing.T) {
 	requireCUDADevice(t)
 	for _, fx := range kv8Fixtures {
 		t.Run(filepath.Base(fx), func(t *testing.T) {
+			// The f32 arm first, read, then closed, so the int8 arm plans its context against the same free VRAM.
 			m32, r32 := kv8Load(t, fx, "f32", decoder.Options{})
+			ctx32, a32, kv32 := r32.ctxCap, kv8Allocated[r32], r32.kvI8
+			lens32 := make([][2]int, len(r32.layers))
+			for l := range r32.layers {
+				lens32[l] = [2]int{r32.kc[l].Len(), r32.vc[l].Len()}
+			}
+			m32.Close()
 			m8, r8 := kv8Load(t, fx, "i8", decoder.Options{ResidentKVSlots: 4, ResidentKVSlotsDefault: true})
 			if got := m8.ResidentKVPrecision(); got != "i8" {
 				t.Fatalf("-kv i8 reports %q", got)
 			}
-			if !r8.kvI8 || r32.kvI8 || r8.kvF16 {
-				t.Fatalf("resident flags: i8 arm kvI8=%v kvF16=%v, f32 arm kvI8=%v", r8.kvI8, r8.kvF16, r32.kvI8)
+			if !r8.kvI8 || kv32 || r8.kvF16 {
+				t.Fatalf("resident flags: i8 arm kvI8=%v kvF16=%v, f32 arm kvI8=%v", r8.kvI8, r8.kvF16, kv32)
 			}
 			if n := r8.KVSlots(); n != 1 {
 				t.Errorf("a default of 4 slots built %d at -kv i8, want 1", n)
@@ -416,8 +424,8 @@ func TestKV8_deliveredBytes(t *testing.T) {
 			if p := r8.KVPool().Precision; p != "i8" {
 				t.Errorf("KVPool precision %q", p)
 			}
-			if r8.ctxCap != r32.ctxCap {
-				t.Logf("contexts differ (f32 %d, i8 %d): the f32-arm comparison is skipped", r32.ctxCap, r8.ctxCap)
+			if r8.ctxCap != ctx32 {
+				t.Fatalf("contexts differ (f32 %d, i8 %d): the arms are not comparable", ctx32, r8.ctxCap)
 			}
 			owners, scales := 0, int64(0)
 			var formula int64
@@ -435,8 +443,8 @@ func TestKV8_deliveredBytes(t *testing.T) {
 					t.Fatalf("layer %d: K %d, V %d int8; K scales %d, V scales %d; want %d rows of %d heads", l, r8.kc[l].Len(), r8.vc[l].Len(),
 						r8.ksc[l].Len(), r8.vsc[l].Len(), rows, Ly.nKV)
 				}
-				if r8.ctxCap == r32.ctxCap && (r8.kc[l].Len() != r32.kc[l].Len() || r8.vc[l].Len() != r32.vc[l].Len()) {
-					t.Fatalf("layer %d: element counts differ from the f32 build (%d/%d vs %d/%d)", l, r8.kc[l].Len(), r8.vc[l].Len(), r32.kc[l].Len(), r32.vc[l].Len())
+				if r8.kc[l].Len() != lens32[l][0] || r8.vc[l].Len() != lens32[l][1] {
+					t.Fatalf("layer %d: element counts differ from the f32 build (%d/%d vs %d/%d)", l, r8.kc[l].Len(), r8.vc[l].Len(), lens32[l][0], lens32[l][1])
 				}
 				scales += int64(r8.ksc[l].Len()+r8.vsc[l].Len()) * 4
 				formula += 2 * int64(rows) * (int64(Ly.kvDim) + 4*int64(Ly.nKV)) // K and V: 1 B an element and a 4 B scale per head, each
@@ -448,7 +456,7 @@ func TestKV8_deliveredBytes(t *testing.T) {
 			if a8 != formula {
 				t.Errorf("the int8 build allocated %d B of K/V; 1 B an element plus 8 B of scales per position, head and layer is %d B", a8, formula)
 			}
-			if a32 := kv8Allocated[r32]; r8.ctxCap == r32.ctxCap && a8 != a32/4+scales {
+			if a8 != a32/4+scales {
 				t.Errorf("the int8 build allocated %d B, the f32 build %d B: not a quarter plus %d B of scales", a8, a32, scales)
 			}
 			tabs := int64(kvGroups * 4 * kvBlocksFor(r8.ctxCap))
@@ -458,8 +466,7 @@ func TestKV8_deliveredBytes(t *testing.T) {
 			if want := m8.ResidentKVBytes("cuda", r8.ctxCap, false, true); want != a8+tabs {
 				t.Errorf("decoder prices the int8 cache at %d B; a one-slot build allocates %d B and %d B of tables", want, a8, tabs)
 			}
-			t.Logf("%d int8 layers, one slot at %d positions: allocated %d B (f32 build %d B), scales %d B", owners, r8.ctxCap, a8, kv8Allocated[r32], scales)
-			_ = m32
+			t.Logf("%d int8 layers, one slot at %d positions: allocated %d B (f32 build %d B), scales %d B", owners, r8.ctxCap, a8, a32, scales)
 		})
 	}
 }
@@ -626,6 +633,7 @@ func TestKV8_everyAttentionPathStaysCloseToF32(t *testing.T) {
 				}
 			}},
 		{"prefill with fast prefill on", map[string]string{"GOINFER_CUDA_FLASH_DECODE": "0", "GOINFER_CUDA_FAST_PREFILL_FLOOR": "0"}, false, noFused},
+		// (the f32 control of this cell must have taken the fused tiles; asserted below, after both arms ran)
 		{"prefill attn_batched", map[string]string{"GOINFER_CUDA_FLASH_DECODE": "0", "GOINFER_CUDA_FAST_PREFILL": "0"}, false, noFused},
 		{"prefill row-batched split-KV", map[string]string{"GOINFER_CUDA_FLASH_DECODE": "0", "GOINFER_CUDA_FAST_PREFILL": "0"}, true,
 			func(t *testing.T, r *cudaResident) {
@@ -635,6 +643,9 @@ func TestKV8_everyAttentionPathStaysCloseToF32(t *testing.T) {
 				}
 			}},
 	}
+	// The 1.5B only. The 0.5B misses the 0.97 bar on every cell (min cosine 0.86 to 0.87) because int8 KV costs that model as much on the
+	// CPU's own int8 cache (min cosine 0.82, top-1 35/65 against f32): a quality reading (G4), not a reader fault; the exact-input G2 holds
+	// the 0.5B's readers (scope.md, "S2", "Readings so far").
 	for _, model := range []string{"qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"} {
 		for _, c := range cells {
 			t.Run(model[:len("qwen2.5-coder-0.5b")]+"/"+c.name, func(t *testing.T) {
@@ -696,6 +707,9 @@ func TestKV8_everyAttentionPathStaysCloseToF32(t *testing.T) {
 					t.Errorf("argmax agrees on %d of %d rows", agree, len(cos))
 				}
 				c.check(t, r8)
+				if c.name == "prefill with fast prefill on" && r32.fastAttnLaunches == 0 {
+					t.Errorf("the f32 control took no fused prefill launch: the cell does not compare a routed-around int8 prefill with the fused one")
+				}
 			})
 		}
 	}
@@ -981,18 +995,22 @@ func TestKV8_G2Diag_amplification(t *testing.T) {
 
 // TestKV8_G2exact_readersMatchTheCPUOnOneCache is the exact-input G2 (Francis's decision (c) on #755, docs/measurements/cuda-kv-i8-2026-11/scope.md,
 // "S2, exact-input G2"): the CUDA int8 readers and the CPU's production int8 reader (decoder.Model.AttendInt8ForTest: the layer dequantized,
-// then the float64-accumulated attention) fed ONE int8 cache, the rows and scales the CUDA resident stored for a real prose prefill, with one
-// query, give the same attention output row, to float-reduction noise. Tier 1: Qwen2.5-Coder 0.5B and 1.5B, layers 0, the middle one and the
-// last, query rows at four positions, every CUDA decode reader (glue attention, attn_batched M=1, the flash-decode lane, split-KV); seconds.
+// then the float64-accumulated attention) fed ONE int8 cache, the rows and scales the CUDA resident stored for a real prose prefill, with the
+// model's own query, give the same attention output row, to float-reduction noise. Tier 1: Qwen2.5-Coder 0.5B and 1.5B, layers 0, the middle
+// one and the last; seconds.
 //
-// Each layer's query is the model's own: the rotated q it attended with at the decode step after the prefill, captured per layer. The bar,
-// registered before the first run: on every row, max |CUDA - CPU| <= 1e-4 x max |CPU row| (f32 against float64 accumulation over at most a few
-// hundred keys is ~1e-5 relative). Two plants in the CPU copy only must break it: one V scale of the most-attended key x1.01, and one V code
-// of that key moved by one. (The first two runs built the queries from cached K rows instead, which on Qwen's layer 0 put scores at 1e4 to
-// 2e5, where one f32 ulp of a score moves the softmax by the deviation they read; scope.md records them.)
+// Readers: every decode reader (glue attention, attn_batched M=1, the flash-decode lane, split-KV) at four positions, and every prefill
+// reader over 8 rows (attn_batched M=8, the row-batched split-KV kernels, the multi-row verify lane), each row against the CPU at that row's
+// position. The output buffer is filled with NaN before every launch, so a reader that writes nothing, or only part of a row, reads as an
+// infinite difference. The store is held on every layer: at the decode step, each layer's int8 row and scales are aikit QuantizeRowInt8 of
+// the rotated K and the V that layer handed kv8_store (layer 0's prefill rows are TestKV8_layer0StoreIsTheQuantizedF32Store's).
+//
+// Each layer's query is the rotated q it attended with at the decode step after the prefill, captured per layer. The bar, registered before
+// the first run: on every row, max |CUDA - CPU| <= 1e-4 x max |CPU row|. Two plants in the CPU copy only must break it on every decode row:
+// one V scale of the most-attended key x1.01, and one V code of that key moved by one.
 func TestKV8_G2exact_readersMatchTheCPUOnOneCache(t *testing.T) {
 	requireCUDADevice(t)
-	const K, bar = 300, 1e-4
+	const K, bar, M, start = 300, 1e-4, 8, 200
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16") // the lane on at this short context, as the every-path test turns it on
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "0")
 	for _, model := range []string{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"} {
@@ -1020,11 +1038,10 @@ func TestKV8_G2exact_readersMatchTheCPUOnOneCache(t *testing.T) {
 			if _, err := r.PrefillLast(context.Background(), embs, 0); err != nil {
 				t.Fatal(err)
 			}
-			// The decode step at K stores row K and, layer by layer, leaves that layer's rotated query in qB: capture it after each layer (graphs off,
-			// so each layer's launches have run when its hook returns).
+			// The decode step at K stores row K and, layer by layer, leaves that layer's rotated query in qB and its rotated K and its V in kB and vB:
+			// capture them after each layer (graphs off, so each layer's launches have run when its hook returns).
 			nL, nH := len(r.layers), r.nH
-			last := nL - 1
-			qs := make([][]float32, nL)
+			qs, kIn, vIn := make([][]float32, nL), make([][]float32, nL), make([][]float32, nL)
 			graphs := r.graphs
 			r.graphs = false
 			legacyLayerForTest = func(r *cudaResident, Ly *cudaLayer, l, pos, ropePos int, qt float32, gA, gB, gC bool) error {
@@ -1034,15 +1051,53 @@ func TestKV8_G2exact_readersMatchTheCPUOnOneCache(t *testing.T) {
 				if e := r.stream.Sync(); e != nil {
 					return e
 				}
-				qs[l] = make([]float32, r.nH*Ly.hd)
-				return gpu.Download(r.qB, qs[l])
+				qs[l], kIn[l], vIn[l] = make([]float32, r.nH*Ly.hd), make([]float32, Ly.kvDim), make([]float32, Ly.kvDim)
+				for _, c := range []struct {
+					b Buffer
+					h []float32
+				}{{r.qB, qs[l]}, {r.kB, kIn[l]}, {r.vB, vIn[l]}} {
+					if e := gpu.Download(c.b, c.h); e != nil {
+						return e
+					}
+				}
+				return nil
 			}
 			_, err = r.Forward(mg.EmbedResidentForTest(ids[K]), K)
 			legacyLayerForTest, r.graphs = nil, graphs
 			if err != nil {
 				t.Fatal(err)
 			}
-			rows, flash, split := 0, 0, 0
+			// The store, every layer, row K.
+			stored := 0
+			for l := range nL {
+				Ly := &r.layers[l]
+				var kq, vq []int8
+				var ks, vs []float32
+				if err := r.do(func() error {
+					var e error
+					kq, vq, ks, vs, e = r.kv8RowsForTest(r.kvSlot, l, K, K+1)
+					return e
+				}); err != nil {
+					t.Fatal(err)
+				}
+				q := make([]int8, Ly.hd)
+				for _, c := range []struct {
+					name string
+					in   []float32
+					code []int8
+					sc   []float32
+				}{{"K", kIn[l], kq, ks}, {"V", vIn[l], vq, vs}} {
+					for h := range Ly.nKV {
+						sc := linalg.QuantizeRowInt8(c.in[h*Ly.hd:(h+1)*Ly.hd], q)
+						if math.Float32bits(sc) != math.Float32bits(c.sc[h]) || !slices.Equal(q, c.code[h*Ly.hd:(h+1)*Ly.hd]) {
+							t.Errorf("layer %d %s head %d at position %d: the cache is not kv8_store's quantization of the row it was handed", l, c.name, h, K)
+						}
+						stored++
+					}
+				}
+			}
+			last := nL - 1
+			rows, flash, split, verify, psRowsRun := 0, 0, 0, 0, 0
 			worst, plantMin := 0.0, math.Inf(1) // the largest row's diff / scale, and the smallest a plant made
 			for _, l := range []int{0, nL / 2, last} {
 				Ly := &r.layers[l]
@@ -1056,28 +1111,30 @@ func TestKV8_G2exact_readersMatchTheCPUOnOneCache(t *testing.T) {
 				}); err != nil {
 					t.Fatal(err)
 				}
-				for _, pos := range []int{63, 64, K / 2, K} {
-					q := qs[l] // the query of position K, over the keys up to pos
+				q := qs[l] // the query of position K, over the keys up to each row's position
+				cpuAt := func(pos int) []float32 {
 					n := pos + 1
-					cpu, err := mc.AttendInt8ForTest(l, pos, q, kq[:n*Ly.kvDim], vq[:n*Ly.kvDim], ks[:n*nKV], vs[:n*nKV])
+					c, err := mc.AttendInt8ForTest(l, pos, q, kq[:n*Ly.kvDim], vq[:n*Ly.kvDim], ks[:n*nKV], vs[:n*nKV])
 					if err != nil {
 						t.Fatal(err)
 					}
+					return c
+				}
+				check := func(name string, pos int, got, cpu []float32) {
+					d, scale := kv8RowDiff(got, cpu)
+					worst = math.Max(worst, d/scale)
+					if d > bar*scale {
+						t.Errorf("layer %d position %d, %s: max |CUDA - CPU| %.3g, over %.0e x the row's %.3g", l, pos, name, d, bar, scale)
+					}
+					rows++
+				}
+				for _, pos := range []int{63, 64, K / 2, K} {
+					n := pos + 1
+					cpu := cpuAt(pos)
 					for _, rd := range kv8Readers(r, l, pos) {
-						if rd.name == "flash-decode lane" {
-							flash++
-						}
-						if rd.name == "split-KV" {
-							split++
-						}
-						got := kv8RunReader(t, r, q, rd)
-						d0, s0 := kv8RowDiff(got, cpu)
-						worst = math.Max(worst, d0/s0)
-						if d, scale := d0, s0; d > bar*scale {
-							t.Errorf("layer %d position %d, %s: max |CUDA - CPU| %.3g, over %.0e x the row's %.3g (largest |score| %.3g)", l, pos, rd.name, d, bar, scale,
-								kv8MaxScore(q, kq[:n*Ly.kvDim], ks[:n*nKV], hd, nKV, G, r.attnScale))
-						}
-						rows++
+						flash += map[bool]int{true: 1}[rd.name == "flash-decode lane"]
+						split += map[bool]int{true: 1}[rd.name == "split-KV"]
+						check(rd.name, pos, kv8RunReader(t, r, q, rd), cpu)
 					}
 					// The plants, in the CPU copy only: the most-attended key's V scale x1.01, and one of its V codes moved by one.
 					top := kv8TopKey(q, kq[:n*Ly.kvDim], ks[:n*nKV], 0, hd, nKV, G, r.attnScale)
@@ -1101,25 +1158,40 @@ func TestKV8_G2exact_readersMatchTheCPUOnOneCache(t *testing.T) {
 						}
 						d1, s1 := kv8RowDiff(cuda, bad)
 						plantMin = math.Min(plantMin, d1/s1)
-						if d, scale := d1, s1; d <= bar*scale {
-							t.Errorf("plant %q at layer %d position %d (key %d): max diff %.3g is within the bar %.3g: the gate cannot see it", p.name, l, pos, top, d, bar*scale)
+						if d1 <= bar*s1 {
+							t.Errorf("plant %q at layer %d position %d (key %d): max diff %.3g is within the bar %.3g: the gate cannot see it", p.name, l, pos, top, d1, bar*s1)
 						}
 					}
 				}
+				// The prefill readers over M rows at positions start..start+M-1, every row the same query.
+				qRows := make([]float32, 0, M*len(q))
+				for range M {
+					qRows = append(qRows, q...)
+				}
+				for _, rd := range kv8RowReaders(r, l, start, M) {
+					verify += map[bool]int{true: 1}[rd.name == "multi-row verify lane"]
+					psRowsRun += map[bool]int{true: 1}[rd.name == "row-batched split-KV"]
+					got := kv8RunRowReader(t, r, qRows, M, rd)
+					for m := range M {
+						check(rd.name, start+m, got[m*len(q):(m+1)*len(q)], cpuAt(start+m))
+					}
+				}
 			}
-			t.Logf("%d reader rows compared (flash-decode lane %d, split-KV %d): largest |CUDA - CPU| / max|row| %.2e (bar %.0e); smallest a plant made %.2e",
-				rows, flash, split, worst, bar, plantMin)
-			if flash == 0 || split == 0 {
-				t.Errorf("flash-decode %d, split-KV %d rows: a reader never ran", flash, split)
+			t.Logf("%d reader rows compared (decode: flash-decode lane %d, split-KV %d; prefill: row-batched split-KV %d, verify lane %d launches); "+
+				"largest |CUDA - CPU| / max|row| %.2e (bar %.0e); smallest a plant made %.2e; %d stored (layer, head, K/V) rows held to the quantizer",
+				rows, flash, split, psRowsRun, verify, worst, bar, plantMin, stored)
+			if flash == 0 || split == 0 || psRowsRun == 0 || verify == 0 {
+				t.Errorf("flash-decode %d, split-KV %d, row-batched split-KV %d, verify lane %d: a reader never ran", flash, split, psRowsRun, verify)
 			}
 		})
 	}
 }
 
-// kv8Reader is one CUDA decode attention reader at (layer, pos).
+// kv8Reader is one CUDA attention reader at (layer, pos), or over a block of rows (kv8RowReaders).
 type kv8Reader struct {
 	name   string
 	launch func() error
+	rows   func(q, ctx Buffer) error // a prefill reader: reads q's rows, writes ctx's
 }
 
 // kv8Readers lists the decode readers that serve layer l at pos on r, each reading r.qB and writing r.cctx through the bound slot's table.
@@ -1128,30 +1200,61 @@ func kv8Readers(r *cudaResident, l, pos int) []kv8Reader {
 	nKeys := pos + 1
 	shm := uint32((nKeys + 128) * 4)
 	out := []kv8Reader{
-		{"glue attention", func() error {
+		{name: "glue attention", launch: func() error {
 			return r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: shm},
 				r.kvScaled(l, r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))...)...)
 		}},
-		{"attn_batched M=1", func() error {
+		{name: "attn_batched M=1", launch: func() error {
 			return r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: shm},
 				r.kvScaled(l, r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l))...)...)
 		}},
 	}
 	if r.faEligible(l) {
-		out = append(out, kv8Reader{"flash-decode lane", func() error { return r.flashDecodeAttn(l, pos) }})
+		out = append(out, kv8Reader{name: "flash-decode lane", launch: func() error { return r.flashDecodeAttn(l, pos) }})
 	}
 	if r.skScores != (Pipeline{}) {
-		out = append(out, kv8Reader{"split-KV", func() error { return r.splitKVAttnDecode(l, pos) }})
+		out = append(out, kv8Reader{name: "split-KV", launch: func() error { return r.splitKVAttnDecode(l, pos) }})
 	}
 	return out
 }
 
-// kv8RunReader uploads q into r.qB, runs rd, and returns r.cctx.
+// kv8RowReaders lists the prefill readers that serve layer l over M rows at positions start.. on r.
+func kv8RowReaders(r *cudaResident, l, start, M int) []kv8Reader {
+	Ly := &r.layers[l]
+	shm := uint32((start + M + 128) * 4)
+	out := []kv8Reader{{name: "attn_batched M>1", rows: func(q, ctx Buffer) error {
+		return r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: shm},
+			r.kvScaled(l, r.withCap(Arg(q), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(start)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(ctx), r.sinkArg(l))...)...)
+	}}}
+	if r.prefillSplitKVReady() {
+		out = append(out, kv8Reader{name: "row-batched split-KV", rows: func(q, ctx Buffer) error {
+			stride := start + M // the widest row's keys
+			sc, inv := r.tf(M*r.nH*stride), r.tf(M*r.nH)
+			defer r.dev.ReleaseBuf(sc)
+			defer r.dev.ReleaseBuf(inv)
+			return r.prefillSplitKVAttn(l, start, M, q, ctx, sc, inv, stride, M, Buffer{}, 0)
+		}})
+	}
+	if r.faEligible(l) {
+		out = append(out, kv8Reader{name: "multi-row verify lane", rows: func(q, ctx Buffer) error { return r.flashVerifyAttn(l, start, 0, M, q, ctx) }})
+	}
+	return out
+}
+
+// kv8RunReader uploads q into r.qB, fills r.cctx with NaN, runs rd, and returns r.cctx: a reader that leaves any of the row unwritten
+// returns NaN there.
 func kv8RunReader(t *testing.T, r *cudaResident, q []float32, rd kv8Reader) []float32 {
 	t.Helper()
 	out := make([]float32, len(q))
+	poison := make([]float32, len(q))
+	for i := range poison {
+		poison[i] = float32(math.NaN())
+	}
 	if err := r.do(func() error {
 		if e := gpu.Upload(r.qB, q); e != nil {
+			return e
+		}
+		if e := gpu.Upload(r.cctx, poison); e != nil {
 			return e
 		}
 		if e := r.stream.Sync(); e != nil {
@@ -1170,10 +1273,43 @@ func kv8RunReader(t *testing.T, r *cudaResident, q []float32, rd kv8Reader) []fl
 	return out
 }
 
-// kv8RowDiff is max |a - b| and max |b| over a row.
+// kv8RunRowReader runs a prefill reader over M rows of q in buffers of the test's own, the output filled with NaN first, and returns it.
+func kv8RunRowReader(t *testing.T, r *cudaResident, q []float32, M int, rd kv8Reader) []float32 {
+	t.Helper()
+	out := make([]float32, len(q))
+	poison := make([]float32, len(q))
+	for i := range poison {
+		poison[i] = float32(math.NaN())
+	}
+	if err := r.do(func() error {
+		qb, cb := r.tup32(q), r.tup32(poison)
+		defer r.dev.ReleaseBuf(qb)
+		defer r.dev.ReleaseBuf(cb)
+		if e := r.stream.Sync(); e != nil {
+			return e
+		}
+		if e := rd.rows(qb, cb); e != nil {
+			return e
+		}
+		if e := r.stream.Sync(); e != nil {
+			return e
+		}
+		return gpu.Download(cb, out)
+	}); err != nil {
+		t.Fatalf("%s: %v", rd.name, err)
+	}
+	return out
+}
+
+// kv8RowDiff is max |a - b| and max |b| over a row. A NaN or infinite element of a (a value no reader produced) is an infinite difference.
 func kv8RowDiff(a, b []float32) (d, scale float64) {
 	for i := range b {
-		d = math.Max(d, math.Abs(float64(a[i])-float64(b[i])))
+		x := float64(a[i])
+		if math.IsNaN(x) || math.IsInf(x, 0) {
+			d = math.Inf(1)
+		} else {
+			d = math.Max(d, math.Abs(x-float64(b[i])))
+		}
 		scale = math.Max(scale, math.Abs(float64(b[i])))
 	}
 	return d, scale

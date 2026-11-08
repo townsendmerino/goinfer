@@ -103,3 +103,38 @@ func TestCUDAKVI8_prices(t *testing.T) {
 		t.Errorf("mistral-tiny-window: i8 asked prices %d B, f32 %d B; a refused cell prices f32", i8, f32)
 	}
 }
+
+// TestCUDAKVI8_slotPriceIsTheGPUsPrecision pins the price cuda's ctxForSlots puts on each further KV slot,
+// CUDAKVSlotBytes(ctx, KVCacheF16(), KVCacheI8()), at the precision the CUDA cache holds, never the CPU cache's: KVCacheI8 is the resident's
+// request (Options.KVPrecision), and CUDAKVSlotBytes prices int8 only where ResolveKV delivers it. A CPU int8 cache beside an f16 resident
+// prices f16. (auto is not a case here: these loads carry no CUDA backend, and only a backend's policy resolves auto.)
+func TestCUDAKVI8_slotPriceIsTheGPUsPrecision(t *testing.T) {
+	dir := filepath.Join("..", "testdata", "llama-tiny")
+	price := func(o Options) int64 {
+		m, err := Load(dir, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		return m.CUDAKVSlotBytes(128, m.KVCacheF16(), m.KVCacheI8())
+	}
+	m, err := Load(dir, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f16, i8 := m.CUDAKVSlotBytes(128, true, false), int64(40976)
+	m.Close()
+	for _, c := range []struct {
+		name string
+		o    Options
+		want int64
+	}{
+		{"GPU int8", Options{KVPrecision: kvPrecI8}, i8},
+		{"GPU int8, CPU int8", Options{KVPrecision: kvPrecI8, KVQuant: kvPrecI8}, i8},
+		{"GPU f16, CPU int8", Options{KVPrecision: kvPrecF16, KVQuant: kvPrecI8}, f16},
+	} {
+		if got := price(c.o); got != c.want {
+			t.Errorf("%s: a further slot is priced %d B, want %d", c.name, got, c.want)
+		}
+	}
+}

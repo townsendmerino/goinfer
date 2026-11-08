@@ -1,0 +1,7 @@
+=== RUN   TestCUDAKVI8_slotPriceIsTheGPUsPrecision
+    kvi8_cuda_test.go:137: GPU int8: a further slot is priced 131088 B, want 40976
+    kvi8_cuda_test.go:137: GPU f16, CPU int8: a further slot is priced 40976 B, want 65552
+--- FAIL: TestCUDAKVI8_slotPriceIsTheGPUsPrecision (0.01s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.008s
+FAIL
