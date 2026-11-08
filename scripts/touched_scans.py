@@ -215,6 +215,7 @@ SCANS = [
     # gpu module
     Scan("backend/webgpu", "TestNemotronBlockKind_hasADefault", F("backend/webgpu/residency.go")),
     Scan("backend/webgpu/internal/kernels", "TestLedger_everyBufferIsLeased", NT("backend/webgpu", "backend/webgpu/internal/kernels")),
+    Scan("backend/webgpu/internal/kernels", "TestRopeKernels_noBuiltinSinCos", NT("backend/webgpu/internal/kernels")),
     Scan("backend/webgpu", "TestEnsureAttnWide_guardsOnTheLastPipeline", F("backend/webgpu/attention.go")),
     Scan("backend/webgpu", "TestGPU_deviceBoundaryErrorsAreNotDropped", F("backend/webgpu/decoderunner.go", "backend/webgpu/residency.go")),
     Scan("backend/webgpu", "TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches", F("backend/webgpu/residency.go")),

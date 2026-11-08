@@ -52,7 +52,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 // ropeBatchedShaderWGSL is ropeShaderWGSL (attention.go) widened to M rows in one dispatch, grid (ceil(heads*half/64), M).
 // Positions are contiguous within one PrefillLastW8A8 call, so row r's position is p.start+row. Same per-(row, head, d)
 // math as the M=1 kernel, so bit-identical (TestRoPEBatched_parity).
-const ropeBatchedShaderWGSL = `
+const ropeBatchedShaderWGSL = ropeCosSinWGSL + `
 struct P { heads: u32, headDim: u32, half: u32, start: u32, scale: f32, _a: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read_write> vec:     array<f32>;  // [M, heads*headDim]
 @group(0) @binding(1) var<storage, read>       invFreq: array<f32>;  // [half]
@@ -66,8 +66,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let d = idx % p.half;
     let pos = p.start + row;
     let theta = f32(pos) * invFreq[d];
-    let c = cos(theta) * p.scale;
-    let s = sin(theta) * p.scale;
+    let cs = ropeCosSin(theta); let c = cs.x * p.scale;
+    let s = cs.y * p.scale;
     let base = row * p.heads * p.headDim;
     let off = base + h * p.headDim;
     let x1 = vec[off + d];
