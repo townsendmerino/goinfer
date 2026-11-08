@@ -1273,8 +1273,8 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			r.fastAttn, r.fastGemm = false, false
 		}
 		if (r.fastAttn || r.fastGemm) && r.prefillReady {
-			// The tensor-core prefill attention has no int8 twin: an int8 cache leaves it unbound, and prefill takes attn_batched or the
-			// row-batched split-KV kernels.
+			// The tensor-core prefill attention has no int8 twin: an int8 cache leaves it unbound (kvPTX gives nil and compileKV refuses it without
+			// compiling anything), and prefill takes attn_batched or the row-batched split-KV kernels.
 			if fmod, e6 := r.compileKV(r.kvPTX(attnFusedPTX, attnFusedKV16PTX)); r.fastAttn && !r.kvI8 && e6 == nil {
 				loadF := func(dst *Pipeline, name string) {
 					if pl, pe := r.dev.NewComputePipeline(fmod, name); pe == nil {

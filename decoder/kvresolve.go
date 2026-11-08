@@ -172,8 +172,8 @@ func CUDAKVF16AutoDecline(f KVFacts, o Options) string {
 var cudaKVI8Families = []string{"llama", "mistral", "qwen2", "qwen3", "phi3"}
 
 // CUDAKVI8Decline returns why a CUDA resident cannot hold this model's KV cache as int8 under o, or "" when it can. Every refusal names what
-// it is waiting for. The slots' shared blocks and copy on write carry the scale pools; host snapshots and demotion decline by name on the
-// resident (cuda/kv8.go).
+// it is waiting for. Several KV slots, their shared blocks and copy on write, host snapshots and demotion carry the scale pools (cuda's
+// kvCopyBlockRows and kvsnap.go).
 func CUDAKVI8Decline(f KVFacts, o Options) string {
 	if !slices.Contains(cudaKVI8Families, f.Family) {
 		return "int8 KV on CUDA covers the dense families (" + strings.Join(cudaKVI8Families, ", ") + ") so far; " + f.Family + " is refused until its stage"

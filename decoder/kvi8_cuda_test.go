@@ -135,3 +135,23 @@ func TestCUDAKVI8_slotPriceIsTheGPUsPrecision(t *testing.T) {
 		}
 	}
 }
+
+// TestCUDAKVI8_pricesWhatIsAsked: ResidentKVBytes("cuda", …, kvI8) prices an int8 cache for any architecture the CUDA int8 kernels cover,
+// whatever else the load that asks carries (several KV slots, a drafter): it answers "what would int8 cost", which fit and Plan ask of a
+// load that may not hold int8 itself. A family the kernels do not cover prices f32, as it would build.
+func TestCUDAKVI8_pricesWhatIsAsked(t *testing.T) {
+	dir := filepath.Join("..", "testdata", "llama-tiny")
+	for _, o := range []Options{{ResidentKVSlots: 2}, {ResidentKVSlots: 4, KVPrecision: kvPrecF16}, {Drafter: true}, {KVPrecision: kvPrecI8}} {
+		m, err := Load(dir, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := m.ResidentKVBytes("cuda", 128, false, true); got != 61456 {
+			t.Errorf("%+v: ResidentKVBytes(cuda, 128, i8) = %d B, want 61,456", o, got)
+		}
+		if got, f16 := m.ResidentKVBytes("cuda", 128, true, true), m.ResidentKVBytes("cuda", 128, true, false); got != 61456 || got == f16 {
+			t.Errorf("%+v: both f16 and i8 asked prices %d B; int8 (61,456) is the smaller cache the kernels cover", o, got)
+		}
+		m.Close()
+	}
+}
