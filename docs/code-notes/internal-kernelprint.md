@@ -1,7 +1,7 @@
 # internal/diag/kernelprint: design notes
 
 The package's contract is in its `doc.go`. This file holds the design: why it has this shape, what it does not cover, and
-where its evidence lives. Plan: `docs/tasks/task-subsystems-2026-10.md` §5.4 (VK1) and §5.8 (VK5, which mixes the
+where its evidence lives. Plan: `docs/completed/task-subsystems-2026-10.md` §5.4 (VK1) and §5.8 (VK5, which mixes the
 fingerprints into the parity key). Measurement record: `docs/measurements/vk1-2026-10.md`.
 
 ## What a fingerprint is for

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Grade OP1's Metal speed guard, G2-S (docs/tasks/task-forward-architecture-2026-10.md §4.6), from one output directory.
+"""Grade OP1's Metal speed guard, G2-S (docs/completed/task-forward-architecture-2026-10.md §4.6), from one output directory.
 
   grade_speed.py <out dir>     # decode-metal-*.json (bench_peer.py) and ttft-metal-*.json (bench_prefill_stall.py)
 

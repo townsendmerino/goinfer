@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SP2's 9B gates (docs/tasks/task-forward-architecture-2026-10.md §6a, "SP2 on nobara").
+# SP2's 9B gates (docs/completed/task-forward-architecture-2026-10.md §6a, "SP2 on nobara").
 #   MODE=identity  G1c + plants + G5 on the 9B (correctness; holds the timing lock shared)
 #   MODE=cost      G2, the fold's cost (timed; exclusive lock)
 #   MODE=speed     G4, speed against plain decode (timed; exclusive lock)

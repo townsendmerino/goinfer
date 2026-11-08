@@ -12,4 +12,4 @@
 #
 # Format: <pkg> <name> = <package path below the module>.<name>   # decided by, date
 
-decoder Config = decoder/config.Config   # Francis, 2026-11-07 11:49 (DC1b, docs/tasks/task-decoder-config-2026-11.md)
+decoder Config = decoder/config.Config   # Francis, 2026-11-07 11:49 (DC1b, docs/completed/task-decoder-config-2026-11.md)

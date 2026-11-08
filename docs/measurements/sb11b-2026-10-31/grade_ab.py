@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-SB11b-5's grade (docs/tasks/task-subsystems-2026-10.md §8, "SB11b"): every cell bench_peer.py measured for both
+"""G-SB11b-5's grade (docs/completed/task-subsystems-2026-10.md §8, "SB11b"): every cell bench_peer.py measured for both
 goinfer (this build) and goinfer_old (main before it) in a pass is a pair, its ratio new/old of the cells' median decode
 tok/s. PASS: the median ratio over every pair of both passes >= 0.99. FAIL: under 0.98. Between: AMBIGUOUS, parked.
 A cell started under heavy load is void (the 2026-10-19 rule: 1-min load above 8.0 on nobara) and listed, not paired.

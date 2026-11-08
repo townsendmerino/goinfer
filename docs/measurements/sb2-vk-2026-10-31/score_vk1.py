@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-VK1's grading (SB2-vk, docs/tasks/task-subsystems-2026-10.md): each model's predicted Vulkan device use against nvidia-smi's rise
+"""G-VK1's grading (SB2-vk, docs/completed/task-subsystems-2026-10.md): each model's predicted Vulkan device use against nvidia-smi's rise
 over the load, per load. usage: score_vk1.py <dir> <pass>. M1's rule lives in m1_predict(), fixed before the run."""
 import glob, os, re, sys
 

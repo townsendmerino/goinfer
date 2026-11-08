@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""shard_cover.py: PW2a's gates G1 to G3 (docs/tasks/task-subsystems-2026-10.md §12.2).
+"""shard_cover.py: PW2a's gates G1 to G3 (docs/completed/task-subsystems-2026-10.md §12.2).
 
 Reads .github/workflows/ci.yml at two git refs, takes every `go test` line in the decoder shards and test-rest, and maps
 each top-level test of ./decoder and ./internal/sampling to the steps that select it (-run, -skip, the package list).

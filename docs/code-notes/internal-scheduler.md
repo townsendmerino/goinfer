@@ -1,7 +1,7 @@
 # internal/runtime/scheduler: design notes
 
 The package's contract is in its `doc.go`. This file holds the design: why it has this shape, what it does not decide,
-and where its evidence lives. Plan: `docs/tasks/task-subsystems-2026-10.md` §8, SB6. Background:
+and where its evidence lives. Plan: `docs/completed/task-subsystems-2026-10.md` §8, SB6. Background:
 `docs/tasks/task-work-queue-2026-09.md`, J1 and J6.
 
 ## Why decisions over plain values
