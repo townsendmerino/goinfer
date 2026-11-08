@@ -7,7 +7,7 @@ import (
 )
 
 // Config is a checkpoint's config.json, parsed. The type, its validators and its loader live in decoder/config, which
-// imports no goinfer package; the name stays here as the published API (docs/completed/task-decoder-config-2026-11.md §5).
+// imports no goinfer package; the name stays here as the published API (docs/tasks/task-decoder-config-2026-11.md §5).
 type Config = config.Config
 
 // RecommendedSampling is a checkpoint's own recommended sampling settings (config.RecommendedSampling).
