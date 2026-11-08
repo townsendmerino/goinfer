@@ -395,6 +395,42 @@ func kv8Load(t *testing.T, fx, kv string, opts decoder.Options) (*decoder.Model,
 	return m, r
 }
 
+// TestKV8_flashLaneCompiledFromItsPrecisionsTwin: the flash-decode lane of an f32, f16 and int8 build is compiled from decode_fa, its _kv16
+// twin and its _kv8 twin respectively, and the int8 build allocates exactly f32/4 + f32*nKV/kvDim: the two facts TestKV8GateVsReference's
+// precondition 1 checks on each arm, asserted here on real builds so the gate's arithmetic is not taken on trust.
+func TestKV8_flashLaneCompiledFromItsPrecisionsTwin(t *testing.T) {
+	requireCUDADevice(t)
+	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16") // the lane on at this short context, as the gate and the every-path test turn it on
+	t.Setenv("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "0")
+	const fx = "llama-attnfa-tiny"
+	alloc := map[string]int64{}
+	var kvDim, nKV int
+	for _, c := range []struct{ kv, module string }{{"f32", "decode_fa"}, {"f16", "decode_fa_kv16"}, {"i8", "decode_fa_kv8"}} {
+		m, r := kv8Load(t, fx, c.kv, decoder.Options{})
+		if r.faSplit < 1 || r.faCombine == (Pipeline{}) {
+			t.Fatalf("-kv %s: the flash-decode lane is not loaded", c.kv)
+		}
+		if r.faModule != c.module {
+			t.Errorf("-kv %s: the flash-decode lane was compiled from %q, not %q", c.kv, r.faModule, c.module)
+		}
+		for l := range r.layers {
+			if Ly := &r.layers[l]; !Ly.noKV() && !Ly.kvShared {
+				if kvDim == 0 {
+					kvDim, nKV = Ly.kvDim, Ly.nKV
+				} else if Ly.kvDim != kvDim || Ly.nKV != nKV {
+					t.Fatalf("%s's KV layers differ in geometry; the exact int8 figure needs one", fx)
+				}
+			}
+		}
+		alloc[c.kv] = kv8Allocated[r]
+		m.Close()
+	}
+	e, h, q := alloc["f32"], alloc["f16"], alloc["i8"]
+	if e <= 0 || 2*h != e || 4*q*int64(kvDim) != e*int64(kvDim)+4*e*int64(nKV) {
+		t.Errorf("allocations f32 %d B, f16 %d B, i8 %d B; i8 should be %d B", e, h, q, e/4+e*int64(nKV)/int64(kvDim))
+	}
+}
+
 // TestKV8_deliveredBytes is G3 for the CUDA int8 cache (docs/tasks/task-kv-precision-everywhere-2026-10.md §4): at -kv i8 every layer that
 // keeps K/V holds int8 pools with as many elements as the f32 build's and one f32 scale per (row, KV head) for each of K and V; the build
 // ALLOCATES exactly 1 B an element plus 8 B of scales per position, head and layer (the f32 build's bytes / 4, plus the scales); and

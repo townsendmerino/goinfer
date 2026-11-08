@@ -73,11 +73,13 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 		logs.Warnf("[cuda] flash-decode lane unavailable (exact decode attention used): no positive head dim")
 		return
 	}
-	mod, e := r.compileKV(r.kvPTX8(decodeFAPTX, decodeFAKV16PTX, decodeFAKV8PTX))
+	ptx := r.kvPTX8(decodeFAPTX, decodeFAKV16PTX, decodeFAKV8PTX)
+	mod, e := r.compileKV(ptx)
 	if e != nil {
 		logs.Warnf("[cuda] flash-decode lane unavailable (exact decode attention used): %v", e)
 		return
 	}
+	r.faModule = map[*byte]string{&decodeFAPTX[0]: "decode_fa", &decodeFAKV16PTX[0]: "decode_fa_kv16", &decodeFAKV8PTX[0]: "decode_fa_kv8"}[&ptx[0]]
 	var pipes [3]Pipeline
 	for i, name := range []string{"fa_partial_64", "fa_partial_128", "fa_partial_256"} {
 		if pipes[i], e = r.dev.NewComputePipeline(mod, name); e != nil {

@@ -197,7 +197,7 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 			cpuNote += "; a GPU-resident load caps it with --ctx, but this model declined one (see decode path)"
 		}
 	}
-	ctxLine += kvBannerPart(f.kv)
+	ctxLine += kvBannerPart(f.kv, strings.HasPrefix(f.decodePath, "cuda-resident"))
 	ctxLine += cpuNote
 	out = append(out, ctxLine)
 	if l := harnessLine(f); l != "" {
@@ -515,11 +515,12 @@ func samplingLine(rs *decoder.RecommendedSampling) string {
 
 // kvBannerPart is the context line's KV part: for each cache the load built, the precision it holds and the one requested, with the
 // reason when they differ (an explicit request that cannot be delivered refuses the load, so a difference here is auto's pick).
-// "lossy" marks f16 or i8 that the operator asked for by name; an i8 cache also names its measured cost (docs/kv-precision-matrix.md, "Measured cost").
-// kvI8Cost is int8 KV's measured cost, as the banner states it: the G4 and speed results of docs/measurements/cuda-kv-i8-2026-11/s4-registration.md.
+// "lossy" marks f16 or i8 that the operator asked for by name. A CUDA resident's i8 cache (cudaResident: the load's decode path is
+// cuda-resident) also names its measured cost, which was measured there and nowhere else (docs/kv-precision-matrix.md, "Measured cost").
+// kvI8Cost is CUDA int8 KV's measured cost, as the banner states it: the G4 and speed results of docs/measurements/cuda-kv-i8-2026-11/s4-registration.md.
 const kvI8Cost = "about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B; decode up to 28% slower than f16 at short context, prefill about 20x slower at 16K keys"
 
-func kvBannerPart(reps []decoder.KVPrecisionReport) string {
+func kvBannerPart(reps []decoder.KVPrecisionReport, cudaResident bool) string {
 	if len(reps) == 0 {
 		return " · KV f32"
 	}
@@ -535,7 +536,7 @@ func kvBannerPart(reps []decoder.KVPrecisionReport) string {
 		}
 		if (r.Delivered == "f16" || r.Delivered == "i8") && r.Delivered == r.Requested {
 			note += ", lossy"
-			if r.Delivered == "i8" {
+			if r.Delivered == "i8" && r.Cache == "resident" && cudaResident {
 				note += ": " + kvI8Cost
 			}
 		}

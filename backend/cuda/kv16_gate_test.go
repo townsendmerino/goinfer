@@ -108,8 +108,11 @@ type kv16ArmResult struct {
 	aa         [][]float32 // a second run of prompt 0 (the arm asked for it), for the A/A precondition
 	maxK, maxV []float32   // per layer, over every prompt (the f32 arm only)
 	layers     int
-	faLayers   int  // the layers whose attended span reaches the lane's floor at this depth (a sliding window under it never does)
-	mlaOnly    bool // every layer that keeps K/V is MLA's latent, which the flash-decode lane never reads
+	faLayers   int    // the layers whose attended span reaches the lane's floor at this depth (a sliding window under it never does)
+	mlaOnly    bool   // every layer that keeps K/V is MLA's latent, which the flash-decode lane never reads
+	faModule   string // the build of decode_fa the lane's kernels were compiled from (cudaResident.faModule)
+	kvDim, nKV int    // the KV-keeping layers' K row width and KV heads, when every such layer shares them (uniform)
+	uniform    bool
 }
 
 func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens [][]int, survey, aa bool, tag string, opts decoder.Options) kv16ArmResult {
@@ -136,10 +139,15 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 	// The build's own fit check sized this arm (BuildResident refuses a load that does not fit, and the load above would have failed): record
 	// what it chose, so the cell's record shows each arm passed it.
 	res.fit = fmt.Sprintf("-kv %s: resident, context %d positions, %d KV slot(s), KV pools %d B", kv, rf.ctxCap, rf.KVSlots(), res.kvPool)
-	res.mlaOnly = true
+	res.mlaOnly, res.faModule, res.uniform = true, rf.faModule, true
 	for l := range rf.layers {
 		if !rf.layers[l].noKV() && !rf.layers[l].isMLA() {
 			res.mlaOnly = false
+			if res.kvDim == 0 {
+				res.kvDim, res.nKV = rf.layers[l].kvDim, rf.layers[l].nKV
+			} else if rf.layers[l].kvDim != res.kvDim || rf.layers[l].nKV != res.nKV {
+				res.uniform = false
+			}
 		}
 		if w := int(rf.layers[l].window); !rf.layers[l].noKV() && !rf.layers[l].isMLA() && rf.faEligible(l) && (w == 0 || w >= rf.faMinKeys) {
 			res.faLayers++
@@ -509,14 +517,23 @@ func runKV8GateCell(t *testing.T, path, model string, K int, promptFiles []strin
 			t.Fatalf("PRECONDITION 1: the %s arm allocated %d B of K/V; its pools are priced %d B (%d B with %d B of tables)", a.name, a.r.allocated, a.r.kvPool-a.r.tables, a.r.kvPool, a.r.tables)
 		}
 	}
-	if 2*h.allocated != e.allocated || 2*q.allocated >= e.allocated || 4*q.allocated <= e.allocated {
-		t.Fatalf("PRECONDITION 1: K/V allocations f32 %d B, f16 %d B, i8 %d B: not f32, half, and a quarter plus scales", e.allocated, h.allocated, q.allocated)
+	// f16 is exactly half of f32. An int8 row is kvDim bytes plus one f32 scale per KV head (kvRowBytes) against f32's 4*kvDim, so on a model
+	// whose KV layers share one geometry int8 is exactly f32/4 + f32*nKV/kvDim: 4*i8*kvDim == f32*kvDim + 4*f32*nKV.
+	if !e.uniform || e.kvDim <= 0 {
+		t.Fatalf("PRECONDITION 1: the model's KV layers do not share one geometry, so the int8 overhead has no single exact figure")
 	}
-	// Every arm reads its cache through the production flash-decode lane.
+	if 2*h.allocated != e.allocated || 4*q.allocated*int64(e.kvDim) != e.allocated*int64(e.kvDim)+4*e.allocated*int64(e.nKV) {
+		t.Fatalf("PRECONDITION 1: K/V allocations f32 %d B, f16 %d B, i8 %d B: f16 is not half, or i8 is not f32/4 plus one f32 scale per KV head and row (want %d B)",
+			e.allocated, h.allocated, q.allocated, e.allocated/4+e.allocated*int64(e.nKV)/int64(e.kvDim))
+	}
+	// Every arm reads its cache through the production flash-decode lane, compiled from its own precision's build of decode_fa.
 	for _, a := range []struct {
-		name string
-		r    kv16ArmResult
-	}{{"f32", e}, {"f16", h}, {"i8", q}} {
+		name, module string
+		r            kv16ArmResult
+	}{{"f32", "decode_fa", e}, {"f16", "decode_fa_kv16", h}, {"i8", "decode_fa_kv8", q}} {
+		if a.r.faModule != a.module {
+			t.Fatalf("PRECONDITION 1 (vacuity): the %s arm's flash-decode lane was compiled from %q, not %q", a.name, a.r.faModule, a.module)
+		}
 		if want := a.r.faLayers * (contN - 1) * len(prompts); a.r.faLayers == 0 || a.r.faLaunches < want {
 			t.Fatalf("PRECONDITION 1 (vacuity): the %s arm launched fa_partial %d times over %d lane layers, expected >= %d", a.name, a.r.faLaunches, a.r.faLayers, want)
 		}
