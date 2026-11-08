@@ -1,0 +1,110 @@
+=== RUN   TestKV8GateVsReference
+=== RUN   TestKV8GateVsReference/precondition4-exact-input-G2
+=== RUN   TestKV8GateVsReference/precondition4-exact-input-G2/llama-attnfa-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7067 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6939 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7065 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:1212: 132 reader rows compared, 264 plant rows; launches per reader map[attn_batched M=1:12 attn_batched M>1:3 flash-decode lane:12 glue attention:12 multi-row verify lane:3 row-batched split-KV:3 split-KV:12 split-KV, V-sum split:12]; largest |CUDA - CPU| / max|row| 7.36e-07 (bar 1e-04); smallest a plant made 6.39e-04; 8 stored (layer, head, K/V) rows held to the quantizer
+=== RUN   TestKV8GateVsReference/precondition4-exact-input-G2/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (155 MiB of scratch; 6599 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:1212: 132 reader rows compared, 264 plant rows; launches per reader map[attn_batched M=1:12 attn_batched M>1:3 flash-decode lane:12 glue attention:12 multi-row verify lane:3 row-batched split-KV:3 split-KV:12 split-KV, V-sum split:12]; largest |CUDA - CPU| / max|row| 1.30e-05 (bar 1e-04); smallest a plant made 1.73e-03; 96 stored (layer, head, K/V) rows held to the quantizer
+=== RUN   TestKV8GateVsReference/precondition4-exact-input-G2/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (280 MiB of scratch; 6001 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:1212: 132 reader rows compared, 264 plant rows; launches per reader map[attn_batched M=1:12 attn_batched M>1:3 flash-decode lane:12 glue attention:12 multi-row verify lane:3 row-batched split-KV:3 split-KV:12 split-KV, V-sum split:12]; largest |CUDA - CPU| / max|row| 4.18e-05 (bar 1e-04); smallest a plant made 3.76e-03; 112 stored (layer, head, K/V) rows held to the quantizer
+=== RUN   TestKV8GateVsReference/S-K3900
+cuda: prefill width 2048 rows (280 MiB of scratch; 5783 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[kv16-gate] S arm -kv f32 prompt 1/10 done, elapsed 1s
+[kv16-gate] S arm -kv f32 prompt 2/10 done, elapsed 2s
+[kv16-gate] S arm -kv f32 prompt 3/10 done, elapsed 3s
+[kv16-gate] S arm -kv f32 prompt 4/10 done, elapsed 4s
+[kv16-gate] S arm -kv f32 prompt 5/10 done, elapsed 5s
+[kv16-gate] S arm -kv f32 prompt 6/10 done, elapsed 6s
+[kv16-gate] S arm -kv f32 prompt 7/10 done, elapsed 7s
+[kv16-gate] S arm -kv f32 prompt 8/10 done, elapsed 8s
+[kv16-gate] S arm -kv f32 prompt 9/10 done, elapsed 9s
+[kv16-gate] S arm -kv f32 prompt 10/10 done, elapsed 9s
+cuda: prefill width 2048 rows (280 MiB of scratch; 5895 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[kv16-gate] S arm -kv f16 prompt 1/10 done, elapsed 1s
+[kv16-gate] S arm -kv f16 prompt 2/10 done, elapsed 2s
+[kv16-gate] S arm -kv f16 prompt 3/10 done, elapsed 3s
+[kv16-gate] S arm -kv f16 prompt 4/10 done, elapsed 4s
+[kv16-gate] S arm -kv f16 prompt 5/10 done, elapsed 5s
+[kv16-gate] S arm -kv f16 prompt 6/10 done, elapsed 6s
+[kv16-gate] S arm -kv f16 prompt 7/10 done, elapsed 6s
+[kv16-gate] S arm -kv f16 prompt 8/10 done, elapsed 7s
+[kv16-gate] S arm -kv f16 prompt 9/10 done, elapsed 8s
+[kv16-gate] S arm -kv f16 prompt 10/10 done, elapsed 9s
+cuda: prefill width 2048 rows (280 MiB of scratch; 5949 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[kv16-gate] S arm -kv i8 prompt 1/10 done, elapsed 4s
+[kv16-gate] S arm -kv i8 A/A rerun of prompt 1 done, elapsed 9s
+[kv16-gate] S arm -kv i8 prompt 2/10 done, elapsed 13s
+[kv16-gate] S arm -kv i8 prompt 3/10 done, elapsed 18s
+[kv16-gate] S arm -kv i8 prompt 4/10 done, elapsed 22s
+[kv16-gate] S arm -kv i8 prompt 5/10 done, elapsed 27s
+[kv16-gate] S arm -kv i8 prompt 6/10 done, elapsed 31s
+[kv16-gate] S arm -kv i8 prompt 7/10 done, elapsed 36s
+[kv16-gate] S arm -kv i8 prompt 8/10 done, elapsed 40s
+[kv16-gate] S arm -kv i8 prompt 9/10 done, elapsed 45s
+[kv16-gate] S arm -kv i8 prompt 10/10 done, elapsed 49s
+=== KV8 GATE S K=3900 precondition 5 (fit): -kv f32: resident, context 4028 positions, 1 KV slot(s), KV pools 234881528 B
+=== KV8 GATE S K=3900 precondition 5 (fit): -kv f16: resident, context 4028 positions, 1 KV slot(s), KV pools 117441016 B
+=== KV8 GATE S K=3900 precondition 5 (fit): -kv i8: resident, context 4028 positions, 1 KV slot(s), KV pools 60555768 B
+=== KV8 GATE S K=3900 (confirmation cell, set b, n=10 x 64 positions) i8 vs f32 (G4): base(meanAgree=91.09% HF=9 meanKL=0.052265) cand(meanAgree=89.69% HF=19 meanKL=0.086818) cand>=base on 4/10 prompts; critA=false critB=false critC=false KLratio=1.6611 => DOES NOT PASS
+=== KV8 GATE S K=3900 (confirmation cell, set b, n=10 x 64 positions) i8 vs f16 (reported): base(meanAgree=90.94% HF=8 meanKL=0.052564) cand(meanAgree=89.69% HF=19 meanKL=0.086818) cand>=base on 4/10 prompts; critA=false critB=false critC=false KLratio=1.6517 => DOES NOT PASS
+=== KV8 GATE S K=3900 (confirmation cell, set b, n=10 x 64 positions) f16 vs f32 (control): base(meanAgree=91.09% HF=9 meanKL=0.052265) cand(meanAgree=90.94% HF=8 meanKL=0.052564) cand>=base on 6/10 prompts; critA=true critB=true critC=true KLratio=1.0057 => PASSES
+=== KV8 GATE S K=3900 preconditions: int8 allocated 60555264 B (f32 234881024 B), A/A bit-identical over 64 rows, int8 rows differing from f32 630, seed rows differing 10/10
+=== RUN   TestKV8GateVsReference/D7-K8000
+cuda: prefill width 2048 rows (598 MiB of scratch; 1703 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[kv16-gate] D7 arm -kv f32 prompt 1/10 done, elapsed 7s
+[kv16-gate] D7 arm -kv f32 prompt 2/10 done, elapsed 15s
+[kv16-gate] D7 arm -kv f32 prompt 3/10 done, elapsed 22s
+[kv16-gate] D7 arm -kv f32 prompt 4/10 done, elapsed 29s
+[kv16-gate] D7 arm -kv f32 prompt 5/10 done, elapsed 37s
+[kv16-gate] D7 arm -kv f32 prompt 6/10 done, elapsed 44s
+[kv16-gate] D7 arm -kv f32 prompt 7/10 done, elapsed 51s
+[kv16-gate] D7 arm -kv f32 prompt 8/10 done, elapsed 59s
+[kv16-gate] D7 arm -kv f32 prompt 9/10 done, elapsed 1m6s
+[kv16-gate] D7 arm -kv f32 prompt 10/10 done, elapsed 1m13s
+cuda: prefill width 2048 rows (598 MiB of scratch; 2151 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[kv16-gate] D7 arm -kv f16 prompt 1/10 done, elapsed 7s
+[kv16-gate] D7 arm -kv f16 prompt 2/10 done, elapsed 14s
+[kv16-gate] D7 arm -kv f16 prompt 3/10 done, elapsed 22s
+[kv16-gate] D7 arm -kv f16 prompt 4/10 done, elapsed 29s
+[kv16-gate] D7 arm -kv f16 prompt 5/10 done, elapsed 36s
+[kv16-gate] D7 arm -kv f16 prompt 6/10 done, elapsed 43s
+[kv16-gate] D7 arm -kv f16 prompt 7/10 done, elapsed 50s
+[kv16-gate] D7 arm -kv f16 prompt 8/10 done, elapsed 58s
+[kv16-gate] D7 arm -kv f16 prompt 9/10 done, elapsed 1m5s
+[kv16-gate] D7 arm -kv f16 prompt 10/10 done, elapsed 1m12s
+cuda: prefill width 2048 rows (598 MiB of scratch; 2375 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[kv16-gate] D7 arm -kv i8 prompt 1/10 done, elapsed 1m4s
+[kv16-gate] D7 arm -kv i8 A/A rerun of prompt 1 done, elapsed 2m8s
+[kv16-gate] D7 arm -kv i8 prompt 2/10 done, elapsed 3m12s
+[kv16-gate] D7 arm -kv i8 prompt 3/10 done, elapsed 4m16s
+[kv16-gate] D7 arm -kv i8 prompt 4/10 done, elapsed 5m19s
+[kv16-gate] D7 arm -kv i8 prompt 5/10 done, elapsed 6m23s
+[kv16-gate] D7 arm -kv i8 prompt 6/10 done, elapsed 7m27s
+[kv16-gate] D7 arm -kv i8 prompt 7/10 done, elapsed 8m31s
+[kv16-gate] D7 arm -kv i8 prompt 8/10 done, elapsed 9m35s
+[kv16-gate] D7 arm -kv i8 prompt 9/10 done, elapsed 10m39s
+[kv16-gate] D7 arm -kv i8 prompt 10/10 done, elapsed 11m43s
+=== KV8 GATE D7 K=8000 precondition 5 (fit): -kv f32: resident, context 8128 positions, 1 KV slot(s), KV pools 939525112 B
+=== KV8 GATE D7 K=8000 precondition 5 (fit): -kv f16: resident, context 8128 positions, 1 KV slot(s), KV pools 469763064 B
+=== KV8 GATE D7 K=8000 precondition 5 (fit): -kv i8: resident, context 8128 positions, 1 KV slot(s), KV pools 242222072 B
+=== KV8 GATE D7 K=8000 (DECISION cell, set b, n=10 x 64 positions) i8 vs f32 (G4): base(meanAgree=93.12% HF=11 meanKL=0.055900) cand(meanAgree=92.97% HF=11 meanKL=0.060271) cand>=base on 7/10 prompts; critA=true critB=true critC=true KLratio=1.0782 => AMBIGUOUS — PARKED
+=== KV8 GATE D7 K=8000 (DECISION cell, set b, n=10 x 64 positions) i8 vs f16 (reported): base(meanAgree=92.34% HF=11 meanKL=0.059082) cand(meanAgree=92.97% HF=11 meanKL=0.060271) cand>=base on 9/10 prompts; critA=true critB=true critC=true KLratio=1.0201 => PASSES
+=== KV8 GATE D7 K=8000 (DECISION cell, set b, n=10 x 64 positions) f16 vs f32 (control): base(meanAgree=93.12% HF=11 meanKL=0.055900) cand(meanAgree=92.34% HF=11 meanKL=0.059082) cand>=base on 6/10 prompts; critA=true critB=true critC=true KLratio=1.0569 => AMBIGUOUS — PARKED
+=== KV8 GATE D7 K=8000 preconditions: int8 allocated 242221056 B (f32 939524096 B), A/A bit-identical over 64 rows, int8 rows differing from f32 630, seed rows differing 10/10
+--- PASS: TestKV8GateVsReference (1013.60s)
+    --- PASS: TestKV8GateVsReference/precondition4-exact-input-G2 (10.76s)
+        --- PASS: TestKV8GateVsReference/precondition4-exact-input-G2/llama-attnfa-tiny (2.05s)
+        --- PASS: TestKV8GateVsReference/precondition4-exact-input-G2/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (2.72s)
+        --- PASS: TestKV8GateVsReference/precondition4-exact-input-G2/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (5.85s)
+    --- PASS: TestKV8GateVsReference/S-K3900 (108.15s)
+    --- PASS: TestKV8GateVsReference/D7-K8000 (894.70s)
+PASS
+ledger: 13 device(s) released in this run

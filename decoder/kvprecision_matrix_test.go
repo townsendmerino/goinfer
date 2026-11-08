@@ -213,6 +213,18 @@ func renderKVMatrix(cells map[[3]string]kvMatrixCell) []byte {
 	w("or the load **refuses** and says why; `auto` is the backend's pick, with the reason when it is not the request. `TestKVPrecisionDelivered`\n")
 	w("checks every cell, loads every CPU cell and checks the cache it builds, and fails a cell that moves from delivered back to refused.\n")
 	w("Each family is one tiny fixture under `testdata/`; the CPU column is the CPU (host) cache, which a load uses when no resident runner is active.\n")
+	w("\n## Measured cost of the lossy cells\n\n")
+	w("- **int8 on CUDA** (the dense llama, mistral, qwen2, qwen3 and phi3 families): delivered on request, never an `auto` pick. G4 against an f32 cache,\n")
+	w("  teacher-forced on held-out prompt set B (nobara, RTX 2070 SUPER, driver 595.112.07, tree `7545a43cf`, 2026-11-08):\n")
+	w("  - qwen2.5-7b-instruct-q4_k_m at 8,000 keys: about f16's quality. Agreement -0.15 pt, hard flips 11 against 11, mean KL 1.078x: inside the\n")
+	w("    gate's ambiguous band (PARKED). f16 itself reads 1.057x there, and int8 against f16 is inside every bar (1.020x).\n")
+	w("  - qwen2.5-coder-1.5b-instruct-q4_k_m at 3,900 keys: a measurable loss (DOES NOT PASS). Agreement -1.40 pt, hard flips 19 against 9\n")
+	w("    (the bar is 15), mean KL 1.661x.\n")
+	w("  - Speed against f16, the default it would replace (same session, A B B A, served): decode 0.871x / 0.723x on the 1.5B and 0.954x / 0.883x on\n")
+	w("    the 7B at 128 / 512 keys (under the registered 0.95 bar except the 7B at 128), 0.99x at 4,096 and 16,384. A cold prefill is 3.4x to\n")
+	w("    4.7x slower at 4,096 keys and 20x to 26x slower at 16,384. It buys about twice f16's positions in the same VRAM.\n")
+	w("  - The record: `docs/measurements/cuda-kv-i8-2026-11/s4-registration.md`. Widening int8 to more CUDA families is parked (the task doc, P2).\n")
+	w("- **f16 on CUDA:** `docs/tasks/task-cuda-f16-kv-2026-10.md`.\n")
 	for _, p := range kvMatrixPaths {
 		w("\n## %s\n\n| family (fixture) |", p.name)
 		for _, v := range kvMatrixValues {

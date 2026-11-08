@@ -16,10 +16,10 @@
 | C6 | done | the §1.6 no-KV rule is built at the resolver; no Mamba-only family exists to load | `decoder/kvresolve.go:Architecture.keepsNoKV`; `internal/runtime/mem/kv_test.go` |
 | P1 | moved | KV4b, closed 2026-10-24 (`docs/tasks/task-kv-architecture-2026-10.md`); its leftover is P1r | `docs/measurements/kv4-cuda-2026-10-21.md` §3 |
 | P1r | open | build CUDA `--kv f16` for nemotron_h, today refused (Francis, 2026-11-08: build it); lfm2 is not CUDA-resident, so its cell is the resolver's word only | `docs/kv-precision-matrix.md`, the CUDA nemotron-tiny f16 cell |
-| P2 | active | S1 #735, S2 #755, S3a/S3b #759, #764 merged; S4 #768 open: the G4 S cell DOES NOT PASS, D7 and the speed check run 2026-11-08 on pinned 7545a43c; then S4 merges with its readings published (P2-D) | `docs/measurements/cuda-kv-i8-2026-11/scope.md`; `s4-registration.md` on #768 |
-| P2-S3c | decision | int8 on sliding-window layers and the windowed ring: Francis decides after D7 (2026-11-08) | `decoder/kvresolve.go:CUDAKVI8Decline` |
-| P2-S5 | decision | int8 for MoE, MLA, pairwise RoPE, VL and Gemma 4 on CUDA: Francis decides after D7 (2026-11-08) | the matrix's CUDA i8 cells "refused until its stage" |
-| P2-D | decision | after D7 and the speed check: what the help, banner and docs say about int8 | `docs/measurements/cuda-kv-i8-2026-11/scope.md` |
+| P2 | active | S1 #735, S2 #755, S3a/S3b #759, #764 merged; S4 #768 open with every reading in (pinned tree 7545a43c, 2026-11-08): G4 D7 AMBIGUOUS, PARKED on KL 1.078x (f16 itself 1.057x), S DOES NOT PASS; speed: short-context REGRESSION by the registered 0.95 bar (0.72x to 0.95x at 128 and 512 keys), 0.99x at depth, cold prefill 20x to 26x slower at 16K. Next: #768 merges (the coordinator) | `docs/measurements/cuda-kv-i8-2026-11/scope.md`, `s4-registration.md` |
+| P2-S3c | blocked | parked (Francis, 2026-11-08): int8 on sliding-window layers and the windowed ring. Trigger: someone asks for int8 on one of those families, or tack's window becomes the binding limit | `decoder/kvresolve.go:CUDAKVI8Decline` |
+| P2-S5 | blocked | parked (Francis, 2026-11-08): int8 for MoE, MLA, pairwise RoPE, VL and Gemma 4 on CUDA. Trigger: someone asks for int8 on one of those families, or tack's window becomes the binding limit | the matrix's CUDA i8 cells, "widening to other families is parked" |
+| P2-D | done | Francis, 2026-11-08: ship opt-in (never an auto pick) and publish both readings; the help text, the banner, `docs/flags.md`, `docs/server.md` and the matrix's "Measured cost" notes carry the quality and speed cost (#768) | `s4-registration.md`, "Owner decision" |
 | P3 | done | — | `docs/measurements/kv-precision-2026-10/p3a.md`, `p3b-1.md`, `p3b-2.md`, `d5.md` |
 | P4 | open | CPU f16 and i8 for MoE, MLA and own-loop families, and the CPU batcher (P3 has been done since 2026-10-22) | 38 matrix cells "until phase 4" |
 | P5 | blocked | parked: WebGPU f16 and i8; trigger: P4 lands, or someone asks for WebGPU f16 or i8 | no WebGPU refusals; the column is unsurveyed |
@@ -27,9 +27,9 @@
 | G1 | active | one identity test per new kernel, with its stage | `backend/cuda/kernels/kv8_identity_test.go` |
 | G2 | active | CUDA i8 dense: the exact-input G2 PASSES (owner's (c) on #755) and the cross-backend G2's FAIL is recorded; still to do: Metal f16 and i8 against the CPU, and P4's families | `docs/measurements/cuda-kv-i8-2026-11/scope.md` "S2, exact-input G2" |
 | G3 | open | CPU, Metal and CUDA i8 dense PASS; still to do: CUDA explicit f32 and f16 readback per family, on nobara, after S4's runs | `docs/measurements/kv-precision-2026-10/g3.md`; `TestKV8_deliveredBytes` |
-| G4 | active | CUDA i8 dense is S4 (#768); every other phase's G4 runs with that phase | `s4-registration.md` |
+| G4 | active | CUDA i8 dense read 2026-11-08 (S4, #768: D7 PARKED, S DOES NOT PASS); every other phase's G4 runs with that phase | `s4-registration.md` |
 | G5 | blocked | with each f16 widening | `docs/tasks/task-cuda-f16-kv-2026-10.md` |
-| speed | active | CUDA i8 dense: S4's speed check (2026-11-08) | `s4-registration.md` |
+| speed | active | CUDA i8 dense read 2026-11-08 (S4, #768: short-context REGRESSION by the registered bar; published); every other phase's runs with that phase | `s4-registration.md`, "Speed results" |
 | D1 | done | — | §6 |
 | D2 | done | — | §6 |
 | D3 | done | — | §6 |

@@ -1,0 +1,4 @@
+REFUSED: these checkpoints are on the ARCHIVE, which is not a bench surface on either machine:
+  /home/francis/models/gemma4-26b-gguf/gemma-4-26B_q4_0-it.gguf
+  /home/francis/models/deepseek-v2-lite
+The archive is a 5400 rpm SMR disk (and over SMB from the MacBook). A run that reads it measures that disk, not the engine, and does so WITHOUT ERRORING. Copy to the local bench set first (`models-pull <name>`) and re-run. See docs/benchmarks.md, 'Model storage'.
