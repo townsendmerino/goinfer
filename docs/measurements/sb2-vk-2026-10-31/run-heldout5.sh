@@ -61,7 +61,7 @@ loads=(
   "hf olmo3-7b-ctx2048 2048 - allenai/Olmo-3-7B-Instruct"
   "hf olmohybrid-7b-ctx4096 4096 - allenai/Olmo-Hybrid-7B"
   "hf smollm3-3b-ctx8192 8192 - HuggingFaceTB/SmolLM3-3B"
-  "copy granite4h-tiny-ctx8192 8192 1 /srv/models/granite-4.0-h-tiny-Q8_0.gguf"
+  "copy granite4h-tiny-ctx8192 8192 1 /srv/models/granite/granite-4.0-h-tiny-Q8_0.gguf"
 )
 for L in "${loads[@]}"; do
   read -r kind tag ctx ssm src <<<"$L"
