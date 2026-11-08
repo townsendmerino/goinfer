@@ -28,7 +28,7 @@ func fitCtxModel(t *testing.T, opts Options) (m *Model, fixed, perBlock int64) {
 		t.Fatal("llama-tiny prices no KV on metal; every case below would pass on nothing")
 	}
 	null := m.ResidentKVBytes("metal", KVBlockRows, false, false) - perBlock // the pools' null blocks, once per load
-	return m, p.DenseBytes + p.HostCopyBytes + null, perBlock
+	return m, p.DenseBytes + p.HostCopyBytes + p.ScratchBytes + null, perBlock
 }
 
 // budgetFor is the probe figure at which exactly `positions` positions of KV fit beside the weights and the margin.
