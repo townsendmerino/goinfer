@@ -109,6 +109,34 @@ class Rule(unittest.TestCase):
                       "swap that rose between machine_state and SwapWatch's baseline and receded is still a spike over the cell's start")
         self.assertIsNone(bench_peer.cell_end_void(start, end, 1000, peak_mb=100.0))
 
+    def test_apply_cell_end_check_uses_the_raw_peak_so_float_drift_is_not_growth(self):
+        old = bench_peer.swap_used_mb
+        for name, value in [("swap_used_mb", lambda: 100.6), ("swap_io_mb", lambda: (None, None)), ("free_mem_mb", lambda: 5000),
+                            ("_reclaimable_mb", lambda: 1), ("_loadavg", lambda: [1.0, 1.0, 1.0])]:
+            o = getattr(bench_peer, name)
+            setattr(bench_peer, name, value)
+            self.addCleanup(setattr, bench_peer, name, o)
+        # swap read 100.6 at machine_state, dipped to 100.4 at SwapWatch's baseline, returned to 100.6: zero growth over the cell's start,
+        # but 100.4 + round(0.2, 1) is 100.60000000000001
+        counts = {"swap": {"swap_base_mb": 100.4, "swap_growth_mb": 0.2, "swap_peak_mb": 100.6, "swap_void": None}}
+        res = (([1.0], None, counts), {"swap_mb": 100.6, "swapin_mb": None, "swapout_mb": None}, [])
+        self.assertIsNone(bench_peer.apply_cell_end_check(res, 0)[0][2]["swap"]["swap_void"])
+        # a peak above the cell's start voids it, from the same raw figure
+        counts = {"swap": {"swap_base_mb": 100.4, "swap_growth_mb": 20.2, "swap_peak_mb": 120.6, "swap_void": None}}
+        res = (([1.0], None, counts), {"swap_mb": 100.6, "swapin_mb": None, "swapout_mb": None}, [])
+        self.assertIn("grew +20.0 MB", bench_peer.apply_cell_end_check(res, 0)[0][2]["swap"]["swap_void"])
+
+    def test_swapwatch_reports_its_raw_peak(self):
+        old = bench_peer.swap_used_mb
+        self.addCleanup(setattr, bench_peer, "swap_used_mb", old)
+        reads = iter([100.4, 100.6, 100.6])
+        bench_peer.swap_used_mb = lambda: next(reads, 100.6)
+        bench_peer.swap_io_mb = bench_peer.swap_io_mb
+        w = bench_peer.SwapWatch()
+        w.poll_once()
+        res = w.stop()
+        self.assertAlmostEqual(res["swap_peak_mb"], 100.6, places=9)
+
     def test_the_end_check_honours_the_env_override_not_a_latch(self):
         start = {"swap_mb": 100.0}
         end = {"loadavg": [1.0, 1, 1], "available_mb": None, "swap_mb": 100.0}

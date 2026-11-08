@@ -610,6 +610,7 @@ class SwapWatch:
         self.swapin = None
         self.swapout = None
         self.peak = 0.0
+        self.peak_abs = self.base  # the highest absolute reading, kept raw: base + a rounded growth is not the reading
         self.unreadable = self.base is None  # swap could not be read at the start, or at a poll or the last read
         self.killed = None
         self.pgid = None
@@ -626,6 +627,7 @@ class SwapWatch:
             self.unreadable = True
             return
         self.peak = max(self.peak, now - self.base)
+        self.peak_abs = max(self.peak_abs, now)
         if self.kill_mb is not None and self.peak > self.kill_mb and self.pgid and not self.killed:
             self.killed = f"swap grew +{self.peak:.0f} MB (> {self.kill_mb:.0f}); server killed"
             try:
@@ -653,7 +655,7 @@ class SwapWatch:
             self.swapin = now_in - self.base_in
         if self.base_out is not None and now_out is not None:
             self.swapout = now_out - self.base_out
-        return {"swap_base_mb": self.base, "swap_growth_mb": round(self.peak, 1), "swap_killed": self.killed,
+        return {"swap_base_mb": self.base, "swap_growth_mb": round(self.peak, 1), "swap_peak_mb": self.peak_abs, "swap_killed": self.killed,
                 "swapin_mb": None if self.swapin is None else round(self.swapin, 1),
                 "swapout_mb": None if self.swapout is None else round(self.swapout, 1), "swap_void": self.void_reason()}
 
@@ -930,7 +932,7 @@ def apply_cell_end_check(result, need_mb):
     end = end_state()
     machine["end"] = end
     sw = (counts or {}).get("swap") or {}
-    peak = sw["swap_base_mb"] + sw["swap_growth_mb"] if sw.get("swap_base_mb") is not None and sw.get("swap_growth_mb") is not None else None
+    peak = sw.get("swap_peak_mb")  # the raw peak reading: base + the rounded growth drifts from it by float noise
     why = cell_end_void(machine, end, need_mb, peak)
     if why:
         counts = dict(counts or {})

@@ -18,6 +18,7 @@ be told from one taken under the old +2 GB rule.
 Both print the snapshot as one JSON line on stdout. 75 matches night.py's RETRY_RC, so a runner that exits with it is re-queued.
 """
 import json
+import math
 import os
 import re
 import signal
@@ -119,17 +120,17 @@ def start_void(snap, need_mb, cap=None, allow_unreadable_memory=False):
     read voids the start, with that reason (an unreadable core count with no explicit cap is the one skipped term: the cap cannot be
     computed, and the callers say so). need_mb None or 0 means the cell loads no model, so the memory clause does not apply."""
     ncores = snap.get("ncores")
+    load1, avail = _num(snap.get("load1")), _num(snap.get("available_mb"))
     if cap is None and ncores:
         cap = load_cap(ncores)
     # an unknown core count with no explicit cap is an unknown: the load term is skipped (callers say so), not a cap of 0.5
     if cap is not None:
-        if snap.get("load1") is None:
+        if load1 is None:
             return "load average unreadable"
-        if snap["load1"] > cap:
-            return (f"load {snap['load1']:.2f} above half of {ncores} cores" if ncores and cap == ncores / 2
-                    else f"load {snap['load1']:.2f} above the cap {cap:g}")
+        if load1 > cap:
+            return (f"load {load1:.2f} above half of {ncores} cores" if ncores and cap == ncores / 2
+                    else f"load {load1:.2f} above the cap {cap:g}")
     if need_mb:
-        avail = snap.get("available_mb")
         if avail is None:
             if allow_unreadable_memory:  # BENCH_ALLOW_NO_FREE_MEM=1: the documented override for a box with no memory reading
                 return None
@@ -151,6 +152,7 @@ def swap_verdict(growth_mb, swapin_mb, swapout_mb, env=None):
     outlim = env.get("BENCH_SWAPOUT_VOID_MB", "").strip()
     if growth_mb is None:
         return "swap unreadable: void"  # whichever bar is in force, a swap reading that failed voids the cell
+    growth_mb = round(growth_mb, 2)  # the readings' own resolution (sysctl: 0.01 MB): float noise between two equal readings is not growth
     if not lim and not inlim and not outlim:
         lim = "0"
     if lim:
@@ -187,9 +189,23 @@ def swap_void(start, end, peak_mb=None, env=None, peak_required=False):
     return swap_verdict(growth, delta("swapin_mb"), delta("swapout_mb"), env)
 
 
+def end_void(start, end, peak_mb=None, peak_required=False, env=None, allow_unreadable_memory=False):
+    """The reason a cell is void at its end, or None: swap (swap_void), then a guard reading the end could not take. The load average
+    is part of the record when the start could compute a cap (it had a core count); available memory when the start declared a model
+    load (need_mb) and allow_unreadable_memory (BENCH_ALLOW_NO_FREE_MEM=1) is not set."""
+    why = swap_void(start, end, peak_mb, env, peak_required)
+    if why:
+        return why
+    if start.get("ncores") and _num(end.get("load1")) is None:
+        return "load average unreadable at the cell's end"
+    if start.get("need_mb") and _num(end.get("available_mb")) is None and not allow_unreadable_memory:
+        return "available memory unreadable at the cell's end"
+    return None
+
+
 def _num(x):
-    """x as a float if it is a real number, else None (a string, null, a bool, a list: a reading that is not a reading)."""
-    return float(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else None
+    """x as a float if it is a finite number, else None (a string, null, a bool, a list, NaN, an infinity: a reading that is not a reading)."""
+    return float(x) if isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) else None
 
 
 def peak_since(samples, t0):
@@ -215,18 +231,35 @@ def peak_since(samples, t0):
 READ_TRIES, READ_DELAY = 20, 0.1  # about two seconds for a file a watcher is still writing; tests shorten them
 
 
-def read_json_retry(path, tries=None, delay=None):
-    """The JSON object in path, retrying while it is missing or does not parse (a file a watcher is still writing); None if it never
-    does, or is not an object."""
+def read_json_retry(path, tries=None, delay=None, ok=None):
+    """The JSON object in path, retrying while it is missing or does not parse (a file a watcher is still writing), and, with ok, while
+    ok(obj) is false (a file an earlier watcher left); None if it never parses to an object, else the last object read, ok or not."""
     tries, delay = tries or READ_TRIES, READ_DELAY if delay is None else delay
+    last = None
     for i in range(tries):
         try:
             obj = json.load(open(path))
-            return obj if isinstance(obj, dict) else None
+            if isinstance(obj, dict):
+                last = obj
+                if ok is None or ok(obj):
+                    return obj
         except (OSError, ValueError):
-            if i + 1 < tries:
-                time.sleep(delay)
-    return None
+            pass
+        if i + 1 < tries:
+            time.sleep(delay)
+    return last
+
+
+def peak_file_is_final(obj, t0):
+    """Whether a watcher's result file is the one for the cell that began at t0: it lost a reading (final either way), or its last
+    sample is at or after t0. A file whose samples all predate t0 is an earlier watcher's, not yet overwritten."""
+    if obj.get("unreadable") or _num(t0) is None:
+        return True
+    samples = obj.get("samples")
+    try:
+        return isinstance(samples, list) and bool(samples) and _num(samples[-1][0]) is not None and _num(samples[-1][0]) >= t0
+    except (TypeError, IndexError, KeyError):
+        return False
 
 
 class SwapSampler:
@@ -246,21 +279,24 @@ class SwapSampler:
         self._thread = None
 
     def sample(self):
+        t = time.time()  # stamped BEFORE the read: a slow read must not make a reading older than the cell's start look newer
         try:
             v = self.read()
         except Exception:
             v = None
-        self.observe(v)
+        self.observe(v, t)
 
-    def observe(self, v):
-        """Folds in a reading taken elsewhere (a job's end reading); None marks the sampler unreadable."""
+    def observe(self, v, t=None):
+        """Folds in a reading taken elsewhere (a job's end reading), stamped t (default: now); None or a non-finite value marks the
+        sampler unreadable."""
+        v = _num(v)
         if v is None:
             self.unreadable = True
             return
         self.n += 1
         # every reading is kept, repeats included: a repeat after `start` is the evidence that swap stayed where it was (one reading a
         # second is about 10,000 entries over a three-hour cell)
-        self.samples.append([time.time(), v])
+        self.samples.append([time.time() if t is None else t, v])
         if self.base is None:
             self.base, self.peak = v, v
         self.peak = max(self.peak, v)
@@ -358,7 +394,8 @@ def main(argv):
         start = read_json_retry(a.start_json) or {}  # a cell with no readable baseline is void, not a crash
         peak, peak_why = None, None
         if a.peak_json:
-            pk = read_json_retry(a.peak_json)  # retried while the watcher is still writing it; None if it never parses
+            # retried while the watcher is still writing it, and while it is an earlier watcher's file; None if it never parses
+            pk = read_json_retry(a.peak_json, ok=lambda o: peak_file_is_final(o, start.get("t_epoch")))
             if pk is None:
                 peak_why = "the watcher's peak file never parsed"
             elif pk.get("unreadable"):
@@ -369,7 +406,8 @@ def main(argv):
                 peak = peak_since(pk.get("samples"), start.get("t_epoch"))
                 if peak is None:
                     peak_why = "the watcher's swap samples unusable (none at or after the start, or not numbers, or no start time)"
-        why = swap_void(start, snap, peak, peak_required=bool(a.peak_json))
+        why = end_void(start, snap, peak, peak_required=bool(a.peak_json),
+                       allow_unreadable_memory=os.environ.get("BENCH_ALLOW_NO_FREE_MEM") == "1")
         if why and peak_why and "swap unreadable" in why:
             why = f"{why} ({peak_why})"
         snap["void"] = why
