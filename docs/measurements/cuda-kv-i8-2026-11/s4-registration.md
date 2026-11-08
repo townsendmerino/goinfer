@@ -79,3 +79,18 @@ this is not expected to need.
 3. The speed run.
 4. The reading goes into `docs/kv-precision-matrix.md`'s notes, the banner's int8 line and `scope.md`; S4 is then whole for the dense
    families, and the flag's remaining refusals (sliding window, other families) are S3c and S5.
+
+## Addendum, 2026-11-07 20:10 PST (logistics only; no bar, cell or prediction changed)
+
+The instrument smoke (step 1) stopped before loading anything (`s4-g4-smoke-S2prompts.log`): the set-B references for S and D7
+(`~/goinfer-logs/prefill-ref-b`, built 2026-09-20) have no `.key.json` sidecar. They predate the content-keyed reference cache, so
+`PrefillRefCurrentForTest` refuses them, as it should: a gate scores only a reference this tree would compute. The cache holds no
+qwen2.5-coder-1.5b or qwen2.5-7b entry. The reference's source hash covers `decoder/`, so the references must be built on the tree the gate
+runs on.
+- **S (1.5B, K=3900):** rebuilt now on this branch's tree (`TestPrefillGateReference`, `GOINFER_CPU_REF_MODELS=S`, `GOINFER_CPU_REF_KS=3900`,
+  set B; CPU, f32 weights and activations, exact attention; the timing lock held shared, `s4-ref-S-K3900.log`). The S cell runs on the same
+  tree when it is done.
+- **D7 (7B, K=8000):** the September build took about 25 minutes a prompt, so about 4 hours for ten. That is over the 2-hour line, so by
+  CLAUDE.md it belongs on the night queue, and nobara is quiet 21:45 to 02:00. Building it is a scheduling decision for the coordinator: a
+  night job after 02:00 on a pinned tree, or by day tomorrow. Until then D7, the decision cell, is not run, and S, the confirmation cell,
+  cannot stand in for it.
