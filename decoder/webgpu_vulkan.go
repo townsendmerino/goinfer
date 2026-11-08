@@ -1,15 +1,12 @@
-//go:build goinfer_testhooks
-
 package decoder
 
 import "github.com/townsendmerino/aikit/linalg"
 
-// WebGPU's device memory as Vulkan allocates it (M1′, docs/measurements/sb2-vk-2026-10-31/README.md), for the WebGPU slot census
-// (gpu's slotCensusLine) through WebGPUDeviceBuffersForTest; the planner does not price it yet (docs/tasks/task-subsystems-2026-10.md,
-// "SB2-vk"): wgpu-native's gpu-allocator
+// WebGPU's device memory as Vulkan allocates it (M1′, docs/measurements/sb2-vk-2026-10-31/README.md): wgpu-native's gpu-allocator
 // places each buffer into 128 MiB, then 256 MiB, device-local blocks, first fit, newest block first, and gives a buffer larger than
 // the current block size a block of its own; it keeps one 64 MiB host-visible block for the upload staging; and the device itself
-// holds 144 MiB. One card and driver so far (nobara's
+// holds 144 MiB. The planner prices a webgpu load as that, not as the sum of its buffers, and the WebGPU slot census predicts
+// newKVSlot over the same list (WebGPUDeviceBuffersForTest). One card and driver so far (nobara's
 // RTX 2070 SUPER on 595.112.07): the constants are re-measured, not carried, on another.
 const (
 	webgpuVkInternal  = 512<<10 + 256 + 256 // wgpu-core's own per-device buffers
@@ -85,16 +82,11 @@ func wmBuffers(w *linalg.WeightMat) []int64 {
 	return out
 }
 
-// webgpuLayerCaches is layer i's K and V caches on a WebGPU build at ctx: on an attention layer that owns its cache (a Gemma 4
-// KV-shared layer aliases its source's). An MLA layer's latent cache and a DeltaNet or Mamba-2 layer's recurrent state are not
-// listed; the held-back planner change adds them with the loads that judge them (docs/tasks/task-subsystems-2026-10.md, "SB2-vk").
-func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) []int64 {
-	if mixer, _ := m.ResidentLayerOps(i); mixer != MixerAttention || ctx <= 0 {
-		return nil
-	}
-	if m.w.arch != nil && m.w.arch.gemma4KVSrcAt(i) != i {
-		return nil
-	}
+// webgpuLayerCaches is layer i's per-sequence buffers on a WebGPU build at ctx, as the build allocates them: K and V on an
+// attention layer that owns its cache (a Gemma 4 KV-shared layer aliases its source's), the latent cache on an MLA layer, and the
+// conv window and recurrent state on a DeltaNet or Mamba-2 layer. kv is false for the recurrent state, which is not context and which
+// ResidentKVBytes does not price.
+func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, kv bool) {
 	perElem := 4.0
 	switch {
 	case kvI8:
@@ -102,17 +94,51 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) []int64 {
 	case kvF16:
 		perElem = 2
 	}
-	var kvDim int
-	if m.w.arch != nil {
-		kvDim = m.w.arch.kvDimAt(i)
-	} else {
-		kvDim = m.KVHeadsAtResident(i) * m.HeadDimAtResident(i)
+	mixer, _ := m.ResidentLayerOps(i)
+	switch mixer {
+	case MixerAttention:
+		if m.w.arch != nil && m.w.arch.gemma4KVSrcAt(i) != i {
+			return nil, true
+		}
+		var kvDim int
+		if m.w.arch != nil {
+			kvDim = m.w.arch.kvDimAt(i)
+		} else {
+			kvDim = m.KVHeadsAtResident(i) * m.HeadDimAtResident(i)
+		}
+		if kvDim == 0 || ctx <= 0 {
+			return nil, true
+		}
+		c := int64(float64(kvDim) * perElem * float64(ctx))
+		return []int64{c, c}, true
+	case MixerMLA:
+		// The latent row (kv_lora_rank + the rope key) is f32 at any precision. kvDimAt is 0 on a layer with no latent, such as a
+		// Kimi Delta Attention layer that ResidentLayerOps reports as MLA.
+		if m.w.arch == nil || ctx <= 0 {
+			return nil, true
+		}
+		if d := m.w.arch.kvDimAt(i); d > 0 {
+			return []int64{int64(ctx) * int64(d) * 4}, true
+		}
+		return nil, true
+	case MixerDeltaNet:
+		convK, hk, hv, nk, nv, _, ok := m.Qwen35ResidentParams()
+		if !ok {
+			return nil, false
+		}
+		return []int64{int64(convK-1) * int64(2*nk*hk+nv*hv) * 4, int64(nv*hv*hk) * 4}, false
+	case MixerMamba:
+		nH, hd, dS, nG, dConv, _, _, _, _, ok := m.GraniteResidentParams()
+		if !ok {
+			var nok bool
+			nH, hd, dS, nG, dConv, _, _, nok = m.NemotronResidentParams()
+			if !nok {
+				return nil, false
+			}
+		}
+		return []int64{int64(dConv-1) * int64(nH*hd+2*nG*dS) * 4, int64(nH*hd*dS) * 4}, false
 	}
-	if kvDim == 0 {
-		return nil
-	}
-	c := int64(float64(kvDim) * perElem * float64(ctx))
-	return []int64{c, c}
+	return nil, false
 }
 
 // webgpuDeviceBuffers is the buffer list a WebGPU resident build of m makes at ctx, in its creation order: the LM head (the token
@@ -148,9 +174,11 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 	_, nLayers, _, _, _, _, _ := m.Dims()
 	for i := range w.Layers {
 		if i < nLayers {
-			bufs := m.webgpuLayerCaches(i, ctx, kvF16, kvI8)
+			bufs, kv := m.webgpuLayerCaches(i, ctx, kvF16, kvI8)
 			slot0 = append(slot0, bufs...)
-			slotKV = append(slotKV, bufs...)
+			if kv {
+				slotKV = append(slotKV, bufs...)
+			}
 		}
 		l := &w.Layers[i]
 		mats(&l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GProj, &l.GateProj, &l.UpProj, &l.DownProj, &l.Router, &l.SharedGate, &l.PLEGate, &l.PLEProj)
@@ -190,4 +218,12 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 	}
 	slot0 = append(slot0, webgpuVkScratch)
 	return slot0, slotKV, weights
+}
+
+// webgpuBlockRounding is what a WebGPU load holds at ctx beyond what the plan already prices on its own lines (the weights, the
+// context, and one slot's recurrent state): gpu-allocator's blocks over webgpuDeviceBuffers, less those three. It carries the block
+// rounding, the scratch and wgpu-core's own buffers, so the plan's total is M1′'s: the blocks plus webgpuVkFixed.
+func (m *Model) webgpuBlockRounding(ctx int, kvF16, kvI8 bool) int64 {
+	slot0, _, weights := m.webgpuDeviceBuffers(ctx, kvF16, kvI8)
+	return webgpuVkBlocks(slot0) - weights - m.ResidentKVBytes("webgpu", ctx, kvF16, kvI8) - m.stateBytes("webgpu")
 }

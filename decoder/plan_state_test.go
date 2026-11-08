@@ -200,7 +200,7 @@ func TestPlan_expertBiasesOnTheLineThatHoldsThem(t *testing.T) {
 			t.Errorf("%s: %d fixed on experts with %d of biases", b, l.ExpertBytesFixed, bias)
 		}
 	}
-	if got, want := m.ResidentDenseWeightBytesFor("webgpu")-m.ResidentDenseWeightBytes(), bias-m.kquantSavings("webgpu")-m.mambaProjSavings("webgpu"); got != want {
+	if got, want := m.ResidentDenseWeightBytesFor("webgpu")-m.ResidentDenseWeightBytes(), bias-m.kquantSavings("webgpu")-m.mambaProjSavings("webgpu")-m.residentHostSideBytes("webgpu"); got != want {
 		t.Errorf("webgpu's dense figure holds %d past the tensors, want %d", got, want)
 	}
 	// Metal's autoMoESlots reads these: one more slot costs an expert alone, and what is left at no slots holds the biases.

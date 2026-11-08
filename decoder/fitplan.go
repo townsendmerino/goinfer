@@ -227,7 +227,15 @@ func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceL
 			l.CtxCeiling = MetalFitDefaultCtx
 		}
 	case "webgpu":
+		// Vulkan's blocks, not the buffers' sum (webgpu_vulkan.go): the device and the kept host block are fixed, and the block
+		// rounding moves with the context, so it rides on the KV term and the context is searched.
 		l.CtxCeiling = WebGPUCtxCeiling(kvF16, kvI8)
+		l.FixedSlack += webgpuVkFixed
+		l.CtxSearch = true
+		l.KV = func(ctx int) int64 {
+			return m.ResidentKVBytes(backend, ctx, kvF16, kvI8) + m.webgpuBlockRounding(ctx, kvF16, kvI8)
+		}
+		return l
 	case "cuda":
 		kvF16, kvI8 = m.residentKVFlags(backend)
 		l.CtxSearch = true
