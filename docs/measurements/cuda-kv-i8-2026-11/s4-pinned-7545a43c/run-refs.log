@@ -1,0 +1,8 @@
+refs S K=3900 start 2026-11-08 02:51:23 PST load 1.06 0.45 0.56
+refs S K=3900 end 2026-11-08 03:03:18 PST exit 0
+refs D7 K=8000 start 2026-11-08 03:03:18 PST load 8.94 11.93 7.90
+refs D7 K=8000 end 2026-11-08 06:58:54 PST exit 1
+REFS FAILED: D7
+refs D7 K=8000 resume start 2026-11-08 06:59:40 PST load 6.97 13.03 15.03
+refs D7 K=8000 resume end 2026-11-08 07:43:33 PST exit 0
+refs DONE

@@ -160,3 +160,66 @@ D7, the decision cell, waits on its references (the addendum above).
 - **Expected:** references about 03:00 to 07:15; gate about 07:15 to 09:15; speed check about 09:15 to 12:15 PST. Times are re-stated in
   the status file as each step starts.
 - No bar, cell or prediction changes. A refusal (fit, memory) stops the run and is reported, never bypassed.
+
+## G4 results on the pinned tree `7545a43cf`, 2026-11-08 (nobara, RTX 2070 SUPER, driver 595.112.07)
+
+All five preconditions were checked in the gate binary, built once from the pinned tree. Logs and the run scripts are in
+`s4-pinned-7545a43c/`. Checkpoints came from `~/models` on NVMe.
+
+**References, set B, rebuilt on the pinned tree** (`run-refs.log`):
+- S at K=3900: 10 of 10, 714 s.
+- D7 at K=8000, pass 1 (`refs-D7-K8000-pass1.log`): 8 of 10 stored, each about 3 h 55 m with 8 running in parallel. The test's own deadline
+  guard then declined the last 2, which would have ended past its 6 h timeout, and exited 1. That is the reference test's resume path, not a
+  fit or memory refusal.
+- The resume (`refs-D7-K8000.log`) found the 8 cached and computed the last 2 in 43 minutes. PASS.
+- The 4-hour estimate was low: about 4 h 40 m of CPU in all.
+
+**The gate** (`gate.log`):
+- It started at 07:43 at a 1-minute load of 10.6, the tail of the reference build. These are fidelity cells, not timed ones, and 61 GB was
+  available.
+- It ran 1,014 s: precondition 4 took 11 s, S 108 s and D7 895 s. The "70 to 120 minutes" estimate for D7 was high by about 5x: int8's slow
+  prefill on S did not scale with the key count as feared.
+
+### D7 (qwen2.5-7b-instruct-q4_k_m, K=8000, the decision cell): **AMBIGUOUS — PARKED**
+
+| reading | base | int8 | criteria |
+|---|---|---|---|
+| **G4: int8 against f32** | agreement 93.12 %, hard flips 11, mean KL 0.055900 | 92.97 %, 11, 0.060271 | (a) 11 <= 11 + 2*sqrt(11) = 17.6: passes. (b) -0.15 pt, inside -1.0 and not within its last 0.2 pt, and int8 >= f32 on 7 of 10: passes. (c) KL ratio 1.0782: in the 1.05 to 1.10 band. **AMBIGUOUS, PARKED** |
+| int8 against f16 (reported) | 92.34 %, 11, 0.059082 | 92.97 %, 11, 0.060271 | ratio 1.020, +0.63 pt, int8 >= f16 on 9 of 10: inside all three bars (no verdict of its own) |
+| control: f16 against f32 | 93.12 %, 11, 0.055900 | 92.34 %, 11, 0.059082 | (a) passes; (b) -0.78 pt, just outside its last 0.2 pt; (c) KL ratio 1.0569, in the band. **PARKED** on (c) |
+
+Preconditions:
+1. Vacuity:
+   - int8 allocated 242,221,056 B against f32's 939,524,096 B. That is exactly 1 B an element plus 8 B of scales per position, head and
+     layer, over the 8,192 pool rows that 8,128 positions round up to in 64-row blocks.
+   - The flash lane's `_kv8` kernel launched.
+   - int8 rows differ from f32's at 630 positions, every prompt.
+2. A/A: bit-identical over 64 rows.
+3. Seed row: compared, and it differs on 10 of 10 prompts (reported).
+4. The exact-input G2 passed at the binary's commit: `llama-attnfa-tiny`, 0.5B, 1.5B.
+5. Fit: each arm's build sized it resident, with 1 slot, a context of 8,128 positions, and KV pools of 939,525,112 B (f32), 469,763,064 B
+   (f16) and 242,222,072 B (i8).
+
+### S (qwen2.5-coder-1.5b, K=3900, the confirmation cell): **DOES NOT PASS**, now with every precondition
+
+The re-read reproduces the 2026-11-07 20:21 reading exactly: every agreement, flip count and KL figure in the table above is unchanged.
+- int8 against f32: 89.69 % / 19 / 0.086818 against 91.09 % / 9 / 0.052265, ratio 1.661. All three fail.
+- The f16 control passes (ratio 1.0057).
+- Preconditions 4 and 5 now hold, so this reading is no longer provisional.
+
+### Reading
+
+- **By the rule, D7 is parked, not passed.** int8 KV on the 7B costs nothing measurable on flips or agreement against f32. Its KL ratio of
+  1.078 sits in the band where this gate does not decide. A re-run needs a named mechanism, not a re-roll.
+- **The f16 control parks in the same band at D7** (1.057). Against f16, the default it would replace, int8 sits inside every bar
+  (ratio 1.020).
+- **On the 1.5B, int8's cost is clear** (S, all three bars fail).
+- **What this decides, by the contract (item 4):** `--kv i8` stays delivered on request, and no default moves. The docs and the banner say
+  int8 KV on CUDA is lossy: measurably on the 1.5B, and within the gate's ambiguous band on the 7B.
+
+**Predictions scored:**
+- "S passes (0.65)": wrong.
+- "D7 reads FAIL or PARKED (0.6)": right, PARKED.
+- "int8's mean KL against f32 is over 1.10x at D7 (0.5)": wrong, 1.078.
+
+**Speed check:** running since 08:01 (step 3). Its results go in their own section.
