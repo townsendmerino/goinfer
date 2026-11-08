@@ -4,6 +4,9 @@ package metal
 
 import (
 	"context"
+	"math"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -127,5 +130,107 @@ func greedyChainGenerate(t *testing.T, tied, noRoom bool, sp decoder.SamplingPar
 	}
 	if !slices.Equal(got.turn1, ref.turn1) || !slices.Equal(got.turn2, ref.turn2) {
 		t.Fatalf("two turns: the chain's turns %v / %v differ from the full-logits path's %v / %v", got.turn1, got.turn2, ref.turn1, ref.turn2)
+	}
+}
+
+// TestHLR_gatedChainMatchesTodaysPath is HL-R2 (docs/measurements/hl-2026-11/registration.md): greedy Generate on Metal under a gated
+// processor, with the chain against greedyChainOff (today's path: ForwardArgmax while the gate is closed, Forward while it is open).
+// The gate opens twice and, on every third open step, the processor bans the row's argmax, so the host's pick differs from the
+// device's. The tokens must be equal, and the processor must run on the same steps. With the chain on, it serves the closed steps (a
+// chained forward for every emitted token that is not an open step's) and at least one opening must have stopped it, or the cell is
+// void. Cells: the committed fixture, and the 0.5B and 1.5B bench checkpoints from ~/models (the 1.5B as its Metal .giw).
+func TestHLR_gatedChainMatchesTodaysPath(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	home, _ := os.UserHomeDir()
+	text := func(n int) []int {
+		p := make([]int, n)
+		for i := range p {
+			p[i] = 1000 + (i*37+5)%15000
+		}
+		return p
+	}
+	for _, c := range []struct {
+		name, path string
+		prompt     []int
+	}{
+		{"fixture", mc3ChainFixture, mc3ChainPrompt(5, 24)},
+		{"0.5b", filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), text(48)},
+		{"1.5b", filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw"), text(48)},
+	} {
+		t.Run(c.name, func(t *testing.T) { hlrCell(t, c.path, c.prompt) })
+	}
+}
+
+func hlrCell(t *testing.T, path string, prompt []int) {
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("%s: %v", path, err)
+	}
+	const n = 64
+	open := func(gen []int) bool { l := len(gen); return (l >= 5 && l < 12) || (l >= 30 && l < 40) }
+	type arm struct {
+		ids          []int
+		calls, bans  int
+		served       int
+		chainStopped int
+	}
+	run := func(off bool) arm {
+		greedyChainOff = off
+		defer func() { greedyChainOff = false }()
+		m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 1})
+		if err != nil {
+			t.Fatalf("load %s: %v", path, err)
+		}
+		defer m.Close()
+		a, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok {
+			t.Fatalf("no metal resident: %s", m.ResidentDecline())
+		}
+		if !off && !a.GreedyChainAvailable() {
+			t.Fatalf("%s cannot run the greedy chain (%s): the cell would test nothing", filepath.Base(path), a.r.greedyChainWhyNot())
+		}
+		var o arm
+		sp := decoder.SamplingParams{
+			LogitProcessor: func(gen []int, logits []float32) {
+				if o.calls++; o.calls%3 == 0 {
+					logits[argmaxF(logits)] = float32(math.Inf(-1))
+					o.bans++
+				}
+			},
+			LogitProcessorGate: open,
+		}
+		s0 := a.r.chainServed
+		ch, g := m.Generate(context.Background(), prompt, n, sp)
+		for id := range ch {
+			o.ids = append(o.ids, id)
+		}
+		if err := g.Err(); err != nil {
+			t.Fatalf("generate (chain off %v): %v", off, err)
+		}
+		o.served = a.r.chainServed - s0
+		return o
+	}
+	ref, got := run(true), run(false)
+	t.Logf("%s: %d tokens; chain on: %d served, %d processor calls (%d bans); off: %d served, %d calls",
+		filepath.Base(path), len(got.ids), got.served, got.calls, got.bans, ref.served, ref.calls)
+	if ref.served != 0 {
+		t.Fatalf("greedyChainOff still served %d tokens", ref.served)
+	}
+	if !slices.Equal(got.ids, ref.ids) {
+		t.Fatalf("with the chain the tokens are %v, without it %v", got.ids, ref.ids)
+	}
+	if got.calls != ref.calls || got.bans != ref.bans {
+		t.Fatalf("the processor ran %d times (%d bans) with the chain and %d (%d) without", got.calls, got.bans, ref.calls, ref.bans)
+	}
+	if got.bans == 0 {
+		t.Fatalf("no open step banned the argmax: the cell would not show a host pick that differs from the device's")
+	}
+	// the chain serves the closed steps: every emitted token that is not an open step's, less the one from the prompt's logits
+	if want := len(got.ids) - got.calls - 1; got.served < want {
+		t.Fatalf("the chain served %d tokens' forwards, want at least %d (%d emitted, %d open steps)", got.served, want, len(got.ids), got.calls)
+	}
+	if got.served >= len(got.ids) {
+		t.Fatalf("the chain served %d of %d emitted tokens: an open step stayed on the chain", got.served, len(got.ids))
 	}
 }

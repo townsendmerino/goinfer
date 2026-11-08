@@ -1671,12 +1671,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) &&
 		m.knobs.get(knobNoGreedyFastpath) == ""
 	// The greedy chain (ResidentGreedyChain): the same tokens with the next token's forward queued on the device before the host
-	// has seen this one. Only with no processor at all (a gated one would need the full row mid-chain), no adapter, and where the
-	// embedding lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this
-	// generation decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so
-	// fastGreedy stays the path for those.
+	// has seen this one. With no processor, or a gated one while its gate is closed (outside MC3: a step the gate opens stops the
+	// chain and takes the full-logits path below, which the chain would otherwise skip), no adapter, and where the embedding
+	// lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this generation
+	// decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so fastGreedy
+	// stays the path for those.
 	chainRF, hasChain := m.resident.(ResidentGreedyChain)
-	useChain := useGPU && resCost == nil && hasChain && sp.LogitProcessor == nil && lora == nil &&
+	useChain := useGPU && resCost == nil && hasChain && (sp.LogitProcessor == nil || (gated && mc3 == nil)) && lora == nil &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) && m.knobs.get(knobNoGreedyFastpath) == "" &&
 		m.embedIsTableRow() && chainRF.GreedyChainAvailable()
 	if useChain && mc3 == nil {
@@ -1944,7 +1945,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			residentCall := func() error {
 				var ferr error
 				if needFull {
-					// The gated processor needs this position's full logits (it is about to mask them).
+					// The gated processor needs this position's full logits (it is about to mask them). A chain still open stops
+					// first: it has queued the forward for this position, which Forward then rewrites, and it reopens at the
+					// next closed step.
+					stopChain()
 					logits, ferr = m.resident.Forward(emb, pos)
 					viaForward = true
 				} else if useChain && chainTok {
