@@ -36,17 +36,27 @@ the closed steps' forwards. Checkpoints from `~/models`: `qwen2.5-coder-1.5b-ins
 | model | (a) closed: the prose part | (b) toolcall: the gate open for the last 48 tokens |
 |---|---|---|
 | Qwen2.5-Coder-1.5B | **1.1351** (1.0315 to 1.1729; 9 of 9 pairs above 1); today 88.9, HL-R 101.1 tok/s | **1.0519** (1.0026 to 1.0992; 9 of 9); today 92.6, HL-R 97.8 tok/s |
-| Qwen2.5-7B | not counted: both cells were VOID by the guard | not counted |
+| Qwen2.5-7B | not counted by day: both cells VOID by the guard; see the override cells below | |
 
 **The 7B cells did not run by day.** The 7B's need is 6,596 MiB (its 4,466 MiB file plus 2 GB); reclaimable memory was 6,095 MiB when its
 first cell came up and fell to 3,900 to 4,700 MiB (the load average peaked at 8.6) while the machine's other work ran. The runner waited six
-60-second attempts per cell and started neither; it exited non-zero, as registered. They are queued for the night
-(`hlr-r3-7b`, not before 22:00, pinned binary `1eb6ed26`, re-queued on exit 75 until 05:00). Until they read, the 7B has only the superseded
-reading above, which is not counted.
+60-second attempts per cell and started neither; it exited non-zero, as registered.
+
+**The 7B cells, taken under Francis's override of the free-memory void, 2026-11-08 03:12.** Francis ("Force the Mac runs", relayed by the
+coordinator) relaxed the free-memory void from the file size plus 2 GB to the file size; the load cap of 4.0 and the load's own fit guard
+stayed. `run-hlr-r3-override.sh` (a copy of the runner with that one change; its provenance carries an `OVERRIDE` line) ran the same pinned
+binary `1eb6ed26` under the exclusive lock on 2026-11-08 from 03:14:06 to 03:19:50 PST, at the Mac's idle hour. These two cells are **not registered
+cells** and are reported separately: the first (closed) started with reclaimable memory at 5,630 MiB, under the registered 6,596; the
+second (toolcall) started at 7,331 MiB, above it, with load 2.44. Swap in use was 913 MB of 2,048 MB, unchanged. Identity held in every rep, and the
+chain served exactly the closed steps' forwards in every rep. Records: `r3-7b-override-2026-11-08/`.
+
+| model | (a) closed: the prose part | (b) toolcall: the gate open for the last 48 tokens |
+|---|---|---|
+| Qwen2.5-7B (override) | **1.0188** (1.0063 to 1.0427; 9 of 9 pairs above 1); today 32.5, HL-R 33.1 tok/s | **1.0226** (0.9747 to 1.0385; 8 of 9); today 32.3, HL-R 33.0 tok/s |
 
 **Against the registered bands** (Ship: median (a) >= 1.02 and (b) >= 1.00; Park: (a) in [1.00, 1.02); Off: (a) < 1.00 or (b) < 1.00):
 - **1.5B: Ship.** (a) 1.1351 and (b) 1.0519.
-- **7B: open** until the night run reads.
+- **7B (under the override): Park.** (a) 1.0188 is in the park band, 0.0012 under the ship line; (b) 1.0226 clears 1.00 on the median, with one pair below 1 (0.9747).
 
 **The registration does not say how the two models combine.** The 2026-10-14 reading of the rows-and-redo form gave one verdict because
 (b) was under 1.00 on both. If the 7B parks, the models differ, and read model by model the 1.5B ships and the 7B parks; read as "both must

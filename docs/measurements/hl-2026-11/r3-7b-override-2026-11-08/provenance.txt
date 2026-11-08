@@ -1,0 +1,13 @@
+rev:      1eb6ed26
+binary:   /Users/francistownsend-merino/goinfer-bench/hl-2026-11/metal-tagged-1eb6ed26.test (sha256 03ad66fb41f724f3)
+started:  2026-11-08 03:14:06 PST
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     3.54 2.63 2.22
+memory:   reclaimable 5628 MiB; swap total = 2048.00M  used = 913.38M  free = 1134.62M  (encrypted)
+therm:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+OVERRIDE: Francis 2026-11-08 03:12 ("Force the Mac runs"): the registered free-memory void (file size + 2 GB) is relaxed to file size; readings are reported under this override, not as registered cells
+== 7b-closed — 03:14:06 load 3.54, reclaimable 5630 MiB (need 4548), swap: total = 2048.00M  used = 913.38M  free = 1134.62M  (encrypted)
+== 7b-closed — finished 03:16:58 rc=0, swap: total = 2048.00M  used = 913.38M  free = 1134.62M  (encrypted), reclaimable 7331 MiB
+== 7b-toolcall — 03:16:59 load 2.44, reclaimable 7331 MiB (need 4548), swap: total = 2048.00M  used = 913.38M  free = 1134.62M  (encrypted)
+== 7b-toolcall — finished 03:19:50 rc=0, swap: total = 2048.00M  used = 913.38M  free = 1134.62M  (encrypted), reclaimable 7147 MiB
+finished: 2026-11-08 03:19:50 PST; 2 of 2 cells counted
