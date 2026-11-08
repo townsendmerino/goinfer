@@ -24,7 +24,7 @@ func layerShapeOf(a *Architecture, l int, ops []op) program.LayerShape {
 		case opShortConv:
 			s.ShortConv.Dim, s.ShortConv.LCache = a.lfm2.ConvDim, a.lfm2.ConvLCache
 		case opPLE:
-			s.PLE = a.gemma4.HiddenSizePerLayerInput
+			s.PerLayerEmbed = a.gemma4.HiddenSizePerLayerInput
 		case opGemma4MoE:
 			s.Gemma4MoE.Experts, s.Gemma4MoE.TopK, s.Gemma4MoE.ExpertFFN = a.MoE.NumExperts, a.MoE.TopK, a.MoE.IntermediateDim
 		}

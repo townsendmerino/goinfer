@@ -29,12 +29,13 @@ func TestMM5_noFamilySwitchInPricing(t *testing.T) {
 
 // TestMM5b_decodeScratchNamesNoFamily is G-MS4 (docs/tasks/task-forward-architecture-2026-10.md §4.9c): Metal's decode scratch is
 // priced from the operations' per-row declarations and the head's (program.Buffers, program.HeadBuffers), so its pricing function
-// names no mixer, operation kind of one, FFN form, family or family parameter. Metal's own terms are read by an entry's name.
+// names no mixer, operation kind of one, FFN form, family or family parameter. Metal's own terms are read by a row's name
+// (metalRowTerms). A layer whose V is its K (no v projection, a shape the weights fix) is read from the weights.
 func TestMM5b_decodeScratchNamesNoFamily(t *testing.T) {
-	banned := []string{"ResidentLayerOps", "Mixer", "KVSrcAtResident", "HeadDimAtResident", "KVHeadsAtResident", "VFromK",
+	banned := []string{"ResidentLayerOps", "Mixer", "KVSrcAtResident", "HeadDimAtResident", "KVHeadsAtResident",
 		"Qwen35", "Nemotron", "MLA", "Gemma4", "GptOss", "DeltaNet", "Mamba", "KDA", "ShortConv", "PLE", "MoEResident", "QKNormWhole",
 		"NonGatedMLP", "OpAttention", "OpGatedAttn", "Ffn", ".qwen35", ".lfm2", ".kda", ".granite", ".nemotron", ".gemma4", ".mla"}
-	scanPricingBodies(t, map[string][]string{"metal_scratch.go": {"MetalDecodeScratchBytes"}}, banned,
+	scanPricingBodies(t, map[string][]string{"metal_scratch.go": {"MetalDecodeScratchBytes", "metalDecodeRows"}}, banned,
 		"decode's scratch is priced from the operations' per-row declarations and the head's, not the family")
 }
 

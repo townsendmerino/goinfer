@@ -1,6 +1,8 @@
 package decoder
 
 import (
+	"strings"
+
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -23,149 +25,194 @@ func metalAttnFAPartialFloats(hd, nH, nKV int) int {
 }
 
 // MetalDecodeScratchBytes is what a Metal resident build of m leases on the scratch line for decode, the most it holds before a
-// ForwardBatch grows its rows: the decode list (backend/metal's decodeShape.buffers), the 16 batch rows (batchRows) and the greedy
-// chain's buffers with a sampled chain's (chainBuffers), at slots expert slots per layer (0 = every expert resident), as
-// ResidentNeedBytes takes them. TestMemGate_metal holds it to the build's own list on every row. 0 for a model with no hidden or
-// vocabulary width.
+// ForwardBatch grows its rows, at slots expert slots per layer (0 = every expert resident), as ResidentNeedBytes takes them: the
+// decode list (backend/metal's decodeShape.buffers), the 16 batch rows (batchRows), and the greedy chain's buffers with a sampled
+// chain's (chainBuffers). It is Metal's rule on the program's per-row declarations (metalDecodeRows): each declared row once, at the
+// widest layer that declares it, and Metal's own terms beside them, read by the row's name (metalRowTerms). TestMemGate_metal holds
+// it to the build's own list on every row. 0 for a model with no hidden or vocabulary width.
 func (m *Model) MetalDecodeScratchBytes(slots int) int64 {
-	H, nL, nH, _, _, I, V := m.Dims()
+	H, _, nH, _, _, I, V := m.Dims()
 	if H <= 0 || V <= 0 {
 		return 0
 	}
+	d := m.metalDecodeRows(H, V)
+	W := d.widest
 	var f32, bytes, u32s int64 // f32 elements, bytes, and 4-byte uniforms
-	w := m.Weights()
+	for name, n := range W {
+		if !metalSizedByRule[name] {
+			f32 += int64(n)
+		}
+		if t := metalRowTerms[name]; t != nil {
+			a, b, c := t(m, d, slots)
+			f32, bytes, u32s = f32+a, bytes+b, u32s+c
+		}
+	}
+	// The attention rows at the widest attention layer (4 where none runs: sized, never dispatched), and the FFN's fused gate | up at
+	// the widest of every gate and up declared and the model's own width.
+	nHhd, kvDim := W["q"], max(W["k"], W["v"])
+	if nHhd == 0 {
+		nHhd, kvDim = 4, 4
+	}
+	gu := max(I, W["gate"], W["up"], W["shared-gate"], W["shared-up"])
+	q4k := m.Quant() == "q4k"
+	aq := H
+	if q4k {
+		aq = 4 * H           // the q4k lane's head reads the f32 final norm from aq's slot 0
+		f32 += int64(H + gu) // the lane's f32 activation rows
+	}
+	// q | k | v, gate | up, the context, a sublayer's second output row, the four activation scales, the argmax partials and token,
+	// and the sampler's block keys and indices and its draw.
+	f32 += int64(nHhd + 2*kvDim + 2*gu + nHhd + W["a"] + 4 + 2*((V+7)/8) + 1 + 2*((V+1023)/1024) + 1)
+	// A sublayer input's int8 rows (attention's and the FFN's) and their f16 twins; the context's int8 row and f16 twin; the
+	// activated FFN row's int8 row.
+	bytes += int64(aq + H + 2*H + 2*H + nHhd + 2*nHhd + gu)
+	u32s += 22 // the core's eleven, uAct, uAddOne, uWindow, uLNHasBias, and the sampler's seven
 	type geomKey struct {
 		hd, nKV, half int
 		kEqV          bool
 	}
 	geoms := map[geomKey]bool{}
-	nHhd, kvDim, fa, attn, layerFFN := 0, 0, 0, 0, 0
-	maxFFNI := I
-	nE, k, inter, sharedInter, _, _, _, _, _, _, moeOK := m.MoEResidentParams()
-	g4 := m.HasGemma4MoEResident()
-	moeOK = moeOK && !g4
-	q4k := m.Quant() == "q4k"
-	for l := range nL {
-		mixer, hasFFN := m.ResidentLayerOps(l)
-		if mixer == MixerAttention {
-			hd, kv := m.HeadDimAtResident(l), m.KVHeadsAtResident(l)
-			kEqV := m.VFromKResident(l) && m.KVSrcAtResident(l) == l
-			geoms[geomKey{hd, kv, len(m.RopeInvFreqLayerResident(l)), kEqV}] = true
-			nHhd, kvDim = max(nHhd, nH*hd), max(kvDim, kv*hd)
-			fa = max(fa, metalAttnFAPartialFloats(hd, nH, kv))
+	fa, attn, layerFFN := 0, 0, 0
+	w := m.Weights()
+	for l, rows := range d.layers {
+		s := d.shapes[l]
+		if rows["q"] > 0 { // an attention layer: its geometry, its sink flag and window, and the fused attention's partial
+			geoms[geomKey{s.HeadDim, s.KVHeads, len(m.RopeInvFreqLayerResident(l)), m.VFromKResident(l) && d.ownsKV[l]}] = true
+			fa = max(fa, metalAttnFAPartialFloats(s.HeadDim, nH, s.KVHeads))
 			attn++
 		}
-		if l >= len(w.Layers) {
-			continue
+		if g := rows["gate"]; g != 0 && g != I && !d.routed[l] { // a dense FFN of its own width: its width's uniform
+			layerFFN++
 		}
-		lw := &w.Layers[l]
-		_, isG4 := m.Gemma4MoEResidentLayer(l)
-		denseFFN := hasFFN && !isG4 && !(moeOK && len(lw.Experts) > 0) && !m.NonGatedMLPResident()
-		if denseFFN {
-			if fi := lw.GateProj.Rows(); fi != 0 {
-				maxFFNI = max(maxFFNI, fi)
-				if fi != I {
-					layerFFN++
-				}
-			}
-		}
-		// The q4k lane's segments, one row-count uniform a run of parts of one kind in each fused group, on the dense attention
-		// and SwiGLU layers it runs (buildResident refuses a q4k load with any other).
-		if q4k && mixer == MixerAttention && denseFFN {
+		if q4k && l < len(w.Layers) { // the q4k lane's segments: one row-count uniform a run of parts of one kind in each fused group
+			lw := &w.Layers[l]
 			for _, group := range [][]*linalg.WeightMat{{&lw.QProj, &lw.KProj, &lw.VProj}, {&lw.OProj}, {&lw.DownProj}, {&lw.GateProj, &lw.UpProj}} {
 				u32s += int64(m.metalQ4KRuns(group))
 			}
 		}
 	}
-	if nHhd == 0 { // no attention layer: the attention rows are sized at 4, never dispatched
-		nHhd, kvDim = 4, 4
-	}
-	gu := maxFFNI
-	if moeOK {
-		gu = max(gu, inter, sharedInter)
-	}
-	var g4b Gemma4MoEResidentBundle
-	if g4 {
-		for l := range nL {
-			if b, ok := m.Gemma4MoEResidentLayer(l); ok {
-				g4b = b
-				break
-			}
-		}
-		gu = max(gu, g4b.DenseInter, g4b.MoeInter)
-	}
-	// The core: x, aSc; the fused q | k | v; the fused gate | up; ctx, cSc; oO, mSc; dSc, dO; the logits, the argmax partials, tok;
-	// the sampler's block keys and indices and its draw; and the fused attention's partial.
-	f32 += int64(H + 1 + nHhd + 2*kvDim + 2*gu + nHhd + 1 + H + 1 + 1 + H + V + 2*((V+7)/8) + 1 + 2*((V+1023)/1024) + 1 + fa)
-	aq := H
-	if q4k {
-		aq = 4 * H
-		f32 += int64(H + gu) // the lane's f32 activation rows
-	}
-	bytes += int64(aq + nHhd + H + 2*H + 2*H + 2*nHhd + gu) // aq, cq, mq; the f16 twins of aq, mq and cq; dq
-	u32s += 22                                              // the core's eleven, uAct, uAddOne, uWindow, uLNHasBias, and the sampler's seven
+	f32 += int64(fa)
 	if fa > 0 {
 		u32s += 2
 	}
-	if m.QKNormWholeResident() {
+	if d.qkWhole {
 		u32s += 2
 	}
-	u32s += int64(7*len(geoms) + 2*attn + layerFFN) // each geometry's seven; each attention layer's sink flag and window; a distinct FFN width's
-	if P := m.Gemma4PLEDimResident(); P > 0 {
-		f32 += int64(nL*P + P + 1)
-		bytes += int64(P)
-		u32s++
-	}
-	if _, hk, hv, nk, nv, _, ok := m.Qwen35ResidentParams(); ok { // the Gated DeltaNet mixer and gated attention's [query ‖ gate]
-		keyDim, valueDim := nk*hk, nv*hv
-		f32 += int64(2*(2*keyDim+valueDim) + 2*nv + 2*nv + 2*keyDim + 3*valueDim + 1 + 2*nHhd + nHhd)
-		bytes += int64(valueDim)
-		u32s += 12
-		if eps, oEps := m.metalDeltaNetEps(); oEps != 0 && oEps != eps {
-			u32s++
-		}
-	}
-	if nh, hd, ds, ng, _, normG, _, ok := m.NemotronResidentParams(); ok && normG > 0 { // the Mamba-2 mixer
-		dInner, gSize := nh*hd, ng*ds
-		f32 += int64(2*dInner + 2*gSize + nh + dInner + 2*gSize + 2*dInner + 1)
-		bytes += int64(dInner)
-		u32s += 13
-	}
-	if qLoRA, rank, nope, rope, vHead, _, _, _, ok := m.MLAResidentParams(); ok { // Multi-head Latent Attention
-		qkHead, latDim := nope+rope, rank+rope
-		f32 += int64(max(qLoRA, 1) + 1 + nH*qkHead + latDim + nH*latDim + nH*rank + nH*vHead + 1)
-		bytes += int64(max(qLoRA, 4) + nH*vHead + 4*(3+5+5+7+3)) // qaQ, ctxQ, and the five packed shapes
-		u32s += 5
-	}
-	if moeOK { // the generic MoE's router, shared expert and k slots
-		_, _, gptOss := m.GptOssActResident()
-		f32 += int64(nE + k + 1 + H)
-		bytes += int64(4 * k)
-		u32s += int64(10 + k)
-		if gptOss {
-			u32s += 3
-		}
-		if !gptOss && (2*inter)%8 == 0 && H%8 == 0 {
-			f32 += int64(k*2*inter + k + k*H)
-			bytes += int64(k * inter)
-		}
-		if metalMoEPaged(slots, nE) {
-			bytes += int64(4 * k)
-		}
-	}
-	if g4 { // Gemma 4's parallel dense ‖ MoE block
-		f32 += int64(2*g4b.NE + 2*g4b.TopK + 4*H)
-		bytes += int64(8 * g4b.TopK)
-		u32s += int64(10 + g4b.TopK)
-		if metalMoEPaged(slots, g4b.NE) {
-			bytes += int64(4 * g4b.TopK)
-		}
-	}
-	f32 += int64(metalScratchBatchRows * (H + V)) // batchX, batchLogits
-	u32s += 3 * metalScratchBatchRows             // each batch row's position uniforms
-	u32s += 12 + 7                                // the greedy chain's two tokens and position sets; a sampled chain's temperature, keys and draws
-	f32 += int64(2 * V)                           // a sampled chain's two logits rows
+	u32s += int64(7*len(geoms) + 2*attn + layerFFN) // each geometry's seven; each attention layer's sink flag and window
+	f32 += int64(metalScratchBatchRows * (H + V))   // batchX, batchLogits
+	u32s += 3 * metalScratchBatchRows               // each batch row's position uniforms
+	u32s += 12 + 7                                  // the greedy chain's two tokens and position sets; a sampled chain's temperature, keys and draws
+	f32 += int64(2 * V)                             // a sampled chain's two logits rows
 	return 4*f32 + bytes + 4*u32s
+}
+
+// metalSizedByRule is the declared rows Metal does not hold as one f32 row of their width, which MetalDecodeScratchBytes sizes by its
+// own rule: a sublayer's input (held only as int8 and f16 rows), the parallel block's second output (held in the FFN's output row),
+// the attention rows (fused, with a floor) and every gate and up (one fused row at their widest).
+var metalSizedByRule = map[string]bool{"x": true, "b": true, "q": true, "k": true, "v": true, "ctx": true, "gate": true, "up": true,
+	"shared-gate": true, "shared-up": true}
+
+// metalDecodeRows is decode's per-row activations as m's program declares them (program.Buffers' per-row entries and
+// program.HeadBuffers): each name at the widest layer that declares it, each layer's own with its shape, whether the layer holds KV
+// rows of its own, and whether it routes experts.
+type metalDecodeRows struct {
+	widest  map[string]int
+	layers  []map[string]int
+	shapes  []program.LayerShape
+	ownsKV  []bool
+	routed  []bool
+	qkWhole bool // a QK-norm takes one statistic over every head
+}
+
+func (m *Model) metalDecodeRows(H, V int) metalDecodeRows {
+	a, p := m.w.arch, m.Program()
+	d := metalDecodeRows{widest: map[string]int{}}
+	for l, ops := range p.Layers {
+		s := layerShapeOf(a, l, ops)
+		rows, owns, routed := map[string]int{}, false, false
+		for _, o := range ops {
+			d.qkWhole = d.qkWhole || o.Kind == program.OpQKNorm && o.QKNorm.Whole
+			for _, b := range program.Buffers(o, s) {
+				switch b.Unit {
+				case program.PerRow:
+					rows[b.Name] = max(rows[b.Name], b.Elems)
+					d.widest[b.Name] = max(d.widest[b.Name], b.Elems)
+					routed = routed || strings.HasSuffix(b.Name, "-router")
+				case program.PerPosition:
+					owns = true
+				}
+			}
+		}
+		d.layers, d.shapes, d.ownsKV, d.routed = append(d.layers, rows), append(d.shapes, s), append(d.ownsKV, owns), append(d.routed, routed)
+	}
+	for _, b := range program.HeadBuffers(p, program.HeadShape{Hidden: H, Vocab: V, PerLayerEmbed: d.widest["ple-gate"]}) {
+		d.widest[b.Name] = max(d.widest[b.Name], b.Elems)
+	}
+	return d
+}
+
+// metalRowTerms is what a Metal build holds beside a declared row, by the row's name, as f32 elements, bytes and 4-byte uniforms:
+// the int8 row and scale of a row its kernels quantize, a floor, a mixer's uniforms, a kernel's own rows, and the paged experts'
+// slot indices at slots.
+var metalRowTerms = map[string]func(m *Model, d metalDecodeRows, slots int) (f32, bytes, u32s int64){
+	"ple-gate": func(m *Model, d metalDecodeRows, _ int) (int64, int64, int64) {
+		return 1, int64(d.widest["ple-gate"]), 1
+	},
+	"dn-gated": func(m *Model, d metalDecodeRows, _ int) (int64, int64, int64) {
+		u := int64(12)
+		for _, ops := range m.Program().Layers {
+			for _, o := range ops {
+				if o.Kind == program.OpDeltaNet && o.Delta.ONormEps != 0 && o.Delta.ONormEps != o.Delta.Eps {
+					u = 13 // the output norm's own epsilon
+				}
+			}
+		}
+		return 1, int64(d.widest["dn-gated"]), u
+	},
+	"mb-gated": func(m *Model, d metalDecodeRows, _ int) (int64, int64, int64) {
+		return 1, int64(d.widest["mb-gated"]), 13
+	},
+	"mla-q": func(m *Model, d metalDecodeRows, _ int) (int64, int64, int64) {
+		qLoRA := d.widest["mla-qa"]
+		// q's LoRA row at 1 where there is none, the two scales; its int8 row at 4, the context's, and the five packed shapes
+		return int64(max(qLoRA, 1) - qLoRA + 2), int64(max(qLoRA, 4) + d.widest["mla-ctx"] + 4*(3+5+5+7+3)), 5
+	},
+	"moe-router": func(m *Model, d metalDecodeRows, slots int) (int64, int64, int64) {
+		return metalMoETerms(m, d, slots, "moe", true, 0)
+	},
+	"gptoss-router": func(m *Model, d metalDecodeRows, slots int) (int64, int64, int64) {
+		return metalMoETerms(m, d, slots, "gptoss", false, 3)
+	},
+	"g4moe-router": func(m *Model, d metalDecodeRows, slots int) (int64, int64, int64) {
+		nE, k, H := d.widest["g4moe-router"], d.widest["g4moe-experts"], d.widest["h"]
+		bytes := int64(0)
+		if metalMoEPaged(slots, nE) {
+			bytes = int64(4 * k)
+		}
+		return int64(nE + 2*k + H), bytes, int64(10 + k) // the router's second set of rows and its input
+	},
+}
+
+// metalMoETerms is what Metal's generic MoE holds beside its declared router rows (named by prefix): the shared expert's gate and
+// output rows, its uniforms (extra beyond its base set of 10 + k), the k-slot kernels' rows where kSlots allows them and the widths
+// divide, and the paged slot indices at slots.
+func metalMoETerms(m *Model, d metalDecodeRows, slots int, prefix string, kSlots bool, extra int) (f32, bytes, u32s int64) {
+	nE, k, H := d.widest[prefix+"-router"], d.widest[prefix+"-experts"], d.widest["h"]
+	inter := 0 // the routed experts' width
+	for l, rows := range d.layers {
+		if d.routed[l] {
+			inter = max(inter, rows["up"])
+		}
+	}
+	f32, u32s = int64(1+H), int64(10+k+extra)
+	if kSlots && (2*inter)%8 == 0 && H%8 == 0 {
+		f32 += int64(k*2*inter + k + k*H)
+		bytes += int64(k * inter)
+	}
+	if metalMoEPaged(slots, nE) {
+		bytes += int64(4 * k)
+	}
+	return f32, bytes, u32s
 }
 
 // metalQ4KRuns is how many segments Metal's q4k lane uploads a fused group as: one a run of consecutive parts of one kind (the file's
@@ -192,19 +239,6 @@ func (m *Model) metalQ4KRuns(group []*linalg.WeightMat) int {
 		}
 	}
 	return runs
-}
-
-// metalDeltaNetEps is the model's Gated DeltaNet operation's norm epsilons (program.DeltaNetOpParams): Metal holds a uniform of its own
-// for the output norm's where that differs from the model's.
-func (m *Model) metalDeltaNetEps() (eps, oEps float64) {
-	for _, ops := range m.Program().Layers {
-		for _, o := range ops {
-			if o.Kind == program.OpDeltaNet {
-				return o.Delta.Eps, o.Delta.ONormEps
-			}
-		}
-	}
-	return 0, 0
 }
 
 // metalMoEPaged reports whether a Metal build holding slots expert slots per layer pages its nE routed experts: a slot count above

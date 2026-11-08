@@ -47,7 +47,7 @@ func eachOperationShape() LayerShape {
 	s.ShortConv.Dim, s.ShortConv.LCache = 16, 3
 	s.Hidden, s.Heads, s.FFN = 36, 4, 48
 	s.MLA.QLoRA, s.MLA.Rank, s.MLA.QKHead, s.MLA.VHead = 12, 16, 10, 6
-	s.PLE = 5
+	s.PerLayerEmbed = 5
 	s.Gemma4MoE.Experts, s.Gemma4MoE.TopK, s.Gemma4MoE.ExpertFFN = 8, 2, 40
 	return s
 }
@@ -133,7 +133,7 @@ func TestBuffers_eachOperation(t *testing.T) {
 // second output joins them where a layer writes it, and the per-layer-embedding inputs, every layer's, where the embedding has them.
 func TestHeadBuffers(t *testing.T) {
 	row := func(name string, n int) Buf { return Buf{Name: name, Unit: PerRow, Prec: PrecF32, Elems: n} }
-	s := HeadShape{Hidden: 36, Vocab: 100, PLE: 5}
+	s := HeadShape{Hidden: 36, Vocab: 100, PerLayerEmbed: 5}
 	serial := []Op{{Kind: OpNorm, Out: RegX}, {Kind: OpAttention}, {Kind: OpResidual}}
 	parallel := []Op{{Kind: OpNorm, Out: RegX}, {Kind: OpAttention}, {Kind: OpFFN, Out: RegB}, {Kind: OpResidual, Res: ResidualParams{Two: true}}}
 	base := []Buf{row("h", 36), row("x", 36), row("a", 36)}

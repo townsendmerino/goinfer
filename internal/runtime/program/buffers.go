@@ -47,13 +47,13 @@ type LayerShape struct {
 	Hidden, Heads, FFN int
 	MLA                struct{ QLoRA, Rank, QKHead, VHead int } // the q LoRA rank (0 for none), the KV LoRA rank, a q·k head, a value head
 	Gemma4MoE          struct{ Experts, TopK, ExpertFFN int }   // Gemma 4's MoE block: its routed experts, top k, and an expert's FFN width
-	PLE                int                                      // Gemma 4's per-layer-embedding width
+	PerLayerEmbed      int                                      // Gemma 4's per-layer-embedding width
 }
 
 // HeadShape is the widths of what no layer owns: the residual stream, the vocabulary, and the embedding stage's per-layer inputs.
 type HeadShape struct {
 	Hidden, Vocab int
-	PLE           int // Gemma 4's per-layer-embedding width; read only where the program's embedding stage has the branch
+	PerLayerEmbed int // Gemma 4's per-layer-embedding width; read only where the program's embedding stage has the branch
 }
 
 // HeadBuffers is the per-row activations no layer owns, for p at shape s: the residual stream, a sublayer's input and output, the
@@ -69,7 +69,7 @@ func HeadBuffers(p *Program, s HeadShape) []Buf {
 	}
 	out = append(out, row("logits", s.Vocab))
 	if p.Embed.PLE {
-		out = append(out, row("ple-in", len(p.Layers)*s.PLE))
+		out = append(out, row("ple-in", len(p.Layers)*s.PerLayerEmbed))
 	}
 	return out
 }
@@ -147,7 +147,7 @@ func Buffers(op Op, s LayerShape) []Buf {
 		return rows(nil, "gate", ffn, "up", ffn, "g4moe-router", g.Experts, "g4moe-experts", g.TopK, "g4moe-weights", g.TopK,
 			"g4moe-dense-out", s.Hidden, "g4moe-moe-out", s.Hidden, "g4moe-router-in", s.Hidden)
 	case OpPLE:
-		return rows(nil, "ple-gate", s.PLE)
+		return rows(nil, "ple-gate", s.PerLayerEmbed)
 	case OpKDA:
 		k := s.KDA
 		win := (k.ConvKernel - 1) * k.Heads * k.HeadDim
