@@ -170,6 +170,12 @@ def run(args, run_for):
             print("  skip metal: builds on darwin only")
             skips.append("metal")
             continue
+        cudaOffLinux = mod == "backend/cuda" and sys.platform != "linux"
+        if cudaOffLinux:
+            # The CUDA backend's devices exist only in linux files: off linux its tagged build cannot compile, so build and vet it untagged
+            # (what a darwin checkout can compile) and skip its tests, which need the card.
+            tagarg = []
+            print("  cuda off linux: build and vet untagged; its tests need linux and the card, and are skipped")
         env = dict(os.environ, CGO_ENABLED="0") if mod == "backend/cuda" else dict(os.environ)
         mrun = lambda *c: (lambda r: (r.returncode == 0, r.stdout + r.stderr))(sh(*c, cwd=mod or ".", env=env))
         pkgs = sorted({os.path.dirname(f) for f in files})
@@ -179,6 +185,9 @@ def run(args, run_for):
             bad += not step(f"vet {label} ({len(pkgs)} pkg)", lambda: mrun("go", "vet", *tagarg, *[rel(d) for d in pkgs]))
         for (m, d), sel in sorted(tests.items()):
             if m != mod:
+                continue
+            if cudaOffLinux:
+                skips.append(f"test {d or '.'} (cuda, off linux)")
                 continue
             name = d or "."
             runarg = (["-run", sel] if sel else []) + (["-short"] if name in SLOW else [])
