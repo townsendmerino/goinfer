@@ -174,7 +174,7 @@ func TestRun_measureRateExcludesPrefill(t *testing.T) {
 // which can itself trip the memory guard the probe exists to measure honestly. A real large checkpoint tripping the
 // guard can't be reproduced with this repo's tiny fixtures, so this is asserted structurally, the same technique
 // TestTranscode_writesViaTempThenRenames (decoder) uses for an ordering property: parse Run's AST and confirm
-// the statement calling m.Close() appears BEFORE the `if *measure` block that calls selfMeasure.
+// the statement that calls m.Close() (the loop over the loads) appears BEFORE the `if *measure` block that calls selfMeasure.
 func TestRun_closesFirstLoadBeforeMeasuring(t *testing.T) {
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, "fit.go", nil, 0)
@@ -198,21 +198,17 @@ func TestRun_closesFirstLoadBeforeMeasuring(t *testing.T) {
 	}
 	var closeCallIdx, measureIfIdx = -1, -1
 	for i, stmt := range fn.Body.List {
-		switch s := stmt.(type) {
-		case *ast.ExprStmt:
-			if call, ok := s.X.(*ast.CallExpr); ok {
-				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Close" && render(sel.X) == "m" {
-					closeCallIdx = i
-				}
-			}
-		case *ast.AssignStmt:
-			for _, rhs := range s.Rhs {
-				if call, ok := rhs.(*ast.CallExpr); ok {
+		if _, deferred := stmt.(*ast.DeferStmt); !deferred { // the statement that closes m: a call, or the loop over the loads
+			ast.Inspect(stmt, func(n ast.Node) bool {
+				if call, ok := n.(*ast.CallExpr); ok {
 					if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Close" && render(sel.X) == "m" {
 						closeCallIdx = i
 					}
 				}
-			}
+				return true
+			})
+		}
+		switch s := stmt.(type) {
 		case *ast.IfStmt:
 			ast.Inspect(s, func(n ast.Node) bool {
 				if call, ok := n.(*ast.CallExpr); ok {
@@ -326,7 +322,7 @@ func TestPlanFor_metalPlansAtTheLoadsOwnContext(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	m, err := decoder.Load(dir, fitLoadOptions("int4", ""))
+	m, err := decoder.Load(dir, fitLoadOptions(fitSource{quant: "int4"}, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +365,7 @@ func TestPlanFor_metalPlansAtTheLoadsOwnContext(t *testing.T) {
 func TestPlanFor_metalPricesEverySlotTheBuildKeeps(t *testing.T) {
 	load := func(dir string) *decoder.Model {
 		t.Helper()
-		m, err := decoder.Load(dir, fitLoadOptions("int4", ""))
+		m, err := decoder.Load(dir, fitLoadOptions(fitSource{quant: "int4"}, 0))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -474,7 +470,7 @@ func TestSourceFor_opensWhatTheLoadOpens(t *testing.T) {
 	if s.path != sidecar {
 		t.Fatalf("metal at q4k: fit opens %s, want the fresh metal sidecar %s", s.path, sidecar)
 	}
-	m, err := decoder.Load(s.path, fitLoadOptions(s.quant, s.loadBackend))
+	m, err := decoder.Load(s.path, fitLoadOptions(s, 0))
 	if err != nil {
 		t.Fatalf("the metal sidecar does not open as fit opens it: %v", err)
 	}
