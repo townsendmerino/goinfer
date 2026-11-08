@@ -132,7 +132,7 @@ gates, and the owner decisions. The first, D1, is decided: the owner un-parked p
 reuse, with continuous batching still parked. KV11, added the same day, puts KV blocks and paged MoE experts under one
 memory budget in place of today's fixed split.
 
-[`task-memory-campaign-2026-10.md`](tasks/task-memory-campaign-2026-10.md) (MEM0–MEM17, filed 2026-10-17, scoped)
+[`task-memory-campaign-2026-10.md`](completed/task-memory-campaign-2026-10.md) (MEM0–MEM17, filed 2026-10-17, scoped)
 picks up where never-swap and the KV program stop: every large structure in goinfer and aikit with its share of a
 typical session, how each is held today, and the briefs for what is left — a public mapped load for library callers,
 multimodal towers (f32 heap copies, host copies beside GPU copies, Metal tower scratch never freed), prefill scratch
