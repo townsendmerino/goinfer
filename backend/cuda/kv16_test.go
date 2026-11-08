@@ -1315,22 +1315,6 @@ func kv8RowDiff(a, b []float32) (d, scale float64) {
 	return d, scale
 }
 
-// kv8MaxScore is the largest |q.k x scale| over every query head and key of an int8 cache's dequantized K (float64).
-func kv8MaxScore(q []float32, kq []int8, ks []float32, hd, nKV, G int, scale float32) float64 {
-	m, kvDim := 0.0, nKV*hd
-	for h := range len(q) / hd {
-		kvh := h / G
-		for s := range len(kq) / kvDim {
-			var dot float64
-			for d := range hd {
-				dot += float64(q[h*hd+d]) * float64(kq[s*kvDim+kvh*hd+d]) * float64(ks[s*nKV+kvh])
-			}
-			m = math.Max(m, math.Abs(dot*float64(scale)))
-		}
-	}
-	return m
-}
-
 // kv8TopKey is the key query head h attends most to over an int8 cache's dequantized K (float64 scores).
 func kv8TopKey(q []float32, kq []int8, ks []float32, h, hd, nKV, G int, scale float32) int {
 	kvh, kvDim := h/G, nKV*hd
