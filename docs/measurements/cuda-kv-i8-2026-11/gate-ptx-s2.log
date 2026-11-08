@@ -1,0 +1,6 @@
+
+[1m== 4. PTX reproduces from source, each at the NVRTC it records ==[0m
+  toolchains available: 12.6.85 12.9.86
+  [32mPASS[0m  66/66 PTX regenerate byte-identically at their recorded NVRTC
+
+[32mgate ptx: GREEN[0m

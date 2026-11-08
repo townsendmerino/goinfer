@@ -23,10 +23,10 @@
 > - **Olmo Hybrid** (`NegEigval`/`ONormEps` in DeltaNet): **new, done on all three:** CUDA #604, Metal #611, WebGPU #627.
 > - **OP6:** its Metal half is built (the q4k lane joins MC3's step, 2026-10-15; its kernels were 4.7× slower than the loop on Phi-3 until
 >   #722 fixed them on 2026-11-06, `docs/measurements/p29-phi3-2026-11/README.md`). The default-load switch, the CUDA half and WebGPU are not done.
-> - **RF0:** half built (**new** in this reading): the per-turn `timings` block is on the wire (`internal/app/serveapp/turn_timings.go`) and the cost
->   counters exist (`internal/cost`, SB11); the shape × family × backend census is `docs/measurements/forward-arch-baseline-2026-10-13.md`,
->   stale against program-based admission.
-> - **RF1:** **new**, in progress (§5.5): seven steps (RF1-3 dropped), 49 `Resident*` interfaces to 41. RF1-2a merged (#757); RF1-1 (#752) and RF1-2b open.
+> - **RF0:** built but for its prior-art reading: the per-turn `timings` block is on the wire (`internal/app/serveapp/turn_timings.go`), the cost
+>   counters exist (`internal/cost`, SB11), and the shape × family × backend census was refreshed against program-based admission on 2026-11-07
+>   (`docs/measurements/forward-arch-census-2026-11-07.md`; CPU-only families on CUDA / Metal / WebGPU by `ResidentEligible`, the capability gates: 8 / 8 / 13, from 10 / 12 / 16; by `Admit(...).Why`, which adds Nemotron-H's int4 precision policy: 9 / 9 / 14 model-free and 8 / 8 / 14 at the loader's pick).
+> - **RF1:** **new**, in progress (§5.5): seven steps (RF1-3 dropped), 49 `Resident*` interfaces to 41. RF1-1 (#752) and RF1-2a (#757) merged; RF1-2b open (#760); RF1-4 open (#763).
 > - **Not started:** RF2–RF6, HL, OP5, OP6's CUDA half, default switch and WebGPU, OP1 on WebGPU, OP4 on WebGPU. §7a sizes them.
 > - **Other tracks:** SP's SP2 on CUDA merged (#232, §6a).
 >
@@ -4568,6 +4568,46 @@ read it.
 
 **Not in it:** weights, the arbiter (MM4). SB11a's operation records ride on OP4's walker, not on this.
 
+### 4.9c Metal's decode scratch: design and gates (2026-11-07, registered before any code)
+
+§4.9b's third Metal step. **Today** a Metal build allocates decode's scratch piece by piece (`buildResident` and each family's build:
+the residual rows, each operation's rows at the widest layer that runs it, the head's logits and argmax partials, the sampler's draws, the
+rows `ensureBatchCap` grows, the int8 and f16 activation twins, the uniforms). Nothing prices it: it rides in `mem.MetalFitMargin`, and
+MM7's table bounds it with a hand formula (`metalDecodeScratchBytes`, the `decode` gap row). The batched step's scratch is already one
+list that builds and prices (`stepShape.buffers`, MM5a); this does the same for decode, from the program.
+
+**The declaration.** `program.Buffers` gains a third unit, `PerRow`: per row of a step, the activations an operation writes beyond the
+residual stream, f32: `OpProjQKV`'s q, k and v rows, `OpAttention`'s context, `OpFFN`'s gate|up, and each whole-sublayer operation's own
+rows (`OpMLA`, `OpDeltaNet`, `OpMamba2`, `OpKDA`, `OpShortConv`, `OpGatedAttn`, `OpGemma4Attn`, `OpGemma4MoE`, `OpPLE`). A second list,
+`program.HeadBuffers`, holds what no layer owns: the residual rows and the logits. Decode is one row.
+**Metal's rule, one function:** each entry is one buffer, sized by the widest layer that declares it, since Metal allocates one buffer a
+role and every layer reuses it. Roles are summed, not overlapped: §4.9b's "high-water over operations" holds for an arena, which Metal's
+build does not use. Metal adds its own terms by name: an entry's int8 or f16 twin where its kernel quantizes the row, the fused attention's
+partial, the argmax partial, the sampler's draw rows, the batch rows and the uniforms. The build allocates from the list, as `buildBatch`
+does from `stepShape.buffers`.
+
+**No decision moves.** The plan shows the figure on the scratch line, as `Plan.CheckpointBytes` is shown, outside `NeedBytes`, and
+`MetalFitMargin` is unchanged. Charging it in `NeedBytes` and narrowing the margin is a guard threshold, so Francis's call, not this step's.
+
+**Gates**, tier 0, seconds; ordinary engineering.
+- **G-MS1, the plan:** MM1's census, arm64 and amd64: no decision moves, and only the new scratch figure is added.
+- **G-MS2, the allocation:** on every row of `TestMemGate_metal`, the scratch line after the build and after a short generation equals the
+  decode list plus the step list, to Metal's named rounding, both ways. MM7's `decode` gap row leaves the table (`metalMemGapsPin` 3 to 2).
+- **G-MS3, a hand table:** llama-tiny, qwen35-tiny (DeltaNet and gated attention), deepseek-tiny (MLA), nemotron-tiny (Mamba-2), a MoE
+  fixture and gemma2-tiny: the decode scratch written in the test as arithmetic on the config's numbers equals the plan's.
+- **G-MS4, the scan:** the pricing function names no mixer, family or family parameter.
+- **G-MS5:** `gate identity -backend metal`, all IDENTICAL.
+- **Plants:** an entry declared one element short (G-MS3 red); a buffer allocated beside the list (G-MS2 red); a term counted twice
+  (G-MS2 red). Amended 2026-11-07, during the build: G-MS2 cannot see a short entry, since the build allocates what the list declares,
+  so G-MS3 alone holds a declaration to the config. G-MS2 reads the ledger's requested bytes, so it is exact with no rounding allowance.
+
+**Outcome (#754, 2026-11-07).** The Metal half shipped. Every buffer decode leases on the scratch line comes from a list the build allocates
+from (`decodeShape.buffers`, `batchRows`, `chainBuffers`). G-MS2 holds the ledger to it on every `TestMemGate_metal` row, MM7's
+`decode` gap row is gone, G-MS3 holds it to each registered fixture's config, and G-MS5 reads all IDENTICAL. Metal's scratch is the sum of
+its roles, each at its widest layer, not a high-water over operations (the coordinator agreed the same day). The program-side
+declaration, the plan's figure, G-MS1 and G-MS4 moved to their own item, MM5b (`docs/tasks/task-subsystems-2026-10.md`). Charging
+the figure in `NeedBytes` and narrowing `MetalFitMargin` change a guard threshold, so neither moves until Francis answers.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
@@ -4979,7 +5019,7 @@ weeks. A range is wide where a kernel's tuning decides it (RF2, RF4) and narrow 
 
 | phase | needs | unblocks | session-days | box |
 |---|---|---|---|---|
-| **RF0** close-out | the `timings` block and cost counters exist; refresh the census against program-based admission | RF1's and RF2's registered bands | 0.5–1 | Mac |
+| **RF0** close-out | done 2026-11-07 but for the §10a prior-art reading: the `timings` block, the cost counters and the refreshed census (`docs/measurements/forward-arch-census-2026-11-07.md`) | RF1's and RF2's registered bands | 0.5–1 | Mac |
 | **RF1** one `Step(batch)` over today's entry points | RF0. Today `decoder` declares 49 `Resident*` interfaces (34 optional ones on 10-13); no kernel change, identity by construction | RF2; a smaller `decoder` seam (Tier 3 modularization, `decoder/residency.go` 1,975 lines) | 4–8 | either |
 | **RF2** ragged attention over paged KV, CUDA | KV4 (done), RF1; a new kernel; speed bands per shape (decode depth 0.98, TTFT 0.97, MC3 0.98) with a kill rule | RF3, RF6; CUDA's row-by-row step attention (`stepAttnRows`) goes | 10–20 | nobara |
 | **RF3** mixed steps (token-budget scheduler), CUDA | RF2 | stall-free agent turns (`bench_prefill_stall`); RF4 | 5–8 | nobara |

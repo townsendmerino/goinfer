@@ -55,7 +55,7 @@ func withTwoSlots(r *cudaResident) {
 
 // TestNemotronResidentCUDA_guards is OP2b's gate G on CUDA: a Nemotron-H resident is declined by each site that refuses recurrent state (the batched
 // step, the prefix snapshot, the KV copy, the verify pass, and the batched prefill by name), and a Gated-DeltaNet one is declined by the same sites as before
-// except the prefix snapshot, which carries its state (B35, ResidentRecurrentSnapshots) and admits it.
+// except the prefix snapshot, which carries its state (B35, ResidentKVSnapshotter.KVSnapshotRecurrent) and admits it.
 // llama-tiny is the control, admitted where the recurrent check decides, so a guard that declines everything cannot pass. The batched-prefill decline is
 // switched off for the batched-step check (batchStepStaticDeclineOffForTest), because it also refuses a Mamba-2 model and would hide a guard left DeltaNet-only.
 // Not covered: the fast-lever switch in prefillCore (prefill.go), which a recurrent model never reaches because the prefill declines it first.

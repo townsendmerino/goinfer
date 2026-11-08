@@ -15,9 +15,14 @@ import (
 // Test hooks: entry points into the resident that only goinfer_testhooks tests call (bisection, sub-layer capture, the
 // confirmers, the q4k lane's segments on the unlined plan line). Production code does not reach them.
 
-// q4kLaneProj is q4kLaneProjOn on gpu.UnlinedLine: tests call it; production code names its plan line.
+// q4kLaneProj is q4kLaneProjOn on gpu.UnlinedLine with each segment's row-count uniform, which a build's decode list allocates:
+// tests call it; production code names its plan line.
 func q4kLaneProj(d *Device, kq *decoder.KQuantReader, wms ...*linalg.WeightMat) []q4kSeg {
-	return q4kLaneProjOn(gpu.UnlinedLine, d, kq, wms...)
+	segs := q4kLaneProjOn(gpu.UnlinedLine, d, kq, wms...)
+	for i := range segs {
+		segs[i].uN = NewBufferU32On(gpu.UnlinedLine, d, uint32(segs[i].rows))
+	}
+	return segs
 }
 
 // forwardTrunkForTest runs the trunk over the first nLayers layers ONLY and returns the residual

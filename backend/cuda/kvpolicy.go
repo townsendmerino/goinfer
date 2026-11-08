@@ -17,6 +17,7 @@ func init() {
 		Decline:     decoder.CUDAKVF16Decline,
 		Auto:        func() bool { return kvF16Auto.Load() },
 		AutoDecline: decoder.CUDAKVF16AutoDecline,
+		DeclineI8:   decoder.CUDAKVI8Decline,
 	})
 	kvF16Auto.Store(true)
 }

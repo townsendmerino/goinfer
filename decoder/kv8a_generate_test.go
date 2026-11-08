@@ -67,6 +67,11 @@ func (f *recurrentFake) PrefillLast(ctx context.Context, embs [][]float32, start
 	return last, nil
 }
 
+var _ ResidentRecurrentCheckpoint = (*recurrentFake)(nil)
+
+// RecurrentCheckpointHeld is false: one slot, so no caller asks which slot holds the copy.
+func (f *recurrentFake) RecurrentCheckpointHeld(int) bool { return false }
+
 func (f *recurrentFake) RecurrentCheckpointBytes() int64 {
 	if f.keeps {
 		return 64

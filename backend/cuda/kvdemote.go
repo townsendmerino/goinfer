@@ -35,7 +35,7 @@ func (r *cudaResident) SetKVHostBudget(b decoder.KVHostBudget) {
 // (kvStopped) keeps no copy: its rows past its share are gone. Nor does a slot holding a wrapped upload (kvFloor): it has no sliding-layer
 // rows below its base, so a copy from position 0 would keep zeros. Executor thread only.
 func (r *cudaResident) kvDemote(s, taker int) {
-	if r.kvHost == nil || r.kvWin || r.dnet != nil || r.mamba != nil || r.kvStopped[s] {
+	if r.kvHost == nil || r.kvWin || r.dnet != nil || r.mamba != nil || r.kvStopped[s] || r.kvI8 {
 		return
 	}
 	end := kvBlocksFor(r.kvValid[s]) * kvBlock // whole blocks: kvValid keeps which of their rows were written

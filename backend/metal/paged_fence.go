@@ -3,7 +3,6 @@
 package metal
 
 import (
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"sync/atomic"
 	"time"
 )
@@ -39,8 +38,9 @@ type pagedFence struct {
 	spinNanos, waitNanos int64
 }
 
-// newPagedFence compiles paged_fence; nil when the fence is off or this machine's compiler rejects MSL 3.2.
-func newPagedFence(d *Device, nL, k int) *pagedFence {
+// newPagedFence compiles paged_fence and declares its buffers into sc, which the decode list allocates; nil when the fence is off or
+// this machine's compiler rejects MSL 3.2.
+func newPagedFence(d *Device, nL, k int, sc *scratchList) *pagedFence {
 	if !pagedFenceOn {
 		return nil
 	}
@@ -52,12 +52,15 @@ func newPagedFence(d *Device, nL, k int) *pagedFence {
 	if err != nil {
 		return nil
 	}
-	f := &pagedFence{p: p, mirror: NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, 2*k)), word: NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, 1)),
-		uK: NewBufferU32On(mem.LineScratch, d, uint32(k))}
-	for range nL {
-		f.seq = append(f.seq, NewBufferU32On(mem.LineScratch, d, 0))
+	f := &pagedFence{p: p, seq: make([]Buffer, nL), has: make([]Buffer, 2)}
+	sc.u32s(&f.mirror, make([]uint32, 2*k))
+	sc.u32s(&f.word, make([]uint32, 1))
+	sc.u32(&f.uK, uint32(k))
+	for l := range f.seq {
+		sc.u32(&f.seq[l], 0)
 	}
-	f.has = []Buffer{NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 1)}
+	sc.u32(&f.has[0], 0)
+	sc.u32(&f.has[1], 1)
 	return f
 }
 

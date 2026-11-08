@@ -12,10 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-var (
-	_ decoder.ResidentKVSnapshotter      = (*cudaResident)(nil)
-	_ decoder.ResidentRecurrentSnapshots = (*cudaResident)(nil)
-)
+var _ decoder.ResidentKVSnapshotter = (*cudaResident)(nil)
 
 // Prefix snapshots (docs/tasks/task-kv7-prefix-snapshot-2026-10.md): a slot's KV rows in pinned host memory, and back. It is CopyKV with
 // a host buffer for the other slot, over the same slot storage:
@@ -100,11 +97,13 @@ func (r *cudaResident) snapshotDecline(end int) *decoder.KVCopyDecline {
 		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("rows up to %d are past the %d-position cache", end, r.ctxCap)}
 	case r.mamba != nil:
 		return &decoder.KVCopyDecline{Reason: "Mamba-2 state is not part of a snapshot"}
+	case r.kvI8:
+		return &decoder.KVCopyDecline{Reason: errKV8OneSlot}
 	}
 	return nil
 }
 
-// KVSnapshotRecurrent implements decoder.ResidentRecurrentSnapshots: a Gated-DeltaNet model's snapshots carry its state; a Mamba-2 model's
+// KVSnapshotRecurrent is decoder.ResidentKVSnapshotter's: a Gated-DeltaNet model's snapshots carry its state; a Mamba-2 model's
 // are declined (snapshotDecline).
 func (r *cudaResident) KVSnapshotRecurrent() bool { return r.dnet != nil && r.mamba == nil }
 

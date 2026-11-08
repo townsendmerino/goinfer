@@ -606,12 +606,14 @@ type stepShape struct {
 	q4k                            bool  // the q4k lane's extra rows
 }
 
-// stepBuf is one buffer of the batched step: the one list buildBatch allocates from and the price sums.
+// stepBuf is one scratch buffer of a list that allocates and prices it: the batched step's (stepShape.buffers) or decode's
+// (decodeShape.buffers).
 type stepBuf struct {
 	kind stepBufKind
-	n    int     // elements; a uniform has 1
-	u    uint32  // a stepU32's value
-	f    float32 // a stepFloatsOf's fill
+	n    int      // elements; a uniform has 1
+	u    uint32   // a stepU32's value
+	f    float32  // a stepFloatsOf's fill
+	us   []uint32 // a stepU32s's values, n of them
 	set  func(Buffer)
 }
 
@@ -623,6 +625,7 @@ const (
 	stepBytes                       // n bytes
 	stepHalves                      // n half-words, zeroed
 	stepU32                         // one u32 holding u
+	stepU32s                        // n u32s holding us
 )
 
 // bytes is what the buffer asks the device for.
@@ -647,6 +650,8 @@ func (sb stepBuf) alloc(d *Device) Buffer {
 		return NewBufferU16sOn(mem.LineScratch, d, make([]uint16, sb.n))
 	case stepU32:
 		return NewBufferU32On(mem.LineScratch, d, sb.u)
+	case stepU32s:
+		return NewBufferUint32sOn(mem.LineScratch, d, sb.us)
 	case stepFloatsOf:
 		data := make([]float32, sb.n)
 		for i := range data {
