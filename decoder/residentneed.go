@@ -121,12 +121,13 @@ func MetalKVRowBytes(b program.Buf, delivered string) int64 {
 // ResidentNeedBytes is what a resident build on backend asks the device (or, on Metal, unified memory)
 // to hold with `slots` expert slots per layer (0 = every expert resident) and a ctx-position KV cache:
 // the weights, on Metal the host copy of them (ResidentHostCopyBytes — 0 for weights aliased from a
-// .giw mapping), the KV cache, and one slot's recurrent state. Plan's NeedBytes and Metal's resident guard are this number.
+// .giw mapping) and decode's scratch (MetalDecodeScratchBytes), the KV cache, and one slot's recurrent state. Plan's NeedBytes and
+// Metal's resident guard are this number.
 func (m *Model) ResidentNeedBytes(backend string, slots, ctx int, kvF16, kvI8 bool) int64 {
 	need := m.ResidentWeightBytesPaged(slots) - m.kquantSavings(backend) - m.mambaProjSavings(backend) + m.ResidentKVBytes(backend, ctx, kvF16, kvI8) + m.stateBytes(backend)
 	switch backend {
 	case "metal":
-		need += m.ResidentHostCopyBytes(slots)
+		need += m.ResidentHostCopyBytes(slots) + m.MetalDecodeScratchBytes()
 	case "cpu":
 		dense, experts := m.cpuStructBytes()
 		need += dense + experts

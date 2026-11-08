@@ -71,7 +71,7 @@ func TestPlan_pricesRecurrentState(t *testing.T) {
 			if p.StateBytes != held {
 				t.Errorf("%s: the plan's state line is %d bytes, the forward holds %d", fx.kind, p.StateBytes, held)
 			}
-			if want := p.DenseBytes + p.AllocSlackBytes + p.ExpertBytesUsed + p.KVBytes + p.HostCopyBytes + p.ExtraBytes + p.StateBytes; p.NeedBytes() != want {
+			if want := p.DenseBytes + p.AllocSlackBytes + p.ExpertBytesUsed + p.KVBytes + p.HostCopyBytes + p.ExtraBytes + p.StateBytes + p.ScratchBytes; p.NeedBytes() != want {
 				t.Errorf("NeedBytes %d, its lines sum to %d", p.NeedBytes(), want)
 			}
 			if tight := m.Plan("cpu", p.NeedBytes()-1, PlanRequest{Ctx: 64, CtxPinned: true}); tight.Placement == PlacementResident {

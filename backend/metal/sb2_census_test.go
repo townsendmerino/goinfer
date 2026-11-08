@@ -360,6 +360,15 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	}
 	read.Open = append(read.Open, memgate.Snap("built", l, facts()))
 	exact("built")
+	// MM5b: the decoder's price of decode's scratch is the build's list, with the chain's buffers, which the build holds once a chain
+	// opens (none has yet).
+	var chain int64
+	for _, sb := range r.chainBuffers(true, true) {
+		chain += int64(sb.bytes())
+	}
+	if got, want := m.MetalDecodeScratchBytes(), r.decode.listBytes(r)+chain; got != want {
+		t.Errorf("%s: the decoder prices decode's scratch at %d bytes; the build's list with the chain's is %d (%+d)", row, got, want, got-want)
+	}
 	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
 	for range ch {
 	}

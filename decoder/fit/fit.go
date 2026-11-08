@@ -98,6 +98,7 @@ type Plan struct {
 	KVBytes         int64 // at Ctx, as this backend allocates it (ResidentKVBytes)
 	HostCopyBytes   int64 // Metal only: the host copy of the resident weights unified memory also holds (ResidentHostCopyBytes; 0 when aliased from a .giw)
 	StateBytes      int64 // one KV slot's recurrent and conv state as this backend allocates it (BuildDemand.StateBytes); 0 for a model with none
+	ScratchBytes    int64 // Metal only: decode's scratch, once a load (decoder.Model.MetalDecodeScratchBytes)
 	// CheckpointBytes is one recurrent checkpoint this plan's load keeps (BuildDemand.CheckpointBytes), 0 on a declined plan or where it does
 	// not fit beside NeedBytes. It is not in NeedBytes and moves no decision here: a load with no room for it keeps none and still runs.
 	CheckpointBytes int64
@@ -112,12 +113,12 @@ type Plan struct {
 }
 
 // NeedBytes is the total this Plan actually asks the device to hold — DenseBytes + whatever the
-// chosen Slots keeps of the experts + KV at the chosen Ctx + (Metal) the host copy + the caller's own
+// chosen Slots keeps of the experts + KV at the chosen Ctx + (Metal) the host copy and decode's scratch + the caller's own
 // extra terms and the recurrent state. Never ExpertBytesFull: that field exists for reporting what was capped, not what is
 // resident. Without ExtraBytes it equals Model.ResidentNeedBytes at the same Slots and Ctx — the number Metal's resident guard
 // judges — which TestPlan_metalAgreesWithResidentNeedBytes and TestResidentNeedBytes_countsRecurrentState pin.
 func (p Plan) NeedBytes() int64 {
-	return p.DenseBytes + p.StateBytes + p.AllocSlackBytes + p.ExpertBytesUsed + p.KVBytes + p.HostCopyBytes + p.ExtraBytes
+	return p.DenseBytes + p.StateBytes + p.ScratchBytes + p.AllocSlackBytes + p.ExpertBytesUsed + p.KVBytes + p.HostCopyBytes + p.ExtraBytes
 }
 
 // ErrWontFitResident is wrapped into every load-time fit-guard refusal (declineErr), so a caller

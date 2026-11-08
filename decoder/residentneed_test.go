@@ -65,6 +65,43 @@ func TestPlan_metalAgreesWithResidentNeedBytes(t *testing.T) {
 	}
 }
 
+// TestPlan_metalNeedCountsDecodeScratch is MM5b's gate (Francis's call, 2026-11-07; docs/measurements/mm5-decode-scratch-2026-11/):
+// on every fixture G-MS3 holds Metal's decode list to, Plan("metal").NeedBytes and the resident guard's number count decode's scratch
+// (MetalDecodeScratchBytes) beside the weights, KV, host copy and state; the CPU's do not.
+func TestPlan_metalNeedCountsDecodeScratch(t *testing.T) {
+	const ctx = 256
+	for _, c := range []struct{ name, quant string }{
+		{"llama-tiny", "int8int8"}, {"qwen35-tiny", "int4"}, {"gemma2-tiny", "int8int8"}, {"deepseek-tiny", "int4"}, {"nemotron-tiny", "int4"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := filepath.Join("..", "testdata", c.name)
+			m, err := Load(dir, Options{Quant: c.quant})
+			if err != nil {
+				t.Fatalf("load %s: %v", c.name, err)
+			}
+			defer m.Close()
+			scratch := m.MetalDecodeScratchBytes()
+			if scratch <= 0 {
+				t.Fatalf("%s: Metal's decode scratch is priced at %d bytes", c.name, scratch)
+			}
+			lines := func(p Plan) int64 {
+				return p.DenseBytes + p.StateBytes + p.AllocSlackBytes + p.ExpertBytesUsed + p.KVBytes + p.HostCopyBytes + p.ExtraBytes
+			}
+			p := m.Plan("metal", 1<<40, PlanRequest{Ctx: ctx, CtxPinned: true})
+			if got := p.NeedBytes() - lines(p); got != scratch {
+				t.Errorf("%s: Plan(\"metal\").NeedBytes is %d bytes past its weight, KV, host-copy and state lines; want the decode scratch, %d",
+					c.name, got, scratch)
+			}
+			if want := m.ResidentNeedBytes("metal", p.Slots, p.Ctx, false, false); p.NeedBytes() != want {
+				t.Errorf("%s: Plan(\"metal\").NeedBytes %d, the resident guard's %d", c.name, p.NeedBytes(), want)
+			}
+			if cp := m.Plan("cpu", 1<<40, PlanRequest{Ctx: ctx, CtxPinned: true}); cp.NeedBytes() != lines(cp) {
+				t.Errorf("%s: Plan(\"cpu\").NeedBytes counts %d bytes past its lines; the CPU holds no Metal scratch", c.name, cp.NeedBytes()-lines(cp))
+			}
+		})
+	}
+}
+
 // The disagreement itself, on a dense model: given one byte less than the guard needs, Plan("metal") must not
 // say resident. The old Plan (no host copy, f32 KV) asked for far less and said resident here.
 func TestPlan_metalDeclinesWhereTheGuardWould(t *testing.T) {
