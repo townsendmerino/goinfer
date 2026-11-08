@@ -484,6 +484,49 @@ func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 	}
 }
 
+// TestDecodeScratch_handTable is G-MS3 (docs/tasks/task-forward-architecture-2026-10.md §4.9c): a build's decode list, as it stands
+// after the build, equals arithmetic written here on the config's numbers. G-MS2 holds the ledger to the list; this holds the list to
+// the model, which a declaration one element short fails.
+func TestDecodeScratch_handTable(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	// llama-tiny: hidden 64, vocab 256, FFN 128, 4 query heads and 2 K/V heads of 16, 4 layers; RMSNorm, no window, no sinks, and
+	// head width 16, which the fused attention does not run, so no partial buffer.
+	const H, V, I, nH, nKV, hd, nL = 64, 256, 128, 4, 2, 16, 4
+	const batchCap = 16 // the build's batch rows (ensureBatchCap(16))
+	f32Rows := H + 1 +  // x, aSc
+		nH*hd + 2*nKV*hd + // fused q | k | v
+		2*I + // fused gate | up
+		nH*hd + 1 + // ctx, cSc
+		H + 1 + // oO, mSc
+		1 + H + // dSc, dO
+		V + 2*((V+7)/8) + 1 + // logits, the argmax partials, tok
+		2*((V+1023)/1024) + 1 + // the sampler's block keys and indices, its draw
+		batchCap*(H+V) // batchX, batchLogits
+	twins := H + nH*hd + H + // aq, cq, mq
+		2*H + 2*H + 2*nH*hd + // the W4F16 lane's f16 twins of aq, mq and cq
+		I // dq
+	uniforms := 11 + 4 + 7 + // core (uP, uH, uI, uNH, uScale, uEps, uPos, uNKeys, uRopePos, uQTempScale, uZero); uAct, uAddOne,
+		// uWindow, uLNHasBias; the sampler's seven
+		7 + // the one attention geometry's
+		2*nL + // each layer's sink flag and window
+		3*batchCap // each batch row's position uniforms
+	want := int64(4*f32Rows + twins + 4*uniforms)
+	m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "metal", Quant: "int8int8", ResidentContext: 256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		t.Fatalf("llama-tiny: not Metal-resident: %s", m.ResidentDecline())
+	}
+	if got := a.r.decode.listBytes(a.r); got != want {
+		t.Errorf("llama-tiny: the decode list is %d bytes; the config's arithmetic gives %d", got, want)
+	}
+}
+
 // TestMetalScratch_batchGrowthGivesBackTheOld: ensureBatchCap gives the rows it replaces back to the device, so the scratch line holds
 // one capacity's batch rows, not every capacity the resident has had.
 func TestMetalScratch_batchGrowthGivesBackTheOld(t *testing.T) {
