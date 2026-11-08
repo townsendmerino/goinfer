@@ -15,7 +15,7 @@ var stepShapes = map[string]bool{
 	"ResidentHiddenLast": true, "ResidentResidualAll": true, "ResidentMRoPE": true, "ResidentMRoPEPrefill": true,
 	"ResidentMRoPEDeepstackPrefill": true, "ResidentHybridMRoPEPrefill": true, "ResidentImagePrefill": true,
 	"ResidentImageBlocksPrefill": true, "ResidentSpanPrefill": true, "ResidentPrefillRows": true, "ResidentPrefillMarked": true,
-	"ResidentSeedArgmax": true, "ResidentBatchStepper": true,
+	"ResidentSeedArgmax": true, "ResidentBatchStepper": true, "ResidentRaggedStepper": true,
 }
 
 // TestStepShapes_assertedOnlyInStep refuses a type assertion or type-switch case naming a forward-shape interface in any
