@@ -240,13 +240,19 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 		return p
 	}
 	// The largest slot count whose bytes fit beside the fixed terms. A layer's experts are uniform in shape, so this is arithmetic.
-	// The paged slot indices are held only by a cache under the expert count, so they are taken only from one that pages.
-	remaining := free - (fixed - paged) - l.StateBytes - l.FixedSlack - l.HostFixed - kv - req.ExtraBytes
+	// A cache under the expert count pages and holds the paged slot indices too, so they are charged, and quoted, exactly where it
+	// pages: where the room holds fewer than every expert, or a smaller count was asked for.
+	perExpert := l.ExpertBytesFull / int64(l.NExperts) // at least 1: unpriced experts declined above
+	room := free - (fixed - paged) - l.StateBytes - l.FixedSlack - l.HostFixed - kv - req.ExtraBytes
+	held := int64(0)
+	if room < int64(l.NExperts)*perExpert || req.Slots > 0 && req.Slots < l.NExperts {
+		held = paged
+	}
+	remaining := room - held
 	if remaining <= 0 {
 		return decline("dense %.2f GB%s + KV@%d %.2f GB alone exceeds %.2f GB free — no room left for any expert cache",
-			gbf(weights), stateNote(l.StateBytes)+scratchNote(l.ScratchBytes+paged)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
+			gbf(weights), stateNote(l.StateBytes)+scratchNote(l.ScratchBytes+held)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
 	}
-	perExpert := l.ExpertBytesFull / int64(l.NExperts) // at least 1: unpriced experts declined above
 	slots := int(remaining / perExpert)
 	if req.Slots > 0 && req.Slots < slots {
 		slots = req.Slots // an explicit, smaller request is honoured even if more would fit
@@ -254,18 +260,13 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 	if slots > l.NExperts {
 		slots = l.NExperts
 	}
-	if slots < l.NExperts {
-		slots = min(slots, int((remaining-paged)/perExpert))
-	}
 	if slots < l.TopK {
 		return decline("expert-cached needs at least top-k=%d slots/layer (%.2f GB) but only %.2f GB is free beside dense+KV",
 			l.TopK, gbf(int64(l.TopK)*perExpert), gbf(remaining))
 	}
 	p.Placement = ExpertCached
 	p.Slots = slots
-	if slots < l.NExperts {
-		p.ScratchBytes += paged
-	}
+	p.ScratchBytes += held
 	p.ExpertBytesUsed = int64(slots)*perExpert + l.ExpertBytesFixed
 	p.HostCopyBytes = l.HostFixed
 	p.Reason = fmt.Sprintf("dense %.2f GB%s + %d/%d experts %.2f GB + KV@%d %.2f GB fits %.2f GB free",
