@@ -356,3 +356,7 @@ and MLA is refused at int8), so this is a guard; no test can reach the V-less ca
    plants are the x1.01 / +-1 ones, and it predates `TestKV8_extraSlotPricedAtTheDeliveredPrecision`, whose runs are
    `s3-r4-green-extraslot.log` and `touched-s2.log`. The table above records the commit, and #759's description now says the same.
    `touched-s3a.log` now has its row in the table.
+4. **CI (no CUDA driver) went red on item 1's rule** on #764: a host with no driver builds no resident for any fixture, so
+   phi3-tiny's "must build" failed there. The test now calls `requireCUDADevice` first: a host with no driver or device skips once, naming
+   why (`s4-pre-nodevice.log`, `CUDA_VISIBLE_DEVICES=` on nobara: `CUDA_ERROR_NO_DEVICE`, one SKIP). A GPU host keeps the rule, red first
+   with phi3-tiny planted back to the int4 load (`s4-pre-gpuhost-plant-phi3-int4.log`), green with the fix (`s4-pre-gpuhost.log`).

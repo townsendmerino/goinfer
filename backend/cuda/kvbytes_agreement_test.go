@@ -35,6 +35,7 @@ import (
 // a one-slot load's figure, kvBytesForCap plus the null blocks. The DeltaNet hybrid must build one slot (recurrent state
 // is not part of a slot); every other layout, 2.
 func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
+	requireCUDADevice(t) // a host with no CUDA driver or device skips once, here; on a GPU host every priced fixture must build
 	home, _ := os.UserHomeDir()
 	fixtures := []string{
 		"../../testdata/llama-tiny", "../../testdata/phi3-tiny", "../../testdata/mistral-tiny-window",
