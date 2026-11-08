@@ -115,6 +115,7 @@ type Model struct {
 	kvDemote      bool          // Options.KVDemote
 	disableFit    bool          // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache      bool          // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
+	moeUnpinned   bool          // the expert cache uploads from pageable file pages, not a pinned copy (Options.MoEExpertsUnpinned)
 
 	loadAbort    <-chan struct{} // Options.LoadAbort, read by a backend's resident build through LoadAbort(); nil off a guarded load
 	loadAbortErr error           // set by withResidency when the build returned ErrLoadAborted; Load turns it into the load's error
@@ -125,6 +126,7 @@ type Model struct {
 	extraKVPerPos int64        // Options.ExtraResidentKVPerPosition — see that field's own doc comment
 	mmap          []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
 	srcPath       string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
+	loadPath      string       // the file or directory Load opened, after the sidecar route ("" for a model not loaded from a path)
 	pager         *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
 	layerPager    *layerPager  // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
 	quant         string       // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
@@ -169,6 +171,10 @@ func newAdapterRegistry() *adapterRegistry {
 // from a .giw (safetensors/GGUF have no single mmap-backed weight file to pread from). The metal
 // expert-paging path re-opens this for pread-staging (the mmap closes its own fd after mapping).
 func (m *Model) GiwPath() string { return m.srcPath }
+
+// SourcePath is the file or checkpoint directory Load opened (the sidecar .giw when the route took it), or "" for a model not loaded from a
+// path. The CUDA expert cache writes its packed-experts file beside it under MoEExpertsUnpinned.
+func (m *Model) SourcePath() string { return m.loadPath }
 
 // MmapByteOffset returns the byte offset of slice b within this model's .giw mmap region, or
 // ok=false if b does not alias that region (a heap-backed weight, or no .giw mapping). MapReadOnly
@@ -374,6 +380,11 @@ func (m *Model) MoECacheExperts() bool {
 	return m.moeCache || m.knobs.get(knobMoECacheExperts) != ""
 }
 
+// MoEExpertsUnpinned reports whether a CUDA expert cache (MoECacheExperts) uploads its slots from pageable pages of a file holding the packed
+// experts, instead of a pinned host copy (Options.MoEExpertsUnpinned, `--moe-experts-unpinned`): about 12 GiB less host memory on Gemma 4 26B, at
+// 0.82x decode at short context and 0.75x at long (docs/measurements/mem10-2026-11/ab-registration.md). Off by default.
+func (m *Model) MoEExpertsUnpinned() bool { return m.moeUnpinned }
+
 // MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as many as fit"; only meaningful with
 // MoECacheExperts. 0 asks for ALL experts and lets the builder cap to measured free VRAM, deliberately: topK slots is the
 // worst setting for the situation this applies to, since it degenerates to fresh-loading every routed expert every token.
@@ -415,6 +426,11 @@ type Options struct {
 	// differs exactly as ExactPrefill does). The experts must be int4: Metal declines int8 experts by
 	// name. CUDA and Metal residency; the CPU's expert paging is StreamWeights.
 	MoECacheExperts bool
+	// MoEExpertsUnpinned makes a CUDA expert cache (MoECacheExperts) upload its slots from pageable pages of a file holding the packed experts,
+	// written once beside the model and unlinked while mapped, instead of a pinned host copy: the copy's host memory (about 12 GiB on Gemma 4 26B)
+	// is not held, at a measured decode cost of 0.82x at short context and 0.75x at long (docs/measurements/mem10-2026-11/ab-registration.md).
+	// Off by default; the fit guard names it when the pinned copy is what does not fit.
+	MoEExpertsUnpinned bool
 	// MoECacheSlots is the per-layer expert-slot count for MoECacheExperts (0 = ask for all and
 	// auto-cap to measured free VRAM). More slots ⇒ higher LRU hit rate ⇒ fewer per-token DMAs,
 	// at VRAM cost. Only meaningful with MoECacheExperts.
@@ -607,7 +623,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
 		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, moeStep: opts.ResidentMoEStep, recurStep: opts.ResidentRecurrentStep, recurStepDef: opts.ResidentRecurrentStepDefault, gemma4StepDef: opts.ResidentGemma4StepDefault, gemma4Step: opts.ResidentGemma4Step, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), kvDemote: opts.KVDemote, disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
-		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
+		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, moeUnpinned: opts.MoEExpertsUnpinned,
 		loadAbort:  opts.LoadAbort,
 		extraBytes: opts.ExtraResidentBytes + recurrentSpecReserve(w.arch, opts.Drafter), extraKVPerPos: opts.ExtraResidentKVPerPosition,
 		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, noSelfTest: opts.noSelfTest,
@@ -736,7 +752,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		}
 		m := modelFromOptions(w, be, opts)
 		m.resCtxPinned = ctxFromCaller
-		m.mmap, m.srcPath = data, dir
+		m.mmap, m.srcPath, m.loadPath = data, dir, dir
 		m.bindKnobs(opts.Knobs.values())
 		m.withBackendNames(opts.Backend, beErr)
 		if opts.StreamWeights {
@@ -847,6 +863,7 @@ func Load(dir string, opts Options) (*Model, error) {
 	}
 	m := modelFromOptions(w, be, opts)
 	m.resCtxPinned = ctxFromCaller
+	m.loadPath = dir
 	m.quant, m.eosIDs = opts.Quant, resolvedEOS
 	m = m.withBackendNames(opts.Backend, beErr)
 	m.bindKnobs(opts.Knobs.values())

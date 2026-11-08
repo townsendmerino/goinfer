@@ -36,6 +36,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 | `Knobs` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 | `MoECacheExperts` | n/a | n/a | n/a | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` |
 | `MoECacheSlots` | n/a | n/a | n/a | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` |
+| `MoEExpertsUnpinned` | n/a | n/a | n/a | tested: `TestMoEExpertsUnpinned_identityAndPricing` | tested: `TestMoEExpertsUnpinned_identityAndPricing` | tested: `TestMoEExpertsUnpinned_identityAndPricing` | n/a |
 | `MoEPager` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
 | `Quant` | tested: `TestDecodeParityInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | tested: `TestOptionPathMetal_quant` | tested: `TestOptionPathMetal_quant` | declined at `SpecDecodeConflict` (`TestSpecDecodeConflict_refusesStagedWebGPUInt4`) | tested: `TestOptionPath_sessionSnapshot` |
 | `ResidentContext` | n/a | n/a | n/a | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` |
@@ -74,6 +75,8 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `Knobs`: routes per-model operator knobs by name to the code that reads each (knobs.go); each knob is an environment read listed in testdata/env_reads.txt and owned there
 - `MoECacheExperts`: "CUDA and Metal residency; the CPU's expert paging is StreamWeights"
 - `MoECacheSlots`: "Only meaningful with MoECacheExperts", a residency option
+- `MoEExpertsUnpinned`: a CUDA expert-cache option (with MoECacheExperts); the CPU's expert paging is StreamWeights
+- `MoEExpertsUnpinned`: it changes only where expert slots upload from; a session's prefix, KV and snapshot hold no expert bytes
 - `MoEPager`: the CPU expert pager's backing mode
 - `MoEPager`: pages weights, not the session's cache
 - `ResidentContext`: "Ignored off the residency path"

@@ -201,6 +201,17 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathSessionLifecycle: ogTestedBy("TestMoECacheExperts_specAndSessionMetal"),
 		},
 	),
+	// The CUDA expert cache's slots uploaded from pageable pages (docs/measurements/mem10-2026-11/README.md, "MEM10 opt-in"): the same bytes, so
+	// every resident path is bit-identical to the pinned load on the paths it touches.
+	"MoEExpertsUnpinned": ogMerge(
+		ogCPUNA("a CUDA expert-cache option (with MoECacheExperts); the CPU's expert paging is StreamWeights"),
+		map[ogPath]ogCell{
+			pathResidentDecode:   ogTestedBy("TestMoEExpertsUnpinned_identityAndPricing"),
+			pathResidentPrefill:  ogTestedBy("TestMoEExpertsUnpinned_identityAndPricing"),
+			pathSpecVerify:       ogTestedBy("TestMoEExpertsUnpinned_identityAndPricing"),
+			pathSessionLifecycle: ogNACell("it changes only where expert slots upload from; a session's prefix, KV and snapshot hold no expert bytes"),
+		},
+	),
 	"MoECacheSlots": ogMerge(
 		ogCPUNA("\"Only meaningful with MoECacheExperts\", a residency option"),
 		map[ogPath]ogCell{

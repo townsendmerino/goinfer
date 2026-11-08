@@ -1,0 +1,6 @@
+plant: unpinned-bytes-wrong (backend/cuda/pack_stream.go)
+    kv16_test.go:1604: position 0: logit 0 differs (pinned 0.19706959, unpinned 0.19731973)
+--- FAIL: TestMoEExpertsUnpinned_identityAndPricing (1.87s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	1.938s
+FAIL
