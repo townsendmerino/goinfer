@@ -207,3 +207,39 @@ decision made the deciding one. That move of its status, not of its bars, is min
    the int8 arm loads, so both plan against the same free VRAM, and a context mismatch is a failure. PASS on all four.
 4. **The fast-prefill smoke cell never asserted the f32 control took the fused tiles.** Fixed (it now fails if `r32.fastAttnLaunches == 0`),
    and the reason the 0.5B is not in the smoke is stated where its model list is. PASS on all six cells.
+
+## S2, review round 2 (Gemini's review of #755 at 740846a9, relayed by the coordinator, 2026-11-07)
+
+1. **The prefill readers got one query repeated over their 8 rows, and the plants ran on decode rows only.** Real, fixed. Rows 200 to 207
+   are now decoded one at a time on the same resident before the rest of the prompt is prefilled, and each layer's rotated query is
+   captured at each of them. Every prefill row reads its own query and is compared with the CPU at its own position. Both plants (V scale
+   x1.01, V code +-1, on that row's most-attended key) are checked on every row, decode and prefill. Broken first
+   (`s2-r2-plant-row0-query.log`): with every row given row 0's query, all 63 affected rows of each multi-row reader read red (rows 1 to 7,
+   3 layers, 3 fixtures); restored.
+2. **`cudaKVPrec` priced int8 from the load's own options, so a load with several slots or a drafter got f32 for an int8 question.** Real,
+   fixed. `ResidentKVBytes` now prices the precision it is asked from the architecture alone. Red first (`s2-r2-red-pricing.log`):
+   `TestCUDAKVI8_pricesWhatIsAsked` (2 slots; 4 slots at f16; a drafter) red on all three, green after (`s2-r2-green-pricing.log`).
+   `TestResidentKVBytes_matchesCUDAAllocation` now expects the int8 pools' price where the int8 kernels cover the family, and f32 where
+   they do not.
+3. **Unexercised int8 paths.**
+   - The split V-sum (`splitkv_vsum_partial` / `_combine`) is now a reader in the exact-input G2: `GOINFER_SPLITKV_VSUM_SPLIT=4` loads it,
+     and split-KV runs both with and without it.
+   - The exact-input G2 now also runs on `llama-attnfa-tiny` (in the repository, random tokens, head dim 128), so it does not skip when
+     `~/models` is absent. The option grid's int8 decode and prefill cells cite it.
+   - The every-path smoke now calls `requireCUDADevice`. It still needs the 1.5B checkpoint, because it compares against f32 on real prose.
+   - `kvCopyBlockRows`'s scale copy is out of reach in this PR: copy on write needs a second slot, which S2 refuses. #759's
+     `TestKV4_sharedPreambleStoredOnce/i8` exercises it, with a plant. `CUDAKVI8Decline`'s comment now says so, where it used to say copy
+     on write did not carry the scales.
+4. **Stale figures.** The PR description, and the task doc's P2 row, which said S2 waited on the owner's G2 decision, are updated.
+   `s2-cuda-touched-list.log` is the run before review round 1 (48 rows a model, the cross-backend G2 still a gate) and is kept as that.
+   The compile-before-check in `backend.go` compiles nothing on an int8 cache (`compileKV` refuses the nil module first), and its
+   comment now says so.
+
+**Readings at this head** (`s2-r2-run.log`, filter `^TestKV8_|TestResidentKVBytes_matchesCUDAAllocation|TestKVPool_detailNamesThePool`):
+every test PASS, no FAIL line in the log; the cross-backend G2 and the two diagnostics skip (`GOINFER_KV8_DIAG`). Exact-input G2:
+
+- 132 reader rows a fixture, every reader launched, 264 plant rows a fixture.
+- Largest |CUDA - CPU| / max|row|: 7.36e-7 (tiny), 1.41e-5 (0.5B), 7.17e-5 (1.5B), against the 1e-4 bar.
+- Smallest plant: 1.01e-4, 1.24e-4 and 4.74e-4. Every plant clears the bar, but on the tiny fixture and the 0.5B it does so narrowly. The
+  plants are a 1 % scale and a one-code change on keys that hold little weight for some rows, and the real deviation on those fixtures
+  sits 9x to 100x below them.

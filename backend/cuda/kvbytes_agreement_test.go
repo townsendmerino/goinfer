@@ -21,8 +21,8 @@ import (
 //     gemma3-1b: CUDA gives local layers the FULL context — the window is a mask, not a ring buffer),
 //     per-layer geometry (gemma4-dense-twogeom, gemma4-moe), a DeltaNet hybrid (qwen35-tiny: no cache on
 //     linear layers), and MLA (deepseek-tiny: ONE latent buffer per layer, not K and V);
-//   - at every KV precision a caller can request of these 2-slot loads; int8 is delivered on one slot only, so asked of them it is
-//     refused and prices f32.
+//   - at every KV precision a caller can request: int8 asked prices the int8 pools where the CUDA int8 kernels cover the family (the dense
+//     ones), whatever the load itself holds, and f32 where they do not.
 //
 // Without the "cuda" branch Plan's per-position formula prices MLA at twice the allocation and a
 // requested f16 / i8 at a fraction of it (docs/measurements/memory-accounting-cuda-2026-09-25.md):
@@ -94,7 +94,7 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 			}
 			// What the pricing says against what was allocated: ResidentKVBytes is a one-slot load, kvBytesForCap and the null blocks. The resident's own
 			// precision prices exactly its allocation. Asking for the other one prices the other; f16 on a model the f16 kernels do not cover is still f32 on
-			// the device. int8 is refused for a 2-slot load (one slot so far), so it prices f32; TestKV8_deliveredBytes holds the int8 figure.
+			// the device; int8 likewise, its pools where the kernels cover the family (TestKV8_deliveredBytes holds that figure against an int8 build).
 			asF32 := slices.Clone(r.layers)
 			for i := range asF32 {
 				asF32[i].kvHalf = false
@@ -103,14 +103,19 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 			for i := range asF16 {
 				asF16[i].kvHalf = !asF16[i].noKV() && !asF16[i].kvShared
 			}
+			asI8 := slices.Clone(asF32)
+			for i := range asI8 {
+				asI8[i].kvI8 = !asI8[i].noKV() && !asI8[i].kvShared && !asI8[i].isMLA()
+			}
 			one := forCap + null
 			f32Bytes := kvBytesForCap(r.kvShareCtx, asF32) + kvPoolNullBytes(asF32)
+			i8Bytes := kvBytesForCap(r.kvShareCtx, asI8) + kvPoolNullBytes(asI8)
 			f16Bytes := kvBytesForCap(r.kvShareCtx, asF16) + kvPoolNullBytes(asF16)
 			for _, c := range []struct {
 				name     string
 				f16, i8b bool
 				want     []int64
-			}{{"f32", false, false, []int64{f32Bytes}}, {"f16 requested", true, false, []int64{one, f16Bytes, f32Bytes}}, {"i8 requested", false, true, []int64{f32Bytes}}} {
+			}{{"f32", false, false, []int64{f32Bytes}}, {"f16 requested", true, false, []int64{one, f16Bytes, f32Bytes}}, {"i8 requested", false, true, []int64{f32Bytes, i8Bytes}}} {
 				got := m.ResidentKVBytes("cuda", r.kvShareCtx, c.f16, c.i8b)
 				if !slices.Contains(c.want, got) {
 					t.Errorf("%s: ResidentKVBytes(\"cuda\", %d) = %d B, want one of %v B (resident kvF16=%v, allocates %d B a slot)", c.name, r.ctxCap, got, c.want, r.kvF16, forCap)

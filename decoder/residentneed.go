@@ -160,19 +160,17 @@ func (m *Model) CUDAKVSlotBytes(ctx int, kvF16, kvI8 bool) int64 {
 	return slot
 }
 
-// cudaKVPrec is the precision a CUDA resident's KV pools hold when kvF16 or kvI8 is asked of this model: int8 where ResolveKV delivers it
-// under the load's other options, f16 where the CUDA policy covers the architecture, else f32.
+// cudaKVPrec is the precision a CUDA resident's KV pools would hold for this architecture when kvF16 or kvI8 is asked: int8 where the CUDA
+// int8 kernels cover the architecture, else f16 where the f16 kernels do, else f32. It reads the architecture alone, never the options this
+// model was loaded with: ResidentKVBytes answers what a precision would cost (fit and Plan ask it of loads that hold another), so a load's
+// slot count or drafter must not change the price of the cache asked about.
 func (m *Model) cudaKVPrec(kvF16, kvI8 bool) string {
 	a := m.w.arch
-	if kvI8 {
-		o := m.kvOpts
-		o.Backend, o.KVPrecision = "cuda", kvPrecI8
-		if got, _ := ResolveKV("cuda", a, o); got == kvPrecI8 {
-			return kvPrecI8
-		}
-		return kvPrecF32
+	bare := Options{Backend: "cuda"}
+	if p, ok := kvPolicies["cuda"]; kvI8 && ok && p.DeclineI8 != nil && p.DeclineI8(a.kvFacts(), bare) == "" {
+		return kvPrecI8
 	}
-	if kvF16 && kvF16Decline("cuda", a, Options{Backend: "cuda"}) == "" {
+	if kvF16 && kvF16Decline("cuda", a, bare) == "" {
 		return kvPrecF16
 	}
 	return kvPrecF32

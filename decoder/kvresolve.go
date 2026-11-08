@@ -172,8 +172,9 @@ func CUDAKVF16AutoDecline(f KVFacts, o Options) string {
 var cudaKVI8Families = []string{"llama", "mistral", "qwen2", "qwen3", "phi3"}
 
 // CUDAKVI8Decline returns why a CUDA resident cannot hold this model's KV cache as int8 under o, or "" when it can. Every refusal names what
-// it is waiting for. One KV slot only: a second slot's paths (copy on write, demotion, snapshots, the batched step) do not carry the scale
-// pools yet, so an explicit --kv-sessions above 1 is refused, and a default count is lowered to one (Model.ResidentKVSlotsRequestFor).
+// it is waiting for. One KV slot only: copy on write copies a block's scales (cuda's kvCopyBlockRows) but takes a second slot to reach, and
+// the other paths a second slot opens (copies between slots, demotion, host snapshots, the batched step) have no int8 test yet, so an explicit
+// --kv-sessions above 1 is refused, and a default count is lowered to one (Model.ResidentKVSlotsRequestFor).
 func CUDAKVI8Decline(f KVFacts, o Options) string {
 	if !slices.Contains(cudaKVI8Families, f.Family) {
 		return "int8 KV on CUDA covers the dense families (" + strings.Join(cudaKVI8Families, ", ") + ") so far; " + f.Family + " is refused until its stage"

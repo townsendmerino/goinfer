@@ -178,9 +178,9 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		ogCPUNA("\"Ignored off the residency path\""),
 		map[ogPath]ogCell{
 			pathResidentDecode: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
-				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogTestedBy("TestKV8_everyAttentionPathStaysCloseToF32")}),
+				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogTestedBy("TestKV8_G2exact_readersMatchTheCPUOnOneCache")}),
 			pathResidentPrefill: ogWithCUDA(ogTestedBy("TestPrefill_int8KVOnThePass"),
-				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogTestedBy("TestKV8_everyAttentionPathStaysCloseToF32")}),
+				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogTestedBy("TestKV8_G2exact_readersMatchTheCPUOnOneCache")}),
 			pathSpecVerify: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
 				ogValueCell{"i8", ogTestedBy("TestKV8_verifyIsSequentialDecode")}),
 			pathSessionLifecycle: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
