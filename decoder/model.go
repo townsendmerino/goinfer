@@ -1767,11 +1767,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// silent-corruption guard), but a resident that exposes its cap lets us stop cleanly at it. gpuPos is the next decode
 	// position; the last valid one is ctxCap-1, and the prefill loop guarantees gpuPos <= ctxCap.
 	if useGPU {
-		if capper, ok := m.resident.(ResidentCapped); ok {
-			if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-				maxTokens = ctxCap - gpuPos // may be 0 (prompt used the whole context)
-				g.BudgetClamped = true      // the resident cap (not the request) bounds this turn
-			}
+		if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
+			maxTokens, g.BudgetClamped = c, true
 		}
 	}
 	// Publish the effective budget so the caller reports finish_reason "length" when this clamp, not an EOS, ends the turn. Set
