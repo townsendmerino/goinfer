@@ -1,0 +1,6 @@
+plant: one tile launch (bAttnBM128hd64) without kvScaled
+    kv16_test.go:1599: prefill.go launches bAttnBM128hd64 without r.kvScaled(l, ...): an int8 cache's tile would read no scales (r.launch(r.bAttnBM128hd64, fcfg, attnArgs...))
+--- FAIL: TestKV8_everyFusedPrefillLaunchPassesScales (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	0.005s
+FAIL

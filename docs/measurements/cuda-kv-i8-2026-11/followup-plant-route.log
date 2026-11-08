@@ -1,0 +1,6 @@
+plant: the int8 exclusion back at the tile load (backend.go)
+    kv16_test.go:1619: int8 prefill launched the tile 0 times and attn_batched 2 times: every layer should take the tile
+--- FAIL: TestKV8_prefillTakesTheTileOnTheTinyFixture (1.88s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	1.948s
+FAIL
