@@ -1,0 +1,8 @@
+plant: vet-fails
+replaced: mrun("go", "vet", *tagarg, *live)
+with:     mrun("go", "vet", "-no-such-flag", *tagarg, *live)
+
+FAIL: test_check_module_skips_by_name_and_fails_the_broken (__main__.PackagesForTheTarget.test_check_module_skips_by_name_and_fails_the_broken)
+AssertionError: Regex didn't match: 'ok\\s+vet m \\(3 pkg\\)' not found in "  FAIL build m (0.0s)\n      broken/a.go:1:1: expected 'package', found pakage\n\n  FAIL list m/broken (0.0s)\n      error: expected 'package', found pakage\n\n  skip vet m/empty: build constraints exclude all its files for darwin\n  FAIL vet m (3 pkg) (0.0s)\n      flag provided but not defined: -no-such-flag\n      usage: go vet [build flags] [-vettool prog] [vet flags] [packages]\n      Run 'go help vet' for details.\n      Run 'go tool vet help' for a full list of flags and analyzers.\n      Run 'go tool vet -help' for an overview.\n\n  FAIL list m/broken (0.0s)\n      error: expected 'package', found pakage\n\n  skip test m/empty: build constraints exclude all its files for darwin\n  skip test m/notests: no test file for darwin\n  skip test m/ok: GOOS=darwin on a linux host builds and vets only (a darwin test binary cannot run here)\n"
+Ran 1 test in 0.172s
+FAILED (failures=1)

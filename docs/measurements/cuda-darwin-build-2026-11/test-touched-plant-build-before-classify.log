@@ -1,0 +1,8 @@
+plant: build-before-classify
+replaced: if any(kinds.get(os.path.normpath(a), "ok") != "empty" for a in args):
+with:     if True:
+
+FAIL: test_every_package_excluded_judges_nothing (__main__.PackagesForTheTarget.test_every_package_excluded_judges_nothing)
+AssertionError: Lists differ: ['build h'] != []
+Ran 1 test in 0.170s
+FAILED (failures=1)
