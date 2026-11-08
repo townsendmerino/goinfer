@@ -90,6 +90,37 @@ func wmBuffers(w *linalg.WeightMat) []int64 {
 	return out
 }
 
+// webgpuProjBuffers is a projection's device buffers as WebGPU uploads it (uploadProj): an int4 matrix as packed codes, its rows
+// padded to 32 where K is not a multiple of 32, and f16 scale pairs; an int8 or f32 matrix as W8A8 codes, rows padded to 16, and
+// per-row f32 scales. Any other kind is sized as the CPU holds it (wmBuffers).
+func webgpuProjBuffers(w *linalg.WeightMat) []int64 {
+	return webgpuStackedBuffers(1, w)
+}
+
+// webgpuStackedBuffers is nE experts shaped as w stacked into one codes buffer and one scales buffer, as WebGPU's MoE upload
+// (buildStacked) makes them; nE = 1 is a single projection.
+func webgpuStackedBuffers(nE int, w *linalg.WeightMat) []int64 {
+	n, k := int64(w.Rows()), int64(w.Cols())
+	if n == 0 || k == 0 {
+		return nil
+	}
+	e := int64(nE)
+	switch w.Kind() {
+	case "int4":
+		kp := k
+		if k%32 != 0 {
+			kp = (k + 31) &^ 31
+		}
+		return []int64{e * n * kp / 2, 4 * ((e*n*(kp/32) + 1) / 2)}
+	case "int8", "f32":
+		return []int64{e * n * ((k + 15) &^ 15), 4 * e * n}
+	}
+	if nE != 1 {
+		return nil
+	}
+	return wmBuffers(w)
+}
+
 // webgpuLayerCaches is layer i's per-sequence buffers on a WebGPU build at ctx, as the build allocates them: K and V on an
 // attention layer that owns its cache (a Gemma 4 KV-shared layer aliases its source's), the latent cache on an MLA layer, and the
 // conv window and recurrent state on a DeltaNet or Mamba-2 layer. kv is false for the recurrent state, which is not context and which
@@ -160,7 +191,7 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 	w := m.w
 	mats := func(ws ...*linalg.WeightMat) {
 		for _, x := range ws {
-			for _, n := range wmBuffers(x) {
+			for _, n := range webgpuProjBuffers(x) {
 				slot0 = append(slot0, n)
 				weights += n
 			}
@@ -179,59 +210,131 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 	} else {
 		mats(&w.Embed)
 	}
-	_, nLayers, _, _, _, _, _ := m.Dims()
+	stacked := func(nE int, w0 *linalg.WeightMat) {
+		for _, n := range webgpuStackedBuffers(nE, w0) {
+			slot0 = append(slot0, n)
+			weights += n
+		}
+	}
+	// w8a8 is a projection WebGPU uploads as int8 codes and per-row f32 scales (UploadW8A8): the codes' rows padded to 16.
+	w8a8 := func(rows, cols int) {
+		if rows <= 0 || cols <= 0 {
+			return
+		}
+		for _, n := range []int64{int64(rows) * int64((cols+15)&^15), 4 * int64(rows)} {
+			slot0 = append(slot0, n)
+			weights += n
+		}
+	}
+	hidden, nLayers, _, _, _, _, _ := m.Dims()
 	for i := range w.Layers {
+		var bufs []int64
+		var kv bool
 		if i < nLayers {
-			bufs, kv := m.webgpuLayerCaches(i, ctx, kvF16, kvI8)
+			bufs, kv = m.webgpuLayerCaches(i, ctx, kvF16, kvI8)
+		}
+		caches := func() {
 			slot0 = append(slot0, bufs...)
 			if kv {
 				slotKV = append(slotKV, bufs...)
 			}
 		}
 		l := &w.Layers[i]
-		mats(&l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GProj, &l.GateProj, &l.UpProj, &l.DownProj, &l.Router, &l.SharedGate, &l.PLEGate, &l.PLEProj)
-		if d := l.delta; d != nil {
+		// A recurrent mixer's weights come first and its state after them, as the build uploads them; the layer's other matrices
+		// follow. Any other layer's caches come first.
+		switch d, mb := l.delta, l.mamba; {
+		case d != nil:
 			mats(&d.inProjQKV, &d.inProjZ, &d.outProj)
-			f32s(d.inProjB, d.inProjA, d.convW, d.dtBias, d.negExpA, d.normW)
+			w8a8(len(d.inProjB)/max(hidden, 1), hidden)
+			w8a8(len(d.inProjA)/max(hidden, 1), hidden)
+			f32s(d.convW, d.dtBias, d.negExpA, d.normW)
+			caches()
+		case mb != nil:
+			if mb.inQ.Rows() != 0 {
+				w8a8(mb.inQ.Rows(), mb.inQ.Cols())
+				w8a8(mb.outQ.Rows(), mb.outQ.Cols())
+			} else {
+				w8a8(len(mb.inProj)/max(hidden, 1), hidden)
+				w8a8(hidden, len(mb.outProj)/max(hidden, 1))
+			}
+			f32s(mb.convW, mb.convB, make([]float32, 3*len(mb.aLog)), mb.normW)
+			caches()
+		default:
+			caches()
 		}
+		// The mixer's matrices, then the FFN's: the dense MLP, or the router, each projection's experts stacked into one buffer, the
+		// shared expert and its gate.
+		mats(&l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GProj)
 		if q := l.qattn; q != nil {
 			mats(&q.qProj, &q.kProj, &q.vProj, &q.oProj)
 		}
 		if a := l.mla; a != nil {
-			f32s(a.qAProj, a.qBProj, a.qProj, a.kvAProj, a.kvBProj, a.oProj, a.gProj)
-			mats(&a.qAQ, &a.qBQ, &a.qQ, &a.kvAQ, &a.oQ)
+			// Each projection W8A8, from its int8 form or its f32 (mlaProj), then kv_b split into W_UKᵀ and W_UV, f32.
+			qLoRA, kvLoRA, qkNope, qkRope, vHead, _, _, _, _ := m.MLAResidentParams()
+			_, _, nH, _, _, _, _ := m.Dims()
+			proj := func(q *linalg.WeightMat, rows, cols int) {
+				if q.Rows() != 0 {
+					rows, cols = q.Rows(), q.Cols()
+				}
+				w8a8(rows, cols)
+			}
+			if qLoRA > 0 {
+				proj(&a.qAQ, qLoRA, hidden)
+				proj(&a.qBQ, nH*(qkNope+qkRope), qLoRA)
+			} else {
+				proj(&a.qQ, nH*(qkNope+qkRope), hidden)
+			}
+			proj(&a.kvAQ, kvLoRA+qkRope, hidden)
+			proj(&a.oQ, hidden, nH*vHead)
+			for _, n := range []int64{4 * int64(nH*kvLoRA*qkNope), 4 * int64(nH*vHead*kvLoRA)} {
+				slot0 = append(slot0, n)
+				weights += n
+			}
 		}
 		if k := l.kda; k != nil {
 			mats(&k.qProj, &k.kProj, &k.vProj, &k.fProj, &k.gProj, &k.oProj)
 			f32s(k.qConvW, k.kConvW, k.vConvW, k.bProj, k.dtBias, k.aLog, k.oNormW)
 		}
-		if mb := l.mamba; mb != nil {
-			f32s(mb.inProj, mb.convW, mb.outProj)
-			mats(&mb.inQ, &mb.outQ)
-		}
 		if sc := l.shortConv; sc != nil {
 			mats(&sc.inProj, &sc.outProj)
 			f32s(sc.convW)
 		}
-		for j := range l.Experts {
-			mats(&l.Experts[j].Gate, &l.Experts[j].Up, &l.Experts[j].Down)
-		}
-		mats(&l.SharedExpert.Gate, &l.SharedExpert.Up, &l.SharedExpert.Down)
-		if mo := l.gemma4moe; mo != nil {
-			mats(&mo.routerProj)
-			for e := range mo.expertsGateUp {
-				mats(&mo.expertsGateUp[e], &mo.expertsDown[e])
+		mo := l.gemma4moe
+		if mo != nil { // Gemma 4's parallel block: its router, f32, ahead of the dense MLP
+			if n := 4 * int64(mo.routerProj.Rows()) * int64(mo.routerProj.Cols()); n > 0 {
+				slot0 = append(slot0, n)
+				weights += n
 			}
+		}
+		mats(&l.GateProj, &l.UpProj, &l.DownProj, &l.PLEGate, &l.PLEProj)
+		if nE := len(l.Experts); nE > 0 {
+			mats(&l.Router)
+			stacked(nE, &l.Experts[0].Gate)
+			stacked(nE, &l.Experts[0].Up)
+			stacked(nE, &l.Experts[0].Down)
+		} else {
+			mats(&l.Router)
+		}
+		mats(&l.SharedExpert.Gate, &l.SharedExpert.Up, &l.SharedExpert.Down, &l.SharedGate)
+		if mo != nil && len(mo.expertsGateUp) > 0 {
+			stacked(len(mo.expertsGateUp), &mo.expertsGateUp[0])
+			stacked(len(mo.expertsDown), &mo.expertsDown[0])
 		}
 	}
 	slot0 = append(slot0, webgpuVkScratch)
 	return slot0, slotKV, weights
 }
 
-// webgpuBlockRounding is what a WebGPU load holds at ctx beyond what the plan already prices on its own lines (the weights, the
-// context, and one slot's recurrent state): gpu-allocator's blocks over webgpuDeviceBuffers, less those three. It carries the block
-// rounding, the scratch and wgpu-core's own buffers, so the plan's total is M1′'s: the blocks plus webgpuVkFixed.
+// webgpuBlockRounding is what a WebGPU load holds at ctx beyond what the plan already prices on its own lines (the matrices, the
+// context, and one slot's recurrent state): gpu-allocator's blocks over webgpuDeviceBuffers, less those three. The matrices are
+// the plan's own walk (its dense and expert lines less their vectors and biases, which sit beside the blocks), not the list's sizes,
+// which are what WebGPU uploads: so the plan's total is M1′'s blocks plus webgpuVkFixed, the vectors, the biases and the slack.
 func (m *Model) webgpuBlockRounding(ctx int, kvF16, kvI8 bool) int64 {
-	slot0, _, weights := m.webgpuDeviceBuffers(ctx, kvF16, kvI8)
-	return webgpuVkBlocks(slot0) - weights - m.ResidentKVBytes("webgpu", ctx, kvF16, kvI8) - m.stateBytes("webgpu")
+	slot0, _, _ := m.webgpuDeviceBuffers(ctx, kvF16, kvI8)
+	return webgpuVkBlocks(slot0) - m.webgpuMatrixWalk() - m.ResidentKVBytes("webgpu", ctx, kvF16, kvI8) - m.stateBytes("webgpu")
+}
+
+// webgpuMatrixWalk is the webgpu plan's matrices: its dense line less the vectors, and its routed experts less their biases.
+func (m *Model) webgpuMatrixWalk() int64 {
+	return m.ResidentDenseWeightBytesFor("webgpu") + m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes() - m.denseVectorBytes() - 2*m.expertBiasBytes()
 }

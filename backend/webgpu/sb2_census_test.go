@@ -967,3 +967,51 @@ func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
 		})
 	}
 }
+
+// TestWebGPUDeviceBuffers_inTheBuildsOrder: on a real WebGPU build of each fixture, the planner's buffer list (vkPlanBuffers, its
+// trailing scratch line left out) appears in the build's ledger of weight, KV, state and expert buffers, buffer for buffer and in
+// order, with only vectors between (Storage|CopySrc, as up32 makes them: the norms and gains the plan prices beside the blocks).
+// M1′ places first fit, so the order decides the blocks (docs/measurements/sb2-vk-2026-10-31/README.md, "The hybrid's miss").
+func TestWebGPUDeviceBuffers_inTheBuildsOrder(t *testing.T) {
+	for _, dir := range []string{"olmo_hybrid-tiny", "qwen35-tiny", "qwen3next-tiny", "nemotron-tiny", "nemotron3nano-tiny", "deepseek-tiny",
+		"gemma4-moe-kv-tiny", "llama-tiny", "mistral-tiny-window", "mixtral-tiny", "qwen3moe-tiny", "glm-tiny", "glm-tiny-bias",
+		"granite-dense-tiny", "olmo3-tiny", "smollm3-tiny", "gemma1-tiny", "qwen25vl-tiny"} {
+		t.Run(dir, func(t *testing.T) {
+			path := filepath.Join("../../testdata", dir)
+			if _, err := os.Stat(path); err != nil {
+				t.Skipf("no fixture at %s", path)
+			}
+			o := decoder.Options{Quant: "int4", ResidentContext: 64}
+			if dir == "nemotron-tiny" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": "1"}
+			}
+			m, rd := loadWebGPUResident(t, path, o, 1)
+			defer m.Close()
+			kv := m.KVDeliveredFor("webgpu")
+			plan, _ := vkPlanBuffers(m, rd.ctxCap, kv == "f16", kv == "i8")
+			plan = plan[:len(plan)-1]
+			const vector = uint64(wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc)
+			var led []kernels.LeasedBufferForTest
+			for _, b := range rd.c.LeasedBuffersForTest() {
+				if b.Line == "dense" || b.Line == "kv" || b.Line == "state" || b.Line == "experts" {
+					led = append(led, b)
+				}
+			}
+			// ok[i][j]: the ledger from i on holds the plan from j on, in order, skipping vectors only.
+			ok := make([][]bool, len(led)+1)
+			for i := range ok {
+				ok[i] = make([]bool, len(plan)+1)
+			}
+			ok[len(led)][len(plan)] = true
+			for i := len(led) - 1; i >= 0; i-- {
+				for j := len(plan); j >= 0; j-- {
+					ok[i][j] = led[i].Usage == vector && led[i].Line == "dense" && ok[i+1][j] ||
+						j < len(plan) && led[i].Bytes == plan[j] && ok[i+1][j+1]
+				}
+			}
+			if !ok[0][0] {
+				t.Fatalf("the planner's %d buffers are not the build's %d weight, KV, state and expert buffers in order, with only vectors between", len(plan), len(led))
+			}
+		})
+	}
+}

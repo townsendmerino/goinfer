@@ -2,10 +2,10 @@ package decoder
 
 import "testing"
 
-// TestWebGPUDeviceBuffers_sumToTheModel holds webgpuDeviceBuffers to the planner's own figures on a fixture of each mixer family: the
-// list's matrices are the dense bytes less the host-side tables plus the routed experts (residentWeightBytesSplit's walk), and its
-// context caches (K and V, MLA's latent; not the recurrent state) are ResidentKVBytes("webgpu"), so the block rounding the plan adds
-// is over the buffers it counts.
+// TestWebGPUDeviceBuffers_sumToTheModel holds webgpuDeviceBuffers' context caches (K and V, MLA's latent; not the recurrent state)
+// to ResidentKVBytes("webgpu") on a fixture of each mixer family, so the block rounding the plan adds is over the caches it counts.
+// The list's matrices are sized as WebGPU uploads them, not as the planner's walk counts them; a WebGPU build holds them to its own
+// buffers (backend/webgpu TestWebGPUDeviceBuffers_inTheBuildsOrder).
 func TestWebGPUDeviceBuffers_sumToTheModel(t *testing.T) {
 	for _, dir := range []string{
 		"../testdata/llama-tiny",
@@ -22,10 +22,7 @@ func TestWebGPUDeviceBuffers_sumToTheModel(t *testing.T) {
 			t.Fatalf("%s: %v", dir, err)
 		}
 		const ctx = 512
-		_, slotKV, weights := m.webgpuDeviceBuffers(ctx, false, false)
-		if want := m.ResidentDenseWeightBytesFor("webgpu") + m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes() - m.denseVectorBytes() - 2*m.expertBiasBytes(); weights != want { // a matrix walk: no vectors or biases
-			t.Errorf("%s: the list's matrices %d, the planner's walk %d", dir, weights, want)
-		}
+		_, slotKV, _ := m.webgpuDeviceBuffers(ctx, false, false)
 		var kv int64
 		for _, n := range slotKV {
 			kv += n
