@@ -26,13 +26,14 @@ func TestRope_matchesCPUAngles(t *testing.T) {
 	for i := range invFreq {
 		invFreq[i] = float32(math.Pow(10000, -2*float64(i)/hd))
 	}
+	scaleAt := func(pos int) float64 { return []float64{1, 0.75}[pos%2] } // YaRN's factor on odd positions
 	rot := func(src []float32, heads, pos int) []float32 {
 		out := make([]float32, len(src))
 		for h := range heads {
 			off := h * hd
 			for d := range half {
 				th := float64(float32(pos) * invFreq[d]) // the shader's own f32 angle
-				cs, sn := math.Cos(th), math.Sin(th)
+				cs, sn := math.Cos(th)*scaleAt(pos), math.Sin(th)*scaleAt(pos)
 				x1, x2 := float64(src[off+d]), float64(src[off+half+d])
 				out[off+d] = float32(x1*cs - x2*sn)
 				out[off+half+d] = float32(x2*cs + x1*sn)
@@ -51,26 +52,26 @@ func TestRope_matchesCPUAngles(t *testing.T) {
 		}
 	}
 	rng := i8rng()
-	for _, pos := range []int{1, 2, 3, 5, 7, 100, 1000, 4095, 32767, 65535, 500000} {
+	for _, pos := range []int{1, 2, 3, 5, 7, 100, 1000, 4095, 32767, 65535, 500000, 500001} {
 		slot := pos % maxLen // the cache row written; pos is the rotation's
 		q, k, v := randF(rng, nH*hd), randF(rng, kvDim), randF(rng, kvDim)
 
 		qb := c.sbuf(q)
-		uni := c.ubuf([]uint32{nH, hd, half, uint32(pos), math.Float32bits(1), 0, 0, 0})
+		uni := c.ubuf([]uint32{nH, hd, half, uint32(pos), math.Float32bits(float32(scaleAt(pos))), 0, 0, 0})
 		if err := c.dispatchI8(c.ropePipeline, c.ropeLayout, (nH*half+63)/64, []*wgpu.Buffer{qb, c.sbuf(invFreq)}, uni); err != nil {
 			t.Fatalf("rope: %v", err)
 		}
 		check("rope Q", pos, c.readF(qb, nH*hd), rot(q, nH, pos), q)
 
 		kc := c.zbuf(maxLen * kvDim)
-		suni := c.ubuf([]uint32{nKV, hd, half, uint32(pos), math.Float32bits(1), uint32(slot * kvDim), 0, 0})
+		suni := c.ubuf([]uint32{nKV, hd, half, uint32(pos), math.Float32bits(float32(scaleAt(pos))), uint32(slot * kvDim), 0, 0})
 		if err := c.dispatchI8(c.ropeStorePipeline, c.ropeStoreLayout, (nKV*half+63)/64, []*wgpu.Buffer{c.sbuf(k), c.sbuf(invFreq), kc}, suni); err != nil {
 			t.Fatalf("ropeStore: %v", err)
 		}
 		check("ropeStore K", pos, c.readF(kc, maxLen*kvDim)[slot*kvDim:(slot+1)*kvDim], rot(k, nKV, pos), k)
 
 		qb2, kc2, vc2 := c.sbuf(q), c.zbuf(maxLen*kvDim), c.zbuf(maxLen*kvDim)
-		funi := c.ubuf([]uint32{nH, nKV, hd, half, uint32(pos), uint32(slot * kvDim), math.Float32bits(1), uint32(kvDim)})
+		funi := c.ubuf([]uint32{nH, nKV, hd, half, uint32(pos), uint32(slot * kvDim), math.Float32bits(float32(scaleAt(pos))), uint32(kvDim)})
 		if err := c.dispatchI8(c.qkvFinPipeline, c.qkvFinLayout, (max(nH*half, kvDim)+63)/64,
 			[]*wgpu.Buffer{qb2, c.sbuf(k), c.sbuf(v), c.sbuf(invFreq), kc2, vc2}, funi); err != nil {
 			t.Fatalf("qkvFinalize: %v", err)
@@ -220,4 +221,65 @@ func (c *Context) dispatchI8Grid(pl *wgpu.ComputePipeline, layout *wgpu.BindGrou
 	c.queue.Submit(cb)
 	c.device.Poll(true, nil)
 	return nil
+}
+
+const ropeCosSinProbeWGSL = ropeCosSinWGSL + `
+@group(0) @binding(0) var<storage, read>       x: array<f32>;
+@group(0) @binding(1) var<storage, read_write> y: array<f32>;  // [2n]: cos, sin
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+    let i = g.x;
+    if (i >= arrayLength(&x)) { return; }
+    let cs = ropeCosSin(x[i]);
+    y[2u * i] = cs.x;
+    y[2u * i + 1u] = cs.y;
+}
+`
+
+// TestRopeCosSin_matchesFloat64 holds ropeCosSin itself to float64 cos and sin of the same f32 angle across |θ| < 2^30, negative angles
+// and the integer reduction's limb boundaries included, and to (1, 0) beyond.
+func TestRopeCosSin_matchesFloat64(t *testing.T) {
+	c := newOrSkipHW(t)
+	defer c.Close()
+	_, pl, err := c.compute("ropeCosSin-probe", ropeCosSinProbeWGSL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ly := c.bgl(pl)
+	var xs []float32
+	for _, rg := range [][2]float64{{-10, 10}, {10, 1e4}, {1e4, 1 << 24}, {1 << 24, 1 << 26}, {1 << 26, 1<<30 - 128}, {-(1 << 28), -1e3}} {
+		const n = 1 << 14
+		for i := range n {
+			xs = append(xs, float32(rg[0]+(rg[1]-rg[0])*float64(i)/float64(n-1)))
+		}
+	}
+	for _, p := range []float64{1 << 23, 1 << 24, 1 << 25, 1 << 26, 1 << 27, 1 << 28, 1 << 29} {
+		v := float32(p)
+		xs = append(xs, math.Nextafter32(v, 0), v, math.Nextafter32(v, float32(math.Inf(1))))
+	}
+	big := []float32{1 << 30, 3e9, 1e20}
+	xs = append(xs, big...)
+	yb := c.zbuf(2 * len(xs))
+	if err := c.dispatchI8(pl, ly, (len(xs)+63)/64, []*wgpu.Buffer{c.sbuf(xs), yb}); err != nil {
+		t.Fatal(err)
+	}
+	ys := c.readF(yb, 2*len(xs))
+	var worst float64
+	var at float32
+	for i, v := range xs[:len(xs)-len(big)] {
+		e := math.Max(math.Abs(float64(ys[2*i])-math.Cos(float64(v))), math.Abs(float64(ys[2*i+1])-math.Sin(float64(v))))
+		if e > worst {
+			worst, at = e, v
+		}
+	}
+	if worst > 3e-7 {
+		t.Errorf("ropeCosSin vs float64: worst |diff| %.3g at θ = %v, want under 3e-7", worst, at)
+	}
+	for j := range big {
+		i := len(xs) - len(big) + j
+		if ys[2*i] != 1 || ys[2*i+1] != 0 {
+			t.Errorf("θ = %v (|θ| >= 2^30): got (%v, %v), want (1, 0)", xs[i], ys[2*i], ys[2*i+1])
+		}
+	}
+	t.Logf("worst |diff| %.3g at θ = %v over %d angles", worst, at, len(xs))
 }
