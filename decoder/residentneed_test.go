@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // docs/tasks/task-memory-accounting-2026-09.md item 2: `fit`'s verdict (Plan) and Metal's resident guard (ResidentNeedBytes,
@@ -154,6 +156,34 @@ func TestPlan_metalScratchFollowsTheSlots(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMetalDecodeScratch_q4kSegmentsAreThePartsTheLaneUploads: on a q4k load, each fused group's segments are the runs of one kind
+// among the parts the layer holds, one row-count uniform each. A part with no rows is not uploaded: emptied between two Q4_K parts it
+// splits no run, and a group with none of its parts adds no segment. On a two-layer q4k llama whose projections are all Q4_K.
+func TestMetalDecodeScratch_q4kSegmentsAreThePartsTheLaneUploads(t *testing.T) {
+	m, err := Load(q4kGGUF(t, t.TempDir(), 2), Options{Backend: "cpu", Quant: "q4k", DirectLoad: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if m.Quant() != "q4k" {
+		t.Fatalf("the load's quant is %q, want q4k", m.Quant())
+	}
+	base := m.MetalDecodeScratchBytes(0)
+	lw := &m.w.Layers[0]
+	k := lw.KProj
+	lw.KProj = linalg.WeightMat{}
+	if got := m.MetalDecodeScratchBytes(0); got != base {
+		t.Errorf("K emptied between Q4_K q and v: decode's scratch %d bytes, want %d (q and v stay one run)", got, base)
+	}
+	lw.KProj = k
+	gate, up := lw.GateProj, lw.UpProj
+	lw.GateProj, lw.UpProj = linalg.WeightMat{}, linalg.WeightMat{}
+	if got, want := m.MetalDecodeScratchBytes(0), base-4; got != want {
+		t.Errorf("gate and up emptied: decode's scratch %d bytes, want %d (the group's one segment gone)", got, want)
+	}
+	lw.GateProj, lw.UpProj = gate, up
 }
 
 // The disagreement itself, on a dense model: given one byte less than the guard needs, Plan("metal") must not
