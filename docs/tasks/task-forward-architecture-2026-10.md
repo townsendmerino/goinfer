@@ -4633,7 +4633,9 @@ each is red on its row alone. No registered row builds the q4k lane or PLE, so n
   - G-MS4 reads a K=V layer from the weights (`VFromKResident`), a shape they fix, so it no longer bans the name.
   - KDA and short conv declare no per-row rows, since no Metal build runs them.
 - From #772's review:
-  - The build's check holds each FFN row and each of k and v to the layer that runs it, not through their widest.
+  - The build's check holds each FFN row and each of k and v on its own, at the widest layer that runs it, not through one maximum
+    over them all. It compares row widths, not each layer's dispatch: a per-layer FFN error is G1's to catch (G2's defect (4) in
+    the Gemma 4 E-model test, which lowers the declaration with the width so that it reaches G1).
   - G-MS4 also scans Metal's term table.
   - An expert cache's slot count is solved before its paged slot indices are taken. MM1's census moved in 596 Metal sections: the
     boundary where a cache holds every expert dropped by 4·k, to that plan's own need.
