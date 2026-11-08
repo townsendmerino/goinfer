@@ -89,243 +89,310 @@ type stepResult struct {
 // the resident was not called.
 var errStepShape = errors.New("decoder: the resident does not offer this step's shape")
 
-// stepCall resolves b's shape on r to the one resident call that runs it, or nil when b names no shape or r does not offer it.
-// It is the only place a forward shape is asserted on a resident: canStep and stepOn both read it.
-func stepCall(r ResidentForward, b stepBatch) func() (stepResult, error) {
+// stepDo resolves b's shape on r to the one resident call that runs it, and makes that call when run is set; ok is false, and
+// nothing is called, when b names no shape or r does not offer it. It is the only place a forward shape is asserted on a resident:
+// canStep and stepOn both go through it, and it builds no closure, so a decode token's step allocates nothing of its own.
+func stepDo(r ResidentForward, b stepBatch, run bool) (stepResult, bool, error) {
 	switch b.Pass {
 	case passToken:
 		if len(b.Emb) != 1 {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return tokenCall(r, b, b.Emb[0])
+		return tokenDo(r, b, b.Emb[0], run)
 	case passRows:
 		ctx := b.Ctx
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		return rowsCall(r, b, ctx)
+		return rowsDo(r, b, ctx, run)
 	case passSeqs:
 		st, ok := r.(ResidentBatchStepper)
 		if !ok || len(b.Seqs) == 0 {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (res stepResult, err error) {
-			res.Batch, err = st.StepBatch(b.Seqs)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.Batch, err = st.StepBatch(b.Seqs)
+		return res, true, err
 	}
-	return nil
+	return stepResult{}, false, nil
 }
 
-// tokenCall is stepCall for passToken: the decode methods.
-func tokenCall(r ResidentForward, b stepBatch, e []float32) func() (stepResult, error) {
+// tokenDo is stepDo for passToken: the decode methods.
+func tokenDo(r ResidentForward, b stepBatch, e []float32, run bool) (stepResult, bool, error) {
 	if b.In == inMRoPE {
 		mr, ok := r.(ResidentMRoPE)
 		if !ok || b.Out != outLogits {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (res stepResult, err error) {
-			res.Logits, err = mr.ForwardMRoPE(e, b.Pos, b.RopePos)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.Logits, err = mr.ForwardMRoPE(e, b.Pos, b.RopePos)
+		return res, true, err
 	}
 	if b.In != inTokens {
-		return nil
+		return stepResult{}, false, nil
 	}
 	switch b.Out {
 	case outLogits:
-		return func() (res stepResult, err error) {
-			res.Logits, err = r.Forward(e, b.Pos)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.Logits, err = r.Forward(e, b.Pos)
+		return res, true, err
 	case outArgmax:
 		g, ok := r.(ResidentGreedy)
 		if !ok {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (res stepResult, err error) {
-			res.ID, err = g.ForwardArgmax(e, b.Pos)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.ID, err = g.ForwardArgmax(e, b.Pos)
+		return res, true, err
 	case outTopK:
 		tk, ok := r.(ResidentTopK)
 		if !ok || !tk.TopKAvailable() {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (res stepResult, err error) {
-			res.TopK, err = tk.ForwardTopK(e, b.Pos, b.K, b.Temperature, b.WantZ)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.TopK, err = tk.ForwardTopK(e, b.Pos, b.K, b.Temperature, b.WantZ)
+		return res, true, err
 	case outSample:
 		sm, ok := r.(ResidentSample)
 		if !ok || !sm.SampleAvailable() {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (res stepResult, err error) {
-			res.ID, err = sm.ForwardSample(e, b.Pos, b.Temperature, b.Seed, b.Draw)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.ID, err = sm.ForwardSample(e, b.Pos, b.Temperature, b.Seed, b.Draw)
+		return res, true, err
 	case outNone:
 		kv, ok := r.(ResidentPrefillKV)
 		if !ok {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (stepResult, error) { return stepResult{}, kv.ForwardNoLogits(e, b.Pos) }
+		if !run {
+			return stepResult{}, true, nil
+		}
+		return stepResult{}, true, kv.ForwardNoLogits(e, b.Pos)
 	}
-	return nil
+	return stepResult{}, false, nil
 }
 
-// rowsCall is stepCall for passRows: the batched passes.
-func rowsCall(r ResidentForward, b stepBatch, ctx context.Context) func() (stepResult, error) {
+// rowsDo is stepDo for passRows: the batched passes.
+func rowsDo(r ResidentForward, b stepBatch, ctx context.Context, run bool) (stepResult, bool, error) {
 	if b.In == inRowsFn {
 		pr, ok := r.(ResidentPrefillRows)
 		if !ok || b.Out != outLogits || b.N <= 0 || b.Rows == nil || b.At != nil {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (res stepResult, err error) {
-			res.Logits, err = pr.PrefillLastRows(ctx, b.N, b.Pos, b.Rows)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.Logits, err = pr.PrefillLastRows(ctx, b.N, b.Pos, b.Rows)
+		return res, true, err
 	}
 	if len(b.Emb) == 0 {
-		return nil
+		return stepResult{}, false, nil
 	}
 	if b.In != inTokens {
-		return mediaCall(r, b, ctx)
+		return mediaDo(r, b, ctx, run)
 	}
 	switch b.Out {
 	case outLogits:
 		if b.At != nil {
 			mp, ok := r.(ResidentPrefillMarked)
 			if !ok {
-				return nil
+				return stepResult{}, false, nil
 			}
-			return func() (res stepResult, err error) {
-				res.Logits, err = mp.PrefillLastMarked(ctx, b.Emb, b.Pos, b.Mark, b.At)
-				return res, err
+			if !run {
+				return stepResult{}, true, nil
 			}
+			var res stepResult
+			var err error
+			res.Logits, err = mp.PrefillLastMarked(ctx, b.Emb, b.Pos, b.Mark, b.At)
+			return res, true, err
 		}
 		pf, ok := r.(Prefiller)
 		if !ok {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (res stepResult, err error) {
-			res.Logits, err = pf.PrefillLast(ctx, b.Emb, b.Pos)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.Logits, err = pf.PrefillLast(ctx, b.Emb, b.Pos)
+		return res, true, err
 	case outEveryLogits:
-		return func() (res stepResult, err error) {
-			res.Rows, err = r.ForwardN(b.Emb, b.Pos)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.Rows, err = r.ForwardN(b.Emb, b.Pos)
+		return res, true, err
 	case outArgmax:
 		sa, ok := r.(ResidentSeedArgmax)
 		if !ok {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (res stepResult, err error) {
-			res.ID, err = sa.PrefillSeedArgmax(b.Emb, b.Pos)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.ID, err = sa.PrefillSeedArgmax(b.Emb, b.Pos)
+		return res, true, err
 	case outEveryArgmax:
 		na, ok := r.(interface {
 			PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error)
 		})
 		if !ok {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (res stepResult, err error) {
-			res.IDs, err = na.PrefillLastNArgmax(b.Emb, b.Pos)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.IDs, err = na.PrefillLastNArgmax(b.Emb, b.Pos)
+		return res, true, err
 	case outHidden:
 		hl, ok := r.(ResidentHiddenLast)
 		if !ok {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (res stepResult, err error) {
-			res.Hidden, err = hl.HiddenLast(ctx, b.Emb, b.Pos)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.Hidden, err = hl.HiddenLast(ctx, b.Emb, b.Pos)
+		return res, true, err
 	case outEveryResidual:
 		ra, ok := r.(ResidentResidualAll)
 		if !ok {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (res stepResult, err error) {
-			res.Rows, err = ra.ResidualAll(ctx, b.Emb, b.Pos)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.Rows, err = ra.ResidualAll(ctx, b.Emb, b.Pos)
+		return res, true, err
 	}
-	return nil
+	return stepResult{}, false, nil
 }
 
-// mediaCall is rowsCall for the image and m-RoPE inputs, which return the last row's logits.
-func mediaCall(r ResidentForward, b stepBatch, ctx context.Context) func() (stepResult, error) {
+// mediaDo is rowsDo for the image and m-RoPE inputs, which return the last row's logits.
+func mediaDo(r ResidentForward, b stepBatch, ctx context.Context, run bool) (stepResult, bool, error) {
 	if b.Out != outLogits || b.At != nil {
-		return nil
+		return stepResult{}, false, nil
 	}
 	switch b.In {
 	case inImage:
 		ip, ok := r.(ResidentImagePrefill)
 		if !ok || len(b.Spans) != 1 {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (res stepResult, err error) {
-			res.Logits, err = ip.PrefillImageLast(ctx, b.Emb, b.Pos, b.Spans[0][0], b.Spans[0][1])
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.Logits, err = ip.PrefillImageLast(ctx, b.Emb, b.Pos, b.Spans[0][0], b.Spans[0][1])
+		return res, true, err
 	case inImageBlocks:
 		ib, ok := r.(ResidentImageBlocksPrefill)
 		if !ok {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (res stepResult, err error) {
-			res.Logits, err = ib.PrefillImageBlocksLast(ctx, b.Emb, b.Pos, b.Spans)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.Logits, err = ib.PrefillImageBlocksLast(ctx, b.Emb, b.Pos, b.Spans)
+		return res, true, err
 	case inSpans:
 		sp, ok := r.(ResidentSpanPrefill)
 		if !ok {
-			return nil
+			return stepResult{}, false, nil
 		}
-		return func() (res stepResult, err error) {
-			res.Logits, err = sp.PrefillSpansLast(ctx, b.Emb, b.Pos, b.Spans)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.Logits, err = sp.PrefillSpansLast(ctx, b.Emb, b.Pos, b.Spans)
+		return res, true, err
 	case inMRoPE, inMRoPEDeepstack:
 		if b.Recurrent {
 			hp, ok := r.(ResidentHybridMRoPEPrefill)
 			if !ok || !hp.HybridMRoPEPrefill() {
-				return nil
+				return stepResult{}, false, nil
 			}
 		}
 		if b.In == inMRoPE {
 			mp, ok := r.(ResidentMRoPEPrefill)
 			if !ok {
-				return nil
+				return stepResult{}, false, nil
 			}
-			return func() (res stepResult, err error) {
-				res.Logits, err = mp.PrefillMRoPELast(ctx, b.Emb, b.Pos, b.MRoPE)
-				return res, err
+			if !run {
+				return stepResult{}, true, nil
 			}
+			var res stepResult
+			var err error
+			res.Logits, err = mp.PrefillMRoPELast(ctx, b.Emb, b.Pos, b.MRoPE)
+			return res, true, err
 		}
 		dp, ok := r.(ResidentMRoPEDeepstackPrefill)
 		if !ok || len(b.Spans) != 1 {
-			return nil
+			return stepResult{}, false, nil
 		}
 		lo, hi := b.Spans[0][0], b.Spans[0][1]
-		return func() (res stepResult, err error) {
-			res.Logits, err = dp.PrefillMRoPEDeepstackLast(ctx, b.Emb, b.Pos, b.MRoPE, b.Deep, lo, hi-lo)
-			return res, err
+		if !run {
+			return stepResult{}, true, nil
 		}
+		var res stepResult
+		var err error
+		res.Logits, err = dp.PrefillMRoPEDeepstackLast(ctx, b.Emb, b.Pos, b.MRoPE, b.Deep, lo, hi-lo)
+		return res, true, err
 	}
-	return nil
+	return stepResult{}, false, nil
 }
 
 // canStep reports whether r offers b's shape: the type assertion, and the availability answer beside it where the shape has
 // one (TopKAvailable, SampleAvailable, HybridMRoPEPrefill for a recurrent m-RoPE prefill). It calls no forward.
-func canStep(r ResidentForward, b stepBatch) bool { return r != nil && stepCall(r, b) != nil }
+func canStep(r ResidentForward, b stepBatch) bool {
+	if r == nil {
+		return false
+	}
+	_, ok, _ := stepDo(r, b, false)
+	return ok
+}
 
 // stepOn runs b on r as the one resident call today's callers make for its shape, or returns errStepShape, calling nothing,
 // where canStep is false.
@@ -333,12 +400,20 @@ func stepOn(r ResidentForward, b stepBatch) (stepResult, error) {
 	if r == nil {
 		return stepResult{}, errStepShape
 	}
-	call := stepCall(r, b)
-	if call == nil {
+	res, ok, err := stepDo(r, b, true)
+	if !ok {
 		return stepResult{}, errStepShape
 	}
-	return call()
+	return res, err
 }
 
 // step is stepOn on m's resident. It does not claim or bind the resident: the caller holds it as for the call step makes.
 func (m *Model) step(b stepBatch) (stepResult, error) { return stepOn(m.resident, b) }
+
+// stepProbe is a one-row batch for asking canStep about a decode shape before there is a row: canStep reads no row.
+var stepProbe = [][]float32{nil}
+
+// canDecode reports whether m's resident offers the decode-token shape with output out (canStep on a passToken batch).
+func (m *Model) canDecode(out stepOut) bool {
+	return canStep(m.resident, stepBatch{Pass: passToken, Emb: stepProbe, Out: out})
+}
