@@ -245,7 +245,13 @@ Red first (`s3b-red.log`, the new int8 arms against S3a's code): `TestKV7_restor
 | `TestKV8_uploadRefused` | `KVSnapshotBytes` prices `kvDim` + 4 B a head for each of K and V a row; `UploadKV` refused by name | PASS |
 
 Plant (`s3b-plant-snapshot-noscales.log`): a snapshot that does not download the scales: every layer's restored rows differ and the first
-logit after it; restored. The S3a suite on the card (`s3a-kv-suite.log`): 133 tests PASS, G2 FAIL as registered, the rest env-gated skips.
+logit after it; restored.
+
+**Correction (2026-11-07, 18:10):** an earlier version of this paragraph said the S3a suite (`s3a-kv-suite.log`) read "133 tests PASS, G2
+FAIL as registered". That was wrong: I read only the first 20 FAIL/SKIP lines of the log, and it also holds a red
+`TestResidentKVBytes_matchesCUDAAllocation` (llama-tiny and the 0.5B). The test still expected int8 asked of a two-slot load to price f32,
+which was S2's one-slot refusal; S3a delivers it, so it now accepts the int8 pools' price where the policy delivers int8 (the exact figure
+against an int8 build is `TestKV8_deliveredBytes`'s). Re-run with every FAIL line listed (`s3-review-kv-suite.log`): 135 tests PASS, no FAIL.
 
 **S3 on #755's final head** (merged 02770f4e): the int8 suite and the S3 tests (`s3-merged-suite.log`) all PASS, the cross-backend G2 and the
 diagnostics skip as above; identity on CUDA against 7c4ed713 (`s3-identity-cuda.log`): 24 families IDENTICAL, 0 different, 19 not run
