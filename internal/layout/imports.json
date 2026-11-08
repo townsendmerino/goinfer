@@ -676,7 +676,8 @@
     "internal/app/fitcmd": [
       "decoder",
       "decoder/fit",
-      "internal/runtime/giw"
+      "internal/runtime/giw",
+      "internal/runtime/modelload"
     ],
     "internal/app/loadflags": [
       "decoder",
