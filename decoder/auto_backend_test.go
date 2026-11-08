@@ -33,11 +33,11 @@ func TestAutoBackend_picksTheFirstGPUThatAnswers(t *testing.T) {
 		{"no GPU backend linked", []string{"cpu"}, answers(), "amd64", "cpu", false, "this binary has no GPU backend"},
 		{"cuda with a device", []string{"cpu", "cuda"}, answers("cuda"), "amd64", "cuda", false, "a CUDA device answered"},
 		{"cuda without a device", []string{"cpu", "cuda"}, answers(), "amd64", "cpu", true, "cuda is built in, but no CUDA device answered"},
-		{"metal on Apple silicon", []string{"cpu", "metal"}, answers("metal"), "arm64", "metal", false, "Apple silicon; metal runs int4 models"},
+		{"metal on Apple silicon", []string{"cpu", "metal"}, answers("metal"), "arm64", "metal", false, "Apple silicon; metal runs int4 and q4k models"},
 		// The darwin/amd64 release asset links metal, and its probe answers from the RAM size alone.
 		{"metal on an Intel Mac", []string{"cpu", "metal"}, answers("metal"), "amd64", "cpu", true, "only been run on Apple silicon; -backend metal asks for it"},
 		{"cuda before metal", []string{"cpu", "cuda", "metal"}, answers("cuda", "metal"), "arm64", "cuda", false, "a CUDA device answered"},
-		{"metal after a cuda with no device", []string{"cpu", "cuda", "metal"}, answers("metal"), "arm64", "metal", false, "Apple silicon; metal runs int4 models"},
+		{"metal after a cuda with no device", []string{"cpu", "cuda", "metal"}, answers("metal"), "arm64", "metal", false, "Apple silicon; metal runs int4 and q4k models"},
 		{"webgpu alone is never picked", []string{"cpu", "webgpu"}, answers("webgpu"), "amd64", "cpu", true, "-backend webgpu asks for it"},
 		{"webgpu does not outrank cuda", []string{"cpu", "cuda", "webgpu"}, answers("cuda", "webgpu"), "amd64", "cuda", false, "a CUDA device answered"},
 	} {

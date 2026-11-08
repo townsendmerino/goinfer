@@ -1514,13 +1514,14 @@ func residentQuantLabel(backend, quant string) string {
 
 // autoMetalPrecision is why a model stays on the CPU when -backend auto chose metal, "" when it may go resident. A
 // backend the user did not name must not change the precision they loaded at (such as the int8int8 bundle a
-// model-included goinfer-chat carries; R17, docs/tasks/task-first-hour.md). Metal runs int4 resident and dense
-// int8int8 natively (docs/tasks/task-metal-int8-2026-10.md); it re-quantizes int8, int4mix and the int8int8 models
-// native int8 does not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here and
+// model-included goinfer-chat carries; R17, docs/tasks/task-first-hour.md). Metal runs int4 resident, dense
+// int8int8 natively (docs/tasks/task-metal-int8-2026-10.md), and q4k on its q4k lane, which keeps the file's K-quant
+// blocks (docs/tasks/task-metal-q4k-2026-10.md); it re-quantizes int8, int4mix and the int8int8 models native int8 does
+// not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here and
 // autoMetalKeepsPrecision checks afterwards that it ran natively; the others stay on the CPU. A named -backend
 // metal still runs them re-quantized.
 func autoMetalPrecision(auto bool, backend, quant string) string {
-	if !auto || backend != "metal" || quant == "int4" || quant == "int8int8" {
+	if !auto || backend != "metal" || quant == "int4" || quant == "int8int8" || quant == "q4k" {
 		return ""
 	}
 	switch quant {
