@@ -275,7 +275,7 @@ slot is gone; and every KV feature is built three or four times.
 **What is already right and carries over:**
 - **The cache-state grid** (`decoder/cachestate.go`). It is exactly the correctness skeleton the new manager needs.
 - **The four reuse rules.** They become key properties instead of per-site checks.
-- **Kernel-class awareness.** `decoder/residency.go:ResidentFastPrefill`, `decoder/residency.go:ResidentPrefillKernelFloor`
+- **Kernel-class awareness.** `decoder/residency.go:ResidentCaps` (its fast-prefill and kernel floors)
   and `decoder/resident_reuse.go:Model.declineShortLeadReuse` become the class component of the key (§5.5, §5.6).
 - **MC1 and MC3.** Binding a slot and stepping several rows become "pass a sequence's block table" and "pass a table per row".
 - **Chunked prefill.** It is chunk-invariant on Metal: 0 of 14,336,000 KV elements and 0 of 151,936 last-token logits
@@ -1922,8 +1922,8 @@ Code, read at `e2ffb953`:
     `decoder/resident_reuse.go:Model.residentAcquireSlotAll`, `decoder/resident_reuse.go:Model.declineShortLeadReuse`,
     `decoder/resident_reuse.go:Model.residentSlotCount`, `decoder/resident_reuse.go:Model.residentReuseFloor`;
   - `decoder/residency.go:ResidentForward`, `decoder/residency.go:ResidentKVSlotter`,
-    `decoder/residency.go:ResidentBatchStepper`, `decoder/residency.go:ResidentFastPrefill`,
-    `decoder/residency.go:ResidentPrefillKernelFloor`, `decoder/residency.go:Model.ResidentKVPrecision`;
+    `decoder/residency.go:ResidentBatchStepper`, `decoder/residency.go:ResidentCaps`,
+    `decoder/residency.go:Model.ResidentKVPrecision`;
   - `decoder/session.go:Session.rewindForReuse`, `decoder/kvsnapshot.go:Session.Snapshot`,
     `decoder/kvsnapshot.go:Model.LoadSession`;
   - `decoder/forwardn.go:Model.hasRecurrentState`, `decoder/forwardn.go:Model.specRollbackSafe`;

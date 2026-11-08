@@ -58,7 +58,11 @@ func (f *blockFake) Forward(emb []float32, pos int) ([]float32, error) {
 func (f *blockFake) PrefillBlockRows() int              { return f.block }
 func (f *blockFake) PrefillScratchBytes(rows int) int64 { return int64(rows) * f.perRow }
 func (f *blockFake) PrefillTailExact() bool             { return f.tailExact }
-func (f *blockFake) PrefillKernelFloor() int            { return f.floor }
+func (f *blockFake) ResidentCaps() ResidentCaps {
+	c := f.mc3Fake.ResidentCaps()
+	c.HasKernelFloor, c.KernelFloor = true, f.floor
+	return c
+}
 
 type blockFakeBackend struct {
 	Backend

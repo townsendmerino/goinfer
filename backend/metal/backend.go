@@ -43,17 +43,16 @@ func init() {
 
 // Compile-time seams: catch signature drift against decoder/residency.go + decoder/backend.go.
 var (
-	_ decoder.Backend               = (*metalBackend)(nil)
-	_ decoder.ResidencyBackend      = (*metalBackend)(nil)
-	_ decoder.ResidencyPricer       = (*metalBackend)(nil)
-	_ decoder.ResidentForward       = (*metalResident)(nil)
-	_ decoder.ResidentContextNoted  = (*metalResident)(nil)
-	_ decoder.ResidentMRoPE         = (*metalResident)(nil)
-	_ decoder.ResidentAdapter       = (*metalResident)(nil)
-	_ decoder.Prefiller             = (*metalResident)(nil)
-	_ decoder.PrefillPathReporter   = (*metalResident)(nil)
-	_ decoder.VerifyPathReporter    = (*metalResident)(nil)
-	_ decoder.ResidentQuantReporter = (*metalResident)(nil)
+	_ decoder.Backend              = (*metalBackend)(nil)
+	_ decoder.ResidencyBackend     = (*metalBackend)(nil)
+	_ decoder.ResidencyPricer      = (*metalBackend)(nil)
+	_ decoder.ResidentForward      = (*metalResident)(nil)
+	_ decoder.ResidentCapsReporter = (*metalResident)(nil)
+	_ decoder.ResidentMRoPE        = (*metalResident)(nil)
+	_ decoder.ResidentAdapter      = (*metalResident)(nil)
+	_ decoder.Prefiller            = (*metalResident)(nil)
+	_ decoder.PrefillPathReporter  = (*metalResident)(nil)
+	_ decoder.VerifyPathReporter   = (*metalResident)(nil)
 )
 
 // metalBackend implements decoder.Backend + decoder.ResidencyBackend.
@@ -687,7 +686,7 @@ func (a *metalResident) fastPrefill() bool {
 	return a.fast
 }
 
-// ContextNote makes metalResident a decoder.ResidentContextNoted.
+// ContextNote is ResidentCaps' ContextNote: how the load arrived at the context cap.
 func (a *metalResident) ContextNote() string { return a.ctxNote }
 
 // ctxCap is this resident's resolved KV capacity: a.r.ctxCap, or metalCtxCapDefault for a zero-value &metalResident{} (r == nil),
@@ -711,9 +710,22 @@ func (a *metalResident) checkCap(pos, n int) error {
 	return nil
 }
 
-// ContextCap is the resident KV capacity in positions. It makes metalResident a decoder.ResidentCapped, so generateInto clamps
-// maxTokens to the cap up front instead of erroring mid-decode.
+// ContextCap is the resident KV capacity in positions (ResidentCaps' ContextCap), so generateInto clamps maxTokens to the cap
+// up front instead of erroring mid-decode.
 func (a *metalResident) ContextCap() int { return a.ctxCap() }
+
+// ResidentCaps is decoder.ResidentCapsReporter's. The batched prefill always reports a kernel-class floor, 0 when one class runs
+// at every length.
+func (a *metalResident) ResidentCaps() decoder.ResidentCaps {
+	return decoder.ResidentCaps{
+		ContextCap:      a.ContextCap(),
+		HasKernelFloor:  true,
+		KernelFloor:     a.PrefillKernelFloor(),
+		Quant:           a.ResidentQuant(),
+		ContextNote:     a.ContextNote(),
+		BatchGreedyDraw: a.BatchGreedyDraw(),
+	}
+}
 
 // ForwardMRoPE is decoder.ResidentMRoPE: like Forward, but the rotation angle (ropePos) and the
 // KV-cache/attention position (pos) are supplied separately — Qwen2.5-VL decode past an image
@@ -887,12 +899,12 @@ func metalFusedAttentionEnabled(v string) bool {
 	return true
 }
 
-// ResidentQuant (decoder.ResidentQuantReporter) is the precision this resident runs its weights at, when the decoder cannot
+// ResidentQuant (decoder.ResidentCaps.Quant) is the precision this resident runs its weights at, when the decoder cannot
 // infer it: an int8 model on the native path (r.w8) runs at its own quant, where one on the int4 path is re-quantized. ""
 // leaves the decoder's label.
 func (a *metalResident) ResidentQuant() string { return a.quant }
 
-// PrefillKernelFloor (decoder.ResidentPrefillKernelFloor) is the whole-prompt length from which the batched
+// PrefillKernelFloor (decoder.ResidentCaps.KernelFloor) is the whole-prompt length from which the batched
 // prefill runs the f16 MMA kernels, below which it runs decode rows or the sequential loop: two kernel classes
 // that are not bit-identical. 0 when one class runs at every length (a layer-major path, int8 KV, an arch the
 // MMA kernels do not cover, fast prefill off, or GOINFER_METAL_FAST_PREFILL_FLOOR=0). PrefillPath reports the same

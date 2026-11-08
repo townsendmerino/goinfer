@@ -2039,9 +2039,9 @@ func (r *cudaResident) aboveFastPrefillFloor() bool {
 	return r.passPromptLen >= fastPrefillFloorFor(r.knobValue("GOINFER_CUDA_FAST_PREFILL_FLOOR"))
 }
 
-// FastPrefillFloor satisfies decoder.ResidentFastPrefill: the prompt length from which this resident's batched prefill runs the fast (non-exact) kernels, 0 when it never does (both levers
+// FastPrefillFloor is ResidentCaps' FastPrefillFloor (decoder.ResidentCaps): the prompt length from which this resident's batched prefill runs the fast (non-exact) kernels, 0 when it never does (both levers
 // off, or neither kernel module loaded, in which case every selection site falls back to the exact path). GOINFER_CUDA_FAST_PREFILL_FLOOR=0 means "fast at any length", reported as 1: 0 is
-// the interface's "never". The decoder uses it to decline reuse of a short prefix whose rows an exact-kernel request computed (decoder.declineShortLeadReuse).
+// the record's "never". The decoder uses it to decline reuse of a short prefix whose rows an exact-kernel request computed (decoder.declineShortLeadReuse).
 func (r *cudaResident) FastPrefillFloor() int {
 	attn := r.fastAttn && (r.bAttnFused64 != (Pipeline{}) || r.bAttnFused128 != (Pipeline{}))
 	gemm := r.fastGemm && r.bGemmMMA != (Pipeline{})
