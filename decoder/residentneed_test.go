@@ -67,9 +67,9 @@ func TestPlan_metalAgreesWithResidentNeedBytes(t *testing.T) {
 	}
 }
 
-// TestPlan_metalNeedCountsDecodeScratch is MM5b's gate (Francis's call, 2026-11-07; docs/measurements/mm5-decode-scratch-2026-11/):
-// on every fixture G-MS3 holds Metal's decode list to, Plan("metal").NeedBytes and the resident guard's number count decode's scratch
-// (MetalDecodeScratchBytes) beside the weights, KV, host copy and state; the CPU's do not.
+// TestPlan_metalNeedCountsDecodeScratch is MM5b's gate (docs/measurements/mm5-decode-scratch-2026-11/): on every fixture G-MS3 holds
+// Metal's decode list to, Plan("metal").NeedBytes and the resident guard's number count decode's scratch (MetalDecodeScratchBytes)
+// beside the weights, KV, host copy and state; the CPU's do not.
 func TestPlan_metalNeedCountsDecodeScratch(t *testing.T) {
 	const ctx = 256
 	for _, c := range []struct{ name, quant string }{
