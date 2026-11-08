@@ -46,8 +46,8 @@ type LayerShape struct {
 	// The per-row activations' widths: the residual width, the query heads, and the dense FFN's width (its up rows).
 	Hidden, Heads, FFN int
 	MLA                struct{ QLoRA, Rank, QKHead, VHead int } // the q LoRA rank (0 for none), the KV LoRA rank, a q·k head, a value head
-	Gemma4MoE          struct{ Experts, TopK, ExpertFFN int }
-	PLE                int // Gemma 4's per-layer-embedding width
+	Gemma4MoE          struct{ Experts, TopK, ExpertFFN int }   // Gemma 4's MoE block: its routed experts, top k, and an expert's FFN width
+	PLE                int                                      // Gemma 4's per-layer-embedding width
 }
 
 // HeadShape is the widths of what no layer owns: the residual stream, the vocabulary, and the embedding stage's per-layer inputs.
@@ -128,6 +128,19 @@ func Buffers(op Op, s LayerShape) []Buf {
 		case FfnNonGated:
 			return rows(nil, "up", s.FFN)
 		}
+		if prefix, ok := moeRows[op.FFN.Form]; ok {
+			mo := op.FFN.MoE
+			ffn := max(mo.IntermediateDim, mo.SharedIntermediateDim)
+			var out []Buf
+			if op.FFN.Form != FfnNemotronMoE { // Nemotron's experts are not gated
+				out = rows(nil, "gate", ffn)
+			}
+			return rows(out, "up", ffn, prefix+"-router", mo.NumExperts, prefix+"-experts", mo.TopK, prefix+"-weights", mo.TopK)
+		}
+	case OpGemma4MoE:
+		g, ffn := s.Gemma4MoE, max(s.FFN, s.Gemma4MoE.ExpertFFN)
+		return rows(nil, "gate", ffn, "up", ffn, "g4moe-router", g.Experts, "g4moe-experts", g.TopK, "g4moe-weights", g.TopK,
+			"g4moe-dense-out", s.Hidden, "g4moe-moe-out", s.Hidden, "g4moe-router-in", s.Hidden)
 	case OpPLE:
 		return rows(nil, "ple-gate", s.PLE)
 	case OpKDA:
@@ -139,6 +152,10 @@ func Buffers(op Op, s LayerShape) []Buf {
 	}
 	return nil
 }
+
+// moeRows names each MoE FFN form's router rows (its logits, the chosen experts, their weights), so a backend that holds them per
+// form can tell them apart.
+var moeRows = map[FFNForm]string{FfnMoE: "moe", FfnGptOss: "gptoss", FfnLlama4MoE: "llama4moe", FfnNemotronMoE: "nemotronmoe"}
 
 // LayerBuffers is every buffer a layer's operations declare, in their order.
 func LayerBuffers(ops []Op, s LayerShape) []Buf {
