@@ -1,0 +1,6 @@
+load                       rise MiB list-ledger  M1p-rise plan-rise
+mellum-4b-ctx4096              5490        +2.7      -2.0      -1.3
+nemotronh-4b-ctx8192           3796        +0.8      -4.0      -1.8
+qwen3-4b-2507-ctx8192          5316        +1.3      -1.1      -0.3
+qwen35-4b-ctx8192              3504        -1.1      -1.8      -1.1
+HOLDS: 4 scored loads (worst list-vs-ledger 2.7 MiB, bar 32; M1' 4.0 and plan 1.8 MiB, bar 64; beyond 96 fails)
