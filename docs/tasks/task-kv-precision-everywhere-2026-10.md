@@ -19,6 +19,7 @@
 | P2 | active | S1 #735, S2 #755, S3a/S3b #759, #764 merged; S4 #768 open: the G4 S cell DOES NOT PASS, D7 and the speed check run 2026-11-08 on pinned 7545a43c; then S4 merges with its readings published (P2-D) | `docs/measurements/cuda-kv-i8-2026-11/scope.md`; `s4-registration.md` on #768 |
 | P2-S3c | decision | int8 on sliding-window layers and the windowed ring: Francis decides after D7 (2026-11-08) | `decoder/kvresolve.go:CUDAKVI8Decline` |
 | P2-S5 | decision | int8 for MoE, MLA, pairwise RoPE, VL and Gemma 4 on CUDA: Francis decides after D7 (2026-11-08) | the matrix's CUDA i8 cells "refused until its stage" |
+| P2-S6 | active | int8 KV on the tensor-core prefill tiles (`_kv8` twins of `attn_fused` and `attn_fused_bm`), so a 16K cold prefill at `--kv i8` comes near f16's (S4: 20x to 26x slower) (Francis, 2026-11-08). Registered before any code: G1 identity against the f16 twin, the route gate, G4 re-read with bars unchanged, the cold-prefill and decode-control cells | `docs/measurements/cuda-kv-i8-2026-11/s6-registration.md` |
 | P2-D | decision | after D7 and the speed check: what the help, banner and docs say about int8 | `docs/measurements/cuda-kv-i8-2026-11/scope.md` |
 | P3 | done | — | `docs/measurements/kv-precision-2026-10/p3a.md`, `p3b-1.md`, `p3b-2.md`, `d5.md` |
 | P4 | open | CPU f16 and i8 for MoE, MLA and own-loop families, and the CPU batcher (P3 has been done since 2026-10-22) | 38 matrix cells "until phase 4" |
