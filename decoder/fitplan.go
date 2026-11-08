@@ -227,9 +227,12 @@ func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceL
 			l.CtxCeiling = MetalFitDefaultCtx
 		}
 	case "webgpu":
+		l.CtxCeiling = WebGPUCtxCeiling(kvF16, kvI8)
+		if !webgpuVulkan {
+			break
+		}
 		// Vulkan's blocks, not the buffers' sum (webgpu_vulkan.go): the device and the kept host block are fixed, and the block
 		// rounding moves with the context, so it rides on the KV term and the context is searched.
-		l.CtxCeiling = WebGPUCtxCeiling(kvF16, kvI8)
 		l.FixedSlack += webgpuVkFixed
 		l.CtxSearch = true
 		l.KV = func(ctx int) int64 {

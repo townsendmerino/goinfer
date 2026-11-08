@@ -23,3 +23,30 @@ func TestResidentDenseWeightBytesFor_webgpuKeepsTheUntiedTableOnTheHost(t *testi
 		}
 	}
 }
+
+// TestPlan_webgpuPricesVulkansBlocks: on a Vulkan build the webgpu plan's device total at a context is M1′'s, gpu-allocator's blocks
+// over the build's buffer list plus the device and the kept host block, beside the backend's own slack and the dense line's vectors
+// and biases, on a fixture with recurrent
+// state, one with MLA and one with KV-shared layers as well as a plain one. On darwin it is the buffers' sum, as before.
+func TestPlan_webgpuPricesVulkansBlocks(t *testing.T) {
+	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/qwen35-tiny", "../testdata/deepseek-tiny", "../testdata/gemma4-moe-kv-tiny"} {
+		m, err := Load(dir, Options{Backend: "cpu", Quant: "int4"})
+		if err != nil {
+			t.Fatalf("%s: %v", dir, err)
+		}
+		for _, ctx := range []int{256, 4096} {
+			l := m.deviceLoad("webgpu", false, false, true)
+			got := l.DenseBytes + l.ExpertBytesFull + l.FixedSlack + l.KV(ctx) + l.StateBytes
+			slot0, _, _ := m.webgpuDeviceBuffers(ctx, false, false)
+			// The dense line also holds the norm vectors and expert biases, which the matrix walk does not list: they sit beside the blocks.
+			want := webgpuVkBlocks(slot0) + webgpuVkFixed + m.planSlack("webgpu") + m.denseVectorBytes() + m.expertBiasBytes()
+			if !webgpuVulkan {
+				want = m.ResidentDenseWeightBytesFor("webgpu") + l.ExpertBytesFull + m.planSlack("webgpu") + m.ResidentKVBytes("webgpu", ctx, false, false) + l.StateBytes
+			}
+			if got != want {
+				t.Errorf("%s at %d: the plan prices %d device bytes, M1′ over the build's list %d", dir, ctx, got, want)
+			}
+		}
+		m.Close()
+	}
+}

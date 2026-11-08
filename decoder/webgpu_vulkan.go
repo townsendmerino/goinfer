@@ -1,6 +1,10 @@
 package decoder
 
-import "github.com/townsendmerino/aikit/linalg"
+import (
+	"runtime"
+
+	"github.com/townsendmerino/aikit/linalg"
+)
 
 // WebGPU's device memory as Vulkan allocates it (M1′, docs/measurements/sb2-vk-2026-10-31/README.md): wgpu-native's gpu-allocator
 // places each buffer into 128 MiB, then 256 MiB, device-local blocks, first fit, newest block first, and gives a buffer larger than
@@ -17,6 +21,10 @@ const (
 	webgpuVkDevice    = 144 << 20 // the device's own memory, fitted on G-VK1's six loads and judged on five held out
 	webgpuVkScratch   = 8 << 20   // the runner's scratch line (3 to 7 MiB in G-VK1's ledgers)
 )
+
+// webgpuVulkan reports whether this build's WebGPU runs on Vulkan, whose allocation M1′ models; on darwin wgpu runs on Metal, whose
+// allocator is not measured, so the planner prices a darwin webgpu load as the sum of its buffers.
+const webgpuVulkan = runtime.GOOS != "darwin"
 
 // webgpuVkFixed is what a WebGPU load holds beyond its blocks: the device and the kept host block.
 const webgpuVkFixed = webgpuVkDevice + webgpuVkHostBlock
