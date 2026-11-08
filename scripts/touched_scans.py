@@ -65,6 +65,7 @@ SCANS = [
     Scan("decoder", "TestDispatchCensus", NT("decoder")),
     # MM1's decision census pins every fit decision: a change to the fit code, the machine zoo or a fixture it reads runs it. Every
     # censusFixtures entry has "tiny" in its name (TestCensusFixtures_areTheCommittedOnes).
+    Scan("decoder", "TestStepShapes_assertedOnlyInStep", NT("decoder")),
     Scan("decoder", "TestDecisionCensus", F("decoder/fitguard.go", "decoder/fitplan.go", "decoder/fitquery.go", "decoder/prefill_budget.go",
                                             "decoder/weightbytes.go", "decoder/residentneed.go", "decoder/kvresolve.go", "decoder/kvpolicy.go",
                                             "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/mm1_census.json.gz",

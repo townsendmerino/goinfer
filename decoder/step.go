@@ -418,12 +418,27 @@ func stepOn(r any, b stepBatch) (stepResult, error) {
 // step is stepOn on m's resident. It does not claim or bind the resident: the caller holds it as for the call step makes.
 func (m *Model) step(b stepBatch) (stepResult, error) { return stepOn(m.resident, b) }
 
-// stepProbe is a one-row batch, and stepProbeRows a rows function, for asking canStep about a shape before there is a row:
-// canStep reads neither.
+// stepProbe is a one-row batch, stepProbeRows a rows function and stepProbeAt a mark callback, for asking canStep about a shape
+// before there is a row: canStep reads none of them.
 var (
 	stepProbe     = [][]float32{nil}
 	stepProbeRows = func(lo, hi int) [][]float32 { return nil }
+	stepProbeAt   = func(pos int) {}
 )
+
+// stepProbeSpan is a one-span image input for asking canStep about the image and DeepStack shapes; canStep reads only its count.
+var stepProbeSpan = [][2]int{{0, 1}}
+
+// stepBatchRange is ResidentBatchStepper's BatchStepRange on r, the batch sizes its multi-sequence step serves; ok is false when r
+// has no multi-sequence step (canStep refuses a passSeqs batch).
+func stepBatchRange(r any) (lo, hi int, ok bool) {
+	st, ok := r.(ResidentBatchStepper)
+	if !ok {
+		return 0, 0, false
+	}
+	lo, hi = st.BatchStepRange()
+	return lo, hi, true
+}
 
 // stepMarkAlign is ResidentPrefillMarked's PrefillMarkAlign on r, the pass width a marked prefill's mark must fall on; ok is false
 // when r cannot mark a prefill (canStep refuses a passRows batch with At).
