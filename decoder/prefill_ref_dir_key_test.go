@@ -10,7 +10,8 @@ import (
 )
 
 // A safetensors checkpoint directory keys a reference by its files: the key is stable, ignores goinfer's own sidecars and
-// hidden files, and changes when a weight byte does.
+// hidden files, and changes when the weights do. Each file's hash is cached under its path, size and modification time, so the
+// rewrite changes the size as well as the bytes, and holds the clock still: the key must not depend on the clock's resolution.
 func TestCheckpointSHA256_directory(t *testing.T) {
 	t.Setenv("GOINFER_PREFILL_REF_CACHE", t.TempDir())
 	dir := t.TempDir()
@@ -46,7 +47,7 @@ func TestCheckpointSHA256_directory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write("model.safetensors", "weights-b")
+	write("model.safetensors", "weights-bb")
 	if err := os.Chtimes(weights, st.ModTime(), st.ModTime()); err != nil {
 		t.Fatal(err)
 	}
