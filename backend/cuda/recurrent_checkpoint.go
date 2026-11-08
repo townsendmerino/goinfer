@@ -217,7 +217,7 @@ func (r *cudaResident) ckptCopyOf(s int) int {
 	return -1
 }
 
-// RecurrentCheckpointHeld implements decoder.ResidentRecurrentCheckpointOwner.
+// RecurrentCheckpointHeld is decoder.ResidentRecurrentCheckpoint's.
 func (r *cudaResident) RecurrentCheckpointHeld(slot int) bool {
 	held := false
 	_ = r.do(func() error {
