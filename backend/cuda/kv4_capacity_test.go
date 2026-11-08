@@ -160,8 +160,14 @@ func TestKV4_pressureFollowsD5(t *testing.T) {
 // kv7Load is kv4CapLoad's model with a host budget in bytes.
 func kv7Load(t *testing.T, slots int, hostBytes int64) (*decoder.Model, *cudaResident) {
 	t.Helper()
+	return kv7LoadKV(t, slots, hostBytes, "f32")
+}
+
+// kv7LoadKV is kv7Load at KV precision kv.
+func kv7LoadKV(t *testing.T, slots int, hostBytes int64, kv string) (*decoder.Model, *cudaResident) {
+	t.Helper()
 	requireCUDADevice(t)
-	m, err := decoder.Load(kv4LongFixture(t, kv4CapWindow), decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentKVSlots: slots, KVHostBytes: hostBytes, KVDemote: hostBytes > 0})
+	m, err := decoder.Load(kv4LongFixture(t, kv4CapWindow), decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: kv, ResidentKVSlots: slots, KVHostBytes: hostBytes, KVDemote: hostBytes > 0})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -209,10 +215,20 @@ func kv7ReleaseShort(t *testing.T, m *decoder.Model, r *cudaResident, short int)
 
 // TestKV7_demoteAndPromote is gates 1 and 3 of docs/measurements/kv7-demote-2026-11/README.md: a released idle slot keeps its rows in host
 // memory, still answers ReusableKVSlot, and promoted back continues with logits bit-identical to a slot holding the same rows that was
-// never released; the bytes return to the budget. A plant that loses the rows (a zeroed host copy) must differ.
+// never released; the bytes return to the budget. A plant that loses the rows (a zeroed host copy) must differ. At f32 and at int8 (whose
+// host copy holds its scales).
 func TestKV7_demoteAndPromote(t *testing.T) {
+	for _, kv := range []string{"f32", "i8"} {
+		t.Run(kv, func(t *testing.T) { kv7DemoteAndPromote(t, kv) })
+	}
+}
+
+func kv7DemoteAndPromote(t *testing.T, kv string) {
 	for _, plant := range []bool{false, true} {
-		m, r := kv7Load(t, 4, 1<<30)
+		m, r := kv7LoadKV(t, 4, 1<<30, kv)
+		if r.kvI8 != (kv == "i8") {
+			t.Fatalf("-kv %s built an int8 cache: %v", kv, r.kvI8)
+		}
 		conv, ids := kv7Release(t, m, r)
 		if got := r.ReusableKVSlot(1, conv); got != conv {
 			t.Fatalf("released slot 1 answers %d for its %d rows, want them", got, conv)

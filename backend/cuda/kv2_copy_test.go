@@ -96,7 +96,8 @@ type kv2Buf struct {
 	layer int
 	v     bool
 	win   bool
-	row   int // bytes a position takes
+	row   int  // bytes a position takes
+	scale bool // an int8 layer's K (or V) scale pool, one f32 per head a position
 }
 
 // bufs lists every buffer a slot owns: K and V of each layer that does not read another layer's KV, V only where it exists.
@@ -107,15 +108,15 @@ func (g *kv2Rig) bufs() []kv2Buf {
 		if Ly.kvShared {
 			continue
 		}
-		elem := 4
-		if Ly.kvHalf {
-			elem = 2
-		}
+		elem := g.r.kvElem(l)
 		for _, v := range []bool{false, true} {
 			if v && g.r.vc[l].Len() == 0 {
 				continue
 			}
 			out = append(out, kv2Buf{layer: l, v: v, win: Ly.kvWin, row: Ly.kvDim * elem})
+			if Ly.kvI8 {
+				out = append(out, kv2Buf{layer: l, v: v, win: Ly.kvWin, row: Ly.nKV * 4, scale: true})
+			}
 		}
 	}
 	return out
@@ -135,7 +136,12 @@ func (g *kv2Rig) raw(slot int) (out [][]byte, base int) {
 		}
 		for _, b := range g.bufs() {
 			buf := g.r.kc[b.layer]
-			if b.v {
+			switch {
+			case b.scale && b.v:
+				buf = g.r.vsc[b.layer]
+			case b.scale:
+				buf = g.r.ksc[b.layer]
+			case b.v:
 				buf = g.r.vc[b.layer]
 			}
 			grp, from, n := g.r.kvGroupOf(b.layer), 0, g.r.ctxCap
@@ -300,9 +306,12 @@ func kv2PrefixIsComputed(t *testing.T, g *kv2Rig, batched bool) {
 func TestKV2_copyExact_tiny(t *testing.T) {
 	const dir = "../../testdata/llama-attnfa-tiny"
 	requireDeviceAndFixture(t, dir)
-	for _, kv := range []string{"f32", "f16"} {
+	for _, kv := range []string{"f32", "f16", "i8"} {
 		t.Run(kv, func(t *testing.T) {
 			g := kv2Load(t, dir, decoder.Options{ResidentKVSlots: 3, ResidentContext: 2048, KVPrecision: kv})
+			if g.r.kvI8 != (kv == "i8") {
+				t.Fatalf("-kv %s built an int8 cache: %v", kv, g.r.kvI8)
+			}
 			kv2CopyExact(t, g, true)
 			kv2PrefixIsComputed(t, g, true)
 		})

@@ -597,6 +597,7 @@
       "internal/fidelity",
       "internal/guard/memgate",
       "internal/runtime/giw",
+      "internal/runtime/logs",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
       "internal/runtime/program",

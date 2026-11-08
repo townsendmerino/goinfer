@@ -33,23 +33,25 @@ func TestCUDAStepBatch_matchesForward(t *testing.T) {
 		path   string
 		depths []int
 		tail   string // "softcap" or "logitScale": the host transform the fixture must arm; "" for none
+		kv     string // the KV precision asked ("" for the default)
 	}
 	cfgs := []cfg{
-		{filepath.Join("../../testdata/llama-tiny"), []int{5, 23, 40, 11}, ""},
-		{filepath.Join("../../testdata/mistral-tiny-window"), []int{9, 70, 200, 33}, ""}, // window: some rows past it
-		{filepath.Join("../../testdata/gemma4-dense-twogeom-tiny"), []int{5, 23, 40, 11}, "softcap"},
-		{filepath.Join("../../testdata/granite-dense-tiny"), []int{5, 23, 40, 11}, "logitScale"},
+		{filepath.Join("../../testdata/llama-tiny"), []int{5, 23, 40, 11}, "", ""},
+		{filepath.Join("../../testdata/llama-tiny"), []int{5, 23, 40, 11}, "", "i8"},         // the int8 cache: each row's store and scales through its own slot
+		{filepath.Join("../../testdata/mistral-tiny-window"), []int{9, 70, 200, 33}, "", ""}, // window: some rows past it
+		{filepath.Join("../../testdata/gemma4-dense-twogeom-tiny"), []int{5, 23, 40, 11}, "softcap", ""},
+		{filepath.Join("../../testdata/granite-dense-tiny"), []int{5, 23, 40, 11}, "logitScale", ""},
 	}
 	if p := os.Getenv("GOINFER_CUDA_STEP_MODEL"); p != "" {
-		cfgs = []cfg{{p, []int{120, 2200, 700, 64}, ""}}
+		cfgs = []cfg{{p, []int{120, 2200, 700, 64}, "", ""}, {p, []int{120, 2200, 700, 64}, "", "i8"}}
 	}
 	for _, c := range cfgs {
-		t.Run(filepath.Base(c.path), func(t *testing.T) {
+		t.Run(filepath.Base(c.path)+"/"+c.kv, func(t *testing.T) {
 			requireCUDADevice(t)
 			if _, err := os.Stat(c.path); err != nil {
 				t.Skipf("no fixture at %s", c.path)
 			}
-			m, err := decoder.Load(c.path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 4})
+			m, err := decoder.Load(c.path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 4, KVPrecision: c.kv})
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
@@ -57,6 +59,9 @@ func TestCUDAStepBatch_matchesForward(t *testing.T) {
 			r, ok := m.ResidentForwardForTest().(*cudaResident)
 			if !ok {
 				t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
+			}
+			if r.kvI8 != (c.kv == "i8") {
+				t.Fatalf("-kv %q built an int8 cache: %v", c.kv, r.kvI8)
 			}
 			if lo, hi := r.BatchStepRange(); lo != 2 || hi != 4 {
 				t.Fatalf("BatchStepRange = (%d, %d), want (2, 4): the step does not engage here", lo, hi)

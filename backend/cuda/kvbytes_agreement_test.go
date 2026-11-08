@@ -111,14 +111,25 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 			f32Bytes := kvBytesForCap(r.kvShareCtx, asF32) + kvPoolNullBytes(asF32)
 			i8Bytes := kvBytesForCap(r.kvShareCtx, asI8) + kvPoolNullBytes(asI8)
 			f16Bytes := kvBytesForCap(r.kvShareCtx, asF16) + kvPoolNullBytes(asF16)
+			// The one figure each request implies for this fixture. Written out here, not read from the policy, so a policy that mis-covers a family
+			// shows: every family below has f16 kernels; the int8 kernels cover the dense ones without a sliding window (llama-tiny, phi3-tiny, the
+			// 0.5B), and every other fixture asked for int8 is built, and priced, at f32.
+			wantI8 := f32Bytes
+			if kv8PricedFixtures[filepath.Base(p)] {
+				wantI8 = i8Bytes
+			}
+			if r.kvF16 && one != f16Bytes || !r.kvF16 && one != f32Bytes {
+				t.Errorf("the resident (kvF16=%v) allocates %d B a one-slot load; its precision's figure is f32 %d / f16 %d B", r.kvF16, one, f32Bytes, f16Bytes)
+			}
 			for _, c := range []struct {
 				name     string
 				f16, i8b bool
-				want     []int64
-			}{{"f32", false, false, []int64{f32Bytes}}, {"f16 requested", true, false, []int64{one, f16Bytes, f32Bytes}}, {"i8 requested", false, true, []int64{f32Bytes, i8Bytes}}} {
+				want     int64
+			}{{"f32", false, false, f32Bytes}, {"f16 requested", true, false, f16Bytes}, {"i8 requested", false, true, wantI8}} {
 				got := m.ResidentKVBytes("cuda", r.kvShareCtx, c.f16, c.i8b)
-				if !slices.Contains(c.want, got) {
-					t.Errorf("%s: ResidentKVBytes(\"cuda\", %d) = %d B, want one of %v B (resident kvF16=%v, allocates %d B a slot)", c.name, r.ctxCap, got, c.want, r.kvF16, forCap)
+				if got != c.want {
+					t.Errorf("%s: ResidentKVBytes(\"cuda\", %d) = %d B, want %d B (f32 %d, f16 %d, i8 %d; resident kvF16=%v, allocates %d B a slot)",
+						c.name, r.kvShareCtx, got, c.want, f32Bytes, f16Bytes, i8Bytes, r.kvF16, forCap)
 				}
 				if r.kvF16 && c.f16 && got != one {
 					t.Errorf("an f16 resident prices %d B a one-slot load and ResidentKVBytes(f16) says %d B", one, got)
@@ -130,6 +141,10 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 		t.Skip("no fixture built a CUDA resident here")
 	}
 }
+
+// kv8PricedFixtures are the fixtures of TestResidentKVBytes_matchesCUDAAllocation whose family the CUDA int8 kernels cover (dense, no sliding
+// window): asked for int8, they price the int8 pools; every other fixture prices f32.
+var kv8PricedFixtures = map[string]bool{"llama-tiny": true, "phi3-tiny": true, "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf": true}
 
 // TestKVPool_detailNamesThePool is the CUDA half of KV4's §5.16 pool banner (docs/tasks/task-kv-architecture-2026-10.md): the pool's
 // detail (decoder.KVPoolDetail) names the groups its layers use, the context positions kvPoolLine names, what a window group keeps per

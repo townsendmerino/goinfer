@@ -112,12 +112,12 @@ func setupGlmOcrVision(dir string, int8Tower bool, maxPixels int) (*glmOcrTower,
 
 // loadGlmOcrVisionTower attaches a GLM-OCR tower to the single loaded model. Everything checkable without the tower's
 // weights is checked here, at startup; the weights load on first image.
-func (s *server) loadGlmOcrVisionTower(dir string, int8Tower bool, maxPixels int, backend string, asked, require bool) error {
+func (s *server) loadGlmOcrVisionTower(dir string, int8Tower bool, maxPixels int, backend string, require bool) error {
 	tower, pp, err := setupGlmOcrVision(dir, int8Tower, maxPixels)
 	if err != nil {
 		return err
 	}
-	if tower.plan, err = planGridTower("GLM-OCR", multimodal.GlmOcrTowers(), int8Tower, backend, asked, require); err != nil {
+	if tower.plan, err = planGridTower("GLM-OCR", multimodal.GlmOcrTowers(), int8Tower, backend, require); err != nil {
 		return err
 	}
 	for _, lm := range s.models {
@@ -206,15 +206,12 @@ func deviceTowerName(backend string) (string, bool) {
 }
 
 // planGridTower decides at startup, before the tower's weights load, where a grid tower runs, by the rules
-// chooseGemma4Tower uses: the device tower under --backend metal or cuda when this binary registers one for that backend and the tower is
-// float32; the CPU otherwise, with the reason. -require-backend turns each CPU fallback into a refusal. Under WebGPU the
-// device tower follows those rules only when asked for (-vision-device gpu); otherwise the CPU tower is the choice.
-func planGridTower(family string, registered []string, int8Tower bool, backend string, asked, require bool) (gridTowerPlan, error) {
+// chooseGemma4Tower uses: the device tower under --backend metal, cuda or webgpu when this binary registers one for that backend and the tower is
+// float32; the CPU otherwise, with the reason. -require-backend turns each CPU fallback into a refusal. -vision-device cpu
+// never reaches here with a device backend: serve passes it the backend "cpu".
+func planGridTower(family string, registered []string, int8Tower bool, backend string, require bool) (gridTowerPlan, error) {
 	name, ok := deviceTowerName(backend)
 	if backend == "webgpu" {
-		if !asked {
-			return gridTowerPlan{where: "CPU (-vision-device gpu puts it on WebGPU)"}, nil
-		}
 		name, ok = "WebGPU", true
 	}
 	if !ok {

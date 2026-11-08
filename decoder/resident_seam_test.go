@@ -61,9 +61,14 @@ func (f *fakeResident) Forward(embedding []float32, pos int) ([]float32, error) 
 	return out, nil
 }
 
-// ContextCap makes fakeResident a ResidentCapped so generateInto clamps decode length
+// ResidentCaps reports capPos as fakeResident's ContextCap so generateInto clamps decode length
 // to it up front (0 ⇒ unbounded, the default for the other seam tests).
-func (f *fakeResident) ContextCap() int { return f.capPos }
+func (f *fakeResident) ResidentCaps() ResidentCaps {
+	if f == nil { // a fake that embeds a nil *fakeResident reports nothing
+		return ResidentCaps{}
+	}
+	return ResidentCaps{ContextCap: f.capPos}
+}
 
 func (f *fakeResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, error) {
 	rows := make([][]float32, 0, len(embeddings))
