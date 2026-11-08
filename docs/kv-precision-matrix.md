@@ -9,15 +9,16 @@ Each family is one tiny fixture under `testdata/`; the CPU column is the CPU (ho
 ## Measured cost of the lossy cells
 
 - **int8 on CUDA** (the dense llama, mistral, qwen2, qwen3 and phi3 families): delivered on request, never an `auto` pick. G4 against an f32 cache,
-  teacher-forced on held-out prompt set B (nobara, RTX 2070 SUPER, driver 595.112.07, tree `7545a43cf`, 2026-11-08):
-  - qwen2.5-7b-instruct-q4_k_m at 8,000 keys: about f16's quality. Agreement -0.15 pt, hard flips 11 against 11, mean KL 1.078x: inside the
-    gate's ambiguous band (PARKED). f16 itself reads 1.057x there, and int8 against f16 is inside every bar (1.020x).
-  - qwen2.5-coder-1.5b-instruct-q4_k_m at 3,900 keys: a measurable loss (DOES NOT PASS). Agreement -1.40 pt, hard flips 19 against 9
-    (the bar is 15), mean KL 1.661x.
-  - Speed against f16, the default it would replace (same session, A B B A, served): decode 0.871x / 0.723x on the 1.5B and 0.954x / 0.883x on
-    the 7B at 128 / 512 keys (under the registered 0.95 bar except the 7B at 128), 0.99x at 4,096 and 16,384. A cold prefill is 3.4x to
-    4.7x slower at 4,096 keys and 20x to 26x slower at 16,384. It buys about twice f16's positions in the same VRAM.
-  - The record: `docs/measurements/cuda-kv-i8-2026-11/s4-registration.md`. Widening int8 to more CUDA families is parked (the task doc, P2).
+  teacher-forced on held-out prompt set B, with int8's prefill on the tensor-core tiles (nobara, RTX 2070 SUPER, driver 595.112.07, 2026-11-08):
+  - qwen2.5-7b-instruct-q4_k_m at 8,000 keys: about f16's quality. Agreement -0.93 pt, hard flips 14 against 11, mean KL 1.080x: inside the
+    gate's ambiguous band (PARKED). f16 itself reads 1.057x there, and int8 against f16 is inside every bar (1.022x).
+  - qwen2.5-coder-1.5b-instruct-q4_k_m at 3,900 keys: a measurable loss (DOES NOT PASS). Agreement -2.81 pt, hard flips 27 against 9
+    (the bar is 15), mean KL 1.688x.
+  - Speed against f16, the default it would replace (same session, A B B A, served): decode 0.871x / 0.723x on the 1.5B and 0.953x / 0.883x on
+    the 7B at 128 / 512 keys (under the registered 0.95 bar except the 7B at 128), 0.99x at 4,096 and 16,384. A cold prefill is near f16's:
+    0.99x at 4,096 keys and 1.01x to 1.02x at 16,384. It buys about twice f16's positions in the same VRAM.
+  - The records: `docs/measurements/cuda-kv-i8-2026-11/s4-registration.md` and `s6-registration.md` (the tensor-core prefill). Widening int8
+    to more CUDA families is parked (the task doc, P2).
 - **f16 on CUDA:** `docs/tasks/task-cuda-f16-kv-2026-10.md`.
 
 ## CUDA resident

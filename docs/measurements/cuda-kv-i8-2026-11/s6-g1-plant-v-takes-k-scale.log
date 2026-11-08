@@ -1,0 +1,16 @@
+plant: v-takes-k-scale (attn_fused_bm.cu)
+replaced: const float sv0 = vscl[rowOf(2 * kp) * (kvDim / HD) + colOff / HD], sv1 = vscl[rowOf(2 * kp + 1) * (kvDim / HD) + colOff / HD];
+with:     const float sv0 = kscl[rowOf(2 * kp) * (kvDim / HD) + colOff / HD], sv1 = kscl[rowOf(2 * kp + 1) * (kvDim / HD) + colOff / HD];
+
+    kv16_test.go:1522: attn_fused_bm32x64 hd128 startPos=0 M=70 hd=128: 19456/35840 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm32x32 hd128 startPos=0 M=70 hd=128: 35836/35840 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm128 hd128 startPos=0 M=70 hd=128: 35836/35840 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm32x64 hd128 startPos=0 M=300 hd=128: 137216/153600 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm32x32 hd128 startPos=0 M=300 hd=128: 153596/153600 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm128 hd128 startPos=0 M=300 hd=128: 153596/153600 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm32x64 hd128 startPos=37 M=200 hd=128: 102400/102400 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm32x32 hd128 startPos=37 M=200 hd=128: 102400/102400 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm128 hd128 startPos=37 M=200 hd=128: 102400/102400 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm32x64 hd128 startPos=100 M=129 hd=128: 66048/66048 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm32x32 hd128 startPos=100 M=129 hd=128: 66048/66048 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm128 hd128 startPos=100 M=129 hd=128: 66048/66048 elements differ between the int8 tile and the f16 tile on f16(code*scale)
