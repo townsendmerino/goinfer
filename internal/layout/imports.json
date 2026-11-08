@@ -633,6 +633,7 @@
       "decoder/fit",
       "internal/audio",
       "internal/cost",
+      "internal/diag/sb2census",
       "internal/fidelity",
       "internal/guard/paritykey",
       "internal/runtime/giw",
