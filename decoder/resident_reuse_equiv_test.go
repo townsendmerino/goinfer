@@ -136,11 +136,11 @@ func (m *oldReuse) declineShortLeadReuse(prompt []int, reuse int) int {
 	if reuse <= 0 || reuse >= 64 {
 		return reuse
 	}
-	fp, ok := m.resident.(ResidentFastPrefill)
-	if !ok {
+	cr, ok := m.resident.(ResidentCapsReporter)
+	if !ok || !cr.ResidentCaps().HasFastPrefill {
 		return reuse
 	}
-	if floor := fp.FastPrefillFloor(); floor <= 0 || len(prompt) < floor {
+	if floor := cr.ResidentCaps().FastPrefillFloor; floor <= 0 || len(prompt) < floor {
 		return reuse
 	}
 	return 0
@@ -261,7 +261,11 @@ func (r *equivResident) UseKVSlot(i int) error {
 	r.bound = i
 	return nil
 }
-func (r *equivResident) FastPrefillFloor() int { return r.floor }
+func (r *equivResident) ResidentCaps() ResidentCaps {
+	c := r.fakeResident.ResidentCaps()
+	c.HasFastPrefill, c.FastPrefillFloor = true, r.floor
+	return c
+}
 func (r *equivResident) ReusableKV(prefix int) int {
 	if r.window > 0 && prefix%r.window == 0 {
 		return 0

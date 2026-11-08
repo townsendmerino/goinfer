@@ -1729,9 +1729,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// of its whole logits row; the id is the argmax the sampler would take from that row. Rows run alone keep residentCall's path.
 	batchGreedy := false
 	if mc3 != nil && !fastGreedy && sampleRF == nil && procFree && (sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) {
-		if bg, ok := m.resident.(ResidentBatchGreedy); ok && bg.BatchGreedyDraw() {
-			batchGreedy = true
-		}
+		batchGreedy = residentCapsOf(m.resident).BatchGreedyDraw
 	}
 	// The sampled chain (ResidentSampleChain): where the device draw serves the token, the same draw with the next token's forward
 	// queued on the device first, as the greedy chain does for the argmax. Same exclusions as the greedy chain, and not where

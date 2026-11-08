@@ -99,20 +99,13 @@ type ResidentBatchSeq struct {
 
 // ResidentBatchDraw is a temperature-only draw a batched step makes on-device for its row: ForwardSample's
 // arguments, from the sequence's own Sampler.NextDraw. Greedy marks a greedy generation's row (E-P08,
-// docs/audit-metal-2026-09-30.md), sent only to a resident that implements ResidentBatchGreedy: the id must be the
+// docs/audit-metal-2026-09-30.md), sent only to a resident that reports ResidentCaps.BatchGreedyDraw: the id must be the
 // argmax of the logits the row would have returned (after any softcap or logit scale), first maximum on a tie, exactly
 // as the decoder's sampler would pick it from them.
 type ResidentBatchDraw struct {
 	Temperature float64
 	Seed, Draw  uint64
 	Greedy      bool
-}
-
-// ResidentBatchGreedy is an OPTIONAL ResidentBatchStepper extension: BatchGreedyDraw reports that StepBatch returns a
-// Greedy draw row's argmax id (ResidentBatchDraw.Greedy) instead of its logits, so a greedy generation's batched token
-// costs no logits readback.
-type ResidentBatchGreedy interface {
-	BatchGreedyDraw() bool
 }
 
 // ResidentBatchOut is one row of a StepBatch: the drawn id (>= 0) for a sequence that carried a Draw, else its logits.
@@ -419,48 +412,48 @@ type VerifyPathReporter interface {
 	VerifyPath() (batched bool, reason string)
 }
 
-// ResidentQuantReporter is an OPTIONAL resident extension: the precision the resident runs its weights at, when it
-// chose one the decoder cannot infer from the backend and the load quant. Metal runs some int8 models natively and
-// re-quantizes others to int4 (docs/tasks/task-metal-int8-2026-10.md). "" means residentQuantLabel applies.
-type ResidentQuantReporter interface {
-	ResidentQuant() string
+// ResidentCaps is what a resident reports about itself (ResidentCapsReporter), read at each use. The zero value is what a
+// resident that reports nothing gives, and each field's zero means "none".
+type ResidentCaps struct {
+	// ContextCap is the KV capacity in positions. A write past it is an out-of-bounds device write: the backends refuse one
+	// mid-generation, and the decoder clamps a turn to it up front (clampToResidentCap) so the turn stops cleanly at the cap.
+	ContextCap int
+	// HasFastPrefill reports that the batched prefill switches to non-exact kernels (CUDA's attn_fused and gemm_w4a8_mma) from
+	// FastPrefillFloor prompt tokens, a floor of 0 when the fast kernels are off. Rows a short request computed on the exact kernels
+	// differ from the same rows on the fast ones, so prefix reuse declines a reuse that would mix them
+	// (docs/measurements/mc4-candidate-cuda-2026-10-01.md, ROOT CAUSE). The class rule keys on HasFastPrefill, not on the floor.
+	HasFastPrefill   bool
+	FastPrefillFloor int
+	// HasKernelFloor reports that the batched prefill runs one kernel class below a whole-prompt length of KernelFloor and another,
+	// not bit-identical, from it (Metal: decode rows, then f16 MMA), a floor of 0 when one class runs at every length. Chunked
+	// prefill keeps every chunk on the class the whole prompt takes. A narrower contract than HasFastPrefill's, which prefix reuse
+	// also reads.
+	HasKernelFloor bool
+	KernelFloor    int
+	// TailMinRows is the fewest rows a prefill's last pass may have to run the kernels of the pass before it (CUDA: the fused
+	// attention's floor); every loop that cuts a prompt into passes takes the larger of it and prefillTailMin.
+	TailMinRows int
+	// Quant is the precision the weights run at, when the decoder cannot infer it from the backend and the load quant (Metal runs
+	// some int8 models natively and re-quantizes others to int4, docs/tasks/task-metal-int8-2026-10.md); "" means residentQuantLabel applies.
+	Quant string
+	// ContextNote is a few words on how the backend arrived at ContextCap, for a load banner; "" when the caller's own -ctx set it.
+	ContextNote string
+	// BatchGreedyDraw reports that StepBatch returns a Greedy draw row's argmax id (ResidentBatchDraw.Greedy) instead of its
+	// logits, so a greedy generation's batched token costs no logits readback.
+	BatchGreedyDraw bool
 }
 
-// reportedQuant is rf's ResidentQuant, or "" when rf does not report one.
-func reportedQuant(rf ResidentForward) string {
-	if qr, ok := rf.(ResidentQuantReporter); ok {
-		return qr.ResidentQuant()
+// ResidentCapsReporter is the optional capability of a resident to report its ResidentCaps.
+type ResidentCapsReporter interface {
+	ResidentCaps() ResidentCaps
+}
+
+// residentCapsOf is rf's ResidentCaps, or the zero value when rf is nil or reports none.
+func residentCapsOf(rf ResidentForward) ResidentCaps {
+	if r, ok := rf.(ResidentCapsReporter); ok {
+		return r.ResidentCaps()
 	}
-	return ""
-}
-
-// ResidentCapped is an OPTIONAL ResidentForward extension exposing the backend's fixed
-// KV context capacity (in positions). A write past it is an out-of-bounds device write
-// (silent KV corruption); the backends refuse it mid-generation, but generateInto also
-// type-asserts for this to clamp/refuse UP FRONT — so a request that would overrun stops
-// cleanly at the cap (or falls back) instead of erroring after N tokens. Backends may
-// skip implementing it (they still enforce the cap in Forward/ForwardN/UploadKV). C3/M20.
-type ResidentCapped interface {
-	ContextCap() int
-}
-
-// ResidentFastPrefill is the optional capability of a resident whose batched prefill switches to NON-EXACT kernels once a prompt is long enough (CUDA's attn_fused and
-// gemm_w4a8_mma, from 512 prompt tokens). FastPrefillFloor is that prompt length, or 0 when the fast kernels are off. It exists for prefix reuse: rows a SHORT earlier
-// request computed on the exact kernels differ numerically from the same rows on the fast ones, so a long prompt that reuses even a few of them and prefills the rest
-// fast has a mixed KV and different logits than a cold prefill (docs/measurements/mc4-candidate-cuda-2026-10-01.md, ROOT CAUSE). residentAcquireSlot reads this to
-// decline such a reuse. A resident whose prefill is exact at every length need not implement it.
-type ResidentFastPrefill interface {
-	FastPrefillFloor() int
-}
-
-// ResidentPrefillKernelFloor is the optional capability of a resident whose batched prefill runs one class of
-// kernels below a whole-prompt length and another, not bit-identical, from it (Metal: decode rows below its
-// floor, f16 MMA from it). PrefillKernelFloor is that length, or 0 when one class runs at every length.
-// Chunked prefill (mc3Prefill) reads it so no chunk straddles the boundary the whole prompt would not: a first
-// chunk below the floor ran on the other class, and the reply then depended on whether another generation was
-// decoding. A narrower contract than ResidentFastPrefill's, which prefix reuse also reads.
-type ResidentPrefillKernelFloor interface {
-	PrefillKernelFloor() int
+	return ResidentCaps{}
 }
 
 // ResidentPrefillBlocks is the optional capability of a Prefiller whose pass allocates scratch for every row it is
@@ -515,7 +508,7 @@ func (m *Model) residentPrefillScratch(promptTokens int) (bytes int64, ok bool) 
 }
 
 // prefillKernelFloor is the resident's kernel-class boundary for chunking: PrefillKernelFloor when the resident
-// reports it, else ResidentFastPrefill's floor (the same boundary, as CUDA reports it), else 0.
+// reports it, else the fast-prefill floor (the same boundary, as CUDA reports it), else 0.
 func (m *Model) prefillKernelFloor() int {
 	fast, hasFast, kernel, hasKernel := m.residentFloors()
 	switch {
@@ -527,16 +520,11 @@ func (m *Model) prefillKernelFloor() int {
 	return 0
 }
 
-// residentFloors is the resident's two kernel-class reports, each with whether the resident gives it: ResidentFastPrefill's
-// FastPrefillFloor and ResidentPrefillKernelFloor's PrefillKernelFloor. A caller that keys on a report's presence reads has, not a 0.
+// residentFloors is the resident's two kernel-class reports (ResidentCaps), each with whether the resident gives it. A caller that
+// keys on a report's presence reads has, not a 0.
 func (m *Model) residentFloors() (fast int, hasFast bool, kernel int, hasKernel bool) {
-	if fp, ok := m.resident.(ResidentFastPrefill); ok {
-		fast, hasFast = fp.FastPrefillFloor(), true
-	}
-	if kf, ok := m.resident.(ResidentPrefillKernelFloor); ok {
-		kernel, hasKernel = kf.PrefillKernelFloor(), true
-	}
-	return fast, hasFast, kernel, hasKernel
+	c := residentCapsOf(m.resident)
+	return c.FastPrefillFloor, c.HasFastPrefill, c.KernelFloor, c.HasKernelFloor
 }
 
 // ResidencyBackend is the optional capability a Backend advertises to build a
@@ -1408,16 +1396,8 @@ func (m *Model) ResidentActive() bool { return m.resident != nil }
 // ResidentContextCap returns the resident backend's fixed KV/attention capacity in positions, or 0
 // when the model is not GPU-resident or its backend exposes no cap. A stateless prompt longer than
 // this cannot be prefilled on the resident path, so a caller can reject it up front rather than
-// fail mid-prefill (audit R-10). Mirrors the ResidentCapped clamp generateInto applies to maxTokens.
-func (m *Model) ResidentContextCap() int {
-	if m.resident == nil {
-		return 0
-	}
-	if capper, ok := m.resident.(ResidentCapped); ok {
-		return capper.ContextCap()
-	}
-	return 0
-}
+// fail mid-prefill (audit R-10). clampToResidentCap applies the same cap to maxTokens.
+func (m *Model) ResidentContextCap() int { return residentCapsOf(m.resident).ContextCap }
 
 // clampToResidentCap is maxTokens cut so that a turn starting at gpuPos ends at the resident's context cap, and whether it was cut.
 // A resident without a cap, or a cap of 0, cuts nothing; the result may be 0 when the prompt fills the cap.
@@ -1428,19 +1408,8 @@ func (m *Model) clampToResidentCap(gpuPos, maxTokens int) (int, bool) {
 	return maxTokens, false
 }
 
-// ResidentContextNoted is an optional ResidentForward extension: a few words on how the backend arrived at its context cap
-// ("fit: 2 slots, 1.9 GB KV", "paged MoE keeps the default"), for a load banner. "" when the caller's own -ctx set it.
-type ResidentContextNoted interface {
-	ContextNote() string
-}
-
-// ResidentContextNote is the active resident's ContextNote, or "" when there is no resident or it gives none.
-func (m *Model) ResidentContextNote() string {
-	if n, ok := m.resident.(ResidentContextNoted); ok {
-		return n.ContextNote()
-	}
-	return ""
-}
+// ResidentContextNote is the active resident's ContextNote ("fit: 2 slots, 1.9 GB KV"), or "" when there is no resident or it gives none.
+func (m *Model) ResidentContextNote() string { return residentCapsOf(m.resident).ContextNote }
 
 // ResidentContextKVBytes is the KV one resident slot holds at ctx positions on the active resident's backend, at the precision
 // that backend allocates: the figure FitBudgetSummary reports at the resolved context. 0 when no resident is active.
@@ -1499,7 +1468,7 @@ func (m *Model) DecodePath() string {
 	switch {
 	case m.resident != nil:
 		label := residentQuantLabel(be, m.Quant())
-		if q := reportedQuant(m.resident); q != "" {
+		if q := residentCapsOf(m.resident).Quant; q != "" {
 			label = q
 		}
 		return fmt.Sprintf("%s-resident (%s)", be, label)
@@ -1532,7 +1501,7 @@ func (m *Model) DecodePath() string {
 
 // residentQuantLabel is DecodePath's resident-quant string, split out so it is testable without a live Model
 // (decoder/staged_device_note_test.go). Metal has no int8 GEMV kernel of its own: unless the resident reports
-// otherwise (ResidentQuantReporter), an Int8()-kind weight is re-quantized to W4A8 at resident-build time, under
+// otherwise (ResidentCaps.Quant), an Int8()-kind weight is re-quantized to W4A8 at resident-build time, under
 // `--quant int8` and `int8int8` and for `int4mix`'s int8-kind tensors, so the label says "→int4". f32 never produces
 // a resident build there. Every other (backend, quant) pair echoes the requested quant.
 func residentQuantLabel(backend, quant string) string {
@@ -1563,13 +1532,13 @@ func autoMetalPrecision(auto bool, backend, quant string) string {
 }
 
 // autoMetalKeepsPrecision is why a resident -backend auto built on metal must be dropped for the CPU, "" when it keeps
-// it: an int8int8 model the resident did not run natively (ResidentQuantReporter reports no int8int8) was re-quantized
+// it: an int8int8 model the resident did not run natively (ResidentCaps.Quant is not int8int8) was re-quantized
 // to int4, a precision the user did not ask for.
 func autoMetalKeepsPrecision(auto bool, backend, quant string, rf ResidentForward) string {
 	if !auto || backend != "metal" || quant != "int8int8" {
 		return ""
 	}
-	if reportedQuant(rf) == quant {
+	if residentCapsOf(rf).Quant == quant {
 		return ""
 	}
 	return "-backend auto keeps this int8int8 model on the CPU: metal would re-quantize it to int4 (its int8 kernels cover dense models only; -backend metal does that)"

@@ -17,19 +17,9 @@ type ResidentPrefillSpanScratch interface {
 	PrefillSpanScratchBytes(rows, keys int) int64
 }
 
-// ResidentPrefillTailMin is the optional capability of a resident whose last pass of a prefill must have a minimum number of rows
-// to run the same kernels as the pass before it (CUDA: 16, the fused attention's floor). Every loop that cuts a prompt into
-// passes reads it instead of prefillTailMin.
-type ResidentPrefillTailMin interface {
-	PrefillTailMinRows() int
-}
-
 // prefillTailMinRows is the shortest final pass the resident takes: its own figure when it reports one above the default.
 func (m *Model) prefillTailMinRows() int {
-	if tm, ok := m.resident.(ResidentPrefillTailMin); ok {
-		return max(prefillTailMin, tm.PrefillTailMinRows())
-	}
-	return prefillTailMin
+	return max(prefillTailMin, residentCapsOf(m.resident).TailMinRows)
 }
 
 // residentChunkedScratch prices a request on a resident that chunks its own prefill: the device scratch of one pass of at most

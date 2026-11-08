@@ -8,7 +8,11 @@ type fastPrefillResident struct {
 	floor int
 }
 
-func (f *fastPrefillResident) FastPrefillFloor() int { return f.floor }
+func (f *fastPrefillResident) ResidentCaps() ResidentCaps {
+	c := f.slotResident.ResidentCaps()
+	c.HasFastPrefill, c.FastPrefillFloor = true, f.floor
+	return c
+}
 
 func longPrompt(lead []int, n int) []int {
 	p := append([]int(nil), lead...)
