@@ -1516,6 +1516,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						} else {
 							attnErr = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
 								BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, r.kvScaled(l, r.withCap(attnArgs...)...)...)
+							r.exactAttnLaunches++
 						}
 						if attnErr == nil && laneFrom < M {
 							attnErr = r.flashVerifyAttn(l, startPos, laneFrom, M, qBb, cctxB)

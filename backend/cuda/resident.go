@@ -863,6 +863,7 @@ type cudaResident struct {
 	chunkPromptLen int
 	// fastAttnLaunches / fastGemmLaunches count attn_fused and gemm_w4a8_mma launches, so a test can prove WHICH kernels a prefill pass used rather than infer it from timing.
 	fastAttnLaunches, fastGemmLaunches                      int
+	exactAttnLaunches                                       int // attn_batched launches in a prefill pass, so a test can prove a tile-served layer took none
 	tile128Launches                                         int // attn_fused launches that used the 128-row-tile kernel (default for hd128 layers without a window)
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
 	fMoEWaccBias                                            Pipeline // gpt-oss: wacc + per-expert down bias

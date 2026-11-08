@@ -134,14 +134,14 @@ __device__ __forceinline__ __half kv_vec_half(const kv_vec16& v, int j) {
 #endif
 
 // stage_tile_vec stages one FULL key tile (BN keys) of K as Ksh[BN][kStride] and V as Vtsh[HD][vStride], the same halves
-// the scalar staging writes, with 16-byte loads issued a batch at a time before any of them is converted or stored. K
+// the scalar staging writes, with vector loads (16 bytes; 8 bytes of int8 in the i8 build) issued a batch at a time before any of them is converted or stored. K
 // lanes run along a key row (coalesced). V lanes run along key pairs: each lane loads two rows and stores half2(key,
 // key+1) per column, so a warp's V^T stores land on distinct banks. rowOf(kk) is key kk's row in the cache.
 template <int HD, int BM, int BN, int kStride, int vStride, typename RowOf>
 __device__ __forceinline__ void stage_tile_vec(const KV_T* __restrict__ kc, const KV_T* __restrict__ vc, long colOff,
                                                __half* Ksh, __half* Vtsh, RowOf rowOf, int kvDim KV_SCALE_PARAMS) {
     constexpr int NT = (BM / 16) * 32;
-    constexpr int DV = HD / KV_VW;          // 16-byte chunks a key row
+    constexpr int DV = HD / KV_VW;          // vector loads a key row
     constexpr int NK = BN * DV;             // K loads a tile
     constexpr int NV = (BN / 2) * DV;       // V units (two loads each) a tile
     constexpr int BK = (NK / NT) < 8 ? (NK / NT) : 8;
@@ -293,7 +293,7 @@ __device__ __forceinline__ void attn_fused_impl(const float* __restrict__ q,
         blockMinWinStart = (firstRowKeys > window) ? firstRowKeys - window : 0;
     }
 
-    // A full tile stages with 16-byte loads when both caches are 16-byte aligned (a key row's offset is a multiple of HD
+    // A full tile stages with vector loads when both caches are 16-byte aligned (a key row's offset is a multiple of HD
     // elements, so the base pointers decide it); a partial tile, or a misaligned cache, takes the scalar loops.
     const bool vecOK = ((reinterpret_cast<unsigned long long>(kc) | reinterpret_cast<unsigned long long>(vc)) & 15) == 0;
     for (int s0 = blockMinWinStart; s0 < blockMaxKeys; s0 += BN) {
