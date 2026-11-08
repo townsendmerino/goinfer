@@ -7,7 +7,7 @@ moves no default (`auto` stays as it is; int8 is never an `auto` pick). Nothing 
 
 ## G4: fidelity against f32, with f16 beside it
 
-**Instrument:** `TestKV8GateVsReference` (to be written in `backend/cuda/kv8_gate_test.go`, on the shape of `TestKV16GateVsReference`, whose
+**Instrument:** `TestKV8GateVsReference` (written in `backend/cuda/kv16_gate_test.go`, beside and on the shape of `TestKV16GateVsReference`, whose
 helpers it reuses unchanged). Three arms in one binary and session, loaded one after another (a 7B's copies do not fit the card together):
 `-kv f32` (exact), `-kv f16` and `-kv i8`. Each is teacher-forced on the reference tokens and scored against the **already built** CPU f32/f64
 reference rows of held-out prompt set B (`~/goinfer-logs/prefill-ref-b`: `D7-K8000-p0..9`, `S-K3900-p0..9`; ten prompts of 64 positions).
@@ -109,7 +109,7 @@ References rebuilt on this tree (`s4-ref-S-K3900.log`): 10 of 10, 740 s, keyed t
 | int8 against f16 (reported) | 90.94 %, 8, 0.052564 | 89.69 %, 19, 0.086818 | ratio 1.652, the same three fail |
 | control: f16 against f32 | 91.09 %, 9, 0.052265 | 90.94 %, 8, 0.052564 | **PASSES**, KL ratio 1.0057: the f16 gate's own S reading of 2026-10-13, reproduced exactly |
 
-Preconditions, all held:
+Preconditions checked in this run: 1 to 3 (5 and 4 were not; see the addendum of 2026-11-08 below, which makes this reading provisional):
 - int8 allocated 60,555,264 B against f32's 234,881,024 B, priced exactly in both arms;
 - the flash lane's int8 kernel launched;
 - A/A bit-identical over 64 rows;
@@ -121,3 +121,26 @@ a published reading, not a refusal: `--kv i8` stays delivered on request. It dec
 consistent with what S2's cross-backend readings showed (the CPU's own int8 cache costs the 1.5B the same).
 
 D7, the decision cell, waits on its references (the addendum above).
+
+
+## Addendum, 2026-11-08 02:29 PST (Gemini's review of #768; no bar, cell or prediction changed)
+
+- **The S reading above is provisional.** Its run checked preconditions 1 to 3 only. Precondition 4 (the exact-input G2 passing at the
+  binary's commit) was last run on an earlier tree, and precondition 5 (each load fit-checked first) was not recorded. #768's description
+  and this record said "every precondition holds"; that was wrong for 4 and 5. The S cell is re-read with D7 on one pinned tree, with all
+  five checked.
+- **The gate now enforces 4 and 5.** Precondition 4 runs the exact-input G2 as the gate's first subtest, in the same binary; no cell is
+  read if it fails. Precondition 5 prints each arm's fit decision as its build sized it (context, slots, KV pools); `BuildResident`
+  refuses a load that does not fit, which fails the cell before any score. Precondition 1 now checks all six precision flags, each arm's
+  allocation against its own price (f16's included), and the flash lane's launches on every arm. A missing checkpoint fails the cell
+  instead of skipping it.
+- **Checked on the new instrument** (`s4-instrument-check-S2.log`): precondition 4 PASS (0.5B, 1.5B, `llama-attnfa-tiny`). The S cell
+  then stopped at the reference currency check, as it should: merging main changed `decoder/`, so S's references are stale again. They
+  are rebuilt on the tree D7 runs on.
+- **Budgets, re-estimated.** On S the int8 arm took about 5x the f32 and f16 arms per prompt (49 s for 11 runs against 9 s for 10): an
+  int8 cache prefills through `attn_batched` instead of the tensor-core tiles, and at 8,000 keys the ratio can be larger.
+  - D7's three arms: about 70 to 120 minutes, not the 35 minutes written above.
+  - The speed check, whose 16,384-key 7B cells carry int8's slow prefill: about 2 to 3 hours.
+
+  Past 2 hours a job belongs on the night queue (CLAUDE.md "Run budget"). D7's reference rebuild (about 4 hours of CPU) and both runs
+  are Francis's call; none is started.

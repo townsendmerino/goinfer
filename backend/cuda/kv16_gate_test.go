@@ -99,11 +99,13 @@ func TestKV16GateVsReference(t *testing.T) {
 type kv16ArmResult struct {
 	rows       [][][]float32 // [prompt][row][vocab]
 	allocated  int64         // the K/V cache bytes the load allocated (kvAllocSeenForTest)
-	kvPool     int64         // the KV pools' and null blocks' bytes, from the layers that size them
+	kvPool     int64         // the KV pools' and null blocks' bytes, from the layers that size them, block tables included
+	tables     int64         // the block tables' share of kvPool (allocated does not count them)
+	fit        string        // the build's own fit decision for the arm: its context and KV pool, as the plan sized them
 	faLaunches int
 	f16        bool
-	i8         bool        // the arm's resident holds int8 (kv8_gate_test.go)
-	aa         [][]float32 // a second run of prompt 0 (the f16 arm only), for the A/A precondition
+	i8         bool        // the arm's resident holds int8
+	aa         [][]float32 // a second run of prompt 0 (the arm asked for it), for the A/A precondition
 	maxK, maxV []float32   // per layer, over every prompt (the f32 arm only)
 	layers     int
 	faLayers   int  // the layers whose attended span reaches the lane's floor at this depth (a sliding window under it never does)
@@ -129,7 +131,11 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 	if rf.faSplit < 1 || rf.faCombine == (Pipeline{}) {
 		t.Fatalf("-kv %s: the flash-decode lane is not loaded (faSplit=%d)", kv, rf.faSplit)
 	}
-	res := kv16ArmResult{f16: rf.kvF16, i8: rf.kvI8, allocated: seen[rf], kvPool: kvBytesForCap(rf.ctxCap, rf.layers) + kvPoolNullBytes(rf.layers), layers: len(rf.layers)}
+	res := kv16ArmResult{f16: rf.kvF16, i8: rf.kvI8, allocated: seen[rf], kvPool: kvBytesForCap(rf.ctxCap, rf.layers) + kvPoolNullBytes(rf.layers), layers: len(rf.layers),
+		tables: int64(kvGroups * 4 * kvBlocksFor(rf.ctxCap))}
+	// The build's own fit check sized this arm (BuildResident refuses a load that does not fit, and the load above would have failed): record
+	// what it chose, so the cell's record shows each arm passed it.
+	res.fit = fmt.Sprintf("-kv %s: resident, context %d positions, %d KV slot(s), KV pools %d B", kv, rf.ctxCap, rf.KVSlots(), res.kvPool)
 	res.mlaOnly = true
 	for l := range rf.layers {
 		if !rf.layers[l].noKV() && !rf.layers[l].isMLA() {
@@ -364,6 +370,11 @@ func TestKV8GateVsReference(t *testing.T) {
 	if cells == "" {
 		cells = "S:3900,D7:8000"
 	}
+	// PRECONDITION 4: the exact-input G2 at this binary's commit, before any cell: the int8 readers this gate scores must match the CPU's on
+	// one cache. It runs here, in the same binary, so the gate cannot be read against readers that were never checked.
+	if !t.Run("precondition4-exact-input-G2", TestKV8_G2exact_readersMatchTheCPUOnOneCache) {
+		t.Fatal("PRECONDITION 4 (exact-input G2) failed: no cell is read")
+	}
 	models := map[string]struct {
 		def      string
 		decision bool
@@ -393,7 +404,7 @@ func TestKV8GateVsReference(t *testing.T) {
 		t.Run(fmt.Sprintf("%s-K%d", name, K), func(t *testing.T) {
 			path := os.ExpandEnv(mc.def)
 			if _, err := os.Stat(path); err != nil {
-				t.Skipf("no fixture at %s", path)
+				t.Fatalf("no checkpoint at %s: a registered cell must run, not skip", path)
 			}
 			for pi := range files {
 				if _, err := os.Stat(filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", name, K, pi))); err != nil {
@@ -480,17 +491,35 @@ func runKV8GateCell(t *testing.T, path, model string, K int, promptFiles []strin
 	h := kv16RunArm(t, path, "f16", K, prompts, refTokens, false, false, model, decoder.Options{})
 	q := kv16RunArm(t, path, "i8", K, prompts, refTokens, false, true, model, decoder.Options{})
 
-	// PRECONDITION 1: vacuity.
-	if !q.i8 || e.i8 || e.f16 || !h.f16 {
-		t.Fatalf("PRECONDITION 1: arms are not f32/f16/i8 (int8: %v %v %v; f16: %v %v %v)", e.i8, h.i8, q.i8, e.f16, h.f16, q.f16)
+	// PRECONDITION 5: every arm was sized by the build's own fit check (a refused load fails kv16RunArm before here).
+	for _, a := range []kv16ArmResult{e, h, q} {
+		fmt.Printf("=== KV8 GATE %s K=%d precondition 5 (fit): %s\n", model, K, a.fit)
 	}
-	// Every arm allocated exactly the pools it prices (tables aside, which allocated does not count), and int8's are under half f32's and over a quarter.
-	if q.allocated-q.kvPool != e.allocated-e.kvPool || 2*q.allocated >= e.allocated || 4*q.allocated <= e.allocated {
-		t.Fatalf("PRECONDITION 1: K/V cache allocations f32 %d B (priced %d), i8 %d B (priced %d): the int8 pools are not 1 B an element plus their scales",
-			e.allocated, e.kvPool, q.allocated, q.kvPool)
+	// PRECONDITION 1: vacuity. Each arm holds exactly its precision: all six flags.
+	if e.f16 || e.i8 || !h.f16 || h.i8 || q.f16 || !q.i8 {
+		t.Fatalf("PRECONDITION 1: arms are not f32/f16/i8 (f16 flags %v %v %v; int8 flags %v %v %v)", e.f16, h.f16, q.f16, e.i8, h.i8, q.i8)
 	}
-	if want := q.faLayers * (contN - 1) * len(prompts); q.faLayers == 0 || q.faLaunches < want {
-		t.Fatalf("PRECONDITION 1 (vacuity): the int8 arm launched fa_partial %d times over %d lane layers, expected >= %d", q.faLaunches, q.faLayers, want)
+	// Each arm allocated exactly the pools it prices (its tables aside, which allocated does not count); int8's are under half f32's and over
+	// a quarter (1 B an element plus the scales), f16's exactly half.
+	for _, a := range []struct {
+		name string
+		r    kv16ArmResult
+	}{{"f32", e}, {"f16", h}, {"i8", q}} {
+		if a.r.allocated <= 0 || a.r.allocated != a.r.kvPool-a.r.tables {
+			t.Fatalf("PRECONDITION 1: the %s arm allocated %d B of K/V; its pools are priced %d B (%d B with %d B of tables)", a.name, a.r.allocated, a.r.kvPool-a.r.tables, a.r.kvPool, a.r.tables)
+		}
+	}
+	if 2*h.allocated != e.allocated || 2*q.allocated >= e.allocated || 4*q.allocated <= e.allocated {
+		t.Fatalf("PRECONDITION 1: K/V allocations f32 %d B, f16 %d B, i8 %d B: not f32, half, and a quarter plus scales", e.allocated, h.allocated, q.allocated)
+	}
+	// Every arm reads its cache through the production flash-decode lane.
+	for _, a := range []struct {
+		name string
+		r    kv16ArmResult
+	}{{"f32", e}, {"f16", h}, {"i8", q}} {
+		if want := a.r.faLayers * (contN - 1) * len(prompts); a.r.faLayers == 0 || a.r.faLaunches < want {
+			t.Fatalf("PRECONDITION 1 (vacuity): the %s arm launched fa_partial %d times over %d lane layers, expected >= %d", a.name, a.r.faLaunches, a.r.faLayers, want)
+		}
 	}
 	diff, seedDiff := 0, 0
 	for pi := range prompts {
