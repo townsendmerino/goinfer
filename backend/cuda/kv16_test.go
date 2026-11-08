@@ -1627,6 +1627,9 @@ func TestMoEExpertsUnpinned_identityAndPricing(t *testing.T) {
 	q.Options.MoEExpertsUnpinned = true
 	if got := buildDemand(q).PinnedExpertBytes; got != 0 {
 		t.Errorf("the unpinned load prices a %d-byte pinned copy", got)
+	}
+}
+
 // TestKV8_everyFusedPrefillLaunchPassesScales reads prefill.go: every launch of a tensor-core prefill tile (attn_fused, attn_fused_bm) passes
 // the layer's scale pools through kvScaled, since the identity test launches each tile itself and would not see a dispatch site that forgot
 // them (S6, Gemini's review of #785). Eight sites: two attn_fused head dims and three attn_fused_bm shapes at two head dims.

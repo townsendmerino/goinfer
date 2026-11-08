@@ -103,3 +103,33 @@ pin dirties it. A tmpfs file is RAM, so a sidecar there would cost the same host
 Francis asked for the unpinned path to be measured. The expert slots, uploaded from pageable file pages instead of the pinned copy, save
 12,251 MiB of host memory but cost the 26B's decode 0.817x at short context and 0.750x at long, under the registered 0.90 kill line. The
 registration, the reading and the attempts are in `ab-registration.md`. MEM10 is closed on nobara, and the pinned copy stays.
+
+## MEM10 opt-in: `--moe-experts-unpinned` (Francis, 2026-11-08 13:05)
+
+**Francis's call, after the KILL:** build the unpinned path as an opt-in, and have fit suggest it. It is slower by design and saves host memory,
+so CLAUDE.md's opt-in speed bar does not apply.
+
+- **The flag:** `--moe-experts-unpinned`, default off. It is `decoder.Options.MoEExpertsUnpinned`, read through `Model.MoEExpertsUnpinned()`;
+  there is no env read.
+  - With `--moe-cache-experts` on CUDA, each expert stack is packed into an unlinked, read-only file mapping in the model's directory, and the
+    slots upload from its pageable pages.
+  - It is arm B of the tier 1 A/B (`ab-registration.md`). A directory on tmpfs is refused by name, because there the copy would still be RAM.
+- **Pricing:** the CUDA build demand drops the pinned copy under the flag. A `.giw` load prices no pinned expert bytes; a `.gguf` build peaks at
+  the weights twice.
+- **The suggestion:** the `.giw` guard's two refusals and the `.gguf` build's decline add "--moe-experts-unpinned drops the X GB pinned expert
+  copy … measured at 0.82x decode at short context and 0.75x at long", only when a pinned copy is in the need and dropping it would bring the
+  need within the budget.
+
+**Tests, all passing, each red under its plant** (`optin/plant-*.log`):
+- `TestUnpinnedExpertsHint_onlyWhenTheCopyIsWhatDoesNotFit` (`internal/runtime/mem`): the hint appears only where dropping the copy fits. It is
+  absent with no copy, and absent when the KV alone is over the budget.
+- `TestCUDABuildDemand_unpinnedExpertsDropTheCopy` (`decoder`) and the CUDA `buildDemand` check: the flag drops the pinned term.
+- `TestMoEExpertsUnpinned_identityAndPricing` (`backend/cuda`, `qwen3moe-tiny` with paged experts):
+  - The unpinned load builds every expert stack pageable, and the pinned one none.
+  - Their teacher-forced logits are equal bit for bit over 24 positions.
+- Plants: the hint always; the decoder pricing ignoring the flag; the CUDA pricing ignoring it; the unpinned path not taken; half the
+  unpinned scales zeroed.
+
+**Registries:** `docs/flags.md` (from `flags.meta.json`), the register and resolve goldens, and MM1's census. The census's refusal lines
+changed; both classes are regenerated, arm64 under qemu-user (`optin/census-arm64-qemu.log`). `touched.py` PASS (22 checks). The parity
+staleness gate is green.
