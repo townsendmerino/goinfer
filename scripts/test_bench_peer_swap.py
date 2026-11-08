@@ -34,6 +34,17 @@ class SwapWatch(unittest.TestCase):
         w = bench_peer.SwapWatch()
         self.assertIn("unreadable", w.void_reason(), "a swap bar that cannot read swap must not pass the cell")
 
+    def test_a_reading_lost_mid_cell_fails_closed(self):
+        # the baseline reads, then every poll and the last one fail: the peak would stay 0.0 and the cell would pass
+        old = bench_peer.swap_used_mb
+        self.addCleanup(setattr, bench_peer, "swap_used_mb", old)
+        calls = iter([100.0])
+        bench_peer.swap_used_mb = lambda: next(calls, None)
+        w = bench_peer.SwapWatch()
+        w.poll_once()
+        w.poll_once()
+        self.assertIn("unreadable", w.void_reason())
+
     def test_an_explicit_swap_in_bar_replaces_the_default(self):
         # nobara's rule keeps its swap-in bar: with BENCH_SWAPIN_VOID_MB set and no growth bar, growth alone is not the default's void
         os.environ["BENCH_SWAPIN_VOID_MB"] = "0"

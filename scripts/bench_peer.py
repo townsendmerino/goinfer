@@ -610,6 +610,7 @@ class SwapWatch:
         self.swapin = None
         self.swapout = None
         self.peak = 0.0
+        self.unreadable = self.base is None  # swap could not be read at the start, or at a poll or the last read
         self.killed = None
         self.pgid = None
         kill = os.environ.get("BENCH_SWAP_KILL_MB", "").strip()
@@ -617,17 +618,24 @@ class SwapWatch:
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
+    def poll_once(self):
+        """One poll: the peak growth over the baseline, the kill bar, and a reading that fails marks the cell unreadable (a guard that
+        cannot read what it guards must not pass the cell)."""
+        now = swap_used_mb()
+        if now is None or self.base is None:
+            self.unreadable = True
+            return
+        self.peak = max(self.peak, now - self.base)
+        if self.kill_mb is not None and self.peak > self.kill_mb and self.pgid and not self.killed:
+            self.killed = f"swap grew +{self.peak:.0f} MB (> {self.kill_mb:.0f}); server killed"
+            try:
+                os.killpg(self.pgid, signal.SIGKILL)
+            except Exception:
+                pass
+
     def _run(self):
         while not self._stop.is_set():
-            now = swap_used_mb()
-            if self.base is not None and now is not None:
-                self.peak = max(self.peak, now - self.base)
-                if self.kill_mb is not None and self.peak > self.kill_mb and self.pgid and not self.killed:
-                    self.killed = f"swap grew +{self.peak:.0f} MB (> {self.kill_mb:.0f}); server killed"
-                    try:
-                        os.killpg(self.pgid, signal.SIGKILL)
-                    except Exception:
-                        pass
+            self.poll_once()
             self._stop.wait(self.POLL_S)
 
     def start(self, pid):
@@ -639,6 +647,7 @@ class SwapWatch:
         self._stop.set()
         if self._thread.is_alive():
             self._thread.join(timeout=5)
+        self.poll_once()  # the last reading; a failure here marks the cell unreadable too
         now_in, now_out = swap_io_mb()
         if self.base_in is not None and now_in is not None:
             self.swapin = now_in - self.base_in
@@ -656,7 +665,7 @@ class SwapWatch:
         import void_rule
         if self.killed:
             return self.killed
-        return void_rule.swap_verdict(None if self.base is None else self.peak, self.swapin, self.swapout)
+        return void_rule.swap_verdict(None if self.unreadable else self.peak, self.swapin, self.swapout)
 
 
 class RSSSampler:
@@ -830,19 +839,25 @@ def need_is_lower_bound(source):
 
 
 _LOAD_SKIP_SAID = False
+_MEM_SKIP_SAID = False
 
 
 def heavy_void(state, need_mb):
     """The reason a cell starting in machine state `state` is void, or None, by void_rule.start_void. state carries loadavg,
     available_mb (the fit guard's reading) and ncores; an unreadable core count skips the load term, said once."""
-    global _LOAD_SKIP_SAID
+    global _LOAD_SKIP_SAID, _MEM_SKIP_SAID
     import void_rule
     la, ncores = state.get("loadavg"), state.get("ncores")
     if not ncores and not _LOAD_SKIP_SAID:
         _LOAD_SKIP_SAID = True
         print("# core count unreadable: the heavy-load void's load term is skipped for this run", flush=True)
     snap = {"load1": la[0] if la else None, "ncores": ncores, "available_mb": state.get("available_mb")}
-    return void_rule.start_void(snap, need_mb)
+    # BENCH_ALLOW_NO_FREE_MEM=1 (check_free_mem) lets a run go ahead on a box with no memory reading: the memory term is skipped, said once
+    allow = _FREE_MEM_OVERRIDE_USED and snap["available_mb"] is None
+    if allow and need_mb and not _MEM_SKIP_SAID:
+        _MEM_SKIP_SAID = True
+        print("# BENCH_ALLOW_NO_FREE_MEM=1: no available-memory reading, so the heavy-load void's memory term is skipped for this run", flush=True)
+    return void_rule.start_void(snap, need_mb, allow_unreadable_memory=allow)
 
 
 def start_clean(sample, need_mb, run, wait=time.sleep, limit_s=None):

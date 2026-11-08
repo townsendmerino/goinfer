@@ -73,6 +73,23 @@ class Rule(unittest.TestCase):
         self.assertIn("load average unreadable", bench_peer.heavy_void(dict(CLEAN, loadavg=None), None))
         self.assertIsNone(bench_peer.heavy_void(dict(CLEAN, available_mb=None), None), "no model load: no memory clause")
 
+    def test_the_documented_no_free_memory_override_skips_the_memory_term_and_says_so(self):
+        import contextlib
+        import io
+        self.addCleanup(setattr, bench_peer, "_FREE_MEM_OVERRIDE_USED", bench_peer._FREE_MEM_OVERRIDE_USED)
+        self.addCleanup(setattr, bench_peer, "_MEM_SKIP_SAID", bench_peer._MEM_SKIP_SAID)
+        bench_peer._MEM_SKIP_SAID = False
+        state = dict(CLEAN, available_mb=None)
+        bench_peer._FREE_MEM_OVERRIDE_USED = False
+        self.assertIn("available memory unreadable", bench_peer.heavy_void(state, 1000), "without the override the guard fails closed")
+        bench_peer._FREE_MEM_OVERRIDE_USED = True
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertIsNone(bench_peer.heavy_void(state, 1000))
+            bench_peer.heavy_void(state, 1000)
+            self.assertIn("above half", bench_peer.heavy_void(dict(state, loadavg=[9.0, 0, 0]), 1000), "the load term still applies")
+        self.assertEqual(out.getvalue().count("BENCH_ALLOW_NO_FREE_MEM=1"), 1, "logged once")
+
     def test_provenance_says_a_file_size_need_is_a_lower_bound(self):
         self.assertIn("lower bound", bench_peer.provenance()["fit_need"])
 

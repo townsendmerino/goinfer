@@ -1037,14 +1037,17 @@ class Runner:
         import void_rule
         # The job's swap peak, sampled each poll (POLL_S, 10 s: one sysctl of about 4 ms, from this process, not the job's), from the SAME
         # baseline as the growth below, the job's start reading. Information, like the end readings.
-        sampler = void_rule.SwapSampler(base=j["readings"]["start"].get("swap_mb"))
-        sampler.sample()
+        start_swap = j["readings"]["start"].get("swap_mb")
+        sampler = void_rule.SwapSampler(base=start_swap) if start_swap is not None else None  # no start reading: no peak, not a rebased one
+        if sampler:
+            sampler.sample()
         while True:
             try:
                 self.proc.wait(timeout=POLL_S)
                 break
             except subprocess.TimeoutExpired:
-                sampler.sample()
+                if sampler:
+                    sampler.sample()
             if self.stop_now:
                 self.kill_job("night.py stop --now")
                 outcome = "stopped"
@@ -1061,8 +1064,11 @@ class Runner:
         s0, s1 = j["readings"]["start"].get("swap_mb"), end.get("swap_mb")
         if s0 is not None and s1 is not None:
             j["readings"]["swap_growth_mb"] = round(s1 - s0, 1)
-        sampler.sample()
-        j["readings"]["swap_peak_growth_mb"] = sampler.result()["peak_growth_mb"]
+        if sampler:
+            sampler.observe(end.get("swap_mb"))  # the end reading is part of the peak
+            j["readings"]["swap_peak_growth_mb"] = sampler.result()["peak_growth_mb"]
+        else:
+            j["readings"]["swap_peak_growth_mb"] = None
         f.write(f"\n=== READINGS end {json.dumps(end)}\n")
         f.write(f"=== END      {now().strftime('%F %T %Z')}  rc={rc}\n")
         f.flush()
@@ -1289,7 +1295,7 @@ class Server(Runner):
         return os.getloadavg()[0]
 
     def ncores(self):
-        return os.cpu_count() or 1
+        return os.cpu_count()  # None when unreadable: heavy() then skips the load term and says so
 
     def free_mb(self):
         return free_mem_mb()
@@ -1298,7 +1304,11 @@ class Server(Runner):
     def heavy(self, j):
         """Why the box is under heavy load for job j now (the void rule, scripts/void_rule.py), or None."""
         import void_rule
-        snap = {"load1": self.load1(), "ncores": self.ncores(), "available_mb": self.free_mb()}
+        ncores = self.ncores()
+        if not ncores and not getattr(self, "_cores_said", False):
+            self._cores_said = True
+            self.log("core count unreadable: the heavy-load void's load term is skipped")
+        snap = {"load1": self.load1(), "ncores": ncores, "available_mb": self.free_mb()}
         return void_rule.start_void(snap, float(j.get("fit_need_gb") or 0) * 1024)
 
     def eligible(self, j, t):

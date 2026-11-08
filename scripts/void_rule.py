@@ -88,7 +88,30 @@ def load_cap(ncores):
     return ncores / 2
 
 
-def start_void(snap, need_mb, cap=None):
+def write_json_atomic(path, obj):
+    """Writes obj to path through a temp file and a rename, so a reader that sees the file sees all of it."""
+    tmp = f"{path}.tmp{os.getpid()}"
+    with open(tmp, "w") as f:
+        json.dump(obj, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def wait_ready(path, timeout_s=10.0, poll_s=0.05):
+    """The parsed contents of the ready file `watch` writes once its baseline is taken, waiting up to timeout_s for a whole file; None if
+    it never appears."""
+    end = time.monotonic() + timeout_s
+    while True:
+        try:
+            return json.load(open(path))
+        except (OSError, ValueError):
+            if time.monotonic() >= end:
+                return None
+            time.sleep(poll_s)
+
+
+def start_void(snap, need_mb, cap=None, allow_unreadable_memory=False):
     """The reason a cell starting in state snap is void, or None. A guard fails closed: a load or available-memory reading that cannot be
     read voids the start, with that reason (an unreadable core count with no explicit cap is the one skipped term: the cap cannot be
     computed, and the callers say so). need_mb None or 0 means the cell loads no model, so the memory clause does not apply."""
@@ -105,6 +128,8 @@ def start_void(snap, need_mb, cap=None):
     if need_mb:
         avail = snap.get("available_mb")
         if avail is None:
+            if allow_unreadable_memory:  # BENCH_ALLOW_NO_FREE_MEM=1: the documented override for a box with no memory reading
+                return None
             return "available memory unreadable"
         if avail < need_mb:
             return f"available memory {avail} MB below the fit need {need_mb:.0f} MB"
@@ -141,13 +166,17 @@ def swap_verdict(growth_mb, swapin_mb, swapout_mb, env=None):
     return None
 
 
-def swap_void(start, end, peak_mb=None, env=None):
+def swap_void(start, end, peak_mb=None, env=None, peak_required=False):
     """The reason a cell whose readings were `start` and `end` is void on swap, or None. The growth is the larger of the end against the
     start and the sampled peak (SwapSampler, in absolute MB) against the start: a spike freed again before the end still counts, and
     the peak is read against THIS cell's start reading, whatever baseline the sampler began from."""
     s, e = start.get("swap_mb"), end.get("swap_mb")
-    grows = [v - s for v in (e, peak_mb) if v is not None and s is not None]
-    growth = max(max(grows), 0.0) if grows else None
+    # Fails closed: the start and end readings are both part of the cell's record, so one that failed voids it whatever a sampler saw, and
+    # a watcher that was asked for (peak_required) but has no peak voids it too.
+    if s is None or e is None or (peak_required and peak_mb is None):
+        growth = None
+    else:
+        growth = max(max(v - s for v in (e, peak_mb) if v is not None), 0.0)
 
     def delta(k):
         a, b = start.get(k), end.get(k)
@@ -165,12 +194,21 @@ class SwapSampler:
         sample as the baseline."""
         self.read, self.poll_s = read or (lambda: swap_used_mb()), poll_s
         self.base, self.peak = base, base
+        self.unreadable = False  # a reading failed after the sampler began: the cell cannot be called clean
         self._stop = threading.Event()
         self._thread = None
 
     def sample(self):
-        v = self.read()
+        try:
+            v = self.read()
+        except Exception:
+            v = None
+        self.observe(v)
+
+    def observe(self, v):
+        """Folds in a reading taken elsewhere (a job's end reading); None marks the sampler unreadable."""
         if v is None:
+            self.unreadable = True
             return
         if self.base is None:
             self.base, self.peak = v, v
@@ -178,6 +216,9 @@ class SwapSampler:
 
     def start(self):
         self.sample()
+        return self.start_thread()
+
+    def start_thread(self):
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
         return self
@@ -195,22 +236,22 @@ class SwapSampler:
 
     def result(self):
         if self.base is None:
-            return {"base_mb": None, "peak_mb": None, "peak_growth_mb": None}
-        return {"base_mb": self.base, "peak_mb": self.peak, "peak_growth_mb": round(self.peak - self.base, 3)}
+            return {"base_mb": None, "peak_mb": None, "peak_growth_mb": None, "unreadable": True}
+        return {"base_mb": self.base, "peak_mb": self.peak, "peak_growth_mb": round(self.peak - self.base, 3),
+                "unreadable": self.unreadable}
 
 
 def watch(json_out, ready_file, sampler, stop):
-    """Samples swap until `stop` is set, then writes the result to json_out. The baseline is taken, and ready_file written with it, BEFORE
-    this waits: a runner that waits for the ready file cannot stop the watcher ahead of its first reading, and a stop that arrived
-    already still leaves a result (stop() takes a last sample)."""
+    """Samples swap until `stop` is set, then writes the result to json_out (atomically). The baseline is taken, and ready_file written
+    with it, BEFORE this waits: a runner that waits for the ready file (`wait`) cannot stop the watcher ahead of its first reading, and
+    a stop that arrived already still leaves a result (stop() takes a last sample). The sampling thread is the sampler's own, so
+    stop() joins it before the result is read."""
     sampler.sample()
     if ready_file:
-        json.dump({"base_mb": sampler.base}, open(ready_file, "w"))
-    t = threading.Thread(target=sampler._run, daemon=True)
-    t.start()
+        write_json_atomic(ready_file, {"base_mb": sampler.base})
+    sampler.start_thread()
     stop.wait()
-    json.dump(sampler.stop(), open(json_out, "w"))
-    t.join(timeout=5)
+    write_json_atomic(json_out, sampler.stop())
 
 
 def main(argv):
@@ -230,6 +271,9 @@ def main(argv):
     w.add_argument("--json-out", required=True)
     w.add_argument("--ready-file", help="written, with the baseline, once the first reading is taken: wait for it before the cell starts")
     w.add_argument("--poll-s", type=float, default=1.0)
+    r = sub.add_parser("wait", help="wait for the ready file `watch` writes; exit 77 if it never appears")
+    r.add_argument("--ready-file", required=True)
+    r.add_argument("--timeout-s", type=float, default=10.0)
     sub.add_parser("snapshot")
     a = ap.parse_args(argv)
     if a.cmd == "watch":
@@ -238,6 +282,13 @@ def main(argv):
             signal.signal(sig, lambda *_: done.set())
         watch(a.json_out, a.ready_file, SwapSampler(poll_s=a.poll_s), done)
         return 0
+    if a.cmd == "wait":
+        got = wait_ready(a.ready_file, a.timeout_s)
+        if got is None:
+            print(f"void: the watcher never wrote {a.ready_file}", file=sys.stderr)
+            return 77
+        print(json.dumps(got))
+        return 0
     snap = snapshot()
     if a.cmd == "snapshot":
         print(json.dumps(snap))
@@ -245,15 +296,19 @@ def main(argv):
     if a.cmd == "start":
         if not snap.get("ncores") and a.load_cap is None:
             print("core count unreadable: the load term is skipped", file=sys.stderr)
-        why = start_void(snap, a.need_mb, a.load_cap)
+        allow = os.environ.get("BENCH_ALLOW_NO_FREE_MEM") == "1"
+        if allow and a.need_mb and snap.get("available_mb") is None:
+            print("BENCH_ALLOW_NO_FREE_MEM=1: no available-memory reading, so the memory term is skipped for this cell", file=sys.stderr)
+        why = start_void(snap, a.need_mb, a.load_cap, allow_unreadable_memory=allow)
         snap["need_mb"], snap["void"] = a.need_mb, why
         snap["need_source"], snap["need_is_lower_bound"] = a.need_source, a.need_source == "file size"
     else:
-        peak = json.load(open(a.peak_json)).get("peak_mb") if a.peak_json else None
-        why = swap_void(json.load(open(a.start_json)), snap, peak)
+        pk = json.load(open(a.peak_json)) if a.peak_json else None
+        peak = pk.get("peak_mb") if pk and not pk.get("unreadable") else None  # a watcher that lost its reading has no usable peak
+        why = swap_void(json.load(open(a.start_json)), snap, peak, peak_required=bool(a.peak_json))
         snap["void"] = why
     if a.json_out:
-        json.dump(snap, open(a.json_out, "w"))
+        write_json_atomic(a.json_out, snap)
     print(json.dumps(snap))
     if why:
         # lower case on purpose: a runner under night.py that re-runs a void cell in place and succeeds must not trip night.py's VOID

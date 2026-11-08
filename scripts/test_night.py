@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 _tmp = tempfile.mkdtemp(prefix="night-test-")
@@ -450,6 +451,16 @@ class SwapReadingsInAJob(unittest.TestCase):
         self.assertEqual((got["readings"]["start"]["swap_mb"], got["readings"]["end"]["swap_mb"], got["readings"]["swap_growth_mb"]),
                          (500.0, 650.5, 150.5))
 
+    def test_the_end_reading_is_folded_into_the_peak(self):
+        # the job's swap grew 150.5 MB by its end reading; the peak is never smaller than that growth, whatever the polls saw
+        got = self.run_job([500.0, 650.5])
+        self.assertGreaterEqual(got["readings"]["swap_peak_growth_mb"], got["readings"]["swap_growth_mb"])
+        self.assertEqual(got["readings"]["swap_peak_growth_mb"], 150.5)
+
+    def test_an_unreadable_start_swap_leaves_the_peak_unknown_not_rebased(self):
+        got = self.run_job([None, 650.5])
+        self.assertIsNone(got["readings"]["swap_peak_growth_mb"])
+
     def test_the_sampled_peak_and_the_growth_share_one_baseline(self):
         # readings: swap 500 at the start, 520 at the end; the sampler reads 530 once: both are growth over the SAME 500 (the start reading),
         # not the peak over the sampler's own first reading
@@ -631,6 +642,20 @@ class Serve(unittest.TestCase):
         self.assertIn("available memory", sv.waits[0])
         sv.free = 4 * 1024  # exactly the need starts: there is no 2 GB margin any more
         self.assertEqual(self.tick(sv), "ran")
+
+    def test_the_real_runner_does_not_coerce_an_unreadable_core_count(self):
+        with mock.patch.object(night.os, "cpu_count", lambda: None):
+            self.assertIsNone(night.Server.ncores(object()))
+
+    def test_an_unreadable_core_count_skips_the_load_term_and_logs_it_once(self):
+        sv = FakeServer()
+        sv.ncores = lambda: None
+        logged = []
+        sv.log = logged.append
+        sv.la = 99.0
+        self.assertIsNone(sv.heavy({"fit_need_gb": 0}), "no cap of 0.5 from an unknown core count")
+        self.assertIsNone(sv.heavy({"fit_need_gb": 0}))
+        self.assertEqual(sum("core count unreadable" in m for m in logged), 1)
 
     def test_plant_without_the_heavy_gate_it_runs_under_load(self):
         sv = FakeServer()
