@@ -129,3 +129,38 @@ D7 275 s, against 895 s in S4, because the int8 arm now prefills on the tile. Lo
 - **Predictions:**
   - "D7 stays PARKED (0.6)": right.
   - "S stays DOES NOT PASS (0.8)": right.
+
+### Speed, on `12eedab5`, 10:26 to 10:52 PST
+
+- **Run:** the registered instrument. One serve binary (`serve-cuda-s6`), with `goinfer` = `auto` (f16) and `goinfer_old` = `-kv i8`;
+  bench_peer from `33bfef1d` (#777); S4's prompts. A B B A, four runs per arm per cell.
+- **Fit:** every load reached a serving server first (`fit2-*.log`; the 7B at `auto` is capped at 2 of 4 slots).
+- **Void rule:** no cell was void. Start loads were at most 0.97 and free memory at least 61 GB.
+- The provenance file's `prompts:` line named a wrong path, a slip in the copied script's echo. It is corrected in place: `BENCH_PROMPTS`
+  pointed at S4's file, and bench_peer refuses a plan missing a prompt.
+- Logs: `s6-g4-12eedab5/speed/` (`summary.txt` and both passes).
+
+| model | keys | int8/f16 decode | S4 int8/f16 decode | cold first request, f16 / int8 | int8/f16 cold | S4's int8 cold |
+|---|---|---|---|---|---|---|
+| 1.5B | 128 | 0.871 | 0.871 | 0.35 s / 0.40 s | 1.11 | 0.40 s |
+| 1.5B | 512 | 0.723 | 0.723 | 0.38 s / 0.49 s | 1.29 | 0.56 s |
+| 1.5B | 4,096 | 0.988 | 0.988 | 1.04 s / 1.03 s | **0.99** | 5.04 s |
+| 1.5B | 16,384 | 0.988 | 0.987 | 4.38 s / 4.42 s | **1.01** | 113.6 s |
+| 7B | 128 | 0.953 | 0.954 | 1.17 s / 1.21 s | 1.03 | 1.21 s |
+| 7B | 512 | 0.883 | 0.883 | 1.23 s / 1.33 s | 1.08 | 1.49 s |
+| 7B | 4,096 | 0.997 | 0.994 | 4.03 s / 4.00 s | **0.99** | 13.5 s |
+| 7B | 16,384 | 0.990 | 0.990 | 15.98 s / 16.24 s | **1.017** | 314.1 s |
+
+**Graded:**
+- **The decision cell (the 7B at 16,384 keys): int8/f16 cold = 1.017, PASS** (at or under 1.20). That is 16.2 s against S4's 314 s, 19.3x
+  faster.
+- **Reported, the same bands:** the 1.5B at 16,384 is 1.010, and both models at 4,096 are 0.99. All PASS.
+- **Control: holds.** Every decode ratio at 128 and 512 keys is within 0.002 of S4's.
+- **Ship rule: met.** G1 and the route gate hold, and the 16K cold request is under 157 s. In the PASS band the docs may say "near f16".
+- **Predictions:**
+  - "the 7B's 16K cold int8/f16 in 1.0 to 1.2 (0.6)": right.
+  - "G1 holds (0.9)": right.
+
+**What changes in the docs:** int8's speed cost is now decode only, 0.72x to 0.95x f16's at 128 and 512 keys and 0.99x at depth; a cold
+prefill is near f16's at 4,096 and 16,384 keys. The quality reading is unchanged (G4 above). The help text, the banner, `docs/server.md` and
+the matrix notes are corrected in this PR, stacked on #768, which introduced them.
