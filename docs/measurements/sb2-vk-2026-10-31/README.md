@@ -221,3 +221,37 @@ holds, as read at 17:40.
   and 3 above. They stay with that branch.
 - **The buffer list here** carries K and V caches by owning layer. An MLA layer's latent cache and a hybrid's recurrent state are
   listed only on the planner branch.
+
+## Held-out set 5 (registered 2026-11-08, before any of its loads): the rebuilt planner
+
+- **What is judged.** The planner change rebuilt on main (branch `sb2-vk-ship-2026-11-08`): the host-side tables, M1′ in webgpu's
+  `deviceLoad` on a Vulkan build, and the buffer list with KV only on cache-owning layers (main's `ResidentKVBytes`, from MM8),
+  MLA's latent and the recurrent state. The run is at that branch's head as the run names it.
+- **The loads.** Four architectures no earlier load read, each statically admitted by WebGPU's feature set
+  (`residentBackendFeatures`), int4 at load, one slot. Each is fetched into a new directory under `~/models` and deleted after its
+  load (15 GB limit), by `run-heldout5.sh`:
+  - `allenai/Olmo-3-7B-Instruct` at 2048 (olmo3: post-norm only, whole-vector QK-norm, MHA, untied);
+  - `allenai/Olmo-Hybrid-7B` at 4096 (olmo_hybrid: 24 DeltaNet layers, 8 MHA attention layers);
+  - `HuggingFaceTB/SmolLM3-3B` at 8192 (smollm3: NoPE on 9 of 36 layers, tied);
+  - `granite-4.0-h-tiny-Q8_0.gguf` at 8192, copied from the archive, with the SSM gate set as set 3's amendment did (Mamba-2 with
+    routed experts and NoPE attention; it declined on NoPE in set 3, which WebGPU now implements). It exercises the f32 Mamba
+    projections WebGPU re-quantizes to int8, which the list does not model.
+- **Left out:** Ministral 3 (WebGPU does not implement `FeatAttnTemp`); Mellum-4b (llama, a fit-set layout); InternLM3-8B and
+  command-r7b (over the disk limit); Olmo 3 at its 4096 window (the 32 MHA layers' f32 KV does not fit beside the weights).
+- **Fit, by hand from the configs, int4, f32 KV:** about 6.4, 5.4, 3.3 and 4.5 GB against the card's 7.2 GB free. A load the fit
+  guard refuses is recorded and not scored.
+- **The CPU re-run (`sb2_vr5_test.go.txt`, `vr5.txt`):** G-VR1, G-VP2 and G-VR3 over the fourteen scored loads of sets 1 and 2,
+  with the planner as rebuilt.
+- **The rule** (set 3's), per scored set-5 load, from `score_heldout5.py`:
+  - **holds:** the planner's list within 32 MiB of the ledger, and M1′ over the recorded list and the plan's priced bytes
+    (`Plan.NeedBytes`) each within ±64 MiB of nvidia-smi's rise, on every scored load;
+  - **fails:** any of the three beyond 96 MiB;
+  - **ambiguous:** otherwise;
+  - **void:** fewer than two scored loads.
+- **What each outcome means:**
+  - **ships** only if set 5 holds and `vr5.txt` reads G-VR1 HOLDS, G-VP2 HOLDS and G-VR3 matches on all fourteen (an absent
+    checkpoint makes it INCOMPLETE, which does not ship);
+  - **fails:** it does not ship; the miss is read from the ledgers, and any fix needs a further held-out set (set 5 becomes fit data);
+  - **ambiguous or void:** parked, the branch kept, and the reading goes to Francis.
+- **Stopping:** one pass, no substitution after any load is read. A card step that exits 75 (VOID: another client on the card) is
+  not read and is re-run once the card is clear.
