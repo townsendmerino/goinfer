@@ -222,3 +222,8 @@ Red first (`s3b-red.log`, the new int8 arms against S3a's code): `TestKV7_restor
 
 Plant (`s3b-plant-snapshot-noscales.log`): a snapshot that does not download the scales: every layer's restored rows differ and the first
 logit after it; restored. The S3a suite on the card (`s3a-kv-suite.log`): 133 tests PASS, G2 FAIL as registered, the rest env-gated skips.
+
+**S3 on #755's final head** (merged 02770f4e): the int8 suite and the S3 tests (`s3-merged-suite.log`) all PASS, the cross-backend G2 and the
+diagnostics skip as above; identity on CUDA against 7c4ed713 (`s3-identity-cuda.log`): 24 families IDENTICAL, 0 different, 19 not run
+(no tiny asset on this box); staticcheck clean on the cuda module and the decoder. Still not int8 after S3: sliding-window layers and the
+windowed ring (S3c; those families are refused by name), and the families outside the dense five (S5).
