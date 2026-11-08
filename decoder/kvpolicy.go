@@ -13,6 +13,7 @@ type KVFacts struct {
 	PairwiseRoPE  bool // adjacent-pair rotation (Cohere)
 	MRoPE         bool // multi-section rotary (the VL families)
 	Hybrid        bool // a recurrent or per-layer-geometry mixer: Qwen3.5 DeltaNet, Gemma 4, Laguna, Granite, LFM2
+	KVRowNotWords int  // the first K/V row width (elements a position) that is not a multiple of 4, 0 when every layer's is
 }
 
 // KVF16Policy is one backend's rule for an f16 KV cache.
@@ -43,7 +44,19 @@ func (a *Architecture) kvFacts() KVFacts {
 		PairwiseRoPE:  a.pairwiseRoPE(),
 		MRoPE:         len(a.MRopeSection) > 0,
 		Hybrid:        a.qwen35 != nil || a.gemma4 != nil || a.laguna != nil || a.granite != nil || a.lfm2 != nil,
+		KVRowNotWords: a.kvRowNotWords(),
 	}
+}
+
+// kvRowNotWords is the first layer's K/V row width that is not a multiple of 4 elements, 0 when none: an int8 row of such a width is not
+// whole 4-byte words, which the CUDA cache's block and host copies move.
+func (a *Architecture) kvRowNotWords() int {
+	for l := range a.NumLayers {
+		if d := a.kvDimAt(l); d%4 != 0 {
+			return d
+		}
+	}
+	return 0
 }
 
 // kvF16Decline is the named backend's reason for holding this model's KV cache at f32, "" when it can be f16 or the backend has no policy.

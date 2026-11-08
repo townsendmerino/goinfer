@@ -294,6 +294,7 @@ logit after it; restored.
 | `s3-review-merged-suite.log` (S3 on #755 at ee8027e2) | the same, plus `TestResidentKVBytes_matchesCUDAAllocation\|TestKVPool_detailNamesThePool` | `TestResidentKVBytes_matchesCUDAAllocation` FAIL (as above); the rest PASS |
 | `s3-review-kv-suite.log` (after the fix) | as `s3a-kv-suite.log` | 135 tests PASS, no FAIL line |
 | `s3-r2-kv-suite.log` (S3 on #755 at 7e454481, with the kvsnap guard) | as `s3a-kv-suite.log` | 135 tests PASS, no FAIL line (the cross-backend G2 and the diagnostics skip) |
+| `touched-s3a.log` (S3a tree, before its fixes) | `touched.py`'s own selection: the tests beside each touched file | 1 of 18 checks FAIL, the cuda package; that run's list held the cross-backend G2 and `TestResidentKVBytes_matchesCUDAAllocation`, both red then (`touched.py` truncates the package's output; the verbose re-read is `s3a-kv-suite.log`) |
 
 Identity on CUDA against 7c4ed713 at 02770f4e (`s3-identity-cuda.log`): 24 families IDENTICAL, 0 different, 19 not run (no tiny asset
 on this box). Still not int8 after S3: sliding-window layers and the windowed ring (S3c; those families are refused by name), and the
@@ -339,3 +340,23 @@ and MLA is refused at int8), so this is a guard; no test can reach the V-less ca
    now reads 6.39e-4 / 7.85e-4 / 3.01e-3, 6x to 30x the 1e-4 bar.
 4. **`touched-s2.log` was the run before its fixes.** It now holds a passing `touched.py` run on #759's tree (S2 merged in); the first line
    says so, and the pre-fix run is in git history at e498c3fb.
+
+
+## S4 groundwork: the review of #759 at 5696fe5f, carried in (2026-11-07)
+
+1. **`phi3-tiny` was in `kv8PricedFixtures` but always skipped** in `TestResidentKVBytes_matchesCUDAAllocation`: it was loaded at int4,
+   where Phi-3 builds no resident. It now loads at int8int8 with per-32 activation scales, as the served bench and `kv8Load` do. A fixture
+   this test claims to price at int8 that builds no resident is now a failure, not a skip. PASS with phi3-tiny running (`s4-pre-bytes.log`).
+   The redundant `one` check is gone.
+2. **The whole-word rule was only in the build (`kv8Unsupported`).** A model with a K/V row not a multiple of 4 elements would have
+   resolved int8 and then failed at the build. `KVFacts` now carries the first such row width (`KVRowNotWords`), and `CUDAKVI8Decline`
+   refuses it by name where the precision is resolved. Red first (`s4-pre-red-wholewords.log`): llama-tiny with head width 15 (rows of 30)
+   resolved int8. Green after (`s4-pre-green-wholewords.log`). The build's check stays as the second line.
+3. **Log provenance.** #759's description said `s3-r2-kv-suite.log` ran "at this head". It ran at 7e454481, before the r3/r4 commits: its
+   plants are the x1.01 / +-1 ones, and it predates `TestKV8_extraSlotPricedAtTheDeliveredPrecision`, whose runs are
+   `s3-r4-green-extraslot.log` and `touched-s2.log`. The table above records the commit, and #759's description now says the same.
+   `touched-s3a.log` now has its row in the table.
+4. **CI (no CUDA driver) went red on item 1's rule** on #764: a host with no driver builds no resident for any fixture, so
+   phi3-tiny's "must build" failed there. The test now calls `requireCUDADevice` first: a host with no driver or device skips once, naming
+   why (`s4-pre-nodevice.log`, `CUDA_VISIBLE_DEVICES=` on nobara: `CUDA_ERROR_NO_DEVICE`, one SKIP). A GPU host keeps the rule, red first
+   with phi3-tiny planted back to the int4 load (`s4-pre-gpuhost-plant-phi3-int4.log`), green with the fix (`s4-pre-gpuhost.log`).

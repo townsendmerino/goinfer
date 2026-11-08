@@ -155,3 +155,21 @@ func TestCUDAKVI8_pricesWhatIsAsked(t *testing.T) {
 		m.Close()
 	}
 }
+
+// TestCUDAKVI8_declinesRowsNotWholeWords: the CUDA int8 cache moves rows as 4-byte words (its block copies and host copies), so a model whose
+// K/V row is not a multiple of 4 elements is refused by name where the precision is resolved, not at the build. llama-tiny with a head
+// width of 15 (rows of 30) stands in for such a model.
+func TestCUDAKVI8_declinesRowsNotWholeWords(t *testing.T) {
+	a := *kvMatrixArch(t, "llama-tiny")
+	a.HeadDim = 15
+	if got := a.kvFacts().KVRowNotWords; got != 30 {
+		t.Fatalf("kvFacts reports a %d-element row not whole words, want 30", got)
+	}
+	r := kvRefusal("cuda", &a, Options{Backend: "cuda", KVPrecision: kvPrecI8})
+	if r == nil || !strings.Contains(r.Reason, "4-byte") {
+		t.Fatalf("--kv i8 on 30-element rows: refusal %v, want one naming the 4-byte words", r)
+	}
+	if r := kvRefusal("cuda", kvMatrixArch(t, "llama-tiny"), Options{Backend: "cuda", KVPrecision: kvPrecI8}); r != nil {
+		t.Errorf("llama-tiny (rows of 32) refused: %v", r)
+	}
+}

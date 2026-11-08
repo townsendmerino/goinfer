@@ -183,6 +183,8 @@ func CUDAKVI8Decline(f KVFacts, o Options) string {
 		return "int8 KV on CUDA does not cover sliding-window layers yet (the windowed ring and its rollback carry no scales)"
 	case f.MoE || f.MLA || f.MRoPE || f.PairwiseRoPE || f.Hybrid:
 		return "int8 KV on CUDA covers dense attention only so far"
+	case f.KVRowNotWords > 0:
+		return fmt.Sprintf("int8 KV on CUDA moves rows as whole 4-byte words, and this model's %d-element K/V row is not", f.KVRowNotWords)
 	}
 	return ""
 }
