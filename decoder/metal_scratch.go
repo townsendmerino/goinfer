@@ -169,8 +169,8 @@ var metalRowTerms = map[string]func(m *Model, d metalDecodeRows, slots int) (f32
 		u := int64(12)
 		for _, ops := range m.Program().Layers {
 			for _, o := range ops {
-				if o.Kind == program.OpDeltaNet && o.Delta.ONormEps != 0 && o.Delta.ONormEps != o.Delta.Eps {
-					u = 13 // the output norm's own epsilon
+				if e := o.Delta.ONormEps; e != 0 && e != o.Delta.Eps {
+					u = 13 // the output norm's own epsilon (an operation's parameter, which only the mixer that has it carries)
 				}
 			}
 		}
