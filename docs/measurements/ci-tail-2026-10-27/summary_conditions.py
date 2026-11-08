@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""summary_conditions.py: PW2b's gate B1 (docs/tasks/task-subsystems-2026-10.md §12.4).
+"""summary_conditions.py: PW2b's gate B1 (docs/completed/task-subsystems-2026-10.md §12.4).
 
 Loads .github/workflows/ci.yml at BASE_REF and from the working tree, and passes iff they differ only in an `id` added
 to a step and an `if: always()` that became `always() && steps.<id>.outcome != 'skipped'`, and every `always()` summary

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-SB11b-6 (docs/tasks/task-subsystems-2026-10.md §8, "SB11b"): one goinfer-serve, one prompt, a warm-up, then 8 requests
+"""G-SB11b-6 (docs/completed/task-subsystems-2026-10.md §8, "SB11b"): one goinfer-serve, one prompt, a warm-up, then 8 requests
 alternating cost off and on. Each reply's timings.decode_ms over its completion tokens is that request's decode ms per
 token; the ratio on/off is taken per consecutive (off, on) pair and reported, not graded.
 Usage: cost_on.py <serve binary> <model path> <out.json> [extra serve flags...]. Run it under the exclusive timing lock."""

@@ -62,7 +62,7 @@ This reverses the order these items were first filed in on 2026-09-17, on the re
 A `timings` object beside `usage`: `queue_wait_ms`, `prefill_ms`, `decode_ms`, `ttft_ms`.
 
 **Built as SB11b** (Francis's decision of 2026-10-31, option b): the gates, the stage boundaries each field reads, and the
-opt-in per-operation `cost` report are registered in `docs/tasks/task-subsystems-2026-10.md` §8, "SB11b".
+opt-in per-operation `cost` report are registered in `docs/completed/task-subsystems-2026-10.md` §8, "SB11b".
 
 - Measured at stage boundaries the server already crosses — admission granted, prefill returns,
   first token emitted, generation ends.

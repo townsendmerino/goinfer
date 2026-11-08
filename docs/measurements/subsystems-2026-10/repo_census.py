@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""repo_census.py — the git and source facts behind docs/tasks/task-subsystems-2026-10.md §2, §6 and §7.
+"""repo_census.py — the git and source facts behind docs/completed/task-subsystems-2026-10.md §2, §6 and §7.
 
 Read-only. Run from a goinfer checkout (a worktree of origin/main, so another session's tree is not read):
 

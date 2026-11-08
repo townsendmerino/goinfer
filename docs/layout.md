@@ -53,7 +53,7 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 ## Tier 3: subpackages of `decoder/`
 
 `decoder/` is one package of ~800 files. Tier 3 splits it one subsystem at a time, `decoder/fit` first (Francis, 2026-11-05;
-`docs/releases/v0.25.0-plan.md` §2, ledger row T3-fit in `docs/tasks/task-subsystems-2026-10.md`). A subpackage lives
+`docs/releases/v0.25.0-plan.md` §2, ledger row T3-fit in `docs/completed/task-subsystems-2026-10.md`). A subpackage lives
 **under** `decoder/`, named for the subsystem.
 
 **The rule for what may import what.** A subpackage never imports `decoder` (that is a cycle: the loader calls it).

@@ -4,7 +4,7 @@
     ax2_compare.py <base.json> <head.json>
 
 Pass: the same backend, GOOS and GOARCH, the same cases in the same order, and every case's sha256, values and device
-flag equal. Anything else is FAIL; there is no tolerance (docs/tasks/task-subsystems-2026-10.md §7.8).
+flag equal. Anything else is FAIL; there is no tolerance (docs/completed/task-subsystems-2026-10.md §7.8).
 """
 import json
 import sys

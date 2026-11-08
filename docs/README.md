@@ -94,7 +94,7 @@ half-precision KV cache on the CPU as the command lines' default, with f32 kept 
 its readers are today, why the earlier int8 task rejected f16 and what has changed since, a recommendation on its two
 decisions (2026-10-14), and its gates, registered that day before any code.
 
-[`task-subsystems-2026-10.md`](tasks/task-subsystems-2026-10.md) (VK0–VK6, MM0–MM6, AX0–AX7, SB1–SB13 and PW1–PW6, filed
+[`task-subsystems-2026-10.md`](completed/task-subsystems-2026-10.md) (VK0–VK6, MM0–MM6, AX0–AX7, SB1–SB13 and PW1–PW6, filed
 2026-10-26, scoped; SD1 decided the same day) starts from where session time went in October (CI waits first, then
 local tests and gates; the hour-long runs are timed and real-checkpoint gates, and most night-queue failures are the
 box's state, not a test) and proposes subsystems whose contracts are checked in seconds and whose fingerprints the
