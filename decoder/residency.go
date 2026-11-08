@@ -1448,7 +1448,17 @@ func (m *Model) ResidentContextKVBytes(ctx int) int64 {
 	if m.resident == nil || m.be == nil {
 		return 0
 	}
-	return m.ResidentKVBytes(m.be.Name(), ctx, m.kvF16, m.kvI8)
+	f16, i8 := m.residentKVFlags(m.be.Name())
+	return m.ResidentKVBytes(m.be.Name(), ctx, f16, i8)
+}
+
+// residentKVFlags are the kvF16 and kvI8 ResidentKVBytes is handed for this model's own load on backend: on CUDA the precision its KV policy
+// delivers (int8 only where ResolveKV gives it), elsewhere the load's f16 decision and the CPU cache's int8 request, as before.
+func (m *Model) residentKVFlags(backend string) (kvF16, kvI8 bool) {
+	if backend == "cuda" {
+		return m.kvF16, m.KVDeliveredFor("cuda") == kvPrecI8
+	}
+	return m.kvF16, m.kvI8
 }
 
 // ResidentKVPrecision is the KV-cache precision the resident runner actually allocates — "f32", "f16" or

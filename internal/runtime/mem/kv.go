@@ -11,11 +11,13 @@ const (
 )
 
 // KVPolicy is a backend's f16 KV rule, bound to one load: why f16 is declined for it ("" when it is not), whether auto means
-// f16, and why auto keeps f32 for a model the decline lets through (nil when it never does).
+// f16, and why auto keeps f32 for a model the decline lets through (nil when it never does). DeclineI8 is the same for an
+// explicit int8 request; nil means the backend has no int8 cache. auto never picks int8.
 type KVPolicy struct {
 	Decline     func() string
 	Auto        func() bool
 	AutoDecline func() string
+	DeclineI8   func() string
 }
 
 // KVQuery is what a KV precision is resolved from: the backend, the requests, the model's facts, and the backend's policy.
@@ -87,7 +89,16 @@ func resolveCUDAKV(q KVQuery, req string) (string, string) {
 	case KVF32:
 		return KVF32, ""
 	case KVI8:
-		return KVF32, "CUDA has no int8 KV cache until phase 2"
+		switch {
+		case p.DeclineI8 == nil:
+			return KVF32, "CUDA has no int8 KV cache in this build"
+		case q.Drafter:
+			return KVF32, "the drafter needs f32 KV until phase 6"
+		}
+		if why := p.DeclineI8(); why != "" {
+			return KVF32, why
+		}
+		return KVI8, ""
 	case KVF16:
 		if q.Drafter {
 			return KVF32, "the drafter needs f32 KV until phase 6"
