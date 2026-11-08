@@ -7,7 +7,7 @@ import (
 )
 
 // TestCUDAKVI8_resolves is S2's policy (docs/measurements/cuda-kv-i8-2026-11/scope.md): `--kv i8` on the CUDA resident is delivered for the
-// dense families on one KV slot, and every other cell is refused by name. The CUDA policy the decoder registers is the one the cuda package
+// dense families, and every other cell is refused by name. The CUDA policy the decoder registers is the one the cuda package
 // registers too, so this reads the same answer a CUDA load does.
 func TestCUDAKVI8_resolves(t *testing.T) {
 	i8 := Options{Backend: "cuda", KVPrecision: kvPrecI8}
@@ -21,7 +21,7 @@ func TestCUDAKVI8_resolves(t *testing.T) {
 		{dir: "llama-tiny", deliver: true},
 		{dir: "phi3-tiny", deliver: true},
 		{dir: "llama-tiny", o: func(o *Options) { o.ResidentKVSlots, o.ResidentKVSlotsDefault = 4, true }, deliver: true},
-		{dir: "llama-tiny", o: func(o *Options) { o.ResidentKVSlots = 2 }, reason: "one KV slot"},
+		{dir: "llama-tiny", o: func(o *Options) { o.ResidentKVSlots = 2 }, deliver: true},
 		{dir: "llama-tiny", o: func(o *Options) { o.Drafter = true }, reason: "drafter"},
 		{dir: "mistral-tiny-window", reason: "sliding-window"},
 		{dir: "qwen3moe-tiny", reason: "qwen3_moe"},
@@ -56,18 +56,15 @@ func TestCUDAKVI8_resolves(t *testing.T) {
 	}
 }
 
-// TestCUDAKVI8_oneSlot: a default slot count is lowered to one KV slot on an int8 CUDA cache; an f16 one keeps the request.
-func TestCUDAKVI8_oneSlot(t *testing.T) {
-	for _, c := range []struct {
-		kv   string
-		want int
-	}{{kvPrecI8, 1}, {kvPrecF16, 4}} {
-		m, err := Load(filepath.Join("..", "testdata", "llama-tiny"), Options{KVPrecision: c.kv, ResidentKVSlots: 4, ResidentKVSlotsDefault: true})
+// TestCUDAKVI8_slots: an int8 CUDA cache takes the slots asked, as f16 does.
+func TestCUDAKVI8_slots(t *testing.T) {
+	for _, kv := range []string{kvPrecI8, kvPrecF16} {
+		m, err := Load(filepath.Join("..", "testdata", "llama-tiny"), Options{KVPrecision: kv, ResidentKVSlots: 4, ResidentKVSlotsDefault: true})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := m.ResidentKVSlotsRequestFor("cuda"); got != c.want {
-			t.Errorf("--kv %s, a default of 4 slots: CUDA is asked for %d, want %d", c.kv, got, c.want)
+		if got := m.ResidentKVSlotsRequestFor("cuda"); got != 4 {
+			t.Errorf("--kv %s, a default of 4 slots: CUDA is asked for %d, want 4", kv, got)
 		}
 		m.Close()
 	}

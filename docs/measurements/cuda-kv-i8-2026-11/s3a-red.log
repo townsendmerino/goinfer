@@ -1,0 +1,71 @@
+=== RUN   TestCUDAStepBatch_matchesForward
+=== RUN   TestCUDAStepBatch_matchesForward/llama-tiny/
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:143: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:143: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:143: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/llama-tiny/i8
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:56: load: --kv i8 cannot be delivered on the cuda KV cache: int8 KV on CUDA holds one KV slot so far; --kv-sessions 4 asks for 4
+=== RUN   TestCUDAStepBatch_matchesForward/mistral-tiny-window/
+cuda: prefill width 2048 rows (11 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:143: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70])
+    batchstep_test.go:143: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70 200])
+    batchstep_test.go:143: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70 200 33])
+=== RUN   TestCUDAStepBatch_matchesForward/gemma4-dense-twogeom-tiny/
+    batchstep_test.go:52: no fixture at ../../testdata/gemma4-dense-twogeom-tiny
+=== RUN   TestCUDAStepBatch_matchesForward/granite-dense-tiny/
+cuda: prefill width 2048 rows (5 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:143: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:143: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:143: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+--- FAIL: TestCUDAStepBatch_matchesForward (2.65s)
+    --- PASS: TestCUDAStepBatch_matchesForward/llama-tiny/ (1.89s)
+    --- FAIL: TestCUDAStepBatch_matchesForward/llama-tiny/i8 (0.23s)
+    --- PASS: TestCUDAStepBatch_matchesForward/mistral-tiny-window/ (0.26s)
+    --- SKIP: TestCUDAStepBatch_matchesForward/gemma4-dense-twogeom-tiny/ (0.00s)
+    --- PASS: TestCUDAStepBatch_matchesForward/granite-dense-tiny/ (0.27s)
+=== RUN   TestKV2_copyExact_tiny
+=== RUN   TestKV2_copyExact_tiny/f32
+cuda: prefill width 2048 rows (26 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: kv copy: slot 0 -> 1 shares rows [0, 64), 1 blocks; 47 of 96 full-pool blocks in use
+cuda: kv copy: slot 0 -> 1 shares rows [0, 1024), 16 blocks; 32 of 96 full-pool blocks in use
+cuda: kv copy: slot 0 -> 1 shares rows [256, 1024), 12 blocks; 36 of 96 full-pool blocks in use
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 35 of 96 full-pool blocks in use
+cuda: kv copy: slot 0 -> 1 shares rows [128, 960), 13 blocks; 38 of 96 full-pool blocks in use
+=== RUN   TestKV2_copyExact_tiny/f16
+cuda: prefill width 2048 rows (26 MiB of scratch; 7058 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: kv copy: slot 0 -> 1 shares rows [0, 64), 1 blocks; 47 of 96 full-pool blocks in use
+cuda: kv copy: slot 0 -> 1 shares rows [0, 1024), 16 blocks; 32 of 96 full-pool blocks in use
+cuda: kv copy: slot 0 -> 1 shares rows [256, 1024), 12 blocks; 36 of 96 full-pool blocks in use
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 35 of 96 full-pool blocks in use
+cuda: kv copy: slot 0 -> 1 shares rows [128, 960), 13 blocks; 38 of 96 full-pool blocks in use
+=== RUN   TestKV2_copyExact_tiny/i8
+cuda: prefill width 2048 rows (26 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv2_copy_test.go:311: load ../../testdata/llama-attnfa-tiny: --kv i8 cannot be delivered on the cuda KV cache: int8 KV on CUDA holds one KV slot so far; --kv-sessions 3 asks for 3
+--- FAIL: TestKV2_copyExact_tiny (0.98s)
+    --- PASS: TestKV2_copyExact_tiny/f32 (0.37s)
+    --- PASS: TestKV2_copyExact_tiny/f16 (0.37s)
+    --- FAIL: TestKV2_copyExact_tiny/i8 (0.24s)
+=== RUN   TestKV4_sharedPreambleStoredOnce
+=== RUN   TestKV4_sharedPreambleStoredOnce/f32
+cuda: prefill width 2048 rows (26 MiB of scratch; 6746 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: kv copy: slot 0 -> 1 shares rows [0, 16384), 256 blocks; 258 of 1280 full-pool blocks in use
+cuda: kv copy: slot 0 -> 2 shares rows [0, 16384), 256 blocks; 260 of 1280 full-pool blocks in use
+cuda: kv copy: slot 0 -> 3 shares rows [0, 16384), 256 blocks; 262 of 1280 full-pool blocks in use
+    kv4_share_test.go:119: full pool: 264 blocks in use after 4 conversations sharing a 16384-token preamble (limit 268; 1032 if each stored its own)
+cuda: prefill width 2048 rows (26 MiB of scratch; 6654 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4_sharedPreambleStoredOnce/i8
+cuda: prefill width 2048 rows (26 MiB of scratch; 6746 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_share_test.go:68: load: --kv i8 cannot be delivered on the cuda KV cache: int8 KV on CUDA holds one KV slot so far; --kv-sessions 4 asks for 4
+--- FAIL: TestKV4_sharedPreambleStoredOnce (1.35s)
+    --- PASS: TestKV4_sharedPreambleStoredOnce/f32 (1.10s)
+    --- FAIL: TestKV4_sharedPreambleStoredOnce/i8 (0.25s)
+FAIL
+ledger: 14 device(s) released in this run

@@ -305,9 +305,6 @@ func (m *Model) ResidentKVSlotsRequestFor(backend string) int {
 	if m.hasRecurrentState() && (m.resSlotsDef || !m.recurrentSlotsOn(backend)) {
 		return 1
 	}
-	if backend == "cuda" && m.KVDeliveredFor(backend) == kvPrecI8 {
-		return 1 // CUDA's int8 cache holds one slot so far (CUDAKVI8Decline refuses an explicit count above it)
-	}
 	return max(1, m.resSlotsReq)
 }
 

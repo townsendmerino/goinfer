@@ -1,0 +1,40 @@
+=== RUN   TestKV8_deliveredBytes
+=== RUN   TestKV8_deliveredBytes/llama-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv16_test.go:468: 4 int8 layers, one slot at 4096 positions: allocated 1331200 B (f32 build 4259840 B), scales 266240 B; two slots 2641920 B
+=== RUN   TestKV8_deliveredBytes/phi3-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv16_test.go:468: 3 int8 layers, one slot at 4096 positions: allocated 998400 B (f32 build 3194880 B), scales 199680 B; two slots 1981440 B
+=== RUN   TestKV8_deliveredBytes/llama-attnfa-tiny
+cuda: prefill width 2048 rows (26 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7022 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv16_test.go:468: 2 int8 layers, one slot at 4096 positions: allocated 4392960 B (f32 build 17039360 B), scales 133120 B; two slots 8718336 B
+=== RUN   TestKV8_deliveredBytes/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (155 MiB of scratch; 6132 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (219 MiB of scratch; 5532 MiB free beyond the 109 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: 32768 positions (512 blocks of 64) for 2 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (219 MiB of scratch; 4768 MiB free beyond the 109 MiB kept beside a pass); passes take up to 2048 rows
+    kv16_test.go:468: 24 int8 layers, one slot at 16384 positions: allocated 107372544 B (f32 build 404226048 B), scales 6316032 B; two slots 214327296 B
+--- PASS: TestKV8_deliveredBytes (9.12s)
+    --- PASS: TestKV8_deliveredBytes/llama-tiny (1.82s)
+    --- PASS: TestKV8_deliveredBytes/phi3-tiny (1.39s)
+    --- PASS: TestKV8_deliveredBytes/llama-attnfa-tiny (0.34s)
+    --- PASS: TestKV8_deliveredBytes/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (5.46s)
+PASS
+ledger: 22 device(s) released in this run

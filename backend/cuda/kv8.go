@@ -90,6 +90,6 @@ func (r *cudaResident) compileKV(ptx []byte) (gpu.Library, error) {
 	return r.dev.CompileLibrary(ptx)
 }
 
-// errKV8OneSlot is why an int8 cache declines what moves rows out of their slot (a copy to another slot, a host snapshot, a demotion): the
-// scale pools would have to travel with them, which only the copy-on-write block copy does so far. The decoder recomputes instead.
-const errKV8OneSlot = "an int8 KV cache stays in its one slot: copies and host snapshots of it are not built yet"
+// errKV8NoHostCopy is why an int8 cache declines what moves rows to host memory (a snapshot, a demotion): the host layout carries no scales
+// yet. The slots' shared blocks and the copy-on-write block copy carry them on the device. The decoder recomputes instead.
+const errKV8NoHostCopy = "host copies of an int8 KV cache (snapshots, demotion) are not built yet"

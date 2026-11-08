@@ -146,3 +146,24 @@ G2 reads FAIL by its registered rule on the 1.5B (one row of 65), and on the cos
 (a) accept S2 with G2's reading recorded as above and the mechanism stated; (b) re-register G2 at a sample that can resolve a 2-point bar
 (the 8-prompt pool reads 1.34 and 2.12 pts, so even 520 rows sits on the edge for the 1.5B) and run it once; (c) hold S2 until the cross-backend
 gap is explained further (an exact-input G2 that feeds both backends the same int8 cache). I have not changed G2's bars or its test.
+
+## S3a, 2026-11-07: several KV slots, CopyKV, copy on write and the batched step on the int8 cache
+
+Stacked on S2 (#755). On a dense full-attention model the scale pools already follow the blocks: `CopyKV` shares whole blocks by reference
+(the scales sit in the same pool rows), and copy on write goes through `kvCopyBlockRows`, which S2 taught to copy a block's scales with its
+rows. S3a therefore lifts S2's one-slot rule (an explicit `--kv-sessions N` is honoured, a default count is no longer lowered) and accepts
+`CopyKV` on an int8 cache. Host copies stay declined by name: snapshots (`snapshotDecline`) and demotion, which now logs the slot whose rows
+it does not keep (`errKV8NoHostCopy`); they are S3b. The windowed ring is S3c (every sliding-window family is still refused by name).
+
+Red first (`s3a-red.log`): the existing f32/f16 tests, each given an int8 arm, failed only on that arm (S2 refused a multi-slot int8 load),
+and the f32 arms of the extended KV4 test (a new check, below) passed.
+
+| test (tier 0, tiny fixtures) | what it holds at -kv i8 | reading |
+|---|---|---|
+| `TestKV2_copyExact_tiny/i8` | `CopyKV` copies exactly the range (every K, V and **scale** byte, via `kv2Rig`, which now reads the scale pools), touches nothing else, and a prompt that copies a preamble then prefills the rest equals the cold prefill: every row and the last logits, bit for bit | PASS |
+| `TestKV4_sharedPreambleStoredOnce/i8` | 4 slots share a 16,384-token preamble stored once (264 blocks in use, limit 268); each slot's logits equal its cold prefill; a rollback into a shared block leaves another slot unchanged; and (new, both precisions) the rolled-back slot's next step equals the same writes replayed on a one-slot resident, which holds the rows and scales copy on write kept | PASS (f32 and i8) |
+| `TestCUDAStepBatch_matchesForward/llama-tiny/i8` | the MC3 batched step over 4 slots equals each row's own Forward, bit for bit | PASS |
+| `TestKV8_deliveredBytes` (two slots added) | two int8 slots allocate exactly `ResidentKVBytes` + one `CUDAKVSlotBytes` at the guaranteed share, less the tables | PASS on all four |
+
+Plant (`s3a-plant-cow-noscales.log`): copy on write without the scales: the KV4 replay check reads red at the first logit; restored.
+The rest of the int8 suite on the S3a tree (`s3a-green.log`): unchanged from S2, G2 still FAIL as registered (identical numbers).

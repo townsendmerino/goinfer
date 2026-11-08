@@ -101,7 +101,7 @@ func (r *cudaResident) snapshotDecline(end int) *decoder.KVCopyDecline {
 	case r.mamba != nil:
 		return &decoder.KVCopyDecline{Reason: "Mamba-2 state is not part of a snapshot"}
 	case r.kvI8:
-		return &decoder.KVCopyDecline{Reason: errKV8OneSlot}
+		return &decoder.KVCopyDecline{Reason: errKV8NoHostCopy}
 	}
 	return nil
 }

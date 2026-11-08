@@ -397,21 +397,18 @@ func kv8Load(t *testing.T, fx, kv string, opts decoder.Options) (*decoder.Model,
 // TestKV8_deliveredBytes is G3 for the CUDA int8 cache (docs/tasks/task-kv-precision-everywhere-2026-10.md §4): at -kv i8 every layer that
 // keeps K/V holds int8 pools with as many elements as the f32 build's and one f32 scale per (row, KV head) for each of K and V; the build
 // ALLOCATES exactly 1 B an element plus 8 B of scales per position, head and layer (the f32 build's bytes / 4, plus the scales); and
-// decoder.ResidentKVBytes prices exactly what it allocated. A default slot count gives one slot; the pool says i8.
+// decoder.ResidentKVBytes prices exactly what it allocated; a second slot costs exactly CUDAKVSlotBytes more. The pool says i8.
 func TestKV8_deliveredBytes(t *testing.T) {
 	requireCUDADevice(t)
 	for _, fx := range kv8Fixtures {
 		t.Run(filepath.Base(fx), func(t *testing.T) {
 			m32, r32 := kv8Load(t, fx, "f32", decoder.Options{})
-			m8, r8 := kv8Load(t, fx, "i8", decoder.Options{ResidentKVSlots: 4, ResidentKVSlotsDefault: true})
+			m8, r8 := kv8Load(t, fx, "i8", decoder.Options{})
 			if got := m8.ResidentKVPrecision(); got != "i8" {
 				t.Fatalf("-kv i8 reports %q", got)
 			}
 			if !r8.kvI8 || r32.kvI8 || r8.kvF16 {
 				t.Fatalf("resident flags: i8 arm kvI8=%v kvF16=%v, f32 arm kvI8=%v", r8.kvI8, r8.kvF16, r32.kvI8)
-			}
-			if n := r8.KVSlots(); n != 1 {
-				t.Errorf("a default of 4 slots built %d at -kv i8, want 1", n)
 			}
 			if p := r8.KVPool().Precision; p != "i8" {
 				t.Errorf("KVPool precision %q", p)
@@ -458,7 +455,17 @@ func TestKV8_deliveredBytes(t *testing.T) {
 			if want := m8.ResidentKVBytes("cuda", r8.ctxCap, false, true); want != a8+tabs {
 				t.Errorf("decoder prices the int8 cache at %d B; a one-slot build allocates %d B and %d B of tables", want, a8, tabs)
 			}
-			t.Logf("%d int8 layers, one slot at %d positions: allocated %d B (f32 build %d B), scales %d B", owners, r8.ctxCap, a8, kv8Allocated[r32], scales)
+			// Two slots: the pools hold one more slot's blocks, and the tables one more slot's.
+			m2, r2 := kv8Load(t, fx, "i8", decoder.Options{ResidentKVSlots: 2})
+			if r2.KVSlots() != 2 || !r2.kvI8 {
+				t.Fatalf("two slots asked at -kv i8: built %d (int8 %v)", r2.KVSlots(), r2.kvI8)
+			}
+			// The pools hold each slot's guaranteed share (kvShareCtx; one conversation's cap may be raised past it, and the tables follow the cap).
+			share, tabsS := r2.kvShareCtx, int64(kvGroups*4*kvBlocksFor(r2.kvShareCtx))
+			if got, want := kv8Allocated[r2], m2.ResidentKVBytes("cuda", share, false, true)+m2.CUDAKVSlotBytes(share, false, true)-2*tabsS; got != want {
+				t.Errorf("two int8 slots of %d positions allocate %d B of pools; ResidentKVBytes plus one CUDAKVSlotBytes, less their tables, price %d B", share, got, want)
+			}
+			t.Logf("%d int8 layers, one slot at %d positions: allocated %d B (f32 build %d B), scales %d B; two slots %d B", owners, r8.ctxCap, a8, kv8Allocated[r32], scales, kv8Allocated[r2])
 			_ = m32
 		})
 	}

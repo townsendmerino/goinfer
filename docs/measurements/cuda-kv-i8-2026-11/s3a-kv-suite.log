@@ -1,0 +1,157 @@
+=== RUN   TestCUDAStepBatch_matchesForward
+=== RUN   TestCUDAStepBatch_matchesForward/llama-tiny/
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:143: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:143: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:143: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/llama-tiny/i8
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:143: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:143: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:143: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/mistral-tiny-window/
+cuda: prefill width 2048 rows (11 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:143: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70])
+    batchstep_test.go:143: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70 200])
+    batchstep_test.go:143: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70 200 33])
+=== RUN   TestCUDAStepBatch_matchesForward/gemma4-dense-twogeom-tiny/
+    batchstep_test.go:52: no fixture at ../../testdata/gemma4-dense-twogeom-tiny
+=== RUN   TestCUDAStepBatch_matchesForward/granite-dense-tiny/
+cuda: prefill width 2048 rows (5 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:143: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:143: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:143: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+--- PASS: TestCUDAStepBatch_matchesForward (2.74s)
+    --- PASS: TestCUDAStepBatch_matchesForward/llama-tiny/ (1.90s)
+    --- PASS: TestCUDAStepBatch_matchesForward/llama-tiny/i8 (0.29s)
+    --- PASS: TestCUDAStepBatch_matchesForward/mistral-tiny-window/ (0.28s)
+    --- SKIP: TestCUDAStepBatch_matchesForward/gemma4-dense-twogeom-tiny/ (0.00s)
+    --- PASS: TestCUDAStepBatch_matchesForward/granite-dense-tiny/ (0.26s)
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone/greedy
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:246: runs 27, steps 27 (tokens 96), solo tokens 0, straggler runs 0, step sizes [0 0 3 6 18]
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone/sampled
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:246: runs 29, steps 24 (tokens 91), solo tokens 5, straggler runs 0, step sizes [0 0 0 5 19]
+--- PASS: TestCUDAStepBatch_concurrentMatchesAlone (1.11s)
+    --- PASS: TestCUDAStepBatch_concurrentMatchesAlone/greedy (0.56s)
+    --- PASS: TestCUDAStepBatch_concurrentMatchesAlone/sampled (0.55s)
+=== RUN   TestKSH6C_headroomQwen3
+    ksh6_test.go:90: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestKSH6C_headroomQwen3 (0.00s)
+=== RUN   TestKSH6C_postPoolBreakdown
+    ksh6c_breakdown_test.go:26: set KSH6C_MODEL
+--- SKIP: TestKSH6C_postPoolBreakdown (0.00s)
+=== RUN   TestKSH6C_marginPriced
+    ksh6c_margin_test.go:76: set GOINFER_HEAVY_TESTS=1 and KSH6C_MARGIN=1
+--- SKIP: TestKSH6C_marginPriced (0.00s)
+=== RUN   TestKSH6C_marginPriced7B8B
+    ksh6c_margin_test.go:76: set GOINFER_HEAVY_TESTS=1 and KSH6C_MARGIN=1
+--- SKIP: TestKSH6C_marginPriced7B8B (0.00s)
+=== RUN   TestKSH6C_marginPriced26B
+    ksh6c_margin_test.go:76: set GOINFER_HEAVY_TESTS=1 and KSH6C_MARGIN=1
+--- SKIP: TestKSH6C_marginPriced26B (0.00s)
+=== RUN   TestKSH6C_marginAtTheReturnedContext
+=== RUN   TestKSH6C_marginAtTheReturnedContext/a_genuine_pin
+=== RUN   TestKSH6C_marginAtTheReturnedContext/the_model_window_at_the_floor
+=== RUN   TestKSH6C_marginAtTheReturnedContext/the_plan,_one_slot
+=== RUN   TestKSH6C_marginAtTheReturnedContext/the_plan,_four_slots
+--- PASS: TestKSH6C_marginAtTheReturnedContext (0.42s)
+    --- PASS: TestKSH6C_marginAtTheReturnedContext/a_genuine_pin (0.00s)
+    --- PASS: TestKSH6C_marginAtTheReturnedContext/the_model_window_at_the_floor (0.00s)
+    --- PASS: TestKSH6C_marginAtTheReturnedContext/the_plan,_one_slot (0.20s)
+    --- PASS: TestKSH6C_marginAtTheReturnedContext/the_plan,_four_slots (0.21s)
+=== RUN   TestKSH6C_planSeesTheMoEPool
+    ksh6c_review_test.go:55: set KSH6C_S6=1 (it needs a fresh process: the context keeps the pool once paid)
+--- SKIP: TestKSH6C_planSeesTheMoEPool (0.00s)
+=== RUN   TestKSH6C_moeModelPaysItsPool
+    ksh6c_s5_test.go:22: set KSH6C_S5=1 (it needs a fresh process: the context keeps the pool once paid)
+--- SKIP: TestKSH6C_moeModelPaysItsPool (0.00s)
+=== RUN   TestKV0_prefillInvariance_tiny
+=== RUN   TestKV0_prefillInvariance_tiny/f32
+cuda: prefill width 2048 rows (26 MiB of scratch; 7058 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv0_invariance_test.go:353: KV precision f32
+[kv0] fixture loaded, KV f16=false, N=1000 floor=512 layers=2
+[kv0] whole pass: 2 attn_fused, 14 gemm_w4a8_mma launches per fast pass
+[kv0] class sensitivity: fast whole vs exact whole: KV 512401 of 1024000 elements differ (first at position 0, layer 1); last logits 256 of 256 differ
+[kv0] chunk=64                     16 passes (16 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=128                    8 passes (8 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=256                    4 passes (4 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@256                    2 passes (1 fast): KV 131178 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.017): NOT INVARIANT, starts at position 0 (layer 1)
+[kv0] split@256                      rows [0,256) against the exact whole pass: 0 of 262144 elements differ
+[kv0] split@512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@768                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@511                    2 passes (1 fast): KV 261833 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.016): NOT INVARIANT, starts at position 0 (layer 1)
+[kv0] split@511                      rows [0,511) against the exact whole pass: 0 of 523264 elements differ
+[kv0] split@984                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@985                    2 passes (1 fast): KV 7685 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.02): NOT INVARIANT, starts at position 985 (layer 1)
+[kv0] chunk=496 (8 left over)      3 passes (3 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] control (token 700 changed): 0 KV elements differ before position 700, 154112 from it on (first at 700); last logits 256 of 256 differ
+[kv0] done in 0s
+=== RUN   TestKV0_prefillInvariance_tiny/f16
+cuda: prefill width 2048 rows (26 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv0_invariance_test.go:353: KV precision f16
+[kv0] fixture loaded, KV f16=true, N=1000 floor=512 layers=2
+[kv0] whole pass: 2 attn_fused, 14 gemm_w4a8_mma launches per fast pass
+[kv0] class sensitivity: fast whole vs exact whole: KV 475476 of 1024000 elements differ (first at position 1, layer 1); last logits 256 of 256 differ
+[kv0] chunk=64                     16 passes (16 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=128                    8 passes (8 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=256                    4 passes (4 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] chunk=512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@256                    2 passes (1 fast): KV 127303 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.0186): NOT INVARIANT, starts at position 1 (layer 1)
+[kv0] split@256                      first differing position 1 is 1 rows after the first exact-class row 0
+[kv0] split@256                      rows [0,256) against the exact whole pass: 0 of 262144 elements differ
+[kv0] split@512                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@768                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@511                    2 passes (1 fast): KV 245953 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.0151): NOT INVARIANT, starts at position 1 (layer 1)
+[kv0] split@511                      first differing position 1 is 1 rows after the first exact-class row 0
+[kv0] split@511                      rows [0,511) against the exact whole pass: 0 of 523264 elements differ
+[kv0] split@984                    2 passes (2 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@985                    2 passes (1 fast): KV 6569 of 1024000 elements differ; last logits 256 of 256 differ (max |diff| 0.0203): NOT INVARIANT, starts at position 985 (layer 1)
+[kv0] chunk=496 (8 left over)      3 passes (3 fast): KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] control (token 700 changed): 0 KV elements differ before position 700, 152933 from it on (first at 700); last logits 256 of 256 differ
+[kv0] done in 0s
+--- PASS: TestKV0_prefillInvariance_tiny (0.93s)
+    --- PASS: TestKV0_prefillInvariance_tiny/f32 (0.41s)
+    --- PASS: TestKV0_prefillInvariance_tiny/f16 (0.52s)
+=== RUN   TestKV0_prefillInvariance_real1p5B
+    kv0_invariance_test.go:359: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+--- SKIP: TestKV0_prefillInvariance_real1p5B (0.00s)
+=== RUN   TestKV0_continuationEffect_tiny
+=== RUN   TestKV0_continuationEffect_tiny/f32
+cuda: prefill width 2048 rows (26 MiB of scratch; 7058 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv0_invariance_test.go:542: KV precision f32
+[kv0] continuation, KV f16=false, 50 trials, np=600 d=32, same teacher-forced tokens:
+[kv0]   decode rows vs fast-prefill rows (A vs B): 819817 of 1638400 elements differ; max |diff| 0.04 (largest |value| 2.33); rms diff / rms value mean 0.0116 worst 0.0123
+[kv0]   prompt rows [0,600) of A vs B (a 600-row pass against the first 600 rows of a 632-row pass): 0 elements differ
+[kv0]   next-token logits A vs B: cosine min 0.999832273 mean 0.999901848; argmax agrees 50 of 50; trials with bit-identical logits and rows 0; logits differing bit for bit 12800
+[kv0]   exact class (A' vs C): decode rows differing 0; cosine min 1.000000000; argmax agrees 50 of 50; logits differing bit for bit 0
+[kv0]   B's top-1 minus top-2 logit: min 0.00343 median 0.105
+[kv0] done in 2s
+=== RUN   TestKV0_continuationEffect_tiny/f16
+cuda: prefill width 2048 rows (26 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv0_invariance_test.go:542: KV precision f16
+[kv0] continuation, KV f16=true, 50 trials, np=600 d=32, same teacher-forced tokens:
+[kv0]   decode rows vs fast-prefill rows (A vs B): 745411 of 1638400 elements differ; max |diff| 0.0402 (largest |value| 2.33); rms diff / rms value mean 0.0106 worst 0.0115
+[kv0]   prompt rows [0,600) of A vs B (a 600-row pass against the first 600 rows of a 632-row pass): 0 elements differ
+[kv0]   next-token logits A vs B: cosine min 0.999847765 mean 0.999905949; argmax agrees 49 of 50; trials with bit-identical logits and rows 0; logits differing bit for bit 12800
+[kv0]   exact class (A' vs C): decode rows differing 0; cosine min 1.000000000; argmax agrees 50 of 50; logits differing bit for bit 0
+[kv0]   B's top-1 minus top-2 logit: min 0.00343 median 0.105
+[kv0] done in 3s
+--- PASS: TestKV0_continuationEffect_tiny (5.35s)
+    --- PASS: TestKV0_continuationEffect_tiny/f32 (2.48s)
+    --- PASS: TestKV0_continuationEffect_tiny/f16 (2.87s)
+=== RUN   TestKV0_continuationEffect_real1p5B
+    kv0_invariance_test.go:548: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+--- SKIP: TestKV0_continuationEffect_real1p5B (0.00s)
+=== RUN   TestKV16_theDefaultIsF16OnAClearedFamily
