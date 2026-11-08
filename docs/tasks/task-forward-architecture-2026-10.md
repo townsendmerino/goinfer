@@ -23,9 +23,9 @@
 > - **Olmo Hybrid** (`NegEigval`/`ONormEps` in DeltaNet): **new, done on all three:** CUDA #604, Metal #611, WebGPU #627.
 > - **OP6:** its Metal half is built (the q4k lane joins MC3's step, 2026-10-15; its kernels were 4.7× slower than the loop on Phi-3 until
 >   #722 fixed them on 2026-11-06, `docs/measurements/p29-phi3-2026-11/README.md`). The default-load switch, the CUDA half and WebGPU are not done.
-> - **RF0:** half built (**new** in this reading): the per-turn `timings` block is on the wire (`internal/app/serveapp/turn_timings.go`) and the cost
->   counters exist (`internal/cost`, SB11); the shape × family × backend census is `docs/measurements/forward-arch-baseline-2026-10-13.md`,
->   stale against program-based admission.
+> - **RF0:** built but for its prior-art reading: the per-turn `timings` block is on the wire (`internal/app/serveapp/turn_timings.go`), the cost
+>   counters exist (`internal/cost`, SB11), and the shape × family × backend census was refreshed against program-based admission on 2026-11-07
+>   (`docs/measurements/forward-arch-census-2026-11-07.md`; CPU-only families on CUDA / Metal / WebGPU by `ResidentEligible`, the capability gates: 8 / 8 / 13, from 10 / 12 / 16; by `Admit(...).Why`, which adds Nemotron-H's int4 precision policy: 9 / 9 / 14 model-free and 8 / 8 / 14 at the loader's pick).
 > - **RF1:** **new**, planned (§5.5, docs only): seven steps (RF1-3 dropped), 49 `Resident*` interfaces to 41.
 > - **Not started:** RF2–RF6, HL, OP5, OP6's CUDA half, default switch and WebGPU, OP1 on WebGPU, OP4 on WebGPU. §7a sizes them.
 > - **Other tracks:** SP's SP2 on CUDA merged (#232, §6a).
@@ -4979,7 +4979,7 @@ weeks. A range is wide where a kernel's tuning decides it (RF2, RF4) and narrow 
 
 | phase | needs | unblocks | session-days | box |
 |---|---|---|---|---|
-| **RF0** close-out | the `timings` block and cost counters exist; refresh the census against program-based admission | RF1's and RF2's registered bands | 0.5–1 | Mac |
+| **RF0** close-out | done 2026-11-07 but for the §10a prior-art reading: the `timings` block, the cost counters and the refreshed census (`docs/measurements/forward-arch-census-2026-11-07.md`) | RF1's and RF2's registered bands | 0.5–1 | Mac |
 | **RF1** one `Step(batch)` over today's entry points | RF0. Today `decoder` declares 49 `Resident*` interfaces (34 optional ones on 10-13); no kernel change, identity by construction | RF2; a smaller `decoder` seam (Tier 3 modularization, `decoder/residency.go` 1,975 lines) | 4–8 | either |
 | **RF2** ragged attention over paged KV, CUDA | KV4 (done), RF1; a new kernel; speed bands per shape (decode depth 0.98, TTFT 0.97, MC3 0.98) with a kill rule | RF3, RF6; CUDA's row-by-row step attention (`stepAttnRows`) goes | 10–20 | nobara |
 | **RF3** mixed steps (token-budget scheduler), CUDA | RF2 | stall-free agent turns (`bench_prefill_stall`); RF4 | 5–8 | nobara |
