@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 // kv4bGroups lists, per KV4b family group, the tiny fixtures its tier-0 gates run on (docs/measurements/kv4-cuda-2026-10-21.md §2, G5:
@@ -35,6 +37,7 @@ var kv4bGroups = []struct {
 	{"hybrid", []string{"decoder/testdata/qwen3_5-tiny", "qwen35-tiny", "qwen3next-tiny", "gemma4-dense-twogeom-tiny", "gemma4-moe-kv-tiny32",
 		"gemma4-moe-tiny"}, decoder.Options{}, false},
 	{"mla", []string{"deepseek-tiny", "kimi-tiny"}, decoder.Options{}, false},
+	{"mamba-hybrid", []string{"nemotron-tiny"}, decoder.Options{}, false}, // P1r (docs/measurements/p1r-nemotron-f16-2026-11/README.md)
 }
 
 // kv4bPair loads a tiny fixture twice, at -kv f32 and -kv f16, with the group's options and one slot.
@@ -369,4 +372,98 @@ func TestKV4b_mropePrefillStoreIsTheRoundedF32Store(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestP1r_nemotronRangeSurvey is P1r's G5 (docs/measurements/p1r-nemotron-f16-2026-11/README.md): Nemotron-Nano-9B-v2 on CUDA at an f32 cache, each
+// of the ten held-out set-B gate prompts prefilled at 3,900 tokens, and every attention layer's max |K| and max |V| read back; the worst must be
+// under 65504/2, or an f16 cache could overflow it.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -run '^TestP1r_nemotronRangeSurvey$' -v
+func TestP1r_nemotronRangeSurvey(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads Nemotron-Nano-9B-v2)")
+	}
+	path := modelPath("nemotron/nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("no checkpoint at %s: %v", path, err)
+	}
+	const K, limit = 3900, 65504.0 / 2
+	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentContext: K + 128, ResidentKVSlots: 1})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	rf, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok || rf == nil {
+		t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
+	}
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	maxK, maxV := make([]float64, len(rf.layers)), make([]float64, len(rf.layers))
+	attn := 0
+	for l := range rf.layers {
+		if !rf.layers[l].noKV() && !rf.layers[l].kvShared {
+			attn++
+		}
+	}
+	if attn == 0 {
+		t.Fatal("no attention layer keeps K/V: the survey would be vacuous")
+	}
+	files := decoder.PrefillGatePromptSetFor("b")
+	ctx := context.Background()
+	for pi, f := range files {
+		ids := decoder.PrefillGateProseIDsForTest(t, tk, f, K)
+		embs := make([][]float32, K)
+		for i, id := range ids[:K] {
+			embs[i] = m.EmbedResidentForTest(id)
+		}
+		if _, err := rf.PrefillLast(ctx, embs, 0); err != nil {
+			t.Fatalf("prefill prompt %d: %v", pi, err)
+		}
+		for l := range rf.layers {
+			if rf.layers[l].noKV() || rf.layers[l].kvShared {
+				continue
+			}
+			var kb, vb []float32
+			if err := rf.do(func() error {
+				if e := rf.stream.Sync(); e != nil {
+					return e
+				}
+				var e error
+				kb, vb, e = rf.kvRowsForTest(rf.kvSlot, l, 0, K)
+				return e
+			}); err != nil {
+				t.Fatalf("read layer %d: %v", l, err)
+			}
+			for _, v := range kb {
+				maxK[l] = max(maxK[l], math.Abs(float64(v)))
+			}
+			for _, v := range vb {
+				maxV[l] = max(maxV[l], math.Abs(float64(v)))
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[p1r-survey] prompt %d/%d done\n", pi+1, len(files))
+	}
+	worst, wl, wkind := 0.0, -1, ""
+	for l := range rf.layers {
+		if rf.layers[l].noKV() || rf.layers[l].kvShared {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "[p1r-survey] layer %d: max|K| %.2f, max|V| %.2f\n", l, maxK[l], maxV[l])
+		if maxK[l] > worst {
+			worst, wl, wkind = maxK[l], l, "K"
+		}
+		if maxV[l] > worst {
+			worst, wl, wkind = maxV[l], l, "V"
+		}
+	}
+	verdict := "PASS"
+	if worst >= limit {
+		verdict = "FAIL"
+		t.Errorf("layer %d's max|%s| is %.1f, at or over %.0f: an f16 cache could overflow", wl, wkind, worst, limit)
+	}
+	fmt.Fprintf(os.Stderr, "[p1r-survey] %d attention layers, %d prompts x %d tokens: worst max|%s| %.2f at layer %d, limit %.0f => %s\n",
+		attn, len(files), K, wkind, worst, wl, limit, verdict)
 }
