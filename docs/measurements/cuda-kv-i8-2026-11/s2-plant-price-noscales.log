@@ -1,0 +1,46 @@
+=== RUN   TestCUDAKVI8_prices
+    kvi8_cuda_test.go:87: ResidentKVBytes(cuda, 128, i8) = 49168 B, want 61,456
+    kvi8_cuda_test.go:90: CUDAKVSlotBytes(128, i8) = 32784 B, want 40,976 (the slot's blocks and its tables)
+--- FAIL: TestCUDAKVI8_prices (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.008s
+FAIL
+=== RUN   TestKV8_deliveredBytes
+=== RUN   TestKV8_deliveredBytes/llama-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv16_test.go:459: decoder prices the int8 cache at 1065472 B; a one-slot build allocates 1331200 B and 512 B of tables
+    kv16_test.go:461: 4 int8 layers, one slot at 4096 positions: allocated 1331200 B (f32 build 4259840 B), scales 266240 B
+=== RUN   TestKV8_deliveredBytes/phi3-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv16_test.go:459: decoder prices the int8 cache at 799232 B; a one-slot build allocates 998400 B and 512 B of tables
+    kv16_test.go:461: 3 int8 layers, one slot at 4096 positions: allocated 998400 B (f32 build 3194880 B), scales 199680 B
+=== RUN   TestKV8_deliveredBytes/llama-attnfa-tiny
+cuda: prefill width 2048 rows (26 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv16_test.go:459: decoder prices the int8 cache at 4260352 B; a one-slot build allocates 4392960 B and 512 B of tables
+    kv16_test.go:461: 2 int8 layers, one slot at 4096 positions: allocated 4392960 B (f32 build 17039360 B), scales 133120 B
+=== RUN   TestKV8_deliveredBytes/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (155 MiB of scratch; 6132 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (219 MiB of scratch; 5532 MiB free beyond the 109 MiB kept beside a pass); passes take up to 2048 rows
+    kv16_test.go:459: decoder prices the int8 cache at 101058560 B; a one-slot build allocates 107372544 B and 2048 B of tables
+    kv16_test.go:461: 24 int8 layers, one slot at 16384 positions: allocated 107372544 B (f32 build 404226048 B), scales 6316032 B
+--- FAIL: TestKV8_deliveredBytes (7.41s)
+    --- FAIL: TestKV8_deliveredBytes/llama-tiny (1.79s)
+    --- FAIL: TestKV8_deliveredBytes/phi3-tiny (1.33s)
+    --- FAIL: TestKV8_deliveredBytes/llama-attnfa-tiny (0.30s)
+    --- FAIL: TestKV8_deliveredBytes/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (3.88s)
+FAIL
+ledger: 17 device(s) released in this run

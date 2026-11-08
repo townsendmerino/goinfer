@@ -94,13 +94,17 @@ func TestStagedDeviceNote(t *testing.T) {
 	}
 }
 
-// quantReportingResident is a fakeResident that reports the precision it runs at (ResidentQuantReporter).
+// quantReportingResident is a fakeResident that reports the precision it runs at (ResidentCaps.Quant).
 type quantReportingResident struct {
 	*fakeResident
 	quant string
 }
 
-func (r quantReportingResident) ResidentQuant() string { return r.quant }
+func (r quantReportingResident) ResidentCaps() ResidentCaps {
+	c := r.fakeResident.ResidentCaps()
+	c.Quant = r.quant
+	return c
+}
 
 // TestDecodePath_residentReportsItsQuant: a resident that reports its own precision is what the banner names, and one
 // that reports "" or nothing leaves residentQuantLabel's answer. Metal's native int8 path

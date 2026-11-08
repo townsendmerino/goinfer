@@ -358,7 +358,7 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	for _, sb := range r.chainBuffers(true, true) {
 		chain += int64(sb.bytes())
 	}
-	if got, want := m.MetalDecodeScratchBytes(), r.decode.listBytes(r)+chain; got != want {
+	if got, want := m.MetalDecodeScratchBytes(metalMoESlotsFromEnv(m)), r.decode.listBytes(r)+chain; got != want {
 		t.Errorf("%s: the decoder prices decode's scratch at %d bytes; the build's list with the chain's is %d (%+d)", row, got, want, got-want)
 	}
 	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
@@ -466,8 +466,11 @@ func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 			if !ok || !planted {
 				t.Fatalf("resident %v, plant ran %v", ok, planted)
 			}
-			if got, want := len(exactRed) == 1 && strings.Contains(exactRed[0], ": generated: "), c.line == mem.LineScratch; got != want {
-				t.Errorf("G-MS2 red only at generated %v on a plant on %q, want %v: %q", got, c.line, want, exactRed)
+			switch {
+			case c.line == mem.LineScratch && (len(exactRed) != 1 || !strings.Contains(exactRed[0], ": generated: ")):
+				t.Errorf("G-MS2 on a plant on scratch: %q; want one red, after the generation", exactRed)
+			case c.line != mem.LineScratch && len(exactRed) != 0:
+				t.Errorf("G-MS2 on a plant on %q, a line it does not read: %q; want none", c.line, exactRed)
 			}
 			rounded := false
 			for _, l := range read.Open[1].Leases {
@@ -721,7 +724,7 @@ func TestDecodeScratch_handTableChain(t *testing.T) {
 			t.Errorf("%s: the scratch line holds %d bytes requested, and the decode and step lists %d", c.name, held, want)
 		}
 	}
-	if got, want := m.MetalDecodeScratchBytes(), r.decode.listBytes(r); got != want {
+	if got, want := m.MetalDecodeScratchBytes(metalMoESlotsFromEnv(m)), r.decode.listBytes(r); got != want {
 		t.Errorf("with both chains open the decoder prices decode's scratch at %d bytes, and the list is %d", got, want)
 	}
 }
@@ -779,7 +782,7 @@ func TestDecodeScratch_handTablePagedFence(t *testing.T) {
 			for _, sb := range r.chainBuffers(true, true) {
 				chain += int64(sb.bytes())
 			}
-			if got, want := m.MetalDecodeScratchBytes(), n+chain; got != want {
+			if got, want := m.MetalDecodeScratchBytes(metalMoESlotsFromEnv(m)), n+chain; got != want {
 				t.Errorf("slots %q: the decoder prices decode's scratch at %d bytes; the list with the chain's is %d", slots, got, want)
 			}
 		}

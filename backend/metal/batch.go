@@ -1499,9 +1499,11 @@ func (r *resident) transformedRow(raw []float32) []float32 {
 	return row
 }
 
-// BatchGreedyDraw is decoder.ResidentBatchGreedy's (E-P08): a step returns a Greedy draw row's argmax id, the argmax of
+// BatchGreedyDraw is decoder.ResidentCaps' BatchGreedyDraw (E-P08): a step returns a Greedy draw row's argmax id, the argmax of
 // the row forwardMulti would have returned, first maximum on a tie.
-func (a *metalResident) BatchGreedyDraw() bool { return a.r.batch != nil && len(a.r.kvSlotBufs) >= 2 }
+func (a *metalResident) BatchGreedyDraw() bool {
+	return a.r != nil && a.r.batch != nil && len(a.r.kvSlotBufs) >= 2
+}
 
 // BatchStepRange is decoder.ResidentBatchStepper's: the batch sizes StepBatch serves well (batchMinSeqs..the smaller
 // of batchMaxSeqs and the slot count), or (0, 0) when this resident cannot batch.

@@ -1,8 +1,6 @@
 package decoder
 
 import (
-	"strconv"
-
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -26,9 +24,10 @@ func metalAttnFAPartialFloats(hd, nH, nKV int) int {
 
 // MetalDecodeScratchBytes is what a Metal resident build of m leases on the scratch line for decode, the most it holds before a
 // ForwardBatch grows its rows: the decode list (backend/metal's decodeShape.buffers), the 16 batch rows (batchRows) and the greedy
-// chain's buffers with a sampled chain's (chainBuffers). TestMemGate_metal holds it to the build's own list on every row. 0 for a
-// model with no hidden or vocabulary width.
-func (m *Model) MetalDecodeScratchBytes() int64 {
+// chain's buffers with a sampled chain's (chainBuffers), at slots expert slots per layer (0 = every expert resident), as
+// ResidentNeedBytes takes them. TestMemGate_metal holds it to the build's own list on every row. 0 for a model with no hidden or
+// vocabulary width.
+func (m *Model) MetalDecodeScratchBytes(slots int) int64 {
 	H, nL, nH, _, _, I, V := m.Dims()
 	if H <= 0 || V <= 0 {
 		return 0
@@ -61,7 +60,8 @@ func (m *Model) MetalDecodeScratchBytes() int64 {
 		}
 		lw := &w.Layers[l]
 		_, isG4 := m.Gemma4MoEResidentLayer(l)
-		if hasFFN && !isG4 && !(moeOK && len(lw.Experts) > 0) && !m.NonGatedMLPResident() {
+		denseFFN := hasFFN && !isG4 && !(moeOK && len(lw.Experts) > 0) && !m.NonGatedMLPResident()
+		if denseFFN {
 			if fi := lw.GateProj.Rows(); fi != 0 {
 				maxFFNI = max(maxFFNI, fi)
 				if fi != I {
@@ -69,7 +69,9 @@ func (m *Model) MetalDecodeScratchBytes() int64 {
 				}
 			}
 		}
-		if q4k { // the q4k lane's segments: one row-count uniform a run of parts of one kind in each fused group
+		// The q4k lane's segments, one row-count uniform a run of parts of one kind in each fused group, on the dense attention
+		// and SwiGLU layers it runs (buildResident refuses a q4k load with any other).
+		if q4k && mixer == MixerAttention && denseFFN {
 			for _, group := range [][]*linalg.WeightMat{{&lw.QProj, &lw.KProj, &lw.VProj}, {&lw.OProj}, {&lw.DownProj}, {&lw.GateProj, &lw.UpProj}} {
 				u32s += int64(m.metalQ4KRuns(group))
 			}
@@ -147,7 +149,7 @@ func (m *Model) MetalDecodeScratchBytes() int64 {
 			f32 += int64(k*2*inter + k + k*H)
 			bytes += int64(k * inter)
 		}
-		if m.metalMoEPaged(nE) {
+		if metalMoEPaged(slots, nE) {
 			bytes += int64(4 * k)
 		}
 	}
@@ -155,7 +157,7 @@ func (m *Model) MetalDecodeScratchBytes() int64 {
 		f32 += int64(2*g4b.NE + 2*g4b.TopK + 4*H)
 		bytes += int64(8 * g4b.TopK)
 		u32s += int64(10 + g4b.TopK)
-		if m.metalMoEPaged(g4b.NE) {
+		if metalMoEPaged(slots, g4b.NE) {
 			bytes += int64(4 * g4b.TopK)
 		}
 	}
@@ -167,7 +169,8 @@ func (m *Model) MetalDecodeScratchBytes() int64 {
 }
 
 // metalQ4KRuns is how many segments Metal's q4k lane uploads a fused group as: one a run of consecutive parts of one kind (the file's
-// Q4_K, Q5_K or Q6_K blocks, else int8), as backend/metal's q4kLaneProjOn splits it.
+// Q4_K, Q5_K or Q6_K blocks, else int8), as backend/metal's q4kLaneProjOn splits it. A part with no rows is not one the layer holds:
+// it is not uploaded, so it neither starts a run nor splits one.
 func (m *Model) metalQ4KRuns(group []*linalg.WeightMat) int {
 	kind := func(wm *linalg.WeightMat) string {
 		if wm.Kind() == "q4k" {
@@ -178,10 +181,14 @@ func (m *Model) metalQ4KRuns(group []*linalg.WeightMat) int {
 		}
 		return "int8"
 	}
-	runs := 0
-	for i := range group {
-		if i == 0 || kind(group[i]) != kind(group[i-1]) {
+	runs, prev := 0, ""
+	for _, wm := range group {
+		if wm.Rows() == 0 {
+			continue
+		}
+		if k := kind(wm); runs == 0 || k != prev {
 			runs++
+			prev = k
 		}
 	}
 	return runs
@@ -200,17 +207,6 @@ func (m *Model) metalDeltaNetEps() (eps, oEps float64) {
 	return 0, 0
 }
 
-// metalMoEPaged reports whether a Metal build of m pages its routed experts, from the request backend/metal's metalMoESlotsRequest
-// reads: an expert-slot request, else expert caching (whose slot count the build sizes from memory, priced here as paging), else the
-// GOINFER_METAL_MOE_SLOTS knob; paged when the slots are under the expert count.
-func (m *Model) metalMoEPaged(nE int) bool {
-	n := m.MoECacheSlotsRequest()
-	if n <= 0 && m.MoECacheExperts() {
-		return true
-	}
-	if n <= 0 {
-		v, _ := m.Knob("GOINFER_METAL_MOE_SLOTS")
-		n, _ = strconv.Atoi(v)
-	}
-	return n > 0 && n < nE
-}
+// metalMoEPaged reports whether a Metal build holding slots expert slots per layer pages its nE routed experts: a slot count above
+// 0 and under the expert count, as backend/metal's MoE builds decide it.
+func metalMoEPaged(slots, nE int) bool { return slots > 0 && slots < nE }

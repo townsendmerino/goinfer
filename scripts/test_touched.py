@@ -4,6 +4,7 @@ that reads Go source. Run: python3 -B scripts/test_touched.py"""
 import importlib.util
 import os
 import re
+import subprocess
 import sys
 import unittest
 
@@ -181,6 +182,170 @@ class TableIsComplete(unittest.TestCase):
                     names |= {n for n, _ in functions(os.path.join(dirpath, f))}
         missing = sorted(s.test for s in touched_scans.SCANS if s.test not in names)
         self.assertEqual(missing, [], "SCANS names tests that do not exist (renamed or deleted)")
+
+
+class _KeepsRAN(unittest.TestCase):
+    """check_module() appends to touched.RAN; each test here leaves it as it found it."""
+
+    def setUp(self):
+        self._ran = list(touched.RAN)
+        touched.RAN.clear()
+
+    def tearDown(self):
+        touched.RAN[:] = self._ran
+
+
+def _other_os():
+    """A GOOS that is not this host's: a target whose test binaries cannot execute here."""
+    return "linux" if sys.platform == "darwin" else "darwin"
+
+
+def _scratch(root, files):
+    for rel, body in files.items():
+        os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
+        with open(os.path.join(root, rel), "w") as f:
+            f.write(body)
+
+
+class PackagesForTheTarget(_KeepsRAN):
+    """classify() and check_module() on scratch modules with one package of each shape. For a target that is not the host (go list and go
+    vet cross-check it; go test is not run, since its binaries cannot execute): a package whose files are all excluded is skipped by name, one
+    with no test file for the target is a named skip, not a vacuous pass, and any other go list error fails. For the host: a -run that selects
+    only excluded tests is a named skip, and a diff whose every package is excluded judges nothing. Needs a Go toolchain (on nobara, put
+    /usr/local/go/bin on PATH first: the Bash tool's PATH has none, and this class then skips)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import shutil
+        import tempfile
+        if shutil.which("go") is None:
+            raise unittest.SkipTest("no go toolchain on PATH")
+        cls.tmp = tempfile.mkdtemp(prefix="touched-pkgs-")
+        cls.target = _other_os()
+        tag = "//go:build " + ("linux" if cls.target == "darwin" else "darwin") + "\n\n"  # a host-only file: excluded for the target
+        _scratch(os.path.join(cls.tmp, "m"), {
+            "go.mod": "module m\n\ngo 1.21\n",
+            "empty/a.go": tag + "package empty\n",
+            "empty/a_test.go": tag + "package empty\n",
+            "testonly/a.go": tag + "package testonly\n",
+            "testonly/a_test.go": "package testonly\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {}\n",
+            "notests/a.go": "package notests\n\nfunc F() int { return 1 }\n",
+            "notests/a_test.go": tag + "package notests\n",
+            "ok/a.go": "package ok\n\nfunc F() int { return 1 }\n",
+            "ok/a_test.go": "package ok\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {}\n",
+            "broken/a.go": "pakage broken\n",
+        })
+        never = "//go:build touched_never\n\n"
+        _scratch(os.path.join(cls.tmp, "h"), {  # for the host: tests run
+            "go.mod": "module h\n\ngo 1.21\n",
+            "p/a.go": "package p\n\nfunc F() int { return 1 }\n",
+            "p/a_test.go": "package p\n\nimport \"testing\"\n\nfunc TestPortable(t *testing.T) {}\n",
+            "p/b_test.go": never + "package p\n\nimport \"testing\"\n\nfunc TestExcluded(t *testing.T) {}\n",
+            "gone/a.go": never + "package gone\n",
+            "gone/a_test.go": never + "package gone\n",
+        })
+        cls.cwd = os.getcwd()
+        os.chdir(cls.tmp)
+        base = dict(os.environ, GOWORK="off", GOFLAGS="", CGO_ENABLED="0")
+        base.pop("GOARCH", None)
+        cls.env = dict(base, GOOS=cls.target, GOARCH="arm64" if cls.target == "darwin" else "amd64")
+        cls.hostenv = base
+        cls.host = subprocess.run(["go", "env", "GOHOSTOS"], text=True, capture_output=True, env=base).stdout.strip()
+
+    @classmethod
+    def tearDownClass(cls):
+        import shutil
+        os.chdir(cls.cwd)
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def _check(self, env, *a, **k):
+        import contextlib
+        import io
+        from unittest import mock
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, env, clear=True), contextlib.redirect_stdout(out):
+            bad = touched.check_module(*a, **k)
+        return bad, out.getvalue()
+
+    def test_classify(self):
+        got = touched.classify("m", ["./empty", "./testonly", "./notests", "./ok", "./broken"], [], self.env)
+        self.assertEqual(got["empty"], "empty")
+        self.assertEqual(got["testonly"], "ok")
+        self.assertEqual(got["notests"], "notests")
+        self.assertEqual(got["ok"], "ok")
+        self.assertTrue(got["broken"].startswith("error: "), got["broken"])
+
+    def test_check_module_skips_by_name_and_fails_the_broken(self):
+        skips = []
+        files = ["m/empty/a.go", "m/testonly/a_test.go", "m/notests/a.go", "m/ok/a.go", "m/broken/a.go"]
+        tests = {("m", "m/empty"): "", ("m", "m/notests"): "", ("m", "m/broken"): "", ("m", "m/ok"): ""}
+        bad, text = self._check(self.env, "m", "m", files, tests, self.target, skips, host_os=self.host)
+        self.assertIn(f"skip vet m/empty: build constraints exclude all its files for {self.target}", text)
+        self.assertIn(f"vet m/empty (no files for {self.target})", skips)
+        self.assertIn(f"test m/empty (no files for {self.target})", skips)
+        self.assertIn(f"test m/notests (no test files for {self.target})", skips)
+        self.assertRegex(text, r"ok\s+vet m \(3 pkg\)")  # testonly, notests and ok vet clean; a vet failure would fail this
+        self.assertIn("FAIL list m/broken", text)  # a go list error is a failure, never a skip
+        self.assertNotIn("m/broken (no files", " ".join(skips))
+        # The failures are exactly: the module build (broken is in it), broken's listing before vet, and its listing before test.
+        self.assertEqual(bad, 3, text)
+        self.assertIn(f"test m/ok (cross target {self.target})", skips)  # a cross target's tests do not run
+        self.assertNotIn("test m/ok", " ".join(touched.RAN))
+
+    def test_a_run_selecting_only_excluded_tests_is_a_skip(self):
+        skips = []
+        bad, text = self._check(self.hostenv, "h", "h", ["h/p/b_test.go"], {("h", "h/p"): "^(TestExcluded)$"}, self.host, skips, host_os=self.host)
+        self.assertEqual(bad, 0, text)
+        self.assertIn("no selected test is built for this target", text)
+        self.assertTrue(any("no selected test built" in x for x in skips), skips)
+        self.assertNotIn("test h/p -run ^(TestExcluded)$", touched.RAN)  # not counted as a check that passed
+        skips = []
+        bad, text = self._check(self.hostenv, "h", "h", ["h/p/a_test.go"], {("h", "h/p"): "^(TestPortable)$"}, self.host, skips, host_os=self.host)
+        self.assertEqual(bad, 0, text)
+        self.assertIn("test h/p -run ^(TestPortable)$", touched.RAN)
+
+    def test_every_package_excluded_judges_nothing(self):
+        skips = []
+        bad, text = self._check(self.hostenv, "h", "h", ["h/gone/a.go"], {("h", "h/gone"): None}, self.host, skips, host_os=self.host)
+        self.assertEqual(bad, 0, text)
+        self.assertEqual(touched.RAN, [], text)  # no module build counted, so the run's summary is INCONCLUSIVE, not PASS
+        self.assertIn(f"build h (no files for {self.host})", skips)
+        self.assertEqual(touched.summary(bad, touched.RAN, skips)[2], 2)
+
+
+class CudaCrossChecks(_KeepsRAN):
+    """check_module() on backend/cuda vets the other OS's build module-wide, both ways, and a target that is not the host runs no go test.
+    It drives check_module through a spy for touched.sh, so it needs no Go toolchain."""
+
+    def _calls(self, target, host):
+        import contextlib
+        import io
+        from unittest import mock
+        calls = []
+
+        def spy(*a, **k):
+            calls.append((a, (k.get("env") or {}).get("GOOS")))
+            return subprocess.CompletedProcess(a, 0, "", "")
+
+        tests = {("backend/cuda", "backend/cuda"): "^(TestX)$"}
+        with mock.patch.object(touched, "sh", spy), mock.patch.object(touched, "classify", lambda *a: {}), contextlib.redirect_stdout(io.StringIO()):
+            touched.check_module("backend/cuda", "backend/cuda", ["backend/cuda/x.go"], tests, target, [], host_os=host)
+        return calls
+
+    def test_both_ways(self):
+        linux = [c for c in self._calls("linux", "linux") if c[0][:2] == ("go", "vet")]
+        darwin = [c for c in self._calls("darwin", "darwin") if c[0][:2] in (("go", "vet"), ("go", "build"))]
+        self.assertIn((("go", "vet", "./..."), "darwin"), linux, "a linux run must vet the darwin build of backend/cuda, module-wide")
+        self.assertIn((("go", "vet", "-tags", "cuda goinfer_testhooks", "./..."), "linux"), darwin, "off linux: the linux build at the cuda tags, module-wide")
+        self.assertIn((("go", "build", "-tags", "cuda goinfer_testhooks", "./..."), "linux"), darwin)
+        self.assertIn((("go", "build", "./..."), "darwin"), darwin, "off linux, the host's own untagged build carries the target GOOS")
+
+    def test_a_cross_target_runs_no_go_test(self):
+        native = self._calls("linux", "linux")
+        cross = self._calls("darwin", "linux")
+        self.assertTrue(any(c[0][:2] == ("go", "test") for c in native), "a native target runs go test")
+        self.assertFalse(any(c[0][:2] == ("go", "test") for c in cross), "GOOS=darwin on a linux host must not run go test")
+        self.assertTrue(any(c[0][:2] == ("go", "vet") and c[1] == "darwin" for c in cross), "but it still vets the darwin build")
 
 
 if __name__ == "__main__":

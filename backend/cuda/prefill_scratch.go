@@ -95,7 +95,7 @@ func (r *cudaResident) prefillPassRowsAt(width int) int {
 // PrefillChunkRows (decoder.ResidentPrefillChunks, matched structurally: TestKV3_residentReportsItsChunks holds the wiring) is the most rows one pass of a long prompt's prefill takes.
 func (r *cudaResident) PrefillChunkRows() int { return r.prefillPassRows() }
 
-// PrefillTailMinRows (decoder.ResidentPrefillTailMin) is the fewest rows a prefill's last pass may have: a shorter one runs the
+// PrefillTailMinRows (decoder.ResidentCaps.TailMinRows) is the fewest rows a prefill's last pass may have: a shorter one runs the
 // exact kernels while the pass before it ran the fused ones (attnFusedMinRows).
 func (r *cudaResident) PrefillTailMinRows() int { return attnFusedMinRows }
 

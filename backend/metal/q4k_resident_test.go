@@ -76,6 +76,19 @@ func testQ4KLaneResident(t *testing.T, path string) {
 		mm.Close()
 		t.Fatalf("decode path %q, want metal-resident (q4k); decline: %s", dp, decline)
 	}
+	// The decoder's price for the lane's decode scratch is the build's own list, with the chain's buffers, which the build holds once
+	// a chain opens (none has yet).
+	if a, ok := mm.ResidentForwardForTest().(*metalResident); !ok {
+		t.Errorf("the resident is %T, not Metal's: its decode list is not read", mm.ResidentForwardForTest())
+	} else {
+		chain := int64(0)
+		for _, sb := range a.r.chainBuffers(true, true) {
+			chain += int64(sb.bytes())
+		}
+		if got, want := mm.MetalDecodeScratchBytes(metalMoESlotsFromEnv(mm)), a.r.decode.listBytes(a.r)+chain; got != want {
+			t.Errorf("q4k lane: the decoder prices decode's scratch at %d bytes, the build's list with the chain's at %d (%+d)", got, want, got-want)
+		}
+	}
 	rf := mm.ResidentForwardForTest()
 	rf.Reset()
 	var got [][]float32

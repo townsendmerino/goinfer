@@ -1,0 +1,18 @@
+=== RUN   TestKV8_G2exact_readersMatchTheCPUOnOneCache
+=== RUN   TestKV8_G2exact_readersMatchTheCPUOnOneCache/qwen2.5-coder-0.5b
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:1106: 48 reader rows compared (flash-decode lane 12, split-KV 12): largest |CUDA - CPU| / max|row| 1.41e-05 (bar 1e-04); smallest a plant made 5.34e-04
+=== RUN   TestKV8_G2exact_readersMatchTheCPUOnOneCache/qwen2.5-coder-1.5b
+cuda: prefill width 2048 rows (280 MiB of scratch; 6002 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:1106: 48 reader rows compared (flash-decode lane 12, split-KV 12): largest |CUDA - CPU| / max|row| 4.79e-05 (bar 1e-04); smallest a plant made 6.56e-04
+--- PASS: TestKV8_G2exact_readersMatchTheCPUOnOneCache (9.18s)
+    --- PASS: TestKV8_G2exact_readersMatchTheCPUOnOneCache/qwen2.5-coder-0.5b (3.99s)
+    --- PASS: TestKV8_G2exact_readersMatchTheCPUOnOneCache/qwen2.5-coder-1.5b (5.08s)
+PASS
+ledger: 6 device(s) released in this run

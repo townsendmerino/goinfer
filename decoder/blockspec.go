@@ -75,7 +75,7 @@ type ResidentDrafterHost interface {
 // prompt lengths over ~1k) and runs the head over every row to obtain one token id. The capture the seed needs comes from the layer loop,
 // not the head, so heading one row loses nothing.
 //
-// Optional rather than part of ResidentDrafterHost, following ResidentCapped and ResidentGreedy: a backend without it keeps working
+// Optional rather than part of ResidentDrafterHost, following ResidentGreedy: a backend without it keeps working
 // through the wide path.
 type ResidentSeedArgmax interface {
 	// PrefillSeedArgmax runs the same batched forward and returns only the LAST row's argmax.
@@ -464,11 +464,12 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	}
 	// The seed reads one id: ask for one when the backend can (ResidentSeedArgmax), which skips an M x vocab logits buffer, copy and host argmax.
 	var anchor int
-	if seeder, ok := host.(ResidentSeedArgmax); ok {
-		anchor, err = seeder.PrefillSeedArgmax(embs, reuseFrom)
-		if err != nil {
+	if canStep(host, stepBatch{Pass: passRows, Emb: stepProbe, Out: outArgmax}) {
+		var sr stepResult
+		if sr, err = stepOn(host, stepBatch{Pass: passRows, Emb: embs, Pos: reuseFrom, Out: outArgmax}); err != nil {
 			return nil, 0, err
 		}
+		anchor = sr.ID
 	} else {
 		ids, e := host.PrefillLastNArgmax(embs, reuseFrom)
 		if e != nil {
@@ -491,6 +492,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	maskID := dw.MaskTokenID()
 	var guard acceptanceGuard
 	seamOff := false
+	var fallbackRow [1][]float32 // the plain-decode fallback's one-row batch, reused across its tokens
 	for opt.MaxTokens <= 0 || len(out) < opt.MaxTokens {
 		if eos[anchor] {
 			break
@@ -513,8 +515,11 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			// Falling back through PrefillLastNArgmax(M=1) downloads the full logit row per token, so the guard would turn a loss into the same
 			// loss instead of into plain-decode speed.
 			var e error
-			if g, ok := m.resident.(ResidentGreedy); ok {
-				anchor, e = g.ForwardArgmax(m.embedResident(anchor), pos)
+			if m.canDecode(outArgmax) {
+				var sr stepResult
+				fallbackRow[0] = m.embedResident(anchor)
+				sr, e = m.step(stepBatch{Pass: passToken, Emb: fallbackRow[:], Pos: pos, Out: outArgmax})
+				anchor = sr.ID
 			} else {
 				var one []int
 				one, e = host.PrefillLastNArgmax([][]float32{m.embedResident(anchor)}, pos)
@@ -656,8 +661,8 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 					if _, e = host.PrefillLastNArgmax([][]float32{emb}, pos); e == nil {
 						e = fuse(host.BatchedCapture(), 1)
 					}
-				} else if g, ok := m.resident.(ResidentGreedy); ok {
-					_, e = g.ForwardArgmax(emb, pos)
+				} else if m.canDecode(outArgmax) {
+					_, e = m.step(stepBatch{Pass: passToken, Emb: [][]float32{emb}, Pos: pos, Out: outArgmax})
 				} else {
 					_, e = host.PrefillLastNArgmax([][]float32{emb}, pos)
 				}

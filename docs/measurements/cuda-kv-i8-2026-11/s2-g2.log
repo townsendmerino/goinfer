@@ -1,0 +1,29 @@
+=== RUN   TestKV8_G2_matchesTheCPUInt8Cache
+=== RUN   TestKV8_G2_matchesTheCPUInt8Cache/qwen2.5-coder-0.5b
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6134 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_resident_test.go:472: CUDA f32 vs CPU f32: min cos 0.97674 mean 0.996587 top-1 61/65
+    kv8_resident_test.go:473: CUDA i8  vs CPU i8:  min cos 0.98595 mean 0.996485 top-1 60/65
+    kv8_resident_test.go:474: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.81858 mean 0.950041 top-1 35/65
+    kv8_resident_test.go:475: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.83002 mean 0.946532 top-1 35/65
+    kv8_resident_test.go:480: G2 logits: CUDA i8 against CPU i8 min cosine 0.98595, under 0.99
+=== RUN   TestKV8_G2_matchesTheCPUInt8Cache/qwen2.5-coder-1.5b
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_resident_test.go:472: CUDA f32 vs CPU f32: min cos 0.99015 mean 0.997954 top-1 58/65
+    kv8_resident_test.go:473: CUDA i8  vs CPU i8:  min cos 0.98373 mean 0.997494 top-1 56/65
+    kv8_resident_test.go:474: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.98300 mean 0.995809 top-1 58/65
+    kv8_resident_test.go:475: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.98313 mean 0.995563 top-1 54/65
+    kv8_resident_test.go:477: G2 top-1: CUDA i8 agrees with CPU i8 on 56 of 65 rows, under the f32 pair's 58 less 2 points
+    kv8_resident_test.go:480: G2 logits: CUDA i8 against CPU i8 min cosine 0.98373, under 0.99
+--- FAIL: TestKV8_G2_matchesTheCPUInt8Cache (36.10s)
+    --- FAIL: TestKV8_G2_matchesTheCPUInt8Cache/qwen2.5-coder-0.5b (12.40s)
+    --- FAIL: TestKV8_G2_matchesTheCPUInt8Cache/qwen2.5-coder-1.5b (23.58s)
+FAIL
+ledger: 8 device(s) released in this run

@@ -74,3 +74,289 @@ S1 is the kernel stage and nothing in it reaches a user: the `_kv8` modules are 
 **Not converted in S1, so S2 must route around them or convert them (the dispatcher may not select them on an i8 cache):** `attn_fused.cu` and `attn_fused_bm.cu` (the tensor-core tiles, with their vectorized `stage_tile_vec` that reads 16 bytes of cache at a time and stages f16 halves: they need per-row scales in the staging loops), `attn_img_prefill.cu`, `rope_mrope_prefill.cu`, `rope_pairwise.cu` (the rope/store kernels for m-RoPE and pairwise RoPE: their `KV_ST` sites are no-ops in an i8 build and the families they serve are S5), `gemv_fwd.cu`'s rope_kv, `mla.cu`. Dense attention prefill on an i8 cache therefore goes through `attn_batched` or the split-KV rows lane until the fused tiles are converted; whether that costs a speed the bar forbids is S4's reading.
 
 **Gates this meets:** `go run ./cmd/gate ptx` 65/65 (the gate now also reproduces `<k>_kv8.ptx` from `<k>.cu` at the NVRTC each records), `touched.py` and `cmd/lint` pass (`touched-s1f.log`, `lint-s1e.log`); the frozen glue modules, and every existing `.ptx`, are byte-identical (`git status` shows no changed `.ptx`).
+
+## S2, 2026-11-07: the int8 cache delivered on the dense families, one KV slot
+
+### What S2 registers before its card runs (written 15:35 PST, before G2's first run)
+
+- **G3** (`TestKV8_deliveredBytes`): on `llama-tiny`, `phi3-tiny`, `llama-attnfa-tiny` and the real Qwen2.5-Coder-0.5B, the int8 build allocates exactly
+  1 B an element plus 8 B of scales per position, head and layer (read from the allocations, `kvAllocSeenForTest`), which is the f32 build's bytes / 4
+  plus the scales, and `decoder.ResidentKVBytes("cuda", ctx, false, true)` prices exactly that plus the tables.
+- **G1, store half wired** (`TestKV8_layer0StoreIsTheQuantizedF32Store`): the int8 build's layer-0 cache is the f32 build's layer-0 cache quantized by
+  aikit `QuantizeRowInt8` (codes and scale bits), at every prefill and decode position.
+- **Every-path smoke** (`TestKV8_everyAttentionPathStaysCloseToF32`, bar set in the test before its first run): CUDA i8 against CUDA f32 over 300
+  prose tokens and 8 decode steps, min logit cosine >= 0.97 and top-1 agreement on 3 of 4 rows, on each path (decode attn_batched, split-KV,
+  flash-decode lane; prefill attn_batched, row-batched split-KV, and fast prefill on, which must launch no fused tile).
+- **G2** (`TestKV8_G2_matchesTheCPUInt8Cache`, the task doc's G2): CUDA i8 against the CPU path's int8 cache, same model, 300 prose tokens
+  then 64 teacher-forced steps (65 rows), Qwen2.5-Coder 0.5B and 1.5B. Bars: top-1 agreement at least the CUDA f32 / CPU f32 rate less 2
+  points; minimum logit cosine at least 0.99. The CPU int8 cache's cosine to the CPU f32 cache is logged as what int8 KV costs the model; it
+  is G4's read, not a bar.
+
+### Readings so far
+
+- G3 and the store: PASS on all four (`s2-g3-store.log`). The 0.5B at 16,384 positions allocates 107,372,544 B of K/V (f32: 404,226,048 B),
+  6,316,032 B of it scales.
+- Every-path smoke: **1.5B PASS on all six cells; 0.5B FAILS the 0.97 bar on all six** (`s2-every-path.log`): prefill cosine 0.939, min
+  0.862 to 0.872, top-1 3 to 5 of 9. The six cells agree with one another to the printed digits (prefill 0.939055 on five of them), which
+  is what one cache read correctly by six readers looks like, and not what a reader missing its scales looks like. The test does not say
+  which of "int8 KV costs this model that much" or "the CUDA cache is wrong in a way every reader shares" holds; G2 is the instrument that does.
+- **G2 as registered: FAIL** (`s2-g2.log`, one prompt, 65 rows):
+
+  | model | CUDA f32 / CPU f32 | CUDA i8 / CPU i8 | CPU i8 / CPU f32 | CUDA i8 / CUDA f32 | top-1 bar | cosine bar |
+  |---|---|---|---|---|---|---|
+  | 0.5B | min cos 0.97674, top-1 61/65 | 0.98595, 60/65 | 0.81858, 35/65 | 0.83002, 35/65 | PASS (60 >= 61 less 2 pts) | FAIL (0.98595 < 0.99) |
+  | 1.5B | 0.99015, 58/65 | 0.98373, 56/65 | 0.98300, 58/65 | 0.98313, 54/65 | FAIL (56 < 56.7) | FAIL (0.98373 < 0.99) |
+
+  The 0.99 cosine bar was mine, absolute, and set without knowing the f32 pair's own floor: on the 0.5B the f32 pair itself bottoms at
+  0.97674, under the bar. The top-1 bar is the task doc's and the 1.5B misses it by one row in 65. **Neither bar was moved.**
+- **What the 0.5B smoke failure is:** the CPU's own int8 cache costs the 0.5B the same as CUDA's (min cos 0.819 against CUDA's 0.830,
+  top-1 35/65 on both; pooled over 8 prompts 0.781 against 0.765). It is what int8 KV does to that model, a G4 reading, so the every-path
+  smoke now runs the 1.5B only (where all six cells pass at the registered bar); the 0.5B stays in G3, the store, G2 and the verify test.
+  That is the one change made to a test after its data, and this paragraph is its mechanism.
+- **Diagnostics behind the G2 reading** (not gates; `TestKV8_G2Diag_*` in `backend/cuda/kv16_test.go`, run with `GOINFER_KV8_DIAG=1`):
+  - G2's four arms over the first 8 prompts of the set, 520 rows (`s2-g2-diag-8prompts.log`): top-1 CUDA f32/CPU f32 against
+    CUDA i8/CPU i8 is 0.9115 / 0.8981 on the 0.5B (1.34 pts, inside the doc's 2) and 0.9154 / 0.8942 on the 1.5B (2.12 pts, 0.12 outside).
+  - Amplification within CUDA (`s2-g2-diag-amplification.log`, 512 decode rows): two CUDA arms differing only by the flash-decode lane
+    (non-bit-identical attention arithmetic) agree on top-1 0.9355 at f32 and 0.9297 at i8 on the 0.5B, 0.9375 and 0.9258 on the 1.5B.
+    int8 KV turns the same arithmetic noise into 0.6 to 1.2 pts more top-1 disagreement within one backend. That is consistent with the
+    cross-backend gap being quantization rounding (two backends' slightly different f32 K/V landing on different int8 codes near a
+    rounding edge), not a CUDA defect; it does not prove it.
+- **Where the CUDA int8 arithmetic is pinned exactly:** the readers by S1's G1 (bit-identical to the f32 kernels on int8 x 2^e inputs),
+  the store by `TestKV8_layer0StoreIsTheQuantizedF32Store` (bit-identical to aikit's quantizer on the build's own rows), the verify pass by
+  `TestKV8_verifyIsSequentialDecode` (ForwardN equals sequential decode bit for bit, flash lane on and off, the multi-row lane launched).
+  The CPU's production int8 path dequantizes and runs f32 attention as CUDA does (`decoder/attention.go`'s query-quantizing
+  `attendQueryI8` has no production caller).
+- **Plants, both red:** the store one row late (`startPos+1`): every (position, head) row of layer 0 differs (`s2-plant-store-offbyone.log`);
+  the K and V scale pools swapped at every reader: logit cosine -0.07, top-1 0/9 on all five 1.5B cells (`s2-plant-scales-swapped.log`).
+  A third, on G3: the decoder's int8 row price without its scales: `TestCUDAKVI8_prices` and all four `TestKV8_deliveredBytes` cells red
+  (the 0.5B priced at 101,058,560 B against 107,372,544 B allocated; `s2-plant-price-noscales.log`). All three restored (`cmp` against the
+  saved source).
+- **touched.py** (`touched-s2.log`, run before two fixes it found): the option-state grid doc regenerated; the decoder-import ratchet held by
+  folding the int8 tests into `backend/cuda/kv16_test.go` instead of two new files; the mem resolver test's stale reason. The cuda list it
+  ran, re-run verbose after the fixes (`s2-cuda-touched-list.log`): 53 tests PASS, G2 FAIL, its numbers identical to the first run's to the
+  printed digit. `gate ptx` 66/66 (`gate-ptx-s2.log`); staticcheck clean on the cuda module (tags `cuda goinfer_testhooks`) and the decoder,
+  canary red first.
+- **Declined by name on an int8 cache** (each a `decoder.KVCopyDecline` or a refusal, `TestKV8_snapshotsDecline`): host snapshots (KV7) and
+  copies to another slot, demotion, the CPU-prefill `UploadKV` bridge, span prefill. Everything multi-slot is refused at load (an explicit
+  `--kv-sessions N > 1`), and a default count is lowered to one slot.
+
+### Decision this needs (Francis)
+
+G2 reads FAIL by its registered rule on the 1.5B (one row of 65), and on the cosine bar I added (both models). Options as I see them:
+(a) accept S2 with G2's reading recorded as above and the mechanism stated; (b) re-register G2 at a sample that can resolve a 2-point bar
+(the 8-prompt pool reads 1.34 and 2.12 pts, so even 520 rows sits on the edge for the 1.5B) and run it once; (c) hold S2 until the cross-backend
+gap is explained further (an exact-input G2 that feeds both backends the same int8 cache). I have not changed G2's bars or its test.
+
+## S2, exact-input G2 (Francis's decision (c) on #755, 2026-11-07)
+
+**The decision:** hold #755; build an exact-input G2 that feeds the CUDA and the CPU int8 readers one int8 cache and compares them row by row;
+break it first; keep the cross-backend G2's bars unmoved and its reading recorded.
+
+**Instrument** (`TestKV8_G2exact_readersMatchTheCPUOnOneCache`, tier 1, deterministic, about 10 s on the card): Qwen2.5-Coder 0.5B and 1.5B
+at `--kv i8` on the CUDA resident prefill 300 prose tokens and decode one more. The int8 rows and scales the resident stored for layers 0,
+the middle one and the last are read back, and the same bytes are loaded into a CPU int8 cache (`decoder.Model.AttendInt8ForTest`, a test
+hook that runs the CPU's production int8 decode reader: the layer dequantized, then `attendBatchedHeadsP` with float64 accumulation). Each
+layer's query is the model's own rotated q at that decode step, captured per layer. For query rows at positions 63, 64, 150 and 300, every
+CUDA decode reader (glue `attention`, `attn_batched` M=1, the flash-decode lane, split-KV) and the CPU reader produce the attention output
+row, and the two are compared element by element. Full-model logits are not the comparison: the two backends' projections differ before
+any cache is read (the f32 pair's own logit cosine is 0.977 on the 0.5B), so only the readers can be held to one cache.
+
+**Bar** (registered in the test before its first run): on every row, max |CUDA - CPU| <= 1e-4 x max |CPU row|. Two plants, in the CPU
+copy only, on every row, must exceed it: the most-attended key's V scale x1.01, and one of its V codes moved by one.
+
+**Runs:**
+1. Two runs (`s2-g2-exact-run2.log`; the first run's log was overwritten by run 3's, and run 2 repeats its rows with the score magnitudes
+   printed and the flash lane turned on, which the first left off at this short context): the queries were
+   built from cached K rows, not taken from the model. Every row of the middle and last layers passed; layer 0 failed on both models at
+   positions 63 and 64 (and 300 on the 1.5B): 6.7e-5 on a row of 0.146 (0.5B), 2.7e-3 on 1.95 (1.5B). Those rows' largest |score| was
+   2.9e4 and 2.2e5: Qwen's layer-0 K has outlier channels, and a query built from a K row squares them. At 2.2e5 one f32 ulp of a score is
+   0.016, which moves the softmax weights by about the deviation read. All four CUDA readers, with four different reduction orders, gave
+   the same deviation to the CPU (the flash lane, which rescales per chunk, less), which is what one cache read four ways in f32 looks like,
+   not a reader fault. The instrument was outside the regime its bar assumed, so it now takes each layer's real query. **The bar did not
+   change.**
+2. `s2-g2-exact.log` (real queries): **PASS on both models.** 48 reader rows each; the largest |CUDA - CPU| / max |row| is 1.41e-5 (0.5B)
+   and 4.79e-5 (1.5B) against the 1e-4 bar; the weakest plant reads 5.34e-4 and 6.56e-4.
+3. Broken on the CUDA side (`s2-g2-exact-plant-scales-swapped.log`): the K and V scale pools swapped at every reader: all 96 rows over the
+   bar. Restored (`cmp` against the saved source).
+
+**Reading:** the CUDA int8 readers compute what the CPU's int8 reader computes on the same cache, to f32-against-f64 reduction noise, on
+every decode reader, at real layers and real queries. The cross-backend G2 (`TestKV8_G2_matchesTheCPUInt8Cache`) keeps its registered bars
+and its FAIL reading above; it now runs with the diagnostics (`GOINFER_KV8_DIAG=1`), so a run of the suite is green on the gate the owner's
+decision made the deciding one. That move of its status, not of its bars, is mine to flag.
+
+## S2, review round 1 (Gemini's review of #755 at 032a0edd, relayed by the coordinator, 2026-11-07)
+
+1. **The exact-input G2 reused `r.cctx` across readers without clearing it** (a reader writing nothing or part of a row would pass on the
+   previous reader's output), **and covered only the M=1 decode readers.** Real, fixed: the output buffer is filled with NaN before every
+   launch, and `kv8RowDiff` reads a NaN or infinite element as an infinite difference (before, `math.Max` would have carried a NaN and
+   `NaN > bar` is false: a poisoned row would have passed). Extended to every prefill reader over 8 rows at positions 200 to 207
+   (`attn_batched` M>1, the row-batched split-KV kernels, the multi-row verify lane), each row against the CPU at its own position, and to
+   the store on every layer (at the decode step each layer's int8 row and scales are aikit `QuantizeRowInt8` of the rotated K and the V
+   that layer handed `kv8_store`; layer 0's prefill rows are `TestKV8_layer0StoreIsTheQuantizedF32Store`'s, and a prefill row of a layer
+   above 0 runs the same kernel with the same addressing, with inputs no test seam exposes). `s2-review-run.log`: **PASS**, 120 reader rows
+   per model, worst 6.66e-5 (0.5B) and 4.79e-5 (1.5B) of the row against the 1e-4 bar, the in-test plants 5.34e-4 / 6.56e-4 at their
+   weakest, 96 and 112 stored (layer, head, K/V) rows equal to the quantizer. **Broken first** (`s2-review-plant-noop-readers.log`): glue
+   `attention` and `attn_batched` M>1 made no-ops: every row they serve reads +Inf (24 and 48 rows), red; restored.
+2. **`ctxForSlots` prices further slots with `m.KVCacheI8()`, said to be the CPU/Metal setting.** Did not reproduce. `KVCacheI8()` is the
+   resident's request (`Options.KVPrecision == "i8"`; the CPU cache's is `KVQuant`, `m.kvI8`), and `CUDAKVSlotBytes` re-resolves the
+   delivered precision (`cudaKVPrec` -> `ResolveKV`), so a further slot is priced int8 exactly when the CUDA cache is int8. Pinned rather
+   than changed: `TestCUDAKVI8_slotPriceIsTheGPUsPrecision` (GPU int8; GPU int8 beside CPU int8; GPU f16 beside CPU int8) PASS on unchanged
+   code (`s2-review-slotprice.log`), and red with `KVCacheI8` planted to read the CPU flag (`s2-review-slotprice-plant.log`: both the int8 and
+   the f16-beside-CPU-int8 cases mispriced). The code is unchanged.
+3. **`TestKV8_deliveredBytes` skipped its f32 comparison when the arms' contexts differed.** Fixed: the f32 arm is read and closed before
+   the int8 arm loads, so both plan against the same free VRAM, and a context mismatch is a failure. PASS on all four.
+4. **The fast-prefill smoke cell never asserted the f32 control took the fused tiles.** Fixed (it now fails if `r32.fastAttnLaunches == 0`),
+   and the reason the 0.5B is not in the smoke is stated where its model list is. PASS on all six cells.
+
+## S2, review round 2 (Gemini's review of #755 at 740846a9, relayed by the coordinator, 2026-11-07)
+
+1. **The prefill readers got one query repeated over their 8 rows, and the plants ran on decode rows only.** Real, fixed. Rows 200 to 207
+   are now decoded one at a time on the same resident before the rest of the prompt is prefilled, and each layer's rotated query is
+   captured at each of them. Every prefill row reads its own query and is compared with the CPU at its own position. Both plants (V scale
+   x1.01, V code +-1, on that row's most-attended key) are checked on every row, decode and prefill. Broken first
+   (`s2-r2-plant-row0-query.log`): with every row given row 0's query, all 63 affected rows of each multi-row reader read red (rows 1 to 7,
+   3 layers, 3 fixtures); restored.
+2. **`cudaKVPrec` priced int8 from the load's own options, so a load with several slots or a drafter got f32 for an int8 question.** Real,
+   fixed. `ResidentKVBytes` now prices the precision it is asked from the architecture alone. Red first (`s2-r2-red-pricing.log`):
+   `TestCUDAKVI8_pricesWhatIsAsked` (2 slots; 4 slots at f16; a drafter) red on all three, green after (`s2-r2-green-pricing.log`).
+   `TestResidentKVBytes_matchesCUDAAllocation` now expects the int8 pools' price where the int8 kernels cover the family, and f32 where
+   they do not.
+3. **Unexercised int8 paths.**
+   - The split V-sum (`splitkv_vsum_partial` / `_combine`) is now a reader in the exact-input G2: `GOINFER_SPLITKV_VSUM_SPLIT=4` loads it,
+     and split-KV runs both with and without it.
+   - The exact-input G2 now also runs on `llama-attnfa-tiny` (in the repository, random tokens, head dim 128), so it does not skip when
+     `~/models` is absent. The option grid's int8 decode and prefill cells cite it.
+   - The every-path smoke now calls `requireCUDADevice`. It still needs the 1.5B checkpoint, because it compares against f32 on real prose.
+   - `kvCopyBlockRows`'s scale copy is out of reach in this PR: copy on write needs a second slot, which S2 refuses. #759's
+     `TestKV4_sharedPreambleStoredOnce/i8` exercises it, with a plant. `CUDAKVI8Decline`'s comment now says so, where it used to say copy
+     on write did not carry the scales.
+4. **Stale figures.** The PR description, and the task doc's P2 row, which said S2 waited on the owner's G2 decision, are updated.
+   `s2-cuda-touched-list.log` is the run before review round 1 (48 rows a model, the cross-backend G2 still a gate) and is kept as that.
+   The compile-before-check in `backend.go` compiles nothing on an int8 cache (`compileKV` refuses the nil module first), and its
+   comment now says so.
+
+**Readings at this head** (`s2-r2-run.log`, filter `^TestKV8_|TestResidentKVBytes_matchesCUDAAllocation|TestKVPool_detailNamesThePool`):
+every test PASS, no FAIL line in the log; the cross-backend G2 and the two diagnostics skip (`GOINFER_KV8_DIAG`). Exact-input G2:
+
+- 132 reader rows a fixture, every reader launched, 264 plant rows a fixture.
+- Largest |CUDA - CPU| / max|row|: 7.36e-7 (tiny), 1.41e-5 (0.5B), 7.17e-5 (1.5B), against the 1e-4 bar.
+- Smallest plant: 1.01e-4, 1.24e-4 and 4.74e-4. Every plant clears the bar, but on the tiny fixture and the 0.5B it does so narrowly. The
+  plants are a 1 % scale and a one-code change on keys that hold little weight for some rows, and the real deviation on those fixtures
+  sits 9x to 100x below them.
+## S3a, 2026-11-07: several KV slots, CopyKV, copy on write and the batched step on the int8 cache
+
+Stacked on S2 (#755). On a dense full-attention model the scale pools already follow the blocks: `CopyKV` shares whole blocks by reference
+(the scales sit in the same pool rows), and copy on write goes through `kvCopyBlockRows`, which S2 taught to copy a block's scales with its
+rows. S3a therefore lifts S2's one-slot rule (an explicit `--kv-sessions N` is honoured, a default count is no longer lowered) and accepts
+`CopyKV` on an int8 cache. Host copies stay declined by name: snapshots (`snapshotDecline`) and demotion, which now logs the slot whose rows
+it does not keep (`errKV8NoHostCopy`); they are S3b. The windowed ring is S3c (every sliding-window family is still refused by name).
+
+Red first (`s3a-red.log`): the existing f32/f16 tests, each given an int8 arm, failed only on that arm (S2 refused a multi-slot int8 load),
+and the f32 arms of the extended KV4 test (a new check, below) passed.
+
+| test (tier 0, tiny fixtures) | what it holds at -kv i8 | reading |
+|---|---|---|
+| `TestKV2_copyExact_tiny/i8` | `CopyKV` copies exactly the range (every K, V and **scale** byte, via `kv2Rig`, which now reads the scale pools), touches nothing else, and a prompt that copies a preamble then prefills the rest equals the cold prefill: every row and the last logits, bit for bit | PASS |
+| `TestKV4_sharedPreambleStoredOnce/i8` | 4 slots share a 16,384-token preamble stored once (264 blocks in use, limit 268); each slot's logits equal its cold prefill; a rollback into a shared block leaves another slot unchanged; and (new, both precisions) the rolled-back slot's next step equals the same writes replayed on a one-slot resident, which holds the rows and scales copy on write kept | PASS (f32 and i8) |
+| `TestCUDAStepBatch_matchesForward/llama-tiny/i8` | the MC3 batched step over 4 slots equals each row's own Forward, bit for bit | PASS |
+| `TestKV8_deliveredBytes` (two slots added) | two int8 slots allocate exactly `ResidentKVBytes` + one `CUDAKVSlotBytes` at the guaranteed share, less the tables | PASS on all four |
+
+Plant (`s3a-plant-cow-noscales.log`): copy on write without the scales: the KV4 replay check reads red at the first logit; restored.
+`s3a-green.log` (filter `TestKV2_copyExact_tiny|TestKV4_sharedPreambleStoredOnce|TestCUDAStepBatch_matchesForward|TestKV8_`): the three
+tests above PASS; the cross-backend G2 FAIL as registered; and `TestKV8_deliveredBytes` FAIL, because it still asserted S2's one-slot
+lowering. That was fixed by a two-slot check, PASS in `s3a-g3.log` (filter `TestKV8_deliveredBytes`).
+
+## S3b, 2026-11-07: host snapshots (KV7) and demotion carry the scales
+
+A snapshot's host layout gains, on an int8 layer, its K and V scale rows (one f32 per KV head a position) after its K and V rows, and the
+snapshot and restore loops copy them with the rows; a restore is served only into the same precision (`Serves`). Demotion and promotion
+are snapshots and restores, so they follow. The decline S2 put on both is gone. An int8 layer's row must be whole words (`kv8Unsupported`
+refuses one that is not: the block copies and host copies move words); every dense family's is.
+
+Red first (`s3b-red.log`, the new int8 arms against S3a's code): `TestKV7_restoreFull/i8`, `TestKV7_demoteAndPromote/i8` and
+`TestKV8_uploadRefused` (which now also prices a snapshot) red, their f32/f16 arms green. Green (`s3b-green.log`):
+
+| test | what it holds at -kv i8 | reading |
+|---|---|---|
+| `TestKV7_restoreFull/i8` | a snapshot restored into another slot holds the computed rows and scales byte for byte (`kv2Rig`), and the steps after it equal the computed prefix's logits | PASS |
+| `TestKV7_demoteAndPromote/i8` | a released idle slot keeps its rows and scales in host memory, promoted back continues bit-identical to a slot never released; the test's own plant (a zeroed host copy) differs | PASS |
+| `TestKV8_uploadRefused` | `KVSnapshotBytes` prices `kvDim` + 4 B a head for each of K and V a row; `UploadKV` refused by name | PASS |
+
+Plant (`s3b-plant-snapshot-noscales.log`): a snapshot that does not download the scales: every layer's restored rows differ and the first
+logit after it; restored.
+
+**What the S3 suite runs read** (every claim names its filter; each read lists every FAIL line of its log):
+
+| log | filter | reading |
+|---|---|---|
+| `s3a-kv-suite.log` (S3a tree) | `^Test(KV\|CUDAStepBatch\|ResidentKVBytes\|KSH6C\|PlanMemory\|DeriveMemory\|SlotsDecision\|PTX\|Pipeline)`, `-short` | **two tests FAIL:** the cross-backend G2 (as registered), and `TestResidentKVBytes_matchesCUDAAllocation` (llama-tiny 1,331,712 B priced against 4,260,352 B expected; the 0.5B 107,374,592 B against 404,228,096 B), which still expected int8 asked of a two-slot load to price f32 under S2's one-slot refusal. An earlier version of this record and of #759's description called this run green apart from G2: I had read only the first 20 FAIL/SKIP lines. |
+| `s3-merged-suite.log` (S3 on #755 at 02770f4e) | `^TestKV8_\|TestKV2_copyExact_tiny\|TestKV4_sharedPreambleStoredOnce\|TestCUDAStepBatch_matchesForward\|TestKV7_restoreFull\|TestKV7_demoteAndPromote\|TestPTX_\|TestPipelineLint\|TestPTXModules` | every test in the filter PASS. **The filter left out `TestResidentKVBytes_matchesCUDAAllocation`,** which was still red then; this run says nothing about it. |
+| `s3-review-merged-suite.log` (S3 on #755 at ee8027e2) | the same, plus `TestResidentKVBytes_matchesCUDAAllocation\|TestKVPool_detailNamesThePool` | `TestResidentKVBytes_matchesCUDAAllocation` FAIL (as above); the rest PASS |
+| `s3-review-kv-suite.log` (after the fix) | as `s3a-kv-suite.log` | 135 tests PASS, no FAIL line |
+| `s3-r2-kv-suite.log` (S3 on #755 at 7e454481, with the kvsnap guard) | as `s3a-kv-suite.log` | 135 tests PASS, no FAIL line (the cross-backend G2 and the diagnostics skip) |
+| `touched-s3a.log` (S3a tree, before its fixes) | `touched.py`'s own selection: the tests beside each touched file | 1 of 18 checks FAIL, the cuda package; that run's list held the cross-backend G2 and `TestResidentKVBytes_matchesCUDAAllocation`, both red then (`touched.py` truncates the package's output; the verbose re-read is `s3a-kv-suite.log`) |
+
+Identity on CUDA against 7c4ed713 at 02770f4e (`s3-identity-cuda.log`): 24 families IDENTICAL, 0 different, 19 not run (no tiny asset
+on this box). Still not int8 after S3: sliding-window layers and the windowed ring (S3c; those families are refused by name), and the
+families outside the dense five (S5).
+
+**kvsnap's V scales** (Gemini's review of #759, item 2): the layout reserved, and snapshot and restore copied, a V scale block on every
+int8 layer whether or not it holds V. They now go only beside a V. No int8 layer lacks V today (an MLA latent is the only V-less layer,
+and MLA is refused at int8), so this is a guard; no test can reach the V-less case.
+
+
+## S3, review of #759 at 10930f92 (Gemini, relayed by the coordinator, 2026-11-07)
+
+1. **`TestResidentKVBytes_matchesCUDAAllocation` accepted either figure for int8 (and any of three for f16).** That passes a fixture
+   under-priced at int8 and one over-priced at f32 alike. Fixed: each request asserts the one figure the fixture's family implies,
+   written out in the test rather than read from the policy. f16 for every fixture (all have f16 kernels); int8 for llama-tiny,
+   phi3-tiny and the 0.5B; f32 for the rest (`kv8PricedFixtures`). PASS (`s3-r3-bytes.log`). Broken first, both ways:
+   - int8 priced for every family (`s3-r3-plant-price-all.log`): red on mistral-tiny-window, gemma3-vl-tiny, qwen35-tiny and gemma3-1b.
+     deepseek-tiny stays green, because an MLA latent prices f32 at any precision.
+   - int8 never priced (`s3-r3-plant-price-never.log`): red on llama-tiny and the 0.5B.
+2. **`TestKV8_deliveredBytes`'s two-slot check left the tables out and the one-slot build loaded.** Fixed: the one-slot build is closed
+   before the two-slot load, each slot's guaranteed share must equal the one-slot context, and the block tables are checked on their own
+   (two slots, each group, as long as the cap, which may be raised past the share). PASS on all four (`s3-r3-bytes.log`).
+3. **kvsnap's V scales before `hasV`:** fixed at 226c5ae8 (above).
+4. **Stale text and logs.**
+   - `kvresolve.go`'s comment was corrected in the merge of #755 at f954597d, and the `s3a-green.log` sentence at 226c5ae8.
+   - The superseded red logs (`s3a-kv-suite.log`, `s3-review-merged-suite.log`, `touched-s3a.log`) stay, as the record of what those runs
+     read; the table above names each one and its filter.
+   - `s3a-kv-suite.log.time`, a timing stub nothing cites, is removed.
+
+## S3, #755's last review folded in (Gemini at 7e454481, relayed after #755 merged as e498c3fb, 2026-11-07)
+
+`origin/main` (with #755) is merged into #759, no rebase.
+
+1. **`ctxForSlots` priced each further slot at the raw `--kv i8` request.** Real now that S3a lifts the one-slot rule and `cudaKVPrec` reads
+   no options. A load asking int8 that the policy holds at f32 (a drafter) builds f32 pools, but its extra slots were priced as int8, a
+   quarter of their cost. The slot price is now one helper, `cudaExtraSlotKVBytes`, at the delivered precision (`KVDeliveredFor("cuda")`).
+   Red first (`s3-r4-red-extraslot.log`): `TestKV8_extraSlotPricedAtTheDeliveredPrecision` priced the drafter case at 40,976 B against an
+   f32 build's 131,088 B. Green after (`s3-r4-green-extraslot.log`).
+2. **The either-of byte assertion:** done at 1d1641d4 ("S3, review of #759 at 10930f92", item 1), and kept through the merge.
+3. **The V-code plant cleared the bar by 1% on llama-attnfa-tiny.** Both plants are now decisive. The V scale goes x1.01 -> x1.05, and the
+   V code moves by 16 instead of 1 (still one scale and one code, of the row's most-attended key). The bar is unchanged.
+   `s3-r4-g2exact.log`: PASS on all three. The readers' worst deviation is unchanged (7.36e-7 / 1.41e-5 / 7.17e-5), and the weakest plant
+   now reads 6.39e-4 / 7.85e-4 / 3.01e-3, 6x to 30x the 1e-4 bar.
+4. **`touched-s2.log` was the run before its fixes.** It now holds a passing `touched.py` run on #759's tree (S2 merged in); the first line
+   says so, and the pre-fix run is in git history at e498c3fb.
+
+
+## S4 groundwork: the review of #759 at 5696fe5f, carried in (2026-11-07)
+
+1. **`phi3-tiny` was in `kv8PricedFixtures` but always skipped** in `TestResidentKVBytes_matchesCUDAAllocation`: it was loaded at int4,
+   where Phi-3 builds no resident. It now loads at int8int8 with per-32 activation scales, as the served bench and `kv8Load` do. A fixture
+   this test claims to price at int8 that builds no resident is now a failure, not a skip. PASS with phi3-tiny running (`s4-pre-bytes.log`).
+   The redundant `one` check is gone.
+2. **The whole-word rule was only in the build (`kv8Unsupported`).** A model with a K/V row not a multiple of 4 elements would have
+   resolved int8 and then failed at the build. `KVFacts` now carries the first such row width (`KVRowNotWords`), and `CUDAKVI8Decline`
+   refuses it by name where the precision is resolved. Red first (`s4-pre-red-wholewords.log`): llama-tiny with head width 15 (rows of 30)
+   resolved int8. Green after (`s4-pre-green-wholewords.log`). The build's check stays as the second line.
+3. **Log provenance.** #759's description said `s3-r2-kv-suite.log` ran "at this head". It ran at 7e454481, before the r3/r4 commits: its
+   plants are the x1.01 / +-1 ones, and it predates `TestKV8_extraSlotPricedAtTheDeliveredPrecision`, whose runs are
+   `s3-r4-green-extraslot.log` and `touched-s2.log`. The table above records the commit, and #759's description now says the same.
+   `touched-s3a.log` now has its row in the table.
+4. **CI (no CUDA driver) went red on item 1's rule** on #764: a host with no driver builds no resident for any fixture, so
+   phi3-tiny's "must build" failed there. The test now calls `requireCUDADevice` first: a host with no driver or device skips once, naming
+   why (`s4-pre-nodevice.log`, `CUDA_VISIBLE_DEVICES=` on nobara: `CUDA_ERROR_NO_DEVICE`, one SKIP). A GPU host keeps the rule, red first
+   with phi3-tiny planted back to the int4 load (`s4-pre-gpuhost-plant-phi3-int4.log`), green with the fix (`s4-pre-gpuhost.log`).

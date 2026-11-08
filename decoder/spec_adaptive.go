@@ -216,8 +216,8 @@ func (m *Model) verifyTheta() float64 {
 		return thetaFor(m.be.Name())
 	}
 	// Fallback for residents that only implement PrefillPathReporter: ask whether their prefill path is batched.
-	if pf, ok := m.resident.(Prefiller); ok {
-		if rep, ok := pf.(PrefillPathReporter); ok {
+	if canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe}) {
+		if rep, ok := m.resident.(PrefillPathReporter); ok {
 			if batched, _ := rep.PrefillPath(); !batched {
 				return sequentialVerifyTheta
 			}

@@ -1,0 +1,90 @@
+=== RUN   TestKV8_G2exact_readersMatchTheCPUOnOneCache
+=== RUN   TestKV8_G2exact_readersMatchTheCPUOnOneCache/qwen2.5-coder-0.5b
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:1127: layer 0 position 63, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 0.14
+    kv16_test.go:1127: layer 0 position 64, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 0.14
+    kv16_test.go:1127: layer 0 position 150, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 0.133
+    kv16_test.go:1127: layer 0 position 300, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 0.185
+    kv16_test.go:1127: layer 0 position 200, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 0.13
+    kv16_test.go:1127: layer 0 position 201, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 0.13
+    kv16_test.go:1127: layer 0 position 202, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 0.13
+    kv16_test.go:1127: layer 0 position 203, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 0.13
+    kv16_test.go:1127: layer 0 position 204, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 0.13
+    kv16_test.go:1127: layer 0 position 205, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 0.13
+    kv16_test.go:1127: layer 0 position 206, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 0.13
+    kv16_test.go:1127: layer 0 position 207, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 0.129
+    kv16_test.go:1127: layer 12 position 63, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 1.14
+    kv16_test.go:1127: layer 12 position 64, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 1.14
+    kv16_test.go:1127: layer 12 position 150, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.06
+    kv16_test.go:1127: layer 12 position 300, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.63
+    kv16_test.go:1127: layer 12 position 200, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.05
+    kv16_test.go:1127: layer 12 position 201, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.05
+    kv16_test.go:1127: layer 12 position 202, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.05
+    kv16_test.go:1127: layer 12 position 203, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.05
+    kv16_test.go:1127: layer 12 position 204, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.05
+    kv16_test.go:1127: layer 12 position 205, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.05
+    kv16_test.go:1127: layer 12 position 206, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.05
+    kv16_test.go:1127: layer 12 position 207, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.05
+    kv16_test.go:1127: layer 23 position 63, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 4.88
+    kv16_test.go:1127: layer 23 position 64, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 4.86
+    kv16_test.go:1127: layer 23 position 150, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 5.6
+    kv16_test.go:1127: layer 23 position 300, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 5.13
+    kv16_test.go:1127: layer 23 position 200, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 5.41
+    kv16_test.go:1127: layer 23 position 201, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 5.8
+    kv16_test.go:1127: layer 23 position 202, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 5.79
+    kv16_test.go:1127: layer 23 position 203, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 5.78
+    kv16_test.go:1127: layer 23 position 204, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 5.76
+    kv16_test.go:1127: layer 23 position 205, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 5.76
+    kv16_test.go:1127: layer 23 position 206, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 5.75
+    kv16_test.go:1127: layer 23 position 207, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 5.75
+    kv16_test.go:1180: 120 reader rows compared (decode: flash-decode lane 12, split-KV 12; prefill: row-batched split-KV 3, verify lane 3 launches); largest |CUDA - CPU| / max|row| +Inf (bar 1e-04); smallest a plant made +Inf; 96 stored (layer, head, K/V) rows held to the quantizer
+=== RUN   TestKV8_G2exact_readersMatchTheCPUOnOneCache/qwen2.5-coder-1.5b
+cuda: prefill width 2048 rows (280 MiB of scratch; 6002 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:1127: layer 0 position 63, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.25
+    kv16_test.go:1127: layer 0 position 64, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.25
+    kv16_test.go:1127: layer 0 position 150, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 1.9
+    kv16_test.go:1127: layer 0 position 300, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 1.92
+    kv16_test.go:1127: layer 0 position 200, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 1.92
+    kv16_test.go:1127: layer 0 position 201, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 1.92
+    kv16_test.go:1127: layer 0 position 202, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 1.92
+    kv16_test.go:1127: layer 0 position 203, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 1.92
+    kv16_test.go:1127: layer 0 position 204, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 1.92
+    kv16_test.go:1127: layer 0 position 205, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 1.92
+    kv16_test.go:1127: layer 0 position 206, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 1.92
+    kv16_test.go:1127: layer 0 position 207, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 1.92
+    kv16_test.go:1127: layer 14 position 63, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.69
+    kv16_test.go:1127: layer 14 position 64, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.69
+    kv16_test.go:1127: layer 14 position 150, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.69
+    kv16_test.go:1127: layer 14 position 300, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 3.17
+    kv16_test.go:1127: layer 14 position 200, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.69
+    kv16_test.go:1127: layer 14 position 201, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.69
+    kv16_test.go:1127: layer 14 position 202, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.69
+    kv16_test.go:1127: layer 14 position 203, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.69
+    kv16_test.go:1127: layer 14 position 204, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.69
+    kv16_test.go:1127: layer 14 position 205, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.69
+    kv16_test.go:1127: layer 14 position 206, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.69
+    kv16_test.go:1127: layer 14 position 207, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 2.69
+    kv16_test.go:1127: layer 27 position 63, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 9.04
+    kv16_test.go:1127: layer 27 position 64, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 9.05
+    kv16_test.go:1127: layer 27 position 150, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 9.32
+    kv16_test.go:1127: layer 27 position 300, glue attention: max |CUDA - CPU| +Inf, over 1e-04 x the row's 9.17
+    kv16_test.go:1127: layer 27 position 200, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 9.19
+    kv16_test.go:1127: layer 27 position 201, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 9.18
+    kv16_test.go:1127: layer 27 position 202, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 9.17
+    kv16_test.go:1127: layer 27 position 203, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 9.17
+    kv16_test.go:1127: layer 27 position 204, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 9.18
+    kv16_test.go:1127: layer 27 position 205, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 9.17
+    kv16_test.go:1127: layer 27 position 206, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 9.17
+    kv16_test.go:1127: layer 27 position 207, attn_batched M>1: max |CUDA - CPU| +Inf, over 1e-04 x the row's 9.17
+    kv16_test.go:1180: 120 reader rows compared (decode: flash-decode lane 12, split-KV 12; prefill: row-batched split-KV 3, verify lane 3 launches); largest |CUDA - CPU| / max|row| +Inf (bar 1e-04); smallest a plant made +Inf; 112 stored (layer, head, K/V) rows held to the quantizer
+--- FAIL: TestKV8_G2exact_readersMatchTheCPUOnOneCache (9.74s)
+    --- FAIL: TestKV8_G2exact_readersMatchTheCPUOnOneCache/qwen2.5-coder-0.5b (4.11s)
+    --- FAIL: TestKV8_G2exact_readersMatchTheCPUOnOneCache/qwen2.5-coder-1.5b (5.51s)
+FAIL
+ledger: 6 device(s) released in this run

@@ -1,0 +1,5 @@
+=== RUN   TestKV8_extraSlotPricedAtTheDeliveredPrecision
+--- PASS: TestKV8_extraSlotPricedAtTheDeliveredPrecision (0.01s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	0.009s

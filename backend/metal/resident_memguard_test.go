@@ -247,8 +247,8 @@ func TestMetalMoESlotsFromEnv(t *testing.T) {
 // reverted to always call ResidentWeightBytes() compiles clean and passes that parsing test. It loads a real (tiny) MoE checkpoint
 // and compares residentNeedBytes against ResidentWeightBytes, ResidentWeightBytesPaged, ResidentHostCopyBytes and residentKVBytes
 // directly, with no real RAM needed. The assertions add the host-copy and KV terms back in, computed independently through the public
-// accessors, so the test catches a regression in the paging wiring specifically without a rewrite each time another additive term
-// appears.
+// accessors, and at a paged request the experts' slot indices as arithmetic on the top k, so the test catches a regression in the
+// paging wiring specifically without a rewrite each time another additive term appears.
 func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 	// testdata/gemma4-moe-tiny is gitignored (a real, if small, checkpoint) — never present in CI,
 	// so skip rather than fail when it's absent, matching decoder's own convention for this fixture.
@@ -267,8 +267,8 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 
 	// The slot request is a per-model knob, read at Load (docs/tasks/task-env-config-2026-09.md, phase 4), so
 	// each arm prices its own model loaded with that request, not one model with the environment changed under it.
-	// needWith is the guard's figure at a slot request, less the decode scratch it charges beside the weights, host copy and KV (at that
-	// request, which decides whether the routed experts page: their index table is scratch).
+	// needWith is the guard's figure at a slot request less decode's scratch with every expert resident, which the request does not
+	// move: the weights, host copy and KV at that request, and the paged experts' slot indices where it pages.
 	needWith := func(t *testing.T, slots string) int64 {
 		t.Helper()
 		mk, err := decoder.Load(ckpt, decoder.Options{Quant: "f32", Knobs: &decoder.Knobs{"GOINFER_METAL_MOE_SLOTS": slots}})
@@ -276,8 +276,9 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 			t.Fatalf("Load (slots %q): %v", slots, err)
 		}
 		defer mk.Close()
-		return residentNeedBytes(mk) - mk.MetalDecodeScratchBytes()
+		return residentNeedBytes(mk) - mk.MetalDecodeScratchBytes(0)
 	}
+	index := int64(4 * moeTopK(m)) // the paged experts' slot indices, 4 bytes for each of the top k
 
 	t.Run("unset env == unpaged", func(t *testing.T) {
 		want := unpaged + m.ResidentHostCopyBytes(0) + kv
@@ -291,9 +292,9 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 		if wantWeights >= unpaged {
 			t.Fatalf("test fixture has too few experts to make this case meaningful (paged(1)=%d, unpaged=%d)", wantWeights, unpaged)
 		}
-		want := wantWeights + m.ResidentHostCopyBytes(1) + kv
+		want := wantWeights + m.ResidentHostCopyBytes(1) + kv + index
 		if got := needWith(t, "1"); got != want {
-			t.Errorf("residentNeedBytes() with GOINFER_METAL_MOE_SLOTS=1 = %d, want %d (paged weights+hostcopy+kv) — "+
+			t.Errorf("residentNeedBytes() with GOINFER_METAL_MOE_SLOTS=1 = %d, want %d (paged weights+hostcopy+kv+slot indices) — "+
 				"the guard is not asking for the paged estimate", got, want)
 		}
 		// The host-copy addend must itself shrink under paging: paged experts stream, so ResidentHostCopyBytes(1) must be strictly smaller

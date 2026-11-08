@@ -525,10 +525,10 @@ func (r *residentForwardOnly) ForwardN(embeddings [][]float32, startPos int) ([]
 func (r *residentForwardOnly) UploadKV(layer, base int, keys, vals []float32) error {
 	return r.fakeResident.UploadKV(layer, base, keys, vals)
 }
-func (r *residentForwardOnly) TruncateTo(pos int) { r.fakeResident.TruncateTo(pos) }
-func (r *residentForwardOnly) Reset()             { r.fakeResident.Reset() }
-func (r *residentForwardOnly) Close() error       { return r.fakeResident.Close() }
-func (r *residentForwardOnly) ContextCap() int    { return r.fakeResident.ContextCap() }
+func (r *residentForwardOnly) TruncateTo(pos int)         { r.fakeResident.TruncateTo(pos) }
+func (r *residentForwardOnly) Reset()                     { r.fakeResident.Reset() }
+func (r *residentForwardOnly) Close() error               { return r.fakeResident.Close() }
+func (r *residentForwardOnly) ResidentCaps() ResidentCaps { return r.fakeResident.ResidentCaps() }
 
 // checkResidentCapPublishesBudgetClamped: capPos leaves a prompt of promptLen room for exactly 2 decode tokens and generate asks for
 // more, so the turn must publish the clamp and stream no more than it published.

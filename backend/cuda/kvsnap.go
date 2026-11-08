@@ -44,17 +44,20 @@ type cudaKVSnapshot struct {
 	bytes  int64
 	// the geometry the rows were laid out for: a restore into another one is refused
 	ctxCap, window, slack int
-	win, half             bool
+	win, half, i8         bool
 	once                  sync.Once
 }
 
-// snapLayer is where one layer's K and V rows sit in the host buffer, in float32 words (a layer that holds f16 is copied as raw words).
+// snapLayer is where one layer's K and V rows sit in the host buffer, in float32 words (a layer that holds f16 or int8 is copied as raw
+// words), and on an int8 layer its K and V scale rows, scaleWords (one per KV head) a position.
 type snapLayer struct {
-	held       bool // false for a layer that aliases another's KV
-	win        bool
-	kOff, vOff int
-	hasV       bool
-	rowWords   int // words a position takes
+	held         bool // false for a layer that aliases another's KV
+	win          bool
+	kOff, vOff   int
+	hasV         bool
+	rowWords     int // words a position takes
+	ksOff, vsOff int
+	scaleWords   int // 0 on a layer that holds no int8
 }
 
 // snapDelta is where one DeltaNet layer's conv ring and recurrent state sit in the host buffer, in float32 words.
@@ -75,7 +78,7 @@ func (s *cudaKVSnapshot) Serves(end int) bool {
 	if len(s.dn) > 0 && end != s.rows {
 		return false // the state is the one after the last row
 	}
-	if s.ctxCap != r.ctxCap || s.win != r.kvWin || s.window != r.kvWindow || s.slack != r.kvSlack {
+	if s.ctxCap != r.ctxCap || s.win != r.kvWin || s.window != r.kvWindow || s.slack != r.kvSlack || s.half != r.kvF16 || s.i8 != r.kvI8 {
 		return false
 	}
 	return !s.win || end-(s.window-1) >= s.lo
@@ -135,11 +138,7 @@ func (r *cudaResident) snapshotLayout(end, lo int) ([]snapLayer, int) {
 		if Ly.kvShared || Ly.noKV() {
 			continue // an alias holds its source's rows; a recurrent or feed-forward-only layer has no K/V (snapshotDeltaLayout holds a DeltaNet layer's state)
 		}
-		elem := 4
-		if Ly.kvHalf {
-			elem = 2
-		}
-		sl := snapLayer{held: true, win: Ly.kvWin, rowWords: Ly.kvDim * elem / 4, hasV: r.vc[l].Len() != 0}
+		sl := snapLayer{held: true, win: Ly.kvWin, rowWords: Ly.kvDim * r.kvElem(l) / 4, hasV: r.vc[l].Len() != 0}
 		rows := end
 		if Ly.kvWin {
 			rows = end - lo
@@ -149,6 +148,15 @@ func (r *cudaResident) snapshotLayout(end, lo int) ([]snapLayer, int) {
 		if sl.hasV {
 			sl.vOff = words
 			words += rows * sl.rowWords
+		}
+		if Ly.kvI8 {
+			sl.scaleWords = Ly.nKV
+			sl.ksOff = words
+			words += rows * sl.scaleWords
+			if sl.hasV { // V's scales only beside a V
+				sl.vsOff = words
+				words += rows * sl.scaleWords
+			}
 		}
 		out[l] = sl
 	}
@@ -223,7 +231,7 @@ func (r *cudaResident) snapshotKV(slot, end int) (*cudaKVSnapshot, error) {
 		return nil, &decoder.KVCopyDecline{Reason: fmt.Sprintf("no pinned host memory for %d MiB: %v", int64(words)*4>>20, err)}
 	}
 	s := &cudaKVSnapshot{r: r, rows: end, lo: lo, host: host, layers: layers, dn: dn, bytes: int64(words) * 4,
-		ctxCap: r.ctxCap, window: r.kvWindow, slack: r.kvSlack, win: r.kvWin, half: r.kvF16}
+		ctxCap: r.ctxCap, window: r.kvWindow, slack: r.kvSlack, win: r.kvWin, half: r.kvF16, i8: r.kvI8}
 	buf := host.Slice()
 	for l := range r.layers {
 		sl := layers[l]
@@ -238,6 +246,17 @@ func (r *cudaResident) snapshotKV(slot, end int) (*cudaKVSnapshot, error) {
 			h, words := (p-from)*sl.rowWords, n*sl.rowWords
 			if err := gpu.Download(r.kc[l].At(row*sl.rowWords*4), buf[sl.kOff+h:sl.kOff+h+words]); err != nil {
 				return err
+			}
+			if sl.scaleWords > 0 {
+				hs, sw := (p-from)*sl.scaleWords, n*sl.scaleWords
+				if err := gpu.Download(r.ksc[l].At(row*sl.scaleWords*4), buf[sl.ksOff+hs:sl.ksOff+hs+sw]); err != nil {
+					return err
+				}
+				if sl.hasV {
+					if err := gpu.Download(r.vsc[l].At(row*sl.scaleWords*4), buf[sl.vsOff+hs:sl.vsOff+hs+sw]); err != nil {
+						return err
+					}
+				}
 			}
 			if !sl.hasV {
 				return nil
@@ -346,6 +365,17 @@ func (r *cudaResident) restoreKVRows(s *cudaKVSnapshot, slot, from, end int) (ma
 			h, words := (p-first)*sl.rowWords, n*sl.rowWords
 			if err := gpu.Upload(r.kc[l].At(row*sl.rowWords*4), buf[sl.kOff+h:sl.kOff+h+words]); err != nil {
 				return err
+			}
+			if sl.scaleWords > 0 {
+				hs, sw := (p-first)*sl.scaleWords, n*sl.scaleWords
+				if err := gpu.Upload(r.ksc[l].At(row*sl.scaleWords*4), buf[sl.ksOff+hs:sl.ksOff+hs+sw]); err != nil {
+					return err
+				}
+				if sl.hasV {
+					if err := gpu.Upload(r.vsc[l].At(row*sl.scaleWords*4), buf[sl.vsOff+hs:sl.vsOff+hs+sw]); err != nil {
+						return err
+					}
+				}
 			}
 			if !sl.hasV {
 				return nil

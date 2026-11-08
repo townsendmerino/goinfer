@@ -1,0 +1,18 @@
+=== RUN   TestKV7_restoreFull
+=== RUN   TestKV7_restoreFull/i8
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+    kvsnap_test.go:114: slot 0 layer 0 K: rows [0, 256) are not the computed ones
+    kvsnap_test.go:114: slot 0 layer 0 V: rows [0, 256) are not the computed ones
+    kvsnap_test.go:114: slot 0 layer 1 K: rows [0, 256) are not the computed ones
+    kvsnap_test.go:114: slot 0 layer 1 V: rows [0, 256) are not the computed ones
+    kvsnap_test.go:114: slot 0: step 0 (position 256): logits differ from the computed prefix's (first at 0)
+--- FAIL: TestKV7_restoreFull (2.05s)
+    --- FAIL: TestKV7_restoreFull/i8 (1.94s)
+FAIL
+ledger: 5 device(s) released in this run

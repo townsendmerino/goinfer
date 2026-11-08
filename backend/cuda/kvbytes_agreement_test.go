@@ -21,8 +21,8 @@ import (
 //     gemma3-1b: CUDA gives local layers the FULL context — the window is a mask, not a ring buffer),
 //     per-layer geometry (gemma4-dense-twogeom, gemma4-moe), a DeltaNet hybrid (qwen35-tiny: no cache on
 //     linear layers), and MLA (deepseek-tiny: ONE latent buffer per layer, not K and V);
-//   - at every KV precision a caller can request — CUDA allocates f32 regardless, so the figure must not
-//     move with kvF16 / kvI8.
+//   - at every KV precision a caller can request: int8 asked prices the int8 pools where the CUDA int8 kernels cover the family (the dense
+//     ones), whatever the load itself holds, and f32 where they do not.
 //
 // Without the "cuda" branch Plan's per-position formula prices MLA at twice the allocation and a
 // requested f16 / i8 at a fraction of it (docs/measurements/memory-accounting-cuda-2026-09-25.md):
@@ -35,6 +35,7 @@ import (
 // a one-slot load's figure, kvBytesForCap plus the null blocks. The DeltaNet hybrid must build one slot (recurrent state
 // is not part of a slot); every other layout, 2.
 func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
+	requireCUDADevice(t) // a host with no CUDA driver or device skips once, here; on a GPU host every priced fixture must build
 	home, _ := os.UserHomeDir()
 	fixtures := []string{
 		"../../testdata/llama-tiny", "../../testdata/phi3-tiny", "../../testdata/mistral-tiny-window",
@@ -50,13 +51,17 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 			if _, err := os.Stat(p); err != nil {
 				t.Skipf("no fixture at %s", p)
 			}
-			m, err := decoder.Load(p, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2})
+			// Phi-3 builds a resident only at int8int8 with per-32 activation scales (kv16Quant, kv16ActGroup), as the served bench loads it.
+			m, err := decoder.Load(p, decoder.Options{Backend: "cuda", Quant: kv16Quant(p), ActQuantGroup: kv16ActGroup(p), ResidentKVSlots: 2})
 			if err != nil {
 				t.Skipf("load: %v", err)
 			}
 			defer m.Close()
 			r, ok := m.ResidentForwardForTest().(*cudaResident)
 			if !ok || r == nil {
+				if kv8PricedFixtures[filepath.Base(p)] { // a fixture this test claims to price at int8 must run, not skip
+					t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
+				}
 				t.Skipf("not CUDA-resident: %s", m.ResidentDecline())
 			}
 			ran++
@@ -94,7 +99,7 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 			}
 			// What the pricing says against what was allocated: ResidentKVBytes is a one-slot load, kvBytesForCap and the null blocks. The resident's own
 			// precision prices exactly its allocation. Asking for the other one prices the other; f16 on a model the f16 kernels do not cover is still f32 on
-			// the device. int8 is not a CUDA cache.
+			// the device; int8 likewise, its pools where the kernels cover the family (TestKV8_deliveredBytes holds that figure against an int8 build).
 			asF32 := slices.Clone(r.layers)
 			for i := range asF32 {
 				asF32[i].kvHalf = false
@@ -103,20 +108,33 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 			for i := range asF16 {
 				asF16[i].kvHalf = !asF16[i].noKV() && !asF16[i].kvShared
 			}
+			asI8 := slices.Clone(asF32)
+			for i := range asI8 {
+				asI8[i].kvI8 = !asI8[i].noKV() && !asI8[i].kvShared && !asI8[i].isMLA()
+			}
 			one := forCap + null
 			f32Bytes := kvBytesForCap(r.kvShareCtx, asF32) + kvPoolNullBytes(asF32)
+			i8Bytes := kvBytesForCap(r.kvShareCtx, asI8) + kvPoolNullBytes(asI8)
 			f16Bytes := kvBytesForCap(r.kvShareCtx, asF16) + kvPoolNullBytes(asF16)
+			// The one figure each request implies for this fixture. Written out here, not read from the policy, so a policy that mis-covers a family
+			// shows: every family below has f16 kernels; the int8 kernels cover the dense ones without a sliding window (llama-tiny, phi3-tiny, the
+			// 0.5B), and every other fixture asked for int8 is built, and priced, at f32.
+			wantI8 := f32Bytes
+			if kv8PricedFixtures[filepath.Base(p)] {
+				wantI8 = i8Bytes
+			}
+			if r.kvF16 && one != f16Bytes || !r.kvF16 && one != f32Bytes {
+				t.Errorf("the resident (kvF16=%v) allocates %d B a one-slot load; its precision's figure is f32 %d / f16 %d B", r.kvF16, one, f32Bytes, f16Bytes)
+			}
 			for _, c := range []struct {
 				name     string
 				f16, i8b bool
-				want     []int64
-			}{{"f32", false, false, []int64{f32Bytes}}, {"f16 requested", true, false, []int64{one, f16Bytes, f32Bytes}}, {"i8 requested", false, true, []int64{f32Bytes}}} {
+				want     int64
+			}{{"f32", false, false, f32Bytes}, {"f16 requested", true, false, f16Bytes}, {"i8 requested", false, true, wantI8}} {
 				got := m.ResidentKVBytes("cuda", r.kvShareCtx, c.f16, c.i8b)
-				if !slices.Contains(c.want, got) {
-					t.Errorf("%s: ResidentKVBytes(\"cuda\", %d) = %d B, want one of %v B (resident kvF16=%v, allocates %d B a slot)", c.name, r.ctxCap, got, c.want, r.kvF16, forCap)
-				}
-				if r.kvF16 && c.f16 && got != one {
-					t.Errorf("an f16 resident prices %d B a one-slot load and ResidentKVBytes(f16) says %d B", one, got)
+				if got != c.want {
+					t.Errorf("%s: ResidentKVBytes(\"cuda\", %d) = %d B, want %d B (f32 %d, f16 %d, i8 %d; resident kvF16=%v, allocates %d B a slot)",
+						c.name, r.kvShareCtx, got, c.want, f32Bytes, f16Bytes, i8Bytes, r.kvF16, forCap)
 				}
 			}
 		})
@@ -125,6 +143,10 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 		t.Skip("no fixture built a CUDA resident here")
 	}
 }
+
+// kv8PricedFixtures are the fixtures of TestResidentKVBytes_matchesCUDAAllocation whose family the CUDA int8 kernels cover (dense, no sliding
+// window): asked for int8, they price the int8 pools; every other fixture prices f32.
+var kv8PricedFixtures = map[string]bool{"llama-tiny": true, "phi3-tiny": true, "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf": true}
 
 // TestKVPool_detailNamesThePool is the CUDA half of KV4's §5.16 pool banner (docs/tasks/task-kv-architecture-2026-10.md): the pool's
 // detail (decoder.KVPoolDetail) names the groups its layers use, the context positions kvPoolLine names, what a window group keeps per
