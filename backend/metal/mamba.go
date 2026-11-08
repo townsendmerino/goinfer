@@ -118,20 +118,10 @@ func buildMambaLayer(d *Device, m *decoder.Model, l, hidden int, p *mambaParams)
 	return L, nil
 }
 
-// buildMambaScratch compiles the mixer's pipelines and allocates its per-token scratch and uniforms.
-func (r *resident) buildMambaScratch(d *Device, pipe func(string) Pipeline, eps float32) {
-	p := r.mamba
+// buildMambaPipes compiles the mixer's pipelines. Its per-token scratch and uniforms are in the decode list (decodeShape.buffers).
+func (r *resident) buildMambaPipes(pipe func(string) Pipeline) {
 	r.pMbConv, r.pMbSSM, r.pMbGNorm = pipe("mamba_conv"), pipe("mamba_ssm"), pipe("mamba_gnorm")
 	r.pMbConvSeq, r.pMbSSMSeq, r.pMbGNormRows = pipe("mamba_conv_seq"), pipe("mamba_ssm_seq"), pipe("mamba_gnorm_rows")
-	r.mbProj, r.mbConv = d.NewBufferLenOn(mem.LineScratch, p.projDim), d.NewBufferLenOn(mem.LineScratch, p.convDim)
-	r.mbY, r.mbGated = d.NewBufferLenOn(mem.LineScratch, p.dInner), d.NewBufferLenOn(mem.LineScratch, p.dInner)
-	r.mbGq, r.mbGSc = d.NewBufferBytesOn(mem.LineScratch, p.dInner), d.NewBufferLenOn(mem.LineScratch, 1)
-	u := func(v int) Buffer { return NewBufferU32On(mem.LineScratch, d, uint32(v)) }
-	r.uMbConvDim, r.uMbK, r.uMbDInner = u(p.convDim), u(p.dConv), u(p.dInner)
-	r.uMbNH, r.uMbHD, r.uMbDS, r.uMbRep, r.uMbGSize = u(p.nHeads), u(p.headDim), u(p.dState), u(p.repeat), u(p.gSize)
-	r.uMbDtBase, r.uMbGroupSize, r.uMbZero = u(p.dInner+p.convDim), u(p.dInner/p.normGroups), u(0)
-	r.uMbEps = NewBufferFloatsOn(mem.LineScratch, d, []float32{eps})
-	r.uMbNormGroups = u(p.normGroups)
 }
 
 // encodeMambaMixer runs one Mamba-2 layer's mixer and folds its output into the residual x: the norm, in_proj, the conv →

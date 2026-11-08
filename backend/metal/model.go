@@ -536,6 +536,7 @@ type resident struct {
 	kvEvictions               int
 	kvReclaimed               []int
 	kvUpload                  *kvUploadPass // the upload in progress between BeginKVUpload and EndKVUpload, nil when none
+	decode                    decodeShape   // what decode's scratch list was sized from (decodeShape.buffers)
 	// batch: MC3's batched decode step over those slots (batch.go); nil when this resident cannot batch. preciseMath
 	// is the build's fast-math choice, which the batched kernels must share to round like the kernels they reproduce.
 	batch       *batchState
@@ -738,7 +739,7 @@ func q4kLaneProjOn(line string, d *Device, kq *decoder.KQuantReader, wms ...*lin
 			rows += w.Rows()
 		}
 		w, s := q4kLaneBufOn(line, d, kq, kind, wms[i:j]...)
-		segs = append(segs, q4kSeg{kind: kind, w: w, s: s, uN: NewBufferU32On(mem.LineScratch, d, uint32(rows)), rows: rows, off: off})
+		segs = append(segs, q4kSeg{kind: kind, w: w, s: s, rows: rows, off: off}) // uN: the decode list's, once the layer holds the slice
 		off += rows
 		i = j
 	}
@@ -1372,8 +1373,6 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pLayerScale = pipe("layer_scale")
 	if P := m.Gemma4PLEDimResident(); P > 0 {
 		r.pPLEGeluMul, r.pleP = pipe("ple_gelu_mul"), P
-		r.pleIn, r.pleG, r.pleQ, r.pleSc = d.NewBufferLenOn(mem.LineScratch, nL*P), d.NewBufferLenOn(mem.LineScratch, P), byteBufOn(mem.LineScratch, d, P), d.NewBufferLenOn(mem.LineScratch, 1)
-		r.uPleP = NewBufferU32On(mem.LineScratch, d, uint32(P))
 	}
 	r.pRmsRows, r.pQvRows = pipe("mc3_rmsnorm_quant_rows"), pipe("mc3_quant_vec_rows")
 	r.pSwRows, r.pRope2Rows = pipe("mc3_swiglu_quant_rows"), pipe("mc3_rope2_rows")
@@ -1391,12 +1390,6 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// forwardLogits/ForwardEmbPipe) — see gumbel_sample.go. Always built, sized once for V.
 	r.pGumbel1, r.pGumbel2 = pipe("gumbel_stage1"), pipe("gumbel_stage2")
 	r.gumbelNB = gumbelBlocks(V)
-	r.gumbelBKey, r.gumbelBIdx = d.NewBufferLenOn(mem.LineScratch, r.gumbelNB), d.NewBufferLenOn(mem.LineScratch, r.gumbelNB)
-	r.gumbelOut = d.NewBufferLenOn(mem.LineScratch, 1)
-	r.uGumbelV, r.uGumbelNB = NewBufferU32On(mem.LineScratch, d, uint32(V)), NewBufferU32On(mem.LineScratch, d, uint32(r.gumbelNB))
-	r.uGumbelInvT = NewBufferFloatsOn(mem.LineScratch, d, []float32{1})
-	r.uGumbelK0, r.uGumbelK1 = NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 0)
-	r.uGumbelD0, r.uGumbelD1 = NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 0)
 	r.pQKNorm, r.pRmsF32 = pipe("qk_norm"), pipe("rmsnorm_f32")
 	r.qkNorm = shape.QKNorm
 	r.qkNormWhole = shape.QKNormWhole // G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3/Olmo Hybrid
@@ -1440,16 +1433,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	// Gated-MLP activation: ordinals ARE decoder.ActKind's iota (0=GELU-tanh, 1=SiLU), so this
 	// passes straight through to glu_act. Gemma is GeGLU; everything else admitted is SwiGLU.
-	r.uAct = NewBufferU32On(mem.LineScratch, d, uint32(m.GatedActResident()))
 	addOne := uint32(0)
 	if m.RMSAddOne() {
 		addOne = 1
 	}
-	r.uAddOne = NewBufferU32On(mem.LineScratch, d, addOne)
-	win := max(
-		// 0 = full causal; Mistral is all-local with this window
-		m.SlidingWindowResident(), 0)
-	r.uWindow = NewBufferU32On(mem.LineScratch, d, uint32(win))
+	win := max(m.SlidingWindowResident(), 0)              // 0 = full causal; Mistral is all-local with this window
 	if r.moe, err = buildMoE(d, m, pipe, H); err != nil { // nil for a dense (or gemma4-MoE) model; error ⇒ decline
 		return nil, err
 	}
@@ -1463,39 +1451,22 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return nil, err
 	}
 	if r.mamba != nil {
-		r.buildMambaScratch(d, pipe, m.NormEps())
+		r.buildMambaPipes(pipe)
 	}
 	if r.mla, err = buildMLA(m, r.nH, H); err != nil { // MLA; nil otherwise; error ⇒ decline
 		return nil, err
 	}
 	if r.mla != nil {
 		r.pMlaStore, r.pMlaHeadMV, r.pMlaQRope, r.pMlaAttn = pipe("mla_store"), pipe("mla_head_mv"), pipe("mla_qrope"), pipe("mla_attn")
-		r.mlaS = buildMLAScratch(d, m, r.mla)
+		r.mlaS = buildMLAScratch(d, m)
 	}
 	if r.dnet != nil {
-		dp := r.dnet
 		r.pDnConv, r.pDnGates = pipe("delta_conv"), pipe("delta_gates")
 		r.pDnNorm, r.pDnRule, r.pDnGNorm = pipe("delta_norm"), pipe("delta_rule"), pipe("delta_gnorm")
 		r.pDnQSplit, r.pDnAttnGate = pipe("delta_qsplit"), pipe("delta_attn_gate")
 		r.pDnConvSeq, r.pDnGatesRows, r.pDnNormRows = pipe("delta_conv_seq"), pipe("delta_gates_rows"), pipe("delta_norm_rows")
 		r.pDnRuleSeq, r.pDnGNormRows, r.pDnProjW8Rows = pipe("delta_rule_seq"), pipe("delta_gnorm_rows"), pipe("delta_proj_w8_rows")
 		r.pDnRuleSeqTG, r.pDnConvSeqReg = pipe("delta_rule_seq_tg"), pipe("delta_conv_seq_reg")
-		r.dnMixed, r.dnConvOut = d.NewBufferLenOn(mem.LineScratch, dp.convDim), d.NewBufferLenOn(mem.LineScratch, dp.convDim)
-		r.dnBt, r.dnAt = d.NewBufferLenOn(mem.LineScratch, dp.nv), d.NewBufferLenOn(mem.LineScratch, dp.nv)
-		r.dnHeadP = d.NewBufferLenOn(mem.LineScratch, dp.nv*2)
-		r.dnQn, r.dnKn = d.NewBufferLenOn(mem.LineScratch, dp.keyDim), d.NewBufferLenOn(mem.LineScratch, dp.keyDim)
-		r.dnCore, r.dnZOut, r.dnGated = d.NewBufferLenOn(mem.LineScratch, dp.valueDim), d.NewBufferLenOn(mem.LineScratch, dp.valueDim), d.NewBufferLenOn(mem.LineScratch, dp.valueDim)
-		r.dnGq, r.dnGSc = d.NewBufferBytesOn(mem.LineScratch, dp.valueDim), d.NewBufferLenOn(mem.LineScratch, 1)
-		r.uDnConvDim, r.uDnK = NewBufferU32On(mem.LineScratch, d, uint32(dp.convDim)), NewBufferU32On(mem.LineScratch, d, uint32(dp.convK))
-		r.uDnNv, r.uDnNk = NewBufferU32On(mem.LineScratch, d, uint32(dp.nv)), NewBufferU32On(mem.LineScratch, d, uint32(dp.nk))
-		r.uDnHk, r.uDnHv = NewBufferU32On(mem.LineScratch, d, uint32(dp.hk)), NewBufferU32On(mem.LineScratch, d, uint32(dp.hv))
-		r.uDnKeyDim, r.uDnQScale = NewBufferU32On(mem.LineScratch, d, uint32(dp.keyDim)), NewBufferFloatsOn(mem.LineScratch, d, []float32{dp.qScale})
-		r.uDnRep, r.uDnVBase = NewBufferU32On(mem.LineScratch, d, uint32(dp.rep)), NewBufferU32On(mem.LineScratch, d, uint32(2*dp.keyDim))
-		r.uDnValueDim = NewBufferU32On(mem.LineScratch, d, uint32(dp.valueDim))
-		r.uDnBetaScale = NewBufferFloatsOn(mem.LineScratch, d, []float32{dp.betaScale})
-		if dp.oNormEps != 0 { // else the model's epsilon, r.uEps itself, bound once that exists
-			r.uDnONormEps = NewBufferFloatsOn(mem.LineScratch, d, []float32{dp.oNormEps})
-		}
 	}
 	// Native int8 (docs/tasks/task-metal-int8-2026-10.md): a dense model whose body projections are all int8 runs
 	// them as W8A8 instead of re-quantizing them to int4. The int4-only paths cannot read those buffers, so they are
@@ -1595,11 +1566,6 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// constant, so layer 0's presence/absence decides it for every layer.
 	if r.layerNorm && len(w.Layers) > 0 {
 		r.layerNormBias = len(w.Layers[0].PreAttnNormBias) > 0
-	}
-	if r.layerNormBias {
-		r.uLNHasBias = NewBufferU32On(mem.LineScratch, d, 1)
-	} else {
-		r.uLNHasBias = NewBufferU32On(mem.LineScratch, d, 0)
 	}
 	alias := newWeightAlias(m) // on for a .giw-mapped model unless GOINFER_METAL_ALIAS=0 (S6)
 	if r.g4moe != nil {
@@ -1777,9 +1743,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			// when the rope dispatch itself runs) — every family needs a VALID buffer bound, gated by
 			// the flag, so non-gpt-oss gets a real but unused 1-element dummy, not a zero Buffer.
 			if r.attnSink {
-				L.attnSinks, L.uHasSink = NewBufferFloatsOn(mem.LineDense, d, lw.AttnSinks), NewBufferU32On(mem.LineScratch, d, 1)
+				L.attnSinks = NewBufferFloatsOn(mem.LineDense, d, lw.AttnSinks)
 			} else {
-				L.attnSinks, L.uHasSink = NewBufferFloatsOn(mem.LineDense, d, []float32{0}), NewBufferU32On(mem.LineScratch, d, 0)
+				L.attnSinks = NewBufferFloatsOn(mem.LineDense, d, []float32{0})
 			}
 		}
 		g4b, isG4MoE := decoder.Gemma4MoEResidentBundle{}, false
@@ -1922,7 +1888,6 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			if m.LayerIsLocalResident(l) {
 				lw2 = uint32(win)
 			}
-			L.uWindow = NewBufferU32On(mem.LineScratch, d, lw2)
 			L.window = lw2
 			if !L.qGate {
 				// combined qkv bias (zeros where absent) so the fused pSABias GEMV epilogue is
@@ -2203,14 +2168,6 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if maxNHhd == 0 { // no attention layer (an all-MLA model): the attention scratch below is never dispatched, but sized
 		maxNHhd, maxKvDim, maxHd = 4, 4, 4
 	}
-	r.x = d.NewBufferLenOn(mem.LineScratch, H)
-	r.aq, r.aSc = byteBufOn(mem.LineScratch, d, H), d.NewBufferLenOn(mem.LineScratch, 1)
-	if r.q4kLane { // the head's slot 0 holds the f32 final norm on this lane (gemv_w8f32_head)
-		r.aq = byteBufOn(mem.LineScratch, d, 4*H)
-	}
-	r.qkv = d.NewBufferLenOn(mem.LineScratch, maxNHhd+2*maxKvDim) // fused [q | k | v], sized to the widest layer
-	r.gu = d.NewBufferLenOn(mem.LineScratch, 2*guDim)             // fused [gate | up]
-	r.ctx, r.cq, r.cSc = d.NewBufferLenOn(mem.LineScratch, maxNHhd), byteBufOn(mem.LineScratch, d, maxNHhd), d.NewBufferLenOn(mem.LineScratch, 1)
 	// attnFAPartial is independent of context depth (nSplit is capped, not depth-proportional; see
 	// canUseAttnFA/attnFASplitFor), so it is sized once here, not per token. It is zero-size on a model this
 	// kernel can never engage for (no layer attnFAHeadDimOK admits): canUseAttnFA's hd guard then always declines,
@@ -2231,62 +2188,62 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			r.attnFABlkSplit = attnFABlkSplit
 		}
 	}
-	if maxAttnFAPartial > 0 {
-		r.attnFAPartialLen = maxAttnFAPartial
-		r.attnFAPartial = d.NewBufferLenOn(mem.LineScratch, r.attnFAPartialLen)
-		r.uAttnFAG, r.uAttnFANSplit = NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 0)
+	r.attnFAPartialLen = maxAttnFAPartial
+	r.decode = decodeShape{H: H, V: V, I: I, nH: nH, nHhd: maxNHhd, kvDim: maxKvDim, guDim: guDim, faPartial: maxAttnFAPartial,
+		q4k: r.q4kLane, attnScale: m.AttnScale(), normEps: m.NormEps(), act: uint32(m.GatedActResident()), addOne: addOne, window: uint32(win),
+		gumbelNB: r.gumbelNB, nL: nL, pleP: r.pleP, dnet: r.dnet, mamba: r.mamba, mla: r.mla}
+	if r.layerNormBias {
+		r.decode.lnHasBias = 1
 	}
-	r.oO, r.mq, r.mSc = d.NewBufferLenOn(mem.LineScratch, H), byteBufOn(mem.LineScratch, d, H), d.NewBufferLenOn(mem.LineScratch, 1)
-	// R1 W4F16 lane: half-typed twins of aq/mq/cq (2 bytes/elem, no separate scale buffer — the
-	// f16 activation values are already the true values). Always allocated ("one binary carries
-	// both arms"); only used when decodeLaneW4F16 dispatches into them.
-	r.axF16, r.mxF16, r.cxF16 = byteBufOn(mem.LineScratch, d, 2*H), byteBufOn(mem.LineScratch, d, 2*H), byteBufOn(mem.LineScratch, d, 2*maxNHhd)
-	if r.q4kLane {
-		r.axF32, r.swF32 = d.NewBufferLenOn(mem.LineScratch, H), d.NewBufferLenOn(mem.LineScratch, guDim)
+	if r.qkNormWhole {
+		r.decode.qkWholeHD = nH * m.HeadDimAtResident(0) // one model-level width: the build declines a non-uniform geometry for it
 	}
-	r.dq, r.dSc, r.dO = byteBufOn(mem.LineScratch, d, guDim), d.NewBufferLenOn(mem.LineScratch, 1), d.NewBufferLenOn(mem.LineScratch, H)
-	r.logits = d.NewBufferLenOn(mem.LineScratch, V)
-	// Ceil, not floor: ForwardArgmax dispatches V*32 threads = ceil(V/8) threadgroups and the amax kernel writes
-	// part[tgid] unconditionally, so a floor V/8 would under-size r.part (an 8-byte write past it, on UMA into an
-	// adjacent buffer) and leave the last tile out of uP's reduce, so the greedy token could differ from
-	// argmax(Forward).
-	nTiles := (V + 7) / 8 // one (maxLogit,rowIdx) partial per threadgroup (8 rows)
-	r.part, r.tok, r.uP = d.NewBufferLenOn(mem.LineScratch, nTiles*2), d.NewBufferLenOn(mem.LineScratch, 1), NewBufferU32On(mem.LineScratch, d, uint32(nTiles))
+	if r.attnSink {
+		r.decode.attnSink = 1
+	}
+	r.decode.layers = make([]decodeLayer, len(r.layers))
+	seen := map[*attnGeom]bool{}
+	for l := range r.layers {
+		L := &r.layers[l]
+		if L.ffnI == 0 || L.ffnI == I || g4OneFFNWidthForTest { // the seam: G2 defect (4)
+			L.ffnI = I
+		} else {
+			r.decode.layers[l].ffnI = L.ffnI
+		}
+		if g := L.geom; g != nil {
+			r.decode.layers[l].attn, r.decode.layers[l].window = true, L.window
+			if !seen[g] {
+				seen[g] = true
+				r.decode.geoms = append(r.decode.geoms, g)
+			}
+		}
+	}
+	if r.moe != nil {
+		r.decode.families = append(r.decode.families, r.moe.scratch...)
+	}
+	if r.g4moe != nil {
+		r.decode.families = append(r.decode.families, r.g4moe.scratch...)
+	}
+	for _, sb := range r.decode.buffers(r) {
+		sb.set(sb.alloc(d))
+	}
+	for l := range r.layers {
+		if r.decode.layers[l].ffnI == 0 {
+			r.layers[l].uFFNI = r.uI
+		}
+	}
 	// Model-level rope table for the (uniform-only) prefill path; decode uses each layer's L.invf.
 	// GPT-2 (FeatLearnedPos): no RoPE at all, so this is empty — NewBufferFloats panics on empty;
 	// r.invf stays unused (prefillOK is false for a learned-pos family — see prefillFeatures).
 	if invf0 := m.RopeInvFreq(); len(invf0) > 0 {
 		r.invf = NewBufferFloatsOn(mem.LineDense, d, invf0)
 	}
-	r.uH, r.uI = NewBufferU32On(mem.LineScratch, d, uint32(H)), NewBufferU32On(mem.LineScratch, d, uint32(I))
-	for l := range r.layers {
-		L := &r.layers[l]
-		if L.ffnI == 0 || L.ffnI == I || g4OneFFNWidthForTest { // the seam: G2 defect (4)
-			L.ffnI, L.uFFNI = I, r.uI
-		} else {
-			L.uFFNI = NewBufferU32On(mem.LineScratch, d, uint32(L.ffnI))
-		}
-	}
-	r.uNH = NewBufferU32On(mem.LineScratch, d, uint32(nH)) // query heads: constant across a family, so model-level
-	r.uScale, r.uEps = NewBufferFloatsOn(mem.LineScratch, d, []float32{m.AttnScale()}), NewBufferFloatsOn(mem.LineScratch, d, []float32{m.NormEps()})
 	if r.dnet != nil && r.uDnONormEps == (Buffer{}) {
 		r.uDnONormEps = r.uEps
 	}
-	r.uPos, r.uNKeys, r.uRopePos = NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 1), NewBufferU32On(mem.LineScratch, d, 0)
 	r.attnTempBeta, r.attnTempOrigMaxPos = m.AttnTempParams()
-	r.uQTempScale = NewBufferFloatsOn(mem.LineScratch, d, []float32{1}) // identity; overwritten per call alongside uPos
-	if r.qkNormWhole {
-		// Olmo 3/Olmo Hybrid (G5): encodeAttention's whole-vector qk_norm dispatch needs a
-		// "one reduction group" nH/nKV and the FULL width nH*hd instead of the per-head hd —
-		// both MHA-uniform-geometry-only (BuildResident already declines otherwise above), so
-		// one pair of model-level buffers suffices; no per-layer variant needed.
-		r.uQKWholeOne = NewBufferU32On(mem.LineScratch, d, 1)
-		r.uQKWholeHD = NewBufferU32On(mem.LineScratch, d, uint32(nH*m.HeadDimAtResident(0)))
-	}
-	// Scale-less v_norm plumbing for K=V layers (Gemma 4 globals): a unit-1.0 weight and a shared
-	// zero (nH=0 / nHhd=0 / addOne=0) so qk_norm reduces to x·rms·1 on the V slot. Sized to the
-	// widest head; harmless (a few KB) for models with no K=V layer.
-	r.uZero = NewBufferU32On(mem.LineScratch, d, 0)
+	// Scale-less v_norm plumbing for K=V layers (Gemma 4 globals): a unit-1.0 weight and the shared zero uniform (uZero, in the
+	// decode list) so qk_norm reduces to x·rms·1 on the V slot. Sized to the widest head.
 	ones := make([]float32, maxHd)
 	for i := range ones {
 		ones[i] = 1
@@ -2295,14 +2252,6 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// HF and the CPU apply Gemma 4's scale-less v_norm on EVERY layer that owns its K/V, not only on K=V layers
 	// (S1.0); a K=V layer's V slot holds the raw k_proj output, any other's the v_proj output, and both take it.
 	r.g4VNorm = m.IsGemma4Resident()
-	if r.dnet != nil {
-		// qGate scratch (Gated-DeltaNet family's softmax layers): sized to the widest layer's
-		// qDim, same maxNHhd every other per-token scratch buffer uses — this family's softmax
-		// layers are uniform, so in practice one size, but sizing from the max stays consistent
-		// with how every other per-token buffer in this build is sized.
-		r.dnQg = d.NewBufferLenOn(mem.LineScratch, 2*maxNHhd)
-		r.dnAGate = d.NewBufferLenOn(mem.LineScratch, maxNHhd)
-	}
 	r.finalSoftcap = m.FinalLogitSoftcapResident() // Gemma 4: 30 (host-side softcap); 0 for every other family
 	r.embedScale = float32(m.EmbedScaleResident()) // Gemma: √hidden; 0 for every non-scaled family (G-02)
 	r.logitsHost = make([]float32, V)
@@ -2427,7 +2376,8 @@ func (r *resident) addLearnedPos(pos int) {
 	r.addLearnedPosTo(r.x.Floats(), pos)
 }
 
-// ensureBatchCap ensures r.batchX, r.batchLogits, and per-token uniform buffers have capacity for at least n tokens.
+// ensureBatchCap ensures r.batchX, r.batchLogits, and per-token uniform buffers have capacity for at least n tokens. A growth gives
+// the rows it replaces back; the caller has stopped the executor, so nothing still reads them.
 func (r *resident) ensureBatchCap(n int) {
 	if n <= r.batchCap {
 		return
@@ -2436,12 +2386,17 @@ func (r *resident) ensureBatchCap(n int) {
 	for c < n {
 		c *= 2
 	}
-	r.batchX = r.d.NewBufferLenOn(mem.LineScratch, c*r.H)
-	r.batchLogits = r.d.NewBufferLenOn(mem.LineScratch, c*r.V)
-	for i := len(r.batchUPos); i < c; i++ {
-		r.batchUPos = append(r.batchUPos, NewBufferU32On(mem.LineScratch, r.d, 0))
-		r.batchUNKeys = append(r.batchUNKeys, NewBufferU32On(mem.LineScratch, r.d, 1))
-		r.batchUQTempScale = append(r.batchUQTempScale, NewBufferFloatsOn(mem.LineScratch, r.d, []float32{1}))
+	for _, b := range []Buffer{r.batchX, r.batchLogits} {
+		if b != (Buffer{}) {
+			r.d.ReleaseBuf(b)
+		}
+	}
+	held := len(r.batchUPos)
+	r.batchUPos = append(r.batchUPos, make([]Buffer, c-held)...)
+	r.batchUNKeys = append(r.batchUNKeys, make([]Buffer, c-held)...)
+	r.batchUQTempScale = append(r.batchUQTempScale, make([]Buffer, c-held)...)
+	for _, sb := range r.batchRows(c, held) {
+		sb.set(sb.alloc(r.d))
 	}
 	r.batchCap = c
 }

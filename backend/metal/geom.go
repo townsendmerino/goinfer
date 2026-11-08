@@ -2,8 +2,6 @@
 
 package metal
 
-import "github.com/townsendmerino/goinfer/internal/runtime/mem"
-
 // attnGeom is one distinct per-layer attention geometry, shared by every layer that has it. Gemma 4's own-forward residency
 // interleaves two attention shapes in one model (local: head_dim 256, kv_heads 8, full rotary; global: head_dim 512,
 // kv_heads 2, partial rotary, K=V), so geometry cannot live model-level on *resident: it has no hd/nKV fields, so reading
@@ -26,26 +24,15 @@ type attnGeom struct {
 	uHd, uKvDim, uNKV, uNHhd, uHalf, uQtotal, uKtotal Buffer
 }
 
-// geomFor returns the attnGeom for {hd, nKV, half, kEqV}, allocating its uniform buffers once and
-// caching by value so repeated (uniform) geometries share a single object. r.nH must be set before
-// the first call (BuildResident sets it on the struct literal). The cache is caller-owned (a local
-// in BuildResident) — the geom's buffers are on the device ledger and freed by Close like any other.
+// geomFor returns the attnGeom for {hd, nKV, half, kEqV}, cached by value so repeated (uniform) geometries share a single
+// object. The cache is caller-owned (a local in BuildResident). Its uniforms are decode's scratch: the decode list allocates them
+// once for each distinct geometry (decodeShape.buffers).
 func (r *resident) geomFor(cache map[[4]int]*attnGeom, hd, nKV, half int, kEqV bool) *attnGeom {
 	key := [4]int{hd, nKV, half, b2i(kEqV)}
 	if g := cache[key]; g != nil {
 		return g
 	}
-	d := r.d
-	g := &attnGeom{
-		hd: hd, nKV: nKV, kvDim: nKV * hd, half: half, kEqV: kEqV,
-		uHd:     NewBufferU32On(mem.LineScratch, d, uint32(hd)),
-		uKvDim:  NewBufferU32On(mem.LineScratch, d, uint32(nKV*hd)),
-		uNKV:    NewBufferU32On(mem.LineScratch, d, uint32(nKV)),
-		uNHhd:   NewBufferU32On(mem.LineScratch, d, uint32(r.nH*hd)),
-		uHalf:   NewBufferU32On(mem.LineScratch, d, uint32(half)),
-		uQtotal: NewBufferU32On(mem.LineScratch, d, uint32(r.nH*half)),
-		uKtotal: NewBufferU32On(mem.LineScratch, d, uint32(nKV*half)),
-	}
+	g := &attnGeom{hd: hd, nKV: nKV, kvDim: nKV * hd, half: half, kEqV: kEqV}
 	cache[key] = g
 	return g
 }
