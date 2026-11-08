@@ -71,30 +71,37 @@ func (m *Model) MetalKVSlotsWanted() int {
 type MetalLoad struct {
 	Plan    Plan     // NeedBytes covers every slot kept
 	KVSlots int      // the KV slots the build keeps: as many of MetalKVSlotsWanted as fit beside the first
+	Further int64    // what the slots after the first add (KV and recurrent state), with the raised block tables of every slot asked
 	Fit     MetalFit // MetalFitCtx's answer for an unpinned context; the zero value for a pinned one
 }
 
-// MetalLoadPlan is what a Metal load of m costs on free bytes. An unpinned context is MetalFitCtx's. The KV is every slot the build
-// keeps: the largest count up to MetalKVSlotsWanted whose further slots fit beside the first, as the build's own slot guard counts them.
-// Plan prices one slot, so the rest are ExtraBytes at MetalKVBytes, as fit.PlanRequest.KVSlots' contract asks of a multi-slot caller.
+// MetalLoadPlan is what a Metal load of m costs on free bytes, priced as the build's guard prices it (backend/metal's
+// resolveMetalCtxCap and metalKVSlots). An unpinned context is MetalFitCtx's; a pinned one past the model's window is the window.
+// The guard's fixed need adds the raised block tables of every slot asked, and each slot kept after the first costs its KV at the
+// context and its recurrent state; the build keeps the most slots, up to MetalKVSlotsWanted, that fit. Plan prices one slot, so
+// the rest are ExtraBytes, as fit.PlanRequest.KVSlots' contract asks of a multi-slot caller.
 func (m *Model) MetalLoadPlan(free int64, req PlanRequest) MetalLoad {
 	want := m.MetalKVSlotsWanted()
 	var f MetalFit
 	if !req.CtxPinned {
 		f = m.MetalFitCtx(MetalFitInput{FreeBytes: free, FreeKnown: true, KVSlots: want, PagedMoE: req.Slots > 0})
 		req.Ctx, req.CtxPinned = f.Ctx, true
+	} else if w := m.Config().MaxPositions; w > 0 && req.Ctx > w {
+		req.Ctx = w
 	}
 	p := m.Plan("metal", free, req)
-	further := func(n int) int64 {
-		return m.MetalKVBytes(n, p.Ctx) - m.ResidentKVBytes("metal", p.Ctx, req.KVF16, req.KVI8)
+	if p.Placement == PlacementDecline {
+		return MetalLoad{Plan: p, KVSlots: 1, Fit: f}
 	}
+	raise, perSlot := m.MetalKVTableRaiseBytes(want, p.Ctx), m.MetalKVSlotBytes(p.Ctx)+p.StateBytes
 	n := want
-	for n > 1 && (p.Placement == PlacementDecline || p.NeedBytes()+further(n) > free) {
+	for n > 1 && p.NeedBytes()+raise+int64(n-1)*perSlot > free {
 		n--
 	}
-	if n > 1 {
-		req.ExtraBytes += further(n)
+	further := raise + int64(n-1)*perSlot
+	if further > 0 {
+		req.ExtraBytes += further
 		p = m.Plan("metal", free, req)
 	}
-	return MetalLoad{Plan: p, KVSlots: n, Fit: f}
+	return MetalLoad{Plan: p, KVSlots: n, Further: further, Fit: f}
 }

@@ -268,12 +268,16 @@ func planFor(m *decoder.Model, backend string, free int64, req fit.PlanRequest) 
 	}
 	l := m.MetalLoadPlan(free, req)
 	p := l.Plan
-	if want := m.MetalKVSlotsWanted(); want > 1 && p.Placement != fit.PlacementDecline {
-		further := m.MetalKVBytes(l.KVSlots, p.Ctx) - m.ResidentKVBytes("metal", p.Ctx, req.KVF16, req.KVI8)
+	want := m.MetalKVSlotsWanted()
+	if want > 1 && p.Placement != fit.PlacementDecline {
 		p.Reason += fmt.Sprintf(" — a default load keeps %d of the %d KV slots it asks for (KV %.2f GB in all)", l.KVSlots, want,
-			float64(p.KVBytes+further)/(1<<30))
+			float64(p.KVBytes+l.Further)/(1<<30))
 	}
-	if !req.CtxPinned {
+	switch {
+	case req.CtxPinned:
+	case l.KVSlots < want: // the context is the floor, and MetalFitCtx's reason speaks of every slot asked
+		p.Reason += fmt.Sprintf(" — an unpinned load takes %d positions (the default)", l.Fit.Ctx)
+	default:
 		p.Reason += fmt.Sprintf(" — an unpinned load takes %d positions (%s)", l.Fit.Ctx, l.Fit.Why)
 	}
 	return p

@@ -423,6 +423,15 @@ func TestPlanFor_metalPricesEverySlotTheBuildKeeps(t *testing.T) {
 		t.Fatalf("the budget for both slots at the floor gives ctx %d, want %d", c, decoder.MetalCtxDefault)
 	}
 	check("the default context", wide, atFloor, fit.PlanRequest{Ctx: defaultCtx}, decoder.MetalCtxDefault, 2)
+	// Room for one slot only, unpinned: the context is the floor, and the reason says one slot is kept without MetalFitCtx's
+	// account of the two asked.
+	oneAtFloor := wide.Plan("metal", 1<<40, fit.PlanRequest{Ctx: decoder.MetalCtxDefault, CtxPinned: true}).NeedBytes() +
+		wide.MetalKVTableRaiseBytes(2, decoder.MetalCtxDefault) + wide.MetalKVSlotBytes(decoder.MetalCtxDefault) - 1
+	if p := planFor(wide, "metal", oneAtFloor, fit.PlanRequest{Ctx: defaultCtx}); !strings.Contains(p.Reason, "keeps 1 of the 2 KV slots") ||
+		!strings.Contains(p.Reason, fmt.Sprintf("an unpinned load takes %d positions (the default)", decoder.MetalCtxDefault)) ||
+		strings.Contains(p.Reason, "2 KV slots leave") {
+		t.Errorf("one slot of two at the floor, unpinned: %q", p.Reason)
+	}
 
 	rec := load("../../../testdata/qwen35-tiny")
 	recNeed := rec.Plan("metal", 1<<40, fit.PlanRequest{Ctx: 64, CtxPinned: true}).NeedBytes()
