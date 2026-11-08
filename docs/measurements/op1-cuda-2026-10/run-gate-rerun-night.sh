@@ -7,7 +7,7 @@
 # This runs the same four things the gate runs, in the gate's own forms, on REV in a detached worktree. Everything else the gate checks passed in
 # the first run (PTX 48/48, graphs, drain group, parity, the other heavy groups, hygiene), and this script does not repeat it. The device gate is
 # recorded green only if every part here passes and the first run's other parts stand. A skip counts as a failure.
-#   python3 scripts/night.py add op1-gate-rerun-cuda --est 75 --by "<who>, OP1 CUDA (device gate re-run)" --doc docs/tasks/task-forward-architecture-2026-10.md \
+#   python3 scripts/night.py add op1-gate-rerun-cuda --est 75 --by "<who>, OP1 CUDA (device gate re-run)" --doc docs/completed/task-forward-architecture-2026-10.md \
 #     -- env REV=<main commit with #66> bash docs/measurements/op1-cuda-2026-10/run-gate-rerun-night.sh
 #   DRY=1 ...   stops after provisioning and the sidecar check.
 # Estimate: 2a a few minutes; the 26B group 14 min and the 35B group 7 min (B23, docs/measurements/b23-cuda-heavy-split-2026-10-15.md); the two fresh

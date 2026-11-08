@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# THE OVERRIDE COPY of run-hlr-r3.sh (Francis, 2026-11-08 03:12, "Force the Mac runs"): the one change is that the free-memory void is the model's
+# file size, without the 2 GB margin; the load cap and the load's own fit guard stay. Its readings are not registered cells (README.md, "The 7B cells").
 # HL-R3, HL-R's speed grade on Metal (docs/measurements/hl-2026-11/registration.md), registered before any HL-R code.
 # TestHLRChainAB on the 1.5B and the 7B, one process per model and shape: greedy Generate under a gated processor with the chain
 # running while the gate is closed (HL-R) against greedyChainOff (today's path), 9 reps of 256 tokens per arm, alternated.
@@ -7,7 +9,7 @@
 # Runs a test binary built at REV with -tags goinfer_testhooks, under the exclusive timing lock:
 #   (cd backend/metal && go test -c -tags goinfer_testhooks -o ~/goinfer-bench/hl-2026-11/metal-tagged-<REV>.test .)
 #   go build -o ~/goinfer-bench/hl-2026-11/hostmem ./cmd/hostmem
-#   python3 scripts/timing_lock.py run --wait 600 --label hlr-r3 -- bash docs/measurements/hl-2026-11/run-hlr-r3.sh <REV> [all|7b]
+#   python3 scripts/timing_lock.py run --wait 600 --label hlr-r3 -- bash docs/measurements/hl-2026-11/run-hlr-r3-override.sh <REV> [all|7b]
 # "7b" runs only the two 7B cells (logs in r3-7b), for a night run when the day's free memory was below the 7B's need.
 #
 # The registered void rule, checked at each cell's start and recorded in provenance.txt with the swap in use: the 1-minute load above
@@ -16,7 +18,7 @@
 # unless every cell asked for ran and printed its METRIC line, and with 75 (the night queue re-queues it) when a cell never started
 # because the guard stayed void.
 set -uo pipefail
-REV=${1:?usage: run-hlr-r3.sh <REV> [all|7b]}
+REV=${1:?usage: run-hlr-r3-override.sh <REV> [all|7b]}
 WHICH=${2:-all}
 BASE=$HOME/goinfer-bench/hl-2026-11
 BIN=$BASE/metal-tagged-$REV.test

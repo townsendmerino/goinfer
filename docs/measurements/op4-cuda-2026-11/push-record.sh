@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OP4 on CUDA's push record (docs/tasks/task-forward-architecture-2026-10.md §4.9a, each step's U8): the checks one push of a
+# OP4 on CUDA's push record (docs/completed/task-forward-architecture-2026-10.md §4.9a, each step's U8): the checks one push of a
 # step's branch runs, written to docs/measurements/op4-cuda-2026-11/<step>-push-record.log. It merges origin/main, and it pushes
 # only when every check is green. Run it under nobara's timing lock, shared, from the step's worktree:
 #

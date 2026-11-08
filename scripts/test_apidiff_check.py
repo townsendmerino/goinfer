@@ -3,7 +3,7 @@
 A Hard-tier name's incompatible change is fatal, except the two lines testdata/apidiff/hard_tier_aliases.txt licenses for a
 listed alias: "T: changed from T to <its package>.T", and a Hard-tier method whose signature text is unchanged and names the
 alias, because only its result type's identity moved. Everything else about a Hard-tier name stays fatal. The lines are the
-ones apidiff printed for DC1b (docs/tasks/task-decoder-config-2026-11.md §8), and plants beside them.
+ones apidiff printed for DC1b (docs/completed/task-decoder-config-2026-11.md §8), and plants beside them.
 """
 import os
 import subprocess

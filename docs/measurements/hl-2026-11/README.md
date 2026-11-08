@@ -77,3 +77,21 @@ gate closes and reopens many times (a tool call per few tokens) pays that start 
 - **MC3, CUDA, sampled turns, an ungated processor:** out of scope (registration).
 - **Other sizes and depths.** 1.5B and 7B at the 64-token prompt and 256 generated tokens only.
 - **Served end to end.** The cell is in-process `Generate`, as C-B01's and HL-G4's were.
+
+## The decision (2026-11-08 06:50)
+
+**Francis chose to merge HL-R as is** (relayed by the coordinator; PR #765, merge `ac56f39b`). The registration did not say how the two models
+combine, and this record had left that to him. His call:
+
+- **Readings he decided on.** The 1.5B, on registered cells (the 2026-11-07 20:47:58 run): (a) 1.1351 and (b) 1.0519, in the Ship band. The
+  7B, on cells taken under his own override of the free-memory void (2026-11-08 03:12; the closed cell started below the registered
+  free-memory line, the toolcall cell above it): (a) 1.0188 and (b) 1.0226, in the Park band by 0.0012 on (a), faster on all 9 pairs of
+  (a) and clearing (b) on the median (8 of 9 pairs).
+- **Why, in his words as relayed:** tokens are identical in every rep, there is no memory cost, no median is under 1.00, and the 7B's miss is
+  0.0012.
+- **What the decision is not.** It is not a moved band: the bands stand as registered, and the 7B's (a) is graded Park above. It is a
+  ruling on how the two grades combine, made with both numbers in front of him. It does not cover a turn whose gate opens and closes many
+  times, which remains unmeasured (each opening waits out one queued forward and each reopening starts the chain).
+- **What follows.** The code stays on for gated greedy turns where the resident offers a chain (Metal today), with a changelog entry
+  (`changelog.d/2026-11-08-metal-chain-under-a-gated-processor.md`). CUDA's chain and the sampled chain remain separate steps.
+

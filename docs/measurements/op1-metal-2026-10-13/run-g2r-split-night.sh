@@ -1,5 +1,5 @@
 #!/bin/bash
-# OP1's real Gemma 2 gate, G2-R, as a night job on the MacBook, in two processes (docs/tasks/task-forward-architecture-2026-10.md
+# OP1's real Gemma 2 gate, G2-R, as a night job on the MacBook, in two processes (docs/completed/task-forward-architecture-2026-10.md
 # §4.6, "G2-R amendment, 2026-10-15"): TestG2R_cpuReference loads only CPU models and writes the CPU side of every arm to
 # a file; TestG2R_registered then loads only Metal models and grades against it. Same arms, prompts, bars and voids as
 # run-g2r-night.sh; each process's loads meet the fit guard and Metal's memory guard alone. No guard is bypassed.
@@ -9,7 +9,7 @@
 # bytes); the int4 ones (the 2B, and the 0.5B for the Metal precondition) are built with -target metal (about 2.7 GB with
 # the 0.5B's int8int8; refused under 6 GB free). A refused load is VOID, not FAIL. Run TestG2R_fitCheck by day first.
 #
-#   python3 scripts/night.py add op1-g2r-metal --est 30 --by "<who>, OP1 Metal (G2-R, split)" --doc docs/tasks/task-forward-architecture-2026-10.md \
+#   python3 scripts/night.py add op1-g2r-metal --est 30 --by "<who>, OP1 Metal (G2-R, split)" --doc docs/completed/task-forward-architecture-2026-10.md \
 #     -- env REV=<declaration branch commit> bash docs/measurements/op1-metal-2026-10-13/run-g2r-split-night.sh
 #
 # Exit: 0 when G2-R PASSES; 1 when it FAILS; 2 when it is VOID or SKIPPED (a skip is not a pass), the CPU process did not
