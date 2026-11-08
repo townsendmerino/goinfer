@@ -198,16 +198,17 @@ func TestRun_closesFirstLoadBeforeMeasuring(t *testing.T) {
 	}
 	var closeCallIdx, measureIfIdx = -1, -1
 	for i, stmt := range fn.Body.List {
-		if _, deferred := stmt.(*ast.DeferStmt); !deferred { // the statement that closes m: a call, or the loop over the loads
-			ast.Inspect(stmt, func(n ast.Node) bool {
-				if call, ok := n.(*ast.CallExpr); ok {
-					if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Close" && render(sel.X) == "m" {
-						closeCallIdx = i
-					}
+		ast.Inspect(stmt, func(n ast.Node) bool { // the statement that closes m: a call, or the loop over the loads
+			if _, deferred := n.(*ast.DeferStmt); deferred {
+				return false // a deferred Close runs when Run returns, after selfMeasure: it closes nothing first
+			}
+			if call, ok := n.(*ast.CallExpr); ok {
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Close" && render(sel.X) == "m" {
+					closeCallIdx = i
 				}
-				return true
-			})
-		}
+			}
+			return true
+		})
 		switch s := stmt.(type) {
 		case *ast.IfStmt:
 			ast.Inspect(s, func(n ast.Node) bool {
