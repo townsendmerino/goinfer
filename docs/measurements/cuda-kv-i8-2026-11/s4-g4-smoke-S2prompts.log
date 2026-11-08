@@ -1,0 +1,7 @@
+=== RUN   TestKV8GateVsReference
+=== RUN   TestKV8GateVsReference/S-K3900
+    kv16_gate_test.go:403: reference 0: /home/francis/goinfer-logs/prefill-ref-b/S-K3900-p0.bin: no sidecar (a file from before the content-keyed cache)
+--- FAIL: TestKV8GateVsReference (0.08s)
+    --- FAIL: TestKV8GateVsReference/S-K3900 (0.08s)
+FAIL
+ledger: 0 device(s) released in this run

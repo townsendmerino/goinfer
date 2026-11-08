@@ -1,0 +1,2 @@
+# preflight OK: gate load · loadavg [0.6796875, 0.5283203125, 1.5712890625] · gpu {'driver': '595.112.07', 'name': 'NVIDIA GeForce RTX 2070 SUPER', 'temp_c': 50, 'mem_used_mib': 430, 'mem_total_mib': 8192} · compute apps ['1864, 21 MiB']
+no prompt for 1.5B:16384, 1.5B:4096, 7B:16384, 7B:4096 in scripts/prompts.json: calibrate them (scripts/bench_prompts_calibrate.py) or narrow the plan (BENCH_PHASES, BENCH_DEPTHS)

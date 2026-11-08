@@ -176,7 +176,7 @@ var cudaKVI8Families = []string{"llama", "mistral", "qwen2", "qwen3", "phi3"}
 // kvCopyBlockRows and kvsnap.go).
 func CUDAKVI8Decline(f KVFacts, o Options) string {
 	if !slices.Contains(cudaKVI8Families, f.Family) {
-		return "int8 KV on CUDA covers the dense families (" + strings.Join(cudaKVI8Families, ", ") + ") so far; " + f.Family + " is refused until its stage"
+		return "int8 KV on CUDA covers the dense families (" + strings.Join(cudaKVI8Families, ", ") + "); " + f.Family + " is not among them (widening to other families is parked: docs/tasks/task-kv-precision-everywhere-2026-10.md, P2)"
 	}
 	switch {
 	case f.SlidingWindow:

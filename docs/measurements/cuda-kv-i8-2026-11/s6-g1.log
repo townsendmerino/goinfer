@@ -1,0 +1,34 @@
+=== RUN   TestKV16_exactInputIdentity_prefillReaders
+=== RUN   TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6581 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6109 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+=== RUN   TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (280 MiB of scratch; 5911 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4865 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+--- PASS: TestKV16_exactInputIdentity_prefillReaders (14.88s)
+    --- PASS: TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (5.30s)
+    --- PASS: TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (9.58s)
+=== RUN   TestKV8_exactInputIdentity_fusedPrefill
+=== RUN   TestKV8_exactInputIdentity_fusedPrefill/llama-attnfa-tiny
+cuda: prefill width 2048 rows (26 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7065 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+=== RUN   TestKV8_exactInputIdentity_fusedPrefill/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (155 MiB of scratch; 6605 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6127 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+--- PASS: TestKV8_exactInputIdentity_fusedPrefill (5.87s)
+    --- PASS: TestKV8_exactInputIdentity_fusedPrefill/llama-attnfa-tiny (2.11s)
+    --- PASS: TestKV8_exactInputIdentity_fusedPrefill/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (3.75s)
+=== RUN   TestPTX_matchesSourcesAndBindings
+    ptx_consistency_test.go:101: 65 .cu/.ptx pairs, 336 kernels checked by name and signature; 118 bound kernel names resolved
+--- PASS: TestPTX_matchesSourcesAndBindings (0.06s)
+=== RUN   TestKV8_glueTwinIsBuiltAtTheAuditedToolchain
+--- PASS: TestKV8_glueTwinIsBuiltAtTheAuditedToolchain (0.00s)
+PASS
+ledger: 12 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	20.896s

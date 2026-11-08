@@ -377,6 +377,15 @@ var decodeSplitKVKV8PTX []byte
 //go:embed testdata/decode_fa_kv8.ptx
 var decodeFAKV8PTX []byte
 
+// attnFusedKV8PTX and attnFusedBMKV8PTX: the tensor-core prefill tiles (attn_fused.cu, attn_fused_bm.cu) built with -DKV_I8, at the ambient
+// NVRTC like their f32 and f16 modules: K and V staged as f16 from the int8 cache and its scales (KV_LDHS), the rest of each tile the f16 build's.
+//
+//go:embed testdata/attn_fused_kv8.ptx
+var attnFusedKV8PTX []byte
+
+//go:embed testdata/attn_fused_bm_kv8.ptx
+var attnFusedBMKV8PTX []byte
+
 // gemvFwdKV8PTX: gemv_fwd.cu built with -DKV_I8, at the pinned NVRTC 12.6.85 beside the audited gemv_fwd modules, which stay byte-identical. Its
 // rope_kv rotates Q and K in place and stores nothing (KV_ST is a no-op in an int8 build); kv8_store then quantizes the rotated K and the V.
 //

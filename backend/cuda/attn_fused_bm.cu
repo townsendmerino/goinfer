@@ -101,12 +101,26 @@ __device__ __forceinline__ void mma_m16n8k8_f32(float &d0, float &d1, float &d2,
         : "r"(a0), "r"(a1), "r"(b0), "f"(c0), "f"(c1), "f"(c2), "f"(c3));
 }
 
+#ifdef KV_I8
+// One 8-byte K/V load of 8 int8 elements: the f16 build's element count, so the batching in stage_tile_vec is the f16 build's. Each element
+// is dequantized with its row's scale and rounded to f16 (KV_LDHS's value).
+union kv_vec16 {
+    uint2 u;
+    signed char c[8];
+};
+#define KV_VEC_T uint2
+constexpr int KV_VW = 8;
+
+__device__ __forceinline__ __half kv_vec_half_s(const kv_vec16& v, int j, float sc) { return __float2half_rn((float)v.c[j] * sc); }
+#define KV_VEC_HALF(v, j, sc) kv_vec_half_s(v, j, sc)
+#else
 // One 16-byte K/V load: 4 f32 or 8 f16 elements.
 union kv_vec16 {
     uint4 u;
     float f[4];
     __half h[8];
 };
+#define KV_VEC_T uint4
 constexpr int KV_VW = 16 / (int)sizeof(KV_T);
 
 __device__ __forceinline__ __half kv_vec_half(const kv_vec16& v, int j) {
@@ -116,6 +130,8 @@ __device__ __forceinline__ __half kv_vec_half(const kv_vec16& v, int j) {
     return __float2half_rn(v.f[j]);
 #endif
 }
+#define KV_VEC_HALF(v, j, sc) kv_vec_half(v, j)
+#endif
 
 // stage_tile_vec stages one FULL key tile (BN keys) of K as Ksh[BN][kStride] and V as Vtsh[HD][vStride], the same halves
 // the scalar staging writes, with 16-byte loads issued a batch at a time before any of them is converted or stored. K
@@ -123,7 +139,7 @@ __device__ __forceinline__ __half kv_vec_half(const kv_vec16& v, int j) {
 // key+1) per column, so a warp's V^T stores land on distinct banks. rowOf(kk) is key kk's row in the cache.
 template <int HD, int BM, int BN, int kStride, int vStride, typename RowOf>
 __device__ __forceinline__ void stage_tile_vec(const KV_T* __restrict__ kc, const KV_T* __restrict__ vc, long colOff,
-                                               __half* Ksh, __half* Vtsh, RowOf rowOf, int kvDim) {
+                                               __half* Ksh, __half* Vtsh, RowOf rowOf, int kvDim KV_SCALE_PARAMS) {
     constexpr int NT = (BM / 16) * 32;
     constexpr int DV = HD / KV_VW;          // 16-byte chunks a key row
     constexpr int NK = BN * DV;             // K loads a tile
@@ -139,7 +155,7 @@ __device__ __forceinline__ void stage_tile_vec(const KV_T* __restrict__ kc, cons
         for (int i = 0; i < BK; i++) {
             const int v = base + i * NT + tid, kk = v / DV, dv = v - kk * DV;
             const KV_T* src = kc + rowOf(kk) * kvDim + colOff + dv * KV_VW;
-            r[i].u = *reinterpret_cast<const uint4*>(src);
+            r[i].u = *reinterpret_cast<const KV_VEC_T*>(src);
         }
 #pragma unroll
         for (int i = 0; i < BK; i++) {
@@ -147,6 +163,18 @@ __device__ __forceinline__ void stage_tile_vec(const KV_T* __restrict__ kc, cons
             __half* dst = &Ksh[kk * kStride + dv * KV_VW];
 #ifdef KV_F16
             *reinterpret_cast<uint4*>(dst) = r[i].u;
+#elif defined(KV_I8)
+            const float sk = kscl[rowOf(kk) * (kvDim / HD) + colOff / HD];
+            __half2 a = __floats2half2_rn((float)r[i].c[0] * sk, (float)r[i].c[1] * sk);
+            __half2 b = __floats2half2_rn((float)r[i].c[2] * sk, (float)r[i].c[3] * sk);
+            __half2 c = __floats2half2_rn((float)r[i].c[4] * sk, (float)r[i].c[5] * sk);
+            __half2 e = __floats2half2_rn((float)r[i].c[6] * sk, (float)r[i].c[7] * sk);
+            uint4 w;
+            w.x = *reinterpret_cast<unsigned int*>(&a);
+            w.y = *reinterpret_cast<unsigned int*>(&b);
+            w.z = *reinterpret_cast<unsigned int*>(&c);
+            w.w = *reinterpret_cast<unsigned int*>(&e);
+            *reinterpret_cast<uint4*>(dst) = w;
 #else
             __half2 a = __floats2half2_rn(r[i].f[0], r[i].f[1]);
             __half2 b = __floats2half2_rn(r[i].f[2], r[i].f[3]);
@@ -165,15 +193,18 @@ __device__ __forceinline__ void stage_tile_vec(const KV_T* __restrict__ kc, cons
             const int u = base + i * NT + tid, kp = u % (BN / 2), dv = u / (BN / 2);
             const KV_T* src0 = vc + rowOf(2 * kp) * kvDim + colOff + dv * KV_VW;
             const KV_T* src1 = vc + rowOf(2 * kp + 1) * kvDim + colOff + dv * KV_VW;
-            r0[i].u = *reinterpret_cast<const uint4*>(src0);
-            r1[i].u = *reinterpret_cast<const uint4*>(src1);
+            r0[i].u = *reinterpret_cast<const KV_VEC_T*>(src0);
+            r1[i].u = *reinterpret_cast<const KV_VEC_T*>(src1);
         }
 #pragma unroll
         for (int i = 0; i < BV; i++) {
             const int u = base + i * NT + tid, kp = u % (BN / 2), dv = u / (BN / 2);
+#ifdef KV_I8
+            const float sv0 = vscl[rowOf(2 * kp) * (kvDim / HD) + colOff / HD], sv1 = vscl[rowOf(2 * kp + 1) * (kvDim / HD) + colOff / HD];
+#endif
 #pragma unroll
             for (int j = 0; j < KV_VW; j++) {
-                __half2 p = __halves2half2(kv_vec_half(r0[i], j), kv_vec_half(r1[i], j));
+                __half2 p = __halves2half2(KV_VEC_HALF(r0[i], j, sv0), KV_VEC_HALF(r1[i], j, sv1));
                 *reinterpret_cast<__half2*>(&Vtsh[(dv * KV_VW + j) * vStride + 2 * kp]) = p;
             }
         }
@@ -187,7 +218,7 @@ __device__ __forceinline__ void attn_fused_impl(const float* __restrict__ q,
                                                 const int* __restrict__ kvt, int nH, int nKV,
                                                 int startPos, float scale, int window, int M,
                                                 float* __restrict__ ctx,
-                                                const float* __restrict__ sinks) {
+                                                const float* __restrict__ sinks KV_SCALE_PARAMS) {
     static_assert(BN <= 64, "the staging below assumes a key tile lies in at most two 64-row blocks");
     constexpr int OT = HD / 8;   // 8-wide n-slices of the output, constexpr so acc[] stays in regs
     constexpr int NG = BN / 8;   // 8-wide key groups per tile
@@ -275,17 +306,17 @@ __device__ __forceinline__ void attn_fused_impl(const float* __restrict__ q,
         const long row0 = KV_ROW(kvt, s0), row1 = (split < nk) ? (long)kvt[(s0 >> 6) + 1] * 64 - split : 0;
         if (nk == BN && vecOK) {
             stage_tile_vec<HD, BM, BN, kStride, vStride>(
-                kc, vc, (long)kvh * HD, Ksh, Vtsh, [&](int kk) { return (kk < split ? row0 : row1) + kk; }, kvDim);
+                kc, vc, (long)kvh * HD, Ksh, Vtsh, [&](int kk) { return (kk < split ? row0 : row1) + kk; }, kvDim KV_SCALE_ARGS);
         } else {
             for (int idx = threadIdx.x; idx < nk * HD; idx += blockDim.x) {
                 const int kk = idx / HD, dd = idx - kk * HD;
                 const KV_T* src = kc + ((kk < split ? row0 : row1) + kk) * kvDim + kvh * HD;
-                Ksh[kk * kStride + dd] = KV_LDH(src + dd);
+                Ksh[kk * kStride + dd] = KV_LDHS(src + dd, kscl[((kk < split ? row0 : row1) + kk) * nKV + kvh]);
             }
             for (int idx = threadIdx.x; idx < nk * HD; idx += blockDim.x) {
                 const int kk = idx / HD, dd = idx - kk * HD;
                 const KV_T* src = vc + ((kk < split ? row0 : row1) + kk) * kvDim + kvh * HD;
-                Vtsh[dd * vStride + kk] = KV_LDH(src + dd);
+                Vtsh[dd * vStride + kk] = KV_LDHS(src + dd, vscl[((kk < split ? row0 : row1) + kk) * nKV + kvh]);
             }
         }
         __syncthreads();
@@ -420,42 +451,42 @@ __device__ __forceinline__ void attn_fused_impl(const float* __restrict__ q,
 extern "C" __global__ void attn_fused_bm32_hd64(const float* __restrict__ q, const KV_T* __restrict__ kc,
                                            const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd,
                                            int startPos, float scale, int window, int M,
-                                           float* __restrict__ ctx, const float* __restrict__ sinks) {
-    attn_fused_impl<64, 32, 64>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks);
+                                           float* __restrict__ ctx, const float* __restrict__ sinks KV_SCALE_PARAMS) {
+    attn_fused_impl<64, 32, 64>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks KV_SCALE_ARGS);
 }
 
 extern "C" __global__ void attn_fused_bm32_hd128(const float* __restrict__ q, const KV_T* __restrict__ kc,
                                            const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd,
                                            int startPos, float scale, int window, int M,
-                                           float* __restrict__ ctx, const float* __restrict__ sinks) {
-    attn_fused_impl<128, 32, 64>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks);
+                                           float* __restrict__ ctx, const float* __restrict__ sinks KV_SCALE_PARAMS) {
+    attn_fused_impl<128, 32, 64>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks KV_SCALE_ARGS);
 }
 
 extern "C" __global__ void attn_fused_bm32n32_hd64(const float* __restrict__ q, const KV_T* __restrict__ kc,
                                            const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd,
                                            int startPos, float scale, int window, int M,
-                                           float* __restrict__ ctx, const float* __restrict__ sinks) {
-    attn_fused_impl<64, 32, 32>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks);
+                                           float* __restrict__ ctx, const float* __restrict__ sinks KV_SCALE_PARAMS) {
+    attn_fused_impl<64, 32, 32>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks KV_SCALE_ARGS);
 }
 
 extern "C" __global__ void attn_fused_bm32n32_hd128(const float* __restrict__ q, const KV_T* __restrict__ kc,
                                            const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd,
                                            int startPos, float scale, int window, int M,
-                                           float* __restrict__ ctx, const float* __restrict__ sinks) {
-    attn_fused_impl<128, 32, 32>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks);
+                                           float* __restrict__ ctx, const float* __restrict__ sinks KV_SCALE_PARAMS) {
+    attn_fused_impl<128, 32, 32>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks KV_SCALE_ARGS);
 }
 
 
 extern "C" __global__ void attn_fused_bm128_hd64(const float* __restrict__ q, const KV_T* __restrict__ kc,
                                            const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd,
                                            int startPos, float scale, int window, int M,
-                                           float* __restrict__ ctx, const float* __restrict__ sinks) {
-    attn_fused_impl<64, 128, 64>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks);
+                                           float* __restrict__ ctx, const float* __restrict__ sinks KV_SCALE_PARAMS) {
+    attn_fused_impl<64, 128, 64>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks KV_SCALE_ARGS);
 }
 
 extern "C" __global__ void attn_fused_bm128_hd128(const float* __restrict__ q, const KV_T* __restrict__ kc,
                                            const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd,
                                            int startPos, float scale, int window, int M,
-                                           float* __restrict__ ctx, const float* __restrict__ sinks) {
-    attn_fused_impl<128, 128, 64>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks);
+                                           float* __restrict__ ctx, const float* __restrict__ sinks KV_SCALE_PARAMS) {
+    attn_fused_impl<128, 128, 64>(q, kc, vc, kvt, nH, nKV, startPos, scale, window, M, ctx, sinks KV_SCALE_ARGS);
 }

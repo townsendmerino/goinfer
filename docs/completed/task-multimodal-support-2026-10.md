@@ -10,7 +10,7 @@
 > **Status (close-out, 2026-10-31): DONE as a record, archived; the open work is split out.** S1 to S20 are built, gated
 > and on main (S19 and S20 on 2026-10-23; S20's host-expert split did not ship, by its registration). What is left (the
 > WebGPU device-tower default flips, Qwen3-VL MoE's paged CUDA arm, full S13, S15 video, S16's hybrid half, and
-> `--embed-int4` on Metal) is the ledger of `docs/tasks/task-multimodal-remaining-2026-10.md` (coordinator, 2026-10-31).
+> `--embed-int4` on Metal) is the ledger of `docs/tasks/parked/task-multimodal-remaining-2026-10.md` (coordinator, 2026-10-31).
 > The status block and "Where it stands" below are as of 2026-10-10 and 2026-10-09.
 
 **Status: ACTIVE (refreshed 2026-10-10; S6 closed 2026-10-11).** The phases' state:
@@ -3346,6 +3346,21 @@ aikit expected 0: L, as registered for S10's MoE variants.
     - **Tier (TE11):** night. Instrument: `TestQwen3VLMoe_cudaLogits` plus the grader. Stopping rule: the 8 pinned sequences, no early stop. Cost basis:
       the 2B smoke took 143 s end to end for 179 positions (about 80 s of it the CPU tower and load); the 30B adds the sidecar build (87 s measured in
       `gs10q-d3`), a CPU prefill of about 70 s per image prompt, and 200 paged steps: estimate 30 minutes. Queued as `gs10q-e`.
+    - **Read 2026-11-08 by day on nobara: PASS** (Francis, 2026-11-08: run once by day, the rule unchanged). The run was main at `604f7ddf`,
+      the script's only change being its `cd` (the test moved to `backend/cuda`), binaries built at that rev, under the exclusive timing lock.
+      The RTX 2070 SUPER was on driver 595.112.07, and the checkpoint came from `~/models` (NVMe).
+      - Fit check first, by the server's own banner: the 30B at `--moe-cache-experts` is `cuda-resident (int4)`, with 16.0 GB of weights in a
+        30.9 GB budget, and nothing was refused. The CUDA arm took 355 s.
+      - **CUDA minus CPU int4: -1.00 points [-3.4, +1.2]** (cluster bootstrap, 8 prompts, 200 positions), against the bar of -5.0. Every
+        CUDA logit is finite.
+      - CUDA int4 agrees with HF float32 at 91.50 % [85.3, 97.3] and CPU int4 at 92.50 % [87.9, 96.9]. Mean KL(HF||arm) is 0.0645 for CUDA
+        and 0.0691 for CPU (paired -0.0046 [-0.0159, +0.0010]). CUDA's argmax equals the CPU arm's at 98.00 % of positions (recorded, not
+        graded).
+      - **By the outcome mapping:** the paged CUDA path is as near HF as the CPU path, so G-S10q-d's FAIL is the CPU arm being an unfair
+        reference at a sensitive token, not a CUDA quality gap. Serve is unchanged (no decline), and both FAILs stay recorded. Whether to
+        re-register G-S10q-d against HF is the owner's call.
+      - Prediction "PASS 0.65": right.
+      - Logs: `docs/measurements/multimodal-support-2026-10/s10q-qwen3vlmoe/gs10q-e-2026-11-08/`.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the

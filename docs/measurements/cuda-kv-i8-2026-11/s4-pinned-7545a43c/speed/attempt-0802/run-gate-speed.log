@@ -1,0 +1,43 @@
+waiting for step 1 (refs) 2026-11-08 06:59:41 PST
+step 1 done at 2026-11-08 07:43:33 PST
+== step 2 (gate) start 2026-11-08 07:43:41 PST load 10.59 12.15 12.81 MemAvailable 61415 MiB
+== step 2 (gate) end 2026-11-08 08:00:35 PST exit 0
+=== KV8 GATE S K=3900 precondition 5 (fit): -kv f32: resident, context 4028 positions, 1 KV slot(s), KV pools 234881528 B
+=== KV8 GATE S K=3900 precondition 5 (fit): -kv f16: resident, context 4028 positions, 1 KV slot(s), KV pools 117441016 B
+=== KV8 GATE S K=3900 precondition 5 (fit): -kv i8: resident, context 4028 positions, 1 KV slot(s), KV pools 60555768 B
+=== KV8 GATE S K=3900 (confirmation cell, set b, n=10 x 64 positions) i8 vs f32 (G4): base(meanAgree=91.09% HF=9 meanKL=0.052265) cand(meanAgree=89.69% HF=19 meanKL=0.086818) cand>=base on 4/10 prompts; critA=false critB=false critC=false KLratio=1.6611 => DOES NOT PASS
+=== KV8 GATE S K=3900 (confirmation cell, set b, n=10 x 64 positions) i8 vs f16 (reported): base(meanAgree=90.94% HF=8 meanKL=0.052564) cand(meanAgree=89.69% HF=19 meanKL=0.086818) cand>=base on 4/10 prompts; critA=false critB=false critC=false KLratio=1.6517 => DOES NOT PASS
+=== KV8 GATE S K=3900 (confirmation cell, set b, n=10 x 64 positions) f16 vs f32 (control): base(meanAgree=91.09% HF=9 meanKL=0.052265) cand(meanAgree=90.94% HF=8 meanKL=0.052564) cand>=base on 6/10 prompts; critA=true critB=true critC=true KLratio=1.0057 => PASSES
+=== KV8 GATE S K=3900 preconditions: int8 allocated 60555264 B (f32 234881024 B), A/A bit-identical over 64 rows, int8 rows differing from f32 630, seed rows differing 10/10
+=== KV8 GATE D7 K=8000 precondition 5 (fit): -kv f32: resident, context 8128 positions, 1 KV slot(s), KV pools 939525112 B
+=== KV8 GATE D7 K=8000 precondition 5 (fit): -kv f16: resident, context 8128 positions, 1 KV slot(s), KV pools 469763064 B
+=== KV8 GATE D7 K=8000 precondition 5 (fit): -kv i8: resident, context 8128 positions, 1 KV slot(s), KV pools 242222072 B
+=== KV8 GATE D7 K=8000 (DECISION cell, set b, n=10 x 64 positions) i8 vs f32 (G4): base(meanAgree=93.12% HF=11 meanKL=0.055900) cand(meanAgree=92.97% HF=11 meanKL=0.060271) cand>=base on 7/10 prompts; critA=true critB=true critC=true KLratio=1.0782 => AMBIGUOUS — PARKED
+=== KV8 GATE D7 K=8000 (DECISION cell, set b, n=10 x 64 positions) i8 vs f16 (reported): base(meanAgree=92.34% HF=11 meanKL=0.059082) cand(meanAgree=92.97% HF=11 meanKL=0.060271) cand>=base on 9/10 prompts; critA=true critB=true critC=true KLratio=1.0201 => PASSES
+=== KV8 GATE D7 K=8000 (DECISION cell, set b, n=10 x 64 positions) f16 vs f32 (control): base(meanAgree=93.12% HF=11 meanKL=0.055900) cand(meanAgree=92.34% HF=11 meanKL=0.059082) cand>=base on 6/10 prompts; critA=true critB=true critC=true KLratio=1.0569 => AMBIGUOUS — PARKED
+=== KV8 GATE D7 K=8000 preconditions: int8 allocated 242221056 B (f32 939524096 B), A/A bit-identical over 64 rows, int8 rows differing from f32 630, seed rows differing 10/10
+--- PASS: TestKV8GateVsReference (1013.60s)
+    --- PASS: TestKV8GateVsReference/precondition4-exact-input-G2 (10.76s)
+        --- PASS: TestKV8GateVsReference/precondition4-exact-input-G2/llama-attnfa-tiny (2.05s)
+        --- PASS: TestKV8GateVsReference/precondition4-exact-input-G2/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (2.72s)
+        --- PASS: TestKV8GateVsReference/precondition4-exact-input-G2/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (5.85s)
+    --- PASS: TestKV8GateVsReference/S-K3900 (108.15s)
+    --- PASS: TestKV8GateVsReference/D7-K8000 (894.70s)
+== step 3a (fit checks) start 2026-11-08 08:00:35 PST load 1.08 1.45 5.07 MemAvailable 61415 MiB
+fit 15B-auto:   context: 16896 tokens (--ctx; model maximum 32768) · KV f16 (requested auto: auto is f16 on CUDA for this family)   fit: 16896-token cap needs 0.5 GB KV (weights 0.9 GB, budget 41.7 GB, 41.3 GB left for a request's own prefill)   KV plan: 4 conversations x 16896 positions (--ctx 16896)   KV pool: 67,584 tokens in blocks of 64 (f16, 1.9 GB; group: full); a prompt can take another conversation's KV rows; one conversation can use up to 16,896 of them. 
+fit 15B-i8:   context: 16896 tokens (--ctx; model maximum 32768) · KV i8 (requested i8, lossy)   fit: 16896-token cap needs 0.2 GB KV (weights 0.9 GB, budget 41.7 GB, 41.5 GB left for a request's own prefill)   KV plan: 4 conversations x 16896 positions (--ctx 16896)   KV pool: 67,584 tokens in blocks of 64 (i8, 1.0 GB; group: full); a prompt can take another conversation's KV rows; one conversation can use up to 16,896 of them. 
+fit 7B-auto: cuda: 2 resident KV slots of 4 requested — one slot's pools cost 1008 MB at the resident context 16896, and free VRAM beside the weights (3000 MB, less 328 MB reserved) allows 2   context: 16896 tokens (--ctx; model maximum 32768) · KV f16 (requested auto: auto is f16 on CUDA for this family)   fit: 16896-token cap needs 0.9 GB KV (weights 4.0 GB, budget 41.7 GB, 40.8 GB left for a request's own prefill)   KV plan: 2 conversations x 16896 positions (4 asked for; --ctx 16896) 
+fit 7B-i8:   context: 16896 tokens (--ctx; model maximum 32768) · KV i8 (requested i8, lossy)   fit: 16896-token cap needs 0.5 GB KV (weights 4.0 GB, budget 41.7 GB, 41.2 GB left for a request's own prefill)   KV plan: 4 conversations x 16896 positions (--ctx 16896)   KV pool: 67,584 tokens in blocks of 64 (i8, 1.9 GB; group: full); a prompt can take another conversation's KV rows; one conversation can use up to 16,896 of them. 
+rev:      7545a43cf895585448341760d677e0e58743f00a
+binary:   /home/francis/goinfer-bench/s4-pinned/bin/serve-cuda-7545a43c (a154699f23aef2cc)
+started:  2026-11-08 08:01:08 PST
+driver:   595.112.07
+arms:     goinfer = default (auto, f16 here), goinfer_old = -kv i8 (one binary)
+cells:    1.5B, 7B x 128, 512, 4096, 16384; BENCH_CTX=16896; 2 runs a pass, two passes in reversed arm order
+== f16first start 08:02:18 load 0.67 1.26 4.62 MemAvailable 61304 MiB
+== f16first exit 1 08:02:18
+!! f16first exited 1 or wrote no results (bench_peer exits 0 when it refuses a busy box)
+== i8first start 08:02:18 load 0.67 1.26 4.62 MemAvailable 61307 MiB
+== i8first exit 1 08:02:19
+!! i8first exited 1 or wrote no results (bench_peer exits 0 when it refuses a busy box)
+finished: 2026-11-08 08:02:19 PST rc=1
