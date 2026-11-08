@@ -27,7 +27,8 @@
 >   counters exist (`internal/cost`, SB11), and the shape × family × backend census was refreshed against program-based admission on 2026-11-07
 >   (`docs/measurements/forward-arch-census-2026-11-07.md`; CPU-only families on CUDA / Metal / WebGPU by `ResidentEligible`, the capability gates: 8 / 8 / 13, from 10 / 12 / 16; by `Admit(...).Why`, which adds Nemotron-H's int4 precision policy: 9 / 9 / 14 model-free and 8 / 8 / 14 at the loader's pick).
 > - **RF1:** **new**, planned (§5.5, docs only): seven steps (RF1-3 dropped), 49 `Resident*` interfaces to 41.
-> - **Not started:** RF2–RF6, HL, OP5, OP6's CUDA half, default switch and WebGPU, OP1 on WebGPU, OP4 on WebGPU. §7a sizes them.
+> - **HL:** built once on the unmerged branch `hl-metal-2026-10` (2026-10-14): identity PASS (HL-G1 to HL-G3), speed graded OFF (HL-G4: the prose part of a tool turn 1.035 on the 1.5B and 1.010 on the 7B, the whole tool turn 0.986 and 0.973), and HL-R filed (the chain only while the gate is closed). The branch predates KV5-6's chain rework and the `metal/` move to `backend/metal/`, so HL-R is rebuilt on main rather than merged. §7a's HL row is still its size.
+> - **Not started:** RF2–RF6, OP5, OP6's CUDA half, default switch and WebGPU, OP1 on WebGPU, OP4 on WebGPU. §7a sizes them.
 > - **Other tracks:** SP's SP2 on CUDA merged (#232, §6a).
 >
 > Written on the owner's ask after a Cowork conversation the same day ("we have spent a bunch of time on decode, prefill
