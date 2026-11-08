@@ -21,6 +21,12 @@ go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 > sequential path. `--quant -h` explains all five. A prequantized `.giw` model ignores `--quant`
 > (it carries its own).
 >
+> **A Phi-3 or Phi-4 `.gguf` defaults to `q4k`** on the CPU, CUDA and Metal: the file's Q4_K blocks kept exact, the rest
+> int8, with per-32 activation scales, because per-vector int8 activations break these families
+> (`decoder/actquant_hazard.go:ActivationQuantHazard`). On Metal it runs resident on the q4k lane; before 2026-11-08 the default
+> there was int8int8 with per-32 scales, which Metal declines, so it ran on the CPU. An explicit `--quant` is kept, and WebGPU
+> loads int8int8 with per-32 scales, on the CPU.
+>
 > **`int4` is not the smallest option everywhere.** On Apple Silicon and non-VNNI amd64 hosts, the
 > loader keeps a second, repacked copy of the int4 nibbles beside the canonical ones (the layout
 > the fast NEON/AVX2 kernels need), so `int4` measures ~1.25 bytes/element resident against

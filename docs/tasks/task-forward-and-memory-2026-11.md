@@ -37,7 +37,7 @@
 | OP5-G | open | Granite-4.0-H: the bring-up gate, plus the residual scale on CUDA and Metal | FA §4.7, §4.5 |
 | OP5-La | open | Laguna, after a fit check | FA §4.7 |
 | OP6-M1 | done | M1 read by day 2026-11-08 on main at 76d78d19, after #775 fixed the q4k sidecar admission: goinfer 42.4 tok/s, Ollama 41.7, median ratio 1.02, LEVEL (2026-10-20: 0.539, BEHIND); fit check RESIDENT, no swap growth | `docs/measurements/peer-vetted-2026-10-07-macbook.md` "M1 on main after #775: read"; #775, #780 |
-| OP6-def | decision | Francis: OP6's default switch (FA §8 E5). M1 is read: LEVEL, 1.02 (OP6-M1) | FA §8; `docs/measurements/peer-vetted-2026-10-07-macbook.md` |
+| OP6-def | done | Francis's call, 2026-11-08 09:30, on M1's reading (LEVEL, median ratio 1.02; goinfer 42.4 tok/s, Ollama 41.7): Metal's default load for a Phi-3/4 `.gguf` is `--quant q4k`, resident on the q4k lane (`internal/runtime/modelload/modelload.go:activationSafeQuant`); an explicit `--quant` is kept, WebGPU and other families are unchanged | `docs/measurements/peer-vetted-2026-10-07-macbook.md` "M1 on main after #775: read"; FA §8 E5 |
 | OP6-C | open | CUDA q4k batched prefill | FA §3.2 |
 | OP6-W | open | optional: per-32 activations or a q4k lane on WebGPU | FA §7a |
 | HL-C | open | register a CUDA greedy chain under a gated processor, as HL-R did on Metal | FA §6; `docs/measurements/hl-2026-11/README.md` |

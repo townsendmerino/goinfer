@@ -138,7 +138,7 @@
   {
    "name": "quant",
    "group": "Backend, precision and context",
-   "summary": "Weight precision, the accuracy, speed and RAM trade-off. `int4` is the default; `f32` is unquantized. A prequantized `.giw` carries its own.",
+   "summary": "Weight precision, the accuracy, speed and RAM trade-off. `int4` is the default (`q4k` for a Phi-3/4 `.gguf`, except on WebGPU); `f32` is unquantized. A prequantized `.giw` carries its own.",
    "type": "int4 | int4mix | q4k | int8int8 | int8 | f32",
    "see": "docs/quantization.md"
   },
