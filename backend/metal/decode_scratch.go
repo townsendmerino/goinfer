@@ -74,19 +74,33 @@ func (r *resident) decodeRowsCheck(declared map[string]int) error {
 	}
 	if len(s.geoms) > 0 {
 		want["q"], want["ctx"] = s.nHhd, s.nHhd
-		for _, n := range []string{"k", "v"} {
-			if _, ok := declared[n]; ok {
-				want[n] = s.kvDim
-			}
+	}
+	// K and V where an attention layer holds its own, and each FFN's gate and up at its own width: a dense FFN's, a routed expert's
+	// and a shared expert's, or Gemma 4's MoE block's; up alone for a non-gated MLP. Each row at the widest layer that runs it.
+	at := func(n string, w int) { want[n] = max(want[n], w) }
+	for l := range r.layers {
+		L := &r.layers[l]
+		if g := L.geom; g != nil && !L.kvShared {
+			at("k", g.nKV*g.hd)
+			at("v", g.nKV*g.hd)
 		}
-	}
-	gu := max(s.I, declared["gate"], declared["up"], declared["shared-gate"], declared["shared-up"])
-	if gu != s.guDim {
-		return fmt.Errorf("metal: the program's widest gate and up rows are %d, and the FFN kernels address %d", gu, s.guDim)
-	}
-	for _, n := range []string{"gate", "up", "shared-gate", "shared-up"} {
-		if w, ok := declared[n]; ok {
-			want[n] = w // held in the fused gate | up row, checked at its widest above
+		switch {
+		case L.moe != nil:
+			at("gate", r.moe.inter)
+			at("up", r.moe.inter)
+			if r.moe.sharedInter > 0 {
+				at("shared-gate", r.moe.sharedInter)
+				at("shared-up", r.moe.sharedInter)
+			}
+		case L.g4moe != nil:
+			at("gate", max(r.g4moe.denseInter, r.g4moe.moeInter))
+			at("up", max(r.g4moe.denseInter, r.g4moe.moeInter))
+		case !L.ffn:
+		case r.nonGatedMLP:
+			at("up", s.I)
+		default:
+			at("gate", L.ffnI)
+			at("up", L.ffnI)
 		}
 	}
 	if s.qGate {

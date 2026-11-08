@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -155,23 +156,44 @@ func TestGemma4EModel_metalResidentParity(t *testing.T) {
 }
 
 // TestGemma4EModel_plantedDefects is S1's G2 (docs/tasks/task-multimodal-support-2026-10.md): each planted defect,
-// alone, must turn G1 red. A defect that stays green means the fixture is degenerate along that axis.
+// alone, must turn G1 red. A defect that stays green means the fixture is degenerate along that axis. A defect the build
+// itself refuses (atBuild, the refusal's words) is caught before G1 runs.
 func TestGemma4EModel_plantedDefects(t *testing.T) {
 	defects := []struct {
-		name string
-		set  func(bool)
+		name    string
+		set     func(bool)
+		atBuild string
 	}{
-		{"(1) PLE branch skipped", func(on bool) { g4SkipPLEForTest = on }},
-		{"(2) PLE token-identity term zeroed", decoder.SetGemma4PLEDropTokenForTest},
-		{"(3) shared-KV source one owning layer off", func(on bool) { g4KVSrcOffForTest = on }},
-		{"(4) one FFN width for the model", func(on bool) { g4OneFFNWidthForTest = on }},
-		{"(6) layer scalar dropped", func(on bool) { g4DropLayerScalarForTest = on }},
-		{"(7) v_norm dropped on non-K=V layers", func(on bool) { g4DropVNormForTest = on }},
+		{"(1) PLE branch skipped", func(on bool) { g4SkipPLEForTest = on }, ""},
+		{"(2) PLE token-identity term zeroed", decoder.SetGemma4PLEDropTokenForTest, ""},
+		{"(3) shared-KV source one owning layer off", func(on bool) { g4KVSrcOffForTest = on }, ""},
+		{"(4) one FFN width for the model", func(on bool) { g4OneFFNWidthForTest = on }, "the decode kernels address"}, // decodeRowsCheck
+		{"(6) layer scalar dropped", func(on bool) { g4DropLayerScalarForTest = on }, ""},
+		{"(7) v_norm dropped on non-K=V layers", func(on bool) { g4DropVNormForTest = on }, ""},
 	}
 	for _, d := range defects {
 		t.Run(d.name, func(t *testing.T) {
 			d.set(true)
 			defer d.set(false)
+			if d.atBuild != "" {
+				if _, err := os.Stat(eModelDir); err != nil {
+					t.Skipf("no fixture (%s) — run scripts/pin_gemma4_emodel_tiny.py", eModelDir)
+				}
+				mg, err := decoder.Load(eModelDir, decoder.Options{Quant: "int4"})
+				if err != nil {
+					t.Fatalf("load (metal int4): %v", err)
+				}
+				defer mg.Close()
+				if r, err := buildResident(mg); err == nil {
+					r.Close()
+					t.Errorf("planted defect %s: the build accepted it", d.name)
+				} else if !strings.Contains(err.Error(), d.atBuild) {
+					t.Errorf("planted defect %s: the build refused it for another reason: %v", d.name, err)
+				} else {
+					t.Logf("G2 %s: the build refuses it: %v", d.name, err)
+				}
+				return
+			}
 			g := runEModelG1(t)
 			ok, why := g.pass()
 			t.Logf("G2 %s: G1 %s %s", d.name, map[bool]string{true: "GREEN", false: "RED"}[ok], why)
