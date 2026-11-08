@@ -551,11 +551,11 @@ func (m *Model) kvSnapSlack() int {
 // cannot mark its passes, there is no boundary, the prompt is short, or the part after the boundary fits the rollback (the end snapshot serves).
 func (m *Model) kvBoundaryPlan(prompt []int, sc KVScope, lora *loraRuntime) (q int, ok bool) {
 	sn := m.snapshotter()
-	mp, hasMark := m.resident.(ResidentPrefillMarked)
+	align, hasMark := stepMarkAlign(m.resident)
 	if sn == nil || !hasMark || lora != nil || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.snapshotsBlocked() {
 		return 0, false
 	}
-	n, align := len(prompt), mp.PrefillMarkAlign()
+	n := len(prompt)
 	if m.hasRecurrentState() {
 		// A recurrent model's snapshot is taken where the next turn's prompt parts from this one (KVScope.Keep), on a pass boundary: the
 		// state exists only between passes, and the next turn re-prefills from there on the same pass grid as a cold prefill.
@@ -591,8 +591,7 @@ func (m *Model) kvPrefillMark(slot int, prompt []int, from int, lora *loraRuntim
 	if !ok || (acq.snapRows > 0 && !m.hasRecurrentState()) || q <= from {
 		return nil
 	}
-	mp := m.resident.(ResidentPrefillMarked)
-	if (q-from)%mp.PrefillMarkAlign() != 0 {
+	if align, _ := stepMarkAlign(m.resident); (q-from)%align != 0 {
 		return nil // the passes of this prefill do not end at q
 	}
 	if st := m.kvSnaps; st != nil {
