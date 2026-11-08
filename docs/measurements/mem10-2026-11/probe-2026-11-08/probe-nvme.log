@@ -1,0 +1,28 @@
+# GOINFER_MEM10_PROBE_DIR=$HOME/goinfer-bench (btrfs, /home on NVMe), main b45185842 + the probe, 2026-11-08 09:33:52 PST
+=== RUN   TestMEM10_fileMappingRegistration_probe
+    mem10_probe_test.go:40: device attribute READ_ONLY_HOST_REGISTER_SUPPORTED = 0
+=== RUN   TestMEM10_fileMappingRegistration_probe/read-only_shared_mapping,_flags_0
+    mem10_probe_test.go:135: cuMemHostRegister refused: cuMemHostRegister_v2: CUDA_ERROR_INVALID_VALUE
+    mem10_probe_test.go:131: file mtime changed: false
+=== RUN   TestMEM10_fileMappingRegistration_probe/read-only_shared_mapping,_READ_ONLY
+    mem10_probe_test.go:135: cuMemHostRegister refused: cuMemHostRegister_v2: CUDA_ERROR_NOT_SUPPORTED
+    mem10_probe_test.go:131: file mtime changed: false
+=== RUN   TestMEM10_fileMappingRegistration_probe/read-only_shared_mapping_at_+64_B,_READ_ONLY
+    mem10_probe_test.go:135: cuMemHostRegister refused: cuMemHostRegister_v2: CUDA_ERROR_NOT_SUPPORTED
+    mem10_probe_test.go:131: file mtime changed: false
+=== RUN   TestMEM10_fileMappingRegistration_probe/read-write_shared_mapping,_flags_0
+    mem10_probe_test.go:135: cuMemHostRegister refused: cuMemHostRegister_v2: CUDA_ERROR_INVALID_VALUE
+    mem10_probe_test.go:131: file mtime changed: false
+=== RUN   TestMEM10_fileMappingRegistration_probe/read-write_private_mapping,_flags_0
+    mem10_probe_test.go:143: registered 33554432 + 4194304 B; RssAnon +34 MiB, RssShmem +0 MiB, RssFile +0 MiB, VmLck +0 MiB
+    mem10_probe_test.go:146: registering the mapping added 34 MiB of anonymous memory: the pin copied the stack's pages
+    mem10_probe_test.go:182: 128 expert slots uploaded from the mapping, 0 differ
+    mem10_probe_test.go:131: file mtime changed: false
+--- PASS: TestMEM10_fileMappingRegistration_probe (0.58s)
+    --- PASS: TestMEM10_fileMappingRegistration_probe/read-only_shared_mapping,_flags_0 (0.02s)
+    --- PASS: TestMEM10_fileMappingRegistration_probe/read-only_shared_mapping,_READ_ONLY (0.01s)
+    --- PASS: TestMEM10_fileMappingRegistration_probe/read-only_shared_mapping_at_+64_B,_READ_ONLY (0.02s)
+    --- PASS: TestMEM10_fileMappingRegistration_probe/read-write_shared_mapping,_flags_0 (0.01s)
+    --- PASS: TestMEM10_fileMappingRegistration_probe/read-write_private_mapping,_flags_0 (0.07s)
+PASS
+ok  	github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev	0.623s

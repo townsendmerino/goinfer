@@ -97,7 +97,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 // re-roping every cached key each step). interleave=1 is the V3 GPT-J pairwise layout
 // (de-interleave to [evens|odds] before NeoX rotate); =0 is plain NeoX. ropeScale folds
 // the YaRN attention factor (1.0 when none). One workgroup; base = pos*latDim.
-const mlaLatentStoreWGSL = `
+const mlaLatentStoreWGSL = ropeCosSinWGSL + `
 struct P { rank: u32, qkRope: u32, pos: u32, eps: f32, base: u32, ropeScale: f32, interleave: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read>       kvDown:   array<f32>;  // [rank+qkRope] current token
 @group(0) @binding(1) var<storage, read>       normW:    array<f32>;  // [rank] kvALayernorm
@@ -129,8 +129,8 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     let half = p.qkRope / 2u;
     for (var i: u32 = t; i < half; i = i + 64u) {
         let theta = f32(p.pos) * invFreq[i];
-        let c = cos(theta) * p.ropeScale;
-        let s = sin(theta) * p.ropeScale;
+        let cs = ropeCosSin(theta); let c = cs.x * p.ropeScale;
+        let s = cs.y * p.ropeScale;
         var a: f32;
         var b: f32;
         if (p.interleave == 1u) {
@@ -256,7 +256,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 // and writes it into the combined qAbs buffer at [h*latDim + rank ..] — directly after
 // the W_UK-absorbed qNopeAbs. Same de-interleave+NeoX as the key store (mlaLatentStore),
 // so the q·k rope dot matches. One thread per (head, rope-pair).
-const mlaQRopeWGSL = `
+const mlaQRopeWGSL = ropeCosSinWGSL + `
 struct P { nH: u32, qkHead: u32, qkNope: u32, qkRope: u32, rank: u32, latDim: u32, pos: u32, interleave: u32, ropeScale: f32, _a: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read>       q:       array<f32>;  // [nH*qkHead]
 @group(0) @binding(1) var<storage, read>       invFreq: array<f32>;  // [qkRope/2]
@@ -271,8 +271,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = idx % half;
     let qbase = h * p.qkHead + p.qkNope;  // rope dims of head h
     let theta = f32(p.pos) * invFreq[i];
-    let c = cos(theta) * p.ropeScale;
-    let s = sin(theta) * p.ropeScale;
+    let cs = ropeCosSin(theta); let c = cs.x * p.ropeScale;
+    let s = cs.y * p.ropeScale;
     var a: f32;
     var b: f32;
     if (p.interleave == 1u) {

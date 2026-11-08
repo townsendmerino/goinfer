@@ -1,0 +1,50 @@
+=== RUN   TestKV8GateVsReference
+=== RUN   TestKV8GateVsReference/S-K3900
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 5784 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[kv16-gate] S arm -kv f32 prompt 1/10 done, elapsed 1s
+[kv16-gate] S arm -kv f32 prompt 2/10 done, elapsed 2s
+[kv16-gate] S arm -kv f32 prompt 3/10 done, elapsed 3s
+[kv16-gate] S arm -kv f32 prompt 4/10 done, elapsed 4s
+[kv16-gate] S arm -kv f32 prompt 5/10 done, elapsed 5s
+[kv16-gate] S arm -kv f32 prompt 6/10 done, elapsed 6s
+[kv16-gate] S arm -kv f32 prompt 7/10 done, elapsed 7s
+[kv16-gate] S arm -kv f32 prompt 8/10 done, elapsed 8s
+[kv16-gate] S arm -kv f32 prompt 9/10 done, elapsed 9s
+[kv16-gate] S arm -kv f32 prompt 10/10 done, elapsed 9s
+cuda: prefill width 2048 rows (280 MiB of scratch; 5896 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[kv16-gate] S arm -kv f16 prompt 1/10 done, elapsed 1s
+[kv16-gate] S arm -kv f16 prompt 2/10 done, elapsed 2s
+[kv16-gate] S arm -kv f16 prompt 3/10 done, elapsed 3s
+[kv16-gate] S arm -kv f16 prompt 4/10 done, elapsed 4s
+[kv16-gate] S arm -kv f16 prompt 5/10 done, elapsed 5s
+[kv16-gate] S arm -kv f16 prompt 6/10 done, elapsed 6s
+[kv16-gate] S arm -kv f16 prompt 7/10 done, elapsed 6s
+[kv16-gate] S arm -kv f16 prompt 8/10 done, elapsed 7s
+[kv16-gate] S arm -kv f16 prompt 9/10 done, elapsed 8s
+[kv16-gate] S arm -kv f16 prompt 10/10 done, elapsed 9s
+cuda: prefill width 2048 rows (280 MiB of scratch; 5950 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[kv16-gate] S arm -kv i8 prompt 1/10 done, elapsed 4s
+[kv16-gate] S arm -kv i8 A/A rerun of prompt 1 done, elapsed 9s
+[kv16-gate] S arm -kv i8 prompt 2/10 done, elapsed 13s
+[kv16-gate] S arm -kv i8 prompt 3/10 done, elapsed 18s
+[kv16-gate] S arm -kv i8 prompt 4/10 done, elapsed 22s
+[kv16-gate] S arm -kv i8 prompt 5/10 done, elapsed 27s
+[kv16-gate] S arm -kv i8 prompt 6/10 done, elapsed 31s
+[kv16-gate] S arm -kv i8 prompt 7/10 done, elapsed 36s
+[kv16-gate] S arm -kv i8 prompt 8/10 done, elapsed 40s
+[kv16-gate] S arm -kv i8 prompt 9/10 done, elapsed 45s
+[kv16-gate] S arm -kv i8 prompt 10/10 done, elapsed 49s
+=== KV8 GATE S K=3900 (confirmation cell, set b, n=10 x 64 positions) i8 vs f32 (G4): base(meanAgree=91.09% HF=9 meanKL=0.052265) cand(meanAgree=89.69% HF=19 meanKL=0.086818) cand>=base on 4/10 prompts; critA=false critB=false critC=false KLratio=1.6611 => DOES NOT PASS
+=== KV8 GATE S K=3900 (confirmation cell, set b, n=10 x 64 positions) i8 vs f16 (reported): base(meanAgree=90.94% HF=8 meanKL=0.052564) cand(meanAgree=89.69% HF=19 meanKL=0.086818) cand>=base on 4/10 prompts; critA=false critB=false critC=false KLratio=1.6517 => DOES NOT PASS
+=== KV8 GATE S K=3900 (confirmation cell, set b, n=10 x 64 positions) f16 vs f32 (control): base(meanAgree=91.09% HF=9 meanKL=0.052265) cand(meanAgree=90.94% HF=8 meanKL=0.052564) cand>=base on 6/10 prompts; critA=true critB=true critC=true KLratio=1.0057 => PASSES
+=== KV8 GATE S K=3900 preconditions: int8 allocated 60555264 B (f32 234881024 B), A/A bit-identical over 64 rows, int8 rows differing from f32 630, seed rows differing 10/10
+--- PASS: TestKV8GateVsReference (109.57s)
+    --- PASS: TestKV8GateVsReference/S-K3900 (109.57s)
+PASS
+ledger: 7 device(s) released in this run

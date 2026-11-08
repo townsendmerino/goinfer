@@ -1,0 +1,21 @@
+=== KV8 GATE S K=3900 precondition 5 (fit): -kv f32: resident, context 4028 positions, 1 KV slot(s), KV pools 234881528 B
+=== KV8 GATE S K=3900 precondition 5 (fit): -kv f16: resident, context 4028 positions, 1 KV slot(s), KV pools 117441016 B
+=== KV8 GATE S K=3900 precondition 5 (fit): -kv i8: resident, context 4028 positions, 1 KV slot(s), KV pools 60555768 B
+=== KV8 GATE S K=3900 (confirmation cell, set b, n=10 x 64 positions) i8 vs f32 (G4): base(meanAgree=91.09% HF=9 meanKL=0.052265) cand(meanAgree=88.28% HF=27 meanKL=0.088229) cand>=base on 5/10 prompts; critA=false critB=false critC=false KLratio=1.6881 => DOES NOT PASS
+=== KV8 GATE S K=3900 (confirmation cell, set b, n=10 x 64 positions) i8 vs f16 (reported): base(meanAgree=90.94% HF=8 meanKL=0.052564) cand(meanAgree=88.28% HF=27 meanKL=0.088229) cand>=base on 5/10 prompts; critA=false critB=false critC=false KLratio=1.6785 => DOES NOT PASS
+=== KV8 GATE S K=3900 (confirmation cell, set b, n=10 x 64 positions) f16 vs f32 (control): base(meanAgree=91.09% HF=9 meanKL=0.052265) cand(meanAgree=90.94% HF=8 meanKL=0.052564) cand>=base on 6/10 prompts; critA=true critB=true critC=true KLratio=1.0057 => PASSES
+=== KV8 GATE S K=3900 preconditions: int8 allocated 60555264 B (f32 234881024 B), A/A bit-identical over 64 rows, int8 rows differing from f32 630, seed rows differing 10/10
+=== KV8 GATE D7 K=8000 precondition 5 (fit): -kv f32: resident, context 8128 positions, 1 KV slot(s), KV pools 939525112 B
+=== KV8 GATE D7 K=8000 precondition 5 (fit): -kv f16: resident, context 8128 positions, 1 KV slot(s), KV pools 469763064 B
+=== KV8 GATE D7 K=8000 precondition 5 (fit): -kv i8: resident, context 8128 positions, 1 KV slot(s), KV pools 242222072 B
+=== KV8 GATE D7 K=8000 (DECISION cell, set b, n=10 x 64 positions) i8 vs f32 (G4): base(meanAgree=93.12% HF=11 meanKL=0.055900) cand(meanAgree=92.19% HF=14 meanKL=0.060374) cand>=base on 7/10 prompts; critA=true critB=true critC=true KLratio=1.0800 => AMBIGUOUS — PARKED
+=== KV8 GATE D7 K=8000 (DECISION cell, set b, n=10 x 64 positions) i8 vs f16 (reported): base(meanAgree=92.34% HF=11 meanKL=0.059082) cand(meanAgree=92.19% HF=14 meanKL=0.060374) cand>=base on 7/10 prompts; critA=true critB=true critC=true KLratio=1.0219 => PASSES
+=== KV8 GATE D7 K=8000 (DECISION cell, set b, n=10 x 64 positions) f16 vs f32 (control): base(meanAgree=93.12% HF=11 meanKL=0.055900) cand(meanAgree=92.34% HF=11 meanKL=0.059082) cand>=base on 6/10 prompts; critA=true critB=true critC=true KLratio=1.0569 => AMBIGUOUS — PARKED
+=== KV8 GATE D7 K=8000 preconditions: int8 allocated 242221056 B (f32 939524096 B), A/A bit-identical over 64 rows, int8 rows differing from f32 630, seed rows differing 10/10
+--- PASS: TestKV8GateVsReference (354.89s)
+    --- PASS: TestKV8GateVsReference/precondition4-exact-input-G2 (9.96s)
+        --- PASS: TestKV8GateVsReference/precondition4-exact-input-G2/llama-attnfa-tiny (1.97s)
+        --- PASS: TestKV8GateVsReference/precondition4-exact-input-G2/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (2.45s)
+        --- PASS: TestKV8GateVsReference/precondition4-exact-input-G2/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (5.42s)
+    --- PASS: TestKV8GateVsReference/S-K3900 (69.74s)
+    --- PASS: TestKV8GateVsReference/D7-K8000 (275.20s)

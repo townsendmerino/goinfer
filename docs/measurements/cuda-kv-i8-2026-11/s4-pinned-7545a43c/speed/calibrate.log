@@ -1,0 +1,8 @@
+calibrate start 2026-11-08 08:22:59 PST load 0.31 0.43 1.45
+merging into /home/francis/goinfer-bench/s4-pinned/prompts-s4.json (59 existing prompt(s))
+  1.5B depth=4096: 4096 tokens (4044 words)
+  1.5B depth=16384: 16436 tokens (16384 words)
+  7B depth=4096: 4096 tokens (4044 words)
+  7B depth=16384: 16436 tokens (16384 words)
+wrote /home/francis/goinfer-bench/s4-pinned/prompts-s4.json: 4 calibrated, 63 total
+exit 0 08:23:39

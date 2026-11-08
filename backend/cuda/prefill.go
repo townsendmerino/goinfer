@@ -1488,27 +1488,27 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 								fcfg.SharedMemBytes = uint32(2 * (bn*(hd+attnFusedKPAD) + hd*(bn+attnFusedKPAD)))
 								switch {
 								case tile == 1 && hd == 64:
-									attnErr = r.launch(r.bAttnBM32x64hd64, fcfg, attnArgs...)
+									attnErr = r.launch(r.bAttnBM32x64hd64, fcfg, r.kvScaled(l, attnArgs...)...)
 								case tile == 1:
-									attnErr = r.launch(r.bAttnBM32x64hd128, fcfg, attnArgs...)
+									attnErr = r.launch(r.bAttnBM32x64hd128, fcfg, r.kvScaled(l, attnArgs...)...)
 								case tile == 2 && hd == 64:
-									attnErr = r.launch(r.bAttnBM32x32hd64, fcfg, attnArgs...)
+									attnErr = r.launch(r.bAttnBM32x32hd64, fcfg, r.kvScaled(l, attnArgs...)...)
 								case tile == 2:
-									attnErr = r.launch(r.bAttnBM32x32hd128, fcfg, attnArgs...)
+									attnErr = r.launch(r.bAttnBM32x32hd128, fcfg, r.kvScaled(l, attnArgs...)...)
 								case hd == 64:
-									attnErr = r.launch(r.bAttnBM128hd64, fcfg, attnArgs...)
+									attnErr = r.launch(r.bAttnBM128hd64, fcfg, r.kvScaled(l, attnArgs...)...)
 								default:
-									attnErr = r.launch(r.bAttnBM128hd128, fcfg, attnArgs...)
+									attnErr = r.launch(r.bAttnBM128hd128, fcfg, r.kvScaled(l, attnArgs...)...)
 								}
 								r.fastAttnLaunches++
 								if tile == 3 {
 									r.tile128Launches++
 								}
 							} else if hd == 64 {
-								attnErr = r.launch(r.bAttnFused64, fcfg, attnArgs...)
+								attnErr = r.launch(r.bAttnFused64, fcfg, r.kvScaled(l, attnArgs...)...)
 								r.fastAttnLaunches++
 							} else {
-								attnErr = r.launch(r.bAttnFused128, fcfg, attnArgs...)
+								attnErr = r.launch(r.bAttnFused128, fcfg, r.kvScaled(l, attnArgs...)...)
 								r.fastAttnLaunches++
 							}
 						} else if psStride > 0 && r.prefillSplitKVServes(maxNWin) {
@@ -1516,6 +1516,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						} else {
 							attnErr = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
 								BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, r.kvScaled(l, r.withCap(attnArgs...)...)...)
+							r.exactAttnLaunches++
 						}
 						if attnErr == nil && laneFrom < M {
 							attnErr = r.flashVerifyAttn(l, startPos, laneFrom, M, qBb, cctxB)

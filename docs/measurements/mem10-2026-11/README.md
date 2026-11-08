@@ -55,3 +55,51 @@ Its `RssAnon` 15,258 MiB (14.90 GiB) and `RssFile` 9,728 MiB (9.50 GiB) are the 
 - One box, an 8 GiB card, 62 GiB of RAM. On a box with less RAM the second copy decides whether the model loads at all.
 
 **No build is started on this reading.** Whether a saving of about 12 GiB justifies an M–L change to the sidecar format is the coordinator's and the owner's call.
+
+## MEM10 tier 0: can CUDA register the `.giw` mapping in place? (2026-11-08, nobara-sb01; Francis: "build it")
+
+**No, not on this box, without copying the pages.** The build starts with the step this README named first: register a mapped file, upload
+slots from it, byte-compare. Its answer stops the build before any format change.
+
+**Instrument:** `TestMEM10_fileMappingRegistration_probe` (`backend/cuda/internal/gpudev/mem10_probe_test.go`), tier 0, deterministic, no
+timing, under the shared timing lock, at main `b45185842`.
+- It builds a stack in the packed int4 expert layout's sizes, 128 experts x 256 rows x 2,048 columns (32 MiB of weight words, 4 MiB of f16
+  scales), filled with deterministic random words, and writes it to a file. The content does not matter to a registration; `gpudev` may
+  not import the packer.
+- It maps the file five ways and calls `cuMemHostRegister` on each. Where registration succeeds, it confirms the pointer reads as
+  registered host memory, uploads every expert's slot from the mapping, and byte-compares against the bytes written.
+- Around the registration it reads `RssAnon`, `RssShmem`, `RssFile` and `VmLck` from `/proc/self/status`, and the file's mtime.
+- Machine: RTX 2070 SUPER, driver 595.112.07, Linux 7.3.0-202.nobara.fc44. The file was on `/home` (btrfs on NVMe, where `~/models` and the
+  sidecars live) and, for comparison, on `/tmp` (tmpfs). Logs: `probe-2026-11-08/probe-nvme.log` and `probe-tmpfs.log`.
+
+The device attribute `READ_ONLY_HOST_REGISTER_SUPPORTED` reads **0**. On the btrfs file:
+
+| mapping | flags | registration | memory it costs | file |
+|---|---|---|---|---|
+| read-only, shared | 0 | refused, `CUDA_ERROR_INVALID_VALUE` | | unchanged |
+| read-only, shared | `READ_ONLY` | refused, `CUDA_ERROR_NOT_SUPPORTED` | | unchanged |
+| read-only, shared, +64 B | `READ_ONLY` | refused, `CUDA_ERROR_NOT_SUPPORTED` | | unchanged |
+| read-write, shared | 0 | refused, `CUDA_ERROR_INVALID_VALUE` | | unchanged |
+| read-write, private | 0 | **accepted**; all 128 slots byte-identical to the file | **`RssAnon` +34 MiB** for a 36 MiB stack: the pin copied every page | unchanged |
+
+On tmpfs, the read-write shared mapping registers (`RssShmem` +36 MiB, 128 slots identical) and changes the file's mtime: the write-intent
+pin dirties it. A tmpfs file is RAM, so a sidecar there would cost the same host memory as today's shared region.
+
+**What it means for MEM10:**
+- A pre-permuted `cuda` target only saves the second copy if the driver can pin the mapping's own pages. Here it cannot.
+  - The read-only paths are not supported on this GPU and driver.
+  - A shared file mapping on the disk the models live on is refused.
+  - The one mapping that registers is private, and pinning it copies every page into anonymous memory: the same 12 GiB, moved from
+    `RssShmem` to `RssAnon`.
+- The probe does not show *why* the shared file mapping is refused, only that it is; it gives no kernel or driver cause and claims none.
+- **The build is not started.** No `.giw` format change: it would cost a format variant and every cached cuda sidecar, and save nothing on
+  this box.
+- **What would still save memory, untested here and a decision, not a default:** uploading the slots from the mapping's *pageable* pages
+  (no registration). The driver then stages each copy through its own bounce buffer, so the per-token expert DMA slows down. Its cost on the
+  26B's decode is a tier 1 A/B, needing its own registration and Francis's word.
+
+## MEM10 tier 1: KILL (2026-11-08)
+
+Francis asked for the unpinned path to be measured. The expert slots, uploaded from pageable file pages instead of the pinned copy, save
+12,251 MiB of host memory but cost the 26B's decode 0.817x at short context and 0.750x at long, under the registered 0.90 kill line. The
+registration, the reading and the attempts are in `ab-registration.md`. MEM10 is closed on nobara, and the pinned copy stays.

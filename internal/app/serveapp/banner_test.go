@@ -655,3 +655,40 @@ func TestBanner_kvPoolLine(t *testing.T) {
 		})
 	}
 }
+
+// TestBanner_kvI8CostIsCUDAs: the measured int8 cost is CUDA's (kvI8Cost), so the banner prints it only for a CUDA resident's int8 cache. A
+// CPU cache, a Metal resident and a CPU cache beside a CUDA resident print "lossy" alone.
+func TestBanner_kvI8CostIsCUDAs(t *testing.T) {
+	i8 := func(cache string) decoder.KVPrecisionReport {
+		return decoder.KVPrecisionReport{Cache: cache, Requested: "i8", Delivered: "i8"}
+	}
+	for _, tc := range []struct {
+		name, decodePath string
+		kv               []decoder.KVPrecisionReport
+		want, notWant    []string
+	}{
+		{"cuda resident", "cuda-resident (int4)", []decoder.KVPrecisionReport{i8("resident")},
+			[]string{"KV i8 (requested i8, lossy: " + kvI8Cost + ")"}, nil},
+		{"metal resident", "metal-resident (int4)", []decoder.KVPrecisionReport{i8("resident")},
+			[]string{"KV i8 (requested i8, lossy)"}, []string{kvI8Cost}},
+		{"webgpu resident", "webgpu-resident (int8)", []decoder.KVPrecisionReport{i8("resident")},
+			[]string{"KV i8 (requested i8, lossy)"}, []string{kvI8Cost}},
+		{"cpu", "cpu (int4)", []decoder.KVPrecisionReport{i8("cpu")},
+			[]string{"KV i8 (requested i8, lossy)"}, []string{kvI8Cost}},
+		{"cuda resident and its cpu cache", "cuda-resident (int4)", []decoder.KVPrecisionReport{i8("resident"), i8("cpu")},
+			[]string{"· KV i8 (requested i8, lossy: " + kvI8Cost + ") · CPU KV i8 (requested i8, lossy)"}, nil},
+	} {
+		got := bannerLine(modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: 4096, maxPositions: 4096, decodePath: tc.decodePath, kv: tc.kv},
+			config{load: loadflags.Flags{KV: "i8"}}), "context:")
+		for _, w := range tc.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: line %q lacks %q", tc.name, got, w)
+			}
+		}
+		for _, w := range tc.notWant {
+			if strings.Contains(got, w) {
+				t.Errorf("%s: line %q prints CUDA's measured int8 cost", tc.name, got)
+			}
+		}
+	}
+}

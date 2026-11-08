@@ -1,0 +1,22 @@
+=== RUN   TestMEM10_pageableExpertSourceAB
+[mem10ab 12:12:40] load 1/8 arm A: loading (load 2.06, available 61082 MiB, elapsed 0s)
+decoder: fit is tight — gemma4-26b-q4_k_m.gguf needs ~38.4 GB of host memory while building the CUDA expert cache (13.2 GB weights + 13.2 GB packed copy + 12.0 GB pinned copy of the experts); this machine currently has 59.7 GB of memory available (budget 41.8 GB = 70% of that) (92% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.7 GB free — capping to 32 (3.3 GB)
+cuda: prefill width 1024 rows (154 MiB of scratch; 213 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+[mem10ab 12:14:02] load 1/8 arm A: short 58.81 tok/s, long 33.58 tok/s; RssShmem 12345 MiB (at load 12345), RssAnon 15796, RssFile 90, VmSwap 0, VmHWM 28233; Rss of .giw 0, pageable files 0; first-layer hash bfdc8a9f2b24332e
+[mem10ab 12:14:04] load 2/8 arm B: loading (load 3.29, available 47491 MiB, elapsed 1m24s)
+    graphs_speed_test.go:254: load 2 (B): decoder: gemma4-26b-q4_k_m.gguf needs ~38.4 GB of host memory while building the CUDA expert cache (13.2 GB weights + 13.2 GB packed copy + 12.0 GB pinned copy of the experts); this machine currently has 46.4 GB of memory available (budget 32.5 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- FAIL: TestMEM10_pageableExpertSourceAB (84.35s)
+FAIL
+ledger: 5 device(s) released in this run

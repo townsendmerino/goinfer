@@ -218,6 +218,7 @@ SCANS = [
     # gpu module
     Scan("backend/webgpu", "TestNemotronBlockKind_hasADefault", F("backend/webgpu/residency.go")),
     Scan("backend/webgpu/internal/kernels", "TestLedger_everyBufferIsLeased", NT("backend/webgpu", "backend/webgpu/internal/kernels")),
+    Scan("backend/webgpu/internal/kernels", "TestRopeKernels_noBuiltinSinCos", NT("backend/webgpu/internal/kernels")),
     Scan("backend/webgpu", "TestEnsureAttnWide_guardsOnTheLastPipeline", F("backend/webgpu/attention.go")),
     Scan("backend/webgpu", "TestGPU_deviceBoundaryErrorsAreNotDropped", F("backend/webgpu/decoderunner.go", "backend/webgpu/residency.go")),
     Scan("backend/webgpu", "TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches", F("backend/webgpu/residency.go")),
@@ -238,6 +239,7 @@ SCANS = [
     Scan("backend/cuda", "TestPipelineLint_boundKernelsAreLaunched", NT("backend/cuda")),
     Scan("backend/cuda", "TestPrefillCoreAndDraftBlockCallTheShmemGuards", F("backend/cuda/prefill.go", "backend/cuda/drafter.go")),
     Scan("backend/cuda", "TestPrefillCoreCallsMropePosWindow", F("backend/cuda/prefill.go")),
+    Scan("backend/cuda", "TestKV8_everyFusedPrefillLaunchPassesScales", F("backend/cuda/prefill.go")),
     Scan("backend/cuda", "TestPrefillCoreCallsCheckPrefillShmemImg", F("backend/cuda/prefill.go")),
     Scan("backend/cuda", "TestDeclineAdvice_wiredIntoBuildResident", F("backend/cuda/backend.go")),
     Scan("backend/cuda/kernels", "TestAttnKernelDigests_tableCoversTheSource", CU("backend/cuda")),
