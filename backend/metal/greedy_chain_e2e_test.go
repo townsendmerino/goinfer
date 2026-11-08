@@ -136,9 +136,9 @@ func greedyChainGenerate(t *testing.T, tied, noRoom bool, sp decoder.SamplingPar
 // TestHLR_gatedChainMatchesTodaysPath is HL-R2 (docs/measurements/hl-2026-11/registration.md): greedy Generate on Metal under a gated
 // processor, with the chain against greedyChainOff (today's path: ForwardArgmax while the gate is closed, Forward while it is open).
 // The gate opens twice and, on every third open step, the processor bans the row's argmax, so the host's pick differs from the
-// device's. The tokens must be equal, and the processor must run on the same steps. With the chain on, it serves the closed steps (a
-// chained forward for every emitted token that is not an open step's) and at least one opening must have stopped it, or the cell is
-// void. Cells: the committed fixture, and the 0.5B and 1.5B bench checkpoints from ~/models (the 1.5B as its Metal .giw).
+// device's. The tokens must be equal, and the processor must run on the same steps. With the chain on, it serves exactly the closed
+// steps: every emitted token's forward less the open steps' (the decode loop also asks for the forward after the last token), so an
+// open step that stayed on the chain, or a closed one that missed it, changes the count. Cells: the committed fixture, and the 0.5B and 1.5B bench checkpoints from ~/models (the 1.5B as its Metal .giw).
 func TestHLR_gatedChainMatchesTodaysPath(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -170,10 +170,9 @@ func hlrCell(t *testing.T, path string, prompt []int) {
 	const n = 64
 	open := func(gen []int) bool { l := len(gen); return (l >= 5 && l < 12) || (l >= 30 && l < 40) }
 	type arm struct {
-		ids          []int
-		calls, bans  int
-		served       int
-		chainStopped int
+		ids         []int
+		calls, bans int
+		served      int
 	}
 	run := func(off bool) arm {
 		greedyChainOff = off
@@ -226,11 +225,11 @@ func hlrCell(t *testing.T, path string, prompt []int) {
 	if got.bans == 0 {
 		t.Fatalf("no open step banned the argmax: the cell would not show a host pick that differs from the device's")
 	}
-	// the chain serves the closed steps: every emitted token that is not an open step's, less the one from the prompt's logits
-	if want := len(got.ids) - got.calls - 1; got.served < want {
-		t.Fatalf("the chain served %d tokens' forwards, want at least %d (%d emitted, %d open steps)", got.served, want, len(got.ids), got.calls)
+	if len(got.ids) != n {
+		t.Fatalf("%d tokens, want %d (an early EOS would skip the second gate window): change the prompt", len(got.ids), n)
 	}
-	if got.served >= len(got.ids) {
-		t.Fatalf("the chain served %d of %d emitted tokens: an open step stayed on the chain", got.served, len(got.ids))
+	// the chain serves exactly the closed steps
+	if want := len(got.ids) - got.calls; got.served != want {
+		t.Fatalf("the chain served %d forwards, want %d (%d emitted, %d open steps)", got.served, want, len(got.ids), got.calls)
 	}
 }

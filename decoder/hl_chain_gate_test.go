@@ -160,10 +160,16 @@ func TestHLR_chainRunsWhileTheGateIsClosedAndStopsAtEachOpening(t *testing.T) {
 		}
 		// the resident exists after Load; bind it for the closure above
 		rf = be.rf
-		stream, _ := m.Generate(context.Background(), []int{1, 2, 3}, n, sp)
+		stream, g := m.Generate(context.Background(), []int{1, 2, 3}, n, sp)
 		var out []int
 		for id := range stream {
 			out = append(out, id)
+		}
+		if err := g.Err(); err != nil {
+			t.Fatalf("%s: generate: %v", name, err)
+		}
+		if len(out) != n {
+			t.Fatalf("%s: %d tokens, want %d (an early EOS would skip the later gate windows)", name, len(out), n)
 		}
 		return out, be.rf, processed
 	}

@@ -25,7 +25,7 @@ an ungated processor, CUDA's chain, and a turn under the MC3 batcher. Each is it
 | **HL-R3** | 1, speed, by day | in-process interleaved A/B in HL-G4's shape (`TestHLChainAB`, ported from the branch): 9 reps after a discarded warm-up, Metal 1.5B and 7B, one process per model and shape, under the exclusive timing lock | two quantities, HL-R ÷ today: (a) a gated turn whose gate stays closed (the prose part of a tool turn); (b) a whole turn whose gate opens once for a tool call: 256 tokens, the gate open for the last 48, the processor banning the row's argmax on every 8th open step. **Ship:** median (a) ≥ 1.02 and median (b) ≥ 1.00. **Park:** (a) in [1.00, 1.02). **Off:** (a) < 1.00, or (b) < 1.00. |
 
 **Stopping rule.** One run of 9 reps per model and shape. A rep whose two token streams differ voids the comparison. A cell
-started with load above 4.0 or free memory below the fit need plus 2 GB is void and re-run in place. The do-nothing arm is
+started with load above 4.0 or reclaimable memory (`cmd/hostmem -reclaimable`) below the model's file size plus 2 GB is void and re-run in place; the runner checks both at each cell's start, records them with the swap in use, and exits non-zero unless all four cells counted. The do-nothing arm is
 today's path in the same process; the arms alternate.
 
 **What each outcome means.** Ship: HL-R goes on by default for gated greedy turns on Metal, with a changelog entry. Park: the

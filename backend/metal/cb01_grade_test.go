@@ -250,16 +250,18 @@ func TestHLRChainAB(t *testing.T) {
 		o.served = a.r.chainServed - s0
 		return o
 	}
-	closedSteps := n - 1
+	// the chain serves exactly the closed steps: the loop asks one forward per emitted token (the last token's too) with the tokens so
+	// far, so the gate (open at len(gen) >= n-callLen) opens for callLen+1 of them
+	wantServed := n
 	if shape == "toolcall" {
-		closedSteps = n - callLen - 1
+		wantServed = n - callLen - 1
 	}
 	check := func(rep int, off, on arm) {
 		if !slices.Equal(off.ids, on.ids) {
 			t.Fatalf("rep %d: HL-R's tokens differ from today's", rep)
 		}
-		if off.served != 0 || on.served < closedSteps {
-			t.Fatalf("rep %d: the chain served %d tokens with it off and %d with it on (want 0 and >= %d)", rep, off.served, on.served, closedSteps)
+		if off.served != 0 || on.served != wantServed {
+			t.Fatalf("rep %d: the chain served %d tokens with it off and %d with it on (want 0 and %d)", rep, off.served, on.served, wantServed)
 		}
 	}
 	// The first Generate prefills cold and every later one reuses the prompt (TestCB01ChainAB's note): discard one cold run.

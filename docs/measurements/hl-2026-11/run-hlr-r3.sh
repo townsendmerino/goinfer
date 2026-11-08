@@ -6,17 +6,24 @@
 #
 # Runs a test binary built at REV with -tags goinfer_testhooks, under the exclusive timing lock:
 #   (cd backend/metal && go test -c -tags goinfer_testhooks -o ~/goinfer-bench/hl-2026-11/metal-tagged-<REV>.test .)
+#   go build -o ~/goinfer-bench/hl-2026-11/hostmem ./cmd/hostmem
 #   python3 scripts/timing_lock.py run --wait 600 --label hlr-r3 -- bash docs/measurements/hl-2026-11/run-hlr-r3.sh <REV>
-# A cell started with the 1-minute load above 4.0 (half the cores) is void: it waits for the load to fall and re-runs in place.
+#
+# The registered void rule, checked at each cell's start and recorded in provenance.txt with the swap in use: the 1-minute load above
+# 4.0 (half the cores), or reclaimable memory (cmd/hostmem -reclaimable, the reading the other timed runners use) below the model's
+# file size plus 2 GB (the fit need plus the margin), voids the cell; it waits 60 s and starts again, up to 6 times. Exits non-zero
+# unless all four cells ran and printed their METRIC line.
 set -uo pipefail
 REV=${1:?usage: run-hlr-r3.sh <REV>}
 BASE=$HOME/goinfer-bench/hl-2026-11
 BIN=$BASE/metal-tagged-$REV.test
+HOSTMEM=$BASE/hostmem
 LOG=$HOME/goinfer-logs/hl-2026-11/r3
 M15=$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw
 M7=$HOME/models/qwen2.5-7b-instruct-q4_k_m.int4.metal.v17.giw
-mkdir -p "$LOG"
+rm -rf "$LOG"; mkdir -p "$LOG"
 [ -x "$BIN" ] || { echo "missing test binary $BIN"; exit 1; }
+[ -x "$HOSTMEM" ] || { echo "missing $HOSTMEM"; exit 1; }
 for f in "$M15" "$M7"; do [ -f "$f" ] || { echo "missing model $f"; exit 1; }; done
 cd "$BASE"
 {
@@ -25,22 +32,29 @@ cd "$BASE"
   echo "started:  $(date '+%F %T %Z')"
   echo "machine:  $(sysctl -n machdep.cpu.brand_string), $(( $(sysctl -n hw.memsize) / 1073741824 )) GB, macOS $(sw_vers -productVersion)"
   echo "load:     $(uptime | sed 's/.*load averages*: //')"
+  echo "memory:   reclaimable $("$HOSTMEM" -reclaimable -mb) MiB; swap $(sysctl -n vm.swapusage)"
   echo "therm:    $(pmset -g therm 2>/dev/null | tr '\n' ' ')"
 } | tee "$LOG/provenance.txt"
 
 load1() { uptime | sed 's/.*load averages*: //' | awk '{gsub(",","",$1); print $1}'; }
+ran=0
 grade() { # <log name> <model> <shape>
+  local need_mb=$(( $(stat -f %z "$2") / 1048576 + 2048 ))
   for attempt in 1 2 3 4 5 6; do
-    l=$(load1)
-    if awk -v l="$l" 'BEGIN{exit !(l > 4.0)}'; then
-      echo "== $1: load $l above 4.0 at the cell's start: VOID, waiting 60 s ($attempt)" | tee -a "$LOG/provenance.txt"; sleep 60; continue
+    local l free swap
+    l=$(load1); free=$("$HOSTMEM" -reclaimable -mb); swap=$(sysctl -n vm.swapusage)
+    if awk -v l="$l" 'BEGIN{exit !(l > 4.0)}' || [ "${free:-0}" -lt "$need_mb" ]; then
+      echo "== $1: VOID at start (attempt $attempt): load $l (cap 4.0), reclaimable ${free} MiB (need ${need_mb}); waiting 60 s" | tee -a "$LOG/provenance.txt"; sleep 60; continue
     fi
-    echo "== $1 — $(date '+%T') load $l" | tee -a "$LOG/provenance.txt"
+    echo "== $1 — $(date '+%T') load $l, reclaimable ${free} MiB (need ${need_mb}), swap: $swap" | tee -a "$LOG/provenance.txt"
     GOINFER_METAL_HLR_AB=1 GOINFER_METAL_HLR_MODEL="$2" GOINFER_METAL_HLR_SHAPE="$3" \
-      "$BIN" -test.v -test.count=1 -test.timeout 30m -test.run '^TestHLRChainAB$' 2>&1 | tee "$LOG/$1.log" || true
+      "$BIN" -test.v -test.count=1 -test.timeout 30m -test.run '^TestHLRChainAB$' 2>&1 | tee "$LOG/$1.log"
+    local rc=${PIPESTATUS[0]}
+    echo "== $1 — finished $(date '+%T') rc=$rc, swap: $(sysctl -n vm.swapusage), reclaimable $("$HOSTMEM" -reclaimable -mb) MiB" | tee -a "$LOG/provenance.txt"
+    if [ "$rc" -eq 0 ] && grep -q 'HL-R3 METRIC' "$LOG/$1.log"; then ran=$((ran + 1)); else echo "== $1: FAILED (rc $rc or no METRIC line)" | tee -a "$LOG/provenance.txt"; fi
     return
   done
-  echo "== $1: never started, the load stayed above 4.0" | tee -a "$LOG/provenance.txt"
+  echo "== $1: never started, the guard stayed void for 6 attempts" | tee -a "$LOG/provenance.txt"
 }
 
 grade 1.5b-closed "$M15" closed
@@ -48,5 +62,6 @@ grade 1.5b-toolcall "$M15" toolcall
 grade 7b-closed "$M7" closed
 grade 7b-toolcall "$M7" toolcall
 
-grep -h 'identity:\|METRIC\|loaded\|^--- \|VOID' "$LOG"/*.log "$LOG/provenance.txt" | tee "$LOG/results.txt"
-echo "finished: $(date '+%F %T %Z')" | tee -a "$LOG/provenance.txt"
+grep -h 'identity:\|METRIC\|loaded\|^--- \|VOID\|FAILED\|never started' "$LOG"/*.log "$LOG/provenance.txt" | tee "$LOG/results.txt"
+echo "finished: $(date '+%F %T %Z'); $ran of 4 cells counted" | tee -a "$LOG/provenance.txt"
+[ "$ran" -eq 4 ]
