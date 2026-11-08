@@ -1,0 +1,16 @@
+plant: unpack-shift (attn_fused_bm.cu)
+replaced: __half2 a = __floats2half2_rn((float)r[i].c[0] * sk, (float)r[i].c[1] * sk);
+with:     __half2 a = __floats2half2_rn((float)r[i].c[1] * sk, (float)r[i].c[1] * sk);
+
+    kv16_test.go:1522: attn_fused_bm32x64 hd128 startPos=0 M=70 hd=128: 19456/35840 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm32x32 hd128 startPos=0 M=70 hd=128: 35325/35840 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm128 hd128 startPos=0 M=70 hd=128: 35325/35840 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm32x64 hd128 startPos=0 M=300 hd=128: 137216/153600 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm32x32 hd128 startPos=0 M=300 hd=128: 153088/153600 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm128 hd128 startPos=0 M=300 hd=128: 153088/153600 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm32x64 hd128 startPos=37 M=200 hd=128: 102398/102400 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm32x32 hd128 startPos=37 M=200 hd=128: 102400/102400 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm128 hd128 startPos=37 M=200 hd=128: 102398/102400 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm32x64 hd128 startPos=100 M=129 hd=128: 66048/66048 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm32x32 hd128 startPos=100 M=129 hd=128: 66048/66048 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused_bm128 hd128 startPos=100 M=129 hd=128: 66048/66048 elements differ between the int8 tile and the f16 tile on f16(code*scale)
