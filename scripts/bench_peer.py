@@ -640,20 +640,10 @@ class SwapWatch:
         BENCH_SWAPOUT_VOID_MB void on swap-ins and swap-outs over them (0: any). Nobara takes swap-ins alone (peer-vetted
         2026-10-08: idle pages pushed out under page-cache pressure grew swap by 1.9-46 MB beside a 12-14 GB load with 58 GB
         free, which slows nothing being timed); a never-swap gate takes both at 0."""
-        lim = os.environ.get("BENCH_SWAP_VOID_MB", "").strip()
-        inlim = os.environ.get("BENCH_SWAPIN_VOID_MB", "").strip()
-        outlim = os.environ.get("BENCH_SWAPOUT_VOID_MB", "").strip()
+        import void_rule
         if self.killed:
             return self.killed
-        if not lim and not inlim and not outlim:
-            lim = "0"  # the rule's default (void_rule.py): any growth voids. An explicit swap-in or swap-out bar replaces it, as nobara's does.
-        if lim and self.peak > float(lim):
-            return f"swap grew +{self.peak:.1f} MB during the cell (> {float(lim):.0f} MB): void"
-        if inlim and self.swapin is not None and self.swapin > float(inlim):
-            return f"swap-ins of {self.swapin:.2f} MB during the cell (> {float(inlim):.0f} MB): void"
-        if outlim and self.swapout is not None and self.swapout > float(outlim):
-            return f"swap-outs of {self.swapout:.2f} MB during the cell (> {float(outlim):.0f} MB): void"
-        return None
+        return void_rule.swap_verdict(self.peak, self.swapin, self.swapout)
 
 
 class RSSSampler:
@@ -815,6 +805,13 @@ def learn_fit_need(model_key, log_text):
         found = (float(m.group(1)) + float(m.group(2))) * 1024
     if found:
         _FIT_NEED[model_key] = int(found)
+
+
+def need_is_lower_bound(source):
+    """Whether a fit need from `source` leaves out KV and scratch: the checkpoint's file size does; goinfer's `fit:` banner and an
+    explicit BENCH_FIT_NEED_GB do not. Recorded with the cell (machine.fit_need_lower_bound) because the zero-margin start check then
+    asks for no more than the weights."""
+    return source == "file size"
 
 
 _LOAD_SKIP_SAID = False
@@ -2249,6 +2246,7 @@ def main():
         ((rates, err, counts), machine, void_starts), swap_voids = run_with_swap_voids(lambda: start_clean(machine_state, need, _run))
         machine["gate"] = gate
         machine["fit_need_mb"], machine["fit_need_source"] = need, need_src
+        machine["fit_need_lower_bound"] = need_is_lower_bound(need_src)
         machine["end"] = end_state()
         # prompt_tokens(depth, mk) only resolves for phases A/B/C -- "embed"/"vision" aren't real
         # MODELS keys and D's "depth" is an approximate embeddings length, not a calibrated one, so

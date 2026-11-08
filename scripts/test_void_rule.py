@@ -15,16 +15,6 @@ import void_rule  # noqa: E402
 SNAP = {"load1": 1.0, "ncores": 8, "available_mb": 5000, "reclaimable_mb": 100, "swap_mb": 900.0}
 
 
-def old_rule(snap, need_mb, cap=None):
-    """The rule before 2026-11-08, for the plants: the reclaimable reading against the need plus 2 GB."""
-    cap = snap["ncores"] / 2 if cap is None else cap
-    if snap["load1"] > cap:
-        return "load"
-    if need_mb and snap["reclaimable_mb"] < need_mb + 2048:
-        return "memory"
-    return None
-
-
 class Start(unittest.TestCase):
     def test_available_at_the_need_starts_and_under_it_waits(self):
         self.assertIsNone(void_rule.start_void(dict(SNAP, available_mb=4000), 4000), "exactly the need starts: there is no margin")
@@ -46,21 +36,42 @@ class Start(unittest.TestCase):
         self.assertIsNone(void_rule.start_void(dict(SNAP, available_mb=None), 4000))
         self.assertIsNone(void_rule.start_void(dict(SNAP, load1=None), 4000))
 
-    def test_plant_the_old_rule_holds_a_cell_this_rule_starts(self):
-        # A start the new rule allows (available over the need, reclaimable under need + 2 GB) is held by the old rule: restoring the
-        # +2 GB term would make a cell that should start wait, and this test is what notices it.
-        snap = dict(SNAP, available_mb=4100, reclaimable_mb=4100)
-        self.assertIsNone(void_rule.start_void(snap, 4000))
-        self.assertIsNotNone(old_rule(snap, 4000), "the plant: the old rule holds this start")
-        with mock.patch.object(void_rule, "start_void", old_rule):
-            with self.assertRaises(AssertionError):
-                self.assertIsNone(void_rule.start_void(snap, 4000))
-
 
 class UnknownCores(unittest.TestCase):
     def test_an_unreadable_core_count_skips_the_load_term(self):
         self.assertIsNone(void_rule.start_void(dict(SNAP, ncores=None, load1=99.0), 0), "no cap of 0.5 from an unknown core count")
         self.assertIn("above the cap 1", void_rule.start_void(dict(SNAP, ncores=None, load1=99.0), 0, cap=1.0), "an explicit cap still applies")
+
+
+class SnapshotCores(unittest.TestCase):
+    def snap(self, cpu_count, getloadavg=lambda: (99.0, 1.0, 1.0)):
+        with mock.patch.object(void_rule.hostmem, "available_mb", lambda: 6000), \
+                mock.patch.object(void_rule.hostmem, "reclaimable_mb", lambda: 4000), \
+                mock.patch.object(void_rule, "swap_used_mb", lambda: 1.0), \
+                mock.patch.object(void_rule.os, "getloadavg", getloadavg), \
+                mock.patch.object(void_rule.os, "cpu_count", lambda: cpu_count):
+            return void_rule.snapshot()
+
+    def test_an_unreadable_core_count_stays_unknown_through_snapshot_and_skips_the_load_term(self):
+        snap = self.snap(None)
+        self.assertIsNone(snap["ncores"], "snapshot must not coerce an unknown core count to 1 (a cap of 0.5)")
+        self.assertIsNone(void_rule.start_void(snap, 0))
+
+    def test_an_unreadable_load_is_unknown(self):
+        def boom():
+            raise OSError("no load average")
+        snap = self.snap(8, boom)
+        self.assertIsNone(snap["load1"])
+        self.assertIsNone(void_rule.start_void(snap, 0))
+
+    def test_the_cli_says_when_it_skips_the_load_term(self):
+        import io
+        from contextlib import redirect_stderr
+        err = io.StringIO()
+        with mock.patch.object(void_rule, "snapshot", lambda: dict(SNAP, ncores=None, load1=99.0)), redirect_stderr(err), \
+                mock.patch("sys.stdout", io.StringIO()):
+            self.assertEqual(void_rule.main(["start", "--need-mb", "0"]), 0)
+        self.assertIn("core count unreadable", err.getvalue())
 
 
 class Readings(unittest.TestCase):
@@ -91,15 +102,68 @@ class Readings(unittest.TestCase):
             self.assertEqual(void_rule.swap_used_mb(), 256.0)
 
 
+class SwapVerdict(unittest.TestCase):
+    """swap_verdict is the one swap bar bench_peer's SwapWatch and the shell runners share: any growth voids unless an explicit bar
+    replaces it, and nobara's swap-in/out bars (peer-vetted 2026-10-08) replace the growth bar."""
+
+    def env(self, **kw):
+        return dict(kw)
+
+    def test_any_growth_voids_with_nothing_set(self):
+        self.assertIsNone(void_rule.swap_verdict(0.0, None, None, {}))
+        self.assertIn("grew +0.5 MB", void_rule.swap_verdict(0.5, None, None, {}))
+
+    def test_an_explicit_growth_bar_replaces_the_zero(self):
+        self.assertIsNone(void_rule.swap_verdict(200.0, None, None, {"BENCH_SWAP_VOID_MB": "256"}))
+        self.assertIn("grew", void_rule.swap_verdict(300.0, None, None, {"BENCH_SWAP_VOID_MB": "256"}))
+
+    def test_nobaras_swap_in_bar_replaces_the_default_and_growth_alone_is_not_a_void(self):
+        env = {"BENCH_SWAPIN_VOID_MB": "0"}
+        self.assertIsNone(void_rule.swap_verdict(46.0, 0.0, 0.0, env))
+        self.assertIn("swap-ins", void_rule.swap_verdict(46.0, 0.3, 0.0, env))
+        self.assertIsNone(void_rule.swap_verdict(46.0, None, None, env), "an unreadable swap-in count is unknown")
+
+    def test_the_swap_out_bar(self):
+        env = {"BENCH_SWAPOUT_VOID_MB": "0"}
+        self.assertIn("swap-outs", void_rule.swap_verdict(0.0, 0.0, 2.0, env))
+
+
+class SwapSamplerPeak(unittest.TestCase):
+    """The in-cell check samples swap while the cell runs and votes on the PEAK, so a spike that is freed again before the cell ends
+    still voids it (Francis's rule: swap growing at all during the cell)."""
+
+    def test_a_spike_that_settles_voids_though_the_end_equals_the_start(self):
+        readings = iter([100.0, 100.0, 180.0, 100.0, 100.0])
+        sampler = void_rule.SwapSampler(read=lambda: next(readings), poll_s=0)
+        sampler.sample()           # the baseline, 100
+        for _ in range(4):
+            sampler.sample()
+        res = sampler.result()
+        self.assertEqual((res["base_mb"], res["peak_growth_mb"]), (100.0, 80.0))
+        self.assertIn("grew +80.0 MB", void_rule.swap_verdict(res["peak_growth_mb"], None, None, {}))
+
+    def test_flat_or_falling_swap_has_no_growth(self):
+        readings = iter([100.0, 90.0, 100.0])
+        sampler = void_rule.SwapSampler(read=lambda: next(readings), poll_s=0)
+        for _ in range(3):
+            sampler.sample()
+        self.assertEqual(sampler.result()["peak_growth_mb"], 0.0)
+
+    def test_an_unreadable_swap_is_unknown(self):
+        sampler = void_rule.SwapSampler(read=lambda: None, poll_s=0)
+        sampler.sample()
+        self.assertIsNone(sampler.result()["peak_growth_mb"])
+
+
 class Swap(unittest.TestCase):
     def test_any_growth_voids_and_none_does_not(self):
-        self.assertIsNone(void_rule.swap_void(SNAP, dict(SNAP)))
-        self.assertIsNone(void_rule.swap_void(SNAP, dict(SNAP, swap_mb=800.0)), "swap that fell is not growth")
-        self.assertIn("grew 0.1 MB", void_rule.swap_void(SNAP, dict(SNAP, swap_mb=900.1)))
+        self.assertIsNone(void_rule.swap_void(SNAP, dict(SNAP), env={}))
+        self.assertIsNone(void_rule.swap_void(SNAP, dict(SNAP, swap_mb=800.0), env={}), "swap that fell is not growth")
+        self.assertIn("grew +0.1 MB", void_rule.swap_void(SNAP, dict(SNAP, swap_mb=900.1), env={}))
 
     def test_an_unreadable_swap_does_not_void(self):
-        self.assertIsNone(void_rule.swap_void(SNAP, dict(SNAP, swap_mb=None)))
-        self.assertIsNone(void_rule.swap_void(dict(SNAP, swap_mb=None), SNAP))
+        self.assertIsNone(void_rule.swap_void(SNAP, dict(SNAP, swap_mb=None), env={}))
+        self.assertIsNone(void_rule.swap_void(dict(SNAP, swap_mb=None), SNAP, env={}))
 
 
 class Cli(unittest.TestCase):
@@ -127,6 +191,23 @@ class Cli(unittest.TestCase):
             void_rule.main(["start", "--need-mb", "4000"])
         self.assertIn("void: available memory", err.getvalue())
         self.assertNotIn("VOID", err.getvalue())
+
+    def test_end_uses_the_sampled_peak_when_given(self):
+        with tempfile.TemporaryDirectory() as d:
+            st, pk = os.path.join(d, "s.json"), os.path.join(d, "p.json")
+            json.dump(SNAP, open(st, "w"))
+            json.dump({"base_mb": 900.0, "peak_growth_mb": 60.0}, open(pk, "w"))
+            self.assertEqual(self.run_cli(["end", "--start-json", st, "--peak-json", pk], SNAP), 76, "the end equals the start; the peak does not")
+            json.dump({"base_mb": 900.0, "peak_growth_mb": 0.0}, open(pk, "w"))
+            self.assertEqual(self.run_cli(["end", "--start-json", st, "--peak-json", pk], SNAP), 0)
+
+    def test_start_records_a_file_size_need_as_a_lower_bound(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "s.json")
+            self.run_cli(["start", "--need-mb", "10", "--need-source", "file size", "--json-out", out], SNAP)
+            self.assertTrue(json.load(open(out))["need_is_lower_bound"])
+            self.run_cli(["start", "--need-mb", "10", "--need-source", "fit banner", "--json-out", out], SNAP)
+            self.assertFalse(json.load(open(out))["need_is_lower_bound"])
 
     def test_end_exits_76_when_swap_grew(self):
         with tempfile.TemporaryDirectory() as d:

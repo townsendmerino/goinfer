@@ -60,6 +60,14 @@ class Rule(unittest.TestCase):
         self.assertEqual((e["available_mb"], e["reclaimable_mb"], e["swap_mb"], e["loadavg"][0]), (7000, 3000, 111.5, 1.5))
         self.assertNotIn("free_mem_mb", m, "the key holds the available reading and says so")
 
+    def test_a_file_size_need_is_recorded_as_a_lower_bound(self):
+        self.addCleanup(os.environ.pop, "BENCH_FIT_NEED_GB", None)
+        self.addCleanup(bench_peer._FIT_NEED.clear)
+        self.assertTrue(bench_peer.need_is_lower_bound("file size"))
+        self.assertFalse(bench_peer.need_is_lower_bound("fit banner"))
+        self.assertFalse(bench_peer.need_is_lower_bound("BENCH_FIT_NEED_GB"))
+        self.assertFalse(bench_peer.need_is_lower_bound(None))
+
     def test_fit_need_sources(self):
         self.addCleanup(os.environ.pop, "BENCH_FIT_NEED_GB", None)
         self.addCleanup(bench_peer._FIT_NEED.clear)

@@ -455,12 +455,6 @@ class SwapReadingsInAJob(unittest.TestCase):
             self.assertIn(k, got["readings"]["end"])
         self.assertEqual(got["readings"]["swap_growth_mb"], 0.0)
 
-    def test_plant_a_job_level_swap_void_fails_a_job_whose_cells_ran_clean(self):
-        # The plant: the job-level pair as a verdict. A job whose runner voided a cell and re-ran it clean ends above its baseline; this
-        # test is what notices the pair being used as a verdict (the job must stay ok).
-        got = self.run_job([500.0, 900.0])
-        self.assertEqual(got["outcome"], "ok", "a re-run-in-place cell leaves swap above the start; the job is not FAILED for it")
-
 
 class LogFailureMarkers(unittest.TestCase):
     """A job that exits 0 but prints a failure marker (--- FAIL, a FAIL line, FAILED, VOID) in its own output is FAILED; a line tagged

@@ -1034,12 +1034,15 @@ class Runner:
         write_json(STATE, st)
         limit = t0 + dt.timedelta(minutes=j["timeout_min"])
         outcome = None
+        import void_rule
+        sampler = void_rule.SwapSampler()  # the job's swap peak, sampled each poll: information, like the end readings
+        sampler.sample()
         while True:
             try:
                 self.proc.wait(timeout=POLL_S)
                 break
             except subprocess.TimeoutExpired:
-                pass
+                sampler.sample()
             if self.stop_now:
                 self.kill_job("night.py stop --now")
                 outcome = "stopped"
@@ -1056,6 +1059,8 @@ class Runner:
         s0, s1 = j["readings"]["start"].get("swap_mb"), end.get("swap_mb")
         if s0 is not None and s1 is not None:
             j["readings"]["swap_growth_mb"] = round(s1 - s0, 1)
+        sampler.sample()
+        j["readings"]["swap_peak_growth_mb"] = sampler.result()["peak_growth_mb"]
         f.write(f"\n=== READINGS end {json.dumps(end)}\n")
         f.write(f"=== END      {now().strftime('%F %T %Z')}  rc={rc}\n")
         f.flush()
