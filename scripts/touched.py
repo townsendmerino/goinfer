@@ -52,6 +52,21 @@ def summary(bad, ran, skips):
 RAN = []  # the name of each step run, for the VERDICT line's count
 
 
+def no_files(mod, args, targs, env):
+    """The packages among args (relative to module mod) with no Go file for this target, tests included: every file excluded by its
+    build constraints. go vet passes such a package silently and go test fails on it, so the caller skips it by name."""
+    if not args:
+        return set()
+    f = "{{.Dir}}|{{len .GoFiles}}|{{len .CgoFiles}}|{{len .TestGoFiles}}|{{len .XTestGoFiles}}"
+    r = sh("go", "list", "-e", *targs, "-f", f, *args, cwd=mod or ".", env=env)
+    out = set()
+    for ln in r.stdout.splitlines():
+        d, *counts = ln.split("|")
+        if counts and all(c == "0" for c in counts):
+            out.add(os.path.normpath(os.path.relpath(d, os.path.abspath(mod or "."))))
+    return out
+
+
 def step(name, fn):
     RAN.append(name)
     t = time.time()
@@ -157,6 +172,7 @@ def run(args, run_for):
         print(f"  skip test {name}: slow package, no test file beside the change (name tests: touched.py -run REGEX {name})")
         skips.append(f"test {name}")
     ws = workspace_modules()
+    target_os = sh("go", "env", "GOOS").stdout.strip() or sys.platform  # GOOS=darwin in the environment checks a darwin build from any host
     for mod, files in sorted(mods.items()):
         label = mod or "root"
         if ws is not None and mod not in ws:
@@ -165,31 +181,44 @@ def run(args, run_for):
             skips.append(label)
             continue
         tag = TAGS.get(mod, "")
-        tagarg = ["-tags", tag] if tag else []
-        if mod == "backend/metal" and sys.platform != "darwin":
+        if mod == "backend/metal" and target_os != "darwin":
             print("  skip metal: builds on darwin only")
             skips.append("metal")
             continue
-        cudaOffLinux = mod == "backend/cuda" and sys.platform != "linux"
-        if cudaOffLinux:
-            # The CUDA backend's devices exist only in linux files: off linux its tagged build cannot compile, so build and vet it untagged
-            # (what a darwin checkout can compile) and skip its tests, which need the card.
-            tagarg = []
-            print("  cuda off linux: build and vet untagged; its tests need linux and the card, and are skipped")
+        # The CUDA backend's devices exist only in linux files. Off linux, its tagged build cannot compile for the host, so the host gets an
+        # untagged build, vet and test (what a darwin checkout compiles: the portable source scans among the tests), and the CUDA
+        # implementation a GOOS=linux cross-build and cross-vet at its own tags (no cgo needed), so a change that breaks CUDA still goes red.
+        cuda_off_linux = mod == "backend/cuda" and target_os != "linux"
+        tagarg = [] if cuda_off_linux or not tag else ["-tags", tag]  # built afresh for every module
         env = dict(os.environ, CGO_ENABLED="0") if mod == "backend/cuda" else dict(os.environ)
-        mrun = lambda *c: (lambda r: (r.returncode == 0, r.stdout + r.stderr))(sh(*c, cwd=mod or ".", env=env))
         pkgs = sorted({os.path.dirname(f) for f in files})
         rel = lambda d: "./" + os.path.relpath(d, mod or ".") if d != (mod or "") and d else "."
+
+        mrun = lambda *c, env=env: (lambda r: (r.returncode == 0, r.stdout + r.stderr))(sh(*c, cwd=mod or ".", env=env))
+
         if files:
             bad += not step(f"build {label}", lambda: mrun("go", "build", *tagarg, "./..."))
-            bad += not step(f"vet {label} ({len(pkgs)} pkg)", lambda: mrun("go", "vet", *tagarg, *[rel(d) for d in pkgs]))
+            args = [rel(d) for d in pkgs]
+            empty = no_files(mod, args, tagarg, env)
+            for d in sorted(empty):
+                print(f"  skip vet {label}/{d}: no Go file for {target_os}" + (" untagged" if cuda_off_linux else ""))
+                skips.append(f"vet {label}/{d} (no files for {target_os})")
+            live = [a for a in args if os.path.normpath(a) not in empty]
+            if live:
+                bad += not step(f"vet {label} ({len(live)} pkg)", lambda: mrun("go", "vet", *tagarg, *live))
+            if cuda_off_linux:
+                lin = dict(env, GOOS="linux", GOARCH="amd64")
+                ctag = ["-tags", tag]
+                bad += not step(f"build {label} (GOOS=linux, -tags {tag})", lambda: mrun("go", "build", *ctag, "./...", env=lin))
+                bad += not step(f"vet {label} (GOOS=linux, -tags {tag}, {len(args)} pkg)", lambda: mrun("go", "vet", *ctag, *args, env=lin))
         for (m, d), sel in sorted(tests.items()):
             if m != mod:
                 continue
-            if cudaOffLinux:
-                skips.append(f"test {d or '.'} (cuda, off linux)")
-                continue
             name = d or "."
+            if os.path.normpath(rel(d)) in no_files(mod, [rel(d)], tagarg, env):
+                print(f"  skip test {name}: no Go file for {target_os}")
+                skips.append(f"test {name} (no files for {target_os})")
+                continue
             runarg = (["-run", sel] if sel else []) + (["-short"] if name in SLOW else [])
             bad += not step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *tagarg, "-count=1", *runarg, rel(d)))
     head, line, rc = summary(bad, RAN, skips)
