@@ -1,0 +1,28 @@
+=== RUN   TestP1r_nemotronRangeSurvey
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: none kept (165.8 MiB needed beside a 680 MiB reserve, 404 MiB free); a reply rendered back differently re-prefills the whole prompt
+cuda: prefill width 512 rows (150 MiB of scratch; 231 MiB free beyond the 173 MiB kept beside a pass); passes take up to 512 rows
+[p1r-survey] prompt 1/10 done
+[p1r-survey] prompt 2/10 done
+[p1r-survey] prompt 3/10 done
+[p1r-survey] prompt 4/10 done
+[p1r-survey] prompt 5/10 done
+[p1r-survey] prompt 6/10 done
+[p1r-survey] prompt 7/10 done
+[p1r-survey] prompt 8/10 done
+[p1r-survey] prompt 9/10 done
+[p1r-survey] prompt 10/10 done
+[p1r-survey] layer 14: max|K| 32.77, max|V| 10.49
+[p1r-survey] layer 21: max|K| 30.96, max|V| 20.39
+[p1r-survey] layer 30: max|K| 41.78, max|V| 17.95
+[p1r-survey] layer 39: max|K| 38.94, max|V| 44.67
+[p1r-survey] 4 attention layers, 10 prompts x 3900 tokens: worst max|V| 44.67 at layer 39, limit 32752 => PASS
+--- PASS: TestP1r_nemotronRangeSurvey (833.13s)
+PASS
+ledger: 5 device(s) released in this run
+exit 0
