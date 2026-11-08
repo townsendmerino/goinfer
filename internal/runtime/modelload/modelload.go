@@ -338,7 +338,11 @@ func activationSafeQuant(src, quant string, group int, explicitQuant, backend st
 	}
 	switch {
 	case explicitQuant == "" && strings.HasSuffix(src, ".gguf") && (backend == "" || backend == "cpu" || backend == "cuda" || backend == "metal"):
-		return "q4k", 0, fmt.Sprintf("note: loading at --quant q4k (the file's Q4_K tensors kept exact, the rest int8, per-32 activations) instead of the default %s: %s.", quant, why)
+		acts := "per-32 activations"
+		if backend == "metal" {
+			acts = "no activation quantized on Metal"
+		}
+		return "q4k", 0, fmt.Sprintf("note: loading at --quant q4k (the file's Q4_K tensors kept exact, the rest int8, %s) instead of the default %s: %s.", acts, quant, why)
 	case explicitQuant == "":
 		return "int8int8", 32, fmt.Sprintf("note: loading at --quant int8int8 with per-32 activation scales instead of the default %s: %s.", quant, why)
 	case quant == "int8int8":

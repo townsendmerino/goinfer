@@ -132,7 +132,7 @@
   {
    "name": "backend",
    "group": "Backend, precision and context",
-   "summary": "The compute backend. `auto` (the default) picks `cuda` when a device answers, else `metal` on Apple silicon for int4 models (Metal re-quantizes other precisions, so those stay on the CPU), else `cpu`, and prints one line saying which. It never picks `webgpu`. `--version` lists the backends in this binary; naming one that is not there falls back to `cpu`.",
+   "summary": "The compute backend. `auto` (the default) picks `cuda` when a device answers, else `metal` on Apple silicon for int4 and q4k models (Metal re-quantizes other precisions, so those stay on the CPU), else `cpu`, and prints one line saying which. It never picks `webgpu`. `--version` lists the backends in this binary; naming one that is not there falls back to `cpu`.",
    "type": "auto | cpu | webgpu | cuda | metal"
   },
   {
