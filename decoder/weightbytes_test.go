@@ -323,10 +323,12 @@ func TestResidentHostCopyBytes_exemptsMappedQ4KBlocks(t *testing.T) {
 			mapped += int64(len(raw))
 		}
 	}
+	// Every weight of the bundle is in the mapping (the Q4_K projections, the int8 embedding and head), so the host copy is the
+	// f32 vectors alone, which a .giw does not alias.
 	host, all := m.ResidentHostCopyBytes(0), m.ResidentWeightBytesPaged(0)
-	if host > all-mapped {
-		t.Errorf("the q4k .giw: host copy %d B of %d B of weights, so at least %d B of the %d B of Q4_K blocks in the mapping count as heap",
-			host, all, host-(all-mapped), mapped)
+	if want := m.denseVectorBytes(); host != want {
+		t.Errorf("the q4k .giw: host copy %d B of %d B of weights, want the f32 vectors' %d B (%d B of them are mapped Q4_K blocks)",
+			host, all, want, mapped)
 	}
 	if p := m.Plan("metal", 1<<40, PlanRequest{Ctx: 64, CtxPinned: true}); p.HostCopyBytes != host {
 		t.Errorf("Plan(metal).HostCopyBytes = %d, want ResidentHostCopyBytes(0) %d", p.HostCopyBytes, host)

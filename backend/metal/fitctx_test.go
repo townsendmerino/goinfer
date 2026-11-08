@@ -13,6 +13,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/decoder/fit"
+	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
@@ -232,76 +233,128 @@ func TestMetalFit_agreesWithSlotPricing(t *testing.T) {
 }
 
 // TestMetalLoadPlan_isTheGuardsPrice: fit's Metal line (decoder.Model.MetalLoadPlan, on the file opened as fitcmd's fitLoadOptions
-// opens it) is the build's own price. On a load as serve makes it (the default slot request, a pinned -ctx), its NeedBytes equals
-// residentNeedBytes plus the further slots metalKVSlots keeps, to the byte, and its slot count is the build's (kvSlotCount) and the
-// banner's (decoder.Model.ResidentKVSlots). The q4k case is the metal sidecar of testdata/phi3-q4k-tiny.gguf; with
-// GOINFER_HEAVY_TESTS=1 the Phi-3 mini q4 and Qwen2.5-Coder 0.5B q4_k_m sidecars in ~/models are two more, and a missing one fails.
+// opens it) is the build's own price. The build is given a budget (its memory ceiling, and the Metal probe an unpinned context is fit
+// to), and MetalLoadPlan the same one. Its NeedBytes equals the build guard's, to the byte: residentNeedBytes, plus the raised block
+// tables of every slot asked (metalRaisedTableBytes), plus metalSlotBytes for each slot kept after the first. Its slot count is the
+// build's (kvSlotCount) and the banner's (decoder.Model.ResidentKVSlots). Each case runs at a budget with room for every slot and
+// at one a byte short of the second. The cases: a dense model pinned within its window and past it (which the build clamps to the
+// window), and unpinned (which raises the tables); the metal sidecar of decoder.WritePhi3Q4KTinyGGUFForTest's Phi-3; and a
+// recurrent model's metal .giw asked for 2 slots (whose further slot carries its state). The .giw cases read canonical int4, as the
+// build holds it. With GOINFER_HEAVY_TESTS=1 the Phi-3 mini q4 and Qwen2.5-Coder 0.5B q4_k_m sidecars in ~/models are two more, and
+// a missing one fails.
 func TestMetalLoadPlan_isTheGuardsPrice(t *testing.T) {
-	raw, err := os.ReadFile("../../testdata/phi3-q4k-tiny.gguf")
-	if err != nil {
-		t.Fatal(err)
-	}
 	src := filepath.Join(t.TempDir(), "phi3.gguf")
-	if err := os.WriteFile(src, raw, 0o644); err != nil {
+	if err := decoder.WritePhi3Q4KTinyGGUFForTest(src); err != nil {
 		t.Fatal(err)
 	}
 	sidecar := decoder.SidecarPath(src, "q4k", "metal", false)
 	if err := decoder.TranscodeGIW(context.Background(), src, sidecar, "q4k", false, decoder.GIWTargetForBackend("metal")); err != nil {
 		t.Fatal(err)
 	}
-	cases := []struct {
+	type guardCase struct {
 		name, path, quant string
-		ctx               int
-	}{
-		{"llama-tiny int8int8", "../../testdata/llama-tiny", "int8int8", 128},
-		{"phi3-q4k-tiny's metal sidecar", sidecar, "q4k", 256},
+		ctx, slots        int // ctx 0 is unpinned; slots 0 is a serve load's default request, else an explicit count
+	}
+	q35, err := decoder.Load("../../testdata/qwen35-tiny", decoder.Options{Quant: "int4"}) // canonical int4, for a metal-target .giw
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := decoder.SerializeWeightsForTarget(q35.Weights(), "qwen35-tiny", decoder.GIWTargetMetal)
+	q35.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	q35GIW := filepath.Join(t.TempDir(), "qwen35-tiny.int4.metal.giw")
+	if err := os.WriteFile(q35GIW, giw.Write(blob, nil), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cases := []guardCase{
+		{"llama-tiny int8int8", "../../testdata/llama-tiny", "int8int8", 128, 0},
+		{"llama-tiny, -ctx past its window", "../../testdata/llama-tiny", "int8int8", 256, 0},
+		{"wide-window llama-tiny, unpinned", wideWindowTiny(t), "int8int8", 0, 0},
+		{"a synthetic Phi-3 q4k's metal sidecar", sidecar, "q4k", 256, 0},
+		{"qwen35-tiny's metal .giw asked for 2 slots", q35GIW, "int4", 64, 2},
 	}
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "" {
 		home := os.Getenv("HOME")
 		cases = append(cases,
-			struct {
-				name, path, quant string
-				ctx               int
-			}{"Phi-3 mini q4", filepath.Join(home, "models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.q4k.metal.v17.giw"), "q4k", 2048},
-			struct {
-				name, path, quant string
-				ctx               int
-			}{"Qwen2.5-Coder 0.5B q4_k_m", filepath.Join(home, "models/qwen2.5-coder-0.5b-instruct-q4_k_m.int4.metal.v17.giw"), "int4", 2048})
+			guardCase{"Phi-3 mini q4", filepath.Join(home, "models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.q4k.metal.v17.giw"), "q4k", 2048, 0},
+			guardCase{"Qwen2.5-Coder 0.5B q4_k_m", filepath.Join(home, "models/qwen2.5-coder-0.5b-instruct-q4_k_m.int4.metal.v17.giw"), "int4", 2048, 0})
+	}
+	slotOpts := func(c guardCase, o decoder.Options) decoder.Options {
+		o.ResidentContext = c.ctx
+		if c.slots > 0 {
+			o.ResidentKVSlots = c.slots
+		} else {
+			o.ResidentKVSlots, o.ResidentKVSlotsDefault = 4, true // serve's -kv-sessions default
+		}
+		return o
+	}
+	// build loads c on Metal at budget and returns the slots the build keeps and the banner reads, the guard's price for them, and the
+	// fixed need and per-slot cost the guard's slot decision uses.
+	build := func(t *testing.T, c guardCase, budget int64) (kept, banner int, guard, base, perSlot int64) {
+		t.Helper()
+		defer func(was int64) { metalMemoryCeilingForTest = was }(metalMemoryCeilingForTest)
+		metalMemoryCeilingForTest = budget
+		defer decoder.SetMemoryProbeForTest("metal", budget, true)()
+		m, err := decoder.Load(c.path, slotOpts(c, decoder.Options{Backend: "metal", Quant: c.quant, KVPrecision: "auto"}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		rf := m.ResidentForwardForTest()
+		if rf == nil {
+			t.Fatalf("not resident on metal at a budget of %d B: %s", budget, m.DecodePath())
+		}
+		kept, banner = rf.(*metalResident).r.kvSlotCount(), m.ResidentKVSlots()
+		base, perSlot = residentNeedBytes(m)+metalRaisedTableBytes(m, metalKVSlotsWanted(m)), metalSlotBytes(m)
+		return kept, banner, base + int64(kept-1)*perSlot, base, perSlot
+	}
+	plan := func(t *testing.T, c guardCase, budget int64) decoder.MetalLoad {
+		t.Helper()
+		fm, err := decoder.Load(c.path, slotOpts(c, decoder.Options{Quant: c.quant, DirectLoad: true}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer fm.Close()
+		return fm.MetalLoadPlan(budget, fit.PlanRequest{Ctx: c.ctx, CtxPinned: c.ctx > 0})
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			if _, err := os.Stat(c.path); err != nil {
 				t.Fatalf("%v (a metal sidecar is built by a Metal serve of its .gguf)", err)
 			}
-			m, err := decoder.Load(c.path, decoder.Options{Backend: "metal", Quant: c.quant, ResidentContext: c.ctx, KVPrecision: "auto",
-				ResidentKVSlots: 4, ResidentKVSlotsDefault: true})
-			if err != nil {
-				t.Fatal(err)
+			const roomy = int64(1) << 40
+			kept, _, _, base, perSlot := build(t, c, roomy)
+			budgets := []struct {
+				name   string
+				budget int64
+			}{{"room for every slot", roomy}}
+			if kept > 1 {
+				// A byte short of a second slot at this budget's context: an unpinned load is fit to the budget, so the tight budget
+				// is priced at the context it gives (the floor).
+				tight := base + perSlot - 1
+				if c.ctx == 0 {
+					_, _, _, b, s := build(t, c, base) // at a budget of one slot's need the context falls to the floor
+					tight = b + s - 1
+				}
+				budgets = append(budgets, struct {
+					name   string
+					budget int64
+				}{"a byte short of a second slot", tight})
 			}
-			rf := m.ResidentForwardForTest()
-			if rf == nil {
-				m.Close()
-				t.Fatalf("not resident on metal: %s", m.DecodePath())
+			for _, b := range budgets {
+				kept, banner, guard, _, _ := build(t, c, b.budget)
+				l := plan(t, c, b.budget)
+				if l.Plan.Placement != fit.PlacementResident || l.Plan.NeedBytes() != guard {
+					t.Errorf("%s: fit plans %v needing %d B (%s); the build's guard prices %d B", b.name, l.Plan.Placement, l.Plan.NeedBytes(),
+						l.Plan.Reason, guard)
+				}
+				if l.KVSlots != kept || banner != kept {
+					t.Errorf("%s: KV slots: fit %d, the build %d, the banner %d", b.name, l.KVSlots, kept, banner)
+				}
+				t.Logf("%s, %s: the build keeps %d KV slots, and its guard prices %d B (%.1f MiB)", c.name, b.name, kept, guard, float64(guard)/(1<<20))
 			}
-			kept, banner := rf.(*metalResident).r.kvSlotCount(), m.ResidentKVSlots()
-			guard := residentNeedBytes(m) + metalRaisedTableBytes(m, metalKVSlotsWanted(m)) + int64(kept-1)*metalSlotBytes(m)
-			m.Close()
-
-			fm, err := decoder.Load(c.path, decoder.Options{Quant: c.quant, DirectLoad: true, ResidentContext: c.ctx,
-				ResidentKVSlots: decoder.MetalDefaultKVSlots, ResidentKVSlotsDefault: true})
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer fm.Close()
-			free, _ := decoder.FreeBytesFor("metal")
-			l := fm.MetalLoadPlan(free, fit.PlanRequest{Ctx: c.ctx, CtxPinned: true})
-			if l.Plan.Placement != fit.PlacementResident || l.Plan.NeedBytes() != guard {
-				t.Errorf("fit plans %v needing %d B (%s); the build's guard prices %d B", l.Plan.Placement, l.Plan.NeedBytes(), l.Plan.Reason, guard)
-			}
-			if l.KVSlots != kept || banner != kept {
-				t.Errorf("KV slots: fit %d, the build %d, the banner %d", l.KVSlots, kept, banner)
-			}
-			t.Logf("%s: the build keeps %d KV slots, and its guard prices %d B (%.1f MiB)", c.name, kept, guard, float64(guard)/(1<<20))
 		})
 	}
 }

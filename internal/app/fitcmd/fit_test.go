@@ -2,7 +2,6 @@ package fitcmd
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -17,7 +16,6 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
-	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 )
 
 // captureStdout swaps os.Stdout for the duration of fn and returns what was written — Run prints
@@ -198,16 +196,17 @@ func TestRun_closesFirstLoadBeforeMeasuring(t *testing.T) {
 	}
 	var closeCallIdx, measureIfIdx = -1, -1
 	for i, stmt := range fn.Body.List {
-		if _, deferred := stmt.(*ast.DeferStmt); !deferred { // the statement that closes m: a call, or the loop over the loads
-			ast.Inspect(stmt, func(n ast.Node) bool {
-				if call, ok := n.(*ast.CallExpr); ok {
-					if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Close" && render(sel.X) == "m" {
-						closeCallIdx = i
-					}
+		ast.Inspect(stmt, func(n ast.Node) bool { // the statement that closes m: a call, or the loop over the loads
+			if _, deferred := n.(*ast.DeferStmt); deferred {
+				return false // a deferred Close runs when Run returns, after selfMeasure: it closes nothing first
+			}
+			if call, ok := n.(*ast.CallExpr); ok {
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Close" && render(sel.X) == "m" {
+					closeCallIdx = i
 				}
-				return true
-			})
-		}
+			}
+			return true
+		})
 		switch s := stmt.(type) {
 		case *ast.IfStmt:
 			ast.Inspect(s, func(n ast.Node) bool {
@@ -233,7 +232,7 @@ func TestRun_closesFirstLoadBeforeMeasuring(t *testing.T) {
 	}
 }
 
-// TestFreshSidecar_findsTheOneChatAndServeBuild pins that freshSidecar finds the sidecar a default chat or serve load
+// TestFreshSidecar_findsTheOneChatAndServeBuild pins that sourceFor's cpu line finds the sidecar a default chat or serve load
 // (--backend cpu) writes: this host's cpu target, <base>.int4.cpu-amd64.giw or .cpu-arm64.giw, not only the canonical
 // target. Missing it means a full direct load of the .gguf instead of a mapped read through the sidecar.
 func TestFreshSidecar_findsTheOneChatAndServeBuild(t *testing.T) {
@@ -244,7 +243,7 @@ func TestFreshSidecar_findsTheOneChatAndServeBuild(t *testing.T) {
 	}
 }
 
-// testFreshSidecar builds the sidecar a load with the given --embed-int4 writes, and freshSidecar must find it. With
+// testFreshSidecar builds the sidecar a load with the given --embed-int4 writes: the cpu line must find it, and no other line. With
 // embedInt4 it is <base>.int4.e4h.<target>.giw, the one a default CPU/CUDA/WebGPU load writes, not the plain-head name.
 func testFreshSidecar(t *testing.T, embedInt4 bool) {
 	raw, err := os.ReadFile("../../../testdata/glm-tiny.gguf")
@@ -260,8 +259,8 @@ func testFreshSidecar(t *testing.T, embedInt4 bool) {
 	if err := os.Chtimes(src, old, old); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, ok := freshSidecar(src, "int4"); ok {
-		t.Fatal("found a sidecar before one was built")
+	if s, err := sourceFor(src, "int4", "", "cpu"); err != nil || s.path != src {
+		t.Fatalf("before a sidecar was built fit opens %s (%v), want the .gguf", s.path, err)
 	}
 	// Backend "" keeps canonical int4 bytes in RAM, which the .giw writer needs to emit any target (the
 	// production transcode does the same); a Backend "cpu" load on arm64 keeps only the row4 repack.
@@ -287,15 +286,22 @@ func testFreshSidecar(t *testing.T, embedInt4 bool) {
 	if err := os.WriteFile(cpuSidecar, giw.Write(blob, nil), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, be, ok := freshSidecar(src, "int4")
-	if !ok || got != cpuSidecar {
-		t.Fatalf("freshSidecar = %q, %v; want the cpu-target sidecar %s a default chat/serve load builds", got, ok, filepath.Base(cpuSidecar))
+	s, err := sourceFor(src, "int4", "", "cpu")
+	if err != nil || s.path != cpuSidecar {
+		t.Fatalf("the cpu line opens %q (%v); want the cpu-target sidecar %s a default chat/serve load builds", s.path, err, filepath.Base(cpuSidecar))
 	}
-	if target != decoder.GIWTargetNone && be != "cpu" {
-		t.Errorf("backend = %q, want cpu: a cpu-target sidecar can be row4-only, which only the literal cpu backend reads", be)
+	if target != decoder.GIWTargetNone && s.loadBackend != "cpu" {
+		t.Errorf("backend = %q, want cpu: a cpu-target sidecar can be row4-only, which only the literal cpu backend reads", s.loadBackend)
 	}
-	if _, err := decoder.Load(got, decoder.Options{Quant: "int4", Backend: be}); err != nil {
-		t.Errorf("the found sidecar does not load with the backend freshSidecar chose: %v", err)
+	if _, err := decoder.Load(s.path, decoder.Options{Quant: "int4", Backend: s.loadBackend}); err != nil {
+		t.Errorf("the found sidecar does not load with the backend sourceFor chose: %v", err)
+	}
+	// A load on another backend reads that backend's own sidecar, never the CPU's: a cuda or webgpu load would not open it, and
+	// -measure loads the source on the backend itself, which cannot read a row4-only file.
+	for _, be := range []string{"cuda", "webgpu", "metal"} {
+		if o, err := sourceFor(src, "int4", "", be); err != nil || o.path != src {
+			t.Errorf("the %s line opens %s (%v); want the .gguf, since no %s sidecar is built", be, o.path, err, be)
+		}
 	}
 }
 
@@ -423,56 +429,17 @@ func TestPlanFor_metalPricesEverySlotTheBuildKeeps(t *testing.T) {
 		t.Fatalf("the budget for both slots at the floor gives ctx %d, want %d", c, decoder.MetalCtxDefault)
 	}
 	check("the default context", wide, atFloor, fit.PlanRequest{Ctx: defaultCtx}, decoder.MetalCtxDefault, 2)
+	// Room for one slot only, unpinned: the context is the floor, and the reason says one slot is kept without MetalFitCtx's
+	// account of the two asked.
+	oneAtFloor := wide.Plan("metal", 1<<40, fit.PlanRequest{Ctx: decoder.MetalCtxDefault, CtxPinned: true}).NeedBytes() +
+		wide.MetalKVTableRaiseBytes(2, decoder.MetalCtxDefault) + wide.MetalKVSlotBytes(decoder.MetalCtxDefault) - 1
+	if p := planFor(wide, "metal", oneAtFloor, fit.PlanRequest{Ctx: defaultCtx}); !strings.Contains(p.Reason, "keeps 1 of the 2 KV slots") ||
+		!strings.Contains(p.Reason, fmt.Sprintf("an unpinned load takes %d positions (the default)", decoder.MetalCtxDefault)) ||
+		strings.Contains(p.Reason, "2 KV slots leave") {
+		t.Errorf("one slot of two at the floor, unpinned: %q", p.Reason)
+	}
 
 	rec := load("../../../testdata/qwen35-tiny")
 	recNeed := rec.Plan("metal", 1<<40, fit.PlanRequest{Ctx: 64, CtxPinned: true}).NeedBytes()
 	check("recurrent: one slot", rec, recNeed+further(rec, 64), fit.PlanRequest{Ctx: 64, CtxPinned: true}, 64, 1)
-}
-
-// TestSourceFor_opensWhatTheLoadOpens: fit plans each backend on what a load on that backend opens. The quant is the load's own
-// (modelload.Plan: with no -quant, the per-family default, which for a Phi-3 .gguf is not int4), and a Metal line reads through the
-// metal sidecar a Metal load builds, when it is fresh, not the .gguf.
-func TestSourceFor_opensWhatTheLoadOpens(t *testing.T) {
-	raw, err := os.ReadFile("../../../testdata/phi3-q4k-tiny.gguf")
-	if err != nil {
-		t.Fatal(err)
-	}
-	src := filepath.Join(t.TempDir(), "phi3.gguf") // a load beside the committed file would build its sidecar there
-	if err := os.WriteFile(src, raw, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().Add(-time.Hour)
-	if err := os.Chtimes(src, old, old); err != nil {
-		t.Fatal(err)
-	}
-	for _, be := range []string{"cpu", "cuda", "metal", "webgpu"} {
-		s, err := sourceFor(src, "int4", "", be)
-		if err != nil {
-			t.Fatal(err)
-		}
-		pl, err := modelload.Plan(modelload.Request{Spec: src, Opts: decoder.Options{Quant: "int4", Backend: be}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if s.quant != pl.Opts.Quant || s.group != pl.Opts.ActQuantGroup {
-			t.Errorf("%s, no -quant: fit plans %s/%d, the load takes %s/%d", be, s.quant, s.group, pl.Opts.Quant, pl.Opts.ActQuantGroup)
-		}
-	}
-
-	sidecar := decoder.SidecarPath(src, "q4k", "metal", false)
-	if err := decoder.TranscodeGIW(context.Background(), src, sidecar, "q4k", false, decoder.GIWTargetForBackend("metal")); err != nil {
-		t.Fatal(err)
-	}
-	s, err := sourceFor(src, "q4k", "q4k", "metal")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if s.path != sidecar {
-		t.Fatalf("metal at q4k: fit opens %s, want the fresh metal sidecar %s", s.path, sidecar)
-	}
-	m, err := decoder.Load(s.path, fitLoadOptions(s, 0))
-	if err != nil {
-		t.Fatalf("the metal sidecar does not open as fit opens it: %v", err)
-	}
-	m.Close()
 }
