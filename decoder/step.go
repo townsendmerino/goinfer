@@ -92,7 +92,7 @@ var errStepShape = errors.New("decoder: the resident does not offer this step's 
 // stepDo resolves b's shape on r to the one resident call that runs it, and makes that call when run is set; ok is false, and
 // nothing is called, when b names no shape or r does not offer it. It is the only place a forward shape is asserted on a resident:
 // canStep and stepOn both go through it, and it builds no closure, so a decode token's step allocates nothing of its own.
-func stepDo(r ResidentForward, b stepBatch, run bool) (stepResult, bool, error) {
+func stepDo(r any, b stepBatch, run bool) (stepResult, bool, error) {
 	switch b.Pass {
 	case passToken:
 		if len(b.Emb) != 1 {
@@ -122,7 +122,7 @@ func stepDo(r ResidentForward, b stepBatch, run bool) (stepResult, bool, error) 
 }
 
 // tokenDo is stepDo for passToken: the decode methods.
-func tokenDo(r ResidentForward, b stepBatch, e []float32, run bool) (stepResult, bool, error) {
+func tokenDo(r any, b stepBatch, e []float32, run bool) (stepResult, bool, error) {
 	if b.In == inMRoPE {
 		mr, ok := r.(ResidentMRoPE)
 		if !ok || b.Out != outLogits {
@@ -141,12 +141,16 @@ func tokenDo(r ResidentForward, b stepBatch, e []float32, run bool) (stepResult,
 	}
 	switch b.Out {
 	case outLogits:
+		f, ok := r.(ResidentForward)
+		if !ok {
+			return stepResult{}, false, nil
+		}
 		if !run {
 			return stepResult{}, true, nil
 		}
 		var res stepResult
 		var err error
-		res.Logits, err = r.Forward(e, b.Pos)
+		res.Logits, err = f.Forward(e, b.Pos)
 		return res, true, err
 	case outArgmax:
 		g, ok := r.(ResidentGreedy)
@@ -198,7 +202,7 @@ func tokenDo(r ResidentForward, b stepBatch, e []float32, run bool) (stepResult,
 }
 
 // rowsDo is stepDo for passRows: the batched passes.
-func rowsDo(r ResidentForward, b stepBatch, ctx context.Context, run bool) (stepResult, bool, error) {
+func rowsDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, bool, error) {
 	if b.In == inRowsFn {
 		pr, ok := r.(ResidentPrefillRows)
 		if !ok || b.Out != outLogits || b.N <= 0 || b.Rows == nil || b.At != nil {
@@ -245,12 +249,16 @@ func rowsDo(r ResidentForward, b stepBatch, ctx context.Context, run bool) (step
 		res.Logits, err = pf.PrefillLast(ctx, b.Emb, b.Pos)
 		return res, true, err
 	case outEveryLogits:
+		f, ok := r.(ResidentForward)
+		if !ok {
+			return stepResult{}, false, nil
+		}
 		if !run {
 			return stepResult{}, true, nil
 		}
 		var res stepResult
 		var err error
-		res.Rows, err = r.ForwardN(b.Emb, b.Pos)
+		res.Rows, err = f.ForwardN(b.Emb, b.Pos)
 		return res, true, err
 	case outArgmax:
 		sa, ok := r.(ResidentSeedArgmax)
@@ -307,7 +315,7 @@ func rowsDo(r ResidentForward, b stepBatch, ctx context.Context, run bool) (step
 }
 
 // mediaDo is rowsDo for the image and m-RoPE inputs, which return the last row's logits.
-func mediaDo(r ResidentForward, b stepBatch, ctx context.Context, run bool) (stepResult, bool, error) {
+func mediaDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, bool, error) {
 	if b.Out != outLogits || b.At != nil {
 		return stepResult{}, false, nil
 	}
@@ -384,9 +392,9 @@ func mediaDo(r ResidentForward, b stepBatch, ctx context.Context, run bool) (ste
 	return stepResult{}, false, nil
 }
 
-// canStep reports whether r offers b's shape: the type assertion, and the availability answer beside it where the shape has
+// canStep reports whether r (a resident, or a drafter host) offers b's shape: the type assertion, and the availability answer beside it where the shape has
 // one (TopKAvailable, SampleAvailable, HybridMRoPEPrefill for a recurrent m-RoPE prefill). It calls no forward.
-func canStep(r ResidentForward, b stepBatch) bool {
+func canStep(r any, b stepBatch) bool {
 	if r == nil {
 		return false
 	}
@@ -396,7 +404,7 @@ func canStep(r ResidentForward, b stepBatch) bool {
 
 // stepOn runs b on r as the one resident call today's callers make for its shape, or returns errStepShape, calling nothing,
 // where canStep is false.
-func stepOn(r ResidentForward, b stepBatch) (stepResult, error) {
+func stepOn(r any, b stepBatch) (stepResult, error) {
 	if r == nil {
 		return stepResult{}, errStepShape
 	}
@@ -410,8 +418,22 @@ func stepOn(r ResidentForward, b stepBatch) (stepResult, error) {
 // step is stepOn on m's resident. It does not claim or bind the resident: the caller holds it as for the call step makes.
 func (m *Model) step(b stepBatch) (stepResult, error) { return stepOn(m.resident, b) }
 
-// stepProbe is a one-row batch for asking canStep about a decode shape before there is a row: canStep reads no row.
-var stepProbe = [][]float32{nil}
+// stepProbe is a one-row batch, and stepProbeRows a rows function, for asking canStep about a shape before there is a row:
+// canStep reads neither.
+var (
+	stepProbe     = [][]float32{nil}
+	stepProbeRows = func(lo, hi int) [][]float32 { return nil }
+)
+
+// stepMarkAlign is ResidentPrefillMarked's PrefillMarkAlign on r, the pass width a marked prefill's mark must fall on; ok is false
+// when r cannot mark a prefill (canStep refuses a passRows batch with At).
+func stepMarkAlign(r any) (align int, ok bool) {
+	mp, ok := r.(ResidentPrefillMarked)
+	if !ok {
+		return 0, false
+	}
+	return mp.PrefillMarkAlign(), true
+}
 
 // canDecode reports whether m's resident offers the decode-token shape with output out (canStep on a passToken batch).
 func (m *Model) canDecode(out stepOut) bool {

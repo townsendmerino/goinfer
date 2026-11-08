@@ -64,19 +64,29 @@ func (f *callLogResident) PrefillLastNArgmax(embs [][]float32, start int) ([]int
 
 type callLogBackend struct {
 	Backend
-	rf *callLogResident
+	rf   *callLogResident
+	wrap func(*callLogResident) ResidentForward // the resident the model gets; nil is rf itself
 }
 
 func (b *callLogBackend) BuildResident(m *Model) (ResidentForward, bool, error) {
 	_, _, _, _, _, _, vocab := m.Dims()
 	b.rf = &callLogResident{fakeResident: &fakeResident{vocab: vocab}}
+	if b.wrap != nil {
+		return b.wrap(b.rf), true, nil
+	}
 	return b.rf, true, nil
 }
 func (b *callLogBackend) Close() error { return nil }
 
 func loadWithCallLog(t *testing.T) (*Model, *callLogBackend) {
 	t.Helper()
-	be := &callLogBackend{}
+	return loadWithCallLogAs(t, nil)
+}
+
+// loadWithCallLogAs is loadWithCallLog with the resident wrap builds from the logging one.
+func loadWithCallLogAs(t *testing.T, wrap func(*callLogResident) ResidentForward) (*Model, *callLogBackend) {
+	t.Helper()
+	be := &callLogBackend{wrap: wrap}
 	RegisterBackend("fake-call-log", func() (Backend, error) {
 		cpu, err := NewBackend("cpu")
 		if err != nil {
@@ -191,5 +201,100 @@ func TestStepCallers_blockSpecFallbackCallLog(t *testing.T) {
 	}
 	if !strings.Contains(got, "ForwardArgmax") {
 		t.Fatalf("the guard never tripped to plain decode: %s", got)
+	}
+}
+
+// The prefill shapes RF1-6 moves behind step, each a wrapper adding one capability to the logging resident.
+type (
+	callLogPrefill struct{ *callLogResident }
+	callLogRows    struct{ callLogPrefill }
+	callLogKVOnly  struct{ *callLogResident }
+	callLogBlocks  struct{ callLogPrefill }
+)
+
+func (f callLogPrefill) PrefillLast(_ context.Context, embs [][]float32, start int) ([]float32, error) {
+	f.log = append(f.log, fmt.Sprintf("PrefillLast %d+%d", start, len(embs)))
+	var last []float32
+	for i, e := range embs {
+		last = f.row(e, start+i)
+	}
+	return last, nil
+}
+
+func (f callLogRows) PrefillLastRows(_ context.Context, n, start int, rows func(lo, hi int) [][]float32) ([]float32, error) {
+	f.log = append(f.log, fmt.Sprintf("PrefillLastRows %d+%d", start, n))
+	var last []float32
+	for i, e := range rows(0, n) {
+		last = f.row(e, start+i)
+	}
+	return last, nil
+}
+
+func (f callLogKVOnly) ForwardNoLogits(emb []float32, pos int) error {
+	f.log = append(f.log, fmt.Sprintf("ForwardNoLogits %d", pos))
+	f.row(emb, pos)
+	return nil
+}
+
+func (callLogBlocks) PrefillBlockRows() int              { return 4 }
+func (callLogBlocks) PrefillScratchBytes(rows int) int64 { return int64(rows) }
+func (callLogBlocks) PrefillTailExact() bool             { return true }
+
+// TestStepCallers_prefillCallLog runs residentPrefillSeed's routes through a resident that logs its calls: one batched pass, the
+// rows-at-a-time pass, the KV-only sequential loop of a short prompt, and the block split of a long one; each log is held to the
+// one the direct calls made (recorded from them).
+func TestStepCallers_prefillCallLog(t *testing.T) {
+	long := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
+	cases := []struct {
+		name   string
+		wrap   func(*callLogResident) ResidentForward
+		prompt []int
+		want   string
+	}{
+		{"batched", func(r *callLogResident) ResidentForward { return callLogPrefill{r} }, long,
+			"PrefillLast 0+13; ForwardArgmax 13; ForwardArgmax 14"},
+		{"rows", func(r *callLogResident) ResidentForward { return callLogRows{callLogPrefill{r}} }, long,
+			"PrefillLastRows 0+13; ForwardArgmax 13; ForwardArgmax 14"},
+		{"kv-only", func(r *callLogResident) ResidentForward { return callLogKVOnly{r} }, []int{1, 2, 3, 4, 5},
+			"ForwardNoLogits 0; ForwardNoLogits 1; ForwardNoLogits 2; ForwardNoLogits 3; Forward 4; ForwardArgmax 5; ForwardArgmax 6"},
+		{"blocks", func(r *callLogResident) ResidentForward { return callLogBlocks{callLogPrefill{r}} }, append(long, long...),
+			"PrefillLast 0+4; PrefillLast 4+4; PrefillLast 8+4; PrefillLast 12+4; PrefillLast 16+10; ForwardArgmax 26; ForwardArgmax 27"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m, be := loadWithCallLogAs(t, c.wrap)
+			if _, err := drainGen(m.Generate(context.Background(), c.prompt, 2, SamplingParams{})); err != nil {
+				t.Fatalf("generate: %v", err)
+			}
+			got := strings.Join(be.rf.log, "; ")
+			t.Logf("log %s", got)
+			if got != c.want {
+				t.Errorf("call log\n got  %s\n want %s", got, c.want)
+			}
+		})
+	}
+}
+
+// callLogSeedHost is callLogHost that also seeds by ResidentSeedArgmax.
+type callLogSeedHost struct{ *callLogHost }
+
+func (h callLogSeedHost) PrefillSeedArgmax(embs [][]float32, start int) (int, error) {
+	h.rf.log = append(h.rf.log, fmt.Sprintf("host PrefillSeedArgmax %d+%d", start, len(embs)))
+	return h.id, nil
+}
+
+// TestStepCallers_blockSpecSeedCallLog: a drafter host that offers ResidentSeedArgmax seeds by it, not by the wide verify.
+func TestStepCallers_blockSpecSeedCallLog(t *testing.T) {
+	m, be := loadWithCallLog(t)
+	host := callLogSeedHost{&callLogHost{rf: be.rf, id: 7}}
+	s := &BlockSpec{m: m, host: host, rd: blockspecEchoDrafter{id: 7}, dw: blockspecCommitStubWeights{blockspecStubWeights{blockSize: 8}}}
+	if _, _, err := s.generate([]int{1, 2, 3}, BlockSpecOptions{VerifyWidth: 4, MaxTokens: 1}, nil); err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	got := strings.Join(be.rf.log, "; ")
+	t.Logf("log %s", got)
+	const want = "host PrefillSeedArgmax 0+3; host PrefillLastNArgmax 3+1"
+	if got != want {
+		t.Errorf("call log\n got  %s\n want %s", got, want)
 	}
 }

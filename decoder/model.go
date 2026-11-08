@@ -1258,7 +1258,7 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 		}
 	}
 	if m.knobs.get(knobBatchedPrefill) != "0" && offer && !hasAdapter {
-		if pf, ok := m.resident.(Prefiller); ok {
+		if canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe}) {
 			embed := func(ids []int) [][]float32 {
 				if embedRowsObserver != nil {
 					embedRowsObserver(len(ids))
@@ -1278,23 +1278,24 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 				if perr = ctx.Err(); perr != nil {
 					break
 				}
-				if _, perr = pf.PrefillLast(ctx, embed(prompt[from:from+B]), from); perr == nil {
+				if _, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from : from+B]), Pos: from}); perr == nil {
 					from += B
 				}
 			}
 			// startPos is why the batched path needs no change for reuse: it already
 			// places the run at an offset.
 			if perr == nil {
-				var lg []float32
-				if mp, ok := pf.(ResidentPrefillMarked); ok && mk != nil {
-					lg, perr = mp.PrefillLastMarked(ctx, embed(prompt[from:]), from, mk.q, mk.at)
-				} else if pr, ok := pf.(ResidentPrefillRows); ok { // MEM6: the resident reads the suffix a chunk at a time
-					lg, perr = pr.PrefillLastRows(ctx, len(prompt)-from, from, m.suffixRows(prompt[from:]))
+				var sr stepResult
+				if mk != nil && canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe, Mark: mk.q, At: mk.at}) {
+					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from:]), Pos: from, Mark: mk.q, At: mk.at})
+				} else if canStep(m.resident, stepBatch{Pass: passRows, In: inRowsFn, N: 1, Rows: stepProbeRows}) {
+					// MEM6: the resident reads the suffix a chunk at a time.
+					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, In: inRowsFn, N: len(prompt) - from, Pos: from, Rows: m.suffixRows(prompt[from:])})
 				} else {
-					lg, perr = pf.PrefillLast(ctx, embed(prompt[from:]), from)
+					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from:]), Pos: from})
 				}
 				if perr == nil {
-					return lg, nil
+					return sr.Logits, nil
 				}
 			}
 			// A CANCELLED PREFILL IS NOT A DECLINE. Falling through to the sequential loop would
@@ -1317,8 +1318,8 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 	// (a big-vocab matmul + readback + softcap) on every prefill token but the last, whose
 	// logits seed decode. Byte-identical (same layer chain → same KV → same last-token logits);
 	// GOINFER_NO_KVONLY_PREFILL forces the full-logits prefill (A/B / escape hatch).
-	kvOnly, hasKV := m.resident.(ResidentPrefillKV)
-	useKV := hasKV && m.knobs.get(knobNoKVOnlyPrefill) == ""
+	useKV := m.canDecode(outNone) && m.knobs.get(knobNoKVOnlyPrefill) == ""
+	var row [1][]float32 // the token's one-row batch, reused across the prompt
 	var logits []float32
 	var err error
 	for i, id := range prompt {
@@ -1332,7 +1333,8 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 		}
 		emb := m.embedResident(id)
 		if useKV && i < len(prompt)-1 {
-			if err = kvOnly.ForwardNoLogits(emb, i); err != nil {
+			row[0] = emb
+			if _, err = m.step(stepBatch{Pass: passToken, Emb: row[:], Pos: i, Out: outNone}); err != nil {
 				return nil, err
 			}
 			continue
@@ -1377,7 +1379,7 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 	if from < 0 || from >= len(prompt) {
 		from = 0 // never skip the seed token (residentPrefillSeed's own rule)
 	}
-	pf, ok := m.resident.(Prefiller)
+	ok := canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe})
 	C := m.prefillChunk
 	// A chunk below the resident's kernel-class floor would put the first chunk on the other class from the
 	// whole prompt's; raising the chunk to the floor keeps every pass on the class a whole prefill uses.
@@ -1402,7 +1404,7 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		}
 		mc3.prefillExclusive(func() {
 			if err = m.residentBind(slot); err == nil {
-				_, err = pf.PrefillLast(ctx, embs, from)
+				_, err = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embs, Pos: from})
 			}
 		})
 		if err != nil {

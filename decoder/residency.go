@@ -1599,11 +1599,10 @@ func (m *Model) PrefillPath() (batched bool, reason string) {
 	if m.knobs.get(knobBatchedPrefill) == "0" {
 		return false, "sequential — GOINFER_BATCHED_PREFILL=0 forces the per-token loop"
 	}
-	pf, ok := m.resident.(Prefiller)
-	if !ok {
+	if !canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe}) {
 		return false, "sequential — this backend has no batched prefill (per-token resident forward)"
 	}
-	if rep, ok := pf.(PrefillPathReporter); ok {
+	if rep, ok := m.resident.(PrefillPathReporter); ok {
 		return rep.PrefillPath()
 	}
 	return true, "batched (backend reports no load-time declines; a per-prompt fallback is still possible)"
