@@ -1,0 +1,8 @@
+cuda       rc=0     355s
+200 positions over 8 prompts; every CUDA logit finite: True
+  CPU int4  agreement with HF  92.50% [87.9, 96.9]   mean KL(HF||arm) 0.0691 [0.0342, 0.1354]
+  CUDA int4 agreement with HF  91.50% [85.3, 97.3]   mean KL(HF||arm) 0.0645 [0.0344, 0.1203]
+  paired difference (CUDA - CPU): agreement -1.00 points [-3.4, +1.2]; KL -0.0046 [-0.0159, +0.0010]
+  CUDA argmax equals the CPU arm's at 98.00% of positions (for the record, not graded)
+
+G-S10q-e: CUDA minus CPU = -1.00 points (bar: PASS at >= -5.0, PARKED to -15.0) -> PASS
