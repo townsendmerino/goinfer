@@ -44,8 +44,8 @@ func (m *Model) hiddenLast(ids []int) ([]float32, error) {
 	// writes is left unknown (residentForgetScratch), since a HiddenLast prefill leaves nothing durable to reuse in the next
 	// Generate call.
 	if m.resident != nil {
-		if rh, ok := m.resident.(ResidentHiddenLast); ok && m.tryClaimResident() {
-			out, err := m.hiddenLastResident(context.Background(), rh, ids)
+		if canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe, Out: outHidden}) && m.tryClaimResident() {
+			out, err := m.hiddenLastResident(context.Background(), ids)
 			atomic.StoreInt32(&m.resBusy, 0)
 			if err == nil {
 				return out, nil
@@ -67,13 +67,14 @@ func (m *Model) hiddenLast(ids []int) ([]float32, error) {
 // same embedResident the plain resident forward uses) and hand the whole sequence to the
 // backend's ResidentHiddenLast in one call, starting at position 0 — HiddenLast never reuses a
 // previous resident KV (each call is a fresh sequence), unlike Generate's prefix reuse.
-func (m *Model) hiddenLastResident(ctx context.Context, rh ResidentHiddenLast, ids []int) ([]float32, error) {
+func (m *Model) hiddenLastResident(ctx context.Context, ids []int) ([]float32, error) {
 	m.residentForgetScratch()
 	embs := make([][]float32, len(ids))
 	for i, id := range ids {
 		embs[i] = m.embedResident(id)
 	}
-	return rh.HiddenLast(ctx, embs, 0)
+	sr, err := m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embs, Out: outHidden})
+	return sr.Hidden, err
 }
 
 // hiddenLastBatched is HiddenLast's fast path: one batched forward over the whole
@@ -171,8 +172,8 @@ func (m *Model) promptHidden(ctx context.Context, prompt []int) ([]float32, erro
 	// decline (an arch the headless forward does not cover, a paged MoE, a cap) falls through to the CPU as if there were no
 	// resident; a cancellation returns. The resident's prefix-reuse record is forgotten either way, since the prompt
 	// overwrote its KV.
-	if rh, ok := m.resident.(ResidentHiddenLast); ok && m.tryClaimResident() {
-		out, err := m.hiddenLastResident(ctx, rh, prompt)
+	if canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe, Out: outHidden}) && m.tryClaimResident() {
+		out, err := m.hiddenLastResident(ctx, prompt)
 		atomic.StoreInt32(&m.resBusy, 0)
 		if err == nil {
 			return out, nil

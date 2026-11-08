@@ -336,7 +336,7 @@ func TestPlanFor_metalPlansAtTheLoadsOwnContext(t *testing.T) {
 	perBlock := m.MetalKVSlotBytes(decoder.KVBlockRows)
 	null := m.ResidentKVBytes("metal", decoder.KVBlockRows, false, false) - perBlock // the pools' null blocks, once per load
 	budget := func(positions int) int64 {
-		return decoder.MetalFitMarginBytes + base.DenseBytes + base.HostCopyBytes + null + perBlock*int64(positions)/decoder.KVBlockRows
+		return decoder.MetalFitMarginBytes + base.DenseBytes + base.HostCopyBytes + base.ScratchBytes + null + perBlock*int64(positions)/decoder.KVBlockRows
 	}
 	for _, c := range []struct {
 		positions, want int

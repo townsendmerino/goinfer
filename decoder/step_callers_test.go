@@ -298,3 +298,194 @@ func TestStepCallers_blockSpecSeedCallLog(t *testing.T) {
 		t.Errorf("call log\n got  %s\n want %s", got, want)
 	}
 }
+
+func (f *callLogResident) ForwardMRoPE(emb []float32, pos, rope int) ([]float32, error) {
+	f.log = append(f.log, fmt.Sprintf("ForwardMRoPE %d rope=%d", pos, rope))
+	return f.row(emb, pos), nil
+}
+
+// The multimodal and hidden-state shapes RF1-7 moves behind step, and a marked-capable resident.
+type (
+	callLogImage   struct{ *callLogResident }
+	callLogMRoPEPf struct{ *callLogResident }
+	callLogHidden  struct{ *callLogResident }
+	callLogMarked  struct{ callLogPrefill }
+	callLogSpans   struct{ *callLogResident }
+)
+
+func (f callLogSpans) PrefillSpansLast(_ context.Context, embs [][]float32, start int, spans [][2]int) ([]float32, error) {
+	f.log = append(f.log, fmt.Sprintf("PrefillSpansLast %d+%d spans %v", start, len(embs), spans))
+	var last []float32
+	for i, e := range embs {
+		last = f.row(e, start+i)
+	}
+	return last, nil
+}
+
+func (f callLogImage) PrefillImageLast(_ context.Context, embs [][]float32, start, lo, hi int) ([]float32, error) {
+	f.log = append(f.log, fmt.Sprintf("PrefillImageLast %d+%d image [%d,%d)", start, len(embs), lo, hi))
+	var last []float32
+	for i, e := range embs {
+		last = f.row(e, start+i)
+	}
+	return last, nil
+}
+
+func (f callLogMRoPEPf) PrefillMRoPELast(_ context.Context, embs [][]float32, start int, mp [][3]int) ([]float32, error) {
+	f.log = append(f.log, fmt.Sprintf("PrefillMRoPELast %d+%d mrope %v..%v", start, len(embs), mp[0], mp[len(mp)-1]))
+	var last []float32
+	for i, e := range embs {
+		last = f.row(e, start+i)
+	}
+	return last, nil
+}
+
+func (f callLogHidden) HiddenLast(_ context.Context, embs [][]float32, start int) ([]float32, error) {
+	f.log = append(f.log, fmt.Sprintf("HiddenLast %d+%d", start, len(embs)))
+	return append([]float32(nil), embs[len(embs)-1]...), nil
+}
+
+func (f callLogHidden) ResidualAll(_ context.Context, embs [][]float32, start int) ([][]float32, error) {
+	f.log = append(f.log, fmt.Sprintf("ResidualAll %d+%d", start, len(embs)))
+	out := make([][]float32, len(embs))
+	for i, e := range embs {
+		out[i] = append([]float32(nil), e...)
+	}
+	return out, nil
+}
+
+func (callLogMarked) PrefillMarkAlign() int { return 4 }
+func (f callLogMarked) PrefillLastMarked(_ context.Context, embs [][]float32, start, mark int, at func(int)) ([]float32, error) {
+	f.log = append(f.log, fmt.Sprintf("PrefillLastMarked %d+%d mark %d", start, len(embs), mark))
+	at(mark)
+	var last []float32
+	for i, e := range embs {
+		last = f.row(e, start+i)
+	}
+	return last, nil
+}
+
+// TestStepCallers_multimodalAndHiddenCallLog runs the image prefill (GenerateVL), the m-RoPE decode after the upload bridge and
+// the m-RoPE prefill (GenerateQwenVL), HiddenLast, PromptHiddenAll, and a marked-capable resident's unmarked prefill, through a
+// resident that logs its calls; each log is held to the one the direct calls made (recorded from them).
+func TestStepCallers_multimodalAndHiddenCallLog(t *testing.T) {
+	newRF := func(m *Model) *callLogResident {
+		return &callLogResident{fakeResident: &fakeResident{vocab: m.w.arch.VocabSize}}
+	}
+	cases := []struct {
+		name string
+		run  func(t *testing.T) *callLogResident
+		want string
+	}{
+		{"image prefill", func(t *testing.T) *callLogResident {
+			m, g := loadGemma3VLTiny(t)
+			rf := newRF(m)
+			m.resident = callLogImage{rf}
+			features := func() ([]float32, error) { return g.ImageFeatures, nil }
+			if _, err := drainGen(m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, 0, features, 3, SamplingParams{})); err != nil {
+				t.Fatal(err)
+			}
+			return rf
+		},
+			"PrefillImageLast 0+9 image [3,7); Forward 9; Forward 10; Forward 11"},
+		{"m-rope decode", func(t *testing.T) *callLogResident {
+			m, g := loadQwen25VLTiny(t)
+			rf := newRF(m)
+			m.resident = rf
+			features := func() ([]float32, error) { return g.ImageFeatures, nil }
+			if _, err := drainGen(m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImageTokens, 0, features, g.GridTHW, 2, g.ImageToken, 3, SamplingParams{})); err != nil {
+				t.Fatal(err)
+			}
+			return rf
+		},
+			"ForwardMRoPE 13 rope=10; ForwardMRoPE 14 rope=11; ForwardMRoPE 15 rope=12"},
+		{"m-rope prefill", func(t *testing.T) *callLogResident {
+			m, g := loadQwen25VLTiny(t)
+			rf := newRF(m)
+			m.resident = callLogMRoPEPf{rf}
+			features := func() ([]float32, error) { return g.ImageFeatures, nil }
+			if _, err := drainGen(m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImageTokens, 0, features, g.GridTHW, 2, g.ImageToken, 3, SamplingParams{})); err != nil {
+				t.Fatal(err)
+			}
+			return rf
+		},
+			"PrefillMRoPELast 0+13 mrope [0 0 0]..[9 9 9]; ForwardMRoPE 13 rope=10; ForwardMRoPE 14 rope=11; ForwardMRoPE 15 rope=12"},
+		{"m-rope reuse turn", func(t *testing.T) *callLogResident {
+			m, g := loadQwen25VLTiny(t)
+			rf := newRF(m)
+			m.resident = rf
+			features := func() ([]float32, error) { return g.ImageFeatures, nil }
+			const imgHash = 7
+			ids1, err := drainGen(m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImageTokens, imgHash, features, g.GridTHW, 2, g.ImageToken, 3, SamplingParams{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			prompt2 := append(append(append([]int{}, g.InputIDs...), ids1...), g.InputIDs[len(g.InputIDs)-1])
+			rf.log = nil // the second turn's calls: the reuse fast path's reseed and decode
+			if _, err := drainGen(m.GenerateQwenVL(context.Background(), prompt2, g.ImageStart, g.NImageTokens, imgHash, features, g.GridTHW, 2, g.ImageToken, 3, SamplingParams{})); err != nil {
+				t.Fatal(err)
+			}
+			return rf
+		},
+			"ForwardMRoPE 16 rope=13; ForwardMRoPE 17 rope=14; ForwardMRoPE 18 rope=15; ForwardMRoPE 19 rope=16"},
+		{"hidden last", func(t *testing.T) *callLogResident {
+			m, _ := loadWithCallLog(t)
+			rf := newRF(m)
+			m.resident = callLogHidden{rf}
+			if _, err := m.HiddenLast([]int{1, 2, 3, 4}); err != nil {
+				t.Fatal(err)
+			}
+			return rf
+		},
+			"HiddenLast 0+4"},
+		{"residual all", func(t *testing.T) *callLogResident {
+			m, _ := loadWithCallLog(t)
+			rf := newRF(m)
+			m.resident = callLogHidden{rf}
+			if _, err := m.PromptHiddenAll(context.Background(), []int{1, 2, 3, 4}); err != nil {
+				t.Fatal(err)
+			}
+			return rf
+		},
+			"ResidualAll 0+4"},
+		{"marked-capable, no mark", func(t *testing.T) *callLogResident {
+			m, be := loadWithCallLogAs(t, func(r *callLogResident) ResidentForward { return callLogMarked{callLogPrefill{r}} })
+			if _, err := drainGen(m.Generate(context.Background(), []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}, 2, SamplingParams{})); err != nil {
+				t.Fatal(err)
+			}
+			return be.rf
+		},
+			"PrefillLast 0+13; ForwardArgmax 13; ForwardArgmax 14"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rf := c.run(t)
+			got := strings.Join(rf.log, "; ")
+			t.Logf("log %s", got)
+			if got != c.want {
+				t.Errorf("call log\n got  %s\n want %s", got, c.want)
+			}
+		})
+	}
+}
+
+// TestStepCallers_gemma4SpanPrefillCallLog: a bidirectional Gemma 4 image turn on a resident with ResidentSpanPrefill takes one span
+// prefill over the whole prompt, the image run its one block, then decodes on the resident from the prompt's end. Its fixture is
+// generated (scripts/pin_gemma4_vl_bidir_tiny.py), so the call is checked by its form rather than a recorded log.
+func TestStepCallers_gemma4SpanPrefillCallLog(t *testing.T) {
+	m, g := loadGemma4VLBidirTiny(t)
+	rf := &callLogResident{fakeResident: &fakeResident{vocab: m.w.arch.VocabSize}}
+	m.resident = callLogSpans{rf}
+	features := func() ([]float32, error) { return g.ImageFeatures, nil }
+	ids, err := drainGen(m.GenerateGemma4VL(context.Background(), g.InputIDs, g.ImageTokenStart, g.NImageTokens, 0xC0FFEE, features, 3, SamplingParams{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{fmt.Sprintf("PrefillSpansLast 0+%d spans %v", len(g.InputIDs), [][2]int{{g.ImageTokenStart, g.ImageTokenStart + g.NImageTokens}})}
+	for i := range len(rf.log) - 1 {
+		want = append(want, fmt.Sprintf("Forward %d", len(g.InputIDs)+i))
+	}
+	if len(rf.log) < 2 || len(ids) == 0 || strings.Join(rf.log, "; ") != strings.Join(want, "; ") {
+		t.Errorf("call log %q, want %q", rf.log, want)
+	}
+}
