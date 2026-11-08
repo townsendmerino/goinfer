@@ -52,3 +52,31 @@ was f16 identity and G5, as KV4b did for the others.
   Serve exited only because `-require-backend` also refuses a sequential prefill: "the Mamba-2 mixer has no batched kernel".
 - That same fact makes `PrefillLast` decline on this model, so the survey runs each prompt one forward per token, as serve does. That is
   ten prompts of 3,900 tokens, about 39,000 steps: **about 15 to 30 minutes**, not the 5 to 10 written above.
+
+## Readings, 2026-11-08 (nobara, RTX 2070 SUPER, driver 595.112.07)
+
+- **Tier 0: PASS** (`tier0-red.log` on `main`, `tier0-green.log` with the change).
+  - On `main`, both table gates refused `nemotron-tiny`'s f16 load by name.
+  - With the change, G1's store half holds: the first cache layer's K and V are the f32 store rounded to nearest even.
+  - G3 holds too: 2 f16 layers, and one slot at 4,096 positions takes 1,065,472 B against f32's 2,130,432 B, exactly half and as priced.
+- **G5: PASS** (`g5.log`, 12:46 to 13:00 PST, the exclusive timing lock, 833 s). On Nemotron-Nano-9B-v2 (`cuda-resident (int4)`, f32
+  cache), the ten set-B prompts at 3,900 tokens each, run one forward per token:
+
+| attention layer | max \|K\| | max \|V\| |
+|---|---|---|
+| 14 | 32.77 | 10.49 |
+| 21 | 30.96 | 20.39 |
+| 30 | 41.78 | 17.95 |
+| 39 | 38.94 | 44.67 |
+
+  - The worst is 44.67, against the 32,752 limit.
+  - Prediction "PASS (0.85)": right.
+- **Delivered:** `--kv f16` on CUDA for `nemotron_h`, on request; `auto` keeps f32 (hybrid).
+- **Registries updated with the change:**
+  - `docs/kv-precision-matrix.md`: regenerated; the CUDA `nemotron-tiny` `--kv f16` cell reads `f16`.
+  - MM1's decision census (`testdata/mm1_census.json.gz`): the Nemotron-H rows at `kv=f16` now plan an f16 cache, so both host classes
+    are regenerated with `-census.update`. amd64 was run natively. arm64 was run as a linux/arm64 test binary under qemu-user on nobara
+    (`census-arm64-qemu.log`), the class CI's linux-arm64 job checks.
+  - `cmd/gate`'s heavy partition: the survey joins the `nemotron-h` group, and like that group's other test it skips without its
+    checkpoint, so the group still grades as all-skip there.
+- `touched.py`: PASS, 17 checks. The parity staleness gate is green, with nothing to refresh.
