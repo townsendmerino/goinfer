@@ -258,6 +258,9 @@ func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
 		for l := range a.NumLayers {
 			declared, held := map[string]int{}, map[string]int{}
 			for _, b := range layerBuffers(a, l) {
+				if b.Unit == program.PerRow { // a step's activations, which the cache does not hold
+					continue
+				}
 				if _, again := declared[b.Name]; again {
 					t.Errorf("%s layer %d declares %q twice", dir, l, b.Name)
 				}

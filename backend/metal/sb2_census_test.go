@@ -1222,11 +1222,19 @@ func TestMM5_buildRefusesADeclarationItsKernelsDoNotAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	orig := slices.Clone(m.LayerBuffers(0))
-	if len(orig) != 2 || orig[0].Name != "k" || orig[1].Name != "v" {
-		t.Fatalf("layer 0 declares %+v; the test needs its K and V", orig)
+	all := slices.Clone(m.LayerBuffers(0))
+	var orig, rest []program.Buf // the per-position rows the plants edit, and the rest of the declaration, kept as it is
+	for _, b := range all {
+		if b.Unit == program.PerPosition {
+			orig = append(orig, b)
+		} else {
+			rest = append(rest, b)
+		}
 	}
-	edit := func(f func([]program.Buf) []program.Buf) []program.Buf { return f(slices.Clone(orig)) }
+	if len(orig) != 2 || orig[0].Name != "k" || orig[1].Name != "v" {
+		t.Fatalf("layer 0 declares %+v per position; the test needs its K and V", orig)
+	}
+	edit := func(f func([]program.Buf) []program.Buf) []program.Buf { return append(f(slices.Clone(orig)), rest...) }
 	for _, c := range []struct {
 		name string
 		bufs []program.Buf
@@ -1244,7 +1252,7 @@ func TestMM5_buildRefusesADeclarationItsKernelsDoNotAddress(t *testing.T) {
 			t.Errorf("%s: the build accepted it", c.name)
 		}
 	}
-	m.SetLayerBuffersForTest(0, orig)
+	m.SetLayerBuffersForTest(0, all)
 	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("the declaration as built: %v", err)

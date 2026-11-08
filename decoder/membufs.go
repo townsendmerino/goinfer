@@ -5,11 +5,13 @@ import "github.com/townsendmerino/goinfer/internal/runtime/program"
 // layerShapeOf is layer l's widths for its operations' buffers (program.Buffers), read where the walker's implementations of those
 // operations read them (Model.walkToken).
 func layerShapeOf(a *Architecture, l int, ops []op) program.LayerShape {
-	s := program.LayerShape{KVHeads: a.kvHeadsAt(l), HeadDim: a.headDimAt(l)}
+	s := program.LayerShape{KVHeads: a.kvHeadsAt(l), HeadDim: a.headDimAt(l), Hidden: a.HiddenDim, Heads: a.headsAt(l), FFN: a.ffnAt(l)}
 	for _, o := range ops {
 		switch o.Kind {
 		case opMLA:
-			s.MLALatent = a.mla.KVLoRARank + a.mla.QKRopeHeadDim
+			p := a.mla
+			s.MLALatent = p.KVLoRARank + p.QKRopeHeadDim
+			s.MLA.QLoRA, s.MLA.Rank, s.MLA.QKHead, s.MLA.VHead = p.QLoRARank, p.KVLoRARank, p.QKNopeHeadDim+p.QKRopeHeadDim, p.VHeadDim
 		case opDeltaNet:
 			p, d := a.qwen35, &s.DeltaNet
 			d.KeyHeads, d.KeyHeadDim, d.ValueHeads, d.ValueHeadDim, d.ConvKernel = p.NumKeyHeads, p.KeyHeadDim, p.NumValueHeads, p.ValueHeadDim, p.ConvKernel
@@ -21,6 +23,8 @@ func layerShapeOf(a *Architecture, l int, ops []op) program.LayerShape {
 			d.Heads, d.HeadDim, d.ConvKernel = p.NumHeads, p.HeadDim, p.ConvKernel
 		case opShortConv:
 			s.ShortConv.Dim, s.ShortConv.LCache = a.lfm2.ConvDim, a.lfm2.ConvLCache
+		case opPLE:
+			s.PLE = a.gemma4.HiddenSizePerLayerInput
 		}
 	}
 	return s
