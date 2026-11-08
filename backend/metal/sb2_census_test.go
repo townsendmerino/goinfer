@@ -466,6 +466,64 @@ func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 	}
 }
 
+// TestMetalScratch_batchGrowthGivesBackTheOld: ensureBatchCap gives the rows it replaces back to the device, so the scratch line holds
+// one capacity's batch rows, not every capacity the resident has had.
+func TestMetalScratch_batchGrowthGivesBackTheOld(t *testing.T) {
+	_, r := kv2Resident(t, false)
+	l := metalLedgerOf(r.d)
+	if l == nil {
+		t.Fatal("the build's device has no ledger")
+	}
+	rowsOf := func(c int) (logits, x int) {
+		for _, o := range l.OpenLeases() {
+			switch {
+			case o.Line != mem.LineScratch:
+			case o.Requested == int64(4*c*r.V):
+				logits++
+			case o.Requested == int64(4*c*r.H):
+				x++
+			}
+		}
+		return logits, x
+	}
+	c0 := r.batchCap
+	if lg, x := rowsOf(c0); lg != 1 || x != 1 {
+		t.Fatalf("at the build's capacity of %d rows the scratch line holds %d logits and %d hidden leases of that size; want 1 each", c0, lg, x)
+	}
+	r.ensureBatchCap(4*c0 + 1) // past two doublings, so no old size equals a new one when V is a multiple of H
+	if lg, x := rowsOf(c0); lg != 0 || x != 0 {
+		t.Errorf("after growing from %d rows to %d the scratch line still holds %d logits and %d hidden leases of the old size; want none",
+			c0, r.batchCap, lg, x)
+	}
+	if lg, x := rowsOf(r.batchCap); lg != 1 || x != 1 {
+		t.Errorf("after growing to %d rows the scratch line holds %d logits and %d hidden leases of that size; want 1 each", r.batchCap, lg, x)
+	}
+}
+
+// TestMetalScratch_prefillGivesItsScratchBack: a batched prefill gives back every buffer it allocates, its uniforms included, so a
+// second prefill of the same rows leaves the scratch line where the first did.
+func TestMetalScratch_prefillGivesItsScratchBack(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	l := metalLedgerOf(r.d)
+	if l == nil {
+		t.Fatal("the build's device has no ledger")
+	}
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	embs := kv2Embs(r, 70, 1)
+	run := func() int64 {
+		t.Helper()
+		if _, err := a.PrefillLast(context.Background(), embs, 0); err != nil {
+			t.Fatal(err)
+		}
+		return l.Usage().ByLine[mem.LineScratch]
+	}
+	if first, second := run(), run(); second != first {
+		t.Errorf("the scratch line holds %d bytes after one prefill and %d after a second of the same rows; want the same", first, second)
+	}
+}
+
 // TestStepBuffers_listIsWhatBuilds: the step's scratch is one list. Across buildBatch, the ledger gains exactly the list's buffers,
 // to the byte and the lease, on each model shape the step takes, so a buffer allocated outside the list is red, and the price, which
 // sums the same list, cannot drift from it. The q4k lane has no tiny fixture, so its row reads the 0.5B GGUF in ~/models and skips

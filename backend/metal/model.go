@@ -2427,7 +2427,8 @@ func (r *resident) addLearnedPos(pos int) {
 	r.addLearnedPosTo(r.x.Floats(), pos)
 }
 
-// ensureBatchCap ensures r.batchX, r.batchLogits, and per-token uniform buffers have capacity for at least n tokens.
+// ensureBatchCap ensures r.batchX, r.batchLogits, and per-token uniform buffers have capacity for at least n tokens. A growth gives
+// the rows it replaces back; the caller has stopped the executor, so nothing still reads them.
 func (r *resident) ensureBatchCap(n int) {
 	if n <= r.batchCap {
 		return
@@ -2435,6 +2436,11 @@ func (r *resident) ensureBatchCap(n int) {
 	c := 16
 	for c < n {
 		c *= 2
+	}
+	for _, b := range []Buffer{r.batchX, r.batchLogits} {
+		if b != (Buffer{}) {
+			r.d.ReleaseBuf(b)
+		}
 	}
 	r.batchX = r.d.NewBufferLenOn(mem.LineScratch, c*r.H)
 	r.batchLogits = r.d.NewBufferLenOn(mem.LineScratch, c*r.V)
