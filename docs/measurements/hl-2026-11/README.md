@@ -22,31 +22,42 @@ Machine: MacBook Pro (M1 Pro, 16 GB, macOS 26.6.2), go1.27.0 darwin/arm64, by da
 
 ## HL-R3: speed
 
-`run-hlr-r3.sh` ran a test binary pinned at `0c392c2c` (sha256 prefix in `r3-2026-11-07/provenance.txt`) under the exclusive timing lock,
-2026-11-07 from 20:07:48 to 20:15:27 PST. Load at each cell's start was 2.07, 1.06, 0.81 and 0.35, under the 4.0 void line; no thermal
-warning; no cell was void. Identity held in every rep of every cell (10 reps of 256 tokens each, the first discarded as the warm-up).
-Checkpoints: `qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw` and `qwen2.5-7b-instruct-q4_k_m.int4.metal.v17.giw`, from `~/models`.
+**Superseded reading.** A first run (2026-11-07 20:07:48 to 20:15:27 PST, binary `0c392c2c`) ran without the registered free-memory
+check (the runner checked the load only, and recorded no free memory or swap), so it does not count as registered. Its numbers are in
+the history of this file (the 1.5B: 1.1134 and 1.0252; the 7B: 1.0110 and 1.0039). The reading below replaces it.
+
+**The counted run.** `run-hlr-r3.sh` ran a test binary pinned at `1eb6ed26` under the exclusive timing lock, 2026-11-07 from 20:47:58 to
+21:01:57 PST. At each cell's start the runner checks the 1-minute load (cap 4.0) and `cmd/hostmem -reclaimable` against the model's
+file size plus 2 GB, and records both with the swap in use (`r3-2026-11-07/provenance.txt`). Swap in use was 1,404 MB of 2,048 MB
+throughout, with no growth; reclaimable memory was 6,230 and 6,200 MiB at the 1.5B cells' starts against a need of 3,203. Identity held
+in every rep (10 reps of 256 tokens each, the first discarded as the warm-up), and each rep also asserts that the chain served exactly
+the closed steps' forwards. Checkpoints from `~/models`: `qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw`.
 
 | model | (a) closed: the prose part | (b) toolcall: the gate open for the last 48 tokens |
 |---|---|---|
-| Qwen2.5-Coder-1.5B | **1.1134** (1.0237 to 1.2128; 9 of 9 pairs above 1); today 90.4, HL-R 100.9 tok/s | **1.0252** (1.0173 to 1.0869; 9 of 9) |
-| Qwen2.5-7B | **1.0110** (1.0095 to 1.0243; 9 of 9); today 32.3, HL-R 32.7 tok/s | **1.0039** (0.9967 to 1.0325; 8 of 9) |
+| Qwen2.5-Coder-1.5B | **1.1351** (1.0315 to 1.1729; 9 of 9 pairs above 1); today 88.9, HL-R 101.1 tok/s | **1.0519** (1.0026 to 1.0992; 9 of 9); today 92.6, HL-R 97.8 tok/s |
+| Qwen2.5-7B | not counted: both cells were VOID by the guard | not counted |
 
-**Against the registered bands** (Ship: median (a) ≥ 1.02 and (b) ≥ 1.00; Park: (a) in [1.00, 1.02); Off: (a) < 1.00 or (b) < 1.00):
-- **1.5B: Ship.** (a) 1.1134 and (b) 1.0252.
-- **7B: Park.** (a) 1.0110 is in the park band; (b) 1.0039 clears 1.00 on the median, with one pair below 1.
+**The 7B cells did not run by day.** The 7B's need is 6,596 MiB (its 4,466 MiB file plus 2 GB); reclaimable memory was 6,095 MiB when its
+first cell came up and fell to 3,900 to 4,700 MiB (the load average peaked at 8.6) while the machine's other work ran. The runner waited six
+60-second attempts per cell and started neither; it exited non-zero, as registered. They are queued for the night
+(`hlr-r3-7b`, not before 22:00, pinned binary `1eb6ed26`, re-queued on exit 75 until 05:00). Until they read, the 7B has only the superseded
+reading above, which is not counted.
 
-**The registration does not say how the two models combine.** The 2026-10-14 reading of the rows-and-redo form graded each model
-against the bands and gave one verdict because (b) was under 1.00 on both. Here the models differ: read model by model, the 1.5B ships
-and the 7B parks; read as "both must ship", the result is Park. This record does not choose: a bar is not moved after a reading, and a
-combination rule added now would be chosen with the numbers in view. The ambiguous case goes to the owner.
+**Against the registered bands** (Ship: median (a) >= 1.02 and (b) >= 1.00; Park: (a) in [1.00, 1.02); Off: (a) < 1.00 or (b) < 1.00):
+- **1.5B: Ship.** (a) 1.1351 and (b) 1.0519.
+- **7B: open** until the night run reads.
 
-**What changed against the rows-and-redo form (HL, graded OFF on 2026-10-14):** (b) went from 0.986 and 0.973 to 1.025 and 1.004, and
-(a) from 1.035 and 1.010 to 1.113 and 1.011. The open steps no longer carry an extra head dispatch and a row readback, and there is no
-redo; the cost left is one chain stop at the opening, which waits out the forward the chain had queued past it, and one chain start at
-the reopening (at the end of a tool turn there is none). In the toolcall shape the gate opens once and never closes, so the shape
-has one opening and no reopening; a turn whose gate closes and reopens many times (a tool call per few tokens) pays that start each
-time and is not what (b) measures.
+**The registration does not say how the two models combine.** The 2026-10-14 reading of the rows-and-redo form gave one verdict because
+(b) was under 1.00 on both. If the 7B parks, the models differ, and read model by model the 1.5B ships and the 7B parks; read as "both must
+ship", the result is Park. This record does not choose: a bar is not moved after a reading, and a combination rule added now would be chosen
+with the numbers in view. An ambiguous case goes to the owner.
+
+**What changed against the rows-and-redo form (HL, graded OFF on 2026-10-14):** (b) on the 1.5B went from 0.986 to 1.052 and (a) from 1.035 to
+1.135. The open steps no longer carry an extra head dispatch and a row readback, and there is no redo; the cost left is one chain stop at
+the opening, which waits out the forward the chain had queued past it, and one chain start at the reopening (at the end of a tool turn
+there is none). In the toolcall shape the gate opens once and never closes, so the shape has one opening and no reopening; a turn whose
+gate closes and reopens many times (a tool call per few tokens) pays that start each time and is not what (b) measures.
 
 ## Not shown
 
