@@ -746,6 +746,7 @@ type cudaResident struct {
 	faMinKeys     int            // attended-span floor below which the exact path runs (GOINFER_CUDA_FLASH_DECODE_MIN_KEYS)
 	faBuf         Buffer         // partials [nH][S*8][hd+4]
 	faLaunches    int            // launches of fa_partial, so a test can prove the lane ran
+	faModule      string         // the build of decode_fa the lane was compiled from (decode_fa, _kv16 or _kv8), so a test can prove the precision's twin ran
 	skLaunches    int            // split-KV decode attention passes, so a test can prove that path ran
 	faExactScope  atomic.Int32   // >0: a speculative generation holds the exact-attention scope, so the lane is bypassed
 	faRows        [3][9]Pipeline // fa_partial_rows_{64,128,256}_g{1..8} (multi-row verify variant); zero when not loaded

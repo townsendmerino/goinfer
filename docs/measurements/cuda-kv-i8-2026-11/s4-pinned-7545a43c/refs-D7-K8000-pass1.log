@@ -1,0 +1,17 @@
+=== RUN   TestPrefillGateReference
+    prefill_ref_gen_test.go:71: prompt set "b" (10 files) -> /home/francis/goinfer-logs/prefill-ref-b
+=== RUN   TestPrefillGateReference/D7
+[ref] concurrency preflight OK: 8 parallel workers, identical prompt, bit-identical seed logits
+[ref] D7 K=8000: 0 of 10 prompts already in the reference cache, 10 to compute
+[ref] D7 K=8000 prompt  3 done (1/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/D7-K8000-p2.bin took=3h54m5s elapsed=3h54m5s
+[ref] D7 K=8000 prompt  7 done (2/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/D7-K8000-p6.bin took=3h54m33s elapsed=3h54m33s
+[ref] D7 K=8000 prompt  8 done (3/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/D7-K8000-p7.bin took=3h54m36s elapsed=3h54m36s
+[ref] D7 K=8000 prompt  2 done (4/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/D7-K8000-p1.bin took=3h54m41s elapsed=3h54m41s
+[ref] D7 K=8000 prompt  4 done (5/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/D7-K8000-p3.bin took=3h54m45s elapsed=3h54m45s
+[ref] D7 K=8000 prompt  6 done (6/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/D7-K8000-p5.bin took=3h54m50s elapsed=3h54m50s
+[ref] D7 K=8000 prompt  5 done (7/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/D7-K8000-p4.bin took=3h54m51s elapsed=3h54m51s
+[ref] D7 K=8000 prompt  1 done (8/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/D7-K8000-p0.bin took=3h54m56s elapsed=3h54m56s
+    prefill_ref_gen_test.go:159: D7 K=8000: 2 prompts not started: the slowest finished prompt took 3h54m56s, so they would end past the test deadline (9:03AM); the 8 finished are stored, and a rerun resumes
+--- FAIL: TestPrefillGateReference (14135.92s)
+    --- FAIL: TestPrefillGateReference/D7 (14135.91s)
+FAIL

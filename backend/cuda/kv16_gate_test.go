@@ -99,14 +99,20 @@ func TestKV16GateVsReference(t *testing.T) {
 type kv16ArmResult struct {
 	rows       [][][]float32 // [prompt][row][vocab]
 	allocated  int64         // the K/V cache bytes the load allocated (kvAllocSeenForTest)
-	kvPool     int64         // the KV pools' and null blocks' bytes, from the layers that size them
+	kvPool     int64         // the KV pools' and null blocks' bytes, from the layers that size them, block tables included
+	tables     int64         // the block tables' share of kvPool (allocated does not count them)
+	fit        string        // the build's own fit decision for the arm: its context and KV pool, as the plan sized them
 	faLaunches int
 	f16        bool
-	aa         [][]float32 // a second run of prompt 0 (the f16 arm only), for the A/A precondition
+	i8         bool        // the arm's resident holds int8
+	aa         [][]float32 // a second run of prompt 0 (the arm asked for it), for the A/A precondition
 	maxK, maxV []float32   // per layer, over every prompt (the f32 arm only)
 	layers     int
-	faLayers   int  // the layers whose attended span reaches the lane's floor at this depth (a sliding window under it never does)
-	mlaOnly    bool // every layer that keeps K/V is MLA's latent, which the flash-decode lane never reads
+	faLayers   int    // the layers whose attended span reaches the lane's floor at this depth (a sliding window under it never does)
+	mlaOnly    bool   // every layer that keeps K/V is MLA's latent, which the flash-decode lane never reads
+	faModule   string // the build of decode_fa the lane's kernels were compiled from (cudaResident.faModule)
+	kvDim, nKV int    // the KV-keeping layers' K row width and KV heads, when every such layer shares them (uniform)
+	uniform    bool
 }
 
 func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens [][]int, survey, aa bool, tag string, opts decoder.Options) kv16ArmResult {
@@ -128,11 +134,20 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 	if rf.faSplit < 1 || rf.faCombine == (Pipeline{}) {
 		t.Fatalf("-kv %s: the flash-decode lane is not loaded (faSplit=%d)", kv, rf.faSplit)
 	}
-	res := kv16ArmResult{f16: rf.kvF16, allocated: seen[rf], kvPool: kvBytesForCap(rf.ctxCap, rf.layers) + kvPoolNullBytes(rf.layers), layers: len(rf.layers)}
-	res.mlaOnly = true
+	res := kv16ArmResult{f16: rf.kvF16, i8: rf.kvI8, allocated: seen[rf], kvPool: kvBytesForCap(rf.ctxCap, rf.layers) + kvPoolNullBytes(rf.layers), layers: len(rf.layers),
+		tables: int64(kvGroups * 4 * kvBlocksFor(rf.ctxCap))}
+	// The build's own fit check sized this arm (BuildResident refuses a load that does not fit, and the load above would have failed): record
+	// what it chose, so the cell's record shows each arm passed it.
+	res.fit = fmt.Sprintf("-kv %s: resident, context %d positions, %d KV slot(s), KV pools %d B", kv, rf.ctxCap, rf.KVSlots(), res.kvPool)
+	res.mlaOnly, res.faModule, res.uniform = true, rf.faModule, true
 	for l := range rf.layers {
 		if !rf.layers[l].noKV() && !rf.layers[l].isMLA() {
 			res.mlaOnly = false
+			if res.kvDim == 0 {
+				res.kvDim, res.nKV = rf.layers[l].kvDim, rf.layers[l].nKV
+			} else if rf.layers[l].kvDim != res.kvDim || rf.layers[l].nKV != res.nKV {
+				res.uniform = false
+			}
 		}
 		if w := int(rf.layers[l].window); !rf.layers[l].noKV() && !rf.layers[l].isMLA() && rf.faEligible(l) && (w == 0 || w >= rf.faMinKeys) {
 			res.faLayers++
@@ -335,4 +350,234 @@ func runKV16GateCell(t *testing.T, path, model string, K int, promptFiles []stri
 	if decision && verdict != "PASSES" {
 		t.Errorf("%s K=%d is the DECISION cell and it did not pass (%s): f16 stays opt-in, which is a RESULT", model, K, verdict)
 	}
+}
+
+// TestKV8GateVsReference is S4's G4 for the CUDA int8 cache (docs/measurements/cuda-kv-i8-2026-11/s4-registration.md): three arms, f32 (exact),
+// f16 and i8, loaded one after another, teacher-forced and scored against the CPU f32/f64 reference of held-out prompt set B, with the f16 gate's
+// criteria (a) / (b) / (c), int8 against f32, and the same three numbers for int8 against f16 beside them. G4 is a published reading, not a
+// refusal: the verdict is printed, and only a failed precondition fails the test.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_PREFILL_GATE_PROMPTS=b GOINFER_CUDA_FLASH_DECODE=16 \
+//	  go test -tags 'cuda goinfer_testhooks' ./backend/cuda/ -run TestKV8GateVsReference -v -timeout 2h
+//
+// Cells: D7 K=8000 (decision), S (1.5B) K=3900 (confirmation); GOINFER_KV8_GATE_CELLS="S:3900:2" and the like override, as the f16 gate's do.
+func TestKV8GateVsReference(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs the set-B reference files)")
+	}
+	if s, _ := strconv.Atoi(os.Getenv("GOINFER_CUDA_FLASH_DECODE")); s < 1 {
+		t.Skip("set GOINFER_CUDA_FLASH_DECODE=16: every arm runs the production decode lane")
+	}
+	label, promptFiles := decoder.PrefillGatePromptSet()
+	if label != "b" {
+		t.Fatalf("the registered gate runs on held-out set B; GOINFER_PREFILL_GATE_PROMPTS=%q selects set %q", os.Getenv("GOINFER_PREFILL_GATE_PROMPTS"), label)
+	}
+	home, _ := os.UserHomeDir()
+	refDir := filepath.Join(home, "goinfer-logs", "prefill-ref-b")
+	cells := os.Getenv("GOINFER_KV8_GATE_CELLS")
+	if cells == "" {
+		cells = "S:3900,D7:8000"
+	}
+	// PRECONDITION 4: the exact-input G2 at this binary's commit, before any cell: the int8 readers this gate scores must match the CPU's on
+	// one cache. It runs here, in the same binary, so the gate cannot be read against readers that were never checked.
+	if !t.Run("precondition4-exact-input-G2", TestKV8_G2exact_readersMatchTheCPUOnOneCache) {
+		t.Fatal("PRECONDITION 4 (exact-input G2) failed: no cell is read")
+	}
+	models := map[string]struct {
+		def      string
+		decision bool
+	}{
+		"D7": {"$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", true},
+		"S":  {"$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", false},
+	}
+	for cell := range strings.SplitSeq(cells, ",") {
+		parts := strings.Split(strings.TrimSpace(cell), ":")
+		if len(parts) != 2 && len(parts) != 3 {
+			t.Fatalf("bad cell %q", cell)
+		}
+		name := parts[0]
+		K, _ := strconv.Atoi(parts[1])
+		files := promptFiles
+		if len(parts) == 3 {
+			n, _ := strconv.Atoi(parts[2])
+			if n < 2 || n > len(promptFiles) {
+				t.Fatalf("bad cell %q: n must be 2 to %d", cell, len(promptFiles))
+			}
+			files = promptFiles[:n]
+		}
+		mc, ok := models[name]
+		if !ok || K < 1 {
+			t.Fatalf("bad cell %q", cell)
+		}
+		t.Run(fmt.Sprintf("%s-K%d", name, K), func(t *testing.T) {
+			path := os.ExpandEnv(mc.def)
+			if _, err := os.Stat(path); err != nil {
+				t.Fatalf("no checkpoint at %s: a registered cell must run, not skip", path)
+			}
+			for pi := range files {
+				if _, err := os.Stat(filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", name, K, pi))); err != nil {
+					t.Fatalf("%s K=%d: reference missing for prompt %d", name, K, pi)
+				}
+			}
+			runKV8GateCell(t, path, name, K, files, refDir, mc.decision)
+		})
+	}
+}
+
+// kv8GateRead is one candidate arm scored against a base arm on a cell: the f16 gate's three criteria and the numbers behind them.
+type kv8GateRead struct {
+	baseAgree, candAgree, baseKL, candKL float64 // means; agreement in percent
+	baseHF, candHF, wins, n              int
+	critA, critB, critC, parked          bool
+	klDelta, klSE                        float64
+}
+
+func (g kv8GateRead) verdict() string {
+	switch {
+	case g.critA && g.critB && g.critC && g.parked:
+		return "AMBIGUOUS — PARKED"
+	case g.critA && g.critB && g.critC:
+		return "PASSES"
+	}
+	return "DOES NOT PASS"
+}
+
+// kv8Score scores cand against base over every prompt (agreement against the reference tokens, KL and hard flips against the reference rows).
+func kv8Score(base, cand kv16ArmResult, refTokens [][]int, refLogits [][][]float32) kv8GateRead {
+	var g kv8GateRead
+	g.n = len(refTokens)
+	var sumD, sumD2 float64
+	for pi := range refTokens {
+		ba, _ := decoder.TeacherForcedTop1AgreementForTest(base.rows[pi], refTokens[pi])
+		ca, _ := decoder.TeacherForcedTop1AgreementForTest(cand.rows[pi], refTokens[pi])
+		bs, cs := scoreVsumArm(refLogits[pi], base.rows[pi]), scoreVsumArm(refLogits[pi], cand.rows[pi])
+		g.baseAgree += ba * 100 / float64(g.n)
+		g.candAgree += ca * 100 / float64(g.n)
+		g.baseKL += bs.kl / float64(g.n)
+		g.candKL += cs.kl / float64(g.n)
+		g.baseHF += bs.hardFail
+		g.candHF += cs.hardFail
+		if ca >= ba {
+			g.wins++
+		}
+		d := cs.kl - bs.kl
+		sumD += d
+		sumD2 += d * d
+	}
+	g.klDelta = sumD / float64(g.n)
+	g.klSE = math.Sqrt(math.Max(sumD2/float64(g.n)-g.klDelta*g.klDelta, 0) / float64(g.n-1))
+	g.critA = float64(g.candHF) <= float64(g.baseHF)+2*math.Sqrt(float64(g.baseHF))
+	g.critB = g.candAgree >= g.baseAgree-1.0 && g.wins*2 >= g.n
+	g.critC = g.candKL <= 1.1*g.baseKL
+	g.parked = (g.critB && g.candAgree < g.baseAgree-0.8) || (g.critC && g.candKL > 1.05*g.baseKL)
+	return g
+}
+
+func runKV8GateCell(t *testing.T, path, model string, K int, promptFiles []string, refDir string, decision bool) {
+	t.Helper()
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	prompts := make([][]int, len(promptFiles))
+	refTokens := make([][]int, len(promptFiles))
+	refLogits := make([][][]float32, len(promptFiles))
+	for pi, f := range promptFiles {
+		prompts[pi] = decoder.PrefillGateProseIDsForTest(t, tk, f, K)
+		ref := filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", model, K, pi))
+		if err := decoder.PrefillRefCurrentForTest(ref, path, prompts[pi][:K]); err != nil {
+			t.Fatalf("reference %d: %v", pi, err)
+		}
+		_, rt, rl, err := decoder.ReadPrefillReferenceForTest(ref)
+		if err != nil {
+			t.Fatalf("read reference %d: %v", pi, err)
+		}
+		refTokens[pi], refLogits[pi] = rt, rl
+	}
+	contN := len(refTokens[0])
+	e := kv16RunArm(t, path, "f32", K, prompts, refTokens, false, false, model, decoder.Options{})
+	h := kv16RunArm(t, path, "f16", K, prompts, refTokens, false, false, model, decoder.Options{})
+	q := kv16RunArm(t, path, "i8", K, prompts, refTokens, false, true, model, decoder.Options{})
+
+	// PRECONDITION 5: every arm was sized by the build's own fit check (a refused load fails kv16RunArm before here).
+	for _, a := range []kv16ArmResult{e, h, q} {
+		fmt.Printf("=== KV8 GATE %s K=%d precondition 5 (fit): %s\n", model, K, a.fit)
+	}
+	// PRECONDITION 1: vacuity. Each arm holds exactly its precision: all six flags.
+	if e.f16 || e.i8 || !h.f16 || h.i8 || q.f16 || !q.i8 {
+		t.Fatalf("PRECONDITION 1: arms are not f32/f16/i8 (f16 flags %v %v %v; int8 flags %v %v %v)", e.f16, h.f16, q.f16, e.i8, h.i8, q.i8)
+	}
+	// Each arm allocated exactly the pools it prices (its tables aside, which allocated does not count); int8's are under half f32's and over
+	// a quarter (1 B an element plus the scales), f16's exactly half.
+	for _, a := range []struct {
+		name string
+		r    kv16ArmResult
+	}{{"f32", e}, {"f16", h}, {"i8", q}} {
+		if a.r.allocated <= 0 || a.r.allocated != a.r.kvPool-a.r.tables {
+			t.Fatalf("PRECONDITION 1: the %s arm allocated %d B of K/V; its pools are priced %d B (%d B with %d B of tables)", a.name, a.r.allocated, a.r.kvPool-a.r.tables, a.r.kvPool, a.r.tables)
+		}
+	}
+	// f16 is exactly half of f32. An int8 row is kvDim bytes plus one f32 scale per KV head (kvRowBytes) against f32's 4*kvDim, so on a model
+	// whose KV layers share one geometry int8 is exactly f32/4 + f32*nKV/kvDim: 4*i8*kvDim == f32*kvDim + 4*f32*nKV.
+	if !e.uniform || e.kvDim <= 0 {
+		t.Fatalf("PRECONDITION 1: the model's KV layers do not share one geometry, so the int8 overhead has no single exact figure")
+	}
+	if 2*h.allocated != e.allocated || 4*q.allocated*int64(e.kvDim) != e.allocated*int64(e.kvDim)+4*e.allocated*int64(e.nKV) {
+		t.Fatalf("PRECONDITION 1: K/V allocations f32 %d B, f16 %d B, i8 %d B: f16 is not half, or i8 is not f32/4 plus one f32 scale per KV head and row (want %d B)",
+			e.allocated, h.allocated, q.allocated, e.allocated/4+e.allocated*int64(e.nKV)/int64(e.kvDim))
+	}
+	// Every arm reads its cache through the production flash-decode lane, compiled from its own precision's build of decode_fa.
+	for _, a := range []struct {
+		name, module string
+		r            kv16ArmResult
+	}{{"f32", "decode_fa", e}, {"f16", "decode_fa_kv16", h}, {"i8", "decode_fa_kv8", q}} {
+		if a.r.faModule != a.module {
+			t.Fatalf("PRECONDITION 1 (vacuity): the %s arm's flash-decode lane was compiled from %q, not %q", a.name, a.r.faModule, a.module)
+		}
+		if want := a.r.faLayers * (contN - 1) * len(prompts); a.r.faLayers == 0 || a.r.faLaunches < want {
+			t.Fatalf("PRECONDITION 1 (vacuity): the %s arm launched fa_partial %d times over %d lane layers, expected >= %d", a.name, a.r.faLaunches, a.r.faLayers, want)
+		}
+	}
+	diff, seedDiff := 0, 0
+	for pi := range prompts {
+		nd := 0
+		for i := 1; i < contN; i++ {
+			if !sameLogits(e.rows[pi][i], q.rows[pi][i]) {
+				nd++
+			}
+		}
+		if nd == 0 {
+			t.Fatalf("PRECONDITION 1 (vacuity): prompt %d's int8 decode rows are bit-identical to f32's at every position", pi)
+		}
+		diff += nd
+		if !sameLogits(e.rows[pi][0], q.rows[pi][0]) {
+			seedDiff++
+		}
+	}
+	// PRECONDITION 2: A/A.
+	for i := range q.aa {
+		if !sameLogits(q.aa[i], q.rows[0][i]) {
+			t.Fatalf("PRECONDITION 2: A/A FAILED at row %d: the int8 arm is not deterministic", i)
+		}
+	}
+	kind := "confirmation"
+	if decision {
+		kind = "DECISION"
+	}
+	for _, c := range []struct {
+		name       string
+		base, cand kv16ArmResult
+	}{{"i8 vs f32 (G4)", e, q}, {"i8 vs f16 (reported)", h, q}, {"f16 vs f32 (control)", e, h}} {
+		g := kv8Score(c.base, c.cand, refTokens, refLogits)
+		flag := ""
+		if g.critC && g.klSE > 0 && g.klDelta > 2*g.klSE {
+			flag = fmt.Sprintf(" (KL paired delta %+.6f is %.1f s.e. above zero, s.e. %.6f)", g.klDelta, g.klDelta/g.klSE, g.klSE)
+		}
+		fmt.Printf("=== KV8 GATE %s K=%d (%s cell, set b, n=%d x %d positions) %s: base(meanAgree=%.2f%% HF=%d meanKL=%.6f) cand(meanAgree=%.2f%% HF=%d meanKL=%.6f) "+
+			"cand>=base on %d/%d prompts; critA=%v critB=%v critC=%v KLratio=%.4f%s => %s\n",
+			model, K, kind, g.n, contN, c.name, g.baseAgree, g.baseHF, g.baseKL, g.candAgree, g.candHF, g.candKL, g.wins, g.n, g.critA, g.critB, g.critC,
+			g.candKL/g.baseKL, flag, g.verdict())
+	}
+	fmt.Printf("=== KV8 GATE %s K=%d preconditions: int8 allocated %d B (f32 %d B), A/A bit-identical over %d rows, int8 rows differing from f32 %d, seed rows differing %d/%d\n",
+		model, K, q.allocated, e.allocated, len(q.aa), diff, seedDiff, len(prompts))
 }

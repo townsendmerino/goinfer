@@ -1,0 +1,19 @@
+=== RUN   TestPrefillGateReference
+    prefill_ref_gen_test.go:71: prompt set "b" (10 files) -> /home/francis/goinfer-logs/prefill-ref-b
+=== RUN   TestPrefillGateReference/S
+[ref] concurrency preflight OK: 8 parallel workers, identical prompt, bit-identical seed logits
+[ref] S K=3900: 0 of 10 prompts already in the reference cache, 10 to compute
+[ref] S K=3900 prompt  8 done (1/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/S-K3900-p7.bin took=9m52s elapsed=9m52s
+[ref] S K=3900 prompt  4 done (2/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/S-K3900-p3.bin took=9m56s elapsed=9m56s
+[ref] S K=3900 prompt  7 done (3/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/S-K3900-p6.bin took=9m57s elapsed=9m57s
+[ref] S K=3900 prompt  1 done (4/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/S-K3900-p0.bin took=9m57s elapsed=9m57s
+[ref] S K=3900 prompt  5 done (5/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/S-K3900-p4.bin took=9m58s elapsed=9m58s
+[ref] S K=3900 prompt  3 done (6/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/S-K3900-p2.bin took=9m59s elapsed=9m59s
+[ref] S K=3900 prompt  2 done (7/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/S-K3900-p1.bin took=9m59s elapsed=9m59s
+[ref] S K=3900 prompt  6 done (8/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/S-K3900-p5.bin took=9m59s elapsed=9m59s
+[ref] S K=3900 prompt  9 done (9/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/S-K3900-p8.bin took=2m22s elapsed=12m14s
+[ref] S K=3900 prompt 10 done (10/10 computed) -> /home/francis/goinfer-logs/prefill-ref-b/S-K3900-p9.bin took=2m19s elapsed=12m15s
+--- PASS: TestPrefillGateReference (740.25s)
+    --- PASS: TestPrefillGateReference/S (740.25s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	740.312s

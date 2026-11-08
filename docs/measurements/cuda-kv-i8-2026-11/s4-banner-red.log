@@ -1,0 +1,11 @@
+--- FAIL: TestBanner_kvI8CostIsCUDAs (0.00s)
+    banner_test.go:685: metal resident: line "context: 4096 tokens (model maximum) · KV i8 (requested i8, lossy: about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B; decode up to 28% 
+    banner_test.go:690: metal resident: line "context: 4096 tokens (model maximum) · KV i8 (requested i8, lossy: about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B; decode up to 28% 
+    banner_test.go:685: webgpu resident: line "context: 4096 tokens (model maximum) · KV i8 (requested i8, lossy: about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B; decode up to 28%
+    banner_test.go:690: webgpu resident: line "context: 4096 tokens (model maximum) · KV i8 (requested i8, lossy: about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B; decode up to 28%
+    banner_test.go:685: cpu: line "context: 4096 tokens (model maximum) · KV i8 (requested i8, lossy: about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B; decode up to 28% slower than
+    banner_test.go:690: cpu: line "context: 4096 tokens (model maximum) · KV i8 (requested i8, lossy: about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B; decode up to 28% slower than
+    banner_test.go:685: cuda resident and its cpu cache: line "context: 4096 tokens (model maximum) · KV i8 (requested i8, lossy: about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B; 
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/app/serveapp	0.004s
+FAIL
