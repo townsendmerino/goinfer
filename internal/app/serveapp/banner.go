@@ -517,8 +517,8 @@ func samplingLine(rs *decoder.RecommendedSampling) string {
 // reason when they differ (an explicit request that cannot be delivered refuses the load, so a difference here is auto's pick).
 // "lossy" marks f16 or i8 that the operator asked for by name. A CUDA resident's i8 cache (cudaResident: the load's decode path is
 // cuda-resident) also names its measured cost, which was measured there and nowhere else (docs/kv-precision-matrix.md, "Measured cost").
-// kvI8Cost is CUDA int8 KV's measured cost, as the banner states it: the G4 and speed results of docs/measurements/cuda-kv-i8-2026-11/s4-registration.md.
-const kvI8Cost = "about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B; decode up to 28% slower than f16 at short context, prefill about 20x slower at 16K keys"
+// kvI8Cost is CUDA int8 KV's measured cost, as the banner states it: the G4 and speed results of docs/measurements/cuda-kv-i8-2026-11/s6-registration.md (and s4-registration.md's).
+const kvI8Cost = "about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B; decode up to 28% slower than f16 at short context, prefill near f16's"
 
 func kvBannerPart(reps []decoder.KVPrecisionReport, cudaResident bool) string {
 	if len(reps) == 0 {
