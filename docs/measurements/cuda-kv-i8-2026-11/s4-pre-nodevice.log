@@ -1,0 +1,5 @@
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation
+    kvbytes_agreement_test.go:38: cuInit: cuInit: CUDA_ERROR_NO_DEVICE
+--- SKIP: TestResidentKVBytes_matchesCUDAAllocation (0.01s)
+PASS
+ledger: 0 device(s) released in this run
