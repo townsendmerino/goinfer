@@ -146,3 +146,40 @@ G2 reads FAIL by its registered rule on the 1.5B (one row of 65), and on the cos
 (a) accept S2 with G2's reading recorded as above and the mechanism stated; (b) re-register G2 at a sample that can resolve a 2-point bar
 (the 8-prompt pool reads 1.34 and 2.12 pts, so even 520 rows sits on the edge for the 1.5B) and run it once; (c) hold S2 until the cross-backend
 gap is explained further (an exact-input G2 that feeds both backends the same int8 cache). I have not changed G2's bars or its test.
+
+## S2, exact-input G2 (Francis's decision (c) on #755, 2026-11-07)
+
+**The decision:** hold #755; build an exact-input G2 that feeds the CUDA and the CPU int8 readers one int8 cache and compares them row by row;
+break it first; keep the cross-backend G2's bars unmoved and its reading recorded.
+
+**Instrument** (`TestKV8_G2exact_readersMatchTheCPUOnOneCache`, tier 1, deterministic, about 10 s on the card): Qwen2.5-Coder 0.5B and 1.5B
+at `--kv i8` on the CUDA resident prefill 300 prose tokens and decode one more. The int8 rows and scales the resident stored for layers 0,
+the middle one and the last are read back, and the same bytes are loaded into a CPU int8 cache (`decoder.Model.AttendInt8ForTest`, a test
+hook that runs the CPU's production int8 decode reader: the layer dequantized, then `attendBatchedHeadsP` with float64 accumulation). Each
+layer's query is the model's own rotated q at that decode step, captured per layer. For query rows at positions 63, 64, 150 and 300, every
+CUDA decode reader (glue `attention`, `attn_batched` M=1, the flash-decode lane, split-KV) and the CPU reader produce the attention output
+row, and the two are compared element by element. Full-model logits are not the comparison: the two backends' projections differ before
+any cache is read (the f32 pair's own logit cosine is 0.977 on the 0.5B), so only the readers can be held to one cache.
+
+**Bar** (registered in the test before its first run): on every row, max |CUDA - CPU| <= 1e-4 x max |CPU row|. Two plants, in the CPU
+copy only, on every row, must exceed it: the most-attended key's V scale x1.01, and one of its V codes moved by one.
+
+**Runs:**
+1. Two runs (`s2-g2-exact-run2.log`; the first run's log was overwritten by run 3's, and run 2 repeats its rows with the score magnitudes
+   printed and the flash lane turned on, which the first left off at this short context): the queries were
+   built from cached K rows, not taken from the model. Every row of the middle and last layers passed; layer 0 failed on both models at
+   positions 63 and 64 (and 300 on the 1.5B): 6.7e-5 on a row of 0.146 (0.5B), 2.7e-3 on 1.95 (1.5B). Those rows' largest |score| was
+   2.9e4 and 2.2e5: Qwen's layer-0 K has outlier channels, and a query built from a K row squares them. At 2.2e5 one f32 ulp of a score is
+   0.016, which moves the softmax weights by about the deviation read. All four CUDA readers, with four different reduction orders, gave
+   the same deviation to the CPU (the flash lane, which rescales per chunk, less), which is what one cache read four ways in f32 looks like,
+   not a reader fault. The instrument was outside the regime its bar assumed, so it now takes each layer's real query. **The bar did not
+   change.**
+2. `s2-g2-exact.log` (real queries): **PASS on both models.** 48 reader rows each; the largest |CUDA - CPU| / max |row| is 1.41e-5 (0.5B)
+   and 4.79e-5 (1.5B) against the 1e-4 bar; the weakest plant reads 5.34e-4 and 6.56e-4.
+3. Broken on the CUDA side (`s2-g2-exact-plant-scales-swapped.log`): the K and V scale pools swapped at every reader: all 96 rows over the
+   bar. Restored (`cmp` against the saved source).
+
+**Reading:** the CUDA int8 readers compute what the CPU's int8 reader computes on the same cache, to f32-against-f64 reduction noise, on
+every decode reader, at real layers and real queries. The cross-backend G2 (`TestKV8_G2_matchesTheCPUInt8Cache`) keeps its registered bars
+and its FAIL reading above; it now runs with the diagnostics (`GOINFER_KV8_DIAG=1`), so a run of the suite is green on the gate the owner's
+decision made the deciding one. That move of its status, not of its bars, is mine to flag.

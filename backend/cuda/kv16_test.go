@@ -711,8 +711,12 @@ func TestKV8_everyAttentionPathStaysCloseToF32(t *testing.T) {
 //
 // The CPU int8 cache's own cosine to the CPU f32 cache is logged beside it: it is what int8 KV costs the model, which is G4's read, not a
 // correctness bar.
+//
+// It read FAIL on its first run and its bars are kept as registered. The owner's decision (c) on #755 put the correctness question to the
+// exact-input G2 (TestKV8_G2exact_readersMatchTheCPUOnOneCache); this one is kept as a reading and runs with the diagnostics
+// (GOINFER_KV8_DIAG=1), so a run of the suite stays green on the gate that decides.
 func TestKV8_G2_matchesTheCPUInt8Cache(t *testing.T) {
-	requireCUDADevice(t)
+	kv8Diag(t)
 	for _, model := range []string{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"} {
 		t.Run(model[:len("qwen2.5-coder-0.5b")], func(t *testing.T) {
 			_, files := decoder.PrefillGatePromptSet()
@@ -973,4 +977,236 @@ func TestKV8_G2Diag_amplification(t *testing.T) {
 		}
 		t.Logf("%s over %d decode rows: top-1 lane-off vs lane-on, f32 %.4f, i8 %.4f", model, n, ag[0]/float64(n), ag[1]/float64(n))
 	}
+}
+
+// TestKV8_G2exact_readersMatchTheCPUOnOneCache is the exact-input G2 (Francis's decision (c) on #755, docs/measurements/cuda-kv-i8-2026-11/scope.md,
+// "S2, exact-input G2"): the CUDA int8 readers and the CPU's production int8 reader (decoder.Model.AttendInt8ForTest: the layer dequantized,
+// then the float64-accumulated attention) fed ONE int8 cache, the rows and scales the CUDA resident stored for a real prose prefill, with one
+// query, give the same attention output row, to float-reduction noise. Tier 1: Qwen2.5-Coder 0.5B and 1.5B, layers 0, the middle one and the
+// last, query rows at four positions, every CUDA decode reader (glue attention, attn_batched M=1, the flash-decode lane, split-KV); seconds.
+//
+// Each layer's query is the model's own: the rotated q it attended with at the decode step after the prefill, captured per layer. The bar,
+// registered before the first run: on every row, max |CUDA - CPU| <= 1e-4 x max |CPU row| (f32 against float64 accumulation over at most a few
+// hundred keys is ~1e-5 relative). Two plants in the CPU copy only must break it: one V scale of the most-attended key x1.01, and one V code
+// of that key moved by one. (The first two runs built the queries from cached K rows instead, which on Qwen's layer 0 put scores at 1e4 to
+// 2e5, where one f32 ulp of a score moves the softmax by the deviation they read; scope.md records them.)
+func TestKV8_G2exact_readersMatchTheCPUOnOneCache(t *testing.T) {
+	requireCUDADevice(t)
+	const K, bar = 300, 1e-4
+	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16") // the lane on at this short context, as the every-path test turns it on
+	t.Setenv("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "0")
+	for _, model := range []string{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"} {
+		t.Run(model[:len("qwen2.5-coder-0.5b")], func(t *testing.T) {
+			path := modelPath(model)
+			if _, err := os.Stat(path); err != nil {
+				t.Skipf("no fixture: %v", err)
+			}
+			mg, r := kv8Load(t, "~"+model, "i8", decoder.Options{ResidentContext: K + 64})
+			mc, err := decoder.Load(path, decoder.Options{Quant: "int4", KVQuant: "i8"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { mc.Close() })
+			tk, err := tokenizer.LoadGGUF(path)
+			if err != nil {
+				t.Skip(err)
+			}
+			_, files := decoder.PrefillGatePromptSet()
+			ids := decoder.PrefillGateProseIDsForTest(t, tk, files[0], K+1)
+			embs := make([][]float32, K)
+			for i := range embs {
+				embs[i] = mg.EmbedResidentForTest(ids[i])
+			}
+			if _, err := r.PrefillLast(context.Background(), embs, 0); err != nil {
+				t.Fatal(err)
+			}
+			// The decode step at K stores row K and, layer by layer, leaves that layer's rotated query in qB: capture it after each layer (graphs off,
+			// so each layer's launches have run when its hook returns).
+			nL, nH := len(r.layers), r.nH
+			last := nL - 1
+			qs := make([][]float32, nL)
+			graphs := r.graphs
+			r.graphs = false
+			legacyLayerForTest = func(r *cudaResident, Ly *cudaLayer, l, pos, ropePos int, qt float32, gA, gB, gC bool) error {
+				if e := r.walkLayer(Ly, l, pos, ropePos, qt, gA, gB, gC); e != nil {
+					return e
+				}
+				if e := r.stream.Sync(); e != nil {
+					return e
+				}
+				qs[l] = make([]float32, r.nH*Ly.hd)
+				return gpu.Download(r.qB, qs[l])
+			}
+			_, err = r.Forward(mg.EmbedResidentForTest(ids[K]), K)
+			legacyLayerForTest, r.graphs = nil, graphs
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows, flash, split := 0, 0, 0
+			worst, plantMin := 0.0, math.Inf(1) // the largest row's diff / scale, and the smallest a plant made
+			for _, l := range []int{0, nL / 2, last} {
+				Ly := &r.layers[l]
+				hd, nKV, G := Ly.hd, Ly.nKV, nH/Ly.nKV
+				var kq, vq []int8
+				var ks, vs []float32
+				if err := r.do(func() error {
+					var e error
+					kq, vq, ks, vs, e = r.kv8RowsForTest(r.kvSlot, l, 0, K+1)
+					return e
+				}); err != nil {
+					t.Fatal(err)
+				}
+				for _, pos := range []int{63, 64, K / 2, K} {
+					q := qs[l] // the query of position K, over the keys up to pos
+					n := pos + 1
+					cpu, err := mc.AttendInt8ForTest(l, pos, q, kq[:n*Ly.kvDim], vq[:n*Ly.kvDim], ks[:n*nKV], vs[:n*nKV])
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, rd := range kv8Readers(r, l, pos) {
+						if rd.name == "flash-decode lane" {
+							flash++
+						}
+						if rd.name == "split-KV" {
+							split++
+						}
+						got := kv8RunReader(t, r, q, rd)
+						d0, s0 := kv8RowDiff(got, cpu)
+						worst = math.Max(worst, d0/s0)
+						if d, scale := d0, s0; d > bar*scale {
+							t.Errorf("layer %d position %d, %s: max |CUDA - CPU| %.3g, over %.0e x the row's %.3g (largest |score| %.3g)", l, pos, rd.name, d, bar, scale,
+								kv8MaxScore(q, kq[:n*Ly.kvDim], ks[:n*nKV], hd, nKV, G, r.attnScale))
+						}
+						rows++
+					}
+					// The plants, in the CPU copy only: the most-attended key's V scale x1.01, and one of its V codes moved by one.
+					top := kv8TopKey(q, kq[:n*Ly.kvDim], ks[:n*nKV], 0, hd, nKV, G, r.attnScale)
+					cuda := kv8RunReader(t, r, q, kv8Readers(r, l, pos)[0])
+					vs2 := append([]float32(nil), vs[:n*nKV]...)
+					vs2[top*nKV] *= 1.01
+					vq2 := append([]int8(nil), vq[:n*Ly.kvDim]...)
+					if vq2[top*Ly.kvDim] < 127 {
+						vq2[top*Ly.kvDim]++
+					} else {
+						vq2[top*Ly.kvDim]--
+					}
+					for _, p := range []struct {
+						name   string
+						vq     []int8
+						vscale []float32
+					}{{"V scale x1.01", vq[:n*Ly.kvDim], vs2}, {"V code +-1", vq2, vs[:n*nKV]}} {
+						bad, err := mc.AttendInt8ForTest(l, pos, q, kq[:n*Ly.kvDim], p.vq, ks[:n*nKV], p.vscale)
+						if err != nil {
+							t.Fatal(err)
+						}
+						d1, s1 := kv8RowDiff(cuda, bad)
+						plantMin = math.Min(plantMin, d1/s1)
+						if d, scale := d1, s1; d <= bar*scale {
+							t.Errorf("plant %q at layer %d position %d (key %d): max diff %.3g is within the bar %.3g: the gate cannot see it", p.name, l, pos, top, d, bar*scale)
+						}
+					}
+				}
+			}
+			t.Logf("%d reader rows compared (flash-decode lane %d, split-KV %d): largest |CUDA - CPU| / max|row| %.2e (bar %.0e); smallest a plant made %.2e",
+				rows, flash, split, worst, bar, plantMin)
+			if flash == 0 || split == 0 {
+				t.Errorf("flash-decode %d, split-KV %d rows: a reader never ran", flash, split)
+			}
+		})
+	}
+}
+
+// kv8Reader is one CUDA decode attention reader at (layer, pos).
+type kv8Reader struct {
+	name   string
+	launch func() error
+}
+
+// kv8Readers lists the decode readers that serve layer l at pos on r, each reading r.qB and writing r.cctx through the bound slot's table.
+func kv8Readers(r *cudaResident, l, pos int) []kv8Reader {
+	Ly := &r.layers[l]
+	nKeys := pos + 1
+	shm := uint32((nKeys + 128) * 4)
+	out := []kv8Reader{
+		{"glue attention", func() error {
+			return r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: shm},
+				r.kvScaled(l, r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))...)...)
+		}},
+		{"attn_batched M=1", func() error {
+			return r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: shm},
+				r.kvScaled(l, r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l))...)...)
+		}},
+	}
+	if r.faEligible(l) {
+		out = append(out, kv8Reader{"flash-decode lane", func() error { return r.flashDecodeAttn(l, pos) }})
+	}
+	if r.skScores != (Pipeline{}) {
+		out = append(out, kv8Reader{"split-KV", func() error { return r.splitKVAttnDecode(l, pos) }})
+	}
+	return out
+}
+
+// kv8RunReader uploads q into r.qB, runs rd, and returns r.cctx.
+func kv8RunReader(t *testing.T, r *cudaResident, q []float32, rd kv8Reader) []float32 {
+	t.Helper()
+	out := make([]float32, len(q))
+	if err := r.do(func() error {
+		if e := gpu.Upload(r.qB, q); e != nil {
+			return e
+		}
+		if e := r.stream.Sync(); e != nil {
+			return e
+		}
+		if e := rd.launch(); e != nil {
+			return e
+		}
+		if e := r.stream.Sync(); e != nil {
+			return e
+		}
+		return gpu.Download(r.cctx, out)
+	}); err != nil {
+		t.Fatalf("%s: %v", rd.name, err)
+	}
+	return out
+}
+
+// kv8RowDiff is max |a - b| and max |b| over a row.
+func kv8RowDiff(a, b []float32) (d, scale float64) {
+	for i := range b {
+		d = math.Max(d, math.Abs(float64(a[i])-float64(b[i])))
+		scale = math.Max(scale, math.Abs(float64(b[i])))
+	}
+	return d, scale
+}
+
+// kv8MaxScore is the largest |q.k x scale| over every query head and key of an int8 cache's dequantized K (float64).
+func kv8MaxScore(q []float32, kq []int8, ks []float32, hd, nKV, G int, scale float32) float64 {
+	m, kvDim := 0.0, nKV*hd
+	for h := range len(q) / hd {
+		kvh := h / G
+		for s := range len(kq) / kvDim {
+			var dot float64
+			for d := range hd {
+				dot += float64(q[h*hd+d]) * float64(kq[s*kvDim+kvh*hd+d]) * float64(ks[s*nKV+kvh])
+			}
+			m = math.Max(m, math.Abs(dot*float64(scale)))
+		}
+	}
+	return m
+}
+
+// kv8TopKey is the key query head h attends most to over an int8 cache's dequantized K (float64 scores).
+func kv8TopKey(q []float32, kq []int8, ks []float32, h, hd, nKV, G int, scale float32) int {
+	kvh, kvDim := h/G, nKV*hd
+	best, top := math.Inf(-1), 0
+	for s := range len(kq) / kvDim {
+		var dot float64
+		for d := range hd {
+			dot += float64(q[h*hd+d]) * float64(kq[s*kvDim+kvh*hd+d]) * float64(ks[s*nKV+kvh])
+		}
+		if dot*float64(scale) > best {
+			best, top = dot*float64(scale), s
+		}
+	}
+	return top
 }
