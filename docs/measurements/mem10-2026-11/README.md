@@ -133,3 +133,25 @@ so CLAUDE.md's opt-in speed bar does not apply.
 **Registries:** `docs/flags.md` (from `flags.meta.json`), the register and resolve goldens, and MM1's census. The census's refusal lines
 changed; both classes are regenerated, arm64 under qemu-user (`optin/census-arm64-qemu.log`). `touched.py` PASS (22 checks). The parity
 staleness gate is green.
+
+**Review round (Gemini on #792; the coordinator, 14:08):**
+- **The hint:** `HostCheck.Decline` names the flag only when the need *without* the copy fits: every term `Need` takes, the build peak less the
+  copy. Before, a load bound by its weights plus KV could be told to use a flag that would not save it.
+- **Disk:**
+  - The packed-experts files are reserved with `fallocate`, so a full disk fails the build with a named error instead of a `SIGBUS` during
+    packing.
+  - Each stack is written back (`msync`, `MS_SYNC`) before it is sealed read-only, so a build holds at most one stack's dirty pages, and the
+    written pages are clean and reclaimable like any file page.
+  - tmpfs and ramfs are both refused by name.
+- **The file's directory:** it comes from `Model.SourcePath()`, the file or checkpoint directory `Load` opened (new). With no path, the load
+  refuses rather than writing to the working directory.
+  - `GiwPath()` was empty on a safetensors-directory load, so the first version wrote to `.`. That included this PR's own identity test,
+    which passed while writing to the package directory.
+- **Tests:**
+  - The identity test now also compares the batched prefill and the speculative verify step (`ForwardN`) bit for bit, and checks both
+    pricing terms in the CUDA build demand.
+  - `TestMoEExpertsUnpinned_refusesMemoryBackedOrMissingDirs` covers the empty path, tmpfs, and a load whose model sits on tmpfs: it declines
+    naming tmpfs.
+  - Two more plants are red: the old decline condition, and the empty path accepted.
+- **The option grid:** `MoEExpertsUnpinned` is classified. Resident decode, prefill and speculative verify are tested by the identity test.
+  Session reuse and snapshots are n/a: they carry no expert bytes. The CPU paths are n/a.
