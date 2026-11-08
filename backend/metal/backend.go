@@ -912,7 +912,7 @@ func (a *metalResident) ResidentQuant() string { return a.quant }
 func (a *metalResident) PrefillKernelFloor() int { return a.prefillKernelFloor() }
 
 func (a *metalResident) prefillKernelFloor() int {
-	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || a.r.kvF32 || a.r.attnSink || !a.r.prefillOK || !a.fastPrefill() {
+	if a.r == nil || a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || a.r.kvF32 || a.r.attnSink || !a.r.prefillOK || !a.fastPrefill() {
 		return 0
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))

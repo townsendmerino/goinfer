@@ -20,6 +20,17 @@ func (r *fastFloorResident) ResidentCaps() ResidentCaps {
 	return c
 }
 
+type contextNoteResident struct {
+	*fakeResident
+	note string
+}
+
+func (r *contextNoteResident) ResidentCaps() ResidentCaps {
+	c := r.fakeResident.ResidentCaps()
+	c.ContextNote = r.note
+	return c
+}
+
 type kernelFloorResident struct {
 	*fakeResident
 	floor int
@@ -44,7 +55,27 @@ var (
 	_ ResidentCapsReporter = (*twoClassFake)(nil)
 	_ ResidentCapsReporter = (*fastFloorResident)(nil)
 	_ ResidentCapsReporter = (*kernelFloorResident)(nil)
+	_ ResidentCapsReporter = (*contextNoteResident)(nil)
+	_ ResidentCapsReporter = (*mc3Fake)(nil)
 )
+
+// TestResidentContextNote_readsTheCaps: Model.ResidentContextNote is the resident's ResidentCaps.ContextNote, and "" with no
+// resident or one that reports no caps.
+func TestResidentContextNote_readsTheCaps(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		rf   ResidentForward
+		want string
+	}{
+		{"no resident", nil, ""},
+		{"no caps", noCapResident{&fakeResident{}}, ""},
+		{"a note", &contextNoteResident{&fakeResident{}, "fit: 2 slots, 1.9 GB KV"}, "fit: 2 slots, 1.9 GB KV"},
+	} {
+		if got := (&Model{resident: c.rf}).ResidentContextNote(); got != c.want {
+			t.Errorf("%s: ResidentContextNote = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
 
 // TestClampToResidentCap holds the clamp every generate path takes: no resident, no cap and a cap of 0 cut nothing; a turn that
 // would run past the cap ends at it, down to 0 when the prompt fills it; a turn that ends exactly at the cap is not cut.

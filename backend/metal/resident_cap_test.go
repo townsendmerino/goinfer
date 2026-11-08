@@ -23,6 +23,10 @@ func TestMetalResidentCheckCap(t *testing.T) {
 	if r.ContextCap() != metalCtxCapDefault {
 		t.Fatalf("ContextCap = %d, want %d", r.ContextCap(), metalCtxCapDefault)
 	}
+	// ResidentCaps reads every field, so each must answer on a resident with no device.
+	if c := r.ResidentCaps(); c.ContextCap != metalCtxCapDefault || c.KernelFloor != 0 || !c.HasKernelFloor || c.BatchGreedyDraw {
+		t.Fatalf("ResidentCaps on a zero-value resident = %+v, want ContextCap %d, a kernel floor of 0 and no batch greedy draw", c, metalCtxCapDefault)
+	}
 	for _, c := range []struct {
 		pos, n int
 		ok     bool

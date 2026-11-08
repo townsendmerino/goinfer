@@ -249,8 +249,12 @@ func TestKV3_residentReportsItsChunks(t *testing.T) {
 	if !ok {
 		t.Fatal("cudaResident does not satisfy decoder.ResidentPrefillChunks")
 	}
-	if got := g.r.ResidentCaps().TailMinRows; got != g.r.PrefillTailMinRows() {
-		t.Fatalf("ResidentCaps().TailMinRows = %d, want PrefillTailMinRows %d", got, g.r.PrefillTailMinRows())
+	cr, ok := any(g.r).(decoder.ResidentCapsReporter)
+	if !ok {
+		t.Fatal("cudaResident does not satisfy decoder.ResidentCapsReporter")
+	}
+	if got := cr.ResidentCaps().TailMinRows; got <= 0 || got != g.r.PrefillTailMinRows() {
+		t.Fatalf("ResidentCaps().TailMinRows = %d, want PrefillTailMinRows %d (> 0)", got, g.r.PrefillTailMinRows())
 	}
 	if _, ok := any(g.r).(decoder.ResidentPrefillSpanScratch); !ok {
 		t.Fatal("cudaResident does not satisfy decoder.ResidentPrefillSpanScratch")
