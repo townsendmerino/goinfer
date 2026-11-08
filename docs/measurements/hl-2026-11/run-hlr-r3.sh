@@ -10,9 +10,11 @@
 #   python3 scripts/timing_lock.py run --wait 600 --label hlr-r3 -- bash docs/measurements/hl-2026-11/run-hlr-r3.sh <REV> [all|7b]
 # "7b" runs only the two 7B cells (logs in r3-7b), for a night run when the day's free memory was below the 7B's need.
 #
-# The registered void rule, checked at each cell's start and recorded in provenance.txt with the swap in use: the 1-minute load above
-# 4.0 (half the cores), or reclaimable memory (cmd/hostmem -reclaimable, the reading the other timed runners use) below the model's
-# file size plus 2 GB (the fit need plus the margin), voids the cell; it waits 60 s and starts again, up to 6 times. Exits non-zero
+# The void rule of the day it was registered (2026-11-07), checked at each cell's start and recorded in provenance.txt with the swap in
+# use: the 1-minute load above 4.0 (half the cores), or reclaimable memory (cmd/hostmem -reclaimable) below the model's file size plus
+# 2 GB, voids the cell; it waits 60 s and starts again, up to 6 times. THE RULE CHANGED ON 2026-11-08 (scripts/void_rule.py: available
+# memory against the need with no margin, and any swap growth voids the cell); this runner is kept as the record of the cells it ran.
+# A new run uses scripts/void_rule.py. Exits non-zero
 # unless every cell asked for ran and printed its METRIC line, and with 75 (the night queue re-queues it) when a cell never started
 # because the guard stayed void.
 set -uo pipefail

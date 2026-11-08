@@ -518,7 +518,7 @@ real live", 11:35 PT). **DONE, merged 2026-10-21** on Francis's yes after gate 1
 purgeable pages, read through `host_statistics64` without cgo, each speculative page counted once (A5: `host_statistics64`'s free and
 external counts both hold them); Linux keeps `MemAvailable`. The fit guard, `scripts/night.py` and the job scripts (with
 `scripts/bench_peer.py`'s heavy-load void) read one number, through `cmd/hostmem`; the Metal guard also caps at
-`recommendedMaxWorkingSetSize`. The 2 GB margin and the swap guards are unchanged; the run rule records the change. Gates, amendments
+`recommendedMaxWorkingSetSize`. (The void rule later dropped the 2 GB margin and the reclaimable term, 2026-11-08, Francis: `scripts/void_rule.py`, `docs/measurements/noise-registry.md` §8.) The swap guards are unchanged. Gates, amendments
 A1 to A5 and the readings: `docs/measurements/hostmem-available-2026-10/README.md`. **Candidate, not built:** serve could watch the kernel's pressure level
 (`kern.memorystatus_vm_pressure_level`) while serving, and decline new work or say so at warning and critical.
 
@@ -602,8 +602,10 @@ checkout. The M1 cell is re-queued night-only with its exit 75 on a fit refusal.
   - the timing lock has been free for a settle period, and the runner takes the lock **before** settling (closing the 2026-10-19 gap where
     tack started a run between a job and its settle);
   - its `--not-before HH:MM` hour has passed (night-only jobs), and its estimate still ends before the morning deadline (06:30);
-  - the box is not under heavy load by the 2026-10-19 rule, for every job: load at most half the cores and free memory at least the job's
-    declared fit need plus 2 GB (`--fit-need-gb`; 0 skips the memory clause).
+  - the box is not under heavy load by the void rule (`scripts/void_rule.py`; changed 2026-11-08), for every job: load at most half the cores and
+    available memory at least the job's declared fit need, with no margin (`--fit-need-gb`; 0 skips the memory clause). The four readings at the job's start and
+    end are in its record, with the swap growth between them as information only: the cell is the unit of the swap void, so a job that voided a
+    cell and re-ran it in place is not failed here; the runner's own per-cell void is the verdict.
 - **Retry:** a job whose own fit check refuses exits 75 (EX_TEMPFAIL). The runner re-queues it after a backoff (about 15 minutes) and records
   it VOID-refused only once `--retry-until HH:MM` passes. Any other non-zero exit is FAILED, as today.
 - **Status:** `night.py status` says idle or busy: "idle, N queued, next eligible at T" or "running <job>". tack's launcher waits for "no

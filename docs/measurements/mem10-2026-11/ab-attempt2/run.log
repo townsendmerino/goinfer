@@ -1,0 +1,8 @@
+== fit check 2026-11-08 12:12:10 PST load 1.23 1.15 0.59 MemAvailable 61276 MiB
+fit:   decode path: cuda-resident (int4)   fit: 4352-token cap needs 0.8 GB KV (weights 13.3 GB, budget 33.0 GB, 32.2 GB left for a request's own prefill) 
+== A/B start 2026-11-08 12:12:40 PST
+== A/B end 2026-11-08 12:14:05 PST exit 0
+[mem10ab 12:12:40] load 1/8 arm A: loading (load 2.06, available 61082 MiB, elapsed 0s)
+[mem10ab 12:14:02] load 1/8 arm A: short 58.81 tok/s, long 33.58 tok/s; RssShmem 12345 MiB (at load 12345), RssAnon 15796, RssFile 90, VmSwap 0, VmHWM 28233; Rss of .giw 0, pageable files 0; first-layer hash bfdc8a9f2b24332e
+[mem10ab 12:14:04] load 2/8 arm B: loading (load 3.29, available 47491 MiB, elapsed 1m24s)
+--- FAIL: TestMEM10_pageableExpertSourceAB (84.35s)
