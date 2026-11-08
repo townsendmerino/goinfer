@@ -139,11 +139,18 @@ func prefillRefSourceSHA256() (string, error) {
 // from a later same-size rewrite (Git's "racily clean" index entries).
 const checkpointRaceWindow = 2 * time.Second
 
+// checkpointNow and checkpointChange are checkpointSHA256's clock and checkpointStamp's change-time reader (fileChange), as variables so
+// a test can hold a file settled, or move its change time, without waiting on the clock.
+var (
+	checkpointNow    = time.Now
+	checkpointChange = fileChange
+)
+
 // checkpointStamp is st's cache key: the path, the size and the modification time in ns, and the change time in ns, the inode and the
-// device, which a write or a utimes moves where the OS reports them (fileChange). settled is false where the stamp cannot vouch for the
+// device, which a write or a utimes moves where the OS reports them (checkpointChange). settled is false where the stamp cannot vouch for the
 // bytes: the OS reports no change time (Windows), or the file changed within checkpointRaceWindow of now.
 func checkpointStamp(abs string, st os.FileInfo, now time.Time) (stamp string, settled bool) {
-	ctime, ino, dev, ok := fileChange(st)
+	ctime, ino, dev, ok := checkpointChange(st)
 	if !ok {
 		return "", false
 	}
@@ -174,7 +181,7 @@ func checkpointSHA256(path string) (string, error) {
 	if st.IsDir() {
 		return checkpointDirSHA256(abs)
 	}
-	stamp, settled := checkpointStamp(abs, st, time.Now())
+	stamp, settled := checkpointStamp(abs, st, checkpointNow())
 	dir, err := PrefillRefCacheDirForTest()
 	if err != nil {
 		return "", err

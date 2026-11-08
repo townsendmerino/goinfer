@@ -3,6 +3,7 @@
 package decoder
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,11 +48,14 @@ func TestCheckpointSHA256_directory(t *testing.T) {
 	}
 }
 
-// TestCheckpointSHA256_sameSizeRewriteAtTheSameMtime: a file's hash is not served from the cache after a same-size rewrite whose
-// modification time is held at the first write's (a coarse clock does that: two writes in one tick share it). The stamp must also
-// read what the clock cannot hide, or not trust a stamp the clock could not have moved.
+// TestCheckpointSHA256_sameSizeRewriteAtTheSameMtime: a settled file's hash is cached under its stamp, and a same-size rewrite whose
+// modification time is held at the first write's (a coarse clock does that: two writes in one tick share it) is not served that
+// entry. The clock is held a minute ahead, so both reads are settled and the second can only miss the entry through the stamp.
 func TestCheckpointSHA256_sameSizeRewriteAtTheSameMtime(t *testing.T) {
-	t.Setenv("GOINFER_PREFILL_REF_CACHE", t.TempDir())
+	cache := t.TempDir()
+	t.Setenv("GOINFER_PREFILL_REF_CACHE", cache)
+	defer func(now func() time.Time) { checkpointNow = now }(checkpointNow)
+	checkpointNow = func() time.Time { return time.Now().Add(time.Minute) }
 	p := filepath.Join(t.TempDir(), "model.safetensors")
 	if err := os.WriteFile(p, []byte("weights-a"), 0o644); err != nil {
 		t.Fatal(err)
@@ -60,9 +64,25 @@ func TestCheckpointSHA256_sameSizeRewriteAtTheSameMtime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, _, _, ok := checkpointChange(st); !ok {
+		t.Skip("this OS reports no change time, so nothing is cached (TestCheckpointStamp_vouchesOnlyForASettledFile holds that)")
+	}
 	h1, err := checkpointSHA256(p)
 	if err != nil {
 		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(cache, "filehash.json"))
+	if err != nil {
+		t.Fatalf("the settled file's hash was not cached: %v", err)
+	}
+	var idx map[string]string
+	if err := json.Unmarshal(b, &idx); err != nil || len(idx) != 1 {
+		t.Fatalf("the cache holds %v (err %v), want the one entry for the file", idx, err)
+	}
+	for _, h := range idx {
+		if h != h1 {
+			t.Fatalf("the cache holds %s for the file, which hashed to %s", h, h1)
+		}
 	}
 	if err := os.WriteFile(p, []byte("weights-b"), 0o644); err != nil {
 		t.Fatal(err)
@@ -75,44 +95,63 @@ func TestCheckpointSHA256_sameSizeRewriteAtTheSameMtime(t *testing.T) {
 	}
 }
 
-// TestCheckpointStamp_vouchesOnlyForASettledFile: the cache's stamp vouches for a file only once it has settled past
-// checkpointRaceWindow, and a same-size rewrite with its mtime held moves the stamp through the change time. Where the OS reports no
-// change time (Windows), it vouches for nothing.
+// fakeStat is an os.FileInfo with a set size and mtime; checkpointChange is stubbed beside it for the rest.
+type fakeStat struct {
+	size  int64
+	mtime time.Time
+}
+
+func (f fakeStat) Name() string       { return "model.safetensors" }
+func (f fakeStat) Size() int64        { return f.size }
+func (f fakeStat) Mode() os.FileMode  { return 0o644 }
+func (f fakeStat) ModTime() time.Time { return f.mtime }
+func (f fakeStat) IsDir() bool        { return false }
+func (f fakeStat) Sys() any           { return nil }
+
+// TestCheckpointStamp_vouchesOnlyForASettledFile: the stamp vouches for a file only once its last change, the later of its mtime
+// and change time, is checkpointRaceWindow before now; it moves with the change time, the inode and the device; and where the OS
+// reports no change time (Windows) it vouches for nothing. The clock and the change time are given, not read.
 func TestCheckpointStamp_vouchesOnlyForASettledFile(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "model.safetensors")
-	if err := os.WriteFile(p, []byte("weights-a"), 0o644); err != nil {
-		t.Fatal(err)
+	defer func(c func(os.FileInfo) (time.Time, uint64, uint64, bool)) { checkpointChange = c }(checkpointChange)
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	mtime := now.Add(-time.Hour)
+	st := fakeStat{size: 9, mtime: mtime}
+	change := func(ctime time.Time, ino, dev uint64, ok bool) {
+		checkpointChange = func(os.FileInfo) (time.Time, uint64, uint64, bool) { return ctime, ino, dev, ok }
 	}
-	st, err := os.Stat(p)
-	if err != nil {
-		t.Fatal(err)
+
+	change(time.Time{}, 0, 0, false)
+	if _, settled := checkpointStamp("/m", st, now); settled {
+		t.Error("a stamp with no change time to read vouched for the file")
 	}
-	later := time.Now().Add(time.Minute)
-	if _, _, _, ok := fileChange(st); !ok {
-		if _, settled := checkpointStamp(p, st, later); settled {
-			t.Fatal("a stamp with no change time to read vouched for the file")
-		}
-		return
+	change(now.Add(-checkpointRaceWindow+time.Millisecond), 7, 1, true)
+	if _, settled := checkpointStamp("/m", st, now); settled {
+		t.Error("a file whose change time is inside the race window is stamped as settled")
 	}
-	if _, settled := checkpointStamp(p, st, time.Now()); settled {
-		t.Error("a file changed just now is stamped as settled")
+	change(now.Add(-checkpointRaceWindow), 7, 1, true)
+	if _, settled := checkpointStamp("/m", st, now); !settled {
+		t.Error("a file changed exactly the race window ago is not stamped")
 	}
-	s1, settled := checkpointStamp(p, st, later)
+	change(now.Add(-time.Minute), 7, 1, true)
+	s1, settled := checkpointStamp("/m", st, now)
 	if !settled {
 		t.Fatal("a file settled a minute ago is not stamped")
 	}
-	time.Sleep(10 * time.Millisecond) // past the change clock's tick, so the rewrite's change time is a different reading
-	if err := os.WriteFile(p, []byte("weights-b"), 0o644); err != nil {
-		t.Fatal(err)
+	if _, settled := checkpointStamp("/m", fakeStat{size: 9, mtime: now.Add(-time.Millisecond)}, now); settled {
+		t.Error("a file whose mtime is inside the race window is stamped as settled")
 	}
-	if err := os.Chtimes(p, st.ModTime(), st.ModTime()); err != nil {
-		t.Fatal(err)
-	}
-	st2, err := os.Stat(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if s2, _ := checkpointStamp(p, st2, later.Add(time.Second)); s2 == s1 {
-		t.Errorf("a same-size rewrite with its mtime held kept the stamp %s", s1)
+	for _, c := range []struct {
+		what     string
+		ctime    time.Time
+		ino, dev uint64
+	}{
+		{"a later change time (a same-size rewrite with its mtime held)", now.Add(-30 * time.Second), 7, 1},
+		{"another inode", now.Add(-time.Minute), 8, 1},
+		{"another device", now.Add(-time.Minute), 7, 2},
+	} {
+		change(c.ctime, c.ino, c.dev, true)
+		if s, _ := checkpointStamp("/m", st, now); s == s1 {
+			t.Errorf("%s kept the stamp %s", c.what, s1)
+		}
 	}
 }
