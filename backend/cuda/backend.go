@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -818,10 +819,12 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		// C′: DMA the routed int4 experts host→VRAM slots per token (device read, correct). The
 		// path to running a model whose experts exceed VRAM. Off by default; byte-identical when off.
 		cacheExperts: m.MoECacheExperts(),
-		cacheProf:    os.Getenv("GOINFER_MOE_CACHE_PROF") != "",
-		dnet:         dnetP,
-		mamba:        mambaP,
-		isMLA:        mlaOK, mlaRank: kvLoRA, mlaLatDim: kvLoRA + qkRope,
+		// MoEExpertsUnpinned: the cache's slots upload from pageable pages of a packed-experts file beside the model, not a pinned copy.
+		unpinnedExperts: m.MoEExpertsUnpinned(), unpinnedDir: filepath.Dir(m.GiwPath()),
+		cacheProf: os.Getenv("GOINFER_MOE_CACHE_PROF") != "",
+		dnet:      dnetP,
+		mamba:     mambaP,
+		isMLA:     mlaOK, mlaRank: kvLoRA, mlaLatDim: kvLoRA + qkRope,
 		mlaQKHead: qkNope + qkRope, mlaQKNope: qkNope, mlaQKRope: qkRope,
 		mlaVHead: vHead, mlaQLoRA: qLoRA, mlaInterleave: interleave,
 		mlaRopeScale:    float32(mlaRopeScale),

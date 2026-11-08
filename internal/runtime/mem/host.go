@@ -155,6 +155,9 @@ type Decline struct {
 // Decline is the refusal of this load.
 func (c HostCheck) Decline() *Decline {
 	alt := "  " + c.smallerLoad() + ".\n"
+	if c.CUDABuildBytes > c.WeightBytes+c.KVBytes+c.SourceBytes && c.ExpertBytes > 0 && c.Need()-c.ExpertBytes <= c.Budget() {
+		alt = "  Or " + UnpinnedExpertsHint(c.ExpertBytes) + ".\n" + alt
+	}
 	msg := fmt.Sprintf("decoder: %s.\n"+
 		"  Loading it would page to swap rather than run, so it was NOT loaded.\n"+
 		"  %s\n"+

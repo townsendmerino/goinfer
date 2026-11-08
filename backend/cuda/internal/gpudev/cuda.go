@@ -736,7 +736,15 @@ type MappedHostBuffer struct {
 	hb      *HostBuffer[uint8]        // origin: NewMappedHostBuffer (allocates, caller fills after)
 	rh      *gc.RegisteredHost[uint8] // origin: RegisterMappedHostBuffer (caller already filled, this pins in place)
 	buf     Buffer
-	release func() // RegisterMappedHostBuffer's pin's lease (NewMappedHostBuffer's is its HostBuffer's)
+	release func() // RegisterMappedHostBuffer's pin's lease (NewMappedHostBuffer's is its HostBuffer's); NewPageableHostSource's release
+	page    []byte // origin: NewPageableHostSource (caller-owned pageable bytes, nothing pinned)
+}
+
+// NewPageableHostSource wraps caller-owned bytes (a file mapping, say) as a MappedHostBuffer that pins nothing: Bytes() is data, Buffer() is
+// the zero Buffer (no kernel may read it), and an upload from it copies from pageable memory, which the driver stages. Close runs release.
+// It serves MEM10's pageable-source A/B (docs/measurements/mem10-2026-11/ab-registration.md); no production path builds one.
+func NewPageableHostSource(data []byte, release func()) *MappedHostBuffer {
+	return &MappedHostBuffer{page: data, release: release}
 }
 
 // NewMappedHostBuffer allocates nBytes of pinned, device-mapped host memory. Bytes() is the
@@ -835,6 +843,9 @@ func (m *MappedHostBuffer) Bytes() []byte {
 	if m == nil {
 		return nil
 	}
+	if m.page != nil {
+		return m.page
+	}
 	if m.rh != nil {
 		return m.rh.Slice()
 	}
@@ -855,6 +866,14 @@ func (m *MappedHostBuffer) Buffer() Buffer {
 // Device.
 func (m *MappedHostBuffer) Close() error {
 	if m == nil {
+		return nil
+	}
+	if m.page != nil {
+		if m.release != nil {
+			m.release()
+			m.release = nil
+		}
+		m.page = nil
 		return nil
 	}
 	if m.rh != nil {

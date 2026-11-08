@@ -53,8 +53,8 @@ func SolveGIW(l GIWLoad, m Machine, p Policy) GIWFit {
 		d.Err = fmt.Errorf(
 			"decoder: pinned context %d needs ~%.2f GB (%s) but only %.2f GB of this "+
 				"machine's %.2f GB currently-available memory would be left as a %.0f GB safety "+
-				"margin — pass a smaller -ctx, or set GOINFER_NO_FIT_GUARD=1 to allow it anyway",
-			l.Ctx, float64(need)/gb, what, float64(budget)/gb, float64(avail)/gb, margin)
+				"margin — pass a smaller -ctx, or set GOINFER_NO_FIT_GUARD=1 to allow it anyway%s",
+			l.Ctx, float64(need)/gb, what, float64(budget)/gb, float64(avail)/gb, margin, unpinnedHintIf(l.PinnedExperts, need, budget))
 		return d
 	}
 	floor := p.CtxFloor
@@ -63,8 +63,8 @@ func SolveGIW(l GIWLoad, m Machine, p Policy) GIWFit {
 		d.Err = fmt.Errorf(
 			"decoder: this model needs ~%.2f GB (%s) even at the %d-token floor, but only "+
 				"%.2f GB of this machine's %.2f GB currently-available memory would be left as a "+
-				"%.0f GB safety margin — set GOINFER_NO_FIT_GUARD=1 to allow it anyway",
-			float64(floorNeed)/gb, what, floor, float64(budget)/gb, float64(avail)/gb, margin)
+				"%.0f GB safety margin — set GOINFER_NO_FIT_GUARD=1 to allow it anyway%s",
+			float64(floorNeed)/gb, what, floor, float64(budget)/gb, float64(avail)/gb, margin, unpinnedHintIf(l.PinnedExperts, floorNeed, budget))
 		return d
 	}
 	lo, hi := floor, l.Ctx
@@ -82,4 +82,19 @@ func SolveGIW(l GIWLoad, m Machine, p Policy) GIWFit {
 			"of %.2f GB available (%.0f GB margin) — pass -ctx to choose, or free memory to lift\n",
 		lo, l.Ctx, float64(needAt(lo))/gb, float64(avail)/gb, margin)
 	return d
+}
+
+// UnpinnedExpertsHint is what a refusal says when the pinned MoE expert copy (pinned bytes) is what does not fit: --moe-experts-unpinned drops it,
+// and the experts upload from the file's own pages at a measured decode cost (docs/measurements/mem10-2026-11/ab-registration.md, "Reading").
+func UnpinnedExpertsHint(pinned int64) string {
+	return fmt.Sprintf("--moe-experts-unpinned drops the %.1f GB pinned expert copy: the experts then upload from the model file's own pages, "+
+		"measured at 0.82x decode at short context and 0.75x at long on Gemma 4 26B (docs/measurements/mem10-2026-11/)", float64(pinned)/gb)
+}
+
+// unpinnedHintIf is "; or " and UnpinnedExpertsHint when a pinned expert copy is in need and dropping it would bring need within budget, else "".
+func unpinnedHintIf(pinned, need, budget int64) string {
+	if pinned <= 0 || need-pinned > budget {
+		return ""
+	}
+	return "; or " + UnpinnedExpertsHint(pinned)
 }

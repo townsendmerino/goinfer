@@ -943,6 +943,11 @@ to ignore.**
   signature this server did not mint carries nothing. A client sends `tool_use` input back as JSON it parsed, so arguments
   the model spaced return compacted: the closed list above keeps their ids. Not covered: Chat Completions (no carrier), and
   a reply whose calls the client echoes as separate turns.
+- **A MoE expert cache without its pinned host copy** (`-moe-experts-unpinned`, with `-moe-cache-experts`, CUDA). The expert slots upload from
+  pageable pages of a packed-experts file written beside the model, unlinked while mapped and never on tmpfs, instead of a pinned copy.
+  It saves that copy's host memory, about 12 GiB on Gemma 4 26B, and is slower by design: measured at 0.82x decode at short context and
+  0.75x at 4,096 keys (`docs/measurements/mem10-2026-11/ab-registration.md`). Off by default. The load's memory refusal names it only when the
+  pinned copy is what does not fit (`docs/bigger-than-memory.md`).
 - **Prefix snapshots in host memory** (`-kv-host-bytes`). A GPU card with one KV slot loses the previous session's prompt the moment
   the next session starts, and a coding agent's sessions share almost all of their first prompt (the system prompt, the tool
   definitions, the environment). After a **cold first prefill of 2,048 ids or more**, a GPU-resident model copies the prompt's full

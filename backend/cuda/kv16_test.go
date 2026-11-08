@@ -1566,3 +1566,52 @@ func TestKV8_exactInputIdentity_fusedPrefill(t *testing.T) {
 		})
 	}
 }
+
+// TestMoEExpertsUnpinned_identityAndPricing is MEM10's opt-in at tier 0 (docs/measurements/mem10-2026-11/ab-registration.md): on qwen3moe-tiny with
+// paged experts, a load with MoEExpertsUnpinned builds every expert stack from a pageable file mapping and none pinned, its teacher-forced logits
+// equal the pinned load's bit for bit (the slots hold the same bytes), and the CUDA build demand drops the pinned copy from its price. The flag
+// off builds no pageable stack.
+func TestMoEExpertsUnpinned_identityAndPricing(t *testing.T) {
+	requireCUDADevice(t)
+	const fx, steps = "qwen3moe-tiny", 24
+	mA, rA := kv8Load(t, fx, "f32", decoder.Options{MoECacheExperts: true})
+	_, rB := kv8Load(t, fx, "f32", decoder.Options{MoECacheExperts: true, MoEExpertsUnpinned: true})
+	stacks := 0
+	for l := range rA.layers {
+		if rA.layers[l].expGU.srcW != nil {
+			stacks += 2
+		}
+	}
+	if stacks == 0 {
+		t.Fatalf("%s built no expert cache: the comparison is vacuous", fx)
+	}
+	if rA.pageableStacks != 0 || rB.pageableStacks != stacks {
+		t.Fatalf("pageable stacks: pinned load %d (want 0), unpinned load %d (want %d)", rA.pageableStacks, rB.pageableStacks, stacks)
+	}
+	_, _, _, _, _, _, vocab := mA.Dims()
+	for i := range steps {
+		e := mA.EmbedResidentForTest(3 + (37*i)%(vocab-3))
+		a, err := rA.Forward(e, i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := rB.Forward(e, i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for j := range a {
+			if math.Float32bits(a[j]) != math.Float32bits(b[j]) {
+				t.Fatalf("position %d: logit %d differs (pinned %g, unpinned %g)", i, j, a[j], b[j])
+			}
+		}
+	}
+	q := decoder.BuildQuery{Options: decoder.Options{Backend: "cuda", MoECacheExperts: true}, ExpertCache: true, FeaturesCovered: true,
+		MoELayers: 2, NumExperts: 8, ExpertIntermediate: 64, Hidden: 32}
+	if buildDemand(q).PinnedExpertBytes <= 0 {
+		t.Fatal("the pinned load prices no pinned copy: the comparison below is vacuous")
+	}
+	q.Options.MoEExpertsUnpinned = true
+	if got := buildDemand(q).PinnedExpertBytes; got != 0 {
+		t.Errorf("the unpinned load prices a %d-byte pinned copy", got)
+	}
+}

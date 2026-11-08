@@ -567,6 +567,11 @@ type cudaResident struct {
 	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — segBFFN reuses segA's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
 	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in step(); 0 ⇒ none (FeatLogitScale)
 	cacheExperts  bool    // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
+	// unpinnedExperts (MoEExpertsUnpinned) packs each expert stack into an unlinked, read-only file mapping under unpinnedDir instead of pinned
+	// host memory, so the slots upload from pageable pages; pageableStacks counts the stacks it built that way.
+	unpinnedExperts bool
+	unpinnedDir     string
+	pageableStacks  int
 	// overlap (GOINFER_MOE_DMA_OVERLAP, default on with C′; off under graphs): the C′ round trip no longer drains the
 	// stream. The host waits on evRoute (recorded right after the router), the misses are copied on dmaQ, a second
 	// stream, while the kernels issued after the router keep running, and segC's rank loop waits device-side only

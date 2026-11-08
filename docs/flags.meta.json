@@ -113,6 +113,11 @@
    "summary": "Run a MoE model whose experts exceed VRAM or RAM by streaming routed experts to the GPU per token. Bit-identical to fully resident, at the cost of a transfer per token. Off by default."
   },
   {
+   "name": "moe-experts-unpinned",
+   "group": "Memory and swap safety",
+   "summary": "With `--moe-cache-experts` on CUDA, upload expert slots from a packed-experts file's pageable pages instead of a pinned host copy: about 12 GiB less host memory on Gemma 4 26B, slower by design (0.82x decode at short context, 0.75x at long). Off by default; named by the memory refusal when the copy does not fit."
+  },
+  {
    "name": "moe-cache-slots",
    "group": "Memory and swap safety",
    "summary": "Per-layer expert slots to keep resident for a paged MoE model. On CUDA this is an upper bound: it is lowered if free VRAM cannot hold it."

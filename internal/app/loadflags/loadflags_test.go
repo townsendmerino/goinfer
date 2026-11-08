@@ -58,17 +58,18 @@ func TestOptions_everyFlagReachesOptions(t *testing.T) {
 		arg  string
 		took func(o decoder.Options, f *Flags) bool
 	}{
-		"backend":           {"--backend=cuda", func(o decoder.Options, _ *Flags) bool { return o.Backend == "cuda" }},
-		"quant":             {"--quant=int8", func(o decoder.Options, _ *Flags) bool { return o.Quant == "int8" }},
-		"lora":              {"--lora=/adapter", func(o decoder.Options, _ *Flags) bool { return o.LoRA == "/adapter" }},
-		"kv":                {"--kv=i8", func(o decoder.Options, _ *Flags) bool { return o.KVPrecision == "i8" && o.KVQuant == "i8" }},
-		"ctx":               {"--ctx=12345", func(o decoder.Options, _ *Flags) bool { return o.ResidentContext == 12345 }},
-		"stream-weights":    {"--stream-weights", func(o decoder.Options, _ *Flags) bool { return o.StreamWeights }},
-		"weight-cache":      {"--weight-cache=2.5", func(o decoder.Options, _ *Flags) bool { return o.WeightCacheBytes == 2_500_000_000 }},
-		"moe-cache-experts": {"--moe-cache-experts", func(o decoder.Options, _ *Flags) bool { return o.MoECacheExperts }},
-		"moe-cache-slots":   {"--moe-cache-slots=7", func(o decoder.Options, _ *Flags) bool { return o.MoECacheSlots == 7 }},
-		"moe-pager":         {"--moe-pager=" + otherPager(), func(o decoder.Options, _ *Flags) bool { return o.MoEPager == otherPager() }},
-		"accept-slow":       {"--accept-slow", func(o decoder.Options, _ *Flags) bool { return o.AcceptSlowMoE }},
+		"backend":              {"--backend=cuda", func(o decoder.Options, _ *Flags) bool { return o.Backend == "cuda" }},
+		"quant":                {"--quant=int8", func(o decoder.Options, _ *Flags) bool { return o.Quant == "int8" }},
+		"lora":                 {"--lora=/adapter", func(o decoder.Options, _ *Flags) bool { return o.LoRA == "/adapter" }},
+		"kv":                   {"--kv=i8", func(o decoder.Options, _ *Flags) bool { return o.KVPrecision == "i8" && o.KVQuant == "i8" }},
+		"ctx":                  {"--ctx=12345", func(o decoder.Options, _ *Flags) bool { return o.ResidentContext == 12345 }},
+		"stream-weights":       {"--stream-weights", func(o decoder.Options, _ *Flags) bool { return o.StreamWeights }},
+		"weight-cache":         {"--weight-cache=2.5", func(o decoder.Options, _ *Flags) bool { return o.WeightCacheBytes == 2_500_000_000 }},
+		"moe-cache-experts":    {"--moe-cache-experts", func(o decoder.Options, _ *Flags) bool { return o.MoECacheExperts }},
+		"moe-experts-unpinned": {"--moe-experts-unpinned", func(o decoder.Options, _ *Flags) bool { return o.MoEExpertsUnpinned }},
+		"moe-cache-slots":      {"--moe-cache-slots=7", func(o decoder.Options, _ *Flags) bool { return o.MoECacheSlots == 7 }},
+		"moe-pager":            {"--moe-pager=" + otherPager(), func(o decoder.Options, _ *Flags) bool { return o.MoEPager == otherPager() }},
+		"accept-slow":          {"--accept-slow", func(o decoder.Options, _ *Flags) bool { return o.AcceptSlowMoE }},
 		// Default is true: the row must probe the opt-out, not the (now-default) bare flag, or the "default does NOT look like
 		// the non-default value" check below is vacuous.
 		"embed-int4": {"--embed-int4=false", func(o decoder.Options, _ *Flags) bool { return !o.EmbedInt4 }},
