@@ -1,0 +1,16 @@
+[hlr    1.8s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw (tied head false): shape closed, 9 reps of 256 tokens per arm
+[hlr   59.4s] identity: 10 reps x 256 tokens, HL-R = today's path in every rep
+[hlr   59.4s] HL-R3 METRIC hlr/today closed qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: median 1.1134 (min 1.0237, max 1.2128), 9 of 9 pairs above 1; decode today 90.4, HL-R 100.9 tok/s (medians)
+--- PASS: TestHLRChainAB (59.43s)
+[hlr    0.5s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw (tied head false): shape toolcall, 9 reps of 256 tokens per arm
+[hlr   58.1s] identity: 10 reps x 256 tokens, HL-R = today's path in every rep
+[hlr   58.1s] HL-R3 METRIC hlr/today toolcall qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: median 1.0252 (min 1.0173, max 1.0869), 9 of 9 pairs above 1; decode today 93.8, HL-R 96.1 tok/s (medians)
+--- PASS: TestHLRChainAB (58.19s)
+[hlr    1.0s] loaded qwen2.5-7b-instruct-q4_k_m.int4.metal.v17.giw (tied head false): shape closed, 9 reps of 256 tokens per arm
+[hlr  171.3s] identity: 10 reps x 256 tokens, HL-R = today's path in every rep
+[hlr  171.3s] HL-R3 METRIC hlr/today closed qwen2.5-7b-instruct-q4_k_m.int4.metal.v17.giw: median 1.0110 (min 1.0095, max 1.0243), 9 of 9 pairs above 1; decode today 32.3, HL-R 32.7 tok/s (medians)
+--- PASS: TestHLRChainAB (171.32s)
+[hlr    0.7s] loaded qwen2.5-7b-instruct-q4_k_m.int4.metal.v17.giw (tied head false): shape toolcall, 9 reps of 256 tokens per arm
+[hlr  169.5s] identity: 10 reps x 256 tokens, HL-R = today's path in every rep
+[hlr  169.5s] HL-R3 METRIC hlr/today toolcall qwen2.5-7b-instruct-q4_k_m.int4.metal.v17.giw: median 1.0039 (min 0.9967, max 1.0325), 8 of 9 pairs above 1; decode today 32.2, HL-R 32.4 tok/s (medians)
+--- PASS: TestHLRChainAB (169.53s)
