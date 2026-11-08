@@ -466,8 +466,11 @@ func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 			if !ok || !planted {
 				t.Fatalf("resident %v, plant ran %v", ok, planted)
 			}
-			if got, want := len(exactRed) == 1 && strings.Contains(exactRed[0], ": generated: "), c.line == mem.LineScratch; got != want {
-				t.Errorf("G-MS2 red only at generated %v on a plant on %q, want %v: %q", got, c.line, want, exactRed)
+			switch {
+			case c.line == mem.LineScratch && (len(exactRed) != 1 || !strings.Contains(exactRed[0], ": generated: ")):
+				t.Errorf("G-MS2 on a plant on scratch: %q; want one red, after the generation", exactRed)
+			case c.line != mem.LineScratch && len(exactRed) != 0:
+				t.Errorf("G-MS2 on a plant on %q, a line it does not read: %q; want none", c.line, exactRed)
 			}
 			rounded := false
 			for _, l := range read.Open[1].Leases {
