@@ -117,6 +117,11 @@ func TestBuffers_eachOperation(t *testing.T) {
 			t.Errorf("%s: %+v, want %+v", c.name, got, c.want)
 		}
 	}
+	wide := s // Gemma 4's experts wider than its dense branch: gate and up at the experts' width
+	wide.Gemma4MoE.ExpertFFN = 60
+	if got := Buffers(Op{Kind: OpGemma4MoE}, wide); got[0] != (Buf{"gate", PerRow, PrecF32, 60, 0, 0, false}) || got[1] != (Buf{"up", PerRow, PrecF32, 60, 0, 0, false}) {
+		t.Errorf("gemma 4 moe with wider experts: %+v, want gate and up at 60", got[:2])
+	}
 	for _, k := range []OpKind{OpNorm, OpQKNorm, OpRope, OpAttnTemp, OpOutGate, OpProjO, OpResidual, OpLayerScale} {
 		if got := Buffers(Op{Kind: k}, s); got != nil {
 			t.Errorf("operation %d declares %+v; it holds nothing beyond its weights", k, got)
