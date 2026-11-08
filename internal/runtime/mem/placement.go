@@ -114,7 +114,8 @@ func SolvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy) Device
 func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withReserve bool) DevicePlan {
 	free := m.Available(l.Tier)
 	p := DevicePlan{StateBytes: l.StateBytes, ScratchBytes: l.ScratchBytes}
-	fixed := l.DenseBytes + l.ExpertBytesFixed + l.ScratchBytes
+	weights := l.DenseBytes + l.ExpertBytesFixed // what a reason quotes as dense; the scratch has its own note
+	fixed := weights + l.ScratchBytes
 	decline := func(format string, args ...any) DevicePlan {
 		p.Reason = fmt.Sprintf(format, args...)
 		if l.Backend == "cpu" {
@@ -221,7 +222,7 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 				req.Ctx, l.CtxCeiling)
 		}
 		return decline("context %d does not fit even at the %d-position floor: dense %.2f GB%s + KV %.2f GB exceeds %.2f GB free",
-			req.Ctx, floor, gbf(fixed), stateNote(l.StateBytes)+scratchNote(l.ScratchBytes)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), gbf(kv), gbf(free))
+			req.Ctx, floor, gbf(weights), stateNote(l.StateBytes)+scratchNote(l.ScratchBytes+paged)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), gbf(kv), gbf(free))
 	}
 	if l.NExperts == 0 {
 		p.Placement = Resident
@@ -242,7 +243,7 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 	remaining := free - fixed - l.StateBytes - l.FixedSlack - l.HostFixed - kv - req.ExtraBytes
 	if remaining <= 0 {
 		return decline("dense %.2f GB%s + KV@%d %.2f GB alone exceeds %.2f GB free — no room left for any expert cache",
-			gbf(fixed), stateNote(l.StateBytes)+scratchNote(l.ScratchBytes)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
+			gbf(weights), stateNote(l.StateBytes)+scratchNote(l.ScratchBytes+paged)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
 	}
 	perExpert := l.ExpertBytesFull / int64(l.NExperts) // at least 1: unpriced experts declined above
 	slots := int(remaining / perExpert)
