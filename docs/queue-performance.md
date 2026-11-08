@@ -18,11 +18,33 @@
 ## What is open
 
 - **P36 · The memory campaign's CUDA cells, on nobara — a pointer, filed 2026-10-31 (coordinator).** `linux`.
-  The rows live in `docs/tasks/task-memory-campaign-2026-10.md`'s ledger, which stays the record; this entry only puts
+  *Updated 2026-11-08: the memory campaign is archived (`docs/completed/task-memory-campaign-2026-10.md`); MEM10's build
+  (Francis, 2026-11-08: build it now) is a row in `docs/tasks/task-forward-and-memory-2026-11.md`, and P37 to P40 hold the
+  parked rest, so this pointer has nothing left to point at and closes.* The rows lived in the campaign's ledger; this entry only put
   them in a queue. State at 2026-11-06, from the ledger: MEM13-copies-CUDA and D8b-cuda are done (2026-11-05); MEM10 has its G0
   reading (`docs/measurements/mem10-2026-11/README.md`) and no build, which is the coordinator's and the owner's call; MEM6 (the
   CUDA cells and the `RssAnon` gate) is PR #691, merged as is by Francis 2026-11-06 21:32 (7B 81 MiB against the 64 MiB bar; the three levers not taken); MEM4(b) on CUDA is
   read INCONCLUSIVE (`docs/measurements/mem4b-cuda-2026-11/README.md`), its release already wired. Close a row there, in the same commit as the work, and strike it here.
+
+- **P37 · MoE on Metal: stack-major aliasable experts and the two writer gaps (MEM9(a,b)) — PARKED, filed 2026-11-08
+  (close-out sweep).** `darwin`. Moved from the memory campaign's ledger (`docs/completed/task-memory-campaign-2026-10.md`
+  §4 "MEM9"; its pool half, MEM9(c), is KV11 in `docs/tasks/task-kv-architecture-2026-10.md`). M26 unpaged held 12.85 GB
+  anonymous. Trigger: a Mac that runs an MoE unpaged, or a user report.
+
+- **P38 · Gemma 4 E2B's per-pass PLE block on CUDA (`pleHost`) — PARKED, filed 2026-11-08 (close-out sweep).** `linux`.
+  MEM6's CUDA half did not cover it (`docs/measurements/mem6-cuda-2026-11/README.md`, "Verdict"). Trigger: someone serves
+  E2B on CUDA where host memory binds; the first step is a tier-0 bytes test.
+
+- **P39 · `decoder.Load`'s host peak while it builds the host model (about 16 GB on Nemotron-Nano-9B) — PARKED, filed
+  2026-11-08 (close-out sweep).** `linux`. It sets the whole-process peak before the CUDA build starts
+  (`docs/measurements/mem13-copies-cuda-2026-11/README.md`); no item owned it once MEM1 closed. Trigger: a box where that
+  peak trips the swap or fit guard.
+
+- **P40 · Chunk text by reference in aikit, and ken's reload hygiene (MEM17, ken) — PARKED (Francis, 2026-11-08), filed
+  2026-11-08.** aikit and ken. `chunk.Chunk` as a file and a byte range through a mapping (D4, owner 2026-10-21), about
+  1.4 GB saved at 1M chunks and about 2 MB on aikit's own tree; ken would store chunks that way, and call
+  `StaticModel.Close` on reload and use `Builder.Add`. Needs an aikit minor release (publishing: Francis's go) and a brief to
+  ken's own session. Trigger: a ken index over about 100k chunks where chunk text shows in its memory use.
 
 - **P35 · Gemma-4 prefill falls back to one token at a time past about 12k attended keys on a 48 KB shared-memory card
   (sm_75) — SUPERSEDED 2026-10-18: branch `kv3-tiled-2026-10` already covers it, and nobara is bringing that branch onto
