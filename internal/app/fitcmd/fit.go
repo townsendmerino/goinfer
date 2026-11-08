@@ -169,6 +169,24 @@ func Run(args []string) int {
 	return 0
 }
 
+// fitSource is what `fit` opens to plan one backend, and at which quant.
+type fitSource struct {
+	path        string // the checkpoint, or the sidecar .giw read through
+	quant       string
+	group       int    // the activation group (decoder.Options.ActQuantGroup)
+	loadBackend string // the backend the source is opened with: a cpu-target sidecar can be row4-only, which only "cpu" reads
+	notes       []string
+}
+
+// sourceFor is what fit opens for backend: the quant asked, and a fresh sidecar of it when one exists (freshSidecar).
+func sourceFor(path, quant, explicitQuant, backend string) (fitSource, error) {
+	s := fitSource{path: path, quant: quant}
+	if cached, be, ok := freshSidecar(path, quant); ok {
+		s.path, s.loadBackend = cached, be
+	}
+	return s, nil
+}
+
 // fitLoadOptions is what `fit` loads a checkpoint with: the quant planned at, the backend of the sidecar it reads through, and the
 // KV slot request of a serve load without --kv-sessions (the caller's default, which Metal keeps to decoder.MetalDefaultKVSlots),
 // which planFor's Metal line prices.
