@@ -1,4 +1,4 @@
-# CUDA `--kv i8`, S4: fidelity (G4) and speed, registered before any run (nobara-sb01, 2026-11-07 20:10 PST)
+# CUDA `--kv i8`, S4: fidelity (G4) and speed, registered before any run (nobara-sb01, 2026-11-07 20:05 PST)
 
 S4 of `scope.md`'s staged plan, for the dense families S2 and S3 deliver (llama, mistral, qwen2, qwen3, phi3 without a sliding window). G4 is
 the task doc's (`docs/tasks/task-kv-precision-everywhere-2026-10.md` §4): **a published reading, not a refusal**. The contract's item 4 holds:
