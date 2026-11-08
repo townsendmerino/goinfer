@@ -114,9 +114,10 @@ every kernel in goinfer and aikit for speed and memory: about seventy candidates
 arithmetic, identity class and first measurement, four owner decisions, and eleven places a doc or comment no longer
 matches the code. Nothing in it is built or measured.
 
-[`task-kv-precision-everywhere-2026-10.md`](tasks/task-kv-precision-everywhere-2026-10.md) (plan, filed 2026-10-20) makes
-`--kv f32|f16|i8` deliver the precision asked for on every backend, family and path, or refuse the load by name: today's
-silent fallbacks, a single resolver and a ratchet test, the phases by backend (CUDA int8 is B39), and the gates.
+[`task-kv-precision-everywhere-2026-10.md`](tasks/task-kv-precision-everywhere-2026-10.md) (filed 2026-10-20; live) makes
+`--kv f32|f16|i8` deliver the precision asked for on every backend, family and path, or refuse the load by name. Phase 0 (the
+resolver, the refusals and the generated matrix) shipped 2026-10-20; CUDA int8 for the dense families (B39) is staged S1 to S5,
+S4 open.
 
 [`task-cpu-prefill-memory-2026-10.md`](completed/task-cpu-prefill-memory-2026-10.md) (G40, registered 2026-10-14) diagnoses the
 CPU prefill's memory high-water: every working buffer sized by the whole prompt, the KV regrowing as it is written, and Go
