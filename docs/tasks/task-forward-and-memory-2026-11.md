@@ -36,17 +36,17 @@
 | OP5-L | open | LFM2.5's short conv | FA §4.7; `docs/hardware-matrix.md` |
 | OP5-G | open | Granite-4.0-H: the bring-up gate, plus the residual scale on CUDA and Metal | FA §4.7, §4.5 |
 | OP5-La | open | Laguna, after a fit check | FA §4.7 |
-| OP6-M1 | blocked | the M1 peer cell never ran: at 1ecbb5d6 a q4k load on Metal went to the CPU. PR the admission fix (fd146af5, branch `m1-q4k-giw-admission-2026-11-08`), re-pin the serve build in the M1 registration, run M1 by day | FA §4.7 "OP6"; `docs/measurements/peer-vetted-2026-10-07-macbook.md` |
-| OP6-def | decision | Francis, once M1 is read: OP6's default switch (FA §8 E5) | FA §8 |
+| OP6-M1 | done | M1 read by day 2026-11-08 on main at 76d78d19, after #775 fixed the q4k sidecar admission: goinfer 42.4 tok/s, Ollama 41.7, median ratio 1.02, LEVEL (2026-10-20: 0.539, BEHIND); fit check RESIDENT, no swap growth | `docs/measurements/peer-vetted-2026-10-07-macbook.md` "M1 on main after #775: read"; #775, #780 |
+| OP6-def | decision | Francis: OP6's default switch (FA §8 E5). M1 is read: LEVEL, 1.02 (OP6-M1) | FA §8; `docs/measurements/peer-vetted-2026-10-07-macbook.md` |
 | OP6-C | open | CUDA q4k batched prefill | FA §3.2 |
 | OP6-W | open | optional: per-32 activations or a q4k lane on WebGPU | FA §7a |
 | HL-C | open | register a CUDA greedy chain under a gated processor, as HL-R did on Metal | FA §6; `docs/measurements/hl-2026-11/README.md` |
 | AC | open | map the audit classes' compute share (`docs/measurements/audit-classes-2026-10-08.md` §6) to program paths | FA status block (owner, 2026-10-21); `docs/queue-correctness.md` G47 |
 | F-coh | open | CUDA Cohere batched LayerNorm differs by 1 ulp; the CUDA owner's call whether to match the reduction order | FA §4.5 |
 | MM5 | active | the memory planner's CUDA half (nobara-sb01): `cudaKVParts` and the pools from the shared declarations (#739); CPU and WebGPU later | FA §4.9b; #739, #741 |
-| MM5b | active | decode scratch's program-side declaration (#772, review findings being fixed): `program.Buffers`' per-row unit, `program.HeadBuffers`, the plan's figure, G-MS1, G-MS4 | FA §4.9c; #762 |
+| MM5b | active | decode scratch's program-side declaration, PR #772: the operations declare their per-row activations (`program.Buffers`' per-row unit, `program.HeadBuffers`), Metal's decode scratch is priced from them (G-MS4 passes; the family-keyed price kept as the oracle, equal on 368 prices), and Metal's build holds the declared widths to its kernels'. G-MS1: only Olmo Hybrid moved (768 B of unused rows dropped), and the paged-cache boundary in a later fix. G-MS5: 29 IDENTICAL. Both Gemini reviews fixed. Next: #772's merge | FA §4.9c ("MM5b's declaration"); #762, #772 |
 | MM8 | active | the memory-drift gap fixes: CUDA #721 (dense 314 rows to 10), dense-moe 18, grant 1; Metal dense tables and Gemma 4 MoE's 19,016 B; CPU int8 per-head scale and the sliding ring; WebGPU tables; confirm or strike the towers, host-kept embeddings and verify logits lines | SS §6.5 "MM8"; `internal/guard/memgate` gap tables; `docs/measurements/mm8-*` |
-| MEM10 | open | build the pre-permuted `cuda` `.giw` target so the expert cache registers from the mapping, not about 12 GiB of shared anonymous host memory beside the 13.4 GiB sidecar on the 26B (Francis, 2026-11-08: build it now); M-L, nobara; a tier-0 probe of registering a mapped file first, then a tier 1 reading by day (about 10 min) | `docs/completed/task-memory-campaign-2026-10.md` §4 "MEM10"; `docs/measurements/mem10-2026-11/README.md` |
+| MEM10 | decision | tier 0 read 2026-11-08: the build's premise fails on nobara (RTX 2070 SUPER, driver 595.112.07, Linux 7.3, btrfs). The device reports no read-only host registration; a read-only or shared mapping of a file on the models' disk is refused by cuMemHostRegister; the one mapping that registers (private, read-write) copies every page into anonymous memory, the same 12 GiB moved from RssShmem to RssAnon. No .giw format change was started. For Francis: drop MEM10 on this box, or register a tier 1 A/B of slot uploads from the mapping's pageable pages (saves the copy, slows the per-token expert DMA) | `docs/completed/task-memory-campaign-2026-10.md` §4 "MEM10"; `docs/measurements/mem10-2026-11/README.md`; `docs/measurements/mem10-2026-11/README.md` "MEM10 tier 0"; `backend/cuda/internal/gpudev/mem10_probe_test.go:TestMEM10_fileMappingRegistration_probe` |
 | SB2-vk | active | rebuilt on main (branch `sb2-vk-ship-2026-11-08`; main's shared-KV pricing kept, the branch's duplicate dropped); held-out set 5 and the fourteen-load re-run registered before any load; next: `run-heldout5.sh` on nobara by day, then ship only if it holds (Francis, 2026-11-08); nobara, M | SS §8 "SB2"; `docs/measurements/sb2-vk-2026-10-31/README.md` ("Held-out set 5"); branch `sb2-vk-plan-2026-10-31` |
 | SB11a | blocked | OP4 on CUDA past d2 and OP4 on WebGPU: the walker emits SB11's operation records | SS §8 "SB11" |
 | SerWt | open | `SerializeWeights` does not refuse bf16 and f16 weights; give the writer a named `*SerializeError`; S, any box | `docs/measurements/sb4-2026-10.md` |
@@ -96,6 +96,32 @@
   early; unchanged arms are not re-measured.
 - **Outcomes:** every gate passes, RF2 ships and RF3 opens; a decode kill ships the rest with decode on today's call; an
   ambiguous or failed band on another shape parks that shape on the adapter and goes to Francis.
+
+### RF2: addendum 1 (2026-11-08, after Gemini's review of #778; before any RF2 code or measurement)
+
+These lines replace the registration's where they differ.
+- **Sessions and pairing.** Every timed comparison runs both arms in one session on the same box, ordered A B B A with
+  A = `goinfer_old` and B = this build. Each B is paired with the A next to it, and a band reads the median of the pairs. A
+  baseline arm is never carried over from an earlier session (`docs/measurements/noise-registry.md`, TE3). This replaces
+  "unchanged arms are not re-measured". What stands is that a cell is read once on the final build, plus once on the first
+  working build for the kill.
+- **Metric direction.** Every ratio reads higher-is-better, B against A:
+  - decode, verify (tok/s) and MC3's aggregate (tok/s): B/A;
+  - time to first token (seconds): A/B.
+- **Decode at every depth, 128 included.** Decode under 0.98 at any registered depth opens the tuning budget. That budget is
+  at most two rounds. Each round is one kernel-side change, then a re-run of only the failing cells, both arms A B B A in a
+  new session, within one working day. A cell therefore has at most two re-runs.
+  - If decode at any depth is still under 0.98 after the second round, that is the kill: today's decode call stays beside
+    the ragged one, the other shapes ship on their own bands, and the reading goes to Francis.
+  - Decode has no parked band of its own: 0.97 to 0.98 is under 0.98.
+  - The other shapes' ambiguous bands are unchanged: a shape in its band is parked on the adapter.
+- **The mixed-batch test is widened to the Question.** One step holds every kind the Question names, each at more than one
+  count where the kind allows it:
+  - one sequence's prefill chunk;
+  - a second sequence's verify rows (k = 2 and 4);
+  - one decode row each for two MC3 sequences;
+  - a sequence with a decode row plus verify rows in the same step.
+  Every row's logits must be bit-identical to the same row in its own shape. The Question is not narrowed.
 
 ## Conventions
 

@@ -7,7 +7,7 @@
 #   2. grade   scripts/q3vlmoe_cuda_grade.py: the paired difference and the registered rule; the verdict is its last line.
 # Inputs from G-S10q-c, not re-made: b30.seqs.json, b30.hf.json/.f32, b30.int4.f32 (linked from $IN into the output dir).
 # Pinned in $BIN: cuda.test (built with -tags 'cuda goinfer_testhooks' at the rev in $BIN/rev) and q3vlmoe_cuda_grade.py. The test
-# runs from $SRC/cuda (it reads ../testdata/ images). Checkpoint from ~/models (local NVMe), never the archive. Correctness
+# runs from $SRC/backend/cuda (it reads ../../testdata/ images). Checkpoint from ~/models (local NVMe), never the archive. Correctness
 # gate, not timed. Estimate 30 min; queue at 45:
 #   python3 scripts/night.py add gs10q-e --est 45 --by "Claude, S10 Qwen3-VL MoE G-S10q-e" --doc docs/completed/task-multimodal-support-2026-10.md -- bash <this script>
 # GS10QE_DRY=1 checks the preconditions and prints the plan. Exit 0 whatever the verdict (it is in summary.txt); nonzero only
@@ -34,7 +34,7 @@ for f in b30.seqs.json b30.hf.json b30.hf.f32 b30.int4.f32; do ln -sf "$IN/$f" "
 t0=$SECONDS
 ( while sleep 60; do echo "[$(date +%T)] ... cuda arm running $((SECONDS - t0))s; last: $(tail -n1 "$OUT/cuda.log" | cut -c1-140)"; done ) &
 tick=$!
-( cd "$SRC/cuda" && env GOINFER_HEAVY_TESTS=1 GOINFER_Q3M_DIR="$MODEL" GOINFER_Q3M_OUT="$OUT/b30" "$BIN/cuda.test" -test.run '^TestQwen3VLMoe_cudaLogits$' -test.v -test.timeout 100m ) > "$OUT/cuda.log" 2>&1
+( cd "$SRC/backend/cuda" && env GOINFER_HEAVY_TESTS=1 GOINFER_Q3M_DIR="$MODEL" GOINFER_Q3M_OUT="$OUT/b30" "$BIN/cuda.test" -test.run '^TestQwen3VLMoe_cudaLogits$' -test.v -test.timeout 100m ) > "$OUT/cuda.log" 2>&1
 rc=$?
 kill "$tick" 2>/dev/null; wait "$tick" 2>/dev/null
 printf '%-10s rc=%-3s %5ss\n' cuda "$rc" "$((SECONDS - t0))" | tee -a "$SUM"

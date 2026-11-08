@@ -21,10 +21,30 @@ import (
 func TestMM5_noFamilySwitchInPricing(t *testing.T) {
 	banned := []string{"ResidentLayerOps", "Mixer", "KVSrcAtResident", "MLAResidentParams", "HeadDimAtResident", "KVHeadsAtResident",
 		".qwen35", ".lfm2", ".kda", ".granite", ".nemotron", ".gemma4", ".mla", "isLinearLayer", "isConvLayer", "isMambaLayer"}
-	for file, funcs := range map[string][]string{
+	scanPricingBodies(t, map[string][]string{
 		"residentneed.go": {"metalKVParts", "MetalKVRowBytes"},
 		"statebytes.go":   {"stateSpecs", "stateBuffers", "recurrentCheckpointBuffers"},
-	} {
+	}, banned, "KV and state pricing reads the operations' declarations (LayerBuffers), not the family")
+}
+
+// TestMM5b_decodeScratchNamesNoFamily is G-MS4 (docs/tasks/task-forward-architecture-2026-10.md §4.9c): Metal's decode scratch is
+// priced from the operations' per-row declarations and the head's (program.Buffers, program.HeadBuffers), so its pricing function
+// names no mixer, operation kind of one, FFN form, family or family parameter. Metal's own terms are read by a row's name
+// (metalRowTerms), which the scan reads too. An operation's parameters are read from the operation; a layer whose V is its K (no
+// v projection, a shape the weights fix) is read from the weights.
+func TestMM5b_decodeScratchNamesNoFamily(t *testing.T) {
+	banned := []string{"ResidentLayerOps", "Mixer", "KVSrcAtResident", "HeadDimAtResident", "KVHeadsAtResident",
+		"Qwen35", "Nemotron", "MLA", "Gemma4", "GptOss", "DeltaNet", "Mamba", "KDA", "ShortConv", "PLE", "MoEResident", "QKNormWhole",
+		"NonGatedMLP", "OpAttention", "OpGatedAttn", "Ffn", ".qwen35", ".lfm2", ".kda", ".granite", ".nemotron", ".gemma4", ".mla"}
+	scanPricingBodies(t, map[string][]string{"metal_scratch.go": {"MetalDecodeScratchBytes", "metalDecodeRows", "metalRowTerms", "metalMoETerms"}}, banned,
+		"decode's scratch is priced from the operations' per-row declarations and the head's, not the family")
+}
+
+// scanPricingBodies reports every function or variable in funcs (file to names) whose body or value names one of banned, and every
+// name it finds no declaration for.
+func scanPricingBodies(t *testing.T, funcs map[string][]string, banned []string, why string) {
+	t.Helper()
+	for file, names := range funcs {
 		src, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
@@ -35,25 +55,39 @@ func TestMM5_noFamilySwitchInPricing(t *testing.T) {
 			t.Fatal(err)
 		}
 		found := map[string]bool{}
+		bodies := map[string]ast.Node{} // each declaration's body (a function's) or value (a variable's)
 		for _, d := range f.Decls {
-			fn, ok := d.(*ast.FuncDecl)
-			if !ok || fn.Body == nil {
-				continue
-			}
-			for _, name := range funcs {
-				if fn.Name.Name != name {
-					continue
+			switch d := d.(type) {
+			case *ast.FuncDecl:
+				if d.Body != nil {
+					bodies[d.Name.Name] = d.Body
 				}
-				found[name] = true
-				body := string(src[fs.Position(fn.Body.Pos()).Offset:fs.Position(fn.Body.End()).Offset])
-				for _, b := range banned {
-					if strings.Contains(body, b) {
-						t.Errorf("%s: %s names %q: KV and state pricing reads the operations' declarations (LayerBuffers), not the family", file, name, b)
+			case *ast.GenDecl:
+				for _, sp := range d.Specs {
+					if vs, ok := sp.(*ast.ValueSpec); ok {
+						for i, n := range vs.Names {
+							if i < len(vs.Values) {
+								bodies[n.Name] = vs.Values[i]
+							}
+						}
 					}
 				}
 			}
 		}
-		for _, name := range funcs {
+		for _, name := range names {
+			node, ok := bodies[name]
+			if !ok {
+				continue
+			}
+			found[name] = true
+			body := string(src[fs.Position(node.Pos()).Offset:fs.Position(node.End()).Offset])
+			for _, b := range banned {
+				if strings.Contains(body, b) {
+					t.Errorf("%s: %s names %q: %s", file, name, b, why)
+				}
+			}
+		}
+		for _, name := range names {
 			if !found[name] {
 				t.Errorf("%s: no func %s to scan; the scan reads nothing for it", file, name)
 			}
@@ -240,6 +274,9 @@ func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
 		for l := range a.NumLayers {
 			declared, held := map[string]int{}, map[string]int{}
 			for _, b := range layerBuffers(a, l) {
+				if b.Unit == program.PerRow { // a step's activations, which the cache does not hold
+					continue
+				}
 				if _, again := declared[b.Name]; again {
 					t.Errorf("%s layer %d declares %q twice", dir, l, b.Name)
 				}

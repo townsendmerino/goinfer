@@ -1109,7 +1109,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `cmd/prequant` | `decoder`, `internal/runtime/prequant` |  |
 | `cmd/serve` | `internal/app/serveapp` |  |
 | `constrain` |  | `tokenizer` |
-| `decoder` | `chat`, `constrain`, `decoder/config`, `decoder/fit`, `internal/cost`, `internal/runtime/adapter`, `internal/runtime/diskfree`, `internal/runtime/f16`, `internal/runtime/giw`, `internal/runtime/hybridattn`, `internal/runtime/kvmgr`, `internal/runtime/logs`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/program`, `internal/runtime/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/guard/paritykey`, `internal/vision`, `multimodal` |
+| `decoder` | `chat`, `constrain`, `decoder/config`, `decoder/fit`, `internal/cost`, `internal/runtime/adapter`, `internal/runtime/diskfree`, `internal/runtime/f16`, `internal/runtime/giw`, `internal/runtime/hybridattn`, `internal/runtime/kvmgr`, `internal/runtime/logs`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/program`, `internal/runtime/sampling`, `tokenizer` | `internal/audio`, `internal/diag/sb2census`, `internal/fidelity`, `internal/guard/paritykey`, `internal/vision`, `multimodal` |
 | `decoder/fit` | `internal/runtime/mem` |  |
 | `demo/agent/agent` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
 | `demo/agent/cmd/agent-web` | `backend/webgpu`, `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |

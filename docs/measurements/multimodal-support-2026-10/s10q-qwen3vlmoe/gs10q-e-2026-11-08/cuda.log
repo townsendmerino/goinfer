@@ -1,0 +1,37 @@
+=== RUN   TestQwen3VLMoe_cudaLogits
+[q3m-cuda     16s] tower: gemma3_preprocess_image.png grid [1 56 56], 3 DeepStack sets
+[q3m-cuda     16s] tower: qwen25vl_preprocess_image.png grid [1 14 20], 3 DeepStack sets
+[q3m-cuda     30s] ... vision tower (CPU, goinfer's own, as G-S10q-c)
+[q3m-cuda     43s] tower: glm_ocr/formula.png grid [1 76 62], 3 DeepStack sets
+[q3m-cuda     60s] ... vision tower (CPU, goinfer's own, as G-S10q-c)
+[q3m-cuda     66s] tower: glm_ocr/table.png grid [1 56 76], 3 DeepStack sets
+[q3m-cuda     90s] ... model load
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[q3m-cuda    120s] ... model load
+[cuda] C′ cache: 64 slots/layer would need 8.2 GB VRAM but only 5.5 GB free — capping to 40 (5.1 GB)
+cuda: prefill width 1024 rows (130 MiB of scratch; 221 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+[q3m-cuda    136s] loaded: paged=true, resident present
+[q3m-cuda    150s] ... sequence 1/8: CPU prefill of 812 tokens, then 31 resident steps
+[q3m-cuda    161s] sequence 1/8 (812 ids): 32 positions in 26s, non-finite so far 0
+[q3m-cuda    180s] ... sequence 2/8: CPU prefill of 819 tokens, then 7 resident steps
+[q3m-cuda    186s] sequence 2/8 (819 ids): 8 positions in 25s, non-finite so far 0
+[q3m-cuda    192s] sequence 3/8 (98 ids): 31 positions in 5s, non-finite so far 0
+[q3m-cuda    196s] sequence 4/8 (105 ids): 1 positions in 5s, non-finite so far 0
+[q3m-cuda    210s] ... sequence 5/8: CPU prefill of 1206 tokens, then 31 resident steps
+[q3m-cuda    237s] sequence 5/8 (1206 ids): 32 positions in 41s, non-finite so far 0
+[q3m-cuda    240s] ... sequence 6/8: CPU prefill of 1213 tokens, then 31 resident steps
+[q3m-cuda    270s] ... sequence 6/8: CPU prefill of 1213 tokens, then 31 resident steps
+[q3m-cuda    278s] sequence 6/8 (1213 ids): 32 positions in 41s, non-finite so far 0
+[q3m-cuda    300s] ... sequence 7/8: CPU prefill of 1092 tokens, then 31 resident steps
+[q3m-cuda    314s] sequence 7/8 (1092 ids): 32 positions in 36s, non-finite so far 0
+[q3m-cuda    330s] ... sequence 8/8: CPU prefill of 1099 tokens, then 31 resident steps
+[q3m-cuda    351s] sequence 8/8 (1099 ids): 32 positions in 37s, non-finite so far 0
+[q3m-cuda    351s] wrote /home/francis/goinfer-logs/gs10q-e-2026-11-08/b30.cuda.f32 (200 positions)
+--- PASS: TestQwen3VLMoe_cudaLogits (353.90s)
+PASS
+ledger: 5 device(s) released in this run
