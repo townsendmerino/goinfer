@@ -1,0 +1,82 @@
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_attn_batched_M=1
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6602 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6136 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv8_resident_test.go:365: prefill cosine 0.939055, min over 9 rows 0.86429, argmax agreement 5/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+    kv8_resident_test.go:368: min cosine 0.86429 against the f32 arm: the int8 path is wrong beyond quantization noise
+    kv8_resident_test.go:371: argmax agrees on 5 of 9 rows
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_split-KV
+cuda: prefill width 2048 rows (155 MiB of scratch; 6602 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6136 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv8_resident_test.go:365: prefill cosine 0.939055, min over 9 rows 0.86429, argmax agreement 5/9 (int8 arm: flash 0, split-KV 192, fused prefill 0)
+    kv8_resident_test.go:368: min cosine 0.86429 against the f32 arm: the int8 path is wrong beyond quantization noise
+    kv8_resident_test.go:371: argmax agrees on 5 of 9 rows
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_flash-decode_lane
+cuda: prefill width 2048 rows (155 MiB of scratch; 6592 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6118 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv8_resident_test.go:365: prefill cosine 0.939055, min over 9 rows 0.86266, argmax agreement 3/9 (int8 arm: flash 192, split-KV 0, fused prefill 0)
+    kv8_resident_test.go:368: min cosine 0.86266 against the f32 arm: the int8 path is wrong beyond quantization noise
+    kv8_resident_test.go:371: argmax agrees on 3 of 9 rows
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_with_fast_prefill_on
+cuda: prefill width 2048 rows (155 MiB of scratch; 6602 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6136 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv8_resident_test.go:365: prefill cosine 0.941771, min over 9 rows 0.87177, argmax agreement 4/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+    kv8_resident_test.go:368: min cosine 0.87177 against the f32 arm: the int8 path is wrong beyond quantization noise
+    kv8_resident_test.go:371: argmax agrees on 4 of 9 rows
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_attn_batched
+cuda: prefill width 2048 rows (155 MiB of scratch; 6602 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6138 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv8_resident_test.go:365: prefill cosine 0.939055, min over 9 rows 0.86429, argmax agreement 5/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+    kv8_resident_test.go:368: min cosine 0.86429 against the f32 arm: the int8 path is wrong beyond quantization noise
+    kv8_resident_test.go:371: argmax agrees on 5 of 9 rows
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_row-batched_split-KV
+cuda: prefill width 2048 rows (195 MiB of scratch; 6602 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (195 MiB of scratch; 6138 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv8_resident_test.go:365: prefill cosine 0.939055, min over 9 rows 0.86429, argmax agreement 5/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+    kv8_resident_test.go:368: min cosine 0.86429 against the f32 arm: the int8 path is wrong beyond quantization noise
+    kv8_resident_test.go:371: argmax agrees on 5 of 9 rows
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_attn_batched_M=1
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv8_resident_test.go:365: prefill cosine 0.996911, min over 9 rows 0.98313, argmax agreement 8/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_split-KV
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv8_resident_test.go:365: prefill cosine 0.996911, min over 9 rows 0.98313, argmax agreement 8/9 (int8 arm: flash 0, split-KV 224, fused prefill 0)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_flash-decode_lane
+cuda: prefill width 2048 rows (280 MiB of scratch; 5980 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4910 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv8_resident_test.go:365: prefill cosine 0.996911, min over 9 rows 0.98218, argmax agreement 8/9 (int8 arm: flash 224, split-KV 0, fused prefill 0)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_with_fast_prefill_on
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv8_resident_test.go:365: prefill cosine 0.996311, min over 9 rows 0.98035, argmax agreement 7/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_batched
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv8_resident_test.go:365: prefill cosine 0.996911, min over 9 rows 0.98313, argmax agreement 8/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_row-batched_split-KV
+cuda: prefill width 2048 rows (316 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (316 MiB of scratch; 4942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv8_resident_test.go:365: prefill cosine 0.996911, min over 9 rows 0.98313, argmax agreement 8/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+--- FAIL: TestKV8_everyAttentionPathStaysCloseToF32 (84.71s)
+    --- FAIL: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_attn_batched_M=1 (5.53s)
+    --- FAIL: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_split-KV (3.84s)
+    --- FAIL: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_flash-decode_lane (3.94s)
+    --- FAIL: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_with_fast_prefill_on (3.72s)
+    --- FAIL: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_attn_batched (3.85s)
+    --- FAIL: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_row-batched_split-KV (3.92s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_attn_batched_M=1 (10.00s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_split-KV (10.02s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_flash-decode_lane (10.36s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_with_fast_prefill_on (9.66s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_batched (9.92s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_row-batched_split-KV (9.96s)
+FAIL
+ledger: 28 device(s) released in this run

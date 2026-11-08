@@ -1,0 +1,626 @@
+=== RUN   TestPrefillCoreCallsCheckPrefillShmemImg
+--- PASS: TestPrefillCoreCallsCheckPrefillShmemImg (0.00s)
+=== RUN   TestDeclineAdvice_wiredIntoBuildResident
+--- PASS: TestDeclineAdvice_wiredIntoBuildResident (0.00s)
+=== RUN   TestFlashDecodeVsF64
+    flash_decode_test.go:58: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints for their geometry)
+--- SKIP: TestFlashDecodeVsF64 (0.00s)
+=== RUN   TestFlashDecodeEndToEnd
+    flash_decode_test.go:175: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints)
+--- SKIP: TestFlashDecodeEndToEnd (0.00s)
+=== RUN   TestKernelLocalMemoryCensus
+    kernel_local_memory_test.go:79: device: 40 SMs x 1024 max threads/SM = 40960 resident threads
+    kernel_local_memory_test.go:126: module                 kernel                        local/thr   SMs*maxT*local
+    kernel_local_memory_test.go:133: gptoss_act.ptx         route_gptoss                       4608        188743680  (180.0 MiB)
+    kernel_local_memory_test.go:133: moe.ptx                moe_route                          4416        180879360  (172.5 MiB)
+    kernel_local_memory_test.go:133: deltanet.ptx           delta_rule_rows_128                  96          3932160  (3.8 MiB)
+    kernel_local_memory_test.go:133: deltanet.ptx           delta_rule_rows_128_spec             96          3932160  (3.8 MiB)
+    kernel_local_memory_test.go:133: prefill_batched.ptx    rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_pairwise_kv16.ptx rope_kv_pw                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: gemv_fwd_kv16.ptx      rope_kv                              32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: mla_kv16.ptx           mla_q_rope                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: mla_kv16.ptx           mla_latent_store                     32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: mla.ptx                mla_q_rope                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: prefill_batched_cap.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: mla.ptx                mla_latent_store                     32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: prefill_batched_kv16_cap.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: prefill_batched_kv16.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_pairwise_kv16.ptx rope_kv_mrope_batched_pw             32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_pairwise_kv16.ptx rope_kv_batched_pw                   32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_pairwise.ptx      rope_kv_pw                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_pairwise.ptx      rope_kv_mrope_batched_pw             32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_pairwise.ptx      rope_kv_batched_pw                   32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_mrope_prefill_kv16.ptx rope_kv_mrope_batched                32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_mrope_prefill.ptx rope_kv_mrope_batched                32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: mamba.ptx              mamba_conv                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: gemv_fwd.ptx           rope_kv                              32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:136: 328 entry points across 63 modules; 23 declare per-thread local memory
+    kernel_local_memory_test.go:146: EXAMINED: 63 module(s) — gemv_fwd.ptx gemv_w8a8_batched.ptx prefill_batched.ptx decode_splitkv.ptx prefill_splitkv.ptx deltanet.ptx gptoss_act.ptx actgroup.ptx gemv_w4a8_rn.ptx glue.ptx argmax.ptx moe_fold.ptx moe_rows.ptx audio_encoder.ptx topk.ptx gumbel.ptx decode_fa.ptx lora.ptx attn_block.ptx attn_img_prefill.ptx attn_img_prefill_kv16.ptx rope_mrope_prefill.ptx rope_mrope_prefill_kv16.ptx rope_pairwise.ptx rope_pairwise_kv16.ptx layernorm_quant.ptx gelu_quant.ptx attn_fused.ptx attn_fused_bm.ptx attn_fused_vit.ptx tower_base.ptx gemm_w4a8_mma.ptx moe.ptx router_f32.ptx gemv_w4f32.ptx fused_qkv.ptx fused_qkv_rows.ptx fused_gu_rows.ptx mla.ptx mla_kv16.ptx gemv_fwd_kv16.ptx glue_kv16.ptx prefill_batched_kv16.ptx decode_splitkv_kv16.ptx prefill_splitkv_kv16.ptx decode_fa_kv16.ptx attn_fused_kv16.ptx attn_fused_bm_kv16.ptx glue_cap.ptx glue_kv16_cap.ptx prefill_batched_cap.ptx prefill_batched_kv16_cap.ptx decode_splitkv_cap.ptx decode_splitkv_kv16_cap.ptx glue_kv8.ptx prefill_batched_kv8.ptx kv8_store.ptx prefill_splitkv_kv8.ptx decode_splitkv_kv8.ptx decode_fa_kv8.ptx gemv_fwd_kv8.ptx mamba.ptx nongated_act.ptx. Derived straight from kernels.go's //go:embed list, so this line names exactly what that list currently contains.
+    kernel_local_memory_test.go:154: SUM of per-kernel backing stores at full occupancy: 402391040 B (383.8 MiB) — an UPPER BOUND on the deferred cost, not a prediction: the driver may share or reuse a backing store across kernels, and nothing here shows that it allocates them all simultaneously
+    kernel_local_memory_test.go:264: moe_route: local 4416 B/thread, naive form predicts 180879360 B, MEASURED 138412032 B (ratio 0.7652)
+    kernel_local_memory_test.go:267:   => the naive multiplier does NOT reproduce the measurement. The occupancy factor is not SMs x maxThreadsPerSM (40 x 1024); proportionality in local-bytes is therefore UNVERIFIED, and any 'halving MOE_MAX_E halves the cost' claim must be measured by building at 256 rather than derived from this form.
+--- PASS: TestKernelLocalMemoryCensus (0.46s)
+=== RUN   TestKSH6C_marginPriced
+    ksh6c_margin_test.go:76: set GOINFER_HEAVY_TESTS=1 and KSH6C_MARGIN=1
+--- SKIP: TestKSH6C_marginPriced (0.00s)
+=== RUN   TestKV16_theDefaultIsF16OnAClearedFamily
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6582 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6582 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6582 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6518 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (226 MiB of scratch; 6186 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (226 MiB of scratch; 6186 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (226 MiB of scratch; 6290 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (226 MiB of scratch; 6186 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestKV16_theDefaultIsF16OnAClearedFamily (19.70s)
+=== RUN   TestKV16_exactInputIdentity_decodeReaders
+=== RUN   TestKV16_exactInputIdentity_decodeReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (155 MiB of scratch; 6506 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6006 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV16_exactInputIdentity_decodeReaders/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (280 MiB of scratch; 5784 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4604 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestKV16_exactInputIdentity_decodeReaders (11.67s)
+    --- PASS: TestKV16_exactInputIdentity_decodeReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (3.25s)
+    --- PASS: TestKV16_exactInputIdentity_decodeReaders/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (8.41s)
+=== RUN   TestKV16_exactInputIdentity_prefillReaders
+=== RUN   TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (155 MiB of scratch; 6582 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6110 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+=== RUN   TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (280 MiB of scratch; 5912 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+--- PASS: TestKV16_exactInputIdentity_prefillReaders (12.19s)
+    --- PASS: TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (3.43s)
+    --- PASS: TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (8.76s)
+=== RUN   TestKV16_pairwiseMRoPENeverF16
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 7064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestKV16_pairwiseMRoPENeverF16 (1.44s)
+=== RUN   TestKV16_wholeTokenDecodeAB
+    kv16_speed_test.go:28: set KV16_AB=1
+--- SKIP: TestKV16_wholeTokenDecodeAB (0.00s)
+=== RUN   TestKV16_singleArmDecode
+    kv16_speed_test.go:81: set KV16_ARM=f32|f16 and KV16_AB_MODELS
+--- SKIP: TestKV16_singleArmDecode (0.00s)
+=== RUN   TestKV16_profileSteps
+    kv16_speed_test.go:127: set KV16_ARM, KV16_DEPTH, KV16_AB_MODELS
+--- SKIP: TestKV16_profileSteps (0.00s)
+=== RUN   TestKV16_readerKernelTime
+    kv16_speed_test.go:162: set KV16_ARM, KV16_DEPTH, KV16_AB_MODELS
+--- SKIP: TestKV16_readerKernelTime (0.00s)
+=== RUN   TestKV16_cacheIsHalfAndTheKnobIsHonoured
+cuda: prefill width 2048 rows (155 MiB of scratch; 6420 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 5862 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestKV16_cacheIsHalfAndTheKnobIsHonoured (3.36s)
+=== RUN   TestKV16_layer0StoreIsTheRoundedF32Store
+cuda: prefill width 2048 rows (155 MiB of scratch; 6582 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6110 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+--- PASS: TestKV16_layer0StoreIsTheRoundedF32Store (3.33s)
+=== RUN   TestKV16_uploadKVRoundsLikeTheKernels
+cuda: prefill width 2048 rows (155 MiB of scratch; 6606 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6138 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+--- PASS: TestKV16_uploadKVRoundsLikeTheKernels (3.24s)
+=== RUN   TestKV16_everyAttentionPathStaysCloseToF32
+=== RUN   TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_attn_batched_M=1
+cuda: prefill width 2048 rows (155 MiB of scratch; 6602 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6132 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:329: prefill cosine 0.997144, min over 9 rows 0.98953, argmax agreement 9/9 (f16 arm: flash 0, split-KV 0, fused prefill 0)
+=== RUN   TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_split-KV
+cuda: prefill width 2048 rows (155 MiB of scratch; 6602 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6132 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:329: prefill cosine 0.997144, min over 9 rows 0.98953, argmax agreement 9/9 (f16 arm: flash 0, split-KV 192, fused prefill 0)
+=== RUN   TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_flash-decode_lane
+cuda: prefill width 2048 rows (155 MiB of scratch; 6592 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6114 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:329: prefill cosine 0.997144, min over 9 rows 0.99052, argmax agreement 8/9 (f16 arm: flash 192, split-KV 0, fused prefill 0)
+=== RUN   TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_attn_fused
+cuda: prefill width 2048 rows (155 MiB of scratch; 6602 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6132 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:329: prefill cosine 1.000000, min over 9 rows 0.99349, argmax agreement 8/9 (f16 arm: flash 0, split-KV 0, fused prefill 24)
+=== RUN   TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_attn_batched
+cuda: prefill width 2048 rows (155 MiB of scratch; 6602 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6134 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:329: prefill cosine 0.997144, min over 9 rows 0.98953, argmax agreement 9/9 (f16 arm: flash 0, split-KV 0, fused prefill 0)
+=== RUN   TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_attn_batched_M=1
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4932 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:329: prefill cosine 0.998065, min over 9 rows 0.99198, argmax agreement 8/9 (f16 arm: flash 0, split-KV 0, fused prefill 0)
+=== RUN   TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_split-KV
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4932 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:329: prefill cosine 0.998065, min over 9 rows 0.99198, argmax agreement 8/9 (f16 arm: flash 0, split-KV 224, fused prefill 0)
+=== RUN   TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_flash-decode_lane
+cuda: prefill width 2048 rows (280 MiB of scratch; 5980 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4902 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:329: prefill cosine 0.998065, min over 9 rows 0.99002, argmax agreement 9/9 (f16 arm: flash 224, split-KV 0, fused prefill 0)
+=== RUN   TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_fused
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4932 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:329: prefill cosine 1.000000, min over 9 rows 0.98918, argmax agreement 9/9 (f16 arm: flash 0, split-KV 0, fused prefill 28)
+=== RUN   TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_batched
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:329: prefill cosine 0.998065, min over 9 rows 0.99198, argmax agreement 8/9 (f16 arm: flash 0, split-KV 0, fused prefill 0)
+--- PASS: TestKV16_everyAttentionPathStaysCloseToF32 (63.43s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_attn_batched_M=1 (3.66s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_split-KV (3.65s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_flash-decode_lane (3.60s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_attn_fused (3.47s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_attn_batched (3.68s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_attn_batched_M=1 (9.00s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_split-KV (9.20s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_flash-decode_lane (9.41s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_fused (8.81s)
+    --- PASS: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_batched (8.94s)
+=== RUN   TestKV8_deliveredBytes
+=== RUN   TestKV8_deliveredBytes/llama-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv16_test.go:461: 4 int8 layers, one slot at 4096 positions: allocated 1331200 B (f32 build 4259840 B), scales 266240 B
+=== RUN   TestKV8_deliveredBytes/phi3-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv16_test.go:461: 3 int8 layers, one slot at 4096 positions: allocated 998400 B (f32 build 3194880 B), scales 199680 B
+=== RUN   TestKV8_deliveredBytes/llama-attnfa-tiny
+cuda: prefill width 2048 rows (26 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv16_test.go:461: 2 int8 layers, one slot at 4096 positions: allocated 4392960 B (f32 build 17039360 B), scales 133120 B
+=== RUN   TestKV8_deliveredBytes/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (155 MiB of scratch; 6132 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (219 MiB of scratch; 5532 MiB free beyond the 109 MiB kept beside a pass); passes take up to 2048 rows
+    kv16_test.go:461: 24 int8 layers, one slot at 16384 positions: allocated 107372544 B (f32 build 404226048 B), scales 6316032 B
+--- PASS: TestKV8_deliveredBytes (4.23s)
+    --- PASS: TestKV8_deliveredBytes/llama-tiny (0.29s)
+    --- PASS: TestKV8_deliveredBytes/phi3-tiny (0.25s)
+    --- PASS: TestKV8_deliveredBytes/llama-attnfa-tiny (0.28s)
+    --- PASS: TestKV8_deliveredBytes/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (3.40s)
+=== RUN   TestKV8_layer0StoreIsTheQuantizedF32Store
+=== RUN   TestKV8_layer0StoreIsTheQuantizedF32Store/llama-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV8_layer0StoreIsTheQuantizedF32Store/phi3-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV8_layer0StoreIsTheQuantizedF32Store/llama-attnfa-tiny
+cuda: prefill width 2048 rows (26 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7040 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV8_layer0StoreIsTheQuantizedF32Store/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (219 MiB of scratch; 6478 MiB free beyond the 109 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 5470 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestKV8_layer0StoreIsTheQuantizedF32Store (4.48s)
+    --- PASS: TestKV8_layer0StoreIsTheQuantizedF32Store/llama-tiny (0.32s)
+    --- PASS: TestKV8_layer0StoreIsTheQuantizedF32Store/phi3-tiny (0.31s)
+    --- PASS: TestKV8_layer0StoreIsTheQuantizedF32Store/llama-attnfa-tiny (0.28s)
+    --- PASS: TestKV8_layer0StoreIsTheQuantizedF32Store/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (3.57s)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_attn_batched_M=1
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:690: prefill cosine 0.996911, min over 9 rows 0.98313, argmax agreement 8/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_split-KV
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:690: prefill cosine 0.996911, min over 9 rows 0.98313, argmax agreement 8/9 (int8 arm: flash 0, split-KV 224, fused prefill 0)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_flash-decode_lane
+cuda: prefill width 2048 rows (280 MiB of scratch; 5980 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4910 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:690: prefill cosine 0.996911, min over 9 rows 0.98218, argmax agreement 8/9 (int8 arm: flash 224, split-KV 0, fused prefill 0)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_with_fast_prefill_on
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:690: prefill cosine 0.996311, min over 9 rows 0.98035, argmax agreement 7/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_batched
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:690: prefill cosine 0.996911, min over 9 rows 0.98313, argmax agreement 8/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_row-batched_split-KV
+cuda: prefill width 2048 rows (316 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (316 MiB of scratch; 4942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:690: prefill cosine 0.996911, min over 9 rows 0.98313, argmax agreement 8/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+--- PASS: TestKV8_everyAttentionPathStaysCloseToF32 (54.37s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_attn_batched_M=1 (9.00s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_split-KV (9.20s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_flash-decode_lane (9.16s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_with_fast_prefill_on (8.81s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_batched (8.93s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_row-batched_split-KV (9.27s)
+=== RUN   TestKV8_G2_matchesTheCPUInt8Cache
+=== RUN   TestKV8_G2_matchesTheCPUInt8Cache/qwen2.5-coder-0.5b
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6134 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv16_test.go:719: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CUDA f32 vs CPU f32: min cos 0.97674 top-1 61/65
+    kv16_test.go:719: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CUDA i8  vs CPU i8:  min cos 0.98595 top-1 60/65
+    kv16_test.go:719: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.81858 top-1 35/65
+    kv16_test.go:719: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.83002 top-1 35/65
+    kv16_test.go:724: G2 logits: CUDA i8 against CPU i8 min cosine 0.98595, under 0.99
+=== RUN   TestKV8_G2_matchesTheCPUInt8Cache/qwen2.5-coder-1.5b
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv16_test.go:719: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CUDA f32 vs CPU f32: min cos 0.99015 top-1 58/65
+    kv16_test.go:719: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CUDA i8  vs CPU i8:  min cos 0.98373 top-1 56/65
+    kv16_test.go:719: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.98300 top-1 58/65
+    kv16_test.go:719: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.98313 top-1 54/65
+    kv16_test.go:721: G2 top-1: CUDA i8 agrees with CPU i8 on 0.8615 of the rows, under the f32 pair's 0.8923 less 2 points
+    kv16_test.go:724: G2 logits: CUDA i8 against CPU i8 min cosine 0.98373, under 0.99
+--- FAIL: TestKV8_G2_matchesTheCPUInt8Cache (34.96s)
+    --- FAIL: TestKV8_G2_matchesTheCPUInt8Cache/qwen2.5-coder-0.5b (11.20s)
+    --- FAIL: TestKV8_G2_matchesTheCPUInt8Cache/qwen2.5-coder-1.5b (23.76s)
+=== RUN   TestKV8_verifyIsSequentialDecode
+=== RUN   TestKV8_verifyIsSequentialDecode/llama-attnfa-tiny/lane=0
+cuda: prefill width 2048 rows (26 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+=== RUN   TestKV8_verifyIsSequentialDecode/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf/lane=0
+cuda: prefill width 2048 rows (155 MiB of scratch; 6612 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6148 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+=== RUN   TestKV8_verifyIsSequentialDecode/llama-attnfa-tiny/lane=16
+cuda: prefill width 2048 rows (26 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7056 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+=== RUN   TestKV8_verifyIsSequentialDecode/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf/lane=16
+cuda: prefill width 2048 rows (155 MiB of scratch; 6602 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6128 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+--- PASS: TestKV8_verifyIsSequentialDecode (7.48s)
+    --- PASS: TestKV8_verifyIsSequentialDecode/llama-attnfa-tiny/lane=0 (0.35s)
+    --- PASS: TestKV8_verifyIsSequentialDecode/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf/lane=0 (3.39s)
+    --- PASS: TestKV8_verifyIsSequentialDecode/llama-attnfa-tiny/lane=16 (0.33s)
+    --- PASS: TestKV8_verifyIsSequentialDecode/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf/lane=16 (3.41s)
+=== RUN   TestKV8_snapshotsDecline
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestKV8_snapshotsDecline (0.29s)
+=== RUN   TestKV8_G2Diag_allPrompts
+    kv16_test.go:907: a diagnostic: GOINFER_KV8_DIAG=1 runs it
+--- SKIP: TestKV8_G2Diag_allPrompts (0.00s)
+=== RUN   TestKV8_G2Diag_amplification
+    kv16_test.go:927: a diagnostic: GOINFER_KV8_DIAG=1 runs it
+--- SKIP: TestKV8_G2Diag_amplification (0.00s)
+=== RUN   TestKV4b_deliveredBytes
+=== RUN   TestKV4b_deliveredBytes/moe/qwen3moe-tiny
+cuda: prefill width 2048 rows (5 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 4 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/moe/qwen3moe-tiny-k3
+cuda: prefill width 2048 rows (5 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 4 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/moe/mixtral-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6928 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6924 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 4 f16 layers; one slot at 4096 positions: f32 8520192 bytes, f16 4260352
+=== RUN   TestKV4b_deliveredBytes/paged-experts/qwen3moe-tiny
+cuda: prefill width 2048 rows (5 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 4 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/sliding-window/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 3 f16 layers; one slot at 4096 positions: f32 6390272 bytes, f16 3195392
+=== RUN   TestKV4b_deliveredBytes/sliding-window/gemma2-tiny
+cuda: prefill width 2048 rows (8 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7056 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 4 f16 layers; one slot at 4096 positions: f32 8520192 bytes, f16 4260352
+=== RUN   TestKV4b_deliveredBytes/sliding-window/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 2 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/sliding-window/gptoss_tiny.gguf
+cuda: prefill width 2048 rows (3 MiB of scratch; 6932 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (3 MiB of scratch; 6930 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 4 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/sliding-window/windowed/mistral-tiny-window
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4b_groups_test.go:132: one slot at 4096 positions: f32 295424 bytes, f16 147968
+=== RUN   TestKV4b_deliveredBytes/sliding-window/windowed/gemma2-tiny
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4b_groups_test.go:132: one slot at 4096 positions: f32 4456960 bytes, f16 2228736
+=== RUN   TestKV4b_deliveredBytes/sliding-window/windowed/gemma3-vl-tiny
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4b_groups_test.go:132: one slot at 4096 positions: f32 1114624 bytes, f16 557568
+=== RUN   TestKV4b_deliveredBytes/pairwise-rope/cohere-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 4 f16 layers; one slot at 4096 positions: f32 4260352 bytes, f16 2130432
+=== RUN   TestKV4b_deliveredBytes/pairwise-rope/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 4 f16 layers; one slot at 4096 positions: f32 4260352 bytes, f16 2130432
+=== RUN   TestKV4b_deliveredBytes/pairwise-rope/windowed/cohere2-tiny
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4b_groups_test.go:132: one slot at 4096 positions: f32 1212928 bytes, f16 606720
+=== RUN   TestKV4b_deliveredBytes/m-rope/qwen25vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 2 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/m-rope/qwen3vl-tiny
+    kv4b_groups_test.go:97: no fixture: stat ../../testdata/qwen3vl-tiny: no such file or directory
+=== RUN   TestKV4b_deliveredBytes/hybrid/qwen3_5-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 1 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/hybrid/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 1 f16 layers; one slot at 4096 positions: f32 1065472 bytes, f16 532992
+=== RUN   TestKV4b_deliveredBytes/hybrid/qwen3next-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6928 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 1 f16 layers; one slot at 16384 positions: f32 4212736 bytes, f16 2107392
+=== RUN   TestKV4b_deliveredBytes/hybrid/gemma4-dense-twogeom-tiny
+    kv4b_groups_test.go:97: no fixture: stat ../../testdata/gemma4-dense-twogeom-tiny: no such file or directory
+=== RUN   TestKV4b_deliveredBytes/hybrid/gemma4-moe-kv-tiny32
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6922 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6906 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 2 f16 layers; one slot at 4096 positions: f32 18104832 bytes, f16 9052672
+=== RUN   TestKV4b_deliveredBytes/hybrid/gemma4-moe-tiny
+    kv4b_groups_test.go:97: no fixture: stat ../../testdata/gemma4-moe-tiny: no such file or directory
+=== RUN   TestKV4b_deliveredBytes/mla/deepseek-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:141: 4 f16 layers; one slot at 4096 positions: f32 1597952 bytes, f16 799232
+=== RUN   TestKV4b_deliveredBytes/mla/kimi-tiny
+    kv4b_groups_test.go:97: no fixture: stat ../../testdata/kimi-tiny: no such file or directory
+--- PASS: TestKV4b_deliveredBytes (5.54s)
+    --- PASS: TestKV4b_deliveredBytes/moe/qwen3moe-tiny (0.30s)
+    --- PASS: TestKV4b_deliveredBytes/moe/qwen3moe-tiny-k3 (0.28s)
+    --- PASS: TestKV4b_deliveredBytes/moe/mixtral-tiny (0.30s)
+    --- PASS: TestKV4b_deliveredBytes/paged-experts/qwen3moe-tiny (0.27s)
+    --- PASS: TestKV4b_deliveredBytes/sliding-window/mistral-tiny-window (0.28s)
+    --- PASS: TestKV4b_deliveredBytes/sliding-window/gemma2-tiny (0.28s)
+    --- PASS: TestKV4b_deliveredBytes/sliding-window/gemma3-vl-tiny (0.27s)
+    --- PASS: TestKV4b_deliveredBytes/sliding-window/gptoss_tiny.gguf (0.30s)
+    --- PASS: TestKV4b_deliveredBytes/sliding-window/windowed/mistral-tiny-window (0.26s)
+    --- PASS: TestKV4b_deliveredBytes/sliding-window/windowed/gemma2-tiny (0.26s)
+    --- PASS: TestKV4b_deliveredBytes/sliding-window/windowed/gemma3-vl-tiny (0.28s)
+    --- PASS: TestKV4b_deliveredBytes/pairwise-rope/cohere-tiny (0.26s)
+    --- PASS: TestKV4b_deliveredBytes/pairwise-rope/cohere2-tiny (0.26s)
+    --- PASS: TestKV4b_deliveredBytes/pairwise-rope/windowed/cohere2-tiny (0.27s)
+    --- PASS: TestKV4b_deliveredBytes/m-rope/qwen25vl-tiny (0.27s)
+    --- SKIP: TestKV4b_deliveredBytes/m-rope/qwen3vl-tiny (0.00s)
+    --- PASS: TestKV4b_deliveredBytes/hybrid/qwen3_5-tiny (0.27s)
+    --- PASS: TestKV4b_deliveredBytes/hybrid/qwen35-tiny (0.28s)
+    --- PASS: TestKV4b_deliveredBytes/hybrid/qwen3next-tiny (0.30s)
+    --- SKIP: TestKV4b_deliveredBytes/hybrid/gemma4-dense-twogeom-tiny (0.00s)
+    --- PASS: TestKV4b_deliveredBytes/hybrid/gemma4-moe-kv-tiny32 (0.27s)
+    --- SKIP: TestKV4b_deliveredBytes/hybrid/gemma4-moe-tiny (0.00s)
+    --- PASS: TestKV4b_deliveredBytes/mla/deepseek-tiny (0.27s)
+    --- SKIP: TestKV4b_deliveredBytes/mla/kimi-tiny (0.00s)
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/llama-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/phi3-tiny
+    kvbytes_agreement_test.go:60: not CUDA-resident: every resident cuda projection quantizes activations to int8, and Phi-3's activation outliers are rounded to zero by the per-row int8 activation scale every int4/int8int8/int4mix path uses (queue-engineering.md H2)
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma4-dense-twogeom-tiny
+    kvbytes_agreement_test.go:51: no fixture at ../../testdata/gemma4-dense-twogeom-tiny
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma4-moe-tiny
+    kvbytes_agreement_test.go:51: no fixture at ../../testdata/gemma4-moe-tiny
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma4-emodel-tiny
+    kvbytes_agreement_test.go:51: no fixture at ../../testdata/gemma4-emodel-tiny
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/deepseek-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: KV pool: 32768 positions (512 blocks of 64) for 2 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (155 MiB of scratch; 5746 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma3-1b-q4_k_m.gguf
+cuda: KV pool: 32768 positions (512 blocks of 64) for 2 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (290 MiB of scratch; 4626 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestResidentKVBytes_matchesCUDAAllocation (6.32s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/llama-tiny (0.22s)
+    --- SKIP: TestResidentKVBytes_matchesCUDAAllocation/phi3-tiny (0.00s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/mistral-tiny-window (0.24s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma3-vl-tiny (0.22s)
+    --- SKIP: TestResidentKVBytes_matchesCUDAAllocation/gemma4-dense-twogeom-tiny (0.00s)
+    --- SKIP: TestResidentKVBytes_matchesCUDAAllocation/gemma4-moe-tiny (0.00s)
+    --- SKIP: TestResidentKVBytes_matchesCUDAAllocation/gemma4-emodel-tiny (0.00s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/qwen35-tiny (0.23s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/deepseek-tiny (0.25s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (2.01s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma3-1b-q4_k_m.gguf (3.14s)
+=== RUN   TestKVPool_detailNamesThePool
+cuda: prefill width 2048 rows (6 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kvbytes_agreement_test.go:170: llama-tiny at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 WindowRows:0 Groups:[full] Precision:f32 Bytes:8455168} (slack 0, planned 512)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kvbytes_agreement_test.go:170: llama-tiny at f16: {Positions:8192 Guaranteed:4096 BlockRows:64 WindowRows:0 Groups:[full] Precision:f16 Bytes:4228096} (slack 0, planned 512)
+cuda: windowed KV: sliding-window layers hold 528 positions (window 16 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: 576 more positions from free VRAM (2 MB of 4096 MB free); a follow-up may now diverge 1024 before the newest
+    kvbytes_agreement_test.go:170: mistral-tiny-window at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 WindowRows:1216 Groups:[sliding window] Precision:f32 Bytes:3834880} (slack 1088, planned 512)
+cuda: windowed KV: sliding-window layers hold 528 positions (window 16 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+    kvbytes_agreement_test.go:204: mistral-tiny-window with no headroom: slack 512, pool bytes 2065408, equal to the plan's
+cuda: windowed KV: sliding-window layers hold 520 positions (window 8 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: 576 more positions from free VRAM (1 MB of 4096 MB free); a follow-up may now diverge 1024 before the newest
+    kvbytes_agreement_test.go:170: cohere2-tiny at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 WindowRows:1216 Groups:[full sliding window] Precision:f32 Bytes:4031488} (slack 1088, planned 512)
+cuda: windowed KV: sliding-window layers hold 520 positions (window 8 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+    kvbytes_agreement_test.go:204: cohere2-tiny with no headroom: slack 512, pool bytes 3146752, equal to the plan's
+--- PASS: TestKVPool_detailNamesThePool (1.44s)
+=== RUN   TestKV7_restoreWindowed
+=== RUN   TestKV7_restoreWindowed/mistral-tiny-window
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestKV7_restoreWindowed/gemma3-vl-tiny
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestKV7_restoreWindowed/cohere2-tiny
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestKV7_restoreWindowed (1.90s)
+    --- PASS: TestKV7_restoreWindowed/mistral-tiny-window (0.56s)
+    --- PASS: TestKV7_restoreWindowed/gemma3-vl-tiny (0.57s)
+    --- PASS: TestKV7_restoreWindowed/cohere2-tiny (0.76s)
+=== RUN   TestKV7_restoreFull
+=== RUN   TestKV7_restoreFull/f32
+cuda: prefill width 2048 rows (26 MiB of scratch; 7058 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+=== RUN   TestKV7_restoreFull/f16
+cuda: prefill width 2048 rows (26 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+--- PASS: TestKV7_restoreFull (1.13s)
+    --- PASS: TestKV7_restoreFull/f32 (0.55s)
+    --- PASS: TestKV7_restoreFull/f16 (0.58s)
+=== RUN   TestKV7_declines
+=== RUN   TestKV7_declines/mistral-tiny-window
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestKV7_declines/gemma3-vl-tiny
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestKV7_declines/cohere2-tiny
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestKV7_declines (1.27s)
+    --- PASS: TestKV7_declines/mistral-tiny-window (0.38s)
+    --- PASS: TestKV7_declines/gemma3-vl-tiny (0.41s)
+    --- PASS: TestKV7_declines/cohere2-tiny (0.48s)
+=== RUN   TestKV7_optionKVHostBytes_resident
+=== RUN   TestKV7_optionKVHostBytes_resident/full/f32
+cuda: prefill width 2048 rows (26 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7022 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+kv snapshot: took 2432 rows (10 MiB host) from slot 0 in 12.1 ms; 10 of 256 MiB held
+kv snapshot: took 2240 rows (9 MiB host) from slot 0 in 11.2 ms; 18 of 256 MiB held
+kv snapshot: restored 2432 rows of 2432 into slot 0 in 0.9 ms
+=== RUN   TestKV7_optionKVHostBytes_resident/full/f16
+cuda: prefill width 2048 rows (26 MiB of scratch; 7058 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+kv snapshot: took 2432 rows (5 MiB host) from slot 0 in 5.7 ms; 5 of 256 MiB held
+kv snapshot: took 2240 rows (4 MiB host) from slot 0 in 5.7 ms; 9 of 256 MiB held
+kv snapshot: restored 2432 rows of 2432 into slot 0 in 0.6 ms
+=== RUN   TestKV7_optionKVHostBytes_resident/windowed/mistral-tiny-window
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+kv snapshot: took 2432 rows (0 MiB host) from slot 0 in 0.2 ms; 0 of 256 MiB held
+kv snapshot: restored 2432 rows of 2432 into slot 0 in 0.3 ms
+=== RUN   TestKV7_optionKVHostBytes_resident/windowed/gemma3-vl-tiny
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+kv snapshot: took 2432 rows (1 MiB host) from slot 0 in 0.1 ms; 1 of 256 MiB held
+kv snapshot: restored 2432 rows of 2432 into slot 0 in 0.3 ms
+=== RUN   TestKV7_optionKVHostBytes_resident/windowed/cohere2-tiny
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+kv snapshot: took 2432 rows (1 MiB host) from slot 0 in 0.2 ms; 1 of 256 MiB held
+kv snapshot: restored 2432 rows of 2432 into slot 0 in 0.7 ms
+--- PASS: TestKV7_optionKVHostBytes_resident (2.41s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/full/f32 (0.39s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/full/f16 (0.36s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/windowed/mistral-tiny-window (0.55s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/windowed/gemma3-vl-tiny (0.54s)
+    --- PASS: TestKV7_optionKVHostBytes_resident/windowed/cohere2-tiny (0.58s)
+=== RUN   TestKSH6C_chargedKVArithmetic
+--- PASS: TestKSH6C_chargedKVArithmetic (0.00s)
+=== RUN   TestKSH6C_marginParts
+--- PASS: TestKSH6C_marginParts (0.00s)
+=== RUN   TestKSH6C_roundingBoundHolds
+    margin_test.go:167: 79872 configurations; the closest came 2129920 B under the bound
+--- PASS: TestKSH6C_roundingBoundHolds (0.01s)
+=== RUN   TestPlanMemory
+--- PASS: TestPlanMemory (0.00s)
+=== RUN   TestWeightsFitDecision
+=== RUN   TestWeightsFitDecision/no_reading
+=== RUN   TestWeightsFitDecision/exactly_at_the_budget
+=== RUN   TestWeightsFitDecision/one_byte_over
+=== RUN   TestWeightsFitDecision/companion_at_the_budget
+=== RUN   TestWeightsFitDecision/companion_one_byte_over
+--- PASS: TestWeightsFitDecision (0.00s)
+    --- PASS: TestWeightsFitDecision/no_reading (0.00s)
+    --- PASS: TestWeightsFitDecision/exactly_at_the_budget (0.00s)
+    --- PASS: TestWeightsFitDecision/one_byte_over (0.00s)
+    --- PASS: TestWeightsFitDecision/companion_at_the_budget (0.00s)
+    --- PASS: TestWeightsFitDecision/companion_one_byte_over (0.00s)
+=== RUN   TestKVFitDecision
+--- PASS: TestKVFitDecision (0.00s)
+=== RUN   TestKVFitDecision_trimPlant
+--- PASS: TestKVFitDecision_trimPlant (0.00s)
+=== RUN   TestPlanMemory_moePlannedContext
+--- PASS: TestPlanMemory_moePlannedContext (0.00s)
+=== RUN   TestCkptDeclineFor
+--- PASS: TestCkptDeclineFor (0.00s)
+=== RUN   TestSlotsDecision
+--- PASS: TestSlotsDecision (0.00s)
+=== RUN   TestPlanMemory_postAllocation
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestPlanMemory_postAllocation (0.01s)
+=== RUN   TestPlanMemory_postAllocationPlants
+=== RUN   TestPlanMemory_postAllocationPlants/ckpt
+=== RUN   TestPlanMemory_postAllocationPlants/grant
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestPlanMemory_postAllocationPlants/slots
+=== RUN   TestPlanMemory_postAllocationPlants/prefill
+--- PASS: TestPlanMemory_postAllocationPlants (0.01s)
+    --- PASS: TestPlanMemory_postAllocationPlants/ckpt (0.00s)
+    --- PASS: TestPlanMemory_postAllocationPlants/grant (0.00s)
+    --- PASS: TestPlanMemory_postAllocationPlants/slots (0.00s)
+    --- PASS: TestPlanMemory_postAllocationPlants/prefill (0.00s)
+=== RUN   TestDeriveMemory
+--- PASS: TestDeriveMemory (0.01s)
+=== RUN   TestKVGrantFor
+--- PASS: TestKVGrantFor (0.00s)
+=== RUN   TestPlanMemory_grantsAndWidth
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestPlanMemory_grantsAndWidth (0.13s)
+=== RUN   TestPlanSlotGeomFor_degenerate
+--- PASS: TestPlanSlotGeomFor_degenerate (0.00s)
+=== RUN   TestPlanMemory_kvRaise
+--- PASS: TestPlanMemory_kvRaise (0.00s)
+=== RUN   TestDeriveMemory_raiseScoreScratch
+--- PASS: TestDeriveMemory_raiseScoreScratch (0.00s)
+=== RUN   TestDeriveMemory_grantCharged
+--- PASS: TestDeriveMemory_grantCharged (0.00s)
+=== RUN   TestPlanMemory_degenerateExpertCache
+--- PASS: TestPlanMemory_degenerateExpertCache (0.00s)
+=== RUN   TestDeriveMemory_windowed
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestDeriveMemory_windowed (0.00s)
+=== RUN   TestDeriveMemory_poolInSetup
+--- PASS: TestDeriveMemory_poolInSetup (0.00s)
+=== RUN   TestPrefillCoreCallsMropePosWindow
+--- PASS: TestPrefillCoreCallsMropePosWindow (0.01s)
+=== RUN   TestPipelineLint_boundKernelsAreLaunched
+    pipeline_lint_test.go:82: pipeline lint: 107 Pipeline fields, 0 bound-and-dead, 0 launched-but-unbound
+--- PASS: TestPipelineLint_boundKernelsAreLaunched (1.73s)
+=== RUN   TestPTX_matchesSourcesAndBindings
+    ptx_consistency_test.go:101: 63 .cu/.ptx pairs, 328 kernels checked by name and signature; 118 bound kernel names resolved
+--- PASS: TestPTX_matchesSourcesAndBindings (0.10s)
+=== RUN   TestKV8_glueTwinIsBuiltAtTheAuditedToolchain
+--- PASS: TestKV8_glueTwinIsBuiltAtTheAuditedToolchain (0.00s)
+=== RUN   TestPTXModules_coverEveryEmbed
+    ptx_modules_cover_test.go:53: 63 embedded modules, 63 in ptxModules()
+--- PASS: TestPTXModules_coverEveryEmbed (0.01s)
+=== RUN   TestPlanSlack_oneCopy
+--- PASS: TestPlanSlack_oneCopy (0.05s)
+=== RUN   TestLedger_everyAllocationNamesALine
+    resident_cap_test.go:744: read 79 non-test files
+--- PASS: TestLedger_everyAllocationNamesALine (0.06s)
+=== RUN   TestPrefillCoreAndDraftBlockCallTheShmemGuards
+=== RUN   TestPrefillCoreAndDraftBlockCallTheShmemGuards/prefillCore/checkPrefillShmem
+=== RUN   TestPrefillCoreAndDraftBlockCallTheShmemGuards/DraftBlock/checkDrafterShmem
+--- PASS: TestPrefillCoreAndDraftBlockCallTheShmemGuards (0.01s)
+    --- PASS: TestPrefillCoreAndDraftBlockCallTheShmemGuards/prefillCore/checkPrefillShmem (0.00s)
+    --- PASS: TestPrefillCoreAndDraftBlockCallTheShmemGuards/DraftBlock/checkDrafterShmem (0.00s)
+FAIL
+ledger: 172 device(s) released in this run

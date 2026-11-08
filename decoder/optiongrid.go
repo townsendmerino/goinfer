@@ -171,19 +171,20 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		},
 		ogResidentNA("the CPU KV cache's precision (\"selects the CPU KV cache storage precision\"); a resident uses KVPrecision"),
 	),
-	// The cells name Metal's tests; CUDA's own are beside them (f16 by the CUDA f16 build's tests, i8 refused at load until phase 2 of
-	// docs/tasks/task-kv-precision-everywhere-2026-10.md). Every value's delivery, per backend and family, is docs/kv-precision-matrix.md.
+	// The cells name Metal's tests; CUDA's own are beside them (f16 by the CUDA f16 build's tests; i8, delivered on the dense families on
+	// one KV slot, by the int8 build's, and its session snapshots declined by name). Every value's delivery, per backend and family, is
+	// docs/kv-precision-matrix.md.
 	"KVPrecision": ogMerge(
 		ogCPUNA("\"Ignored off the residency path\""),
 		map[ogPath]ogCell{
 			pathResidentDecode: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
-				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
+				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogTestedBy("TestKV8_G2exact_readersMatchTheCPUOnOneCache")}),
 			pathResidentPrefill: ogWithCUDA(ogTestedBy("TestPrefill_int8KVOnThePass"),
-				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
+				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogTestedBy("TestKV8_G2exact_readersMatchTheCPUOnOneCache")}),
 			pathSpecVerify: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
-				ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
+				ogValueCell{"i8", ogTestedBy("TestKV8_verifyIsSequentialDecode")}),
 			pathSessionLifecycle: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
-				ogValueCell{"f16", ogTestedBy("TestKV7_restoreFull")}, ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
+				ogValueCell{"f16", ogTestedBy("TestKV7_restoreFull")}, ogValueCell{"i8", ogDeclinedAt("snapshotDecline", "TestKV8_snapshotsDecline")}),
 		},
 	),
 

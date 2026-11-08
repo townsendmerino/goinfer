@@ -1,0 +1,91 @@
+touched: 25 .go file(s), 40 changed path(s), 2 module(s), base 7c4ed713
+  ok   gofmt (0.0s)
+  ok   build root (4.6s)
+  ok   vet root (2 pkg) (1.3s)
+  ok   test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (3.1s)
+  FAIL test decoder -run ^(TestAdmitPrefillMemory_admitsARequestT (72.7s)
+      census: D1: 8435 groups in 1.2s
+      census: D2: 3948 groups in 25.4s
+      census: loads: 1 groups in 0.2s
+      census: D3: 11760 groups in 1.1s
+      census: D4: 2310 groups in 0.4s
+      census: D5: 2730 groups in 1.0s
+      decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+      census: D6: 2 groups in 0.0s
+      census: D7: 451 groups in 0.0s
+      census: D1: 8435 groups in 1.2s
+      census: D2: 3948 groups in 24.1s
+      census: loads: 1 groups in 0.1s
+      census: D3: 11760 groups in 1.0s
+      census: D4: 2310 groups in 0.3s
+      census: D5: 2730 groups in 0.9s
+      decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+      census: D6: 2 groups in 0.0s
+      census: D7: 451 groups in 0.0s
+      --- FAIL: TestOptionStateGrid_fresh (0.00s)
+          optiongrid_test.go:143: ../docs/option-state-grid.md is out of date — regenerate: go test ./decoder -run OptionStateGrid -update
+      FAIL
+      FAIL	github.com/townsendmerino/goinfer/decoder	65.753s
+      FAIL
+
+  ok   test internal/app/fitcmd -run ^(TestDefaultCtx_agreesWithTheCudaPlanne (0.4s)
+  ok   test internal/config -run ^(TestInventory|TestInventory_plants)$ (0.3s)
+  ok   test internal/diag/hwcensus -run ^(TestHardwareCensus)$ (0.5s)
+  ok   test internal/diag/kernelprint -run ^(TestCompute_reachesCensus)$ (3.7s)
+  ok   test internal/guard/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/guard/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  FAIL test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (1.6s)
+      --- FAIL: TestBackendTests_decoderImportsOnlyFall (0.12s)
+          decoder_imports_test.go:223: cuda   test files  393, importing decoder  243, reaching decoder  309
+          decoder_imports_test.go:227: cuda: 243 test files importing decoder, above the ratchet's 241. Move the kernel-level test into a package that does not import decoder (cuda/kernels, metal/kernels) instead of raising the figure.
+          decoder_imports_test.go:227: cuda: 309 test files reaching decoder, above the ratchet's 307. Move the kernel-level test into a package that does not import decoder (cuda/kernels, metal/kernels) instead of raising the figure.
+          decoder_imports_test.go:223: gpu    test files  175, importing decoder   85, reaching decoder   95
+          decoder_imports_test.go:223: metal  test files  431, importing decoder  241, reaching decoder  328
+          decoder_imports_test.go:243:   reaching: backend/cuda                              309
+          decoder_imports_test.go:243:   reaching: backend/metal                             328
+          decoder_imports_test.go:243:   reaching: backend/webgpu                             95
+      FAIL
+      FAIL	github.com/townsendmerino/goinfer/internal/layout	1.416s
+      FAIL
+
+  ok   test internal/runtime/logs -run ^(TestLibraryOutput_goesThroughLogs)$ (0.5s)
+  FAIL test internal/runtime/mem (6.3s)
+      --- FAIL: TestResolveKV_eachBranch (0.00s)
+          kv_test.go:46: cuda i8: ("f32", "CUDA has no int8 KV cache in this build"), want ("f32", "CUDA has no int8 KV cache until phase 2")
+      FAIL
+      FAIL	github.com/townsendmerino/goinfer/internal/runtime/mem	6.088s
+      FAIL
+
+  ok   test internal/runtime/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.5s)
+  ok   build backend/cuda (2.2s)
+  ok   vet backend/cuda (1 pkg) (1.2s)
+  FAIL test backend/cuda -run ^(TestCkptDeclineFor|TestDeclineAdvice_w (130.5s)
+      kv snapshot: took 2432 rows (0 MiB host) from slot 0 in 0.1 ms; 0 of 256 MiB held
+      kv snapshot: restored 2432 rows of 2432 into slot 0 in 0.5 ms
+      cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+      kv snapshot: took 2432 rows (1 MiB host) from slot 0 in 0.1 ms; 1 of 256 MiB held
+      kv snapshot: restored 2432 rows of 2432 into slot 0 in 0.3 ms
+      cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+      kv snapshot: took 2432 rows (1 MiB host) from slot 0 in 0.2 ms; 1 of 256 MiB held
+      kv snapshot: restored 2432 rows of 2432 into slot 0 in 0.4 ms
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      FAIL
+      ledger: 71 device(s) released in this run
+      FAIL	github.com/townsendmerino/goinfer/backend/cuda	125.258s
+      FAIL
+
+  ok   test backend/cuda/kernels -run ^(TestKernelFMALint_coversEmbeddedPTX)$ (1.2s)
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 4 of 19 checks failed

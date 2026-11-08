@@ -832,3 +832,39 @@ func WebGPUVkBlocksForTest(sizes []int64) int64 { return webgpuVkBlocks(sizes) }
 
 // WebGPUVkFixed is webgpuVkFixed.
 const WebGPUVkFixed = webgpuVkFixed
+
+// AttendInt8ForTest is the CPU's production int8 decode attention (attendToken's widened-cache branch: the layer dequantized, then
+// attendBatchedHeadsP with float64 accumulation) for query q at position pos of layer, over an int8 cache holding exactly the given rows:
+// kQ and vQ are [pos+1][kvDim] int8, kSc and vSc [pos+1][nKV] f32 scales. m must hold an int8 CPU cache (Options.KVQuant "i8"). It is the
+// CPU half of the exact-input G2: both backends' readers fed one cache.
+func (m *Model) AttendInt8ForTest(layer, pos int, q []float32, kQ, vQ []int8, kSc, vSc []float32) ([]float32, error) {
+	a := m.w.arch
+	cache := m.NewCache(pos + 1)
+	if cache.quant != kvI8 {
+		return nil, fmt.Errorf("decoder: AttendInt8ForTest needs an int8 CPU cache (Options.KVQuant \"i8\"), this one is quant %v", cache.quant)
+	}
+	nH, hd := a.headsAt(layer), a.HeadDim
+	kvDim, nKV := a.NumKVHeads*hd, a.NumKVHeads
+	if len(kQ) != (pos+1)*kvDim || len(vQ) != len(kQ) || len(kSc) != (pos+1)*nKV || len(vSc) != len(kSc) || len(q) != nH*hd {
+		return nil, fmt.Errorf("decoder: AttendInt8ForTest: %d K, %d V, %d K scales, %d V scales, %d query for %d rows of %d (%d heads)",
+			len(kQ), len(vQ), len(kSc), len(vSc), len(q), pos+1, kvDim, nKV)
+	}
+	var p attentionParams
+	found := false
+	for _, o := range a.attentionOps(layer) {
+		if o.Kind == opAttention {
+			p, found = o.Attn, true
+		}
+	}
+	if !found || p.Order != attnBatchedAcc64 {
+		return nil, fmt.Errorf("decoder: AttendInt8ForTest: layer %d's attention is not the per-token batched order", layer)
+	}
+	cache.keysQ[layer], cache.valsQ[layer] = append([]int8(nil), kQ...), append([]int8(nil), vQ...)
+	cache.keyScale[layer], cache.valScale[layer] = append([]float32(nil), kSc...), append([]float32(nil), vSc...)
+	lk, lv := cache.scr.localBufs((pos + 1) * kvDim)
+	nKeys := cache.dequantGlobalLayer(layer, kvDim, lk, lv)
+	ctx := make([]float32, nH*hd)
+	pool := cache.scr.headWorkerPool(nH, 1, nKeys, hd, false, true)
+	attendBatchedHeadsP(append([]float32(nil), q...), ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], 0, cache, layer, pos, 1, p, a, true, pool)
+	return ctx, nil
+}

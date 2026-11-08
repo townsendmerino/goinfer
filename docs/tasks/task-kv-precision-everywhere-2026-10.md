@@ -21,14 +21,14 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | P0a′ | done | — | branch `p0a-resolvekv-2026-10`; P0A-G1, G2 PASS, `docs/measurements/kv-precision-2026-10/p0a-prime.md` |
 | §1.6 | blocked | nothing to build until a Mamba-only family exists | `keepsNoKV` |
 | P1 | moved | KV4b in `docs/tasks/task-kv-architecture-2026-10.md` (owner, 2026-10-21) | — |
-| P2 | blocked | KV4's pools (owner, 2026-10-21); the sizing stays in B39 | B39 |
+| P2 | in progress | staged S1..S5 (owner, 2026-11-07): S1 kernels merged (#735); S2 (dense families on one KV slot, the rest refused by name) in review on #755, its deciding gate the exact-input G2 (owner's decision (c)), PASS; S3a/S3b (several slots, copies, snapshots) on #759, stacked; S4 (fidelity and speed) and S5 after | `docs/measurements/cuda-kv-i8-2026-11/scope.md` |
 | P3 | done | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b-1 (int8 and f32 on the batched step: batched decode and the step prefill) done 2026-10-22, P3B-G1 to G4 PASS (`docs/measurements/kv-precision-2026-10/p3b-1.md`); P3b-2: the layer-major paths (paged Gemma 4, paged MoE, the E-model) already run int8 and f32 on decode's kernels (`encodeAttentionResidualWith`), so every path delivers both; what declines is the f16 MMA pass, a speed question for long prompts: D7 (owner, 2026-10-22) measured it: the i8 step is 6.80× the f16 pass at 8K; building an int8 MMA prefill decided by the owner (D8, owner, 2026-10-22); D9 (owner, 2026-10-22): design (b), dequantize to an f16 scratch, built on branch `p3b2-int8-mma-prefill-2026-10`: G1 and G3 PASS (int8 at 1.000 and 1.006 of f16), G2 failed as registered and passes as amended after the data (D10, owner, 2026-10-22); done 2026-10-22: every Metal path delivers int8 and f32, and int8 prefill runs at f16's speed | `docs/measurements/kv-precision-2026-10/p3b-2.md` | `docs/measurements/kv-precision-2026-10/p3a.md` |
 | P4 | blocked | P3, by the doc's order | 38 matrix cells "until phase 4" |
 | P5 | blocked | P4; a park candidate (trigger: phase 4 lands, or a request for WebGPU f16 or i8) | no matrix cells yet |
 | P6 | blocked | P1–P5 | 12 matrix cells "until phase 6" |
 | G1 | blocked | P1 and P2, with KV4 | — |
 | G2 | blocked | P1–P5 | — |
-| G3 | open | CPU and Metal cells done 2026-10-22 (PASS; `deepseek-tiny` auto/f16 on Metal hold an f32 latent, the P3a D5 question); left: the CUDA cells, on nobara; S | `TestKVDeliveredBytes_CPU`, `TestKVDeliveredBytes_Metal`, `docs/measurements/kv-precision-2026-10/g3.md` |
+| G3 | open | CPU and Metal cells done 2026-10-22 (PASS; `deepseek-tiny` auto/f16 on Metal hold an f32 latent, the P3a D5 question); CUDA int8 cells of the dense families PASS 2026-11-07 (`TestKV8_deliveredBytes`, S2); left: the other CUDA cells, on nobara; S | `TestKVDeliveredBytes_CPU`, `TestKVDeliveredBytes_Metal`, `docs/measurements/kv-precision-2026-10/g3.md` |
 | G4, G5, speed | blocked | each phase | the instrument is in `docs/tasks/task-cuda-f16-kv-2026-10.md` |
 | D1–D3 | done | — | §6 |
 | D4 | done | revised 2026-10-21: KV4 first, phase 2 after the pools | §6; the status block above |

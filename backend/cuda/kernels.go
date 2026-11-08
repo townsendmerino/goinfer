@@ -377,13 +377,20 @@ var decodeSplitKVKV8PTX []byte
 //go:embed testdata/decode_fa_kv8.ptx
 var decodeFAKV8PTX []byte
 
+// gemvFwdKV8PTX: gemv_fwd.cu built with -DKV_I8, at the pinned NVRTC 12.6.85 beside the audited gemv_fwd modules, which stay byte-identical. Its
+// rope_kv rotates Q and K in place and stores nothing (KV_ST is a no-op in an int8 build); kv8_store then quantizes the rotated K and the V.
+//
+//go:embed testdata/gemv_fwd_kv8.ptx
+var gemvFwdKV8PTX []byte
+
 // attnPTX is kvPTX for the three modules that hold a kernel a capped layer takes (attention, attn_batched, splitkv_scores): a model with
-// an attention softcap loads the variant built with -DATTN_SOFTCAP (cuda/attnscore.cuh), every other model the plain module.
-func (r *cudaResident) attnPTX(f32, kv16, capF32, capKV16 []byte) []byte {
+// an attention softcap loads the variant built with -DATTN_SOFTCAP (cuda/attnscore.cuh), every other model the plain module. There is no
+// capped int8 build: on an int8 cache a capped model gets nil, which no load accepts (CUDAKVI8Decline refuses every capped family first).
+func (r *cudaResident) attnPTX(f32, kv16, kv8, capF32, capKV16 []byte) []byte {
 	if r.attnCap != 0 {
 		return r.kvPTX(capF32, capKV16)
 	}
-	return r.kvPTX(f32, kv16)
+	return r.kvPTX8(f32, kv16, kv8)
 }
 
 // withCap appends the cap to the argument list of a covered kernel when the model has one: the capped variants take it as their last
@@ -406,9 +413,19 @@ var mambaPTX []byte
 //go:embed testdata/nongated_act.ptx
 var nongatedActPTX []byte
 
-// kvPTX is the module a KV-touching pipeline loads: the f16 twin when the resident's cache is f16, else the f32 module.
+// kvPTX is the module a KV-touching pipeline loads: the f16 twin when the resident's cache is f16, else the f32 module. A module with no
+// int8 twin is nil on an int8 cache, so it fails to load rather than reading int8 bytes as floats: an optional module (the tensor-core
+// prefill tiles) is then not bound and its fallback runs, a required one fails the build.
 func (r *cudaResident) kvPTX(f32, kv16 []byte) []byte {
-	if r.kvF16 {
+	return r.kvPTX8(f32, kv16, nil)
+}
+
+// kvPTX8 is kvPTX for a module that has an int8 twin (kv8, -DKV_I8): that twin on an int8 cache.
+func (r *cudaResident) kvPTX8(f32, kv16, kv8 []byte) []byte {
+	switch {
+	case r.kvI8:
+		return kv8
+	case r.kvF16:
 		return kv16
 	}
 	return f32
