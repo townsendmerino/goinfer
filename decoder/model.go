@@ -398,8 +398,8 @@ type Options struct {
 	// DirectLoad builds a .gguf or a safetensors directory's weights in the heap. Off (the default) on darwin and linux, Load
 	// opens the source's sidecar .giw instead, transcoding it once beside the source when it is missing or stale, so the
 	// weights are a mapping of that file rather than an anonymous copy; serve and chat do the same. A .gguf whose sidecar
-	// cannot be written (a read-only directory, a full disk) is refused, naming this field. A q4k .gguf always loads
-	// directly. A test binary loads directly too, unless the test turns the default on.
+	// cannot be written (a read-only directory, a full disk) is refused, naming this field. A q4k .gguf takes its sidecar too,
+	// except under StreamWeights. A test binary loads directly, unless the test turns the default on.
 	DirectLoad bool
 	// KVPrecision selects the GPU residency KV cache precision: "" / "auto" (the default: f16 on CUDA for a family the f16 kernels cover and
 	// the gates cleared, otherwise what the backend always did: f32, or f16 on Metal), "f32" (bit-exact, on every backend), "f16" (lossy, twice
