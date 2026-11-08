@@ -144,3 +144,19 @@ D7, the decision cell, waits on its references (the addendum above).
 
   Past 2 hours a job belongs on the night queue (CLAUDE.md "Run budget"). D7's reference rebuild (about 4 hours of CPU) and both runs
   are Francis's call; none is started.
+
+## Addendum, 2026-11-08 02:51 PST: D7 and the speed check run now (Francis, 02:50 via the coordinator: "run it now", replacing "by day tomorrow")
+
+- **Pinned tree: `7545a43cf`** (#768's head, with origin/main merged in, up to #769 at ebf07042). Every step below runs from a detached
+  worktree at that commit (`~/goinfer-bench/s4-pinned/wt`), with binaries built there once (`~/goinfer-bench/s4-pinned/bin/`: the
+  reference generator `decoder.test` and the gate `cuda.test`). Commits after it on #768's branch touch only `docs/`, so the
+  reference source (`decoder/`, `internal/runtime/giw`, `constrain`) is the pinned tree's.
+- **Order and estimates** (logs durable in `~/goinfer-bench/s4-pinned/logs/`, run detached):
+  1. References, set B, on the pinned tree: S at K=3900 (about 13 min), then D7 at K=8000 (about 4 h of CPU), with the timing lock held
+     shared (a load, not a timed run).
+  2. The gate on the same tree, the exclusive lock held: S re-read (about 3 min), then D7 (about 70 to 120 min). All five preconditions
+     are enforced in the binary.
+  3. The speed check as registered (about 2 to 3 h), the exclusive lock held, nothing else of mine running on the box.
+- **Expected:** references about 03:00 to 07:15; gate about 07:15 to 09:15; speed check about 09:15 to 12:15 PST. Times are re-stated in
+  the status file as each step starts.
+- No bar, cell or prediction changes. A refusal (fit, memory) stops the run and is reported, never bypassed.
