@@ -414,9 +414,11 @@ _FLAT = {"t": "x", "load1": 1.0, "ncores": 8, "available_mb": 9000, "reclaimable
 
 
 def setUpModule():
-    # Every job reads the box at its start and end (void_rule.snapshot, two cmd/hostmem runs): a cheap flat stand-in for the tests that do
-    # not look at it.
+    # Every job reads the box at its start and end (void_rule.snapshot, two cmd/hostmem runs) and samples swap (sysctl): a cheap flat
+    # stand-in for the tests that do not look at them, so no test spawns either.
+    import void_rule
     night.readings = lambda: dict(_FLAT)
+    void_rule.swap_used_mb = lambda: _FLAT["swap_mb"]
 
 
 class SwapReadingsInAJob(unittest.TestCase):
@@ -447,6 +449,16 @@ class SwapReadingsInAJob(unittest.TestCase):
         self.assertEqual(got["outcome"], "ok", got["outcome"])
         self.assertEqual((got["readings"]["start"]["swap_mb"], got["readings"]["end"]["swap_mb"], got["readings"]["swap_growth_mb"]),
                          (500.0, 650.5, 150.5))
+
+    def test_the_sampled_peak_and_the_growth_share_one_baseline(self):
+        # readings: swap 500 at the start, 520 at the end; the sampler reads 530 once: both are growth over the SAME 500 (the start reading),
+        # not the peak over the sampler's own first reading
+        import void_rule
+        saved = void_rule.swap_used_mb
+        self.addCleanup(setattr, void_rule, "swap_used_mb", saved)
+        void_rule.swap_used_mb = lambda: 530.0
+        got = self.run_job([500.0, 520.0])
+        self.assertEqual((got["readings"]["swap_growth_mb"], got["readings"]["swap_peak_growth_mb"]), (20.0, 30.0))
 
     def test_the_readings_are_recorded(self):
         got = self.run_job([500.0, 500.0])

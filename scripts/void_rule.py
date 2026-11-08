@@ -11,7 +11,7 @@ the commands below, night.py per job as information only: the cell is the unit o
 be told from one taken under the old +2 GB rule.
 
   python3 scripts/void_rule.py start --need-mb N [--load-cap X] [--json-out F]   exit 0 clean, 75 void (the reason on stderr, as `void: ...`)
-  python3 scripts/void_rule.py watch --json-out P [--poll-s 1]                      samples swap until SIGTERM, writes the peak growth
+  python3 scripts/void_rule.py watch --json-out P --ready-file R [--poll-s 1]       samples swap until SIGTERM, writes the peak; R appears once the baseline is taken
   python3 scripts/void_rule.py end --start-json F [--peak-json P] [--json-out G]   exit 0, or 76 when swap grew, by the sampled peak when given
   python3 scripts/void_rule.py snapshot                                            prints the four readings as JSON
 
@@ -89,18 +89,25 @@ def load_cap(ncores):
 
 
 def start_void(snap, need_mb, cap=None):
-    """The reason a cell starting in state snap is void, or None. A reading that is None is unknown and does not void, as the fit
-    guard treats an unknown. need_mb None or 0 means the cell loads no model, so the memory clause does not apply."""
+    """The reason a cell starting in state snap is void, or None. A guard fails closed: a load or available-memory reading that cannot be
+    read voids the start, with that reason (an unreadable core count with no explicit cap is the one skipped term: the cap cannot be
+    computed, and the callers say so). need_mb None or 0 means the cell loads no model, so the memory clause does not apply."""
     ncores = snap.get("ncores")
     if cap is None and ncores:
         cap = load_cap(ncores)
     # an unknown core count with no explicit cap is an unknown: the load term is skipped (callers say so), not a cap of 0.5
-    if cap is not None and snap.get("load1") is not None and snap["load1"] > cap:
-        return (f"load {snap['load1']:.2f} above half of {ncores} cores" if ncores and cap == ncores / 2
-                else f"load {snap['load1']:.2f} above the cap {cap:g}")
-    avail = snap.get("available_mb")
-    if need_mb and avail is not None and avail < need_mb:
-        return f"available memory {avail} MB below the fit need {need_mb:.0f} MB"
+    if cap is not None:
+        if snap.get("load1") is None:
+            return "load average unreadable"
+        if snap["load1"] > cap:
+            return (f"load {snap['load1']:.2f} above half of {ncores} cores" if ncores and cap == ncores / 2
+                    else f"load {snap['load1']:.2f} above the cap {cap:g}")
+    if need_mb:
+        avail = snap.get("available_mb")
+        if avail is None:
+            return "available memory unreadable"
+        if avail < need_mb:
+            return f"available memory {avail} MB below the fit need {need_mb:.0f} MB"
     return None
 
 
@@ -109,29 +116,39 @@ def swap_verdict(growth_mb, swapin_mb, swapout_mb, env=None):
     swap-in and swap-out, is void, or None. With no bar set, any growth voids (the zero bar). BENCH_SWAP_VOID_MB replaces it;
     BENCH_SWAPIN_VOID_MB / BENCH_SWAPOUT_VOID_MB replace it with a swap-in / swap-out bar (nobara's, peer-vetted 2026-10-08: idle pages
     pushed out under page-cache pressure grew swap by 1.9 to 46 MB beside a 12 to 14 GB load with 58 GB free, which slows nothing being
-    timed; a never-swap gate takes both at 0). A reading that is None is unknown and does not void."""
+    timed; a never-swap gate takes both at 0). The bar in force fails closed: a reading it needs that is None voids the cell."""
     env = os.environ if env is None else env
     lim = env.get("BENCH_SWAP_VOID_MB", "").strip()
     inlim = env.get("BENCH_SWAPIN_VOID_MB", "").strip()
     outlim = env.get("BENCH_SWAPOUT_VOID_MB", "").strip()
     if not lim and not inlim and not outlim:
         lim = "0"
-    if lim and growth_mb is not None and growth_mb > float(lim):
-        return f"swap grew +{growth_mb:.1f} MB during the cell (> {float(lim):.0f} MB): void"
-    if inlim and swapin_mb is not None and swapin_mb > float(inlim):
-        return f"swap-ins of {swapin_mb:.2f} MB during the cell (> {float(inlim):.0f} MB): void"
-    if outlim and swapout_mb is not None and swapout_mb > float(outlim):
-        return f"swap-outs of {swapout_mb:.2f} MB during the cell (> {float(outlim):.0f} MB): void"
+    if lim:
+        if growth_mb is None:
+            return "swap unreadable: void"
+        if growth_mb > float(lim):
+            return f"swap grew +{growth_mb:.1f} MB during the cell (> {float(lim):.0f} MB): void"
+    if inlim:
+        if swapin_mb is None:
+            return "swap-in count unreadable: void"
+        if swapin_mb > float(inlim):
+            return f"swap-ins of {swapin_mb:.2f} MB during the cell (> {float(inlim):.0f} MB): void"
+    if outlim:
+        if swapout_mb is None:
+            return "swap-out count unreadable: void"
+        if swapout_mb > float(outlim):
+            return f"swap-outs of {swapout_mb:.2f} MB during the cell (> {float(outlim):.0f} MB): void"
     return None
 
 
-def swap_void(start, end, peak_growth_mb=None, env=None):
+def swap_void(start, end, peak_mb=None, env=None):
     """The reason a cell whose readings were `start` and `end` is void on swap, or None. The growth is the larger of the end against the
-    start and the sampled peak (SwapSampler) when there is one: a spike freed again before the end still counts."""
+    start and the sampled peak (SwapSampler, in absolute MB) against the start: a spike freed again before the end still counts, and
+    the peak is read against THIS cell's start reading, whatever baseline the sampler began from."""
     s, e = start.get("swap_mb"), end.get("swap_mb")
-    growth = None if s is None or e is None else max(e - s, 0.0)
-    if peak_growth_mb is not None:
-        growth = max(growth or 0.0, peak_growth_mb)
+    grows = [v - s for v in (e, peak_mb) if v is not None and s is not None]
+    growth = max(max(grows), 0.0) if grows else None
+
     def delta(k):
         a, b = start.get(k), end.get(k)
         return None if a is None or b is None else b - a
@@ -143,9 +160,11 @@ class SwapSampler:
     ends (a process's pages swapped out and back in) is invisible to the start and end readings and counts here. sample() takes one
     reading; start() polls every poll_s on a thread; stop() ends it and returns result()."""
 
-    def __init__(self, read=swap_used_mb, poll_s=1.0):
-        self.read, self.poll_s = read, poll_s
-        self.base = self.peak = None
+    def __init__(self, read=None, poll_s=1.0, base=None):
+        """base: the reading growth is measured from when the caller already has one (a cell's start reading); None takes the first
+        sample as the baseline."""
+        self.read, self.poll_s = read or (lambda: swap_used_mb()), poll_s
+        self.base, self.peak = base, base
         self._stop = threading.Event()
         self._thread = None
 
@@ -176,8 +195,22 @@ class SwapSampler:
 
     def result(self):
         if self.base is None:
-            return {"base_mb": None, "peak_growth_mb": None}
-        return {"base_mb": self.base, "peak_growth_mb": round(self.peak - self.base, 3)}
+            return {"base_mb": None, "peak_mb": None, "peak_growth_mb": None}
+        return {"base_mb": self.base, "peak_mb": self.peak, "peak_growth_mb": round(self.peak - self.base, 3)}
+
+
+def watch(json_out, ready_file, sampler, stop):
+    """Samples swap until `stop` is set, then writes the result to json_out. The baseline is taken, and ready_file written with it, BEFORE
+    this waits: a runner that waits for the ready file cannot stop the watcher ahead of its first reading, and a stop that arrived
+    already still leaves a result (stop() takes a last sample)."""
+    sampler.sample()
+    if ready_file:
+        json.dump({"base_mb": sampler.base}, open(ready_file, "w"))
+    t = threading.Thread(target=sampler._run, daemon=True)
+    t.start()
+    stop.wait()
+    json.dump(sampler.stop(), open(json_out, "w"))
+    t.join(timeout=5)
 
 
 def main(argv):
@@ -195,16 +228,15 @@ def main(argv):
     e.add_argument("--json-out")
     w = sub.add_parser("watch", help="sample swap every --poll-s until SIGTERM or SIGINT, then write the peak to --json-out")
     w.add_argument("--json-out", required=True)
+    w.add_argument("--ready-file", help="written, with the baseline, once the first reading is taken: wait for it before the cell starts")
     w.add_argument("--poll-s", type=float, default=1.0)
     sub.add_parser("snapshot")
     a = ap.parse_args(argv)
     if a.cmd == "watch":
-        sampler = SwapSampler(poll_s=a.poll_s).start()
         done = threading.Event()
-        for sig in (signal.SIGTERM, signal.SIGINT):
+        for sig in (signal.SIGTERM, signal.SIGINT):  # before the first reading: a stop that arrives early is not lost
             signal.signal(sig, lambda *_: done.set())
-        done.wait()
-        json.dump(sampler.stop(), open(a.json_out, "w"))
+        watch(a.json_out, a.ready_file, SwapSampler(poll_s=a.poll_s), done)
         return 0
     snap = snapshot()
     if a.cmd == "snapshot":
@@ -217,7 +249,7 @@ def main(argv):
         snap["need_mb"], snap["void"] = a.need_mb, why
         snap["need_source"], snap["need_is_lower_bound"] = a.need_source, a.need_source == "file size"
     else:
-        peak = json.load(open(a.peak_json)).get("peak_growth_mb") if a.peak_json else None
+        peak = json.load(open(a.peak_json)).get("peak_mb") if a.peak_json else None
         why = swap_void(json.load(open(a.start_json)), snap, peak)
         snap["void"] = why
     if a.json_out:

@@ -643,7 +643,7 @@ class SwapWatch:
         import void_rule
         if self.killed:
             return self.killed
-        return void_rule.swap_verdict(self.peak, self.swapin, self.swapout)
+        return void_rule.swap_verdict(None if self.base is None else self.peak, self.swapin, self.swapout)
 
 
 class RSSSampler:
@@ -732,6 +732,8 @@ def provenance():
     return {
         "kind": "provenance",
         "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "fit_need": "goinfer's fit: banner when one has been read, else BENCH_FIT_NEED_GB, else the checkpoint's file size, which is a lower "
+                    "bound (no KV or scratch) and is flagged per cell (machine.fit_need_lower_bound); the start check has no margin",
         "free_mem_override": _FREE_MEM_OVERRIDE_USED,  # the run went ahead without a free-memory reading (check_free_mem)
         "host": socket.gethostname(),
         "uname": _sh(["uname", "-srm"]),

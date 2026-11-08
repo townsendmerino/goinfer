@@ -1035,7 +1035,9 @@ class Runner:
         limit = t0 + dt.timedelta(minutes=j["timeout_min"])
         outcome = None
         import void_rule
-        sampler = void_rule.SwapSampler()  # the job's swap peak, sampled each poll: information, like the end readings
+        # The job's swap peak, sampled each poll (POLL_S, 10 s: one sysctl of about 4 ms, from this process, not the job's), from the SAME
+        # baseline as the growth below, the job's start reading. Information, like the end readings.
+        sampler = void_rule.SwapSampler(base=j["readings"]["start"].get("swap_mb"))
         sampler.sample()
         while True:
             try:

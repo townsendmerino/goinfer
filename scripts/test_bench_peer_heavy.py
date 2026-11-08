@@ -68,6 +68,14 @@ class Rule(unittest.TestCase):
         self.assertFalse(bench_peer.need_is_lower_bound("BENCH_FIT_NEED_GB"))
         self.assertFalse(bench_peer.need_is_lower_bound(None))
 
+    def test_an_unreadable_memory_or_load_reading_fails_closed(self):
+        self.assertIn("available memory unreadable", bench_peer.heavy_void(dict(CLEAN, available_mb=None), 1000))
+        self.assertIn("load average unreadable", bench_peer.heavy_void(dict(CLEAN, loadavg=None), None))
+        self.assertIsNone(bench_peer.heavy_void(dict(CLEAN, available_mb=None), None), "no model load: no memory clause")
+
+    def test_provenance_says_a_file_size_need_is_a_lower_bound(self):
+        self.assertIn("lower bound", bench_peer.provenance()["fit_need"])
+
     def test_fit_need_sources(self):
         self.addCleanup(os.environ.pop, "BENCH_FIT_NEED_GB", None)
         self.addCleanup(bench_peer._FIT_NEED.clear)
