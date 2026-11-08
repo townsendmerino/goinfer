@@ -90,6 +90,8 @@ func main() {
 
 ## 2. Why each family decodes on the CPU, per GPU backend
 
+**Superseded 2026-11-07** by `docs/measurements/forward-arch-census-2026-11-07.md`, which re-runs this walk against program-based admission (CPU-only families 8 / 8 / 13 now, from the 10 / 12 / 16 below). This section is kept as the 10-13 reading.
+
 **Result:**
 - The registry has 52 keys and 43 distinct `Architecture.Name`s, which are the hardware matrix's 43 rows.
 - Families that decode CPU-only: 10 under CUDA, 12 under Metal and 16 under WebGPU.
