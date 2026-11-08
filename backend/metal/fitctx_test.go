@@ -238,16 +238,13 @@ func TestMetalFit_agreesWithSlotPricing(t *testing.T) {
 // tables of every slot asked (metalRaisedTableBytes), plus metalSlotBytes for each slot kept after the first. Its slot count is the
 // build's (kvSlotCount) and the banner's (decoder.Model.ResidentKVSlots). Each case runs at a budget with room for every slot and
 // at one a byte short of the second. The cases: a dense model pinned within its window and past it (which the build clamps to the
-// window), and unpinned (which raises the tables); the metal sidecar of testdata/phi3-q4k-tiny.gguf; and a recurrent model's metal
-// .giw asked for 2 slots (whose further slot carries its state). The .giw cases read canonical int4, as the build holds it. With
-// GOINFER_HEAVY_TESTS=1 the Phi-3 mini q4 and Qwen2.5-Coder 0.5B q4_k_m sidecars in ~/models are two more, and a missing one fails.
+// window), and unpinned (which raises the tables); the metal sidecar of decoder.WritePhi3Q4KTinyGGUFForTest's Phi-3; and a
+// recurrent model's metal .giw asked for 2 slots (whose further slot carries its state). The .giw cases read canonical int4, as the
+// build holds it. With GOINFER_HEAVY_TESTS=1 the Phi-3 mini q4 and Qwen2.5-Coder 0.5B q4_k_m sidecars in ~/models are two more, and
+// a missing one fails.
 func TestMetalLoadPlan_isTheGuardsPrice(t *testing.T) {
-	raw, err := os.ReadFile("../../testdata/phi3-q4k-tiny.gguf")
-	if err != nil {
-		t.Fatal(err)
-	}
 	src := filepath.Join(t.TempDir(), "phi3.gguf")
-	if err := os.WriteFile(src, raw, 0o644); err != nil {
+	if err := decoder.WritePhi3Q4KTinyGGUFForTest(src); err != nil {
 		t.Fatal(err)
 	}
 	sidecar := decoder.SidecarPath(src, "q4k", "metal", false)
@@ -275,7 +272,7 @@ func TestMetalLoadPlan_isTheGuardsPrice(t *testing.T) {
 		{"llama-tiny int8int8", "../../testdata/llama-tiny", "int8int8", 128, 0},
 		{"llama-tiny, -ctx past its window", "../../testdata/llama-tiny", "int8int8", 256, 0},
 		{"wide-window llama-tiny, unpinned", wideWindowTiny(t), "int8int8", 0, 0},
-		{"phi3-q4k-tiny's metal sidecar", sidecar, "q4k", 256, 0},
+		{"a synthetic Phi-3 q4k's metal sidecar", sidecar, "q4k", 256, 0},
 		{"qwen35-tiny's metal .giw asked for 2 slots", q35GIW, "int4", 64, 2},
 	}
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "" {

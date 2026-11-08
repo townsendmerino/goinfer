@@ -188,10 +188,6 @@ demo/chat/dist/
 # red. Same rationale as mixtral-tiny/cohere-tiny above; see docs/parity-coverage-policy.md,
 # "A gate must be able to run, and able to fail".
 !testdata/glm-tiny.gguf
-# EXCEPTION: phi3-q4k-tiny.gguf is a synthetic Phi-3 GGUF with random Q4_K projections (no real weights), written by
-# decoder's TestPhi3Q4KTinyFixture (-update), which holds it to its generator. Committed so the paths keyed on the Phi-3 family and
-# its Q4_K blocks (the activation-hazard default, fit) are tested in CI, not only where ~/models has the real file.
-!testdata/phi3-q4k-tiny.gguf
 # EXCEPTION: testdata/gguf-split/ is glm-tiny.gguf above split into 4 shards by llama.cpp's own llama-gguf-split
 # (0.3.0, build 10621: --split --split-max-tensors 12), 812 KB in all. It is the real tool's shard format, committed so
 # the split-GGUF gates (decoder/gguf_split_test.go) run in CI, which has no llama.cpp to make it.
