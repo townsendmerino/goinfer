@@ -169,11 +169,13 @@ func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 		// claim is released first so the tower and CPU-prefill work never run while holding it.
 		var resPrefill func() ([]float32, int, error)
 		if causal {
-			if pf, ok := m.resident.(Prefiller); ok && m.knobs.get(knobBatchedPrefill) != "0" {
-				resPrefill = func() ([]float32, int, error) { return m.residentCausalImagePrefill(ctx, pf, ids, feats, spans) }
+			if canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe}) && m.knobs.get(knobBatchedPrefill) != "0" {
+				resPrefill = func() ([]float32, int, error) {
+					return m.residentCausalImagePrefill(ctx, m.resident, ids, feats, spans)
+				}
 			}
-		} else if rip, ok := m.resident.(ResidentImagePrefill); ok {
-			resPrefill = func() ([]float32, int, error) { return m.residentImagePrefill(ctx, rip, ids, feats, spans) }
+		} else if canStep(m.resident, stepBatch{Pass: passRows, In: inImage, Emb: stepProbe, Spans: stepProbeSpan}) {
+			resPrefill = func() ([]float32, int, error) { return m.residentImagePrefill(ctx, m.resident, ids, feats, spans) }
 		}
 		if resPrefill != nil && m.tryClaimResident() {
 			if logits, gpuPos, ferr := resPrefill(); ferr == nil {
@@ -313,7 +315,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 		// docs/multimodal.md P8 record, item 5.
 		recurrent := m.hasRecurrentState()
 
-		if r, ok := m.resident.(ResidentMRoPE); ok && !recurrent && m.tryClaimResident() {
+		if canStep(m.resident, stepBatch{Pass: passToken, In: inMRoPE, Emb: stepProbe}) && !recurrent && m.tryClaimResident() {
 			claim := residentImageClaimsOf(spans)
 			// Same cap decline as GenerateVL's reuse site: a prompt in (ResidentContextCap, MaxPositions) already passed prepare's
 			// MaxPositions check, so residentPrefillSeedMRoPE below would die mid-prefill with no CPU fallback. Decline up front
@@ -322,7 +324,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 				if ctxCap := m.ResidentContextCap(); ctxCap <= 0 || len(ids) <= ctxCap {
 					g.PrefillReused = reuseFrom // observable proof the fast path actually fired
 					m.residentForgetIDsIn(kvScopeOf(ctx))
-					logits, err := m.residentPrefillSeedMRoPE(ctx, r, ids, reuseFrom, mropeDelta)
+					logits, err := m.residentPrefillSeedMRoPE(ctx, ids, reuseFrom, mropeDelta)
 					if err != nil {
 						atomic.StoreInt32(&m.resBusy, 0)
 						g.err = err
@@ -335,11 +337,12 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 					g.Budget = maxTokens // publish the effective (possibly clamped) budget so a cap-truncated turn reports finish_reason "length"
 					sampler := NewSampler(sp)
 					sampler.Observe(ids...)
+					var row [1][]float32
 					generated := m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) {
-						ropePos := gpuPos + mropeDelta
-						l, err := r.ForwardMRoPE(m.embedResident(next), gpuPos, ropePos)
+						row[0] = m.embedResident(next)
+						sr, err := m.step(stepBatch{Pass: passToken, In: inMRoPE, Emb: row[:], Pos: gpuPos, RopePos: gpuPos + mropeDelta})
 						gpuPos++
-						return l, err
+						return sr.Logits, err
 					})
 					if g.err == nil {
 						m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
@@ -374,18 +377,16 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 		// recorded ids are forgotten before the attempt: a prefill that fails partway has already overwritten the recurrent
 		// state, and a stale record of the previous conversation would let a later strict-extension reuse (residentReuseLen)
 		// continue from that garbage.
-		hybridOK := false
-		if recurrent {
-			hp, isHP := m.resident.(ResidentHybridMRoPEPrefill)
-			hybridOK = isHP && hp.HybridMRoPEPrefill()
-		}
-		_, deepOK := m.resident.(ResidentMRoPEDeepstackPrefill) // a turn with DeepStack sets needs a resident that injects them
-		if rmp, ok := m.resident.(ResidentMRoPEPrefill); ok && (!recurrent || hybridOK) && (deep == nil || deepOK) {
-			if r, ok2 := m.resident.(ResidentMRoPE); ok2 && m.tryClaimResident() {
+		// canStep asks HybridMRoPEPrefill of a recurrent model's m-RoPE prefill; a turn with DeepStack sets needs a resident that
+		// injects them.
+		mropeOK := canStep(m.resident, stepBatch{Pass: passRows, In: inMRoPE, Emb: stepProbe, Recurrent: recurrent})
+		deepOK := canStep(m.resident, stepBatch{Pass: passRows, In: inMRoPEDeepstack, Emb: stepProbe, Spans: stepProbeSpan})
+		if mropeOK && (deep == nil || deepOK) {
+			if canStep(m.resident, stepBatch{Pass: passToken, In: inMRoPE, Emb: stepProbe}) && m.tryClaimResident() {
 				if recurrent {
 					m.residentForgetIDsIn(kvScopeOf(ctx))
 				}
-				if logits, gpuPos, ferr := m.residentMRoPEPrefillDeep(ctx, rmp, ids, feats, spans, mropePos, deep); ferr == nil {
+				if logits, gpuPos, ferr := m.residentMRoPEPrefillDeep(ctx, m.resident, ids, feats, spans, mropePos, deep); ferr == nil {
 					g.ImgPrefillResident = true
 					if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
 						maxTokens, g.BudgetClamped = c, true
@@ -400,11 +401,12 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 						}
 						atomic.StoreInt32(&m.resBusy, 0)
 					}()
+					var row [1][]float32
 					generated := m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) {
-						ropePos := gpuPos + mropeDelta
-						l, err := r.ForwardMRoPE(m.embedResident(next), gpuPos, ropePos)
+						row[0] = m.embedResident(next)
+						sr, err := m.step(stepBatch{Pass: passToken, In: inMRoPE, Emb: row[:], Pos: gpuPos, RopePos: gpuPos + mropeDelta})
 						gpuPos++
-						return l, err
+						return sr.Logits, err
 					})
 					if g.err == nil {
 						m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
@@ -432,12 +434,11 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 		useGPU := false
 		gpuPos := 0
 		committed := false
-		var mrope ResidentMRoPE
 		// Gate the resBusy claim on ResidentMRoPE support BEFORE claiming — a resident that
 		// cannot do Qwen decode (no m-RoPE support) shouldn't contend with a concurrent
 		// plain-text Generate for a claim it can't use. Safe on a nil m.resident: a type
 		// assertion on a nil interface value just reports ok=false.
-		if r, ok := m.resident.(ResidentMRoPE); ok && !recurrent && m.tryClaimResident() {
+		if canStep(m.resident, stepBatch{Pass: passToken, In: inMRoPE, Emb: stepProbe}) && !recurrent && m.tryClaimResident() {
 			defer func() {
 				if !committed {
 					m.residentForgetIDsIn(kvScopeOf(ctx)) // see GenerateVL's identical comment
@@ -446,7 +447,6 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 			}()
 			if uerr := m.residentUploadPrefill(cache); uerr == nil {
 				useGPU = true
-				mrope = r
 				gpuPos = len(ids)
 				if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
 					maxTokens, g.BudgetClamped = c, true
@@ -457,12 +457,13 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 		g.Budget = maxTokens // publish the effective (possibly clamped) budget so a cap-truncated turn reports finish_reason "length"
 		sampler := NewSampler(sp)
 		sampler.Observe(ids...)
+		var row [1][]float32
 		generated := m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) {
 			if useGPU {
-				ropePos := gpuPos + mropeDelta
-				l, err := mrope.ForwardMRoPE(m.embedResident(next), gpuPos, ropePos)
+				row[0] = m.embedResident(next)
+				sr, err := m.step(stepBatch{Pass: passToken, In: inMRoPE, Emb: row[:], Pos: gpuPos, RopePos: gpuPos + mropeDelta})
 				gpuPos++
-				return l, err
+				return sr.Logits, err
 			}
 			return m.forward(next, cache) // decode m-RoPE via cache.mropeDelta
 		})

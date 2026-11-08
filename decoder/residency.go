@@ -592,7 +592,8 @@ func (m *Model) decodeRunnerDecline() string {
 // in either backend reads the group, so a load that asked for per-32 ran resident at per-vector, silently,
 // whenever the family had no activation hazard for the gate below to catch. The Options doc has always
 // said such a load declines to the CPU; this makes it so. Metal's q4k lane is exempt: it quantizes no
-// activation at all, and modelFromOptions stamps the group on every q4k load.
+// activation at all, and every q4k load carries the group (a direct load's and a q4k .giw's alike). quant
+// is the loaded weights' (Model.Quant), as Metal's build reads it, not the --quant option a .giw does not keep.
 func actGroupResidentDecline(backend string, actGroup int, quant string) string {
 	if actGroup == 0 || backend == "cuda" || backend == "metal" && quant == "q4k" {
 		return ""
@@ -1599,11 +1600,10 @@ func (m *Model) PrefillPath() (batched bool, reason string) {
 	if m.knobs.get(knobBatchedPrefill) == "0" {
 		return false, "sequential — GOINFER_BATCHED_PREFILL=0 forces the per-token loop"
 	}
-	pf, ok := m.resident.(Prefiller)
-	if !ok {
+	if !canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe}) {
 		return false, "sequential — this backend has no batched prefill (per-token resident forward)"
 	}
-	if rep, ok := pf.(PrefillPathReporter); ok {
+	if rep, ok := m.resident.(PrefillPathReporter); ok {
 		return rep.PrefillPath()
 	}
 	return true, "batched (backend reports no load-time declines; a per-prompt fallback is still possible)"

@@ -2212,6 +2212,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		}
 		if g := L.geom; g != nil {
 			r.decode.layers[l].attn, r.decode.layers[l].window = true, L.window
+			r.decode.qGate = r.decode.qGate || L.qGate
 			if !seen[g] {
 				seen[g] = true
 				r.decode.geoms = append(r.decode.geoms, g)
@@ -2223,6 +2224,13 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	if r.g4moe != nil {
 		r.decode.families = append(r.decode.families, r.g4moe.scratch...)
+	}
+	rows := m.MetalDecodeRowWidths()
+	if decodeRowsPlantForTest != nil {
+		decodeRowsPlantForTest(rows)
+	}
+	if err := r.decodeRowsCheck(rows); err != nil {
+		return nil, err
 	}
 	for _, sb := range r.decode.buffers(r) {
 		sb.set(sb.alloc(d))

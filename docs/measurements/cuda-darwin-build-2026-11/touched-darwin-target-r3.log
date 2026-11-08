@@ -1,0 +1,20 @@
+GOOS=darwin GOARCH=arm64 python3 scripts/touched.py on nobara (linux/amd64): a darwin target from a linux host, with go.work, 2026-11-08 03:13:45 PST
+touched: 3 .go file(s), 17 changed path(s), 2 module(s), base ebf07042
+  ok   gofmt (0.0s)
+  skip test decoder: GOOS=darwin on a linux host builds and vets only (a darwin test binary cannot run here)
+  skip test internal/diag/hwcensus: GOOS=darwin on a linux host builds and vets only (a darwin test binary cannot run here)
+  skip test internal/diag/kernelprint: GOOS=darwin on a linux host builds and vets only (a darwin test binary cannot run here)
+  skip test internal/guard/movedpaths: GOOS=darwin on a linux host builds and vets only (a darwin test binary cannot run here)
+  skip test internal/guard/prezerolint: GOOS=darwin on a linux host builds and vets only (a darwin test binary cannot run here)
+  skip test internal/layout: GOOS=darwin on a linux host builds and vets only (a darwin test binary cannot run here)
+  skip test internal/runtime/logs: GOOS=darwin on a linux host builds and vets only (a darwin test binary cannot run here)
+  skip test internal/runtime/mem: GOOS=darwin on a linux host builds and vets only (a darwin test binary cannot run here)
+  skip test internal/runtime/mem/probe: GOOS=darwin on a linux host builds and vets only (a darwin test binary cannot run here)
+  ok   build backend/cuda (0.6s)
+  ok   vet backend/cuda (1 pkg) (0.4s)
+  ok   build backend/cuda (GOOS=linux, -tags cuda goinfer_testhooks) (13.5s)
+  ok   vet backend/cuda (GOOS=linux, -tags cuda goinfer_testhooks, ./...) (4.9s)
+  skip test backend/cuda/internal/gpudev: GOOS=darwin on a linux host builds and vets only (a darwin test binary cannot run here)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 5 checks passed (CI runs the rest on push); did not run: test decoder (cross target darwin), test internal/diag/hwcensus (cross target darwin), test internal/diag/kernelprint (cross target darwin), test internal/guard/movedpaths (cross target darwin), test internal/guard/prezerolint (cross target darwin), test internal/layout (cross target darwin), test internal/runtime/logs (cross target darwin), test internal/runtime/mem (cross target darwin), test internal/runtime/mem/probe (cross target darwin), test backend/cuda/internal/gpudev (cross target darwin)
+exit 0

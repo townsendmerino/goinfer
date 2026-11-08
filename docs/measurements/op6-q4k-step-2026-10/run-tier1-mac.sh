@@ -1,5 +1,5 @@
 #!/bin/bash
-# OP6's Metal tier 1 (docs/tasks/task-forward-architecture-2026-10.md §4.7) on the MacBook, night queue: Phi-3 mini at
+# OP6's Metal tier 1 (docs/completed/task-forward-architecture-2026-10.md §4.7) on the MacBook, night queue: Phi-3 mini at
 # q4k does not fit by day. Two steps, the load-time fit guard ON for both (no bypass; a refusal is the reading):
 #   1. the fit guard's q4k price against Phi-3's measured weight bytes (PR #41's unmeasured row);
 #   2. TestQ4KStep_phi3Tier1: the step route bit for bit against the sequential loop, the golden's argmax, the speed A/B.

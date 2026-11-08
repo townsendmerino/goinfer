@@ -1,0 +1,31 @@
+plant: any-error-is-empty (on 4aeac8a16 + this round's working tree; go: go version go1.27.3 linux/amd64)
+replaced: if err and EXCLUDED in err:
+with:     if err:
+
+test_a_cross_target_runs_no_go_test (__main__.CudaCrossChecks.test_a_cross_target_runs_no_go_test) ... ok
+test_both_ways (__main__.CudaCrossChecks.test_both_ways) ... ok
+test_a_run_selecting_only_excluded_tests_is_a_skip (__main__.PackagesForTheTarget.test_a_run_selecting_only_excluded_tests_is_a_skip) ... ok
+test_check_module_skips_by_name_and_fails_the_broken (__main__.PackagesForTheTarget.test_check_module_skips_by_name_and_fails_the_broken) ... FAIL
+test_classify (__main__.PackagesForTheTarget.test_classify) ... FAIL
+test_every_package_excluded_judges_nothing (__main__.PackagesForTheTarget.test_every_package_excluded_judges_nothing) ... ok
+test_a_ci_workflow_change_selects_its_readers (__main__.PlanSelectsTheScanTests.test_a_ci_workflow_change_selects_its_readers) ... ok
+test_a_decoder_source_change_selects_the_dispatch_census (__main__.PlanSelectsTheScanTests.test_a_decoder_source_change_selects_the_dispatch_census) ... ok
+test_a_doc_a_test_reads_selects_it (__main__.PlanSelectsTheScanTests.test_a_doc_a_test_reads_selects_it) ... ok
+test_a_kernel_source_change_selects_its_readers_with_no_go_file_changed (__main__.PlanSelectsTheScanTests.test_a_kernel_source_change_selects_its_readers_with_no_go_file_changed) ... ok
+test_a_new_model_fixture_selects_the_fixture_censuses (__main__.PlanSelectsTheScanTests.test_a_new_model_fixture_selects_the_fixture_censuses) ... ok
+test_a_scanner_in_an_untouched_package_runs (__main__.PlanSelectsTheScanTests.test_a_scanner_in_an_untouched_package_runs) ... ok
+test_an_unscanned_change_selects_nothing_extra (__main__.PlanSelectsTheScanTests.test_an_unscanned_change_selects_nothing_extra) ... ok
+test_gguf_go_selects_the_case_label_scan (__main__.PlanSelectsTheScanTests.test_gguf_go_selects_the_case_label_scan) ... ok
+test_every_listed_test_exists (__main__.TableIsComplete.test_every_listed_test_exists) ... ok
+test_every_source_reading_test_is_listed_or_excluded (__main__.TableIsComplete.test_every_source_reading_test_is_listed_or_excluded) ... ok
+Each `return` in main() and run() follows a VERDICT print, so no path ends without one. ... ok
+Only gofmt ran, every module was skipped (cuda outside the Mac's go.work, say): nothing was judged. ... ok
+test_green_is_pass (__main__.VerdictLine.test_green_is_pass) ... ok
+test_red_is_fail (__main__.VerdictLine.test_red_is_fail) ... ok
+test_skips_are_named (__main__.VerdictLine.test_skips_are_named) ... ok
+FAIL: test_check_module_skips_by_name_and_fails_the_broken (__main__.PackagesForTheTarget.test_check_module_skips_by_name_and_fails_the_broken)
+AssertionError: 'FAIL list m/broken' not found in "  FAIL build m (0.0s)\n      broken/a.go:1:1: expected 'package', found pakage\n\n  skip vet m/broken: build constraints exclude all its files for darwin\n  skip vet m/empty: build constraints exclude all its files for darwin\n  ok   vet m (3 pkg) (0.2s)\n  skip test m/broken: build constraints exclude all its files for darwin\n  skip test m/empty: build constraints exclude all its files for darwin\n  skip test m/notests: no test file for darwin\n  skip test m/ok: GOOS=darwin on a linux host builds and vets only (a darwin test binary cannot run here)\n"
+FAIL: test_classify (__main__.PackagesForTheTarget.test_classify)
+AssertionError: False is not true : empty
+Ran 21 tests in 4.949s
+FAILED (failures=2)

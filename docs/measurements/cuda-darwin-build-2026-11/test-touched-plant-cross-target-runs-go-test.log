@@ -1,0 +1,10 @@
+plant: cross-target-runs-go-test
+replaced: if target_os != host_os:
+with:     if False:
+
+FAIL: test_a_cross_target_runs_no_go_test (__main__.CudaCrossChecks.test_a_cross_target_runs_no_go_test)
+AssertionError: True is not false : GOOS=darwin on a linux host must not run go test
+FAIL: test_check_module_skips_by_name_and_fails_the_broken (__main__.PackagesForTheTarget.test_check_module_skips_by_name_and_fails_the_broken)
+AssertionError: 4 != 3 :   FAIL build m (0.0s)
+Ran 2 tests in 3.099s
+FAILED (failures=2)

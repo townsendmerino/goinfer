@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SB11b's timed gates (docs/tasks/task-subsystems-2026-10.md §8, "SB11b"), on nobara's RTX 2070 SUPER, Qwen2.5-Coder-0.5B
+# SB11b's timed gates (docs/completed/task-subsystems-2026-10.md §8, "SB11b"), on nobara's RTX 2070 SUPER, Qwen2.5-Coder-0.5B
 # q4_k_m:
 #   G-SB11b-5: this build's served decode (timings on, cost off) against main before it, bench_peer.py with
 #              BENCH_ENGINES=goinfer,goinfer_old, phase A, two passes with the engine order reversed (A B B A).

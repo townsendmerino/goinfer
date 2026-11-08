@@ -1,0 +1,72 @@
+touched: 4 .go file(s), 5 changed path(s), 3 module(s), base 93738643
+  FAIL gofmt (0.0s)
+      backend/cuda/internal/gpudev/cuda_copy.go
+
+  FAIL test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (0.6s)
+      fork/exec /tmp/go-build2664997155/b001/decoder.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/decoder	0.000s
+      FAIL
+
+  FAIL test internal/diag/hwcensus -run ^(TestHardwareCensus)$ (0.2s)
+      fork/exec /tmp/go-build1463460558/b001/hwcensus.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/diag/hwcensus	0.000s
+      FAIL
+
+  FAIL test internal/diag/kernelprint -run ^(TestCompute_reachesCensus)$ (0.2s)
+      fork/exec /tmp/go-build1581855263/b001/kernelprint.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/diag/kernelprint	0.000s
+      FAIL
+
+  FAIL test internal/guard/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+      fork/exec /tmp/go-build2953364122/b001/movedpaths.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/guard/movedpaths	0.000s
+      FAIL
+
+  FAIL test internal/guard/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.1s)
+      fork/exec /tmp/go-build4250600047/b001/prezerolint.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/guard/prezerolint	0.000s
+      FAIL
+
+  FAIL test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (0.2s)
+      fork/exec /tmp/go-build683338535/b001/layout.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/layout	0.000s
+      FAIL
+
+  FAIL test internal/runtime/logs -run ^(TestLibraryOutput_goesThroughLogs)$ (0.2s)
+      fork/exec /tmp/go-build2218772087/b001/logs.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/runtime/logs	0.000s
+      FAIL
+
+  FAIL test internal/runtime/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.1s)
+      fork/exec /tmp/go-build2017159635/b001/mem.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/runtime/mem	0.000s
+      FAIL
+
+  FAIL test internal/runtime/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.2s)
+      fork/exec /tmp/go-build2740395912/b001/probe.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/runtime/mem/probe	0.000s
+      FAIL
+
+  ok   build backend/cuda (0.1s)
+  ok   vet backend/cuda (1 pkg) (0.0s)
+  FAIL build backend/cuda (GOOS=linux, -tags cuda goinfer_testhooks) (0.2s)
+      # github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev
+      internal/gpudev/cuda_copy.go:170:9: undefined: plantedUndefinedForTouchedCheck
+
+  FAIL vet backend/cuda (GOOS=linux, -tags cuda goinfer_testhooks, 1 pkg) (0.1s)
+      # github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev
+      # [github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev]
+      vet: internal/gpudev/cuda_copy.go:170:9: undefined: plantedUndefinedForTouchedCheck
+
+  FAIL test backend/cuda/internal/gpudev (0.1s)
+      fork/exec /tmp/go-build2771016799/b001/gpudev.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev	0.000s
+      FAIL
+
+  FAIL test backend/metal/internal/gpudev -run ^(TestOutputContract_hostWritersStateThe (0.4s)
+      fork/exec /tmp/go-build2432963135/b001/gpudev.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/backend/metal/internal/gpudev	0.000s
+      FAIL
+
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 14 of 16 checks failed

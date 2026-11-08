@@ -3,6 +3,7 @@ package mem
 import (
 	"fmt"
 	"math/rand/v2"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -328,5 +329,79 @@ func TestSolvePlacement_moeSawtooth(t *testing.T) {
 	}
 	if prev.Ctx <= mc.Floor {
 		t.Errorf("the Metal MoE load never got past the floor (%d): the walk tests nothing", prev.Ctx)
+	}
+}
+
+// TestSolvePlacement_declineReasonsQuoteEachTermOnce: a decline that quotes the dense weights quotes them alone (with the experts'
+// fixed bytes), and the scratch once in its own note, the paged slot indices included exactly where the plan charged them; a top-k
+// decline quotes as free what the experts had once those were taken. Each decline that prints a dense or free figure is reached:
+// the context floor on a dense Metal load and an MoE one, and, on the planner without the MoE reserve, no room left for an expert
+// cache and too little for its top k, each with and without a paged extra.
+func TestSolvePlacement_declineReasonsQuoteEachTermOnce(t *testing.T) {
+	const gib, mib = int64(1) << 30, int64(1) << 20
+	kv := func(c int) int64 { return int64(c) << 16 }
+	dense := DeviceLoad{Backend: "metal", Tier: Unified, DenseBytes: gib, ScratchBytes: 256 * mib, CtxStep: 8, CtxCeiling: 32768, KV: kv}
+	moe := dense
+	moe.NExperts, moe.TopK, moe.ExpertBytesFull, moe.ExpertBytesFixed, moe.ScratchPagedExtra = 8, 2, 8*gib, 512*mib, 64*mib
+	moe.HostAll = func() int64 { return 0 }
+	unpaged := moe // a cache that adds no paged extra
+	unpaged.ScratchPagedExtra = 0
+	quoted := func(re, reason string) string {
+		if m := regexp.MustCompile(re).FindStringSubmatch(reason); m != nil {
+			return m[1]
+		}
+		return "none"
+	}
+	weights := gib + 512*mib // the MoE load's dense and expert-fixed bytes
+	for _, c := range []struct {
+		name                  string
+		l                     DeviceLoad
+		free                  int64
+		reserve               bool
+		dense, scratch, avail string // "" where the reason quotes none
+	}{
+		{"dense, the context floor", dense, gib, true, "1.00", "256.00", ""},
+		{"moe, the context floor", moe, gib, true, "1.50", "320.00", ""},
+		{"moe without the reserve, no room for a paged cache", moe, weights + 320*mib + kv(4096), false, "1.50", "320.00", ""},
+		{"moe without the reserve, no room for an unpaged cache", unpaged, weights + 256*mib + kv(4096), false, "1.50", "256.00", ""},
+		{"moe without the reserve, under the top k, paged", moe, weights + 320*mib + kv(4096) + 3*gib/2, false, "", "", "1.50"},
+	} {
+		d := solvePlacement(c.l, PlanRequest{Ctx: 4096, CtxPinned: true}, Machine{Free: map[Tier]int64{Unified: c.free}}, DefaultPolicy(), c.reserve)
+		if d.Placement != Declined {
+			t.Fatalf("%s: %s, want a decline", c.name, planAnswer(d))
+		}
+		for _, q := range []struct{ what, re, want string }{
+			{"dense", `dense ([\d.]+) GB`, c.dense}, {"scratch", `scratch ([\d.]+) MB`, c.scratch}, {"free", `only ([\d.]+) GB is free`, c.avail},
+		} {
+			if q.want == "" {
+				continue
+			}
+			if got := quoted(q.re, d.Reason); got != q.want {
+				t.Errorf("%s: the reason quotes %s %s, want %s: %q", c.name, q.what, got, q.want, d.Reason)
+			}
+		}
+	}
+}
+
+// TestSolvePlacement_aCacheHoldingEveryExpertPaysNoPaging: an expert cache that fits every expert does not page, so it holds no
+// paged slot indices and its slot count is solved without them. Given exactly the room for all 8 experts beside the fixed terms,
+// the cache holds 8 at the resident build's scratch; one byte less, it holds 7 and pages, its scratch with the indices.
+func TestSolvePlacement_aCacheHoldingEveryExpertPaysNoPaging(t *testing.T) {
+	const mib = int64(1) << 20
+	kv := func(c int) int64 { return int64(c) << 10 }
+	l := DeviceLoad{Backend: "metal", Tier: Unified, DenseBytes: 1 << 30, ScratchBytes: mib, ScratchPagedExtra: 64, CtxStep: 8,
+		CtxCeiling: 32768, KV: kv, NExperts: 8, TopK: 2, ExpertBytesFull: 8 * mib,
+		HostAll: func() int64 { return 100 * mib }} // the experts' host copy keeps them from a resident placement
+	req := PlanRequest{Ctx: 4096, CtxPinned: true}
+	room := l.DenseBytes + l.ScratchBytes + kv(4096) + l.ExpertBytesFull
+	for _, c := range []struct {
+		free    int64
+		slots   int
+		scratch int64
+	}{{room, 8, l.ScratchBytes}, {room - 1, 7, l.ScratchBytes + 64}} {
+		d := SolvePlacement(l, req, Machine{Free: map[Tier]int64{Unified: c.free}}, DefaultPolicy())
+		if d.Placement != ExpertCached || d.Slots != c.slots || d.ScratchBytes != c.scratch {
+			t.Errorf("free %d: %s, scratch %d; want expert-cached at %d slots, scratch %d", c.free, planAnswer(d), d.ScratchBytes, c.slots, c.scratch)
+		}
 	}
 }

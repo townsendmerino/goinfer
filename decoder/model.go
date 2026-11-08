@@ -398,8 +398,8 @@ type Options struct {
 	// DirectLoad builds a .gguf or a safetensors directory's weights in the heap. Off (the default) on darwin and linux, Load
 	// opens the source's sidecar .giw instead, transcoding it once beside the source when it is missing or stale, so the
 	// weights are a mapping of that file rather than an anonymous copy; serve and chat do the same. A .gguf whose sidecar
-	// cannot be written (a read-only directory, a full disk) is refused, naming this field. A q4k .gguf always loads
-	// directly. A test binary loads directly too, unless the test turns the default on.
+	// cannot be written (a read-only directory, a full disk) is refused, naming this field. A q4k .gguf takes its sidecar too,
+	// except under StreamWeights. A test binary loads directly, unless the test turns the default on.
 	DirectLoad bool
 	// KVPrecision selects the GPU residency KV cache precision: "" / "auto" (the default: f16 on CUDA for a family the f16 kernels cover and
 	// the gates cleared, otherwise what the backend always did: f32, or f16 on Metal), "f32" (bit-exact, on every backend), "f16" (lossy, twice
@@ -1258,7 +1258,7 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 		}
 	}
 	if m.knobs.get(knobBatchedPrefill) != "0" && offer && !hasAdapter {
-		if pf, ok := m.resident.(Prefiller); ok {
+		if canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe}) {
 			embed := func(ids []int) [][]float32 {
 				if embedRowsObserver != nil {
 					embedRowsObserver(len(ids))
@@ -1278,23 +1278,24 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 				if perr = ctx.Err(); perr != nil {
 					break
 				}
-				if _, perr = pf.PrefillLast(ctx, embed(prompt[from:from+B]), from); perr == nil {
+				if _, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from : from+B]), Pos: from}); perr == nil {
 					from += B
 				}
 			}
 			// startPos is why the batched path needs no change for reuse: it already
 			// places the run at an offset.
 			if perr == nil {
-				var lg []float32
-				if mp, ok := pf.(ResidentPrefillMarked); ok && mk != nil {
-					lg, perr = mp.PrefillLastMarked(ctx, embed(prompt[from:]), from, mk.q, mk.at)
-				} else if pr, ok := pf.(ResidentPrefillRows); ok { // MEM6: the resident reads the suffix a chunk at a time
-					lg, perr = pr.PrefillLastRows(ctx, len(prompt)-from, from, m.suffixRows(prompt[from:]))
+				var sr stepResult
+				if mk != nil && canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe, At: stepProbeAt}) {
+					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from:]), Pos: from, Mark: mk.q, At: mk.at})
+				} else if canStep(m.resident, stepBatch{Pass: passRows, In: inRowsFn, N: 1, Rows: stepProbeRows}) {
+					// MEM6: the resident reads the suffix a chunk at a time.
+					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, In: inRowsFn, N: len(prompt) - from, Pos: from, Rows: m.suffixRows(prompt[from:])})
 				} else {
-					lg, perr = pf.PrefillLast(ctx, embed(prompt[from:]), from)
+					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from:]), Pos: from})
 				}
 				if perr == nil {
-					return lg, nil
+					return sr.Logits, nil
 				}
 			}
 			// A CANCELLED PREFILL IS NOT A DECLINE. Falling through to the sequential loop would
@@ -1317,8 +1318,8 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 	// (a big-vocab matmul + readback + softcap) on every prefill token but the last, whose
 	// logits seed decode. Byte-identical (same layer chain → same KV → same last-token logits);
 	// GOINFER_NO_KVONLY_PREFILL forces the full-logits prefill (A/B / escape hatch).
-	kvOnly, hasKV := m.resident.(ResidentPrefillKV)
-	useKV := hasKV && m.knobs.get(knobNoKVOnlyPrefill) == ""
+	useKV := m.canDecode(outNone) && m.knobs.get(knobNoKVOnlyPrefill) == ""
+	var row [1][]float32 // the token's one-row batch, reused across the prompt
 	var logits []float32
 	var err error
 	for i, id := range prompt {
@@ -1332,7 +1333,8 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 		}
 		emb := m.embedResident(id)
 		if useKV && i < len(prompt)-1 {
-			if err = kvOnly.ForwardNoLogits(emb, i); err != nil {
+			row[0] = emb
+			if _, err = m.step(stepBatch{Pass: passToken, Emb: row[:], Pos: i, Out: outNone}); err != nil {
 				return nil, err
 			}
 			continue
@@ -1348,25 +1350,26 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 // (docs/multimodal.md), where decode past the (already-resident) image block needs pos+mropeDelta for the rotation, not plain
 // pos. Deliberately simple (no batched or KV-only prefill): the reused-suffix case is an agent turn's short trailing
 // extension, not a long cold prompt worth the batched machinery.
-func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, mrope ResidentMRoPE, prompt []int, from, mropeDelta int) ([]float32, error) {
+func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, prompt []int, from, mropeDelta int) ([]float32, error) {
 	if from < 0 || from >= len(prompt) {
 		from = 0
 	}
 	if from == 0 {
 		m.residentWritesFromZero()
 	}
-	var logits []float32
+	var sr stepResult
 	var err error
+	var row [1][]float32
 	for i := from; i < len(prompt); i++ {
 		if err = ctx.Err(); err != nil {
 			return nil, err
 		}
-		emb := m.embedResident(prompt[i])
-		if logits, err = mrope.ForwardMRoPE(emb, i, i+mropeDelta); err != nil {
+		row[0] = m.embedResident(prompt[i])
+		if sr, err = m.step(stepBatch{Pass: passToken, In: inMRoPE, Emb: row[:], Pos: i, RopePos: i + mropeDelta}); err != nil {
 			return nil, err
 		}
 	}
-	return logits, nil
+	return sr.Logits, nil
 }
 
 // mc3Prefill prefills prompt[from:] into an MC3 generation's slot and returns the seed logits. A long suffix is taken
@@ -1377,7 +1380,7 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 	if from < 0 || from >= len(prompt) {
 		from = 0 // never skip the seed token (residentPrefillSeed's own rule)
 	}
-	pf, ok := m.resident.(Prefiller)
+	ok := canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe})
 	C := m.prefillChunk
 	// A chunk below the resident's kernel-class floor would put the first chunk on the other class from the
 	// whole prompt's; raising the chunk to the floor keeps every pass on the class a whole prefill uses.
@@ -1402,7 +1405,7 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		}
 		mc3.prefillExclusive(func() {
 			if err = m.residentBind(slot); err == nil {
-				_, err = pf.PrefillLast(ctx, embs, from)
+				_, err = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embs, Pos: from})
 			}
 		})
 		if err != nil {
@@ -1671,12 +1674,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) &&
 		m.knobs.get(knobNoGreedyFastpath) == ""
 	// The greedy chain (ResidentGreedyChain): the same tokens with the next token's forward queued on the device before the host
-	// has seen this one. Only with no processor at all (a gated one would need the full row mid-chain), no adapter, and where the
-	// embedding lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this
-	// generation decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so
-	// fastGreedy stays the path for those.
+	// has seen this one. With no processor, or a gated one while its gate is closed (outside MC3: a step the gate opens stops the
+	// chain and takes the full-logits path below, which the chain would otherwise skip), no adapter, and where the embedding
+	// lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this generation
+	// decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so fastGreedy
+	// stays the path for those.
 	chainRF, hasChain := m.resident.(ResidentGreedyChain)
-	useChain := useGPU && resCost == nil && hasChain && sp.LogitProcessor == nil && lora == nil &&
+	useChain := useGPU && resCost == nil && hasChain && (sp.LogitProcessor == nil || (gated && mc3 == nil)) && lora == nil &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) && m.knobs.get(knobNoGreedyFastpath) == "" &&
 		m.embedIsTableRow() && chainRF.GreedyChainAvailable()
 	if useChain && mc3 == nil {
@@ -1939,7 +1943,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			residentCall := func() error {
 				var ferr error
 				if needFull {
-					// The gated processor needs this position's full logits (it is about to mask them).
+					// The gated processor needs this position's full logits (it is about to mask them). A chain still open stops
+					// first: it has queued the forward for this position, which Forward then rewrites, and it reopens at the
+					// next closed step.
+					stopChain()
 					logits, ferr = m.resident.Forward(emb, pos)
 					viaForward = true
 				} else if useChain && chainTok {

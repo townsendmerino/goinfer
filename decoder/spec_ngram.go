@@ -325,6 +325,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			hasG := target.canDecode(outArgmax)
 			hasAV := canStep(target.resident, stepBatch{Pass: passRows, Emb: stepProbe, Out: outEveryArgmax})
 			if hasG || hasAV {
+				var oneRow [1][]float32 // a one-row verify's batch, reused across rounds
 				idsVerify = func(seq []int, base int) ([]int, error) {
 					if adaptive {
 						if err := target.residentBind(mc3Slot); err != nil {
@@ -332,7 +333,8 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 						}
 					}
 					if len(seq) == 1 && hasG {
-						sr, e := target.step(stepBatch{Pass: passToken, Emb: [][]float32{target.embedResident(seq[0])}, Pos: base, Out: outArgmax})
+						oneRow[0] = target.embedResident(seq[0])
+						sr, e := target.step(stepBatch{Pass: passToken, Emb: oneRow[:], Pos: base, Out: outArgmax})
 						return []int{sr.ID}, e
 					}
 					if !hasAV {

@@ -856,3 +856,34 @@ func TestPublishGIW_restoresTheOldBundleOnFailure(t *testing.T) {
 		t.Errorf("a leftover was not swept: %v", err)
 	}
 }
+
+// TestPlan_metalAdmitsAQ4KLoadThroughItsSidecar: a q4k .gguf is admitted to Metal's resident path whether it loads directly or
+// through its sidecar .giw (serve's and chat's default on darwin). Both loads carry the per-32 activation group, and Metal's q4k
+// lane quantizes no activation, so the group's gate exempts both; it reads the loaded weights' quant, which a .giw records, not the
+// --quant option, which only a direct load keeps.
+func TestPlan_metalAdmitsAQ4KLoadThroughItsSidecar(t *testing.T) {
+	mem1NeedsSidecarPlatform(t)
+	src := q4kGGUF(t, t.TempDir(), 2)
+	direct, err := Load(src, Options{Backend: "cpu", Quant: "q4k", DirectLoad: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer direct.Close()
+	sidecarDefaultOn(t)
+	viaGIW, err := Load(src, Options{Backend: "cpu", Quant: "q4k"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer viaGIW.Close()
+	if viaGIW.mmap == nil {
+		t.Fatalf("the load opened %q, not a sidecar .giw", viaGIW.srcPath)
+	}
+	for name, m := range map[string]*Model{"direct": direct, "sidecar": viaGIW} {
+		if m.Quant() != "q4k" || m.ActQuantGroup() != 32 {
+			t.Fatalf("%s: quant %q, activation group %d; want q4k at 32", name, m.Quant(), m.ActQuantGroup())
+		}
+		if p := m.Plan("metal", 1<<40, PlanRequest{Ctx: 256, CtxPinned: true}); p.Placement != PlacementResident {
+			t.Errorf("%s: Plan(\"metal\") is %v: %s", name, p.Placement, p.Reason)
+		}
+	}
+}

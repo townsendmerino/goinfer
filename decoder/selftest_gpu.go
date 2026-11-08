@@ -232,13 +232,14 @@ func probeFixture(backend, quant, name string, positions int, worst *probeWorst)
 	}
 
 	// Batched prefill, when the backend has one: a real prompt takes this path. A decline is not a failure (the sequential path is then what runs, and was just checked).
-	if pf, ok := rf.(Prefiller); ok {
+	if canStep(rf, stepBatch{Pass: passRows, Emb: stepProbe}) {
 		rf.Reset()
 		embs := make([][]float32, positions)
 		for i, tok := range prompt {
 			embs[i] = gm.embedResident(tok)
 		}
-		got, perr := pf.PrefillLast(context.Background(), embs, 0)
+		sr, perr := stepOn(rf, stepBatch{Pass: passRows, Emb: embs})
+		got := sr.Logits
 		if perr == nil {
 			want, err := cm.prefillLogits(context.Background(), prompt, cm.NewCache(positions))
 			if err != nil {

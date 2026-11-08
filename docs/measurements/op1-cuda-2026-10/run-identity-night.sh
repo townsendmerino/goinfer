@@ -1,11 +1,11 @@
 #!/bin/bash
-# OP1 on CUDA, G1-M and G2-I on real checkpoints (docs/tasks/task-forward-architecture-2026-10.md §4.6a): every family's logits at the
+# OP1 on CUDA, G1-M and G2-I on real checkpoints (docs/completed/task-forward-architecture-2026-10.md §4.6a): every family's logits at the
 # commit under test (REV) equal those at BASE (the commit before OP1's CUDA code), on this box, at int4, with the real checkpoints under
 # ~/models. Runs with nobody watching: the gate binary is built here from a detached worktree at REV, and the identity tool builds
 # each side's dumper from its own detached worktree.
 #
 #   python3 scripts/night.py add op1-identity-real-cuda --est 30 --by "<who>, OP1 CUDA (G1-M, G2-I real)" \
-#     --doc docs/tasks/task-forward-architecture-2026-10.md \
+#     --doc docs/completed/task-forward-architecture-2026-10.md \
 #     -- env REV=<commit> BASE=78e4faf2 bash docs/measurements/op1-cuda-2026-10/run-identity-night.sh
 #   DRY=1 ...   stops after the build and the provenance block.
 set -uo pipefail

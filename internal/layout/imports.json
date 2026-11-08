@@ -26,7 +26,7 @@
       "forbid_goinfer": [
         "*"
       ],
-      "why": "decoder/config holds a checkpoint's Config, its validators and its loader, so they test in seconds without compiling decoder (DC1, docs/tasks/task-decoder-config-2026-11.md). It sits below decoder, which aliases Config: it imports no goinfer package, decoder included."
+      "why": "decoder/config holds a checkpoint's Config, its validators and its loader, so they test in seconds without compiling decoder (DC1, docs/completed/task-decoder-config-2026-11.md). It sits below decoder, which aliases Config: it imports no goinfer package, decoder included."
     },
     {
       "name": "towers-standalone",
@@ -633,6 +633,7 @@
       "decoder/fit",
       "internal/audio",
       "internal/cost",
+      "internal/diag/sb2census",
       "internal/fidelity",
       "internal/guard/paritykey",
       "internal/runtime/giw",

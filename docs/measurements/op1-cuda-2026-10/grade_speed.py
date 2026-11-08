@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Grade OP1's CUDA speed guard (tier 1, by day), G2-S (docs/tasks/task-forward-architecture-2026-10.md §4.6), from one output directory.
+"""Grade OP1's CUDA speed guard (tier 1, by day), G2-S (docs/completed/task-forward-architecture-2026-10.md §4.6), from one output directory.
 
   grade_speed.py <out dir>     # decode-cuda-*.json (bench_peer.py) and ttft-cuda-*.json (bench_prefill_stall.py)
 

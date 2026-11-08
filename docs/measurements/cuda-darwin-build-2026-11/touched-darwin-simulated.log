@@ -1,0 +1,58 @@
+touched: 3 .go file(s), 4 changed path(s), 2 module(s), base 93738643
+  ok   gofmt (0.0s)
+  FAIL test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (0.6s)
+      fork/exec /tmp/go-build550839745/b001/decoder.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/decoder	0.000s
+      FAIL
+
+  FAIL test internal/diag/hwcensus -run ^(TestHardwareCensus)$ (0.2s)
+      fork/exec /tmp/go-build3093318091/b001/hwcensus.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/diag/hwcensus	0.000s
+      FAIL
+
+  FAIL test internal/diag/kernelprint -run ^(TestCompute_reachesCensus)$ (0.2s)
+      fork/exec /tmp/go-build2475656452/b001/kernelprint.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/diag/kernelprint	0.001s
+      FAIL
+
+  FAIL test internal/guard/movedpaths -run ^(TestNoMovedAikitPath)$ (0.1s)
+      fork/exec /tmp/go-build1356480973/b001/movedpaths.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/guard/movedpaths	0.000s
+      FAIL
+
+  FAIL test internal/guard/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.2s)
+      fork/exec /tmp/go-build2723243334/b001/prezerolint.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/guard/prezerolint	0.000s
+      FAIL
+
+  FAIL test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (0.2s)
+      fork/exec /tmp/go-build1315408919/b001/layout.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/layout	0.000s
+      FAIL
+
+  FAIL test internal/runtime/logs -run ^(TestLibraryOutput_goesThroughLogs)$ (0.2s)
+      fork/exec /tmp/go-build2423122840/b001/logs.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/runtime/logs	0.000s
+      FAIL
+
+  FAIL test internal/runtime/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.1s)
+      fork/exec /tmp/go-build2863579849/b001/mem.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/runtime/mem	0.000s
+      FAIL
+
+  FAIL test internal/runtime/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.2s)
+      fork/exec /tmp/go-build1865622393/b001/probe.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/internal/runtime/mem/probe	0.000s
+      FAIL
+
+  ok   build backend/cuda (0.1s)
+  ok   vet backend/cuda (1 pkg) (0.0s)
+  ok   build backend/cuda (GOOS=linux, -tags cuda goinfer_testhooks) (0.7s)
+  ok   vet backend/cuda (GOOS=linux, -tags cuda goinfer_testhooks, 1 pkg) (0.1s)
+  FAIL test backend/cuda/internal/gpudev (0.2s)
+      fork/exec /tmp/go-build381114819/b001/gpudev.test: exec format error
+      FAIL	github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev	0.000s
+      FAIL
+
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 10 of 15 checks failed

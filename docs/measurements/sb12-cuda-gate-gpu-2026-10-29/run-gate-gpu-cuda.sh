@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The CUDA `gate gpu` recorded for SB12 step 10 (docs/tasks/task-subsystems-2026-10.md, "SB12 step 10 (CUDA)"), shaped like
+# The CUDA `gate gpu` recorded for SB12 step 10 (docs/completed/task-subsystems-2026-10.md, "SB12 step 10 (CUDA)"), shaped like
 # docs/measurements/gate-gpu-night-2026-10-06/run-gate-gpu.sh and the Mac's run-gate-gpu-metal.sh: REV (default origin/main) in
 # its own detached worktree, the gitignored fixtures placed from FIXTURES (the main checkout) by scripts/worktree_fixtures.sh, a
 # go.work, -record and -logdir outside the worktree, under the timing lock held shared (a gate only adds load). The heavy tier

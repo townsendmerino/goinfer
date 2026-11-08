@@ -1,0 +1,8 @@
+plant: no-tests-to-run-passes
+replaced: if ok and NO_TESTS in out:
+with:     if False:
+
+FAIL: test_a_run_selecting_only_excluded_tests_is_a_skip (__main__.PackagesForTheTarget.test_a_run_selecting_only_excluded_tests_is_a_skip)
+AssertionError: 'no selected test is built for this target' not found in '  ok   build h (0.0s)\n  ok   vet h (1 pkg) (0.2s)\n  ok   test h/p -run ^(TestExcluded)$ (0.6s)\n'
+Ran 1 test in 0.981s
+FAILED (failures=1)

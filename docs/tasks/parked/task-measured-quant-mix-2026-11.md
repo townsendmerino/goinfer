@@ -1,7 +1,11 @@
 # Task: a measured per-tensor int4/int8 mix (`int4mix` chosen by measurement, not by rule) — 2026-11
 
-> **Status: SCOPED 2026-11-07, unstarted, parked for later (Francis).** Nothing here is approved to run yet. Starting
-> it is Francis's call, because it spends nights of machine time on nobara.
+> **Status 2026-11-08: PARKED (Francis, 2026-11-07), unstarted.** Trigger: Francis's go, best after low-bit LB0-LB2 land
+> (`docs/tasks/task-lowbit-formats-2026-11.md`), because it spends nights of machine time on nobara. Two premises below
+> needed correcting against the code (the 2026-11-08 close-out): `int4mix` loads only from a GGUF (MQ5), and the Metal
+> question in §5 is already answered (MQ6). tack's Qwen3-8B load is a `Q4_K_M` GGUF, so the gain is real only against a
+> high-precision source or against `q4k`. Ownership with the low-bit doc: that doc keeps file formats, source pricing and kept
+> lanes; this one keeps per-tensor resident policy.
 >
 > **The idea.** goinfer already resolves its quant per tensor at load time: `matmulQuant` turns `int4mix` into int8 for
 > attention, embed, head and router, and int4 for the FFN bulk (`docs/code-notes/decoder.md`, "quantInt4Mix"). That
@@ -11,6 +15,20 @@
 > **Why now, and for whom.** tack runs Qwen3-8B on nobara's RTX 2070 SUPER (8 GB). On that card the window is
 > limited by KV memory (about 20k positions at 144 KiB each), not by weights. A mix that matches `int4mix`'s quality in
 > fewer bytes buys KV room; one that beats `int4` at the same bytes buys quality. Either helps tack directly.
+
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| MQ0 | blocked | Francis's go; then per-table int4 damage on Qwen3-8B: one capture pass, the proxy, and an exact KL sample of about 20 tables against f32 | §2 Q0 |
+| MQ1 | blocked | after MQ0: knapsack over the measured damage at budgets (a)/(b)/(c); arms `int4`, `int4mix`, `int8int8`, `q4k`, the mix | §2 Q1 |
+| MQ2 | blocked | after MQ0's capture: activation-aware group scales, gated alone and combined with MQ1 | §2 Q2 |
+| MQ3 | blocked | only if MQ1 or MQ2 wins: tack tier-1 live check against `int4` on nobara | §2 Q3 |
+| MQ4 | blocked | only if MQ3 holds: per-model mix table, a quant or profile name, `DecodePath()` and banner, fit pricing per tensor (low-bit LB6c) | §2 Q4; `decoder/fitguard.go:measureBytesPerElem` |
+| MQ5 | decision | when started: which source the arms share, since `int4mix` refuses safetensors (`matmulQuant` keys on llama.cpp names); recommended: a BF16/F16 GGUF of Qwen3-8B for every arm, f32 from the same GGUF | `decoder/weights.go:loadWeights`; `decoder/weightmat.go:matmulQuant` |
+| MQ6 | done | Metal: only `int4mix`'s attention-int8/FFN-int4 split runs natively; any other mix falls back to int4 re-quantization, so a measured mix ships CUDA and CPU first | `backend/metal/model.go:w8AttnWeights` |
+| MQ7 | blocked | after MQ1: does the ranking transfer to Qwen3-4B or another dense family | §5 |
+| MQ8 | blocked | before MQ0: a permissive calibration and held-out corpus, disjoint from tack E1's repos, source and license recorded | §2 Q0, §5 |
 
 ---
 
@@ -141,3 +159,5 @@
   2.3 points of top-1, `docs/quantization.md`) inside the same budget, since the head table is a candidate like any
   other.
 - **Calibration text:** which public, permissively licensed code-and-prose corpus, disjoint from E1's repositories.
+
+<!-- doc-reviewed: 2026-11-08 -->

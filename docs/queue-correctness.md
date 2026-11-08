@@ -74,7 +74,7 @@ detection** — `any`, **filed 2026-10-21 (owner)**
 
 Twenty of the 71 registration and bound findings counted on 2026-10-08 (`docs/measurements/audit-classes-2026-10-08.md`
 §2–§3) were one model family that one path did not know about, and six of the twenty were Critical. **Owner, 2026-10-21,
-the hybrid:** the compute, fit-guard and speculative share goes to `docs/tasks/task-forward-architecture-2026-10.md`, whose
+the hybrid:** the compute, fit-guard and speculative share goes to `docs/completed/task-forward-architecture-2026-10.md`, whose
 per-layer programs can declare each layer's weights and state so those paths read the program instead of hand lists. This
 entry owns the rest: a grid of every registry family against three columns (load and serialize; tokenizer dispatch;
 chat-template detection), ratcheted as the option grid is, so a new family fills its row or a test fails. Its findings:
@@ -329,7 +329,7 @@ The rule is the owner's to choose:
 - copy (tails kept, one preamble per conversation);
 - KV9's host blocks (both). This is the case the KV9 record names for reopening KV9.
 
-**G43 · CPU fast prefill attention on a sliding-window layer is not chunk-invariant, so G40 cannot chunk those caches** — `cpu`, **filed 2026-10-15**
+**G43 · CPU fast prefill attention on a sliding-window layer is not chunk-invariant, so G40 cannot chunk those caches** — `cpu`, **filed 2026-10-15** *(2026-11-08: also owns MEM5-ring, moved here from the archived memory campaign, `docs/completed/task-memory-campaign-2026-10.md`: the ring layer's chunked prefill waits on this fix and its gate.)*
 
 Found by G40-1 (`docs/completed/task-cpu-prefill-memory-2026-10.md`, "Amendment, 2026-10-15, after G40-1's first read", on
 branch `g40-cpu-prefill-memory-2026-10`):

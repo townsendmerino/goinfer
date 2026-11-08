@@ -94,8 +94,8 @@ half-precision KV cache on the CPU as the command lines' default, with f32 kept 
 its readers are today, why the earlier int8 task rejected f16 and what has changed since, a recommendation on its two
 decisions (2026-10-14), and its gates, registered that day before any code.
 
-[`task-subsystems-2026-10.md`](tasks/task-subsystems-2026-10.md) (VK0–VK6, MM0–MM6, AX0–AX7, SB1–SB13 and PW1–PW6, filed
-2026-10-26, scoped; SD1 decided the same day) starts from where session time went in October (CI waits first, then
+[`task-subsystems-2026-10.md`](completed/task-subsystems-2026-10.md) (VK0–VK6, MM0–MM8, AX0–AX7, SB1–SB14 and PW1–PW6, filed
+2026-10-26; **archived 2026-11-08** as the record, its open rows in [`task-forward-and-memory-2026-11.md`](tasks/task-forward-and-memory-2026-11.md); SD1 decided the same day) starts from where session time went in October (CI waits first, then
 local tests and gates; the hour-long runs are timed and real-checkpoint gates, and most night-queue failures are the
 box's state, not a test) and proposes subsystems whose contracts are checked in seconds and whose fingerprints the
 validations above them key on: parity keyed on behavior instead of source files and aikit's version (VK); one
@@ -114,9 +114,10 @@ every kernel in goinfer and aikit for speed and memory: about seventy candidates
 arithmetic, identity class and first measurement, four owner decisions, and eleven places a doc or comment no longer
 matches the code. Nothing in it is built or measured.
 
-[`task-kv-precision-everywhere-2026-10.md`](tasks/task-kv-precision-everywhere-2026-10.md) (plan, filed 2026-10-20) makes
-`--kv f32|f16|i8` deliver the precision asked for on every backend, family and path, or refuse the load by name: today's
-silent fallbacks, a single resolver and a ratchet test, the phases by backend (CUDA int8 is B39), and the gates.
+[`task-kv-precision-everywhere-2026-10.md`](tasks/task-kv-precision-everywhere-2026-10.md) (filed 2026-10-20; live) makes
+`--kv f32|f16|i8` deliver the precision asked for on every backend, family and path, or refuse the load by name. Phase 0 (the
+resolver, the refusals and the generated matrix) shipped 2026-10-20; CUDA int8 for the dense families (B39) is staged S1 to S5,
+S4 open.
 
 [`task-cpu-prefill-memory-2026-10.md`](completed/task-cpu-prefill-memory-2026-10.md) (G40, registered 2026-10-14) diagnoses the
 CPU prefill's memory high-water: every working buffer sized by the whole prompt, the KV regrowing as it is written, and Go
@@ -131,7 +132,7 @@ gates, and the owner decisions. The first, D1, is decided: the owner un-parked p
 reuse, with continuous batching still parked. KV11, added the same day, puts KV blocks and paged MoE experts under one
 memory budget in place of today's fixed split.
 
-[`task-memory-campaign-2026-10.md`](tasks/task-memory-campaign-2026-10.md) (MEM0–MEM17, filed 2026-10-17, scoped)
+[`task-memory-campaign-2026-10.md`](completed/task-memory-campaign-2026-10.md) (MEM0–MEM17, filed 2026-10-17; **archived 2026-11-08**: MEM10's build is in [`task-forward-and-memory-2026-11.md`](tasks/task-forward-and-memory-2026-11.md), the parked rest P37 to P40 in `queue-performance.md`)
 picks up where never-swap and the KV program stop: every large structure in goinfer and aikit with its share of a
 typical session, how each is held today, and the briefs for what is left — a public mapped load for library callers,
 multimodal towers (f32 heap copies, host copies beside GPU copies, Metal tower scratch never freed), prefill scratch
@@ -143,8 +144,13 @@ Cloudflare's Clairic, a System One extraction model (typed values from unstructu
 output tokens), on goinfer. It sits beside the parked decisions work and does not reopen it; its own trigger is the
 weights published under a licence that permits redistribution, and only E0, desk work on the API, can run before that.
 
-[`task-forward-architecture-2026-10.md`](tasks/task-forward-architecture-2026-10.md) (OP0–OP6, RF0–RF6 and HL, filed
-2026-10-13; OP0 done the same day, the rest not started) is the compute half of the same redesign.
+[`task-forward-and-memory-2026-11.md`](tasks/task-forward-and-memory-2026-11.md) (filed 2026-11-08, live) holds the open and
+parked rows of the forward-architecture and subsystems programs, both archived that day, plus the memory campaign's MEM10:
+the ragged step (RF2 to RF6), the remaining operations (OP1 on WebGPU, OP5, OP6), HL on CUDA, the memory planner's CUDA half
+and gap fixes (MM5, MM5b, MM8), and WebGPU fit planning (SB2-vk). Each row names the archived section it comes from.
+
+[`task-forward-architecture-2026-10.md`](completed/task-forward-architecture-2026-10.md) (OP0–OP6, RF0–RF6 and HL, filed
+2026-10-13; **archived 2026-11-08** as the record: OP0 to OP4, RF0, RF1 and HL on Metal done, the open rows in [`task-forward-and-memory-2026-11.md`](tasks/task-forward-and-memory-2026-11.md)) is the compute half of the same redesign.
 - **Track OP** describes a model to the GPU backends as a per-layer list of operations, so a backend implements operations
   rather than families.
 - **Track RF** replaces the resident's one entry point per request shape with one ragged forward call, which carries decode,

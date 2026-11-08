@@ -117,7 +117,7 @@ func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack boo
 	p.DenseBytes, p.ExpertBytesFull, p.AllocSlackBytes, p.StateBytes = l.DenseBytes, l.ExpertBytesFull, l.FixedSlack, l.StateBytes
 	d := mem.SolvePlacement(l, mem.PlanRequest{Ctx: req.Ctx, CtxPinned: req.CtxPinned, Slots: req.Slots, ExtraBytes: req.ExtraBytes},
 		mem.Machine{Free: map[mem.Tier]int64{l.Tier: freeBytes}}, mem.DefaultPolicy())
-	p.Placement, p.Ctx, p.Slots = Placement(d.Placement), d.Ctx, d.Slots
+	p.Placement, p.Ctx, p.Slots, p.ScratchBytes = Placement(d.Placement), d.Ctx, d.Slots, d.ScratchBytes
 	p.ExpertBytesUsed, p.KVBytes, p.HostCopyBytes, p.Reason = d.ExpertBytesUsed, d.KVBytes, d.HostCopyBytes, d.Reason
 	if ckpt, perSlot := m.checkpointBytes(backend); p.Placement != PlacementDecline {
 		if copies := checkpointCopies(checkpointHeadroom(p, freeBytes, req), ckpt, max(req.KVSlots, 1), perSlot); copies > 0 {
@@ -219,6 +219,10 @@ func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceL
 	switch backend {
 	case "metal":
 		l.CtxStep, l.CtxCeiling, l.CtxSearch = metalKVPad, MetalCtxCeiling, true // whole blocks beside the pools' null blocks: no one rate
+		l.ScratchBytes = m.MetalDecodeScratchBytes(0)
+		if l.TopK < l.NExperts { // an expert cache holds at least the top k, under the expert count when it pages
+			l.ScratchPagedExtra = m.MetalDecodeScratchBytes(l.TopK) - l.ScratchBytes
+		}
 		if !pinned {
 			l.CtxCeiling = MetalFitDefaultCtx
 		}

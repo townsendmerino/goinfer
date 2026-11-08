@@ -1,10 +1,10 @@
 #!/bin/bash
 # OP1's real Gemma 2 gate, G2-R, as a night job on the MacBook: all three arms (B, G, P) in one session, by
-# TestG2R_registered at a pinned commit of the declaration branch (docs/tasks/task-forward-architecture-2026-10.md §4.6).
+# TestG2R_registered at a pinned commit of the declaration branch (docs/completed/task-forward-architecture-2026-10.md §4.6).
 # The gate is not timed. It runs at night because by day neither the fit guard nor Metal's resident memory guard would
 # admit the loads with the owner's apps open; no guard is bypassed here.
 #
-#   python3 scripts/night.py add op1-g2r-metal --est 25 --by "<who>, OP1 Metal (G2-R)" --doc docs/tasks/task-forward-architecture-2026-10.md \
+#   python3 scripts/night.py add op1-g2r-metal --est 25 --by "<who>, OP1 Metal (G2-R)" --doc docs/completed/task-forward-architecture-2026-10.md \
 #     -- env REV=<declaration branch commit> bash docs/measurements/op1-metal-2026-10-13/run-g2r-night.sh
 #
 # Exit: 0 when the test PASSES; 1 when it FAILS (the verdict block says which arm); 2 when it is VOID or SKIPPED (a skip

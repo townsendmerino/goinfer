@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MEM0, nobara half (docs/tasks/task-memory-campaign-2026-10.md §3): the server's memory through one long cold prompt, Linux.
+"""MEM0, nobara half (docs/completed/task-memory-campaign-2026-10.md §3): the server's memory through one long cold prompt, Linux.
 
 A Linux port of docs/measurements/g40-2026-10/g40_mem.py's cell: one fresh `serve` per cell, at serve's defaults except -backend and -ctx 32768 (the backend default is 16384 on CUDA, under the prompt), one request
 (a cold prompt of about 20,193 tokens: KV9's preamble, this repository's text at e42db592, cut to a character budget; max_tokens 8,
@@ -14,7 +14,7 @@ cells: <backend>:<model> with backend cpu|cuda and model 1.5b|7b|e2b
 import argparse, json, os, re, signal, subprocess, threading, time, urllib.request
 
 PIN = "e42db592"
-SOURCES = ["CLAUDE.md", "docs/tasks/task-kv-architecture-2026-10.md", "docs/tasks/task-forward-architecture-2026-10.md", "RELEASING.md", "docs/server.md"]
+SOURCES = ["CLAUDE.md", "docs/tasks/task-kv-architecture-2026-10.md", "docs/completed/task-forward-architecture-2026-10.md", "RELEASING.md", "docs/server.md"]
 CHARS = int(20000 * 3.6)
 HOME = os.path.expanduser("~")
 MODELS = {"1.5b": f"{HOME}/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "7b": f"{HOME}/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf",

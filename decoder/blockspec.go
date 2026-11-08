@@ -464,11 +464,12 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	}
 	// The seed reads one id: ask for one when the backend can (ResidentSeedArgmax), which skips an M x vocab logits buffer, copy and host argmax.
 	var anchor int
-	if seeder, ok := host.(ResidentSeedArgmax); ok {
-		anchor, err = seeder.PrefillSeedArgmax(embs, reuseFrom)
-		if err != nil {
+	if canStep(host, stepBatch{Pass: passRows, Emb: stepProbe, Out: outArgmax}) {
+		var sr stepResult
+		if sr, err = stepOn(host, stepBatch{Pass: passRows, Emb: embs, Pos: reuseFrom, Out: outArgmax}); err != nil {
 			return nil, 0, err
 		}
+		anchor = sr.ID
 	} else {
 		ids, e := host.PrefillLastNArgmax(embs, reuseFrom)
 		if e != nil {
@@ -491,6 +492,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	maskID := dw.MaskTokenID()
 	var guard acceptanceGuard
 	seamOff := false
+	var fallbackRow [1][]float32 // the plain-decode fallback's one-row batch, reused across its tokens
 	for opt.MaxTokens <= 0 || len(out) < opt.MaxTokens {
 		if eos[anchor] {
 			break
@@ -515,7 +517,8 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			var e error
 			if m.canDecode(outArgmax) {
 				var sr stepResult
-				sr, e = m.step(stepBatch{Pass: passToken, Emb: [][]float32{m.embedResident(anchor)}, Pos: pos, Out: outArgmax})
+				fallbackRow[0] = m.embedResident(anchor)
+				sr, e = m.step(stepBatch{Pass: passToken, Emb: fallbackRow[:], Pos: pos, Out: outArgmax})
 				anchor = sr.ID
 			} else {
 				var one []int
