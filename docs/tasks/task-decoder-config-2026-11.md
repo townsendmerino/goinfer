@@ -5,11 +5,11 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| DC0 | done | Francis 2026-11-06: DC1 yes; DC2/DC3 parked | this proposal |
+| DC0 | done | Francis 2026-11-06: DC1 yes; DC2/DC3 not planned | §7; #710 |
 | DC1a | done | `Config`'s cross-file methods exported in place (`headDim`→`EffectiveHeadDim`, `validateX`→`ValidateX`, …), merged in #714 (2026-11-06) | §3; #714 |
-| DC1b | done | 2026-11-07 (mbp2-vk5): `decoder/config` holds `Config`, all its methods (`ValidateGemma12`, `ValidateGlmOcr` moved in), `Load`, `ResolveEOSIDs`, `LenientJSON` and `RecommendedSampling`; `decoder.Config` and `decoder.RecommendedSampling` are aliases, `loadConfig`/`resolveEOSIDs` one-line wrappers; layout rule `config-leaf` (red under a plant); `paritykey.BuilderFile` learns `decoder/config/config.go`; program fingerprints and the decision census unchanged; one parity refresh, 12 `deps_hash` lines (the families with no programs; the 31 with programs stay fresh under the builder switch) | §3; §8 |
-| DC2 | blocked | `Options` only when a subsystem needs it (it drags `Backend`, `Drafter`, `Knobs`) | §4 |
-| DC3 | blocked | no: `Architecture` is the hub (§5); continue `internal/runtime/program` instead | §5 |
+| DC1b | done | #746 (9900df6c), 2026-11-07 (mbp2-vk5): `decoder/config` holds `Config`, all its methods (`ValidateGemma12`, `ValidateGlmOcr` moved in), `Load`, `ResolveEOSIDs`, `LenientJSON` and `RecommendedSampling`; `decoder.Config` and `decoder.RecommendedSampling` are aliases, `loadConfig`/`resolveEOSIDs` one-line wrappers; layout rule `config-leaf` (red under a plant); `paritykey.BuilderFile` learns `decoder/config/config.go`; program fingerprints and the decision census unchanged; one parity refresh, 12 `deps_hash` lines (the families with no programs; the 31 with programs stay fresh under the builder switch) | §3; §8 |
+| DC2 | killed | not planned: no consumer, and it drags `Backend`, `Drafter`, `Knobs` with 581 outside test files naming `decoder.Options`; a subsystem that names a consumer opens a new task (`docs/layout.md` "Tier 3", item 4) | §3; Francis 2026-11-06 |
+| DC3 | killed | `Architecture` is the hub; it leaves `decoder` as data through `internal/runtime/program` (`docs/completed/task-forward-architecture-2026-10.md`) | §1, §3 |
 | DC4 | done | the aliases in `decoder` are the published API and stay (T3-fit question a); kept, Francis 2026-11-06 | §5 |
 
 ## 1. What is there (files naming each type, `2fd3a644`; decoder has 206 non-test and 606 test files)
