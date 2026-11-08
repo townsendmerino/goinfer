@@ -40,6 +40,8 @@ func (r *cudaResident) kv8Unsupported() string {
 			return fmt.Sprintf("layer %d's sliding window", l)
 		case Ly.vNorm:
 			return fmt.Sprintf("layer %d's v_norm", l)
+		case Ly.kvDim%4 != 0:
+			return fmt.Sprintf("layer %d's %d-byte K/V row, not whole words (the block copies and host copies move words)", l, Ly.kvDim)
 		}
 	}
 	return ""
@@ -89,7 +91,3 @@ func (r *cudaResident) compileKV(ptx []byte) (gpu.Library, error) {
 	}
 	return r.dev.CompileLibrary(ptx)
 }
-
-// errKV8OneSlot is why an int8 cache declines what moves rows out of their slot (a copy to another slot, a host snapshot, a demotion): the
-// scale pools would have to travel with them, which only the copy-on-write block copy does so far. The decoder recomputes instead.
-const errKV8OneSlot = "an int8 KV cache stays in its one slot: copies and host snapshots of it are not built yet"

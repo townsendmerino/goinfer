@@ -50,13 +50,20 @@ func kv4LongFixture(t *testing.T, maxPos int) string {
 // pool's blocks in use after all four have prefilled their own tails are at most 256 + 4 * (ceil(tail/64) + 1), and each slot's last
 // logits equal the same prompt prefilled cold on a fresh resident, bit for bit. A decode step in each slot after it (writing past the
 // shared blocks) leaves the others' logits unchanged, and a rollback into a shared block in one slot (copy on write) leaves another
-// slot's next step unchanged.
+// slot's next step unchanged, while slot 1's own next step equals the same writes replayed on a one-slot resident: the rows it kept of
+// the block it copied (and, on an int8 cache, their scales) are the shared ones. At f32 and at int8.
 func TestKV4_sharedPreambleStoredOnce(t *testing.T) {
 	requireCUDADevice(t)
+	for _, kv := range []string{"f32", "i8"} {
+		t.Run(kv, func(t *testing.T) { kv4SharedPreamble(t, kv) })
+	}
+}
+
+func kv4SharedPreamble(t *testing.T, kv string) {
 	const pre, tail, slots, maxPos = 16384, 100, 4, 20480
 	dir := kv4LongFixture(t, maxPos)
 	load := func(n int) (*decoder.Model, *cudaResident) {
-		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentContext: maxPos, ResidentKVSlots: n})
+		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: kv, ResidentContext: maxPos, ResidentKVSlots: n})
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
@@ -64,8 +71,8 @@ func TestKV4_sharedPreambleStoredOnce(t *testing.T) {
 		return m, mustResident(t, m)
 	}
 	m, r := load(slots)
-	if r.KVSlots() != slots {
-		t.Fatalf("built %d slots, want %d", r.KVSlots(), slots)
+	if r.KVSlots() != slots || r.kvI8 != (kv == "i8") {
+		t.Fatalf("built %d slots (int8 %v), want %d at -kv %s", r.KVSlots(), r.kvI8, slots, kv)
 	}
 	_, _, _, _, _, _, vocab := m.Dims()
 	tok := func(i, salt int) []float32 {
@@ -145,5 +152,27 @@ func TestKV4_sharedPreambleStoredOnce(t *testing.T) {
 	}
 	if j, ok := sameBits(again2, want2); !ok {
 		t.Fatalf("slot 2's step changed at %d after slot 1 rewrote positions inside the shared preamble: the write reached a shared block", j)
+	}
+	// Slot 1 after its rollback, against the same prompt and writes on the one-slot resident.
+	bind(1)
+	next1, err := r.Forward(tok(pre+tail, 13), pre+kvBlock/2+8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got1 := append([]float32(nil), next1...)
+	if _, err := rc.PrefillLast(context.Background(), prompt(1), 0); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 40 {
+		if _, err := rc.Forward(tok(i, 11), pre-kvBlock/2+i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want1, err := rc.Forward(tok(pre+tail, 13), pre+kvBlock/2+8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j, ok := sameBits(got1, want1); !ok {
+		t.Fatalf("slot 1's step after its copy on write differs from the one-slot replay at %d: the rows it kept are not the shared ones", j)
 	}
 }
