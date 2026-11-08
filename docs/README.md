@@ -144,7 +144,7 @@ Cloudflare's Clairic, a System One extraction model (typed values from unstructu
 output tokens), on goinfer. It sits beside the parked decisions work and does not reopen it; its own trigger is the
 weights published under a licence that permits redistribution, and only E0, desk work on the API, can run before that.
 
-[`task-forward-architecture-2026-10.md`](tasks/task-forward-architecture-2026-10.md) (OP0–OP6, RF0–RF6 and HL, filed
+[`task-forward-architecture-2026-10.md`](completed/task-forward-architecture-2026-10.md) (OP0–OP6, RF0–RF6 and HL, filed
 2026-10-13; OP0 done the same day, the rest not started) is the compute half of the same redesign.
 - **Track OP** describes a model to the GPU backends as a per-layer list of operations, so a backend implements operations
   rather than families.

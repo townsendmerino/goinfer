@@ -3459,7 +3459,7 @@ The attention-score softcap is compiled into the three kernels a capped layer ta
 variant built with -DATTN_SOFTCAP (backend/cuda/attnscore.cuh). The lane selectors keep such a layer off flash-decode and its verify
 rows, the fused prefill kernels, the image block kernel, the block drafter and MLA. The declaration rests on the kernel gates
 against float64 with the cap dropped as the control (TestAttnSoftcap_kernelsAgainstFloat64) and on the lane test
-(TestGemma2Softcap_lanesCUDA); the Gemma 2 end-to-end tests are diagnostics (docs/tasks/task-forward-architecture-2026-10.md §4.6a).
+(TestGemma2Softcap_lanesCUDA); the Gemma 2 end-to-end tests are diagnostics (docs/completed/task-forward-architecture-2026-10.md §4.6a).
 FeatAttnLogitSoftcap: true,
 FeatPerLayerRoPE:     true, // per-layer invFreq buffer (Gemma local 10k vs global 1M base)
 FeatMoE:              true, // moe_route + indexed stacked experts + ungated shared expert
@@ -3511,7 +3511,7 @@ Nemotron-H's Mamba-2 mixer (backend/cuda/mamba.cu: mamba_conv, mamba_ssm, mamba_
 (backend/cuda/nongated_act.cu: relu2_quant) and the non-gated up/down structure, at int4 only: BuildResident declines an int8 load, whose
 projections would be re-quantized to int4, and the family's non-gated MoE blocks. Granite-4.0-H stays on the CPU. The declaration rests on
 the tier 0 gates (K, D, I, M, S, G, P) and on tier 1 against the CPU: the 4B whole, a three-layer slice of the 9B, and the whole 9B on this
-8 GB card (docs/tasks/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"; docs/measurements/op2b-cuda-2026-10-16/).
+8 GB card (docs/completed/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"; docs/measurements/op2b-cuda-2026-10-16/).
 FeatSSM:           true,
 FeatNonGatedMLP:   true,
 FeatNonGatedReLU2: true,
@@ -13804,7 +13804,7 @@ family with a gated exact-GELU MLP and NO attention gate would need that verifie
 not assumed safe by this precedent.
 ```
 
-Resolved 2026-10-13 (OP0, `docs/tasks/task-forward-architecture-2026-10.md` §3.2): the gated kernels take GELU-tanh and SiLU only, so
+Resolved 2026-10-13 (OP0, `docs/completed/task-forward-architecture-2026-10.md` §3.2): the gated kernels take GELU-tanh and SiLU only, so
 exact GELU now derives its own feature, `gated-gelu-erf`, which no backend declares. `spark2_5`'s profile carries it in place of
 `gated-gelu`.
 
@@ -19912,7 +19912,7 @@ On the box tack's C3 ran on (38 GiB available) the load is admitted; the term re
 ## residentBackendFeatures.metal.removed
 
 Moved from `decoder/features.go` on 2026-10-31, when Metal's admission moved from its feature set to its operation table
-(`internal/runtime/program/support.go:Metal`; docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-c2). The entry as it stood,
+(`internal/runtime/program/support.go:Metal`; docs/completed/task-forward-architecture-2026-10.md §4.9, OP4m-c2). The entry as it stood,
 with each feature's evidence:
 
 ```go
@@ -19964,18 +19964,18 @@ with each feature's evidence:
 	// the three kernels a capped layer takes: attention, attention_i8 and the exact attention_prefill. The lane selectors keep
 	// such a layer off every other attention kernel, and the MC3 batched step declines it. The declaration rests on the kernel
 	// gates against float64, with the cap dropped as the control (TestAttnSoftcap_decodeKernels, TestAttnSoftcap_prefillKernel).
-	// The Gemma 2 end-to-end tests are diagnostics, not its gate (docs/tasks/task-forward-architecture-2026-10.md §4.6).
+	// The Gemma 2 end-to-end tests are diagnostics, not its gate (docs/completed/task-forward-architecture-2026-10.md §4.6).
 	FeatAttnLogitSoftcap: true,
 	// Nemotron-H's Mamba-2 mixer (backend/metal/mamba.go: mamba_conv, mamba_ssm, mamba_gnorm) and its squared-ReLU MLP (act_quant's
 	// nongated_act), at int4 only: buildMamba declines an int8 model, whose projections would be re-quantized to int4. The
 	// declaration rests on gates M and S, the tier 0 kernel and guard tests, a three-layer slice of the real 9B, and the
-	// whole 9B against the CPU (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b step 2).
+	// whole 9B against the CPU (docs/completed/task-forward-architecture-2026-10.md §4.7, OP2b step 2).
 	FeatSSM:           true,
 	FeatNonGatedReLU2: true,
 	// Multi-head latent attention (backend/metal/mla.go: mla_store, mla_head_mv, mla_qrope, mla_attn), the absorbed form, its latent
 	// rows in each slot's KV buffer. The declaration rests on gate M with routing forced (deepseek-tiny, kimi-tiny), the
 	// kernel gate on both rope branches, the guard tests, and a two-layer slice of DeepSeek-V2-Lite against the CPU
-	// (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2a). Kimi K2's 384-expert router is not here.
+	// (docs/completed/task-forward-architecture-2026-10.md §4.7, OP2a). Kimi K2's 384-expert router is not here.
 	FeatMLA: true,
 },
 ```

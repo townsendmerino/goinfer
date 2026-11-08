@@ -14,7 +14,7 @@ cells: <backend>:<model> with backend cpu|cuda and model 1.5b|7b|e2b
 import argparse, json, os, re, signal, subprocess, threading, time, urllib.request
 
 PIN = "e42db592"
-SOURCES = ["CLAUDE.md", "docs/tasks/task-kv-architecture-2026-10.md", "docs/tasks/task-forward-architecture-2026-10.md", "RELEASING.md", "docs/server.md"]
+SOURCES = ["CLAUDE.md", "docs/tasks/task-kv-architecture-2026-10.md", "docs/completed/task-forward-architecture-2026-10.md", "RELEASING.md", "docs/server.md"]
 CHARS = int(20000 * 3.6)
 HOME = os.path.expanduser("~")
 MODELS = {"1.5b": f"{HOME}/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "7b": f"{HOME}/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf",

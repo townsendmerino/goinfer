@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OP2b step 2, tier 1 input (docs/tasks/task-forward-architecture-2026-10.md §4.7):
+# OP2b step 2, tier 1 input (docs/completed/task-forward-architecture-2026-10.md §4.7):
 # nobara builds NVIDIA-Nemotron-Nano-9B-v2's int4 .giw from the registered Q8_0 GGUF
 # (GOINFER_NEMOTRON_GGUF), and the Mac copies only the .giw into its ~/models.
 #

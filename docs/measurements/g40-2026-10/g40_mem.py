@@ -28,7 +28,7 @@ import time
 import urllib.request
 
 PIN = "e42db592"
-SOURCES = ["CLAUDE.md", "docs/tasks/task-kv-architecture-2026-10.md", "docs/tasks/task-forward-architecture-2026-10.md",
+SOURCES = ["CLAUDE.md", "docs/tasks/task-kv-architecture-2026-10.md", "docs/completed/task-forward-architecture-2026-10.md",
            "RELEASING.md", "docs/server.md"]
 CHARS = int(20000 * 3.6)  # KV9's budget; serve counted 20,193 tokens
 HOME = os.path.expanduser("~")

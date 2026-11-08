@@ -1,11 +1,11 @@
 #!/bin/bash
-# OP1 on Metal, the speed guard G2-S (docs/tasks/task-forward-architecture-2026-10.md §4.6): no model got slower.
+# OP1 on Metal, the speed guard G2-S (docs/completed/task-forward-architecture-2026-10.md §4.6): no model got slower.
 # Two arms, new (REV) against base (BASE, main before any OP1 Metal code), served, no peer arm. Runs with nobody
 # watching: both serve binaries are built here from detached worktrees at commits named when the job is queued.
 # night.py holds the timing lock; bench_peer.py inherits it.
 #
 #   python3 scripts/night.py add op1-speed-metal --est 75 --by "<who>, OP1 Metal (G2-S)" \
-#     --doc docs/tasks/task-forward-architecture-2026-10.md \
+#     --doc docs/completed/task-forward-architecture-2026-10.md \
 #     -- env REV=<merged commit> BASE=<main before OP1's Metal code> bash docs/measurements/op1-metal-2026-10-13/run-op1-night.sh
 #   DRY=1 ...   stops after the builds and the provenance block.
 #

@@ -1,0 +1,5409 @@
+# Task: one forward architecture — models as operation lists, one ragged forward pass (OP0–OP6, RF0–RF6, HL) — 2026-10
+
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **ARCHIVED 2026-11-08 (coordinator close-out sweep, Francis's yes: archive the record, one combined live doc).** The open and
+> parked rows moved to `docs/tasks/task-forward-and-memory-2026-11.md`, which names the section here each one comes from;
+> section numbers below are unchanged, so code citations hold. What closed it: OP0 to OP3; OP4 on Metal (#525 to #591, the
+> step-flag defaults on, Francis 2026-11-04, #748) and on CUDA to its d2 stop (#582 to #603); RF0 (#756, #761); RF1 (#752,
+> #757, #760, #763, #769, #770, #771, 2026-11-07/08; `decoder/step.go` holds every forward-shape assertion); HL on Metal
+> (HL-R, #765, Francis's option 1, 2026-11-08 06:50); SP0 (#270); SP2 on CUDA (#232, #238, #249, #268); the memory planner
+> (§4.9b, §4.9c) is MM5 and MM5b in the live doc, with #739, #741, #754 and #762 merged. §8's E1 to E7 are recorded as decided
+> (E1, E2, E7 acted on; E4 keeps WebGPU on the RF1 adapter; E5 is OP6-def). Killed: OP4-W and OP2a-n (the whole V2-Lite night
+> run). Parked, with triggers, in the live doc: OP2c, OP2-K2, OP5-L4, SP1, SP2-M, SP2b, SP3, OP4cu-x. Not owned here: OP1's
+> peer cell (queue-engineering B28) and AC's queue entry (queue-correctness G47). Every instruction below is a record, not a task.
+
+> **2026-10-22: track SP added (§6a): speculation on windowed and recurrent models**, from Kapitsa (`nace-ai/kapitsa`, Apache-2.0, read at `3f7f4c8` on 2026-10-22).
+> Every speculative path in goinfer refuses both kinds of model today (`decoder/forwardn.go:Model.specRollbackSafe`).
+> Added on the owner's word ("yes both please").
+
+> **Status 2026-11-07.** What changed since 2026-11-02 is marked **new**.
+>
+> - **OP0:** done 2026-10-13 (§4.4, census §4.5, prior art §10a).
+> - **OP1:** Gemma 2 is resident on **Metal and CUDA** (**new**: `docs/hardware-matrix.md`, generated and drift-tested, lists its only
+>   remaining decline as WebGPU, `attn-logit-softcap`). Gates and mechanism: §4.6 and §4.6a. WebGPU is not started.
+> - **OP3:** complete as of 2026-10-30 (§4.8). Every family's per-token forward walks the program (OP3a–OP3k, OP3z part 1); OP3z part 2
+>   deleted the old loops; OP3t (#506) moved the two batched twins onto the batched walker.
+> - **OP4 on Metal** (§4.9): merged through d6b (#525 to #591: layer shape and per-layer steps, `program.Metal` read by the walker and
+>   `Admit`, batched prefill and the multi-sequence step, MoE in the step 1.4873×, per-slot Gated-DeltaNet state 1.5799×, Gemma 4's dense
+>   layers 1.3794×, per-slot Mamba-2 state). Left: D6b-5 (the timed Nemotron-H 4B cell, waits on its checkpoint), per-operation dispatch
+>   inside mixer steps, and the memory planner (§4.7).
+> - **OP4 on CUDA** (§4.9a; Francis's go 2026-11-01: Q2a fusion table, Q3a `program.CUDA`, **Q4a stop at d2**): **new, all merged:** a (#582),
+>   b1 (#584), b2 (#588: decode walks the fusion table; 0.5B/1.5B medians 0.9999×/1.0006×), c1 (#598: `program.CUDA`), c2 (#599: `Admit` reads
+>   `program.CUDA`, 2026-11-02), d2 (#602: MC3's step admitted by `program.CUDAStep`) and d1 (#603: batched prefill walks the steps), the last
+>   two on 2026-11-02. **OP4 on CUDA is therefore at Francis's d2 stop;** the CUDA step does not carry MoE or recurrent blocks, and there is no
+>   phase for them until he says so.
+> - **Olmo Hybrid** (`NegEigval`/`ONormEps` in DeltaNet): **new, done on all three:** CUDA #604, Metal #611, WebGPU #627.
+> - **OP6:** its Metal half is built (the q4k lane joins MC3's step, 2026-10-15; its kernels were 4.7× slower than the loop on Phi-3 until
+>   #722 fixed them on 2026-11-06, `docs/measurements/p29-phi3-2026-11/README.md`). The default-load switch, the CUDA half and WebGPU are not done.
+> - **RF0:** done 2026-11-07 (the prior-art reading is `docs/measurements/forward-arch-prior-art-rf0-2026-11-07.md`, the cost of a decline `docs/measurements/forward-arch-decline-cost-2026-11-07.md`): the per-turn `timings` block is on the wire (`internal/app/serveapp/turn_timings.go`), the cost
+>   counters exist (`internal/cost`, SB11), and the shape × family × backend census was refreshed against program-based admission on 2026-11-07
+>   (`docs/measurements/forward-arch-census-2026-11-07.md`; CPU-only families on CUDA / Metal / WebGPU by `ResidentEligible`, the capability gates: 8 / 8 / 13, from 10 / 12 / 16; by `Admit(...).Why`, which adds Nemotron-H's int4 precision policy: 9 / 9 / 14 model-free and 8 / 8 / 14 at the loader's pick).
+> - **RF1:** **new**, done but for its last merge (§5.5): 49 `Resident*` interfaces to 41 (RF1-1 #752, RF1-2a #757, RF1-2b #760), and every forward shape asserted only in `decoder/step.go` (RF1-4 #763, RF1-5 #769, RF1-6 #770, RF1-7 this step's PR). RF1-3 was dropped. RF5 deletes the shape interfaces.
+> - **HL:** built once on the unmerged branch `hl-metal-2026-10` (2026-10-14): identity PASS (HL-G1 to HL-G3), speed graded OFF (HL-G4: the prose part of a tool turn 1.035 on the 1.5B and 1.010 on the 7B, the whole tool turn 0.986 and 0.973), and HL-R filed (the chain only while the gate is closed). The branch predates KV5-6's chain rework and the `metal/` move to `backend/metal/`, so HL-R was rebuilt on main rather than merged: built and graded 2026-11-07 (PR #765, `docs/measurements/hl-2026-11/README.md`), the 1.5B in the Ship band and the 7B in the Park band, the owner's reading owed. §7a's HL row is still its size.
+> - **Not started:** RF2–RF6, OP5, OP6's CUDA half, default switch and WebGPU, OP1 on WebGPU, OP4 on WebGPU. §7a sizes them.
+> - **Other tracks:** SP's SP2 on CUDA merged (#232, §6a).
+>
+> Written on the owner's ask after a Cowork conversation the same day ("we have spent a bunch of time on decode, prefill
+> and now kv cache. in terms of time spent by goinfer on a query, where is there any room to re-architect to a cleaner
+> internal structure that could simplify and improve either model coverage or (most importantly) performance?", then
+> "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
+>
+> **Its companion is `docs/tasks/task-kv-architecture-2026-10.md`**, the storage half. This doc is the compute half: how a
+> model is described to the GPU backends (Track OP), and how a forward pass is called (Track RF). The third item from the
+> same conversation, one residency manager for KV blocks and MoE experts, went into the KV doc as KV11.
+>
+> **The facts about the code were read at main `9593bd70` (2026-10-13).** This doc took two readings: the tokenizer's cost,
+> and every family's decline reason on each GPU backend. Both are exploratory, not registered, and their programs and output
+> are in `docs/measurements/forward-arch-baseline-2026-10-13.md`. Every gate below is a sketch: whoever starts a phase
+> registers its gates first (rule, void conditions, stopping rule, cost basis), as `CLAUDE.md` requires.
+
+> **Added 2026-10-21 (owner), from option-path admission's leftovers:** 20 of the 71 registration and bound findings counted on
+> 2026-10-08 (`docs/measurements/audit-classes-2026-10-08.md` §2–§3) were one model family that one path did not know about,
+> six of them Critical. The owner's call is a hybrid. The compute, fit-guard and speculative share is this doc's to close,
+> because Track OP's per-layer programs can declare each layer's weights and state, so those paths read the program instead of
+> hand lists: batched-prefill and `Plan` admission, the backends' tails, declines and dispatch, `BuildResident` branches, the
+> expert pager's hooks, the fit guard's byte and KV accounting, and the speculative entry points' rollback and capture checks
+> (the record's §6 table names each finding). The rest (loading and serializing, tokenizer dispatch, chat-template detection)
+> is G47 in `docs/queue-correctness.md`.
+
+## 0. Summary
+
+**Where a query's time goes.** Almost all of an agent turn is prefill and decode.
+- **Handling the request is not where the time is.** Tokenizing 25,327 tokens took 24.1 ms on the M1 Pro, 0.95 µs a token.
+  The same Mac prefills a 3,900-token prompt on the 1.5B at about 1.1 ms a token.
+- **The host's gap between decode tokens is small.** It is 0.58–0.66 ms on Metal, and the run-ahead chain already hides it
+  where it applies.
+- **What costs most is falling off the fast path.**
+  - A model a GPU backend cannot build resident decodes on the CPU, measured 1.7 to 1.8× slower on the Mac for Qwen2.5 at 0.5B, 1.5B and 7B (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), a proxy for the declined families. The 15× this doc once quoted has no record behind it, and the CUDA pair is not measured.
+  - A request shape a backend has not built for a family runs a slower path. A Claude Code first request prefilled token by
+    token for about 4.5 minutes on the 8 GB card before KV3 (the KV doc, §8 Q2).
+
+**Two structural causes.**
+1. **The GPU runners are uniform-layer runners** (`docs/ARCHITECTURE.md`'s phrase). A family runs resident only if the backend
+   implements every feature it needs and its layers all have one shape.
+   - The hardware matrix has 43 families. In the model-free default configuration it reads, 10 decode on the CPU under CUDA,
+     12 under Metal and 16 under WebGPU.
+   - The reasons are a short list (§3.2): missing operations, four families whose layers differ in shape, and two gates.
+   - Gemma 2 is the 8th most-pulled model in Ollama's library (34.4M pulls). It lacks exactly one operation on every GPU
+     backend: attention softcapping.
+2. **The resident seam has one entry point per request shape.** CUDA's resident has 18 methods that run the model, Metal's 18
+   (counting its run-ahead chains) and WebGPU's 7. The decoder type-asserts a resident against 34 optional interfaces.
+   - Every family × shape × backend combination nobody has built falls back to something slower.
+   - Different shapes run different kernel classes. That caused MC4's identity failure on a reused prefix, and KV0's 16-row
+     rule.
+
+**What this doc proposes.**
+- **Track OP:** a model becomes a per-layer list of operations, and backends implement operations, not families.
+- **Track RF:** one ragged forward call carries rows from any number of conversations, each row with its own input and
+  requested output. Decode, verify, a prefill chunk, an image turn and a batched step all become shapes of it.
+- **HL:** a small host-loop change, so Metal's run-ahead survives tool and thinking-budget turns, and CUDA gets one.
+
+| phase | what | backends | size | needs |
+|---|---|---|---|---|
+| OP0 | decline reasons in the hardware matrix; features mapped to operations; prior art. **Done 2026-10-13** | — | S | — |
+| OP1 | attention softcapping: Gemma 2 on every GPU | CUDA, Metal, WebGPU | M | — |
+| OP2 | the next missing operations by demand: MLA on Metal, SSM on CUDA and Metal, KDA | per operation | M–L each | OP0 |
+| OP3 | the layer program, built from the `Architecture`; the CPU executes it bit for bit | CPU | L | OP0 |
+| OP4 | residents walk the program; admission by operation; fusion tables; one memory planner | CUDA, Metal, WebGPU | L | OP3 |
+| OP5 | the families whose layers differ: Llama 4, LFM2.5, Laguna, Spark-X2.5, Granite-4.0-H | per family | M each | OP4 |
+| OP6 | Phi-3/4 on the fast paths: Metal's default load, a q4k prefill, WebGPU | Metal, CUDA, WebGPU | M | — |
+| RF0 | measure first: per-turn phase timing (telemetry X1); a shape × family × backend census | — | S | — |
+| RF1 | one call shape in the decoder, over today's entry points; no kernel change | all resident | M | RF0 |
+| RF2 | ragged attention over paged KV: decode, verify and prefill rows in one pass | CUDA | L | KV4, RF1 |
+| RF3 | mixed steps: decode rows and prefill-chunk rows share a pass | CUDA | M | RF2 |
+| RF4 | the same on Metal | Metal | L | KV5, RF3 |
+| RF5 | retire the old entry points and interfaces; images and hidden outputs as row attributes | all resident | M | RF4 |
+| RF6 | speculation inside a batch | CUDA, Metal | M | RF3 |
+| SP0 | the prize per family: drafter acceptance by teacher forcing, verify-row cost, a projected speedup | — | S | — |
+| SP1 | exact rollback for windowed models: rings sized window + verify rows | CUDA, Metal (staged path first) | M | SP0 |
+| SP2 | speculation on recurrent hybrids: verify never writes the committed state; accepted updates fold in | CUDA, Metal | L | SP0 |
+| SP3 | a tree of the drafter's candidates in the same verify rows, sized by measured row cost | CUDA, Metal | M | SP2 |
+| HL | run-ahead under a gated logit processor (Metal); a run-ahead chain on CUDA | Metal, CUDA | S–M | — |
+
+## 1. Where a query's time goes
+
+| phase | what it costs | evidence | re-architect? |
+|---|---|---|---|
+| parse, template, tokenize | tokenizing: 24.1 ms for 25,327 tokens (best of 5, 0.95 µs a token); the tokenizer loads once, in 89 ms | `docs/measurements/forward-arch-baseline-2026-10-13.md` | **no** |
+| prefill | the largest share of an agent turn. Claude Code's first request is 19,692–20,199 tokens, and its thread switches re-prefilled 8,000 to 17,000 tokens each, 78% of its request time | `docs/measurements/kv0-traffic-2026-10-13.md` | the KV doc, RF |
+| decode | one GPU forward per token | `docs/benchmarks.md` | OP, RF |
+| host gap per token | 0.58–0.66 ms on Metal; the run-ahead chain hides it where it applies (1.010–1.160× decode) | `CHANGELOG.md`, "the next token's forward is queued on the GPU" | HL (small) |
+| **fallbacks** | a model on the CPU decodes 1.7 to 1.8× slower on the Mac, a Qwen2.5 proxy with CUDA unmeasured; a declined shape runs a slower path (above) | `internal/app/loadflags/loadflags.go` (`-ctx`'s help); the KV doc §8 Q2; `docs/measurements/forward-arch-decline-cost-2026-11-07.md` | **OP, RF** |
+
+- **There is no per-phase timing on the wire today.** `docs/tasks/task-turn-telemetry-2026-09.md` (X1–X8) is scoped and
+  unstarted, so the split of a real turn is inferred, not read. RF0 builds its X1.
+- **Fallbacks are being removed one at a time.**
+  - KV3 lifts CUDA's 12,288-key bound on batched prefill for the layers its fused attention serves. In a one-run smoke on its
+    branch, a request of Claude Code's size answered in 25.1 s. Its graded run is queued for the night of 2026-10-13.
+  - A tiled exact attention kernel for Gemma's head dims of 256 and 512 is built on the `kv3-tiled-2026-10` branch. Its night
+    gates are queued.
+  - Per KV3's report, these still decline past the bound: MLA, the all-logits, embedding and residual tails, and image blocks.
+  - Phi-3 at `--quant q4k` decodes resident on CUDA, but its batched prefill declines to the sequential path
+    (`docs/benchmarks.md`).
+  - Each of these was found by someone hitting it. RF removes the class: with one call path, no shape is left without a fast
+    path.
+
+## 2. What must not change
+
+1. **Bit-identity.** Each migration step is bit-identical to the code it replaces. That holds per backend, on every family
+   fixture and real checkpoint the backend runs: the parity manifest plus each resident's identity suites.
+2. **Hand-written kernels stay.** This is not a graph compiler. Fusions stay explicit and per backend, each gated against the
+   unfused operations it replaces.
+3. **A backend that cannot run something declines by name, and never runs it wrong.** Admission is
+   `decoder/admit.go:Admit`, a pure function of the load's facts, then the backend's build:
+   1. the backend and precision checks;
+   2. the runner shape with its precision policy (`decoder/admit.go:admitRunner`);
+   3. the activation-group gate;
+   4. `decoder/features.go:residentGateReasons`;
+   5. the backend's own build, which declines through `decoder/residency.go:DeclineResident`.
+4. **The CPU stays the reference.** The descriptor-driven loop and the own-forward families are the oracle. The layer program
+   reproduces them exactly before anything else moves.
+5. **The Hard API tier and the two-step tag.** The backends are separate modules, so every seam change lands with
+   `RELEASING.md`'s two-step tag.
+6. **The run budget.** Heavy gates go on the night queue under the timing lock.
+
+## 3. Today
+
+### 3.1 How a model is described, and how a GPU backend runs it
+
+- **The CPU is descriptor-driven** (`docs/ARCHITECTURE.md` §1, "One decoder, read from a descriptor").
+  - `decoder/registry.go:resolveArchitecture` turns a checkpoint's config into a `decoder/arch.go:Architecture`. Every
+    `Architecture` passes `decoder/registry.go:Architecture.validateResolved`.
+  - A family's specifics are fields: norms, attention options, position scheme, FFN kind, MoE configuration.
+  - Nine families run their own layer loop: the nine entries of the `ownForwards` table (`ownForwardFamily`; the table was removed in OP3z),
+    one `runLayers*` function each, across twelve files named `forward_*.go` in `decoder/`. They are:
+    - the recurrent hybrids: Gated DeltaNet, short conv, two Mamba-2 families, and KDA with MLA;
+    - MLA itself (DeepSeek);
+    - three softmax families whose layers differ: Gemma 4, Llama 4 and gpt-oss.
+  - Six of the nine pass the runner-shape check through a per-family bridge.
+    - Ling 3.0 then declines on KDA everywhere.
+    - Nemotron-H declines on SSM on CUDA and Metal and runs on WebGPU. A Nemotron 3 Nano checkpoint (MoE) also fails the
+      runner shape on CUDA and Metal.
+  - Llama 4 and LFM2 have no bridge. Granite-4.0-H waits on a bring-up gate, and on CUDA and Metal also lacks SSM.
+- **The GPU backends are uniform-layer runners.**
+  - Each builds a per-layer struct from the `Architecture` and branches on its flags (`backend/cuda/backend.go:cudaBackend.BuildResident`,
+    `backend/metal/backend.go:metalBackend.BuildResident`, `backend/webgpu/residency.go:webgpuBackend.BuildResident`).
+  - CUDA's `backend/cuda/resident.go:cudaLayer` has 47 lines of fields. Metal has `backend/metal/model.go:residLayer` beside its own DeltaNet
+    and MoE layer types. WebGPU has `backend/webgpu/internal/kernels/decoderunner.go:RunLayer`.
+- **Admission** is the chain in §2, item 3.
+  - An own-forward family needs a per-family bridge to pass the runner-shape check.
+  - Every `ResidentFeature` the architecture needs must then be in the backend's declared set
+    (`decoder/features.go:ResidentBackendFeatures`).
+  - The backend's own build may still decline, for memory for example.
+- **Size**, in non-test Go:
+  - about 45K lines in `decoder/`;
+  - 13.5K in `cuda/`, plus 35 `.cu` files;
+  - 18K in `metal/`, whose shaders live in its Go files;
+  - 19K in `gpu/`.
+
+### 3.2 Why families decode on the CPU (read 2026-10-13)
+
+This is the census behind `docs/hardware-matrix.md`'s CPU cells. For every registry family on each GPU backend, it applies the
+runner-shape check and then `decoder/features.go:residentGateReason`, in the model-free default configuration the matrix
+reads. "—" means the family runs resident there. Where an earlier check refuses first, what the later ones would also name is
+listed after it ("plus"). The programs and their raw output are in the baseline record.
+
+**Since OP0 the matrix generates this table itself** (`docs/hardware-matrix.md`, "Why a cell reads CPU"), from every gate and
+not only the first. The table below is kept as the reading the design started from, with two rows corrected by what the
+generator showed: Spark-X2.5 (the activation, below) and Kimi K2 on Metal (a router capacity the missing `mla` hid).
+
+| family | CUDA | Metal | WebGPU |
+|---|---|---|---|
+| Gemma 2 | attn-logit-softcap | attn-logit-softcap | attn-logit-softcap |
+| DeepSeek-V2, DeepSeek-V3 | — | mla | — |
+| Kimi K2 | — | mla, plus the router's capacity (384 experts; Metal's kernel routes 256) | — |
+| Ling 3.0 | kda | kda, mla | kda |
+| Nemotron-H | non-gated-mlp, ssm (plus runner shape if MoE) | ssm (plus runner shape if MoE) | — |
+| GPT-2 | learned-pos, non-gated-mlp | — | layer-norm, learned-pos |
+| Command-R, Command-R7B | — | — | layer-norm, pairwise-rope, parallel-block (Command-R7B also nope) |
+| GLM-OCR | — | — | pairwise-mrope, pairwise-rope |
+| Ministral 3 | — | — | attn-temp |
+| Olmo 3, Olmo Hybrid | — | — | post-only-norm, qk-norm-whole (Olmo Hybrid also nope) |
+| SmolLM3 | — | — | nope |
+| Llama 4 | runner shape: own forward, not bridged | the same | the same |
+| LFM2.5 | runner shape: own forward, not bridged, plus short-conv | the same | the same |
+| Laguna | runner shape: local/global RoPE tables differ in length, plus attn-output-gate | the same | the same |
+| Spark-X2.5 | runner shape: local/global RoPE tables differ in length, plus attn-output-gate, gated-gelu-erf | the same | the same |
+| Granite-4.0-H | bring-up gate (`GOINFER_SSM_RESIDENT`), plus ssm | the same | bring-up gate (`GOINFER_SSM_RESIDENT`) |
+| Phi-3, Phi-4 | the activation hazard: int8 activations round its outliers away | the same | the same |
+
+**Four kinds of decline:**
+- **A missing operation** on one or more backends: softcapping, MLA, SSM, KDA, short conv, the attention output gate
+  (Laguna's softplus, Spark-X2.5's sigmoid), and a set of small operations WebGPU lacks.
+- **Layers of different shapes.**
+  - Llama 4 and LFM2.5 run their own forwards, which no GPU runner bridges.
+  - Laguna and Spark-X2.5 use the generic loop, but give local and global layers RoPE tables of different lengths.
+    `decoder/residency.go:Architecture.ropeResidentCompatible` refuses that.
+  - No uniform-layer runner can express these, however many operations it has.
+- **A gate.** Granite-4.0-H waits on its parity bring-up on every backend. On WebGPU that is the only reason, since WebGPU
+  already declares its SSM feature (`docs/hardware-matrix.md`'s note). CUDA and Metal also lack SSM.
+- **A numerics guard, read in one configuration.** Phi-3/4's activation outliers are rounded away by per-row int8 activation
+  scales (`decoder/actquant_hazard.go:ActivationQuantHazard`). The matrix shows CPU everywhere, but the loader picks a safe
+  configuration (`internal/runtime/modelload/modelload.go:activationSafeQuant`):
+  - **On CUDA,** a Phi-3/4 GGUF loads at `--quant q4k` and runs resident: 112.6 tok/s at depth 128 on the 8 GB card
+    (`docs/measurements/peer-sweep-2026-09-29.md`). Its batched prefill declines to the sequential path.
+  - **On Metal,** it runs resident at an explicit `--quant q4k`, a lane built 2026-10-08 (`docs/tasks/task-metal-q4k-2026-10.md`).
+    The default load still picks int8int8 with per-32 scales, which declines to the CPU.
+  - **WebGPU** has neither.
+
+**The activation hazard, closed by OP0.** Every resident MLP kernel picks its activation from the ordinal
+`decoder/residency.go:Model.GatedActResident` returns, and knows two: tanh-GELU and SiLU.
+- **Gated, exact-erf GELU (Spark-X2.5; `ActGelu`, `gegluExact`).** The feature list mapped every gated non-SiLU activation to
+  `gated-gelu`, which every backend declares. Nothing ran wrong, because the runner shape and the output gate decline
+  Spark-X2.5 first; once both were lifted it would have been admitted with the wrong activation.
+- **Non-gated, exact-erf GELU: this one was live.** A GPT-2 checkpoint that declares `activation_function: "gelu"` passed every
+  feature Metal declares, and Metal's non-gated kernel ran tanh-GELU for it. Measured on the pre-fix tree: Metal's logits were
+  bit-identical between the `gelu` and `gelu_new` configs of the real GPT-2, while the CPU's differed (the baseline record, §3).
+  The released GPT-2 checkpoints use `gelu_new`.
+- **Now:** `gated-gelu` is tanh-GELU only. `gated-gelu-erf` and `non-gated-gelu-erf` are features no backend declares, and
+  `gated-act-unknown` catches any other gated activation, so a gated model past admission hands a kernel only the two ordinals
+  it knows (`decoder/features.go:Architecture.residentFeatures`).
+- **What is left** is in §4.5: `non-gated-mlp` still means a different activation on Metal and on WebGPU.
+
+**How much it matters.** Pulls in Ollama's library, in millions (`docs/measurements/ollama-coverage-2026-10-09.md`):
+- **gemma2, 34.4:** Gemma 2 decodes on the CPU on every GPU backend.
+- **phi3, 18.2, and phi4, 7.7:** Phi-3/4 decode on the CPU under WebGPU, and under Metal without `--quant q4k`.
+- **deepseek-v3, 3.8, and deepseek-coder-v2, 3.2** (the V2 architecture): DeepSeek-V2/V3 and Kimi K2 decode on the CPU under
+  Metal.
+
+### 3.3 How a forward pass is called
+
+- **The seam** is `decoder/residency.go:ResidentForward`, plus 34 optional interfaces the decoder finds by type assertion on a
+  resident. 28 of them are declared in `decoder/residency.go`. They include:
+  - **the prefills:** `Prefiller`, `ResidentPrefillKV`, and the image, m-RoPE and deepstack prefills;
+  - **the outputs:** `ResidentHiddenLast`, `ResidentResidualAll`, `ResidentGreedy`, `ResidentSample`, `ResidentTopK`, and the
+    greedy and sample chains;
+  - **batching:** `ResidentBatchStepper`;
+  - **the reporters:** `PrefillPathReporter`, `VerifyPathReporter`, `ResidentFastPrefill`, `ResidentPrefillKernelFloor`.
+- **The methods that run the model:**
+  - **CUDA, 18:** `Forward`, `ForwardArgmax`, `ForwardMRoPE`, `ForwardN`, `ForwardNoLogits`, `ForwardSample`, `ForwardTopK`,
+    `HiddenLast`, `PrefillImageBlocksLast`, `PrefillImageLast`, `PrefillLast`, `PrefillLastN`, `PrefillLastNArgmax`,
+    `PrefillMRoPEDeepstackLast`, `PrefillMRoPELast`, `PrefillSeedArgmax`, `ResidualAll`, `StepBatch`.
+  - **Metal, 18:** the same set less `ForwardArgmax`, `ForwardTopK`, `PrefillLastN` and `PrefillSeedArgmax`, plus the greedy
+    and sample chains (a start and a next for each).
+  - **WebGPU, 7:** `Forward`, `ForwardMRoPE`, `ForwardN`, `ForwardNoLogits`, `ForwardSample`, `PrefillLast`,
+    `PrefillMRoPELast`.
+- **Kernel classes differ by shape.**
+  - On CUDA, a pass runs the fast kernels when it has at least 16 rows and its prompt is at least 512 tokens (KV0's class rule;
+    `ResidentFastPrefill`). Anything else runs the exact ones. Metal has its own floor (`ResidentPrefillKernelFloor`).
+  - The consequences so far:
+    - MC4's first rerun failed identity on exactly this. A reused prefix had been computed by a different kernel class than a
+      cold prefill would use (`docs/measurements/mc4-candidate-cuda-2026-10-01.md`, "ROOT CAUSE (2026-10-02 evening)").
+    - KV0 had to state the class rule and put its 16-row condition into the prefix key.
+    - KV3's chunker had to be shaped around it.
+- **What one entry point per shape blocks:**
+  - **Speculation inside a batch.** It is an owner decision in `docs/tasks/parked/task-concurrency-2026-09.md`: "CUDA copy L =
+    1.54×; needs a ragged-batch kernel, no design".
+  - **Removing the pause a newcomer's prefill causes in other conversations' decode.** Chunked prefill cut the decoders'
+    longest stall from 5.38 s to 1.23 s (`docs/measurements/chunked-prefill-2026-09-27.md`). It cannot remove the stall,
+    because a chunk and a decode step are different calls.
+
+## 4. Track OP — a model is a list of operations
+
+### 4.1 Design
+
+- **The layer program.** At load, the `Architecture` produces a per-layer list of operation instances.
+  - A dense layer, for example: `norm(rms, +1)`, `proj(qkv, int4)`, `qk-norm(per-head)`, `rope(partial, base, yarn)`,
+    `attention(window W, softcap c, sinks, temperature)`, `out-gate`, `proj(o)`, `residual`, `norm`,
+    `ffn(gated swiglu | moe{router, experts, shared})`, `residual`.
+  - The recurrent mixers are operations too: `deltanet`, `mamba2`, `kda`, `short-conv`. So are per-layer embeddings and KV
+    sharing.
+  - A layer can differ from its neighbours, which is the point.
+- **Operation kinds are a closed, versioned set.** Most `ResidentFeature` values already name an operation kind or one of its
+  parameters: softcap, sinks, temperature, NoPE, partial or pairwise RoPE, layer norm, parallel block, post-only norm,
+  whole-vector QK-norm, MLA, SSM, DeltaNet, KDA, short conv, MoE.
+- **A backend declares the operation kinds it implements,** and runs a program by walking it layer by layer.
+- **Fusions are explicit.**
+  - A backend's fusion table claims sequences of operations. For example, CUDA's `fused_rms_qkv` would claim
+    `[norm, proj(qkv)]`. It folds the RMSNorm and the int8 activation quantization into the Q/K/V GEMV (`backend/cuda/fused_qkv.cu`).
+  - Each fusion has an identity gate against the operations it replaces.
+  - There is no automatic fusion and no general compiler. goinfer's speed is in hand-written kernels, and its trust is in
+    gating them.
+- **Admission becomes:** every operation kind in the program is implemented, and the memory fits. This replaces the family
+  switch in `decodeRunnerEligible` and the feature sets.
+- **The CPU executes the same program.** Its own-forward code becomes operation implementations. `deltaNetCore`, `mamba2Step`
+  and `kdaRecurrentStep` mostly already are.
+- **Memory planning.** A program lets each backend size its scratch once, per operation and per chunk.
+  - The recompute audit's same-work-twice class (`docs/tasks/task-recompute-audit.md` §5, R-11–R-25) was found by hand. A
+    planner makes avoiding it a property.
+  - The planner prices through the KV doc's one sizing function (its §5.10), so admission has one source.
+
+### 4.2 What it buys
+
+- **Coverage per operation, not per family.** An operation built once per backend lights up every family that uses it.
+  - Softcapping puts Gemma 2 on all three GPUs.
+  - MLA on Metal brings DeepSeek-V2 and DeepSeek-V3 there. Kimi K2 also needs Metal's router to route its 384 experts; the
+    kernel routes 256 (`decoder/features.go:ResidentBackendMoECap`).
+- **Performance where it matters most.** A family leaving the CPU fallback gets roughly the CPU-to-GPU decode difference, 1.7 to 1.8× on the Mac for Qwen2.5 at three sizes (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), not 15×; the CUDA difference is not measured, and a new family's first kernel can be slower than the CPU. That is the
+  largest single change available to a user of that family.
+- **New families get cheaper.** A family made of existing operations needs an adapter (descriptor → program) and a parity gate,
+  not code in three runners.
+- **The families whose layers differ stop being special.** Each becomes a program of mostly existing kinds plus its own
+  missing operations:
+  - **Llama 4:** chunked attention on its RoPE layers, NoPE layers, parameter-free L2 QK-norm, attention temperature, and
+    dense/MoE layer interleaving;
+  - **LFM2.5:** a gated short convolution (`FeatShortConv`) on 22 of its 30 layers;
+  - **Laguna:** per-layer query heads, per-layer RoPE rotary width, and attention output gate (`g_proj` with softplus,
+    `FeatAttnOutputGate`);
+  - **Spark-X2.5:** per-layer RoPE rotary width, attention output gate (`g_proj` with sigmoid, `FeatAttnOutputGate`), and
+    exact-erf gated GELU (`ActGelu`, `gegluExact`);
+  - **Granite-4.0-H:** Mamba-2 (`FeatSSM`) and attention layers.
+
+### 4.3 How close the code is
+
+- **Close on knowledge.** The `Architecture` holds every fact the program needs.
+  - The per-layer predicates exist: `isLinearLayer`, `isMambaLayer`, `isConvLayer`, `LayerIsLocalResident`, and Gemma 4's
+    per-layer geometry.
+  - So does the feature list.
+  - The residents already branch per layer on flags.
+- **Missing:**
+  - an explicit program object;
+  - runners that walk layers of different kinds;
+  - backend operation tables in place of feature sets;
+  - fusion tables in place of fusions hard-coded into each runner's build.
+
+### 4.4 Phases
+
+- **OP0 — the decline table, the operation census, prior art (S). DONE 2026-10-13; the summary follows this list.**
+  - `docs/hardware-matrix.md` prints each declining cell's reasons: the runner shape, the operations missing, or the gate. It
+    is generated from both checks, and a runner-shape decline does not hide the operations `residentGateReason` also names.
+  - A row whose default load runs resident in another configuration says so: Phi-3/4 at `--quant q4k` on CUDA.
+  - Map every `ResidentFeature` to an operation kind or parameter.
+  - Split `gated-gelu` into tanh GELU (`ActGeluTanh`, Gemma) and exact-erf GELU (`ActGelu`, Spark-X2.5), so a backend without
+    an exact-GELU kernel declines Spark-X2.5 by name (§3.2's hazard).
+  - Read the prior art (§10).
+- **OP1 — attention softcapping on every GPU (M).** Worth doing before the program exists.
+  - Softcapping is a parameter of every attention kernel variant per backend: decode, split-KV and flash-decode, fused and
+    exact prefill, and the MC3 rows.
+  - It is two steps per backend: route every kernel's score through one function, then put the softcap in that function.
+  - **Its gates are registered in §4.6.**
+- **OP2 — the next operations, in order of demand (M–L each).** Each has its own gates, as OP1 does.
+  - MLA on Metal: DeepSeek-V2/V3. Kimi K2 needs it and a router that routes 384 experts (Metal's routes 256).
+  - SSM on CUDA and Metal: Nemotron-H, and Granite-4.0-H once its gate lifts.
+  - Then KDA.
+- **OP3 — the layer program, on the CPU (L).**
+  - Build the program for every registry family. The CPU executes it, and its logits are bit-identical to today's generic loop
+    and own forwards on the whole parity manifest.
+  - **Can the gate go red?** Plant a dropped operation, two swapped operations, and a parameter off by one.
+- **OP4 — the residents walk the program (L).** CUDA first, then Metal, then WebGPU.
+  - It brings admission by operation, per-backend fusion tables with each fusion gated, and the memory planner.
+  - **Gates:**
+    - every family's identity suite unchanged on each backend;
+    - speed within 0.99 at depth 128 and 3,900 (night queue).
+- **OP5 — the families whose layers differ, onto the GPU (M each).** Llama 4, LFM2.5, Laguna, Spark-X2.5, and Granite-4.0-H
+  after its gate. Each brings only its missing operations.
+- **OP6 — Phi-3/4 on the fast paths (M).** This may become its own task (E5).
+  - Metal's default load becomes `--quant q4k`, where the loader now picks int8int8, once the lane's peer cell is read.
+  - A batched prefill for the q4k kinds, on CUDA and Metal.
+  - Per-32 activations or a q4k lane on WebGPU.
+
+**OP0, done 2026-10-13.** What it changed, and what it found:
+- **The matrix says why.** `docs/hardware-matrix.md` has a generated section, "Why a cell reads CPU", built from
+  `decoder/residency.go:Architecture.runnerShapeDecline` and `decoder/features.go:residentGateReasons`. It lists every gate
+  that refuses, and the generator fails if a cell and its reasons disagree. A note covers Phi-3/4's other configurations.
+- **Its reasons are the baseline record's, with two additions:** Spark-X2.5's activation, and Kimi K2's router capacity on
+  Metal, which the missing `mla` had hidden. §3.2's table and OP2's line are corrected for it.
+- **The activation hazard is closed** (§3.2): `gated-gelu-erf`, `non-gated-gelu-erf` and `gated-act-unknown`, declared by no
+  backend. The non-gated case was live on Metal, and the baseline record's §3 has the run before and after.
+- **A runner-shape decline now names the shape** in `DecodePath()` and `serve check`.
+- **The census is §4.5.** Its seven numbered findings are where the operation boundary does not hold, and it sizes OP1.
+- **The prior art is §10a,** with §10's lines corrected in place.
+- **Two things for the phases that follow:**
+  - Before OP2's SSM on Metal, the non-gated activation needs a feature per value (§4.5, item 2).
+  - Before OP5, `attn-output-gate` needs splitting by activation (§4.5, item 3).
+- **Backend findings are §4.5's last list.** The CUDA double softcap was confirmed and fixed; a Cohere step row's one-ulp
+  LayerNorm difference was found by that fix and is open, as are the other two.
+
+### 4.5 Features mapped to operations (OP0, read 2026-10-13)
+
+Every `ResidentFeature`, the operation it would become, and what implements it on each backend today.
+
+- **Basis.** Read on branch `op0-2026-10` (main `bf62dd71` plus OP0's own changes). Nothing here was run.
+  - "Declared" is read from `decoder/features.go:ResidentBackendFeatures`' source map. "—" means the backend does not declare
+    the feature.
+  - The kernels were read in three passes, one per backend module. Every kernel name below was then checked to occur in the
+    file named. A statement that was not read in the code is marked INFERRED.
+- **Kernel files.** CUDA kernels are `.cu` files in `cuda/`. Metal's are Go string constants: `backend/metal/kernels/kernels_msl.go` (decode), `backend/metal/kernels/prefill_msl.go` (the f16
+  prefill), `backend/metal/kernels/moe_msl.go` and `backend/metal/kernels/deltanet_kernels_msl.go`. WebGPU's are WGSL constants in `gpu/`.
+- **What "operation" means here.** §4.1's kinds: `norm`, `proj`, `qk-norm`, `rope`, `attention`, `out-gate`, `ffn` (gated,
+  non-gated or MoE), the recurrent mixers, and the embedding and head stages. A feature is an operation kind, a parameter of
+  one, a property of the layer list, or a bundle of several.
+
+**Norms**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `rms-add-one` | parameter of `norm(rms)`: the (1+w) offset | `addOne` of every RMS kernel: `rmsnorm_quant`, `rmsnorm_f32` (`backend/cuda/glue.cu`), `fused_rms_qkv`, `fused_rms_gu`, `qk_norm` (`backend/cuda/fused_qkv.cu`), their batched twins (`backend/cuda/prefill_batched.cu`) | `addOne` of `rmsnorm_quant`, `rmsnorm_f32`, `qk_norm`; `rmsnorm_f16`, `qk_norm_f16` in the prefill | `addone` of `rmsnormQuantWGSL` (`backend/webgpu/decodefuse.go`), `rmsnormShaderWGSL` (`backend/webgpu/layer.go`), `qkNormWGSL` (`backend/webgpu/qknorm.go`) |
+| `layer-norm` | a second `norm` kind, with a bias parameter | `layernorm_quant` (`backend/cuda/glue.cu`), bias-free; `layernorm_quant_batched` (`backend/cuda/layernorm_quant.cu`) | `layernorm_quant` with `hasBias`; the prefill's `layernorm_f16` is bias-free | — |
+| `qk-norm` | `qk-norm`, per head | `qk_norm` (`backend/cuda/fused_qkv.cu`), `qk_norm_batched` (`backend/cuda/prefill_batched.cu`) | `qk_norm`; `qk_norm_f16` | `qkNormWGSL` (`backend/webgpu/qknorm.go`) |
+| `qk-norm-whole` | parameter of `qk-norm`: one group over all heads | the same kernels launched as one head; declines unless nH = nKV | the same; declines unless nH = nKV | — |
+| `sandwich-norm` | the layer list: a `norm` after each sublayer | no new kernel: `rmsnorm_f32`, and the o and down projections lose their fused residual add | `rmsnorm_f32`; `rmsnorm_f16` in the prefill | reuses `rmsnormShaderWGSL` and `residualShaderWGSL` (`backend/webgpu/layer.go`) |
+| `post-only-norm` | the layer list: no pre-norm | no new kernel: `quant_vec` (`backend/cuda/glue.cu`) replaces the pre-norm | no new kernel: `quant_vec` | — |
+| `parallel-block` | the layer list: one `norm` feeds attention and FFN, one residual add | no kernel; the attention input is reused | no kernel; the same | — |
+
+**Positions**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `partial-rotary` | parameter of `rope`: the rotary width | `rhalf` of `rope_kv` (`backend/cuda/gemv_fwd.cu`), `rope_kv_batched` (`backend/cuda/prefill_batched.cu`) | `rhalf` of `rope2`; `rope_f16` | `half` in the rope shaders (`backend/webgpu/attention.go`); the batched prefill declines it |
+| `yarn-mscale` | parameter of `rope`: a scale | `mscale` of the same kernels | `scale` of `rope2`; `rope_f16` | `scale` in the rope shaders; the batched prefill declines it |
+| `per-layer-rope` | the layer list: `rope`'s table differs by layer | a buffer bound per layer | a buffer bound per layer | a buffer bound per layer |
+| `nope` | the layer list: a layer with no `rope` | no kernel: the decoder hands the layer an all-zero table | the same | — (the table mechanism is there; not declared) |
+| `pairwise-rope` | parameter of `rope`: the pairing; its own kernels | `rope_kv_pw`, `rope_kv_batched_pw` (`backend/cuda/rope_pairwise.cu`) | `rope_pw`, `rope2_pw`; `rope_f16_pw` | — |
+| `pairwise-mrope` | pairing × a (t, h, w) position; prefill only | `rope_kv_mrope_batched_pw` (`backend/cuda/rope_pairwise.cu`) | `rope_mrope_f16_pw` | — |
+| `learned-pos` | an embedding-stage operation; no `rope` | — | host add (`backend/metal/model.go:resident.addLearnedPosTo`) | — |
+
+**Attention**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `sliding-window` | parameter of `attention`, and a KV property | `window` of `attention` (`backend/cuda/glue.cu`), `attn_batched`, `attn_fused_hd64` and the tiled kernels; a host-computed start for `splitkv_scores` and `fa_partial` | `window` of `attention`, `attention_i8`, `attention_prefill`; the batched step declines it | `start` in every decode attention shader's uniform (`backend/webgpu/attention.go`) |
+| `attn-logit-softcap` | parameter of `attention` | — | — | — |
+| `attn-temp` | parameter of `attention` (a query scale), implemented in the rope kernel | `qTempScale` of `rope_kv`; a per-row table for `rope_kv_batched` | `qTempScale` of `rope2`; not in the f16 prefill | — |
+| `attn-sink` | **bundle of four** (below) | `sinks` of `splitkv_softmax` (`backend/cuda/decode_splitkv.cu`), `attn_batched`, `attn_fused_hd64`; `glu_quant_gptoss`, `route_gptoss` (`backend/cuda/gptoss_act.cu`); `gemv_w4a8_moe_wacc_bias` (`backend/cuda/moe.cu`) | `sinks` of `attention`, `attention_i8`; `swiglu_quant_gptoss`, `route_gptoss_sg`, `gemv_w4a8_moe_wacc_bias` | `sinks` in the nine decode attention pipelines (`backend/webgpu/attention.go`); `routeGptOssWGSL`, `gptossGluQuantWGSL`, `moeExpertGptOssDownGEMVWGSL` (`backend/webgpu/moe.go`) |
+| `attn-output-gate` | `out-gate`, with two activations under one name, plus a per-layer query-head count | — | — | — |
+| `mla` | a second `attention` kind, with its own projections and rope | `mla_latent_store`, `mla_head_matvec`, `mla_q_rope`, `mla_attn` (`backend/cuda/mla.cu`); decode only | — | `mlaLatentStoreWGSL`, `mlaHeadMatvecWGSL`, `mlaQRopeWGSL`, `mlaAttnWGSL` (`backend/webgpu/mla.go`) |
+| `out-bias` | parameter of `proj(o)`: a bias | the bias argument of the GEMVs | `gemv_w4a8_sa_bias_resid` | no new shader: a bare GEMV, then two adds |
+
+**Feed-forward**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `gated-gelu` | parameter of `ffn(gated)`: tanh-GELU | `act` of `glu_quant` (`backend/cuda/glue.cu`), `glu_quant_batched` (`backend/cuda/prefill_batched.cu`), `glu_quant_g32` (`backend/cuda/actgroup.cu`) | `act` of `swiglu_quant`, `swiglu_f32`; `swiglu_f16` | its own shader, `gegluQuantWGSL` (`backend/webgpu/decodefuse.go`), chosen by one model-level flag |
+| `gated-gelu-erf` | parameter of `ffn(gated)`: exact GELU | — | — | — |
+| `gated-act-unknown` | none: the catch-all for any other gated activation | — | — | — |
+| `non-gated-mlp` | `ffn(non-gated)`; **the activation is not named** | — | `act_quant`: tanh-GELU or SiLU, with biased up and down GEMVs | `relu2QuantWGSL` (`backend/webgpu/relu2.go`): squared ReLU, reached only through Nemotron's block kinds |
+| `non-gated-gelu-erf` | parameter of `ffn(non-gated)`: exact GELU | — | — | — |
+| `moe` | `ffn(moe)`: a router, routed experts, an ungated shared expert | `moe_route`, `gemv_w4a8_moe`, `gemv_w4a8_moe_wacc`, `shared_gate_combine` (`backend/cuda/moe.cu`) | `moe_route_sg`, `gemv_w4a8_moe`, `gemv_w4a8_moe_wacc` | `moeRouteWGSL`, `moeExpertGEMVWGSL` (`backend/webgpu/moe.go`) |
+| `moe-gated-shared` | parameter of `ffn(moe)`: a sigmoid gate on the shared expert | the `ungated` argument of `shared_gate_combine` | `shared_gate_combine` | `sharedGateWGSL` (`backend/webgpu/moe.go`) |
+
+**Recurrent mixers**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `ssm` | `mamba2`, for two families with different block layouts | — | — | `mambaConvShaderWGSL`, `mambaSSMShaderWGSL`, `mambaGNormShaderWGSL` (`backend/webgpu/mamba.go`) |
+| `deltanet` | **bundle of two**: the `deltanet` mixer, and a fused output gate on the family's softmax layers | `delta_conv`, `delta_gates`, `delta_norm`, `delta_rule`, `delta_gnorm`; `delta_qsplit`, `delta_attn_gate` (`backend/cuda/deltanet.cu`) | the same seven names | `deltaRuleShaderWGSL`, `deltaNormShaderWGSL`, `deltaGatesShaderWGSL`, `deltaGNormShaderWGSL`; `deltaQSplitShaderWGSL`, `deltaAttnGateShaderWGSL` (`backend/webgpu/deltanet.go`) |
+| `kda` | `kda` | — | — | — |
+| `short-conv` | `short-conv` | — | — | — |
+
+**Embedding and head**
+
+| feature | operation | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| `embed-scale` | parameter of the embedding stage | host, in the decoder for every backend (`decoder/residency.go:Model.embedResidentInto`) | the same | the same |
+| `final-logit-softcap` | head post-processing, on the host | `backend/cuda/softcap.go:applySoftcap` | `backend/metal/model.go:softcapParallel` | `backend/webgpu/internal/kernels/softcap.go:ApplySoftcap` |
+| `logit-scale` | head post-processing | host multiply (`backend/cuda/softcap.go:applyLogitScale`) | host multiply (`backend/metal/model.go:resident.finalizeLogits`) | folded into the head's weight scale at build, **for the Granite hybrid only** |
+| `gemma4-e-model` | **bundle of three**: a per-layer embedding operation, cross-layer shared KV, a per-layer FFN width | no new kernel | `ple_gelu_mul`, plus existing kernels (`backend/metal/model.go:resident.encodePLE`) | no new shader |
+
+**What does not map cleanly.** These are the places the operation boundary of §4.1 does not hold today.
+
+1. **Four features are bundles.** A backend declares all of a bundle or none, so a model that needs one part waits for the rest.
+   - `attn-sink` is gpt-oss's four changes: the sink (an `attention` parameter), a router whose bias reaches the mixing weight,
+     a clamped SwiGLU expert with a bias, and a biased weighted down-projection.
+   - `deltanet` is the mixer plus an output gate on the softmax layers, fused into a double-width query projection.
+   - `gemma4-e-model` is one operation, one KV-layer property and one property of the layer list.
+   - `moe` covers every routing flavour as kernel parameters, and each backend's build then declines some shapes by hand: on
+     CUDA, a non-SiLU expert, MoE with sandwich norms, and widths that are not multiples of 32
+     (`backend/cuda/backend.go:cudaBackend.BuildResident`).
+2. **One name, a different operation per backend.**
+   - `non-gated-mlp` is tanh-GELU or SiLU on Metal and squared ReLU on WebGPU. OP0 named exact GELU; the rest is open.
+     - A non-gated squared-ReLU model derives nothing for its activation, and Metal's `act_quant` would run tanh-GELU for it.
+       Today only Nemotron-H is that shape, and `ssm` declines it on Metal first. **OP2's "SSM on Metal" lifts that**, so the
+       non-gated activation needs a feature per value before then.
+     - WebGPU reaches its kernel only through Nemotron's block kinds. INFERRED: another non-gated family that passed the
+       gates would fail the build with a projection error, not a decline.
+   - `logit-scale` is a host multiply for any family on CUDA and Metal. On WebGPU it is a fold into the head that only the
+     Granite hybrid's build performs (`backend/webgpu/residency.go:webgpuBackend.BuildResident`). Another family with a logit scale would
+     be admitted there and left unscaled. No released checkpoint reaches it: dense Granite 4.2 ships a scale of 1.0, and
+     Command-R declines on WebGPU for other features (both read from this repo's notes, not from the checkpoints).
+   - `layer-norm` is biased on Metal's decode kernel, and bias-free on CUDA's decode kernel and in Metal's prefill. GPT-2's
+     biased norm is not on CUDA; `learned-pos` and `non-gated-mlp` decline it there first.
+3. **One name, two parameter values: the class OP0's activation fix belongs to.** `attn-output-gate` is softplus for Laguna and
+   sigmoid for Spark-X2.5, and also carries Laguna's per-layer query-head count. A backend that builds one gate and declares
+   the feature admits the other. Split it before OP5.
+4. **Five features are not operations.** `sandwich-norm`, `post-only-norm`, `parallel-block`, `nope` and `per-layer-rope`
+   say which operations a layer has, in what order, and with which table. In a layer program they are the list itself.
+   - They still cost code, because fusions assume one order. Sandwich and post-only norms give up the residual add fused into
+     the o and down projections. On CUDA, post-only norms and the parallel block turn the fused norm-plus-QKV kernel off.
+   - This is the argument for §4.1's explicit fusion tables: the kernels already know which sequences they claim.
+5. **Where the math lives is not where the code lives.** `attn-temp` scales the query, so it is an `attention` parameter, and
+   both backends implement it inside the rope kernel. It is missing from Metal's f16 prefill rope and from CUDA's m-RoPE and
+   MLA kernels.
+6. **A second admission system sits beside the features.** These decide admission and are not features:
+   - in the decoder: the runner shape, the activation hazard and the activation group, the router's capacity, per-layer
+     attention geometry, and Gemma 4's parallel dense and MoE block (`decoder/features.go:residentGateReasons`);
+   - in each backend's build: hand-written declines. Metal's include widths that are not multiples of 8 and the q4k lane's
+     shape (`backend/metal/model.go:buildResident`). WebGPU's include a head dimension above its kernel's and a KV
+     precision per family.
+   - OP4's "admission by operation" must take these in, or it replaces one of two systems.
+7. **The feature sets describe decode. Every other request shape keeps its own, smaller list.**
+   - Metal: `backend/metal/model.go:prefillFeatures` for the f16 prefill, and `backend/metal/batch.go:resident.batchIneligible` for the batched
+     step, which declines eleven model-level variants.
+   - WebGPU: `backend/webgpu/internal/kernels/prefillrunner.go:RunModelToPrefill` declines MoE, MLA, the mixers, partial rotary and a rope scale.
+   - CUDA: `backend/cuda/prefill.go:cudaResident.prefillStaticDecline` and `backend/cuda/batchstep.go:cudaResident.BatchStepRange`. MLA runs
+     in decode only (its prefill and verify fall back to sequential: INFERRED from the code, not run).
+   - So an operation table needs a request-shape column until RF removes the shapes. This is §3.3's cost, counted per feature.
+
+**What OP1 has to touch.** Softcapping is one `attention` parameter, and the score is formed in this many places on the text
+path:
+
+| backend | hand-written score implementations | derived or twin forms |
+|---|---|---|
+| CUDA | 10, in 9 `.cu` files; 8 without MLA and the block drafter | f16-KV builds of six of those modules |
+| Metal | 10: 6 decode and 4 prefill | 4 batched-step forms, derived as text (`backend/metal/batch_rows.go`) |
+| WebGPU | 10: 6 decode, 1 MLA and 3 prefill | 3 derived as text; 14 pipeline slots in all |
+
+Metal's Gemma 4 audio tower already has a softcapped attention kernel, off the text path.
+
+**Found in backend modules** (a backend change is a two-step tag; each needs its owner's call). The first two were run; the
+rest are read from the code and not fixed.
+- **CUDA: a batched-step row that returns logits got the final softcap and the logit scale twice. Confirmed and fixed
+  2026-10-14.** `backend/cuda/prefill.go:cudaResident.batchedHeadFull` applied both to a step row, and
+  `backend/cuda/prefill.go:cudaResident.prefillCore`'s closing loop applied both again to every logits row; the closing loop is now
+  the only place. It touched concurrent conversations that sample on a model with a final softcap (dense Gemma 4) or a
+  logit scale (Command-R, Granite): those models always draw on the host. `TestCUDAStepBatch_matchesForward` now runs
+  `gemma4-dense-twogeom-tiny` (softcap) and `granite-dense-tiny` (logit scale) and compares a step row's logits with
+  `Forward`'s bit for bit; before the fix it read logit 1 at -0.2842141 against -0.2842226 (Gemma 4) and logit 0 at
+  -0.0024854098 against -0.014912458 (Granite, the scale of 1/6 applied twice).
+- **CUDA: a Cohere step row is not bit-identical to `Forward`, found by the fix above and not fixed.** With the double
+  transform gone, `cohere-tiny` and `cohere2-tiny` still differ from `Forward` by one ulp in a logit (cohere-tiny at its
+  third step, cohere2-tiny at its first). The batched LayerNorm, `backend/cuda/layernorm_quant.cu`'s `layernorm_quant_batched`,
+  rounds `((x-mean)*inv)*w`, while decode's `layernorm_quant` in `backend/cuda/glue.cu` rounds `((x-mean)*w)*inv`, so a normed value
+  can differ in its last bit and move an int8 code. The step, `PrefillLastN` and speculative verify on Cohere inherit it.
+  `backend/cuda/prefill.go:cudaResident.bLayerNormQuantB`'s fallback, which loops decode's kernel per row, would be exact. The
+  batched kernel is shared with the SigLIP tower, so the fix is the CUDA owner's call.
+- **WebGPU: `logit-scale`**, item 2 above.
+- **WebGPU and Granite-4.0-H.** INFERRED: a Granite hybrid checkpoint whose config says `position_embedding_type: "nope"`
+  derives `nope`, which WebGPU does not declare. The registry's representative config is roped, so the matrix cannot show it.
+  If so, lifting the bring-up gate is not the only step left for the released tiny checkpoint, which the registry says ships
+  NoPE.
+- **Comments in `decoder/features.go`'s declared sets that the code has moved past:** CUDA's "per-layer rotary width is not
+  implemented" (the layer struct carries one); CUDA's attention temperature "recomputed per row device-side" (a host-built
+  table); Metal's "the f16 prefill declines" the E-model (it has a batched route); and several kernel file names.
+
+### 4.6 OP1: the registered gates (2026-10-13, before any OP1 code)
+
+Registered at main `0fb622ff`. Nothing below has been run. A backend's rows may be amended only before that backend's OP1 code
+starts, in a commit of their own; after that a change to a rule is a deviation and is reported as one.
+
+**The two steps, per backend.**
+- **Step 1 is a refactor.** §4.5 counts about 10 hand-written places per backend where an attention score is formed. Each is
+  routed through one score function per backend. The function returns what the kernel computes today, so nothing changes.
+- **Step 2 puts the softcap in that function:** `cap · tanh(score / cap)` on the scaled score, before the mask and the softmax,
+  which is what the CPU computes (`decoder/attention.go:softcapScore`).
+
+**What the function has to respect** (Metal, read 2026-10-13 in `backend/metal/kernels/kernels_msl.go` and
+`backend/metal/kernels/prefill_msl.go`). The kernels do not form the score the same way:
+- `attention`, `attention_f32`, `attention_fa`, `attention_prefill`, `attention_prefill_img` and `attention_prefill_fused`
+  multiply the dot product by the scale;
+- `attention_i8` multiplies by the key's scale first, then by the scale;
+- `attention_fa_blk` and `attention_fa_blk64` multiply the scale into the query before the dot product;
+- `attention_prefill_steel` folds log2(e) into the scale and uses a base-2 exponential.
+
+So the function takes the score as the kernel has it, and each kernel keeps its own order of multiplies. Where a constant is
+folded into the scale, step 2 folds the cap's constants the same way (FlashInfer's form, §10a).
+
+**Amended 2026-10-13, before any Metal OP1 code: one Metal kernel stays out of step 1.**
+- `attention_fa_blk` (head dimension 128) is pinned to the source that was graded: `TestAttnFABlkIsTheGradedKernel` hashes its
+  text, and its rule is that an edit needs the R17 grading re-run (fidelity, kernel accuracy, speed).
+- Routing its score through a function edits that text. A byte-identity digest is evidence about the inputs it ran, and it is
+  not the grading the pin asks for, so step 1 does not touch this kernel and does not move the pin.
+- Nothing is lost for OP1: a capped layer never takes this kernel (the rule below), and Gemma 2's head dimension is 256.
+- **Owed, and not in OP1:** route it together with a re-run of the R17 grading, on the night queue.
+- G1-K still records this kernel's digests, so the record shows it did not move.
+- `attention_fa_blk64`, its head-dimension-64 twin, has no source pin and is routed in step 1.
+
+**Metal's mechanism, registered because the gates lean on it: the softcap is a compile-time variant.**
+- A model with a cap compiles its kernel library with the cap defined. A model without one compiles step 1's source.
+- **Why not a run-time parameter:**
+  - a branch per score sits in the hottest loop of every model;
+  - Metal's output has moved with code shape before, so "the cap = 0 path is identical" would rest on the compiler;
+  - the batched step's split-KV rows kernel already binds all 16 buffers it can.
+- **What this buys the identity gate:** for a model without a cap, step 2's kernel source is step 1's, byte for byte. G2-I
+  checks that as text, and then checks the bits.
+- CUDA and WebGPU choose their mechanism on nobara and write it here before their code. CUDA's kernels are prebuilt PTX, so a
+  compile-time variant there means more PTX files, as its f16-KV twins are.
+
+**Which kernels a capped model may run.**
+- Gemma 2 is the only family with a cap. INFERRED from Metal's lane selectors, to be confirmed by step 2's tests: its layers
+  (sandwich norms, head dimension 256) take `attention`, `attention_i8` under `--kv i8`, and `attention_prefill`.
+- **The rule:** every kernel that can be compiled with the cap is covered by G2-K, and a lane selector keeps a capped layer
+  off any kernel that is not. End-to-end evidence (G2-T, G2-R) exists only for the kernels Gemma 2 reaches, and the record
+  lists which those are.
+
+**Boxes.**
+
+| backend | box | notes |
+|---|---|---|
+| Metal | the MacBook: M1 Pro, 16 GB | 9.0 GB of disk free on 2026-10-13 |
+| CUDA | nobara-pc: RTX 2070 SUPER, 8 GB, the pinned driver | |
+| WebGPU | nobara-pc, over Vulkan | |
+
+**Checkpoints.**
+- **Tiny:** `testdata/gemma2-tiny` and `testdata/gemma2-hd-tiny`.
+- **Real 2B:** `gemma-2-2b-it`, the Q8_0 GGUF the CPU's real gate reads (`TestGemma12Real_gate`).
+  - **Corrected 2026-10-13, a fact and not a rule:** this line said the file comes from the archive with `models-pull`. It is
+    not in the archive. It is in nobara's `~/models` only (listed 2026-10-13), and `models-pull` on the Mac found nothing.
+  - **Copied 2026-10-14 08:16** from nobara's `~/models` to the Mac's `~/models`, with nobara's timing lock free, and verified:
+    sha256 `2d448a9aab894b8e8e18168cf3f490cb9f65632222f29f93514ac9ecc754debe` on both boxes.
+- **Real 9B:** not in the archive or on either box today. It runs where a box has the disk and the memory for it, and
+  otherwise the record says "9B not run" by name. The Mac does not have the disk today.
+- **The peer cell's file** is the GGUF Ollama ships for `gemma2:2b`, copied to `~/models` and loaded by both engines, with
+  `scripts/gguf_same_weights.py` reporting every tensor identical.
+
+**The gates.** "Base" is the commit before the backend's OP1 code. Identity gates have no ambiguous band: equal or not.
+
+| id | step | gate | tier | instrument | rule |
+|---|---|---|---|---|---|
+| G1-K | 1 | every attention kernel's output bytes are unchanged | day | a kernel digest test, built at base before the refactor: each text-path attention kernel driven on fixed inputs, its output hashed. Shapes: the head dimensions each kernel serves (64, 128, 256, 512); key counts on both sides of each kernel's tile bound; windowed and not; with and without a sink | every digest at the candidate equals base's. The test fails if the source has an attention kernel it does not drive |
+| G1-M | 1 | every family's logits are unchanged | day (tiny), night (real) | `go run ./cmd/gate identity <base> <candidate> -backend <b>`, `-assets tiny` then `-assets real`. The tool has no CUDA backend today; CUDA's half names its instrument before its code | bytes equal for every family, every step |
+| G1-S | 1 | the backend's own suites still pass | day (the tests the change touches), night (the device gate) | the attention kernel tests and the batched step's bit-identity tests by name; then `go run ./cmd/gate gpu` | green, with no test that passed at base skipped |
+| G2-I | 2 | a model without a cap is untouched | day (tiny), night (real) | G1-K and G1-M again, base against the step-2 tree; on Metal also a test that the library source built without the cap equals step 1's | equal |
+| G2-K | 2 | each capped kernel computes the softcap | day | each kernel that can be compiled with the cap, against an f64 reference, with scores on both sides of ±cap and peaked attention | cosine ≥ 0.9999 and max abs error ≤ 1e-2, `TestAttention_ShippedKernelShapes`' bar |
+| G2-T | 2 | Gemma 2 tiny, resident against the CPU | day | `TestGemma1ResidentParityMetal`'s shape on both tiny fixtures: 16 positions, both sides int4. The batched prefill against the token-by-token one, as `TestPrefillParityGemma` does | worst logit cosine ≥ 0.999. `TestGemma2DeclinesResidentMetal` is replaced by this |
+| G2-R | 2 | Gemma 2 real, resident against the CPU | day if estimated under 10 min, else night | the real-checkpoint harness (`TestGemma3ResidentParity`'s: greedy lockstep off the CPU, 24 steps, positions from 2), at int8int8 and at int4, both sides the same | min logit cosine ≥ 0.88, argmax equal at ≥ 50% of positions, no NaN: the Gemma 3 gate's bar |
+| G2-D | 2 | the gates can see a dropped cap | day | the cap removed from the build (a planted defect), then G2-K, G2-T, G2-R | G2-K must go red. For G2-T and G2-R the result is recorded: one that stays green does not vouch for the cap, only for the rest of Gemma 2's path |
+| G2-M | 2 | the matrix | day | `go test ./decoder -run HardwareMatrix -update` | Gemma 2 reads resident on the backend, and only after G2-I, G2-K, G2-T, G2-R pass there |
+| G2-S | 1+2 | no model got slower | night | two arms, new against base (below) | below |
+| G2-P | 2 | Gemma 2's decode against Ollama and against our CPU | night | `scripts/bench_peer.py`, one timed run per box (below) | below |
+
+**G2-R's band.** `TestDenseResidentParity` (the control, bar 0.95) and `TestGemma3ResidentParity` run in the same session.
+- The control failing voids the session.
+- **Parked, for the owner:** Gemma 2 clears 0.88 but its min cosine is more than 0.03 under Gemma 3's from the same session.
+  The feature is not declared while parked.
+
+**G2-R's baseline step, added 2026-10-13 on the owner's ruling, before any G2-R run.** G2-T's bar sat within 0.0003 of
+its fixture's own no-softcap agreement, which nobody had measured. This step measures G2-R's before its graded arm runs.
+- **The checkpoint:** `gemma-2-2b-it-Q8_0.gguf`, sha256 `2d448a9aab894b8e8e18168cf3f490cb9f65632222f29f93514ac9ecc754debe`, in
+  the Mac's `~/models`.
+- **Arm B, the baseline.** G2-R's harness and metric (greedy lockstep off the CPU, 24 steps, the min logit cosine over
+  positions from 2), at each registered quant (int8int8 and int4), with the softcap removed on BOTH sides.
+  - **How it is removed:** a test hook, built only under `goinfer_testhooks`, zeroes the model's attention softcap before
+    the resident is built. It is applied to the CPU model and to the Metal model alike.
+  - **The hook is checked before B uses it (added 2026-10-13, before the hook was written):** on the CPU, the 2B's logits
+    with the hook must differ from its logits without it, on the same tokens. If they do not, the hook is broken and the
+    run stops there.
+  - **What is recorded:** the min cosine per quant.
+- **The stopping rule on B:** if 0.88, G2-R's bar, is within 0.001 of B's min cosine at either quant (B under 0.881), stop
+  and report. The graded arm does not run and the bar is not changed.
+- **Otherwise, two arms, once each, in this order, in B's session:**
+  - **Arm G, graded:** G2-R as registered, the softcap on both sides, with its control and its band.
+  - **Arm P, the planted defect:** the softcap dropped from the Metal build only, the CPU keeping it. P must FAIL G2-R's
+    rule (min cosine under 0.88, or argmax equal at under half the positions) at both quants.
+  - **P also records how much the softcap acts on the gate's prompts (added 2026-10-13, before the hook was written).**
+    All three are read on the CPU, on the same tokens P feeds:
+    - the share of attention scores, over every layer, head and key, with |score| > 15 before the cap;
+    - the largest |score| before the cap;
+    - the worst per-position logit cosine between the capped and the uncapped CPU runs.
+- **The outcome:**
+  - G passes and P fails: G2-R passes, and the declaration may merge.
+  - G fails or is parked: stop and report, with no retuning.
+  - **P does not fail G2-R's rule at a quant: G2-R is VOID as a softcap test at that quant, not a pass.** Report it with
+    P's three numbers. Do not declare, and do not change the bar or the prompts after the fact. The next step would be a
+    prompt set registered in advance for long contexts, where the scores are larger.
+- **Void, in addition to G2-R's own conditions:**
+  - B, G and P not in one session;
+  - a resident that reports a cap that is not its arm's (0 in B, the model's in G and P);
+  - the Gemma 3 control's checkpoint missing. The test reads `~/models/gemma-3-4b-it-Q4_K_M.gguf`, and on the Mac the file
+    is in `~/models/gemma-3-4b-it-gguf/`. The run links it to the path the test reads for the session, and removes the
+    link after.
+- **Tier: by day.** The 2B loads twice per arm and quant, and Gemma 3 4B and the 1.5B once each; about 15 minutes in all
+  (INFERRED from the tiny runs and the load sizes, not measured). Under the timing lock, with no night job running.
+
+**G2-R moved to the night queue (owner's decision, 2026-10-14).** The registration says "Tier: by day"; by day the Mac
+cannot admit the loads.
+- **Run 1, 08:49:** the fit guard refused the first load of the 2B (6.7 GB needed, 6.4 GB available with the owner's
+  apps open). Nothing was measured.
+- **Run 2, 08:50, with the fit guard bypassed on the owner's word** (`GOINFER_NO_FIT_GUARD=1`):
+  - the hook check passed: removing the softcap changes the CPU's logits;
+  - arm B at int8int8 read a min cosine of 0.982217, with argmax equal at 22 of 24 positions;
+  - Metal's resident memory guard then declined the int4 build (3.63 GB needed, a budget of 2.66 GB), and the test was
+    skipped. **The run is void, and the 0.982217 is recorded as not a result:** the registration needs B, G and P in one
+    session.
+- **Tonight, as `op1-g2r-metal`:** all three arms in one session, by
+  `docs/measurements/op1-metal-2026-10-13/run-g2r-night.sh` at the declaration branch's `78633e7f`. No guard is bypassed.
+  The gate is not timed: night only means nothing else holds memory.
+
+**G2-R amendment, 2026-10-15 (owner), before any further run: the CPU reference runs in its own process.**
+
+**Why.** On the night of 2026-10-14 the fit guard refused the job's first load, the 2B on the CPU: 6.7 GB priced, with
+6.6 GB available. No guard is bypassed (owner, 2026-10-15). Within one process, `residentParityAt` holds a Metal model
+and a CPU model at once, so each load's guard sees what the other holds.
+
+**What changes.** The job runs two processes, one after the other, at the same build:
+
+1. **The CPU reference.**
+   - It loads only CPU models, one at a time, and computes everything the arms read on the CPU:
+     - the hook check's two logit sets;
+     - for each of B (softcap off), G and P (softcap on), at int8int8 and int4: the token sequence (the seed, then the
+       CPU's greedy continuation, 24 steps) and the CPU's logits at every step;
+     - P's score statistics and its capped-against-uncapped logits;
+     - the control's and Gemma 3's tokens and logits.
+   - It writes them to one file under the job's output directory, with each checkpoint's sha256 and the build's commit.
+2. **The Metal arms.**
+   - They load only Metal models, one at a time.
+   - They feed each arm the saved tokens (greedy lockstep off the CPU, as before) and compare their logits with the
+     saved CPU logits.
+   - B's stop rule is applied before G and P run, as before.
+
+**Unchanged:** the arms and their order of reading, the prompts, the 24 steps, the metric (the min logit cosine from
+position 2, and argmax), the bars (0.88; the control's 0.95; the 0.03 band), B's 0.001 stop margin, and every void rule.
+
+The CPU logits are the same computation as before (`decoder.Load` on the CPU at the arm's quant, `ForwardForTest` over
+the same tokens), saved as raw float32 bits.
+
+**Void, in addition:**
+
+- the saved file's checkpoint hashes or commit differ from the Metal process's;
+- an arm is missing from the file;
+- the file does not exist.
+
+**The memory this buys, and what it does not.**
+
+- **Before, in one process:** the largest moment was a Metal model and a CPU model held together, about 10 GB in all.
+  Metal's own guard declined the 2B's int4 build at 3.63 GB needed against a 2.66 GB budget, with the CPU model beside it.
+- **After:** the peak is the larger of the two processes, about 7 GB, and each load's guard sees only itself.
+- **The fit guard still prices the CPU process's largest loads at about 6.7 GB** (estimated from the guard's formula:
+  resident weights + KV at its fitted context + the `.gguf` mapped during the load):
+  - the 2B at int8int8: 2.5 + 1.6 + 2.6 GB;
+  - Gemma 3 4B at int8int8, which the old order never reached: about 4 + KV + 2.5 GB.
+  - The guard's budget is 70% of available memory, so these loads need about 9.6 GB available. The two nights on
+    record had 6.6 GB and 7.8 GB.
+  - Splitting the processes alone therefore does not clear the guard on such a night, and a refused load is void.
+  - What would clear it, for the owner to choose:
+    - a CPU process that loads `.giw` sidecars: no mapping term, so about 4.1 GB priced for the 2B and about 4.5 GB for
+      Gemma 3, which need roughly 6 to 6.5 GB available;
+    - or a night with 9.6 GB free.
+
+**G2-R amendment 2, 2026-10-15 (owner's choice from amendment 1's options), before any run: the CPU arms load `.giw` files.**
+
+**What changes.**
+
+- The CPU process loads each CPU model from a CPU `.giw` (`cmd/prequant -quant <q>`, this box's own target), built from
+  the same `.gguf` at each quant the arms use:
+  - the 2B at int8int8 and int4;
+  - Gemma 3 4B at int8int8;
+  - the dense 1.5B at int8int8, and at int4 for the check below.
+- The night job builds any that are missing, at the job's revision, under `~/goinfer-bench/op1-metal-2026-10/giw/`, and
+  records each one's sha256 in the reference file.
+- The Metal process still loads the `.gguf` files, and every guard stays as shipped.
+
+**Why it is the same computation.** A `.giw` holds the weights already quantized by the same quantizer a direct `.gguf`
+load runs at load time.
+
+- On record: greedy output byte-identical between the two routes (`docs/completed/task-never-swap-2026-09.md`, S1), and
+  CPU logits through the sidecar bit-identical to the direct load's (`docs/tasks/task-multimodal-support-2026-10.md`).
+- **Checked again each run, as a precondition.** Before any arm, the CPU process loads the dense 1.5B both ways (its
+  `.gguf` fits the fit guard directly) at int8int8 and int4. It runs the gate's prompt and 24 steps, and requires the
+  logits to be equal bit for bit at every step. **A difference voids the run.** It is not a fail of G2-R.
+
+**Memory.** By the guard's formula, the CPU process's largest priced loads drop to about 4.1 GB (the 2B at int8int8)
+and about 4.5 GB (Gemma 3 4B), because there is no `.gguf` to map during the load. That needs roughly 6 to 6.5 GB
+available, where the two nights on record had 6.6 and 7.8 GB.
+
+**Disk.** The four bundles take about 10.6 GB. The job refuses to build when less than 14 GB is free.
+
+**Unchanged:** amendment 1's split, the arms, prompts, bars, voids and the order of reading.
+
+**G2-R amendment 3, 2026-10-15 (owner-approved), before any run: the Metal arms load Metal `.giw` files, and a refused
+load is VOID.**
+
+**Why.** On 2026-10-15 the CPU process passed (its precondition held). Then the fit guard refused the Metal process's
+first load, the 2B's `.gguf`: 5.5 GB priced against a 4.9 GB budget, with 7.0 GB available. The script labelled the run
+FAIL. A refused load measures nothing, so that label was wrong: it was VOID.
+
+**What changes.**
+
+- **Every Metal load reads a `.giw`** of the same `.gguf` at the arm's quant, with no `.gguf` mapped during the load.
+  - **int8int8 has one bundle for both targets.** `cmd/prequant -target metal` and the CPU's own target wrote the dense
+    1.5B's int8int8 bundle byte for byte the same (`cmp`, 1,787,283,843 bytes, 2026-10-15). The target changes only int4
+    tensors. So the Metal process reads amendment 2's int8int8 bundles, under a `.metal.giw` hard link the job makes.
+  - **int4 needs its own Metal bundle**, built with `-target metal`: the CPU's int4 bundles hold the row4-only layout,
+    which Metal cannot read. Two are added: the 2B, and the 0.5B for the precondition below. About 2.7 GB of disk with
+    the 0.5B's int8int8 bundle; the job refuses to build under 6 GB free.
+- **A Metal precondition, like amendment 2's on the CPU.** Before any arm, the Metal process loads Qwen2.5-Coder-0.5B
+  both ways at int8int8 and int4. Its `.gguf` is small enough to load directly. It runs the gate's prompt and 24 steps:
+  the `.gguf` route's greedy tokens, fed to both routes. The logits must be equal bit for bit at every step. **A
+  difference voids the run.**
+- **A refused load is VOID, not FAIL.** A load refused by the fit guard or by Metal's memory guard, in either process,
+  ends the run as VOID, with the refusal's numbers in the log. The script grades a log that holds a `VOID` line as VOID
+  (exit 2) before it looks for a FAIL. A FAIL is reserved for G2-R's own rule: arm G failing, or arm G parked.
+- **A fit check of every load, by day, before the job is queued** (CLAUDE.md, "Testing tiers"). Each load the two
+  processes make is run once, alone, on its backend, and admitted or refused is recorded. The test is
+  `TestG2R_fitCheck`, which takes seconds. The job is queued only if every load is admitted by day. Day memory is the
+  owner's apps plus this session, so a load admitted by day is admitted at night.
+
+**Considered, not changed: whether a smaller model covers the same operations** (owner's question, 2026-10-15).
+
+- **The 2B cannot shrink.** G2-R tests the attention softcap. Gemma 2 is the only family goinfer reads that has one
+  (`decoder/gemma12.go`). The 2B is the smallest Gemma 2 release (2B, 9B, 27B), and no 0.5B-class checkpoint carries the
+  operation.
+- **Gemma 3 4B stays.** It is not covering an operation. It is the reference for G2-R's band: parked when Gemma 2 is
+  more than 0.03 under Gemma 3 from the same session. Gemma 3 1B would change the band's reference after the bar was
+  set, and that is a bar change, so it stays at 4B. With `.giw` loads, the 4B's int8int8 load is priced at about 4.5 GB.
+- **The dense 1.5B control stays.** Its 0.95 bar was registered on it.
+- **The 0.5B enters only as the Metal precondition's model.** Its `.gguf` fits Metal's guards directly, and the
+  precondition checks the load route, not the gate.
+
+**Unchanged:** amendments 1 and 2, the arms, prompts, bars, voids and the order of reading.
+
+**G2-R, read 2026-10-15 by day (the owner moved it off the night queue): VOID as a softcap test at both quants. Not
+declared.**
+
+- **The run:**
+  - Declaration branch `ecf58621`, the script at main `205e3b0d`, under the timing lock, 15:20 to 15:21.
+  - The CPU process passed, with amendment 2's precondition holding at both quants. The Metal process passed amendment 3's
+    precondition and every load.
+  - The logs are in `~/goinfer-logs/op1-metal-2026-10-13/g2r-split-night-2026-10-15/`.
+- **Two earlier attempts the same afternoon measured nothing:**
+  - The Metal `.gguf` load was refused by the fit guard. That run was labelled FAIL by the old grading.
+  - The Metal precondition's `.giw` route read `seed[0]` with no seed and panicked. That was a harness bug, fixed in
+    `ecf58621`.
+  - After the second attempt, the grading was tightened (`205e3b0d`): FAIL comes only from G2-R's own verdict lines, and
+    anything else that ends the run reads VOID.
+
+| arm | int8int8: min cosine, argmax | int4: min cosine, argmax |
+|---|---|---|
+| B, the softcap removed on both sides | 0.982217, 22/24 | 0.976711, 23/24 |
+| the control, the dense 1.5B (bar 0.95) | 0.997749, 21/24 | — |
+| Gemma 3 4B, the band's reference | 0.974482, 23/24 | — |
+| G, graded: the softcap on both sides | 0.991436, 23/24: pass | 0.982765, 20/24: pass |
+| P, the softcap dropped from the Metal build only | 0.990859, 23/24: **passes the rule** | 0.978495, 21/24: **passes the rule** |
+
+- **B's stop rule did not fire:** 0.88 is far below B at both quants.
+- **G passes at both quants and is inside the band:** G is not more than 0.03 under Gemma 3's 0.974482.
+- **P must fail and does not, at either quant.** The softcap barely acts on the gate's prompts. P's three numbers, read on
+  the CPU on the tokens P feeds:
+
+  | quant | scores over \|15\| | largest \|score\| | worst capped-vs-uncapped logit cosine |
+  |---|---|---|---|
+  | int8int8 | 0.0032% of 62,400 | 15.72 | 0.992485 |
+  | int4 | 0.0064% of 62,400 | 16.97 | 0.979200 |
+
+  At a cap of 50, `50·tanh(s/50)` moves a score of 17 by about 0.6, so dropping it costs less than the gate's tolerance.
+- **The outcome, as registered:** VOID as a softcap test at both quants, not a pass. Do not declare; change no bar and no
+  prompt after the fact.
+- **The registered next step:** a prompt set for long contexts, registered in advance, where the scores are larger. It is
+  for the owner to commission; nothing is registered yet.
+
+**G2-R closed as void (owner, 2026-10-15).** No long-context prompt set will be registered, and no CPU comparison is added.
+
+- **The reason:** on these prompts the cap barely acts, so a dropped cap passes the model-level rule.
+- **What tests the Metal kernels instead:** G2-K. It is graded against a float64 reference, on inputs built so the scores
+  cross ±cap, and it reads 152 of 152 inside its bar, with all 152 red once the softcap is dropped (G2-D).
+- **G2-K and its plant now decide the Metal softcap declaration,** in G2-R's place in the order (§4.6, step 3) and among
+  the gates G2-M follows.
+
+**G2-D is why the tiny fixture is not enough alone.** A tiny random model's scores are far inside ±cap, where
+`cap · tanh(score / cap)` is nearly the identity. A dropped cap may leave G2-T green. That is `CLAUDE.md`'s "a minimal repro
+can be minimal in exactly the dimension that hides the bug", so the claim rests on G2-K, whose inputs are built to cross
+the cap.
+
+**G2-S, the speed guard** (`docs/measurements/noise-registry.md` §8's template):
+```
+Tier: night.
+Instrument: served, two arms (new, base), no peer arm: scripts/bench_peer.py for decode, scripts/bench_prefill_stall.py's
+  solo arm for time to first token. A refactor has no in-process A/B: the two builds cannot share a process.
+Cells (Metal): decode on the 1.5B at depth 128 and 3900 (the exact kernel, then the split-KV ones), and on Gemma 3 4B at
+  depth 128 (head dimension 256, the kernel Gemma 2 shares); time to first token on the 1.5B at K = 3900.
+Noise: decode sd 0.0129 (metal-r17-e2e-control-crossbuild, a cross-build A/A, n = 2); time to first token sd 0.0112
+  (the chunked-prefill solo arm).
+power.py N: `power.py served-decode mac/metal/1.5B/d128 --bar 0.97 --expect 1.0 --paired` -> N = 4 blocks (power 0.87);
+  `power.py served-ttft mac/metal/1.5B/k3900 --bar 0.97 --expect 1.0 --paired` -> N = 4 blocks (power 0.94).
+  A bar of 0.99 cannot be resolved: power.py wants N = 13 against a feasible 12.
+Stopping rule: fixed N = 4 blocks per cell, no early stop.
+Rule: PASS if every cell's interval clears 0.97. FAIL if any cell's interval lies under 0.97.
+Ambiguous band: an interval that straddles 0.97. Parked for the owner; the refactor stays, and the cell is re-read.
+Speed bar: this is a no-regression guard, not a ship bar. The refactor is expected to read 1.00.
+Cost: 4 cells x 4 blocks x 2 arms, about 2 min an arm-cell: about 65 min. Queued after the KV1 jobs.
+```
+- What 0.97 leaves open: a regression under 3% is not seen by this gate. The argument that there is none is G2-I's: without a
+  cap the compiled source is unchanged by step 2, and step 1 changes it only by one inlined function.
+- CUDA and WebGPU register their own cells and N from nobara's registry entries before their code.
+
+**G2-P, the peer cell** (the same template):
+```
+Tier: night. One timed run per box, under the timing lock.
+Instrument: scripts/bench_peer.py, same-session interleaved, greedy, server restart between cells. Three arms: goinfer on
+  the GPU backend, goinfer on the CPU backend (the do-nothing arm: where Gemma 2 decoded before OP1), and Ollama.
+Model: gemma-2-2b-it, the GGUF Ollama ships as gemma2:2b, loaded by both engines; 4-bit both sides.
+Cells: decode at depth 128 and 2048.
+Noise: for the peer ratio, served-decode-peer-arm sd 0.0099 (seed-mac-metal-peer-all-P, n = 2); a cross-session ratio is
+  not a ratio.
+power.py N: not a bar to resolve for the peer ratio, which is a read. For GPU against CPU the expected ratio is several
+  times 1, so the harness default (3 runs x 8) resolves the bands below at N = 1 block.
+Stopping rule: one pass at the harness defaults. No second pass unless the first is void.
+Rule, GPU against our CPU (this one gates): ship >= 1.02x at both depths; park 1.00-1.02x; off < 1.00x. "Off" means the
+  softcap is not declared on that backend, because Gemma 2 would get slower by default.
+Rule, against Ollama (this one is a read, and never gates): reported as the ratio with its provenance. It enters
+  docs/benchmarks.md under that file's own rules.
+Ambiguous band: 1.00-1.02x against our CPU, for the owner.
+Cost: 3 arms x 2 depths, about 2 min a cell with restarts, plus idle-gate waits: about 25 min. Queued after G2-S.
+```
+
+**Void conditions, for every gate above.**
+- A model path under `/srv/models` or `/Volumes/`.
+- A resident arm whose `DecodePath()` is not the backend's resident path (a silent CPU fallback passes every parity bar).
+- A skipped test counted as a pass. Each gate's record names what ran, by `--- PASS`.
+- The two sides of an identity gate run on different boxes, OS builds or drivers.
+- For G2-R: the two sides at different quants.
+- For the timed gates: an idle-gate or load deviation, a timed run without the lock, weights that are not the same on both
+  engines, or a stop before the fixed token count on either engine.
+
+**Order, and what a failure does.**
+1. Build G1-K's digest test at base and record base's digests. It is the first OP1 commit on a backend.
+2. Step 1, then G1-K, G1-M (tiny), G1-S (by name). Any failure: step 1 is not merged.
+3. Step 2, then G2-I (tiny), G2-K, G2-D, G2-T, G2-R. Any failure, or G2-R parked: the feature is not declared.
+4. Declare `attn-logit-softcap` on the backend, regenerate the matrix (G2-M), merge.
+5. Night: G1-M and G2-I on real checkpoints, the device gate, G2-S, G2-P.
+   - An identity or device-gate failure reverts the step that caused it, the next morning.
+   - G2-S failing reverts both steps. A second night's run, base against step 1 alone, then says which step it was.
+   - G2-P "off" against our CPU removes the declaration, which is one line.
+
+**Metal's half: the day gates, 2026-10-13.** The record is `docs/measurements/op1-metal-2026-10-13/README.md`.
+
+| gate | result |
+|---|---|
+| G1-K | PASS: all 1,095 kernel digests equal base's. A planted one-ulp change turns every routed kernel's digests red, except the steel prefill kernel's, which a 1% change does |
+| G1-M, tiny | PASS for the 25 families that ran; 18 not run (Metal declines them, or the asset is not on the Mac) |
+| G1-S, by name | PASS: 140 passed, 91 skipped for want of real checkpoints |
+| G2-I, tiny | PASS: digests and the same 25 families identical; step 2 does not touch the two kernel source files |
+| G2-K | PASS: 152 cases inside the bar against float64 |
+| G2-D | PASS at kernel level: all 152 cases miss the bar with the cap dropped. The tiny fixtures fall to 0.9785 and 0.9799 |
+| **G2-T** | **FAIL as registered:** worst logit cosine 0.998997 and 0.998657, against 0.999 |
+| G2-R, G2-M | not run: they follow the declaration |
+
+- **What is on main:** the digest instrument; step 1 (`backend/metal/kernels/attn_score_msl.go:AttnScoreMSL`); and the softcap as a
+  variant of the kernel source (`backend/metal/kernels/attn_score_msl.go:WithAttnSoftcap`), which no model reaches while the feature
+  is undeclared. Gemma 2 still decodes on the CPU under Metal.
+- **G2-T: FAILED.** The 0.999 bar was copied from Gemma 1's test without first measuring this fixture's no-softcap baseline
+  at int4, which is 0.9991 to 0.9993. The softcap's own contribution is shown by the planted defect: with the cap dropped
+  from the Metal build the fixtures read 0.978 and 0.980. The record has the diagnostics.
+- **Owner decision OP1-M1 (2026-10-13): the bar stays, and it is not amended against the numbers already seen.** The tiny
+  fixtures are now diagnostics, and the real Gemma 2 2B gate (G2-R) decides the declaration (below). The declaration, the
+  matrix and the Gemma 2 parity tests stay on the branch `op1-metal-declare-2026-10`, unmerged, until G2-R passes.
+- **Step 1 left one kernel out,** as amended above: `attention_fa_blk`. Routing it is owed with a re-run of the R17 grading.
+- **Queued on the Mac's night queue 2026-10-13, after the two KV1 jobs,** at main `c02205b8` against `d03da21f`:
+  - `op1-identity-real-metal` (35 min): G1-M and G2-I on the real checkpoints in `~/models`;
+  - `op1-gate-gpu-metal` (25 min): the Metal device gate at the merge;
+  - `op1-speed-metal` (75 min): G2-S, by `docs/measurements/op1-metal-2026-10-13/run-op1-night.sh`.
+  - The queue is 4 h 35 min. A job that would end after 06:30 is not started and carries to the next night.
+- **G2-S runs two cells the registration did not have,** reported and not gating: decode on the 0.5B at depth 128 and 3900.
+  At depth 3900 the 0.5B takes `attention_fa_blk64`, the one split-KV kernel step 1 routed; the registered 1.5B cell at that
+  depth takes the unrouted block kernel.
+- **Not queued:** G2-R (no declaration, and the checkpoint is not on the Mac) and G2-P, the peer cell (no declaration, and
+  the harness has no Gemma 2 key, calibrated prompts or Ollama import yet).
+- **Graded 2026-10-14: all three PASS.**
+  - G1-M and G2-I on real checkpoints: byte-identical on the three cells that ran (Qwen2.5-Coder 0.5B and 1.5B, Qwen3 0.6B).
+  - The Metal device gate: 8 pass, 0 fail.
+  - G2-S: every registered cell's interval clears 0.97; the lowest bound is 0.9919.
+
+**What decides the declaration (owner's ruling, 2026-10-13): no G2-T2. The tiny fixtures are diagnostics, not a gate.**
+- **Why not G2-T2.** Metal cannot run f32 weights: a resident build declines them by design
+  (`backend/metal/model.go:f32Projection`). The nearest runnable setting, int8int8, was already read in G2-T's diagnostics
+  (0.999255 and 0.999334), so a gate on it could not fail on anything new.
+- **What the tiny fixtures show, kept as a record:**
+  - the planted defect separates: with the cap dropped from the Metal build the fixtures read 0.978 and 0.980;
+  - the int8int8 readings are 0.999255 and 0.999334. That setting runs native int8 weights
+    (`backend/metal/model.go:w8Weights`) with the library compiled without fast math (`backend/metal/model.go:w8PreciseMath`);
+  - **the tanh:** at int4 the library is compiled with fast math, so the capped function's plain `tanh` is the fast one
+    (INFERRED from the math-mode rule; the compiled code was not disassembled). An explicit `precise::tanh` moved
+    `gemma2-tiny` by 0.00005 and `gemma2-hd-tiny` by nothing.
+- **The softcap's correctness evidence is the kernel-level float64 checks:** all 152 cases pass, and all 152 fail with
+  the softcap dropped (G2-K, G2-D).
+- **The real Gemma 2 2B parity gate, G2-R, decides the declaration.** Its baseline step is below.
+
+### 4.6a OP1 on CUDA: mechanism and rows (amended 2026-10-16 on nobara, before any CUDA OP1 code)
+
+Read at main `7e130317`. This section amends §4.6 for CUDA only, in a commit of its own, as §4.6 allows. It applies Metal's
+two rulings (OP1-M1, 2026-10-13, and "G2-R closed as void", 2026-10-15) to CUDA's rows from the start, so CUDA does not repeat
+the run that found them out. The owner may overrule either before the first CUDA code commit.
+
+**CUDA's mechanism: the softcap is a compile-time variant, and the cap is a kernel argument of the variant.**
+- **The variant.** `build_ptx.sh` builds a second module from the same source with `-DATTN_SOFTCAP`: `<module>_cap.ptx`, and
+  `<module>_kv16_cap.ptx` beside the f16-KV twin. The variant's kernels take a trailing `float cap`; the plain module's
+  signatures and source do not change. A capped model loads the variants of the three modules below, and no other model loads
+  them (as the `_kv16` twins are loaded only by an f16 build).
+- **Why a variant and not a run-time parameter.**
+  - A parameter puts a branch on every score in every attention kernel of every model, and changes the PTX of all of them.
+  - Here the identity gate can be stronger than Metal's: the plain modules are PTX files, so G2-I compares step 2's plain PTX
+    with step 1's **byte for byte**, then checks the bits. With a parameter it would rest on the compiler.
+- **Why an argument and not a baked `-D` constant.** CUDA has no NVRTC at run time, so a baked cap would be one number in a
+  prebuilt file. An argument lets G2-K sweep caps, including a small one so that ordinary scores cross it.
+- **The covered kernels** (the ones a capped layer takes): `attention` (`glue.cu`, the fallback when batched prefill is not
+  ready), `attn_batched` (`prefill_batched.cu`: exact prefill, and decode through `decodeAttnGap`, the batched step's rows
+  included), and `splitkv_scores` (`decode_splitkv.cu`; its softmax and V-sum kernels read the stored, already capped scores).
+  That is three modules at two KV types: six variant files.
+- **The kernels a lane selector keeps a capped layer off**, each by a named decline and each tested (G2-L below):
+  flash-decode and its verify rows (`faEligible` and `flashVerifyAttn`: the lane is default-on at 2,048 keys and serves head
+  dimension 256), `attn_fused*` and `attn_fused_bm*` (`useAttnFused`: head dimensions 64 and 128 only, guarded anyway), the
+  drafter's `attn_block_full`, the image prefill's `attn_img_batched`, `mla_attn`. The vision and audio towers (`attn_fused_vit`,
+  `tower_base`, `audio_encoder`) are not text-path kernels and are not touched.
+  **Owed, not in OP1:** the flash-decode lane with the cap. Gemma 2 then decodes at depth on the exact split-KV lane; G2-P's depth
+  cell shows what that costs.
+
+**Step 1 on CUDA.** One new header, `attnscore.cuh`, beside `kvtype.cuh`. Each of the 10 hand-written score sites (§4.5) calls it:
+`glue.cu`, `prefill_batched.cu`, `attn_block.cu`, `attn_img_prefill.cu` (`dot *= scale`), `decode_splitkv.cu` (`dot * scale`),
+`decode_fa.cu` (`d * scale`, two sites), `attn_fused.cu` and `attn_fused_bm.cu` (`__fmul_rn(s, scale)`), `mla.cu`
+(`__fmul_rn(dot, scale)`). The header has one function per multiply the sites use today, so each kernel keeps its own order of
+operations and a `__fmul_rn` stays a `__fmul_rn` (a fused multiply-add must not appear).
+- **`glue.ptx` is an audited artifact** (`cuda/testdata/REGEN.md`). Editing `glue.cu` means regenerating it at the pinned NVRTC
+  12.6.85 with that file's control. **Registered fallback:** if the per-kernel hash audit shows any kernel other than `attention`
+  moving, step 1 does not touch `glue.cu`, `attention` stays unrouted, and a capped model requires `prefillReady` or declines by
+  name. G1-K records `attention`'s digests either way. **Which modules were built at 12.6.85 (read from each PTX header, 2026-10-16):**
+  `glue.ptx`, `glue_kv16.ptx` and `mla.ptx`. The other seven modules and their f16 twins were built at the ambient 12.9.86 and are
+  regenerated there. Each is rebuilt unchanged first, at its own toolchain, and must come back byte for byte.
+- **G1-K's instrument** is `TestAttnKernelDigests` (`goinfer_testhooks`, `cuda` tags), built and run at base first.
+  - It drives each of the 10 sites' kernels, in every module they ship in (f32 and f16 KV), on fixed pseudo-random inputs, and hashes
+    the output bytes. Shapes: head dimensions 64, 128, 256 (512 where a kernel has it); key counts at, one under and one over each
+    kernel's tile bound; windowed and not; with and without a sink.
+  - The kernel list is a table in the test. **A `__global__` in `cuda/*.cu` whose name says attention, and that is not in the table,
+    fails the test.** A kernel in the table that no case drives fails it too.
+  - The digests are committed in `backend/cuda/testdata/attn_digests.json`, keyed by device name and driver version. A run on another
+    driver is VOID, not a pass.
+  - **Planted defect:** one ulp added to a score in each routed kernel turns that kernel's digests red.
+- **G1-M's instrument.** `cmd/gate identity` gets `-backend cuda`: a dumper in `cuda/` with `-tags cuda`, an ephemeral
+  `go.work` of `. ./cuda`, the same three-run judging as the other GPU backends, and a decline that reads as NOT RUN. It lands as its
+  own commit, before step 1, with the tool's tests. Tiny fixtures at int4 and int8int8; real checkpoints at int4, as the other backends.
+
+**G1-S on CUDA, by name** (no test that passed at base may skip): `TestAttnBatched_bitIdentical`, `TestSplitKV_bitIdentical`,
+`TestSplitKV_bitIdentical_gemma3`, `TestAttnFused_vsExact`, `TestAttnFusedTile_32x64BitIdentical`,
+`TestAttnFusedTile_defaultBitIdenticalWholeModel`, `TestAttnBlockFull_nonCausal`, `TestAttnImgBatched_*`, `TestAttnSink_matchesReference`,
+`TestFlashDecode*` (the host-only ones included), `TestMLAAttn_cuda`, and the batched step's bit-identity tests; the night device gate is
+`go run ./cmd/gate gpu`.
+
+**G2-K on CUDA.** Each covered kernel, at f32 and at f16 KV, with a head dimension of 64 and of 256, windowed and not, with a sink
+(`attn_batched` and `splitkv_scores` carry one), against a float64 reference, with caps of 50 and of 2 and queries scaled so that scores
+land on both sides of ±cap, plus a peaked row. Bar: cosine ≥ 0.9999 and max abs error ≤ 1e-2.
+- **G2-D** removes the cap's application from the variant source (the argument is read and ignored): every G2-K case must go red.
+  It is the same planted defect for G2-T and G2-R, whose results are recorded.
+
+**G2-L (new, CUDA): the lane selectors keep a capped layer off the uncovered kernels.** On a capped fixture, decode at a depth past
+2,048 keys and a prefill with `fastAttn` on launch none of the kernels in the list above. The instrument is the executor's launch record by
+kernel name; if it has none, step 2 adds a counter behind `goinfer_testhooks`. **Planted defect:** `faEligible` ignores the cap, and G2-L
+goes red.
+
+**G2-T on CUDA is a diagnostic from the start, with its baseline measured first.** Metal's run found a bar copied from Gemma 1 sat
+inside the fixture's own no-softcap agreement. For CUDA, before any graded reading, both tiny fixtures are read at int4 and at int8int8
+with the cap removed on both sides (`SetAttnSoftcapOffForTest`), 16 positions, the batched prefill against the token-by-token one. Both
+numbers are recorded with the capped ones. The 0.999 bar is not applied: the declaration does not rest on these fixtures (G2-D).
+
+**G2-R on CUDA is a model-level sanity gate, not a softcap test.** Metal found the cap barely acts on the gate's prompts (a plant that
+drops it passes). CUDA runs the registered arms B, G and P anyway, since the harness exists, and records them: G must clear 0.88 with
+argmax equal at ≥ 50% of positions and no NaN, inside the band of §4.6's G2-R. P's result is recorded and does not gate. **The CUDA
+softcap declaration rests on G2-K, G2-D and G2-L**, as Metal's does. The checkpoint is `gemma-2-2b-it-Q8_0.gguf` in nobara's `~/models`
+(sha256 `2d448a9a…debe`); G2-R loads it from there, never from `/srv/models`.
+
+**Rows for the night gates.**
+- **G1-M and G2-I on real checkpoints, CUDA:** `cmd/gate identity -backend cuda -assets real`. Estimate 25 min; the families the box
+  holds, int4.
+- **G2-S, CUDA** (the template in §4.6; the numbers from `scripts/power.py` and the registry, 2026-10-16):
+  ```
+  Tier: night. One timed run per box, under the timing lock (the 8 GB card holds one model at a time).
+  Instrument: scripts/bench_peer.py served decode, two arms (new, base), no peer arm, restart between cells.
+  Cells: decode on the 1.5B at depth 128 and 3900 (the single-block and split-KV lanes, then flash-decode, whose kernels step 1
+    routes), on Gemma 3 4B at depth 128 (head dimension 256, the kernels Gemma 2 shares), and on the 0.5B at depth 128.
+  Noise: 1.5B and Gemma 3 cells: seed-nobara-cuda-goinfer-all-S, sd 0.0081, a same-binary A/A (registry gap 1: it cannot see a build
+    effect). 0.5B cell: cuda-fused-rms-0.5B-crossbuild, sd 0.0164 with a floor of 0.0144, the only cross-build A/A on this box.
+  power.py N: `served-decode nobara/cuda/1.5B/d128 --bar 0.97 --expect 1.0 --paired` -> N = 3 (power 0.88), run at N = 4;
+    the same at d3900 and for gemma-3-4b/d128; the 0.5B cell with `--entry cuda-fused-rms-0.5B-crossbuild` -> N = 11 (power 0.83).
+  Stopping rule: fixed N per cell, no early stop.
+  Rule: PASS if every cell's interval clears 0.97; FAIL if any lies under it. A straddling interval is parked for the owner.
+  Not gating: time to first token on the 1.5B at K = 3900 (the registry has no CUDA entry: gap 4), reported with its spread.
+  Cost: (3 cells x 4 blocks + 1 cell x 11 blocks) x 2 arms x about 2 min = about 90 min, plus idle-gate waits. Queued after the other night jobs.
+  ```
+- **G2-P, CUDA:** §4.6's template with `bench_peer.py` on nobara, `gemma-2-2b-it` Q4 both sides, depth 128 and 2048, three arms (goinfer
+  CUDA, goinfer CPU, Ollama). The CPU arm gates (ship ≥ 1.02x at both depths). Estimate 25 min. The depth-2048 cell runs on the exact
+  split-KV lane because flash-decode is kept off a capped layer; a result under 1.02x there is parked and names that lane.
+
+**Boxes and costs.** nobara-pc, RTX 2070 SUPER, 8 GB, driver 595.91.07. Day gates need the card for seconds to minutes each, under
+`timing_lock.py run`; while anyone is logged in, `kwin_wayland` holds about 16 MiB of the card, which goes in the record. The 2B at int4
+and f16 KV fits; its fit is checked with the server's own plan (the `fit:` and `KV plan:` banner) before the night job is queued.
+
+**Order on CUDA** (§4.6's order, with the two additions): (1) the `-backend cuda` tool commit; (2) G1-K's digest test and base's digests,
+committed with the digest file; (3) step 1, then G1-K, G1-M (tiny), G1-S; (4) step 2, then G2-I (plain PTX byte-equal to step 1's, then
+G1-K and G1-M again), G2-K, G2-D, G2-L, the G2-T baseline and readings, G2-R; (5) declare `attn-logit-softcap` on CUDA, regenerate the
+matrix (G2-M), merge; (6) night: G1-M and G2-I on real checkpoints, the device gate, G2-S, G2-P.
+
+### 4.7 The remaining plan for OP2–OP6 (proposed 2026-10-15; docs only, nothing built)
+
+Written on the owner's ask, after G40 stopped on its tier 1 memory run and G2-R was queued for the night of 2026-10-15. Read at
+main `ee80cf2e`. **A proposal for the owner, not a decision.** Sizes are §0's. Gates are in the tiered form
+(`CLAUDE.md`, "Testing tiers"): each is registered at the lowest tier that can answer it, and a night run states why the day
+tiers cannot. The day sizes and the fit notes below are INFERRED from checkpoint sizes, not fit-checked. Every night load is
+fit-checked by day before it is queued.
+
+**KV work in flight, and its production files** (from `git diff --stat` against main on each branch, tests excluded):
+
+- **KV2** (the Mac's `kv2-2026-10`, nobara's `kv2-cuda-2026-10`):
+  - `decoder/model.go`, `decoder/resident_reuse.go` and `decoder/blockspec.go`, plus the decoder's session and VL
+    generate files;
+  - `internal/runtime/kvmgr/`;
+  - `internal/app/serveapp/` (main, openai, sessions);
+  - a new KV-copy file in each of `metal/`, `gpu/` and `cuda/`;
+  - on CUDA, also `backend/cuda/resident.go`.
+- **KV3:** CUDA's half on `kv3-cuda-2026-10` (`backend/cuda/prefill.go` and the prefill scratch). Metal's half is KV-pre's
+  (`backend/metal/prefill.go`).
+- **The CPU's KV:**
+  - G40, stopped: `decoder/forwardn.go`, `decoder/kvcache.go` and `decoder/weightmat.go`;
+  - the CPU KV pricing fix: `decoder/model.go`, `decoder/fitguard.go` and `decoder/prefill_budget.go`;
+  - CPU f16 KV, approved and not started: `decoder/kvcache.go` and the CPU attention.
+- **Next on the KV track:**
+  - KV4, paged CUDA storage: every CUDA KV kernel goes through a block table, including `mla_attn` in `backend/cuda/mla.cu`;
+  - KV5, the same on Metal;
+  - KV8, a recurrent state pool.
+- **Proposal 2** (the integration harness's id carry, nobara's next build): `internal/app/serveapp/` and one accessor on the
+  decoder's `Generation`. It shares serve's files with KV2 and no file with OP.
+
+#### OP2 — the next operations by demand
+
+Two prerequisites from §4.5, both S, on the Mac, tier 0 only, in `decoder/features.go`:
+
+- **(a) A feature per non-gated activation** (§4.5, item 2), before SSM on Metal. Metal's `act_quant` would otherwise run
+  tanh-GELU for Nemotron-H's squared ReLU.
+- **(b) Split `attn-output-gate` by activation** (§4.5, item 3), before OP5.
+
+Their gate:
+
+- **Tier 0:** the hardware matrix regenerated, with every cell's decline reasons unchanged except the split names.
+- **Plant:** a backend declaring the wrong half of a split must decline the family by name.
+
+**(a) and (b) built 2026-10-15; both gates pass.**
+
+- **(a)** One feature per non-gated activation, in `decoder/features.go`: `non-gated-gelu-tanh`, `non-gated-silu`,
+  `non-gated-relu2` and `non-gated-act-unknown`, beside `non-gated-gelu-erf`. Each backend declares the kernels it has:
+  - Metal's `act_quant` (`glu_act`'s two branches): GELU-tanh and SiLU;
+  - WebGPU's `relu2Quant`: squared ReLU;
+  - CUDA: no non-gated kernel, as before.
+- **(b)** `attn-output-gate` is three features:
+  - `attn-output-gate-softplus` (Laguna);
+  - `attn-output-gate-sigmoid` (Spark-X2.5);
+  - `per-layer-query-heads` (Laguna XS's per-layer query-head count, which the old feature carried along).
+
+  The gate features follow `hasAttnOutputGate`'s two cases, so the features and the forward cannot drift.
+- **Tier 0, the matrix:** `docs/hardware-matrix.md` changes in six rows, each only by the split names. No cell changed
+  whether it runs resident, and the capability matrix is unchanged.
+  - **The row that matters:** Nemotron-H on Metal now reads "missing: `non-gated-relu2`, `ssm`". When SSM on Metal lands,
+    Nemotron-H stays declined until Metal has a squared-ReLU kernel, instead of running `act_quant`'s GELU-tanh on it.
+- **The plant:** `TestFeatureSplits_wrongHalfDeclinesByName` gives each split's family a backend that declares the other
+  half: GPT-2 with SiLU, Nemotron-H with GELU-tanh, Laguna with sigmoid, Spark-X2.5 with softplus. Each declines,
+  naming exactly the half it lacks.
+  - **Planted:** Spark-X2.5 deriving softplus, and squared ReLU deriving GELU-tanh. Both went red, then restored.
+
+**OP2a, MLA on Metal.**
+- **Delivers:** DeepSeek-V2/V3 and Moonlight resident on Metal. Kimi K2 also needs a 384-expert router; that is not here.
+- **Size and box:** M–L, on the Mac.
+- **Depends on:** OP0 only. CUDA's `backend/cuda/mla.cu` and WebGPU's `backend/webgpu/mla.go` are the models to port.
+- **KV:**
+  - MLA's latent cache is a second KV shape, a layer group of its own in the KV design (§5.2 of the KV doc).
+  - KV2's Metal KV-copy has to copy it, or decline MLA for cross-conversation reuse, and it shares `backend/metal/model.go`'s
+    slot allocation with KV2.
+  - KV5 will route Metal's MLA kernel through the block table, so OP2a writes the kernel KV5 then edits.
+- **Gates:**
+  - **Tier 0:** `deepseek-tiny` and `kimi-tiny` on Metal against the CPU, by the resident identity suite's bars. A plant: the
+    rope split of q and k swapped must go red.
+  - **Tier 1:** none fits by day as a whole model. The smallest real MLA checkpoint is DeepSeek-V2-Lite (16B MoE), whose
+    Q4_K_M file is about 10 GB, against the Mac's 16 GB. Tier 1 is a layer slice of V2-Lite against `deepseek_v2lite_golden.json`'s
+    hidden states, as a correctness gate only, never quoted as a speed.
+  - **Night, only if the slice passes:** the whole V2-Lite resident through Metal's expert paging. It is the only run that
+    sees the router with the real expert count. Fit-check by day first, and if it is refused, it is an owner question, not
+    a bypass.
+
+**OP2a on Metal, registered 2026-10-16 before any code** (branch `op2a-mla-metal-2026-10`).
+
+- **Design:** WebGPU's absorbed MLA (`backend/webgpu/mla.go`, `backend/webgpu/decoderunner.go`), ported to Metal kernels:
+  - the q-LoRA path or the direct q projection;
+  - the KV down-projection with its latent norm and the rope slice, stored per position as one latent row
+    (`kvLoRA + qkRope` values);
+  - q's nope part absorbed through W_UK; q's rope part rotated;
+  - attention over the latent cache;
+  - the lift through W_UV, then the output projection.
+  - Metal's MoE router already routes DeepSeek-V2/V3 (sigmoid, bias, group-limited top-k), so the MoE is unchanged.
+  - Kimi K2's 384-expert router stays out, as above.
+- **The KV:**
+  - an MLA layer's cache is its latent rows, priced so by `ResidentKVBytes`;
+  - the MC3 batched step, the f16 prefill, KV2's slot copy and int8 KV decline an MLA model, each pinned by a test.
+- **Tier 0, by day:**
+  - **M, the tiny models against the CPU at the same quant:** `deepseek-tiny` and `kimi-tiny` resident on Metal at int4,
+    in greedy lockstep for 32 steps off the CPU, graded from position 2.
+    - **The control,** in the same session and harness: `qwen3moe-tiny`, a MoE already resident on Metal. A routing flip
+      under rounding is then something both arms can show.
+    - **The bar:** each MLA fixture's min logit cosine at least the control's minus 0.001, and argmax agreement at least the
+      control's count minus 2. That is gate M's rule (OP2b).
+    - **Planted defect:** q's and k's rope and nope slices swapped in the Metal kernel only. M must fail.
+  - **Guards:** each decline above, with a test; `ResidentKVBytes` for an MLA layer equals its latent size per position.
+- **Tier 1, by day:** a layer slice of DeepSeek-V2-Lite (`scripts/slice_gguf_layers.py`, its first layers including the
+  dense one and one MoE layer) resident on Metal against the CPU at int4, by G2-R's bars (min cosine ≥ 0.88, argmax ≥ 50%)
+  with the dense 1.5B control ≥ 0.95. The checkpoint is pulled to `~/models` first.
+  - This replaces the hidden-state comparison against `deepseek_v2lite_golden.json` written above. That golden holds the
+    whole model's output, which a slice does not produce.
+- **Night, only if the slice passes:** the whole V2-Lite, as above.
+
+**OP2a gate M, read 2026-10-16, and two amendments after the data (owner, 2026-10-16).**
+
+- **As registered:**
+  - The control `qwen3moe-tiny` read min cosine 0.999458, argmax 31/32.
+  - `deepseek-tiny`: 0.999880, 32/32, **PASS**.
+  - `kimi-tiny`: 0.994251 against 0.998458, **FAIL**, with argmax 31/32. Its cosine held about 0.9997 except steps 8 and 9
+    (0.994, 0.997), then recovered.
+  - The guards PASS.
+- **Amendment 1, gate M for the MoE fixtures is graded with routing forced.** Every MoE layer on Metal takes the experts
+  and weights the CPU chose for the same token (`TestMLAResident_routingForced`), on all three fixtures, control included.
+  - Read: control 0.999885, 31/32; `deepseek-tiny` 0.999884, 32/32; `kimi-tiny` 0.999751, 32/32. **PASS.**
+  - The step 8–9 dip was a routing near-tie: Metal's router sums its softmax in f32, the CPU's in f64, and kimi-tiny picks
+    4 of 16 experts. A fault in the MLA path would persist through the latent cache, and none shows once routing is forced.
+- **Amendment 2, the tiny fixtures cannot see a rope defect.** The registered plant (q's and the latent's rope and nope slices
+  swapped, on the branch these interleaved fixtures run) read 0.999866, 32/32, not red. Their rope contributes almost nothing
+  to the scores (`decoder/features.go`'s note on flat tiny weights). Gate M stays as the model-level check of the rest of the
+  path. The rope is gated at the kernel instead, registered here before it runs:
+  - **K-MLA:** `mla_store` and `mla_qrope` against a float64 reference on non-flat synthetic inputs (values spanning ±4, a
+    rope table of base 10,000), both branches (interleaved and not), at positions 0, 1, 7, 255 and 4,095.
+    - **Bar:** max |error| ≤ 2e-3 × max |reference| per output, which allows for fast-math `sin`/`cos` at angles up to
+      about 4,095 radians.
+    - **Plant:** the rope and nope slices swapped in each branch must turn it red.
+
+**OP2a read 2026-10-16: K-MLA, tier 1 PASS; Metal declares `mla`.** Record: `docs/measurements/op2a-mla-metal-2026-10-16/`.
+
+- **K-MLA (`TestMLAKernels_rope`):** worst max |error| / max |reference| is 7.8e-5 for `mla_store` and 2.9e-4 for `mla_qrope`
+  across both branches and every position, against 2e-3. The rope/nope swap reads 1.3 to 2.1. **PASS.**
+- **Tier 1, the V2-Lite slice:** the first two layers (dense, then MoE) of `DeepSeek-V2-Lite-Chat-Q4_K_M.gguf`, cut by
+  `scripts/slice_gguf_layers.py` on nobara (774 MB, sha256 `7396629f…`), int4, by day under the timing lock. The fit guard
+  and Metal's memory guard admitted both loads.
+  - Control 0.997134, 27/32.
+  - The slice: min cosine 0.995465 against 0.88; argmax 30/32 against 16. **PASS.**
+- **The declaration:** Metal declares `mla`.
+  - It rests on gate M with routing forced, K-MLA, the guards and the tier 1 slice.
+  - The hardware matrix reads DeepSeek-V2 and V3 resident on Metal.
+  - Kimi K2 stays on the CPU, held by its 384-expert router (Metal's routes 256), which this work does not touch.
+- **Not run:** the whole V2-Lite at night, through Metal's expert paging, as registered above.
+
+**OP2b, SSM (Mamba-2) on CUDA and on Metal.**
+- **Delivers:** Nemotron-H resident on CUDA and Metal, and Granite-4.0-H once its bring-up gate lifts.
+- **Size and box:** M–L for each of CUDA (nobara) and Metal (the Mac).
+- **Depends on:** OP2(a) for Metal.
+- **KV:**
+  - The SSM state is not KV. It lives in today's per-slot recurrent buffers until KV8's state pool.
+  - KV2's reuse already treats hybrids as one slot with exact-extension reuse only. OP2b keeps that, so it changes nothing
+    in KV2's files.
+  - It shares `backend/cuda/resident.go` (CUDA) and `backend/metal/model.go` (Metal) with KV2's slot code.
+- **Gates:**
+  - **Tier 0:**
+    - `nemotron-tiny` and `granite-tiny` on the backend against the CPU, plus `nemotron3nano-tiny` where its MoE is
+      admitted;
+    - a plant: the conv window shifted by one must go red. This needs ≥ 2 decode steps past the window, per `CLAUDE.md`'s
+      minimal-repro rule.
+  - **Tier 1:**
+    - **CUDA:** NVIDIA-Nemotron-Nano-9B-v2 at int4 on nobara's 8 GB card, against `nemotron_real_golden.json.gz`.
+    - **Metal:** the same checkpoint if it fits by day. If it doesn't fit, a layer slice by day, and the whole model at
+      night after a by-day fit check.
+  - **No speed gate:** the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt. [Corrected 2026-11-07: the 15× has no record behind it. On the Mac the measured CPU-to-Metal decode ratio for Qwen2.5 is 1.7 to 1.8× (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), a proxy: it says nothing about CUDA, which is unmeasured, and a first kernel for a new family can be slower than the CPU (OP6's first Metal kernels on Phi-3 were 4.7× slower than the loop until #722), so "cannot be in doubt" is weaker than written here.]
+
+**OP2b on Metal: the gates, registered 2026-10-15 before any code.**
+
+**The build:**
+- The Mamba-2 decode kernels in MSL, ported from `backend/webgpu/mamba.go`'s shaders: the conv step with its window, the SSM step,
+  and the gated RMSNorm, per group (Nemotron-H) and over the full inner width (Granite-4.0-H).
+- A squared-ReLU branch in `glu_act`. It is a new ordinal (2); 0 and 1 stay as they are.
+- Metal's resident builder learns Nemotron-H's one-operation blocks: Mamba, NoPE attention and the non-gated MLP. The
+  recurrent state is kept per slot and reset with it.
+- `ssm` and `non-gated-relu2` are declared on Metal only after every gate below passes.
+
+**Tier 0, by day: synthetic kernels and tiny fixtures, seconds.**
+
+- **K, each new kernel against the CPU's own computation** (`decoder/mamba2.go:mamba2Step`'s pieces), on synthetic
+  inputs. The bar is `backend/webgpu/mamba_test.go`'s: cosine ≥ 0.99999 and max |diff| ≤ 1e-3.
+  - The gated norm at one group and at several.
+  - The conv step over ≥ 2 steps past its window. One step inside the window cannot see a window error (CLAUDE.md's
+    minimal-repro rule).
+  - The SSM step over 64 steps, for drift.
+  - The squared-ReLU branch.
+- **D, plants: each must turn K red.**
+  - The conv window shifted by one.
+  - The softplus on dt dropped.
+  - The group norm taken over the full width where groups are asked for.
+  - Squared ReLU as plain ReLU.
+- **I, identity:** every existing kernel's digest equals base's (G1-K's instrument). Adding the new ordinal changes no
+  existing path.
+- **M, the tiny models against the CPU at the same quant:** `nemotron-tiny` and `granite-tiny` resident on Metal, at
+  int8int8 and int4, in greedy lockstep for 32 steps. Positions from 2 are graded.
+  - **The bar is relative, set by a control in the same session:** `llama-tiny` at the same quant through the same
+    harness.
+  - Each SSM fixture's min logit cosine must be at least the control's minus 0.001, with argmax equal on at least the
+    control's count minus 2.
+  - G2-T is why: its bar was copied without measuring the fixture's own baseline, and sat just under it.
+  - With the conv window plant from D in the Metal build only, M must fail.
+- **S, slots:**
+  - A recurrent family is declined by MC3's batched step and by KV2's sharing, as now.
+  - A test pins both declines.
+  - Two conversations taking turns on one slot, the state reset between them, each give the reply they give alone.
+
+**Tier 1, by day.**
+
+- **Fit-check first:** NVIDIA-Nemotron-Nano-9B-v2 at int4 on Metal, about 5.5 GB.
+- **If it is admitted by day:** its resident run against the CPU at int4, by G2-R's harness and bars (min cosine ≥ 0.88,
+  argmax ≥ 50%), with the dense 1.5B control at 0.95, in one session.
+- **If not:** the same on a layer slice by day, and the whole model at night after a by-day fit check of every load.
+- The checkpoint is pulled to `~/models` first; the archive is never a read path.
+
+**Step 1, the kernels, read 2026-10-15** (branch `op2b-ssm-metal-2026-10`). All tier 0 gates pass.
+
+- **Built:**
+  - `backend/metal/kernels/mamba_kernels_msl.go`: `mamba_conv`, `mamba_ssm` and `mamba_gnorm`, ported from `backend/webgpu/mamba.go`'s
+    shaders and appended to the library.
+  - `act_quant`'s squared-ReLU branch: `nongated_act`, ordinal 2, local to `act_quant`, so `glu_act`'s other callers keep
+    their code.
+  - Nothing reaches the new kernels yet.
+- **Two amendments, made before any run:**
+  - **K reads real inputs, not synthetic ones.** The CPU's own `mamba2Step` captures each step's in_proj output and gated
+    output on the tiny fixtures (`decoder.SetMambaCapHook`), and the Metal chain replays the in_proj output from a fresh
+    state.
+  - **The norm-group plant needs its own kernel case.** Both tiny fixtures have one group, so the grouped norm is gated at
+    4 groups against the CPU's `gatedRMSNormGrouped`, through a new test hook.
+- **K:**
+  - The chain against `mamba2Step` over 72 steps, worst cosine 1.000000000: `nemotron-tiny` max |diff| 1.2e-7,
+    `granite-tiny` 7.2e-7.
+  - The gated norm at 4 groups: 2.4e-7.
+  - `act_quant`'s squared ReLU: exact.
+- **D:**
+  - Conv taps shifted by one: red on both fixtures.
+  - Softplus on dt dropped: red on `nemotron-tiny`. `granite-tiny`'s dt sits where softplus is nearly the identity, so
+    there it moved the output by 4e-5 only; logged as that fixture's blind spot.
+  - One group over the full width: red (cosine 0.79).
+  - Plain ReLU for squared ReLU: red.
+  - K fails under every plant, as registered.
+- **I:**
+  - G1-K's 1,095 attention digests are equal on main (`69b37261`) and the branch.
+  - `act_quant` at ordinals 0 and 1 is bit-identical to the kernel rebuilt with `glu_act` in the branch's place.
+- **Found on the way:**
+  - The test's first run read Metal's gated output as all zeros, because the fixture's weight slices aliased a model the
+    test had already closed (fixed by copying them).
+  - It showed as a cosine of 1.0, because the shared `cosF32` returns 1 when one side is all zeros. The Mamba tests use
+    `mambaCos`, which scores that case 0. Other callers of `cosF32` still have the guard.
+- **Next, step 2:** the resident builder learns Nemotron-H's one-operation blocks, with the per-slot state, then M and S.
+
+**Step 2, Nemotron-H on Metal, read 2026-10-15** (branch `op2b-step2-nemotron-metal-2026-10`). Nothing is declared yet.
+Gates S and the tier 0 checks pass. **Gate M fails at int8int8**: stopped for the owner's call (below).
+
+- **The NoPE check:** Nemotron-H's adapter sets `RotaryDim: 0` and no RoPE base, so it builds no RoPE table, and
+  `Model.RopeInvFreqLayerResident` already returns an all-zero table (the identity rotation) for its attention layers.
+  - No change was needed. A clause added for it was dead code and was removed.
+  - `TestRopeInvFreqLayer_nemotronIsNoPE` pins the property, and a RoPE base planted in the adapter turns it red.
+- **The general form:** `decoder.Model.ResidentLayerOps(i)` gives each layer's mixer (attention, DeltaNet, Mamba-2 or
+  none) and whether a feed-forward block follows.
+  - This is §4.1's layer program in its smallest form: each layer is a mixer operation, then an optional FFN operation,
+    from a closed set of mixer kinds.
+  - Metal's build and encode switch on it and upload and encode only that layer's own weights. A hybrid of existing
+    kinds (Granite-4.0-H, once its multipliers are folded) needs no family branch on Metal.
+  - What it does not yet do: per-operation norms and fusions are still the runner's own (§4.1's fusion tables are
+    OP4's), and the FFN kind is still read from model-level flags.
+- **Mamba-2 on the resident** (`backend/metal/mamba.go`):
+  - in_proj and out_proj run W8A8, as on WebGPU;
+  - the conv window and SSM state are per layer, reset with the slot (`resetRecurrent`);
+  - Granite-4.0-H declines on Metal, its multipliers not yet folded.
+- **The guards:** the twelve paths that declined DeltaNet now decline any recurrent mixer.
+  - `TestRecurrentGuards_declineMamba` checks all twelve on a hand-built resident with one Mamba-2 layer. For the four
+    where the recurrent check decides, a control without the Mamba layer is admitted.
+  - Plant: the KV-copy guard left DeltaNet-only. Red.
+- **KV pricing:** `ResidentKVBytes("metal")` prices attention layers only.
+  - `TestResidentKVBytes_attentionLayersOnly`: nemotron-tiny 2 attention layers of 5, qwen35-tiny's DeltaNet layers,
+    llama-tiny all.
+  - Plant: only DeltaNet skipped. Red: 640,000 bytes against 256,000.
+- **Gate S: pass.**
+  - One KV slot, and the batched step declines.
+  - Two conversations taking turns on the slot give their solo replies.
+  - Plant: the reset leaving the Mamba-2 state. Red: both later replies change.
+- **Gate M** (`TestNemotronResident_tinyAgainstControl`, against `llama-tiny` in the same run):
+
+  | quant | control (llama-tiny) | nemotron-tiny | verdict | conv plant |
+  |---|---|---|---|---|
+  | int4 | 0.999906, argmax 32/32 | 0.999699, argmax 31/32 | pass | red (0.0336) |
+  | int8int8 | 0.999888, argmax 32/32 | 0.994279, argmax 30/32 | **FAIL** | red (0.2451) |
+
+- **Why int8int8 fails: not the Mamba-2 mixer.**
+  - With the CPU's Mamba projections also W8A8 (`SetSSMQ8CPU`), nemotron-tiny still reads 0.994730.
+  - The native int8 path (`w8Eligible`) covers no recurrent family. Its doc comment scopes slice 1 to "no DeltaNet", and
+    the converted guard now declines Mamba too.
+  - So at int8int8, Nemotron-H's attention and MLP projections take the int4 re-quantization (`int4ConcatA`) while the CPU
+    runs int8. The control is on the native int8 path, so it matches.
+  - This agrees with the decoder's existing rule (`decodeRunnerDecline`): Nemotron-H is resident at int4 only by default,
+    with int8 behind `GOINFER_SSM_RESIDENT`.
+- **Not run (at the time of this reading):** tier 1 (the real 9B) and the declaration. Both waited on gate M; see the
+  amendment below.
+- **Regression checks:**
+  - The Metal set (DeltaNet, Qwen3.5, Olmo, GPT-2, Gemma, the parity, KV and batch tests): 86 pass, 45 skip.
+  - Its two failures: gate M's int8int8 row, and `TestGemma2ResidentParityMetal`, which fails identically on main
+    (0.998997 and 0.998657, G2-T's recorded readings: OP1-M1 made the tiny fixtures diagnostics, and the test still
+    asserts 0.999).
+  - The decoder's feature, matrix, residency and KV tests: 55 pass, 0 fail.
+
+**Gate M amended after the data (owner, 2026-10-15): graded at int4 only, with a condition.**
+
+- **The reason:** the gate assumed a native Metal int8 path, which no recurrent family has. So int8int8 measured the int4
+  re-quantization of Nemotron-H's attention and MLP weights, not this work.
+- **Gate M at int4: PASS:** 0.999699 against the control's 0.999906, argmax 31/32; the conv plant red.
+- **The condition, built:** at int8, Metal declines Nemotron-H as resident, and the CPU runs it at real int8, instead of
+  re-quantizing to int4.
+  - It is `backend/metal/mamba.go:buildMamba`, on the decoder's own test (`decoder.Model.ResidentProjsInt4`).
+  - `TestNemotronResident_int8Declines`: int8int8 is refused with the int4-only reason, and int4 builds.
+  - Plant: the decline removed. Red: the int8int8 build went through.
+- **The ssm and non-gated-relu2 declaration is scoped to int4:** Metal builds Nemotron-H at int4 only.
+- **Checked once: the DeltaNet families have the same re-quantization.**
+  - `qwen35-tiny` at int8int8 runs resident on Metal as "int8int8→int4", with native int8 off.
+  - Filed as G44 (`docs/queue-correctness.md`) with the same fix.
+- **Native int8 for recurrent families** is slice 6 of `docs/tasks/task-metal-int8-2026-10.md`, later.
+- **Tier 1 next, after a by-day fit check.**
+
+**Tier 1's whole model cannot load on the Mac, by day or by night (2026-10-15).** The int4 .giw that nobara built from
+the registered Q8_0 GGUF (`make-nemotron-giw.sh`, at `6622df20`) is 19.2 GB. Its Mamba projections stay f32 in the
+bundle, about 0.59 GB a Mamba layer over 27, and only the attention and MLP matrices take int4. That is more than the
+Mac's 16 GB RAM, so the fallback's night half cannot run here. The fit-check line's 5.5 GB above assumed every matrix
+at int4.
+
+**Tier 1 on a layer slice, registered 2026-10-15 before any run (the registered fallback, by day).**
+
+- **The slice:** layers 0 (Mamba), 1 (MLP) and 14 (the first attention layer) of the Q8_0 GGUF, renumbered 0 to 2, with
+  the embedding, final norm and head (`scripts/slice_gguf_layers.py`, bytes checked against the source). nobara built
+  its int4 .giw (`nemotron-nano-9b-v2.slice-0-1-14.int4-metal.giw`, 1.88 GB, sha256 `13c38555b9ac…`) and the Mac pulled
+  it into `~/models/nemotron/`.
+  - **Why these three:** a first-N slice that reaches an attention layer needs 15 layers, 8 of them Mamba, about 6 GB.
+    That does not fit by day. These three hold real weights of every block kind the step builds.
+  - **What it is not:** the model. Its logits are what three layers make of the prompt.
+- **The arms, `TestNemotronResident_tier1Slice`:** one load of the .giw at int4; the Metal resident is built from it and
+  run against the CPU model it was built from. That is gate M's harness: greedy lockstep for 32 steps off the CPU, graded
+  from position 2.
+- **Bars, G2-R's:** min logit cosine ≥ 0.88 and argmax agreement ≥ 50%.
+- **The control, same process, before the slice:** the dense Qwen2.5-Coder-1.5B through its int4 Metal .giw, the same
+  harness. It must reach min cosine ≥ 0.95, or the run is VOID.
+- **A refused load** (the fit guard or Metal's memory guard) is VOID, not FAIL. No guard is bypassed.
+- **Not answered by the slice:** the whole model's agreement. That needs a smaller bundle, quantized Mamba projections
+  (B27), or a box that holds 19.2 GB.
+
+**Tier 1 on the slice, read 2026-10-15 22:36 PDT: PASS.** By day, under the timing lock. The fit guard and Metal's memory
+guard admitted both loads; nothing was bypassed. Record: `docs/measurements/op2b-step2-2026-10/tier1-slice-2026-10-15/`.
+
+- **Control, the dense 1.5B:** min cosine 0.997134, argmax 27/32. Over 0.95, so the run counts.
+- **The Nemotron-H slice:** min cosine 0.994410 against 0.88; argmax 29/32 against 16. **PASS.**
+- **What stays open:** the whole model, for which this Mac has no room, and filed as B27 (`docs/queue-engineering.md`; filed as B26, renumbered
+  because main's B26 is another item).
+
+**Declared, 2026-10-15 (owner: the slice stands in for tier 1 for now): Metal declares `ssm` and `non-gated-relu2`,
+int4 only.**
+
+- **What it rests on:**
+  - gate M at int4;
+  - gate S;
+  - the tier 0 kernel tests (K, the norm groups, ReLU²), the guard gate and the int8 decline, each with its plant;
+  - the three-layer slice of the real 9B against the CPU, above;
+  - the whole 9B against the CPU, below (2026-10-16, PASS).
+- **The whole-model run is done,** no longer owed: B27's int8 Mamba projections brought the 9B's bundle to 7.27 GB, and it
+  passed by day against the bars above.
+- **The matrices:** Nemotron-H reads resident on Metal. Granite-4.0-H stays on the CPU: its runner-shape bring-up gate holds
+  it, `buildMamba` declines it, and only its "missing: `ssm`" reason goes. The admission golden lists Metal for both,
+  as it tracks the feature-only model.
+
+**Tier 1 on the whole 9B, read 2026-10-16 06:28–06:33 PDT: PASS.** Run by day on the owner's word, as the fit check
+admitted both loads (B27's v17 int4 bundle, 7.27 GB). Pinned at `3faaa5bb`; the fit guard and Metal's memory guard were
+on and admitted both. Peak RSS 5.78 GB, 0 swaps, swap flat at about 1.86 GB. Record:
+`docs/measurements/op2b-step2-2026-10/tier1-whole-2026-10-16/`.
+
+- **Control, the dense 1.5B:** min cosine 0.997134, argmax 27/32. Over 0.95, so the run counts.
+- **NVIDIA-Nemotron-Nano-9B-v2, whole:** min cosine 0.929161 against 0.88; argmax 27/32 against 16. **PASS.**
+- **This closes what the slice stood in for.** The declaration now rests on the whole model as well.
+
+**Not in this build:**
+- Granite-4.0-H's own bring-up gate (§4.5).
+- Nemotron-3-Nano's MoE.
+- A speed gate. The do-nothing arm is the CPU, about 15× slower. [Corrected 2026-11-07: the 15× has no record behind it. On the Mac the measured CPU-to-Metal decode ratio for Qwen2.5 is 1.7 to 1.8× (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), a proxy: it says nothing about CUDA, which is unmeasured, and a first kernel for a new family can be slower than the CPU (OP6's first Metal kernels on Phi-3 were 4.7× slower than the loop until #722), so "cannot be in doubt" is weaker than written here.]
+
+**OP2b on CUDA: the gates, registered 2026-10-16 before any code** (read at main `d183f2c9`; Metal's step 1 and step 2 records above).
+
+**What exists and what does not.**
+- **On the CPU and the decoder side, ready:**
+  - the reference, `decoder/mamba2.go:mamba2Step`, and its hooks (`SetMambaCapHook`, `SetSSMQ8CPU`);
+  - the layer program, `decoder.Model.ResidentLayerOps`, and the accessors `NemotronResidentParams`, `MambaProjInt8`,
+    `ResidentProjsInt4`;
+  - the fixtures `nemotron-tiny`, `granite-tiny`, `nemotron3nano-tiny` and the real goldens.
+- **On CUDA, nothing:**
+  - no Mamba kernel, no non-gated MLP, and none of `ssm`, `non-gated-mlp`, `non-gated-relu2` is declared. Nemotron-H derives exactly
+    those three (`decoder/features.go:Architecture.residentFeatures`);
+  - the only recurrent state is DeltaNet's `dnetParams` (`backend/cuda/resident.go`), model-level and shaped for DeltaNet, so it is not reused;
+  - the recurrent guards test `r.dnet` at eight sites: `backend/cuda/batchstep.go`, `backend/cuda/kvsnap.go`, `backend/cuda/kvcopy.go`, `backend/cuda/prefill.go` (two),
+    `backend/cuda/resident.go` (four). A Mamba layer must read as recurrent at every one.
+- **The shape that carries over from Metal:** Nemotron-H resident at int4 only. Its int8 projections would be re-quantized to int4
+  without notice, so int8int8 declines by name, on the decoder's own test (`ResidentProjsInt4`), and the CPU runs it at real int8
+  (Metal's gate-M amendment). Granite-4.0-H stays on the CPU: its runner-shape bring-up gate holds it, and the backend declines it by name.
+
+**The build, by step.**
+- **Step 1, kernels and the non-gated MLP, nothing reaches them yet.**
+  - `mamba_conv`, `mamba_ssm`, `mamba_gnorm` (per group for Nemotron-H, over the full inner width for Granite), in a new `backend/cuda/mamba.cu`,
+    from `backend/webgpu/mamba.go`'s shaders and `decoder/mamba2.go`. Conv window ≤ 8 taps, the window and the SSM state persistent in place.
+  - The squared-ReLU activation and the non-gated structure (up GEMV, activation, quantize, down GEMV) in a new `backend/cuda/nongated_act.cu`.
+  - **Mechanism, chosen here because the gates lean on it: new files and new PTX, no ordinal added to `glue.cu`,
+    `prefill_batched.cu` or `actgroup.cu`.** No audited or shipped PTX moves, so gate I below is a byte comparison of PTX and not a
+    claim about a compiler. Built at the ambient NVRTC (12.9.86) per `cuda/testdata/REGEN.md`; a new `.cu` needs no pinned toolchain.
+  - `in_proj` and `out_proj` run W8A8 through the existing `gemv_w8a8` (int8 rows with per-row scales from `MambaProjInt8` when the
+    load holds them, else quantized from the f32 as Metal and WebGPU do); attention and MLP projections are W4A8 as today.
+- **Step 2, the resident:** the builder walks `ResidentLayerOps`, uploads and encodes only a layer's own weights, keeps the conv window
+  and SSM state per layer and per slot, and resets them with the slot. The eight guard sites above read "recurrent".
+  Prompts are processed token by token (the batched prefill declines a recurrent family, as for DeltaNet). `KVBytes` and the fit plan
+  price the attention layers only, and add the states.
+- **Declaration:** `ssm`, `non-gated-mlp` and `non-gated-relu2` on CUDA, int4 only, after every gate below passes; the
+  matrix and the admission golden regenerate with it. On a branch, unmerged, until then (OP1's way).
+
+**Tier 0, by day: synthetic and tiny, seconds. In every K and M reading both outputs are asserted non-zero before the cosine is taken,
+and a cosine where exactly one side is all zeros is scored 0.**
+CUDA's `cosF32` returns 1 for an all-zero side (`backend/cuda/deltanet_test.go`), which is the guard that made Metal's first kernel test read
+1.0 on an all-zero output (step 1's "found on the way"). The non-zero assertion fails the test by name ("output is all zeros: the
+reading is void"), so a kernel that writes nothing, or a replay of a model closed under it, cannot pass as agreement. Tier 1's harness
+applies the same check to each step's logits.
+- **K, each new kernel against the CPU's own computation, on real inputs.** `SetMambaCapHook` captures each step's `in_proj` output
+  and gated output from `nemotron-tiny` and `granite-tiny` (the kernels serve Granite's geometry too; the family stays declined), and
+  the CUDA chain replays the `in_proj` output from a fresh state. Bar `backend/webgpu/mamba_test.go`'s: cosine ≥ 0.99999 and max |diff| ≤ 1e-3
+  (Metal read 1.2e-7 and 7.2e-7).
+  - The chain over 72 steps (≥ 2 past the conv window: one step inside it cannot see a window error; 72 for drift).
+  - The gated norm at 4 groups against `gatedRMSNormGrouped` (both fixtures have one group, so the grouped case needs its own).
+  - The squared-ReLU activation: exact.
+- **D, plants, each must turn K red.** The kernels are prebuilt PTX, so each plant is a temporary edit of `mamba.cu` or
+  `nongated_act.cu` with the affected modules rebuilt, run, and restored (as OP1's G2-D was); the record lists the red cases.
+  - The conv taps shifted by one.
+  - The softplus on dt dropped. `granite-tiny`'s dt sits where softplus is nearly the identity (Metal moved it by 4e-5), so this
+    plant is read on `nemotron-tiny` and `granite-tiny`'s blind spot is logged, not hidden.
+  - One group over the full width where groups are asked for.
+  - Squared ReLU as plain ReLU.
+- **I, identity.** Every existing PTX file is byte for byte base's (`git diff` adds only new files), and G1-K's 1,864 attention digests
+  are equal to base's. `go run ./cmd/gate identity <base> <new> -backend cuda` on the tiny fixtures: IDENTICAL for every family that ran.
+- **M, the tiny models against the CPU, int4 only,** in greedy lockstep for 32 steps, positions from 2 graded.
+  - **The bar is relative, set by a control in the same run:** `llama-tiny` at int4 through the same harness. Each SSM fixture's min
+    logit cosine ≥ the control's minus 0.001, argmax equal on at least the control's count minus 2 (G2-T's lesson: a bar copied
+    from another model sat just under this fixture's own baseline).
+  - `nemotron-tiny` always; `nemotron3nano-tiny` where its MoE is admitted on CUDA, else its decline reason is recorded.
+  - **int8int8 is not graded:** it must decline by name, test pinned (`buildMamba`'s counterpart), planted by removing the decline.
+  - **Plant:** the conv window shifted in the CUDA build only, the CPU keeping the right math: M must fail.
+- **G, the guards.** A resident built from `nemotron-tiny` is declined by each of the eight sites: the batched step, the prefix
+  snapshot, KV copy, both prefill sites, and the four in `resident.go`. A control (`llama-tiny`) is admitted by the ones where the
+  recurrent check decides. **Plant:** one guard left DeltaNet-only (`kvcopy.go`, then `kvsnap.go`): red.
+- **S, slots.** One KV slot; the batched step declines. Two conversations taking turns on the slot with the state reset between them
+  each give the reply they give alone. **Plant:** the reset leaving the Mamba state: red, both later replies change.
+- **P, pricing.** The KV plan prices attention layers only plus the states (`nemotron-tiny`: 2 attention layers of 5; `qwen35-tiny`'s
+  DeltaNet layers; `llama-tiny` all). **Plant:** only DeltaNet skipped: red.
+- **F, fit, by day, before any tier 1:** every load tier 1 makes is started alone with the server's own flags and its `fit:` and
+  `KV plan:` banner read, or its refusal. A refused load is VOID, not FAIL, and no guard is bypassed.
+
+**Gate F's prediction, written before the server's plan exists (2026-10-16, owner's instruction).** This is arithmetic, not the gate: F is the server's own
+`fit:` and `KV plan:` banner on a resident, which can be read only once step 2 builds one. The card is 8,192 MiB with 445 MiB held by the desktop,
+so **7,747 MiB (7.57 GiB) is free**; the owner's "about 7.7 GiB" was a rounding of that.
+- **The 4B:** its CUDA int4 bundle (`cmd/prequant -quant int4 -target cuda`, measured) is 3,665,816,296 bytes, **3,496 MiB (3.41 GiB)**. That leaves
+  about 4,250 MiB. Against it: the process's CUDA context and driver-JIT modules (INFERRED, a few hundred MiB), scratch for one decode row (tens
+  of MiB), the Mamba state (24 layers x 112 x 64 x 128 f32 = 3.7 MB each, about 88 MiB plus the conv windows), and the KV of the 4 attention layers
+  (8 KV heads x 128 x K and V x f16 = 16 KiB a token, 256 MiB at 16,384 positions). **Predicted: admitted whole at a context of 16,384 or more,
+  with 3 GiB or more of headroom.** Falsified if the plan refuses it, or caps its context under 8,192.
+- **The 9B:** Metal's v17 bundle is 7.27 GB, **6,935 MiB**; the CUDA counterpart should be within a few percent. That leaves about 810 MiB for the
+  context, the scratch, the state and the KV. **Predicted: refused, or admitted only at a context under 2,048.** Falsified if it is admitted at 4,096
+  or more.
+- Both readings, and the plan's own numbers beside these, go in the record when the resident exists. A wrong prediction is recorded as wrong.
+
+**Tier 1, by day, under the timing lock, about 10 minutes.** The checkpoint is `nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf` in
+nobara's `~/models` (never `/srv/models`); the CUDA int4 bundle is built from it on nobara with `cmd/prequant -target cuda`.
+- **The whole-model cell, decided now (owner, 2026-10-16), in this order, before any data:**
+  1. **Look for a smaller real Nemotron-H first.** `nvidia/Nemotron-H-4B-Instruct-128K` exists (52 layers, hidden 3072, 112 Mamba heads
+     of 64, per its model card and config as found 2026-10-16; its file size was not confirmed and is INFERRED to be about 8 GB in
+     bf16, so about 2.5 to 3 GB as an int4 bundle). The steps, each stopping the list on a failure:
+     - pull it to nobara's `~/models` (never read from the archive);
+     - it must load and generate coherently on the **CPU** through today's `nemotron_h` adapter, which is a decoder finding in its
+       own right if it does not (a different layer pattern or head geometry the adapter does not know);
+     - gate F's plan must admit its CUDA int4 bundle whole.
+     If all three hold, **it is tier 1's whole-model cell:** its resident run against the CPU by G2-R's harness and bars (greedy
+     lockstep 32 steps off the CPU, min cosine ≥ 0.88, argmax ≥ 50%), the dense 1.5B control at ≥ 0.95 in the same session (a control
+     failure voids the session). The 9B's three-layer slice runs beside it as an extra, not as the cell.
+  2. **If none fits whole,** the declaration may rest on gates K, D, I, M, G, S and P, **the three-layer 9B slice on CUDA** (layers 0, 1
+     and 14 of the Q8_0, renumbered 0 to 2, with the embedding, final norm and head, `scripts/slice_gguf_layers.py`; same harness and
+     bars), **and Metal's whole-9B pass** (2026-10-16, min cosine 0.929161, argmax 27/32), recorded as exactly that: the same CPU
+     reference and the same Mamba-2 math, checked whole on Metal and in slice on CUDA, **not** a whole-model CUDA measurement. The
+     record says so in its first line, and the matrix row carries no stronger claim.
+  3. **The 9B on the card is still tried:** gate F reads the plan for Metal's 7.27 GB bundle's CUDA counterpart (on an 8 GB card with
+     about 0.45 GB held by the desktop and a context, it may not fit). If F admits it, the whole 9B joins as a further cell. A refusal
+     is recorded, is VOID for that cell and not a FAIL, and changes nothing in rule 2.
+- A smaller bundle would also answer it for the 9B (B27's int8 Mamba projections took Metal's from 19.2 to 7.27 GB; int4 Mamba
+  projections would go further and need their own quality gate, `docs/ssm-int8-quality.md`); that is not part of this build.
+- **Tier 2: none.** There is no speed gate: the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt. [Corrected 2026-11-07: the 15× has no record behind it. On the Mac the measured CPU-to-Metal decode ratio for Qwen2.5 is 1.7 to 1.8× (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), a proxy: it says nothing about CUDA, which is unmeasured, and a first kernel for a new family can be slower than the CPU (OP6's first Metal kernels on Phi-3 were 4.7× slower than the loop until #722), so "cannot be in doubt" is weaker than written here.] One
+  decode rate and the time to first token of the sequential prompt are recorded for the 9B, not graded.
+
+**Void, for every gate above:** a model path under `/srv/models` or `/Volumes`; a resident arm whose `DecodePath()` is not
+`cuda-resident` (a silent CPU fallback passes every bar); a skipped test counted as a pass (the record names `--- PASS`); the two
+sides on different drivers; the control failing; a refused load.
+
+**Order, and what a failure does.**
+0. **OP2b CUDA's build starts after #58 (OP1 on CUDA) merges** (owner, 2026-10-16): both edit `backend/cuda/resident.go`, `backend/cuda/backend.go` and the PTX lint tests.
+1. Merge main into the branch (B27, `.giw` v17, KV7's snapshot code are all in `backend/cuda/resident.go`'s neighbourhood). Gate F's table,
+   and the CUDA int4 bundle's size, are written into this section before step 1's code.
+2. Step 1, then K, D, I. A failure: step 2 does not start.
+3. Step 2, then M, G, S, P. A failure: not declared. **Step 2 is four PRs, each gated (owner, 2026-10-16):**
+   - **2a** per-layer kinds from `ResidentLayerOps` (attention / DeltaNet / Mamba / none, and whether a feed-forward block follows), replacing the
+     DeltaNet special cases with the general form, no new behaviour. Gate: identity on the tiny fixtures (all IDENTICAL) and the 1,864 digests.
+   - **2b** the Mamba mixer (mirroring `deltaNetMixer`), attention-only and MLP-only blocks, per-layer recurrent state reset with the slot. Gates M and S.
+   - **2c** the eight `r.dnet` guard sites read "recurrent"; KV pricing skips Mamba and MLP layers. Gates G and P, each with a planted defect.
+   - **2d** retire the transitional predicates (`Qwen35LinearLayer` and `mlaOK` as dispatch inputs, the agreement check, the derived `isDeltaNet` and
+     `isMLA` booleans) so `ResidentLayerOps` is the only source of truth. Its own small PR, with the identity gate.
+   Then gate F's real fit plan, tier 1 on the 4B whole, and the declaration, which comes to the owner before it merges.
+4. Tier 1. Declaration on its own branch; the matrix regenerates (`go test ./decoder -run HardwareMatrix -update`).
+5. Not in this build: Granite-4.0-H, Nemotron-3-Nano's MoE unless admitted, int8int8, a batched prefill for recurrent families, a
+   speed gate.
+
+**OP2b on CUDA, read 2026-10-16: gate F, tier 1 and the declaration** (branch `op2b-cuda-tier1-2026-10`, on step 2d; record
+`docs/measurements/op2b-cuda-2026-10-16/tier1-and-declaration-2026-10-16.md`). **For the owner before merging.**
+- **Gate F, the resident's own plan** (7,235 MiB free before the load, the desktop holding the rest):
+  - The 4B (CUDA int4 bundle, 3.41 GiB): admitted whole at 16,384 positions, 3,243 MiB left after the load, and at 65,536 with 1,833 MiB left;
+    131,072 is refused (4.29 GB of KV against 4.06 GB free). **The prediction holds.** One detail was wrong: its KV is f32, 32 KB a position
+    over 4 attention layers (512 MiB at 16,384), not the f16 256 MiB the prediction priced; the Mamba state is 98.5 MiB, not about 88.
+  - The 9B (CUDA int4 bundle 7,273,734,558 bytes, 6,937 MiB, as predicted): **admitted at the plan's default context of 4,314 positions**
+    with 373 MiB left, and refused at 16,384 by 8 MB (a guard pin). **The prediction was wrong:** it said refused, or admitted under 2,048,
+    falsified at 4,096 or more.
+- **Tier 1** (32 steps of greedy lockstep off the CPU at int4, the bars min cosine >= 0.88 and argmax >= 50%; the dense 1.5B control read
+  0.997580, 29/32 in every session): the **4B whole** 0.993996, 30/32 PASS; the **9B slice** (layers 0, 1, 14) 0.990851, 25/32 PASS; the
+  **whole 9B** 0.953892, 28/32 PASS (47.4 tokens a second, recorded, not graded).
+- **Declared: CUDA declares `ssm`, `non-gated-mlp` and `non-gated-relu2`**, int4 only; Nemotron-H reads resident on CUDA in the matrix.
+  Granite-4.0-H, an int8 load and Nemotron-3-Nano's MoE blocks stay on the CPU. The identity gate reads Nemotron-H DIFFERENT, as it must
+  (it now runs resident; the reference gates are the tier 1 above), and the other 28 families IDENTICAL.
+
+**OP2c, KDA.**
+- **Delivers:** Kimi Linear resident.
+- **Size:** M–L.
+- **Box:** none today. The released Kimi Linear is a 48B-A3B MoE (INFERRED from its model card, not checked here), which
+  fits neither box resident.
+- **Gates:** tier 0 only: `kimi-tiny` plus `kda_rehearsal_golden.json`.
+- **Proposed: park OP2c** until a checkpoint that fits a box exists. A tiny-only gate would leave the real path unseen,
+  the gap §4.6 closed for Gemma 2 with G2-R.
+
+#### OP3 — the layer program, on the CPU
+
+**Registered 2026-10-16 in §4.8, with the design and the steps.** The sketch below is the plan it registered from.
+
+- **Delivers:** every registry family built as a per-layer program that the CPU executes, with its logits bit-identical to
+  today's generic loop and own forwards.
+- **Size and box:** L, on the Mac. The CPU is either box; the Mac, because it stays on OP.
+- **Depends on:** OP0.
+- **Shares files with KV work in flight:**
+  - `decoder/forwardn.go` and `decoder/kvcache.go` with G40 and CPU f16 KV;
+  - `decoder/model.go` with KV2 and the pricing fix.
+  - **Start it after G40 is decided and CPU f16 KV has merged,** or it is rebased across both kernels of the CPU
+    attention.
+- **Gates:**
+  - **Tier 0:** `go run ./cmd/gate identity` on the tiny assets, every family, every step, bit for bit, against the commit
+    before OP3.
+  - **Plants, each of which must go red:** a dropped operation, two swapped operations, and a parameter off by one (the
+    registration in §4.4).
+  - **Tier 1:** the 0.5B, bit for bit, at prompt sizes that cross the CPU's size-switched paths (the fast-attention floor,
+    and G40's chunking if it merges). Tiny fixtures never reach those paths.
+  - **No night run.** Identity inherits each family's validation (TE6(b)). A real checkpoint adds a shape only where a path
+    switches on size, and tier 1 covers those.
+
+#### OP4 — the residents walk the program
+
+- **Delivers:**
+  - each GPU resident runs the program layer by layer;
+  - admission by operation, which absorbs the decoder's and each backend's hand-written declines (§4.5, item 6);
+  - per-backend fusion tables, each fusion gated;
+  - one memory planner pricing through the KV doc's sizing function (its §5.10).
+- **Size:** L per backend.
+- **Box:** CUDA on nobara, Metal on the Mac, WebGPU on the Mac (its discrete half on nobara).
+- **Depends on:** OP3.
+- **KV:**
+  - The memory planner is KV3's admission, generalised, so it follows KV3 on that backend.
+  - CUDA's walk rewrites the launch paths that KV4 routes through block tables (`backend/cuda/resident.go`, `backend/cuda/prefill.go`).
+    **Proposed: CUDA's OP4 after KV4a lands,** so one of the two rebases onto the other once, not repeatedly.
+  - Metal's OP4 shares `backend/metal/model.go`, `backend/metal/prefill.go` and `backend/metal/batch.go` with KV-pre, KV2 and later KV5.
+- **Gates:**
+  - **Tier 0:**
+    - every family's tiny identity suite on the backend, bit-identical to the pre-walk runner;
+    - each fusion bit-identical to the operations it replaces;
+    - a plant: a fusion that claims one operation too many must go red.
+  - **Tier 1:** the 0.5B and the 1.5B, bit for bit against the pre-walk runner, by day.
+  - **Speed:** §4.4's "within 0.99 at depth 128 and 3,900".
+    - A whole-token in-process A/B, interleaved, by day (TE5(b)), first.
+    - **Night only if it does not resolve:** a 0.99 bar is a small-effect decision, which is tier 2's stated case.
+
+#### OP5 — the families whose layers differ
+
+**What it delivers, size and order:**
+
+- **Delivers:** each family resident, bringing only its missing operations.
+- **Size:** M each.
+- **Depends on:** OP4 on that backend, and OP2(b) (the out-gate split).
+- **Order by what a box can measure:**
+  1. Spark-X2.5 (1.7B, on the Mac): exact-erf GELU, out-gate sigmoid, per-layer rotary width.
+  2. LFM2.5 (2.6B, on the Mac): short conv.
+  3. Granite-4.0-H, after OP2b SSM and its gate.
+  4. Laguna (XS-2.1 Q4_K_M), after a by-day fit check.
+  5. Llama 4 last. Scout's smallest released GGUF here is Q2_K at about 40 GB, which neither box holds, so it is tier 0
+     only, and is proposed parked like OP2c.
+
+**KV:**
+
+- LFM2.5's conv state and Granite's SSM state are recurrent state: per-slot until KV8.
+- Llama 4's chunked attention is a KV property (a released-entry rule like the window's), so it touches KV4/KV5's null-block
+  handling.
+
+**Gates:**
+
+- **Tier 0:** the family's tiny fixture on the backend, against the CPU.
+- **Tier 1:** the real checkpoint on the box that holds it, against its committed golden: `spark2_5_real_golden.json.gz`
+  and `lfm2_real_golden.json.gz` on the Mac.
+- **No night run** for the families that fit by day.
+
+#### OP6 — Phi-3/4 on the fast paths (E5: its own small task)
+
+**Delivers:**
+
+- Metal's default load becomes `--quant q4k` for Phi-3/4.
+- A q4k batched prefill on CUDA and on Metal.
+- Per-32 activations, or a q4k lane, on WebGPU.
+
+**Size and box:** M. The Metal half is on the Mac, the CUDA half on nobara.
+
+**Depends on:**
+
+- The Metal decode lane is built and gated (`docs/tasks/task-metal-q4k-2026-10.md`: G-Q1 to G-Q3 PASS).
+- The default switch waits on the owed peer cell M1, a night run. That is a published number, which is tier 2's case.
+
+**Shares with KV:**
+
+- the prefill path: `backend/cuda/prefill.go` with KV3's CUDA half, and `backend/metal/prefill.go` with KV-pre;
+- the q4k prefill sizes its scratch through KV3's admission.
+
+**Gates:**
+
+- **Tier 0:** `phi3-tiny` q4k prefill against q4k decode, bit for bit on the logits of the last prompt row.
+- **Tier 1:** Phi-3 mini on the Mac (`phi3-mini-4k-gguf`), the prefill against `phi3_mini_golden.json`.
+- **Night:** M1 only.
+
+**OP6's Metal half, registered 2026-10-15 before any code** (branch `op6-q4k-step-metal-2026-10`).
+
+- **Design: the q4k lane joins MC3's batched step,** so its prefill runs on the step route that every other dense Metal
+  model below the floor already takes (`prefillByStep`, eight rows a step, the sequential loop's bits).
+  - **New rows kernels:**
+    - `rmsnorm_f32_out` and `swiglu_f32` rows forms, derived from production's text as `batch_rows.go` derives the others;
+    - `gemv_q4k_f32` and `gemv_w8_f32` rows forms, which read each weight row once for B activation rows and keep
+      decode's per-lane loop and `simd_sum` for each row.
+  - **The head:** production's `gemv_w8f32_head`, once per row.
+  - **`promptStepOK` gains one case:** a resident whose batched pass never runs (`prefillOK` false and no layer-major
+    route) takes the step for a prompt of any length. Its rows are the loop the decoder would otherwise run.
+  - **One consequence, in scope:** concurrent batched decode turns on for q4k models (`StepBatch`), with the same per-row
+    bits.
+- **Amendment before any code: tier 0 runs on Qwen2.5-Coder-0.5B q4_k_m, not `phi3-tiny`.** No tiny Q4_K fixture
+  exists (`phi3-tiny` is safetensors). The 0.5B is the lane's own non-heavy test model and loads in seconds. Its attn_v
+  is Q6_K in half the layers, so both rows kernels run, and so do the multi-segment projections.
+- **Tier 0, by day, all bit for bit (`math.Float32bits`):**
+  - **(a) Prompt:** `PrefillLast` on the step against the sequential loop (`promptStepOff`). Measured at lengths
+    2, 7, 8, 9, 17 and 64, on the last row's logits and every K/V byte written.
+  - **(b) Verify rows:** consecutive rows on one slot at depths 128 and 2048, M = 2, 4 and 8, against sequential decode
+    (`TestMC3Verify_sameSlotRowsBitIdentical`'s shape).
+  - **(c) Two sequences:** two slots stepped together for 8 steps, each row against that sequence's decode alone.
+  - **Planted defect:** the min term dropped from the q4k rows kernel only. It must turn (a) red.
+  - **`PrefillPath`** on a q4k resident must name the step route.
+- **Tier 1, by day (≤ 10 min):** Phi-3 mini (`phi3-mini-4k-gguf`) at q4k on Metal.
+  - **Graded:** the step against the sequential loop, bit for bit on the last row and the K/V, on the golden's prompt
+    and on a 200-token prompt.
+  - **Graded:** argmax equal to `phi3_mini_golden.json`'s, as `TestPhi3GGUFReal_gate` grades this file. Its cosine is
+    logged only, because the GGUF is an earlier Phi-3 snapshot than the golden.
+  - **Speed:** an in-process A/B of `PrefillLast` on the 200-token prompt, step against sequential, interleaved, 5 pairs
+    after a warm-up.
+    - **Ship:** every pair's ratio above 1 and the median at least 1.02.
+    - **Park:** a median of 1.00 to 1.02.
+    - **Off:** a median below 1.00.
+- **Night:** M1, unchanged, after this merges.
+
+**OP6's Metal half, read 2026-10-15.** Tier 0 and tier 1 PASS.
+
+- **Tier 0, by day, on the 0.5B q4_k_m:** (a) to (c) are 0 differing logits and 0 differing K/V elements in every case.
+  The planted defect turns (a) red: every logit and 91,101 K/V elements differ. `PrefillPath` names the step route.
+  - The first run failed every case, with differences up to 1.9e-6. The int8 rows kernel computed its row scale once,
+    above its mode branch, where decode's kernel writes `simd_sum * scale + bias` as one statement and the compiler
+    fuses it. Each mode now writes decode's statement. That is a kernel fix, not a bar change.
+- **Tier 1 needed the fit guard's q4k price fixed first.** By day the guard refused Phi-3 at 6.6 to 7.0 GB, pricing q4k as
+  int4 with its repacks. PR #41 prices it at what the load keeps; Phi-3's weights are 2.81 GB measured against 2.83 GB
+  estimated. Tier 1's context was set to 256 positions, what its prompts use.
+- **Tier 1, the Mac's night queue, 2026-10-15 21:30–21:32 PDT,** at `d1b340ad` (its `metal/` and `decoder/` equal this
+  branch's after the rebase onto #41). The fit guard was on and admitted both loads. Swap stayed at 849 MB with 0 swaps;
+  the tier 1 process peaked at 5.49 GB RSS. Records: `docs/measurements/op6-q4k-step-2026-10/night-2026-10-15/`.
+  - **Bit identity:** 0 of 32,064 last-row logits and 0 K/V elements differ from the sequential loop, on the golden's
+    5-token prompt and on the 200-token prompt. **PASS.**
+  - **Golden:** argmax 3681, the golden's 3681. **PASS.** Cosine 0.7554, logged only (an earlier snapshot).
+  - **Speed:** 200 tokens in 4.42 s on the step (45 tok/s) against 8.78 s on the sequential loop (23 tok/s). Ratios
+    1.982 to 1.986 over 5 pairs, every pair above 1, median 1.985. **SHIP.**
+- **Next:** the PR, merged by hand on green CI. Then M1 at night, which decides Metal's default `--quant q4k` load.
+
+#### Proposed order
+
+**The Mac stays on OP continuously:**
+
+1. OP1 on Metal: tonight's G2-R. On a pass, the declaration merges and G2-M runs, by day.
+2. OP2(a) and (b), the two feature splits: S, tier 0.
+3. OP2b, SSM on Metal.
+4. OP6's Metal half: the q4k batched prefill by day, and M1 queued for a night.
+5. OP2a, MLA on Metal. It is behind SSM because its real gate needs a slice and paging, while Nemotron-H's may fit whole.
+6. OP3, once G40 is decided and CPU f16 KV has merged. If those are still open when step 5 ends, OP1 on WebGPU fills the
+   gap.
+7. OP4 on Metal.
+8. OP5 on Metal: Spark-X2.5, LFM2.5, then the rest as above.
+
+**nobara, after proposal 2's build:**
+
+1. OP1 on CUDA (§4.6's CUDA rows).
+2. OP2b, SSM on CUDA.
+3. OP6's CUDA half: the q4k batched prefill.
+4. KV4a, the KV track's next CUDA phase. That order is the owner's call; it is here because OP4 on CUDA is proposed after it.
+5. OP4 on CUDA, after OP3 (the Mac's) and KV4a. Both have landed; its plan and gates are §4.9a (scoped 2026-11-01).
+6. OP5 on CUDA, by family.
+
+**Two departures from §4.4 and §7, both approved by the owner on 2026-10-15:**
+
+- **OP4 on Metal before OP4 on CUDA** (§4.4 says CUDA first). The Mac reaches OP4 while nobara is in KV4a, and CUDA's walk
+  would otherwise rebase across KV4's kernel rewrite.
+- **OP2c (KDA) and Llama 4 parked,** because no box can run their real checkpoints. They wait for a checkpoint that fits a
+  box.
+  - **A way to test them later without the real weights:** a small, randomly initialised Hugging Face checkpoint of the
+    family's own config class. Build it with `transformers` at a reduced width and depth, with the real layer pattern:
+    Llama 4's chunked and NoPE layers, and Kimi Linear's KDA and MLA layers. It gives a full-model reference from the
+    family's own modelling code, at a size either box holds.
+  - Such a checkpoint is still not trained weights. Its scores sit near zero, as `CLAUDE.md`'s minimal-repro rule warns. Its
+    registration has to say which effects a random init leaves identically zero, as G2-D did for the softcap.
+
+### 4.8 OP3: design and registered gates (2026-10-16, before any OP3 code)
+
+Read at main `2c56d9c6`, with CPU f16 KV merged (#55) and G40 merged, which §4.7 makes OP3's precondition.
+
+**What the CPU forward is today.** Three generic paths, not two:
+- the per-token loop, `decoder/model_forward.go:Model.runLayersFromEmbed`;
+- the batched loop, `decoder/forwardn.go:Model.runLayersFromEmbedNFloor`;
+- MC3c's multi-sequence step, `decoder/cpu_batch.go:Model.decodeMultiStep`.
+
+Beside them are the nine own loops of the `ownForwards` table, two of which have batched twins:
+`decoder/forward_gemma4_batched.go:Model.runLayersGemma4FromEmbedN` and `decoder/forward_qwen35_n.go:Model.runLayersQwen35N`.
+
+**The same mathematics is computed in more than one floating-point order across them:**
+- **Attention:** `attendBatchedHeads` with float64 accumulation in the generic paths; `attendQuery` in the qwen35, lfm2,
+  granite, nemotron and llama4 loops; a float32 `MatmulBT` in gemma4's; an inline float64 softmax with sinks in gpt-oss's;
+  and the absorbed and naive MLA forms.
+- **Norms:** four-way partial sums in `rmsNormInto` and `layerNormInto`, sequential sums in `rmsNormNoWeight`,
+  `l2NormHeads` and the recurrent mixers' gated norms.
+- **RoPE:** `mlaRope` for llama4 and MLA, gemma4's zero-padded table, and `applyRoPE` called directly by lfm2 and granite.
+
+OP3 moves no number, so each of these orders survives it.
+
+**The design.**
+- **The program** is a value built once at load from the resolved `Architecture`. It holds an embedding stage, one list of
+  operations per layer, and a head stage.
+  - Each operation has a kind from a closed set, its parameters, and the operands it reads and writes.
+  - The operands are a small fixed set of per-stream registers: the residual, the normed input, and two sublayer outputs. So
+    the parallel block is a list (norm, attention into one output, FFN from the same input into the other, one residual add of
+    both), not a branch.
+  - The types are unexported in OP3. OP4 exports what the backends read, when they first read it.
+- **The kinds for the generic families,** following §4.1:
+  - the embedding stage: `embed` {scale} and `learned-pos`;
+  - `norm` {slot, rms or layer or none, eps, (1+w), bias};
+  - `proj-qkv` {bias};
+  - `qk-norm` {per head or whole vector, eps, (1+w)};
+  - `rope` {table, mscale, interleave, m-RoPE section and interleave};
+  - `attn-temp` {beta, original length};
+  - `attention` {window, softcap, scale, order};
+  - `out-gate` {activation, per head or per element};
+  - `proj-o` {bias};
+  - `ffn` {gated with its activation, non-gated with its activation and biases, or MoE with its router's parameters};
+  - `residual` {one output or two};
+  - the head stage: the final norm, the head (tied or not), the final softcap and the logit scale.
+- **The own loops add their mixers and their variants as kinds:**
+  - `deltanet`, `mamba2`, `kda`, `short-conv`;
+  - MLA as an `attention` order with its own projections;
+  - gemma4's per-layer embedding and shared KV;
+  - gpt-oss's sinks and expert;
+  - llama4's chunked and NoPE layers.
+  
+  Each is added in the step that moves its family.
+- **The CPU's reduction order is a parameter of each operation that has more than one.** `attention`'s order is one of the
+  forms listed above, and a norm's is four-way or sequential. Each family keeps the order it computes in today. A GPU backend
+  ignores the parameter. Unifying the orders would move numbers, so it is a separate change with its own validation, not
+  part of OP3.
+- **Every implementation reads its parameters from the operation, not from the `Architecture`.** That is why a planted
+  parameter can go red, and gate L checks it for every parameter.
+- **What is not an operation stays outside the program,** as a hook in the walker around the operations:
+  - LoRA;
+  - the sublayer capture and the layer capture;
+  - the layer pager, the expert pager and per-layer cancellation;
+  - `decodeTiming` and the test seams.
+- **Three walkers,** one per generic path, run the one program.
+  - A path that declines today declines by operation kind or parameter instead: `canBatchN`, and the multi-sequence
+    step's eligibility.
+  - The declines' outcomes do not change in OP3.
+- **The old generic loops stay in the tree until OP3's last step,** behind a test hook. Gate S needs both arms in one
+  process. The last step deletes them.
+
+**Steps.** Each step is its own PR, merged by hand on green CI, and each passes gates I, P and L before it merges.
+- **OP3a:** the program, the builder for the generic families, and the per-token walker.
+- **OP3b:** the batched walker and the multi-sequence walker.
+- **OP3c to OP3k:** the own loops, one family per step, each with its batched twin where it has one, and its
+  `ownForwards` entry removed as it moves. The order is gpt-oss, llama4, deepseek, bailing_hybrid, lfm2, granitemoehybrid,
+  nemotron_h, qwen3_5_moe, gemma4: the smallest loops first, the two with batched twins last.
+- **OP3z:** the old loops and the table go.
+
+**Gates.**
+- **I, identity (tier 0, every step).**
+  - The instrument: `go run ./cmd/gate identity <base> <head> -backend cpu -assets tiny`, all families, quants f32,
+    int8int8 and int4, the default steps.
+  - The base is the commit the step branched from. For OP3a that is main `2c56d9c6`, or the merge it branches from if main
+    has moved.
+  - **Pass:** every family that runs is IDENTICAL. A DIFFERENT or WITHIN TOLERANCE family is red.
+  - NOT RUN cells are listed and never counted. Today's are mellum (a 4.2 GB slice), qwen2 and qwen3 (no tiny asset),
+    deepseek_v2 (no tiny fixture: deepseek_v3's covers the MLA loop), and qwen3_asr and voxtral (their goldens are zips).
+  - **Identity runs `Generate`, so it does not reach every path.** It misses the multimodal seams, LoRA, the captures, MC3c
+    and speculative verify. Those are covered by the touched packages' own tests (`scripts/touched.py`) and, once before each
+    push, by the goldens-gated parity refresh.
+- **P, plants (tier 0, every step, on the walkers it adds).** A test hook changes the built program before a run on the tiny
+  fixtures. Each plant must change the logits of at least one family the step covers:
+  - **a dropped operation:** layer 0's second `residual`;
+  - **two swapped operations:** layer 0's `qk-norm` and `rope` on a family with a QK-norm, and its `norm` and `proj-qkv`
+    on one without;
+  - **a parameter off by one:** `rope`'s rotary width one pair short, and `attention`'s window one key short on a family
+    with a window.
+- **L, every parameter is live (tier 0, every step).**
+  - For each (kind, parameter) pair the builder emits for a family the step covers, one test changes that parameter alone
+    and requires the logits to change. An integer parameter goes off by one; any other is doubled, or toggled if it is a
+    flag. Each change runs on a family whose fixture carries the parameter.
+  - A pair that no fixture reaches is listed by name in the step's record, never counted as passing.
+  - This gate is what shows an implementation reads the program and not the `Architecture`. P checks three parameters;
+    L checks all of them.
+- **T1, the size-switched paths (tier 1, by day, on the steps that change a walker: OP3a, OP3b, and qwen3_5_moe's
+  batched twin).**
+  - The instrument: `gate identity -assets real -only coder-0.5b-q4km`.
+  - The real prompts are 145 and 621 tokens. Those cross the grouped kernel's 128 keys and the fast-attention floor at
+    512 (on by default). A third, long prompt is added to the set, about 2,500 tokens, so the prefill crosses G40's
+    2,048-row chunk.
+  - **Pass:** IDENTICAL. About 3 minutes.
+- **S, speed (tier 1, by day, OP3a and OP3b).**
+  - The instrument: a whole-token in-process A/B, the walker against the old loop (the test hook), interleaved ABBA in
+    one process. The shape is F3's harness (`decoder/kv_f16_ab_test.go`). The cells are the 0.5B at depths 128 and 4,096,
+    with 6 and 4 pairs. The quantity is the decode-rate ratio, walker ÷ old.
+  - **Pass:** the median is at least 0.99 at both cells.
+  - **Fail:** a cell resolves slower (every pair under 1) with its median under 0.99. The walker is fixed before the
+    step merges.
+  - **Parked:** a cell does not resolve and its median is under 0.99. It goes to the served two-arm gate
+    (`BENCH_ENGINES=goinfer,goinfer_old`) at night, fit-checked first.
+  - About 8 minutes, under the timing lock.
+- **No other night run.** Identity inherits each family's validation (TE6(b)).
+
+**Void conditions:**
+- an identity run whose base is not the named commit;
+- a NOT RUN cell counted as a pass;
+- gate S run while another timed run holds the lock, or run without the lock.
+
+**Stopping rule.** Each gate runs once per step, at the step's head, after its last merge of main. A red is fixed and the
+gate is re-run. The bar never moves.
+
+**Predictions:**
+- I is IDENTICAL at every step (0.9). The risk is an own loop whose order this census misread.
+- S is within 0.99 at both cells (0.85). The walker adds one dispatch per operation, about 15 per layer per token.
+
+**For the owner,** if either should be otherwise:
+- the reduction order as an operation parameter, rather than unifying the orders inside OP3;
+- the old loops kept until OP3z, for gate S.
+
+**OP3a's readings, 2026-10-16 (branch `op3-layer-program-2026-10`). P, L and T1 ran at `439bd3bf`. S ran at `d5752b99`, which adds only the S test. I ran at `1ce5f447`, which has the same code as `d5752b99` plus this record.**
+
+- **I, identity: PASS.** Against `2c56d9c6` on the tiny assets: 37 families IDENTICAL at f32, int8int8 and int4, none
+  different. The six NOT RUN are as listed above. Log: `docs/measurements/op3-2026-10/op3a-identity-tiny.log`.
+- **P, plants: PASS.** Each plant changed the logits on every fixture it applies to:
+
+  | plant | fixtures changed |
+  |---|---|
+  | layer 0's second `residual` dropped | 33 of 33 |
+  | `qk-norm` and `rope` swapped, or `norm` and `proj-qkv` | 33 of 33 |
+  | `rope` one pair short | 32 of 32 |
+  | `attention`'s window one key short | 9 of 9 |
+
+- **L, every parameter is live: PASS.**
+  - Every (kind, parameter) pair the builder emits changes some fixture's logits, or errors when changed (`attention.Order`, read
+    and refused by the walker), except six.
+  - **Listed, with the reason in the test (`decoder/program_test.go:programParamUnreached`):**
+    - `ffn.MoE.NGroup` and `TopkGroup`: no generic fixture routes by group;
+    - `ffn.MoE.NumExperts`: a shape, which the per-token path never reads;
+    - `ffn.MoE.PerExpertScale` and `RouterPreNorm`: Gemma 4's router extras, read only by its own loop;
+    - `head.Norm.Slot`: the head has one norm weight.
+  - **Five pairs only GPT-2 reaches:** learned positions, the norm and head-norm biases, and the q/k/v and o biases.
+    - Every tiny fixture's biases are exactly zero, as HF initialises them, including `glm-tiny-bias`'s. Their goldens cannot
+      see a bias.
+    - `testdata/gpt2` is gitignored, so where it is absent those five report NOT RUN, never pass
+      (`programParamNeeds`).
+  - The m-RoPE pairs are reached by giving the VL fixtures' cache distinct (t, h, w) positions; a text prompt's are equal.
+- **T1, the size-switched paths: PASS.** `gate identity -assets real -only coder-0.5b-q4km -long`: prompts of 145, 621 and
+  2,593 tokens, read from the kept dumps, 32 decode steps each, IDENTICAL. Log:
+  `docs/measurements/op3-2026-10/op3a-T1-real-0.5b.log`.
+- **S, speed: depth 4,096 PASS, depth 128 PARKED.** The in-process A/B on the 0.5B, decode-rate ratio walker ÷ old:
+
+  | cell | pairs | median | range | pairs under 1 | read |
+  |---|---|---|---|---|---|
+  | depth 128 | 6 | 0.980 | 0.905–1.011 | 4 | **parked:** unresolved, under 0.99 |
+  | depth 4,096 | 4 | 0.997 | 0.982–1.026 | 3 | pass |
+
+  - Load average was 7.2 at the end (Spotlight indexing). Log: `docs/measurements/op3-2026-10/op3a-S.log`.
+  - **Diagnostics, by day, not a grade:**
+    - allocations per token are equal, 69 against 69 on `llama-tiny`;
+    - per-token time on `llama-tiny`, where the walker's dispatch is the largest share of a token, is 247–252 µs walker
+      against 249–260 µs old, over four alternating rounds.
+- **Found while building, and fixed in OP3a:**
+  - Four tests changed the `Architecture` after load to simulate another configuration, so they now rebuild the program
+    (`rebuildProgramForTest`).
+  - OP1's softcap-off test hook zeroed the softcap after the program was built, so the CPU would have kept capping. It
+    rebuilds the program now.
+
+**Gate S's served cell (amendment, 2026-10-16, before it runs: the details the registration left open).** The parked cell
+runs at night as registered.
+- The instrument is `docs/measurements/op3-2026-10/run-S-served.sh`: CPU decode on the 0.5B at depth 128, two arms and no
+  peer.
+  - The walker is `d5752b99`, and the old arm is `2c56d9c6`.
+  - Both binaries were built by day and fit-checked: each admits the 0.5B, with 0.3 GB of weights against a 4.1 GB budget.
+- `BENCH_RUNS=5`, two passes, the engine order reversed in the second.
+- **The quantity:** the median decode rate, walker ÷ old, per pass. The reading is the geometric mean of the two passes.
+- **Pass:** at least 0.99. **Fail:** under 0.99, and the walker is fixed before OP3a merges. Pass 2 is not skipped.
+- OP3a merges after this cell reads. OP3b builds on the branch meanwhile.
+
+**Gate S's served cell, read 2026-10-16 21:01-21:03 PDT (night queue, the MacBook): PASS, 0.9989.** As registered: CPU decode
+on the 0.5B at depth 128, the walker `d5752b99` against `2c56d9c6`, `BENCH_RUNS=5`, two passes with the engine order reversed.
+
+| pass | order | walker median | old median | walker ÷ old |
+|---|---|---|---|---|
+| 1 | walker first | 119.50 tok/s | 117.34 tok/s | 1.0184 |
+| 2 | old first | 117.02 tok/s | 119.45 tok/s | 0.9797 |
+
+The reading is the geometric mean of the two, 0.9989, against the 0.99 bar. Each pass favours the arm that ran first, so the
+order matters about as much as the arm, and reversing it is what nets that out. The load average was 1.36 at pass 1 and 2.53
+at pass 2, with a tack session open on the desktop through both passes (it was opened before the run). Records: `S-served-pass1.json` and
+`S-served-pass2.json` in the run's bench directory, with the night log `op3a-S-served.log`.
+
+**OP3b's gate S (amendment, 2026-10-16, before it runs).** S's cells name a decode rate, but OP3b's walkers run the batched
+prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
+- **The batched walker:** prefill rate, walker ÷ old, on the 0.5B. The prompts are 128 tokens, which is batched with exact
+  attention, and 4,096, which is fast attention over two G40 chunks. Pairs: 6 and 4.
+- **The multi-sequence walker:** MC3c's step rate, walker ÷ old, on the 0.5B with four sequences at depth 128, 24 steps a
+  generation, 6 pairs.
+- The instrument was `TestProgram_S_batchedSpeed`, interleaved ABBA in one process under the timing lock. OP3z part 2 deleted
+  it with the loops it timed; its last version is at `5e412c8e`.
+- The bars and bands are S's: pass at a median of at least 0.99; fail when a cell resolves slower with its median under 0.99;
+  parked when a cell does not resolve and its median is under 0.99, which sends it to a served gate at night.
+
+**OP3b's readings, 2026-10-16, at `51693631` (stacked on OP3a, same branch).**
+- **The build:**
+  - The batched walker (`Model.walkBatch`) and the multi-sequence walker (`Model.walkMulti`). The old loops stay behind
+    `programWalkOffForTest`.
+  - `canBatchN` and MC3c's eligibility read the program (`program.batchEligible`, `program.multiStepEligible`).
+  - The batched embedding and head read the program.
+- **I, identity: PASS.** 37 families IDENTICAL against `2c56d9c6`, none different. Log:
+  `docs/measurements/op3-2026-10/op3b-identity-tiny.log`.
+- **P, plants: PASS on each walker.**
+  - Every plant changed the logits on every fixture it applies to: 32 of 32 batched, and 13 of 13 multi-sequence for the
+    three plants that apply there.
+  - The window plant is NOT RUN on the multi-sequence walker: it admits no windowed cache.
+- **L, every parameter is live: PASS.**
+  - The per-token reading is OP3a's.
+  - Each parameter that changes a fixture's per-token logits also changes that fixture's batched and multi-sequence logits,
+    on every fixture those walkers run: 33 parameters checked on the batched walker and 24 on the multi-sequence walker.
+    The rest are NOT RUN there, because no fixture those walkers admit shows them per token.
+  - **An amendment made at the build, before this reading:** only a per-token *change* binds the other walkers, not a
+    per-token error. One more than an expert's width overruns the per-token scratch and errors there. The batched path
+    allocates per call, and the extra all-zero column cannot reach the logits. So `ffn.MoE.IntermediateDim` and
+    `SharedIntermediateDim` are shapes, read by no walker as behaviour.
+  - Log: `docs/measurements/op3-2026-10/op3b-PL.log`.
+- **T1: PASS.** The real 0.5B with prompts of 145, 621 and 2,593 tokens is IDENTICAL. The long prompt's prefill runs the
+  batched walker with fast attention, over two chunks. Log: `docs/measurements/op3-2026-10/op3b-T1-real-0.5b.log`.
+- **S: PASS in every cell.** The cells are as amended above; each pair's two arms gave the same logits, bit for bit. Load
+  averages were 3.2 to 6.8. Log: `docs/measurements/op3-2026-10/op3b-S.log`.
+
+  | cell | pairs | median, walker ÷ old | range | under 1 |
+  |---|---|---|---|---|
+  | prefill, 128 tokens | 6 | 1.014 | 0.965–1.219 | 2 |
+  | prefill, 4,096 tokens | 4 | 1.001 | 0.995–1.005 | 2 |
+  | MC3c step, 4 × depth 128 | 6 | 1.008 | 0.995–1.022 | 1 |
+
+**OP3c, gpt-oss: readings, 2026-10-16 (same branch, stacked on OP3b).**
+- **The build:**
+  - gpt-oss walks the program. Its layer is the generic pre-norm list with two kinds of its own:
+    - the attention order `attnSinksF64` (`decoder/forward_gptoss.go:attendSinksToken`, its kernel moved verbatim);
+    - the FFN form `ffnGptOss`, whose gate's sigmoid gain and clamp bound are parameters.
+  - `runLayersGptOss` and its table entry are gone.
+- **The rules the table entry answered now decline by operation:**
+  - ring storage, int8 KV and f16 KV need the batched attention kernel (`Architecture.attnOrder`);
+  - the batched walker and MC3c need it too (`program.attnOrderIs`).
+  - So gpt-oss keeps an append-forever f32 cache and the per-token prefill, as before.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- The hidden-state seams' final norm now reads the program's head (`Model.finalNorm`).
+- **I: PASS.** 37 families IDENTICAL against `2c56d9c6`, gpt-oss in all three cells. Log:
+  `docs/measurements/op3-2026-10/op3c-identity-tiny.log`.
+- **P and L: PASS.** The fixtures now include the tiny GGUFs: 37 per token, gpt-oss among them.
+  - gpt-oss's fixture has non-zero q/k/v and o biases, so those two pairs no longer depend on GPT-2.
+  - `ffn.MoE.NumExperts` errors when changed on gpt-oss (its router logits are allocated by it), so it is no longer listed.
+  - `ffn.Limit` is listed: the fixture's gate and up values never reach the clamp bound of 7.
+  - Log: `docs/measurements/op3-2026-10/op3c-PL.log`.
+- No T1 or S: OP3c changes no walker's existing path.
+
+**OP3d, Llama 4: readings, 2026-10-16 (same branch).**
+- **The build:** Llama 4 walks the program (`Architecture.llama4LayerOps`). Each of its differences from the generic layer is a
+  parameter, or a place in the list:
+  - `rope`'s kernel is `mlaRope`, in its interleaved form, with no mscale;
+  - the QK-norm's form is parameter-free, and it comes after the rope in the list;
+  - the temperature takes a position offset of one;
+  - attention is `attendQuery` (order `attnQuery`) through its parameter form `attendQueryP`, with the chunk as a parameter;
+  - the FFN form is `ffnLlama4MoE`.
+  - `runLayersLlama4` and its table entry are gone.
+  - Its attention order keeps it off rings, int8 and f16 KV, the batched walker and MC3c, as before.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL, `llama4_text` in all three cells. Log: `docs/measurements/op3-2026-10/op3d-identity-tiny.log`.
+- **P and L: PASS.** The new parameters are all live:
+  - `attention.Chunk`: one key per chunk changes every fixture;
+  - `attn-temp.PosOffset`: Llama 4 and Ministral 3;
+  - `qk-norm.Form`;
+  - `rope.Kernel`: same on the NeoX families, where the two kernels coincide; changed on 4.
+  - Log: `docs/measurements/op3-2026-10/op3d-PL.log`.
+
+**OP3e, DeepSeek V2/V3 (MLA): readings, 2026-10-16 (same branch).**
+- **The build:**
+  - DeepSeek walks the program: the generic pre-norm layer with one `opMLA` as its attention sublayer. Its parameters are the
+    rotation (table, mscale, interleave), the norms' epsilon, the score scale and the output gate's granularity; the ranks and
+    head widths are shapes.
+  - The absorbed and naive forms stay a knob and a test seam (`mlaAttentionWith`), as fast attention does.
+  - The per-token walker advances a manual-position cache at the end of the token, as the own loops did.
+  - The batched and multi-sequence walkers now also decline any operation they do not implement (`program.kindsIn`).
+    Without that, an MLA program, which has no `opAttention`, would have passed their attention-order check.
+  - `runLayersDeepseek` and its table entry are gone. Bailing Hybrid still calls `mlaAttention` (now a wrapper) until OP3f.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL; `deepseek_v3` and `kimi_k2` in all three cells. Log:
+  `docs/measurements/op3-2026-10/op3e-identity-tiny.log`.
+- **P and L: PASS.**
+  - The swap plant now swaps the input norm with whatever operation follows it, since an MLA layer has no `proj-qkv`.
+  - DeepSeek's fixture routes by group, so `ffn.MoE.NGroup` and `TopkGroup` are reached, and come off the unreached list.
+  - Every `mla` parameter is live except `mla.HeadWise`, which is listed: only Bailing's MLA layers carry the gate.
+  - Log: `docs/measurements/op3-2026-10/op3e-PL.log`.
+
+**OP3f, Bailing Hybrid (MLA and KDA): readings, 2026-10-16 (same branch).**
+- **The build:**
+  - Bailing walks the program: the pre-norm layer with `opKDA` on its linear layers and `opMLA` on the rest. `opKDA`'s
+    parameters are the output norm's epsilon and the decay gate's lower bound. The safe gate is not a parameter: the CPU
+    implements only that form, and the adapter refuses a checkpoint without it.
+  - Its loop file, `decoder/forward_bailing.go`, is gone.
+- **The rule that matters most here:** the table's `Recurrent` bit kept speculative rollback off a family with in-place state.
+  - It is now `Architecture.recurrent`: the table's bit for a family still listed, otherwise any recurrent operation in the
+    family's layers.
+  - `Model.hasRecurrentState` and the hybrid image prefill's check (`imageTurnDecodesResident`) read it.
+- **Tests that iterated the own-loop table** would have lost each family as it moved, while staying green. They now iterate every
+  registered model type: the recurrent-state census, the cache-state grid's rewind and rollback cells, and the check that the
+  recurrence rule agrees with the cache NewCache allocates (227 subtests).
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL; `bailing_hybrid` in all three cells. Log: `docs/measurements/op3-2026-10/op3f-identity-tiny.log`.
+- **P and L: PASS.** `mla.HeadWise` is now reached, since Bailing's fixture has the gate, and is off the list. `kda.Eps` and
+  `kda.LowerBound` are live. Log: `docs/measurements/op3-2026-10/op3f-PL.log`.
+
+**OP3g, LFM2: readings, 2026-10-16 (same branch).**
+- **The build:**
+  - LFM2 walks the program: `opShortConv` on its conv layers, which has no behavioural parameter (the conv width and taps are
+    shapes), and the generic attention list with `attendQuery` on the rest.
+  - The LFM2-VL prefill runs its rows through the per-token walker's embedding entry.
+  - Its loop goes.
+- **Three rules the table answered now read the operations** (`Architecture.genericKindsOnly`: every layer made of the generic
+  kinds):
+  - LoRA, which would otherwise have accepted LFM2 and silently not applied its conv-layer deltas (V-12's own regression);
+  - the dense layer pager;
+  - the fit guard's streaming retry, which mirrors the pager.
+  - Each stays off LFM2, as before. The LoRA rejection test now iterates every registered model type and requires LFM2 among
+    the rejected families.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS** (37 IDENTICAL; `lfm2` in all three cells). **P and L: PASS.** Logs:
+  `docs/measurements/op3-2026-10/op3g-identity-tiny.log`, `docs/measurements/op3-2026-10/op3g-PL.log`.
+
+**OP3h, Granite-4.0-H: readings, 2026-10-16 (same branch).**
+- **The build:** Granite walks the program (`Architecture.graniteLayerOps`):
+  - `opMamba2`, whose parameters are the gated norm's epsilon and group count; the heads, state and conv sizes are shapes;
+  - the generic attention list with `attendQuery`;
+  - a MoE FFN;
+  - a new `residual` scale for residual_multiplier;
+  - the embedding multiplier as the embed stage's scale.
+  - Its isolation seams shape the program: GOINFER_SSM_NOMUL sets the multipliers to 1, and GOINFER_SSM_SKIPFFN drops the FFN.
+    The layer-sweep seam truncates the per-token walker.
+  - Its loop goes.
+- **Found while building, fixed:** two rollback-guard tests built hybrid `Architecture`s with no layers, which carry no
+  recurrent operation once the rule reads the layers. Each now gets one recurrent layer, since a family of attention layers
+  only has no in-place state.
+  - LFM2 had failed one of them since OP3g, and my targeted run pattern for OP3g missed it. From here, the whole decoder
+    package runs once per step before its record.
+- **I: PASS.** 37 IDENTICAL; `granite` and `granitemoehybrid` in all three cells. **P and L: PASS.** `residual.Scale` is live
+  on Granite. Logs: `docs/measurements/op3-2026-10/op3h-identity-tiny.log`, `docs/measurements/op3-2026-10/op3h-PL.log`.
+- **The whole decoder package, at the end of OP3h** (`docs/measurements/op3-2026-10/op3h-decoder-full.log`): three red.
+  - `TestDispatchCensus`: the walkers carry copies of `causalAttention`'s and the gated FFN's W8A8 and W4A8 capability guards,
+    and the census records sites by content. They are now declared with that reason, and the fused gate/up entry is re-keyed
+    to its new content.
+  - `TestParityManifest_fresh`: stale between refreshes, as expected; the refresh runs before each push.
+  - `TestFitEstimate_q4kAgreesWithResidentWeightBytes`: the fit guard refused the 1.5B because the Mac had 2.7 GB available
+    at that moment. This is the machine's memory, not this change.
+
+**OP3i, Nemotron-H: readings, 2026-10-16 (same branch).**
+- **The build:** Nemotron-H walks the program (`Architecture.nemotronLayerOps`). Each layer is one operation, pre-norm, with a
+  residual add:
+  - `opMamba2` with per-group gated norms;
+  - NoPE GQA attention through `attendQuery`;
+  - the generic non-gated FFN, now with relu² and the width read from the weights (it varies by layer);
+  - `ffnNemotronMoE`.
+  - A layer whose rope table is empty now gets no `rope` operation; it rotated nothing before.
+  - `nemotronMLP` and the loop are gone.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL; `nemotron_h` in all six cells (two fixtures). **P and L: PASS.**
+- **The whole decoder package: PASS** apart from the parity manifest's staleness between refreshes. Logs:
+  `docs/measurements/op3-2026-10/op3i-identity-tiny.log`, `docs/measurements/op3-2026-10/op3i-PL.log`,
+  `docs/measurements/op3-2026-10/op3i-decoder-full.log`.
+
+**OP3j, the Qwen3.5 family (qwen3_5_moe, qwen3_5, qwen3_next, olmo_hybrid): readings, 2026-10-16 (same branch).**
+- **The build:** the per-token loop walks the program. The family's layer is the generic layer with
+  `Architecture.mixerOps`' mixer:
+  - `opDeltaNet` on the linear layers, whose parameters are the norm epsilon, the output norm's own epsilon and the widened
+    write gate;
+  - `opGatedAttn` on qwen3.5's attention layers, whose parameters are the generic QK-norm, rotation and attention
+    parameters;
+  - the generic attention on Olmo Hybrid's plain layers, in the batched kernel's order, which is what `causalAttention`
+    computed.
+  - The family-level attention order, which the cache-layout rules read, stays `attnQuery`, so the cache is unchanged.
+- **Split from the registration's plan:** the batched twin, `runLayersQwen35N`, is unchanged in this step. It is dispatched by
+  its own check (`qwen35BatchN`), and it is not bit-identical to the per-token forward by design. Moving it onto the batched
+  walker is its own step, with its T1, after Gemma 4.
+- **Found while building, fixed:**
+  - `opGatedAttn` ignored its QK-norm form and its attention order. It now uses the shared QK-norm, and refuses an order it does
+    not run. L caught both.
+  - **The whole decoder package found seven test fixtures that build a recurrent family's `Architecture` with no layers, or
+    assert the own-loop table.** Two of them had failed since OP3g, which my targeted run patterns missed.
+    - `recurrentTestModel` and the MTP eligibility fixture now carry one linear layer.
+    - The PromptHidden tests check the family, not the table.
+- **I: PASS.** 37 IDENTICAL: `qwen3_5_moe` in six cells, and `qwen3_5`, `qwen3_next` and `olmo_hybrid` in three each.
+  **P and L: PASS.**
+- Logs: `docs/measurements/op3-2026-10/op3j-identity-tiny.log`, `docs/measurements/op3-2026-10/op3j-PL.log`, and the two
+  whole-package runs: the first, red as described (`docs/measurements/op3-2026-10/op3j-decoder-full-1.log`), and the second,
+  green apart from the manifest's staleness (`docs/measurements/op3-2026-10/op3j-decoder-full-2.log`).
+
+**OP3k, Gemma 4: readings, 2026-10-16 (same branch). The own-loop table is now empty.**
+- **The build:** Gemma 4 walks the program (`Architecture.gemma4LayerOps`).
+  - `opGemma4Attn`. Its parameters are the q/k/v norms' epsilon and (1+w), the layer's rope table and scale, the window, the
+    score scale, and the layer whose K/V it attends with whether it stores its own. Cross-layer KV sharing is now a parameter.
+  - Gemma 4's dense GeGLU in its own call form, at the per-layer width.
+  - `opGemma4MoE`, which replaces the whole layer output on the 26B.
+  - `opPLE` and `opLayerScale`.
+  - **The embedding stage carries PLE.** The walker computes the per-layer inputs from the token id, or from the pad id for a
+    row with no token behind it, through `runLayersFromEmbedPLE`. It does this before layer 0, from the embedding, as the loop
+    did.
+  - The family-level attention order (`attnGemma4`) keeps the cache as it was: no rings, no int8 or f16.
+- **Not moved in this step:** the bidirectional image prefill's batched twin, `runLayersGemma4FromEmbedN`. Like qwen3.5's twin, it
+  is its own later step.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- **I: PASS.** 37 IDENTICAL; `gemma4` in all 15 cells (five fixtures, three quants). **P and L: PASS.** Every Gemma 4 parameter
+  is live: changing `KVSrc` or `OwnsKV` errors, the rest change the logits. Logs:
+  `docs/measurements/op3-2026-10/op3k-identity-tiny.log`, `docs/measurements/op3-2026-10/op3k-PL.log`.
+
+**OP3z, part 1: the own-loop table goes (2026-10-16, same branch).**
+- **The table had been empty since OP3k.** Every rule it answered now reads the family's operations:
+  - the cache layout (rings, int8, f16) reads the family's attention kernel (`Architecture.attnOrder`);
+  - recurrence (`Architecture.recurrent`) reads its recurrent operations;
+  - LoRA, the dense pager and the fit guard's retry read whether its layers are all generic operations
+    (`Architecture.genericKindsOnly`);
+  - the batched walkers read the kinds and attention orders they implement.
+- **Seams:** the hidden-state seams (`HiddenLast`, `ForwardSubCapture`, and `ForwardCapture` where the loop did not
+  capture) keep refusing this family exactly as its loop did (`decoder/seam_refusals.go`; owner, 2026-10-16). Enabling
+  them is its own reviewed change.
+- `captureResidual`, `mlaAttention` and `gptOssExpert` had no caller left and are gone; staticcheck is clean under the default,
+  testhooks and realckpt tags.
+- **The table's tests become program invariants over every registered model type:**
+  - `TestProgram_noFamilyLoopAndEveryFamilyWalks`: no family layer loop outside the program (a source scan), and every
+    family's program is made of operations the per-token walker implements.
+  - `TestProgram_pagerStaysOffNonGenericFamilies`: the dense pager stays off any family with a layer outside the generic
+    operations.
+- **I: PASS** (37 IDENTICAL). **The whole decoder package: PASS** apart from the manifest's staleness. Logs:
+  `docs/measurements/op3-2026-10/op3z1-identity-tiny.log`, `docs/measurements/op3-2026-10/op3z1-decoder-full.log` (and Gemma
+  4's own run, `docs/measurements/op3-2026-10/op3k-decoder-full.log`, where the old table test had nothing left to scan).
+
+**Left in OP3:**
+- **OP3a's parked S cell** is served tonight (`op3a-S-served`). The old per-token, batched and multi-sequence loops stay
+  behind `programWalkOffForTest` until it reads: if the walker must change, S runs again in process.
+- **The two batched twins:** qwen3.5's (`runLayersQwen35N`), with its registered T1, and Gemma 4's bidirectional
+  (`runLayersGemma4FromEmbedN`). Neither is bit-identical to its family's per-token forward by design, and gate I (through
+  `Generate`) does not reach either. Moving them onto the batched walker needs their own gate: the PromptHidden and bidirectional
+  VL tests that already bound them.
+- **OP3z, part 2:** once S reads, the old loops, `causalAttention`, the old `mlp` dispatch and `programWalkOffForTest` go.
+- **The seams PR (owner, 2026-10-16).** OP3 keeps every pre-OP3 own-loop family's seam refusals exactly
+  (`decoder/seam_refusals.go`, pinned by `TestSeams_ownLoopFamiliesStillRefuse`). Enabling `HiddenLast`, `ForwardSubCapture`
+  and `ForwardCapture` for them is a separate PR, with a gate per seam and a planted defect, which goes to the owner before it
+  merges.
+
+**#62 rebuilt one commit per step (2026-10-16), on the owner's condition that each commit passes the whole decoder package.**
+- Each step's commit is the tree that step ended at, with:
+  - the seam refusals;
+  - the test-fixture fixes found at later steps, moved into the step that first needed them (the dispatch census, the
+    layered recurrent fixtures, the PromptHidden family check);
+  - its own goldens-gated manifest refresh.
+- OP3k and OP3z part 1 are one commit: at OP3k the old table test had nothing left to scan.
+- The final tree differs from the pre-rebuild branch only in the refusals, their test, the removed seam test, these records
+  and the manifest's hashes.
+- **The per-commit check runs at night**, about 85 minutes, beyond the day budget:
+  `docs/measurements/op3-2026-10/run-steps-sweep.sh`, over every rebuilt commit and #61's head. It runs in a worktree that
+  carries the main checkout's gitignored fixtures as clones, so it runs the same tests the main checkout does.
+
+
+**OP3's seams PR: enabling `HiddenLast`, `ForwardSubCapture` and `ForwardCapture` for the pre-OP3 own-loop families
+(registered 2026-10-16, before its code; a behaviour change, so it goes to the owner before merging).**
+- **The change:** the three seams stop refusing the nine families `decoder/seam_refusals.go` lists, and so does the CUDA/WebGPU
+  bisect hook, `ForwardSubCaptureLogitsForTest`. Their layers already run through the walker, which carries the seams. The
+  other refusals in that file (f16 KV's reason text, MC3c's, LoRA's) are not seams and stay.
+- **Gates, tier 0, on every tiny fixture whose family walks a program** (the P/L harness's fixtures: the nine families and
+  the generic ones). A fixture a gate cannot reach is listed as NOT RUN, never passed.
+  - **H, `HiddenLast`:**
+    - its row is bit-identical to the forward's final hidden state: the per-token forward's residual after the last prompt
+      token, with the head's norm applied;
+    - the head over that row reproduces the forward's last logits, bit for bit.
+  - **C, `ForwardCapture`:**
+    - for every layer l, the residual captured after layer l at the prompt's last token is bit-identical to the forward
+      over the same prompt with the program cut to its first l+1 layers;
+    - the capture does not change the logits.
+  - **S, `ForwardSubCapture`:**
+    - for every layer from 1 on, the residual after it is rebuilt bit for bit from the residual before it (from gate C's
+      capture) and the captured contributions, applied the way the layer's own residual operations apply them: one add, the
+      parallel block's joint add, or Granite's scaled add;
+    - a layer with an in-place operation the contributions do not cover (Gemma 4's PLE branch and its MoE block) is skipped,
+      and the skips are counted;
+    - the capture does not change the logits.
+- **Planted defects, each of which must turn its gate red on at least one fixture:**
+  - H: the seam skips the final norm;
+  - C: the capture is taken before the layer's last operation;
+  - S: the attention contribution is captured before its post-attention norm, for the sandwich-norm families.
+- **No tier 1 or night run:** each seam is a copy of a tensor the forward already computes. Gate I is unaffected, since the
+  forward does not change.
+
+**OP3's seams PR: readings, 2026-10-16 (branch `op3-seams-2026-10`, on #62).**
+- **The build:** the three seams, and `ForwardSubCaptureLogitsForTest`, stop refusing. `seam_refusals.go` keeps only the
+  family list for the refusals that are not seams (f16 KV's reason, MC3c's and LoRA's), which keep their pre-OP3 text. The
+  walker's capture moved into `Model.captureLayer`, and the plants are one test hook, `seamPlantForTest`.
+- **Gates, on all 58 tiny fixtures that walk a program:**
+
+  | gate | result | its plant |
+  |---|---|---|
+  | H, `HiddenLast` | PASS on 58 | the final norm skipped: red on 23 (every fixture whose `HiddenLast` takes the per-token path) |
+  | C, `ForwardCapture` | PASS on 58 | the capture one operation early: red on 58 |
+  | S, `ForwardSubCapture` | PASS on 54; NOT RUN on 4 | the attention contribution before its post-norm: red on 9 (the sandwich-norm fixtures) |
+
+  - S is NOT RUN on the four Gemma 4 E-model and 26B MoE fixtures: every layer past the first has the PLE branch or the MoE
+    block, which the contributions do not cover. Gates H and C cover those fixtures.
+- **The owner's condition (2026-10-16, approving the PR): `ForwardSubCapture` stays refused there.**
+  - It refuses any model with a layer whose operation the contributions do not cover (`program.subCaptureUncovered`: Gemma
+    4's PLE branch and MoE block), and so does its bisect hook.
+  - `TestSeams_subCaptureRefusedWhereGateSCannotRun` pins it: the refused set is exactly those four fixtures, and every
+    served fixture rebuilds at least one layer under gate S.
+  - `HiddenLast` and `ForwardCapture` serve all 58.
+  - Plant S, counted only on the 54 fixtures it can run on, is red on 9.
+  - The PR merges by hand on green CI after #62 lands.
+  - Log: `docs/measurements/op3-2026-10/seams-gates.log`.
+- **I: PASS** (37 IDENTICAL; the forward does not change). Log: `docs/measurements/op3-2026-10/seams-identity-tiny.log`.
+
+**OP3z, part 2: readings, 2026-10-30 (mac-sb11m, branch `op3-finish-2026-10-30`; Francis's option A, 08:21).**
+- **The build:** the per-token, batched and multi-sequence loops the walkers replaced go, with `causalAttention`, the old
+  `mlp` dispatch, `programWalkOffForTest` and gate S's A/B test (`TestProgram_S_walkerSpeed`, `TestProgram_S_batchedSpeed`),
+  which timed the loops and has nothing left to time. Four wrappers only those loops called go too (`applyAttnGate`,
+  `nonGatedMLP`, `gatedMLP`, `moeMLPBatch`); their contracts move onto the forms the walkers call. The dispatch census drops the
+  six sites that lived in the loops.
+- **I: PASS.** `gate identity 5e412c8e 4c0e0ce8` (CPU, tiny): 37 IDENTICAL, 0 DIFFERENT, 6 NOT RUN. The six are the Mac's usual
+  gaps: qwen2's and qwen3's fixtures are not on this disk, mellum's is a 4.2 GB slice, deepseek_v2 has no tiny fixture, and
+  qwen3_asr's and voxtral's goldens are zip archives. Log: `docs/measurements/op3-2026-10/op3z2-identity-tiny.log`.
+- `touched.py`, `go vet` and the pinned staticcheck (untagged, `goinfer_testhooks`, `realckpt`) pass; the staticcheck canary
+  printed `field deadField is unused (U1000)`.
+
+**OP3t, the two batched twins onto the batched walker: registered 2026-10-30, before the code (mac-sb11m; Francis's option
+A, 08:21).** This is the last item of "Left in OP3". Gate I cannot see either twin: their callers are PromptHidden, prefix
+sharing and the image prefills, not `Generate`. So each twin is held to bit-identity with the code it replaces, in one process,
+the way OP3a held the walker to the old loop.
+- **What moves.**
+  - **qwen3.5 (`runLayersQwen35N`)** becomes `walkBatch` over the family's program. The batched walker gains batched forms of
+    `opDeltaNet` and `opGatedAttn` whose arithmetic is the twin's: the same kernels in the same order (the twin's M=K
+    projections, `deltaNetCoreN` or the per-row core, and `attendBatchedHeads` with f64 accumulation). The norms, the FFN and
+    the residuals use the walker's existing operations. The call sites keep `qwen35BatchN` / `qwen35BatchNAnyPos` as the
+    eligibility check.
+  - **Gemma 4 (`runLayersGemma4FromEmbedN`)** becomes `walkBatch` over its program. The batched walker gains batched
+    `opGemma4Attn`, which takes the pass's bidirectional spans (`gemma4AttendRange`), Gemma 4's dense GeGLU form,
+    `opGemma4MoE` per row, `opPLE` and `opLayerScale`. The PLE embedding stage runs over the K rows (an image row takes the pad
+    id), as the twin does.
+  - **qwen3.5 first,** because its T1 was registered with OP3; Gemma 4 second. During each step the twin stays behind a
+    test-only switch for the gates. The step's last commit deletes it and the switch, as OP3z part 2 did.
+- **Gates (each twin; a fixture or cell a gate cannot reach is listed NOT RUN, never counted as a pass):**
+  - **TW1, bit-identity with the twin (tier 0).** On every tracked tiny fixture of the family (qwen3.5: `qwen3_5-tiny`,
+    `qwen3_5_moe-tiny`, `qwen35-tiny`; Gemma 4: every tiny fixture `gate identity` lists for it), at f32, int8int8 and int4,
+    passes of K = 2, 17 and 64 rows, each from position 0 and as a second pass over a cache a first pass primed. Compared bit for
+    bit: the rows returned; and the cache after the pass, meaning every layer's K/V rows, qwen3.5's recurrent state and conv
+    window, and the position. Gemma 4 adds cells with one span and with two spans, including a span that crosses the pass
+    boundary. **Pass:** every cell IDENTICAL.
+  - **TW2, the bounds already in the tree pass unchanged.** qwen3.5: `TestPromptHidden_batchedMatchesSequential`, the batched
+    cases in `prompt_hidden_all_test.go`, `qwen35vl_batched_test.go`, the `mem5vl_*` tests, `b35_split_prefill_test.go` and
+    the prefix-sharing tests. Gemma 4: `gemma4_vl_bidir_test.go` and `two_images_test.go`.
+  - **TW3, plants.** Each must turn TW1 red on at least one cell. qwen3.5: the gated attention's sigmoid gate skipped in one
+    layer; the conv window not carried into a second pass (red only on second-pass cells). Gemma 4: a block-interior row's key
+    range ending at its own position, so the bidirectional block is dropped (red only on span cells); and an image row's PLE
+    taking its token id instead of the pad id.
+  - **TW4, T1 (tier 1, by day, qwen3.5).** The real Qwen3.5-0.8B (`~/models/qwen3.5-0.8b`), with PromptHidden over prompts of
+    145, 621 and about 2,500 tokens, through the walker and the twin in one process. **Pass:** IDENTICAL. About 5 minutes;
+    fit-checked first. Gemma 4's T1 uses the E2B (`~/models/gemma-4-e2b-gguf`), text only, plus one synthetic 256-row span, at
+    145 and 621 tokens, fit-checked first. If the fit check refuses it, it is reported NOT RUN, with the refusal.
+  - **TW5, speed (tier 1, by day, each twin).** The instrument is a whole-call in-process A/B, walker against twin,
+    interleaved ABBA in one process under the exclusive timing lock: PromptHidden on the 0.8B at 621 tokens, 6 pairs.
+    **Pass:** a median of at least 0.99 (S's bar). **Fail:** every pair under 1 with the median under 0.99; the walker is fixed
+    before the step merges. **Parked:** unresolved with the median under 0.99; the step does not merge and the result goes to
+    Francis. Gemma 4's cell is the E2B at 621 tokens with one span, if it fits. About 5 minutes per cell.
+  - **TW6, the rest.** `touched.py`; `gate identity` (CPU, tiny) against the step's base, which must be IDENTICAL because
+    `Generate` does not reach the twins; the pinned staticcheck under the three tags; one parity refresh before the push.
+- **Void conditions:** as OP3's. In addition, a TW5 cell started under heavy load (CLAUDE.md, "Run budget") is void and re-run
+  in order.
+- **Stopping rule:** every gate runs to completion. TW5 has a fixed N, with no early stop.
+
+**OP3t: readings, 2026-10-30 (mac-sb11m, branch `op3-finish-2026-10-30`). The move is `479a19f6`, which kept the twins
+behind test switches for the gates. The deletion is `15bfd6c5`, and `c62af22d` assigns the new files in the parity manifest.
+OP3 is complete: every CPU forward walks the program.**
+- **The build:** `walkBatch` runs qwen3.5's `opDeltaNet` and `opGatedAttn` (`deltaNetBatch`, `gatedAttnBatch`). It also runs Gemma
+  4's `opGemma4Attn` with the pass's spans (`gemma4AttnBatch`, `gemma4BatchRange`), the dense GeGLU at the layer's width,
+  `opGemma4MoE` per row, `opPLE`, `opLayerScale` and the PLE embedding stage (`newGemma4Pass`). A pass's token ids and spans
+  reach it as `batchRows`. It builds its attention pool and generic FFN buffers only when the program uses them.
+  `runLayersGemma4FromEmbedN` now returns the last row after the head's norm, so its callers apply the head with
+  `logitsFromNormed`, and the image prefill still counts the head. `moeMLP` takes the walker's signature.
+- **Two changes from the registration, both made before any comparison result:**
+  - **TW1's Gemma 4 "span crossing the pass boundary" cell is not a valid input.** The caller cuts passes outside blocks
+    (`cutOutsideBlocks`), and the twin itself indexed past its keys on it (a panic in the priming pass). The cell became a span
+    ending on the first pass's last row plus a span starting the second pass.
+  - **TW1's Gemma 4 fixtures were widened** with `gemma4-emodel-tiny` (PLE and cross-layer KV sharing) and
+    `gemma4-vl-bidir-tiny`, because none of the five listed fixtures has PLE, and the PLE plant needs one.
+- **TW1: PASS.** qwen3.5: 72 cells IDENTICAL (4 fixtures × 3 quants × K 2/17/64 × fresh or primed): the rows, every layer's K/V,
+  each DeltaNet layer's conv window and state, and the position. Gemma 4: 378 cells IDENTICAL (7 fixtures × 3 quants × 3 K ×
+  2 starts × no, one or two spans).
+- **TW3: PASS.** The skipped gated-attention gate is red on 72 of 72 cells. The dropped conv window is red on the 36 primed cells
+  and on no fresh cell. The dropped bidirectional block is red on 231 cells, none of them span-free. The image row's PLE taken from its
+  token id is red on 36 cells, which are exactly emodel-tiny's span cells.
+- **TW2: PASS.** 36 tests pass on the final tree. `TestMEM5VL_peakTier1` is NOT RUN: it needs `GOINFER_MEM5VL_PEAK` set to a model
+  directory.
+- **TW4: qwen3.5 PASS; Gemma 4 NOT RUN.** The real Qwen3.5-0.8B (int4) is IDENTICAL at 145, 621 and 2,500 tokens. The fit
+  guard refuses the Gemma 4 E2B by day: it needs 8.1 GB (4.9 resident, 0.2 KV at 4,096 positions, 3.1 GB reading the checkpoint)
+  against a 5.7 GB budget (70% of 8.2 GB available). Running it is night case (a), but the twin it compares against is gone from
+  the final tree; it would need a run pinned at `479a19f6`, which is Francis's call.
+  - **Francis's decision (2026-10-30 09:22): skip it.** TW1's 378 cells and the plants cover the Gemma 4 path, so Gemma 4's
+    TW4 and TW5 stay NOT RUN and no night run is queued.
+- **TW5: qwen3.5 PASS; Gemma 4 NOT RUN** (the same refusal). qwen3.5: 6 ABBA pairs at 621 tokens, ratios 0.980, 1.018, 0.978,
+  1.016, 0.984, 1.022, median 0.9998, against the bar of 0.99. The cell started at load 2.64. **A first attempt is VOID because of
+  an instrument defect:** the test voided each pair whose own starting load was above 4.0. That is not the registered rule, which
+  voids the cell on the load at its start. The test's own four threads pushed the load past 4 within 30 seconds, so every
+  later pair voided itself. Its five counted pairs had a median of 0.994. The test was fixed to the registered rule and the cell
+  re-run. The registered run's pairs started at loads 3.09 to 3.81, all under 4.0, so it also passes a per-pair reading. The
+  5.5 GB of KV in the first attempt's banner is the fit guard's price at the auto-pinned context (239,794 positions), not an
+  allocation: PromptHidden's cache reserves the prompt's 621 rows (`decoder/embed.go:Model.PromptHidden`, `NewCache(len(prompt))`).
+  - **Correction, 2026-10-30 10:55 (mac-sb11m): the qwen3.5 cell is VOID by the void rule's memory term, so TW5 is owed.**
+    The rule voids a cell whose reclaimable memory at its start (`cmd/hostmem -reclaimable`) is below the fit guard's need
+    for its load plus 2 GB (the timed-run skill draft, § "Run budget"). The cell did not record that reading, which the rule
+    requires. Its own banner priced the load at 6.9 GB (0.9 GB resident and 6.0 GB of KV at the auto-pinned context), so the
+    bar was 8.9 GB. The nearest reading, at about 08:42, was 4,234 MB, and at 10:52 it was 1,980 MB. The median of 0.9998 is
+    therefore not a reading. The record called it PASS until this correction.
+  - **The re-run** is the same cell at `479a19f6`, the last commit with both arms behind `qwen35TwinForTest`. That commit's test
+    prices the KV at 4,096 positions (`ResidentContext`), which makes the need about 1.0 GB and the bar about 3.0 GB. The re-run
+    records the load and the reclaimable reading at the cell's start and voids on either term. It runs when the Mac clears the
+    bar; at 10:52 it did not. The coordinator chose a run by day, with an 18:00 cutoff, and no night job.
+  - **Re-run, 11:06 (binary built at `479a19f6`): PASS by TW5's registered rule.** At the cell's start the load was 2.93 (bar
+    4.0) and the reclaimable reading was 3,222 MB (bar 3,072). Ratios were 1.015, 1.132, 1.005, 1.033, 0.998 and 1.002: a
+    median of 1.0100, with one pair of six slower, against the bar of 0.99. **Contention arrived mid-run:** pairs 4 to 6 started
+    at loads 8.23, 9.01 and 10.77, and after the cell another session's Python process and Spotlight's indexers held the box at
+    14.6. Both arms of each pair shared that load. TW5 registered a void on the cell's start only, so the cell stands. Under the
+    mid-run bar later written for M5 (half the cores plus the test's `GOMAXPROCS`, 8.0 here), pairs 4 to 6 would have voided
+    it. Pairs 4 to 6 read 1.033, 0.998 and 1.002. Pairs 1 to 3, all started under 8.0, have a median of 1.015.
+    Log: `docs/measurements/op3-2026-10/op3t-tw5-qwen35-rerun.log`.
+- **TW6: PASS.** `gate identity 5e412c8e c62af22d` (CPU, tiny): 37 IDENTICAL, 0 DIFFERENT, the same 6 NOT RUN as OP3z part 2.
+  `touched.py`, `go vet` and the pinned staticcheck under the three tags pass.
+- **One behavior change outside the gates:** a capture request (`captureLayers`) on Gemma 4's bidirectional image prefill is
+  now filled, as on every other batched pass. The twin left it unfilled. TW1 did not compare captures. The prefill keeps a
+  capture in one pass (`decoder/generate_gemma4_vl.go:Model.prefillLogitsGemma4VLBidirectionalSpans` chunks only when no
+  capture is set), so every row is captured.
+- Logs: `docs/measurements/op3-2026-10/op3t-*.log`.
+
+**#506's review (Gemini, relayed by the coordinator, 2026-10-30), each finding checked against the code:**
+- **1, fixed (red first).** `gatedAttnBatch` always accumulates in f64, but `walkBatch` could build the fused attention pool,
+  whose slots carry no score buffers, when a request asked for fast attention. No caller does that today, since the qwen3.5 entry
+  passes `fastAttn` false. `TestWalkBatch_gatedAttentionIgnoresFastAttention` panicked (`slice bounds out of range [:576] with
+  capacity 0`, in `attendBatchedHeadsP`), with a fresh scratch and with one whose pool was last built fused. `walkBatch` now turns
+  fast attention off for a program with gated attention, and the test passes, bit-identical to the exact pass.
+- **2, not a bug.** A capture keeps the prefill in one pass (above), so no chunk overwrites another's rows.
+- **3, a rule clarified, and the finding was partly right.** The registered TW5 run holds under either reading of the load term,
+  but it fails the memory term, which it never recorded. That correction is under TW5 above, and TW5 is owed. M5's rule in §4.9
+  now records both terms at the cell's start, and also voids a cell on contention that arrives mid-run, which a check at the
+  start alone misses.
+- **4, done.** The four plants stay in the tree as `walkBatchPlantForTest`, each with a test against a reference that stays:
+  - the skipped gate against PromptHidden's per-token bound (clean 8.4e-08, planted 0.288, bar 1e-06);
+  - the dropped conv window against split-prefill identity;
+  - the causal block against the bidirectional image golden (clean cosine 1.000000, planted 0.952334 with argmax 115 against
+    142);
+  - the image row's token-id PLE against the causal per-token prefill with a one-row block, where the two masks agree (clean 0,
+    planted 0.017, bar 1e-05).
+  - The last two need gitignored fixtures and skip in CI, as `TestGemma4VLBidir_imageParity` does.
+- **5, fixed (red first).** A program whose only attention is Gemma 4's no longer takes the walker's generic q, k, v and context
+  buffers. `TestWalkBatch_gemma4PassTakesNoGenericAttentionScratch` failed on all four buffers and now passes.
+  `TestMEM5VL_gemma4BidirBytes`'s derived bound is 2,565,594 B: it was 2,577,384 with those buffers and 2,546,696 on main before
+  #506. The remaining 18,898 B are the walker's other shared buffers.
+- **6, declined.** The head's norm over every row of a pass is one RMS norm a row, against the layers' matmuls, which is about
+  1/(hidden × layers) of the pass. Skipping it would add a branch to the walker for no measurable gain.
+
+### 4.9 OP4 on Metal: registered gates (2026-10-30, before any OP4 code)
+
+Registered by mac-sb11m on the coordinator's job of 08:21 (Francis's option A, "then (B)"). Francis's order of 2026-10-15 puts
+OP4 on Metal before OP4 on CUDA (§4.7, "Proposed order"). This section registers the gates the steps are held to. The design
+question below is for whoever starts the first step, and it goes to Francis before code.
+
+**What OP4 on Metal replaces.** Today the Metal resident's decode is one encoder that branches on per-model flags
+(`backend/metal/model.go:resident.encodeLayerResidualWith`: `sandwich`, `postOnly`, `parallelBlock`, `nonGatedMLP`, the q4k lane, the
+f16 lane, and the mixer kinds). Admission is a second, hand-written list beside it (§4.5, item 6). OP4 makes the encoder walk
+decoder's per-layer program: each operation maps to its dispatches, a fusion table maps operation runs to fused kernels, and
+admission declines on an operation the walker lacks, naming it.
+
+**Steps, each its own PR with its own reading:**
+- **OP4m-a, the program reaches the backend.** The `metal` module gets a read-only view of the program at build time. No
+  dispatch changes. The design question decides the form.
+- **OP4m-b, dense decode walks the program.** The generic families' per-token decode (norm, proj-qkv, qk-norm, rope,
+  attention, out-gate, proj-o, gated or non-gated FFN, residual) is built from the program. The fusions it keeps (norm+quant,
+  fused gate|up, down+residual, attention+residual) are table entries, each gated. The flags it absorbs go.
+- **OP4m-c, admission by operation.** Metal's decline reads the program. A family builds resident when the walker implements
+  every operation and its parameters, and a decline names the first operation it lacks. The hand list goes.
+- **OP4m-d onward:** the batched prefill and multi-sequence step walkers, then the mixer and own-block operations (MoE,
+  DeltaNet, Mamba-2, MLA, Gemma 4's), one PR each. The memory planner (KV3's admission, generalised) comes last, per §4.7.
+
+**Design question for OP4m-a (Francis's call before its code):** where the program lives for backends.
+- (a) **Extract `internal/runtime/program`** from decoder: the operation kinds, parameters and the per-layer list. Decoder builds it
+  from the `Architecture`, and backends import it. The `metal` module can import a root-module `internal/` package, since Go's
+  rule is by import path.
+  - Pros: one vocabulary for decoder, Metal, CUDA and WebGPU. SB1's kit and SB9's towers deferred this package to OP4
+    (§8 of the subsystems doc, SB9's step M options).
+  - Cons: a protected layout change, and a package move across decoder.
+- (b) **Decoder exports a read-only description** through the residency seam (a `ResidentProgram` accessor). The types stay in
+  decoder.
+  - Pros: no package move.
+  - Cons: the vocabulary stays in decoder. SB1's kit, whose kernel tests leave packages that import decoder (SB13's ratchet only
+    falls), cannot share it, and neither can SB9's towers.
+- **Recommendation:** (a).
+- **Francis's decision (2026-10-30 09:22): (a).** Extract `internal/runtime/program` from decoder (the operation kinds, their
+  parameters and the per-layer list). Decoder builds it, `metal` imports it, and `cuda` and `gpu` follow later. The move is
+  mechanical and census-gated: OP4m-a changes no dispatch, and M1 and M3 must read unchanged.
+
+**OP4m-a's registration, 2026-10-30, before its code (mac-sb11m; Francis's (a) of 09:22).**
+- **What moves into `internal/runtime/program`:**
+  - the program (its per-layer operation lists, the embedding and head stages), the operation kinds and registers, each
+    kind's parameter struct, and the methods that only read a program (`subCaptureUncovered`, `anyOp`, `kindsIn`,
+    `attnOrderIs`, `anySoftcap`, and the kind's `String` and `recurrent`);
+  - the two decoder types the parameters carry, `ActKind` (with its constants and `String`) and `MoEConfig`. Decoder keeps
+    them as aliases, so its exported names still compile for every caller. Neither is in apidiff's hard tier
+    (`testdata/apidiff/hard_tier.txt`), so the alias change is reported, not fatal.
+- **What stays in decoder:** building the program from an `Architecture` (`buildProgram` and the family layer builders), every
+  walker, the cost counters, and the fingerprint. The struct fields become exported, and decoder's uses are renamed
+  mechanically with `gopls`.
+- **The fingerprint must not move.** `programFingerprint` hashes each field's name, and VK5's week-2 shadow (to 2026-11-03
+  08:27) keys on it. Each renamed field carries an `fp:"<old name>"` tag, and the walk writes the tag where there is one, so
+  the bytes it hashes are unchanged.
+- **The `metal` module's view.** `decoder.Model.Program()` returns the model's `*program.Program`, read-only by contract.
+  `metal` reads it at build time and dispatches nothing from it in this step.
+- **Gates:**
+  - **A1, the fingerprints:** `TestProgramFingerprint_table` passes against `testdata/program_fingerprints.json` unchanged,
+    with no `-update`.
+  - **A2, identity:** `gate identity` (CPU, tiny) from this step's base to the step is IDENTICAL on every family that runs.
+    The Metal half of M1 (`-backend metal`) runs once, after the step, and its wall time is recorded as M1's first cost
+    basis.
+  - **A3, the census:** `TestDecisionCensus` and `TestParityManifest_coreClosed` pass with no `-update`.
+  - **A4, Metal's view:** a tier-0 test in `metal` loads two tracked tiny fixtures and checks that the view the resident
+    receives at build is the model's own program (the same pointer, and the same layer and operation count).
+  - **A5, the rest:** `touched.py`; `go run ./cmd/lint`; vet with the tags it touches; `TestArchitecture_importAppendix` (the
+    new package's imports); the citation lint; and one parity refresh before the push.
+- **Void if:** the base of an identity run is not the named commit; a NOT RUN counted as a pass; A1 run with `-update`.
+- **Stopping rule:** every gate runs to completion. **Cost basis:** seconds for A1, A3 and A4; about a minute for A2's CPU
+  half (OP3's 42–52 s); A2's Metal half is unmeasured.
+
+**OP4m-a: readings, 2026-10-30 (mac-sb11m, branch `op4m-a-program-2026-10-30`).** Step 1 (`b780beba`) exported the fields and
+read-only methods inside decoder with `gopls`, type-checked under `goinfer_testhooks` and `realckpt`. Step 2 (`e214ae73`) moved
+the declarations to `internal/runtime/program`, with decoder's aliases, `Model.Program`, and the Metal resident's view.
+- **A1: PASS.** `TestProgramFingerprint_table` passes against `testdata/program_fingerprints.json` unchanged (37 fixture
+  programs, arm64), with no `-update`.
+- **A2: PASS.** `gate identity 2b04148f e214ae73`, CPU: 37 IDENTICAL, 0 DIFFERENT, the same 6 NOT RUN as OP3 (45 s). Metal:
+  29 IDENTICAL, 0 DIFFERENT, 14 NOT RUN, in 1m42s, M1's first cost basis. Of the 14, eight are families Metal declines
+  (bailing_hybrid, granitemoehybrid, laguna, lfm2, llama4_text, phi3, qwen2_moe and spark2_5). The other six are the fixture
+  gaps the CPU half also has. For each of the 37 families, the old and new builds' logs show the same backend outcome (resident,
+  or the same CPU fallback), so no NOT RUN hides a new decline. Logs: `docs/measurements/op4-2026-10/op4m-a-identity-cpu.log`, `op4m-a-identity-metal.log`.
+- **A3: PASS.** `TestParityManifest_coreClosed` passes here. `TestDecisionCensus` passed in #525's CI run 41108937636 (head
+  `b6fd6152`, linux/amd64, job test-decoder-a, 237 s, behind its zero-match guard), and main's `ci` run for the merge (`2c189eba`)
+  is green. It is **NOT RUN on this Mac**, where it fails on
+  main's code too: its `longVariant` helper copies a fixture directory's subdirectories as files (`testdata/gpt2/.cache` and
+  `onnx`, `testdata/tiny-qwen2-moe/.cache`). With those moved aside, the run was killed at 59 s, after D1 and D2, with the Mac
+  at about 2 GB reclaimable. Both are for MM1's owner. The parity core set now lists `internal/runtime/program/program.go`, since the
+  program's numeric methods (`AttentionParams.Start`, `AttnTempParams.Scale`) moved there.
+- **A4: PASS, with one change from the registration.** `TestResident_holdsTheModelsProgram` (in `backend/metal/resident_memguard_test.go`,
+  which already imports decoder, so SB13's ratchet does not move) checks a synthetic dense model the test writes (2 layers, 18
+  operations) and the tracked `qwen35-tiny` at int4 (4 layers, 24 operations). The registration said two tracked fixtures. The
+  synthetic model is written by the test, so it is always present.
+- **A5: PASS.** `touched.py`; `go run ./cmd/lint` (VERDICT: PASS, 7 of 7); vet on darwin and linux/amd64 under the three tags,
+  and `gpu` and `cuda` with theirs; `TestLayout_arrows` and `TestArchitecture_importAppendix`, after `-update` added the two new
+  arrows (decoder and metal into `internal/runtime/program`) as the test asks; the citation lint; one goldens-gated parity refresh (43
+  passed, 0 failed).
+- **#525's review (Gemini, after the merge), fixed in the follow-up PR:**
+  - `OpKind.String`'s fallback had become `"Op(%d)"`, because the move's rename reached a string literal. It is `"op(%d)"`
+    again, and a check of every string literal in `internal/runtime/program/program.go` against decoder's sources before the move finds
+    no other change outside the `fp` tags.
+  - `TestResident_holdsTheModelsProgram` fails, rather than skips, when either fixture is missing (both are tracked or written
+    by the test), and it releases its probe device.
+  - The package doc and `Model.Program` state that the program is shared and read-only, slices included, and that a Model a test
+    assembles without `modelFromOptions` builds a fresh one per call. A read-only view type was considered and not built: the
+    walkers index the slices on every operation.
+  - The A2 count above (8 declines, 6 fixture gaps) and the test's section (§4.9).
+
+**Gates (every step; a family or cell a gate cannot reach is listed NOT RUN, never counted as a pass):**
+- **M1, identity (tier 0).** `go run ./cmd/gate identity -backend metal <step's base> <step>` on the tiny assets. **Pass:** every
+  family that runs on Metal is IDENTICAL.
+- **M2, the walker can go red (tier 0).** On the Metal walker, the P gate's plants (a dropped operation, two swapped operations,
+  a parameter off by one) must each turn M1 red on at least one family. Each fusion must be bit-identical to the operations it
+  replaces, and a fusion that claims one operation too many must go red.
+- **M3, admission unchanged (tier 0).** The decision census (`TestDecisionCensus`) and the hardware matrix's generated "Why a
+  cell reads CPU" section are unchanged, except for cells a step names in advance, each with its reason. OP4m-c is the step that
+  changes the decline text. Its record lists every changed message, old and new.
+- **M4, T1 (tier 1, by day).** `gate identity -backend metal -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long`
+  (prompts of 145, 621 and about 2,500 tokens). **Pass:** IDENTICAL. Fit-checked first.
+- **M5, speed (tier 1, by day).** A whole-token in-process A/B, the walker against the pre-walk encoder behind a test switch,
+  interleaved ABBA in one process under the exclusive timing lock. The cells are the 0.5B and the 1.5B, decode at depth 128
+  and prefill at 3,900 tokens (§4.4's bands), 6 pairs each. The quantity is the rate ratio, walker ÷ old.
+  - **Pass:** a median of at least 0.99 in every cell.
+  - **Fail:** a cell resolves slower (every pair under 1) with its median under 0.99. The walker is fixed before the step merges.
+  - **Parked:** a cell does not resolve and its median is under 0.99. It goes to the served two-arm gate
+    (`BENCH_ENGINES=goinfer,goinfer_old`) by day, or at night only if it runs over 2 hours.
+  - The cell is void when started under heavy load (the timed-run skill draft, § "Run budget"). It records both terms at its
+    start: the 1-minute load, and the reclaimable reading against the fit guard's need for its load plus 2 GB. OP3t's TW5 recorded
+    only the first and was voided after the fact. Each pair also logs its starting load, and the
+    cell is void and re-run in order when any pair starts above half the core count plus the test's own `GOMAXPROCS`. That bar
+    catches contention arriving mid-run (OP3t's first TW5 attempt saw 12.2) without voiding on the test's own threads, which push
+    the load past half the cores within 30 seconds. One Metal run at a time.
+- **M6, memory (tier 0).** The resident's device buffer bytes and host scratch, from its buffer census, are not higher.
+- **M7, the rest.** `touched.py`; `go vet` and the pinned staticcheck for the `metal` module with its tags; CI's darwin job.
+- **Void conditions:** an identity run whose base is not the named commit; a NOT RUN cell counted as a pass; M5 run while
+  another timed run holds the lock, or without it.
+- **Stopping rule:** every gate runs to completion. M5 has a fixed N, with no early stop.
+- **Cost basis:** M1 and M2 run in about a minute (OP3's CPU identity was 42 to 52 s; Metal's is not yet measured, and the
+  first step records it). M4 takes about 3 minutes (OP3a's T1). M5 is 4 cells × 6 pairs; the first step records its wall
+  time.
+
+**OP4m-b, split in two; OP4m-b1 registered 2026-10-30, before its code (mac-sb11m; the coordinator's go-ahead under Francis's
+standing rule).**
+- **Why split.** Metal's dense decode reads its layer shape from ten Architecture accessors at build
+  (`SandwichNormResident`, `PostOnlyNormResident`, `ParallelBlockResident`, `NonGatedMLPResident`, `LayerNormResident`,
+  `HasQKNorm`, `QKNormWholeResident`, `OutBiasResident`, `LearnedPosResident`), then branches on the flags in
+  `backend/metal/model.go:resident.encodeLayerResidualWith` and its attention, batch and prefill twins. Every one of those facts is in
+  the program:
+  - post-only placement is an input `norm` of form `normCopy`;
+  - sandwich placement is a post-attention `norm` after a non-copy input norm;
+  - a parallel block is an `ffn` writing `regB` and a `residual` adding both;
+  - the rest are op parameters: the FFN's form, the QK-norm and its `Whole`, `proj-o`'s bias, the norm's form, and the
+    embedding's learned positions.
+  - **b1** moves the source of the dispatch to the program. **b2** moves the dispatch itself: the dense layer body walks the
+    recipe's operations through a fusion table whose entries are today's fused blocks. Only b2 can change speed, so M2's fusion
+    plants and M5 belong to b2.
+- **OP4m-b1, what changes.** A function in `metal` derives the dense layer shape from `decoder.Model.Program()`: each flag
+  above, from the operations as listed. `buildResident` sets its flags from it and stops calling those accessors (the accessors
+  stay for CUDA and WebGPU). A generic layer whose operations match no shape the encoder implements (for example, a placement
+  that differs between two attention layers where the encoder has one model-level flag) declines the resident, naming the
+  layer and the operation.
+- **Gates (b1):**
+  - **B1-1, the derivation equals the accessors (tier 0, CPU loads only):** for every tracked tiny checkpoint the decoder
+    loads on the CPU, and the config-only fixtures `TestProgramFingerprint_table` builds programs for, the derived shape equals
+    the nine accessors, field for field. A fixture that cannot load is listed NOT RUN. Plants, each red on at least one fixture:
+    reading sandwich as a post norm alone (so post-only also counts), and reading the QK-norm's `Whole` as false.
+  - **B1-2, no new decline:** for every fixture that builds resident on the base, the derivation returns no error.
+  - **B1-3, identity (M1's Metal half):** `gate identity -backend metal` from the base, IDENTICAL on every family that runs,
+    with every family's backend outcome the same in both builds.
+  - **B1-4, the rest (M7):** `touched.py`; `go run ./cmd/lint`; vet with the `metal` module's tags; `internal/layout`; the
+    citation lint.
+  - No M5 cell: b1 changes no dispatch, so its kernels are the base's.
+- **Void if:** a NOT RUN counted as a pass; an identity base other than the named commit; a Metal run beside a timed run.
+  **Stopping rule:** one run each. **Cost basis:** seconds for B1-1 and B1-2; about 2 to 3 minutes for B1-3 (OP4m-a's 1m42s
+  and the argmax fix's 2m59s).
+
+**OP4m-b1: readings, 2026-10-30 (mac-sb11m, branch `op4m-b1-2026-10-30`; every run under the shared timing lock, in gaps
+between tack's blocks).** `denseShapeOf` (`backend/metal/program_shape.go`) derives the shape. `buildResident` and `w8Weights` read it,
+and no longer call the nine accessors.
+- **B1-1 and B1-2: PASS, after three derivation fixes.** The first run (15:41) differed from the accessors on 16 fixtures, and
+  each was an operation the first rules did not read:
+  - gemma4, qwen3.5 and qwen3-next norm q and k inside their own attention operations (`gemma4-attn`, and `gated-attn`'s
+    `QKNorm`), so `HasQKNorm` is true while no `qk-norm` operation exists;
+  - llama4's `qk-norm` is the parameter-free L2 form (`QKL2`), which `HasQKNorm` does not count, since it is true only for the
+    weighted RMS form;
+  - nemotron3nano's FFNs are Nemotron's MoE, whose experts are non-gated, which `NonGatedMLPResident` counts.
+
+  The derivation now reads each as the accessor defines it. The re-run (16:13): 57 fixtures equal on all nine fields, no
+  derivation error, and each plant red on 2 fixtures (the post-only and whole-QK-norm ones). The 8 NOT RUN are encoders and
+  towers the decoder does not load (embeddinggemma2, gemma4-audio and -vision, glm-ocr's and qwen3-vl's vision towers, siglip
+  and two whisper fixtures). Log: `docs/measurements/op4-2026-10/op4m-b1-shape.log`.
+- **B1-3: PASS.** `gate identity -backend metal db331388 7839f476`: 29 IDENTICAL, 0 DIFFERENT, the same 14 NOT RUN as OP4m-a,
+  and every family's backend outcome is the same in both builds (1m29s). Log: `op4m-b1-identity-metal.log`.
+- **B1-4: PASS.** `touched.py`; `go run ./cmd/lint` (7 of 7); the citation lint.
+- **#539's review (Gemini; the coordinator held auto-merge), fixed:**
+  - **Per-layer agreement.** The first derivation OR-ed each flag across layers. A model with some pre-norm and some sandwich
+    layers would have had sandwich applied to every layer. `denseShapeOf` now requires:
+    - every attention layer shares one placement;
+    - a recurrent-mixer layer is pre-norm or matches it (Olmo Hybrid's DeltaNet layers stay pre-norm beside its post-only
+      attention layers, which the encoder handles per layer);
+    - the layers that carry the norm form, the FFN form, the QK-norm and its reach, and the output bias agree on each.
+    A disagreement declines, naming both layers. `TestDenseShapeOf_declinesLayersThatDisagree` (hand-built programs, in `backend/metal/resident_memguard_test.go` so SB13's ratchet does not move) was red
+    on the old derivation, where all 8 mixed programs passed with no error, and passes now, with Olmo Hybrid's mix allowed.
+  - **Memory.** B1-1 closes each model as soon as it is read, instead of holding all of them, and skips any fixture with more
+    than 1 GB of weights (the 4.2 GB mellum slice, now NOT RUN). It runs in 1.4 s instead of 12 s.
+  - **Load failures.** The 8 encoders and towers are named as expected skips; any other load failure fails.
+  - Re-run (17:16, on `f57059f1`): Metal identity 29 IDENTICAL, 0 DIFFERENT, every family's backend outcome unchanged; and
+    56 fixtures equal on all nine fields, no derivation error on any (so the stricter rule declines no fixture that
+    loads), and each plant red on 2.
+- **Gemini's re-read of the fixed head (after #539 merged), fixed in a follow-up.** The second rule still accepted four kinds
+  of disagreement silently:
+  - a pre-norm non-attention layer was never recorded, so a recurrent-only model mixing pre-norm and sandwich applied sandwich
+    everywhere;
+  - a pre-norm recurrent or FFN-only layer was accepted beside sandwich or parallel attention layers;
+  - a layer with both an attention and a recurrent mixer skipped the QK-norm check;
+  - a layer asking for two placements took the first match.
+
+  `denseShapeOf` now records every layer's placement and QK-norm, declines a layer asking for two placements, and accepts a
+  mixed placement only as `olmoHybridMix`: every layer either post-only attention or pre-norm recurrent, with at least one of
+  each. `TestDenseShapeOf_acceptsOnlyAgreementOrOlmoHybrid` was red on the previous head (all 6 cases accepted) and passes now,
+  and a Nemotron-H-shaped program (pre-norm attention, recurrent and FFN-only layers) is still accepted. **No loadable model
+  newly declines:** the 56 fixtures derive with no error. Metal identity (`46320078` to `32b23076`): 29 IDENTICAL, every
+  family's backend outcome unchanged. `touched.py` and `go run ./cmd/lint` (7 of 7) pass.
+
+**OP4m-b2 registered 2026-10-30, before its code (mac-sb11m; the coordinator's go-ahead under Francis's standing rule).**
+- **What changes.** At build, each layer's operation list is matched against a fusion table into steps. Each step is one of
+  today's fused blocks, emitting exactly its dispatches:
+  - the attention sublayer (input norm, q/k/v, QK-norm, rotation, attention, output gate, output projection, post-attention
+    norm, residual), which is `resident.encodeAttentionResidualWith`;
+  - a recurrent or latent mixer sublayer (DeltaNet, Mamba-2, MLA);
+  - the dense FFN sublayer (input norm, gated or non-gated FFN, post-MLP norm, residual), or the parallel block's FFN half;
+  - the MoE FFN and Gemma 4's parallel dense and MoE block;
+  - PLE and the layer scale.
+
+  The per-token decode's layer body (`resident.encodeLayerResidualWith`) runs its layer's steps in order instead of branching
+  on the layer's kind, and each step reads its own parameters as today. A layer with an operation no entry matches declines the
+  resident, naming the operation. The internal branches of each block (the QK-norm form, the q4k lane, the f16 lane) are
+  untouched, and per-operation dispatch inside a block is later work.
+- **Folded in from Gemini on #540:** a non-pre-norm placement is accepted only on attention layers. A recurrent or FFN-only layer
+  with one declines whatever layer 0's placement is, since the encoder applies post-only to attention layers alone.
+- **The old switch stays behind a test-only switch** for M5, and goes when M5 passes, as OP3z part 2 did for the CPU.
+- **Gates:**
+  - **M1 (identity):** `gate identity -backend metal` from the base, IDENTICAL on every family that runs, with every family's
+    backend outcome the same in both builds.
+  - **M2 (the table cannot over-claim):** a tier-0 test over every fixture program checks that the steps consume each operation
+    of each layer exactly once, in order. Plant: the attention step also consumes the FFN sublayer's input norm, which must turn
+    the coverage test red, and M1 red on at least one family.
+  - **M4 (T1):** `gate identity -backend metal -assets real -only coder-0.5b-q4km,coder-1.5b-q4km`, IDENTICAL, fit-checked
+    first.
+  - **M5 (speed):** a whole-token in-process A/B of decode at depth 128, steps against the old switch, interleaved ABBA, 6
+    pairs on each of the 0.5B and the 1.5B, under the exclusive timing lock. Both void terms are recorded at the cell's start,
+    and a pair started above half the cores plus the test's `GOMAXPROCS` voids the cell. Pass: a median of at least 0.99 in
+    both cells. Prefill at 3,900 is not a cell: b2 changes only the per-token layer body, and `backend/metal/prefill.go` is untouched.
+  - **M6 (memory):** b2 adds no device buffer. The step lists are host slices of a few function values a layer.
+  - **M7 (the rest):** `touched.py`; `go run ./cmd/lint`; vet with the `metal` module's tags; `internal/layout`; the citation
+    lint.
+- **Void if:** as §4.9. **Stopping rule:** one run each; M5 fixed N. **Cost basis:** M1 about 1.5 minutes (b1's runs); M4
+  about 3 minutes; M5 2 cells × 6 pairs, minutes. It runs after tack's run frees the exclusive lock (about 20:15).
+
+**OP4m-b2: readings, 2026-10-30 (mac-sb11m, branch `op4m-b2-2026-10-30`, code at `9dbe78b6`; every run under the shared timing
+lock).**
+- **What was built.** `backend/metal/layer_steps.go`: `layerStepsOf` splits a layer at its residual adds and names each sublayer's step
+  (a parallel block's one sublayer gives the attention step up to its FFN and the dense FFN step from there; Gemma 4's MoE
+  block, PLE and layer scale are steps of one operation). `checkStepClaims` checks the steps consume every operation once, in
+  order, each only operations its block emits and exactly one core operation. `resident.buildLayerSteps` runs both at build and
+  also checks the steps equal the blocks the layer's build loaded (mixer, FFN form, PLE, layer scale); any mismatch declines
+  the resident, naming the layer. `encodeLayerResidualWith` runs `L.steps`; the old switch is `encodeLayerSwitch` behind
+  `layerSwitchForTest`. The FFN, PLE and layer-scale blocks are shared helpers both paths call, so the two differ only in
+  how the blocks are chosen.
+- **The #540 fold-in, red first.** `TestDenseShapeOf_placementOnlyOnAttentionLayers`: with every layer post-only, sandwich
+  or parallel, a recurrent or FFN-only layer was accepted in 6 of 6 cases before the fix; after it, each declines naming the
+  layer. Two older cases (a sandwich recurrent layer) now decline at this check first, with a message naming one layer, so they
+  moved into the new test.
+- **M1: PASS.** `gate identity -backend metal e9959454 9dbe78b6`: 29 IDENTICAL, 0 DIFFERENT, the same 14 NOT RUN as b1
+  (1m30s). Every one of the 37 families' cells has the same bracketed backend outcome in both builds. Log:
+  `docs/measurements/op4-2026-10/op4m-b2-identity-metal.log`.
+- **M2: PASS.** `TestLayerSteps_consumeEveryOperationOnce` over 56 fixtures: no error, 2 decline for an operation with no step
+  (KDA, short convolution: Bailing Hybrid and LFM2, which run on the CPU in both builds). The plant (the attention step also
+  consumes the next operation, the FFN's input norm) turns it red on 48 of 56. M1 under the plant (a temporary commit, since
+  dropped): 24 of 37 families change backend outcome, each declining with "the attention step consumes operation 6 (norm), which
+  its block does not emit". Log: `docs/measurements/op4-2026-10/op4m-b2-identity-metal-plant.log`.
+- **M4: PASS.** `gate identity -backend metal -assets real -only coder-0.5b-q4km,coder-1.5b-q4km e9959454 9dbe78b6`, under
+  the exclusive lock from 20:15:46 (load 1.50, 80% memory free; the 0.5B needs 0.90 GiB and the 1.5B 2.27 GiB resident, with
+  8.8 GiB reclaimable): both cells Metal-resident int4 in both builds, IDENTICAL (20 s). Log:
+  `docs/measurements/op4-2026-10/op4m-b2-identity-metal-real.log`.
+- **M5: PASS.** `TestOP4mB2_stepsSpeed`, decode at depth 128 (64 timed greedy tokens a run), steps against the old switch, A B
+  B A, 6 pairs a cell, one exclusive hold from 20:16:54, both arms' 64 tokens equal in every pair:
+  - 0.5B: start load 2.27, reclaimable 8.83 GiB against 0.90 + 2 GiB; ratios 0.9990 to 1.0015, median **0.9998** (about 187
+    tok/s each arm).
+  - 1.5B: start load 2.09, reclaimable 8.78 GiB against 2.27 + 2 GiB; ratios 0.9983 to 1.0159, median **1.0008** (about 94
+    tok/s each arm).
+  - No pair started above the bar of 8.0 (half the 8 cores plus `GOMAXPROCS` 4); swap stayed at 410 MB through the hold. The
+    first attempt at 20:16 loaded without `Quant: "int4"`, so neither model built resident (the 1.5B's f32 build was refused by
+    the memory guard before loading) and nothing was timed; the harness was fixed and the cell run once. Log:
+    `docs/measurements/op4-2026-10/op4m-b2-m5-decode.log`.
+- **M6: PASS by construction.** b2 adds no device buffer; each layer's steps are a host slice of one-byte step names.
+- **M7: PASS.** `touched.py` 13 checks; `go run ./cmd/lint` 7/7; vet of `metal` plain and with `goinfer_testhooks`;
+  `internal/layout` inside touched.
+- **The old switch is gone** (`858d9989`), with the M5 harness, as registered. M1 on that commit: `gate identity -backend metal
+  e9959454 858d9989`, 29 IDENTICAL, 0 DIFFERENT, the same 14 NOT RUN, 37 of 37 families the same backend outcome (1m25s). Log:
+  `docs/measurements/op4-2026-10/op4m-b2-identity-metal-final.log`.
+- **Lock note.** One `go vet` of `metal` (seconds) ran outside the lock at 18:11, while the lock was free.
+
+**OP4m-c design question (Francis's call before its registration; mac-sb11m, 2026-10-30).** OP4m-c makes Metal's admission read
+the program: a family builds resident when Metal implements every operation and its parameters, and a decline names the first
+it lacks. Today's admission constrains where that check can live.
+- **How admission works now.**
+  - `decoder/admit.go:Admit` is a pure function of the arch, the backend's name and the load's options.
+  - Metal's part is its declared feature set, `decoder/features.go:residentBackendFeatures` (33 features), checked against
+    `Architecture.residentFeatures`; a gap reads "metal does not implement [kda], which this model needs".
+  - The hardware matrix, the capability matrix and the admission census read the same answer with no GPU, on Linux CI. That is
+    why the declarations live in decoder and not in the build-tagged backends (the comment on `residentBackendFeatures`).
+  - Beside the features sit `residentGateReasons`' non-feature gates (activation hazard, router capacity, per-layer attention
+    geometry) and `buildResident`'s numeric declines (widths not a multiple of 8, the q4k lane's shape), §4.5 item 6.
+- **(a) An operation table in `internal/runtime/program`, read by decoder's admission and by Metal's walker.**
+  - The table: which operation kinds Metal has a step for, and which parameter values each step's block implements (norm form
+    and AddOne, FFN form and activation, rotary form and width, attention window, softcap, sinks and temperature, the embedding
+    scale, the head's softcap and logit scale).
+  - `Admit` builds the program from the arch (as `buildProgram` does today, every layer of a MoE family offered its experts so
+    the program is a superset of the forms) and declines on the first operation or parameter outside the table, naming it.
+  - `backend/metal/layer_steps.go:layerStepsOf` reads the same table, so the admission and the walker share one list, and a tier-0 test
+    checks that every fixture program the table admits is one `buildLayerSteps` accepts.
+  - Metal's entry in `residentBackendFeatures` goes; CUDA's and WebGPU's stay until their own OP4 steps.
+  - Pros: CI and the matrices still compute Metal's answer with no GPU; one admission path; the decline names an operation.
+  - Cons: the table is a declaration beside the walker, not the walker itself (the tier-0 test is what keeps them equal); the
+    features that are geometry rather than operations (per-layer query heads, per-layer attention geometry) stay gates.
+- **(b) Metal registers an admission hook with decoder** (`func(*program.Program) error`, called before the weights load), so
+  the walker itself is the check.
+  - Pros: no second list at all.
+  - Cons: Metal's module is darwin-only, so on Linux CI the matrices and the census cannot see Metal's answer, and the site's
+    "Why a cell reads CPU" section would have to be generated on a Mac. It reverses the reason the declarations sit in decoder.
+- **(c) Keep the features; add only a tier-0 test** that Metal's declared feature set and `buildLayerSteps` agree over every
+  fixture program. No admission or decline text changes.
+  - Pros: smallest; M3's census unchanged.
+  - Cons: two vocabularies stay (features and operations), which is what OP4m-c was meant to end.
+- **In every option**, the non-operation gates and `buildResident`'s numeric declines stay as they are; §4.5 item 6's point is
+  recorded as out of scope rather than absorbed.
+- **Recommendation: (a).** It ends the second vocabulary for Metal without losing the GPU-free matrices. Its gates would be:
+  - M1 (identity, every family's backend outcome unchanged);
+  - M3 (the decision census and the matrix's "Why a cell reads CPU" unchanged except Metal's decline texts, each old and new
+    listed);
+  - a planted gap (the table drops one parameter value) that turns a family's admission red;
+  - and the tier-0 table-equals-walker test.
+
+**OP4m-c registered 2026-10-31, before its code (mac-sb11m).**
+- **The design: (a)** (the coordinator under Francis's standing rule, 2026-10-30 20:50; the item is on Francis's end-of-day
+  list). An operation-and-parameter table in `internal/runtime/program`, read by decoder's `Admit` and by Metal's walker, with a tier-0
+  test that the two agree.
+- **Split in two, as OP4m-b was.** c1 builds the table, makes the walker read it and proves it equals today's admission. c2
+  moves Metal's admission onto it: `Admit` declines Metal on the table, Metal's entry in `residentBackendFeatures` goes, and
+  the decline texts change (M3's named step, every message old and new). c1 changes no decline text.
+- **c1, what changes.**
+  - `internal/runtime/program/support.go`: `Support`, a backend's table. It lists the operation kinds the backend has a step for and
+    the FFN forms with each form's activations. It also gives the QK-norm forms, the rotation kernels, and whether a chunked
+    attention, a residual scale and DeltaNet's widened write gate or own output-norm epsilon are implemented. `Support.Check` names the first
+    layer, operation and parameter outside it. `program.Metal` is Metal's.
+  - Metal's `buildLayerSteps` checks each layer against `program.Metal` before deriving its steps.
+  - Gemini on #544: an FFN form with no Metal block (Llama 4's and Nemotron's MoE, an unknown form) declines instead of
+    mapping to a step; a parallel split needs an attention mixer, a dense FFN and a two-output residual, and a sequential
+    sublayer's span ends with its own one-output residual; the q4k lane's FFN no longer ends the layer's step loop, and the
+    layer-scale step is matched against the build's reading of the scalar, not the buffer's absence; and tests of the
+    contiguity, core-count and loaded-steps checks.
+  - Gemini on #540: a layer with both an attention and a recurrent mixer declines whatever its placement; a mixed-placement
+    decline names the first layer that fits neither layer 0's placement nor Olmo Hybrid's mix; the two-placements test reads
+    its message.
+- **The one outcome c1 changes, named in advance: Olmo Hybrid on Metal declines to the CPU.** Metal's DeltaNet computes the
+  write gate as σ(b) (`delta_gates`), and the CPU doubles it when `NegEigval` is set (`linear_allow_neg_eigval`, true on the
+  release and in `testdata/olmo_hybrid-tiny`). It also takes the model's norm epsilon for the output gated norm where Olmo
+  Hybrid sets its own (`ONormEps`). Metal admits the family at int4 today, and its only gate is a NaN smoke test. The table
+  lists neither parameter, so the walker declines it. CUDA and WebGPU have the same gap, by a grep of their sources, which is
+  for their owners.
+- **Gates (c1):**
+  - **C1-1, the table equals the walker (tier 0):** over every fixture program (B1-1's loads) and a synthetic layer of each
+    operation kind and FFN form, `program.Metal` has a step for every operation of a layer (its kinds and FFN forms; the
+    parameters are not a step's choice) exactly when `layerStepsOf` and `checkStepClaims` accept the layer. Plant:
+    the table lists `OpKDA`, red on Bailing Hybrid.
+  - **C1-2, the table can replace the features (tier 0, no GPU):** for every config-only fixture program
+    (`TestProgramFingerprint_table`'s), Metal's admission with its feature gate replaced by the table equals today's, except
+    Olmo Hybrid. Plant: the table admits the exact-erf GELU on a gated FFN, red on at least one config, or listed NOT RUN if
+    no config has one.
+  - **C1-3, the review points, red first:** each new test fails on the base.
+  - **C1-4, identity (M1):** `gate identity -backend metal` from the base, IDENTICAL on every family that runs, every
+    family's backend outcome the same except Olmo Hybrid's (resident to CPU, the table's message).
+  - **C1-5 (M7):** `touched.py`; `go run ./cmd/lint`; vet with the `metal` module's tags; the citation lint.
+  - No M5 cell: c1 moves no dispatch. The q4k lane's change removes an early return after the layer's last step on every
+    family that reaches it.
+- **Void if:** as §4.9. **Stopping rule:** one run each. **Cost basis:** seconds for C1-1 to C1-3; C1-4 about 1.5 minutes.
+
+**OP4m-c1: readings, 2026-10-31 (mac-sb11m, branch `op4m-c-2026-10-31`, code at `926b446f`; every run under the shared timing
+lock).** `internal/runtime/program/support.go` holds `Support` and `program.Metal`; `backend/metal/layer_steps.go:resident.buildLayerSteps`
+checks each layer against it before deriving the steps. The fixture runs use the 56 tiny checkpoints b1 and b2 read (the
+worktree's gitignored fixtures cloned in; the 4.2 GB mellum slice is NOT RUN, as in b1).
+- **C1-1: PASS, after one walker fix.** The first run went red on the four Laguna and Spark-X2.5 fixtures: the walker counted
+  an attention output gate (`out-gate`) as part of the attention step, which Metal's attention block does not run, while the
+  table (like the features) lists none. The walker no longer claims it; no fixture ran wrong, since those families decline
+  earlier. Re-run: 56 fixtures, the walker and the table agree on every one; 8 decline in both (Bailing Hybrid's KDA, LFM2's
+  short convolution, Llama 4's and Nemotron 3 Nano's MoE forms, the four out-gate fixtures). The synthetic sweep (a layer
+  of each operation kind and each FFN form, one past the last of each) agrees, with both outcomes present. Plants: the table
+  listing `kda` is red on 1 (Bailing Hybrid); b2's attention-consumes-the-next-norm plant is red on 43 of 56. The registration's
+  wording of C1-1 was narrowed before the run to what the comparison reads: the table's kinds and FFN forms against the step
+  derivation, since the parameters are not a step's choice.
+- **C1-2: PASS.** `TestMetalSupport_replacesTheFeatures` over the 37 tracked fixture configs: 36 agree with today's Metal
+  admission; Olmo Hybrid, the named change, is admitted today and declined by the table ("operation 1 (deltanet): metal does
+  not implement DeltaNet's widened write gate (NegEigval)"). No fixture has a gated exact-erf GELU, so each of the 24
+  admitted SiLU-gated configs is also read with one: today's features and the table both decline every one, and the plant
+  (the table admits it) is red on 14 of the 24 (the other 10 are MoE forms, which the plant does not widen).
+- **C1-3: PASS.** The review tests, reduced to the base's API, run on `f18a97c2`: red on 8 of 10 parallel-and-form cases
+  (the two others already declined there), on the span that does not end with its residual, on both loaded-steps cases (a
+  layer scale the build did not read, the q4k lane with a layer scale), on both both-mixers cases, and on the mixed-placement
+  message. All pass on `926b446f`.
+- **C1-4: PASS.** `gate identity -backend metal f18a97c2 926b446f`: 28 IDENTICAL, 0 DIFFERENT, 15 NOT RUN (1m28s). Against
+  b2's final log, cell by cell, the one backend outcome that changed is Olmo Hybrid at int4, resident before and on the CPU
+  now with the table's message. The 15 NOT RUN are b2's 14 and Olmo Hybrid, whose int8int8 cell declined in both builds. Log:
+  `docs/measurements/op4-2026-10/op4m-c1-identity-metal.log`.
+- **C1-5: PASS.** `touched.py` (16 checks, after `TestLayout_arrows -update` added the decoder test's arrow into
+  `internal/runtime/program`, as the test asks); `go run ./cmd/lint` 7/7; vet of `metal`, `decoder` and `internal/runtime/program` plain,
+  with `goinfer_testhooks` and `realckpt`, and for linux; the citation lint.
+- **Two Metal tests follow the Olmo Hybrid change.** `TestOlmoHybridResidentSmokeMetal`, which required the model to go
+  resident, is now `TestOlmoHybridDeclinesOnMetal`: the int4 load runs on the CPU and the decline names `NegEigval`. KS-D3's
+  `TestKSD3_deltaNetModelsBitIdentical` drops the fixture from its list (it was never compared there, since its Metal prefill
+  was not batched). Both pass, as do the fixture-sweeping `metal` tests under `goinfer_testhooks` (the weight-alias, ledger
+  and admission-census ones).
+- **For CUDA's and WebGPU's owners:** neither has `NegEigval` or `ONormEps` anywhere in its DeltaNet path (a grep of `cuda/`
+  and `gpu/`), and both admit Olmo Hybrid. Their own OP4 tables would decline it the same way; until then it is a finding.
+- **What c2 does:** `Admit` reads `program.Metal` for Metal (building the program from the arch with `configExperts`, as
+  C1-2 does), Metal's entry in `residentBackendFeatures` and `backend/metal/backend.go`'s feature check go, and the census and the
+  hardware matrix's "Why a cell reads CPU" take the table's texts, each listed old and new.
+
+**OP4m-c2 registered 2026-10-31, before its code (mac-sb11m; stacked on c1, #547).**
+- **What changes.**
+  - Decoder names the backends whose admission reads an operation table (`residentBackendTables`; Metal's is
+    `program.Metal`). For such a backend, `residentGateReasons` replaces the feature gate with an operations gate. The program
+    is built from the arch (`buildProgram` with `configExperts`, as C1-2 does) and checked against the table, and the reason
+    names the layer, operation and parameter.
+  - Two features are not in the program, so they stay a feature gate for a table backend. One is the per-layer query-head
+    count (Laguna XS). The other is the gated activation of Gemma 4's MoE block: `OpGemma4MoE` carries no activation, and
+    adding one would move the program fingerprints, which VK5's shadow keys on until 2026-11-03.
+  - Metal's entry in `residentBackendFeatures` goes. `backend/metal/backend.go:residentPreBuild` checks the table and those two
+    features instead of `MissingResidentFeatures`. Every reader that asks whether a backend declares resident features
+    (`Admit`, `ResidentEligible`, `planAdmitDecline`, `BuildQueryFor`, the test hook) also accepts a table. Tests that read
+    Metal's feature set read the table or the admission instead.
+- **Gates (c2):**
+  - **C2-1, identity (M1):** `gate identity -backend metal` from c1's head: IDENTICAL on every family that runs, every
+    family's backend outcome unchanged (Olmo Hybrid already declines in c1).
+  - **C2-2, admission (M3):** the admission golden (`admissionGolden`), the admission and decision censuses and the
+    generated matrices change only in Metal's decline texts and Olmo Hybrid's Metal cell. The record lists every changed
+    line, old and new. `TestDecisionCensus` is CI's (it does not run on the Mac, §4.9 A3).
+  - **C2-3, a planted gap:** a copy of the table without GELU-tanh on the gated form, put in place for Metal, turns the
+    Gemma rows' admission red.
+  - **C2-4 (M7):** `touched.py`; `go run ./cmd/lint`; vet with the tags it touches; the citation lint; `site`'s snapshot
+    check if the capability matrix changes.
+- **Void if:** as §4.9. **Stopping rule:** one run each. **Cost basis:** seconds, and about 1.5 minutes for C2-1.
+
+**OP4m-c2: readings, 2026-10-31 (mac-sb11m, branch `op4m-c2-2026-10-31`, stacked on #547).** `decoder/features.go`:
+`residentBackendTables` holds `program.Metal`. `residentGateReasons` gives a table backend an operations gate, which lists
+every distinct gap (`program.Support.Gaps`) so that a first refusal hides none, and also gives it the two outside-program
+features. `residentDeclared` and `residentCovers` answer for either form. Metal's feature entry, with each feature's evidence,
+is now in `docs/code-notes/decoder.md`, "residentBackendFeatures.metal.removed". `backend/metal/backend.go:residentPreBuild` checks
+the table.
+- **C2-1: PASS.** `gate identity -backend metal fd127ffb <c2>`: 28 IDENTICAL, 0 DIFFERENT, the same 15 NOT RUN as c1. Cell by
+  cell against c1's log, every backend outcome is the same, and only the decline texts change (Bailing Hybrid, Laguna M1,
+  Olmo Hybrid). Log: `docs/measurements/op4-2026-10/op4m-c2-identity-metal.log`.
+- **C2-2: PASS, every change listed.**
+  - The admission census (`TestAdmissionCensus`) differs from c1's golden in 24 cells, all Metal, each old and new in
+    `docs/measurements/op4-2026-10/op4m-c2-admission-census-diff.txt`. The goldens are rewritten on both architectures (amd64
+    under Rosetta, with the same 24 cells). The changes:
+    - Metal's feature texts become the table's for Bailing Hybrid (KDA), LFM2 and LFM2-VL (short convolution), Laguna (the
+      output gate, plus the per-layer query heads, which stay a feature) and Spark-X2.5 (the output gate and the gated
+      exact-erf GELU, both named).
+    - Olmo Hybrid's Metal cells decline: the named change. Its `--kv i8` cell now reads the CPU's load error, as every
+      CPU-only family's does.
+    - Granite-4.0-H and Llama 4 gain an operations gate beside the runner-shape decline that already kept them on the CPU:
+      Granite's residual scale, and Llama 4's de-interleaving (mlaRope) rotation, parameter-free L2 QK-norm and MoE form.
+  - The Metal fit census (`TestBackendAdmissionCensus_metal`) loses Olmo Hybrid's 18 lines, since Metal no longer admits it;
+    the list is in `op4m-c2-metal-census-diff.txt`.
+  - `admissionGolden`'s Metal column changes in three rows, each a hand edit with its reason: Granite-4.0-H, Llama 4 and Olmo
+    Hybrid.
+  - The hardware matrix's "Why a cell reads CPU" splits Metal's rows from WebGPU's and CUDA's for the same seven families, and
+    Olmo Hybrid's Metal cell reads CPU.
+  - The capability matrix is unchanged, once its GPU column read the backend list instead of the feature map's keys. Its
+    first regeneration had flipped GPT-2, which only Metal runs, to "no".
+  - `TestDecisionCensus` is CI's on the first push; its golden is rewritten in the follow-ups below.
+- **C2-3: PASS.** `TestMetalTable_plantedGapGoesRed`: with GELU-tanh removed from the gated form of the table Metal reads, the
+  Gemma rows the golden admits on Metal decline, and a SiLU row stays admitted.
+- **C2-4: PASS.** `go run ./cmd/lint` 7/7; vet of `decoder` and `metal`, plain, with `goinfer_testhooks` and with
+  `realckpt`; SB13's ratchet lowered to 241 for `metal` as its test asks (the Mellum test no longer imports decoder); the
+  citation lint. `touched.py`: 15 of 16 checks pass, with two gitignored clones moved aside to match CI's fixture set. Its
+  reds are not c2's:
+  - `TestPlan_tableDriven`'s MoE-on-CUDA subtests and `TestPlan_extraBytesReservedAheadOfExperts` fail on c1's head as well
+    whenever `testdata/gemma4-moe-tiny` is present, which CI never has (prices 0 expert bytes; for the fit-plan owner);
+  - `TestDecisionCensus` fails on this Mac on a fixture's `.cache` directory (`testdata/gpt2`, then
+    `testdata/tiny-qwen2-moe`), as on main (§4.9, A3); CI runs it.
+- **Tests that read Metal's feature set** now read the table or the admission. Each per-feature pin moves to
+  `TestMetalTable_noOverclaim`, and the always-true skip guards, eight of them in six Metal test files, are gone. The capability
+  matrix, GLM-OCR's admission test and the E-model real test had iterated the feature map, where Metal is no longer a key,
+  so they would have stopped checking Metal without failing. Each now names it.
+
+**OP4m-c2: CI and review follow-ups, 2026-10-31 (mac-sb11m; the coordinator's list of 07:38).**
+- **The two CI reds (run 41209719554, root-windows and test-decoder-a) were `TestDecisionCensus`.** MM1's census holds
+  Metal's decline texts and fit pricing, and c2 changes both. The golden has one host class, amd64. It is rewritten under
+  Rosetta (`GOARCH=amd64`) in a clean checkout of the branch, which has CI's fixture set. That run reproduces CI exactly: the
+  same host class, the same 29,637 groups and the same census hash as the Windows job (`2b836889…`), in 27 s. Main's own
+  dump matches main's golden.
+- **What changes, group by group** (234 of 29,637, none added or removed): `docs/measurements/op4-2026-10/op4m-c2-decision-census-diff.txt`,
+  every differing line old and new.
+  - Bailing Hybrid and Laguna M1 change only their decline text, to the table's.
+  - Olmo Hybrid's Metal cells are the change named in c1.
+  - **Not named in the registration: the Metal fit pricing of Llama 4 and Nemotron 3 Nano.** The fit guard prices a Metal
+    load as resident when `BuildQuery.FeaturesCovered`. Both families passed the feature check, because their declines are
+    the runner shape and Nemotron's MoE block. So both were priced as Metal-resident (f16 KV, a 4,096 context by default)
+    while their loads run on the CPU. The table declines their operations, so they are now priced as the CPU path they run
+    (f32 KV, the model's whole context). No guard threshold moves; the priced path is the one taken. The coordinator
+    approved keeping it (07:58). `TestMetalPricing_followsThePathThatRuns` pins both families to the CPU pricing, with plain
+    Llama as the resident control. It is red on main, where `FeaturesCovered` is true for both.
+- **Gemini on #548, each checked against the tree; all held, all fixed:**
+  - `Support.gaps` returns every failing check of an operation, so Olmo Hybrid's DeltaNet names both of its gaps. The test
+    is red on the previous head (1 gap where 2 and 3 are wanted).
+  - `Support.PairwiseRope` makes GPT-J pairwise rotation a table field. `TestGlmOcr_residentDeclined` reads it, and
+    `TestSupport_pairwiseRotationIsATableField` declines it on a NeoX-only table.
+  - `TestGatedAct_metalModelPathAndGemma4MoE` runs the Model path `residentPreBuild` checks, and Gemma 4 MoE's
+    outside-program activation gate. A plant that removes that branch turns it red.
+  - The Llama 4 descriptions now read what the census shows (the de-interleaving rotation, the L2 QK-norm, the MoE form; no
+    chunked attention). The stale skip comments and the gpt-oss message are fixed.
+- **Gemini on #547, all held, all fixed:**
+  - `checkStepClaims` declines an orphaned parallel dense-FFN half and a parallel mark on a one-operation step.
+  - `buildLayerSteps` declines a parallel block on the q4k lane.
+  - All three cases are red first.
+  - `TestSupport_eachParameterCheckDeclines` holds each of `Support`'s checks to a case. It replaces the coverage C1-2's
+    helper did not give, since that helper returned before the table on most declined configs.
+  - `olmoHybridMix`'s two unreachable branches are gone.
+- **The rest:** the Metal walker, census, Olmo, E-model, GPT-2 and gpt-oss tests pass under `goinfer_testhooks`; the
+  admission census goldens (both architectures) and the hardware matrix are regenerated for the every-gap texts.
+- **Lock note.** Three CPU-only decoder test runs (the admission census updates and the matrix regeneration, about 07:44)
+  ran without taking the timing lock shared while tack's eval pilot held it exclusively. Every later run waited for the lock.
+
+**OP4m-d1 registered 2026-10-31, before its code (mac-sb11m; the coordinator's job of 08:22).** OP4m-d's first PR: Metal's
+batched prefill layer body walks the program, as OP4m-b2 made decode do. The multi-sequence step is OP4m-d2, its own PR.
+- **What changes.** `backend/metal/prefill.go:resident.prefillLastImgSrc` chooses each layer's blocks by its kind today (`L.delta`,
+  `L.mamba`, `L.geom == nil`, `L.ffn`, `L.moe`, the PLE weights, the layer scalar). It will run the layer's steps
+  (`residLayer.steps`, which `buildLayerSteps` derives from the program and checks against what was loaded) through a
+  table of the batched pass's blocks:
+  - attention;
+  - the DeltaNet and Mamba-2 mixers;
+  - the MoE FFN, and the dense and non-gated FFNs;
+  - PLE and the layer scale.
+
+  Each block emits exactly the dispatches it emits today, in the same order, and its internal branches are untouched (the
+  attention kernel lanes, the sandwich and post-only epilogues, the q-gate). The batched pass has no block for MLA or
+  Gemma 4's MoE step. A model with one of those steps declines the pass by name, which replaces the hand checks that
+  decline those families now. The layer-kind switch goes, and the old body stays behind a test-only switch until D-4
+  passes.
+- **Gates:**
+  - **D-1, the same dispatches (tier 0):** for every fixture that takes the batched pass, the pipeline sequence the step
+    walker issues for one prefill equals the old body's, dispatch for dispatch (the encoder's dispatch hook). Plant: the
+    attention block also emits the next layer's pre-MLP norm, which must go red.
+  - **D-2, identity (M1):** `gate identity -backend metal` from the base: IDENTICAL on every family that runs, every
+    family's backend and prefill path unchanged; and the prefill parity goldens (`TestPrefill*Parity*`, the forward goldens
+    in the parity refresh) pass unchanged.
+  - **D-3, admission (M3):** the decision and admission censuses unchanged. Any line that moves is listed with its reason.
+  - **D-4, speed (tier 1, by day, under the exclusive Mac timing lock, never beside mac-tack5's blocks):** a whole-prefill
+    in-process A/B, the steps against the old body, interleaved A B B A, 6 pairs, at 3,900 prompt tokens, on two models,
+    both int4 resident, fit-checked first: Qwen2.5-Coder 1.5B Q4_K_M (dense, from its `.giw`) and Qwen3.5 0.8B (the Qwen
+    family's hybrid, whose DeltaNet layers take a second batched block). *Amended before any timed run:* the first choice
+    of dense cell, InternLM2 1.8B, has no `.giw`. Its int4 load would quantize 3.8 GB of bf16 at load on this 16 GB Mac,
+    during mac-tack5's day.
+    - **Pass:** a median rate ratio (steps ÷ old) of at least 0.99 in both cells.
+    - **Fail:** a cell resolves slower (every pair under 1) with its median under 0.99.
+    - **Parked:** otherwise under 0.99. Void terms and the per-pair load bar as M5.
+  - **D-5 (M7):** `touched.py`; `go run ./cmd/lint`; vet with the `metal` module's tags; the citation lint.
+- **Void if:** as §4.9. **Stopping rule:** one run each; D-4 fixed N. **Cost basis:** seconds for D-1 and D-3; about 1.5
+  minutes for D-2; D-4 about 2 × 12 prefills of a few seconds each, plus two loads.
+
+**OP4m-d1: readings, 2026-10-31 (mac-sb11m, branch `op4m-d-2026-10-31`; every run under the timing lock, shared, and
+exclusive for D-4).** `backend/metal/prefill.go:resident.prefillLastImgSrc` defines the batched pass's blocks as closures
+(attention, MoE, FFN, PLE, layer scale; the DeltaNet and Mamba-2 mixers were already their own functions). Each layer runs
+its steps through them. `backend/metal/layer_steps.go:prefillStepsDecline` declines the pass on a step with no block, in place of
+`r.prefillOK`'s hand checks for MLA and Gemma 4's MoE block.
+- **D-1: PASS.** On the 56 tiny checkpoints loaded int4, 29 build resident and take the batched pass. On each, one 24-row
+  prefill issues the same pipeline sequence under the step walker as under the old kind switch (24 to 242 dispatches). 11
+  decline the pass and the rest do not build resident, all as on main. The plant (the attention block also runs the next
+  FFN step's input norm) is red on 29 of 29. `TestPrefillStepsDecline_equalsTheHandChecks`: on every fixture whose layers all
+  have steps, the step decline equals the two hand checks (MLA on DeepSeek and Kimi, Gemma 4's MoE block on its four
+  fixtures). Log: `docs/measurements/op4-2026-10/op4m-d1-d1-dispatches.log`.
+- **D-2: PASS.**
+  - `gate identity -backend metal 9540b7c5 a9d9fd8b`: 28 IDENTICAL, 0 DIFFERENT, every cell's backend outcome as c2's.
+    It was re-run on the final head (`d0a05f2f`: the old body removed, and the review fixes below) with the same result.
+  - The tiny prompts may sit under the pass's 16-token floor. So the real-asset identity ran too, with the long prompts
+    (`-assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long`; 145, 621 and about 2,500 tokens, which do take the pass):
+    both cells IDENTICAL, on `a9d9fd8b` and again on the final head `d0a05f2f` (`op4m-d1-identity-metal-real-final.log`).
+  - Logs: `op4m-d1-identity-metal.log`, `op4m-d1-identity-metal-final.log`, `op4m-d1-identity-metal-real.log`.
+- **D-3: PASS.** `TestBackendAdmissionCensus_metal` and `TestAdmissionCensus` pass against their goldens unchanged. d1
+  changes no decoder file, so MM1's census, which is decoder's, cannot move.
+- **D-4: PASS.** One exclusive hold per cell, both started 08:48 PDT, with mac-tack5's lock free. The steps against the old
+  body ran A B B A, 6 pairs at 3,900 tokens, with the last logits byte-equal in every pair; no pair started above the bar of
+  8.0.
+  - Qwen2.5-Coder 1.5B Q4_K_M: start load 1.20, reclaimable 6.80 GiB against 2.35 + 2 GiB. Ratios 0.9884 to 1.0111, median
+    **0.9970**, at about 950 tok/s each arm.
+  - Qwen3.5 0.8B: start load 1.18, reclaimable 7.39 GiB against 1.04 + 2 GiB. Ratios 0.9989 to 1.0016, median **1.0006**,
+    at about 1,295 tok/s each arm.
+  - Log: `op4m-d1-d4-prefill-speed.log`.
+- **The old body is gone**, with its plant, D-1's comparison test and the D-4 harness, as registered.
+- **D-5: PASS.** `touched.py` 13 checks, on CI's fixture set (gitignored clones moved aside); `go run ./cmd/lint` 7/7; vet of
+  `metal` plain and with `goinfer_testhooks`; the citation lint.
+- **#553's review (Gemini), fixed on the branch:**
+  - The FFN block took the model-wide `r.nonGatedMLP`; it now takes its step's kind.
+  - `prefillStepsDecline`'s error path has a case: a KDA layer declines with the step derivation's error, and an MLA layer
+    names its step.
+  - The FFN block's unused layer parameter is gone. The PLE block keeps its own, since it indexes the layer's PLE input.
+  - The options variant of the fixture loader, left with one caller, is folded back.
+  - Both identity runs above repeat on the final head.
+- **Next: OP4m-d2,** the multi-sequence step, its own PR.
+
+**OP4m-d2 registered 2026-10-31, before its code (mac-sb11m; the coordinator's job of 09:08).** Metal's multi-sequence step
+(MC3's batched decode, `backend/metal/batch.go`) is admitted by an operation table and runs its layers' steps.
+- **What changes.**
+  - The step reproduces one layer shape: a pre-norm attention sublayer and a gated dense FFN on every layer.
+    `resident.batchIneligible` declines everything else through a hand list of family flags today. It will check
+    the model's program against `program.MetalStep`, a second `Support` table that lists what the step implements.
+  - `Support` gains the fields that state those limits: sandwich and post-only norms, the parallel block, LayerNorm, the
+    output projection's bias, the whole-vector QK-norm, the attention window and softcap, and learned positions. `program.Metal`,
+    decode's table, sets every one true, which changes none of its admissions.
+  - The step's own limits stay as checks: KV slots in one allocation, the w4f16 decode lane, uniform attention geometry and
+    tiled widths.
+  - The step's layer body runs the layer's two steps through an attention block and an FFN block, each emitting today's
+    dispatches. The old body stays behind a test-only switch until D-4 passes.
+- **Gates:**
+  - **D2-1, the same admission (tier 0):** over every tiny checkpoint that builds resident at int4, and the int8int8 loads,
+    the table-based decline admits exactly the fixtures the hand list admits. Plant: the step table admits a sandwich norm,
+    red on a Gemma fixture.
+  - **D2-2, the same dispatches (tier 0):** for every fixture the step admits, one step of 2 and of 4 sequences issues the old
+    body's pipeline sequence, dispatch for dispatch. Plant: an extra norm after the attention block, which must go red.
+  - **D2-3, identity (M1):** `gate identity -backend metal`, IDENTICAL, every family's outcome unchanged; the batched step's
+    own bit-identity tests (`TestMC3*`) pass.
+  - **D2-4, speed (tier 1, by day, under the exclusive Mac timing lock):** the step's throughput at 4 sequences, depth 128, 64
+    steps a run, the steps against the old body, A B B A, 6 pairs, byte-equal tokens, on Qwen2.5-Coder 1.5B Q4_K_M and Qwen3
+    0.6B (its per-head QK-norm is the step's one family branch), both int4, fit-checked first. Pass, fail and parked as d1's
+    D-4.
+  - **D2-5:** the censuses unchanged; `touched.py`; `go run ./cmd/lint`; vet with the `metal` tags; the citation lint.
+- **Void if:** as §4.9. **Stopping rule:** one run each; D2-4 fixed N. **Cost basis:** seconds for D2-1, D2-2 and D2-5;
+  about 1.5 minutes for D2-3; D2-4 a few minutes.
+
+**OP4m-d2: readings, 2026-10-31 (mac-sb11m, branch `op4m-d2-2026-10-31`, stacked on #553; every run under the timing lock,
+exclusive for D2-4).**
+- **What was built.**
+  - `internal/runtime/program/support.go:MetalStep` is the step's table.
+  - `Support` gains the placement and form fields its limits need (sandwich and post-only norms, the parallel block,
+    LayerNorm, the output bias, the whole QK-norm, the attention window and softcap, learned positions), checked on the
+    embedding and head stages too. `program.Metal` sets them all true.
+  - `backend/metal/batch.go:resident.batchIneligible` checks `program.MetalStep`, then that every layer's steps are an attention and a
+    dense FFN step. It keeps the step's own limits: one KV allocation per layer, the w4f16 lane, the sink, uniform geometry,
+    tiled widths.
+  - The step's layer body runs its two steps through an attention block and an FFN block.
+- **D2-1: PASS.** At int4 and int8int8, 76 fixture residents: the table admits exactly the hand list's 18 and declines the
+  same 58.
+  - The registered plant (the table admits a sandwich norm) went red on none: every sandwich fixture also fails another of
+    the step's gates, so that plant could not show anything. It was replaced by the table dropping SiLU from the gated FFN,
+    which is red on 16.
+  - Log: `docs/measurements/op4-2026-10/op4m-d2-d1-admission.log`.
+- **D2-2: PASS.** On every admitted resident, steps of 2 and of 4 sequences (36 steps) issue the fixed body's pipeline sequence
+  dispatch for dispatch; the plant (an extra norm after the attention block) is red on 36. Log: `op4m-d2-d2-dispatches.log`.
+  That log ends in FAIL with rc=1 because it is the first combined run of D2-1 and D2-2: its FAIL is D2-1's first plant (red
+  on none, as above), and D2-2 passes in it. D2-1's re-run with the replaced plant is `op4m-d2-d1-admission.log`.
+- **D2-3: PASS.** `gate identity -backend metal`: 28 IDENTICAL, 0 DIFFERENT, every cell's outcome as d1's, on the code commit
+  and on the final head (`20d4080a`, the old body removed). The step's own MC3 tests: 13 pass (the 4 timing harnesses skip
+  without their opt-in; on the final head, `op4m-d2-mc3-tests.log`). Logs: `op4m-d2-identity-metal.log`,
+  `op4m-d2-identity-metal-final.log`.
+- **D2-4: PASS.** One exclusive hold per cell, from 09:15 PDT. The steps against the fixed body ran A B B A, 6 pairs; each run
+  timed 64 argmax steps of 4 sequences at depth 128, with tokens equal in every pair and no pair above the bar of 8.0.
+  - Qwen2.5-Coder 1.5B Q4_K_M: start load 1.96, reclaimable 7.31 GiB against 3.64 + 2 GiB. Ratios 0.9979 to 1.0020, median
+    **0.9981**, at about 212 tok/s each arm.
+  - Qwen3 0.6B: start load 1.41, reclaimable 7.62 GiB against 1.61 + 2 GiB. Ratios 0.9940 to 1.0090, median **0.9986**, at
+    about 380 tok/s each arm.
+  - Log: `op4m-d2-d4-step-speed.log`.
+- **D2-5: PASS.** The admission census and the Metal backend census unchanged (the new decode-table fields are all true);
+  `TestMetalTable_noOverclaim` pins both tables; `touched.py`; `go run ./cmd/lint`; vet; the citation lint.
+- **The fixed body is gone,** with the hand list, both plants, D2-1's and D2-2's comparisons and the D2-4 harness, as
+  registered.
+- **#554's review (Gemini), fixed:**
+  - `TestSupport_metalStepDeclinesEachPlacement` is the permanent test the comparison left: each placement and form check
+    is driven to a decline on `MetalStep`, and decode's table admits each. The step's missing kinds decline too.
+  - A LayerNorm model's head no longer names the form a second time; red with the old head gap.
+  - The `MetalStep` comment now names its rotation (ropeAt, neither pairwise nor mlaRope), and the PLE block's comment no
+    longer says it runs the layer scalar.
+- **What remains of OP4 on Metal:** the mixer and own-block operations as per-operation dispatch (OP4m-d onward's last part)
+  and the memory planner, §4.7.
+
+**OP4m-d3 registered 2026-10-31 (mac-sb11m; the coordinator's job of 10:08): MoE in the multi-sequence step, opt-in.**
+*Order note:* the block and its tier-0 identity test (`fdc8f2dd`) were written before this registration, while the speed
+cell's model was a pending decision. No timed run preceded it.
+- **What changes.**
+  - `program.MetalStepMoE` is `MetalStep` with the generic MoE FFN form.
+  - `resident.batchIneligible` reads it while `moeStepOn` is set; paged MoE still declines.
+  - The step's MoE block runs decode's own MoE dispatches on each row in turn: the norm, the route, the k experts and the
+    shared expert. A row's MoE is therefore decode's, bit for bit. The gain can come only from the rows the step already
+    batches (norms, projections, attention), not from the experts.
+  - `moeStepOn` is off by default. It becomes an operator choice (a `decoder.Options` field) only if D3-4 passes; making it
+    the default is Francis's call.
+- **Gates:**
+  - **D3-1, bit-identity (tier 0):** on the tracked generic-MoE fixtures (Mixtral, Qwen3-MoE at two top-k, GLM-4.5), four
+    sequences at different depths stepped together 12 times equal production's single-token forward on every logit. With the
+    block off, none builds the step. Plant: every row routed from row 0's norm, red on each.
+  - **D3-2, off changes nothing:** the admission and Metal backend censuses, `gate identity -backend metal`, and the MC3
+    suite are unchanged.
+  - **D3-3, speed (the feature bar; under the exclusive Mac timing lock):**
+    - The arms: the batched step of 4 MoE sequences, against the do-nothing arm, those 4 sequences decoded one token at a
+      time as today.
+    - At depth 128, 64 tokens a run, A B B A over 10 pairs, with tokens equal between arms.
+    - **Pass:** a median rate ratio of at least 1.05 and at least 9 of 10 pairs faster.
+    - **Fail:** a median under 1.00.
+    - **Parked:** otherwise. A park is committed as a negative result.
+    - The model is the open decision in the status file: (a) Qwen1.5-MoE-A2.7B as an int4 `.giw`, (b) a generated checkpoint
+      at its real widths, or (c) both, with (b) deciding the merge.
+    - *Amended before the first timed cell, 2026-10-31 11:51 PDT:* the model is Qwen1.5-MoE-A2.7B, its int4 Metal `.giw`.
+      **Free-memory margin 1 GiB for D3-3 only, Francis 2026-10-31 11:47 PDT, via the coordinator** (in place of the void
+      rule's 2 GiB): a one-off for this registration, not a rule change. Each pair records swap in use and pageouts at its
+      start and end. A pair that pages, meaning pageouts rose or swap grew, voids the cell, which is re-run, never averaged.
+      If the cell voids repeatedly, D3-3 falls back to (b), as approved.
+    - *Amended again before any timed pair, 12:03 PDT:* the 1 GiB attempts voided three times too (11:51, 11:57 and 12:02:
+      reclaimable 7,997, 8,157 and 7,959 MiB against 8,153 + 1,024 MiB; `op4m-d3-d3-voids-1gib.log`), so D3-3 falls back to (b) as approved. The cell is a generated
+      checkpoint at Qwen1.5-MoE-A2.7B's widths (hidden 2,048, 60 experts of 1,408, top 4, gated shared expert of 5,632,
+      16 heads, vocabulary 151,936) with 12 of its 24 layers. Weights are random f16 (`gen_qwen15moe.py`, kept with the
+      record), quantized to an int4 Metal `.giw` with this branch's `prequant`, about 4.4 GB resident, under the void rule's
+      registered 2 GiB margin.
+      - What 12 layers does to the reading: the LM head's per-token cost is a larger share than in the 24-layer model (about
+        36% against 22%), so the ratio reads the step's batching with the head over-weighted.
+      - The pair paging rule above stays.
+    - *(b)'s first three cells, 12:31 to 12:42 PDT: VOID, each at pair 0, on the paging rule.* Each started with the fit check
+      passing (reclaimable 7.23 to 8.75 GiB against 4.27 GiB + 2 GiB). Swap stayed at 252.1 MiB, and the system-wide `vm_stat`
+      pageouts counter rose by 1, 7 and 30 pages during the pair. The voided pairs read step ÷ sequential 1.3481, 1.3467 and
+      1.3430 with tokens equal; they are not readings. Log: `docs/measurements/op4-2026-10/op4m-d3-d3-voids-gen12.log`.
+      - The rule as written reads a system-wide counter, which other processes move. CLAUDE.md's never-swap rule reads the
+        test process, with system-wide figures as context only.
+      - Whether to void on the process's own major faults instead is put to the coordinator before any further cell. These
+        three stay void whatever is decided.
+    - *Amended before the next cell, 13:58 PDT (the coordinator, 13:57):* a pair voids when the test process itself pages,
+      meaning its own major faults (`getrusage` `ru_majflt`) rise during the timed pair, or when system swap in use grows. The
+      system-wide `vm_stat` pageouts are recorded per pair as context only. This aligns D3-3 with CLAUDE.md's never-swap rule
+      (read the process; system figures are context), not a new threshold. The three voided cells above stay void and listed.
+  - **D3-4:** `touched.py`; `go run ./cmd/lint`; vet; the citation lint.
+- **Stopping rule:** one run each; D3-3 fixed N. **Cost basis:** seconds for D3-1 and D3-2; D3-3 about 10 minutes per model,
+  plus its load.
+
+**OP4m-d3: registration addendum D3-3r, the real-model cell for the default, 2026-10-31 17:55 PDT, before any timed cell**
+(Francis 17:40, via the coordinator 17:46: "let's at least try" making the step's MoE block the default).
+- **Question:** on a real checkpoint, does the block clear the feature bar, so it may become the default?
+- **Model:** Huihui-MoE-5B-A1.7B (huihui-ai). It is in the qwen3_moe architecture:
+  - 28 layers, hidden 2,048, 16 heads of 128 over 8 KV heads;
+  - 4 experts of 6,144 at top 1, no shared expert;
+  - vocabulary 151,936, an untied head.
+  - **Source:** mradermacher's Q8_0 GGUF (sha256 `ab807f77…608c`), quantized with this branch's `prequant` on nobara to an int4 Metal `.giw` (3,059 MB, sha256 `83c3abfd…c1b5`), read from `~/models`.
+  - **What it is:** a community merge of four Qwen3-1.7B fine-tunes, not a jointly trained MoE. At top 1, each row runs one expert of a dense 1.7B's width. So its routing is a real model's, but its expert share is not typical of a trained MoE.
+- **Why this model:** it is the only small real MoE found that goinfer loads, the step admits, and the registered 2 GiB margin fits on this 16 GB Mac. The others, and why not:
+  - Granite-4.0-H-Tiny: a Mamba hybrid, which the step declines.
+  - Mellum2: sliding-window attention, which the step declines.
+  - DeepSeek-V2-Lite and Moonlight: MLA, which the step declines.
+  - Qwen1.5-MoE-A2.7B: voided at both margins, above.
+  - Qwen3-30B-A3B and Mixtral: larger still.
+  - OLMoE and Granite 3 MoE: not registered.
+- **The cell:** D3-3's, unchanged:
+  - 4 sequences at depth 128, 64 tokens a run, A B B A over 10 pairs, tokens equal in every pair, under the exclusive Mac lock;
+  - the 2 GiB margin, the load bar, and the 13:58 paging rule.
+- **The harness since (b)'s reading** (Gemini's review of #560, changed before this cell):
+  - the fit check reads memory after the load and before the resident allocates;
+  - the margin is fixed at 2 GiB, with no override;
+  - a swap reading that does not parse fails the cell;
+  - a fail or a park fails the test.
+  None changes what a pass reads.
+- **Default-on if** the median is at least 1.05, with at least 9 of 10 pairs faster, tokens equal, and the memory cost stated in the flip PR. **Fail:** a median under 1.00. **Parked otherwise.** On a fail or a park, the block stays opt-in and the record says why.
+- **Stopping rule:** one cell. A void re-runs, listed and never averaged, up to six attempts, none starting after 21:30.
+- **Cost:** about 10 minutes plus the load.
+
+**OP4m-d3: readings so far, 2026-10-31 (mac-sb11m, branch `op4m-d3-2026-10-31`; every run under the shared timing lock).**
+- **D3-1: PASS.** `TestMC3Step_moeBitIdentical`, on Mixtral, Qwen3-MoE (top 2 and top 3) and GLM-4.5 tiny at int4 with 8 KV
+  slots. With the block on, each builds the step. Four sequences at depths 3, 11, 20 and 40, stepped together 12 times,
+  equal production's single-token forward on every logit: 0 differ on each fixture. These fixtures hold 64 positions. With
+  the block off, none builds the step. The plant (every row's MoE routed from row 0's norm) is red on all four: 18,432 logits
+  differ on each of the three without a dense layer, and 9,216 on GLM, whose first layer is dense.
+- **D3-2: PASS.** With the block off (the default), `TestAdmissionCensus`, `TestBackendAdmissionCensus_metal`, the MC3
+  suite and the table and Support tests pass unchanged. `gate identity -backend metal c51df91e f47706e2`: 28 IDENTICAL, 0
+  DIFFERENT, 15 NOT RUN, of 43 families (94 cells), as d2's. Log: `docs/measurements/op4-2026-10/op4m-d3-identity-metal.log`.
+- **D3-3: VOID, seven attempts, nothing timed** (the coordinator's (a) of 10:20: Qwen1.5-MoE-A2.7B).
+  - The int4 Metal `.giw` was built on nobara from its archive copy with this branch's `prequant` (7,958 MB in 197 s) and
+    copied to `~/models`, sha256 equal.
+  - Every attempt voided on the harness's fit check before the resident allocated: once at 11:06 and six times from 11:07 to
+    11:34, five minutes apart, each with the lock free.
+  - The void rule's reading (`probe.Read().Reclaimable`) was 7,283 to 8,680 MiB, against the resident's need of 8,153 MiB plus
+    2 GiB. `scripts/hostmem.py` read 11.8 to 12.1 GB available at the same moments; the two readings disagree.
+  - On this 16 GB Mac, with its resident processes, the reclaimable reading does not reach the need plus 2 GiB, so this
+    model cannot run here under the registered rule.
+  - Log: `docs/measurements/op4-2026-10/op4m-d3-d3-voids.log`. How to measure is a decision in the status file.
+- **D3-3 at a 1 GiB margin (Francis's one-off, 11:47) and on (b) before the 13:57 criterion: VOID**, as recorded in the
+  registration's amendments above (`op4m-d3-d3-voids-1gib.log`, `op4m-d3-d3-voids-gen12.log`).
+- **D3-3: PASS on (b)** (the 12-layer generated checkpoint at Qwen1.5-MoE-A2.7B's widths, 4,280 MB int4; the exclusive Mac lock;
+  the registered 2 GiB margin; the 13:57 paging criterion).
+  - The first attempt after the lock freed, at 17:16, voided on the fit check before allocating (5,505 MiB reclaimable
+    against 4,374 + 2,048 MiB). It is listed and not counted.
+  - The second, at 17:21, started at 1-minute load 2.76, with reclaimable 6.60 GiB against 4.27 GiB + 2 GiB and the pair bar
+    at 8.0.
+  - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128. The batched step ran at 126.7 to 135.7 tok/s and
+    sequential single-token decode at 96.7 to 99.9 tok/s.
+  - Ratios 1.3014 to 1.3742, median **1.3550**, **10 of 10 pairs faster**. Tokens were equal between arms in every pair.
+  - The process's major faults stayed at 101,862 throughout, and swap at 244.1 MiB. System pageouts rose by 0 to 21 pages per
+    pair, which is context only under the 13:57 criterion.
+  - Against the feature bar (median ≥ 1.05, at least 9 of 10 faster): PASS.
+  - What this reading is: a synthetic checkpoint with 12 of 24 layers, so the LM head is a larger share than in the real
+    model. Random weights route to different experts than the real model's, and the step runs each row's experts as decode
+    does, so routing changes the expert work but not what the step batches.
+  - Log: `docs/measurements/op4-2026-10/op4m-d3-d3-speed-gen12.log`. The generated checkpoint is deleted from `~/models`.
+  - **Not yet read:** the real model. On this 16 GB Mac it does not fit the void rule even at a 1 GiB margin; the coordinator
+    puts a real-model read to Francis as optional.
+- **What a pass allows, per the registration:** the block may become an operator choice, a `decoder.Options` field. This PR
+  keeps `moeStepOn` as the test-only switch. The `Options` field (an API addition, through apidiff) is a follow-up PR, and
+  making it the default is Francis's call.
+- **D3-3r: PASS on the real model** (Huihui-MoE-5B-A1.7B, int4 Metal `.giw` from `~/models`; the exclusive Mac lock; the
+  harness as registered in D3-3r).
+  - One attempt, 17:50:37 to 17:51:47 PDT, with no void. It started at 1-minute load 1.64, reclaimable 7.23 GiB against need 3.09 GiB plus 2 GiB, and the pair bar at 8.0. Pairs started at load 0.95 to 1.90.
+  - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128. The batched step ran at 116.6 to 122.0 tok/s, and sequential single-token decode at 80.0 to 82.0 tok/s.
+  - Ratios 1.4384 to 1.5233, median **1.4873**, **10 of 10 pairs faster**. Tokens were equal between the arms in every pair.
+  - The process's major faults stayed at 571 throughout, and swap at 244.1 MiB. System pageouts rose by 0 to 14 pages per pair, which is context only.
+  - Against the bar for the default (median at least 1.05, at least 9 of 10 faster): **PASS**. The block may become the default, with its memory cost stated in the flip PR.
+  - What this reading is: a real model's weights and routing, but a top-1 merge of four dense fine-tunes. Each row's MoE work is one dense 1.7B FFN, so the expert share differs from a jointly trained MoE with many small experts (Qwen1.5-MoE's 4 of 60, which does not fit this Mac).
+  - Log: `docs/measurements/op4-2026-10/op4m-d3-d3r-speed-huihui.log`. The `.giw` is deleted from `~/models`. It and its GGUF source remain on nobara in `~/goinfer-work/op4m-d3/`.
+- **The switch (branch `op4m-d3o-2026-10-31`, stacked on #560):** `decoder.Options.ResidentMoEStep`, which the flag `--moe-step` sets (chat and serve), off by default. It replaces the test-only `moeStepOn`. A further PR flips the flag's default.
+  - **Found while wiring it:** with the block on, a MoE resident inherited the dense step-prefill range (A-P02: prompts ending below `metalStepPrefillCeiling`, 32). So prompts of 16 to 31 tokens left the batched pass for the step, and their last-row logits differed from the block-off load's: 512 of 512 on every fixture. A-P02 was measured on dense models only.
+  - So a MoE resident takes the step only below the pass's floor (`stepPrefillBound`), where it replaces the sequential loop bit for bit, and turning the block on changes no prompt's output.
+  - Gates (tier 0, red first):
+    - `TestMC3Step_moePromptRouteChangesNoOutput`: red at 16, 20 and 31 tokens before the bound, green after.
+    - `TestMC3Step_moeVerifyBitIdentical`: the speculative verify on the step equals the sequential loop's argmax.
+    - `TestMC3Step_moeBitIdentical`, now through the option.
+    - The dense prompt-route tests are unchanged.
+  - **Gemini's review of the switch:**
+    - **Multi-slot pricing.** At two or more KV slots, nothing charged the step's scratch, since the guard priced it only for a one-slot build.
+      - Now a MoE step build charges it at any slot count (`resident.stepPriced`). It charges against the guard's headroom after every slot's KV (`metalStepHeadroom`), and a miss declines the step, not the load.
+      - `TestMC3Step_moeScratchPricedAtTwoSlots`: red before (the step built at a ceiling of the weights plus two slots' KV), green after.
+      - A dense build of two or more slots still does not charge its scratch. That gap predates this work and is left for its own change.
+    - **Through the decoder.** `TestOptionPathMetal_moeStep` goes through `decoder.Load` and `Generate` at one and two slots:
+      - with the block on, prompts below and above the floor generate the block-off model's tokens and log-probabilities exactly;
+      - at two slots, two concurrent generations that decode on the step each equal their own block-off run.
+      - Each concurrent prompt is new to both models. A repeated prompt reuses its cached prefix, whose seed logits come from the sequential path over the pass's KV and differ from a cold prefill on either model, block on or off.
+
+**OP4m-d4a planned 2026-10-31, before its code (mac-sb11m; the coordinator's job of 17:38; design (a) approved 17:50): per-slot
+recurrent state on Metal.** OP4m-d4 brings Gated-DeltaNet into the multi-sequence step. d4a is its first half. d4b is the step's
+DeltaNet and gated-attention blocks, opt-in, under the feature bar on Qwen3.5 0.8B.
+- **What it changes:**
+  - Every backend holds a recurrent mixer's conv window and state once per layer. So the decoder caps a recurrent family at one KV slot (`Model.ResidentKVSlotsRequest`), or several sequences would mix one state.
+  - d4a gives Metal one state per KV slot for Gated-DeltaNet: `useKVSlot` binds the slot's window and state, and a reset zeroes the bound slot's.
+  - The decoder lifts the cap only for a backend whose table declares it: `program.Support.RecurrentSlots`, the recurrent operation kinds that backend keeps per slot. Metal's is `OpDeltaNet` after d4a; CUDA's and WebGPU's are empty.
+  - A model is lifted only if every recurrent operation in its program is listed, so a Mamba-2 hybrid stays at one slot on Metal.
+- **The default does not change.** A recurrent model gets more than one slot only when the caller asks for them (`-kv-sessions N`, not `ResidentKVSlotsDefault`). Serve's default request leaves it at one slot, so no default load takes more memory. Making it the default is d4b's question, with its measured gain and memory cost.
+- **Memory:** the fit guard prices each further slot's recurrent state beside its KV (`kvSlotsWithin`'s per-slot bytes), with no threshold change.
+- **The recurrent checkpoint (KV8a)** stays one copy, and is tied to the slot it was taken on: restoring it into another slot is refused, not reused.
+- **Gates (tier 0, red first; ordinary engineering):**
+  - **D4a-1:** on the tracked Gated-DeltaNet fixtures with two slots, a sequence decoded on slot 1 equals the same sequence on a one-slot resident, every logit.
+  - **D4a-2:** two sequences interleaved token by token on slots 0 and 1 each equal their own solo run. The plant, both slots bound to slot 0's state, goes red.
+  - **D4a-3:** CUDA and WebGPU keep a recurrent family at one slot, and a Mamba-2 hybrid stays at one slot on Metal (tier 0, no GPU).
+  - **D4a-4:** without an explicit request, a recurrent load keeps one slot.
+  - **D4a-5:** the fit guard's per-slot bytes include the recurrent state, and the census diff (`TestAdmissionCensus`, `TestBackendAdmissionCensus_metal`) is explained row by row.
+  - **D4a-6:** `touched.py`, `go run ./cmd/lint`, vet and the citation lint.
+- **Stopping rule:** one run each. **Cost:** seconds. No timed cell: d4a claims no speed.
+
+**OP4m-d4a: readings, 2026-11-01 (mac-sb11m, branch `op4m-d4a-2026-10-31`; every run under the shared Mac lock, queued behind
+tack's night and run at 06:05).**
+- **Red first:** `TestRecurrentSlots_deltaNetSequencesKeepTheirOwnState` (renamed `TestRecurrentSlots_sequencesKeepTheirOwnState` in OP4m-d6a), run on main, failed on both fixtures with "1 KV slots on a Gated-DeltaNet model that asked for 2".
+- **D4a-1 and D4a-2: PASS.** On qwen35-tiny and qwen3next-tiny with two slots, two 12-token sequences decoded one token each in turn on slots 0 and 1 each equal their solo run on a one-slot resident: 0 logits differ. The plant, both slots bound to slot 0's state, is red: 5,888 logits differ.
+- **D4a-3: PASS.**
+  - `TestResidentKVSlotsRequestFor_recurrentSlotsByTable` (decoder, no GPU): the DeltaNet model gets its 3 slots on metal, and 1 on cuda, webgpu and the no-backend request. The Mamba-2 hybrid gets 1 on metal. A dense model gets 3 everywhere.
+  - `TestSupport_recurrentSlotsCover`: a Mamba-2 or KDA layer, alone or beside DeltaNet, is not covered.
+  - On Metal, the Mamba-2 hybrid (nemotron-tiny) keeps one slot.
+- **D4a-4: PASS.** At the caller's default request (`ResidentKVSlotsDefault`), the DeltaNet model keeps one slot.
+- **D4a-5: PASS.**
+  - Each further slot is priced as its KV plus its Gated-DeltaNet state (`metalSlotBytes`), and the state's price equals slot 1's allocated buffers, to the byte.
+  - A ceiling of the need plus one slot's price grants two slots; one byte less grants one.
+  - The admission censuses (`TestAdmissionCensus`, `TestBackendAdmissionCensus_metal`) are unchanged, since no default load's slot count changes.
+- **The checkpoint:** `TestRecurrentSlots_checkpointStaysWithItsSlot` covers it. Restoring slot 1's checkpoint with slot 0 bound is refused, and on slot 1 it restores the saved state. The KV8a suite (`TestKV8aMetal_*`) passes unchanged.
+- **D4a-6: PASS.**
+  - vet, plain and tagged;
+  - `touched.py`: the queued run (`docs/measurements/op4-2026-10/op4m-d4a-tier0.log`) ends red, 1 of 17. It failed the layout ratchet `TestBackendTests_decoderImportsOnlyFall`: two new test files took metal's decoder-importing count from 241 to 243. The tests then moved into `backend/metal/residentkvbytes_deltanet_test.go`, and touched passed 17/17 at that commit (run by hand, not logged then);
+  - `go run ./cmd/lint` 7/7, and the citation lint.
+- **Gemini's review of #570, fixed red first** (passing log: `docs/measurements/op4-2026-10/op4m-d4a-tier0-review.log`, touched 17/17 and lint 7/7):
+  - **[bug] the checkpoint before any save.** `ckptSlot` started at 0, so a restore on slot 0 before any save copied the zeroed checkpoint over slot 0's live state. It now starts at -1, a failed save sets it back to -1, and a restore before any save is refused. `TestRecurrentSlots_checkpointStaysWithItsSlot` was red first.
+  - **[risk] slot 0's state unpriced.** A build of two or more slots now charges slot 0's Gated-DeltaNet state beside the need (`metalRecurrentBaseBytes`), in `metalKVSlots` and `metalStepHeadroom`. A one-slot build's admission is unchanged. `TestRecurrentSlots_eachSlotPricesItsState` was red first: at one byte short, it granted 2 slots.
+  - **[test] the decoder's slot choice.** `TestRecurrentSlots_decoderChoosesAmongSlots` goes through `decoder.Load` on Metal: `Model.ResidentKVSlots` reports 2 for both DeltaNet fixtures, and 1 for the Mamba-2 hybrid.
+  - **[test] a reset of a dirty slot.** `TestRecurrentSlots_resetZeroesTheBoundSlot`: a reset with slot 1 bound zeroes slot 1's dirty window and state, and leaves slot 0's as they were.
+- **Next: OP4m-d4b,** the step's DeltaNet and gated-attention blocks, opt-in, under the feature bar on Qwen3.5 0.8B.
+
+**OP4m-d4b registered 2026-11-01, before its code (mac-sb11m; the coordinator's job of 07:12): Qwen3.5's mixers in the
+multi-sequence step, opt-in.** It is stacked on OP4m-d4a (#570), whose per-slot state it needs.
+- **The scope, measured first.** Against the step's table, the Qwen3.5 family's programs (qwen35-tiny, qwen3next-tiny and Qwen3.5 0.8B) lack two operation kinds: `OpDeltaNet` and `OpGatedAttn`. Their norms and FFNs are already covered.
+- **The design: per-row blocks, as the MoE block.** The step runs each row's mixer with decode's own dispatches, so a row's mixer is decode's, bit for bit:
+  - **A DeltaNet row** runs `encodeDeltaNetMixer`'s dispatches on the row's residual, against its own slot's window and state (OP4m-d4a).
+  - **A gated-attention row** runs `encodeAttentionResidualWith`. It reads per-row position uniforms, and the row's slot KV is bound while that row is encoded.
+  - The gain comes from what the step already batches: the FFN, and the LM head (Qwen3.5 0.8B's vocabulary is 248,320).
+- **A prompt** takes the step only below the batched pass's floor, as for MoE (`stepPrefillBound`).
+- **The switch is test-only** in this PR. If the bar passes, an operator option (`decoder.Options`) and the decoder's concurrency for a recurrent family are a follow-up.
+- **Gates:**
+  - **D4b-1, bit-identity (tier 0):** on qwen35-tiny and qwen3next-tiny (DeltaNet with the MoE block) with the block on, four sequences at different depths, each on its own slot, stepped together 12 times equal production's single-token forward on every logit.
+    - With the block off, neither builds the step.
+    - Two plants, each red: every row's DeltaNet on slot 0's state; every row's attention at row 0's position.
+  - **D4b-2, prompt route:** with the block on, a prompt below the floor equals the sequential loop, and one at or above it equals the block-off load.
+  - **D4b-3, off changes nothing:** the admission censuses, the MC3 suite and `gate identity -backend metal` are unchanged.
+  - **D4b-4, the feature bar (timed, exclusive Mac lock):** D3-3's cell on Qwen3.5 0.8B: 4 sequences at depth 128, 64 tokens a run, A B B A over 10 pairs, tokens equal in every pair.
+    - The 2 GiB margin is read after the load; a pair voids on the process's own major faults or system swap growth.
+    - **Pass:** median at least 1.05 with at least 9 of 10 pairs faster. **Fail:** median under 1.00. **Parked** otherwise.
+    - A void re-runs, listed and never averaged, up to six attempts.
+  - **D4b-5:** `touched.py`, `go run ./cmd/lint`, vet and the citation lint.
+- **Stopping rule:** one run each; D4b-4 fixed N. **Cost:** seconds for D4b-1 to D4b-3; D4b-4 about 2 minutes plus the load.
+
+**OP4m-d4b: readings, 2026-11-01 (mac-sb11m, branch `op4m-d4b-2026-11-01`; tier 0 under the shared Mac lock, D4b-4 under the
+exclusive one).**
+- **D4b-1: PASS.** On qwen35-tiny and qwen3next-tiny with the recurrent and MoE blocks on, 4 sequences at depths 3, 11, 20 and 40, each on its own slot and DeltaNet state, stepped together 12 times, equal production's single-token forward: 0 logits differ. With the blocks off, neither builds the step.
+  - **The plants, red on both fixtures:**
+    - every row's DeltaNet on slot 0's state: 12,032 logits differ. That is every row from step 1 on, and rows 1 to 3 at step 0, since all four rows advance slot 0's state;
+    - every row's attention at row 0's position: 9,216 logits differ, rows 1 to 3 at every step.
+  - **Found on the way:** qwen35-tiny has no dense FFN (I = 0), so the step's dense-FFN scratch was a 0-byte allocation, which Metal refuses. It is now sized from max(I, 1).
+- **D4b-2: PASS.** With the blocks on, prompts of 8 and 15 tokens, below the floor of 16, equal the sequential loop from a reset state. Prompts of 16 and 20 take the pass and equal the blocks-off load.
+  - **A defect, found afterwards by OP4m-d4c's decoder-level test and fixed here.**
+    - A prompt at position 0 on the step route (`prefillByStepSrc`) did not zero the bound slot's recurrent state. Every other `PrefillLast` route does, as `Forward` at position 0 does. So on a warm slot, a short prompt started from the previous sequence's state.
+    - The first form of this test reset the slot itself before each prompt, which hid it.
+    - Now the step route resets at position 0. The test leaves the slot dirty with three tokens of its own first, and was red first: 256 of 256 last-row logits differed at 8 and 15 tokens on both fixtures.
+    - D4b-4's reading is unaffected: its cell fills its slots through `ForwardBatch`, not `PrefillLast`.
+- **D4b-3: PASS.**
+  - `gate identity -backend metal 3c6e4d56 1341e13d` (d4a's head against this branch): 28 IDENTICAL, 0 DIFFERENT, 15 NOT RUN, of 43 families, as before. Log: `docs/measurements/op4-2026-10/op4m-d4b-identity-metal.log`.
+  - `touched.py` 17/17, the censuses included.
+- **D4b-4: PASS** (Qwen3.5 0.8B from `~/models`, its HF directory loaded int4; the exclusive Mac lock; one attempt, 07:31:31 to 07:32:15 PST, no void).
+  - The fit check: reclaimable 5.69 GiB against need 1.53 GiB plus 2 GiB. Pairs started at 1-minute load 1.85 to 2.46, under the bar of 8.0.
+  - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128. The batched step ran at 198.1 to 204.6 tok/s, and sequential single-token decode at 124.8 to 130.3 tok/s.
+  - Ratios 1.5434 to 1.6282, median **1.5799**, **10 of 10 pairs faster**. Tokens were equal in every pair. The process's major faults held at 91,977 and swap at 236.1 MiB.
+  - Against the bar (median at least 1.05, at least 9 of 10 faster): **PASS**. The blocks may become an operator option. Like D3's, that switch is a follow-up, and so is the decoder's concurrency for a recurrent family (`EnableResidentConcurrency` and `ResidentBatchCapable` still refuse one).
+  - Log: `docs/measurements/op4-2026-10/op4m-d4b-speed-qwen35-0p8b.log`.
+- **Also in this branch:** `resident.chainEmbBase`, the memory guard's price of the build that the chained-embedding table is checked against, now prices every slot as `metalKVSlots` does (KV plus recurrent state). Before, it priced each further slot's KV alone.
+- **Gemini's review of #573, fixed** (log: `docs/measurements/op4-2026-10/op4m-d4b-tier0-review.log`, touched 17/17 and lint 7/7):
+  - **[test] a dense fixture.** `recurrentStepFixtures` gains the dense `decoder/testdata/qwen3_5-tiny` (tracked weights), loaded without the MoE block. It reads `program.MetalStepRecurrent`, the prompt bound's non-MoE branch, and a blocks-off arm that keeps the MoE block as the fixture has it.
+    - **It was red first, and found a defect:** a dense Qwen3.5 model with the recurrent blocks on built no step. The memory guard's headroom for the step's scratch was computed only for a one-slot or MoE-step build, so it was 0, and the scratch never fit. The build now computes it whenever the recurrent blocks are on.
+    - D4b-4's cell turns the MoE block on in both arms, so it did not see this.
+    - On the dense fixture: D4b-1 0 logits differ; both plants red; D4b-2 passes.
+  - **[bug] gated attention without DeltaNet.** Pricing and the prompt bound keyed on `r.dnet`, so such a model would have been admitted, unpriced, and left on the dense prompt range. They now key on `recurrentBlocks`: the blocks on, and a DeltaNet or gated-attention layer present. `TestMC3Step_recurrentBlocksWithoutDeltaNet` covers it on a hand-built resident, since no tracked fixture has that shape.
+  - **[bug] a model with no attention layer** passed admission, then failed sizing the step's attention scratch. Admission now declines it (`stepGeomLayer` returns -1). `TestMC3Step_recurrentNoAttentionDeclined` rewrites qwen3_5-tiny's attention layers as DeltaNet steps and checks the decline.
+  - **[nit] one slot's state.** The step's headroom and `chainEmbBase` now charge slot 0's recurrent state at any slot count. `metalKVSlots` keeps a one-slot load's admission as it was. `TestMC3Step_recurrentScratchPriced` covers it at one slot and at two.
+  - **Red first, as it went:** the dense-fixture tests were red first. The tests for the three code fixes above were written after them; they call a new helper (`recurrentBlocks`), so they cannot run on the previous head.
+
+**OP4m-d4c, 2026-11-01 (mac-sb11m, branch `op4m-d4c-2026-11-01`; the coordinator's job of 07:40): the recurrent blocks as an
+operator option, and the decoder's concurrency for a recurrent family.** It follows the MoE step's path: ordinary
+engineering, a red-first test, no timed cell. Its bar is D4b-4's.
+- **The option.** `decoder.Options.ResidentRecurrentStep`, with `Model.ResidentRecurrentStep`, set by the flag `--recurrent-step` in chat and serve, off by default.
+  - Metal reads it at the build, replacing d4b's test-only `recurrentStepOn`. It also computes the step's headroom with it on.
+  - The flag's metadata, `docs/flags.md`, the option grid, and the register, resolve and serve-options goldens are updated. The goldens gain only the new field and its `-recurrent-step` cases.
+- **Concurrency.** `EnableResidentConcurrency` and `ResidentBatchCapable` no longer refuse a recurrent family outright. They follow `residentSlotCount`, which is 1 for such a family unless its backend's table keeps the state per slot (OP4m-d4a) and the slots were asked for.
+- **Gate:** `TestOptionPathMetal_recurrentStep`, through `decoder.Load`, `EnableResidentConcurrency` and `Generate` on qwen35-tiny, at one and two slots.
+  - With the blocks on, generations equal the blocks-off model's in every token and log-probability.
+  - At two slots, two concurrent generations that decode together on the step (`StepSizes[2]`) each equal their own blocks-off run.
+  - It was red first: batch capable false.
+  - On the way it found the step route's missing reset at position 0, fixed in OP4m-d4b (above).
+- **Checked and not changed:** under MC3, a lone holder's greedy chain would leave a recurrent state advanced if stopped mid-generation. On this resident the chain never runs: 0 held tokens, in a greedy check with a second generation joining. So no guard was added.
+- **Checks:** the metal recurrent, MoE and option tests; the loadflags, serveapp and config tests; the option-grid tests; and the parity refresh (43 passed, 0 refreshed). Touched and lint: `docs/measurements/op4-2026-10/op4m-d4c-tier0.log`.
+- **Gemini's review of #574** (passing log: `docs/measurements/op4-2026-10/op4m-d4c-tier0-review.log`):
+  - **[risk] the chain under MC3:** safe by construction. Metal offers neither the greedy nor the sampled chain on a recurrent model (`greedyChainWhyNot`: a forward past the tokens given cannot be undone), and MC3's `holdSolo` runs only for a chainable token. `TestOptionPathMetal_recurrentNoChain` holds both off on all three fixtures with the blocks on.
+  - **[risk] a step row at position 0:** confirmed, and fixed red first.
+    - A step row at position 0 on a dirty slot ran from the previous sequence's state: 256 of 256 logits differed on all three fixtures.
+    - Through the decoder a new sequence enters by `PrefillLast`, which resets, but the step itself now zeroes the slot's DeltaNet state for any row at position 0 (`resetDeltaNetSlot`).
+    - `TestMC3Step_recurrentRowAtZeroStartsFresh`.
+  - **[risk] the cell's fit check** now prices every slot's KV and recurrent state, not one slot's KV. The readings stand: D4b-4 had 5.69 GiB reclaimable against 1.53 plus 2, and four slots at a 1,024 context add little to that.
+  - **[test]**
+    - `TestOptionPathMetal_recurrentStepDense` runs the option test on the dense qwen3_5 fixture, MoE off.
+    - The prompt-route test runs on slots 0 and 1, and compares the slot's recurrent state after the prompt, every element, besides the last-row logits.
+  - **[nit] the help text:** `--kv-sessions` is serve's alone, so the text now says concurrency in serve needs it, and goinfer-chat runs one conversation.
+**OP4m-d5a registered 2026-11-01, before its code (mac-sb11m; the coordinator's job of 08:28): Gemma 4's dense layers in the
+multi-sequence step, opt-in.** OP4m-d5 brings Gemma 4's blocks into the step. d5a is the first cut.
+- **The scope, measured first.** On gemma4-emodel-tiny, gemma4-dense-twogeom-tiny, gemma4-dense-scaled and Gemma 4 E2B (q4_0 GGUF), the programs lack these against the step's table:
+  - Gemma 4 attention;
+  - a norm on a sublayer's output;
+  - the Gemma 4 dense FFN form;
+  - the layer scale;
+  - on the E-models, the per-layer embedding (PLE) branch.
+  - E2B: hidden 1,536, FFN width 6,144, vocabulary 262,144, 35 layers, 20 of them sharing another layer's KV.
+- **The design: per-row whole layers.** Each Gemma 4 row runs its layer with decode's own encoder (`encodeLayerResidualWith`), so a row's layer is decode's, bit for bit.
+  - Bound while the row is encoded: the row's position uniforms, its slot's KV (a shared layer reads its source's, as decode does), its attention plan (`encNKeys`, `encFANSplit`), and its own PLE input (the row's `[h | L·P]` tail).
+  - The step batches the LM head (E2B's vocabulary is 262,144). The final softcap is applied on the host, as the step already does for a full row.
+  - No prompt or verify runs on the step for these models, since `stepPrefill` excludes a logit transform. So prefill is unchanged.
+- **Out of d5a:** Gemma 4's MoE block (26B-A4B, which does not fit this Mac), batching its dense FFN (d5b, if d5a's gain is thin), and the operator option (d5c).
+- **The switch is test-only** in this PR.
+- **Gates:**
+  - **D5a-1, bit-identity (tier 0):** on gemma4-emodel-tiny (PLE, shared KV), gemma4-dense-twogeom-tiny and gemma4-dense-scaled with the blocks on, four sequences at different depths, each on its own slot, stepped together 12 times, equal production's single-token forward on every logit.
+    - With the blocks off, none builds the step.
+    - Two plants, each red: every row's PLE input from row 0's; every row's attention at row 0's position.
+  - **D5a-2, off changes nothing:** the admission censuses, the MC3 suite and `gate identity -backend metal` are unchanged.
+  - **D5a-3, the feature bar (timed, exclusive Mac lock):** D3-3's cell (`op4mStepSpeed`) on Gemma 4 E2B from `~/models`: 4 sequences at depth 128, 64 tokens a run, A B B A over 10 pairs, tokens equal in every pair, the 2 GiB margin with every slot priced, and the process-fault void rule.
+    - **Pass:** median at least 1.05 with at least 9 of 10 pairs faster. **Fail:** median under 1.00. **Parked** otherwise.
+    - A void re-runs, listed and never averaged, up to six attempts.
+  - **D5a-4:** `touched.py` (its committed log ends in PASS), `go run ./cmd/lint`, vet and the citation lint.
+- **Stopping rule:** one run each; D5a-3 fixed N. **Cost:** seconds for D5a-1 and D5a-2; D5a-3 about 3 minutes plus the load.
+
+**OP4m-d5a: readings, 2026-11-01 (mac-sb11m, branch `op4m-d5-2026-11-01`; tier 0 under the shared Mac lock, D5a-3 under the
+exclusive one).**
+- **D5a-1: PASS.** On gemma4-emodel-tiny (PLE, layers sharing another's KV), gemma4-dense-twogeom-tiny and gemma4-dense-scaled with the blocks on, 4 sequences at depths 3, 7, 12 and 20, each on its own slot, stepped together 12 times, equal production's single-token forward on full rows (the PLE tail included): 0 logits differ. With the blocks off, none builds the step.
+  - **The plants, red:** every row's PLE input from row 0's, 8,925 logits differ on the E-model; every row's attention at row 0's position, 9,180 on each fixture.
+- **D5a-2: PASS.** `gate identity -backend metal e58d0184 425eaf7c`: 28 IDENTICAL, 0 DIFFERENT, 15 NOT RUN, of 43 families, as before. `touched.py` 16/16. Log: `docs/measurements/op4-2026-10/op4m-d5a-identity-metal.log`.
+- **D5a-3: PASS** (Gemma 4 E2B, its int4 Metal `.giw` from `~/models`; the exclusive Mac lock; 08:39:29 to 08:41:47 PST).
+  - A first start at 08:38:58 loaded the `.gguf` and was refused by the load's fit guard before any pair: the mapped checkpoint priced the load at 8.1 GB against a 7.9 GB budget. It is listed, not counted. The cell then loaded the `.giw` beside it, the Mac's form for a day run.
+  - The fit check: reclaimable 8.04 GiB against need 3.62 GiB (every slot's KV) plus 2 GiB. Pairs started at 1-minute load 0.77 to 1.47.
+  - Both arms take full rows and return logits to the host, as production decodes an E-model: its PLE tail comes from the host, and its logits are softcapped. `ForwardArgmax`'s device embedding would leave the PLE input stale.
+  - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128. The step ran at 48.5 to 49.6 tok/s, and sequential decode at 39.7 to 43.1 tok/s.
+  - Ratios 1.1337 to 1.2230, median **1.1375**, **10 of 10 pairs faster**. Tokens were equal in every pair. The process's major faults held at 230,043 and swap at 236.1 MiB.
+  - Against the bar (median at least 1.05, at least 9 of 10 faster): **PASS**.
+  - What it is: every layer still runs per row. The step batches only the LM head and the logits readback, so the gain is smaller than D4b-4's. Batching Gemma 4's dense FFN is d5b.
+  - Log: `docs/measurements/op4-2026-10/op4m-d5a-speed-gemma4-e2b.log`.
+- **Gemini's review of #579** (run queued behind tack's night and run at 13:11 PST; touched 16/16 and lint 7/7 in `docs/measurements/op4-2026-10/op4m-d5a-tier0-review.log`):
+  - **[risk] admission of a layer not run whole: fixed, red first.** The program-wide Gemma 4 table admitted Gemma 4 operations in any layer. A layer the step runs on its batched blocks is now held to those blocks' table (`CheckLayer`).
+    - `TestMC3Step_gemma4BatchedLayerHeldToTheBaseTable` rewrites a layer's Gemma 4 attention as plain attention. On the pre-fix head that layer was admitted; it is now declined on its sublayer-output norm.
+  - **[bug] pricing:** the PLE rows were already in the price, since `stepScratchBytes` runs on the built resident, where `pleIn` is allocated. The step's headroom is now computed only for a model with Gemma 4 attention.
+    - `TestMC3Step_gemma4ScratchPriced` passes on both heads. At two slots, the step is declined without room for its scratch and builds with it. The price holds the PLE rows, and the driver's allocation (573,440 bytes) is within the price (2,031,616).
+  - **[bug]** the embedding-length error names the row the step expects.
+  - **[risk] the cell's fit check** counts the step's scratch once the build sizes it. The D5a-3 reading stands: 8.04 GiB reclaimable against 3.62 plus 2.
+
+**OP4m-d5b registered 2026-11-01, before its code (mac-sb11m; the coordinator's job after #579): Gemma 4's dense FFN partly
+batched in the step.** D5a-3 read 1.1375 with every layer per row, and only the head batched.
+- **The scope, measured first** (gemma4-emodel-tiny, gemma4-dense-scaled, Gemma 4 E2B):
+  - Every Gemma 4 layer is a sandwich layer. Its FFN is: the input norm, the fused gate|up GEMV, the GLU activation, the down GEMV into scratch (`pGemv`), the post-MLP norm, and the residual add.
+  - The FFN width varies by layer: on E2B, 20 layers are 12,288 wide and 15 are 6,144.
+  - No layer is on the f16 or the q4k lane, and none is int8.
+- **The design.** The attention half, PLE and layer scale stay per row, as in d5a. The FFN runs in three parts:
+  - **Batched:** the input norm, gate|up and the activation, on the step's existing kernels at each layer's own width. These are the step's dense-FFN pieces, which MC3 holds bit-identical to decode's at the same width.
+  - **Per row, on decode's own dispatches:** the down GEMV into each row's scratch (`pGemv`), the post-MLP norm, and the residual add.
+  - The down GEMV stays per row because the step's batched down kernel is fused with the residual, and it matches decode's staged kernel, not the sandwich layer's `pGemv`. So batching it would change the arithmetic.
+  - Gate|up is two thirds of the FFN's weight reads.
+- **Gates:**
+  - **D5b-1, bit-identity (tier 0):** D5a-1 on the same three fixtures, with the FFN split: 0 logits differ. Plant: every row's down projection from row 0's activation, red.
+  - **D5b-2, off changes nothing:** `gate identity -backend metal`, and D5a-1 with the split switched off.
+  - **D5b-3, the feature bar (timed, exclusive Mac lock):** D5a-3's cell on Gemma 4 E2B, the split against d5a's per-row layers as the do-nothing arm. Both arms run on the step, A B B A over 10 pairs, tokens equal.
+    - **Pass:** median at least 1.05 with at least 9 of 10 pairs faster. **Fail:** median under 1.00. **Parked** otherwise.
+  - **D5b-4:** `touched.py` (its committed log ends in PASS), `go run ./cmd/lint`, vet and the citation lint.
+- **Stopping rule:** one run each; D5b-3 fixed N. **Cost:** seconds for D5b-1 and D5b-2; D5b-3 about 4 minutes plus the load.
+
+**OP4m-d5b: readings, 2026-11-01 (mac-sb11m, branch `op4m-d5b-2026-11-01`; tier 0 under the shared Mac lock, D5b-3 under the
+exclusive one).**
+- **D5b-1: PASS.** On the three Gemma 4 fixtures, the split engages on every layer (the test asserts it, so a fallback to whole layers cannot pass it), and 4 sequences stepped together 12 times equal production's single-token forward: 0 logits differ. The plant (every row's down projection from row 0's activation) is red: 9,180 logits differ on each fixture.
+- **D5b-2: PASS.** With the split off (d5a's form), the same check gives 0 logits differ. The step's other paths are unchanged (the MC3, MoE and recurrent suites in the run below).
+- **D5b-3: PASS** (Gemma 4 E2B, int4 Metal `.giw`; the exclusive Mac lock; 13:31:24 to 13:33:24 PST, no void).
+  - The fit check: reclaimable 6.64 GiB against need 3.62 GiB plus 2 GiB. Pairs started at 1-minute load 0.70 to 1.92.
+  - Both arms are the step on full rows, A B B A over 10 pairs of 64 greedy tokens of 4 sequences at depth 128: the split at 59.0 to 59.3 tok/s, against d5a's whole per-row layers at 48.5 to 48.8 tok/s.
+  - Ratios 1.2131 to 1.2190, median **1.2156**, **10 of 10 pairs faster**. Tokens were equal in every pair. The process's major faults held at 101,185 and swap at 236.1 MiB.
+  - Against the bar: **PASS**.
+  - This is the gain over d5a's step, in one session. It is not multiplied with D5a-3's 1.1375, which was another session's (a cross-session ratio is not a ratio).
+  - Log: `docs/measurements/op4-2026-10/op4m-d5b-speed-gemma4-e2b.log`.
+- **Gemini's review of #581** (log: `docs/measurements/op4-2026-10/op4m-d5b-tier0-review.log`, touched 13/13 and lint 7/7):
+  - **[test]** The speed cell left the split switch off after `TestOP4mD5b_gemma4FFNSplitSpeed`: each run's `defer stepArms(false)` set `gemma4FFNSplitOffForTest`. So with `GOINFER_OP4MD5B_MODEL` set, a later identity test in the same run would have run with the split off.
+    - The defer is gone, since each run sets its own arm, and the test now restores the switch itself.
+    - Not red first: the cell runs only with a model and the timing lock.
+  - **[doc]** The D5b-1 plant's scope line now says what the code plants: every row's down projection from row 0's activation.
+  - **[nit, noted]** `b.rowsGU`, the calibrated per-row-or-batched crossover, is one threshold for layers 6,144 and 12,288 wide. The output is bit-identical either way, and B = 4 takes the same kernel at both widths.
+- **Next:** d5c, the operator option for the Gemma 4 blocks (as d4c was for DeltaNet), and a read of the step against sequential decode with the split in, in one session.
+
+**OP4m-d5c registered 2026-11-01 14:01:12 PST (the commit's time, fd722330), before its code and its cell (mac-sb11m; the coordinator's job): the Gemma 4 step
+blocks as an operator option, and their speed against sequential decode in one session.**
+- **D5c-1, the read (timed, exclusive Mac lock):** D5a-3's cell (`TestOP4mD5a_gemma4StepSpeed`) on Gemma 4 E2B, now with d5b's split in: the step against sequential decode, both on full rows, A B B A over 10 pairs, tokens equal.
+  - The bar is the feature bar: median at least 1.05 with at least 9 of 10 pairs faster.
+  - This one-session figure replaces the product of D5a-3's and D5b-3's readings, which were two sessions.
+- **The option (ordinary engineering, red first; as OP4m-d4c):** `decoder.Options.ResidentGemma4Step` and the flag `--gemma4-step` (chat and serve), off by default. Metal reads it at the build in place of the test-only `gemma4StepOn`.
+  - The decoder's concurrency for Gemma 4 needs no change: it is not a recurrent family.
+  - Gate: an option test through `decoder.Load`, `EnableResidentConcurrency` and `Generate` on gemma4-emodel-tiny, at one and two slots. With the blocks on, generations equal the blocks-off model's in every token and log-probability, and two concurrent generations decode together on the step.
+  - Plus the flag goldens, docs and option grid, and touched (its committed log ends in PASS).
+- **Stopping rule:** one run each. **Cost:** D5c-1 about 4 minutes plus the load; the rest seconds.
+
+**OP4m-d5c: readings, 2026-11-01 (mac-sb11m, branch `op4m-d5c-2026-11-01`).**
+- **D5c-1: PASS** (Gemma 4 E2B, int4 Metal `.giw`; the exclusive Mac lock; 14:01:21 to 14:03:29 PST, no void; d5b's split in).
+  - The fit check: reclaimable 5.79 GiB against need 3.62 GiB plus 2 GiB. Pairs started at 1-minute load 1.96 to 2.99.
+  - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128, both arms on full rows. The step ran at 58.8 to 59.5 tok/s, and sequential decode at 42.8 to 43.2 tok/s.
+  - Ratios 1.3662 to 1.3847, median **1.3794**, **10 of 10 pairs faster**. Tokens were equal in every pair. The process's major faults held at 231,473 and swap at 236.1 MiB.
+  - This is the one-session figure for Gemma 4 E2B on the step. It replaces the product of D5a-3 (1.1375) and D5b-3 (1.2156).
+  - Log: `docs/measurements/op4-2026-10/op4m-d5c-speed-gemma4-e2b.log`.
+  - **The order, from the commit and the run script's console stamps** (the committed log carries no clock; corrected from a first draft of this record that gave the registration as 14:06):
+    - 14:01:12 PST, the registration committed (fd722330), naming this cell: D5a-3's `TestOP4mD5a_gemma4StepSpeed`, reused, not a new one.
+    - 14:01:21, the cell's binary built from that commit, which had d5b's split and none of d5c's code.
+    - 14:01:21 to 14:03:29, the ten pairs.
+    - After that, the option's code. Then `touched.py` at 14:05:56.
+    - So the registration came before the cell, by nine seconds, and the cell measured the step as d5b left it. The option changes no arithmetic.
+- **The option.**
+  - `decoder.Options.ResidentGemma4Step`, with `Model.ResidentGemma4Step`, is set by `--gemma4-step` in chat and serve, off by default. Metal reads it at the build in place of `gemma4StepOn`, which is gone.
+  - Also updated: the flag's metadata and `docs/flags.md`, the option grid, and the register, resolve and serve-options goldens.
+  - **`TestOptionPathMetal_gemma4Step`** goes through `decoder.Load`, `EnableResidentConcurrency` and `Generate` on gemma4-emodel-tiny. At one and two slots, generations equal the blocks-off model's in every token and log-probability. At two slots, two concurrent generations decode together on the step, each equal to its own blocks-off run.
+  - Not red first: the option did not exist before this change.
+  - The Gemma 4 step suite, the MoE and recurrent option tests, the loadflags, serveapp and config tests, and the option grid all pass. The parity refresh: 43 passed, 0 refreshed.
+- **Gemini's review of #583, fixed:**
+  - **[record]** The order above, corrected.
+  - **[test]** gemma4-emodel-tiny mixes FFN widths (ffnI 256 and 512, with I = 256), so tier 0 already ran the multi-width path. It now asserts that:
+    - `TestMC3Step_gemma4BitIdentical` checks for two or more width uniforms and a step width above I.
+    - `TestMC3Step_gemma4ScratchPriced` checks that the price holds the widest layer's gate|up rows.
+    - Not red first: these assert a property the fixture has.
+  - **[nit]** `Gemma4StepHelp` now says that at one KV slot (goinfer-chat) the scratch is allocated but not used, since the softcap keeps prompts off the step.
+  - Gemma 4 step tests, `touched.py` 17/17 and the lint 7/7: `docs/measurements/op4-2026-10/op4m-d5c-tier0-review.log`, which ends in PASS.
+- **Gemini's second pass, folded into OP4m-d6's PR:**
+  - **[test]** The scratch test now re-prices with every layer's width clamped to I, and the difference must equal the width-dependent terms exactly (guB, dqB, the width uniforms, and swB on the q4k lane).
+    - It was red first: with guB planted at I, the difference was 16,384 bytes against 32,768.
+    - The earlier at-least check had passed that plant, because the width uniform's page covered the gap.
+    - On this fixture, dqB rounds to one page at either width, so a dqB priced at I would not show here.
+  - **[nit]** `aT`'s widest K stays I, now commented at the build: a Gemma 4 layer's down projection at its own width runs per row, off `aT`.
+
+**OP4m-d6 registered 2026-11-01, before its code (mac-sb11m; the coordinator's job after #583 merged; the commit's time is the
+registration's): Mamba-2 (Nemotron-H) in the multi-sequence step, opt-in.** It follows OP4m-d4's path: per-slot state first, then the step's block.
+- **The scope, measured first.** Against the step's tables, nemotron-tiny's program lacks two things: `mamba2`, and the non-gated FFN (ReLU²). nemotron3nano-tiny also lacks the Nemotron MoE form, which stays out of scope. Attention is NoPE, which the step already takes.
+- **d6a, per-slot Mamba-2 state (tier 0, red first; ordinary engineering).**
+  - Metal's `RecurrentSlots` gains `OpMamba2`: `useKVSlot` binds the slot's conv window and SSM state, and a reset zeroes the bound slot's.
+  - The recurrent checkpoint (KV8a) copies the bound slot's Mamba state, and a restore into another slot is refused.
+  - Each further slot is priced with its Mamba state, as d4a priced DeltaNet's: about 91 MB a slot on Nemotron-H 4B, and 146 MB on the 9B.
+  - **D6a-1, D6a-2:** on nemotron-tiny with two slots, two sequences interleaved on slots 0 and 1 each equal their solo run on a one-slot resident, every logit. The plant, both slots on slot 0's state, goes red.
+  - **D6a-3, D6a-4:** Nemotron-H gets its slots on Metal when asked, keeps one on CUDA and WebGPU, and keeps one at the default request.
+  - **D6a-5:** the per-slot price equals slot 1's allocated buffers to the byte, and the checkpoint stays with its slot.
+- **d6b, the step's blocks, under `--recurrent-step`** (the existing option, off by default; its help gains Nemotron-H).
+  - **The Mamba-2 row** runs decode's `encodeMambaMixer` dispatches on the row's residual, against its own slot's state. A row at position 0 zeroes its slot's state first, and so does the step's prompt route (the defects d4b and d4c found).
+  - **The non-gated FFN** batches its front, as d5b batched Gemma 4's: the norm and the up projection on the step's batched kernels, then ReLU² and the quantization per row, and the down projection per row on decode's own kernel. If the batched up projection cannot equal decode's bit for bit, the whole FFN runs per row, and the bar decides.
+  - **Why the front must batch:** with Mamba and the FFN both per row, only the LM head would be shared. From bytes read, that is under 1.05 on the 4B.
+  - **D6b-1, bit-identity:** on nemotron-tiny, four sequences at different depths, each on its own slot, stepped together 12 times equal production's single-token forward on every logit. With the blocks off, no step builds. Plants, each red: every row's Mamba on slot 0's state; every row's ReLU² input from row 0.
+  - **D6b-2:** a prompt below the floor, on a dirty slot, equals the sequential loop.
+  - **D6b-3, off changes nothing:** the admission censuses, the MC3 suite and `gate identity -backend metal`.
+  - **D6b-4:** `TestOptionPathMetal_recurrentStep` on nemotron-tiny, through `decoder.Load` and `Generate`: two concurrent generations each equal their own blocks-off run.
+  - **D6b-5, the feature bar (timed, exclusive Mac lock):** D4b-4's cell on Nemotron-H 4B Instruct: an int4 Metal `.giw` read from `~/models`, built on nobara by its session. 4 sequences at depth 128, 64 tokens a run, A B B A over 10 pairs, tokens equal in every pair.
+    - Fit-checked first: reclaimable must cover need plus 2 GiB. A refused load is VOID, and the cell moves to `night.py` once.
+    - A pair voids on the process's major faults or swap growth.
+    - **Pass:** median at least 1.05, with at least 9 of 10 pairs faster. **Fail:** median under 1.00. **Parked** otherwise.
+  - **D6b-6:** `touched.py`, `go run ./cmd/lint`, vet and the citation lint, for both parts.
+- **Stopping rule:** one run each; D6b-5 fixed N, a void re-runs up to six attempts, listed. **Cost:** seconds for tier 0; D6b-5 about 4 minutes plus the load.
+
+**OP4m-d6a: readings, 2026-11-01 (mac-sb11m, branch `op4m-d6-2026-11-01`; tier 0 under the shared Mac lock).**
+- **The change.**
+  - `program.Metal.RecurrentSlots` lists `OpMamba2` beside `OpDeltaNet`.
+  - `allocRecurrentSlots` gives each Mamba-2 layer a conv window and SSM state per KV slot, and `useKVSlot` binds the slot's.
+  - `metalRecurrentSlotBytes` adds `metalMambaSlotBytes`.
+  - The checkpoint and the reset already read the bound slot's buffers, so they needed no change.
+- **Red first.** Only the new fields were declared, with no table entry and no allocation. The d4a tests, now run on nemotron-tiny too, failed on every nemotron-tiny case: "1 KV slots on a recurrent model that asked for 2", a per-slot price with "a recurrent state of 0", and "KV slot 1 out of range". `TestSupport_recurrentSlotsCover` and the decoder's `TestResidentKVSlotsRequestFor_recurrentSlotsByTable` failed too. The DeltaNet cases passed throughout.
+- **D6a-1 and D6a-2: PASS.** On nemotron-tiny with two slots, two 12-token sequences interleaved on slots 0 and 1 each equal their solo run, 0 logits differ (`TestRecurrentSlots_sequencesKeepTheirOwnState`). The plant, both slots on slot 0's state, is red (`TestRecurrentSlots_sharedStateGoesRed`).
+- **D6a-3 and D6a-4: PASS.**
+  - Through `decoder.Load`, nemotron-tiny gets 3 slots on Metal, and 1 on CUDA, WebGPU and the no-backend request.
+  - At the caller's default request it keeps 1, on Metal too.
+  - KDA, alone or beside DeltaNet, is still not covered.
+- **D6a-5: PASS.**
+  - Slot 1's Mamba-2 buffers equal the price, to the byte. A ceiling one byte short of a second slot's price grants one slot.
+  - The checkpoint saved on slot 1 is refused on slot 0 and restores on slot 1.
+  - A reset with slot 1 bound zeroes slot 1's state and leaves slot 0's.
+- **Changed on purpose:** gate S (`TestNemotronResident_slots`) now expects the 4 slots asked for, not 1. The step still declines Nemotron-H, and the turn-taking check and its plant are unchanged.
+- **Checks:** the Metal recurrent, Nemotron, KV8a, guard and option tests (72 pass); `internal/runtime/program`; the decoder's slot and recurrent tests; `touched.py` 16/16 and the lint 7/7. Log: `docs/measurements/op4-2026-10/op4m-d6a-tier0.log`, which ends in PASS.
+
+**OP4m-d6b: tier-0 readings, 2026-11-01 (mac-sb11m, branch `op4m-d6b-2026-11-01`, stacked on d6a's #590; under the shared Mac lock). D6b-5, the timed cell, waits on its checkpoint.**
+- **The change.**
+  - `MetalStepRecurrent` and `MetalStepRecurrentMoE` gain `OpMamba2` and the non-gated FFN at ReLU².
+  - The admission takes a layer of one mixer step, one FFN step, or a mixer then an FFN (`stepLayerShapeOK`), since Nemotron-H's layers are one step each.
+  - `recurrentBlocks` counts a Mamba-2 model, so its step is priced and its prompts take the step only below the floor.
+  - A step row at position 0 zeroes its slot's DeltaNet and Mamba-2 state (`resetRecurrentSlot`).
+- **The blocks.**
+  - **Mamba-2:** each row runs decode's dispatches (`encodeMambaMixerOn`) against its own slot's window and state.
+  - **The non-gated FFN** (`encodeNonGatedFFNRows`) batches the input norm and the up projection. Below the calibrated size, the up projection is decode's own SA-bias GEMV per row; above it, the step's batched kernel in its bias mode (`mc3_bt` mode 1). Both compute `acc·scale + bias` as `gemv_w4a8_sa_bias` does.
+  - Each row's ReLU² quantization and its down projection, fused with the residual, run on decode's own kernels.
+- **Red first.** With the tests extended to nemotron-tiny and only the plant switches declared, every nemotron-tiny case failed: "layer 0: operation 1 (mamba2): metal's batched step has no step for it".
+- **D6b-1: PASS.** On nemotron-tiny with the blocks on, 4 sequences at depths 3, 11, 20 and 40, each on its own slot, stepped together 12 times, equal production's single-token forward: 0 logits differ. With the blocks off, no step builds.
+  - The same holds with the up projection forced onto each path, per row and batched (`TestMC3Step_nonGatedFFNBothUpPaths`).
+  - **Plants, red:** every row's Mamba-2 on slot 0's state, 12,032 logits differ; every row's ReLU² input from row 0, 9,216, on both up paths.
+  - The plants that do not apply to a fixture are skipped and named: DeltaNet's and gated attention's on nemotron-tiny, and Mamba-2's and the FFN's on the Qwen3.5 fixtures.
+- **D6b-2: PASS.** On a dirty slot, prompts below the floor equal the sequential loop, and prompts at or above it equal the blocks-off load, on slots 0 and 1. The slot's recurrent state after the prompt is equal too, every element. A row at position 0 starts from a zeroed state.
+  - **Checked once, by a throwaway test not committed:** with the Mamba-2 reset planted off (`mambaResetSkipForTest`), both the position-0 test and the prompt-route test go red on nemotron-tiny, 256 of 256 logits. So both see a missing Mamba-2 reset.
+- **D6b-3: PASS.** `gate identity -backend metal 8e4beaa0 a6e2da73` (d6a's head against d6b's): 28 IDENTICAL, 0 DIFFERENT, 15 NOT RUN, of 43 families. `TestBackendAdmissionCensus_metal` and the decoder's census are unchanged. The parity refresh: 43 passed, 0 refreshed.
+- **D6b-4: PASS.** `TestOptionPathMetal_recurrentStepMamba` covers nemotron-tiny through `decoder.Load` and `Generate`. Generations equal the blocks-off model's at one and two slots, and two concurrent generations on the step each equal their own run. `TestOptionPathMetal_recurrentNoChain` holds nemotron-tiny off both chains.
+- **The option:** `--recurrent-step`'s help, `Options.ResidentRecurrentStep`, the option grid and the flag's summary in `docs/flags.meta.json` name Nemotron-H. The register golden, `docs/option-state-grid.md` and `docs/flags.md` were regenerated. `docs/flags.md` is built from the metadata's summary, not the help, so it changed only with the summary, in the review fixes below; this line first said it had been regenerated when the regeneration had changed nothing.
+- **Checks:** the Metal MC3, option, slot, Nemotron, KV8a, guard and admission-census tests (176 pass); the decoder's option-grid, slot, recurrent and census tests; `internal/runtime/program`, loadflags, serveapp and config; `touched.py` 17/17 and the lint 7/7. Log: `docs/measurements/op4-2026-10/op4m-d6b-tier0.log`, which ends in PASS.
+- **Gemini's review of #590, folded in here:**
+  - **[test]** `TestMC3Step_gemma4ScratchPriced` now re-prices three cases, each requiring the terms it names to grow by at least a page:
+    - the fixture's widths: guB;
+    - its widest layer widened to 4,128 (B rows of it span more pages than B rows of I): guB and dqB;
+    - that width on the q4k lane: also swB.
+  - It was red first, with each plant on its own:
+    - dqB priced at I: a difference of 294,912 against 327,680 widened, and 425,984 against 458,752 on the lane;
+    - swB priced at I: 327,680 against 458,752.
+  - **[nit]** `TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest`'s comment now says that an unlisted recurrent kind on Metal (KDA) is `TestSupport_recurrentSlotsCover`'s alone. The decoder's table test covers the backends whose table lists none.
+  - Log: `docs/measurements/op4-2026-10/op4m-d6b-tier0-review.log`, which ends in PASS.
+- **Gemini's review of #591, fixed** (log: `docs/measurements/op4-2026-10/op4m-d6b-tier0-review2.log`, which ends in PASS):
+  - **[bug] `docs/flags.md`** is built from `docs/flags.meta.json`'s summary. The summary now names Nemotron-H, and the page is regenerated.
+  - **[bug] admission against `recurrentBlocks`.**
+    - `stepLayerShapeOK` had admitted a layer of one step with the recurrent blocks off, and the non-gated FFN with them on, on a model `recurrentBlocks` does not count. The pricing and the prompt route follow `recurrentBlocks`, so they disagreed with the admission.
+    - It now admits the hybrids' shapes (a DeltaNet or Mamba-2 mixer, the non-gated FFN, and a layer of one step) only where `recurrentBlocks` holds.
+    - `TestMC3Step_recurrentShapesNeedRecurrentBlocks` rewrites the dense MC3 fixture two ways: every layer a single attention step, and every dense FFN the non-gated one. It checks each with the blocks off and on.
+    - Red first, with the tests committed before the fix (94696359): 3 of the 4 cases were admitted. The non-gated FFN with the blocks off was already declined. At the fix (81e0a6b4), all 4 are declined.
+  - **[test] the step's Mamba-2 reset plant** is committed as `TestMC3Step_recurrentRowAtZeroPlantGoesRed`. With `mambaResetSkipForTest` set around the step alone, the row on the dirty slot differs from a fresh sequence: 256 logits, against 0 on the clean slot.
+  - Checks: the Metal MC3, option, Nemotron and slot tests (161 pass), serveapp, `touched.py` 17/17 and the lint 7/7.
+
+### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
+
+Scoped by nobara-sb01 at the coordinator's job of 08:52 on 2026-11-01. It is the CUDA counterpart of §4.9. Its direction
+and its size go to Francis through the coordinator before any code. Read at main `c9dc25d91`. The steps are named
+**OP4cu-…**, so they do not collide with Metal's OP4m-… names.
+
+**Preconditions, both met.**
+- **OP3 is merged**, and so is Metal's OP4m-a. `internal/runtime/program` exists, `decoder.Model.Program()` returns a model's
+  program, and `internal/runtime/program.Support` is the operation table.
+- **KV4a is merged** (#138, 2026-10-22). §4.7 put CUDA's walk after KV4a, so that the walk and KV4's block tables rebase
+  onto each other once. The walk inherits the block tables as they are: the bound slot's `kvTabSlot`, read through
+  `decodeAttnGap`.
+
+**What KV4 still leaves, checked in the tree today.** None of it is on OP4's path:
+- §5.16's vendor extension saying where a reuse came from is absent. `usage.prefill_reused_tokens` is the only reuse field
+  (`internal/app/serveapp/openai.go`).
+- §5.16's `serve check` row is absent: `internal/guard/servecheck` has no reuse or preamble row.
+- The pool banner is partial. `backend/cuda/kvpool.go:cudaResident.kvPoolLine` names the positions, blocks and conversations, but not
+  the precision, bytes, groups or sharing scope.
+
+These three are KV4's own close-out (S, serve-side, tier 0 plus one served check). Only the banner touches a file OP4 reads
+(`backend/cuda/kvpool.go`), and the walk does not change it.
+
+**What CUDA has today.**
+- **The build reads the layer shape from accessors.** `backend/cuda/backend.go:cudaBackend.buildResidentMode` takes the model-level
+  placements from accessors at build: `SandwichNormResident`, `PostOnlyNormResident`, `QKNormWholeResident`,
+  `LayerNormResident`, `ParallelBlockResident` and `LogitScaleResident`. It also reads the per-layer geometry ones and the
+  family ones (`IsGemma4Resident`, `HasGemma4MoEResident`, `GptOssActResident`, the MLA, DeltaNet and Mamba-2 parameter
+  sets). Each layer's kind comes from `decoder.Model.ResidentLayerOps`, the two-fact layer view OP2b added (a mixer, and
+  whether an FFN follows). The function has 61 `declined(...)` sites.
+- **Decode is segmented** (`backend/cuda/resident.go:cudaResident.launchToken`). Each layer runs:
+  - `segA`: the input norm, q/k/v and the QK-norm;
+  - the dynamic gap `decodeAttnGap`: rope, the KV store into the bound slot, and attention by lane;
+  - `segB`: the output projection and the FFN up to the router readback;
+  - `layerTail`: the router readback and expert DMA, then `segC`.
+
+  DeltaNet layers run `deltaNetMixer` and `segBFFN`, Nemotron-H's blocks run `mambaMixer` or `nonGatedMLP`, and MLA runs
+  `segAMLA`. CUDA graphs capture the static segments per layer (`cudaLayer.gSegA`, `gSegB`, `gSegC` in
+  `cudaResident.captureGraphs`). Graphs are off by default on this card: `admitGraphs` declines in the DEFAULT compute
+  mode. The gpu gate's `graphsforced` group checks that a replay equals the live launches.
+- **Every batched entry point is one function**, `backend/cuda/prefill.go:cudaResident.prefillCore`, about 890 lines. Its callers are
+  the prefill entry points, `ResidualAll`, `PrefillLastN`, batched verify and MC3's multi-sequence step
+  (`backend/cuda/batchstep.go:cudaResident.StepBatch`, `rows != nil`). It branches on each layer's kind: DeltaNet rows, the
+  per-row MoE FFN, PLE, K=V. `nonBatchableKind` sends the Mamba-2 mixer and FFN-only blocks to the sequential path.
+- **The step's scope is a flag list.** `cudaResident.BatchStepRange` excludes MoE (C′ expert streaming included), MLA, the
+  recurrent families, a model with no batched prefill, and a model with one slot.
+- **Admission is the feature set.** `decoder/features.go:residentBackendFeatures` gives `"cuda"` 30 features, checked through
+  `Model.MissingResidentFeatures` at the top of the build. Beside them sit `residentGateReasons`' non-feature gates (the
+  activation hazard, router capacity, per-layer geometry) and the build's numeric declines. These include the per-32
+  activation lane's five family declines, MoE int4 widths and int4-only experts. `residentBackendTables` holds only
+  `program.Metal`. `RecurrentSlots` is empty for CUDA, so a recurrent family keeps one slot.
+- **The cost basis for identity.** `go run ./cmd/gate identity -backend cuda` on the tiny assets takes 3m42s–3m43s and reads
+  28–29 IDENTICAL, 0 different and 14–15 NOT RUN (`docs/measurements/op2b-cuda-2026-10-16/step2a-2026-10-16.md`;
+  `docs/measurements/kv7-step2-2026-10-17/README.md`). The NOT RUN are CUDA's declines and fixture gaps. It needs the card.
+- **The files are hot.** Since 2026-10-18, main has 65 commits touching `backend/cuda/resident.go`, 55 touching `backend/cuda/backend.go` and
+  21 touching `backend/cuda/prefill.go`. Each step below is one PR on a short-lived branch, merged with `main` merged in, never rebased.
+
+**The steps, each its own PR with its own reading:**
+- **OP4cu-a, the program reaches CUDA.** The resident holds `decoder.Model.Program()` at build, read-only, as Metal's
+  `resident.prog` does, and dispatches nothing from it. `cuda` imports `internal/runtime/program`, a new arrow in
+  `internal/layout/imports.json`, permitted by §9's table.
+- **OP4cu-b1, the shape comes from the program.** A function in `cuda` derives the model-level placements and each layer's
+  mixer and FFN from the program, as OP4m-b1 did for Metal (`backend/metal/program_shape.go`). `buildResidentMode` stops calling
+  those accessors and `ResidentLayerOps`. They stay for WebGPU, and `ResidentLayerOps` for Metal's one remaining read. A layer
+  whose operations match no shape the build implements declines, naming the layer and the operation. b1 changes no dispatch.
+- **OP4cu-b2, decode walks the program.** At build, each layer's operation list is matched against a fusion table into steps,
+  and `launchToken`'s layer loop runs the steps. Each step is one of today's blocks and emits exactly its launches in the
+  same order: `segA`, the attention gap, `segB` or `segBFFN`, `layerTail`, the DeltaNet, Mamba-2 and MLA mixers, the
+  FFN-only block, and the MoE and Gemma 4 FFN halves. The table records which steps are static, so graph capture wraps the
+  same launch runs as today (question 2).
+- **OP4cu-c1, CUDA's operation table.** `program.CUDA`, a `Support` for CUDA's walker, is read by the build. A tier-0 test
+  checks that every fixture program the table admits is one the build's steps accept, and the reverse. No decline text
+  changes.
+- **OP4cu-c2, admission by operation.** `Admit` declines CUDA on `program.CUDA` (`residentBackendTables` gains `"cuda"`), and
+  CUDA's entry in `residentBackendFeatures` goes. The decline texts change, each listed old and new. The non-operation gates
+  and the numeric declines stay, as in OP4m-c.
+- **OP4cu-d1, batched prefill walks the program.** `prefillCore`'s per-layer kind branches become the layers' steps through a
+  table of the batched pass's blocks, each emitting today's launches. The MC3 step rides on it, since `StepBatch` is
+  `prefillCore` with rows.
+- **OP4cu-d2, the step admitted by a table.** `BatchStepRange`'s flag list becomes `program.CUDAStep`, a second `Support`,
+  as OP4m-d2's `MetalStep`. The step's own limits stay checks: one slot, no batched prefill, and the per-32 lane. No model's
+  range changes.
+- **Not in this plan, each a later decision with its own bar.** These are new capabilities rather than the walk:
+  - MoE in the step (Metal's OP4m-d3);
+  - per-slot recurrent state and the recurrent blocks in the step (OP4m-d4a to d4c). On CUDA this meets B35's and KV8a's
+    recurrent checkpoints, which are tied to one slot;
+  - batched kernels for the Mamba-2 mixer and the FFN-only block;
+  - the memory planner, which comes last per §4.7.
+
+**Francis's decision (2026-11-01 13:51 PST, relayed by the coordinator): GO on OP4 on CUDA as scoped here (#580).** Q2 (a), one
+fusion table whose entries are today's static and dynamic segments; Q3 (a), a `program.CUDA` operation table; Q4 (a), stop at
+OP4cu-d2 and report before going further. Rules: card time under 2 hours in all, under nobara's timing lock; no night job; each
+step a PR from `main`, which the coordinator reviews (with Gemini) and merges.
+
+**Design questions (Francis's call, through the coordinator, before the step that needs each):**
+1. **Where CUDA reads the program from.** Decided for every backend by OP4m-a's (a), Francis, 2026-10-30 09:22:
+   `internal/runtime/program`, through `decoder.Model.Program()`. Nothing new to decide. One CUDA detail: `ResidentLayerOps` is
+   then derived, not read. It stays in decoder while Metal and WebGPU call it.
+2. **How the walk keeps CUDA graphs** (before OP4cu-b2).
+   - (a) **The fusion table's entries are today's segments.** Each step carries a static or dynamic mark, and capture wraps
+     each maximal run of static steps that today's capture wraps, layer by layer.
+     - Pros: graph capture stays byte for byte the same launch runs, so `graphsforced` is a direct check. It mirrors OP4m-b2,
+       whose entries are today's fused blocks.
+     - Cons: the table keeps CUDA's segment boundaries as a fact beside the operations.
+   - (b) **Per-operation steps,** with segment boundaries derived from which operations are position-dependent (rope,
+     attention, the router readback).
+     - Pros: no second fact; a new operation finds its segment by itself.
+     - Cons: a launch run can split or merge differently from today. Graphs are off by default, so a mistake would show only
+       in `graphsforced`, and nothing else would catch it in production use.
+   - (c) **Walk only the live path,** and keep graph capture on the hand-written segments.
+     - Pros: the smallest.
+     - Cons: two dispatch paths stay, which is what OP4 ends.
+   - **Recommendation: (a).** It is Metal's shape, and it keeps one dispatch path whose captured form is checkable today.
+3. **Admission** (before OP4cu-c1).
+   - (a) **An operation table, as OP4m-c's (a):** `program.CUDA`, read by `Admit` and by CUDA's walker, with the tier-0 test
+     that the two agree.
+   - (b) **An admission hook from the backend.** The `cuda` module is build-tagged, so on CI the matrices and the census
+     would not see CUDA's answer. That is OP4m-c's reason against (b), and it holds here too.
+   - (c) **Keep the features,** plus a test that they agree with the walker.
+   - **Recommendation: (a),** as Metal chose (the coordinator under Francis's standing rule, 2026-10-30 20:50). One CUDA
+     point to decide with it: CUDA's per-32 activation lane declines five families by name. Recommended: it stays a numeric
+     gate, as Metal's q4k lane shape did, and is not encoded as table parameters.
+4. **How far OP4 on CUDA goes in this plan** (before OP4cu-d1).
+   - (a) **Stop at d2:** the walk, admission and the step's table, all behaviour-neutral.
+   - (b) **Also take MoE in the step and per-slot recurrent state,** as Metal's d3 and d4 did.
+   - **Recommendation: (a).** The capabilities in (b) each need a registered bar on the card, and on CUDA they meet C′
+     expert streaming and B35's checkpoints. Each is its own item once (a) has landed, at Francis's call.
+
+**Gates (every step; a family or cell a gate cannot reach is listed NOT RUN, never counted as a pass):**
+- **U1, identity (tier 0, the card):** `gate identity -backend cuda <step's base> <step>` on the tiny assets, with fixtures
+  copied by `worktree_fixtures.sh`. **Pass:** every family that runs is IDENTICAL, and every family's backend outcome
+  (resident, or the same decline) is the same in both builds. About 4 minutes. Under the shared timing lock, never beside a
+  timed run (mac-tack5's screens take nobara's lock often).
+- **U2, the walk can go red (tier 0):** on CUDA's walker, the P gate's plants turn U1 red on at least one family: a dropped
+  operation, two swapped operations, and a parameter off by one. Each fusion is bit-identical to the operations it
+  replaces, and a fusion that claims one operation too many goes red.
+- **U3, admission unchanged (tier 0, CPU):** `TestDecisionCensus` and the hardware matrix's "Why a cell reads CPU" section are
+  unchanged, except in OP4cu-c2, whose record lists every changed message, old and new.
+- **U4, T1 (tier 1, by day, the card):** `gate identity -backend cuda -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long`.
+  **Pass:** IDENTICAL. Fit-checked first, by the server's own plan.
+- **U5, speed (tier 1, by day, the card, the exclusive lock):** a whole-token in-process A/B of the walker against the
+  pre-walk path behind a test switch, interleaved ABBA in one process. Cells: the 0.5B and the 1.5B, decode at depth 128 and
+  prefill at 3,900 tokens, 6 pairs each. The quantity is walker ÷ old.
+  - **Pass:** a median of at least 0.99 in every cell.
+  - **Fail:** a cell resolves slower (every pair under 1) with a median under 0.99.
+  - **Parked:** a cell does not resolve and its median is under 0.99. It goes to the served two-arm gate by day.
+  - **Void:** a cell started under heavy load (load above 8.0, or free memory under the fit need plus 2 GB, both recorded
+    at its start), or one beside another timed run.
+- **U6, graphs (the card):** the gpu gate's `graphsforced` cell (`TestGemma4Graphs_`, forced capture) passes. Each captured
+  segment's launch count per layer equals the base's, read from SB11's CUDA cost counters.
+- **U7, memory (tier 0):** the resident's device bytes and host scratch (the SB2 census lines on CUDA) are not higher.
+- **U8, the rest:** `touched.py`; `go vet` and the pinned staticcheck with `-tags 'cuda goinfer_testhooks'` on `./cuda/...`,
+  with the canary red; `TestLayout_arrows` and `TestArchitecture_importAppendix`; the citation lint.
+- **Void conditions:** an identity base other than the named commit; a NOT RUN counted as a pass; U5 run without the
+  exclusive lock or beside another timed run; another session's CUDA process on the card during a U1, U4 or U6 cell.
+- **Stopping rule:** every gate runs to completion; U5 has a fixed N with no early stop.
+
+**Which gates each step runs, its size, and what needs the card:**
+
+| step | gates | size | card time |
+|---|---|---|---|
+| OP4cu-a | U1; a tier-0 test that the resident's view is the model's own program (the same pointer, and the same layer and operation counts) on two tracked tiny fixtures; U8 | S, half a day | U1, about 4 min |
+| OP4cu-b1 | B-1: the derived shape equals the accessors and `ResidentLayerOps` field for field, on every tracked tiny checkpoint and every config-only program `TestProgramFingerprint_table` builds, with the plants red (sandwich read as post-only, `Whole` read as false, an FFN-only block read as attention); B-2: no new decline; U1; U8. No U5, since no dispatch changes | S–M, half a day | U1 |
+| OP4cu-b2 | U1, U2, U4, U5 (decode cells, and prefill cells as a control), U6, U7, U8 | L, 1–2 days | U1, U6 (about 15 min), U4 (about 5 min), U5 (4 cells × 6 pairs, about 30 min, unmeasured on CUDA; the step records it) |
+| OP4cu-c1 | the table-equals-walker test, both directions, with a planted gap (a parameter value dropped) red; U3 unchanged; U1; U8 | M, half a day | U1 |
+| OP4cu-c2 | U3 with every changed message listed; a planted gap turns a family's admission red; U1, with every backend outcome unchanged; U8 | M, half a day | U1 |
+| OP4cu-d1 | U1 with `-long`; U2 on the batched blocks; U4; U5's prefill cells (decode as a control); the MC3 step's own tests (`TestKV2_*`, the `StepBatch` identity tests); U7; U8 | L, 1–2 days | U1, U4, U5, the step tests (about 10 min) |
+| OP4cu-d2 | the step table admits exactly the models `BatchStepRange` serves today, over every tracked fixture, with a plant red (MLA put on the table); U1; U8 | S, a few hours | U1 |
+
+**Total:** L, about 4–6 working days for one session on nobara, plus Gemini's reviews. The card time is under 2 hours in all.
+No step needs a night job, and none needs a guard threshold changed.
+
+**OP4cu-a registered 2026-11-01 13:52 PST, before its code (nobara-sb01).**
+- **What changes.** `cudaResident` gains `prog *program.Program`, set in the build from `decoder.Model.Program()`. It is
+  read-only by contract, and nothing is launched from it. `cuda` imports `internal/runtime/program`, and `internal/layout/imports.json`
+  gains the arrow (`cuda → internal/runtime/program`), which `-update` writes.
+- **A-1, the view (tier 0, the card).** `TestResident_holdsTheModelsProgram` in `cuda`, tags `cuda goinfer_testhooks`, builds
+  two tracked tiny fixtures through `decoder.Load` with backend `cuda` and quant `int4`: `testdata/llama-tiny` (dense) and
+  `testdata/qwen35-tiny` (DeltaNet and MoE).
+  - Each must build a CUDA resident whose `prog` is the model's `Program()` (the same pointer), with one operation list per
+    layer and at least one operation.
+  - A missing fixture fails, and a missing device skips.
+  - It is committed red first, with the field present and unset.
+- **A-2, U1:** `gate identity -backend cuda` from this step's base to the step, IDENTICAL on every family that runs, with every
+  family's backend outcome the same. Its wall time is recorded.
+- **A-3, U8:** `touched.py`; vet and the pinned staticcheck on `./cuda/...` with `-tags 'cuda goinfer_testhooks'`, canary
+  red; `TestLayout_arrows` and `TestArchitecture_importAppendix` after `-update`; the citation lint.
+- **Void if:** the identity base is not the named commit, or another session's CUDA process is on the card during A-1 or A-2
+  (checked with `nvidia-smi` before and after).
+
+**OP4cu-a: readings, 2026-11-01 (nobara-sb01, branch `op4cu-a-2026-11-01`; registration `3e476db45`, red `ec8ba9573`, code
+`37e139cbd`; every card run under the shared timing lock, with only `kwin_wayland` on the card before and after).** Logs:
+`docs/measurements/op4-cuda-2026-11/`.
+- **A-1: PASS.** Red first with the field unset: both fixtures built a CUDA resident holding nil (`op4cu-a-a1-red.log`). Green
+  with `prog` set from `m.Program()` in `cudaBackend.buildResidentMode`. `llama-tiny` has 4 layers and 36 operations,
+  `qwen35-tiny` 4 layers and 24 (`op4cu-a-a1-green.log`).
+  - **One change from the registration.** The test sits in `backend/cuda/sb2_census_test.go`, not in a file of its own. A new test
+    file importing decoder raised SB13's decoder-import ratchet (cuda 242 → 243 importing, 307 → 308 reaching), which only
+    falls. Metal's A4 went into an existing file for the same reason.
+- **A-2 (U1): PASS.** `gate identity -backend cuda f10ada6e6 37e139cbd`: 29 IDENTICAL, 0 within tolerance, 0 different and 14
+  NOT RUN, in 5m45s (`op4cu-a-a2-identity-cuda.log`). That is the CUDA baseline's count (29 and 14, the KV7 step-2 record).
+  - **Every cell's backend outcome is the same in both builds.** The gate checks a decline only on the new build, so the
+    per-cell logs of both builds were compared. All 98 cells match, 55 of them resident on CUDA (`op4cu-a-a2-outcomes.txt`).
+  - The 14 NOT RUN are CUDA's declines and the gate's three fixture gaps (deepseek_v2, qwen3_asr, voxtral), the same set as
+    before.
+  - **A first run is recorded, not counted.** It started before the fixtures were placed: I passed the worktree as `.`, and
+    the script resolves it after `cd` to the source. It read 24 IDENTICAL, 0 different and 19 NOT RUN, 11 cells short of
+    their assets (`op4cu-a-a2-identity-cuda-nofixtures.log`). The counted run followed `worktree_fixtures.sh` with absolute
+    paths (33 entries copied, 21 cloned, 6 symlinks).
+- **A-3 (U8): PASS.**
+  - `touched.py`: 14 checks, the touched `cuda` tests among them (`op4cu-a-a3-touched.log`).
+  - `go vet -tags 'cuda goinfer_testhooks' ./cuda/...` is clean. Staticcheck 2026.2.1 (0.8.1) with CI's tags (`cuda
+    goinfer_testhooks`) is clean, and its canary is red (`op4cu-a-a3-staticcheck-vet.log`). The `-tags cuda`-only variant,
+    which CI does not run, lists 19 U1000s on test hooks; `prog` is not among them.
+  - `TestLayout_arrows` and `TestArchitecture_importAppendix` pass after `-update` added `cuda → internal/runtime/program`.
+  - The citation lint is green.
+- **Card time:** about 11 minutes so far, of the 2 hours: the two identity runs (4m11s and 5m45s), `touched.py` (about a minute) and three A-1 runs of seconds each.
+
+**OP4cu-b1 registered 2026-11-01 14:17 PST, before its code (nobara-sb01; design (a), the coordinator's word, received at 14:17).**
+- **What moves.** Metal's layer-shape derivation (`backend/metal/program_shape.go`: `denseShapeOf`, its plants, the agreement and Olmo
+  Hybrid rules) moves verbatim into `internal/runtime/program` as `Shape` and `ShapeOf`, with exported fields. Its plants become a
+  package test hook, `program.ShapePlantForTest`, which is zero in production.
+  - `internal/runtime/program` gains `MixerOf(ops)`: a layer's mixer (attention, DeltaNet, Mamba-2, MLA or none) and whether an FFN
+    follows. It is the program's form of `decoder.Model.ResidentLayerOps`, with a third plant (an FFN-only block read as
+    attention).
+  - Metal's pure `denseShapeOf` tests move to `internal/runtime/program` with only the names changed. Metal's fixture test
+    (`TestDenseShape_matchesTheAccessors`) stays in `metal` and calls `program.ShapeOf`.
+- **The metal/ edit.** `backend/metal/model.go`'s two callers and their field reads take the exported names. No Metal dispatch
+  changes.
+- **CUDA.** `buildResidentMode` takes `sandwich`, `postOnly`, `qkNorm`, `qkNormWhole`, `layerNorm` and `parallelBlock` from
+  `program.ShapeOf(m.Program())`, and each layer's mixer and FFN from `program.MixerOf`. It stops calling those six accessors
+  and `ResidentLayerOps`. A `ShapeOf` error declines the resident, naming the layer.
+- **Gates:**
+  - **B-1 (tier 0, CPU, CI).** `TestProgramShape_matchesTheAccessors` in `decoder` covers every tracked tiny checkpoint the
+    decoder loads on the CPU, comparing at least 10 fixtures.
+    - `ShapeOf` must equal the nine accessors field for field, and `MixerOf` must equal `ResidentLayerOps` on every layer.
+    - Each of the three plants is red on at least one fixture.
+    - **Narrowed from §4.9a's table:** the config-only programs are not compared, because the accessors are methods of a
+      loaded `Model`. Metal's B1-1 reading compared the loadable fixtures too.
+  - **B-1m:** the moved pure tests pass in `internal/runtime/program`, and their assertions are unchanged.
+  - **B-2 (U1, the card).** `gate identity -backend cuda` from this step's base (`7ae1e1920`, OP4cu-a's head) to the
+    step is IDENTICAL on every family that runs. The fixtures are placed first with absolute paths. Every cell's outcome must
+    be the same in both builds, compared from the per-cell logs as in A-2.
+  - **B-3, Metal:**
+    - CI's `metal-darwin` and `gpu-darwin` jobs are green;
+    - vet with `GOOS=darwin` on `./metal/...`;
+    - Metal's M1 (`gate identity -backend metal`) is run by a Mac session after the merge. The coordinator arranges it, and
+      it is owed in the reading.
+  - **B-4 (U8):** `touched.py`; vet and the pinned staticcheck on `./cuda/...` and `./internal/runtime/program/` (canary red);
+    `internal/layout`; the citation lint.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; another CUDA process on the card
+  during B-2.
+
+**OP4cu-b1: readings, 2026-11-01 (nobara-sb01, branch `op4cu-b1-2026-11-01`; registration `1c58b4b75`, red `639427546`, code
+`c9bebc617`, #582's review fix `03f4d2982`).** Logs are in `docs/measurements/op4-cuda-2026-11/`. The card gates ran in one shared hold
+of the timing lock, 14:57–15:04 PST, with only `kwin_wayland` on the card before and after.
+- **B-1: PASS.** Red first: with `MixerOf` a stub, 13 of 63 fixtures differed (`op4cu-b1-b1-red.log`; the red commit's message says 14, which
+  counted the log's header line). With the code, all 63
+  fixtures compared equal, with 15 NOT RUN: eight are not decoders and seven are slices over 1 GB. Each of the three plants is
+  red on 2 of the 63 (`op4cu-b1-b1-green.log`).
+  - **One narrowing.** `MixerOf` is compared only on layers whose mixer some resident runs. KDA and LFM2's short convolution
+    have no `ResidentMixer` value, and every backend declines their families before it reads a layer's mixer.
+    `program.Mixer.Resident` names the two.
+- **B-1m: PASS.** The three moved tests pass as `TestShapeOf_*`, with their assertions unchanged.
+  `GOOS=darwin GOARCH=arm64 go vet ./metal/...` is clean with and without `goinfer_testhooks` (`op4cu-b1-b1m-metal-vet.log`).
+- **B-2 (U1): PASS.** `gate identity -backend cuda 7ae1e1920 03f4d2982`: 29 IDENTICAL, 0 within tolerance, 0 different, 14 NOT
+  RUN, in 5m41s (`op4cu-b1-b2-identity-cuda.log`). All 98 cells have the same backend outcome in both builds, 55 resident on
+  CUDA (`op4cu-b1-b2-outcomes.txt`).
+- **B-3, Metal: in part.** The vet above passes. CI's `metal-darwin` and `gpu-darwin` jobs read on the PR. **Owed:** Metal's
+  M1 (`gate identity -backend metal`) by a Mac session after the merge, which the coordinator arranges.
+- **B-4: PASS.** `touched.py` passed 17 checks; it skips metal off darwin (`op4cu-b1-b4-touched.log`). Under the shared lock (15:25),
+  the pinned staticcheck is clean on `./cuda/...` with CI's tags and on `./internal/runtime/program/` and `./decoder/`, and its canary is red.
+  On `./metal/...` (darwin, untagged) it lists only the three production-looking prefill functions SB11d left for their owner
+  (`prefillEModel`, `prefillG4Paged`, `prefillMoEPaged`). `go vet` on `./cuda/...` is clean (`op4cu-b1-b4-staticcheck-vet.log`).
+  The citation lint is green.
+- **#582's review, folded in.** `TestResident_holdsTheModelsProgram` guards a nil program, asserts each layer non-empty, and
+  asserts each fixture's counts (4 layers and 36 operations, 4 and 24). Green, and red by hand with 37 expected
+  (`op4cu-b1-a1-review.log`).
+- **Two lock slips of mine, both reported to mac-tack5.** Short CPU checks ran outside the shared lock at 14:20–14:21 (about 10 s)
+  and at 15:05 (vet and the staticcheck canary, a few seconds), each inside a tack cell's server load, before its first run. mac-tack5
+  judged that neither needs a void, since that screen is decided on passes, and recorded both in its notes. Every later run went
+  through the lock with `--wait`.
+- **Card time:** about 7 minutes in b1 (identity 5m41s, two A-1 runs, the `cuda` tests in `touched.py`), so about 18 of the
+  2 hours in all.
+- **#584's review (Gemini, relayed by the coordinator), fixed in `15d3356ad`.** The checks ran under the shared lock at
+  16:35–16:37 PST (`op4cu-b1-review.log`).
+  1. **B-1 skipped a layer on `MixerOf`'s own output.** It now decides the skip from the layer's operations: a layer holding
+     `OpKDA` or `OpShortConv` must map to `MixerKDA` or `MixerShortConv`. The FFN is compared on every layer.
+     `TestMixerOf_eachKind` and `TestMixer_resident` test `MixerOf` and `Resident` directly. Red by hand with `MixerOf`
+     mapping attention to KDA: B-1 and `TestMixerOf_eachKind` both fail. The old skip would have passed it.
+  2. **A plant counted the unplanted run's differences.** A plant is now red on a fixture only when it adds a difference.
+     Red by hand with the stub `MixerOf`: the FFN-only plant is red on 0 of 63 and the test fails. The old count read 13.
+  3. **The plant was an exported mutable global.** It is unexported, and only `program.SetShapePlantForTest`
+     (`goinfer_testhooks`) sets it, restored by `t.Cleanup`. B-1 carries the tag, and CI runs `decoder` with it. Metal's
+     accessor test keeps its equality check and drops its plant loop, since B-1 plants the shared `ShapeOf` on every box.
+  4. **The red count** is 13 of 63 (above).
+  5. `Mixer.Resident` is `x <= MixerMLA`. `Mixer` has a `String`, and CUDA declines a mixer no resident runs by its name,
+     where it printed `ResidentMixer(255)` before.
+  - **The checks:** `internal/runtime/program` tagged and untagged; B-1 (63 compared, each plant red on 2); darwin vet for metal
+    with and without the tag; vet and staticcheck on `decoder` and `internal/runtime/program` both ways and on `./cuda/...` with CI's
+    tags, canary red; gofmt; `touched.py` 17 checks. All pass.
+
+**OP4cu-b2 registered 2026-11-01 17:02 PST, before its code (nobara-sb01; the coordinator's go after #584 merged; Q2 (a)).**
+- **What changes.** At build, each layer's operation list is matched against CUDA's fusion table into **steps**, which are stored
+  on the layer. `launchToken`'s layer loop runs the steps in order. It no longer branches on the layer's mixer.
+- **The table's entries are today's segments.** Each emits exactly the launches it emits today, with its internal branches
+  untouched: sandwich and post-only, the q-gate, LoRA, K=V, the lanes. Each entry is marked static or dynamic:
+  - `qkv` (static): `segA`, the input norm through the QK-norm and v-norm;
+  - `attnGap` (dynamic): `decodeAttnGap`, rope, the KV store into the bound slot, and attention by lane;
+  - `mla` (dynamic): `segAMLA`;
+  - `outFFN` (static): `segB`, the output projection and its residual, then the FFN up to the router readback;
+  - `deltaNet` (static): `deltaNetMixer`, then `segBFFN`;
+  - `mamba` (static): `mambaMixer`;
+  - `ffnOnly` (static): `nonGatedMLP`;
+  - `tail` (dynamic, then static): `layerTail`, the router readback and expert DMA, then `segC`.
+- **The claims.** Each entry claims the operation kinds its segment emits. An operation that spans segments is claimed by a
+  contiguous run of the layer's steps, the same run each time:
+  - `OpGatedAttn` and `OpGemma4Attn` by `qkv`, `attnGap` and `outFFN`;
+  - `OpMLA` by `mla` and `outFFN`;
+  - a MoE `OpFFN` by `outFFN` and `tail`.
+
+  The check fails when an operation is claimed by no step, by steps that are not contiguous, or by a step whose entry does not
+  emit it.
+- **Graphs.** Capture wraps the same segments as today, so the static steps that `captureGraphs` captures are unchanged.
+- **The pre-walk loop** stays for the speed A/B only, behind a test switch in a `cuda && goinfer_testhooks` file. Production
+  has the walker alone.
+- **Gates:**
+  - **B2-1, walker equals the old loop (tier 0, the card).** `TestWalk_equalsLegacy` (`cuda`, tags `cuda
+    goinfer_testhooks`) covers every tracked tiny fixture that builds a CUDA resident at int4. For each, it decodes 24 greedy
+    tokens on the walker and on the pre-walk loop, in one process. Every step's logits must be bit-identical, and so must the
+    tokens. A fixture that does not build is listed NOT RUN.
+  - **B2-2, the walk can go red (U2).** Each plant, shown red once:
+    - a dropped step (the walker skips `attnGap`) and two swapped steps (`outFFN` before `attnGap`) turn B2-1 red on at
+      least one fixture;
+    - a parameter off by one (the layer's qDim given as qDim−1 to `outFFN`) turns B2-1 red;
+    - an entry that claims one operation too many (`qkv` also claiming `OpRope`) makes the claims check decline the layer,
+      naming it.
+  - **B2-3, U1:** `gate identity -backend cuda` from this step's base (`51dd5dc45`) to the step is IDENTICAL on every family that
+    runs. Every cell's outcome must be the same in both builds.
+  - **B2-4, U6:** the gpu gate's `graphsforced` cell (`TestGemma4Graphs_` with forced capture) passes.
+  - **B2-5, U4:** `gate identity -backend cuda -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long` is IDENTICAL
+    against the base, fit-checked first.
+  - **B2-6, U5 (the exclusive lock).** A whole-token in-process A/B of the walker against the pre-walk loop, interleaved ABBA
+    in one process, 6 pairs per cell. The cells are the 0.5B and the 1.5B, decode at depth 128 and prefill at 3,900 tokens
+    (prefill is untouched by b2, so those cells are a control). The bands are §4.9a's U5:
+    - **Pass:** a median of at least 0.99 in every cell.
+    - **Fail:** a cell resolves slower and its median is under 0.99.
+    - **Parked:** otherwise.
+    - **Void:** a cell started at a load above 8.0, or with free memory under the fit need plus 2 GB. Both are recorded at
+      the cell's start.
+  - **B2-7, U7:** no device or host buffer is added. The diff adds no allocation; checked by reading the diff and the SB2
+    census test (`TestBackendAdmissionCensus_cuda`, which `touched.py` runs).
+  - **B2-8, U8:** `touched.py`; vet and the pinned staticcheck on `./cuda/...` with CI's tags (canary red); the citation lint.
+- **Amended 2026-11-01 17:13 PST, before any claims code (the coordinator's (a), received at 17:13).** The claims check is not a
+  second, CUDA-only model. Metal's sublayer derivation moves into `internal/runtime/program`:
+  - What moves from `backend/metal/layer_steps.go`: `layerStepsOf`, `checkStepClaims` and `stepClaims`, with the step kinds, spans
+    and form table. They become `Sublayer`, `SublayerSpan`, `SublayersOf(ops, backend)` and `CheckSublayerClaims(ops, spans)`.
+    The plant becomes `ShapePlantClaimOneMore`, behind `SetShapePlantForTest` like b1's.
+  - Metal keeps aliases for the old names, and only the span fields are renamed. Its decline texts are unchanged:
+    `SublayersOf` takes the backend name they print.
+  - Metal's pure claims tests (`TestCheckStepClaims_spans` and the decline table) move to `internal/runtime/program`. Its fixture
+    test (`TestLayerSteps_consumeEveryOperationOnce`, with both plants) moves to `decoder`, tagged `goinfer_testhooks`, as
+    B-1 did. Their assertions are unchanged.
+  - **CUDA** derives each layer's sublayers with `SublayersOf` and checks them with `CheckSublayerClaims`. One table maps
+    the layer's sublayer pattern (PLE and the layer scale aside, which CUDA runs inside `segBFFN` and `segC`) to its
+    segment sequence. The build declines a layer whose pattern has no entry, or whose steps differ from the ones its loaded
+    mixer runs (`layerStepsFor`), naming the layer. That is Metal's `loadedSteps` check.
+  - **B2-2's fourth plant** is `ShapePlantClaimOneMore`: the attention sublayer also consumes the next operation, and the
+    CUDA build declines the layer, naming it. Shown on a CPU-built program by `cudaStepsOf`'s unit test, and on the card
+    by one fixture's build.
+  - **B-3 again:** Metal's M1 on a Mac after the merge, batched with #584's, as the coordinator arranges. CI's
+    `metal-darwin` job does not run Metal's step tests, which is why the pure ones move to `internal/runtime/program`.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; any card cell run without the
+  timing lock or beside another timed run.
+- **Card time, estimated before the run:** B2-1 about 2 min per run, run 5 times with the plants; B2-3 about 6 min; B2-4
+  about 15 min; B2-5 about 5 min; B2-6 about 30 min. That is about 65 min, which keeps the total under the 2-hour budget
+  (about 19 min used so far).
+
+**OP4cu-b2: readings, 2026-11-01 (nobara-sb01, branch `op4cu-b2-2026-11-01`).** Commits: the registration `6f9e21cee` and
+its amendment `c716b22df`; the walker `5a8866713`; the claims check `fd7c61ded`, with gofmt in `e1b16d671`; the plant fix and
+B2-6 `db97f33fe`; the layout data `6915deb0a`. Logs: `docs/measurements/op4-cuda-2026-11/op4cu-b2-*`. Every run was under
+nobara's timing lock, shared, except B2-6, which ran exclusive. Only `kwin_wayland` was on the card before and after each run.
+- **The compile and CPU checks: PASS** at `e1b16d671` (`op4cu-b2-checks.log`): vet on `cuda`, on darwin `metal` with and without
+  the tag, and on `decoder` and `internal/runtime/program`; the `internal/runtime/program` tests; B-1; and the moved fixture test. The first
+  run failed on gofmt alone (`op4cu-b2-checks-gofmt-red.log`).
+  - **The moved fixture test:** 63 fixtures, 8 declined for an operation with no step. The claim plant is red on 50, the
+    table plant on 1.
+- **B2-1: PASS.** 46 fixtures built a CUDA resident at int4. On every one, 24 greedy positions on the walk equal the pre-walk
+  loop's bit for bit, 0 differ (`op4cu-b2-b21-walk-equals-legacy.log`).
+- **B2-2: PASS, at the second run.**
+  - The walk plants make 44, 44 and 42 of the 46 fixtures differ: the dropped `attnGap`, the swapped steps, and qDim−1.
+  - `TestCudaStepsOf_patterns` passes, its claim plant included.
+  - With the claim plant, the build declines `llama-tiny`: "layer 0: the attention step over operations 0 to 6 ends with
+    operation 6 (norm), not its sublayer's residual add" (`op4cu-b2-b22-plants.log`).
+  - **The first run compared no fixture** (`op4cu-b2-b22-plants-selftest-declined.log`). With a walk plant set, the
+    process's first CUDA load ran the decoder's startup self-test. It failed the planted walk (worst cosine 0.6947) and
+    declined CUDA for the whole process. The production guard catches the plant, but the test then measured nothing.
+  - Each plant test now makes the process's first CUDA load unplanted (`walkSelfTestUnplanted`), so the self-test stays
+    in force everywhere else.
+- **B2-3 (U1): PASS.** `gate identity -backend cuda 51dd5dc45 e1b16d671`: 29 IDENTICAL, 0 different, 14 NOT RUN, in 5m35s. All
+  98 cells have the same backend outcome in both builds, 55 resident on CUDA (`op4cu-b2-b23-outcomes.txt`).
+- **B2-4 (U6): PASS.** All eight `TestGemma4Graphs_` tests pass with forced capture (`op4cu-b2-b24-graphsforced.log`).
+- **B2-5 (U4): PASS.** `coder-0.5b-q4km` and `coder-1.5b-q4km` are IDENTICAL with `-long`. The other 42 NOT RUN are the
+  families `-only` leaves out (`op4cu-b2-b25-identity-real.log`).
+- **B2-6 (U5): PASS in every cell, none void** (`op4cu-b2-b26-speed.log`). Walk over old:
+
+  | cell | ratios (six pairs) | median | load and MB available at the cell's start |
+  |---|---|---|---|
+  | 0.5B decode at 128 | 1.0020 1.0034 0.9976 0.9969 0.9998 0.9999 | 0.9999 | 5.07, 58,612 |
+  | 0.5B prefill at 3,900 | 1.0001 0.9996 0.9997 1.0003 1.0002 1.0001 | 1.0001 | 4.75, 58,520 |
+  | 1.5B decode at 128 | 1.0025 1.0030 1.0009 1.0002 0.9993 1.0003 | 1.0006 | 2.92, 54,214 |
+  | 1.5B prefill at 3,900 | 1.0000 1.0000 0.9999 1.0001 1.0001 1.0001 | 1.0000 | 2.62, 54,113 |
+
+  The prefill cells are the control, since b2 does not touch prefill. They read 1.0000 to 1.0001.
+- **B2-7 (U7): PASS by inspection.** The diff adds no device or host buffer: `steps` is a slice of a few bytes per layer, set at
+  build. `TestBackendAdmissionCensus_cuda` passes in `touched.py`.
+- **B2-8 (U8): `touched.py`** first failed on the layout data's new test arrow, fixed by `-update` in `6915deb0a`. It then failed
+  on `cmd/gate`'s `TestHeavyPartition_cudaTreeFitsTheTable`: B2-6's label trimmed the suffix off a checkpoint name, and the
+  heavy partition read that suffix as an unclassified checkpoint. B2-6 now names its cells by explicit labels. The final
+  `touched.py`, vet and staticcheck are in the push record.
+- **Card time:** about 24 minutes in b2, about 43 of the 2 hours in all.
+- **#588's review (Gemini, relayed by the coordinator), fixed in `e412b7f2a` and `0d74dd1d0`.** The checks ran under the shared lock,
+  19:21–19:28 PST (`op4cu-b2-review-*`). The first attempt did not build, because of an unused import, and its log is kept
+  (`op4cu-b2-review-checks-build-red.log`).
+  1. **The table stripped every PLE and layer scale before matching.** It now matches whole patterns, taken from the
+     fixtures' programs. PLE and the layer scale are accepted only after a dense FFN, where `segBFFN` runs them:
+     `[attention, dense FFN, layer scale]` (Gemma 4's dense layers) and `[attention, dense FFN, PLE, layer scale]` (the
+     E-model). Gemma 4's MoE block scales inside `segC`.
+     - Red first (`op4cu-b2-review1-red.log`): seven layers were accepted that put a PLE or a layer scale anywhere else, or
+       twice.
+  2. **The check against the mixer's steps could not differ.** It ran before the weights loaded, and every pattern for one mixer
+     maps to the same steps. So it was not what this section called "Metal's `loadedSteps` check", which it was not.
+     - It is removed. A pass after the layer loop now checks each layer's program sublayers against the blocks the build
+       loaded (`loadedSublayers`: the mixer, the FFN's form, the PLE branch, the layer scale).
+     - `TestLoadedSublayers_matchTheProgram` covers ten loaded shapes and four mismatches. It is red by hand with the PLE
+       left out.
+  3. **B2-6 passed on VOID and PARKED.** Only PASS now passes (`b26Verdict`, `TestB26Verdict_bands`). The recorded run stands:
+     every cell PASS, none void.
+  4. **`TestCudaStepsOf_patterns` covers every table row**, the four it missed included.
+  - **Re-run, since the build's checks changed.** B2-1: 46 fixtures, 0 differ. B2-3: `gate identity -backend cuda 51dd5dc45
+    0d74dd1d0`, 29 IDENTICAL, 0 different, 14 NOT RUN, in 5m38s. All 98 cells keep their outcome, 55 resident on CUDA, so the
+    new check declines no fixture.
+  - **Card time:** about 7 minutes, about 50 of the 2 hours in all.
+- **#588's second review (Gemini, relayed by the coordinator), fixed in `184d8a508`.** The checks ran under the shared lock,
+  20:01–20:11 PST (`op4cu-b2-review2-*`).
+  1. **The loaded check still read the program, not the upload.** It now runs after the upload, on each built `cudaLayer`'s
+     buffers:
+     - the mixer's weights (`dnQKV`, `mbIn`, `mlaQA`/`mlaQ`, `q`);
+     - a router, with Gemma 4's MoE norms or without them;
+     - an up projection without a gate (non-gated), or a gate (dense);
+     - the PLE gate and a non-zero layer scalar;
+     - the resident's parallel placement.
+
+     The buffers do not tell a dense FFN's activation or the attention's form. The code says so, and the build checks those
+     where it reads them.
+  2. **The match dropped a parallel block's flag.** Each table row now carries it. Red first on the pushed head `591b71428`: a
+     parallel block followed by a layer scale, or by a PLE and a layer scale, was accepted
+     (`op4cu-b2-review2-parallel-red.log`).
+  3. **The loaded check's test never touched a program.** `TestLoadedSublayers_matchTheProgram` now builds eight fixtures on
+     the card, between them every table row's mixer and FFN, and checks every layer against its program. A planted mismatch
+     in a copy of a built layer is refused on 2 to 31 layers each: the PLE gate, router, layer scalar, q, Gemma 4 MoE norm,
+     gate or DeltaNet projection dropped, or the parallel placement flipped.
+  4. **B2-1 passed when the walk's build declined fixtures.** The pre-walk arm now builds without the walk's build checks, and
+     a fixture only the walk's build declines fails the test. Red by hand with the claim plant: every such fixture is
+     reported (`op4cu-b2-review2-r4-red.log`).
+  5. **qDim−1 was bypassed under graph replay.** The walk plants act in `runStep`'s live path, so they run with graphs off, as
+     this box builds. A plant run on a build that captured graphs fails.
+  6. **A stale comment** named the deleted `setLegacyLayerForTest`; it is fixed.
+  - **Re-run:**
+    - B2-1: 46 fixtures, 0 differ.
+    - B2-2: the walk plants make 44, 44 and 42 of 46 fixtures differ, and the claim plant declines the build.
+    - B2-3: `gate identity -backend cuda 51dd5dc45 184d8a508`, 29 IDENTICAL, 0 different, 14 NOT RUN. All 98 cells keep their
+      outcome, 55 resident on CUDA.
+  - **Card time:** about 10 minutes, about 60 of the 2 hours in all.
+
+**OP4cu-c1 registered 2026-11-01 20:43 PST, before its code (nobara-sb01; the coordinator's go, received before 20:43, under Francis's GO).** The
+CUDA half of OP4m-c1: CUDA's operation-and-parameter table.
+- **What changes:**
+  - `internal/runtime/program/support.go` gains `program.CUDA`, the operation kinds and parameter values CUDA's walker implements. The
+    kinds: the norm, q/k/v, the QK-norm, rope, the query temperature, attention, the output projection, the FFN, the residual,
+    MLA, Mamba-2, DeltaNet, gated attention, Gemma 4's attention and MoE block, PLE and the layer scale.
+  - Its FFN forms, each with its activations: gated (SiLU, tanh GELU), non-gated (ReLU²), MoE and gpt-oss's (SiLU), and Gemma
+    4's dense (tanh GELU).
+  - Its other parameters: the weighted-RMS QK-norm, the `ropeAt` rotation with the pairwise form, a window, a softcap, the
+    whole-vector QK-norm, sandwich and post-only norms, the parallel block, LayerNorm and the output bias. It has no chunked
+    attention, no residual scale, no learned positions, no DeltaNet `NegEigval` or own output-norm epsilon, and no per-slot
+    recurrent state.
+  - CUDA's build checks the program against `program.CUDA` before deriving any steps, and declines naming the layer, operation
+    and parameter. `Admit` and CUDA's `residentBackendFeatures` entry do not change: that is c2.
+  - #588's third review's two nits: `loadedSublayers` reports a PLE buffer on any layer, not only after a dense FFN, and Gemma
+    4's MoE layer requires its dense branch's gate.
+- **The one outcome c1 changes, named in advance: Olmo Hybrid on CUDA declines to the CPU.** CUDA's DeltaNet reads neither
+  `NegEigval` (`linear_allow_neg_eigval`, true in `testdata/olmo_hybrid-tiny`) nor `ONormEps`. A grep of `cuda/` finds neither.
+  So it computes the write gate as σ(b), where the CPU's is 2σ(b), and it takes the model's epsilon for the output norm. Its only
+  CUDA gates are a smoke test (admission, no NaN) and a prefill-against-decode check, neither against the CPU. It is Metal c1's
+  finding, for CUDA.
+- **Gates:**
+  - **C1-1, the table equals the walker (tier 0).** Run over every tracked fixture program the decoder loads on the CPU, and a
+    synthetic layer of each operation kind and FFN form (one past the last of each included). The rule: `program.CUDA` has a
+    step for every operation of a layer exactly when `cudaSublayersOf` accepts the layer. Plant: the table lists `OpKDA`, red
+    on Bailing Hybrid.
+  - **C1-2, the table can replace the features (tier 0, CPU, CI).** `TestCUDASupport_replacesTheFeatures` in `decoder` runs
+    over every fixture config. CUDA's admission with its feature gate replaced by `program.CUDA` must admit exactly what
+    today's admits, except Olmo Hybrid. Plant: the table admits the exact-erf GELU on a gated FFN, red on at least one config.
+  - **C1-3, the nits, red first.** `TestLoadedSublayers_matchTheProgram` gains two plants, each red on the base: a PLE gate on
+    a MoE, Gemma 4 MoE or non-gated layer, and Gemma 4's MoE layer without its dense gate.
+  - **C1-4, identity (U1).** `gate identity -backend cuda` from the base (`0fd7f9da8`) is IDENTICAL on every family that runs.
+    Every cell's backend outcome must be the same, except Olmo Hybrid's, which goes from resident to the CPU with the table's
+    message.
+  - **C1-5 (U8):** `touched.py`; vet and the pinned staticcheck on `./cuda/...` (canary red); the citation lint.
+  - No speed cell: c1 moves no dispatch.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
+- **Card time, estimated:** C1-3 about 1 min; C1-4 about 6 min. With about 61 used, the total would be about 68 of the 2 hours.
+
+**OP4cu-c1: readings, 2026-11-01 (nobara-sb01, branch `op4cu-c1-2026-11-01`; registration `258f13068`, red `6bd469469` for C1-3, code
+`dcfa0aa04`, the censuses and the decline text `f41a28c42`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-c1-*`. Every run
+was under the shared lock.
+- **C1-1: PASS.** `program.CUDA` has a step for every operation exactly when `cudaSublayersOf` accepts the layer. That holds on
+  301 layers of 63 fixtures and on 26 synthetic layers, 19 of them accepted. The KDA plant is red on 3 Bailing Hybrid layers.
+- **C1-2: PASS.** With the feature gate replaced by `program.CUDA`, 36 of 37 fixture configs are admitted as today. The 37th is
+  Olmo Hybrid, the named change: "cuda does not implement DeltaNet's widened write gate (NegEigval)". The exact-erf GELU plant is
+  red on 14 of 24 configs read with one.
+- **C1-3: PASS.**
+  - Red first on the base: both plants were refused on no layer (`op4cu-c1-c13-red.log`).
+  - Now the PLE gate on a non-dense layer is refused on 10 layers, and Gemma 4's MoE layer without its dense gate on 2.
+  - B2-1 still holds: 45 fixtures, 0 differ, Olmo Hybrid listed as the named decline.
+- **C1-4 (U1): PASS, with the named change and nothing else** (*#599's review: the named change also makes an explicit `--kv i8`
+  load of Olmo Hybrid on CUDA fail, where it ran resident before; see c2's readings*). `gate identity -backend cuda 0fd7f9da8 dcfa0aa04`: 28 IDENTICAL,
+  0 different, 15 NOT RUN. The one change in any cell's backend outcome is Olmo Hybrid's two cells, resident to the CPU with
+  the table's message. Resident cells go from 55 to 53 (`op4cu-c1-c14-outcomes.txt`).
+- **The censuses take the named change.** `TestBackendAdmissionCensus_cuda` and `TestBackendMemoryCensus_cuda` hold CUDA's build
+  decisions to goldens, and both were regenerated (`-sb2census.update`, `-sb2memcensus.update`).
+  - Compared as sets (`op4cu-c1-census-setdiff.txt`), every changed line is Olmo Hybrid's.
+  - **Admission, 9 cells:** six from a plan to the table's decline, and three per-32 cells whose decline text changes from "the
+    Gated DeltaNet path is not implemented". The table is now checked first.
+  - **Memory:** Olmo Hybrid's 12 planned lines are gone, six cells under two profiles.
+  - **The census's own diff misreads that removal.** It pairs lines by a key without the profile, so the removal misaligns the
+    lines after it: the diff reports 366 lines differing (it prints the first 30), when only Olmo Hybrid's 12 are gone. Corrected
+    in c2's record (#598's review): this line first said 30.
+  - The same test passes on `main`'s own tree (`op4cu-c1-memcensus-on-main.log`).
+- **C1-5 (U8):** `touched.py` first failed on those censuses (`op4cu-c1-c15-touched-census-red.log`); the final run is
+  `op4cu-c1-c15-touched.log`. The pinned staticcheck and the citation lint are in the push record.
+- **Card time:** about 20 minutes, about 81 of the 2 hours in all.
+
+**OP4cu-c2 registered 2026-11-01 23:03 PST, before its code (nobara-sb01; the coordinator's go after #598 merged, under
+Francis's GO).** The CUDA half of OP4m-c2: CUDA's admission reads `program.CUDA`.
+- **What changes:**
+  - `residentBackendTables` gains `"cuda": program.CUDA`, and CUDA's entry in `residentBackendFeatures` goes. Its per-feature
+    evidence comments move to `docs/code-notes/decoder.md`, as Metal's did.
+  - `residentGateReasons` already gives a table backend an operations gate (OP4m-c2), so `Admit`, the matrices and the
+    censuses now read CUDA's answer from the table.
+  - CUDA's build checks `FeaturesOutsideProgram` (the per-layer query-head count, and Gemma 4's MoE gated activation) in place
+    of `MissingResidentFeatures`, beside its table check.
+  - The tests that read CUDA's feature set change:
+    - two skip guards check the table instead;
+    - three "does CUDA declare X" guards go, as Metal's did;
+    - the fit-guard and prefill-coverage tests read `residentCovers`;
+    - the hardware matrix's break-it-first test mutates WebGPU's feature set, which remains.
+    - *(As built, #599's review, point 4: the prefill-coverage test calls `Admit(archAdmitFacts(arch, "cuda")).Why`, and the
+      break-it-first test mutates a copy of `program.CUDA` in `residentBackendTables["cuda"]`.)*
+  - #598's review:
+    - the layer scale is reported on any layer but Gemma 4's MoE block, as PLE is;
+    - the non-dense PLE plant covers FFN-less layers, and a stray-layer-scale plant joins it;
+    - the c1 record's "30 more lines" becomes 366 (done above).
+- **No outcome changes.** Olmo Hybrid already declines in c1. Only CUDA's decline texts change: a feature gap such as "arch needs
+  unimplemented feature(s) [kda]" becomes the table's "layer 0: operation 1 (kda) has no step for it". *(Corrected in the readings: the model-free
+  decisions change too, #599's review.)*
+- **Gates:**
+  - **C2-1, identity (U1):** `gate identity -backend cuda` from c1's merge (`86ffac614`). IDENTICAL on every family that runs,
+    and every cell's backend outcome unchanged.
+  - **C2-2, admission (U3):** these change only in CUDA's decline texts:
+    - the admission census golden (`testdata/sb2_admission_census.amd64.txt.gz`);
+    - the decision census (`TestDecisionCensus`);
+    - the generated hardware matrix (`docs/hardware-matrix.md`) and capability matrix;
+    - CUDA's own admission census (`backend/cuda/testdata/sb2_cuda_census.amd64.txt.gz`).
+
+    The record lists every changed line, old and new, compared as sets.
+  - **C2-3, a planted gap:** a copy of `program.CUDA` without the tanh GELU on the gated form, put in place for CUDA, turns the
+    Gemma rows' admission red.
+  - **C2-4, the nits, red first:** the stray-layer-scale plant and the FFN-less PLE plant are refused on no layer on the base.
+  - **C2-5 (U8):** `touched.py`; vet and the pinned staticcheck on `./cuda/...` and `./decoder/` (canary red); the citation
+    lint; `site`'s snapshot check if the capability matrix changes.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
+- **Card time, estimated:** C2-1 about 6 min, C2-4 about 1 min, CUDA's census about 1 min. About 89 of the 2 hours in all.
+
+**OP4cu-c2: readings, 2026-11-01 (nobara-sb01, branch `op4cu-c2-2026-11-01`; registration `b71c381f0`, red `81987df63` for C2-4,
+code `c40e79dc6` and `7f3723eca`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-c2-*`. Every run was under the shared lock.
+- **C2-1 (U1): PASS.** `gate identity -backend cuda 86ffac614 c40e79dc6`: 28 IDENTICAL, 0 different, 15 NOT RUN. All 98 cells keep their
+  backend, 53 resident on CUDA (`op4cu-c2-c21-outcomes.txt`, decline texts cut off, since c2 changes only those).
+- **Outcome changes, corrected (#599's review, point 1).** The registration said c2 changes no outcome. That holds for the card: a
+  real load of `olmo_hybrid-tiny` on CUDA at int4 behaves the same on `main` (c1 merged) and on c2 (`op4cu-c2-review-olmo-kv.log`).
+  - With the default KV it loads on the CPU.
+  - With `--kv f16` it loads on the CPU.
+  - With `--kv i8` it is refused at load, because this family's CPU loop keeps an f32 cache.
+
+  It does not hold for the model-free decisions, which follow `Admit`, now the table's:
+  - **Olmo Hybrid in the admission census's load layer.** The default, f32, int8, `ssm` and per-32 cells go from resident to
+    CPU. `--kv f16` goes from a load error (CUDA's f16 KV did not cover it) to a CPU load. `--kv i8` goes from resident to a
+    load error. These are the outcomes c1 made true on the card. Each is a model CUDA cannot run correctly, now refused at
+    admission rather than at the build.
+  - **Nemotron 3 Nano** goes from admitted to declined in model-free `Admit` and in the host and device KV fit pricing. CUDA's
+    build already declined it (its non-gated MoE blocks), so the fit now prices the CPU path it runs.
+  - **No load that worked on `main` fails on c2.** One user-visible change is c1's, which its record understated: before c1,
+    `--kv i8` loaded Olmo Hybrid resident on CUDA, and since c1 it is refused at load. Without an explicit `--kv`, it loads on
+    the CPU.
+- **C2-2: PASS. CUDA's decline texts and admission rows change, with the model-free outcome changes above**, each listed as a set
+  diff:
+  - **`admissionGolden`:** three CUDA rows, none moving a backend. `granitemoehybrid` loses its residual scale, though the runner
+    shape already kept it on the CPU. `llama4_text` loses its de-interleaving rotation, L2 QK-norm and MoE form, with the same
+    shape gate. `olmo_hybrid` has been declined since c1.
+  - **The hardware and capability matrices and the SB2 admission census (amd64):** 93 changed lines, all from CUDA's admission.
+    That includes rows that read "WebGPU, CUDA" splitting in two (`op4cu-c2-c22-admission-diff.txt`).
+  - **The arm64 admission census:** updated by applying the amd64 change per line key. All 34 keys had an identical arm64 line,
+    and none mismatched (`op4cu-c2-c22-arm64-census-applied.txt`). **No Mac has run `TestAdmissionCensus` on it yet; that run is
+    owed** (#599's review, point 2, corrected an earlier "confirms it").
+  - **The decision census** (`testdata/mm1_census.json.gz`, one host class, amd64) was regenerated in a clean worktree. 384
+    groups changed, all CUDA groups of the five families CUDA declines (`op4cu-c2-c22-decision-census-groups.txt`).
+    - Run where I had placed the gitignored fixtures, it fails before comparing: `longVariant` copies a `.cache` directory as
+      a file (`op4cu-c2-c22-decision-census-fixture-dirs.log`). That is §4.9 A3's finding.
+  - **CUDA's admission census** loses Olmo Hybrid's 9 build lines, since admission now declines it before the build. Its
+    memory census is unchanged (`op4cu-c2-c22-cuda-census-diff.txt`).
+- **C2-3: PASS.** `TestCUDATable_plantedGapGoesRed`: a table without the tanh GELU on the gated form declines every admitted Gemma
+  row, and leaves a SiLU row admitted.
+- **C2-4: PASS.** Red first: a layer scalar on a non-dense layer was refused on no layer (`op4cu-c2-c24-red.log`). Now it is
+  refused on 12, and the widened PLE plant on 14. C1-1 and B2-1 still pass: 45 fixtures, 0 differ.
+- **C2-5:** `touched.py` first failed on `TestResidentBackendFeatures_noOverclaim`, which pinned CUDA's feature list
+  (`op4cu-c2-c25-touched-features-red.log`). It now asserts that CUDA reads `program.CUDA` and declares no feature set, as for
+  Metal. The final `touched.py`, staticcheck and the citation lint are in the push record.
+- **Also in c2:**
+  - CUDA's per-feature evidence moved to `docs/code-notes/decoder.md#residentBackendFeatures.cuda.entry`;
+  - the decoder-import ratchet falls to 241 (a guard that read CUDA's features is gone);
+  - a `changelog.d` entry for Olmo Hybrid on CUDA, which c1 owed.
+- **Card time:** about 14 minutes, about 96 of the 2 hours in all.
+
+**OP4cu-d2 registered 2026-11-02 00:33 PST, before its code (nobara-sb01; the coordinator's budget answer, option (b): d2 only, inside
+Francis's 2 hours; d1 waits for Francis).** The CUDA half of OP4m-d2: MC3's step on CUDA is admitted by an operation table.
+- **What changes.**
+  - `program.CUDAStep` is a second `Support`: what `backend/cuda/batchstep.go`'s step implements. It is `program.CUDA` without the
+    kinds and forms the step excludes: MLA, Mamba-2, DeltaNet, Gemma 4's MoE block, and the MoE and gpt-oss FFN forms.
+  - `cudaResident.BatchStepRange` checks the model's program against it, in place of `r.moe || r.gemma4Moe || r.isMLA ||
+    r.recurrent()`.
+  - The step's runtime limits stay checks: a batched prefill, C′ expert streaming, two or more KV slots, and
+    `prefillStaticDecline`.
+  - No model's step range changes.
+- **Gates:**
+  - **D2-1, the table equals the flag list (tier 0, the card's builds).** On every tracked tiny fixture that builds a CUDA
+    resident at int4, `program.CUDAStep` admits the program exactly when the old flag list did not exclude the resident.
+    Plant: `OpMLA` on the step's table, red on the MLA fixtures.
+  - **D2-2, U1:** `gate identity -backend cuda` from this step's base (c2's head, `ab271911c`): IDENTICAL on every family that
+    runs, every cell's backend outcome unchanged.
+  - **D2-3:** the step's own tests (`TestKV2_*` on the step, `backend/cuda/batchstep_test.go`) pass.
+  - **D2-4 (U8):** `touched.py` in a clean worktree of the commit; vet and the pinned staticcheck on `./cuda/...` (canary red);
+    the citation lint.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
+- **Card time, estimated:** D2-1 about 1 minute, D2-2 about 6, D2-3 about 1. With about 107 used, the total is about 115 of the
+  2 hours.
+
+**OP4cu-d2: readings, 2026-11-02 (nobara-sb01, branch `op4cu-d2-2026-11-02`, stacked on c2's `ab271911c`; registration `57c76b951`,
+red `d74111ab6`, code `ac32b0a17`, plants `8d1b24d30`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-d2-*`. Every run was
+under the shared lock.
+- **D2-1: PASS.** Red first: with `CUDAStep` a plain copy of `CUDA`, 18 of the 45 built fixtures disagreed with the flag list
+  (`op4cu-d2-d21-red.log`). With the table, all 45 agree, 27 of them admitted to the step (`op4cu-d2-d21.log`).
+  - **One change from the registration.** The registered plant, `OpMLA` on the step's table, reaches no fixture: every MLA
+    fixture (DeepSeek, Kimi) also has MoE layers, which the table still declines (`op4cu-d2-checks-mla-plant.log`). It stays,
+    logged. The required plants are the MoE form, red on 5 fixtures, and DeltaNet, red on 3.
+- **D2-2 (U1): PASS.** `gate identity -backend cuda ab271911c 8d1b24d30`: 28 IDENTICAL, 0 different, 15 NOT RUN. All 98 cells keep
+  their backend, 53 resident on CUDA (`op4cu-d2-d22-outcomes.txt`).
+- **D2-3: PASS.** `TestCUDAStepBatch_matchesForward`, `TestCUDAStepBatch_concurrentMatchesAlone` and the `TestKV2_*` tiny tests
+  pass; the real-checkpoint ones skip, as by day (`op4cu-d2-checks.log`).
+- **D2-4 (U8): PASS.** The push record (`touched.py` in a clean worktree, staticcheck, the citation lint) ran at 06:34 PST after
+  Francis raised the budget (`op4cu-d2-push-record.log`). *(This line said it waited on the budget until #602's review, point 4.)*
+- **#602's review (Gemini, relayed by the coordinator 2026-11-02): two of the six exclusions could be deleted with D2-1 green.**
+  - **MLA:** every MLA fixture also has MoE, so the MLA plant reached none.
+  - **gpt-oss's FFN form:** `walkFixtures` never reaches `decoder/testdata/gptoss_tiny.gguf`.
+  - **The fix:** D2-1 now walks `gptoss_tiny.gguf`, and a new plant lists gpt-oss's FFN form. The MLA plant is scored on each MLA
+    program rewritten with a dense FFN in place of its MoE one, where the table must still refuse it. All four plants are required.
+  - **Reading:** red on 5 (MoE form), 3 (DeltaNet), 2 (MLA) and 1 (gpt-oss) fixtures; 46 built, 27 admitted
+    (`op4cu-d2-review-d21.log`).
+  - **Each deletion is now red:** with `OpMLA` deleted from `CUDAStep`'s exclusions, D2-1 fails on both MLA rewrites; with
+    `FfnGptOss` deleted, it fails on `gptoss_tiny` (`op4cu-d2-review-exclusions-deleted.log`).
+  - **Point 2: D2-1 did not call `BatchStepRange`.** D2-1 now also loads each fixture at two KV slots. `BatchStepRange` must serve
+    exactly what the former flag list and the step's runtime limits allow. Red first: with `BatchStepRange` checking `program.CUDA`,
+    it serves 10 MoE fixtures the step refuses (`op4cu-d2-review-batchsteprange-red.log`).
+  - **Second review (2026-11-02).**
+    - The oracle is now the former flag list rather than a copy of `BatchStepRange`'s body.
+    - Plants for the two remaining exclusions join the rest: Mamba-2, required, and Gemma 4's MoE block, whose fixtures are
+      gitignored, required with them.
+    - With the fixtures required, D2-1 needs the 46 fixtures. The record that runs it so is #603's push record,
+      `op4cu-d1-push-record.log` at `a5c909159` (committed here too), whose tree holds this branch. D2-1 there: 46 built, 27
+      admitted; its six plants red on 5, 3, 2, 1, 1 and 4 fixtures; at two slots 39 built, 27 served by `BatchStepRange`.
+      *(#602's third review: this line cited `op4cu-d2-push-record.log`, which is this branch's 06:34 record from before both
+      reviews and runs only `TestLoadedSublayers`.)*
+- **Card time:** about 11 minutes for the gates, about 118 of the 2 hours, and about 3 more for the push record.
+
+**OP4cu-d1 registered 2026-11-02 06:39 PST, before its code (nobara-sb01; Francis raised OP4 on CUDA's card budget to about 145 at
+06:29, relayed by the coordinator).** The CUDA half of OP4m-d1: the batched prefill's layer body walks the program.
+- **What changes.** `prefillCore`'s layer loop branches twice today. It chooses the DeltaNet rows or the attention half (q/k/v,
+  rope and attention by lane, output projection). Then it chooses the MoE FFN (per row, or expert-major) or the dense FFN (with
+  PLE and the layer scale). Each layer now gets **batched steps** at build: `pstepDeltaNet`, `pstepAttn`, `pstepMoE` and
+  `pstepDenseFFN`. The loop runs them through a switch whose cases hold today's block bodies unchanged.
+- **How the steps are derived.** From the layer's sublayer pattern (`cudaSublayersOf`), through a second table. A layer the
+  batched pass has no blocks for has no batched steps: Mamba-2, FFN-only, MLA and Nemotron's attention-only block.
+  `prefillStaticDecline` declines those today, unchanged. The build checks that the steps equal the ones the layer's flags
+  chose before (`isDeltaNet`, `isMoE || g4moe`), and declines naming the layer otherwise.
+- **Gates:**
+  - **D1-1, the steps equal the flags (tier 0, the card's builds).** On every tracked tiny fixture that builds a CUDA resident at
+    int4, each layer's batched steps equal the ones the former branches chose.
+  - **D1-2, the walk can go red (the card).** Two plants, on up to 15 fixtures with a batched prefill: a dropped dense-FFN step,
+    and the FFN step run before the attention step. Each changes a 40-token `PrefillLast`'s logits from the unplanted run's on at
+    least one fixture.
+  - **D1-3, U1:** `gate identity -backend cuda` from this step's base (d2's head, `a42055a31`). IDENTICAL on every family that
+    runs, every cell's backend outcome unchanged. Identity's prompts go through `PrefillLast`.
+  - **D1-4, U4:** `gate identity -backend cuda -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long`. IDENTICAL against the
+    base. The 2,500-token prompt takes the batched prefill.
+  - **D1-5, the step and its users:** `TestCUDAStepBatch_*`, the `TestKV2_*` tiny tests, and the DeltaNet prefill test
+    (`TestCUDADeltaNetPrefill_matchesPerToken`) pass.
+  - **D1-6, U8:** the push record (`touched.py` in a clean worktree, `TestLoadedSublayers` with its fixtures required,
+    staticcheck with the canary red, the citation lint).
+  - **U5, not run, a change from §4.9a's table, for the coordinator.** An in-process A/B needs the pre-walk loop beside the
+    walk. Here that means duplicating about 420 lines of `prefillCore` and its locals. The walk's added work is one range over
+    two steps and a switch, per layer and pass, against prefill passes of milliseconds. If a speed reading is wanted, the served
+    two-arm A/B (`BENCH_ENGINES=goinfer,goinfer_old`) is the instrument, at about 10 more card minutes, which passes 145.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
+- **Card time, estimated:** D1-1 about 1 min, D1-2 about 1, D1-3 about 6, D1-4 about 1, D1-5 about 1, D1-6 about 4. About 14 in
+  all, so about 140 of the 145.
+
+**OP4cu-d1: readings, 2026-11-02 (nobara-sb01, branch `op4cu-d1-2026-11-02`, stacked on d2's `a42055a31`; registration
+`58e2fbe4f`, code `344820281`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-d1-*`. One job under the shared lock, 06:41:49
+to 06:49:01 PST, load 0.31 at its start, `kwin_wayland` the only other CUDA context.
+- **D1-1: PASS.** 45 fixtures built resident, 42 with a batched prefill, 214 layers' batched steps equal to the flags' choice
+  (`op4cu-d1-checks.log`).
+- **D1-2: PASS.** The dropped dense-FFN step is red on 11 of 15 fixtures (the other 4 have no dense-FFN layer); the FFN step
+  before the mixer's is red on 15 of 15 (`op4cu-d1-checks.log`).
+- **D1-3 (U1): PASS.** `gate identity -backend cuda a42055a31 344820281`: 28 IDENTICAL, 0 different, 15 NOT RUN, in 5m27s. All
+  98 cells keep their backend outcome, 53 resident on CUDA (`op4cu-d1-d13-identity-cuda.log`, `op4cu-d1-d13-outcomes.txt`).
+- **D1-4 (U4): PASS.** `gate identity -backend cuda -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long a42055a31
+  344820281`: qwen2 IDENTICAL on both cells (`op4cu-d1-d14-identity-real.log`).
+- **D1-5: PASS.** `TestCUDAStepBatch_*`, the `TestKV2_*` tiny tests and `TestCUDADeltaNetPrefill_matchesPerToken` pass; the
+  real-checkpoint ones skip, as by day, and the DeltaNet test skips `olmo_hybrid-tiny`, which declines to the CPU since c1
+  (`op4cu-d1-checks.log`).
+- **D1-6 (U8):** the push record, below.
+- **U5:** not run, as registered; it waits on the coordinator.
+- **Card time:** about 7 minutes against the 14 estimated, so about 133 of the 145 before the push record.
+- **#603's review (Gemini, relayed by the coordinator 2026-11-02): D1-1's no-steps branch was unreachable.** `prefillStaticDecline`
+  itself declines a model with a layer without steps, so `serves` excluded it. A `cudaPrefillStepsOf` returning nil on 41 of 42
+  fixtures would have passed.
+  - **The fix:** the guards read from the flags are now `prefillFlagsDecline`, and `prefillStaticDecline` adds the steps check to
+    them, with behaviour unchanged.
+  - **What D1-1 now requires:**
+    - every layer of a model the flags' guards batch has steps;
+    - the pass serves exactly those models;
+    - at least 42 of them with `OP4CU_REQUIRE_FIXTURES=1`;
+    - the branch is shown reachable by emptying one layer's steps.
+  - **Reading:** 45 built, 42 batched by the flags, 42 by the pass, 214 layers. With `cudaPrefillStepsOf` returning nil after its
+    first call, the test fails on each fixture and layer (`op4cu-d1-review-d11.log`; the first 8 lines of that run are kept).
+- **#603's review, points 2 and 3.**
+  - The build now declines a model the batched guards admit whose program gives a layer no steps, naming the layer.
+  - Past the mixer and the FFN, `cudaPrefillStepsOf` accepts only the PLE branch and the layer scale, which the dense FFN block
+    runs. The review's suggested `!= 2` dropped Gemma 4's E-model layers, and the first push record went red on it
+    (`op4cu-d1-review-push-record-red.log`).
+  - D1-2 now walks every batched fixture and adds MoE and DeltaNet drop plants. Each plant must be red wherever its step runs.
+  - `prefillPlant` is a constant outside `goinfer_testhooks` builds.
+  - The push record runs D1-1, D1-2 and D2-1 with the fixtures required (`op4cu-d1-push-record.log`): 42/42 batched; the plants
+    red on 32/32, 12/12, 6/6 and 42/42; D2-1's plants red on 5, 3, 2 and 1; `BatchStepRange` serving 27 of 39 at two slots.
+  - **Card time:** OP4 on CUDA ends at about 147 of the 145 minutes. The 2 over are the extra push record my error cost.
+  - **Slips:** two CPU-only go commands ran outside the lock, under a second each, with no timed run on the box.
+- **#603's second review: the build's new decline made D1-1's failure branches unreachable again.** A nil `cudaPrefillStepsOf`
+  declined to the CPU, and the test skipped the fixture.
+  - **The fix:** D1-1 compares with the build's step checks off (`prefillStepsBuildChecksOffForTest`). It then loads each fixture
+    the flags batch with the checks on, and requires it to stay resident.
+  - **New test:** `TestPrefillSteps_buildDeclinesAStepLessLayer` checks the build's decline of a layer built without steps.
+  - **D1-2** needs 42 batched fixtures with the fixtures required.
+  - **`cudaPrefillStepsOf`** takes a tail only after a dense FFN: PLE, then the layer scale, once each.
+  - **Readings:**
+    - With `cudaPrefillStepsOf` nil after its first call, D1-1 is red: 42 batched by the flags, 0 by the pass, 0 resident with the
+      checks on (`op4cu-d1-review2-regression.log`).
+    - The push record (`op4cu-d1-push-record.log`, at `a5c909159` with `origin/main` merged; its tree holds c2 and d2) is green:
+      - D1-1: 42/42, all 42 resident with the checks on, 214 layers.
+      - The build-decline test passes.
+      - D1-2 passes.
+      - D2-1: 46 built, its six plants red on 5, 3, 2, 1, 1 (Mamba-2) and 4 (Gemma 4's MoE block); 27 of 39 served by
+        `BatchStepRange` at two slots.
+  - **Card time:** about 7 minutes. OP4 on CUDA ends at about 154 of the 153 Francis set at 11:50.
+
+### 4.9b OP4's memory planner: design (2026-11-07, before any code; revised the same day on Gemini's review of #738)
+
+The planner is MM5 (`docs/tasks/task-subsystems-2026-10.md` §6.5): demand derived from the program, each operation declaring its
+buffers. Today a load's KV and recurrent state are priced by family-keyed code and sized a second time by each backend's build:
+`decoder.Model.metalKVParts` and `cudaKVParts` take each layer's mixer from `ResidentLayerOps`, `decoder.stateSpecs` switches on the family
+(MM5a made it the one list both backends' state allocates from), and Metal's build sizes each layer's pool from its own geometry.
+Weights are already generic (every tensor the load holds).
+
+**The declaration.** `program.Buffers(op, LayerShape)` lists what one operation needs beyond its weights, one entry per buffer, each with
+its own unit, precision and window: per position, the K and V rows of `OpAttention`, `OpGatedAttn` and `OpGemma4Attn` at the layer's KV
+width with its head count (none on a KV-shared layer) and window, and `OpMLA`'s latent row, f32 at any KV precision and without per-head
+scales; per slot, the state of `OpDeltaNet`, `OpMamba2`, `OpKDA` and `OpShortConv`, f32, each marked checkpointed or not. `LayerShape`
+carries one layer's widths; the decoder fills it per layer from the Architecture where the walker reads them. Pricing is per layer and
+per buffer, never one program-wide row: a backend sizes each entry with its own rule (Metal: f16, f32, or int8 codes plus one f32 scale
+per head, for 64-row blocks over the whole context; CUDA: the same rows, a windowed one in window-plus-slack blocks).
+
+**What moves, and whose:**
+1. **Shared, mac-sb11m (#739):** the declaration; `stateSpecs` and `recurrentCheckpointBuffers` as sums over it (a non-f32 state entry is
+   refused).
+2. **Metal, mac-sb11m (#741):** `metalKVParts` and Metal's pool sizes from the per-position entries, a build refused where an entry's
+   width or heads differ from what the layer's kernels address. Then Metal's decode scratch, the third Metal step: it is MM5's (§6.5's
+   per-step scratch), and MM7's known-gap rows for it close with it. Its declaration is a third unit, per step, sized by the rows a step
+   runs; a step's scratch is the high-water mark over its operations, not their sum, since each operation's buffers are free once the
+   next reads them. That step registers its own gates before it starts.
+3. **CUDA, nobara-sb01, once #739 is merged:** `cudaKVParts` and CUDA's pool sizes from the same entries, with its windowed and table
+   terms. CUDA's step scratch stays with OP4 on CUDA (the coordinator's 2026-11-06 split), not here.
+4. **Later, not in this pass:** the CPU's and WebGPU's KV pricing and the host fit's `kvBytesForCtx`.
+
+**Gates.** All tier 0, seconds. Ordinary engineering: nothing computed changes. Each gate checks the list against something that does not
+read it.
+- **G-MP1, the plan:** MM1's decision census, arm64 and amd64 (Rosetta reproduces CI's class). No decision may move. A byte figure that
+  moves is explained in the PR and re-recorded (`internal/runtime/mem/CLAUDE.md`'s rule). Amended the same day from "unchanged byte for
+  byte", on the Metal half's first census: 88 D4 rows on lfm2-tiny and bailing_hybrid-tiny move by their kv figure alone, to a quarter,
+  because the old pricing charged rows to layers `ResidentLayerOps` miscalls attention (LFM2's short conv) or MLA (Bailing Hybrid's KDA).
+- **G-MP2, the allocation and the kernels:** per backend, at a pinned context and slot count, the KV the build allocates (every pool,
+  int8's scales, the tables) equals what the plan prices, to the byte, both ways (MM7's gate fails only an under-price), with an f16 and an
+  int8 cache; and the build refuses an entry whose width or heads differ from what its kernels address. The context crosses every
+  windowed fixture's window (256 positions against gemma2-tiny's 4 and mistral-tiny-window's 16). Fit-dependent leases (rollback grants,
+  the room-sized checkpoint) are not on this line.
+- **G-MP3, a hand table:** for llama-tiny, deepseek-tiny (MLA), qwen35-tiny (DeltaNet beside attention), gemma2-tiny (windowed), lfm2-tiny
+  (short conv) and nemotron-tiny (Mamba-2), the KV bytes per block, the state bytes per slot and the checkpoint bytes per slot are written
+  in the test as arithmetic on the config's numbers, and the plan's figures (`recurrentCheckpointBuffers` included) must equal them. A
+  short-conv model's checkpoint is 0 beside its state; DeltaNet's and Mamba-2's equal their state.
+- **G-MP4, the scan:** `stateSpecs`, `stateBuffers`, `recurrentCheckpointBuffers`, `metalKVParts` and `MetalKVRowBytes` (and `cudaKVParts`
+  with CUDA's half) name no mixer, family or family parameter. A backend's build still branches by mixer to build each layer's kernels,
+  so the scan does not read it; its pool sizes come from the list through one function (`kvDeclaredRow` on Metal), and G-MP2 holds them.
+- **G-MP5:** `gate identity` per backend, all IDENTICAL.
+- **G-MP6, the CPU:** each layer's declarations equal what the CPU walker's own cache holds after a prefill, which it sizes without the
+  list: its rows (width, KV heads, precision, the ring's window) and its state (each entry against the walker's own, conv windows full), on
+  dense, windowed, MLA, DeltaNet, Mamba-2, short-conv and KDA fixtures, and a KV-shared layer on a built Gemma 4 config.
+- **Plants:** a row declared one element short (G-MP2's kernel check, G-MP3 and G-MP6 red); a state entry declared short or with its
+  checkpoint mark flipped (G-MP3 and G-MP6 red, the mark G-MP3 alone); a backend term counted twice (G-MP2 red).
+
+**Not in it:** weights, the arbiter (MM4). SB11a's operation records ride on OP4's walker, not on this.
+
+### 4.9c Metal's decode scratch: design and gates (2026-11-07, registered before any code)
+
+§4.9b's third Metal step. **Today** a Metal build allocates decode's scratch piece by piece (`buildResident` and each family's build:
+the residual rows, each operation's rows at the widest layer that runs it, the head's logits and argmax partials, the sampler's draws, the
+rows `ensureBatchCap` grows, the int8 and f16 activation twins, the uniforms). Nothing prices it: it rides in `mem.MetalFitMargin`, and
+MM7's table bounds it with a hand formula (`metalDecodeScratchBytes`, the `decode` gap row). The batched step's scratch is already one
+list that builds and prices (`stepShape.buffers`, MM5a); this does the same for decode, from the program.
+
+**The declaration.** `program.Buffers` gains a third unit, `PerRow`: per row of a step, the activations an operation writes beyond the
+residual stream, f32: `OpProjQKV`'s q, k and v rows, `OpAttention`'s context, `OpFFN`'s gate|up, and each whole-sublayer operation's own
+rows (`OpMLA`, `OpDeltaNet`, `OpMamba2`, `OpKDA`, `OpShortConv`, `OpGatedAttn`, `OpGemma4Attn`, `OpGemma4MoE`, `OpPLE`). A second list,
+`program.HeadBuffers`, holds what no layer owns: the residual rows and the logits. Decode is one row.
+**Metal's rule, one function:** each entry is one buffer, sized by the widest layer that declares it, since Metal allocates one buffer a
+role and every layer reuses it. Roles are summed, not overlapped: §4.9b's "high-water over operations" holds for an arena, which Metal's
+build does not use. Metal adds its own terms by name: an entry's int8 or f16 twin where its kernel quantizes the row, the fused attention's
+partial, the argmax partial, the sampler's draw rows, the batch rows and the uniforms. The build allocates from the list, as `buildBatch`
+does from `stepShape.buffers`.
+
+**No decision moves.** The plan shows the figure on the scratch line, as `Plan.CheckpointBytes` is shown, outside `NeedBytes`, and
+`MetalFitMargin` is unchanged. Charging it in `NeedBytes` and narrowing the margin is a guard threshold, so Francis's call, not this step's.
+
+**Gates**, tier 0, seconds; ordinary engineering.
+- **G-MS1, the plan:** MM1's census, arm64 and amd64: no decision moves, and only the new scratch figure is added.
+- **G-MS2, the allocation:** on every row of `TestMemGate_metal`, the scratch line after the build and after a short generation equals the
+  decode list plus the step list, to Metal's named rounding, both ways. MM7's `decode` gap row leaves the table (`metalMemGapsPin` 3 to 2).
+- **G-MS3, a hand table:** llama-tiny, qwen35-tiny (DeltaNet and gated attention), deepseek-tiny (MLA), nemotron-tiny (Mamba-2), a MoE
+  fixture and gemma2-tiny: the decode scratch written in the test as arithmetic on the config's numbers equals the plan's.
+- **G-MS4, the scan:** the pricing function names no mixer, family or family parameter.
+- **G-MS5:** `gate identity -backend metal`, all IDENTICAL.
+- **Plants:** an entry declared one element short (G-MS3 red); a buffer allocated beside the list (G-MS2 red); a term counted twice
+  (G-MS2 red). Amended 2026-11-07, during the build: G-MS2 cannot see a short entry, since the build allocates what the list declares,
+  so G-MS3 alone holds a declaration to the config. G-MS2 reads the ledger's requested bytes, so it is exact with no rounding allowance.
+
+**Outcome (#754, 2026-11-07).** The Metal half shipped. Every buffer decode leases on the scratch line comes from a list the build allocates
+from (`decodeShape.buffers`, `batchRows`, `chainBuffers`). G-MS2 holds the ledger to it on every `TestMemGate_metal` row, MM7's
+`decode` gap row is gone, G-MS3 holds it to each registered fixture's config, and G-MS5 reads all IDENTICAL. Metal's scratch is the sum of
+its roles, each at its widest layer, not a high-water over operations (the coordinator agreed the same day). The program-side
+declaration, the plan's figure, G-MS1 and G-MS4 moved to their own item, MM5b (`docs/tasks/task-subsystems-2026-10.md`).
+**Francis's call, 2026-11-07 17:26:** the figure is charged in `NeedBytes`, and `MetalFitMargin` stays at 384 MiB as a drift cushion
+(`docs/measurements/mm5-decode-scratch-2026-11/README.md`). This replaces "no decision moves" above for MM5b, whose gates
+the ledger row names.
+**Amended with MM5b (2026-11-07), from #754's review.** At #754, G-MS3's five fixtures left most of the list's branches unchecked: the
+fused attention's partial, the whole-vector QK norm, a second attention geometry, the Gemma 4 and gpt-oss MoE lists, the chain and the paged
+fence. Since G-MS2 sums the list on both sides, a wrong entry in any of them passed. Each now has a hand row, and a one-element plant on
+each is red on its row alone. No registered row builds the q4k lane or PLE, so neither has a row. G-MS2 now reads the scratch line after
+`metalGatePlantForTest`, so a buffer leased beside the list is red in it (`TestMemGate_metalPlantsThroughTheTable`).
+
+## 5. Track RF — one ragged forward pass
+
+### 5.1 Design
+
+- **One call per backend: `Step(batch)`.** A batch is a list of rows, and each row has:
+  - **a sequence:** its KV block tables (KV4/KV5), or a slot before then, plus its position;
+  - **an input:** a token id, an embedding row, or an image-embedding row with its m-RoPE triple and image-span mark;
+  - **an output request:** nothing, logits, an argmax, a sample with its parameters, top-k, or a hidden state at a layer.
+- **Every shape is a batch:**
+
+  | today | as a batch |
+  |---|---|
+  | `Forward`, `ForwardArgmax`, `ForwardSample`, `ForwardTopK` | 1 row, with an output kind |
+  | `ForwardN` (verify) | k rows of one sequence |
+  | `PrefillLast` and its variants | a chunk of rows; the last asks for logits or an argmax |
+  | image and m-RoPE prefills | rows with embeddings and positions |
+  | `HiddenLast`, `ResidualAll` | output kinds |
+  | `StepBatch` (MC3) | B rows, one per sequence |
+  | a mixed step (new) | a newcomer's chunk plus the other conversations' decode rows |
+
+- **Ragged attention reads paged KV through block tables.** This is the core new kernel, in the shape of FlashAttention's
+  variable-length interface and FlashInfer.
+  - It arrives with KV4/KV5. KV4 puts every KV kernel behind a block table and gives MC3's step a table per row (the KV doc,
+    KV4a).
+  - RF2 adds rows of different kinds and counts per sequence in one pass.
+- **One kernel-class rule, set by what is invariant: the pass, not the whole prompt.**
+  - KV0 measured chunk and split invariance on CUDA and WebGPU. Chunked prefill measured Metal's chunk invariance.
+  - The KV manager keys every block by the kernel class that wrote it (the KV doc, §5.5–5.6).
+  - So a row's class cannot depend on how it was batched.
+- **A scheduler in the decoder** gives each step a token budget: decode rows first, then prefill rows to fill it. This is
+  Sarathi-Serve's stall-free batching. MC3's batcher becomes this scheduler.
+
+### 5.2 What it buys
+
+- **No more cliffs.** Every family a backend runs resident runs every shape through one path: long prompts, images,
+  all-logits requests, hidden-state routes.
+- **No more stalls.** A newcomer's prefill shares passes with the others' decode instead of pausing them. Decode tokens ride
+  along in prefill passes nearly free.
+- **Speculation inside a batch** becomes possible.
+- **One identity story:** a handful of interfaces instead of 34, and far fewer kernel variants to keep equal.
+
+### 5.3 How close the code is
+
+- **Exists:**
+  - MC3's `StepBatch`: B sequences, one row each (`backend/cuda/batchstep.go:cudaResident.StepBatch`,
+    `backend/metal/batch.go:metalResident.StepBatch`);
+  - `ForwardN`: one sequence, k rows;
+  - chunked prefill;
+  - Metal's row kernels (`backend/metal/batch_rows.go`). CUDA's step runs attention row by row
+    (`backend/cuda/batchstep.go:cudaResident.stepAttnRows`).
+- **Missing:**
+  - several rows per sequence in a step that also holds other sequences;
+  - ragged attention;
+  - per-row output kinds;
+  - images as row attributes;
+  - the token-budget scheduler.
+
+### 5.4 Phases
+
+- **RF0 — measure first (S).**
+  - Per-turn phase timing on the wire: `docs/tasks/task-turn-telemetry-2026-09.md`'s X1, built here.
+  - A census of shape × family × backend: which combinations decline today, to what, and at what cost.
+  - Prior art: what §10a lists as not read.
+- **RF1 — the call shape, over today's entry points (M).**
+  - Every caller goes through `Step(batch)`, and an adapter turns each batch into today's calls.
+  - No kernel changes, so identity is unchanged by construction.
+  - It can start any time.
+- **RF2 — ragged attention on CUDA (L), after KV4.** Decode, verify and prefill rows in one pass.
+  - **Gates:**
+    - identity per shape wherever the kernel class is unchanged, and a registered fidelity gate where it changes;
+    - speed per shape:
+      - decode at depth 128 to 8,000: 0.98 or better;
+      - time to first token at K = 512 and 3,900: 0.97 or better;
+      - the MC3 aggregate: 0.98 or better.
+    - **Kill:** if decode at depth stays under 0.98 after the registered tuning budget, keep the old decode call beside the
+      ragged one.
+- **RF3 — mixed steps on CUDA (M).** The token-budget scheduler.
+  - **Gates**, on chunked prefill's harness (`scripts/bench_prefill_stall.py`), with bands registered against chunked
+    prefill's:
+    - the longest decode stall during a newcomer's prefill;
+    - the newcomer's time to first token;
+    - the solo guard.
+- **RF4 — Metal (L),** after KV5 and RF3.
+- **RF5 — retire the old entry points and interfaces (M).** Images, m-RoPE and hidden outputs become row attributes. WebGPU
+  keeps the RF1 adapter, since D3 keeps its slots.
+- **RF6 — speculation inside a batch (M).** The parked "spec inside a batch", on the ragged path, with MC4's identity gate.
+
+### 5.5 RF1: the plan (2026-11-07, docs only, before any RF1 code)
+
+**The count, read at main `7c4ed7130`.** `decoder` declares 49 `type Resident* interface`; §3.3's 34 counted optional type assertions
+on 10-13, and its list includes `Prefiller` and the two path reporters, which are not named `Resident*`. Implementers were read with
+`go/types` over `backend/cuda` (`cuda`), `backend/metal` (`GOOS=darwin`) and `backend/webgpu` (`gpu`); every one of the 49 has one,
+so none is dead. By role:
+
+| group | interfaces | implemented by | RF1 does |
+|---|---|---|---|
+| not a capability (3) | `ResidentForward` (the required seam), `ResidentKVSnapshot` (a value), `ResidentBlockDrafter` (CUDA's drafter) | all | keeps |
+| forward shapes (17) | `Greedy`, `Sample`, `TopK`, `PrefillKV`, `HiddenLast`, `ResidualAll`, `MRoPE`, `MRoPEPrefill`, `MRoPEDeepstackPrefill`, `HybridMRoPEPrefill`, `ImagePrefill`, `ImageBlocksPrefill`, `SpanPrefill`, `PrefillRows`, `PrefillMarked`, `SeedArgmax`, `BatchStepper` | 4 on all three, 7 on CUDA and Metal, 6 on CUDA alone; 28 assertion sites | moves every site behind `step` (RF1-4 to RF1-7); RF5 deletes them |
+| reporters (10) | values: `Capped`, `FastPrefill`, `PrefillKernelFloor`, `PrefillTailMin`, `QuantReporter`, `ContextNoted`, `BatchGreedy`; pricing functions of rows: `PrefillChunks`, `PrefillBlocks`, `PrefillSpanScratch` | `Capped` on all, `PrefillChunks` CUDA and WebGPU, five Metal, three CUDA; 26 assertion sites | the seven values become one record (RF1-2b); the pricing functions stay |
+| KV and recurrent state (12) | `KVSlotter`, `KVCopier`, `KVSlotActivity`, `KVPoolInfo`, `ReusableKV`, `ReusableKVSlot`, `KVUploadPass`, `KVDemoter`, `KVSnapshotter`, `RecurrentSnapshots`, `RecurrentCheckpoint`, `RecurrentCheckpointOwner` | 8 CUDA alone | merges two pairs (RF1-1); the rest is the KV doc's KV11 |
+| host chains (2) | `GreedyChain`, `SampleChain` | Metal | HL's (§6) |
+| speculation (2) | `DrafterHost`, `RecurrentSpec` | CUDA | RF6's |
+| other (3) | `Adapter` (LoRA), `ExpertCache` (also `decoder.Model`), `Cost` (wraps a call to count its device work; not a report) | all / CUDA / CUDA | keeps |
+
+**Nothing moves to the program in RF1.** Four answers look like walks over layer flags the program holds (`HybridMRoPEPrefill`,
+`KVSnapshotRecurrent`, `TopKAvailable`, `SampleAvailable`), but each also carries the backend's own coverage: whether CUDA's m-RoPE
+prefill kernel compiled for the layout, which recurrent families CUDA's snapshot code carries, which head the top-k kernel handles,
+Metal's paged MoE. An answer leaves a backend only when the program gives all of it, so these stay; a backend can later state them
+in its `program.Support` table (OP's work). CUDA's `BatchStepRange` already reads `program.CUDAStep`.
+
+**Steps, each a PR from `origin/main` that builds and passes alone.** Interfaces left after each in brackets.
+
+| id | what | removes | gates | session-days |
+|---|---|---|---|---|
+| RF1-1 | merge the two pairs whose implementer sets are identical: `RecurrentCheckpointOwner` into `RecurrentCheckpoint` (CUDA, Metal), `RecurrentSnapshots` into `KVSnapshotter` (CUDA); test fakes answer the old "absent" value | 2 interfaces, 2 assertions [47] | the backends lose a `var _` line and two comments, no behavior; tier 0 | 0.5 |
+| RF1-2a | each reporter asserted in one accessor (a `Model` method, or a helper taking the resident); no backend change; merged, #757 | 26 sites to 10 | decision census | 0.5 |
+| RF1-2b | one `ResidentCaps` record for the seven values behind `ResidentCapsReporter`, read at each use as the methods were (so no field needs a static-after-load proof); the floors keep their presence bits | 6 interfaces [41] | decision census; a red-first fake per field; each backend's value tests, on its box | 1–1.5 |
+| RF1-3 | *dropped* (Gemini's review of #751, read against the code): the four answers above stay with the backends | — | — | 0 |
+| RF1-4 | `Batch` (rows: sequence, position, input kind, output kind) and `(*Model).step`, an adapter onto today's calls; no caller moves; built as `decoder/step.go`'s `stepBatch`, `canStep`, `stepOn` and `(*Model).step`, unexported until a backend implements `Step` (RF5); the caller names the call kind (`stepPass`: one decode token, one batched pass of one row or more, several sequences), never inferred from the row count | nothing yet | a fake resident logs its calls; for every shape `step` makes exactly the call today's caller makes | 1 |
+| RF1-5 | decode and verify callers onto `step` (`model.go`'s greedy/top-k/sample choice, `spec_ngram`, `blockspec`); done in this step's PR: the six sites ask `canDecode` / `canStep` and call `step`, and `stepDo` builds no closure, so a decode token's step allocates nothing | 6 assertion sites | the call log through the callers, not `step` alone; decision census | 1 |
+| RF1-6 | prefill callers (`PrefillKV`, `PrefillRows`, `PrefillMarked`, `SeedArgmax`, the block and chunk splits); done in this step's PR, with the batched-prefill presence checks in `PrefillPath`, `Theta` and the self-test; `step` takes a drafter host as well as a resident | 6 sites | as RF1-5 | 1 |
+| RF1-7 | multimodal and hidden-state callers, and MC3's `StepBatch`; then a source-scan test refuses a forward-shape assertion outside `decoder/step.go`; done in this step's PR (`TestStepShapes_assertedOnlyInStep`, in `scripts/touched_scans.py`): RF1's call shape is complete | 15 sites | as RF1-5; the scan in `scripts/touched_scans.py` | 1–1.5 |
+
+**Totals: 6–7 session-days, 49 → 41 interfaces, every forward shape asserted in one file.** RF1-1 and RF1-2 shrink the seam;
+RF1-4 to RF1-7 are the call shape (4–4.5). The 17 shape interfaces go in RF5, when a backend implements `Step` itself.
+
+**Gates on every step.** No kernel changes, so identity holds by construction; the checks that it does: `TestDecisionCensus` and its
+second-process twin, `TestProgramFingerprint_table`, the parity refresh (`scripts/refresh_parity_hashes.sh`) once before each push
+that changes non-test `decoder` code, `touched.py`, `go run ./cmd/lint` and the citation lint. Tier 0 throughout; no timed run.
+
+**Build-tag variants.** Every step touches `decoder`; RF1-1 and RF1-2b touch the backends too. mbp2 (Linux, no GPU) vets all three
+here (`go vet -tags 'cuda goinfer_testhooks' ./backend/cuda/`, `GOOS=darwin go vet -tags goinfer_testhooks ./backend/metal/`,
+`go vet -tags 'gpu goinfer_testhooks' ./backend/webgpu/`) and runs `decoder`'s tests. It cannot run a backend's tests: CUDA's on
+nobara, Metal's on the Mac, WebGPU's on nobara (Vulkan). A step that changes backend behavior (RF1-2b) runs those there before
+it merges.
+
+## 6. HL — the host token loop (small)
+
+- **Today:** Metal's run-ahead chains run only when no logit processor is attached
+  (`decoder/residency.go:ResidentGreedyChain`, `decoder/residency.go:ResidentSampleChain`,
+  `decoder/model.go:Model.generateInto`).
+  - A gated processor already keeps the single-token fast path armed. Only the chains refuse it, because "a gated one would need
+    the full row mid-chain".
+  - In auto mode, a turn that declares tools attaches the lazy tool union, a gated processor that is on by default
+    (`internal/app/serveapp/tools.go:constrainToolUnion`). A turn with a thinking budget attaches another
+    (`internal/app/serveapp/budget.go`). So agent turns lose the chain.
+  - CUDA has no chain at all.
+- **The change on Metal:** run ahead while the gate is closed.
+  - When the gate opens at token t, the host reads step t's full row and applies the mask.
+  - If the masked pick differs from the device's, the host discards the forward already queued for t + 1, truncates the one
+    position it wrote, and redoes it.
+  - That costs at most one wasted forward per opening, and openings come about once per tool call.
+- **The change on CUDA:** add a chain. `ForwardArgmax` already picks on the device. Decode replays CUDA graph segments only
+  where graphs are on, and they are opt-in and off by default (corrected 2026-10-22, kernel survey KS-A2).
+- **Gates:**
+  - tokens identical to today's;
+  - speed on the prose part of tool turns (Metal 1.5B and 7B; CUDA 1.5B and 7B), registered against the 1.010–1.160× the
+    chain gave plain turns.
+- **Size:** S–M.
+
+## 6a. Track SP — speculation on windowed and recurrent models (added 2026-10-22)
+
+### Why
+
+- **Every speculative path refuses these models.** `decoder/forwardn.go:Model.specRollbackSafe` is false for every family
+  with recurrent state and for every model with a sliding window. Block speculation (`decoder/blockspec.go`), n-gram
+  (`decoder/spec_ngram.go`), grammar speculation (`decoder/spec_grammar.go`), the drafter loop (`decoder/speculative.go`) and
+  `decoder/spec_optfwd.go` all check it.
+- **The families affected:** every Qwen since 3.5, Qwen3-Next, Nemotron-H, Granite-4.0-H, OLMo Hybrid, gpt-oss, Mellum,
+  Gemma, Cohere2, and Flint (`docs/tasks/task-flint-2026-10.md`). These are the most-used local models today.
+- **Why it refuses.** Recurrent layers: `KVCache.TruncateTo` does not roll back in-place state. Windowed layers: once a ring
+  wraps, a rollback of more than one position cannot restore what the verify rows evicted. The comment's own condition
+  for re-enabling windows is "consuming an exact-rollback bool at each rollback site".
+- **What was tried before.** A checkpoint per verify round was priced at 11.0% of a decode step and closed (R-01 phase 1,
+  `docs/tasks/task-kv-architecture-2026-10.md` §5.7).
+- **What goinfer already has.** A DFlash drafter (`decoder/dflash.go`), block speculation, and tree masks in the KV cache
+  (`KVCache.treeMask`, `treeRowPos`). All of it runs only on models without recurrent state or a window.
+- **What Kapitsa shows.** It speculates on exactly these models, with no checkpoint per round (`docs/kflash.md`):
+  - Each verify row runs its recurrent layers from its parent row's state. Mamba-2 keeps the 8 rows' states in registers;
+    Gated DeltaNet rebuilds a parent's state from the committed state by replaying the ancestors' updates. The short
+    convolutions read each row's ancestors.
+  - The committed state is not written during the pass. The accepted path's updates fold into it at the start of the next.
+  - Flint's sliding layers keep a ring of 528 positions: the 513-token window plus room for a verify pass's rows
+    (`docs/architecture.md`). A rejected row never evicts a position the window still needs.
+  - Its claim, self-reported: 161 tok/s decode on Qwen3.6-35B-A3B at 4-bit on an M4 Pro, against Ollama's 89.
+
+### Phases
+
+- **SP0 — the prize per family (S; no product code).** For each target, record:
+  - **Targets:** Qwen3.5-9B on nobara, Qwen3.6-35B-A3B on the Mac, one windowed model with a drafter or n-gram use
+    (gpt-oss or Mellum), and Flint once its F3 lands.
+  - **Drafters:** which exist (z-lab's DFlash and DFlash2 for the Qwen line; n-gram for all).
+  - **Acceptance by teacher forcing:** run the drafter against the target's own greedy continuation offline. This needs no
+    rollback in the target.
+  - **Cost:** a verify pass of k rows against a one-row step, measured with `ForwardN`. Cost needs no correct rollback.
+    MoE rows cost more, since each row brings its own experts (Kapitsa: 1.56× for 8 rows against 1 on the 35B).
+  - **Projected decode speedup** = tokens per cycle over cycle cost.
+  - **Rule, registered first:** a family goes on to SP1 or SP2 only if its projected speedup is at least 1.3× on its box.
+- **SP1 — exact rollback for windowed models (M).**
+  - **Rings:** sized to the window plus the most rows a verify pass writes, so rollback within a pass is exact.
+  - **Rollback sites:** every one (`KVCache.TruncateTo` on the staged path; the resident windowed KV, which compacts in
+    64-token steps on CUDA) consumes an exact-rollback bool. `specRollbackSafe` admits a windowed model only where every
+    site reports exact.
+  - **Gates:**
+    - identity: greedy speculative output equals plain decode token for token, on prompts past the window, with the ring
+      wrapped;
+    - the ring's added bytes, stated;
+    - speed against plain decode at SP0's registered bar.
+  - It turns on n-gram speculation for Flint, which has no drafter.
+- **SP2 — speculation on recurrent hybrids (L).** Verify never writes the committed recurrent state.
+  - **During the pass:** each row's scan starts from its parent's state, held per row where it fits (Mamba-2) and replayed
+    from the committed state where it does not (DeltaNet). The conv windows read each row's ancestors.
+  - **After acceptance:** the accepted rows' updates fold into the committed state, k rank-1 updates per layer with no
+    full-state copy.
+  - **Gates:**
+    - identity as SP1, conv window included (spec/09: skipping it gives wrong logits with no error);
+    - the fold's cost per cycle, against R-01 phase 1's 11.0%;
+    - speed with DFlash on Qwen3.5-9B (nobara) and Qwen3.6-35B-A3B (Mac), at SP0's bar.
+      **Amended (the owner, 2026-10-25 8:46 am, restated 2026-10-26 09:01):** graded by the merge rule for a lossless opt-in
+      feature (median ≥ 1.05×, at least 9 of 10 pairs faster, the memory cost stated); SP0's 1.30× is an investment bar, not a merge
+      bar (`docs/measurements/sp2-2026-10/README.md`, "G4 graded against the owner's merge rule").
+  - **What it must agree with:** KV8a's checkpoint is taken before decode and is unaffected. The committed sequence after a
+    speculative turn must be what kvmgr scores (R-03, `docs/tasks/task-recompute-audit.md`).
+  - **Registered on nobara, 2026-10-24:** the design and the gates are in "SP2 on nobara" below. SP0 parked the 35B (its MoE
+    verify rows cost about 5× a step on CUDA), so its speed gate is out of SP2's scope; the Mac reading stays open.
+  - **Status, 2026-10-25:** built (PR #232). G1 (identity, both plants caught), G3 and G5 pass on Qwen3.5-9B with DFlash and on
+    three small models. G2 read 10.2% / 9.4% of a step, flagged, so the fold moved into the next pass's scan as registered (two
+    arena banks, 62 MiB priced): 6.4% / 5.9%, still flagged, under 11.0%. G4: 1.46× at short context (PASS), 1.21× behind a
+    3,800-token preamble (PARKED, to the owner) (`docs/measurements/sp2-2026-10/README.md`). The owner's decision (Francis, 2026-10-25):
+    merge on these readings; under his merge rule of the same morning (lossless and opt-in: median ≥ 1.05×, 9 of 10 pairs faster)
+    both contexts merge. Next, a `serve` verify-width option and a served A/B.
+- **SP2b — the drafter's context in prefix snapshots (M; queued after the 35B + DFlash work).** On the owner's decision
+  (Francis, 2026-10-25 13:38, option A). `BlockSpec` reuses a prefix only when a prompt extends its own last turn: the host prefix
+  snapshots plain `serve` restores carry the target's rows and recurrent state, not the drafter's context, so `--drafter`
+  re-prefills a repeated or re-sent prompt cold, with the capture on top (on the essay A/B at depth 4096: 18.65 s a request against
+  plain's 0.21 s, wall 0.19×; `docs/measurements/sp2-2026-10/README.md`, "The essay A/B end to end").
+  - **The change:** snapshots carry the drafter's context rows for their prefix, and `BlockSpec` takes the same prefix plain `serve`
+    takes.
+  - **Gates, registered before any code:** identity (a reused turn equals a cold one, tokens and state); the snapshot's added host
+    bytes, stated and priced; and an end-to-end served A/B, wall time and TTFT beside decode tok/s, on repeated and on agent-style
+    prompts, graded at the merge rule (median ≥ 1.05×, at least 9 of 10 pairs faster).
+  - Not blocking #238.
+- **SP3 — trees of the drafter's candidates (M, after SP2; optional).**
+  - **The tree:** a best-first tree of candidates in the rows a chain already pays for, as KFlash does, on the existing tree
+    masks.
+  - **Size:** each box sizes the tree from its measured verify-row cost, so MoE models use fewer rows.
+  - **Hybrids:** branch states come from SP2.
+  - **Gates:** identity; tokens per pass against the chain; speed.
+
+### SP2 on nobara: design and registered gates (2026-10-24, before any SP2 code)
+
+Registered by nobara-sp2 on the owner's word (Francis, 2026-10-24 11:01 pm: "go on SP2"). Read at main `d9a1cb4d`. SP0's
+record (branch `sp0-2026-10`, `docs/measurements/sp0-2026-10/README.md`, not yet merged) is the input: Qwen3.5-9B with z-lab's
+DFlash projects 1.55× at L = 512 (w = 4) and 1.29× at L = 4096 (w = 4).
+
+**Scope.**
+- **Target:** Qwen3.5-9B Q4_K_M (its `.int4.e4h.cuda.v17.giw` sidecar), resident on CUDA, f32 KV (the CUDA drafter refuses
+  f16), with `z-lab/Qwen3.5-9B-DFlash` at `5fc3b3d4` (block 16, `~/models/qwen35-9b-dflash`). Geometry: 24 Gated-DeltaNet
+  layers of 32; 16 key heads and 32 value heads of 128; conv kernel 4; conv width 8,192.
+- **One loop:** `BlockSpec` (DFlash), a chain of `[anchor, drafts]`. The n-gram, draft-model, grammar and `spec_optfwd`
+  loops roll back through `KVCache.TruncateTo` or the sequential `ForwardN`, and keep refusing every recurrent model.
+- **One backend and one recurrent kind:** the CUDA resident's Gated-DeltaNet layers. Mamba-2 (Nemotron-H, Granite-4.0-H),
+  the short conv (LFM2) and KDA stay refused: `specRollbackSafe` admits a recurrent model only when the resident says its
+  path serves every recurrent layer. Metal is not built here.
+- **Out of scope:** the 35B (parked by SP0, above); trees (SP3).
+
+**Design.**
+- **Verify writes no committed state.** A speculative verify is `PrefillLastNArgmax`'s pass with two row-batched DeltaNet
+  kernels swapped for twins that never store:
+  - the conv twin reads the committed window and does not slide it: row m's taps come from the window and from the pass's
+    rows before m (its ancestors in a chain);
+  - the scan twin loads the committed state, scans the pass's rows in order and never writes it back. In a chain each row's
+    parent is the row above it, so the running state in registers is the parent's state, and no per-row state is stored.
+  - Each twin shares its arithmetic with the kernel it replaces (one function body), so a verify row's output is the bits a
+    prefill row's would be.
+- **The pass keeps each row's inputs.** In verify mode the DeltaNet projections and the conv, norm and gate outputs are
+  written into per-layer slices of one device arena instead of the pass's shared scratch: per row and layer, the conv input
+  (8,192 floats), the conv output (8,192), the normed q and k (2,048 each) and the gates (64). That is 82,176 B per row
+  and layer; 1.88 MiB per row over 24 layers; 30.1 MiB for 16 rows, one allocation of 32 MiB.
+- **The fold.** Once the loop knows how many rows it commits (n = 1 + accepted drafts, fewer when a stop token lands
+  inside the burst), each DeltaNet layer replays those n rows on the committed buffers, in place, through the existing
+  `delta_conv_rows` (the window) and `delta_rule_rows_128` / `delta_rule_rows` (the state). That is n rank-1 updates per
+  value head per layer, and no copy of the state. They are prefill's own kernels, so the committed state after a fold is
+  the bits a prefill of those n rows leaves. The fold runs right after acceptance, so the fallback step, the trailing
+  forward and the commit all see a consistent state. Folding at the start of the next pass instead (Kapitsa's place) saves
+  one read and one write of the state per cycle, and is the follow-up if G2 asks for it.
+- **Held per row, or replayed:** replayed, for this family. Holding each row's state would cost 50.25 MiB per row (48 MiB of
+  state and 2.25 MiB of conv window over 24 layers): 201 MiB at w = 4 and 804 MiB at 16, plus a full-state copy on every
+  commit, which §6a rules out. The arena keeps the rows' inputs at 1.88 MiB per row instead. The record states both, and
+  free VRAM with the drafter attached.
+- **Admission.** `specRollbackSafe` takes the verify path a loop uses. A recurrent model is admitted only on the fold path,
+  only on a resident whose capability reports it serves every recurrent layer, and only at widths up to the arena's 16
+  rows. `BlockSpec.generate` itself refuses a recurrent target when the fold path is not active (today it would verify on
+  a path that advances the state by every row).
+- **Off is unchanged.** With no speculation the prefill and decode launches are exactly today's; the only change on those
+  paths is a nil check in the DeltaNet layer of the batched pass.
+- **The stop inside a burst.** The loop advances its position by the rows it emits, not by 1 + accepted, so a turn that
+  stops mid-burst folds and commits exactly the emitted tokens. For a positional cache this changes nothing observable; for
+  a recurrent one, the old accounting would leave the state past the committed ids.
+- **Not a departure from §6a.** §6a's per-row replay from the committed state is what a tree needs (SP3), where a row's
+  parent is not the row above it. A chain's parent is the row above, which the scan already holds.
+
+**The gates.** Tier and instrument per `CLAUDE.md` (TE11). Every gate's test and its log path go into
+`docs/measurements/sp2-2026-10/README.md`, with the outcome against the rule below.
+
+- **G1 — identity (correctness; the PR opens when G1 passes).**
+  - **G1a, tier 0, the mechanism, CUDA, seconds** (`qwen35-tiny` and `qwen3next-tiny`, the generic scan; `qwen3.5-0.8b`, the
+    128-wide scan):
+    - a verify of w rows leaves every DeltaNet layer's state and conv window byte-equal to before;
+    - a verify of w rows followed by a fold of n leaves them byte-equal to a prefill of the first n of those rows from the
+      same start, for every n in 1..w and w in {2, 4, 8, 16};
+    - each verify row's argmax equals that prefill's.
+  - **G1b, tier 0/1, the loop with a scripted drafter** (the same three models; 0.8B at tier 1): a test drafter proposes the
+    target's own greedy continuation with one token corrupted on a fixed schedule, so the rounds accept every count from 0
+    to w − 1 and also all w − 1; widths {2, 4, 8, 16}; random-id and chat prompts, 128 new tokens. Bar: the speculative
+    tokens equal plain greedy token for token, and the state after the turn is byte-equal to plain's.
+  - **G1c, tier 1, the real pairing:** Qwen3.5-9B + DFlash, at w = 4 (SP0's best) and w = 16 (the block, the widest fold).
+    Prompts: SP0's 12 code and math prompts (thinking off), its 6 math prompts with thinking on (more rejections, so more
+    partial folds), and 2 long prompts of about 3,000 tokens (a source file and a question), 256 new tokens each.
+    - **Bar:** every prompt's speculative tokens equal plain greedy's token for token, to the end, and every DeltaNet
+      layer's state and window after the turn are byte-equal to plain's.
+    - **"Plain greedy"** is `Model.Generate` at temperature 0 on the same resident, under the same exact-attention scope
+      `BlockSpec` holds (`Model.enterExactAttention`): the contract the dense lossless gate holds (`TestDFlashLoop_lossless`).
+      The served default's plain decode, without that scope, is compared too and recorded, with no bar. A difference there
+      is the flash-decode lane's, and is not SP2's.
+    - **The guard's fallback:** one run with the acceptance guard tripped after its window (a test seam), so the turn ends
+      on plain steps after folds. Same bar.
+  - **Planted defects, registered to go red:** (P1) the fold replays the scan but not the conv window, spec/09's defect;
+    (P2) verify writes the committed state, today's behavior. Each runs G1a, G1b, and G1c at w = 4 on the 12 thinking-off
+    prompts. **Expected:** each plant fails G1a and G1b, and diverges on at least one G1c prompt. A plant that passes G1c
+    makes G1c too weak: the prompts are lengthened, and G1c re-registered before it is read again.
+  - **Outcomes:** all pass → the path is correct, and the PR opens. Any real-run divergence → a defect in SP2; the row and
+    layer of the first divergence are named, and nothing merges. A plant that stays green → the gate is weak (above).
+- **G2 — the fold's cost per cycle (tier 1, by day, timing lock).**
+  - **Instrument:** in one process on the 9B, interleaved and rotated A B B A over 3 warm-ups and 20 repetitions: a plain
+    step (`ForwardArgmax`), a w = 4 verify on the fold path, the same verify on today's path, and the fold of n = 1..4 rows.
+    Each arm is timed from a stream sync to a stream sync. L ∈ {512, 4096}, SP0's lengths.
+  - **The reading:** the fold at SP0's mean committed rows per cycle at w = 4 (3.30: interpolated between n = 3 and 4), over
+    the median step. Also recorded: the fold-path verify over today's verify (it writes the arena where today's writes
+    scratch, so it should be about 1.0).
+  - **Bands:** under 5.0% of a step → passes (spec/09's own bar for the snapshot was 5%); 5.0–11.0% → passes the
+    comparison but is flagged, and the fold moves into the next pass's scan before G4 is read; 11.0% or more → fails: it
+    costs what the closed checkpoint cost, and SP2 stops with a decision for the owner.
+- **G3 — device memory, stated and priced (tier 0, plus the real load).**
+  - The resident states the arena at attach on stderr: bytes, rows, layers.
+  - The fit guard prices it: the companion reserve a drafter brings (`Options.ExtraResidentBytes`) grows by the arena on a
+    recurrent target. A tier-0 test pins the formula (layers × rows × (2 × conv width + 2 × key width + 2 × value heads) ×
+    4 B, rounded up to 2 MiB as `cuMemAlloc` rounds) and that the CUDA plan's reserve grows by exactly that.
+  - On the real load: the `fit:` and `KV plan:` banners with and without SP2, and free VRAM before and after attach.
+  - **Bar:** the stated, priced and allocated bytes agree, and the 9B with its drafter still plans the 4,608-position
+    context SP0 ran. A plan that drops below 4,608 is recorded with its new figure, and G4 runs at what fits.
+- **G4 — speed with DFlash against plain decode (tier 2, by day, timing lock).**
+  - **Instrument:** the whole-generation in-process A/B (TE5(b)), through the public API on one resident: plain greedy
+    (`Model.Generate`) against `BlockSpec.Generate` at w = 4. The served path verifies at width 8, where SP0 projects
+    1.17×, and `serve` has no width option, so a served reading waits on that option. It is a follow-up, below.
+  - **Cells:** two contexts, read separately: SP0's 12 code and math prompts as they are (about 100–250 tokens), and the
+    same prompts behind a fixed 3,800-token preamble of real text, so decode starts near 4,096. 256 new tokens.
+  - **Pairs:** 10 A B B A pairs per context; a pair is one pass of each arm over all 12 prompts, and its reading is the
+    plain time over the speculative time, tokens equal by G1. Each pair records load and `MemAvailable` at its start; a pair
+    started above 8.0 load or under the fit need plus 2 GB is void and re-run in order.
+  - **Bar, per context:** SP0's rule. The median pair ≥ 1.30× and at least 9 of 10 pairs above 1.0 → passes at that
+    context. 1.20–1.30× → parked, to the owner. Under 1.20× → not advanced at that context. The verdict names each
+    context's outcome; SP0's 4,096 projection was 1.29×, so a parked reading there would be the expected one.
+  - **Amended (the owner, 2026-10-25 8:46 am, restated 2026-10-26 09:01):** G4 is graded by the merge rule (median ≥ 1.05×, at
+    least 9 of 10 pairs above 1.0, the memory cost stated), not SP0's bands above; the readings stand as recorded
+    (`docs/measurements/sp2-2026-10/README.md`, "G4 graded against the owner's merge rule").
+  - **The small-gains rule does not decide this.** The tokens are identical, but SP2 adds device memory (the arena and the
+    drafter) and keeps two paths, so the registered bar decides.
+- **G5 — agreement with KV8a and kvmgr (R-03; tier 0/1).**
+  - **KV8a:** the recurrent checkpoint's buffers are byte-equal before and after a speculative turn's rounds: verify and fold
+    never write them. Whatever checkpoint record the turn leaves is either none or the end of its prompt.
+  - **kvmgr:** after a speculative turn A, a turn B whose prompt is A's prompt, A's output and a suffix:
+    - kvmgr scores B as the strict extension (reuse = A's prompt plus output);
+    - B's tokens, decoded speculatively and plainly, equal a cold plain decode of B's prompt;
+    - the live state after A is byte-equal to a cold prefill of A's prompt plus output.
+  - Run with the scripted drafter on the three small models (tier 0/1), and once on the 9B with DFlash.
+  - **Bar:** all hold. A failure means the commit records a sequence the state does not hold, R-00's class of error; it
+    blocks the merge.
+
+**Cost (estimated).** G1a and G1b tiny: seconds. G1a, G1b, G5 on 0.8B: about 3 min. G1c and its plants: load 1 min; 20
+prompts × (one plain turn about 5 s + two speculative turns about 7 s), about 5 min; plants about 3 min each; about 15
+min. G2: 2 contexts × 23 repetitions × 7 arms, about 3 min plus load. G4: 2 contexts × 20 runs of 12 prompts × 256
+tokens; about 4.5 s plain and 3 s speculative per prompt at 512, more at 4,096: about 40 min, plus the preamble's
+prefills. Each timed run states its start and finish when it starts.
+
+**Follow-ups, not gated here:** a `serve` option for the verify width, then a served A/B (two `serve` arms, plain on its
+default KV); the fold fused into the next pass, if G2 flags it; Mamba-2 per-row states; trees (SP3).
+
+### Order
+
+SP0 → SP1 → SP2 → SP3. Nothing here waits on KV4 or RF2. RF6 (speculation inside a batch) later builds on what SP lands.
+
+## 7. Order, and what each step is worth alone
+
+- **Now, independent of everything:** OP0, OP1 (Gemma 2 on every GPU), RF0, HL, and OP6's Metal default (E5).
+- **With the KV track:** RF1 any time; RF2 after KV4; RF4 after KV5; RF3 and RF6 after RF2.
+- **Track SP** (added 2026-10-22) waits on nothing in KV or RF: SP0 first, SP1 next (it unblocks Flint, gpt-oss, Mellum and Gemma), then SP2.
+- **The structural work** comes after OP1 and OP2 have shown the operation boundary holds: OP3, then OP4, then OP5.
+- **Every phase is bit-identical where it says so, and ships alone.** A track that stops early leaves the tree consistent,
+  because the adapters keep the old paths working.
+
+### 7a. What is not started: size, order and what it decides (read 2026-11-07, docs only)
+
+**Unit and anchors.** A session-day is one session working one day on one box, review rounds included. Anchors from this doc's own dates: OP1 on
+Metal 2 days (gates registered 10-13, night gates passed 10-14); OP6's Metal half 1 day to a tier 1 pass (10-15); OP3 14 days (10-16 to
+10-30, about 13 sub-phases); OP4 on Metal about 4 days (gates 10-30, through d6b by 11-02, about 20 PRs); OP4 on CUDA about 2 days to the d2 stop
+(7 PRs). Work that needs a **night** or the card is slower than its code: OP1 on CUDA's night gates and OP6's M1 peer cell have each waited
+weeks. A range is wide where a kernel's tuning decides it (RF2, RF4) and narrow where the pattern exists (OP5 after the first family).
+
+| phase | needs | unblocks | session-days | box |
+|---|---|---|---|---|
+| **RF0** close-out | done 2026-11-07: the `timings` block, the cost counters, the refreshed census (`docs/measurements/forward-arch-census-2026-11-07.md`), the §10a prior-art reading and the cost of a decline measured on the Mac | RF1's and RF2's registered bands | 0.5–1 | Mac |
+| **RF1** one `Step(batch)` over today's entry points | RF0. Today `decoder` declares 49 `Resident*` interfaces (34 optional ones on 10-13); no kernel change, identity by construction | RF2; a smaller `decoder` seam (Tier 3 modularization, `decoder/residency.go` 1,975 lines) | 4–8 | either |
+| **RF2** ragged attention over paged KV, CUDA | KV4 (done), RF1; a new kernel; speed bands per shape (decode depth 0.98, TTFT 0.97, MC3 0.98) with a kill rule | RF3, RF6; CUDA's row-by-row step attention (`stepAttnRows`) goes | 10–20 | nobara |
+| **RF3** mixed steps (token-budget scheduler), CUDA | RF2 | stall-free agent turns (`bench_prefill_stall`); RF4 | 5–8 | nobara |
+| **RF4** the same on Metal | RF3; KV5 (active, mac-sb11m: KV5-1 to KV5-3 merged, KV5-4 to KV5-6 in flight) | RF5; Metal's mixed steps | 10–16 | Mac |
+| **RF5** retire the old entry points; images and hidden outputs as row attributes | RF4 (WebGPU keeps the RF1 adapter, D3) | the 49 interfaces collapse; the biggest `decoder` simplification here | 5–8 | Mac |
+| **RF6** speculation inside a batch | RF3 for CUDA, RF4 for Metal; MC4's identity gate | speculation without a pause for the other conversations | 5–8 | both |
+| **HL** run-ahead under a gated logit processor (Metal), a chain on CUDA | nothing (independent) | prose speed on tool and thinking-budget turns (the chain gave plain turns 1.010–1.160×) | 4–8 (Metal 2–4, CUDA 2–4) | both |
+| **OP5** Spark-X2.5, LFM2.5, Granite-4.0-H, Laguna | OP4 on the backend (Metal done; CUDA at d2, enough for decode and the step); OP2(b) done | each family resident; their rows leave `hardware-matrix.md`'s "Why a cell reads CPU" | Metal 12–20, CUDA 10–18 (3–6 a family-backend; the first family is dearest, later cells reuse its operations) | both |
+| **OP6** Phi-3/4 | Metal default `--quant q4k` needs the peer cell M1 (a night); the CUDA q4k batched prefill (declines to the sequential path today, §3.2); WebGPU needs per-32 activations or a q4k lane | Phi-3/4 resident by default on Metal; a CUDA prefill for q4k | Metal switch 1–2, CUDA 3–6, WebGPU 5–10 (optional) | both |
+| **OP1 on WebGPU** | cells registered from nobara (Vulkan) before code (§4.6); softcap routed through every WGSL attention variant (`backend/webgpu/internal/kernels/attention.go` and the keys/rows/wide files) | Gemma 2 resident on WebGPU, the one decline left | 3–6 | nobara |
+| *OP4 on WebGPU* (not asked) | the program walked by `DecodeRunner`; WebGPU keeps its slots (D3) | OP5 families on WebGPU | 4–8 | *not recommended: E4 keeps WebGPU on the RF1 adapter* |
+
+**Parked, not counted:** Llama 4 and Ling 3.0's KDA (OP2c) wait for a checkpoint a box holds (§4.7: 6–10 days each if a random-init
+reference is accepted); Kimi K2's 384-expert router on Metal; Command-R, GPT-2 and Ministral 3's `attn-temp` on WebGPU.
+
+**Totals.** Sum of the rows above, without OP4-on-WebGPU: **about 80–140 session-days.** By box: nobara 33–62 (RF2, RF3, OP5-CUDA, HL-CUDA,
+OP6-CUDA, OP1-WebGPU), the Mac 31–51 (RF4, RF5, OP5-Metal, HL-Metal, OP6-Metal, RF0), either 14–26 (RF1, RF6, OP6-WebGPU).
+**The critical path is the RF chain:** RF1 → RF2 → RF3 → RF4 → RF5 is **34–60 sequential session-days** (RF4 also waits on KV5). OP5, HL and OP6
+run beside it. With one session on each box and 5–6 productive session-days a week (the night queue, the timing lock and review rounds take the
+rest), that is **about 7–14 weeks to finish everything, 6–12 for the RF chain alone.** Dropping RF5, RF6 and everything WebGPU leaves about 60–105
+session-days, 5–10 weeks. These are estimates from the anchors, not measurements; RF2's kill rule is the one place the number can
+move a lot (a tuning budget that fails keeps the old decode call and shortens RF2 and RF3).
+
+**Order, and why.**
+1. **Now, beside whatever the boxes are doing:** RF0 close-out, HL (Metal then CUDA) and OP6's Metal switch (one night). They need nothing.
+2. **RF1 next, on whichever box is free:** it has no kernel change, it starts the `decoder` seam collapse, and RF2 needs its call shape.
+3. **Then two lanes.** nobara: RF2 → RF3, with OP6's CUDA half in the gaps while the card is busy elsewhere. Mac: OP5 on Metal
+   (Spark-X2.5, LFM2.5, Granite-4.0-H, Laguna; order by what the Mac can measure, §4.7), then RF4 once RF3 and KV5 are in.
+4. **OP5 on CUDA** after RF3 (the same families, the operations already written for Metal); **RF5 and RF6** last; **OP1 on WebGPU** is a filler for
+   a nobara gap, since its only gain is Gemma 2 on WebGPU.
+
+**What this decides.** The structural modularization that is not finished is the RF chain (the 49 interfaces and the CUDA step's row-by-row
+attention), and the weeks above are mostly its length. Everything else is breadth (more families resident) and can stop at any phase: each
+ships alone and the adapters keep the old paths (§7).
+
+## 8. Owner decisions
+
+| id | question | recommendation |
+|---|---|---|
+| **E1** | Hand-written kernels with explicit fusion tables, and no general graph compiler? | Yes. |
+| **E2** | OP1 (Gemma 2's softcapping) before the program exists? | Yes: it is the most-pulled gap, and it tests the operation boundary. |
+| **E3** | The kernel-class rule for RF: set per pass, with invariance measured? | Yes, after RF0 and KV0's data. |
+| **E4** | WebGPU in RF? | The RF1 adapter only, consistent with D3. |
+| **E5** | Phi-3/4 (OP6): here, or its own task? And `--quant q4k` as Metal's default load once its peer cell is read? | Its own small task; yes to the default once the cell is read. |
+| **E6** | RF3 mixes one user's conversations in a step, the same step continuous batching takes for many users. Keep it framed as stall removal for one user's agents, with continuous batching for many users still parked? | Yes. |
+| **E7** | Queue position? | OP1, RF0 and HL now; RF1 alongside KV2; the rest after KV4. |
+
+## 9. Risks
+
+| risk | containment |
+|---|---|
+| **Rewriting around hand-tuned kernels** | no compiler; kernels keep their code; per-family identity gates; one backend at a time; adapters keep the old paths until they are retired |
+| **Ragged attention slower than today's specialised kernels** | speed bands per shape; RF2's kill rule keeps the old decode call |
+| **Identity across shapes** | invariance measured (KV0); one class rule; the class recorded per block |
+| **Seam churn across modules** | the two-step tag |
+| **Scope creep** | every phase stands alone; OP1, OP2 and HL pay off without the structural phases |
+| **Test budget** | the night queue under the timing lock, per `CLAUDE.md` |
+
+## 10. Prior art, read in OP0
+
+Each line was written before the reading and is corrected here by it. §10a has the reading, and what RF0 still has to read.
+
+- **llama.cpp and ggml:** a closed set of 101 operation kinds, mostly primitives, with some fused and architecture-specific ones.
+  - Each backend answers per graph node whether it supports it, and an unsupported node runs on the CPU. No model is refused.
+  - The Metal and CUDA backends carry explicit fusion tables over those primitives.
+  - One C++ builder file per architecture (160 of them) sits over shared helpers with parameter enums.
+  - `llama_batch` is ragged as an interface: a position, sequence ids and an output flag per token. It is not ragged in
+    execution: a batch is split into micro-batches, and attention is dense over a contiguous cell range with a mask.
+- **Ollama's Go engine** was model structs with an imperative `Forward` over an `ml` backend that mirrored ggml. It was removed
+  between 2026-05-29 and 2026-09-16; GGUF models now run through llama-server. What remains is a Go engine over MLX, of the same
+  shape, with hand-written kernels only for the recurrent mixers.
+- **vLLM V1's scheduler:** it has no prefill or decode phase; each step assigns tokens so that every request's computed count
+  catches up, within one token budget. It gives decode rows no priority: running requests are scheduled in list order, and an
+  optional threshold is the guard against a prefill taking the budget.
+- **Sarathi-Serve** (OSDI 2024): chunked prefills with stall-free batching. A batch takes the running decodes first, then
+  partly finished prefills, then new requests, within a budget profiled against the time-between-tokens target.
+- **FlashAttention's variable-length interface and FlashInfer:** ragged and paged attention kernels. FlashAttention marks
+  ragged rows with cumulative lengths and pages KV through a block table. FlashInfer uses a compressed-row page table, plans on
+  the CPU and runs a fixed-grid kernel, and still ships decode and prefill as separate kernels.
+- **MLX and MLC:** the path not taken (E1). MLX is a lazy graph built on every call, with compilation optional and custom
+  kernels allowed. MLC compiles a model to an IR per target, with one entry function per call shape. Both lose attention
+  softcapping from their fused attention: mlx-lm composes Gemma 2's by hand, and MLC's Gemma 2 ignores it.
+
+## 10a. What we take and what we leave (read for OP0, 2026-10-13)
+
+Everything below was read on 2026-10-13 at the revisions in the last table, from shallow clones and the papers' text. Four of
+§10's six lines were corrected and the other two gained detail: see "What the OP0 reading corrected in §10" at the end.
+
+| source | what we take | what we leave | basis |
+|---|---|---|---|
+| llama.cpp and ggml | a per-backend fusion table that the planner and the encoder both read; a probe for each fused operation, with a composed fallback; softcap, sinks and a KV bound as parameters of the one attention operation; dropping non-output rows before the last layer's FFN; the extended batch entry (token, embedding or both; a position tuple; an output flag) | per-node CPU fallback; a primitive graph that backends pattern-match to recover structure; dense attention with a mask; the equal-length micro-batch split | READ |
+| Ollama | an optional Go interface for a fused operation with a composed fallback; per-layer operator interfaces chosen at load; a kernel type with per-backend sources and a graph fallback | a ggml-mirrored tensor interface as the model-definition surface (deleted upstream); a padded (B, L) batch | READ: the Go engine at `f63eea3d`, the MLX engine at main |
+| vLLM V1 | "catch up the computed count" as the one rule; one token budget; a per-request cap so one prefill cannot take it; a flat token batch with query offsets, sequence lengths and a block table, built once per step | scheduling the running list in list order; one module per architecture; preemption | READ |
+| Sarathi-Serve | the fill order; a budget profiled once against the time-between-tokens target; chunk sizes rounded to the kernel's tile; the measured cost of chunking | its capacity multipliers (datacenter GPUs against a 2024 vLLM) | READ (arXiv v3) |
+| FlashAttention | the interface vocabulary: cumulative lengths for ragged queries, per-row cache lengths and a block table for paged KV; softcap as a compile-time flag | a rectangular block table; FlashAttention 2's page size, a multiple of 256 | READ |
+| FlashInfer | the compressed-row page table; plan on the CPU and run on the GPU with a fixed grid and fixed buffers, for CUDA-graph replay; its variant hooks as the list of places a softcap, a window and a sink touch a kernel | compiling CUDA source strings at run time; separate decode and prefill wrappers | READ (code and paper v2) |
+| MLX, MLC | MLX's custom-kernel escape inside a lazy graph | a lazy graph or a compiled IR as the unit a model is defined in | READ (docs and a few source files); TVM not read |
+
+### llama.cpp and ggml
+
+[Repository](https://github.com/ggml-org/llama.cpp) at `091b6a7f` (master, 2026-10-13): `ggml/include/ggml.h`, `ggml/src/ggml.c`, `ggml/src/ggml-backend-impl.h`,
+`ggml/src/ggml-backend.cpp`, `ggml/src/ggml-metal/ggml-metal-fusion.h`, the CUDA backend's fusion code, `src/llama-graph.h`, `src/llama-graph.cpp`,
+`src/llama-context.cpp`, `src/llama-kv-cache.cpp`, `src/models/`, `include/llama.h`, `tools/server/server-context.cpp`, `common/common.h`.
+
+READ:
+- **The operation set.** `enum ggml_op` has 101 entries (`static_assert(GGML_OP_COUNT == 101)`, counting `GGML_OP_NONE`). It mixes primitives (`MUL_MAT`, `SOFT_MAX`, `RMS_NORM`,
+  `ROPE`, `GET_ROWS`) with fused and architecture-specific kinds: `FLASH_ATTN_EXT`, `GLU`, `MUL_MAT_ID` (MoE), `SSM_CONV`, `SSM_SCAN`, `GATED_DELTA_NET`, `GATED_LINEAR_ATTN`.
+- **Attention is one operation with parameters.** `ggml_flash_attn_ext(ctx, q, k, v, mask, scale, max_bias, logit_softcap)`, plus `ggml_flash_attn_ext_add_sinks` and a setter for a KV bound.
+  `build_attn_mha` has both forms: the one fused node, or `mul_mat`, an optional scale-tanh-scale softcap, `soft_max_ext`, `mul_mat`.
+- **Support is a function per node.** `supports_op(dev, op)` in the backend interface. `ggml_backend_sched_split_graph` assigns a backend to each node in passes, splits the graph and copies tensors
+  between the pieces; the last backend is "assumed CPU".
+- **Fusion is explicit, per backend.**
+  - Metal: `ggml-metal-fusion.h` opens "single source of truth for the fusions supported by the Metal backend". Its table has 27 rows over 10 fusion ids, each an operation sequence and a check.
+  - CUDA: `ggml_cuda_try_fuse` matches fixed operation lists, among them `{MUL_MAT, MUL_MAT, GLU}`, `{RMS_NORM, MUL, ROPE}` and the softcap's `{SCALE, UNARY(tanh), SCALE}`.
+- **A fused operation is probed, not assumed.** `llama_context::resolve_fused_ops` reserves a probe graph for each fused kind. If the node did not land on its layer's device, the kind is
+  disabled and the builder emits the composed form.
+- **Builders.** `src/models/` has 160 `.cpp` files, one architecture each, over shared helpers: `build_norm`, `build_qkv`, `build_ffn`, `build_moe_ffn`, `build_attn_mha`, `build_rs`.
+  Parameters are enums: `llm_norm_type`; `llm_ffn_op_type` with ten values and an unset sentinel, among them `GEGLU`, `GEGLU_ERF`, `RELU_SQR` and `SWIGLU_OAI_MOE`; `llm_ffn_gate_type`.
+- **Layers that differ are C++ control flow.** In `lfm2.cpp`: `hparams.is_recr(il) ? build_shortconv_block(...) : build_attn_block(...)`.
+- **`llama_batch`** has `token`, `embd`, `pos`, `n_seq_id`, `seq_id`, `logits`. Its comments: "can contain input about one or many sequences"; of `logits`, "TODO: rename this to "output"".
+  A newer extended batch adds token and embedding entries in one batch and a position tuple "in order [t, y, x, z]".
+- **Execution is not ragged.** With one stream per sequence the batch is split by `split_equal`, which takes the same number of tokens from every sequence. The attention mask is filled per
+  cell as 0 or `-INFINITY` by sequence, causality and window, over a contiguous view of the cells.
+- **Output rows.** At the last layer the builder gathers only the rows that asked for output, before that layer's FFN.
+- **The server.** `update_slots` first adds each generating slot's sampled token, then walks the slots "without exceeding n_batch" to add prompt tokens. Defaults: `n_batch` 2048, `n_ubatch` 512.
+
+INFERRED:
+- **Our operation kinds sit at the level of llama.cpp's builder helpers and their enums, not at `ggml_op`.** Their FFN enum already separates `GEGLU` from `GEGLU_ERF`, the split OP0 made.
+  Its zero value is a sentinel an architecture must replace; our `ActKind`'s zero value is tanh-GELU, so a forgotten activation here is silent.
+- **Both ggml GPU backends arrived at explicit fusion tables,** as matchers over a primitive graph. A layer program that already names `[norm, proj]` needs the table and not the matcher.
+- **Admission differs in kind.** ggml moves a node to the CPU and never refuses a model. Its fused-operation probe is the nearest thing to our whole-model admission, per fused kind.
+  A per-operation CPU fallback is what OP4's "admission by operation" would make possible; this doc does not propose it.
+- **`llama_batch` is RF's row as an interface and not as a kernel.** With one stream per sequence, a 500-token prefill and three decode tokens become one micro-batch of four tokens and then
+  prefill-only ones. RF2's ragged attention is what llama.cpp does not have.
+- **The server fills decode first and does not budget it.** Prompt slots fill in slot order, so the first prefilling slot takes what is left.
+
+### Ollama
+
+[Repository](https://github.com/ollama/ollama). Main is `8718c2bd` (2026-10-13). The Go engine was read at `f63eea3d` (2026-05-24), its last complete revision.
+
+READ:
+- **At main the Go engine is gone.** `model/` holds only parsers and renderers, and `ml/` only device and path files. Commits `9db4bdba` (2026-05-29), `7b22ac96` (2026-07-02) and
+  `bef41f71` (2026-09-16) removed the runner, `ml/nn`, the model interface and `ml/backend.go`. `2e036e7c` (2026-09-16) moved the MLX engine to top-level `mlx/` and `mlxrunner/`.
+- **At `f63eea3d`, `ml/backend.go`** has `Backend`, `Context` and a `Tensor` interface with about 66 operation methods that track ggml (`Mulmat`, `MulmatID`, `RMSNorm`, `SSMConv`, `SSMScan`).
+- **Fused attention is an optional interface.** `ScaledDotProductAttention` is type-asserted by `nn.Attention`, which otherwise composes it from matmul, scale, mask, softmax and matmul.
+  The ggml implementation passes no softcap.
+- **A model definition** is a Go struct with tagged weight fields, filled by reflection, and a `Forward(ml.Context, input.Batch)` that builds a lazy graph. 24 architectures were registered.
+- **Layers that differ are Go interfaces chosen at construction:** an `MLP` interface with sparse and dense forms (qwen3); an `Operator` set to a short convolution or attention (lfm2).
+- **`input.Batch`** has `Inputs`, `Outputs` (indices of the inputs to return output for), `Positions`, `Sequences` and `Multimodal`.
+- **The MLX engine at main** keeps the shape: a model is `LoadWeights`, `NewCaches`, `Forward`, `Unembed`, with 17 architecture packages. Its batch is padded: `InputIDs` is "(B, L)".
+- **`gpuKernel`,** in `mlx/gpu_kernel.go`, is "a custom kernel with per-backend sources and a graph fallback". It is used for the gated delta rule and the Mamba-2 scan.
+
+INFERRED:
+- **§10's line described an engine that no longer exists,** and whose unit was a struct with an imperative `Forward`, never an operation list.
+- **The optional fused interface is the mechanism goinfer's resident seam already uses.** Ollama's shows the cost when the fused signature lacks a parameter, here the softcap.
+- **Hand-written kernels survive in the MLX engine only for the recurrent mixers.** Those are the operations OP2 and OP5 have to write as well.
+
+### vLLM V1's scheduler
+
+[Repository](https://github.com/vllm-project/vllm) at `a1f51a02` (main): `vllm/v1/core/sched/scheduler.py`, `vllm/v1/core/sched/output.py`, `vllm/config/scheduler.py`,
+`vllm/v1/attention/backend.py`, `vllm/v1/attention/backends/utils.py`, `vllm/model_executor/models/registry.py`.
+
+READ:
+- **The wording,** in `Scheduler.schedule()`: "There's no "decoding phase" nor "prefill phase" in the scheduler. Each request just has the num_computed_tokens and num_tokens_with_spec."
+  And: "At each step, the scheduler tries to assign tokens to the requests so that each request's num_computed_tokens can catch up its num_tokens_with_spec. This is general enough to cover
+  chunked prefills, prefix caching, speculative decoding, and the "jump decoding" optimization in the future."
+- **The budget.** `token_budget = self.max_num_scheduled_tokens`, which defaults to `max_num_batched_tokens` (2048).
+- **The order.** "First, schedule the RUNNING requests." walks `self.running`, a list in admission order, while the budget lasts. "Next, schedule the WAITING requests." runs only if nothing was preempted.
+- **The guard.** `long_prefill_token_threshold` (default 0, off) "exists to stop a long prefill from starving other requests of the token budget". `enable_chunked_prefill` is on by default.
+- **One forward.** The scheduler's output is a token count per request. The attention metadata is `query_start_loc`, `seq_lens`, a block table and a slot mapping.
+  The rows whose logits are read are `query_start_loc[1:] - 1`.
+- **Kernel dispatch still splits.** `reorder_batch_to_split_decodes_and_prefills` reorders a batch into decode, extend and prefill regions, and the FlashInfer backend keeps separate
+  prefill and decode wrappers.
+- **Coverage.** `vllm/model_executor/models/` has 284 Python files, and the registry has 401 names. It is one module per architecture over shared layers.
+
+INFERRED:
+- **§10's claim holds on the point that matters for RF:** prefill and decode are not kinds of step.
+- **vLLM does not put decode first.** With the threshold off, a prefill early in the running list can take the whole budget. RF3's "decode rows first" is Sarathi-Serve's rule, not vLLM's.
+- **Even with one scheduler, the kernels are split by row kind.** RF's one call need not mean one attention kernel.
+
+### Sarathi-Serve
+
+[arXiv 2403.02310](https://arxiv.org/abs/2403.02310) v3, 17 Jun 2024 (OSDI 2024): the abstract, §4.2, §4.3 and §5.4.1.
+
+READ:
+- **The two ideas,** from the abstract: "chunked-prefills which splits a prefill request into near equal sized chunks and creates stall-free schedules that adds new requests in a batch
+  without pausing ongoing decodes."
+- **The fill order** (§4.2): "we first pack all the running decodes in the next batch … After that, we include any partially completed prefill … Only after all the running requests have been
+  accommodated, we admit new requests."
+- **The budget** (§4.3) comes from "a one-time profiling of batches with different number of tokens and setting the token budget to maximum number of tokens that can be packed in a batch
+  without violating TBT SLO".
+- **The cost of chunking** (§4.3): "if a prefill sequence is split into N chunks, then the first chunk's KV-cache is loaded N − 1 times". And: "using chunk size of 257 can increase prefill
+  time by 32% compared to that with chunk size 256".
+- **Measured** (§5.4.1, Yi-34B): "even with the smallest chunk size of 512, we observe a moderate overhead of at most ∼25%. Whereas with the larger token budget of 2048, chunked prefills
+  have almost negligible overhead."
+- **Headline:** 2.6× the serving capacity of vLLM on Mistral-7B with one A100, and up to 3.7× on Yi-34B with two.
+
+INFERRED:
+- **RF3's scheduler is Sarathi-Serve's with one tier merged:** Sarathi separates partly finished prefills from new requests. RF3 should keep the tier, so a prefill in progress finishes
+  before another starts.
+- **A "fill what is left" chunk must be rounded to the kernel's tile,** as the 257-against-256 result shows. §5.1 does not say so yet.
+- **The capacity multipliers do not transfer.** They are for many users on datacenter cards. The stall figure RF3 is gated on is ours (§5.4).
+
+### FlashAttention
+
+[Repository](https://github.com/Dao-AILab/flash-attention) at `1fc02211` (2026-10-12, package 2.8.4): `flash_attn/flash_attn_interface.py`, `csrc/flash_attn/flash_api.cpp`, `hopper/flash_attn_interface.py`.
+
+READ:
+- **Ragged rows.** `flash_attn_varlen_func` takes `q` as "(total_q, nheads, headdim)" and `cu_seqlens_q` as "(batch_size + 1,), dtype torch.int32. The cumulative sequence lengths".
+  It also takes `softcap=0.0`, a window, and `block_table`.
+- **Paged KV in version 2.** The table is rectangular, batch × the most blocks per sequence, and "Paged KV cache block size must be divisible by 256".
+- **`flash_attn_with_kvcache`** appends the new K and V in place at `cache_seqlens` and applies RoPE in the kernel.
+- **Version 3** (`hopper/`) adds a page table of any block size and ragged queries to that call, with a scheduler-metadata step computed ahead.
+- **Softcap** is a template flag in version 3, and it is an input to the choice of tile size.
+
+INFERRED:
+- **Version 3's cache call, not version 2's varlen call, is the shape of RF2's kernel:** ragged queries over paged KV, with the append.
+- **A softcap is one tanh, and still a separately compiled kernel variant that can change the tiling.** OP1 should expect a variant per kernel and not a run-time branch.
+- **Version 2's kernels could not be taken as they are:** its page size must be a multiple of 256, and the KV doc's block is 64. Version 3 lifts the limit.
+
+### FlashInfer
+
+[Repository](https://github.com/flashinfer-ai/flashinfer) at `53e3168a` (main): `flashinfer/decode.py`, `flashinfer/prefill.py`, `flashinfer/pod.py`, `docs/tutorials/kv_layout.rst`,
+`include/flashinfer/attention/scheduler.cuh`, `variant_helper.cuh`, `variants.cuh`, `flashinfer/jit/attention/variants.py`. Paper: [arXiv 2501.01005](https://arxiv.org/abs/2501.01005) v2, §3.1, §3.2.3, §3.3, appendix D.
+
+READ:
+- **The page table is a compressed-row sparse matrix:** `indptr`, `indices` and `last_page_len`. A sequence's length is `page_size * (pages - 1) + last_page_len`.
+- **Plan, then run.** `plan(...)` runs on the CPU once per step; `run(q, kv_cache)` runs per layer, and the plan "can be reused across multiple batch decode attention calls (e.g. different
+  Transformer layers)".
+- **Decode and prefill are separate wrappers,** and a third (`flashinfer/pod.py`, arXiv 2410.18038) exists for mixed batches.
+- **CUDA graphs.** With `use_cuda_graph`, "The `batch_size` cannot change during the lifecycle of this wrapper", and queries per row are "part of the frozen shape (like the batch size)".
+  The grid is padded to a fixed size with a validity mask. From the paper: "plan function is not captured by CUDAGraph because it's on CPU".
+- **Determinism.** A fixed split size gives "batch-size invariant outputs", but "compatibility with CUDA graph is NOT guaranteed".
+- **Variants are hooks:** a query transform, a key transform, a logits transform, a logits mask, an update of the running softmax state, and an output transform.
+  - A softcap is the logits transform with two constants refolded: the kernel computes `tanh(logits * sm_scale / cap)`.
+  - A sliding window is the mask predicate.
+  - An attention sink uses the softmax-state update and the output transform, and has a second implementation for the FlashAttention 3 template.
+- **The paper on variants** (§3.2.3): "we specialize the kernel for each variant for maximum performance, and the number of variants is growing rapidly".
+
+INFERRED:
+- **Ragged queries over paged KV are one data model and still three kernels.** RF2's kill rule, which keeps the old decode call, has precedent.
+- **For CUDA's graph replay (HL, RF2):** the batch size and the queries per row are fixed per captured graph, lengths travel in buffers at fixed addresses, and the grid is padded.
+  The plan on the host and a fixed-shape kernel is the split our decode graphs need.
+- **FlashInfer does not promise batch-invariant output and graph replay together.** RF's one kernel-class rule (§5.1) asks for both on CUDA, so RF2 has to measure it.
+- **The six hooks are OP1's checklist** for each hand-written kernel in §4.5's count: where the softcap goes, and that it must compose with the window and the sink already there.
+
+### MLX and MLC
+
+MLX at `243bdf09`, mlx-lm at `ba8a08fd`, MLC-LLM at `8978ea9a`. Docs and a few source files; TVM itself was not read.
+
+READ:
+- **MLX is lazy and does not compile by default.** Its docs: "no computation actually happens. Instead a compute graph is recorded", and "Currently, MLX does not compile and rerun compute
+  graphs. They are all generated dynamically." `mx.compile` is opt-in.
+- **MLX owns the fused kernels** (`rms_norm`, `rope`, `scaled_dot_product_attention` with a mask and sinks) and offers `metal_kernel` and `cuda_kernel` for a custom one.
+  Its fused attention has no softcap parameter.
+- **mlx-lm** has one Python file per architecture (136 files in its models directory). Its Gemma 2 writes attention by hand: `scores = mx.tanh(scores / self.attn_logit_softcapping)`.
+- **MLC** defines a model as a Relax module (44 architecture directories) that exports one entry function per call shape: `embed`, `prefill`, `decode`, `batch_prefill`, `batch_decode`,
+  `batch_verify`. Attention is a call into the paged KV cache's runtime.
+- **MLC's Gemma 2** says: "NOTE: We ignore attn_logit_softcapping in the gemma2 implementation for now."
+
+INFERRED:
+- **The cost E1 asks about shows on the exact feature OP1 adds.** A framework-owned attention kernel without a softcap parameter leaves two choices: compose attention from primitives and
+  lose the fused kernel (mlx-lm), or drop the feature (MLC).
+- **MLC is the opposite of RF:** it compiles one function per call shape, which is the seam RF removes.
+
+### Kapitsa (read 2026-10-22, `nace-ai/kapitsa` at `3f7f4c8`, Apache-2.0)
+
+- **We take:**
+  - verify rows that run recurrent layers from the parent row's state, never writing the committed state (SP2);
+  - rings sized to the window plus a verify pass's rows (SP1);
+  - trees sized by each box's measured row cost (SP3);
+  - the second checkpoint at the last user question (KV8a-Q in the KV doc).
+- **Candidate only:** prefilling the next turn's history while idle (recorded under KV8a-Q).
+- **We leave:**
+  - Neural Engine prefill (Apple's private APIs; no cgo);
+  - Metal 4 matrix units, which help only on M5;
+  - its C++ and Metal code, which we read for ideas only, unless a piece is adapted with its notice.
+
+### What the OP0 reading corrected in §10 (applied above)
+
+- **llama.cpp, "a fixed operation set implemented per backend".** The set is closed, but at primitive granularity; support is per node with a CPU fallback, not per model; and the
+  backends fuse through explicit tables. "`llama_batch` already is the ragged call" is true of the interface and false of the execution.
+- **Ollama, "model definitions in Go over an `ml` backend. Confirm the shape".** The shape was right and the engine is deleted. Ollama today is llama-server plus a Go engine over MLX.
+- **vLLM, "a step is a token budget across requests".** The wording about phases is confirmed, with the quote. The budget does not favour decode: the order is list order.
+- **Sarathi-Serve.** Confirmed. Added: three tiers in the fill order, and the measured cost of chunking.
+- **FlashAttention and FlashInfer.** Confirmed. Added: the paged ragged call is FlashAttention 3's; FlashInfer keeps decode and prefill kernels apart; a softcap is a compile-time variant.
+- **MLX and MLC, "lazy graphs and compiled IR".** MLX is a lazy graph that is not compiled by default, and it allows custom kernels. MLC is compiled, one function per call shape.
+
+### Revisions read
+
+| source | revision | date |
+|---|---|---|
+| llama.cpp | `091b6a7fc561b78da90a0ed2d524ec995458c657` (master) | 2026-10-13 |
+| Ollama | main `8718c2bd2363c3f9f422d82bbad322bc2b791d60`; Go engine at `f63eea3d273816ffc27fbeb0662ab44d236abc45` | 2026-10-13; 2026-05-24 |
+| vLLM | `a1f51a0226a8f5e97a5ed340e091a447c8b35911` (main) | 2026-10-13 |
+| FlashAttention | `1fc0221183e799363001394a12dd9e78e15f5dda` | 2026-10-12 |
+| FlashInfer | `53e3168a630bc9ca55f0321fb3cee50242770b1c` (main) | 2026-10-13 |
+| MLX; mlx-lm; MLC-LLM | `243bdf09c0cccbb85ca6a686dab3cc0102cf1f7e`; `ba8a08fd2ed72bbc53de84f89933f91fe4743e4a`; `8978ea9aec626d64096aaa92fbc89bda2e3ea802` | 2026-10-13; 2026-10-10; 2026-10-07 |
+| Papers | arXiv 2403.02310 v3 (Sarathi-Serve); arXiv 2501.01005 v2 (FlashInfer) | read 2026-10-13 |
+
+The llama.cpp, Ollama and vLLM mains had moved since the KV doc's reading the same day (`77c4540c`, `665f9e07`, `ac71b175`); those revisions were not re-read. The vLLM and FlashInfer
+commits are dated 2026-10-14 in their own time zones.
+
+**How it was read.** A delegated reading pass made the clones and reported each fact as read or inferred. Eleven of its facts were then checked against the clones by search, and all eleven matched:
+the operation count, the Metal fusion header, the `logits` comment, the softcap parameter, the builder count, the FFN enum, the vLLM scheduler comment and its two ordering comments, both
+Gemma 2 softcap lines, FlashInfer's softcap constant and FlashAttention's 256 check. The rest stands on the pass's own reading.
+
+**Read for RF0 on 2026-11-07:** every source this paragraph listed as unread, at the revisions and with the limits in `docs/measurements/forward-arch-prior-art-rf0-2026-11-07.md`. Its one correction to this section: Sarathi-Serve's code has a configured chunk size and no profiled budget, and tile rounding only in its experimental dynamic schedule. Still unread, and named there: the kernel bodies of FlashInfer's and flash-attention's mainloops, FlashInfer's persistent attention sink, vLLM's rejection sampler, TVM's kernel bodies.
+
+## 11. What this absorbs and changes elsewhere
+
+- **`docs/tasks/task-kv-architecture-2026-10.md`:**
+  - KV4/KV5 supply the tables RF2/RF4 read;
+  - its KV11 takes the expert half of memory;
+  - OP4's planner prices through its §5.10.
+- **`docs/tasks/task-turn-telemetry-2026-09.md`:** RF0 builds its X1.
+- **`docs/tasks/parked/task-concurrency-2026-09.md`:** "spec inside a batch" becomes RF6. MC5's continuous batching stays
+  parked (E6).
+- **`docs/tasks/task-recompute-audit.md` §5:** its class becomes a planner property (OP4).
+- **`docs/hardware-matrix.md`:** decline reasons and the Phi-3/4 configuration note (OP0, done).
+- **`docs/ARCHITECTURE.md`:** §1 ("One decoder, read from a descriptor") and §3 ("Registration and the runner seam",
+  "Admission: which models run resident") are rewritten as phases land. §3's count of the optional interfaces was corrected to 34
+  in OP0's doc pass.
+
+## 12. When this closes
+
+`docs/ARCHITECTURE.md` carries the design as it lands, and this doc moves to `docs/completed/` with its records. There is no
+separate architecture doc while this is a proposal.
+
+## 13. Sources
+
+Code, read at `9593bd70`:
+- **The descriptor and admission:**
+  - `decoder/registry.go:resolveArchitecture`, `decoder/registry.go:Architecture.validateResolved`;
+  - `decoder/arch.go:Architecture`, `ownForwardFamily` (removed in OP3z);
+  - `decoder/admit.go:Admit`, `decoder/residency.go:Model.decodeRunnerDecline`,
+    `decoder/residency.go:Architecture.decodeRunnerEligible`, `decoder/residency.go:Architecture.ropeResidentCompatible`,
+    `decoder/residency.go:DeclineResident`;
+  - `decoder/features.go:ResidentEligible`, `decoder/features.go:residentGateReason`,
+    `decoder/features.go:ResidentBackendFeatures`;
+  - added by OP0: `decoder/residency.go:Architecture.runnerShapeDecline`, `decoder/features.go:residentGateReasons`,
+    `decoder/features.go:Architecture.residentFeatures`, `decoder/residency.go:Model.GatedActResident`;
+  - `decoder/actquant_hazard.go:ActivationQuantHazard`, `internal/runtime/modelload/modelload.go:activationSafeQuant`.
+- **The seam and the decode loop:** `decoder/residency.go:ResidentForward`, `decoder/residency.go:ResidentGreedyChain`,
+  `decoder/residency.go:ResidentSampleChain`, `decoder/model.go:Model.generateInto`.
+- **The runners:**
+  - `backend/cuda/resident.go:cudaLayer`, `backend/cuda/backend.go:cudaBackend.BuildResident`, `backend/cuda/batchstep.go:cudaResident.StepBatch`,
+    `backend/cuda/batchstep.go:cudaResident.stepAttnRows`, `backend/cuda/fused_qkv.cu`;
+  - `backend/metal/model.go:residLayer`, `backend/metal/backend.go:metalBackend.BuildResident`, `backend/metal/batch.go:metalResident.StepBatch`,
+    `backend/metal/batch_rows.go`;
+  - `backend/webgpu/internal/kernels/decoderunner.go:RunLayer`, `backend/webgpu/residency.go:webgpuBackend.BuildResident`.
+- **Serve:** `internal/app/serveapp/tools.go:constrainToolUnion`, `internal/app/serveapp/budget.go`, `internal/app/loadflags/loadflags.go`.
+
+Docs and records:
+- `docs/ARCHITECTURE.md`, `docs/hardware-matrix.md`, `docs/benchmarks.md`, `CHANGELOG.md`;
+- `docs/measurements/forward-arch-baseline-2026-10-13.md`, `docs/measurements/kv0-traffic-2026-10-13.md`,
+  `docs/measurements/ollama-coverage-2026-10-09.md`, `docs/measurements/peer-sweep-2026-09-29.md`,
+  `docs/measurements/mc4-candidate-cuda-2026-10-01.md`, `docs/measurements/chunked-prefill-2026-09-27.md`;
+- `docs/tasks/task-kv-architecture-2026-10.md`, `docs/tasks/task-turn-telemetry-2026-09.md`,
+  `docs/tasks/task-metal-q4k-2026-10.md`, `docs/tasks/parked/task-concurrency-2026-09.md`,
+  `docs/tasks/task-recompute-audit.md`.

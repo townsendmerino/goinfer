@@ -74,7 +74,7 @@ detection** — `any`, **filed 2026-10-21 (owner)**
 
 Twenty of the 71 registration and bound findings counted on 2026-10-08 (`docs/measurements/audit-classes-2026-10-08.md`
 §2–§3) were one model family that one path did not know about, and six of the twenty were Critical. **Owner, 2026-10-21,
-the hybrid:** the compute, fit-guard and speculative share goes to `docs/tasks/task-forward-architecture-2026-10.md`, whose
+the hybrid:** the compute, fit-guard and speculative share goes to `docs/completed/task-forward-architecture-2026-10.md`, whose
 per-layer programs can declare each layer's weights and state so those paths read the program instead of hand lists. This
 entry owns the rest: a grid of every registry family against three columns (load and serialize; tokenizer dispatch;
 chat-template detection), ratcheted as the option grid is, so a new family fills its row or a test fails. Its findings:
