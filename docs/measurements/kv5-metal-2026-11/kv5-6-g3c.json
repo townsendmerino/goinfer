@@ -1,0 +1,84 @@
+[
+ {
+  "model": "1.5B",
+  "path": "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+  "main": {
+   "context_line": "  context: 16384 tokens (fit: 2 slots, 0.9 GB KV; model maximum 32768 \u2014 raise with --ctx) \u00b7 KV f16 (requested auto: auto is f16 on Metal)",
+   "kv_plan_line": "  KV plan: 2 conversations x 16384 positions (4 asked for)",
+   "kv_pool_line": "",
+   "decode_path_line": "  decode path: metal-resident (int4)",
+   "context": 16384,
+   "started": true,
+   "cpu_fallback_lines": []
+  },
+  "new": {
+   "context_line": "  context: 32768 tokens (model maximum) \u00b7 KV f16 (requested auto: auto is f16 on Metal)",
+   "kv_plan_line": "  KV plan: a 32768-position pool for 2 conversations; each is guaranteed 16384, and one can use up to 32768 (4 asked for)",
+   "kv_pool_line": "  KV pool: 32,768 tokens in blocks of 64 (f16, 897.8 MB; group: full); a prompt can take another conversation's KV rows; one conversation can use all of it.",
+   "decode_path_line": "  decode path: metal-resident (int4)",
+   "context": 32768,
+   "started": true,
+   "cpu_fallback_lines": []
+  },
+  "calibration": {
+   "status": 200,
+   "prompt_tokens_per_item": 5.024
+  },
+  "request": {
+   "status": 200,
+   "items": 6555,
+   "usage": {
+    "prompt_tokens": 32763,
+    "completion_tokens": 5,
+    "total_tokens": 32768,
+    "prefill_reused_tokens": 0
+   },
+   "finish_reason": "length",
+   "error": null,
+   "wall_s": 73.8,
+   "swapout_pages": 0
+  },
+  "verdict": "PASS"
+ },
+ {
+  "model": "7B",
+  "path": "/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+  "main": {
+   "context_line": "  context: 16384 tokens (fit: 2 slots, 1.8 GB KV; model maximum 32768 \u2014 raise with --ctx) \u00b7 KV f16 (requested auto: auto is f16 on Metal)",
+   "kv_plan_line": "  KV plan: 2 conversations x 16384 positions (4 asked for)",
+   "kv_pool_line": "",
+   "decode_path_line": "  decode path: metal-resident (int4)",
+   "context": 16384,
+   "started": true,
+   "cpu_fallback_lines": []
+  },
+  "new": {
+   "context_line": "  context: 32768 tokens (model maximum) \u00b7 KV f16 (requested auto: auto is f16 on Metal)",
+   "kv_plan_line": "  KV plan: a 32768-position pool for 2 conversations; each is guaranteed 16384, and one can use up to 32768 (4 asked for)",
+   "kv_pool_line": "  KV pool: 32,768 tokens in blocks of 64 (f16, 1.8 GB; group: full); a prompt can take another conversation's KV rows; one conversation can use all of it.",
+   "decode_path_line": "  decode path: metal-resident (int4)",
+   "context": 32768,
+   "started": true,
+   "cpu_fallback_lines": []
+  },
+  "calibration": {
+   "status": 200,
+   "prompt_tokens_per_item": 5.024
+  },
+  "request": {
+   "status": 200,
+   "items": 6555,
+   "usage": {
+    "prompt_tokens": 32763,
+    "completion_tokens": 5,
+    "total_tokens": 32768,
+    "prefill_reused_tokens": 0
+   },
+   "finish_reason": "length",
+   "error": null,
+   "wall_s": 247.0,
+   "swapout_pages": 0
+  },
+  "verdict": "PASS"
+ }
+]
