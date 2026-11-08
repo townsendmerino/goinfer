@@ -21,7 +21,7 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| RF2 | open | after RF1: one ragged step mixing rows of different kinds and counts per sequence; register the bands before code | FA §5.4 |
+| RF2 | open | registered below ("RF2: registration"), before any code; next: the CUDA `Step` with ragged attention through the block tables, on nobara | FA §5.4; "RF2: registration" below |
 | RF3 | blocked | RF2 | FA §5.4 |
 | RF4 | blocked | RF3 and KV5 | FA §7a |
 | RF5 | blocked | RF4; it also takes SB1's op-level interface | FA §7a; SS §8 "SB1" |
@@ -61,6 +61,41 @@
 | SP2-M | blocked | parked: a Metal recurrent spec; reopens with track SP | FA §6a |
 | SP2b | blocked | parked at the owner's wind-down; its registration and stop point are on `origin/sp2b-2026-10` (c3093ae0) and never reached main | FA §6a |
 | SP3 | blocked | after SP2-M (optional) | FA §6a |
+
+## RF2: registration (2026-11-08, before any RF2 code)
+
+- **Question.** Can CUDA run decode, verify, prefill and MC3 rows, of several kinds and counts per sequence, in one `Step` pass
+  whose attention reads the paged KV through the block tables (KV4), without losing identity or speed on any of today's shapes?
+- **Built:** CUDA's resident `Step(batch)` and its ragged attention; RF1's `step` calls it for the shapes it takes and the
+  adapter keeps the rest. A mixed batch (a prefill chunk beside other sequences' decode rows) is exercised by tests only; the
+  scheduler is RF3. Each row keeps its kernel class (FA §5.1: the class is the pass's, never the batch's).
+- **G-RF2-I, identity (hard; tier 0, then tier 1, nobara):**
+  - per shape, against `main` at the merge base: every logit bit-identical on KV4's G1a fixture list
+    (`docs/measurements/kv4-cuda-2026-10-21.md` §2 G1a), with scrambled tables, and `go run ./cmd/gate identity -backend cuda`
+    IDENTICAL on its default sets;
+  - batch invariance: every row of a mixed step bit-identical to the same row run in its own shape;
+  - plants (each must go red, recorded, never shipped): one row's table offset off by one block; one row's kind read as another's.
+- **G-RF2-F, fidelity:** none is expected, because no class changes. A shape whose class would change stops the work, and its
+  gate is registered here (KV4b's G4 shape) before that code.
+- **G-RF2-S, speed (tier 1, nobara, by day, exclusive timing lock):** KV4's G2 instruments, arms and void rule
+  (`kv4-cuda-2026-10-21.md` §2 G2), `goinfer_old` = a `serve-cuda` from the merge base, A B B A in one session.
+  - decode at depth 128, 2,048, 3,900 and 8,000, the 1.5B and the 7B, and gemma3-1b to 3,900;
+  - time to first token at K = 512 and 3,900, the 1.5B and the 7B;
+  - MC3's aggregate at 4 clients, the 1.5B, every turn's `content_sha` equal between arms;
+  - verify: `scripts/bench_spec_lane.py`'s arm A (exact attention, `-spec ngram`) on each build, cells 1.5B:3900 and 7B:7500,
+    three pairs (the harness takes the second build's binary first, as tooling).
+  - **Bands,** each the median paired ratio new/old (TTFT old/new): **pass** 0.98 or better for decode, MC3 and verify, and
+    0.97 or better for TTFT; **ambiguous** (parked, not shipped on this evidence) 0.97 to 0.98 (TTFT 0.96 to 0.97); **fail**
+    below.
+  - About 70 minutes: KV4's 35 + 6 + 6, and about 20 for verify.
+- **Never-swap:** KV4's G4, from the same runs.
+- **Kill (FA §5.4):** decode at depth 2,048 or more under 0.98 after two tuning rounds (each one kernel-side change and a
+  re-run of only the failing cells, within one working day) keeps today's decode call beside the ragged one; the other shapes
+  ship on their own bands.
+- **Stopping:** each speed cell is read once on the final build, plus once on the first working build to apply the kill
+  early; unchanged arms are not re-measured.
+- **Outcomes:** every gate passes, RF2 ships and RF3 opens; a decode kill ships the rest with decode on today's call; an
+  ambiguous or failed band on another shape parks that shape on the adapter and goes to Francis.
 
 ## Conventions
 

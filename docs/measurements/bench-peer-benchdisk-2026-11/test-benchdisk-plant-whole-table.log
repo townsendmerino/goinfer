@@ -1,0 +1,14 @@
+plant: whole-table
+replaced: check_bench_disk(selected_bench_paths())
+with:     check_bench_disk([p for p, _ in MODELS.values()] + list(GOINFER_MOE_PATH.values()))
+
+test_a_selected_archive_model_still_refuses (__main__.SelectedOnly.test_a_selected_archive_model_still_refuses) ... ok
+test_a_selected_moe_models_own_bundle_is_checked (__main__.SelectedOnly.test_a_selected_moe_models_own_bundle_is_checked) ... ok
+test_an_unselected_archive_model_does_not_block (__main__.SelectedOnly.test_an_unselected_archive_model_does_not_block) ... ok
+test_preflight_calls_it_with_the_selection (__main__.SelectedOnly.test_preflight_calls_it_with_the_selection) ... # preflight OK: gate load · loadavg (0.1, 0.1, 0.1) · gpu None · compute apps []
+FAIL
+test_the_vision_checkpoint_is_checked_when_phase_e_is_on (__main__.SelectedOnly.test_the_vision_checkpoint_is_checked_when_phase_e_is_on) ... ok
+FAIL: test_preflight_calls_it_with_the_selection (__main__.SelectedOnly.test_preflight_calls_it_with_the_selection)
+AssertionError: Lists differ: [['/t[34 chars]gguf', '/tmp/benchdisk-wg4ans14/models/far.ggu[84 chars]iw']] != [['/t[34 chars]gguf']]
+Ran 5 tests in 0.003s
+FAILED (failures=1)
