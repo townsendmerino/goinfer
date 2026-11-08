@@ -372,3 +372,26 @@ func TestSolvePlacement_declineReasonsQuoteEachTermOnce(t *testing.T) {
 		}
 	}
 }
+
+// TestSolvePlacement_aCacheHoldingEveryExpertPaysNoPaging: an expert cache that fits every expert does not page, so it holds no
+// paged slot indices and its slot count is solved without them. Given exactly the room for all 8 experts beside the fixed terms,
+// the cache holds 8 at the resident build's scratch; one byte less, it holds 7 and pages, its scratch with the indices.
+func TestSolvePlacement_aCacheHoldingEveryExpertPaysNoPaging(t *testing.T) {
+	const mib = int64(1) << 20
+	kv := func(c int) int64 { return int64(c) << 10 }
+	l := DeviceLoad{Backend: "metal", Tier: Unified, DenseBytes: 1 << 30, ScratchBytes: mib, ScratchPagedExtra: 64, CtxStep: 8,
+		CtxCeiling: 32768, KV: kv, NExperts: 8, TopK: 2, ExpertBytesFull: 8 * mib,
+		HostAll: func() int64 { return 100 * mib }} // the experts' host copy keeps them from a resident placement
+	req := PlanRequest{Ctx: 4096, CtxPinned: true}
+	room := l.DenseBytes + l.ScratchBytes + kv(4096) + l.ExpertBytesFull
+	for _, c := range []struct {
+		free    int64
+		slots   int
+		scratch int64
+	}{{room, 8, l.ScratchBytes}, {room - 1, 7, l.ScratchBytes + 64}} {
+		d := SolvePlacement(l, req, Machine{Free: map[Tier]int64{Unified: c.free}}, DefaultPolicy())
+		if d.Placement != ExpertCached || d.Slots != c.slots || d.ScratchBytes != c.scratch {
+			t.Errorf("free %d: %s, scratch %d; want expert-cached at %d slots, scratch %d", c.free, planAnswer(d), d.ScratchBytes, c.slots, c.scratch)
+		}
+	}
+}
