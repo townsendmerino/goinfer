@@ -129,13 +129,18 @@ func Buffers(op Op, s LayerShape) []Buf {
 			return rows(nil, "up", s.FFN)
 		}
 		if prefix, ok := moeRows[op.FFN.Form]; ok {
-			mo := op.FFN.MoE
-			ffn := max(mo.IntermediateDim, mo.SharedIntermediateDim)
-			var out []Buf
-			if op.FFN.Form != FfnNemotronMoE { // Nemotron's experts are not gated
-				out = rows(nil, "gate", ffn)
+			mo, gated := op.FFN.MoE, op.FFN.Form != FfnNemotronMoE // Nemotron's experts are not gated
+			ffn := func(out []Buf, name string, n int) []Buf {
+				if gated {
+					out = rows(out, name+"gate", n)
+				}
+				return rows(out, name+"up", n)
 			}
-			return rows(out, "up", ffn, prefix+"-router", mo.NumExperts, prefix+"-experts", mo.TopK, prefix+"-weights", mo.TopK)
+			out := ffn(nil, "", mo.IntermediateDim)
+			if mo.SharedIntermediateDim > 0 {
+				out = ffn(out, "shared-", mo.SharedIntermediateDim)
+			}
+			return rows(out, prefix+"-router", mo.NumExperts, prefix+"-experts", mo.TopK, prefix+"-weights", mo.TopK)
 		}
 	case OpGemma4MoE:
 		g, ffn := s.Gemma4MoE, max(s.FFN, s.Gemma4MoE.ExpertFFN)
