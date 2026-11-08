@@ -32,5 +32,5 @@ today's path in the same process; the arms alternate.
 branch's reading stands and HL-R stays off by default, behind no new setting (the code is removed). Off: the code is removed and
 the record says so. The bands are the 2026-10-14 ones and are not moved.
 
-**Cost of the run.** About 25 minutes: 4 cells (two models, two shapes), 20 timed arms and 4 warm-ups each, plus a load per cell.
+**Cost of the run.** About 25 minutes: 4 cells (two models, two shapes), 18 timed arms (9 pairs) and 3 warm-up runs each, plus a load per cell.
 Start time and expected finish are stated before it runs.

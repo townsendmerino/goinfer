@@ -1,5 +1,5 @@
 #!/bin/bash
-# G-MS1 and G-MS2 (docs/tasks/task-subsystems-2026-10.md, "The WebGPU multi-slot finding"). Run from the repo root with the three test
+# G-MS1 and G-MS2 (docs/completed/task-subsystems-2026-10.md, "The WebGPU multi-slot finding"). Run from the repo root with the three test
 # binaries prebuilt (see the record). Takes the timing lock exclusively; exits 75 (VOID) when anything but the desktop shell's GPU clients
 # is on the card before a run.
 set -uo pipefail

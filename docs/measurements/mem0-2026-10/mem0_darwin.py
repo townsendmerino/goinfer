@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MEM0, the Mac half (docs/tasks/task-memory-campaign-2026-10.md §3): the server's memory through one long cold prompt, macOS.
+"""MEM0, the Mac half (docs/completed/task-memory-campaign-2026-10.md §3): the server's memory through one long cold prompt, macOS.
 
 The Mac port of mem0_linux.py, on g40_mem.py's macOS readings. One fresh `serve` per cell at serve's defaults except
 -backend and -ctx; one request at temperature 0, max_tokens 8: a cold prompt of about 20,200 tokens (KV9's preamble, this
@@ -14,7 +14,7 @@ cells: cpu:1.5b (warm its CPU sidecar first: --warm), metal:1.5b, metal:e2b, tow
 import argparse, base64, json, os, re, signal, struct, subprocess, threading, time, urllib.request, zlib
 
 PIN = "e42db592"
-SOURCES = ["CLAUDE.md", "docs/tasks/task-kv-architecture-2026-10.md", "docs/tasks/task-forward-architecture-2026-10.md", "RELEASING.md", "docs/server.md"]
+SOURCES = ["CLAUDE.md", "docs/tasks/task-kv-architecture-2026-10.md", "docs/completed/task-forward-architecture-2026-10.md", "RELEASING.md", "docs/server.md"]
 CHARS = int(20000 * 3.6)
 HOME = os.path.expanduser("~")
 CELLS = {  # name: (serve -model path, extra flags)

@@ -53,7 +53,7 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 ## Tier 3: subpackages of `decoder/`
 
 `decoder/` is one package of ~800 files. Tier 3 splits it one subsystem at a time, `decoder/fit` first (Francis, 2026-11-05;
-`docs/releases/v0.25.0-plan.md` §2, ledger row T3-fit in `docs/tasks/task-subsystems-2026-10.md`). A subpackage lives
+`docs/releases/v0.25.0-plan.md` §2, ledger row T3-fit in `docs/completed/task-subsystems-2026-10.md`). A subpackage lives
 **under** `decoder/`, named for the subsystem.
 
 **The rule for what may import what.** A subpackage never imports `decoder` (that is a cycle: the loader calls it).
@@ -82,11 +82,14 @@ In the other direction 13 non-test `decoder` files call it (`model.go`, `prefill
    `kvPricingFor`, `denseStreamable`, `estimateKVBytes`, `fitRates` and `quantBytesPerElem`, which measure the per-element prices through
    the loader's quantizer, `Model.Plan`, `FitQuery`) plus the stderr line `guardFit` prints. Moving the
    `fitCheck` struct to `fit` would only relocate fields that `mem.HostLoad` already carries, at the price of rewriting about ten
-   test files that build it by field name, so it is not planned. Moving the adapter needs `Config`, `Options` and `Architecture`
-   out of `decoder` first; that is the next Tier 3 subsystem (a `decoder/config`-style package), not part of `fit`.
+   test files that build it by field name, so it is not planned. The adapter stays in `decoder`: `Config` has moved to
+   `decoder/config` (DC1), and moving `Options` and `Architecture` would not free it, since it also needs the registry and the
+   backends' demand reports.
 4. **The aliases stay.** `decoder.Plan`, `PlanRequest`, `Placement*`, `FitAnswer`, `FitDeclineError` and `ErrWontFitResident` are the library's
-   published names (`Model.Plan` returns a `Plan`), and `decoder/fitalias.go` keeps them (Francis, 2026-11-06). Whether `Config`, `Options` and
-   `Architecture` leave `decoder` next is `docs/tasks/task-decoder-config-2026-11.md`.
+   published names (`Model.Plan` returns a `Plan`), and `decoder/fitalias.go` keeps them (Francis, 2026-11-06). `Config` left `decoder` for
+   `decoder/config`; `Options` and `Architecture` stay (Francis, 2026-11-06; the record is `docs/completed/task-decoder-config-2026-11.md`).
+   Moving `Options` is a new task when a subsystem names a consumer for it; `Architecture` leaves `decoder` as data, through
+   `internal/runtime/program`, not as a package move.
 
 ## GPU backend modules
 

@@ -189,6 +189,11 @@ func TestHLR_chainRunsWhileTheGateIsClosedAndStopsAtEachOpening(t *testing.T) {
 	if on.starts != 3 || on.stops != 3 {
 		t.Errorf("chain starts %d, stops %d; want 3 and 3 (events %v)", on.starts, on.stops, on.events)
 	}
+	// the registered condition itself: no GreedyChainNext for an open step. The loop asks one forward per emitted token, so the
+	// chain returns exactly the closed steps' tokens: n less the open steps; and the chain-off turn never calls it.
+	if off.nexts != 0 || on.nexts != n-openSteps {
+		t.Errorf("GreedyChainNext calls: %d without the chain, %d with it; want 0 and %d (%d tokens, %d open steps)", off.nexts, on.nexts, n-openSteps, n, openSteps)
+	}
 	// every open step ran Forward for its full row and no closed step did: the same full-row forwards as today's path (the prompt's,
 	// plus one per open step)
 	if on.fulls != off.fulls {

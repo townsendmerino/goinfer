@@ -500,7 +500,7 @@ end of this entry.** As filed:
 
 **B28 · the peer harness cannot yet run Gemma 2: G2-P (OP1) waits for it, on both backends** — filed 2026-10-16 (owner, from OP1 on
 CUDA). **Not started; not blocking** the CUDA or Metal softcap declarations, which rest on G2-K, G2-D and G2-L
-(docs/tasks/task-forward-architecture-2026-10.md §4.6a).
+(docs/completed/task-forward-architecture-2026-10.md §4.6a).
 
 G2-P is OP1's peer cell: Gemma 2 decoded by goinfer on the GPU, by goinfer on the CPU (the do-nothing arm) and by Ollama, depth 128
 and 2048, `scripts/bench_peer.py`, same-session interleaved. The harness cannot run it today, on either backend:
@@ -571,7 +571,7 @@ used, and the next 9B job's start check read 8.13 GB against an 8.7 GB need unti
     exits, and the reload time of the same model.
 - **Size:** S to M; the darwin mechanics decide it.
 
-**B39 · CANDIDATE: 8-bit KV cache on CUDA (`--kv i8`), for a longer context on the 8 GB card** — filed 2026-10-20 (owner, from tack's question: tack runs Qwen3-8B Q4_K_M at 16k because of KV memory). **Folded 2026-10-20 into `docs/tasks/task-kv-precision-everywhere-2026-10.md` as its phase 2 (the owner asked for f16 and int8 KV on every backend, family and path); the state line below is corrected there (§2).** **Candidate, not funded, not scoped past this estimate.** *Update 2026-10-20 (tack): its 4.8 screen removed about 10k tokens of instructions from a 16k window and passes on the hard tasks did not move (0/30 in both arms), so the window is no longer tack's binding limit; B39 stays a candidate with no pull from tack for now.* Tack decides after its next change (dropping or sectioning CLAUDE.md in the prompt) shows whether the window is still its main failure; no work until then.
+**B39 · CANDIDATE: 8-bit KV cache on CUDA (`--kv i8`), for a longer context on the 8 GB card** — *State 2026-11-08: delivered for the five dense families (S1 #735 to S3 #759, #764); S4, the fidelity gate and speed check, is #768; see `docs/tasks/task-kv-precision-everywhere-2026-10.md` P2. The lines below that say `--kv i8` refuses the load on CUDA, and that Metal declines the MMA prefill, are from before then.* Filed 2026-10-20 (owner, from tack's question: tack runs Qwen3-8B Q4_K_M at 16k because of KV memory). **Folded 2026-10-20 into `docs/tasks/task-kv-precision-everywhere-2026-10.md` as its phase 2 (the owner asked for f16 and int8 KV on every backend, family and path); the state line below is corrected there (§2).** **Candidate, not funded, not scoped past this estimate.** *Update 2026-10-20 (tack): its 4.8 screen removed about 10k tokens of instructions from a 16k window and passes on the hard tasks did not move (0/30 in both arms), so the window is no longer tack's binding limit; B39 stays a candidate with no pull from tack for now.* Tack decides after its next change (dropping or sectioning CLAUDE.md in the prompt) shows whether the window is still its main failure; no work until then.
 - **State today:** CUDA's resident KV is f32 or f16 only. `--kv auto` is f16 for the dense llama, mistral, qwen2, qwen3 and phi3 families (`decoder/residency.go:Model.ResidentKVPrecision`; Qwen3-8B's banner reads `KV f16`). `--kv i8` refuses the load on CUDA (phase 0 of `docs/tasks/task-kv-precision-everywhere-2026-10.md`; until then it was silently f32). On Metal it is delivered on the per-token path where the MMA prefill, batched decode and the Gemma 4, MoE and emodel layer-major paths decline it; on the CPU it covers the families without MoE on the batched attention kernel and refuses elsewhere; WebGPU's coverage is phase 5's survey (`docs/kv-precision-matrix.md`). 4-bit KV exists nowhere (int4 KV is deferred behind int8; a 3-bit variant was killed, `docs/quantization.md`).
 - **Sizing arithmetic (Qwen3-8B Q4_K_M, RTX 2070 SUPER; arithmetic, not a measurement; the server's own plan is the fit check):**
   - KV per position at f16: 36 layers x 8 KV heads x 128 x 2 (K and V) x 2 B = 147,456 B = 144 KiB. At 16,384 positions: 2.36 GB (the banner's "needs 2.2 GB KV", in GiB). Weights 4.3 GB (the banner).
@@ -750,14 +750,14 @@ changes the plan of every shipped DeltaNet model that fits the card, so it is a 
 
 **B27 · Nemotron-H's Mamba projections at int8 in the .giw and on the host** — filed 2026-10-15 (from OP2b's tier 1).
 **Built 2026-10-16; the whole-model run PASS** (branch `b26-mamba-int8-giw-v17-2026-10`; filed as B26 and renumbered,
-main's B26 being another item; reading in docs/tasks/task-forward-architecture-2026-10.md §4.7); owner's decisions and the registration below, 2026-10-15,
+main's B26 being another item; reading in docs/completed/task-forward-architecture-2026-10.md §4.7); owner's decisions and the registration below, 2026-10-15,
 before any code.
 
 NVIDIA-Nemotron-Nano-9B-v2's int4 .giw is 19.2 GB: the Mamba in/out projections stay f32 there and in the decoder's host
 weights (about 0.59 GB a layer over 27 layers), and only attention and MLP take the requested quant. Metal already runs
 those projections at int8 (`backend/metal/mamba.go`, quantized at build from the f32 host copy), so the f32 bytes serve only the
 CPU path and the build. At int8 the bundle would be about 7 GB, which a 16 GB Mac could load at night, and the whole-model
-half of OP2b's tier 1 could run (docs/tasks/task-forward-architecture-2026-10.md §4.7, "Tier 1 on a layer slice").
+half of OP2b's tier 1 could run (docs/completed/task-forward-architecture-2026-10.md §4.7, "Tier 1 on a layer slice").
 
 **Owner's decisions:**
 1. **The .giw goes to v17,** as v16 did: every sidecar rebuilds once. In v17 each tensor's encoding is explicit, and a
