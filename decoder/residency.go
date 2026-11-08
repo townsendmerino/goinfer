@@ -426,6 +426,14 @@ type ResidentQuantReporter interface {
 	ResidentQuant() string
 }
 
+// reportedQuant is rf's ResidentQuant, or "" when rf does not report one.
+func reportedQuant(rf ResidentForward) string {
+	if qr, ok := rf.(ResidentQuantReporter); ok {
+		return qr.ResidentQuant()
+	}
+	return ""
+}
+
 // ResidentCapped is an OPTIONAL ResidentForward extension exposing the backend's fixed
 // KV context capacity (in positions). A write past it is an out-of-bounds device write
 // (silent KV corruption); the backends refuse it mid-generation, but generateInto also
@@ -467,13 +475,19 @@ type ResidentPrefillBlocks interface {
 	PrefillScratchBytes(rows int) int64
 }
 
+// prefillBlocks is the resident's ResidentPrefillBlocks, or nil when it reports none.
+func (m *Model) prefillBlocks() ResidentPrefillBlocks {
+	pb, _ := m.resident.(ResidentPrefillBlocks)
+	return pb
+}
+
 // prefillBlockRows is the pass length residentPrefillSeed splits a prompt of promptLen tokens into, or 0 when the
 // resident's prefill is not split: it does not report a block, or its continuation is not exact. A block under the
 // resident's kernel-class floor is raised to it, as mc3Prefill raises its chunk, so the first pass runs the class the
 // whole prompt would.
 func (m *Model) prefillBlockRows(promptLen int) int {
-	pb, ok := m.resident.(ResidentPrefillBlocks)
-	if !ok {
+	pb := m.prefillBlocks()
+	if pb == nil {
 		return 0
 	}
 	if te, ok := m.resident.(PrefillTailExact); !ok || !te.PrefillTailExact() {
@@ -497,20 +511,32 @@ func (m *Model) residentPrefillScratch(promptTokens int) (bytes int64, ok bool) 
 		return m.residentChunkedScratch(promptTokens)
 	}
 	rows := min(promptTokens, B+m.prefillTailMinRows()-1)
-	pb := m.resident.(ResidentPrefillBlocks)
-	return pb.PrefillScratchBytes(rows) + int64(rows)*4*int64(m.ResidentEmbedLen()), true
+	return m.prefillBlocks().PrefillScratchBytes(rows) + int64(rows)*4*int64(m.ResidentEmbedLen()), true
 }
 
 // prefillKernelFloor is the resident's kernel-class boundary for chunking: PrefillKernelFloor when the resident
 // reports it, else ResidentFastPrefill's floor (the same boundary, as CUDA reports it), else 0.
 func (m *Model) prefillKernelFloor() int {
-	if kf, ok := m.resident.(ResidentPrefillKernelFloor); ok {
-		return kf.PrefillKernelFloor()
-	}
-	if fp, ok := m.resident.(ResidentFastPrefill); ok {
-		return fp.FastPrefillFloor()
+	fast, hasFast, kernel, hasKernel := m.residentFloors()
+	switch {
+	case hasKernel:
+		return kernel
+	case hasFast:
+		return fast
 	}
 	return 0
+}
+
+// residentFloors is the resident's two kernel-class reports, each with whether the resident gives it: ResidentFastPrefill's
+// FastPrefillFloor and ResidentPrefillKernelFloor's PrefillKernelFloor. A caller that keys on a report's presence reads has, not a 0.
+func (m *Model) residentFloors() (fast int, hasFast bool, kernel int, hasKernel bool) {
+	if fp, ok := m.resident.(ResidentFastPrefill); ok {
+		fast, hasFast = fp.FastPrefillFloor(), true
+	}
+	if kf, ok := m.resident.(ResidentPrefillKernelFloor); ok {
+		kernel, hasKernel = kf.PrefillKernelFloor(), true
+	}
+	return fast, hasFast, kernel, hasKernel
 }
 
 // ResidencyBackend is the optional capability a Backend advertises to build a
@@ -1393,6 +1419,15 @@ func (m *Model) ResidentContextCap() int {
 	return 0
 }
 
+// clampToResidentCap is maxTokens cut so that a turn starting at gpuPos ends at the resident's context cap, and whether it was cut.
+// A resident without a cap, or a cap of 0, cuts nothing; the result may be 0 when the prompt fills the cap.
+func (m *Model) clampToResidentCap(gpuPos, maxTokens int) (int, bool) {
+	if c := m.ResidentContextCap(); c > 0 && gpuPos+maxTokens > c {
+		return c - gpuPos, true
+	}
+	return maxTokens, false
+}
+
 // ResidentContextNoted is an optional ResidentForward extension: a few words on how the backend arrived at its context cap
 // ("fit: 2 slots, 1.9 GB KV", "paged MoE keeps the default"), for a load banner. "" when the caller's own -ctx set it.
 type ResidentContextNoted interface {
@@ -1454,8 +1489,8 @@ func (m *Model) DecodePath() string {
 	switch {
 	case m.resident != nil:
 		label := residentQuantLabel(be, m.Quant())
-		if qr, ok := m.resident.(ResidentQuantReporter); ok && qr.ResidentQuant() != "" {
-			label = qr.ResidentQuant()
+		if q := reportedQuant(m.resident); q != "" {
+			label = q
 		}
 		return fmt.Sprintf("%s-resident (%s)", be, label)
 	case be == "cpu":
@@ -1524,7 +1559,7 @@ func autoMetalKeepsPrecision(auto bool, backend, quant string, rf ResidentForwar
 	if !auto || backend != "metal" || quant != "int8int8" {
 		return ""
 	}
-	if qr, ok := rf.(ResidentQuantReporter); ok && qr.ResidentQuant() == quant {
+	if reportedQuant(rf) == quant {
 		return ""
 	}
 	return "-backend auto keeps this int8int8 model on the CPU: metal would re-quantize it to int4 (its int8 kernels cover dense models only; -backend metal does that)"
