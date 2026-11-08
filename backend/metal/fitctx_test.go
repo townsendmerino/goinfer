@@ -301,7 +301,7 @@ func TestMetalLoadPlan_isTheGuardsPrice(t *testing.T) {
 			if l.KVSlots != kept || banner != kept {
 				t.Errorf("KV slots: fit %d, the build %d, the banner %d", l.KVSlots, kept, banner)
 			}
-			t.Logf("%s: %d KV slots, %d B (%.1f MiB) on both sides", c.name, kept, guard, float64(guard)/(1<<20))
+			t.Logf("%s: the build keeps %d KV slots, and its guard prices %d B (%.1f MiB)", c.name, kept, guard, float64(guard)/(1<<20))
 		})
 	}
 }
