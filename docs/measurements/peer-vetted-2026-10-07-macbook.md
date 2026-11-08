@@ -281,3 +281,26 @@ It is the same cell, rules and grader as "M1 on main after #722", with these dif
   decode-path gate.
 - **What it decides:** nothing on its own. The reading goes to Francis for OP6's default switch, beside 2026-10-20's (0.539,
   BEHIND).
+
+### M1 on main after #775: read 2026-11-08 — LEVEL (1.02)
+
+By day, 2026-11-08 08:44:33–08:47:54 PST (16:44:33–16:47:54 UTC), `run-mac-m1-2026-11-08.sh` under the exclusive timing lock with
+`caffeinate -i`.
+- **Provenance:** the serve built at `76d78d19` (sha256 `9a2e74bd1ce5fb28`), Ollama 0.32.5, macOS 26.6.2, on AC power.
+- **Records:** `~/goinfer-bench/peer-vetted/results-mac-m1-2026-11-08/` (`grade.jsonl`, `grade.txt`, `fitcheck.log`,
+  `metal-phi3-q4k.json`, `provenance.txt`). The run's log is `~/goinfer-logs/op6-m1-2026-11-08.log`.
+
+- **Fit check: RESIDENT.** Decode path `metal-resident (q4k)`, the sidecar `.giw` loaded in 1.7 s, and a peak physical footprint of
+  2,527 MB once serving (the 2026-10-20 heap load: 5,311 MB). Swap was 2,425 MB before and after.
+- **Each cell's start, against the heavy-load rule:**
+  - goinfer: load average 2.13 (cap 4.0); free memory 6,854 MB against the fit need 2,282 MB plus 2 GB.
+  - Ollama: load average 2.94; free memory 6,768 MB against 3,481 MB plus 2 GB.
+  - `bench_peer.py`'s instant gate waited 19.6 s and 51.9 s for the box to go quiet. No GPU compute apps were running.
+- **Swap over each engine's cell: 0 and 0 MB.** The bar is 0 MB, so neither arm is void.
+- **The cell:** goinfer 42.2, 42.4 and 42.7 tok/s; Ollama 41.1, 41.7 and 41.9. Pairs 1.026, 1.017 and 1.020, median ratio **1.02**,
+  spread 1.2 and 1.9. `grade.py`: **LEVEL**, its parity band.
+- **Against 2026-10-20's reading** (goinfer 22.6, Ollama 41.9, 0.539 BEHIND), on the same weights and box: goinfer's decode is 1.88×
+  faster between `a2732f00` and `76d78d19`, and Ollama's arm is unchanged within its spread. The peak RSS was 4.80 GiB for goinfer
+  and 3.05 GiB for Ollama.
+- **What it decides:** nothing on its own. The reading goes to Francis for OP6's default switch.
+
