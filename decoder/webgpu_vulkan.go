@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"runtime"
+	"slices"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -182,8 +183,8 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 
 // webgpuDeviceBuffers is the buffer list a WebGPU resident build of m makes at ctx, in its creation order: the LM head (the token
 // table when tied; an untied table, the position table and Gemma 4's per-layer tables stay on the host), then each layer's caches
-// (webgpuLayerCaches) and matrices, then the scratch. slotKV is the caches one further slot adds; weights is the matrices' bytes,
-// the dense bytes less the host-side tables plus the routed experts.
+// (webgpuLayerCaches) and matrices, then the scratch. slotKV is the caches one further slot adds; weights is the dense matrices'
+// bytes as WebGPU uploads them (the routed experts, stacked, are listed but not counted in it).
 func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []int64, weights int64) {
 	if m == nil || m.w == nil {
 		return nil, nil, 0
@@ -211,10 +212,7 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 		mats(&w.Embed)
 	}
 	stacked := func(nE int, w0 *linalg.WeightMat) {
-		for _, n := range webgpuStackedBuffers(nE, w0) {
-			slot0 = append(slot0, n)
-			weights += n
-		}
+		slot0 = append(slot0, webgpuStackedBuffers(nE, w0)...)
 	}
 	// w8a8 is a projection WebGPU uploads as int8 codes and per-row f32 scales (UploadW8A8): the codes' rows padded to 16.
 	w8a8 := func(rows, cols int) {
@@ -325,16 +323,50 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 	return slot0, slotKV, weights
 }
 
-// webgpuBlockRounding is what a WebGPU load holds at ctx beyond what the plan already prices on its own lines (the matrices, the
-// context, and one slot's recurrent state): gpu-allocator's blocks over webgpuDeviceBuffers, less those three. The matrices are
-// the plan's own walk (its dense and expert lines less their vectors and biases, which sit beside the blocks), not the list's sizes,
-// which are what WebGPU uploads: so the plan's total is M1′'s blocks plus webgpuVkFixed, the vectors, the biases and the slack.
+// webgpuBlockRounding is what a WebGPU load holds at ctx beyond what the plan already prices on its own lines (the dense matrices, the
+// routed experts, the context, and one slot's recurrent state): gpu-allocator's blocks over webgpuDeviceBuffers, less those. The plan's
+// total is therefore M1′'s blocks plus webgpuVkFixed and what sits beside the blocks (the vectors, biases and derived tables).
 func (m *Model) webgpuBlockRounding(ctx int, kvF16, kvI8 bool) int64 {
-	slot0, _, _ := m.webgpuDeviceBuffers(ctx, kvF16, kvI8)
-	return webgpuVkBlocks(slot0) - m.webgpuMatrixWalk() - m.ResidentKVBytes("webgpu", ctx, kvF16, kvI8) - m.stateBytes("webgpu")
+	slot0, _, dense := m.webgpuDeviceBuffers(ctx, kvF16, kvI8)
+	return webgpuVkBlocks(slot0) - dense - m.webgpuExpertLine() - m.ResidentKVBytes("webgpu", ctx, kvF16, kvI8) - m.stateBytes("webgpu")
 }
 
-// webgpuMatrixWalk is the webgpu plan's matrices: its dense line less the vectors, and its routed experts less their biases.
-func (m *Model) webgpuMatrixWalk() int64 {
-	return m.ResidentDenseWeightBytesFor("webgpu") + m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes() - m.denseVectorBytes() - 2*m.expertBiasBytes()
+// webgpuDenseLine is the webgpu plan's dense line: the dense matrices as WebGPU uploads them (webgpuDeviceBuffers), and beside them
+// the vectors, the routed experts' biases and the derived tables.
+func (m *Model) webgpuDenseLine() int64 {
+	_, _, dense := m.webgpuDeviceBuffers(0, false, false)
+	return dense + m.denseVectorBytes() + m.expertBiasBytes() + m.webgpuDerivedTableBytes()
+}
+
+// webgpuExpertLine is the plan's routed-expert line (deviceLoad's ExpertBytesFull): 0 for a dense model.
+func (m *Model) webgpuExpertLine() int64 {
+	if _, _, isMoE := m.moeGeometry(); !isMoE {
+		return 0
+	}
+	return m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes() - m.expertBiasBytes()
+}
+
+// webgpuDerivedTableBytes is what a WebGPU build uploads beside the weights that no weight line holds: one RoPE inverse-frequency
+// table per distinct table (the build caches them by value), a one-element attention sink on each layer without learned sinks
+// (a WGSL bind group binds no null buffer), and on a DeltaNet model one zeroed conv bias of the conv width, which every DeltaNet
+// layer binds. The plan prices it on the dense line, beside the blocks, as it prices the vectors.
+func (m *Model) webgpuDerivedTableBytes() int64 {
+	if m == nil || m.w == nil || m.w.arch == nil {
+		return 0
+	}
+	var tabs [][]float32
+	var n int64
+	for i := range m.w.arch.NumLayers {
+		if inv := m.RopeInvFreqLayerResident(i); len(inv) > 0 && !slices.ContainsFunc(tabs, func(t []float32) bool { return slices.Equal(t, inv) }) {
+			tabs = append(tabs, inv)
+			n += 4 * int64(len(inv))
+		}
+		if len(m.GptOssSinksResident(i)) == 0 {
+			n += 4
+		}
+	}
+	if _, hk, hv, nk, nv, _, ok := m.Qwen35ResidentParams(); ok {
+		n += 4 * int64(2*nk*hk+nv*hv)
+	}
+	return n
 }

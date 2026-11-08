@@ -119,6 +119,13 @@ func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack boo
 		mem.Machine{Free: map[mem.Tier]int64{l.Tier: freeBytes}}, mem.DefaultPolicy())
 	p.Placement, p.Ctx, p.Slots, p.ScratchBytes = Placement(d.Placement), d.Ctx, d.Slots, d.ScratchBytes
 	p.ExpertBytesUsed, p.KVBytes, p.HostCopyBytes, p.Reason = d.ExpertBytesUsed, d.KVBytes, d.HostCopyBytes, d.Reason
+	if backend == "webgpu" && webgpuVulkan && p.Placement != PlacementDecline {
+		// The search priced Vulkan's block rounding on the KV term, where it moves with the context; the plan reports it as slack, so
+		// KVBytes is the KV the build allocates (one slot's, as a caller multiplies it) and the total is unchanged.
+		r := m.webgpuBlockRounding(p.Ctx, req.KVF16, req.KVI8)
+		p.KVBytes -= r
+		p.AllocSlackBytes += r
+	}
 	if ckpt, perSlot := m.checkpointBytes(backend); p.Placement != PlacementDecline {
 		if copies := checkpointCopies(checkpointHeadroom(p, freeBytes, req), ckpt, max(req.KVSlots, 1), perSlot); copies > 0 {
 			p.CheckpointBytes, p.CheckpointCopies = ckpt, copies
@@ -228,6 +235,7 @@ func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceL
 		}
 	case "webgpu":
 		l.CtxCeiling = WebGPUCtxCeiling(kvF16, kvI8)
+		l.DenseBytes = m.webgpuDenseLine()
 		if !webgpuVulkan {
 			break
 		}

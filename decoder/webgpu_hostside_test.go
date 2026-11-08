@@ -38,10 +38,10 @@ func TestPlan_webgpuPricesVulkansBlocks(t *testing.T) {
 			l := m.deviceLoad("webgpu", false, false, true)
 			got := l.DenseBytes + l.ExpertBytesFull + l.FixedSlack + l.KV(ctx) + l.StateBytes
 			slot0, _, _ := m.webgpuDeviceBuffers(ctx, false, false)
-			// The dense line also holds the norm vectors and expert biases, which the matrix walk does not list: they sit beside the blocks.
-			want := webgpuVkBlocks(slot0) + webgpuVkFixed + m.planSlack("webgpu") + m.denseVectorBytes() + m.expertBiasBytes()
+			// The dense line also holds the norm vectors, the expert biases and the derived tables, which the list does not hold: they sit beside the blocks.
+			want := webgpuVkBlocks(slot0) + webgpuVkFixed + m.planSlack("webgpu") + m.denseVectorBytes() + m.expertBiasBytes() + m.webgpuDerivedTableBytes()
 			if !webgpuVulkan {
-				want = m.ResidentDenseWeightBytesFor("webgpu") + l.ExpertBytesFull + m.planSlack("webgpu") + m.ResidentKVBytes("webgpu", ctx, false, false) + l.StateBytes
+				want = m.webgpuDenseLine() + l.ExpertBytesFull + m.planSlack("webgpu") + m.ResidentKVBytes("webgpu", ctx, false, false) + l.StateBytes
 			}
 			if got != want {
 				t.Errorf("%s at %d: the plan prices %d device bytes, M1′ over the build's list %d", dir, ctx, got, want)

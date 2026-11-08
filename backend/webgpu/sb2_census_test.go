@@ -747,23 +747,9 @@ func TestBackendSlotCensus_webgpu_m1p(t *testing.T) {
 // blocks are outside what a row reads (webgpuVkBlocks prices them in the slot census).
 var webgpuRounding = memgate.PowerOfTwo("Vulkan's power-of-two blocks")
 
-// webgpuDenseTableFixtures are the fixtures whose dense line reads over plan: a tied head uploads the table the plan counts, so the
-// host-kept table that hides the derived tables on other fixtures is not there to hide them.
-var webgpuDenseTableFixtures = []string{
-	"selftestdata/gemma3-vl-tiny",
-	"testdata/gemma1-tiny",
-	"testdata/gemma1-tiny.gguf",
-	"testdata/gemma3-vl-tiny",
-	"testdata/smollm3-tiny",
-}
-
 // webgpuMemGaps is WebGPU's table of known reds. It may only shrink: the fix that removes a row lowers webgpuMemGapsPin.
 var webgpuMemGaps = func() []memgate.Gap {
 	var out []memgate.Gap
-	for _, row := range webgpuDenseTableFixtures {
-		out = append(out, memgate.Gap{Row: row + " *", Line: mem.LineDense, What: "the rotation tables and small constant buffers a build derives are leased on dense and priced nowhere",
-			Item: "MM8 WebGPU, derived dense tables", Bytes: func(f map[string]int64) int64 { return f["tables"] }})
-	}
 	moeDense := func(row string, over int64) {
 		out = append(out, memgate.Gap{Row: row, Line: mem.LineDense, What: "Gemma 4's MoE block leases derived router tables on dense past the tensors the plan sums: not diagnosed, so it names this row's own bytes",
 			Item: "MM8, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return over }})
@@ -807,7 +793,7 @@ const webgpuGateRowsPath = "testdata/memgate_rows.txt"
 var webgpuGateRowsUpdate = flag.Bool("memgate.rows.update", false, "have TestMemGate_webgpu rewrite testdata/memgate_rows.txt")
 
 // webgpuMemGapsPin is len(webgpuMemGaps) on this architecture.
-var webgpuMemGapsPin = map[string]int{"arm64": 34}[runtime.GOARCH] + map[bool]int{true: 38}[runtime.GOARCH != "arm64"]
+var webgpuMemGapsPin = map[string]int{"arm64": 29}[runtime.GOARCH] + map[bool]int{true: 33}[runtime.GOARCH != "arm64"]
 
 // webgpuGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; the function it returns
 // runs after that read, so the plant is released before Close and the package's own ledger check stays clean.
@@ -922,7 +908,7 @@ func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
 		o             decoder.Options
 		live          bool
 	}{
-		{"dense", "../../testdata/gemma1-tiny", "testdata/gemma1-tiny int8int8", mem.LineDense, decoder.Options{Quant: "int8int8"}, true},
+		{"dense", "../../testdata/gemma4-moe-kv-tiny", "testdata/gemma4-moe-kv-tiny int8int8", mem.LineDense, decoder.Options{Quant: "int8int8"}, true},
 		{"experts", "../../testdata/qwen3vlmoe-tiny", "testdata/qwen3vlmoe-tiny int8int8", mem.LineExperts, decoder.Options{Quant: "int8int8"}, true},
 		{"kv", "../../testdata/llama-tiny", "testdata/llama-tiny int4/kvprecision-i8", mem.LineKV, decoder.Options{Quant: "int4", KVPrecision: "i8"}, true},
 		{"state", "../../testdata/llama-tiny", "testdata/llama-tiny int4", mem.LineState, decoder.Options{Quant: "int4"}, false},
