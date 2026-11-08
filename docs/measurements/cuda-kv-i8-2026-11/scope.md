@@ -243,3 +243,99 @@ every test PASS, no FAIL line in the log; the cross-backend G2 and the two diagn
 - Smallest plant: 1.01e-4, 1.24e-4 and 4.74e-4. Every plant clears the bar, but on the tiny fixture and the 0.5B it does so narrowly. The
   plants are a 1 % scale and a one-code change on keys that hold little weight for some rows, and the real deviation on those fixtures
   sits 9x to 100x below them.
+## S3a, 2026-11-07: several KV slots, CopyKV, copy on write and the batched step on the int8 cache
+
+Stacked on S2 (#755). On a dense full-attention model the scale pools already follow the blocks: `CopyKV` shares whole blocks by reference
+(the scales sit in the same pool rows), and copy on write goes through `kvCopyBlockRows`, which S2 taught to copy a block's scales with its
+rows. S3a therefore lifts S2's one-slot rule (an explicit `--kv-sessions N` is honoured, a default count is no longer lowered) and accepts
+`CopyKV` on an int8 cache. Host copies stay declined by name: snapshots (`snapshotDecline`) and demotion, which now logs the slot whose rows
+it does not keep (`errKV8NoHostCopy`); they are S3b. The windowed ring is S3c (every sliding-window family is still refused by name).
+
+Red first (`s3a-red.log`): the existing f32/f16 tests, each given an int8 arm, failed only on that arm (S2 refused a multi-slot int8 load),
+and the f32 arms of the extended KV4 test (a new check, below) passed.
+
+| test (tier 0, tiny fixtures) | what it holds at -kv i8 | reading |
+|---|---|---|
+| `TestKV2_copyExact_tiny/i8` | `CopyKV` copies exactly the range (every K, V and **scale** byte, via `kv2Rig`, which now reads the scale pools), touches nothing else, and a prompt that copies a preamble then prefills the rest equals the cold prefill: every row and the last logits, bit for bit | PASS |
+| `TestKV4_sharedPreambleStoredOnce/i8` | 4 slots share a 16,384-token preamble stored once (264 blocks in use, limit 268); each slot's logits equal its cold prefill; a rollback into a shared block leaves another slot unchanged; and (new, both precisions) the rolled-back slot's next step equals the same writes replayed on a one-slot resident, which holds the rows and scales copy on write kept | PASS (f32 and i8) |
+| `TestCUDAStepBatch_matchesForward/llama-tiny/i8` | the MC3 batched step over 4 slots equals each row's own Forward, bit for bit | PASS |
+| `TestKV8_deliveredBytes` (two slots added) | two int8 slots allocate exactly `ResidentKVBytes` + one `CUDAKVSlotBytes` at the guaranteed share, less the tables | PASS on all four |
+
+Plant (`s3a-plant-cow-noscales.log`): copy on write without the scales: the KV4 replay check reads red at the first logit; restored.
+`s3a-green.log` (filter `TestKV2_copyExact_tiny|TestKV4_sharedPreambleStoredOnce|TestCUDAStepBatch_matchesForward|TestKV8_`): the three
+tests above PASS; the cross-backend G2 FAIL as registered; and `TestKV8_deliveredBytes` FAIL, because it still asserted S2's one-slot
+lowering. That was fixed by a two-slot check, PASS in `s3a-g3.log` (filter `TestKV8_deliveredBytes`).
+
+## S3b, 2026-11-07: host snapshots (KV7) and demotion carry the scales
+
+A snapshot's host layout gains, on an int8 layer, its K and V scale rows (one f32 per KV head a position) after its K and V rows, and the
+snapshot and restore loops copy them with the rows; a restore is served only into the same precision (`Serves`). Demotion and promotion
+are snapshots and restores, so they follow. The decline S2 put on both is gone. An int8 layer's row must be whole words (`kv8Unsupported`
+refuses one that is not: the block copies and host copies move words); every dense family's is.
+
+Red first (`s3b-red.log`, the new int8 arms against S3a's code): `TestKV7_restoreFull/i8`, `TestKV7_demoteAndPromote/i8` and
+`TestKV8_uploadRefused` (which now also prices a snapshot) red, their f32/f16 arms green. Green (`s3b-green.log`):
+
+| test | what it holds at -kv i8 | reading |
+|---|---|---|
+| `TestKV7_restoreFull/i8` | a snapshot restored into another slot holds the computed rows and scales byte for byte (`kv2Rig`), and the steps after it equal the computed prefix's logits | PASS |
+| `TestKV7_demoteAndPromote/i8` | a released idle slot keeps its rows and scales in host memory, promoted back continues bit-identical to a slot never released; the test's own plant (a zeroed host copy) differs | PASS |
+| `TestKV8_uploadRefused` | `KVSnapshotBytes` prices `kvDim` + 4 B a head for each of K and V a row; `UploadKV` refused by name | PASS |
+
+Plant (`s3b-plant-snapshot-noscales.log`): a snapshot that does not download the scales: every layer's restored rows differ and the first
+logit after it; restored.
+
+**What the S3 suite runs read** (every claim names its filter; each read lists every FAIL line of its log):
+
+| log | filter | reading |
+|---|---|---|
+| `s3a-kv-suite.log` (S3a tree) | `^Test(KV\|CUDAStepBatch\|ResidentKVBytes\|KSH6C\|PlanMemory\|DeriveMemory\|SlotsDecision\|PTX\|Pipeline)`, `-short` | **two tests FAIL:** the cross-backend G2 (as registered), and `TestResidentKVBytes_matchesCUDAAllocation` (llama-tiny 1,331,712 B priced against 4,260,352 B expected; the 0.5B 107,374,592 B against 404,228,096 B), which still expected int8 asked of a two-slot load to price f32 under S2's one-slot refusal. An earlier version of this record and of #759's description called this run green apart from G2: I had read only the first 20 FAIL/SKIP lines. |
+| `s3-merged-suite.log` (S3 on #755 at 02770f4e) | `^TestKV8_\|TestKV2_copyExact_tiny\|TestKV4_sharedPreambleStoredOnce\|TestCUDAStepBatch_matchesForward\|TestKV7_restoreFull\|TestKV7_demoteAndPromote\|TestPTX_\|TestPipelineLint\|TestPTXModules` | every test in the filter PASS. **The filter left out `TestResidentKVBytes_matchesCUDAAllocation`,** which was still red then; this run says nothing about it. |
+| `s3-review-merged-suite.log` (S3 on #755 at ee8027e2) | the same, plus `TestResidentKVBytes_matchesCUDAAllocation\|TestKVPool_detailNamesThePool` | `TestResidentKVBytes_matchesCUDAAllocation` FAIL (as above); the rest PASS |
+| `s3-review-kv-suite.log` (after the fix) | as `s3a-kv-suite.log` | 135 tests PASS, no FAIL line |
+| `s3-r2-kv-suite.log` (S3 on #755 at 7e454481, with the kvsnap guard) | as `s3a-kv-suite.log` | 135 tests PASS, no FAIL line (the cross-backend G2 and the diagnostics skip) |
+
+Identity on CUDA against 7c4ed713 at 02770f4e (`s3-identity-cuda.log`): 24 families IDENTICAL, 0 different, 19 not run (no tiny asset
+on this box). Still not int8 after S3: sliding-window layers and the windowed ring (S3c; those families are refused by name), and the
+families outside the dense five (S5).
+
+**kvsnap's V scales** (Gemini's review of #759, item 2): the layout reserved, and snapshot and restore copied, a V scale block on every
+int8 layer whether or not it holds V. They now go only beside a V. No int8 layer lacks V today (an MLA latent is the only V-less layer,
+and MLA is refused at int8), so this is a guard; no test can reach the V-less case.
+
+
+## S3, review of #759 at 10930f92 (Gemini, relayed by the coordinator, 2026-11-07)
+
+1. **`TestResidentKVBytes_matchesCUDAAllocation` accepted either figure for int8 (and any of three for f16).** That passes a fixture
+   under-priced at int8 and one over-priced at f32 alike. Fixed: each request asserts the one figure the fixture's family implies,
+   written out in the test rather than read from the policy. f16 for every fixture (all have f16 kernels); int8 for llama-tiny,
+   phi3-tiny and the 0.5B; f32 for the rest (`kv8PricedFixtures`). PASS (`s3-r3-bytes.log`). Broken first, both ways:
+   - int8 priced for every family (`s3-r3-plant-price-all.log`): red on mistral-tiny-window, gemma3-vl-tiny, qwen35-tiny and gemma3-1b.
+     deepseek-tiny stays green, because an MLA latent prices f32 at any precision.
+   - int8 never priced (`s3-r3-plant-price-never.log`): red on llama-tiny and the 0.5B.
+2. **`TestKV8_deliveredBytes`'s two-slot check left the tables out and the one-slot build loaded.** Fixed: the one-slot build is closed
+   before the two-slot load, each slot's guaranteed share must equal the one-slot context, and the block tables are checked on their own
+   (two slots, each group, as long as the cap, which may be raised past the share). PASS on all four (`s3-r3-bytes.log`).
+3. **kvsnap's V scales before `hasV`:** fixed at 226c5ae8 (above).
+4. **Stale text and logs.**
+   - `kvresolve.go`'s comment was corrected in the merge of #755 at f954597d, and the `s3a-green.log` sentence at 226c5ae8.
+   - The superseded red logs (`s3a-kv-suite.log`, `s3-review-merged-suite.log`, `touched-s3a.log`) stay, as the record of what those runs
+     read; the table above names each one and its filter.
+   - `s3a-kv-suite.log.time`, a timing stub nothing cites, is removed.
+
+## S3, #755's last review folded in (Gemini at 7e454481, relayed after #755 merged as e498c3fb, 2026-11-07)
+
+`origin/main` (with #755) is merged into #759, no rebase.
+
+1. **`ctxForSlots` priced each further slot at the raw `--kv i8` request.** Real now that S3a lifts the one-slot rule and `cudaKVPrec` reads
+   no options. A load asking int8 that the policy holds at f32 (a drafter) builds f32 pools, but its extra slots were priced as int8, a
+   quarter of their cost. The slot price is now one helper, `cudaExtraSlotKVBytes`, at the delivered precision (`KVDeliveredFor("cuda")`).
+   Red first (`s3-r4-red-extraslot.log`): `TestKV8_extraSlotPricedAtTheDeliveredPrecision` priced the drafter case at 40,976 B against an
+   f32 build's 131,088 B. Green after (`s3-r4-green-extraslot.log`).
+2. **The either-of byte assertion:** done at 1d1641d4 ("S3, review of #759 at 10930f92", item 1), and kept through the merge.
+3. **The V-code plant cleared the bar by 1% on llama-attnfa-tiny.** Both plants are now decisive. The V scale goes x1.01 -> x1.05, and the
+   V code moves by 16 instead of 1 (still one scale and one code, of the row's most-attended key). The bar is unchanged.
+   `s3-r4-g2exact.log`: PASS on all three. The readers' worst deviation is unchanged (7.36e-7 / 1.41e-5 / 7.17e-5), and the weakest plant
+   now reads 6.39e-4 / 7.85e-4 / 3.01e-3, 6x to 30x the 1e-4 bar.
+4. **`touched-s2.log` was the run before its fixes.** It now holds a passing `touched.py` run on #759's tree (S2 merged in); the first line
+   says so, and the pre-fix run is in git history at e498c3fb.

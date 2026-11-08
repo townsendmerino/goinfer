@@ -16,30 +16,28 @@ func TestQwenTowerPlacement(t *testing.T) {
 		name         string
 		backend      string
 		int8, req    bool
-		asked        bool // -vision-device gpu
 		attach       func() error
 		want         string // a prefix of the placement; "" with wantErr
 		wantErr      string
 		wantWarnPart string
 	}{
-		{"cuda attaches", "cuda", false, false, false, ok, "CUDA", "", ""},
-		{"cuda attaches under require", "cuda", false, true, false, ok, "CUDA", "", ""},
-		{"cuda declined falls to the CPU, named, with a warning", "cuda", false, false, false, declined, "CPU (cuda declined)", "", "cuda declined it: out of memory"},
-		{"cuda declined is refused under require", "cuda", false, true, false, declined, "", "-require-backend: the Qwen2.5-VL tower could not start on cuda", ""},
-		{"cuda int8 keeps the CPU, named", "cuda", true, false, false, mustNotAttach, "CPU (-vision-quant int8", "", ""},
-		{"cuda int8 is refused under require", "cuda", true, true, false, mustNotAttach, "", "-require-backend: the Qwen2.5-VL CUDA tower is float32", ""},
-		{"-vision-device cpu (backend cpu) never attaches", "cpu", false, true, false, mustNotAttach, "CPU", "", ""},
-		{"metal has no Qwen2.5-VL device tower here", "metal", false, true, false, mustNotAttach, "CPU", "", ""},
-		{"webgpu, not asked: the CPU tower by choice, under require too", "webgpu", false, true, false, mustNotAttach, "CPU (-vision-device gpu puts it on WebGPU)", "", ""},
-		{"webgpu asked attaches", "webgpu", false, false, true, ok, "WebGPU", "", ""},
-		{"webgpu asked, declined, falls to the CPU, named, with a warning", "webgpu", false, false, true, declined, "CPU (webgpu declined)", "", "webgpu declined it: out of memory"},
-		{"webgpu asked, declined, is refused under require", "webgpu", false, true, true, declined, "", "-require-backend: the Qwen2.5-VL tower could not start on webgpu", ""},
-		{"webgpu asked, int8 keeps the CPU, named", "webgpu", true, false, true, mustNotAttach, "CPU (-vision-quant int8; the WebGPU tower is float32)", "", ""},
-		{"auto/empty never attaches", "", false, false, false, mustNotAttach, "CPU", "", ""},
+		{"cuda attaches", "cuda", false, false, ok, "CUDA", "", ""},
+		{"cuda attaches under require", "cuda", false, true, ok, "CUDA", "", ""},
+		{"cuda declined falls to the CPU, named, with a warning", "cuda", false, false, declined, "CPU (cuda declined)", "", "cuda declined it: out of memory"},
+		{"cuda declined is refused under require", "cuda", false, true, declined, "", "-require-backend: the Qwen2.5-VL tower could not start on cuda", ""},
+		{"cuda int8 keeps the CPU, named", "cuda", true, false, mustNotAttach, "CPU (-vision-quant int8", "", ""},
+		{"cuda int8 is refused under require", "cuda", true, true, mustNotAttach, "", "-require-backend: the Qwen2.5-VL CUDA tower is float32", ""},
+		{"-vision-device cpu (backend cpu) never attaches", "cpu", false, true, mustNotAttach, "CPU", "", ""},
+		{"metal has no Qwen2.5-VL device tower here", "metal", false, true, mustNotAttach, "CPU", "", ""},
+		{"webgpu attaches by default", "webgpu", false, false, ok, "WebGPU", "", ""},
+		{"webgpu declined is refused under require", "webgpu", false, true, declined, "", "-require-backend: the Qwen2.5-VL tower could not start on webgpu", ""},
+		{"webgpu declined falls to the CPU, named, with a warning", "webgpu", false, false, declined, "CPU (webgpu declined)", "", "webgpu declined it: out of memory"},
+		{"webgpu int8 keeps the CPU, named", "webgpu", true, false, mustNotAttach, "CPU (-vision-quant int8; the WebGPU tower is float32)", "", ""},
+		{"auto/empty never attaches", "", false, false, mustNotAttach, "CPU", "", ""},
 	}
 	for _, c := range cases {
 		var warn strings.Builder
-		got, err := qwenTowerPlacement(c.backend, c.int8, c.asked, c.req, c.attach, &warn)
+		got, err := qwenTowerPlacement(c.backend, c.int8, c.req, c.attach, &warn)
 		if c.wantErr != "" {
 			if err == nil || !strings.Contains(err.Error(), c.wantErr) {
 				t.Errorf("%s: err = %v, want one containing %q", c.name, err, c.wantErr)

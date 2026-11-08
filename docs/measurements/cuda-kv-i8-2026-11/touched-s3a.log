@@ -1,0 +1,47 @@
+touched: 28 .go file(s), 54 changed path(s), 2 module(s), base 912eae66
+  ok   gofmt (0.0s)
+  ok   build root (2.3s)
+  ok   vet root (2 pkg) (1.3s)
+  ok   test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (2.1s)
+  ok   test decoder -run ^(TestAdmitPrefillMemory_admitsARequestT (70.6s)
+  ok   test internal/app/fitcmd -run ^(TestDefaultCtx_agreesWithTheCudaPlanne (0.4s)
+  ok   test internal/diag/hwcensus -run ^(TestHardwareCensus)$ (0.5s)
+  ok   test internal/diag/kernelprint -run ^(TestCompute_reachesCensus)$ (3.5s)
+  ok   test internal/guard/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/guard/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (1.7s)
+  ok   test internal/runtime/logs -run ^(TestLibraryOutput_goesThroughLogs)$ (0.4s)
+  ok   test internal/runtime/mem (6.2s)
+  ok   test internal/runtime/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.7s)
+  ok   build backend/cuda (2.0s)
+  ok   vet backend/cuda (1 pkg) (0.9s)
+  FAIL test backend/cuda -run ^(TestCUDAStepBatch_concurrentMatchesAlo (233.1s)
+      kv snapshot: took 2432 rows (0 MiB host) from slot 0 in 0.1 ms; 0 of 256 MiB held
+      kv snapshot: restored 2432 rows of 2432 into slot 0 in 0.4 ms
+      cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+      kv snapshot: took 2432 rows (1 MiB host) from slot 0 in 0.1 ms; 1 of 256 MiB held
+      kv snapshot: restored 2432 rows of 2432 into slot 0 in 0.3 ms
+      cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+      kv snapshot: took 2432 rows (1 MiB host) from slot 0 in 0.2 ms; 1 of 256 MiB held
+      kv snapshot: restored 2432 rows of 2432 into slot 0 in 0.3 ms
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+      FAIL
+      ledger: 138 device(s) released in this run
+      FAIL	github.com/townsendmerino/goinfer/backend/cuda	228.012s
+      FAIL
+
+  ok   test backend/cuda/kernels -run ^(TestKernelFMALint_coversEmbeddedPTX)$ (0.2s)
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 1 of 18 checks failed

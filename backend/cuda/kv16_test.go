@@ -398,7 +398,7 @@ func kv8Load(t *testing.T, fx, kv string, opts decoder.Options) (*decoder.Model,
 // TestKV8_deliveredBytes is G3 for the CUDA int8 cache (docs/tasks/task-kv-precision-everywhere-2026-10.md §4): at -kv i8 every layer that
 // keeps K/V holds int8 pools with as many elements as the f32 build's and one f32 scale per (row, KV head) for each of K and V; the build
 // ALLOCATES exactly 1 B an element plus 8 B of scales per position, head and layer (the f32 build's bytes / 4, plus the scales); and
-// decoder.ResidentKVBytes prices exactly what it allocated. A default slot count gives one slot; the pool says i8.
+// decoder.ResidentKVBytes prices exactly what it allocated; a second slot costs exactly CUDAKVSlotBytes more. The pool says i8.
 func TestKV8_deliveredBytes(t *testing.T) {
 	requireCUDADevice(t)
 	for _, fx := range kv8Fixtures {
@@ -411,15 +411,12 @@ func TestKV8_deliveredBytes(t *testing.T) {
 				lens32[l] = [2]int{r32.kc[l].Len(), r32.vc[l].Len()}
 			}
 			m32.Close()
-			m8, r8 := kv8Load(t, fx, "i8", decoder.Options{ResidentKVSlots: 4, ResidentKVSlotsDefault: true})
+			m8, r8 := kv8Load(t, fx, "i8", decoder.Options{})
 			if got := m8.ResidentKVPrecision(); got != "i8" {
 				t.Fatalf("-kv i8 reports %q", got)
 			}
 			if !r8.kvI8 || kv32 || r8.kvF16 {
 				t.Fatalf("resident flags: i8 arm kvI8=%v kvF16=%v, f32 arm kvI8=%v", r8.kvI8, r8.kvF16, kv32)
-			}
-			if n := r8.KVSlots(); n != 1 {
-				t.Errorf("a default of 4 slots built %d at -kv i8, want 1", n)
 			}
 			if p := r8.KVPool().Precision; p != "i8" {
 				t.Errorf("KVPool precision %q", p)
@@ -466,7 +463,26 @@ func TestKV8_deliveredBytes(t *testing.T) {
 			if want := m8.ResidentKVBytes("cuda", r8.ctxCap, false, true); want != a8+tabs {
 				t.Errorf("decoder prices the int8 cache at %d B; a one-slot build allocates %d B and %d B of tables", want, a8, tabs)
 			}
-			t.Logf("%d int8 layers, one slot at %d positions: allocated %d B (f32 build %d B), scales %d B", owners, r8.ctxCap, a8, a32, scales)
+			// Two slots, loaded with the one-slot build closed so both plan against the same free VRAM: each slot keeps the one-slot context as its
+			// guaranteed share; the pools hold one more slot's blocks; the tables are one per slot per group, as long as one conversation's cap
+			// (which may be raised past the share, kvRaise).
+			ctx8 := r8.ctxCap
+			m8.Close()
+			m2, r2 := kv8Load(t, fx, "i8", decoder.Options{ResidentKVSlots: 2})
+			if r2.KVSlots() != 2 || !r2.kvI8 {
+				t.Fatalf("two slots asked at -kv i8: built %d (int8 %v)", r2.KVSlots(), r2.kvI8)
+			}
+			share, tabsS := r2.kvShareCtx, int64(kvGroups*4*kvBlocksFor(r2.kvShareCtx))
+			if share != ctx8 {
+				t.Errorf("each of two int8 slots is guaranteed %d positions; one slot took %d", share, ctx8)
+			}
+			if got, want := kv8Allocated[r2], m2.ResidentKVBytes("cuda", share, false, true)+m2.CUDAKVSlotBytes(share, false, true)-2*tabsS; got != want {
+				t.Errorf("two int8 slots of %d positions allocate %d B of pools; ResidentKVBytes plus one CUDAKVSlotBytes, less their tables, price %d B", share, got, want)
+			}
+			if got, want := int64(r2.kvTabDev.Len())*4, int64(2*kvGroups*4*kvBlocksFor(r2.ctxCap)); got != want {
+				t.Errorf("two slots' block tables hold %d B; two slots of %d groups at %d positions (the cap) is %d B", got, kvGroups, r2.ctxCap, want)
+			}
+			t.Logf("%d int8 layers, one slot at %d positions: allocated %d B (f32 build %d B), scales %d B; two slots %d B", owners, r8.ctxCap, a8, a32, scales, kv8Allocated[r2])
 		})
 	}
 }
@@ -894,17 +910,14 @@ func TestKV8_verifyIsSequentialDecode(t *testing.T) {
 	}
 }
 
-// TestKV8_snapshotsDecline: an int8 cache stays in its slot. A host snapshot (KV7) and a copy to another slot are declined by name
-// (decoder.KVCopyDecline, which the decoder answers by recomputing), never taken without their scales.
-func TestKV8_snapshotsDecline(t *testing.T) {
+// TestKV8_uploadRefused: the CPU-prefill UploadKV bridge (the VL families' path) is refused by name on an int8 cache, never written as floats.
+// A host snapshot carries the scales (TestKV7_restoreFull/i8) and is priced with them: kvDim bytes and 4 B per head for each of K and V a row.
+func TestKV8_uploadRefused(t *testing.T) {
 	requireCUDADevice(t)
 	_, r := kv8Load(t, "llama-tiny", "i8", decoder.Options{})
-	var d *decoder.KVCopyDecline
-	if _, err := r.SnapshotKV(0, decoder.KVBlockRows); !errors.As(err, &d) || !strings.Contains(d.Reason, "int8") {
-		t.Errorf("SnapshotKV on an int8 cache: %v, want a decline naming int8", err)
-	}
-	if b := r.KVSnapshotBytes(decoder.KVBlockRows); b != 0 {
-		t.Errorf("KVSnapshotBytes on an int8 cache: %d, want 0 (nothing would be kept)", b)
+	Ly := &r.layers[0]
+	if b, want := r.KVSnapshotBytes(decoder.KVBlockRows), int64(decoder.KVBlockRows)*int64(len(r.layers))*2*(int64(Ly.kvDim)+4*int64(Ly.nKV)); b != want {
+		t.Errorf("KVSnapshotBytes of 64 int8 rows: %d, want %d", b, want)
 	}
 	if err := r.UploadKV(0, 0, make([]float32, r.layers[0].kvDim), make([]float32, r.layers[0].kvDim)); err == nil || !strings.Contains(err.Error(), "int8") {
 		t.Errorf("UploadKV into an int8 cache: %v, want a refusal naming int8", err)
@@ -1008,7 +1021,8 @@ func TestKV8_G2Diag_amplification(t *testing.T) {
 // QuantizeRowInt8 of the rotated K and the V that layer handed kv8_store (layer 0's prefill rows are TestKV8_layer0StoreIsTheQuantizedF32Store's).
 //
 // The bar, registered before the first run: on every row, max |CUDA - CPU| <= 1e-4 x max |CPU row|. Two plants in the CPU copy only must break
-// it on every row, decode and prefill: the most-attended key's V scale x1.01, and one V code of that key moved by one.
+// it on every row, decode and prefill: the most-attended key's V scale x1.05, and one V code of that key moved by 16. (They were x1.01 and +-1
+// until #755's last review: the weakest then cleared the bar by 1%, close enough to drift green; scope.md, "S3, plants made decisive".)
 func TestKV8_G2exact_readersMatchTheCPUOnOneCache(t *testing.T) {
 	requireCUDADevice(t)
 	const K, bar, M, start = 300, 1e-4, 8, 200
@@ -1157,18 +1171,18 @@ func TestKV8_G2exact_readersMatchTheCPUOnOneCache(t *testing.T) {
 					n := pos + 1
 					top := kv8TopKey(q, kq[:n*Ly.kvDim], ks[:n*nKV], 0, hd, nKV, G, r.attnScale)
 					vs2 := append([]float32(nil), vs...)
-					vs2[top*nKV] *= 1.01
+					vs2[top*nKV] *= 1.05
 					vq2 := append([]int8(nil), vq...)
-					if vq2[top*Ly.kvDim] < 127 {
-						vq2[top*Ly.kvDim]++
+					if vq2[top*Ly.kvDim] <= 127-16 {
+						vq2[top*Ly.kvDim] += 16
 					} else {
-						vq2[top*Ly.kvDim]--
+						vq2[top*Ly.kvDim] -= 16
 					}
 					for _, p := range []struct {
 						name string
 						vq   []int8
 						vs   []float32
-					}{{"V scale x1.01", vq, vs2}, {"V code +-1", vq2, vs}} {
+					}{{"V scale x1.05", vq, vs2}, {"V code +-16", vq2, vs}} {
 						d1, s1 := kv8RowDiff(got, cpuAt(pos, q, p.vq, p.vs))
 						plantMin = math.Min(plantMin, d1/s1)
 						if d1 <= bar*s1 {
@@ -1358,4 +1372,31 @@ func kv8TopKey(q []float32, kq []int8, ks []float32, h, hd, nKV, G int, scale fl
 		}
 	}
 	return top
+}
+
+// TestKV8_extraSlotPricedAtTheDeliveredPrecision: ctxForSlots prices each further slot (cudaExtraSlotKVBytes) at the precision the build
+// allocates, which is what ResolveKV delivers, never the raw --kv request: a load asking int8 that the CUDA policy holds at f32 (a drafter)
+// builds f32 pools, and its extra slots must be priced f32, or the context search sizes slots a quarter of their real cost. No device: the
+// models load on the CPU, and only the CUDA pricing is read.
+func TestKV8_extraSlotPricedAtTheDeliveredPrecision(t *testing.T) {
+	dir := "../../testdata/llama-tiny"
+	for _, c := range []struct {
+		name string
+		o    decoder.Options
+		want string // the precision the extra slot must be priced at
+	}{
+		{"int8 delivered", decoder.Options{KVPrecision: "i8"}, "i8"},
+		{"int8 asked with a drafter (held at f32)", decoder.Options{KVPrecision: "i8", Drafter: true}, "f32"},
+		{"f16", decoder.Options{KVPrecision: "f16"}, "f16"},
+	} {
+		m, err := decoder.Load(dir, c.o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]int64{"f32": m.CUDAKVSlotBytes(128, false, false), "f16": m.CUDAKVSlotBytes(128, true, false), "i8": m.CUDAKVSlotBytes(128, false, true)}[c.want]
+		if got := cudaExtraSlotKVBytes(m, 128); got != want {
+			t.Errorf("%s: an extra slot is priced %d B; the build allocates %s, %d B (delivered %q)", c.name, got, c.want, want, m.KVDeliveredFor("cuda"))
+		}
+		m.Close()
+	}
 }

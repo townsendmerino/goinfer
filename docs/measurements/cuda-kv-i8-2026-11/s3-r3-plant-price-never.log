@@ -1,0 +1,48 @@
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/llama-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kvbytes_agreement_test.go:131: i8 requested: ResidentKVBytes("cuda", 4096) = 4260352 B, want 1331712 B (f32 4260352, f16 2130432, i8 1331712; resident kvF16=false, allocates 4194816 B a slot)
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/phi3-tiny
+    kvbytes_agreement_test.go:60: not CUDA-resident: every resident cuda projection quantizes activations to int8, and Phi-3's activation outliers are rounded to zero by the per-row int8 activation scale every int4/int8int8/int4mix path uses (queue-engineering.md H2)
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma4-dense-twogeom-tiny
+    kvbytes_agreement_test.go:51: no fixture at ../../testdata/gemma4-dense-twogeom-tiny
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma4-moe-tiny
+    kvbytes_agreement_test.go:51: no fixture at ../../testdata/gemma4-moe-tiny
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma4-emodel-tiny
+    kvbytes_agreement_test.go:51: no fixture at ../../testdata/gemma4-emodel-tiny
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/deepseek-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: KV pool: 32768 positions (512 blocks of 64) for 2 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (155 MiB of scratch; 5746 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kvbytes_agreement_test.go:131: i8 requested: ResidentKVBytes("cuda", 16384) = 404228096 B, want 107374592 B (f32 404228096, f16 202115072, i8 107374592; resident kvF16=false, allocates 402655232 B a slot)
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma3-1b-q4_k_m.gguf
+cuda: KV pool: 32768 positions (512 blocks of 64) for 2 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (290 MiB of scratch; 4626 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- FAIL: TestResidentKVBytes_matchesCUDAAllocation (8.19s)
+    --- FAIL: TestResidentKVBytes_matchesCUDAAllocation/llama-tiny (1.75s)
+    --- SKIP: TestResidentKVBytes_matchesCUDAAllocation/phi3-tiny (0.00s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/mistral-tiny-window (0.23s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma3-vl-tiny (0.24s)
+    --- SKIP: TestResidentKVBytes_matchesCUDAAllocation/gemma4-dense-twogeom-tiny (0.00s)
+    --- SKIP: TestResidentKVBytes_matchesCUDAAllocation/gemma4-moe-tiny (0.00s)
+    --- SKIP: TestResidentKVBytes_matchesCUDAAllocation/gemma4-emodel-tiny (0.00s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/qwen35-tiny (0.25s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/deepseek-tiny (0.23s)
+    --- FAIL: TestResidentKVBytes_matchesCUDAAllocation/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (2.07s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma3-1b-q4_k_m.gguf (3.41s)
+FAIL
+ledger: 13 device(s) released in this run

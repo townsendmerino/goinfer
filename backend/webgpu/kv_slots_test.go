@@ -11,6 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"io"
+	"log/slog"
 	"math"
 	"math/rand"
 	"os"
@@ -27,6 +28,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
 // kvSlotTurn is one generation of the MC1 identity scenario: its token ids and PrefillReused.
@@ -613,6 +615,32 @@ func TestCtxWhereSlotsFit(t *testing.T) {
 	} {
 		if got := ctxWhereSlotsFit(tc.oneSlot, 4, under(tc.edge)); got != tc.got {
 			t.Errorf("%s: ctxWhereSlotsFit(%d, fits ≤ %d) = %d, want %d", tc.name, tc.oneSlot, tc.edge, got, tc.got)
+		}
+	}
+}
+
+// TestCtxWhereSlotsFit_warnsWhenTheContextGivesWay: a context that gives way to the companion or to the requested slots is a warning,
+// not a debug line, for one slot and for several, at the floor and above it, so it shows at the default log level.
+func TestCtxWhereSlotsFit_warnsWhenTheContextGivesWay(t *testing.T) {
+	under := func(limit int) func(int) bool { return func(ctx int) bool { return ctx <= limit } }
+	for _, tc := range []struct {
+		name       string
+		want, edge int
+	}{
+		{"one slot, above the floor", 1, 9000},
+		{"one slot, not even the floor", 1, 1000},
+		{"four slots, above the floor", 4, 9000},
+		{"four slots, not even the floor", 4, 1000},
+	} {
+		var buf strings.Builder
+		logs.Set(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+		ctx := ctxWhereSlotsFit(16384, tc.want, under(tc.edge))
+		logs.Set(nil)
+		if ctx >= 16384 {
+			t.Fatalf("%s: the context stayed at %d", tc.name, ctx)
+		}
+		if !strings.Contains(buf.String(), "resident context") {
+			t.Errorf("%s: no warning when the context gave way to %d; output %q", tc.name, ctx, buf.String())
 		}
 	}
 }

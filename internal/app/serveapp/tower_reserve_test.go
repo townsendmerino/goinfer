@@ -57,12 +57,54 @@ func TestTowerReserve_zeroCases(t *testing.T) {
 	metal.load.Backend = "metal"
 	webgpu := cuda
 	webgpu.load.Backend = "webgpu"
-	for name, c := range map[string]config{"cuda but no CUDA tower registered in this binary": cuda, "-vision-device cpu": cpuDev, "metal": metal, "webgpu but no WebGPU tower registered in this binary": webgpu} {
+	// the registries are what a build's imports fill, and WebGPU's default placement reads the machine: stand in for both, so no case
+	// depends on the build tags or the OS
+	oldC, oldM, oldW, oldU := cudaTowerRegistered, metalTowerRegistered, webgpuTowerRegistered, webgpuTowerUnified
+	t.Cleanup(func() {
+		cudaTowerRegistered, metalTowerRegistered, webgpuTowerRegistered, webgpuTowerUnified = oldC, oldM, oldW, oldU
+	})
+	registry := func(registered bool) {
+		f := func(string) bool { return registered }
+		cudaTowerRegistered, metalTowerRegistered, webgpuTowerRegistered = f, f, f
+	}
+	webgpuTowerUnified = func() bool { return true }
+
+	// a binary with no tower registered for the family reserves nothing, on each backend
+	registry(false)
+	for name, c := range map[string]config{"cuda but no CUDA tower registered in this binary": cuda, "metal but no Metal tower registered in this binary": metal, "webgpu but no WebGPU tower registered in this binary": webgpu} {
 		if got := towerReserve(c, dir); got != 0 {
 			t.Errorf("%s: reserve %d, want 0", name, got)
 		}
 	}
-	if got := towerReserve(cuda, filepath.Join(dir, "model.gguf")); got != 0 {
+
+	// with the towers registered the same configs are priced, so each zero below is the rule under test and not the registry
+	registry(true)
+	for name, c := range map[string]config{"cuda": cuda, "metal": metal, "webgpu on a unified-memory machine": webgpu} {
+		if got := towerReserve(c, dir); got <= 0 {
+			t.Fatalf("%s with a registered tower: reserve %d, want a positive figure (the baseline for the zero cases)", name, got)
+		}
+	}
+	if got := towerReserve(cpuDev, dir); got != 0 {
+		t.Errorf("-vision-device cpu under cuda: reserve %d, want 0", got)
+	}
+	// an unresolved path: with no -vision directory the model's own path is read, and a missing one prices nothing. The same config
+	// reading the real directory is priced, so the zero is the path's doing.
+	noVision := config{}
+	noVision.load.Backend = "cuda"
+	if got := towerReserve(noVision, dir); got <= 0 {
+		t.Fatalf("cuda reading the model directory: reserve %d, want a positive figure (the baseline)", got)
+	}
+	if got := towerReserve(noVision, filepath.Join(dir, "model.gguf")); got != 0 {
 		t.Errorf("an unresolved path: reserve %d, want 0", got)
+	}
+	// a discrete GPU under webgpu keeps the CPU tower unless the device is asked for, so the default reserves nothing there
+	webgpuTowerUnified = func() bool { return false }
+	if got := towerReserve(webgpu, dir); got != 0 {
+		t.Errorf("webgpu on a discrete GPU by default: reserve %d, want 0 (the tower is the CPU's)", got)
+	}
+	asked := webgpu
+	asked.visionDevice = "gpu"
+	if got := towerReserve(asked, dir); got <= 0 {
+		t.Errorf("webgpu on a discrete GPU with -vision-device gpu: reserve %d, want the device tower's figure", got)
 	}
 }
