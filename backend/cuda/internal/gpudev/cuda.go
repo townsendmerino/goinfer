@@ -742,7 +742,7 @@ type MappedHostBuffer struct {
 
 // NewPageableHostSource wraps caller-owned bytes (a file mapping, say) as a MappedHostBuffer that pins nothing: Bytes() is data, Buffer() is
 // the zero Buffer (no kernel may read it), and an upload from it copies from pageable memory, which the driver stages. Close runs release.
-// It serves MEM10's pageable-source A/B (docs/measurements/mem10-2026-11/ab-registration.md); no production path builds one.
+// The CUDA expert cache builds one per stack under --moe-experts-unpinned (docs/measurements/mem10-2026-11/README.md, "MEM10 opt-in").
 func NewPageableHostSource(data []byte, release func()) *MappedHostBuffer {
 	return &MappedHostBuffer{page: data, release: release}
 }

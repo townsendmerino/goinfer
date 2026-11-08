@@ -497,12 +497,18 @@ func (r *cudaResident) packStackPinned(w *cudaWQ, h hostW) {
 // them read-only (sealPageable). The files are unlinked once mapped, so their disk space goes with the mappings. A dir on tmpfs is refused:
 // its pages are shared memory, so the copy would still be held.
 func pageableStackSources(dir string, wBytes, sBytes int) (*gpu.MappedHostBuffer, *gpu.MappedHostBuffer, error) {
+	if dir == "" {
+		return nil, nil, fmt.Errorf("the model has no file path, so there is no directory to write the packed experts beside it")
+	}
 	var fs syscall.Statfs_t
 	if err := syscall.Statfs(dir, &fs); err != nil {
 		return nil, nil, fmt.Errorf("the packed-experts file's directory %s: %w", dir, err)
 	}
-	if fs.Type == tmpfsMagic {
+	switch fs.Type {
+	case tmpfsMagic:
 		return nil, nil, fmt.Errorf("%s is tmpfs, whose pages are memory: the packed experts would still be held in RAM", dir)
+	case ramfsMagic:
+		return nil, nil, fmt.Errorf("%s is ramfs, whose pages are memory: the packed experts would still be held in RAM", dir)
 	}
 	one := func(n int) (*gpu.MappedHostBuffer, error) {
 		if n == 0 {
@@ -514,8 +520,9 @@ func pageableStackSources(dir string, wBytes, sBytes int) (*gpu.MappedHostBuffer
 		}
 		defer f.Close()
 		defer os.Remove(f.Name())
-		if err := f.Truncate(int64(n)); err != nil {
-			return nil, err
+		// Reserve the blocks: a sparse file whose disk filled during packing would fault (SIGBUS) on a write instead of failing here.
+		if err := syscall.Fallocate(int(f.Fd()), 0, 0, int64(n)); err != nil {
+			return nil, fmt.Errorf("%s has no room for a %.2f GB packed-experts file: %w", dir, float64(n)/(1<<30), err)
 		}
 		m, err := syscall.Mmap(int(f.Fd()), 0, n, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 		if err != nil {
@@ -535,14 +542,20 @@ func pageableStackSources(dir string, wBytes, sBytes int) (*gpu.MappedHostBuffer
 	return w, s, nil
 }
 
-// sealPageable makes packed pageable sources read-only: after packing, nothing writes them.
+// sealPageable writes packed pageable sources back to their file and makes them read-only: after packing nothing writes them, and once
+// clean their pages are reclaimable like any file page, so a build holds at most one stack's dirty pages at a time.
 func sealPageable(bs ...[]byte) {
 	for _, b := range bs {
 		if len(b) > 0 {
+			_, _, _ = syscall.Syscall(syscall.SYS_MSYNC, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)), msSync)
 			_ = syscall.Mprotect(b, syscall.PROT_READ)
 		}
 	}
 }
 
-// tmpfsMagic is statfs's f_type for tmpfs (linux/magic.h TMPFS_MAGIC).
-const tmpfsMagic = 0x01021994
+// tmpfsMagic and ramfsMagic are statfs's f_type for tmpfs and ramfs (linux/magic.h); msSync is msync(2)'s MS_SYNC.
+const (
+	tmpfsMagic = 0x01021994
+	ramfsMagic = 0x858458f6
+	msSync     = 4
+)

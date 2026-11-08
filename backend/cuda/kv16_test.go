@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -1619,14 +1621,59 @@ func TestMoEExpertsUnpinned_identityAndPricing(t *testing.T) {
 			}
 		}
 	}
+	// The batched prefill and the speculative verify step (ForwardN) upload slots the same way: both arms, the same rows, the same bits.
+	const pre, ver = 32, 4
+	embs := make([][]float32, pre+ver)
+	for i := range embs {
+		embs[i] = mA.EmbedResidentForTest(5 + (41*i)%(vocab-5))
+	}
+	same := func(what string, a, b []float32) {
+		t.Helper()
+		if len(a) == 0 || len(a) != len(b) {
+			t.Fatalf("%s: %d and %d logits", what, len(a), len(b))
+		}
+		for j := range a {
+			if math.Float32bits(a[j]) != math.Float32bits(b[j]) {
+				t.Fatalf("%s: logit %d differs (pinned %g, unpinned %g)", what, j, a[j], b[j])
+			}
+		}
+	}
+	pa, err := rA.PrefillLast(context.Background(), embs[:pre], 0)
+	if err != nil {
+		t.Fatalf("prefill: %v", err)
+	}
+	pb, err := rB.PrefillLast(context.Background(), embs[:pre], 0)
+	if err != nil {
+		t.Fatalf("prefill: %v", err)
+	}
+	same("batched prefill", pa, pb)
+	if ok, why := rA.VerifyPath(); !ok {
+		t.Fatalf("no speculative verify path on %s: %s", fx, why)
+	}
+	va, err := rA.ForwardN(embs[pre:], pre)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	vb, err := rB.ForwardN(embs[pre:], pre)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if len(va) != ver || len(vb) != ver {
+		t.Fatalf("verify returned %d and %d rows, want %d", len(va), len(vb), ver)
+	}
+	for i := range va {
+		same(fmt.Sprintf("verify row %d", i), va[i], vb[i])
+	}
+	// Pricing, both terms: the pinned copy of a resident cache, and a .gguf build's peak.
 	q := decoder.BuildQuery{Options: decoder.Options{Backend: "cuda", MoECacheExperts: true}, ExpertCache: true, FeaturesCovered: true,
-		MoELayers: 2, NumExperts: 8, ExpertIntermediate: 64, Hidden: 32}
-	if buildDemand(q).PinnedExpertBytes <= 0 {
-		t.Fatal("the pinned load prices no pinned copy: the comparison below is vacuous")
+		MoELayers: 2, NumExperts: 8, ExpertIntermediate: 64, Hidden: 32, GGUF: true, WeightBytes: 10 << 30, ExpertBytes: 7 << 30}
+	pinned := buildDemand(q)
+	if pinned.PinnedExpertBytes <= 0 || pinned.HostBuildPeak != 27<<30 {
+		t.Fatalf("the pinned load prices a %d-byte copy and a %d-byte build peak: the comparison below is vacuous", pinned.PinnedExpertBytes, pinned.HostBuildPeak)
 	}
 	q.Options.MoEExpertsUnpinned = true
-	if got := buildDemand(q).PinnedExpertBytes; got != 0 {
-		t.Errorf("the unpinned load prices a %d-byte pinned copy", got)
+	if got := buildDemand(q); got.PinnedExpertBytes != 0 || got.HostBuildPeak != 20<<30 {
+		t.Errorf("the unpinned load prices a %d-byte pinned copy and a %d-byte build peak (want 0 and %d)", got.PinnedExpertBytes, got.HostBuildPeak, int64(20<<30))
 	}
 }
 
@@ -1666,5 +1713,54 @@ func TestKV8_prefillTakesTheTileOnTheTinyFixture(t *testing.T) {
 	}
 	if r.fastAttnLaunches == 0 || r.exactAttnLaunches != 0 {
 		t.Errorf("int8 prefill launched the tile %d times and attn_batched %d times: every layer should take the tile", r.fastAttnLaunches, r.exactAttnLaunches)
+	}
+}
+
+// TestMoEExpertsUnpinned_refusesMemoryBackedOrMissingDirs: the packed-experts file is refused on tmpfs (its pages would still be RAM) and with no
+// model path (never the working directory), and a load with the flag whose model lives on tmpfs declines by name rather than holding the copy.
+func TestMoEExpertsUnpinned_refusesMemoryBackedOrMissingDirs(t *testing.T) {
+	if _, _, err := pageableStackSources("", 4096, 4096); err == nil || !strings.Contains(err.Error(), "no file path") {
+		t.Errorf("no model path: %v", err)
+	}
+	var fs syscall.Statfs_t
+	if err := syscall.Statfs("/dev/shm", &fs); err != nil || fs.Type != tmpfsMagic {
+		t.Skipf("/dev/shm is not tmpfs here (%v)", err)
+	}
+	if _, _, err := pageableStackSources("/dev/shm", 4096, 4096); err == nil || !strings.Contains(err.Error(), "tmpfs") {
+		t.Errorf("tmpfs: %v", err)
+	}
+	requireCUDADevice(t)
+	dir, err := os.MkdirTemp("/dev/shm", "unpinned-")
+	if err != nil {
+		t.Skip(err)
+	}
+	defer os.RemoveAll(dir)
+	src := "../../testdata/qwen3moe-tiny"
+	ents, err := os.ReadDir(src)
+	if err != nil {
+		t.Skipf("no fixture: %v", err)
+	}
+	for _, e := range ents {
+		b, err := os.ReadFile(filepath.Join(src, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, e.Name()), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4", MoECacheExperts: true, MoEExpertsUnpinned: true, ResidentKVSlots: 1})
+	if err != nil {
+		if !strings.Contains(err.Error(), "tmpfs") {
+			t.Fatalf("the load failed without naming tmpfs: %v", err)
+		}
+		return
+	}
+	defer m.Close()
+	if r, ok := m.ResidentForwardForTest().(*cudaResident); ok && r != nil {
+		t.Fatalf("a model on tmpfs built a resident with --moe-experts-unpinned (%d pageable stacks)", r.pageableStacks)
+	}
+	if why := m.ResidentDecline(); !strings.Contains(why, "tmpfs") {
+		t.Errorf("the decline does not name tmpfs: %s", why)
 	}
 }

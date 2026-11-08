@@ -54,6 +54,16 @@ func (c HostCheck) Need() int64 {
 	return n
 }
 
+// needUnpinned is Need with the CUDA expert cache's pinned copy out of the build peak, as --moe-experts-unpinned prices it: every other
+// term Need takes stays.
+func (c HostCheck) needUnpinned() int64 {
+	n := max(c.CUDABuildBytes-c.ExpertBytes, c.WeightBytes+c.KVBytes+c.SourceBytes)
+	if c.PackBytes > 0 {
+		n = max(n, c.WeightBytes+c.PackBytes)
+	}
+	return n
+}
+
 // Budget is the share of available memory the load may take.
 func (c HostCheck) Budget() int64 { return int64(float64(c.Available) * c.Policy.WeightsFraction) }
 
@@ -155,7 +165,7 @@ type Decline struct {
 // Decline is the refusal of this load.
 func (c HostCheck) Decline() *Decline {
 	alt := "  " + c.smallerLoad() + ".\n"
-	if c.CUDABuildBytes > c.WeightBytes+c.KVBytes+c.SourceBytes && c.ExpertBytes > 0 && c.Need()-c.ExpertBytes <= c.Budget() {
+	if c.CUDABuildBytes > c.WeightBytes+c.KVBytes+c.SourceBytes && c.ExpertBytes > 0 && c.needUnpinned() <= c.Budget() {
 		alt = "  Or " + UnpinnedExpertsHint(c.ExpertBytes) + ".\n" + alt
 	}
 	msg := fmt.Sprintf("decoder: %s.\n"+

@@ -87,8 +87,9 @@ func SolveGIW(l GIWLoad, m Machine, p Policy) GIWFit {
 // UnpinnedExpertsHint is what a refusal says when the pinned MoE expert copy (pinned bytes) is what does not fit: --moe-experts-unpinned drops it,
 // and the experts upload from the file's own pages at a measured decode cost (docs/measurements/mem10-2026-11/ab-registration.md, "Reading").
 func UnpinnedExpertsHint(pinned int64) string {
-	return fmt.Sprintf("--moe-experts-unpinned drops the %.1f GB pinned expert copy: the experts then upload from the model file's own pages, "+
-		"measured at 0.82x decode at short context and 0.75x at long on Gemma 4 26B (docs/measurements/mem10-2026-11/)", float64(pinned)/gb)
+	return fmt.Sprintf("--moe-experts-unpinned drops the %.1f GB pinned expert copy: the experts are packed into a file beside the model (written "+
+		"at load, unlinked while mapped) and upload from its pageable pages, measured at 0.82x decode at short context and 0.75x at long on "+
+		"Gemma 4 26B (docs/measurements/mem10-2026-11/)", float64(pinned)/gb)
 }
 
 // unpinnedHintIf is "; or " and UnpinnedExpertsHint when a pinned expert copy is in need and dropping it would bring need within budget, else "".

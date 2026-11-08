@@ -283,4 +283,10 @@ func TestUnpinnedExpertsHint_onlyWhenTheCopyIsWhatDoesNotFit(t *testing.T) {
 	if c := hc(20*GB, 12*GB); c.Fits() || strings.Contains(c.Decline().Msg, "--moe-experts-unpinned") {
 		t.Errorf("a build that does not fit even without its copy names the flag: %s", c.Decline().Msg)
 	}
+	// The build peak without the copy fits, but the weights and the KV alone do not: the flag would not make the load fit, so it is not named.
+	kvBound := NewHostCheck(HostLoad{Name: "m", Quant: "int4", GGUF: true, WeightBytes: 10 * GB, KVBytes: 19 * GB, ExpertBytes: 12 * GB,
+		CUDABuildBytes: 32 * GB}, m, p)
+	if kvBound.Fits() || strings.Contains(kvBound.Decline().Msg, "--moe-experts-unpinned") {
+		t.Errorf("a load the flag would not save names it (fits %v): %s", kvBound.Fits(), kvBound.Decline().Msg)
+	}
 }

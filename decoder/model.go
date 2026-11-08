@@ -126,6 +126,7 @@ type Model struct {
 	extraKVPerPos int64        // Options.ExtraResidentKVPerPosition — see that field's own doc comment
 	mmap          []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
 	srcPath       string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
+	loadPath      string       // the file or directory Load opened, after the sidecar route ("" for a model not loaded from a path)
 	pager         *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
 	layerPager    *layerPager  // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
 	quant         string       // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
@@ -170,6 +171,10 @@ func newAdapterRegistry() *adapterRegistry {
 // from a .giw (safetensors/GGUF have no single mmap-backed weight file to pread from). The metal
 // expert-paging path re-opens this for pread-staging (the mmap closes its own fd after mapping).
 func (m *Model) GiwPath() string { return m.srcPath }
+
+// SourcePath is the file or checkpoint directory Load opened (the sidecar .giw when the route took it), or "" for a model not loaded from a
+// path. The CUDA expert cache writes its packed-experts file beside it under MoEExpertsUnpinned.
+func (m *Model) SourcePath() string { return m.loadPath }
 
 // MmapByteOffset returns the byte offset of slice b within this model's .giw mmap region, or
 // ok=false if b does not alias that region (a heap-backed weight, or no .giw mapping). MapReadOnly
@@ -747,7 +752,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		}
 		m := modelFromOptions(w, be, opts)
 		m.resCtxPinned = ctxFromCaller
-		m.mmap, m.srcPath = data, dir
+		m.mmap, m.srcPath, m.loadPath = data, dir, dir
 		m.bindKnobs(opts.Knobs.values())
 		m.withBackendNames(opts.Backend, beErr)
 		if opts.StreamWeights {
@@ -858,6 +863,7 @@ func Load(dir string, opts Options) (*Model, error) {
 	}
 	m := modelFromOptions(w, be, opts)
 	m.resCtxPinned = ctxFromCaller
+	m.loadPath = dir
 	m.quant, m.eosIDs = opts.Quant, resolvedEOS
 	m = m.withBackendNames(opts.Backend, beErr)
 	m.bindKnobs(opts.Knobs.values())
