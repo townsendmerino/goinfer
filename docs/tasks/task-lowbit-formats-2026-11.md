@@ -1,21 +1,39 @@
 # Task: low-bit read formats, NVFP4 first, and a fit planner that prices them (2026-11)
 
-**Status 2026-11-06: planned, nothing built.** The owner decided on 2026-11-06 to read low-bit formats, NVFP4 first, and
-to plan and estimate the rest here. It is v0.26.0 work (`docs/releases/v0.25.0-plan.md` §7, §8). This doc replaces item C
+**Status 2026-11-08: planned, nothing built.** The owner decided on 2026-11-06 to read low-bit formats, NVFP4 first, and
+to plan and estimate the rest here; #731 (2026-11-07) merged this plan and nothing else (no NVFP4, IQ2_XXS or rotation-guard
+code is on `main` in goinfer or aikit). It is v0.26.0 work (`docs/releases/v0.25.0-plan.md` §7, §8), except that the plan
+pinned for v0.25.0 lists the Bonsai guard (LB0a) as cheap v0.25.0 work: which release takes LB0a is open. This doc replaces item C
 (NVFP4 read support) of `docs/tasks/task-fp4-formats.md`, which links here. Items A (a native MXFP4 CPU kernel), B (MXFP4
-beyond gpt-oss) and D (Blackwell FP4 tensor cores) stay there and are not this doc's subject.
+beyond gpt-oss) and D (Blackwell FP4 tensor cores) stay there and are not this doc's subject. A likely first NVFP4 asset is
+the Bolt E4B DFlash drafter (`nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16-DFlash-NVFP4`, named blocked on NVFP4 dequant in
+`docs/measurements/bolt-e4b-g0-2026-10.md`).
 
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| LB0 | open | the Bonsai guard (a named decline for a Hadamard-rotated GGUF, keyed on its metadata, with a test); count the real files per format (NVFP4 safetensors and GGUF, the IQ types in Unsloth's dynamic quants); read the NVFP4 GGUF type id and block layout from `ggml-common.h` at a pinned llama.cpp build, and ModelOpt's nibble order from its exporter | §1, §2 |
-| LB1 | open | NVFP4 dequant in aikit (`embed`), for safetensors and GGUF; tier 0 against the reference | §1 |
-| LB2 | open | NVFP4 loader admission in goinfer (safetensors: the packed `[N, K/2]` weight and its scale tensors; GGUF type), and the fit's pricing of the packed shape; tier 0 for the pricing, tier 1 on one small file | §1 |
-| LB3 | moved | into LB0: the Bonsai guard ships first, since a rotated file can load today | §2 |
-| LB4 | open | IQ2_XXS, IQ2_XS, IQ3_XXS dequant (aikit), tier 0 each; Bolt's experts | §2 |
-| LB5 | open | IQ1_S, IQ1_M, TQ1_0, TQ2_0, and the legacy Q4_1/Q5_1 | §2 |
-| LB6 | open | fit F1: price the source bytes per stored type; F2: say what the stored format does and does not change | §3 |
-| LB7 | decision | whether to build kept lanes (compute in a low-bit format) at all; until then a low-bit file fits no better resident than a Q4_K one at the same `--quant` | §3 |
+| LB0a | open | the Bonsai guard: a named decline keyed on the GGUF metadata marking the Hadamard rotation, checked before any tensor read, tier 0 on a synthetic GGUF; settle whether Ollama's `Q2_0` Bonsai files are upstream Q2_0 or relabeled PQ2_0; release slot (v0.25.0 or v0.26.0) open | §2; `docs/next-models.md` "Bonsai-2: the format question changed" |
+| LB0b | open | count real files per format (NVFP4 safetensors and GGUF, IQ types in Unsloth dynamic quants, ModelOpt exports of models goinfer runs) | §1 |
+| LB0c | open | NVFP4 GGUF type id, block size and nibble order from `ggml-common.h` at a pinned llama.cpp build | §1 |
+| LB0d | open | ModelOpt's NVFP4 nibble order from its exporter | §1 |
+| LB1a | open | aikit NVFP4 dequant, safetensors form; tier 0 bit-exact against the ModelOpt formula | §1 |
+| LB1b | blocked | aikit NVFP4 dequant, GGUF type; tier 0 against gguf-py; needs LB0c | §1 |
+| LB2a | blocked | loader admission for ModelOpt safetensors (uint8 `[N,K/2]` + F8_E4M3 `[N,K/16]` + scalar fp32; a named load error otherwise); needs LB0d, LB1a | §1 |
+| LB2b | blocked | loader admission for the NVFP4 GGUF type; needs LB1b | §1 |
+| LB2c | open | fit: a `.weight` with a sibling `.weight_scale` counts N·K; skip `weight_scale`, `weight_scale_2`, `input_scale`; tier 0 on a synthetic index; independent of LB1 | §1; `decoder/fit/weights.go:SafetensorsWeightBytes` |
+| LB2d | blocked | tier 1: one small real NVFP4 file loads, and its first greedy tokens and per-layer hidden states match the reference; needs LB2a and the asset LB0b finds | §1 |
+| LB3 | moved | into LB0a: the Bonsai guard ships first, since a rotated file can load today | §2 |
+| LB4a | open | IQ2_XXS dequant (aikit), tier 0 | §2 |
+| LB4b | open | IQ2_XS dequant, tier 0 | §2 |
+| LB4c | open | IQ3_XXS dequant, tier 0 | §2 |
+| LB5a | open | IQ1_S, IQ1_M | §2 |
+| LB5b | open | TQ1_0, TQ2_0 | §2 |
+| LB5c | open | legacy Q4_1, Q5_1 | §2 |
+| LB5d | open | upstream `Q2_0` (Ollama serves Bonsai as `Q2_0`); read it correctly or decline it by name, with LB0a | `docs/next-models.md` |
+| LB6a | open | F1: a per-type source bytes-per-weight table, so fit prices another build's source before download | §3 |
+| LB6b | open | F2: `mem.HostCheck.smallerLoad` never names a smaller file for a read-only format | §3; `internal/runtime/mem/host.go:HostCheck.smallerLoad` |
+| LB6c | open | fit prices `int4mix` (and `q4k` in `measureBytesPerElem`) as all-int4, an underestimate an admission guard must not make: price per tensor through `fit.Rates.Kept`, as `q4k`'s GGUF estimator does; tier 0 | `decoder/fitguard.go:measureBytesPerElem`; found by the 2026-11-08 close-out |
+| LB7 | decision | the owner: whether to build kept lanes (compute in a low-bit format) at all; recommended: decide once LB0b shows demand and LB1-LB4 have shipped; until then a low-bit file fits no better resident than a Q4_K one at the same `--quant` | §3 |
 
 ---
 
@@ -142,3 +160,5 @@ then CUDA (dequant in the kernel on Turing), each with its own parity bar; rough
 LB0 (1 day, the Bonsai guard included) → LB1 + LB2 NVFP4 (2 to 3 days) → LB4 IQ2_XXS/IQ2_XS/IQ3_XXS (2 days; with NVFP4 this
 reads Bolt's 24 GB build) → LB6 fit F1 and F2 (1 day) → LB5 (2 days). About two weeks of read work, all at tier 0 and
 tier 1. LB7, if chosen, is per format per backend and gets its own registration.
+
+<!-- doc-reviewed: 2026-11-08 -->

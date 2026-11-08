@@ -1,5 +1,5 @@
 #!/bin/bash
-# OP2b on CUDA, step 2c's planted defects (docs/tasks/task-forward-architecture-2026-10.md §4.7): each is a temporary source edit, the named test must go red,
+# OP2b on CUDA, step 2c's planted defects (docs/completed/task-forward-architecture-2026-10.md §4.7): each is a temporary source edit, the named test must go red,
 # then the file is restored from git. Run under the timing lock (the tests use the card):
 #   python3 scripts/timing_lock.py run --label op2b-2c-plants -- bash docs/measurements/op2b-cuda-2026-10-16/run-2c-plants.sh
 set -uo pipefail

@@ -100,7 +100,7 @@ A `.giw` is a cache of its source, so the format has **one version at a time**. 
 - **A reader refuses only the encoding it does not read.** That tensor's encoding is named in a `*SerializeError`, and a
   sidecar is rebuilt as for a version mismatch. A bundle that never uses the new encoding still loads.
 - **So a new encoding is added at v17,** without a v18. q4k's form is that case: kind 8, a `--quant q4k` load's Q4_K
-  tensors as their raw super-blocks, aliased from the mapping (D8b-build, `docs/tasks/task-memory-campaign-2026-10.md`).
+  tensors as their raw super-blocks, aliased from the mapping (D8b-build, `docs/completed/task-memory-campaign-2026-10.md`).
   - An older build refuses a sidecar that uses it and writes its own in place, under the same name.
   - The newer build reads that one, since it reads every older encoding.
 - **What it does not cover:** a change to the layout itself, such as a new per-layer field or a new header field. A reader

@@ -161,7 +161,7 @@ Add `"goinfer": {"cost": true}` to the request body and the response also carrie
 phases, each with its tokens, its wall time where the backend measures it, its totals and its per-operation counts
 (`calls`, `bytes_read`, `bytes_written`, `launches`, `submits`, `syncs`, `allocs`, `alloc_bytes`, `time_ns`). A field a
 backend does not count is listed in that operation's `unmeasured`, never reported as 0. `internal/cost` is the schema
-(`docs/tasks/task-subsystems-2026-10.md` §8, "SB11b").
+(`docs/completed/task-subsystems-2026-10.md` §8, "SB11b").
 - **Counted:** the CPU's program walker (operations by kind, with bytes and time), and CUDA's resident `Generate` (per
   kernel launches, syncs and allocations, the prefill and the decode each as one span with its wall time).
 - **Not counted yet**, answering `"cost": {}`: speculative or drafted decode, image and audio turns, the WebGPU and Metal

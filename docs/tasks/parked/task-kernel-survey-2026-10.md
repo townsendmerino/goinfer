@@ -238,7 +238,7 @@ noticed: `docs/queue-performance.md` has two entries numbered P24 (`attn_fused`,
    sums over threads. The serial share of wall time is much larger (KS-G1).
 6. **`backend/metal/backend.go:metalResident.PrefillBlockRows`** excludes exact-attention models for a 4,096-key decline. The tiled
    twin removed that decline (KS-H1).
-7. **`docs/tasks/task-forward-architecture-2026-10.md` §6** says "decode already replays CUDA graph segments". Graphs are
+7. **`docs/completed/task-forward-architecture-2026-10.md` §6** says "decode already replays CUDA graph segments". Graphs are
    opt-in and off by default.
 8. **`docs/tasks/red-october.md` §2.3** calls the CUDA GEMM done ("Nothing left to fund there"). It compared against a
    whole-curve Ollama figure that the 2026-09-21 per-interval marginals supersede (KS-B1).
@@ -415,7 +415,7 @@ in ms (GB/s):
 - **Gain (est.):** removes 78 of gemma3's 341 launches per token, 0.16–0.23 ms of GPU time (3–4.5%), and more if KS-A2
   holds. It also serves Gemma 2/4, Olmo and Qwen3.
 - **Size:** S.
-- **Prior art:** new; `docs/tasks/task-forward-architecture-2026-10.md` §4.5 names the cost.
+- **Prior art:** new; `docs/completed/task-forward-architecture-2026-10.md` §4.5 names the cost.
 
 **KS-A6 · Per-token host plumbing (output unchanged).**
 - **Waste:**

@@ -1,6 +1,9 @@
 # Task: what a turn actually cost — per-generation telemetry on the wire (X1–X6) — 2026-09
 
-> **Status: SCOPED 2026-09-17, unstarted. X7/X8 added and the build order reversed the same day.**
+> **Status 2026-11-08: X1 partly built, the rest unstarted.** X1's timing block was built as subsystems' SB11b step 1
+> (#571, 2026-11-01; G-SB11b-1 to 7 PASS; `docs/completed/task-subsystems-2026-10.md` §8 "SB11"). Left for X1, moved here
+> from that archived doc on 2026-11-08: counting under MC3, speculative decode, media, WebGPU and Metal. Scoped 2026-09-17;
+> X7/X8 added and the build order reversed the same day.
 >
 > goinfer measures itself better than any peer and tells a *caller* almost none of it. Per
 > generation the API reports token counts and one vendor extension
@@ -59,7 +62,7 @@ This reverses the order these items were first filed in on 2026-09-17, on the re
 A `timings` object beside `usage`: `queue_wait_ms`, `prefill_ms`, `decode_ms`, `ttft_ms`.
 
 **Built as SB11b** (Francis's decision of 2026-10-31, option b): the gates, the stage boundaries each field reads, and the
-opt-in per-operation `cost` report are registered in `docs/tasks/task-subsystems-2026-10.md` §8, "SB11b".
+opt-in per-operation `cost` report are registered in `docs/completed/task-subsystems-2026-10.md` §8, "SB11b".
 
 - Measured at stage boundaries the server already crosses — admission granted, prefill returns,
   first token emitted, generation ends.

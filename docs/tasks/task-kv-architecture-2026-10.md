@@ -69,7 +69,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 
 > **For KV4's owner (mac-sb11m, 2026-10-30):** KV4's row reads active, although KV4a (#138, merged 2026-10-22) and KV4b
 > (closed 2026-10-24, D-KV4-9) are both done. Close the row, or name what remains in it. KV5, KV8 and KV10 read as blocked on it,
-> and KV5 (Metal) shares its files with OP4 on Metal (`docs/tasks/task-forward-architecture-2026-10.md` §4.9).
+> and KV5 (Metal) shares its files with OP4 on Metal (`docs/completed/task-forward-architecture-2026-10.md` §4.9).
 
 
 > **2026-10-20: KV8a added, ahead of KV4.** KV0-H (`docs/measurements/kv0h-hybrid-traffic-2026-10.md`) drove opencode
@@ -1535,7 +1535,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
 
 ### KV11 — One residency manager for KV blocks and MoE experts (added 2026-10-13)
 
-Added on the owner's word the same day, from the conversation that produced `docs/tasks/task-forward-architecture-2026-10.md`
+Added on the owner's word the same day, from the conversation that produced `docs/completed/task-forward-architecture-2026-10.md`
 (the compute half; this is its memory item).
 
 - **Why: two managers split one memory by a fixed rule.**
@@ -1675,7 +1675,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
   - `docs/completed/task-cpu-kv-f16-2026-10.md`: independent;
   - `docs/tasks/task-library-surface-review-2026-10.md`: D6;
   - `docs/option-state-grid.md` (its Policy section; design record `docs/completed/task-option-path-admission-2026-10.md`): new options join its grid;
-  - `docs/tasks/task-forward-architecture-2026-10.md`: its RF2 and RF4 read KV4's and KV5's block tables, and its OP4
+  - `docs/completed/task-forward-architecture-2026-10.md`: its RF2 and RF4 read KV4's and KV5's block tables, and its OP4
     memory planner prices through §5.10's one function.
 - **Doc amendments when phases land:**
   - `docs/roadmap.md` and MC5 record D1 (done 2026-10-13); `docs/positioning.md`'s "no paged attention" changes when

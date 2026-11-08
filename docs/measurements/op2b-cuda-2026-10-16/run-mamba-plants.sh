@@ -1,5 +1,5 @@
 #!/bin/bash
-# OP2b on CUDA, gate D (docs/tasks/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"): each plant is a temporary edit of mamba.cu or
+# OP2b on CUDA, gate D (docs/completed/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"): each plant is a temporary edit of mamba.cu or
 # nongated_act.cu with that module's PTX rebuilt, and gate K must go red on it; then the source and the PTX are restored and checked against git.
 # The kernels are prebuilt PTX, so a plant cannot be a run-time switch (as OP1's G2-D was). Run it under the timing lock (the tests use the card):
 #   python3 scripts/timing_lock.py run --label op2b-plants -- bash docs/measurements/op2b-cuda-2026-10-16/run-mamba-plants.sh
