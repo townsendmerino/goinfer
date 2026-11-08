@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -170,7 +171,8 @@ func (m *Model) metalDeltaNetEpsByFamily() (eps, oEps float64) {
 // TestMetalDecodeScratch_fromTheDeclarations is MM5b's derivation (docs/tasks/task-forward-architecture-2026-10.md §4.9c): Metal's
 // decode scratch priced from the program's per-row declarations (MetalDecodeScratchBytes) is the family-keyed price it replaces, on
 // every fixture and option cell layer D built resident on Metal (TestMemGate_metal's rows), unpaged and at a paged slot count. Each
-// is loaded on the CPU without its KV options.
+// is loaded on the CPU without its KV options. Each router row such a load declares has Metal's MoE terms; the MoE forms with none
+// (Llama 4's and Nemotron-H's) are on families Metal's admission declines, so Plan("metal") never prices them.
 func TestMetalDecodeScratch_fromTheDeclarations(t *testing.T) {
 	d, err := sb2census.ReadLayerD("..", "metal")
 	if err != nil {
@@ -194,6 +196,11 @@ func TestMetalDecodeScratch_fromTheDeclarations(t *testing.T) {
 			if err != nil {
 				t.Errorf("%s %s: %v", f, c.Name, err)
 				continue
+			}
+			for name := range m.MetalDecodeRowWidths() { // a router row Metal builds with, with no term, would price its MoE short
+				if strings.HasSuffix(name, "-router") && metalRowTerms[name] == nil {
+					t.Errorf("%s %s: Metal builds a load declaring %s, which metalRowTerms prices no term for", f, c.Name, name)
+				}
 			}
 			slotCounts := []int{0}
 			if nE, k, _ := m.moeGeometry(); k > 0 && k < nE {
