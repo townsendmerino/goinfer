@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_peer  # noqa: E402
@@ -100,6 +101,24 @@ class Rule(unittest.TestCase):
         self.assertIn("load average unreadable at the cell's end", bench_peer.cell_end_void(start, dict(end, loadavg=None), 1000))
         self.assertIn("available memory unreadable at the cell's end", bench_peer.cell_end_void(start, dict(end, available_mb=None), 1000))
         self.assertIsNone(bench_peer.cell_end_void(start, dict(end, available_mb=None), None), "no model load: no memory clause")
+
+    def test_the_cell_end_check_takes_the_watchers_peak_against_the_cells_own_start(self):
+        start = {"swap_mb": 100.0, "swapin_mb": 1.0, "swapout_mb": 1.0}
+        end = {"loadavg": [1.0, 1, 1], "available_mb": 5000, "swap_mb": 100.0, "swapin_mb": 1.0, "swapout_mb": 1.0}
+        self.assertIn("grew +35.0 MB", bench_peer.cell_end_void(start, end, 1000, peak_mb=135.0),
+                      "swap that rose between machine_state and SwapWatch's baseline and receded is still a spike over the cell's start")
+        self.assertIsNone(bench_peer.cell_end_void(start, end, 1000, peak_mb=100.0))
+
+    def test_the_end_check_honours_the_env_override_not_a_latch(self):
+        start = {"swap_mb": 100.0}
+        end = {"loadavg": [1.0, 1, 1], "available_mb": None, "swap_mb": 100.0}
+        self.addCleanup(setattr, bench_peer, "_FREE_MEM_OVERRIDE_USED", bench_peer._FREE_MEM_OVERRIDE_USED)
+        bench_peer._FREE_MEM_OVERRIDE_USED = False  # the reading was fine at the start, so the latch never set
+        with mock.patch.dict(os.environ, {"BENCH_ALLOW_NO_FREE_MEM": "1"}):
+            self.assertIsNone(bench_peer.cell_end_void(start, end, 1000), "the environment setting is the override")
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("BENCH_ALLOW_NO_FREE_MEM", None)
+            self.assertIn("available memory unreadable", bench_peer.cell_end_void(start, end, 1000))
 
     def test_the_end_check_marks_the_cell_void_in_its_record_so_it_reruns(self):
         for name, value in [("swap_used_mb", lambda: 100.0), ("swap_io_mb", lambda: (None, None)), ("free_mem_mb", lambda: 5000),

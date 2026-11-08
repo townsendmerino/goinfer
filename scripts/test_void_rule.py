@@ -12,6 +12,11 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import void_rule  # noqa: E402
 
+def setUpModule():
+    # the retry on a file still being written is about two seconds in production; a missing or garbled file in a test need not wait it out
+    void_rule.READ_TRIES, void_rule.READ_DELAY = 2, 0.001
+
+
 SNAP = {"load1": 1.0, "ncores": 8, "available_mb": 5000, "reclaimable_mb": 100, "swap_mb": 900.0}
 
 
@@ -218,6 +223,34 @@ class SwapSamplerPeak(unittest.TestCase):
             with mock.patch.object(void_rule, "snapshot", lambda: dict(SNAP)), mock.patch("builtins.print"):
                 self.assertEqual(void_rule.main(["end", "--start-json", missing]), 76)
 
+    def test_end_voids_on_json_that_parses_but_is_not_a_reading(self):
+        with tempfile.TemporaryDirectory() as d:
+            st = os.path.join(d, "s.json")
+            json.dump(SNAP, open(st, "w"))
+            out = os.path.join(d, "o.json")
+            for name, body in [("null", "null"), ("a list", "[]"), ("a number", "123"),
+                               ("a string peak", json.dumps({"peak_mb": "high", "samples": [[1.0, "x"]]}))]:
+                pk = os.path.join(d, "p.json")
+                open(pk, "w").write(body)
+                with mock.patch.object(void_rule, "snapshot", lambda: dict(SNAP)), mock.patch("builtins.print"):
+                    self.assertEqual(void_rule.main(["end", "--start-json", st, "--peak-json", pk, "--json-out", out]), 76, name)
+                self.assertIn("unreadable", json.load(open(out))["void"], name)
+            bad_start = os.path.join(d, "bs.json")
+            json.dump({"swap_mb": "lots"}, open(bad_start, "w"))
+            with mock.patch.object(void_rule, "snapshot", lambda: dict(SNAP)), mock.patch("builtins.print"):
+                self.assertEqual(void_rule.main(["end", "--start-json", bad_start]), 76)
+
+    def test_a_half_written_file_that_completes_is_read_on_the_retry(self):
+        import threading
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "p.json")
+            open(p, "w").write('{"peak_mb": 4')
+            threading.Timer(0.15, lambda: void_rule.write_json_atomic(p, {"peak_mb": 400.0})).start()
+            self.assertEqual(void_rule.read_json_retry(p, tries=40, delay=0.02), {"peak_mb": 400.0})
+            open(p, "w").write('{"peak_mb": 4')
+            self.assertIsNone(void_rule.read_json_retry(p, tries=3, delay=0.01), "never parses: None")
+            self.assertIsNone(void_rule.read_json_retry(os.path.join(d, "never"), tries=2, delay=0.01))
+
     def test_observe_folds_a_reading_in_without_reading_swap(self):
         sampler = void_rule.SwapSampler(read=lambda: 1 / 0, poll_s=0, base=100.0)
         sampler.observe(160.0)
@@ -335,50 +368,32 @@ class AtomicFiles(unittest.TestCase):
     def test_watch_joins_its_thread_before_it_reads_the_result(self):
         import threading
         import time
+        alive_at_result = []
+
+        class Slow(void_rule.SwapSampler):
+            def result(self):
+                alive_at_result.append(self._thread.is_alive())
+                return super().result()
+
         with tempfile.TemporaryDirectory() as d:
             out = os.path.join(d, "peak.json")
-            calls = []
+            polling = threading.Event()
 
             def read():
-                calls.append(time.monotonic())
+                if threading.current_thread() is getattr(sampler, "_thread", None):
+                    polling.set()
+                    time.sleep(0.4)  # a POLL still in flight when the stop arrives: only a join waits for it (the stop's own read is instant)
                 return 5.0
-            sampler = void_rule.SwapSampler(read=read, poll_s=0.002)
+            sampler = Slow(read=read, poll_s=0.001)
             stop = threading.Event()
             t = threading.Thread(target=void_rule.watch, args=(out, None, sampler, stop), daemon=True)
             self.addCleanup(stop.set)
             t.start()
-            for _ in range(500):  # the sampling thread is really polling before the stop
-                if len(calls) >= 5:
-                    break
-                time.sleep(0.005)
-            self.assertGreaterEqual(len(calls), 5, "the poller never ran")
+            self.assertTrue(polling.wait(5))  # the sampling thread is inside a slow read
             stop.set()
-            t.join(5)
-            n = len(calls)
-            time.sleep(0.1)
-            self.assertEqual(len(calls), n, "a poller was still running after watch returned: the thread was not joined")
-            self.assertFalse(sampler._thread.is_alive())
+            t.join(10)
+            self.assertEqual(alive_at_result, [False], "result() was read while the sampling thread was still running: stop() did not join")
             self.assertTrue(os.path.exists(out))
-
-
-class Allowance(unittest.TestCase):
-    """BENCH_ALLOW_NO_FREE_MEM=1 (the documented override for a box with no memory reading) skips the memory term, and says so."""
-
-    def test_start_void_can_skip_an_unreadable_memory_term_only_when_allowed(self):
-        self.assertIn("available memory unreadable", void_rule.start_void(dict(SNAP, available_mb=None), 4000))
-        self.assertIsNone(void_rule.start_void(dict(SNAP, available_mb=None), 4000, allow_unreadable_memory=True))
-        self.assertIn("above half", void_rule.start_void(dict(SNAP, available_mb=None, load1=9.0), 4000, allow_unreadable_memory=True),
-                      "the load term still applies")
-
-    def test_the_cli_honours_the_env_override_and_logs_it(self):
-        import io
-        from contextlib import redirect_stderr
-        err = io.StringIO()
-        with mock.patch.dict(os.environ, {"BENCH_ALLOW_NO_FREE_MEM": "1"}), \
-                mock.patch.object(void_rule, "snapshot", lambda: dict(SNAP, available_mb=None)), redirect_stderr(err), \
-                mock.patch("sys.stdout", io.StringIO()):
-            self.assertEqual(void_rule.main(["start", "--need-mb", "4000"]), 0)
-        self.assertIn("BENCH_ALLOW_NO_FREE_MEM=1", err.getvalue())
 
 
 class Swap(unittest.TestCase):
@@ -426,28 +441,56 @@ class Cli(unittest.TestCase):
         self.assertNotIn("VOID", err.getvalue())
 
     def test_a_watcher_started_before_start_does_not_void_a_cell_whose_swap_fell_in_between(self):
-        # the watcher saw 500 MB, swap fell to 400 before `start` took the cell's baseline, and stayed 400 for the whole cell: no growth
-        samples = [[1000.0, 500.0], [1005.0, 400.0]]          # (epoch, MB) as the watcher recorded them
-        start = dict(SNAP, swap_mb=400.0, t_epoch=1010.0)
+        # driven through the real sampler and snapshot, with a controlled clock: the watcher reads 500 MB, swap falls to 400 before `start`
+        # reads it, and stays 400 to the end. The watcher's last pre-start sample (500) is not the cell's: peak_since takes only samples
+        # at or after the start's own swap reading.
+        clock = [1000.0]
+        swap = [500.0]
+        with mock.patch.object(void_rule.time, "time", lambda: clock[0]):
+            sampler = void_rule.SwapSampler(read=lambda: swap[0], poll_s=0)
+            sampler.sample()                    # t=1000, 500 (the watcher's baseline)
+            swap[0], clock[0] = 400.0, 1010.0   # swap fell; start reads it now
+            with mock.patch.object(void_rule.hostmem, "available_mb", lambda: 6000), \
+                    mock.patch.object(void_rule.hostmem, "reclaimable_mb", lambda: 4000), \
+                    mock.patch.object(void_rule, "swap_used_mb", lambda: swap[0]):
+                start = void_rule.snapshot()
+            clock[0] = 1020.0
+            sampler.sample()                    # the watcher's last sample, at stop: 400
         end = dict(SNAP, swap_mb=400.0)
-        self.assertIsNone(void_rule.swap_void(start, end, void_rule.peak_since(samples, start["t_epoch"]), {}, peak_required=True))
-        # and a spike after the cell's start is still caught
-        samples2 = samples + [[1020.0, 470.0], [1025.0, 400.0]]
-        peak = void_rule.peak_since(samples2, start["t_epoch"])
-        self.assertEqual(peak, 470.0)
-        self.assertIn("grew +70.0 MB", void_rule.swap_void(start, end, peak, {}, peak_required=True))
+        self.assertEqual(start["swap_mb"], 400.0)
+        peak = void_rule.peak_since(sampler.samples, start["t_epoch"])
+        self.assertEqual(peak, 400.0)
+        self.assertIsNone(void_rule.swap_void(start, end, peak, {}, peak_required=True))
 
-    def test_peak_since_uses_the_state_at_the_start_when_nothing_was_sampled_after_it(self):
-        self.assertEqual(void_rule.peak_since([[1000.0, 500.0], [1005.0, 400.0]], 1010.0), 400.0)
+    def test_a_spike_after_start_is_still_caught(self):
+        samples = [[1000.0, 500.0], [1015.0, 470.0], [1020.0, 400.0]]
+        start = dict(SNAP, swap_mb=400.0, t_epoch=1010.0)
+        peak = void_rule.peak_since(samples, start["t_epoch"])
+        self.assertEqual(peak, 470.0)
+        self.assertIn("grew +70.0 MB", void_rule.swap_void(start, dict(SNAP, swap_mb=400.0), peak, {}, peak_required=True))
+
+    def test_peak_since_takes_only_samples_at_or_after_the_start(self):
+        self.assertIsNone(void_rule.peak_since([[1000.0, 500.0], [1005.0, 400.0]], 1010.0), "nothing after the start: no peak, so a void")
         self.assertIsNone(void_rule.peak_since([], 1010.0))
-        self.assertEqual(void_rule.peak_since([[1020.0, 300.0]], 1010.0), 300.0, "the first sample after the start, nothing before")
+        self.assertEqual(void_rule.peak_since([[1000.0, 900.0], [1010.0, 300.0]], 1010.0), 300.0, "a sample AT the start counts; before it does not")
+
+    def test_the_snapshot_reads_swap_first_and_stamps_the_time_right_after_it(self):
+        order = []
+        with mock.patch.object(void_rule, "swap_used_mb", lambda: order.append("swap") or 1.0), \
+                mock.patch.object(void_rule.time, "time", lambda: order.append("time") or 5.0), \
+                mock.patch.object(void_rule.hostmem, "available_mb", lambda: order.append("avail") or 1), \
+                mock.patch.object(void_rule.hostmem, "reclaimable_mb", lambda: order.append("recl") or 1):
+            snap = void_rule.snapshot()
+        self.assertEqual(snap["t_epoch"], 5.0)
+        self.assertLess(order.index("swap"), order.index("time"))
+        self.assertLess(order.index("time"), order.index("avail"), "the stamp is taken before the slow hostmem runs, right after swap")
 
     def test_the_cli_end_reads_the_peak_since_the_start_time(self):
         with tempfile.TemporaryDirectory() as d:
             st, pk = os.path.join(d, "s.json"), os.path.join(d, "p.json")
             json.dump(dict(SNAP, swap_mb=400.0, t_epoch=1010.0), open(st, "w"))
             json.dump({"base_mb": 500.0, "peak_mb": 500.0, "peak_growth_mb": 0.0, "unreadable": False,
-                       "samples": [[1000.0, 500.0], [1005.0, 400.0]]}, open(pk, "w"))
+                       "samples": [[1000.0, 500.0], [1020.0, 400.0]]}, open(pk, "w"))
             with mock.patch.object(void_rule, "snapshot", lambda: dict(SNAP, swap_mb=400.0)), mock.patch("builtins.print"):
                 self.assertEqual(void_rule.main(["end", "--start-json", st, "--peak-json", pk]), 0)
 

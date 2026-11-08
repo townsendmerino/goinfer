@@ -905,18 +905,20 @@ def end_state():
             "swapin_mb": swapin, "swapout_mb": swapout}
 
 
-def cell_end_void(start, end, need_mb):
+def cell_end_void(start, end, need_mb, peak_mb=None):
     """The reason a cell is void from the readings at its start and its end, or None: swap that grew between them (or an unreadable swap
     reading at either), and an unreadable load or available-memory reading at the end. SwapWatch votes on the peak inside the cell; this
     couples the cell's own start and end readings to its verdict, so a record whose end readings fail cannot be called clean."""
     import void_rule
+    # peak_mb: SwapWatch's peak, in absolute MB, against the cell's own start reading: swap that rose between machine_state and the
+    # watch's later baseline and receded before the end is a spike over the cell's start that neither reading alone shows
     why = void_rule.swap_void({k: start.get(k) for k in ("swap_mb", "swapin_mb", "swapout_mb")},
-                              {k: end.get(k) for k in ("swap_mb", "swapin_mb", "swapout_mb")})
+                              {k: end.get(k) for k in ("swap_mb", "swapin_mb", "swapout_mb")}, peak_mb)
     if why:
         return why
     if end.get("loadavg") is None:
         return "load average unreadable at the cell's end"
-    if need_mb and end.get("available_mb") is None and not _FREE_MEM_OVERRIDE_USED:
+    if need_mb and end.get("available_mb") is None and os.environ.get("BENCH_ALLOW_NO_FREE_MEM") != "1":
         return "available memory unreadable at the cell's end"
     return None
 
@@ -927,7 +929,9 @@ def apply_cell_end_check(result, need_mb):
     (rates, err, counts), machine, void_starts = result
     end = end_state()
     machine["end"] = end
-    why = cell_end_void(machine, end, need_mb)
+    sw = (counts or {}).get("swap") or {}
+    peak = sw["swap_base_mb"] + sw["swap_growth_mb"] if sw.get("swap_base_mb") is not None and sw.get("swap_growth_mb") is not None else None
+    why = cell_end_void(machine, end, need_mb, peak)
     if why:
         counts = dict(counts or {})
         swap = dict(counts.get("swap") or {})
