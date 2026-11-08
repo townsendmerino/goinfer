@@ -419,7 +419,13 @@ func TestP1r_nemotronRangeSurvey(t *testing.T) {
 		for i, id := range ids[:K] {
 			embs[i] = m.EmbedResidentForTest(id)
 		}
-		if _, err := rf.PrefillLast(ctx, embs, 0); err != nil {
+		if _, err := rf.PrefillLast(ctx, embs, 0); errors.Is(err, errPrefillDeclined) {
+			for i, e := range embs { // the Mamba-2 mixer has no batched kernel: the prompt runs one forward per token, as serve's does
+				if _, err := rf.Forward(e, i); err != nil {
+					t.Fatalf("prompt %d position %d: %v", pi, i, err)
+				}
+			}
+		} else if err != nil {
 			t.Fatalf("prefill prompt %d: %v", pi, err)
 		}
 		for l := range rf.layers {

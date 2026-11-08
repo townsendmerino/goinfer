@@ -45,3 +45,10 @@ A `mamba-hybrid` row in `kv4bGroups` (`backend/cuda/kv4b_groups_test.go`), fixtu
 
 **Not gated here:** G4, the fidelity read. f16 is delivered on request only, and `auto` is f32, as for every hybrid. The coordinator's brief
 was f16 identity and G5, as KV4b did for the others.
+
+## Addendum, 2026-11-08 12:45 PST, before G5 runs: the cost; no bar or cell changed
+
+- **Fit**, by serve's own banner (`fit.log`): `cuda-resident (int4)`, 6.3 GB of weights, a 4,028-token f32 cache at 0.1 GB; nothing refused.
+  Serve exited only because `-require-backend` also refuses a sequential prefill: "the Mamba-2 mixer has no batched kernel".
+- That same fact makes `PrefillLast` decline on this model, so the survey runs each prompt one forward per token, as serve does. That is
+  ten prompts of 3,900 tokens, about 39,000 steps: **about 15 to 30 minutes**, not the 5 to 10 written above.
