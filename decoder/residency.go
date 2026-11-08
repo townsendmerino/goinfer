@@ -114,6 +114,30 @@ type ResidentBatchOut struct {
 	ID     int
 }
 
+// ResidentRaggedStepper is an optional ResidentForward extension: one step over several sequences, each with one row or more
+// at consecutive positions from its Pos on its own KV slot, every row in the kernel class its own shape runs today (a row
+// alone is a decode token, a sequence's rows a verify). Row j of a sequence equals that sequence's own Forward at Pos+j bit
+// for bit, or ForwardSample's id for a last row that carries the Draw. The slots are distinct; the bound slot is restored.
+// Docs: docs/tasks/task-forward-and-memory-2026-11.md, "RF2: registration".
+type ResidentRaggedStepper interface {
+	StepRagged(seqs []ResidentRaggedSeq) ([]ResidentRaggedOut, error)
+}
+
+// ResidentRaggedSeq is one sequence of a ResidentRaggedStepper step: its KV slot, the position of its first row, its rows'
+// embeddings (embedResident's), and, when its last row's token is drawn on-device, that draw.
+type ResidentRaggedSeq struct {
+	Slot, Pos int
+	Embs      [][]float32
+	Draw      *ResidentBatchDraw // nil: every row's logits
+}
+
+// ResidentRaggedOut is one sequence of a StepRagged: each row's logits, with the last nil when the sequence carried a Draw,
+// and the drawn id (>= 0), or -1.
+type ResidentRaggedOut struct {
+	Logits [][]float32
+	ID     int
+}
+
 // ResidentMRoPE is an OPTIONAL ResidentForward extension: a resident backend whose rotation kernel takes a
 // rope-angle position (ropePos) separate from the KV-cache/attention position (pos). Qwen2.5-VL decode past
 // an image block needs it: decoder/rope.go's CPU reference rotates by pos+mropeDelta while storage and
