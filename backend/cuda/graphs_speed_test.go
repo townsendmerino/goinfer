@@ -217,7 +217,7 @@ func TestMEM10_pageableExpertSourceAB(t *testing.T) {
 		t.Fatalf("%s is tmpfs (or unreadable: %v): its pages would be shared memory, not the file pages arm B measures", dir, err)
 	}
 	const shortPrompt, longPrompt, steps, checkToks = 32, 4096, 256, 64
-	opts := decoder.Options{Backend: "cuda", Quant: "int4", MoECacheExperts: true, ResidentContext: longPrompt + steps}
+	opts := decoder.Options{Backend: "cuda", Quant: "int4", EmbedInt4: true, MoECacheExperts: true, ResidentContext: longPrompt + steps} // EmbedInt4: serve's CUDA default, so the load opens the .int4.e4h.cuda sidecar
 	type arm struct {
 		Name                                    string
 		Short, Long                             float64

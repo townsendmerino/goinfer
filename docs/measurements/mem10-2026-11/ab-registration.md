@@ -54,3 +54,15 @@ attention takes a larger share of each token there.
 **Cost:** about 30 min. A 26B load is about 1 min (the sidecar is mapped). B's first pack writes about 12 GiB to NVMe, about 1 min. A 4,096
 prefill is about 30 s, plus 2 x 256 decode tokens at about 20 to 30 tok/s. That is about 3 to 4 min a load, eight loads. By day; start and
 finish go in the status file first.
+
+## Addendum, 2026-11-08 12:11 PST: the first attempt measured the wrong load; the instrument fixed, no rule changed
+
+- **What happened.** The first attempt (12:09) loaded `gemma4-26b-q4_k_m.gguf` with `Quant: "int4"` but without `EmbedInt4`.
+  - Serve sets `EmbedInt4` on CUDA, and that is what makes it open `….int4.e4h.cuda.v17.giw`. Without it, no sidecar matched, so the
+    load re-packed the weights in-process: arm A's `RssAnon` was 16,101 MiB, and the `.giw`'s Rss was 0.
+  - Its `RssShmem` (12,345 MiB) did match MEM10-G0's region.
+- **How it stopped.** Load 2 (arm B) was refused by the host-memory guard: "needs ~38.4 GB … (13.2 GB weights + 13.2 GB packed copy + 12.0
+  GB pinned copy); 46.0 GB available". The refusal was not bypassed.
+- **The fix.** The test now sets `EmbedInt4: true`, serve's own CUDA default, so it measures the registered load through the sidecar.
+- **The readings.** The first attempt's single load is void and is not used. Its log is kept as `ab-attempt1/`.
+- **Unchanged:** the arms, order, metrics and rule.
