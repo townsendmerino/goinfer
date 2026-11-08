@@ -97,6 +97,32 @@
 - **Outcomes:** every gate passes, RF2 ships and RF3 opens; a decode kill ships the rest with decode on today's call; an
   ambiguous or failed band on another shape parks that shape on the adapter and goes to Francis.
 
+### RF2: addendum 1 (2026-11-08, after Gemini's review of #778; before any RF2 code or measurement)
+
+These lines replace the registration's where they differ.
+- **Sessions and pairing.** Every timed comparison runs both arms in one session on the same box, ordered A B B A with
+  A = `goinfer_old` and B = this build. Each B is paired with the A next to it, and a band reads the median of the pairs. A
+  baseline arm is never carried over from an earlier session (`docs/measurements/noise-registry.md`, TE3). This replaces
+  "unchanged arms are not re-measured". What stands is that a cell is read once on the final build, plus once on the first
+  working build for the kill.
+- **Metric direction.** Every ratio reads higher-is-better, B against A:
+  - decode, verify (tok/s) and MC3's aggregate (tok/s): B/A;
+  - time to first token (seconds): A/B.
+- **Decode at every depth, 128 included.** Decode under 0.98 at any registered depth opens the tuning budget. That budget is
+  at most two rounds. Each round is one kernel-side change, then a re-run of only the failing cells, both arms A B B A in a
+  new session, within one working day. A cell therefore has at most two re-runs.
+  - If decode at any depth is still under 0.98 after the second round, that is the kill: today's decode call stays beside
+    the ragged one, the other shapes ship on their own bands, and the reading goes to Francis.
+  - Decode has no parked band of its own: 0.97 to 0.98 is under 0.98.
+  - The other shapes' ambiguous bands are unchanged: a shape in its band is parked on the adapter.
+- **The mixed-batch test is widened to the Question.** One step holds every kind the Question names, each at more than one
+  count where the kind allows it:
+  - one sequence's prefill chunk;
+  - a second sequence's verify rows (k = 2 and 4);
+  - one decode row each for two MC3 sequences;
+  - a sequence with a decode row plus verify rows in the same step.
+  Every row's logits must be bit-identical to the same row in its own shape. The Question is not narrowed.
+
 ## Conventions
 
 The archived records' rules for every phase still apply to any row taken up here: gates registered and committed before the
