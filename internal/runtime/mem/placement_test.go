@@ -333,9 +333,10 @@ func TestSolvePlacement_moeSawtooth(t *testing.T) {
 }
 
 // TestSolvePlacement_declineReasonsQuoteEachTermOnce: a decline that quotes the dense weights quotes them alone (with the experts'
-// fixed bytes), and the scratch once in its own note, the paged extra included on an expert cache's path. Each decline that prints a
-// dense figure is reached, on a dense Metal load and an MoE one: the context floor, and (the planner without the MoE reserve) no room
-// left for an expert cache.
+// fixed bytes), and the scratch once in its own note, the paged slot indices included exactly where the plan charged them; a top-k
+// decline quotes as free what the experts had once those were taken. Each decline that prints a dense or free figure is reached:
+// the context floor on a dense Metal load and an MoE one, and, on the planner without the MoE reserve, no room left for an expert
+// cache and too little for its top k, each with and without a paged extra.
 func TestSolvePlacement_declineReasonsQuoteEachTermOnce(t *testing.T) {
 	const gib, mib = int64(1) << 30, int64(1) << 20
 	kv := func(c int) int64 { return int64(c) << 16 }
@@ -343,7 +344,7 @@ func TestSolvePlacement_declineReasonsQuoteEachTermOnce(t *testing.T) {
 	moe := dense
 	moe.NExperts, moe.TopK, moe.ExpertBytesFull, moe.ExpertBytesFixed, moe.ScratchPagedExtra = 8, 2, 8*gib, 512*mib, 64*mib
 	moe.HostAll = func() int64 { return 0 }
-	unpaged := moe // a cache that adds no paged extra: the only one the context leaves no room beside
+	unpaged := moe // a cache that adds no paged extra
 	unpaged.ScratchPagedExtra = 0
 	quoted := func(re, reason string) string {
 		if m := regexp.MustCompile(re).FindStringSubmatch(reason); m != nil {
@@ -351,26 +352,33 @@ func TestSolvePlacement_declineReasonsQuoteEachTermOnce(t *testing.T) {
 		}
 		return "none"
 	}
+	weights := gib + 512*mib // the MoE load's dense and expert-fixed bytes
 	for _, c := range []struct {
-		name           string
-		l              DeviceLoad
-		free           int64
-		reserve        bool
-		dense, scratch string
+		name                  string
+		l                     DeviceLoad
+		free                  int64
+		reserve               bool
+		dense, scratch, avail string // "" where the reason quotes none
 	}{
-		{"dense, the context floor", dense, gib, true, "1.00", "256.00"},
-		{"moe, the context floor", moe, gib, true, "1.50", "320.00"},
-		{"moe without the reserve, no room for a cache", unpaged, gib + 512*mib + 256*mib + kv(4096), false, "1.50", "256.00"},
+		{"dense, the context floor", dense, gib, true, "1.00", "256.00", ""},
+		{"moe, the context floor", moe, gib, true, "1.50", "320.00", ""},
+		{"moe without the reserve, no room for a paged cache", moe, weights + 320*mib + kv(4096), false, "1.50", "320.00", ""},
+		{"moe without the reserve, no room for an unpaged cache", unpaged, weights + 256*mib + kv(4096), false, "1.50", "256.00", ""},
+		{"moe without the reserve, under the top k, paged", moe, weights + 320*mib + kv(4096) + 3*gib/2, false, "", "", "1.50"},
 	} {
 		d := solvePlacement(c.l, PlanRequest{Ctx: 4096, CtxPinned: true}, Machine{Free: map[Tier]int64{Unified: c.free}}, DefaultPolicy(), c.reserve)
 		if d.Placement != Declined {
 			t.Fatalf("%s: %s, want a decline", c.name, planAnswer(d))
 		}
-		if got := quoted(`dense ([\d.]+) GB`, d.Reason); got != c.dense {
-			t.Errorf("%s: the reason quotes dense %s GB, want %s (the weights alone): %q", c.name, got, c.dense, d.Reason)
-		}
-		if got := quoted(`scratch ([\d.]+) MB`, d.Reason); got != c.scratch {
-			t.Errorf("%s: the reason quotes scratch %s MB, want %s: %q", c.name, got, c.scratch, d.Reason)
+		for _, q := range []struct{ what, re, want string }{
+			{"dense", `dense ([\d.]+) GB`, c.dense}, {"scratch", `scratch ([\d.]+) MB`, c.scratch}, {"free", `only ([\d.]+) GB is free`, c.avail},
+		} {
+			if q.want == "" {
+				continue
+			}
+			if got := quoted(q.re, d.Reason); got != q.want {
+				t.Errorf("%s: the reason quotes %s %s, want %s: %q", c.name, q.what, got, q.want, d.Reason)
+			}
 		}
 	}
 }
