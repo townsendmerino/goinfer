@@ -106,6 +106,13 @@ func (m *Model) MetalDecodeScratchBytes(slots int) int64 {
 	return 4*f32 + bytes + 4*u32s
 }
 
+// MetalDecodeRowWidths is decode's per-row activations as m's program declares them, each name at the widest layer that declares
+// it (program.Buffers' per-row entries and program.HeadBuffers): what a Metal build holds its decode rows to. A fresh map each call.
+func (m *Model) MetalDecodeRowWidths() map[string]int {
+	H, _, _, _, _, _, V := m.Dims()
+	return m.metalDecodeRows(H, V).widest
+}
+
 // metalSizedByRule is the declared rows Metal does not hold as one f32 row of their width, which MetalDecodeScratchBytes sizes by its
 // own rule: a sublayer's input (held only as int8 and f16 rows), the parallel block's second output (held in the FFN's output row),
 // the attention rows (fused, with a floor) and every gate and up (one fused row at their widest).

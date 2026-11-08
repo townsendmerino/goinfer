@@ -2225,6 +2225,13 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.g4moe != nil {
 		r.decode.families = append(r.decode.families, r.g4moe.scratch...)
 	}
+	rows := m.MetalDecodeRowWidths()
+	if decodeRowsPlantForTest != nil {
+		decodeRowsPlantForTest(rows)
+	}
+	if err := r.decodeRowsCheck(rows); err != nil {
+		return nil, err
+	}
 	for _, sb := range r.decode.buffers(r) {
 		sb.set(sb.alloc(d))
 	}

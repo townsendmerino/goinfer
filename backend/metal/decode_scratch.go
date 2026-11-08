@@ -2,6 +2,12 @@
 
 package metal
 
+import (
+	"fmt"
+	"maps"
+	"slices"
+)
+
 // decodeShape is what decode's own scratch is sized from (docs/tasks/task-forward-architecture-2026-10.md §4.9c): the widths, in
 // elements, its buffers take, each at the widest layer that uses it, since every layer reuses one buffer a role.
 type decodeShape struct {
@@ -50,6 +56,88 @@ type decodeLayer struct {
 	attn   bool   // it runs attention: its sink flag and its window
 	window uint32 // its sliding window, 0 for full causal
 	ffnI   int    // its FFN width where that differs from the model's; 0 where it reads uI
+}
+
+// decodeRowsPlantForTest, when set, edits the declared row widths buildResident checks, so a test can plant a declaration the
+// decode kernels do not address. nil in every production build.
+var decodeRowsPlantForTest func(rows map[string]int)
+
+// decodeRowsCheck holds the program's declared per-row widths (decoder.Model.MetalDecodeRowWidths) to what r's decode kernels
+// address: each row Metal holds, by name, at its width, none declared that Metal holds no buffer for, and a mixer's or branch's rows
+// declared exactly where r runs it. The list is sized from the same widths, so a declaration and kernels that differ would read or
+// write past a buffer.
+func (r *resident) decodeRowsCheck(declared map[string]int) error {
+	s := r.decode
+	want := map[string]int{"h": s.H, "x": s.H, "a": s.H, "logits": s.V}
+	if _, ok := declared["b"]; ok { // the parallel block's second output, held in the FFN's output row
+		want["b"] = s.H
+	}
+	if len(s.geoms) > 0 {
+		want["q"], want["ctx"] = s.nHhd, s.nHhd
+		for _, n := range []string{"k", "v"} {
+			if _, ok := declared[n]; ok {
+				want[n] = s.kvDim
+			}
+		}
+	}
+	gu := max(s.I, declared["gate"], declared["up"], declared["shared-gate"], declared["shared-up"])
+	if gu != s.guDim {
+		return fmt.Errorf("metal: the program's widest gate and up rows are %d, and the FFN kernels address %d", gu, s.guDim)
+	}
+	for _, n := range []string{"gate", "up", "shared-gate", "shared-up"} {
+		if w, ok := declared[n]; ok {
+			want[n] = w // held in the fused gate | up row, checked at its widest above
+		}
+	}
+	if s.qGate {
+		want["q-gate"], want["attn-gate"] = 2*s.nHhd, s.nHhd
+	}
+	if dp := s.dnet; dp != nil {
+		for n, w := range map[string]int{"dn-mixed": dp.convDim, "dn-conv": dp.convDim, "dn-beta": dp.nv, "dn-decay": dp.nv, "dn-ba": 2 * dp.nv,
+			"dn-q": dp.keyDim, "dn-k": dp.keyDim, "dn-core": dp.valueDim, "dn-z": dp.valueDim, "dn-gated": dp.valueDim} {
+			want[n] = w
+		}
+	}
+	if p := s.mamba; p != nil {
+		want["mb-proj"], want["mb-conv"], want["mb-y"], want["mb-gated"] = p.projDim, p.convDim, p.dInner, p.dInner
+	}
+	if p := s.mla; p != nil {
+		for n, w := range map[string]int{"mla-qa": p.qLoRA, "mla-q": p.nH * p.qkHead, "mla-kv": p.latDim, "mla-q-abs": p.nH * p.latDim,
+			"mla-wsum": p.nH * p.rank, "mla-ctx": p.nH * p.vHead} {
+			want[n] = w
+		}
+	}
+	if P := s.pleP; P > 0 {
+		want["ple-gate"], want["ple-in"] = P, s.nL*P
+	}
+	if mo := r.moe; mo != nil {
+		prefix := "moe"
+		if mo.isGptOss {
+			prefix = "gptoss"
+		}
+		want[prefix+"-router"], want[prefix+"-experts"], want[prefix+"-weights"] = mo.nE, mo.k, mo.k
+	}
+	if g := r.g4moe; g != nil {
+		for n, w := range map[string]int{"g4moe-router": g.nE, "g4moe-experts": g.topK, "g4moe-weights": g.topK, "g4moe-dense-out": s.H,
+			"g4moe-moe-out": s.H, "g4moe-router-in": s.H} {
+			want[n] = w
+		}
+	}
+	for _, n := range slices.Sorted(maps.Keys(declared)) {
+		w, ok := want[n]
+		switch {
+		case !ok:
+			return fmt.Errorf("metal: the program declares a %s row of %d, which decode holds no buffer for", n, declared[n])
+		case declared[n] != w:
+			return fmt.Errorf("metal: the program declares the %s row at %d, and the decode kernels address %d", n, declared[n], w)
+		}
+	}
+	for _, n := range slices.Sorted(maps.Keys(want)) {
+		if _, ok := declared[n]; !ok && want[n] != 0 {
+			return fmt.Errorf("metal: the program declares no %s row, which the decode kernels address at %d", n, want[n])
+		}
+	}
+	return nil
 }
 
 // buffers is decode's scratch, each set into r as it is allocated: the list buildResident allocates it from and the price sums. A
