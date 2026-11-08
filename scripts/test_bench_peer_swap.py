@@ -18,12 +18,21 @@ class SwapWatch(unittest.TestCase):
 
     def test_void_rule(self):
         w = bench_peer.SwapWatch()
-        self.assertIsNone(w.void_reason(), "off unless BENCH_SWAP_VOID_MB is set")
+        self.assertIsNone(w.void_reason(), "no growth is not a void")
+        w.peak = 0.5
+        self.assertIn("void", w.void_reason(), "with nothing set, any growth voids: the void rule's zero bar (void_rule.py)")
         os.environ["BENCH_SWAP_VOID_MB"] = "0"
         w.peak = 0.0
         self.assertIsNone(w.void_reason(), "no growth is not a void")
         w.peak = 0.5
         self.assertIn("void", w.void_reason())
+
+    def test_an_explicit_swap_in_bar_replaces_the_default(self):
+        # nobara's rule keeps its swap-in bar: with BENCH_SWAPIN_VOID_MB set and no growth bar, growth alone is not the default's void
+        os.environ["BENCH_SWAPIN_VOID_MB"] = "0"
+        w = bench_peer.SwapWatch()
+        w.peak, w.swapin = 46.0, 0.0
+        self.assertIsNone(w.void_reason())
 
     def test_swapin_rule(self):
         # nobara's rule (2026-10-08): swap growth from idle pages pushed out is not a void; swap-ins over the limit are.

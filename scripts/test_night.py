@@ -58,11 +58,13 @@ class Runner(night.Runner):
 
 class FreeMemoryReading(unittest.TestCase):
     def test_reads_goinfers_number(self):
-        # The runner's fit-need gate reads cmd/hostmem's reclaimable figure (scripts/hostmem.py), not the fit guard's available one.
+        # The runner's fit-need gate reads the fit guard's own available figure (scripts/hostmem.py), not the reclaimable one.
         import hostmem
-        saved = hostmem.reclaimable_mb
-        self.addCleanup(setattr, hostmem, "reclaimable_mb", saved)
-        hostmem.reclaimable_mb = lambda *a, **k: 6789
+        saved, saved_r = hostmem.available_mb, hostmem.reclaimable_mb
+        self.addCleanup(setattr, hostmem, "available_mb", saved)
+        self.addCleanup(setattr, hostmem, "reclaimable_mb", saved_r)
+        hostmem.available_mb = lambda *a, **k: 6789
+        hostmem.reclaimable_mb = lambda *a, **k: 1
         self.assertEqual(night.free_mem_mb(), 6789)
 
 
@@ -408,6 +410,53 @@ class QueueEnvironment(unittest.TestCase):
         self.assertIsNone(code, out)
 
 
+_FLAT = {"t": "x", "load1": 1.0, "ncores": 8, "available_mb": 9000, "reclaimable_mb": 8000, "swap_mb": 500.0}
+
+
+def setUpModule():
+    # Every job reads the box at its start and end (void_rule.snapshot, two cmd/hostmem runs): a cheap flat stand-in for the tests that do
+    # not look at it.
+    night.readings = lambda: dict(_FLAT)
+
+
+class SwapVoidInAJob(unittest.TestCase):
+    """The void rule's in-cell swap bar for a night job: system swap that grows while the job runs makes an otherwise clean job FAILED
+    with a VOID line naming the growth; flat swap does not; the start and end readings are recorded in the job's record."""
+
+    def run_job(self, swaps):
+        night.QUEUE.mkdir(parents=True, exist_ok=True)
+        for f in night.QUEUE.glob("*"):
+            f.unlink()
+        _seq[0] += 1
+        seq = 2_000_000 + _seq[0]
+        job = {"name": f"swap-{seq}", "cmd": ["/bin/sh", "-c", "echo measured; exit 0"], "cwd": _tmp, "est_min": 1.0, "timeout_min": 2.0,
+               "priority": 50, "seq": seq}
+        (night.QUEUE / f"{seq}-swap.json").write_text(json.dumps(job))
+        seen = iter(swaps)
+        saved = night.readings
+        night.readings = lambda: dict(_FLAT, swap_mb=next(seen))
+        self.addCleanup(setattr, night, "readings", saved)
+        r = Runner(night.now() + dt.timedelta(hours=1), Path(tempfile.mkdtemp(dir=_tmp)))
+        with contextlib.redirect_stdout(io.StringIO()):
+            r.run()
+        return [x for x in r.results if x["name"] == job["name"]][0]
+
+    def test_swap_growth_voids_the_job(self):
+        got = self.run_job([500.0, 500.1])
+        self.assertTrue(got["outcome"].startswith("FAILED rc=0, log says: VOID: system swap grew 0.1 MB"), got["outcome"])
+        self.assertEqual((got["readings"]["start"]["swap_mb"], got["readings"]["end"]["swap_mb"]), (500.0, 500.1))
+
+    def test_flat_or_falling_swap_does_not(self):
+        self.assertEqual(self.run_job([500.0, 500.0])["outcome"], "ok")
+        self.assertEqual(self.run_job([500.0, 400.0])["outcome"], "ok")
+
+    def test_the_readings_are_recorded_either_way(self):
+        got = self.run_job([500.0, 500.0])
+        for k in ("load1", "available_mb", "reclaimable_mb", "swap_mb"):
+            self.assertIn(k, got["readings"]["start"])
+            self.assertIn(k, got["readings"]["end"])
+
+
 class LogFailureMarkers(unittest.TestCase):
     """A job that exits 0 but prints a failure marker (--- FAIL, a FAIL line, FAILED, VOID) in its own output is FAILED; a line tagged
     [expected] (a plant's red run) is exempt, and the runner's header (a note naming VOID) is not scanned."""
@@ -566,10 +615,10 @@ class Serve(unittest.TestCase):
     def test_low_free_memory_holds_the_start(self):
         sv = FakeServer()
         self.job(fit_need_gb=4)
-        sv.free = 4 * 1024 + 2048 - 1
+        sv.free = 4 * 1024 - 1
         self.assertEqual(self.tick(sv), "idle")
-        self.assertIn("free memory", sv.waits[0])
-        sv.free = 4 * 1024 + 2048
+        self.assertIn("available memory", sv.waits[0])
+        sv.free = 4 * 1024  # exactly the need starts: there is no 2 GB margin any more
         self.assertEqual(self.tick(sv), "ran")
 
     def test_plant_without_the_heavy_gate_it_runs_under_load(self):

@@ -585,8 +585,8 @@ def swapins_mb():
 class SwapWatch:
     """Swap growth over one cell, from a baseline taken before its server starts (peer-vetted 2026-10-07: "any swap
     growth voids that engine's arm"). Polls system swap every POLL_S on a thread; the peak growth goes in the cell's
-    counts. BENCH_SWAP_VOID_MB (unset: off, the old behaviour) voids a cell whose peak growth exceeds it, 0 meaning any
-    growth. BENCH_SWAP_KILL_MB (unset: off) also kills the server's process group the moment growth passes it, so a
+    counts. BENCH_SWAP_VOID_MB (unset: 0, the void rule's bar, unless BENCH_SWAPIN_VOID_MB or BENCH_SWAPOUT_VOID_MB is set) voids a cell
+    whose peak growth exceeds it, 0 meaning any growth. BENCH_SWAP_KILL_MB (unset: off) also kills the server's process group the moment growth passes it, so a
     runaway load is stopped, not just recorded (the Mac's 2026-09-04/05 swap spiral; scripts/swap_killwatch.sh is the
     out-of-process twin)."""
     POLL_S = 1.0
@@ -645,6 +645,8 @@ class SwapWatch:
         outlim = os.environ.get("BENCH_SWAPOUT_VOID_MB", "").strip()
         if self.killed:
             return self.killed
+        if not lim and not inlim and not outlim:
+            lim = "0"  # the rule's default (void_rule.py): any growth voids. An explicit swap-in or swap-out bar replaces it, as nobara's does.
         if lim and self.peak > float(lim):
             return f"swap grew +{self.peak:.1f} MB during the cell (> {float(lim):.0f} MB): void"
         if inlim and self.swapin is not None and self.swapin > float(inlim):
@@ -772,19 +774,19 @@ def provenance():
     }
 
 def free_mem_mb():
-    """This box's free memory in MiB for the void rule: the reclaimable figure cmd/hostmem prints (scripts/hostmem.py), what a cell
-    can take without macOS compressing or swapping other memory under it, not the load-decision figure. None when it cannot be
-    read."""
+    """This box's available memory in MiB for the void rule: the figure the fit guard decides loads by (cmd/hostmem via
+    scripts/hostmem.py). The reclaimable figure is recorded beside it (machine_state) but is not a void term. None when it
+    cannot be read."""
     import hostmem
-    return hostmem.reclaimable_mb()
+    return hostmem.available_mb()
 
 
-# THE HEAVY-LOAD VOID (owner rule 2026-10-19; CLAUDE.md "Run budget", docs/measurements/noise-registry.md §8). A cell is VOID if,
-# at its start, this box (the one doing the timed work) has a 1-minute load average above half its cores, or free memory below the
-# fit guard's need for the cell's load plus 2 GB. A void start is listed in the cell's record and the cell re-runs in place; it is
-# never run and averaged. The need is weights + KV from goinfer's own `fit:` banner for the model (learned from its goinfer cells),
+# THE HEAVY-LOAD VOID (owner rule 2026-10-19, changed by Francis 2026-11-08; scripts/void_rule.py is the one definition,
+# docs/measurements/noise-registry.md §8). A cell is VOID if, at its start, this box (the one doing the timed work) has a 1-minute
+# load average above half its cores, or available memory (the fit guard's reading) below the fit guard's need for the cell's load,
+# with no margin; and if system swap grows at all while it runs (SwapWatch). A void start is listed in the cell's record and the
+# cell re-runs in place; it is never run and averaged. The need is weights + KV from goinfer's own `fit:` banner for the model (learned from its goinfer cells),
 # BENCH_FIT_NEED_GB when set ("5.6", or per model "phi3-mini=5.6,M7=9.3"), else the checkpoint's file size, recorded as such.
-VOID_HEADROOM_MB = 2048
 _FIT_NEED = {}   # model key -> MB, from a goinfer fit banner
 
 
@@ -816,13 +818,12 @@ def learn_fit_need(model_key, log_text):
 
 
 def heavy_void(state, need_mb):
-    """The reason a cell starting in machine state `state` is void, or None. state carries loadavg, free_mem_mb and ncores."""
-    la, ncores, free = state.get("loadavg"), state.get("ncores"), state.get("free_mem_mb")
-    if la and ncores and la[0] > ncores / 2:
-        return f"load {la[0]:.2f} above half of {ncores} cores"
-    if need_mb is not None and free is not None and free < need_mb + VOID_HEADROOM_MB:
-        return f"free memory {free} MB below the fit need {need_mb} MB + {VOID_HEADROOM_MB} MB"
-    return None
+    """The reason a cell starting in machine state `state` is void, or None, by void_rule.start_void. state carries loadavg,
+    free_mem_mb (the available reading) and ncores."""
+    import void_rule
+    la, ncores = state.get("loadavg"), state.get("ncores")
+    snap = {"load1": la[0] if la else None, "ncores": ncores or 1, "available_mb": state.get("free_mem_mb")}
+    return void_rule.start_void(snap, need_mb)
 
 
 def start_clean(sample, need_mb, run, wait=time.sleep, limit_s=None):
@@ -845,10 +846,17 @@ def start_clean(sample, need_mb, run, wait=time.sleep, limit_s=None):
         waited += step
 
 
+def _reclaimable_mb():
+    import hostmem
+    return hostmem.reclaimable_mb()
+
+
 def machine_state():
-    """Recorded at the START of each cell: the load average, free memory and core count the void rule reads (heavy_void), and
-    the GPU and thermal state as a record."""
-    m = {"loadavg": _loadavg(), "free_mem_mb": free_mem_mb(), "ncores": os.cpu_count(), "gpu": _gpu_state()}
+    """Recorded at the START of each cell: the load average, available memory and core count the void rule reads (heavy_void), the
+    reclaimable memory and swap in use as a record (void_rule.py: a record taken under this rule can be told from the old one),
+    and the GPU and thermal state."""
+    m = {"loadavg": _loadavg(), "free_mem_mb": free_mem_mb(), "ncores": os.cpu_count(), "gpu": _gpu_state(),
+         "reclaimable_mb": _reclaimable_mb(), "swap_mb": swap_used_mb()}
     th = thermal_state()
     if th:
         m["therm"] = th

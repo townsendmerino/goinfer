@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """bench_peer.py's heavy-load void (owner rule 2026-10-19; CLAUDE.md "Run budget"): a cell whose start finds this box's load
-above half its cores, or its free memory under the fit need plus 2 GB, is void, listed, and re-run in place, never averaged.
+above half its cores, or its available memory (the fit guard's reading) under the fit need, is void, listed, and re-run in place,
+never averaged; swap that grows during a cell voids it (void_rule.py, the one definition; Francis, 2026-11-08).
 Driven through main()'s cell loop with a fake sampler, and checked against a plant (the rule removed: the heavy start's run is
 averaged). Run: python3 -B scripts/test_bench_peer_heavy.py"""
 import json
@@ -14,7 +15,7 @@ import bench_peer  # noqa: E402
 
 CLEAN = {"loadavg": [1.0, 1.0, 1.0], "free_mem_mb": 9000, "ncores": 8, "gpu": None}
 LOADED = {"loadavg": [4.5, 3.0, 2.0], "free_mem_mb": 9000, "ncores": 8, "gpu": None}
-SHORT = {"loadavg": [1.0, 1.0, 1.0], "free_mem_mb": 2500, "ncores": 8, "gpu": None}
+SHORT = {"loadavg": [1.0, 1.0, 1.0], "free_mem_mb": 900, "ncores": 8, "gpu": None}  # under the 1 GB fit need the MainLoop cell declares
 RULE = bench_peer.heavy_void  # the fake run's own judge of a heavy start, untouched by the plant
 
 
@@ -30,9 +31,9 @@ class Rule(unittest.TestCase):
         self.assertIn("above half of 8 cores", bench_peer.heavy_void(LOADED, None))
         self.assertIn("above half of 16 cores", bench_peer.heavy_void(dict(LOADED, loadavg=[8.5, 0, 0], ncores=16), None))
 
-    def test_free_memory_under_need_plus_2gb(self):
-        self.assertIsNone(bench_peer.heavy_void(dict(CLEAN, free_mem_mb=1000 + 2048), 1000))
-        self.assertIn("below the fit need", bench_peer.heavy_void(dict(CLEAN, free_mem_mb=1000 + 2047), 1000))
+    def test_available_memory_under_the_need(self):
+        self.assertIsNone(bench_peer.heavy_void(dict(CLEAN, free_mem_mb=1000), 1000), "exactly the need starts: no margin")
+        self.assertIn("below the fit need", bench_peer.heavy_void(dict(CLEAN, free_mem_mb=999), 1000))
         self.assertIsNone(bench_peer.heavy_void(SHORT, None), "no model load: the memory clause does not apply")
 
     def test_fit_need_sources(self):
@@ -46,11 +47,13 @@ class Rule(unittest.TestCase):
         self.assertEqual(bench_peer.fit_need("anything"), (3072, "BENCH_FIT_NEED_GB"))
 
     def test_free_memory_is_goinfers_reading(self):
-        # The void rule reads cmd/hostmem's reclaimable figure (scripts/hostmem.py), not the fit guard's available one; no formula here.
+        # The void rule reads the fit guard's own available figure (cmd/hostmem via scripts/hostmem.py); the reclaimable one is only recorded.
         import hostmem
-        saved = hostmem.reclaimable_mb
-        self.addCleanup(setattr, hostmem, "reclaimable_mb", saved)
-        hostmem.reclaimable_mb = lambda *a, **k: 12345
+        saved, saved_r = hostmem.available_mb, hostmem.reclaimable_mb
+        self.addCleanup(setattr, hostmem, "available_mb", saved)
+        self.addCleanup(setattr, hostmem, "reclaimable_mb", saved_r)
+        hostmem.available_mb = lambda *a, **k: 12345
+        hostmem.reclaimable_mb = lambda *a, **k: 1
         self.assertEqual(bench_peer.free_mem_mb(), 12345)
 
     def test_refuses_when_every_start_is_void(self):
@@ -101,7 +104,7 @@ class MainLoop(unittest.TestCase):
     def test_a_heavy_start_is_listed_and_the_cell_reruns_clean(self):
         rec = self.run_main()
         self.assertEqual(rec["mean"], 100.0, "the cell's rates came from a heavy start")
-        self.assertEqual([v["void"].split()[0] for v in rec["void_starts"]], ["load", "free"])
+        self.assertEqual([v["void"].split()[0] for v in rec["void_starts"]], ["load", "available"])
         self.assertEqual(rec["machine"]["free_mem_mb"], 9000)
         self.assertEqual((rec["machine"]["fit_need_mb"], rec["machine"]["fit_need_source"]), (1024, "BENCH_FIT_NEED_GB"))
 

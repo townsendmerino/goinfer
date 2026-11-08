@@ -40,7 +40,7 @@ usage:
 
 serve starts a job when: its --not-before HH:MM has passed and its estimate ends by the deadline after it (a night-only job);
 its retry time has passed; the box is not under heavy load (1-min load at most half the cores, free memory at least the job's
---fit-need-gb plus 2 GB); and the timing lock is free. It takes the lock, then waits SERVE_SETTLE_S with the box quiet, then
+--fit-need-gb); and the timing lock is free. It takes the lock, then waits SERVE_SETTLE_S with the box quiet, then
 runs the before_queue step and the job under that lock. A job that exits 75 (its own check refused) is re-queued every
 RETRY_BACKOFF_MIN until --retry-until, or RETRY_MAX tries, then recorded VOID-refused. It holds the machine awake while a job
 runs and, on AC power, while a night-only job is due within AWAKE_AHEAD_H hours, and the day's SUMMARY.md says when it slept.
@@ -107,7 +107,6 @@ RETRY_MAX = int(os.environ.get("NIGHT_RETRY_MAX", "8"))  # attempts when a job s
 SERVE_POLL_S = float(os.environ.get("NIGHT_SERVE_POLL_S", "30"))
 SERVE_SETTLE_S = float(os.environ.get("NIGHT_SERVE_SETTLE_S", "60"))  # the lock held, the box quiet, this long before a job starts
 AWAKE_AHEAD_H = 12               # hold the machine awake when a night-only job is due within this many hours
-HEADROOM_MB = 2048               # the 2026-10-19 rule: free memory under a job's fit need plus 2 GB is heavy load
 
 
 # ---------------------------------------------------------------- helpers
@@ -995,6 +994,8 @@ class Runner:
                 record_reading(t0, name, in_night(t0), avail)  # the box at night, whichever job read it (as backfill reads)
             else:
                 self.log(f"{name}: the available reading failed (cmd/hostmem), so no reading is recorded for the night profile")
+            j["readings"] = {"start": readings()}
+            f.write(f"=== READINGS start {json.dumps(j['readings']['start'])}\n")
             f.flush()
             j["_out_from"] = f.tell()  # where the job's own output starts: the header above (its note, its cmd) is not scanned
             # TE9: the job holds the timing lock, and its children (a run-*.sh, bench_peer.py) inherit it through the
@@ -1046,7 +1047,17 @@ class Runner:
                 self.kill_job(f"timeout {j['timeout_min']} min")
                 outcome = "timeout"
         rc = self.proc.returncode
-        f.write(f"\n=== END      {now().strftime('%F %T %Z')}  rc={rc}\n")
+        # The void rule's in-cell swap bar (void_rule.py): system swap that grew while the job ran voids what it measured. The line is a
+        # VOID marker before the END line, so an otherwise clean job is FAILED, naming the growth; the four readings at the end are
+        # recorded either way.
+        end = readings()
+        j["readings"]["end"] = end
+        f.write(f"\n=== READINGS end {json.dumps(end)}\n")
+        import void_rule
+        swap_why = void_rule.swap_void(j["readings"]["start"], end)
+        if swap_why:
+            f.write(f"VOID: {swap_why}\n")
+        f.write(f"=== END      {now().strftime('%F %T %Z')}  rc={rc}\n")
         f.flush()
         if outcome is None:
             outcome = "ok" if rc == 0 else ("retry" if rc == RETRY_RC and self.retries else f"FAILED rc={rc}")
@@ -1209,12 +1220,17 @@ def fcntl_flock(fd):
     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
+def readings():
+    """The four readings a job records at its start and end (void_rule.snapshot): load, available and reclaimable memory, swap in use."""
+    import void_rule
+    return void_rule.snapshot()
+
+
 def free_mem_mb():
-    """This box's free memory in MiB for a job's start check (fit need + 2 GB): the reclaimable figure cmd/hostmem prints
-    (scripts/hostmem.py), what a timed job can take without macOS compressing or swapping other memory under it, not the
-    load-decision figure. None when unreadable."""
+    """This box's available memory in MiB for a job's start check (the fit need, no margin): the figure the fit guard decides loads by
+    (cmd/hostmem via scripts/hostmem.py), the one void_rule.py reads. None when unreadable."""
     import hostmem
-    return hostmem.reclaimable_mb()
+    return hostmem.available_mb()
 
 
 def night_start(hhmm, added, deadline=DEFAULT_DEADLINE):
@@ -1279,8 +1295,8 @@ class Server(Runner):
             return f"load {la:.2f} above half of {n} cores"
         need = float(j.get("fit_need_gb") or 0) * 1024
         free = self.free_mb()
-        if need and free is not None and free < need + HEADROOM_MB:
-            return f"free memory {free} MB under the job's fit need {need:.0f} MB + {HEADROOM_MB} MB"
+        if need and free is not None and free < need:
+            return f"available memory {free} MB under the job's fit need {need:.0f} MB"
         return None
 
     def eligible(self, j, t):
@@ -1789,7 +1805,7 @@ def main():
                    help="queue a command that is already queued (a pre-registered repeat only)")
     s.add_argument("--not-before", metavar="HH:MM", help="night-only: start no earlier than this, and end by the deadline after it")
     s.add_argument("--retry-until", metavar="HH:MM", help=f"an exit {RETRY_RC} (the job's own check refused) re-queues it until then")
-    s.add_argument("--fit-need-gb", type=float, help="memory the job needs; serve starts it only with this plus 2 GB free")
+    s.add_argument("--fit-need-gb", type=float, help="memory the job needs; serve starts it only with at least this much available (the fit guard's reading)")
     s.add_argument("--fit-model", action="append", metavar="PATH",
                    help="a checkpoint the job loads (repeatable): priced at queue time with `fit -profile` on this box's recorded "
                         "profile (night for --not-before, else day); a load it would refuse is not queued")
