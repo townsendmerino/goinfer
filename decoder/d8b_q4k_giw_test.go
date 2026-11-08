@@ -887,3 +887,100 @@ func TestPlan_metalAdmitsAQ4KLoadThroughItsSidecar(t *testing.T) {
 		}
 	}
 }
+
+// phi3Q4KTinyPath is a synthetic Phi-3 GGUF with Q4_K projections (random blocks: no real weights), small enough to commit, so the
+// paths keyed on the family and the file's Q4_K blocks (the activation-hazard default, the q4k lane, fit) run without ~/models.
+const phi3Q4KTinyPath = "../testdata/phi3-q4k-tiny.gguf"
+
+// phi3Q4KTinyGGUF is phi3Q4KTinyPath's bytes: one layer of Phi-3's fused attn_qkv and ffn_up (gate‖up) at the smallest Q4_K
+// width, 256, with f32 embeddings and norms.
+func phi3Q4KTinyGGUF(t *testing.T) []byte {
+	t.Helper()
+	const arch, hidden, heads, hd, inter, vocab, layers = "phi3", 256, 4, 64, 256, 64, 1
+	toks := make([]string, vocab)
+	for i := range toks {
+		toks[i] = string(rune('a'+i%26)) + strings.Repeat("x", i/26)
+	}
+	kvs := []ggufKV{
+		kvStr("general.architecture", arch),
+		kvU32(arch+".context_length", 256), kvU32(arch+".embedding_length", hidden),
+		kvU32(arch+".block_count", layers), kvU32(arch+".attention.head_count", heads),
+		kvU32(arch+".attention.head_count_kv", heads), kvU32(arch+".feed_forward_length", inter),
+		kvU32(arch+".rope.dimension_count", hd),
+		kvF32(arch+".attention.layer_norm_rms_epsilon", 1e-5), kvF32(arch+".rope.freq_base", 10000),
+		kvStr("tokenizer.ggml.model", "gpt2"), kvStrArr("tokenizer.ggml.tokens", toks),
+	}
+	r := rand.New(rand.NewPCG(3, 4))
+	f32 := func(name string, dims []uint64, n int, one bool) ggufRawTensor {
+		b := make([]byte, 0, 4*n)
+		for i := range n {
+			v := float32(0.02 * float64(i%13-6))
+			if one {
+				v = 1
+			}
+			b = append(b, gF32(v)...)
+		}
+		return ggufRawTensor{name, dims, 0, b}
+	}
+	q4k := func(name string, out, in int) ggufRawTensor {
+		wm := q4kTestMat(t, r, out, in)
+		raw, _ := wm.Q4K()
+		return ggufRawTensor{name, []uint64{uint64(in), uint64(out)}, 12, raw}
+	}
+	ts := []ggufRawTensor{
+		f32("token_embd.weight", []uint64{hidden, vocab}, vocab*hidden, false),
+		f32("output_norm.weight", []uint64{hidden}, hidden, true),
+		f32("output.weight", []uint64{hidden, vocab}, vocab*hidden, false),
+	}
+	for l := range layers {
+		b := fmt.Sprintf("blk.%d.", l)
+		ts = append(ts,
+			f32(b+"attn_norm.weight", []uint64{hidden}, hidden, true),
+			q4k(b+"attn_qkv.weight", 3*heads*hd, hidden),
+			q4k(b+"attn_output.weight", hidden, heads*hd),
+			f32(b+"ffn_norm.weight", []uint64{hidden}, hidden, true),
+			q4k(b+"ffn_up.weight", 2*inter, hidden),
+			q4k(b+"ffn_down.weight", hidden, inter),
+		)
+	}
+	return buildGGUFRaw(kvs, ts)
+}
+
+// TestPhi3Q4KTinyFixture holds the committed fixture to its generator (-update rewrites it) and checks it is what its callers take
+// it for: a Phi-3 by its header, whose q4k load keeps every projection as Q4_K blocks.
+func TestPhi3Q4KTinyFixture(t *testing.T) {
+	want := phi3Q4KTinyGGUF(t)
+	if *updateMatrix {
+		if err := os.WriteFile(phi3Q4KTinyPath, want, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := os.ReadFile(phi3Q4KTinyPath)
+	if err != nil {
+		t.Fatalf("%v (go test ./decoder -run TestPhi3Q4KTinyFixture -update writes it)", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("%s is not what phi3Q4KTinyGGUF builds (-update rewrites it)", phi3Q4KTinyPath)
+	}
+	if mt := PeekModelType(phi3Q4KTinyPath); mt != "phi3" {
+		t.Errorf("PeekModelType = %q, want phi3", mt)
+	}
+	src := filepath.Join(t.TempDir(), "phi3-q4k-tiny.gguf") // a load beside the committed file would write its sidecar there
+	if err := os.WriteFile(src, got, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Load(src, Options{Backend: "cpu", Quant: "q4k", DirectLoad: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	l := &m.w.Layers[0]
+	for _, w := range []*linalg.WeightMat{&l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GateProj, &l.UpProj, &l.DownProj} {
+		if _, ok := w.Q4K(); !ok {
+			t.Errorf("a %dx%d projection loads as %q, want Q4_K blocks", w.Rows(), w.Cols(), w.Kind())
+		}
+	}
+	if logits := d8bLogits(t, m); len(logits) != 8*64 {
+		t.Errorf("8 forwards give %d logits, want 8 x the vocab's 64", len(logits))
+	}
+}
