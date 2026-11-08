@@ -195,11 +195,8 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 				useGPU = true
 				g.DecodeResident = true
 				gpuPos = len(ids)
-				if capper, ok := m.resident.(ResidentCapped); ok {
-					if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-						maxTokens = ctxCap - gpuPos
-						g.BudgetClamped = true // the resident cap (not the request) bounds this turn
-					}
+				if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
+					maxTokens, g.BudgetClamped = c, true
 				}
 			}
 		}
@@ -276,11 +273,8 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 	}
 	g.ImgPrefillResident, g.DecodeResident = true, true
 	gpuPos := len(ids)
-	if capper, ok := m.resident.(ResidentCapped); ok {
-		if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-			maxTokens = ctxCap - gpuPos
-			g.BudgetClamped = true
-		}
+	if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
+		maxTokens, g.BudgetClamped = c, true
 	}
 	g.Budget = maxTokens
 	sampler := NewSampler(sp)

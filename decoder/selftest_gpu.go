@@ -261,8 +261,8 @@ func probeFixture(backend, quant, name string, positions int, worst *probeWorst)
 // residentPrecision is the quant a resident actually computes at: what it reports (ResidentQuantReporter), else the int4
 // residentQuantLabel names for a re-quantizing (backend, quant), else the load quant.
 func residentPrecision(backend, quant string, rf ResidentForward) string {
-	if qr, ok := rf.(ResidentQuantReporter); ok && qr.ResidentQuant() != "" {
-		return qr.ResidentQuant()
+	if q := reportedQuant(rf); q != "" {
+		return q
 	}
 	if residentQuantLabel(backend, quant) != quant {
 		return "int4"
