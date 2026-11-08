@@ -1369,7 +1369,7 @@ class NightProfile(unittest.TestCase):
         self.assertEqual(prof["name"], "box-night")
         self.assertEqual(night.percentile([2900, 3900, 4600, 6400, 6400, 6600, 6900, 7000, 7400, 7500, 7700], 25), 5500)
 
-    def test_too_few_readings_fall_back_to_the_day_profile_with_a_warning(self):
+    def too_few_readings_scenario(self):
         """G-NP-2: under 5 readings or 3 nights, a night job is priced on the apps-open profile, and add says why."""
         for d in range(2):
             for mb in (5000, 6000, 7000):
@@ -1385,11 +1385,37 @@ class NightProfile(unittest.TestCase):
         for d in range(2):
             for mb in (5000, 6000, 7000):
                 night.record_reading(self.at(d, 23), "j", True, mb, path=self.readings, host="macbookpro.lan")
-        checks, refusals, warnings = night.fit_check(["m.gguf"], [""], True, "macbookpro.lan", self.dir, run=fake,
-                                                     readings_path=self.readings, night_profile_path=self.dir / "p.json")
+        # fit_check prices on night.now(): pin it to the test's own clock (night of 2026-10-26), or the window slides with the day the
+        # test runs on and the readings, dated 24 to 26 October, fall out of it
+        saved_now = night.now
+        night.now = lambda: self.t
+        try:
+            checks, refusals, warnings = night.fit_check(["m.gguf"], [""], True, "macbookpro.lan", self.dir, run=fake,
+                                                         readings_path=self.readings, night_profile_path=self.dir / "p.json")
+        finally:
+            night.now = saved_now
         self.assertEqual(checks[0]["profile"], "m1pro-apps-open")
-        self.assertTrue(any("6 night readings over 2 nights" in w and "m1pro-apps-open" in w for w in warnings), warnings)
+        want = ("only 6 night readings over 2 nights in the last 14 (the night profile needs 5 over 3): "
+                "this night job is priced on the m1pro-apps-open profile")
+        self.assertIn(want, warnings)
         self.assertTrue(calls[0][calls[0].index("-profile") + 1].endswith("m1pro-apps-open.json"))
+
+    def test_too_few_readings_fall_back_to_the_day_profile_with_a_warning(self):
+        self.too_few_readings_scenario()
+
+    def test_the_scenario_does_not_read_the_wall_clock(self):
+        """The readings are dated 2026-10-24 to 26; fit_check prices on night.now(). Run under any later wall clock the scenario must
+        say the same thing: it is the test's clock that is fixed, not the day it runs on."""
+        for i, when in enumerate(("2026-11-08T22:30:00", "2026-11-09T12:00:00", "2027-03-01T12:00:00")):
+            with self.subTest(wall_clock=when):
+                saved = night.now
+                self.addCleanup(setattr, night, "now", saved)
+                self.readings = self.dir / f"memory-{i}.jsonl"  # a fresh log each time: the scenario writes its own readings
+                night.now = lambda w=dt.datetime.fromisoformat(when).astimezone(): w
+                try:
+                    self.too_few_readings_scenario()
+                finally:
+                    night.now = saved
 
     def run_at(self, hour, name, avail=4321):
         """Runs one queued job through the real runner with the clock at hour today; returns its log text and new readings."""
