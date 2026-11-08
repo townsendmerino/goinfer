@@ -2212,6 +2212,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		}
 		if g := L.geom; g != nil {
 			r.decode.layers[l].attn, r.decode.layers[l].window = true, L.window
+			r.decode.qGate = r.decode.qGate || L.qGate
 			if !seen[g] {
 				seen[g] = true
 				r.decode.geoms = append(r.decode.geoms, g)

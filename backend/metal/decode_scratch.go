@@ -20,6 +20,7 @@ type decodeShape struct {
 	mamba              *mambaParams
 	mla                *mlaParams
 	attnSink           uint32        // 1 where the attention layers add learned sinks
+	qGate              bool          // a layer runs gated attention: its [query ‖ gate] row and split gate are held
 	geoms              []*attnGeom   // each distinct attention geometry once, its uniforms set into it
 	layers             []decodeLayer // one a layer, in order
 	families           []stepBuf     // what the family builders declared (scratchList): the MoE kinds and the paged fence
@@ -138,7 +139,7 @@ func (s decodeShape) buffers(r *resident) []stepBuf {
 		buf(stepFloats, &r.pleSc, 1)
 		u32(&r.uPleP, uint32(P))
 	}
-	if dp := s.dnet; dp != nil { // the Gated DeltaNet mixer's rows, and its gated-attention layers' [query ‖ gate]
+	if dp := s.dnet; dp != nil { // the Gated DeltaNet mixer's rows
 		buf(stepFloats, &r.dnMixed, dp.convDim)
 		buf(stepFloats, &r.dnConvOut, dp.convDim)
 		buf(stepFloats, &r.dnBt, dp.nv)
@@ -151,8 +152,6 @@ func (s decodeShape) buffers(r *resident) []stepBuf {
 		buf(stepFloats, &r.dnGated, dp.valueDim)
 		buf(stepBytes, &r.dnGq, dp.valueDim)
 		buf(stepFloats, &r.dnGSc, 1)
-		buf(stepFloats, &r.dnQg, 2*s.nHhd)
-		buf(stepFloats, &r.dnAGate, s.nHhd)
 		u32(&r.uDnConvDim, uint32(dp.convDim))
 		u32(&r.uDnK, uint32(dp.convK))
 		u32(&r.uDnNv, uint32(dp.nv))
@@ -168,6 +167,10 @@ func (s decodeShape) buffers(r *resident) []stepBuf {
 		if dp.oNormEps != 0 { // else the model's epsilon: buildResident binds uEps itself
 			f32Of(&r.uDnONormEps, dp.oNormEps)
 		}
+	}
+	if s.qGate { // gated attention's [query ‖ gate] q_proj output and its split gate
+		buf(stepFloats, &r.dnQg, 2*s.nHhd)
+		buf(stepFloats, &r.dnAGate, s.nHhd)
 	}
 	if p := s.mamba; p != nil { // the Mamba-2 mixer: in_proj's output, the conv's, the scan's and the gated norm's, and its uniforms
 		buf(stepFloats, &r.mbProj, p.projDim)

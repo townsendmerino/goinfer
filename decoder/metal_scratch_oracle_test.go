@@ -99,9 +99,12 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 		bytes += int64(P)
 		u32s++
 	}
-	if _, hk, hv, nk, nv, _, ok := m.Qwen35ResidentParams(); ok { // the Gated DeltaNet mixer and gated attention's [query ‖ gate]
+	if _, hk, hv, nk, nv, attnGate, ok := m.Qwen35ResidentParams(); ok { // the Gated DeltaNet mixer and gated attention's [query ‖ gate]
 		keyDim, valueDim := nk*hk, nv*hv
-		f32 += int64(2*(2*keyDim+valueDim) + 2*nv + 2*nv + 2*keyDim + 3*valueDim + 1 + 2*nHhd + nHhd)
+		f32 += int64(2*(2*keyDim+valueDim) + 2*nv + 2*nv + 2*keyDim + 3*valueDim + 1)
+		if attnGate {
+			f32 += int64(2*nHhd + nHhd)
+		}
 		bytes += int64(valueDim)
 		u32s += 12
 		if eps, oEps := m.metalDeltaNetEpsByFamily(); oEps != 0 && oEps != eps {
@@ -192,21 +195,21 @@ func TestMetalDecodeScratch_fromTheDeclarations(t *testing.T) {
 				t.Errorf("%s %s: %v", f, c.Name, err)
 				continue
 			}
-			nE, k, _ := m.moeGeometry()
-			for _, slots := range []int{0, k} {
-				if slots == k && k >= nE {
-					continue
-				}
+			slotCounts := []int{0}
+			if nE, k, _ := m.moeGeometry(); k > 0 && k < nE {
+				slotCounts = append(slotCounts, k) // a paged slot count
+			}
+			for _, slots := range slotCounts {
 				if got, want := m.MetalDecodeScratchBytes(slots), m.metalDecodeScratchByFamily(slots); got != want {
 					t.Errorf("%s %s at %d slots: priced from the declarations %d bytes, by family %d (%+d)", f, c.Name, slots, got, want, got-want)
 				}
 			}
-			rows++
+			rows += len(slotCounts)
 			m.Close()
 		}
 	}
-	if rows < 50 {
-		t.Errorf("only %d rows compared", rows)
+	if rows < 300 {
+		t.Errorf("only %d prices compared", rows)
 	}
-	t.Logf("%d rows compared", rows)
+	t.Logf("%d prices compared", rows)
 }
