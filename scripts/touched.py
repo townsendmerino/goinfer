@@ -62,13 +62,15 @@ def classify(mod, args, targs, env):
     test would pass vacuously), else "ok"."""
     if not args:
         return {}
-    r = sh("go", "list", "-e", "-json=Dir,Error,GoFiles,CgoFiles,TestGoFiles,XTestGoFiles", *targs, *args, cwd=mod or ".", env=env)
+    r = sh("go", "list", "-e", "-json=Dir,ImportPath,Error,GoFiles,CgoFiles,TestGoFiles,XTestGoFiles", *targs, *args, cwd=mod or ".", env=env)
     root = os.path.realpath(mod or ".")
     out, dec, buf = {}, json.JSONDecoder(), r.stdout.strip()
     while buf:
         p, n = dec.raw_decode(buf)
         buf = buf[n:].lstrip()
-        key = os.path.normpath(os.path.relpath(os.path.realpath(p.get("Dir", "")), root))
+        # A package go list could not find has no Dir; it is keyed by its ImportPath, which go list echoes as the relative pattern given.
+        rp = os.path.relpath(os.path.realpath(p["Dir"]), root) if p.get("Dir") else ""
+        key = os.path.normpath(rp if rp and not rp.startswith("..") else p.get("ImportPath", ""))
         err = (p.get("Error") or {}).get("Err", "")
         if err and EXCLUDED in err:
             out[key] = "empty"
@@ -78,9 +80,16 @@ def classify(mod, args, targs, env):
             out[key] = "notests"
         else:
             out[key] = "ok"
-    if r.returncode != 0 and not out:
-        out = {os.path.normpath(a): "error: " + (r.stderr.strip().splitlines() or ["go list failed"])[0] for a in args}
+    # Fail closed: an arg go list gave no entry for is an error, never a default.
+    why = (r.stderr.strip().splitlines() or ["go list reported nothing for it"])[0]
+    for a in args:
+        out.setdefault(os.path.normpath(a), "error: " + why)
     return out
+
+
+def kind(kinds, a):
+    """classify()'s verdict for arg a; a package it did not key is an error, not "ok"."""
+    return kinds.get(os.path.normpath(a), f"error: go list did not classify {a}")
 
 
 def step(name, fn):
@@ -209,14 +218,14 @@ def check_module(mod, label, files, tests, target_os, skips, host_os=None):
         kinds = classify(mod, args, tagarg, env)
         # The module build runs only when a touched package is built for the target, so a diff whose every package is excluded judges
         # nothing here and the run stays INCONCLUSIVE rather than PASS.
-        if any(kinds.get(os.path.normpath(a), "ok") != "empty" for a in args):
+        if any(kind(kinds, a) != "empty" for a in args):
             bad += not step(f"build {label}", lambda: mrun("go", "build", *tagarg, "./..."))
         else:
             print(f"  skip build {label}: every touched package is excluded for {target_os}")
             skips.append(f"build {label} (no files for {target_os})")
         live = []
         for a in args:
-            k = kinds.get(os.path.normpath(a), "ok")
+            k = kind(kinds, a)
             if k == "empty":
                 print(f"  skip vet {label}/{os.path.normpath(a)}: build constraints exclude all its files for {target_os}" + (" untagged" if cuda_off_linux else ""))
                 skips.append(f"vet {label}/{os.path.normpath(a)} (no files for {target_os})")
@@ -239,7 +248,7 @@ def check_module(mod, label, files, tests, target_os, skips, host_os=None):
         if m != mod:
             continue
         name = d or "."
-        k = classify(mod, [rel(d)], tagarg, env).get(os.path.normpath(rel(d)), "ok")
+        k = kind(classify(mod, [rel(d)], tagarg, env), rel(d))
         if k == "empty":
             print(f"  skip test {name}: build constraints exclude all its files for {target_os}")
             skips.append(f"test {name} (no files for {target_os})")
@@ -252,7 +261,8 @@ def check_module(mod, label, files, tests, target_os, skips, host_os=None):
             bad += not step(f"list {name}", lambda k=k: (False, k))
             continue
         if target_os != host_os:
-            print(f"  skip test {name}: GOOS={target_os} on a {host_os} host builds and vets only (a {target_os} test binary cannot run here)")
+            what = "builds and vets only" if files else "runs nothing for it (no .go file of this module changed, so nothing was built or vetted)"
+            print(f"  skip test {name}: GOOS={target_os} on a {host_os} host {what}: a {target_os} test binary cannot run here")
             skips.append(f"test {name} (cross target {target_os})")
             continue
         runarg = (["-run", sel] if sel else []) + (["-short"] if name in SLOW else [])

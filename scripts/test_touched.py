@@ -233,6 +233,9 @@ class PackagesForTheTarget(_KeepsRAN):
             "notests/a_test.go": tag + "package notests\n",
             "ok/a.go": "package ok\n\nfunc F() int { return 1 }\n",
             "ok/a_test.go": "package ok\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {}\n",
+        })
+        _scratch(os.path.join(cls.tmp, "b"), {  # its own module, so its failing build cannot hide one of m's
+            "go.mod": "module b\n\ngo 1.21\n",
             "broken/a.go": "pakage broken\n",
         })
         never = "//go:build touched_never\n\n"
@@ -268,29 +271,41 @@ class PackagesForTheTarget(_KeepsRAN):
         return bad, out.getvalue()
 
     def test_classify(self):
-        got = touched.classify("m", ["./empty", "./testonly", "./notests", "./ok", "./broken"], [], self.env)
-        self.assertEqual(got["empty"], "empty")
-        self.assertEqual(got["testonly"], "ok")
-        self.assertEqual(got["notests"], "notests")
-        self.assertEqual(got["ok"], "ok")
-        self.assertTrue(got["broken"].startswith("error: "), got["broken"])
+        got = touched.classify("m", ["./empty", "./testonly", "./notests", "./ok"], [], self.env)
+        self.assertEqual(got, {"empty": "empty", "testonly": "ok", "notests": "notests", "ok": "ok"})
+        got = touched.classify("b", ["./broken"], [], self.env)
+        self.assertTrue(got["broken"].startswith("error: "), got)
 
-    def test_check_module_skips_by_name_and_fails_the_broken(self):
+    def test_classify_keys_a_package_with_no_dir_by_its_arg(self):
+        # go list gives a missing package no Dir. It is keyed by the arg, as an error, and nothing else is keyed in its place.
+        got = touched.classify("m", ["./ok", "./nope"], [], self.env)
+        self.assertEqual(set(got), {"ok", "nope"}, got)
+        self.assertEqual(got["ok"], "ok")
+        self.assertTrue(got["nope"].startswith("error: "), got)
+
+    def test_check_module_skips_by_name(self):
         skips = []
-        files = ["m/empty/a.go", "m/testonly/a_test.go", "m/notests/a.go", "m/ok/a.go", "m/broken/a.go"]
-        tests = {("m", "m/empty"): "", ("m", "m/notests"): "", ("m", "m/broken"): "", ("m", "m/ok"): ""}
+        files = ["m/empty/a.go", "m/testonly/a_test.go", "m/notests/a.go", "m/ok/a.go"]
+        tests = {("m", "m/empty"): "", ("m", "m/notests"): "", ("m", "m/ok"): ""}
         bad, text = self._check(self.env, "m", "m", files, tests, self.target, skips, host_os=self.host)
+        self.assertEqual(bad, 0, text)  # no broken package shares this module, so a failing build here is m's own
+        self.assertRegex(text, r"ok\s+build m ")
         self.assertIn(f"skip vet m/empty: build constraints exclude all its files for {self.target}", text)
         self.assertIn(f"vet m/empty (no files for {self.target})", skips)
         self.assertIn(f"test m/empty (no files for {self.target})", skips)
         self.assertIn(f"test m/notests (no test files for {self.target})", skips)
         self.assertRegex(text, r"ok\s+vet m \(3 pkg\)")  # testonly, notests and ok vet clean; a vet failure would fail this
-        self.assertIn("FAIL list m/broken", text)  # a go list error is a failure, never a skip
-        self.assertNotIn("m/broken (no files", " ".join(skips))
-        # The failures are exactly: the module build (broken is in it), broken's listing before vet, and its listing before test.
-        self.assertEqual(bad, 3, text)
         self.assertIn(f"test m/ok (cross target {self.target})", skips)  # a cross target's tests do not run
         self.assertNotIn("test m/ok", " ".join(touched.RAN))
+
+    def test_check_module_fails_the_broken(self):
+        skips = []
+        bad, text = self._check(self.env, "b", "b", ["b/broken/a.go"], {("b", "b/broken"): ""}, self.target, skips, host_os=self.host)
+        self.assertRegex(text, r"FAIL\s+build b ")
+        self.assertIn("FAIL list b/broken", text)  # a go list error is a failure, never a skip
+        self.assertNotIn("b/broken (no files", " ".join(skips))
+        # The failures are exactly: the module build, broken's listing before vet, and its listing before test.
+        self.assertEqual(bad, 3, text)
 
     def test_a_run_selecting_only_excluded_tests_is_a_skip(self):
         skips = []
@@ -317,7 +332,7 @@ class CudaCrossChecks(_KeepsRAN):
     """check_module() on backend/cuda vets the other OS's build module-wide, both ways, and a target that is not the host runs no go test.
     It drives check_module through a spy for touched.sh, so it needs no Go toolchain."""
 
-    def _calls(self, target, host):
+    def _calls(self, target, host, files=("backend/cuda/x.go",), classified=(((".", "ok"),))):
         import contextlib
         import io
         from unittest import mock
@@ -328,8 +343,10 @@ class CudaCrossChecks(_KeepsRAN):
             return subprocess.CompletedProcess(a, 0, "", "")
 
         tests = {("backend/cuda", "backend/cuda"): "^(TestX)$"}
-        with mock.patch.object(touched, "sh", spy), mock.patch.object(touched, "classify", lambda *a: {}), contextlib.redirect_stdout(io.StringIO()):
-            touched.check_module("backend/cuda", "backend/cuda", ["backend/cuda/x.go"], tests, target, [], host_os=host)
+        with mock.patch.object(touched, "sh", spy), mock.patch.object(touched, "classify", lambda *a: dict(classified)), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            touched.check_module("backend/cuda", "backend/cuda", files, tests, target, [], host_os=host)
+        self.out = out.getvalue()
         return calls
 
     def test_both_ways(self):
@@ -345,7 +362,24 @@ class CudaCrossChecks(_KeepsRAN):
         cross = self._calls("darwin", "linux")
         self.assertTrue(any(c[0][:2] == ("go", "test") for c in native), "a native target runs go test")
         self.assertFalse(any(c[0][:2] == ("go", "test") for c in cross), "GOOS=darwin on a linux host must not run go test")
-        self.assertTrue(any(c[0][:2] == ("go", "vet") and c[1] == "darwin" for c in cross), "but it still vets the darwin build")
+        # The touched package's own vet at the target GOOS: the native run's module-wide darwin cross-vet is a different call.
+        target_vet = (("go", "vet", "."), "darwin")
+        self.assertIn(target_vet, cross, "but it still vets the touched package for darwin")
+        self.assertNotIn(target_vet, native, "a call the native run also makes would not show the cross target was vetted")
+
+    def test_a_cross_target_with_no_go_file_claims_no_build(self):
+        calls = self._calls("darwin", "linux", files=())
+        self.assertEqual([c for c in calls if c[0][:2] in (("go", "vet"), ("go", "build"), ("go", "test"))], [])
+        self.assertIn("runs nothing for it", self.out)
+        self.assertNotIn("builds and vets", self.out)
+
+    def test_an_unclassified_package_fails(self):
+        # classify() keying nothing for a touched package is a failure, never a default "ok" that vets and tests it.
+        calls = self._calls("linux", "linux", classified=())
+        self.assertFalse(any(c[0][:2] == ("go", "test") for c in calls), self.out)
+        self.assertIn("FAIL list backend/cuda/.", self.out)  # before vet
+        self.assertIn("FAIL list backend/cuda ", self.out)  # before test
+        self.assertNotIn((("go", "vet", "-tags", "cuda goinfer_testhooks", "."), "linux"), calls, "an unclassified package is not vetted")
 
 
 if __name__ == "__main__":
