@@ -1,0 +1,22 @@
+[hlr    1.9s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw (tied head false): shape closed, 9 reps of 256 tokens per arm
+[hlr   59.3s] identity: 10 reps x 256 tokens, HL-R = today's path in every rep
+[hlr   59.3s] HL-R3 METRIC hlr/today closed qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: median 1.1351 (min 1.0315, max 1.1729), 9 of 9 pairs above 1; decode today 88.9, HL-R 101.1 tok/s (medians)
+--- PASS: TestHLRChainAB (59.39s)
+[hlr    0.6s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw (tied head false): shape toolcall, 9 reps of 256 tokens per arm
+[hlr   58.1s] identity: 10 reps x 256 tokens, HL-R = today's path in every rep
+[hlr   58.1s] HL-R3 METRIC hlr/today toolcall qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: median 1.0519 (min 1.0026, max 1.0992), 9 of 9 pairs above 1; decode today 92.6, HL-R 97.8 tok/s (medians)
+--- PASS: TestHLRChainAB (58.10s)
+== 7b-closed: VOID at start (attempt 1): load 1.21 (cap 4.0), reclaimable 6095 MiB (need 6596); waiting 60 s
+== 7b-closed: VOID at start (attempt 2): load 1.90 (cap 4.0), reclaimable 6013 MiB (need 6596); waiting 60 s
+== 7b-closed: VOID at start (attempt 3): load 3.52 (cap 4.0), reclaimable 5693 MiB (need 6596); waiting 60 s
+== 7b-closed: VOID at start (attempt 4): load 8.64 (cap 4.0), reclaimable 3898 MiB (need 6596); waiting 60 s
+== 7b-closed: VOID at start (attempt 5): load 4.94 (cap 4.0), reclaimable 3931 MiB (need 6596); waiting 60 s
+== 7b-closed: VOID at start (attempt 6): load 3.17 (cap 4.0), reclaimable 4217 MiB (need 6596); waiting 60 s
+== 7b-closed: never started, the guard stayed void for 6 attempts
+== 7b-toolcall: VOID at start (attempt 1): load 4.10 (cap 4.0), reclaimable 4277 MiB (need 6596); waiting 60 s
+== 7b-toolcall: VOID at start (attempt 2): load 3.10 (cap 4.0), reclaimable 4369 MiB (need 6596); waiting 60 s
+== 7b-toolcall: VOID at start (attempt 3): load 2.65 (cap 4.0), reclaimable 4670 MiB (need 6596); waiting 60 s
+== 7b-toolcall: VOID at start (attempt 4): load 2.47 (cap 4.0), reclaimable 4291 MiB (need 6596); waiting 60 s
+== 7b-toolcall: VOID at start (attempt 5): load 1.77 (cap 4.0), reclaimable 4596 MiB (need 6596); waiting 60 s
+== 7b-toolcall: VOID at start (attempt 6): load 1.26 (cap 4.0), reclaimable 4523 MiB (need 6596); waiting 60 s
+== 7b-toolcall: never started, the guard stayed void for 6 attempts
