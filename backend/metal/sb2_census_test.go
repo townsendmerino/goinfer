@@ -1281,8 +1281,9 @@ func TestMM5_buildRefusesADeclarationItsKernelsDoNotAddress(t *testing.T) {
 
 // TestMM5b_buildRefusesDecodeRowsItsKernelsDoNotAddress: Metal's build holds the program's declared per-row widths to what its decode
 // kernels address (decodeRowsCheck), so a declaration one element short, a row decode holds no buffer for, a missing row, a mixer's
-// rows on a model that runs no such mixer, and a gate wider than the FFN kernels are each refused, on a dense model and on Qwen3.5's
-// DeltaNet and gated attention; the declaration as built passes.
+// rows on a model that runs no such mixer, a gate wider than the FFN kernels, and a parallel block's row where none runs or missing
+// where one does are each refused, on a dense model, a parallel-block one and Qwen3.5's DeltaNet and gated attention; the
+// declaration as built passes.
 func TestMM5b_buildRefusesDecodeRowsItsKernelsDoNotAddress(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -1293,16 +1294,20 @@ func TestMM5b_buildRefusesDecodeRowsItsKernelsDoNotAddress(t *testing.T) {
 		plants map[string]func(map[string]int)
 	}{
 		{"../../testdata/llama-tiny", map[string]func(map[string]int){
-			"ctx a column short":                  func(r map[string]int) { r["ctx"]-- },
-			"a row decode holds no buffer for":    func(r map[string]int) { r["kda-q"] = 8 },
-			"no logits row":                       func(r map[string]int) { delete(r, "logits") },
-			"a DeltaNet row on a model with none": func(r map[string]int) { r["dn-mixed"] = 8 },
-			"a gate wider than the FFN kernels":   func(r map[string]int) { r["gate"] += 8 },
-			"no gate row":                         func(r map[string]int) { delete(r, "gate") },
-			"gate a column short":                 func(r map[string]int) { r["gate"]-- },
-			"v a column short":                    func(r map[string]int) { r["v"]-- },
-			"no k or v rows":                      func(r map[string]int) { delete(r, "k"); delete(r, "v") },
-			"a shared expert on a dense model":    func(r map[string]int) { r["shared-gate"], r["shared-up"] = 8, 8 },
+			"ctx a column short":                       func(r map[string]int) { r["ctx"]-- },
+			"a row decode holds no buffer for":         func(r map[string]int) { r["kda-q"] = 8 },
+			"no logits row":                            func(r map[string]int) { delete(r, "logits") },
+			"a DeltaNet row on a model with none":      func(r map[string]int) { r["dn-mixed"] = 8 },
+			"a gate wider than the FFN kernels":        func(r map[string]int) { r["gate"] += 8 },
+			"no gate row":                              func(r map[string]int) { delete(r, "gate") },
+			"gate a column short":                      func(r map[string]int) { r["gate"]-- },
+			"v a column short":                         func(r map[string]int) { r["v"]-- },
+			"no k or v rows":                           func(r map[string]int) { delete(r, "k"); delete(r, "v") },
+			"a shared expert on a dense model":         func(r map[string]int) { r["shared-gate"], r["shared-up"] = 8, 8 },
+			"a parallel block's row on a serial model": func(r map[string]int) { r["b"] = r["h"] },
+		}},
+		{"../../testdata/cohere-tiny", map[string]func(map[string]int){
+			"no parallel block's row": func(r map[string]int) { delete(r, "b") },
 		}},
 		{"../../decoder/selftestdata/qwen35-tiny", map[string]func(map[string]int){
 			"the gated row one short": func(r map[string]int) { r["dn-gated"]-- },
