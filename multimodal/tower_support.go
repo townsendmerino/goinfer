@@ -43,14 +43,11 @@ func DeclaredTower(backend, family string) bool {
 	return slices.Contains(declaredTowers[backend], family)
 }
 
-// DefaultTowerOnDevice reports whether backend runs family's tower on the device when the user asks for nothing. It is
-// DeclaredTower except for WebGPU's towers, which serve leaves on the CPU unless asked (-vision-device gpu, or
-// -vision-quant for Gemma 3's SigLIP): each becomes the default when its speed gate against the CPU tower reads
-// (docs/tasks/task-multimodal-support-2026-10.md, G-S12.3a-4, G-S12.3d-4, G-S12.3e-4 and G-S12.3f-4).
+// DefaultTowerOnDevice reports whether backend runs family's tower on the device when the user asks for nothing: every tower
+// the build declares (DeclaredTower). WebGPU's towers were opt-in until their speed gates read (G-S12.3a-4, G-S12.3d-4,
+// G-S12.3e-4, G-S12.3f-4, docs/completed/task-multimodal-support-2026-10.md, S12) and the default was applied (S12-defaults);
+// serve's -vision-device cpu keeps a tower on the CPU.
 func DefaultTowerOnDevice(backend, family string) bool {
-	if backend == "webgpu" {
-		return false
-	}
 	return DeclaredTower(backend, family)
 }
 
