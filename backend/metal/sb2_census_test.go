@@ -1298,6 +1298,11 @@ func TestMM5b_buildRefusesDecodeRowsItsKernelsDoNotAddress(t *testing.T) {
 			"no logits row":                       func(r map[string]int) { delete(r, "logits") },
 			"a DeltaNet row on a model with none": func(r map[string]int) { r["dn-mixed"] = 8 },
 			"a gate wider than the FFN kernels":   func(r map[string]int) { r["gate"] += 8 },
+			"no gate row":                         func(r map[string]int) { delete(r, "gate") },
+			"gate a column short":                 func(r map[string]int) { r["gate"]-- },
+			"v a column short":                    func(r map[string]int) { r["v"]-- },
+			"no k or v rows":                      func(r map[string]int) { delete(r, "k"); delete(r, "v") },
+			"a shared expert on a dense model":    func(r map[string]int) { r["shared-gate"], r["shared-up"] = 8, 8 },
 		}},
 		{"../../decoder/selftestdata/qwen35-tiny", map[string]func(map[string]int){
 			"the gated row one short": func(r map[string]int) { r["dn-gated"]-- },
