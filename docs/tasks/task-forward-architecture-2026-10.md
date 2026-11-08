@@ -4604,8 +4604,10 @@ does from `stepShape.buffers`.
 from (`decodeShape.buffers`, `batchRows`, `chainBuffers`). G-MS2 holds the ledger to it on every `TestMemGate_metal` row, MM7's
 `decode` gap row is gone, G-MS3 holds it to each registered fixture's config, and G-MS5 reads all IDENTICAL. Metal's scratch is the sum of
 its roles, each at its widest layer, not a high-water over operations (the coordinator agreed the same day). The program-side
-declaration, the plan's figure, G-MS1 and G-MS4 moved to their own item, MM5b (`docs/tasks/task-subsystems-2026-10.md`). Charging
-the figure in `NeedBytes` and narrowing `MetalFitMargin` change a guard threshold, so neither moves until Francis answers.
+declaration, the plan's figure, G-MS1 and G-MS4 moved to their own item, MM5b (`docs/tasks/task-subsystems-2026-10.md`).
+**Francis's call, 2026-11-07 17:26:** the figure is charged in `NeedBytes`, and `MetalFitMargin` stays at 384 MiB as a drift cushion
+(`docs/measurements/mm5-decode-scratch-2026-11/README.md`). This replaces "no decision moves" above for MM5b, whose gates
+the ledger row names.
 
 ## 5. Track RF — one ragged forward pass
 
