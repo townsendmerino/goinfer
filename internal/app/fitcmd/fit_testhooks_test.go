@@ -123,6 +123,17 @@ func TestPlanFor_metalPricesASourceAsItsSidecarRoute(t *testing.T) {
 			if from != src || before.Placement != fit.PlacementResident {
 				t.Fatalf("before the sidecar: fit planned %s (%v, %s), want the source, resident", from, before.Placement, before.Reason)
 			}
+			// The control: opened as the source itself, not as its sidecar's stand-in, it holds the row4 repack and a heap host copy.
+			plain, err := decoder.Load(src, decoder.Options{Quant: "int4", DirectLoad: true, ResidentContext: 64})
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := planFor(plain, "metal", 1<<40, fit.PlanRequest{Ctx: 64, CtxPinned: true})
+			plain.Close()
+			if p.DenseBytes <= before.DenseBytes || p.HostCopyBytes <= before.HostCopyBytes {
+				t.Fatalf("the source opened as itself prices dense %d, host copy %d B, no more than its stand-in's %d, %d B: the test cannot see the layout",
+					p.DenseBytes, p.HostCopyBytes, before.DenseBytes, before.HostCopyBytes)
+			}
 			sidecar := decoder.SidecarPath(src, "int4", "metal", false)
 			if err := decoder.TranscodeGIW(context.Background(), src, sidecar, "int4", false, decoder.GIWTargetForBackend("metal")); err != nil {
 				t.Fatal(err)
