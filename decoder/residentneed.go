@@ -127,7 +127,7 @@ func (m *Model) ResidentNeedBytes(backend string, slots, ctx int, kvF16, kvI8 bo
 	need := m.ResidentWeightBytesPaged(slots) - m.kquantSavings(backend) - m.mambaProjSavings(backend) + m.ResidentKVBytes(backend, ctx, kvF16, kvI8) + m.stateBytes(backend)
 	switch backend {
 	case "metal":
-		need += m.ResidentHostCopyBytes(slots) + m.MetalDecodeScratchBytes()
+		need += m.ResidentHostCopyBytes(slots) + m.MetalDecodeScratchBytes(slots)
 	case "cpu":
 		dense, experts := m.cpuStructBytes()
 		need += dense + experts

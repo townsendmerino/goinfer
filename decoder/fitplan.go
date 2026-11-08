@@ -219,7 +219,7 @@ func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceL
 	switch backend {
 	case "metal":
 		l.CtxStep, l.CtxCeiling, l.CtxSearch = metalKVPad, MetalCtxCeiling, true // whole blocks beside the pools' null blocks: no one rate
-		l.ScratchBytes = m.MetalDecodeScratchBytes()
+		l.ScratchBytes = m.MetalDecodeScratchBytes(0)
 		if !pinned {
 			l.CtxCeiling = MetalFitDefaultCtx
 		}

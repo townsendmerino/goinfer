@@ -276,7 +276,7 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 			t.Fatalf("Load (slots %q): %v", slots, err)
 		}
 		defer mk.Close()
-		return residentNeedBytes(mk) - mk.MetalDecodeScratchBytes()
+		return residentNeedBytes(mk) - mk.MetalDecodeScratchBytes(metalMoESlotsFromEnv(mk))
 	}
 
 	t.Run("unset env == unpaged", func(t *testing.T) {

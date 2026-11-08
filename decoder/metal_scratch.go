@@ -26,9 +26,10 @@ func metalAttnFAPartialFloats(hd, nH, nKV int) int {
 
 // MetalDecodeScratchBytes is what a Metal resident build of m leases on the scratch line for decode, the most it holds before a
 // ForwardBatch grows its rows: the decode list (backend/metal's decodeShape.buffers), the 16 batch rows (batchRows) and the greedy
-// chain's buffers with a sampled chain's (chainBuffers). TestMemGate_metal holds it to the build's own list on every row. 0 for a
-// model with no hidden or vocabulary width.
-func (m *Model) MetalDecodeScratchBytes() int64 {
+// chain's buffers with a sampled chain's (chainBuffers), at slots expert slots per layer (0 = every expert resident), as
+// ResidentNeedBytes takes them. TestMemGate_metal holds it to the build's own list on every row. 0 for a model with no hidden or
+// vocabulary width.
+func (m *Model) MetalDecodeScratchBytes(slots int) int64 {
 	H, nL, nH, _, _, I, V := m.Dims()
 	if H <= 0 || V <= 0 {
 		return 0

@@ -80,7 +80,7 @@ func TestPlan_metalNeedCountsDecodeScratch(t *testing.T) {
 				t.Fatalf("load %s: %v", c.name, err)
 			}
 			defer m.Close()
-			scratch := m.MetalDecodeScratchBytes()
+			scratch := m.MetalDecodeScratchBytes(0)
 			if scratch <= 0 {
 				t.Fatalf("%s: Metal's decode scratch is priced at %d bytes", c.name, scratch)
 			}
@@ -97,6 +97,60 @@ func TestPlan_metalNeedCountsDecodeScratch(t *testing.T) {
 			}
 			if cp := m.Plan("cpu", 1<<40, PlanRequest{Ctx: ctx, CtxPinned: true}); cp.NeedBytes() != lines(cp) {
 				t.Errorf("%s: Plan(\"cpu\").NeedBytes counts %d bytes past its lines; the CPU holds no Metal scratch", c.name, cp.NeedBytes()-lines(cp))
+			}
+		})
+	}
+}
+
+// TestPlan_metalScratchFollowsTheSlots: Metal's decode scratch holds the routed experts' slot indices, 4 bytes for each of the top k,
+// exactly when the experts page (slots above 0 and under the expert count). The resident guard's figure counts them at a paged slot
+// count and not at an unpaged one, and Plan("metal") counts them on an expert cache that pages and not on a resident placement or a
+// cache that holds every expert; written as arithmetic on each fixture's top k, on a generic MoE and on Gemma 4's.
+func TestPlan_metalScratchFollowsTheSlots(t *testing.T) {
+	const ctx = 64
+	for _, name := range []string{"mixtral-tiny", "gemma4-moe-kv-tiny32"} {
+		t.Run(name, func(t *testing.T) {
+			m := loadAccountingFixture(t, name)
+			nE, k, isMoE := m.moeGeometry()
+			if !isMoE || k >= nE {
+				t.Fatalf("%s: %d experts, top %d: the fixture cannot page", name, nE, k)
+			}
+			index := int64(4 * k)
+			resident := m.MetalDecodeScratchBytes(0)
+			// The guard's figure past its weight and host-copy terms, which also move with the slots; KV and state do not.
+			scratchIn := func(slots int) int64 {
+				return m.ResidentNeedBytes("metal", slots, ctx, false, false) - m.ResidentNeedBytes("metal", 0, ctx, false, false) -
+					(m.ResidentWeightBytesPaged(slots) - m.ResidentWeightBytesPaged(0)) - (m.ResidentHostCopyBytes(slots) - m.ResidentHostCopyBytes(0)) + resident
+			}
+			for _, c := range []struct {
+				slots int
+				want  int64
+			}{{0, resident}, {nE, resident}, {k, resident + index}, {nE - 1, resident + index}} {
+				if got := m.MetalDecodeScratchBytes(c.slots); got != c.want {
+					t.Errorf("%s: MetalDecodeScratchBytes(%d) = %d, want %d", name, c.slots, got, c.want)
+				}
+				if got := scratchIn(c.slots); got != c.want {
+					t.Errorf("%s: the resident guard at %d slots counts %d bytes of scratch, want %d", name, c.slots, got, c.want)
+				}
+			}
+			p := m.Plan("metal", 1<<40, PlanRequest{Ctx: ctx, CtxPinned: true})
+			if p.Placement != PlacementResident || p.ScratchBytes != resident {
+				t.Errorf("%s: resident plan: placement %v, scratch %d; want resident at %d", name, p.Placement, p.ScratchBytes, resident)
+			}
+			// One byte short of resident, the cache holds every expert, which does not page; asked for top-k slots, it pages.
+			short := m.ResidentNeedBytes("metal", 0, ctx, false, false) - 1
+			for _, c := range []struct {
+				asked, slots int
+				want         int64
+			}{{0, nE, resident}, {k, k, resident + index}} {
+				pc := m.Plan("metal", short, PlanRequest{Ctx: ctx, CtxPinned: true, Slots: c.asked})
+				if pc.Placement != PlacementExpertCached || pc.Slots != c.slots || pc.ScratchBytes != c.want {
+					t.Errorf("%s: one byte short of resident, %d slots asked: placement %v at %d slots (%s), scratch %d; want expert-cached at %d slots, %d",
+						name, c.asked, pc.Placement, pc.Slots, pc.Reason, pc.ScratchBytes, c.slots, c.want)
+				}
+				if want := m.ResidentNeedBytes("metal", pc.Slots, ctx, false, false); pc.NeedBytes() != want {
+					t.Errorf("%s: expert-cached (%d slots): Plan.NeedBytes %d, the resident guard's %d", name, pc.Slots, pc.NeedBytes(), want)
+				}
 			}
 		})
 	}
