@@ -322,3 +322,20 @@ and MLA is refused at int8), so this is a guard; no test can reach the V-less ca
    - The superseded red logs (`s3a-kv-suite.log`, `s3-review-merged-suite.log`, `touched-s3a.log`) stay, as the record of what those runs
      read; the table above names each one and its filter.
    - `s3a-kv-suite.log.time`, a timing stub nothing cites, is removed.
+
+## S3, #755's last review folded in (Gemini at 7e454481, relayed after #755 merged as e498c3fb, 2026-11-07)
+
+`origin/main` (with #755) is merged into #759, no rebase.
+
+1. **`ctxForSlots` priced each further slot at the raw `--kv i8` request.** Real now that S3a lifts the one-slot rule and `cudaKVPrec` reads
+   no options. A load asking int8 that the policy holds at f32 (a drafter) builds f32 pools, but its extra slots were priced as int8, a
+   quarter of their cost. The slot price is now one helper, `cudaExtraSlotKVBytes`, at the delivered precision (`KVDeliveredFor("cuda")`).
+   Red first (`s3-r4-red-extraslot.log`): `TestKV8_extraSlotPricedAtTheDeliveredPrecision` priced the drafter case at 40,976 B against an
+   f32 build's 131,088 B. Green after (`s3-r4-green-extraslot.log`).
+2. **The either-of byte assertion:** done at 1d1641d4 ("S3, review of #759 at 10930f92", item 1), and kept through the merge.
+3. **The V-code plant cleared the bar by 1% on llama-attnfa-tiny.** Both plants are now decisive. The V scale goes x1.01 -> x1.05, and the
+   V code moves by 16 instead of 1 (still one scale and one code, of the row's most-attended key). The bar is unchanged.
+   `s3-r4-g2exact.log`: PASS on all three. The readers' worst deviation is unchanged (7.36e-7 / 1.41e-5 / 7.17e-5), and the weakest plant
+   now reads 6.39e-4 / 7.85e-4 / 3.01e-3, 6x to 30x the 1e-4 bar.
+4. **`touched-s2.log` was the run before its fixes.** It now holds a passing `touched.py` run on #759's tree (S2 merged in); the first line
+   says so, and the pre-fix run is in git history at e498c3fb.

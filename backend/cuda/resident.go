@@ -192,6 +192,12 @@ func ctxPlanRange(m *decoder.Model, request, modelCtx int) (candidate, floor int
 // planFreeSeenForTest, when set (tests only), is told the free VRAM resolveCtxCapFitSlack hands Plan.
 var planFreeSeenForTest func(free int64)
 
+// cudaExtraSlotKVBytes is the KV one more resident slot of m costs at ctx positions, at the precision the build allocates: what ResolveKV
+// delivers on CUDA (the backend's kvI8 reads the same), not the --kv request, which a policy may hold at f32 (a drafter).
+func cudaExtraSlotKVBytes(m *decoder.Model, ctx int) int64 {
+	return m.CUDAKVSlotBytes(ctx, m.KVCacheF16(), m.KVDeliveredFor("cuda") == mem.KVI8)
+}
+
 // ctxForSlots is resolveCtxCapFit's answer when MC1's resident KV slots are requested
 // (docs/tasks/task-concurrency-2026-09.md MC1 on CUDA): the largest context in [floor, oneSlot] at which Plan fits
 // every requested slot (the build's own KV plus slots-1 more copies, priced as ExtraBytes), so an unpinned load
@@ -207,7 +213,7 @@ var planFreeSeenForTest func(free int64)
 func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slots, floor int) int {
 	stateBytes := m.Plan("cuda", 1<<40, fit.PlanRequest{Ctx: 1}).StateBytes // the plan's own line is one slot's
 	fits := func(ctx int) bool {
-		more := int64(slots-1) * (m.CUDAKVSlotBytes(ctx, m.KVCacheF16(), m.KVCacheI8()) + stateBytes) // each further slot, at the load's own KV precision (decoder/kv16_cuda.go), with its recurrent state
+		more := int64(slots-1) * (cudaExtraSlotKVBytes(m, ctx) + stateBytes) // each further slot, at the load's own KV precision, with its recurrent state
 		p := m.Plan("cuda", marginedFree, fit.PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extraBytes + more})
 		return p.Placement != fit.PlacementDecline
 	}

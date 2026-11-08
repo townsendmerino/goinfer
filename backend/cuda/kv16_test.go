@@ -1021,7 +1021,8 @@ func TestKV8_G2Diag_amplification(t *testing.T) {
 // QuantizeRowInt8 of the rotated K and the V that layer handed kv8_store (layer 0's prefill rows are TestKV8_layer0StoreIsTheQuantizedF32Store's).
 //
 // The bar, registered before the first run: on every row, max |CUDA - CPU| <= 1e-4 x max |CPU row|. Two plants in the CPU copy only must break
-// it on every row, decode and prefill: the most-attended key's V scale x1.01, and one V code of that key moved by one.
+// it on every row, decode and prefill: the most-attended key's V scale x1.05, and one V code of that key moved by 16. (They were x1.01 and +-1
+// until #755's last review: the weakest then cleared the bar by 1%, close enough to drift green; scope.md, "S3, plants made decisive".)
 func TestKV8_G2exact_readersMatchTheCPUOnOneCache(t *testing.T) {
 	requireCUDADevice(t)
 	const K, bar, M, start = 300, 1e-4, 8, 200
@@ -1170,18 +1171,18 @@ func TestKV8_G2exact_readersMatchTheCPUOnOneCache(t *testing.T) {
 					n := pos + 1
 					top := kv8TopKey(q, kq[:n*Ly.kvDim], ks[:n*nKV], 0, hd, nKV, G, r.attnScale)
 					vs2 := append([]float32(nil), vs...)
-					vs2[top*nKV] *= 1.01
+					vs2[top*nKV] *= 1.05
 					vq2 := append([]int8(nil), vq...)
-					if vq2[top*Ly.kvDim] < 127 {
-						vq2[top*Ly.kvDim]++
+					if vq2[top*Ly.kvDim] <= 127-16 {
+						vq2[top*Ly.kvDim] += 16
 					} else {
-						vq2[top*Ly.kvDim]--
+						vq2[top*Ly.kvDim] -= 16
 					}
 					for _, p := range []struct {
 						name string
 						vq   []int8
 						vs   []float32
-					}{{"V scale x1.01", vq, vs2}, {"V code +-1", vq2, vs}} {
+					}{{"V scale x1.05", vq, vs2}, {"V code +-16", vq2, vs}} {
 						d1, s1 := kv8RowDiff(got, cpuAt(pos, q, p.vq, p.vs))
 						plantMin = math.Min(plantMin, d1/s1)
 						if d1 <= bar*s1 {
@@ -1371,4 +1372,31 @@ func kv8TopKey(q []float32, kq []int8, ks []float32, h, hd, nKV, G int, scale fl
 		}
 	}
 	return top
+}
+
+// TestKV8_extraSlotPricedAtTheDeliveredPrecision: ctxForSlots prices each further slot (cudaExtraSlotKVBytes) at the precision the build
+// allocates, which is what ResolveKV delivers, never the raw --kv request: a load asking int8 that the CUDA policy holds at f32 (a drafter)
+// builds f32 pools, and its extra slots must be priced f32, or the context search sizes slots a quarter of their real cost. No device: the
+// models load on the CPU, and only the CUDA pricing is read.
+func TestKV8_extraSlotPricedAtTheDeliveredPrecision(t *testing.T) {
+	dir := "../../testdata/llama-tiny"
+	for _, c := range []struct {
+		name string
+		o    decoder.Options
+		want string // the precision the extra slot must be priced at
+	}{
+		{"int8 delivered", decoder.Options{KVPrecision: "i8"}, "i8"},
+		{"int8 asked with a drafter (held at f32)", decoder.Options{KVPrecision: "i8", Drafter: true}, "f32"},
+		{"f16", decoder.Options{KVPrecision: "f16"}, "f16"},
+	} {
+		m, err := decoder.Load(dir, c.o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]int64{"f32": m.CUDAKVSlotBytes(128, false, false), "f16": m.CUDAKVSlotBytes(128, true, false), "i8": m.CUDAKVSlotBytes(128, false, true)}[c.want]
+		if got := cudaExtraSlotKVBytes(m, 128); got != want {
+			t.Errorf("%s: an extra slot is priced %d B; the build allocates %s, %d B (delivered %q)", c.name, got, c.want, want, m.KVDeliveredFor("cuda"))
+		}
+		m.Close()
+	}
 }
