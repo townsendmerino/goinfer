@@ -712,7 +712,10 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	scratch := []Buffer{
 		xF, normF, qkvF, ctxF, guF, dqF, posB, moeDst,
 		uM, uI, u2I, uQkv, uQDim, uStride, uKOff, uVOff, uStartPos,
-		uTotalQ, uTotalK, uBase0, uBaseK, m0, m1, m2, dummyBias, uMReal,
+		uTotalQ, uTotalK, uBase0, uBaseK, m0, m1, m2, dummyBias, uMReal, uTile,
+	}
+	if pos3B != (Buffer{}) {
+		scratch = append(scratch, pos3B)
 	}
 	if r.moe != nil {
 		scratch = append(scratch, moeLogits, moeIdx, moeWgt, expertIn, expertDown, rowIdxBuf, rowWgtBuf)
@@ -868,6 +871,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		for _, set := range deep.sets {
 			deepB = append(deepB, NewBufferFloatsOn(mem.LineScratch, d, set))
 		}
+		scratch = append(scratch, deepB...) // the deferred release reads scratch when the call returns
 	}
 	addDeep := func(k int) {
 		if k >= len(deepB) {

@@ -174,19 +174,8 @@ func (r *resident) chainOpen(q chainReq) error {
 	}
 	r.stopExec() // the encode-ahead executor and any earlier chain
 	r.chainGW, r.chainGS = gw, gs
-	if r.chainTok[0] == (Buffer{}) {
-		for k := range r.chainSets {
-			r.chainTok[k] = NewBufferU32On(mem.LineScratch, r.d, 0)
-			r.chainSets[k] = posUniforms{NewBufferU32On(mem.LineScratch, r.d, 0), NewBufferU32On(mem.LineScratch, r.d, 1), NewBufferU32On(mem.LineScratch, r.d, 0),
-				NewBufferFloatsOn(mem.LineScratch, r.d, []float32{1}), NewBufferU32On(mem.LineScratch, r.d, 0)}
-		}
-	}
-	if q.sampled && r.chainLogits[0] == (Buffer{}) {
-		r.chainInvT, r.chainK0, r.chainK1 = NewBufferFloatsOn(mem.LineScratch, r.d, []float32{1}), NewBufferU32On(mem.LineScratch, r.d, 0), NewBufferU32On(mem.LineScratch, r.d, 0)
-		for k := range r.chainLogits {
-			r.chainLogits[k] = r.d.NewBufferLenOn(mem.LineScratch, r.V)
-			r.chainD0[k], r.chainD1[k] = NewBufferU32On(mem.LineScratch, r.d, 0), NewBufferU32On(mem.LineScratch, r.d, 0)
-		}
+	for _, sb := range r.chainBuffers(r.chainTok[0] == (Buffer{}), q.sampled && r.chainLogits[0] == (Buffer{})) {
+		sb.set(sb.alloc(r.d))
 	}
 	r.chainReq, r.chainResp, r.chainDone = make(chan chainReq), make(chan chainResp), make(chan struct{})
 	r.chainSlot, r.chainEnd = r.kvSlot, q.pos
