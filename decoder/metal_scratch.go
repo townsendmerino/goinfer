@@ -31,7 +31,7 @@ func metalAttnFAPartialFloats(hd, nH, nKV int) int {
 // widest layer that declares it, and Metal's own terms beside them, read by the row's name (metalRowTerms). TestMemGate_metal holds
 // it to the build's own list on every row. 0 for a model with no hidden or vocabulary width.
 func (m *Model) MetalDecodeScratchBytes(slots int) int64 {
-	H, _, nH, _, _, I, V := m.Dims()
+	H, _, _, _, _, I, V := m.Dims()
 	if H <= 0 || V <= 0 {
 		return 0
 	}
@@ -78,13 +78,15 @@ func (m *Model) MetalDecodeScratchBytes(slots int) int64 {
 		s := d.shapes[l]
 		if rows["q"] > 0 { // an attention layer: its geometry, its sink flag and window, and the fused attention's partial
 			geoms[geomKey{s.HeadDim, s.KVHeads, len(m.RopeInvFreqLayerResident(l)), m.VFromKResident(l) && d.ownsKV[l]}] = true
-			fa = max(fa, metalAttnFAPartialFloats(s.HeadDim, nH, s.KVHeads))
+			fa = max(fa, metalAttnFAPartialFloats(s.HeadDim, s.Heads, s.KVHeads))
 			attn++
 		}
 		if g := rows["gate"]; g != 0 && g != I && !d.routed[l] { // a dense FFN of its own width: its width's uniform
 			layerFFN++
 		}
-		if q4k && l < len(w.Layers) { // the q4k lane's segments: one row-count uniform a run of parts of one kind in each fused group
+		// The q4k lane's segments, one row-count uniform a run of parts of one kind in each fused group, on the attention and dense
+		// gated FFN layers it runs (buildResident refuses a q4k load with any other).
+		if q4k && rows["q"] > 0 && rows["gate"] > 0 && !d.routed[l] && l < len(w.Layers) {
 			lw := &w.Layers[l]
 			for _, group := range [][]*linalg.WeightMat{{&lw.QProj, &lw.KProj, &lw.VProj}, {&lw.OProj}, {&lw.DownProj}, {&lw.GateProj, &lw.UpProj}} {
 				u32s += int64(m.metalQ4KRuns(group))
