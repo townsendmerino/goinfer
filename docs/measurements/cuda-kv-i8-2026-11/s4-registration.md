@@ -222,4 +222,16 @@ The re-read reproduces the 2026-11-07 20:21 reading exactly: every agreement, fl
 - "D7 reads FAIL or PARKED (0.6)": right, PARKED.
 - "int8's mean KL against f32 is over 1.10x at D7 (0.5)": wrong, 1.078.
 
-**Speed check:** running since 08:01 (step 3). Its results go in their own section.
+**Owner decision, 2026-11-08 08:24 (Francis, via the coordinator), on this reading:**
+1. **Ship opt-in, and publish both readings.** `--kv i8` stays delivered on request for the five dense families, and is never an `auto` pick.
+   The help text (`kvHelp`), the load banner, the matrix's "Measured cost" notes, `docs/flags.md` and `docs/server.md` name the cost: about
+   f16's quality on the 7B at 8,000 keys, and a measurable loss on the 1.5B at 3,900 keys.
+2. **Widening to more CUDA families is parked:** S3c (sliding window) and S5 (MoE, MLA, pairwise RoPE, VL, Gemma 4). Trigger: someone asks
+   for int8 on one of those families, or tack's window becomes the binding limit. The refusal for those families now says the widening is
+   parked, not "until its stage".
+3. The speed check still runs today, and is recorded before #768 merges.
+
+**Speed check:** the 08:02 attempt refused at bench_peer's archive check, over two table entries this run does not load (fixed by #777).
+The 08:21 attempt stopped at the plan check: `scripts/prompts.json` has no 4,096 or 16,384 prompt for these models. The four prompts were
+calibrated by `scripts/bench_prompts_calibrate.py` against the pinned serve binary (16,384 lands at 16,436 tokens, as the deep prompts always
+overshoot). The run started 08:25. Its results go in their own section.

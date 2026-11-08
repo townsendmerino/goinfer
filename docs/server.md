@@ -977,7 +977,10 @@ to ignore.**
 - **The KV precision a request ran at.** `--kv f32`, `f16` or `i8` is delivered on the path the load resolves to, or the load refuses
   at startup and says why (`docs/kv-precision-matrix.md` has every backend and family; `auto` is the backend's pick). The banner's
   context line prints each cache's precision with the one requested, and `-log-requests` gives every generating request ` kv=<f32|f16|i8|n/a>`,
-  the precision of the cache it wrote.
+  the precision of the cache it wrote. `--kv i8` on CUDA (the dense llama, Mistral, Qwen2, Qwen3 and Phi-3 families without a sliding
+  window; opt-in, never an `auto` pick) holds about half f16's KV bytes. Its measured cost (nobara, RTX 2070 SUPER, 2026-11-08, against an
+  f32 cache): about f16's quality on qwen2.5-7b at 8,000 keys (mean KL 1.078x f32's, f16's own 1.057x), a measurable loss on
+  qwen2.5-coder-1.5b at 3,900 keys (19 hard flips against 9, KL 1.661x). The banner names it; `docs/kv-precision-matrix.md` has the figures.
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema` (or Anthropic's
   `output_config.format`), and a tool call the
   server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt

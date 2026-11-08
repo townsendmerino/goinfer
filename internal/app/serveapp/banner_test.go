@@ -119,7 +119,7 @@ func TestBanner_contextAndKV(t *testing.T) {
 		{"no resident, the default -kv auto", 32768, 32768, 0, "auto", []string{"KV f32"}, []string{"KV auto", "lossy"}, ""},
 		// Metal's auto is f16: the banner reports what runs and what was requested. (An explicit -kv f32 on Metal refuses the load.)
 		{"metal resident, no -kv", 4096, 32768, 0, "", []string{"KV f16 (requested auto"}, []string{"KV f32", "lossy"}, "f16"},
-		{"resident, -kv i8 requested and applied", 4096, 32768, 0, "i8", []string{"KV i8 (requested i8, lossy)"}, nil, "i8"},
+		{"resident, -kv i8 requested and applied", 4096, 32768, 0, "i8", []string{"KV i8 (requested i8, lossy: about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B)"}, nil, "i8"},
 	} {
 		req := tc.kv
 		if req == "" {
@@ -610,7 +610,7 @@ func TestBanner_cpuKVBothCaches(t *testing.T) {
 	f := bannerFacts{hasTemplate: true, ctxWindow: 4096, maxPositions: 4096, kv: []decoder.KVPrecisionReport{
 		{Cache: "resident", Requested: "i8", Delivered: "i8"}, {Cache: "cpu", Requested: "i8", Delivered: "i8"}}}
 	got := bannerLine(modelBannerFrom(f, config{load: loadflags.Flags{KV: "i8"}}), "context:")
-	if !strings.Contains(got, "· KV i8 (requested i8, lossy) · CPU KV i8 (requested i8, lossy)") {
+	if !strings.Contains(got, "· KV i8 (requested i8, lossy: "+kvI8Cost+") · CPU KV i8 (requested i8, lossy: "+kvI8Cost+")") {
 		t.Errorf("both caches printed %q", got)
 	}
 }
