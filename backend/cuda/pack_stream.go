@@ -4,11 +4,9 @@ package cuda
 
 import (
 	"fmt"
-	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -424,23 +422,16 @@ const packStackWorkers = 8
 // packWeight produces for it, at the offset packWeightStack puts it. An abort, a lost canonical payload or a malformed member is recorded as an upload
 // error and leaves the copy partly filled, which the failed build discards.
 func (r *cudaResident) packStackPinned(w *cudaWQ, h hostW) {
-	var srcW, srcS *gpu.MappedHostBuffer
-	var err error
-	if moePageableDirForTest != "" {
-		srcW, srcS, err = pageableStackSources(moePageableDirForTest, h.nWpk*4, h.nWs16*2)
-		if err != nil {
-			panic(fmt.Sprintf("cacheWQ: pageable expert source: %v", err))
-		}
-		r.pageableStacks++
-	} else {
-		if srcW, err = r.dev.NewMappedHostBufferOn(mem.LinePinnedExperts, h.nWpk*4); err != nil {
-			panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", h.nWpk*4, err))
-		}
-		if srcS, err = r.dev.NewMappedHostBufferOn(mem.LinePinnedExperts, h.nWs16*2); err != nil {
-			panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", h.nWs16*2, err))
-		}
+	srcW, err := r.dev.NewMappedHostBufferOn(mem.LinePinnedExperts, h.nWpk*4)
+	if err != nil {
+		panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", h.nWpk*4, err))
 	}
-	w.srcW, w.srcS = srcW, srcS
+	w.srcW = srcW
+	srcS, err := r.dev.NewMappedHostBufferOn(mem.LinePinnedExperts, h.nWs16*2)
+	if err != nil {
+		panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", h.nWs16*2, err))
+	}
+	w.srcS = srcS
 	var dstW []uint32
 	var dstS []uint16
 	if h.nWpk > 0 {
@@ -482,61 +473,10 @@ func (r *cudaResident) packStackPinned(w *cudaWQ, h hostW) {
 		}()
 	}
 	wg.Wait()
-	if moePageableDirForTest != "" {
-		sealPageable(w.srcW.Bytes(), w.srcS.Bytes())
-	}
 	switch {
 	case aborted.Load():
 		r.recordUpload(fmt.Errorf("cuda: resident build aborted while packing an expert stack: %w", decoder.ErrLoadAborted))
 	case bad.Load():
 		r.recordUpload(fmt.Errorf("cuda: an int4 expert lost its canonical bytes between planning and upload, or its payload is the wrong size"))
-	}
-}
-
-// moePageableDirForTest, when set (tests only: MEM10's A/B, docs/measurements/mem10-2026-11/ab-registration.md), makes packStackPinned pack each
-// expert stack into files under this directory, mapped read-only and pinned nowhere, instead of pinned host memory: the slots then upload from
-// pageable pages, which the driver stages. Set it before the model loads.
-var moePageableDirForTest string
-
-// pageableStackSources returns two shared file mappings of wBytes and sBytes under dir, writable for packStackPinned's fill, which then makes
-// them read-only (sealPageable). The files are unlinked once mapped, so their disk space goes with the mappings.
-func pageableStackSources(dir string, wBytes, sBytes int) (*gpu.MappedHostBuffer, *gpu.MappedHostBuffer, error) {
-	one := func(n int) (*gpu.MappedHostBuffer, error) {
-		if n == 0 {
-			return gpu.NewPageableHostSource([]byte{}, nil), nil
-		}
-		f, err := os.CreateTemp(dir, "mem10-stack-*.bin")
-		if err != nil {
-			return nil, err
-		}
-		defer f.Close()
-		defer os.Remove(f.Name())
-		if err := f.Truncate(int64(n)); err != nil {
-			return nil, err
-		}
-		m, err := syscall.Mmap(int(f.Fd()), 0, n, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
-		if err != nil {
-			return nil, err
-		}
-		return gpu.NewPageableHostSource(m, func() { _ = syscall.Munmap(m) }), nil
-	}
-	w, err := one(wBytes)
-	if err != nil {
-		return nil, nil, err
-	}
-	s, err := one(sBytes)
-	if err != nil {
-		_ = w.Close()
-		return nil, nil, err
-	}
-	return w, s, nil
-}
-
-// sealPageable makes packed pageable sources read-only: after packing, nothing writes them.
-func sealPageable(bs ...[]byte) {
-	for _, b := range bs {
-		if len(b) > 0 {
-			_ = syscall.Mprotect(b, syscall.PROT_READ)
-		}
 	}
 }

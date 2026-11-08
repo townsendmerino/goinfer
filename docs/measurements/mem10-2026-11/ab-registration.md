@@ -78,3 +78,47 @@ finish go in the status file first.
   CUDA, and the load MEM10-G0 read.
 - **The readings.** Attempt 2's single load is void. Its log is kept as `ab-attempt2/`.
 - **Unchanged:** the arms, order, metrics and rule.
+
+## Reading, 2026-11-08 12:16 to 12:26 PST: **KILL**
+
+- **Run:**
+  - Binary built at `e40e354ad` (the test-only switch, and the test opening the sidecar by name).
+  - The fit check came first (`ab-reading/fit.log`: `cuda-resident (int4)`, 13.3 GB of weights in a 33.0 GB budget).
+  - The exclusive timing lock was held throughout. Eight loads in 592 s; no load was void (start loads 2.1 to 3.8, at least 61 GB
+    available).
+  - Logs: `ab-reading/ab.log` and `ab-reading/ab.json`.
+- **The checks held.** Every arm's first MoE layer source hashes `bfdc8a9f2b24332e`, and the first B load's first 64 greedy tokens
+  equal A's. Arm A is MEM10-G0's load: `RssShmem` 12,345 MiB, `RssAnon` about 0.2 to 0.4 GiB, and the `.giw` mapped at 13,574 MiB.
+
+| load | arm | short tok/s | long tok/s | RssShmem MiB | RssFile MiB (`.giw` + pageable files) | VmSwap |
+|---|---|---|---|---|---|---|
+| 1 | A | 58.68 | 33.57 | 12,345 | 13,675 (13,574 + 0) | 0 |
+| 2 | B | 48.58 | 25.16 | 94 | 25,926 (13,574 + 12,240) | 0 |
+| 3 | B | 48.10 | 25.19 | 94 | 25,926 | 0 |
+| 4 | A | 58.94 | 33.59 | 12,345 | 13,675 | 0 |
+| 5 | A | 59.01 | 33.57 | 12,345 | 13,675 | 0 |
+| 6 | B | 48.12 | 25.16 | 94 | 25,926 | 0 |
+| 7 | B | 47.97 | 25.17 | 94 | 25,926 | 0 |
+| 8 | A | 58.60 | 33.41 | 12,345 | 13,675 | 0 |
+
+**Paired B/A** (each B with its adjacent A):
+
+| context | pairs | median |
+|---|---|---|
+| short | 0.8280, 0.8160, 0.8154, 0.8187 | **0.8174** |
+| long | 0.7494, 0.7500, 0.7494, 0.7533 | **0.7497** |
+
+- B saves 12,251 MiB of `RssShmem`, with no swap.
+- **Verdict, by the rule:** both medians are under 0.90. **KILL.**
+- **What it means:**
+  - Uploading the expert slots from pageable pages costs the 26B 18 % of its short-context decode and 25 % of its long-context decode
+    on this box, for 12 GiB of host memory.
+  - With tier 0's finding (the mapping cannot be pinned in place without a copy), MEM10's two routes to dropping the copy are closed
+    on nobara. The pinned copy stays.
+  - The pairs are tight (spread under 0.013), so this is not a noise reading.
+- **Predictions:**
+  - "short 0.85 to 0.97 (0.5)": wrong, 0.817.
+  - "long closer to 1.0 than short (0.6)": wrong; long is the larger cost. Long-context steps are slower, so the staged copies are a
+    larger share of each one. That is a mechanism to confirm, not measured here.
+- **The code:** the arm-B switch and `gpudev.NewPageableHostSource` are removed from the production files after this reading. They stay
+  reproducible at `e40e354ad` on this branch.
