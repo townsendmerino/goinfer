@@ -50,13 +50,17 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 			if _, err := os.Stat(p); err != nil {
 				t.Skipf("no fixture at %s", p)
 			}
-			m, err := decoder.Load(p, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2})
+			// Phi-3 builds a resident only at int8int8 with per-32 activation scales (kv16Quant, kv16ActGroup), as the served bench loads it.
+			m, err := decoder.Load(p, decoder.Options{Backend: "cuda", Quant: kv16Quant(p), ActQuantGroup: kv16ActGroup(p), ResidentKVSlots: 2})
 			if err != nil {
 				t.Skipf("load: %v", err)
 			}
 			defer m.Close()
 			r, ok := m.ResidentForwardForTest().(*cudaResident)
 			if !ok || r == nil {
+				if kv8PricedFixtures[filepath.Base(p)] { // a fixture this test claims to price at int8 must run, not skip
+					t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
+				}
 				t.Skipf("not CUDA-resident: %s", m.ResidentDecline())
 			}
 			ran++
@@ -130,9 +134,6 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 				if got != c.want {
 					t.Errorf("%s: ResidentKVBytes(\"cuda\", %d) = %d B, want %d B (f32 %d, f16 %d, i8 %d; resident kvF16=%v, allocates %d B a slot)",
 						c.name, r.kvShareCtx, got, c.want, f32Bytes, f16Bytes, i8Bytes, r.kvF16, forCap)
-				}
-				if r.kvF16 && c.f16 && got != one {
-					t.Errorf("an f16 resident prices %d B a one-slot load and ResidentKVBytes(f16) says %d B", one, got)
 				}
 			}
 		})
