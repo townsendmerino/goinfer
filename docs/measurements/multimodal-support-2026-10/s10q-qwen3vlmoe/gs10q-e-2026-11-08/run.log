@@ -1,0 +1,22 @@
+== fit check start 2026-11-08 09:19:07 PST load 1.09 2.81 2.23 MemAvailable 61309 MiB
+fit:   decode path: cuda-resident (int4)   fit: 4096-token cap needs 0.4 GB KV (weights 16.0 GB, budget 30.9 GB, 30.5 GB left for a request's own prefill)   KV plan: 1 conversation x 4096 positions (4 asked for; 2.1 GB held back for the vision tower) "qwen3-vl-30b-a3b-instruct" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter) 
+== gate start 2026-11-08 09:20:53 PST load 7.79 4.99 3.09
+binaries: /home/francis/goinfer-bench/gs10q-e-604f7ddf (rev 604f7ddfa3477d94a47e73aeb7548cc567534798)
+started: 2026-11-08 09:20:53 PST
+free: 309 GB; load: 7.79 4.99 3.09 1/719 76555
+595.112.07, 430 MiB
+[09:21:53] ... cuda arm running 60s; last: [q3m-cuda     43s] tower: glm_ocr/formula.png grid [1 76 62], 3 DeepStack sets
+[09:22:53] ... cuda arm running 120s; last: cuda: prefill width 2048 rows (8 MiB of scratch; 6941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[09:23:53] ... cuda arm running 180s; last: [q3m-cuda    161s] sequence 1/8 (812 ids): 32 positions in 26s, non-finite so far 0
+[09:24:53] ... cuda arm running 240s; last: [q3m-cuda    237s] sequence 5/8 (1206 ids): 32 positions in 41s, non-finite so far 0
+[09:25:53] ... cuda arm running 300s; last: [q3m-cuda    278s] sequence 6/8 (1213 ids): 32 positions in 41s, non-finite so far 0
+cuda       rc=0     355s
+200 positions over 8 prompts; every CUDA logit finite: True
+  CPU int4  agreement with HF  92.50% [87.9, 96.9]   mean KL(HF||arm) 0.0691 [0.0342, 0.1354]
+  CUDA int4 agreement with HF  91.50% [85.3, 97.3]   mean KL(HF||arm) 0.0645 [0.0344, 0.1203]
+  paired difference (CUDA - CPU): agreement -1.00 points [-3.4, +1.2]; KL -0.0046 [-0.0159, +0.0010]
+  CUDA argmax equals the CPU arm's at 98.00% of positions (for the record, not graded)
+
+G-S10q-e: CUDA minus CPU = -1.00 points (bar: PASS at >= -5.0, PARKED to -15.0) -> PASS
+finished: 2026-11-08 09:26:52 PST
+== gate end 2026-11-08 09:26:52 PST exit 0
