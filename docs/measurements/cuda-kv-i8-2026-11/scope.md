@@ -303,3 +303,22 @@ families outside the dense five (S5).
 int8 layer whether or not it holds V. They now go only beside a V. No int8 layer lacks V today (an MLA latent is the only V-less layer,
 and MLA is refused at int8), so this is a guard; no test can reach the V-less case.
 
+
+## S3, review of #759 at 10930f92 (Gemini, relayed by the coordinator, 2026-11-07)
+
+1. **`TestResidentKVBytes_matchesCUDAAllocation` accepted either figure for int8 (and any of three for f16).** That passes a fixture
+   under-priced at int8 and one over-priced at f32 alike. Fixed: each request asserts the one figure the fixture's family implies,
+   written out in the test rather than read from the policy. f16 for every fixture (all have f16 kernels); int8 for llama-tiny,
+   phi3-tiny and the 0.5B; f32 for the rest (`kv8PricedFixtures`). PASS (`s3-r3-bytes.log`). Broken first, both ways:
+   - int8 priced for every family (`s3-r3-plant-price-all.log`): red on mistral-tiny-window, gemma3-vl-tiny, qwen35-tiny and gemma3-1b.
+     deepseek-tiny stays green, because an MLA latent prices f32 at any precision.
+   - int8 never priced (`s3-r3-plant-price-never.log`): red on llama-tiny and the 0.5B.
+2. **`TestKV8_deliveredBytes`'s two-slot check left the tables out and the one-slot build loaded.** Fixed: the one-slot build is closed
+   before the two-slot load, each slot's guaranteed share must equal the one-slot context, and the block tables are checked on their own
+   (two slots, each group, as long as the cap, which may be raised past the share). PASS on all four (`s3-r3-bytes.log`).
+3. **kvsnap's V scales before `hasV`:** fixed at 226c5ae8 (above).
+4. **Stale text and logs.**
+   - `kvresolve.go`'s comment was corrected in the merge of #755 at f954597d, and the `s3a-green.log` sentence at 226c5ae8.
+   - The superseded red logs (`s3a-kv-suite.log`, `s3-review-merged-suite.log`, `touched-s3a.log`) stay, as the record of what those runs
+     read; the table above names each one and its filter.
+   - `s3a-kv-suite.log.time`, a timing stub nothing cites, is removed.

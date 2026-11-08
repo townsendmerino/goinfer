@@ -463,15 +463,24 @@ func TestKV8_deliveredBytes(t *testing.T) {
 			if want := m8.ResidentKVBytes("cuda", r8.ctxCap, false, true); want != a8+tabs {
 				t.Errorf("decoder prices the int8 cache at %d B; a one-slot build allocates %d B and %d B of tables", want, a8, tabs)
 			}
-			// Two slots: the pools hold one more slot's blocks, and the tables one more slot's.
+			// Two slots, loaded with the one-slot build closed so both plan against the same free VRAM: each slot keeps the one-slot context as its
+			// guaranteed share; the pools hold one more slot's blocks; the tables are one per slot per group, as long as one conversation's cap
+			// (which may be raised past the share, kvRaise).
+			ctx8 := r8.ctxCap
+			m8.Close()
 			m2, r2 := kv8Load(t, fx, "i8", decoder.Options{ResidentKVSlots: 2})
 			if r2.KVSlots() != 2 || !r2.kvI8 {
 				t.Fatalf("two slots asked at -kv i8: built %d (int8 %v)", r2.KVSlots(), r2.kvI8)
 			}
-			// The pools hold each slot's guaranteed share (kvShareCtx; one conversation's cap may be raised past it, and the tables follow the cap).
 			share, tabsS := r2.kvShareCtx, int64(kvGroups*4*kvBlocksFor(r2.kvShareCtx))
+			if share != ctx8 {
+				t.Errorf("each of two int8 slots is guaranteed %d positions; one slot took %d", share, ctx8)
+			}
 			if got, want := kv8Allocated[r2], m2.ResidentKVBytes("cuda", share, false, true)+m2.CUDAKVSlotBytes(share, false, true)-2*tabsS; got != want {
 				t.Errorf("two int8 slots of %d positions allocate %d B of pools; ResidentKVBytes plus one CUDAKVSlotBytes, less their tables, price %d B", share, got, want)
+			}
+			if got, want := int64(r2.kvTabDev.Len())*4, int64(2*kvGroups*4*kvBlocksFor(r2.ctxCap)); got != want {
+				t.Errorf("two slots' block tables hold %d B; two slots of %d groups at %d positions (the cap) is %d B", got, kvGroups, r2.ctxCap, want)
 			}
 			t.Logf("%d int8 layers, one slot at %d positions: allocated %d B (f32 build %d B), scales %d B; two slots %d B", owners, r8.ctxCap, a8, a32, scales, kv8Allocated[r2])
 		})
