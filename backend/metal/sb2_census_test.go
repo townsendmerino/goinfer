@@ -491,39 +491,73 @@ func TestDecodeScratch_handTable(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	// llama-tiny: hidden 64, vocab 256, FFN 128, 4 query heads and 2 K/V heads of 16, 4 layers; RMSNorm, no window, no sinks, and
-	// head width 16, which the fused attention does not run, so no partial buffer.
-	const H, V, I, nH, nKV, hd, nL = 64, 256, 128, 4, 2, 16, 4
 	const batchCap = 16 // the build's batch rows (ensureBatchCap(16))
-	f32Rows := H + 1 +  // x, aSc
-		nH*hd + 2*nKV*hd + // fused q | k | v
-		2*I + // fused gate | up
-		nH*hd + 1 + // ctx, cSc
-		H + 1 + // oO, mSc
-		1 + H + // dSc, dO
-		V + 2*((V+7)/8) + 1 + // logits, the argmax partials, tok
-		2*((V+1023)/1024) + 1 + // the sampler's block keys and indices, its draw
-		batchCap*(H+V) // batchX, batchLogits
-	twins := H + nH*hd + H + // aq, cq, mq
-		2*H + 2*H + 2*nH*hd + // the W4F16 lane's f16 twins of aq, mq and cq
-		I // dq
-	uniforms := 11 + 4 + 7 + // core (uP, uH, uI, uNH, uScale, uEps, uPos, uNKeys, uRopePos, uQTempScale, uZero); uAct, uAddOne,
-		// uWindow, uLNHasBias; the sampler's seven
-		7 + // the one attention geometry's
-		2*nL + // each layer's sink flag and window
-		3*batchCap // each batch row's position uniforms
-	want := int64(4*f32Rows + twins + 4*uniforms)
-	m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "metal", Quant: "int8int8", ResidentContext: 256})
-	if err != nil {
-		t.Fatal(err)
+	// core is what every build holds, for hidden H, vocab V, gate|up half gu, query width q and K/V width kv at the widest attention
+	// layer: its f32 rows, its int8 and f16 twins, and its uniforms (the eleven core ones; uAct, uAddOne, uWindow, uLNHasBias; the
+	// sampler's seven).
+	core := func(H, V, gu, q, kv int) (f32Rows, twins, uniforms int) {
+		f32Rows = H + 1 + // x, aSc
+			q + 2*kv + // fused q | k | v
+			2*gu + // fused gate | up
+			q + 1 + // ctx, cSc
+			H + 1 + // oO, mSc
+			1 + H + // dSc, dO
+			V + 2*((V+7)/8) + 1 + // logits, the argmax partials, tok
+			2*((V+1023)/1024) + 1 + // the sampler's block keys and indices, its draw
+			batchCap*(H+V) // batchX, batchLogits
+		twins = H + q + H + // aq, cq, mq
+			2*H + 2*H + 2*q + // the W4F16 lane's f16 twins of aq, mq and cq
+			gu // dq
+		return f32Rows, twins, 11 + 4 + 7 + 3*batchCap
 	}
-	defer m.Close()
-	a, ok := m.ResidentForwardForTest().(*metalResident)
-	if !ok {
-		t.Fatalf("llama-tiny: not Metal-resident: %s", m.ResidentDecline())
-	}
-	if got := a.r.decode.listBytes(a.r); got != want {
-		t.Errorf("llama-tiny: the decode list is %d bytes; the config's arithmetic gives %d", got, want)
+	for _, c := range []struct {
+		name, quant string
+		want        func() int64
+	}{
+		// llama-tiny: hidden 64, vocab 256, FFN 128, 4 query heads and 2 K/V heads of 16, 4 layers, all attention; head width 16,
+		// which the fused attention does not run, so no partial buffer.
+		{"llama-tiny", "int8int8", func() int64 {
+			const H, V, I, nH, nKV, hd, nL = 64, 256, 128, 4, 2, 16, 4
+			f, b, u := core(H, V, I, nH*hd, nKV*hd)
+			u += 7 + 2*nL // one attention geometry; each layer's sink flag and window
+			return int64(4*f + b + 4*u)
+		}},
+		// qwen35-tiny: hidden 64, vocab 256, 4 layers of which the last is gated attention (4 query heads and 2 K/V heads of 16)
+		// and three Gated DeltaNet (2 key heads and 4 value heads of 16, conv kernel 4); every FFN a MoE of 4 experts, top 2,
+		// expert and shared width 32, whose k-slot kernels run (2 x 32 and 64 are multiples of 8).
+		{"qwen35-tiny", "int4", func() int64 {
+			const H, V, nH, nKV, hd = 64, 256, 4, 2, 16
+			const nk, hk, nv, hv = 2, 16, 4, 16
+			const nE, k, inter = 4, 2, 32
+			f, b, u := core(H, V, inter, nH*hd, nKV*hd)
+			u += 7 + 2 // the one attention geometry; the attention layer's sink flag and window
+			keyDim, valueDim := nk*hk, nv*hv
+			convDim := 2*keyDim + valueDim
+			f += 2*convDim + 2*nv + 2*nv + 2*keyDim + 3*valueDim + 1 // the mixer's rows, its head parameters, dnGSc
+			b += valueDim                                            // dnGq
+			f += 2*nH*hd + nH*hd                                     // gated attention's [query ‖ gate] and its gate
+			u += 12                                                  // the mixer's uniforms
+			f += nE + k + 1 + H                                      // the router's logits and weights, the shared gate and down
+			b += 4 * k                                               // the router's indices
+			f += k*2*inter + k + k*H                                 // the k slots' gate|up, scales and accumulators
+			b += k * inter                                           // their int8 rows
+			u += 10 + k                                              // the MoE's uniforms and one a slot
+			return int64(4*f + b + 4*u)
+		}},
+	} {
+		m, err := decoder.Load("../../testdata/"+c.name, decoder.Options{Backend: "metal", Quant: c.quant, ResidentContext: 256})
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok {
+			m.Close()
+			t.Fatalf("%s: not Metal-resident: %s", c.name, m.ResidentDecline())
+		}
+		if got, want := a.r.decode.listBytes(a.r), c.want(); got != want {
+			t.Errorf("%s: the decode list is %d bytes; the config's arithmetic gives %d", c.name, got, want)
+		}
+		m.Close()
 	}
 }
 
