@@ -598,8 +598,8 @@ def swapins_mb():
 class SwapWatch:
     """Swap growth over one cell, from a baseline taken before its server starts (peer-vetted 2026-10-07: "any swap
     growth voids that engine's arm"). Polls system swap every POLL_S on a thread; the peak growth goes in the cell's
-    counts. BENCH_SWAP_VOID_MB (unset: off, the old behaviour) voids a cell whose peak growth exceeds it, 0 meaning any
-    growth. BENCH_SWAP_KILL_MB (unset: off) also kills the server's process group the moment growth passes it, so a
+    counts. BENCH_SWAP_VOID_MB (unset: 0, the void rule's bar, unless BENCH_SWAPIN_VOID_MB or BENCH_SWAPOUT_VOID_MB is set) voids a cell
+    whose peak growth exceeds it, 0 meaning any growth. BENCH_SWAP_KILL_MB (unset: off) also kills the server's process group the moment growth passes it, so a
     runaway load is stopped, not just recorded (the Mac's 2026-09-04/05 swap spiral; scripts/swap_killwatch.sh is the
     out-of-process twin)."""
     POLL_S = 1.0
@@ -610,6 +610,7 @@ class SwapWatch:
         self.swapin = None
         self.swapout = None
         self.peak = 0.0
+        self.unreadable = self.base is None  # swap could not be read at the start, or at a poll or the last read
         self.killed = None
         self.pgid = None
         kill = os.environ.get("BENCH_SWAP_KILL_MB", "").strip()
@@ -617,17 +618,24 @@ class SwapWatch:
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
+    def poll_once(self):
+        """One poll: the peak growth over the baseline, the kill bar, and a reading that fails marks the cell unreadable (a guard that
+        cannot read what it guards must not pass the cell)."""
+        now = swap_used_mb()
+        if now is None or self.base is None:
+            self.unreadable = True
+            return
+        self.peak = max(self.peak, now - self.base)
+        if self.kill_mb is not None and self.peak > self.kill_mb and self.pgid and not self.killed:
+            self.killed = f"swap grew +{self.peak:.0f} MB (> {self.kill_mb:.0f}); server killed"
+            try:
+                os.killpg(self.pgid, signal.SIGKILL)
+            except Exception:
+                pass
+
     def _run(self):
         while not self._stop.is_set():
-            now = swap_used_mb()
-            if self.base is not None and now is not None:
-                self.peak = max(self.peak, now - self.base)
-                if self.kill_mb is not None and self.peak > self.kill_mb and self.pgid and not self.killed:
-                    self.killed = f"swap grew +{self.peak:.0f} MB (> {self.kill_mb:.0f}); server killed"
-                    try:
-                        os.killpg(self.pgid, signal.SIGKILL)
-                    except Exception:
-                        pass
+            self.poll_once()
             self._stop.wait(self.POLL_S)
 
     def start(self, pid):
@@ -639,6 +647,7 @@ class SwapWatch:
         self._stop.set()
         if self._thread.is_alive():
             self._thread.join(timeout=5)
+        self.poll_once()  # the last reading; a failure here marks the cell unreadable too
         now_in, now_out = swap_io_mb()
         if self.base_in is not None and now_in is not None:
             self.swapin = now_in - self.base_in
@@ -653,18 +662,10 @@ class SwapWatch:
         BENCH_SWAPOUT_VOID_MB void on swap-ins and swap-outs over them (0: any). Nobara takes swap-ins alone (peer-vetted
         2026-10-08: idle pages pushed out under page-cache pressure grew swap by 1.9-46 MB beside a 12-14 GB load with 58 GB
         free, which slows nothing being timed); a never-swap gate takes both at 0."""
-        lim = os.environ.get("BENCH_SWAP_VOID_MB", "").strip()
-        inlim = os.environ.get("BENCH_SWAPIN_VOID_MB", "").strip()
-        outlim = os.environ.get("BENCH_SWAPOUT_VOID_MB", "").strip()
+        import void_rule
         if self.killed:
             return self.killed
-        if lim and self.peak > float(lim):
-            return f"swap grew +{self.peak:.1f} MB during the cell (> {float(lim):.0f} MB): void"
-        if inlim and self.swapin is not None and self.swapin > float(inlim):
-            return f"swap-ins of {self.swapin:.2f} MB during the cell (> {float(inlim):.0f} MB): void"
-        if outlim and self.swapout is not None and self.swapout > float(outlim):
-            return f"swap-outs of {self.swapout:.2f} MB during the cell (> {float(outlim):.0f} MB): void"
-        return None
+        return void_rule.swap_verdict(None if self.unreadable else self.peak, self.swapin, self.swapout)
 
 
 class RSSSampler:
@@ -753,6 +754,8 @@ def provenance():
     return {
         "kind": "provenance",
         "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "fit_need": "goinfer's fit: banner when one has been read, else BENCH_FIT_NEED_GB, else the checkpoint's file size, which is a lower "
+                    "bound (no KV or scratch) and is flagged per cell (machine.fit_need_lower_bound); the start check has no margin",
         "free_mem_override": _FREE_MEM_OVERRIDE_USED,  # the run went ahead without a free-memory reading (check_free_mem)
         "host": socket.gethostname(),
         "uname": _sh(["uname", "-srm"]),
@@ -785,19 +788,19 @@ def provenance():
     }
 
 def free_mem_mb():
-    """This box's free memory in MiB for the void rule: the reclaimable figure cmd/hostmem prints (scripts/hostmem.py), what a cell
-    can take without macOS compressing or swapping other memory under it, not the load-decision figure. None when it cannot be
-    read."""
+    """This box's available memory in MiB for the void rule: the figure the fit guard decides loads by (cmd/hostmem via
+    scripts/hostmem.py). The reclaimable figure is recorded beside it (machine_state) but is not a void term. None when it
+    cannot be read."""
     import hostmem
-    return hostmem.reclaimable_mb()
+    return hostmem.available_mb()
 
 
-# THE HEAVY-LOAD VOID (owner rule 2026-10-19; CLAUDE.md "Run budget", docs/measurements/noise-registry.md §8). A cell is VOID if,
-# at its start, this box (the one doing the timed work) has a 1-minute load average above half its cores, or free memory below the
-# fit guard's need for the cell's load plus 2 GB. A void start is listed in the cell's record and the cell re-runs in place; it is
-# never run and averaged. The need is weights + KV from goinfer's own `fit:` banner for the model (learned from its goinfer cells),
+# THE HEAVY-LOAD VOID (owner rule 2026-10-19, changed by Francis 2026-11-08; scripts/void_rule.py is the one definition,
+# docs/measurements/noise-registry.md §8). A cell is VOID if, at its start, this box (the one doing the timed work) has a 1-minute
+# load average above half its cores, or available memory (the fit guard's reading) below the fit guard's need for the cell's load,
+# with no margin; and if system swap grows at all while it runs (SwapWatch). A void start is listed in the cell's record and the
+# cell re-runs in place; it is never run and averaged. The need is weights + KV from goinfer's own `fit:` banner for the model (learned from its goinfer cells),
 # BENCH_FIT_NEED_GB when set ("5.6", or per model "phi3-mini=5.6,M7=9.3"), else the checkpoint's file size, recorded as such.
-VOID_HEADROOM_MB = 2048
 _FIT_NEED = {}   # model key -> MB, from a goinfer fit banner
 
 
@@ -828,14 +831,33 @@ def learn_fit_need(model_key, log_text):
         _FIT_NEED[model_key] = int(found)
 
 
+def need_is_lower_bound(source):
+    """Whether a fit need from `source` leaves out KV and scratch: the checkpoint's file size does; goinfer's `fit:` banner and an
+    explicit BENCH_FIT_NEED_GB do not. Recorded with the cell (machine.fit_need_lower_bound) because the zero-margin start check then
+    asks for no more than the weights."""
+    return source == "file size"
+
+
+_LOAD_SKIP_SAID = False
+_MEM_SKIP_SAID = False
+
+
 def heavy_void(state, need_mb):
-    """The reason a cell starting in machine state `state` is void, or None. state carries loadavg, free_mem_mb and ncores."""
-    la, ncores, free = state.get("loadavg"), state.get("ncores"), state.get("free_mem_mb")
-    if la and ncores and la[0] > ncores / 2:
-        return f"load {la[0]:.2f} above half of {ncores} cores"
-    if need_mb is not None and free is not None and free < need_mb + VOID_HEADROOM_MB:
-        return f"free memory {free} MB below the fit need {need_mb} MB + {VOID_HEADROOM_MB} MB"
-    return None
+    """The reason a cell starting in machine state `state` is void, or None, by void_rule.start_void. state carries loadavg,
+    available_mb (the fit guard's reading) and ncores; an unreadable core count skips the load term, said once."""
+    global _LOAD_SKIP_SAID, _MEM_SKIP_SAID
+    import void_rule
+    la, ncores = state.get("loadavg"), state.get("ncores")
+    if not ncores and not _LOAD_SKIP_SAID:
+        _LOAD_SKIP_SAID = True
+        print("# core count unreadable: the heavy-load void's load term is skipped for this run", flush=True)
+    snap = {"load1": la[0] if la else None, "ncores": ncores, "available_mb": state.get("available_mb")}
+    # BENCH_ALLOW_NO_FREE_MEM=1 (check_free_mem) lets a run go ahead on a box with no memory reading: the memory term is skipped, said once
+    allow = _FREE_MEM_OVERRIDE_USED and snap["available_mb"] is None
+    if allow and need_mb and not _MEM_SKIP_SAID:
+        _MEM_SKIP_SAID = True
+        print("# BENCH_ALLOW_NO_FREE_MEM=1: no available-memory reading, so the heavy-load void's memory term is skipped for this run", flush=True)
+    return void_rule.start_void(snap, need_mb, allow_unreadable_memory=allow)
 
 
 def start_clean(sample, need_mb, run, wait=time.sleep, limit_s=None):
@@ -858,14 +880,27 @@ def start_clean(sample, need_mb, run, wait=time.sleep, limit_s=None):
         waited += step
 
 
+def _reclaimable_mb():
+    import hostmem
+    return hostmem.reclaimable_mb()
+
+
 def machine_state():
-    """Recorded at the START of each cell: the load average, free memory and core count the void rule reads (heavy_void), and
-    the GPU and thermal state as a record."""
-    m = {"loadavg": _loadavg(), "free_mem_mb": free_mem_mb(), "ncores": os.cpu_count(), "gpu": _gpu_state()}
+    """Recorded at the START of each cell: the load average, available memory and core count the void rule reads (heavy_void), the
+    reclaimable memory and swap in use as a record (void_rule.py: a record taken under this rule can be told from the old one),
+    and the GPU and thermal state."""
+    m = {"loadavg": _loadavg(), "available_mb": free_mem_mb(), "ncores": os.cpu_count(), "gpu": _gpu_state(),
+         "reclaimable_mb": _reclaimable_mb(), "swap_mb": swap_used_mb()}
     th = thermal_state()
     if th:
         m["therm"] = th
     return m
+
+def end_state():
+    """Recorded at the END of each cell (void_rule.py: the four readings at a cell's start and end): the same load, available and
+    reclaimable memory and swap in use as machine_state, so a record taken under the 2026-11-08 rule shows what the cell left."""
+    return {"loadavg": _loadavg(), "available_mb": free_mem_mb(), "reclaimable_mb": _reclaimable_mb(), "swap_mb": swap_used_mb()}
+
 
 def preflight():
     """The idle check, and the ONLY place it is answerable -- before this harness loads the box.
@@ -910,7 +945,7 @@ _FREE_MEM_OVERRIDE_USED = False  # set by check_free_mem when BENCH_ALLOW_NO_FRE
 
 def check_free_mem():
     """Refuses a run that cannot read this box's free memory, since the heavy-load void's memory term would then never apply and
-    every cell would record free_mem_mb null. BENCH_ALLOW_NO_FREE_MEM=1 runs anyway; provenance() records that it did, and only
+    every cell would record available_mb null. BENCH_ALLOW_NO_FREE_MEM=1 runs anyway; provenance() records that it did, and only
     when it did (a set override with a reading present is not recorded). Returns whether the override was used."""
     global _FREE_MEM_OVERRIDE_USED
     _FREE_MEM_OVERRIDE_USED = False
@@ -2241,6 +2276,8 @@ def main():
         ((rates, err, counts), machine, void_starts), swap_voids = run_with_swap_voids(lambda: start_clean(machine_state, need, _run))
         machine["gate"] = gate
         machine["fit_need_mb"], machine["fit_need_source"] = need, need_src
+        machine["fit_need_lower_bound"] = need_is_lower_bound(need_src)
+        machine["end"] = end_state()
         # prompt_tokens(depth, mk) only resolves for phases A/B/C -- "embed"/"vision" aren't real
         # MODELS keys and D's "depth" is an approximate embeddings length, not a calibrated one, so
         # phases D/E record None here rather than raising a KeyError against prompts.json.

@@ -97,3 +97,9 @@ pin dirties it. A tmpfs file is RAM, so a sidecar there would cost the same host
 - **What would still save memory, untested here and a decision, not a default:** uploading the slots from the mapping's *pageable* pages
   (no registration). The driver then stages each copy through its own bounce buffer, so the per-token expert DMA slows down. Its cost on the
   26B's decode is a tier 1 A/B, needing its own registration and Francis's word.
+
+## MEM10 tier 1: KILL (2026-11-08)
+
+Francis asked for the unpinned path to be measured. The expert slots, uploaded from pageable file pages instead of the pinned copy, save
+12,251 MiB of host memory but cost the 26B's decode 0.817x at short context and 0.750x at long, under the registered 0.90 kill line. The
+registration, the reading and the attempts are in `ab-registration.md`. MEM10 is closed on nobara, and the pinned copy stays.

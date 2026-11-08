@@ -1,0 +1,12 @@
+plant: restore the !r.kvI8 exclusion at the tile load (backend.go)
+    kv16_test.go:656: the int8 cache took no tensor-core tile launch with fast prefill on (S6's route gate)
+--- FAIL: TestKV8_everyAttentionPathStaysCloseToF32 (10.59s)
+    --- FAIL: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_with_fast_prefill_on (10.48s)
+    kv16_test.go:1442: attn_fused hd128 did not load on both arms (i8 false, f16 true): a missing kernel is not a pass
+    kv16_test.go:1442: attn_fused hd64 did not load on both arms (i8 false, f16 true): a missing kernel is not a pass
+--- FAIL: TestKV8_exactInputIdentity_fusedPrefill (3.52s)
+    --- FAIL: TestKV8_exactInputIdentity_fusedPrefill/llama-attnfa-tiny (0.27s)
+    --- FAIL: TestKV8_exactInputIdentity_fusedPrefill/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (3.25s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	14.184s
+FAIL

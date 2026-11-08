@@ -41,6 +41,7 @@ __device__ __forceinline__ float2 kv_ld2(const __half* p) {
 // KV_LDH(p): the element as an f16 value, for the tensor-core kernels that stage K and V as f16 anyway (f32 caches round here, f16 caches
 // are already that value).
 #define KV_LDH(p) (*(p))
+#define KV_LDHS(p, sc) KV_LDH(p)
 #define KV_LDS(p, sc) KV_LD(p)
 #define KV_LD4VS(p, i, sc) KV_LD4V(p, i)
 #define KV_LD2VS(p, i, sc) KV_LD2V(p, i)
@@ -51,6 +52,10 @@ typedef signed char KV_T;
 // KV_LDS(p, sc): the element widened to f32 and multiplied by its (position, head) scale. For a scale that is a power of two the product
 // is exact, so a reader folding these in the f32 original's order gives the original's bits on a cache that holds int8 x 2^e values.
 #define KV_LDS(p, sc) ((float)(*(p)) * (sc))
+// KV_LDHS(p, sc): the element dequantized (the f32 product KV_LDS forms) and rounded to f16, for the tensor-core prefill tiles, which stage K and V
+// as f16. In the f32 and f16 builds it is KV_LDH(p) and sc is not evaluated, so those modules' PTX is unchanged; the i8 build has no KV_LDH, so a
+// tile staging an int8 cache without its scale does not compile.
+#define KV_LDHS(p, sc) __float2half_rn((float)(*(p)) * (sc))
 // KV_ST in an i8 build stores nothing: the rope/store kernels still write the rotated K back into their f32 K buffer in place and leave V in its own,
 // and kv8_store.cu quantizes both into the int8 pools with their scales (one scale needs the absmax over a head's hd values, which the per-pair
 // threads of the rope kernels do not see). A caller of an i8 build launches kv8_store after the rope kernel.
@@ -75,6 +80,7 @@ typedef float KV_T;
 #define KV_LD2V(p, i) (((const float2*)(p))[i])
 #define KV_ST(p, v) (*(p) = (v))
 #define KV_LDH(p) __float2half_rn(*(p))
+#define KV_LDHS(p, sc) KV_LDH(p)
 #define KV_LDS(p, sc) KV_LD(p)
 #define KV_LD4VS(p, i, sc) KV_LD4V(p, i)
 #define KV_LD2VS(p, i, sc) KV_LD2V(p, i)

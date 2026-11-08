@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """bench_peer.py's heavy-load void (owner rule 2026-10-19; CLAUDE.md "Run budget"): a cell whose start finds this box's load
-above half its cores, or its free memory under the fit need plus 2 GB, is void, listed, and re-run in place, never averaged.
+above half its cores, or its available memory (the fit guard's reading) under the fit need, is void, listed, and re-run in place,
+never averaged; swap that grows during a cell voids it (void_rule.py, the one definition; Francis, 2026-11-08).
 Driven through main()'s cell loop with a fake sampler, and checked against a plant (the rule removed: the heavy start's run is
 averaged). Run: python3 -B scripts/test_bench_peer_heavy.py"""
 import json
@@ -12,9 +13,9 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_peer  # noqa: E402
 
-CLEAN = {"loadavg": [1.0, 1.0, 1.0], "free_mem_mb": 9000, "ncores": 8, "gpu": None}
-LOADED = {"loadavg": [4.5, 3.0, 2.0], "free_mem_mb": 9000, "ncores": 8, "gpu": None}
-SHORT = {"loadavg": [1.0, 1.0, 1.0], "free_mem_mb": 2500, "ncores": 8, "gpu": None}
+CLEAN = {"loadavg": [1.0, 1.0, 1.0], "available_mb": 9000, "ncores": 8, "gpu": None}
+LOADED = {"loadavg": [4.5, 3.0, 2.0], "available_mb": 9000, "ncores": 8, "gpu": None}
+SHORT = {"loadavg": [1.0, 1.0, 1.0], "available_mb": 900, "ncores": 8, "gpu": None}  # under the 1 GB fit need the MainLoop cell declares
 RULE = bench_peer.heavy_void  # the fake run's own judge of a heavy start, untouched by the plant
 
 
@@ -30,10 +31,67 @@ class Rule(unittest.TestCase):
         self.assertIn("above half of 8 cores", bench_peer.heavy_void(LOADED, None))
         self.assertIn("above half of 16 cores", bench_peer.heavy_void(dict(LOADED, loadavg=[8.5, 0, 0], ncores=16), None))
 
-    def test_free_memory_under_need_plus_2gb(self):
-        self.assertIsNone(bench_peer.heavy_void(dict(CLEAN, free_mem_mb=1000 + 2048), 1000))
-        self.assertIn("below the fit need", bench_peer.heavy_void(dict(CLEAN, free_mem_mb=1000 + 2047), 1000))
+    def test_available_memory_under_the_need(self):
+        self.assertIsNone(bench_peer.heavy_void(dict(CLEAN, available_mb=1000), 1000), "exactly the need starts: no margin")
+        self.assertIn("below the fit need", bench_peer.heavy_void(dict(CLEAN, available_mb=999), 1000))
         self.assertIsNone(bench_peer.heavy_void(SHORT, None), "no model load: the memory clause does not apply")
+
+    def test_an_unreadable_core_count_skips_the_load_term_and_says_so(self):
+        import contextlib
+        import io
+        self.addCleanup(setattr, bench_peer, "_LOAD_SKIP_SAID", bench_peer._LOAD_SKIP_SAID)
+        bench_peer._LOAD_SKIP_SAID = False
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertIsNone(bench_peer.heavy_void(dict(CLEAN, loadavg=[40.0, 0, 0], ncores=None), None), "no cap of 0.5 from an unknown core count")
+            bench_peer.heavy_void(dict(CLEAN, ncores=None), None)
+        self.assertEqual(out.getvalue().count("core count unreadable"), 1, "said once")
+
+    def test_machine_state_and_end_state_carry_the_four_readings(self):
+        import hostmem
+        for obj, name, value in [(hostmem, "available_mb", lambda *a, **k: 7000), (hostmem, "reclaimable_mb", lambda *a, **k: 3000),
+                                 (bench_peer, "swap_used_mb", lambda: 111.5), (bench_peer, "_loadavg", lambda: [1.5, 1.0, 1.0]),
+                                 (bench_peer, "_gpu_state", lambda: None), (bench_peer, "thermal_state", lambda: None)]:
+            old = getattr(obj, name)
+            setattr(obj, name, value)
+            self.addCleanup(setattr, obj, name, old)
+        m, e = bench_peer.machine_state(), bench_peer.end_state()
+        self.assertEqual((m["available_mb"], m["reclaimable_mb"], m["swap_mb"], m["loadavg"][0]), (7000, 3000, 111.5, 1.5))
+        self.assertEqual((e["available_mb"], e["reclaimable_mb"], e["swap_mb"], e["loadavg"][0]), (7000, 3000, 111.5, 1.5))
+        self.assertNotIn("free_mem_mb", m, "the key holds the available reading and says so")
+
+    def test_a_file_size_need_is_recorded_as_a_lower_bound(self):
+        self.addCleanup(os.environ.pop, "BENCH_FIT_NEED_GB", None)
+        self.addCleanup(bench_peer._FIT_NEED.clear)
+        self.assertTrue(bench_peer.need_is_lower_bound("file size"))
+        self.assertFalse(bench_peer.need_is_lower_bound("fit banner"))
+        self.assertFalse(bench_peer.need_is_lower_bound("BENCH_FIT_NEED_GB"))
+        self.assertFalse(bench_peer.need_is_lower_bound(None))
+
+    def test_an_unreadable_memory_or_load_reading_fails_closed(self):
+        self.assertIn("available memory unreadable", bench_peer.heavy_void(dict(CLEAN, available_mb=None), 1000))
+        self.assertIn("load average unreadable", bench_peer.heavy_void(dict(CLEAN, loadavg=None), None))
+        self.assertIsNone(bench_peer.heavy_void(dict(CLEAN, available_mb=None), None), "no model load: no memory clause")
+
+    def test_the_documented_no_free_memory_override_skips_the_memory_term_and_says_so(self):
+        import contextlib
+        import io
+        self.addCleanup(setattr, bench_peer, "_FREE_MEM_OVERRIDE_USED", bench_peer._FREE_MEM_OVERRIDE_USED)
+        self.addCleanup(setattr, bench_peer, "_MEM_SKIP_SAID", bench_peer._MEM_SKIP_SAID)
+        bench_peer._MEM_SKIP_SAID = False
+        state = dict(CLEAN, available_mb=None)
+        bench_peer._FREE_MEM_OVERRIDE_USED = False
+        self.assertIn("available memory unreadable", bench_peer.heavy_void(state, 1000), "without the override the guard fails closed")
+        bench_peer._FREE_MEM_OVERRIDE_USED = True
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertIsNone(bench_peer.heavy_void(state, 1000))
+            bench_peer.heavy_void(state, 1000)
+            self.assertIn("above half", bench_peer.heavy_void(dict(state, loadavg=[9.0, 0, 0]), 1000), "the load term still applies")
+        self.assertEqual(out.getvalue().count("BENCH_ALLOW_NO_FREE_MEM=1"), 1, "logged once")
+
+    def test_provenance_says_a_file_size_need_is_a_lower_bound(self):
+        self.assertIn("lower bound", bench_peer.provenance()["fit_need"])
 
     def test_fit_need_sources(self):
         self.addCleanup(os.environ.pop, "BENCH_FIT_NEED_GB", None)
@@ -46,11 +104,13 @@ class Rule(unittest.TestCase):
         self.assertEqual(bench_peer.fit_need("anything"), (3072, "BENCH_FIT_NEED_GB"))
 
     def test_free_memory_is_goinfers_reading(self):
-        # The void rule reads cmd/hostmem's reclaimable figure (scripts/hostmem.py), not the fit guard's available one; no formula here.
+        # The void rule reads the fit guard's own available figure (cmd/hostmem via scripts/hostmem.py); the reclaimable one is only recorded.
         import hostmem
-        saved = hostmem.reclaimable_mb
-        self.addCleanup(setattr, hostmem, "reclaimable_mb", saved)
-        hostmem.reclaimable_mb = lambda *a, **k: 12345
+        saved, saved_r = hostmem.available_mb, hostmem.reclaimable_mb
+        self.addCleanup(setattr, hostmem, "available_mb", saved)
+        self.addCleanup(setattr, hostmem, "reclaimable_mb", saved_r)
+        hostmem.available_mb = lambda *a, **k: 12345
+        hostmem.reclaimable_mb = lambda *a, **k: 1
         self.assertEqual(bench_peer.free_mem_mb(), 12345)
 
     def test_refuses_when_every_start_is_void(self):
@@ -101,8 +161,10 @@ class MainLoop(unittest.TestCase):
     def test_a_heavy_start_is_listed_and_the_cell_reruns_clean(self):
         rec = self.run_main()
         self.assertEqual(rec["mean"], 100.0, "the cell's rates came from a heavy start")
-        self.assertEqual([v["void"].split()[0] for v in rec["void_starts"]], ["load", "free"])
-        self.assertEqual(rec["machine"]["free_mem_mb"], 9000)
+        self.assertEqual([v["void"].split()[0] for v in rec["void_starts"]], ["load", "available"])
+        self.assertEqual(rec["machine"]["available_mb"], 9000)
+        for k in ("loadavg", "available_mb", "reclaimable_mb", "swap_mb"):
+            self.assertIn(k, rec["machine"]["end"], "the cell records the four readings at its end too")
         self.assertEqual((rec["machine"]["fit_need_mb"], rec["machine"]["fit_need_source"]), (1024, "BENCH_FIT_NEED_GB"))
 
     def test_plant_without_the_rule_a_heavy_cell_is_averaged(self):

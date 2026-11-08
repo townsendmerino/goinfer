@@ -1,0 +1,22 @@
+== fit check 2026-11-08 12:15:38 PST load 1.58 1.84 1.03 MemAvailable 61320 MiB
+fit:   decode path: cuda-resident (int4)   fit: 4352-token cap needs 0.8 GB KV (weights 13.3 GB, budget 33.1 GB, 32.3 GB left for a request's own prefill) 
+== A/B start 2026-11-08 12:16:09 PST
+== A/B end 2026-11-08 12:26:01 PST exit 0
+[mem10ab 12:16:09] load 1/8 arm A: loading (load 2.32, available 60989 MiB, elapsed 0s)
+[mem10ab 12:17:20] load 1/8 arm A: short 58.68 tok/s, long 33.57 tok/s; RssShmem 12345 MiB (at load 12345), RssAnon 209, RssFile 13675, VmSwap 0, VmHWM 26316; Rss of .giw 13574, pageable files 0; first-layer hash bfdc8a9f2b24332e
+[mem10ab 12:17:23] load 2/8 arm B: loading (load 2.62, available 61124 MiB, elapsed 1m14s)
+[mem10ab 12:18:36] load 2/8 arm B: short 48.58 tok/s, long 25.16 tok/s; RssShmem 94 MiB (at load 94), RssAnon 225, RssFile 25926, VmSwap 0, VmHWM 26333; Rss of .giw 13574, pageable files 12240; first-layer hash bfdc8a9f2b24332e
+[mem10ab 12:18:38] load 3/8 arm B: loading (load 3.22, available 61134 MiB, elapsed 2m29s)
+[mem10ab 12:19:51] load 3/8 arm B: short 48.10 tok/s, long 25.19 tok/s; RssShmem 94 MiB (at load 94), RssAnon 255, RssFile 25926, VmSwap 0, VmHWM 26350; Rss of .giw 13574, pageable files 12240; first-layer hash bfdc8a9f2b24332e
+[mem10ab 12:19:53] load 4/8 arm A: loading (load 3.79, available 61057 MiB, elapsed 3m44s)
+[mem10ab 12:21:03] load 4/8 arm A: short 58.94 tok/s, long 33.59 tok/s; RssShmem 12345 MiB (at load 12345), RssAnon 267, RssFile 13675, VmSwap 0, VmHWM 26373; Rss of .giw 13574, pageable files 0; first-layer hash bfdc8a9f2b24332e
+[mem10ab 12:21:06] load 5/8 arm A: loading (load 2.60, available 61061 MiB, elapsed 4m57s)
+[mem10ab 12:22:15] load 5/8 arm A: short 59.01 tok/s, long 33.57 tok/s; RssShmem 12345 MiB (at load 12345), RssAnon 283, RssFile 13675, VmSwap 0, VmHWM 26391; Rss of .giw 13574, pageable files 0; first-layer hash bfdc8a9f2b24332e
+[mem10ab 12:22:18] load 6/8 arm B: loading (load 3.14, available 61070 MiB, elapsed 6m9s)
+[mem10ab 12:23:31] load 6/8 arm B: short 48.12 tok/s, long 25.16 tok/s; RssShmem 94 MiB (at load 94), RssAnon 329, RssFile 25926, VmSwap 0, VmHWM 26434; Rss of .giw 13574, pageable files 12240; first-layer hash bfdc8a9f2b24332e
+[mem10ab 12:23:33] load 7/8 arm B: loading (load 3.06, available 61051 MiB, elapsed 7m24s)
+[mem10ab 12:24:46] load 7/8 arm B: short 47.97 tok/s, long 25.17 tok/s; RssShmem 94 MiB (at load 94), RssAnon 338, RssFile 25926, VmSwap 0, VmHWM 26443; Rss of .giw 13574, pageable files 12240; first-layer hash bfdc8a9f2b24332e
+[mem10ab 12:24:48] load 8/8 arm A: loading (load 3.77, available 61005 MiB, elapsed 8m39s)
+[mem10ab 12:25:59] load 8/8 arm A: short 58.60 tok/s, long 33.41 tok/s; RssShmem 12345 MiB (at load 12345), RssAnon 362, RssFile 13675, VmSwap 0, VmHWM 26468; Rss of .giw 13574, pageable files 0; first-layer hash bfdc8a9f2b24332e
+[mem10ab] short B/A 0.8280, 0.8160, 0.8154, 0.8187 median 0.8174; long B/A 0.7494, 0.7500, 0.7494, 0.7533 median 0.7497; RssShmem saved 12251 MiB (A max 12345, B max 94); B's VmSwap max 0 MiB => KILL
+--- PASS: TestMEM10_pageableExpertSourceAB (592.49s)

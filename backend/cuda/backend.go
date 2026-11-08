@@ -1273,9 +1273,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			r.fastAttn, r.fastGemm = false, false
 		}
 		if (r.fastAttn || r.fastGemm) && r.prefillReady {
-			// The tensor-core prefill attention has no int8 twin: an int8 cache leaves it unbound (kvPTX gives nil and compileKV refuses it without
-			// compiling anything), and prefill takes attn_batched or the row-batched split-KV kernels.
-			if fmod, e6 := r.compileKV(r.kvPTX(attnFusedPTX, attnFusedKV16PTX)); r.fastAttn && !r.kvI8 && e6 == nil {
+			// The tensor-core prefill attention loads its cache's build: f32, f16 or int8 (the _kv8 twins stage K and V as f16 from the int8 cache and
+			// its scales, docs/measurements/cuda-kv-i8-2026-11/s6-registration.md); its launches pass the layer's scale pools (kvScaled).
+			if fmod, e6 := r.compileKV(r.kvPTX8(attnFusedPTX, attnFusedKV16PTX, attnFusedKV8PTX)); r.fastAttn && e6 == nil {
 				loadF := func(dst *Pipeline, name string) {
 					if pl, pe := r.dev.NewComputePipeline(fmod, name); pe == nil {
 						*dst = pl
@@ -1283,7 +1283,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				}
 				loadF(&r.bAttnFused64, "attn_fused_hd64")
 				loadF(&r.bAttnFused128, "attn_fused_hd128")
-				if bmod, eb := r.compileKV(r.kvPTX(attnFusedBMPTX, attnFusedBMKV16PTX)); eb == nil {
+				if bmod, eb := r.compileKV(r.kvPTX8(attnFusedBMPTX, attnFusedBMKV16PTX, attnFusedBMKV8PTX)); eb == nil {
 					loadF2 := func(dst *Pipeline, name string) {
 						if pl, pe := r.dev.NewComputePipeline(bmod, name); pe == nil {
 							*dst = pl
