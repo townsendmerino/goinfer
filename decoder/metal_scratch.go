@@ -1,8 +1,6 @@
 package decoder
 
 import (
-	"strconv"
-
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -148,7 +146,7 @@ func (m *Model) MetalDecodeScratchBytes(slots int) int64 {
 			f32 += int64(k*2*inter + k + k*H)
 			bytes += int64(k * inter)
 		}
-		if m.metalMoEPaged(nE) {
+		if metalMoEPaged(slots, nE) {
 			bytes += int64(4 * k)
 		}
 	}
@@ -156,7 +154,7 @@ func (m *Model) MetalDecodeScratchBytes(slots int) int64 {
 		f32 += int64(2*g4b.NE + 2*g4b.TopK + 4*H)
 		bytes += int64(8 * g4b.TopK)
 		u32s += int64(10 + g4b.TopK)
-		if m.metalMoEPaged(g4b.NE) {
+		if metalMoEPaged(slots, g4b.NE) {
 			bytes += int64(4 * g4b.TopK)
 		}
 	}
@@ -201,17 +199,6 @@ func (m *Model) metalDeltaNetEps() (eps, oEps float64) {
 	return 0, 0
 }
 
-// metalMoEPaged reports whether a Metal build of m pages its routed experts, from the request backend/metal's metalMoESlotsRequest
-// reads: an expert-slot request, else expert caching (whose slot count the build sizes from memory, priced here as paging), else the
-// GOINFER_METAL_MOE_SLOTS knob; paged when the slots are under the expert count.
-func (m *Model) metalMoEPaged(nE int) bool {
-	n := m.MoECacheSlotsRequest()
-	if n <= 0 && m.MoECacheExperts() {
-		return true
-	}
-	if n <= 0 {
-		v, _ := m.Knob("GOINFER_METAL_MOE_SLOTS")
-		n, _ = strconv.Atoi(v)
-	}
-	return n > 0 && n < nE
-}
+// metalMoEPaged reports whether a Metal build holding slots expert slots per layer pages its nE routed experts: a slot count above
+// 0 and under the expert count, as backend/metal's MoE builds decide it.
+func metalMoEPaged(slots, nE int) bool { return slots > 0 && slots < nE }

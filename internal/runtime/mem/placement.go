@@ -36,8 +36,10 @@ type DeviceLoad struct {
 	// with the context, and is priced wherever the dense weights are.
 	StateBytes int64
 	// ScratchBytes is what the backend's build holds for its forward passes once a load (Metal's decode scratch), 0 where none is
-	// priced. It does not grow with the context, and is priced wherever the dense weights are.
-	ScratchBytes int64
+	// priced. It does not grow with the context, and is priced wherever the dense weights are. ScratchPagedExtra is what the scratch
+	// holds beyond it when the routed experts page (Metal's slot indices), priced on an expert cache under the expert count.
+	ScratchBytes      int64
+	ScratchPagedExtra int64
 
 	CtxCeiling int // a fixed context cap past which the backend allocates nothing more (0 for none)
 	// CtxStep is the grid a shrunk context stays on (Metal allocates KV in 8-position steps; 1 elsewhere). CtxSearch makes the
@@ -203,6 +205,11 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 			reserve = int64(l.TopK) * (l.ExpertBytesFull / int64(l.NExperts))
 		}
 	}
+	paged := int64(0) // an expert cache's scratch beyond a resident build's, solved for as held
+	if l.NExperts > 0 {
+		paged = l.ScratchPagedExtra
+		fixed += paged
+	}
 	ctx, kv, ctxOK := chooseCtx()
 	p.Ctx, p.KVBytes = ctx, kv
 	if !ctxOK {
@@ -223,7 +230,7 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 		return p
 	}
 	// Every expert resident, at the context just chosen.
-	if fixed+l.StateBytes+l.FixedSlack+l.ExpertBytesFull+hostAll+kv+req.ExtraBytes <= free {
+	if fixed-paged+l.StateBytes+l.FixedSlack+l.ExpertBytesFull+hostAll+kv+req.ExtraBytes <= free {
 		p.Placement = Resident
 		p.ExpertBytesUsed = l.ExpertBytesFull + l.ExpertBytesFixed
 		p.HostCopyBytes = hostAll
@@ -251,6 +258,9 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 	}
 	p.Placement = ExpertCached
 	p.Slots = slots
+	if slots < l.NExperts {
+		p.ScratchBytes += paged
+	}
 	p.ExpertBytesUsed = int64(slots)*perExpert + l.ExpertBytesFixed
 	p.HostCopyBytes = l.HostFixed
 	p.Reason = fmt.Sprintf("dense %.2f GB%s + %d/%d experts %.2f GB + KV@%d %.2f GB fits %.2f GB free",

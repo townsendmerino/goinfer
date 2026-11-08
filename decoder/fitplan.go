@@ -220,6 +220,9 @@ func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceL
 	case "metal":
 		l.CtxStep, l.CtxCeiling, l.CtxSearch = metalKVPad, MetalCtxCeiling, true // whole blocks beside the pools' null blocks: no one rate
 		l.ScratchBytes = m.MetalDecodeScratchBytes(0)
+		if l.TopK < l.NExperts { // an expert cache holds at least the top k, under the expert count when it pages
+			l.ScratchPagedExtra = m.MetalDecodeScratchBytes(l.TopK) - l.ScratchBytes
+		}
 		if !pinned {
 			l.CtxCeiling = MetalFitDefaultCtx
 		}
