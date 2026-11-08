@@ -1,0 +1,28 @@
+=== RUN   TestKV4b_deliveredBytes
+=== RUN   TestKV4b_deliveredBytes/mamba-hybrid/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7067 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:64: load nemotron-tiny (-kv f16): --kv f16 cannot be delivered on the cuda KV cache: f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3 and kimi_k2 so far; nemotron_h keeps f32
+--- FAIL: TestKV4b_deliveredBytes (1.92s)
+    --- FAIL: TestKV4b_deliveredBytes/mamba-hybrid/nemotron-tiny (1.81s)
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/mamba-hybrid/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7067 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:64: load nemotron-tiny (-kv f16): --kv f16 cannot be delivered on the cuda KV cache: f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3 and kimi_k2 so far; nemotron_h keeps f32
+--- FAIL: TestKV4b_layer0StoreIsTheRoundedF32Store (0.27s)
+    --- FAIL: TestKV4b_layer0StoreIsTheRoundedF32Store/mamba-hybrid/nemotron-tiny (0.27s)
+FAIL
+ledger: 8 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	2.264s
+FAIL
