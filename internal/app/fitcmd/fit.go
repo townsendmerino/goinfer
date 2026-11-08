@@ -138,6 +138,7 @@ func Run(args []string) int {
 		known   bool
 		src     fitSource
 		plan    fit.Plan
+		loadErr error
 	}
 	var lines []line
 	for _, backend := range decoder.CompiledBackends() {
@@ -161,20 +162,21 @@ func Run(args []string) int {
 		}
 		src := lines[i].src
 		m, err := decoder.Load(src.path, fitLoadOptions(src, residentCtx))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "load %s: %v\n", src.path, err)
-			return 1
-		}
 		for j := i; j < len(lines); j++ {
 			if lines[j].known && !planned[j] && sameSource(lines[j].src, src) {
-				lines[j].plan, planned[j] = planFor(m, lines[j].backend, lines[j].free, req), true
+				if planned[j], lines[j].loadErr = true, err; err == nil {
+					lines[j].plan = planFor(m, lines[j].backend, lines[j].free, req)
+				}
 			}
 		}
-		_ = m.Close()
+		if err == nil {
+			_ = m.Close()
+		}
 	}
 
 	fmt.Printf("%s, ctx=%d%s\n\n", path, *ctx, pinnedNote(ctxPinned))
 	printed := map[string]bool{}
+	failed := false
 	var admitted []string // in CompiledBackends() order; "cpu" always eligible, sorted last
 	srcOf := map[string]fitSource{}
 	for _, l := range lines {
@@ -192,6 +194,11 @@ func Run(args []string) int {
 		if l.src.path != path {
 			via = ", read through its sidecar " + filepath.Base(l.src.path)
 		}
+		if l.loadErr != nil { // this backend's source did not load; the others are still planned
+			fmt.Printf("%-6s  NOT PLANNED @ %s%s\n        load %s: %v\n", l.backend, quantLabel(l.src.quant), via, l.src.path, l.loadErr)
+			failed = true
+			continue
+		}
 		fmt.Printf("%-6s  %s @ %s%s\n        %s\n", l.backend, strings.ToUpper(l.plan.Placement.String()), quantLabel(l.src.quant), via, l.plan.Reason)
 		if l.plan.Placement != fit.PlacementDecline {
 			admitted = append(admitted, l.backend)
@@ -200,6 +207,9 @@ func Run(args []string) int {
 	}
 	if *measure {
 		selfMeasure(admitted, srcOf)
+	}
+	if failed {
+		return 1
 	}
 	return 0
 }
