@@ -343,6 +343,8 @@ func TestSolvePlacement_declineReasonsQuoteEachTermOnce(t *testing.T) {
 	moe := dense
 	moe.NExperts, moe.TopK, moe.ExpertBytesFull, moe.ExpertBytesFixed, moe.ScratchPagedExtra = 8, 2, 8*gib, 512*mib, 64*mib
 	moe.HostAll = func() int64 { return 0 }
+	unpaged := moe // a cache that adds no paged extra: the only one the context leaves no room beside
+	unpaged.ScratchPagedExtra = 0
 	quoted := func(re, reason string) string {
 		if m := regexp.MustCompile(re).FindStringSubmatch(reason); m != nil {
 			return m[1]
@@ -358,7 +360,7 @@ func TestSolvePlacement_declineReasonsQuoteEachTermOnce(t *testing.T) {
 	}{
 		{"dense, the context floor", dense, gib, true, "1.00", "256.00"},
 		{"moe, the context floor", moe, gib, true, "1.50", "320.00"},
-		{"moe without the reserve, no room for a cache", moe, gib + 512*mib + 320*mib + kv(4096), false, "1.50", "320.00"},
+		{"moe without the reserve, no room for a cache", unpaged, gib + 512*mib + 256*mib + kv(4096), false, "1.50", "256.00"},
 	} {
 		d := solvePlacement(c.l, PlanRequest{Ctx: 4096, CtxPinned: true}, Machine{Free: map[Tier]int64{Unified: c.free}}, DefaultPolicy(), c.reserve)
 		if d.Placement != Declined {

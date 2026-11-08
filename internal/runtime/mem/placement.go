@@ -240,7 +240,8 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 		return p
 	}
 	// The largest slot count whose bytes fit beside the fixed terms. A layer's experts are uniform in shape, so this is arithmetic.
-	remaining := free - fixed - l.StateBytes - l.FixedSlack - l.HostFixed - kv - req.ExtraBytes
+	// The paged slot indices are held only by a cache under the expert count, so they are taken only from one that pages.
+	remaining := free - (fixed - paged) - l.StateBytes - l.FixedSlack - l.HostFixed - kv - req.ExtraBytes
 	if remaining <= 0 {
 		return decline("dense %.2f GB%s + KV@%d %.2f GB alone exceeds %.2f GB free — no room left for any expert cache",
 			gbf(weights), stateNote(l.StateBytes)+scratchNote(l.ScratchBytes+paged)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
@@ -252,6 +253,9 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 	}
 	if slots > l.NExperts {
 		slots = l.NExperts
+	}
+	if slots < l.NExperts {
+		slots = min(slots, int((remaining-paged)/perExpert))
 	}
 	if slots < l.TopK {
 		return decline("expert-cached needs at least top-k=%d slots/layer (%.2f GB) but only %.2f GB is free beside dense+KV",
