@@ -94,3 +94,38 @@ On `llama-attnfa-tiny` at `-kv i8`, a prefill above the fast-prefill floor launc
 
 **Timeline:** by day on 2026-11-08, start and expected finish stated in the status file before each timed step. One timed run on the box
 (the timing lock).
+
+## Readings, 2026-11-08 (nobara, RTX 2070 SUPER, driver 595.112.07)
+
+### G1 and the route gate: PASS (tier 0, on `f457c8a0`)
+- **G1** (`TestKV8_exactInputIdentity_fusedPrefill`): every fused variant's `_kv8` twin, on an int8 cache written by a real prefill,
+  equals its `_kv16` twin on `f16(code * scale)` bit for bit. That covers `llama-attnfa-tiny` (hd128) and the 0.5B (hd64), at
+  (startPos, M) = (0, 70), (0, 300), (37, 200), (100, 129).
+  - Plants, each red: the scale ignored; V staged with K's scale; the next head's scale; the vector unpack shifted one lane
+    (`s6-g1-plant-*.log`).
+  - The f32 and f16 modules' PTX is byte-unchanged (only the two `_kv8` files are new). `TestPTX_matchesSourcesAndBindings`, the toolchain
+    banner test and `TestKV16_exactInputIdentity_prefillReaders` pass.
+- **Route** (`TestKV8_everyAttentionPathStaysCloseToF32`, fast-prefill cell, the 1.5B): the int8 arm launched the tile 28 times. Prefill
+  cosine against f32 is 0.9963, min 0.9708 over 9 rows, against that test's 0.97 smoke bar: a thin margin, recorded. Restoring the int8
+  exclusion at the tile load turns this and G1 red (`s6-route-plant.log`).
+
+### G4, on `12eedab5` (the pinned `7545a43cf` + the S6 commits; reference source unchanged, set B current)
+
+The gate binary passed every precondition. The run started at a 1-minute load of 2.50, a fidelity cell, not a timed one. It took 355 s:
+D7 275 s, against 895 s in S4, because the int8 arm now prefills on the tile. Logs: `s6-g4-12eedab5/gate.log`.
+
+| cell, int8 against f32 | agreement | hard flips | KL ratio | verdict | S4 (old route) |
+|---|---|---|---|---|---|
+| D7, qwen2.5-7b, K=8000 | 92.19 % vs 93.12 % (-0.93 pt), int8 >= f32 on 7/10 | 14 vs 11 (bar 17.6) | 1.0800 | **AMBIGUOUS, PARKED** | PARKED: -0.15 pt, 11 flips, 1.078 |
+| S, qwen2.5-coder-1.5b, K=3900 | 88.28 % vs 91.09 % (-2.81 pt), 5/10 | 27 vs 9 (bar 15) | 1.6881 | **DOES NOT PASS** | DOES NOT PASS: -1.40 pt, 19 flips, 1.661 |
+
+- D7's (b) also sits inside its last 0.2 pt (-0.93 against -1.0), so it is ambiguous on (b) as well as (c).
+- The controls reproduce S4's exactly: f16 against f32 is 1.0569 (PARKED) at D7 and 1.0057 (PASSES) at S.
+- int8 against f16 is inside every bar at D7 (1.0219).
+- **Reading:** int8 through the tile is a little lossier than through `attn_batched` at both cells.
+  - The tile rounds each dequantized K/V value to f16 before the mma. `attn_batched` reads the dequantized value in f32.
+  - The f32 and f16 arms' tiles round too, which is why the controls do not move.
+  - No verdict changes. The published wording stays: about f16's quality on the 7B at 8K keys, a measurable loss on the 1.5B.
+- **Predictions:**
+  - "D7 stays PARKED (0.6)": right.
+  - "S stays DOES NOT PASS (0.8)": right.
