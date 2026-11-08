@@ -26,7 +26,7 @@
 > - **RF0:** built but for its prior-art reading: the per-turn `timings` block is on the wire (`internal/app/serveapp/turn_timings.go`), the cost
 >   counters exist (`internal/cost`, SB11), and the shape × family × backend census was refreshed against program-based admission on 2026-11-07
 >   (`docs/measurements/forward-arch-census-2026-11-07.md`; CPU-only families on CUDA / Metal / WebGPU by `ResidentEligible`, the capability gates: 8 / 8 / 13, from 10 / 12 / 16; by `Admit(...).Why`, which adds Nemotron-H's int4 precision policy: 9 / 9 / 14 model-free and 8 / 8 / 14 at the loader's pick).
-> - **RF1:** **new**, planned (§5.5, docs only): seven steps (RF1-3 dropped), 49 `Resident*` interfaces to 41.
+> - **RF1:** **new**, in progress (§5.5): seven steps (RF1-3 dropped), 49 `Resident*` interfaces to 41. RF1-1 (#752) and RF1-2a (#757) merged; RF1-2b open (#760); RF1-4 open (#763).
 > - **Not started:** RF2–RF6, HL, OP5, OP6's CUDA half, default switch and WebGPU, OP1 on WebGPU, OP4 on WebGPU. §7a sizes them.
 > - **Other tracks:** SP's SP2 on CUDA merged (#232, §6a).
 >
@@ -4723,8 +4723,8 @@ in its `program.Support` table (OP's work). CUDA's `BatchStepRange` already read
 | id | what | removes | gates | session-days |
 |---|---|---|---|---|
 | RF1-1 | merge the two pairs whose implementer sets are identical: `RecurrentCheckpointOwner` into `RecurrentCheckpoint` (CUDA, Metal), `RecurrentSnapshots` into `KVSnapshotter` (CUDA); test fakes answer the old "absent" value | 2 interfaces, 2 assertions [47] | the backends lose a `var _` line and two comments, no behavior; tier 0 | 0.5 |
-| RF1-2a | each reporter asserted in one `Model` accessor; no backend change | 26 sites to 10 | decision census | 0.5 |
-| RF1-2b | one `ResidentCaps` record for the seven values, read once after load; a red-first test per field shows it does not change after load (a slot change, `ResizeExpertCache`), and a field that does stays a method | 6 interfaces [41] | decision census; each backend's value tests, on its box | 1–1.5 |
+| RF1-2a | each reporter asserted in one accessor (a `Model` method, or a helper taking the resident); no backend change; merged, #757 | 26 sites to 10 | decision census | 0.5 |
+| RF1-2b | one `ResidentCaps` record for the seven values behind `ResidentCapsReporter`, read at each use as the methods were (so no field needs a static-after-load proof); the floors keep their presence bits | 6 interfaces [41] | decision census; a red-first fake per field; each backend's value tests, on its box | 1–1.5 |
 | RF1-3 | *dropped* (Gemini's review of #751, read against the code): the four answers above stay with the backends | — | — | 0 |
 | RF1-4 | `Batch` (rows: sequence, position, input kind, output kind) and `(*Model).step`, an adapter onto today's calls; no caller moves | nothing yet | a fake resident logs its calls; for every shape `step` makes exactly the call today's caller makes | 1 |
 | RF1-5 | decode and verify callers onto `step` (`model.go`'s greedy/top-k/sample choice, `spec_ngram`, `blockspec`) | 6 assertion sites | the call log through the callers, not `step` alone; decision census | 1 |

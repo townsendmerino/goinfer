@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// fakeResident is a minimal decoder.ResidentForward + decoder.ResidentCapped, built only from
+// fakeResident is a minimal decoder.ResidentForward + decoder.ResidentCapsReporter, built only from
 // decoder's exported API (mirroring decoder/resident_seam_test.go's own unexported fakeResident,
 // which internal/serveapp cannot import) — enough to make ResidentActive()/ResidentContextCap()
 // report real values without a GPU, so M-01's fix (docs/audit-2026-09-10.md) can be tested
@@ -43,7 +43,9 @@ func (f *fakeResident) UploadKV(layer, base int, keys, vals []float32) error { r
 func (f *fakeResident) TruncateTo(pos int)                                   {}
 func (f *fakeResident) Reset()                                               {}
 func (f *fakeResident) Close() error                                         { return nil }
-func (f *fakeResident) ContextCap() int                                      { return f.capPos }
+func (f *fakeResident) ResidentCaps() decoder.ResidentCaps {
+	return decoder.ResidentCaps{ContextCap: f.capPos}
+}
 
 // fakeResidencyBackend wraps the real cpu backend and additionally advertises residency, so
 // decoder.Load builds a resident runner with no GPU present — the same seam

@@ -110,26 +110,31 @@ func (m *Model) kvRootIn(lora *loraRuntime, ns string) kvmgr.Root {
 	return r
 }
 
-// fastPrefillMinRows is the fewest rows a pass needs to run a ResidentFastPrefill resident's fast kernels: a pass of
+// fastPrefillMinRows is the fewest rows a pass needs to run a fast-prefill resident's fast kernels (ResidentCaps.HasFastPrefill): a pass of
 // 15 rows or fewer is exact whatever the prompt's length (docs/measurements/kv0-invariance-2026-10-13.md).
 const fastPrefillMinRows = 16
 
-// kvLeadClassMap is the class rule the short-prefix guard reads: a ResidentFastPrefill resident's.
+// kvLeadClassMap is the class rule the short-prefix guard reads: a fast-prefill resident's (ResidentCaps.HasFastPrefill).
 func (m *Model) kvLeadClassMap() kvmgr.ClassMap {
 	if fast, ok, _, _ := m.residentFloors(); ok {
-		return kvmgr.ClassMap{Floor: fast, MinRows: fastPrefillMinRows}
+		return fastClassMap(fast)
 	}
 	return kvmgr.ClassMap{}
 }
 
+// fastClassMap is the class rule of a resident with fast prefill kernels from floor prompt tokens.
+func fastClassMap(floor int) kvmgr.ClassMap {
+	return kvmgr.ClassMap{Floor: floor, MinRows: fastPrefillMinRows}
+}
+
 // kvClassMap is the rule for which kernel class a prefill pass of this resident writes, recorded with each committed
-// row. A ResidentPrefillKernelFloor resident judges a pass on where it ends and has no row minimum. On a model with
+// row. A kernel-floor resident (ResidentCaps.HasKernelFloor) judges a pass on where it ends and has no row minimum. On a model with
 // sliding-window layers a fast pass that starts off a block boundary is recorded with no producer
 // (kvmgr.ClassMap.Windowed; measured on CUDA, applied to every backend with a fast class).
 func (m *Model) kvClassMap() kvmgr.ClassMap {
 	cm := kvmgr.ClassMap{}
-	if _, hasFast, kernel, hasKernel := m.residentFloors(); hasFast {
-		cm = m.kvLeadClassMap()
+	if fast, hasFast, kernel, hasKernel := m.residentFloors(); hasFast {
+		cm = fastClassMap(fast)
 	} else if hasKernel {
 		cm = kvmgr.ClassMap{Floor: kernel, MinRows: 1}
 	}
@@ -261,7 +266,7 @@ type ResidentKVSlotActivity interface {
 
 // KVPoolDetail is a resident's shared KV block pool as the load banner names it (docs/tasks/task-kv-architecture-2026-10.md
 // §5.16): the context positions it serves across every slot, the positions each slot is guaranteed (one conversation's cap,
-// ResidentCapped, may exceed it), the rows in a block, the layer groups that hold pools, the precision the rows are stored at, and the
+// ResidentCaps.ContextCap, may exceed it), the rows in a block, the layer groups that hold pools, the precision the rows are stored at, and the
 // device bytes the pools and block tables take. WindowRows is how many rows a sliding-window layer keeps for one conversation, its
 // newest (0 when no layer has a window group): such a layer serves every position of Positions while holding only these.
 type KVPoolDetail struct {
@@ -487,7 +492,7 @@ func (m *Model) residentAcquireIn(prompt []int, imgs []residentImageClaim, lora 
 }
 
 // minLeadReuseFast is the shortest prefix worth reusing under a resident with non-exact prefill kernels
-// (ResidentFastPrefill), for a prompt that will run them (kvmgr.MinLeadReuse). Not an Options field: it is a
+// (ResidentCaps.HasFastPrefill), for a prompt that will run them (kvmgr.MinLeadReuse). Not an Options field: it is a
 // correctness margin, not an operator choice.
 const minLeadReuseFast = kvmgr.MinLeadReuse
 
