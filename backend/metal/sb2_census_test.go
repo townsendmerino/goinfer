@@ -298,15 +298,13 @@ var metalRounding = memgate.PerLease("Metal's 16 KiB sub-allocation", 16<<10)
 // metalMemGaps is Metal's table of known reds (MM7). It may only shrink: the fix that removes a row lowers metalMemGapsPin. Each
 // row is bounded by the build's own shape, so a second gap on the same line stays red.
 var metalMemGaps = []memgate.Gap{
-	{Row: "*", Line: mem.LineScratch, What: "decode's own scratch and uniforms lease on the scratch line, and nothing prices them",
-		Item: "MM5, decode's buffer list", Bytes: func(f map[string]int64) int64 { return f["decode"] }},
 	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums the tensors: rotation tables and other derived buffers are leased on dense and priced nowhere",
 		Item: "MM8 Metal, dense vectors", Bytes: func(f map[string]int64) int64 { return f["tables"] }},
 	{Row: "testdata/gemma4-moe-kv-tiny32 *", Line: mem.LineDense, What: "Gemma 4's MoE leases 19,016 bytes on dense past the row above: not diagnosed",
 		Item: "MM8 Metal, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return 19016 }},
 }
 
-const metalMemGapsPin = 3
+const metalMemGapsPin = 2
 
 // metalGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; what it returns
 // runs after that read, before Close.
@@ -340,12 +338,32 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount()}
 	read.Plan = m.Plan("metal", math.MaxInt64/4, fit.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
 	facts := func() map[string]int64 {
-		return map[string]int64{"tables": max(metalDenseVectorBytes(m, r)-m.PricedDenseVectorBytesForTest("metal")+m.PricedGemma4MoEVectorBytesForTest(), 0), "decode": metalDecodeScratchBytes(m, r)}
+		return map[string]int64{"tables": max(metalDenseVectorBytes(m, r)-m.PricedDenseVectorBytesForTest("metal")+m.PricedGemma4MoEVectorBytesForTest(), 0)}
+	}
+	// G-MS2 (docs/tasks/task-forward-architecture-2026-10.md §4.9c): the scratch line holds decode's list and the step's to the byte,
+	// both ways. The ledger's requests are read, not its charges, so the allocator's rounding hides nothing.
+	exact := func(at string) {
+		t.Helper()
+		var held int64
+		for _, o := range l.OpenLeases() {
+			if o.Line == mem.LineScratch {
+				held += o.Requested
+			}
+		}
+		want := r.decode.listBytes(r)
+		if r.batch != nil {
+			want += r.stepShape().listBytes()
+		}
+		if held != want {
+			t.Errorf("%s: %s: the scratch line holds %d bytes requested, and the decode and step lists %d", row, at, held, want)
+		}
 	}
 	read.Open = append(read.Open, memgate.Snap("built", l, facts()))
+	exact("built")
 	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
 	for range ch {
 	}
+	exact("generated")
 	free := func() {}
 	if metalGatePlantForTest != nil {
 		free = metalGatePlantForTest(r)
@@ -355,11 +373,11 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	}
 	read.Open = append(read.Open, memgate.Snap("generated", l, facts()))
 	free()
-	// Scratch has no plan line: the one thing anything prices on it is the step, whose list the gate holds it to, before the price's
-	// page rounding, which would hide what else leases there.
-	var scratch int64
+	// Scratch has no plan line: it holds decode's list and the step's, which the gate holds it to, before the step price's page
+	// rounding, which would hide what else leases there.
+	scratch := r.decode.listBytes(r)
 	if r.batch != nil {
-		scratch = r.stepShape().listBytes()
+		scratch += r.stepShape().listBytes()
 	}
 	// The reserve is the build's own answer read before the build: every input to it agrees, so it is the step's price where
 	// batchIneligible admits it and 0 where not, on shapes no fixture has as well as on these.
@@ -463,6 +481,181 @@ func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 				t.Errorf("4 MiB leased on %q during a row is not red through the table", c.line)
 			}
 		})
+	}
+}
+
+// TestDecodeScratch_handTable is G-MS3 (docs/tasks/task-forward-architecture-2026-10.md §4.9c): a build's decode list, as it stands
+// after the build, equals arithmetic written here on the config's numbers. G-MS2 holds the ledger to the list; this holds the list to
+// the model, which a declaration one element short fails.
+func TestDecodeScratch_handTable(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	const batchCap = 16 // the build's batch rows (ensureBatchCap(16))
+	// core is what every build holds, for hidden H, vocab V, gate|up half gu, query width q and K/V width kv at the widest attention
+	// layer: its f32 rows, its int8 and f16 twins, and its uniforms (the eleven core ones; uAct, uAddOne, uWindow, uLNHasBias; the
+	// sampler's seven).
+	core := func(H, V, gu, q, kv int) (f32Rows, twins, uniforms int) {
+		f32Rows = H + 1 + // x, aSc
+			q + 2*kv + // fused q | k | v
+			2*gu + // fused gate | up
+			q + 1 + // ctx, cSc
+			H + 1 + // oO, mSc
+			1 + H + // dSc, dO
+			V + 2*((V+7)/8) + 1 + // logits, the argmax partials, tok
+			2*((V+1023)/1024) + 1 + // the sampler's block keys and indices, its draw
+			batchCap*(H+V) // batchX, batchLogits
+		twins = H + q + H + // aq, cq, mq
+			2*H + 2*H + 2*q + // the W4F16 lane's f16 twins of aq, mq and cq
+			gu // dq
+		return f32Rows, twins, 11 + 4 + 7 + 3*batchCap
+	}
+	for _, c := range []struct {
+		name, quant string
+		want        func() int64
+	}{
+		// llama-tiny: hidden 64, vocab 256, FFN 128, 4 query heads and 2 K/V heads of 16, 4 layers, all attention; head width 16,
+		// which the fused attention does not run, so no partial buffer.
+		{"llama-tiny", "int8int8", func() int64 {
+			const H, V, I, nH, nKV, hd, nL = 64, 256, 128, 4, 2, 16, 4
+			f, b, u := core(H, V, I, nH*hd, nKV*hd)
+			u += 7 + 2*nL // one attention geometry; each layer's sink flag and window
+			return int64(4*f + b + 4*u)
+		}},
+		// qwen35-tiny: hidden 64, vocab 256, 4 layers of which the last is gated attention (4 query heads and 2 K/V heads of 16)
+		// and three Gated DeltaNet (2 key heads and 4 value heads of 16, conv kernel 4); every FFN a MoE of 4 experts, top 2,
+		// expert and shared width 32, whose k-slot kernels run (2 x 32 and 64 are multiples of 8).
+		{"qwen35-tiny", "int4", func() int64 {
+			const H, V, nH, nKV, hd = 64, 256, 4, 2, 16
+			const nk, hk, nv, hv = 2, 16, 4, 16
+			const nE, k, inter = 4, 2, 32
+			f, b, u := core(H, V, inter, nH*hd, nKV*hd)
+			u += 7 + 2 // the one attention geometry; the attention layer's sink flag and window
+			keyDim, valueDim := nk*hk, nv*hv
+			convDim := 2*keyDim + valueDim
+			f += 2*convDim + 2*nv + 2*nv + 2*keyDim + 3*valueDim + 1 // the mixer's rows, its head parameters, dnGSc
+			b += valueDim                                            // dnGq
+			f += 2*nH*hd + nH*hd                                     // gated attention's [query ‖ gate] and its gate
+			u += 12                                                  // the mixer's uniforms
+			f += nE + k + 1 + H                                      // the router's logits and weights, the shared gate and down
+			b += 4 * k                                               // the router's indices
+			f += k*2*inter + k + k*H                                 // the k slots' gate|up, scales and accumulators
+			b += k * inter                                           // their int8 rows
+			u += 10 + k                                              // the MoE's uniforms and one a slot
+			return int64(4*f + b + 4*u)
+		}},
+		// gemma2-tiny: hidden 64, vocab 512, FFN 128, 4 query heads and 2 K/V heads of 32, 4 layers alternating a 4-position window
+		// with full attention; the window changes each layer's uniform's value, not its size, and head width 32 has no partial.
+		{"gemma2-tiny", "int8int8", func() int64 {
+			const H, V, I, nH, nKV, hd, nL = 64, 512, 128, 4, 2, 32, 4
+			f, b, u := core(H, V, I, nH*hd, nKV*hd)
+			u += 7 + 2*nL
+			return int64(4*f + b + 4*u)
+		}},
+		// deepseek-tiny: hidden 64, vocab 128, 4 layers, every one Multi-head Latent Attention (4 heads, q LoRA 24, KV LoRA 16, rope 8,
+		// nope 16, v 16), so no attention layer: the attention rows take the build's width of 4. Layer 0's FFN is dense (128), the rest
+		// a MoE of 8 experts, top 2, width 32, one shared expert of 32, whose k-slot kernels run.
+		{"deepseek-tiny", "int4", func() int64 {
+			const H, V, I, nH = 64, 128, 128, 4
+			const qLoRA, rank, rope, nope, vHead = 24, 16, 8, 16, 16
+			const nE, k, inter = 8, 2, 32
+			f, b, u := core(H, V, I, 4, 4)
+			qkHead, latDim := nope+rope, rank+rope
+			f += qLoRA + 1 + nH*qkHead + latDim + nH*latDim + nH*rank + nH*vHead + 1 // qa, qaSc, q, kv, qAbs, wsum, ctx, ctxSc
+			b += qLoRA + nH*vHead                                                    // qaQ, ctxQ
+			b += 4 * (3 + 5 + 5 + 7 + 3)                                             // MLA's packed shapes
+			u += 5                                                                   // and its five single uniforms
+			f += nE + k + 1 + H + k*2*inter + k + k*H                                // the router and the k slots, as above
+			b += 4*k + k*inter
+			u += 10 + k
+			return int64(4*f + b + 4*u)
+		}},
+		// nemotron-tiny: hidden 64, vocab 256, FFN 128, five layers (Mamba-2, attention, MLP, Mamba-2, attention); attention of 4 query
+		// heads and 2 K/V heads of 16; Mamba-2 of 8 heads of 8 (inner 64), state 16, one group, conv kernel 4. Metal runs it at int4.
+		{"nemotron-tiny", "int4", func() int64 {
+			const H, V, I, nH, nKV, hd = 64, 256, 128, 4, 2, 16
+			const nh, mhd, ds, ng = 8, 8, 16, 1
+			f, b, u := core(H, V, I, nH*hd, nKV*hd)
+			u += 7 + 2*2 // the one attention geometry; the two attention layers' sink flags and windows
+			dInner, gSize := nh*mhd, ng*ds
+			convDim, projDim := dInner+2*gSize, 2*dInner+2*gSize+nh
+			f += projDim + convDim + 2*dInner + 1 // in_proj's output, the conv's, the scan's and the gated norm's, mbGSc
+			b += dInner                           // mbGq
+			u += 13                               // the mixer's uniforms
+			return int64(4*f + b + 4*u)
+		}},
+	} {
+		m, err := decoder.Load("../../testdata/"+c.name, decoder.Options{Backend: "metal", Quant: c.quant, ResidentContext: 256})
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok {
+			m.Close()
+			t.Fatalf("%s: not Metal-resident: %s", c.name, m.ResidentDecline())
+		}
+		if got, want := a.r.decode.listBytes(a.r), c.want(); got != want {
+			t.Errorf("%s: the decode list is %d bytes; the config's arithmetic gives %d", c.name, got, want)
+		}
+		m.Close()
+	}
+}
+
+// TestMetalScratch_batchGrowthGivesBackTheOld: ensureBatchCap gives the rows it replaces back to the device, so the scratch line holds
+// one capacity's batch rows, not every capacity the resident has had.
+func TestMetalScratch_batchGrowthGivesBackTheOld(t *testing.T) {
+	_, r := kv2Resident(t, false)
+	l := metalLedgerOf(r.d)
+	if l == nil {
+		t.Fatal("the build's device has no ledger")
+	}
+	rowsOf := func(c int) (logits, x int) {
+		for _, o := range l.OpenLeases() {
+			switch {
+			case o.Line != mem.LineScratch:
+			case o.Requested == int64(4*c*r.V):
+				logits++
+			case o.Requested == int64(4*c*r.H):
+				x++
+			}
+		}
+		return logits, x
+	}
+	c0 := r.batchCap
+	if lg, x := rowsOf(c0); lg != 1 || x != 1 {
+		t.Fatalf("at the build's capacity of %d rows the scratch line holds %d logits and %d hidden leases of that size; want 1 each", c0, lg, x)
+	}
+	r.ensureBatchCap(4*c0 + 1) // past two doublings, so no old size equals a new one when V is a multiple of H
+	if lg, x := rowsOf(c0); lg != 0 || x != 0 {
+		t.Errorf("after growing from %d rows to %d the scratch line still holds %d logits and %d hidden leases of the old size; want none",
+			c0, r.batchCap, lg, x)
+	}
+	if lg, x := rowsOf(r.batchCap); lg != 1 || x != 1 {
+		t.Errorf("after growing to %d rows the scratch line holds %d logits and %d hidden leases of that size; want 1 each", r.batchCap, lg, x)
+	}
+}
+
+// TestMetalScratch_prefillGivesItsScratchBack: a batched prefill gives back every buffer it allocates, its uniforms included, so a
+// second prefill of the same rows leaves the scratch line where the first did.
+func TestMetalScratch_prefillGivesItsScratchBack(t *testing.T) {
+	a, r := kv2Resident(t, false)
+	l := metalLedgerOf(r.d)
+	if l == nil {
+		t.Fatal("the build's device has no ledger")
+	}
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	embs := kv2Embs(r, 70, 1)
+	run := func() int64 {
+		t.Helper()
+		if _, err := a.PrefillLast(context.Background(), embs, 0); err != nil {
+			t.Fatal(err)
+		}
+		return l.Usage().ByLine[mem.LineScratch]
+	}
+	if first, second := run(), run(); second != first {
+		t.Errorf("the scratch line holds %d bytes after one prefill and %d after a second of the same rows; want the same", first, second)
 	}
 }
 
@@ -706,60 +899,6 @@ func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
 	}); len(a.r.kvSlotBufs) != 2 || a.r.batch != nil {
 		t.Errorf("unpinned, giving up a slot would not make room for the step: %d slots, step built %v; want two slots and no step", len(a.r.kvSlotBufs), a.r.batch != nil)
 	}
-}
-
-// metalDecodeScratchBytes is, from the model's widths and the blocks this build has on, what a build leases on the scratch line for
-// decode itself. Nothing prices these. Its buffers are sized as the build sizes them, and its one allowance is a fixed count of small
-// uniforms, so it holds a leak in any width-sized buffer to well under a buffer. MM5's list for decode replaces it.
-func metalDecodeScratchBytes(m *decoder.Model, r *resident) int64 {
-	H, nL, nH, _, _, I, V := m.Dims()
-	var nHhd, kvDim, faPartial int
-	for l := range nL {
-		hd := m.HeadDimAtResident(l)
-		nHhd, kvDim = max(nHhd, nH*hd), max(kvDim, m.KVHeadsAtResident(l)*hd)
-		if r.layers[l].geom != nil {
-			faPartial = max(faPartial, attnFAPartialFloats(hd, nH, m.KVHeadsAtResident(l)))
-		}
-	}
-	gu := I
-	for _, lw := range m.Weights().Layers {
-		gu = max(gu, lw.GateProj.Rows())
-	}
-	floats, bytes := 0, 0
-	if mo := r.moe; mo != nil {
-		gu = max(gu, mo.inter, mo.sharedInter)
-		floats += mo.nE + 2*mo.k + H // the router's logits, indices and weights, and the shared expert's down
-		if mo.guK != (Buffer{}) {    // allocated before an int8 build turns those kernels off
-			floats += mo.k*2*mo.inter + mo.k + mo.k*H
-			bytes += mo.k * mo.inter
-		}
-	}
-	if g := r.g4moe; g != nil {
-		gu = max(gu, g.denseInter, g.moeInter)
-		floats += 2*(g.nE+2*g.topK) + 4*H
-	}
-	if dp := r.dnet; dp != nil {
-		floats += 2*dp.convDim + 4*dp.nv + 2*dp.keyDim + 3*dp.valueDim + 3*nHhd // its mixer, and gated attention's rows
-		bytes += dp.valueDim
-	}
-	if p := r.mamba; p != nil {
-		floats += p.projDim + p.convDim + 2*p.dInner
-		bytes += p.dInner
-	}
-	if p := r.mla; p != nil {
-		floats += max(p.qLoRA, 1) + p.nH*p.qkHead + p.latDim + p.nH*p.latDim + p.nH*p.rank + p.nH*p.vHead
-		bytes += max(p.qLoRA, 4) + p.nH*p.vHead
-	}
-	if P := r.pleP; P > 0 {
-		floats += nL*P + P
-		bytes += P
-	}
-	floats += 3*H + nHhd + 2*kvDim + 2*gu + nHhd + V + 2*((V+7)/8) + faPartial // x, oO, dO; qkv; gu; ctx; logits; part; the fused partial
-	floats += r.batchCap * (H + V)                                             // ensureBatchCap's rows, once a call has asked for them
-	floats += 2 * r.gumbelNB
-	bytes += 6*H + 3*nHhd + gu // aq, mq, the f16 twins of a and m; cq and its twin; dq
-	const uniforms = 450       // each a few bytes: the model's, the chain's and the families'
-	return 4*int64(floats) + int64(bytes) + 4*int64(uniforms+8*nL)
 }
 
 // metalDenseVectorBytes is what a build leases on the dense line that the plan's dense figure, a sum of weight matrices, does not

@@ -232,8 +232,8 @@ func goBoundKernelNames(t *testing.T) []string {
 	return out
 }
 
-// The int8 twin of the glue module is built beside the audited glue modules, at the same pinned NVRTC (docs/measurements/cuda-kv-i8-2026-11/scope.md): a twin from
-// the ambient toolchain would put two compilers in one family of modules.
+// The int8 twins of the audited glue and gemv_fwd modules are built beside them, at the same pinned NVRTC (docs/measurements/cuda-kv-i8-2026-11/scope.md): a twin
+// from the ambient toolchain would put two compilers in one family of modules.
 func TestKV8_glueTwinIsBuiltAtTheAuditedToolchain(t *testing.T) {
 	banner := func(b []byte) string {
 		_, rest, _ := bytes.Cut(b, []byte("Cuda compilation tools, "))
@@ -242,6 +242,9 @@ func TestKV8_glueTwinIsBuiltAtTheAuditedToolchain(t *testing.T) {
 	}
 	if got, want := banner(glueKV8PTX), banner(gluePTX); got == "" || got != want {
 		t.Errorf("glue_kv8.ptx was built by %q, glue.ptx by %q", got, want)
+	}
+	if got, want := banner(gemvFwdKV8PTX), banner(gemvFwdPTX); got == "" || got != want {
+		t.Errorf("gemv_fwd_kv8.ptx was built by %q, gemv_fwd.ptx by %q", got, want)
 	}
 	// prefill_batched and the store are not among the audited modules: their twins and the store are built at the toolchain their base records.
 	if got, want := banner(prefillBatchedKV8PTX), banner(prefillBatchedPTX); got == "" || got != want {

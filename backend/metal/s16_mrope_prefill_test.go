@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -237,6 +238,57 @@ func TestS16MRoPEPrefill_tiny(t *testing.T) {
 		if !caught[di] {
 			t.Errorf("planted defect %s left the bar green on every fixture", defects[di])
 		}
+	}
+}
+
+// TestS16MRoPEPrefill_givesItsScratchBack: a resident m-RoPE prefill gives back every buffer it allocates, its rows' position triples
+// included, so a second prefill of the same prompt leaves the scratch line where the first did.
+func TestS16MRoPEPrefill_givesItsScratchBack(t *testing.T) {
+	defer func(m bool) { metalMRoPEPrefillOn = m }(metalMRoPEPrefillOn)
+	metalMRoPEPrefillOn = true
+	var g struct {
+		InputIDs      []int     `json:"input_ids"`
+		ImageToken    int       `json:"image_token_id"`
+		ImageStart    int       `json:"image_token_start"`
+		NImageTokens  int       `json:"n_image_tokens"`
+		GridTHW       [][3]int  `json:"grid_thw"`
+		ImageFeatures []float32 `json:"image_features"`
+	}
+	raw, err := os.ReadFile("../../testdata/qwen25vl_tiny_image_golden.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatal(err)
+	}
+	m, err := decoder.Load("../../testdata/qwen25vl-tiny", decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 256,
+		Knobs: &decoder.Knobs{"GOINFER_METAL_FAST_PREFILL_FLOOR": "0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		t.Fatalf("not Metal-resident: %s", m.ResidentDecline())
+	}
+	mrope, err := decoder.MRopePositionsForTest(g.InputIDs, g.ImageToken, g.GridTHW, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := metalLedgerOf(a.r.d)
+	if l == nil {
+		t.Fatal("the build's device has no ledger")
+	}
+	run := func() int64 {
+		t.Helper()
+		a.Reset()
+		if _, _, err := m.ResidentMRoPEPrefillForTest(context.Background(), a, g.InputIDs, g.ImageFeatures, g.ImageStart, g.NImageTokens, mrope); err != nil {
+			t.Fatal(err)
+		}
+		return l.Usage().ByLine[mem.LineScratch]
+	}
+	if first, second := run(), run(); second != first {
+		t.Errorf("the scratch line holds %d bytes after one m-RoPE prefill and %d after a second of the same prompt; want the same", first, second)
 	}
 }
 

@@ -225,7 +225,7 @@ func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceL
 	case "webgpu":
 		l.CtxCeiling = WebGPUCtxCeiling(kvF16, kvI8)
 	case "cuda":
-		kvF16 = m.kvF16
+		kvF16, kvI8 = m.residentKVFlags(backend)
 		l.CtxSearch = true
 	}
 	l.KV = func(ctx int) int64 { return m.ResidentKVBytes(backend, ctx, kvF16, kvI8) }

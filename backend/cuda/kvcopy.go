@@ -52,6 +52,8 @@ func (r *cudaResident) CopyKV(src, dst, start, end int) error {
 		return &decoder.KVCopyDecline{Reason: "a KV copy does not carry recurrent state"}
 	case r.kvF16 && !kvCopyF16:
 		return &decoder.KVCopyDecline{Reason: "copies of an f16 KV cache are off (kvCopyF16)"}
+	case r.kvI8:
+		return &decoder.KVCopyDecline{Reason: errKV8OneSlot}
 	}
 	if start == end {
 		return nil
