@@ -984,6 +984,50 @@ func TestKVPages_abortedStepUndoesAStoppedSlot(t *testing.T) {
 	}
 }
 
+// TestKVPages_stepRefusesASlotReleasedAgain: a batched step in which a take releases a slot the step maps is refused, though the slot was
+// already released before the step, so its flags read the same before and after. Slot 0, idle and released once, starts a sequence at 0
+// in the step and takes the pool's one free block; slot 1's row, past its share, finds none, and its take releases slot 0 again.
+func TestKVPages_stepRefusesASlotReleasedAgain(t *testing.T) {
+	m, a := kvCapLoad(t, 3, 3*decoder.MetalCtxDefault, "")
+	r, vocab := a.r, m.Config().VocabSize
+	B, S, N := decoder.KVBlockRows, r.kvShareBlocks, len(r.kvRefs)-1
+	one, two := S+40, N-1-(S+40)
+	if one+2 > r.kvTabBlocks || two > r.kvTabBlocks {
+		t.Fatalf("a slot reaches %d blocks; the case needs %d and %d", r.kvTabBlocks, one+2, two)
+	}
+	for _, c := range []struct{ slot, blocks int }{{0, 1}, {1, one}, {2, two}} {
+		if _, err := kvCapPrefill(m, a, c.slot, kvCapIds(c.blocks*B, c.slot, vocab), 0); err != nil {
+			t.Fatalf("slot %d: %v", c.slot, err)
+		}
+	}
+	for _, s := range []int{1, 2} {
+		a.SetKVSlotBusy(s, true)
+		defer a.SetKVSlotBusy(s, false)
+	}
+	if err := r.kvWrite(1, one*B, (one+1)*B); err != nil { // the pool is full: the take releases slot 0
+		t.Fatal(err)
+	}
+	if !r.kvSlotSt[0].released {
+		t.Fatal("slot 0 was not released by slot 1's write: the case reads nothing")
+	}
+	r.kvEndAt(2, (two-1)*B) // one block free
+	tab, valid := slices.Clone(r.kvTabU32[r.kvTabBlocks:2*r.kvTabBlocks]), r.kvSlotSt[1].valid
+	err := r.kvMapStep([]batchSeq{{slot: 0, pos: 0}, {slot: 1, pos: (one + 1) * B}})
+	if !errors.Is(err, decoder.ErrKVPoolFull) {
+		t.Fatalf("the step whose take released slot 0 again: got %v, want ErrKVPoolFull", err)
+	}
+	if st := &r.kvSlotSt[0]; !st.released || st.valid != 0 || r.kvHeld(0) != 0 {
+		t.Errorf("slot 0 after the step: released %v, %d rows, %d blocks; want released, 0 and none", st.released, st.valid, r.kvHeld(0))
+	}
+	if !slices.Equal(r.kvTabU32[r.kvTabBlocks:2*r.kvTabBlocks], tab) || r.kvSlotSt[1].valid != valid {
+		t.Errorf("slot 1 after the undone step holds %d rows, its table changed %v; want %d and unchanged", r.kvSlotSt[1].valid,
+			!slices.Equal(r.kvTabU32[r.kvTabBlocks:2*r.kvTabBlocks], tab), valid)
+	}
+	if why := kvRefsAgree(r); why != "" {
+		t.Errorf("after the undone step %s", why)
+	}
+}
+
 // TestKVPages_failedCopyCutsAnUndoneCopy: a batched step whose second copy on write fails is undone, and a copy's old entry the undo maps
 // again, to a block the second copy wrote, ends its slot before that block. Four slots: slot 0, idle, holds half the pool, its first two
 // blocks shared with slot 1; slot 2's three blocks are shared with slot 3, running, which holds the rest. Slot 1 writes at 70, a copy of its
