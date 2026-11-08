@@ -176,38 +176,22 @@ func fitLoadOptions(quant, backend string) decoder.Options {
 	return decoder.Options{Quant: quant, Backend: backend, DirectLoad: true, ResidentKVSlots: decoder.MetalDefaultKVSlots, ResidentKVSlotsDefault: true}
 }
 
-// planFor is the plan `fit` prints for one backend. On Metal it prices the load a serve without --kv-sessions makes. An unpinned
-// context is decoder.Model.MetalFitCtx's, the function the load asks. The KV is every slot the build keeps: it asks for the model's
-// request, capped at MetalDefaultKVSlots, and keeps as many as fit beside the first (backend/metal's metalKVSlots). Plan prices one
-// slot, so the rest are ExtraBytes at decoder.Model.MetalKVBytes, as fit.PlanRequest.KVSlots' contract asks of a multi-slot caller.
+// planFor is the plan `fit` prints for one backend. On Metal it is decoder.Model.MetalLoadPlan's, the load a serve without
+// --kv-sessions makes: the context an unpinned load takes and the KV of every slot the build keeps, and the reason says both.
 func planFor(m *decoder.Model, backend string, free int64, req fit.PlanRequest) fit.Plan {
 	if backend != "metal" {
 		return m.Plan(backend, free, req)
 	}
-	want := min(m.ResidentKVSlotsRequestFor("metal"), decoder.MetalDefaultKVSlots)
-	unpinned := ""
+	l := m.MetalLoadPlan(free, req)
+	p := l.Plan
+	if want := m.MetalKVSlotsWanted(); want > 1 {
+		further := m.MetalKVBytes(l.KVSlots, p.Ctx) - m.ResidentKVBytes("metal", p.Ctx, req.KVF16, req.KVI8)
+		p.Reason += fmt.Sprintf(" — a default load keeps %d of the %d KV slots it asks for (KV %.2f GB in all)", l.KVSlots, want,
+			float64(p.KVBytes+further)/(1<<30))
+	}
 	if !req.CtxPinned {
-		f := m.MetalFitCtx(decoder.MetalFitInput{FreeBytes: free, FreeKnown: true, KVSlots: want, PagedMoE: req.Slots > 0})
-		req.Ctx, req.CtxPinned = f.Ctx, true
-		unpinned = fmt.Sprintf(" — an unpinned load takes %d positions (%s)", f.Ctx, f.Why)
+		p.Reason += fmt.Sprintf(" — an unpinned load takes %d positions (%s)", l.Fit.Ctx, l.Fit.Why)
 	}
-	p := m.Plan(backend, free, req)
-	further := func(n int) int64 {
-		return m.MetalKVBytes(n, p.Ctx) - m.ResidentKVBytes("metal", p.Ctx, req.KVF16, req.KVI8)
-	}
-	slots := want
-	for slots > 1 && (p.Placement == fit.PlacementDecline || p.NeedBytes()+further(slots) > free) {
-		slots--
-	}
-	if want > 1 {
-		if slots > 1 {
-			req.ExtraBytes += further(slots)
-			p = m.Plan(backend, free, req)
-		}
-		p.Reason += fmt.Sprintf(" — a default load keeps %d of the %d KV slots it asks for (KV %.2f GB in all)", slots, want,
-			float64(p.KVBytes+further(slots))/(1<<30))
-	}
-	p.Reason += unpinned
 	return p
 }
 
