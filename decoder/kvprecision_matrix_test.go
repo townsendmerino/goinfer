@@ -220,6 +220,9 @@ func renderKVMatrix(cells map[[3]string]kvMatrixCell) []byte {
 	w("    gate's ambiguous band (PARKED). f16 itself reads 1.057x there, and int8 against f16 is inside every bar (1.020x).\n")
 	w("  - qwen2.5-coder-1.5b-instruct-q4_k_m at 3,900 keys: a measurable loss (DOES NOT PASS). Agreement -1.40 pt, hard flips 19 against 9\n")
 	w("    (the bar is 15), mean KL 1.661x.\n")
+	w("  - Speed against f16, the default it would replace (same session, A B B A, served): decode 0.871x / 0.723x on the 1.5B and 0.954x / 0.883x on\n")
+	w("    the 7B at 128 / 512 keys (under the registered 0.95 bar except the 7B at 128), 0.99x at 4,096 and 16,384. A cold prefill is 3.4x to\n")
+	w("    4.7x slower at 4,096 keys and 20x to 26x slower at 16,384. It buys about twice f16's positions in the same VRAM.\n")
 	w("  - The record: `docs/measurements/cuda-kv-i8-2026-11/s4-registration.md`. Widening int8 to more CUDA families is parked (the task doc, P2).\n")
 	w("- **f16 on CUDA:** `docs/tasks/task-cuda-f16-kv-2026-10.md`.\n")
 	for _, p := range kvMatrixPaths {

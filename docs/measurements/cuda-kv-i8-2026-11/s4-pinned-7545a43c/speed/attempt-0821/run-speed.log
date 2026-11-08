@@ -1,0 +1,17 @@
+== fit checks start 2026-11-08 08:20:09 PST load 0.30 0.32 1.61 MemAvailable 61262 MiB
+fit 15B-auto:   fit: 16896-token cap needs 0.5 GB KV (weights 0.9 GB, budget 41.7 GB, 41.3 GB left for a request's own prefill)   KV plan: 4 conversations x 16896 positions (--ctx 16896) 
+fit 15B-i8:   fit: 16896-token cap needs 0.2 GB KV (weights 0.9 GB, budget 41.7 GB, 41.5 GB left for a request's own prefill)   KV plan: 4 conversations x 16896 positions (--ctx 16896) 
+fit 7B-auto: cuda: 2 resident KV slots of 4 requested — one slot's pools cost 1008 MB at the resident context 16896, and free VRAM beside the weights (3000 MB, less 328 MB reserved) allows 2   fit: 16896-token cap needs 0.9 GB KV (weights 4.0 GB, budget 41.7 GB, 40.8 GB left for a request's own prefill)   KV plan: 2 conversations x 16896 positions (4 asked for; --ctx 16896) 
+fit 7B-i8:   fit: 16896-token cap needs 0.5 GB KV (weights 4.0 GB, budget 41.7 GB, 41.3 GB left for a request's own prefill)   KV plan: 4 conversations x 16896 positions (--ctx 16896) 
+served:   7545a43cf895585448341760d677e0e58743f00a (/home/francis/goinfer-bench/s4-pinned/bin/serve-cuda-7545a43c, sha256 a154699f23aef2cc)
+harness:  33bfef1d0d6e90e00f82c75f6305c69250306db2 (bench_peer.py from #777)
+started:  2026-11-08 08:20:38 PST
+driver:   595.112.07
+arms:     goinfer = default (auto, f16 here), goinfer_old = -kv i8 (one binary)
+cells:    1.5B, 7B x 128, 512, 4096, 16384; BENCH_CTX=16896; 2 runs a pass, two passes in reversed arm order
+== f16first start 08:21:38 load 0.68 0.53 1.57 MemAvailable 61295 MiB
+== f16first exit 1 08:21:39
+!! f16first exited 1 or wrote no results (bench_peer exits 0 when it refuses a busy box)
+# preflight OK: gate load · loadavg [0.6796875, 0.5283203125, 1.5712890625] · gpu {'driver': '595.112.07', 'name': 'NVIDIA GeForce RTX 2070 SUPER', 'temp_c': 50, 'mem_used_mib': 430, 'mem_total_mib': 8192} · compute apps ['1864, 21 MiB']
+no prompt for 1.5B:16384, 1.5B:4096, 7B:16384, 7B:4096 in scripts/prompts.json: calibrate them (scripts/bench_prompts_calibrate.py) or narrow the plan (BENCH_PHASES, BENCH_DEPTHS)
+STOP: the first pass did not complete; the second does not run

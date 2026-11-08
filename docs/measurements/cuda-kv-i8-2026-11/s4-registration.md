@@ -234,4 +234,55 @@ The re-read reproduces the 2026-11-07 20:21 reading exactly: every agreement, fl
 **Speed check:** the 08:02 attempt refused at bench_peer's archive check, over two table entries this run does not load (fixed by #777).
 The 08:21 attempt stopped at the plan check: `scripts/prompts.json` has no 4,096 or 16,384 prompt for these models. The four prompts were
 calibrated by `scripts/bench_prompts_calibrate.py` against the pinned serve binary (16,384 lands at 16,436 tokens, as the deep prompts always
-overshoot). The run started 08:25. Its results go in their own section.
+overshoot). The run started 08:25. Its results are in the next section.
+
+## Speed results, 2026-11-08 08:25 to 09:06 PST (nobara, RTX 2070 SUPER, driver 595.112.07)
+
+**Run:**
+- Served binary: the pinned `7545a43cf` (`serve-cuda-7545a43c`). bench_peer from `33bfef1d` (#777); its `bench_peer.py`, `hostmem.py` and
+  `timing_lock.py` differ from the pinned tree's only by that fix.
+- Prompts: `scripts/prompts.json` plus the four calibrated ones (`s4-pinned-7545a43c/speed/prompts-s4-added.json`).
+- Arms: goinfer = default (`auto`, f16 here) and goinfer_old = `-kv i8`, one binary, a fresh serve per cell, greedy, 64 tokens.
+- Two runs per arm per pass, in two passes with the arm order reversed (A B B A), so four runs per arm per cell.
+- Fit: every load reached a serving server first (`fit2-*.log`). The 7B at `auto` is capped at 2 resident slots of 4, not refused.
+
+**Void rule:** no cell was void. Start loads were at most 1.00 (the line is 8.0) and free memory was at least 61,156 MiB. No cell had an
+error, a swap void or a short completion. Logs: `s4-pinned-7545a43c/speed/` (`summary.txt`, both passes' JSON and logs, the two earlier
+attempts).
+
+| model | keys | f16 tok/s | int8 tok/s | int8/f16 (pass 1, pass 2) | median | cold first request, f16 / int8 |
+|---|---|---|---|---|---|---|
+| 1.5B | 128 | 278.4 | 242.4 | 0.871, 0.870 | **0.871** | 0.36 s / 0.40 s |
+| 1.5B | 512 | 243.1 | 175.7 | 0.722, 0.723 | **0.723** | 0.37 s / 0.56 s |
+| 1.5B | 4,096 | 230.4 | 227.5 | 0.987, 0.988 | 0.988 | 1.07 s / 5.04 s |
+| 1.5B | 16,384 (16,436) | 153.7 | 151.7 | 0.985, 0.988 | 0.987 | 4.38 s / 113.6 s |
+| 7B | 128 | 86.1 | 82.1 | 0.954, 0.954 | **0.954** | 1.17 s / 1.21 s |
+| 7B | 512 | 81.4 | 71.8 | 0.882, 0.883 | **0.883** | 1.24 s / 1.49 s |
+| 7B | 4,096 | 75.0 | 74.6 | 0.994, 0.994 | 0.994 | 4.03 s / 13.5 s |
+| 7B | 16,384 (16,436) | 56.2 | 55.6 | 0.990, 0.990 | 0.990 | 16.0 s / 314 s |
+
+Phase A's 128-key cells (the harness's backend table) read the same: 0.873 on the 1.5B and 0.953 on the 7B. The "cold first request" column
+is bench_peer's warm-up: the first request on a fresh server, a full prefill of the prompt plus 64 decoded tokens. It is the TTFT reading
+here; the timed runs after it reuse the prompt's prefix.
+
+**Graded by the registered bars:**
+- **No regression at short context: REGRESSION.** The bar is int8/f16 >= 0.95 at 128 and 512 keys on both models.
+  - The 1.5B reads 0.871 at 128 and 0.723 at 512: both under the bar.
+  - The 7B reads 0.954 at 128, inside the 0.95 to 0.98 "small cost" band, and 0.883 at 512: under the bar.
+  - By the registration, this record states it and the docs carry it.
+- **Long context (reported):** 0.987 to 0.994. int8 halves the K/V bytes read, but decode at 4,096 and 16,384 keys is not faster than f16.
+- **Prefill (reported):** cold first requests are 4.7x (1.5B) and 3.4x (7B) slower at 4,096 keys, and 26x and 20x slower at 16,384. An int8
+  cache prefills through `attn_batched`, not the tensor-core tiles (S2's record): on the 7B, 314 s against 16 s for a 16K prompt.
+
+**Predictions scored:**
+- "128 and 512 within +-3% of 1.00 (0.7)": wrong.
+- "16,384 on the 7B >= 1.00 (0.5)": wrong (0.990).
+- "TTFT at 4,096 and over worse than f16 by more than 10% on the 7B (0.6)": right (3.4x and 20x).
+
+**Not explained by this run:** the 1.5B's cost is larger at 512 keys (0.72) than at 128 (0.87) or 4,096 (0.99). A depth-dependent choice of
+decode attention path is the candidate, and it is not measured here. Finding it is a follow-up with its own registration, not a re-roll of
+this one.
+
+**What it means for the docs, by the contract:** `--kv i8` stays delivered on request. It buys context, roughly double f16's positions in
+the same VRAM. It costs decode speed at short context (up to 28 % on the 1.5B and 12 % on the 7B), and prefill at depth (about 20 to 26x at
+16K keys), on top of the quality reading above. The help text, the banner, `docs/flags.md`, `docs/server.md` and the matrix notes say so.

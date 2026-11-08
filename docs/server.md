@@ -980,7 +980,10 @@ to ignore.**
   the precision of the cache it wrote. `--kv i8` on CUDA (the dense llama, Mistral, Qwen2, Qwen3 and Phi-3 families without a sliding
   window; opt-in, never an `auto` pick) holds about half f16's KV bytes. Its measured cost (nobara, RTX 2070 SUPER, 2026-11-08, against an
   f32 cache): about f16's quality on qwen2.5-7b at 8,000 keys (mean KL 1.078x f32's, f16's own 1.057x), a measurable loss on
-  qwen2.5-coder-1.5b at 3,900 keys (19 hard flips against 9, KL 1.661x). The banner names it; `docs/kv-precision-matrix.md` has the figures.
+  qwen2.5-coder-1.5b at 3,900 keys (19 hard flips against 9, KL 1.661x). Its speed: decode is 0.72x to 0.95x f16's at 128 and 512 keys and
+  0.99x at 4,096 and 16,384, and a cold prefill is 3.4x to 4.7x slower at 4,096 keys and 20x to 26x slower at 16,384 (314 s against 16 s
+  for a 16K prompt on the 7B). It buys context, about twice f16's positions in the same VRAM. The banner names the cost;
+  `docs/kv-precision-matrix.md` has the figures.
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema` (or Anthropic's
   `output_config.format`), and a tool call the
   server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt

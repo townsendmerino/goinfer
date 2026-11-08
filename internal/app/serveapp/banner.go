@@ -516,8 +516,8 @@ func samplingLine(rs *decoder.RecommendedSampling) string {
 // kvBannerPart is the context line's KV part: for each cache the load built, the precision it holds and the one requested, with the
 // reason when they differ (an explicit request that cannot be delivered refuses the load, so a difference here is auto's pick).
 // "lossy" marks f16 or i8 that the operator asked for by name; an i8 cache also names its measured cost (docs/kv-precision-matrix.md, "Measured cost").
-// kvI8Cost is int8 KV's measured quality cost, as the banner states it: G4 of docs/measurements/cuda-kv-i8-2026-11/s4-registration.md.
-const kvI8Cost = "about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B"
+// kvI8Cost is int8 KV's measured cost, as the banner states it: the G4 and speed results of docs/measurements/cuda-kv-i8-2026-11/s4-registration.md.
+const kvI8Cost = "about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B; decode up to 28% slower than f16 at short context, prefill about 20x slower at 16K keys"
 
 func kvBannerPart(reps []decoder.KVPrecisionReport) string {
 	if len(reps) == 0 {
