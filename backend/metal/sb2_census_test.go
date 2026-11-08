@@ -544,6 +544,32 @@ func TestDecodeScratch_handTable(t *testing.T) {
 			u += 10 + k                                              // the MoE's uniforms and one a slot
 			return int64(4*f + b + 4*u)
 		}},
+		// gemma2-tiny: hidden 64, vocab 512, FFN 128, 4 query heads and 2 K/V heads of 32, 4 layers alternating a 4-position window
+		// with full attention; the window changes each layer's uniform's value, not its size, and head width 32 has no partial.
+		{"gemma2-tiny", "int8int8", func() int64 {
+			const H, V, I, nH, nKV, hd, nL = 64, 512, 128, 4, 2, 32, 4
+			f, b, u := core(H, V, I, nH*hd, nKV*hd)
+			u += 7 + 2*nL
+			return int64(4*f + b + 4*u)
+		}},
+		// deepseek-tiny: hidden 64, vocab 128, 4 layers, every one Multi-head Latent Attention (4 heads, q LoRA 24, KV LoRA 16, rope 8,
+		// nope 16, v 16), so no attention layer: the attention rows take the build's width of 4. Layer 0's FFN is dense (128), the rest
+		// a MoE of 8 experts, top 2, width 32, one shared expert of 32, whose k-slot kernels run.
+		{"deepseek-tiny", "int4", func() int64 {
+			const H, V, I, nH = 64, 128, 128, 4
+			const qLoRA, rank, rope, nope, vHead = 24, 16, 8, 16, 16
+			const nE, k, inter = 8, 2, 32
+			f, b, u := core(H, V, I, 4, 4)
+			qkHead, latDim := nope+rope, rank+rope
+			f += qLoRA + 1 + nH*qkHead + latDim + nH*latDim + nH*rank + nH*vHead + 1 // qa, qaSc, q, kv, qAbs, wsum, ctx, ctxSc
+			b += qLoRA + nH*vHead                                                    // qaQ, ctxQ
+			b += 4 * (3 + 5 + 5 + 7 + 3)                                             // MLA's packed shapes
+			u += 5                                                                   // and its five single uniforms
+			f += nE + k + 1 + H + k*2*inter + k + k*H                                // the router and the k slots, as above
+			b += 4*k + k*inter
+			u += 10 + k
+			return int64(4*f + b + 4*u)
+		}},
 	} {
 		m, err := decoder.Load("../../testdata/"+c.name, decoder.Options{Backend: "metal", Quant: c.quant, ResidentContext: 256})
 		if err != nil {
