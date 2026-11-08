@@ -169,26 +169,45 @@ func Run(args []string) int {
 	return 0
 }
 
-// fitLoadOptions is what `fit` loads a checkpoint with: the quant planned at and the backend of the sidecar it reads through.
+// fitLoadOptions is what `fit` loads a checkpoint with: the quant planned at, the backend of the sidecar it reads through, and the
+// KV slot request of a serve load without --kv-sessions (the caller's default, which Metal keeps to decoder.MetalDefaultKVSlots),
+// which planFor's Metal line prices.
 func fitLoadOptions(quant, backend string) decoder.Options {
-	return decoder.Options{Quant: quant, Backend: backend, DirectLoad: true}
+	return decoder.Options{Quant: quant, Backend: backend, DirectLoad: true, ResidentKVSlots: decoder.MetalDefaultKVSlots, ResidentKVSlotsDefault: true}
 }
 
-// planFor is the plan `fit` prints for one backend. An unpinned Metal load does not take the context Plan alone would give
-// it: it asks decoder.Model.MetalFitCtx, which also holds Metal's default KV slots and its margin, so `fit` asks the same
-// function and plans at its answer. The further slots' KV is priced as ExtraBytes when the context grew for them; at the
-// default the build grants the slots that fit, and the plan prices one as it always has.
+// planFor is the plan `fit` prints for one backend. On Metal it prices the load a serve without --kv-sessions makes. An unpinned
+// context is decoder.Model.MetalFitCtx's, the function the load asks. The KV is every slot the build keeps: it asks for the model's
+// request, capped at MetalDefaultKVSlots, and keeps as many as fit beside the first (backend/metal's metalKVSlots). Plan prices one
+// slot, so the rest are ExtraBytes at decoder.Model.MetalKVBytes, as fit.PlanRequest.KVSlots' contract asks of a multi-slot caller.
 func planFor(m *decoder.Model, backend string, free int64, req fit.PlanRequest) fit.Plan {
-	if backend != "metal" || req.CtxPinned {
+	if backend != "metal" {
 		return m.Plan(backend, free, req)
 	}
-	f := m.MetalFitCtx(decoder.MetalFitInput{FreeBytes: free, FreeKnown: true, KVSlots: decoder.MetalDefaultKVSlots, PagedMoE: req.Slots > 0})
-	req.Ctx, req.CtxPinned = f.Ctx, true
-	if f.Ctx > decoder.MetalCtxDefault {
-		req.ExtraBytes += f.KVBytes / int64(f.KVSlots) * int64(f.KVSlots-1)
+	want := min(m.ResidentKVSlotsRequestFor("metal"), decoder.MetalDefaultKVSlots)
+	unpinned := ""
+	if !req.CtxPinned {
+		f := m.MetalFitCtx(decoder.MetalFitInput{FreeBytes: free, FreeKnown: true, KVSlots: want, PagedMoE: req.Slots > 0})
+		req.Ctx, req.CtxPinned = f.Ctx, true
+		unpinned = fmt.Sprintf(" — an unpinned load takes %d positions (%s)", f.Ctx, f.Why)
 	}
 	p := m.Plan(backend, free, req)
-	p.Reason += fmt.Sprintf(" — an unpinned load takes %d positions (%s)", f.Ctx, f.Why)
+	further := func(n int) int64 {
+		return m.MetalKVBytes(n, p.Ctx) - m.ResidentKVBytes("metal", p.Ctx, req.KVF16, req.KVI8)
+	}
+	slots := want
+	for slots > 1 && (p.Placement == fit.PlacementDecline || p.NeedBytes()+further(slots) > free) {
+		slots--
+	}
+	if want > 1 {
+		if slots > 1 {
+			req.ExtraBytes += further(slots)
+			p = m.Plan(backend, free, req)
+		}
+		p.Reason += fmt.Sprintf(" — a default load keeps %d of the %d KV slots it asks for (KV %.2f GB in all)", slots, want,
+			float64(p.KVBytes+further(slots))/(1<<30))
+	}
+	p.Reason += unpinned
 	return p
 }
 

@@ -324,7 +324,7 @@ func TestPlanFor_metalPlansAtTheLoadsOwnContext(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	m, err := decoder.Load(dir, decoder.Options{Quant: "int4"})
+	m, err := decoder.Load(dir, fitLoadOptions("int4", ""))
 	if err != nil {
 		t.Fatal(err)
 	}
