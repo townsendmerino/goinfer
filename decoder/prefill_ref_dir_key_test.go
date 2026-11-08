@@ -40,7 +40,16 @@ func TestCheckpointSHA256_directory(t *testing.T) {
 	if h2, _ := checkpointSHA256(dir); h2 != h1 {
 		t.Fatalf("a sidecar or a hidden file changed the key: %s -> %s", h1, h2)
 	}
+	// A coarse clock (Windows' write times can land in one tick): the rewrite keeps the first write's modification time.
+	weights := filepath.Join(dir, "model.safetensors")
+	st, err := os.Stat(weights)
+	if err != nil {
+		t.Fatal(err)
+	}
 	write("model.safetensors", "weights-b")
+	if err := os.Chtimes(weights, st.ModTime(), st.ModTime()); err != nil {
+		t.Fatal(err)
+	}
 	if h3, _ := checkpointSHA256(dir); h3 == h1 {
 		t.Fatal("changing the weights did not change the key")
 	}
