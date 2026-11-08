@@ -23,11 +23,12 @@
 > - **Olmo Hybrid** (`NegEigval`/`ONormEps` in DeltaNet): **new, done on all three:** CUDA #604, Metal #611, WebGPU #627.
 > - **OP6:** its Metal half is built (the q4k lane joins MC3's step, 2026-10-15; its kernels were 4.7× slower than the loop on Phi-3 until
 >   #722 fixed them on 2026-11-06, `docs/measurements/p29-phi3-2026-11/README.md`). The default-load switch, the CUDA half and WebGPU are not done.
-> - **RF0:** built but for its prior-art reading: the per-turn `timings` block is on the wire (`internal/app/serveapp/turn_timings.go`), the cost
+> - **RF0:** done 2026-11-07 (the prior-art reading is `docs/measurements/forward-arch-prior-art-rf0-2026-11-07.md`, the cost of a decline `docs/measurements/forward-arch-decline-cost-2026-11-07.md`): the per-turn `timings` block is on the wire (`internal/app/serveapp/turn_timings.go`), the cost
 >   counters exist (`internal/cost`, SB11), and the shape × family × backend census was refreshed against program-based admission on 2026-11-07
 >   (`docs/measurements/forward-arch-census-2026-11-07.md`; CPU-only families on CUDA / Metal / WebGPU by `ResidentEligible`, the capability gates: 8 / 8 / 13, from 10 / 12 / 16; by `Admit(...).Why`, which adds Nemotron-H's int4 precision policy: 9 / 9 / 14 model-free and 8 / 8 / 14 at the loader's pick).
 > - **RF1:** **new**, in progress (§5.5): seven steps (RF1-3 dropped), 49 `Resident*` interfaces to 41. RF1-1 (#752) and RF1-2a (#757) merged; RF1-2b open (#760); RF1-4 open (#763).
-> - **Not started:** RF2–RF6, HL, OP5, OP6's CUDA half, default switch and WebGPU, OP1 on WebGPU, OP4 on WebGPU. §7a sizes them.
+> - **HL:** built once on the unmerged branch `hl-metal-2026-10` (2026-10-14): identity PASS (HL-G1 to HL-G3), speed graded OFF (HL-G4: the prose part of a tool turn 1.035 on the 1.5B and 1.010 on the 7B, the whole tool turn 0.986 and 0.973), and HL-R filed (the chain only while the gate is closed). The branch predates KV5-6's chain rework and the `metal/` move to `backend/metal/`, so HL-R was rebuilt on main rather than merged: built and graded 2026-11-07 (PR #765, `docs/measurements/hl-2026-11/README.md`), the 1.5B in the Ship band and the 7B in the Park band, the owner's reading owed. §7a's HL row is still its size.
+> - **Not started:** RF2–RF6, OP5, OP6's CUDA half, default switch and WebGPU, OP1 on WebGPU, OP4 on WebGPU. §7a sizes them.
 > - **Other tracks:** SP's SP2 on CUDA merged (#232, §6a).
 >
 > Written on the owner's ask after a Cowork conversation the same day ("we have spent a bunch of time on decode, prefill
@@ -61,7 +62,7 @@
 - **The host's gap between decode tokens is small.** It is 0.58–0.66 ms on Metal, and the run-ahead chain already hides it
   where it applies.
 - **What costs most is falling off the fast path.**
-  - A model a GPU backend cannot build resident decodes on the CPU, measured about 15× slower.
+  - A model a GPU backend cannot build resident decodes on the CPU, measured 1.7 to 1.8× slower on the Mac for Qwen2.5 at 0.5B, 1.5B and 7B (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), a proxy for the declined families. The 15× this doc once quoted has no record behind it, and the CUDA pair is not measured.
   - A request shape a backend has not built for a family runs a slower path. A Claude Code first request prefilled token by
     token for about 4.5 minutes on the 8 GB card before KV3 (the KV doc, §8 Q2).
 
@@ -115,7 +116,7 @@
 | prefill | the largest share of an agent turn. Claude Code's first request is 19,692–20,199 tokens, and its thread switches re-prefilled 8,000 to 17,000 tokens each, 78% of its request time | `docs/measurements/kv0-traffic-2026-10-13.md` | the KV doc, RF |
 | decode | one GPU forward per token | `docs/benchmarks.md` | OP, RF |
 | host gap per token | 0.58–0.66 ms on Metal; the run-ahead chain hides it where it applies (1.010–1.160× decode) | `CHANGELOG.md`, "the next token's forward is queued on the GPU" | HL (small) |
-| **fallbacks** | a model on the CPU decodes about 15× slower; a declined shape runs a slower path (above) | `internal/app/loadflags/loadflags.go` (`-ctx`'s help); the KV doc §8 Q2 | **OP, RF** |
+| **fallbacks** | a model on the CPU decodes 1.7 to 1.8× slower on the Mac, a Qwen2.5 proxy with CUDA unmeasured; a declined shape runs a slower path (above) | `internal/app/loadflags/loadflags.go` (`-ctx`'s help); the KV doc §8 Q2; `docs/measurements/forward-arch-decline-cost-2026-11-07.md` | **OP, RF** |
 
 - **There is no per-phase timing on the wire today.** `docs/tasks/task-turn-telemetry-2026-09.md` (X1–X8) is scoped and
   unstarted, so the split of a real turn is inferred, not read. RF0 builds its X1.
@@ -321,7 +322,7 @@ generator showed: Spark-X2.5 (the activation, below) and Kimi K2 on Metal (a rou
   - Softcapping puts Gemma 2 on all three GPUs.
   - MLA on Metal brings DeepSeek-V2 and DeepSeek-V3 there. Kimi K2 also needs Metal's router to route its 384 experts; the
     kernel routes 256 (`decoder/features.go:ResidentBackendMoECap`).
-- **Performance where it matters most.** A family leaving the CPU fallback gets roughly the 15× decode difference. That is the
+- **Performance where it matters most.** A family leaving the CPU fallback gets roughly the CPU-to-GPU decode difference, 1.7 to 1.8× on the Mac for Qwen2.5 at three sizes (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), not 15×; the CUDA difference is not measured, and a new family's first kernel can be slower than the CPU. That is the
   largest single change available to a user of that family.
 - **New families get cheaper.** A family made of existing operations needs an adapter (descriptor → program) and a parity gate,
   not code in three runners.
@@ -1283,7 +1284,7 @@ Their gate:
     - **CUDA:** NVIDIA-Nemotron-Nano-9B-v2 at int4 on nobara's 8 GB card, against `nemotron_real_golden.json.gz`.
     - **Metal:** the same checkpoint if it fits by day. If it doesn't fit, a layer slice by day, and the whole model at
       night after a by-day fit check.
-  - **No speed gate:** the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt.
+  - **No speed gate:** the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt. [Corrected 2026-11-07: the 15× has no record behind it. On the Mac the measured CPU-to-Metal decode ratio for Qwen2.5 is 1.7 to 1.8× (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), a proxy: it says nothing about CUDA, which is unmeasured, and a first kernel for a new family can be slower than the CPU (OP6's first Metal kernels on Phi-3 were 4.7× slower than the loop until #722), so "cannot be in doubt" is weaker than written here.]
 
 **OP2b on Metal: the gates, registered 2026-10-15 before any code.**
 
@@ -1500,7 +1501,7 @@ on and admitted both. Peak RSS 5.78 GB, 0 swaps, swap flat at about 1.86 GB. Rec
 **Not in this build:**
 - Granite-4.0-H's own bring-up gate (§4.5).
 - Nemotron-3-Nano's MoE.
-- A speed gate. The do-nothing arm is the CPU, about 15× slower.
+- A speed gate. The do-nothing arm is the CPU, about 15× slower. [Corrected 2026-11-07: the 15× has no record behind it. On the Mac the measured CPU-to-Metal decode ratio for Qwen2.5 is 1.7 to 1.8× (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), a proxy: it says nothing about CUDA, which is unmeasured, and a first kernel for a new family can be slower than the CPU (OP6's first Metal kernels on Phi-3 were 4.7× slower than the loop until #722), so "cannot be in doubt" is weaker than written here.]
 
 **OP2b on CUDA: the gates, registered 2026-10-16 before any code** (read at main `d183f2c9`; Metal's step 1 and step 2 records above).
 
@@ -1612,7 +1613,7 @@ nobara's `~/models` (never `/srv/models`); the CUDA int4 bundle is built from it
      is recorded, is VOID for that cell and not a FAIL, and changes nothing in rule 2.
 - A smaller bundle would also answer it for the 9B (B27's int8 Mamba projections took Metal's from 19.2 to 7.27 GB; int4 Mamba
   projections would go further and need their own quality gate, `docs/ssm-int8-quality.md`); that is not part of this build.
-- **Tier 2: none.** There is no speed gate: the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt. One
+- **Tier 2: none.** There is no speed gate: the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt. [Corrected 2026-11-07: the 15× has no record behind it. On the Mac the measured CPU-to-Metal decode ratio for Qwen2.5 is 1.7 to 1.8× (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), a proxy: it says nothing about CUDA, which is unmeasured, and a first kernel for a new family can be slower than the CPU (OP6's first Metal kernels on Phi-3 were 4.7× slower than the loop until #722), so "cannot be in doubt" is weaker than written here.] One
   decode rate and the time to first token of the sequential prompt are recorded for the 9B, not graded.
 
 **Void, for every gate above:** a model path under `/srv/models` or `/Volumes`; a resident arm whose `DecodePath()` is not
@@ -4726,8 +4727,8 @@ in its `program.Support` table (OP's work). CUDA's `BatchStepRange` already read
 | RF1-2a | each reporter asserted in one accessor (a `Model` method, or a helper taking the resident); no backend change; merged, #757 | 26 sites to 10 | decision census | 0.5 |
 | RF1-2b | one `ResidentCaps` record for the seven values behind `ResidentCapsReporter`, read at each use as the methods were (so no field needs a static-after-load proof); the floors keep their presence bits | 6 interfaces [41] | decision census; a red-first fake per field; each backend's value tests, on its box | 1–1.5 |
 | RF1-3 | *dropped* (Gemini's review of #751, read against the code): the four answers above stay with the backends | — | — | 0 |
-| RF1-4 | `Batch` (rows: sequence, position, input kind, output kind) and `(*Model).step`, an adapter onto today's calls; no caller moves | nothing yet | a fake resident logs its calls; for every shape `step` makes exactly the call today's caller makes | 1 |
-| RF1-5 | decode and verify callers onto `step` (`model.go`'s greedy/top-k/sample choice, `spec_ngram`, `blockspec`) | 6 assertion sites | the call log through the callers, not `step` alone; decision census | 1 |
+| RF1-4 | `Batch` (rows: sequence, position, input kind, output kind) and `(*Model).step`, an adapter onto today's calls; no caller moves; built as `decoder/step.go`'s `stepBatch`, `canStep`, `stepOn` and `(*Model).step`, unexported until a backend implements `Step` (RF5); the caller names the call kind (`stepPass`: one decode token, one batched pass of one row or more, several sequences), never inferred from the row count | nothing yet | a fake resident logs its calls; for every shape `step` makes exactly the call today's caller makes | 1 |
+| RF1-5 | decode and verify callers onto `step` (`model.go`'s greedy/top-k/sample choice, `spec_ngram`, `blockspec`); done in this step's PR: the six sites ask `canDecode` / `canStep` and call `step`, and `stepDo` builds no closure, so a decode token's step allocates nothing | 6 assertion sites | the call log through the callers, not `step` alone; decision census | 1 |
 | RF1-6 | prefill callers (`PrefillKV`, `PrefillRows`, `PrefillMarked`, `SeedArgmax`, the block and chunk splits) | 6 sites | as RF1-5 | 1 |
 | RF1-7 | multimodal and hidden-state callers, and MC3's `StepBatch`; then a source-scan test refuses a forward-shape assertion outside `decoder/step.go` | 15 sites | as RF1-5; the scan in `scripts/touched_scans.py` | 1–1.5 |
 
@@ -5019,7 +5020,7 @@ weeks. A range is wide where a kernel's tuning decides it (RF2, RF4) and narrow 
 
 | phase | needs | unblocks | session-days | box |
 |---|---|---|---|---|
-| **RF0** close-out | done 2026-11-07 but for the §10a prior-art reading: the `timings` block, the cost counters and the refreshed census (`docs/measurements/forward-arch-census-2026-11-07.md`) | RF1's and RF2's registered bands | 0.5–1 | Mac |
+| **RF0** close-out | done 2026-11-07: the `timings` block, the cost counters, the refreshed census (`docs/measurements/forward-arch-census-2026-11-07.md`), the §10a prior-art reading and the cost of a decline measured on the Mac | RF1's and RF2's registered bands | 0.5–1 | Mac |
 | **RF1** one `Step(batch)` over today's entry points | RF0. Today `decoder` declares 49 `Resident*` interfaces (34 optional ones on 10-13); no kernel change, identity by construction | RF2; a smaller `decoder` seam (Tier 3 modularization, `decoder/residency.go` 1,975 lines) | 4–8 | either |
 | **RF2** ragged attention over paged KV, CUDA | KV4 (done), RF1; a new kernel; speed bands per shape (decode depth 0.98, TTFT 0.97, MC3 0.98) with a kill rule | RF3, RF6; CUDA's row-by-row step attention (`stepAttnRows`) goes | 10–20 | nobara |
 | **RF3** mixed steps (token-budget scheduler), CUDA | RF2 | stall-free agent turns (`bench_prefill_stall`); RF4 | 5–8 | nobara |
@@ -5327,8 +5328,7 @@ commits are dated 2026-10-14 in their own time zones.
 the operation count, the Metal fusion header, the `logits` comment, the softcap parameter, the builder count, the FFN enum, the vLLM scheduler comment and its two ordering comments, both
 Gemma 2 softcap lines, FlashInfer's softcap constant and FlashAttention's 256 check. The rest stands on the pass's own reading.
 
-**Not read, and left for RF0:** TVM and Relax, so MLC's attention kernels are unverified; FlashInfer's and FlashAttention's kernel bodies and the mixed-batch (POD) internals; vLLM's model
-runner beyond the logits rows, and its waiting-queue loop; llama.cpp's Vulkan fusion code and its hybrid and recurrent memories; the Ollama MLX runner's scheduler; the Sarathi-Serve code.
+**Read for RF0 on 2026-11-07:** every source this paragraph listed as unread, at the revisions and with the limits in `docs/measurements/forward-arch-prior-art-rf0-2026-11-07.md`. Its one correction to this section: Sarathi-Serve's code has a configured chunk size and no profiled budget, and tile rounding only in its experimental dynamic schedule. Still unread, and named there: the kernel bodies of FlashInfer's and flash-attention's mainloops, FlashInfer's persistent attention sink, vLLM's rejection sampler, TVM's kernel bodies.
 
 ## 11. What this absorbs and changes elsewhere
 

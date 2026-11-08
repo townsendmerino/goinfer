@@ -706,13 +706,20 @@ func TestMC3_batchGreedyDrawAsksForTheID(t *testing.T) {
 	wg.Wait()
 	for c := range nConv {
 		for tn := range alone[c] {
-			if tn >= len(concurrent[c]) || !slices.Equal(alone[c][tn].ids, concurrent[c][tn].ids) {
-				t.Fatalf("conversation %d turn %d: concurrent %v, alone %v", c, tn, concurrent[c], alone[c][tn].ids)
+			if tn >= len(concurrent[c]) {
+				t.Fatalf("conversation %d: %d turns concurrently, %d alone", c, len(concurrent[c]), len(alone[c]))
+			}
+			if !slices.Equal(alone[c][tn].ids, concurrent[c][tn].ids) {
+				t.Fatalf("conversation %d turn %d: concurrent %v, alone %v", c, tn, concurrent[c][tn].ids, alone[c][tn].ids)
 			}
 		}
 	}
 	if rf.steps == 0 || rf.greedyDraws == 0 {
 		t.Fatalf("%d batched steps, %d Greedy draws: a BatchGreedyDraw resident's batched greedy rows did not ask for the id", rf.steps, rf.greedyDraws)
+	}
+	// Every batched row of these greedy generations asks for the id: none returns logits or takes a sampled draw.
+	if rf.greedyDraws != rf.stepSeqs || rf.stepDraws != 0 {
+		t.Fatalf("%d batched rows, %d of them Greedy draws and %d sampled draws: every row should be a Greedy draw", rf.stepSeqs, rf.greedyDraws, rf.stepDraws)
 	}
 	t.Logf("batched steps %d, Greedy draws %d", rf.steps, rf.greedyDraws)
 }
