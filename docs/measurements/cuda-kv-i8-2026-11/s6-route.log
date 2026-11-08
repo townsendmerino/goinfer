@@ -1,0 +1,41 @@
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_attn_batched_M=1
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 5995 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4939 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:724: prefill cosine 0.996911, min over 9 rows 0.98313, argmax agreement 8/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_split-KV
+cuda: prefill width 2048 rows (280 MiB of scratch; 5995 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4939 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:724: prefill cosine 0.996911, min over 9 rows 0.98313, argmax agreement 8/9 (int8 arm: flash 0, split-KV 224, fused prefill 0)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_flash-decode_lane
+cuda: prefill width 2048 rows (280 MiB of scratch; 5979 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4909 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:724: prefill cosine 0.996911, min over 9 rows 0.98218, argmax agreement 8/9 (int8 arm: flash 224, split-KV 0, fused prefill 0)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_with_fast_prefill_on
+cuda: prefill width 2048 rows (280 MiB of scratch; 5995 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4939 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:724: prefill cosine 0.996275, min over 9 rows 0.97084, argmax agreement 8/9 (int8 arm: flash 0, split-KV 0, fused prefill 28)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_batched
+cuda: prefill width 2048 rows (280 MiB of scratch; 5995 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:724: prefill cosine 0.996911, min over 9 rows 0.98313, argmax agreement 8/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+=== RUN   TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_row-batched_split-KV
+cuda: prefill width 2048 rows (316 MiB of scratch; 5995 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+cuda: prefill width 2048 rows (316 MiB of scratch; 4941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:724: prefill cosine 0.996911, min over 9 rows 0.98313, argmax agreement 8/9 (int8 arm: flash 0, split-KV 0, fused prefill 0)
+--- PASS: TestKV8_everyAttentionPathStaysCloseToF32 (61.47s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_attn_batched_M=1 (11.65s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_split-KV (9.60s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_flash-decode_lane (9.89s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_with_fast_prefill_on (9.78s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_batched (10.38s)
+    --- PASS: TestKV8_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_row-batched_split-KV (10.07s)
+PASS
+ledger: 16 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	61.557s

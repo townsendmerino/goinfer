@@ -1,0 +1,16 @@
+plant: wrong-head (attn_fused.cu)
+replaced: Vtsh[dd * vStride + kk] = KV_LDHS(src + dd, vscl[((kk < split ? row0 : row1) + kk) * nKV + kvh]);
+with:     Vtsh[dd * vStride + kk] = KV_LDHS(src + dd, vscl[((kk < split ? row0 : row1) + kk) * nKV + (kvh + 1) % nKV]);
+
+    kv16_test.go:1522: attn_fused hd128 startPos=0 M=70 hd=128: 35836/35840 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused hd128 startPos=0 M=300 hd=128: 153596/153600 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused hd128 startPos=37 M=200 hd=128: 102400/102400 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused hd128 startPos=100 M=129 hd=128: 66048/66048 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused hd64 startPos=0 M=70 hd=64: 62674/62720 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused hd64 startPos=0 M=300 hd=64: 268762/268800 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused hd64 startPos=37 M=200 hd=64: 179198/179200 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+    kv16_test.go:1522: attn_fused hd64 startPos=100 M=129 hd=64: 115584/115584 elements differ between the int8 tile and the f16 tile on f16(code*scale)
+--- FAIL: TestKV8_exactInputIdentity_fusedPrefill (6.08s)
+    --- FAIL: TestKV8_exactInputIdentity_fusedPrefill/llama-attnfa-tiny (2.23s)
+    --- FAIL: TestKV8_exactInputIdentity_fusedPrefill/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (3.75s)
+FAIL

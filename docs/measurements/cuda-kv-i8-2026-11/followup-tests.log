@@ -1,0 +1,5 @@
+--- PASS: TestKV8_flashLaneCompiledFromItsPrecisionsTwin (2.50s)
+--- PASS: TestKV8_exactInputIdentity_fusedPrefill (3.76s)
+--- PASS: TestKV8_everyFusedPrefillLaunchPassesScales (0.00s)
+--- PASS: TestKV8_prefillTakesTheTileOnTheTinyFixture (0.24s)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	6.587s

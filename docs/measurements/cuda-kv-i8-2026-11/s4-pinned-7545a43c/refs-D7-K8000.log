@@ -1,0 +1,10 @@
+=== RUN   TestPrefillGateReference
+    prefill_ref_gen_test.go:71: prompt set "b" (10 files) -> /home/francis/goinfer-logs/prefill-ref-b
+=== RUN   TestPrefillGateReference/D7
+[ref] concurrency preflight OK: 8 parallel workers, identical prompt, bit-identical seed logits
+[ref] D7 K=8000: 8 of 10 prompts already in the reference cache, 2 to compute
+[ref] D7 K=8000 prompt 10 done (1/2 computed) -> /home/francis/goinfer-logs/prefill-ref-b/D7-K8000-p9.bin took=43m12s elapsed=43m12s
+[ref] D7 K=8000 prompt  9 done (2/2 computed) -> /home/francis/goinfer-logs/prefill-ref-b/D7-K8000-p8.bin took=43m14s elapsed=43m14s
+--- PASS: TestPrefillGateReference (2632.81s)
+    --- PASS: TestPrefillGateReference/D7 (2632.81s)
+PASS

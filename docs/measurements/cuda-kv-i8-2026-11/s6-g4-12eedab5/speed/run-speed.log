@@ -1,0 +1,18 @@
+== fit checks start 2026-11-08 10:25:51 PST load 1.08 1.50 1.46 MemAvailable 61304 MiB
+fit 15B-auto:   fit: 16896-token cap needs 0.5 GB KV (weights 0.9 GB, budget 41.7 GB, 41.2 GB left for a request's own prefill)   KV plan: 4 conversations x 16896 positions (--ctx 16896) 
+fit 15B-i8:   fit: 16896-token cap needs 0.2 GB KV (weights 0.9 GB, budget 41.6 GB, 41.4 GB left for a request's own prefill)   KV plan: 4 conversations x 16896 positions (--ctx 16896) 
+fit 7B-auto: cuda: 2 resident KV slots of 4 requested — one slot's pools cost 1008 MB at the resident context 16896, and free VRAM beside the weights (3000 MB, less 328 MB reserved) allows 2   fit: 16896-token cap needs 0.9 GB KV (weights 4.0 GB, budget 41.6 GB, 40.7 GB left for a request's own prefill)   KV plan: 2 conversations x 16896 positions (4 asked for; --ctx 16896) 
+fit 7B-i8:   fit: 16896-token cap needs 0.5 GB KV (weights 4.0 GB, budget 41.6 GB, 41.1 GB left for a request's own prefill)   KV plan: 4 conversations x 16896 positions (--ctx 16896) 
+served:   12eedab501f922e4728bc9777e799cc599fa77bb (/home/francis/goinfer-bench/s6-g4/bin/serve-cuda-s6, sha256 17bdac5866a57d25)
+harness:  33bfef1d0d6e90e00f82c75f6305c69250306db2 (bench_peer.py from #777); served = S6 G4 tree
+started:  2026-11-08 10:26:24 PST
+driver:   595.112.07
+arms:     goinfer = default (auto, f16 here), goinfer_old = -kv i8 (one binary)
+cells:    1.5B, 7B x 128, 512, 4096, 16384 (16,436 tokens); BENCH_CTX=16896; 2 runs a pass, two passes in reversed arm order
+sha256sum: /home/francis/goinfer-bench/s6-g4/prompts-s4.json: No such file or directory
+prompts:  /home/francis/goinfer-bench/s6-g4/prompts-s4.json (sha256 )
+== f16first start 10:27:24 load 0.63 1.30 1.39 MemAvailable 61285 MiB
+== f16first exit 0 10:39:19
+== i8first start 10:39:49 load 0.63 0.99 1.17 MemAvailable 61362 MiB
+== i8first exit 0 10:51:43
+finished: 2026-11-08 10:51:43 PST rc=0

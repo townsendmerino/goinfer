@@ -5,6 +5,8 @@ package webgpu
 import (
 	"context"
 	"os"
+	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -45,13 +47,25 @@ func TestDecodeRealModel_throughput(t *testing.T) {
 	}
 	newOrSkipHW(t).Close() // real-HW gate
 
-	tk, err := tokenizer.LoadGGUF(path)
+	tok := path
+	if v := os.Getenv("GOINFER_DECODE_TOKENIZER_GGUF"); v != "" { // a .giw's tokenizer, from its source GGUF
+		tok = v
+	}
+	tk, err := tokenizer.LoadGGUF(tok)
 	if err != nil {
 		t.Fatalf("tokenizer: %v", err)
 	}
 	promptIDs, _ := tk.Encode("Write a short note about recursion in programming.\n", true)
 
-	m, err := decoder.Load(path, decoder.Options{Backend: "webgpu", Quant: "int8int8"})
+	// GOINFER_DECODE_QUANT is the load's Options.Quant (default int8int8; "native" loads a .giw at its stored precision).
+	quant := os.Getenv("GOINFER_DECODE_QUANT")
+	switch quant {
+	case "":
+		quant = "int8int8"
+	case "native":
+		quant = ""
+	}
+	m, err := decoder.Load(path, decoder.Options{Backend: "webgpu", Quant: quant})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -83,14 +97,29 @@ func TestDecodeRealModel_throughput(t *testing.T) {
 	}
 
 	rate(8) // warm: compile pipelines, fill the cache; discarded
-	const rounds, gen = 6, 48
-	best := 0.0
+	// GOINFER_DECODE_ROUNDS and GOINFER_DECODE_TOKENS size the cell (default 6 rounds of 48 tokens); every round is printed, with the
+	// best and the median, so an A/B can pair cells on the median.
+	rounds, gen := envInt("GOINFER_DECODE_ROUNDS", 6), envInt("GOINFER_DECODE_TOKENS", 48)
+	rates := make([]float64, 0, rounds)
 	for range rounds {
-		if tps, _ := rate(gen); tps > best {
-			best = tps
-		}
+		tps, _ := rate(gen)
+		rates = append(rates, tps)
 	}
-	t.Logf("REAL-MODEL DECODE: %s", path)
-	t.Logf("  steady-state %.1f tok/s = %.2f ms/token (best of %d × %d-tok greedy, resident int8)",
-		best, 1000/best, rounds, gen)
+	sorted := slices.Clone(rates)
+	slices.Sort(sorted)
+	best, median := sorted[len(sorted)-1], sorted[len(sorted)/2]
+	if len(sorted)%2 == 0 {
+		median = (sorted[len(sorted)/2-1] + sorted[len(sorted)/2]) / 2
+	}
+	t.Logf("REAL-MODEL DECODE: %s (quant %q)", path, quant)
+	t.Logf("  rounds tok/s %.2f", rates)
+	t.Logf("  steady-state best %.1f tok/s, median %.2f tok/s (%d × %d-tok greedy, resident)", best, median, rounds, gen)
+}
+
+// envInt is the positive integer in env var name, or def when it is unset or not one.
+func envInt(name string, def int) int {
+	if v, err := strconv.Atoi(os.Getenv(name)); err == nil && v > 0 {
+		return v
+	}
+	return def
 }

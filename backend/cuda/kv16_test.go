@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -395,6 +396,51 @@ func kv8Load(t *testing.T, fx, kv string, opts decoder.Options) (*decoder.Model,
 	return m, r
 }
 
+// TestKV8_flashLaneCompiledFromItsPrecisionsTwin: the flash-decode lane of an f32, f16 and int8 build is compiled from decode_fa, its _kv16
+// twin and its _kv8 twin respectively, and the int8 build allocates exactly f32/4 + f32*nKV/kvDim: the two facts TestKV8GateVsReference's
+// precondition 1 checks on each arm, asserted here on real builds so the gate's arithmetic is not taken on trust.
+func TestKV8_flashLaneCompiledFromItsPrecisionsTwin(t *testing.T) {
+	requireCUDADevice(t)
+	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16") // the lane on at this short context, as the gate and the every-path test turn it on
+	t.Setenv("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "0")
+	const fx = "llama-attnfa-tiny"
+	alloc := map[string]int64{}
+	var kvDim, nKV int
+	for _, c := range []struct{ kv, module string }{{"f32", "decode_fa"}, {"f16", "decode_fa_kv16"}, {"i8", "decode_fa_kv8"}} {
+		m, r := kv8Load(t, fx, c.kv, decoder.Options{})
+		if r.faSplit < 1 || r.faCombine == (Pipeline{}) {
+			t.Fatalf("-kv %s: the flash-decode lane is not loaded", c.kv)
+		}
+		if r.faModule != c.module {
+			t.Errorf("-kv %s: the flash-decode lane was compiled from %q, not %q", c.kv, r.faModule, c.module)
+		}
+		for l := range r.layers {
+			if Ly := &r.layers[l]; !Ly.noKV() && !Ly.kvShared {
+				if kvDim == 0 {
+					kvDim, nKV = Ly.kvDim, Ly.nKV
+				} else if Ly.kvDim != kvDim || Ly.nKV != nKV {
+					t.Fatalf("%s's KV layers differ in geometry; the exact int8 figure needs one", fx)
+				}
+			}
+		}
+		alloc[c.kv] = kv8Allocated[r]
+		var pools int64 // TestKV8GateVsReference's precondition 1, on this build: each KV-owning layer's pool rows times its row bytes
+		for l := range r.layers {
+			if Ly := &r.layers[l]; !Ly.noKV() && !Ly.kvShared && Ly.kvDim > 0 {
+				pools += 2 * int64(r.kc[l].Len()/Ly.kvDim) * kvRowBytes(Ly)
+			}
+		}
+		if pools != alloc[c.kv] {
+			t.Errorf("-kv %s: allocated %d B of K/V; its layers' pools at its precision are %d B", c.kv, alloc[c.kv], pools)
+		}
+		m.Close()
+	}
+	e, h, q := alloc["f32"], alloc["f16"], alloc["i8"]
+	if e <= 0 || 2*h != e || 4*q*int64(kvDim) != e*int64(kvDim)+4*e*int64(nKV) {
+		t.Errorf("allocations f32 %d B, f16 %d B, i8 %d B; i8 should be %d B", e, h, q, e/4+e*int64(nKV)/int64(kvDim))
+	}
+}
+
 // TestKV8_deliveredBytes is G3 for the CUDA int8 cache (docs/tasks/task-kv-precision-everywhere-2026-10.md §4): at -kv i8 every layer that
 // keeps K/V holds int8 pools with as many elements as the f32 build's and one f32 scale per (row, KV head) for each of K and V; the build
 // ALLOCATES exactly 1 B an element plus 8 B of scales per position, head and layer (the f32 build's bytes / 4, plus the scales); and
@@ -612,8 +658,8 @@ func TestKV8_layer0StoreIsTheQuantizedF32Store(t *testing.T) {
 
 // TestKV8_everyAttentionPathStaysCloseToF32 drives an int8 and an f32 build over real prose and compares last-position logits step by step on
 // each attention path an int8 cache takes: decode through attn_batched (M=1), split-KV and the flash-decode lane; prefill through attn_batched,
-// through the row-batched split-KV kernels, and with fast prefill on, which an int8 cache routes around (the tensor-core tiles have no int8
-// twin: a fused launch here is a failure). The bar is a smoke bar, registered with S2 before its first run (cosine >= 0.97 on every row,
+// through the row-batched split-KV kernels, and with fast prefill on, which takes the tensor-core tiles' _kv8 twins (S6's route gate: a fast-prefill
+// cell with no fused launch is a failure). The bar is a smoke bar, registered with S2 before its first run (cosine >= 0.97 on every row,
 // argmax agreement on 3 of 4); the readers' correctness is S1's bit-exact G1, and the fidelity read is S4's. What this catches is a reader bound
 // without its scales, a store that never ran, or a path that never ran (a launch counter at 0). The 1.5B only: what int8 KV costs the 0.5B
 // is under the bar on the CPU's own int8 cache too, which makes it a quality reading, not a correctness one (scope.md, "S2").
@@ -649,7 +695,12 @@ func TestKV8_everyAttentionPathStaysCloseToF32(t *testing.T) {
 					t.Errorf("no flash-decode launches: the cell is vacuous")
 				}
 			}},
-		{"prefill with fast prefill on", map[string]string{"GOINFER_CUDA_FLASH_DECODE": "0", "GOINFER_CUDA_FAST_PREFILL_FLOOR": "0"}, false, noFused},
+		{"prefill with fast prefill on", map[string]string{"GOINFER_CUDA_FLASH_DECODE": "0", "GOINFER_CUDA_FAST_PREFILL_FLOOR": "0"}, false,
+			func(t *testing.T, r *cudaResident) {
+				if r.fastAttnLaunches == 0 {
+					t.Errorf("the int8 cache took no tensor-core tile launch with fast prefill on (S6's route gate)")
+				}
+			}},
 		// (the f32 control of this cell must have taken the fused tiles; asserted below, after both arms ran)
 		{"prefill attn_batched", map[string]string{"GOINFER_CUDA_FLASH_DECODE": "0", "GOINFER_CUDA_FAST_PREFILL": "0"}, false, noFused},
 		{"prefill row-batched split-KV", map[string]string{"GOINFER_CUDA_FLASH_DECODE": "0", "GOINFER_CUDA_FAST_PREFILL": "0"}, true,
@@ -725,7 +776,7 @@ func TestKV8_everyAttentionPathStaysCloseToF32(t *testing.T) {
 				}
 				c.check(t, r8)
 				if c.name == "prefill with fast prefill on" && r32.fastAttnLaunches == 0 {
-					t.Errorf("the f32 control took no fused prefill launch: the cell does not compare a routed-around int8 prefill with the fused one")
+					t.Errorf("the f32 control took no fused prefill launch: the cell does not compare the two builds' tensor-core tiles")
 				}
 			})
 		}
@@ -1398,5 +1449,173 @@ func TestKV8_extraSlotPricedAtTheDeliveredPrecision(t *testing.T) {
 			t.Errorf("%s: an extra slot is priced %d B; the build allocates %s, %d B (delivered %q)", c.name, got, c.want, want, m.KVDeliveredFor("cuda"))
 		}
 		m.Close()
+	}
+}
+
+// TestKV8_exactInputIdentity_fusedPrefill is S6's G1 (docs/measurements/cuda-kv-i8-2026-11/s6-registration.md): every tensor-core prefill tile's
+// _kv8 twin, on an int8 cache, equals its _kv16 twin bit for bit on an f16 cache holding f16(code * scale) of the same rows: the int8 twin stages each
+// element as that f16 value and runs the rest of the tile as the f16 build does. The int8 rows come from a real prefill of the int8 resident (its
+// store's codes and scales, read back), the f16 cache from those rows dequantized and rounded to nearest even on the host. The cases put a ragged
+// last key tile (the scalar staging) beside full tiles (the vector staging).
+func TestKV8_exactInputIdentity_fusedPrefill(t *testing.T) {
+	requireCUDADevice(t)
+	for _, fx := range []string{"llama-attnfa-tiny", "~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"} {
+		t.Run(filepath.Base(fx), func(t *testing.T) {
+			// The 0.5B is the only hd64 case, so on a box with a device its absence fails the test instead of skipping hd64's tiles.
+			if _, err := os.Stat(kv8Path(fx)); err != nil {
+				t.Fatalf("no %s (the hd64 tiles' only fixture): %v", fx, err)
+			}
+			const nTot = 300
+			m8, r8 := kv8Load(t, fx, "i8", decoder.Options{ResidentContext: 1024})
+			_, r16 := kv8Load(t, fx, "f16", decoder.Options{ResidentContext: 1024})
+			Ly := &r8.layers[0]
+			nH, hd, kvDim, nKV := r8.nH, Ly.hd, Ly.kvDim, Ly.nKV
+			type kernel struct {
+				name    string
+				p8, p16 Pipeline
+				bm, bn  int // query-tile and key-tile rows; 0 for the 64x64 kernel
+			}
+			var ks []kernel
+			switch hd {
+			case 64:
+				ks = []kernel{{"attn_fused hd64", r8.bAttnFused64, r16.bAttnFused64, 0, 0}, {"attn_fused_bm32x64 hd64", r8.bAttnBM32x64hd64, r16.bAttnBM32x64hd64, 32, 64},
+					{"attn_fused_bm32x32 hd64", r8.bAttnBM32x32hd64, r16.bAttnBM32x32hd64, 32, 32}, {"attn_fused_bm128 hd64", r8.bAttnBM128hd64, r16.bAttnBM128hd64, 128, 64}}
+			case 128:
+				ks = []kernel{{"attn_fused hd128", r8.bAttnFused128, r16.bAttnFused128, 0, 0}, {"attn_fused_bm32x64 hd128", r8.bAttnBM32x64hd128, r16.bAttnBM32x64hd128, 32, 64},
+					{"attn_fused_bm32x32 hd128", r8.bAttnBM32x32hd128, r16.bAttnBM32x32hd128, 32, 32}, {"attn_fused_bm128 hd128", r8.bAttnBM128hd128, r16.bAttnBM128hd128, 128, 64}}
+			default:
+				t.Fatalf("no fused tile for hd=%d", hd)
+			}
+			for _, k := range ks {
+				if k.p8 == (Pipeline{}) || k.p16 == (Pipeline{}) {
+					t.Fatalf("%s did not load on both arms (i8 %v, f16 %v): a missing kernel is not a pass", k.name, k.p8 != (Pipeline{}), k.p16 != (Pipeline{}))
+				}
+			}
+			// The int8 rows: a real prefill of the int8 resident, read back as codes and scales.
+			_, _, _, _, _, _, vocab := m8.Dims()
+			embs := make([][]float32, nTot)
+			for i := range embs {
+				embs[i] = m8.EmbedResidentForTest(3 + (37*i)%(vocab-3))
+			}
+			if _, err := r8.PrefillLast(context.Background(), embs, 0); err != nil {
+				t.Fatalf("int8 prefill: %v", err)
+			}
+			var k8, v8 []int8
+			var ksc, vsc []float32
+			if err := r8.do(func() error {
+				if e := r8.stream.Sync(); e != nil {
+					return e
+				}
+				var e error
+				k8, v8, ksc, vsc, e = r8.kv8RowsForTest(r8.kvSlot, 0, 0, nTot)
+				return e
+			}); err != nil {
+				t.Fatal(err)
+			}
+			deq := func(c []int8, sc []float32) []float32 {
+				out := make([]float32, len(c))
+				for i := range c {
+					p, h := i/kvDim, (i%kvDim)/hd
+					out[i] = linalg.F16ToF32(f32ToF16RNE(float32(c[i]) * sc[p*nKV+h]))
+				}
+				return out
+			}
+			if err := r16.UploadKV(0, 0, deq(k8, ksc), deq(v8, vsc)); err != nil {
+				t.Fatal(err)
+			}
+			for _, tc := range []struct{ startPos, M int }{{0, 70}, {0, 300}, {37, 200}, {100, 129}} {
+				q := kv16Representable(tc.M*nH*hd, uint32(13+tc.M))
+				for _, k := range ks {
+					var out [2][]float32
+					for i, r := range []*cudaResident{r8, r16} {
+						p := k.p8
+						if i == 1 {
+							p = k.p16
+						}
+						out[i] = make([]float32, tc.M*nH*hd)
+						if err := r.do(func() error {
+							qB := gpu.NewBufferLenOf[float32](r.dev, len(q))
+							cB := gpu.NewBufferLenOf[float32](r.dev, len(q))
+							if e := gpu.Upload(qB, q); e != nil {
+								return e
+							}
+							args := r.kvScaled(0, Arg(qB), Arg(r.kvK(0)), Arg(r.kvV(0)), Arg(r.kvT(0)), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)),
+								gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(tc.startPos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window),
+								gpu.ArgValue(int32(tc.M)), Arg(cB), r.sinkArg(0))
+							cfg := LaunchConfig{GridX: uint32(nH), GridY: uint32((tc.M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,
+								BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: attnFusedShmem(hd)}
+							if k.bm > 0 {
+								cfg.GridY = uint32((tc.M + k.bm - 1) / k.bm)
+								cfg.BlockX = uint32(k.bm / 16 * 32)
+								cfg.SharedMemBytes = uint32(2 * (k.bn*(hd+attnFusedKPAD) + hd*(k.bn+attnFusedKPAD)))
+							}
+							if e := r.launch(p, cfg, args...); e != nil {
+								return e
+							}
+							if e := r.stream.Sync(); e != nil {
+								return e
+							}
+							return gpu.Download(cB, out[i])
+						}); err != nil {
+							t.Fatalf("%s startPos=%d M=%d arm %d: %v", k.name, tc.startPos, tc.M, i, err)
+						}
+					}
+					diff, nz := 0, 0
+					for i := range out[0] {
+						if math.Float32bits(out[0][i]) != math.Float32bits(out[1][i]) {
+							diff++
+						}
+						if out[0][i] != 0 {
+							nz++
+						}
+					}
+					if nz == 0 {
+						t.Errorf("%s startPos=%d M=%d: the int8 arm's output is all zero, so the comparison is vacuous", k.name, tc.startPos, tc.M)
+					}
+					if diff != 0 {
+						t.Errorf("%s startPos=%d M=%d hd=%d: %d/%d elements differ between the int8 tile and the f16 tile on f16(code*scale)", k.name, tc.startPos, tc.M, hd, diff, len(out[0]))
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestKV8_everyFusedPrefillLaunchPassesScales reads prefill.go: every launch of a tensor-core prefill tile (attn_fused, attn_fused_bm) passes
+// the layer's scale pools through kvScaled, since the identity test launches each tile itself and would not see a dispatch site that forgot
+// them (S6, Gemini's review of #785). Eight sites: two attn_fused head dims and three attn_fused_bm shapes at two head dims.
+func TestKV8_everyFusedPrefillLaunchPassesScales(t *testing.T) {
+	b, err := os.ReadFile("prefill.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	launch := regexp.MustCompile(`r\.launch\(r\.(bAttnFused(?:64|128)|bAttnBM\w+), ([^\n]*)`)
+	sites := launch.FindAllStringSubmatch(string(b), -1)
+	if len(sites) != 8 {
+		t.Fatalf("found %d tensor-core tile launches in prefill.go, expected 8: the scan no longer sees them all", len(sites))
+	}
+	for _, m := range sites {
+		if !strings.Contains(m[2], "r.kvScaled(l, ") {
+			t.Errorf("prefill.go launches %s without r.kvScaled(l, ...): an int8 cache's tile would read no scales (%s)", m[1], m[0])
+		}
+	}
+}
+
+// TestKV8_prefillTakesTheTileOnTheTinyFixture is S6's route gate at tier 0 (s6-registration.md, "Route"): on llama-attnfa-tiny at -kv i8, a
+// prefill above the fast-prefill floor launches the tensor-core tile and no attn_batched (every layer is tile-served: no window, hd 128).
+func TestKV8_prefillTakesTheTileOnTheTinyFixture(t *testing.T) {
+	requireCUDADevice(t)
+	t.Setenv("GOINFER_CUDA_FAST_PREFILL_FLOOR", "0")
+	m, r := kv8Load(t, "llama-attnfa-tiny", "i8", decoder.Options{ResidentContext: 1024})
+	_, _, _, _, _, _, vocab := m.Dims()
+	embs := make([][]float32, 300)
+	for i := range embs {
+		embs[i] = m.EmbedResidentForTest(3 + (37*i)%(vocab-3))
+	}
+	if _, err := r.PrefillLast(context.Background(), embs, 0); err != nil {
+		t.Fatalf("int8 prefill: %v", err)
+	}
+	if r.fastAttnLaunches == 0 || r.exactAttnLaunches != 0 {
+		t.Errorf("int8 prefill launched the tile %d times and attn_batched %d times: every layer should take the tile", r.fastAttnLaunches, r.exactAttnLaunches)
 	}
 }
