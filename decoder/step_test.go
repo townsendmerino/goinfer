@@ -340,3 +340,34 @@ func TestStep_absentShapeDeclines(t *testing.T) {
 		t.Errorf("a marked prefill on a Prefiller-only resident: err %v, %d calls; want errStepShape and no call", err, pf.calls)
 	}
 }
+
+// stepNoAllocResident answers each decode shape without allocating, so an allocation in a step is step's own.
+type stepNoAllocResident struct{ stepPlainResident }
+
+func (*stepNoAllocResident) ForwardArgmax([]float32, int) (int, error) { return 1, nil }
+func (*stepNoAllocResident) TopKAvailable() bool                       { return true }
+func (*stepNoAllocResident) ForwardTopK([]float32, int, int, float64, bool) (TopKRow, error) {
+	return TopKRow{}, nil
+}
+func (*stepNoAllocResident) SampleAvailable() bool { return true }
+func (*stepNoAllocResident) ForwardSample([]float32, int, float64, uint64, uint64) (int, error) {
+	return 2, nil
+}
+
+// TestStep_decodeTokenAllocatesNothing: a decode token's step, with the caller's one-row slice reused across tokens as the decode
+// loop does, allocates nothing, so moving the per-token calls behind step adds no garbage per token.
+func TestStep_decodeTokenAllocatesNothing(t *testing.T) {
+	m := &Model{resident: &stepNoAllocResident{}}
+	emb := make([]float32, 8)
+	var row [1][]float32
+	for _, out := range []stepOut{outLogits, outArgmax, outTopK, outSample} {
+		if a := testing.AllocsPerRun(100, func() {
+			row[0] = emb
+			if _, err := m.step(stepBatch{Pass: passToken, Emb: row[:], Pos: 3, Out: out}); err != nil {
+				t.Fatal(err)
+			}
+		}); a != 0 {
+			t.Errorf("out kind %d: %v allocations per decode step, want 0", out, a)
+		}
+	}
+}
