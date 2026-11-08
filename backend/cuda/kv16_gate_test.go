@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -113,6 +114,10 @@ type kv16ArmResult struct {
 	faModule   string // the build of decode_fa the lane's kernels were compiled from (cudaResident.faModule)
 	kvDim, nKV int    // the KV-keeping layers' K row width and KV heads, when every such layer shares them (uniform)
 	uniform    bool
+	poolBytes  int64 // the K/V pools' bytes from each KV-owning layer's own pool rows and row bytes (kvRowBytes), summed: what allocated must equal
+	poolRows   []int // each KV-owning layer's pool rows, which the three arms must share
+	slots      int
+	mla        bool
 }
 
 func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens [][]int, survey, aa bool, tag string, opts decoder.Options) kv16ArmResult {
@@ -139,8 +144,14 @@ func kv16RunArm(t *testing.T, path, kv string, K int, prompts [][]int, refTokens
 	// The build's own fit check sized this arm (BuildResident refuses a load that does not fit, and the load above would have failed): record
 	// what it chose, so the cell's record shows each arm passed it.
 	res.fit = fmt.Sprintf("-kv %s: resident, context %d positions, %d KV slot(s), KV pools %d B", kv, rf.ctxCap, rf.KVSlots(), res.kvPool)
-	res.mlaOnly, res.faModule, res.uniform = true, rf.faModule, true
+	res.mlaOnly, res.faModule, res.uniform, res.slots = true, rf.faModule, true, rf.KVSlots()
 	for l := range rf.layers {
+		if Ly := &rf.layers[l]; !Ly.noKV() && !Ly.kvShared && Ly.kvDim > 0 {
+			rows := rf.kc[l].Len() / Ly.kvDim
+			res.poolRows = append(res.poolRows, rows)
+			res.poolBytes += 2 * int64(rows) * kvRowBytes(Ly)
+			res.mla = res.mla || Ly.isMLA()
+		}
 		if !rf.layers[l].noKV() && !rf.layers[l].isMLA() {
 			res.mlaOnly = false
 			if res.kvDim == 0 {
@@ -380,8 +391,10 @@ func TestKV8GateVsReference(t *testing.T) {
 	}
 	// PRECONDITION 4: the exact-input G2 at this binary's commit, before any cell: the int8 readers this gate scores must match the CPU's on
 	// one cache. It runs here, in the same binary, so the gate cannot be read against readers that were never checked.
-	if !t.Run("precondition4-exact-input-G2", TestKV8_G2exact_readersMatchTheCPUOnOneCache) {
-		t.Fatal("PRECONDITION 4 (exact-input G2) failed: no cell is read")
+	// A skipped subtest passes t.Run, so the precondition also requires the subtest to have run to its end.
+	ranG2 := false
+	if !t.Run("precondition4-exact-input-G2", func(t *testing.T) { TestKV8_G2exact_readersMatchTheCPUOnOneCache(t); ranG2 = !t.Skipped() }) || !ranG2 {
+		t.Fatal("PRECONDITION 4 (exact-input G2) failed or skipped: no cell is read")
 	}
 	models := map[string]struct {
 		def      string
@@ -517,14 +530,25 @@ func runKV8GateCell(t *testing.T, path, model string, K int, promptFiles []strin
 			t.Fatalf("PRECONDITION 1: the %s arm allocated %d B of K/V; its pools are priced %d B (%d B with %d B of tables)", a.name, a.r.allocated, a.r.kvPool-a.r.tables, a.r.kvPool, a.r.tables)
 		}
 	}
-	// f16 is exactly half of f32. An int8 row is kvDim bytes plus one f32 scale per KV head (kvRowBytes) against f32's 4*kvDim, so on a model
-	// whose KV layers share one geometry int8 is exactly f32/4 + f32*nKV/kvDim: 4*i8*kvDim == f32*kvDim + 4*f32*nKV.
-	if !e.uniform || e.kvDim <= 0 {
-		t.Fatalf("PRECONDITION 1: the model's KV layers do not share one geometry, so the int8 overhead has no single exact figure")
-	}
-	if 2*h.allocated != e.allocated || 4*q.allocated*int64(e.kvDim) != e.allocated*int64(e.kvDim)+4*e.allocated*int64(e.nKV) {
-		t.Fatalf("PRECONDITION 1: K/V allocations f32 %d B, f16 %d B, i8 %d B: f16 is not half, or i8 is not f32/4 plus one f32 scale per KV head and row (want %d B)",
-			e.allocated, h.allocated, q.allocated, e.allocated/4+e.allocated*int64(e.nKV)/int64(e.kvDim))
+	// Each arm allocated exactly its layers' pools at its own precision: every KV-owning layer's pool rows times that layer's row bytes
+	// (kvRowBytes: 4*kvDim at f32, 2*kvDim at f16, kvDim plus one f32 scale per KV head at int8), K and V, summed. The arms share their pool
+	// rows layer by layer, and each holds one KV slot (the pricing above is one slot's table).
+	for _, a := range []struct {
+		name string
+		r    kv16ArmResult
+	}{{"f32", e}, {"f16", h}, {"i8", q}} {
+		if a.r.mla {
+			t.Fatalf("PRECONDITION 1: the %s arm has an MLA layer, whose latent pool this check does not price", a.name)
+		}
+		if a.r.slots != 1 {
+			t.Fatalf("PRECONDITION 1: the %s arm built %d KV slots; the gate prices one slot's pools and table", a.name, a.r.slots)
+		}
+		if !slices.Equal(a.r.poolRows, e.poolRows) {
+			t.Fatalf("PRECONDITION 1: the %s arm's per-layer pool rows %v differ from f32's %v", a.name, a.r.poolRows, e.poolRows)
+		}
+		if a.r.allocated != a.r.poolBytes {
+			t.Fatalf("PRECONDITION 1: the %s arm allocated %d B of K/V; its layers' pools at its precision are %d B", a.name, a.r.allocated, a.r.poolBytes)
+		}
 	}
 	// Every arm reads its cache through the production flash-decode lane, compiled from its own precision's build of decode_fa.
 	for _, a := range []struct {
