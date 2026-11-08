@@ -116,8 +116,8 @@ const fastPrefillMinRows = 16
 
 // kvLeadClassMap is the class rule the short-prefix guard reads: a ResidentFastPrefill resident's.
 func (m *Model) kvLeadClassMap() kvmgr.ClassMap {
-	if fp, ok := m.resident.(ResidentFastPrefill); ok {
-		return kvmgr.ClassMap{Floor: fp.FastPrefillFloor(), MinRows: fastPrefillMinRows}
+	if fast, ok, _, _ := m.residentFloors(); ok {
+		return kvmgr.ClassMap{Floor: fast, MinRows: fastPrefillMinRows}
 	}
 	return kvmgr.ClassMap{}
 }
@@ -128,10 +128,10 @@ func (m *Model) kvLeadClassMap() kvmgr.ClassMap {
 // (kvmgr.ClassMap.Windowed; measured on CUDA, applied to every backend with a fast class).
 func (m *Model) kvClassMap() kvmgr.ClassMap {
 	cm := kvmgr.ClassMap{}
-	if _, ok := m.resident.(ResidentFastPrefill); ok {
+	if _, hasFast, kernel, hasKernel := m.residentFloors(); hasFast {
 		cm = m.kvLeadClassMap()
-	} else if kf, ok := m.resident.(ResidentPrefillKernelFloor); ok {
-		cm = kvmgr.ClassMap{Floor: kf.PrefillKernelFloor(), MinRows: 1}
+	} else if hasKernel {
+		cm = kvmgr.ClassMap{Floor: kernel, MinRows: 1}
 	}
 	cm.Windowed = m.w != nil && m.w.arch != nil && m.w.arch.SlidingWindow > 0
 	return cm

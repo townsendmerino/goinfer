@@ -121,6 +121,7 @@ type kvSlotState struct {
 	released bool   // its blocks went to make room: it answers no reuse, and its next write starts a sequence at 0
 	stopped  bool   // a borrower stopped to give its blocks past the share back: its next write past 0 is ErrKVPoolFull
 	valid    int    // positions [0, valid) hold the slot's sequence
+	lost     int    // how many times a release or a reclaim has taken its blocks: a mapping compares it, not the flags, which may not change
 }
 
 // kvRaise is the cap one conversation may reach on a load of slots slots whose planned per-slot context is share
@@ -302,6 +303,7 @@ func (r *resident) kvEvictIdle(s int) bool {
 	r.kvReleaseAll(t)
 	st := &r.kvSlotSt[t]
 	st.released, st.stopped, st.valid = true, false, 0
+	st.lost++
 	r.kvEvictions++
 	return true
 }
@@ -335,6 +337,7 @@ func (r *resident) kvReclaim(s int) bool {
 	}
 	st := &r.kvSlotSt[t]
 	st.stopped, st.valid = true, min(st.valid, r.kvShareBlocks*decoder.KVBlockRows)
+	st.lost++
 	r.kvReclaimed = append(r.kvReclaimed, t)
 	return true
 }
@@ -404,6 +407,7 @@ type kvTxEdit struct {
 type kvTxStanding struct {
 	valid             int
 	released, stopped bool
+	lost              int // kvSlotState.lost when the mapping first touched the slot
 }
 
 // kvTxCOW is a copy on write to run at commit: the first keep rows of block from into block to, which slot s's entry b now names.
@@ -425,7 +429,7 @@ func (tx *kvTx) standing(s int) kvTxStanding {
 		return p
 	}
 	st := &tx.r.kvSlotSt[s]
-	p := kvTxStanding{valid: st.valid, released: st.released, stopped: st.stopped}
+	p := kvTxStanding{valid: st.valid, released: st.released, stopped: st.stopped, lost: st.lost}
 	tx.saved[s], tx.pending[s] = p, p
 	return p
 }
@@ -513,11 +517,11 @@ func (tx *kvTx) abort() {
 	share := r.kvShareBlocks * decoder.KVBlockRows
 	for s, p := range tx.saved {
 		st := &r.kvSlotSt[s]
-		switch evicted, reclaimed := st.released && !p.released, st.stopped && !p.stopped; {
-		case evicted: // a take released it meanwhile: it holds nothing
+		switch lost := st.lost != p.lost; {
+		case lost && st.released: // a take released it meanwhile, or took what it mapped after an earlier release: it holds nothing
 			r.kvReleaseAll(s)
 			st.valid = 0
-		case reclaimed: // a take stopped it meanwhile: nothing past its share
+		case lost: // a take stopped it meanwhile: nothing past its share
 			st.valid = min(p.valid, share)
 			r.kvTrim(s, share)
 		default:
@@ -533,7 +537,7 @@ func (tx *kvTx) abort() {
 func (tx *kvTx) commit() error {
 	r := tx.r
 	for s, p := range tx.saved {
-		if st := &r.kvSlotSt[s]; st.released != p.released || st.stopped != p.stopped {
+		if r.kvSlotSt[s].lost != p.lost {
 			tx.abort()
 			return fmt.Errorf("metal: KV slot %d was released or reclaimed while its blocks were mapped: %w", s, decoder.ErrKVPoolFull)
 		}

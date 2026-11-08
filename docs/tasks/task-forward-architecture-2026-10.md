@@ -23,10 +23,11 @@
 > - **Olmo Hybrid** (`NegEigval`/`ONormEps` in DeltaNet): **new, done on all three:** CUDA #604, Metal #611, WebGPU #627.
 > - **OP6:** its Metal half is built (the q4k lane joins MC3's step, 2026-10-15; its kernels were 4.7× slower than the loop on Phi-3 until
 >   #722 fixed them on 2026-11-06, `docs/measurements/p29-phi3-2026-11/README.md`). The default-load switch, the CUDA half and WebGPU are not done.
-> - **RF0:** half built (**new** in this reading): the per-turn `timings` block is on the wire (`internal/app/serveapp/turn_timings.go`) and the cost
->   counters exist (`internal/cost`, SB11); the shape × family × backend census is `docs/measurements/forward-arch-baseline-2026-10-13.md`,
->   stale against program-based admission.
-> - **Not started:** RF1–RF6, HL, OP5, OP6's CUDA half, default switch and WebGPU, OP1 on WebGPU, OP4 on WebGPU. §7a sizes them.
+> - **RF0:** built but for its prior-art reading: the per-turn `timings` block is on the wire (`internal/app/serveapp/turn_timings.go`), the cost
+>   counters exist (`internal/cost`, SB11), and the shape × family × backend census was refreshed against program-based admission on 2026-11-07
+>   (`docs/measurements/forward-arch-census-2026-11-07.md`; CPU-only families on CUDA / Metal / WebGPU by `ResidentEligible`, the capability gates: 8 / 8 / 13, from 10 / 12 / 16; by `Admit(...).Why`, which adds Nemotron-H's int4 precision policy: 9 / 9 / 14 model-free and 8 / 8 / 14 at the loader's pick).
+> - **RF1:** **new**, planned (§5.5, docs only): seven steps (RF1-3 dropped), 49 `Resident*` interfaces to 41.
+> - **Not started:** RF2–RF6, HL, OP5, OP6's CUDA half, default switch and WebGPU, OP1 on WebGPU, OP4 on WebGPU. §7a sizes them.
 > - **Other tracks:** SP's SP2 on CUDA merged (#232, §6a).
 >
 > Written on the owner's ask after a Cowork conversation the same day ("we have spent a bunch of time on decode, prefill
@@ -4654,6 +4655,55 @@ read it.
   keeps the RF1 adapter, since D3 keeps its slots.
 - **RF6 — speculation inside a batch (M).** The parked "spec inside a batch", on the ragged path, with MC4's identity gate.
 
+### 5.5 RF1: the plan (2026-11-07, docs only, before any RF1 code)
+
+**The count, read at main `7c4ed7130`.** `decoder` declares 49 `type Resident* interface`; §3.3's 34 counted optional type assertions
+on 10-13, and its list includes `Prefiller` and the two path reporters, which are not named `Resident*`. Implementers were read with
+`go/types` over `backend/cuda` (`cuda`), `backend/metal` (`GOOS=darwin`) and `backend/webgpu` (`gpu`); every one of the 49 has one,
+so none is dead. By role:
+
+| group | interfaces | implemented by | RF1 does |
+|---|---|---|---|
+| not a capability (3) | `ResidentForward` (the required seam), `ResidentKVSnapshot` (a value), `ResidentBlockDrafter` (CUDA's drafter) | all | keeps |
+| forward shapes (17) | `Greedy`, `Sample`, `TopK`, `PrefillKV`, `HiddenLast`, `ResidualAll`, `MRoPE`, `MRoPEPrefill`, `MRoPEDeepstackPrefill`, `HybridMRoPEPrefill`, `ImagePrefill`, `ImageBlocksPrefill`, `SpanPrefill`, `PrefillRows`, `PrefillMarked`, `SeedArgmax`, `BatchStepper` | 4 on all three, 7 on CUDA and Metal, 6 on CUDA alone; 28 assertion sites | moves every site behind `step` (RF1-4 to RF1-7); RF5 deletes them |
+| reporters (10) | values: `Capped`, `FastPrefill`, `PrefillKernelFloor`, `PrefillTailMin`, `QuantReporter`, `ContextNoted`, `BatchGreedy`; pricing functions of rows: `PrefillChunks`, `PrefillBlocks`, `PrefillSpanScratch` | `Capped` on all, `PrefillChunks` CUDA and WebGPU, five Metal, three CUDA; 26 assertion sites | the seven values become one record (RF1-2b); the pricing functions stay |
+| KV and recurrent state (12) | `KVSlotter`, `KVCopier`, `KVSlotActivity`, `KVPoolInfo`, `ReusableKV`, `ReusableKVSlot`, `KVUploadPass`, `KVDemoter`, `KVSnapshotter`, `RecurrentSnapshots`, `RecurrentCheckpoint`, `RecurrentCheckpointOwner` | 8 CUDA alone | merges two pairs (RF1-1); the rest is the KV doc's KV11 |
+| host chains (2) | `GreedyChain`, `SampleChain` | Metal | HL's (§6) |
+| speculation (2) | `DrafterHost`, `RecurrentSpec` | CUDA | RF6's |
+| other (3) | `Adapter` (LoRA), `ExpertCache` (also `decoder.Model`), `Cost` (wraps a call to count its device work; not a report) | all / CUDA / CUDA | keeps |
+
+**Nothing moves to the program in RF1.** Four answers look like walks over layer flags the program holds (`HybridMRoPEPrefill`,
+`KVSnapshotRecurrent`, `TopKAvailable`, `SampleAvailable`), but each also carries the backend's own coverage: whether CUDA's m-RoPE
+prefill kernel compiled for the layout, which recurrent families CUDA's snapshot code carries, which head the top-k kernel handles,
+Metal's paged MoE. An answer leaves a backend only when the program gives all of it, so these stay; a backend can later state them
+in its `program.Support` table (OP's work). CUDA's `BatchStepRange` already reads `program.CUDAStep`.
+
+**Steps, each a PR from `origin/main` that builds and passes alone.** Interfaces left after each in brackets.
+
+| id | what | removes | gates | session-days |
+|---|---|---|---|---|
+| RF1-1 | merge the two pairs whose implementer sets are identical: `RecurrentCheckpointOwner` into `RecurrentCheckpoint` (CUDA, Metal), `RecurrentSnapshots` into `KVSnapshotter` (CUDA); test fakes answer the old "absent" value | 2 interfaces, 2 assertions [47] | the backends lose a `var _` line and two comments, no behavior; tier 0 | 0.5 |
+| RF1-2a | each reporter asserted in one `Model` accessor; no backend change | 26 sites to 10 | decision census | 0.5 |
+| RF1-2b | one `ResidentCaps` record for the seven values, read once after load; a red-first test per field shows it does not change after load (a slot change, `ResizeExpertCache`), and a field that does stays a method | 6 interfaces [41] | decision census; each backend's value tests, on its box | 1–1.5 |
+| RF1-3 | *dropped* (Gemini's review of #751, read against the code): the four answers above stay with the backends | — | — | 0 |
+| RF1-4 | `Batch` (rows: sequence, position, input kind, output kind) and `(*Model).step`, an adapter onto today's calls; no caller moves | nothing yet | a fake resident logs its calls; for every shape `step` makes exactly the call today's caller makes | 1 |
+| RF1-5 | decode and verify callers onto `step` (`model.go`'s greedy/top-k/sample choice, `spec_ngram`, `blockspec`) | 6 assertion sites | the call log through the callers, not `step` alone; decision census | 1 |
+| RF1-6 | prefill callers (`PrefillKV`, `PrefillRows`, `PrefillMarked`, `SeedArgmax`, the block and chunk splits) | 6 sites | as RF1-5 | 1 |
+| RF1-7 | multimodal and hidden-state callers, and MC3's `StepBatch`; then a source-scan test refuses a forward-shape assertion outside `decoder/step.go` | 15 sites | as RF1-5; the scan in `scripts/touched_scans.py` | 1–1.5 |
+
+**Totals: 6–7 session-days, 49 → 41 interfaces, every forward shape asserted in one file.** RF1-1 and RF1-2 shrink the seam;
+RF1-4 to RF1-7 are the call shape (4–4.5). The 17 shape interfaces go in RF5, when a backend implements `Step` itself.
+
+**Gates on every step.** No kernel changes, so identity holds by construction; the checks that it does: `TestDecisionCensus` and its
+second-process twin, `TestProgramFingerprint_table`, the parity refresh (`scripts/refresh_parity_hashes.sh`) once before each push
+that changes non-test `decoder` code, `touched.py`, `go run ./cmd/lint` and the citation lint. Tier 0 throughout; no timed run.
+
+**Build-tag variants.** Every step touches `decoder`; RF1-1 and RF1-2b touch the backends too. mbp2 (Linux, no GPU) vets all three
+here (`go vet -tags 'cuda goinfer_testhooks' ./backend/cuda/`, `GOOS=darwin go vet -tags goinfer_testhooks ./backend/metal/`,
+`go vet -tags 'gpu goinfer_testhooks' ./backend/webgpu/`) and runs `decoder`'s tests. It cannot run a backend's tests: CUDA's on
+nobara, Metal's on the Mac, WebGPU's on nobara (Vulkan). A step that changes backend behavior (RF1-2b) runs those there before
+it merges.
+
 ## 6. HL — the host token loop (small)
 
 - **Today:** Metal's run-ahead chains run only when no logit processor is attached
@@ -4929,7 +4979,7 @@ weeks. A range is wide where a kernel's tuning decides it (RF2, RF4) and narrow 
 
 | phase | needs | unblocks | session-days | box |
 |---|---|---|---|---|
-| **RF0** close-out | the `timings` block and cost counters exist; refresh the census against program-based admission | RF1's and RF2's registered bands | 0.5–1 | Mac |
+| **RF0** close-out | done 2026-11-07 but for the §10a prior-art reading: the `timings` block, the cost counters and the refreshed census (`docs/measurements/forward-arch-census-2026-11-07.md`) | RF1's and RF2's registered bands | 0.5–1 | Mac |
 | **RF1** one `Step(batch)` over today's entry points | RF0. Today `decoder` declares 49 `Resident*` interfaces (34 optional ones on 10-13); no kernel change, identity by construction | RF2; a smaller `decoder` seam (Tier 3 modularization, `decoder/residency.go` 1,975 lines) | 4–8 | either |
 | **RF2** ragged attention over paged KV, CUDA | KV4 (done), RF1; a new kernel; speed bands per shape (decode depth 0.98, TTFT 0.97, MC3 0.98) with a kill rule | RF3, RF6; CUDA's row-by-row step attention (`stepAttnRows`) goes | 10–20 | nobara |
 | **RF3** mixed steps (token-budget scheduler), CUDA | RF2 | stall-free agent turns (`bench_prefill_stall`); RF4 | 5–8 | nobara |
