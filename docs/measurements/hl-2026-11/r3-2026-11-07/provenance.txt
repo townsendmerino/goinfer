@@ -1,11 +1,26 @@
-rev:      0c392c2c
-binary:   /Users/francistownsend-merino/goinfer-bench/hl-2026-11/metal-tagged-0c392c2c.test (sha256 1c40359d9803f69f)
-started:  2026-11-07 20:07:48 PST
+rev:      1eb6ed26
+binary:   /Users/francistownsend-merino/goinfer-bench/hl-2026-11/metal-tagged-1eb6ed26.test (sha256 03ad66fb41f724f3)
+started:  2026-11-07 20:47:58 PST
 machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
-load:     2.07 1.95 1.78
+load:     2.01 1.73 1.65
+memory:   reclaimable 6229 MiB; swap total = 2048.00M  used = 1404.00M  free = 644.00M  (encrypted)
 therm:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
-== 1.5b-closed — 20:07:48 load 2.07
-== 1.5b-toolcall — 20:08:48 load 1.06
-== 7b-closed — 20:09:46 load 0.81
-== 7b-toolcall — 20:12:38 load 0.35
-finished: 2026-11-07 20:15:27 PST
+== 1.5b-closed — 20:47:58 load 2.01, reclaimable 6230 MiB (need 3203), swap: total = 2048.00M  used = 1404.00M  free = 644.00M  (encrypted)
+== 1.5b-closed — finished 20:48:58 rc=0, swap: total = 2048.00M  used = 1404.00M  free = 644.00M  (encrypted), reclaimable 6197 MiB
+== 1.5b-toolcall — 20:48:58 load 1.54, reclaimable 6200 MiB (need 3203), swap: total = 2048.00M  used = 1404.00M  free = 644.00M  (encrypted)
+== 1.5b-toolcall — finished 20:49:56 rc=0, swap: total = 2048.00M  used = 1404.00M  free = 644.00M  (encrypted), reclaimable 6093 MiB
+== 7b-closed: VOID at start (attempt 1): load 1.21 (cap 4.0), reclaimable 6095 MiB (need 6596); waiting 60 s
+== 7b-closed: VOID at start (attempt 2): load 1.90 (cap 4.0), reclaimable 6013 MiB (need 6596); waiting 60 s
+== 7b-closed: VOID at start (attempt 3): load 3.52 (cap 4.0), reclaimable 5693 MiB (need 6596); waiting 60 s
+== 7b-closed: VOID at start (attempt 4): load 8.64 (cap 4.0), reclaimable 3898 MiB (need 6596); waiting 60 s
+== 7b-closed: VOID at start (attempt 5): load 4.94 (cap 4.0), reclaimable 3931 MiB (need 6596); waiting 60 s
+== 7b-closed: VOID at start (attempt 6): load 3.17 (cap 4.0), reclaimable 4217 MiB (need 6596); waiting 60 s
+== 7b-closed: never started, the guard stayed void for 6 attempts
+== 7b-toolcall: VOID at start (attempt 1): load 4.10 (cap 4.0), reclaimable 4277 MiB (need 6596); waiting 60 s
+== 7b-toolcall: VOID at start (attempt 2): load 3.10 (cap 4.0), reclaimable 4369 MiB (need 6596); waiting 60 s
+== 7b-toolcall: VOID at start (attempt 3): load 2.65 (cap 4.0), reclaimable 4670 MiB (need 6596); waiting 60 s
+== 7b-toolcall: VOID at start (attempt 4): load 2.47 (cap 4.0), reclaimable 4291 MiB (need 6596); waiting 60 s
+== 7b-toolcall: VOID at start (attempt 5): load 1.77 (cap 4.0), reclaimable 4596 MiB (need 6596); waiting 60 s
+== 7b-toolcall: VOID at start (attempt 6): load 1.26 (cap 4.0), reclaimable 4523 MiB (need 6596); waiting 60 s
+== 7b-toolcall: never started, the guard stayed void for 6 attempts
+finished: 2026-11-07 21:01:57 PST; 2 of 4 cells counted
