@@ -1,17 +1,29 @@
-F............/home/francis/goinfer-bench/v025-kvi8-s2-wt/scripts/test_touched.py:57: ResourceWarning: unclosed file <_io.TextIOWrapper name='/home/francis/goinfer-bench/v025-kvi8-s2-wt/scripts/touched.py' mode='r' encoding='utf-8'>
-  src = open(os.path.join(HERE, "touched.py")).read()
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-.....
-======================================================================
-FAIL: test_check_module_cross_checks_cuda_both_ways (__main__.PackagesForTheTarget.test_check_module_cross_checks_cuda_both_ways)
-----------------------------------------------------------------------
-Traceback (most recent call last):
-  File "/home/francis/goinfer-bench/v025-kvi8-s2-wt/scripts/test_touched.py", line 269, in test_check_module_cross_checks_cuda_both_ways
-    self.assertIn((("go", "vet", "./..."), "darwin"), linux, "a linux run must vet the darwin build of backend/cuda, module-wide")
-    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AssertionError: (('go', 'vet', './...'), 'darwin') not found in [(('go', 'vet', '-tags', 'cuda goinfer_testhooks', '.'), None)] : a linux run must vet the darwin build of backend/cuda, module-wide
+plant: no-darwin-crossvet (on 4aeac8a16 + this round's working tree; go: go version go1.27.3 linux/amd64)
+replaced: other, otag, oname = dict(env, GOOS="darwin", GOARCH="arm64"), [], "GOOS=darwin, untagged"
+with:     other, otag, oname = dict(env), [], "GOOS=darwin, untagged"
 
-----------------------------------------------------------------------
-Ran 18 tests in 1.427s
-
+test_a_cross_target_runs_no_go_test (__main__.CudaCrossChecks.test_a_cross_target_runs_no_go_test) ... ok
+test_both_ways (__main__.CudaCrossChecks.test_both_ways) ... FAIL
+test_a_run_selecting_only_excluded_tests_is_a_skip (__main__.PackagesForTheTarget.test_a_run_selecting_only_excluded_tests_is_a_skip) ... ok
+test_check_module_skips_by_name_and_fails_the_broken (__main__.PackagesForTheTarget.test_check_module_skips_by_name_and_fails_the_broken) ... ok
+test_classify (__main__.PackagesForTheTarget.test_classify) ... ok
+test_every_package_excluded_judges_nothing (__main__.PackagesForTheTarget.test_every_package_excluded_judges_nothing) ... ok
+test_a_ci_workflow_change_selects_its_readers (__main__.PlanSelectsTheScanTests.test_a_ci_workflow_change_selects_its_readers) ... ok
+test_a_decoder_source_change_selects_the_dispatch_census (__main__.PlanSelectsTheScanTests.test_a_decoder_source_change_selects_the_dispatch_census) ... ok
+test_a_doc_a_test_reads_selects_it (__main__.PlanSelectsTheScanTests.test_a_doc_a_test_reads_selects_it) ... ok
+test_a_kernel_source_change_selects_its_readers_with_no_go_file_changed (__main__.PlanSelectsTheScanTests.test_a_kernel_source_change_selects_its_readers_with_no_go_file_changed) ... ok
+test_a_new_model_fixture_selects_the_fixture_censuses (__main__.PlanSelectsTheScanTests.test_a_new_model_fixture_selects_the_fixture_censuses) ... ok
+test_a_scanner_in_an_untouched_package_runs (__main__.PlanSelectsTheScanTests.test_a_scanner_in_an_untouched_package_runs) ... ok
+test_an_unscanned_change_selects_nothing_extra (__main__.PlanSelectsTheScanTests.test_an_unscanned_change_selects_nothing_extra) ... ok
+test_gguf_go_selects_the_case_label_scan (__main__.PlanSelectsTheScanTests.test_gguf_go_selects_the_case_label_scan) ... ok
+test_every_listed_test_exists (__main__.TableIsComplete.test_every_listed_test_exists) ... ok
+test_every_source_reading_test_is_listed_or_excluded (__main__.TableIsComplete.test_every_source_reading_test_is_listed_or_excluded) ... ok
+Each `return` in main() and run() follows a VERDICT print, so no path ends without one. ... ok
+Only gofmt ran, every module was skipped (cuda outside the Mac's go.work, say): nothing was judged. ... ok
+test_green_is_pass (__main__.VerdictLine.test_green_is_pass) ... ok
+test_red_is_fail (__main__.VerdictLine.test_red_is_fail) ... ok
+test_skips_are_named (__main__.VerdictLine.test_skips_are_named) ... ok
+FAIL: test_both_ways (__main__.CudaCrossChecks.test_both_ways)
+AssertionError: (('go', 'vet', './...'), 'darwin') not found in [(('go', 'vet', '-tags', 'cuda goinfer_testhooks', '.'), 'linux'), (('go', 'vet', './...'), 'linux')] : a linux run must vet the darwin build of backend/cuda, module-wide
+Ran 21 tests in 3.926s
 FAILED (failures=1)

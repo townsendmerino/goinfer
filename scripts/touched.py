@@ -93,6 +93,25 @@ def step(name, fn):
     return ok
 
 
+NO_TESTS = "[no tests to run]"
+
+
+def test_step(name, fn, skips):
+    """step() for a go test run, except that a run go test reports as "[no tests to run]" (a -run that selects only tests in files the
+    target excludes) is a named skip, not a pass, and does not count as a step run. Returns whether it failed."""
+    t = time.time()
+    ok, out = fn()
+    if ok and NO_TESTS in out:
+        print(f"  skip {name}: no selected test is built for this target ({time.time() - t:.1f}s)")
+        skips.append(f"{name} (no selected test built)")
+        return False
+    RAN.append(name)
+    print(f"  {'ok  ' if ok else 'FAIL'} {name} ({time.time() - t:.1f}s)")
+    if not ok:
+        print("".join("      " + l + "\n" for l in out.strip().splitlines()[-25:]))
+    return not ok
+
+
 def module_of(d):
     """The module root (a repo-relative dir, "" for the root module) that contains dir d."""
     while d and not os.path.exists(os.path.join(ROOT, d, "go.mod")):
@@ -162,9 +181,12 @@ def main():
             lock.release()
 
 
-def check_module(mod, label, files, tests, target_os, skips):
+def check_module(mod, label, files, tests, target_os, skips, host_os=None):
     """Builds, vets and tests one module of the diff for target_os (files: its changed .go files; tests: the (module, package) -> -run
-    selection the diff picked), appending what it skips to skips. Returns the number of failed steps."""
+    selection the diff picked), appending what it skips to skips. Returns the number of failed steps. When target_os is not host_os (the
+    go toolchain's GOHOSTOS by default), it builds and vets only: a cross-compiled test binary cannot execute here, so each test is a
+    named skip."""
+    host_os = host_os or sh("go", "env", "GOHOSTOS").stdout.strip()
     bad = 0
     tag = TAGS.get(mod, "")
     if mod == "backend/metal" and target_os != "darwin":
@@ -176,16 +198,22 @@ def check_module(mod, label, files, tests, target_os, skips):
     # cross-checked below either way.
     cuda_off_linux = mod == "backend/cuda" and target_os != "linux"
     tagarg = [] if cuda_off_linux or not tag else ["-tags", tag]  # built afresh for every module
-    env = dict(os.environ, CGO_ENABLED="0") if mod == "backend/cuda" else dict(os.environ)
+    env = dict(os.environ, GOOS=target_os, **({"CGO_ENABLED": "0"} if mod == "backend/cuda" else {}))
     pkgs = sorted({os.path.dirname(f) for f in files})
     rel = lambda d: "./" + os.path.relpath(d, mod or ".") if d != (mod or "") and d else "."
 
     mrun = lambda *c, env=env: (lambda r: (r.returncode == 0, r.stdout + r.stderr))(sh(*c, cwd=mod or ".", env=env))
 
     if files:
-        bad += not step(f"build {label}", lambda: mrun("go", "build", *tagarg, "./..."))
         args = [rel(d) for d in pkgs]
         kinds = classify(mod, args, tagarg, env)
+        # The module build runs only when a touched package is built for the target, so a diff whose every package is excluded judges
+        # nothing here and the run stays INCONCLUSIVE rather than PASS.
+        if any(kinds.get(os.path.normpath(a), "ok") != "empty" for a in args):
+            bad += not step(f"build {label}", lambda: mrun("go", "build", *tagarg, "./..."))
+        else:
+            print(f"  skip build {label}: every touched package is excluded for {target_os}")
+            skips.append(f"build {label} (no files for {target_os})")
         live = []
         for a in args:
             k = kinds.get(os.path.normpath(a), "ok")
@@ -223,8 +251,12 @@ def check_module(mod, label, files, tests, target_os, skips):
         if k.startswith("error: "):
             bad += not step(f"list {name}", lambda k=k: (False, k))
             continue
+        if target_os != host_os:
+            print(f"  skip test {name}: GOOS={target_os} on a {host_os} host builds and vets only (a {target_os} test binary cannot run here)")
+            skips.append(f"test {name} (cross target {target_os})")
+            continue
         runarg = (["-run", sel] if sel else []) + (["-short"] if name in SLOW else [])
-        bad += not step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *tagarg, "-count=1", *runarg, rel(d)))
+        bad += test_step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *tagarg, "-count=1", *runarg, rel(d)), skips)
     return bad
 
 
@@ -254,7 +286,7 @@ def run(args, run_for):
         print(f"  skip test {name}: slow package, no test file beside the change (name tests: touched.py -run REGEX {name})")
         skips.append(f"test {name}")
     ws = workspace_modules()
-    target_os = sh("go", "env", "GOOS").stdout.strip() or sys.platform  # GOOS=darwin in the environment checks a darwin build from any host
+    target_os = sh("go", "env", "GOOS").stdout.strip() or sys.platform  # GOOS=darwin from another host builds and vets darwin; its tests do not run
     for mod, files in sorted(mods.items()):
         label = mod or "root"
         if ws is not None and mod not in ws:
