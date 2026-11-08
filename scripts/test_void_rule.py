@@ -396,6 +396,103 @@ class AtomicFiles(unittest.TestCase):
             self.assertTrue(os.path.exists(out))
 
 
+class Allowance(unittest.TestCase):
+    """BENCH_ALLOW_NO_FREE_MEM=1 (the documented override for a box with no memory reading) skips the memory term, and says so."""
+
+    def test_start_void_can_skip_an_unreadable_memory_term_only_when_allowed(self):
+        self.assertIn("available memory unreadable", void_rule.start_void(dict(SNAP, available_mb=None), 4000))
+        self.assertIsNone(void_rule.start_void(dict(SNAP, available_mb=None), 4000, allow_unreadable_memory=True))
+        self.assertIn("above half", void_rule.start_void(dict(SNAP, available_mb=None, load1=9.0), 4000, allow_unreadable_memory=True),
+                      "the load term still applies")
+
+    def test_the_cli_honours_the_env_override_and_logs_it(self):
+        import io
+        from contextlib import redirect_stderr
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, {"BENCH_ALLOW_NO_FREE_MEM": "1"}), \
+                mock.patch.object(void_rule, "snapshot", lambda: dict(SNAP, available_mb=None)), redirect_stderr(err), \
+                mock.patch("sys.stdout", io.StringIO()):
+            self.assertEqual(void_rule.main(["start", "--need-mb", "4000"]), 0)
+        self.assertIn("BENCH_ALLOW_NO_FREE_MEM=1", err.getvalue())
+
+
+class EndThroughMain(unittest.TestCase):
+    """`void_rule.py end` driven through main(): a real SwapSampler under a controlled clock writes the peak file the way `watch` does,
+    `start` writes its snapshot, and the exit code is the verdict. Every sample is kept, repeated values included."""
+
+    def cell(self, d, plan):
+        """plan: [(epoch, swap_MB, what)], what in {'watch', 'start', 'stop'}. Returns (peak_path, start_path)."""
+        clock, swap = [0.0], [0.0]
+        sampler = void_rule.SwapSampler(read=lambda: swap[0], poll_s=0)
+        pk, st = os.path.join(d, "peak.json"), os.path.join(d, "start.json")
+        with mock.patch.object(void_rule.time, "time", lambda: clock[0]):
+            for t, mb, what in plan:
+                clock[0], swap[0] = t, mb
+                if what == "watch":
+                    sampler.sample()
+                elif what == "start":
+                    with mock.patch.object(void_rule.hostmem, "available_mb", lambda: 6000), \
+                            mock.patch.object(void_rule.hostmem, "reclaimable_mb", lambda: 4000), \
+                            mock.patch.object(void_rule, "swap_used_mb", lambda: swap[0]):
+                        void_rule.write_json_atomic(st, void_rule.snapshot())
+                elif what == "stop":
+                    void_rule.write_json_atomic(pk, sampler.stop())
+        return pk, st
+
+    def end(self, pk, st, end_swap):
+        with mock.patch.object(void_rule, "snapshot", lambda: dict(SNAP, swap_mb=end_swap)), mock.patch("builtins.print"):
+            return void_rule.main(["end", "--start-json", st, "--peak-json", pk])
+
+    def test_every_sample_is_kept_repeats_included(self):
+        sampler = void_rule.SwapSampler(read=lambda: 400.0, poll_s=0)
+        for _ in range(5):
+            sampler.sample()
+        self.assertEqual(len(sampler.samples), 5)
+
+    def test_a_flat_cell_after_a_fall_before_start_is_clean(self):
+        # the watcher saw 500, swap fell to 400 and stayed 400 for the whole cell: the repeated 400s after `start` are the evidence
+        # (a sampler that drops repeats leaves no sample at or after `start` and the cell is falsely void)
+        with tempfile.TemporaryDirectory() as d:
+            pk, st = self.cell(d, [(1000, 500.0, "watch"), (1005, 400.0, "watch"), (1010, 400.0, "start"), (1011, 400.0, "watch"),
+                                   (1012, 400.0, "watch"), (1020, 400.0, "stop")])
+            self.assertEqual(self.end(pk, st, 400.0), 0)
+
+    def test_growth_that_persists_after_start_is_caught_when_it_repeats_a_pre_start_value(self):
+        # swap read 470 before start, fell to 400 at start, rose to 470 and stayed there: the persisting 470s are growth over the cell's start
+        with tempfile.TemporaryDirectory() as d:
+            pk, st = self.cell(d, [(1000, 470.0, "watch"), (1005, 470.0, "watch"), (1010, 400.0, "start"), (1012, 470.0, "watch"),
+                                   (1014, 470.0, "watch"), (1016, 400.0, "stop")])
+            self.assertEqual(self.end(pk, st, 400.0), 76)
+
+    def test_a_peak_file_with_no_usable_samples_voids_instead_of_falling_back_to_the_pre_start_peak(self):
+        with tempfile.TemporaryDirectory() as d:
+            st = os.path.join(d, "start.json")
+            json.dump(dict(SNAP, swap_mb=400.0, t_epoch=1010.0), open(st, "w"))
+            pk = os.path.join(d, "peak.json")
+            base = {"base_mb": 100.0, "peak_mb": 100.0, "peak_growth_mb": 0.0, "unreadable": False}
+            for name, body in [("empty samples", dict(base, samples=[])), ("samples that are not a list", dict(base, samples=5)),
+                               ("a sample that is not a pair", dict(base, samples=[7])), ("no samples key", dict(base))]:
+                json.dump(body, open(pk, "w"))
+                self.assertEqual(self.end(pk, st, 400.0), 76, name)
+            # a corrupt start time: the peak cannot be placed against the cell
+            for t0 in ("soon", None, [1]):
+                json.dump(dict(SNAP, swap_mb=400.0, t_epoch=t0), open(st, "w"))
+                json.dump(dict(base, samples=[[1015.0, 400.0]]), open(pk, "w"))
+                self.assertEqual(self.end(pk, st, 400.0), 76, f"t_epoch {t0!r}")
+
+    def test_the_reason_names_the_unusable_peak_file(self):
+        import io
+        from contextlib import redirect_stderr
+        with tempfile.TemporaryDirectory() as d:
+            st, pk = os.path.join(d, "s.json"), os.path.join(d, "p.json")
+            json.dump(dict(SNAP, swap_mb=400.0, t_epoch=1010.0), open(st, "w"))
+            json.dump({"unreadable": False, "samples": []}, open(pk, "w"))
+            err = io.StringIO()
+            with mock.patch.object(void_rule, "snapshot", lambda: dict(SNAP, swap_mb=400.0)), redirect_stderr(err), mock.patch("sys.stdout", io.StringIO()):
+                self.assertEqual(void_rule.main(["end", "--start-json", st, "--peak-json", pk]), 76)
+            self.assertIn("watcher's swap samples unusable", err.getvalue())
+
+
 class Swap(unittest.TestCase):
     def test_any_growth_voids_and_none_does_not(self):
         self.assertIsNone(void_rule.swap_void(SNAP, dict(SNAP), env={}))
@@ -502,11 +599,13 @@ class Cli(unittest.TestCase):
     def test_end_compares_the_sampled_peak_with_the_cells_start_reading(self):
         with tempfile.TemporaryDirectory() as d:
             st, pk = os.path.join(d, "s.json"), os.path.join(d, "p.json")
-            json.dump(SNAP, open(st, "w"))  # the cell started with 900 MB of swap
-            json.dump({"base_mb": 900.0, "peak_mb": 960.0, "peak_growth_mb": 60.0}, open(pk, "w"))
+            json.dump(dict(SNAP, t_epoch=1000.0), open(st, "w"))  # the cell started with 900 MB of swap at t=1000
+            json.dump({"base_mb": 900.0, "peak_mb": 960.0, "peak_growth_mb": 60.0, "unreadable": False,
+                       "samples": [[1001.0, 960.0], [1002.0, 900.0]]}, open(pk, "w"))
             self.assertEqual(self.run_cli(["end", "--start-json", st, "--peak-json", pk], SNAP), 76, "the end equals the start; the peak does not")
-            # the watcher started earlier and saw 100 MB, so its own growth is 800; against the cell's start (900) the peak is no growth
-            json.dump({"base_mb": 100.0, "peak_mb": 900.0, "peak_growth_mb": 800.0}, open(pk, "w"))
+            # the watcher started earlier and saw 100 MB, so its own growth is 800; against the cell's start (900) the samples are no growth
+            json.dump({"base_mb": 100.0, "peak_mb": 900.0, "peak_growth_mb": 800.0, "unreadable": False,
+                       "samples": [[900.0, 100.0], [1001.0, 900.0], [1002.0, 900.0]]}, open(pk, "w"))
             self.assertEqual(self.run_cli(["end", "--start-json", st, "--peak-json", pk], SNAP), 0,
                              "the peak is read against the cell's start baseline, not the watcher's")
 

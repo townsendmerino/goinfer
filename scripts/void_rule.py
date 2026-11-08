@@ -196,9 +196,11 @@ def peak_since(samples, t0):
     """The highest swap reading a watcher took at or after epoch time t0, the cell's own start reading. A watcher started before `start`
     saw swap the cell never did, and its last sample before t0 can predate a fall that happened before `start` read swap, so neither
     counts: the baseline is `start`'s reading, and the peak is over what the watcher saw from there on (it takes a last sample at
-    stop). None if there is no such sample, or a sample is not a number: the caller voids the cell."""
+    stop). None if there is no such sample, if samples is not a list, or a sample is not a pair of numbers: the caller voids the cell."""
+    if not isinstance(samples, list) or _num(t0) is None:
+        return None
     vals = []
-    for item in samples or []:
+    for item in samples:
         try:
             t, v = _num(item[0]), _num(item[1])
         except (TypeError, IndexError, KeyError):
@@ -239,7 +241,7 @@ class SwapSampler:
         self.base, self.peak = base, base
         self.unreadable = False  # a reading failed after the sampler began: the cell cannot be called clean
         self.n = 0               # readings taken: a sampler that never read has no evidence of a peak
-        self.samples = []        # [epoch, MB], appended when the reading changes (peak_since)
+        self.samples = []        # [epoch, MB], every reading (peak_since)
         self._stop = threading.Event()
         self._thread = None
 
@@ -256,8 +258,9 @@ class SwapSampler:
             self.unreadable = True
             return
         self.n += 1
-        if not self.samples or self.samples[-1][1] != v:
-            self.samples.append([time.time(), v])
+        # every reading is kept, repeats included: a repeat after `start` is the evidence that swap stayed where it was (one reading a
+        # second is about 10,000 entries over a three-hour cell)
+        self.samples.append([time.time(), v])
         if self.base is None:
             self.base, self.peak = v, v
         self.peak = max(self.peak, v)
@@ -353,14 +356,22 @@ def main(argv):
         snap["need_source"], snap["need_is_lower_bound"] = a.need_source, a.need_source == "file size"
     else:
         start = read_json_retry(a.start_json) or {}  # a cell with no readable baseline is void, not a crash
-        peak = None
+        peak, peak_why = None, None
         if a.peak_json:
             pk = read_json_retry(a.peak_json)  # retried while the watcher is still writing it; None if it never parses
-            if pk and not pk.get("unreadable"):
-                # against the cell's own start reading: the samples from its time on (a watcher started first saw swap the cell never did)
-                t0 = _num(start.get("t_epoch"))
-                peak = peak_since(pk["samples"], t0) if pk.get("samples") and t0 is not None else _num(pk.get("peak_mb"))
+            if pk is None:
+                peak_why = "the watcher's peak file never parsed"
+            elif pk.get("unreadable"):
+                peak_why = "the watcher lost a swap reading"
+            else:
+                # against the cell's own start reading: the samples from its time on (a watcher started first saw swap the cell never did).
+                # No fallback to the pre-start peak_mb: samples that cannot be placed against the start are a void, not a clean cell.
+                peak = peak_since(pk.get("samples"), start.get("t_epoch"))
+                if peak is None:
+                    peak_why = "the watcher's swap samples unusable (none at or after the start, or not numbers, or no start time)"
         why = swap_void(start, snap, peak, peak_required=bool(a.peak_json))
+        if why and peak_why and "swap unreadable" in why:
+            why = f"{why} ({peak_why})"
         snap["void"] = why
     if a.json_out:
         write_json_atomic(a.json_out, snap)
