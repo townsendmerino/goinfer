@@ -804,6 +804,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		loadAbort: loadAbort,
 		knob:      m.Knob,
 		kvF16:     m.KVCacheF16(),
+		kvI8:      m.KVDeliveredFor("cuda") == mem.KVI8,
 		hidden:    H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
 		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(), attnCap: attnCap,
 		attnTempBeta: attnTempBeta, attnTempOrigMaxPos: attnTempOrigMaxPos,
@@ -991,11 +992,11 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		// Any change that drives the device to refusal and then keeps using the same context breaks this, silently, as zeros. A
 		// retry loop, an eviction-and-rebuild or a "just try a smaller cache" must re-load rather than reuse these handles.
 		// Evidence, path by path: docs/QUEUE.md A13; the full record: docs/code-notes/cuda.md#BuildResident: device exhaustion.
-		gmod, e := r.dev.CompileLibrary(r.kvPTX(gemvFwdPTX, gemvFwdKV16PTX))
+		gmod, e := r.compileKV(r.kvPTX8(gemvFwdPTX, gemvFwdKV16PTX, gemvFwdKV8PTX))
 		if e != nil {
 			return e
 		}
-		glmod, e := r.dev.CompileLibrary(r.attnPTX(gluePTX, glueKV16PTX, glueCapPTX, glueKV16CapPTX))
+		glmod, e := r.compileKV(r.attnPTX(gluePTX, glueKV16PTX, glueKV8PTX, glueCapPTX, glueKV16CapPTX))
 		if e != nil {
 			return e
 		}
@@ -1013,7 +1014,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		// no fallback.
 		r.pairwiseRoPE = m.PairwiseRoPEResident()
 		if r.pairwiseRoPE {
-			pwmod, pe := r.dev.CompileLibrary(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX))
+			pwmod, pe := r.compileKV(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX))
 			if pe != nil {
 				return fmt.Errorf("pairwise rope: compile rope_pairwise.ptx: %w", pe)
 			}
@@ -1145,7 +1146,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		// Batched prefill kernels (weight-stationary M=len path): own module, prefill_batched.ptx, with the audited PTX
 		// untouched. bGemvB dispatches int4 to bRN (gemv_w4a8_rn) unconditionally; there is no gemv_w4a8_batched module.
 		{
-			if pbmod, e3 := r.dev.CompileLibrary(r.attnPTX(prefillBatchedPTX, prefillBatchedKV16PTX, prefillBatchedCapPTX, prefillBatchedKV16CapPTX)); e3 == nil {
+			if pbmod, e3 := r.compileKV(r.attnPTX(prefillBatchedPTX, prefillBatchedKV16PTX, prefillBatchedKV8PTX, prefillBatchedCapPTX, prefillBatchedKV16CapPTX)); e3 == nil {
 				ok := true
 				load := func(dst *Pipeline, mod gpu.Library, name string) {
 					if p, le := r.dev.NewComputePipeline(mod, name); le == nil {
@@ -1170,7 +1171,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				load(&r.bNormF32, pbmod, "rmsnorm_f32_batched")
 				if r.pairwiseRoPE {
 					// GPT-J pairwise twin of rope_kv_batched (same signature); see the decode bind above.
-					if pwmod, pe := r.dev.CompileLibrary(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX)); pe == nil {
+					if pwmod, pe := r.compileKV(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX)); pe == nil {
 						load(&r.bRopeKV, pwmod, "rope_kv_batched_pw")
 					} else {
 						ok = false
@@ -1207,8 +1208,8 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		// Gemma 3 image-block prefill attention (decoder.ResidentImagePrefill): own module, prefill_batched.ptx untouched. A
 		// load failure is not fatal: bAttnImg stays zero and PrefillImageLast declines to the CPU-prefill-then-UploadKV bridge.
 		// It depends on r.prefillReady, as L2 does.
-		if r.prefillReady {
-			if imod, e8 := r.dev.CompileLibrary(r.kvPTX(attnImgPrefillPTX, attnImgPrefillKV16PTX)); e8 == nil {
+		if r.prefillReady && !r.kvI8 { // no int8 twin: an int8 cache leaves the image and span prefills declined
+			if imod, e8 := r.compileKV(r.kvPTX(attnImgPrefillPTX, attnImgPrefillKV16PTX)); e8 == nil {
 				// &r.bAttnImg (not a bare tuple assign): TestPipelineLint_boundKernelsAreLaunched's
 				// static scan recognizes `&r.<field>` or a direct NewComputePipeline RHS as a bind
 				// site, matching the loadF/loadG idiom L2/L3 already use below.
@@ -1234,7 +1235,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		if r.prefillReady {
 			// GLM-OCR's pairwise m-RoPE kernel writes f32 rows, so an f16 cache never compiles or loads it, whatever the policy says: the
 			// batched m-RoPE prefill stays unready and PrefillMRoPELast declines to the CPU prefill and upload (TestKV16_pairwiseMRoPENeverF16).
-			if sec := m.MRopeSectionResident(); len(sec) == 3 && !(r.pairwiseRoPE && r.kvF16) {
+			if sec := m.MRopeSectionResident(); len(sec) == 3 && !(r.pairwiseRoPE && r.kvF16) && !r.kvI8 {
 				// Pairwise m-RoPE (GLM-OCR) rotates (2d, 2d+1): its own kernel in rope_pairwise.ptx. A
 				// model that needs it and cannot load it must NOT fall back to the NeoX m-RoPE kernel.
 				mropePTX, mropeName := r.kvPTX(ropeMRopePrefillPTX, ropeMRopePrefillKV16PTX), "rope_kv_mrope_batched"
@@ -1272,7 +1273,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			r.fastAttn, r.fastGemm = false, false
 		}
 		if (r.fastAttn || r.fastGemm) && r.prefillReady {
-			if fmod, e6 := r.dev.CompileLibrary(r.kvPTX(attnFusedPTX, attnFusedKV16PTX)); r.fastAttn && e6 == nil {
+			// The tensor-core prefill attention has no int8 twin: an int8 cache leaves it unbound, and prefill takes attn_batched or the
+			// row-batched split-KV kernels.
+			if fmod, e6 := r.compileKV(r.kvPTX(attnFusedPTX, attnFusedKV16PTX)); r.fastAttn && !r.kvI8 && e6 == nil {
 				loadF := func(dst *Pipeline, name string) {
 					if pl, pe := r.dev.NewComputePipeline(fmod, name); pe == nil {
 						*dst = pl
@@ -1280,7 +1283,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				}
 				loadF(&r.bAttnFused64, "attn_fused_hd64")
 				loadF(&r.bAttnFused128, "attn_fused_hd128")
-				if bmod, eb := r.dev.CompileLibrary(r.kvPTX(attnFusedBMPTX, attnFusedBMKV16PTX)); eb == nil {
+				if bmod, eb := r.compileKV(r.kvPTX(attnFusedBMPTX, attnFusedBMKV16PTX)); eb == nil {
 					loadF2 := func(dst *Pipeline, name string) {
 						if pl, pe := r.dev.NewComputePipeline(bmod, name); pe == nil {
 							*dst = pl
@@ -1339,7 +1342,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			}
 		}
 		if r.prefillReady {
-			if skmod, e2 := r.dev.CompileLibrary(r.attnPTX(decodeSplitKVPTX, decodeSplitKVKV16PTX, decodeSplitKVCapPTX, decodeSplitKVKV16CapPTX)); e2 == nil {
+			if skmod, e2 := r.compileKV(r.attnPTX(decodeSplitKVPTX, decodeSplitKVKV16PTX, decodeSplitKVKV8PTX, decodeSplitKVCapPTX, decodeSplitKVKV16CapPTX)); e2 == nil {
 				skOK := true
 				loadSK := func(dst *Pipeline, name string) {
 					if p, le := r.dev.NewComputePipeline(skmod, name); le == nil {
@@ -1541,7 +1544,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			}
 		}
 		if r.isMLA {
-			mlamod, me := r.dev.CompileLibrary(r.kvPTX(mlaPTX, mlaKV16PTX))
+			mlamod, me := r.compileKV(r.kvPTX(mlaPTX, mlaKV16PTX))
 			if me != nil {
 				return fmt.Errorf("cuda: JIT mla.ptx: %w", me)
 			}
@@ -1847,8 +1850,15 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		}
 		r.qB, r.kB, r.vB = r.af(qBufDim), r.af(maxKVDim), r.af(maxKVDim)
 		r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
+		r.ksc, r.vsc = make([]Buffer, nLayers), make([]Buffer, nLayers)
 		for l := range r.layers {
 			r.layers[l].kvHalf = r.kvF16 && !r.layers[l].noKV() && !r.layers[l].kvShared
+			r.layers[l].kvI8 = r.kvI8 && !r.layers[l].noKV() && !r.layers[l].kvShared
+		}
+		if r.kvI8 {
+			if e := r.loadKV8(); e != nil {
+				return e
+			}
 		}
 		r.kvWindowSetup(m) // before checkKVFits: windowed layers price and allocate at window+slack, not at the context
 		// r.ctxCap was resolved at construction (several earlier buffers size from it). The fit check

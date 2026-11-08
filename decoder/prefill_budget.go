@@ -134,7 +134,8 @@ func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes i
 	// per-request ceiling over the model's whole window, which badly overstates it.
 	if capper, ok := m.resident.(ResidentCapped); ok && m.be != nil {
 		if c := capper.ContextCap(); c > 0 {
-			return c, m.ResidentKVBytes(m.be.Name(), c, m.kvF16, m.kvI8), weightBytes, budgetBytes, true
+			f16, i8 := m.residentKVFlags(m.be.Name())
+			return c, m.ResidentKVBytes(m.be.Name(), c, f16, i8), weightBytes, budgetBytes, true
 		}
 	}
 	ctx = m.resCtxReq

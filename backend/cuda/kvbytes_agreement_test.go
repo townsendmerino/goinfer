@@ -21,8 +21,8 @@ import (
 //     gemma3-1b: CUDA gives local layers the FULL context — the window is a mask, not a ring buffer),
 //     per-layer geometry (gemma4-dense-twogeom, gemma4-moe), a DeltaNet hybrid (qwen35-tiny: no cache on
 //     linear layers), and MLA (deepseek-tiny: ONE latent buffer per layer, not K and V);
-//   - at every KV precision a caller can request — CUDA allocates f32 regardless, so the figure must not
-//     move with kvF16 / kvI8.
+//   - at every KV precision a caller can request of these 2-slot loads; int8 is delivered on one slot only, so asked of them it is
+//     refused and prices f32.
 //
 // Without the "cuda" branch Plan's per-position formula prices MLA at twice the allocation and a
 // requested f16 / i8 at a fraction of it (docs/measurements/memory-accounting-cuda-2026-09-25.md):
@@ -94,7 +94,7 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 			}
 			// What the pricing says against what was allocated: ResidentKVBytes is a one-slot load, kvBytesForCap and the null blocks. The resident's own
 			// precision prices exactly its allocation. Asking for the other one prices the other; f16 on a model the f16 kernels do not cover is still f32 on
-			// the device. int8 is not a CUDA cache.
+			// the device. int8 is refused for a 2-slot load (one slot so far), so it prices f32; TestKV8_deliveredBytes holds the int8 figure.
 			asF32 := slices.Clone(r.layers)
 			for i := range asF32 {
 				asF32[i].kvHalf = false

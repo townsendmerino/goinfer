@@ -1,0 +1,63 @@
+=== RUN   TestKV8_layer0StoreIsTheQuantizedF32Store
+=== RUN   TestKV8_layer0StoreIsTheQuantizedF32Store/llama-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8_resident_test.go:248: layer 0 K position 0 head 0: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 0.0024658996 [-19 0 1 43 43 -71 61 -31]
+    kv8_resident_test.go:248: layer 0 K position 0 head 1: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 0.0020022267 [-34 71 -12 117 33 49 -123 127]
+    kv8_resident_test.go:248: layer 0 K position 1 head 0: cache scale 0.0024658996 codes [-19 0 1 43 43 -71 61 -31], the f32 row quantizes to 0.0020288106 [35 -57 -50 -27 -19 21 26 -58]
+    kv8_resident_test.go:256: layer 0 K: 152 of 152 (position, head) rows differ from the quantized f32 store
+    kv8_resident_test.go:248: layer 0 V position 0 head 0: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 0.003673259 [-127 4 44 11 37 -11 -21 31]
+    kv8_resident_test.go:248: layer 0 V position 0 head 1: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 0.0022317544 [127 -4 65 8 35 33 -35 -8]
+    kv8_resident_test.go:248: layer 0 V position 1 head 0: cache scale 0.003673259 codes [-127 4 44 11 37 -11 -21 31], the f32 row quantizes to 0.0025830762 [-56 40 79 49 -69 -35 64 -12]
+    kv8_resident_test.go:256: layer 0 V: 152 of 152 (position, head) rows differ from the quantized f32 store
+=== RUN   TestKV8_layer0StoreIsTheQuantizedF32Store/phi3-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8_resident_test.go:248: layer 0 K position 0 head 0: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 0.0013062388 [-96 -2 -21 -12 -127 -92 95 -21]
+    kv8_resident_test.go:248: layer 0 K position 0 head 1: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 0.0020991666 [-127 -103 99 -102 -18 -81 -21 67]
+    kv8_resident_test.go:248: layer 0 K position 1 head 0: cache scale 0.0013062388 codes [-96 -2 -21 -12 -127 -92 95 -21], the f32 row quantizes to 0.0021909592 [18 -61 76 -62 -100 38 19 32]
+    kv8_resident_test.go:256: layer 0 K: 152 of 152 (position, head) rows differ from the quantized f32 store
+    kv8_resident_test.go:248: layer 0 V position 0 head 0: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 0.0025649734 [-127 45 -34 25 3 -58 -6 16]
+    kv8_resident_test.go:248: layer 0 V position 0 head 1: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 0.0031004953 [9 -23 34 -24 -49 -1 -74 -33]
+    kv8_resident_test.go:248: layer 0 V position 1 head 0: cache scale 0.0025649734 codes [-127 45 -34 25 3 -58 -6 16], the f32 row quantizes to 0.0028126992 [11 -4 127 61 88 96 10 -44]
+    kv8_resident_test.go:256: layer 0 V: 152 of 152 (position, head) rows differ from the quantized f32 store
+=== RUN   TestKV8_layer0StoreIsTheQuantizedF32Store/llama-attnfa-tiny
+cuda: prefill width 2048 rows (26 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7040 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8_resident_test.go:248: layer 0 K position 0 head 0: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 0.011363969 [52 -64 -2 -16 -15 38 16 -3]
+    kv8_resident_test.go:248: layer 0 K position 0 head 1: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 0.008034691 [24 -11 78 -42 -71 -18 -40 37]
+    kv8_resident_test.go:248: layer 0 K position 1 head 0: cache scale 0.011363969 codes [52 -64 -2 -16 -15 38 16 -3], the f32 row quantizes to 0.011032133 [78 -11 -50 59 23 5 79 -74]
+    kv8_resident_test.go:256: layer 0 K: 152 of 152 (position, head) rows differ from the quantized f32 store
+    kv8_resident_test.go:248: layer 0 V position 0 head 0: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 0.012104519 [-30 -56 -77 1 -32 47 -22 15]
+    kv8_resident_test.go:248: layer 0 V position 0 head 1: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 0.009627525 [-60 60 27 -14 -17 -54 -43 -63]
+    kv8_resident_test.go:248: layer 0 V position 1 head 0: cache scale 0.012104519 codes [-30 -56 -77 1 -32 47 -22 15], the f32 row quantizes to 0.010938626 [-28 -50 44 9 27 -14 -68 -27]
+    kv8_resident_test.go:256: layer 0 V: 152 of 152 (position, head) rows differ from the quantized f32 store
+=== RUN   TestKV8_layer0StoreIsTheQuantizedF32Store/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (219 MiB of scratch; 6478 MiB free beyond the 109 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 5470 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8_resident_test.go:248: layer 0 K position 0 head 0: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 1.1436149 [-8 -4 -5 0 0 9 7 -1]
+    kv8_resident_test.go:248: layer 0 K position 0 head 1: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 1.0133797 [-12 2 7 8 6 -2 -6 -8]
+    kv8_resident_test.go:248: layer 0 K position 1 head 0: cache scale 1.1436149 codes [-8 -4 -5 0 0 9 7 -1], the f32 row quantizes to 1.1449199 [-9 -7 -7 2 0 9 8 -2]
+    kv8_resident_test.go:256: layer 0 K: 152 of 152 (position, head) rows differ from the quantized f32 store
+    kv8_resident_test.go:248: layer 0 V position 0 head 0: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 0.0009958933 [-29 -20 12 -5 -11 37 9 26]
+    kv8_resident_test.go:248: layer 0 V position 0 head 1: cache scale 0 codes [0 0 0 0 0 0 0 0], the f32 row quantizes to 0.0004371326 [-37 -52 -20 -83 57 -37 -37 19]
+    kv8_resident_test.go:248: layer 0 V position 1 head 0: cache scale 0.0009958933 codes [-29 -20 12 -5 -11 37 9 26], the f32 row quantizes to 0.00095214177 [-29 3 -3 4 -4 2 0 -20]
+    kv8_resident_test.go:256: layer 0 V: 152 of 152 (position, head) rows differ from the quantized f32 store
+--- FAIL: TestKV8_layer0StoreIsTheQuantizedF32Store (7.05s)
+    --- FAIL: TestKV8_layer0StoreIsTheQuantizedF32Store/llama-tiny (1.72s)
+    --- FAIL: TestKV8_layer0StoreIsTheQuantizedF32Store/phi3-tiny (1.35s)
+    --- FAIL: TestKV8_layer0StoreIsTheQuantizedF32Store/llama-attnfa-tiny (0.28s)
+    --- FAIL: TestKV8_layer0StoreIsTheQuantizedF32Store/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (3.60s)
+FAIL
+ledger: 17 device(s) released in this run

@@ -28,8 +28,8 @@ const grantReserveBytes = 384 << 20
 func chargedBytes(n int64) int64 { return n + allocRoundSlack(n) }
 
 // kvChargedBytes is the device bytes kvAllocPools takes for slots slots at capacity cap: every owning layer's K and V pool (one
-// latent pool for MLA), each holding its group's blocks for every slot plus the null block and charged as the device rounds it,
-// and the slots' block tables. It mirrors kvAllocPools and kvSlotBlocks; TestKSH6C_marginPriced holds it to the pools' allocations.
+// latent pool for MLA) and an int8 layer's two scale pools, each holding its group's blocks for every slot plus the null block and charged
+// as the device rounds it, and the slots' block tables. It mirrors kvAllocPools and kvSlotBlocks; TestKSH6C_marginPriced holds it to the pools' allocations.
 func kvChargedBytes(cap, slots int, layers []cudaLayer) int64 {
 	full := int64(slots*kvBlocksFor(cap) + 1)
 	var n int64
@@ -39,7 +39,10 @@ func kvChargedBytes(cap, slots int, layers []cudaLayer) int64 {
 			continue
 		}
 		elem := int64(4)
-		if Ly.kvHalf {
+		switch {
+		case Ly.kvI8:
+			elem = 1
+		case Ly.kvHalf:
 			elem = 2
 		}
 		blocks := full
@@ -47,6 +50,9 @@ func kvChargedBytes(cap, slots int, layers []cudaLayer) int64 {
 			blocks = int64(slots*kvWindowBlocks(cap, int(Ly.window)+kvWindowSlack) + 1)
 		}
 		buf := chargedBytes(blocks * kvBlock * int64(Ly.kvDim) * elem)
+		if Ly.kvI8 { // and its scale pool, one f32 per row and KV head
+			buf += chargedBytes(blocks * kvBlock * int64(Ly.nKV) * 4)
+		}
 		if Ly.isMLA() {
 			n += buf
 			continue
@@ -220,12 +226,14 @@ func planLayerGeometry(m *decoder.Model, hls []hlayer, nH int, r *cudaResident) 
 			L.vNorm = !L.kvShared && (L.kEqV || m.IsGemma4Resident())
 		}
 		L.kvHalf = r.kvF16 && !L.noKV() && !L.kvShared
+		L.kvI8 = r.kvI8 && !L.noKV() && !L.kvShared
 		ls[l] = L
 	}
 	return ls
 }
 
-// kvLayerCounts is the number of layers owning a K/V pool pair and the number owning one latent pool (MLA), for kvRoundingBound.
+// kvLayerCounts is the number of layers owning a K/V pool pair and the number owning one latent pool (MLA), for kvRoundingBound. An int8
+// layer counts twice: its K and V scale pools are a second pair of buffers.
 func kvLayerCounts(layers []cudaLayer) (owners, mla int) {
 	for l := range layers {
 		Ly := &layers[l]
@@ -233,6 +241,8 @@ func kvLayerCounts(layers []cudaLayer) (owners, mla int) {
 		case Ly.kvShared || Ly.noKV() || Ly.kvDim == 0:
 		case Ly.isMLA():
 			mla++
+		case Ly.kvI8:
+			owners += 2
 		default:
 			owners++
 		}

@@ -100,6 +100,8 @@ func (r *cudaResident) snapshotDecline(end int) *decoder.KVCopyDecline {
 		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("rows up to %d are past the %d-position cache", end, r.ctxCap)}
 	case r.mamba != nil:
 		return &decoder.KVCopyDecline{Reason: "Mamba-2 state is not part of a snapshot"}
+	case r.kvI8:
+		return &decoder.KVCopyDecline{Reason: errKV8OneSlot}
 	}
 	return nil
 }

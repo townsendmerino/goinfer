@@ -74,3 +74,75 @@ S1 is the kernel stage and nothing in it reaches a user: the `_kv8` modules are 
 **Not converted in S1, so S2 must route around them or convert them (the dispatcher may not select them on an i8 cache):** `attn_fused.cu` and `attn_fused_bm.cu` (the tensor-core tiles, with their vectorized `stage_tile_vec` that reads 16 bytes of cache at a time and stages f16 halves: they need per-row scales in the staging loops), `attn_img_prefill.cu`, `rope_mrope_prefill.cu`, `rope_pairwise.cu` (the rope/store kernels for m-RoPE and pairwise RoPE: their `KV_ST` sites are no-ops in an i8 build and the families they serve are S5), `gemv_fwd.cu`'s rope_kv, `mla.cu`. Dense attention prefill on an i8 cache therefore goes through `attn_batched` or the split-KV rows lane until the fused tiles are converted; whether that costs a speed the bar forbids is S4's reading.
 
 **Gates this meets:** `go run ./cmd/gate ptx` 65/65 (the gate now also reproduces `<k>_kv8.ptx` from `<k>.cu` at the NVRTC each records), `touched.py` and `cmd/lint` pass (`touched-s1f.log`, `lint-s1e.log`); the frozen glue modules, and every existing `.ptx`, are byte-identical (`git status` shows no changed `.ptx`).
+
+## S2, 2026-11-07: the int8 cache delivered on the dense families, one KV slot
+
+### What S2 registers before its card runs (written 15:35 PST, before G2's first run)
+
+- **G3** (`TestKV8_deliveredBytes`): on `llama-tiny`, `phi3-tiny`, `llama-attnfa-tiny` and the real Qwen2.5-Coder-0.5B, the int8 build allocates exactly
+  1 B an element plus 8 B of scales per position, head and layer (read from the allocations, `kvAllocSeenForTest`), which is the f32 build's bytes / 4
+  plus the scales, and `decoder.ResidentKVBytes("cuda", ctx, false, true)` prices exactly that plus the tables.
+- **G1, store half wired** (`TestKV8_layer0StoreIsTheQuantizedF32Store`): the int8 build's layer-0 cache is the f32 build's layer-0 cache quantized by
+  aikit `QuantizeRowInt8` (codes and scale bits), at every prefill and decode position.
+- **Every-path smoke** (`TestKV8_everyAttentionPathStaysCloseToF32`, bar set in the test before its first run): CUDA i8 against CUDA f32 over 300
+  prose tokens and 8 decode steps, min logit cosine >= 0.97 and top-1 agreement on 3 of 4 rows, on each path (decode attn_batched, split-KV,
+  flash-decode lane; prefill attn_batched, row-batched split-KV, and fast prefill on, which must launch no fused tile).
+- **G2** (`TestKV8_G2_matchesTheCPUInt8Cache`, the task doc's G2): CUDA i8 against the CPU path's int8 cache, same model, 300 prose tokens
+  then 64 teacher-forced steps (65 rows), Qwen2.5-Coder 0.5B and 1.5B. Bars: top-1 agreement at least the CUDA f32 / CPU f32 rate less 2
+  points; minimum logit cosine at least 0.99. The CPU int8 cache's cosine to the CPU f32 cache is logged as what int8 KV costs the model; it
+  is G4's read, not a bar.
+
+### Readings so far
+
+- G3 and the store: PASS on all four (`s2-g3-store.log`). The 0.5B at 16,384 positions allocates 107,372,544 B of K/V (f32: 404,226,048 B),
+  6,316,032 B of it scales.
+- Every-path smoke: **1.5B PASS on all six cells; 0.5B FAILS the 0.97 bar on all six** (`s2-every-path.log`): prefill cosine 0.939, min
+  0.862 to 0.872, top-1 3 to 5 of 9. The six cells agree with one another to the printed digits (prefill 0.939055 on five of them), which
+  is what one cache read correctly by six readers looks like, and not what a reader missing its scales looks like. The test does not say
+  which of "int8 KV costs this model that much" or "the CUDA cache is wrong in a way every reader shares" holds; G2 is the instrument that does.
+- **G2 as registered: FAIL** (`s2-g2.log`, one prompt, 65 rows):
+
+  | model | CUDA f32 / CPU f32 | CUDA i8 / CPU i8 | CPU i8 / CPU f32 | CUDA i8 / CUDA f32 | top-1 bar | cosine bar |
+  |---|---|---|---|---|---|---|
+  | 0.5B | min cos 0.97674, top-1 61/65 | 0.98595, 60/65 | 0.81858, 35/65 | 0.83002, 35/65 | PASS (60 >= 61 less 2 pts) | FAIL (0.98595 < 0.99) |
+  | 1.5B | 0.99015, 58/65 | 0.98373, 56/65 | 0.98300, 58/65 | 0.98313, 54/65 | FAIL (56 < 56.7) | FAIL (0.98373 < 0.99) |
+
+  The 0.99 cosine bar was mine, absolute, and set without knowing the f32 pair's own floor: on the 0.5B the f32 pair itself bottoms at
+  0.97674, under the bar. The top-1 bar is the task doc's and the 1.5B misses it by one row in 65. **Neither bar was moved.**
+- **What the 0.5B smoke failure is:** the CPU's own int8 cache costs the 0.5B the same as CUDA's (min cos 0.819 against CUDA's 0.830,
+  top-1 35/65 on both; pooled over 8 prompts 0.781 against 0.765). It is what int8 KV does to that model, a G4 reading, so the every-path
+  smoke now runs the 1.5B only (where all six cells pass at the registered bar); the 0.5B stays in G3, the store, G2 and the verify test.
+  That is the one change made to a test after its data, and this paragraph is its mechanism.
+- **Diagnostics behind the G2 reading** (not gates; `TestKV8_G2Diag_*` in `backend/cuda/kv16_test.go`, run with `GOINFER_KV8_DIAG=1`):
+  - G2's four arms over the first 8 prompts of the set, 520 rows (`s2-g2-diag-8prompts.log`): top-1 CUDA f32/CPU f32 against
+    CUDA i8/CPU i8 is 0.9115 / 0.8981 on the 0.5B (1.34 pts, inside the doc's 2) and 0.9154 / 0.8942 on the 1.5B (2.12 pts, 0.12 outside).
+  - Amplification within CUDA (`s2-g2-diag-amplification.log`, 512 decode rows): two CUDA arms differing only by the flash-decode lane
+    (non-bit-identical attention arithmetic) agree on top-1 0.9355 at f32 and 0.9297 at i8 on the 0.5B, 0.9375 and 0.9258 on the 1.5B.
+    int8 KV turns the same arithmetic noise into 0.6 to 1.2 pts more top-1 disagreement within one backend. That is consistent with the
+    cross-backend gap being quantization rounding (two backends' slightly different f32 K/V landing on different int8 codes near a
+    rounding edge), not a CUDA defect; it does not prove it.
+- **Where the CUDA int8 arithmetic is pinned exactly:** the readers by S1's G1 (bit-identical to the f32 kernels on int8 x 2^e inputs),
+  the store by `TestKV8_layer0StoreIsTheQuantizedF32Store` (bit-identical to aikit's quantizer on the build's own rows), the verify pass by
+  `TestKV8_verifyIsSequentialDecode` (ForwardN equals sequential decode bit for bit, flash lane on and off, the multi-row lane launched).
+  The CPU's production int8 path dequantizes and runs f32 attention as CUDA does (`decoder/attention.go`'s query-quantizing
+  `attendQueryI8` has no production caller).
+- **Plants, both red:** the store one row late (`startPos+1`): every (position, head) row of layer 0 differs (`s2-plant-store-offbyone.log`);
+  the K and V scale pools swapped at every reader: logit cosine -0.07, top-1 0/9 on all five 1.5B cells (`s2-plant-scales-swapped.log`).
+  A third, on G3: the decoder's int8 row price without its scales: `TestCUDAKVI8_prices` and all four `TestKV8_deliveredBytes` cells red
+  (the 0.5B priced at 101,058,560 B against 107,372,544 B allocated; `s2-plant-price-noscales.log`). All three restored (`cmp` against the
+  saved source).
+- **touched.py** (`touched-s2.log`, run before two fixes it found): the option-state grid doc regenerated; the decoder-import ratchet held by
+  folding the int8 tests into `backend/cuda/kv16_test.go` instead of two new files; the mem resolver test's stale reason. The cuda list it
+  ran, re-run verbose after the fixes (`s2-cuda-touched-list.log`): 53 tests PASS, G2 FAIL, its numbers identical to the first run's to the
+  printed digit. `gate ptx` 66/66 (`gate-ptx-s2.log`); staticcheck clean on the cuda module (tags `cuda goinfer_testhooks`) and the decoder,
+  canary red first.
+- **Declined by name on an int8 cache** (each a `decoder.KVCopyDecline` or a refusal, `TestKV8_snapshotsDecline`): host snapshots (KV7) and
+  copies to another slot, demotion, the CPU-prefill `UploadKV` bridge, span prefill. Everything multi-slot is refused at load (an explicit
+  `--kv-sessions N > 1`), and a default count is lowered to one slot.
+
+### Decision this needs (Francis)
+
+G2 reads FAIL by its registered rule on the 1.5B (one row of 65), and on the cosine bar I added (both models). Options as I see them:
+(a) accept S2 with G2's reading recorded as above and the mechanism stated; (b) re-register G2 at a sample that can resolve a 2-point bar
+(the 8-prompt pool reads 1.34 and 2.12 pts, so even 520 rows sits on the edge for the 1.5B) and run it once; (c) hold S2 until the cross-backend
+gap is explained further (an exact-input G2 that feeds both backends the same int8 cache). I have not changed G2's bars or its test.
