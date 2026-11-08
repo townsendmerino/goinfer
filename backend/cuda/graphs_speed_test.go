@@ -201,9 +201,11 @@ func TestMEM10_pageableExpertSourceAB(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads the real 26B eight times)")
 	}
-	path := modelPath("gemma4-26b-q4_k_m.gguf")
+	// The sidecar serve opens for gemma4-26b-q4_k_m.gguf on CUDA (int4, embed-int4 head): a test binary does not take Load's sidecar default
+	// (sidecarInTests), so the test opens it by name, the load MEM10-G0 read.
+	path := modelPath("gemma4-26b-q4_k_m.int4.e4h.cuda.v17.giw")
 	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("no 26B checkpoint at %s: %v", path, err)
+		t.Fatalf("no 26B sidecar at %s: %v", path, err)
 	}
 	dir := os.Getenv("GOINFER_MEM10_PAGEABLE_DIR")
 	if dir == "" {
@@ -217,7 +219,7 @@ func TestMEM10_pageableExpertSourceAB(t *testing.T) {
 		t.Fatalf("%s is tmpfs (or unreadable: %v): its pages would be shared memory, not the file pages arm B measures", dir, err)
 	}
 	const shortPrompt, longPrompt, steps, checkToks = 32, 4096, 256, 64
-	opts := decoder.Options{Backend: "cuda", Quant: "int4", EmbedInt4: true, MoECacheExperts: true, ResidentContext: longPrompt + steps} // EmbedInt4: serve's CUDA default, so the load opens the .int4.e4h.cuda sidecar
+	opts := decoder.Options{Backend: "cuda", MoECacheExperts: true, ResidentContext: longPrompt + steps}
 	type arm struct {
 		Name                                    string
 		Short, Long                             float64

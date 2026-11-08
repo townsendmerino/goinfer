@@ -66,3 +66,15 @@ finish go in the status file first.
 - **The fix.** The test now sets `EmbedInt4: true`, serve's own CUDA default, so it measures the registered load through the sidecar.
 - **The readings.** The first attempt's single load is void and is not used. Its log is kept as `ab-attempt1/`.
 - **Unchanged:** the arms, order, metrics and rule.
+
+## Addendum, 2026-11-08 12:15 PST: attempt 2 also measured the wrong load; the test now opens the sidecar by name
+
+- **What happened.** Attempt 2 (12:12) set `EmbedInt4` and still re-packed in-process: arm A's `RssAnon` was 15,796 MiB and the
+  `.giw`'s Rss 0.
+  - The cause: a test binary never takes `Load`'s sidecar default (`decoder/sidecar.go:sidecarInTests`, off). So a `.gguf` loads
+    directly, whatever the options.
+  - Load 2 was again refused by the host-memory guard (38.4 GB needed, 46.4 GB available), and was not bypassed.
+- **The fix.** The test opens `~/models/gemma4-26b-q4_k_m.int4.e4h.cuda.v17.giw` by name. That is the file serve opens for this GGUF on
+  CUDA, and the load MEM10-G0 read.
+- **The readings.** Attempt 2's single load is void. Its log is kept as `ab-attempt2/`.
+- **Unchanged:** the arms, order, metrics and rule.
