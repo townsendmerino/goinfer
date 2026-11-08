@@ -218,7 +218,10 @@ func TestRouteVisionTower(t *testing.T) {
 		// CPU-only vision towers and the unknown
 		{"discrete mistral3", "mistral3", false, "webgpu", false, "", "", false, "cpu", ""},
 		{"discrete lfm2_vl", "lfm2_vl", false, "webgpu", false, "", "", false, "cpu", ""},
-		{"discrete, no family (text-only or unknown)", "", false, "webgpu", false, "", "", false, "webgpu", ""},
+		{"discrete, no family (text-only or unknown)", "", false, "webgpu", false, "", "", false, "cpu", ""},
+		{"discrete, unknown family", "some_new_tower", false, "webgpu", false, "", "", false, "cpu", ""},
+		{"discrete, unknown family, -vision-quant int8 is still the loader's", "some_new_tower", false, "webgpu", false, "", "int8", false, "webgpu", ""},
+		{"unified, no family", "", false, "webgpu", true, "", "", false, "webgpu", ""},
 		// a Qwen3.5+ GGUF mmproj tower: the CPU unless -vision-device gpu, on either machine; a quant does not ask
 		{"mmproj on a Mac", "qwen3_5", true, "webgpu", true, "", "", true, "cpu", mNote},
 		{"mmproj on a discrete GPU", "qwen3_5", true, "webgpu", false, "", "", true, "cpu", mNote},
@@ -254,8 +257,9 @@ func TestRouteVisionTower(t *testing.T) {
 
 // loadVisionTower writes the note, once, and only for a tower this binary could have put on the device: a text-only load, a CPU-only
 // vision tower (mistral3), an audio encoder (voxtral, qwen3_asr), a tower on the device (unified memory), an int8 tower that is
-// the CPU's by the quant, and -vision-device cpu print nothing. The tower directories hold a config.json only: the family loaders
-// fail on the missing weights, which is after the decision under test.
+// the CPU's by the quant, and -vision-device cpu print nothing. It has three ways to find a tower: -vision DIR, the sole --model's own
+// directory (auto-discovery), and a Qwen3.5+ GGUF mmproj file, whose branch prints its own note. The tower directories hold a
+// config.json only: the family loaders fail on the missing weights, which is after the decision under test.
 func TestLoadVisionTower_keptOnCPUNoteIsPrintedOnceAndOnlyForATower(t *testing.T) {
 	capture := func(f func()) string {
 		r, w, err := os.Pipe()
@@ -277,28 +281,56 @@ func TestLoadVisionTower_keptOnCPUNoteIsPrintedOnceAndOnlyForATower(t *testing.T
 		}
 		return dir
 	}
-	registered := map[string]bool{"gemma3": true, "gemma4": true, "qwen2_5_vl": true}
+	mmprojFile := func() string {
+		p := filepath.Join(t.TempDir(), "mmproj-Q8_0.gguf")
+		if err := os.WriteFile(p, []byte("not a real gguf"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	const discrete, mmproj = "note: under --backend webgpu on a discrete GPU", "note: a Qwen3.5+ .gguf mmproj tower runs on the CPU"
+	registered := map[string]bool{"gemma3": true, "gemma4": true, "qwen2_5_vl": true, "qwen3_5": true}
 	for _, c := range []struct {
-		name, mt, device, quant string
-		unified                 bool
-		want                    int
+		name, kind, mt, device, quant string // kind: "dir" (-vision DIR), "model" (auto-discovery from --model), "gguf" (an mmproj file)
+		unified                       bool
+		wantDiscrete, wantMMProj      int
 	}{
-		{"gemma4 on a discrete GPU", "gemma4", "", "", false, 1},
-		{"gemma4 on a discrete GPU, -vision-device gpu", "gemma4", "gpu", "", false, 0},
-		{"gemma4 on a Mac", "gemma4", "", "", true, 0},
-		{"gemma4 int8 on a discrete GPU is the CPU's", "gemma4", "", "int8", false, 0},
-		{"gemma4, -vision-device cpu", "gemma4", "cpu", "", false, 0},
-		{"mistral3, a CPU-only tower", "mistral3", "", "", false, 0},
-		{"voxtral, an audio encoder", "voxtral", "", "", false, 0},
-		{"qwen3_asr, an audio encoder", "qwen3_asr", "", "", false, 0},
+		{"gemma4 on a discrete GPU", "dir", "gemma4", "", "", false, 1, 0},
+		{"gemma4 found from the sole --model's directory", "model", "gemma4", "", "", false, 1, 0},
+		{"gemma4 on a discrete GPU, -vision-device gpu", "dir", "gemma4", "gpu", "", false, 0, 0},
+		{"gemma4 on a Mac", "dir", "gemma4", "", "", true, 0, 0},
+		{"gemma4 int8 on a discrete GPU is the CPU's", "dir", "gemma4", "", "int8", false, 0, 0},
+		{"gemma4, -vision-device cpu", "dir", "gemma4", "cpu", "", false, 0, 0},
+		{"mistral3, a CPU-only tower", "dir", "mistral3", "", "", false, 0, 0},
+		{"mistral3 found from the --model directory", "model", "mistral3", "", "", false, 0, 0},
+		{"voxtral, an audio encoder", "dir", "voxtral", "", "", false, 0, 0},
+		{"qwen3_asr, an audio encoder", "model", "qwen3_asr", "", "", false, 0, 0},
+		{"an mmproj file on a Mac", "gguf", "", "", "", true, 0, 1},
+		{"an mmproj file on a discrete GPU", "gguf", "", "", "", false, 0, 1},
+		{"an mmproj file, -vision-device gpu", "gguf", "", "gpu", "", true, 0, 0},
+		{"an mmproj file, int8 is the CPU's by the quant", "gguf", "", "", "int8", true, 0, 0},
+		{"an mmproj file, -vision-device cpu", "gguf", "", "cpu", "", true, 0, 0},
 	} {
 		stubWebGPU(t, c.unified, 1<<40)
 		webgpuTowerRegistered = func(mt string) bool { return registered[mt] }
-		cfg := config{visionPath: tower(c.mt), visionDevice: c.device, visionQuant: c.quant, models: modelFlag{{path: "m"}}}
+		cfg := config{visionDevice: c.device, visionQuant: c.quant}
 		cfg.load.Backend = "webgpu"
+		switch c.kind {
+		case "dir":
+			cfg.visionPath = tower(c.mt)
+			cfg.models = modelFlag{{path: "m"}}
+		case "model":
+			cfg.models = modelFlag{{path: tower(c.mt)}}
+		case "gguf":
+			cfg.visionPath = mmprojFile()
+			cfg.models = modelFlag{{path: "m"}}
+		}
 		out := capture(func() { _ = (&server{}).loadVisionTower(cfg) })
-		if n := strings.Count(out, "note: under --backend webgpu on a discrete GPU"); n != c.want {
-			t.Errorf("%s: the note was printed %d times, want %d: %q", c.name, n, c.want, out)
+		if n := strings.Count(out, discrete); n != c.wantDiscrete {
+			t.Errorf("%s: the discrete-GPU note was printed %d times, want %d: %q", c.name, n, c.wantDiscrete, out)
+		}
+		if n := strings.Count(out, mmproj); n != c.wantMMProj {
+			t.Errorf("%s: the mmproj note was printed %d times, want %d: %q", c.name, n, c.wantMMProj, out)
 		}
 	}
 	// a text-only load (no -vision, no tower to find) prints nothing
@@ -309,10 +341,15 @@ func TestLoadVisionTower_keptOnCPUNoteIsPrintedOnceAndOnlyForATower(t *testing.T
 	if out := capture(func() { _ = (&server{}).loadVisionTower(cfg) }); strings.Contains(out, "note:") {
 		t.Errorf("a load with no vision tower printed %q", out)
 	}
-	// a model with a tower directory beside it prints the note once, found by auto-discovery as well as by -vision
+	// a one-model load whose directory holds no tower prints nothing either
+	cfg.models = modelFlag{{path: tower("llama")}}
+	if out := capture(func() { _ = (&server{}).loadVisionTower(cfg) }); strings.Contains(out, "note:") {
+		t.Errorf("a text-only model directory printed %q", out)
+	}
+	// a Gemma 3 projector directory given with -vision prints the note once
 	cfg.visionPath = gemma3RealLayoutTiny(t)
 	cfg.models = modelFlag{{path: "m"}}
-	if out := capture(func() { _ = (&server{}).loadVisionTower(cfg) }); strings.Count(out, "note: under --backend webgpu on a discrete GPU") != 1 {
+	if out := capture(func() { _ = (&server{}).loadVisionTower(cfg) }); strings.Count(out, discrete) != 1 {
 		t.Errorf("a Gemma 3 tower kept on the CPU printed %q, want the note once", out)
 	}
 }

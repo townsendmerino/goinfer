@@ -1147,7 +1147,7 @@ const (
 // routeVisionTower is the one place the vision tower's backend and its note are decided (family is visionModelType's answer;
 // mmproj is a Qwen3.5+ GGUF mmproj tower, which has no config.json). Rules, in order:
 //   - not --backend webgpu, or -vision-device cpu: towerBackend, no note;
-//   - an int8 tower other than Gemma 3's is the CPU's by the quant (towerInt8): the backend is left alone so the family loader says
+//   - an int8 tower other than Gemma 3's is the CPU's by the quant (-vision-quant int8; the family's default never is): the backend is left alone so the family loader says
 //     so, and refuses under -require-backend; no note, since --vision-device gpu would not move it;
 //   - -vision-device gpu asks for the device: the backend, no note;
 //   - an mmproj tower stays on the CPU (towerReserve cannot price a tower with no config.json), with a note when this binary has
@@ -1167,7 +1167,7 @@ func (cfg config) routeVisionTower(family string, mmproj bool) visionRoute {
 	if mmproj {
 		quantFamily = "qwen3_5"
 	}
-	if towerInt8(quantFamily, cfg.visionQuant, be) && quantFamily != "gemma3" {
+	if cfg.visionQuant == "int8" && quantFamily != "gemma3" {
 		return visionRoute{Backend: be}
 	}
 	if cfg.visionDevice == "gpu" {
