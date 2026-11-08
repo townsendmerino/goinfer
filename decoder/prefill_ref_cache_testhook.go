@@ -182,6 +182,21 @@ func checkpointSHA256(path string) (string, error) {
 		return checkpointDirSHA256(abs)
 	}
 	stamp, settled := checkpointStamp(abs, st, checkpointNow())
+	hash := func() (string, error) {
+		f, err := os.Open(abs)
+		if err != nil {
+			return "", err
+		}
+		defer f.Close()
+		hh := sha256.New()
+		if _, err := io.Copy(hh, f); err != nil {
+			return "", err
+		}
+		return hex.EncodeToString(hh.Sum(nil)), nil
+	}
+	if !settled {
+		return hash()
+	}
 	dir, err := PrefillRefCacheDirForTest()
 	if err != nil {
 		return "", err
@@ -191,21 +206,12 @@ func checkpointSHA256(path string) (string, error) {
 	if b, err := os.ReadFile(idxPath); err == nil {
 		_ = json.Unmarshal(b, &idx)
 	}
-	if h, ok := idx[stamp]; ok && settled {
+	if h, ok := idx[stamp]; ok {
 		return h, nil
 	}
-	f, err := os.Open(abs)
+	sum, err := hash()
 	if err != nil {
 		return "", err
-	}
-	defer f.Close()
-	hh := sha256.New()
-	if _, err := io.Copy(hh, f); err != nil {
-		return "", err
-	}
-	sum := hex.EncodeToString(hh.Sum(nil))
-	if !settled {
-		return sum, nil
 	}
 	idx[stamp] = sum
 	if err := os.MkdirAll(dir, 0o755); err == nil {
