@@ -58,24 +58,21 @@ type ResidentKVSnapshotter interface {
 	KVSnapshotBytes(end int) int64
 	// KVSnapshotRollback is how many positions before a snapshot's end a windowed layer still serves a restore; 0 with no windowed layer.
 	KVSnapshotRollback() int
-}
-
-// ResidentRecurrentSnapshots is the optional capability of a ResidentKVSnapshotter to carry a recurrent model's state with its rows: a snapshot
-// to end holds the state as it stood after position end-1, so it serves a restore to exactly end and to no shorter prefix.
-type ResidentRecurrentSnapshots interface {
+	// KVSnapshotRecurrent reports whether a snapshot carries a recurrent model's state with its rows: a snapshot to end holds the state
+	// as it stood after position end-1, so it serves a restore to exactly end and to no shorter prefix. False when it carries none.
 	KVSnapshotRecurrent() bool
 }
 
 // KeepsRecurrentSnapshots reports whether this model's prefix snapshots carry its recurrent state: it has recurrent state, and its resident's
-// snapshots hold it (ResidentRecurrentSnapshots). A route computes KVScope.Keep only for such a model.
+// snapshots hold it (ResidentKVSnapshotter.KVSnapshotRecurrent). A route computes KVScope.Keep only for such a model.
 func (m *Model) KeepsRecurrentSnapshots() bool {
 	return m.hasRecurrentState() && m.recurrentSnapshots()
 }
 
 // recurrentSnapshots reports whether the snapshotter carries recurrent state.
 func (m *Model) recurrentSnapshots() bool {
-	rs, ok := m.snapshotter().(ResidentRecurrentSnapshots)
-	return ok && rs.KVSnapshotRecurrent()
+	sn := m.snapshotter()
+	return sn != nil && sn.KVSnapshotRecurrent()
 }
 
 // snapshotsBlocked reports whether this model's state is outside what a snapshot holds: recurrent state its snapshotter does not carry.

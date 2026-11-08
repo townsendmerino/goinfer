@@ -94,7 +94,7 @@ func (r *resident) bindCheckpoint() {
 	}
 }
 
-// RecurrentCheckpointHeld implements decoder.ResidentRecurrentCheckpointOwner: the one copy is the slot's that last saved it.
+// RecurrentCheckpointHeld is decoder.ResidentRecurrentCheckpoint's: the one copy is the slot's that last saved it.
 func (a *metalResident) RecurrentCheckpointHeld(slot int) bool {
 	return slot >= 0 && len(a.r.ckptBufs) > 0 && a.r.ckptSlot == slot
 }
