@@ -79,7 +79,6 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 		logs.Warnf("[cuda] flash-decode lane unavailable (exact decode attention used): %v", e)
 		return
 	}
-	r.faModule = map[*byte]string{&decodeFAPTX[0]: "decode_fa", &decodeFAKV16PTX[0]: "decode_fa_kv16", &decodeFAKV8PTX[0]: "decode_fa_kv8"}[&ptx[0]]
 	var pipes [3]Pipeline
 	for i, name := range []string{"fa_partial_64", "fa_partial_128", "fa_partial_256"} {
 		if pipes[i], e = r.dev.NewComputePipeline(mod, name); e != nil {
@@ -92,6 +91,7 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 		return
 	}
 	r.faPartial = pipes
+	r.faModule = map[*byte]string{&decodeFAPTX[0]: "decode_fa", &decodeFAKV16PTX[0]: "decode_fa_kv16", &decodeFAKV8PTX[0]: "decode_fa_kv8"}[&ptx[0]]
 	// Multi-row (speculative verify) variant: 24 kernels + the row combine. A load failure leaves them zero, which only disables
 	// the verify lane (speculation then falls back to the exact-attention scope), never the M=1 lane.
 	rowsOK := true

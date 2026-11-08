@@ -164,3 +164,23 @@ D7 275 s, against 895 s in S4, because the int8 arm now prefills on the tile. Lo
 **What changes in the docs:** int8's speed cost is now decode only, 0.72x to 0.95x f16's at 128 and 512 keys and 0.99x at depth; a cold
 prefill is near f16's at 4,096 and 16,384 keys. The quality reading is unchanged (G4 above). The help text, the banner, `docs/server.md` and
 the matrix notes are corrected in this PR, stacked on #768, which introduced them.
+
+## Addendum, 2026-11-08 12:35 PST (after merge; no bar, cell or reading changed)
+
+- **A correction to the change description above.** "An int8 unpack of 16 lanes" is wrong. The i8 build's vector staging loads 8 int8
+  elements (8 bytes, `uint2`, `KV_VW = 8`), the f16 build's element count, so its batching and `static_assert`s are the f16 build's. That
+  is what shipped and what G1 tested. `attn_fused_bm.cu`'s comments now say so too.
+- **The speed run's provenance (`s6-g4-12eedab5/speed/provenance.txt`):** its `prompts:` line was corrected after the run, as the
+  "Speed" section records. The copied script's `sha256sum` named `$P/prompts-s4.json`; the file is at
+  `~/goinfer-bench/s4-pinned/prompts-s4.json`, where `BENCH_PROMPTS` pointed. The committed `run-speed.sh` is kept as it ran.
+- **The route cell's thin margin (Gemini's review of #785, [risk]).**
+  - `TestKV8_everyAttentionPathStaysCloseToF32`'s fast-prefill cell now reads a minimum cosine of 0.97084 against its 0.97 smoke bar.
+    The int8 tile rounds dequantized values to f16, as the f32 and f16 tiles round theirs.
+  - The bar is S2's, registered before its first run, and it is not moved. A future red there on an unchanged tree reads as that margin,
+    not as a reader fault: the exact-input G1 is the correctness check for the tiles.
+- **Two test gaps closed (the same review, [test]):**
+  - `TestKV8_everyFusedPrefillLaunchPassesScales` scans `prefill.go`: every one of the eight tile launches must pass `kvScaled`. G1
+    launches each tile itself, so it would not see a dispatch site that forgot the scales.
+  - `TestKV8_prefillTakesTheTileOnTheTinyFixture` is the route gate this file registered at tier 0, on `llama-attnfa-tiny`: tile launches,
+    and no `attn_batched` (a new launch counter, `exactAttnLaunches`).
+  - G1 now fails, rather than skipping its hd64 tiles, when a CUDA device is present and the 0.5B is not.
