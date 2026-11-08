@@ -56,8 +56,8 @@ func (c *tokenCoalescer) init() { c.cond = sync.NewCond(&c.mu) }
 // resident's slot holders. A resident is one command queue, so its runs and exclusive sections are one at a time.
 type residentBatcher struct {
 	tokenCoalescer
-	stepper    ResidentBatchStepper
-	maxHolders int // generations that may hold a slot at once
+	stepper    ResidentForward // a ResidentBatchStepper; its StepBatch goes through stepOn
+	maxHolders int             // generations that may hold a slot at once
 
 	holders  int    // generations holding a slot (claimed, not yet released); guarded by mu
 	slotBusy []bool // resident KV slots a holder is using; guarded by mu
@@ -111,17 +111,16 @@ type batchReq struct {
 // allowed: 1 — nothing enabled — unless the resident can batch (ResidentBatchStepper) over at least two KV slots, and
 // never more than the slot count, since each running generation holds a slot. Call it before any generation starts.
 func (m *Model) EnableResidentConcurrency(n int) int {
-	st, ok := m.resident.(ResidentBatchStepper)
+	lo, hi, ok := stepBatchRange(m.resident)
 	if !ok || n < 2 {
 		return 1 // a recurrent family has one slot unless its backend keeps that state per slot (residentSlotCount)
 	}
-	lo, hi := st.BatchStepRange()
 	slots := m.residentSlotCount()
 	if hi < 2 || slots < 2 {
 		return 1
 	}
 	n = min(n, slots)
-	b := &residentBatcher{stepper: st, maxHolders: n, slotBusy: make([]bool, slots)}
+	b := &residentBatcher{stepper: m.resident, maxHolders: n, slotBusy: make([]bool, slots)}
 	b.lo, b.hi, b.wait, b.step = max(lo, 2), hi, batchStragglerWait, b.stepResident
 	b.init()
 	m.batcher = b
@@ -145,11 +144,10 @@ func (m *Model) SetSpecAdaptive(on bool) { m.specAdaptive = on }
 
 // ResidentBatchCapable reports whether EnableResidentConcurrency could enable anything on this model.
 func (m *Model) ResidentBatchCapable() bool {
-	st, ok := m.resident.(ResidentBatchStepper)
+	_, hi, ok := stepBatchRange(m.resident)
 	if !ok || m.residentSlotCount() < 2 {
 		return false
 	}
-	_, hi := st.BatchStepRange()
 	return hi >= 2
 }
 
@@ -423,7 +421,8 @@ func (b *residentBatcher) stepResident(run []*batchReq) {
 	for i, r := range run {
 		seqs[i] = r.seq
 	}
-	out, err := b.stepper.StepBatch(seqs)
+	sr, err := stepOn(b.stepper, stepBatch{Pass: passSeqs, Seqs: seqs})
+	out := sr.Batch
 	if errors.Is(err, ErrKVPoolFull) {
 		// A row past its share found no block. The step maps every row's blocks before it writes anything, so it wrote nothing:
 		// run each token on its own, and only the row that cannot get a block ends.

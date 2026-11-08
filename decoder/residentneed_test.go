@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // docs/tasks/task-memory-accounting-2026-09.md item 2: `fit`'s verdict (Plan) and Metal's resident guard (ResidentNeedBytes,
@@ -63,6 +65,125 @@ func TestPlan_metalAgreesWithResidentNeedBytes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPlan_metalNeedCountsDecodeScratch is MM5b's gate (docs/measurements/mm5-decode-scratch-2026-11/): on every fixture G-MS3 holds
+// Metal's decode list to, Plan("metal").NeedBytes and the resident guard's number count decode's scratch (MetalDecodeScratchBytes)
+// beside the weights, KV, host copy and state; the CPU's do not.
+func TestPlan_metalNeedCountsDecodeScratch(t *testing.T) {
+	const ctx = 256
+	for _, c := range []struct{ name, quant string }{
+		{"llama-tiny", "int8int8"}, {"qwen35-tiny", "int4"}, {"gemma2-tiny", "int8int8"}, {"deepseek-tiny", "int4"}, {"nemotron-tiny", "int4"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := filepath.Join("..", "testdata", c.name)
+			m, err := Load(dir, Options{Quant: c.quant})
+			if err != nil {
+				t.Fatalf("load %s: %v", c.name, err)
+			}
+			defer m.Close()
+			scratch := m.MetalDecodeScratchBytes(0)
+			if scratch <= 0 {
+				t.Fatalf("%s: Metal's decode scratch is priced at %d bytes", c.name, scratch)
+			}
+			lines := func(p Plan) int64 {
+				return p.DenseBytes + p.StateBytes + p.AllocSlackBytes + p.ExpertBytesUsed + p.KVBytes + p.HostCopyBytes + p.ExtraBytes
+			}
+			p := m.Plan("metal", 1<<40, PlanRequest{Ctx: ctx, CtxPinned: true})
+			if got := p.NeedBytes() - lines(p); got != scratch {
+				t.Errorf("%s: Plan(\"metal\").NeedBytes is %d bytes past its weight, KV, host-copy and state lines; want the decode scratch, %d",
+					c.name, got, scratch)
+			}
+			if want := m.ResidentNeedBytes("metal", p.Slots, p.Ctx, false, false); p.NeedBytes() != want {
+				t.Errorf("%s: Plan(\"metal\").NeedBytes %d, the resident guard's %d", c.name, p.NeedBytes(), want)
+			}
+			if cp := m.Plan("cpu", 1<<40, PlanRequest{Ctx: ctx, CtxPinned: true}); cp.NeedBytes() != lines(cp) {
+				t.Errorf("%s: Plan(\"cpu\").NeedBytes counts %d bytes past its lines; the CPU holds no Metal scratch", c.name, cp.NeedBytes()-lines(cp))
+			}
+		})
+	}
+}
+
+// TestPlan_metalScratchFollowsTheSlots: Metal's decode scratch holds the routed experts' slot indices, 4 bytes for each of the top k,
+// exactly when the experts page (slots above 0 and under the expert count). The resident guard's figure counts them at a paged slot
+// count and not at an unpaged one, and Plan("metal") counts them on an expert cache that pages and not on a resident placement or a
+// cache that holds every expert; written as arithmetic on each fixture's top k, on a generic MoE and on Gemma 4's.
+func TestPlan_metalScratchFollowsTheSlots(t *testing.T) {
+	const ctx = 64
+	for _, name := range []string{"mixtral-tiny", "gemma4-moe-kv-tiny32"} {
+		t.Run(name, func(t *testing.T) {
+			m := loadAccountingFixture(t, name)
+			nE, k, isMoE := m.moeGeometry()
+			if !isMoE || k >= nE {
+				t.Fatalf("%s: %d experts, top %d: the fixture cannot page", name, nE, k)
+			}
+			index := int64(4 * k)
+			resident := m.MetalDecodeScratchBytes(0)
+			// The guard's figure past its weight and host-copy terms, which also move with the slots; KV and state do not.
+			scratchIn := func(slots int) int64 {
+				return m.ResidentNeedBytes("metal", slots, ctx, false, false) - m.ResidentNeedBytes("metal", 0, ctx, false, false) -
+					(m.ResidentWeightBytesPaged(slots) - m.ResidentWeightBytesPaged(0)) - (m.ResidentHostCopyBytes(slots) - m.ResidentHostCopyBytes(0)) + resident
+			}
+			for _, c := range []struct {
+				slots int
+				want  int64
+			}{{0, resident}, {nE, resident}, {k, resident + index}, {nE - 1, resident + index}} {
+				if got := m.MetalDecodeScratchBytes(c.slots); got != c.want {
+					t.Errorf("%s: MetalDecodeScratchBytes(%d) = %d, want %d", name, c.slots, got, c.want)
+				}
+				if got := scratchIn(c.slots); got != c.want {
+					t.Errorf("%s: the resident guard at %d slots counts %d bytes of scratch, want %d", name, c.slots, got, c.want)
+				}
+			}
+			p := m.Plan("metal", 1<<40, PlanRequest{Ctx: ctx, CtxPinned: true})
+			if p.Placement != PlacementResident || p.ScratchBytes != resident {
+				t.Errorf("%s: resident plan: placement %v, scratch %d; want resident at %d", name, p.Placement, p.ScratchBytes, resident)
+			}
+			// One byte short of resident, the cache holds every expert, which does not page; asked for top-k slots, it pages.
+			short := m.ResidentNeedBytes("metal", 0, ctx, false, false) - 1
+			for _, c := range []struct {
+				asked, slots int
+				want         int64
+			}{{0, nE, resident}, {k, k, resident + index}} {
+				pc := m.Plan("metal", short, PlanRequest{Ctx: ctx, CtxPinned: true, Slots: c.asked})
+				if pc.Placement != PlacementExpertCached || pc.Slots != c.slots || pc.ScratchBytes != c.want {
+					t.Errorf("%s: one byte short of resident, %d slots asked: placement %v at %d slots (%s), scratch %d; want expert-cached at %d slots, %d",
+						name, c.asked, pc.Placement, pc.Slots, pc.Reason, pc.ScratchBytes, c.slots, c.want)
+				}
+				if want := m.ResidentNeedBytes("metal", pc.Slots, ctx, false, false); pc.NeedBytes() != want {
+					t.Errorf("%s: expert-cached (%d slots): Plan.NeedBytes %d, the resident guard's %d", name, pc.Slots, pc.NeedBytes(), want)
+				}
+			}
+		})
+	}
+}
+
+// TestMetalDecodeScratch_q4kSegmentsAreThePartsTheLaneUploads: on a q4k load, each fused group's segments are the runs of one kind
+// among the parts the layer holds, one row-count uniform each. A part with no rows is not uploaded: emptied between two Q4_K parts it
+// splits no run, and a group with none of its parts adds no segment. On a two-layer q4k llama whose projections are all Q4_K.
+func TestMetalDecodeScratch_q4kSegmentsAreThePartsTheLaneUploads(t *testing.T) {
+	m, err := Load(q4kGGUF(t, t.TempDir(), 2), Options{Backend: "cpu", Quant: "q4k", DirectLoad: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if m.Quant() != "q4k" {
+		t.Fatalf("the load's quant is %q, want q4k", m.Quant())
+	}
+	base := m.MetalDecodeScratchBytes(0)
+	lw := &m.w.Layers[0]
+	k := lw.KProj
+	lw.KProj = linalg.WeightMat{}
+	if got := m.MetalDecodeScratchBytes(0); got != base {
+		t.Errorf("K emptied between Q4_K q and v: decode's scratch %d bytes, want %d (q and v stay one run)", got, base)
+	}
+	lw.KProj = k
+	gate, up := lw.GateProj, lw.UpProj
+	lw.GateProj, lw.UpProj = linalg.WeightMat{}, linalg.WeightMat{}
+	if got, want := m.MetalDecodeScratchBytes(0), base-4; got != want {
+		t.Errorf("gate and up emptied: decode's scratch %d bytes, want %d (the group's one segment gone)", got, want)
+	}
+	lw.GateProj, lw.UpProj = gate, up
 }
 
 // The disagreement itself, on a dense model: given one byte less than the guard needs, Plan("metal") must not

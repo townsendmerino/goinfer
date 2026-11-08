@@ -26,7 +26,7 @@
 > - **RF0:** done 2026-11-07 (the prior-art reading is `docs/measurements/forward-arch-prior-art-rf0-2026-11-07.md`, the cost of a decline `docs/measurements/forward-arch-decline-cost-2026-11-07.md`): the per-turn `timings` block is on the wire (`internal/app/serveapp/turn_timings.go`), the cost
 >   counters exist (`internal/cost`, SB11), and the shape × family × backend census was refreshed against program-based admission on 2026-11-07
 >   (`docs/measurements/forward-arch-census-2026-11-07.md`; CPU-only families on CUDA / Metal / WebGPU by `ResidentEligible`, the capability gates: 8 / 8 / 13, from 10 / 12 / 16; by `Admit(...).Why`, which adds Nemotron-H's int4 precision policy: 9 / 9 / 14 model-free and 8 / 8 / 14 at the loader's pick).
-> - **RF1:** **new**, in progress (§5.5): seven steps (RF1-3 dropped), 49 `Resident*` interfaces to 41. RF1-1 (#752) and RF1-2a (#757) merged; RF1-2b open (#760); RF1-4 open (#763).
+> - **RF1:** **new**, done but for its last merge (§5.5): 49 `Resident*` interfaces to 41 (RF1-1 #752, RF1-2a #757, RF1-2b #760), and every forward shape asserted only in `decoder/step.go` (RF1-4 #763, RF1-5 #769, RF1-6 #770, RF1-7 this step's PR). RF1-3 was dropped. RF5 deletes the shape interfaces.
 > - **HL:** built once on the unmerged branch `hl-metal-2026-10` (2026-10-14): identity PASS (HL-G1 to HL-G3), speed graded OFF (HL-G4: the prose part of a tool turn 1.035 on the 1.5B and 1.010 on the 7B, the whole tool turn 0.986 and 0.973), and HL-R filed (the chain only while the gate is closed). The branch predates KV5-6's chain rework and the `metal/` move to `backend/metal/`, so HL-R was rebuilt on main rather than merged: built and graded 2026-11-07 (PR #765, `docs/measurements/hl-2026-11/README.md`), the 1.5B in the Ship band and the 7B in the Park band, the owner's reading owed. §7a's HL row is still its size.
 > - **Not started:** RF2–RF6, OP5, OP6's CUDA half, default switch and WebGPU, OP1 on WebGPU, OP4 on WebGPU. §7a sizes them.
 > - **Other tracks:** SP's SP2 on CUDA merged (#232, §6a).
@@ -4606,8 +4606,15 @@ does from `stepShape.buffers`.
 from (`decodeShape.buffers`, `batchRows`, `chainBuffers`). G-MS2 holds the ledger to it on every `TestMemGate_metal` row, MM7's
 `decode` gap row is gone, G-MS3 holds it to each registered fixture's config, and G-MS5 reads all IDENTICAL. Metal's scratch is the sum of
 its roles, each at its widest layer, not a high-water over operations (the coordinator agreed the same day). The program-side
-declaration, the plan's figure, G-MS1 and G-MS4 moved to their own item, MM5b (`docs/tasks/task-subsystems-2026-10.md`). Charging
-the figure in `NeedBytes` and narrowing `MetalFitMargin` change a guard threshold, so neither moves until Francis answers.
+declaration, the plan's figure, G-MS1 and G-MS4 moved to their own item, MM5b (`docs/tasks/task-subsystems-2026-10.md`).
+**Francis's call, 2026-11-07 17:26:** the figure is charged in `NeedBytes`, and `MetalFitMargin` stays at 384 MiB as a drift cushion
+(`docs/measurements/mm5-decode-scratch-2026-11/README.md`). This replaces "no decision moves" above for MM5b, whose gates
+the ledger row names.
+**Amended with MM5b (2026-11-07), from #754's review.** At #754, G-MS3's five fixtures left most of the list's branches unchecked: the
+fused attention's partial, the whole-vector QK norm, a second attention geometry, the Gemma 4 and gpt-oss MoE lists, the chain and the paged
+fence. Since G-MS2 sums the list on both sides, a wrong entry in any of them passed. Each now has a hand row, and a one-element plant on
+each is red on its row alone. No registered row builds the q4k lane or PLE, so neither has a row. G-MS2 now reads the scratch line after
+`metalGatePlantForTest`, so a buffer leased beside the list is red in it (`TestMemGate_metalPlantsThroughTheTable`).
 
 ## 5. Track RF — one ragged forward pass
 
@@ -4730,7 +4737,7 @@ in its `program.Support` table (OP's work). CUDA's `BatchStepRange` already read
 | RF1-4 | `Batch` (rows: sequence, position, input kind, output kind) and `(*Model).step`, an adapter onto today's calls; no caller moves; built as `decoder/step.go`'s `stepBatch`, `canStep`, `stepOn` and `(*Model).step`, unexported until a backend implements `Step` (RF5); the caller names the call kind (`stepPass`: one decode token, one batched pass of one row or more, several sequences), never inferred from the row count | nothing yet | a fake resident logs its calls; for every shape `step` makes exactly the call today's caller makes | 1 |
 | RF1-5 | decode and verify callers onto `step` (`model.go`'s greedy/top-k/sample choice, `spec_ngram`, `blockspec`); done in this step's PR: the six sites ask `canDecode` / `canStep` and call `step`, and `stepDo` builds no closure, so a decode token's step allocates nothing | 6 assertion sites | the call log through the callers, not `step` alone; decision census | 1 |
 | RF1-6 | prefill callers (`PrefillKV`, `PrefillRows`, `PrefillMarked`, `SeedArgmax`, the block and chunk splits); done in this step's PR, with the batched-prefill presence checks in `PrefillPath`, `Theta` and the self-test; `step` takes a drafter host as well as a resident | 6 sites | as RF1-5 | 1 |
-| RF1-7 | multimodal and hidden-state callers, and MC3's `StepBatch`; then a source-scan test refuses a forward-shape assertion outside `decoder/step.go` | 15 sites | as RF1-5; the scan in `scripts/touched_scans.py` | 1–1.5 |
+| RF1-7 | multimodal and hidden-state callers, and MC3's `StepBatch`; then a source-scan test refuses a forward-shape assertion outside `decoder/step.go`; done in this step's PR (`TestStepShapes_assertedOnlyInStep`, in `scripts/touched_scans.py`): RF1's call shape is complete | 15 sites | as RF1-5; the scan in `scripts/touched_scans.py` | 1–1.5 |
 
 **Totals: 6–7 session-days, 49 → 41 interfaces, every forward shape asserted in one file.** RF1-1 and RF1-2 shrink the seam;
 RF1-4 to RF1-7 are the call shape (4–4.5). The 17 shape interfaces go in RF5, when a backend implements `Step` itself.

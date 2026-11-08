@@ -559,8 +559,7 @@ func SetStreamDirSwapForTest(on bool) func() {
 // cannot run on the resident (no m-RoPE decode, the claim lost, the upload refused) is an error, never a CPU fallback, so a
 // reading is always the resident's. The model must have been loaded on a resident backend.
 func (m *Model) QwenVLTeacherForcedLogitsForTest(ctx context.Context, ids, path []int, spans []ImageSpan, feats []float32, deep [][]float32, gridTHW [][3]int, merge, imageToken int) ([]float32, error) {
-	r, ok := m.resident.(ResidentMRoPE)
-	if !ok {
+	if !canStep(m.resident, stepBatch{Pass: passToken, In: inMRoPE, Emb: stepProbe}) {
 		return nil, fmt.Errorf("decoder: no resident m-RoPE decode on this model (%s)", m.ResidentDecline())
 	}
 	if len(path) == 0 {
@@ -596,7 +595,8 @@ func (m *Model) QwenVLTeacherForcedLogitsForTest(ctx context.Context, ids, path 
 	out := append(make([]float32, 0, len(path)*len(logits)), logits...)
 	gpuPos := len(ids)
 	for _, tok := range path[:len(path)-1] {
-		l, err := r.ForwardMRoPE(m.embedResident(tok), gpuPos, gpuPos+delta)
+		sr, err := m.step(stepBatch{Pass: passToken, In: inMRoPE, Emb: [][]float32{m.embedResident(tok)}, Pos: gpuPos, RopePos: gpuPos + delta})
+		l := sr.Logits
 		if err != nil {
 			return nil, fmt.Errorf("decoder: resident step at position %d: %w", gpuPos, err)
 		}

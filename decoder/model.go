@@ -1286,7 +1286,7 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 			// places the run at an offset.
 			if perr == nil {
 				var sr stepResult
-				if mk != nil && canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe, Mark: mk.q, At: mk.at}) {
+				if mk != nil && canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe, At: stepProbeAt}) {
 					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from:]), Pos: from, Mark: mk.q, At: mk.at})
 				} else if canStep(m.resident, stepBatch{Pass: passRows, In: inRowsFn, N: 1, Rows: stepProbeRows}) {
 					// MEM6: the resident reads the suffix a chunk at a time.
@@ -1350,25 +1350,26 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 // (docs/multimodal.md), where decode past the (already-resident) image block needs pos+mropeDelta for the rotation, not plain
 // pos. Deliberately simple (no batched or KV-only prefill): the reused-suffix case is an agent turn's short trailing
 // extension, not a long cold prompt worth the batched machinery.
-func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, mrope ResidentMRoPE, prompt []int, from, mropeDelta int) ([]float32, error) {
+func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, prompt []int, from, mropeDelta int) ([]float32, error) {
 	if from < 0 || from >= len(prompt) {
 		from = 0
 	}
 	if from == 0 {
 		m.residentWritesFromZero()
 	}
-	var logits []float32
+	var sr stepResult
 	var err error
+	var row [1][]float32
 	for i := from; i < len(prompt); i++ {
 		if err = ctx.Err(); err != nil {
 			return nil, err
 		}
-		emb := m.embedResident(prompt[i])
-		if logits, err = mrope.ForwardMRoPE(emb, i, i+mropeDelta); err != nil {
+		row[0] = m.embedResident(prompt[i])
+		if sr, err = m.step(stepBatch{Pass: passToken, In: inMRoPE, Emb: row[:], Pos: i, RopePos: i + mropeDelta}); err != nil {
 			return nil, err
 		}
 	}
-	return logits, nil
+	return sr.Logits, nil
 }
 
 // mc3Prefill prefills prompt[from:] into an MC3 generation's slot and returns the seed logits. A long suffix is taken
@@ -1673,12 +1674,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) &&
 		m.knobs.get(knobNoGreedyFastpath) == ""
 	// The greedy chain (ResidentGreedyChain): the same tokens with the next token's forward queued on the device before the host
-	// has seen this one. Only with no processor at all (a gated one would need the full row mid-chain), no adapter, and where the
-	// embedding lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this
-	// generation decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so
-	// fastGreedy stays the path for those.
+	// has seen this one. With no processor, or a gated one while its gate is closed (outside MC3: a step the gate opens stops the
+	// chain and takes the full-logits path below, which the chain would otherwise skip), no adapter, and where the embedding
+	// lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this generation
+	// decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so fastGreedy
+	// stays the path for those.
 	chainRF, hasChain := m.resident.(ResidentGreedyChain)
-	useChain := useGPU && resCost == nil && hasChain && sp.LogitProcessor == nil && lora == nil &&
+	useChain := useGPU && resCost == nil && hasChain && (sp.LogitProcessor == nil || (gated && mc3 == nil)) && lora == nil &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) && m.knobs.get(knobNoGreedyFastpath) == "" &&
 		m.embedIsTableRow() && chainRF.GreedyChainAvailable()
 	if useChain && mc3 == nil {
@@ -1941,7 +1943,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			residentCall := func() error {
 				var ferr error
 				if needFull {
-					// The gated processor needs this position's full logits (it is about to mask them).
+					// The gated processor needs this position's full logits (it is about to mask them). A chain still open stops
+					// first: it has queued the forward for this position, which Forward then rewrites, and it reopens at the
+					// next closed step.
+					stopChain()
 					logits, ferr = m.resident.Forward(emb, pos)
 					viaForward = true
 				} else if useChain && chainTok {
