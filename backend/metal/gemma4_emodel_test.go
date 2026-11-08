@@ -154,6 +154,16 @@ func TestGemma4EModel_metalResidentParity(t *testing.T) {
 	}
 }
 
+// g4OneFFNWidth plants G2's defect (4): every layer's FFN at the model's width (256), its declared gate and up lowered with it, so the
+// build's row check passes and G1, which reads each layer's own FFN, grades the defect.
+func g4OneFFNWidth(on bool) {
+	g4OneFFNWidthForTest = on
+	decodeRowsPlantForTest = nil
+	if on {
+		decodeRowsPlantForTest = func(r map[string]int) { r["gate"], r["up"] = 256, 256 }
+	}
+}
+
 // TestGemma4EModel_plantedDefects is S1's G2 (docs/tasks/task-multimodal-support-2026-10.md): each planted defect,
 // alone, must turn G1 red. A defect that stays green means the fixture is degenerate along that axis.
 func TestGemma4EModel_plantedDefects(t *testing.T) {
@@ -164,7 +174,7 @@ func TestGemma4EModel_plantedDefects(t *testing.T) {
 		{"(1) PLE branch skipped", func(on bool) { g4SkipPLEForTest = on }},
 		{"(2) PLE token-identity term zeroed", decoder.SetGemma4PLEDropTokenForTest},
 		{"(3) shared-KV source one owning layer off", func(on bool) { g4KVSrcOffForTest = on }},
-		{"(4) one FFN width for the model", func(on bool) { g4OneFFNWidthForTest = on }},
+		{"(4) one FFN width for the model", g4OneFFNWidth},
 		{"(6) layer scalar dropped", func(on bool) { g4DropLayerScalarForTest = on }},
 		{"(7) v_norm dropped on non-K=V layers", func(on bool) { g4DropVNormForTest = on }},
 	}

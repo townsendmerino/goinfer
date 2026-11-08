@@ -1,0 +1,12 @@
+scripts/test_bench_peer_benchdisk.py on 91353a2e4 + this change, nobara, 2026-11-08 08:18:02 PST
+test_a_selected_archive_model_still_refuses (__main__.SelectedOnly.test_a_selected_archive_model_still_refuses) ... ok
+test_a_selected_moe_models_own_bundle_is_checked (__main__.SelectedOnly.test_a_selected_moe_models_own_bundle_is_checked) ... ok
+test_an_unselected_archive_model_does_not_block (__main__.SelectedOnly.test_an_unselected_archive_model_does_not_block) ... ok
+test_preflight_calls_it_with_the_selection (__main__.SelectedOnly.test_preflight_calls_it_with_the_selection) ... # preflight OK: gate load · loadavg (0.1, 0.1, 0.1) · gpu None · compute apps []
+ok
+test_the_vision_checkpoint_is_checked_when_phase_e_is_on (__main__.SelectedOnly.test_the_vision_checkpoint_is_checked_when_phase_e_is_on) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.003s
+
+OK

@@ -37,9 +37,9 @@ func TestAdmit_table(t *testing.T) {
 		f    AdmitFacts
 		want string
 	}{
-		{"no residency first", "llama4_text", AdmitFacts{Backend: "cpu", Quant: "q4k"}, "backend does not implement residency"},
-		{"q4k on webgpu before the shape", "llama4_text", AdmitFacts{Backend: "webgpu", Residency: true, Quant: "q4k"}, "--quant q4k (native Q4_K) has no resident kernel on webgpu"},
-		{"q4k on cuda passes", "llama", AdmitFacts{Backend: "cuda", Residency: true, Quant: "q4k", ProjsInt4: true}, ""},
+		{"no residency first", "llama4_text", AdmitFacts{Backend: "cpu", QuantLabel: "q4k"}, "backend does not implement residency"},
+		{"q4k on webgpu before the shape", "llama4_text", AdmitFacts{Backend: "webgpu", Residency: true, QuantLabel: "q4k"}, "--quant q4k (native Q4_K) has no resident kernel on webgpu"},
+		{"q4k on cuda passes", "llama", AdmitFacts{Backend: "cuda", Residency: true, QuantLabel: "q4k", ProjsInt4: true}, ""},
 		{"auto metal keeps f32 on the CPU", "llama4_text", AdmitFacts{Backend: "metal", Residency: true, BackendAuto: true, QuantLabel: "f32"}, "-backend auto keeps this f32 model on the CPU"},
 		{"auto metal int4 passes", "llama", AdmitFacts{Backend: "metal", Residency: true, BackendAuto: true, QuantLabel: "int4"}, ""},
 		{"nemotron MoE on cuda named", nemoMoE, AdmitFacts{Backend: "cuda", Residency: true, ProjsInt4: true}, "Nemotron-H MoE FFN block has no GPU resident implementation"},

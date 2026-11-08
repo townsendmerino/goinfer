@@ -4634,6 +4634,30 @@ fence. Since G-MS2 sums the list on both sides, a wrong entry in any of them pas
 each is red on its row alone. No registered row builds the q4k lane or PLE, so neither has a row. G-MS2 now reads the scratch line after
 `metalGatePlantForTest`, so a buffer leased beside the list is red in it (`TestMemGate_metalPlantsThroughTheTable`).
 
+**MM5b's declaration (2026-11-08), the second PR.**
+- `program.Buffers` declares each operation's per-row activations (`PerRow`), and `program.HeadBuffers` the rows no layer owns.
+  An MoE form's router rows are named by the form, and its routed and shared experts' gate and up are declared apart.
+- `decoder/metal_scratch.go:Model.MetalDecodeScratchBytes` is Metal's rule on them: each name at its widest layer, with Metal's own terms
+  read by the row's name (`metalRowTerms`).
+- Metal's build holds the declared widths to its kernels' and refuses a difference
+  (`backend/metal/decode_scratch.go:resident.decodeRowsCheck`), as `kvCheckRows` does for KV.
+- G-MS4 passes. The family-keyed price it replaced is kept as an oracle and equals it on 368 prices over layer D's Metal rows
+  (`decoder/metal_scratch_oracle_test.go:TestMetalDecodeScratch_fromTheDeclarations`).
+- Found on the way: Metal held gated attention's two rows on Olmo Hybrid, whose attention is plain, and never dispatched them. The
+  build now holds them only where a layer runs gated attention.
+- G-MS1: MM1's census moved only Olmo Hybrid's 68 Metal sections, each need and boundary down by those 768 B, with no decision
+  changed. G-MS5: 29 IDENTICAL.
+- Amended during the build:
+  - G-MS4 reads a K=V layer from the weights (`VFromKResident`), a shape they fix, so it no longer bans the name.
+  - KDA and short conv declare no per-row rows, since no Metal build runs them.
+- From #772's review:
+  - The build's check holds each FFN row and each of k and v on its own, at the widest layer that runs it, not through one maximum
+    over them all. It compares row widths, not each layer's dispatch: a per-layer FFN error is G1's to catch (G2's defect (4) in
+    the Gemma 4 E-model test, which lowers the declaration with the width so that it reaches G1).
+  - G-MS4 also scans Metal's term table.
+  - An expert cache's slot count is solved before its paged slot indices are taken. MM1's census moved in 596 Metal sections: the
+    boundary where a cache holds every expert dropped by 4·k, to that plan's own need.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

@@ -387,6 +387,19 @@ def check_bench_disk(paths):
                  "Copy to the local bench set first (`models-pull <name>`) and re-run. "
                  "See docs/benchmarks.md, 'Model storage'.")
 
+def selected_bench_paths():
+    """The checkpoint paths this run loads: each selected model's GGUF and, where goinfer runs its own bundle, that bundle; plus the vision
+    checkpoint when phase E is on. check_bench_disk takes these and no others, so a table entry this run does not select cannot refuse it,
+    and every one it does select still must be off the archive."""
+    paths = []
+    for mk in plan_models():
+        paths.append(MODELS[mk][0])
+        if mk in GOINFER_MOE_PATH:
+            paths.append(GOINFER_MOE_PATH[mk])
+    if plan_vision():
+        paths.append(VISION_MODEL_PATH)
+    return paths
+
 def _sh(cmd, default=""):
     try:
         return subprocess.run(cmd, capture_output=True, text=True, timeout=15).stdout.strip() or default
@@ -903,7 +916,7 @@ def preflight():
         sys.exit(f"REFUSED: 1-min load average {la[0]:.2f} exceeds {cap:.2f}. The box is not idle, "
                  f"and a number measured on a busy box is not distinguishable afterwards from a "
                  f"number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.")
-    check_bench_disk([p for p, _ in MODELS.values()] + list(GOINFER_MOE_PATH.values()))
+    check_bench_disk(selected_bench_paths())
     apps = _gpu_compute_apps()
     if len(apps) > 1:
         sys.exit("REFUSED: %d compute processes already hold the GPU (1 = the compositor, expected):\n  %s"

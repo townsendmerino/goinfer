@@ -1225,11 +1225,19 @@ func TestMM5_buildRefusesADeclarationItsKernelsDoNotAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	orig := slices.Clone(m.LayerBuffers(0))
-	if len(orig) != 2 || orig[0].Name != "k" || orig[1].Name != "v" {
-		t.Fatalf("layer 0 declares %+v; the test needs its K and V", orig)
+	all := slices.Clone(m.LayerBuffers(0))
+	var orig, rest []program.Buf // the per-position rows the plants edit, and the rest of the declaration, kept as it is
+	for _, b := range all {
+		if b.Unit == program.PerPosition {
+			orig = append(orig, b)
+		} else {
+			rest = append(rest, b)
+		}
 	}
-	edit := func(f func([]program.Buf) []program.Buf) []program.Buf { return f(slices.Clone(orig)) }
+	if len(orig) != 2 || orig[0].Name != "k" || orig[1].Name != "v" {
+		t.Fatalf("layer 0 declares %+v per position; the test needs its K and V", orig)
+	}
+	edit := func(f func([]program.Buf) []program.Buf) []program.Buf { return append(f(slices.Clone(orig)), rest...) }
 	for _, c := range []struct {
 		name string
 		bufs []program.Buf
@@ -1247,7 +1255,7 @@ func TestMM5_buildRefusesADeclarationItsKernelsDoNotAddress(t *testing.T) {
 			t.Errorf("%s: the build accepted it", c.name)
 		}
 	}
-	m.SetLayerBuffersForTest(0, orig)
+	m.SetLayerBuffersForTest(0, all)
 	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("the declaration as built: %v", err)
@@ -1268,6 +1276,65 @@ func TestMM5_buildRefusesADeclarationItsKernelsDoNotAddress(t *testing.T) {
 	if r, err := buildResident(q); err == nil {
 		r.Close()
 		t.Error("a DeltaNet layer declaring K and V rows: the build accepted it")
+	}
+}
+
+// TestMM5b_buildRefusesDecodeRowsItsKernelsDoNotAddress: Metal's build holds the program's declared per-row widths to what its decode
+// kernels address (decodeRowsCheck), so a declaration one element short, a row decode holds no buffer for, a missing row, a mixer's
+// rows on a model that runs no such mixer, a gate wider than the FFN kernels, and a parallel block's row where none runs or missing
+// where one does are each refused, on a dense model, a parallel-block one and Qwen3.5's DeltaNet and gated attention; the
+// declaration as built passes.
+func TestMM5b_buildRefusesDecodeRowsItsKernelsDoNotAddress(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	defer func() { decodeRowsPlantForTest = nil }()
+	for _, c := range []struct {
+		fx     string
+		plants map[string]func(map[string]int)
+	}{
+		{"../../testdata/llama-tiny", map[string]func(map[string]int){
+			"ctx a column short":                       func(r map[string]int) { r["ctx"]-- },
+			"a row decode holds no buffer for":         func(r map[string]int) { r["kda-q"] = 8 },
+			"no logits row":                            func(r map[string]int) { delete(r, "logits") },
+			"a DeltaNet row on a model with none":      func(r map[string]int) { r["dn-mixed"] = 8 },
+			"a gate wider than the FFN kernels":        func(r map[string]int) { r["gate"] += 8 },
+			"no gate row":                              func(r map[string]int) { delete(r, "gate") },
+			"gate a column short":                      func(r map[string]int) { r["gate"]-- },
+			"v a column short":                         func(r map[string]int) { r["v"]-- },
+			"no k or v rows":                           func(r map[string]int) { delete(r, "k"); delete(r, "v") },
+			"a shared expert on a dense model":         func(r map[string]int) { r["shared-gate"], r["shared-up"] = 8, 8 },
+			"a parallel block's row on a serial model": func(r map[string]int) { r["b"] = r["h"] },
+		}},
+		{"../../testdata/cohere-tiny", map[string]func(map[string]int){
+			"no parallel block's row": func(r map[string]int) { delete(r, "b") },
+		}},
+		{"../../decoder/selftestdata/qwen35-tiny", map[string]func(map[string]int){
+			"the gated row one short": func(r map[string]int) { r["dn-gated"]-- },
+			"no [query ‖ gate] row":   func(r map[string]int) { delete(r, "q-gate") },
+		}},
+	} {
+		m, err := decoder.Load(c.fx, decoder.Options{Quant: "int4", ResidentContext: 256})
+		if err != nil {
+			t.Fatal(err)
+		}
+		decodeRowsPlantForTest = nil
+		if r, err := buildResident(m); err != nil {
+			t.Errorf("%s as declared: %v", c.fx, err)
+		} else {
+			r.Close()
+		}
+		for name, plant := range c.plants {
+			decodeRowsPlantForTest = plant
+			if r, err := buildResident(m); err == nil {
+				r.Close()
+				t.Errorf("%s, %s: the build accepted it", c.fx, name)
+			} else if !strings.Contains(err.Error(), "row") {
+				t.Errorf("%s, %s: refused for another reason: %v", c.fx, name, err)
+			}
+		}
+		decodeRowsPlantForTest = nil
+		m.Close()
 	}
 }
 
