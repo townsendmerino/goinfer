@@ -328,3 +328,18 @@ only vectors between.
   - **fails:** it does not ship, and the miss is read from the ledgers;
   - **ambiguous or void:** parked, and the reading goes to Francis.
 - **Stopping:** one pass, no substitution after any load is read. A card step that exits 75 (VOID) is re-run once the card is clear.
+
+## Held-out set 6, read (2026-11-08 15:00–15:08 PDT, nobara-sb01): holds, so the planner change ships
+
+| load | rise MiB | list − ledger | M1′ − rise | plan − rise |
+|---|---|---|---|---|
+| mellum-4b @4096 | 5490 | +2.7 | −2.0 | −1.3 |
+| nemotronh-4b @8192 | 3796 | +0.8 | −4.0 | −1.8 |
+| qwen3-4b-2507 @8192 | 5316 | +1.3 | −1.1 | −0.3 |
+| qwen35-4b @8192 | 3504 | −1.1 | −1.8 | −1.1 |
+
+- **Set 6 HOLDS** (`heldout6-score.txt`): four scored loads, two of them hybrids; worst list against ledger 2.7 MiB (bar 32), M1′
+  4.0 and the plan 1.8 MiB (bar 64).
+- **The fourteen re-run holds** (`vr6.txt`): G-VR1 (worst 5.3 and 7.0 MiB), G-VP2 (worst 6.0 MiB), G-VR3 matches on both loads.
+- **By the registered rule the planner change ships:** the host-side tables, M1′ in webgpu's `deviceLoad` on a Vulkan build, and
+  the buffer list in the build's order.
