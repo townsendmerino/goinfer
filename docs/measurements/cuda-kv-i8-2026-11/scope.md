@@ -262,7 +262,9 @@ and the f32 arms of the extended KV4 test (a new check, below) passed.
 | `TestKV8_deliveredBytes` (two slots added) | two int8 slots allocate exactly `ResidentKVBytes` + one `CUDAKVSlotBytes` at the guaranteed share, less the tables | PASS on all four |
 
 Plant (`s3a-plant-cow-noscales.log`): copy on write without the scales: the KV4 replay check reads red at the first logit; restored.
-The rest of the int8 suite on the S3a tree (`s3a-green.log`): unchanged from S2, G2 still FAIL as registered (identical numbers).
+`s3a-green.log` (filter `TestKV2_copyExact_tiny|TestKV4_sharedPreambleStoredOnce|TestCUDAStepBatch_matchesForward|TestKV8_`): the three
+tests above PASS; the cross-backend G2 FAIL as registered; and `TestKV8_deliveredBytes` FAIL, because it still asserted S2's one-slot
+lowering. That was fixed by a two-slot check, PASS in `s3a-g3.log` (filter `TestKV8_deliveredBytes`).
 
 ## S3b, 2026-11-07: host snapshots (KV7) and demotion carry the scales
 
@@ -283,13 +285,21 @@ Red first (`s3b-red.log`, the new int8 arms against S3a's code): `TestKV7_restor
 Plant (`s3b-plant-snapshot-noscales.log`): a snapshot that does not download the scales: every layer's restored rows differ and the first
 logit after it; restored.
 
-**Correction (2026-11-07, 18:10):** an earlier version of this paragraph said the S3a suite (`s3a-kv-suite.log`) read "133 tests PASS, G2
-FAIL as registered". That was wrong: I read only the first 20 FAIL/SKIP lines of the log, and it also holds a red
-`TestResidentKVBytes_matchesCUDAAllocation` (llama-tiny and the 0.5B). The test still expected int8 asked of a two-slot load to price f32,
-which was S2's one-slot refusal; S3a delivers it, so it now accepts the int8 pools' price where the policy delivers int8 (the exact figure
-against an int8 build is `TestKV8_deliveredBytes`'s). Re-run with every FAIL line listed (`s3-review-kv-suite.log`): 135 tests PASS, no FAIL.
+**What the S3 suite runs read** (every claim names its filter; each read lists every FAIL line of its log):
 
-**S3 on #755's final head** (merged 02770f4e): the int8 suite and the S3 tests (`s3-merged-suite.log`) all PASS, the cross-backend G2 and the
-diagnostics skip as above; identity on CUDA against 7c4ed713 (`s3-identity-cuda.log`): 24 families IDENTICAL, 0 different, 19 not run
-(no tiny asset on this box); staticcheck clean on the cuda module and the decoder. Still not int8 after S3: sliding-window layers and the
-windowed ring (S3c; those families are refused by name), and the families outside the dense five (S5).
+| log | filter | reading |
+|---|---|---|
+| `s3a-kv-suite.log` (S3a tree) | `^Test(KV\|CUDAStepBatch\|ResidentKVBytes\|KSH6C\|PlanMemory\|DeriveMemory\|SlotsDecision\|PTX\|Pipeline)`, `-short` | **two tests FAIL:** the cross-backend G2 (as registered), and `TestResidentKVBytes_matchesCUDAAllocation` (llama-tiny 1,331,712 B priced against 4,260,352 B expected; the 0.5B 107,374,592 B against 404,228,096 B), which still expected int8 asked of a two-slot load to price f32 under S2's one-slot refusal. An earlier version of this record and of #759's description called this run green apart from G2: I had read only the first 20 FAIL/SKIP lines. |
+| `s3-merged-suite.log` (S3 on #755 at 02770f4e) | `^TestKV8_\|TestKV2_copyExact_tiny\|TestKV4_sharedPreambleStoredOnce\|TestCUDAStepBatch_matchesForward\|TestKV7_restoreFull\|TestKV7_demoteAndPromote\|TestPTX_\|TestPipelineLint\|TestPTXModules` | every test in the filter PASS. **The filter left out `TestResidentKVBytes_matchesCUDAAllocation`,** which was still red then; this run says nothing about it. |
+| `s3-review-merged-suite.log` (S3 on #755 at ee8027e2) | the same, plus `TestResidentKVBytes_matchesCUDAAllocation\|TestKVPool_detailNamesThePool` | `TestResidentKVBytes_matchesCUDAAllocation` FAIL (as above); the rest PASS |
+| `s3-review-kv-suite.log` (after the fix) | as `s3a-kv-suite.log` | 135 tests PASS, no FAIL line |
+| `s3-r2-kv-suite.log` (S3 on #755 at 7e454481, with the kvsnap guard) | as `s3a-kv-suite.log` | 135 tests PASS, no FAIL line (the cross-backend G2 and the diagnostics skip) |
+
+Identity on CUDA against 7c4ed713 at 02770f4e (`s3-identity-cuda.log`): 24 families IDENTICAL, 0 different, 19 not run (no tiny asset
+on this box). Still not int8 after S3: sliding-window layers and the windowed ring (S3c; those families are refused by name), and the
+families outside the dense five (S5).
+
+**kvsnap's V scales** (Gemini's review of #759, item 2): the layout reserved, and snapshot and restore copied, a V scale block on every
+int8 layer whether or not it holds V. They now go only beside a V. No int8 layer lacks V today (an MLA latent is the only V-less layer,
+and MLA is refused at int8), so this is a guard; no test can reach the V-less case.
+

@@ -152,8 +152,11 @@ func (r *cudaResident) snapshotLayout(end, lo int) ([]snapLayer, int) {
 		if Ly.kvI8 {
 			sl.scaleWords = Ly.nKV
 			sl.ksOff = words
-			sl.vsOff = words + rows*sl.scaleWords
-			words += 2 * rows * sl.scaleWords
+			words += rows * sl.scaleWords
+			if sl.hasV { // V's scales only beside a V
+				sl.vsOff = words
+				words += rows * sl.scaleWords
+			}
 		}
 		out[l] = sl
 	}
@@ -249,8 +252,10 @@ func (r *cudaResident) snapshotKV(slot, end int) (*cudaKVSnapshot, error) {
 				if err := gpu.Download(r.ksc[l].At(row*sl.scaleWords*4), buf[sl.ksOff+hs:sl.ksOff+hs+sw]); err != nil {
 					return err
 				}
-				if err := gpu.Download(r.vsc[l].At(row*sl.scaleWords*4), buf[sl.vsOff+hs:sl.vsOff+hs+sw]); err != nil {
-					return err
+				if sl.hasV {
+					if err := gpu.Download(r.vsc[l].At(row*sl.scaleWords*4), buf[sl.vsOff+hs:sl.vsOff+hs+sw]); err != nil {
+						return err
+					}
 				}
 			}
 			if !sl.hasV {
@@ -366,8 +371,10 @@ func (r *cudaResident) restoreKVRows(s *cudaKVSnapshot, slot, from, end int) (ma
 				if err := gpu.Upload(r.ksc[l].At(row*sl.scaleWords*4), buf[sl.ksOff+hs:sl.ksOff+hs+sw]); err != nil {
 					return err
 				}
-				if err := gpu.Upload(r.vsc[l].At(row*sl.scaleWords*4), buf[sl.vsOff+hs:sl.vsOff+hs+sw]); err != nil {
-					return err
+				if sl.hasV {
+					if err := gpu.Upload(r.vsc[l].At(row*sl.scaleWords*4), buf[sl.vsOff+hs:sl.vsOff+hs+sw]); err != nil {
+						return err
+					}
 				}
 			}
 			if !sl.hasV {
