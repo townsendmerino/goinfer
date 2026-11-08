@@ -21,10 +21,28 @@ import (
 func TestMM5_noFamilySwitchInPricing(t *testing.T) {
 	banned := []string{"ResidentLayerOps", "Mixer", "KVSrcAtResident", "MLAResidentParams", "HeadDimAtResident", "KVHeadsAtResident",
 		".qwen35", ".lfm2", ".kda", ".granite", ".nemotron", ".gemma4", ".mla", "isLinearLayer", "isConvLayer", "isMambaLayer"}
-	for file, funcs := range map[string][]string{
+	scanPricingBodies(t, map[string][]string{
 		"residentneed.go": {"metalKVParts", "MetalKVRowBytes"},
 		"statebytes.go":   {"stateSpecs", "stateBuffers", "recurrentCheckpointBuffers"},
-	} {
+	}, banned, "KV and state pricing reads the operations' declarations (LayerBuffers), not the family")
+}
+
+// TestMM5b_decodeScratchNamesNoFamily is G-MS4 (docs/tasks/task-forward-architecture-2026-10.md §4.9c): Metal's decode scratch is
+// priced from the operations' per-row declarations and the head's (program.Buffers, program.HeadBuffers), so its pricing function
+// names no mixer, operation kind of one, FFN form, family or family parameter. Metal's own terms are read by an entry's name.
+func TestMM5b_decodeScratchNamesNoFamily(t *testing.T) {
+	banned := []string{"ResidentLayerOps", "Mixer", "KVSrcAtResident", "HeadDimAtResident", "KVHeadsAtResident", "VFromK",
+		"Qwen35", "Nemotron", "MLA", "Gemma4", "GptOss", "DeltaNet", "Mamba", "KDA", "ShortConv", "PLE", "MoEResident", "QKNormWhole",
+		"NonGatedMLP", "OpAttention", "OpGatedAttn", "Ffn", ".qwen35", ".lfm2", ".kda", ".granite", ".nemotron", ".gemma4", ".mla"}
+	scanPricingBodies(t, map[string][]string{"metal_scratch.go": {"MetalDecodeScratchBytes"}}, banned,
+		"decode's scratch is priced from the operations' per-row declarations and the head's, not the family")
+}
+
+// scanPricingBodies reports every function in funcs (file to names) whose body names one of banned, and every name it finds no
+// function for.
+func scanPricingBodies(t *testing.T, funcs map[string][]string, banned []string, why string) {
+	t.Helper()
+	for file, names := range funcs {
 		src, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
@@ -40,7 +58,7 @@ func TestMM5_noFamilySwitchInPricing(t *testing.T) {
 			if !ok || fn.Body == nil {
 				continue
 			}
-			for _, name := range funcs {
+			for _, name := range names {
 				if fn.Name.Name != name {
 					continue
 				}
@@ -48,12 +66,12 @@ func TestMM5_noFamilySwitchInPricing(t *testing.T) {
 				body := string(src[fs.Position(fn.Body.Pos()).Offset:fs.Position(fn.Body.End()).Offset])
 				for _, b := range banned {
 					if strings.Contains(body, b) {
-						t.Errorf("%s: %s names %q: KV and state pricing reads the operations' declarations (LayerBuffers), not the family", file, name, b)
+						t.Errorf("%s: %s names %q: %s", file, name, b, why)
 					}
 				}
 			}
 		}
-		for _, name := range funcs {
+		for _, name := range names {
 			if !found[name] {
 				t.Errorf("%s: no func %s to scan; the scan reads nothing for it", file, name)
 			}
