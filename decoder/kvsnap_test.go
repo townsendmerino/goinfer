@@ -54,7 +54,10 @@ func (s *snapFakeSnap) Release() {
 	}
 }
 
+var _ ResidentKVSnapshotter = (*snapFake)(nil)
+
 func (f *snapFake) KVSnapshotBytes(end int) int64 { return int64(end) * 1024 }
+func (f *snapFake) KVSnapshotRecurrent() bool     { return false }
 func (f *snapFake) KVSnapshotRollback() int       { return f.serveFloor }
 
 func (f *snapFake) SnapshotKV(slot, end int) (ResidentKVSnapshot, error) {

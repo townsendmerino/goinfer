@@ -229,3 +229,25 @@ start). Records: `~/goinfer-bench/peer-vetted/results-mac-m1-fix/` (`grade.jsonl
 - **A VOID attempt first:** job `peer-vetted-m1-phi3-q4k-fixed-2` ran 22:43:18–22:45:38 while this Mac's own session ran `go test`
   beside it (about 22:43–22:44), so it is void and not graded (it read 22.4 against 41.4, 0.54). Its files are kept in
   `results-mac-m1-fix-VOID-2026-10-20-2243/` with a `VOID.txt`.
+
+### M1 on main after #722: registered 2026-11-07, before it runs
+
+OP6's Metal switch, which would make `--quant q4k` Metal's default load for Phi-3/4, waits on this cell. Since the 2026-10-20 reading,
+#722 fixed the q4k lane's step kernels, and main has moved by three weeks of Metal work. It is the same cell, rules and grader as
+"M1 on the fixed build", with these differences, all in `peer-vetted-2026-10-07/run-mac-m1-2026-11-07.sh`:
+- the serve binary and the harness come from an archive of main at `1ecbb5d6`, built by day (serve sha256 `62af620ac4e36d6e`), so
+  the night job builds nothing and runs no git command;
+- the records go to `results-mac-m1-2026-11-07`;
+- the fit check's server runs without `GODEBUG`, since the footprint question the last run asked is closed, and its peak
+  footprint is still read once it serves;
+- a refused fit check or a battery start exits 75, so the night queue retries it until 05:30;
+- amended before it runs, on review: any swap growth across the fit check (the void's 0 MB bar; the kill's is 1,024 MB) also
+  exits 75 before the cell starts, rather than starting a cell the void would void. A fit-check server that ignores SIGTERM for 30 s
+  is killed. The serve's sha256 must equal the registered one. `grade.py` runs only when `bench_peer.py` exits 0. Its stdout is
+  kept whole in `grade.txt`, its JSON lines alone in `grade.jsonl`, and its stderr in `grade.stderr`. A grading failure fails
+  the job.
+
+- **Read at night:** goinfer's tok/s ×3 and Ollama's ×3, graded by `grade.py` (AHEAD, PARITY or BEHIND), with the swap void and
+  the decode-path gate as before.
+- **What it decides:** nothing on its own. The cell is the published number the switch waits on. Changing a default is
+  Francis's call, so the reading goes to him beside the 2026-10-20 one (0.539, BEHIND).
