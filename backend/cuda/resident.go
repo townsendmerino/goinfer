@@ -192,6 +192,12 @@ func ctxPlanRange(m *decoder.Model, request, modelCtx int) (candidate, floor int
 // planFreeSeenForTest, when set (tests only), is told the free VRAM resolveCtxCapFitSlack hands Plan.
 var planFreeSeenForTest func(free int64)
 
+// cudaExtraSlotKVBytes is the KV one more resident slot of m costs at ctx positions, at the precision the build allocates: what ResolveKV
+// delivers on CUDA (the backend's kvI8 reads the same), not the --kv request, which a policy may hold at f32 (a drafter).
+func cudaExtraSlotKVBytes(m *decoder.Model, ctx int) int64 {
+	return m.CUDAKVSlotBytes(ctx, m.KVCacheF16(), m.KVDeliveredFor("cuda") == mem.KVI8)
+}
+
 // ctxForSlots is resolveCtxCapFit's answer when MC1's resident KV slots are requested
 // (docs/tasks/task-concurrency-2026-09.md MC1 on CUDA): the largest context in [floor, oneSlot] at which Plan fits
 // every requested slot (the build's own KV plus slots-1 more copies, priced as ExtraBytes), so an unpinned load
@@ -207,7 +213,7 @@ var planFreeSeenForTest func(free int64)
 func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slots, floor int) int {
 	stateBytes := m.Plan("cuda", 1<<40, fit.PlanRequest{Ctx: 1}).StateBytes // the plan's own line is one slot's
 	fits := func(ctx int) bool {
-		more := int64(slots-1) * (m.CUDAKVSlotBytes(ctx, m.KVCacheF16()) + stateBytes) // each further slot, at the load's own KV precision (decoder/kv16_cuda.go), with its recurrent state
+		more := int64(slots-1) * (cudaExtraSlotKVBytes(m, ctx) + stateBytes) // each further slot, at the load's own KV precision, with its recurrent state
 		p := m.Plan("cuda", marginedFree, fit.PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extraBytes + more})
 		return p.Placement != fit.PlacementDecline
 	}
@@ -234,7 +240,7 @@ func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slot
 }
 
 // kvBytesForCap is the device bytes one resident KV slot takes at a given capacity (kvpool.go): the blocks its tables can map, every
-// layer holding K and V as f32 (f16 for a kvHalf layer) and an MLA layer one latent row, plus the slot's tables. The pools' null blocks are
+// layer holding K and V at its row size (kvRowBytes) and an MLA layer one latent row, plus the slot's tables. The pools' null blocks are
 // once per build, not per slot (kvPoolNullBytes). docs/benchmarks.md derives its deep-context sizing from this formula.
 func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 	blocks := int64(kvBlocksFor(cap))
@@ -243,18 +249,15 @@ func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 		if layers[i].kvShared {
 			continue // aliases its source's cache: no bytes of its own
 		}
-		elem := int64(4) // f32; an f16 layer (kvHalf) holds half
-		if layers[i].kvHalf {
-			elem = 2
-		}
+		row := kvRowBytes(&layers[i])
 		if layers[i].isMLA() {
-			perBlock += kvBlock * int64(layers[i].kvDim) * elem // MLA caches 1 latent row per pos (not 2x for K+V)
+			perBlock += kvBlock * row // MLA caches 1 latent row per pos (not 2x for K+V)
 		} else if layers[i].kvWin {
 			// a windowed layer maps window+slack positions however long the context (kvWindowBlocks)
 			held := int64(kvWindowBlocks(cap, int(layers[i].window)+kvWindowSlack))
-			windowed += 2 * int64(layers[i].kvDim) * elem * kvBlock * held
+			windowed += 2 * row * kvBlock * held
 		} else {
-			perBlock += 2 * kvBlock * int64(layers[i].kvDim) * elem // K+V
+			perBlock += 2 * kvBlock * row // K+V
 		}
 	}
 	return perBlock*blocks + windowed + kvGroups*4*blocks
@@ -374,6 +377,7 @@ type cudaLayer struct {
 	window              int32  // sliding-window span for THIS layer; 0 = full causal
 	kvWin               bool   // this layer's K/V hold window+slack positions, not the context (kvwindow.go)
 	kvHalf              bool   // this layer's K/V cache holds f16 (the _kv16 kernel twins, docs/tasks/task-cuda-f16-kv-2026-10.md); an MLA latent never does
+	kvI8                bool   // this layer's K/V cache holds int8 with one f32 scale per (position, KV head) in ksc/vsc (the _kv8 twins and kv8_store)
 	// Per-layer attention geometry. Uniform families set the model values on every layer; Gemma 4 varies them (local
 	// head_dim 16 / global 512, K=V). launchToken reads ONLY these: the model-level hd/nKV/qDim/kvDim/rhalf are
 	// deliberately absent from cudaResident so a launch site cannot bind the wrong (uniform) source.
@@ -736,6 +740,7 @@ type cudaResident struct {
 	skVsumSplit                                  int      // GOINFER_SPLITKV_VSUM_SPLIT; 0 = off (the shipped path)
 	// Flash-decode lane (decode_fa.cu): default on (GOINFER_CUDA_FLASH_DECODE=0 turns it off), NOT bit-identical.
 	faPartial     [3]Pipeline // fa_partial_{64,128,256}
+	kv8Store      Pipeline    // kv8_store: the int8 cache's quantizing store (kv8.go); bound only on an int8 cache
 	faCombine     Pipeline
 	faSplit       int            // S key splits per kv head; 0 = lane off (the exact path)
 	faMinKeys     int            // attended-span floor below which the exact path runs (GOINFER_CUDA_FLASH_DECODE_MIN_KEYS)
@@ -901,6 +906,7 @@ type cudaResident struct {
 	topkCV, topkCI, topkCnt, topkMx, topkPart, topkDone Buffer
 	gbKey, gbIdx, gbOut                                 Buffer   // gumbel_stage1 per-block winners, and the drawn id
 	kc, vc                                              []Buffer // each layer's K/V pool (kvpool.go); a KV-shared layer holds its source's
+	ksc, vsc                                            []Buffer // an int8 layer's K and V scale pools, one f32 per (pool row, KV head), laid out like kc/vc; empty otherwise
 
 	// MC1's resident KV slots (docs/tasks/task-concurrency-2026-09.md) over the paged pools (kvpool.go). kvSlotsReq is the model's
 	// request (decoder.Model.ResidentKVSlotsRequest; 1 for a recurrent family and under expert streaming), kvTabs each slot's block
@@ -908,6 +914,7 @@ type cudaResident struct {
 	// one, or an MC3 row's while its attention runs.
 	kvSlotsReq      int
 	kvF16           bool          // the K/V caches hold f16 (decoder.Model.KVCacheF16: a cleared family under -kv auto, or -kv f16); the attention and store pipelines are the _kv16 twins
+	kvI8            bool          // the K/V caches hold int8 with per-(position, head) scales (decoder.Model.KVDeliveredFor("cuda") == "i8"): the _kv8 twins, and kv8_store after every rope/store launch
 	ctxPlanned      int           // ctxCap as the plan chose it, before checkKVFits can trim it against the real free VRAM
 	deepPlan        *cudaDeepPlan // the DeepStack sets of the PrefillMRoPEDeepstackLast call in progress (prefill.go); nil otherwise
 	allocSlackBytes int64         // the driver's allocation rounding over the packed weights, priced into the plan (packedAllocSlack)
@@ -1043,13 +1050,25 @@ func (r *cudaResident) upOn(line string, v []float32) Buffer {
 	return r.up32(v)
 }
 
-// akv allocates n elements of layer l's K or V cache: f16 for a kvHalf layer, f32 otherwise. Buffer.Len is in elements either way.
+// akv allocates n elements of layer l's K or V cache: f16 for a kvHalf layer, int8 for a kvI8 one, f32 otherwise. Buffer.Len is in elements
+// either way.
 func (r *cudaResident) akv(l, n int) Buffer {
+	if r.layers[l].kvI8 {
+		allocSeen(n)
+		kvAllocSeen(r, n)
+		return gpu.NewBufferLenOfOn[int8](r.dev, r.line, n)
+	}
 	if r.layers[l].kvHalf {
 		allocSeen(n * 2)
 		kvAllocSeen(r, n*2)
 		return gpu.NewBufferLenOfOn[uint16](r.dev, r.line, n)
 	}
+	kvAllocSeen(r, n*4)
+	return r.af(n)
+}
+
+// akvScales allocates an int8 layer's K or V scale pool: n f32 scales, one per (pool row, KV head).
+func (r *cudaResident) akvScales(n int) Buffer {
 	kvAllocSeen(r, n*4)
 	return r.af(n)
 }
@@ -2495,6 +2514,16 @@ func (r *cudaResident) checkCap(pos, n int) error {
 // up front rather than discover the limit mid-generation).
 func (r *cudaResident) ContextCap() int { return r.ctxCap }
 
+// ResidentCaps is decoder.ResidentCapsReporter's. The batched prefill always reports a fast-kernel floor, 0 when the fast kernels are off.
+func (r *cudaResident) ResidentCaps() decoder.ResidentCaps {
+	return decoder.ResidentCaps{
+		ContextCap:       r.ContextCap(),
+		HasFastPrefill:   true,
+		FastPrefillFloor: r.FastPrefillFloor(),
+		TailMinRows:      r.PrefillTailMinRows(),
+	}
+}
+
 // Forward runs one token at absolute position pos and returns logits[vocab].
 func (r *cudaResident) Forward(embedding []float32, pos int) ([]float32, error) {
 	if e := r.checkCap(pos, 1); e != nil {
@@ -2622,6 +2651,9 @@ func (r *cudaResident) VerifyPath() (bool, string) {
 // bridge, rows in the layout the kernels read: [pos*kvDim + head*hd + d], each position's row placed through the slot's table). base
 // is normally 0; a wrapped CPU-side sliding-window ring's live K/V can start later (KVCache.LayerKV's base return).
 func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
+	if r.kvI8 {
+		return fmt.Errorf("cuda: UploadKV into an int8 KV cache: the host rows would need quantizing with their scales, which no path does yet")
+	}
 	if r.layers[layer].kvShared {
 		// Its r.kc/r.vc ARE its source's buffers: an upload here would overwrite the source layer's cache with another layer's rows.
 		return fmt.Errorf("cuda: UploadKV to layer %d, which shares layer %d's KV cache (Gemma 4 E-model): upload the owning layer", layer, r.layers[layer].kvSrc)
@@ -3092,8 +3124,8 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 	// for the staged q: splitkv_scores stages the block-invariant q vector once instead of every thread re-loading it
 	// from global (docs/measurements/splitkv-stall-profile-2026-09-13.md).
 	if e := r.launch(r.skScores, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((nWin + 127) / 128), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(Ly.hd * 4)},
-		r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-			gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), Arg(r.skScoreBuf), gpu.ArgValue(int32(nWin)))...); e != nil {
+		r.kvScaled(l, r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+			gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), Arg(r.skScoreBuf), gpu.ArgValue(int32(nWin)))...)...); e != nil {
 		return e
 	}
 	// 2. softmax in place (block 128 — MUST match attn_batched for byte-identical max/denominator).
@@ -3110,9 +3142,9 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 		nSplit := r.skVsumSplit
 		dy := uint32((Ly.hd + dTile - 1) / dTile)
 		if e := r.launch(r.skVsumPartial, LaunchConfig{GridX: uint32(r.nH), GridY: dy, GridZ: uint32(nSplit), BlockX: dTile, BlockY: 1, BlockZ: 1},
-			Arg(r.skScoreBuf), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-			gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(int32(nWin)),
-			gpu.ArgValue(int32(nSplit)), Arg(r.skPartialBuf)); e != nil {
+			r.kvScaled(l, Arg(r.skScoreBuf), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+				gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(int32(nWin)),
+				gpu.ArgValue(int32(nSplit)), Arg(r.skPartialBuf))...); e != nil {
 			return e
 		}
 		return r.launch(r.skVsumCombine, LaunchConfig{GridX: uint32(r.nH), GridY: dy, GridZ: 1, BlockX: dTile, BlockY: 1, BlockZ: 1},
@@ -3120,8 +3152,8 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 			gpu.ArgValue(int32(nSplit)), Arg(r.cctx))
 	}
 	return r.launch(r.skVsum, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((Ly.hd + dTile - 1) / dTile), GridZ: 1, BlockX: dTile, BlockY: 1, BlockZ: 1},
-		Arg(r.skScoreBuf), Arg(r.kvV(l)), Arg(r.kvT(l)), Arg(r.skInvBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-		gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(int32(nWin)), Arg(r.cctx))
+		r.kvScaled(l, Arg(r.skScoreBuf), Arg(r.kvV(l)), Arg(r.kvT(l)), Arg(r.skInvBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+			gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(int32(nWin)), Arg(r.cctx))...)
 }
 
 // normF32 is Gemma's sandwich post-norm: a plain in-place RMSNorm of a SUBLAYER OUTPUT
@@ -4219,6 +4251,9 @@ func (r *cudaResident) decodeAttnGap(Ly *cudaLayer, l, pos, ropePos int, qTempSc
 		gpu.ArgValue(Ly.mscale), gpu.ArgValue(qTempScale)); err != nil {
 		return err
 	}
+	if err := r.kvStore8(l, r.kB, r.vB, ropeNKV, Ly.hd, pos, 1); err != nil {
+		return err
+	}
 	nKeys := pos + 1
 	// Sliding window (per layer: Mistral all-local, Mellum interleaves); shared sized to the attended span.
 	nWin := nKeys
@@ -4261,12 +4296,12 @@ func (r *cudaResident) decodeAttnGap(Ly *cudaLayer, l, pos, ropePos int, qTempSc
 		// the glue launch, so decode stays byte-identical. The glue `attention` (audited) is UNTOUCHED and is the fallback
 		// below.
 		if err := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-			r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l))...); err != nil {
+			r.kvScaled(l, r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l))...)...); err != nil {
 			return err
 		}
 	} else {
 		if err := r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-			r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))...); err != nil {
+			r.kvScaled(l, r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))...)...); err != nil {
 			return err
 		}
 	}

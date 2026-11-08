@@ -1,0 +1,110 @@
+=== RUN   TestKV8_G2Diag_amplification
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/026-09-02.md
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6590 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6610 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/e-a/QUEUE.md
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6590 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6610 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/gineering.md
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6590 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6610 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/ama-chase.md
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6590 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6610 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/enchmarks.md
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6590 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6610 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/ge-policy.md
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6590 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6610 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/bandwidth.md
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6590 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6610 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/enchmarks.md#01
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6590 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6610 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== NAME  TestKV8_G2Diag_amplification
+    kv8_g2diag_test.go:82: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf over 512 decode rows: top-1 lane-off vs lane-on, f32 0.9355, i8 0.9297
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/026-09-02.md
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 5980 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6016 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/e-a/QUEUE.md
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 5980 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6016 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/gineering.md
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 5980 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6016 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/ama-chase.md
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 5980 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6016 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/enchmarks.md
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 5980 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6016 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/ge-policy.md
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 5980 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6016 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/bandwidth.md
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 5980 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6016 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== RUN   TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/enchmarks.md#01
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 5980 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6016 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 6000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+=== NAME  TestKV8_G2Diag_amplification
+    kv8_g2diag_test.go:82: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf over 512 decode rows: top-1 lane-off vs lane-on, f32 0.9375, i8 0.9258
+--- PASS: TestKV8_G2Diag_amplification (227.84s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/026-09-02.md (9.79s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/e-a/QUEUE.md (8.02s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/gineering.md (8.26s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/ama-chase.md (8.28s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/enchmarks.md (8.30s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/ge-policy.md (8.19s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/bandwidth.md (8.29s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-0.5b/enchmarks.md#01 (8.17s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/026-09-02.md (19.87s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/e-a/QUEUE.md (20.33s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/gineering.md (20.31s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/ama-chase.md (20.24s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/enchmarks.md (20.06s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/ge-policy.md (20.02s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/bandwidth.md (19.62s)
+    --- PASS: TestKV8_G2Diag_amplification/qwen2.5-coder-1.5b/enchmarks.md#01 (19.97s)
+PASS
+ledger: 68 device(s) released in this run

@@ -231,10 +231,9 @@ func TestZZCensus2(t *testing.T) {
 }
 ```
 
-## What RF0 still has open
+## What RF0 had open, and where it went
 
 - **Done:** the per-turn `timings` block (`internal/app/serveapp/turn_timings.go`), the cost counters (`internal/cost`), and this census.
-- **Not done:**
-  - The prior-art reading `docs/tasks/task-forward-architecture-2026-10.md` §10a lists as not read (TVM and Relax, FlashInfer's and FlashAttention's kernel bodies, the mixed-batch internals, vLLM's model runner). It needs the sources, not a run.
-  - The "at what cost" column of the census: each decline's price is the CPU-against-GPU decode ratio of that family, which this record does not re-measure (the 10-13 baseline quoted about 15× from other records). The cost counters record it per turn for a run that has the GPU path available to compare.
-  - A WebGPU census by operation, which waits for OP4 on WebGPU.
+- **The prior-art reading** §10a left unread is `docs/measurements/forward-arch-prior-art-rf0-2026-11-07.md`.
+- **The "at what cost" column** is `docs/measurements/forward-arch-decline-cost-2026-11-07.md`: a proxy (Qwen2.5 at three sizes, CPU against Metal in one session, 1.7 to 1.8×), not the declined families themselves, which have no GPU arm to time.
+- **Still open:** a WebGPU census by operation, which waits for OP4 on WebGPU.

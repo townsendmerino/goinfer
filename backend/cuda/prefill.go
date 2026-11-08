@@ -227,6 +227,8 @@ func (r *cudaResident) PrefillSpansLast(ctx context.Context, embeddings [][]floa
 		return nil, fmt.Errorf("cuda prefill: span prefill on a Gemma 4 E-model: %w", errPrefillDeclined)
 	case r.kvF16:
 		return nil, fmt.Errorf("cuda prefill: span prefill on an f16 KV cache is not gated end to end yet: %w", errPrefillDeclined)
+	case r.kvI8:
+		return nil, fmt.Errorf("cuda prefill: span prefill on an int8 KV cache: %w", errPrefillDeclined)
 	case !r.spanPrefillReady:
 		return nil, fmt.Errorf("cuda prefill: attn_span_batched unavailable: %w", errPrefillDeclined)
 	}
@@ -1400,6 +1402,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 							}
 							ropeErr = r.launch(r.bRopeKV, ropeCfg, append(append([]gpu.KernelArg{}, ropeArgs...), qTemp)...)
 						}
+						if ropeErr == nil {
+							ropeErr = r.kvStore8(l, kBb, vBb, ropeNKV, hd, startPos, M)
+						}
 						if ropeErr != nil {
 							return ropeErr
 						}
@@ -1510,7 +1515,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 							attnErr = r.prefillSplitKVAttn(l, startPos, M, qBb, cctxB, psScB, psInvB, psStride, psRows, Buffer{}, 0)
 						} else {
 							attnErr = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
-								BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, r.withCap(attnArgs...)...)
+								BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, r.kvScaled(l, r.withCap(attnArgs...)...)...)
 						}
 						if attnErr == nil && laneFrom < M {
 							attnErr = r.flashVerifyAttn(l, startPos, laneFrom, M, qBb, cctxB)
@@ -2039,9 +2044,9 @@ func (r *cudaResident) aboveFastPrefillFloor() bool {
 	return r.passPromptLen >= fastPrefillFloorFor(r.knobValue("GOINFER_CUDA_FAST_PREFILL_FLOOR"))
 }
 
-// FastPrefillFloor satisfies decoder.ResidentFastPrefill: the prompt length from which this resident's batched prefill runs the fast (non-exact) kernels, 0 when it never does (both levers
+// FastPrefillFloor is ResidentCaps' FastPrefillFloor (decoder.ResidentCaps): the prompt length from which this resident's batched prefill runs the fast (non-exact) kernels, 0 when it never does (both levers
 // off, or neither kernel module loaded, in which case every selection site falls back to the exact path). GOINFER_CUDA_FAST_PREFILL_FLOOR=0 means "fast at any length", reported as 1: 0 is
-// the interface's "never". The decoder uses it to decline reuse of a short prefix whose rows an exact-kernel request computed (decoder.declineShortLeadReuse).
+// the record's "never". The decoder uses it to decline reuse of a short prefix whose rows an exact-kernel request computed (decoder.declineShortLeadReuse).
 func (r *cudaResident) FastPrefillFloor() int {
 	attn := r.fastAttn && (r.bAttnFused64 != (Pipeline{}) || r.bAttnFused128 != (Pipeline{}))
 	gemm := r.fastGemm && r.bGemmMMA != (Pipeline{})

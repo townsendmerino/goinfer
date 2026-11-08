@@ -1,0 +1,22 @@
+=== RUN   TestKV8_G2exact_readersMatchTheCPUOnOneCache
+=== RUN   TestKV8_G2exact_readersMatchTheCPUOnOneCache/llama-attnfa-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:1212: 132 reader rows compared, 264 plant rows; launches per reader map[attn_batched M=1:12 attn_batched M>1:3 flash-decode lane:12 glue attention:12 multi-row verify lane:3 row-batched split-KV:3 split-KV:12 split-KV, V-sum split:12]; largest |CUDA - CPU| / max|row| 7.36e-07 (bar 1e-04); smallest a plant made 6.39e-04; 8 stored (layer, head, K/V) rows held to the quantizer
+=== RUN   TestKV8_G2exact_readersMatchTheCPUOnOneCache/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:1212: 132 reader rows compared, 264 plant rows; launches per reader map[attn_batched M=1:12 attn_batched M>1:3 flash-decode lane:12 glue attention:12 multi-row verify lane:3 row-batched split-KV:3 split-KV:12 split-KV, V-sum split:12]; largest |CUDA - CPU| / max|row| 1.41e-05 (bar 1e-04); smallest a plant made 7.85e-04; 96 stored (layer, head, K/V) rows held to the quantizer
+=== RUN   TestKV8_G2exact_readersMatchTheCPUOnOneCache/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (280 MiB of scratch; 6002 MiB free beyond the 173 MiB kept beside a pass); passes take up to 364 rows
+    kv16_test.go:1212: 132 reader rows compared, 264 plant rows; launches per reader map[attn_batched M=1:12 attn_batched M>1:3 flash-decode lane:12 glue attention:12 multi-row verify lane:3 row-batched split-KV:3 split-KV:12 split-KV, V-sum split:12]; largest |CUDA - CPU| / max|row| 7.17e-05 (bar 1e-04); smallest a plant made 3.01e-03; 112 stored (layer, head, K/V) rows held to the quantizer
+--- PASS: TestKV8_G2exact_readersMatchTheCPUOnOneCache (10.52s)
+    --- PASS: TestKV8_G2exact_readersMatchTheCPUOnOneCache/llama-attnfa-tiny (1.92s)
+    --- PASS: TestKV8_G2exact_readersMatchTheCPUOnOneCache/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (2.65s)
+    --- PASS: TestKV8_G2exact_readersMatchTheCPUOnOneCache/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (5.84s)
+PASS
+ledger: 7 device(s) released in this run

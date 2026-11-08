@@ -1,0 +1,29 @@
+=== RUN   TestKV8_verifyIsSequentialDecode
+=== RUN   TestKV8_verifyIsSequentialDecode/llama-attnfa-tiny/lane=0
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+=== RUN   TestKV8_verifyIsSequentialDecode/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf/lane=0
+cuda: prefill width 2048 rows (155 MiB of scratch; 6612 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6148 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+=== RUN   TestKV8_verifyIsSequentialDecode/llama-attnfa-tiny/lane=16
+cuda: prefill width 2048 rows (26 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7056 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+=== RUN   TestKV8_verifyIsSequentialDecode/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf/lane=16
+cuda: prefill width 2048 rows (155 MiB of scratch; 6602 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6128 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+--- PASS: TestKV8_verifyIsSequentialDecode (8.85s)
+    --- PASS: TestKV8_verifyIsSequentialDecode/llama-attnfa-tiny/lane=0 (1.80s)
+    --- PASS: TestKV8_verifyIsSequentialDecode/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf/lane=0 (3.32s)
+    --- PASS: TestKV8_verifyIsSequentialDecode/llama-attnfa-tiny/lane=16 (0.32s)
+    --- PASS: TestKV8_verifyIsSequentialDecode/~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf/lane=16 (3.30s)
+=== RUN   TestKV8_snapshotsDecline
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestKV8_snapshotsDecline (0.26s)
+PASS
+ledger: 13 device(s) released in this run

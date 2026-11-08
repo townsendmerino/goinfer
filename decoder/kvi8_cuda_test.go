@@ -1,0 +1,175 @@
+package decoder
+
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// TestCUDAKVI8_resolves is S2's policy (docs/measurements/cuda-kv-i8-2026-11/scope.md): `--kv i8` on the CUDA resident is delivered for the
+// dense families, and every other cell is refused by name. The CUDA policy the decoder registers is the one the cuda package
+// registers too, so this reads the same answer a CUDA load does.
+func TestCUDAKVI8_resolves(t *testing.T) {
+	i8 := Options{Backend: "cuda", KVPrecision: kvPrecI8}
+	i := 0
+	for _, c := range []struct {
+		dir     string
+		o       func(*Options)
+		deliver bool
+		reason  string // a refusal's reason contains this
+	}{
+		{dir: "llama-tiny", deliver: true},
+		{dir: "phi3-tiny", deliver: true},
+		{dir: "llama-tiny", o: func(o *Options) { o.ResidentKVSlots, o.ResidentKVSlotsDefault = 4, true }, deliver: true},
+		{dir: "llama-tiny", o: func(o *Options) { o.ResidentKVSlots = 2 }, deliver: true},
+		{dir: "llama-tiny", o: func(o *Options) { o.Drafter = true }, reason: "drafter"},
+		{dir: "mistral-tiny-window", reason: "sliding-window"},
+		{dir: "qwen3moe-tiny", reason: "qwen3_moe"},
+		{dir: "gemma2-tiny", reason: "gemma2"},
+		{dir: "cohere-tiny", reason: "cohere"},
+		{dir: "qwen25vl-tiny", reason: "qwen2_5_vl"},
+		{dir: "deepseek-tiny", reason: "deepseek"},
+		{dir: "qwen35-tiny", reason: "qwen3_5"},
+		{dir: "gemma4-moe-kv-tiny", reason: "gemma4"},
+	} {
+		i++
+		o := i8
+		if c.o != nil {
+			c.o(&o)
+		}
+		arch := kvMatrixArch(t, c.dir)
+		got, why := ResolveKV("cuda", arch, o)
+		r := kvRefusal("cuda", arch, o)
+		switch {
+		case c.deliver && (got != kvPrecI8 || r != nil):
+			t.Errorf("case %d (%s): delivered %q (%s), refusal %v; want i8", i, c.dir, got, why, r)
+		case !c.deliver && r == nil:
+			t.Errorf("case %d (%s): delivered %q, want a refusal naming %q", i, c.dir, got, c.reason)
+		case !c.deliver && !strings.Contains(r.Reason, c.reason):
+			t.Errorf("case %d (%s): refused with %q, want it to name %q", i, c.dir, r.Reason, c.reason)
+		}
+	}
+	// auto and f16 are not moved by the int8 policy.
+	arch := kvMatrixArch(t, "llama-tiny")
+	if got, _ := ResolveKV("cuda", arch, Options{Backend: "cuda"}); got != kvPrecF16 {
+		t.Errorf("llama-tiny under auto: %q, want f16 (unchanged)", got)
+	}
+}
+
+// TestCUDAKVI8_slots: an int8 CUDA cache takes the slots asked, as f16 does.
+func TestCUDAKVI8_slots(t *testing.T) {
+	for _, kv := range []string{kvPrecI8, kvPrecF16} {
+		m, err := Load(filepath.Join("..", "testdata", "llama-tiny"), Options{KVPrecision: kv, ResidentKVSlots: 4, ResidentKVSlotsDefault: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := m.ResidentKVSlotsRequestFor("cuda"); got != 4 {
+			t.Errorf("--kv %s, a default of 4 slots: CUDA is asked for %d, want 4", kv, got)
+		}
+		m.Close()
+	}
+}
+
+// TestCUDAKVI8_prices is G3's arithmetic for the CUDA int8 cache, written out for llama-tiny (4 layers, 2 KV heads of 16): each position of
+// each layer holds K and V at 1 B an element plus one 4 B scale per KV head for each, so a 64-row block of one layer is
+// 2 * 64 * (32 + 2*4) = 5,120 B. At 128 positions (2 blocks) the slot is 4 layers * 2 blocks * 5,120 = 40,960 B, the null blocks one more
+// block of every layer (20,480 B) and the tables 4 B per block per group (16 B): 61,456 B.
+func TestCUDAKVI8_prices(t *testing.T) {
+	m, err := Load(filepath.Join("..", "testdata", "llama-tiny"), Options{KVPrecision: kvPrecI8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if got := m.ResidentKVBytes("cuda", 128, false, true); got != 61456 {
+		t.Errorf("ResidentKVBytes(cuda, 128, i8) = %d B, want 61,456", got)
+	}
+	if got := m.CUDAKVSlotBytes(128, false, true); got != 40976 {
+		t.Errorf("CUDAKVSlotBytes(128, i8) = %d B, want 40,976 (the slot's blocks and its tables)", got)
+	}
+	f16 := m.ResidentKVBytes("cuda", 128, true, false)
+	if i8 := m.ResidentKVBytes("cuda", 128, false, true); i8 >= f16 {
+		t.Errorf("i8 prices %d B, not under f16's %d B", i8, f16)
+	}
+	// A family the int8 cache does not cover prices what it would build: nothing, since the load is refused; asked anyway, f32.
+	q, err := Load(filepath.Join("..", "testdata", "mistral-tiny-window"), Options{KVPrecision: kvPrecI8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+	if i8, f32 := q.ResidentKVBytes("cuda", 128, false, true), q.ResidentKVBytes("cuda", 128, false, false); i8 != f32 {
+		t.Errorf("mistral-tiny-window: i8 asked prices %d B, f32 %d B; a refused cell prices f32", i8, f32)
+	}
+}
+
+// TestCUDAKVI8_slotPriceIsTheGPUsPrecision pins the price cuda's ctxForSlots puts on each further KV slot,
+// CUDAKVSlotBytes(ctx, KVCacheF16(), KVCacheI8()), at the precision the CUDA cache holds, never the CPU cache's: KVCacheI8 is the resident's
+// request (Options.KVPrecision), and CUDAKVSlotBytes prices int8 only where ResolveKV delivers it. A CPU int8 cache beside an f16 resident
+// prices f16. (auto is not a case here: these loads carry no CUDA backend, and only a backend's policy resolves auto.)
+func TestCUDAKVI8_slotPriceIsTheGPUsPrecision(t *testing.T) {
+	dir := filepath.Join("..", "testdata", "llama-tiny")
+	price := func(o Options) int64 {
+		m, err := Load(dir, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		return m.CUDAKVSlotBytes(128, m.KVCacheF16(), m.KVCacheI8())
+	}
+	m, err := Load(dir, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f16, i8 := m.CUDAKVSlotBytes(128, true, false), int64(40976)
+	m.Close()
+	for _, c := range []struct {
+		name string
+		o    Options
+		want int64
+	}{
+		{"GPU int8", Options{KVPrecision: kvPrecI8}, i8},
+		{"GPU int8, CPU int8", Options{KVPrecision: kvPrecI8, KVQuant: kvPrecI8}, i8},
+		{"GPU f16, CPU int8", Options{KVPrecision: kvPrecF16, KVQuant: kvPrecI8}, f16},
+	} {
+		if got := price(c.o); got != c.want {
+			t.Errorf("%s: a further slot is priced %d B, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+// TestCUDAKVI8_pricesWhatIsAsked: ResidentKVBytes("cuda", …, kvI8) prices an int8 cache for any architecture the CUDA int8 kernels cover,
+// whatever else the load that asks carries (several KV slots, a drafter): it answers "what would int8 cost", which fit and Plan ask of a
+// load that may not hold int8 itself. A family the kernels do not cover prices f32, as it would build.
+func TestCUDAKVI8_pricesWhatIsAsked(t *testing.T) {
+	dir := filepath.Join("..", "testdata", "llama-tiny")
+	for _, o := range []Options{{ResidentKVSlots: 2}, {ResidentKVSlots: 4, KVPrecision: kvPrecF16}, {Drafter: true}, {KVPrecision: kvPrecI8}} {
+		m, err := Load(dir, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := m.ResidentKVBytes("cuda", 128, false, true); got != 61456 {
+			t.Errorf("%+v: ResidentKVBytes(cuda, 128, i8) = %d B, want 61,456", o, got)
+		}
+		if got, f16 := m.ResidentKVBytes("cuda", 128, true, true), m.ResidentKVBytes("cuda", 128, true, false); got != 61456 || got == f16 {
+			t.Errorf("%+v: both f16 and i8 asked prices %d B; int8 (61,456) is the smaller cache the kernels cover", o, got)
+		}
+		m.Close()
+	}
+}
+
+// TestCUDAKVI8_declinesRowsNotWholeWords: the CUDA int8 cache moves rows as 4-byte words (its block copies and host copies), so a model whose
+// K/V row is not a multiple of 4 elements is refused by name where the precision is resolved, not at the build. llama-tiny with a head
+// width of 15 (rows of 30) stands in for such a model.
+func TestCUDAKVI8_declinesRowsNotWholeWords(t *testing.T) {
+	a := *kvMatrixArch(t, "llama-tiny")
+	a.HeadDim = 15
+	if got := a.kvFacts().KVRowNotWords; got != 30 {
+		t.Fatalf("kvFacts reports a %d-element row not whole words, want 30", got)
+	}
+	r := kvRefusal("cuda", &a, Options{Backend: "cuda", KVPrecision: kvPrecI8})
+	if r == nil || !strings.Contains(r.Reason, "4-byte") {
+		t.Fatalf("--kv i8 on 30-element rows: refusal %v, want one naming the 4-byte words", r)
+	}
+	if r := kvRefusal("cuda", kvMatrixArch(t, "llama-tiny"), Options{Backend: "cuda", KVPrecision: kvPrecI8}); r != nil {
+		t.Errorf("llama-tiny (rows of 32) refused: %v", r)
+	}
+}

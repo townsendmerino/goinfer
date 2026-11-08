@@ -1,0 +1,142 @@
+=== RUN   TestKV8_G2Diag_allPrompts
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/026-09-02.md
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6134 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CUDA f32 vs CPU f32: min cos 0.97674 top-1 61/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CUDA i8  vs CPU i8:  min cos 0.98595 top-1 60/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.81858 top-1 35/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.83002 top-1 35/65
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/e-a/QUEUE.md
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6134 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, QUEUE.md: CUDA f32 vs CPU f32: min cos 0.99166 top-1 57/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, QUEUE.md: CUDA i8  vs CPU i8:  min cos 0.97845 top-1 61/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, QUEUE.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.97046 top-1 55/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, QUEUE.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.96121 top-1 55/65
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/gineering.md
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6134 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, queue-engineering.md: CUDA f32 vs CPU f32: min cos 0.97862 top-1 61/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, queue-engineering.md: CUDA i8  vs CPU i8:  min cos 0.97597 top-1 60/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, queue-engineering.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.93992 top-1 56/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, queue-engineering.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.94181 top-1 57/65
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/ama-chase.md
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6134 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, ollama-chase.md: CUDA f32 vs CPU f32: min cos 0.98991 top-1 58/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, ollama-chase.md: CUDA i8  vs CPU i8:  min cos 0.97956 top-1 57/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, ollama-chase.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.73727 top-1 43/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, ollama-chase.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.79044 top-1 45/65
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/enchmarks.md
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6134 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, benchmarks.md: CUDA f32 vs CPU f32: min cos 0.98986 top-1 60/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, benchmarks.md: CUDA i8  vs CPU i8:  min cos 0.98704 top-1 58/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, benchmarks.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.96131 top-1 56/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, benchmarks.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.96294 top-1 52/65
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/ge-policy.md
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6134 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, parity-coverage-policy.md: CUDA f32 vs CPU f32: min cos 0.99020 top-1 57/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, parity-coverage-policy.md: CUDA i8  vs CPU i8:  min cos 0.97093 top-1 59/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, parity-coverage-policy.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.95330 top-1 54/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, parity-coverage-policy.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.93594 top-1 55/65
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/bandwidth.md
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6134 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, task-w4a8-neon-bandwidth.md: CUDA f32 vs CPU f32: min cos 0.99070 top-1 57/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, task-w4a8-neon-bandwidth.md: CUDA i8  vs CPU i8:  min cos 0.98809 top-1 56/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, task-w4a8-neon-bandwidth.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.95506 top-1 49/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, task-w4a8-neon-bandwidth.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.95937 top-1 45/65
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/enchmarks.md#01
+cuda: prefill width 2048 rows (155 MiB of scratch; 6600 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6134 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, legacy-benchmarks.md: CUDA f32 vs CPU f32: min cos 0.99486 top-1 63/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, legacy-benchmarks.md: CUDA i8  vs CPU i8:  min cos 0.98288 top-1 56/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, legacy-benchmarks.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.95152 top-1 58/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, legacy-benchmarks.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.95339 top-1 54/65
+=== NAME  TestKV8_G2Diag_allPrompts
+    kv8_g2diag_test.go:26: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf over 8 prompts: top-1 CUDA f32/CPU f32 0.9115, CUDA i8/CPU i8 0.8981, CPU i8/CPU f32 0.7808, CUDA i8/CUDA f32 0.7654
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/026-09-02.md
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CUDA f32 vs CPU f32: min cos 0.99015 top-1 58/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CUDA i8  vs CPU i8:  min cos 0.98373 top-1 56/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.98300 top-1 58/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, audit-2026-09-02.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.98313 top-1 54/65
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/e-a/QUEUE.md
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, QUEUE.md: CUDA f32 vs CPU f32: min cos 0.99496 top-1 60/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, QUEUE.md: CUDA i8  vs CPU i8:  min cos 0.98893 top-1 57/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, QUEUE.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.97494 top-1 56/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, QUEUE.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.98271 top-1 59/65
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/gineering.md
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, queue-engineering.md: CUDA f32 vs CPU f32: min cos 0.99114 top-1 61/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, queue-engineering.md: CUDA i8  vs CPU i8:  min cos 0.99336 top-1 62/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, queue-engineering.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.98694 top-1 61/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, queue-engineering.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.98792 top-1 62/65
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/ama-chase.md
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, ollama-chase.md: CUDA f32 vs CPU f32: min cos 0.98542 top-1 60/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, ollama-chase.md: CUDA i8  vs CPU i8:  min cos 0.99064 top-1 60/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, ollama-chase.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.97140 top-1 57/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, ollama-chase.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.97212 top-1 60/65
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/enchmarks.md
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, benchmarks.md: CUDA f32 vs CPU f32: min cos 0.99401 top-1 59/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, benchmarks.md: CUDA i8  vs CPU i8:  min cos 0.99102 top-1 58/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, benchmarks.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.97887 top-1 60/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, benchmarks.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.98038 top-1 58/65
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/ge-policy.md
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, parity-coverage-policy.md: CUDA f32 vs CPU f32: min cos 0.99059 top-1 57/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, parity-coverage-policy.md: CUDA i8  vs CPU i8:  min cos 0.99220 top-1 57/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, parity-coverage-policy.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.97458 top-1 61/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, parity-coverage-policy.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.97448 top-1 54/65
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/bandwidth.md
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, task-w4a8-neon-bandwidth.md: CUDA f32 vs CPU f32: min cos 0.99070 top-1 59/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, task-w4a8-neon-bandwidth.md: CUDA i8  vs CPU i8:  min cos 0.98442 top-1 54/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, task-w4a8-neon-bandwidth.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.96947 top-1 58/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, task-w4a8-neon-bandwidth.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.96783 top-1 53/65
+=== RUN   TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/enchmarks.md#01
+cuda: prefill width 2048 rows (280 MiB of scratch; 5996 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 428 rows
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, legacy-benchmarks.md: CUDA f32 vs CPU f32: min cos 0.99337 top-1 62/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, legacy-benchmarks.md: CUDA i8  vs CPU i8:  min cos 0.99341 top-1 61/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, legacy-benchmarks.md: CPU i8 vs CPU f32 (what int8 KV costs on the CPU): min cos 0.98647 top-1 61/65
+    kv8_g2diag_test.go:20: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, legacy-benchmarks.md: CUDA i8 vs CUDA f32 (what it costs on CUDA): min cos 0.98547 top-1 59/65
+=== NAME  TestKV8_G2Diag_allPrompts
+    kv8_g2diag_test.go:26: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf over 8 prompts: top-1 CUDA f32/CPU f32 0.9154, CUDA i8/CPU i8 0.8942, CPU i8/CPU f32 0.9077, CUDA i8/CUDA f32 0.8827
+--- PASS: TestKV8_G2Diag_allPrompts (278.58s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/026-09-02.md (12.50s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/e-a/QUEUE.md (10.90s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/gineering.md (10.85s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/ama-chase.md (11.07s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/enchmarks.md (10.81s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/ge-policy.md (11.05s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/bandwidth.md (10.96s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-0.5b/enchmarks.md#01 (11.02s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/026-09-02.md (23.71s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/e-a/QUEUE.md (23.55s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/gineering.md (23.87s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/ama-chase.md (23.58s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/enchmarks.md (23.63s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/ge-policy.md (23.69s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/bandwidth.md (23.69s)
+    --- PASS: TestKV8_G2Diag_allPrompts/qwen2.5-coder-1.5b/enchmarks.md#01 (23.56s)
+PASS
+ledger: 36 device(s) released in this run

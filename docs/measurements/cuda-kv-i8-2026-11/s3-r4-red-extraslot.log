@@ -1,0 +1,7 @@
+=== RUN   TestKV8_extraSlotPricedAtTheDeliveredPrecision
+    kv16_test.go:1397: int8 asked with a drafter (held at f32): an extra slot is priced 40976 B; the build allocates f32, 131088 B (delivered "f32")
+--- FAIL: TestKV8_extraSlotPricedAtTheDeliveredPrecision (0.00s)
+FAIL
+ledger: 0 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	0.009s
+FAIL

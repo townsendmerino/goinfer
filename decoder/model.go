@@ -1258,7 +1258,7 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 		}
 	}
 	if m.knobs.get(knobBatchedPrefill) != "0" && offer && !hasAdapter {
-		if pf, ok := m.resident.(Prefiller); ok {
+		if canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe}) {
 			embed := func(ids []int) [][]float32 {
 				if embedRowsObserver != nil {
 					embedRowsObserver(len(ids))
@@ -1278,23 +1278,24 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 				if perr = ctx.Err(); perr != nil {
 					break
 				}
-				if _, perr = pf.PrefillLast(ctx, embed(prompt[from:from+B]), from); perr == nil {
+				if _, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from : from+B]), Pos: from}); perr == nil {
 					from += B
 				}
 			}
 			// startPos is why the batched path needs no change for reuse: it already
 			// places the run at an offset.
 			if perr == nil {
-				var lg []float32
-				if mp, ok := pf.(ResidentPrefillMarked); ok && mk != nil {
-					lg, perr = mp.PrefillLastMarked(ctx, embed(prompt[from:]), from, mk.q, mk.at)
-				} else if pr, ok := pf.(ResidentPrefillRows); ok { // MEM6: the resident reads the suffix a chunk at a time
-					lg, perr = pr.PrefillLastRows(ctx, len(prompt)-from, from, m.suffixRows(prompt[from:]))
+				var sr stepResult
+				if mk != nil && canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe, Mark: mk.q, At: mk.at}) {
+					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from:]), Pos: from, Mark: mk.q, At: mk.at})
+				} else if canStep(m.resident, stepBatch{Pass: passRows, In: inRowsFn, N: 1, Rows: stepProbeRows}) {
+					// MEM6: the resident reads the suffix a chunk at a time.
+					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, In: inRowsFn, N: len(prompt) - from, Pos: from, Rows: m.suffixRows(prompt[from:])})
 				} else {
-					lg, perr = pf.PrefillLast(ctx, embed(prompt[from:]), from)
+					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from:]), Pos: from})
 				}
 				if perr == nil {
-					return lg, nil
+					return sr.Logits, nil
 				}
 			}
 			// A CANCELLED PREFILL IS NOT A DECLINE. Falling through to the sequential loop would
@@ -1317,8 +1318,8 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 	// (a big-vocab matmul + readback + softcap) on every prefill token but the last, whose
 	// logits seed decode. Byte-identical (same layer chain → same KV → same last-token logits);
 	// GOINFER_NO_KVONLY_PREFILL forces the full-logits prefill (A/B / escape hatch).
-	kvOnly, hasKV := m.resident.(ResidentPrefillKV)
-	useKV := hasKV && m.knobs.get(knobNoKVOnlyPrefill) == ""
+	useKV := m.canDecode(outNone) && m.knobs.get(knobNoKVOnlyPrefill) == ""
+	var row [1][]float32 // the token's one-row batch, reused across the prompt
 	var logits []float32
 	var err error
 	for i, id := range prompt {
@@ -1332,7 +1333,8 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 		}
 		emb := m.embedResident(id)
 		if useKV && i < len(prompt)-1 {
-			if err = kvOnly.ForwardNoLogits(emb, i); err != nil {
+			row[0] = emb
+			if _, err = m.step(stepBatch{Pass: passToken, Emb: row[:], Pos: i, Out: outNone}); err != nil {
 				return nil, err
 			}
 			continue
@@ -1377,7 +1379,7 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 	if from < 0 || from >= len(prompt) {
 		from = 0 // never skip the seed token (residentPrefillSeed's own rule)
 	}
-	pf, ok := m.resident.(Prefiller)
+	ok := canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe})
 	C := m.prefillChunk
 	// A chunk below the resident's kernel-class floor would put the first chunk on the other class from the
 	// whole prompt's; raising the chunk to the floor keeps every pass on the class a whole prefill uses.
@@ -1402,7 +1404,7 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		}
 		mc3.prefillExclusive(func() {
 			if err = m.residentBind(slot); err == nil {
-				_, err = pf.PrefillLast(ctx, embs, from)
+				_, err = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embs, Pos: from})
 			}
 		})
 		if err != nil {
@@ -1666,7 +1668,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// then asks the gate, and only a step it opens takes the full-logits path below (needFull).
 	gated := sp.LogitProcessor != nil && sp.LogitProcessorGate != nil
 	procFree := sp.LogitProcessor == nil || gated
-	greedyRF, hasGreedy := m.resident.(ResidentGreedy)
+	hasGreedy := m.canDecode(outArgmax)
 	fastGreedy := useGPU && hasGreedy && procFree &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) &&
 		m.knobs.get(knobNoGreedyFastpath) == ""
@@ -1703,48 +1705,43 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// that needs or rewrites the full row (bias, penalties, logprobs, a LogitProcessor), the greedy and optimistic-forward paths,
 	// and backends whose logits are transformed on the host after readback. GOINFER_NO_TOPK_FASTPATH forces the full-row path
 	// (escape hatch / A-B check), same convention as GOINFER_NO_GREEDY_FASTPATH.
-	var topKRF ResidentTopK
+	topKOn := false
 	topKWidth, topKVocab := 0, len(logits)
 	// Under MC3 a TopKRow's Full() reads the resident's logits, which a later step of another generation may have overwritten, so
 	// the draw is resolved inside the resident call (topKPre / topKPreFull below) while this generation still holds the resident,
 	// not at the top of the next iteration. Do not switch it off under MC3: that sent every CUDA top-p request down the
 	// full-row path (docs/measurements/topp-regression-2026-09-30.md).
 	if useGPU && !fastGreedy && !useChain && !optFwd && procFree && m.knobs.get(knobNoTopKFastpath) == "" && sampler.TopKEligible() {
-		if rf, ok := m.resident.(ResidentTopK); ok && rf.TopKAvailable() {
+		if m.canDecode(outTopK) {
 			if w, wok := sampler.TopKWidth(len(logits)); wok {
-				topKRF, topKWidth = rf, w
+				topKOn, topKWidth = true, w
 			}
 		}
 	}
 	// Device temperature-only sampling (sampler_gumbel.go): the resident draws the next token by Gumbel-max on-device and returns
 	// just the id, reusing the greedy fast path's fastNext mechanism. Same exclusions as the top-K path;
 	// GOINFER_NO_SAMPLE_FASTPATH forces the host draw (A/B check, escape hatch).
-	var sampleRF ResidentSample
-	if useGPU && !fastGreedy && !useChain && !optFwd && procFree && m.knobs.get(knobNoSampleFastpath) == "" && sampler.SampleEligible() {
-		if rf, ok := m.resident.(ResidentSample); ok && rf.SampleAvailable() {
-			sampleRF = rf
-		}
-	}
+	sampleOn := useGPU && !fastGreedy && !useChain && !optFwd && procFree && m.knobs.get(knobNoSampleFastpath) == "" &&
+		sampler.SampleEligible() && m.canDecode(outSample)
 	// A greedy generation's batched token asks the step for its argmax id (a Greedy draw) where the resident offers that, instead
 	// of its whole logits row; the id is the argmax the sampler would take from that row. Rows run alone keep residentCall's path.
 	batchGreedy := false
-	if mc3 != nil && !fastGreedy && sampleRF == nil && procFree && (sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) {
-		if bg, ok := m.resident.(ResidentBatchGreedy); ok && bg.BatchGreedyDraw() {
-			batchGreedy = true
-		}
+	if mc3 != nil && !fastGreedy && !sampleOn && procFree && (sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) {
+		batchGreedy = residentCapsOf(m.resident).BatchGreedyDraw
 	}
 	// The sampled chain (ResidentSampleChain): where the device draw serves the token, the same draw with the next token's forward
 	// queued on the device first, as the greedy chain does for the argmax. Same exclusions as the greedy chain, and not where
 	// ForwardSample itself takes the argmax (a temperature so small 1/T is infinite).
 	var sChainRF ResidentSampleChain
-	if sampleRF != nil && resCost == nil && sp.LogitProcessor == nil && lora == nil && m.embedIsTableRow() &&
+	if sampleOn && resCost == nil && sp.LogitProcessor == nil && lora == nil && m.embedIsTableRow() &&
 		!math.IsInf(1/sp.Temperature, 0) {
 		if rf, ok := m.resident.(ResidentSampleChain); ok && rf.SampleChainAvailable() {
 			sChainRF = rf
 		}
 	}
-	var topKRow *TopKRow // this step's device top-K row, set instead of logits when topKRF is active
-	// Under MC3 the top-K draw is made inside the resident call (see topKRF above): topKPre is the drawn token when the row
+	var stepRow [1][]float32 // the decode token's one-row batch, reused across tokens so a step allocates nothing
+	var topKRow *TopKRow     // this step's device top-K row, set instead of logits when topKOn
+	// Under MC3 the top-K draw is made inside the resident call (see topKOn above): topKPre is the drawn token when the row
 	// held the whole retained set, else topKPreFull says topKFullBuf holds this step's full row, copied before the resident
 	// was released. Both are consumed, and cleared, where topKRow is.
 	var topKPre *SampleInfo
@@ -1933,7 +1930,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			// A device-drawn token takes its draw HERE, once, whichever path then serves it — the sampler's RNG
 			// stream advances exactly as it always has.
 			var draw *ResidentBatchDraw
-			if !needFull && !fastGreedy && sampleRF != nil {
+			if !needFull && !fastGreedy && sampleOn {
 				seed, d := sampler.NextDraw()
 				draw = &ResidentBatchDraw{Temperature: sp.Temperature, Seed: seed, Draw: d}
 			} else if batchGreedy && !needFull {
@@ -1982,17 +1979,27 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				} else if fastGreedy {
 					// Greedy fast path: the resident picks the argmax on-device and returns
 					// just the id, skipping the full-logits readback.
-					fastNext, ferr = greedyRF.ForwardArgmax(emb, pos)
-				} else if sampleRF != nil {
-					fastNext, ferr = sampleRF.ForwardSample(emb, pos, draw.Temperature, draw.Seed, draw.Draw)
+					stepRow[0] = emb
+					var sr stepResult
+					sr, ferr = m.step(stepBatch{Pass: passToken, Emb: stepRow[:], Pos: pos, Out: outArgmax})
+					fastNext = sr.ID
+				} else if sampleOn {
+					stepRow[0] = emb
+					var sr stepResult
+					sr, ferr = m.step(stepBatch{Pass: passToken, Emb: stepRow[:], Pos: pos, Out: outSample,
+						Temperature: draw.Temperature, Seed: draw.Seed, Draw: draw.Draw})
+					fastNext = sr.ID
 					if ferr == nil {
 						g.DeviceSampled++
 					}
-				} else if topKRF != nil {
-					var row TopKRow
-					row, ferr = topKRF.ForwardTopK(emb, pos, topKWidth, sp.Temperature, sampler.topPActive())
+				} else if topKOn {
+					stepRow[0] = emb
+					var sr stepResult
+					sr, ferr = m.step(stepBatch{Pass: passToken, Emb: stepRow[:], Pos: pos, Out: outTopK, K: topKWidth,
+						Temperature: sp.Temperature, WantZ: sampler.topPActive()})
+					row := sr.TopK
 					if ferr == nil && mc3 != nil {
-						// Resolve the draw now, while this generation holds the resident (see topKRF). The sampler is this
+						// Resolve the draw now, while this generation holds the resident (see topKOn). The sampler is this
 						// generation's own and nothing else draws from it before the next iteration would have, so the RNG
 						// is consumed in the same order as the unbatched path.
 						if inf, ok := sampler.SampleFromTopK(row, topKVocab); ok {
