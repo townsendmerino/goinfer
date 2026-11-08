@@ -358,3 +358,75 @@ func TestPlanFor_metalPlansAtTheLoadsOwnContext(t *testing.T) {
 		t.Errorf("cpu: planFor changed Plan's answer (%d, %q) to (%d, %q)", want.Ctx, want.Reason, p.Ctx, p.Reason)
 	}
 }
+
+// TestPlanFor_metalPricesEverySlotTheBuildKeeps: a serve load without --kv-sessions asks Metal for decoder.MetalDefaultKVSlots
+// KV slots and keeps as many as fit beside the first (backend/metal's metalKVSlots), so fit's Metal line prices each slot kept:
+// the first in Plan, the rest at decoder.Model.MetalKVBytes. It holds at a pinned -ctx and at the default context, prices one
+// slot where a second does not fit, and one for a recurrent model, which a default load keeps to one slot. Each model is
+// loaded as Run loads it (fitLoadOptions), since the slot request is a load option.
+func TestPlanFor_metalPricesEverySlotTheBuildKeeps(t *testing.T) {
+	load := func(dir string) *decoder.Model {
+		t.Helper()
+		m, err := decoder.Load(dir, fitLoadOptions("int4", ""))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { m.Close() })
+		return m
+	}
+	further := func(m *decoder.Model, ctx int) int64 {
+		return m.MetalKVBytes(decoder.MetalDefaultKVSlots, ctx) - m.ResidentKVBytes("metal", ctx, false, false)
+	}
+	check := func(name string, m *decoder.Model, free int64, req fit.PlanRequest, ctx, slots int) {
+		t.Helper()
+		one := m.Plan("metal", 1<<40, fit.PlanRequest{Ctx: ctx, CtxPinned: true})
+		want := one.NeedBytes()
+		if slots > 1 {
+			want += further(m, ctx)
+		}
+		p := planFor(m, "metal", free, req)
+		if p.Placement != fit.PlacementResident || p.Ctx != ctx || p.NeedBytes() != want {
+			t.Errorf("%s: %v at ctx %d needing %d B (%s); want resident at ctx %d needing %d B, %d KV slots", name, p.Placement, p.Ctx,
+				p.NeedBytes(), p.Reason, ctx, want, slots)
+		}
+		if slots > 1 && !strings.Contains(p.Reason, fmt.Sprintf("keeps %d of the %d KV slots", slots, decoder.MetalDefaultKVSlots)) {
+			t.Errorf("%s: the reason does not say how many KV slots the load keeps: %q", name, p.Reason)
+		}
+	}
+
+	m := load("../../../testdata/llama-tiny")
+	const ctx = 128 // llama-tiny's window
+	if further(m, ctx) <= 0 {
+		t.Fatal("llama-tiny prices no KV for a second Metal slot")
+	}
+	need := m.Plan("metal", 1<<40, fit.PlanRequest{Ctx: ctx, CtxPinned: true}).NeedBytes()
+	pinned := fit.PlanRequest{Ctx: ctx, CtxPinned: true}
+	check("pinned, room for both slots", m, need+further(m, ctx), pinned, ctx, 2)
+	check("pinned, room for one slot", m, need+further(m, ctx)-1, pinned, ctx, 1)
+
+	// The default context: a wide-window copy (as TestPlanFor_metalPlansAtTheLoadsOwnContext makes) with room for both slots at
+	// MetalCtxDefault and not at the next block, so MetalFitCtx answers the floor, where fit once priced one slot.
+	dir := t.TempDir()
+	for _, name := range []string{"config.json", "generation_config.json", "model.safetensors"} {
+		b, err := os.ReadFile(filepath.Join("../../../testdata/llama-tiny", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name == "config.json" {
+			b = []byte(strings.Replace(string(b), `"max_position_embeddings": 128`, `"max_position_embeddings": 131072`, 1))
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wide := load(dir)
+	atFloor := wide.Plan("metal", 1<<40, fit.PlanRequest{Ctx: decoder.MetalCtxDefault, CtxPinned: true}).NeedBytes() + further(wide, decoder.MetalCtxDefault)
+	if c := wide.MetalFitCtx(decoder.MetalFitInput{FreeBytes: atFloor, FreeKnown: true, KVSlots: decoder.MetalDefaultKVSlots}).Ctx; c != decoder.MetalCtxDefault {
+		t.Fatalf("the budget for both slots at the floor gives ctx %d, want %d", c, decoder.MetalCtxDefault)
+	}
+	check("the default context", wide, atFloor, fit.PlanRequest{Ctx: defaultCtx}, decoder.MetalCtxDefault, 2)
+
+	rec := load("../../../testdata/qwen35-tiny")
+	recNeed := rec.Plan("metal", 1<<40, fit.PlanRequest{Ctx: 64, CtxPinned: true}).NeedBytes()
+	check("recurrent: one slot", rec, recNeed+further(rec, 64), fit.PlanRequest{Ctx: 64, CtxPinned: true}, 64, 1)
+}

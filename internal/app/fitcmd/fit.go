@@ -128,7 +128,7 @@ func Run(args []string) int {
 	if cached, be, ok := freshSidecar(path, *quant); ok {
 		loadPath, loadBackend = cached, be
 	}
-	m, err := decoder.Load(loadPath, decoder.Options{Quant: *quant, Backend: loadBackend, DirectLoad: true})
+	m, err := decoder.Load(loadPath, fitLoadOptions(*quant, loadBackend))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load %s: %v\n", loadPath, err)
 		return 1
@@ -167,6 +167,11 @@ func Run(args []string) int {
 		selfMeasure(path, *quant, admitted)
 	}
 	return 0
+}
+
+// fitLoadOptions is what `fit` loads a checkpoint with: the quant planned at and the backend of the sidecar it reads through.
+func fitLoadOptions(quant, backend string) decoder.Options {
+	return decoder.Options{Quant: quant, Backend: backend, DirectLoad: true}
 }
 
 // planFor is the plan `fit` prints for one backend. An unpinned Metal load does not take the context Plan alone would give
