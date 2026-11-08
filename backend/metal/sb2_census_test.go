@@ -298,15 +298,13 @@ var metalRounding = memgate.PerLease("Metal's 16 KiB sub-allocation", 16<<10)
 // metalMemGaps is Metal's table of known reds (MM7). It may only shrink: the fix that removes a row lowers metalMemGapsPin. Each
 // row is bounded by the build's own shape, so a second gap on the same line stays red.
 var metalMemGaps = []memgate.Gap{
-	{Row: "*", Line: mem.LineScratch, What: "decode's own scratch and uniforms lease on the scratch line, and nothing prices them",
-		Item: "MM5, decode's buffer list", Bytes: func(f map[string]int64) int64 { return f["decode"] }},
 	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums the tensors: rotation tables and other derived buffers are leased on dense and priced nowhere",
 		Item: "MM8 Metal, dense vectors", Bytes: func(f map[string]int64) int64 { return f["tables"] }},
 	{Row: "testdata/gemma4-moe-kv-tiny32 *", Line: mem.LineDense, What: "Gemma 4's MoE leases 19,016 bytes on dense past the row above: not diagnosed",
 		Item: "MM8 Metal, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return 19016 }},
 }
 
-const metalMemGapsPin = 3
+const metalMemGapsPin = 2
 
 // metalGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; what it returns
 // runs after that read, before Close.
@@ -340,12 +338,32 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount()}
 	read.Plan = m.Plan("metal", math.MaxInt64/4, fit.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
 	facts := func() map[string]int64 {
-		return map[string]int64{"tables": max(metalDenseVectorBytes(m, r)-m.PricedDenseVectorBytesForTest("metal")+m.PricedGemma4MoEVectorBytesForTest(), 0), "decode": metalDecodeScratchBytes(m, r)}
+		return map[string]int64{"tables": max(metalDenseVectorBytes(m, r)-m.PricedDenseVectorBytesForTest("metal")+m.PricedGemma4MoEVectorBytesForTest(), 0)}
+	}
+	// G-MS2 (docs/tasks/task-forward-architecture-2026-10.md §4.9c): the scratch line holds decode's list and the step's to the byte,
+	// both ways. The ledger's requests are read, not its charges, so the allocator's rounding hides nothing.
+	exact := func(at string) {
+		t.Helper()
+		var held int64
+		for _, o := range l.OpenLeases() {
+			if o.Line == mem.LineScratch {
+				held += o.Requested
+			}
+		}
+		want := r.decode.listBytes(r)
+		if r.batch != nil {
+			want += r.stepShape().listBytes()
+		}
+		if held != want {
+			t.Errorf("%s: %s: the scratch line holds %d bytes requested, and the decode and step lists %d", row, at, held, want)
+		}
 	}
 	read.Open = append(read.Open, memgate.Snap("built", l, facts()))
+	exact("built")
 	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
 	for range ch {
 	}
+	exact("generated")
 	free := func() {}
 	if metalGatePlantForTest != nil {
 		free = metalGatePlantForTest(r)
@@ -355,11 +373,11 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	}
 	read.Open = append(read.Open, memgate.Snap("generated", l, facts()))
 	free()
-	// Scratch has no plan line: the one thing anything prices on it is the step, whose list the gate holds it to, before the price's
-	// page rounding, which would hide what else leases there.
-	var scratch int64
+	// Scratch has no plan line: it holds decode's list and the step's, which the gate holds it to, before the step price's page
+	// rounding, which would hide what else leases there.
+	scratch := r.decode.listBytes(r)
 	if r.batch != nil {
-		scratch = r.stepShape().listBytes()
+		scratch += r.stepShape().listBytes()
 	}
 	// The reserve is the build's own answer read before the build: every input to it agrees, so it is the step's price where
 	// batchIneligible admits it and 0 where not, on shapes no fixture has as well as on these.
@@ -764,60 +782,6 @@ func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
 	}); len(a.r.kvSlotBufs) != 2 || a.r.batch != nil {
 		t.Errorf("unpinned, giving up a slot would not make room for the step: %d slots, step built %v; want two slots and no step", len(a.r.kvSlotBufs), a.r.batch != nil)
 	}
-}
-
-// metalDecodeScratchBytes is, from the model's widths and the blocks this build has on, what a build leases on the scratch line for
-// decode itself. Nothing prices these. Its buffers are sized as the build sizes them, and its one allowance is a fixed count of small
-// uniforms, so it holds a leak in any width-sized buffer to well under a buffer. MM5's list for decode replaces it.
-func metalDecodeScratchBytes(m *decoder.Model, r *resident) int64 {
-	H, nL, nH, _, _, I, V := m.Dims()
-	var nHhd, kvDim, faPartial int
-	for l := range nL {
-		hd := m.HeadDimAtResident(l)
-		nHhd, kvDim = max(nHhd, nH*hd), max(kvDim, m.KVHeadsAtResident(l)*hd)
-		if r.layers[l].geom != nil {
-			faPartial = max(faPartial, attnFAPartialFloats(hd, nH, m.KVHeadsAtResident(l)))
-		}
-	}
-	gu := I
-	for _, lw := range m.Weights().Layers {
-		gu = max(gu, lw.GateProj.Rows())
-	}
-	floats, bytes := 0, 0
-	if mo := r.moe; mo != nil {
-		gu = max(gu, mo.inter, mo.sharedInter)
-		floats += mo.nE + 2*mo.k + H // the router's logits, indices and weights, and the shared expert's down
-		if mo.guK != (Buffer{}) {    // allocated before an int8 build turns those kernels off
-			floats += mo.k*2*mo.inter + mo.k + mo.k*H
-			bytes += mo.k * mo.inter
-		}
-	}
-	if g := r.g4moe; g != nil {
-		gu = max(gu, g.denseInter, g.moeInter)
-		floats += 2*(g.nE+2*g.topK) + 4*H
-	}
-	if dp := r.dnet; dp != nil {
-		floats += 2*dp.convDim + 4*dp.nv + 2*dp.keyDim + 3*dp.valueDim + 3*nHhd // its mixer, and gated attention's rows
-		bytes += dp.valueDim
-	}
-	if p := r.mamba; p != nil {
-		floats += p.projDim + p.convDim + 2*p.dInner
-		bytes += p.dInner
-	}
-	if p := r.mla; p != nil {
-		floats += max(p.qLoRA, 1) + p.nH*p.qkHead + p.latDim + p.nH*p.latDim + p.nH*p.rank + p.nH*p.vHead
-		bytes += max(p.qLoRA, 4) + p.nH*p.vHead
-	}
-	if P := r.pleP; P > 0 {
-		floats += nL*P + P
-		bytes += P
-	}
-	floats += 3*H + nHhd + 2*kvDim + 2*gu + nHhd + V + 2*((V+7)/8) + faPartial // x, oO, dO; qkv; gu; ctx; logits; part; the fused partial
-	floats += r.batchCap * (H + V)                                             // ensureBatchCap's rows, once a call has asked for them
-	floats += 2 * r.gumbelNB
-	bytes += 6*H + 3*nHhd + gu // aq, mq, the f16 twins of a and m; cq and its twin; dq
-	const uniforms = 450       // each a few bytes: the model's, the chain's and the families'
-	return 4*int64(floats) + int64(bytes) + 4*int64(uniforms+8*nL)
 }
 
 // metalDenseVectorBytes is what a build leases on the dense line that the plan's dense figure, a sum of weight matrices, does not

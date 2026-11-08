@@ -4596,8 +4596,9 @@ does from `stepShape.buffers`.
   fixture and gemma2-tiny: the decode scratch written in the test as arithmetic on the config's numbers equals the plan's.
 - **G-MS4, the scan:** the pricing function names no mixer, family or family parameter.
 - **G-MS5:** `gate identity -backend metal`, all IDENTICAL.
-- **Plants:** an entry declared one element short (G-MS2 and G-MS3 red); a buffer allocated beside the list (G-MS2 red); a term counted
-  twice (G-MS2 red).
+- **Plants:** an entry declared one element short (G-MS3 red); a buffer allocated beside the list (G-MS2 red); a term counted twice
+  (G-MS2 red). Amended 2026-11-07, during the build: G-MS2 cannot see a short entry, since the build allocates what the list declares,
+  so G-MS3 alone holds a declaration to the config. G-MS2 reads the ledger's requested bytes, so it is exact with no rounding allowance.
 
 ## 5. Track RF — one ragged forward pass
 

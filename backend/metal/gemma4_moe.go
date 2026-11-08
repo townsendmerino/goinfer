@@ -40,6 +40,7 @@ func (r *resident) PagedProfile() pagedProfile { return r.prof }
 // enable_moe_block layers. It is separate from moeResident (moe.go), the generic one-branch SiLU shape with wacc straight into the
 // residual, which Gemma 4 is not.
 type gemma4MoeResident struct {
+	scratch                             scratchList // its decode scratch, allocated with the decode list
 	pRouterF32, pRoute, pGU, pDownWacc  Pipeline
 	guR, downR                          int // D-B04: rows per simdgroup of pGU / pDownWacc (moeExpertRows)
 	pRmsNW, pScaleWgt, pScaleVec, pZero Pipeline
@@ -123,22 +124,31 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 		nE: b.NE, topK: b.TopK, denseInter: b.DenseInter, moeInter: b.MoeInter,
 	}
 	g.pGU, g.pDownWacc, g.guR, g.downR = moeExpertRows(pipe, 2*b.MoeInter, H, true)
-	g.uNE, g.uK = NewBufferU32On(mem.LineScratch, d, uint32(b.NE)), NewBufferU32On(mem.LineScratch, d, uint32(b.TopK))
-	g.uHidden = NewBufferU32On(mem.LineScratch, d, uint32(H))
-	g.uDenseInter, g.uMoeInter = NewBufferU32On(mem.LineScratch, d, uint32(b.DenseInter)), NewBufferU32On(mem.LineScratch, d, uint32(b.MoeInter))
-	g.uMoeGU = NewBufferU32On(mem.LineScratch, d, uint32(2*b.MoeInter))
-	g.uSig0, g.uNorm1 = NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 1)
-	g.uScale1 = NewBufferFloatsOn(mem.LineScratch, d, []float32{1})
-	g.uOne = NewBufferU32On(mem.LineScratch, d, 1)
+	sc := &g.scratch
+	sc.u32(&g.uNE, uint32(b.NE))
+	sc.u32(&g.uK, uint32(b.TopK))
+	sc.u32(&g.uHidden, uint32(H))
+	sc.u32(&g.uDenseInter, uint32(b.DenseInter))
+	sc.u32(&g.uMoeInter, uint32(b.MoeInter))
+	sc.u32(&g.uMoeGU, uint32(2*b.MoeInter))
+	sc.u32(&g.uSig0, 0)
+	sc.u32(&g.uNorm1, 1)
+	sc.f32Of(&g.uScale1, 1)
+	sc.u32(&g.uOne, 1)
 	g.uSlot = make([]Buffer, b.TopK)
 	for j := range g.uSlot {
-		g.uSlot[j] = NewBufferU32On(mem.LineScratch, d, uint32(j))
+		sc.u32(&g.uSlot[j], uint32(j))
 	}
-	g.rLogits = d.NewBufferLenOn(mem.LineScratch, b.NE)
-	g.rIdx = NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, b.TopK))
-	g.rWgt = d.NewBufferLenOn(mem.LineScratch, b.TopK)
-	g.g4x1, g.g4x2, g.g4rn = d.NewBufferLenOn(mem.LineScratch, H), d.NewBufferLenOn(mem.LineScratch, H), d.NewBufferLenOn(mem.LineScratch, H)
-	g.rLogitsP, g.rIdxP, g.rWgtP, g.g4rnP = d.NewBufferLenOn(mem.LineScratch, b.NE), NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, b.TopK)), d.NewBufferLenOn(mem.LineScratch, b.TopK), d.NewBufferLenOn(mem.LineScratch, H)
+	sc.f32(&g.rLogits, b.NE)
+	sc.u32s(&g.rIdx, make([]uint32, b.TopK))
+	sc.f32(&g.rWgt, b.TopK)
+	sc.f32(&g.g4x1, H)
+	sc.f32(&g.g4x2, H)
+	sc.f32(&g.g4rn, H)
+	sc.f32(&g.rLogitsP, b.NE)
+	sc.u32s(&g.rIdxP, make([]uint32, b.TopK))
+	sc.f32(&g.rWgtP, b.TopK)
+	sc.f32(&g.g4rnP, H)
 
 	// Synchronous paging: --moe-cache-slots (GOINFER_METAL_MOE_SLOTS is the deprecated fallback; metalMoESlotsRequest) keeps only N
 	// experts per layer resident and stages the routed top-k in per token. N must be >= topK (a token's own top-k must fit); N==0 or
@@ -150,8 +160,8 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 		}
 		if n < b.NE { // n>=nE would hold every expert — no paging, just build the stacked path
 			g.paged, g.slots = true, n
-			g.slotIdx = NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, b.TopK))
-			g.fence = newPagedFence(d, nL, b.TopK)
+			sc.u32s(&g.slotIdx, make([]uint32, b.TopK))
+			g.fence = newPagedFence(d, nL, b.TopK, sc)
 			for l := range nL {
 				if skipPagedInt4CheckForTest {
 					break

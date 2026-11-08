@@ -11,6 +11,44 @@ type decodeShape struct {
 	q4k                bool
 	qkWholeHD          int // the whole-vector qk_norm's width; 0 where the family has none
 	attnScale, normEps float32
+	act, addOne        uint32 // the gated MLP's activation and RMSNorm's (1 + w), as their uniforms hold them
+	window             uint32 // the model's sliding window, 0 for full causal attention
+	lnHasBias          uint32 // 1 where the family's LayerNorm carries a bias
+	gumbelNB           int    // the device sampler's blocks over the vocabulary
+	nL, pleP           int    // the layer count and Gemma 4's per-layer-embedding width; pleP 0 without the branch
+	dnet               *dnetParams
+	mamba              *mambaParams
+	mla                *mlaParams
+	attnSink           uint32        // 1 where the attention layers add learned sinks
+	geoms              []*attnGeom   // each distinct attention geometry once, its uniforms set into it
+	layers             []decodeLayer // one a layer, in order
+	families           []stepBuf     // what the family builders declared (scratchList): the MoE kinds and the paged fence
+}
+
+// scratchList is a family builder's decode scratch, declared where the builder knows its values and allocated with the rest of the
+// decode list (decodeShape.families).
+type scratchList []stepBuf
+
+func (l *scratchList) add(sb stepBuf, dst *Buffer) {
+	sb.set = func(b Buffer) { *dst = b }
+	*l = append(*l, sb)
+}
+
+func (l *scratchList) f32(dst *Buffer, n int)    { l.add(stepBuf{kind: stepFloats, n: n}, dst) }
+func (l *scratchList) bytes(dst *Buffer, n int)  { l.add(stepBuf{kind: stepBytes, n: n}, dst) }
+func (l *scratchList) u32(dst *Buffer, v uint32) { l.add(stepBuf{kind: stepU32, n: 1, u: v}, dst) }
+func (l *scratchList) f32Of(dst *Buffer, v float32) {
+	l.add(stepBuf{kind: stepFloatsOf, n: 1, f: v}, dst)
+}
+func (l *scratchList) u32s(dst *Buffer, us []uint32) {
+	l.add(stepBuf{kind: stepU32s, n: len(us), us: us}, dst)
+}
+
+// decodeLayer is what one layer's own uniforms hold.
+type decodeLayer struct {
+	attn   bool   // it runs attention: its sink flag and its window
+	window uint32 // its sliding window, 0 for full causal
+	ffnI   int    // its FFN width where that differs from the model's; 0 where it reads uI
 }
 
 // buffers is decode's scratch, each set into r as it is allocated: the list buildResident allocates it from and the price sums. A
@@ -78,13 +116,190 @@ func (s decodeShape) buffers(r *resident) []stepBuf {
 		u32(&r.uQKWholeHD, uint32(s.qkWholeHD))
 	}
 	u32(&r.uZero, 0)
-	return out
+	u32(&r.uAct, s.act)
+	u32(&r.uAddOne, s.addOne)
+	u32(&r.uWindow, s.window)
+	u32(&r.uLNHasBias, s.lnHasBias)
+	// The device sampler (gumbel_sample.go): each block's best key and index, the draw, and its uniforms.
+	buf(stepFloats, &r.gumbelBKey, s.gumbelNB)
+	buf(stepFloats, &r.gumbelBIdx, s.gumbelNB)
+	buf(stepFloats, &r.gumbelOut, 1)
+	u32(&r.uGumbelV, uint32(s.V))
+	u32(&r.uGumbelNB, uint32(s.gumbelNB))
+	f32Of(&r.uGumbelInvT, 1)
+	u32(&r.uGumbelK0, 0)
+	u32(&r.uGumbelK1, 0)
+	u32(&r.uGumbelD0, 0)
+	u32(&r.uGumbelD1, 0)
+	if P := s.pleP; P > 0 { // Gemma 4's per-layer-embedding branch: every layer's input, the gate, and its int8 row
+		buf(stepFloats, &r.pleIn, s.nL*P)
+		buf(stepFloats, &r.pleG, P)
+		buf(stepBytes, &r.pleQ, P)
+		buf(stepFloats, &r.pleSc, 1)
+		u32(&r.uPleP, uint32(P))
+	}
+	if dp := s.dnet; dp != nil { // the Gated DeltaNet mixer's rows, and its gated-attention layers' [query ‖ gate]
+		buf(stepFloats, &r.dnMixed, dp.convDim)
+		buf(stepFloats, &r.dnConvOut, dp.convDim)
+		buf(stepFloats, &r.dnBt, dp.nv)
+		buf(stepFloats, &r.dnAt, dp.nv)
+		buf(stepFloats, &r.dnHeadP, 2*dp.nv)
+		buf(stepFloats, &r.dnQn, dp.keyDim)
+		buf(stepFloats, &r.dnKn, dp.keyDim)
+		buf(stepFloats, &r.dnCore, dp.valueDim)
+		buf(stepFloats, &r.dnZOut, dp.valueDim)
+		buf(stepFloats, &r.dnGated, dp.valueDim)
+		buf(stepBytes, &r.dnGq, dp.valueDim)
+		buf(stepFloats, &r.dnGSc, 1)
+		buf(stepFloats, &r.dnQg, 2*s.nHhd)
+		buf(stepFloats, &r.dnAGate, s.nHhd)
+		u32(&r.uDnConvDim, uint32(dp.convDim))
+		u32(&r.uDnK, uint32(dp.convK))
+		u32(&r.uDnNv, uint32(dp.nv))
+		u32(&r.uDnNk, uint32(dp.nk))
+		u32(&r.uDnHk, uint32(dp.hk))
+		u32(&r.uDnHv, uint32(dp.hv))
+		u32(&r.uDnKeyDim, uint32(dp.keyDim))
+		f32Of(&r.uDnQScale, dp.qScale)
+		u32(&r.uDnRep, uint32(dp.rep))
+		u32(&r.uDnVBase, uint32(2*dp.keyDim))
+		u32(&r.uDnValueDim, uint32(dp.valueDim))
+		f32Of(&r.uDnBetaScale, dp.betaScale)
+		if dp.oNormEps != 0 { // else the model's epsilon: buildResident binds uEps itself
+			f32Of(&r.uDnONormEps, dp.oNormEps)
+		}
+	}
+	if p := s.mamba; p != nil { // the Mamba-2 mixer: in_proj's output, the conv's, the scan's and the gated norm's, and its uniforms
+		buf(stepFloats, &r.mbProj, p.projDim)
+		buf(stepFloats, &r.mbConv, p.convDim)
+		buf(stepFloats, &r.mbY, p.dInner)
+		buf(stepFloats, &r.mbGated, p.dInner)
+		buf(stepBytes, &r.mbGq, p.dInner)
+		buf(stepFloats, &r.mbGSc, 1)
+		for _, u := range []struct {
+			dst *Buffer
+			v   int
+		}{{&r.uMbConvDim, p.convDim}, {&r.uMbK, p.dConv}, {&r.uMbDInner, p.dInner}, {&r.uMbNH, p.nHeads}, {&r.uMbHD, p.headDim},
+			{&r.uMbDS, p.dState}, {&r.uMbRep, p.repeat}, {&r.uMbGSize, p.gSize}, {&r.uMbDtBase, p.dInner + p.convDim},
+			{&r.uMbGroupSize, p.dInner / p.normGroups}, {&r.uMbZero, 0}} {
+			u32(u.dst, uint32(u.v))
+		}
+		f32Of(&r.uMbEps, s.normEps)
+		u32(&r.uMbNormGroups, uint32(p.normGroups))
+	}
+	if p := s.mla; p != nil { // Multi-head Latent Attention: q (through its LoRA), the latent, the absorbed q, and the lifted context
+		S, b := r.mlaS, uint32(0)
+		if p.interleave {
+			b = 1
+		}
+		u32s := func(dst *Buffer, vs ...int) {
+			us := make([]uint32, len(vs))
+			for i, v := range vs {
+				us[i] = uint32(v)
+			}
+			out = append(out, stepBuf{kind: stepU32s, n: len(us), us: us, set: func(x Buffer) { *dst = x }})
+		}
+		buf(stepFloats, &S.qa, max(p.qLoRA, 1))
+		buf(stepBytes, &S.qaQ, max(p.qLoRA, 4))
+		buf(stepFloats, &S.qaSc, 1)
+		buf(stepFloats, &S.q, p.nH*p.qkHead)
+		buf(stepFloats, &S.kv, p.latDim)
+		buf(stepFloats, &S.qAbs, p.nH*p.latDim)
+		buf(stepFloats, &S.wsum, p.nH*p.rank)
+		buf(stepFloats, &S.ctx, p.nH*p.vHead)
+		buf(stepBytes, &S.ctxQ, p.nH*p.vHead)
+		buf(stepFloats, &S.ctxSc, 1)
+		u32s(&S.uStore, p.rank, p.qkRope, int(b)) // packed shapes (kernels/mla_kernels_msl.go)
+		u32s(&S.uAbsorb, p.nH, p.rank, p.qkNope, p.qkHead, p.latDim)
+		u32s(&S.uLift, p.nH, p.vHead, p.rank, p.rank, p.vHead)
+		u32s(&S.uQRope, p.nH, p.qkHead, p.qkNope, p.qkRope, p.rank, p.latDim, int(b))
+		u32s(&S.uAttn, p.nH, p.latDim, p.rank)
+		u32(&S.uQLoRA, uint32(p.qLoRA))
+		u32(&S.uOK, uint32(p.nH*p.vHead))
+		u32(&S.uZero, 0)
+		f32Of(&S.uRopeScale, p.ropeScale)
+		f32Of(&S.uScale, p.attnScale)
+	}
+	for _, g := range s.geoms {
+		u32(&g.uHd, uint32(g.hd))
+		u32(&g.uKvDim, uint32(g.kvDim))
+		u32(&g.uNKV, uint32(g.nKV))
+		u32(&g.uNHhd, uint32(s.nH*g.hd))
+		u32(&g.uHalf, uint32(g.half))
+		u32(&g.uQtotal, uint32(s.nH*g.half))
+		u32(&g.uKtotal, uint32(g.nKV*g.half))
+	}
+	for l := range r.layers { // the q4k lane's segments: each one's row count
+		L := &r.layers[l]
+		for _, segs := range [][]q4kSeg{L.qkvSegs, L.oSegs, L.guSegs, L.dSegs} {
+			for i := range segs {
+				u32(&segs[i].uN, uint32(segs[i].rows))
+			}
+		}
+	}
+	for l, ly := range s.layers {
+		L := &r.layers[l]
+		if ly.attn {
+			u32(&L.uHasSink, s.attnSink)
+			u32(&L.uWindow, ly.window)
+		}
+		if ly.ffnI != 0 {
+			u32(&L.uFFNI, uint32(ly.ffnI))
+		}
+	}
+	out = append(out, s.families...)
+	if r.batchCap > 0 { // ensureBatchCap's rows, allocated after the list at the build's capacity and grown by ForwardBatch
+		out = append(out, r.batchRows(r.batchCap, 0)...)
+	}
+	return append(out, r.chainBuffers(r.chainTok[0] != (Buffer{}), r.chainLogits[0] != (Buffer{}))...)
 }
 
-// listBytes is what the list asks the device for.
-func (s decodeShape) listBytes() int64 {
+// batchRows is ensureBatchCap's buffers at capacity c: the batch's hidden and logits rows, and the position uniforms of rows held
+// through c. The decode list counts them at the resident's capacity.
+func (r *resident) batchRows(c, held int) []stepBuf {
+	var l scratchList
+	l.f32(&r.batchX, c*r.H)
+	l.f32(&r.batchLogits, c*r.V)
+	for i := held; i < c; i++ {
+		l.u32(&r.batchUPos[i], 0)
+		l.u32(&r.batchUNKeys[i], 1)
+		l.f32Of(&r.batchUQTempScale[i], 1)
+	}
+	return l
+}
+
+// chainBuffers is what the greedy chain allocates when it first opens (chainOpen): each buffer's token and position uniforms, and,
+// for a sampled chain, the draw's temperature, keys and logits. The decode list counts each part once it is held.
+func (r *resident) chainBuffers(greedy, sampled bool) []stepBuf {
+	var l scratchList
+	if greedy {
+		for k := range r.chainSets {
+			u := &r.chainSets[k]
+			l.u32(&r.chainTok[k], 0)
+			l.u32(&u.uPos, 0)
+			l.u32(&u.uNKeys, 1)
+			l.u32(&u.uRopePos, 0)
+			l.f32Of(&u.uQTempScale, 1)
+			l.u32(&u.uFANSplit, 0)
+		}
+	}
+	if sampled {
+		l.f32Of(&r.chainInvT, 1)
+		l.u32(&r.chainK0, 0)
+		l.u32(&r.chainK1, 0)
+		for k := range r.chainLogits {
+			l.f32(&r.chainLogits[k], r.V)
+			l.u32(&r.chainD0[k], 0)
+			l.u32(&r.chainD1[k], 0)
+		}
+	}
+	return l
+}
+
+// listBytes is what the list asks the device for on r, the resident it was built for.
+func (s decodeShape) listBytes(r *resident) int64 {
 	var n int64
-	for _, sb := range s.buffers(&resident{}) {
+	for _, sb := range s.buffers(r) {
 		n += int64(sb.bytes())
 	}
 	return n
