@@ -513,8 +513,10 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			// Falling back through PrefillLastNArgmax(M=1) downloads the full logit row per token, so the guard would turn a loss into the same
 			// loss instead of into plain-decode speed.
 			var e error
-			if g, ok := m.resident.(ResidentGreedy); ok {
-				anchor, e = g.ForwardArgmax(m.embedResident(anchor), pos)
+			if m.canDecode(outArgmax) {
+				var sr stepResult
+				sr, e = m.step(stepBatch{Pass: passToken, Emb: [][]float32{m.embedResident(anchor)}, Pos: pos, Out: outArgmax})
+				anchor = sr.ID
 			} else {
 				var one []int
 				one, e = host.PrefillLastNArgmax([][]float32{m.embedResident(anchor)}, pos)
@@ -656,8 +658,8 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 					if _, e = host.PrefillLastNArgmax([][]float32{emb}, pos); e == nil {
 						e = fuse(host.BatchedCapture(), 1)
 					}
-				} else if g, ok := m.resident.(ResidentGreedy); ok {
-					_, e = g.ForwardArgmax(emb, pos)
+				} else if m.canDecode(outArgmax) {
+					_, e = m.step(stepBatch{Pass: passToken, Emb: [][]float32{emb}, Pos: pos, Out: outArgmax})
 				} else {
 					_, e = host.PrefillLastNArgmax([][]float32{emb}, pos)
 				}
