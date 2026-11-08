@@ -7,8 +7,7 @@ type AdmitFacts struct {
 	Arch        *Architecture
 	Backend     string // the backend's name, as Backend.Name reports it
 	Residency   bool   // the backend can build a resident runner (it implements ResidencyBackend)
-	Quant       string // the load's quant option, as Options.Quant spells it
-	QuantLabel  string // the precision the weights loaded at (Model.Quant)
+	QuantLabel  string // the precision the weights loaded at (Model.Quant), which a backend's build reads; a .giw records its own
 	BackendAuto bool   // the backend was chosen by -backend auto
 	ActGroup    int    // Options.ActQuantGroup
 	ProjsInt4   bool   // the resident projections load as int4 (Model.residentProjsInt4)
@@ -50,7 +49,7 @@ func Admit(f AdmitFacts) Admission {
 // int8 resident projections (W8A8) do; int4 does not yet. Metal's q4k lane quantizes no activation, so the hazard does not apply.
 func admitActSafe(f AdmitFacts, key string) bool {
 	if key == "metal" {
-		return f.Quant == "q4k"
+		return f.QuantLabel == "q4k"
 	}
 	return f.ActGroup == 32 && !f.ProjsInt4
 }
@@ -61,7 +60,7 @@ func admitWhy(f AdmitFacts, ad Admission) string {
 		// built in (`--backend cuda` without `-tags cuda`): NewBackend returns a cpuBackend + a note there.
 		return "backend does not implement residency (not built in, or the CPU backend)"
 	}
-	if f.Quant == "q4k" && f.Backend != "cuda" && f.Backend != "metal" {
+	if f.QuantLabel == "q4k" && f.Backend != "cuda" && f.Backend != "metal" {
 		// CUDA has gemv_q4k_g32 and Metal the q4k lane; WebGPU has no Q4_K kernel yet.
 		return "--quant q4k (native Q4_K) has no resident kernel on " + f.Backend + " yet (docs/tasks/task-int4-weight-quality-2026-09.md)"
 	}
@@ -90,7 +89,7 @@ func admitResident(f AdmitFacts, ad Admission) string {
 	if !residentDeclared(key) {
 		return ""
 	}
-	if why := actGroupResidentDecline(key, f.ActGroup, f.Quant); why != "" {
+	if why := actGroupResidentDecline(key, f.ActGroup, f.QuantLabel); why != "" {
 		return why
 	}
 	if len(ad.Gates) > 0 {
@@ -129,7 +128,7 @@ func archAdmitFacts(a *Architecture, backend string) AdmitFacts {
 
 // admitFacts gathers the facts Admit reads from a loaded model.
 func (m *Model) admitFacts() AdmitFacts {
-	f := AdmitFacts{Arch: m.w.arch, Quant: m.quant, QuantLabel: m.Quant(), BackendAuto: m.backendAuto, ActGroup: m.actGroup,
+	f := AdmitFacts{Arch: m.w.arch, QuantLabel: m.Quant(), BackendAuto: m.backendAuto, ActGroup: m.actGroup,
 		ProjsInt4: m.residentProjsInt4(), SSMResident: m.knobs.get(knobSSMResident) != ""}
 	if m.be != nil {
 		f.Backend = m.be.Name()
