@@ -2,6 +2,12 @@
 
 package metal
 
+import (
+	"fmt"
+	"maps"
+	"slices"
+)
+
 // decodeShape is what decode's own scratch is sized from (docs/tasks/task-forward-architecture-2026-10.md §4.9c): the widths, in
 // elements, its buffers take, each at the widest layer that uses it, since every layer reuses one buffer a role.
 type decodeShape struct {
@@ -20,6 +26,7 @@ type decodeShape struct {
 	mamba              *mambaParams
 	mla                *mlaParams
 	attnSink           uint32        // 1 where the attention layers add learned sinks
+	qGate              bool          // a layer runs gated attention: its [query ‖ gate] row and split gate are held
 	geoms              []*attnGeom   // each distinct attention geometry once, its uniforms set into it
 	layers             []decodeLayer // one a layer, in order
 	families           []stepBuf     // what the family builders declared (scratchList): the MoE kinds and the paged fence
@@ -49,6 +56,102 @@ type decodeLayer struct {
 	attn   bool   // it runs attention: its sink flag and its window
 	window uint32 // its sliding window, 0 for full causal
 	ffnI   int    // its FFN width where that differs from the model's; 0 where it reads uI
+}
+
+// decodeRowsPlantForTest, when set, edits the declared row widths buildResident checks, so a test can plant a declaration the
+// decode kernels do not address. nil in every production build.
+var decodeRowsPlantForTest func(rows map[string]int)
+
+// decodeRowsCheck holds the program's declared per-row widths (decoder.Model.MetalDecodeRowWidths) to what r's decode kernels
+// address: each row Metal holds, by name, at its width, none declared that Metal holds no buffer for, and a mixer's or branch's rows
+// declared exactly where r runs it. The list is sized from the same widths, so a declaration and kernels that differ would read or
+// write past a buffer.
+func (r *resident) decodeRowsCheck(declared map[string]int) error {
+	s := r.decode
+	want := map[string]int{"h": s.H, "x": s.H, "a": s.H, "logits": s.V}
+	if r.parallelBlock { // the parallel block's second output, held in the FFN's output row
+		want["b"] = s.H
+	}
+	if len(s.geoms) > 0 {
+		want["q"], want["ctx"] = s.nHhd, s.nHhd
+	}
+	// K and V where an attention layer holds its own, and each FFN's gate and up at its own width: a dense FFN's, a routed expert's
+	// and a shared expert's, or Gemma 4's MoE block's; up alone for a non-gated MLP. Each row at the widest layer that runs it.
+	at := func(n string, w int) { want[n] = max(want[n], w) }
+	for l := range r.layers {
+		L := &r.layers[l]
+		if g := L.geom; g != nil && !L.kvShared {
+			at("k", g.nKV*g.hd)
+			at("v", g.nKV*g.hd)
+		}
+		switch {
+		case L.moe != nil:
+			at("gate", r.moe.inter)
+			at("up", r.moe.inter)
+			if r.moe.sharedInter > 0 {
+				at("shared-gate", r.moe.sharedInter)
+				at("shared-up", r.moe.sharedInter)
+			}
+		case L.g4moe != nil:
+			at("gate", max(r.g4moe.denseInter, r.g4moe.moeInter))
+			at("up", max(r.g4moe.denseInter, r.g4moe.moeInter))
+		case !L.ffn:
+		case r.nonGatedMLP:
+			at("up", s.I)
+		default:
+			at("gate", L.ffnI)
+			at("up", L.ffnI)
+		}
+	}
+	if s.qGate {
+		want["q-gate"], want["attn-gate"] = 2*s.nHhd, s.nHhd
+	}
+	if dp := s.dnet; dp != nil {
+		for n, w := range map[string]int{"dn-mixed": dp.convDim, "dn-conv": dp.convDim, "dn-beta": dp.nv, "dn-decay": dp.nv, "dn-ba": 2 * dp.nv,
+			"dn-q": dp.keyDim, "dn-k": dp.keyDim, "dn-core": dp.valueDim, "dn-z": dp.valueDim, "dn-gated": dp.valueDim} {
+			want[n] = w
+		}
+	}
+	if p := s.mamba; p != nil {
+		want["mb-proj"], want["mb-conv"], want["mb-y"], want["mb-gated"] = p.projDim, p.convDim, p.dInner, p.dInner
+	}
+	if p := s.mla; p != nil {
+		for n, w := range map[string]int{"mla-qa": p.qLoRA, "mla-q": p.nH * p.qkHead, "mla-kv": p.latDim, "mla-q-abs": p.nH * p.latDim,
+			"mla-wsum": p.nH * p.rank, "mla-ctx": p.nH * p.vHead} {
+			want[n] = w
+		}
+	}
+	if P := s.pleP; P > 0 {
+		want["ple-gate"], want["ple-in"] = P, s.nL*P
+	}
+	if mo := r.moe; mo != nil {
+		prefix := "moe"
+		if mo.isGptOss {
+			prefix = "gptoss"
+		}
+		want[prefix+"-router"], want[prefix+"-experts"], want[prefix+"-weights"] = mo.nE, mo.k, mo.k
+	}
+	if g := r.g4moe; g != nil {
+		for n, w := range map[string]int{"g4moe-router": g.nE, "g4moe-experts": g.topK, "g4moe-weights": g.topK, "g4moe-dense-out": s.H,
+			"g4moe-moe-out": s.H, "g4moe-router-in": s.H} {
+			want[n] = w
+		}
+	}
+	for _, n := range slices.Sorted(maps.Keys(declared)) {
+		w, ok := want[n]
+		switch {
+		case !ok:
+			return fmt.Errorf("metal: the program declares a %s row of %d, which decode holds no buffer for", n, declared[n])
+		case declared[n] != w:
+			return fmt.Errorf("metal: the program declares the %s row at %d, and the decode kernels address %d", n, declared[n], w)
+		}
+	}
+	for _, n := range slices.Sorted(maps.Keys(want)) {
+		if _, ok := declared[n]; !ok && want[n] != 0 {
+			return fmt.Errorf("metal: the program declares no %s row, which the decode kernels address at %d", n, want[n])
+		}
+	}
+	return nil
 }
 
 // buffers is decode's scratch, each set into r as it is allocated: the list buildResident allocates it from and the price sums. A
@@ -138,7 +241,7 @@ func (s decodeShape) buffers(r *resident) []stepBuf {
 		buf(stepFloats, &r.pleSc, 1)
 		u32(&r.uPleP, uint32(P))
 	}
-	if dp := s.dnet; dp != nil { // the Gated DeltaNet mixer's rows, and its gated-attention layers' [query ‖ gate]
+	if dp := s.dnet; dp != nil { // the Gated DeltaNet mixer's rows
 		buf(stepFloats, &r.dnMixed, dp.convDim)
 		buf(stepFloats, &r.dnConvOut, dp.convDim)
 		buf(stepFloats, &r.dnBt, dp.nv)
@@ -151,8 +254,6 @@ func (s decodeShape) buffers(r *resident) []stepBuf {
 		buf(stepFloats, &r.dnGated, dp.valueDim)
 		buf(stepBytes, &r.dnGq, dp.valueDim)
 		buf(stepFloats, &r.dnGSc, 1)
-		buf(stepFloats, &r.dnQg, 2*s.nHhd)
-		buf(stepFloats, &r.dnAGate, s.nHhd)
 		u32(&r.uDnConvDim, uint32(dp.convDim))
 		u32(&r.uDnK, uint32(dp.convK))
 		u32(&r.uDnNv, uint32(dp.nv))
@@ -168,6 +269,10 @@ func (s decodeShape) buffers(r *resident) []stepBuf {
 		if dp.oNormEps != 0 { // else the model's epsilon: buildResident binds uEps itself
 			f32Of(&r.uDnONormEps, dp.oNormEps)
 		}
+	}
+	if s.qGate { // gated attention's [query ‖ gate] q_proj output and its split gate
+		buf(stepFloats, &r.dnQg, 2*s.nHhd)
+		buf(stepFloats, &r.dnAGate, s.nHhd)
 	}
 	if p := s.mamba; p != nil { // the Mamba-2 mixer: in_proj's output, the conv's, the scan's and the gated norm's, and its uniforms
 		buf(stepFloats, &r.mbProj, p.projDim)
