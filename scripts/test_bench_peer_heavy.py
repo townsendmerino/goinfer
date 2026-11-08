@@ -90,6 +90,29 @@ class Rule(unittest.TestCase):
             self.assertIn("above half", bench_peer.heavy_void(dict(state, loadavg=[9.0, 0, 0]), 1000), "the load term still applies")
         self.assertEqual(out.getvalue().count("BENCH_ALLOW_NO_FREE_MEM=1"), 1, "logged once")
 
+    def test_the_cell_end_check_voids_what_the_cell_left_behind(self):
+        start = {"swap_mb": 100.0, "swapin_mb": 1.0, "swapout_mb": 1.0}
+        end = {"loadavg": [1.0, 1, 1], "available_mb": 5000, "reclaimable_mb": 1, "swap_mb": 100.0, "swapin_mb": 1.0, "swapout_mb": 1.0}
+        self.assertIsNone(bench_peer.cell_end_void(start, end, 1000))
+        self.assertIn("grew +20.0 MB", bench_peer.cell_end_void(start, dict(end, swap_mb=120.0), 1000))
+        self.assertIn("swap unreadable", bench_peer.cell_end_void(start, dict(end, swap_mb=None), 1000))
+        self.assertIn("swap unreadable", bench_peer.cell_end_void(dict(start, swap_mb=None), end, 1000))
+        self.assertIn("load average unreadable at the cell's end", bench_peer.cell_end_void(start, dict(end, loadavg=None), 1000))
+        self.assertIn("available memory unreadable at the cell's end", bench_peer.cell_end_void(start, dict(end, available_mb=None), 1000))
+        self.assertIsNone(bench_peer.cell_end_void(start, dict(end, available_mb=None), None), "no model load: no memory clause")
+
+    def test_the_end_check_marks_the_cell_void_in_its_record_so_it_reruns(self):
+        for name, value in [("swap_used_mb", lambda: 100.0), ("swap_io_mb", lambda: (None, None)), ("free_mem_mb", lambda: 5000),
+                            ("_reclaimable_mb", lambda: 1), ("_loadavg", lambda: [1.0, 1.0, 1.0])]:
+            old = getattr(bench_peer, name)
+            setattr(bench_peer, name, value)
+            self.addCleanup(setattr, bench_peer, name, old)
+        counts = {}
+        res = (([1.0], None, counts), {"swap_mb": 50.0, "swapin_mb": None, "swapout_mb": None}, [])
+        out = bench_peer.apply_cell_end_check(res, 0)
+        self.assertIn("grew +50.0 MB", out[0][2]["swap"]["swap_void"])
+        self.assertIn("end", out[1])
+
     def test_provenance_says_a_file_size_need_is_a_lower_bound(self):
         self.assertIn("lower bound", bench_peer.provenance()["fit_need"])
 

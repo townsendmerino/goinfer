@@ -457,6 +457,15 @@ class SwapReadingsInAJob(unittest.TestCase):
         self.assertGreaterEqual(got["readings"]["swap_peak_growth_mb"], got["readings"]["swap_growth_mb"])
         self.assertEqual(got["readings"]["swap_peak_growth_mb"], 150.5)
 
+    def test_polls_and_an_end_reading_that_all_fail_leave_no_numeric_peak_or_growth(self):
+        import void_rule
+        saved = void_rule.swap_used_mb
+        self.addCleanup(setattr, void_rule, "swap_used_mb", saved)
+        void_rule.swap_used_mb = lambda: None
+        got = self.run_job([500.0, None])
+        self.assertIsNone(got["readings"]["swap_peak_growth_mb"])
+        self.assertIsNone(got["readings"]["swap_growth_mb"])
+
     def test_an_unreadable_start_swap_leaves_the_peak_unknown_not_rebased(self):
         got = self.run_job([None, 650.5])
         self.assertIsNone(got["readings"]["swap_peak_growth_mb"])
