@@ -75,7 +75,7 @@ type ResidentDrafterHost interface {
 // prompt lengths over ~1k) and runs the head over every row to obtain one token id. The capture the seed needs comes from the layer loop,
 // not the head, so heading one row loses nothing.
 //
-// Optional rather than part of ResidentDrafterHost, following ResidentCapped and ResidentGreedy: a backend without it keeps working
+// Optional rather than part of ResidentDrafterHost, following ResidentGreedy: a backend without it keeps working
 // through the wide path.
 type ResidentSeedArgmax interface {
 	// PrefillSeedArgmax runs the same batched forward and returns only the LAST row's argmax.

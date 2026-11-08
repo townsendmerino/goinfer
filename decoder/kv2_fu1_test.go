@@ -18,8 +18,12 @@ type twoClassFake struct{ *copyFake }
 // batchedTag is mixed into every row a batched pass writes.
 const batchedTag = 0x9E3779B97F4A7C15
 
-func (f *twoClassFake) PrefillKernelFloor() int { return 1 }
-func (f *twoClassFake) PrefillTailExact() bool  { return true }
+func (f *twoClassFake) ResidentCaps() ResidentCaps {
+	c := f.copyFake.ResidentCaps()
+	c.HasKernelFloor, c.KernelFloor = true, 1
+	return c
+}
+func (f *twoClassFake) PrefillTailExact() bool { return true }
 
 func (f *twoClassFake) PrefillLast(ctx context.Context, embs [][]float32, startPos int) ([]float32, error) {
 	if _, err := f.copyFake.PrefillLast(ctx, embs, startPos); err != nil {
