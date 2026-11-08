@@ -570,6 +570,20 @@ func TestDecodeScratch_handTable(t *testing.T) {
 			u += 10 + k
 			return int64(4*f + b + 4*u)
 		}},
+		// nemotron-tiny: hidden 64, vocab 256, FFN 128, five layers (Mamba-2, attention, MLP, Mamba-2, attention); attention of 4 query
+		// heads and 2 K/V heads of 16; Mamba-2 of 8 heads of 8 (inner 64), state 16, one group, conv kernel 4. Metal runs it at int4.
+		{"nemotron-tiny", "int4", func() int64 {
+			const H, V, I, nH, nKV, hd = 64, 256, 128, 4, 2, 16
+			const nh, mhd, ds, ng = 8, 8, 16, 1
+			f, b, u := core(H, V, I, nH*hd, nKV*hd)
+			u += 7 + 2*2 // the one attention geometry; the two attention layers' sink flags and windows
+			dInner, gSize := nh*mhd, ng*ds
+			convDim, projDim := dInner+2*gSize, 2*dInner+2*gSize+nh
+			f += projDim + convDim + 2*dInner + 1 // in_proj's output, the conv's, the scan's and the gated norm's, mbGSc
+			b += dInner                           // mbGq
+			u += 13                               // the mixer's uniforms
+			return int64(4*f + b + 4*u)
+		}},
 	} {
 		m, err := decoder.Load("../../testdata/"+c.name, decoder.Options{Backend: "metal", Quant: c.quant, ResidentContext: 256})
 		if err != nil {
