@@ -183,5 +183,93 @@ class TableIsComplete(unittest.TestCase):
         self.assertEqual(missing, [], "SCANS names tests that do not exist (renamed or deleted)")
 
 
+class PackagesForTheTarget(unittest.TestCase):
+    """classify() and check_module() on a scratch module with one package of each shape, for a darwin target: a package whose files are all
+    linux-only is skipped by name, one with no test file for the target is a named skip, not a vacuous pass, and any other go list error
+    fails. Needs a Go toolchain; go vet and go list cross-check darwin from any host (go test is not run: it would build darwin binaries)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import shutil
+        import tempfile
+        if shutil.which("go") is None:
+            raise unittest.SkipTest("no go toolchain on PATH")
+        cls.tmp = tempfile.mkdtemp(prefix="touched-pkgs-")
+        mod = os.path.join(cls.tmp, "m")
+        files = {
+            "go.mod": "module m\n\ngo 1.21\n",
+            "empty/a.go": "//go:build linux\n\npackage empty\n",
+            "empty/a_test.go": "//go:build linux\n\npackage empty\n",
+            "testonly/a.go": "//go:build linux\n\npackage testonly\n",
+            "testonly/a_test.go": "package testonly\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {}\n",
+            "notests/a.go": "package notests\n\nfunc F() int { return 1 }\n",
+            "notests/a_test.go": "//go:build linux\n\npackage notests\n",
+            "ok/a.go": "package ok\n\nfunc F() int { return 1 }\n",
+            "ok/a_test.go": "package ok\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {}\n",
+            "broken/a.go": "pakage broken\n",
+        }
+        for rel, body in files.items():
+            os.makedirs(os.path.dirname(os.path.join(mod, rel)), exist_ok=True)
+            with open(os.path.join(mod, rel), "w") as f:
+                f.write(body)
+        cls.cwd = os.getcwd()
+        os.chdir(cls.tmp)
+        cls.env = dict(os.environ, GOOS="darwin", GOARCH="arm64", GOWORK="off", GOFLAGS="", CGO_ENABLED="0")
+
+    @classmethod
+    def tearDownClass(cls):
+        import shutil
+        os.chdir(cls.cwd)
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_classify(self):
+        got = touched.classify("m", ["./empty", "./testonly", "./notests", "./ok", "./broken"], [], self.env)
+        self.assertEqual(got["empty"], "empty")
+        self.assertEqual(got["testonly"], "ok")
+        self.assertEqual(got["notests"], "notests")
+        self.assertEqual(got["ok"], "ok")
+        self.assertTrue(got["broken"].startswith("error: "), got["broken"])
+
+    def test_check_module_skips_by_name_and_fails_the_broken(self):
+        import contextlib
+        import io
+        from unittest import mock
+        skips = []
+        files = ["m/empty/a.go", "m/testonly/a_test.go", "m/notests/a.go", "m/ok/a.go", "m/broken/a.go"]
+        tests = {("m", "m/empty"): "", ("m", "m/notests"): "", ("m", "m/broken"): ""}
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, self.env, clear=True), contextlib.redirect_stdout(out):
+            bad = touched.check_module("m", "m", files, tests, "darwin", skips)
+        text = out.getvalue()
+        self.assertIn("skip vet m/empty: build constraints exclude all its files for darwin", text)
+        self.assertIn("vet m/empty (no files for darwin)", skips)
+        self.assertIn("test m/empty (no files for darwin)", skips)
+        self.assertIn("test m/notests (no test files for darwin)", skips)
+        self.assertIn("FAIL list m/broken", text)  # a go list error is a failure, never a skip
+        self.assertNotIn("m/broken (no files", " ".join(skips))
+        self.assertGreaterEqual(bad, 2)  # the broken package's vet listing and its test listing
+
+    def test_check_module_cross_checks_cuda_both_ways(self):
+        calls = []
+        real = touched.sh
+
+        def spy(*a, **k):
+            calls.append((a, (k.get("env") or {}).get("GOOS")))
+            return real("true")
+
+        import contextlib
+        import io
+        from unittest import mock
+        with mock.patch.object(touched, "sh", spy), mock.patch.object(touched, "classify", lambda *a: {}), contextlib.redirect_stdout(io.StringIO()):
+            touched.check_module("backend/cuda", "backend/cuda", ["backend/cuda/x.go"], {}, "linux", [])
+            linux = [c for c in calls if c[0][:2] == ("go", "vet")]
+            calls.clear()
+            touched.check_module("backend/cuda", "backend/cuda", ["backend/cuda/x.go"], {}, "darwin", [])
+            darwin = [c for c in calls if c[0][:2] in (("go", "vet"), ("go", "build"))]
+        self.assertIn((("go", "vet", "./..."), "darwin"), linux, "a linux run must vet the darwin build of backend/cuda, module-wide")
+        self.assertIn((("go", "vet", "-tags", "cuda goinfer_testhooks", "./..."), "linux"), darwin, "off linux: the linux build at the cuda tags, module-wide")
+        self.assertIn((("go", "build", "-tags", "cuda goinfer_testhooks", "./..."), "linux"), darwin)
+
+
 if __name__ == "__main__":
     unittest.main()

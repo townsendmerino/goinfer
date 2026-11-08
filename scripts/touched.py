@@ -16,7 +16,7 @@ The last line is always a VERDICT line, so `| tail -1` reads the outcome: PASS (
 check (0), INCONCLUSIVE when a timed run holds the timing lock (75) or when every build, vet and test the diff needed was skipped, so
 only gofmt or nothing ran (2).
 """
-import os, re, subprocess, sys, time
+import json, os, re, subprocess, sys, time
 
 ROOT = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
 os.chdir(ROOT)
@@ -52,18 +52,34 @@ def summary(bad, ran, skips):
 RAN = []  # the name of each step run, for the VERDICT line's count
 
 
-def no_files(mod, args, targs, env):
-    """The packages among args (relative to module mod) with no Go file for this target, tests included: every file excluded by its
-    build constraints. go vet passes such a package silently and go test fails on it, so the caller skips it by name."""
+EXCLUDED = "build constraints exclude all Go files"
+
+
+def classify(mod, args, targs, env):
+    """Each package of args (paths relative to module mod) for this target, keyed by its normalised relative path: "empty" when go list
+    reports that build constraints exclude every file (go vet and go test both fail on such a package, so the caller skips it by name),
+    "error: <msg>" for any other go list error (the caller fails it), "notests" when it builds but has no test file for the target (go
+    test would pass vacuously), else "ok"."""
     if not args:
-        return set()
-    f = "{{.Dir}}|{{len .GoFiles}}|{{len .CgoFiles}}|{{len .TestGoFiles}}|{{len .XTestGoFiles}}"
-    r = sh("go", "list", "-e", *targs, "-f", f, *args, cwd=mod or ".", env=env)
-    out = set()
-    for ln in r.stdout.splitlines():
-        d, *counts = ln.split("|")
-        if counts and all(c == "0" for c in counts):
-            out.add(os.path.normpath(os.path.relpath(d, os.path.abspath(mod or "."))))
+        return {}
+    r = sh("go", "list", "-e", "-json=Dir,Error,GoFiles,CgoFiles,TestGoFiles,XTestGoFiles", *targs, *args, cwd=mod or ".", env=env)
+    root = os.path.realpath(mod or ".")
+    out, dec, buf = {}, json.JSONDecoder(), r.stdout.strip()
+    while buf:
+        p, n = dec.raw_decode(buf)
+        buf = buf[n:].lstrip()
+        key = os.path.normpath(os.path.relpath(os.path.realpath(p.get("Dir", "")), root))
+        err = (p.get("Error") or {}).get("Err", "")
+        if err and EXCLUDED in err:
+            out[key] = "empty"
+        elif err:
+            out[key] = "error: " + err.strip().splitlines()[0]
+        elif not p.get("TestGoFiles") and not p.get("XTestGoFiles"):
+            out[key] = "notests"
+        else:
+            out[key] = "ok"
+    if r.returncode != 0 and not out:
+        out = {os.path.normpath(a): "error: " + (r.stderr.strip().splitlines() or ["go list failed"])[0] for a in args}
     return out
 
 
@@ -146,6 +162,72 @@ def main():
             lock.release()
 
 
+def check_module(mod, label, files, tests, target_os, skips):
+    """Builds, vets and tests one module of the diff for target_os (files: its changed .go files; tests: the (module, package) -> -run
+    selection the diff picked), appending what it skips to skips. Returns the number of failed steps."""
+    bad = 0
+    tag = TAGS.get(mod, "")
+    if mod == "backend/metal" and target_os != "darwin":
+        print("  skip metal: builds on darwin only")
+        skips.append("metal")
+        return 0
+    # The CUDA backend's devices exist only in linux files. Off linux, its tagged build cannot compile for the host, so the host gets an
+    # untagged build, vet and test (what a darwin checkout compiles: the portable source scans among the tests); the other OS's build is
+    # cross-checked below either way.
+    cuda_off_linux = mod == "backend/cuda" and target_os != "linux"
+    tagarg = [] if cuda_off_linux or not tag else ["-tags", tag]  # built afresh for every module
+    env = dict(os.environ, CGO_ENABLED="0") if mod == "backend/cuda" else dict(os.environ)
+    pkgs = sorted({os.path.dirname(f) for f in files})
+    rel = lambda d: "./" + os.path.relpath(d, mod or ".") if d != (mod or "") and d else "."
+
+    mrun = lambda *c, env=env: (lambda r: (r.returncode == 0, r.stdout + r.stderr))(sh(*c, cwd=mod or ".", env=env))
+
+    if files:
+        bad += not step(f"build {label}", lambda: mrun("go", "build", *tagarg, "./..."))
+        args = [rel(d) for d in pkgs]
+        kinds = classify(mod, args, tagarg, env)
+        live = []
+        for a in args:
+            k = kinds.get(os.path.normpath(a), "ok")
+            if k == "empty":
+                print(f"  skip vet {label}/{os.path.normpath(a)}: build constraints exclude all its files for {target_os}" + (" untagged" if cuda_off_linux else ""))
+                skips.append(f"vet {label}/{os.path.normpath(a)} (no files for {target_os})")
+            elif k.startswith("error: "):
+                bad += not step(f"list {label}/{os.path.normpath(a)}", lambda k=k: (False, k))
+            else:
+                live.append(a)
+        if live:
+            bad += not step(f"vet {label} ({len(live)} pkg)", lambda: mrun("go", "vet", *tagarg, *live))
+        if mod == "backend/cuda":
+            # The other OS's build of the CUDA backend, module-wide (go vet type-checks _test.go files too; go build does not). Off linux:
+            # the CUDA implementation, GOOS=linux at its tags. On linux: what a darwin checkout compiles, untagged. Neither needs cgo.
+            if cuda_off_linux:
+                other, otag, oname = dict(env, GOOS="linux", GOARCH="amd64"), ["-tags", tag], f"GOOS=linux, -tags {tag}"
+                bad += not step(f"build {label} ({oname})", lambda: mrun("go", "build", *otag, "./...", env=other))
+            else:
+                other, otag, oname = dict(env, GOOS="darwin", GOARCH="arm64"), [], "GOOS=darwin, untagged"
+            bad += not step(f"vet {label} ({oname}, ./...)", lambda: mrun("go", "vet", *otag, "./...", env=other))
+    for (m, d), sel in sorted(tests.items()):
+        if m != mod:
+            continue
+        name = d or "."
+        k = classify(mod, [rel(d)], tagarg, env).get(os.path.normpath(rel(d)), "ok")
+        if k == "empty":
+            print(f"  skip test {name}: build constraints exclude all its files for {target_os}")
+            skips.append(f"test {name} (no files for {target_os})")
+            continue
+        if k == "notests":
+            print(f"  skip test {name}: no test file for {target_os}")
+            skips.append(f"test {name} (no test files for {target_os})")
+            continue
+        if k.startswith("error: "):
+            bad += not step(f"list {name}", lambda k=k: (False, k))
+            continue
+        runarg = (["-run", sel] if sel else []) + (["-short"] if name in SLOW else [])
+        bad += not step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *tagarg, "-count=1", *runarg, rel(d)))
+    return bad
+
+
 def run(args, run_for):
     """touched.py's work, run while main holds the timing lock shared."""
     while args and args[0] == "-run":
@@ -180,47 +262,7 @@ def run(args, run_for):
                   + ", ".join(sorted(sel or d for (m, d), sel in tests.items() if m == mod)))
             skips.append(label)
             continue
-        tag = TAGS.get(mod, "")
-        if mod == "backend/metal" and target_os != "darwin":
-            print("  skip metal: builds on darwin only")
-            skips.append("metal")
-            continue
-        # The CUDA backend's devices exist only in linux files. Off linux, its tagged build cannot compile for the host, so the host gets an
-        # untagged build, vet and test (what a darwin checkout compiles: the portable source scans among the tests), and the CUDA
-        # implementation a GOOS=linux cross-build and cross-vet at its own tags (no cgo needed), so a change that breaks CUDA still goes red.
-        cuda_off_linux = mod == "backend/cuda" and target_os != "linux"
-        tagarg = [] if cuda_off_linux or not tag else ["-tags", tag]  # built afresh for every module
-        env = dict(os.environ, CGO_ENABLED="0") if mod == "backend/cuda" else dict(os.environ)
-        pkgs = sorted({os.path.dirname(f) for f in files})
-        rel = lambda d: "./" + os.path.relpath(d, mod or ".") if d != (mod or "") and d else "."
-
-        mrun = lambda *c, env=env: (lambda r: (r.returncode == 0, r.stdout + r.stderr))(sh(*c, cwd=mod or ".", env=env))
-
-        if files:
-            bad += not step(f"build {label}", lambda: mrun("go", "build", *tagarg, "./..."))
-            args = [rel(d) for d in pkgs]
-            empty = no_files(mod, args, tagarg, env)
-            for d in sorted(empty):
-                print(f"  skip vet {label}/{d}: no Go file for {target_os}" + (" untagged" if cuda_off_linux else ""))
-                skips.append(f"vet {label}/{d} (no files for {target_os})")
-            live = [a for a in args if os.path.normpath(a) not in empty]
-            if live:
-                bad += not step(f"vet {label} ({len(live)} pkg)", lambda: mrun("go", "vet", *tagarg, *live))
-            if cuda_off_linux:
-                lin = dict(env, GOOS="linux", GOARCH="amd64")
-                ctag = ["-tags", tag]
-                bad += not step(f"build {label} (GOOS=linux, -tags {tag})", lambda: mrun("go", "build", *ctag, "./...", env=lin))
-                bad += not step(f"vet {label} (GOOS=linux, -tags {tag}, {len(args)} pkg)", lambda: mrun("go", "vet", *ctag, *args, env=lin))
-        for (m, d), sel in sorted(tests.items()):
-            if m != mod:
-                continue
-            name = d or "."
-            if os.path.normpath(rel(d)) in no_files(mod, [rel(d)], tagarg, env):
-                print(f"  skip test {name}: no Go file for {target_os}")
-                skips.append(f"test {name} (no files for {target_os})")
-                continue
-            runarg = (["-run", sel] if sel else []) + (["-short"] if name in SLOW else [])
-            bad += not step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *tagarg, "-count=1", *runarg, rel(d)))
+        bad += check_module(mod, label, files, tests, target_os, skips)
     head, line, rc = summary(bad, RAN, skips)
     print(head)
     print(line)

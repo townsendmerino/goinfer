@@ -1,0 +1,8 @@
+s........../home/francis/goinfer-bench/v025-kvi8-s2-wt/scripts/test_touched.py:57: ResourceWarning: unclosed file <_io.TextIOWrapper name='/home/francis/goinfer-bench/v025-kvi8-s2-wt/scripts/touched.py' mode='r' encoding='utf-8'>
+  src = open(os.path.join(HERE, "touched.py")).read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.....
+----------------------------------------------------------------------
+Ran 15 tests in 1.321s
+
+OK (skipped=1)

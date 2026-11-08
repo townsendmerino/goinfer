@@ -1,0 +1,26 @@
+.FF........../home/francis/goinfer-bench/v025-kvi8-s2-wt/scripts/test_touched.py:57: ResourceWarning: unclosed file <_io.TextIOWrapper name='/home/francis/goinfer-bench/v025-kvi8-s2-wt/scripts/touched.py' mode='r' encoding='utf-8'>
+  src = open(os.path.join(HERE, "touched.py")).read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.....
+======================================================================
+FAIL: test_check_module_skips_by_name_and_fails_the_broken (__main__.PackagesForTheTarget.test_check_module_skips_by_name_and_fails_the_broken)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/francis/goinfer-bench/v025-kvi8-s2-wt/scripts/test_touched.py", line 248, in test_check_module_skips_by_name_and_fails_the_broken
+    self.assertIn("FAIL list m/broken", text)  # a go list error is a failure, never a skip
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'FAIL list m/broken' not found in "  FAIL build m (0.0s)\n      broken/a.go:1:1: expected 'package', found pakage\n\n  skip vet m/broken: build constraints exclude all its files for darwin\n  skip vet m/empty: build constraints exclude all its files for darwin\n  ok   vet m (3 pkg) (0.1s)\n  skip test m/broken: build constraints exclude all its files for darwin\n  skip test m/empty: build constraints exclude all its files for darwin\n  skip test m/notests: no test file for darwin\n"
+
+======================================================================
+FAIL: test_classify (__main__.PackagesForTheTarget.test_classify)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/francis/goinfer-bench/v025-kvi8-s2-wt/scripts/test_touched.py", line 231, in test_classify
+    self.assertTrue(got["broken"].startswith("error: "), got["broken"])
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true : empty
+
+----------------------------------------------------------------------
+Ran 18 tests in 1.418s
+
+FAILED (failures=2)

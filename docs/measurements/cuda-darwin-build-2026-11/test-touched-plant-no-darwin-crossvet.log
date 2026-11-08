@@ -1,0 +1,17 @@
+F............/home/francis/goinfer-bench/v025-kvi8-s2-wt/scripts/test_touched.py:57: ResourceWarning: unclosed file <_io.TextIOWrapper name='/home/francis/goinfer-bench/v025-kvi8-s2-wt/scripts/touched.py' mode='r' encoding='utf-8'>
+  src = open(os.path.join(HERE, "touched.py")).read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.....
+======================================================================
+FAIL: test_check_module_cross_checks_cuda_both_ways (__main__.PackagesForTheTarget.test_check_module_cross_checks_cuda_both_ways)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/francis/goinfer-bench/v025-kvi8-s2-wt/scripts/test_touched.py", line 269, in test_check_module_cross_checks_cuda_both_ways
+    self.assertIn((("go", "vet", "./..."), "darwin"), linux, "a linux run must vet the darwin build of backend/cuda, module-wide")
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (('go', 'vet', './...'), 'darwin') not found in [(('go', 'vet', '-tags', 'cuda goinfer_testhooks', '.'), None)] : a linux run must vet the darwin build of backend/cuda, module-wide
+
+----------------------------------------------------------------------
+Ran 18 tests in 1.427s
+
+FAILED (failures=1)
