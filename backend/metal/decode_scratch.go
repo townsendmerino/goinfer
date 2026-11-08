@@ -69,7 +69,7 @@ var decodeRowsPlantForTest func(rows map[string]int)
 func (r *resident) decodeRowsCheck(declared map[string]int) error {
 	s := r.decode
 	want := map[string]int{"h": s.H, "x": s.H, "a": s.H, "logits": s.V}
-	if _, ok := declared["b"]; ok { // the parallel block's second output, held in the FFN's output row
+	if r.parallelBlock { // the parallel block's second output, held in the FFN's output row
 		want["b"] = s.H
 	}
 	if len(s.geoms) > 0 {
