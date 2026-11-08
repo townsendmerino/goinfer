@@ -286,3 +286,15 @@ this one.
 **What it means for the docs, by the contract:** `--kv i8` stays delivered on request. It buys context, roughly double f16's positions in
 the same VRAM. It costs decode speed at short context (up to 28 % on the 1.5B and 12 % on the 7B), and prefill at depth (about 20 to 26x at
 16K keys), on top of the quality reading above. The help text, the banner, `docs/flags.md`, `docs/server.md` and the matrix notes say so.
+
+## Addendum, 2026-11-08 12:35 PST: what changed after the pinned run
+
+The G4 and speed readings above were measured on `7545a43cf` (the "Addendum, 2026-11-08 02:51" pin), and they stand on that tree.
+Afterwards, and before #768 merged:
+- `kvHelp`, the load banner's int8 note and `decoder/kvresolve.go`'s refusal text for the other families were changed to publish these
+  readings (Francis, 2026-11-08 08:24).
+- The gate test's precondition 1 was tightened.
+
+None of those changes touch a kernel, the store or the pricing a reading measured. The tighter precondition 1 holds on D7's recorded
+allocations (242,221,056 B), and it is checked per layer in a follow-up. S6 (`s6-registration.md`) replaces the int8 prefill route, and
+its own readings supersede the published figures.

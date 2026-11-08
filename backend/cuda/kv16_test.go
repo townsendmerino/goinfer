@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -423,6 +424,15 @@ func TestKV8_flashLaneCompiledFromItsPrecisionsTwin(t *testing.T) {
 			}
 		}
 		alloc[c.kv] = kv8Allocated[r]
+		var pools int64 // TestKV8GateVsReference's precondition 1, on this build: each KV-owning layer's pool rows times its row bytes
+		for l := range r.layers {
+			if Ly := &r.layers[l]; !Ly.noKV() && !Ly.kvShared && Ly.kvDim > 0 {
+				pools += 2 * int64(r.kc[l].Len()/Ly.kvDim) * kvRowBytes(Ly)
+			}
+		}
+		if pools != alloc[c.kv] {
+			t.Errorf("-kv %s: allocated %d B of K/V; its layers' pools at its precision are %d B", c.kv, alloc[c.kv], pools)
+		}
 		m.Close()
 	}
 	e, h, q := alloc["f32"], alloc["f16"], alloc["i8"]
@@ -1451,6 +1461,10 @@ func TestKV8_exactInputIdentity_fusedPrefill(t *testing.T) {
 	requireCUDADevice(t)
 	for _, fx := range []string{"llama-attnfa-tiny", "~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"} {
 		t.Run(filepath.Base(fx), func(t *testing.T) {
+			// The 0.5B is the only hd64 case, so on a box with a device its absence fails the test instead of skipping hd64's tiles.
+			if _, err := os.Stat(kv8Path(fx)); err != nil {
+				t.Fatalf("no %s (the hd64 tiles' only fixture): %v", fx, err)
+			}
 			const nTot = 300
 			m8, r8 := kv8Load(t, fx, "i8", decoder.Options{ResidentContext: 1024})
 			_, r16 := kv8Load(t, fx, "f16", decoder.Options{ResidentContext: 1024})
@@ -1613,5 +1627,41 @@ func TestMoEExpertsUnpinned_identityAndPricing(t *testing.T) {
 	q.Options.MoEExpertsUnpinned = true
 	if got := buildDemand(q).PinnedExpertBytes; got != 0 {
 		t.Errorf("the unpinned load prices a %d-byte pinned copy", got)
+// TestKV8_everyFusedPrefillLaunchPassesScales reads prefill.go: every launch of a tensor-core prefill tile (attn_fused, attn_fused_bm) passes
+// the layer's scale pools through kvScaled, since the identity test launches each tile itself and would not see a dispatch site that forgot
+// them (S6, Gemini's review of #785). Eight sites: two attn_fused head dims and three attn_fused_bm shapes at two head dims.
+func TestKV8_everyFusedPrefillLaunchPassesScales(t *testing.T) {
+	b, err := os.ReadFile("prefill.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	launch := regexp.MustCompile(`r\.launch\(r\.(bAttnFused(?:64|128)|bAttnBM\w+), ([^\n]*)`)
+	sites := launch.FindAllStringSubmatch(string(b), -1)
+	if len(sites) != 8 {
+		t.Fatalf("found %d tensor-core tile launches in prefill.go, expected 8: the scan no longer sees them all", len(sites))
+	}
+	for _, m := range sites {
+		if !strings.Contains(m[2], "r.kvScaled(l, ") {
+			t.Errorf("prefill.go launches %s without r.kvScaled(l, ...): an int8 cache's tile would read no scales (%s)", m[1], m[0])
+		}
+	}
+}
+
+// TestKV8_prefillTakesTheTileOnTheTinyFixture is S6's route gate at tier 0 (s6-registration.md, "Route"): on llama-attnfa-tiny at -kv i8, a
+// prefill above the fast-prefill floor launches the tensor-core tile and no attn_batched (every layer is tile-served: no window, hd 128).
+func TestKV8_prefillTakesTheTileOnTheTinyFixture(t *testing.T) {
+	requireCUDADevice(t)
+	t.Setenv("GOINFER_CUDA_FAST_PREFILL_FLOOR", "0")
+	m, r := kv8Load(t, "llama-attnfa-tiny", "i8", decoder.Options{ResidentContext: 1024})
+	_, _, _, _, _, _, vocab := m.Dims()
+	embs := make([][]float32, 300)
+	for i := range embs {
+		embs[i] = m.EmbedResidentForTest(3 + (37*i)%(vocab-3))
+	}
+	if _, err := r.PrefillLast(context.Background(), embs, 0); err != nil {
+		t.Fatalf("int8 prefill: %v", err)
+	}
+	if r.fastAttnLaunches == 0 || r.exactAttnLaunches != 0 {
+		t.Errorf("int8 prefill launched the tile %d times and attn_batched %d times: every layer should take the tile", r.fastAttnLaunches, r.exactAttnLaunches)
 	}
 }
