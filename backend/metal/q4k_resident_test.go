@@ -143,17 +143,13 @@ func testQ4KLaneResident(t *testing.T, path string) {
 	}
 }
 
-// phi3DefaultLoad loads testdata/phi3-q4k-tiny.gguf as a serve with its defaults does on this Mac: -backend auto and no --quant,
+// phi3DefaultLoad loads decoder.WritePhi3Q4KTinyGGUFForTest's Phi-3 as a serve with its defaults does on this Mac: -backend auto and no --quant,
 // through loadflags.Resolve and modelload.Plan (the per-family default), opening the sidecar Plan names, built here first as the
 // load builds it. It returns the model and the copied source.
 func phi3DefaultLoad(t *testing.T) (*decoder.Model, string) {
 	t.Helper()
-	raw, err := os.ReadFile("../../testdata/phi3-q4k-tiny.gguf")
-	if err != nil {
-		t.Fatal(err)
-	}
 	src := filepath.Join(t.TempDir(), "phi3.gguf")
-	if err := os.WriteFile(src, raw, 0o644); err != nil {
+	if err := decoder.WritePhi3Q4KTinyGGUFForTest(src); err != nil {
 		t.Fatal(err)
 	}
 	old := time.Now().Add(-time.Hour)
@@ -198,7 +194,7 @@ func TestPhi3Default_autoRunsResidentOnTheQ4KLane(t *testing.T) {
 }
 
 // TestPhi3Default_tracksTheCPUReferenceAtLeastAsCloselyAsTheOldDefault is the default's fidelity gate, tier 0, on
-// testdata/phi3-q4k-tiny.gguf, teacher-forced over 32 positions. The reference is the CPU at f32 on the same file (every Q4_K
+// decoder.WritePhi3Q4KTinyGGUFForTest's Phi-3, teacher-forced over 32 positions. The reference is the CPU at f32 on the same file (every Q4_K
 // block dequantized exactly). The default (phi3DefaultLoad: q4k, resident on Metal) is held to three bars:
 //   - against the CPU at q4k on the same file, worst per-position logits cosine at least 0.99: the q4k lane's bar
 //     (testQ4KLaneResident), which compares the same quant on both sides;
