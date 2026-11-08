@@ -580,9 +580,11 @@ type cudaResident struct {
 	missEv      []int              // per rank: index into evMiss, or -1 for a hit
 	slotIdxHost *HostBuffer[uint8] // pinned source of the per-token slot-id upload (UploadAsync needs pinned)
 	cacheProf   bool               // GOINFER_MOE_CACHE_PROF: time the per-layer routing round trip
-	profStall   time.Duration
-	profHost    time.Duration
-	profDMA     time.Duration
+	// pageableStacks counts the expert stacks packStackPinned put in pageable file mappings (moePageableDirForTest), so a test can prove arm B ran.
+	pageableStacks int
+	profStall      time.Duration
+	profHost       time.Duration
+	profDMA        time.Duration
 	// The expert DMA is split into the BIG weight copy and the TINY scale copy, with bytes and call counts for each:
 	// if a small scale upload costs about as much as a large weight upload, the path is per-call-overhead bound and
 	// the fix is batching. Zero cost when cacheProf is off.
