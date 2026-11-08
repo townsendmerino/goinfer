@@ -4568,6 +4568,46 @@ read it.
 
 **Not in it:** weights, the arbiter (MM4). SB11a's operation records ride on OP4's walker, not on this.
 
+### 4.9c Metal's decode scratch: design and gates (2026-11-07, registered before any code)
+
+§4.9b's third Metal step. **Today** a Metal build allocates decode's scratch piece by piece (`buildResident` and each family's build:
+the residual rows, each operation's rows at the widest layer that runs it, the head's logits and argmax partials, the sampler's draws, the
+rows `ensureBatchCap` grows, the int8 and f16 activation twins, the uniforms). Nothing prices it: it rides in `mem.MetalFitMargin`, and
+MM7's table bounds it with a hand formula (`metalDecodeScratchBytes`, the `decode` gap row). The batched step's scratch is already one
+list that builds and prices (`stepShape.buffers`, MM5a); this does the same for decode, from the program.
+
+**The declaration.** `program.Buffers` gains a third unit, `PerRow`: per row of a step, the activations an operation writes beyond the
+residual stream, f32: `OpProjQKV`'s q, k and v rows, `OpAttention`'s context, `OpFFN`'s gate|up, and each whole-sublayer operation's own
+rows (`OpMLA`, `OpDeltaNet`, `OpMamba2`, `OpKDA`, `OpShortConv`, `OpGatedAttn`, `OpGemma4Attn`, `OpGemma4MoE`, `OpPLE`). A second list,
+`program.HeadBuffers`, holds what no layer owns: the residual rows and the logits. Decode is one row.
+**Metal's rule, one function:** each entry is one buffer, sized by the widest layer that declares it, since Metal allocates one buffer a
+role and every layer reuses it. Roles are summed, not overlapped: §4.9b's "high-water over operations" holds for an arena, which Metal's
+build does not use. Metal adds its own terms by name: an entry's int8 or f16 twin where its kernel quantizes the row, the fused attention's
+partial, the argmax partial, the sampler's draw rows, the batch rows and the uniforms. The build allocates from the list, as `buildBatch`
+does from `stepShape.buffers`.
+
+**No decision moves.** The plan shows the figure on the scratch line, as `Plan.CheckpointBytes` is shown, outside `NeedBytes`, and
+`MetalFitMargin` is unchanged. Charging it in `NeedBytes` and narrowing the margin is a guard threshold, so Francis's call, not this step's.
+
+**Gates**, tier 0, seconds; ordinary engineering.
+- **G-MS1, the plan:** MM1's census, arm64 and amd64: no decision moves, and only the new scratch figure is added.
+- **G-MS2, the allocation:** on every row of `TestMemGate_metal`, the scratch line after the build and after a short generation equals the
+  decode list plus the step list, to Metal's named rounding, both ways. MM7's `decode` gap row leaves the table (`metalMemGapsPin` 3 to 2).
+- **G-MS3, a hand table:** llama-tiny, qwen35-tiny (DeltaNet and gated attention), deepseek-tiny (MLA), nemotron-tiny (Mamba-2), a MoE
+  fixture and gemma2-tiny: the decode scratch written in the test as arithmetic on the config's numbers equals the plan's.
+- **G-MS4, the scan:** the pricing function names no mixer, family or family parameter.
+- **G-MS5:** `gate identity -backend metal`, all IDENTICAL.
+- **Plants:** an entry declared one element short (G-MS3 red); a buffer allocated beside the list (G-MS2 red); a term counted twice
+  (G-MS2 red). Amended 2026-11-07, during the build: G-MS2 cannot see a short entry, since the build allocates what the list declares,
+  so G-MS3 alone holds a declaration to the config. G-MS2 reads the ledger's requested bytes, so it is exact with no rounding allowance.
+
+**Outcome (#754, 2026-11-07).** The Metal half shipped. Every buffer decode leases on the scratch line comes from a list the build allocates
+from (`decodeShape.buffers`, `batchRows`, `chainBuffers`). G-MS2 holds the ledger to it on every `TestMemGate_metal` row, MM7's
+`decode` gap row is gone, G-MS3 holds it to each registered fixture's config, and G-MS5 reads all IDENTICAL. Metal's scratch is the sum of
+its roles, each at its widest layer, not a high-water over operations (the coordinator agreed the same day). The program-side
+declaration, the plan's figure, G-MS1 and G-MS4 moved to their own item, MM5b (`docs/tasks/task-subsystems-2026-10.md`). Charging
+the figure in `NeedBytes` and narrowing `MetalFitMargin` change a guard threshold, so neither moves until Francis answers.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
