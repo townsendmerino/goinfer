@@ -1,7 +1,7 @@
 package program
 
-// The memory each operation declares beyond its weights (MM5, docs/tasks/task-forward-architecture-2026-10.md §4.9b): a load's KV and
-// recurrent state are the sum of its layers' declarations, priced and allocated from the same list.
+// The memory each operation declares beyond its weights (MM5, docs/tasks/task-forward-architecture-2026-10.md §4.9b and §4.9c): a load's
+// KV, recurrent state and per-row activations are its layers' declarations and the head's, priced and allocated from the same list.
 
 // Unit is what a buffer's size counts by.
 type Unit uint8
@@ -9,6 +9,7 @@ type Unit uint8
 const (
 	PerPosition Unit = iota + 1 // one row per position of a sequence: the KV cache
 	PerSlot                     // one copy per sequence: recurrent and conv state
+	PerRow                      // one copy per row of a step: an activation an operation writes beyond the residual stream, f32
 )
 
 // Prec is a buffer's element type.
@@ -40,6 +41,23 @@ type LayerShape struct {
 	Mamba2           struct{ Heads, HeadDim, DState, ConvDim, ConvKernel int }
 	KDA              struct{ Heads, HeadDim, ConvKernel int }
 	ShortConv        struct{ Dim, LCache int }
+	// The per-row activations' widths: the residual width, the query heads, and the dense FFN's width (its up rows).
+	Hidden, Heads, FFN int
+	MLA                struct{ QLoRA, Rank, QKHead, VHead int } // the q LoRA rank (0 for none), the KV LoRA rank, a q·k head, a value head
+	Gemma4MoE          struct{ Experts, TopK, ExpertFFN int }
+	PLE                int // Gemma 4's per-layer-embedding width
+}
+
+// HeadShape is the widths of what no layer owns: the residual stream, the vocabulary, and the embedding stage's per-layer inputs.
+type HeadShape struct {
+	Hidden, Vocab int
+	PLE           int // Gemma 4's per-layer-embedding width; read only where the program's embedding stage has the branch
+}
+
+// HeadBuffers is the per-row activations no layer owns, for p at shape s: the residual stream, a sublayer's input and output, the
+// parallel block's second output where a layer writes it, the logits, and the per-layer-embedding inputs where the embedding has them.
+func HeadBuffers(p *Program, s HeadShape) []Buf {
+	return nil
 }
 
 // Buffers is what op needs beyond its weights on a layer of shape s, nil for none.
