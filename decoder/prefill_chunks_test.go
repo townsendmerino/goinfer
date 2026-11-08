@@ -18,7 +18,11 @@ type chunkFake struct {
 
 func (f *chunkFake) PrefillChunkRows() int              { return f.chunk }
 func (f *chunkFake) PrefillScratchBytes(rows int) int64 { return int64(rows) * f.perRow }
-func (f *chunkFake) PrefillTailMinRows() int            { return f.tailMin }
+func (f *chunkFake) ResidentCaps() ResidentCaps {
+	c := f.mc3Fake.ResidentCaps()
+	c.TailMinRows = f.tailMin
+	return c
+}
 func (f *chunkFake) PrefillSpanScratchBytes(rows, keys int) int64 {
 	return int64(keys) * f.perKey
 }

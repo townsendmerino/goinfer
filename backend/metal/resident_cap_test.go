@@ -23,6 +23,10 @@ func TestMetalResidentCheckCap(t *testing.T) {
 	if r.ContextCap() != metalCtxCapDefault {
 		t.Fatalf("ContextCap = %d, want %d", r.ContextCap(), metalCtxCapDefault)
 	}
+	// ResidentCaps reads every field, so each must answer on a resident with no device.
+	if c := r.ResidentCaps(); c.ContextCap != metalCtxCapDefault || c.KernelFloor != 0 || !c.HasKernelFloor || c.BatchGreedyDraw {
+		t.Fatalf("ResidentCaps on a zero-value resident = %+v, want ContextCap %d, a kernel floor of 0 and no batch greedy draw", c, metalCtxCapDefault)
+	}
 	for _, c := range []struct {
 		pos, n int
 		ok     bool
@@ -148,11 +152,11 @@ func TestMetalBuildResident_explicitCtxHonoured(t *testing.T) {
 		t.Fatalf("BuildResident(ResidentContext=%d): ok=%v err=%v", want, ok, err)
 	}
 	defer b.Close()
-	capped, isCapped := rf.(decoder.ResidentCapped)
+	capped, isCapped := rf.(decoder.ResidentCapsReporter)
 	if !isCapped {
-		t.Fatalf("resident does not implement decoder.ResidentCapped: %T", rf)
+		t.Fatalf("resident does not implement decoder.ResidentCapsReporter: %T", rf)
 	}
-	if got := capped.ContextCap(); got != want {
+	if got := capped.ResidentCaps().ContextCap; got != want {
 		t.Fatalf("ContextCap() = %d, want %d — the explicit request did not reach the built resident", got, want)
 	}
 	// A real forward pass at the smaller cap must still produce finite, sane logits — not just

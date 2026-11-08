@@ -2514,6 +2514,16 @@ func (r *cudaResident) checkCap(pos, n int) error {
 // up front rather than discover the limit mid-generation).
 func (r *cudaResident) ContextCap() int { return r.ctxCap }
 
+// ResidentCaps is decoder.ResidentCapsReporter's. The batched prefill always reports a fast-kernel floor, 0 when the fast kernels are off.
+func (r *cudaResident) ResidentCaps() decoder.ResidentCaps {
+	return decoder.ResidentCaps{
+		ContextCap:       r.ContextCap(),
+		HasFastPrefill:   true,
+		FastPrefillFloor: r.FastPrefillFloor(),
+		TailMinRows:      r.PrefillTailMinRows(),
+	}
+}
+
 // Forward runs one token at absolute position pos and returns logits[vocab].
 func (r *cudaResident) Forward(embedding []float32, pos int) ([]float32, error) {
 	if e := r.checkCap(pos, 1); e != nil {
