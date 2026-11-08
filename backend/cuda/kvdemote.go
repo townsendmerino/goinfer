@@ -38,10 +38,6 @@ func (r *cudaResident) kvDemote(s, taker int) {
 	if r.kvHost == nil || r.kvWin || r.dnet != nil || r.mamba != nil || r.kvStopped[s] {
 		return
 	}
-	if r.kvI8 {
-		logs.Warnf("cuda: KV pool: slot %d's rows not kept in host memory: %s", s, errKV8NoHostCopy)
-		return
-	}
 	end := kvBlocksFor(r.kvValid[s]) * kvBlock // whole blocks: kvValid keeps which of their rows were written
 	bytes := r.KVSnapshotBytes(end)
 	if bytes <= 0 {

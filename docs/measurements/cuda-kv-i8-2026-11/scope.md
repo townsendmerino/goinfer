@@ -167,3 +167,22 @@ and the f32 arms of the extended KV4 test (a new check, below) passed.
 
 Plant (`s3a-plant-cow-noscales.log`): copy on write without the scales: the KV4 replay check reads red at the first logit; restored.
 The rest of the int8 suite on the S3a tree (`s3a-green.log`): unchanged from S2, G2 still FAIL as registered (identical numbers).
+
+## S3b, 2026-11-07: host snapshots (KV7) and demotion carry the scales
+
+A snapshot's host layout gains, on an int8 layer, its K and V scale rows (one f32 per KV head a position) after its K and V rows, and the
+snapshot and restore loops copy them with the rows; a restore is served only into the same precision (`Serves`). Demotion and promotion
+are snapshots and restores, so they follow. The decline S2 put on both is gone. An int8 layer's row must be whole words (`kv8Unsupported`
+refuses one that is not: the block copies and host copies move words); every dense family's is.
+
+Red first (`s3b-red.log`, the new int8 arms against S3a's code): `TestKV7_restoreFull/i8`, `TestKV7_demoteAndPromote/i8` and
+`TestKV8_uploadRefused` (which now also prices a snapshot) red, their f32/f16 arms green. Green (`s3b-green.log`):
+
+| test | what it holds at -kv i8 | reading |
+|---|---|---|
+| `TestKV7_restoreFull/i8` | a snapshot restored into another slot holds the computed rows and scales byte for byte (`kv2Rig`), and the steps after it equal the computed prefix's logits | PASS |
+| `TestKV7_demoteAndPromote/i8` | a released idle slot keeps its rows and scales in host memory, promoted back continues bit-identical to a slot never released; the test's own plant (a zeroed host copy) differs | PASS |
+| `TestKV8_uploadRefused` | `KVSnapshotBytes` prices `kvDim` + 4 B a head for each of K and V a row; `UploadKV` refused by name | PASS |
+
+Plant (`s3b-plant-snapshot-noscales.log`): a snapshot that does not download the scales: every layer's restored rows differ and the first
+logit after it; restored. The S3a suite on the card (`s3a-kv-suite.log`): 133 tests PASS, G2 FAIL as registered, the rest env-gated skips.

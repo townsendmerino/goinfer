@@ -40,6 +40,8 @@ func (r *cudaResident) kv8Unsupported() string {
 			return fmt.Sprintf("layer %d's sliding window", l)
 		case Ly.vNorm:
 			return fmt.Sprintf("layer %d's v_norm", l)
+		case Ly.kvDim%4 != 0:
+			return fmt.Sprintf("layer %d's %d-byte K/V row, not whole words (the block copies and host copies move words)", l, Ly.kvDim)
 		}
 	}
 	return ""
@@ -89,7 +91,3 @@ func (r *cudaResident) compileKV(ptx []byte) (gpu.Library, error) {
 	}
 	return r.dev.CompileLibrary(ptx)
 }
-
-// errKV8NoHostCopy is why an int8 cache declines what moves rows to host memory (a snapshot, a demotion): the host layout carries no scales
-// yet. The slots' shared blocks and the copy-on-write block copy carry them on the device. The decoder recomputes instead.
-const errKV8NoHostCopy = "host copies of an int8 KV cache (snapshots, demotion) are not built yet"

@@ -882,17 +882,14 @@ func TestKV8_verifyIsSequentialDecode(t *testing.T) {
 	}
 }
 
-// TestKV8_snapshotsDecline: an int8 cache stays in its slot. A host snapshot (KV7) and a copy to another slot are declined by name
-// (decoder.KVCopyDecline, which the decoder answers by recomputing), never taken without their scales.
-func TestKV8_snapshotsDecline(t *testing.T) {
+// TestKV8_uploadRefused: the CPU-prefill UploadKV bridge (the VL families' path) is refused by name on an int8 cache, never written as floats.
+// A host snapshot carries the scales (TestKV7_restoreFull/i8) and is priced with them: kvDim bytes and 4 B per head for each of K and V a row.
+func TestKV8_uploadRefused(t *testing.T) {
 	requireCUDADevice(t)
 	_, r := kv8Load(t, "llama-tiny", "i8", decoder.Options{})
-	var d *decoder.KVCopyDecline
-	if _, err := r.SnapshotKV(0, decoder.KVBlockRows); !errors.As(err, &d) || !strings.Contains(d.Reason, "int8") {
-		t.Errorf("SnapshotKV on an int8 cache: %v, want a decline naming int8", err)
-	}
-	if b := r.KVSnapshotBytes(decoder.KVBlockRows); b != 0 {
-		t.Errorf("KVSnapshotBytes on an int8 cache: %d, want 0 (nothing would be kept)", b)
+	Ly := &r.layers[0]
+	if b, want := r.KVSnapshotBytes(decoder.KVBlockRows), int64(decoder.KVBlockRows)*int64(len(r.layers))*2*(int64(Ly.kvDim)+4*int64(Ly.nKV)); b != want {
+		t.Errorf("KVSnapshotBytes of 64 int8 rows: %d, want %d", b, want)
 	}
 	if err := r.UploadKV(0, 0, make([]float32, r.layers[0].kvDim), make([]float32, r.layers[0].kvDim)); err == nil || !strings.Contains(err.Error(), "int8") {
 		t.Errorf("UploadKV into an int8 cache: %v, want a refusal naming int8", err)
