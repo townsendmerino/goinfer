@@ -183,6 +183,30 @@ copy only, on every row, must exceed it: the most-attended key's V scale x1.01, 
 every decode reader, at real layers and real queries. The cross-backend G2 (`TestKV8_G2_matchesTheCPUInt8Cache`) keeps its registered bars
 and its FAIL reading above; it now runs with the diagnostics (`GOINFER_KV8_DIAG=1`), so a run of the suite is green on the gate the owner's
 decision made the deciding one. That move of its status, not of its bars, is mine to flag.
+
+## S2, review round 1 (Gemini's review of #755 at 032a0edd, relayed by the coordinator, 2026-11-07)
+
+1. **The exact-input G2 reused `r.cctx` across readers without clearing it** (a reader writing nothing or part of a row would pass on the
+   previous reader's output), **and covered only the M=1 decode readers.** Real, fixed: the output buffer is filled with NaN before every
+   launch, and `kv8RowDiff` reads a NaN or infinite element as an infinite difference (before, `math.Max` would have carried a NaN and
+   `NaN > bar` is false: a poisoned row would have passed). Extended to every prefill reader over 8 rows at positions 200 to 207
+   (`attn_batched` M>1, the row-batched split-KV kernels, the multi-row verify lane), each row against the CPU at its own position, and to
+   the store on every layer (at the decode step each layer's int8 row and scales are aikit `QuantizeRowInt8` of the rotated K and the V
+   that layer handed `kv8_store`; layer 0's prefill rows are `TestKV8_layer0StoreIsTheQuantizedF32Store`'s, and a prefill row of a layer
+   above 0 runs the same kernel with the same addressing, with inputs no test seam exposes). `s2-review-run.log`: **PASS**, 120 reader rows
+   per model, worst 6.66e-5 (0.5B) and 4.79e-5 (1.5B) of the row against the 1e-4 bar, the in-test plants 5.34e-4 / 6.56e-4 at their
+   weakest, 96 and 112 stored (layer, head, K/V) rows equal to the quantizer. **Broken first** (`s2-review-plant-noop-readers.log`): glue
+   `attention` and `attn_batched` M>1 made no-ops: every row they serve reads +Inf (24 and 48 rows), red; restored.
+2. **`ctxForSlots` prices further slots with `m.KVCacheI8()`, said to be the CPU/Metal setting.** Did not reproduce. `KVCacheI8()` is the
+   resident's request (`Options.KVPrecision == "i8"`; the CPU cache's is `KVQuant`, `m.kvI8`), and `CUDAKVSlotBytes` re-resolves the
+   delivered precision (`cudaKVPrec` -> `ResolveKV`), so a further slot is priced int8 exactly when the CUDA cache is int8. Pinned rather
+   than changed: `TestCUDAKVI8_slotPriceIsTheGPUsPrecision` (GPU int8; GPU int8 beside CPU int8; GPU f16 beside CPU int8) PASS on unchanged
+   code (`s2-review-slotprice.log`), and red with `KVCacheI8` planted to read the CPU flag (`s2-review-slotprice-plant.log`: both the int8 and
+   the f16-beside-CPU-int8 cases mispriced). The code is unchanged.
+3. **`TestKV8_deliveredBytes` skipped its f32 comparison when the arms' contexts differed.** Fixed: the f32 arm is read and closed before
+   the int8 arm loads, so both plan against the same free VRAM, and a context mismatch is a failure. PASS on all four.
+4. **The fast-prefill smoke cell never asserted the f32 control took the fused tiles.** Fixed (it now fails if `r32.fastAttnLaunches == 0`),
+   and the reason the 0.5B is not in the smoke is stated where its model list is. PASS on all six cells.
 ## S3a, 2026-11-07: several KV slots, CopyKV, copy on write and the batched step on the int8 cache
 
 Stacked on S2 (#755). On a dense full-attention model the scale pools already follow the blocks: `CopyKV` shares whole blocks by reference
