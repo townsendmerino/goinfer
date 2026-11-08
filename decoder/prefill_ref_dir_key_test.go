@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A safetensors checkpoint directory keys a reference by its files: the key is stable, ignores goinfer's own sidecars and
@@ -71,5 +72,47 @@ func TestCheckpointSHA256_sameSizeRewriteAtTheSameMtime(t *testing.T) {
 	}
 	if h2, err := checkpointSHA256(p); err != nil || h2 == h1 {
 		t.Fatalf("a same-size rewrite at the same mtime kept the hash %s (err %v): the cache served a stale key", h1, err)
+	}
+}
+
+// TestCheckpointStamp_vouchesOnlyForASettledFile: the cache's stamp vouches for a file only once it has settled past
+// checkpointRaceWindow, and a same-size rewrite with its mtime held moves the stamp through the change time. Where the OS reports no
+// change time (Windows), it vouches for nothing.
+func TestCheckpointStamp_vouchesOnlyForASettledFile(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "model.safetensors")
+	if err := os.WriteFile(p, []byte("weights-a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Minute)
+	if _, _, _, ok := fileChange(st); !ok {
+		if _, settled := checkpointStamp(p, st, later); settled {
+			t.Fatal("a stamp with no change time to read vouched for the file")
+		}
+		return
+	}
+	if _, settled := checkpointStamp(p, st, time.Now()); settled {
+		t.Error("a file changed just now is stamped as settled")
+	}
+	s1, settled := checkpointStamp(p, st, later)
+	if !settled {
+		t.Fatal("a file settled a minute ago is not stamped")
+	}
+	time.Sleep(10 * time.Millisecond) // past the change clock's tick, so the rewrite's change time is a different reading
+	if err := os.WriteFile(p, []byte("weights-b"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(p, st.ModTime(), st.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	st2, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s2, _ := checkpointStamp(p, st2, later.Add(time.Second)); s2 == s1 {
+		t.Errorf("a same-size rewrite with its mtime held kept the stamp %s", s1)
 	}
 }
