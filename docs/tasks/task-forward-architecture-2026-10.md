@@ -4632,6 +4632,11 @@ each is red on its row alone. No registered row builds the q4k lane or PLE, so n
 - Amended during the build:
   - G-MS4 reads a K=V layer from the weights (`VFromKResident`), a shape they fix, so it no longer bans the name.
   - KDA and short conv declare no per-row rows, since no Metal build runs them.
+- From #772's review:
+  - The build's check holds each FFN row and each of k and v to the layer that runs it, not through their widest.
+  - G-MS4 also scans Metal's term table.
+  - An expert cache's slot count is solved before its paged slot indices are taken. MM1's census moved in 596 Metal sections: the
+    boundary where a cache holds every expert dropped by 4·k, to that plan's own need.
 
 ## 5. Track RF — one ragged forward pass
 
