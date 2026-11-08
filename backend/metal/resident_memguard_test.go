@@ -267,6 +267,8 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 
 	// The slot request is a per-model knob, read at Load (docs/tasks/task-env-config-2026-09.md, phase 4), so
 	// each arm prices its own model loaded with that request, not one model with the environment changed under it.
+	// needWith is the guard's figure at a slot request, less the decode scratch it charges beside the weights, host copy and KV (at that
+	// request, which decides whether the routed experts page: their index table is scratch).
 	needWith := func(t *testing.T, slots string) int64 {
 		t.Helper()
 		mk, err := decoder.Load(ckpt, decoder.Options{Quant: "f32", Knobs: &decoder.Knobs{"GOINFER_METAL_MOE_SLOTS": slots}})
@@ -274,7 +276,7 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 			t.Fatalf("Load (slots %q): %v", slots, err)
 		}
 		defer mk.Close()
-		return residentNeedBytes(mk)
+		return residentNeedBytes(mk) - mk.MetalDecodeScratchBytes()
 	}
 
 	t.Run("unset env == unpaged", func(t *testing.T) {

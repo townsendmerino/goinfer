@@ -1,6 +1,8 @@
 package decoder
 
 import (
+	"strconv"
+
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -198,11 +200,17 @@ func (m *Model) metalDeltaNetEps() (eps, oEps float64) {
 	return 0, 0
 }
 
-// metalMoEPaged reports whether a Metal build of m pages its routed experts (backend/metal's metalMoESlotsRequest): an expert-slot
-// request under the expert count, or expert caching, whose slot count the build sizes from memory.
+// metalMoEPaged reports whether a Metal build of m pages its routed experts, from the request backend/metal's metalMoESlotsRequest
+// reads: an expert-slot request, else expert caching (whose slot count the build sizes from memory, priced here as paging), else the
+// GOINFER_METAL_MOE_SLOTS knob; paged when the slots are under the expert count.
 func (m *Model) metalMoEPaged(nE int) bool {
-	if n := m.MoECacheSlotsRequest(); n > 0 {
-		return n < nE
+	n := m.MoECacheSlotsRequest()
+	if n <= 0 && m.MoECacheExperts() {
+		return true
 	}
-	return m.MoECacheExperts()
+	if n <= 0 {
+		v, _ := m.Knob("GOINFER_METAL_MOE_SLOTS")
+		n, _ = strconv.Atoi(v)
+	}
+	return n > 0 && n < nE
 }

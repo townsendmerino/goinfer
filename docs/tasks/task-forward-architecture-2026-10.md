@@ -4609,6 +4609,11 @@ declaration, the plan's figure, G-MS1 and G-MS4 moved to their own item, MM5b (`
 **Francis's call, 2026-11-07 17:26:** the figure is charged in `NeedBytes`, and `MetalFitMargin` stays at 384 MiB as a drift cushion
 (`docs/measurements/mm5-decode-scratch-2026-11/README.md`). This replaces "no decision moves" above for MM5b, whose gates
 the ledger row names.
+**Amended with MM5b (2026-11-07), from #754's review.** At #754, G-MS3's five fixtures left most of the list's branches unchecked: the
+fused attention's partial, the whole-vector QK norm, a second attention geometry, the Gemma 4 and gpt-oss MoE lists, the chain and the paged
+fence. Since G-MS2 sums the list on both sides, a wrong entry in any of them passed. Each now has a hand row, and a one-element plant on
+each is red on its row alone. No registered row builds the q4k lane or PLE, so neither has a row. G-MS2 now reads the scratch line after
+`metalGatePlantForTest`, so a buffer leased beside the list is red in it (`TestMemGate_metalPlantsThroughTheTable`).
 
 ## 5. Track RF — one ragged forward pass
 

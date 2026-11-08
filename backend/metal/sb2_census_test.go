@@ -24,6 +24,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/diag/sb2census"
 	"github.com/townsendmerino/goinfer/internal/guard/memgate"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 	"github.com/townsendmerino/goinfer/internal/wrappedupload"
 )
@@ -306,18 +307,19 @@ var metalMemGaps = []memgate.Gap{
 
 const metalMemGapsPin = 2
 
-// metalGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; what it returns
-// runs after that read, before Close.
+// metalGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read, by G-MS2 and the
+// snapshot; what it returns runs after that read, before Close.
 var metalGatePlantForTest func(r *resident) (free func())
 
 // metalGateRow loads fixture path at options o, runs it, and returns the row: the build's ledger after the build and after a short
-// generation, the plan for the same load, and the ledger after Close. ok is false when Metal's own build declines, which has no
-// allocation to hold (the census's rows record admission, not the build).
-func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) (memgate.Reading, bool) {
+// generation, the plan for the same load, and the ledger after Close; exactRed is G-MS2's findings, for the caller to fail on (or, under
+// a plant, to expect). ok is false when Metal's own build declines, which has no allocation to hold (the census's rows record
+// admission, not the build).
+func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) (_ memgate.Reading, exactRed []string, ok bool) {
 	t.Helper()
 	m, err := decoder.Load(path, o)
 	if err != nil {
-		return memgate.Reading{}, false
+		return memgate.Reading{}, nil, false
 	}
 	closed := false
 	defer func() {
@@ -327,13 +329,13 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	}()
 	rf := m.ResidentForwardForTest()
 	if rf == nil {
-		return memgate.Reading{}, false
+		return memgate.Reading{}, nil, false
 	}
 	r := rf.(*metalResident).r
 	l := metalLedgerOf(r.d)
 	if l == nil {
 		t.Errorf("%s: the build's device has no ledger", row)
-		return memgate.Reading{}, false
+		return memgate.Reading{}, nil, false
 	}
 	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount()}
 	read.Plan = m.Plan("metal", math.MaxInt64/4, fit.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
@@ -343,19 +345,9 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	// G-MS2 (docs/tasks/task-forward-architecture-2026-10.md §4.9c): the scratch line holds decode's list and the step's to the byte,
 	// both ways. The ledger's requests are read, not its charges, so the allocator's rounding hides nothing.
 	exact := func(at string) {
-		t.Helper()
-		var held int64
-		for _, o := range l.OpenLeases() {
-			if o.Line == mem.LineScratch {
-				held += o.Requested
-			}
-		}
-		want := r.decode.listBytes(r)
-		if r.batch != nil {
-			want += r.stepShape().listBytes()
-		}
-		if held != want {
-			t.Errorf("%s: %s: the scratch line holds %d bytes requested, and the decode and step lists %d", row, at, held, want)
+		if held, want := scratchRequested(l), scratchLists(r); held != want {
+			exactRed = append(exactRed, fmt.Sprintf("%s: %s: the scratch line holds %d bytes requested, and the decode and step lists %d",
+				row, at, held, want))
 		}
 	}
 	read.Open = append(read.Open, memgate.Snap("built", l, facts()))
@@ -370,24 +362,22 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 		t.Errorf("%s: the decoder prices decode's scratch at %d bytes; the build's list with the chain's is %d (%+d)", row, got, want, got-want)
 	}
 	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
+	// Draining the channel joins the generation: its goroutine closes it once the body has returned.
 	for range ch {
-	}
-	exact("generated")
-	free := func() {}
-	if metalGatePlantForTest != nil {
-		free = metalGatePlantForTest(r)
 	}
 	if err := g.Err(); err != nil {
 		t.Errorf("%s: generation: %v", row, err)
 	}
+	free := func() {}
+	if metalGatePlantForTest != nil {
+		free = metalGatePlantForTest(r)
+	}
+	exact("generated")
 	read.Open = append(read.Open, memgate.Snap("generated", l, facts()))
 	free()
 	// Scratch has no plan line: it holds decode's list and the step's, which the gate holds it to, before the step price's page
 	// rounding, which would hide what else leases there.
-	scratch := r.decode.listBytes(r)
-	if r.batch != nil {
-		scratch += r.stepShape().listBytes()
-	}
+	scratch := scratchLists(r)
 	// The reserve is the build's own answer read before the build: every input to it agrees, so it is the step's price where
 	// batchIneligible admits it and 0 where not, on shapes no fixture has as well as on these.
 	built, before := r.stepInputs(), metalStepInputs(m)
@@ -406,7 +396,7 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	closed = true
 	m.Close()
 	read.Closed = l.Usage()
-	return read, true
+	return read, exactRed, true
 }
 
 // TestMemGate_metalPlantGoesRed: the gate reads the real ledger. llama-tiny's dense line is under plan after the build; a mebibyte
@@ -425,16 +415,19 @@ func TestMemGate_metalPlantGoesRed(t *testing.T) {
 		}
 		return false
 	}
-	clean, ok := metalGateRow(t, "clean", fx, o, false)
+	clean, exactRed, ok := metalGateRow(t, "clean", fx, o, false)
 	if !ok {
 		t.Fatal("llama-tiny did not build resident")
+	}
+	for _, e := range exactRed {
+		t.Error(e)
 	}
 	if builtRed(clean) {
 		t.Fatalf("the unplanted build is already over plan on dense: %v", memgate.Check(clean, metalRounding))
 	}
 	ledgerChargeDeltaForTest, ledgerChargeLineForTest = plant, mem.LineDense
 	defer func() { ledgerChargeDeltaForTest, ledgerChargeLineForTest = 0, "" }()
-	planted, ok := metalGateRow(t, "planted", fx, o, false)
+	planted, _, ok := metalGateRow(t, "planted", fx, o, false)
 	if !ok {
 		t.Fatal("llama-tiny did not build resident")
 	}
@@ -448,7 +441,8 @@ func TestMemGate_metalPlantGoesRed(t *testing.T) {
 
 // TestMemGate_metalPlantsThroughTheTable: a buffer really allocated over plan during a row stays red through Metal's allowance and
 // its table of known gaps. It is 4 MiB and 4 bytes, so Metal rounds it and the allowance has something to forgive; the fixtures are
-// a dense model and a recurrent one. The buffer is freed before Close, so what is red is the plan.
+// a dense model and a recurrent one. The buffer is freed before Close, so what is red is the plan. On scratch it is red in G-MS2's
+// exact read as well, and on any other line it is not.
 func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -468,9 +462,12 @@ func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 			}
 			defer func() { metalGatePlantForTest = nil }()
 			row := "testdata/" + c.fx + " int4"
-			read, ok := metalGateRow(t, row, "../../testdata/"+c.fx, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 256}, false)
+			read, exactRed, ok := metalGateRow(t, row, "../../testdata/"+c.fx, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 256}, false)
 			if !ok || !planted {
 				t.Fatalf("resident %v, plant ran %v", ok, planted)
+			}
+			if got, want := len(exactRed) == 1 && strings.Contains(exactRed[0], ": generated: "), c.line == mem.LineScratch; got != want {
+				t.Errorf("G-MS2 red only at generated %v on a plant on %q, want %v: %q", got, c.line, want, exactRed)
 			}
 			rounded := false
 			for _, l := range read.Open[1].Leases {
@@ -495,7 +492,9 @@ func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 
 // TestDecodeScratch_handTable is G-MS3 (docs/tasks/task-forward-architecture-2026-10.md §4.9c): a build's decode list, as it stands
 // after the build, equals arithmetic written here on the config's numbers. G-MS2 holds the ledger to the list; this holds the list to
-// the model, which a declaration one element short fails.
+// the model, which a declaration one element short fails. Its rows reach every branch of the list a registered row builds; the chain
+// and the paged fence, which a build holds later or under a switch, have their own tests below. No registered row builds the q4k lane
+// (a GGUF of K-quants) or the per-layer embedding (Gemma 4's PLE), so neither has a row.
 func TestDecodeScratch_handTable(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -593,8 +592,59 @@ func TestDecodeScratch_handTable(t *testing.T) {
 			u += 13                               // the mixer's uniforms
 			return int64(4*f + b + 4*u)
 		}},
+		// llama-attnfa-tiny: hidden 512, vocab 256, FFN 256, 4 query heads and 2 K/V heads of 128, 2 layers, all attention. Head width
+		// 128 runs the fused attention, whose partial holds each query head's accumulators, max and sum for each of its 32 splits; its
+		// group and split-count uniforms come with it.
+		{"llama-attnfa-tiny", "int4", func() int64 {
+			const H, V, I, nH, nKV, hd, nL, splits = 512, 256, 256, 4, 2, 128, 2, 32
+			f, b, u := core(H, V, I, nH*hd, nKV*hd)
+			f += nH * (hd + 2) * splits
+			u += 2 + 7 + 2*nL
+			return int64(4*f + b + 4*u)
+		}},
+		// olmo3-tiny: hidden 64, vocab 512, FFN 128, 8 query heads and 8 K/V heads of 8, 4 layers (three with an 8-position window, then
+		// full attention). Its QK norm spans the whole q and k vectors, which adds that norm's two uniforms.
+		{"olmo3-tiny", "int4", func() int64 {
+			const H, V, I, nH, nKV, hd, nL = 64, 512, 128, 8, 8, 8, 4
+			f, b, u := core(H, V, I, nH*hd, nKV*hd)
+			u += 2 + 7 + 2*nL
+			return int64(4*f + b + 4*u)
+		}},
+		// gemma4-moe-kv-tiny32: hidden 64, vocab 256, 2 layers: one with a 4-position window (4 query heads, 2 K/V heads of 16) and one
+		// with full attention (4 query heads, 1 K/V head of 512). That is two attention geometries, and the rows take the widest. Each
+		// layer runs a dense FFN of 64 beside a MoE of 8 experts, top 2. The MoE's list has two sets, the second for the async route.
+		// Each set holds the router's logits, indices and weights and a normed hidden row; two more hidden rows and the MoE's uniforms
+		// are held once.
+		{"gemma4-moe-kv-tiny32", "int4", func() int64 {
+			const H, V, I, nH, nL = 64, 256, 64, 4, 2
+			const nE, k = 8, 2
+			f, b, u := core(H, V, I, nH*512, 1*512) // K/V width: the wider of 2 x 16 and 1 x 512
+			u += 2*7 + 2*nL                         // the two attention geometries; each layer's sink flag and window
+			f += 2*(nE+k) + 4*H                     // rLogits, rWgt and their twins; g4x1, g4x2, g4rn, g4rnP
+			b += 2 * 4 * k                          // rIdx, rIdxP
+			u += 10 + k                             // the MoE's uniforms and one a slot
+			return int64(4*f + b + 4*u)
+		}},
+		// gptoss_tiny.gguf (scripts/gptoss_tiny_golden.py): hidden 64, vocab 128, 8 query heads and 2 K/V heads of 8, 4 layers
+		// alternating a 4-position window with full attention, each with a sink. Every FFN is a MoE of 4 experts, top 2, width 32, with
+		// no shared expert. Its clamped SwiGLU and biased down run their own kernels, so it has no k-slot rows; its alpha, limit and
+		// bias flag add three uniforms.
+		{"gptoss_tiny.gguf", "int4", func() int64 {
+			const H, V, nH, nKV, hd, nL = 64, 128, 8, 2, 8, 4
+			const nE, k, inter = 4, 2, 32
+			f, b, u := core(H, V, inter, nH*hd, nKV*hd)
+			u += 7 + 2*nL
+			f += nE + k + 1 + H // the router's logits and weights, the shared gate and down
+			b += 4 * k          // the router's indices
+			u += 3 + 10 + k
+			return int64(4*f + b + 4*u)
+		}},
 	} {
-		m, err := decoder.Load("../../testdata/"+c.name, decoder.Options{Backend: "metal", Quant: c.quant, ResidentContext: 256})
+		path, err := sb2census.Path("../..", "testdata/"+c.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: c.quant, ResidentContext: 256})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -607,6 +657,140 @@ func TestDecodeScratch_handTable(t *testing.T) {
 			t.Errorf("%s: the decode list is %d bytes; the config's arithmetic gives %d", c.name, got, want)
 		}
 		m.Close()
+	}
+}
+
+// scratchRequested is what l's open leases on the scratch line asked for.
+func scratchRequested(l *mem.Ledger) int64 {
+	var n int64
+	for _, o := range l.OpenLeases() {
+		if o.Line == mem.LineScratch {
+			n += o.Requested
+		}
+	}
+	return n
+}
+
+// scratchLists is what G-MS2 holds r's scratch line to: decode's list, and the step's where the build holds one.
+func scratchLists(r *resident) int64 {
+	n := r.decode.listBytes(r)
+	if r.batch != nil {
+		n += r.stepShape().listBytes()
+	}
+	return n
+}
+
+// TestDecodeScratch_handTableChain is G-MS3 for the chain, which the list counts once it is held. On llama-tiny (vocab 256), opening the
+// greedy chain adds six uniforms to each of its two buffers: the token, position, key count, rope position, temperature scale and split
+// count. A sampled chain then adds the draw's temperature and two keys, plus each buffer's logits row and two draw words. The scratch
+// line holds the list throughout (G-MS2), and the decoder's price, which counts both chains from the start, is the list once both are
+// open.
+func TestDecodeScratch_handTableChain(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "metal", Quant: "int8int8", ResidentContext: 256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		t.Fatalf("not Metal-resident: %s", m.ResidentDecline())
+	}
+	r, l := a.r, metalLedgerOf(a.r.d)
+	const V, sets = 256, 2
+	for _, c := range []struct {
+		name string
+		open func() error
+		want int64
+	}{
+		{"greedy", func() error { return r.chainStart(1, 0) }, 4 * 6 * sets},
+		{"sampled", func() error { return r.chainStartSampled(1, 0, 1, 7, 0) }, 4*3 + sets*(4*V+4*2)},
+	} {
+		before := r.decode.listBytes(r)
+		if err := c.open(); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		r.stopChain()
+		after := r.decode.listBytes(r)
+		if got := after - before; got != c.want {
+			t.Errorf("%s: opening the chain grew the decode list by %d bytes; the config's arithmetic gives %d", c.name, got, c.want)
+		}
+		if held, want := scratchRequested(l), scratchLists(r); held != want {
+			t.Errorf("%s: the scratch line holds %d bytes requested, and the decode and step lists %d", c.name, held, want)
+		}
+	}
+	if got, want := m.MetalDecodeScratchBytes(), r.decode.listBytes(r); got != want {
+		t.Errorf("with both chains open the decoder prices decode's scratch at %d bytes, and the list is %d", got, want)
+	}
+}
+
+// TestDecodeScratch_handTablePagedFence is G-MS3 for a paged Gemma 4 MoE, which no registered row builds. The fixture is the tiny Gemma 4
+// MoE (4 experts, top 2, 2 layers) as a metal .giw, paged at 3 experts. Paging adds the staged top-k's slot indices. The route fence,
+// switched on, adds the mirrored route (two words a pick), its word, its top-k uniform, one sequence number a layer and its two flags.
+// The scratch line holds the list on each build (G-MS2). With the fence off, as it ships, the decoder prices the paged build's scratch at
+// the list plus the chain.
+func TestDecodeScratch_handTablePagedFence(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	const ckpt = "../../testdata/gemma4-moe-tiny"
+	if _, err := os.Stat(ckpt + "/model.safetensors"); err != nil {
+		t.Skipf("no fixture: %v", err)
+	}
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
+	giw := filepath.Join(t.TempDir(), "g4.metal.giw")
+	if err := prequant.Transcode(context.Background(), ckpt, giw, "int4", false, decoder.GIWTargetMetal); err != nil {
+		t.Fatal(err)
+	}
+	prev := pagedFenceOn
+	defer func() { pagedFenceOn = prev }()
+	const k, nL = 2, 2
+	list := func(slots string, fence bool) int64 {
+		t.Helper()
+		pagedFenceOn = fence
+		o := decoder.Options{Backend: "metal", Quant: "int4"}
+		if slots != "" {
+			o.Knobs = &decoder.Knobs{"GOINFER_METAL_MOE_SLOTS": slots}
+		}
+		m, err := decoder.Load(giw, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		a, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok {
+			t.Fatalf("slots %q: not Metal-resident: %s", slots, m.ResidentDecline())
+		}
+		r := a.r
+		if paged := r.g4moe != nil && r.g4moe.paged; paged != (slots != "") {
+			t.Fatalf("slots %q: the Gemma 4 MoE is paged %v", slots, paged)
+		}
+		if fence && r.g4moe.fence == nil {
+			t.Skip("no fence was built: this machine's compiler rejects MSL 3.2")
+		}
+		n := r.decode.listBytes(r)
+		if held, want := scratchRequested(metalLedgerOf(r.d)), scratchLists(r); held != want {
+			t.Errorf("slots %q, fence %v: the scratch line holds %d bytes requested, and the decode and step lists %d", slots, fence, held, want)
+		}
+		if !fence {
+			var chain int64
+			for _, sb := range r.chainBuffers(true, true) {
+				chain += int64(sb.bytes())
+			}
+			if got, want := m.MetalDecodeScratchBytes(), n+chain; got != want {
+				t.Errorf("slots %q: the decoder prices decode's scratch at %d bytes; the list with the chain's is %d", slots, got, want)
+			}
+		}
+		return n
+	}
+	resident, paged, fenced := list("", false), list("3", false), list("3", true)
+	if got, want := paged-resident, int64(4*k); got != want {
+		t.Errorf("paging grew the decode list by %d bytes; the config's arithmetic gives %d", got, want)
+	}
+	if got, want := fenced-paged, int64(4*(2*k+1+1+nL+2)); got != want {
+		t.Errorf("the fence grew the decode list by %d bytes; the config's arithmetic gives %d", got, want)
 	}
 }
 
@@ -987,10 +1171,13 @@ func TestMemGate_metal(t *testing.T) {
 	built, declined := 0, 0
 	run := func(row, path string, o decoder.Options, kvI8 bool) {
 		o.Backend, o.ResidentContext = "metal", 256
-		read, ok := metalGateRow(t, row, path, o, kvI8)
+		read, exactRed, ok := metalGateRow(t, row, path, o, kvI8)
 		if !ok {
 			declined++
 			return
+		}
+		for _, e := range exactRed {
+			t.Error(e)
 		}
 		built++
 		g.Check(t, read)

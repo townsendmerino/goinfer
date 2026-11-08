@@ -26,7 +26,7 @@ func fitBudget(t *testing.T, m *decoder.Model, positions int) int64 {
 	if kv <= 0 {
 		t.Fatal("the tiny model prices no KV; every case would pass on nothing")
 	}
-	return decoder.MetalFitMarginBytes + p.DenseBytes + p.HostCopyBytes + kv
+	return decoder.MetalFitMarginBytes + p.DenseBytes + p.HostCopyBytes + p.ScratchBytes + kv
 }
 
 // TestResolveMetalCtxCap_fitByDefault: what an unpinned Metal load resolves under a forced memory figure. It grows to
