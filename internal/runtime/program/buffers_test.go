@@ -48,6 +48,7 @@ func eachOperationShape() LayerShape {
 	s.Hidden, s.Heads, s.FFN = 36, 4, 48
 	s.MLA.QLoRA, s.MLA.Rank, s.MLA.QKHead, s.MLA.VHead = 12, 16, 10, 6
 	s.PLE = 5
+	s.Gemma4MoE.Experts, s.Gemma4MoE.TopK, s.Gemma4MoE.ExpertFFN = 8, 2, 40
 	return s
 }
 
@@ -99,6 +100,16 @@ func TestBuffers_eachOperation(t *testing.T) {
 		{"gated ffn", Op{Kind: OpFFN, FFN: FFNParams{Form: FfnGated}}, rows("gate", 48, "up", 48)},
 		{"gemma 4 dense ffn", Op{Kind: OpFFN, FFN: FFNParams{Form: FfnGemma4Dense}}, rows("gate", 48, "up", 48)},
 		{"non-gated ffn", Op{Kind: OpFFN, FFN: FFNParams{Form: FfnNonGated}}, rows("up", 48)},
+		{"moe ffn", Op{Kind: OpFFN, FFN: FFNParams{Form: FfnMoE, MoE: MoEConfig{NumExperts: 8, TopK: 2, IntermediateDim: 20, SharedIntermediateDim: 24}}},
+			rows("gate", 24, "up", 24, "moe-router", 8, "moe-experts", 2, "moe-weights", 2)},
+		{"gpt-oss ffn", Op{Kind: OpFFN, FFN: FFNParams{Form: FfnGptOss, MoE: MoEConfig{NumExperts: 4, TopK: 2, IntermediateDim: 20}}},
+			rows("gate", 20, "up", 20, "gptoss-router", 4, "gptoss-experts", 2, "gptoss-weights", 2)},
+		{"llama 4 moe ffn", Op{Kind: OpFFN, FFN: FFNParams{Form: FfnLlama4MoE, MoE: MoEConfig{NumExperts: 4, TopK: 1, IntermediateDim: 20, SharedIntermediateDim: 20}}},
+			rows("gate", 20, "up", 20, "llama4moe-router", 4, "llama4moe-experts", 1, "llama4moe-weights", 1)},
+		{"nemotron moe ffn", Op{Kind: OpFFN, FFN: FFNParams{Form: FfnNemotronMoE, MoE: MoEConfig{NumExperts: 4, TopK: 2, IntermediateDim: 20, SharedIntermediateDim: 28}}},
+			rows("up", 28, "nemotronmoe-router", 4, "nemotronmoe-experts", 2, "nemotronmoe-weights", 2)},
+		{"gemma 4 moe", Op{Kind: OpGemma4MoE}, rows("gate", 48, "up", 48, "g4moe-router", 8, "g4moe-experts", 2, "g4moe-weights", 2,
+			"g4moe-dense-out", 36, "g4moe-moe-out", 36, "g4moe-router-in", 36)},
 		{"ple", Op{Kind: OpPLE}, rows("ple-gate", 5)},
 	}
 	for _, c := range cases {
