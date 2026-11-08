@@ -61,7 +61,7 @@
 - **The host's gap between decode tokens is small.** It is 0.58–0.66 ms on Metal, and the run-ahead chain already hides it
   where it applies.
 - **What costs most is falling off the fast path.**
-  - A model a GPU backend cannot build resident decodes on the CPU, measured 1.7 to 1.8× slower on the Mac for Qwen2.5 at 0.5B, 1.5B and 7B (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`). The 15× this doc once quoted has no record behind it, and the CUDA pair is not measured.
+  - A model a GPU backend cannot build resident decodes on the CPU, measured 1.7 to 1.8× slower on the Mac for Qwen2.5 at 0.5B, 1.5B and 7B (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), a proxy for the declined families. The 15× this doc once quoted has no record behind it, and the CUDA pair is not measured.
   - A request shape a backend has not built for a family runs a slower path. A Claude Code first request prefilled token by
     token for about 4.5 minutes on the 8 GB card before KV3 (the KV doc, §8 Q2).
 
@@ -115,7 +115,7 @@
 | prefill | the largest share of an agent turn. Claude Code's first request is 19,692–20,199 tokens, and its thread switches re-prefilled 8,000 to 17,000 tokens each, 78% of its request time | `docs/measurements/kv0-traffic-2026-10-13.md` | the KV doc, RF |
 | decode | one GPU forward per token | `docs/benchmarks.md` | OP, RF |
 | host gap per token | 0.58–0.66 ms on Metal; the run-ahead chain hides it where it applies (1.010–1.160× decode) | `CHANGELOG.md`, "the next token's forward is queued on the GPU" | HL (small) |
-| **fallbacks** | a model on the CPU decodes 1.7 to 1.8× slower on the Mac (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`); a declined shape runs a slower path (above) | `internal/app/loadflags/loadflags.go` (`-ctx`'s help); the KV doc §8 Q2 | **OP, RF** |
+| **fallbacks** | a model on the CPU decodes 1.7 to 1.8× slower on the Mac, a Qwen2.5 proxy with CUDA unmeasured; a declined shape runs a slower path (above) | `internal/app/loadflags/loadflags.go` (`-ctx`'s help); the KV doc §8 Q2; `docs/measurements/forward-arch-decline-cost-2026-11-07.md` | **OP, RF** |
 
 - **There is no per-phase timing on the wire today.** `docs/tasks/task-turn-telemetry-2026-09.md` (X1–X8) is scoped and
   unstarted, so the split of a real turn is inferred, not read. RF0 builds its X1.
@@ -321,7 +321,7 @@ generator showed: Spark-X2.5 (the activation, below) and Kimi K2 on Metal (a rou
   - Softcapping puts Gemma 2 on all three GPUs.
   - MLA on Metal brings DeepSeek-V2 and DeepSeek-V3 there. Kimi K2 also needs Metal's router to route its 384 experts; the
     kernel routes 256 (`decoder/features.go:ResidentBackendMoECap`).
-- **Performance where it matters most.** A family leaving the CPU fallback gets roughly the CPU-to-GPU decode difference, 1.7 to 1.8× on the Mac for Qwen2.5 at three sizes (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), not 15×. That is the
+- **Performance where it matters most.** A family leaving the CPU fallback gets roughly the CPU-to-GPU decode difference, 1.7 to 1.8× on the Mac for Qwen2.5 at three sizes (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), not 15×; the CUDA difference is not measured, and a new family's first kernel can be slower than the CPU. That is the
   largest single change available to a user of that family.
 - **New families get cheaper.** A family made of existing operations needs an adapter (descriptor → program) and a parity gate,
   not code in three runners.
@@ -1283,7 +1283,7 @@ Their gate:
     - **CUDA:** NVIDIA-Nemotron-Nano-9B-v2 at int4 on nobara's 8 GB card, against `nemotron_real_golden.json.gz`.
     - **Metal:** the same checkpoint if it fits by day. If it doesn't fit, a layer slice by day, and the whole model at
       night after a by-day fit check.
-  - **No speed gate:** the do-nothing arm is the CPU, 1.7 to 1.8× slower on the Mac (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), so the direction cannot be in doubt.
+  - **No speed gate:** the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt. [Corrected 2026-11-07: the 15× has no record behind it. On the Mac the measured CPU-to-Metal decode ratio for Qwen2.5 is 1.7 to 1.8× (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), a proxy: it says nothing about CUDA, which is unmeasured, and a first kernel for a new family can be slower than the CPU (OP6's first Metal kernels on Phi-3 were 4.7× slower than the loop until #722), so "cannot be in doubt" is weaker than written here.]
 
 **OP2b on Metal: the gates, registered 2026-10-15 before any code.**
 
@@ -1500,7 +1500,7 @@ on and admitted both. Peak RSS 5.78 GB, 0 swaps, swap flat at about 1.86 GB. Rec
 **Not in this build:**
 - Granite-4.0-H's own bring-up gate (§4.5).
 - Nemotron-3-Nano's MoE.
-- A speed gate. The do-nothing arm is the CPU, 1.7 to 1.8× slower on the Mac (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`).
+- A speed gate. The do-nothing arm is the CPU, about 15× slower. [Corrected 2026-11-07: the 15× has no record behind it. On the Mac the measured CPU-to-Metal decode ratio for Qwen2.5 is 1.7 to 1.8× (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), a proxy: it says nothing about CUDA, which is unmeasured, and a first kernel for a new family can be slower than the CPU (OP6's first Metal kernels on Phi-3 were 4.7× slower than the loop until #722), so "cannot be in doubt" is weaker than written here.]
 
 **OP2b on CUDA: the gates, registered 2026-10-16 before any code** (read at main `d183f2c9`; Metal's step 1 and step 2 records above).
 
@@ -1612,7 +1612,7 @@ nobara's `~/models` (never `/srv/models`); the CUDA int4 bundle is built from it
      is recorded, is VOID for that cell and not a FAIL, and changes nothing in rule 2.
 - A smaller bundle would also answer it for the 9B (B27's int8 Mamba projections took Metal's from 19.2 to 7.27 GB; int4 Mamba
   projections would go further and need their own quality gate, `docs/ssm-int8-quality.md`); that is not part of this build.
-- **Tier 2: none.** There is no speed gate: the do-nothing arm is the CPU, 1.7 to 1.8× slower on the Mac (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), so the direction cannot be in doubt. One
+- **Tier 2: none.** There is no speed gate: the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt. [Corrected 2026-11-07: the 15× has no record behind it. On the Mac the measured CPU-to-Metal decode ratio for Qwen2.5 is 1.7 to 1.8× (`docs/measurements/forward-arch-decline-cost-2026-11-07.md`), a proxy: it says nothing about CUDA, which is unmeasured, and a first kernel for a new family can be slower than the CPU (OP6's first Metal kernels on Phi-3 were 4.7× slower than the loop until #722), so "cannot be in doubt" is weaker than written here.] One
   decode rate and the time to first token of the sequential prompt are recorded for the 9B, not graded.
 
 **Void, for every gate above:** a model path under `/srv/models` or `/Volumes`; a resident arm whose `DecodePath()` is not

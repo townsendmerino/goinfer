@@ -7,7 +7,7 @@ the declined families themselves (Phi-3/Phi-4, Granite-4.0-H, LFM2.5, Llama 4, L
 
 ## Result
 
-Decode throughput, goinfer's own CPU path against its Metal path, same checkpoint, same quantisation class, depth 128, greedy,
+Decode throughput, goinfer's own CPU path against its Metal path, same checkpoint, same quantisation class, phase A's 129-token prompt (the harness's "depth 128"; `BENCH_DEPTHS=none` skips only its depth curve), greedy,
 `scripts/bench_peer.py` interleaved A B B A (`BENCH_ABBA`), tokens per second:
 
 | model | CPU (median of the cell means) | Metal (median of the cell means) | Metal / CPU | cells (CPU, Metal) |
@@ -18,13 +18,13 @@ Decode throughput, goinfer's own CPU path against its Metal path, same checkpoin
 
 - **The block-by-block ratios** (Metal block against the CPU block of the same position): 0.5B 1.79, 1.78, 1.78, 1.84; 1.5B 1.76, 1.75, 1.69, 1.75; 7B 1.81, 1.78. Every block is between 1.69 and 1.84.
 - **The spread inside a cell** (two runs of eight completions of 64 tokens) is under 1% on every cell but two (Metal 0.5B block 3 reads 211.7 and 219.0; CPU 7B block 0 reads 18.9 and 18.5); no cell was void; the harness re-ran one cold-load start (load 4.9 and 4.1 against its cap of 4.0) in place, as its rule says, and the 7B CPU cell it started is the one recorded.
-- **The ratio does not grow with the model.** From 0.5B to 7B it stays at 1.7 to 1.8. The CPU path reaches roughly 83 GB/s of weight traffic on the 7B (18.8 tok/s × 4.68 GB), the Metal path roughly 158 GB/s.
+- **The ratio does not grow with the model.** From 0.5B to 7B it stays at 1.7 to 1.8. The CPU path reaches roughly 88 GB/s of weight traffic on the 7B (18.8 tok/s × 4.68 GB), the Metal path roughly 158 GB/s (33.8 × 4.68), which is the 1.80× of the table.
 
 ## What it corrects
 
-`docs/tasks/task-forward-architecture-2026-10.md` quoted "a model on the CPU decodes about 15× slower" in six places (§0, the §2 table, §4.2, and three gate lines). No record sits behind that figure. On this Mac, for these three sizes, the CPU is **1.7 to 1.8× slower**, not 15×. The 15× may describe the CUDA box (a 16-thread Ryzen against the card); nothing in the repository measures that pair in one session, and this record does not. The task doc now says what was measured and where.
+`docs/tasks/task-forward-architecture-2026-10.md` quoted "a model on the CPU decodes about 15× slower" in six places (§0, the §2 table, §4.2, and three gate lines). No record sits behind that figure. On this Mac, for these three sizes, the CPU is **1.7 to 1.8× slower**, not 15×. The 15× may describe the CUDA box (a 16-thread Ryzen against the card); nothing in the repository measures that pair in one session, and this record does not. The three summary statements now say what was measured, that it is a Mac proxy and that CUDA is unmeasured; the three gate lines under OP2 keep their historical text with a dated correction beside it, because they were registered under the 15× and a Mac ratio does not justify a CUDA decision.
 
-What the correction changes: a family leaving the CPU fallback on the Mac gains about 1.8× on decode for a model like these, which is still the largest single change available to a user of that family but far from an order of magnitude, and the gate sentences that said "the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt" keep their conclusion (the direction is not in doubt) on the measured size.
+What the correction changes: a family leaving the CPU fallback on the Mac gains about 1.8× on decode for a model like these, which is still the largest single change available to a user of that family but far from an order of magnitude. It also weakens the premise of those gate lines ("the do-nothing arm is the CPU, about 15× slower, so the direction cannot be in doubt"): at 1.8× on a dense model, a first kernel for a new family can be slower than the CPU (OP6's first Metal kernels on Phi-3 were 4.7× slower than the loop until #722), so the direction is not settled by the ratio.
 
 ## What ran
 
