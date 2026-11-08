@@ -99,7 +99,7 @@ func Buffers(op Op, s LayerShape) []Buf {
 	case OpAttention:
 		return rows(kv(op.Attn.Window), "ctx", q)
 	case OpGatedAttn:
-		return rows(kv(op.Gated.Attn.Window), "q-gate", 2*q, "q", q, "k", kvw, "v", kvw, "gate", q, "ctx", q)
+		return rows(kv(op.Gated.Attn.Window), "q-gate", 2*q, "q", q, "k", kvw, "v", kvw, "attn-gate", q, "ctx", q)
 	case OpGemma4Attn:
 		if !op.G4.OwnsKV {
 			return rows(nil, "q", q, "ctx", q) // a KV-shared layer reads its source layer's rows

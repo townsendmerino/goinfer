@@ -86,7 +86,7 @@ func TestBuffers_eachOperation(t *testing.T) {
 		{"attention", Op{Kind: OpAttention}, cat(kv(0), rows("ctx", 32))},
 		{"windowed attention", Op{Kind: OpAttention, Attn: AttentionParams{Window: 512}}, cat(kv(512), rows("ctx", 32))},
 		{"gated attention", Op{Kind: OpGatedAttn, Gated: GatedAttnParams{Attn: AttentionParams{Window: 7}}},
-			cat(kv(7), rows("q-gate", 64, "q", 32, "k", 16, "v", 16, "gate", 32, "ctx", 32))},
+			cat(kv(7), rows("q-gate", 64, "q", 32, "k", 16, "v", 16, "attn-gate", 32, "ctx", 32))},
 		{"gemma 4 owning", Op{Kind: OpGemma4Attn, G4: Gemma4AttnParams{OwnsKV: true, Window: 9}}, cat(kv(9), rows("q", 32, "k", 16, "v", 16, "ctx", 32))},
 		{"gemma 4 shared", Op{Kind: OpGemma4Attn, G4: Gemma4AttnParams{KVSrc: 1}}, rows("q", 32, "ctx", 32)},
 		{"mla", Op{Kind: OpMLA}, cat([]Buf{{"latent", PerPosition, PrecF32, 24, 0, 0, false}},
