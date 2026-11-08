@@ -80,7 +80,7 @@ this is not expected to need.
 4. The reading goes into `docs/kv-precision-matrix.md`'s notes, the banner's int8 line and `scope.md`; S4 is then whole for the dense
    families, and the flag's remaining refusals (sliding window, other families) are S3c and S5.
 
-## Addendum, 2026-11-07 20:10 PST (logistics only; no bar, cell or prediction changed)
+## Addendum, 2026-11-07 20:08 PST (logistics only; no bar, cell or prediction changed)
 
 The instrument smoke (step 1) stopped before loading anything (`s4-g4-smoke-S2prompts.log`): the set-B references for S and D7
 (`~/goinfer-logs/prefill-ref-b`, built 2026-09-20) have no `.key.json` sidecar. They predate the content-keyed reference cache, so
@@ -94,3 +94,30 @@ runs on.
   CLAUDE.md it belongs on the night queue, and nobara is quiet 21:45 to 02:00. Building it is a scheduling decision for the coordinator: a
   night job after 02:00 on a pinned tree, or by day tomorrow. Until then D7, the decision cell, is not run, and S, the confirmation cell,
   cannot stand in for it.
+
+## Results
+
+### S (qwen2.5-coder-1.5b, K=3900, the confirmation cell), 2026-11-07 20:21 PST
+
+References rebuilt on this tree (`s4-ref-S-K3900.log`): 10 of 10, 740 s, keyed to the gate's source. The cell started at a 1-minute load of
+6.87 (under nobara's 8.0 void line; this is a fidelity cell, not a timed one) with 60 GB available (`s4-g4-S-K3900.log.start`). It ran 110 s
+(`s4-g4-S-K3900.log`).
+
+| reading | base | int8 | criteria |
+|---|---|---|---|
+| **G4: int8 against f32** | agreement 91.09 %, hard flips 9, mean KL 0.052265 | 89.69 %, 19, 0.086818 | (a) 19 > 9 + 2*sqrt(9) = 15: fails. (b) -1.40 pt, under -1.0, and int8 >= f32 on 4 of 10: fails. (c) KL ratio 1.661: fails. **DOES NOT PASS** |
+| int8 against f16 (reported) | 90.94 %, 8, 0.052564 | 89.69 %, 19, 0.086818 | ratio 1.652, the same three fail |
+| control: f16 against f32 | 91.09 %, 9, 0.052265 | 90.94 %, 8, 0.052564 | **PASSES**, KL ratio 1.0057: the f16 gate's own S reading of 2026-10-13, reproduced exactly |
+
+Preconditions, all held:
+- int8 allocated 60,555,264 B against f32's 234,881,024 B, priced exactly in both arms;
+- the flash lane's int8 kernel launched;
+- A/A bit-identical over 64 rows;
+- int8 rows differ from f32's at 630 positions (every prompt), and seed rows at 10 of 10.
+
+Prediction scored: "S passes (0.65)" was wrong. The confirmation cell reads DOES NOT PASS, so int8 KV's quality cost on the 1.5B is
+measurable at this gate's bars: about 1.4 points of agreement, twice the hard flips, and two-thirds more KL. By the contract (item 4) this is
+a published reading, not a refusal: `--kv i8` stays delivered on request. It decides what the docs and the banner say, and it is
+consistent with what S2's cross-backend readings showed (the CPU's own int8 cache costs the 1.5B the same).
+
+D7, the decision cell, waits on its references (the addendum above).
