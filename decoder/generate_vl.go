@@ -130,11 +130,8 @@ func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 						return
 					}
 					gpuPos := len(ids)
-					if capper, ok := m.resident.(ResidentCapped); ok {
-						if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-							maxTokens = ctxCap - gpuPos
-							g.BudgetClamped = true // the resident cap (not the request) bounds this turn
-						}
+					if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
+						maxTokens, g.BudgetClamped = c, true
 					}
 					g.Budget = maxTokens // publish the effective (possibly clamped) budget so a cap-truncated turn reports finish_reason "length"
 					sampler := NewSampler(sp)
@@ -181,11 +178,8 @@ func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 		if resPrefill != nil && m.tryClaimResident() {
 			if logits, gpuPos, ferr := resPrefill(); ferr == nil {
 				g.ImgPrefillResident = true
-				if capper, ok := m.resident.(ResidentCapped); ok {
-					if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-						maxTokens = ctxCap - gpuPos
-						g.BudgetClamped = true // the resident cap (not the request) bounds this turn
-					}
+				if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
+					maxTokens, g.BudgetClamped = c, true
 				}
 				g.Budget = maxTokens // publish the effective (possibly clamped) budget so a cap-truncated turn reports finish_reason "length"
 				sampler := NewSampler(sp)
@@ -237,11 +231,8 @@ func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 			if uerr := m.residentUploadPrefill(cache); uerr == nil {
 				useGPU = true
 				gpuPos = len(ids)
-				if capper, ok := m.resident.(ResidentCapped); ok {
-					if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-						maxTokens = ctxCap - gpuPos // may clamp to 0 (prompt filled the cap)
-						g.BudgetClamped = true      // the resident cap (not the request) bounds this turn
-					}
+				if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
+					maxTokens, g.BudgetClamped = c, true
 				}
 			}
 		}
@@ -338,11 +329,8 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 						return
 					}
 					gpuPos := len(ids)
-					if capper, ok := m.resident.(ResidentCapped); ok {
-						if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-							maxTokens = ctxCap - gpuPos
-							g.BudgetClamped = true // the resident cap (not the request) bounds this turn
-						}
+					if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
+						maxTokens, g.BudgetClamped = c, true
 					}
 					g.Budget = maxTokens // publish the effective (possibly clamped) budget so a cap-truncated turn reports finish_reason "length"
 					sampler := NewSampler(sp)
@@ -399,11 +387,8 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 				}
 				if logits, gpuPos, ferr := m.residentMRoPEPrefillDeep(ctx, rmp, ids, feats, spans, mropePos, deep); ferr == nil {
 					g.ImgPrefillResident = true
-					if capper, ok := m.resident.(ResidentCapped); ok {
-						if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-							maxTokens = ctxCap - gpuPos
-							g.BudgetClamped = true // the resident cap (not the request) bounds this turn
-						}
+					if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
+						maxTokens, g.BudgetClamped = c, true
 					}
 					g.Budget = maxTokens // publish the effective (possibly clamped) budget so a cap-truncated turn reports finish_reason "length"
 					sampler := NewSampler(sp)
@@ -463,11 +448,8 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 				useGPU = true
 				mrope = r
 				gpuPos = len(ids)
-				if capper, ok := m.resident.(ResidentCapped); ok {
-					if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-						maxTokens = ctxCap - gpuPos
-						g.BudgetClamped = true // the resident cap (not the request) bounds this turn
-					}
+				if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
+					maxTokens, g.BudgetClamped = c, true
 				}
 			}
 		}
