@@ -172,7 +172,7 @@ func TestRun_measureRateExcludesPrefill(t *testing.T) {
 // which can itself trip the memory guard the probe exists to measure honestly. A real large checkpoint tripping the
 // guard can't be reproduced with this repo's tiny fixtures, so this is asserted structurally, the same technique
 // TestTranscode_writesViaTempThenRenames (decoder) uses for an ordering property: parse Run's AST and confirm
-// the statement calling m.Close() appears BEFORE the `if *measure` block that calls selfMeasure.
+// the statement that calls m.Close() (the loop over the loads) appears BEFORE the `if *measure` block that calls selfMeasure.
 func TestRun_closesFirstLoadBeforeMeasuring(t *testing.T) {
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, "fit.go", nil, 0)
@@ -196,21 +196,18 @@ func TestRun_closesFirstLoadBeforeMeasuring(t *testing.T) {
 	}
 	var closeCallIdx, measureIfIdx = -1, -1
 	for i, stmt := range fn.Body.List {
-		switch s := stmt.(type) {
-		case *ast.ExprStmt:
-			if call, ok := s.X.(*ast.CallExpr); ok {
+		ast.Inspect(stmt, func(n ast.Node) bool { // the statement that closes m: a call, or the loop over the loads
+			if _, deferred := n.(*ast.DeferStmt); deferred {
+				return false // a deferred Close runs when Run returns, after selfMeasure: it closes nothing first
+			}
+			if call, ok := n.(*ast.CallExpr); ok {
 				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Close" && render(sel.X) == "m" {
 					closeCallIdx = i
 				}
 			}
-		case *ast.AssignStmt:
-			for _, rhs := range s.Rhs {
-				if call, ok := rhs.(*ast.CallExpr); ok {
-					if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Close" && render(sel.X) == "m" {
-						closeCallIdx = i
-					}
-				}
-			}
+			return true
+		})
+		switch s := stmt.(type) {
 		case *ast.IfStmt:
 			ast.Inspect(s, func(n ast.Node) bool {
 				if call, ok := n.(*ast.CallExpr); ok {
@@ -235,7 +232,7 @@ func TestRun_closesFirstLoadBeforeMeasuring(t *testing.T) {
 	}
 }
 
-// TestFreshSidecar_findsTheOneChatAndServeBuild pins that freshSidecar finds the sidecar a default chat or serve load
+// TestFreshSidecar_findsTheOneChatAndServeBuild pins that sourceFor's cpu line finds the sidecar a default chat or serve load
 // (--backend cpu) writes: this host's cpu target, <base>.int4.cpu-amd64.giw or .cpu-arm64.giw, not only the canonical
 // target. Missing it means a full direct load of the .gguf instead of a mapped read through the sidecar.
 func TestFreshSidecar_findsTheOneChatAndServeBuild(t *testing.T) {
@@ -246,7 +243,7 @@ func TestFreshSidecar_findsTheOneChatAndServeBuild(t *testing.T) {
 	}
 }
 
-// testFreshSidecar builds the sidecar a load with the given --embed-int4 writes, and freshSidecar must find it. With
+// testFreshSidecar builds the sidecar a load with the given --embed-int4 writes: the cpu line must find it, and no other line. With
 // embedInt4 it is <base>.int4.e4h.<target>.giw, the one a default CPU/CUDA/WebGPU load writes, not the plain-head name.
 func testFreshSidecar(t *testing.T, embedInt4 bool) {
 	raw, err := os.ReadFile("../../../testdata/glm-tiny.gguf")
@@ -262,8 +259,8 @@ func testFreshSidecar(t *testing.T, embedInt4 bool) {
 	if err := os.Chtimes(src, old, old); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, ok := freshSidecar(src, "int4"); ok {
-		t.Fatal("found a sidecar before one was built")
+	if s, err := sourceFor(src, "int4", "", "cpu"); err != nil || s.path != src {
+		t.Fatalf("before a sidecar was built fit opens %s (%v), want the .gguf", s.path, err)
 	}
 	// Backend "" keeps canonical int4 bytes in RAM, which the .giw writer needs to emit any target (the
 	// production transcode does the same); a Backend "cpu" load on arm64 keeps only the row4 repack.
@@ -289,15 +286,22 @@ func testFreshSidecar(t *testing.T, embedInt4 bool) {
 	if err := os.WriteFile(cpuSidecar, giw.Write(blob, nil), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, be, ok := freshSidecar(src, "int4")
-	if !ok || got != cpuSidecar {
-		t.Fatalf("freshSidecar = %q, %v; want the cpu-target sidecar %s a default chat/serve load builds", got, ok, filepath.Base(cpuSidecar))
+	s, err := sourceFor(src, "int4", "", "cpu")
+	if err != nil || s.path != cpuSidecar {
+		t.Fatalf("the cpu line opens %q (%v); want the cpu-target sidecar %s a default chat/serve load builds", s.path, err, filepath.Base(cpuSidecar))
 	}
-	if target != decoder.GIWTargetNone && be != "cpu" {
-		t.Errorf("backend = %q, want cpu: a cpu-target sidecar can be row4-only, which only the literal cpu backend reads", be)
+	if target != decoder.GIWTargetNone && s.loadBackend != "cpu" {
+		t.Errorf("backend = %q, want cpu: a cpu-target sidecar can be row4-only, which only the literal cpu backend reads", s.loadBackend)
 	}
-	if _, err := decoder.Load(got, decoder.Options{Quant: "int4", Backend: be}); err != nil {
-		t.Errorf("the found sidecar does not load with the backend freshSidecar chose: %v", err)
+	if _, err := decoder.Load(s.path, decoder.Options{Quant: "int4", Backend: s.loadBackend}); err != nil {
+		t.Errorf("the found sidecar does not load with the backend sourceFor chose: %v", err)
+	}
+	// A load on another backend reads that backend's own sidecar, never the CPU's: a cuda or webgpu load would not open it, and
+	// -measure loads the source on the backend itself, which cannot read a row4-only file.
+	for _, be := range []string{"cuda", "webgpu", "metal"} {
+		if o, err := sourceFor(src, "int4", "", be); err != nil || o.path != src {
+			t.Errorf("the %s line opens %s (%v); want the .gguf, since no %s sidecar is built", be, o.path, err, be)
+		}
 	}
 }
 
@@ -324,7 +328,7 @@ func TestPlanFor_metalPlansAtTheLoadsOwnContext(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	m, err := decoder.Load(dir, decoder.Options{Quant: "int4"})
+	m, err := decoder.Load(dir, fitLoadOptions(fitSource{quant: "int4"}, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,4 +361,85 @@ func TestPlanFor_metalPlansAtTheLoadsOwnContext(t *testing.T) {
 	if p, want := planFor(m, "cpu", budget(80000), fit.PlanRequest{Ctx: defaultCtx}), m.Plan("cpu", budget(80000), fit.PlanRequest{Ctx: defaultCtx}); p.Ctx != want.Ctx || p.Reason != want.Reason {
 		t.Errorf("cpu: planFor changed Plan's answer (%d, %q) to (%d, %q)", want.Ctx, want.Reason, p.Ctx, p.Reason)
 	}
+}
+
+// TestPlanFor_metalPricesEverySlotTheBuildKeeps: a serve load without --kv-sessions asks Metal for decoder.MetalDefaultKVSlots
+// KV slots and keeps as many as fit beside the first (backend/metal's metalKVSlots), so fit's Metal line prices each slot kept:
+// the first in Plan, the rest at decoder.Model.MetalKVBytes. It holds at a pinned -ctx and at the default context, prices one
+// slot where a second does not fit, and one for a recurrent model, which a default load keeps to one slot. Each model is
+// loaded as Run loads it (fitLoadOptions), since the slot request is a load option.
+func TestPlanFor_metalPricesEverySlotTheBuildKeeps(t *testing.T) {
+	load := func(dir string) *decoder.Model {
+		t.Helper()
+		m, err := decoder.Load(dir, fitLoadOptions(fitSource{quant: "int4"}, 0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { m.Close() })
+		return m
+	}
+	further := func(m *decoder.Model, ctx int) int64 {
+		return m.MetalKVBytes(decoder.MetalDefaultKVSlots, ctx) - m.ResidentKVBytes("metal", ctx, false, false)
+	}
+	check := func(name string, m *decoder.Model, free int64, req fit.PlanRequest, ctx, slots int) {
+		t.Helper()
+		one := m.Plan("metal", 1<<40, fit.PlanRequest{Ctx: ctx, CtxPinned: true})
+		want := one.NeedBytes()
+		if slots > 1 {
+			want += further(m, ctx)
+		}
+		p := planFor(m, "metal", free, req)
+		if p.Placement != fit.PlacementResident || p.Ctx != ctx || p.NeedBytes() != want {
+			t.Errorf("%s: %v at ctx %d needing %d B (%s); want resident at ctx %d needing %d B, %d KV slots", name, p.Placement, p.Ctx,
+				p.NeedBytes(), p.Reason, ctx, want, slots)
+		}
+		if slots > 1 && !strings.Contains(p.Reason, fmt.Sprintf("keeps %d of the %d KV slots", slots, decoder.MetalDefaultKVSlots)) {
+			t.Errorf("%s: the reason does not say how many KV slots the load keeps: %q", name, p.Reason)
+		}
+	}
+
+	m := load("../../../testdata/llama-tiny")
+	const ctx = 128 // llama-tiny's window
+	if further(m, ctx) <= 0 {
+		t.Fatal("llama-tiny prices no KV for a second Metal slot")
+	}
+	need := m.Plan("metal", 1<<40, fit.PlanRequest{Ctx: ctx, CtxPinned: true}).NeedBytes()
+	pinned := fit.PlanRequest{Ctx: ctx, CtxPinned: true}
+	check("pinned, room for both slots", m, need+further(m, ctx), pinned, ctx, 2)
+	check("pinned, room for one slot", m, need+further(m, ctx)-1, pinned, ctx, 1)
+
+	// The default context: a wide-window copy (as TestPlanFor_metalPlansAtTheLoadsOwnContext makes) with room for both slots at
+	// MetalCtxDefault and not at the next block, so MetalFitCtx answers the floor, where fit once priced one slot.
+	dir := t.TempDir()
+	for _, name := range []string{"config.json", "generation_config.json", "model.safetensors"} {
+		b, err := os.ReadFile(filepath.Join("../../../testdata/llama-tiny", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name == "config.json" {
+			b = []byte(strings.Replace(string(b), `"max_position_embeddings": 128`, `"max_position_embeddings": 131072`, 1))
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wide := load(dir)
+	atFloor := wide.Plan("metal", 1<<40, fit.PlanRequest{Ctx: decoder.MetalCtxDefault, CtxPinned: true}).NeedBytes() + further(wide, decoder.MetalCtxDefault)
+	if c := wide.MetalFitCtx(decoder.MetalFitInput{FreeBytes: atFloor, FreeKnown: true, KVSlots: decoder.MetalDefaultKVSlots}).Ctx; c != decoder.MetalCtxDefault {
+		t.Fatalf("the budget for both slots at the floor gives ctx %d, want %d", c, decoder.MetalCtxDefault)
+	}
+	check("the default context", wide, atFloor, fit.PlanRequest{Ctx: defaultCtx}, decoder.MetalCtxDefault, 2)
+	// Room for one slot only, unpinned: the context is the floor, and the reason says one slot is kept without MetalFitCtx's
+	// account of the two asked.
+	oneAtFloor := wide.Plan("metal", 1<<40, fit.PlanRequest{Ctx: decoder.MetalCtxDefault, CtxPinned: true}).NeedBytes() +
+		wide.MetalKVTableRaiseBytes(2, decoder.MetalCtxDefault) + wide.MetalKVSlotBytes(decoder.MetalCtxDefault) - 1
+	if p := planFor(wide, "metal", oneAtFloor, fit.PlanRequest{Ctx: defaultCtx}); !strings.Contains(p.Reason, "keeps 1 of the 2 KV slots") ||
+		!strings.Contains(p.Reason, fmt.Sprintf("an unpinned load takes %d positions (the default)", decoder.MetalCtxDefault)) ||
+		strings.Contains(p.Reason, "2 KV slots leave") {
+		t.Errorf("one slot of two at the floor, unpinned: %q", p.Reason)
+	}
+
+	rec := load("../../../testdata/qwen35-tiny")
+	recNeed := rec.Plan("metal", 1<<40, fit.PlanRequest{Ctx: 64, CtxPinned: true}).NeedBytes()
+	check("recurrent: one slot", rec, recNeed+further(rec, 64), fit.PlanRequest{Ctx: 64, CtxPinned: true}, 64, 1)
 }

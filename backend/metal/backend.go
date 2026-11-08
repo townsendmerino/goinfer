@@ -517,15 +517,9 @@ func metalSlotBytes(m *decoder.Model) int64 {
 	return m.MetalKVSlotBytes(ctxCap) + metalRecurrentSlotBytes(m)
 }
 
-// metalKVSlotsWanted is the slot count the build asks memory for: the model's request, or metalDefaultKVSlots when that
-// request is only the caller's default (E-P09). metalKVSlots grants as many of them as fit.
-func metalKVSlotsWanted(m *decoder.Model) int {
-	n := m.ResidentKVSlotsRequestFor("metal")
-	if m.ResidentKVSlotsIsDefault() && n > metalDefaultKVSlots {
-		n = metalDefaultKVSlots
-	}
-	return max(n, 1)
-}
+// metalKVSlotsWanted is the slot count the build asks memory for (decoder.Model.MetalKVSlotsWanted, E-P09). metalKVSlots grants as
+// many of them as fit.
+func metalKVSlotsWanted(m *decoder.Model) int { return m.MetalKVSlotsWanted() }
 
 // metalDefaultKVSlots is how many resident KV slots Metal keeps when the count asked is the caller's default
 // (decoder.Options.ResidentKVSlotsDefault: serve without -kv-sessions). Every slot's KV is resident from the first token, so
