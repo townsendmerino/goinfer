@@ -240,7 +240,12 @@ OP6's Metal switch, which would make `--quant q4k` Metal's default load for Phi-
 - the records go to `results-mac-m1-2026-11-07`;
 - the fit check's server runs without `GODEBUG`, since the footprint question the last run asked is closed, and its peak
   footprint is still read once it serves;
-- a refused fit check or a battery start exits 75, so the night queue retries it until 05:30.
+- a refused fit check or a battery start exits 75, so the night queue retries it until 05:30;
+- amended before it runs, on review: any swap growth across the fit check (the void's 0 MB bar; the kill's is 1,024 MB) also
+  exits 75 before the cell starts, rather than starting a cell the void would void. A fit-check server that ignores SIGTERM for 30 s
+  is killed. The serve's sha256 must equal the registered one. `grade.py` runs only when `bench_peer.py` exits 0. Its stdout is
+  kept whole in `grade.txt`, its JSON lines alone in `grade.jsonl`, and its stderr in `grade.stderr`. A grading failure fails
+  the job.
 
 - **Read at night:** goinfer's tok/s ×3 and Ollama's ×3, graded by `grade.py` (AHEAD, PARITY or BEHIND), with the swap void and
   the decode-path gate as before.
