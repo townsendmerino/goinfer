@@ -202,9 +202,10 @@ func TestPhi3Default_autoRunsResidentOnTheQ4KLane(t *testing.T) {
 //     Metal declines to the CPU) and of the CPU's own q4k;
 //   - against the f32 reference, argmax agreement at least the old default's.
 //
-// No absolute bar is set against f32: the q4k quant's int8 parts move a few positions of this fixture by a few percent on every
-// path that takes it. Random blocks carry none of Phi-3's activation outliers, so this gates the default's arithmetic, not the
-// outlier hazard; that is G-Q2's, on the real file (TestQ4KLane_realPhi3NonInferiority).
+// No absolute bar is set against f32: the q4k quant's int8 parts move every path that takes it away from the reference, the CPU's
+// own q4k included, by an amount the fixture's random weights set, so the bars compare paths. Random blocks carry none of Phi-3's
+// activation outliers, so this gates the default's arithmetic, not the outlier hazard; that is G-Q2's, on the real file
+// (TestQ4KLane_realPhi3NonInferiority).
 func TestPhi3Default_tracksTheCPUReferenceAtLeastAsCloselyAsTheOldDefault(t *testing.T) {
 	const positions = 32
 	tok := func(p int) int { return (7 + 11*p) % 64 }
