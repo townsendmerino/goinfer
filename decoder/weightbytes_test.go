@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"errors"
 	"io"
 	"io/fs"
@@ -286,4 +287,48 @@ func TestResidentHostCopyBytes_exemptsMmapAliasedGIWWeights(t *testing.T) {
 	t.Logf("heap: device=%d host=%d (doubles, correctly) | .giw: device=%d host=%d (mmap-aliased "+
 		"portion excluded, %.1f%% of the heap case)", heapDevice, heapHost, giwDevice, giwHost,
 		100*float64(giwHost)/float64(heapHost))
+}
+
+// TestResidentHostCopyBytes_exemptsMappedQ4KBlocks: a q4k .giw keeps every Q4_K projection's blocks in the mapping (kind 8), so the
+// host-copy term counts none of them: they are pages of the file, which the process does not hold as heap (fit.Plan.HostCopyBytes is
+// 0 for what aliases a .giw). The direct load of the same .gguf decodes them onto the heap, and there the term is the whole weights.
+func TestResidentHostCopyBytes_exemptsMappedQ4KBlocks(t *testing.T) {
+	dir := t.TempDir()
+	src := q4kGGUF(t, dir, 2)
+	heap, err := Load(src, Options{Backend: "cpu", Quant: "q4k", DirectLoad: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer heap.Close()
+	if host, all := heap.ResidentHostCopyBytes(0), heap.ResidentWeightBytesPaged(0); host != all {
+		t.Fatalf("the direct q4k load: host copy %d B, want the whole weights %d B (control)", host, all)
+	}
+	out := filepath.Join(dir, "q4k.metal.giw")
+	if err := TranscodeGIW(context.Background(), src, out, "q4k", false, GIWTargetForBackend("metal")); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Load(out, Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	var mapped int64
+	for i := range m.w.Layers {
+		l := &m.w.Layers[i]
+		for _, w := range []*linalg.WeightMat{&l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GateProj, &l.UpProj, &l.DownProj} {
+			raw, ok := w.Q4K()
+			if _, in := m.MmapByteOffset(raw); !ok || !in {
+				t.Fatalf("layer %d: a %dx%d projection is not Q4_K blocks in the mapping (kind %q)", i, w.Rows(), w.Cols(), w.Kind())
+			}
+			mapped += int64(len(raw))
+		}
+	}
+	host, all := m.ResidentHostCopyBytes(0), m.ResidentWeightBytesPaged(0)
+	if host > all-mapped {
+		t.Errorf("the q4k .giw: host copy %d B of %d B of weights, so at least %d B of the %d B of Q4_K blocks in the mapping count as heap",
+			host, all, host-(all-mapped), mapped)
+	}
+	if p := m.Plan("metal", 1<<40, PlanRequest{Ctx: 64, CtxPinned: true}); p.HostCopyBytes != host {
+		t.Errorf("Plan(metal).HostCopyBytes = %d, want ResidentHostCopyBytes(0) %d", p.HostCopyBytes, host)
+	}
 }

@@ -210,12 +210,17 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	// excluded from it by the OS's own accounting. Subtracting them again would double-count a footprint that is not
 	// there (the bug AdmitPrefillMemory once had at request time). Weights are still shown, for the reader's own
 	// arithmetic.
+	// A resident of two or more slots holds every slot's KV from the load, so the line prices its pool (the resident's own account),
+	// not one conversation's cap.
 	if f.fitKnown {
-		remaining := f.fitBudgetBytes - f.fitKVBytes
+		kv, what := f.fitKVBytes, fmt.Sprintf("%d-token cap needs", f.fitCtx)
+		if f.resident && f.kvSlots > 1 && f.kvPoolDetail.Bytes > 0 {
+			kv, what = f.kvPoolDetail.Bytes, fmt.Sprintf("%d KV slots at a %d-token cap hold", f.kvSlots, f.fitCtx)
+		}
 		fitLine := fmt.Sprintf(
-			"fit: %d-token cap needs %.1f GB KV (weights %.1f GB, budget %.1f GB, %.1f GB left for a request's own prefill)",
-			f.fitCtx, float64(f.fitKVBytes)/(1<<30), float64(f.fitWeightBytes)/(1<<30),
-			float64(f.fitBudgetBytes)/(1<<30), float64(remaining)/(1<<30))
+			"fit: %s %.1f GB KV (weights %.1f GB, budget %.1f GB, %.1f GB left for a request's own prefill)",
+			what, float64(kv)/(1<<30), float64(f.fitWeightBytes)/(1<<30),
+			float64(f.fitBudgetBytes)/(1<<30), float64(f.fitBudgetBytes-kv)/(1<<30))
 		if !f.resident && f.ctxWindow > 0 && f.fitCtx == f.maxPositions { // the CPU path's ceiling, as the context line says
 			fitLine += " — a ceiling, reached only by a request that fills the window"
 		}

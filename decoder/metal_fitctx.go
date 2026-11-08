@@ -55,3 +55,46 @@ func (m *Model) MetalFitCtx(in MetalFitInput) MetalFit {
 
 // MetalFitWhy is MetalFitCtx's reason for a context it grew past the default: the slots it holds and what their KV costs.
 func MetalFitWhy(slots int, kvBytes int64) string { return mem.MetalFitWhy(slots, kvBytes) }
+
+// MetalKVSlotsWanted is how many resident KV slots a Metal build asks memory for: the model's request
+// (ResidentKVSlotsRequestFor("metal")), or MetalDefaultKVSlots when that request is only the caller's default. The build keeps as many
+// of them as fit (MetalLoadPlan's KVSlots).
+func (m *Model) MetalKVSlotsWanted() int {
+	n := m.ResidentKVSlotsRequestFor("metal")
+	if m.resSlotsDef && n > MetalDefaultKVSlots {
+		n = MetalDefaultKVSlots
+	}
+	return max(n, 1)
+}
+
+// MetalLoad is MetalLoadPlan's answer.
+type MetalLoad struct {
+	Plan    Plan     // NeedBytes covers every slot kept
+	KVSlots int      // the KV slots the build keeps: as many of MetalKVSlotsWanted as fit beside the first
+	Fit     MetalFit // MetalFitCtx's answer for an unpinned context; the zero value for a pinned one
+}
+
+// MetalLoadPlan is what a Metal load of m costs on free bytes. An unpinned context is MetalFitCtx's. The KV is every slot the build
+// keeps: the largest count up to MetalKVSlotsWanted whose further slots fit beside the first, as the build's own slot guard counts them.
+// Plan prices one slot, so the rest are ExtraBytes at MetalKVBytes, as fit.PlanRequest.KVSlots' contract asks of a multi-slot caller.
+func (m *Model) MetalLoadPlan(free int64, req PlanRequest) MetalLoad {
+	want := m.MetalKVSlotsWanted()
+	var f MetalFit
+	if !req.CtxPinned {
+		f = m.MetalFitCtx(MetalFitInput{FreeBytes: free, FreeKnown: true, KVSlots: want, PagedMoE: req.Slots > 0})
+		req.Ctx, req.CtxPinned = f.Ctx, true
+	}
+	p := m.Plan("metal", free, req)
+	further := func(n int) int64 {
+		return m.MetalKVBytes(n, p.Ctx) - m.ResidentKVBytes("metal", p.Ctx, req.KVF16, req.KVI8)
+	}
+	n := want
+	for n > 1 && (p.Placement == PlacementDecline || p.NeedBytes()+further(n) > free) {
+		n--
+	}
+	if n > 1 {
+		req.ExtraBytes += further(n)
+		p = m.Plan("metal", free, req)
+	}
+	return MetalLoad{Plan: p, KVSlots: n, Fit: f}
+}

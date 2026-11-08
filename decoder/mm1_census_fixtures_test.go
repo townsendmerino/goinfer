@@ -61,6 +61,7 @@ var censusFixtures = []string{
 	"../testdata/nemotron3nano-tiny",
 	"../testdata/olmo3-tiny",
 	"../testdata/olmo_hybrid-tiny",
+	"../testdata/phi3-q4k-tiny.gguf",
 	"../testdata/phi3-tiny",
 	"../testdata/qwen25vl-tiny",
 	"../testdata/qwen35-tiny",

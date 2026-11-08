@@ -119,71 +119,153 @@ func Run(args []string) int {
 	// only "cpu" needs its free bytes captured early; freeBytesFor still queries the rest live.
 	hostFreeBeforeLoad := decoder.HostRAMAvailableBytes()
 
-	// S1 (task-never-swap-2026-09.md) item 5: measure through an ALREADY-fresh sidecar when one
-	// exists — a mapped load, lazy faults, nearly free next to the resident build below. Never
-	// forces a transcode itself (that would trade one expensive one-time cost for another, not
-	// buy "nearly free" as the brief asks) — a missing or stale sidecar just falls through to
-	// today's direct load, unchanged.
-	loadPath, loadBackend := path, ""
-	if cached, be, ok := freshSidecar(path, *quant); ok {
-		loadPath, loadBackend = cached, be
-	}
-	m, err := decoder.Load(loadPath, decoder.Options{Quant: *quant, Backend: loadBackend, DirectLoad: true})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "load %s: %v\n", loadPath, err)
-		return 1
+	explicitQuant := ""
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "quant" {
+			explicitQuant = *quant
+		}
+	})
+	residentCtx := 0
+	if ctxPinned {
+		residentCtx = *ctx // an explicit -ctx is a pin, as it is for Load
 	}
 
-	req := fit.PlanRequest{Ctx: *ctx, CtxPinned: ctxPinned, KVF16: *kvF16, KVI8: *kvI8, Slots: *slots}
-	via := ""
-	if loadPath != path {
-		via = " (read through its sidecar " + filepath.Base(loadPath) + ")"
+	// Each backend is planned on what a load on it opens (sourceFor). Every probe is read before any load, which on unified
+	// memory takes from what the GPU probe reports too.
+	type line struct {
+		backend string
+		free    int64
+		known   bool
+		src     fitSource
+		plan    fit.Plan
 	}
-	fmt.Printf("%s @ %s, ctx=%d%s%s\n\n", path, quantLabel(*quant), *ctx, pinnedNote(ctxPinned), via)
-
-	var admitted []string // in CompiledBackends() order; "cpu" always eligible, sorted last
+	var lines []line
 	for _, backend := range decoder.CompiledBackends() {
-		free, known := freeBytesFor(backend, hostFreeBeforeLoad)
-		if !known {
-			fmt.Printf("%-6s  no memory probe available (driver/device not found) — skipped\n", backend)
+		l := line{backend: backend}
+		if l.free, l.known = freeBytesFor(backend, hostFreeBeforeLoad); l.known {
+			src, err := sourceFor(path, *quant, explicitQuant, backend)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", self(), err)
+				return 1
+			}
+			l.src = src
+		}
+		lines = append(lines, l)
+	}
+	// One load per distinct source, closed before the next: two quantized copies at once could trip the guard being priced.
+	req := fit.PlanRequest{Ctx: *ctx, CtxPinned: ctxPinned, KVF16: *kvF16, KVI8: *kvI8, Slots: *slots}
+	planned := make([]bool, len(lines))
+	for i := range lines {
+		if !lines[i].known || planned[i] {
 			continue
 		}
-		p := planFor(m, backend, free, req)
-		fmt.Printf("%-6s  %s\n        %s\n", backend, strings.ToUpper(p.Placement.String()), p.Reason)
-		if p.Placement != fit.PlacementDecline {
-			admitted = append(admitted, backend)
+		src := lines[i].src
+		m, err := decoder.Load(src.path, fitLoadOptions(src, residentCtx))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "load %s: %v\n", src.path, err)
+			return 1
 		}
+		for j := i; j < len(lines); j++ {
+			if lines[j].known && !planned[j] && sameSource(lines[j].src, src) {
+				lines[j].plan, planned[j] = planFor(m, lines[j].backend, lines[j].free, req), true
+			}
+		}
+		_ = m.Close()
 	}
 
-	// M-20 (docs/audit-2026-09-10.md): close m BEFORE selfMeasure's own fresh Load, not after —
-	// selfMeasure loads the SAME checkpoint again, so leaving m open the whole time left two full
-	// quantized copies resident on the CPU backend, which could itself trip the very memory guard
-	// the probe is trying to measure honestly (a swapping machine's number is exactly the
-	// "plausible, wrong" result task-fit-to-hardware.md §5 warns against). No use of m follows
-	// this point on either branch, so an explicit close here (not a function-scoped defer, which
-	// silently discarded the error the same way this does) is exactly once on every path.
-	_ = m.Close()
+	fmt.Printf("%s, ctx=%d%s\n\n", path, *ctx, pinnedNote(ctxPinned))
+	printed := map[string]bool{}
+	var admitted []string // in CompiledBackends() order; "cpu" always eligible, sorted last
+	srcOf := map[string]fitSource{}
+	for _, l := range lines {
+		if !l.known {
+			fmt.Printf("%-6s  no memory probe available (driver/device not found) — skipped\n", l.backend)
+			continue
+		}
+		for _, n := range l.src.notes {
+			if !printed[n] {
+				fmt.Printf("%s\n", n)
+				printed[n] = true
+			}
+		}
+		via := ""
+		if l.src.path != path {
+			via = ", read through its sidecar " + filepath.Base(l.src.path)
+		}
+		fmt.Printf("%-6s  %s @ %s%s\n        %s\n", l.backend, strings.ToUpper(l.plan.Placement.String()), quantLabel(l.src.quant), via, l.plan.Reason)
+		if l.plan.Placement != fit.PlacementDecline {
+			admitted = append(admitted, l.backend)
+		}
+		srcOf[l.backend] = l.src
+	}
 	if *measure {
-		selfMeasure(path, *quant, admitted)
+		selfMeasure(admitted, srcOf)
 	}
 	return 0
 }
 
-// planFor is the plan `fit` prints for one backend. An unpinned Metal load does not take the context Plan alone would give
-// it: it asks decoder.Model.MetalFitCtx, which also holds Metal's default KV slots and its margin, so `fit` asks the same
-// function and plans at its answer. The further slots' KV is priced as ExtraBytes when the context grew for them; at the
-// default the build grants the slots that fit, and the plan prices one as it always has.
+// fitSource is what `fit` opens to plan one backend, and at which quant.
+type fitSource struct {
+	path        string // the checkpoint, or the sidecar .giw read through
+	quant       string
+	group       int    // the activation group (decoder.Options.ActQuantGroup)
+	loadBackend string // the backend the source is opened with: a cpu-target sidecar can be row4-only, which only "cpu" reads
+	notes       []string
+}
+
+// sourceFor is what a load on backend opens, as the load chooses both: the quant modelload.Plan resolves (the per-family default when
+// -quant was not given, with the note the load prints), and a fresh sidecar of that quant, Metal's own on Metal (an always-canonical
+// target, opened with no backend), else freshSidecar's. Without one it is path, opened directly: a .gguf read so holds its weights on
+// the heap, which the load, through the sidecar it builds first, does not.
+func sourceFor(path, quant, explicitQuant, backend string) (fitSource, error) {
+	pl, err := modelload.Plan(modelload.Request{Spec: path, Opts: decoder.Options{Quant: quant, Backend: backend}, ExplicitQuant: explicitQuant})
+	if err != nil {
+		return fitSource{}, err
+	}
+	s := fitSource{path: path, quant: pl.Opts.Quant, group: pl.Opts.ActQuantGroup, notes: pl.Notes}
+	switch {
+	case !strings.HasSuffix(path, ".gguf"):
+	case backend == "metal":
+		if cached, ok := sidecarIfFresh(path, s.quant, "metal"); ok {
+			s.path = cached
+		}
+	default:
+		if cached, be, ok := freshSidecar(path, s.quant); ok {
+			s.path, s.loadBackend = cached, be
+		}
+	}
+	return s, nil
+}
+
+// sameSource reports whether two backends are planned on one load.
+func sameSource(a, b fitSource) bool {
+	return a.path == b.path && a.quant == b.quant && a.group == b.group && a.loadBackend == b.loadBackend
+}
+
+// fitLoadOptions is what `fit` opens src with: its quant and activation group, the backend it is read on, a pinned -ctx as the
+// load's own pin (residentCtx, 0 for none), and the KV slot request of a serve load without --kv-sessions (the caller's default,
+// which Metal keeps to decoder.MetalDefaultKVSlots), which planFor's Metal line prices.
+func fitLoadOptions(src fitSource, residentCtx int) decoder.Options {
+	return decoder.Options{Quant: src.quant, ActQuantGroup: src.group, Backend: src.loadBackend, DirectLoad: true, ResidentContext: residentCtx,
+		ResidentKVSlots: decoder.MetalDefaultKVSlots, ResidentKVSlotsDefault: true}
+}
+
+// planFor is the plan `fit` prints for one backend. On Metal it is decoder.Model.MetalLoadPlan's, the load a serve without
+// --kv-sessions makes: the context an unpinned load takes and the KV of every slot the build keeps, and the reason says both.
 func planFor(m *decoder.Model, backend string, free int64, req fit.PlanRequest) fit.Plan {
-	if backend != "metal" || req.CtxPinned {
+	if backend != "metal" {
 		return m.Plan(backend, free, req)
 	}
-	f := m.MetalFitCtx(decoder.MetalFitInput{FreeBytes: free, FreeKnown: true, KVSlots: decoder.MetalDefaultKVSlots, PagedMoE: req.Slots > 0})
-	req.Ctx, req.CtxPinned = f.Ctx, true
-	if f.Ctx > decoder.MetalCtxDefault {
-		req.ExtraBytes += f.KVBytes / int64(f.KVSlots) * int64(f.KVSlots-1)
+	l := m.MetalLoadPlan(free, req)
+	p := l.Plan
+	if want := m.MetalKVSlotsWanted(); want > 1 && p.Placement != fit.PlacementDecline {
+		further := m.MetalKVBytes(l.KVSlots, p.Ctx) - m.ResidentKVBytes("metal", p.Ctx, req.KVF16, req.KVI8)
+		p.Reason += fmt.Sprintf(" — a default load keeps %d of the %d KV slots it asks for (KV %.2f GB in all)", l.KVSlots, want,
+			float64(p.KVBytes+further)/(1<<30))
 	}
-	p := m.Plan(backend, free, req)
-	p.Reason += fmt.Sprintf(" — an unpinned load takes %d positions (%s)", f.Ctx, f.Why)
+	if !req.CtxPinned {
+		p.Reason += fmt.Sprintf(" — an unpinned load takes %d positions (%s)", l.Fit.Ctx, l.Fit.Why)
+	}
 	return p
 }
 
@@ -194,7 +276,7 @@ func planFor(m *decoder.Model, backend string, free int64, req fit.PlanRequest) 
 // non-cpu backend over cpu (cpu is always eligible and always last in admitted, so it is only
 // picked when nothing else was) — a user asking "how fast will it go" almost always means the
 // GPU they compiled in, not the CPU fallback every build has.
-func selfMeasure(path, quant string, admitted []string) {
+func selfMeasure(admitted []string, srcOf map[string]fitSource) {
 	if len(admitted) == 0 {
 		fmt.Println("\n(measure) no backend admitted this checkpoint — nothing to probe")
 		return
@@ -207,11 +289,8 @@ func selfMeasure(path, quant string, admitted []string) {
 		}
 	}
 
-	measurePath := path
-	if cached, ok := sidecarIfFresh(path, quant, backend); ok && strings.HasSuffix(path, ".gguf") {
-		measurePath = cached // the sidecar a `--backend <this>` load built: mapped, not rebuilt
-	}
-	pm, err := decoder.Load(measurePath, decoder.Options{Backend: backend, Quant: quant, DirectLoad: true})
+	src := srcOf[backend] // what fit planned this backend on: the load's quant, and its sidecar when one is fresh
+	pm, err := decoder.Load(src.path, decoder.Options{Backend: backend, Quant: src.quant, ActQuantGroup: src.group, DirectLoad: true})
 	if err != nil {
 		fmt.Printf("\n(measure) %s: load failed, skipping probe: %v\n", backend, err)
 		return
