@@ -14,7 +14,7 @@ import (
 
 // WritePhi3Q4KTinyGGUFForTest writes a synthetic Phi-3 GGUF to path, for the tests keyed on the Phi-3 family and its Q4_K blocks (the
 // activation-hazard default, the q4k lane, fit) outside the decoder package: two layers of Phi-3's fused attn_qkv and ffn_up
-// (gate‖up) at the smallest Q4_K width, 256, as random Q4_K blocks with sane scales, beside f32 embeddings and norms and a 64-token
+// (gate‖up) at the smallest Q4_K width, 256, as random Q4_K blocks with small scales, beside f32 embeddings and norms and a 64-token
 // list. The bytes are fixed by a seed. It is written, not committed: random weights are no family's fixture.
 func WritePhi3Q4KTinyGGUFForTest(path string) error {
 	const arch, hidden, heads, hd, inter, vocab, layers = "phi3", 256, 4, 64, 256, 64, 2
@@ -74,9 +74,11 @@ func WritePhi3Q4KTinyGGUFForTest(path string) error {
 	}
 	q4k := func(name string, out, in int) tensor {
 		raw := make([]byte, out*(in/256)*144)
-		for b := 0; b < len(raw); b += 144 { // a super-block: f16 d and dmin (normal, small), then scales and nibbles
+		// A super-block: f16 d and dmin, then scales and nibbles. d and dmin are 2^-10 to 2^-7: larger ones (decoder's q4kTestMat
+		// draws up to 1) drive two random layers' activations past f16's range in Metal's KV, and the logits to NaN.
+		for b := 0; b < len(raw); b += 144 {
 			for _, off := range []int{0, 2} {
-				le.PutUint16(raw[b+off:], uint16(9+r.IntN(7))<<10|uint16(r.IntN(1024)))
+				le.PutUint16(raw[b+off:], uint16(5+r.IntN(4))<<10|uint16(r.IntN(1024)))
 			}
 			for i := 4; i < 144; i++ {
 				raw[b+i] = byte(r.IntN(256))
