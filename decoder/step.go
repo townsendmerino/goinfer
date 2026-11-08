@@ -5,47 +5,58 @@ import (
 	"errors"
 )
 
+// stepPass is the kind of resident call a stepBatch is, set by the caller and never inferred from the row count: a one-row
+// prefill and a decode token are different calls on the resident.
+type stepPass uint8
+
+const (
+	passNone  stepPass = iota // unset: no shape
+	passToken                 // one decode token: Emb holds exactly one row
+	passRows                  // one batched pass over Emb's rows (or inRowsFn's N), one row or more: prefill, verify, seed
+	passSeqs                  // one decode row for each of several sequences on their own KV slots (MC3): Seqs
+)
+
 // stepIn is what a stepBatch's rows feed the model besides their token embeddings.
 type stepIn uint8
 
 const (
 	inTokens         stepIn = iota // Emb at consecutive positions from Pos
-	inRowsFn                       // N rows, which Rows hands over a chunk at a time
-	inMRoPE                        // a rope position per row: RopePos for one row, MRoPE for several
-	inMRoPEDeepstack               // inMRoPE plus Deep, injected over the image span Spans[0]
-	inImage                        // one image span Spans[0], attended bidirectionally
-	inImageBlocks                  // several image blocks, Spans
-	inSpans                        // bidirectional spans, Spans
+	inRowsFn                       // N rows, which Rows hands over a chunk at a time (passRows)
+	inMRoPE                        // a rope position per row: RopePos for passToken, MRoPE for passRows
+	inMRoPEDeepstack               // inMRoPE plus Deep, injected over the image span Spans[0] (passRows)
+	inImage                        // one image span Spans[0], attended bidirectionally (passRows)
+	inImageBlocks                  // several image blocks, Spans (passRows)
+	inSpans                        // bidirectional spans, Spans (passRows)
 )
 
-// stepOut is what a stepBatch returns. A one-row batch reads it for that row, a longer one for its last row, except the
-// outEvery kinds, which return every row's.
+// stepOut is what a stepBatch returns: for passToken that row's, for passRows its last row's, except the outEvery kinds,
+// which return every row's.
 type stepOut uint8
 
 const (
 	outLogits        stepOut = iota // Logits
 	outArgmax                       // ID: the argmax id
-	outTopK                         // TopK: the K best logits (K, Temperature, WantZ)
-	outSample                       // ID: a device draw (Temperature, Seed, Draw)
-	outNone                         // nothing: the rows' KV only
-	outHidden                       // Hidden: the hidden state after the final norm
-	outEveryLogits                  // Rows: every row's logits
-	outEveryArgmax                  // IDs: every row's argmax id
-	outEveryResidual                // Rows: every row's residual
+	outTopK                         // TopK: the K best logits (K, Temperature, WantZ); passToken
+	outSample                       // ID: a device draw (Temperature, Seed, Draw); passToken
+	outNone                         // nothing: the row's KV only; passToken
+	outHidden                       // Hidden: the hidden state after the final norm; passRows
+	outEveryLogits                  // Rows: every row's logits; passRows
+	outEveryArgmax                  // IDs: every row's argmax id; passRows
+	outEveryResidual                // Rows: every row's residual; passRows
 )
 
-// stepBatch is one forward call: rows of one sequence on the bound KV slot, from position Pos, with an input and an output
-// kind; or, when Seqs is set, one decode row for each of several sequences on their own slots (MC3), and nothing else is read.
-// Each field is read only by the kinds its comment names.
+// stepBatch is one forward call: Pass says which kind; for passToken and passRows, rows of one sequence on the bound KV slot from
+// position Pos with an input and an output kind; for passSeqs, Seqs alone. Each field is read only by the kinds its comment names.
 type stepBatch struct {
-	Ctx  context.Context // the batched prefills' cancellation; nil is context.Background
+	Pass stepPass
+	Ctx  context.Context // passRows' cancellation; nil is context.Background
 	Pos  int
 	Emb  [][]float32
 	In   stepIn
 	Out  stepOut
 	N    int                          // inRowsFn: the row count
 	Rows func(lo, hi int) [][]float32 // inRowsFn
-	Mark int                          // with At, on a batched outLogits prefill: the position at which At runs (PrefillLastMarked)
+	Mark int                          // with At, on a passRows outLogits prefill: the position at which At runs (PrefillLastMarked)
 	At   func(pos int)                // see Mark
 	// RopePos, MRoPE, Deep, Spans: the rope and image inputs of the kinds named on stepIn.
 	RopePos int
@@ -63,7 +74,7 @@ type stepBatch struct {
 	Seqs        []ResidentBatchSeq
 }
 
-// stepResult holds a step's output in the field its stepOut names; Batch holds a multi-sequence step's rows.
+// stepResult holds a step's output in the field its stepOut names; Batch holds a passSeqs step's rows.
 type stepResult struct {
 	Logits []float32
 	Hidden []float32
@@ -74,35 +85,104 @@ type stepResult struct {
 	Batch  []ResidentBatchOut
 }
 
-// errStepShape is stepOn's answer for a batch whose shape the resident does not offer (canStep false); the resident was not called.
+// errStepShape is stepOn's answer for a batch whose shape the resident does not offer, or that names no shape (canStep false);
+// the resident was not called.
 var errStepShape = errors.New("decoder: the resident does not offer this step's shape")
 
-// stepCall resolves b's shape on r to the one resident call that runs it, or nil when r does not offer that shape. It is the
-// only place a forward shape is asserted on a resident: canStep and stepOn both read it.
+// stepCall resolves b's shape on r to the one resident call that runs it, or nil when b names no shape or r does not offer it.
+// It is the only place a forward shape is asserted on a resident: canStep and stepOn both read it.
 func stepCall(r ResidentForward, b stepBatch) func() (stepResult, error) {
-	ctx := b.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	var res stepResult
-	if b.Seqs != nil {
-		st, ok := r.(ResidentBatchStepper)
-		if !ok {
+	switch b.Pass {
+	case passToken:
+		if len(b.Emb) != 1 {
 			return nil
 		}
-		return func() (stepResult, error) {
-			var err error
+		return tokenCall(r, b, b.Emb[0])
+	case passRows:
+		ctx := b.Ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		return rowsCall(r, b, ctx)
+	case passSeqs:
+		st, ok := r.(ResidentBatchStepper)
+		if !ok || len(b.Seqs) == 0 {
+			return nil
+		}
+		return func() (res stepResult, err error) {
 			res.Batch, err = st.StepBatch(b.Seqs)
 			return res, err
 		}
 	}
-	if b.In == inRowsFn {
-		pr, ok := r.(ResidentPrefillRows)
+	return nil
+}
+
+// tokenCall is stepCall for passToken: the decode methods.
+func tokenCall(r ResidentForward, b stepBatch, e []float32) func() (stepResult, error) {
+	if b.In == inMRoPE {
+		mr, ok := r.(ResidentMRoPE)
 		if !ok || b.Out != outLogits {
 			return nil
 		}
-		return func() (stepResult, error) {
-			var err error
+		return func() (res stepResult, err error) {
+			res.Logits, err = mr.ForwardMRoPE(e, b.Pos, b.RopePos)
+			return res, err
+		}
+	}
+	if b.In != inTokens {
+		return nil
+	}
+	switch b.Out {
+	case outLogits:
+		return func() (res stepResult, err error) {
+			res.Logits, err = r.Forward(e, b.Pos)
+			return res, err
+		}
+	case outArgmax:
+		g, ok := r.(ResidentGreedy)
+		if !ok {
+			return nil
+		}
+		return func() (res stepResult, err error) {
+			res.ID, err = g.ForwardArgmax(e, b.Pos)
+			return res, err
+		}
+	case outTopK:
+		tk, ok := r.(ResidentTopK)
+		if !ok || !tk.TopKAvailable() {
+			return nil
+		}
+		return func() (res stepResult, err error) {
+			res.TopK, err = tk.ForwardTopK(e, b.Pos, b.K, b.Temperature, b.WantZ)
+			return res, err
+		}
+	case outSample:
+		sm, ok := r.(ResidentSample)
+		if !ok || !sm.SampleAvailable() {
+			return nil
+		}
+		return func() (res stepResult, err error) {
+			res.ID, err = sm.ForwardSample(e, b.Pos, b.Temperature, b.Seed, b.Draw)
+			return res, err
+		}
+	case outNone:
+		kv, ok := r.(ResidentPrefillKV)
+		if !ok {
+			return nil
+		}
+		return func() (stepResult, error) { return stepResult{}, kv.ForwardNoLogits(e, b.Pos) }
+	}
+	return nil
+}
+
+// rowsCall is stepCall for passRows: the batched passes.
+func rowsCall(r ResidentForward, b stepBatch, ctx context.Context) func() (stepResult, error) {
+	if b.In == inRowsFn {
+		pr, ok := r.(ResidentPrefillRows)
+		if !ok || b.Out != outLogits || b.N <= 0 || b.Rows == nil || b.At != nil {
+			return nil
+		}
+		return func() (res stepResult, err error) {
 			res.Logits, err = pr.PrefillLastRows(ctx, b.N, b.Pos, b.Rows)
 			return res, err
 		}
@@ -110,140 +190,79 @@ func stepCall(r ResidentForward, b stepBatch) func() (stepResult, error) {
 	if len(b.Emb) == 0 {
 		return nil
 	}
-	if len(b.Emb) == 1 && b.In == inTokens {
-		e := b.Emb[0]
-		switch b.Out {
-		case outLogits:
-			return func() (stepResult, error) {
-				var err error
-				res.Logits, err = r.Forward(e, b.Pos)
-				return res, err
-			}
-		case outArgmax:
-			g, ok := r.(ResidentGreedy)
-			if !ok {
-				return nil
-			}
-			return func() (stepResult, error) {
-				var err error
-				res.ID, err = g.ForwardArgmax(e, b.Pos)
-				return res, err
-			}
-		case outTopK:
-			tk, ok := r.(ResidentTopK)
-			if !ok || !tk.TopKAvailable() {
-				return nil
-			}
-			return func() (stepResult, error) {
-				var err error
-				res.TopK, err = tk.ForwardTopK(e, b.Pos, b.K, b.Temperature, b.WantZ)
-				return res, err
-			}
-		case outSample:
-			sm, ok := r.(ResidentSample)
-			if !ok || !sm.SampleAvailable() {
-				return nil
-			}
-			return func() (stepResult, error) {
-				var err error
-				res.ID, err = sm.ForwardSample(e, b.Pos, b.Temperature, b.Seed, b.Draw)
-				return res, err
-			}
-		case outNone:
-			kv, ok := r.(ResidentPrefillKV)
-			if !ok {
-				return nil
-			}
-			return func() (stepResult, error) { return res, kv.ForwardNoLogits(e, b.Pos) }
-		}
+	if b.In != inTokens {
+		return mediaCall(r, b, ctx)
 	}
-	if len(b.Emb) == 1 && b.In == inMRoPE && b.Out == outLogits {
-		mr, ok := r.(ResidentMRoPE)
+	switch b.Out {
+	case outLogits:
+		if b.At != nil {
+			mp, ok := r.(ResidentPrefillMarked)
+			if !ok {
+				return nil
+			}
+			return func() (res stepResult, err error) {
+				res.Logits, err = mp.PrefillLastMarked(ctx, b.Emb, b.Pos, b.Mark, b.At)
+				return res, err
+			}
+		}
+		pf, ok := r.(Prefiller)
 		if !ok {
 			return nil
 		}
-		return func() (stepResult, error) {
-			var err error
-			res.Logits, err = mr.ForwardMRoPE(b.Emb[0], b.Pos, b.RopePos)
+		return func() (res stepResult, err error) {
+			res.Logits, err = pf.PrefillLast(ctx, b.Emb, b.Pos)
+			return res, err
+		}
+	case outEveryLogits:
+		return func() (res stepResult, err error) {
+			res.Rows, err = r.ForwardN(b.Emb, b.Pos)
+			return res, err
+		}
+	case outArgmax:
+		sa, ok := r.(ResidentSeedArgmax)
+		if !ok {
+			return nil
+		}
+		return func() (res stepResult, err error) {
+			res.ID, err = sa.PrefillSeedArgmax(b.Emb, b.Pos)
+			return res, err
+		}
+	case outEveryArgmax:
+		na, ok := r.(interface {
+			PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error)
+		})
+		if !ok {
+			return nil
+		}
+		return func() (res stepResult, err error) {
+			res.IDs, err = na.PrefillLastNArgmax(b.Emb, b.Pos)
+			return res, err
+		}
+	case outHidden:
+		hl, ok := r.(ResidentHiddenLast)
+		if !ok {
+			return nil
+		}
+		return func() (res stepResult, err error) {
+			res.Hidden, err = hl.HiddenLast(ctx, b.Emb, b.Pos)
+			return res, err
+		}
+	case outEveryResidual:
+		ra, ok := r.(ResidentResidualAll)
+		if !ok {
+			return nil
+		}
+		return func() (res stepResult, err error) {
+			res.Rows, err = ra.ResidualAll(ctx, b.Emb, b.Pos)
 			return res, err
 		}
 	}
-	switch b.In {
-	case inTokens:
-		switch b.Out {
-		case outLogits:
-			pf, ok := r.(Prefiller)
-			if !ok {
-				return nil
-			}
-			if b.At != nil {
-				mp, ok := r.(ResidentPrefillMarked)
-				if !ok {
-					return nil
-				}
-				return func() (stepResult, error) {
-					var err error
-					res.Logits, err = mp.PrefillLastMarked(ctx, b.Emb, b.Pos, b.Mark, b.At)
-					return res, err
-				}
-			}
-			return func() (stepResult, error) {
-				var err error
-				res.Logits, err = pf.PrefillLast(ctx, b.Emb, b.Pos)
-				return res, err
-			}
-		case outEveryLogits:
-			return func() (stepResult, error) {
-				var err error
-				res.Rows, err = r.ForwardN(b.Emb, b.Pos)
-				return res, err
-			}
-		case outArgmax:
-			sa, ok := r.(ResidentSeedArgmax)
-			if !ok {
-				return nil
-			}
-			return func() (stepResult, error) {
-				var err error
-				res.ID, err = sa.PrefillSeedArgmax(b.Emb, b.Pos)
-				return res, err
-			}
-		case outEveryArgmax:
-			na, ok := r.(interface {
-				PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error)
-			})
-			if !ok {
-				return nil
-			}
-			return func() (stepResult, error) {
-				var err error
-				res.IDs, err = na.PrefillLastNArgmax(b.Emb, b.Pos)
-				return res, err
-			}
-		case outHidden:
-			hl, ok := r.(ResidentHiddenLast)
-			if !ok {
-				return nil
-			}
-			return func() (stepResult, error) {
-				var err error
-				res.Hidden, err = hl.HiddenLast(ctx, b.Emb, b.Pos)
-				return res, err
-			}
-		case outEveryResidual:
-			ra, ok := r.(ResidentResidualAll)
-			if !ok {
-				return nil
-			}
-			return func() (stepResult, error) {
-				var err error
-				res.Rows, err = ra.ResidualAll(ctx, b.Emb, b.Pos)
-				return res, err
-			}
-		}
-		return nil
-	}
-	if b.Out != outLogits {
+	return nil
+}
+
+// mediaCall is rowsCall for the image and m-RoPE inputs, which return the last row's logits.
+func mediaCall(r ResidentForward, b stepBatch, ctx context.Context) func() (stepResult, error) {
+	if b.Out != outLogits || b.At != nil {
 		return nil
 	}
 	switch b.In {
@@ -252,8 +271,7 @@ func stepCall(r ResidentForward, b stepBatch) func() (stepResult, error) {
 		if !ok || len(b.Spans) != 1 {
 			return nil
 		}
-		return func() (stepResult, error) {
-			var err error
+		return func() (res stepResult, err error) {
 			res.Logits, err = ip.PrefillImageLast(ctx, b.Emb, b.Pos, b.Spans[0][0], b.Spans[0][1])
 			return res, err
 		}
@@ -262,8 +280,7 @@ func stepCall(r ResidentForward, b stepBatch) func() (stepResult, error) {
 		if !ok {
 			return nil
 		}
-		return func() (stepResult, error) {
-			var err error
+		return func() (res stepResult, err error) {
 			res.Logits, err = ib.PrefillImageBlocksLast(ctx, b.Emb, b.Pos, b.Spans)
 			return res, err
 		}
@@ -272,8 +289,7 @@ func stepCall(r ResidentForward, b stepBatch) func() (stepResult, error) {
 		if !ok {
 			return nil
 		}
-		return func() (stepResult, error) {
-			var err error
+		return func() (res stepResult, err error) {
 			res.Logits, err = sp.PrefillSpansLast(ctx, b.Emb, b.Pos, b.Spans)
 			return res, err
 		}
@@ -289,8 +305,7 @@ func stepCall(r ResidentForward, b stepBatch) func() (stepResult, error) {
 			if !ok {
 				return nil
 			}
-			return func() (stepResult, error) {
-				var err error
+			return func() (res stepResult, err error) {
 				res.Logits, err = mp.PrefillMRoPELast(ctx, b.Emb, b.Pos, b.MRoPE)
 				return res, err
 			}
@@ -299,9 +314,8 @@ func stepCall(r ResidentForward, b stepBatch) func() (stepResult, error) {
 		if !ok || len(b.Spans) != 1 {
 			return nil
 		}
-		return func() (stepResult, error) {
-			var err error
-			lo, hi := b.Spans[0][0], b.Spans[0][1]
+		lo, hi := b.Spans[0][0], b.Spans[0][1]
+		return func() (res stepResult, err error) {
 			res.Logits, err = dp.PrefillMRoPEDeepstackLast(ctx, b.Emb, b.Pos, b.MRoPE, b.Deep, lo, hi-lo)
 			return res, err
 		}
