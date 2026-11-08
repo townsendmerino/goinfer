@@ -4600,6 +4600,13 @@ does from `stepShape.buffers`.
   (G-MS2 red). Amended 2026-11-07, during the build: G-MS2 cannot see a short entry, since the build allocates what the list declares,
   so G-MS3 alone holds a declaration to the config. G-MS2 reads the ledger's requested bytes, so it is exact with no rounding allowance.
 
+**Outcome (#754, 2026-11-07).** The Metal half shipped. Every buffer decode leases on the scratch line comes from a list the build allocates
+from (`decodeShape.buffers`, `batchRows`, `chainBuffers`). G-MS2 holds the ledger to it on every `TestMemGate_metal` row, MM7's
+`decode` gap row is gone, G-MS3 holds it to each registered fixture's config, and G-MS5 reads all IDENTICAL. Metal's scratch is the sum of
+its roles, each at its widest layer, not a high-water over operations (the coordinator agreed the same day). The program-side
+declaration, the plan's figure, G-MS1 and G-MS4 moved to their own item, MM5b (`docs/tasks/task-subsystems-2026-10.md`). Charging
+the figure in `NeedBytes` and narrowing `MetalFitMargin` change a guard threshold, so neither moves until Francis answers.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
