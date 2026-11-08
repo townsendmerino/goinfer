@@ -1,5 +1,7 @@
 package program
 
+import "slices"
+
 // The memory each operation declares beyond its weights (MM5, docs/tasks/task-forward-architecture-2026-10.md §4.9b and §4.9c): a load's
 // KV, recurrent state and per-row activations are its layers' declarations and the head's, priced and allocated from the same list.
 
@@ -33,7 +35,7 @@ type Buf struct {
 }
 
 // LayerShape is one layer's widths as the weights fix them, which its operations' buffers are sized by. Only the fields of the
-// layer's mixer are read.
+// layer's operations are read.
 type LayerShape struct {
 	KVHeads, HeadDim int // attention's K and V rows: KVHeads × HeadDim each
 	MLALatent        int // MLA's latent row: the KV LoRA rank plus the rope-carrying width
@@ -57,7 +59,19 @@ type HeadShape struct {
 // HeadBuffers is the per-row activations no layer owns, for p at shape s: the residual stream, a sublayer's input and output, the
 // parallel block's second output where a layer writes it, the logits, and the per-layer-embedding inputs where the embedding has them.
 func HeadBuffers(p *Program, s HeadShape) []Buf {
-	return nil
+	row := func(name string, n int) Buf { return Buf{Name: name, Unit: PerRow, Prec: PrecF32, Elems: n} }
+	out := []Buf{row("h", s.Hidden), row("x", s.Hidden), row("a", s.Hidden)}
+	for _, ops := range p.Layers {
+		if slices.ContainsFunc(ops, func(o Op) bool { return o.Out == RegB }) {
+			out = append(out, row("b", s.Hidden))
+			break
+		}
+	}
+	out = append(out, row("logits", s.Vocab))
+	if p.Embed.PLE {
+		out = append(out, row("ple-in", len(p.Layers)*s.PLE))
+	}
+	return out
 }
 
 // Buffers is what op needs beyond its weights on a layer of shape s, nil for none.
@@ -72,25 +86,50 @@ func Buffers(op Op, s LayerShape) []Buf {
 	state := func(name string, elems int, ckpt bool) Buf {
 		return Buf{Name: name, Unit: PerSlot, Prec: PrecF32, Elems: elems, Checkpointed: ckpt}
 	}
+	rows := func(bufs []Buf, nameElems ...any) []Buf {
+		for i := 0; i < len(nameElems); i += 2 {
+			bufs = append(bufs, Buf{Name: nameElems[i].(string), Unit: PerRow, Prec: PrecF32, Elems: nameElems[i+1].(int)})
+		}
+		return bufs
+	}
+	q, kvw := s.Heads*s.HeadDim, s.KVHeads*s.HeadDim
 	switch op.Kind {
+	case OpProjQKV:
+		return rows(nil, "q", q, "k", kvw, "v", kvw)
 	case OpAttention:
-		return kv(op.Attn.Window)
+		return rows(kv(op.Attn.Window), "ctx", q)
 	case OpGatedAttn:
-		return kv(op.Gated.Attn.Window)
+		return rows(kv(op.Gated.Attn.Window), "q-gate", 2*q, "q", q, "k", kvw, "v", kvw, "gate", q, "ctx", q)
 	case OpGemma4Attn:
 		if !op.G4.OwnsKV {
-			return nil // a KV-shared layer reads its source layer's rows
+			return rows(nil, "q", q, "ctx", q) // a KV-shared layer reads its source layer's rows
 		}
-		return kv(op.G4.Window)
+		return rows(kv(op.G4.Window), "q", q, "k", kvw, "v", kvw, "ctx", q)
 	case OpMLA:
-		return []Buf{{Name: "latent", Unit: PerPosition, Prec: PrecF32, Elems: s.MLALatent}}
+		m := s.MLA
+		return rows([]Buf{{Name: "latent", Unit: PerPosition, Prec: PrecF32, Elems: s.MLALatent}},
+			"mla-qa", m.QLoRA, "mla-q", s.Heads*m.QKHead, "mla-kv", s.MLALatent, "mla-q-abs", s.Heads*s.MLALatent, "mla-wsum", s.Heads*m.Rank,
+			"mla-ctx", s.Heads*m.VHead)
 	case OpDeltaNet:
 		d := s.DeltaNet
 		keys, vals := d.KeyHeads*d.KeyHeadDim, d.ValueHeads*d.ValueHeadDim
-		return []Buf{state("window", (d.ConvKernel-1)*(2*keys+vals), true), state("state", d.ValueHeads*d.KeyHeadDim*d.ValueHeadDim, true)}
+		return rows([]Buf{state("window", (d.ConvKernel-1)*(2*keys+vals), true), state("state", d.ValueHeads*d.KeyHeadDim*d.ValueHeadDim, true)},
+			"dn-mixed", 2*keys+vals, "dn-conv", 2*keys+vals, "dn-beta", d.ValueHeads, "dn-decay", d.ValueHeads, "dn-ba", 2*d.ValueHeads,
+			"dn-q", keys, "dn-k", keys, "dn-core", vals, "dn-z", vals, "dn-gated", vals)
 	case OpMamba2:
 		m := s.Mamba2
-		return []Buf{state("window", (m.ConvKernel-1)*m.ConvDim, true), state("state", m.Heads*m.HeadDim*m.DState, true)}
+		inner := m.Heads * m.HeadDim
+		return rows([]Buf{state("window", (m.ConvKernel-1)*m.ConvDim, true), state("state", m.Heads*m.HeadDim*m.DState, true)},
+			"mb-proj", inner+m.ConvDim+m.Heads, "mb-conv", m.ConvDim, "mb-y", inner, "mb-gated", inner)
+	case OpFFN:
+		switch op.FFN.Form {
+		case FfnGated, FfnGemma4Dense:
+			return rows(nil, "gate", s.FFN, "up", s.FFN)
+		case FfnNonGated:
+			return rows(nil, "up", s.FFN)
+		}
+	case OpPLE:
+		return rows(nil, "ple-gate", s.PLE)
 	case OpKDA:
 		k := s.KDA
 		win := (k.ConvKernel - 1) * k.Heads * k.HeadDim
