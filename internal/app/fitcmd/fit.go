@@ -224,24 +224,23 @@ type fitSource struct {
 }
 
 // sourceFor is what a load on backend opens, as the load chooses both: the quant modelload.Plan resolves (the per-family default when
-// -quant was not given, with the note the load prints), and a fresh sidecar of that quant, Metal's own on Metal (an always-canonical
-// target, opened with no backend), else freshSidecar's. Without one it is path, opened directly: a .gguf read so holds its weights on
-// the heap, which the load, through the sidecar it builds first, does not.
+// -quant was not given, with the note the load prints), and the fresh sidecar of that quant for backend's own target, never another
+// backend's. A cpu-target sidecar can be row4-only, which only the literal cpu backend reads, so it is opened on "cpu"; the GPU
+// targets are canonical and are opened with no backend. Without one it is path, opened directly: a .gguf read so holds its weights
+// on the heap, which the load, through the sidecar it builds first, does not.
 func sourceFor(path, quant, explicitQuant, backend string) (fitSource, error) {
 	pl, err := modelload.Plan(modelload.Request{Spec: path, Opts: decoder.Options{Quant: quant, Backend: backend}, ExplicitQuant: explicitQuant})
 	if err != nil {
 		return fitSource{}, err
 	}
 	s := fitSource{path: path, quant: pl.Opts.Quant, group: pl.Opts.ActQuantGroup, notes: pl.Notes}
-	switch {
-	case !strings.HasSuffix(path, ".gguf"):
-	case backend == "metal":
-		if cached, ok := sidecarIfFresh(path, s.quant, "metal"); ok {
-			s.path = cached
-		}
-	default:
-		if cached, be, ok := freshSidecar(path, s.quant); ok {
-			s.path, s.loadBackend = cached, be
+	if !strings.HasSuffix(path, ".gguf") {
+		return s, nil
+	}
+	if cached, ok := sidecarIfFresh(path, s.quant, backend); ok {
+		s.path = cached
+		if backend == "cpu" {
+			s.loadBackend = "cpu"
 		}
 	}
 	return s, nil
@@ -388,29 +387,6 @@ func self() string {
 		return filepath.Base(os.Args[0])
 	}
 	return "goinfer-chat"
-}
-
-// freshSidecar finds an already-fresh sidecar .giw that a chat or serve load built for this .gguf, and
-// the Backend to load it with. fit has no --backend of its own (it reports every compiled backend), and
-// it used to look only for the canonical target — but a default chat or serve run (--backend cpu)
-// writes this host's cpu target, cpu-amd64 or cpu-arm64, so fit never found the sidecar they had
-// already paid for and did a full direct load instead. Tried in the order a user is likely to have
-// built them: this host's cpu target (loaded with Backend "cpu": an arm64 cpu sidecar is row4-only,
-// which only the literal cpu backend reads), then cuda's and the canonical one (canonical bytes, any
-// backend). A metal sidecar is not used: its fused kinds are Metal's alone.
-func freshSidecar(path, quant string) (giw, backend string, ok bool) {
-	if !strings.HasSuffix(path, ".gguf") {
-		return "", "", false
-	}
-	for _, be := range []string{"cpu", "cuda", ""} {
-		if p, fresh := sidecarIfFresh(path, quant, be); fresh {
-			if be == "cuda" {
-				be = ""
-			}
-			return p, be, true
-		}
-	}
-	return "", "", false
 }
 
 // sidecarIfFresh is the sidecar a load of path at quant on backend built, whichever head precision it used. fit has no
