@@ -152,7 +152,7 @@ func Run(args []string) int {
 		}
 		lines = append(lines, l)
 	}
-	// One load per distinct source, closed before the next (M-20: two quantized copies at once could trip the guard measured).
+	// One load per distinct source, closed before the next: two quantized copies at once could trip the guard being priced.
 	req := fit.PlanRequest{Ctx: *ctx, CtxPinned: ctxPinned, KVF16: *kvF16, KVI8: *kvI8, Slots: *slots}
 	planned := make([]bool, len(lines))
 	for i := range lines {
