@@ -48,50 +48,78 @@ func TestCheckpointSHA256_directory(t *testing.T) {
 	}
 }
 
-// TestCheckpointSHA256_sameSizeRewriteAtTheSameMtime: a settled file's hash is cached under its stamp, and a same-size rewrite whose
-// modification time is held at the first write's (a coarse clock does that: two writes in one tick share it) is not served that
-// entry. The clock is held a minute ahead, so both reads are settled and the second can only miss the entry through the stamp.
+// TestCheckpointSHA256_sameSizeRewriteAtTheSameMtime: a same-size rewrite with its modification time held at the first write's (as
+// a coarse clock, or a backdating copy, leaves it) is never served the first write's hash. The test gives the clock and the change
+// time, so neither depends on a real clock advancing:
+//   - the change time moves (the rewrite lands a tick later): the first read is settled and cached, and the rewrite's new stamp
+//     misses that entry;
+//   - the change time does not move (the rewrite lands in the same tick): the stamp cannot tell the two apart, so the first read,
+//     within checkpointRaceWindow of the change, must cache nothing, and the second, settled, hashes the new bytes.
 func TestCheckpointSHA256_sameSizeRewriteAtTheSameMtime(t *testing.T) {
-	cache := t.TempDir()
-	t.Setenv("GOINFER_PREFILL_REF_CACHE", cache)
-	defer func(now func() time.Time) { checkpointNow = now }(checkpointNow)
-	checkpointNow = func() time.Time { return time.Now().Add(time.Minute) }
-	p := filepath.Join(t.TempDir(), "model.safetensors")
-	if err := os.WriteFile(p, []byte("weights-a"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	st, err := os.Stat(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, _, ok := checkpointChange(st); !ok {
-		t.Skip("this OS reports no change time, so nothing is cached (TestCheckpointStamp_vouchesOnlyForASettledFile holds that)")
-	}
-	h1, err := checkpointSHA256(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := os.ReadFile(filepath.Join(cache, "filehash.json"))
-	if err != nil {
-		t.Fatalf("the settled file's hash was not cached: %v", err)
-	}
-	var idx map[string]string
-	if err := json.Unmarshal(b, &idx); err != nil || len(idx) != 1 {
-		t.Fatalf("the cache holds %v (err %v), want the one entry for the file", idx, err)
-	}
-	for _, h := range idx {
-		if h != h1 {
-			t.Fatalf("the cache holds %s for the file, which hashed to %s", h, h1)
-		}
-	}
-	if err := os.WriteFile(p, []byte("weights-b"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(p, st.ModTime(), st.ModTime()); err != nil {
-		t.Fatal(err)
-	}
-	if h2, err := checkpointSHA256(p); err != nil || h2 == h1 {
-		t.Fatalf("a same-size rewrite at the same mtime kept the hash %s (err %v): the cache served a stale key", h1, err)
+	defer func(now func() time.Time, c func(os.FileInfo) (time.Time, uint64, uint64, bool)) {
+		checkpointNow, checkpointChange = now, c
+	}(checkpointNow, checkpointChange)
+	for _, c := range []struct {
+		name          string
+		ctimeMoves    bool
+		firstRead     time.Duration // after the change time
+		firstCachedTo int           // filehash.json entries after the first read
+	}{
+		{"the change time moves", true, time.Minute, 1},
+		{"the same tick: the change time does not move", false, time.Second, 0},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cache := t.TempDir()
+			t.Setenv("GOINFER_PREFILL_REF_CACHE", cache)
+			p := filepath.Join(t.TempDir(), "model.safetensors")
+			if err := os.WriteFile(p, []byte("weights-a"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			st, err := os.Stat(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mtime := st.ModTime()
+			ctime := mtime
+			checkpointChange = func(os.FileInfo) (time.Time, uint64, uint64, bool) { return ctime, 7, 1, true }
+			read := func(now time.Time) string {
+				t.Helper()
+				checkpointNow = func() time.Time { return now }
+				h, err := checkpointSHA256(p)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return h
+			}
+			entries := func() map[string]string {
+				t.Helper()
+				b, err := os.ReadFile(filepath.Join(cache, "filehash.json"))
+				if os.IsNotExist(err) {
+					return nil
+				}
+				var idx map[string]string
+				if err != nil || json.Unmarshal(b, &idx) != nil {
+					t.Fatalf("filehash.json: %v", err)
+				}
+				return idx
+			}
+			h1 := read(ctime.Add(c.firstRead))
+			if idx := entries(); len(idx) != c.firstCachedTo {
+				t.Fatalf("after the first read the cache holds %v, want %d entries", idx, c.firstCachedTo)
+			}
+			if err := os.WriteFile(p, []byte("weights-b"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chtimes(p, mtime, mtime); err != nil {
+				t.Fatal(err)
+			}
+			if c.ctimeMoves {
+				ctime = mtime.Add(30 * time.Second)
+			}
+			if h2 := read(ctime.Add(2 * time.Minute)); h2 == h1 {
+				t.Fatalf("a same-size rewrite at the same mtime kept the hash %s: the cache served a stale key", h1)
+			}
+		})
 	}
 }
 
