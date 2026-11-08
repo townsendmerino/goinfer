@@ -3,14 +3,19 @@
 package metal
 
 import (
+	"context"
+	"flag"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 )
 
 // TestQ4KLaneResidentQwen is the q4k lane's by-day wiring smoke (docs/tasks/task-metal-q4k-2026-10.md), not G-Q2: a
@@ -135,5 +140,143 @@ func testQ4KLaneResident(t *testing.T, path string) {
 		filepath.Base(path), positions, worst, agree, positions, dp)
 	if worst < 0.99 {
 		t.Errorf("worst per-position cosine %.6f, bar 0.99", worst)
+	}
+}
+
+// phi3DefaultLoad loads testdata/phi3-q4k-tiny.gguf as a serve with its defaults does on this Mac: -backend auto and no --quant,
+// through loadflags.Resolve and modelload.Plan (the per-family default), opening the sidecar Plan names, built here first as the
+// load builds it. It returns the model and the copied source.
+func phi3DefaultLoad(t *testing.T) (*decoder.Model, string) {
+	t.Helper()
+	raw, err := os.ReadFile("../../testdata/phi3-q4k-tiny.gguf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(t.TempDir(), "phi3.gguf")
+	if err := os.WriteFile(src, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(src, old, old); err != nil {
+		t.Fatal(err)
+	}
+	auto := decoder.AutoBackend()
+	if auto.Backend != "metal" {
+		t.Fatalf("-backend auto picks %q on this machine (%s), not metal", auto.Backend, auto.Reason)
+	}
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	f := loadflags.Register(fs, loadflags.Serve)
+	if err := fs.Parse(nil); err != nil {
+		t.Fatal(err)
+	}
+	opts := loadflags.Resolve(*f, loadflags.Machine{Auto: auto}, loadflags.Overrides{Serve: &loadflags.ServeLoad{KVSessions: 4}})
+	pl, err := modelload.Plan(modelload.Request{Spec: src, Opts: opts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pl.Build != "" {
+		if err := decoder.TranscodeGIW(context.Background(), src, pl.Build, pl.Opts.Quant, pl.Opts.EmbedInt4, decoder.GIWTargetForBackend(pl.Opts.Backend)); err != nil {
+			t.Fatal(err)
+		}
+		pl.LoadPath = pl.Build
+	}
+	m, err := decoder.Load(pl.LoadPath, pl.Opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m, src
+}
+
+// TestPhi3Default_autoRunsResidentOnTheQ4KLane: a Phi-3 .gguf served with the defaults (-backend auto, no --quant) on Apple
+// silicon loads at q4k and runs resident on Metal's q4k lane, which keeps the file's Q4_K blocks and quantizes no activation.
+func TestPhi3Default_autoRunsResidentOnTheQ4KLane(t *testing.T) {
+	m, _ := phi3DefaultLoad(t)
+	defer m.Close()
+	if q, dp := m.Quant(), m.DecodePath(); q != "q4k" || !strings.HasPrefix(dp, "metal-resident (q4k") {
+		t.Errorf("the default load is %s, decode path %q; want q4k, metal-resident (q4k)", q, dp)
+	}
+}
+
+// TestPhi3Default_tracksTheCPUReferenceAtLeastAsCloselyAsTheOldDefault is the default's fidelity gate, tier 0, on
+// testdata/phi3-q4k-tiny.gguf, teacher-forced over 32 positions. The reference is the CPU at f32 on the same file (every Q4_K
+// block dequantized exactly). The default (phi3DefaultLoad: q4k, resident on Metal) and the old default (int8int8 with per-32
+// activation scales, which Metal declines to the CPU) are each held to it. Bars, set before the first run: the default's worst
+// per-position logits cosine is at least 0.99 (the q4k lane's bar, testQ4KLaneResident) and at least the old default's, and its
+// argmax agreement with the reference is at least the old default's. Random blocks carry none of Phi-3's activation outliers, so
+// this gates the default's arithmetic, not the outlier hazard; that is G-Q2's, on the real file (TestQ4KLane_realPhi3NonInferiority).
+func TestPhi3Default_tracksTheCPUReferenceAtLeastAsCloselyAsTheOldDefault(t *testing.T) {
+	const positions = 32
+	tok := func(p int) int { return (7 + 11*p) % 64 }
+	def, src := phi3DefaultLoad(t)
+	if dp := def.DecodePath(); !strings.HasPrefix(dp, "metal-resident (q4k") {
+		def.Close()
+		t.Fatalf("the default load's decode path is %q, want metal-resident (q4k)", dp)
+	}
+	rf := def.ResidentForwardForTest()
+	rf.Reset()
+	var got [][]float32
+	for p := range positions {
+		lg, err := rf.Forward(def.EmbedResidentForTest(tok(p)), p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, append([]float32(nil), lg...))
+	}
+	def.Close()
+
+	cpuLogits := func(name string, o decoder.Options, wantPath string) [][]float32 {
+		m, err := decoder.Load(src, o)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		defer m.Close()
+		if dp := m.DecodePath(); !strings.HasPrefix(dp, wantPath) {
+			t.Fatalf("%s: decode path %q, want %s", name, dp, wantPath)
+		}
+		cache := m.NewCache(positions)
+		var out [][]float32
+		for p := range positions {
+			lg, err := m.ForwardForTest(tok(p), cache)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, append([]float32(nil), lg...))
+		}
+		return out
+	}
+	ref := cpuLogits("the f32 reference", decoder.Options{Backend: "cpu", Quant: "", DirectLoad: true}, "cpu")
+	oldDef := cpuLogits("the old default", decoder.Options{Backend: "metal", BackendAuto: true, Quant: "int8int8", ActQuantGroup: 32, DirectLoad: true}, "cpu")
+
+	score := func(arm [][]float32) (worst float64, agree int) {
+		worst = 1
+		for p := range positions {
+			var dot, na, nb float64
+			ga, wa := 0, 0
+			for i, w := range ref[p] {
+				g := float64(arm[p][i])
+				if math.IsNaN(g) || math.IsInf(g, 0) {
+					t.Fatalf("position %d logit %d is %v", p, i, g)
+				}
+				dot, na, nb = dot+g*float64(w), na+g*g, nb+float64(w)*float64(w)
+				if arm[p][i] > arm[p][ga] {
+					ga = i
+				}
+				if w > ref[p][wa] {
+					wa = i
+				}
+			}
+			worst = math.Min(worst, dot/math.Sqrt(na*nb))
+			if ga == wa {
+				agree++
+			}
+		}
+		return worst, agree
+	}
+	dw, da := score(got)
+	ow, oa := score(oldDef)
+	t.Logf("against the CPU f32 reference over %d positions: the default (q4k, Metal) worst cosine %.6f, argmax %d/%d; the old default (int8int8 per-32, CPU) %.6f, %d/%d",
+		positions, dw, da, positions, ow, oa, positions)
+	if dw < 0.99 || dw < ow || da < oa {
+		t.Errorf("the default: worst cosine %.6f (bars: 0.99 and the old default's %.6f), argmax %d (bar: the old default's %d)", dw, ow, da, oa)
 	}
 }
