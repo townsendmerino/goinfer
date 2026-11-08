@@ -156,7 +156,7 @@ func towerReserve(cfg config, modelPath string) int64 {
 		return 0 // a GGUF mmproj or an unresolved reference: nothing priced
 	}
 	mt := visionModelType(dir)
-	if cfg.visionTowerBackend(mt) == "cpu" {
+	if cfg.routeVisionTower(mt, false).Backend == "cpu" {
 		return 0 // a WebGPU tower kept on the CPU (a discrete GPU, nothing asking for the device) holds no device memory
 	}
 	if cfg.towerBackend() == "metal" {

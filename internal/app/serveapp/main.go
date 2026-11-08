@@ -401,7 +401,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.BoolVar(&cfg.noSelfTest, "no-selftest", false, "skip the startup self-tests: a kernel check against a reference that steps a CPU kernel tier down, or declines a GPU backend, when its output disagrees. On by default; skip it only if it misjudges a healthy machine (and tell us: `check --hardware` prints what it found).")
 	fs.IntVar(&cfg.visionMaxPixels, "vision-max-pixels", 0, "GLM-OCR only: lower the image pixel budget to this many pixels (0 = the model's own ceiling, 4.82 MP; it is never raised). The CPU tower costs about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP on an M1 Pro.")
 	fs.StringVar(&cfg.visionDevice, "vision-device", "auto", "where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: auto (default: on the --backend's GPU when this binary has one there, else the CPU; under --backend webgpu that is Gemma 3's, Gemma 4's, Qwen2.5-VL's, Qwen3.5+'s, Qwen3-VL's and GLM-OCR's towers, in float32, on a unified-memory Mac; a discrete GPU and a Qwen3.5+ .gguf mmproj tower keep the CPU) | cpu (the CPU whatever the backend; the language model keeps its own backend) | gpu (as auto, and it also puts on the device the towers auto keeps on the CPU under webgpu: on a discrete GPU, and a Qwen3.5+ .gguf mmproj tower)")
-	fs.StringVar(&cfg.visionQuant, "vision-quant", "", "vision encoder weight quant: f32 (bit-exact) | int8 (W8A8; lossy: relative L2 0.14-0.52 against f32, docs/measurements/vision-tower-int8-fidelity-*) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash. Unset (the default) is f32 everywhere; on CUDA Gemma 3 is int8 instead (with a note) if the card cannot hold the decoder, one KV slot and the float32 tower, or if that tower fails to attach (an explicit f32 never falls back). Under --backend webgpu Gemma 3's unset default is the float32 tower on the GPU; int8 given explicitly puts the int8 one there")
+	fs.StringVar(&cfg.visionQuant, "vision-quant", "", "vision encoder weight quant: f32 (bit-exact) | int8 (W8A8; lossy: relative L2 0.14-0.52 against f32, docs/measurements/vision-tower-int8-fidelity-*) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash. Unset (the default) is f32 everywhere; on CUDA Gemma 3 is int8 instead (with a note) if the card cannot hold the decoder, one KV slot and the float32 tower, or if that tower fails to attach (an explicit f32 never falls back). Under --backend webgpu Gemma 3's unset default is the float32 tower on the GPU on a unified-memory Mac (a discrete GPU keeps the CPU tower, and an explicit f32 or int8 asks for the device); int8 given explicitly puts the int8 one there")
 	fs.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m), hf:<owner>/<repo>:safetensors (a safetensors checkpoint, fetched as a verified set) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
 		"OpenAI `model` field. Append comma-separated per-model overrides of the global\n"+
@@ -1132,46 +1132,62 @@ func (cfg config) towerBackend() string {
 	return cfg.load.Backend
 }
 
-// visionTowerBackend is towerBackend for a vision tower of family mt. Under --backend webgpu on a discrete GPU a tower that has a
-// WebGPU form stays on the CPU unless the device is asked for (-vision-device gpu, or for Gemma 3 an explicit -vision-quant, whose
-// int8 form is the one WebGPU int8 tower): WebGPU has no free-VRAM query, so the tower's device bytes cannot be priced against the
-// card's budget there (towerReserve and webgpuTowerFits only have a figure on unified memory). A tower with no WebGPU form is
-// unaffected, and an audio encoder does not come through here.
-func (cfg config) visionTowerBackend(mt string) string {
+// visionRoute is where one vision tower is routed under the flags and the machine: the backend handed to the family loader, and
+// the one stderr line (or "") that says a WebGPU-capable tower was kept on the CPU.
+type visionRoute struct {
+	Backend string
+	Note    string
+}
+
+const (
+	discreteKeptNote = "note: under --backend webgpu on a discrete GPU the vision tower runs on the CPU: its device memory cannot be priced against the card, so --vision-device gpu puts it on the GPU"
+	mmprojKeptNote   = "note: a Qwen3.5+ .gguf mmproj tower runs on the CPU under --backend webgpu (it has no config.json to price); --vision-device gpu puts it on WebGPU"
+)
+
+// routeVisionTower is the one place the vision tower's backend and its note are decided (family is visionModelType's answer;
+// mmproj is a Qwen3.5+ GGUF mmproj tower, which has no config.json). Rules, in order:
+//   - not --backend webgpu, or -vision-device cpu: towerBackend, no note;
+//   - an int8 tower other than Gemma 3's is the CPU's by the quant (towerInt8): the backend is left alone so the family loader says
+//     so, and refuses under -require-backend; no note, since --vision-device gpu would not move it;
+//   - -vision-device gpu asks for the device: the backend, no note;
+//   - an mmproj tower stays on the CPU (towerReserve cannot price a tower with no config.json), with a note when this binary has
+//     a WebGPU Qwen3.5+ tower;
+//   - a unified-memory machine runs the device tower by default;
+//   - a discrete GPU keeps the CPU (WebGPU has no free-VRAM query, so the tower cannot be priced against the card) unless Gemma 3
+//     is given an explicit -vision-quant, whose int8 form is the one WebGPU int8 tower; the note is printed only for a family this
+//     binary has a WebGPU tower for.
+//
+// An audio encoder does not come through here (towerBackend).
+func (cfg config) routeVisionTower(family string, mmproj bool) visionRoute {
 	be := cfg.towerBackend()
-	if be == "webgpu" && webgpuTowerRegistered(mt) && !webgpuTowerUnified() && cfg.visionDevice != "gpu" && !(mt == "gemma3" && cfg.visionQuant != "") {
-		return "cpu"
+	if be != "webgpu" {
+		return visionRoute{Backend: be}
 	}
-	return be
-}
-
-// mmprojTowerBackend is the backend a Qwen3.5+ GGUF mmproj tower runs on: the tower backend, except that under webgpu it stays on the
-// CPU unless -vision-device gpu asks for the device (a quant does not), because towerReserve cannot price a tower that has no
-// config.json, so the device tower would share the decoder's memory with nothing reserved.
-func mmprojTowerBackend(cfg config) string {
-	if be := cfg.towerBackend(); be != "webgpu" || cfg.visionDevice == "gpu" {
-		return be
+	quantFamily := family
+	if mmproj {
+		quantFamily = "qwen3_5"
 	}
-	return "cpu"
-}
-
-// keptOnCPUNote is the one stderr line that says a WebGPU-capable vision tower of family mt (mt "gguf-mmproj" for a Qwen3.5+ GGUF
-// mmproj tower) runs on the CPU although --backend webgpu is chosen, and what puts it on the device; "" when it is not kept there:
-// no WebGPU backend, -vision-device cpu (the user's own choice), a tower with no WebGPU form, or a tower that is on the device.
-func (cfg config) keptOnCPUNote(mt string) string {
-	if cfg.towerBackend() != "webgpu" {
-		return ""
+	if towerInt8(quantFamily, cfg.visionQuant, be) && quantFamily != "gemma3" {
+		return visionRoute{Backend: be}
 	}
-	if mt == "gguf-mmproj" {
-		if mmprojTowerBackend(cfg) == "cpu" {
-			return "note: a Qwen3.5+ .gguf mmproj tower runs on the CPU under --backend webgpu (it has no config.json to price); --vision-device gpu puts it on WebGPU"
+	if cfg.visionDevice == "gpu" {
+		return visionRoute{Backend: be}
+	}
+	if mmproj {
+		r := visionRoute{Backend: "cpu"}
+		if webgpuTowerRegistered(quantFamily) {
+			r.Note = mmprojKeptNote
 		}
-		return ""
+		return r
 	}
-	if cfg.visionTowerBackend(mt) == "cpu" {
-		return "note: under --backend webgpu on a discrete GPU the vision tower runs on the CPU: its device memory cannot be priced against the card, so --vision-device gpu puts it on the GPU"
+	if webgpuTowerUnified() || (family == "gemma3" && cfg.visionQuant != "") {
+		return visionRoute{Backend: be}
 	}
-	return ""
+	r := visionRoute{Backend: "cpu"}
+	if webgpuTowerRegistered(family) {
+		r.Note = discreteKeptNote
+	}
+	return r
 }
 
 // loadVisionTower attaches a vision tower to the (single) loaded model, making it vision-capable (serve then accepts
@@ -1231,18 +1247,20 @@ func (s *server) loadVisionTower(cfg config) error {
 		return err
 	}
 	if fi, err := os.Stat(dir); err == nil && !fi.IsDir() && strings.HasSuffix(strings.ToLower(dir), ".gguf") {
-		be := mmprojTowerBackend(cfg)
-		if note := cfg.keptOnCPUNote("gguf-mmproj"); note != "" {
-			fmt.Fprintln(os.Stderr, note)
+		route := cfg.routeVisionTower("qwen3_5", true)
+		be := route.Backend
+		if route.Note != "" {
+			fmt.Fprintln(os.Stderr, route.Note)
 		}
 		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, be), be, cfg.requireBE)
 	}
 	mt := visionModelType(dir)
 	// the tower backend, not the model's backend: -vision-device cpu keeps Gemma 3's SigLIP tower on the CPU, in f32, under
 	// --backend cuda or webgpu too, and a discrete GPU under webgpu keeps a tower on the CPU until the device is asked for.
-	vbe := cfg.visionTowerBackend(mt)
-	if note := cfg.keptOnCPUNote(mt); note != "" {
-		fmt.Fprintln(os.Stderr, note)
+	route := cfg.routeVisionTower(mt, false)
+	vbe := route.Backend
+	if route.Note != "" {
+		fmt.Fprintln(os.Stderr, route.Note)
 	}
 	int8Tower := towerInt8(mt, cfg.visionQuant, vbe)
 	if mt == "qwen2_5_vl" {

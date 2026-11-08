@@ -175,112 +175,87 @@ func TestLoadVisionTower_webgpuTowerGuard(t *testing.T) {
 	}
 }
 
-// A Qwen3.5+ GGUF mmproj tower has no config.json, so towerReserve cannot price it: under webgpu it stays on the CPU unless
-// -vision-device gpu asks for the device (a quant does not), on a unified-memory Mac and on a discrete GPU alike; the other
-// backends and -vision-device cpu are untouched.
-func TestMMProjTowerBackend(t *testing.T) {
-	for _, unified := range []bool{true, false} {
-		stubWebGPU(t, unified, 1<<40)
-		for _, c := range []struct{ backend, device, quant, want string }{
-			{"webgpu", "", "", "cpu"},
-			{"webgpu", "auto", "", "cpu"},
-			{"webgpu", "", "int8", "cpu"},
-			{"webgpu", "", "f32", "cpu"},
-			{"webgpu", "gpu", "", "webgpu"},
-			{"webgpu", "cpu", "", "cpu"},
-			{"metal", "", "", "metal"},
-			{"cuda", "", "", "cuda"},
-			{"cpu", "", "", "cpu"},
-		} {
-			cfg := config{visionDevice: c.device, visionQuant: c.quant}
-			cfg.load.Backend = c.backend
-			if got := mmprojTowerBackend(cfg); got != c.want {
-				t.Errorf("unified %v, backend %q, -vision-device %q, -vision-quant %q: mmproj tower on %q, want %q", unified, c.backend, c.device, c.quant, got, c.want)
-			}
+// routeVisionTower is the one table for where a vision tower runs under --backend webgpu and what stderr says: family x machine x
+// -vision-device x -vision-quant x whether this binary has a WebGPU tower for the family -> backend and note. "" for a note means none.
+func TestRouteVisionTower(t *testing.T) {
+	const (
+		dNote = discreteKeptNote
+		mNote = mmprojKeptNote
+	)
+	type row struct {
+		name, family       string
+		mmproj             bool
+		backend            string // the config's --backend
+		unified            bool
+		device, quant      string
+		registered         bool // this binary has a WebGPU tower for the family
+		wantBackend, wantN string
+	}
+	rows := []row{
+		// a unified-memory Mac: the device tower by default, no note
+		{"unified default", "gemma4", false, "webgpu", true, "", "", true, "webgpu", ""},
+		{"unified, auto", "qwen2_5_vl", false, "webgpu", true, "auto", "", true, "webgpu", ""},
+		{"unified, -vision-device cpu", "gemma4", false, "webgpu", true, "cpu", "", true, "cpu", ""},
+		// a discrete GPU: the CPU unless the device is asked for
+		{"discrete default", "gemma4", false, "webgpu", false, "", "", true, "cpu", dNote},
+		{"discrete, auto", "qwen3_vl", false, "webgpu", false, "auto", "", true, "cpu", dNote},
+		{"discrete, -vision-device gpu", "gemma4", false, "webgpu", false, "gpu", "", true, "webgpu", ""},
+		{"discrete, -vision-device cpu is the user's own choice", "gemma4", false, "webgpu", false, "cpu", "", true, "cpu", ""},
+		{"discrete gemma3, -vision-quant int8 asks for the WebGPU int8 tower", "gemma3", false, "webgpu", false, "", "int8", true, "webgpu", ""},
+		{"discrete gemma3, -vision-quant f32 asks for the device", "gemma3", false, "webgpu", false, "", "f32", true, "webgpu", ""},
+		{"discrete gemma3, nothing asked", "gemma3", false, "webgpu", false, "", "", true, "cpu", dNote},
+		{"discrete qwen3_5, -vision-quant f32 does not ask", "qwen3_5", false, "webgpu", false, "", "f32", true, "cpu", dNote},
+		// an int8 tower other than Gemma 3's is the CPU's by the quant: the backend is left for the loader to refuse under
+		// -require-backend, and no note says the device would move it
+		{"unified gemma4 int8", "gemma4", false, "webgpu", true, "", "int8", true, "webgpu", ""},
+		{"discrete gemma4 int8", "gemma4", false, "webgpu", false, "", "int8", true, "webgpu", ""},
+		{"discrete qwen2_5_vl int8", "qwen2_5_vl", false, "webgpu", false, "", "int8", true, "webgpu", ""},
+		{"discrete glm_ocr int8", "glm_ocr", false, "webgpu", false, "", "int8", true, "webgpu", ""},
+		{"discrete qwen3_vl int8, -vision-device gpu", "qwen3_vl", false, "webgpu", false, "gpu", "int8", true, "webgpu", ""},
+		// a build with no WebGPU tower for the family: the discrete default is still the CPU (so -require-backend passes), with no note
+		{"discrete, family not registered in this binary", "gemma4", false, "webgpu", false, "", "", false, "cpu", ""},
+		{"unified, family not registered in this binary", "gemma4", false, "webgpu", true, "", "", false, "webgpu", ""},
+		// CPU-only vision towers and the unknown
+		{"discrete mistral3", "mistral3", false, "webgpu", false, "", "", false, "cpu", ""},
+		{"discrete lfm2_vl", "lfm2_vl", false, "webgpu", false, "", "", false, "cpu", ""},
+		{"discrete, no family (text-only or unknown)", "", false, "webgpu", false, "", "", false, "webgpu", ""},
+		// a Qwen3.5+ GGUF mmproj tower: the CPU unless -vision-device gpu, on either machine; a quant does not ask
+		{"mmproj on a Mac", "qwen3_5", true, "webgpu", true, "", "", true, "cpu", mNote},
+		{"mmproj on a discrete GPU", "qwen3_5", true, "webgpu", false, "", "", true, "cpu", mNote},
+		{"mmproj, -vision-quant f32 does not ask", "qwen3_5", true, "webgpu", true, "", "f32", true, "cpu", mNote},
+		{"mmproj, -vision-device gpu", "qwen3_5", true, "webgpu", true, "gpu", "", true, "webgpu", ""},
+		{"mmproj, int8 is the CPU's by the quant", "qwen3_5", true, "webgpu", true, "", "int8", true, "webgpu", ""},
+		{"mmproj, -vision-device cpu", "qwen3_5", true, "webgpu", true, "cpu", "", true, "cpu", ""},
+		{"mmproj, no WebGPU tower in this binary: the CPU, no note", "qwen3_5", true, "webgpu", true, "", "", false, "cpu", ""},
+		// other backends are never moved
+		{"cuda", "gemma4", false, "cuda", false, "", "", true, "cuda", ""},
+		{"metal int8", "gemma4", false, "metal", true, "", "int8", true, "metal", ""},
+		{"cuda mmproj", "qwen3_5", true, "cuda", false, "", "", true, "cuda", ""},
+		{"cpu", "gemma4", false, "cpu", false, "", "", true, "cpu", ""},
+	}
+	for _, r := range rows {
+		stubWebGPU(t, r.unified, 1<<40)
+		webgpuTowerRegistered = func(string) bool { return r.registered }
+		cfg := config{visionDevice: r.device, visionQuant: r.quant}
+		cfg.load.Backend = r.backend
+		got := cfg.routeVisionTower(r.family, r.mmproj)
+		if got.Backend != r.wantBackend || got.Note != r.wantN {
+			t.Errorf("%s: route {%q, note %q}, want {%q, note %q}", r.name, got.Backend, got.Note, r.wantBackend, r.wantN)
 		}
 	}
-}
-
-// The default placement of a vision tower under webgpu reads the machine and the family: on a unified-memory Mac a tower with a
-// WebGPU form is on the device; on a discrete GPU it stays on the CPU unless -vision-device gpu asks, or, for Gemma 3 only (the
-// one family with a WebGPU int8 form), an explicit -vision-quant. A family with no WebGPU form, another backend, and an audio
-// encoder (towerBackend) are never moved by the machine.
-func TestVisionTowerBackend_webgpuDiscreteDefault(t *testing.T) {
-	for _, c := range []struct {
-		name, mt, device, quant string
-		unified                 bool
-		want                    string
-	}{
-		{"unified default", "gemma4", "", "", true, "webgpu"},
-		{"discrete default", "gemma4", "", "", false, "cpu"},
-		{"discrete auto", "gemma4", "auto", "", false, "cpu"},
-		{"discrete, -vision-device gpu", "gemma4", "gpu", "", false, "webgpu"},
-		{"discrete, -vision-device cpu", "gemma4", "cpu", "", false, "cpu"},
-		{"discrete gemma3, -vision-quant int8 asks for the WebGPU int8 tower", "gemma3", "", "int8", false, "webgpu"},
-		{"discrete gemma3, -vision-quant f32", "gemma3", "", "f32", false, "webgpu"},
-		{"discrete gemma4, -vision-quant int8 is the CPU's int8 tower, not a request for the device", "gemma4", "", "int8", false, "cpu"},
-		{"discrete qwen2_5_vl, -vision-quant int8", "qwen2_5_vl", "", "int8", false, "cpu"},
-		{"discrete qwen3_5, -vision-quant f32", "qwen3_5", "", "f32", false, "cpu"},
-		{"discrete glm_ocr, -vision-quant int8", "glm_ocr", "", "int8", false, "cpu"},
-		{"discrete family with no WebGPU form (the stub registers only the families below)", "mistral3", "", "", false, "webgpu"},
-	} {
-		stubWebGPU(t, c.unified, 1<<40)
-		webgpuTowerRegistered = func(mt string) bool { return mt != "mistral3" }
-		cfg := config{visionDevice: c.device, visionQuant: c.quant}
-		cfg.load.Backend = "webgpu"
-		if got := cfg.visionTowerBackend(c.mt); got != c.want {
-			t.Errorf("%s: vision tower backend %q, want %q", c.name, got, c.want)
-		}
-	}
-	// the audio encoder and every other backend are never moved by the machine
+	// an audio encoder never comes through the vision route: towerBackend is the plain backend on a discrete GPU
 	stubWebGPU(t, false, 0)
 	cfg := config{}
 	cfg.load.Backend = "webgpu"
 	if got := cfg.towerBackend(); got != "webgpu" {
 		t.Errorf("an audio encoder's tower backend on a discrete GPU is %q, want webgpu", got)
 	}
-	cfg.load.Backend = "cuda"
-	if got := cfg.visionTowerBackend("gemma4"); got != "cuda" {
-		t.Errorf("cuda vision tower backend %q, want cuda", got)
-	}
 }
 
-// keptOnCPUNote is printed only when a WebGPU-capable vision tower exists and is kept on the CPU: not for a text-only load, a CPU-only
-// vision tower (mistral3, lfm2_vl), an audio encoder, a tower on the device, or -vision-device cpu. The mmproj note prints for a GGUF
-// mmproj tower kept on the CPU. loadVisionTower writes it, once, to stderr.
-func TestKeptOnCPUNote(t *testing.T) {
-	for _, c := range []struct {
-		name, mt, device string
-		backend          string
-		unified          bool
-		want             bool
-	}{
-		{"discrete, a WebGPU-capable tower kept on the CPU", "gemma4", "", "webgpu", false, true},
-		{"discrete, -vision-device gpu: on the device", "gemma4", "gpu", "webgpu", false, false},
-		{"discrete, -vision-device cpu is the user's own choice", "gemma4", "cpu", "webgpu", false, false},
-		{"unified: on the device", "gemma4", "", "webgpu", true, false},
-		{"discrete, a CPU-only vision tower (no WebGPU form)", "mistral3", "", "webgpu", false, false},
-		{"discrete, an audio encoder", "voxtral", "", "webgpu", false, false},
-		{"discrete, not a tower at all", "", "", "webgpu", false, false},
-		{"another backend", "gemma4", "", "cuda", false, false},
-		{"mmproj on a Mac, kept on the CPU", "gguf-mmproj", "", "webgpu", true, true},
-		{"mmproj on a discrete GPU, kept on the CPU", "gguf-mmproj", "", "webgpu", false, true},
-		{"mmproj, -vision-device gpu", "gguf-mmproj", "gpu", "webgpu", true, false},
-		{"mmproj, -vision-device cpu", "gguf-mmproj", "cpu", "webgpu", true, false},
-		{"mmproj under metal", "gguf-mmproj", "", "metal", true, false},
-	} {
-		stubWebGPU(t, c.unified, 1<<40)
-		webgpuTowerRegistered = func(mt string) bool { return mt == "gemma4" || mt == "gemma3" }
-		cfg := config{visionDevice: c.device}
-		cfg.load.Backend = c.backend
-		note := cfg.keptOnCPUNote(c.mt)
-		if (note != "") != c.want || (c.want && !strings.Contains(note, "--vision-device gpu")) {
-			t.Errorf("%s: note %q, want a note: %v naming --vision-device gpu", c.name, note, c.want)
-		}
-	}
-}
-
-// loadVisionTower is where the note is written: a text-only load prints nothing; a Gemma 3 checkpoint on a discrete GPU prints it once.
+// loadVisionTower writes the note, once, and only for a tower this binary could have put on the device: a text-only load, a CPU-only
+// vision tower (mistral3), an audio encoder (voxtral, qwen3_asr), a tower on the device (unified memory), an int8 tower that is
+// the CPU's by the quant, and -vision-device cpu print nothing. The tower directories hold a config.json only: the family loaders
+// fail on the missing weights, which is after the decision under test.
 func TestLoadVisionTower_keptOnCPUNoteIsPrintedOnceAndOnlyForATower(t *testing.T) {
 	capture := func(f func()) string {
 		r, w, err := os.Pipe()
@@ -295,17 +270,78 @@ func TestLoadVisionTower_keptOnCPUNoteIsPrintedOnceAndOnlyForATower(t *testing.T
 		b, _ := io.ReadAll(r)
 		return string(b)
 	}
+	tower := func(modelType string) string {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"model_type":"`+modelType+`"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	registered := map[string]bool{"gemma3": true, "gemma4": true, "qwen2_5_vl": true}
+	for _, c := range []struct {
+		name, mt, device, quant string
+		unified                 bool
+		want                    int
+	}{
+		{"gemma4 on a discrete GPU", "gemma4", "", "", false, 1},
+		{"gemma4 on a discrete GPU, -vision-device gpu", "gemma4", "gpu", "", false, 0},
+		{"gemma4 on a Mac", "gemma4", "", "", true, 0},
+		{"gemma4 int8 on a discrete GPU is the CPU's", "gemma4", "", "int8", false, 0},
+		{"gemma4, -vision-device cpu", "gemma4", "cpu", "", false, 0},
+		{"mistral3, a CPU-only tower", "mistral3", "", "", false, 0},
+		{"voxtral, an audio encoder", "voxtral", "", "", false, 0},
+		{"qwen3_asr, an audio encoder", "qwen3_asr", "", "", false, 0},
+	} {
+		stubWebGPU(t, c.unified, 1<<40)
+		webgpuTowerRegistered = func(mt string) bool { return registered[mt] }
+		cfg := config{visionPath: tower(c.mt), visionDevice: c.device, visionQuant: c.quant, models: modelFlag{{path: "m"}}}
+		cfg.load.Backend = "webgpu"
+		out := capture(func() { _ = (&server{}).loadVisionTower(cfg) })
+		if n := strings.Count(out, "note: under --backend webgpu on a discrete GPU"); n != c.want {
+			t.Errorf("%s: the note was printed %d times, want %d: %q", c.name, n, c.want, out)
+		}
+	}
+	// a text-only load (no -vision, no tower to find) prints nothing
 	stubWebGPU(t, false, 0)
-	webgpuTowerRegistered = func(mt string) bool { return mt == "gemma3" }
+	webgpuTowerRegistered = func(mt string) bool { return registered[mt] }
 	cfg := config{}
 	cfg.load.Backend = "webgpu"
 	if out := capture(func() { _ = (&server{}).loadVisionTower(cfg) }); strings.Contains(out, "note:") {
 		t.Errorf("a load with no vision tower printed %q", out)
 	}
+	// a model with a tower directory beside it prints the note once, found by auto-discovery as well as by -vision
 	cfg.visionPath = gemma3RealLayoutTiny(t)
 	cfg.models = modelFlag{{path: "m"}}
-	out := capture(func() { _ = (&server{}).loadVisionTower(cfg) })
-	if n := strings.Count(out, "note: under --backend webgpu on a discrete GPU"); n != 1 {
-		t.Errorf("a Gemma 3 tower kept on the CPU printed the note %d times: %q", n, out)
+	if out := capture(func() { _ = (&server{}).loadVisionTower(cfg) }); strings.Count(out, "note: under --backend webgpu on a discrete GPU") != 1 {
+		t.Errorf("a Gemma 3 tower kept on the CPU printed %q, want the note once", out)
+	}
+}
+
+// The route feeds the family planners, which refuse under -require-backend a tower they cannot put on the device: an int8 tower
+// other than Gemma 3's must still reach them as webgpu (so the refusal stays), and a discrete GPU's CPU default must reach them as
+// cpu (so -require-backend does not refuse a choice the user did not make), whether or not this binary has a WebGPU tower.
+func TestRouteVisionTower_requireBackendReachesTheFamilyPlanner(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		unified    bool
+		quant      string
+		registered bool
+		wantErr    bool
+	}{
+		{"discrete, int8: the planner refuses the CPU's int8 tower", false, "int8", true, true},
+		{"unified, int8: the planner refuses", true, "int8", true, true},
+		{"discrete, default: the CPU by default, nothing to refuse", false, "", true, false},
+		{"discrete, default, no WebGPU tower in this binary: still the CPU, nothing to refuse", false, "", false, false},
+		{"unified, default: the device tower is planned", true, "", true, false},
+	} {
+		stubWebGPU(t, c.unified, 1<<40)
+		webgpuTowerRegistered = func(string) bool { return c.registered }
+		cfg := config{visionQuant: c.quant, requireBE: true}
+		cfg.load.Backend = "webgpu"
+		r := cfg.routeVisionTower("qwen3_vl", false)
+		_, err := planGridTower("Qwen3-VL", []string{"webgpu"}, towerInt8("qwen3_vl", cfg.visionQuant, r.Backend), r.Backend, cfg.requireBE)
+		if (err != nil) != c.wantErr {
+			t.Errorf("%s: planGridTower under -require-backend = %v, want an error: %v", c.name, err, c.wantErr)
+		}
 	}
 }
