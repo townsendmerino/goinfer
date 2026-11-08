@@ -407,7 +407,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 
 <!-- END images-and-audio support table -->
 
-Not yet: video. Under `--backend webgpu` the Gemma 3, Gemma 4, Qwen2.5-VL, Qwen3.5+, Qwen3-VL and GLM-OCR towers run on the GPU by default (the table's WebGPU column; `--vision-device cpu` keeps them on the CPU), and the other families' towers have no WebGPU form.
+Not yet: video. Under `--backend webgpu` the Gemma 3, Gemma 4, Qwen2.5-VL, Qwen3.5+, Qwen3-VL and GLM-OCR towers run on the GPU by default on a unified-memory Mac (the table's WebGPU column; `--vision-device cpu` keeps them on the CPU). A discrete GPU keeps the CPU tower until `--vision-device gpu` asks, since WebGPU cannot price a card's memory, and a Qwen3.5+ `.gguf` mmproj tower likewise; the other families' towers have no WebGPU form.
 Qwen3-VL MoE (a 30B model, too large for a 16 GB Mac or an 8 GB card) has been checked against HuggingFace on the CPU; its served check on a GPU has not passed, because a two-image request on CUDA's paged path read as a fail and is still open ([S10q-paged](docs/tasks/task-multimodal-remaining-2026-10.md)).
 
 ## Docs

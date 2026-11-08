@@ -1122,31 +1122,56 @@ func (s *server) loadAdapters(cfg config) error {
 	return nil
 }
 
-// towerBackend is the backend a device vision tower is chosen for: the model's own, unless -vision-device cpu keeps the
+// towerBackend is the backend a device tower (vision or audio) is chosen for: the model's own, unless -vision-device cpu keeps the
 // tower on the CPU, which also isolates the tower in a served comparison with the language model on the same backend in
 // both arms (docs/tasks/task-multimodal-support-2026-10.md).
 func (cfg config) towerBackend() string {
-	if cfg.visionDevice == "cpu" || cfg.defaultsToCPUTower() {
+	if cfg.visionDevice == "cpu" {
 		return "cpu"
 	}
 	return cfg.load.Backend
 }
 
-// defaultsToCPUTower says that, under --backend webgpu on a discrete GPU, the vision tower stays on the CPU unless the device is
-// asked for (-vision-device gpu, or an explicit -vision-quant): WebGPU has no free-VRAM query, so the tower's device bytes cannot
-// be priced against the card's budget there (towerReserve and webgpuTowerFits only have a figure on unified memory).
-func (cfg config) defaultsToCPUTower() bool {
-	return cfg.load.Backend == "webgpu" && cfg.visionDevice != "gpu" && cfg.visionQuant == "" && !webgpuTowerUnified()
+// visionTowerBackend is towerBackend for a vision tower of family mt. Under --backend webgpu on a discrete GPU a tower that has a
+// WebGPU form stays on the CPU unless the device is asked for (-vision-device gpu, or for Gemma 3 an explicit -vision-quant, whose
+// int8 form is the one WebGPU int8 tower): WebGPU has no free-VRAM query, so the tower's device bytes cannot be priced against the
+// card's budget there (towerReserve and webgpuTowerFits only have a figure on unified memory). A tower with no WebGPU form is
+// unaffected, and an audio encoder does not come through here.
+func (cfg config) visionTowerBackend(mt string) string {
+	be := cfg.towerBackend()
+	if be == "webgpu" && webgpuTowerRegistered(mt) && !webgpuTowerUnified() && cfg.visionDevice != "gpu" && !(mt == "gemma3" && cfg.visionQuant != "") {
+		return "cpu"
+	}
+	return be
 }
 
 // mmprojTowerBackend is the backend a Qwen3.5+ GGUF mmproj tower runs on: the tower backend, except that under webgpu it stays on the
-// CPU unless -vision-device gpu asks for the device, because towerReserve cannot price a tower that has no config.json, so the
-// device tower would share the decoder's memory with nothing reserved.
+// CPU unless -vision-device gpu asks for the device (a quant does not), because towerReserve cannot price a tower that has no
+// config.json, so the device tower would share the decoder's memory with nothing reserved.
 func mmprojTowerBackend(cfg config) string {
 	if be := cfg.towerBackend(); be != "webgpu" || cfg.visionDevice == "gpu" {
 		return be
 	}
 	return "cpu"
+}
+
+// keptOnCPUNote is the one stderr line that says a WebGPU-capable vision tower of family mt (mt "gguf-mmproj" for a Qwen3.5+ GGUF
+// mmproj tower) runs on the CPU although --backend webgpu is chosen, and what puts it on the device; "" when it is not kept there:
+// no WebGPU backend, -vision-device cpu (the user's own choice), a tower with no WebGPU form, or a tower that is on the device.
+func (cfg config) keptOnCPUNote(mt string) string {
+	if cfg.towerBackend() != "webgpu" {
+		return ""
+	}
+	if mt == "gguf-mmproj" {
+		if mmprojTowerBackend(cfg) == "cpu" {
+			return "note: a Qwen3.5+ .gguf mmproj tower runs on the CPU under --backend webgpu (it has no config.json to price); --vision-device gpu puts it on WebGPU"
+		}
+		return ""
+	}
+	if cfg.visionTowerBackend(mt) == "cpu" {
+		return "note: under --backend webgpu on a discrete GPU the vision tower runs on the CPU: its device memory cannot be priced against the card, so --vision-device gpu puts it on the GPU"
+	}
+	return ""
 }
 
 // loadVisionTower attaches a vision tower to the (single) loaded model, making it vision-capable (serve then accepts
@@ -1158,9 +1183,6 @@ func (s *server) loadVisionTower(cfg config) error {
 	case "", "auto", "cpu", "gpu": // "" (a config built without flags) is auto
 	default:
 		return fmt.Errorf("-vision-device %q: want auto, cpu or gpu", cfg.visionDevice)
-	}
-	if cfg.defaultsToCPUTower() && cfg.visionDevice != "cpu" {
-		fmt.Fprintln(os.Stderr, "note: under --backend webgpu on a discrete GPU the vision tower runs on the CPU: its device memory cannot be priced against the card, so --vision-device gpu puts it on the GPU")
 	}
 	dir := cfg.visionPath
 	if dir == "" {
@@ -1210,20 +1232,24 @@ func (s *server) loadVisionTower(cfg config) error {
 	}
 	if fi, err := os.Stat(dir); err == nil && !fi.IsDir() && strings.HasSuffix(strings.ToLower(dir), ".gguf") {
 		be := mmprojTowerBackend(cfg)
-		if be == "cpu" && cfg.towerBackend() == "webgpu" {
-			fmt.Fprintln(os.Stderr, "note: a Qwen3.5+ .gguf mmproj tower runs on the CPU under --backend webgpu (it has no config.json to price); --vision-device gpu puts it on WebGPU")
+		if note := cfg.keptOnCPUNote("gguf-mmproj"); note != "" {
+			fmt.Fprintln(os.Stderr, note)
 		}
 		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, be), be, cfg.requireBE)
 	}
 	mt := visionModelType(dir)
-	// cfg.towerBackend(), not the model's backend: -vision-device cpu keeps Gemma 3's SigLIP tower on the CPU, in f32, under
-	// --backend cuda or webgpu too.
-	int8Tower := towerInt8(mt, cfg.visionQuant, cfg.towerBackend())
+	// the tower backend, not the model's backend: -vision-device cpu keeps Gemma 3's SigLIP tower on the CPU, in f32, under
+	// --backend cuda or webgpu too, and a discrete GPU under webgpu keeps a tower on the CPU until the device is asked for.
+	vbe := cfg.visionTowerBackend(mt)
+	if note := cfg.keptOnCPUNote(mt); note != "" {
+		fmt.Fprintln(os.Stderr, note)
+	}
+	int8Tower := towerInt8(mt, cfg.visionQuant, vbe)
 	if mt == "qwen2_5_vl" {
-		return s.loadQwenVisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
+		return s.loadQwenVisionTower(dir, int8Tower, vbe, cfg.requireBE)
 	}
 	if mt == "qwen3_5" || mt == "qwen3_5_moe" || mt == "qwen3_vl" || mt == "qwen3_vl_moe" { // qwen3_vl, qwen3_vl_moe: the same tower plus DeepStack; literals, which the support-table loader test reads
-		return s.loadQwen35VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
+		return s.loadQwen35VisionTower(dir, int8Tower, vbe, cfg.requireBE)
 	}
 	if mt == "qwen3_asr" { // speech to text; the audio encoder is in the model's own directory
 		return s.loadQwenASR(dir)
@@ -1232,10 +1258,10 @@ func (s *server) loadVisionTower(cfg config) error {
 		return s.loadVoxtral(dir, cfg.towerBackend())
 	}
 	if mt == "glm_ocr" {
-		return s.loadGlmOcrVisionTower(dir, int8Tower, cfg.visionMaxPixels, cfg.towerBackend(), cfg.requireBE)
+		return s.loadGlmOcrVisionTower(dir, int8Tower, cfg.visionMaxPixels, vbe, cfg.requireBE)
 	}
 	if mt == "gemma4" {
-		return s.loadGemma4VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
+		return s.loadGemma4VisionTower(dir, int8Tower, vbe, cfg.requireBE)
 	}
 	if mt == "mistral3" { // Ministral 3's Pixtral tower, on the CPU in float32
 		return s.loadPixtralVisionTower(dir)
@@ -1250,7 +1276,7 @@ func (s *server) loadVisionTower(cfg config) error {
 	// tower changes the reply, at the cost of about 1.7 GiB of VRAM against 0.56 (docs/tasks/task-multimodal-support-2026-10.md,
 	// "Gemma 3's CUDA default is now float32"). The CUDA resident tower registers its factory with vision.RegisterResident
 	// (cuda/vision_register.go) through cuda/cmd/serve's blank import.
-	towerBE := cfg.towerBackend()
+	towerBE := vbe
 	enc, int8Tower, residentOK, err := attachGemma3Tower(siglipLoader(dir, towerBE == "metal"), int8Tower, gemma3FloatDefault(cfg, int8Tower), towerBE, cfg.requireBE, os.Stderr)
 	if err != nil {
 		return err

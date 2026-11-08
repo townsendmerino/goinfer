@@ -156,6 +156,9 @@ func towerReserve(cfg config, modelPath string) int64 {
 		return 0 // a GGUF mmproj or an unresolved reference: nothing priced
 	}
 	mt := visionModelType(dir)
+	if cfg.visionTowerBackend(mt) == "cpu" {
+		return 0 // a WebGPU tower kept on the CPU (a discrete GPU, nothing asking for the device) holds no device memory
+	}
 	if cfg.towerBackend() == "metal" {
 		// Metal's device memory is the Mac's RAM, and its guard prices this beside the decoder. Gemma 3's int8 tower is
 		// Metal's own (tower_gemm_w8); every other family's int8 tower is the CPU's.
