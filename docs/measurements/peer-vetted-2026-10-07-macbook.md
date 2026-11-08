@@ -251,3 +251,33 @@ OP6's Metal switch, which would make `--quant q4k` Metal's default load for Phi-
   the decode-path gate as before.
 - **What it decides:** nothing on its own. The cell is the published number the switch waits on. Changing a default is
   Francis's call, so the reading goes to him beside the 2026-10-20 one (0.539, BEHIND).
+
+### M1 on main after #775: re-registered 2026-11-08, before it runs
+
+The 2026-11-07 job never ran the cell: its fit check read NOT-RESIDENT on all 18 tries ("ActQuantGroup 32: metal's resident
+projections use per-vector activation scales …"). That was a decoder regression, not the checkpoint or the cell's flags.
+- Since `d84d8644` (2026-10-21), a q4k `.gguf` loads through its sidecar `.giw`.
+- The activation-group gate exempted Metal's q4k lane by the `--quant` option, which a `.giw` does not keep.
+- #775 (`bbfce11d`) fixed it, so admission reads the loaded weights' quant, as Metal's build does.
+
+It is the same cell, rules and grader as "M1 on main after #722", with these differences, all in
+`peer-vetted-2026-10-07/run-mac-m1-2026-11-08.sh`:
+- **The build:** the serve and the harness come from an archive of main at `76d78d19` (after `bbfce11d`), built by day (serve sha256
+  `9a2e74bd1ce5fb28`).
+  - The harness's one change since `1ecbb5d6` is which checkpoints its archive check covers (`33bfef1d`); no measurement rule moved.
+- **The records** go to `results-mac-m1-2026-11-08`.
+- **By day,** as the coordinator asked. The job holds the timing lock and keeps the Mac awake (`caffeinate -i`). The fit check runs
+  first and must read `metal-resident (q4k)`. A refused load, swap growth across the fit check, or a battery start stops the job
+  for the coordinator; nothing retries it or forces the load.
+- **The load path:** goinfer's load now opens the file's q4k sidecar (`Phi-3-mini-4k-instruct-q4.q4k.metal.v17.giw`), the default
+  on darwin since `d84d8644`, where the 2026-10-20 run loaded the `.gguf` into the heap. They are the same weights
+  (`decoder/d8b_q4k_giw_test.go:TestD8b_q4kGGUFTakesItsSidecar`). Ollama's arm reads the same `.gguf` as before.
+- **The void rule** is the registered one: `BENCH_SWAP_VOID_MB=0` and the kill at +1,024 MB over an engine's cell, plus the
+  heavy-load rule of `docs/measurements/noise-registry.md` §8 at the cell's start. #774's new rule is not applied: it is in review.
+- **A by-day fit check before this was registered** (08:41, the cell's own flags on this serve) read `metal-resident (q4k)`, with
+  swap unchanged.
+
+- **Read:** goinfer's tok/s ×3 and Ollama's ×3, graded by `grade.py` (AHEAD, PARITY or BEHIND), with the swap void and the
+  decode-path gate.
+- **What it decides:** nothing on its own. The reading goes to Francis for OP6's default switch, beside 2026-10-20's (0.539,
+  BEHIND).
