@@ -817,12 +817,19 @@ def learn_fit_need(model_key, log_text):
         _FIT_NEED[model_key] = int(found)
 
 
+_LOAD_SKIP_SAID = False
+
+
 def heavy_void(state, need_mb):
     """The reason a cell starting in machine state `state` is void, or None, by void_rule.start_void. state carries loadavg,
-    free_mem_mb (the available reading) and ncores."""
+    available_mb (the fit guard's reading) and ncores; an unreadable core count skips the load term, said once."""
+    global _LOAD_SKIP_SAID
     import void_rule
     la, ncores = state.get("loadavg"), state.get("ncores")
-    snap = {"load1": la[0] if la else None, "ncores": ncores or 1, "available_mb": state.get("free_mem_mb")}
+    if not ncores and not _LOAD_SKIP_SAID:
+        _LOAD_SKIP_SAID = True
+        print("# core count unreadable: the heavy-load void's load term is skipped for this run", flush=True)
+    snap = {"load1": la[0] if la else None, "ncores": ncores, "available_mb": state.get("available_mb")}
     return void_rule.start_void(snap, need_mb)
 
 
@@ -855,12 +862,18 @@ def machine_state():
     """Recorded at the START of each cell: the load average, available memory and core count the void rule reads (heavy_void), the
     reclaimable memory and swap in use as a record (void_rule.py: a record taken under this rule can be told from the old one),
     and the GPU and thermal state."""
-    m = {"loadavg": _loadavg(), "free_mem_mb": free_mem_mb(), "ncores": os.cpu_count(), "gpu": _gpu_state(),
+    m = {"loadavg": _loadavg(), "available_mb": free_mem_mb(), "ncores": os.cpu_count(), "gpu": _gpu_state(),
          "reclaimable_mb": _reclaimable_mb(), "swap_mb": swap_used_mb()}
     th = thermal_state()
     if th:
         m["therm"] = th
     return m
+
+def end_state():
+    """Recorded at the END of each cell (void_rule.py: the four readings at a cell's start and end): the same load, available and
+    reclaimable memory and swap in use as machine_state, so a record taken under the 2026-11-08 rule shows what the cell left."""
+    return {"loadavg": _loadavg(), "available_mb": free_mem_mb(), "reclaimable_mb": _reclaimable_mb(), "swap_mb": swap_used_mb()}
+
 
 def preflight():
     """The idle check, and the ONLY place it is answerable -- before this harness loads the box.
@@ -905,7 +918,7 @@ _FREE_MEM_OVERRIDE_USED = False  # set by check_free_mem when BENCH_ALLOW_NO_FRE
 
 def check_free_mem():
     """Refuses a run that cannot read this box's free memory, since the heavy-load void's memory term would then never apply and
-    every cell would record free_mem_mb null. BENCH_ALLOW_NO_FREE_MEM=1 runs anyway; provenance() records that it did, and only
+    every cell would record available_mb null. BENCH_ALLOW_NO_FREE_MEM=1 runs anyway; provenance() records that it did, and only
     when it did (a set override with a reading present is not recorded). Returns whether the override was used."""
     global _FREE_MEM_OVERRIDE_USED
     _FREE_MEM_OVERRIDE_USED = False
@@ -2236,6 +2249,7 @@ def main():
         ((rates, err, counts), machine, void_starts), swap_voids = run_with_swap_voids(lambda: start_clean(machine_state, need, _run))
         machine["gate"] = gate
         machine["fit_need_mb"], machine["fit_need_source"] = need, need_src
+        machine["end"] = end_state()
         # prompt_tokens(depth, mk) only resolves for phases A/B/C -- "embed"/"vision" aren't real
         # MODELS keys and D's "depth" is an approximate embeddings length, not a calibrated one, so
         # phases D/E record None here rather than raising a KeyError against prompts.json.

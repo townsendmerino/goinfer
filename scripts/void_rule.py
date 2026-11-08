@@ -6,10 +6,11 @@ A cell may START only if both hold:
       physical memory less 500 MiB, on Linux MemAvailable; scripts/hostmem.py) is at least the cell's fit need, with no margin;
   (b) the 1-minute load average is not above half the core count (the cap is a parameter, 4.0 on the 8-core Mac).
 A cell is VOID if system swap grows at all between its start and its end. The reclaimable reading is no longer a void term; it is
-recorded, with load, available memory and swap, at the start and the end of every cell, so a record taken under this rule can be
-told from one taken under the old +2 GB rule.
+recorded, with load, available memory and swap, at the start and the end of every cell (bench_peer.py per cell, a shell runner through
+the commands below, night.py per job as information only: the cell is the unit of the swap void), so a record taken under this rule can
+be told from one taken under the old +2 GB rule.
 
-  python3 scripts/void_rule.py start --need-mb N [--load-cap X] [--json-out F]   exit 0 clean, 75 void (the reason on stderr)
+  python3 scripts/void_rule.py start --need-mb N [--load-cap X] [--json-out F]   exit 0 clean, 75 void (the reason on stderr, as `void: ...`)
   python3 scripts/void_rule.py end --start-json F [--json-out G]                  exit 0, or 76 when swap grew (the reason on stderr)
   python3 scripts/void_rule.py snapshot                                            prints the four readings as JSON
 
@@ -56,9 +57,12 @@ def load_cap(ncores):
 def start_void(snap, need_mb, cap=None):
     """The reason a cell starting in state snap is void, or None. A reading that is None is unknown and does not void, as the fit
     guard treats an unknown. need_mb None or 0 means the cell loads no model, so the memory clause does not apply."""
-    cap = load_cap(snap["ncores"]) if cap is None else cap
-    if snap.get("load1") is not None and snap["load1"] > cap:
-        return (f"load {snap['load1']:.2f} above half of {snap['ncores']} cores" if cap == snap["ncores"] / 2
+    ncores = snap.get("ncores")
+    if cap is None and ncores:
+        cap = load_cap(ncores)
+    # an unknown core count with no explicit cap is an unknown: the load term is skipped (callers say so), not a cap of 0.5
+    if cap is not None and snap.get("load1") is not None and snap["load1"] > cap:
+        return (f"load {snap['load1']:.2f} above half of {ncores} cores" if ncores and cap == ncores / 2
                 else f"load {snap['load1']:.2f} above the cap {cap:g}")
     avail = snap.get("available_mb")
     if need_mb and avail is not None and avail < need_mb:
@@ -102,7 +106,9 @@ def main(argv):
         json.dump(snap, open(a.json_out, "w"))
     print(json.dumps(snap))
     if why:
-        print("VOID: " + why, file=sys.stderr)
+        # lower case on purpose: a runner under night.py that re-runs a void cell in place and succeeds must not trip night.py's VOID
+        # marker scan; the exit code (75 at a start, 76 at an end) is the runner's verdict to act on
+        print("void: " + why, file=sys.stderr)
         return RETRY_RC if a.cmd == "start" else SWAP_VOID_RC
     return 0
 

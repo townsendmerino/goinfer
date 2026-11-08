@@ -1047,16 +1047,16 @@ class Runner:
                 self.kill_job(f"timeout {j['timeout_min']} min")
                 outcome = "timeout"
         rc = self.proc.returncode
-        # The void rule's in-cell swap bar (void_rule.py): system swap that grew while the job ran voids what it measured. The line is a
-        # VOID marker before the END line, so an otherwise clean job is FAILED, naming the growth; the four readings at the end are
-        # recorded either way.
+        # The four readings at the end of the job are recorded beside those at its start, with the swap growth between them as information.
+        # The cell is the unit of the void rule (scripts/void_rule.py): a multi-cell job that voids a cell and re-runs it in place still ends
+        # above its start baseline, and a spike that settles is invisible to two readings, so the job-level pair never voids a job. The
+        # runner's own per-cell void (bench_peer.py's SwapWatch, void_rule.py's start/end exit codes) is the verdict.
         end = readings()
         j["readings"]["end"] = end
+        s0, s1 = j["readings"]["start"].get("swap_mb"), end.get("swap_mb")
+        if s0 is not None and s1 is not None:
+            j["readings"]["swap_growth_mb"] = round(s1 - s0, 1)
         f.write(f"\n=== READINGS end {json.dumps(end)}\n")
-        import void_rule
-        swap_why = void_rule.swap_void(j["readings"]["start"], end)
-        if swap_why:
-            f.write(f"VOID: {swap_why}\n")
         f.write(f"=== END      {now().strftime('%F %T %Z')}  rc={rc}\n")
         f.flush()
         if outcome is None:
@@ -1289,15 +1289,10 @@ class Server(Runner):
 
 
     def heavy(self, j):
-        """Why the box is under heavy load for job j now (the 2026-10-19 rule), or None."""
-        la, n = self.load1(), self.ncores()
-        if la > n / 2:
-            return f"load {la:.2f} above half of {n} cores"
-        need = float(j.get("fit_need_gb") or 0) * 1024
-        free = self.free_mb()
-        if need and free is not None and free < need:
-            return f"available memory {free} MB under the job's fit need {need:.0f} MB"
-        return None
+        """Why the box is under heavy load for job j now (the void rule, scripts/void_rule.py), or None."""
+        import void_rule
+        snap = {"load1": self.load1(), "ncores": self.ncores(), "available_mb": self.free_mb()}
+        return void_rule.start_void(snap, float(j.get("fit_need_gb") or 0) * 1024)
 
     def eligible(self, j, t):
         """Why j may not start at t, or None."""

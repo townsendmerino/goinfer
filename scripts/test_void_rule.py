@@ -57,6 +57,40 @@ class Start(unittest.TestCase):
                 self.assertIsNone(void_rule.start_void(snap, 4000))
 
 
+class UnknownCores(unittest.TestCase):
+    def test_an_unreadable_core_count_skips_the_load_term(self):
+        self.assertIsNone(void_rule.start_void(dict(SNAP, ncores=None, load1=99.0), 0), "no cap of 0.5 from an unknown core count")
+        self.assertIn("above the cap 1", void_rule.start_void(dict(SNAP, ncores=None, load1=99.0), 0, cap=1.0), "an explicit cap still applies")
+
+
+class Readings(unittest.TestCase):
+    """snapshot() and swap_used_mb() with stubbed sources."""
+
+    def test_snapshot_has_the_four_readings(self):
+        with mock.patch.object(void_rule.hostmem, "available_mb", lambda: 6000), \
+                mock.patch.object(void_rule.hostmem, "reclaimable_mb", lambda: 4000), \
+                mock.patch.object(void_rule, "swap_used_mb", lambda: 321.5), \
+                mock.patch.object(void_rule.os, "getloadavg", lambda: (2.25, 1.0, 1.0)), \
+                mock.patch.object(void_rule.os, "cpu_count", lambda: 10):
+            snap = void_rule.snapshot()
+        self.assertEqual((snap["load1"], snap["ncores"], snap["available_mb"], snap["reclaimable_mb"], snap["swap_mb"]),
+                         (2.25, 10, 6000, 4000, 321.5))
+
+    def test_swap_on_darwin_is_sysctls_used_figure(self):
+        out = "total = 2048.00M  used = 1404.50M  free = 643.50M  (encrypted)\n"
+        with mock.patch.object(void_rule.sys, "platform", "darwin"), \
+                mock.patch.object(void_rule.subprocess, "run", lambda *a, **k: mock.Mock(stdout=out)):
+            self.assertEqual(void_rule.swap_used_mb(), 1404.5)
+        with mock.patch.object(void_rule.sys, "platform", "darwin"), \
+                mock.patch.object(void_rule.subprocess, "run", lambda *a, **k: mock.Mock(stdout="garbage")):
+            self.assertIsNone(void_rule.swap_used_mb())
+
+    def test_swap_on_linux_is_total_less_free_from_meminfo(self):
+        meminfo = "MemTotal: 1 kB\nSwapTotal: 8388608 kB\nSwapFree: 8126464 kB\n"
+        with mock.patch.object(void_rule.sys, "platform", "linux"), mock.patch("builtins.open", mock.mock_open(read_data=meminfo)):
+            self.assertEqual(void_rule.swap_used_mb(), 256.0)
+
+
 class Swap(unittest.TestCase):
     def test_any_growth_voids_and_none_does_not(self):
         self.assertIsNone(void_rule.swap_void(SNAP, dict(SNAP)))
@@ -83,6 +117,16 @@ class Cli(unittest.TestCase):
                 self.assertIn(k, rec)
             self.assertIn("below the fit need", rec["void"])
             self.assertEqual(self.run_cli(["start", "--need-mb", "4000"], SNAP), 0)
+
+    def test_the_reason_is_lower_case_so_a_retried_cell_does_not_trip_nights_marker_scan(self):
+        import io
+        from contextlib import redirect_stderr
+        err = io.StringIO()
+        with mock.patch.object(void_rule, "snapshot", lambda: dict(SNAP, available_mb=3000)), redirect_stderr(err), \
+                mock.patch("sys.stdout", io.StringIO()):
+            void_rule.main(["start", "--need-mb", "4000"])
+        self.assertIn("void: available memory", err.getvalue())
+        self.assertNotIn("VOID", err.getvalue())
 
     def test_end_exits_76_when_swap_grew(self):
         with tempfile.TemporaryDirectory() as d:

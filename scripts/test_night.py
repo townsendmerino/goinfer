@@ -419,9 +419,10 @@ def setUpModule():
     night.readings = lambda: dict(_FLAT)
 
 
-class SwapVoidInAJob(unittest.TestCase):
-    """The void rule's in-cell swap bar for a night job: system swap that grows while the job runs makes an otherwise clean job FAILED
-    with a VOID line naming the growth; flat swap does not; the start and end readings are recorded in the job's record."""
+class SwapReadingsInAJob(unittest.TestCase):
+    """A job's four readings at its start and end are recorded, with the swap growth between them as information. They never void the job:
+    the cell is the unit of the void rule (scripts/void_rule.py), so a multi-cell job that voided a cell and re-ran it in place, which ends
+    above its start baseline, is not failed here; the runner's own per-cell void is the verdict."""
 
     def run_job(self, swaps):
         night.QUEUE.mkdir(parents=True, exist_ok=True)
@@ -441,20 +442,24 @@ class SwapVoidInAJob(unittest.TestCase):
             r.run()
         return [x for x in r.results if x["name"] == job["name"]][0]
 
-    def test_swap_growth_voids_the_job(self):
-        got = self.run_job([500.0, 500.1])
-        self.assertTrue(got["outcome"].startswith("FAILED rc=0, log says: VOID: system swap grew 0.1 MB"), got["outcome"])
-        self.assertEqual((got["readings"]["start"]["swap_mb"], got["readings"]["end"]["swap_mb"]), (500.0, 500.1))
+    def test_swap_growth_between_the_readings_is_recorded_and_does_not_fail_the_job(self):
+        got = self.run_job([500.0, 650.5])
+        self.assertEqual(got["outcome"], "ok", got["outcome"])
+        self.assertEqual((got["readings"]["start"]["swap_mb"], got["readings"]["end"]["swap_mb"], got["readings"]["swap_growth_mb"]),
+                         (500.0, 650.5, 150.5))
 
-    def test_flat_or_falling_swap_does_not(self):
-        self.assertEqual(self.run_job([500.0, 500.0])["outcome"], "ok")
-        self.assertEqual(self.run_job([500.0, 400.0])["outcome"], "ok")
-
-    def test_the_readings_are_recorded_either_way(self):
+    def test_the_readings_are_recorded(self):
         got = self.run_job([500.0, 500.0])
         for k in ("load1", "available_mb", "reclaimable_mb", "swap_mb"):
             self.assertIn(k, got["readings"]["start"])
             self.assertIn(k, got["readings"]["end"])
+        self.assertEqual(got["readings"]["swap_growth_mb"], 0.0)
+
+    def test_plant_a_job_level_swap_void_fails_a_job_whose_cells_ran_clean(self):
+        # The plant: the job-level pair as a verdict. A job whose runner voided a cell and re-ran it clean ends above its baseline; this
+        # test is what notices the pair being used as a verdict (the job must stay ok).
+        got = self.run_job([500.0, 900.0])
+        self.assertEqual(got["outcome"], "ok", "a re-run-in-place cell leaves swap above the start; the job is not FAILED for it")
 
 
 class LogFailureMarkers(unittest.TestCase):

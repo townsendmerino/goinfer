@@ -603,8 +603,9 @@ checkout. The M1 cell is re-queued night-only with its exit 75 on a fit refusal.
     tack started a run between a job and its settle);
   - its `--not-before HH:MM` hour has passed (night-only jobs), and its estimate still ends before the morning deadline (06:30);
   - the box is not under heavy load by the void rule (`scripts/void_rule.py`; changed 2026-11-08), for every job: load at most half the cores and
-    available memory at least the job's declared fit need, with no margin (`--fit-need-gb`; 0 skips the memory clause). System swap that grows
-    while the job runs voids it: the log gets a `VOID:` line, so the job is FAILED, and the four readings at its start and end are in its record.
+    available memory at least the job's declared fit need, with no margin (`--fit-need-gb`; 0 skips the memory clause). The four readings at the job's start and
+    end are in its record, with the swap growth between them as information only: the cell is the unit of the swap void, so a job that voided a
+    cell and re-ran it in place is not failed here; the runner's own per-cell void is the verdict.
 - **Retry:** a job whose own fit check refuses exits 75 (EX_TEMPFAIL). The runner re-queues it after a backoff (about 15 minutes) and records
   it VOID-refused only once `--retry-until HH:MM` passes. Any other non-zero exit is FAILED, as today.
 - **Status:** `night.py status` says idle or busy: "idle, N queued, next eligible at T" or "running <job>". tack's launcher waits for "no
