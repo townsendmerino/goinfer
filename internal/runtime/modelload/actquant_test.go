@@ -2,7 +2,6 @@ package modelload
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -36,16 +35,13 @@ func TestActivationSafeQuant(t *testing.T) {
 
 // TestActivationSafeQuant_ggufBackend: a Phi-3 .gguf (Phi-4's too: llama.cpp files both as phi3) defaults to q4k on the CPU, CUDA
 // and Metal backends (docs/tasks/task-int4-weight-quality-2026-09.md's phases 1a and 1b; Metal's q4k lane, OP6's default switch) and
-// to int8int8 + per-32 on WebGPU, which has no Q4_K kernel. An explicit quant is never replaced by q4k, on Metal as elsewhere. Needs
-// the real Phi-3 GGUF for PeekModelType; skips without it (a skip is not a pass).
+// to int8int8 + per-32 on WebGPU, which has no Q4_K kernel. An explicit quant is never replaced by q4k, on Metal as elsewhere. The
+// file is testdata/phi3-q4k-tiny.gguf; what -backend auto hands this function is TestPhi3Default_autoRunsResidentOnTheQ4KLane's
+// (backend/metal), through loadflags.Resolve.
 func TestActivationSafeQuant_ggufBackend(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skipf("no home directory: %v", err)
-	}
-	gguf := filepath.Join(home, "models", "phi3-mini-4k-gguf", "Phi-3-mini-4k-instruct-q4.gguf")
+	const gguf = "../../../testdata/phi3-q4k-tiny.gguf" // read for its header only (PeekModelType): nothing is loaded beside it
 	if _, err := os.Stat(gguf); err != nil {
-		t.Skipf("no Phi-3 GGUF at %s", gguf)
+		t.Fatalf("the committed Phi-3 fixture: %v", err)
 	}
 	for _, c := range []struct {
 		backend, explicit, wantQ string
