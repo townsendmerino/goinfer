@@ -131,7 +131,7 @@ func TestKV4b_deliveredBytes(t *testing.T) {
 				}
 				if g.windowed {
 					// withWindowedKV's test slack sizes the window group below production's, which decoder.ResidentKVBytes prices; the
-					// agreement at production's slack is TestKVBytes_agreement's.
+					// agreement at production's slack is TestMM5_cudaPoolsAreTheDeclaredRows' windowed pass.
 					t.Logf("one slot at %d positions: f32 %d bytes, f16 %d", r16.ctxCap, b32+n32, b16+n16)
 					return
 				}

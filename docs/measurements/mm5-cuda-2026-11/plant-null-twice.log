@@ -1,0 +1,15 @@
+== plant null-twice: decoder/residentneed.go: '			null += block
+' -> '			null += 2 * block
+'
+    membufs_test.go:380: ../testdata/nemotron-tiny: the plan prices 32768 B of KV a block at -kv f16; the hand table 16384
+    membufs_test.go:383: ../testdata/nemotron-tiny: the plan prices 65536 B of KV a block at f32; the hand table 32768
+    membufs_test.go:392: llama-tiny: the plan prices 40960 B of KV a block at int8; the hand table 20480
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.013s
+FAIL
+--- FAIL: TestMM5_cudaPoolsAreTheDeclaredRows (22.36s)
+    mm5_test.go:89: mistral-tiny-window kv=f16 windowed: the build holds 1032448 bytes of KV over 2 slots at a 1024-position share; the plan prices 1081600
+    mm5_test.go:89: mistral-tiny-window kv=f32 windowed: the build holds 2064640 bytes of KV over 2 slots at a 1024-position share; the plan prices 2162944
+    mm5_test.go:89: gemma2-tiny kv=f16 windowed: the build holds 1769728 bytes of KV over 2 slots at a 1024-position share; the plan prices 1835264
+    mm5_test.go:89: gemma2-tiny kv=f32 windowed: the build holds 3539200 bytes of KV over 2 slots at a 1024-position share; the plan prices 3670272
+    mm5_test.go:89: cohere2-tiny kv=f16 windowed: the build holds 786688 bytes of KV over 2 slots at a 1024-position share; the plan prices 819456

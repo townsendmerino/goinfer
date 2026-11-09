@@ -1,0 +1,12 @@
+== plant window-block: decoder/residentneed.go: 'int64((held+KVBlockRows-1)/KVBlockRows+1)' -> 'int64((held+KVBlockRows-1)/KVBlockRows)'
+--- FAIL: TestMM5_handTableCUDA (0.01s)
+    membufs_test.go:407: gemma2-tiny windowed at 1,024 positions: the plan prices 819328 B a slot; the hand table 852096
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.013s
+FAIL
+--- FAIL: TestMM5_cudaPoolsAreTheDeclaredRows (22.49s)
+    mm5_test.go:89: mistral-tiny-window kv=f16 windowed: the build holds 1032448 bytes of KV over 2 slots at a 1024-position share; the plan prices 934144
+    mm5_test.go:89: mistral-tiny-window kv=f32 windowed: the build holds 2064640 bytes of KV over 2 slots at a 1024-position share; the plan prices 1868032
+    mm5_test.go:89: gemma2-tiny kv=f16 windowed: the build holds 1769728 bytes of KV over 2 slots at a 1024-position share; the plan prices 1704192
+    mm5_test.go:89: gemma2-tiny kv=f32 windowed: the build holds 3539200 bytes of KV over 2 slots at a 1024-position share; the plan prices 3408128
+    mm5_test.go:89: cohere2-tiny kv=f16 windowed: the build holds 786688 bytes of KV over 2 slots at a 1024-position share; the plan prices 737536
