@@ -105,12 +105,14 @@ kernel has no declaration. Start from the 19 B findings, which name most of the 
 - First step: reproduce it on a small safetensors checkpoint; the fix is either the check's int4 / int4mix equivalence or the
   build writing the kind asked for. From `docs/completed/task-mellum21-2026-10.md`'s status block.
 
-**G54 · `TestSpecDecodeCurve`'s depth-512 lossless violation on CUDA: read the current result before any spec-decode claim** —
-`cuda`, **filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions)**
-- Recorded as red on clean main (depth 512, token 10: spec 6929, sequential 3910) in
-  `docs/completed/task-cuda-deltanet-prefill-2026-09.md`; the last evidence found since is a SKIP.
-- Kept as a pre-claim check: before any published or decided spec-decode number on CUDA, run the test by its name on nobara
-  and read for `--- PASS`. A red is a correctness bug in the speculative path, filed here.
+~~**G54 · `TestSpecDecodeCurve`'s depth-512 lossless violation on CUDA**~~ — `cuda`, filed 2026-11-09 (mbp2-fit, from Francis's
+doc-review decisions, B4-4); **CLOSED 2026-11-09: PASS on nobara** (main f8fb5b883, under the exclusive timing lock, 12 s):
+lossless at every depth, accepting 1.00 at 128, 0.47 at 512 and 0.43 at 2048 tokens per round. The depth-512 violation recorded
+in `docs/completed/task-cuda-deltanet-prefill-2026-09.md` no longer reproduces. The run's tok/s are not quotable: that main
+carries a solo-decode regression.
+- **Kept as the pre-claim check:** before any published or decided spec-decode number on CUDA, run on nobara
+  `GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -count=1 ./backend/cuda/ -run '^TestSpecDecodeCurve$' -v` (it skips
+  without the variable) and read for `--- PASS`. A red is a correctness bug in the speculative path, filed as a new item.
 
 **G53 · Metal and CUDA: admission claims whole-vector QK-norm, and the build refuses it on a GQA model** — `metal`, `cuda`, **filed 2026-11-03 (mac-sb11m, from Gemini's review of #627); not started**
 - `backend/metal/model.go:buildResident` and `backend/cuda/backend.go` decline a layer with `QKNormWhole` at `nH != nKV`, while `residentBackendFeatures` claims `FeatQKNormWhole` for any KV heads. So `Admit` says resident and the load runs on the CPU. The review says real Olmo 3 checkpoints are GQA; no checkpoint here could confirm that, so read one's `num_key_value_heads` first.
