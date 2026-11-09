@@ -39,6 +39,12 @@
   (about 250 µs and 167 µs a token), not measured for a parallel form; the max-scan half lost (1.39x to 3.78x slower). Ships
   at ≥ 1.2x at Gemma vocab with bit-identity, the min-p candidate order preserved; killed otherwise. The design and band are
   in `docs/completed/red-october.md` § "R15".
+  *Updated 2026-11-09: the parallel arms and their bit-identity tests are built, test-only
+  (`internal/runtime/sampling/sampler_filter_parallel_test.go`); what is left is the timed A/B, by day on the Mac,
+  in-process:* `for i in $(seq 10); do python3 scripts/timing_lock.py run --label r15 -- go test ./internal/runtime/sampling
+  -run '^$' -bench 'TopKByLogit_gemmaVocab|MinPScan_gemmaVocab' -benchtime 2000x -count 1; done`, about 2 minutes. Each
+  iteration runs serial then parallel, so the ten iterations are ten matched pairs per component. A component ships, wired
+  into `topFilterLogits`, at a median ≥ 1.2x with 9 of 10 pairs faster; otherwise it is killed and its arm removed.
 
 - **P41 · R13's full three-arm sweep, both boxes, all sizes — OPEN, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `either`. The grouped CPU decode attention shipped
   default on (1.32x served at depth 8192), but the three-arm, both-box, every-size sweep was never run, and the Linux half

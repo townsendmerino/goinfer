@@ -15,6 +15,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // G-ids-0 (docs/measurements/integration-harness-2026-10/id-roundtrip-step0-2026-10-15.md, §(c) and its Amendment 1): the
@@ -30,7 +31,7 @@ import (
 // Fixture: testdata/ids-step0/replies.jsonl.gz, built from step 0's requests (prep.py) and its replay (run.jsonl.gz).
 // Tokenizer: testdata/mellum2-tokenizer (Mellum2 and Mellum2.1 share tokenizer.json byte for byte); the test skips without it.
 func TestIDsCarried_G0(t *testing.T) {
-	tkDir := filepath.Join("..", "..", "testdata", "mellum2-tokenizer")
+	tkDir := testpath.Testdata(t, "mellum2-tokenizer")
 	if _, err := os.Stat(filepath.Join(tkDir, "tokenizer.json")); err != nil {
 		t.Skipf("G-ids-0 needs the Mellum2 tokenizer at %s (a per-machine symlink): %v", tkDir, err)
 	}

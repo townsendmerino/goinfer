@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // TestSideRequests_snapshotPrefixes checks a run's restored prefixes against the ids the run itself wrote (KV7 step 2, the night rerun with bodies kept,
@@ -31,7 +32,7 @@ func TestSideRequests_snapshotPrefixes(t *testing.T) {
 	if name == "" {
 		t.Fatal("SIDE_CONFIG names the configuration")
 	}
-	tk, err := modelload.Tokenizer(filepath.Join("..", "..", "testdata", "mellum2-tokenizer"))
+	tk, err := modelload.Tokenizer(testpath.Testdata(t, "mellum2-tokenizer"))
 	if err != nil {
 		t.Skipf("needs the Mellum2 tokenizer: %v", err)
 	}
@@ -110,7 +111,7 @@ func TestSideRequests_sessionStartShare(t *testing.T) {
 			paths = append(paths, p)
 		}
 	}
-	tk, err := modelload.Tokenizer(filepath.Join("..", "..", "testdata", "mellum2-tokenizer"))
+	tk, err := modelload.Tokenizer(testpath.Testdata(t, "mellum2-tokenizer"))
 	if err != nil {
 		t.Skipf("needs the Mellum2 tokenizer: %v", err)
 	}

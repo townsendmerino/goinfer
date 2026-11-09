@@ -283,13 +283,6 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	if !toolUnionEnabled || (mode != "auto" && mode != "required") || (mode == "auto" && !toolUnionAuto) {
 		return
 	}
-	// A server started with speculative decoding keeps its pre-union auto behaviour: every speculative path refuses a
-	// LogitProcessor (gated or not), so arming the lazy union would silently cost such a server its drafter on every
-	// multi-tool auto turn, a regression it opted out of by opting in. required is unaffected: it rides the grammar-fused
-	// speculative path.
-	if mode == "auto" && (lm.spec || lm.blockSpec != nil) {
-		return
-	}
 	prefix, suffix, argsKey, array, ok := lm.tmpl.ToolCallWrapper()
 	if !ok {
 		gr.callPostCheck = mode == "required" && forcedCallEnforcement(lm.tmpl) == "post-check"
@@ -314,12 +307,22 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 		return
 	}
 	// auto: the template's lazy masker (chat.Template.ToolGrammar) masks nothing until the call opener arrives, so a prose
-	// answer is never touched. A LogitProcessor only: gr.masker stays nil, because the grammar-fused speculative path assumes a
-	// grammar live from token 1, which a lazy one is not. The Gate keeps the decoder's on-device fast paths until the opener
-	// arrives (SamplingParams.LogitProcessorGate).
+	// answer is never touched.
 	lazy, err := lm.tmpl.ToolGrammar(tools, lm.cachedTokenBytes(), eos)
 	if err != nil {
 		warnToolUnionOff(err)
+		return
+	}
+	armLazy(lm, gr, lazy)
+}
+
+// armLazy puts an auto turn's lazy union on gr. On a server that speculates it goes to gr.lazy, with no LogitProcessor, which every
+// speculative path refuses: the engine then speculates until the call's opener and takes the constrained path from there
+// (engine.Request.Lazy). Elsewhere it is a LogitProcessor only, gated (SamplingParams.LogitProcessorGate): gr.masker stays nil,
+// because the grammar-fused speculative path assumes a grammar live from token 1, which a lazy one is not.
+func armLazy(lm *loadedModel, gr *genRequest, lazy *constrain.LazyMasker) {
+	if lm.spec || lm.blockSpec != nil {
+		gr.lazy = lazy
 		return
 	}
 	gr.sp.LogitProcessor = lazy.Process

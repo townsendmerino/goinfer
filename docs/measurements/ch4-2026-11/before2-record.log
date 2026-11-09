@@ -1,0 +1,21 @@
+rev 87b41343abf4c0c43f022a738c8e7af603a0f915 2026-11-09 13:19:44 PST load 0.21 0.17 0.18
+=== RUN   TestCH4_giwByteIdentity
+    ch4_giw_gate_test.go:77: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf config b7f4284d1af2406d0bec91aa2bd816449871f5fbb74e0e30c441f8f14083208d
+    ch4_giw_gate_test.go:77: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf q4k 53e637a2eb6ed11b6a28d07c32878db5d548d25971f64a5a155a00c7ed3a4922
+    ch4_giw_gate_test.go:77: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf int4 c29dfe6465674df186725b346c1f660cbc5abc1b93532bc471e825d5631f23de
+    ch4_giw_gate_test.go:77: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf int8int8 dd4859a06d8e15316d45c80765be0906163d307f5fbb876b248cb1bef537d429
+    ch4_giw_gate_test.go:77: gemma3-1b-q4_k_m.gguf config 3e78e25bf17a26f9b17974804e09d3dd134ceb3d902de5e01b01bf2bb37caefd
+    ch4_giw_gate_test.go:77: gemma3-1b-q4_k_m.gguf q4k c39f65edc974bc69cc32e11b0c9ab9de05423eb43c50f05921227773620d25e6
+    ch4_giw_gate_test.go:77: gemma3-1b-q4_k_m.gguf int4 0219e84625f67021ee5cdb12f09ce562c5e493558ad945777cefa603704e91b3
+    ch4_giw_gate_test.go:77: gemma3-1b-q4_k_m.gguf int8int8 36e23c173a3d8079e25108cab97727ddaa15db61ba41d3d407945d1f69bd4ef9
+    ch4_giw_gate_test.go:77: Phi-3-mini-4k-instruct-q4.gguf config c42224facfc063aa22f2f17ec2c0354da7ee79a07bacf06b8a8f946227bc77e5
+    ch4_giw_gate_test.go:77: Phi-3-mini-4k-instruct-q4.gguf q4k e7440c06908ea93bf0816d34e8f091a54099b2b51c5f11210947ff9a80f844d4
+    ch4_giw_gate_test.go:77: Phi-3-mini-4k-instruct-q4.gguf int4 0838b00a453eca5291384ad1681399a51c2dd2373e01f1ce32c39c6ce98a244a
+    ch4_giw_gate_test.go:77: Phi-3-mini-4k-instruct-q4.gguf int8int8 4b20fd7d05595d72aaaab0391c60ec5b2af09c7cd935cf9c2b47d915c816d32d
+    ch4_giw_gate_test.go:122: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: plant (one dequantized value past its group scale) changes the int4 hash (red, as it must be)
+    ch4_giw_gate_test.go:122: gemma3-1b-q4_k_m.gguf: plant (one dequantized value past its group scale) changes the int4 hash (red, as it must be)
+    ch4_giw_gate_test.go:122: Phi-3-mini-4k-instruct-q4.gguf: plant (one dequantized value past its group scale) changes the int4 hash (red, as it must be)
+    ch4_giw_gate_test.go:128: recorded 12 hashes to /home/francis/goinfer-bench/ch4/before2.txt
+--- PASS: TestCH4_giwByteIdentity (40.99s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	41.005s

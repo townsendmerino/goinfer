@@ -15,6 +15,9 @@ type Request struct {
 	Sampling  decoder.SamplingParams
 	// Masker is the request's grammar constraint (response_format or a tool grammar), nil when unconstrained.
 	Masker *constrain.Masker
+	// Lazy is a tool_choice auto turn's lazy tool-call union on a server that speculates: the turn speculates until the call's
+	// opener, then takes the constrained path (lazyTurn). Read only with Masker nil, on a speculating engine.
+	Lazy *constrain.LazyMasker
 	// NoSpeculation asks for plain decoding on a CPU session, never a speculative path there (goinfer_confidence
 	// records one position per emitted token). The resident path never speculates a constrained request.
 	NoSpeculation bool
