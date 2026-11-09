@@ -1,7 +1,6 @@
 package decoder
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 )
@@ -36,7 +35,9 @@ func olmoHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	var ropeFlat struct {
 		RopeTheta *float64 `json:"rope_theta"`
 	}
-	_ = json.Unmarshal(cfg.RopeParameters, &ropeFlat)
+	if err := rereadRope("olmo_hybrid", cfg.RopeParameters, &ropeFlat); err != nil {
+		return nil, nil, err
+	}
 	noRope := ropeFlat.RopeTheta == nil
 	var base float64
 	var scaling *ropeScaling

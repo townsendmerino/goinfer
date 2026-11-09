@@ -1,7 +1,6 @@
 package decoder
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 )
@@ -56,7 +55,9 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			Mscale       *float64 `json:"mscale"`
 			MscaleAllDim *float64 `json:"mscale_all_dim"`
 		}
-		_ = json.Unmarshal(raw, &y)
+		if err := rereadRope(cfg.ModelType, raw, &y); err != nil {
+			return nil, nil, err
+		}
 		if y.Mscale != nil || y.MscaleAllDim != nil {
 			m, mAll := 1.0, 1.0
 			if y.Mscale != nil {

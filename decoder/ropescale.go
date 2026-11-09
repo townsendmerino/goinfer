@@ -188,6 +188,19 @@ func parseRopeSpec(name string, raw json.RawMessage) (*ropeLayerSpec, error) {
 	return spec, nil
 }
 
+// rereadRope decodes fields of a rope object the RoPE parser has already accepted into v, for a family that reads a field
+// the parser does not. Absent or null bytes leave v zero; bytes that do not decode into v (a field of the wrong type) are the
+// config's error, since a field read as absent would change the RoPE the family runs.
+func rereadRope(family string, raw json.RawMessage, v any) error {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	if err := json.Unmarshal(raw, v); err != nil {
+		return fmt.Errorf("decoder(%s): rope_parameters: %w", family, err)
+	}
+	return nil
+}
+
 // parseRopeFlat reads the qwen3_5_moe flat rope_parameters object
 // {rope_type, rope_theta, partial_rotary_factor, …}: one ropeLayerSpec (base +
 // optional scaling) plus the partial-rotary fraction (HF defaults it to 0.25
