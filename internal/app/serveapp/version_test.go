@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -58,11 +59,14 @@ func TestServeVersionFlag_reportsOnlyCPUForTheRootBinary(t *testing.T) {
 		t.Skipf("cannot build cmd/serve here: %v\n%s", err, out)
 	}
 
-	// Both spellings, because the release workflow greps one and a user types the other.
-	for _, arg := range []string{"--version", "version"} {
+	// Every spelling: the release workflow greps one, a user types another, and a pinning client (tack) runs -version.
+	for _, arg := range []string{"--version", "-version", "version"} {
 		out, err := exec.Command(bin, arg).CombinedOutput()
 		if err != nil {
 			t.Fatalf("%s %s: %v\n%s", bin, arg, err, out)
+		}
+		if first, _, _ := strings.Cut(string(out), "\n"); !versionLine.MatchString(first) || !strings.HasPrefix(first, "goinfer-serve ") {
+			t.Errorf("%s: the first line %q is not \"goinfer-serve <version>[ (<revision>)]\"", arg, first)
 		}
 		line := backendsLine(t, string(out))
 		if line != "cpu" {
@@ -118,6 +122,11 @@ func TestServeUnknownPositional_namesTheSubcommands(t *testing.T) {
 
 // backendsLine extracts the value of the single `backends:` line, failing loudly if the report
 // no longer has one — a renamed field would otherwise make every check above vacuous.
+// versionLine is the first line of a --version report, which a client that pins goinfer's version compares: the binary's name, then
+// the module version the toolchain stamped (a tag from `go install …@vX.Y.Z`, a pseudo-version from a checkout, or "(devel)"), then
+// the commit in parentheses where the version does not already carry it.
+var versionLine = regexp.MustCompile(`^\S+ (v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+dirty)?|\(devel\)|\(unknown\))( \([0-9a-f]{7,12}(-dirty)?\))?$`)
+
 func backendsLine(t *testing.T, report string) string {
 	t.Helper()
 	for l := range strings.SplitSeq(report, "\n") {
@@ -185,5 +194,15 @@ func TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered(t *testing.T) {
 	}
 	if want > 0 && !strings.Contains(help, fmt.Sprintf("All %d flags", want)) {
 		t.Errorf("help claims a flag count that does not match the %d flags it prints", want)
+	}
+}
+
+// TestVersionReport_namesTheBinaryWithoutItsExtension: on Windows os.Args[0] ends in .exe, and the first line a pinning client parses
+// is the binary's name without it.
+func TestVersionReport_namesTheBinaryWithoutItsExtension(t *testing.T) {
+	for _, prog := range []string{"goinfer-serve", "goinfer-serve.exe", "goinfer-serve.EXE"} {
+		if first, _, _ := strings.Cut(versionReport(prog), "\n"); !strings.HasPrefix(first, "goinfer-serve ") || !versionLine.MatchString(first) {
+			t.Errorf("versionReport(%q): the first line %q is not \"goinfer-serve <version>[ (<revision>)]\"", prog, first)
+		}
 	}
 }
