@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strings"
 	"testing"
 )
 
@@ -188,8 +189,10 @@ func TestAttnSoftcap_decodeKernels(t *testing.T) {
 }
 
 // TestAttnSoftcap_faBlk covers attention_fa_blk, the split-KV block kernel at head dimension 128, with attention_fa_combine, at both
-// graded group sizes and on both sides of the depth floor where it engages. A capped layer does not take it today
-// (resident.canUseAttnFA); this holds the capped build of it to the reference, and the uncapped build outside the bar.
+// graded group sizes. A capped layer does not take it today (resident.canUseAttnFA); this holds the capped build of it to the reference.
+// The kernel forms a score at two sites, a full block of 32 keys and the shorter run at a chunk's end, and each case plants its keys at
+// one site's positions only: there the capped build meets the bar, and a build with that site's cap dropped misses it, as does the
+// uncapped build. Every query head of a group shares most of one direction, so the planted keys compete in every head's softmax.
 func TestAttnSoftcap_faBlk(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -206,64 +209,113 @@ func TestAttnSoftcap_faBlk(t *testing.T) {
 	}
 	cq := d.NewCommandQueue()
 	const nKV, hd = 2, 128
+	// faBlkSites splits the keys a dispatch reads into the two sites, by the kernel's own walk: split s takes keys
+	// [s·chunkLen, (s+1)·chunkLen), simdgroup g of 4 takes the blocks of 32 starting at chunkStart + 32g, every 128 keys, and a block
+	// cut short by the chunk's end is the tail site.
+	faBlkSites := func(nKeys, nSplit int) (full, tail []int) {
+		chunkLen := (nKeys + nSplit - 1) / nSplit
+		for sp := range nSplit {
+			start, end := sp*chunkLen, min((sp+1)*chunkLen, nKeys)
+			for sg := range 4 {
+				for b0 := start + sg*32; b0 < end; b0 += 128 {
+					for j := b0; j < min(b0+32, end); j++ {
+						if end-b0 >= 32 {
+							full = append(full, j)
+						} else {
+							tail = append(tail, j)
+						}
+					}
+				}
+			}
+		}
+		return full, tail
+	}
+	// siteDropped is src with the cap dropped at one of the kernel's two score sites, by the order they appear in its section.
+	siteDropped := func(t *testing.T, src string, site int) string {
+		const begin, end = "// ---- attention_fa_blk begin", "// ---- attention_fa_blk end ----"
+		b, e := strings.Index(src, begin), strings.Index(src, end)
+		sec := src[b:e]
+		parts := strings.Split(sec, r17RoutedScore)
+		if len(parts) != 3 {
+			t.Fatalf("attention_fa_blk has %d score sites, want 2", len(parts)-1)
+		}
+		join := []string{r17RoutedScore, r17RoutedScore}
+		join[site] = r17GradedScore
+		return src[:b] + parts[0] + join[0] + parts[1] + join[1] + parts[2] + src[e:]
+	}
 	checked := 0
 	for _, cap := range []float32{50, 5} {
 		src, err := withAttnSoftcap(allKernels, cap)
 		if err != nil {
 			t.Fatal(err)
 		}
-		capped, err := d.CompileLibrary(src, MSL3_1)
-		if err != nil {
-			t.Fatalf("compile with cap %g: %v", cap, err)
-		}
 		for _, G := range []int{6, 7} {
 			kernel := fmt.Sprintf("attention_fa_blk_g%d", G)
-			pCap, err := d.NewComputePipeline(capped, kernel)
-			if err != nil {
-				t.Fatalf("pipeline %s: %v", kernel, err)
+			pipe := func(what, src string) Pipeline {
+				lib, err := d.CompileLibrary(src, MSL3_1)
+				if err != nil {
+					t.Fatalf("compile %s with cap %g: %v", what, cap, err)
+				}
+				p, err := d.NewComputePipeline(lib, kernel)
+				if err != nil {
+					t.Fatalf("pipeline %s (%s): %v", kernel, what, err)
+				}
+				return p
 			}
-			pPlain, err := d.NewComputePipeline(plain, kernel)
-			if err != nil {
-				t.Fatalf("pipeline %s: %v", kernel, err)
-			}
+			pCap, pPlain := pipe("capped", src), pipe("uncapped", allKernels)
+			pDropped := map[string]Pipeline{"full": pipe("full site dropped", siteDropped(t, src, 0)), "tail": pipe("tail site dropped", siteDropped(t, src, 1))}
 			nH := G * nKV
-			for _, nKeys := range []int{attnFADepthFloor, attnFADepthFloor + 1, 4100} {
-				for plantName, plants := range softcapPlants {
-					name := fmt.Sprintf("cap=%g %s nKeys=%d, %s", cap, kernel, nKeys, plantName)
-					rng := rand.New(rand.NewSource(int64(G*100000 + nKeys*10 + len(plants))))
-					kvDim := nKV * hd
-					qv := randUnit(rng, nH*hd)
-					kf, vf := randUnit(rng, nKeys*kvDim), randUnit(rng, nKeys*kvDim)
-					for i, a := range plants {
-						s := (nKeys - 1) * (i + 1) / len(plants)
+			for _, nKeys := range []int{attnFADepthFloor + 1, 4100} {
+				full, tail := faBlkSites(nKeys, attnFABlkSplit)
+				for site, positions := range map[string][]int{"full": full, "tail": tail} {
+					for plantName, plants := range softcapPlants {
+						name := fmt.Sprintf("cap=%g %s nKeys=%d %s site, %s", cap, kernel, nKeys, site, plantName)
+						rng := rand.New(rand.NewSource(int64(G*100000 + nKeys*10 + len(plants) + len(site))))
+						kvDim := nKV * hd
+						qv := randUnit(rng, nH*hd)
 						for kvh := range nKV {
 							h0 := kvh * G
-							for j := range hd {
-								kf[s*kvDim+kvh*hd+j] = a * qv[h0*hd+j]
+							for g := 1; g < G; g++ {
+								for j := range hd {
+									qv[(h0+g)*hd+j] = 0.85*qv[h0*hd+j] + 0.15*qv[(h0+g)*hd+j]
+								}
 							}
 						}
+						kf, vf := randUnit(rng, nKeys*kvDim), randUnit(rng, nKeys*kvDim)
+						for i, a := range plants {
+							s := positions[(len(positions)-1)*(i+1)/len(plants)]
+							for kvh := range nKV {
+								for j := range hd {
+									kf[s*kvDim+kvh*hd+j] = a * qv[kvh*G*hd+j]
+								}
+							}
+						}
+						kh, vh := make([]uint16, len(kf)), make([]uint16, len(vf))
+						for i := range kf {
+							kh[i], vh[i] = f32ToF16(kf[i]), f32ToF16(vf[i])
+							kf[i], vf[i] = f16ToF32(kh[i]), f16ToF32(vh[i])
+						}
+						run := func(p Pipeline) []float32 {
+							return blkRun(t, d, cq, p, comb, G, nKV, nKeys, attnFABlkSplit, qv, kh, vh)
+						}
+						got, dropped, siteOff := run(pCap), run(pPlain), run(pDropped[site])
+						d.ReleaseAll()
+						want := attnRef64Cap(qv, kf, vf, nH, nKV, hd, 0, nKeys, float64(float32(1/math.Sqrt(hd))), float64(cap))
+						if cos, ma := softcapCosMaxAbs(got, want); !(cos >= softcapCosBar && ma <= softcapMaxAbsBar) {
+							t.Errorf("%s: cosine %.7f, max abs error %.3g against the capped float64 reference (want >= %g and <= %g)", name, cos, ma, softcapCosBar, softcapMaxAbsBar)
+						}
+						for what, out := range map[string][]float32{"WITHOUT the cap": dropped, "with the " + site + " site's cap dropped": siteOff} {
+							if cos, ma := softcapCosMaxAbs(out, want); cos >= softcapCosBar && ma <= softcapMaxAbsBar {
+								t.Errorf("%s: the kernel built %s also meets the bar (cosine %.7f, max abs %.3g): this case cannot see that cap", name, what, cos, ma)
+							}
+						}
+						checked++
 					}
-					kh, vh := make([]uint16, len(kf)), make([]uint16, len(vf))
-					for i := range kf {
-						kh[i], vh[i] = f32ToF16(kf[i]), f32ToF16(vf[i])
-						kf[i], vf[i] = f16ToF32(kh[i]), f16ToF32(vh[i])
-					}
-					got := blkRun(t, d, cq, pCap, comb, G, nKV, nKeys, attnFABlkSplit, qv, kh, vh)
-					dropped := blkRun(t, d, cq, pPlain, comb, G, nKV, nKeys, attnFABlkSplit, qv, kh, vh)
-					d.ReleaseAll()
-					want := attnRef64Cap(qv, kf, vf, nH, nKV, hd, 0, nKeys, float64(float32(1/math.Sqrt(hd))), float64(cap))
-					if cos, ma := softcapCosMaxAbs(got, want); !(cos >= softcapCosBar && ma <= softcapMaxAbsBar) {
-						t.Errorf("%s: cosine %.7f, max abs error %.3g against the capped float64 reference (want >= %g and <= %g)", name, cos, ma, softcapCosBar, softcapMaxAbsBar)
-					}
-					if cos, ma := softcapCosMaxAbs(dropped, want); cos >= softcapCosBar && ma <= softcapMaxAbsBar {
-						t.Errorf("%s: the kernel built WITHOUT the cap also meets the bar (cosine %.7f, max abs %.3g): this case cannot see a dropped cap", name, cos, ma)
-					}
-					checked++
 				}
 			}
 		}
 	}
-	t.Logf("%d cap × group size × key-count × plant cases within the bar, and outside it with the cap dropped", checked)
+	t.Logf("%d cap × group size × key-count × site × plant cases within the bar, and outside it with the cap dropped at the planted site", checked)
 }
 
 // TestAttnSoftcap_prefillKernel covers attention_prefill, the exact prefill kernel: M query rows over a cached prefix,
