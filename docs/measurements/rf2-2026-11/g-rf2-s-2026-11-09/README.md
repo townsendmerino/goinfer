@@ -71,7 +71,22 @@ The median is **1.217**. `content_sha` is equal in all 24 turns of each pair.
   - Across all 41 pairs the median difference is +0.3 MB. This is host-memory spread, not memory RF2 holds: CUDA's pool takes
     VRAM, and peak VmSwap is 0 on every server.
   - The registered rule decides. Both readings are recorded here.
-- **Verify: not read.** `bench_spec_lane.py` needed `--build-b` (#816) to compare two builds; those cells run separately.
+- **Verify: PASS** (bar: at least 0.98), read separately below.
+
+## Verify cells (2026-11-09, nobara, after #816)
+
+`bench_spec_lane.py --build-b`: exact attention with `-spec ngram`, A = the old build and B = the new, on the same two binaries as
+above (sha256 99541c53bf50938b and 0e232a46521c0b41). Three pairs per cell, arm order alternating, plus an A/A floor. Raw data is in
+`verify/`.
+
+| cell | prompt tokens | B/A per pair | median | A/A floor |
+|---|---|---|---|---|
+| 1.5B:3900 | 1,072 | 1.0019, 1.0030, 1.0060 | 1.0030 | 1.0003 |
+| 7B:7500 | 1,969 | 0.9999, 1.0008, 1.0004 | 1.0004 | 1.0004 |
+
+- **Verify: PASS.** On this build, verify keeps today's call: the solo shapes do not move onto `StepRagged` until RF2-3b-3, so this
+  is the do-nothing reading the final build is compared against.
+- The cell names are characters of `decoder/model.go` in the prompt; the token counts above are what the engine reported.
 
 ## Files
 

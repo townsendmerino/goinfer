@@ -1,5 +1,14 @@
 # Release hygiene, 2026-10: three changes that remove a manual read from a tag
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status 2026-11-09:** complete: every item has shipped. Item 1 (versioned `.v<N>.giw` sidecars: `decoder/sidecar.go:streamCachePath`, `freshCache`, `adoptLegacy`), item 2 (`cmd/gate/changelog.go:runChangelog`) and item 3 (`cmd/gate/release.go:runRelease`) were built 2026-10-11, with the GPU-gate record (`cmd/gate/gpu_record.go:runGPURecords`) and row 11's parity-sweep record (`cmd/gate/parity_record.go:loadParityRecords`); the release command has since grown to twelve rows (RELEASING.md) and has cut v0.23.0 to v0.24.1, and its records are committed under `docs/measurements/gpu-gate/` and `docs/measurements/parity-sweep/`. Item 1b shipped 2026-11-06 (2cd816056) as `goinfer-chat cache prune-sidecars`, not the `goinfer-pull` subcommand planned here (`pull/prune.go:StaleSidecars`). The sidecar code lives in `decoder`, not in `internal/runtime/prequant` as item 1 says. Never built, owned by no doc: a tag-push CI job for `gate changelog` (RELEASING.md step 9 and the `gate release` row run it by hand), and hard links on Windows. Every instruction below is a record of what was asked, not a task.
+
 Status 2026-10-11. Item 1 is built and merged with this file. Items 2 and 3 are planned here and not started.
 The three came out of the library-surface review's release-readiness notes. They share one purpose: a drift
 between a thing that changed and the sentence that says so is found by a command, not by someone reading.
