@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // goinfer_confidence is refused wherever it would be dropped: on a route that does not write it back, and without a
@@ -50,7 +50,7 @@ func TestConfResult_payload(t *testing.T) {
 // no goinfer_confidence key at all; streaming carries the records as one event; a tools request with the flag is a
 // 400.
 func TestConfidence_endToEnd(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	path := testpath.Testdata(t, "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no local checkpoint at %s (an untracked symlink): %v", path, err)
 	}

@@ -480,6 +480,11 @@ type Options struct {
 	// StreamWeights) needs when its predicted working-set rate falls below moeSlowTokPerSecThreshold (moeworkingset.go):
 	// without it the load is refused. A no-op everywhere else.
 	AcceptSlowMoE bool
+	// RequireBackend makes a decline an error: when Backend names a backend other than the CPU and the load builds no
+	// resident runner on it (the backend is not linked, no device answered, or it declined the model), Load closes the model
+	// and returns an error that errors.Is matches against ErrBackendDeclined, carrying the decline's reason, instead of
+	// running on the CPU. A CPU load is unaffected.
+	RequireBackend bool
 	// MoEPager is the CPU expert pager's backing mode for a .giw-paged MoE model: "mmap" (advice-based,
 	// zero-copy) or "pool" (owned buffers + pread; a firm cap on every platform). "" = the platform
 	// default (MoEPagerDefault: pool on darwin, mmap elsewhere), unless GOINFER_MOE_PREAD_CPU overrides.

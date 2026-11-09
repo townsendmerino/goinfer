@@ -3,18 +3,18 @@ package serveapp
 import (
 	"encoding/json"
 	"flag"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // KV7 step 2, M3 (docs/tasks/task-kv7-step2-boundary-snapshot-2026-10.md §8): the boundary is where the stable system-and-tools section ends, read from the
 // render, and the same for two sessions of one client whatever their first message says.
 func TestPrefixBoundary_endsWhereTheFirstTurnBegins(t *testing.T) {
-	tk, err := modelload.Tokenizer(filepath.Join("..", "..", "testdata", "mellum2-tokenizer"))
+	tk, err := modelload.Tokenizer(testpath.Testdata(t, "mellum2-tokenizer"))
 	if err != nil {
 		t.Skipf("needs the Mellum2 tokenizer: %v", err)
 	}
