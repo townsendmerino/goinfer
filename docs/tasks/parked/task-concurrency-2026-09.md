@@ -150,7 +150,7 @@
 > MC0–MC1 address the first problem and stay inside goinfer's stated niche (one generation at a
 > time). MC2–MC3 address the second and bend it; see "House rules this doc bends."
 >
-> **Siblings.** [`red-october.md`](../red-october.md) R12 (owns W7; this doc is its follow-on) ·
+> **Siblings.** [`red-october.md`](../../completed/red-october.md) R12 (owns W7; this doc is its follow-on) ·
 > [`task-work-queue-2026-09.md`](../task-work-queue-2026-09.md) (J1 fair admission, which MC3 changes;
 > J6 prefix-aware scheduling, measured 1.024× and not shipped, which MC1 may re-open; J8, which
 > MC2 absorbs if the owner agrees) · [`../positioning.md`](../../positioning.md) ("not a serving

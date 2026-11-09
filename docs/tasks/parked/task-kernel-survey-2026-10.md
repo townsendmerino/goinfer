@@ -240,7 +240,7 @@ noticed: `docs/queue-performance.md` has two entries numbered P24 (`attn_fused`,
    twin removed that decline (KS-H1).
 7. **`docs/completed/task-forward-architecture-2026-10.md` §6** says "decode already replays CUDA graph segments". Graphs are
    opt-in and off by default.
-8. **`docs/tasks/red-october.md` §2.3** calls the CUDA GEMM done ("Nothing left to fund there"). It compared against a
+8. **`docs/completed/red-october.md` §2.3** calls the CUDA GEMM done ("Nothing left to fund there"). It compared against a
    whole-curve Ollama figure that the 2026-09-21 per-interval marginals supersede (KS-B1).
 9. **P24's 1.72% of tensor peak and 12.6% occupancy** describe the retired 64×64 kernel. The shipped 128-row kernel has no
    ncu reading (KS-B2).

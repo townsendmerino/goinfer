@@ -4997,7 +4997,7 @@ Moved from `decoder/forwardn.go` (the comment above `attnGroupedNEONSize`) on 20
 attnGroupedNEONSize is the query-head group size aikit's grouped acc64
 kernels (MatmulQKAcc64Group/MatmulAVAcc64Group) have a NEON port for — the
 1.5B's real GQA ratio (NumHeads/NumKVHeads), R13's registered decision
-shape (docs/tasks/red-october.md, aikit linalg commit af926e3). Any other
+shape (docs/completed/red-october.md, aikit linalg commit af926e3). Any other
 group ratio still runs correctly through the same Group functions (their
 Go fallback is the oracle every G is gated against), but slower than G
 separate per-head calls — so attendGroupedHeads is gated to EXACTLY this
@@ -11186,7 +11186,7 @@ Moved from `decoder/doc.go` (the comment above `doc.families`) on 2026-10-09.
 Moved from `internal/runtime/sampling/sampler_gumbel.go` (the comment above `sampler_gumbel`) on 2026-10-09.
 
 ```text
-Temperature-only sampling by Gumbel-max (docs/tasks/red-october.md R7b, owner decision 2026-09-20).
+Temperature-only sampling by Gumbel-max (docs/completed/red-october.md R7b, owner decision 2026-09-20).
 
 WHAT IT IS. For a logit row l and temperature T, the token is
 
@@ -12830,7 +12830,7 @@ arch; if a case ever differs by architecture, the table must be keyed by GOARCH,
 Moved from `decoder/attn_distinct_bytes_bench_test.go` (the comment above `BenchmarkAttnDistinctBytes`) on 2026-10-09.
 
 ```text
-BenchmarkAttnDistinctBytes is R13 (docs/tasks/red-october.md) step 0(iii): "the CPU's version of
+BenchmarkAttnDistinctBytes is R13 (docs/completed/red-october.md) step 0(iii): "the CPU's version of
 the Metal collapse probe and CUDA's ncu traffic ratio" — it asks whether the real GQA layout
 (nKV distinct KV heads, each read by nH/nKV query heads) is faster than an otherwise-identical
 MHA-EXPANDED layout (nH distinct KV heads, one per query head, same per-head QKᵀ/scores·V work)

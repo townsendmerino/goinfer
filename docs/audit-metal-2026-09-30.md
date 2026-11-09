@@ -5,7 +5,7 @@
 **Tree:** goinfer `844700f8` (2026-09-30) + aikit `v1.51.0` (the `gpu/` Metal bindings goinfer's `metal/` calls through) +
 MLX `9c3d355` (2026-09-30; MLX paths below are relative to `mlx/backend/metal/` unless they start with `mlx/`). The
 working repo is at `cd7eb362` (v0.20.0 and later): seven commits after the audited snapshot, none of them under `metal/`,
-`decoder/model.go`, `decoder/fitguard.go`, `decoder/fitplan.go`, `docs/benchmarks.md` or `docs/tasks/red-october.md`
+`decoder/model.go`, `decoder/fitguard.go`, `decoder/fitplan.go`, `docs/benchmarks.md` or `docs/completed/red-october.md`
 (checked with `git log 844700f8..HEAD -- <those paths>`), so every `path:line` below holds in the working tree for those
 files. Files outside that list were read at the snapshot only.
 
@@ -20,7 +20,7 @@ onto a different quantisation scheme), so the MLX lens here is technique-by-tech
 
 **Method:** six independent reviewers by area (A prefill; B decode kernels; C runtime; D MoE, paging, DeltaNet, gpt-oss;
 E batched decode, speculative verify, multi-slot KV, LoRA, sampling; F correctness, gates and claims). Each read the
-record first (the Sep 12 audit's §0, §5 and §7, `docs/tasks/red-october.md` §2/§6 and R1–R19, the measurement records
+record first (the Sep 12 audit's §0, §5 and §7, `docs/completed/red-october.md` §2/§6 and R1–R19, the measurement records
 and the autoresearch notes inside kernel comments) so that no recorded negative is re-proposed, then the area's Metal
 code in full, then the MLX analog, and each carried forward its share of the Sep 12 IDs. Where a recorded negative's
 premise looks stale the finding is filed as a REVISIT with the premise named and the cheapest probe. The consolidation
@@ -1584,7 +1584,7 @@ repo for M26 experts (3.19) equal 3.19 MiB by my count (5.95M weights x 4.5 bits
 
 Geometry used for counts (rec): M26 = Gemma-4-26B-A4B, 30 layers all MoE, hidden 2816, 128 experts,
 moe_inter 704 (`docs/measurements/prefill-moe-m26-2026-09-04.md:20`), top_k 8 (N=8 is "top_k itself",
-`docs/tasks/red-october.md:424`), 3.19 MB per expert (`metal/gemma4_26b_paged_test.go:128,168`).
+`docs/completed/red-october.md:424`), 3.19 MB per expert (`metal/gemma4_26b_paged_test.go:128,168`).
 
 ### (a) Summary
 

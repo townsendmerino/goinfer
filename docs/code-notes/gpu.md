@@ -913,7 +913,7 @@ attached (-tags gpu); the default build is pure-Go CPU.
 Moved from `backend/webgpu/prefill_prof.go` (the comment above `prefillProf`) on 2026-10-09.
 
 ```text
-R10's prefill-profile step (docs/tasks/red-october.md, docs/measurements/webgpu-prefill-decomp-2026-09-22.md):
+R10's prefill-profile step (docs/completed/red-october.md, docs/measurements/webgpu-prefill-decomp-2026-09-22.md):
 per-category wall time for the batched prefill path, mirroring backend/cuda/prefill.go's own profTic/profToc
 exactly (same shape, same accepted trade-off — "category boundaries are syncs, so the category sum
 runs a bit over the pipelined wall time... the price of per-kernel attribution", backend/cuda/prefill_decomp_test.go's
@@ -1993,7 +1993,7 @@ Moved from `backend/webgpu/decode_argmax_headroom_test.go` (the comment above `T
 
 ```text
 TestDecodeArgmaxHeadroom is R10's "measure before building" step for the greedy-decode item named
-in docs/tasks/red-october.md R10 ("on-device argmax for the greedy path with a K-entry MapAsync ...
+in docs/completed/red-october.md R10 ("on-device argmax for the greedy path with a K-entry MapAsync ...
 so the 608 KB readback goes"): ForwardSample's greedy branch (backend/webgpu/resident_sample.go) still calls
 Run() — full LM-head GEMV + a vocab*4-byte staging copy + MapAsync + a host linear scan — where a
 device-side argmax kernel would need only the GEMV (unavoidable either way) plus a tiny readback.
@@ -2754,7 +2754,7 @@ and decode speed. The AGREEMENT NUMBER drives the default-vs-opt-in flip — no 
 Moved from `backend/webgpu/prefill_dispatch_profile_test.go` (the comment above `TestPrefill_dispatchProfile`) on 2026-10-09.
 
 ```text
-TestPrefill_dispatchProfile is R10's prefill investigation (docs/tasks/red-october.md): "extend
+TestPrefill_dispatchProfile is R10's prefill investigation (docs/completed/red-october.md): "extend
 the ablation harness to the batched path at P in {256, 1024}: per-class time with one class
 omitted, so the GEMM, the attention, the batched norms/rope and the KV write each carry a
 number. Then one arithmetic line: GFLOPS achieved by the GEMM class against the card's
