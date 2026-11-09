@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Grades run-kv16-speed.sh against the bands pre-registered in docs/tasks/task-cuda-f16-kv-2026-10.md.
+"""Grades run-kv16-speed.sh against the bands pre-registered in docs/completed/task-cuda-f16-kv-2026-10.md.
 
 Per cell (model, depth): the ratio of the f16 arm's median per-run decode rate to the f32 arm's, pooled over both arm orders. Ships when every cell is >= 0.98, parked when the
 worst is in 0.95-0.98, killed when any is below 0.95. Also prints each order alone, so an order effect shows. A cell with no rate on either arm is VOID, not a pass.
