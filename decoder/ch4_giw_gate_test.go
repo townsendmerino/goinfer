@@ -7,7 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +17,8 @@ import (
 // TestCH4_giwByteIdentity is code-health CH4's gate (docs/tasks/task-code-health.md): the .giw a real GGUF transcodes to must be
 // byte-identical before and after a gguf.go refactor. GOINFER_CH4_GGUF names the fixtures (comma-separated paths to real K-quant
 // .gguf files); each one's .giw weights body, what gguf.go produces (StreamTranscodeGGUF, no target), is hashed as it streams at q4k
-// (the source's Q4_K kept), int4 and int8int8, twice each (the output must be deterministic), and its SHA-256 is written to
+// (the source's Q4_K kept), int4 and int8int8, twice each (the output must be deterministic), and so is its parsed Config's JSON
+// (ggufConfig: the hyperparameters, floats among them, the weights body does not carry); each SHA-256 is written to
 // GOINFER_CH4_RECORD's file (one "basename quant sha" line each) or checked against GOINFER_CH4_WANT's. Nothing is written to disk.
 // Its red, on every run: each fixture is transcoded once more at int4 with one dequantized value of its first layer row set past its
 // group's scale (ggufRowFilter, the dequantizer's own seam), and that hash must differ, or the gate could not see a decode change. The seam does not
@@ -54,24 +55,46 @@ func TestCH4_giwByteIdentity(t *testing.T) {
 		return hex.EncodeToString(h.Sum(nil))
 	}
 	var lines []string
+	configSum := func(path string) string {
+		t.Helper()
+		g, err := OpenGGUFMmap(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer g.Close()
+		cfg, err := ggufConfig(g)
+		if err != nil {
+			t.Fatalf("%s: ggufConfig: %v", filepath.Base(path), err)
+		}
+		b, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := sha256.Sum256(b)
+		return hex.EncodeToString(h[:])
+	}
+	check := func(key, got string) {
+		t.Logf("%s %s", key, got)
+		lines = append(lines, key+" "+got)
+		if wantFile == "" {
+			return
+		}
+		switch w, ok := want[key]; {
+		case !ok:
+			t.Errorf("%s: no recorded hash in %s", key, wantFile)
+		case w != got:
+			t.Errorf("%s: sha256 %s, recorded %s: the transcode's bytes changed", key, got, w)
+		}
+	}
 	for _, p := range paths {
+		check(filepath.Base(p)+" config", configSum(p))
 		for _, q := range []string{"q4k", "int4", "int8int8"} {
 			key := filepath.Base(p) + " " + q
 			a, b := sum(p, q), sum(p, q)
 			if a != b {
 				t.Fatalf("%s: two transcodes differ (%s, %s); the gate needs a deterministic .giw", key, a, b)
 			}
-			t.Logf("%s %s", key, a)
-			lines = append(lines, fmt.Sprintf("%s %s", key, a))
-			if wantFile == "" {
-				continue
-			}
-			switch w, ok := want[key]; {
-			case !ok:
-				t.Errorf("%s: no recorded hash in %s", key, wantFile)
-			case w != a:
-				t.Errorf("%s: .giw sha256 %s, recorded %s: the transcode's bytes changed", key, a, w)
-			}
+			check(key, a)
 		}
 	}
 	for _, p := range paths {
