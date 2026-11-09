@@ -100,7 +100,8 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
   `TemplateFromStruct`, its Go-type twins, are Hard (above).
 - **Per-field confidence.** `constrain.Masker`'s `CaptureConfidence` and `FieldConfidence`, with `ConfidenceOptions` and
   `FieldConfidence`.
-- **Tool-call wiring.** `chat.Template`'s `ToolCallWrapper`, `ToolCallOpener`, `ParseToolCallsFor` and `SplitThink`, and
+- **Tool-call wiring.** `chat.Template`'s `ToolGrammar` (the masker for a turn that may call a tool), `ToolCallWrapper`,
+  `ToolCallOpener`, `ParseToolCallsFor` and `SplitThink`, and
   `constrain.ToolCallsGrammar`, `ToolSpec`, `NewLazyMasker` and `LazyMasker`: the parts a caller assembles a constrained
   tool call from (`ParseToolCalls` itself is Hard, above).
 - **Fit and placement reports.** `decoder.FitDeclineError`, `ErrWontFitResident` and `ResidentDeclineError`, and
