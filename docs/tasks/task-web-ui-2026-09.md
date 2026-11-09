@@ -819,7 +819,7 @@ checks that the list is laid out below its heading at full width (found by W15's
     quant/backend. Read-only: shows what *would* happen, changes nothing.
   - **Still blocked, not this item's problem to solve:** an EXACT check *before* the download —
     header-only GGUF parsing (param counts/MoE geometry without a full `Load()`) — is the specific
-    half `task-fit-to-hardware.md` Phase 1 left unstarted (`docs/tasks/task-gpu-paths-2026-09.md`'s
+    half `task-fit-to-hardware.md` Phase 1 left unstarted (`docs/completed/task-gpu-paths-2026-09.md`'s
     G11 entries have the full reasoning for why). The coarse size-based tag above is what stands in
     for it until that lands; do not conflate the two or promise the exact number pre-download.
   - **Making it changeable, not just visible — the part that actually revisits W5.** The mechanism
