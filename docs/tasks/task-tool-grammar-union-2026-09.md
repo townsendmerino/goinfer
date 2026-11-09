@@ -36,7 +36,7 @@
 | T5 | done | — | `constrain/lazy.go:LazyMasker` (disarms after each call) |
 | T6 | done | — | `docs/measurements/tool-union-2026-09-24.md` |
 | T7 | done | — | `docs/server.md` "What `tool_choice` actually constrains"; `docs/env-vars.md` (`GOINFER_TOOL_UNION`) |
-| R1 | decision | a llama3 call that follows prose: keep, park or kill | `constrain/lazy.go:NewCallKeyLazyMasker` arms only at the output's start |
+| R1 | blocked | parked (Francis, 2026-11-09). Trigger: a harness trace where prose-then-call on llama3 does real damage | `constrain/lazy.go:NewCallKeyLazyMasker` arms only at the output's start |
 | R2 | decision | the auto union on a speculative-decoding server: keep, park or kill | `internal/app/serveapp/tools.go:constrainToolUnion` skips auto when the model speculates |
 | R3 | moved | `docs/tasks/task-harness-reliability-2026-10.md`, row Gate-3 | its Gate 3 cells name one MoE |
 | R4 | moved | `docs/tasks/task-harness-reliability-2026-10.md`, row Gate-3 | its Gate 3 asks for three traces |

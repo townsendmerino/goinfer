@@ -45,7 +45,7 @@ Boxes: `linux` (nvidia-rtx2070s, CUDA) · `mac` (Apple Silicon, Metal).
 
 ## In flight
 
-- **Metal runs int8 weights natively (W8A8)**, `docs/tasks/task-metal-int8-2026-10.md`. Slice 1, dense int8 decode,
+- **Metal runs int8 weights natively (W8A8)**, `docs/completed/task-metal-int8-2026-10.md`. Slice 1, dense int8 decode,
   built 2026-10-01 with the native path off by default; F1 and F2 passed by day, F3 and S are on the Mac's night queue.
   Owner decision O1: native, once F3 and S pass.
 

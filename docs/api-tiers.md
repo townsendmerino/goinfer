@@ -62,7 +62,8 @@ for a given input IS, because callers pin prompts against it.
 - `constrain.Grammar` (interface), `constrain.NewMasker`, `constrain.Masker`'s
   `Process`, `MaskAt`, `Commit`, `Reset`, `CanEnd`, `StopWhenComplete`, `ForcedRun`,
   `ForcedBytesRun`, `GrammarClone`
-- `constrain.TokenBytes`, `constrain.SchemaFromStruct`
+- `constrain.TokenBytes`, `constrain.SchemaFromStruct`, `constrain.GrammarFromStruct`, `constrain.TemplateFromStruct` (the
+  README's structured-output API)
 
 ### `cmd/serve` — the operator surface
 
@@ -94,12 +95,13 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
 
 - **The library's logger.** `decoder.SetLogger`.
 - **Load's error kinds.** `decoder.ErrUnsupportedModel`, `ErrUnknownQuant`, `ErrUnknownBackend`, for `errors.Is`.
-- **Structured output from Go types and JSON Schema.** `constrain.GrammarFromStruct`, `constrain.TemplateFromStruct` and
-  `constrain.JSONSchema`, the README's structured-output API. Experimental until JSON Schema's `format` keyword is decided
-  (refused or enforced; it is accepted and ignored today).
+- **Structured output from JSON Schema.** `constrain.JSONSchema`, which holds a string's `format` for `date`, `time`,
+  `date-time`, `uuid`, `ipv4` and `email` (any other format is an annotation). `GrammarFromStruct` and
+  `TemplateFromStruct`, its Go-type twins, are Hard (above).
 - **Per-field confidence.** `constrain.Masker`'s `CaptureConfidence` and `FieldConfidence`, with `ConfidenceOptions` and
   `FieldConfidence`.
-- **Tool-call wiring.** `chat.Template`'s `ToolCallWrapper`, `ToolCallOpener`, `ParseToolCallsFor` and `SplitThink`, and
+- **Tool-call wiring.** `chat.Template`'s `ToolGrammar` (the masker for a turn that may call a tool), `ToolCallWrapper`,
+  `ToolCallOpener`, `ParseToolCallsFor` and `SplitThink`, and
   `constrain.ToolCallsGrammar`, `ToolSpec`, `NewLazyMasker` and `LazyMasker`: the parts a caller assembles a constrained
   tool call from (`ParseToolCalls` itself is Hard, above).
 - **Fit and placement reports.** `decoder.FitDeclineError`, `ErrWontFitResident` and `ResidentDeclineError`, and
@@ -135,7 +137,8 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
 - **Adapters at compute time.** `Model.LoadAdapter`, `HasAdapter`, `Session.UseAdapter`,
   `Session.ClearAdapter`, and `Options.LoRA`'s multi-adapter behaviour.
 - **Diagnostics and capture.** `Model.ForwardCapture`, `ForwardSubCapture`, `HiddenLast`,
-  `DecodePath`, `PrefillPath`, `PrefillPathReporter`, `ResidentDecline`, `MmapByteOffset`.
+  `DecodePath`, `PrefillPath`, `PrefillPathReporter`, `ResidentDecline`, `MmapByteOffset`, and `Generation.ResidentDeclined`
+  (why one generation ran on the CPU on a resident model).
 - **Serialization plumbing.** `SerializeWeights`, `SerializeWeightsTo`, `StreamTranscodeGGUF`,
   `TranscodeGIW`, `TranscodeGIWTimed`, `TranscodeGIWLoRA`, `TranscodeGIWLoRATimed`, `TranscodePhases`, `GIWAdapterLoRA`,
   `EnsureCachedGIW`, `SidecarPath`, `SidecarPathIfFresh`, `SidecarPathIfCurrent`, `SidecarState`, `DefaultToSidecar`,

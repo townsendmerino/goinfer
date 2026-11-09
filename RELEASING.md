@@ -121,6 +121,10 @@ the report is shown. Only Francis adds an entry, as with `swap_guard_approved_by
    section does not name; exit 1 means something is owed. A whole-string match (a route's `{id}` placeholders read as `{}`, a new route's sub-routes ride with it); anything that is not release-note material
    goes in `docs/changelog-waivers.txt` as `<kind> <name> <reason>` (a route's name is its method and path), the reason mandatory. aikit has the same rule for exported API
    (`tools/releasegate`, "changelog-api"). `-base` and `-head` run it against a past release.
+10. **The CPU suites under Intel SDE, when this release moved a kernel or the decoder, or bumped aikit** (hardware-followups item 2):
+   queue `docs/measurements/sde-2026-10-04/run-sde-goldens.sh` on nobara (the night queue's `sde-goldens`) and read its `summary.txt` before tagging.
+   It runs aikit's `linalg` suite and goinfer's tiny-fixture goldens under `-hsw` (the control), `-icx` and `-spr`; a difference under the
+   VNNI targets is arithmetic, not emulation noise. Not a CI job: SDE is a click-through-license download. The same item applies at every aikit bump.
 
 ## The two-step tag (post-M-19)
 

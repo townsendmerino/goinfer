@@ -11,17 +11,17 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| M1 | decision | Francis: refuse or enforce JSON Schema `format` | `constrain/schema.go:schemaKeywords` still accepts it as annotation-only |
+| M1 | done | — (Francis: enforce the common formats) | `constrain/schema_format.go:fmtStep`; `constrain/schema_format_test.go:TestJSONSchema_formatIsEnforced` |
 | M2 | done | — | `chat/chat.go:Template.StopIDs` (Hard); `chat/stopids_test.go:TestTemplate_StopIDs`; the smallest structured program uses it |
 | M3 | done | — | f02d0b534; `tokenizer/stream.go:Tokenizer.NewStream` |
-| M4 | open | a tool-grammar helper on `chat.Template`; document `ToolCall.ID` and the `<think>` lead on `ParseToolCalls` | the parts exist (`constrain/tools_union.go:ToolCallsGrammar`), no helper |
+| M4 | done | — | `chat/toolgrammar.go:Template.ToolGrammar`, which serve's auto mode now calls; `chat/tools.go:Template.ParseToolCalls` documents `ID` and the reasoning lead; `chat/toolgrammar_test.go:TestTemplate_ToolGrammar` |
 | M5 | done | — | merged 2026-10-11 |
 | M6 | done | — | 3d50ec1f8; `decoder/lifecycle.go:Model.endGenerations` |
 | M7 | done | — | the contract is `decoder.Model`'s doc comment; `decoder/concurrency_contract_test.go:TestModel_concurrentGenerationsBeyondTheResidentsPlacesRunOnTheCPU` pins the case past the resident's places |
-| M8 | open | document that `Generation.Err` wraps `ctx.Err` and how often prefill checks | the comments are unchanged |
+| M8 | done | — | the comments on `decoder.Model.Generate` and `decoder.Generation.Err`; `decoder/generation_cancel_test.go:TestGeneration_errReportsCancellation` |
 | M9 | open | an `Options` way to make a backend decline an error (the kinds shipped in 275701c0c) | `docs/measurements/error-hygiene-audit-2026-11-04/README.md`, follow-up 4 |
 | U1 | done | — (promoting any of them to Hard is a separate call) | `docs/api-tiers.md`, Experimental: structured output, per-field confidence, tool-call wiring, fit and placement reports, embeddings |
-| S1 | open | warn, or report, when a long prompt leaves the Metal resident path | `decoder/fitplan.go` `MetalCtxDefault` is 4096 |
+| S1 | done | — | `decoder.Generation.ResidentDeclined` reports it per turn and `decoder/model.go:Model.warnResidentCap` warns once per model; `decoder/resident_declined_test.go:TestGeneration_residentDeclinedSaysWhyItRanOnTheCPU` |
 | S5 | done | — | 3d50ec1f8 (`ErrClosed`) |
 
 ## 1. Why now

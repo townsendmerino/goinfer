@@ -1,5 +1,5 @@
 #!/bin/bash
-# Night job: gate W7-int8 (docs/tasks/task-metal-int8-2026-10.md, "Gate W7-int8"), pre-registered there on 2026-10-04
+# Night job: gate W7-int8 (docs/completed/task-metal-int8-2026-10.md, "Gate W7-int8"), pre-registered there on 2026-10-04
 # before any graded run: MC3's W7 harness on the 1.5B coder at int8int8, one serve binary pinned at b1e6fa4b for both
 # arms, old at -max-concurrent 1 (one generation at a time), new at -max-concurrent 4 (the batched int8 step), both
 # -kv-sessions 4 -exact-prefill, greedy, --fixed-nonce, a fresh server per cell, 4 then 1 then 2 clients, old/new x 3
@@ -8,7 +8,7 @@
 # Binary: (cd ~/tmcode/goinfer/metal && CGO_ENABLED=0 go build -o ~/goinfer-bench/metal-int8-2026-10/serve-metal-b1e6fa4b ./cmd/serve)
 # Queued with:
 #   python3 scripts/night.py add metal-int8-w7 --est 25 --by "Claude (Mac session), Metal int8 W7 served confirmation" \
-#     --doc docs/tasks/task-metal-int8-2026-10.md -- bash docs/measurements/metal-int8-2026-10/run-w7-int8.sh
+#     --doc docs/completed/task-metal-int8-2026-10.md -- bash docs/measurements/metal-int8-2026-10/run-w7-int8.sh
 # Logs: ~/goinfer-logs/metal-int8-2026-10/w7/.
 set -u
 REPO=$HOME/tmcode/goinfer

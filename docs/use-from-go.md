@@ -195,6 +195,8 @@ The supported subset:
 - objects, with required and optional properties and `additionalProperties: false`;
 - arrays, with `items`, `minItems` and `maxItems`;
 - `string`, `number`, `integer`, `boolean` and `null`;
+- a string's `format`, held for `date`, `time`, `date-time`, `uuid`, `ipv4` and `email` (any other
+  format is an annotation, so the string stays free);
 - `enum` and `const`;
 - nesting to any depth.
 

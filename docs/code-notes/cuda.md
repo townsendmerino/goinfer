@@ -24,7 +24,7 @@ Moved from `backend/cuda/prefill.go` (the comment in the body of `prefillCore`) 
 ```text
 K=V (Gemma-4 global layers): this layer has NO v_proj. V is v_norm(the RAW pre-RoPE k_proj output), so copy the k projection into the V buffer here and normalize it
 below, before rope_kv_batched rotates k. Mirrors segA's decode path op for op. It used to project k a SECOND time "because decode does": decode now copies too
-(R-23, docs/tasks/task-recompute-audit.md), so the two still agree, and neither reads the k weight twice. kBb and vBb are [M, kvDim] row-major, so one contiguous
+(R-23, docs/completed/task-recompute-audit.md), so the two still agree, and neither reads the k weight twice. kBb and vBb are [M, kvDim] row-major, so one contiguous
 copy of M*kvDim floats moves every row.
 ```
 
@@ -7779,7 +7779,7 @@ TestKernelFMALint_coversEmbeddedPTX closes the same gap for the FMA lint.
 Moved from `backend/cuda/prefill_tails_identity_test.go` (the comment above `tailsBaselinePath`) on 2026-10-09.
 
 ```text
-R-24 (docs/tasks/task-recompute-audit.md §5): the batched prefill's tail used to download the whole [M, hidden] residual after every pass, though only
+R-24 (docs/completed/task-recompute-audit.md §5): the batched prefill's tail used to download the whole [M, hidden] residual after every pass, though only
 ResidualAll reads it (the argmax and all-logits heads read it on the device, and the last-row tails need one row, which they uploaded back). This gate hashes
 the output of EVERY tail mode the resident exposes, for each fixture, and compares it with the hashes recorded from the code BEFORE that change
 (testdata/prefill_tails_baseline.json). It is device-specific for the same reason keqv_copy_baseline.json is (the PTX is JIT-compiled to the card's own SASS), so

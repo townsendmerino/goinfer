@@ -2,7 +2,7 @@
   "chat": [
     {
       "Name": "accept-slow",
-      "Usage": "acknowledge a -stream-weights paged-MoE load whose predicted working-set rate falls below decoder's own floor (2 tok/s) and load it anyway. Without this, such a load is refused with the predicted rate named, rather than run for hours with zero completions the way an unacknowledged M35/M26-class load did before this flag existed (task-never-swap-2026-09.md S4). The prediction is a PRIOR borrowed from an unrelated CUDA cache curve, not a measurement of this pager — raising -weight-cache to shrink the predicted miss rate is usually the better fix",
+      "Usage": "acknowledge a MoE .giw load decoded on the CPU, through its default mapped sidecar or -stream-weights, whose predicted working-set rate falls below decoder's own floor (2 tok/s) and load it anyway. Without this, such a load is refused with the predicted rate named, rather than run for hours with zero completions the way an unacknowledged M35/M26-class load did before this flag existed (task-never-swap-2026-09.md S4). The prediction is a PRIOR borrowed from an unrelated CUDA cache curve, not a measurement of this pager — raising -weight-cache to shrink the predicted miss rate is usually the better fix",
       "DefValue": "false",
       "Type": "*flag.boolValue"
     },
@@ -130,7 +130,7 @@
   "serve": [
     {
       "Name": "accept-slow",
-      "Usage": "acknowledge a -stream-weights paged-MoE load whose predicted working-set rate falls below decoder's own floor (2 tok/s) and load it anyway. Without this, such a load is refused with the predicted rate named, rather than run for hours with zero completions the way an unacknowledged M35/M26-class load did before this flag existed (task-never-swap-2026-09.md S4). The prediction is a PRIOR borrowed from an unrelated CUDA cache curve, not a measurement of this pager — raising -weight-cache to shrink the predicted miss rate is usually the better fix",
+      "Usage": "acknowledge a MoE .giw load decoded on the CPU, through its default mapped sidecar or -stream-weights, whose predicted working-set rate falls below decoder's own floor (2 tok/s) and load it anyway. Without this, such a load is refused with the predicted rate named, rather than run for hours with zero completions the way an unacknowledged M35/M26-class load did before this flag existed (task-never-swap-2026-09.md S4). The prediction is a PRIOR borrowed from an unrelated CUDA cache curve, not a measurement of this pager — raising -weight-cache to shrink the predicted miss rate is usually the better fix",
       "DefValue": "false",
       "Type": "*flag.boolValue"
     },

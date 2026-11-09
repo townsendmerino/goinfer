@@ -22,8 +22,8 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| M0 | open | pre-register, then run mcode on the Mac and nobara; it also owes M2's re-run with no `--ctx` | no compat record under `docs/measurements/` |
-| M1 | open | after M0: an integrations page for minimax-code and a `serve check` first-turn row | `internal/guard/servecheck/check.go` has the opencode-shaped harness rows only |
+| M0 | blocked | parked (Francis, 2026-11-09): pre-register, then run mcode on the Mac and nobara; it also owes M2's re-run with no `--ctx`. Trigger: Francis unparks it, or a user reports minimax-code against goinfer | no compat record under `docs/measurements/` |
+| M1 | blocked | after M0: an integrations page for minimax-code and a `serve check` first-turn row | `internal/guard/servecheck/check.go` has the opencode-shaped harness rows only |
 | M2 | done | — | `decoder/fitplan.go:MetalFitDefaultCtx` (16384) |
 | M3 | done | built in `task-qwen35-think-prompt-2026-09.md`; a top-level `enable_thinking` and a `/v1/models` thinking field are not built | `internal/app/serveapp/think.go` |
 | M4 | done | built in the same doc | `internal/app/serveapp/reasoning_items.go`; `anthropic_stream.go` |

@@ -61,6 +61,9 @@ type node struct {
 
 	// free: an object whose keys are any strings and whose values are any JSON values (anyObjNode)
 	free bool
+
+	// string: the `format` the grammar holds it to (fmtNone: any string)
+	format strFormat
 }
 
 // The any-value shapes. A kAny frame becomes one of these on its first byte (schemaGrammar.dispatch).
@@ -134,15 +137,15 @@ const maxSchemaDepth = 64
 // safely ignore. Any other keyword is an assertion this package does NOT enforce (pattern,
 // maxLength, oneOf, $ref, uniqueItems, …): the package contract is that it is a compile error,
 // not a silent no-op, so a caller cannot believe a constraint is in force that isn't. `format`
-// is annotation-only by JSON Schema 2020-12 default, so it is allowed and ignored rather than
-// rejected.
+// is enforced on a string for the formats stringFormats names; any other value is an annotation,
+// as JSON Schema 2020-12 defines it, and is allowed and ignored.
 var schemaKeywords = map[string]bool{
 	// enforced
 	"type": true, "enum": true, "const": true,
 	"properties": true, "required": true, "additionalProperties": true, "items": true,
-	"minItems": true, "maxItems": true, "minimum": true,
+	"minItems": true, "maxItems": true, "minimum": true, "format": true,
 	// annotation-only — allowed, not enforced
-	"title": true, "description": true, "default": true, "examples": true, "format": true,
+	"title": true, "description": true, "default": true, "examples": true,
 	"$schema": true, "$id": true, "$comment": true,
 	"deprecated": true, "readOnly": true, "writeOnly": true,
 }
@@ -216,7 +219,8 @@ func (c compiler) compileStrict(s map[string]any, depth int) (*node, error) {
 	case "array":
 		return c.compileArray(s, depth)
 	case "string":
-		return &node{kind: kString}, nil
+		f, _ := s["format"].(string)
+		return &node{kind: kString, format: stringFormats[f]}, nil
 	case "number", "integer":
 		nn, err := nonNegativeKeyword(s)
 		if err != nil && !c.lenient {

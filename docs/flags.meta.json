@@ -105,7 +105,7 @@
   {
    "name": "accept-slow",
    "group": "Memory and swap safety",
-   "summary": "Load a `--stream-weights` paged-MoE model even when its predicted decode rate is below the 2 tok/s floor. Without this, such a load is refused and the predicted rate is named."
+   "summary": "Load a MoE `.giw` (its default mapped sidecar, or `--stream-weights`) even when its predicted decode rate on the CPU is below the 2 tok/s floor. Without this, such a load is refused and the predicted rate is named."
   },
   {
    "name": "moe-cache-experts",
