@@ -262,6 +262,7 @@ var Settings = []Setting{
 	{Name: "GOINFER_SSM_RESIDENT", Env: "GOINFER_SSM_RESIDENT", EnvRole: EnvKnob, Class: Operator, Doc: "docs/env-vars.md"},
 
 	{Name: "BackendAuto", Option: "BackendAuto", Class: Internal, Reason: "loadflags sets it when --backend auto chose the backend"},
+	{Name: "SidecarFor", Option: "SidecarFor", Class: Internal, Reason: "goinfer-chat fit sets it to price a load through the sidecar it would build"},
 	{Name: "Knobs", Option: "Knobs", Class: Internal, Reason: "the per-model knob overrides by variable name; each knob is its own setting"},
 	{Name: "KVDemote", Option: "KVDemote", Class: Internal, Reason: "serve sets it when --kv-host-bytes names a budget"},
 	{Name: "ResidentKVSlotsDefault", Option: "ResidentKVSlotsDefault", Class: Internal, Reason: "serve sets it when --kv-sessions was not given"},

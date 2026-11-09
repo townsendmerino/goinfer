@@ -10,35 +10,42 @@ import (
 // zero-copy load, not a heap allocation. f32 and SplitHalfBytes are never mmap-aliased (f32 is copied at .giw read time;
 // SplitHalfBytes is a derived repack). Unlike aikit's WeightMat.MappedSpan (the expert paging registry), this does not
 // page-align: it answers "did this allocation happen at all", not "can MADV_DONTNEED release whole pages", and rounding
-// would undercount a small mmap-backed tensor.
+// would undercount a small mmap-backed tensor. A heap model standing in for its sidecar (Options.SidecarFor) counts every payload of
+// these kinds, as the bundle maps them.
 func mmapAliasedBytes(m *Model, w *linalg.WeightMat) int64 {
-	if m == nil || len(m.mmap) == 0 {
+	if m == nil {
 		return 0
+	}
+	in := func(b []byte) bool { _, ok := m.MmapByteOffset(b); return ok }
+	if len(m.mmap) == 0 {
+		if m.sidecarFor == "" {
+			return 0
+		}
+		in = func([]byte) bool { return true }
 	}
 	var n int64
 	if q8, sc, _, ok := w.Int8(); ok && len(q8) > 0 {
-		raw := unsafe.Slice((*byte)(unsafe.Pointer(&q8[0])), len(q8))
-		if _, aliased := m.MmapByteOffset(raw); aliased {
+		if in(unsafe.Slice((*byte)(unsafe.Pointer(&q8[0])), len(q8))) {
 			n += int64(len(q8)) + 4*int64(len(sc))
 		}
 	}
 	if q4, sc, _, ok := w.Int4F16(); ok && len(q4) > 0 {
-		if _, aliased := m.MmapByteOffset(q4); aliased {
+		if in(q4) {
 			n += int64(len(q4)) + 2*int64(len(sc)) // int4 scales are binary16
 		}
 	}
 	if p4, sc, ok := w.Int4Row4F16(); ok && len(p4) > 0 {
-		if _, aliased := m.MmapByteOffset(p4); aliased {
+		if in(p4) {
 			n += int64(len(p4)) + 2*int64(len(sc))
 		}
 	}
 	if raw, ok := w.Q4K(); ok && len(raw) > 0 {
-		if _, aliased := m.MmapByteOffset(raw); aliased {
+		if in(raw) {
 			n += int64(len(raw))
 		}
 	}
 	if u, _, ok := w.Half16(); ok && len(u) > 0 {
-		if _, aliased := m.MmapByteOffset(unsafe.Slice((*byte)(unsafe.Pointer(&u[0])), 2*len(u))); aliased {
+		if in(unsafe.Slice((*byte)(unsafe.Pointer(&u[0])), 2*len(u))) {
 			n += 2 * int64(len(u))
 		}
 	}

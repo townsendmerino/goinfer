@@ -96,6 +96,7 @@ type Model struct {
 	prog          *layerProgram // the forward as operations (buildProgram), built once by modelFromOptions
 	exactPrefill  bool          // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
 	backendAuto   bool          // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
+	sidecarFor    string        // Options.SidecarFor: the backend whose sidecar .giw this load stands in for
 	noSelfTest    bool          // Options.noSelfTest: this model IS a self-test fixture, so withResidency must not probe for it (selftest_gpu.go)
 	planResidency bool          // Options.planResidency: FitQuery's open, which plans the resident (plannedDecodePath) instead of building it
 	knobs         *knobSet      // per-model operator knobs, snapshotted once at Load (knobs.go)
@@ -362,6 +363,17 @@ func (m *Model) ResizeExpertCache(reserve int64) (int, error) {
 	return c.ResizeExpertCache(reserve)
 }
 
+// SidecarFor is Options.SidecarFor: the backend whose sidecar .giw this load stands in for, "" for none.
+func (m *Model) SidecarFor() string { return m.sidecarFor }
+
+// layoutBackend is the backend whose weight layout a load builds: the one its sidecar stand-in is for, else the one it runs on.
+func (o Options) layoutBackend() string {
+	if o.SidecarFor != "" {
+		return o.SidecarFor
+	}
+	return o.Backend
+}
+
 // FitDisabled is --fit=off (Options.DisableFit), also set by GOINFER_NO_FIT_DEFAULT (kept working as the original, narrower
 // escape hatch): every "fit by default" behavior reverts to its previous default. Checked by backend packages that implement
 // a fit-by-default policy (cuda.resolveCtxCapFit); decoder itself has none to gate. See docs/tasks/task-fit-to-hardware.md.
@@ -580,6 +592,12 @@ type Options struct {
 	// sets it beside the name.
 	BackendAuto bool
 
+	// SidecarFor names the backend whose sidecar .giw this load stands in for, "" for none: a planner (goinfer-chat fit) opens a source
+	// whose sidecar the real load would build first, to price that load without building it. The weights are built in the layout the
+	// sidecar holds (on metal, canonical int4 with no row4 repack: wantsRow4Fallback), and the resident host copy is priced as the
+	// bundle maps it, every weight payload (mmapAliasedBytes). A load from a .giw ignores it. Per model: Model.SidecarFor.
+	SidecarFor string
+
 	// planResidency is set only by FitQuery's open of a .giw: withResidency builds nothing, so FitQuery can ask the backend what
 	// its build would decide (Model.plannedDecodePath).
 	planResidency bool
@@ -626,7 +644,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, moeUnpinned: opts.MoEExpertsUnpinned,
 		loadAbort:  opts.LoadAbort,
 		extraBytes: opts.ExtraResidentBytes + recurrentSpecReserve(w.arch, opts.Drafter), extraKVPerPos: opts.ExtraResidentKVPerPosition,
-		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, noSelfTest: opts.noSelfTest,
+		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, sidecarFor: opts.SidecarFor, noSelfTest: opts.noSelfTest,
 		planResidency: opts.planResidency}
 }
 
@@ -826,7 +844,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		opts.ResidentContext = pinnedCtx
 	}
 
-	w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), !wantsRow4Fallback(opts.Backend), lora, opts.LoadAbort)
+	w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), !wantsRow4Fallback(opts.layoutBackend()), lora, opts.LoadAbort)
 	if err != nil {
 		closeBackend(be)
 		return nil, err
