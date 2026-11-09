@@ -408,7 +408,7 @@ applied only through the session binding (sessionLRU.bindAdapter → Session.Use
 cache's lora), and the stateless Generate/GenerateNgram… run on a fresh cache with lora == nil,
 so they'd silently return BASE-model output. Route adapter requests down the session path below
 instead; base models keep the resident fast path here (audit R-01). Since G3
-(docs/tasks/task-gpu-paths-2026-09.md), the session path itself is NOT always staged/CPU for
+(docs/completed/task-gpu-paths-2026-09.md), the session path itself is NOT always staged/CPU for
 an adapter: generateInto's useGPU (decoder/model.go) admits prefillFrom==0 with a bound
 resident adapter onto the resident GPU path — a session's FIRST turn. A later turn on the
 same session (prefillFrom>0, continuing off the reused warm prefix) still drops to CPU;
@@ -738,7 +738,7 @@ never the thing truncation drops — it must stay last, because it is the pooled
 Moved from `internal/app/serveapp/embeddings.go` (the comment above `embedTask`) on 2026-10-09.
 
 ```text
-embedTask picks the prompt a taskEmbedder applies (docs/tasks/task-embeddinggemma2.md, Gate 3, owner decision
+embedTask picks the prompt a taskEmbedder applies (docs/completed/task-embeddinggemma2.md, Gate 3, owner decision
 2026-10-06): an explicit task names one of the model's prompts ("none" for none); else input_type maps onto the
 model's own "query" and "document" prompts; else no prompt, which is what sentence-transformers applies by default,
 so a client that knows nothing about prompts gets the reference's own output.
@@ -3341,7 +3341,7 @@ options() path serve uses for every --model entry (D6b, owner decision 2026-10-0
 Moved from `internal/app/serveapp/embeddinggemma2_embedder_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
-TestEmbeddings_taskPromptChoice is Gate 3's prompt rule (docs/tasks/task-embeddinggemma2.md, owner decision
+TestEmbeddings_taskPromptChoice is Gate 3's prompt rule (docs/completed/task-embeddinggemma2.md, owner decision
 2026-10-06): with no task and no input_type the model gets no prompt (sentence-transformers' own default); input_type
 maps onto the model's query and document prompts; task names any of its prompts, and "none" means none. The prompt
 applied is echoed in goinfer_task and the X-Goinfer-Embedding-Task header.

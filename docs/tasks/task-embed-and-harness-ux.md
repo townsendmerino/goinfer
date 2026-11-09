@@ -16,6 +16,25 @@
 > the step that made both hours possible, and the 2026-09-02 audit's serving tranches (C-06, C-07,
 > C-08, M-17, M-18, M-19, M-21, M-22, M-23 fixed the same day) as the floor this builds on.
 
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| P0 | done | — | `pull/resolve.go:Resolve` |
+| P1 | decision | Francis: build the facade, or park it until a mode-2 consumer is named | no `llm/` in the tree; `docs/QUEUE.md` "unblocked and undecided" |
+| G1 | blocked | P1's README example | `.github/workflows/standalone-build.yml` |
+| G2 | blocked | P1; M-28's magnitude bounds still open | `constrain/schema.go:nonNegativeKeyword` |
+| G3 | done | — | `internal/guard/servecheck/check.go` |
+| G4 | done | — | `docs/QUEUE.md` G37, 1.21× |
+| G5 | open | the Open-WebUI and Continue recipes, each with a number; the dsh re-run is parked | `docs/integrations/claude-code.md`; `docs/QUEUE.md` "G5 leftovers" |
+| G6 | done | — | `internal/app/serveapp/banner.go:modelBannerFrom` |
+| P3 | done | — | same as G4 |
+| P4 | done | — | `decoder/resident_reuse.go` |
+| P5 | blocked | P1 | `docs/tasks/parked/task-bindings.md` |
+| I5-rest | open | the four framework smokes and cancel at the SDK level | `apps/sdktest/` has neither |
+| F.1-F.2 | open | settle with P1 | §7 |
+| F.3 | moved | `task-web-ui-2026-09.md` §1 | §7 F.3, decided 2026-09-14 |
+| F.4 | open | confirm the desk-read value in a G5 trace | `docs/completed/task-integration-harness-2026-10.md` §5 H-d |
+
 **The two people.**
 
 - **Mode 2 — the embedder.** A Go developer writing a CLI, a desktop tool, an edge service, who
@@ -138,6 +157,10 @@ now with a reason to exist beyond release hygiene.
 | an 8k-token turn that finishes | CUDA prefill 270 tok/s measured (`docs/server.md:173-200`); CPU ~30; **resident prefix reuse shipped 2026-09-02 (3358e6b)** — agent turn 3 went 9.13 → 0.42 s, so a turn now costs its suffix, not its history | reuse is token-id bookkeeping only (`residentReuseLen`, `decoder/resident_reuse.go`) and nothing rewinds a recurrent state: on the Gated-DeltaNet/Mamba hybrids a reused prefix runs against the state decode left behind, and it was found silently corrupting Qwen3.5 output on CUDA (2026-09-02 run on the 8 GB box; its QUEUE §A entry was still uncommitted there when this line was written) — needs a family exclusion until the state is snapshotted with the prefix; also single-conversation (QUEUE §A) |
 | knowing what it will do before the first request | the banner prints resolved decode/prefill paths (`internal/app/serveapp/main.go:loadDecoder` prefill, `internal/app/serveapp/main.go:requireFastPaths` decode) | the rest of §3.3 |
 | finding out it does not work, fast | `-require-backend` (`:354`) | nothing exercises the *routes* a harness uses |
+
+> **Correction 2026-11-09** (the "8k-token turn" row above): a recurrent family's state is now scored by its checkpoint
+> (`kvmgr.Request.Checkpoint` in `decoder/resident_reuse.go`), and a state that cannot be copied declines reuse with that
+> reason; several conversations are held resident per backend (MC1, `docs/QUEUE.md`).
 
 ### 3.2 One command
 
@@ -294,6 +317,9 @@ by default (the banner says how to turn it on); which of the five routes a given
    **Only that one recipe is published**, because §3.5's own rule is that a recipe with no
    number is not published and Open-WebUI / Continue have none yet.
 
+   > **Correction 2026-11-09:** `docs/integrations/opencode.md` and `docs/integrations/typesafe-jevx.md` are published
+   > too; Open-WebUI and Continue are still unwritten.
+
    **The dsh half of G5 was NOT run** (decided 2026-09-02): dsh is not installed here and
    `server.md` documents its install as an ordeal (npm's resolver hangs; 19 peer plugins added
    one error at a time). The 277 s figure therefore stands un-re-measured. The Claude Code loop
@@ -345,6 +371,10 @@ by default (the banner says how to turn it on); which of the five routes a given
   stream; the heartbeat fix (M-19) should make G5 pass, but the timeout value is unrecorded.
   Measure it in the G5 run rather than assume it.
 
+  > **Note 2026-11-09:** a desk read found 300 s with no bytes received, adjustable with
+  > `CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS` (`docs/completed/task-integration-harness-2026-10.md` §5 H-d); if so the 10 s
+  > heartbeat covers it. A G5 trace has not confirmed it yet.
+
 ## Sources
 
 `docs/api-tiers.md` (the Hard tier; the surfaces the facade must not touch) · `README.md` § "A Go struct the model cannot violate"
@@ -359,4 +389,4 @@ cache dir, the web UI's contract) · `docs/tasks/parked/task-bindings.md` (what 
 L-15 (the floor and the open items this builds on) · `tasks/task-fit-to-hardware.md` (placement, the
 plan, the banner's byte lines).
 
-<!-- doc-reviewed: 2026-09-13 -->
+<!-- doc-reviewed: 2026-11-09 -->

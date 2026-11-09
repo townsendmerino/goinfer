@@ -21,7 +21,7 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| RF2 | active | RF2-1 (#787), RF2-2 (#799), RF2-3a (#804) and RF2-3b-1 (#811, a step heads only the rows it reads) merged. G-RF2-S first-working-build read (2026-11-09, nobara): decode PASS at every depth on 1.5B, 7B and gemma3-1b (0.999-1.001), TTFT PASS (worst 0.982), MC3 PASS at 1.217 with identical replies, never-swap PASS as registered (cell medians -24.5 to +25.6 MB, no swap); verify PASS (1.003 and 1.0004). Next: RF2-3b-2 (split-KV and flash-decode ragged twins), RF2-3b-3 (the solo shapes onto StepRagged), then the final-build read | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below; `docs/measurements/rf2-2026-11/g-rf2-s-2026-11-09/README.md` |
+| RF2 | active | RF2-1 (#787), RF2-2 (#799), RF2-3a (#804) and RF2-3b-1 (#811, a step heads only the rows it reads) merged. G-RF2-S first-working-build read (2026-11-09, nobara): decode PASS at every depth on 1.5B, 7B and gemma3-1b (0.999-1.001), TTFT PASS (worst 0.982), MC3 PASS at 1.217 with identical replies, never-swap PASS as registered (cell medians -24.5 to +25.6 MB, no swap); verify PASS (1.003 and 1.0004). RF2-3b-2a (the flash-decode lane's ragged twins; a step's rows split by arm per layer class) in its PR, identity and G1-K on nobara; next: RF2-3b-2b (split-KV's twins), RF2-3b-3 (the solo shapes onto StepRagged), then the final-build read | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below; `docs/measurements/rf2-2026-11/g-rf2-s-2026-11-09/README.md` |
 | RF3 | blocked | RF2 | FA §5.4 |
 | RF4 | blocked | RF3 and KV5 | FA §7a |
 | RF5 | blocked | RF4; it also takes SB1's op-level interface | FA §7a; SS §8 "SB1" |

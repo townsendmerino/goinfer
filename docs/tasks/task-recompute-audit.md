@@ -16,6 +16,10 @@
 > unpacked on every use, the same activation quantised seven times per layer, an embeddings route that
 > prefills one token at a time, and three O(n²)-per-token loops in serving.
 >
+> **Status 2026-11-09:** R-00 to R-08 and R-11 to R-25 are done, declined or moved (the ledger below); R-01 phase 2 and
+> R-04's resident half belong to KV7-rest in `docs/tasks/task-kv-architecture-2026-10.md`. R-05, R-09, R-10 and the small §5
+> remainders are what this doc still owns. The status below is the 2026-09-03 scoping.
+>
 > **Status: SCOPED 2026-09-03, nothing started as of the scoping.** Read at goinfer `3e45469` and
 > aikit `438acfa` (v1.32.0). Static; every cost figure is quoted from the record that measured it
 > and says so. **Updated 2026-09-04** against `docs/completed/audit-2026-09-02.md`'s full remediation, which
@@ -47,6 +51,24 @@
 > `GenerateSpeculative` already claimed `resBusy` and now forgets too. Mutation-checked; the full
 > mixed-traffic CUDA scenario from R-00's own Gate bullet is still unrun (no CUDA hardware here) —
 > a portable stub-host test covers the same postcondition instead. See R-00 below for detail.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| R-00, R-02, R-03, R-07, R-08 | done | — | `decoder/blockspec.go:BlockSpec.generate` and `decoder/speculative.go:Model.GenerateSpeculative` forget resident ids; the R-02, R-03, R-07 and R-08 sections |
+| R-01 phase 0, R-04 L-15 half, R-06 | done | — | `decoder/resident_reuse.go:Model.reuseLenOf`; `internal/app/serveapp/sessions.go:pickSession`; `decoder/cpu_tuning_other.go:w4a8BatchDefault` |
+| R-01 phase 1 | killed | — | `docs/spec/09-mtp-heads.md` ("Pricing the narrow state snapshot") |
+| R-01 phase 2, R-04 resident half | moved | KV7-rest | `docs/tasks/task-kv-architecture-2026-10.md` §10 |
+| L-05 | moved | — | `docs/tasks/task-peer-benchmarks.md` |
+| R-05 | blocked | re-run `TestGemma4EndToEndThroughput` on a box with the bundles and ~75 GB free; no pager code before that | `decoder/moepaging.go:newExpertPager` |
+| R-09 | open | none planned; out of proportionate scope | `docs/completed/audit-2026-09-02.md` P-10 |
+| R-10 | open | contingent on Gemma 4 CPU decode as a target; the head gather is listed under R-17 | `docs/completed/audit-2026-09-02.md` P-09 |
+| R-11–R-13, R-15–R-23, R-25 | done | — | §5 "Order" item 1; `decoder/kvdequant_parallel.go:dequantKVRows`; `internal/guard/prezerolint` |
+| R-14 rest | open | aikit-side; as they come up | R-13 and R-14, "Not done" |
+| R-15 rest, R-16 dirty flag, R-24 `launchToken` | killed | declined; reopen on new evidence | §5 "Order" item 2 |
+| R-17 rest | open | as they come up | R-17, "Not done" |
+| R-24 drafter trips | blocked | parked: measure the transfer time first | `decoder/blockspec.go:ResidentBlockDrafter` |
+| §5 class | moved | OP4 | `docs/completed/task-forward-architecture-2026-10.md` |
 
 ## 0. What must not change
 
@@ -1132,4 +1154,4 @@ Status 2026-10-05, after the first pass through the list:
    - ~~R-15~~ (done 2026-10-05: the widen is parallel; the O(context) work remains, see R-15);
    - R-17's last small items (its per-token allocations and the AV-writes-into-`ctx` copies were done 2026-10-05; `moeMLP`'s output copy, postOnly's copy, `deltaNetCore`'s `conv` allocation, Gemma 4's head gather and the logprobs scans were sized and left; see R-17), as they come up. R-25 is done: both halves shipped 2026-10-05.
 
-<!-- doc-reviewed: 2026-10-05 -->
+<!-- doc-reviewed: 2026-11-09 -->

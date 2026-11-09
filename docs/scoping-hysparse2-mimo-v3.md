@@ -14,7 +14,7 @@ substrate goinfer already has: MoE, sliding-window attention, partial RoPE, and
 cross-layer KV sharing (Gemma 4 E-models, CPU-only). Two ideas are new: the two-level KV
 sharing, and token-level top-k sparse attention that reuses another layer's cache and
 selection. The design lines up with the current gap: its whole point is cheaper prefill and a
-smaller long-context KV cache, and those are the two areas where `docs/tasks/red-october.md`
+smaller long-context KV cache, and those are the two areas where `docs/completed/red-october.md`
 says goinfer is furthest behind. The practical blocker is size. The published configurations
 are 80B-A3B and 290B-A8B, which on the 16 GB Mac means streaming-only from day one.
 
