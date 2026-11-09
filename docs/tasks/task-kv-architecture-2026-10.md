@@ -189,7 +189,7 @@ slot is gone; and every KV feature is built three or four times.
      CPU path decodes 5.6× slower (4.19 against 23.5 tok/s;
      `docs/measurements/r01-phase2-cpu-fallback-cost-2026-09-23.md`).
    - R-01 phase 2 and FreeToken Lead 1 are both open (`docs/tasks/task-recompute-audit.md`,
-     `docs/tasks/task-freetoken-techniques.md`).
+     `docs/completed/task-freetoken-techniques.md`).
 4. **A conversation that loses its GPU slot is gone.**
    - The CPU path has a RAM → NVMe tier (`internal/app/serveapp/sessions.go:sessionLRU`, `.giw-kv` v3 snapshots,
      `-session-dir`, `-kv-idle-demote`). The GPU paths have nothing.
@@ -1584,7 +1584,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
   - The CPU pager keeps its own cache (D2).
 - **First, measure.** The build goes ahead only if these show the fixed split costs something:
   - per-layer expert hit rates at a fixed total budget on the real Gemma 4 26B-A4B, which is FreeToken Lead 4's first
-    step (`docs/tasks/task-freetoken-techniques.md`);
+    step (`docs/completed/task-freetoken-techniques.md`);
   - the trade curve on one paged-MoE model per GPU box: decode speed, and the longest prompt that fits, against the KV share.
 - **Gates (sketch):**
   - tokens identical to today's at the same split, since paging changes where weights live and not what is computed;
@@ -1658,7 +1658,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
   - lever 5 (a shared KV pool);
   - MC5's paged-KV half (`docs/tasks/parked/task-concurrency-2026-09.md`);
   - R-01 phase 2 and R-04's resident half (`docs/tasks/task-recompute-audit.md`);
-  - FreeToken Lead 1 (`docs/tasks/task-freetoken-techniques.md`);
+  - FreeToken Lead 1 (`docs/completed/task-freetoken-techniques.md`);
   - the reopen condition of `docs/tasks/parked/task-kv-cache-streaming.md` (its host-KV idea becomes KV7);
   - lever 4's third step (KV10);
   - FreeToken Lead 4, pooling the CUDA expert cache across layers (KV11).
@@ -1948,7 +1948,7 @@ Docs and records:
 - **Positioning and policy:** `docs/positioning.md`, `docs/roadmap.md`, `docs/api-tiers.md`, `docs/ARCHITECTURE.md`.
 - **Task docs:**
   - `docs/tasks/parked/task-concurrency-2026-09.md` (MC1, MC3, MC5), `docs/tasks/task-recompute-audit.md` (R-01,
-    R-04), `docs/tasks/task-freetoken-techniques.md` (Lead 1);
+    R-04), `docs/completed/task-freetoken-techniques.md` (Lead 1);
   - `docs/completed/task-cuda-windowed-kv-2026-10.md`, `docs/completed/task-memory-accounting-2026-09.md`,
     `docs/completed/task-never-swap-2026-09.md`;
   - `docs/completed/task-integration-harness-2026-10.md` (I4, I7), `docs/completed/task-cpu-kv-f16-2026-10.md`,

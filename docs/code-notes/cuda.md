@@ -1332,7 +1332,7 @@ Moved from `backend/cuda/testhooks.go` (the comment above `PerLayerCacheStatsFor
 ```text
 PerLayerCacheStatsForTest returns hits/misses for every MoE layer individually, in layer order
 (dense layers report 0/0) — the per-layer breakdown CacheStatsForTest's sum discards. This is
-the instrument `docs/tasks/task-freetoken-techniques.md` Lead 4 asks for: is C′'s per-layer slot
+the instrument `docs/completed/task-freetoken-techniques.md` Lead 4 asks for: is C′'s per-layer slot
 budget wasted on some layers and starved on others, or is demand actually even across layers?
 ```
 
@@ -1857,7 +1857,7 @@ Moved from `backend/cuda/resident.go` (the comment above `mapBytes.register`) on
 
 ```text
 Register in place (GOINFER_MOE_PIN_REGISTER, read from the model's knob snapshot in mapBytes below): Lead 3
-(docs/tasks/task-freetoken-techniques.md), measured
+(docs/completed/task-freetoken-techniques.md), measured
 2026-09-22 (docs/measurements/lead3-pin-order-2026-09-22.md) — populate-then-pin beat
 allocate-then-copy 1.33x-4.46x in a standalone microbenchmark at this scale, and never lost a
 single real-load trial (5/5) in the follow-up decision measurement. That measurement's own

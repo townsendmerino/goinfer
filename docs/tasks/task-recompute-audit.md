@@ -42,7 +42,7 @@
 > record of that state, not updated in place.
 > Cross-references: `docs/completed/audit-2026-09-02.md` (P-06 and C-12 closed, as before), its L-05 and L-15,
 > `docs/QUEUE.md` §A (the single-conversation limit), `docs/spec/09-mtp-heads.md` ("Pricing the
-> narrow state snapshot"), `docs/tasks/task-freetoken-techniques.md` (Lead 1), aikit
+> narrow state snapshot"), `docs/completed/task-freetoken-techniques.md` (Lead 1), aikit
 > `docs/task-simd-audit.md` (S-02, S-03), and — **added 2026-09-13** — `docs/audit-2026-09-10.md`
 > P-05, which found R-03's commit was never consumed by the speculative loops' own prefill and
 > fixed the read side too; see the correction under R-03 below. **R-00 (the correctness bug, fixed
