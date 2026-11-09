@@ -1217,5 +1217,11 @@ jobs:
             echo "::error::TestLedger_everyMetalAllocationNamesALine matched NOTHING in ./metal/ — renamed or deleted?"
             exit 1
           fi
+          # R17's source pin on attention_fa_blk, and the harnesses' graded arm: text and hashes, device-free.
+          matched=$(go test -list '^(TestAttnFABlkIsTheGradedKernel|TestR17GradedArm_isTheGradedText)$' ./backend/metal/ | grep -cE '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          if [ "$matched" != 2 ]; then
+            echo "::error::TestAttnFABlkIsTheGradedKernel and TestR17GradedArm_isTheGradedText matched $matched of 2 in ./metal/ — renamed or deleted?"
+            exit 1
+          fi
       - name: test (device-free tests only — the runner's Metal layer SIGSEGVs)
-        run: go test -run 'TestParity_NaNCosineFailsTheGate|TestBuildDemand_matchesDecoderDefault|TestLedger_everyMetalAllocationNamesALine' ./backend/metal/...
+        run: go test -run 'TestParity_NaNCosineFailsTheGate|TestBuildDemand_matchesDecoderDefault|TestLedger_everyMetalAllocationNamesALine|^TestAttnFABlkIsTheGradedKernel$|^TestR17GradedArm_isTheGradedText$' ./backend/metal/...

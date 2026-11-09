@@ -1,0 +1,31 @@
+cell start 2026-11-09 03:18:50 PST load1=3.08 reclaimable_bytes=6061408256 commit=944e5113b
+=== RUN   TestR17AttentionProto
+decoder: qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw is not in memory: reading its 1.2 GB once before the load
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.038 ms), gate|up at B <= 2 (0.110, 0.249); 0 = always the fragment
+[r17    1.6s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: nH=12 nKV=2 G=6; prototype attention_fa_blk_g6; prototype split counts [16]
+[r17    6.4s] depth 3900 exact kernel (again)       logits vs exact kernel: cosine 1.000000000 max|diff| 0 (argmax 8 vs 8); vs attention_fa: cosine 0.994642390 max|diff| 0.7469 (argmax 8)
+[r17    6.4s] depth 3900 current (production)       logits vs exact kernel: cosine 0.994642390 max|diff| 0.7469 (argmax 8 vs 8); vs attention_fa: cosine 1.000000000 max|diff| 0 (argmax 8)
+[r17    6.4s] depth 3900 current (production) (again) logits vs exact kernel: cosine 0.994642390 max|diff| 0.7469 (argmax 8 vs 8); vs attention_fa: cosine 1.000000000 max|diff| 0 (argmax 8)
+[r17    6.4s] depth 3900 prototype S=16             logits vs exact kernel: cosine 0.994642390 max|diff| 0.7469 (argmax 8 vs 8); vs attention_fa: cosine 1.000000000 max|diff| 0 (argmax 8)
+[r17    6.4s] depth 3900 production S=16            logits vs exact kernel: cosine 0.994642390 max|diff| 0.7469 (argmax 8 vs 8); vs attention_fa: cosine 1.000000000 max|diff| 0 (argmax 8)
+[r17   13.4s] depth 3900 rep 1/10: current (production) 11.423 (idle 20.140)  prototype S=16 11.421 (idle 15.086)  no-op attention 8.966 (idle 13.901)  
+[r17   20.4s] depth 3900 rep 2/10: current (production) 11.113 (idle 16.573)  prototype S=16 11.207 (idle 17.561)  no-op attention 8.776 (idle 15.505)  
+[r17   27.4s] depth 3900 rep 3/10: current (production) 11.113 (idle 15.363)  prototype S=16 11.055 (idle 13.729)  no-op attention 8.660 (idle 12.157)  
+[r17   34.5s] depth 3900 rep 4/10: current (production) 11.428 (idle 16.516)  prototype S=16 11.372 (idle 16.144)  no-op attention 8.977 (idle 11.864)  
+[r17   41.6s] depth 3900 rep 5/10: current (production) 11.217 (idle 14.748)  prototype S=16 11.203 (idle 14.237)  no-op attention 8.780 (idle 13.651)  
+[r17   48.6s] depth 3900 rep 6/10: current (production) 11.434 (idle 13.959)  prototype S=16 11.122 (idle 18.548)  no-op attention 8.965 (idle 14.310)  
+[r17   55.6s] depth 3900 rep 7/10: current (production) 11.481 (idle 15.492)  prototype S=16 11.371 (idle 17.421)  no-op attention 8.942 (idle 12.973)  
+[r17   62.6s] depth 3900 rep 8/10: current (production) 11.135 (idle 15.935)  prototype S=16 11.138 (idle 14.800)  no-op attention 8.903 (idle 13.664)  
+[r17   69.5s] depth 3900 rep 9/10: current (production) 11.495 (idle 17.451)  prototype S=16 11.473 (idle 13.574)  no-op attention 8.975 (idle 19.540)  
+[r17   76.6s] depth 3900 rep 10/10: current (production) 11.469 (idle 19.097)  prototype S=16 11.348 (idle 14.272)  no-op attention 8.987 (idle 15.504)  
+
+=== R17 step 2, depth 3900: in-sequence attention work, current vs prototype (medians of 10 reps × 20 tokens) ===
+  current (production)       attention   2.455 ms  full token  11.425 ms  reps 2.5 2.3 2.5 2.5 2.4 2.5 2.5 2.2 2.5 2.5 | after 2 s idle: attention   2.395 full  16.225
+  prototype S=16             attention   2.409 ms  full token  11.278 ms  speedup 1.02x (reps 1.0 1.0 1.0 1.0 1.0 1.1 1.0 1.0 1.0 1.1) → KILL (< 1.5x) | after 2 s idle: attention   1.378 full  14.943 speedup 0.83x (reps 5.3 0.5 2.0 1.1 1.9 -0.1 0.6 2.0 0.4 -2.9)
+  no-op attention            full token   8.954 ms, after 2 s idle  13.782 (the attention-free baseline)
+
+--- PASS: TestR17AttentionProto (76.61s)
+PASS
+ledger: 1 device(s) released in this run
+cell end 2026-11-09 03:20:08 PST exit=0
