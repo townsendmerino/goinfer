@@ -1215,9 +1215,11 @@ belong to one class.
 **B1 · Env-var lint** *Checked 2026-11-09 (mbp2-fit): the registry half is DONE: `testdata/env_reads.txt` lists every production
 `GOINFER_*` read and `decoder/envvars_registry_test.go:TestEnvVars_docAndCodeAgree` fails on one missing from it or from
 `docs/env-vars.md`, and operator knobs are snapshotted at `Load` (`decoder.Model.Knob`, `TestKnobDrift_firesOnPostLoadSetenv`).
-OPEN: the package-initialiser half. Five production reads still sit in package-level `var`s, out of reach of `t.Setenv`:
-`decoder/weightmat.go:w4a8SplitHalfRepackEnabled`, `decoder/model.go:decodeTiming`, `decoder/deltanet.go:deltaNetTiming`,
-`decoder/mamba2.go:ssmQ8CPU`, `backend/webgpu/internal/kernels/attention.go:AttnKeysDisabled`; nothing flags a new one.* — either box
+The package-initialiser half is GUARDED: `decoder/envvars_pkginit_test.go:TestEnvVars_noNewPackageInitRead` fails
+on a new production package-level `var` initialised from the environment (a direct `os.Getenv`/`os.LookupEnv`, or a
+`GOINFER_*` literal passed to a helper such as `envBoolDefault`). Thirteen such reads remain, listed there
+(`pkgInitEnvReadsKnown`), out of reach of `t.Setenv`; the list only shrinks. OPEN: moving those thirteen to load-time knobs
+or test hooks, one at a time, where a test needs to set one.* — either box
 
 `cc238c6` landed the `GINFER_`→`GOINFER_` rename (31 files, real work) and an env-var
 classification as `docs/env-vars.md`. The classification is the expensive part and it's done. What's
