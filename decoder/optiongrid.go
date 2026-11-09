@@ -213,6 +213,17 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathSessionLifecycle: ogNACell("it changes only where expert slots upload from; a session's prefix, KV and snapshot hold no expert bytes"),
 		},
 	),
+	// A capped model on CUDA's flash-decode lane (docs/measurements/op1o2-fa-softcap-2026-11/README.md): decode and verify rows past the lane's
+	// floor; the lane's eligibility, which both paths ask, is what the option changes.
+	"FlashDecodeSoftcap": ogMerge(
+		ogCPUNA("a CUDA flash-decode lane option; the CPU has no flash-decode lane"),
+		map[ogPath]ogCell{
+			pathResidentDecode:   ogTestedBy("TestGemma2Softcap_lanesCUDA"),
+			pathResidentPrefill:  ogNACell("the flash-decode lane serves decode and verify rows; a prompt's prefill keeps its kernels"),
+			pathSpecVerify:       ogTestedBy("TestGemma2Softcap_lanesCUDA"),
+			pathSessionLifecycle: ogNACell("it changes which kernel attends a decode row; a session's prefix, KV and snapshot are the same"),
+		},
+	),
 	"MoECacheSlots": ogMerge(
 		ogCPUNA("\"Only meaningful with MoECacheExperts\", a residency option"),
 		map[ogPath]ogCell{

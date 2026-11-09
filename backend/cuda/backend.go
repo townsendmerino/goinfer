@@ -807,7 +807,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		kvF16:     m.KVCacheF16(),
 		kvI8:      m.KVDeliveredFor("cuda") == mem.KVI8,
 		hidden:    H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
-		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(), attnCap: attnCap,
+		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(), attnCap: attnCap, faSoftcap: m.FlashDecodeSoftcap(),
 		attnTempBeta: attnTempBeta, attnTempOrigMaxPos: attnTempOrigMaxPos,
 		qkNorm: shape.QKNorm, qkNormWhole: qkNormWhole, rmsAddOne: m.RMSAddOne(),
 		act: int32(m.GatedActResident()), sandwich: sandwich, postOnly: postOnly,

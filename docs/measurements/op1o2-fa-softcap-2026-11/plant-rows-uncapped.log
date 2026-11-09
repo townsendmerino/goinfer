@@ -1,0 +1,13 @@
+=== RUN   TestGemma2Softcap_flashDecodeVsF64
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7067 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6939 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7055 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma2_softcap_fa_test.go:140: 90 cases, worst 4.64e-07 of max|ref| from the capped oracle; 72 where the cap moves the output by over 1%, 72 of them red with the cap lifted
+    gemma2_softcap_fa_test.go:199: S=4 n0=1 M=3 row 1 elem 0: multi-row -0.73821896, M=1 -0.73723036
+--- FAIL: TestGemma2Softcap_flashDecodeVsF64 (6.28s)
+FAIL
+ledger: 5 device(s) released in this run

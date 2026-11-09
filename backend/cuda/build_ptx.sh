@@ -97,10 +97,11 @@ for k in "${targets[@]}"; do
 	case "${k%.cu}" in
 	gemv_fwd | glue | prefill_batched | decode_fa | decode_splitkv | prefill_splitkv | attn_fused | attn_fused_bm) nvrtc "$src" "out/${k%.cu}_kv8.ptx" "$ARCH" "$CUDA_INC" -DKV_I8 ;;
 	esac
-	# The three modules whose kernels a capped layer takes (attention, attn_batched, splitkv_scores) are also built with the attention
-	# softcap, at both KV types: <name>_cap.ptx and <name>_kv16_cap.ptx (cuda/attnscore.cuh). The plain modules above do not change.
+	# The four modules whose kernels a capped layer takes (attention, attn_batched, splitkv_scores, the flash-decode lane's fa_partial*)
+	# are also built with the attention softcap, at both KV types: <name>_cap.ptx and <name>_kv16_cap.ptx (cuda/attnscore.cuh). The
+	# plain modules above do not change.
 	case "${k%.cu}" in
-	glue | prefill_batched | decode_splitkv)
+	glue | prefill_batched | decode_splitkv | decode_fa)
 		for variant in "cap:-DATTN_SOFTCAP" "kv16_cap:-DKV_F16 -DATTN_SOFTCAP"; do
 			nvrtc "$src" "out/${k%.cu}_${variant%%:*}.ptx" "$ARCH" "$CUDA_INC" ${variant#*:}
 		done

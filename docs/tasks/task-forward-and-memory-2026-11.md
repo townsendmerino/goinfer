@@ -21,14 +21,14 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| RF2 | active | RF2-1 (decode and verify rows of several sequences in one CUDA step) in its PR; its identity test runs on nobara before merge; then RF2-2, RF2-3 ("RF2: steps") | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below |
+| RF2 | active | RF2-1 merged (#787); RF2-2 (a prompt's prefill pass as rows of the ragged step, in its own pass's class) in its PR, its identity test (`TestCUDAStepRagged_prefillChunkMatchesItsPass`) on nobara before merge; then RF2-3 ("RF2: steps") | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below |
 | RF3 | blocked | RF2 | FA §5.4 |
 | RF4 | blocked | RF3 and KV5 | FA §7a |
 | RF5 | blocked | RF4; it also takes SB1's op-level interface | FA §7a; SS §8 "SB1" |
 | RF6 | blocked | RF3 or RF4 | FA §7a |
 | OP1-W | open | Gemma 2's attention-logit softcap on WebGPU: register the cells on nobara (Vulkan) before code | FA §4.6; `docs/hardware-matrix.md` |
 | OP1-o1 | open | Metal `attention_fa_blk` through attn_score, then the R17 re-grade | FA §4.6 "Owed, and not in OP1" |
-| OP1-o2 | open | the CUDA flash-decode lane with the softcap | FA §4.6a "Owed, not in OP1" |
+| OP1-o2 | active | the CUDA flash-decode lane with the softcap (nobara-sb01): built (`decode_fa_cap`), opt-in only (`Options.FlashDecodeSoftcap`; the exact split-KV lane stays Gemma 2's default), correctness gates pass (G2-K at both KV types, the resident path, a real Gemma 2 2B end to end). Next: the registered fidelity gate by day (G22B at K=3900), then the timed cell; a default change needs Francis | FA §4.6a "Owed, not in OP1"; `docs/measurements/op1o2-fa-softcap-2026-11/README.md` |
 | OP4m-D6b5 | open | the timed cell: the int4 Metal `.giw` of Nemotron-H 4B has been in `~/models` since 2026-11-07; a few minutes by day under the exclusive lock | FA §4.9 |
 | OP4m-pod | open | register per-operation dispatch inside the mixer steps | FA §4.9 "OP4m-d2", "What remains" |
 | OP4cu-census | done | an arm64 `TestAdmissionCensus` run passes at c2's commit (`c40e79dc6`) and on main, 2,711 lines each: the golden c2 applied per line key is what an arm64 run produces | FA §4.9a "C2-2"; `docs/measurements/op4-cuda-2026-11/op4cu-c2-c22-arm64-census-run.txt` |
@@ -40,7 +40,7 @@
 | OP6-def | done | Francis's call, 2026-11-08 09:30, on M1's reading (LEVEL, median ratio 1.02; goinfer 42.4 tok/s, Ollama 41.7): Metal's default load for a Phi-3/4 `.gguf` is `--quant q4k`, resident on the q4k lane (`internal/runtime/modelload/modelload.go:activationSafeQuant`), and `-backend auto` admits q4k to Metal (`decoder/residency.go:autoMetalPrecision`), so the default serve takes it; an explicit `--quant` is kept, WebGPU and other families are unchanged | `docs/measurements/peer-vetted-2026-10-07-macbook.md` "M1 on main after #775: read"; FA §8 E5 |
 | OP6-C | open | CUDA q4k batched prefill | FA §3.2 |
 | OP6-W | open | optional: per-32 activations or a q4k lane on WebGPU | FA §7a |
-| HL-C | open | register a CUDA greedy chain under a gated processor, as HL-R did on Metal | FA §6; `docs/measurements/hl-2026-11/README.md` |
+| HL-C | active | registered 2026-11-08 (docs PR); code after the registration merges: HL-C1 (the gather's table, tier 0), then HL-C3 and HL-C4 on nobara by day | FA §6; `docs/measurements/hl-2026-11/registration-hlc.md`; `docs/measurements/hl-2026-11/README.md` |
 | AC | done | the 13 compute, fit-guard and speculative family findings mapped to what decides each path now: 8 read the program in whole or in part (one of them the resident's own report), 5 do not, which the map lists as candidates for the owner | FA status block (owner, 2026-10-21); `docs/queue-correctness.md` G47; `docs/measurements/audit-classes-2026-10-08/compute-share-paths-2026-11-08.md` |
 | F-coh | open | CUDA Cohere batched LayerNorm differs by 1 ulp; the CUDA owner's call whether to match the reduction order | FA §4.5 |
 | MM5 | active | the memory planner's CUDA half (nobara-sb01): `cudaKVParts` priced from the declared rows and CUDA's build holding its pools to them (`kvCheckDeclared`); G-MP1 to G-MP4 and the plants pass, G-MP1 moved nothing. Next: its PR's merge; then CPU and WebGPU | FA §4.9b; #739, #741; `docs/measurements/mm5-cuda-2026-11/README.md` |
