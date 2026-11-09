@@ -230,8 +230,9 @@ func renderHardwareWhy(rows []hwRow) string {
 		b.WriteString("(`internal/runtime/modelload/modelload.go:activationSafeQuant`):\n\n")
 		b.WriteString("- **CUDA:** a GGUF loads at `--quant q4k` by default and runs resident. Any other source loads at int8int8 with\n")
 		b.WriteString("  per-32 activation scales, which CUDA's residency also implements.\n")
-		b.WriteString("- **Metal:** resident only with an explicit `--quant q4k`. The default load is int8int8 with per-32 activation\n")
-		b.WriteString("  scales, which Metal's resident projections do not implement, so it runs on the CPU.\n")
+		b.WriteString("- **Metal:** a GGUF loads at `--quant q4k` by default and runs resident on the q4k lane, which quantizes no\n")
+		b.WriteString("  activation. Any other source loads at int8int8 with per-32 activation scales, which Metal's resident projections do\n")
+		b.WriteString("  not implement, so it runs on the CPU.\n")
 		b.WriteString("- **WebGPU:** neither; the CPU.\n")
 	}
 	return b.String()

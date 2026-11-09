@@ -34,6 +34,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // PrefillRefKeyParts is what a reference depends on. Key() is the sha256 of its canonical JSON.
@@ -133,8 +134,38 @@ func prefillRefSourceSHA256() (string, error) {
 	return refSourceHash, refSourceErr
 }
 
-// checkpointSHA256 hashes a checkpoint file, caching the result by absolute path + size + mtime in the cache dir's
-// filehash.json so each file is read in full once.
+// checkpointRaceWindow is how recent a file's last change may be before its stamp is not trusted: a write inside one tick of a
+// coarse file-system clock leaves every timestamp as it was, so a stamp taken within a tick of the change cannot tell the bytes it saw
+// from a later same-size rewrite (Git's "racily clean" index entries).
+const checkpointRaceWindow = 2 * time.Second
+
+// checkpointNow and checkpointChange are checkpointSHA256's clock and checkpointStamp's change-time reader (fileChange), as variables so
+// a test can hold a file settled, or move its change time, without waiting on the clock.
+var (
+	checkpointNow    = time.Now
+	checkpointChange = fileChange
+)
+
+// checkpointStamp is st's cache key: the path, the size and the modification time in ns, and the change time in ns, the inode and the
+// device, which a write or a utimes moves where the OS reports them (checkpointChange). settled is false where the stamp cannot vouch for the
+// bytes: the OS reports no change time (Windows), or the file changed within checkpointRaceWindow of now.
+func checkpointStamp(abs string, st os.FileInfo, now time.Time) (stamp string, settled bool) {
+	ctime, ino, dev, ok := checkpointChange(st)
+	if !ok {
+		return "", false
+	}
+	last := st.ModTime()
+	if ctime.After(last) {
+		last = ctime
+	}
+	if now.Sub(last) < checkpointRaceWindow {
+		return "", false
+	}
+	return fmt.Sprintf("%s|%d|%d|%d|%d|%d", abs, st.Size(), st.ModTime().UnixNano(), ctime.UnixNano(), ino, dev), true
+}
+
+// checkpointSHA256 hashes a checkpoint file, caching the result in the cache dir's filehash.json under the file's stamp
+// (checkpointStamp), so a settled file is read in full once. A file the stamp cannot vouch for is hashed every time.
 func checkpointSHA256(path string) (string, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -150,7 +181,22 @@ func checkpointSHA256(path string) (string, error) {
 	if st.IsDir() {
 		return checkpointDirSHA256(abs)
 	}
-	stamp := fmt.Sprintf("%s|%d|%d", abs, st.Size(), st.ModTime().UnixNano())
+	stamp, settled := checkpointStamp(abs, st, checkpointNow())
+	hash := func() (string, error) {
+		f, err := os.Open(abs)
+		if err != nil {
+			return "", err
+		}
+		defer f.Close()
+		hh := sha256.New()
+		if _, err := io.Copy(hh, f); err != nil {
+			return "", err
+		}
+		return hex.EncodeToString(hh.Sum(nil)), nil
+	}
+	if !settled {
+		return hash()
+	}
 	dir, err := PrefillRefCacheDirForTest()
 	if err != nil {
 		return "", err
@@ -163,16 +209,10 @@ func checkpointSHA256(path string) (string, error) {
 	if h, ok := idx[stamp]; ok {
 		return h, nil
 	}
-	f, err := os.Open(abs)
+	sum, err := hash()
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
-	hh := sha256.New()
-	if _, err := io.Copy(hh, f); err != nil {
-		return "", err
-	}
-	sum := hex.EncodeToString(hh.Sum(nil))
 	idx[stamp] = sum
 	if err := os.MkdirAll(dir, 0o755); err == nil {
 		if b, err := json.MarshalIndent(idx, "", " "); err == nil {
