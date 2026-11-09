@@ -4214,7 +4214,7 @@ input — so the flag was being recommended as a fix that could not possibly cha
 producing an identical refusal after the user did what they were told.
 
 cmd/prequant builds a .giw from a directory one layer at a time since 2026-10-09 (StreamTranscodeDir,
-docs/tasks/task-prequant-dir-streaming-2026-10.md): it no longer loads the checkpoint whole, so it no longer hits this
+docs/completed/task-prequant-dir-streaming-2026-10.md): it no longer loads the checkpoint whole, so it no longer hits this
 guard, and it is the remedy for a directory (goinfer-serve and goinfer-chat already take that route unless --direct-load).
 Before that, the directory transcode loaded fully resident and could not help, so GOINFER_NO_FIT_GUARD=1 was named
 instead; it stays in the text for the case the 70% margin is being conservative about.

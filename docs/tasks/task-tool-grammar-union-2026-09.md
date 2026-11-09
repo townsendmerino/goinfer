@@ -4,7 +4,7 @@
 > T0 measured the failure ([`tool-call-failure-t0-2026-09-23.md`](../measurements/tool-call-failure-t0-2026-09-23.md)) and found a
 > second one this doc did not anticipate — Qwen2.5-Coder never writes the wrapper — fixed separately by accepting a bare call that
 > names a supplied tool. T1 (`constrain.ToolCallsGrammar`, a parallel-branch union of the single-tool grammars rather than §5's
-> hand-written trie), T2 (`constrain.LazyMasker`, arming on the opener, fail-open; llama3 left unarmed — option b), T3 (`required` /
+> hand-written trie), T2 (`constrain.LazyMasker`, arming on the opener, fail-open; llama3 first left unarmed — option b, superseded the same day by option (c), below), T3 (`required` /
 > `any` from token 1; N-18 closed) and T5 (repeated wrapper, each call constrained) are default-on; the cost problem the first build
 > had was solved by `SamplingParams.LogitProcessorGate`, which keeps every on-device fast path until the opener. T6's gates:
 > [`tool-union-2026-09-24.md`](../measurements/tool-union-2026-09-24.md). T4: [`tool-call-coverage.md`](../tool-call-coverage.md),
@@ -24,6 +24,22 @@
 > tools at it) and lists N-18 as one of G5's open preconditions; `docs/server.md`'s "What
 > `tool_choice` actually constrains" paragraph is the user-facing statement this work rewrites;
 > [`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W19 and W23 are downstream consumers.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| T0 | done | — | `docs/measurements/tool-call-failure-t0-2026-09-23.md` |
+| T1 | done | — | `constrain/tools_union.go:ToolCallsGrammar` |
+| T2 | done | — | `constrain/lazy.go:LazyMasker`; llama3's option (c), `constrain/lazy.go:NewCallKeyLazyMasker` |
+| T3 | done | — | `internal/app/serveapp/tools.go:toolsConstrainedFromStart`; N-18 closed in `docs/QUEUE.md` |
+| T4 | done | — | `docs/tool-call-coverage.md` |
+| T5 | done | — | `constrain/lazy.go:LazyMasker` (disarms after each call) |
+| T6 | done | — | `docs/measurements/tool-union-2026-09-24.md` |
+| T7 | done | — | `docs/server.md` "What `tool_choice` actually constrains"; `docs/env-vars.md` (`GOINFER_TOOL_UNION`) |
+| R1 | decision | a llama3 call that follows prose: keep, park or kill | `constrain/lazy.go:NewCallKeyLazyMasker` arms only at the output's start |
+| R2 | decision | the auto union on a speculative-decoding server: keep, park or kill | `internal/app/serveapp/tools.go:constrainToolUnion` skips auto when the model speculates |
+| R3 | moved | `docs/tasks/task-harness-reliability-2026-10.md`, row Gate-3 | its Gate 3 cells name one MoE |
+| R4 | moved | `docs/tasks/task-harness-reliability-2026-10.md`, row Gate-3 | its Gate 3 asks for three traces |
 
 ---
 
@@ -249,4 +265,4 @@ malformed call becomes a prose answer) · `docs/server.md:144` (the user-facing 
 [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) (mode 3, G5's preconditions) ·
 [`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W19, W23 (downstream consumers)
 
-<!-- doc-reviewed: 2026-09-15 -->
+<!-- doc-reviewed: 2026-11-09 -->
