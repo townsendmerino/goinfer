@@ -26,11 +26,11 @@
 | W19 | open | decide where the tool loop runs | the grammar side shipped (`task-tool-grammar-union-2026-09.md` T1–T5) |
 | W21 | open | needs a design | no conversation search in the page |
 | W22 | open | a gate for acting on other clients' work | no admin route under `/web/` |
-| W23 | decision | close as met by W36, or scope the "watch it fill" view | W36's schema control |
-| W24 | decision | a stack decision (RAG) | — |
-| W26 | decision | the weakest pull: build or kill | — |
+| W23 | killed | — (Francis, 2026-11-09: met by W36's schema control) | W36's schema control |
+| W24 | killed | — (Francis, 2026-11-09: server-scale, a new stack) | — |
+| W26 | killed | — (Francis, 2026-11-09: the weakest pull) | — |
 | W33-2a | open | a library function out of `internal/app/fitcmd/fit.go:Run`, then a fit route | no `/web/models/fit` route |
-| W33-2b | blocked | the owner's sign-off on revisiting W5 | `internal/app/serveapp/webui.go:server.handleWebLoad` takes no quant |
+| W33-2b | blocked | parked (Francis, 2026-11-09) until someone asks for a load-time quant picker | `internal/app/serveapp/webui.go:server.handleWebLoad` takes no quant |
 | W34 | open | the live rate client-side first, then the panel on X1's timing | `task-turn-telemetry-2026-09.md` X1, partly built |
 | W35 | open | §9.6 first (attachments out of the message text) | no elision in the page |
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: gates F3 (0.5B, then 1.5B), F2 (1.5B) and S of docs/tasks/task-metal-int8-2026-10.md, on an idle Mac.
+# Night job: gates F3 (0.5B, then 1.5B), F2 (1.5B) and S of docs/completed/task-metal-int8-2026-10.md, on an idle Mac.
 # F3 could not run by day: the fit guard refused its f32 reference (the 0.5B at f32 priced 3.6 GB against a 2.2 GB
 # budget with the owner's apps open), and a bypass on this 16 GB Mac is a standing no. A test that the fit guard still
 # refuses tonight skips with the guard's numbers in its log. S is a timed A/B, so it is night-only by rule.
@@ -8,7 +8,7 @@
 #   go test -c -tags goinfer_testhooks -o ~/goinfer-bench/metal-int8-2026-10/metal-<REV>.test ./metal/
 # Queued with:
 #   python3 scripts/night.py add metal-int8-gates --est 30 --by "Claude, Metal int8 slice 1" \
-#     --doc docs/tasks/task-metal-int8-2026-10.md -- bash ~/goinfer-bench/metal-int8-2026-10/run-gates.sh
+#     --doc docs/completed/task-metal-int8-2026-10.md -- bash ~/goinfer-bench/metal-int8-2026-10/run-gates.sh
 # The runner holds the timing lock for the whole job. Logs: ~/goinfer-logs/metal-int8-2026-10/.
 set -uo pipefail
 REV=f73b980a

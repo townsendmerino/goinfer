@@ -97,3 +97,5 @@ constrain (*Masker).ForcedBytesRun
 constrain (*Masker).GrammarClone
 constrain TokenBytes
 constrain SchemaFromStruct
+constrain GrammarFromStruct
+constrain TemplateFromStruct

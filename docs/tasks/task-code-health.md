@@ -19,10 +19,10 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| CH1 | open | a bit-identity test of the packed upload, `Context.UploadStackedExpertsInt4Packed` against `Context.UploadStackedExpertsInt4` on the same experts | `backend/webgpu/internal/kernels/moe_w4a8_expert_test.go:TestMoEExpertW4A8_parity` covers the unpacked path; `backend/webgpu/internal/kernels/moe_w4a8.go:Context.UploadStackedExpertsInt4Packed` has no test |
+| CH1 | done | — | `backend/webgpu/internal/kernels/moe_w4a8_expert_test.go:TestUploadStackedExpertsInt4Packed_matchesUnpacked` (2026-11-09): the packed and unpacked uploads of the same experts give bit-identical expert GEMV outputs over every expert and two activations; an in-test plant (one byte's nibbles swapped) is red on every run, and a temporary plant in the packed upload itself was red before it was reverted |
 | CH2 | done | — | the audit-2026-09-02 M-04 read, fixed 2026-09-02; `decoder/session_hostile_test.go:TestLoadSession_hostileHeaders` |
 | CH3 | done | — | 2026-11-09, no behaviour change (touched.py green; parity refresh non-numeric, forward goldens green): `decoder/model.go:layerStates` replaces the five per-family recurrent-state loops of the KV cache constructor (the two Mamba-2 blocks were the near-duplicate pair); `decoder/model.go:Model.prefillSeedFrom` is the shared prologue of `residentPrefillSeedMarked` and `residentPrefillSeedMRoPE`; `decoder/blockspec.go:BlockSpec.seedAnchor` is the extraction from `BlockSpec.generate`. Not done: `server.serveChatText` onto `loadedModel`, whose premise is stale (it now uses five of the server's members: resolveThink, haltState, gens, jobs, routeThink), so a move would only trade receivers; and the greedy and sampled chain blocks of the decode loop, which call different interfaces with different arguments |
-| CH4 | blocked | a `.giw` byte-identity gate on a real fixture first | §3.2; its line ranges are stale |
+| CH4 | active | the metadata-reader extraction (`decoder/gguf.go:ggufUintReader`, `decoder/gguf.go:ggufFloatReader`: 13 + 8 per-family closures) in its PR, behind the gate (`decoder/ch4_giw_gate_test.go:TestCH4_giwByteIdentity`, #848); next: nobara's re-record at the gate head and the check at the PR's head, then the merge | §3.2; `docs/measurements/ch4-2026-11/before.txt` |
 | CH5 | decision | the `.repowise` history purge, declined 2026-08-26 | `.gitignore` carries `.repowise/` |
 
 Tooling: repowise 0.45.0, `apple-m1pro`, 2026-08-26, `--no-prose` (structural only, no LLM).

@@ -31,7 +31,7 @@
 | G4 | active | CUDA i8 dense read 2026-11-08 (S4, #768: D7 PARKED, S DOES NOT PASS); every other phase's G4 runs with that phase | `s4-registration.md` |
 | G5 | blocked | with each f16 widening | `docs/completed/task-cuda-f16-kv-2026-10.md` |
 | speed | active | CUDA i8 dense read 2026-11-08 (S4, #768: short-context REGRESSION by the registered bar; published); every other phase's runs with that phase | `s4-registration.md`, "Speed results" |
-| F16-speed | open | the paired f16-against-f32 served speed check of CUDA's five dense f16-auto families on the paged KV, as `docs/completed/task-cuda-f16-kv-2026-10.md` registered it (1.5B and phi3 at 512 keys and over, 7B at 8000, the reversed arm order); about 70 minutes of night time | `docs/measurements/cuda-f16-kv-2026-10/run-kv16-speed.sh`; moved here from that doc on its archive, 2026-11-09 |
+| F16-speed | open | (Francis, 2026-11-09: keep; a nobara night after the coordinator's (d) and L5) the paired f16-against-f32 served speed check of CUDA's five dense f16-auto families on the paged KV, as `docs/completed/task-cuda-f16-kv-2026-10.md` registered it (1.5B and phi3 at 512 keys and over, 7B at 8000, the reversed arm order); about 70 minutes of night time | `docs/measurements/cuda-f16-kv-2026-10/run-kv16-speed.sh`; moved here from that doc on its archive, 2026-11-09 |
 | D1 | done | — | §6 |
 | D2 | done | — | §6 |
 | D3 | done | — | §6 |
