@@ -18393,7 +18393,7 @@ against 0.9977 with f32 ones, and its recorded cause is the expert-flip cliff.
 Moved from `decoder/r9_decode_attribution_test.go` (the comment above `TestR9_w4a8BatchAt7B`) on 2026-10-09.
 
 ```text
-TestR9_w4a8BatchAt7B is a follow-up to R-06 (docs/tasks/task-recompute-audit.md), which measured
+TestR9_w4a8BatchAt7B is a follow-up to R-06 (docs/completed/task-recompute-audit.md), which measured
 GOINFER_W4A8_BATCH's fused q/k/v and gate/up matmuls on the 1.5B only (1.071x arm64/Metal,
 1.066x amd64/CPU -- both ambiguous, parked). R9 step 1's own finding (MLP's share of the token
 grows with model size, largest at 7B) raises the natural follow-up: does R-06 behave differently
