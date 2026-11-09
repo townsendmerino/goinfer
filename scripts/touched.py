@@ -64,14 +64,20 @@ def classify(mod, args, targs, env):
         return {}
     r = sh("go", "list", "-e", "-json=Dir,ImportPath,Error,GoFiles,CgoFiles,TestGoFiles,XTestGoFiles", *targs, *args, cwd=mod or ".", env=env)
     root = os.path.realpath(mod or ".")
-    out, dec, buf = {}, json.JSONDecoder(), r.stdout.strip()
+    want = {os.path.normpath(a) for a in args}
+    out, stray, dec, buf = {}, [], json.JSONDecoder(), r.stdout.strip()
     while buf:
         p, n = dec.raw_decode(buf)
         buf = buf[n:].lstrip()
-        # A package go list could not find has no Dir; it is keyed by its ImportPath, which go list echoes as the relative pattern given.
-        rp = os.path.relpath(os.path.realpath(p["Dir"]), root) if p.get("Dir") else ""
-        key = os.path.normpath(rp if rp and not rp.startswith("..") else p.get("ImportPath", ""))
+        # An entry is keyed by its Dir under the module, else by an ImportPath naming an arg (go list echoes a pattern it could not find
+        # as the ImportPath, with no Dir). Any other entry keys nothing: its error is kept for the args left without an entry.
+        rp = os.path.normpath(os.path.relpath(os.path.realpath(p["Dir"]), root)) if p.get("Dir") else ""
+        ip = os.path.normpath(p["ImportPath"]) if p.get("ImportPath") else ""
+        key = rp if rp and not rp.startswith("..") else ip if ip in want else None
         err = (p.get("Error") or {}).get("Err", "")
+        if key is None:
+            stray.append(err.strip().splitlines()[0] if err.strip() else f"go list gave an entry for {p.get('ImportPath') or 'no path'}")
+            continue
         if err and EXCLUDED in err:
             out[key] = "empty"
         elif err:
@@ -81,7 +87,7 @@ def classify(mod, args, targs, env):
         else:
             out[key] = "ok"
     # Fail closed: an arg go list gave no entry for is an error, never a default.
-    why = (r.stderr.strip().splitlines() or ["go list reported nothing for it"])[0]
+    why = (r.stderr.strip().splitlines() or stray or ["go list reported nothing for it"])[0]
     for a in args:
         out.setdefault(os.path.normpath(a), "error: " + why)
     return out
@@ -211,6 +217,7 @@ def check_module(mod, label, files, tests, target_os, skips, host_os=None):
     pkgs = sorted({os.path.dirname(f) for f in files})
     rel = lambda d: "./" + os.path.relpath(d, mod or ".") if d != (mod or "") and d else "."
 
+    built = False  # whether the target's own build or vet ran, which a cross-target test skip may then claim
     mrun = lambda *c, env=env: (lambda r: (r.returncode == 0, r.stdout + r.stderr))(sh(*c, cwd=mod or ".", env=env))
 
     if files:
@@ -219,6 +226,7 @@ def check_module(mod, label, files, tests, target_os, skips, host_os=None):
         # The module build runs only when a touched package is built for the target, so a diff whose every package is excluded judges
         # nothing here and the run stays INCONCLUSIVE rather than PASS.
         if any(kind(kinds, a) != "empty" for a in args):
+            built = True
             bad += not step(f"build {label}", lambda: mrun("go", "build", *tagarg, "./..."))
         else:
             print(f"  skip build {label}: every touched package is excluded for {target_os}")
@@ -261,7 +269,7 @@ def check_module(mod, label, files, tests, target_os, skips, host_os=None):
             bad += not step(f"list {name}", lambda k=k: (False, k))
             continue
         if target_os != host_os:
-            what = "builds and vets only" if files else "runs nothing for it (no .go file of this module changed, so nothing was built or vetted)"
+            what = "builds and vets only" if built else f"runs nothing for it (nothing of this module was built or vetted for {target_os})"
             print(f"  skip test {name}: GOOS={target_os} on a {host_os} host {what}: a {target_os} test binary cannot run here")
             skips.append(f"test {name} (cross target {target_os})")
             continue

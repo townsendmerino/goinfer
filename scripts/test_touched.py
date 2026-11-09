@@ -2,6 +2,7 @@
 """touched.py runs the source-scan tests (scripts/touched_scans.py) for the files they read, and the table covers every test
 that reads Go source. Run: python3 -B scripts/test_touched.py"""
 import importlib.util
+import json
 import os
 import re
 import subprocess
@@ -281,7 +282,7 @@ class PackagesForTheTarget(_KeepsRAN):
         got = touched.classify("m", ["./ok", "./nope"], [], self.env)
         self.assertEqual(set(got), {"ok", "nope"}, got)
         self.assertEqual(got["ok"], "ok")
-        self.assertTrue(got["nope"].startswith("error: "), got)
+        self.assertIn("directory not found", got["nope"])  # go list's own error for it, not the no-entry fallback
 
     def test_check_module_skips_by_name(self):
         skips = []
@@ -345,7 +346,7 @@ class CudaCrossChecks(_KeepsRAN):
         tests = {("backend/cuda", "backend/cuda"): "^(TestX)$"}
         with mock.patch.object(touched, "sh", spy), mock.patch.object(touched, "classify", lambda *a: dict(classified)), \
                 contextlib.redirect_stdout(io.StringIO()) as out:
-            touched.check_module("backend/cuda", "backend/cuda", files, tests, target, [], host_os=host)
+            self.bad = touched.check_module("backend/cuda", "backend/cuda", files, tests, target, [], host_os=host)
         self.out = out.getvalue()
         return calls
 
@@ -377,9 +378,74 @@ class CudaCrossChecks(_KeepsRAN):
         # classify() keying nothing for a touched package is a failure, never a default "ok" that vets and tests it.
         calls = self._calls("linux", "linux", classified=())
         self.assertFalse(any(c[0][:2] == ("go", "test") for c in calls), self.out)
+        self.assertEqual(self.bad, 2, self.out)  # the listing before vet and the one before test, each counted as a failure
         self.assertIn("FAIL list backend/cuda/.", self.out)  # before vet
         self.assertIn("FAIL list backend/cuda ", self.out)  # before test
         self.assertNotIn((("go", "vet", "-tags", "cuda goinfer_testhooks", "."), "linux"), calls, "an unclassified package is not vetted")
+
+
+
+class ClassifyKeys(unittest.TestCase):
+    """classify() on go list output fed through a spy for touched.sh: which entries it keys, and what an arg with no keyable entry gets.
+    Needs no Go toolchain."""
+
+    def setUp(self):
+        import tempfile
+        self.root = os.path.realpath(tempfile.mkdtemp(prefix="touched-keys-"))
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def _classify(self, args, entries, rc=0, stderr=""):
+        from unittest import mock
+        out = "".join(json.dumps(e) + "\n" for e in entries)
+        with mock.patch.object(touched, "sh", lambda *a, **k: subprocess.CompletedProcess(a, rc, out, stderr)):
+            return touched.classify(self.root, args, [], {})
+
+    def test_an_entry_with_neither_dir_nor_import_path_keys_nothing(self):
+        # normpath("") is ".": an entry with no key must not land on the root package, least of all as "empty", which skips it.
+        ok = {"Dir": self.root, "ImportPath": "m", "TestGoFiles": ["a_test.go"]}
+        stray = {"Error": {"Err": "build constraints exclude all Go files in x"}}
+        got = self._classify([".", "./x"], [ok, stray])
+        self.assertEqual(got["."], "ok", got)
+        self.assertEqual(set(got), {".", "x"}, got)
+        self.assertTrue(got["x"].startswith("error: "), got)  # not "empty": a stray verdict is not this arg's
+
+    def test_a_dir_outside_the_module_is_not_keyed_by_its_import_path(self):
+        out = {"Dir": os.path.dirname(self.root), "ImportPath": "m/pkg", "TestGoFiles": ["a_test.go"]}
+        got = self._classify(["./pkg"], [out])
+        self.assertEqual(set(got), {"pkg"}, got)
+        self.assertTrue(got["pkg"].startswith("error: "), got)
+
+    def test_an_arg_with_no_entry_is_an_error(self):
+        self.assertEqual(self._classify(["./y"], [], rc=1, stderr="go: boom\nmore"), {"y": "error: go: boom"})
+        self.assertEqual(self._classify(["./y"], []), {"y": "error: go list reported nothing for it"})
+
+
+class CrossTargetMessage(_KeepsRAN):
+    """A cross-target test skip claims a build and vet only when the target's build or vet ran. Spies touched.sh and classify."""
+
+    def _check(self, kinds):
+        import contextlib
+        import io
+        from unittest import mock
+        spy = lambda *a, **k: subprocess.CompletedProcess(a, 0, "", "")
+        with mock.patch.object(touched, "sh", spy), mock.patch.object(touched, "classify", lambda *a: dict(kinds)), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            bad = touched.check_module("m", "m", ["m/a/x.go"], {("m", "m/b"): None}, "darwin", [], host_os="linux")
+        return bad, out.getvalue()
+
+    def test_built_says_so(self):
+        bad, text = self._check({"a": "ok", "b": "ok"})
+        self.assertEqual(bad, 0, text)
+        self.assertIn("builds and vets only", text)
+
+    def test_every_touched_package_excluded_claims_nothing(self):
+        bad, text = self._check({"a": "empty", "b": "ok"})
+        self.assertEqual(bad, 0, text)
+        self.assertNotIn("builds and vets", text)
+        self.assertIn("runs nothing for it", text)
 
 
 if __name__ == "__main__":
