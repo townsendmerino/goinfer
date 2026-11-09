@@ -19,7 +19,7 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| CH1 | open | a bit-identity test of the packed upload, `Context.UploadStackedExpertsInt4Packed` against `Context.UploadStackedExpertsInt4` on the same experts | `backend/webgpu/internal/kernels/moe_w4a8_expert_test.go:TestMoEExpertW4A8_parity` covers the unpacked path; `backend/webgpu/internal/kernels/moe_w4a8.go:Context.UploadStackedExpertsInt4Packed` has no test |
+| CH1 | done | — | `backend/webgpu/internal/kernels/moe_w4a8_expert_test.go:TestUploadStackedExpertsInt4Packed_matchesUnpacked` (2026-11-09): the packed and unpacked uploads of the same experts give bit-identical expert GEMV outputs over every expert and two activations; an in-test plant (one byte's nibbles swapped) is red on every run, and a temporary plant in the packed upload itself was red before it was reverted |
 | CH2 | done | — | the audit-2026-09-02 M-04 read, fixed 2026-09-02; `decoder/session_hostile_test.go:TestLoadSession_hostileHeaders` |
 | CH3 | open | optional: the model.go helper extraction; `internal/app/serveapp/openai.go:server.serveChatText` onto `loadedModel`; an extraction in `decoder/blockspec.go:BlockSpec.generate` | §3.2; its line ranges are stale |
 | CH4 | blocked | a `.giw` byte-identity gate on a real fixture first | §3.2; its line ranges are stale |
