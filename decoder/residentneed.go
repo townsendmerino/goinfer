@@ -53,49 +53,12 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 	return slot + null
 }
 
-// cpuKVBytes is the K/V a CPU cache (NewCache) holds for ctx positions, at the precision NewCache takes for the request (int8 or f16
-// only where the family accepts it, else f32). An append-forever layer holds ctx rows. A ring layer (ringLayerAt) holds its
-// window's W rows from its first write, and at f32 twice that once a read wraps, which any context past W reaches. An int8 row is
-// one byte an element plus one f32 scale a KV head; an MLA layer holds one f32 latent row a position; a layer that reads another's
-// cache, or has no attention, holds none.
+// cpuKVBytes is what this model's CPU cache holds for ctx positions (kvBytesForCtx); without a resolved architecture, Plan's flat rate.
 func (m *Model) cpuKVBytes(ctx int, f16, i8 bool) int64 {
-	a := m.w.arch
-	if a == nil {
+	if m.w.arch == nil {
 		return m.kvBytesPerPositionAllLayers(f16, i8) * int64(ctx)
 	}
-	quant := kvqF32
-	if i8 && a.kvInt8OK() {
-		quant = kvI8
-	} else if f16 && a.kvF16OK() {
-		quant = kvqF16
-	}
-	var total int64
-	for l := range a.NumLayers {
-		if a.hasNoAttentionKVAt(l) || a.gemma4KVSrcAt(l) != l {
-			continue
-		}
-		width := int64(a.kvDimAt(l))
-		if a.mla != nil {
-			total += 4 * width * int64(ctx)
-			continue
-		}
-		rows := int64(ctx)
-		if a.ringLayerAt(l) {
-			rows = int64(a.SlidingWindow)
-			if quant == kvqF32 && ctx > a.SlidingWindow {
-				rows *= 2
-			}
-		}
-		row := 4 * width
-		switch quant {
-		case kvI8:
-			row = width + 4*int64(a.NumKVHeads)
-		case kvqF16:
-			row = 2 * width
-		}
-		total += 2 * rows * row
-	}
-	return total
+	return kvBytesForCtx(m.w.arch, ctx, f16, i8)
 }
 
 // MetalKVSlotBytes is what one more resident KV slot costs a metal load at ctx positions: ResidentKVBytes less the pools' null blocks.

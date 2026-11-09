@@ -126,12 +126,15 @@ func (f fitCheck) check() mem.HostCheck {
 	if f.quant != "int4" && f.quant != "int4mix" {
 		l.Int4Smaller = quantBytesPerElem(quantInt4) < quantBytesPerElem(quantInt8)
 	}
-	if cfg, f16, i8 := f.cfg, f.kvF16, f.kvI8; cfg != nil {
-		l.MaxCtx = cfg.MaxPositions
-		l.KV = func(ctx int) int64 { return estimateKVBytes(cfg, ctx, f16, i8) }
+	if f.cfg != nil {
+		l.MaxCtx = f.cfg.MaxPositions
+		l.KV = f.kvAt
 	}
 	return mem.NewHostCheck(l, mem.HostMachine(f.availBytes), mem.DefaultPolicy())
 }
+
+// kvAt is the KV f prices at ctx positions, the one function its own figure and every re-pricing at another context read.
+func (f fitCheck) kvAt(ctx int) int64 { return estimateKVBytes(f.cfg, ctx, f.kvF16, f.kvI8) }
 
 const fitGB = 1 << 30
 
@@ -547,7 +550,7 @@ func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
 		}
 		return f
 	}
-	f.kvBytes = estimateKVBytes(cfg, f.effCtx, f.kvF16, f.kvI8)
+	f.kvBytes = f.kvAt(f.effCtx)
 	return f
 }
 

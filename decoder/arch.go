@@ -444,41 +444,50 @@ func (a *Architecture) kvPositionsAt(i, ctx int) int {
 	return ctx
 }
 
-// kvBytesForCtx sums the real per-layer KV cost at ctx positions over the whole architecture: kvDimAt (width) times
-// kvPositionsAt (count). Used by fitguard.go's load-time host-RAM guard and prefill_budget.go's request-time guard, both
-// Config-only via resolveArchitecture. Not used by fitplan.go's device-VRAM Plan(), which needs only the width and
-// deliberately skips the sliding-window count cap (see kvBytesPerPositionAllLayers there). Do not replace it with a flat
-// NumLayers*NumKVHeads*headDim formula: that overprices hybrid, sliding-window and MLA models, which cache far less.
-func kvBytesForCtx(arch *Architecture, ctx int, kvF16, kvI8 bool) int64 {
-	if arch == nil || ctx <= 0 || arch.NumLayers <= 0 {
+// kvBytesForCtx is the K/V a CPU cache (NewCache) holds for ctx positions of arch, at the precision NewCache takes for the request
+// (int8 or f16 only where the family accepts it, else f32). An append-forever layer holds ctx rows. A ring layer (ringLayerAt) holds
+// its window's W rows from its first write, and at f32 twice that once a read wraps, which any context past W reaches. An int8 row is
+// one byte an element plus one f32 scale a KV head; an MLA layer holds one f32 latent row a position; a layer that reads another's
+// cache, or has no attention, holds none. Both host-RAM guards price the CPU's KV with it (estimateKVBytes), and Model.cpuKVBytes
+// is it, so the guard and the plan cannot price one cache two ways. Do not replace it with a flat NumLayers*NumKVHeads*headDim
+// formula: that overprices hybrid, sliding-window and MLA models, which cache far less.
+func kvBytesForCtx(a *Architecture, ctx int, f16, i8 bool) int64 {
+	if a == nil || ctx <= 0 || a.NumLayers <= 0 {
 		return 0
 	}
-	perElem := 4.0
-	switch {
-	case kvI8:
-		perElem = 1.125 // int8 payload + per-row f32 scale
-	case kvF16:
-		perElem = 2
+	quant := kvqF32
+	if i8 && a.kvInt8OK() {
+		quant = kvI8
+	} else if f16 && a.kvF16OK() {
+		quant = kvqF16
 	}
-	var total float64
-	for l := 0; l < arch.NumLayers; l++ {
-		dim := arch.kvDimAt(l)
-		if dim == 0 || arch.gemma4KVSrcAt(l) != l { // a Gemma 4 E-model's shared layer reads its source's cache
+	var total int64
+	for l := range a.NumLayers {
+		if a.hasNoAttentionKVAt(l) || a.gemma4KVSrcAt(l) != l {
 			continue
 		}
-		positions := arch.kvPositionsAt(l, ctx)
-		// A local layer's f32 ring keeps a mirror copy of its window once wrapped (decode reads it in place), so it holds 2*W
-		// positions, not W; the int8 ring has no mirror. Priced here so the fit guard counts what is resident.
-		if !kvI8 && arch.SlidingWindow > 0 && !arch.isGlobalLayer(l) && ctx > arch.SlidingWindow {
-			positions += arch.SlidingWindow
-		}
-		if arch.mla != nil { // one latent row, f32 whatever K/V precision the load names
-			total += 4 * float64(dim) * float64(positions)
+		width := int64(a.kvDimAt(l))
+		if a.mla != nil {
+			total += 4 * width * int64(ctx)
 			continue
 		}
-		total += 2 * perElem * float64(dim) * float64(positions) // ×2 for K and V
+		rows := int64(ctx)
+		if a.ringLayerAt(l) {
+			rows = int64(a.SlidingWindow)
+			if quant == kvqF32 && ctx > a.SlidingWindow {
+				rows *= 2
+			}
+		}
+		row := 4 * width
+		switch quant {
+		case kvI8:
+			row = width + 4*int64(a.NumKVHeads)
+		case kvqF16:
+			row = 2 * width
+		}
+		total += 2 * rows * row
 	}
-	return int64(total)
+	return total
 }
 
 func (a *Architecture) ffnAt(i int) int {
