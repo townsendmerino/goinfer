@@ -172,6 +172,7 @@ SCANS = [
     Scan("internal/runtime/mem", "TestImports", NT("internal/runtime/mem")),
     Scan("backend/cuda", "TestPlanSlack_oneCopy", NT("backend/cuda")),
     Scan("backend/cuda", "TestLedger_everyAllocationNamesALine", NT("backend/cuda")),
+    Scan("internal/layout", "TestCUDASoloShapes_takeTodaysCalls", F("backend/cuda/resident.go", "backend/cuda/gumbel.go")),
     Scan("internal/runtime/mem", "TestSolve_pure", NT("internal/runtime/mem")),
     Scan("internal/runtime/mem", "TestNoGuardThresholdOutsideMem", TREE_NT),
     Scan("internal/runtime/mem/probe", "TestProbeImports", NT("internal/runtime/mem/probe")),
