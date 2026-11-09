@@ -32,8 +32,11 @@ func buildDemand(q decoder.BuildQuery) decoder.BuildDemand {
 	}
 	if o.Backend == "cuda" && q.GGUF && !o.StreamWeights && q.ExpertBytes > 0 && q.ExpertCache {
 		d.HostBuildPeak = 2*q.WeightBytes + q.ExpertBytes
+		if o.MoEExpertsUnpinned { // the packed experts are file pages (MoEExpertsUnpinned), not a host copy
+			d.HostBuildPeak = 2 * q.WeightBytes
+		}
 	}
-	if q.ExpertCache && d.Resident && q.NumExperts > 0 && q.ExpertIntermediate > 0 {
+	if q.ExpertCache && d.Resident && q.NumExperts > 0 && q.ExpertIntermediate > 0 && !o.MoEExpertsUnpinned {
 		d.PinnedExpertBytes = int64(q.MoELayers) * int64(q.NumExperts) * 3 * int64(q.ExpertIntermediate) * int64(q.Hidden) *
 			pinnedExpertNum / pinnedExpertDen
 	}

@@ -32,6 +32,11 @@ func mmapAliasedBytes(m *Model, w *linalg.WeightMat) int64 {
 			n += int64(len(p4)) + 2*int64(len(sc))
 		}
 	}
+	if raw, ok := w.Q4K(); ok && len(raw) > 0 {
+		if _, aliased := m.MmapByteOffset(raw); aliased {
+			n += int64(len(raw))
+		}
+	}
 	if u, _, ok := w.Half16(); ok && len(u) > 0 {
 		if _, aliased := m.MmapByteOffset(unsafe.Slice((*byte)(unsafe.Pointer(&u[0])), 2*len(u))); aliased {
 			n += 2 * int64(len(u))

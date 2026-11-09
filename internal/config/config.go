@@ -98,6 +98,7 @@ var Settings = []Setting{
 	{Name: "stream-weights", Flag: "stream-weights", Apps: Chat | Serve, Option: "StreamWeights", Default: "false", Doc: "docs/flags.md", Help: streamWeightsHelp + "{per-model}", PerModel: "stream"},
 	{Name: "weight-cache", Flag: "weight-cache", Apps: Chat | Serve, Option: "WeightCacheBytes", Default: "0", Doc: "docs/flags.md", Help: "resident expert-weight budget in GB for -stream-weights (0 = auto, ~half of available RAM){per-model}", PerModel: "weight-cache"},
 	{Name: "moe-cache-experts", Flag: "moe-cache-experts", Apps: Chat | Serve, Env: "GOINFER_MOE_CACHE_EXPERTS", EnvRole: EnvKnob, Option: "MoECacheExperts", Default: "false", Doc: "docs/flags.md", Help: moeCacheExpertsHelp},
+	{Name: "moe-experts-unpinned", Flag: "moe-experts-unpinned", Apps: Chat | Serve, Option: "MoEExpertsUnpinned", Default: "false", Doc: "docs/flags.md", Help: moeExpertsUnpinnedHelp},
 	{Name: "moe-cache-slots", Flag: "moe-cache-slots", Apps: Chat | Serve, Env: "GOINFER_MOE_CACHE_SLOTS", EnvRole: EnvKnob, Option: "MoECacheSlots", Default: "0", Doc: "docs/flags.md", Help: moeCacheSlotsHelp},
 	{Name: "moe-pager", Flag: "moe-pager", Apps: Chat | Serve, Option: "MoEPager", Default: "mmap", DefaultOn: map[string]string{"darwin": "pool"}, Doc: "docs/flags.md", Help: moePagerHelp},
 	{Name: "accept-slow", Flag: "accept-slow", Apps: Chat | Serve, Option: "AcceptSlowMoE", Default: "false", Doc: "docs/flags.md", Help: acceptSlowHelp},

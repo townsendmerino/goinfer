@@ -1,0 +1,6 @@
+plant: decoder-pricing-ignores-flag (decoder/builddemand.go)
+    plan_state_test.go:349: unpinned: build peak 28991029248, want 21474836480
+--- FAIL: TestCUDABuildDemand_unpinnedExpertsDropTheCopy (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.004s
+FAIL

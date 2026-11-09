@@ -103,3 +103,55 @@ pin dirties it. A tmpfs file is RAM, so a sidecar there would cost the same host
 Francis asked for the unpinned path to be measured. The expert slots, uploaded from pageable file pages instead of the pinned copy, save
 12,251 MiB of host memory but cost the 26B's decode 0.817x at short context and 0.750x at long, under the registered 0.90 kill line. The
 registration, the reading and the attempts are in `ab-registration.md`. MEM10 is closed on nobara, and the pinned copy stays.
+
+## MEM10 opt-in: `--moe-experts-unpinned` (Francis, 2026-11-08 13:05)
+
+**Francis's call, after the KILL:** build the unpinned path as an opt-in, and have fit suggest it. It is slower by design and saves host memory,
+so CLAUDE.md's opt-in speed bar does not apply.
+
+- **The flag:** `--moe-experts-unpinned`, default off. It is `decoder.Options.MoEExpertsUnpinned`, read through `Model.MoEExpertsUnpinned()`;
+  there is no env read.
+  - With `--moe-cache-experts` on CUDA, each expert stack is packed into an unlinked, read-only file mapping in the model's directory, and the
+    slots upload from its pageable pages.
+  - It is arm B of the tier 1 A/B (`ab-registration.md`). A directory on tmpfs is refused by name, because there the copy would still be RAM.
+- **Pricing:** the CUDA build demand drops the pinned copy under the flag. A `.giw` load prices no pinned expert bytes; a `.gguf` build peaks at
+  the weights twice.
+- **The suggestion:** the `.giw` guard's two refusals and the `.gguf` build's decline add "--moe-experts-unpinned drops the X GB pinned expert
+  copy … measured at 0.82x decode at short context and 0.75x at long", only when a pinned copy is in the need and dropping it would bring the
+  need within the budget.
+
+**Tests, all passing, each red under its plant** (`optin/plant-*.log`):
+- `TestUnpinnedExpertsHint_onlyWhenTheCopyIsWhatDoesNotFit` (`internal/runtime/mem`): the hint appears only where dropping the copy fits. It is
+  absent with no copy, and absent when the KV alone is over the budget.
+- `TestCUDABuildDemand_unpinnedExpertsDropTheCopy` (`decoder`) and the CUDA `buildDemand` check: the flag drops the pinned term.
+- `TestMoEExpertsUnpinned_identityAndPricing` (`backend/cuda`, `qwen3moe-tiny` with paged experts):
+  - The unpinned load builds every expert stack pageable, and the pinned one none.
+  - Their teacher-forced logits are equal bit for bit over 24 positions.
+- Plants: the hint always; the decoder pricing ignoring the flag; the CUDA pricing ignoring it; the unpinned path not taken; half the
+  unpinned scales zeroed.
+
+**Registries:** `docs/flags.md` (from `flags.meta.json`), the register and resolve goldens, and MM1's census. The census's refusal lines
+changed; both classes are regenerated, arm64 under qemu-user (`optin/census-arm64-qemu.log`). `touched.py` PASS (22 checks). The parity
+staleness gate is green.
+
+**Review round (Gemini on #792; the coordinator, 14:08):**
+- **The hint:** `HostCheck.Decline` names the flag only when the need *without* the copy fits: every term `Need` takes, the build peak less the
+  copy. Before, a load bound by its weights plus KV could be told to use a flag that would not save it.
+- **Disk:**
+  - The packed-experts files are reserved with `fallocate`, so a full disk fails the build with a named error instead of a `SIGBUS` during
+    packing.
+  - Each stack is written back (`msync`, `MS_SYNC`) before it is sealed read-only, so a build holds at most one stack's dirty pages, and the
+    written pages are clean and reclaimable like any file page.
+  - tmpfs and ramfs are both refused by name.
+- **The file's directory:** it comes from `Model.SourcePath()`, the file or checkpoint directory `Load` opened (new). With no path, the load
+  refuses rather than writing to the working directory.
+  - `GiwPath()` was empty on a safetensors-directory load, so the first version wrote to `.`. That included this PR's own identity test,
+    which passed while writing to the package directory.
+- **Tests:**
+  - The identity test now also compares the batched prefill and the speculative verify step (`ForwardN`) bit for bit, and checks both
+    pricing terms in the CUDA build demand.
+  - `TestMoEExpertsUnpinned_refusesMemoryBackedOrMissingDirs` covers the empty path, tmpfs, and a load whose model sits on tmpfs: it declines
+    naming tmpfs.
+  - Two more plants are red: the old decline condition, and the empty path accepted.
+- **The option grid:** `MoEExpertsUnpinned` is classified. Resident decode, prefill and speculative verify are tested by the identity test.
+  Session reuse and snapshots are n/a: they carry no expert bytes. The CPU paths are n/a.

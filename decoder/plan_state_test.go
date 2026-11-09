@@ -336,3 +336,16 @@ func TestCheckpointHeadroom_followsTheBuildsOrder(t *testing.T) {
 		}
 	}
 }
+
+// TestCUDABuildDemand_unpinnedExpertsDropTheCopy: with MoEExpertsUnpinned a CUDA expert-cache build from a .gguf peaks at the weights twice, not
+// twice plus the experts' pinned copy, which is then file pages; without it the copy is priced as before.
+func TestCUDABuildDemand_unpinnedExpertsDropTheCopy(t *testing.T) {
+	q := BuildQuery{Options: Options{Backend: "cuda"}, GGUF: true, WeightBytes: 10 << 30, ExpertBytes: 7 << 30, ExpertCache: true}
+	if got, want := defaultCUDABuildDemand(q).HostBuildPeak, int64(27<<30); got != want {
+		t.Errorf("pinned: build peak %d, want %d", got, want)
+	}
+	q.Options.MoEExpertsUnpinned = true
+	if got, want := defaultCUDABuildDemand(q).HostBuildPeak, int64(20<<30); got != want {
+		t.Errorf("unpinned: build peak %d, want %d", got, want)
+	}
+}

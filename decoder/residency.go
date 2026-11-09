@@ -114,6 +114,30 @@ type ResidentBatchOut struct {
 	ID     int
 }
 
+// ResidentRaggedStepper is an optional ResidentForward extension: one step over several sequences, each with one row or more
+// at consecutive positions from its Pos on its own KV slot, every row in the kernel class its own shape runs today (a row
+// alone is a decode token, a sequence's rows a verify). Row j of a sequence equals that sequence's own Forward at Pos+j bit
+// for bit, or ForwardSample's id for a last row that carries the Draw. The slots are distinct; the bound slot is restored.
+// Docs: docs/tasks/task-forward-and-memory-2026-11.md, "RF2: registration".
+type ResidentRaggedStepper interface {
+	StepRagged(seqs []ResidentRaggedSeq) ([]ResidentRaggedOut, error)
+}
+
+// ResidentRaggedSeq is one sequence of a ResidentRaggedStepper step: its KV slot, the position of its first row, its rows'
+// embeddings (embedResident's), and, when its last row's token is drawn on-device, that draw.
+type ResidentRaggedSeq struct {
+	Slot, Pos int
+	Embs      [][]float32
+	Draw      *ResidentBatchDraw // nil: every row's logits
+}
+
+// ResidentRaggedOut is one sequence of a StepRagged: each row's logits, with the last nil when the sequence carried a Draw,
+// and the drawn id (>= 0), or -1.
+type ResidentRaggedOut struct {
+	Logits [][]float32
+	ID     int
+}
+
 // ResidentMRoPE is an OPTIONAL ResidentForward extension: a resident backend whose rotation kernel takes a
 // rope-angle position (ropePos) separate from the KV-cache/attention position (pos). Qwen2.5-VL decode past
 // an image block needs it: decoder/rope.go's CPU reference rotates by pos+mropeDelta while storage and
@@ -1514,13 +1538,14 @@ func residentQuantLabel(backend, quant string) string {
 
 // autoMetalPrecision is why a model stays on the CPU when -backend auto chose metal, "" when it may go resident. A
 // backend the user did not name must not change the precision they loaded at (such as the int8int8 bundle a
-// model-included goinfer-chat carries; R17, docs/tasks/task-first-hour.md). Metal runs int4 resident and dense
-// int8int8 natively (docs/tasks/task-metal-int8-2026-10.md); it re-quantizes int8, int4mix and the int8int8 models
-// native int8 does not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here and
+// model-included goinfer-chat carries; R17, docs/tasks/task-first-hour.md). Metal runs int4 resident, dense
+// int8int8 natively (docs/tasks/task-metal-int8-2026-10.md), and q4k on its q4k lane, which keeps the file's K-quant
+// blocks (docs/tasks/task-metal-q4k-2026-10.md); it re-quantizes int8, int4mix and the int8int8 models native int8 does
+// not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here and
 // autoMetalKeepsPrecision checks afterwards that it ran natively; the others stay on the CPU. A named -backend
 // metal still runs them re-quantized.
 func autoMetalPrecision(auto bool, backend, quant string) string {
-	if !auto || backend != "metal" || quant == "int4" || quant == "int8int8" {
+	if !auto || backend != "metal" || quant == "int4" || quant == "int8int8" || quant == "q4k" {
 		return ""
 	}
 	switch quant {
