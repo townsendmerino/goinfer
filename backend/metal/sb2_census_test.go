@@ -1156,6 +1156,158 @@ func TestMetalDensePrice_isTheBuildsLeases(t *testing.T) {
 	}
 }
 
+// TestMixerWalk_issuesTheBlocksDispatches is OP4m-pod's P-1 and P-2 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod:
+// registration"): on every census fixture and option cell whose build goes resident, eight decode tokens issue the same pipelines,
+// dispatch for dispatch, and the same logits, bit for bit, under the mixer steps' walk as under their blocks. The cells that walk a
+// mixer step are counted, so a walk nothing reaches cannot pass.
+func TestMixerWalk_issuesTheBlocksDispatches(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	d, err := sb2census.ReadLayerD("../..", "metal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked, walked := 0, 0
+	for _, f := range d.Fixtures {
+		path, err := sb2census.Path("../..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range sb2census.Cells {
+			if !d.Resident[f+" "+c.Name] {
+				continue
+			}
+			row := f + " " + c.Name
+			o := decoder.Options{Backend: "metal", ResidentContext: 256, Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
+			}
+			m, err := decoder.Load(path, o)
+			if err != nil {
+				continue
+			}
+			a, ok := m.ResidentForwardForTest().(*metalResident)
+			if !ok {
+				m.Close()
+				continue
+			}
+			if slices.ContainsFunc(a.r.layers, func(L residLayer) bool { return slices.ContainsFunc(L.steps, mixerWalks) }) {
+				walked++
+			}
+			diffs := mixerWalkDiffs(t, m, a)
+			m.Close()
+			for _, d := range diffs {
+				t.Errorf("%s: %s", row, d)
+			}
+			checked++
+		}
+	}
+	t.Logf("%d resident cells checked, %d of them walk a mixer step", checked, walked)
+	if walked < 6 {
+		t.Errorf("only %d cells walk a mixer step: a gate the walk barely reaches covers little", walked)
+	}
+}
+
+// TestMixerWalk_plantsGoRed: each of P-1's planted defects in the walk differs from the blocks on the fixtures it can show on. A
+// residual added again after an output projection that adds it (DeltaNet's out_proj, a fused attention o-proj) is an extra
+// dispatch; the input norm ignoring (1 + w) moves the logits wherever a walked step's RMSNorm has it, Gemma's among them, and
+// stays quiet elsewhere.
+func TestMixerWalk_plantsGoRed(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	reds := map[int]int{}
+	for _, f := range []string{"testdata/qwen35-tiny", "decoder/testdata/qwen3_5-tiny-normw", "testdata/qwen3next-tiny", "testdata/olmo_hybrid-tiny",
+		"testdata/nemotron-tiny", "testdata/deepseek-tiny", "testdata/llama-tiny", "testdata/gemma2-tiny", "testdata/gemma1-tiny"} {
+		m, err := decoder.Load("../../"+f, decoder.Options{Backend: "metal", ResidentContext: 256, Quant: "int4"})
+		if err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		a, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok {
+			m.Close()
+			t.Fatalf("%s did not build resident", f)
+		}
+		fused, addOne := false, false
+		for l := range a.r.layers {
+			L := &a.r.layers[l]
+			for i, st := range L.steps {
+				if !mixerWalks(st) {
+					continue
+				}
+				ops := L.stepOps[i]
+				fused = fused || st == stepDeltaNet || (st == stepAttention && ops[len(ops)-1].Kind == program.OpResidual &&
+					ops[len(ops)-2].Kind == program.OpProjO)
+				addOne = addOne || (ops[0].Norm.AddOne && ops[0].Norm.Form == program.NormRMS && !a.r.q4kLane && !(st == stepAttention && a.r.canUseF16Lane(l)))
+			}
+		}
+		for plant, wantRed := range map[int]bool{mixerWalkPlantResidual: fused, mixerWalkPlantAddOne: addOne} {
+			mixerWalkPlantForTest = plant
+			diffs := mixerWalkDiffs(t, m, a)
+			mixerWalkPlantForTest = 0
+			if red := len(diffs) > 0; red != wantRed {
+				t.Errorf("%s, plant %d: red %v, want %v (%v)", f, plant, red, wantRed, diffs)
+			} else if red {
+				reds[plant]++
+			}
+		}
+		m.Close()
+	}
+	t.Logf("fixtures red: the extra residual on %d, (1 + w) ignored on %d", reds[mixerWalkPlantResidual], reds[mixerWalkPlantAddOne])
+	if reds[mixerWalkPlantResidual] == 0 {
+		t.Error("the extra-residual plant is red on no fixture")
+	}
+}
+
+// mixerWalkDiffs runs eight decode tokens on a under the mixer steps' blocks and then under their walk, and names each token whose
+// pipeline sequence or logits differ.
+func mixerWalkDiffs(t *testing.T, m *decoder.Model, a *metalResident) []string {
+	t.Helper()
+	names := a.r.pipelineNames()
+	run := func(blocks bool) (seqs [][]string, logits [][]float32) {
+		mixerWalkBlocksForTest = blocks
+		defer func() { mixerWalkBlocksForTest = false }()
+		a.r.stopExec()
+		a.Reset()
+		var cur []string
+		a.r.d.SetDispatchHook(func(pl Pipeline) { cur = append(cur, names[pl]) })
+		defer a.r.d.SetDispatchHook(nil)
+		for pos := range 8 {
+			cur = nil
+			lg, err := a.Forward(m.EmbedResidentForTest((pos*7+3)%a.r.V), pos)
+			if err != nil {
+				t.Fatalf("forward at %d: %v", pos, err)
+			}
+			seqs, logits = append(seqs, cur), append(logits, slices.Clone(lg))
+		}
+		a.r.stopExec()
+		return seqs, logits
+	}
+	sb, lb := run(true)
+	sw, lw := run(false)
+	var out []string
+	for pos := range 8 {
+		if !slices.Equal(sb[pos], sw[pos]) {
+			out = append(out, fmt.Sprintf("token %d: the walk issues %d dispatches and the blocks %d, first apart at %d", pos, len(sw[pos]), len(sb[pos]), firstApart(sb[pos], sw[pos])))
+		}
+		if !slices.EqualFunc(lb[pos], lw[pos], func(x, y float32) bool { return math.Float32bits(x) == math.Float32bits(y) }) {
+			out = append(out, fmt.Sprintf("token %d: the logits differ", pos))
+		}
+	}
+	return out
+}
+
+// firstApart is the first index where a and b differ, or the shorter length.
+func firstApart(a, b []string) int {
+	for i := range min(len(a), len(b)) {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return min(len(a), len(b))
+}
+
 // TestMemGate_metal is MM7's gate on Metal (docs/tasks/task-subsystems-2026-10.md): every census fixture at every option cell whose
 // build goes resident, and each at int4 with two KV slots and the step's blocks on, holds what it leased on each line to the plan
 // for the same load. It runs every row in one test, since a filtered run would see known gaps go quiet.

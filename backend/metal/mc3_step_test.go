@@ -226,6 +226,186 @@ func TestOP4mD6b_mambaStepSpeed(t *testing.T) {
 		want: func(r *resident) bool { return r.mamba != nil }, wantWhat: "a Mamba-2 (Nemotron-H) resident"})
 }
 
+// cellLoad1 is the 1-minute load average (vm.loadavg), a timed cell's start and pair term.
+func cellLoad1(t *testing.T) float64 {
+	t.Helper()
+	out, err := exec.Command("sysctl", "-n", "vm.loadavg").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v float64
+	if _, err := fmt.Sscanf(strings.Trim(strings.TrimSpace(string(out)), "{} "), "%g", &v); err != nil {
+		t.Fatalf("vm.loadavg %q: %v", out, err)
+	}
+	return v
+}
+
+// cellPaging is swap in use (MiB, vm.swapusage), whose growth voids a pair, and the system-wide pageouts count (vm_stat),
+// recorded as context. A swap reading that does not parse fails the cell rather than reading as zero.
+func cellPaging(t *testing.T) (swapMiB float64, pageouts int64) {
+	t.Helper()
+	out, err := exec.Command("sysctl", "-n", "vm.swapusage").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := strings.Fields(string(out)) // total = X  used = Y  free = Z ...
+	parsed := false
+	for i := range f {
+		if f[i] == "used" && i+2 < len(f) {
+			_, err := fmt.Sscanf(strings.TrimSuffix(f[i+2], "M"), "%g", &swapMiB)
+			parsed = err == nil
+		}
+	}
+	if !parsed {
+		t.Fatalf("vm.swapusage %q: no swap-in-use reading", out)
+	}
+	vs, err := exec.Command("vm_stat").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for line := range strings.SplitSeq(string(vs), "\n") {
+		if strings.HasPrefix(line, "Pageouts:") {
+			fmt.Sscanf(strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(line, "Pageouts:")), "."), "%d", &pageouts)
+		}
+	}
+	return swapMiB, pageouts
+}
+
+// TestOP4mPod_decodeSpeed is OP4m-pod's P-3 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod: registration"): one
+// sequence's decode, the mixer steps' walk against their blocks, in one process, on the checkpoint at GOINFER_OP4MPOD_MODEL. Each
+// run refills the sequence to depth 128 untimed and times 64 greedy tokens; the arms alternate A B, B A over 6 pairs, and the tokens
+// must be equal in every pair. A pair whose starting load is above half the cores plus GOMAXPROCS, or across which swap in use
+// grows, voids the cell. Pass: a median rate ratio, walk ÷ blocks, of at least 0.99; fail: the cell resolves slower (every pair
+// under 1) with its median under 0.99; parked otherwise under 0.99. A fail or a park fails the test. A timed run: it refuses to
+// run outside the timing lock (GOINFER_OP4MPOD_TIMING=1).
+func TestOP4mPod_decodeSpeed(t *testing.T) {
+	path := os.Getenv("GOINFER_OP4MPOD_MODEL")
+	if os.Getenv("GOINFER_OP4MPOD_TIMING") == "" || path == "" {
+		t.Skip("set GOINFER_OP4MPOD_TIMING=1 and GOINFER_OP4MPOD_MODEL (a timed run under the timing lock)")
+	}
+	if os.Getenv("GOINFER_TIMING_LOCK") == "" {
+		t.Fatal("not under the timing lock: run through scripts/timing_lock.py run")
+	}
+	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
+		t.Fatalf("%s is on the archive, not the bench set: a timing from it measures the disk", path)
+	}
+	const depth, steps, pairs, ctx = 128, 64, 6, 1024
+	const label = "[OP4m-pod P-3]"
+	name := filepath.Base(path)
+	l0 := cellLoad1(t)
+	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: ctx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	need := m.ResidentNeedBytes("metal", 0, ctx, false, false)
+	r0, ok := probe.Read() // the fit check: after the load maps the file, before the resident allocates
+	if !ok {
+		t.Fatal("no memory reading")
+	}
+	gib := func(b int64) float64 { return float64(b) / (1 << 30) }
+	why := stepCellStartVoid(l0, runtime.NumCPU(), r0.Available, need)
+	fmt.Fprintf(os.Stderr, label+" %s: cell start: 1-minute load %.2f; available %.2f GiB against need %.2f GiB (%s); reclaimable %.2f GiB (recorded)\n",
+		name, l0, gib(r0.Available), gib(need), map[bool]string{true: "ok", false: "VOID"}[why == ""], gib(r0.Reclaimable))
+	if why != "" {
+		t.Fatalf("cell void: %s", why)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatalf("build the resident: %v", err)
+	}
+	defer r.Close()
+	kinds := map[layerStep]int{}
+	for l := range r.layers {
+		for _, st := range r.layers[l].steps {
+			if mixerWalks(st) {
+				kinds[st]++
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, label+" %s: walked steps by kind %v\n", name, kinds)
+	defer func() { mixerWalkBlocksForTest = false }()
+	rng := rand.New(rand.NewSource(128))
+	fill := make([]int, depth)
+	for i := range fill {
+		fill[i] = rng.Intn(min(20000, r.V))
+	}
+	first := rng.Intn(min(20000, r.V))
+	run := func(blocks bool) (rate float64, toks []int) {
+		mixerWalkBlocksForTest = blocks
+		r.stopExec()
+		r.resetRecurrent()
+		for p, id := range fill {
+			r.Forward(id, p)
+		}
+		cur := first
+		t0 := time.Now()
+		for s := range steps {
+			lg := r.Forward(cur, depth+s)
+			cur = 0
+			for i, v := range lg {
+				if v > lg[cur] {
+					cur = i
+				}
+			}
+			toks = append(toks, cur)
+		}
+		el := time.Since(t0)
+		if err := r.takeExecErr(); err != nil {
+			t.Fatal(err)
+		}
+		return float64(steps) / el.Seconds(), toks
+	}
+	run(false) // each arm warm before the first pair, untimed
+	run(true)
+	bar := float64(runtime.NumCPU())/2 + float64(runtime.GOMAXPROCS(0))
+	var ratios []float64
+	below := 0
+	for p := range pairs {
+		lp := cellLoad1(t)
+		if lp > bar {
+			t.Fatalf("cell void: pair %d starts at 1-minute load %.2f, above %.1f", p+1, lp, bar)
+		}
+		s0, _ := cellPaging(t)
+		order := []bool{false, true} // false: the walk; true: the blocks
+		if p%2 == 1 {
+			order = []bool{true, false}
+		}
+		rates, toks := map[bool]float64{}, map[bool][]int{}
+		for _, blocks := range order {
+			rates[blocks], toks[blocks] = run(blocks)
+		}
+		if s1, _ := cellPaging(t); s1 > s0 {
+			t.Fatalf("cell void: swap in use grew from %.1f to %.1f MiB across pair %d", s0, s1, p+1)
+		}
+		if !slices.Equal(toks[false], toks[true]) {
+			t.Fatalf("pair %d: the walk's tokens differ from the blocks'", p+1)
+		}
+		ratio := rates[false] / rates[true]
+		ratios = append(ratios, ratio)
+		if ratio < 1 {
+			below++
+		}
+		fmt.Fprintf(os.Stderr, label+" %s: pair %d/%d (%s first, load %.2f): walk %.2f tok/s, blocks %.2f tok/s, ratio %.4f\n",
+			name, p+1, pairs, map[bool]string{false: "walk", true: "blocks"}[order[0]], lp, rates[false], rates[true], ratio)
+	}
+	sorted := slices.Clone(ratios)
+	slices.Sort(sorted)
+	med := (sorted[pairs/2-1] + sorted[pairs/2]) / 2
+	verdict := "PASS"
+	switch {
+	case med >= 0.99:
+	case below == pairs:
+		verdict = "FAIL"
+	default:
+		verdict = "PARKED"
+	}
+	fmt.Fprintf(os.Stderr, label+" %s: median ratio %.4f, %d of %d pairs under 1: %s\n", name, med, below, pairs, verdict)
+	if verdict != "PASS" {
+		t.Errorf("P-3 on %s: median %.4f, %d of %d pairs under 1: %s", name, med, below, pairs, verdict)
+	}
+}
+
 // stepCellStartVoid is why a timed cell may not start, or "" when it may: the void rule's start terms
 // (docs/measurements/noise-registry.md §8, scripts/void_rule.py start). The 1-minute load must not be above half of ncpu, and
 // available, the fit guard's reading (probe.Reading.Available), must cover need with no margin.
@@ -366,46 +546,8 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 		t.Fatalf("%s is on the archive, not the bench set: a timing from it measures the disk", path)
 	}
 	const B, depth, steps, pairs, ctx = 4, 128, 64, 10, 1024
-	load1 := func() float64 {
-		out, err := exec.Command("sysctl", "-n", "vm.loadavg").Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		var v float64
-		if _, err := fmt.Sscanf(strings.Trim(strings.TrimSpace(string(out)), "{} "), "%g", &v); err != nil {
-			t.Fatalf("vm.loadavg %q: %v", out, err)
-		}
-		return v
-	}
-	// paging is swap in use (MiB, vm.swapusage), whose growth voids a pair, and the system-wide pageouts count (vm_stat),
-	// recorded as context. A swap reading that does not parse fails the cell rather than reading as zero.
-	paging := func() (swapMiB float64, pageouts int64) {
-		out, err := exec.Command("sysctl", "-n", "vm.swapusage").Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		f := strings.Fields(string(out)) // total = X  used = Y  free = Z ...
-		parsed := false
-		for i := range f {
-			if f[i] == "used" && i+2 < len(f) {
-				_, err := fmt.Sscanf(strings.TrimSuffix(f[i+2], "M"), "%g", &swapMiB)
-				parsed = err == nil
-			}
-		}
-		if !parsed {
-			t.Fatalf("vm.swapusage %q: no swap-in-use reading", out)
-		}
-		vs, err := exec.Command("vm_stat").Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		for line := range strings.SplitSeq(string(vs), "\n") {
-			if strings.HasPrefix(line, "Pageouts:") {
-				fmt.Sscanf(strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(line, "Pageouts:")), "."), "%d", &pageouts)
-			}
-		}
-		return swapMiB, pageouts
-	}
+	load1 := func() float64 { return cellLoad1(t) }
+	paging := func() (swapMiB float64, pageouts int64) { return cellPaging(t) }
 	majFaults := func() int64 { // this process's major faults (page-ins from disk), the never-swap rule's own reading
 		var ru syscall.Rusage
 		if err := syscall.Getrusage(syscall.RUSAGE_SELF, &ru); err != nil {

@@ -55,9 +55,12 @@ func (r *resident) buildLayerSteps(p *program.Program) error {
 			return fmt.Errorf("layer %d: %w", l, err)
 		}
 		L := &r.layers[l]
-		steps := make([]layerStep, len(spans))
+		steps, stepOps := make([]layerStep, len(spans)), make([][]program.Op, len(spans))
 		for i, s := range spans {
-			steps[i] = s.Kind
+			steps[i], stepOps[i] = s.Kind, ops[s.From:s.To]
+			if err := r.checkMixerWalk(L, s.Kind, stepOps[i]); err != nil {
+				return fmt.Errorf("layer %d: %w", l, err)
+			}
 		}
 		if want := r.loadedSteps(L); !slices.Equal(steps, want) {
 			return fmt.Errorf("layer %d: the program's steps are %v and the layer's build loaded %v", l, steps, want)
@@ -66,7 +69,7 @@ func (r *resident) buildLayerSteps(p *program.Program) error {
 			return fmt.Errorf("layer %d: the q4k lane runs a sequential attention and dense FFN step only, and the layer's steps are %v (a parallel block: %v)",
 				l, steps, spans[0].Parallel)
 		}
-		L.steps = steps
+		L.steps, L.stepOps = steps, stepOps
 	}
 	return nil
 }

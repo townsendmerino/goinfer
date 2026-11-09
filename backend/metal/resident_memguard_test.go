@@ -264,11 +264,14 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 
 	unpaged := m.ResidentWeightBytes()
 	kv := residentKVBytes(m)
+	// The buffers Metal's build derives beside the tensors: the excess of its dense figure over the tensors' sum, which on this f32
+	// load, with no q4k lane or Mamba layer to take anything off, is that term alone.
+	derived := m.ResidentDenseWeightBytesFor("metal") - m.ResidentDenseWeightBytes()
 
 	// The slot request is a per-model knob, read at Load (docs/tasks/task-env-config-2026-09.md, phase 4), so
 	// each arm prices its own model loaded with that request, not one model with the environment changed under it.
 	// needWith is the guard's figure at a slot request less decode's scratch with every expert resident, which the request does not
-	// move: the weights, host copy and KV at that request, and the paged experts' slot indices where it pages.
+	// move: the weights, the derived buffers, host copy and KV at that request, and the paged experts' slot indices where it pages.
 	needWith := func(t *testing.T, slots string) int64 {
 		t.Helper()
 		mk, err := decoder.Load(ckpt, decoder.Options{Quant: "f32", Knobs: &decoder.Knobs{"GOINFER_METAL_MOE_SLOTS": slots}})
@@ -281,9 +284,9 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 	index := int64(4 * moeTopK(m)) // the paged experts' slot indices, 4 bytes for each of the top k
 
 	t.Run("unset env == unpaged", func(t *testing.T) {
-		want := unpaged + m.ResidentHostCopyBytes(0) + kv
+		want := unpaged + derived + m.ResidentHostCopyBytes(0) + kv
 		if got := needWith(t, ""); got != want {
-			t.Errorf("residentNeedBytes() with no slots env = %d, want unpaged+hostcopy+kv %d", got, want)
+			t.Errorf("residentNeedBytes() with no slots env = %d, want unpaged+derived+hostcopy+kv %d", got, want)
 		}
 	})
 
@@ -292,9 +295,9 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 		if wantWeights >= unpaged {
 			t.Fatalf("test fixture has too few experts to make this case meaningful (paged(1)=%d, unpaged=%d)", wantWeights, unpaged)
 		}
-		want := wantWeights + m.ResidentHostCopyBytes(1) + kv + index
+		want := wantWeights + derived + m.ResidentHostCopyBytes(1) + kv + index
 		if got := needWith(t, "1"); got != want {
-			t.Errorf("residentNeedBytes() with GOINFER_METAL_MOE_SLOTS=1 = %d, want %d (paged weights+hostcopy+kv+slot indices) — "+
+			t.Errorf("residentNeedBytes() with GOINFER_METAL_MOE_SLOTS=1 = %d, want %d (paged weights+derived+hostcopy+kv+slot indices) — "+
 				"the guard is not asking for the paged estimate", got, want)
 		}
 		// The host-copy addend must itself shrink under paging: paged experts stream, so ResidentHostCopyBytes(1) must be strictly smaller
@@ -632,7 +635,8 @@ func TestBuildLayerSteps_matchesTheLoadedBlocks(t *testing.T) {
 	scaled := append(slices.Clone(dense), program.Op{Kind: program.OpLayerScale})
 	parallel := append(slices.Clone(dense[:4]), dense[6], program.Op{Kind: program.OpResidual, Res: program.ResidualParams{Two: true}})
 	build := func(ops []program.Op, L residLayer, q4k bool) error {
-		r := &resident{layers: []residLayer{L}, q4kLane: q4k}
+		parallel := slices.ContainsFunc(ops, func(o program.Op) bool { return o.Kind == program.OpResidual && o.Res.Two })
+		r := &resident{layers: []residLayer{L}, q4kLane: q4k, parallelBlock: parallel}
 		return r.buildLayerSteps(&program.Program{Layers: [][]program.Op{ops}})
 	}
 	loaded := residLayer{geom: &attnGeom{}, ffn: true}
