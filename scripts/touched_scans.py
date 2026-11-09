@@ -98,6 +98,7 @@ SCANS = [
     Scan("decoder", "TestGoDoc_listsEveryFieldOfOptionsAndSamplingParams", NT("decoder")),
     Scan("decoder", "TestBackendBanner_usesTheReport", TREE_NT),
     Scan("decoder", "TestEnvVars_docAndCodeAgree", TREE_GO + F("docs/env-vars.md", "testdata/env_reads.txt")),
+    Scan("decoder", "TestEnvVars_noNewPackageInitRead", TREE_NT),
     Scan("internal/config", "TestInventory", F("decoder/knobs.go", "decoder/model.go", "testdata/env_reads.txt", "docs/flags.meta.json") + NT("internal/app/loadflags")),
     Scan("internal/config", "TestInventory_plants", F("decoder/knobs.go", "decoder/model.go", "testdata/env_reads.txt", "docs/flags.meta.json") + NT("internal/app/loadflags")),
     Scan("internal/config", "TestEnvVarsDoc", F("docs/env-vars.md", "docs/env-vars.meta.json")),
