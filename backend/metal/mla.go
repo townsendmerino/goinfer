@@ -147,8 +147,14 @@ var mlaKVCopyDeclineOffForTest bool
 // start, through the bound slot's table), the lift
 // through W_UV, the output projection, and the residual add into x.
 func (r *resident) encodeMLAMixer(e *Encoder, l int, L *residLayer, x, uPos, uRopePos, uNKeys Buffer) {
-	p, M, s := r.mla, L.mla, r.mlaS
 	r.encodeNorm(e, x, L.preNorm, L.preNormBias, r.aq, r.aSc)
+	r.encodeMLACore(e, l, L, uPos, uRopePos, uNKeys)
+	e.Dispatch(r.pRes, r.H, 256, x, r.dO)
+}
+
+// encodeMLACore is the MLA mixer from its normed input in aq and aSc through the output projection, into dO.
+func (r *resident) encodeMLACore(e *Encoder, l int, L *residLayer, uPos, uRopePos, uNKeys Buffer) {
+	p, M, s := r.mla, L.mla, r.mlaS
 	if p.qLoRA > 0 {
 		e.Dispatch(r.pGemvW8, p.qLoRA*32, 32, r.aq, r.aSc, M.qAW, M.qAS, s.qa, r.uH)
 		e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, s.qa, M.qANorm, s.qaQ, s.qaSc, s.uQLoRA, r.uEps, s.uZero)
@@ -164,5 +170,4 @@ func (r *resident) encodeMLAMixer(e *Encoder, l int, L *residLayer, x, uPos, uRo
 	e.Dispatch(r.pMlaHeadMV, p.nH*p.vHead*32, 256, s.wsum, M.wuv, s.ctx, s.uLift)
 	e.Dispatch(r.pQv, 256, 256, s.ctx, s.ctxQ, s.ctxSc, s.uOK)
 	e.Dispatch(r.pGemvW8, r.H*32, 32, s.ctxQ, s.ctxSc, M.oW, M.oS, r.dO, s.uOK)
-	e.Dispatch(r.pRes, r.H, 256, x, r.dO)
 }
