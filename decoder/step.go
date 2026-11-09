@@ -10,11 +10,10 @@ import (
 type stepPass uint8
 
 const (
-	passNone   stepPass = iota // unset: no shape
-	passToken                  // one decode token: Emb holds exactly one row
-	passRows                   // one batched pass over Emb's rows (or inRowsFn's N), one row or more: prefill, verify, seed
-	passSeqs                   // one decode row for each of several sequences on their own KV slots (MC3): Seqs
-	passRagged                 // one or more rows for each of several sequences on their own KV slots: Ragged
+	passNone  stepPass = iota // unset: no shape
+	passToken                 // one decode token: Emb holds exactly one row
+	passRows                  // one batched pass over Emb's rows (or inRowsFn's N), one row or more: prefill, verify, seed
+	passSeqs                  // one decode row for each of several sequences on their own KV slots (MC3): Seqs
 )
 
 // stepIn is what a stepBatch's rows feed the model besides their token embeddings.
@@ -73,10 +72,9 @@ type stepBatch struct {
 	WantZ       bool
 	Seed, Draw  uint64
 	Seqs        []ResidentBatchSeq
-	Ragged      []ResidentRaggedSeq
 }
 
-// stepResult holds a step's output in the field its stepOut names; Batch holds a passSeqs step's rows, Ragged a passRagged step's.
+// stepResult holds a step's output in the field its stepOut names; Batch holds a passSeqs step's rows.
 type stepResult struct {
 	Logits []float32
 	Hidden []float32
@@ -85,7 +83,6 @@ type stepResult struct {
 	IDs    []int
 	TopK   TopKRow
 	Batch  []ResidentBatchOut
-	Ragged []ResidentRaggedOut
 }
 
 // errStepShape is stepOn's answer for a batch whose shape the resident does not offer, or that names no shape (canStep false);
@@ -119,23 +116,6 @@ func stepDo(r any, b stepBatch, run bool) (stepResult, bool, error) {
 		var res stepResult
 		var err error
 		res.Batch, err = st.StepBatch(b.Seqs)
-		return res, true, err
-	case passRagged:
-		st, ok := r.(ResidentRaggedStepper)
-		if !ok || len(b.Ragged) == 0 {
-			return stepResult{}, false, nil
-		}
-		for _, q := range b.Ragged {
-			if len(q.Embs) == 0 {
-				return stepResult{}, false, nil
-			}
-		}
-		if !run {
-			return stepResult{}, true, nil
-		}
-		var res stepResult
-		var err error
-		res.Ragged, err = st.StepRagged(b.Ragged)
 		return res, true, err
 	}
 	return stepResult{}, false, nil
