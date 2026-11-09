@@ -1,0 +1,19 @@
+=== RUN   TestCohereResidentParityCUDA
+=== RUN   TestCohereResidentParityCUDA/cohere-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 7069 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    cohere_resident_parity_test.go:88: decode, 12 positions: worst cosine 1.000000000, worst relL2 1.9293e-07
+    cohere_resident_parity_test.go:110: batched prefill last-token logits vs CPU: cosine 1.000000 relL2 0.0000
+=== RUN   TestCohereResidentParityCUDA/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7069 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    cohere_resident_parity_test.go:88: decode, 12 positions: worst cosine 1.000000000, worst relL2 1.9629e-07
+    cohere_resident_parity_test.go:110: batched prefill last-token logits vs CPU: cosine 1.000000 relL2 0.0000
+--- PASS: TestCohereResidentParityCUDA (1.66s)
+    --- PASS: TestCohereResidentParityCUDA/cohere-tiny (1.42s)
+    --- PASS: TestCohereResidentParityCUDA/cohere2-tiny (0.24s)
+PASS
+ledger: 5 device(s) released in this run

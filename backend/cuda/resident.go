@@ -3099,10 +3099,11 @@ func (r *cudaResident) rms(src, nrm Buffer, qOut Buffer, sOut Buffer) error {
 }
 
 // layerNormQuant is rms's mean-centered twin (Cohere/Command-R, FeatLayerNorm): no addOne
-// selector (bias-free, no Gemma-style (1+w) family uses this norm kind on this backend).
+// selector (bias-free, no Gemma-style (1+w) family uses this norm kind on this backend). Decode runs the batched paths' kernel at one
+// row (bLayerNormQuantB), so a step, PrefillLastN or verify row normalizes exactly as decode does: layernorm_quant rounds in another
+// order and moves an int8 code by a last bit (docs/measurements/fcoh-cohere-layernorm-2026-11/README.md).
 func (r *cudaResident) layerNormQuant(src, nrm Buffer, qOut Buffer, sOut Buffer) error {
-	return r.launch(r.fLN, onecfg(256, (r.hidden+256)*4),
-		Arg(src), Arg(nrm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps), Arg(qOut), Arg(sOut))
+	return r.bLayerNormQuantB(src, nrm, r.hidden, 1, qOut, sOut)
 }
 
 // norm dispatches the family's pre-GEMV norm+quant into qOut/sOut — layerNormQuant (Cohere's

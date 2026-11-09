@@ -27,9 +27,6 @@ import (
 // gemma4-dense-twogeom-tiny has a final-logit softcap and granite-dense-tiny a logit scale. The subtest asserts the
 // transform is armed on the loaded model, so a fixture that lost it fails rather than passing on the identity. The Gemma 4
 // fixture is generated (scripts/pin_gemma4_dense_twogeom.py), so that subtest skips where it has not been pinned. The
-// Cohere fixtures are not here: their batched LayerNorm (layernorm_quant_batched) rounds in a different order from
-// decode's, so their step is not bit-identical to Forward for a reason that is not the host tail
-// (docs/tasks/task-forward-architecture-2026-10.md §4.5).
 func TestCUDAStepBatch_matchesForward(t *testing.T) {
 	type cfg struct {
 		path   string
@@ -43,6 +40,8 @@ func TestCUDAStepBatch_matchesForward(t *testing.T) {
 		{filepath.Join("../../testdata/mistral-tiny-window"), []int{9, 70, 200, 33}, "", ""}, // window: some rows past it
 		{filepath.Join("../../testdata/gemma4-dense-twogeom-tiny"), []int{5, 23, 40, 11}, "softcap", ""},
 		{filepath.Join("../../testdata/granite-dense-tiny"), []int{5, 23, 40, 11}, "logitScale", ""},
+		{filepath.Join("../../testdata/cohere-tiny"), []int{5, 23, 40, 11}, "", ""},  // LayerNorm: decode and the step share its kernel
+		{filepath.Join("../../testdata/cohere2-tiny"), []int{5, 23, 40, 11}, "", ""}, // F-coh (docs/measurements/fcoh-cohere-layernorm-2026-11/README.md)
 	}
 	if p := os.Getenv("GOINFER_CUDA_STEP_MODEL"); p != "" {
 		cfgs = []cfg{{p, []int{120, 2200, 700, 64}, "", ""}, {p, []int{120, 2200, 700, 64}, "", "i8"}}
