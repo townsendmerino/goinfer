@@ -25,6 +25,9 @@ func (r *cudaResident) ForwardSample(embedding []float32, pos int, temperature f
 	if e := r.checkCap(pos, 1); e != nil {
 		return 0, e
 	}
+	if o, ok, e := r.soloRagged([][]float32{embedding}, pos, &decoder.ResidentBatchDraw{Temperature: temperature, Seed: seed, Draw: draw}); ok {
+		return o.ID, e
+	}
 	var id int
 	err := r.do(func() error {
 		if e := r.launchToken(embedding, pos, pos, true); e != nil {
