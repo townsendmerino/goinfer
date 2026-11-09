@@ -756,6 +756,8 @@ var webgpuMemGaps = func() []memgate.Gap {
 	}
 	moeDense("testdata/gemma4-moe-kv-tiny int8int8", 1128)
 	moeDense("testdata/gemma4-moe-kv-tiny32 int8int8", 1128)
+	moeDense("testdata/gemma4-moe-kv-tiny int4*", 64)
+	moeDense("testdata/gemma4-moe-kv-tiny32 int4*", 64)
 	for _, f := range []string{
 		"testdata/olmo3-tiny", "testdata/olmo_hybrid-tiny", "testdata/smollm3-tiny",
 		"internal/vision/testdata/qwen25vl-vision-tiny", "selftestdata/gemma3-vl-tiny", "selftestdata/llama-tiny",
@@ -779,8 +781,6 @@ var webgpuMemGaps = func() []memgate.Gap {
 	}
 	stacked("testdata/qwen3vlmoe-tiny int8int8", 16384)
 	if runtime.GOARCH != "arm64" { // gpu-darwin's run fires none of these int4 rows: not diagnosed, and not shown to be the architecture rather than the adapter
-		moeDense("testdata/gemma4-moe-kv-tiny int4*", 2152)
-		moeDense("testdata/gemma4-moe-kv-tiny32 int4*", 1128)
 		stacked("testdata/gemma4-moe-kv-tiny int4*", 8192)
 		stacked("testdata/qwen3vlmoe-tiny int4*", 8192)
 	}
@@ -793,7 +793,7 @@ const webgpuGateRowsPath = "testdata/memgate_rows.txt"
 var webgpuGateRowsUpdate = flag.Bool("memgate.rows.update", false, "have TestMemGate_webgpu rewrite testdata/memgate_rows.txt")
 
 // webgpuMemGapsPin is len(webgpuMemGaps) on this architecture.
-var webgpuMemGapsPin = map[string]int{"arm64": 29}[runtime.GOARCH] + map[bool]int{true: 33}[runtime.GOARCH != "arm64"]
+var webgpuMemGapsPin = map[string]int{"arm64": 31}[runtime.GOARCH] + map[bool]int{true: 33}[runtime.GOARCH != "arm64"]
 
 // webgpuGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; the function it returns
 // runs after that read, so the plant is released before Close and the package's own ledger check stays clean.
