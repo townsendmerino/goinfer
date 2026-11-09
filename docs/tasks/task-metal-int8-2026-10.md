@@ -5,7 +5,7 @@ before any implementation or timed run.
 
 ## Why
 
-- **G10** (`docs/tasks/task-gpu-paths-2026-09.md`): every int8-kind weight is re-quantized to int4 (W4A8) when the Metal
+- **G10** (`docs/completed/task-gpu-paths-2026-09.md`): every int8-kind weight is re-quantized to int4 (W4A8) when the Metal
   resident builds (`backend/metal/model.go`, `int4BufA`). `--quant int8`, `int8int8` and `int4mix` on Metal therefore run int4
   numerics, and f32 weights decline to the CPU. G10 offered "a W8A8 GEMV on Metal" or an honest label, sized the
   kernel "medium", and only the label was done.

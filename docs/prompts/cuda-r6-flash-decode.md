@@ -1,14 +1,14 @@
 # goinfer task: R6 — the CUDA flash-decode lane: the spike's mechanism, then the kernel, then f16 KV
 
 > Written 2026-09-19 against goinfer `894c9a9a` plus the same day's edits to
-> `docs/tasks/red-october.md`. **Box: `nobara-pc`.** Three phases with a written record between
+> `docs/completed/red-october.md`. **Box: `nobara-pc`.** Three phases with a written record between
 > each; phase 1 builds no kernel.
-> **The brief is R6 in [`../tasks/red-october.md`](../tasks/red-october.md), and it is the
+> **The brief is R6 in [`../completed/red-october.md`](../completed/red-october.md), and it is the
 > authority** — goal, bands, gates, measurement protocol, record. This prompt is the order of work
 > plus the six points of R6's 2026-09-19 amendment, which exist because the brief as first written
 > got three things about the spike wrong.
-> **Before anything else:** `git pull`, then `grep -n "The depth curves as a line" docs/tasks/red-october.md`
-> and `grep -n "Amendment, 2026-09-19" docs/tasks/red-october.md`. If either is missing, the Mac has
+> **Before anything else:** `git pull`, then `grep -n "The depth curves as a line" docs/completed/red-october.md`
+> and `grep -n "Amendment, 2026-09-19" docs/completed/red-october.md`. If either is missing, the Mac has
 > not pushed the edits this prompt depends on — stop and say so.
 > **Read first, all of it, in R6's order** (§6 rule 12 — the reading list is not optional), plus
 > `docs/measurements/splitkv-q-staging-2026-09-13.md`, §2.2's 2026-09-19 note, and `CLAUDE.md`.

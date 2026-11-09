@@ -1,5 +1,9 @@
 # Task: concurrency — stop the resident-KV thrash, then earn batched multi-request decode (MC0–MC5) — 2026-09
 
+> **2026-11-09:** nothing is queued: rerun 2 ran 2026-10-02 and parked the MC4 candidate with the numbers; "spec inside a
+> batch" is now RF6 and MC4's MoE and recurrent items were built on Metal by OP4 (CUDA: OP4cu-x), both in
+> `docs/tasks/task-forward-and-memory-2026-11.md`. The ledger below is current.
+>
 > **PARKED, 2026-10-01 (owner), with one graded run queued.** Moved to `docs/tasks/parked/`; a pointer stub stays at the
 > old path because ~60 code comments and several docs cite it. MC0–MC3 (including MC3c) and chunked prefill shipped
 > (below), and nothing in this track is an unblocked build. Open:
@@ -150,7 +154,7 @@
 > MC0–MC1 address the first problem and stay inside goinfer's stated niche (one generation at a
 > time). MC2–MC3 address the second and bend it; see "House rules this doc bends."
 >
-> **Siblings.** [`red-october.md`](../red-october.md) R12 (owns W7; this doc is its follow-on) ·
+> **Siblings.** [`red-october.md`](../../completed/red-october.md) R12 (owns W7; this doc is its follow-on) ·
 > [`task-work-queue-2026-09.md`](../task-work-queue-2026-09.md) (J1 fair admission, which MC3 changes;
 > J6 prefix-aware scheduling, measured 1.024× and not shipped, which MC1 may re-open; J8, which
 > MC2 absorbs if the owner agrees) · [`../positioning.md`](../../positioning.md) ("not a serving
@@ -158,6 +162,23 @@
 > [`task-fit-to-hardware.md`](../task-fit-to-hardware.md) (owns the fit guard MC1 must price) ·
 > [`task-never-swap-2026-09.md`](../../completed/task-never-swap-2026-09.md) (MC1's extra KV is anonymous GPU
 > memory on a 16 GB Mac).
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| MC0-MC3c | done | — | MC0, MC1 (Metal, CUDA, WebGPU), MC2, MC3 (Metal, CUDA), MC3c steps 1-2; `backend/metal/kv_slots_test.go:TestKVSlotsWithin` |
+| MC5-chunk | done | — | `backend/metal/mc5_chunk_invariance_test.go:TestMC5_prefillChunkInvariance`; `docs/measurements/chunked-prefill-2026-09-27.md` |
+| MC5-paged | moved | KV5 in `docs/tasks/task-kv-architecture-2026-10.md` | D1, 2026-10-13 |
+| MC4-cand | decision | Francis: keep `-spec-adaptive` opt-in, make it a default, or withdraw it | `docs/measurements/mc4-candidate-cuda-2026-10-01.md` "RERUN 2 RESULT" |
+| MC4-spec | moved | RF6 in `docs/tasks/task-forward-and-memory-2026-11.md` | `docs/completed/task-forward-architecture-2026-10.md` §5.4 |
+| MC4-moe, MC4-rec | moved | Metal: built by OP4; CUDA: OP4cu-x in `docs/tasks/task-forward-and-memory-2026-11.md` | `internal/config/help.go:RecurrentStepHelp` |
+| MC4-adapter | blocked | trigger: a real multi-adapter workload | "MC4 — broadening" below |
+| P10-metal | decision | Francis: pick it up (step 0, the drafter trunk's Metal cost, by day) or kill it | `docs/measurements/p10-metal-projection-2026-09-28.md` |
+| 413-e2e | open | re-run the 7B MC3 batch cells on a Mac that is not swapping, or close it as covered by the unit test | `internal/app/serveapp/prefill_share_testhooks_test.go:TestPrepare_prefillShare` |
+| W7-vulkan | open | optional, reported only (item 29) | `docs/prompts/nobara-mc1-webgpu-2026-09.md` §5 |
+| LeverB | blocked | trigger: 7B-class concurrent CPU serving becomes a priority, or a peer row puts the batched CPU path behind | `docs/measurements/concurrency-mc3c-s1-2026-09-27.md` |
+| J6 | blocked | trigger: more concurrently active conversations than `-kv-sessions` (8 or more on one model) | "MC1 — multi-slot resident KV", follow-on |
+| MC5-cb | blocked | trigger: Francis reverses the positioning | `docs/completed/task-forward-architecture-2026-10.md` §8 E6 (stays parked) |
 
 ---
 
@@ -1420,7 +1441,7 @@ Each item waits on MC3 shipping and on a measured request for it:
   §6). Investigated the same day: the real fix is a ragged-batch kernel (unscoped, real backend
   work); the cheap hypothesis (a workload-aware yield policy in the switch candidate, zero new
   kernels) does NOT work — measured worse than doing nothing, because the cost is concurrent
-  admission itself, not the per-round policy. **Parked, no design exists yet, owner's call.**
+  admission itself, not the per-round policy. **Parked, no design exists yet, owner's call.** *(2026-11-09: now RF6, the ragged path, in `docs/tasks/task-forward-and-memory-2026-11.md`.)*
 - **Mixed adapters in one batch.** Trigger: a real multi-adapter workload.
 
 **The spec trigger, measured on Metal — pre-registered 2026-09-27, before any timing.** Today a model served with
@@ -1723,4 +1744,4 @@ decline, and p99 latency. Only the speed thresholds move:
   shows eviction still hurts at realistic client counts.
 - **Multi-model scheduling.** Distinct models already run in parallel; nothing here changes that.
 
-<!-- doc-reviewed: 2026-10-01 -->
+<!-- doc-reviewed: 2026-11-09 -->

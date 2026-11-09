@@ -11,7 +11,7 @@ import (
 // independent by design, so a change to one floor must not silently move the other's.
 const ctxPlanFloor = mem.PlanCtxFloor
 
-// kvBytesPerPositionAllLayers is Plan's KV-cost rate: per layer (a per-layer-varying family like Gemma 4 is not approximated by one
+// kvBytesPerPositionAllLayers is the KV-cost rate Plan prices WebGPU at (ResidentKVBytes; the CPU, CUDA and Metal have their own): per layer (a per-layer-varying family like Gemma 4 is not approximated by one
 // model-level figure, as metal/backend.go's residentKVBytes also sums per layer), K+V, at the requested precision. Bytes per element match
 // kvBytesForCtx in decoder/arch.go (f32 4.0, f16 2, int8 1.125 including scale). The per-layer width is Architecture.kvDimAt: zero for a
 // linear/mamba/conv mixer layer (no position-indexed K/V), MLA's compressed latent width, whose one row stays f32 at any precision.

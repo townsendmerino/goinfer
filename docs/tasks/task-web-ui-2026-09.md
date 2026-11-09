@@ -15,6 +15,25 @@
 > W22 admin panel would surface. `docs/completed/task-web-ui-ambient.md` is the closed record of
 > the current visual design and is not superseded by anything here.
 
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| W1–W11, W13–W18, W27–W32, W36, §6.1 | done | — | per-item `feat(web-ui)` commits, 2026-09-14/15; e331cc4d2 (W36) |
+| W12 | moved | `task-fit-to-hardware.md`, row P4-pull | skipped (owner, 2026-09-14) |
+| W20-text | done | — | d15064e3d |
+| W20-pdf | open | a no-new-dependency extractor decision | W20 below |
+| W25 | done | — | d15064e3d (a sandboxed data: iframe, no scripts) |
+| W19 | open | decide where the tool loop runs | the grammar side shipped (`task-tool-grammar-union-2026-09.md` T1–T5) |
+| W21 | open | needs a design | no conversation search in the page |
+| W22 | open | a gate for acting on other clients' work | no admin route under `/web/` |
+| W23 | decision | close as met by W36, or scope the "watch it fill" view | W36's schema control |
+| W24 | decision | a stack decision (RAG) | — |
+| W26 | decision | the weakest pull: build or kill | — |
+| W33-2a | open | a library function out of `internal/app/fitcmd/fit.go:Run`, then a fit route | no `/web/models/fit` route |
+| W33-2b | blocked | the owner's sign-off on revisiting W5 | `internal/app/serveapp/webui.go:server.handleWebLoad` takes no quant |
+| W34 | open | the live rate client-side first, then the panel on X1's timing | `task-turn-telemetry-2026-09.md` X1, partly built |
+| W35 | open | §9.6 first (attachments out of the message text) | no elision in the page |
+
 ---
 
 ## 0. What exists today
@@ -726,7 +745,7 @@ checks that the list is laid out below its heading at full width (found by W15's
   `demo/agent/cmd/agent-web/index.html:198` has the collapsible chip UI for exactly this. The
   blocker is architectural: someone must run the tool loop, in the browser or behind a new server
   endpoint. **This is the F.3 question in its sharpest form.** L.
-- **W20 — File attach.** Text and source files are S (read, fence, prepend). PDF is L and is really
+- **W20 — File attach.** *(2026-11-09: the text and source half shipped 2026-09-15, d15064e3d; PDF is still open.)* Text and source files are S (read, fence, prepend). PDF is L and is really
   a dependency decision — extraction in pure Go with no new root module dependency, against
   `task-embed-and-harness-ux.md` §0's rule.
 - **W21 — Search across conversations.** Needs W3 and W9 first. Then it is the obvious place to
@@ -742,7 +761,7 @@ checks that the list is laid out below its heading at full width (found by W15's
   model cannot violate" currently has nowhere a visitor can see it work. M.
 - **W24 — Projects / knowledge / RAG.** ken + aikit + `/v1/embeddings`. A stack decision, not a UI
   one. XL.
-- **W25 — Rendered preview of generated code.** The sandboxing *is* the job: a sandboxed iframe at
+- **W25 — Rendered preview of generated code.** *(2026-11-09: done 2026-09-15, d15064e3d: a `sandbox=""` data: iframe with a CSP and no scripts.)* The sandboxing *is* the job: a sandboxed iframe at
   a null origin, or not at all. L.
 - **W26 — Prompt library.** M, and the weakest pull on the list for this audience.
 - **W33 — A model picker instead of blind text entry.** Filed 2026-09-15 from a live session on
@@ -819,7 +838,7 @@ checks that the list is laid out below its heading at full width (found by W15's
     quant/backend. Read-only: shows what *would* happen, changes nothing.
   - **Still blocked, not this item's problem to solve:** an EXACT check *before* the download —
     header-only GGUF parsing (param counts/MoE geometry without a full `Load()`) — is the specific
-    half `task-fit-to-hardware.md` Phase 1 left unstarted (`docs/tasks/task-gpu-paths-2026-09.md`'s
+    half `task-fit-to-hardware.md` Phase 1 left unstarted (`docs/completed/task-gpu-paths-2026-09.md`'s
     G11 entries have the full reasoning for why). The coarse size-based tag above is what stands in
     for it until that lands; do not conflate the two or promise the exact number pre-download.
   - **Making it changeable, not just visible — the part that actually revisits W5.** The mechanism
@@ -1473,4 +1492,4 @@ markdown TODO, the tool chips — all transplantable) ·
 context-management evidence and its recall negative result · `decoder/resident_reuse.go`,
 `internal/app/serveapp/sessions.go` (the prefix reuse W35's policy is shaped around)
 
-<!-- doc-reviewed: 2026-09-13 -->
+<!-- doc-reviewed: 2026-11-09 -->
