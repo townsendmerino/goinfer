@@ -88,7 +88,7 @@
 | P4-pull | open | needs header-only reading; W12 skipped (owner, 2026-09-14) | `internal/app/pullcmd/pull.go` prints no verdict |
 | G1-G3-G5 | open | the reference cells on nobara and the Mac | no record |
 | P5 | killed | — | afbd10416, 806f7c57d; `../completed/task-l01-hybrid-moe-cpu-gpu.md` |
-| SLOW | open | the working-set refusal and `--accept-slow` on the default mapped path (owner-decided 2026-10-21) | `decoder/moeworkingset.go:moeWorkingSetRefusal`, called from `decoder/model.go:Load` only when streaming weights |
+| SLOW | done | — | a MoE `.giw` decoded on the CPU from its mapping (no `-stream-weights`, no resident runner) takes the paged load's working-set refusal and `--accept-slow`: `decoder/moeworkingset.go:mappedMoEWorkingSetPrediction`, wired in `decoder/model.go:Load`; `decoder/moeworkingset_test.go:TestLoad_mappedMoEWorkingSetRefusal` |
 | Q-KV | decision | whether a decline may offer `-kv f16`, after G1 | §8 |
 
 **Who this is for.** One person with one consumer machine — an 8 GB RTX card, a 16 GB Apple

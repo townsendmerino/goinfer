@@ -99,6 +99,64 @@ func resolveMoEPagerPool(opt, preadCPU string) bool {
 	return MoEPagerDefault(runtime.GOOS) == "pool"
 }
 
+// pagedExpertSpan is the part of wm the pager registers for one projection: its row4 span when present, which is the only one
+// the M==1 decode kernel reads (MatmulBTW4A8Into), else its canonical span; nil for a weight the mapping does not back.
+func pagedExpertSpan(wm *linalg.WeightMat, base, end uintptr) []byte {
+	if s := wm.MappedSpanRow4(base, end); len(s) > 0 {
+		return s
+	}
+	return wm.MappedSpan(base, end)
+}
+
+// forEachRoutedExpert calls fn once per routed expert of w with its identity key (the value the forward touches) and its
+// projections: a Mixtral-style expert's gate, up and down, or a Gemma 4 expert's fused gate‖up and down (keyed by the
+// gate‖up element, gemma4MoEFFN's identity). The always-on shared expert is not a routed expert.
+func forEachRoutedExpert(w *Weights, fn func(key unsafe.Pointer, wms ...*linalg.WeightMat)) {
+	for li := range w.Layers {
+		exps := w.Layers[li].Experts
+		for ei := range exps {
+			ex := &exps[ei]
+			fn(unsafe.Pointer(ex), &ex.Gate, &ex.Up, &ex.Down)
+		}
+		if gm := w.Layers[li].gemma4moe; gm != nil {
+			for ei := range gm.expertsGateUp {
+				fn(unsafe.Pointer(&gm.expertsGateUp[ei]), &gm.expertsGateUp[ei], &gm.expertsDown[ei])
+			}
+		}
+	}
+}
+
+// mappedExpertBytes is a pager's expert accounting without building one: the routed-expert bytes mapping backs (the spans
+// pagedExpertSpan picks), the largest expert, and how many experts it backs.
+func mappedExpertBytes(w *Weights, mapping []byte) (total, maxExpert int64, n int) {
+	if w == nil || w.arch == nil || w.arch.MoE == nil || len(mapping) == 0 {
+		return 0, 0, 0
+	}
+	base := uintptr(unsafe.Pointer(&mapping[0]))
+	end := base + uintptr(len(mapping))
+	forEachRoutedExpert(w, func(_ unsafe.Pointer, wms ...*linalg.WeightMat) {
+		var b int64
+		for _, wm := range wms {
+			b += int64(len(pagedExpertSpan(wm, base, end)))
+		}
+		if b == 0 {
+			return
+		}
+		total, n = total+b, n+1
+		maxExpert = max(maxExpert, b)
+	})
+	return total, maxExpert, n
+}
+
+// pagerBudget is the byte budget a pager over total expert bytes takes when asked for budget: the request, or aikit's auto
+// budget when it is 0, never more than exists and never less than one expert.
+func pagerBudget(budget, total, maxExpert int64) int64 {
+	if budget <= 0 {
+		budget = mmap.AutoBudget()
+	}
+	return max(min(budget, total), maxExpert)
+}
+
 // newExpertPager builds a pager over the experts of an mmap-backed MoE model, or returns nil when paging does not apply
 // (not MoE, not mmap-backed, or no expert weights alias the mapping). budget <= 0 selects an automatic budget (about half
 // of available RAM); it is clamped to [one expert, total expert bytes]. giwPath is the .giw file the mapping was built
@@ -133,10 +191,7 @@ func newExpertPager(w *Weights, mapping []byte, budget int64, giwPath string, po
 		var n int64
 		pageable := true
 		for _, wm := range wms {
-			s := wm.MappedSpanRow4(base, end)
-			if len(s) == 0 {
-				s = wm.MappedSpan(base, end)
-			}
+			s := pagedExpertSpan(wm, base, end)
 			if len(s) == 0 {
 				continue
 			}
@@ -160,33 +215,11 @@ func newExpertPager(w *Weights, mapping []byte, budget int64, giwPath string, po
 			maxExpert = n
 		}
 	}
-	for li := range w.Layers {
-		// Mixtral-style experts: [NumExperts]expertWeights, gate/up/down separate.
-		exps := w.Layers[li].Experts
-		for ei := range exps {
-			ex := &exps[ei]
-			addExpert(unsafe.Pointer(ex), &ex.Gate, &ex.Up, &ex.Down)
-		}
-		// Gemma 4 experts: fused gate‖up + down, held in the gemma4moe sub-block. Keyed by
-		// the gateUp element address — the same identity gemma4MoEFFN touches.
-		if gm := w.Layers[li].gemma4moe; gm != nil {
-			for ei := range gm.expertsGateUp {
-				addExpert(unsafe.Pointer(&gm.expertsGateUp[ei]), &gm.expertsGateUp[ei], &gm.expertsDown[ei])
-			}
-		}
-	}
+	forEachRoutedExpert(w, addExpert)
 	if total == 0 {
 		return nil // no mapping-backed experts to manage
 	}
-	if budget <= 0 {
-		budget = mmap.AutoBudget()
-	}
-	if budget > total {
-		budget = total // never budget more than exists
-	}
-	if budget < maxExpert {
-		budget = maxExpert // must hold at least one expert
-	}
+	budget = pagerBudget(budget, total, maxExpert)
 	minfltBase, majfltBase, faultsOK := processFaultCounts()
 	if pool && giwPath != "" && len(poolMembers) == len(members) {
 		pool, err := newExpertBufferPool(giwPath, poolMembers, budget, w.arch.MoE.TopK)
