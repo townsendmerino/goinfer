@@ -124,7 +124,8 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
 - **Adapters at compute time.** `Model.LoadAdapter`, `HasAdapter`, `Session.UseAdapter`,
   `Session.ClearAdapter`, and `Options.LoRA`'s multi-adapter behaviour.
 - **Diagnostics and capture.** `Model.ForwardCapture`, `ForwardSubCapture`, `HiddenLast`,
-  `DecodePath`, `PrefillPath`, `PrefillPathReporter`, `ResidentDecline`, `MmapByteOffset`.
+  `DecodePath`, `PrefillPath`, `PrefillPathReporter`, `ResidentDecline`, `MmapByteOffset`, and `Generation.ResidentDeclined`
+  (why one generation ran on the CPU on a resident model).
 - **Serialization plumbing.** `SerializeWeights`, `SerializeWeightsTo`, `StreamTranscodeGGUF`,
   `TranscodeGIW`, `TranscodeGIWTimed`, `TranscodeGIWLoRA`, `TranscodeGIWLoRATimed`, `TranscodePhases`, `GIWAdapterLoRA`,
   `EnsureCachedGIW`, `SidecarPath`, `SidecarPathIfFresh`, `SidecarPathIfCurrent`, `SidecarState`, `DefaultToSidecar`,

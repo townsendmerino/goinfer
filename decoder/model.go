@@ -49,6 +49,7 @@ type Model struct {
 	resident    ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
 	lifeP       unsafe.Pointer  // *modelLife (lifecycle.go): the in-flight generations Close ends; made on first use
 	resBusy     int32           // atomic: claims the single shared resident KV for one in-flight generation. Raw int32 (not atomic.Bool) so Model stays copyable for the value-copy test seam.
+	capWarned   int32           // atomic: the first prompt past the resident's context has been reported (warnResidentCap)
 	// batcher: MC3's coordinator (mc3_batch.go) — several generations on the resident at once, each on its own KV
 	// slot, their decode tokens joined into shared steps. nil unless EnableResidentConcurrency enabled it.
 	batcher *residentBatcher
@@ -1480,6 +1481,14 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 	return logits, err
 }
 
+// warnResidentCap reports, once per model, that a prompt passed the resident's context and ran on the CPU path, which is
+// correct but far slower to the first token; raising the resident context (-ctx) keeps such prompts on the device.
+func (m *Model) warnResidentCap(why string) {
+	if atomic.CompareAndSwapInt32(&m.capWarned, 0, 1) {
+		logs.Warnf("decoder: %s, so it runs on the CPU (first time only; a larger resident context keeps it on the device)", why)
+	}
+}
+
 // tryClaimResident attempts the exclusive claim on the model's single shared resident KV (the resBusy CAS), the one CAS site
 // every resident-touching caller shares. It returns false when there is no resident backend or another generation holds the
 // claim; the caller must then fall back to the CPU/staged path (distinct sequences still complete correctly, only resident
@@ -1561,6 +1570,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			// caller derives residentPath from ResidentActive(). This is the decoder-seam half, defense in depth for any caller that
 			// does not.
 			useGPU = false
+			g.ResidentDeclined = fmt.Sprintf("the prompt's %d tokens pass the resident's context of %d", len(prompt), ctxCap)
+			m.warnResidentCap(g.ResidentDeclined)
 		} else if bt := m.batcher; bt != nil && lora == nil && bt.claim(&m.resBusy) {
 			// MC3: one of several concurrent generations on the resident, on its own KV slot (mc3_batch.go).
 			mc3 = bt
@@ -1573,6 +1584,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 					// (applyLoRA); do NOT proceed resident with no delta bound.
 					atomic.StoreInt32(&m.resBusy, 0)
 					useGPU = false
+					g.ResidentDeclined = "the adapter could not be bound on the resident: " + err.Error()
 				} else {
 					defer func() {
 						resAdapter.SetAdapter(nil)
@@ -1584,6 +1596,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			}
 		} else {
 			useGPU = false
+			g.ResidentDeclined = "another generation held the resident"
 		}
 	}
 	// Allocate the host KV cache here, not before the CAS above: this covers both "never going to be resident" and "lost the race
@@ -2229,6 +2242,10 @@ type Generation struct {
 	// was asked and said no (a multi-image turn on a backend whose resident prefill takes one block). Empty when it
 	// ran, or when no resident implements it.
 	ImgPrefillDecline string
+	// ResidentDeclined is why this generation ran on the CPU path on a model with a resident runner it could have used: its
+	// prompt passed the resident's context (ResidentContextCap), another generation held the resident, or an adapter failed
+	// to bind. "" when it ran on the resident, or the model has no resident.
+	ResidentDeclined string
 	// DecodeResident reports whether a multimodal turn's decode ran on the resident after its CPU prefill was uploaded
 	// (GenerateGemma4VL's bridge). Diagnostic, as ImgPrefillResident: a gate must show the image turn decoded resident, not on
 	// the CPU.
