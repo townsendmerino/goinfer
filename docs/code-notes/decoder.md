@@ -10328,7 +10328,7 @@ of those entry points calls this function today, matching this function's own
 Moved from `decoder/residentneed.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-One memory-accounting path per backend (docs/tasks/task-memory-accounting-2026-09.md).
+One memory-accounting path per backend (docs/completed/task-memory-accounting-2026-09.md).
 
 Before this, Plan("metal") — what `fit` reports — and Metal's own pre-build guard priced the same
 load differently, measured on an M1 Pro (2026-09-25, qwen2.5-coder-1.5b at ctx 4096):
@@ -18550,7 +18550,7 @@ human remembering to look at throughput.
 Moved from `decoder/residentneed_test.go` (the comment above `loadAccountingFixture`) on 2026-10-09.
 
 ```text
-docs/tasks/task-memory-accounting-2026-09.md item 2: `fit`'s verdict (Plan) and Metal's resident guard
+docs/completed/task-memory-accounting-2026-09.md item 2: `fit`'s verdict (Plan) and Metal's resident guard
 (ResidentNeedBytes, via backend/metal/backend.go's residentNeedBytes) must be the same number by construction. Before,
 Plan("metal") had no host-copy term and priced Metal's KV at f32, so on a directly loaded model it asked for
 about half of what the guard would then demand (measured: 2.34 vs 4.33 GB on qwen2.5-coder-1.5b).

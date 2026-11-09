@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mellum2.1 Gate 1, part 2 (docs/tasks/task-mellum21-2026-10.md): the goinfer side of the parity gates against the 2.1 checkpoint and the goldens part 1 pinned from its real Hugging Face weights.
+# Mellum2.1 Gate 1, part 2 (docs/completed/task-mellum21-2026-10.md): the goinfer side of the parity gates against the 2.1 checkpoint and the goldens part 1 pinned from its real Hugging Face weights.
 #   0. tokenizer  tokenizer.json byte-identical to the staged copy that TestByteLevel_mellum2GoldenParity passed on (21 passes, 2026-10-09): the golden carries over
 #   1. logit      TestMellum2_logitParity  (chat golden, thinking off; argmax exact, sample-256 cosine >= 0.98 as 2.0's; 2.0 measured 0.99955)
 #   2. window     TestMellum2_windowParity (1,441 tokens past the 1,024 window; same bars; 2.0 measured 0.99636)
@@ -8,7 +8,7 @@
 #                 in the "on" arm and not in the "off" arm, on 2.1's weights. Timed, so this job holds the timing lock (night.py does) and nothing else runs on the box.
 # A SKIP is a failure of this job (no checkpoint, no golden, a heavy gate not opted in). Pinned: $BIN/decoder.test built from the tree at queue time ($BIN/rev, $BIN/tree.diff).
 # Estimate ~100 min (three loads of the 12B at int8int8/int4 ~6-10 min each; the 1,441-token window prefill ~15-30 min; K=600 forwards ~4-7 min each pair); queue at 150:
-#   python3 scripts/night.py add mellum21-gates --est 150 --by "nobara session, Mellum2.1 Gate 1" --doc docs/tasks/task-mellum21-2026-10.md -- env BIN=$HOME/goinfer-bench/mellum21 bash docs/measurements/mellum21-2026-10/run-mellum21-gates.sh
+#   python3 scripts/night.py add mellum21-gates --est 150 --by "nobara session, Mellum2.1 Gate 1" --doc docs/completed/task-mellum21-2026-10.md -- env BIN=$HOME/goinfer-bench/mellum21 bash docs/measurements/mellum21-2026-10/run-mellum21-gates.sh
 # MELLUM_DRY=1 checks preconditions and prints the plan.
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)

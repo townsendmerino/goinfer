@@ -16,7 +16,7 @@
 > [`../integrations/claude-code.md`](../integrations/claude-code.md) (the two harness pages this one
 > copies the shape of) · [`task-tool-grammar-union-2026-09.md`](task-tool-grammar-union-2026-09.md) (the
 > many-tools grammar M0 relies on) · [`task-fit-to-hardware.md`](task-fit-to-hardware.md) (owns the
-> context-default policy M2 amends) · [`task-memory-accounting-2026-09.md`](task-memory-accounting-2026-09.md)
+> context-default policy M2 amends) · [`../completed/task-memory-accounting-2026-09.md`](../completed/task-memory-accounting-2026-09.md)
 > (the pricing M2 uses) · `docs/server.md` · `docs/api-tiers.md`.
 
 <!-- ledger -->
@@ -141,7 +141,7 @@ agent's first turns fit in, or a message saying so at startup — never a mid-se
 **Read first.** `task-fit-to-hardware.md` Phase 2 (CUDA's fit-by-default context: up to 8192 when the
 card affords it, and the 2026-09-15/16 regression it caused on `-moe-cache-experts` loads — a larger
 default ate the expert cache's VRAM; the fix keeps 4096 there), `backend/metal/model.go` `resolveMetalCtxCap`,
-the S4 live memory ceiling (`../completed/task-never-swap-2026-09.md`), `task-memory-accounting-2026-09.md` (the one
+the S4 live memory ceiling (`../completed/task-never-swap-2026-09.md`), `../completed/task-memory-accounting-2026-09.md` (the one
 KV formula to price with), `docs/tasks/task-embed-and-harness-ux.md` mode 3.
 
 **Build.**

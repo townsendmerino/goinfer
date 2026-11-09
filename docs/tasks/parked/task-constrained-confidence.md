@@ -767,7 +767,7 @@ exists.
 - **Why it stopped:** its estimate was ~6 h. CUDA prefills a Gated-DeltaNet prompt one token at a time (~14 ms per
   token). The owner: never a 6-hour run. Two changes:
   1. **Batched DeltaNet prefill on CUDA**, as its own gated task
-     ([`task-cuda-deltanet-prefill-2026-09.md`](../task-cuda-deltanet-prefill-2026-09.md)). D6a runs on the commit that
+     ([`task-cuda-deltanet-prefill-2026-09.md`](../../completed/task-cuda-deltanet-prefill-2026-09.md)). D6a runs on the commit that
      ships it, named then.
   2. **Smaller samples**, from the same rule (lowest `sha256(id)` per stratum), so each is the head of the original:
      - calibration: 600 rows (noul 239 / choice 187 / score 174), sha256 `91b3cc2a…95cb`;

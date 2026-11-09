@@ -29,8 +29,9 @@
 | G2 | active | CUDA i8 dense: the exact-input G2 PASSES (owner's (c) on #755) and the cross-backend G2's FAIL is recorded; still to do: Metal f16 and i8 against the CPU, and P4's families | `docs/measurements/cuda-kv-i8-2026-11/scope.md` "S2, exact-input G2" |
 | G3 | open | CPU, Metal and CUDA i8 dense PASS; still to do: CUDA explicit f32 and f16 readback per family, on nobara, after S4's runs | `docs/measurements/kv-precision-2026-10/g3.md`; `TestKV8_deliveredBytes` |
 | G4 | active | CUDA i8 dense read 2026-11-08 (S4, #768: D7 PARKED, S DOES NOT PASS); every other phase's G4 runs with that phase | `s4-registration.md` |
-| G5 | blocked | with each f16 widening | `docs/tasks/task-cuda-f16-kv-2026-10.md` |
+| G5 | blocked | with each f16 widening | `docs/completed/task-cuda-f16-kv-2026-10.md` |
 | speed | active | CUDA i8 dense read 2026-11-08 (S4, #768: short-context REGRESSION by the registered bar; published); every other phase's runs with that phase | `s4-registration.md`, "Speed results" |
+| F16-speed | open | the paired f16-against-f32 served speed check of CUDA's five dense f16-auto families on the paged KV, as `docs/completed/task-cuda-f16-kv-2026-10.md` registered it (1.5B and phi3 at 512 keys and over, 7B at 8000, the reversed arm order); about 70 minutes of night time | `docs/measurements/cuda-f16-kv-2026-10/run-kv16-speed.sh`; moved here from that doc on its archive, 2026-11-09 |
 | D1 | done | — | §6 |
 | D2 | done | — | §6 |
 | D3 | done | — | §6 |
@@ -271,7 +272,7 @@ G2 minutes (two arms × the prompt set on the 1.5B; state the wall time before s
   i8 1 B plus 8 B of scales per position, head and layer) for every cell in phase 0's table. Catches a silent fallback
   that the banner might still misreport.
 - **G4, quality against f32 (published, not a refusal):** the CUDA f16 gate's instrument and cells
-  (`docs/tasks/task-cuda-f16-kv-2026-10.md`: 7B at K=8000, 1.5B at K=3900) plus one long-context cell per family group,
+  (`docs/completed/task-cuda-f16-kv-2026-10.md`: 7B at K=8000, 1.5B at K=3900) plus one long-context cell per family group,
   agreement and mean KL ratio recorded per family and precision. `auto` may move to a precision only on a PASS under that
   doc's bars and the owner's word.
 - **G5, f16 range:** the overflow survey from the CUDA f16 gate (max|K| and max|V| under 65504/2 on the gate prompts).
