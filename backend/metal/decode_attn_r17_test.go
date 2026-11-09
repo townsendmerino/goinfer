@@ -359,7 +359,8 @@ func r17ExactNull(t *testing.T, r *resident) Pipeline {
 //	GOINFER_METAL_R17=1 go test -tags goinfer_testhooks -run '^TestR17AttentionProto$' -v ./metal/
 //
 // Env: GOINFER_METAL_R17_MODEL, GOINFER_METAL_R17_DEPTHS (default 3900), GOINFER_METAL_R17_SPLITS (split counts for
-// the prototype, default "0,32"; 0 = production's rule), GOINFER_METAL_R17_REPS (5), GOINFER_METAL_R17_TOKENS (20).
+// the prototype, default "0,32"; 0 = production's rule), GOINFER_METAL_R17_REPS (5), GOINFER_METAL_R17_TOKENS (20),
+// GOINFER_METAL_R17_ABBA (1: the first two arms alternate their order rep by rep).
 func TestR17AttentionProto(t *testing.T) {
 	if os.Getenv("GOINFER_METAL_R17") != "1" {
 		t.Skip("set GOINFER_METAL_R17=1 (loads a real checkpoint; minutes of GPU time)")
@@ -545,9 +546,23 @@ func TestR17AttentionProto(t *testing.T) {
 
 		res := make([][]float64, len(arms))
 		idleRes := make([][]float64, len(arms)) // one token right after 2 s idle, per arm per rep (R17 precondition 3)
+		// GOINFER_METAL_R17_ABBA=1 swaps the first two arms on every odd rep, so the pairs run A B, B A, A B, …: a drift across the
+		// run lands on both arms alike.
+		abba := os.Getenv("GOINFER_METAL_R17_ABBA") == "1" && len(arms) >= 3
 		for rep := 0; rep < reps; rep++ {
-			for ai, a := range arms {
-				res[ai] = append(res[ai], runArm(a))
+			order := make([]int, len(arms))
+			for i := range order {
+				order[i] = i
+			}
+			if abba && rep%2 == 1 {
+				order[0], order[1] = 1, 0
+			}
+			got := make([]float64, len(arms))
+			for _, ai := range order {
+				got[ai] = runArm(arms[ai])
+			}
+			for ai := range arms {
+				res[ai] = append(res[ai], got[ai])
 			}
 			for ai, a := range arms {
 				restore := setArm(a)
