@@ -12,6 +12,21 @@
 > - **`checkpoint-fetch` landed (2026-10-04), so the "out of scope" paragraph is stale**: `pull` now fetches a split GGUF as one model and a safetensors checkpoint as one verified set. The proposal says nothing about what "delete the source after converting" means for either. See Decision 5.
 > - **`cacheFresh` also checks the weights-layout version now** (v15), and **the default CPU target on an arm64 core without DotProd is canonical, not `cpu-arm64`** (2026-10-05, `bf4e5759`). Both are corrected in place below.
 > - **Decision 3 has precedent now**: `prequant -lora` records the adapter in `<bundle>.lora.json` (`24ffe1b5`), a provenance sidecar of exactly option (a)'s shape.
+>
+> **2026-11-09:** P0 now lives at `decoder/sidecar_projected.go:projectedSidecarBytes`; sidecar names carry the format version
+> (`<base>.<quant>[.e4h].<target>.v<N>.giw`, `decoder/sidecar.go:streamCachePath`), so every name below is the legacy form;
+> a download writes its verified digest sidecar itself (`pull/pull.go:recordVerifiedDigest`, 2026-10-05), so proposal step 1 is
+> done; and `cache prune-sidecars` (2026-11-06, `pull/prune.go:StaleSidecars`) removes sidecars in an old format. The five
+> decisions are still open.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| P0 | done | — | `decoder/sidecar_projected.go:projectedSidecarBytes` |
+| P1 | blocked | Decision 3, then the provenance record, resolving without the `.gguf`, freshness on the recorded hash, and `fit` | no `.giw.json`; `decoder/sidecar.go:cacheFresh` is mtime plus "does it load" |
+| P2 | blocked | Decisions 1, 2 and 5 | no `--keep-gguf`; `pull/pull.go`'s package doc still says it does not convert |
+| P3 | moved | the stale-format prune shipped as `cache prune-sidecars` (#734); a prune of pairs or non-default variants waits on Decision 4 | `pull/prune.go:StaleSidecars` |
+| D1-D5 | decision | Francis | "Decisions" below |
 
 ## Summary
 
@@ -190,4 +205,4 @@ the download could only be committed after the final check, which is exactly wha
 - `docs/completed/task-never-swap-2026-09.md` S1 introduced the sidecar default this builds on.
 - `docs/giw-bundles.md` documents the `.giw` format and when sidecars are rebuilt.
 
-<!-- doc-reviewed: 2026-10-05 -->
+<!-- doc-reviewed: 2026-11-09 -->

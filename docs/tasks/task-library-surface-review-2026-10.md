@@ -17,7 +17,7 @@
 | M4 | open | a tool-grammar helper on `chat.Template`; document `ToolCall.ID` and the `<think>` lead on `ParseToolCalls` | the parts exist (`constrain/tools_union.go:ToolCallsGrammar`), no helper |
 | M5 | done | — | merged 2026-10-11 |
 | M6 | done | — | 3d50ec1f8; `decoder/lifecycle.go:Model.endGenerations` |
-| M7 | open | write the resident concurrency contract on `decoder.Model` | its doc comment is unchanged |
+| M7 | done | — | the contract is `decoder.Model`'s doc comment; `decoder/concurrency_contract_test.go:TestModel_concurrentGenerationsBeyondTheResidentsPlacesRunOnTheCPU` pins the case past the resident's places |
 | M8 | open | document that `Generation.Err` wraps `ctx.Err` and how often prefill checks | the comments are unchanged |
 | M9 | done | — | the kinds shipped in 275701c0c; `decoder.Options.RequireBackend` and `ErrBackendDeclined` (`decoder/residency.go:Model.backendDeclinedErr`); `decoder/require_backend_test.go:TestLoad_requireBackendRefusesADecline` |
 | U1 | open | place the unlisted surfaces in `docs/api-tiers.md` | none of them is listed there |

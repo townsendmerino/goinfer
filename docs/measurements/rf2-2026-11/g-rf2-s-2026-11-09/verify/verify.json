@@ -1,0 +1,218 @@
+{
+ "builds": {
+  "A": {
+   "path": "/home/francis/goinfer-bench/rf2-s-2026-11-09/bins/serve-cuda-old",
+   "sha256": "99541c53bf50938b9ce03656b45f2d3ba536bf4fcbb7ae56192c135033921d71"
+  },
+  "B": {
+   "path": "/home/francis/goinfer-bench/rf2-s-2026-11-09/bins/serve-cuda-new",
+   "sha256": "0e232a46521c0b41456d23bd44c33064d4ddf0f27b7004deed215ffdc573cbbc"
+  }
+ },
+ "cells": {
+  "1.5B:3900": {
+   "aa": [],
+   "aa_ratio": 1.0003005084438907,
+   "context": {},
+   "median_ratio_B_over_A": 1.0030491936492714,
+   "pairs": [
+    {
+     "A": {
+      "mean": 660.0799806157364,
+      "prompt_tokens": 1072,
+      "rates": [
+       662.0596712478203,
+       658.1002899836525
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 661.3231377832129,
+      "prompt_tokens": 1072,
+      "rates": [
+       659.4367041667113,
+       663.2095713997146
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 1.0018833432371588
+    },
+    {
+     "A": {
+      "mean": 655.337796210316,
+      "prompt_tokens": 1072,
+      "rates": [
+       650.7244400978631,
+       659.951152322769
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 657.336048056648,
+      "prompt_tokens": 1072,
+      "rates": [
+       656.833361483301,
+       657.8387346299949
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 1.0030491936492714
+    },
+    {
+     "A": {
+      "mean": 656.3080291137765,
+      "prompt_tokens": 1072,
+      "rates": [
+       654.0662073875466,
+       658.5498508400062
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 660.2691150098836,
+      "prompt_tokens": 1072,
+      "rates": [
+       659.649013711534,
+       660.8892163082332
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 1.006035406730367
+    }
+   ]
+  },
+  "7B:7500": {
+   "aa": [],
+   "aa_ratio": 1.0004342719725325,
+   "context": {},
+   "median_ratio_B_over_A": 1.0004318784951187,
+   "pairs": [
+    {
+     "A": {
+      "mean": 181.68056187409888,
+      "prompt_tokens": 1969,
+      "rates": [
+       181.78964547581833,
+       181.5714782723794
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 181.67019649571233,
+      "prompt_tokens": 1969,
+      "rates": [
+       181.79265692173456,
+       181.54773606969007
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 0.9999429472350833
+    },
+    {
+     "A": {
+      "mean": 181.68983136430973,
+      "prompt_tokens": 1969,
+      "rates": [
+       181.52675592938442,
+       181.852906799235
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 181.83048983163263,
+      "prompt_tokens": 1969,
+      "rates": [
+       181.88498757406634,
+       181.77599208919892
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 1.000774168076808
+    },
+    {
+     "A": {
+      "mean": 181.67902449428925,
+      "prompt_tokens": 1969,
+      "rates": [
+       181.77677576285646,
+       181.58127322572201
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 181.7574877579825,
+      "prompt_tokens": 1969,
+      "rates": [
+       181.856911116872,
+       181.65806439909298
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 1.0004318784951187
+    }
+   ]
+  }
+ },
+ "provenance": {
+  "cpu_count": 16,
+  "ctx_pin": 0,
+  "deep_ctx": 0,
+  "distro": "Nobara Linux 44",
+  "fit_need": "goinfer's fit: banner when one has been read, else BENCH_FIT_NEED_GB, else the checkpoint's file size, which is a lower bound (no KV or scratch) and is flagged per cell (machine.fit_need_lower_bound); the start check has no margin",
+  "free_mem_override": false,
+  "goinfer_commit": "a4b159444",
+  "goinfer_tree_dirty": false,
+  "gpu": {
+   "driver": "595.112.07",
+   "mem_total_mib": 8192,
+   "mem_used_mib": 427,
+   "name": "NVIDIA GeForce RTX 2070 SUPER",
+   "temp_c": 47
+  },
+  "gpu_compute_apps_at_start": [
+   "1864, 20 MiB"
+  ],
+  "host": "nobara-pc",
+  "kind": "provenance",
+  "loadavg_at_start": [
+   0.08203125,
+   0.091796875,
+   0.12353515625
+  ],
+  "peer": {
+   "ollama_bin": "/home/francis/ollama-0325/bin/ollama",
+   "version": "0.32.5"
+  },
+  "peer_llamacpp": {
+   "bin": "llama-server",
+   "version": null
+  },
+  "sampling": "sent explicitly per cell; see each record's `sent`",
+  "serve_binaries": {
+   "cpu": {
+    "mtime": "2026-08-22T18:18:03Z",
+    "path": "/home/francis/bench-v0.15.0/serve-cpu"
+   },
+   "cuda": {
+    "mtime": "2026-11-09T12:32:39Z",
+    "path": "/home/francis/goinfer-bench/rf2-s-2026-11-09/bins/serve-cuda-old"
+   },
+   "metal": {
+    "mtime": null,
+    "path": "/nonexistent/serve-metal"
+   },
+   "webgpu": {
+    "mtime": "2026-08-22T18:17:55Z",
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu"
+   }
+  },
+  "serve_binaries_old": {
+   "cuda": {
+    "mtime": "2026-11-09T12:32:39Z",
+    "path": "/home/francis/goinfer-bench/rf2-s-2026-11-09/bins/serve-cuda-old"
+   }
+  },
+  "uname": "Linux 7.3.0-202.nobara.fc44.x86_64 x86_64",
+  "utc": "2026-11-09T17:37:06Z"
+ }
+}
