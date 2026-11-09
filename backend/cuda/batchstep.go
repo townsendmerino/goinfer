@@ -4,7 +4,6 @@ package cuda
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 
@@ -215,27 +214,6 @@ func raggedOrder(seqs []decoder.ResidentRaggedSeq) ([]int, error) {
 	return order, nil
 }
 
-// soloRaggedOffForTest keeps Forward, ForwardArgmax, ForwardSample and ForwardN on today's calls, so a test's references are a
-// shape's own launches rather than the ragged step it checks. false in production. Set by tests only.
-var soloRaggedOffForTest bool
-
-// soloRagged runs one sequence's rows (one decode token, or a verify's rows) as a one-sequence StepRagged on the bound KV slot,
-// with draw on the last row when non-nil: RF2-3b-3's move of the solo shapes onto the ragged step. ok is false, and the caller
-// takes today's call, when the step is not offered, a ragged kernel is not loaded, or the step declines the shape.
-func (r *cudaResident) soloRagged(embs [][]float32, pos int, draw *decoder.ResidentBatchDraw) (out decoder.ResidentRaggedOut, ok bool, err error) {
-	if _, hi := r.BatchStepRange(); soloRaggedOffForTest || hi == 0 || r.raggedRowsWords(1) == 0 || r.eModel {
-		return decoder.ResidentRaggedOut{}, false, nil
-	}
-	res, err := r.StepRagged([]decoder.ResidentRaggedSeq{{Slot: r.kvSlot, Pos: pos, Embs: embs, Draw: draw}})
-	if errors.Is(err, errPrefillDeclined) {
-		return decoder.ResidentRaggedOut{}, false, nil
-	}
-	if err != nil {
-		return decoder.ResidentRaggedOut{}, true, err
-	}
-	return res[0], true, nil
-}
-
 // raggedChunkDecline is why this model's step cannot take a prefill chunk, or nil: the chunk runs prefillCore's attention and
 // dense GEMVs over its rows, so a recurrent mixer, a routed-expert layer and a windowed KV (whose slot base the step's rows
 // do not share) stay with their own passes.
@@ -259,21 +237,15 @@ type raggedRows struct {
 	hostPos          []int
 	classOf          []int // layer -> index into classes
 	classes          []raggedClass
-	// skScores and skInv are the split-KV rows' scratch: skRows rows of nH x skStride scores and nH inverse denominators per
-	// launch, so a class's split rows go in chunks of skRows.
-	skScores, skInv  Buffer
-	skRows, skStride int
 }
 
 // raggedClass is one class of layers' split of a step's rows by decode's attention launch there (decodeAttnArm): the rows taking
-// attn_batched (one attn_ragged launch), the flash-decode lane (fa_partial_ragged and fa_combine_ragged) and split-KV (its three
-// ragged launches), as device lists of row indices, and the rest (the glue attention, a refused span, split-KV's opt-in split
-// V-sum, or rows the margin has no room for), which take decode's own launches row by row.
+// attn_batched (one attn_ragged launch) and the flash-decode lane (fa_partial_ragged and fa_combine_ragged), as device lists of row
+// indices, and the rest (split-KV, the glue attention, a refused span), which take decode's own launches row by row.
 type raggedClass struct {
-	batched, flash, split Buffer
-	nB, nF, nS            int
-	maxWin, maxWinS       int // the widest span among the batched rows, and among the split-KV rows
-	other                 []int
+	batched, flash Buffer
+	nB, nF, maxWin int // maxWin: the widest span among the batched rows
+	other          []int
 }
 
 // raggedLayerClasses groups the layers by what decodeAttnArm reads of a layer (its window, KV heads, head dim and flash-lane
@@ -301,8 +273,7 @@ func (r *cudaResident) raggedLayerClasses() (reps, classOf []int) {
 }
 
 // raggedRowsWords is the 4-byte words raggedRowsFor allocates for n rows: each row's slot and position, its query scale when the
-// family has one, and three n-entry row lists per layer class; 0 when the ragged kernels are not loaded. Split-KV rows' score
-// scratch comes beside it, only as much as the margin's prefill pass leaves (raggedRowsFor).
+// family has one, and two n-entry row lists per layer class; 0 when the ragged kernels are not loaded.
 func (r *cudaResident) raggedRowsWords(n int) int {
 	if n == 0 || r.bRopeKVRagged == (Pipeline{}) || r.bAttnRagged == (Pipeline{}) {
 		return 0
@@ -312,13 +283,7 @@ func (r *cudaResident) raggedRowsWords(n int) int {
 		w += n
 	}
 	reps, _ := r.raggedLayerClasses()
-	return w + 3*n*len(reps)
-}
-
-// raggedSKReady reports whether split-KV's ragged twins are loaded and decode's split-KV is the bit-identical V-sum (not the
-// opt-in split one), so a step's split-KV rows can take one launch of each.
-func (r *cudaResident) raggedSKReady() bool {
-	return r.skScoresRagged != (Pipeline{}) && r.skSoftmaxRagged != (Pipeline{}) && r.skVsumRagged != (Pipeline{}) && r.skVsumSplit < 1
+	return w + 2*n*len(reps)
 }
 
 // raggedFAReady reports whether the flash-decode lane's ragged twins are loaded, so a step's lane rows can take one launch.
@@ -327,9 +292,8 @@ func (r *cudaResident) raggedFAReady() bool {
 }
 
 // raggedRowsFor uploads rows into one buffer from ai (prefillCore's scratch, so StepScratchBytes prices it), or returns nil when
-// the ragged kernels are not loaded, so every row takes decode's own gap. passRows is the pass's whole width (a prefill chunk's rows
-// included), whose scratch is already allocated: the split-KV scores take only what the margin's 512-row pass leaves beside it.
-func (r *cudaResident) raggedRowsFor(rows []stepRow, passRows int, ai, af func(int) Buffer) (*raggedRows, error) {
+// the ragged kernels are not loaded, so every row takes decode's own gap.
+func (r *cudaResident) raggedRowsFor(rows []stepRow, ai func(int) Buffer) (*raggedRows, error) {
 	n := len(rows)
 	words := r.raggedRowsWords(n)
 	if words == 0 {
@@ -351,10 +315,9 @@ func (r *cudaResident) raggedRowsFor(rows []stepRow, passRows int, ai, af func(i
 	}
 	reps, classOf := r.raggedLayerClasses()
 	rg.classOf = classOf
-	lists := off // the classes' row lists start here: three n-entry lists per class
 	for _, l := range reps {
 		Ly := &r.layers[l]
-		c := raggedClass{batched: b.At(4 * off), flash: b.At(4 * (off + n)), split: b.At(4 * (off + 2*n))}
+		c := raggedClass{batched: b.At(4 * off), flash: b.At(4 * (off + n))}
 		for i, p := range rg.hostPos {
 			w := decodeNWin(Ly, p)
 			switch arm := r.decodeAttnArm(Ly, l, w); {
@@ -365,41 +328,12 @@ func (r *cudaResident) raggedRowsFor(rows []stepRow, passRows int, ai, af func(i
 			case arm == armFlash && r.raggedFAReady():
 				host[off+n+c.nF] = int32(i)
 				c.nF++
-			case arm == armSplitKV && r.raggedSKReady():
-				host[off+2*n+c.nS] = int32(i)
-				c.nS++
-				c.maxWinS = max(c.maxWinS, w)
 			default:
 				c.other = append(c.other, i)
 			}
 		}
 		rg.classes = append(rg.classes, c)
-		off += 3 * n
-	}
-	// The split-KV rows' scores: chunks of as many rows as the margin's 512-row pass leaves room for beside the step's own scratch,
-	// so a step never holds more than the margin reserves; with no room for one row, those rows take decode's own launches.
-	for _, c := range rg.classes {
-		if c.nS > 0 {
-			rg.skStride = max(rg.skStride, c.maxWinS)
-		}
-	}
-	if rg.skStride > 0 {
-		used := r.PrefillScratchBytes(passRows) + scratchBufBytes(words)
-		left := r.PrefillScratchBytes(prefillDefaultChunk) - used - 2*allocRoundSlack(1)
-		perRow := int64(r.nH) * int64(rg.skStride+1) * 4
-		rg.skRows = int(min(int64(n), max(0, left/perRow)))
-		for ci := range rg.classes {
-			if c := &rg.classes[ci]; rg.skRows == 0 && c.nS > 0 {
-				split := lists + 3*n*ci + 2*n
-				for k := range c.nS {
-					c.other = append(c.other, int(host[split+k]))
-				}
-				c.nS = 0
-			}
-		}
-		if rg.skRows > 0 {
-			rg.skScores, rg.skInv = af(rg.skRows*r.nH*rg.skStride), af(rg.skRows*r.nH)
-		}
+		off += 2 * n
 	}
 	if e := gpu.Upload(b, host); e != nil {
 		return nil, e
@@ -491,31 +425,6 @@ func (r *cudaResident) stepAttnRows(Ly *cudaLayer, l int, rows []stepRow, from i
 			}
 			if e := r.launch(r.faCombineRagged, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(k), GridZ: 1, BlockX: uint32(Ly.hd), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(3 * U * 4)},
 				Arg(r.faBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(U)), gpu.ArgValue(int32(a)), Arg(c.flash), Arg(c0)); e != nil {
-				return e
-			}
-		}
-	}
-	if c.nS > 0 {
-		const dTile = 32 // decode's split-KV V-sum tile (splitKVAttnDecode)
-		for a := 0; a < c.nS; a += rag.skRows {
-			k := min(rag.skRows, c.nS-a)
-			r.raggedSKLaunches++
-			if e := r.launch(r.skScoresRagged, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((c.maxWinS + 127) / 128), GridZ: uint32(k), BlockX: 128, BlockY: 1, BlockZ: 1,
-				SharedMemBytes: uint32(Ly.hd * 4)},
-				r.kvScaled(l, r.withCap(Arg(q0), Arg(r.kvK(l)), Arg(tabs), gpu.ArgValue(int32(attnStride)), Arg(rag.slot), Arg(rag.pos), Arg(c.split),
-					gpu.ArgValue(int32(a)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(Ly.window),
-					gpu.ArgValue(r.attnScale), Arg(rag.skScores), gpu.ArgValue(int32(rag.skStride)))...)...); e != nil {
-				return e
-			}
-			if e := r.launch(r.skSoftmaxRagged, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(k), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4},
-				Arg(rag.skScores), Arg(rag.pos), Arg(c.split), gpu.ArgValue(int32(a)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(Ly.window),
-				gpu.ArgValue(int32(rag.skStride)), Arg(rag.skInv), r.sinkArg(l)); e != nil {
-				return e
-			}
-			if e := r.launch(r.skVsumRagged, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((Ly.hd + dTile - 1) / dTile), GridZ: uint32(k), BlockX: dTile, BlockY: 1, BlockZ: 1},
-				r.kvScaled(l, Arg(rag.skScores), Arg(r.kvV(l)), Arg(tabs), gpu.ArgValue(int32(attnStride)), Arg(rag.slot), Arg(rag.pos), Arg(c.split),
-					gpu.ArgValue(int32(a)), Arg(rag.skInv), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-					gpu.ArgValue(Ly.window), gpu.ArgValue(int32(rag.skStride)), Arg(c0))...); e != nil {
 				return e
 			}
 		}

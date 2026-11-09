@@ -28,7 +28,6 @@ import (
 // transform is armed on the loaded model, so a fixture that lost it fails rather than passing on the identity. The Gemma 4
 // fixture is generated (scripts/pin_gemma4_dense_twogeom.py), so that subtest skips where it has not been pinned. The
 func TestCUDAStepBatch_matchesForward(t *testing.T) {
-	todaysCallsForReferences(t)
 	type cfg struct {
 		path   string
 		depths []int
@@ -158,7 +157,6 @@ func TestCUDAStepBatch_matchesForward(t *testing.T) {
 //
 // GOINFER_CUDA_STEP_MODEL=<checkpoint> runs it on a real model (int4, 24 tokens per turn) instead of llama-tiny.
 func TestCUDAStepBatch_concurrentMatchesAlone(t *testing.T) {
-	todaysCallsForReferences(t)
 	requireCUDADevice(t)
 	path, maxTok, longLen := filepath.Join("../../testdata/llama-tiny"), 8, 90
 	if p := os.Getenv("GOINFER_CUDA_STEP_MODEL"); p != "" {
@@ -285,39 +283,30 @@ func at(v [][]int, i int) []int {
 // table read one block entry on) must make a row differ too: where a fixture's rows sit past the first 64-key block, a row there,
 // where its offset table has the row read another block than its own. llama-tiny's depths put the decode sequence at 62, across
 // the 64-key edge within the four steps, and the k = 4 verify past it from the start (its context is 128).
-// llama-attnfa-tiny with the flash-decode lane forced from 48 keys mixes lane rows and attn_batched rows in each step: every step
-// must make both an attn_ragged and a fa_partial_ragged launch, and each lane row equal its own decode's lane bit for bit; llama-tiny
-// with split-KV forced from 48 keys (the lane off) mixes split-KV rows in the same way, and must make a splitkv_scores_ragged launch.
 // GOINFER_CUDA_STEP_MODEL=<checkpoint> runs it on a real model, one sequence past 2048 keys (the flash-decode lane), where the
 // rows' launches differ and the step takes each row's own.
 func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
-	todaysCallsForReferences(t)
 	type cfg struct {
 		path   string
 		depths []int
 		kv     string
 		knobs  *decoder.Knobs // nil: the defaults
 		lane   bool           // every step must also take the flash-decode lane's ragged launch
-		split  bool           // every step must also take split-KV's ragged launches
 	}
 	// llama-attnfa-tiny with the lane forced from 48 keys: each step mixes lane rows and attn_batched rows.
 	laneKnobs := &decoder.Knobs{"GOINFER_CUDA_FLASH_DECODE": "16", "GOINFER_CUDA_FLASH_DECODE_MIN_KEYS": "48"}
-	// llama-tiny with split-KV forced from 48 keys and the lane off: each step mixes split-KV rows and attn_batched rows.
-	splitKnobs := &decoder.Knobs{"GOINFER_CUDA_FLASH_DECODE": "0", "GOINFER_SPLITKV_MIN_KEYS": "48"}
 	cfgs := []cfg{
-		{"../../testdata/llama-tiny", []int{5, 62, 40, 90}, "", nil, false, false},
-		{"../../testdata/llama-tiny", []int{5, 62, 40, 90}, "i8", nil, false, false},
-		{"../../testdata/mistral-tiny-window", []int{9, 70, 200, 33}, "", nil, false, false},
-		{"../../testdata/gemma4-dense-twogeom-tiny", []int{5, 23, 40, 11}, "", nil, false, false},
-		{"../../testdata/granite-dense-tiny", []int{5, 23, 40, 11}, "", nil, false, false}, // a 64-position context: every row in the first block
-		{"../../testdata/llama-attnfa-tiny", []int{5, 60, 30, 90}, "", laneKnobs, true, false},
-		{"../../testdata/llama-attnfa-tiny", []int{5, 60, 30, 90}, "i8", laneKnobs, true, false},
-		{"../../testdata/llama-tiny", []int{5, 62, 30, 90}, "", splitKnobs, false, true},
-		{"../../testdata/llama-tiny", []int{5, 62, 30, 90}, "i8", splitKnobs, false, true},
+		{"../../testdata/llama-tiny", []int{5, 62, 40, 90}, "", nil, false},
+		{"../../testdata/llama-tiny", []int{5, 62, 40, 90}, "i8", nil, false},
+		{"../../testdata/mistral-tiny-window", []int{9, 70, 200, 33}, "", nil, false},
+		{"../../testdata/gemma4-dense-twogeom-tiny", []int{5, 23, 40, 11}, "", nil, false},
+		{"../../testdata/granite-dense-tiny", []int{5, 23, 40, 11}, "", nil, false}, // a 64-position context: every row in the first block
+		{"../../testdata/llama-attnfa-tiny", []int{5, 60, 30, 90}, "", laneKnobs, true},
+		{"../../testdata/llama-attnfa-tiny", []int{5, 60, 30, 90}, "i8", laneKnobs, true},
 	}
 	ragged := true
 	if p := os.Getenv("GOINFER_CUDA_STEP_MODEL"); p != "" {
-		cfgs = []cfg{{p, []int{120, 2200, 700, 64}, "", nil, false, false}, {p, []int{120, 2200, 700, 64}, "i8", nil, false, false}}
+		cfgs = []cfg{{p, []int{120, 2200, 700, 64}, "", nil, false}, {p, []int{120, 2200, 700, 64}, "i8", nil, false}}
 		ragged = false
 	}
 	nRows := []int{1, 1, 2, 4} // per sequence: a drawn decode row, a decode row, verify k = 2 and 4
@@ -413,7 +402,7 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 				return differ
 			}
 			for n := range 4 {
-				launches, lane, split := r.raggedAttnLaunches, r.raggedFALaunches, r.raggedSKLaunches
+				launches, lane := r.raggedAttnLaunches, r.raggedFALaunches
 				if d := step(n); d != 0 {
 					t.Fatalf("step %d: %d rows differ from their own shapes", n, d)
 				}
@@ -422,9 +411,6 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 				}
 				if c.lane && r.raggedFALaunches == lane {
 					t.Fatalf("step %d: no fa_partial_ragged launch; the lane rows took the M=1 lane one by one", n)
-				}
-				if c.split && r.raggedSKLaunches == split {
-					t.Fatalf("step %d: no splitkv_scores_ragged launch; the split-KV rows took decode's own launches one by one", n)
 				}
 			}
 			t.Cleanup(func() { raggedPlantForTest = 0 })
@@ -459,7 +445,6 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 // fast kernel is the MMA GEMM, whose int32 group sums can equal the exact GEMV's bit for bit, so there the case is identity only.
 // Each step's head runs over the rows whose logits are read only: the others' rows and the final pass's last chunk row.
 func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
-	todaysCallsForReferences(t)
 	for _, c := range []struct {
 		path, kv string
 		plant    bool
@@ -835,7 +820,6 @@ func TestBatchedHeadFull_noRowsTouchesNothing(t *testing.T) {
 // leaves the logits block as it was; the prompt's final pass beside one decode row then grows the block to the two rows it heads,
 // not the pass's 33. The prompt's last-row logits must equal its two passes run alone on another slot, bit for bit.
 func TestCUDAStepRagged_soloChunk(t *testing.T) {
-	todaysCallsForReferences(t)
 	requireCUDADevice(t)
 	m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 3})
 	if err != nil {
@@ -895,96 +879,5 @@ func TestCUDAStepRagged_soloChunk(t *testing.T) {
 	}
 	if !bitsEqual(got, outs[len(outs)-1]) {
 		t.Fatal("the prompt prefilled as a solo chunk and a mixed step is not bit-identical to its own two passes")
-	}
-}
-
-// todaysCallsForReferences keeps Forward, ForwardArgmax, ForwardSample and ForwardN on today's calls for the rest of the test, so
-// its references are each shape's own launches and not the ragged step under test (soloRaggedOffForTest).
-func todaysCallsForReferences(t *testing.T) {
-	soloRaggedOffForTest = true
-	t.Cleanup(func() { soloRaggedOffForTest = false })
-}
-
-// TestCUDASoloRagged_matchesTodaysCall holds RF2-3b-3's move of the solo shapes onto the ragged step: on llama-tiny (f32 and i8 KV)
-// and llama-attnfa-tiny with the flash-decode lane from 48 keys, a decode token through Forward, ForwardArgmax and ForwardSample,
-// and a k = 4 verify through ForwardN, each run through the step, equal the same call on today's path at the same positions, bit
-// for bit; every routed call must have taken the step (a ragged launch counter moves).
-func TestCUDASoloRagged_matchesTodaysCall(t *testing.T) {
-	for _, c := range []struct {
-		path, kv string
-		knobs    *decoder.Knobs
-	}{
-		{"../../testdata/llama-tiny", "", nil},
-		{"../../testdata/llama-tiny", "i8", nil},
-		{"../../testdata/llama-attnfa-tiny", "", &decoder.Knobs{"GOINFER_CUDA_FLASH_DECODE": "16", "GOINFER_CUDA_FLASH_DECODE_MIN_KEYS": "48"}},
-	} {
-		t.Run(filepath.Base(c.path)+"/"+c.kv, func(t *testing.T) {
-			requireCUDADevice(t)
-			m, err := decoder.Load(c.path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2, KVPrecision: c.kv, Knobs: c.knobs})
-			if err != nil {
-				t.Fatalf("load: %v", err)
-			}
-			defer m.Close()
-			r, ok := m.ResidentForwardForTest().(*cudaResident)
-			if !ok {
-				t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
-			}
-			_, _, _, _, _, _, vocab := m.Dims()
-			emb := func(id int) []float32 { return m.EmbedResidentForTest(id % vocab) }
-			prompt := make([][]float32, 40)
-			for i := range prompt {
-				prompt[i] = emb(i*13 + 7)
-			}
-			if _, err := r.PrefillLast(context.Background(), prompt, 0); err != nil {
-				t.Fatal(err)
-			}
-			steps := func() int { return r.raggedAttnLaunches + r.raggedFALaunches + r.raggedSKLaunches }
-			// both runs one call at pos on the step, then on today's path at the same position (rope_kv rewrites it first).
-			both := func(name string, pos int, call func() ([]float32, int, [][]float32, error)) {
-				t.Helper()
-				before := steps()
-				l1, id1, n1, err := call()
-				if err != nil {
-					t.Fatalf("%s at %d through the step: %v", name, pos, err)
-				}
-				if steps() == before {
-					t.Fatalf("%s at %d made no ragged launch: it did not take the step", name, pos)
-				}
-				soloRaggedOffForTest = true
-				l2, id2, n2, err := call()
-				soloRaggedOffForTest = false
-				if err != nil {
-					t.Fatalf("%s at %d on today's path: %v", name, pos, err)
-				}
-				if !bitsEqual(l1, l2) || id1 != id2 || len(n1) != len(n2) {
-					t.Fatalf("%s at %d: the step differs from today's call", name, pos)
-				}
-				for j := range n1 {
-					if !bitsEqual(n1[j], n2[j]) {
-						t.Fatalf("%s at %d: row %d differs from today's call", name, pos, j)
-					}
-				}
-			}
-			t.Cleanup(func() { soloRaggedOffForTest = false })
-			pos := len(prompt)
-			for n := range 12 { // past 48 keys, so the lane fixture's later tokens take the lane
-				e := emb(n*29 + 3)
-				both("Forward", pos, func() ([]float32, int, [][]float32, error) { l, err := r.Forward(e, pos); return l, 0, nil, err })
-				both("ForwardArgmax", pos, func() ([]float32, int, [][]float32, error) {
-					id, err := r.ForwardArgmax(e, pos)
-					return nil, id, nil, err
-				})
-				both("ForwardSample", pos, func() ([]float32, int, [][]float32, error) {
-					id, err := r.ForwardSample(e, pos, 0.8, uint64(100+n), uint64(n))
-					return nil, id, nil, err
-				})
-				verify := [][]float32{e, emb(n + 1), emb(n + 2), emb(n + 3)}
-				both("ForwardN", pos, func() ([]float32, int, [][]float32, error) {
-					rows, err := r.ForwardN(verify, pos)
-					return nil, 0, rows, err
-				})
-				pos++
-			}
-		})
 	}
 }

@@ -194,93 +194,6 @@ func adCasesRagged() []adCase {
 	return cs
 }
 
-// splitkv_scores_ragged, splitkv_softmax_ragged and splitkv_vsum_ragged (decode_splitkv.cu): split-KV over a ragged step's rows, in
-// attn_ragged's rows and slots (adRaggedPos, adRaggedSlot) with a launch list of four of the five in a non-identity order. Each
-// listed row is also run alone through the M=1 chain over its slot's table and must match its context bit for bit; the unlisted
-// row's context stays zero.
-var adSplitRaggedIdx = []int32{4, 0, 2, 1}
-
-func adCasesSplitRagged() []adCase {
-	var cs []adCase
-	for kvi, m := range adSplit {
-		for _, g := range adHeadDims {
-			for _, window := range []int{0, 100} {
-				for _, sink := range []bool{false, true} {
-					f16, nH, nKV, hd := kvi == 1, g.nH, g.nKV, g.hd
-					cs = append(cs, adCase{"splitkv_scores_ragged", fmt.Sprintf("splitkv_scores_ragged/%s/hd%d/%s/%s", adKVNames[kvi], hd, adWindowText(window), adSinkText(sink)),
-						func(r *adRig) [][]float32 {
-							R, kvDim, qDim, nSlot := len(adRaggedPos), nKV*hd, nH*hd, slices.Max(adRaggedSlot)+1
-							nb := (slices.Max(adRaggedPos) + 1 + 63) / 64
-							tabs, slots, pos := make([]int32, nSlot*nb), make([]int32, R), make([]int32, R)
-							for i := range tabs {
-								tabs[i] = int32(i)
-							}
-							stride := 0
-							for i, p := range adRaggedPos {
-								slots[i], pos[i] = int32(adRaggedSlot[i]), int32(p)
-								w := p + 1
-								if window > 0 && window < w {
-									w = window
-								}
-								stride = max(stride, w)
-							}
-							q := adRand(R*qDim, 91, 1)
-							qb := r.f32(q)
-							kc, vc := r.kv(adRand(nSlot*nb*64*kvDim, 92, 1), f16), r.kv(adRand(nSlot*nb*64*kvDim, 93, 1), f16)
-							sk := adSink(r, nH, sink)
-							K := len(adSplitRaggedIdx)
-							sc, inv, ctx := r.zeros(K*nH*stride), r.zeros(K*nH), r.zeros(R*qDim)
-							idx, tb, sl, ps := gc.Arg(r.i32(adSplitRaggedIdx)), gc.Arg(r.i32(tabs)), gc.Arg(r.i32(slots)), gc.Arg(r.i32(pos))
-							r.launch(m, "splitkv_scores_ragged", adCfg(nH, (stride+127)/128, K, 128, hd*4), gc.Arg(qb), kc, tb, adI(nb), sl, ps, idx, adI(0),
-								adI(nH), adI(nKV), adI(hd), adI(window), gc.ArgValue(adScale(hd)), gc.Arg(sc), adI(stride))
-							r.launch(m, "splitkv_softmax_ragged", adCfg(nH, K, 1, 128, 128*4), gc.Arg(sc), ps, idx, adI(0), adI(nH), adI(window), adI(stride),
-								gc.Arg(inv), sk)
-							r.launch(m, "splitkv_vsum_ragged", adCfg(nH, (hd+31)/32, K, 32, 0), gc.Arg(sc), vc, tb, adI(nb), sl, ps, idx, adI(0), gc.Arg(inv),
-								adI(nH), adI(nKV), adI(hd), adI(window), adI(stride), gc.Arg(ctx))
-							got := r.read(ctx, R*qDim)
-							listed := map[int]bool{}
-							for _, i32 := range adSplitRaggedIdx {
-								i := int(i32)
-								listed[i] = true
-								nKeys := adRaggedPos[i] + 1
-								winStart := 0
-								if window > 0 && nKeys > window {
-									winStart = nKeys - window
-								}
-								nWin := nKeys - winStart
-								s := adRaggedSlot[i]
-								kt := gc.Arg(r.i32(tabs[s*nb : (s+1)*nb]))
-								sc1, inv1, c1 := r.zeros(nH*nWin), r.zeros(nH), r.zeros(qDim)
-								r.launch(m, "splitkv_scores", adCfg(nH, (nWin+127)/128, 1, 128, hd*4), gc.Arg(r.f32(q[i*qDim:(i+1)*qDim])), kc, kt, adI(nH), adI(nKV), adI(hd),
-									adI(winStart), adI(nKeys), gc.ArgValue(adScale(hd)), gc.Arg(sc1), adI(nWin))
-								r.launch(m, "splitkv_softmax", adCfg(nH, 1, 1, 128, 128*4), gc.Arg(sc1), adI(nH), adI(nWin), gc.Arg(inv1), sk)
-								r.launch(m, "splitkv_vsum", adCfg(nH, (hd+31)/32, 1, 32, 0), gc.Arg(sc1), vc, kt, gc.Arg(inv1), adI(nH), adI(nKV), adI(hd),
-									adI(winStart), adI(nKeys), adI(nWin), gc.Arg(c1))
-								want := r.read(c1, qDim)
-								for j := range want {
-									if math.Float32bits(got[i*qDim+j]) != math.Float32bits(want[j]) {
-										r.t.Errorf("splitkv ragged row %d (position %d) element %d: %v, the M = 1 chain gives %v", i, adRaggedPos[i], j, got[i*qDim+j], want[j])
-										break
-									}
-								}
-							}
-							for i := range R {
-								for j := 0; !listed[i] && j < qDim; j++ {
-									if got[i*qDim+j] != 0 {
-										r.t.Errorf("splitkv_vsum_ragged wrote row %d, which the launch list does not name", i)
-										break
-									}
-								}
-							}
-							return [][]float32{got}
-						}})
-				}
-			}
-		}
-	}
-	return cs
-}
-
 // The split-KV chain (decode_splitkv.cu): scores, softmax in place, the V-sum, and the opt-in split V-sum with its combine. A case
 // hashes the stored (scaled) scores, the inverse denominators and both contexts.
 func adCasesSplitKV() []adCase {
@@ -651,7 +564,7 @@ func adCasesMLA() []adCase {
 // adAllCases is every driven kernel at every shape, in a fixed order.
 func adAllCases() []adCase {
 	var cs []adCase
-	for _, f := range []func() []adCase{adCasesAttention, adCasesBatched, adCasesRagged, adCasesFlashRagged, adCasesSplitRagged, adCasesSplitKV, adCasesSplitKVRows, adCasesBlockAndImage, adCasesFlash, adCasesFused, adCasesMLA} {
+	for _, f := range []func() []adCase{adCasesAttention, adCasesBatched, adCasesRagged, adCasesFlashRagged, adCasesSplitKV, adCasesSplitKVRows, adCasesBlockAndImage, adCasesFlash, adCasesFused, adCasesMLA} {
 		cs = append(cs, f()...)
 	}
 	return cs
@@ -663,7 +576,7 @@ func adDrivenKernels(cs []adCase) map[string]bool {
 	out := map[string]bool{
 		// driven inside a chain case, after the score kernel that names it
 		"splitkv_softmax": true, "splitkv_vsum": true, "splitkv_vsum_partial": true, "splitkv_vsum_combine": true,
-		"splitkv_softmax_rows": true, "splitkv_vsum_rows": true, "splitkv_softmax_ragged": true, "splitkv_vsum_ragged": true,
+		"splitkv_softmax_rows": true, "splitkv_vsum_rows": true,
 		"fa_combine": true, "fa_combine_rows": true, "fa_combine_ragged": true,
 	}
 	for _, c := range cs {
