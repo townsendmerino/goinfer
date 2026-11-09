@@ -16,6 +16,15 @@
 > re-run repowise (§5) before navigating by them. Moved `docs/` → `docs/tasks/` per this repo's
 > live-doc convention; nothing else about the triage changed.
 
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| CH1 | open | a bit-identity test of the packed upload, `Context.UploadStackedExpertsInt4Packed` against `Context.UploadStackedExpertsInt4` on the same experts | `backend/webgpu/internal/kernels/moe_w4a8_expert_test.go:TestMoEExpertW4A8_parity` covers the unpacked path; `backend/webgpu/internal/kernels/moe_w4a8.go:Context.UploadStackedExpertsInt4Packed` has no test |
+| CH2 | done | — | the audit-2026-09-02 M-04 read, fixed 2026-09-02; `decoder/session_hostile_test.go:TestLoadSession_hostileHeaders` |
+| CH3 | open | optional: the model.go helper extraction; `internal/app/serveapp/openai.go:server.serveChatText` onto `loadedModel`; an extraction in `decoder/blockspec.go:BlockSpec.generate` | §3.2; its line ranges are stale |
+| CH4 | blocked | a `.giw` byte-identity gate on a real fixture first | §3.2; its line ranges are stale |
+| CH5 | decision | the `.repowise` history purge, declined 2026-08-26 | `.gitignore` carries `.repowise/` |
+
 Tooling: repowise 0.45.0, `apple-m1pro`, 2026-08-26, `--no-prose` (structural only, no LLM).
 Reproduce with §5.
 
@@ -89,7 +98,9 @@ Its 187 dependents make it look like the scarier of the two; it is not. Downgrad
 175 lines of MoE W4A8 path with 18 dependents and no test exercising it, on the same quant path
 the W4A8 campaign is actively changing. **This is the item to do.** Not a refactor: a test.
 
-**Re-checked 2026-09-13:** still true, and the gap grew — the file is now 274 lines (WebGPU
+*(Correction 2026-11-09: the zero-references claim was measured without the `gpu` build tag; `TestMoEExpertW4A8_parity`, now in
+`backend/webgpu/internal/kernels/`, has existed since 2026-06-19. What is untested is the packed fast path,
+`Context.UploadStackedExpertsInt4Packed` (CH1).)* **Re-checked 2026-09-13:** still true, and the gap grew — the file is now 274 lines (WebGPU
 binding migration + a gpt-oss int4 down-projection kernel landed since scoping) and still has no
 paired `_test.go` and zero references from any `_test.go` in the repo.
 
@@ -128,7 +139,8 @@ it is this.
 
 **Update 2026-09-13:** a 4th fix landed since scoping — `e708b1a9` ("LoadSession rejected valid
 snapshots", 2026-09-05) also touched this file. The predictor keeps predicting; the review pass
-itself still has not happened.
+itself still has not happened. *(Correction 2026-11-09: it happened. The audit-2026-09-02 M-04 read found and fixed the
+`LoadSession` validate-after-allocate OOM; `decoder/session_hostile_test.go:TestLoadSession_hostileHeaders` pins it (CH2).)*
 
 ## 4 · What is NOT a work list, and why
 
@@ -204,4 +216,4 @@ Suggested order, cheapest-first, and each independently droppable:
 Items 1–3 are small enough not to need a gate. Item 4 does. Nothing here is urgent, and none of it
 should preempt `completed/task-w4a8-neon-bandwidth.md` or `completed/task-attention-decode-cost.md`.
 
-<!-- doc-reviewed: 2026-09-13 -->
+<!-- doc-reviewed: 2026-11-09 -->
