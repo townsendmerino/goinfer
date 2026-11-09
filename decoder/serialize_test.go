@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"os"
@@ -651,5 +652,41 @@ func TestLoadSerialized_neverPanicsOnValidCRC(t *testing.T) {
 				_ = w // a plausible-but-different bundle may load; the contract is only "no panic"
 			}
 		}()
+	}
+}
+
+// TestSerializeWeights_refuses16BitWeights: the .giw holds no bf16 or f16 weight kind, so every writer entry point refuses a bundle
+// loaded at either with a *SerializeError naming it, before writing a byte, rather than emit a CRC-valid blob LoadSerializedWeights
+// then refuses for a reason that names neither. The CLI entry points refuse those modes before they reach the writer
+// (decoder/stream_dir.go, decoder/sidecar.go); this is the exported function itself.
+func TestSerializeWeights_refuses16BitWeights(t *testing.T) {
+	for _, q := range []string{"bf16", "f16"} {
+		t.Run(q, func(t *testing.T) {
+			m, err := Load("../testdata/llama-tiny", Options{Quant: q})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			check := func(name string, err error, wrote int64) {
+				t.Helper()
+				var se *SerializeError
+				if !errors.As(err, &se) || !strings.Contains(se.Reason, q) {
+					t.Errorf("%s at %s: %v, want a *SerializeError naming %s", name, q, err, q)
+				}
+				if wrote != 0 {
+					t.Errorf("%s at %s wrote %d bytes before refusing", name, q, wrote)
+				}
+			}
+			blob, err := SerializeWeights(m.w, "x")
+			check("SerializeWeights", err, int64(len(blob)))
+			blob, err = SerializeWeightsForTarget(m.w, "x", GIWTargetMetal)
+			check("SerializeWeightsForTarget", err, int64(len(blob)))
+			var buf bytes.Buffer
+			n, err := SerializeWeightsTo(&buf, m.w, "x")
+			check("SerializeWeightsTo", err, n+int64(buf.Len()))
+			buf.Reset()
+			n, err = SerializeWeightsToForTarget(&buf, m.w, "x", GIWTargetCPUArm64)
+			check("SerializeWeightsToForTarget", err, n+int64(buf.Len()))
+		})
 	}
 }
