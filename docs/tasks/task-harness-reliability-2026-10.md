@@ -9,6 +9,18 @@
 > widened past T0 (more traces, whole sessions, more families and backends). Gates run cheapest first and stop at
 > the first negative one (§2). To start after v0.20.0 is tagged.
 
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| Gate-0 | done | — | `docs/measurements/harness-dialects-2026-10-09.md` (182d83687) |
+| H-a, H-b | done | — | `internal/app/serveapp/openai.go:dropUnrunnableTools`; `internal/app/serveapp/openai.go:server.pathFields` |
+| H-c | done | — (I1, v0.23.0) | 94dcda6ae; `internal/app/serveapp/overflow.go:contextOverflowError.message` |
+| H-d | moved | `docs/tasks/task-embed-and-harness-ux.md`, row F.4 | `docs/completed/task-integration-harness-2026-10.md` §5 |
+| Gate-1 | done | — | `internal/guard/servecheck/check.go:Client.ToolsHarnessMessages` (28b79e28b) |
+| Gate-2 | open | both rows on the four checkpoints, fit-checked first, from `~/models`; also re-run the small Qwen coders and add Mellum2.1 (the amendments moved to `docs/queue-presentation.md`) | opencode.md's tools table: "not yet measured" |
+| Gate-3 | open | after Gate 2: record three traces, then the night-queue cells on nobara | none yet |
+| hygiene | done | — | the integration pages carry no "honest" |
+
 ## 1. What already exists, so it is not re-measured
 
 - **T0 and the union grammar** (`docs/tasks/task-tool-grammar-union-2026-09.md`, T0–T7 done 2026-09-24). T0
@@ -20,12 +32,13 @@
 - **What T0 did not establish**, in its own record: no MoE, one transcript, CUDA only. Every turn was replayed from a
   fixed, correct history (teacher-forced), so a bad call could not derail what followed. Still open from the union
   task: llama3 calls that follow prose, and the union on a speculative-decoding server.
-- **Measured harness successes, one per dialect.** `docs/integrations/opencode.md:117`: Qwen2.5-7B-Instruct q4_k_m on
+- **Measured harness successes, one per dialect.** `docs/integrations/opencode.md`'s tools table: Qwen2.5-7B-Instruct q4_k_m on
   nobara-pc (CUDA, 8 GB) "ok — real tool calls, real completion" (OpenAI dialect). `docs/integrations/claude-code.md`:
   an agent loop verified end to end on 2026-09-02 (Anthropic dialect). Re-read both at the start; correct this section
   if either has changed.
-- **`serve check`'s tool rows** (`internal/guard/servecheck/check.go`): `tools, OpenAI` (:460) and `tools, harness-scale`
-  (:547, using `harnessScaleTools()` at :572), both on `/v1/chat/completions`. There is no `/v1/messages` row, so the
+- **`serve check`'s tool rows** (`internal/guard/servecheck/check.go`): `tools, OpenAI` (`Client.Tools`) and `tools, harness-scale`
+  (`Client.ToolsHarness`, using `harnessScaleTools`), both on `/v1/chat/completions`. *(Corrected 2026-11-09: Gate 1 added
+  `tools, harness, Messages`, `Client.ToolsHarnessMessages`, so the next sentence is history.)* There is no `/v1/messages` row, so the
   dialect Claude Code uses cannot be predicted per checkpoint; the 2026-09-02 result was a hand measurement.
 
 ## 2. Gates, cheapest first
@@ -122,3 +135,5 @@ idle machine. Leave changes uncommitted for review where the brief asks for that
   harness-scale ok. If Gate 2 satisfies that, say so; do not retire the page inside this task.
 - Both integration pages use "honestly", "honest picture" or "honest state" (opencode.md :105, :109, :122). Strike the
   words and say the same thing directly ("the narrower picture", "what is measured").
+
+<!-- doc-reviewed: 2026-11-09 -->
