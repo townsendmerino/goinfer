@@ -29,7 +29,7 @@
 | OP1-W | open | Gemma 2's attention-logit softcap on WebGPU: register the cells on nobara (Vulkan) before code | FA §4.6; `docs/hardware-matrix.md` |
 | OP1-o1 | done | Metal `attention_fa_blk` forms its score through `attn_score` (its softcap build held to float64 per score site by `backend/metal/attn_softcap_test.go:TestAttnSoftcap_faBlk`), bit-identical to the graded text without a cap (`backend/metal/attn_fa_blk_test.go:TestAttnFABlk_routedScoreIsTheGradedKernel`, the resident's own pipeline on the 1.5B and 7B, G1-K's digests); R17's speed re-grade PASS (median routed ÷ graded attention 1.0161, bar ≤ 1.02), and the pin moved to the routed text | FA §4.6 "Owed, and not in OP1"; `docs/measurements/op1-o1-r17-regrade-2026-11-09/README.md` |
 | OP1-o2 | active | the CUDA flash-decode lane with the softcap (nobara-sb01): built (`decode_fa_cap`), opt-in only (`Options.FlashDecodeSoftcap`; the exact split-KV lane stays Gemma 2's default), correctness gates pass (G2-K at both KV types, the resident path, a real Gemma 2 2B end to end). Next: the registered fidelity gate by day (G22B at K=3900), then the timed cell; a default change needs Francis | FA §4.6a "Owed, not in OP1"; `docs/measurements/op1o2-fa-softcap-2026-11/README.md` |
-| OP4m-D6b5 | open | the timed cell: the int4 Metal `.giw` of Nemotron-H 4B has been in `~/models` since 2026-11-07; a few minutes by day under the exclusive lock | FA §4.9 |
+| OP4m-D6b5 | done | read 2026-11-09 by day under the exclusive Mac lock: PASS, median step/sequential 1.2009, 10 of 10 pairs faster, tokens equal in every pair, after the cell's recurrent refill fix; `--recurrent-step` stays off by default | FA §4.9; "OP4m-D6b5: reading" below; `docs/measurements/op4-2026-10/op4m-d6b5-speed-nemotron-h-4b.log` |
 | OP4m-pod | open | register per-operation dispatch inside the mixer steps | FA §4.9 "OP4m-d2", "What remains" |
 | OP4cu-census | done | an arm64 `TestAdmissionCensus` run passes at c2's commit (`c40e79dc6`) and on main, 2,711 lines each: the golden c2 applied per line key is what an arm64 run produces | FA §4.9a "C2-2"; `docs/measurements/op4-cuda-2026-11/op4cu-c2-c22-arm64-census-run.txt` |
 | OP5-S | open | Spark-X2.5, on Metal first | FA §4.7 "OP5" |
@@ -133,6 +133,39 @@ takes (a decode token, a verify and MC3's step keep today's calls), so the speed
 | RF2-1 | `ResidentRaggedStepper` (`decoder/residency.go`) and step's `passRagged`; CUDA's `StepRagged`: decode rows and verify rows of several sequences in one pass of prefillCore's multi-sequence mode, each row in the exact class at its own slot and position | `TestCUDAStepRagged_rowsMatchTheirShapes` on nobara (batch invariance for decode, drawn decode and verify at k = 2 and 4; both plants red); decoder's step tests; tier 0 |
 | RF2-2 | a prefill chunk's rows in the same step, in the class its own prefill takes (the fast kernels over its rows, the exact ones over the others) | the full mixed batch of addendum 1, bit-identical to each row's own shape; G-RF2-I's `cmd/gate identity` |
 | RF2-3 | one ragged attention launch over the block tables in place of the per-row decode gap; the solo shapes move onto `StepRagged` | G-RF2-I again; G-RF2-S and never-swap, by day on nobara; the kill |
+
+## OP4m-D6b5: reading (2026-11-09, mac-fit, the exclusive Mac lock)
+
+- **The cell:** FA §4.9's D6b-5, D4b-4's cell on Nemotron-H 4B Instruct (`backend/metal/mc3_step_test.go:TestOP4mD6b_mambaStepSpeed`):
+  the int4 Metal `.giw` (v17) read from `~/models`, the step's recurrent blocks on, 4 sequences at depth 128, 64 greedy tokens a
+  run, A B B A over 10 pairs. The binary was built at 5621e26b; the runner is `docs/measurements/op4-2026-10/run-d6b5.sh`.
+- **The fit check first:** the Metal build's `fit` at ctx 1024, int4: metal RESIDENT, 5.14 GB at one slot (dense 3.40 GB, host
+  copy 1.63 GB, recurrent state 0.08 GB, KV 0.02 GB, scratch 10.69 MB) against 11.20 GB free. The cell's own need at four slots
+  was 5.44 GiB, and the step's scratch 11.4 MiB.
+- **The void rule:** today's (`scripts/void_rule.py`; `docs/measurements/noise-registry.md` §8, changed 2026-11-08 by Francis), in
+  place of the registration's reclaimable plus 2 GiB, which predates it. The cell started at a 1-minute load of 3.95 (cap 4.0)
+  with 11,624 MB available against a need of 5,600 MB; swap, sampled through the cell, did not grow (2,119.56 MB, peak growth
+  0.0); the process's major faults stayed at 20. The registration's own term held too: 7.61 GiB reclaimable against 5.44 + 2.
+- **Reading: PASS.** The step ran at 32.1 to 34.0 tok/s and sequential decode at 27.4 to 28.5 tok/s (rates over the four
+  sequences). Ratios 1.1264 to 1.2416, median **1.2009**, **10 of 10 pairs faster**, tokens equal in every pair, one counted
+  attempt (03:45:29 to 03:55:25 PST). Against the bar (median at least 1.05, at least 9 of 10 faster): PASS. Log:
+  `docs/measurements/op4-2026-10/op4m-d6b5-speed-nemotron-h-4b.log`.
+- **What it decides:** the option (`--recurrent-step`, which has covered Nemotron-H since OP4m-d6b) meets its feature bar on
+  this model. It stays off by default; a default change is Francis's call against its memory (the step's scratch above, and a
+  slot's Mamba-2 state, 86.5 MiB on this model by its KV8a checkpoint).
+- **Found first, in the cell, and fixed before the counted run.** The first attempt (03:40:50 to 03:41:57, binary at 3c4c2f47,
+  start and end checks clean) stopped at pair 0 before any rate was printed: the step's token 0 was 2899, sequential decode's
+  1885. Each run rewinds to position 128, which rewrites KV rows in place, but a recurrent state keeps every token it has
+  absorbed, so the two arms started from Mamba-2 states 64 tokens apart. `stepCellFill` now zeroes each slot's recurrent state
+  and refills it before every run on a recurrent resident. `TestStepCellFill_rewindsRecurrentState` (nemotron-tiny, two slots):
+  a refill reproduces the first run's logits bit for bit and a run without one differs; with the reset planted out, 3,072
+  logits differ. Log: `docs/measurements/op4-2026-10/op4m-d6b5-unrewound-stop.log`.
+- **D4b-4 ran with that defect.** Its arms (Qwen3.5 0.8B, median 1.5799) also started from different DeltaNet states, and its
+  tokens were equal anyway. Its rates stand, since the arms ran the same kernels over the same shapes; its "tokens equal in every
+  pair" was a weaker check than it read.
+- **Also changed in the cell:** a D6b-5 entry (D4b-4's requires a DeltaNet resident), and the start check
+  (`stepCellStartVoid`), now the void rule's start terms (`TestStepCellStartVoid`; with the old +2 GiB margin planted back, two
+  cases go red).
 
 ## Conventions
 

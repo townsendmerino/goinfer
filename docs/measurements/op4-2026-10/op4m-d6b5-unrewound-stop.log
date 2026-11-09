@@ -1,0 +1,37 @@
+== OP4m-D6b5, stopped on the cell's defect (arms from different recurrent states), not counted: runner output (launch2.log), 2026-11-09, binary metal-d6b5-3c4c2f47.test built at 3c4c2f47
+launch2: taking the exclusive lock (--wait 7200), 2026-11-09 03:40:50 PST
+run-d6b5: BIN /Users/francistownsend-merino/goinfer-bench/d6b5-2026-11-09/metal-d6b5-3c4c2f47.test (856970dc540f8710), MODEL /Users/francistownsend-merino/models/nemotron-h-4b-instruct-128k.int4.metal.v17.giw, OUT /Users/francistownsend-merino/goinfer-bench/d6b5-2026-11-09/cell, need 5600 MB, load cap 4.0, 2026-11-09 03:40:50 PST
+{"base_mb": 2127.56}
+{"t": "2026-11-09 03:40:50", "t_epoch": 1794224450.5295832, "load1": 2.119140625, "ncores": 8, "available_mb": 12115, "reclaimable_mb": 6404, "swap_mb": 2127.56, "swapin_mb": 185568.484375, "swapout_mb": 290951.59375, "need_mb": 5600.0, "void": null, "need_source": "goinfer-chat fit, metal, ctx 1024, int4, plus three slots", "need_is_lower_bound": false}
+attempt 1: cell start 03:40:50: {"t": "2026-11-09 03:40:50", "t_epoch": 1794224450.5295832, "load1": 2.119140625, "ncores": 8, "available_mb": 12115, "reclaimable_mb": 6404, "swap_mb": 2127.56, "swapin_mb": 185568.484375, "swapout_mb": 290951.59375, "need_mb": 5600.0, "void": null, "need_source": "goinfer-chat fit, metal, ctx 1024, int4, plus three slots", "need_is_lower_bound": false}
+{"t": "2026-11-09 03:41:56", "t_epoch": 1794224516.9484959, "load1": 3.3857421875, "ncores": 8, "available_mb": 11296, "reclaimable_mb": 8023, "swap_mb": 2119.56, "swapin_mb": 185570.421875, "swapout_mb": 290951.59375, "void": null}
+attempt 1: cell end 03:41:57: test exit 1, end exit 0: {"t": "2026-11-09 03:41:56", "t_epoch": 1794224516.9484959, "load1": 3.3857421875, "ncores": 8, "available_mb": 11296, "reclaimable_mb": 8023, "swap_mb": 2119.56, "swapin_mb": 185570.421875, "swapout_mb": 290951.59375, "void": null} 
+[OP4m-d6b D6b-5] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: cell start: 1-minute load 2.11; available 11.67 GiB against need 5.44 GiB (ok); reclaimable 6.63 GiB (recorded); pair bar 12.0
+[OP4m-d6b D6b-5] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: the step's scratch 11.4 MiB
+--- FAIL: TestOP4mD6b_mambaStepSpeed (65.71s)
+run-d6b5: attempt 1 ended in an error that is not a void (test exit 1); stopping
+=== RUN   TestOP4mD6b_mambaStepSpeed
+decoder: nemotron-h-4b-instruct-128k.int4.metal.v17.giw is not in memory: reading its 3.7 GB once before the load
+[OP4m-d6b D6b-5] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: cell start: 1-minute load 2.11; available 11.67 GiB against need 5.44 GiB (ok); reclaimable 6.63 GiB (recorded); pair bar 12.0
+[metal] weights aliased from nemotron-h-4b-instruct-128k.int4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1424 MB bound in place, 0 MB copied (anonymous) — 924 MB int4 nibbles (52 single tensors + 4 fused groups = 36 MB) + 384 MB int8 codes (1 matrices) + 116 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: recurrent checkpoint: 86.5 MiB (48 buffers, KV8a)
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 7.776 ms, fragment 8.292 ms), gate|up at B <= 0 (35.126, 37.724); 0 = always the fragment
+[OP4m-d6b D6b-5] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: the step's scratch 11.4 MiB
+    mc3_step_test.go:468: pair 0: the batched step's token 0 is 2899, sequential decode's 1885
+--- FAIL: TestOP4mD6b_mambaStepSpeed (65.71s)
+FAIL
+ledger: 1 device(s) released in this run
+launch2: runner exit 1, 2026-11-09 03:41:57 PST
+
+== the cell's own output (attempt-1.log)
+=== RUN   TestOP4mD6b_mambaStepSpeed
+decoder: nemotron-h-4b-instruct-128k.int4.metal.v17.giw is not in memory: reading its 3.7 GB once before the load
+[OP4m-d6b D6b-5] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: cell start: 1-minute load 2.11; available 11.67 GiB against need 5.44 GiB (ok); reclaimable 6.63 GiB (recorded); pair bar 12.0
+[metal] weights aliased from nemotron-h-4b-instruct-128k.int4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1424 MB bound in place, 0 MB copied (anonymous) — 924 MB int4 nibbles (52 single tensors + 4 fused groups = 36 MB) + 384 MB int8 codes (1 matrices) + 116 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: recurrent checkpoint: 86.5 MiB (48 buffers, KV8a)
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 7.776 ms, fragment 8.292 ms), gate|up at B <= 0 (35.126, 37.724); 0 = always the fragment
+[OP4m-d6b D6b-5] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: the step's scratch 11.4 MiB
+    mc3_step_test.go:468: pair 0: the batched step's token 0 is 2899, sequential decode's 1885
+--- FAIL: TestOP4mD6b_mambaStepSpeed (65.71s)
+FAIL
+ledger: 1 device(s) released in this run

@@ -31,7 +31,7 @@
 >   deleted the old loops; OP3t (#506) moved the two batched twins onto the batched walker.
 > - **OP4 on Metal** (§4.9): merged through d6b (#525 to #591: layer shape and per-layer steps, `program.Metal` read by the walker and
 >   `Admit`, batched prefill and the multi-sequence step, MoE in the step 1.4873×, per-slot Gated-DeltaNet state 1.5799×, Gemma 4's dense
->   layers 1.3794×, per-slot Mamba-2 state). Left: D6b-5 (the timed Nemotron-H 4B cell, waits on its checkpoint), per-operation dispatch
+>   layers 1.3794×, per-slot Mamba-2 state). D6b-5 read 2026-11-09: PASS, 1.2009× (`docs/tasks/task-forward-and-memory-2026-11.md`, "OP4m-D6b5: reading"). Left: per-operation dispatch
 >   inside mixer steps, and the memory planner (§4.7).
 > - **OP4 on CUDA** (§4.9a; Francis's go 2026-11-01: Q2a fusion table, Q3a `program.CUDA`, **Q4a stop at d2**): **new, all merged:** a (#582),
 >   b1 (#584), b2 (#588: decode walks the fusion table; 0.5B/1.5B medians 0.9999×/1.0006×), c1 (#598: `program.CUDA`), c2 (#599: `Admit` reads
@@ -3493,7 +3493,7 @@ exclusive one).**
 - **D4b-4: PASS** (Qwen3.5 0.8B from `~/models`, its HF directory loaded int4; the exclusive Mac lock; one attempt, 07:31:31 to 07:32:15 PST, no void).
   - The fit check: reclaimable 5.69 GiB against need 1.53 GiB plus 2 GiB. Pairs started at 1-minute load 1.85 to 2.46, under the bar of 8.0.
   - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128. The batched step ran at 198.1 to 204.6 tok/s, and sequential single-token decode at 124.8 to 130.3 tok/s.
-  - Ratios 1.5434 to 1.6282, median **1.5799**, **10 of 10 pairs faster**. Tokens were equal in every pair. The process's major faults held at 91,977 and swap at 236.1 MiB.
+  - Ratios 1.5434 to 1.6282, median **1.5799**, **10 of 10 pairs faster**. Tokens were equal in every pair (the two arms did not start from the same DeltaNet state; the rates stand: `docs/tasks/task-forward-and-memory-2026-11.md`, "OP4m-D6b5: reading"). The process's major faults held at 91,977 and swap at 236.1 MiB.
   - Against the bar (median at least 1.05, at least 9 of 10 faster): **PASS**. The blocks may become an operator option. Like D3's, that switch is a follow-up, and so is the decoder's concurrency for a recurrent family (`EnableResidentConcurrency` and `ResidentBatchCapable` still refuse one).
   - Log: `docs/measurements/op4-2026-10/op4m-d4b-speed-qwen35-0p8b.log`.
 - **Also in this branch:** `resident.chainEmbBase`, the memory guard's price of the build that the chained-embedding table is checked against, now prices every slot as `metalKVSlots` does (KV plus recurrent state). Before, it priced each further slot's KV alone.
