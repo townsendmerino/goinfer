@@ -34,8 +34,8 @@ var r17TableKernels = strings.Replace(r17GradedKernelSource(), "using namespace 
 const r17GradedKernelSourceSHA256 = "ae72a2b060007abee88c940ac60308bb5650edaf8c761a273287ce873520ab4e"
 
 // r17ShippedKernelSourceSHA256 is the SHA-256 of the shipped kernel as last graded: r17ShippedKernelSource less the block table. It
-// moves only with an R17 grading of the shipped text.
-const r17ShippedKernelSourceSHA256 = r17GradedKernelSourceSHA256
+// moves only with an R17 grading of the shipped text: docs/measurements/op1-o1-r17-regrade-2026-11-09/README.md.
+const r17ShippedKernelSourceSHA256 = "293f868f1f7a5bcb8597b38f977cdc9bdb35befe193b70c759b5d38549f96a8c"
 
 // r17RoutedScore is attention_fa_blk's score as it ships, through the score function (kernels.AttnScoreMSL), and r17GradedScore the
 // same score as the graded kernel formed it. The function is the identity in a library built without a softcap.
