@@ -27,34 +27,20 @@ var cpuGateRowsUpdate = flag.Bool("memgate.cpurows.update", false, "have TestMem
 var cpuRounding = PerLease("none: the walk leases each array's own bytes", 0)
 
 // cpuMemGaps is the CPU's table of known reds. It may only shrink: the fix that removes a row lowers cpuMemGapsPin.
-var cpuMemGaps = cpuKVGaps
+var cpuMemGaps []Gap
 
-const cpuMemGapsPin = 26
-
-// cpuKVGaps are the CPU plan's KV figures that a row reads wrong, each in MM8's row. The plan prices ctx positions of K and V on every layer.
-var cpuKVGaps = func() []Gap {
-	var out []Gap
-	over := func(fixtures []string, what, item string) {
-		for _, f := range fixtures {
-			out = append(out, Gap{Row: f + " *", Line: mem.LineKV, OverPriced: true, What: what, Item: item, Bytes: KVPricedOver})
-		}
-	}
-	over([]string{"testdata/cohere2-tiny", "testdata/gemma2-hd-tiny", "testdata/gemma2-hd-tiny.gguf", "testdata/gemma2-tiny", "selftestdata/gemma3-vl-tiny", "testdata/gemma3-vl-tiny",
-		"testdata/gptoss_tiny.gguf", "testdata/laguna-xs2-tiny", "testdata/laguna-xs21-tiny", "testdata/mistral-tiny-window", "testdata/olmo3-tiny", "testdata/spark2-5-tiny"},
-		"a sliding layer's ring holds its window, and the plan prices the whole context (at int8, int8's scale error nets inside this row's figure: Geometry names it apart)", "MM8 CPU, KV of a sliding window")
-	over([]string{"testdata/llama-attnfa-tiny"}, "int8 K/V holds one scale a head, and the plan prices 1/8 of a byte an element, which over-prices a wide head", "MM8, int8 KV's scale")
-	for _, f := range []string{"testdata/cohere-tiny", "testdata/granite-dense-tiny", "testdata/internlm2-tiny", "testdata/internlm3-tiny", "selftestdata/llama-tiny", "testdata/llama-tiny",
-		"testdata/ministral3-tiny", "testdata/phi3-tiny", "testdata/qwen25vl-tiny", "internal/vision/testdata/qwen25vl-vision-tiny", "testdata/qwen3asr-tiny", "testdata/smollm3-tiny", "testdata/voxtral-tiny"} {
-		out = append(out, Gap{Row: f + " int4/kv-i8", Line: mem.LineKV, What: "int8 K/V holds one scale a head, and the plan prices 1/8 of a byte an element, which under-prices a narrow head",
-			Item: "MM8, int8 KV's scale", Bytes: KVPricedUnder})
-	}
-	return out
-}()
+const cpuMemGapsPin = 0
 
 // cpuGateRow loads fixture path on the CPU, writes cpuGateCtx positions, and returns the row. The CPU has no allocator to account, so its
 // ledger is filled by walking what the model and the cache hold (Model.CPUHoldsForTest). Closed reads that ledger after the model closed and
 // those leases are released, so it holds a plant's lease and not the model's own freeing, which no ledger sees here. plant, when set, runs on the ledger before it is read. ok is false when the load is refused, which has nothing to hold.
 func cpuGateRow(t *testing.T, row, path string, o decoder.Options, plant func(*mem.Ledger)) (Reading, bool) {
+	t.Helper()
+	return cpuGateRowAt(t, row, path, o, plant, cpuGateCtx)
+}
+
+// cpuGateRowAt is cpuGateRow at ctx positions.
+func cpuGateRowAt(t *testing.T, row, path string, o decoder.Options, plant func(*mem.Ledger), ctx int) (Reading, bool) {
 	t.Helper()
 	o.Backend, o.DirectLoad = "cpu", true
 	m, err := decoder.Load(path, o)
@@ -63,9 +49,9 @@ func cpuGateRow(t *testing.T, row, path string, o decoder.Options, plant func(*m
 	}
 	defer m.Close()
 	var l mem.Ledger
-	c := m.NewCache(cpuGateCtx)
+	c := m.NewCache(ctx)
 	cfg := m.Config()
-	for i := range cpuGateCtx {
+	for i := range ctx {
 		if _, err := m.ForwardForTest(i%cfg.VocabSize, c); err != nil {
 			t.Errorf("%s: forward %d: %v", row, i, err)
 			return Reading{}, false
@@ -76,9 +62,9 @@ func cpuGateRow(t *testing.T, row, path string, o decoder.Options, plant func(*m
 		plant(&l)
 	}
 	kv := m.KVDeliveredFor("cpu") // what the cache really is: Options.KVPrecision is the GPU's, and a family can refuse what was asked
-	p := m.Plan("cpu", math.MaxInt64/4, fit.PlanRequest{Ctx: cpuGateCtx, CtxPinned: true, KVF16: kv == mem.KVF16, KVI8: kv == mem.KVI8})
+	p := m.Plan("cpu", math.MaxInt64/4, fit.PlanRequest{Ctx: ctx, CtxPinned: true, KVF16: kv == mem.KVF16, KVI8: kv == mem.KVI8})
 	read := Reading{Row: row, KVSlots: 1, Plan: p, Exact: []mem.LineID{mem.LineKV, mem.LineState}, Named: map[mem.LineID]int64{mem.LineScratch: decoder.CPUScratchBudgetForTest}}
-	facts := GeometryOf(m, cpuGateCtx, 1, kv, true).Facts()
+	facts := GeometryOf(m, ctx, 1, kv, true).Facts()
 	read.Open = append(read.Open, Snap("generated", &l, facts))
 	m.Close()
 	release()
@@ -124,6 +110,43 @@ func TestMemGate_cpu(t *testing.T) {
 	t.Logf("%d rows held, %d option cells refused at load", len(built), refused)
 	HoldRows(t, cpuGateRowsPath, built, *cpuGateRowsUpdate)
 	g.Finish(t)
+}
+
+// TestMemGate_cpuRingsAcrossTheWindow: on two ring families, at each K/V precision, the plan's KV is what the cache holds at a context
+// below, at and one past the window, where TestMemGate_cpu's rows are all past it: a ring holds its W rows from its first write, and at
+// f32 twice that once a read wraps.
+func TestMemGate_cpuRingsAcrossTheWindow(t *testing.T) {
+	g := Gate{Allowance: cpuRounding}
+	for _, fx := range []string{"testdata/gemma2-tiny", "testdata/mistral-tiny-window"} {
+		path, err := sb2census.Path("../../..", fx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := decoder.Load(path, decoder.Options{Backend: "cpu", DirectLoad: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := m.SlidingWindowResident()
+		m.Close()
+		if w <= 1 || w >= cpuGateCtx {
+			t.Fatalf("%s: window %d, want one between 1 and %d", fx, w, cpuGateCtx)
+		}
+		for _, kv := range []struct {
+			name string
+			o    decoder.Options
+		}{{"f32", decoder.Options{Quant: "int4"}}, {"kvquant-f16", decoder.Options{Quant: "int4", KVQuant: "f16"}}, {"kv-i8", decoder.Options{Quant: "int4", KVQuant: "i8"}}} {
+			for _, ctx := range []int{w - 1, w, w + 1} {
+				read, ok := cpuGateRowAt(t, fmt.Sprintf("%s int4/%s ctx %d", fx, kv.name, ctx), path, kv.o, nil, ctx)
+				if !ok {
+					t.Fatalf("%s %s: the load was refused", fx, kv.name)
+				}
+				g.Check(t, read)
+			}
+		}
+	}
+	if g.rows != 18 {
+		t.Fatalf("%d rows checked, want 18", g.rows)
+	}
 }
 
 // TestMemGate_cpuPlantsThroughTheTable: bytes leased over plan on the row's ledger stay red through the table, on a line it forgives

@@ -34,8 +34,8 @@ const metalKVPad = KVBlockRows
 // attention (ResidentLayerOps: DeltaNet, Mamba, or none). On "cuda" it is exact to the resident's K/V buffers (cuda/resident.go's kvBytesForCap:
 // f32, f16 or int8 with per-head f32 scales where the KV policy delivers it, the full context on every attention layer, one latent buffer on an MLA layer, none on a
 // layer with no attention KV) — before the driver's per-buffer 2 MiB rounding, which the CUDA resident's
-// own fit check does not add either. On any other backend it is Plan's long-standing per-position formula
-// at the precision requested (kvF16 / kvI8), multiplied by ctx.
+// own fit check does not add either. On "cpu" it is exact to what NewCache holds (cpuKVBytes). On any other backend it is Plan's
+// long-standing per-position formula at the precision requested (kvF16 / kvI8), multiplied by ctx.
 func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64 {
 	if ctx <= 0 {
 		return 0
@@ -43,11 +43,59 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 	if backend == "cuda" {
 		return m.cudaKVBytes(ctx, kvF16, kvI8)
 	}
+	if backend == "cpu" {
+		return m.cpuKVBytes(ctx, kvF16, kvI8)
+	}
 	if backend != "metal" {
 		return m.kvBytesPerPositionAllLayers(kvF16, kvI8) * int64(ctx)
 	}
 	slot, null := m.metalKVParts(ctx)
 	return slot + null
+}
+
+// cpuKVBytes is the K/V a CPU cache (NewCache) holds for ctx positions, at the precision NewCache takes for the request (int8 or f16
+// only where the family accepts it, else f32). An append-forever layer holds ctx rows. A ring layer (ringLayerAt) holds its
+// window's W rows from its first write, and at f32 twice that once a read wraps, which any context past W reaches. An int8 row is
+// one byte an element plus one f32 scale a KV head; an MLA layer holds one f32 latent row a position; a layer that reads another's
+// cache, or has no attention, holds none.
+func (m *Model) cpuKVBytes(ctx int, f16, i8 bool) int64 {
+	a := m.w.arch
+	if a == nil {
+		return m.kvBytesPerPositionAllLayers(f16, i8) * int64(ctx)
+	}
+	quant := kvqF32
+	if i8 && a.kvInt8OK() {
+		quant = kvI8
+	} else if f16 && a.kvF16OK() {
+		quant = kvqF16
+	}
+	var total int64
+	for l := range a.NumLayers {
+		if a.hasNoAttentionKVAt(l) || a.gemma4KVSrcAt(l) != l {
+			continue
+		}
+		width := int64(a.kvDimAt(l))
+		if a.mla != nil {
+			total += 4 * width * int64(ctx)
+			continue
+		}
+		rows := int64(ctx)
+		if a.ringLayerAt(l) {
+			rows = int64(a.SlidingWindow)
+			if quant == kvqF32 && ctx > a.SlidingWindow {
+				rows *= 2
+			}
+		}
+		row := 4 * width
+		switch quant {
+		case kvI8:
+			row = width + 4*int64(a.NumKVHeads)
+		case kvqF16:
+			row = 2 * width
+		}
+		total += 2 * rows * row
+	}
+	return total
 }
 
 // MetalKVSlotBytes is what one more resident KV slot costs a metal load at ctx positions: ResidentKVBytes less the pools' null blocks.
