@@ -11,7 +11,7 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| M1 | decision | Francis: refuse or enforce JSON Schema `format` | `constrain/schema.go:schemaKeywords` still accepts it as annotation-only |
+| M1 | done | — (Francis: enforce the common formats) | `constrain/schema_format.go:fmtStep`; `constrain/schema_format_test.go:TestJSONSchema_formatIsEnforced` |
 | M2 | open | a stop-id helper on `chat.Template` | no stop-id helper in the tree; `chat/chat.go:Template.Stops` is strings |
 | M3 | done | — | f02d0b534; `tokenizer/stream.go:Tokenizer.NewStream` |
 | M4 | open | a tool-grammar helper on `chat.Template`; document `ToolCall.ID` and the `<think>` lead on `ParseToolCalls` | the parts exist (`constrain/tools_union.go:ToolCallsGrammar`), no helper |

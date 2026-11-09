@@ -26,6 +26,7 @@ const (
 	fsFreeKey                // a free object's key string (anyObjNode): any string, then ':'
 	fsFreeKeyEsc             // a free key, after '\'
 	fsFreeKeyU               // a free key, reading \uXXXX (num = hex left)
+	fsFmt                    // inside a string held to a format (schema_format.go)
 )
 
 // number sub-states (held in frame.num while state == fsNum).
@@ -327,6 +328,16 @@ func (g *schemaGrammar) step(b byte) bool {
 				return true
 			}
 
+		case fsFmt:
+			if b == '"' {
+				if !fmtTerminal(f) {
+					return false
+				}
+				g.complete()
+				return true
+			}
+			return fmtStep(f, b)
+
 		case fsStrEsc:
 			switch b {
 			case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
@@ -388,6 +399,10 @@ func (g *schemaGrammar) dispatch(f *frame, b byte) bool {
 	case kString:
 		if b == '"' {
 			f.state = fsStr
+			if f.n.format != fmtNone {
+				f.state = fsFmt
+				fmtStart(f)
+			}
 			return true
 		}
 	case kNumber:
