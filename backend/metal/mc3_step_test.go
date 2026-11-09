@@ -199,7 +199,7 @@ func moeStepResident(t *testing.T, dir string, on bool) *resident {
 // GOINFER_OP4MD3_MODEL, loaded int4 with the step's MoE block on, four slots filled to depth 128, then 64 greedy tokens of all four
 // sequences timed two ways: the batched step (device argmax), against the do-nothing arm, each sequence decoded one token at a
 // time on its own slot as today (ForwardArgmax). A B B A over 10 pairs after one warm run each; both arms' tokens must be
-// equal. The cell starts only under the void rule's start terms (stepCellStartVoid), read after the load maps the file and
+// equal, and on a recurrent resident every run starts from a refill (stepCellFill). The cell starts only under the void rule's start terms (stepCellStartVoid), read after the load maps the file and
 // before the resident allocates; the reclaimable reading is recorded beside them. Swap growth over the whole cell is the
 // runner's to judge (scripts/void_rule.py watch and end). A pair voids the cell when the test process itself pages (its own
 // major faults rise during the pair) or system swap in use grows; system-wide pageouts are recorded as context only. A
@@ -254,6 +254,85 @@ func TestStepCellStartVoid(t *testing.T) {
 		if why := stepCellStartVoid(c.load1, 8, c.available, c.need); (why != "") != c.void {
 			t.Errorf("load %.2f, available %d, need %d: void %q, want void %v", c.load1, c.available, c.need, why, c.void)
 		}
+	}
+}
+
+// stepCellFill fills KV slot i with fills[i] from position 0: through ForwardBatch, or token by token through ForwardEmb when
+// full (rows that carry more than the embedding). A recurrent resident's slot states are zeroed first, since a pass at
+// position 0 does not reset them, so a refill puts every slot back where the first fill left it.
+func stepCellFill(t *testing.T, r *resident, fills [][]int, row func(int) []float32, full bool) {
+	t.Helper()
+	if r.recurrentModel() {
+		r.stopExec()
+		for sl := range fills {
+			r.resetRecurrentSlot(sl)
+		}
+	}
+	for sl, ids := range fills {
+		if !full {
+			mc3Fill(t, r, sl, ids)
+			continue
+		}
+		if err := r.useKVSlot(sl); err != nil {
+			t.Fatal(err)
+		}
+		for i, id := range ids {
+			r.ForwardEmb(row(id), i)
+		}
+	}
+}
+
+// TestStepCellFill_rewindsRecurrentState: on nemotron-tiny with the step on, two slots, steps run after a refill equal
+// the steps run after the first fill, every logit; run again without the refill they differ, so the fixture's state carries
+// the earlier steps and a cell that skipped the refill would compare arms from different states.
+func TestStepCellFill_rewindsRecurrentState(t *testing.T) {
+	r := recurrentStepResidentSlots(t, recurrentFixture{dir: "../../testdata/nemotron-tiny"}, true, 2)
+	if r.batch == nil || r.mamba == nil {
+		t.Fatalf("step built %v, Mamba-2 %v: want both (%s)", r.batch != nil, r.mamba != nil, r.batchIneligible())
+	}
+	const depth, steps = 20, 6
+	rng := rand.New(rand.NewSource(11))
+	fills := [][]int{make([]int, depth), make([]int, depth)}
+	for _, f := range fills {
+		for i := range f {
+			f[i] = rng.Intn(r.V)
+		}
+	}
+	row := func(id int) []float32 { return mc3Emb(r, id) }
+	run := func() [][]float32 {
+		var out [][]float32
+		cur := []int{1, 2}
+		for s := range steps {
+			logits, _, err := r.forwardMultiInto([]batchSeq{{slot: 0, pos: depth + s, emb: row(cur[0])}, {slot: 1, pos: depth + s, emb: row(cur[1])}}, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := range cur {
+				cur[i] = argmaxF32(logits[i])
+				out = append(out, slices.Clone(logits[i]))
+			}
+		}
+		return out
+	}
+	differ := func(a, b [][]float32) int {
+		n := 0
+		for i := range a {
+			for j := range a[i] {
+				if math.Float32bits(a[i][j]) != math.Float32bits(b[i][j]) {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	stepCellFill(t, r, fills, row, false)
+	want := run()
+	stepCellFill(t, r, fills, row, false)
+	if n := differ(want, run()); n != 0 {
+		t.Errorf("after a refill, %d logits differ from the run after the first fill", n)
+	}
+	if n := differ(want, run()); n == 0 {
+		t.Error("a run without a refill equals the first: the fixture's state does not carry earlier steps, so this test proves nothing")
 	}
 }
 
@@ -380,22 +459,14 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	if c.rows != nil {
 		row = c.rows(m)
 	}
-	for sl := range B {
-		ids := make([]int, depth)
-		for i := range ids {
-			ids[i] = rnd()
-		}
-		if c.rows == nil {
-			mc3Fill(t, r, sl, ids)
-			continue
-		}
-		if err := r.useKVSlot(sl); err != nil {
-			t.Fatal(err)
-		}
-		for i, id := range ids {
-			r.ForwardEmb(row(id), i)
+	fills := make([][]int, B)
+	for sl := range fills {
+		fills[sl] = make([]int, depth)
+		for i := range fills[sl] {
+			fills[sl][i] = rnd()
 		}
 	}
+	stepCellFill(t, r, fills, row, c.rows != nil)
 	first := make([]int, B)
 	for i := range first {
 		first[i] = rnd()
@@ -403,6 +474,9 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	run := func(batched bool) (float64, []int) {
 		if c.stepArms != nil {
 			c.stepArms(batched)
+		}
+		if r.recurrentModel() { // every run starts from the state the fill left, as the KV rows it rewrites in place do
+			stepCellFill(t, r, fills, row, c.rows != nil)
 		}
 		cur := append([]int(nil), first...)
 		var toks []int
