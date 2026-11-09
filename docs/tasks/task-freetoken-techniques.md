@@ -39,7 +39,7 @@
 > (2) **Lead 5 (bandwidth-adaptive CPU/GPU co-execution) ran its own pre-registered
 > funding measurement 2026-09-21 and was KILLED**, not merely "not yet a funding
 > decision": CPU-offloaded experts permanently poison the C′ cache, an ~11× regression
-> (`docs/measurements/l01-funding-cell-2026-09-21.md`) — `task-l01-hybrid-moe-cpu-gpu.md`
+> (`docs/measurements/l01-funding-cell-2026-09-21.md`) — `../completed/task-l01-hybrid-moe-cpu-gpu.md`
 > itself already records this; this doc's own summary did not. Leads 1, 3, and 4 were
 > re-checked against the current tree (`backend/cuda/resident.go`'s `mapBytes`, `MoECacheSlots`)
 > and stand exactly as written in 2026-09-13 — genuinely unbuilt, unmeasured, unowned by
@@ -342,7 +342,7 @@ instrument (`PagerStageStatsForTest`) are in place to answer them; they currentl
 refusal, which is the right answer for today and the wrong one to carry forward.
 
 **Correction, 2026-09-22: Lead 5's funding measurement ran and it was KILLED, not a still-
-open funding decision.** `task-l01-hybrid-moe-cpu-gpu.md`'s §9 remainder — the goroutine-
+open funding decision.** `../completed/task-l01-hybrid-moe-cpu-gpu.md`'s §9 remainder — the goroutine-
 per-expert parallel CPU compute, the merge kernel, async overlap alongside the GPU's own
 hit-path launches — was built (`backend/cuda/l01_cpu_offload.go`, `GOINFER_CUDA_L01_CPU_OFFLOAD`,
 bit-identical per `TestL01_e2eDecode_matchesBaseline`) and run against the pre-registered
