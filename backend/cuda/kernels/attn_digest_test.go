@@ -129,6 +129,7 @@ func adCasesBatched() []adCase {
 var (
 	adRaggedPos  = []int{0, 63, 64, 130, 299}
 	adRaggedSlot = []int{2, 0, 3, 1, 1}
+	adRaggedIdx  = []int32{3, 1, 4, 0, 2} // launch row k is batch row adRaggedIdx[k]
 )
 
 // attn_ragged (prefill_batched.cu): attn_batched over rows of different sequences, each in its slot's table at its own position.
@@ -164,8 +165,8 @@ func adCasesRagged() []adCase {
 							sk := adSink(r, nH, sink)
 							ctx := r.zeros(R * qDim)
 							r.launch(m, "attn_ragged", adCfg(nH, R, 1, 128, (maxWin+128)*4), gc.Arg(qb), kc, vc, gc.Arg(r.i32(tabs)), adI(nb),
-								gc.Arg(r.i32(slots)), gc.Arg(r.i32(pos)), adI(nH), adI(nKV), adI(hd), gc.ArgValue(adScale(hd)), adI(window), adI(R),
-								gc.Arg(ctx), sk)
+								gc.Arg(r.i32(slots)), gc.Arg(r.i32(pos)), gc.Arg(r.i32(adRaggedIdx)), adI(nH), adI(nKV), adI(hd), gc.ArgValue(adScale(hd)),
+								adI(window), adI(R), gc.Arg(ctx), sk)
 							got := r.read(ctx, R*qDim)
 							for i, p := range adRaggedPos {
 								w := p + 1
@@ -346,6 +347,87 @@ func adCasesBlockAndImage() []adCase {
 	return cs
 }
 
+// adFARaggedPos, adFARaggedSlot and adFARaggedIdx are fa_partial_ragged's rows: depths on both sides of the lane's usual floor
+// and past a 1,500-key window, in slots that are not the row index (two sharing one), and a launch list of four of the five rows
+// in a non-identity order (the fifth row's context must stay untouched).
+var (
+	adFARaggedPos  = []int{69, 999, 2099, 1000, 2200}
+	adFARaggedSlot = []int{2, 0, 3, 1, 1}
+	adFARaggedIdx  = []int32{4, 1, 3, 0}
+)
+
+// fa_partial_ragged_{64,128,256} and fa_combine_ragged (decode_fa.cu): the flash-decode lane over a ragged step's rows. Each listed
+// row is also run alone through fa_partial and fa_combine at M = 1 over its slot's table and must match it bit for bit; the unlisted
+// row's context stays zero.
+func adCasesFlashRagged() []adCase {
+	var cs []adCase
+	for kvi, m := range adFA {
+		for _, hd := range []int{64, 128, 256} {
+			for _, G := range []int{1, 4} {
+				for _, window := range []int{0, 1500} {
+					f16, nKV, nSplit := kvi == 1, 2, 16
+					nH := nKV * G
+					cs = append(cs, adCase{"fa_partial_ragged_" + itoa(hd), fmt.Sprintf("fa_partial_ragged_%d/%s/g%d/w%d", hd, adKVNames[kvi], G, window),
+						func(r *adRig) [][]float32 {
+							R, kvDim, qDim, nSlot := len(adFARaggedPos), nKV*hd, nH*hd, slices.Max(adFARaggedSlot)+1
+							nb := (slices.Max(adFARaggedPos) + 1 + 63) / 64
+							tabs, slots, pos := make([]int32, nSlot*nb), make([]int32, R), make([]int32, R)
+							for i := range tabs {
+								tabs[i] = int32(i)
+							}
+							for i, p := range adFARaggedPos {
+								slots[i], pos[i] = int32(adFARaggedSlot[i]), int32(p)
+							}
+							q := adRand(R*qDim, 81, 1)
+							qb := r.f32(q)
+							kc, vc := r.kv(adRand(nSlot*nb*64*kvDim, 82, 1), f16), r.kv(adRand(nSlot*nb*64*kvDim, 83, 1), f16)
+							U, K := nSplit*faWarps, len(adFARaggedIdx)
+							part, ctx := r.zeros(K*nH*U*(hd+4)), r.zeros(R*qDim)
+							r.launch(m, "fa_partial_ragged_"+itoa(hd), adCfg(nKV, nSplit, K, faWarps*32, (G*hd+faWarps*64)*4), gc.Arg(qb), kc, vc,
+								gc.Arg(r.i32(tabs)), adI(nb), gc.Arg(r.i32(slots)), gc.Arg(r.i32(pos)), gc.Arg(r.i32(adFARaggedIdx)), adI(0),
+								adI(nH), adI(nKV), adI(window), gc.ArgValue(adScale(hd)), adI(nSplit), gc.Arg(part))
+							r.launch(m, "fa_combine_ragged", adCfg(nH, K, 1, hd, 3*U*4), gc.Arg(part), adI(nH), adI(hd), adI(U), adI(0),
+								gc.Arg(r.i32(adFARaggedIdx)), gc.Arg(ctx))
+							got := r.read(ctx, R*qDim)
+							listed := map[int]bool{}
+							for _, i32 := range adFARaggedIdx {
+								i := int(i32)
+								listed[i] = true
+								nKeys := adFARaggedPos[i] + 1
+								winStart := 0
+								if window > 0 && nKeys > window {
+									winStart = nKeys - window
+								}
+								p1, c1 := r.zeros(nH*U*(hd+4)), r.zeros(qDim)
+								s := adFARaggedSlot[i]
+								r.launch(m, "fa_partial_"+itoa(hd), adCfg(nKV, nSplit, 1, faWarps*32, (G*hd+faWarps*64)*4), gc.Arg(r.f32(q[i*qDim:(i+1)*qDim])), kc, vc,
+									gc.Arg(r.i32(tabs[s*nb:(s+1)*nb])), adI(nH), adI(nKV), adI(winStart), adI(nKeys), gc.ArgValue(adScale(hd)), adI(nSplit), gc.Arg(p1))
+								r.launch(m, "fa_combine", adCfg(nH, 1, 1, hd, 3*U*4), gc.Arg(p1), adI(hd), adI(U), gc.Arg(c1))
+								want := r.read(c1, qDim)
+								for j := range want {
+									if math.Float32bits(got[i*qDim+j]) != math.Float32bits(want[j]) {
+										r.t.Errorf("fa_partial_ragged row %d (position %d) element %d: %v, the M = 1 lane gives %v", i, adFARaggedPos[i], j, got[i*qDim+j], want[j])
+										break
+									}
+								}
+							}
+							for i := range R {
+								for j := 0; !listed[i] && j < qDim; j++ {
+									if got[i*qDim+j] != 0 {
+										r.t.Errorf("fa_combine_ragged wrote row %d, which the launch list does not name", i)
+										break
+									}
+								}
+							}
+							return [][]float32{got}
+						}})
+				}
+			}
+		}
+	}
+	return cs
+}
+
 // fa_partial_{64,128,256} and fa_combine (decode_fa.cu), the flash-decode lane, and its multi-row variants for speculative verify.
 func adCasesFlash() []adCase {
 	var cs []adCase
@@ -482,7 +564,7 @@ func adCasesMLA() []adCase {
 // adAllCases is every driven kernel at every shape, in a fixed order.
 func adAllCases() []adCase {
 	var cs []adCase
-	for _, f := range []func() []adCase{adCasesAttention, adCasesBatched, adCasesRagged, adCasesSplitKV, adCasesSplitKVRows, adCasesBlockAndImage, adCasesFlash, adCasesFused, adCasesMLA} {
+	for _, f := range []func() []adCase{adCasesAttention, adCasesBatched, adCasesRagged, adCasesFlashRagged, adCasesSplitKV, adCasesSplitKVRows, adCasesBlockAndImage, adCasesFlash, adCasesFused, adCasesMLA} {
 		cs = append(cs, f()...)
 	}
 	return cs
@@ -495,7 +577,7 @@ func adDrivenKernels(cs []adCase) map[string]bool {
 		// driven inside a chain case, after the score kernel that names it
 		"splitkv_softmax": true, "splitkv_vsum": true, "splitkv_vsum_partial": true, "splitkv_vsum_combine": true,
 		"splitkv_softmax_rows": true, "splitkv_vsum_rows": true,
-		"fa_combine": true, "fa_combine_rows": true,
+		"fa_combine": true, "fa_combine_rows": true, "fa_combine_ragged": true,
 	}
 	for _, c := range cs {
 		out[c.kernel] = true
