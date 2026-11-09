@@ -1459,6 +1459,9 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		C = f
 	}
 	chunk := ok && C > 0 && m.knobs.get(knobBatchedPrefill) != "0"
+	// ride: each chunk is carried by a decode run, one ragged step with the decode rows pending then (rideChunk), instead of a
+	// pass of its own followed by yieldToDecode.
+	ride := chunk && mc3.ride != nil
 	var logits []float32
 	var err error
 	// Cut a chunk only while a chunk plus prefillTailMinRows tokens remain, so the pass that ends the prefill has at least
@@ -1473,6 +1476,15 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		embs := make([][]float32, end-from)
 		for i, id := range prompt[from:end] {
 			embs[i] = m.embedResident(id)
+		}
+		if ride {
+			c := &chunkReq{seq: ResidentRaggedSeq{Slot: slot, Pos: from, Embs: embs, Prefill: &ResidentRaggedPrefill{PromptLen: len(prompt)}}}
+			if err = mc3.rideChunk(c); err == nil {
+				from = end
+				continue
+			}
+			// The ragged step did not take the chunk (a family it declines, a full KV pool): this chunk and the rest alternate.
+			ride, err = false, nil
 		}
 		mc3.prefillExclusive(func() {
 			if err = m.residentBind(slot); err == nil {
