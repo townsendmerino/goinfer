@@ -130,7 +130,7 @@ func TestMix_matchesThePlainMixerStep(t *testing.T) {
 }
 
 // TestMix_windowOwnsItsRows: after every step, each conv-window row is its own convDim floats (length and capacity) lying
-// outside every proj Mix was given, and once the window is full the same K-1 rows are reused, oldest first.
+// outside every proj Mix was given, and once the window is full its rows are reused, oldest first.
 func TestMix_windowOwnsItsRows(t *testing.T) {
 	p := Params{NHeads: 2, HeadDim: 4, DState: 8, NGroups: 1, DConv: 4, NormGroups: 1}
 	rng := rand.New(rand.NewPCG(3, 5))
