@@ -15,13 +15,22 @@ import (
 // CPUBatchDecode on, concurrent generations whose decode tokens are joined into batched steps must
 // each emit the tokens and leave the K/V they do alone on a model with batching off. A control
 // reads the batcher's stats, so the test cannot pass on solo tokens. TestCPUBatch_concurrentMatchesAlone
-// is the same contract at f32; this runs it under each option. (KVQuant is not here: an int8 cache is
-// declined by cpuBatchCacheEligible, TestCPUBatch_ineligibleCachesBypass.)
+// is the same contract at f32; this runs it under each option, the f16 and int8 CPU caches included.
 func TestOptionPath_cpuBatchedDecode(t *testing.T) {
 	cases := []ogCase{
 		{name: "Quant int8", opts: Options{Quant: "int8"}, effect: ogDiffersFromPlain},
 		{name: "Quant int8int8", opts: Options{Quant: "int8int8"}, effect: ogDiffersFromPlain},
 		{name: "Quant int4", opts: Options{Quant: "int4"}, effect: ogDiffersFromPlain},
+		{name: "KVQuant i8", opts: Options{KVQuant: "i8"}, effect: func(t *testing.T, m *Model) {
+			if m.NewCache(1).quant != kvI8 {
+				t.Fatal("KVQuant i8 did not give an int8 cache")
+			}
+		}},
+		{name: "KVQuant f16", opts: Options{KVQuant: "f16"}, effect: func(t *testing.T, m *Model) {
+			if m.NewCache(1).quant != kvqF16 {
+				t.Fatal("KVQuant f16 did not give an f16 cache")
+			}
+		}},
 		{name: "ActQuantGroup 32 (int8int8)", opts: Options{Quant: "int8int8", ActQuantGroup: 32}, effect: func(t *testing.T, m *Model) {
 			if m.actGroup != 32 {
 				t.Fatalf("actGroup %d, want 32", m.actGroup)

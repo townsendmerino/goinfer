@@ -90,6 +90,14 @@ func ogKV(c *KVCache, n int) []float32 {
 			out = append(out, c.valScale[l][:n*nKV]...)
 			continue
 		}
+		if c.quant == kvqF16 {
+			for _, h := range [][]uint16{c.keysH[l][:n*c.kvDim], c.valsH[l][:n*c.kvDim]} {
+				for _, v := range h {
+					out = append(out, float32(v))
+				}
+			}
+			continue
+		}
 		out = append(out, c.keys[l][:n*c.kvDim]...)
 		out = append(out, c.vals[l][:n*c.kvDim]...)
 	}
