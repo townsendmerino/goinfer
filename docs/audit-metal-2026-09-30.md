@@ -65,7 +65,7 @@ most of `docs/tasks/` were not in the audited snapshot; findings that lean on th
   (`5946e8f7`). None closes a finding. Every other finding stands as written.
 
 Outside the findings: Metal re-quantizes every int8 body weight to int4 (G10 in `docs/completed/task-gpu-paths-2026-09.md`,
-labelled since M-25). Running those weights natively is planned in `docs/tasks/task-metal-int8-2026-10.md`.
+labelled since M-25). Running those weights natively is planned in `docs/completed/task-metal-int8-2026-10.md`.
 
 The order §10's items run in, under the run-budget rules and this Mac's limits, is `docs/completed/task-metal-audit-2026-10.md`.
 
@@ -2461,7 +2461,7 @@ removed the test fails 2 of 2 or 3 of 3; with both it passes 3 of 3. Bit-identic
 
 #### E-C02 [C, Minor, default-off] `fp contract(fast)` restore and `GOINFER_PRECISE_MATH`
 
-**Status, 2026-10-04: probed, no defect on this build.** `TestMC3Step_bitIdenticalPreciseMath` runs the batched step with the library compiled precise: 0 logits differ from single-token decode, shallow and deep. It now matters by default, because native int8 compiles precise (docs/tasks/task-metal-int8-2026-10.md, O3); `TestMC3Step_w8BitIdentical` holds for the int8 step too. The pragma order is unchanged. The test is the guard against a toolchain that compiles it differently.
+**Status, 2026-10-04: probed, no defect on this build.** `TestMC3Step_bitIdenticalPreciseMath` runs the batched step with the library compiled precise: 0 logits differ from single-token decode, shallow and deep. It now matters by default, because native int8 compiles precise (docs/completed/task-metal-int8-2026-10.md, O3); `TestMC3Step_w8BitIdentical` holds for the int8 step too. The pragma order is unchanged. The test is the guard against a toolchain that compiles it differently.
 
 `gumbelMSLKernels` is the last block of `allKernels` and is bracketed by `#pragma METAL fp contract(off)` (metal/gumbel.go:49) and
 `#pragma METAL fp contract(fast)` (:164). `mc3RowsKernels` is appended after it (metal/model.go:1088) and the whole library is compiled with

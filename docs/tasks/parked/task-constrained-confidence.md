@@ -107,7 +107,7 @@
 | D8-gpu | blocked | a device recurrent-state copy per backend; unscheduled | D8 below |
 | D9 | done | the capability-matrix column is deferred by design | `docs/integrations/typesafe-jevx.md` |
 | D10-D14 | moved | `docs/completed/task-clef-route-c-2026-10.md` | that doc |
-| CC1 | decision | jevx and the TypeSafe SDK end to end against a live `/v1/systemone`; the owner's yes to install the third-party clients | `docs/integrations/typesafe-jevx.md` "Not yet run end to end" |
+| CC1 | blocked | parked (Francis, 2026-11-09): jevx and the TypeSafe SDK end to end against a live `/v1/systemone`. On reopening, CC3 is the cheaper first step | `docs/integrations/typesafe-jevx.md` "Not yet run end to end" |
 | CC2 | blocked | a Clef-flash registry entry (multi-file design), then its site tag at a release cut | `pull/registry.go` has no Clef entry |
 | CC3 | open | on reopening: read Ollama's Tev1 and Nimble `/v1/systemone` recipes, then a D10-style reproduce gate | the 2026-10-26 block above |
 | CC4 | blocked | the Metal and WebGPU all-positions seam; CUDA-resident Clef at int8int8 on a card over 9.5 GB | Route C's open list |

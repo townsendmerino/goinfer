@@ -19,17 +19,19 @@
 | 3 | done | — | `backend/metal/internal/gpudev/metal.go:Encoder.bindBuffers` |
 | 4 | blocked | T1.13 run on nobara | `docs/audit-metal-2026-09-30.md` T1.13 |
 | O1 | blocked | build A-P04 (the pipeline form), then decide | `docs/audit-metal-2026-09-30.md` A-P04 |
-| O2 | decision | Francis: delta_rule's summation order (read the recurrence share first) | `docs/tasks/parked/task-kernel-survey-2026-10.md`, Metal |
-| O3 | decision | Francis: a Metal int4 head (recommendation: defer) | `docs/tasks/parked/task-multimodal-remaining-2026-10.md`, Metal-embed-int4 |
-| O4 | decision | Francis: the down projection off the per-word chain | `docs/tasks/parked/task-kernel-survey-2026-10.md`, Metal |
+| O2 | blocked | parked (Francis, 2026-11-09): delta_rule's summation order (read the recurrence share first) | `docs/tasks/parked/task-kernel-survey-2026-10.md`, Metal |
+| O3 | blocked | deferred (Francis, 2026-11-09): a Metal int4 head | `docs/tasks/parked/task-multimodal-remaining-2026-10.md`, Metal-embed-int4 |
+| O4 | blocked | parked (Francis, 2026-11-09): the down projection off the per-word chain | `docs/tasks/parked/task-kernel-survey-2026-10.md`, Metal |
 | O5 | blocked | T1.13's error numbers | item 4 |
-| O6 | decision | Francis: device top-k, top-p and min-p | `docs/tasks/parked/task-kernel-survey-2026-10.md`, Metal |
+| O6 | killed | — (Francis, 2026-11-09: greedy dominates the timed paths) | `docs/tasks/parked/task-kernel-survey-2026-10.md`, Metal |
 | O7 | blocked | the pooled F-G01 fidelity gate | `docs/audit-metal-2026-09-30.md` F-B01 |
 | 6 | blocked | a k = 8 MoE resident on the Mac | `backend/metal/moe.go:moeKSlotsOn` (off) |
 | 7 | blocked | a model where per-row wins at 3 to 4 clients in the whole step | item 7 below |
 | 8 | blocked | Francis, or a served short-prompt TTFT at depth naming attention | `docs/tasks/parked/task-kernel-survey-2026-10.md`, Metal |
-| 9 | decision | Francis (parked 2026-10-03, low value) | `docs/tasks/parked/task-kernel-survey-2026-10.md`, Metal |
+| 9 | killed | — (Francis, 2026-11-09: low value) | `docs/tasks/parked/task-kernel-survey-2026-10.md`, Metal |
 | 10 | blocked | a guess that needs no phase-2 wait; a cheaper write publish | `backend/metal/paged_fence.go:pagedFenceOn`, `backend/metal/gemma4_moe.go:g4PrefetchOn` (both off) |
+| M26-L4 | blocked | parked (Francis, 2026-11-09): M26's lever 4, the night slot sweep; the auto-sizer already takes up to 64 slots. Trigger: the owner asks for the night sweep | `docs/completed/task-m26-mac-2026-10.md` "Levers", item 4 |
+| M26-L6a | blocked | parked (Francis, 2026-11-09): M26's lever 6a, the n-gram drafter on paged M26. Trigger: a cheaper expert miss | `docs/completed/task-m26-mac-2026-10.md` "Levers", item 6 |
 
 | # | item | state | trigger or owner |
 |---|---|---|---|

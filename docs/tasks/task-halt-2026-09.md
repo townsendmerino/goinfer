@@ -28,12 +28,12 @@
 |---|---|---|---|
 | K1 | done | the `sessions/{key}/cancel` route moved to K4 | `internal/app/serveapp/cancel_test.go:TestServe_cancelByID` |
 | K2 | done | — | `internal/app/serveapp/halt_test.go:TestServe_haltUnderLoad`; `docs/measurements/kill-switch-quiescence-2026-09-12.md` |
-| K3 | open | `-lease-file` / `-lease-ttl`, fail-closed start; the next item by this doc's order | no lease code in `internal/app/serveapp` |
-| K4 | open | a session key (`user` / `metadata.user_id`) and caps; carries K1's `sessions/{key}/cancel` | `internal/app/serveapp/budget.go` is the reasoning budget, unrelated |
+| K3 | blocked | parked (Francis, 2026-11-09; Trigger: an in-tree or supported agent executes non-read-only tool calls): `-lease-file` / `-lease-ttl`, fail-closed start | no lease code in `internal/app/serveapp` |
+| K4 | blocked | parked (Francis, 2026-11-09; the same trigger): a session key (`user` / `metadata.user_id`) and caps; carries K1's `sessions/{key}/cancel` | `internal/app/serveapp/budget.go` is the reasoning budget, unrelated |
 | K5 | done | — | `internal/app/serveapp/admin_socket_test.go:TestServe_adminSocket` |
-| K6 | open | a systemd unit and a launchd plist; needs K3 | no `deploy/` directory |
-| K7 | open | `agent.Broker` in demo/agent; needs K3 | `demo/agent/agent/` has `agent.go` and `kenclient.go` only |
-| K8 | open | `gate kill`, the queued-not-started case first; needs K3, K4, K7 | no kill gate in `cmd/gate` |
+| K6 | blocked | parked with K3: a systemd unit and a launchd plist | no `deploy/` directory |
+| K7 | blocked | parked with K3: `agent.Broker` in demo/agent | `demo/agent/agent/` has `agent.go` and `kenclient.go` only |
+| K8 | blocked | parked with K3: `gate kill`, the queued-not-started case first; needs K3, K4, K7 | no kill gate in `cmd/gate` |
 | K9 | moved | J2 of `task-work-queue-2026-09.md` owns the journal; the remainder in the note above is unowned | `internal/app/serveapp/jobjournal.go` |
 
 ## Where goinfer sits, and what that means for a kill switch

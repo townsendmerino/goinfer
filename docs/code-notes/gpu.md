@@ -150,7 +150,7 @@ tiled kernel instead of a separate post-hoc residual-kernel add — see the
 original tiledProj's doc comment (git history) for the measured reason this
 matters for bit-exactness (TestLocalize_BiasEpilogue).
 
-R-25 (docs/tasks/task-recompute-audit.md): it is quantB then projQB, so the projections that read the same input
+R-25 (docs/completed/task-recompute-audit.md): it is quantB then projQB, so the projections that read the same input
 (q, k, v of xn; gate, up of xn2) quantize it once and share the result. Quantization is deterministic, so each GEMM
 reads the same bytes it did when it quantized its own copy.
 ```
