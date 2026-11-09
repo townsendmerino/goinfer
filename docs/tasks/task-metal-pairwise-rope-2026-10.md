@@ -177,7 +177,7 @@ site changes.
 
   - **Owner decision, 2026-10-09:** "close enough, so it's a go." The bar was not amended; the result ships as a
     recorded miss.
-  - **Not measured here; settled in Part C of `docs/tasks/task-metal-pairwise-followups-2026-10.md`:**
+  - **Not measured here; settled in Part C of `docs/completed/task-metal-pairwise-followups-2026-10.md`:**
     - Metal does not sit below CUDA like for like: on CUDA's own 48-token prompt it reads mean 0.995862 against
       CUDA's 0.996714.
     - The f16 KV cache is not the mechanism: f32 KV moved the mean by +0.0008.
