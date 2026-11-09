@@ -257,7 +257,7 @@ RECURRENT STATE (Gated-DeltaNet: qwen3_5 / qwen3_5_moe / qwen3_next). A DeltaNet
 state must advance strictly one token at a time and in order. The batched path now honours that INSIDE the
 pass: prefillCore branches on Ly.isDeltaNet, runs the layer's projections over the M rows, and runs the
 recurrence through row-batched twins of decode's kernels that walk the rows in order (prefillDeltaNetRows,
-docs/tasks/task-cuda-deltanet-prefill-2026-09.md). It dispatches on the layer's KIND, not on which weights
+docs/completed/task-cuda-deltanet-prefill-2026-09.md). It dispatches on the layer's KIND, not on which weights
 happen to be absent, so the LFM2 bug class (audit-2026-09-02 C-01: a dense attention stack run over conv
 layers that load no q/k/v/o) cannot recur through this path; nonBatchableKind checks the projections each
 kind actually binds. ForwardN (spec verify) keeps its sequential path for this family: verify rewinds, and
@@ -353,7 +353,7 @@ Moved from `backend/cuda/prefill.go` (the comment in the `forceExactKernels` exp
 ```text
 Gated-DeltaNet: the fast levers' projection error feeds the recurrent state and compounds token after
 token — measured on Qwen3.5-9B, 561 tokens: cosine 0.994 and different greedy continuations with them,
-bit-identical to decode without (docs/tasks/task-cuda-deltanet-prefill-2026-09.md).
+bit-identical to decode without (docs/completed/task-cuda-deltanet-prefill-2026-09.md).
 ```
 
 ## prefillCore: forceExactKernels, E-model
@@ -5390,7 +5390,7 @@ The next two were invisible until ptxModules() was derived from kernels.go's emb
 Moved from `backend/cuda/kernel_local_memory_test.go` (the comment above `delta_rule_rows_128`) on 2026-10-09.
 
 ```text
-deltanet.ptx, the batched Gated-DeltaNet prefill (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): the
+deltanet.ptx, the batched Gated-DeltaNet prefill (docs/completed/task-cuda-deltanet-prefill-2026-09.md): the
 scan holds its 128-float state row in registers across the rows and spills 24 floats of it at 255
 registers (launch_bounds(128, 1) measured the same 96 B). 3.8 MiB at full occupancy, against the 1.23 s →
 38 ms it bought on a 621-token Qwen3.5-9B prefill over the no-spill generic scan.
