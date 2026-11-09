@@ -1799,8 +1799,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		}
 		outs = make([][]float32, M)
 		if tail == tailAllLogits {
-			// Every row needs the head (PrefillLastN, speculative verify, the multi-sequence step): batch it, ONE norm+quant+GEMV
-			// over all M rows, bit-identical to the per-row GEMV by construction (bGemvB). batchedHeadFull says what stays per row.
+			// Every row whose logits are read needs the head (PrefillLastN, speculative verify, a step's rows; not a ragged step's
+			// prefill chunk but its final pass's last row, raggedChunk.headFrom): batch it, ONE norm+quant+GEMV over those rows,
+			// bit-identical to the per-row GEMV by construction (bGemvB). batchedHeadFull says what stays per row.
 			var e error
 			if outs, ids, e = r.batchedHeadFull(xB, aqB, aScB, M, rows, r.stepChunk.headFrom()); e != nil {
 				return e
@@ -1934,17 +1935,20 @@ func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int
 // raw head output: prefillCore applies the softcap and logit scale to every logits row after the job. Rows before from (a
 // ragged step's prefill chunk, raggedChunk.headFrom) are not headed and come back nil.
 func (r *cudaResident) batchedHeadFull(xB, aqB, aScB Buffer, M int, rows []stepRow, from int) (outs [][]float32, ids []int, err error) {
+	n := M - from
+	if n <= 0 {
+		return make([][]float32, M), nil, nil // a step of a non-final chunk alone: no row is read
+	}
 	defer r.onLine(mem.LineScratch)()
-	if M > r.logitsBCap {
+	if n > r.logitsBCap { // sized by the headed rows, so a chunk's unread rows hold no logits
 		if r.logitsBCap > 0 {
 			r.dev.ReleaseBuf(r.logitsB)
 			r.dev.ReleaseBuf(r.logitsBIdx)
 		}
-		r.logitsB = r.af(M * r.vocab)
-		r.logitsBIdx = r.ai(M)
-		r.logitsBCap = M
+		r.logitsB = r.af(n * r.vocab)
+		r.logitsBIdx = r.ai(n)
+		r.logitsBCap = n
 	}
-	n := M - from
 	if e := r.bNormB(xB.At(from*r.hidden*4), r.finalNorm, r.hidden, aqB, aScB, n); e != nil {
 		return nil, nil, e
 	}
