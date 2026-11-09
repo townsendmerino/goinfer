@@ -29,7 +29,7 @@ var cpuRounding = PerLease("none: the walk leases each array's own bytes", 0)
 // cpuMemGaps is the CPU's table of known reds. It may only shrink: the fix that removes a row lowers cpuMemGapsPin.
 var cpuMemGaps = cpuKVGaps
 
-const cpuMemGapsPin = 28
+const cpuMemGapsPin = 26
 
 // cpuKVGaps are the CPU plan's KV figures that a row reads wrong, each in MM8's row. The plan prices ctx positions of K and V on every layer.
 var cpuKVGaps = func() []Gap {
@@ -47,10 +47,6 @@ var cpuKVGaps = func() []Gap {
 		"testdata/ministral3-tiny", "testdata/phi3-tiny", "testdata/qwen25vl-tiny", "internal/vision/testdata/qwen25vl-vision-tiny", "testdata/qwen3asr-tiny", "testdata/smollm3-tiny", "testdata/voxtral-tiny"} {
 		out = append(out, Gap{Row: f + " int4/kv-i8", Line: mem.LineKV, What: "int8 K/V holds one scale a head, and the plan prices 1/8 of a byte an element, which under-prices a narrow head",
 			Item: "MM8, int8 KV's scale", Bytes: KVPricedUnder})
-	}
-	for _, f := range []string{"testdata/nemotron-tiny", "testdata/nemotron3nano-tiny"} {
-		out = append(out, Gap{Row: f + " *", Line: mem.LineState, What: "a Mamba-2 conv window row is a view into the projection's output, whose tail it keeps alive",
-			Item: "MM8 CPU, Mamba window views", Bytes: func(fs map[string]int64) int64 { return fs["mambaTail"] }})
 	}
 	return out
 }()
