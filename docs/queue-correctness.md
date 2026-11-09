@@ -136,7 +136,7 @@ path "metal-resident (int8int8→int4, no Metal int8 GEMV kernel)". The path lab
 was loaded with.
 
 **The fix, as Nemotron-H's (OP2b, `backend/metal/mamba.go:buildMamba`):** at int8 Metal declines the model as resident and the CPU runs it
-at real int8. Native int8 for recurrent families is a later slice of `docs/tasks/task-metal-int8-2026-10.md`.
+at real int8. Native int8 for recurrent families is a later slice of `docs/completed/task-metal-int8-2026-10.md`.
 
 **Gate (tier 0):** `qwen35-tiny` at int8int8 does not go resident on Metal; at int4 it does, unchanged. Planted defect: no decline,
 which must turn it red.

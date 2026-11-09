@@ -430,7 +430,7 @@ Moved from `decoder/residency.go` (the comment above `autoMetalPrecision`) on 20
 autoMetalPrecision is why a model stays on the CPU when -backend auto chose metal, "" when it may go resident. A
 backend the user did not name must not change the precision they loaded at, such as the int8int8 bundle a
 model-included goinfer-chat carries (R17, docs/completed/task-first-hour.md). Metal runs int4 resident, and since slice 1
-of docs/tasks/task-metal-int8-2026-10.md dense int8int8 natively; it re-quantizes int8, int4mix and the int8int8
+of docs/completed/task-metal-int8-2026-10.md dense int8int8 natively; it re-quantizes int8, int4mix and the int8int8
 models native int8 does not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here
 (slice 5: gate S-auto passed, 2026-10-04), and autoMetalKeepsPrecision checks afterwards that it ran natively; the
 others stay on the CPU. A named -backend metal still runs them re-quantized.
@@ -11939,7 +11939,7 @@ size fields.
 Moved from `decoder/fidelity_testhook.go` (a comment block rewritten to the rule; it carried tracker ids, dates or a provenance note) on 2026-10-09.
 
 ```text
-W8F3Ref is F3′'s CPU f32 reference (docs/tasks/task-metal-int8-2026-10.md, "F3′"), written by
+W8F3Ref is F3′'s CPU f32 reference (docs/completed/task-metal-int8-2026-10.md, "F3′"), written by
 TestW8F3Reference_write on a machine whose fit guard admits the f32 model (nobara for the 1.5B) and read by
 metal's TestW8Native_F3amended_closerToF32 through GOINFER_W8_F3_REF_IN: the 8 prompts, the f32 model's greedy
 continuation (the tokens every arm is teacher-forced on), and the f32 logits at every position.
@@ -12873,7 +12873,7 @@ attribution measured the fallback slower than per-head).
 Moved from `decoder/auto_backend_test.go` (the comment above `TestAutoMetalPrecision_keepsTheLoadedPrecision`) on 2026-10-09.
 
 ```text
-TestAutoMetalPrecision_keepsTheLoadedPrecision (R17, then slice 5 of docs/tasks/task-metal-int8-2026-10.md): when
+TestAutoMetalPrecision_keepsTheLoadedPrecision (R17, then slice 5 of docs/completed/task-metal-int8-2026-10.md): when
 auto chose metal, a model Metal would run only re-quantized (int8, int4mix) or not at all (f32) stays on the CPU at the
 precision it loaded at, and says so. int8int8 goes to BuildResident, since Metal runs dense int8int8 natively, and is
 kept only when the resident reports that it ran at int8int8; one Metal re-quantized (MoE, DeltaNet) is dropped for
