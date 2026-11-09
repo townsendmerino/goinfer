@@ -1101,9 +1101,11 @@ set for the analysis only, run from inside the module with `GOWORK=off`, gives t
 "Zero findings" and "the tool did not run" are the same output, which is the same class the tracer's
 zero samples belonged to.
 
-**B8 · A sweep must distinguish "could not evaluate" from "failed"** *Checked 2026-11-09 (mbp2-fit): STILL LIVE in
-`cmd/gate`. `scripts/parity_sweep.sh` is gone, and `cmd/gate/grade_parity.go:classifyChecks` still labels every unexplained
-skip `SKIP - asset missing (blocker)` whatever the cause, and the verdict is one count, `N BLOCKER(S)`.* — `linux`, **filed 2026-08-12**
+~~**B8 · A sweep must distinguish "could not evaluate" from "failed"**~~ **DONE 2026-11-09 (mbp2-fit):** `cmd/gate/grade_parity.go:classifyChecks` names the
+variable of an env-gated skip (`SKIP - not evaluated, GOINFER_HEAVY_TESTS unset (blocker)`), an asset skip keeps its label,
+and the verdict line splits the count (`blockerSplit`: `N BLOCKER(S): F FAILED, E NOT EVALUATED (a asset absent, b env gate
+unset, c did not run)`, plus any from the catch-alls); both still block a tag
+(`cmd/gate/parity_test.go:TestParity_notEvaluatedIsCountedApartFromFailed`). The entry as filed:* — `linux`, **filed 2026-08-12**
 
 `scripts/parity_sweep.sh` reported **27 blockers**, then **15**, then **0**. The tree was fine at all
 three. Every one of the 42 was a **missing asset or an unset env var** — an *inability to evaluate*,
