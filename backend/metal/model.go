@@ -3074,7 +3074,7 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 	r.encLayer = l
 	for i, st := range L.steps {
 		if mixerWalks(st) && !mixerWalkBlocksForTest {
-			r.encodeMixerWalk(e, l, L, L.stepOps[i], x, uPos, uNKeys, rp)
+			r.encodeMixerWalk(e, l, L, L.stepOps[i], x, uPos, uNKeys, uQTempScale, rp)
 			continue
 		}
 		r.encodeStep(e, st, l, L, x, uPos, uNKeys, uQTempScale, rp)
