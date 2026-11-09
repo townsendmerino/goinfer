@@ -874,11 +874,6 @@ type cudaResident struct {
 	// raggedAttnLaunches counts attn_ragged launches, so a test can prove a step's rows took the one launch; headRows counts the
 	// rows batchedHeadFull heads, so it can prove a prefill chunk's unread rows took none.
 	raggedAttnLaunches, headRows int
-	// raggedFALaunches counts fa_partial_ragged launches, so a test can prove a step's flash-lane rows took one launch.
-	raggedFALaunches int
-	// faRagged and faCombineRagged are the flash-decode lane's ragged twins (decode_fa.cu); zero when not loaded.
-	faRagged        [3]Pipeline
-	faCombineRagged Pipeline
 	// bRopeKVRagged and bAttnRagged are rope_kv_batched's and attn_batched's ragged twins (prefill_batched.cu); zero when not
 	// loaded, when a step's rows take decode's own gap.
 	bRopeKVRagged, bAttnRagged                              Pipeline
