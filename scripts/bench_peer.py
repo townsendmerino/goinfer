@@ -610,6 +610,7 @@ class SwapWatch:
         self.swapin = None
         self.swapout = None
         self.peak = 0.0
+        self.peak_abs = self.base  # the highest absolute reading, kept raw: base + a rounded growth is not the reading
         self.unreadable = self.base is None  # swap could not be read at the start, or at a poll or the last read
         self.killed = None
         self.pgid = None
@@ -626,6 +627,7 @@ class SwapWatch:
             self.unreadable = True
             return
         self.peak = max(self.peak, now - self.base)
+        self.peak_abs = max(self.peak_abs, now)
         if self.kill_mb is not None and self.peak > self.kill_mb and self.pgid and not self.killed:
             self.killed = f"swap grew +{self.peak:.0f} MB (> {self.kill_mb:.0f}); server killed"
             try:
@@ -653,7 +655,7 @@ class SwapWatch:
             self.swapin = now_in - self.base_in
         if self.base_out is not None and now_out is not None:
             self.swapout = now_out - self.base_out
-        return {"swap_base_mb": self.base, "swap_growth_mb": round(self.peak, 1), "swap_killed": self.killed,
+        return {"swap_base_mb": self.base, "swap_growth_mb": round(self.peak, 1), "swap_peak_mb": self.peak_abs, "swap_killed": self.killed,
                 "swapin_mb": None if self.swapin is None else round(self.swapin, 1),
                 "swapout_mb": None if self.swapout is None else round(self.swapout, 1), "swap_void": self.void_reason()}
 
@@ -889,8 +891,9 @@ def machine_state():
     """Recorded at the START of each cell: the load average, available memory and core count the void rule reads (heavy_void), the
     reclaimable memory and swap in use as a record (void_rule.py: a record taken under this rule can be told from the old one),
     and the GPU and thermal state."""
+    swapin, swapout = swap_io_mb()
     m = {"loadavg": _loadavg(), "available_mb": free_mem_mb(), "ncores": os.cpu_count(), "gpu": _gpu_state(),
-         "reclaimable_mb": _reclaimable_mb(), "swap_mb": swap_used_mb()}
+         "reclaimable_mb": _reclaimable_mb(), "swap_mb": swap_used_mb(), "swapin_mb": swapin, "swapout_mb": swapout}
     th = thermal_state()
     if th:
         m["therm"] = th
@@ -899,7 +902,45 @@ def machine_state():
 def end_state():
     """Recorded at the END of each cell (void_rule.py: the four readings at a cell's start and end): the same load, available and
     reclaimable memory and swap in use as machine_state, so a record taken under the 2026-11-08 rule shows what the cell left."""
-    return {"loadavg": _loadavg(), "available_mb": free_mem_mb(), "reclaimable_mb": _reclaimable_mb(), "swap_mb": swap_used_mb()}
+    swapin, swapout = swap_io_mb()
+    return {"loadavg": _loadavg(), "available_mb": free_mem_mb(), "reclaimable_mb": _reclaimable_mb(), "swap_mb": swap_used_mb(),
+            "swapin_mb": swapin, "swapout_mb": swapout}
+
+
+def cell_end_void(start, end, need_mb, peak_mb=None):
+    """The reason a cell is void from the readings at its start and its end, or None: swap that grew between them (or an unreadable swap
+    reading at either), and an unreadable load or available-memory reading at the end. SwapWatch votes on the peak inside the cell; this
+    couples the cell's own start and end readings to its verdict, so a record whose end readings fail cannot be called clean."""
+    import void_rule
+    # peak_mb: SwapWatch's peak, in absolute MB, against the cell's own start reading: swap that rose between machine_state and the
+    # watch's later baseline and receded before the end is a spike over the cell's start that neither reading alone shows
+    why = void_rule.swap_void({k: start.get(k) for k in ("swap_mb", "swapin_mb", "swapout_mb")},
+                              {k: end.get(k) for k in ("swap_mb", "swapin_mb", "swapout_mb")}, peak_mb)
+    if why:
+        return why
+    if end.get("loadavg") is None:
+        return "load average unreadable at the cell's end"
+    if need_mb and end.get("available_mb") is None and os.environ.get("BENCH_ALLOW_NO_FREE_MEM") != "1":
+        return "available memory unreadable at the cell's end"
+    return None
+
+
+def apply_cell_end_check(result, need_mb):
+    """Takes the cell's end readings, records them in its machine state, and marks the cell void in its record (counts.swap.swap_void,
+    which run_with_swap_voids re-runs on) when cell_end_void says so, unless SwapWatch already did."""
+    (rates, err, counts), machine, void_starts = result
+    end = end_state()
+    machine["end"] = end
+    sw = (counts or {}).get("swap") or {}
+    peak = sw.get("swap_peak_mb")  # the raw peak reading: base + the rounded growth drifts from it by float noise
+    why = cell_end_void(machine, end, need_mb, peak)
+    if why:
+        counts = dict(counts or {})
+        swap = dict(counts.get("swap") or {})
+        if not swap.get("swap_void"):
+            swap["swap_void"] = why
+        counts["swap"] = swap
+    return (rates, err, counts), machine, void_starts
 
 
 def preflight():
@@ -2273,11 +2314,11 @@ def main():
                 return run_vision_cell(engine)
             return run_cell(engine, mk, depth, cfg, backend)
         t0 = time.time()
-        ((rates, err, counts), machine, void_starts), swap_voids = run_with_swap_voids(lambda: start_clean(machine_state, need, _run))
+        ((rates, err, counts), machine, void_starts), swap_voids = run_with_swap_voids(
+            lambda: apply_cell_end_check(start_clean(machine_state, need, _run), need))
         machine["gate"] = gate
         machine["fit_need_mb"], machine["fit_need_source"] = need, need_src
         machine["fit_need_lower_bound"] = need_is_lower_bound(need_src)
-        machine["end"] = end_state()
         # prompt_tokens(depth, mk) only resolves for phases A/B/C -- "embed"/"vision" aren't real
         # MODELS keys and D's "depth" is an approximate embeddings length, not a calibrated one, so
         # phases D/E record None here rather than raising a KeyError against prompts.json.

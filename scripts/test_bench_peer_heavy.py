@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_peer  # noqa: E402
@@ -89,6 +90,75 @@ class Rule(unittest.TestCase):
             bench_peer.heavy_void(state, 1000)
             self.assertIn("above half", bench_peer.heavy_void(dict(state, loadavg=[9.0, 0, 0]), 1000), "the load term still applies")
         self.assertEqual(out.getvalue().count("BENCH_ALLOW_NO_FREE_MEM=1"), 1, "logged once")
+
+    def test_the_cell_end_check_voids_what_the_cell_left_behind(self):
+        start = {"swap_mb": 100.0, "swapin_mb": 1.0, "swapout_mb": 1.0}
+        end = {"loadavg": [1.0, 1, 1], "available_mb": 5000, "reclaimable_mb": 1, "swap_mb": 100.0, "swapin_mb": 1.0, "swapout_mb": 1.0}
+        self.assertIsNone(bench_peer.cell_end_void(start, end, 1000))
+        self.assertIn("grew +20.0 MB", bench_peer.cell_end_void(start, dict(end, swap_mb=120.0), 1000))
+        self.assertIn("swap unreadable", bench_peer.cell_end_void(start, dict(end, swap_mb=None), 1000))
+        self.assertIn("swap unreadable", bench_peer.cell_end_void(dict(start, swap_mb=None), end, 1000))
+        self.assertIn("load average unreadable at the cell's end", bench_peer.cell_end_void(start, dict(end, loadavg=None), 1000))
+        self.assertIn("available memory unreadable at the cell's end", bench_peer.cell_end_void(start, dict(end, available_mb=None), 1000))
+        self.assertIsNone(bench_peer.cell_end_void(start, dict(end, available_mb=None), None), "no model load: no memory clause")
+
+    def test_the_cell_end_check_takes_the_watchers_peak_against_the_cells_own_start(self):
+        start = {"swap_mb": 100.0, "swapin_mb": 1.0, "swapout_mb": 1.0}
+        end = {"loadavg": [1.0, 1, 1], "available_mb": 5000, "swap_mb": 100.0, "swapin_mb": 1.0, "swapout_mb": 1.0}
+        self.assertIn("grew +35.0 MB", bench_peer.cell_end_void(start, end, 1000, peak_mb=135.0),
+                      "swap that rose between machine_state and SwapWatch's baseline and receded is still a spike over the cell's start")
+        self.assertIsNone(bench_peer.cell_end_void(start, end, 1000, peak_mb=100.0))
+
+    def test_apply_cell_end_check_uses_the_raw_peak_so_float_drift_is_not_growth(self):
+        old = bench_peer.swap_used_mb
+        for name, value in [("swap_used_mb", lambda: 100.6), ("swap_io_mb", lambda: (None, None)), ("free_mem_mb", lambda: 5000),
+                            ("_reclaimable_mb", lambda: 1), ("_loadavg", lambda: [1.0, 1.0, 1.0])]:
+            o = getattr(bench_peer, name)
+            setattr(bench_peer, name, value)
+            self.addCleanup(setattr, bench_peer, name, o)
+        # swap read 100.6 at machine_state, dipped to 100.4 at SwapWatch's baseline, returned to 100.6: zero growth over the cell's start,
+        # but 100.4 + round(0.2, 1) is 100.60000000000001
+        counts = {"swap": {"swap_base_mb": 100.4, "swap_growth_mb": 0.2, "swap_peak_mb": 100.6, "swap_void": None}}
+        res = (([1.0], None, counts), {"swap_mb": 100.6, "swapin_mb": None, "swapout_mb": None}, [])
+        self.assertIsNone(bench_peer.apply_cell_end_check(res, 0)[0][2]["swap"]["swap_void"])
+        # a peak above the cell's start voids it, from the same raw figure
+        counts = {"swap": {"swap_base_mb": 100.4, "swap_growth_mb": 20.2, "swap_peak_mb": 120.6, "swap_void": None}}
+        res = (([1.0], None, counts), {"swap_mb": 100.6, "swapin_mb": None, "swapout_mb": None}, [])
+        self.assertIn("grew +20.0 MB", bench_peer.apply_cell_end_check(res, 0)[0][2]["swap"]["swap_void"])
+
+    def test_swapwatch_reports_its_raw_peak(self):
+        old = bench_peer.swap_used_mb
+        self.addCleanup(setattr, bench_peer, "swap_used_mb", old)
+        reads = iter([100.4, 100.6, 100.6])
+        bench_peer.swap_used_mb = lambda: next(reads, 100.6)
+        bench_peer.swap_io_mb = bench_peer.swap_io_mb
+        w = bench_peer.SwapWatch()
+        w.poll_once()
+        res = w.stop()
+        self.assertAlmostEqual(res["swap_peak_mb"], 100.6, places=9)
+
+    def test_the_end_check_honours_the_env_override_not_a_latch(self):
+        start = {"swap_mb": 100.0}
+        end = {"loadavg": [1.0, 1, 1], "available_mb": None, "swap_mb": 100.0}
+        self.addCleanup(setattr, bench_peer, "_FREE_MEM_OVERRIDE_USED", bench_peer._FREE_MEM_OVERRIDE_USED)
+        bench_peer._FREE_MEM_OVERRIDE_USED = False  # the reading was fine at the start, so the latch never set
+        with mock.patch.dict(os.environ, {"BENCH_ALLOW_NO_FREE_MEM": "1"}):
+            self.assertIsNone(bench_peer.cell_end_void(start, end, 1000), "the environment setting is the override")
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("BENCH_ALLOW_NO_FREE_MEM", None)
+            self.assertIn("available memory unreadable", bench_peer.cell_end_void(start, end, 1000))
+
+    def test_the_end_check_marks_the_cell_void_in_its_record_so_it_reruns(self):
+        for name, value in [("swap_used_mb", lambda: 100.0), ("swap_io_mb", lambda: (None, None)), ("free_mem_mb", lambda: 5000),
+                            ("_reclaimable_mb", lambda: 1), ("_loadavg", lambda: [1.0, 1.0, 1.0])]:
+            old = getattr(bench_peer, name)
+            setattr(bench_peer, name, value)
+            self.addCleanup(setattr, bench_peer, name, old)
+        counts = {}
+        res = (([1.0], None, counts), {"swap_mb": 50.0, "swapin_mb": None, "swapout_mb": None}, [])
+        out = bench_peer.apply_cell_end_check(res, 0)
+        self.assertIn("grew +50.0 MB", out[0][2]["swap"]["swap_void"])
+        self.assertIn("end", out[1])
 
     def test_provenance_says_a_file_size_need_is_a_lower_bound(self):
         self.assertIn("lower bound", bench_peer.provenance()["fit_need"])

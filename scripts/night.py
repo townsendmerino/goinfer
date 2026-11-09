@@ -1062,8 +1062,7 @@ class Runner:
         end = readings()
         j["readings"]["end"] = end
         s0, s1 = j["readings"]["start"].get("swap_mb"), end.get("swap_mb")
-        if s0 is not None and s1 is not None:
-            j["readings"]["swap_growth_mb"] = round(s1 - s0, 1)
+        j["readings"]["swap_growth_mb"] = round(s1 - s0, 1) if s0 is not None and s1 is not None else None
         if sampler:
             sampler.observe(end.get("swap_mb"))  # the end reading is part of the peak
             j["readings"]["swap_peak_growth_mb"] = sampler.result()["peak_growth_mb"]
