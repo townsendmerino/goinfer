@@ -101,33 +101,19 @@ type raggedChunk struct {
 // a windowed model takes a sequence's rows only where they fit its window's slack (kvRoomFor).
 func (r *cudaResident) StepRagged(seqs []decoder.ResidentRaggedSeq) ([]decoder.ResidentRaggedOut, error) {
 	if len(seqs) == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("cuda ragged step: no sequences")
 	}
+	// The range's upper bound is the KV slots; its lower bound is MC3's StepBatch, and a ragged step of one sequence is a step.
 	if _, hi := r.BatchStepRange(); hi == 0 || len(seqs) > hi {
 		return nil, fmt.Errorf("cuda ragged step: %d sequences outside the step range", len(seqs))
 	}
-	// A prefill chunk goes first, so its rows are the pass's first and its launches the ones its own pass makes.
-	order := make([]int, 0, len(seqs))
-	for i, s := range seqs {
-		if s.Prefill == nil {
-			continue
-		}
-		switch {
-		case len(order) > 0:
-			return nil, fmt.Errorf("cuda ragged step: sequences %d and %d are both prefill chunks; a step takes one", order[0], i)
-		case s.Draw != nil:
-			return nil, fmt.Errorf("cuda ragged step: sequence %d is a prefill chunk with a draw", i)
-		case s.Prefill.PromptLen < s.Pos+len(s.Embs):
-			return nil, fmt.Errorf("cuda ragged step: sequence %d's chunk ends at %d, past its prompt's %d", i, s.Pos+len(s.Embs), s.Prefill.PromptLen)
-		}
+	order, err := raggedOrder(seqs)
+	if err != nil {
+		return nil, err
+	}
+	if seqs[order[0]].Prefill != nil {
 		if e := r.raggedChunkDecline(); e != nil {
 			return nil, e
-		}
-		order = append(order, i)
-	}
-	for i, s := range seqs {
-		if s.Prefill == nil {
-			order = append(order, i)
 		}
 	}
 	if s := seqs[order[0]]; s.Prefill != nil {
@@ -186,6 +172,35 @@ func (r *cudaResident) StepRagged(seqs []decoder.ResidentRaggedSeq) ([]decoder.R
 		}
 	}
 	return res, nil
+}
+
+// raggedOrder is StepRagged's sequence order and the checks it makes on the sequences alone: a prefill chunk first (at most one,
+// with no draw, its rows inside its prompt and ending it exactly when it is the prompt's Last pass, so its class and its head are
+// its pass's), then the others in their order.
+func raggedOrder(seqs []decoder.ResidentRaggedSeq) ([]int, error) {
+	order := make([]int, 0, len(seqs))
+	for i, s := range seqs {
+		if s.Prefill == nil {
+			continue
+		}
+		switch {
+		case len(order) > 0:
+			return nil, fmt.Errorf("cuda ragged step: sequences %d and %d are both prefill chunks; a step takes one", order[0], i)
+		case s.Draw != nil:
+			return nil, fmt.Errorf("cuda ragged step: sequence %d is a prefill chunk with a draw", i)
+		case s.Prefill.PromptLen < s.Pos+len(s.Embs):
+			return nil, fmt.Errorf("cuda ragged step: sequence %d's chunk ends at %d, past its prompt's %d", i, s.Pos+len(s.Embs), s.Prefill.PromptLen)
+		case s.Prefill.Last != (s.Pos+len(s.Embs) == s.Prefill.PromptLen):
+			return nil, fmt.Errorf("cuda ragged step: sequence %d's chunk ends at %d of a %d-row prompt with Last %v", i, s.Pos+len(s.Embs), s.Prefill.PromptLen, s.Prefill.Last)
+		}
+		order = append(order, i)
+	}
+	for i, s := range seqs {
+		if s.Prefill == nil {
+			order = append(order, i)
+		}
+	}
+	return order, nil
 }
 
 // raggedChunkDecline is why this model's step cannot take a prefill chunk, or nil: the chunk runs prefillCore's attention and

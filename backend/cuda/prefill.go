@@ -1288,7 +1288,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			if Ly.hasBias {
 				qb, kb, vb = Arg(Ly.qb), Arg(Ly.kb), Arg(Ly.vb)
 			}
-			t := r.profTic()
+			var t time.Time // the category timer (profTic): each step sets it before it reads it
 			// The layer's batched steps (cudaPrefillStepsOf, OP4cu-d1): the DeltaNet rows or the attention half, then the MoE or the
 			// dense FFN. Each case is the block the layer's kind chose before, unchanged.
 			for _, pst := range r.prefillLayerSteps(Ly) {
@@ -1388,8 +1388,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					}
 					// ordAttn is an ordinary pass's rope, KV store and attention over rows [0, M) at startPos in the bound slot's tables.
 					ordAttn := func(startPos, M, tail int) error {
-						// rope + kv-store (glue): token m at absolute position startPos+m; rotates q/k, writes K/V.
-						t = r.profTic()
+						// rope + kv-store (glue): token m at absolute position startPos+m; rotates q/k, writes K/V. Its own timer: a
+						// step times the chunk's attention inside its own attnCat span.
+						t := r.profTic()
 						ropeCfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 						ropeArgs := []gpu.KernelArg{
 							Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)),
@@ -1544,8 +1545,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					if rows != nil {
 						// Multi-sequence step: rope, the KV store and attention per sequence through decode's own gap, each row on its own slot
 						// at its own position; a prefill chunk's rows (the first) through its own pass's attention, in its slot and class.
-						// The batched stack resumes at the ctx-quant below.
-						t = r.profTic()
+						// The batched stack resumes at the ctx-quant below. The chunk's attention times itself (glue, then attnCat).
 						if c := r.stepChunk; c.rows > 0 {
 							exact, tab := r.forceExactKernels, r.kvTabSlot
 							r.forceExactKernels, r.kvTabSlot = c.exact, c.slot
@@ -1555,6 +1555,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 								return e
 							}
 						}
+						t = r.profTic()
 						if e := r.stepAttnRows(Ly, l, rows, r.stepChunk.rows, qBb, kBb, vBb, cctxB); e != nil {
 							return e
 						}
