@@ -1,0 +1,53 @@
+hold start 2026-11-09 05:35:10 PST commit fc5b65ec8
+== qwen2.5-coder-1.5b-instruct-q4_k_m 05:35:10 load1=1.60
+=== RUN   TestOP4mPod_decodeSpeed
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: cell start: 1-minute load 1.60; available 11.35 GiB against need 1.16 GiB (ok); reclaimable 8.40 GiB (recorded)
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.037 ms), gate|up at B <= 2 (0.108, 0.250); 0 = always the fragment
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: walked steps by kind map[attention:28]
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: pair 1/6 (walk first, load 1.63): walk 92.18 tok/s, blocks 92.26 tok/s, ratio 0.9991
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: pair 2/6 (blocks first, load 1.50): walk 92.20 tok/s, blocks 92.11 tok/s, ratio 1.0009
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: pair 3/6 (walk first, load 1.38): walk 92.19 tok/s, blocks 92.05 tok/s, ratio 1.0015
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: pair 4/6 (blocks first, load 1.27): walk 92.11 tok/s, blocks 92.18 tok/s, ratio 0.9992
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: pair 5/6 (walk first, load 1.17): walk 92.02 tok/s, blocks 92.03 tok/s, ratio 0.9999
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: pair 6/6 (blocks first, load 1.17): walk 92.08 tok/s, blocks 92.26 tok/s, ratio 0.9980
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: median ratio 0.9996, 4 of 6 pairs under 1: PASS
+--- PASS: TestOP4mPod_decodeSpeed (29.55s)
+PASS
+ledger: 1 device(s) released in this run
+exit=0
+== qwen3.5-0.8b 05:35:40 load1=1.07
+=== RUN   TestOP4mPod_decodeSpeed
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: cell start: 1-minute load 1.07; available 11.51 GiB against need 0.56 GiB (ok); reclaimable 8.42 GiB (recorded)
+[metal] weights aliased from qwen3.5-0.8b.int4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 506 MB bound in place, 4 MB copied (anonymous) — 234 MB int4 nibbles (90 single tensors + 24 fused groups = 84 MB) + 242 MB int8 codes (1 matrices) + 29 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 6 fused groups not adjacent, 0 scale sets converted
+metal: recurrent checkpoint: 19.3 MiB (36 buffers, KV8a)
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: walked steps by kind map[attention:6 DeltaNet:18]
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: pair 1/6 (walk first, load 1.07): walk 124.58 tok/s, blocks 123.59 tok/s, ratio 1.0080
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: pair 2/6 (blocks first, load 1.07): walk 125.47 tok/s, blocks 125.33 tok/s, ratio 1.0011
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: pair 3/6 (walk first, load 0.98): walk 125.70 tok/s, blocks 125.28 tok/s, ratio 1.0034
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: pair 4/6 (blocks first, load 0.90): walk 123.62 tok/s, blocks 125.35 tok/s, ratio 0.9862
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: pair 5/6 (walk first, load 0.90): walk 125.48 tok/s, blocks 125.41 tok/s, ratio 1.0006
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: pair 6/6 (blocks first, load 0.83): walk 126.12 tok/s, blocks 126.24 tok/s, ratio 0.9991
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: median ratio 1.0008, 2 of 6 pairs under 1: PASS
+--- PASS: TestOP4mPod_decodeSpeed (21.11s)
+PASS
+ledger: 1 device(s) released in this run
+exit=0
+== nemotron-h-4b-instruct-128k 05:36:02 load1=0.83
+=== RUN   TestOP4mPod_decodeSpeed
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: cell start: 1-minute load 0.83; available 11.51 GiB against need 5.14 GiB (ok); reclaimable 8.33 GiB (recorded)
+[metal] weights aliased from nemotron-h-4b-instruct-128k.int4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1424 MB bound in place, 0 MB copied (anonymous) — 924 MB int4 nibbles (52 single tensors + 4 fused groups = 36 MB) + 384 MB int8 codes (1 matrices) + 116 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: recurrent checkpoint: 86.5 MiB (48 buffers, KV8a)
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: walked steps by kind map[attention:4 Mamba-2:24]
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: pair 1/6 (walk first, load 0.71): walk 28.51 tok/s, blocks 27.78 tok/s, ratio 1.0262
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: pair 2/6 (blocks first, load 0.83): walk 28.49 tok/s, blocks 27.63 tok/s, ratio 1.0312
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: pair 3/6 (walk first, load 0.78): walk 27.77 tok/s, blocks 27.76 tok/s, ratio 1.0005
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: pair 4/6 (blocks first, load 0.99): walk 28.26 tok/s, blocks 28.51 tok/s, ratio 0.9911
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: pair 5/6 (walk first, load 0.83): walk 27.78 tok/s, blocks 27.77 tok/s, ratio 1.0004
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: pair 6/6 (blocks first, load 0.88): walk 27.78 tok/s, blocks 27.77 tok/s, ratio 1.0001
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: median ratio 1.0005, 1 of 6 pairs under 1: PASS
+--- PASS: TestOP4mPod_decodeSpeed (96.62s)
+PASS
+ledger: 1 device(s) released in this run
+exit=0
+hold end 2026-11-09 05:37:38 PST
