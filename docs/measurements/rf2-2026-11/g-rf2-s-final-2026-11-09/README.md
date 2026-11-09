@@ -21,7 +21,9 @@ read once on RF2's final build, after RF2-3b-2b (#825) and RF2-3b-3 (#826). The 
 - **Thermal:** the GPU read 47–53 °C at the start of the 64 decode records.
 - **Swap:** growth 0 on every record, and every record's `error` is null.
 - **Script:** `docs/measurements/rf2-2026-11/run-g-rf2-s.sh`, all phases (decode, deep, gemma, ttft, mc3, verify).
-- **Not here:** host-memory samples (`procmem.jsonl`). This run has none, so never-swap's VmHWM half cannot be read.
+- **Not here:** host-memory samples (`procmem.jsonl`), so never-swap's VmHWM half cannot be read. The binaries' 20-character names
+  (`serve-cuda-983282891`) never matched `procmem_sampler.py`'s exact name test against `/proc`'s 15-character `Name`; #871
+  matches by the first 15 and makes `run-g-rf2-s.sh` require `serve-cuda-old` and `serve-cuda-new`, the names `score_speed.py` reads.
 
 ## Readings
 
