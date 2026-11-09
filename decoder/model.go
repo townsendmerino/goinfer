@@ -37,9 +37,14 @@ var dtAttn, dtMLP, dtHead, dtGU, dtAct, dtActDown, dtQKV, dtO, dtAttnAll int64
 // component in-process (decodeTiming must be on for it to fill).
 var lastDecodeSplit struct{ fwd, attn, mlp, head, gu, act, down, qkv, core, o float64 }
 
-// Model is a loaded checkpoint plus the compute backend. Goroutine safety follows encoder.Model: Weights are immutable after
-// Load; per-sequence state (the KV cache) is owned by each Generate call, so distinct sequences can run concurrently, but a
-// single KVCache is not shared.
+// Model is a loaded checkpoint plus the compute backend. It is safe for concurrent use: weights are immutable after Load, and
+// any number of goroutines may call Generate (and each its own Session) at once; every call completes correctly. Where a call
+// runs is the only thing concurrency changes. On the CPU each generation owns its KV cache. A GPU-resident model's resident KV
+// is claimed per generation: by default one generation holds it and the others run on the CPU path; after
+// EnableResidentConcurrency(n), up to n run on the device at once, each on its own KV slot, and any further one runs on the
+// CPU. A prompt longer than ResidentContextCap also runs on the CPU. Falling back costs speed, never correctness; whether
+// CPU generations are worth running side by side is CPUConcurrentSafe's answer. A single KVCache or Session is not safe to
+// share between goroutines.
 type Model struct {
 	planSlackOf *planSlackMemo // PlanSlack per backend, asked once; nil on a Model built by hand (asked every time)
 	fitOf       *fitMemo       // what Plan derives from the config and architecture alone; nil on a Model built by hand
