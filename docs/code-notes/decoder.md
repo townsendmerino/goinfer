@@ -3543,7 +3543,7 @@ Model.LogitScaleResident.
 Moved from `decoder/features.go` (the comment above `FeatPairwiseRoPE` in the metal entry) on 2026-10-09.
 
 ```text
-2026-10-09 (docs/tasks/task-metal-pairwise-rope-2026-10.md): GPT-J PAIRWISE rotation, via the twins rope_pw,
+2026-10-09 (docs/completed/task-metal-pairwise-rope-2026-10.md): GPT-J PAIRWISE rotation, via the twins rope_pw,
 rope2_pw, rope_f16_pw and rope_mrope_f16_pw, bound in place of the NeoX pipelines when
 Model.PairwiseRoPEResident() (backend/metal/model.go, backend/metal/prefill.go); the MC3 batched step declines a pairwise model.
 Backed by the kernel gate (TestRopePairwise_*), the peaked-attention resident gates that go red on the NeoX
@@ -4214,7 +4214,7 @@ input — so the flag was being recommended as a fix that could not possibly cha
 producing an identical refusal after the user did what they were told.
 
 cmd/prequant builds a .giw from a directory one layer at a time since 2026-10-09 (StreamTranscodeDir,
-docs/tasks/task-prequant-dir-streaming-2026-10.md): it no longer loads the checkpoint whole, so it no longer hits this
+docs/completed/task-prequant-dir-streaming-2026-10.md): it no longer loads the checkpoint whole, so it no longer hits this
 guard, and it is the remedy for a directory (goinfer-serve and goinfer-chat already take that route unless --direct-load).
 Before that, the directory transcode loaded fully resident and could not help, so GOINFER_NO_FIT_GUARD=1 was named
 instead; it stays in the text for the case the 70% margin is being conservative about.
@@ -13856,7 +13856,7 @@ kernel is NeoX half-split; the CUDA resident had the same defect until backend/c
 -0.041, exact at position 0 only). The old gates used flat 0.02-std fixtures where a wrong
 rotation reads 0.9997. FeatPairwiseRoPE is declared by cuda alone; metal declines these families
 to the CPU path until the Mac session ports the kernels.
-2026-10-09: Metal too (docs/tasks/task-metal-pairwise-rope-2026-10.md: rope_pw and twins, metal.TestPairwiseRoPEResidentParityMetal
+2026-10-09: Metal too (docs/completed/task-metal-pairwise-rope-2026-10.md: rope_pw and twins, metal.TestPairwiseRoPEResidentParityMetal
 and the real-checkpoint metal.TestPairwiseRoPERealMetal). WebGPU still declines.
 ```
 
