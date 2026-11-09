@@ -1137,13 +1137,6 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		aqB, aScB := ai(M*hidden/4), af(M)
 		qBb, kBb, vBb := af(M*maxQDim), af(M*maxKvDim), af(M*maxKvDim)
 		cctxB := af(M * maxQDim)
-		var rag *raggedRows // a step's decode and verify rows for the ragged launches
-		if rows != nil {
-			var e error
-			if rag, e = r.raggedRowsFor(rows[r.stepChunk.rows:], ai); e != nil {
-				return e
-			}
-		}
 		// The row-batched exact attention's scores and inverses, for a pass with a layer past attn_batched's bound (none: no buffer).
 		var psScB, psInvB Buffer
 		psStride, psRows := 0, 0
@@ -1563,7 +1556,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 							}
 						}
 						t = r.profTic()
-						if e := r.stepAttnRows(Ly, l, rows, r.stepChunk.rows, qBb, kBb, vBb, cctxB, rag); e != nil {
+						if e := r.stepAttnRows(Ly, l, rows, r.stepChunk.rows, qBb, kBb, vBb, cctxB); e != nil {
 							return e
 						}
 						r.profToc(attnCat, t)
