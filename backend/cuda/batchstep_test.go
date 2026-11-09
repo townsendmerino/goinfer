@@ -401,6 +401,167 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 	}
 }
 
+// TestCUDAStepRagged_prefillChunkMatchesItsPass is RF2-2's gate (docs/tasks/task-forward-and-memory-2026-11.md, "RF2: steps",
+// and addendum 1's mixed batch): a 64-row prompt prefilled as two 32-row passes, each inside a ragged step beside a drawn
+// decode row, a decode row and a k = 4 verify, against the same two passes run alone (prefillChunkedRows' chunkOrdinary and
+// chunkPromptLen) on a spare slot. The final pass's last-row logits see every K/V row both passes wrote, and must match bit
+// for bit, as must every other row its own shape. The fast-prefill floor is 0, so the passes take the fast kernels; the test
+// requires that they did, and a plant that runs the chunk on the exact kernels must make the logits differ.
+func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
+	for _, c := range []struct{ path, kv string }{
+		{"../../testdata/llama-tiny", ""},
+		{"../../testdata/llama-tiny", "i8"},
+		{"../../testdata/granite-dense-tiny", ""},
+	} {
+		t.Run(filepath.Base(c.path)+"/"+c.kv, func(t *testing.T) {
+			requireCUDADevice(t)
+			if _, err := os.Stat(c.path); err != nil {
+				t.Skipf("no fixture at %s", c.path)
+			}
+			m, err := decoder.Load(c.path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 5, KVPrecision: c.kv})
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			defer m.Close()
+			decoder.SetKnobEnvForTest(t, m, "GOINFER_CUDA_FAST_PREFILL_FLOOR", "0")
+			r, ok := m.ResidentForwardForTest().(*cudaResident)
+			if !ok {
+				t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
+			}
+			_, _, _, _, _, _, vocab := m.Dims()
+			emb := func(id int) []float32 { return m.EmbedResidentForTest(id % vocab) }
+			const passRows, promptLen, refSlot = 32, 64, 4
+			prompt := make([][]float32, promptLen)
+			for i := range prompt {
+				prompt[i] = emb(i*29 + 5)
+			}
+			// ownPasses runs the prompt's two passes alone on refSlot and returns the last row's logits and the fast launches made.
+			ownPasses := func() ([]float32, int) {
+				if err := r.UseKVSlot(refSlot); err != nil {
+					t.Fatal(err)
+				}
+				fast := r.fastGemmLaunches + r.fastAttnLaunches
+				r.chunkOrdinary, r.chunkPromptLen = true, promptLen
+				defer func() { r.chunkOrdinary, r.chunkPromptLen = false, 0 }()
+				if _, _, err := r.prefillCore(context.Background(), prompt[:passRows], 0, tailKVOnly, nil, nil, nil); err != nil {
+					t.Fatalf("own pass 1: %v", err)
+				}
+				outs, _, err := r.prefillCore(context.Background(), prompt[passRows:], passRows, tailLastLogits, nil, nil, nil)
+				if err != nil {
+					t.Fatalf("own pass 2: %v", err)
+				}
+				return outs[len(outs)-1], r.fastGemmLaunches + r.fastAttnLaunches - fast
+			}
+			want, fast := ownPasses()
+			if fast == 0 {
+				t.Fatalf("the prompt's own passes launched no fast kernel: the chunk's class split is not exercised here")
+			}
+			depths := []int{0, 7, 23, 11}
+			for b := 1; b < 4; b++ {
+				if err := r.UseKVSlot(b); err != nil {
+					t.Fatal(err)
+				}
+				pre := make([][]float32, depths[b])
+				for i := range pre {
+					pre[i] = emb(i*37 + b*11 + 3)
+				}
+				if _, err := r.PrefillLast(context.Background(), pre, 0); err != nil {
+					t.Fatalf("prefill slot %d: %v", b, err)
+				}
+			}
+			// run prefills the prompt through two steps and returns its last-row logits and how many other rows differ.
+			run := func(n int) ([]float32, int) {
+				pos := append([]int(nil), depths...)
+				var last []float32
+				differ := 0
+				for pass := range 2 {
+					seqs := []decoder.ResidentRaggedSeq{
+						{Slot: 0, Pos: pass * passRows, Embs: prompt[pass*passRows : (pass+1)*passRows],
+							Prefill: &decoder.ResidentRaggedPrefill{PromptLen: promptLen, Last: pass == 1}},
+					}
+					for b, k := range []int{0, 1, 1, 4} {
+						if b == 0 {
+							continue
+						}
+						embs := make([][]float32, k)
+						for j := range embs {
+							embs[j] = emb(n*101 + pass*71 + b*53 + j*7 + 1)
+						}
+						seqs = append(seqs, decoder.ResidentRaggedSeq{Slot: b, Pos: pos[b], Embs: embs})
+					}
+					draw := &decoder.ResidentBatchDraw{Temperature: 0.8, Seed: uint64(2000 + n), Draw: uint64(pass)}
+					seqs[1].Draw = draw
+					out, err := r.StepRagged(seqs)
+					if err != nil {
+						t.Fatalf("step %d pass %d: %v", n, pass, err)
+					}
+					for j, l := range out[0].Logits {
+						if (l != nil) != (pass == 1 && j == passRows-1) {
+							t.Fatalf("step %d pass %d: the chunk's row %d has logits %v; only the final pass's last row has them", n, pass, j, l != nil)
+						}
+					}
+					if pass == 1 {
+						last = out[0].Logits[passRows-1]
+					}
+					for b := 1; b < len(seqs); b++ {
+						s := seqs[b]
+						if err := r.UseKVSlot(s.Slot); err != nil {
+							t.Fatal(err)
+						}
+						switch {
+						case s.Draw != nil:
+							id, err := r.ForwardSample(s.Embs[0], s.Pos, draw.Temperature, draw.Seed, draw.Draw)
+							if err != nil {
+								t.Fatal(err)
+							}
+							if out[b].ID != id {
+								differ++
+							}
+						default:
+							var ref [][]float32
+							if len(s.Embs) == 1 {
+								l, err := r.Forward(s.Embs[0], s.Pos)
+								if err != nil {
+									t.Fatal(err)
+								}
+								ref = [][]float32{l}
+							} else if ref, err = r.ForwardN(s.Embs, s.Pos); err != nil {
+								t.Fatal(err)
+							}
+							for j := range ref {
+								if !bitsEqual(out[b].Logits[j], ref[j]) {
+									differ++
+									t.Logf("step %d pass %d seq %d row %d at position %d: not bit-identical to its own shape", n, pass, b, j, s.Pos+j)
+								}
+							}
+						}
+						pos[b] += len(s.Embs)
+					}
+				}
+				for b := 1; b < 4; b++ {
+					depths[b] = pos[b]
+				}
+				return last, differ
+			}
+			got, differ := run(0)
+			if differ != 0 {
+				t.Fatalf("%d decode and verify rows beside the chunk differ from their own shapes", differ)
+			}
+			if !bitsEqual(got, want) {
+				t.Fatalf("the prompt prefilled in two steps is not bit-identical to its own two passes")
+			}
+			t.Cleanup(func() { raggedPlantForTest = 0 })
+			raggedPlantForTest = 3
+			got, _ = run(1)
+			raggedPlantForTest = 0
+			if bitsEqual(got, want) {
+				t.Fatalf("plant 3: the chunk on the exact kernels still matched its fast passes; the gate cannot see the class")
+			}
+			t.Logf("plant 3: the chunk out of its class differs (red, as it must be); the own passes made %d fast launches", fast)
+		})
+	}
+}
+
 func bitsEqual(a, b []float32) bool {
 	if len(a) != len(b) {
 		return false

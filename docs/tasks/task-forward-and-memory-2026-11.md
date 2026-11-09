@@ -21,7 +21,7 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| RF2 | active | RF2-1 (decode and verify rows of several sequences in one CUDA step) in its PR; its identity test runs on nobara before merge; then RF2-2, RF2-3 ("RF2: steps") | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below |
+| RF2 | active | RF2-1 merged (#787); RF2-2 (a prompt's prefill pass as rows of the ragged step, in its own pass's class) in its PR, its identity test (`TestCUDAStepRagged_prefillChunkMatchesItsPass`) on nobara before merge; then RF2-3 ("RF2: steps") | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below |
 | RF3 | blocked | RF2 | FA §5.4 |
 | RF4 | blocked | RF3 and KV5 | FA §7a |
 | RF5 | blocked | RF4; it also takes SB1's op-level interface | FA §7a; SS §8 "SB1" |
