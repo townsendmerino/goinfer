@@ -105,8 +105,8 @@ const (
 )
 
 // SerializeError is returned by LoadSerializedWeights on any magic/version/
-// quant/CRC mismatch. It is distinct so callers can fall back to building from
-// the source GGUF rather than treating a stale blob as fatal.
+// quant/CRC mismatch, and by the writer for weights the format cannot hold (a bf16 or f16 load). It is distinct so callers can
+// fall back to building from the source GGUF rather than treating a stale blob as fatal.
 type SerializeError struct{ Reason string }
 
 func (e *SerializeError) Error() string { return "decoder: serialized weights: " + e.Reason }
@@ -188,6 +188,13 @@ func SerializeWeightsToForTarget(out io.Writer, w *Weights, id string, target GI
 func (wr *giwWriter) writeBundle(w *Weights, id string) error {
 	if err := canSerialize(w.arch); err != nil {
 		return err
+	}
+	// The format has no 16-bit matmul weight kind (LFM2's bf16 conv islands, kind 9, are not matmul weights): refused before a
+	// byte is written, not emitted as a bundle that leaves them out.
+	for _, m := range w.matmulWeights() {
+		if k := m.Kind(); k == "bf16" || k == "f16" {
+			return &SerializeError{"a .giw has no " + k + " matmul weight kind: serialize a load at int4, int8, int8int8 or f32"}
+		}
 	}
 	wr.arch = w.arch // gates the gemma4 model-level PLE + per-layer tail
 	if err := wr.writeHeadGlobals(w, id); err != nil {

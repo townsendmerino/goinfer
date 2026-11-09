@@ -31,7 +31,7 @@
 | OP1-o2 | open | the CUDA flash-decode lane with the softcap | FA §4.6a "Owed, not in OP1" |
 | OP4m-D6b5 | open | the timed cell: the int4 Metal `.giw` of Nemotron-H 4B has been in `~/models` since 2026-11-07; a few minutes by day under the exclusive lock | FA §4.9 |
 | OP4m-pod | open | register per-operation dispatch inside the mixer steps | FA §4.9 "OP4m-d2", "What remains" |
-| OP4cu-census | open | read an arm64 `TestAdmissionCensus` run | FA §4.9a "C2-2" |
+| OP4cu-census | done | an arm64 `TestAdmissionCensus` run passes at c2's commit (`c40e79dc6`) and on main, 2,711 lines each: the golden c2 applied per line key is what an arm64 run produces | FA §4.9a "C2-2"; `docs/measurements/op4-cuda-2026-11/op4cu-c2-c22-arm64-census-run.txt` |
 | OP5-S | open | Spark-X2.5, on Metal first | FA §4.7 "OP5" |
 | OP5-L | open | LFM2.5's short conv | FA §4.7; `docs/hardware-matrix.md` |
 | OP5-G | open | Granite-4.0-H: the bring-up gate, plus the residual scale on CUDA and Metal | FA §4.7, §4.5 |
@@ -49,7 +49,7 @@
 | MEM10 | done | the pinned expert copy stays the default (tier 0 and tier 1, 2026-11-08: no in-place pin on nobara; unpinned decode 0.817x / 0.750x). Francis, 13:05: ship the unpinned path as an opt-in, `--moe-experts-unpinned` (default off), which the memory refusal names when the pinned copy is what does not fit | `docs/completed/task-memory-campaign-2026-10.md` §4 "MEM10"; `docs/measurements/mem10-2026-11/README.md`; `docs/measurements/mem10-2026-11/README.md` "MEM10 tier 0"; `backend/cuda/internal/gpudev/mem10_probe_test.go:TestMEM10_fileMappingRegistration_probe`; `docs/measurements/mem10-2026-11/ab-registration.md`; `docs/measurements/mem10-2026-11/ab-registration.md` "Reading"; `docs/measurements/mem10-2026-11/README.md` "MEM10 opt-in" |
 | SB2-vk | open | rebuild on main and ship (Francis, 2026-11-08): gpu-allocator first-fit placement over the build's buffers (M1′ predicts Vulkan device use within 7 MiB on fourteen loads); fold out what MM8's merged shared-KV fix already covers, run the held-out pass, then the fit change; nobara, M | SS §8 "SB2"; `docs/measurements/sb2-vk-2026-10-31/README.md`; branch `sb2-vk-plan-2026-10-31` |
 | SB11a | blocked | OP4 on CUDA past d2 and OP4 on WebGPU: the walker emits SB11's operation records | SS §8 "SB11" |
-| SerWt | open | `SerializeWeights` does not refuse bf16 and f16 weights; give the writer a named `*SerializeError`; S, any box | `docs/measurements/sb4-2026-10.md` |
+| SerWt | done | every writer entry point refuses a bundle with bf16 or f16 weights with a `*SerializeError` naming the kind, before writing a byte (`decoder/serialize.go:giwWriter.writeBundle`) | `docs/measurements/sb4-2026-10.md` §3; `TestSerializeWeights_refuses16BitWeights` (`decoder/serialize_test.go`) |
 | SB4 | blocked | parked in shadow (Francis, 2026-11-08): the loader rule keeps computing its verdict without acting; the first loader-only push decides whether it switches | SS §5 "VK5"; `docs/measurements/vk5-2026-10.md` §12; `docs/measurements/sb4-2026-10.md` |
 | VK6 | blocked | parked (Francis, 2026-11-08): the daily real-checkpoint canary; trigger: a carried-over validation found wrong, or an aikit bump that changes kernels | SS §5.9 |
 | VK5-C | blocked | parked: VK5's option C, not started | `docs/measurements/vk5-2026-10.md` |
