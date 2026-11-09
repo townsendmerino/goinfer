@@ -49,6 +49,9 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 			if strings.Contains(path, ".hq") || strings.HasSuffix(path, ".tq") || strings.HasSuffix(path, ".tsc") || strings.HasSuffix(path, ".th") {
 				return mem.LineScratch // rewritten every step
 			}
+			if cpuRingBookkeeping[path] {
+				return mem.LineScratch // a ring's counters, as the cache's own are
+			}
 			return ln
 		}, name, cv.Field(i))
 	}
@@ -236,6 +239,10 @@ var cpuCacheLines = map[string]mem.LineID{"keys": mem.LineKV, "vals": mem.LineKV
 	"treeMask": mem.LineScratch, "numLayers": mem.LineScratch, "planRows": mem.LineScratch, "rowCeiling": mem.LineScratch, "regrownBytes": mem.LineScratch, "kvDim": mem.LineScratch,
 	"window": mem.LineScratch, "mropeDelta": mem.LineScratch, "pos": mem.LineScratch, "localAny": mem.LineScratch, "quant": mem.LineScratch, "headDim": mem.LineScratch,
 	"manualPos": mem.LineScratch, "recurrentResets": mem.LineScratch, "latentDim": mem.LineScratch, "subCapture": mem.LineScratch}
+
+// cpuRingBookkeeping is a ring's scalar fields: its geometry and counters, which lease on scratch beside the cache's own (kvDim, window, pos),
+// so its K/V line is the arrays alone.
+var cpuRingBookkeeping = map[string]bool{"rings.w": true, "rings.stride": true, "rings.count": true, "rings.quant": true, "rings.headDim": true}
 
 // cpuCacheIgnored is what KVCache points at and does not own: a request's counter, the adapter the model holds, and a predicate.
 var cpuCacheIgnored = map[string]bool{"cost": true, "costPhase": true, "lora": true, "skipAppend": true}
