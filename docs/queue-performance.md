@@ -17,6 +17,33 @@
 
 ## What is open
 
+- **P46 · Metal int8's MC3 step: B activation rows staged in threadgroup memory, or an MMA form (S3-next) — PARKED, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).**
+  `darwin`. Optional and unmeasured; B = 8 already reads 2.0x. Moved from `docs/completed/task-metal-int8-2026-10.md` (slice 3b,
+  "Still not built"). Trigger: a served multi-client Metal int8 run that names the step as the gap.
+
+- **P45 · Native int8 for the recurrent families on Metal (S6) — PARKED, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `darwin`. Until it is built, G44's decline
+  holds (`backend/metal/g44_deltanet_int8_test.go:TestG44_deltaNetInt8Declines`): the recurrent families' int4 default serves
+  them on Metal and their int8 loads run on the CPU. Write its gates before code. Moved from
+  `docs/completed/task-metal-int8-2026-10.md`. Trigger: a recurrent model ships as an int8int8 bundle.
+
+- **P44 · Recompute audit's leftovers (R-14 rest, R-17 rest, R-24 drafter trips) — as they come up, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `either`. Moved
+  from `docs/completed/task-recompute-audit.md` when it was archived: R-14's aikit-side activation re-quantization and R-17's
+  small CPU duplicates are taken as they come up (their "Not done" lists); R-24's drafter round trips are parked until the
+  transfer time is measured (`decoder/blockspec.go:ResidentBlockDrafter`).
+
+- **P43 · Re-run `TestGemma4EndToEndThroughput` before any expert-pager work (R-05) — OPEN, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `either`. One run on a box
+  with the Gemma 4 bundles and about 75 GB free; no pager code before it (`decoder/moepaging.go:newExpertPager`). Moved from
+  `docs/completed/task-recompute-audit.md`, R-05.
+
+- **P42 · Parallel `topKByLogit` and min-p scan at Gemma vocab (R15's open half) — OPEN, unfunded, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `darwin`. Sized
+  (about 250 µs and 167 µs a token), not measured for a parallel form; the max-scan half lost (1.39x to 3.78x slower). Ships
+  at ≥ 1.2x at Gemma vocab with bit-identity, the min-p candidate order preserved; killed otherwise. The design and band are
+  in `docs/completed/red-october.md` § "R15".
+
+- **P41 · R13's full three-arm sweep, both boxes, all sizes — OPEN, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `either`. The grouped CPU decode attention shipped
+  default on (1.32x served at depth 8192), but the three-arm, both-box, every-size sweep was never run, and the Linux half
+  read a regression on the 1.5B. `docs/completed/red-october.md` § "R13" has the arms.
+
 - **P36 · The memory campaign's CUDA cells, on nobara — a pointer, filed 2026-10-31 (coordinator).** `linux`.
   *Updated 2026-11-08: the memory campaign is archived (`docs/completed/task-memory-campaign-2026-10.md`); MEM10's build
   (Francis, 2026-11-08: build it now) is a row in `docs/tasks/task-forward-and-memory-2026-11.md`, and P37 to P40 hold the

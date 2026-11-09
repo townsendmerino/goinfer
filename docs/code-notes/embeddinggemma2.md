@@ -10,7 +10,7 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 Moved from `embeddinggemma2/model_test.go` (the comment above `TestTiny_parity`) on 2026-10-09.
 
 ```text
-TestTiny_parity is Gate 1 (docs/tasks/task-embeddinggemma2.md): on a random-weight fixture pinned with
+TestTiny_parity is Gate 1 (docs/completed/task-embeddinggemma2.md): on a random-weight fixture pinned with
 transformers' own embedding_gemma2 modeling code, every layer's hidden state, the projected last hidden state, the
 pooled vector before normalisation and the sentence embedding match the float32 reference to cosine 0.9999 (each on
 its own, so a pooling or normalisation bug cannot pass on a matching hidden state), and the embedding is as accurate

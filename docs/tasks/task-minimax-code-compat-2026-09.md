@@ -1,6 +1,6 @@
 # Task: goinfer as a minimax-code backend (M0–M7) — 2026-09
 
-> **Status: SCOPED 2026-09-25, unstarted.** M0 is a measurement and gates the rest: every band below
+> **Status: SCOPED 2026-09-25; 2026-11-09: M2 done (2026-10-13); M3 and M4 built by `task-qwen35-think-prompt-2026-09.md`; M0 not run, so M1 and M5 to M7 wait.** M0 is a measurement and gates the rest: every band below
 > is a prediction from reading both codebases, and M0 is where it becomes a number. M1 is docs and can
 > land with M0. M2–M4 are the fixes the reading says matter; M5–M7 are verify-then-decide.
 >
@@ -16,8 +16,20 @@
 > [`../integrations/claude-code.md`](../integrations/claude-code.md) (the two harness pages this one
 > copies the shape of) · [`task-tool-grammar-union-2026-09.md`](task-tool-grammar-union-2026-09.md) (the
 > many-tools grammar M0 relies on) · [`task-fit-to-hardware.md`](task-fit-to-hardware.md) (owns the
-> context-default policy M2 amends) · [`task-memory-accounting-2026-09.md`](task-memory-accounting-2026-09.md)
+> context-default policy M2 amends) · [`../completed/task-memory-accounting-2026-09.md`](../completed/task-memory-accounting-2026-09.md)
 > (the pricing M2 uses) · `docs/server.md` · `docs/api-tiers.md`.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| M0 | blocked | parked (Francis, 2026-11-09): pre-register, then run mcode on the Mac and nobara; it also owes M2's re-run with no `--ctx`. Trigger: Francis unparks it, or a user reports minimax-code against goinfer | no compat record under `docs/measurements/` |
+| M1 | blocked | after M0: an integrations page for minimax-code and a `serve check` first-turn row | `internal/guard/servecheck/check.go` has the opencode-shaped harness rows only |
+| M2 | done | — | `decoder/fitplan.go:MetalFitDefaultCtx` (16384) |
+| M3 | done | built in `task-qwen35-think-prompt-2026-09.md`; a top-level `enable_thinking` and a `/v1/models` thinking field are not built | `internal/app/serveapp/think.go` |
+| M4 | done | built in the same doc | `internal/app/serveapp/reasoning_items.go`; `anthropic_stream.go` |
+| M5 | blocked | decide after M0 | the refusal in `internal/app/serveapp/openai.go:server.handleChat` |
+| M6 | blocked | M0's capture | `internal/app/serveapp/responses.go:responseInputToMessages` reads reasoning items |
+| M7 | blocked | M0's capture | `internal/app/serveapp/anthropic.go` accepts thinking config |
 
 ---
 
@@ -48,15 +60,16 @@
    (`packages/local-runtime-v2/src/service/model-system/connectivity/test-connection.ts`). goinfer has no
    way to turn a model's thinking off — nothing reads `enable_thinking`, `chat_template_kwargs` or
    `reasoning_effort` — so a Qwen3-class model thinks about "ping" until the timeout. The same absence
-   costs every real turn.
+   costs every real turn. *(2026-11-09: no longer true. `chat_template_kwargs.enable_thinking`, `reasoning_effort: "none"`
+   and `-thinking off` exist (`internal/app/serveapp/think.go`). A top-level `enable_thinking`, pi-ai's `qwen` format, is not read.)*
 3. **Thinking arrives as answer text.** goinfer never emits `reasoning_content` (the llama.cpp
    convention pi-ai reads, `providers/openai-completions.ts`, `reasoningFields`), so `<think>` text is
-   shown as the reply and is resent as assistant history, spending context.
+   shown as the reply and is resent as assistant history, spending context. *(2026-11-09: fixed. `reasoning_content` is emitted under the default `-reasoning-format deepseek`.)*
 4. **Images with tools are refused.** minimax-code always sends tools; a pasted screenshot gets goinfer's
    deliberate 400 "tools are not supported together with image inputs" (`internal/app/serveapp/openai.go:server.handleChat`,
    N-16 / R-08).
 5. **The other two formats are unverified.** `openai-responses` sends item types the route declares out
-   of scope ("reasoning items", `internal/app/serveapp/responses.go` header); `anthropic-messages` sends
+   of scope ("reasoning items", `internal/app/serveapp/responses.go` header) *(2026-11-09: input reasoning items are now read, `internal/app/serveapp/responses.go:responseInputToMessages`.)*; `anthropic-messages` sends
    pi-ai's Anthropic shape (cache_control, thinking config, beta headers) — not traced.
 
 ---
@@ -68,8 +81,8 @@
 | M0 | Run it for real — both boxes, a scripted task set, a pre-registered pass rule | S | gates M2–M7 |
 | M1 | `docs/integrations/minimax-code.md` + a `serve check` row shaped like its first turn | S | with M0 |
 | M2 | A context default an agent harness fits in — Metal fit-by-default, a harness warning | M | **done 2026-10-13** (run on its own, before M0) |
-| M3 | A thinking switch: `enable_thinking`, `chat_template_kwargs`, `reasoning_effort`, `--thinking` | M | after M0 |
-| M4 | Emit reasoning separately: `reasoning_content` deltas and Anthropic `thinking` blocks | M | after M3 |
+| M3 | A thinking switch: `enable_thinking`, `chat_template_kwargs`, `reasoning_effort`, `--thinking` | M | **done 2026-09-30** (`task-qwen35-think-prompt-2026-09.md`) |
+| M4 | Emit reasoning separately: `reasoning_content` deltas and Anthropic `thinking` blocks | M | **done 2026-09-30** (same) |
 | M5 | Images together with tools on the vision path | L | verify-then-decide |
 | M6 | `/v1/responses` tolerates what pi-ai sends | S–M | verify-then-decide |
 | M7 | `/v1/messages` tolerates what pi-ai's Anthropic client sends | S | verify-then-decide |
@@ -128,7 +141,7 @@ agent's first turns fit in, or a message saying so at startup — never a mid-se
 **Read first.** `task-fit-to-hardware.md` Phase 2 (CUDA's fit-by-default context: up to 8192 when the
 card affords it, and the 2026-09-15/16 regression it caused on `-moe-cache-experts` loads — a larger
 default ate the expert cache's VRAM; the fix keeps 4096 there), `backend/metal/model.go` `resolveMetalCtxCap`,
-the S4 live memory ceiling (`../completed/task-never-swap-2026-09.md`), `task-memory-accounting-2026-09.md` (the one
+the S4 live memory ceiling (`../completed/task-never-swap-2026-09.md`), `../completed/task-memory-accounting-2026-09.md` (the one
 KV formula to price with), `docs/tasks/task-embed-and-harness-ux.md` mode 3.
 
 **Build.**
@@ -347,4 +360,4 @@ harness exists; M5 waits on M0's evidence.
 - That minimax-code should change. Reading `/v1/models`' `context_window` would remove item 1 of §0 on
   the client side; that is theirs to decide, and M2 does not depend on it.
 
-<!-- doc-reviewed: 2026-09-25 -->
+<!-- doc-reviewed: 2026-11-09 -->

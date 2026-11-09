@@ -8,13 +8,33 @@
 > them against a real `.gguf`). **K3, K4, K6, K7, K8, K9 remain open** — see each item's own
 > section; none has a queue entry or a doc elsewhere, so this doc is still the sole owner of all
 > six. Scoping doc for the question "if an agent built on goinfer misbehaves, what stops it, and
-> how do we know the stop works". Companion to `docs/tasks/task-gpu-paths-2026-09.md` (nothing here
+> how do we know the stop works". Companion to `docs/completed/task-gpu-paths-2026-09.md` (nothing here
 > touches kernels).
 >
 > Suggested order: K1 → K2 → K5 → K3 → K4 → K6 → K8 → K7 → K9. K1+K2+K5 are the useful minimum
 > (cancel a task, halt the server, from a channel the agent cannot reach) **and are now shipped**;
 > K3 is the next item, and is the one that changes the guarantee; K8 is what makes any of it
 > believable.
+>
+> **Note 2026-11-09:** K9 is not owned here alone. `task-work-queue-2026-09.md` J2 (done: `internal/app/serveapp/jobjournal.go`,
+> `-job-dir`) subsumes it; the per-generation session, tool_calls count, cancel or halt issuer and an append-only file are the
+> unbuilt remainder. K3, K4, K6, K7 and K8 stay open and this doc owns them. K2's "single mutex" premise is no longer the
+> shape: admission is `internal/runtime/scheduler:Admit`, N-wide under `serve -max-concurrent`
+> (`docs/tasks/parked/task-concurrency-2026-09.md`). The second halt check still runs inside
+> `internal/app/serveapp/openai.go:loadedModel.tryEnter`, so K2's fix stands, and K8's queued-not-started case still applies.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| K1 | done | the `sessions/{key}/cancel` route moved to K4 | `internal/app/serveapp/cancel_test.go:TestServe_cancelByID` |
+| K2 | done | — | `internal/app/serveapp/halt_test.go:TestServe_haltUnderLoad`; `docs/measurements/kill-switch-quiescence-2026-09-12.md` |
+| K3 | blocked | parked (Francis, 2026-11-09; Trigger: an in-tree or supported agent executes non-read-only tool calls): `-lease-file` / `-lease-ttl`, fail-closed start | no lease code in `internal/app/serveapp` |
+| K4 | blocked | parked (Francis, 2026-11-09; the same trigger): a session key (`user` / `metadata.user_id`) and caps; carries K1's `sessions/{key}/cancel` | `internal/app/serveapp/budget.go` is the reasoning budget, unrelated |
+| K5 | done | — | `internal/app/serveapp/admin_socket_test.go:TestServe_adminSocket` |
+| K6 | blocked | parked with K3: a systemd unit and a launchd plist | no `deploy/` directory |
+| K7 | blocked | parked with K3: `agent.Broker` in demo/agent | `demo/agent/agent/` has `agent.go` and `kenclient.go` only |
+| K8 | blocked | parked with K3: `gate kill`, the queued-not-started case first; needs K3, K4, K7 | no kill gate in `cmd/gate` |
+| K9 | moved | J2 of `task-work-queue-2026-09.md` owns the journal; the remainder in the note above is unowned | `internal/app/serveapp/jobjournal.go` |
 
 ## Where goinfer sits, and what that means for a kill switch
 
@@ -421,4 +441,4 @@ question every rogue-agent story ends on.
 - Adversaries with the serve user's write access to the unit, the socket dir, or the lease.
   K6 makes those root-only; an attacker with root is not this doc.
 
-<!-- doc-reviewed: 2026-09-13 -->
+<!-- doc-reviewed: 2026-11-09 -->

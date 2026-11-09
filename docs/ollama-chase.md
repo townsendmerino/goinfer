@@ -436,7 +436,7 @@ wall as the whole decode path (`docs/completed/task-metal-cgofree-spike.md`: meg
 ceiling). **A1-Metal (half4 coalescing, 1.37–1.40×) remains the one capturable decode-attention win on
 this box.** Stop proposing dedup layouts; the lever is elsewhere (KV-quant §A3, or accept the floor).
 
-**Fifth attempt, 2026-09-21 (R2, `docs/tasks/red-october.md`): not a dedup layout, a grid-shape
+**Fifth attempt, 2026-09-21 (R2, `docs/completed/red-october.md`): not a dedup layout, a grid-shape
 change — and it worked, partially.** `attention_fa` grids by (kvHead, split) instead of (kvHead ×
 query-head-group) so a group's K/V read is one cooperative coalesced load per key per simdgroup,
 sidestepping the co-location-vs-occupancy trap above entirely (no group co-location, no extra
@@ -682,7 +682,7 @@ TTFT is 2.1 s, down from 13.1 s) and cannot reach parity.
 
 > **Superseded (2026-09-21, doc review).** "Banked / can't reach parity" below was overtaken by the L2/L3 prefill campaign: path (3), a tolerance-gated FlashAttention-style kernel, shipped as
 > `backend/cuda/attn_fused.cu` on 2026-09-05 (default ON above a 512-token floor; 1.70× end-to-end), with `gemm_w4a8_mma` beside it, taking CUDA prefill from 12–15× to **1.9–3.2× behind** Ollama.
-> The live owners are `docs/tasks/red-october.md` R5 and `queue-performance.md` P24 (`attn_fused` at 1.72% of tensor peak). Kept as written, per this file's retraction discipline.
+> The live owners are `docs/completed/red-october.md` R5 and `queue-performance.md` P24 (`attn_fused` at 1.72% of tensor peak). Kept as written, per this file's retraction discipline.
 
 Design-first (before writing the kernel) found the clean ~1.3× is **not bit-identical-buildable on
 Turing**: bit-identity pins the denom to the 128-strided tree ⇒ Bk=128, but a Bk=128 K-tile at hd=128 =
@@ -1236,7 +1236,7 @@ kernel.
 > tail shortcut stands). The named cost — a device Z differing from the host's — is real but small: it can
 > move a `top_p` draw only at a rounding-level boundary (0 of 5,000 draws under a 1e-6 Z error; 0
 > divergences in 12 streams), CUDA-only. Metal and WebGPU are not done. Record and gates:
-> `docs/measurements/sampled-topk-2026-09-20.md`; brief: `docs/tasks/red-october.md` R7.
+> `docs/measurements/sampled-topk-2026-09-20.md`; brief: `docs/completed/red-october.md` R7.
 
 Surfaced by outside-consumer testing of the released **v0.10.2** across a five-model sweep. Two
 distinct sampling cliffs were measured; **one is now fixed, one remains and is the lever here.**

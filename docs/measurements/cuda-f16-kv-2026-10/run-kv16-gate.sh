@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# The fidelity gate of docs/tasks/task-cuda-f16-kv-2026-10.md as an unattended night job: cuda.TestKV16GateVsReference on the D7 decision cell (K=8000) and the S
+# The fidelity gate of docs/completed/task-cuda-f16-kv-2026-10.md as an unattended night job: cuda.TestKV16GateVsReference on the D7 decision cell (K=8000) and the S
 # confirmation cell (K=3900), arms -kv f32 and -kv f16, set B, overflow survey inside the f32 arm. Estimated 30 minutes: the flash-decode gate's D7@8000 took 1,110 s for
 # the same count of prompt runs (21), the survey adds a K/V download per layer per prompt, S@3900 takes about a minute (an exploratory run of it took 46 s).
 #
 # REV is required: the commit under test, pinned in its own detached worktree so a push during the night does not change what runs. A cross-module test needs a go.work
 # (gitignored, so a fresh worktree has none); this one is written here, with the local aikit checkout the main go.work also uses, and its HEAD recorded.
-#   python3 scripts/night.py add kv16-gate --est 30 --by "<who>, CUDA f16 KV" --doc docs/tasks/task-cuda-f16-kv-2026-10.md -- env REV=<sha> bash docs/measurements/cuda-f16-kv-2026-10/run-kv16-gate.sh
+#   python3 scripts/night.py add kv16-gate --est 30 --by "<who>, CUDA f16 KV" --doc docs/completed/task-cuda-f16-kv-2026-10.md -- env REV=<sha> bash docs/measurements/cuda-f16-kv-2026-10/run-kv16-gate.sh
 #
 # Pass rule (pre-registered, the task doc): both cells print "=> PASSES" on their "=== KV16 GATE" line and the overflow survey prints under 32752. A SKIP is a failure.
 set -uo pipefail

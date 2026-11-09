@@ -1167,7 +1167,7 @@ after it (text before the image is a 400 for now), at most 16 per request and 16
 loads on the first image request, so a text-only server never pays for it. It runs on Metal with the encoder when
 the encoder is on Metal (startup says where, and so does a line when the first image loads it), on the CPU otherwise. The image is resized as the reference's processor does it (torchvision's antialiased
 bicubic, reproduced bit for bit), and an image embedding then matches sentence-transformers' to cosine 1.000000000 on
-the gate's 12 cases (`docs/tasks/task-embeddinggemma2.md`, Phase V). `--embed-image-resize bilinear` selects aikit's
+the gate's 12 cases (`docs/completed/task-embeddinggemma2.md`, Phase V). `--embed-image-resize bilinear` selects aikit's
 bilinear resize instead (0.9992 to 0.9999 from the reference); `bicubic` is the default.
 
 **Audio.** EmbeddingGemma 2 embeds audio into the same space too. An `input` element may be `{"audio": "<data:
@@ -1181,12 +1181,12 @@ URI or bare base64 of a WAV>", "text": "optional text after it"}`, or the OpenAI
 The WAV must be 16-bit PCM, mono, at 16 kHz, and at most 30 s. Anything else is a 400; nothing is resampled or cut.
 One image or one audio clip per input, at most 16 clips per request. `usage` counts the clip's soft tokens, 25 a
 second. The audio tower loads on the first audio request, and runs on Metal with the encoder when the encoder is on Metal, on the CPU otherwise. On the gate's nine cases the embeddings
-match sentence-transformers' to cosine 1.000000000 (`docs/tasks/task-embeddinggemma2.md`, Phase A).
+match sentence-transformers' to cosine 1.000000000 (`docs/completed/task-embeddinggemma2.md`, Phase A).
 
 Every response says which prompt it applied, in a `goinfer_task: {"name", "prompt"}` field and an
 `X-Goinfer-Embedding-Task` header. Index and query with the prompts the model intends: an index built under one prompt
 and queried under another retrieves worse without any error, and the echo is there so that can be seen. Its checks
-against sentence-transformers are in `docs/tasks/task-embeddinggemma2.md`.
+against sentence-transformers are in `docs/completed/task-embeddinggemma2.md`.
 
 **Startup self-tests, and `check --hardware`.** goinfer is built and measured on two machines, and a wrong kernel on hardware nobody here owns does not crash: it returns slightly wrong numbers (an AVX-512 VNNI
 accumulator bug did exactly that in September, and surfaced only because one CI runner happened to have the CPU). So the first model load of a process runs aikit's `linalg.SelfCheck`: the dispatched CPU kernels

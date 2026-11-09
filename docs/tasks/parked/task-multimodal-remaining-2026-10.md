@@ -14,6 +14,7 @@
 | S13-full | blocked | parked: the full peer comparison comes after S10's remaining families, S11 and S15; no bar registered. Trigger: S15 unparked, or Francis wants a published multimodal peer number. S13-lite is done | `docs/completed/task-multimodal-support-2026-10.md` "S13" |
 | S15 | blocked | parked (owner, 2026-10-11: "leave video parked"); Gate 0's desk map is done. Trigger: Francis unparks video | `docs/completed/task-multimodal-support-2026-10.md` "S15"; `docs/measurements/multimodal-support-2026-10/s15-video-deskmap-2026-10-07.md` |
 | S16-hybrid | blocked | parked: only CUDA declares a hybrid m-RoPE prefill, and only for the dense hybrids, so a Qwen3.5+ image turn prefills and decodes on the CPU on Metal and WebGPU (dense and MoE) and on CUDA for the MoE. Trigger: Francis asks for resident Qwen3.5+ image turns on the Mac | `backend/cuda/prefill.go:cudaResident.HybridMRoPEPrefill`; `docs/multimodal.md` |
+| EG2-rest | blocked | parked (Francis, 2026-11-09): EmbeddingGemma 2's video as frames, text before an image, and several images per input. Trigger: a user asks for one of them | `docs/completed/task-embeddinggemma2.md` status block |
 | Metal-embed-int4 | moved | to `docs/tasks/parked/task-metal-audit-followups-2026-10.md` owner decision O3 (B-N01, "An int4 head on Metal"), the same item | `internal/app/loadflags/loadflags.go:Flags.embedInt4` |
 
 ## Conventions

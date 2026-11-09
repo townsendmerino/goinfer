@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: the Metal int8 gates after the owner's 2026-10-04 decisions (docs/tasks/task-metal-int8-2026-10.md, "F3′"):
+# Night job: the Metal int8 gates after the owner's 2026-10-04 decisions (docs/completed/task-metal-int8-2026-10.md, "F3′"):
 # F3′ on the 1.5B (it skips with the guard's numbers if the fit guard refuses its f32 reference; no bypass on this Mac),
 # F2 on the 1.5B with precise math (its bar unchanged), and S with the fast-math arm that prices precise math. F3′ on the
 # 0.5B ran and passed by day.
@@ -10,7 +10,7 @@
 #   git worktree add --detach ~/goinfer-bench/metal-int8-2026-10/wt-<REV> <REV>
 # Queued with:
 #   python3 scripts/night.py add metal-int8-gates2 --est 30 --by "Claude, Metal int8 F3′" \
-#     --doc docs/tasks/task-metal-int8-2026-10.md -- bash docs/measurements/metal-int8-2026-10/run-gates2.sh
+#     --doc docs/completed/task-metal-int8-2026-10.md -- bash docs/measurements/metal-int8-2026-10/run-gates2.sh
 # The runner holds the timing lock for the whole job. Logs: ~/goinfer-logs/metal-int8-2026-10/gates2/.
 set -uo pipefail
 REV=351a3f63

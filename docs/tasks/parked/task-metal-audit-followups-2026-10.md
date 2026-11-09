@@ -4,7 +4,34 @@
 > that ran `docs/audit-metal-2026-09-30.md`'s §10 items) was archived. Everything it scoped is done, graded, or listed
 > here with a trigger. The audit itself, [`audit-metal-2026-09-30.md`](../../audit-metal-2026-09-30.md), stays live until
 > every finding in it is closed; this file is the program's remainder, not the audit's. M26 work, D-P01's batched expert
-> phase 2 included, is live in [`task-m26-mac-2026-10.md`](../task-m26-mac-2026-10.md).
+> phase 2 included, is live in [`task-m26-mac-2026-10.md`](../../completed/task-m26-mac-2026-10.md).
+>
+> **2026-11-09:** that M26 doc is now archived too; row 10 below keeps its prefetch and fence triggers. Item 3's closure
+> stands, but the modules are now `backend/metal` and `backend/cuda`, both pinning aikit v1.76.0, and the guard is in-tree
+> at `backend/metal/internal/gpudev/metal.go:Encoder.bindBuffers`. The triggers below still hold: the only Macs on record
+> are 16 GB, T1.13 has not run on nobara, and no O-decision has an answer in a later doc.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| 1 | done | — | `docs/benchmarks.md`, "Metal short-prompt prefill floor — R3" |
+| 2 | blocked | a resident int8 MoE that fits 16 GB, or a bigger Mac | `backend/metal/moe.go:moeExpertRowsOn` (on, its speed never read) |
+| 3 | done | — | `backend/metal/internal/gpudev/metal.go:Encoder.bindBuffers` |
+| 4 | blocked | T1.13 run on nobara | `docs/audit-metal-2026-09-30.md` T1.13 |
+| O1 | blocked | build A-P04 (the pipeline form), then decide | `docs/audit-metal-2026-09-30.md` A-P04 |
+| O2 | blocked | parked (Francis, 2026-11-09): delta_rule's summation order (read the recurrence share first) | `docs/tasks/parked/task-kernel-survey-2026-10.md`, Metal |
+| O3 | blocked | deferred (Francis, 2026-11-09): a Metal int4 head | `docs/tasks/parked/task-multimodal-remaining-2026-10.md`, Metal-embed-int4 |
+| O4 | blocked | parked (Francis, 2026-11-09): the down projection off the per-word chain | `docs/tasks/parked/task-kernel-survey-2026-10.md`, Metal |
+| O5 | blocked | T1.13's error numbers | item 4 |
+| O6 | killed | — (Francis, 2026-11-09: greedy dominates the timed paths) | `docs/tasks/parked/task-kernel-survey-2026-10.md`, Metal |
+| O7 | blocked | the pooled F-G01 fidelity gate | `docs/audit-metal-2026-09-30.md` F-B01 |
+| 6 | blocked | a k = 8 MoE resident on the Mac | `backend/metal/moe.go:moeKSlotsOn` (off) |
+| 7 | blocked | a model where per-row wins at 3 to 4 clients in the whole step | item 7 below |
+| 8 | blocked | Francis, or a served short-prompt TTFT at depth naming attention | `docs/tasks/parked/task-kernel-survey-2026-10.md`, Metal |
+| 9 | killed | — (Francis, 2026-11-09: low value) | `docs/tasks/parked/task-kernel-survey-2026-10.md`, Metal |
+| 10 | blocked | a guess that needs no phase-2 wait; a cheaper write publish | `backend/metal/paged_fence.go:pagedFenceOn`, `backend/metal/gemma4_moe.go:g4PrefetchOn` (both off) |
+| M26-L4 | blocked | parked (Francis, 2026-11-09): M26's lever 4, the night slot sweep; the auto-sizer already takes up to 64 slots. Trigger: the owner asks for the night sweep | `docs/completed/task-m26-mac-2026-10.md` "Levers", item 4 |
+| M26-L6a | blocked | parked (Francis, 2026-11-09): M26's lever 6a, the n-gram drafter on paged M26. Trigger: a cheaper expert miss | `docs/completed/task-m26-mac-2026-10.md` "Levers", item 6 |
 
 | # | item | state | trigger or owner |
 |---|---|---|---|
@@ -47,4 +74,4 @@ the ratios to Ollama are not current (A-D01). This re-measures it.
 **Not carried:** the audit's Minor findings were never swept one by one against the program. They are in the audit doc,
 which is live.
 
-<!-- doc-reviewed: 2026-10-05 -->
+<!-- doc-reviewed: 2026-11-09 -->

@@ -24,7 +24,7 @@ Moved from `backend/cuda/prefill.go` (the comment in the body of `prefillCore`) 
 ```text
 K=V (Gemma-4 global layers): this layer has NO v_proj. V is v_norm(the RAW pre-RoPE k_proj output), so copy the k projection into the V buffer here and normalize it
 below, before rope_kv_batched rotates k. Mirrors segA's decode path op for op. It used to project k a SECOND time "because decode does": decode now copies too
-(R-23, docs/tasks/task-recompute-audit.md), so the two still agree, and neither reads the k weight twice. kBb and vBb are [M, kvDim] row-major, so one contiguous
+(R-23, docs/completed/task-recompute-audit.md), so the two still agree, and neither reads the k weight twice. kBb and vBb are [M, kvDim] row-major, so one contiguous
 copy of M*kvDim floats moves every row.
 ```
 
@@ -257,7 +257,7 @@ RECURRENT STATE (Gated-DeltaNet: qwen3_5 / qwen3_5_moe / qwen3_next). A DeltaNet
 state must advance strictly one token at a time and in order. The batched path now honours that INSIDE the
 pass: prefillCore branches on Ly.isDeltaNet, runs the layer's projections over the M rows, and runs the
 recurrence through row-batched twins of decode's kernels that walk the rows in order (prefillDeltaNetRows,
-docs/tasks/task-cuda-deltanet-prefill-2026-09.md). It dispatches on the layer's KIND, not on which weights
+docs/completed/task-cuda-deltanet-prefill-2026-09.md). It dispatches on the layer's KIND, not on which weights
 happen to be absent, so the LFM2 bug class (audit-2026-09-02 C-01: a dense attention stack run over conv
 layers that load no q/k/v/o) cannot recur through this path; nonBatchableKind checks the projections each
 kind actually binds. ForwardN (spec verify) keeps its sequential path for this family: verify rewinds, and
@@ -353,7 +353,7 @@ Moved from `backend/cuda/prefill.go` (the comment in the `forceExactKernels` exp
 ```text
 Gated-DeltaNet: the fast levers' projection error feeds the recurrent state and compounds token after
 token — measured on Qwen3.5-9B, 561 tokens: cosine 0.994 and different greedy continuations with them,
-bit-identical to decode without (docs/tasks/task-cuda-deltanet-prefill-2026-09.md).
+bit-identical to decode without (docs/completed/task-cuda-deltanet-prefill-2026-09.md).
 ```
 
 ## prefillCore: forceExactKernels, E-model
@@ -532,7 +532,7 @@ Moved from `backend/cuda/prefill.go` (the comment above `HiddenLast`) on 2026-10
 
 ```text
 HiddenLast (decoder.ResidentHiddenLast) is prefillChunked's twin for G4
-(docs/tasks/task-gpu-paths-2026-09.md, embedding requests): the resident batched pass ingests the
+(docs/completed/task-gpu-paths-2026-09.md, embedding requests): the resident batched pass ingests the
 whole sequence exactly as PrefillLast does — same chunking, same K/V it writes, bit-identical
 per-row math — but the final chunk's tail computes the last row's post-final-norm hidden state
 instead of logits, and never dispatches the LM head at all: an embedder never needs it
@@ -826,7 +826,7 @@ Moved from `backend/cuda/backend.go` (the comment in the body of `BuildResident`
 The same family's GATED softmax layer (qwen3_5/qwen3_5_moe/qwen3_next — NOT every
 dnetOK family: Olmo Hybrid's full-attention layer is olmo3's plain scheme instead,
 dnAttnGate=false, and falls through to default below — G5,
-docs/tasks/task-gpu-paths-2026-09.md. This used to be a bare `dnetOK` case, silently
+docs/completed/task-gpu-paths-2026-09.md. This used to be a bare `dnetOK` case, silently
 wrong the moment a non-gated hybrid family reached residency, since
 Qwen35ResidentParams hardcoded attnGate=true). Its weights live off lw.QProj (the
 family keeps them in its own struct), and q_proj is DOUBLE WIDTH — [query ‖ gate]
@@ -1274,7 +1274,7 @@ docs/audit-2026-09-10.md) ReleaseAll ran directly on whatever goroutine called C
 Moved from `backend/cuda/moe_expert_major.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-R11/P20 — CUDA expert-major MoE prefill (docs/queue-performance.md P20, docs/tasks/red-october.md R11(b),
+R11/P20 — CUDA expert-major MoE prefill (docs/queue-performance.md P20, docs/completed/red-october.md R11(b),
 docs/measurements/p20-expert-locality-2026-09-21.md). GENERIC MoE PATH ONLY (Ly.isMoE, moeMLPPre/moeMLPPost's
 own shape) — gemma4's parallel dense‖MoE FFN (gemma4MoeMLPPre/Post) is NOT covered here; that is a separate,
 structurally similar extension, not attempted in this pass (M26, the model the locality measurement used,
@@ -1332,7 +1332,7 @@ Moved from `backend/cuda/testhooks.go` (the comment above `PerLayerCacheStatsFor
 ```text
 PerLayerCacheStatsForTest returns hits/misses for every MoE layer individually, in layer order
 (dense layers report 0/0) — the per-layer breakdown CacheStatsForTest's sum discards. This is
-the instrument `docs/tasks/task-freetoken-techniques.md` Lead 4 asks for: is C′'s per-layer slot
+the instrument `docs/completed/task-freetoken-techniques.md` Lead 4 asks for: is C′'s per-layer slot
 budget wasted on some layers and starved on others, or is demand actually even across layers?
 ```
 
@@ -1439,7 +1439,7 @@ would be the same number as the CPU path produces (decoder/forwardn.go, decoder/
 
 SIBLING SET. Six sites carry this identical loop: decoder/forwardn.go, decoder/model.go,
 backend/cuda/prefill.go, backend/cuda/resident.go, backend/metal/model.go, and backend/webgpu/softcap.go (G6,
-docs/tasks/task-gpu-paths-2026-09.md). Both cuda/ callers now share this helper. The other three are
+docs/completed/task-gpu-paths-2026-09.md). Both cuda/ callers now share this helper. The other three are
 unchanged and deliberately so — decoder/ is under the 6edd1ca numerics freeze and metal/ is on
 hold — which is recorded in docs/QUEUE.md B6 so the pair is not left implicit.
 ```
@@ -1857,7 +1857,7 @@ Moved from `backend/cuda/resident.go` (the comment above `mapBytes.register`) on
 
 ```text
 Register in place (GOINFER_MOE_PIN_REGISTER, read from the model's knob snapshot in mapBytes below): Lead 3
-(docs/tasks/task-freetoken-techniques.md), measured
+(docs/completed/task-freetoken-techniques.md), measured
 2026-09-22 (docs/measurements/lead3-pin-order-2026-09-22.md) — populate-then-pin beat
 allocate-then-copy 1.33x-4.46x in a standalone microbenchmark at this scale, and never lost a
 single real-load trial (5/5) in the follow-up decision measurement. That measurement's own
@@ -3498,7 +3498,7 @@ This smoke gate passed while every decode token's final norm was the wrong kind 
 C-04). The numeric gate is TestCohereResidentParityCUDA (cohere_resident_parity_test.go).
 
 TestCohereResidentSmokeCUDA and TestCohere2ResidentSmokeCUDA are G5's last row
-(docs/tasks/task-gpu-paths-2026-09.md) smoke gates on CUDA — the Metal twin
+(docs/completed/task-gpu-paths-2026-09.md) smoke gates on CUDA — the Metal twin
 (backend/metal/cohere_resident_smoke_test.go) explains why this is deliberately a smoke check
 (admission + no NaN) rather than a resident-vs-CPU cosine floor: testdata/cohere-tiny and
 testdata/cohere2-tiny are both "tiny-random" (scripts/pin_cohere_tiny.py), the same
@@ -5390,7 +5390,7 @@ The next two were invisible until ptxModules() was derived from kernels.go's emb
 Moved from `backend/cuda/kernel_local_memory_test.go` (the comment above `delta_rule_rows_128`) on 2026-10-09.
 
 ```text
-deltanet.ptx, the batched Gated-DeltaNet prefill (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): the
+deltanet.ptx, the batched Gated-DeltaNet prefill (docs/completed/task-cuda-deltanet-prefill-2026-09.md): the
 scan holds its 128-float state row in registers across the rows and spills 24 floats of it at 255
 registers (launch_bounds(128, 1) measured the same 96 B). 3.8 MiB at full occupancy, against the 1.23 s →
 38 ms it bought on a 621-token Qwen3.5-9B prefill over the no-spill generic scan.
@@ -6742,7 +6742,7 @@ is untouched either way (fit-by-default only ever applies to an UNPINNED load), 
 (Options.DisableFit) and its GOINFER_NO_FIT_DEFAULT env-var precursor both restore resolveCtxCap
 exactly, and a model whose own window is already at or below cudaCtxCapDefault has nothing to
 gain from asking Plan at all. The live-probe-driven branch (a real free-VRAM reading) is
-exercised on real hardware separately (docs/tasks/task-gpu-paths-2026-09.md's G11 entry has the
+exercised on real hardware separately (docs/completed/task-gpu-paths-2026-09.md's G11 entry has the
 nobara numbers). A real (if minimal, tracked-in-git) model is loaded per case rather than
 passing nil — m.FitDisabled() reads a real field now, unlike the plain env-var check this
 replaced, so a nil *decoder.Model would panic in the request==0 cases where it's evaluated.
@@ -7011,7 +7011,7 @@ Times are exploratory.
 Moved from `backend/cuda/sampled_gumbel_identity_test.go` (the comment above `TestSampledGumbelStreamIdentity`) on 2026-10-09.
 
 ```text
-TestSampledGumbelStreamIdentity is R7b's end-to-end gate (docs/tasks/red-october.md): with a fixed seed, the token
+TestSampledGumbelStreamIdentity is R7b's end-to-end gate (docs/completed/red-october.md): with a fixed seed, the token
 stream drawn on-device by Gumbel-max is IDENTICAL to the stream the host draws (GOINFER_NO_SAMPLE_FASTPATH=1) —
 the host and the device implement one algorithm over one Philox counter stream, so they may differ only where two
 candidates' scores are within an f32 rounding (measured ~1e-6 per token, and 0 in 15,840 kernel-level draws).
@@ -7175,7 +7175,7 @@ Moved from `backend/cuda/smollm3_resident_smoke_test.go` (the comment above `Tes
 
 ```text
 WRITTEN, NOT RUN: no CUDA device was available while writing this (see
-docs/tasks/task-gpu-paths-2026-09.md's G5 status log) — needs a real run on a CUDA box before it can
+docs/completed/task-gpu-paths-2026-09.md's G5 status log) — needs a real run on a CUDA box before it can
 be trusted, same posture as G4's cudaResident.HiddenLast.
 ```
 
@@ -7779,7 +7779,7 @@ TestKernelFMALint_coversEmbeddedPTX closes the same gap for the FMA lint.
 Moved from `backend/cuda/prefill_tails_identity_test.go` (the comment above `tailsBaselinePath`) on 2026-10-09.
 
 ```text
-R-24 (docs/tasks/task-recompute-audit.md §5): the batched prefill's tail used to download the whole [M, hidden] residual after every pass, though only
+R-24 (docs/completed/task-recompute-audit.md §5): the batched prefill's tail used to download the whole [M, hidden] residual after every pass, though only
 ResidualAll reads it (the argmax and all-logits heads read it on the device, and the last-row tails need one row, which they uploaded back). This gate hashes
 the output of EVERY tail mode the resident exposes, for each fixture, and compares it with the hashes recorded from the code BEFORE that change
 (testdata/prefill_tails_baseline.json). It is device-specific for the same reason keqv_copy_baseline.json is (the PTX is JIT-compiled to the card's own SASS), so
@@ -7941,7 +7941,7 @@ so; it does not panic, and it does not pass either.
 Moved from `backend/cuda/vsum_mechanism_test.go` (the comment above `TestVsumMechanism`) on 2026-10-09.
 
 ```text
-TestVsumMechanism is R6 step 1 (docs/tasks/red-october.md): why did the V-sum spike's KL against the
+TestVsumMechanism is R6 step 1 (docs/completed/red-october.md): why did the V-sum spike's KL against the
 f32/f64 reference read 1.0585x exact's on D7@8000 while its argmax metrics were better?
 Pre-registered in docs/measurements/vsum-mechanism-PREREGISTERED.md; the hypotheses, the numeric tests
 and the decision rule are there and are not restated here.
