@@ -37,9 +37,14 @@ var dtAttn, dtMLP, dtHead, dtGU, dtAct, dtActDown, dtQKV, dtO, dtAttnAll int64
 // component in-process (decodeTiming must be on for it to fill).
 var lastDecodeSplit struct{ fwd, attn, mlp, head, gu, act, down, qkv, core, o float64 }
 
-// Model is a loaded checkpoint plus the compute backend. Goroutine safety follows encoder.Model: Weights are immutable after
-// Load; per-sequence state (the KV cache) is owned by each Generate call, so distinct sequences can run concurrently, but a
-// single KVCache is not shared.
+// Model is a loaded checkpoint plus the compute backend. It is safe for concurrent use: weights are immutable after Load, and
+// any number of goroutines may call Generate (and each its own Session) at once; every call completes correctly. Where a call
+// runs is the only thing concurrency changes. On the CPU each generation owns its KV cache. A GPU-resident model's resident KV
+// is claimed per generation: by default one generation holds it and the others run on the CPU path; after
+// EnableResidentConcurrency(n), up to n run on the device at once, each on its own KV slot, and any further one runs on the
+// CPU. A prompt longer than ResidentContextCap also runs on the CPU. Falling back costs speed, never correctness; whether
+// CPU generations are worth running side by side is CPUConcurrentSafe's answer. A single KVCache or Session is not safe to
+// share between goroutines.
 type Model struct {
 	planSlackOf *planSlackMemo // PlanSlack per backend, asked once; nil on a Model built by hand (asked every time)
 	fitOf       *fitMemo       // what Plan derives from the config and architecture alone; nil on a Model built by hand
@@ -468,11 +473,11 @@ type Options struct {
 	// trades RAM for cold-miss fault latency. No-op for non-MoE / non-.giw models.
 	StreamWeights bool
 	// WeightCacheBytes is the resident-bytes budget for streamed weights (0 = auto,
-	// ~half of available RAM). Only meaningful with StreamWeights.
+	// ~half of available RAM), and the budget a mapped MoE .giw's working-set prediction prices the page cache at.
 	WeightCacheBytes int64
-	// AcceptSlowMoE is the explicit acknowledgement a paged-MoE StreamWeights load needs when its predicted working-set rate
-	// falls below moeSlowTokPerSecThreshold (moeworkingset.go): without it the load is refused. Only meaningful for a .giw MoE
-	// load under StreamWeights; a no-op everywhere else.
+	// AcceptSlowMoE is the explicit acknowledgement a MoE .giw load that decodes on the CPU (mapped, or paged under
+	// StreamWeights) needs when its predicted working-set rate falls below moeSlowTokPerSecThreshold (moeworkingset.go):
+	// without it the load is refused. A no-op everywhere else.
 	AcceptSlowMoE bool
 	// MoEPager is the CPU expert pager's backing mode for a .giw-paged MoE model: "mmap" (advice-based,
 	// zero-copy) or "pool" (owned buffers + pread; a firm cap on every platform). "" = the platform
@@ -810,7 +815,24 @@ func Load(dir string, opts Options) (*Model, error) {
 				logs.Warnf("decoder: --stream-weights ignored (model fits the budget, or no mmap-backed layer weights)")
 			}
 		}
-		return m.withResidencyOrAbort()
+		m, rerr = m.withResidencyOrAbort()
+		if rerr != nil {
+			return nil, rerr
+		}
+		// A MoE load that decodes from its mapping on the CPU (no -stream-weights, no resident runner) pages its experts through
+		// the page cache, so it takes the paged load's working-set refusal (docs/tasks/task-fit-to-hardware.md, SLOW) at the
+		// budget a pager would take here.
+		if !opts.StreamWeights && w.arch.MoE != nil && !m.ResidentActive() {
+			if predicted, ok := mappedMoEWorkingSetPrediction(m, resolveWeightCacheBudget(opts.WeightCacheBytes)); ok {
+				logs.Infof("decoder: predicted mapped-MoE decode rate ~%.2f tok/s "+
+					"(a prior, not a measurement — see moeHitRatePrior's own doc comment)", predicted)
+				if serr := moeWorkingSetRefusal(filepath.Base(dir), predicted, opts.AcceptSlowMoE); serr != nil {
+					m.Close()
+					return nil, serr
+				}
+			}
+		}
+		return m, nil
 	}
 
 	// Resolve the quant mode first so the weights stream straight into the

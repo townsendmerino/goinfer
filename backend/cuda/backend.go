@@ -1368,6 +1368,15 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				loadSK(&r.skSoftmax, "splitkv_softmax")
 				loadSK(&r.skVsum, "splitkv_vsum")
 				if skOK {
+					// A ragged step's twins (splitkv_*_ragged). A load failure leaves them zero, so the step's split-KV rows take
+					// decode's own three launches row by row.
+					var e1, e2, e3 error
+					r.skScoresRagged, e1 = r.dev.NewComputePipeline(skmod, "splitkv_scores_ragged")
+					r.skSoftmaxRagged, e2 = r.dev.NewComputePipeline(skmod, "splitkv_softmax_ragged")
+					r.skVsumRagged, e3 = r.dev.NewComputePipeline(skmod, "splitkv_vsum_ragged")
+					if e1 != nil || e2 != nil || e3 != nil {
+						r.skScoresRagged, r.skSoftmaxRagged, r.skVsumRagged = Pipeline{}, Pipeline{}, Pipeline{}
+					}
 					r.skScoreBuf = r.af(r.nH * r.ctxCap)
 					r.skInvBuf = r.af(r.nH)
 					// Flash-decode V-sum SPIKE, opt-in and NOT bit-identical. Loaded and allocated
