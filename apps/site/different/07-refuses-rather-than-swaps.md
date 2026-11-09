@@ -36,13 +36,13 @@ figures:
   - {text: "100/100", source: "docs/measurements/swap-tripwire-negative-controls-2026-09-24.md"}
   - {text: "1,346.12 MB", source: "docs/measurements/swap-tripwire-negative-controls-2026-09-24.md"}
   - {text: "16–21%", source: "docs/measurements/sidecar-default-2026-09-22.md"}
-  - {text: "0.944", source: "docs/tasks/task-gpu-paths-2026-09.md"}
-  - {text: "5.6%", source: "docs/tasks/task-gpu-paths-2026-09.md"}
+  - {text: "0.944", source: "docs/completed/task-gpu-paths-2026-09.md"}
+  - {text: "5.6%", source: "docs/completed/task-gpu-paths-2026-09.md"}
   - {text: "+512 MB", source: "docs/server.md"}
 sources:
   - "docs/tasks/task-never-swap-2026-09.md"
   - "docs/completed/task-first-hour.md"
-  - "docs/tasks/task-gpu-paths-2026-09.md"
+  - "docs/completed/task-gpu-paths-2026-09.md"
   - "docs/tasks/task-fit-to-hardware.md"
   - "docs/measurements/cold-user-2026-09-06.md"
   - "docs/measurements/swap-tripwire-2026-09-22.md"

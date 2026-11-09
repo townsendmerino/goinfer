@@ -522,7 +522,7 @@ norms/rope/softmax to WGSL) is the remaining work for a GPU-fast forward.
 Moved from `backend/webgpu/backend.go` (the comment above `webgpuBackend.MatmulW4A8`) on 2026-10-09.
 
 ```text
-MatmulW4A8 is MatmulW8A8's int4 (W4A8) twin — G6 (docs/tasks/task-gpu-paths-2026-09.md), the "staged
+MatmulW4A8 is MatmulW8A8's int4 (W4A8) twin — G6 (docs/completed/task-gpu-paths-2026-09.md), the "staged
 int4" item: decoder/weightmat.go's matmulInto never consulted a backend for int4 before this
 (its int8 branch already did, via MatmulW8A8/QuantBackend), so an int4-quantized model on the
 STAGED (non-resident) path ran every projection on the CPU regardless of which backend was
@@ -586,7 +586,7 @@ Moved from `backend/webgpu/decodefuse.go` (the comment above `gegluQuantWGSL`) o
 
 ```text
 gegluQuant is swigluQuant's GELU-tanh-gated twin — Gemma's FeatGatedGELU (G6,
-docs/tasks/task-gpu-paths-2026-09.md). Same fused shape (product recomputed in the pack pass, no
+docs/completed/task-gpu-paths-2026-09.md). Same fused shape (product recomputed in the pack pass, no
 inter-wide global-memory round-trip); only the activation differs. gelu_tanh's argument is
 CLAMPED to ±15 before calling tanh — see gegluShaderWGSL's own comment (layer.go) for why:
 unclamped, it overflows f32 before saturating, which cost Metal's own port a real cosine
@@ -831,7 +831,7 @@ Moved from `backend/webgpu/layer.go` (the comment above `gegluShaderWGSL`) on 20
 
 ```text
 gegluShaderWGSL is swigluShaderWGSL's GELU-tanh-gated twin — Gemma's FeatGatedGELU (G6,
-docs/tasks/task-gpu-paths-2026-09.md). The tanh argument is CLAMPED to ±15 before calling tanh:
+docs/completed/task-gpu-paths-2026-09.md). The tanh argument is CLAMPED to ±15 before calling tanh:
 unclamped, tanh's argument overflows f32 before saturating at Gemma's activation magnitudes,
 producing NaN — the exact defect Metal's own port hit (backend/metal/kernels.go's glu_act, logit
 cosine 0.818→0.994 after the clamp fix, decoder/features.go's FeatGatedGELU-adjacent note).
@@ -1243,7 +1243,7 @@ to the key too; none on this seam has that (Gemma 4 is 16 query heads in both va
 Moved from `backend/webgpu/decoderunner.go` (the comment above `runModel.gatedGELU`) on 2026-10-09.
 
 ```text
-G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatGatedGELU, model-level like ropeHalf/
+G6 (docs/completed/task-gpu-paths-2026-09.md): FeatGatedGELU, model-level like ropeHalf/
 slidingWindow above (every gated-MLP family shares one activation). Deliberately a bool
 with SiLU as the zero value, NOT decoder.ActKind's own ordinal (where 0=GELU-tanh,
 1=SiLU) — a runModel built by hand (every gpu/*_test.go that constructs one directly,
@@ -1772,7 +1772,7 @@ re-upload), proving both paths route through the one shared cache this fix intro
 Moved from `backend/webgpu/backend_w4a8_test.go` (the comment above `TestWebGPUBackend_MatmulW4A8_matchesCPU`) on 2026-10-09.
 
 ```text
-TestWebGPUBackend_MatmulW4A8_matchesCPU is G6's staged-int4 gate (docs/tasks/task-gpu-paths-2026-09.md):
+TestWebGPUBackend_MatmulW4A8_matchesCPU is G6's staged-int4 gate (docs/completed/task-gpu-paths-2026-09.md):
 webgpuBackend.MatmulW4A8, the actual decoder.QuantBackend4 entry point matmulInto/matmul now
 call, against the CPU reference (linalg.MatmulBTW4A8Into) — the same comparison
 TestWebGPUBackend_matchesCPU does for the f32 path, but nothing previously did this directly
@@ -2158,7 +2158,7 @@ the class at ~975 GFLOPS: the two kernels back to back, same buffers, alternatin
 Moved from `backend/webgpu/gemma3_resident_parity_test.go` (the comment above `TestGemma3ResidentParityWebGPU`) on 2026-10-09.
 
 ```text
-TestGemma3ResidentParityWebGPU is G6's Gemma set gate (docs/tasks/task-gpu-paths-2026-09.md):
+TestGemma3ResidentParityWebGPU is G6's Gemma set gate (docs/completed/task-gpu-paths-2026-09.md):
 FeatEmbedScale + FeatSandwichNorm + FeatGatedGELU (+ the already-declared FeatQKNorm/
 FeatSlidingWindow/FeatRMSAddOne) against a REAL, non-seeded checkpoint
 (testdata/gemma3-vl-tiny's text tower — a real small Gemma3 VL model, not a tiny-random
@@ -2327,7 +2327,7 @@ rotary tripped the RotaryDim==HeadDim check) — stranding the C3d shared-expert
 Moved from `backend/webgpu/gptoss_resident_test.go` (the comment above `TestGptOssResidentParityWebGPU`) on 2026-10-09.
 
 ```text
-TestGptOssResidentParityWebGPU is G6's gpt-oss gate (docs/tasks/task-gpu-paths-2026-09.md):
+TestGptOssResidentParityWebGPU is G6's gpt-oss gate (docs/completed/task-gpu-paths-2026-09.md):
 FeatAttnSink + FeatOutBias against the REAL, committed decoder/testdata/gptoss_tiny.gguf —
 not a seeded/synthetic fixture, so this is a genuine numeric floor, the same class of evidence
 backend/webgpu/gemma3_resident_parity_test.go established for the Gemma set.
@@ -2461,7 +2461,7 @@ Moved from `backend/webgpu/kv_i8_test.go` (the comment above `dispatchI8`) on 20
 
 ```text
 dispatch binds storage buffers (binding 0..k-1) + one or more trailing uniforms (binding
-k, k+1, …) and runs. G6 (docs/tasks/task-gpu-paths-2026-09.md) widened this from a single trailing
+k, k+1, …) and runs. G6 (docs/completed/task-gpu-paths-2026-09.md) widened this from a single trailing
 uniform to a slice: attnI8ShaderWGSL now carries TWO (the shared geometry P, and the
 genuinely-per-layer HS attention-sink flag — see attnShaderWGSL's own comment for why they
 can't be merged into one).
@@ -2687,7 +2687,7 @@ concentrate at SMALL f32 top1–top2 margins; harmful ⇒ at LARGE margins (f32 
 Moved from `backend/webgpu/nemotron_moe_resident_test.go` (the comment above `TestNemotronMoEResidentParityWebGPU`) on 2026-10-09.
 
 ```text
-TestNemotronMoEResidentParityWebGPU is the G7 part 2 gate (docs/tasks/task-gpu-paths-2026-09.md):
+TestNemotronMoEResidentParityWebGPU is the G7 part 2 gate (docs/completed/task-gpu-paths-2026-09.md):
 Nemotron-H's fourth block kind (MoE FFN — routed NON-GATED relu² experts plus an always-on
 ungated shared expert of the same shape, NOT moeMLP's gated SwiGLU) against
 testdata/nemotron3nano-tiny, whose 6-layer block pattern (linear_attention, moe,
@@ -3071,7 +3071,7 @@ backend/cuda/prefill.go before applySoftcap, and that still ships at decoder/for
 decoder/model.go and backend/metal/model.go. Kept verbatim so the gate compares against the thing the
 other four siblings still do, not against a re-derivation of it. This is the WebGPU twin of
 backend/cuda/softcap_test.go — backend/webgpu/softcap.go is a byte-identical port of backend/cuda/softcap.go's
-applySoftcap (G6, docs/tasks/task-gpu-paths-2026-09.md), so this test is a direct port too.
+applySoftcap (G6, docs/completed/task-gpu-paths-2026-09.md), so this test is a direct port too.
 ```
 
 ## TestSpeculative_C03_concurrentResidentClaim
@@ -3651,7 +3651,7 @@ not a production read).
 Moved from `backend/webgpu/lora_resident_parity_test.go` (the comment at old line 17, reworded in place; the comment above `the code below` keeps the contract) on 2026-10-09.
 
 ```text
-TestLoRAResidentParityWebGPU is the G3 numeric gate (docs/tasks/task-gpu-paths-2026-09.md): compute-
+TestLoRAResidentParityWebGPU is the G3 numeric gate (docs/completed/task-gpu-paths-2026-09.md): compute-
 time LoRA applied on this backend's resident decode path must match the CPU reference (the
 same adapter applied via decoder's generic gatedMLP/causalAttention forward). Mirrors
 backend/metal/lora_resident_parity_test.go — same fixture (testdata/llama-tiny, GQA 4-heads/2-kv-heads

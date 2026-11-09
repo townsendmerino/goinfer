@@ -64,7 +64,7 @@ most of `docs/tasks/` were not in the audited snapshot; findings that lean on th
 - The rest are release and dependency bumps, test skips on memory-guard declines (`4223d381`) and R17's `-backend auto`
   (`5946e8f7`). None closes a finding. Every other finding stands as written.
 
-Outside the findings: Metal re-quantizes every int8 body weight to int4 (G10 in `docs/tasks/task-gpu-paths-2026-09.md`,
+Outside the findings: Metal re-quantizes every int8 body weight to int4 (G10 in `docs/completed/task-gpu-paths-2026-09.md`,
 labelled since M-25). Running those weights natively is planned in `docs/tasks/task-metal-int8-2026-10.md`.
 
 The order §10's items run in, under the run-budget rules and this Mac's limits, is `docs/completed/task-metal-audit-2026-10.md`.

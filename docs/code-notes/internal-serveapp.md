@@ -408,7 +408,7 @@ applied only through the session binding (sessionLRU.bindAdapter → Session.Use
 cache's lora), and the stateless Generate/GenerateNgram… run on a fresh cache with lora == nil,
 so they'd silently return BASE-model output. Route adapter requests down the session path below
 instead; base models keep the resident fast path here (audit R-01). Since G3
-(docs/tasks/task-gpu-paths-2026-09.md), the session path itself is NOT always staged/CPU for
+(docs/completed/task-gpu-paths-2026-09.md), the session path itself is NOT always staged/CPU for
 an adapter: generateInto's useGPU (decoder/model.go) admits prefillFrom==0 with a bound
 resident adapter onto the resident GPU path — a session's FIRST turn. A later turn on the
 same session (prefillFrom>0, continuing off the reused warm prefix) still drops to CPU;

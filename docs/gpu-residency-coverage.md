@@ -89,6 +89,10 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   on the same missing feature as Granite-4.0-H above, `FeatSSM` (`decoder/features.go:residentBackendFeatures`, webgpu
   only) — the Mamba-2 scan a CUDA/Metal port would need already exists on WebGPU
   (`backend/webgpu/mamba2.go`), so this is a port, not a new design.
+  > **Correction 2026-11-09:** Nemotron-H's dense layers are now resident on CUDA and Metal too (`docs/hardware-matrix.md`).
+  > Still open, handed here when `docs/completed/task-gpu-paths-2026-09.md` was archived: the Nemotron 3 Nano and Lightning
+  > MoE block (non-gated relu²) on CUDA and Metal, which `decoder/residency.go` declines as the Nemotron MoE runner shape
+  > (that doc's G7); and a WebGPU `HiddenLast` for resident embeddings (G4; Metal and CUDA have one).
 - **Gemma 4 dense** — resident on CUDA, Metal, and (as of 2026-09-17) WebGPU too: WebGPU's
   per-layer geometry seam (`backend/webgpu/residency.go`'s `ghd`/`gnKV`/`ghalf`/`gKEqV`, mirroring
   `backend/cuda/resident.go`'s `cudaLayer.hd/nKV` and `backend/metal/model.go`'s `residLayer.geom`), K=V
