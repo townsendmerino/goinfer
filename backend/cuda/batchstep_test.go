@@ -425,6 +425,7 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 // passes must launch fast kernels, and under a plant that runs the chunk on the exact kernels none, with the logits then
 // differing. The plant is read only where the fused attention runs (head dim 64 or 128): at llama-tiny's head dim 16 the only
 // fast kernel is the MMA GEMM, whose int32 group sums can equal the exact GEMV's bit for bit, so there the case is identity only.
+// Each step's head runs over the rows whose logits are read only: the others' rows and the final pass's last chunk row.
 func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 	for _, c := range []struct {
 		path, kv string
@@ -514,11 +515,24 @@ func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 					ci := 2 * pass // the chunk's index: first, then third
 					seqs = slices.Insert(seqs, ci, decoder.ResidentRaggedSeq{Slot: 0, Pos: pass * passRows, Embs: prompt[pass*passRows : (pass+1)*passRows],
 						Prefill: &decoder.ResidentRaggedPrefill{PromptLen: promptLen, Last: pass == 1}})
+					head0 := r.headRows
 					out, err := r.StepRagged(seqs)
 					if err != nil {
 						t.Fatalf("step %d pass %d: %v", n, pass, err)
 					}
 					fast = r.fastAttnLaunches + r.fastGemmLaunches - fast0 // the references below are decode and verify: exact
+					wantHead := 0                                          // the other sequences' rows, and the chunk's last on the final pass
+					for b, s := range seqs {
+						if b != ci {
+							wantHead += len(s.Embs)
+						}
+					}
+					if pass == 1 {
+						wantHead++
+					}
+					if got := r.headRows - head0; got != wantHead {
+						t.Fatalf("step %d pass %d: the head ran over %d rows, want %d: a chunk's unread rows are not headed", n, pass, got, wantHead)
+					}
 					for j, l := range out[ci].Logits {
 						if (l != nil) != (pass == 1 && j == passRows-1) {
 							t.Fatalf("step %d pass %d: the chunk's row %d has logits %v; only the final pass's last row has them", n, pass, j, l != nil)
