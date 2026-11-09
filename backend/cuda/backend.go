@@ -1857,6 +1857,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		for l := range r.layers {
 			r.layers[l].kvHalf = r.kvF16 && !r.layers[l].noKV() && !r.layers[l].kvShared
 			r.layers[l].kvI8 = r.kvI8 && !r.layers[l].noKV() && !r.layers[l].kvShared
+			if e := kvCheckDeclared(l, m.LayerBuffers(l), &r.layers[l]); e != nil {
+				return e
+			}
 		}
 		if r.kvI8 {
 			if e := r.loadKV8(); e != nil {

@@ -1,0 +1,73 @@
+=== RUN   TestMM5_cudaPoolsAreTheDeclaredRows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 256 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+    mm5_test.go:49: testdata/gemma4-moe-kv-tiny int4/kv-f16: the census builds it resident, this load did not: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32
+--- FAIL: TestMM5_cudaPoolsAreTheDeclaredRows (7.93s)
+=== RUN   TestMM5_cudaBuildRefusesADeclarationItsKernelsDoNotAddress
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    mm5_test.go:164: llama-tiny: K one element short: the build accepted it
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    mm5_test.go:164: llama-tiny: V with one head too many: the build accepted it
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    mm5_test.go:164: llama-tiny: K at f32: the build accepted it
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    mm5_test.go:164: llama-tiny: K windowed on a full layer: the build accepted it
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    mm5_test.go:164: llama-tiny: a row no pool has: the build accepted it
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    mm5_test.go:164: llama-tiny: K twice: the build accepted it
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+    mm5_test.go:164: llama-tiny: V missing: the build accepted it
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 128 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6939 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6939 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    mm5_test.go:164: deepseek-tiny: the latent at the KV precision: the build accepted it
+cuda: prefill width 2048 rows (6 MiB of scratch; 6939 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    mm5_test.go:164: deepseek-tiny: the latent one element short: the build accepted it
+cuda: prefill width 2048 rows (6 MiB of scratch; 6939 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6939 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6937 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    mm5_test.go:164: qwen35-tiny: a DeltaNet layer declaring K and V: the build accepted it
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6937 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+--- FAIL: TestMM5_cudaBuildRefusesADeclarationItsKernelsDoNotAddress (0.61s)
+FAIL
+ledger: 46 device(s) released in this run
