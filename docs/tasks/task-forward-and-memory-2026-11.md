@@ -21,7 +21,7 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| RF2 | active | RF2-1 (decode and verify rows of several sequences in one CUDA step) in its PR; its identity test runs on nobara before merge; then RF2-2, RF2-3 ("RF2: steps") | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below |
+| RF2 | open | registered below ("RF2: registration"), before any code; next: the CUDA `Step` with ragged attention through the block tables, on nobara | FA §5.4; "RF2: registration" below |
 | RF3 | blocked | RF2 | FA §5.4 |
 | RF4 | blocked | RF3 and KV5 | FA §7a |
 | RF5 | blocked | RF4; it also takes SB1's op-level interface | FA §7a; SS §8 "SB1" |
@@ -122,17 +122,6 @@ These lines replace the registration's where they differ.
   - one decode row each for two MC3 sequences;
   - a sequence with a decode row plus verify rows in the same step.
   Every row's logits must be bit-identical to the same row in its own shape. The Question is not narrowed.
-
-### RF2: steps (2026-11-08)
-
-Each step is a PR from `origin/main` that builds and passes alone. No step before RF2-3 changes the path an existing shape
-takes (a decode token, a verify and MC3's step keep today's calls), so the speed gate reads once, on RF2-3's build.
-
-| id | what | gates |
-|---|---|---|
-| RF2-1 | `ResidentRaggedStepper` (`decoder/residency.go`) and step's `passRagged`; CUDA's `StepRagged`: decode rows and verify rows of several sequences in one pass of prefillCore's multi-sequence mode, each row in the exact class at its own slot and position | `TestCUDAStepRagged_rowsMatchTheirShapes` on nobara (batch invariance for decode, drawn decode and verify at k = 2 and 4; both plants red); decoder's step tests; tier 0 |
-| RF2-2 | a prefill chunk's rows in the same step, in the class its own prefill takes (the fast kernels over its rows, the exact ones over the others) | the full mixed batch of addendum 1, bit-identical to each row's own shape; G-RF2-I's `cmd/gate identity` |
-| RF2-3 | one ragged attention launch over the block tables in place of the per-row decode gap; the solo shapes move onto `StepRagged` | G-RF2-I again; G-RF2-S and never-swap, by day on nobara; the kill |
 
 ## Conventions
 
