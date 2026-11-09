@@ -128,9 +128,10 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 
 // faEligible reports whether layer l can take the lane: a supported head dim, a GQA group of at most 8, and no
 // attention sink (gpt-oss folds the sink into the softmax max and denominator, which fa_combine does not). A model with an attention
-// softcap takes the lane's capped variant (decodeFACapPTX).
+// softcap takes it, in the capped variant (decodeFACapPTX), only when the load asked (faSoftcap): the lane's outputs differ from the
+// exact split-KV lane's, and no fidelity gate has read a capped model on it (docs/measurements/op1o2-fa-softcap-2026-11/README.md).
 func (r *cudaResident) faEligible(l int) bool {
-	if r.faSplit < 1 || r.faCombine == (Pipeline{}) {
+	if r.faSplit < 1 || r.faCombine == (Pipeline{}) || (r.attnCap != 0 && !r.faSoftcap) {
 		return false
 	}
 	Ly := &r.layers[l]

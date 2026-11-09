@@ -192,7 +192,8 @@ func flashEndToEnd(t *testing.T, file string) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture at %s", path)
 	}
-	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	// FlashDecodeSoftcap: a capped model (Gemma 2) takes the lane only when asked; it is no-op on the others.
+	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", FlashDecodeSoftcap: true})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

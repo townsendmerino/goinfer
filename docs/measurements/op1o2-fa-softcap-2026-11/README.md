@@ -1,75 +1,87 @@
-# OP1-o2: the CUDA flash-decode lane with Gemma 2's attention softcap (nobara-sb01, 2026-11-08)
+# OP1-o2: the CUDA flash-decode lane with Gemma 2's attention softcap, opt-in (nobara-sb01, 2026-11-08)
 
 **What.** `docs/completed/task-forward-architecture-2026-10.md` §4.6a, "Owed, not in OP1": the flash-decode lane with the cap.
-- Until now a capped layer (Gemma 2's `attn_logit_softcapping`) was kept off the lane by `faEligible`, so Gemma 2 decoded at depth on
-  the exact split-KV lane.
-- **The change:** `decode_fa.cu` joins the modules built with `-DATTN_SOFTCAP`, as OP1 did for `glue`, `prefill_batched` and
-  `decode_splitkv`:
+- `decode_fa.cu` joins the modules built with `-DATTN_SOFTCAP`, as OP1 did for `glue`, `prefill_batched` and `decode_splitkv`.
   - Every `fa_partial*` kernel, the M=1 lane and the 24 multi-row verify kernels, takes `ATTN_CAP_PARAM` after its int8 scales, and
     both score sites call `attn_score(d, scale ATTN_CAP_ARG)`.
-  - The capped variants are `decode_fa_cap.ptx` and `decode_fa_kv16_cap.ptx`, built at the ambient NVRTC 12.9.86 like `decode_fa.ptx`.
-    There is no capped int8 build: `CUDAKVI8Decline` refuses every capped family first.
-  - A capped model's resident loads them through `attnPTX`, `withCap` appends the cap to both `fa_partial` launches, and `faEligible`
-    no longer declines a capped layer.
-- **How the bars were set.** The gates below were written alongside the code, not registered before it. The coordinator's brief was
-  "build plus correctness tests". Their bars are the lane's existing ones, not new choices: the f64-oracle bound of
-  `TestFlashDecodeVsF64` (1e-4 of the largest output), the verify lane's bit identity (`TestFlashDecodeRowsBitIdentical`), and
-  `TestFlashDecodeEndToEnd`'s wiring criterion.
+  - The variants are `decode_fa_cap.ptx` and `decode_fa_kv16_cap.ptx`, built at the ambient NVRTC 12.9.86 like `decode_fa.ptx`. There
+    is no capped int8 build: `CUDAKVI8Decline` refuses every capped family first.
+- A capped model's resident loads them through `attnPTX`, and `withCap` appends the cap to both `fa_partial` launches.
+- **Off by default.** A capped layer takes the lane only when the load sets `decoder.Options.FlashDecodeSoftcap`, read through
+  `Model.FlashDecodeSoftcap()` (no environment read, no CLI flag). Without it, Gemma 2 decodes on the exact split-KV lane as before.
+  - The default stays off because the lane's outputs differ from the exact lane's: on Gemma 2 2B, 24 of 24 steps differ and the argmax
+    moves on 3 to 6 of 24. The end-to-end read below is a wiring criterion, not a fidelity gate.
+  - Making the lane the default for capped models needs the fidelity gate registered below, and Francis's call. This follows the
+    coordinator's hold on #806, from Gemini's review.
+- **How the bars were set.** The correctness gates below were written alongside the code, not registered before it. The coordinator's
+  brief was "build plus correctness tests", and their bars are the lane's and G2-K's existing ones.
 
-## Gates and readings (tier 0 and one tier-1 correctness read; card tests under the shared timing lock)
+## Correctness gates and readings (card tests under the shared timing lock; nothing timed)
 
-- **G2-I, the plain modules unchanged.** Before any edit, `decode_fa.ptx`, `decode_fa_kv16.ptx` and `decode_fa_kv8.ptx` were rebuilt from
-  the unchanged source and came back byte for byte. After the edit they come back byte for byte again: in the plain build both macros
-  are empty. An uncapped model's lane is therefore the same PTX it was.
-- **The capped lane against a capped f64 oracle** (`TestGemma2Softcap_flashDecodeVsF64`, gemma2-tiny's resident, cap 5).
-  - **Setup:** the lane is driven on synthetic K/V at head dimensions 64, 128 and 256, the lane's (the fixture's 32 is not one), at 1 to
-    1,000 keys, two window starts and split counts 1, 4 and 16.
-  - **Result:** 90 cases, worst 4.64e-7 of the largest output against the 1e-4 bound, and two runs bit-identical each time.
-  - **Control:** the scores are drawn at a few times the cap. In 72 of the 90 cases the cap moves the output by over 1 %, and in all 72
-    the lane with its cap lifted to 1e30 is red against the capped oracle.
-  - **Verify lane:** 104 rows of multi-row launches equal the M=1 capped lane bit for bit.
-  - **Instrument note:** the lane's partial buffer is sized at load for the fixture's head dimension, so the test re-sizes it (test
-    line) for the 256-wide, 16-split, full-batch geometry it drives. Without that, the first run wrote past it and the context faulted
-    (`CUDA_ERROR_ILLEGAL_INSTRUCTION`).
-- **G2-L, the lane selectors** (`TestGemma2Softcap_lanesCUDA`, updated): a capped layer is now eligible for the lane, on
-  `decode_fa_cap`. The fused prefill kernels, the image prefill and the drafter still refuse it by name, and the uncapped control
-  still sees both lanes.
-- **The plant, in the kernel source:** the multi-row kernel's score site without the cap. After a rebuild, the verify-lane bit identity
-  is red ("S=4 n0=1 M=3 row 1 elem 0: multi-row -0.73821896, M=1 -0.73723036"; `plant-rows-uncapped.log`). Restored, both capped
-  variants rebuild to the same SHA-256.
-- **End to end on a real Gemma 2** (`TestFlashDecodeEndToEnd`, `gemma-2-2b-it-Q8_0.gguf` from `~/models` added to its list;
-  `e2e-gemma2-2b.log`, 17:49 to 17:50 PST, 36 s).
-  - **Setup:** a 2,048-deep teacher-forced decode, 24 steps, with the lane against the exact lane at four split counts. The lane
-    launched 2,496 times.
-  - **Result:** the lane's worst cosine is 0.9738, inside the accepted V-sum reduction-order family's 0.9600 on the same chaotic
-    synthetic input. This is the wiring criterion, not a fidelity gate.
-- **Unchanged around it:** the Gemma 2 parity and prefill bit-identity tests pass; CUDA's admission and memory censuses, with their
-  plants, pass; the PTX consistency and embed checks pass (67 modules); the kernel local-memory census passes; `TestKV16_exactInput*`
-  passes.
-- **Checks:** `touched.py` PASS (16); staticcheck 0.8.1 is clean on `backend/cuda` at the cuda tags.
+- **G2-I, the plain modules unchanged.** `decode_fa.ptx`, `decode_fa_kv16.ptx` and `decode_fa_kv8.ptx` were rebuilt from the unchanged
+  source first, and come back byte for byte before and after the edit: in the plain build both macros are empty.
+  - G1-K, `TestAttnKernelDigests` (`backend/cuda/kernels`): 2,064 digests equal base's on this card and driver (595.112.07).
+- **G2-K for the lane** (`TestAttnSoftcap_flashDecodeAgainstFloat64`, `backend/cuda/kernels`, beside OP1's three kernels).
+  - **Coverage:** `fa_partial_{64,128,256}` with `fa_combine`, and every `fa_partial_rows_{hd}_g{G}` the matrix reaches with
+    `fa_combine_rows`, from both capped modules (f32 and f16 KV), against the float64 reference, on inputs where the cap acts.
+  - **Matrix:** caps 50 and 2; head dimensions 64, 128 and 256; G = 1, 2, 4 and 8; windows 0 and 100; peaked and not; 4 and 16 splits at
+    one query; verify batches of 1, 5 and 16 rows at 16 splits.
+  - **Result:** 1,344 cases (4,224 verify rows) inside G2-K's bar (cosine ≥ 0.9999, max abs ≤ 1e-2), none void.
+  - **Plant:** the kernels handed a lifted cap (1e30) put 4,992 of 4,992 comparisons outside the bar, 2,496 at each KV type
+    (`g2k-plant-cap-lifted.log.gz`; the gate run is `g2k-flash-decode.log`, the digests `g1k-digests.log`).
+- **The resident path** (`TestGemma2Softcap_flashDecodeVsF64`, gemma2-tiny loaded with `FlashDecodeSoftcap`).
+  - The opt-in reaches the resident, and its lane loads `decode_fa_cap`.
+  - Through the resident's own launch path it matches a capped f64 oracle: 90 cases, worst 4.6e-7 of the largest output, bound 1e-4.
+  - Lifting the cap reddens all 72 cases it moves, and 104 verify rows equal the M=1 lane bit for bit.
+- **G2-L, the lane selectors** (`TestGemma2Softcap_lanesCUDA`): a capped layer on a default load is not eligible for the lane; opted in, it
+  is eligible on `decode_fa_cap`. The fused prefill kernels, the image prefill and the drafter refuse it either way, and the uncapped
+  control sees both lanes.
+- **A kernel-source plant:** the rows kernel's score without the cap turns the verify bit identity red
+  (`plant-rows-uncapped.log`). Restored, both variants rebuild to the same SHA-256.
+- **End to end on a real Gemma 2** (`TestFlashDecodeEndToEnd`, `gemma-2-2b-it-Q8_0.gguf` from `~/models`, opted in; `e2e-gemma2-2b.log`).
+  - 2,496 lane launches.
+  - The worst cosine against the exact lane is 0.9738, inside the accepted V-sum reduction-order family's 0.9600: the wiring
+    criterion holds.
+- **Unchanged around it:** the Gemma 2 parity and prefill bit-identity tests; CUDA's admission and memory censuses; the PTX consistency
+  and embed checks; the local-memory census; `TestKV16_exactInput*`.
+- **Registries:**
+  - The option grid gains `FlashDecodeSoftcap` (`docs/option-state-grid.md`, regenerated).
+  - The resolve and serve options goldens gain its `false` key, and nothing else moved.
 
-## Owed: the timed cell (by day; nothing timed ran tonight)
+## The fidelity gate, registered before any run (by day; not run tonight)
 
-Merging this changes what Gemma 2 runs on CUDA. The lane is default-on from 2,048 keys (`flashDecodeDefaultMinKeys`), so a Gemma 2
-decode past 2,048 keys moves from the exact split-KV lane to the capped flash-decode lane. No timed read of that exists yet.
+| | |
+|---|---|
+| **Question** | Does Gemma 2 on the capped flash-decode lane decode as well as on the exact split-KV lane, both scored against the CPU reference? |
+| **Instrument** | `TestFlashDecodeGateVsReference` (`backend/cuda`), the lane's registered gate, with its new `G22B` cell: `~/models/gemma-2-2b-it` (local NVMe), int4, `FlashDecodeSoftcap` on so the lane arm takes the lane, K = 3,900, held-out set B. Preconditions 1 to 3 as registered: the lane arm launched the lane, A/A determinism, the prefill seed row identical across arms. |
+| **Reference** | Phase A: `TestPrefillGateReference`'s new `G22B` row, CPU f32 from the same directory, K = 3,900, into `~/goinfer-logs/prefill-ref-b/G22B-K3900-p*.bin`. |
+| **Rule** | `docs/measurements/attn-decode-fa-fidelity-PREREGISTERED.md`'s criteria, unchanged: (a) hard flips ≤ exact + 2√exact; (b) paired agreement ≥ exact − 1.0 pt and lane ≥ exact on at least half the prompts; (c) mean KL ≤ 1.10 × exact's. AMBIGUOUS, PARKED: (b) within its last 0.2 pt, or (c) in 1.05 to 1.10 ×. |
+| **Outcome** | PASS: the evidence Francis needs to decide whether capped models take the lane by default; this does not flip the default itself. FAIL: the lane stays opt-in, and the record names the failing criterion. |
+| **Limit** | Gemma 2's window is 4,096, so K = 3,900 does not cross it. The windowed lane is held by G2-K at window 100, not by this gate. |
+| **Fit** | The 2B at int4 with a 4,028-position cache; checked first by serve's own banner. |
 
-**The cell, registered now, before any timed data:**
-- **Arms:** a goinfer-vs-goinfer two-arm A/B (TE5(a)). `goinfer` is a serve built at this branch's head; `goinfer_old` is one built at
-  its merge-base with `main`, where the capped lane is off.
-- **Model:** `gemma-2-2b-it-Q8_0.gguf` from `~/models`. `bench_peer.py` has no Gemma 2 key yet; one line adds `"gemma2-2b"` to
-  `MODELS`.
-- **Shape:** depths 128 and 2,048; `BENCH_RUNS=2`; two passes with the arm order reversed (A B B A); the timing lock, and the void rule
-  per cell.
+**Commands** (in an OP1-o2 worktree, binaries built once from it; references first):
+
+```sh
+GOINFER_HEAVY_TESTS=1 GOINFER_PREFILL_GATE_PROMPTS=b GOINFER_CPU_REF_MODELS=G22B GOINFER_CPU_REF_KS=3900 \
+  python3 scripts/timing_lock.py run --shared --label op1o2-refs -- <decoder.test> -test.run '^TestPrefillGateReference$' -test.v -test.timeout 3h
+GOINFER_HEAVY_TESTS=1 GOINFER_PREFILL_GATE_PROMPTS=b GOINFER_CUDA_FLASH_DECODE=16 GOINFER_FA_GATE_CELLS=G22B:3900 \
+  python3 scripts/timing_lock.py run --label op1o2-fidelity -- <cuda.test> -test.run '^TestFlashDecodeGateVsReference$' -test.v -test.timeout 2h
+```
+
+**Wall time:** the reference is about 40 to 60 min of CPU. The 1.5B took about 9.5 min a prompt at K = 3,900, computed in parallel;
+the 2B has more layers and a 256k vocabulary. The gate itself is about 10 min. In all, 50 to 70 min, by day. The reference is
+resumable and content-keyed, so an interrupted run keeps what it wrote.
+
+## The timed cell (by day; after the fidelity gate, only if it passes)
+
+A two-arm A/B (TE5(a)) of Gemma 2 2B decode on CUDA: `goinfer` is the opted-in lane and `goinfer_old` is the default exact lane. One
+serve binary at this branch's head serves both arms, with the opt-in on one arm only; that needs a load flag for the option, which is not
+built.
+- **Shape:** depths 128 and 2,048; `BENCH_RUNS=2`; two passes in reversed arm order; the timing lock and the void rule per cell.
 - **Rule:**
-  - **SHIP:** the paired median new/old decode tok/s is ≥ 1.02 at depth 2,048 and ≥ 0.98 at depth 128.
-  - **REGRESSION:** under 0.98 at depth 2,048. The lane is then kept off capped layers again, by `faEligible`, until a fix.
-  - **Between:** parked, to Francis with the numbers.
-- **Command** (after the key is added):
-
-  ```sh
-  GOINFER_SERVE_CUDA=<new serve> GOINFER_SERVE_CUDA_OLD=<old serve> BENCH_BACKENDS=cuda BENCH_ENGINES=goinfer,goinfer_old \
-    BENCH_MODELS=gemma2-2b BENCH_DEPTHS=128,2048 BENCH_RUNS=2 python3 scripts/bench_peer.py <out>.json
-  ```
-
-  Then the same with `BENCH_ENGINES=goinfer_old,goinfer`.
-- **Wall time:** 2 arms × 2 depths × 2 runs × 2 passes, about 1 min a cell for a 2B at these depths: about 15 min, plus idle-gate waits.
+  - **SHIP:** the paired median ≥ 1.02 at depth 2,048 and ≥ 0.98 at depth 128.
+  - **REGRESSION:** under 0.98 at depth 2,048.
+  - **Between:** parked.
+- **Wall time:** about 15 min plus idle-gate waits.
+- `bench_peer.py` needs a `gemma2-2b` key.

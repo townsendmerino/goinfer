@@ -28,6 +28,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 | `CPUBatchDecode` | n/a | n/a | tested: `TestEnableCPUBatch_policy` | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestOptionPath_sessionSnapshot` |
 | `EmbedInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | declined at `int8BufOn` (`TestOptionPathMetal_embedInt4Declines`) | declined at `int8BufOn` (`TestOptionPathMetal_embedInt4Declines`) | tested: `TestOptionPath_specVerify` | n/a |
 | `ExactPrefill` | n/a | tested: `TestOptionPath_cpuBatchedPrefill` | n/a | n/a | tested: `TestOptionPathMetal_exactPrefill` | tested: `TestOptionPath_specVerify` | n/a |
+| `FlashDecodeSoftcap` | n/a | n/a | n/a | tested: `TestGemma2Softcap_lanesCUDA` | n/a | tested: `TestGemma2Softcap_lanesCUDA` | n/a |
 | `KVDemote` | n/a | n/a | n/a | n/a | tested: `TestKV7_demoteAndPromote` | n/a | n/a |
 | `KVHostBytes` | n/a | n/a | n/a | n/a | tested: `TestKV7_optionKVHostBytes_resident` | n/a | n/a |
 | `KVPrecision` | n/a | n/a | n/a | tested: `TestOptionPathMetal_kvPrecision`; CUDA f16 tested: `TestKV16_everyAttentionPathStaysCloseToF32`; CUDA i8 tested: `TestKV8_G2exact_readersMatchTheCPUOnOneCache` | tested: `TestPrefill_int8KVOnThePass`; CUDA f16 tested: `TestKV16_everyAttentionPathStaysCloseToF32`; CUDA i8 tested: `TestKV8_G2exact_readersMatchTheCPUOnOneCache` | tested: `TestOptionPathMetal_kvPrecision`; CUDA i8 tested: `TestKV8_verifyIsSequentialDecode` | tested: `TestOptionPathMetal_kvPrecision`; CUDA f16 tested: `TestKV7_restoreFull`; CUDA i8 tested: `TestKV7_restoreFull` |
@@ -59,6 +60,9 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `EmbedInt4`: a weight format; the session's cache does not depend on it
 - `ExactPrefill`: selects how a prompt is ingested; decode is one token
 - `ExactPrefill`: selects prefill numerics; a session's reuse rules do not depend on them
+- `FlashDecodeSoftcap`: a CUDA flash-decode lane option; the CPU has no flash-decode lane
+- `FlashDecodeSoftcap`: the flash-decode lane serves decode and verify rows; a prompt's prefill keeps its kernels
+- `FlashDecodeSoftcap`: it changes which kernel attends a decode row; a session's prefix, KV and snapshot are the same
 - `KVDemote`: a released slot is a GPU resident's; the CPU path keeps its own session LRU
 - `KVDemote`: rows are promoted as a request takes its slot, before the prefill; decode extends the slot's own rows
 - `KVDemote`: promotion acts as a request takes its slot, before any speculative step

@@ -1,0 +1,6 @@
+=== RUN   TestAttnKernelDigests_tableCoversTheSource
+--- PASS: TestAttnKernelDigests_tableCoversTheSource (0.00s)
+=== RUN   TestAttnKernelDigests
+    attn_digest_test.go:532: 2064 digests equal base's on {Device:NVIDIA GeForce RTX 2070 SUPER Compute:7.5 DriverAPI:13020 NvidiaModule:595.112.07}
+--- PASS: TestAttnKernelDigests (21.68s)
+PASS

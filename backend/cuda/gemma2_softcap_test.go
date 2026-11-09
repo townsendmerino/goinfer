@@ -146,11 +146,11 @@ func TestGemma2Softcap_prefillBitIdentical(t *testing.T) {
 	}
 }
 
-// TestGemma2Softcap_lanesCUDA is G2-L: the lane selectors keep a capped layer off every kernel that has no cap, and let it onto the
-// flash-decode lane, whose capped variant the resident loads (decode_fa_cap; OP1-o2). The tiny fixtures have head dimension 32, which
-// flash-decode and the fused kernels never serve, so each selector is asked at a head dimension it does serve, with the resident's own
-// state set up as a served one would be: with the cap off both say yes (the control: the test can see the lanes), with the cap on the
-// flash-decode selector still says yes and the fused-prefill one no.
+// TestGemma2Softcap_lanesCUDA is G2-L: the lane selectors keep a capped layer off every kernel that has no cap, and off the flash-decode
+// lane unless the load asked for it (decoder.Options.FlashDecodeSoftcap; OP1-o2), when it takes the capped variant (decode_fa_cap). The
+// tiny fixtures have head dimension 32, which flash-decode and the fused kernels never serve, so each selector is asked at a head dimension
+// it does serve, with the resident's own state set up as a served one would be: with the cap off both say yes (the control: the test can
+// see the lanes); with the cap on, the default load's flash-decode selector says no, the opted-in one yes, and the fused-prefill one no.
 func TestGemma2Softcap_lanesCUDA(t *testing.T) {
 	requireCUDADevice(t)
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16") // the test binary turns the lane off by default; this turns it on so the control can see it
@@ -180,9 +180,17 @@ func TestGemma2Softcap_lanesCUDA(t *testing.T) {
 		t.Fatalf("VOID control: with no cap the flash-decode selector says %v and the fused-prefill selector %v; both should say yes at hd 64", fa(), fused())
 	}
 	rf.attnCap = capV
-	if !fa() || rf.faModule != "decode_fa_cap" {
-		t.Errorf("a capped layer: flash-decode eligible %v on module %q; want eligible on decode_fa_cap (its verify rows ask the same question)", fa(), rf.faModule)
+	if rf.faSoftcap {
+		t.Fatal("a default load opted a capped model into the flash-decode lane")
 	}
+	if fa() {
+		t.Error("a capped layer on a default load is eligible for the flash-decode lane: the exact split-KV lane is the default (its verify rows ask the same question)")
+	}
+	rf.faSoftcap = true // what decoder.Options.FlashDecodeSoftcap sets; TestGemma2Softcap_flashDecodeVsF64 reads it through a load
+	if !fa() || rf.faModule != "decode_fa_cap" {
+		t.Errorf("a capped layer, opted in: flash-decode eligible %v on module %q; want eligible on decode_fa_cap", fa(), rf.faModule)
+	}
+	rf.faSoftcap = false
 	if fused() {
 		t.Error("a capped layer takes the fused prefill kernels")
 	}
@@ -228,8 +236,10 @@ func flashRefCap(q, k, v []float32, nH, nKV, hd, winStart, nKeys int, scale, cap
 	return out
 }
 
-// TestGemma2Softcap_flashDecodeVsF64 is OP1-o2's correctness gate (docs/completed/task-forward-architecture-2026-10.md §4.6a, "Owed,
-// not in OP1"): a capped model's resident loads the flash-decode lane's capped variant (decode_fa_cap), and that lane, driven on
+// TestGemma2Softcap_flashDecodeVsF64 is OP1-o2's resident-level check (docs/completed/task-forward-architecture-2026-10.md §4.6a, "Owed,
+// not in OP1"; the kernel gate at both KV types is the kernels package's TestAttnSoftcap_flashDecodeAgainstFloat64): a capped model
+// loaded with decoder.Options.FlashDecodeSoftcap carries the opt-in to its resident and loads the lane's capped variant (decode_fa_cap), and
+// that lane, through the resident's own launch path, driven on
 // synthetic K/V at head dimensions 64, 128 and 256 (the lane's), matches an f64 oracle that caps every score, within the uncapped lane's
 // bound (TestFlashDecodeVsF64: 1e-4 of the largest output), at several key counts, window starts and split counts, deterministically.
 // Scores are drawn large enough that the fixture's cap (5) bends most of them, and the control requires it: on most cases the uncapped
@@ -238,7 +248,7 @@ func flashRefCap(q, k, v []float32, nH, nKV, hd, winStart, nKeys int, scale, cap
 func TestGemma2Softcap_flashDecodeVsF64(t *testing.T) {
 	requireCUDADevice(t)
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16")
-	m, err := decoder.Load(filepath.Join("../../testdata/gemma2-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
+	m, err := decoder.Load(filepath.Join("../../testdata/gemma2-tiny"), decoder.Options{Backend: "cuda", Quant: "int4", FlashDecodeSoftcap: true})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -246,6 +256,9 @@ func TestGemma2Softcap_flashDecodeVsF64(t *testing.T) {
 	rf, ok := m.ResidentForwardForTest().(*cudaResident)
 	if !ok {
 		t.Fatalf("not resident: %s", m.ResidentDecline())
+	}
+	if !rf.faSoftcap {
+		t.Fatal("decoder.Options.FlashDecodeSoftcap did not reach the resident")
 	}
 	capV := rf.attnCap
 	if capV == 0 || rf.faModule != "decode_fa_cap" || rf.faCombine == (Pipeline{}) || rf.faCombineRows == (Pipeline{}) {
