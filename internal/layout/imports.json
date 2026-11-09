@@ -259,6 +259,7 @@
       "multimodal"
     ],
     "chat": [
+      "constrain",
       "tokenizer"
     ],
     "cmd/gate": [
