@@ -20,6 +20,7 @@ package chat
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -152,6 +153,28 @@ func chatMLBOS(t string, has func(string) bool) string {
 
 // Stops returns the turn-stop marker strings for this family.
 func (t *Template) Stops() Stops { return Stops{Strings: append([]string(nil), t.stops...)} }
+
+// StopIDs is the token ids that end a generation of this template on tok, for decoder.SamplingParams.StopIDs and
+// constrain.NewMasker: tok's end-of-sequence and end-of-turn ids where it has them, then each of Stops' strings that is a
+// single token in tok's vocabulary, each id once and in that order. A stop string that is not one token contributes
+// nothing here; match it as text.
+func (t *Template) StopIDs(tok *tokenizer.Tokenizer) []int {
+	var ids []int
+	add := func(id int) {
+		if id >= 0 && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	sp := tok.Special()
+	add(sp.EOS)
+	add(sp.EndOfTurn)
+	for _, s := range t.stops {
+		if id, ok := tok.TokenID(s); ok {
+			add(id)
+		}
+	}
+	return ids
+}
 
 // Meta is what Detect inspects: the model's chat-template string (from
 // GGUF/HF tokenizer metadata, possibly empty) and a vocab-membership probe used
