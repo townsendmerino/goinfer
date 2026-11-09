@@ -187,8 +187,10 @@ type residLayer struct {
 	// ffn is whether a feed-forward block follows the mixer (decoder.Model.ResidentLayerOps); false on Nemotron-H's
 	// Mamba and attention blocks.
 	ffn bool
-	// steps is the layer's per-token body, in order (buildLayerSteps).
-	steps []layerStep
+	// steps is the layer's per-token body, in order (buildLayerSteps), and stepOps each step's operations in the program, which the
+	// mixer steps' walk emits (resident.encodeMixerWalk).
+	steps   []layerStep
+	stepOps [][]program.Op
 }
 
 // recurrent reports whether the layer's mixer keeps per-sequence state instead of a KV cache: every path that cannot
@@ -3062,7 +3064,7 @@ func (r *resident) encodeLayerWith(e *Encoder, l int, uPos, uNKeys, uQTempScale 
 }
 
 // encodeLayerResidualWith encodes one decoder layer into e with parameterized residual buffer x and uniforms: the layer's steps
-// (buildLayerSteps), in order.
+// (buildLayerSteps), in order, a mixer step the walk covers by its operations (resident.encodeMixerWalk).
 func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uNKeys, uQTempScale Buffer, uRopePos ...Buffer) {
 	rp := uPos
 	if len(uRopePos) > 0 && uRopePos[0] != (Buffer{}) {
@@ -3070,7 +3072,11 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 	}
 	L := &r.layers[l]
 	r.encLayer = l
-	for _, st := range L.steps {
+	for i, st := range L.steps {
+		if mixerWalks(st) && !mixerWalkBlocksForTest {
+			r.encodeMixerWalk(e, l, L, L.stepOps[i], x, uPos, uNKeys, rp)
+			continue
+		}
 		r.encodeStep(e, st, l, L, x, uPos, uNKeys, uQTempScale, rp)
 	}
 }
