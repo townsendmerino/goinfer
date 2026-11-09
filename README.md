@@ -55,7 +55,8 @@ It works from any JSON Schema too (`constrain.JSONSchema(bytes)`), and from the 
 
 Supported subset: objects (required and optional, `additionalProperties:false`), arrays
 (`items`/`minItems`/`maxItems`), `string`/`number`/`integer`/`boolean`/`null`, `enum`/`const`,
-and arbitrary nesting. A property-based test asserts that every constrained generation validates
+a string's `format` for `date`, `time`, `date-time`, `uuid`, `ipv4` and `email`, and arbitrary
+nesting. A property-based test asserts that every constrained generation validates
 against its schema.
 
 **Tool calls get the same treatment.** On the Qwen families (Qwen2 through Qwen3.8),

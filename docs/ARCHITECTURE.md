@@ -1103,7 +1103,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `backend/webgpu/cmd/chat` | `backend/webgpu`, `internal/app/chatapp` |  |
 | `backend/webgpu/cmd/serve` | `backend/webgpu`, `internal/app/serveapp` |  |
 | `backend/webgpu/internal/kernels` | `internal/cost`, `internal/runtime/adapter`, `internal/runtime/mem`, `internal/vision`, `multimodal` | `internal/runtime/hybridattn`, `internal/runtime/sampling` |
-| `chat` | `tokenizer` | `internal/codec`, `multimodal` |
+| `chat` | `constrain`, `tokenizer` | `internal/codec`, `multimodal` |
 | `cmd/gate` | `internal/guard/paritykey`, `internal/runtime/mem/probe`, `tokenizer` |  |
 | `cmd/hostmem` | `internal/runtime/mem/probe` |  |
 | `cmd/prequant` | `decoder`, `internal/runtime/prequant` |  |
