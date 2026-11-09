@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job (Mac): Gate 2 of docs/tasks/task-embeddinggemma2.md, pre-registered there ("Gate 2: pre-registered
+# Night job (Mac): Gate 2 of docs/completed/task-embeddinggemma2.md, pre-registered there ("Gate 2: pre-registered
 # 2026-10-06, before it runs") in the commit this job is pinned to. (1) The sentence-transformers reference on the real
 # google/embeddinggemma-2 (48 parity texts, and the Matryoshka truncation reading over the repo's own docs at REV),
 # (2) goinfer's TestReal_parity against it. CPU, float32, both sides. Not a timed measurement: no throughput figure.
@@ -9,7 +9,7 @@
 # torchvision 0.29.1. The checkpoint is ~/models/embeddinggemma-2 (revision 914f7f89, sha256 197a3296...), local disk.
 # Queued with:
 #   python3 scripts/night.py add embeddinggemma2-gate2 --est 30 --by "Claude (Mac session), EmbeddingGemma 2 Gate 2" \
-#     --doc docs/tasks/task-embeddinggemma2.md -- bash docs/measurements/embeddinggemma2-2026-10-06/run-gate2.sh
+#     --doc docs/completed/task-embeddinggemma2.md -- bash docs/measurements/embeddinggemma2-2026-10-06/run-gate2.sh
 set -uo pipefail
 REV=2ec0cdc9
 B=$HOME/goinfer-bench/embeddinggemma2-2026-10-06

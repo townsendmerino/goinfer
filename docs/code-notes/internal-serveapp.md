@@ -738,7 +738,7 @@ never the thing truncation drops — it must stay last, because it is the pooled
 Moved from `internal/app/serveapp/embeddings.go` (the comment above `embedTask`) on 2026-10-09.
 
 ```text
-embedTask picks the prompt a taskEmbedder applies (docs/tasks/task-embeddinggemma2.md, Gate 3, owner decision
+embedTask picks the prompt a taskEmbedder applies (docs/completed/task-embeddinggemma2.md, Gate 3, owner decision
 2026-10-06): an explicit task names one of the model's prompts ("none" for none); else input_type maps onto the
 model's own "query" and "document" prompts; else no prompt, which is what sentence-transformers applies by default,
 so a client that knows nothing about prompts gets the reference's own output.
@@ -3341,7 +3341,7 @@ options() path serve uses for every --model entry (D6b, owner decision 2026-10-0
 Moved from `internal/app/serveapp/embeddinggemma2_embedder_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
-TestEmbeddings_taskPromptChoice is Gate 3's prompt rule (docs/tasks/task-embeddinggemma2.md, owner decision
+TestEmbeddings_taskPromptChoice is Gate 3's prompt rule (docs/completed/task-embeddinggemma2.md, owner decision
 2026-10-06): with no task and no input_type the model gets no prompt (sentence-transformers' own default); input_type
 maps onto the model's query and document prompts; task names any of its prompts, and "none" means none. The prompt
 applied is echoed in goinfer_task and the X-Goinfer-Embedding-Task header.
