@@ -815,8 +815,8 @@ func Load(dir string, opts Options) (*Model, error) {
 			return nil, rerr
 		}
 		// A MoE load that decodes from its mapping on the CPU (no -stream-weights, no resident runner) pages its experts through
-		// the page cache, so it takes the paged load's working-set refusal (docs/tasks/task-fit-to-hardware.md, the decision of
-		// 2026-10-21) at the budget a pager would take here.
+		// the page cache, so it takes the paged load's working-set refusal (docs/tasks/task-fit-to-hardware.md, SLOW) at the
+		// budget a pager would take here.
 		if !opts.StreamWeights && w.arch.MoE != nil && !m.ResidentActive() {
 			if predicted, ok := mappedMoEWorkingSetPrediction(m, resolveWeightCacheBudget(opts.WeightCacheBytes)); ok {
 				logs.Infof("decoder: predicted mapped-MoE decode rate ~%.2f tok/s "+

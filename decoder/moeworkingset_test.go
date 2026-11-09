@@ -171,8 +171,8 @@ func int8GIWFixture(t *testing.T, ckpt string) string {
 }
 
 // skipUnlessExpertsPage skips when this platform's pages leave the .giw at path no pageable expert bytes: a pager keeps
-// only each tensor's page-aligned interior (mmap.PageAlignedInterior), and the tiny fixtures' 8 KB expert projections have
-// none on a 16 KB page (Apple silicon). A real checkpoint's experts are megabytes; this is a fixture-size fact.
+// only each tensor's page-aligned interior (mmap.PageAlignedInterior), and a tiny fixture's expert projections, smaller
+// than an Apple silicon page, have none there. A real checkpoint's experts span many pages; this is a fixture-size fact.
 func skipUnlessExpertsPage(t *testing.T, path string) {
 	t.Helper()
 	m, err := Load(path, Options{Backend: "cpu", AcceptSlowMoE: true})
