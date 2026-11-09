@@ -170,11 +170,27 @@ func int8GIWFixture(t *testing.T, ckpt string) string {
 	return giwPath
 }
 
+// skipUnlessExpertsPage skips when this platform's pages leave the .giw at path no pageable expert bytes: a pager keeps
+// only each tensor's page-aligned interior (mmap.PageAlignedInterior), and the tiny fixtures' 8 KB expert projections have
+// none on a 16 KB page (Apple silicon). A real checkpoint's experts are megabytes; this is a fixture-size fact.
+func skipUnlessExpertsPage(t *testing.T, path string) {
+	t.Helper()
+	m, err := Load(path, Options{Backend: "cpu", AcceptSlowMoE: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if total, _, _ := mappedExpertBytes(m.w, m.mmap); total == 0 {
+		t.Skipf("%d-byte pages leave %s's expert tensors no page-aligned interior to page", os.Getpagesize(), filepath.Base(path))
+	}
+}
+
 // TestLoad_mappedMoEWorkingSetRefusal: a MoE .giw loaded the default way (mapped, no -stream-weights) and decoded on the CPU
 // is held to the same working-set refusal as a paged one: below the floor it refuses and names --accept-slow, AcceptSlowMoE
 // loads it, a prediction above the floor loads it, and a dense .giw is never asked.
 func TestLoad_mappedMoEWorkingSetRefusal(t *testing.T) {
 	moe := int8GIWFixture(t, "../testdata/mixtral-tiny")
+	skipUnlessExpertsPage(t, moe)
 	dense := int8GIWFixture(t, "../testdata/llama-tiny")
 	t.Run("a prediction above the floor loads", func(t *testing.T) {
 		m, err := Load(moe, Options{Backend: "cpu"})
@@ -217,6 +233,7 @@ func TestLoad_mappedMoEWorkingSetRefusal(t *testing.T) {
 
 func TestLoad_moeWorkingSetGateWiring(t *testing.T) {
 	giwPath := int8GIWFixture(t, "../testdata/mixtral-tiny")
+	skipUnlessExpertsPage(t, giwPath)
 
 	orig := moeSlowTokPerSecThreshold
 	moeSlowTokPerSecThreshold = 1e18 // absurdly high: even this fixture's fast prediction is "slow"
@@ -248,6 +265,7 @@ func TestLoad_moeWorkingSetGateWiring(t *testing.T) {
 // at the automatic one.
 func TestMappedMoEWorkingSet_isThePagersArithmetic(t *testing.T) {
 	path := int8GIWFixture(t, "../testdata/mixtral-tiny")
+	skipUnlessExpertsPage(t, path)
 	mapped, err := Load(path, Options{Backend: "cpu"})
 	if err != nil {
 		t.Fatal(err)
