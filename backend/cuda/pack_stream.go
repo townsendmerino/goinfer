@@ -4,9 +4,11 @@ package cuda
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -422,16 +424,23 @@ const packStackWorkers = 8
 // packWeight produces for it, at the offset packWeightStack puts it. An abort, a lost canonical payload or a malformed member is recorded as an upload
 // error and leaves the copy partly filled, which the failed build discards.
 func (r *cudaResident) packStackPinned(w *cudaWQ, h hostW) {
-	srcW, err := r.dev.NewMappedHostBufferOn(mem.LinePinnedExperts, h.nWpk*4)
-	if err != nil {
-		panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", h.nWpk*4, err))
+	var srcW, srcS *gpu.MappedHostBuffer
+	var err error
+	if r.unpinnedExperts {
+		if srcW, srcS, err = pageableStackSources(r.unpinnedDir, h.nWpk*4, h.nWs16*2); err != nil {
+			r.recordUpload(fmt.Errorf("cuda: --moe-experts-unpinned: %w", err))
+			return
+		}
+		r.pageableStacks++
+	} else {
+		if srcW, err = r.dev.NewMappedHostBufferOn(mem.LinePinnedExperts, h.nWpk*4); err != nil {
+			panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", h.nWpk*4, err))
+		}
+		if srcS, err = r.dev.NewMappedHostBufferOn(mem.LinePinnedExperts, h.nWs16*2); err != nil {
+			panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", h.nWs16*2, err))
+		}
 	}
-	w.srcW = srcW
-	srcS, err := r.dev.NewMappedHostBufferOn(mem.LinePinnedExperts, h.nWs16*2)
-	if err != nil {
-		panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", h.nWs16*2, err))
-	}
-	w.srcS = srcS
+	w.srcW, w.srcS = srcW, srcS
 	var dstW []uint32
 	var dstS []uint16
 	if h.nWpk > 0 {
@@ -473,6 +482,9 @@ func (r *cudaResident) packStackPinned(w *cudaWQ, h hostW) {
 		}()
 	}
 	wg.Wait()
+	if r.unpinnedExperts {
+		sealPageable(w.srcW.Bytes(), w.srcS.Bytes())
+	}
 	switch {
 	case aborted.Load():
 		r.recordUpload(fmt.Errorf("cuda: resident build aborted while packing an expert stack: %w", decoder.ErrLoadAborted))
@@ -480,3 +492,70 @@ func (r *cudaResident) packStackPinned(w *cudaWQ, h hostW) {
 		r.recordUpload(fmt.Errorf("cuda: an int4 expert lost its canonical bytes between planning and upload, or its payload is the wrong size"))
 	}
 }
+
+// pageableStackSources returns two shared file mappings of wBytes and sBytes under dir, writable for packStackPinned's fill, which then makes
+// them read-only (sealPageable). The files are unlinked once mapped, so their disk space goes with the mappings. A dir on tmpfs is refused:
+// its pages are shared memory, so the copy would still be held.
+func pageableStackSources(dir string, wBytes, sBytes int) (*gpu.MappedHostBuffer, *gpu.MappedHostBuffer, error) {
+	if dir == "" {
+		return nil, nil, fmt.Errorf("the model has no file path, so there is no directory to write the packed experts beside it")
+	}
+	var fs syscall.Statfs_t
+	if err := syscall.Statfs(dir, &fs); err != nil {
+		return nil, nil, fmt.Errorf("the packed-experts file's directory %s: %w", dir, err)
+	}
+	switch fs.Type {
+	case tmpfsMagic:
+		return nil, nil, fmt.Errorf("%s is tmpfs, whose pages are memory: the packed experts would still be held in RAM", dir)
+	case ramfsMagic:
+		return nil, nil, fmt.Errorf("%s is ramfs, whose pages are memory: the packed experts would still be held in RAM", dir)
+	}
+	one := func(n int) (*gpu.MappedHostBuffer, error) {
+		if n == 0 {
+			return gpu.NewPageableHostSource([]byte{}, nil), nil
+		}
+		f, err := os.CreateTemp(dir, "mem10-stack-*.bin")
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		defer os.Remove(f.Name())
+		// Reserve the blocks: a sparse file whose disk filled during packing would fault (SIGBUS) on a write instead of failing here.
+		if err := syscall.Fallocate(int(f.Fd()), 0, 0, int64(n)); err != nil {
+			return nil, fmt.Errorf("%s has no room for a %.2f GB packed-experts file: %w", dir, float64(n)/(1<<30), err)
+		}
+		m, err := syscall.Mmap(int(f.Fd()), 0, n, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+		if err != nil {
+			return nil, err
+		}
+		return gpu.NewPageableHostSource(m, func() { _ = syscall.Munmap(m) }), nil
+	}
+	w, err := one(wBytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	s, err := one(sBytes)
+	if err != nil {
+		_ = w.Close()
+		return nil, nil, err
+	}
+	return w, s, nil
+}
+
+// sealPageable writes packed pageable sources back to their file and makes them read-only: after packing nothing writes them, and once
+// clean their pages are reclaimable like any file page, so a build holds at most one stack's dirty pages at a time.
+func sealPageable(bs ...[]byte) {
+	for _, b := range bs {
+		if len(b) > 0 {
+			_, _, _ = syscall.Syscall(syscall.SYS_MSYNC, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)), msSync)
+			_ = syscall.Mprotect(b, syscall.PROT_READ)
+		}
+	}
+}
+
+// tmpfsMagic and ramfsMagic are statfs's f_type for tmpfs and ramfs (linux/magic.h); msSync is msync(2)'s MS_SYNC.
+const (
+	tmpfsMagic = 0x01021994
+	ramfsMagic = 0x858458f6
+	msSync     = 4
+)

@@ -692,3 +692,25 @@ func TestBanner_kvI8CostIsCUDAs(t *testing.T) {
 		}
 	}
 }
+
+// The "fit:" line prices the KV a resident holds: with two or more slots, the pool every slot's blocks take (the resident's own
+// account, decoder.Model.ResidentKVPool), not one conversation's cap, and the room left for a prefill is the budget less all of it.
+// A one-slot resident and the CPU path keep the one-cap figure.
+func TestBanner_fitLinePricesEveryResidentSlot(t *testing.T) {
+	const gib = float64(1 << 30)
+	f := bannerFacts{hasTemplate: true, resident: true, kvSlots: 2, ctxWindow: 2048, maxPositions: 4096, fitKnown: true, fitCtx: 2048,
+		fitKVBytes: 792 << 20, fitWeightBytes: 2680 << 20, fitBudgetBytes: 7884 << 20,
+		kvPoolDetail: decoder.KVPoolDetail{Positions: 4096, Guaranteed: 2048, BlockRows: 64, Precision: "f16", Bytes: 1560 << 20}}
+	line := func(f bannerFacts) string { return bannerLine(modelBannerFrom(f, config{}), "fit:") }
+
+	want := fmt.Sprintf("fit: 2 KV slots at a 2048-token cap hold %.1f GB KV (weights %.1f GB, budget %.1f GB, %.1f GB left for a request's own prefill)",
+		float64(1560<<20)/gib, float64(2680<<20)/gib, float64(7884<<20)/gib, float64((7884-1560)<<20)/gib)
+	if got := line(f); got != want {
+		t.Errorf("two resident slots:\n got %q\nwant %q", got, want)
+	}
+	one := f
+	one.kvSlots, one.kvPoolDetail.Positions, one.kvPoolDetail.Bytes = 1, 2048, 792<<20
+	if got := line(one); !strings.HasPrefix(got, "fit: 2048-token cap needs 0.8 GB KV (") {
+		t.Errorf("one resident slot: %q, want the cap's own figure", got)
+	}
+}

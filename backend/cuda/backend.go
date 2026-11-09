@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -818,10 +819,12 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		// C′: DMA the routed int4 experts host→VRAM slots per token (device read, correct). The
 		// path to running a model whose experts exceed VRAM. Off by default; byte-identical when off.
 		cacheExperts: m.MoECacheExperts(),
-		cacheProf:    os.Getenv("GOINFER_MOE_CACHE_PROF") != "",
-		dnet:         dnetP,
-		mamba:        mambaP,
-		isMLA:        mlaOK, mlaRank: kvLoRA, mlaLatDim: kvLoRA + qkRope,
+		// MoEExpertsUnpinned: the cache's slots upload from pageable pages of a packed-experts file beside the model, not a pinned copy.
+		unpinnedExperts: m.MoEExpertsUnpinned(), unpinnedDir: modelDir(m.SourcePath()),
+		cacheProf: os.Getenv("GOINFER_MOE_CACHE_PROF") != "",
+		dnet:      dnetP,
+		mamba:     mambaP,
+		isMLA:     mlaOK, mlaRank: kvLoRA, mlaLatDim: kvLoRA + qkRope,
 		mlaQKHead: qkNope + qkRope, mlaQKNope: qkNope, mlaQKRope: qkRope,
 		mlaVHead: vHead, mlaQLoRA: qLoRA, mlaInterleave: interleave,
 		mlaRopeScale:    float32(mlaRopeScale),
@@ -2259,4 +2262,16 @@ func cudaMixerOf(ops []program.Op) (mixer decoder.ResidentMixer, ffn, ok bool) {
 		return decoder.MixerMLA, ffn, true
 	}
 	return 0, ffn, false
+}
+
+// modelDir is where the packed-experts file goes for a model loaded from path: a checkpoint directory itself, a file's directory, or "" when
+// the model has no path, so the file is never written to the working directory by default.
+func modelDir(path string) string {
+	if path == "" {
+		return ""
+	}
+	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+		return path
+	}
+	return filepath.Dir(path)
 }

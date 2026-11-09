@@ -22,7 +22,7 @@ const ctxServeHelp = " — unless -require-backend is set, which refuses to star
 
 const backendHelp = "compute backend: auto | cpu | webgpu | cuda | metal (cgo-free native). " +
 	"auto (the default) uses the first GPU backend in this binary that finds its device, cuda then metal, else the CPU, " +
-	"and prints one line saying which; it never picks webgpu. metal is picked on Apple silicon only, and for int4 models only: " +
+	"and prints one line saying which; it never picks webgpu. metal is picked on Apple silicon only, and for int4 and q4k models: " +
 	"it re-quantizes other precisions to int4, so auto keeps those on the CPU (-backend metal runs them re-quantized). " +
 	"cuda/metal support both dense and MoE architectures resident. cuda needs `-tags cuda`; metal's own submodule " +
 	"entrypoints (goinfer/backend/metal/cmd/chat, goinfer/backend/metal/cmd/serve) are darwin-gated and need no build tag of their own. " +
@@ -39,8 +39,10 @@ const quantHelp = "  int4      W4A8 (int4 weights, int8 activations): fastest on
 	"            bytes/element against int8int8's ~1.02 -- more resident RAM, not less. THE DEFAULT anyway,\n" +
 	"            for speed, not for RAM.\n" +
 	"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n" +
-	"  q4k       EXPERIMENTAL (GGUF only, CPU only for now): the file's Q4_K tensors kept exactly as stored,\n" +
-	"            every other tensor int8, per-32 activations. int4's size with int8-class quality on Q4_K_M files.\n" +
+	"  q4k       GGUF only (CPU, CUDA and Metal): the file's Q4_K tensors kept exactly as stored, every other\n" +
+	"            tensor int8; per-32 int8 activations on the CPU and CUDA, none quantized on Metal. int4's size with\n" +
+	"            int8-class quality on Q4_K_M files. THE DEFAULT for a Phi-3 or Phi-4 .gguf on those backends,\n" +
+	"            whose activations per-vector int8 scales break.\n" +
 	"  int8int8  W8A8 (int8 weights + int8 activations, native SDOT): higher accuracy; on Apple Silicon and\n" +
 	"            non-VNNI amd64 it is actually the SMALLER option (see int4's note above), not larger.\n" +
 	"            Metal itself consumes int4 directly (no re-pack to int8int8 needed to run resident there).\n" +
@@ -88,3 +90,8 @@ const Gemma4StepHelp = "In serve, on with 2 or more KV sessions, the default inc
 // CPUExactPrefillHelp is --cpu-exact-prefill's usage text. The default it opts out of diverges from the exact
 // kernel, so the text discloses that trade; TestCPUExactPrefillDisclosesTheDefaultsTrade asserts it.
 const CPUExactPrefillHelp = "force BIT-EXACT prompt ingestion on the CPU backend: use the f64-accumulating attention kernel for prefill instead of the f32 one that is the DEFAULT (since 2026-08-31). The default is measured 2.28x faster prefill on an 8k prompt (dense 1.5B, M1 Pro: 602.9s to 264.6s — attention is ~70% of a long prefill and the f64 path is ~8x slower at those shapes) and NOT bit-identical: cosine 0.9976 against the exact kernel, stable across 256/1024/2048-token prompts, so a long-prompt response CAN differ from a build before the default changed, even at temperature 0. The default is FLOORED AT 512 PROMPT TOKENS (below that the exact kernel runs anyway: the win scales with prompt length, the divergence does not). Decode is unaffected, and speculative decoding's verify pass always uses the exact kernel. MoE models take the same f32 path as dense ones — the exclusion was measured and dropped in 66d0a05 — so this is the only way to get bit-exact prefill for them too. Use it when diffing outputs across versions, reproducing a bug report, or anything where 'same prompt, same tokens' matters more than time-to-first-token. CPU backend only — use --exact-prefill to disable fast prefill on all backends at once"
+
+const moeExpertsUnpinnedHelp = "with -moe-cache-experts on CUDA: upload the expert slots from pageable pages of a packed-experts file written beside the model " +
+	"(unlinked while mapped; not on tmpfs) instead of a pinned host copy. Saves that copy's host memory (about 12 GiB on Gemma 4 26B) and is slower " +
+	"by design: measured 0.82x decode at short context and 0.75x at long on the 26B (docs/measurements/mem10-2026-11/). The fit guard names it " +
+	"when the pinned copy is what does not fit."

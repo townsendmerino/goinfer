@@ -665,7 +665,7 @@ load's facts, `Admit` (`decoder/admit.go`), which applies them in this order:
 1. **The load's backend and precision.**
    - The backend can build residents at all.
    - Native Q4_K has a resident kernel (CUDA and Metal).
-   - `-backend auto` on Metal keeps a non-int4 model on the CPU.
+   - `-backend auto` on Metal keeps a model on the CPU unless it is int4, q4k, or int8int8 that runs natively.
    - Nemotron-H's MoE block is named as a gap on CUDA and Metal.
 2. **Runner shape and precision policy** (`admitRunner`). The architecture must be one the
    uniform-layer runners can express.

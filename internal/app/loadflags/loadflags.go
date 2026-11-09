@@ -30,31 +30,32 @@ const (
 
 // Flags holds the shared loading flags' values once the flag set has been parsed.
 type Flags struct {
-	Backend          string              // --backend; "auto" (the default) is replaced by the backend it resolves to in Validate
-	Auto             *decoder.AutoChoice // what -backend auto chose and why; nil when the user named a backend
-	Quant            string              // --quant
-	QuantSet         bool                // --quant was given on the command line, not left at its default
-	LoRA             string              // --lora
-	KV               string              // --kv
-	Ctx              int                 // --ctx
-	StreamWeights    bool                // --stream-weights
-	WeightCacheGB    float64             // --weight-cache
-	MoECacheExperts  bool                // --moe-cache-experts
-	MoECacheSlots    int                 // --moe-cache-slots
-	MoEPager         string              // --moe-pager
-	AcceptSlow       bool                // --accept-slow
-	EmbedInt4        bool                // --embed-int4
-	EmbedInt4Set     bool                // --embed-int4 was given on the command line, not left at its default
-	DirectLoad       bool                // --direct-load
-	Fit              bool                // --fit
-	ExactPrefill     bool                // --exact-prefill
-	CPUExactPrefill  bool                // --cpu-exact-prefill
-	WindowedKV       bool                // --windowed-kv
-	MoEStep          bool                // --moe-step
-	RecurrentStep    bool                // --recurrent-step
-	Gemma4Step       bool                // --gemma4-step
-	RecurrentStepSet bool                // --recurrent-step was given on the command line, not left at its default
-	Gemma4StepSet    bool                // --gemma4-step was given on the command line, not left at its default
+	Backend            string              // --backend; "auto" (the default) is replaced by the backend it resolves to in Validate
+	Auto               *decoder.AutoChoice // what -backend auto chose and why; nil when the user named a backend
+	Quant              string              // --quant
+	QuantSet           bool                // --quant was given on the command line, not left at its default
+	LoRA               string              // --lora
+	KV                 string              // --kv
+	Ctx                int                 // --ctx
+	StreamWeights      bool                // --stream-weights
+	WeightCacheGB      float64             // --weight-cache
+	MoECacheExperts    bool                // --moe-cache-experts
+	MoEExpertsUnpinned bool                // --moe-experts-unpinned
+	MoECacheSlots      int                 // --moe-cache-slots
+	MoEPager           string              // --moe-pager
+	AcceptSlow         bool                // --accept-slow
+	EmbedInt4          bool                // --embed-int4
+	EmbedInt4Set       bool                // --embed-int4 was given on the command line, not left at its default
+	DirectLoad         bool                // --direct-load
+	Fit                bool                // --fit
+	ExactPrefill       bool                // --exact-prefill
+	CPUExactPrefill    bool                // --cpu-exact-prefill
+	WindowedKV         bool                // --windowed-kv
+	MoEStep            bool                // --moe-step
+	RecurrentStep      bool                // --recurrent-step
+	Gemma4Step         bool                // --gemma4-step
+	RecurrentStepSet   bool                // --recurrent-step was given on the command line, not left at its default
+	Gemma4StepSet      bool                // --gemma4-step was given on the command line, not left at its default
 }
 
 // Register adds the shared loading flags to fs and returns the Flags their values are parsed into. Each flag's
@@ -83,6 +84,7 @@ func register(fs *flag.FlagSet, app App, goos string, ggufDirect bool) *Flags {
 	fs.BoolVar(&f.StreamWeights, "stream-weights", boolDef("stream-weights"), use("stream-weights"))
 	fs.Float64Var(&f.WeightCacheGB, "weight-cache", floatDef("weight-cache"), use("weight-cache"))
 	fs.BoolVar(&f.MoECacheExperts, "moe-cache-experts", boolDef("moe-cache-experts"), use("moe-cache-experts"))
+	fs.BoolVar(&f.MoEExpertsUnpinned, "moe-experts-unpinned", boolDef("moe-experts-unpinned"), use("moe-experts-unpinned"))
 	fs.IntVar(&f.MoECacheSlots, "moe-cache-slots", intDef("moe-cache-slots"), use("moe-cache-slots"))
 	fs.StringVar(&f.MoEPager, "moe-pager", def("moe-pager"), use("moe-pager"))
 	fs.BoolVar(&f.AcceptSlow, "accept-slow", boolDef("accept-slow"), use("accept-slow"))
@@ -167,6 +169,7 @@ func Resolve(f Flags, m Machine, ov Overrides) decoder.Options {
 		StreamWeights:         or(ov.Stream, f.StreamWeights),
 		WeightCacheBytes:      int64(or(ov.WeightCacheGB, f.WeightCacheGB) * 1e9),
 		MoECacheExperts:       f.MoECacheExperts,
+		MoEExpertsUnpinned:    f.MoEExpertsUnpinned,
 		MoECacheSlots:         f.MoECacheSlots,
 		MoEPager:              f.MoEPager,
 		AcceptSlowMoE:         f.AcceptSlow,

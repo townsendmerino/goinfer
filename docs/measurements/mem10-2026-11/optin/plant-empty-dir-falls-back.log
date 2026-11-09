@@ -1,0 +1,6 @@
+plant: empty-dir-falls-back (backend/cuda/pack_stream.go)
+    kv16_test.go:1723: no model path: the packed-experts file's directory : no such file or directory
+--- FAIL: TestMoEExpertsUnpinned_refusesMemoryBackedOrMissingDirs (1.82s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	1.890s
+FAIL

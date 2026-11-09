@@ -21,7 +21,7 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| RF2 | open | registered below ("RF2: registration"), before any code; next: the CUDA `Step` with ragged attention through the block tables, on nobara | FA §5.4; "RF2: registration" below |
+| RF2 | active | RF2-1 (decode and verify rows of several sequences in one CUDA step) in its PR; its identity test runs on nobara before merge; then RF2-2, RF2-3 ("RF2: steps") | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below |
 | RF3 | blocked | RF2 | FA §5.4 |
 | RF4 | blocked | RF3 and KV5 | FA §7a |
 | RF5 | blocked | RF4; it also takes SB1's op-level interface | FA §7a; SS §8 "SB1" |
@@ -37,7 +37,7 @@
 | OP5-G | open | Granite-4.0-H: the bring-up gate, plus the residual scale on CUDA and Metal | FA §4.7, §4.5 |
 | OP5-La | open | Laguna, after a fit check | FA §4.7 |
 | OP6-M1 | done | M1 read by day 2026-11-08 on main at 76d78d19, after #775 fixed the q4k sidecar admission: goinfer 42.4 tok/s, Ollama 41.7, median ratio 1.02, LEVEL (2026-10-20: 0.539, BEHIND); fit check RESIDENT, no swap growth | `docs/measurements/peer-vetted-2026-10-07-macbook.md` "M1 on main after #775: read"; #775, #780 |
-| OP6-def | decision | Francis: OP6's default switch (FA §8 E5). M1 is read: LEVEL, 1.02 (OP6-M1) | FA §8; `docs/measurements/peer-vetted-2026-10-07-macbook.md` |
+| OP6-def | done | Francis's call, 2026-11-08 09:30, on M1's reading (LEVEL, median ratio 1.02; goinfer 42.4 tok/s, Ollama 41.7): Metal's default load for a Phi-3/4 `.gguf` is `--quant q4k`, resident on the q4k lane (`internal/runtime/modelload/modelload.go:activationSafeQuant`), and `-backend auto` admits q4k to Metal (`decoder/residency.go:autoMetalPrecision`), so the default serve takes it; an explicit `--quant` is kept, WebGPU and other families are unchanged | `docs/measurements/peer-vetted-2026-10-07-macbook.md` "M1 on main after #775: read"; FA §8 E5 |
 | OP6-C | open | CUDA q4k batched prefill | FA §3.2 |
 | OP6-W | open | optional: per-32 activations or a q4k lane on WebGPU | FA §7a |
 | HL-C | open | register a CUDA greedy chain under a gated processor, as HL-R did on Metal | FA §6; `docs/measurements/hl-2026-11/README.md` |
@@ -46,7 +46,7 @@
 | MM5 | active | the memory planner's CUDA half (nobara-sb01): `cudaKVParts` and the pools from the shared declarations (#739); CPU and WebGPU later | FA §4.9b; #739, #741 |
 | MM5b | active | decode scratch's program-side declaration, PR #772: the operations declare their per-row activations (`program.Buffers`' per-row unit, `program.HeadBuffers`), Metal's decode scratch is priced from them (G-MS4 passes; the family-keyed price kept as the oracle, equal on 368 prices), and Metal's build holds the declared widths to its kernels'. G-MS1: only Olmo Hybrid moved (768 B of unused rows dropped), and the paged-cache boundary in a later fix. G-MS5: 29 IDENTICAL. Both Gemini reviews fixed. Next: #772's merge | FA §4.9c ("MM5b's declaration"); #762, #772 |
 | MM8 | active | the memory-drift gap fixes: CUDA #721 (dense 314 rows to 10), dense-moe 18, grant 1; Metal dense tables and Gemma 4 MoE's 19,016 B; CPU int8 per-head scale and the sliding ring; WebGPU tables; confirm or strike the towers, host-kept embeddings and verify logits lines | SS §6.5 "MM8"; `internal/guard/memgate` gap tables; `docs/measurements/mm8-*` |
-| MEM10 | killed | both routes to dropping the 26B's ~12 GiB pinned expert copy are closed on nobara: tier 0 (2026-11-08), the mapping cannot be pinned in place without a copy; tier 1 A/B (2026-11-08, registered rule), uploading the slots from pageable pages saves 12,251 MiB but costs decode 0.817x (short) and 0.750x (long): KILL under 0.90x. The pinned copy stays | `docs/completed/task-memory-campaign-2026-10.md` §4 "MEM10"; `docs/measurements/mem10-2026-11/README.md`; `docs/measurements/mem10-2026-11/README.md` "MEM10 tier 0"; `backend/cuda/internal/gpudev/mem10_probe_test.go:TestMEM10_fileMappingRegistration_probe`; `docs/measurements/mem10-2026-11/ab-registration.md`; `docs/measurements/mem10-2026-11/ab-registration.md` "Reading" |
+| MEM10 | done | the pinned expert copy stays the default (tier 0 and tier 1, 2026-11-08: no in-place pin on nobara; unpinned decode 0.817x / 0.750x). Francis, 13:05: ship the unpinned path as an opt-in, `--moe-experts-unpinned` (default off), which the memory refusal names when the pinned copy is what does not fit | `docs/completed/task-memory-campaign-2026-10.md` §4 "MEM10"; `docs/measurements/mem10-2026-11/README.md`; `docs/measurements/mem10-2026-11/README.md` "MEM10 tier 0"; `backend/cuda/internal/gpudev/mem10_probe_test.go:TestMEM10_fileMappingRegistration_probe`; `docs/measurements/mem10-2026-11/ab-registration.md`; `docs/measurements/mem10-2026-11/ab-registration.md` "Reading"; `docs/measurements/mem10-2026-11/README.md` "MEM10 opt-in" |
 | SB2-vk | open | rebuild on main and ship (Francis, 2026-11-08): gpu-allocator first-fit placement over the build's buffers (M1′ predicts Vulkan device use within 7 MiB on fourteen loads); fold out what MM8's merged shared-KV fix already covers, run the held-out pass, then the fit change; nobara, M | SS §8 "SB2"; `docs/measurements/sb2-vk-2026-10-31/README.md`; branch `sb2-vk-plan-2026-10-31` |
 | SB11a | blocked | OP4 on CUDA past d2 and OP4 on WebGPU: the walker emits SB11's operation records | SS §8 "SB11" |
 | SerWt | open | `SerializeWeights` does not refuse bf16 and f16 weights; give the writer a named `*SerializeError`; S, any box | `docs/measurements/sb4-2026-10.md` |
@@ -122,6 +122,17 @@ These lines replace the registration's where they differ.
   - one decode row each for two MC3 sequences;
   - a sequence with a decode row plus verify rows in the same step.
   Every row's logits must be bit-identical to the same row in its own shape. The Question is not narrowed.
+
+### RF2: steps (2026-11-08)
+
+Each step is a PR from `origin/main` that builds and passes alone. No step before RF2-3 changes the path an existing shape
+takes (a decode token, a verify and MC3's step keep today's calls), so the speed gate reads once, on RF2-3's build.
+
+| id | what | gates |
+|---|---|---|
+| RF2-1 | `ResidentRaggedStepper` (`decoder/residency.go`) and step's `passRagged`; CUDA's `StepRagged`: decode rows and verify rows of several sequences in one pass of prefillCore's multi-sequence mode, each row in the exact class at its own slot and position | `TestCUDAStepRagged_rowsMatchTheirShapes` on nobara (batch invariance for decode, drawn decode and verify at k = 2 and 4; both plants red); decoder's step tests; tier 0 |
+| RF2-2 | a prefill chunk's rows in the same step, in the class its own prefill takes (the fast kernels over its rows, the exact ones over the others) | the full mixed batch of addendum 1, bit-identical to each row's own shape; G-RF2-I's `cmd/gate identity` |
+| RF2-3 | one ragged attention launch over the block tables in place of the per-row decode gap; the solo shapes move onto `StepRagged` | G-RF2-I again; G-RF2-S and never-swap, by day on nobara; the kill |
 
 ## Conventions
 

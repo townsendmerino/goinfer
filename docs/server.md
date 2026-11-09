@@ -21,6 +21,13 @@ go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 > sequential path. `--quant -h` explains all five. A prequantized `.giw` model ignores `--quant`
 > (it carries its own).
 >
+> **A Phi-3 or Phi-4 `.gguf` defaults to `q4k`** on the CPU, CUDA and Metal: the file's Q4_K blocks kept exact, the rest
+> int8, because per-vector int8 activations break these families (`decoder/actquant_hazard.go:ActivationQuantHazard`). The CPU
+> and CUDA quantize activations with per-32 scales. On Metal, `-backend auto` included, it runs resident on the q4k lane, which
+> quantizes no activation; before 2026-11-08 the default
+> there was int8int8 with per-32 scales, which Metal declines, so it ran on the CPU. An explicit `--quant` is kept, and WebGPU
+> loads int8int8 with per-32 scales, on the CPU.
+>
 > **`int4` is not the smallest option everywhere.** On Apple Silicon and non-VNNI amd64 hosts, the
 > loader keeps a second, repacked copy of the int4 nibbles beside the canonical ones (the layout
 > the fast NEON/AVX2 kernels need), so `int4` measures ~1.25 bytes/element resident against
@@ -943,6 +950,11 @@ to ignore.**
   signature this server did not mint carries nothing. A client sends `tool_use` input back as JSON it parsed, so arguments
   the model spaced return compacted: the closed list above keeps their ids. Not covered: Chat Completions (no carrier), and
   a reply whose calls the client echoes as separate turns.
+- **A MoE expert cache without its pinned host copy** (`-moe-experts-unpinned`, with `-moe-cache-experts`, CUDA). The expert slots upload from
+  pageable pages of a packed-experts file written beside the model, unlinked while mapped and never on tmpfs, instead of a pinned copy.
+  It saves that copy's host memory, about 12 GiB on Gemma 4 26B, and is slower by design: measured at 0.82x decode at short context and
+  0.75x at 4,096 keys (`docs/measurements/mem10-2026-11/ab-registration.md`). Off by default. The load's memory refusal names it only when the
+  pinned copy is what does not fit (`docs/bigger-than-memory.md`).
 - **Prefix snapshots in host memory** (`-kv-host-bytes`). A GPU card with one KV slot loses the previous session's prompt the moment
   the next session starts, and a coding agent's sessions share almost all of their first prompt (the system prompt, the tool
   definitions, the environment). After a **cold first prefill of 2,048 ids or more**, a GPU-resident model copies the prompt's full
