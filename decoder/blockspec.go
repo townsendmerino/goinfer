@@ -355,6 +355,20 @@ func (s *BlockSpec) Generate(prompt []int, opt BlockSpecOptions) ([]int, int, er
 	return s.generate(prompt, opt, nil)
 }
 
+// seedAnchor runs the prompt suffix embs from pos through the host and returns the seed's id, the argmax of its last row. It asks for
+// the id alone when the backend can (ResidentSeedArgmax), which skips an M x vocab logits buffer, copy and host argmax.
+func (s *BlockSpec) seedAnchor(embs [][]float32, pos int) (int, error) {
+	if canStep(s.host, stepBatch{Pass: passRows, Emb: stepProbe, Out: outArgmax}) {
+		sr, err := stepOn(s.host, stepBatch{Pass: passRows, Emb: embs, Pos: pos, Out: outArgmax})
+		return sr.ID, err
+	}
+	ids, err := s.host.PrefillLastNArgmax(embs, pos)
+	if err != nil {
+		return 0, err
+	}
+	return ids[len(ids)-1], nil
+}
+
 // generate is the loop. emit, when non-nil, receives each round's committed tokens as they are
 // produced and returns false to stop (cancellation) — that is what lets GenerateStream forward
 // tokens per round instead of at the end.
@@ -462,20 +476,9 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	for i, id := range suffix {
 		embs[i] = m.embedResident(id)
 	}
-	// The seed reads one id: ask for one when the backend can (ResidentSeedArgmax), which skips an M x vocab logits buffer, copy and host argmax.
-	var anchor int
-	if canStep(host, stepBatch{Pass: passRows, Emb: stepProbe, Out: outArgmax}) {
-		var sr stepResult
-		if sr, err = stepOn(host, stepBatch{Pass: passRows, Emb: embs, Pos: reuseFrom, Out: outArgmax}); err != nil {
-			return nil, 0, err
-		}
-		anchor = sr.ID
-	} else {
-		ids, e := host.PrefillLastNArgmax(embs, reuseFrom)
-		if e != nil {
-			return nil, 0, e
-		}
-		anchor = ids[len(ids)-1]
+	anchor, err := s.seedAnchor(embs, reuseFrom)
+	if err != nil {
+		return nil, 0, err
 	}
 	if err := fuse(host.BatchedCapture(), len(suffix)); err != nil {
 		return nil, 0, err
