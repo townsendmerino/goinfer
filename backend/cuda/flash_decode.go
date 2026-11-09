@@ -116,6 +116,20 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 	if !rowsOK {
 		r.faRows, r.faCombineRows = [3][9]Pipeline{}, Pipeline{}
 	}
+	// A ragged step's twins (fa_partial_ragged_*, fa_combine_ragged). A load failure leaves them zero, so the step's lane rows take
+	// the M=1 lane row by row.
+	for i, name := range []string{"fa_partial_ragged_64", "fa_partial_ragged_128", "fa_partial_ragged_256"} {
+		if r.faRagged[i], e = r.dev.NewComputePipeline(mod, name); e != nil {
+			break
+		}
+	}
+	if e == nil {
+		r.faCombineRagged, e = r.dev.NewComputePipeline(mod, "fa_combine_ragged")
+	}
+	if e != nil {
+		logs.Warnf("[cuda] flash-decode ragged kernels not loaded (a step's lane rows go one by one): %v", e)
+		r.faRagged, r.faCombineRagged, e = [3]Pipeline{}, Pipeline{}, nil
+	}
 	// The partial buffer holds faMaxRows rows so a verify batch fits; row 0 of the rows layout is the M=1 layout.
 	r.faBuf = r.af(faMaxRows * r.nH * s * faWarps * (maxHd + 4))
 	r.faVerify = r.faCombineRows != (Pipeline{}) && r.knobValue("GOINFER_CUDA_FLASH_DECODE_VERIFY") != "0"

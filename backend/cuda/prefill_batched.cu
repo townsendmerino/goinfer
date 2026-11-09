@@ -284,15 +284,17 @@ __global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict
     attn_row(q, kc, vc, kvt, nH, nKV, hd, startPos + m + 1, scale, window, h, m, ctx, sinks ATTN_CAP_ARG KV_SCALE_ARGS);
 }
 
-// attn_ragged: attn_batched over M query rows of different sequences (a ragged step): row m attends rowPos[m]+1 keys in KV slot
-// rowSlot[m], whose table is tabs + rowSlot[m]*tabStride. Shared memory is sized by the host to the widest row's window.
+// attn_ragged: attn_batched over M query rows of different sequences (a ragged step): launch row k is batch row m = rowIdx[k] (k
+// itself when rowIdx is NULL), which attends rowPos[m]+1 keys in KV slot rowSlot[m], whose table is tabs + rowSlot[m]*tabStride; q
+// and ctx are indexed by m. Shared memory is sized by the host to the widest row's window.
 __global__ void attn_ragged(const float* __restrict__ q, const KV_T* __restrict__ kc,
                             const KV_T* __restrict__ vc, const int* __restrict__ tabs, int tabStride,
-                            const int* __restrict__ rowSlot, const int* __restrict__ rowPos, int nH, int nKV, int hd,
-                            float scale, int window, int M, float* __restrict__ ctx,
+                            const int* __restrict__ rowSlot, const int* __restrict__ rowPos, const int* __restrict__ rowIdx,
+                            int nH, int nKV, int hd, float scale, int window, int M, float* __restrict__ ctx,
                             const float* __restrict__ sinks ATTN_CAP_PARAM KV_SCALE_PARAMS) {
     int h = blockIdx.x; if (h >= nH) return;
-    int m = blockIdx.y; if (m >= M) return;
+    int k = blockIdx.y; if (k >= M) return;
+    int m = rowIdx ? rowIdx[k] : k;
     attn_row(q, kc, vc, tabs + (long)rowSlot[m] * tabStride, nH, nKV, hd, rowPos[m] + 1, scale, window, h, m, ctx,
              sinks ATTN_CAP_ARG KV_SCALE_ARGS);
 }
