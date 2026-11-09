@@ -1183,6 +1183,16 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 					load(&r.bRopeKV, pbmod, "rope_kv_batched")
 				}
 				load(&r.bAttn, pbmod, "attn_batched")
+				// A ragged step's twins of rope_kv_batched and attn_batched (stepAttnRows). Optional: without them every row takes
+				// decode's own gap. The pairwise rope has no ragged twin.
+				if !r.pairwiseRoPE {
+					var e1, e2 error
+					r.bRopeKVRagged, e1 = r.dev.NewComputePipeline(pbmod, "rope_kv_ragged")
+					r.bAttnRagged, e2 = r.dev.NewComputePipeline(pbmod, "attn_ragged")
+					if e1 != nil || e2 != nil {
+						r.bRopeKVRagged, r.bAttnRagged = Pipeline{}, Pipeline{}
+					}
+				}
 				load(&r.bQuant, pbmod, "quant_vec_batched")
 				load(&r.bSw, pbmod, "glu_quant_batched")
 				load(&r.bRes, pbmod, "residual_batched")
