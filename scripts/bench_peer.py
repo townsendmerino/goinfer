@@ -656,7 +656,7 @@ class SwapWatch:
         if self.base_out is not None and now_out is not None:
             self.swapout = now_out - self.base_out
         # a failed reading leaves no numeric peak for a caller to mistake for a clean one (void_rule.SwapSampler.result's rule)
-        growth, peak_abs = (None, None) if self.unreadable else (round(self.peak, 1), self.peak_abs)
+        growth, peak_abs = (None, None) if self.unreadable else (round(self.peak, 4), self.peak_abs)
         return {"swap_base_mb": self.base, "swap_growth_mb": growth, "swap_peak_mb": peak_abs, "swap_killed": self.killed,
                 "swapin_mb": None if self.swapin is None else round(self.swapin, 1),
                 "swapout_mb": None if self.swapout is None else round(self.swapout, 1), "swap_void": self.void_reason()}
