@@ -473,11 +473,11 @@ type Options struct {
 	// trades RAM for cold-miss fault latency. No-op for non-MoE / non-.giw models.
 	StreamWeights bool
 	// WeightCacheBytes is the resident-bytes budget for streamed weights (0 = auto,
-	// ~half of available RAM). Only meaningful with StreamWeights.
+	// ~half of available RAM), and the budget a mapped MoE .giw's working-set prediction prices the page cache at.
 	WeightCacheBytes int64
-	// AcceptSlowMoE is the explicit acknowledgement a paged-MoE StreamWeights load needs when its predicted working-set rate
-	// falls below moeSlowTokPerSecThreshold (moeworkingset.go): without it the load is refused. Only meaningful for a .giw MoE
-	// load under StreamWeights; a no-op everywhere else.
+	// AcceptSlowMoE is the explicit acknowledgement a MoE .giw load that decodes on the CPU (mapped, or paged under
+	// StreamWeights) needs when its predicted working-set rate falls below moeSlowTokPerSecThreshold (moeworkingset.go):
+	// without it the load is refused. A no-op everywhere else.
 	AcceptSlowMoE bool
 	// RequireBackend makes a decline an error: when Backend names a backend other than the CPU and the load builds no
 	// resident runner on it (the backend is not linked, no device answered, or it declined the model), Load closes the model
@@ -820,7 +820,24 @@ func Load(dir string, opts Options) (*Model, error) {
 				logs.Warnf("decoder: --stream-weights ignored (model fits the budget, or no mmap-backed layer weights)")
 			}
 		}
-		return m.withResidencyOrAbort()
+		m, rerr = m.withResidencyOrAbort()
+		if rerr != nil {
+			return nil, rerr
+		}
+		// A MoE load that decodes from its mapping on the CPU (no -stream-weights, no resident runner) pages its experts through
+		// the page cache, so it takes the paged load's working-set refusal (docs/tasks/task-fit-to-hardware.md, SLOW) at the
+		// budget a pager would take here.
+		if !opts.StreamWeights && w.arch.MoE != nil && !m.ResidentActive() {
+			if predicted, ok := mappedMoEWorkingSetPrediction(m, resolveWeightCacheBudget(opts.WeightCacheBytes)); ok {
+				logs.Infof("decoder: predicted mapped-MoE decode rate ~%.2f tok/s "+
+					"(a prior, not a measurement — see moeHitRatePrior's own doc comment)", predicted)
+				if serr := moeWorkingSetRefusal(filepath.Base(dir), predicted, opts.AcceptSlowMoE); serr != nil {
+					m.Close()
+					return nil, serr
+				}
+			}
+		}
+		return m, nil
 	}
 
 	// Resolve the quant mode first so the weights stream straight into the

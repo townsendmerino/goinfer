@@ -95,6 +95,17 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
 - **The library's logger.** `decoder.SetLogger`.
 - **Load's error kinds.** `decoder.ErrUnsupportedModel`, `ErrUnknownQuant`, `ErrUnknownBackend`, for `errors.Is`, and
   `ErrBackendDeclined` with the `Options.RequireBackend` that asks for it (a named backend's decline becomes Load's error).
+- **Structured output from Go types and JSON Schema.** `constrain.GrammarFromStruct`, `constrain.TemplateFromStruct` and
+  `constrain.JSONSchema`, the README's structured-output API. Experimental until JSON Schema's `format` keyword is decided
+  (refused or enforced; it is accepted and ignored today).
+- **Per-field confidence.** `constrain.Masker`'s `CaptureConfidence` and `FieldConfidence`, with `ConfidenceOptions` and
+  `FieldConfidence`.
+- **Tool-call wiring.** `chat.Template`'s `ToolCallWrapper`, `ToolCallOpener`, `ParseToolCallsFor` and `SplitThink`, and
+  `constrain.ToolCallsGrammar`, `ToolSpec`, `NewLazyMasker` and `LazyMasker`: the parts a caller assembles a constrained
+  tool call from (`ParseToolCalls` itself is Hard, above).
+- **Fit and placement reports.** `decoder.FitDeclineError`, `ErrWontFitResident` and `ResidentDeclineError`, and
+  `Model.EffectiveBackend`, `BackendReport` and `CPUConcurrentSafe`: what a load or a backend decided, and why.
+- **Embeddings.** The `embeddinggemma2` package (EmbeddingGemma 2's text, image and audio encoders).
 - **The backend/residency seam.** `decoder.Backend`, `RegisterBackend`, `QuantBackend`,
   `QuantBatchBackend`, `ResidencyBackend`, `Prefiller`, `ResidentForward`, `ResidentGreedy`,
   `ResidentPrefillKV`, `ResidentCapped`, `ResidentDrafterHost`, `ResidentBlockDrafter`,
