@@ -302,9 +302,11 @@ func TestLazyTurn_realSpeculativeProseKeepsTheDrafter(t *testing.T) {
 		return d.lazyConstrained(ctx, p, max, sp)
 	}
 	var got []int
-	for id := range lazyTurn(context.Background(), req, lazy, free, constrained).Tokens() {
+	st := lazyTurn(context.Background(), req, lazy, free, constrained)
+	for id := range st.Tokens() {
 		got = append(got, id)
 	}
+	rep := st.Report()
 	if len(got) != len(want) {
 		t.Fatalf("the lazy turn emitted %d tokens, the plain speculative turn %d", len(got), len(want))
 	}
@@ -318,6 +320,9 @@ func TestLazyTurn_realSpeculativeProseKeepsTheDrafter(t *testing.T) {
 	}
 	if phase1 == nil || phase1.Spec == nil || phase1.Spec.Drafted == 0 {
 		t.Fatal("phase 1 drafted nothing: the turn did not keep the drafter")
+	}
+	if rep == nil || rep.SpecDrafted != phase1.Spec.Drafted || rep.SpecAccepted != phase1.Spec.Accepted || rep.LazyArmed {
+		t.Fatalf("the stream's report %+v: want phase 1's drafted %d and accepted %d, and not armed (what -log-requests reads)", rep, phase1.Spec.Drafted, phase1.Spec.Accepted)
 	}
 	t.Logf("%d tokens, identical to plain speculation; phase 1 drafted %d, accepted %d", len(got), phase1.Spec.Drafted, phase1.Spec.Accepted)
 }

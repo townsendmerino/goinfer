@@ -19,9 +19,9 @@ type lazyPhase func(ctx context.Context, prompt []int, max int, sp decoder.Sampl
 // plus the output so far, gated by lazy (its Process and Gate, offset past phase 1's tokens): what a constrained turn takes on this
 // server. Speculation does not resume after the call. A phase 1 that cannot start runs the whole turn as phase 2, today's lazy auto turn.
 func lazyTurn(ctx context.Context, req Request, lazy *constrain.LazyMasker, free, constrained lazyPhase) *Stream {
-	var cur atomic.Pointer[decoder.Generation]
-	var startErr atomic.Pointer[error] // a phase 2 that could not start
-	var phase2At atomic.Int64          // tokens phase 1 emitted before phase 2 began; -1 while phase 1 runs
+	var cur, phase1 atomic.Pointer[decoder.Generation] // the phase now running, and phase 1 (whose speculation the report counts)
+	var startErr atomic.Pointer[error]                 // a phase 2 that could not start
+	var phase2At atomic.Int64                          // tokens phase 1 emitted before phase 2 began; -1 while phase 1 runs
 	phase2At.Store(-1)
 	out := make(chan int)
 	gated := func(base []int) decoder.SamplingParams {
@@ -64,6 +64,7 @@ func lazyTurn(ctx context.Context, req Request, lazy *constrain.LazyMasker, free
 			return
 		}
 		cur.Store(g1)
+		phase1.Store(g1)
 		var emitted []int
 		armed := false
 		for t := range s1 {
@@ -91,8 +92,14 @@ func lazyTurn(ctx context.Context, req Request, lazy *constrain.LazyMasker, free
 			return &Report{Err: *e}
 		}
 		r := reportOf(cur.Load())
-		if n := phase2At.Load(); r != nil && n >= 0 && r.BudgetClamped {
-			r.Budget += int(n) // phase 2's budget is the turn's less what phase 1 emitted
+		if n := phase2At.Load(); r != nil && n >= 0 {
+			r.LazyArmed = true
+			if r.BudgetClamped {
+				r.Budget += int(n) // phase 2's budget is the turn's less what phase 1 emitted
+			}
+			if p1 := reportOf(phase1.Load()); p1 != nil {
+				r.SpecDrafted, r.SpecAccepted = p1.SpecDrafted, p1.SpecAccepted
+			}
 		}
 		return r
 	}, nil)

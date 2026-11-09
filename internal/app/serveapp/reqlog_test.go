@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 )
@@ -154,5 +155,24 @@ func TestRequestLog_wiredIntoTheGenerationRoutes(t *testing.T) {
 		if log.Len() != 0 {
 			t.Errorf("/health is not a generation route, and it logged %q", log.String())
 		}
+	}
+}
+
+// TestRequestLog_speculationFields holds -log-requests' speculation fields: a generation that speculated adds spec=<drafted>/<accepted>
+// (summed over the request's generations) and a lazy tool-union turn that armed adds lazy=armed; a request that did neither keeps the
+// line without them.
+func TestRequestLog_speculationFields(t *testing.T) {
+	lm := &loadedModel{name: "m"}
+	tr := &reqTrace{start: time.Now()}
+	tr.generated(lm, genRequest{}, &genReport{SpecDrafted: 11, SpecAccepted: 9, LazyArmed: true}, nil)
+	tr.generated(lm, genRequest{}, &genReport{SpecDrafted: 4, SpecAccepted: 1}, nil)
+	line := tr.line("/v1/chat/completions", 200, time.Now())
+	if !strings.Contains(line, " spec=15/10") || !strings.Contains(line, " lazy=armed") {
+		t.Fatalf("line %q: want spec=15/10 and lazy=armed", line)
+	}
+	plain := &reqTrace{start: time.Now()}
+	plain.generated(lm, genRequest{}, &genReport{}, nil)
+	if l := plain.line("/v1/chat/completions", 200, time.Now()); strings.Contains(l, "spec=") || strings.Contains(l, "lazy=") {
+		t.Fatalf("a request that did not speculate carries the fields: %q", l)
 	}
 }
