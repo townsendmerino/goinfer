@@ -1,7 +1,22 @@
 # Metal runs int8 weights natively (W8A8) — 2026-10
 
-**Status, 2026-10-04: native int8 is ON by default** (slices 1, 2, 3 and 3b; owner: "2 turn on", with F2's argmax criterion read as hard flips; Log 2026-10-04). Slice 5 (auto) shipped the same day, and slice 4 after it: int4mix runs native (M1-M4 pass) and so does a generic MoE at int8int8 (`nativeInt8MoE` on; X1-X4 pass, X3 forced by day on the owner's word). The optional follow-ups are all that is left. Earlier status: slice 1 built; F3 (0.5B) and F2 (1.5B) failed on 2026-10-02, so the native path stayed off by default. The per-layer comparison (2026-10-04) found no defective op: F3's gap is the f16 KV cache, fast math, and the noise any non-identical path adds at this quant. An amended bar is proposed and waits on the owner (Log, 2026-10-04) (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
+**Status, 2026-10-04: native int8 is ON by default** (slices 1, 2, 3 and 3b; owner: "2 turn on", with F2's argmax criterion read as hard flips; Log 2026-10-04). Slice 5 (auto) shipped the same day, and slice 4 after it: int4mix runs native (M1-M4 pass) and so does a generic MoE at int8int8 (`nativeInt8MoE` on; X1-X4 pass, X3 forced by day on the owner's word). The optional follow-ups are all that is left. Earlier status: slice 1 built; F3 (0.5B) and F2 (1.5B) failed on 2026-10-02, so the native path stayed off by default. The per-layer comparison (2026-10-04) found no defective op: F3's gap is the f16 KV cache, fast math, and the noise any non-identical path adds at this quant. The owner amended F3 (O2, F3′) and F2/M2 (O4, O5) the same day (Log, 2026-10-04). *Note 2026-11-09:* slice 6 (the recurrent families, added 2026-10-15) is open and not started; G44's decline holds until it lands (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
 before any implementation or timed run.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| S1 | done | — | `backend/metal/model.go:nativeInt8` on; F1, F2 (hard flips, O4), F3′ |
+| S2 | done | — | P2 SHIPS, Log 2026-10-04 |
+| S3 | done | — | `backend/metal/batch.go:mc3W8RowsOn`; W7-int8 CONFIRMED 1.537× |
+| S3-next | open | optional: B activation rows staged in threadgroup memory, or an MMA form, for the MC3 int8 step | slice 3b, "Still not built" |
+| S4-mix | done | — | `backend/metal/model.go:nativeInt4Mix` on (O5); M4 SHIPS |
+| S4-moe | done | — | `backend/metal/model.go:nativeInt8MoE` on; X1 to X4 pass |
+| S4-f32 | done | quantizing at build stays an owner option | `backend/metal/f32_decline_test.go:TestBuildResident_f32DeclinesClearly` |
+| S5 | done | — | `decoder/residency.go:autoMetalKeepsPrecision` |
+| F3p-1.5B | done | — | 1.014×, afternoon queue 2026-10-04 |
+| S1-shapes | moved | KS-C3 in `docs/tasks/parked/task-kernel-survey-2026-10.md` (done 2026-10-23) | that doc's ledger |
+| S6 | open | write its gates before code; until then G44's decline holds | `backend/metal/deltanet.go:recurrentInt8Load`; `backend/metal/g44_deltanet_int8_test.go:TestG44_deltaNetInt8Declines` |
 
 ## Why
 
@@ -597,3 +612,5 @@ nightly"): PASSES, and `nativeInt8MoE` turns on.**
   alone: the re-quant ran int4 there), and `TestAutoBackend_int8int8` now expects an int8int8 MoE under auto to stay
   on Metal, with the decline half run with the flag off. Both Metal suites otherwise green except
   `TestPrefillParityMoEGatedShared`, which fails identically with the flag off (int4 K%32, audit M-10).
+
+<!-- doc-reviewed: 2026-11-09 -->
