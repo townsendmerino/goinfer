@@ -219,8 +219,8 @@ type cellOutcome struct {
 const identityTolFactor = 2.0
 
 // judgeCell decides one cell from its three runs (new#1, new#2, old). backend is what was asked for:
-// a GPU cell whose NEW build fell back to the CPU is NOT RUN on that backend — a CPU identity
-// reported under "metal" would vouch for a device path nothing executed.
+// a GPU cell whose NEW build fell back to the CPU is NOT RUN on that backend when the old build fell back too — a CPU identity
+// reported under "metal" would vouch for a device path nothing executed — and DIFFERENT when the old build ran it on the backend.
 func judgeCell(c *identityCell, backend string, n1, n2, old *dump) cellOutcome {
 	out := cellOutcome{Cell: c}
 	if c.NotRun != "" {
@@ -262,8 +262,14 @@ func judgeCell(c *identityCell, backend string, n1, n2, old *dump) cellOutcome {
 		return out
 	}
 	if backend != "cpu" && !pathOnBackend(out.NewPath, backend) {
+		if pathOnBackend(out.OldPath, backend) {
+			// The old build ran the cell on the backend and the new one does not: a behaviour change, not a skip.
+			out.Verdict = vDifferent
+			out.Detail = fmt.Sprintf("the new build left backend %s (%q) where the old ran on it (%q)", backend, out.NewPath, out.OldPath)
+			return out
+		}
 		out.Verdict = vNotRun
-		out.Detail = fmt.Sprintf("backend %s declined — the new build ran %q", backend, out.NewPath)
+		out.Detail = fmt.Sprintf("backend %s declined by both builds — the new ran %q", backend, out.NewPath)
 		return out
 	}
 	if e2 == "" {
