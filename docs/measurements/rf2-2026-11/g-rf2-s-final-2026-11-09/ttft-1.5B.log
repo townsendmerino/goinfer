@@ -1,0 +1,8 @@
+14:12:45 cell start load 0.76
+pair 1 old: K=512 median 93.5 ms, K=3900 median 721.3 ms
+pair 1 new: K=512 median 92.3 ms, K=3900 median 730.6 ms
+pair 2 new: K=512 median 91.6 ms, K=3900 median 730.3 ms
+pair 2 old: K=512 median 91.5 ms, K=3900 median 732.6 ms
+pair 3 old: K=512 median 93.6 ms, K=3900 median 730.0 ms
+pair 3 new: K=512 median 91.4 ms, K=3900 median 730.1 ms
+SUMMARY {"512": {"ratios": [1.013, 0.999, 1.023], "median": 1.013, "verdict": "PASS"}, "3900": {"ratios": [0.987, 1.003, 1.0], "median": 1.0, "verdict": "PASS"}}
