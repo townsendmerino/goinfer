@@ -1210,6 +1210,10 @@ func (m *Model) embedToken(id int, dst []float32) {
 //
 // Sampling is greedy at Temperature 0, else temperature/top-k/top-p (see Sampler). A SamplingParams.LogitProcessor, if set,
 // masks each step's logits before sampling, the seam for constrained/structured decoding.
+//
+// Cancelling ctx ends the generation at its next check: before each layer of a batched CPU prefill, before each token of a
+// token-at-a-time prefill (CPU or resident), between tokens while decoding, and at a resident backend's own boundaries inside
+// its batched prefill (PrefillLast takes ctx). Generation.Err then reports the context's error.
 func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
@@ -2258,6 +2262,7 @@ type Generation struct {
 	BudgetClamped bool
 }
 
-// Err returns the error that ended the stream, or nil if it ended cleanly
-// (EOS / stop / maxTokens). Read it after the channel closes.
+// Err returns the error that ended the stream, or nil if it ended cleanly (EOS / stop / maxTokens). Read it after the
+// channel closes. A cancelled or expired context ends the stream with an error that errors.Is matches against ctx.Err()
+// (context.Canceled or context.DeadlineExceeded), whether it fired before the first token or mid-decode.
 func (g *Generation) Err() error { return g.err }
