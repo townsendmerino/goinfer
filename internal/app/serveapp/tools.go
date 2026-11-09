@@ -283,13 +283,6 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	if !toolUnionEnabled || (mode != "auto" && mode != "required") || (mode == "auto" && !toolUnionAuto) {
 		return
 	}
-	// A server started with speculative decoding keeps its pre-union auto behaviour: every speculative path refuses a
-	// LogitProcessor (gated or not), so arming the lazy union would silently cost such a server its drafter on every
-	// multi-tool auto turn, a regression it opted out of by opting in. required is unaffected: it rides the grammar-fused
-	// speculative path.
-	if mode == "auto" && (lm.spec || lm.blockSpec != nil) {
-		return
-	}
 	prefix, suffix, argsKey, array, ok := lm.tmpl.ToolCallWrapper()
 	if !ok {
 		gr.callPostCheck = mode == "required" && forcedCallEnforcement(lm.tmpl) == "post-check"
@@ -323,9 +316,7 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 			warnToolUnionOff(err)
 			return
 		}
-		lazy := constrain.NewCallKeyLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), "<|python_tag|>")
-		gr.sp.LogitProcessor = lazy.Process
-		gr.sp.LogitProcessorGate = lazy.Gate
+		armLazy(lm, gr, constrain.NewCallKeyLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), "<|python_tag|>"))
 		return
 	}
 	g, err := constrain.ToolCallsGrammar(trigger, suffix, argsKey, array, specs)
@@ -336,7 +327,17 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	// A LogitProcessor only: gr.masker stays nil, because the grammar-fused speculative path
 	// assumes a grammar live from token 1, which a lazy one is not. The Gate keeps the decoder's
 	// on-device fast paths until the opener arrives (SamplingParams.LogitProcessorGate).
-	lazy := constrain.NewLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), trigger)
+	armLazy(lm, gr, constrain.NewLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), trigger))
+}
+
+// armLazy puts an auto turn's lazy union on gr. On a server that speculates it goes to gr.lazy, with no LogitProcessor, which every
+// speculative path refuses: the engine then speculates until the call's opener and takes the constrained path from there
+// (engine.Request.Lazy). Elsewhere it is the request's gated processor.
+func armLazy(lm *loadedModel, gr *genRequest, lazy *constrain.LazyMasker) {
+	if lm.spec || lm.blockSpec != nil {
+		gr.lazy = lazy
+		return
+	}
 	gr.sp.LogitProcessor = lazy.Process
 	gr.sp.LogitProcessorGate = lazy.Gate
 }

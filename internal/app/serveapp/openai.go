@@ -1208,7 +1208,8 @@ type genRequest struct {
 	// drive/driveVL. "" (the zero value) skips registration, so a caller not wired for cancellation (or a test
 	// calling drive/driveVL directly) is unaffected.
 	id     string
-	masker *constrain.Masker // set on constrained requests (response_format / tool grammar); enables grammar-spec
+	masker *constrain.Masker     // set on constrained requests (response_format / tool grammar); enables grammar-spec
+	lazy   *constrain.LazyMasker // an auto turn's lazy tool union on a speculating server (armLazy); engine.Request.Lazy
 	// conf, when the request asked for goinfer_confidence, receives the per-field confidences once streamTokens
 	// has drained the generation. Its presence also keeps drive on plain constrained decode: the grammar-fused
 	// speculative path drives the masker without Process, which is where the capture records.
@@ -1650,7 +1651,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	defer cancel()
 	gr.clock.start()
 	st := lm.genEngine().Start(cost.WithCounter(ctx, gr.clock.costCounter()), engine.Request{
-		PromptIDs: gr.promptIDs, MaxTokens: gr.maxTokens, Sampling: decoder.SamplingParams(gr.sp), Masker: gr.masker,
+		PromptIDs: gr.promptIDs, MaxTokens: gr.maxTokens, Sampling: decoder.SamplingParams(gr.sp), Masker: gr.masker, Lazy: gr.lazy,
 		NoSpeculation: gr.conf != nil, Scope: gr.kvScope(),
 	})
 	defer st.Close()

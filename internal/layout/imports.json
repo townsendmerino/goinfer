@@ -658,6 +658,7 @@
       "multimodal"
     ],
     "engine": [
+      "constrain",
       "decoder",
       "internal/cost"
     ],
