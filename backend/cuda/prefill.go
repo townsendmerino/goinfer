@@ -952,7 +952,8 @@ func mropePosWindow(mropePos [][3]int, startPos, M int) [][3]int {
 // (batchstep.go): non-nil means row m is one decode token of its own sequence, KV slot rows[m].slot at position
 // rows[m].pos, rather than prompt row startPos+m. The layer stack is unchanged; rope, the KV store and attention run per
 // row through decode's own gap (decodeAttnGap) with that row's slot bound; the tail must be tailAllLogits, whose per-row
-// head is decode's, and a row with a draw ends in ForwardSample's pick.
+// head is decode's, and a row with a draw ends in ForwardSample's pick. With stepChunk set, the first rows are instead one
+// pass of a prompt's prefill in its slot: its GEMVs and attention are that pass's, in its class (raggedChunk).
 func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int, blocks [][2]int, mropePos [][3]int, rows []stepRow) ([][]float32, []int, error) {
 	M := len(embeddings)
 	if M == 0 {
@@ -1035,6 +1036,12 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		r.deepPlan != nil ||
 		// a prompt with a layer on the row-batched attention past its bound (prefillPastBoundExact)
 		r.prefillPastBoundExact(r.passPromptLen)
+	if c := &r.stepChunk; rows != nil && c.rows > 0 {
+		// A step's prefill chunk: the floor is its prompt's, and its class is the one its own pass takes as a pass of an ordinary
+		// prompt (chunkOrdinary), so only the model-wide reasons above make it exact. The step's other rows stay exact.
+		r.passPromptLen = c.promptLen
+		c.exact = c.exact || r.recurrent() || r.eModel || r.deepPlan != nil || r.prefillPastBoundExact(r.passPromptLen)
+	}
 	maxQDim, maxKvDim := r.prefillMaxGeom()
 	hidden, inter := r.hidden, r.inter
 	if r.eModel {
@@ -1079,6 +1086,20 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			if r.kvStepAbort {
 				// a row took back blocks from a borrower that may be another row of this step: run nothing, so each row can go alone
 				return fmt.Errorf("cuda step: a borrower was stopped while the rows were mapped: %w", decoder.ErrKVPoolFull)
+			}
+			if c := r.stepChunk; c.rows > 0 {
+				// The chunk's attention is an ordinary pass's without the row-batched exact kernels: a chunk that would need them declines.
+				fused := func(hd int) bool {
+					exact := r.forceExactKernels
+					r.forceExactKernels = c.exact
+					_, ok := r.useAttnFused(hd, c.rows)
+					r.forceExactKernels = exact
+					return ok
+				}
+				if e := r.checkPrefillShmem(c.pos, c.rows, fused); e != nil {
+					return fmt.Errorf("cuda ragged step: the prefill chunk at %d: %w", c.pos, e)
+				}
+				r.stepChunk.split = true
 			}
 		} else if e := r.kvEnsure(startPos, M); e != nil {
 			return e
@@ -1267,7 +1288,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			if Ly.hasBias {
 				qb, kb, vb = Arg(Ly.qb), Arg(Ly.kb), Arg(Ly.vb)
 			}
-			t := r.profTic()
+			var t time.Time // the category timer (profTic): each step sets it before it reads it
 			// The layer's batched steps (cudaPrefillStepsOf, OP4cu-d1): the DeltaNet rows or the attention half, then the MoE or the
 			// dense FFN. Each case is the block the layer's kind chose before, unchanged.
 			for _, pst := range r.prefillLayerSteps(Ly) {
@@ -1365,17 +1386,11 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						}
 						r.profToc(glueCat, t)
 					}
-					if rows != nil {
-						// Multi-sequence step: rope, the KV store and attention per sequence through decode's own gap, each row on its own slot
-						// at its own position; the batched stack resumes at the ctx-quant below.
-						t = r.profTic()
-						if e := r.stepAttnRows(Ly, l, rows, qBb, kBb, vBb, cctxB); e != nil {
-							return e
-						}
-						r.profToc(attnCat, t)
-					} else if e := func() error {
-						// rope + kv-store (glue): token m at absolute position startPos+m; rotates q/k, writes K/V.
-						t = r.profTic()
+					// ordAttn is an ordinary pass's rope, KV store and attention over rows [0, M) at startPos in the bound slot's tables.
+					ordAttn := func(startPos, M, tail int) error {
+						// rope + kv-store (glue): token m at absolute position startPos+m; rotates q/k, writes K/V. Its own timer: a
+						// step times the chunk's attention inside its own attnCat span.
+						t := r.profTic()
 						ropeCfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 						ropeArgs := []gpu.KernelArg{
 							Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)),
@@ -1526,7 +1541,26 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						}
 						r.profToc(attnCat, t)
 						return nil
-					}(); e != nil {
+					}
+					if rows != nil {
+						// Multi-sequence step: rope, the KV store and attention per sequence through decode's own gap, each row on its own slot
+						// at its own position; a prefill chunk's rows (the first) through its own pass's attention, in its slot and class.
+						// The batched stack resumes at the ctx-quant below. The chunk's attention times itself (glue, then attnCat).
+						if c := r.stepChunk; c.rows > 0 {
+							exact, tab := r.forceExactKernels, r.kvTabSlot
+							r.forceExactKernels, r.kvTabSlot = c.exact, c.slot
+							e := ordAttn(c.pos, c.rows, tailKVOnly)
+							r.forceExactKernels, r.kvTabSlot = exact, tab
+							if e != nil {
+								return e
+							}
+						}
+						t = r.profTic()
+						if e := r.stepAttnRows(Ly, l, rows, r.stepChunk.rows, qBb, kBb, vBb, cctxB); e != nil {
+							return e
+						}
+						r.profToc(attnCat, t)
+					} else if e := ordAttn(startPos, M, tail); e != nil {
 						return e
 					}
 					// segB: ctx-quant (glue), o-proj (gemv, accum into residual), MLP.
@@ -1728,6 +1762,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			}
 		}
 
+		r.stepChunk.split = false // the head is decode's on every row (batchedHeadFull), a chunk's last row included
 		// Drain the layer launches first: they run on r.stream and the DtoH below is not ordered after it. The tails below reuse
 		// the exact Forward tail, so each row's logits are bit-identical to a sequential Forward at position startPos+m (given
 		// an identical residual, which the KV/logits gate checks).
@@ -2119,6 +2154,23 @@ func (r *cudaResident) useGemmMMA(kind string, K, M int) bool {
 // accumulator across all K. int8 uses gemv_w8a8_batched, bit-identical to gemv_w8a8_fwd by construction (exact int32
 // accumulation, so tiling M changes no element).
 func (r *cudaResident) bGemvB(wt cudaWQ, a, as Buffer, bias KernelArg, dst Buffer, M int, accum int32) error {
+	if c := r.stepChunk; c.split && c.rows > 0 {
+		// A ragged step's prefill chunk, rows [0, c.rows): the launch its own pass makes, in its class; the step's other rows
+		// follow on the exact kernels. Rows are K activation bytes, one scale and N outputs apart (bQuant's and the GEMVs' layout).
+		exact := r.forceExactKernels
+		r.forceExactKernels = c.exact
+		e := r.bGemvRows(wt, a, as, bias, dst, c.rows, accum)
+		r.forceExactKernels = exact
+		if e != nil || c.rows == M {
+			return e
+		}
+		return r.bGemvRows(wt, a.At(c.rows*wt.K), as.At(c.rows*4), bias, dst.At(c.rows*wt.N*4), M-c.rows, accum)
+	}
+	return r.bGemvRows(wt, a, as, bias, dst, M, accum)
+}
+
+// bGemvRows is bGemvB's launch over M rows in the class forceExactKernels and the pass allow.
+func (r *cudaResident) bGemvRows(wt cudaWQ, a, as Buffer, bias KernelArg, dst Buffer, M int, accum int32) error {
 	switch wt.kind {
 	case "int4":
 		if r.useGemmMMA(wt.kind, wt.K, M) {
