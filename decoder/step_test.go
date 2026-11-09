@@ -139,15 +139,6 @@ func (f *stepLogResident) StepBatch(seqs []ResidentBatchSeq) ([]ResidentBatchOut
 	return []ResidentBatchOut{{ID: 19}}, nil
 }
 
-func (f *stepLogResident) StepRagged(seqs []ResidentRaggedSeq) ([]ResidentRaggedOut, error) {
-	s := ""
-	for _, q := range seqs {
-		s += fmt.Sprintf("{%d %d %v %v}", q.Slot, q.Pos, q.Embs, q.Draw != nil)
-	}
-	f.log("StepRagged %s", s)
-	return []ResidentRaggedOut{{ID: 20}}, nil
-}
-
 // TestStep_eachShapeMakesTodaysCall checks, for every forward shape, that step makes exactly the one resident call today's
 // caller makes for it, with the same arguments, and hands back that call's result.
 func TestStep_eachShapeMakesTodaysCall(t *testing.T) {
@@ -205,11 +196,6 @@ func TestStep_eachShapeMakesTodaysCall(t *testing.T) {
 			"PrefillMRoPEDeepstackLast [0.5][0.25] 4 [[4 4 4] [5 5 5]] [0.125] 1 1", stepResult{Logits: []float32{16}}},
 		{"multi-sequence", stepBatch{Pass: passSeqs, Seqs: []ResidentBatchSeq{{Slot: 1, Pos: 3, Emb: []float32{0.5}}, {Slot: 2, Pos: 7, Emb: []float32{0.25}, Draw: draw}}},
 			"StepBatch {1 3 [0.5] false}{2 7 [0.25] true}", stepResult{Batch: []ResidentBatchOut{{ID: 19}}}},
-		// A ragged step is its own call even when every sequence holds one row: never StepBatch.
-		{"ragged", stepBatch{Pass: passRagged, Ragged: []ResidentRaggedSeq{{Slot: 1, Pos: 3, Embs: two}, {Slot: 2, Pos: 7, Embs: one, Draw: draw}}},
-			"StepRagged {1 3 [[0.5] [0.25]] false}{2 7 [[0.5]] true}", stepResult{Ragged: []ResidentRaggedOut{{ID: 20}}}},
-		{"ragged, one row each", stepBatch{Pass: passRagged, Ragged: []ResidentRaggedSeq{{Slot: 0, Pos: 3, Embs: one}, {Slot: 1, Pos: 5, Embs: one}}},
-			"StepRagged {0 3 [[0.5]] false}{1 5 [[0.5]] false}", stepResult{Ragged: []ResidentRaggedOut{{ID: 20}}}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -289,7 +275,6 @@ func TestStep_absentShapeDeclines(t *testing.T) {
 		{Pass: passRows, Emb: two, In: inMRoPEDeepstack, Spans: [][2]int{{0, 1}}},
 		{Pass: passRows, Emb: one, Out: outArgmax}, {Pass: passRows, Emb: two, Out: outArgmax}, {Pass: passRows, Emb: two, Out: outEveryArgmax},
 		{Pass: passSeqs, Seqs: []ResidentBatchSeq{{}}},
-		{Pass: passRagged, Ragged: []ResidentRaggedSeq{{Embs: one}}},
 	}
 	p := &stepPlainResident{}
 	for i, b := range optional {
@@ -339,7 +324,6 @@ func TestStep_absentShapeDeclines(t *testing.T) {
 		{Pass: passRows, In: inRowsFn, N: 2, Rows: rowsFn, Out: outArgmax}, {Pass: passRows, Emb: two, Out: outTopK},
 		{Pass: passRows, Emb: two, In: inImage}, {Pass: passRows, Emb: two, In: inMRoPEDeepstack},
 		{Pass: passSeqs}, {Pass: passSeqs, Seqs: []ResidentBatchSeq{}},
-		{Pass: passRagged}, {Pass: passRagged, Ragged: []ResidentRaggedSeq{}}, {Pass: passRagged, Ragged: []ResidentRaggedSeq{{Embs: one}, {Slot: 1}}},
 	} {
 		f := &stepLogResident{}
 		if _, err := stepOn(f, b); !errors.Is(err, errStepShape) || len(f.calls) != 0 {
