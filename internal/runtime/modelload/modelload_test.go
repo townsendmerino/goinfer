@@ -12,6 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -75,7 +76,7 @@ func TestLoad_safetensorsDirGoesThroughSidecar(t *testing.T) {
 	if !prequant.DefaultToSidecar(false) {
 		t.Skip("the sidecar default does not hold on this platform")
 	}
-	fix := filepath.Join("..", "..", "..", "testdata", "tiny-qwen2-moe")
+	fix := testpath.Testdata(t, "tiny-qwen2-moe")
 	ents, err := os.ReadDir(fix)
 	if err != nil {
 		t.Skipf("tiny fixture: %v", err)
@@ -270,7 +271,7 @@ func TestLoad_explicitInt4AcceptsItsMoESidecar(t *testing.T) {
 	if !prequant.DefaultToSidecar(false) {
 		t.Skip("the sidecar default does not hold on this platform")
 	}
-	fix := filepath.Join("..", "..", "..", "testdata", "mixtral-tiny")
+	fix := testpath.Testdata(t, "mixtral-tiny")
 	src := filepath.Join(t.TempDir(), "mixtral-tiny")
 	if err := os.Mkdir(src, 0o755); err != nil {
 		t.Fatal(err)

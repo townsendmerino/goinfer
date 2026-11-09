@@ -16,6 +16,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // TestSideRequests_evictionCounterfactual reads a night or day run's output (SIDE_OUT, a matrix.py output directory whose
@@ -42,7 +43,7 @@ func TestSideRequests_evictionCounterfactual(t *testing.T) {
 	if v := os.Getenv("SIDE_ROLLBACK"); v != "" {
 		floor, _ = strconv.Atoi(v)
 	}
-	tk, err := modelload.Tokenizer(filepath.Join("..", "..", "testdata", "mellum2-tokenizer"))
+	tk, err := modelload.Tokenizer(testpath.Testdata(t, "mellum2-tokenizer"))
 	if err != nil {
 		t.Skipf("needs the Mellum2 tokenizer: %v", err)
 	}
@@ -163,7 +164,7 @@ func TestSideRequests_sessionStartPrefix(t *testing.T) {
 	if v := os.Getenv("SIDE_ROLLBACK"); v != "" {
 		floor, _ = strconv.Atoi(v)
 	}
-	tk, err := modelload.Tokenizer(filepath.Join("..", "..", "testdata", "mellum2-tokenizer"))
+	tk, err := modelload.Tokenizer(testpath.Testdata(t, "mellum2-tokenizer"))
 	if err != nil {
 		t.Skipf("needs the Mellum2 tokenizer: %v", err)
 	}

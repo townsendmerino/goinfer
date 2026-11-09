@@ -30,7 +30,46 @@ type Local struct {
 
 // Start begins one generation on d.
 func (d Local) Start(ctx context.Context, req Request) *Stream {
+	if req.Lazy != nil && req.Masker == nil && req.Media == nil && !req.NoSpeculation && (d.Drafter != nil || d.Speculative) {
+		return lazyTurn(decoder.WithKVScope(ctx, req.Scope), req, req.Lazy, d.lazyFree, d.lazyConstrained) // the scope plain resident Generate takes
+	}
 	return GenerationStream(d.generate(ctx, req))
+}
+
+// resident reports whether d generates on the GPU-resident stateless path rather than through a session (generate's first branch).
+func (d Local) resident() bool { return d.Model.ResidentActive() && !d.AdapterBound }
+
+// lazyFree is a lazy-union turn's phase 1: d's speculative path, the block drafter or n-gram speculation, with no fallback (an error
+// sends the whole turn to lazyConstrained, as a non-speculating server runs it).
+func (d Local) lazyFree(ctx context.Context, prompt []int, max int, sp decoder.SamplingParams) (<-chan int, *decoder.Generation, func(), error) {
+	if d.resident() {
+		if dr := d.Drafter; dr != nil {
+			s, g, err := dr.GenerateStream(cost.Off(ctx), prompt, max, sp)
+			return s, g, nil, err
+		}
+		s, g, err := d.Model.GenerateNgramSpeculativeAdaptive(cost.Off(ctx), prompt, max, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, sp)
+		return s, g, nil, err
+	}
+	sess := d.Pool.Acquire(prompt)
+	s, g, err := sess.GenerateNgramSpeculativeAdaptive(cost.Off(ctx), prompt, max, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, sp)
+	if err != nil {
+		d.Pool.Checkin(sess)
+		return nil, nil, nil, err
+	}
+	return s, g, func() { d.Pool.Checkin(sess) }, nil
+}
+
+// lazyConstrained is a lazy-union turn's phase 2, sp carrying the lazy masker: plain gated Generate, on the resident when d is resident,
+// else on a session. Not the CPU session's grammar-fused speculation, which needs a grammar live from token 1 and cannot disarm after a
+// call, as the lazy masker does.
+func (d Local) lazyConstrained(ctx context.Context, prompt []int, max int, sp decoder.SamplingParams) (<-chan int, *decoder.Generation, func(), error) {
+	if d.resident() {
+		s, g := d.Model.Generate(ctx, prompt, max, sp)
+		return s, g, nil, nil
+	}
+	sess := d.Pool.Acquire(prompt)
+	s, g := sess.Generate(ctx, prompt, max, sp)
+	return s, g, func() { d.Pool.Checkin(sess) }, nil
 }
 
 // A cost counter on ctx (internal/cost, a request that asked for its cost) reaches only the plain Generate paths, which count;

@@ -30,6 +30,10 @@ type Report struct {
 	ImgPrefillResident bool
 	ImgPrefillDecline  string
 	DecodeResident     bool
+	// SpecDrafted and SpecAccepted are a speculative turn's drafted and accepted tokens (decoder.SpecStats), 0 when it did not
+	// speculate; LazyArmed is a lazy-union turn (lazyTurn) whose call opener armed the constrained phase.
+	SpecDrafted, SpecAccepted int
+	LazyArmed                 bool
 
 	Err error
 }
@@ -50,7 +54,7 @@ func reportOf(gen *decoder.Generation) *Report {
 	if gen == nil {
 		return nil
 	}
-	return &Report{
+	r := &Report{
 		Budget: gen.Budget, BudgetClamped: gen.BudgetClamped, Logprobs: gen.Logprobs,
 		PrefillReused: gen.PrefillReused, PrefillSlot: gen.PrefillSlot, PrefillMatch: gen.PrefillMatch,
 		PrefillShared: gen.PrefillShared, KVCopy: gen.KVCopy, KVCopyDeclined: gen.KVCopyDeclined,
@@ -60,4 +64,8 @@ func reportOf(gen *decoder.Generation) *Report {
 		ImgPrefillResident: gen.ImgPrefillResident, ImgPrefillDecline: gen.ImgPrefillDecline, DecodeResident: gen.DecodeResident,
 		Err: gen.Err(),
 	}
+	if s := gen.Spec; s != nil {
+		r.SpecDrafted, r.SpecAccepted = s.Drafted, s.Accepted
+	}
+	return r
 }

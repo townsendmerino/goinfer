@@ -259,6 +259,7 @@
       "multimodal"
     ],
     "chat": [
+      "constrain",
       "tokenizer"
     ],
     "cmd/gate": [
@@ -658,6 +659,7 @@
       "multimodal"
     ],
     "engine": [
+      "constrain",
       "decoder",
       "internal/cost"
     ],
@@ -709,6 +711,7 @@
       "internal/runtime/modelload",
       "internal/runtime/prequant",
       "internal/runtime/whisper",
+      "internal/testpath",
       "internal/vision",
       "multimodal",
       "pull",
@@ -749,6 +752,7 @@
       "decoder",
       "decoder/fit",
       "internal/runtime/prequant",
+      "internal/testpath",
       "tokenizer"
     ],
     "internal/runtime/whisper": [

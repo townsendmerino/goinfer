@@ -1103,7 +1103,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `backend/webgpu/cmd/chat` | `backend/webgpu`, `internal/app/chatapp` |  |
 | `backend/webgpu/cmd/serve` | `backend/webgpu`, `internal/app/serveapp` |  |
 | `backend/webgpu/internal/kernels` | `internal/cost`, `internal/runtime/adapter`, `internal/runtime/mem`, `internal/vision`, `multimodal` | `internal/runtime/hybridattn`, `internal/runtime/sampling` |
-| `chat` | `tokenizer` | `internal/codec`, `multimodal` |
+| `chat` | `constrain`, `tokenizer` | `internal/codec`, `multimodal` |
 | `cmd/gate` | `internal/guard/paritykey`, `internal/runtime/mem/probe`, `tokenizer` |  |
 | `cmd/hostmem` | `internal/runtime/mem/probe` |  |
 | `cmd/prequant` | `decoder`, `internal/runtime/prequant` |  |
@@ -1123,7 +1123,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/app/fitcmd` | `decoder`, `decoder/fit`, `internal/runtime/modelload`, `internal/runtime/prequant` | `internal/runtime/giw` |
 | `internal/app/loadflags` | `decoder`, `internal/app/cliutil`, `internal/config` |  |
 | `internal/app/pullcmd` | `pull` |  |
-| `internal/app/serveapp` | `chat`, `constrain`, `decoder`, `decoder/fit`, `embeddinggemma2`, `engine`, `engine/enginetest`, `internal/app/cliutil`, `internal/app/connect`, `internal/app/loadflags`, `internal/app/pullcmd`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/codec`, `internal/cost`, `internal/decide`, `internal/guard/servecheck`, `internal/guard/swapguard`, `internal/runtime/mem`, `internal/runtime/modelload`, `internal/runtime/prequant`, `internal/runtime/sampling`, `internal/runtime/scheduler`, `internal/runtime/whisper`, `internal/vision`, `multimodal`, `pull`, `tokenizer` | `internal/app/chatapp`, `internal/app/inproc`, `internal/config`, `internal/runtime/giw`, `internal/runtime/kvmgr` |
+| `internal/app/serveapp` | `chat`, `constrain`, `decoder`, `decoder/fit`, `embeddinggemma2`, `engine`, `engine/enginetest`, `internal/app/cliutil`, `internal/app/connect`, `internal/app/loadflags`, `internal/app/pullcmd`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/codec`, `internal/cost`, `internal/decide`, `internal/guard/servecheck`, `internal/guard/swapguard`, `internal/runtime/mem`, `internal/runtime/modelload`, `internal/runtime/prequant`, `internal/runtime/sampling`, `internal/runtime/scheduler`, `internal/runtime/whisper`, `internal/vision`, `multimodal`, `pull`, `tokenizer` | `internal/app/chatapp`, `internal/app/inproc`, `internal/config`, `internal/runtime/giw`, `internal/runtime/kvmgr`, `internal/testpath` |
 | `internal/audio` | `internal/vision` |  |
 | `internal/clef` | `decoder`, `tokenizer` | `internal/runtime/modelload` |
 | `internal/codec` | `chat`, `multimodal`, `tokenizer` |  |
@@ -1135,7 +1135,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/guard/servecheck` | `decoder`, `internal/diag/hwreport` |  |
 | `internal/guard/swapguard` | `decoder`, `internal/runtime/logs`, `internal/runtime/mem/probe` |  |
 | `internal/runtime/mamba2` | `internal/runtime/hybridattn` |  |
-| `internal/runtime/modelload` | `decoder`, `decoder/fit`, `internal/guard/swapguard`, `internal/runtime/giw`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/prequant`, `pull`, `tokenizer` |  |
+| `internal/runtime/modelload` | `decoder`, `decoder/fit`, `internal/guard/swapguard`, `internal/runtime/giw`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/prequant`, `pull`, `tokenizer` | `internal/testpath` |
 | `internal/runtime/prequant` | `decoder` |  |
 | `internal/runtime/whisper` | `internal/audio`, `tokenizer` | `multimodal` |
 | `internal/wrappedupload` | `decoder` |  |

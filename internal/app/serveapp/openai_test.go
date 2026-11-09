@@ -726,11 +726,12 @@ func TestConstrainToolUnion_wiring(t *testing.T) {
 	if err := constrainForcedTool(chatml, gr0, nil, false, "auto", tools[:1]); err != nil || gr0.sp.LogitProcessor == nil || gr0.masker != nil {
 		t.Errorf("Anthropic-auto lone tool: err=%v proc=%v masker=%v — want the lazy union only", err, gr0.sp.LogitProcessor != nil, gr0.masker != nil)
 	}
-	// a speculative server keeps its auto behaviour from before the union (its drafter), but still gets required
+	// a speculative server keeps its drafter under auto (no processor, which every speculative path refuses) and gets the lazy union
+	// as gr.lazy, which the engine takes from the call's opener on; required still gets the forced union
 	specLM := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}, spec: true}
 	grS := &genRequest{}
-	if err := constrainForcedTool(specLM, grS, nil, false, "auto", tools); err != nil || grS.sp.LogitProcessor != nil {
-		t.Errorf("spec server, auto: err=%v proc=%v — want unconstrained (keep the drafter)", err, grS.sp.LogitProcessor != nil)
+	if err := constrainForcedTool(specLM, grS, nil, false, "auto", tools); err != nil || grS.sp.LogitProcessor != nil || grS.lazy == nil {
+		t.Errorf("spec server, auto: err=%v proc=%v lazy=%v — want no processor (keep the drafter) and the lazy union on gr.lazy", err, grS.sp.LogitProcessor != nil, grS.lazy != nil)
 	}
 	grR := &genRequest{}
 	if err := constrainForcedTool(specLM, grR, nil, false, "required", tools); err != nil || grR.masker == nil {
