@@ -1,0 +1,65 @@
+=== RUN   TestCUDAStepBatch_matchesForward
+=== RUN   TestCUDAStepBatch_matchesForward/llama-tiny/
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7041 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:147: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:147: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:147: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/llama-tiny/i8
+cuda: prefill width 2048 rows (6 MiB of scratch; 7069 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:147: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:147: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:147: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/mistral-tiny-window/
+cuda: prefill width 2048 rows (11 MiB of scratch; 7037 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:147: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70])
+    batchstep_test.go:147: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70 200])
+    batchstep_test.go:147: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70 200 33])
+=== RUN   TestCUDAStepBatch_matchesForward/gemma4-dense-twogeom-tiny/
+cuda: prefill width 2048 rows (64 MiB of scratch; 6933 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:147: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:147: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:147: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/granite-dense-tiny/
+cuda: prefill width 2048 rows (5 MiB of scratch; 7059 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:147: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:147: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:147: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/cohere-tiny/
+cuda: prefill width 2048 rows (6 MiB of scratch; 7041 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:138: B=2 step 2 seq 0 (slot 0, pos 7): logit 1 = -0.012343788 in the step, -0.0123437885 from Forward — not bit-identical
+=== RUN   TestCUDAStepBatch_matchesForward/cohere2-tiny/
+cuda: prefill width 2048 rows (6 MiB of scratch; 7041 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:138: B=2 step 0 seq 0 (slot 0, pos 5): logit 1 = -0.014723363 in the step, -0.014723365 from Forward — not bit-identical
+--- FAIL: TestCUDAStepBatch_matchesForward (3.56s)
+    --- PASS: TestCUDAStepBatch_matchesForward/llama-tiny/ (1.95s)
+    --- PASS: TestCUDAStepBatch_matchesForward/llama-tiny/i8 (0.28s)
+    --- PASS: TestCUDAStepBatch_matchesForward/mistral-tiny-window/ (0.28s)
+    --- PASS: TestCUDAStepBatch_matchesForward/gemma4-dense-twogeom-tiny/ (0.29s)
+    --- PASS: TestCUDAStepBatch_matchesForward/granite-dense-tiny/ (0.28s)
+    --- FAIL: TestCUDAStepBatch_matchesForward/cohere-tiny/ (0.24s)
+    --- FAIL: TestCUDAStepBatch_matchesForward/cohere2-tiny/ (0.23s)
+=== RUN   TestCohereResidentParityCUDA
+=== RUN   TestCohereResidentParityCUDA/cohere-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 7069 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    cohere_resident_parity_test.go:88: decode, 12 positions: worst cosine 1.000000, worst relL2 0.0000
+    cohere_resident_parity_test.go:110: batched prefill last-token logits vs CPU: cosine 1.000000 relL2 0.0000
+=== RUN   TestCohereResidentParityCUDA/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7069 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    cohere_resident_parity_test.go:88: decode, 12 positions: worst cosine 1.000000, worst relL2 0.0000
+    cohere_resident_parity_test.go:110: batched prefill last-token logits vs CPU: cosine 1.000000 relL2 0.0000
+--- PASS: TestCohereResidentParityCUDA (1.55s)
+    --- PASS: TestCohereResidentParityCUDA/cohere-tiny (1.30s)
+    --- PASS: TestCohereResidentParityCUDA/cohere2-tiny (0.25s)
+FAIL
+ledger: 16 device(s) released in this run

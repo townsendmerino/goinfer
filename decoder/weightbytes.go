@@ -105,7 +105,8 @@ func (m *Model) ResidentDenseWeightBytes() int64 {
 // gather token embeddings on the host and never upload the learned position table or Gemma 4's per-layer embedding tables, so
 // an untied model's token-embedding table must not be priced as device memory; pricing it makes the slot-aware context
 // plan land too low. The Metal and CUDA q4k lanes upload the file's Q5_K and Q6_K blocks for their int8 copies (kquantSavings).
-// The CPU also holds the weights' own structs (cpuStructBytes), and CUDA and WebGPU hold gpt-oss's expert biases on this line.
+// The CPU also holds the weights' own structs (cpuStructBytes), CUDA and WebGPU hold gpt-oss's expert biases on this line, and Metal
+// the buffers its build derives (metalDerivedDenseBytes).
 // Measurement: docs/code-notes/decoder.md#Model.ResidentDenseWeightBytesFor.
 func (m *Model) ResidentDenseWeightBytesFor(backend string) int64 {
 	n := m.ResidentDenseWeightBytes() - m.residentHostSideBytes(backend) - m.kquantSavings(backend) - m.mambaProjSavings(backend)
@@ -115,6 +116,8 @@ func (m *Model) ResidentDenseWeightBytesFor(backend string) int64 {
 		n += dense
 	case "cuda", "webgpu":
 		n += m.expertBiasBytes()
+	case "metal":
+		n += m.metalDerivedDenseBytes()
 	}
 	return n
 }

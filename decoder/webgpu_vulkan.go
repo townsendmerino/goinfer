@@ -348,8 +348,9 @@ func (m *Model) webgpuExpertLine() int64 {
 
 // webgpuDerivedTableBytes is what a WebGPU build uploads beside the weights that no weight line holds: one RoPE inverse-frequency
 // table per distinct table (the build caches them by value), a one-element attention sink on each layer without learned sinks
-// (a WGSL bind group binds no null buffer), and on a DeltaNet model one zeroed conv bias of the conv width, which every DeltaNet
-// layer binds. The plan prices it on the dense line, beside the blocks, as it prices the vectors.
+// (a WGSL bind group binds no null buffer), on a DeltaNet model one zeroed conv bias of the conv width, which every DeltaNet
+// layer binds, and on each of Gemma 4's MoE blocks the router norm's unit weight and the router's zero bias, less the router scale
+// the build folds into the router. The plan prices it on the dense line, beside the blocks, as it prices the vectors.
 func (m *Model) webgpuDerivedTableBytes() int64 {
 	if m == nil || m.w == nil || m.w.arch == nil {
 		return 0
@@ -363,6 +364,9 @@ func (m *Model) webgpuDerivedTableBytes() int64 {
 		}
 		if len(m.GptOssSinksResident(i)) == 0 {
 			n += 4
+		}
+		if g4 := m.w.Layers[i].gemma4moe; g4 != nil {
+			n += 4 * (int64(m.w.arch.HiddenDim) + int64(g4.nE) - int64(len(g4.routerScale)))
 		}
 	}
 	if _, hk, hv, nk, nv, _, ok := m.Qwen35ResidentParams(); ok {
