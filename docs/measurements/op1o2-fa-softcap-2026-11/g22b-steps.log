@@ -1,0 +1,7 @@
+refs start 2026-11-09 03:19:33 PST load 0.62 0.71 0.36 MemAvailable 60719 MiB
+refs end 2026-11-09 03:56:47 PST exit 0
+gate try 1 start 2026-11-09 03:56:47 PST load 12.44 12.45 13.08 MemAvailable 61229 MiB
+gate try 1 VOID (load 12.44, MemAvailable 61229 MiB); waiting 5 min
+gate try 2 start 2026-11-09 04:01:48 PST load 0.20 4.65 9.50 MemAvailable 61269 MiB
+gate end 2026-11-09 04:05:04 PST exit 0
+DONE 2026-11-09 04:05:04 PST
