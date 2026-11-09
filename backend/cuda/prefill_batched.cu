@@ -125,14 +125,15 @@ extern "C" __global__ void qk_norm_batched(
 // kernel used to recompute it here in f32 with a bare multiply-add, which left both the rounding
 // and the fma-vs-mul+add choice to the compiler (audit-2026-09-10 G-11). NULL for every family
 // without the feature: scale 1.
-// rope_kv_row is rope_kv_batched's work for row m at position pos under table kvt: the one body rope_kv_batched and rope_kv_ragged
-// share, so a ragged row is the batched row's arithmetic.
-__device__ __forceinline__ void rope_kv_row(
+__global__ void rope_kv_batched(
     float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
     const float* __restrict__ invFreq, KV_T* __restrict__ kc, KV_T* __restrict__ vc,
-    const int* __restrict__ kvt, int nH, int nKV, int hd, int pos, int rhalf, int m, int idx, float mscale,
+    const int* __restrict__ kvt, int nH, int nKV, int hd, int startPos, int rhalf, int M, float mscale,
     const float* __restrict__ qTempRows)
 {
+    int m = blockIdx.y; if (m >= M) return;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int pos = startPos + m;
     int tail = hd - 2 * rhalf;
     int qn = nH * rhalf, kn = nKV * rhalf, tn = nKV * tail;
     int qDim = nH * hd, kvDim = nKV * hd;
@@ -164,30 +165,6 @@ __device__ __forceinline__ void rope_kv_row(
     }
 }
 
-__global__ void rope_kv_batched(
-    float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
-    const float* __restrict__ invFreq, KV_T* __restrict__ kc, KV_T* __restrict__ vc,
-    const int* __restrict__ kvt, int nH, int nKV, int hd, int startPos, int rhalf, int M, float mscale,
-    const float* __restrict__ qTempRows)
-{
-    int m = blockIdx.y; if (m >= M) return;
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    rope_kv_row(q, k, v, invFreq, kc, vc, kvt, nH, nKV, hd, startPos + m, rhalf, m, idx, mscale, qTempRows);
-}
-
-// rope_kv_ragged: rope_kv_batched over M rows of different sequences (a ragged step): row m at position rowPos[m] in KV slot
-// rowSlot[m], whose table is tabs + rowSlot[m]*tabStride.
-__global__ void rope_kv_ragged(
-    float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
-    const float* __restrict__ invFreq, KV_T* __restrict__ kc, KV_T* __restrict__ vc,
-    const int* __restrict__ tabs, int tabStride, const int* __restrict__ rowSlot, const int* __restrict__ rowPos,
-    int nH, int nKV, int hd, int rhalf, int M, float mscale, const float* __restrict__ qTempRows)
-{
-    int m = blockIdx.y; if (m >= M) return;
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    rope_kv_row(q, k, v, invFreq, kc, vc, tabs + (long)rowSlot[m] * tabStride, nH, nKV, hd, rowPos[m], rhalf, m, idx, mscale, qTempRows);
-}
-
 // attn_batched: grid.x = head, grid.y = query row m. Each block runs the M=1 attention math for
 // query m with nKeys = startPos+m+1 (CAUSAL) and its own window. Shared mem sized to the largest
 // row's window by the host (maxNWin + blockDim). Bit-identical to attention() per row.
@@ -195,12 +172,13 @@ __global__ void rope_kv_ragged(
 // and the DENOMINATOR, never the numerator. NULL elsewhere, leaving the kernel bit-identical.
 // It must match splitkv_softmax exactly — a sink applied at decode but not at prefill would
 // present as drift partway through a sequence rather than as a missing term.
-// attn_row is attn_batched's block for head h of query row m over nKeys keys under table kvt: the one body attn_batched and
-// attn_ragged share, so a ragged row is the batched row's arithmetic.
-__device__ __forceinline__ void attn_row(const float* __restrict__ q, const KV_T* __restrict__ kc,
-                             const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd, int nKeys,
-                             float scale, int window, int h, int m, float* __restrict__ ctx,
+__global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict__ kc,
+                             const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd, int startPos,
+                             float scale, int window, int M, float* __restrict__ ctx,
                              const float* __restrict__ sinks ATTN_CAP_PARAM KV_SCALE_PARAMS) {
+    int h = blockIdx.x; if (h >= nH) return;
+    int m = blockIdx.y; if (m >= M) return;
+    int nKeys = startPos + m + 1;
     int winStart = (window > 0 && nKeys > window) ? nKeys - window : 0;
     int nWin = nKeys - winStart;
     extern __shared__ float sm[];
@@ -273,28 +251,6 @@ __device__ __forceinline__ void attn_row(const float* __restrict__ q, const KV_T
 #endif
         ctx[(long)m * qDim + h * hd + d] = acc * inv;
     }
-}
-
-__global__ void attn_batched(const float* __restrict__ q, const KV_T* __restrict__ kc,
-                             const KV_T* __restrict__ vc, const int* __restrict__ kvt, int nH, int nKV, int hd, int startPos,
-                             float scale, int window, int M, float* __restrict__ ctx,
-                             const float* __restrict__ sinks ATTN_CAP_PARAM KV_SCALE_PARAMS) {
-    int h = blockIdx.x; if (h >= nH) return;
-    int m = blockIdx.y; if (m >= M) return;
-    attn_row(q, kc, vc, kvt, nH, nKV, hd, startPos + m + 1, scale, window, h, m, ctx, sinks ATTN_CAP_ARG KV_SCALE_ARGS);
-}
-
-// attn_ragged: attn_batched over M query rows of different sequences (a ragged step): row m attends rowPos[m]+1 keys in KV slot
-// rowSlot[m], whose table is tabs + rowSlot[m]*tabStride. Shared memory is sized by the host to the widest row's window.
-__global__ void attn_ragged(const float* __restrict__ q, const KV_T* __restrict__ kc,
-                            const KV_T* __restrict__ vc, const int* __restrict__ tabs, int tabStride,
-                            const int* __restrict__ rowSlot, const int* __restrict__ rowPos, int nH, int nKV, int hd,
-                            float scale, int window, int M, float* __restrict__ ctx,
-                            const float* __restrict__ sinks ATTN_CAP_PARAM KV_SCALE_PARAMS) {
-    int h = blockIdx.x; if (h >= nH) return;
-    int m = blockIdx.y; if (m >= M) return;
-    attn_row(q, kc, vc, tabs + (long)rowSlot[m] * tabStride, nH, nKV, hd, rowPos[m] + 1, scale, window, h, m, ctx,
-             sinks ATTN_CAP_ARG KV_SCALE_ARGS);
 }
 
 #define ACT_GELU_TANH 0
