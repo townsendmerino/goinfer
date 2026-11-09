@@ -18,6 +18,7 @@ be told from one taken under the old +2 GB rule.
 Both print the snapshot as one JSON line on stdout. 75 matches night.py's RETRY_RC, so a runner that exits with it is re-queued.
 """
 import json
+import math
 import os
 import re
 import signal
@@ -76,10 +77,13 @@ def _load1():
 def snapshot():
     """The readings a cell records at its start and its end; None for one that cannot be read (an unreadable core count stays unknown, so
     start_void skips the load term instead of imposing a cap of 0.5). swapin_mb and swapout_mb are cumulative since boot, for the
-    swap-in and swap-out bars."""
+    swap-in and swap-out bars. Swap is read FIRST and t_epoch stamped right after it, before the slow hostmem readings: t_epoch is
+    the time of the swap reading, the cell's baseline, which a watcher's samples are compared against (peak_since)."""
+    swap = swap_used_mb()
+    t_epoch = time.time()
     swapin, swapout = swap_io_mb()
-    return {"t": time.strftime("%F %T"), "load1": _load1(), "ncores": os.cpu_count(),
-            "available_mb": hostmem.available_mb(), "reclaimable_mb": hostmem.reclaimable_mb(), "swap_mb": swap_used_mb(),
+    return {"t": time.strftime("%F %T"), "t_epoch": t_epoch, "load1": _load1(), "ncores": os.cpu_count(),
+            "available_mb": hostmem.available_mb(), "reclaimable_mb": hostmem.reclaimable_mb(), "swap_mb": swap,
             "swapin_mb": swapin, "swapout_mb": swapout}
 
 
@@ -116,17 +120,17 @@ def start_void(snap, need_mb, cap=None, allow_unreadable_memory=False):
     read voids the start, with that reason (an unreadable core count with no explicit cap is the one skipped term: the cap cannot be
     computed, and the callers say so). need_mb None or 0 means the cell loads no model, so the memory clause does not apply."""
     ncores = snap.get("ncores")
+    load1, avail = _num(snap.get("load1")), _num(snap.get("available_mb"))
     if cap is None and ncores:
         cap = load_cap(ncores)
     # an unknown core count with no explicit cap is an unknown: the load term is skipped (callers say so), not a cap of 0.5
     if cap is not None:
-        if snap.get("load1") is None:
+        if load1 is None:
             return "load average unreadable"
-        if snap["load1"] > cap:
-            return (f"load {snap['load1']:.2f} above half of {ncores} cores" if ncores and cap == ncores / 2
-                    else f"load {snap['load1']:.2f} above the cap {cap:g}")
+        if load1 > cap:
+            return (f"load {load1:.2f} above half of {ncores} cores" if ncores and cap == ncores / 2
+                    else f"load {load1:.2f} above the cap {cap:g}")
     if need_mb:
-        avail = snap.get("available_mb")
         if avail is None:
             if allow_unreadable_memory:  # BENCH_ALLOW_NO_FREE_MEM=1: the documented override for a box with no memory reading
                 return None
@@ -146,11 +150,12 @@ def swap_verdict(growth_mb, swapin_mb, swapout_mb, env=None):
     lim = env.get("BENCH_SWAP_VOID_MB", "").strip()
     inlim = env.get("BENCH_SWAPIN_VOID_MB", "").strip()
     outlim = env.get("BENCH_SWAPOUT_VOID_MB", "").strip()
+    if growth_mb is None:
+        return "swap unreadable: void"  # whichever bar is in force, a swap reading that failed voids the cell
+    growth_mb = round(growth_mb, 2)  # the readings' own resolution (sysctl: 0.01 MB): float noise between two equal readings is not growth
     if not lim and not inlim and not outlim:
         lim = "0"
     if lim:
-        if growth_mb is None:
-            return "swap unreadable: void"
         if growth_mb > float(lim):
             return f"swap grew +{growth_mb:.1f} MB during the cell (> {float(lim):.0f} MB): void"
     if inlim:
@@ -170,7 +175,7 @@ def swap_void(start, end, peak_mb=None, env=None, peak_required=False):
     """The reason a cell whose readings were `start` and `end` is void on swap, or None. The growth is the larger of the end against the
     start and the sampled peak (SwapSampler, in absolute MB) against the start: a spike freed again before the end still counts, and
     the peak is read against THIS cell's start reading, whatever baseline the sampler began from."""
-    s, e = start.get("swap_mb"), end.get("swap_mb")
+    s, e, peak_mb = _num(start.get("swap_mb")), _num(end.get("swap_mb")), _num(peak_mb)
     # Fails closed: the start and end readings are both part of the cell's record, so one that failed voids it whatever a sampler saw, and
     # a watcher that was asked for (peak_required) but has no peak voids it too.
     if s is None or e is None or (peak_required and peak_mb is None):
@@ -179,9 +184,82 @@ def swap_void(start, end, peak_mb=None, env=None, peak_required=False):
         growth = max(max(v - s for v in (e, peak_mb) if v is not None), 0.0)
 
     def delta(k):
-        a, b = start.get(k), end.get(k)
+        a, b = _num(start.get(k)), _num(end.get(k))
         return None if a is None or b is None else b - a
     return swap_verdict(growth, delta("swapin_mb"), delta("swapout_mb"), env)
+
+
+def end_void(start, end, peak_mb=None, peak_required=False, env=None, allow_unreadable_memory=False):
+    """The reason a cell is void at its end, or None: swap (swap_void), then a guard reading the end could not take. The load average
+    is part of the record when the start could compute a cap (it had a core count); available memory when the start declared a model
+    load (need_mb) and allow_unreadable_memory (BENCH_ALLOW_NO_FREE_MEM=1) is not set."""
+    why = swap_void(start, end, peak_mb, env, peak_required)
+    if why:
+        return why
+    if start.get("ncores") and _num(end.get("load1")) is None:
+        return "load average unreadable at the cell's end"
+    if start.get("need_mb") and _num(end.get("available_mb")) is None and not allow_unreadable_memory:
+        return "available memory unreadable at the cell's end"
+    return None
+
+
+def _num(x):
+    """x as a float if it is a finite number, else None (a string, null, a bool, a list, NaN, an infinity: a reading that is not a reading)."""
+    return float(x) if isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) else None
+
+
+def peak_since(samples, t0):
+    """The highest swap reading a watcher took at or after epoch time t0, the cell's own start reading. A watcher started before `start`
+    saw swap the cell never did, and its last sample before t0 can predate a fall that happened before `start` read swap, so neither
+    counts: the baseline is `start`'s reading, and the peak is over what the watcher saw from there on (it takes a last sample at
+    stop). None if there is no such sample, if samples is not a list, or a sample is not a pair of numbers: the caller voids the cell."""
+    if not isinstance(samples, list) or _num(t0) is None:
+        return None
+    vals = []
+    for item in samples:
+        try:
+            t, v = _num(item[0]), _num(item[1])
+        except (TypeError, IndexError, KeyError):
+            return None
+        if t is None or v is None:
+            return None
+        if t >= t0:
+            vals.append(v)
+    return max(vals) if vals else None
+
+
+READ_TRIES, READ_DELAY = 20, 0.1  # about two seconds for a file a watcher is still writing; tests shorten them
+
+
+def read_json_retry(path, tries=None, delay=None, ok=None):
+    """The JSON object in path, retrying while it is missing or does not parse (a file a watcher is still writing), and, with ok, while
+    ok(obj) is false (a file an earlier watcher left); None if it never parses to an object, else the last object read, ok or not."""
+    tries, delay = tries or READ_TRIES, READ_DELAY if delay is None else delay
+    last = None
+    for i in range(tries):
+        try:
+            obj = json.load(open(path))
+            if isinstance(obj, dict):
+                last = obj
+                if ok is None or ok(obj):
+                    return obj
+        except (OSError, ValueError):
+            pass
+        if i + 1 < tries:
+            time.sleep(delay)
+    return last
+
+
+def peak_file_is_final(obj, t0):
+    """Whether a watcher's result file is the one for the cell that began at t0: it lost a reading (final either way), or its last
+    sample is at or after t0. A file whose samples all predate t0 is an earlier watcher's, not yet overwritten."""
+    if obj.get("unreadable") or _num(t0) is None:
+        return True
+    samples = obj.get("samples")
+    try:
+        return isinstance(samples, list) and bool(samples) and _num(samples[-1][0]) is not None and _num(samples[-1][0]) >= t0
+    except (TypeError, IndexError, KeyError):
+        return False
 
 
 class SwapSampler:
@@ -195,21 +273,30 @@ class SwapSampler:
         self.read, self.poll_s = read or (lambda: swap_used_mb()), poll_s
         self.base, self.peak = base, base
         self.unreadable = False  # a reading failed after the sampler began: the cell cannot be called clean
+        self.n = 0               # readings taken: a sampler that never read has no evidence of a peak
+        self.samples = []        # [epoch, MB], every reading (peak_since)
         self._stop = threading.Event()
         self._thread = None
 
     def sample(self):
+        t = time.time()  # stamped BEFORE the read: a slow read must not make a reading older than the cell's start look newer
         try:
             v = self.read()
         except Exception:
             v = None
-        self.observe(v)
+        self.observe(v, t)
 
-    def observe(self, v):
-        """Folds in a reading taken elsewhere (a job's end reading); None marks the sampler unreadable."""
+    def observe(self, v, t=None):
+        """Folds in a reading taken elsewhere (a job's end reading), stamped t (default: now); None or a non-finite value marks the
+        sampler unreadable."""
+        v = _num(v)
         if v is None:
             self.unreadable = True
             return
+        self.n += 1
+        # every reading is kept, repeats included: a repeat after `start` is the evidence that swap stayed where it was (one reading a
+        # second is about 10,000 entries over a three-hour cell)
+        self.samples.append([time.time() if t is None else t, v])
         if self.base is None:
             self.base, self.peak = v, v
         self.peak = max(self.peak, v)
@@ -235,10 +322,11 @@ class SwapSampler:
         return self.result()
 
     def result(self):
-        if self.base is None:
-            return {"base_mb": None, "peak_mb": None, "peak_growth_mb": None, "unreadable": True}
+        if self.base is None or self.n == 0 or self.unreadable:
+            # no evidence of a peak, or a reading failed: no numeric peak for a caller to mistake for a clean one
+            return {"base_mb": self.base, "peak_mb": None, "peak_growth_mb": None, "unreadable": True, "samples": self.samples}
         return {"base_mb": self.base, "peak_mb": self.peak, "peak_growth_mb": round(self.peak - self.base, 3),
-                "unreadable": self.unreadable}
+                "unreadable": False, "samples": self.samples}
 
 
 def watch(json_out, ready_file, sampler, stop):
@@ -303,9 +391,25 @@ def main(argv):
         snap["need_mb"], snap["void"] = a.need_mb, why
         snap["need_source"], snap["need_is_lower_bound"] = a.need_source, a.need_source == "file size"
     else:
-        pk = json.load(open(a.peak_json)) if a.peak_json else None
-        peak = pk.get("peak_mb") if pk and not pk.get("unreadable") else None  # a watcher that lost its reading has no usable peak
-        why = swap_void(json.load(open(a.start_json)), snap, peak, peak_required=bool(a.peak_json))
+        start = read_json_retry(a.start_json) or {}  # a cell with no readable baseline is void, not a crash
+        peak, peak_why = None, None
+        if a.peak_json:
+            # retried while the watcher is still writing it, and while it is an earlier watcher's file; None if it never parses
+            pk = read_json_retry(a.peak_json, ok=lambda o: peak_file_is_final(o, start.get("t_epoch")))
+            if pk is None:
+                peak_why = "the watcher's peak file never parsed"
+            elif pk.get("unreadable"):
+                peak_why = "the watcher lost a swap reading"
+            else:
+                # against the cell's own start reading: the samples from its time on (a watcher started first saw swap the cell never did).
+                # No fallback to the pre-start peak_mb: samples that cannot be placed against the start are a void, not a clean cell.
+                peak = peak_since(pk.get("samples"), start.get("t_epoch"))
+                if peak is None:
+                    peak_why = "the watcher's swap samples unusable (none at or after the start, or not numbers, or no start time)"
+        why = end_void(start, snap, peak, peak_required=bool(a.peak_json),
+                       allow_unreadable_memory=os.environ.get("BENCH_ALLOW_NO_FREE_MEM") == "1")
+        if why and peak_why and "swap unreadable" in why:
+            why = f"{why} ({peak_why})"
         snap["void"] = why
     if a.json_out:
         write_json_atomic(a.json_out, snap)

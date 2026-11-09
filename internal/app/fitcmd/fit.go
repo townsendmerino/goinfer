@@ -191,8 +191,11 @@ func Run(args []string) int {
 			}
 		}
 		via := ""
-		if l.src.path != path {
+		switch {
+		case l.src.path != path:
 			via = ", read through its sidecar " + filepath.Base(l.src.path)
+		case l.src.sidecarFor != "":
+			via = ", priced as the " + l.src.sidecarFor + " sidecar its load builds first"
 		}
 		if l.loadErr != nil { // this backend's source did not load; the others are still planned
 			fmt.Printf("%-6s  NOT PLANNED @ %s%s\n        load %s: %v\n", l.backend, quantLabel(l.src.quant), via, l.src.path, l.loadErr)
@@ -220,20 +223,31 @@ type fitSource struct {
 	quant       string
 	group       int    // the activation group (decoder.Options.ActQuantGroup)
 	loadBackend string // the backend the source is opened with: a cpu-target sidecar can be row4-only, which only "cpu" reads
+	sidecarFor  string // the backend whose sidecar the load builds from path first, which path stands in for (decoder.Options.SidecarFor)
 	notes       []string
 }
 
 // sourceFor is what a load on backend opens, as the load chooses both: the quant modelload.Plan resolves (the per-family default when
-// -quant was not given, with the note the load prints), and the fresh sidecar of that quant for backend's own target, never another
-// backend's. A cpu-target sidecar can be row4-only, which only the literal cpu backend reads, so it is opened on "cpu"; the GPU
-// targets are canonical and are opened with no backend. Without one it is path, opened directly: a .gguf read so holds its weights
-// on the heap, which the load, through the sidecar it builds first, does not.
+// -quant was not given, with the note the load prints), and the sidecar of that quant for backend's own target, never another
+// backend's. On Metal it is modelload.Plan's route, a .gguf's or a safetensors directory's: a current sidecar is opened, and a source
+// whose sidecar the load would build first stands in for it (sidecarFor), priced as that bundle holds it. Elsewhere a fresh .gguf
+// sidecar is opened, a cpu-target one on "cpu" (it can be row4-only, which only that backend reads), a canonical GPU one with no
+// backend. Without one it is path, opened directly.
 func sourceFor(path, quant, explicitQuant, backend string) (fitSource, error) {
 	pl, err := modelload.Plan(modelload.Request{Spec: path, Opts: decoder.Options{Quant: quant, Backend: backend}, ExplicitQuant: explicitQuant})
 	if err != nil {
 		return fitSource{}, err
 	}
 	s := fitSource{path: path, quant: pl.Opts.Quant, group: pl.Opts.ActQuantGroup, notes: pl.Notes}
+	if backend == "metal" {
+		switch {
+		case pl.LoadPath != pl.Source:
+			s.path = pl.LoadPath
+		case pl.Build != "":
+			s.sidecarFor = "metal"
+		}
+		return s, nil
+	}
 	if !strings.HasSuffix(path, ".gguf") {
 		return s, nil
 	}
@@ -248,15 +262,15 @@ func sourceFor(path, quant, explicitQuant, backend string) (fitSource, error) {
 
 // sameSource reports whether two backends are planned on one load.
 func sameSource(a, b fitSource) bool {
-	return a.path == b.path && a.quant == b.quant && a.group == b.group && a.loadBackend == b.loadBackend
+	return a.path == b.path && a.quant == b.quant && a.group == b.group && a.loadBackend == b.loadBackend && a.sidecarFor == b.sidecarFor
 }
 
-// fitLoadOptions is what `fit` opens src with: its quant and activation group, the backend it is read on, a pinned -ctx as the
-// load's own pin (residentCtx, 0 for none), and the KV slot request of a serve load without --kv-sessions (the caller's default,
-// which Metal keeps to decoder.MetalDefaultKVSlots), which planFor's Metal line prices.
+// fitLoadOptions is what `fit` opens src with: its quant and activation group, the backend it is read on, the sidecar it stands in
+// for, a pinned -ctx as the load's own pin (residentCtx, 0 for none), and the KV slot request of a serve load without --kv-sessions
+// (the caller's default, which Metal keeps to decoder.MetalDefaultKVSlots), which planFor's Metal line prices.
 func fitLoadOptions(src fitSource, residentCtx int) decoder.Options {
-	return decoder.Options{Quant: src.quant, ActQuantGroup: src.group, Backend: src.loadBackend, DirectLoad: true, ResidentContext: residentCtx,
-		ResidentKVSlots: decoder.MetalDefaultKVSlots, ResidentKVSlotsDefault: true}
+	return decoder.Options{Quant: src.quant, ActQuantGroup: src.group, Backend: src.loadBackend, SidecarFor: src.sidecarFor, DirectLoad: true,
+		ResidentContext: residentCtx, ResidentKVSlots: decoder.MetalDefaultKVSlots, ResidentKVSlotsDefault: true}
 }
 
 // planFor is the plan `fit` prints for one backend. On Metal it is decoder.Model.MetalLoadPlan's, the load a serve without

@@ -115,6 +115,7 @@ var ogLoadOnly = map[string]string{
 	"Drafter":                      "tells ResolveKV at load that a block drafter will attach: auto stays f32 on CUDA, and an explicit f16 refuses",
 	"LoadAbort":                    "checked between layers during a GGUF weight build, a .giw load and a backend's resident build; nil afterwards in effect",
 	"BackendAuto":                  "tells a backend at load that \"auto\" chose it, so it may decline a precision it would requantize",
+	"SidecarFor":                   "a planner's stand-in for the sidecar a load would build first: the weights in that sidecar's layout, the host copy as it maps them",
 	"ResidentKVSlotsDefault":       "tells the backend at load that ResidentKVSlots is the caller's default, not a chosen count",
 	"ResidentRecurrentStepDefault": "tells the backend at load that ResidentRecurrentStep is the caller's default, not a choice",
 	"ResidentGemma4StepDefault":    "tells the backend at load that ResidentGemma4Step is the caller's default, not a choice",

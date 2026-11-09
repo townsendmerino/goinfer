@@ -16,8 +16,15 @@ import (
 // activation-hazard default, the q4k lane, fit) outside the decoder package: two layers of Phi-3's fused attn_qkv and ffn_up
 // (gate‖up) at the smallest Q4_K width, 256, as random Q4_K blocks with small scales, beside f32 embeddings and norms and a 64-token
 // list. The bytes are fixed by a seed. It is written, not committed: random weights are no family's fixture.
-func WritePhi3Q4KTinyGGUFForTest(path string) error {
-	const arch, hidden, heads, hd, inter, vocab, layers = "phi3", 256, 4, 64, 256, 64, 2
+func WritePhi3Q4KTinyGGUFForTest(path string) error { return writeQ4KTinyGGUF(path, "phi3") }
+
+// WriteLlamaQ4KTinyGGUFForTest is WritePhi3Q4KTinyGGUFForTest for llama, whose q, k, v, gate and up are separate tensors: a family
+// with no activation hazard, so an int4 load of it runs resident on Metal.
+func WriteLlamaQ4KTinyGGUFForTest(path string) error { return writeQ4KTinyGGUF(path, "llama") }
+
+// writeQ4KTinyGGUF writes the two-layer synthetic GGUF for arch, phi3 or llama.
+func writeQ4KTinyGGUF(path, arch string) error {
+	const hidden, heads, hd, inter, vocab, layers = 256, 4, 64, 256, 64, 2
 	const tU32, tF32, tStr, tArr = 4, 6, 8, 9
 	le := binary.LittleEndian
 	var hdr, data bytes.Buffer
@@ -93,14 +100,19 @@ func WritePhi3Q4KTinyGGUFForTest(path string) error {
 	}
 	for l := range layers {
 		p := fmt.Sprintf("blk.%d.", l)
-		ts = append(ts,
-			f32(p+"attn_norm.weight", []uint64{hidden}, hidden, true),
-			q4k(p+"attn_qkv.weight", 3*heads*hd, hidden),
-			q4k(p+"attn_output.weight", hidden, heads*hd),
-			f32(p+"ffn_norm.weight", []uint64{hidden}, hidden, true),
-			q4k(p+"ffn_up.weight", 2*inter, hidden),
-			q4k(p+"ffn_down.weight", hidden, inter),
-		)
+		ts = append(ts, f32(p+"attn_norm.weight", []uint64{hidden}, hidden, true))
+		if arch == "phi3" {
+			ts = append(ts, q4k(p+"attn_qkv.weight", 3*heads*hd, hidden))
+		} else {
+			ts = append(ts, q4k(p+"attn_q.weight", heads*hd, hidden), q4k(p+"attn_k.weight", heads*hd, hidden), q4k(p+"attn_v.weight", heads*hd, hidden))
+		}
+		ts = append(ts, q4k(p+"attn_output.weight", hidden, heads*hd), f32(p+"ffn_norm.weight", []uint64{hidden}, hidden, true))
+		if arch == "phi3" {
+			ts = append(ts, q4k(p+"ffn_up.weight", 2*inter, hidden))
+		} else {
+			ts = append(ts, q4k(p+"ffn_gate.weight", inter, hidden), q4k(p+"ffn_up.weight", inter, hidden))
+		}
+		ts = append(ts, q4k(p+"ffn_down.weight", hidden, inter))
 	}
 	u32(&hdr, 0x46554747) // "GGUF"
 	u32(&hdr, 3)
