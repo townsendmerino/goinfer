@@ -1,0 +1,5 @@
+=== RUN   TestSB2VK5Probe
+    sb2_vk5_probe_test.go:105: model=sb2-heldout5-olmohybrid-7b-ctx4096 ctx=4096 B=5146093184 ledger_list=5212329080 buffers=1846 A=1895825408 fills_MiB=map[16:5 64:3 256:2 1024:1] nvsmi_used_MiB before=430 loaded=6001 full=7539 kv=f32 plan_list=5226176128 plan_list_buffers=611 m1p_plan_list=5569511424 plan=5570755584 plan_ctx=4096 plan_placement=resident
+--- PASS: TestSB2VK5Probe (17.82s)
+PASS
+ledger: 5 Context(s) closed in this run

@@ -15,14 +15,13 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// TestMM5_noFamilySwitchInPricing is G-MP4 (docs/tasks/task-forward-architecture-2026-10.md §4.9b): Metal's KV pricing and the state lists
-// read the operations' declarations, so none of them names a mixer, a family or a family's parameters. CUDA's KV pricing (cudaKVParts)
-// joins the list with CUDA's half.
+// TestMM5_noFamilySwitchInPricing is G-MP4 (docs/tasks/task-forward-architecture-2026-10.md §4.9b): Metal's and CUDA's KV pricing and the
+// state lists read the operations' declarations, so none of them names a mixer, a family or a family's parameters.
 func TestMM5_noFamilySwitchInPricing(t *testing.T) {
 	banned := []string{"ResidentLayerOps", "Mixer", "KVSrcAtResident", "MLAResidentParams", "HeadDimAtResident", "KVHeadsAtResident",
 		".qwen35", ".lfm2", ".kda", ".granite", ".nemotron", ".gemma4", ".mla", "isLinearLayer", "isConvLayer", "isMambaLayer"}
 	scanPricingBodies(t, map[string][]string{
-		"residentneed.go": {"metalKVParts", "MetalKVRowBytes"},
+		"residentneed.go": {"metalKVParts", "MetalKVRowBytes", "cudaKVParts", "cudaKVRowBytes"},
 		"statebytes.go":   {"stateSpecs", "stateBuffers", "recurrentCheckpointBuffers"},
 	}, banned, "KV and state pricing reads the operations' declarations (LayerBuffers), not the family")
 }
@@ -339,6 +338,73 @@ func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
 		if kinds[k] == 0 {
 			t.Errorf("no %s layer compared", k)
 		}
+	}
+}
+
+// TestMM5_handTableCUDA is G-MP3 for CUDA's half (docs/tasks/task-forward-architecture-2026-10.md §4.9b): on the same six fixtures,
+// CUDA's KV per 64-row block (cudaKVParts' null blocks) at the precision CUDA delivers for -kv f16 and at f32, written as arithmetic on
+// each config's numbers. CUDA holds MLA's latent at the cache's precision (f16 here, unlike Metal), and a family its f16 kernels do not
+// cover at f32. Two more rows: llama-tiny's int8 block (one f32 scale per position and head), and one slot of gemma2-tiny at 1,024
+// positions with the windowed cache on, whose two sliding layers hold window+slack positions plus a block and whose two full layers
+// hold the context.
+func TestMM5_handTableCUDA(t *testing.T) {
+	for _, c := range []struct {
+		dir                string
+		numbers            func(*Config) bool
+		f16Block, f32Block int64
+	}{
+		{"../testdata/llama-tiny", func(c *Config) bool { return c.NumLayers == 4 && c.NumKVHeads == 2 && c.HeadDim == 16 },
+			4 * 2 * (2 * 16) * 2 * 64, 4 * 2 * (2 * 16) * 4 * 64},
+		{"../testdata/deepseek-tiny", func(c *Config) bool { return c.NumLayers == 4 && c.KVLoRARank == 16 && c.QKRopeHeadDim == 8 },
+			4 * (16 + 8) * 2 * 64, 4 * (16 + 8) * 4 * 64},
+		{"selftestdata/qwen35-tiny", func(c *Config) bool { return c.NumLayers == 4 && c.NumKVHeads == 2 && c.HeadDim == 16 },
+			1 * 2 * (2 * 16) * 2 * 64, 1 * 2 * (2 * 16) * 4 * 64},
+		{"../testdata/gemma2-tiny", func(c *Config) bool { return c.NumLayers == 4 && c.NumKVHeads == 2 && c.HeadDim == 32 },
+			4 * 2 * (2 * 32) * 2 * 64, 4 * 2 * (2 * 32) * 4 * 64},
+		// lfm2 has no f16 kernels on CUDA: f32 either way, on its one attention layer
+		{"../testdata/lfm2-tiny", func(c *Config) bool {
+			return c.NumLayers == 4 && c.NumKVHeads == 2 && c.HiddenDim == 64 && c.NumHeads == 4
+		},
+			1 * 2 * (2 * 16) * 4 * 64, 1 * 2 * (2 * 16) * 4 * 64},
+		{"../testdata/nemotron-tiny", func(c *Config) bool { return c.NumKVHeads == 2 && c.HeadDim == 16 },
+			2 * 2 * (2 * 16) * 2 * 64, 2 * 2 * (2 * 16) * 4 * 64},
+	} {
+		m, err := Load(c.dir, Options{Backend: "cpu", Quant: "f32"})
+		if err != nil {
+			t.Fatalf("%s: %v", c.dir, err)
+		}
+		if !c.numbers(m.Config()) {
+			t.Errorf("%s: the config no longer has the numbers the table is written from", c.dir)
+		}
+		if _, n := m.cudaKVParts(4096, true, false); n != c.f16Block {
+			t.Errorf("%s: the plan prices %d B of KV a block at -kv f16; the hand table %d", c.dir, n, c.f16Block)
+		}
+		if _, n := m.cudaKVParts(4096, false, false); n != c.f32Block {
+			t.Errorf("%s: the plan prices %d B of KV a block at f32; the hand table %d", c.dir, n, c.f32Block)
+		}
+		m.Close()
+	}
+	m, err := Load("../testdata/llama-tiny", Options{Backend: "cpu", Quant: "f32"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, n := m.cudaKVParts(4096, false, true); n != 4*2*(2*16+4*2)*64 {
+		t.Errorf("llama-tiny: the plan prices %d B of KV a block at int8; the hand table %d", n, 4*2*(2*16+4*2)*64)
+	}
+	m.Close()
+	g, err := Load("../testdata/gemma2-tiny", Options{Backend: "cpu", Quant: "f32", ResidentWindowedKV: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	if g.Config().SlidingWindow != 4 {
+		t.Fatalf("gemma2-tiny's window is %d; the table is written for 4", g.Config().SlidingWindow)
+	}
+	row := int64(2*32) * 2 * 64                                      // one K or V block at f16
+	held := int64((4+WindowedKVSlack+KVBlockRows-1)/KVBlockRows + 1) // a sliding layer's blocks
+	want := 2*2*row*16 + 2*2*row*held + 2*4*16                       // full layers over 16 blocks, sliding layers, two tables
+	if slot, _ := g.cudaKVParts(1024, true, false); slot != want {
+		t.Errorf("gemma2-tiny windowed at 1,024 positions: the plan prices %d B a slot; the hand table %d", slot, want)
 	}
 }
 

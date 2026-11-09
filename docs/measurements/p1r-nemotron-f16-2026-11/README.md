@@ -58,7 +58,8 @@ was f16 identity and G5, as KV4b did for the others.
 - **Tier 0: PASS** (`tier0-red.log` on `main`, `tier0-green.log` with the change).
   - On `main`, both table gates refused `nemotron-tiny`'s f16 load by name.
   - With the change, G1's store half holds: the first cache layer's K and V are the f32 store rounded to nearest even.
-  - G3 holds too: 2 f16 layers, and one slot at 4,096 positions takes 1,065,472 B against f32's 2,130,432 B, exactly half and as priced.
+  - G3 holds too: 2 f16 layers. Their K/V pools are exactly half the f32 build's, and the whole slot is as priced: 1,065,472 B against
+    f32's 2,130,432 B. That is half plus 256 B: the slot also holds fixed buffers that are not K/V and do not halve (Gemini's review of #790).
 - **G5: PASS** (`g5.log`, 12:46 to 13:00 PST, the exclusive timing lock, 833 s). On Nemotron-Nano-9B-v2 (`cuda-resident (int4)`, f32
   cache), the ten set-B prompts at 3,900 tokens each, run one forward per token:
 
@@ -80,3 +81,21 @@ was f16 identity and G5, as KV4b did for the others.
   - `cmd/gate`'s heavy partition: the survey joins the `nemotron-h` group, and like that group's other test it skips without its
     checkpoint, so the group still grades as all-skip there.
 - `touched.py`: PASS, 17 checks. The parity staleness gate is green, with nothing to refresh.
+
+## Addendum, 2026-11-08 14:55 PST: Gemini's review of #790, answered (no bar changed)
+
+- **The recurrent state between prompts ([test]).** The survey ran each prompt one forward per token on one resident without `Reset()`, so
+  prompts 2 to 10 began from the previous prompt's Mamba-2 state.
+  - It now resets before every prompt, and was re-run (`g5-rerun.log`, 14:41 to 14:55, the exclusive lock, 837 s).
+  - Every per-layer maximum is identical to the first run: worst max |V| 44.67 at layer 39. **PASS** stands, now on ten independent prompts.
+- **NaN ([test]).** A NaN in the readback would have been skipped by `max` and the `>` comparisons. The survey now counts NaNs and fails
+  on any, requires a non-empty prompt set, and fails if the worst value is not positive. The re-run read no NaN.
+- **The tokenizer ([risk]).** The GGUF's pre-tokenizer is `tekken`, which goinfer does not know. It falls back to cl100k with a one-digit
+  cap, so the survey's 3,900-token sequences are not the canonical tokenization of the set-B text.
+  - No HF tokenizer for Nano-9B-v2 is on the box.
+  - The survey measures K/V magnitudes over real prose, which do not depend on the exact segmentation; the worst is about 1/730 of the limit.
+  - Recorded as a limit of this reading, not re-run.
+- **The `auto` note ([nit]).** Nemotron-H's `--kv auto` reason was the generic "until its quality gate passes". It now says what is true:
+  "no quality gate has read a Mamba-2 hybrid yet (a passing G4 cell would clear it)". The DeltaNet hybrids' failed gate is not Nemotron-H's.
+  The matrix and both censuses are regenerated; only Nemotron-H's rows moved.
+- **The slot bytes ([nit]).** Corrected above: the pools are exactly half, and the slot total is half plus 256 B of fixed buffers.

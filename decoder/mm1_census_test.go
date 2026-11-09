@@ -113,13 +113,17 @@ func (c *census) total() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// censusHostClass is the architecture and the bytes per element the loader charges for each weight mode on this CPU: what makes a
-// weight figure differ between hosts (the int4 repacks).
+// censusHostClass is the architecture, the bytes per element the loader charges for each weight mode on this CPU (the int4
+// repacks), and, where WebGPU is not Vulkan, that: what makes a plan differ between hosts. darwin/arm64 and linux/arm64 share
+// the rest, but only Vulkan's plan prices gpu-allocator's blocks (webgpuVulkan).
 func censusHostClass() string {
 	var parts []string
 	for _, q := range []string{"f32", "int8", "int4", "int4mix", "int8int8", "q4k", "bf16", "f16"} {
 		m, _ := parseQuant(q)
 		parts = append(parts, fmt.Sprintf("%s=%.6f", q, quantBytesPerElem(m)))
+	}
+	if !webgpuVulkan {
+		parts = append(parts, "webgpu=metal")
 	}
 	return runtime.GOARCH + " " + strings.Join(parts, " ")
 }

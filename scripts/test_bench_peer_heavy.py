@@ -4,6 +4,8 @@ above half its cores, or its available memory (the fit guard's reading) under th
 never averaged; swap that grows during a cell voids it (void_rule.py, the one definition; Francis, 2026-11-08).
 Driven through main()'s cell loop with a fake sampler, and checked against a plant (the rule removed: the heavy start's run is
 averaged). Run: python3 -B scripts/test_bench_peer_heavy.py"""
+import contextlib
+import io
 import json
 import os
 import sys
@@ -92,7 +94,7 @@ class Rule(unittest.TestCase):
         self.assertEqual(out.getvalue().count("BENCH_ALLOW_NO_FREE_MEM=1"), 1, "logged once")
 
     def test_the_cell_end_check_voids_what_the_cell_left_behind(self):
-        start = {"swap_mb": 100.0, "swapin_mb": 1.0, "swapout_mb": 1.0}
+        start = {"swap_mb": 100.0, "swapin_mb": 1.0, "swapout_mb": 1.0, "ncores": 8}
         end = {"loadavg": [1.0, 1, 1], "available_mb": 5000, "reclaimable_mb": 1, "swap_mb": 100.0, "swapin_mb": 1.0, "swapout_mb": 1.0}
         self.assertIsNone(bench_peer.cell_end_void(start, end, 1000))
         self.assertIn("grew +20.0 MB", bench_peer.cell_end_void(start, dict(end, swap_mb=120.0), 1000))
@@ -131,11 +133,54 @@ class Rule(unittest.TestCase):
         self.addCleanup(setattr, bench_peer, "swap_used_mb", old)
         reads = iter([100.4, 100.6, 100.6])
         bench_peer.swap_used_mb = lambda: next(reads, 100.6)
-        bench_peer.swap_io_mb = bench_peer.swap_io_mb
         w = bench_peer.SwapWatch()
         w.poll_once()
         res = w.stop()
-        self.assertAlmostEqual(res["swap_peak_mb"], 100.6, places=9)
+        # exact: 100.4 + round(0.2, 1) is 100.60000000000001, which a rebuilt peak would report
+        self.assertEqual(res["swap_peak_mb"], 100.6)
+
+    def test_swapwatch_records_a_single_page_of_growth(self):
+        old = bench_peer.swap_used_mb
+        self.addCleanup(setattr, bench_peer, "swap_used_mb", old)
+        reads = iter([100.0, 100.0 + 4 / 1024, 100.0 + 4 / 1024])
+        bench_peer.swap_used_mb = lambda: next(reads, 100.0 + 4 / 1024)
+        w = bench_peer.SwapWatch()
+        w.poll_once()
+        res = w.stop()
+        self.assertGreater(res["swap_growth_mb"], 0.0, "a 4 KiB page voids the cell and its record must not read 0.0")
+        self.assertIn("grew", res["swap_void"])
+
+    def test_swapwatch_reports_no_numeric_peak_when_a_reading_failed(self):
+        old = bench_peer.swap_used_mb
+        self.addCleanup(setattr, bench_peer, "swap_used_mb", old)
+        reads = iter([100.0, 130.0, None])
+        bench_peer.swap_used_mb = lambda: next(reads, None)
+        w = bench_peer.SwapWatch()
+        w.poll_once()   # 130
+        res = w.stop()  # the last read fails
+        self.assertIsNone(res["swap_peak_mb"])
+        self.assertIsNone(res["swap_growth_mb"])
+        self.assertIn("swap unreadable", res["swap_void"])
+
+    def test_cell_end_void_is_void_rules_end_void(self):
+        start = {"swap_mb": 100.0, "swapin_mb": None, "swapout_mb": None, "ncores": None}
+        end = {"swap_mb": 100.0, "swapin_mb": None, "swapout_mb": None, "available_mb": 5000, "loadavg": None}
+        self.assertIsNone(bench_peer.cell_end_void(start, end, 1000), "no core count at the start: no load term")
+        start = dict(start, ncores=8)
+        self.assertIn("load average unreadable", bench_peer.cell_end_void(start, end, 1000))
+        self.assertIn("load average unreadable", bench_peer.cell_end_void(start, dict(end, loadavg=[float("nan")] * 3), 1000))
+        self.assertIn("swap unreadable", bench_peer.cell_end_void(start, dict(end, loadavg=[1.0] * 3, swap_mb=float("inf")), 1000))
+        self.assertIn("swap unreadable", bench_peer.cell_end_void(start, dict(end, loadavg=[1.0] * 3), 1000, peak_mb=float("nan")))
+
+    def test_the_end_check_says_when_the_override_skips_memory(self):
+        start = {"swap_mb": 100.0, "ncores": 8}
+        end = {"swap_mb": 100.0, "available_mb": None, "loadavg": [1.0] * 3}
+        out = io.StringIO()
+        self.addCleanup(setattr, bench_peer, "_END_MEM_SKIP_SAID", bench_peer._END_MEM_SKIP_SAID)
+        bench_peer._END_MEM_SKIP_SAID = False
+        with mock.patch.dict(os.environ, {"BENCH_ALLOW_NO_FREE_MEM": "1"}), contextlib.redirect_stdout(out):
+            self.assertIsNone(bench_peer.cell_end_void(start, end, 1000))
+        self.assertIn("BENCH_ALLOW_NO_FREE_MEM", out.getvalue())
 
     def test_the_end_check_honours_the_env_override_not_a_latch(self):
         start = {"swap_mb": 100.0}

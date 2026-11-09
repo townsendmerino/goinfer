@@ -131,7 +131,7 @@ func TestKV4b_deliveredBytes(t *testing.T) {
 				}
 				if g.windowed {
 					// withWindowedKV's test slack sizes the window group below production's, which decoder.ResidentKVBytes prices; the
-					// agreement at production's slack is TestKVBytes_agreement's.
+					// agreement at production's slack is TestMM5_cudaPoolsAreTheDeclaredRows' windowed pass.
 					t.Logf("one slot at %d positions: f32 %d bytes, f16 %d", r16.ctxCap, b32+n32, b16+n16)
 					return
 				}
@@ -412,8 +412,13 @@ func TestP1r_nemotronRangeSurvey(t *testing.T) {
 		t.Fatal("no attention layer keeps K/V: the survey would be vacuous")
 	}
 	files := decoder.PrefillGatePromptSetFor("b")
+	if len(files) == 0 {
+		t.Fatal("no set-B prompts: the survey would be vacuous")
+	}
 	ctx := context.Background()
+	nans := 0
 	for pi, f := range files {
+		rf.Reset() // each prompt from a zeroed Mamba-2 state: the recurrent state accumulates, and the KV rows are overwritten positionally
 		ids := decoder.PrefillGateProseIDsForTest(t, tk, f, K)
 		embs := make([][]float32, K)
 		for i, id := range ids[:K] {
@@ -444,10 +449,18 @@ func TestP1r_nemotronRangeSurvey(t *testing.T) {
 				t.Fatalf("read layer %d: %v", l, err)
 			}
 			for _, v := range kb {
-				maxK[l] = max(maxK[l], math.Abs(float64(v)))
+				if a := math.Abs(float64(v)); !math.IsNaN(a) {
+					maxK[l] = max(maxK[l], a)
+				} else {
+					nans++
+				}
 			}
 			for _, v := range vb {
-				maxV[l] = max(maxV[l], math.Abs(float64(v)))
+				if a := math.Abs(float64(v)); !math.IsNaN(a) {
+					maxV[l] = max(maxV[l], a)
+				} else {
+					nans++
+				}
 			}
 		}
 		fmt.Fprintf(os.Stderr, "[p1r-survey] prompt %d/%d done\n", pi+1, len(files))
@@ -465,8 +478,14 @@ func TestP1r_nemotronRangeSurvey(t *testing.T) {
 			worst, wl, wkind = maxV[l], l, "V"
 		}
 	}
+	if nans > 0 {
+		t.Errorf("%d K/V elements read back NaN: an f32 cache holding NaN cannot be surveyed", nans)
+	}
+	if !(worst > 0) {
+		t.Fatalf("the worst max|K|/|V| is %v: the survey read nothing", worst)
+	}
 	verdict := "PASS"
-	if worst >= limit {
+	if nans > 0 || worst >= limit {
 		verdict = "FAIL"
 		t.Errorf("layer %d's max|%s| is %.1f, at or over %.0f: an f16 cache could overflow", wl, wkind, worst, limit)
 	}

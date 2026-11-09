@@ -4,9 +4,11 @@ package cuda
 
 import (
 	"context"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -415,8 +417,9 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 }
 
 // TestCUDAStepRagged_prefillChunkMatchesItsPass is RF2-2's gate (docs/tasks/task-forward-and-memory-2026-11.md, "RF2: steps",
-// and addendum 1's mixed batch): a 64-row prompt prefilled as two 32-row passes, each inside a ragged step beside a drawn
-// decode row, a decode row and a k = 4 verify, against the same two passes run alone (prefillChunkedRows' chunkOrdinary and
+// and addendum 1's mixed batch): a 64-row prompt prefilled as two 32-row passes, each inside a ragged step beside two MC3 decode
+// rows (one drawn) and verifies at k = 2 and 4, the chunk first in the first step and third in the second (StepRagged reorders
+// it), against the same two passes run alone (prefillChunkedRows' chunkOrdinary and
 // chunkPromptLen) on a spare slot. The final pass's last-row logits see every K/V row both passes wrote, and must match bit
 // for bit, as must every other row its own shape. The fast-prefill floor is 0, so the passes take the fast kernels: the stepped
 // passes must launch fast kernels, and under a plant that runs the chunk on the exact kernels none, with the logits then
@@ -436,7 +439,7 @@ func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 			if _, err := os.Stat(c.path); err != nil {
 				t.Skipf("no fixture at %s", c.path)
 			}
-			m, err := decoder.Load(c.path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 5, KVPrecision: c.kv})
+			m, err := decoder.Load(c.path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 6, KVPrecision: c.kv})
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
@@ -448,7 +451,7 @@ func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 			}
 			_, _, _, _, _, _, vocab := m.Dims()
 			emb := func(id int) []float32 { return m.EmbedResidentForTest(id % vocab) }
-			const passRows, promptLen, refSlot = 32, 64, 4
+			const passRows, promptLen, refSlot = 32, 64, 5
 			prompt := make([][]float32, promptLen)
 			for i := range prompt {
 				prompt[i] = emb(i*29 + 5)
@@ -475,8 +478,9 @@ func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 			if c.plant && fast == 0 {
 				t.Fatalf("the prompt's own passes launched no fused attention: the chunk's class is not visible here")
 			}
-			depths := []int{0, 7, 23, 11}
-			for b := 1; b < 4; b++ {
+			depths := []int{0, 7, 23, 11, 17}
+			ks := []int{0, 1, 1, 2, 4} // rows per slot: slot 0 is the prompt's; a drawn decode row, a decode row, verify k = 2 and 4
+			for b := 1; b < len(depths); b++ {
 				if err := r.UseKVSlot(b); err != nil {
 					t.Fatal(err)
 				}
@@ -497,37 +501,36 @@ func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 				var last []float32
 				differ := 0
 				for pass := range 2 {
-					seqs := []decoder.ResidentRaggedSeq{
-						{Slot: 0, Pos: pass * passRows, Embs: prompt[pass*passRows : (pass+1)*passRows],
-							Prefill: &decoder.ResidentRaggedPrefill{PromptLen: promptLen, Last: pass == 1}},
-					}
-					for b, k := range []int{0, 1, 1, 4} {
-						if b == 0 {
-							continue
-						}
-						embs := make([][]float32, k)
+					var seqs []decoder.ResidentRaggedSeq
+					for b := 1; b < len(ks); b++ {
+						embs := make([][]float32, ks[b])
 						for j := range embs {
 							embs[j] = emb(n*101 + pass*71 + b*53 + j*7 + 1)
 						}
 						seqs = append(seqs, decoder.ResidentRaggedSeq{Slot: b, Pos: pos[b], Embs: embs})
 					}
 					draw := &decoder.ResidentBatchDraw{Temperature: 0.8, Seed: uint64(2000 + n), Draw: uint64(pass)}
-					seqs[1].Draw = draw
+					seqs[0].Draw = draw
+					ci := 2 * pass // the chunk's index: first, then third
+					seqs = slices.Insert(seqs, ci, decoder.ResidentRaggedSeq{Slot: 0, Pos: pass * passRows, Embs: prompt[pass*passRows : (pass+1)*passRows],
+						Prefill: &decoder.ResidentRaggedPrefill{PromptLen: promptLen, Last: pass == 1}})
 					out, err := r.StepRagged(seqs)
 					if err != nil {
 						t.Fatalf("step %d pass %d: %v", n, pass, err)
 					}
 					fast = r.fastAttnLaunches + r.fastGemmLaunches - fast0 // the references below are decode and verify: exact
-					for j, l := range out[0].Logits {
+					for j, l := range out[ci].Logits {
 						if (l != nil) != (pass == 1 && j == passRows-1) {
 							t.Fatalf("step %d pass %d: the chunk's row %d has logits %v; only the final pass's last row has them", n, pass, j, l != nil)
 						}
 					}
 					if pass == 1 {
-						last = out[0].Logits[passRows-1]
+						last = out[ci].Logits[passRows-1]
 					}
-					for b := 1; b < len(seqs); b++ {
-						s := seqs[b]
+					for b, s := range seqs {
+						if b == ci {
+							continue
+						}
 						if err := r.UseKVSlot(s.Slot); err != nil {
 							t.Fatal(err)
 						}
@@ -558,10 +561,10 @@ func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 								}
 							}
 						}
-						pos[b] += len(s.Embs)
+						pos[s.Slot] += len(s.Embs)
 					}
 				}
-				for b := 1; b < 4; b++ {
+				for b := 1; b < len(depths); b++ {
 					depths[b] = pos[b]
 				}
 				return last, differ, fast
@@ -605,4 +608,100 @@ func bitsEqual(a, b []float32) bool {
 		}
 	}
 	return true
+}
+
+// TestRaggedOrder_checksAndOrder holds StepRagged's checks on the sequences alone, which need no device: an empty step is an error,
+// a step takes at most one prefill chunk and no draw on it, a chunk's rows end inside its prompt and end it exactly when (and only
+// when) the chunk is the prompt's Last pass, and the chunk goes first wherever it stands, the others keeping their order.
+func TestRaggedOrder_checksAndOrder(t *testing.T) {
+	if _, err := (&cudaResident{}).StepRagged(nil); err == nil {
+		t.Error("an empty step returned no error")
+	}
+	rows := func(n int) [][]float32 { return make([][]float32, n) }
+	chunk := func(pos, n, promptLen int, last bool) decoder.ResidentRaggedSeq {
+		return decoder.ResidentRaggedSeq{Slot: 9, Pos: pos, Embs: rows(n), Prefill: &decoder.ResidentRaggedPrefill{PromptLen: promptLen, Last: last}}
+	}
+	dec := func(slot int) decoder.ResidentRaggedSeq {
+		return decoder.ResidentRaggedSeq{Slot: slot, Pos: 5, Embs: rows(1)}
+	}
+	drawn := chunk(0, 32, 64, false)
+	drawn.Draw = &decoder.ResidentBatchDraw{Temperature: 1}
+	for _, c := range []struct {
+		name string
+		seqs []decoder.ResidentRaggedSeq
+	}{
+		{"two chunks", []decoder.ResidentRaggedSeq{chunk(0, 32, 64, false), dec(1), chunk(32, 32, 64, true)}},
+		{"a chunk with a draw", []decoder.ResidentRaggedSeq{drawn, dec(1)}},
+		{"a chunk past its prompt", []decoder.ResidentRaggedSeq{chunk(48, 32, 64, true), dec(1)}},
+		{"a Last chunk short of its prompt", []decoder.ResidentRaggedSeq{chunk(0, 32, 64, true), dec(1)}},
+		{"a chunk that ends its prompt, not Last", []decoder.ResidentRaggedSeq{chunk(32, 32, 64, false), dec(1)}},
+	} {
+		if _, err := raggedOrder(c.seqs); err == nil {
+			t.Errorf("%s: no error", c.name)
+		}
+	}
+	for _, c := range []struct {
+		name string
+		seqs []decoder.ResidentRaggedSeq
+		want []int
+	}{
+		{"no chunk", []decoder.ResidentRaggedSeq{dec(0), dec(1), dec(2)}, []int{0, 1, 2}},
+		{"a chunk first", []decoder.ResidentRaggedSeq{chunk(0, 32, 64, false), dec(1), dec(2)}, []int{0, 1, 2}},
+		{"a chunk third", []decoder.ResidentRaggedSeq{dec(0), dec(1), chunk(32, 32, 64, true), dec(3)}, []int{2, 0, 1, 3}},
+	} {
+		got, err := raggedOrder(c.seqs)
+		if err != nil || !slices.Equal(got, c.want) {
+			t.Errorf("%s: order %v (%v), want %v", c.name, got, err, c.want)
+		}
+	}
+}
+
+// TestCUDAStepRagged_prefillChunkDeclines holds raggedChunkDecline through StepRagged: a prefill chunk on a recurrent model, a
+// routed-expert model and a windowed-KV build is refused with errPrefillDeclined, where the model offers the step at all (a model
+// that does not is refused earlier, by the step range, and the test says which).
+func TestCUDAStepRagged_prefillChunkDeclines(t *testing.T) {
+	step := func(t *testing.T, r *cudaResident, m *decoder.Model) error {
+		_, _, _, _, _, _, vocab := m.Dims()
+		emb := func(id int) []float32 { return m.EmbedResidentForTest(id % vocab) }
+		chunk := make([][]float32, 16)
+		for i := range chunk {
+			chunk[i] = emb(i + 3)
+		}
+		_, err := r.StepRagged([]decoder.ResidentRaggedSeq{
+			{Slot: 1, Pos: 0, Embs: [][]float32{emb(7)}},
+			{Slot: 0, Pos: 0, Embs: chunk, Prefill: &decoder.ResidentRaggedPrefill{PromptLen: 16, Last: true}},
+		})
+		return err
+	}
+	check := func(t *testing.T, r *cudaResident, err error) {
+		if _, hi := r.BatchStepRange(); hi < 2 {
+			if err == nil {
+				t.Fatal("a model that offers no step ran one")
+			}
+			t.Logf("the model offers no step; refused by the step range: %v", err)
+			return
+		}
+		if !errors.Is(err, errPrefillDeclined) {
+			t.Fatalf("a prefill chunk was not declined: %v", err)
+		}
+	}
+	for _, fx := range []string{"qwen35-tiny", "qwen3moe-tiny"} {
+		t.Run(fx, func(t *testing.T) {
+			requireCUDADevice(t)
+			m, err := decoder.Load(filepath.Join("../../testdata", fx), decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2})
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			defer m.Close()
+			r, ok := m.ResidentForwardForTest().(*cudaResident)
+			if !ok {
+				t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
+			}
+			check(t, r, step(t, r, m))
+		})
+	}
+	t.Run("mistral-tiny-window/windowed", func(t *testing.T) {
+		_, win, _, mw := loadWindowedPair(t, "mistral-tiny-window", 2)
+		check(t, win, step(t, win, mw))
+	})
 }

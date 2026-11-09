@@ -496,6 +496,97 @@ class EndThroughMain(unittest.TestCase):
                 self.assertEqual(void_rule.main(["end", "--start-json", st, "--peak-json", pk]), 0,
                                  "the stale file must not be read as this cell's final samples")
 
+    def test_a_stale_unreadable_peak_file_is_waited_past_too(self):
+        import threading
+        with tempfile.TemporaryDirectory() as d:
+            pk, st = os.path.join(d, "peak.json"), os.path.join(d, "start.json")
+            json.dump(dict(SNAP, swap_mb=400.0, t_epoch=1010.0), open(st, "w"))
+            # the previous attempt's watcher lost a reading and wrote this at t=905
+            json.dump({"unreadable": True, "t_written": 905.0, "samples": [[900.0, 400.0]]}, open(pk, "w"))
+            fresh = {"unreadable": False, "t_written": 1021.0, "samples": [[1020.0, 400.0]]}
+            threading.Timer(0.15, lambda: void_rule.write_json_atomic(pk, fresh)).start()
+            with mock.patch.object(void_rule, "snapshot", lambda: dict(SNAP, swap_mb=400.0)), mock.patch("builtins.print"):
+                void_rule.READ_TRIES, void_rule.READ_DELAY = 40, 0.02
+                self.addCleanup(setattr, void_rule, "READ_TRIES", 2)
+                self.addCleanup(setattr, void_rule, "READ_DELAY", 0.001)
+                self.assertEqual(void_rule.main(["end", "--start-json", st, "--peak-json", pk]), 0,
+                                 "the old attempt's unreadable file must not void the retry")
+
+    def test_a_fresh_unreadable_peak_file_is_final(self):
+        self.assertTrue(void_rule.peak_file_is_final({"unreadable": True, "t_written": 1020.0, "samples": []}, 1010.0))
+        self.assertFalse(void_rule.peak_file_is_final({"unreadable": True, "t_written": 905.0, "samples": []}, 1010.0))
+        self.assertFalse(void_rule.peak_file_is_final({"unreadable": True, "samples": []}, 1010.0), "no write time: cannot be placed")
+
+    def test_the_sampler_result_carries_its_write_time(self):
+        with mock.patch.object(void_rule.time, "time", lambda: 1500.0):
+            sampler = void_rule.SwapSampler(read=lambda: None, poll_s=0)
+            sampler.sample()
+            self.assertEqual(sampler.result()["t_written"], 1500.0, "an unreadable result is placed in time too")
+            good = void_rule.SwapSampler(read=lambda: 5.0, poll_s=0)
+            good.sample()
+            self.assertEqual(good.result()["t_written"], 1500.0)
+
+    def test_an_unreadable_start_file_is_blamed_on_the_start_file_not_the_peak(self):
+        with tempfile.TemporaryDirectory() as d:
+            pk, st, out = os.path.join(d, "peak.json"), os.path.join(d, "start.json"), os.path.join(d, "o.json")
+            json.dump({"unreadable": False, "t_written": 1020.0, "samples": [[1020.0, 400.0]]}, open(pk, "w"))
+            open(st, "w").write("{not json")
+            with mock.patch.object(void_rule, "snapshot", lambda: dict(SNAP, swap_mb=400.0)), mock.patch("builtins.print"):
+                self.assertEqual(void_rule.main(["end", "--start-json", st, "--peak-json", pk, "--json-out", out]), 76)
+            reason = json.load(open(out))["void"]
+            self.assertIn("start file", reason)
+            self.assertNotIn("watcher", reason)
+
+    def test_a_readable_file_is_final_only_by_its_samples_own_times(self):
+        # the earlier watcher's last read began at 1009.9 (before t0) and the file was written at 1010.5 (after it)
+        stale = {"unreadable": False, "t_written": 1010.5, "samples": [[900.0, 400.0], [1009.9, 400.0]]}
+        self.assertFalse(void_rule.peak_file_is_final(stale, 1010.0), "t_written does not place a readable file")
+        self.assertTrue(void_rule.peak_file_is_final(dict(stale, samples=[[1010.0, 400.0]]), 1010.0))
+
+    def test_a_stale_readable_file_written_just_after_start_is_waited_past(self):
+        import threading
+        with tempfile.TemporaryDirectory() as d:
+            pk, st = os.path.join(d, "peak.json"), os.path.join(d, "start.json")
+            json.dump(dict(SNAP, swap_mb=400.0, t_epoch=1010.0), open(st, "w"))
+            json.dump({"unreadable": False, "t_written": 1010.5, "samples": [[1009.9, 400.0]]}, open(pk, "w"))
+            fresh = {"unreadable": False, "t_written": 1021.0, "samples": [[1020.0, 400.0]]}
+            threading.Timer(0.15, lambda: void_rule.write_json_atomic(pk, fresh)).start()
+            with mock.patch.object(void_rule, "snapshot", lambda: dict(SNAP, swap_mb=400.0)), mock.patch("builtins.print"):
+                void_rule.READ_TRIES, void_rule.READ_DELAY = 40, 0.02
+                self.addCleanup(setattr, void_rule, "READ_TRIES", 2)
+                self.addCleanup(setattr, void_rule, "READ_DELAY", 0.001)
+                self.assertEqual(void_rule.main(["end", "--start-json", st, "--peak-json", pk]), 0)
+
+    def test_t_written_is_stamped_before_the_final_read(self):
+        clock = [1000.0]
+        def slow_read():
+            clock[0] += 5.0   # the final read takes 5 s
+            return 400.0
+        with mock.patch.object(void_rule.time, "time", lambda: clock[0]):
+            sampler = void_rule.SwapSampler(read=slow_read, poll_s=0)
+            res = sampler.stop()
+        self.assertEqual(res["t_written"], 1000.0, "the stamp is the time the final read began")
+        self.assertEqual(res["samples"][-1][0], 1000.0)
+
+    def reason(self, peak_obj):
+        with tempfile.TemporaryDirectory() as d:
+            pk, st, out = os.path.join(d, "peak.json"), os.path.join(d, "start.json"), os.path.join(d, "o.json")
+            json.dump(dict(SNAP, swap_mb=400.0, t_epoch=1010.0), open(st, "w"))
+            json.dump(peak_obj, open(pk, "w"))
+            with mock.patch.object(void_rule, "snapshot", lambda: dict(SNAP, swap_mb=400.0)), mock.patch("builtins.print"):
+                self.assertEqual(void_rule.main(["end", "--start-json", st, "--peak-json", pk, "--json-out", out]), 76)
+            return json.load(open(out))["void"]
+
+    def test_an_unreadable_file_with_no_timestamps_is_blamed_on_the_lost_reading(self):
+        why = self.reason({"unreadable": True, "samples": []})
+        self.assertIn("lost a swap reading", why)
+        self.assertNotIn("earlier attempt", why)
+
+    def test_a_stale_unreadable_file_that_never_refreshes_says_so(self):
+        why = self.reason({"unreadable": True, "t_written": 905.0, "samples": []})
+        self.assertIn("earlier attempt", why)
+        self.assertIn("lost a swap reading", self.reason({"unreadable": True, "t_written": 1020.0, "samples": []}))
+
     def test_a_stale_peak_file_that_never_refreshes_voids(self):
         with tempfile.TemporaryDirectory() as d:
             pk, st = os.path.join(d, "peak.json"), os.path.join(d, "start.json")
@@ -541,13 +632,51 @@ class FiniteAndRounded(unittest.TestCase):
         self.assertIn("load average unreadable", void_rule.start_void(dict(SNAP, load1=nan), 0))
         self.assertIn("available memory unreadable", void_rule.start_void(dict(SNAP, available_mb=nan), 4000))
 
-    def test_float_drift_is_not_growth(self):
-        # a flat cell whose readings differ by IEEE-754 noise (100.4 + 0.2 - 100.6 is 1.4e-14) is clean under the zero bar
-        self.assertGreater((100.4 + 0.2) - 100.6, 0.0)
-        self.assertIsNone(void_rule.swap_void(dict(SNAP, swap_mb=100.6), dict(SNAP, swap_mb=100.6), 100.4 + 0.2, {}, peak_required=True))
-        self.assertIsNone(void_rule.swap_verdict(1.4e-14, None, None, {}))
-        # a real step at the readings' own resolution (0.01 MB) still voids
-        self.assertIn("grew", void_rule.swap_verdict(0.01, None, None, {}))
+    def test_a_single_page_of_swap_growth_voids_and_prints_a_visible_figure(self):
+        # Linux reports KiB: one 4 KiB page is 0.00390625 MB, which the zero bar must see and the reason must show
+        page = 4 / 1024
+        why = void_rule.swap_void(dict(SNAP, swap_mb=100.0), dict(SNAP, swap_mb=100.0 + page), env={})
+        self.assertIsNotNone(why)
+        self.assertIn("0.0039", why)
+        self.assertNotIn("+0.0 MB", why)
+        self.assertIn("0.02", void_rule.swap_verdict(0.02, None, None, {}), "a 0.02 MB growth is not printed as +0.0")
+        self.assertIn("+20.0 MB", void_rule.swap_verdict(20.0, None, None, {}))
+
+    def test_equal_readings_are_not_growth_without_rounding(self):
+        self.assertIsNone(void_rule.swap_void(dict(SNAP, swap_mb=100.6), dict(SNAP, swap_mb=100.6), 100.6, {}, peak_required=True))
+
+    def test_a_non_finite_peak_voids_even_when_not_required(self):
+        for bad in (float("nan"), float("inf"), "x"):
+            self.assertIn("swap unreadable", void_rule.swap_void(SNAP, dict(SNAP), bad, {}), repr(bad))
+        self.assertIsNone(void_rule.swap_void(SNAP, dict(SNAP), None, {}), "no peak given and none required: end against start decides")
+
+    def test_end_void_reads_the_override_from_its_env_argument(self):
+        start = dict(SNAP, swap_mb=100.0, need_mb=4000)
+        end = dict(SNAP, swap_mb=100.0, available_mb=None)
+        with mock.patch.dict(os.environ, {"BENCH_ALLOW_NO_FREE_MEM": "1"}):
+            self.assertIn("available memory unreadable", void_rule.end_void(start, end, None, False, env={}),
+                          "an isolated env is not the process's")
+        with mock.patch.dict(os.environ, {"BENCH_ALLOW_NO_FREE_MEM": ""}):
+            self.assertIsNone(void_rule.end_void(start, end, None, False, env={"BENCH_ALLOW_NO_FREE_MEM": "1"}))
+
+    def test_end_void_ignores_the_load_when_the_start_had_no_core_count_and_says_when_it_skips_memory(self):
+        start = dict(SNAP, swap_mb=100.0, need_mb=4000, ncores=None)
+        end = dict(SNAP, swap_mb=100.0, load1=None)
+        self.assertIsNone(void_rule.end_void(start, end, None, False), "no core count at the start: no load term")
+        said = []
+        self.assertIsNone(void_rule.end_void(dict(start, ncores=8), dict(end, load1=1.0, available_mb=None), None, False,
+                                             allow_unreadable_memory=True, say=said.append))
+        self.assertEqual(len(said), 1)
+        self.assertIn("BENCH_ALLOW_NO_FREE_MEM", said[0])
+        self.assertIn("load average unreadable", void_rule.end_void(dict(start, ncores=8), dict(end, load1=float("nan")), None, False))
+
+    def test_the_end_reads_the_override_from_the_environment_by_default(self):
+        start = dict(SNAP, swap_mb=100.0, need_mb=4000)
+        end = dict(SNAP, swap_mb=100.0, available_mb=None)
+        with mock.patch.dict(os.environ, {"BENCH_ALLOW_NO_FREE_MEM": "1"}):
+            self.assertIsNone(void_rule.end_void(start, end, None, False))
+        with mock.patch.dict(os.environ, {"BENCH_ALLOW_NO_FREE_MEM": ""}):
+            self.assertIn("available memory unreadable", void_rule.end_void(start, end, None, False))
 
     def test_a_readable_end_is_needed_for_load_and_memory_too(self):
         start = dict(SNAP, swap_mb=100.0, need_mb=4000)

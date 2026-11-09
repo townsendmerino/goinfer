@@ -114,6 +114,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `ResidentGemma4StepDefault`: tells the backend at load that ResidentGemma4Step is the caller's default, not a choice
 - `ResidentKVSlotsDefault`: tells the backend at load that ResidentKVSlots is the caller's default, not a chosen count
 - `ResidentRecurrentStepDefault`: tells the backend at load that ResidentRecurrentStep is the caller's default, not a choice
+- `SidecarFor`: a planner's stand-in for the sidecar a load would build first: the weights in that sidecar's layout, the host copy as it maps them
 - `noSelfTest`: the resident self-test's own fixture loads; read by the self-test at load
 - `planResidency`: FitQuery's open of a .giw, which builds no resident and is closed before it runs anything
 
