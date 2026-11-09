@@ -5,6 +5,7 @@ package kernels
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"slices"
 	"sort"
@@ -116,6 +117,72 @@ func adCasesBatched() []adCase {
 								return [][]float32{r.read(ctx, M*nH*hd)}
 							}})
 					}
+				}
+			}
+		}
+	}
+	return cs
+}
+
+// adRaggedPos is the positions of attn_ragged's rows, one sequence each: a first key, both sides of a 64-key block, past 128,
+// and the window's far side.
+var adRaggedPos = []int{0, 63, 64, 130, 299}
+
+// attn_ragged (prefill_batched.cu): attn_batched over rows of different sequences, each in its own slot's table at its own position.
+// Slot s's table maps its blocks to the pool's blocks s*nb.., so no two rows share a key. Each row is also run alone through
+// attn_batched at M = 1 over its slot's table, and must match it bit for bit: a ragged row is its decode's attention.
+func adCasesRagged() []adCase {
+	var cs []adCase
+	for kvi, m := range adPrefill {
+		for _, g := range adHeadDims {
+			for _, window := range []int{0, 50} {
+				for _, sink := range []bool{false, true} {
+					f16, nH, nKV, hd := kvi == 1, g.nH, g.nKV, g.hd
+					cs = append(cs, adCase{"attn_ragged", fmt.Sprintf("attn_ragged/%s/hd%d/%s/%s", adKVNames[kvi], hd, adWindowText(window), adSinkText(sink)),
+						func(r *adRig) [][]float32 {
+							R, kvDim, qDim := len(adRaggedPos), nKV*hd, nH*hd
+							nb := (adRaggedPos[R-1] + 1 + 63) / 64
+							tabs, slots, pos := make([]int32, R*nb), make([]int32, R), make([]int32, R)
+							maxWin := 0
+							for i, p := range adRaggedPos {
+								for b := range nb {
+									tabs[i*nb+b] = int32(i*nb + b)
+								}
+								slots[i], pos[i] = int32(i), int32(p)
+								w := p + 1
+								if window > 0 && window < w {
+									w = window
+								}
+								maxWin = max(maxWin, w)
+							}
+							q := adRand(R*qDim, 31, 1)
+							qb := r.f32(q)
+							kc, vc := r.kv(adRand(R*nb*64*kvDim, 32, 1), f16), r.kv(adRand(R*nb*64*kvDim, 33, 1), f16)
+							sk := adSink(r, nH, sink)
+							ctx := r.zeros(R * qDim)
+							r.launch(m, "attn_ragged", adCfg(nH, R, 1, 128, (maxWin+128)*4), gc.Arg(qb), kc, vc, gc.Arg(r.i32(tabs)), adI(nb),
+								gc.Arg(r.i32(slots)), gc.Arg(r.i32(pos)), adI(nH), adI(nKV), adI(hd), gc.ArgValue(adScale(hd)), adI(window), adI(R),
+								gc.Arg(ctx), sk)
+							got := r.read(ctx, R*qDim)
+							for i, p := range adRaggedPos {
+								w := p + 1
+								if window > 0 && window < w {
+									w = window
+								}
+								one := r.zeros(qDim)
+								r.launch(m, "attn_batched", adCfg(nH, 1, 1, 128, (w+128)*4), gc.Arg(r.f32(q[i*qDim:(i+1)*qDim])), kc, vc,
+									gc.Arg(r.i32(tabs[i*nb:(i+1)*nb])), adI(nH), adI(nKV), adI(hd), adI(p), gc.ArgValue(adScale(hd)), adI(window), adI(1),
+									gc.Arg(one), sk)
+								want := r.read(one, qDim)
+								for j := range want {
+									if math.Float32bits(got[i*qDim+j]) != math.Float32bits(want[j]) {
+										r.t.Errorf("attn_ragged row %d (position %d) element %d: %v, attn_batched at M = 1 gives %v", i, p, j, got[i*qDim+j], want[j])
+										break
+									}
+								}
+							}
+							return [][]float32{got}
+						}})
 				}
 			}
 		}
@@ -412,7 +479,7 @@ func adCasesMLA() []adCase {
 // adAllCases is every driven kernel at every shape, in a fixed order.
 func adAllCases() []adCase {
 	var cs []adCase
-	for _, f := range []func() []adCase{adCasesAttention, adCasesBatched, adCasesSplitKV, adCasesSplitKVRows, adCasesBlockAndImage, adCasesFlash, adCasesFused, adCasesMLA} {
+	for _, f := range []func() []adCase{adCasesAttention, adCasesBatched, adCasesRagged, adCasesSplitKV, adCasesSplitKVRows, adCasesBlockAndImage, adCasesFlash, adCasesFused, adCasesMLA} {
 		cs = append(cs, f()...)
 	}
 	return cs

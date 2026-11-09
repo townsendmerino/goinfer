@@ -277,8 +277,11 @@ func at(v [][]int, i int) []int {
 // for four teacher-forced steps. Every single row must equal its sequence's Forward (or ForwardSample's id) and every
 // sequence's rows its ForwardN at the same positions, bit for bit. The references run after the step at the same positions:
 // rope_kv rewrites a position before attention reads it. Two plants must each make a row differ: a sequence's second row
-// bound to another sequence's slot, and every row of a sequence given its first row's position.
-// GOINFER_CUDA_STEP_MODEL=<checkpoint> runs it on a real model, one sequence past 2048 keys (the flash-decode lane).
+// bound to another sequence's slot, and every row of a sequence given its first row's position. On the fixtures every row's decode
+// takes attn_batched, so each step must make its attention one attn_ragged launch per layer, and a third plant (every ragged row's
+// table read one block entry on) must make a row differ too.
+// GOINFER_CUDA_STEP_MODEL=<checkpoint> runs it on a real model, one sequence past 2048 keys (the flash-decode lane), where the
+// rows' launches differ and the step takes each row's own.
 func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 	type cfg struct {
 		path   string
@@ -292,8 +295,10 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 		{"../../testdata/gemma4-dense-twogeom-tiny", []int{5, 23, 40, 11}, ""},
 		{"../../testdata/granite-dense-tiny", []int{5, 23, 40, 11}, ""},
 	}
+	ragged := true
 	if p := os.Getenv("GOINFER_CUDA_STEP_MODEL"); p != "" {
 		cfgs = []cfg{{p, []int{120, 2200, 700, 64}, ""}, {p, []int{120, 2200, 700, 64}, "i8"}}
+		ragged = false
 	}
 	nRows := []int{1, 1, 2, 4} // per sequence: a drawn decode row, a decode row, verify k = 2 and 4
 	for _, c := range cfgs {
@@ -383,12 +388,20 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 				return differ
 			}
 			for n := range 4 {
+				launches := r.raggedAttnLaunches
 				if d := step(n); d != 0 {
 					t.Fatalf("step %d: %d rows differ from their own shapes", n, d)
 				}
+				if ragged && r.raggedAttnLaunches == launches {
+					t.Fatalf("step %d: no attn_ragged launch; the rows took their own attention", n)
+				}
 			}
 			t.Cleanup(func() { raggedPlantForTest = 0 })
-			for _, plant := range []int{1, 2} {
+			plants := []int{1, 2}
+			if ragged {
+				plants = append(plants, 4)
+			}
+			for _, plant := range plants {
 				raggedPlantForTest = plant
 				d := step(10 + plant)
 				raggedPlantForTest = 0

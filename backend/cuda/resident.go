@@ -869,7 +869,12 @@ type cudaResident struct {
 	// its later chunks the fast ones, mixing numerics inside one prompt (TestPrefillChunked_bitIdentical, chunk=300). Zero outside a chunked prefill.
 	chunkPromptLen int
 	// fastAttnLaunches / fastGemmLaunches count attn_fused and gemm_w4a8_mma launches, so a test can prove WHICH kernels a prefill pass used rather than infer it from timing.
-	fastAttnLaunches, fastGemmLaunches                      int
+	fastAttnLaunches, fastGemmLaunches int
+	// raggedAttnLaunches counts attn_ragged launches, so a test can prove a step's rows took the one launch.
+	raggedAttnLaunches int
+	// bRopeKVRagged and bAttnRagged are rope_kv_batched's and attn_batched's ragged twins (prefill_batched.cu); zero when not
+	// loaded, when a step's rows take decode's own gap.
+	bRopeKVRagged, bAttnRagged                              Pipeline
 	exactAttnLaunches                                       int // attn_batched launches in a prefill pass, so a test can prove a tile-served layer took none
 	tile128Launches                                         int // attn_fused launches that used the 128-row-tile kernel (default for hd128 layers without a window)
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
@@ -4246,6 +4251,46 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 // calls it per sequence inside a step, with those four buffers pointed at the sequence's row and its slot bound,
 // so every row gets exactly its own decode's kernels.
 func (r *cudaResident) decodeAttnGap(Ly *cudaLayer, l, pos, ropePos int, qTempScale float32) error {
+	if err := r.decodeRopeStore(Ly, l, pos, ropePos, qTempScale); err != nil {
+		return err
+	}
+	return r.decodeAttn(Ly, l, pos)
+}
+
+// attnArm is one of decode's attention launches (decodeAttnArm).
+type attnArm uint8
+
+const (
+	armFlash   attnArm = iota // the flash-decode lane
+	armSplitKV                // split-KV
+	armBatched                // attn_batched at M=1
+	armGlue                   // the glue attention
+)
+
+// decodeAttnArm is the attention launch decode makes at layer l over nWin attended keys: the one choice decodeAttn and a ragged
+// step's rows (stepAttnRows) share. The flash-decode lane is checked first because it replaces the exact path outright.
+func (r *cudaResident) decodeAttnArm(Ly *cudaLayer, l, nWin int) attnArm {
+	switch {
+	case r.faSplit > 0 && r.faExactScope.Load() == 0 && nWin >= r.faMinKeys && r.faEligible(l):
+		return armFlash
+	case r.splitkvAttn && r.skScores != (Pipeline{}) && (splitKVRequired(nWin) || nWin >= r.splitkvMin(Ly.nKV, Ly.hd)):
+		return armSplitKV
+	case r.prefillReady:
+		return armBatched
+	}
+	return armGlue
+}
+
+// decodeNWin is the keys decode attends at pos on layer Ly: pos+1, or the layer's sliding window.
+func decodeNWin(Ly *cudaLayer, pos int) int {
+	if nKeys := pos + 1; Ly.window <= 0 || nKeys <= int(Ly.window) {
+		return nKeys
+	}
+	return int(Ly.window)
+}
+
+// decodeRopeStore is decodeAttnGap's first half: rope_kv at (pos, ropePos) into the bound KV slot and, for an int8 cache, its store.
+func (r *cudaResident) decodeRopeStore(Ly *cudaLayer, l, pos, ropePos int, qTempScale float32) error {
 	// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): rhalf == hd/2 for full rotary, rotaryDim/2 for partial.
 	// A KV-shared layer (Gemma 4 E-model) rotates Q only: nKV=0 leaves rope_kv's K and V work empty, so nothing is stored
 	// through the alias into its source's cache. The attention launches below keep the real Ly.nKV, which is how they read it.
@@ -4260,9 +4305,12 @@ func (r *cudaResident) decodeAttnGap(Ly *cudaLayer, l, pos, ropePos int, qTempSc
 		gpu.ArgValue(Ly.mscale), gpu.ArgValue(qTempScale)); err != nil {
 		return err
 	}
-	if err := r.kvStore8(l, r.kB, r.vB, ropeNKV, Ly.hd, pos, 1); err != nil {
-		return err
-	}
+	return r.kvStore8(l, r.kB, r.vB, ropeNKV, Ly.hd, pos, 1)
+}
+
+// decodeAttn is decodeAttnGap's second half: the attention launch decodeAttnArm chooses at pos, reading r.qB and the bound slot's
+// cache and writing r.cctx.
+func (r *cudaResident) decodeAttn(Ly *cudaLayer, l, pos int) error {
 	nKeys := pos + 1
 	// Sliding window (per layer: Mistral all-local, Mellum interleaves); shared sized to the attended span.
 	nWin := nKeys
@@ -4282,13 +4330,14 @@ func (r *cudaResident) decodeAttnGap(Ly *cudaLayer, l, pos, ropePos int, qTempSc
 			singleBlockAttnShmemLimit,
 			map[bool]string{true: "kernel not loaded", false: "disabled by GOINFER_SPLITKV_ATTN"}[r.skScores == (Pipeline{})])
 	}
-	if r.faSplit > 0 && r.faExactScope.Load() == 0 && nWin >= r.faMinKeys && r.faEligible(l) {
+	switch r.decodeAttnArm(Ly, l, nWin) {
+	case armFlash:
 		// Flash-decode lane (default ON, GOINFER_CUDA_FLASH_DECODE=0 to disable): NOT bit-identical, fidelity-gated.
 		// Checked first because it replaces the exact path's three launches outright when eligible.
 		if err := r.flashDecodeAttn(l, pos); err != nil {
 			return err
 		}
-	} else if r.splitkvAttn && r.skScores != (Pipeline{}) && (mustSplit || nWin >= r.splitkvMin(Ly.nKV, Ly.hd)) {
+	case armSplitKV:
 		// Split-KV: high-occupancy and BIT-IDENTICAL to attn_batched(M=1) (TestSplitKV_bitIdentical); fills the SMs the
 		// single-block kernel leaves idle at long ctx. Gated PER LAYER on nWin (the EFFECTIVE attended span) against a
 		// per-geometry threshold, so shallow decode keeps the cheaper single-block path. nWin, not nKeys: a sliding-window
@@ -4298,7 +4347,7 @@ func (r *cudaResident) decodeAttnGap(Ly *cudaLayer, l, pos, ropePos int, qTempSc
 		if err := r.splitKVAttnDecode(l, pos); err != nil {
 			return err
 		}
-	} else if r.prefillReady {
+	case armBatched:
 		// Coalesced M=1 decode attention: attn_batched with M=1 is BIT-IDENTICAL to the glue `attention`
 		// (TestAttnBatched_bitIdentical) but reads K via float4, which recovers the L1TEX-latency-bound glue decode
 		// attention at long context. startPos=pos, M=1 gives nKeys = pos+1 and the same GridX/block/shared/ctx-layout as
@@ -4308,7 +4357,7 @@ func (r *cudaResident) decodeAttnGap(Ly *cudaLayer, l, pos, ropePos int, qTempSc
 			r.kvScaled(l, r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l))...)...); err != nil {
 			return err
 		}
-	} else {
+	default: // armGlue
 		if err := r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
 			r.kvScaled(l, r.withCap(Arg(r.qB), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx))...)...); err != nil {
 			return err
