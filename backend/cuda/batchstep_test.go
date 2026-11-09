@@ -405,13 +405,18 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 // and addendum 1's mixed batch): a 64-row prompt prefilled as two 32-row passes, each inside a ragged step beside a drawn
 // decode row, a decode row and a k = 4 verify, against the same two passes run alone (prefillChunkedRows' chunkOrdinary and
 // chunkPromptLen) on a spare slot. The final pass's last-row logits see every K/V row both passes wrote, and must match bit
-// for bit, as must every other row its own shape. The fast-prefill floor is 0, so the passes take the fast kernels; the test
-// requires that they did, and a plant that runs the chunk on the exact kernels must make the logits differ.
+// for bit, as must every other row its own shape. The fast-prefill floor is 0, so the passes take the fast kernels: the stepped
+// passes must launch fast kernels, and under a plant that runs the chunk on the exact kernels none, with the logits then
+// differing. The plant is read only where the fused attention runs (head dim 64 or 128): at llama-tiny's head dim 16 the only
+// fast kernel is the MMA GEMM, whose int32 group sums can equal the exact GEMV's bit for bit, so there the case is identity only.
 func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
-	for _, c := range []struct{ path, kv string }{
-		{"../../testdata/llama-tiny", ""},
-		{"../../testdata/llama-tiny", "i8"},
-		{"../../testdata/granite-dense-tiny", ""},
+	for _, c := range []struct {
+		path, kv string
+		plant    bool
+	}{
+		{"../../testdata/llama-attnfa-tiny", "", true},
+		{"../../testdata/llama-attnfa-tiny", "i8", true},
+		{"../../testdata/llama-tiny", "", false},
 	} {
 		t.Run(filepath.Base(c.path)+"/"+c.kv, func(t *testing.T) {
 			requireCUDADevice(t)
@@ -435,12 +440,13 @@ func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 			for i := range prompt {
 				prompt[i] = emb(i*29 + 5)
 			}
-			// ownPasses runs the prompt's two passes alone on refSlot and returns the last row's logits and the fast launches made.
+			// ownPasses runs the prompt's two passes alone on refSlot and returns the last row's logits and the fused attention
+			// launches made.
 			ownPasses := func() ([]float32, int) {
 				if err := r.UseKVSlot(refSlot); err != nil {
 					t.Fatal(err)
 				}
-				fast := r.fastGemmLaunches + r.fastAttnLaunches
+				fast := r.fastAttnLaunches
 				r.chunkOrdinary, r.chunkPromptLen = true, promptLen
 				defer func() { r.chunkOrdinary, r.chunkPromptLen = false, 0 }()
 				if _, _, err := r.prefillCore(context.Background(), prompt[:passRows], 0, tailKVOnly, nil, nil, nil); err != nil {
@@ -450,11 +456,11 @@ func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 				if err != nil {
 					t.Fatalf("own pass 2: %v", err)
 				}
-				return outs[len(outs)-1], r.fastGemmLaunches + r.fastAttnLaunches - fast
+				return outs[len(outs)-1], r.fastAttnLaunches - fast
 			}
 			want, fast := ownPasses()
-			if fast == 0 {
-				t.Fatalf("the prompt's own passes launched no fast kernel: the chunk's class split is not exercised here")
+			if c.plant && fast == 0 {
+				t.Fatalf("the prompt's own passes launched no fused attention: the chunk's class is not visible here")
 			}
 			depths := []int{0, 7, 23, 11}
 			for b := 1; b < 4; b++ {
@@ -469,8 +475,11 @@ func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 					t.Fatalf("prefill slot %d: %v", b, err)
 				}
 			}
-			// run prefills the prompt through two steps and returns its last-row logits and how many other rows differ.
-			run := func(n int) ([]float32, int) {
+			// run prefills the prompt through two steps and returns its last-row logits, how many other rows differ, and the fast
+			// launches (fused attention and MMA GEMM) the steps made.
+			run := func(n int) ([]float32, int, int) {
+				fast0 := r.fastAttnLaunches + r.fastGemmLaunches
+				var fast int
 				pos := append([]int(nil), depths...)
 				var last []float32
 				differ := 0
@@ -495,6 +504,7 @@ func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 					if err != nil {
 						t.Fatalf("step %d pass %d: %v", n, pass, err)
 					}
+					fast = r.fastAttnLaunches + r.fastGemmLaunches - fast0 // the references below are decode and verify: exact
 					for j, l := range out[0].Logits {
 						if (l != nil) != (pass == 1 && j == passRows-1) {
 							t.Fatalf("step %d pass %d: the chunk's row %d has logits %v; only the final pass's last row has them", n, pass, j, l != nil)
@@ -541,23 +551,33 @@ func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 				for b := 1; b < 4; b++ {
 					depths[b] = pos[b]
 				}
-				return last, differ
+				return last, differ, fast
 			}
-			got, differ := run(0)
+			got, differ, stepFast := run(0)
 			if differ != 0 {
 				t.Fatalf("%d decode and verify rows beside the chunk differ from their own shapes", differ)
 			}
 			if !bitsEqual(got, want) {
 				t.Fatalf("the prompt prefilled in two steps is not bit-identical to its own two passes")
 			}
+			if stepFast == 0 {
+				t.Fatalf("the stepped passes launched no fast kernel: the chunk did not take its class")
+			}
+			if !c.plant {
+				t.Logf("identity only: the stepped passes made %d fast launches; no fused attention at this head dim", stepFast)
+				return
+			}
 			t.Cleanup(func() { raggedPlantForTest = 0 })
 			raggedPlantForTest = 3
-			got, _ = run(1)
+			got, _, plantFast := run(1)
 			raggedPlantForTest = 0
+			if plantFast != 0 {
+				t.Fatalf("plant 3: the chunk on the exact kernels still made %d fast launches; the plant does not reach them", plantFast)
+			}
 			if bitsEqual(got, want) {
 				t.Fatalf("plant 3: the chunk on the exact kernels still matched its fast passes; the gate cannot see the class")
 			}
-			t.Logf("plant 3: the chunk out of its class differs (red, as it must be); the own passes made %d fast launches", fast)
+			t.Logf("plant 3: the chunk out of its class differs (red, as it must be); fused attention launches: own passes %d", fast)
 		})
 	}
 }
