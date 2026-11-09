@@ -31,3 +31,18 @@ voids the sweep.
   `attnGroupedMinKeys` moves to the smallest depth measured that keeps, and Francis makes the call.
 - **Turn it off on arm64:** median below 0.98 with at least 8 of 10 pairs slower at 8192.
 - **Ambiguous → parked:** anything else. To Francis with the numbers.
+
+**Run (approved by Francis, 2026-11-09).** On the Mac, by day, quiet, from a clean checkout of `main` at a commit that has this
+file (the runner records the commit):
+```
+ls ~/models | grep -iE 'qwen2\.?5.*(1\.5b|7b).*instruct.*q4_k_m\.gguf'   # the two models; any other quant or size is not this sweep
+bash docs/measurements/r13-grouped-sweep-2026-11/run-r13.sh ~/models/<the 1.5B .gguf> ~/models/<the 7B .gguf>
+```
+`run-r13.sh` refuses a model outside `~/models`, a non-arm64 host and a dirty `decoder/`. It builds `decoder.test` and
+`cmd/hostmem` once into `~/goinfer-bench/r13/<UTC time>-<commit>/`, and runs `r13_ab.py` under the exclusive timing lock
+(`timing_lock.py run --label p41-r13-sweep`). `r13_ab.py` runs `TestAttendGroupedHeads_matchesPerHead` first (VOID unless
+it passes), then the 40 pairs and the 10 control runs. Before each run it waits until the 1-minute load is under 2.0 (a
+mechanism, set before any run: a run's own load must decay before the next starts), up to 300 s, and applies the void rule
+above with `hostmem -reclaimable`. It writes `raw.jsonl` and `grade.txt` (the outcome as a `VERDICT:` line, graded by the
+rules above) there and beside this file; commit those two. About 30 minutes.
+
