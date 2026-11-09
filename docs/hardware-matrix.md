@@ -142,8 +142,9 @@ the configuration that has it. The loader picks one that does not
 
 - **CUDA:** a GGUF loads at `--quant q4k` by default and runs resident. Any other source loads at int8int8 with
   per-32 activation scales, which CUDA's residency also implements.
-- **Metal:** resident only with an explicit `--quant q4k`. The default load is int8int8 with per-32 activation
-  scales, which Metal's resident projections do not implement, so it runs on the CPU.
+- **Metal:** a GGUF loads at `--quant q4k` by default and runs resident on the q4k lane, which quantizes no
+  activation. Any other source loads at int8int8 with per-32 activation scales, which Metal's resident projections do
+  not implement, so it runs on the CPU.
 - **WebGPU:** neither; the CPU.
 
 ## Verified on: what has actually run
