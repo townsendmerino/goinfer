@@ -1,0 +1,7 @@
+=== RUN   TestAttnSoftcap_kernelsAgainstFloat64
+    attn_softcap_kernel_test.go:235: 320 kernel cases inside the bar against float64
+--- PASS: TestAttnSoftcap_kernelsAgainstFloat64 (1.15s)
+=== RUN   TestAttnSoftcap_flashDecodeAgainstFloat64
+    attn_softcap_kernel_test.go:333: 1344 flash-decode cases (4224 verify rows) inside the bar against float64, at f32 and f16 KV
+--- PASS: TestAttnSoftcap_flashDecodeAgainstFloat64 (7.84s)
+PASS

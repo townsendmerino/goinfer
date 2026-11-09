@@ -27,6 +27,7 @@ var (
 	adGlueCap    = [2]adMod{{"glue_cap", glueCapPTX}, {"glue_kv16_cap", glueKV16CapPTX}}
 	adPrefillCap = [2]adMod{{"prefill_batched_cap", prefillBatchedCapPTX}, {"prefill_batched_kv16_cap", prefillBatchedKV16CapPTX}}
 	adSplitCap   = [2]adMod{{"decode_splitkv_cap", decodeSplitKVCapPTX}, {"decode_splitkv_kv16_cap", decodeSplitKVKV16CapPTX}}
+	adFACap      = [2]adMod{{"decode_fa_cap", decodeFACapPTX}, {"decode_fa_kv16_cap", decodeFAKV16CapPTX}}
 )
 
 // capInputs returns q rows, K and V (as the kernel will read them: f16-rounded for an f16 cache) for a case whose scores cross the cap.
@@ -232,4 +233,102 @@ func TestAttnSoftcap_kernelsAgainstFloat64(t *testing.T) {
 		t.Fatalf("%d case(s) void: the inputs did not make the cap act", void)
 	}
 	t.Logf("%d kernel cases inside the bar against float64", cases)
+}
+
+// TestAttnSoftcap_flashDecodeAgainstFloat64 is G2-K for the flash-decode lane's capped variant (OP1-o2,
+// docs/measurements/op1o2-fa-softcap-2026-11/README.md): fa_partial_{64,128,256} with fa_combine, and the multi-row verify kernels
+// fa_partial_rows_{hd}_g{G} with fa_combine_rows, from decode_fa_cap and decode_fa_kv16_cap, against the float64 reference, at the bar and
+// on the cap-crossing inputs above. Head dimensions 64, 128 and 256; GQA groups 1, 2, 4 and 8; windows 0 and 100; split counts 4 and 16
+// at one query; verify batches of 1, 5 and 16 rows at 16 splits, each row against its own reference.
+func TestAttnSoftcap_flashDecodeAgainstFloat64(t *testing.T) {
+	r, _ := newAdRig(t)
+	cases, rows, void := 0, 0, 0
+	for kvi := range 2 {
+		f16 := kvi == 1
+		for _, cap := range []float32{50, 2} {
+			for _, hd := range []int{64, 128, 256} {
+				for _, G := range []int{1, 2, 4, 8} {
+					for _, peaked := range []bool{false, true} {
+						for _, window := range []int{0, 100} {
+							nKV := 2
+							nH := nKV * G
+							id := func(k string, s ...any) string {
+								return fmt.Sprintf("%s/%s/cap%g/hd%d/g%d/peaked=%v/win%d/%v", k, adKVNames[kvi], cap, hd, G, peaked, window, s)
+							}
+							acts := func(name string, past, total int, maxAbs float64) bool {
+								if past*20 < total || maxAbs < 1.5*float64(cap) {
+									t.Errorf("VOID %s: only %d of %d scores past ±cap, largest |score| %.2f: the cap does not act on this input", name, past, total, maxAbs)
+									void++
+									return false
+								}
+								return true
+							}
+							for _, nKeys := range []int{130, 300} {
+								in := capMakeInputs(1, nKeys, nH, nKV, hd, cap, peaked, 5, f16, 301)
+								want, past, total, maxAbs := capReference(in.q, in, nH, nKV, hd, nKeys, window, float64(cap), nil)
+								if !acts(id("fa", nKeys), past, total, maxAbs) {
+									continue
+								}
+								winStart := 0
+								if window > 0 && nKeys > window {
+									winStart = nKeys - window
+								}
+								q := r.f32(in.q)
+								kc, vc := r.kv(in.k, f16), r.kv(in.v, f16)
+								for _, nSplit := range []int{4, 16} {
+									U := nSplit * faWarps
+									part, ctx := r.zeros(nH*U*(hd+4)), r.zeros(nH*hd)
+									r.launch(adFACap[kvi], "fa_partial_"+itoa(hd), adCfg(nKV, nSplit, 1, faWarps*32, (G*hd+faWarps*64)*4), gc.Arg(q), kc, vc, r.kvt(nKeys),
+										adI(nH), adI(nKV), adI(winStart), adI(nKeys), gc.ArgValue(adScale(hd)), adI(nSplit), gc.Arg(part), gc.ArgValue(cap))
+									r.launch(adFACap[kvi], "fa_combine", adCfg(nH, 1, 1, hd, 3*U*4), gc.Arg(part), adI(hd), adI(U), gc.Arg(ctx))
+									capCompare(t, id("fa_partial", nKeys, "s", nSplit), r.read(ctx, nH*hd), want)
+									cases++
+								}
+								r.release()
+							}
+							const nSplit, n0 = 16, 130
+							for _, nRows := range []int{1, 5, 16} {
+								nTot := n0 + nRows
+								in := capMakeInputs(nRows, nTot, nH, nKV, hd, cap, peaked, 5, f16, 401)
+								wants := make([][]float64, nRows)
+								past, total, maxAbs := 0, 0, 0.0
+								for m := range nRows {
+									w, p, tt, mx := capReference(in.q[m*nH*hd:(m+1)*nH*hd], in, nH, nKV, hd, n0+m, window, float64(cap), nil)
+									wants[m], past, total, maxAbs = w, past+p, total+tt, math.Max(maxAbs, mx)
+								}
+								if !acts(id("fa_rows", nRows), past, total, maxAbs) {
+									continue
+								}
+								q := r.f32(in.q)
+								kc, vc := r.kv(in.k, f16), r.kv(in.v, f16)
+								U := nSplit * faWarps
+								part, ctx := r.zeros(faMaxRows*nH*U*(hd+4)), r.zeros(nRows*nH*hd)
+								R := faRowsPerCTA(hd, G)
+								for _, run := range faRowRuns(n0, nRows, window, nSplit) {
+									r.launch(adFACap[kvi], fmt.Sprintf("fa_partial_rows_%d_g%d", hd, G), adCfg(nKV, nSplit, (run.N+R-1)/R, faWarps*32, (R*G*hd+faWarps*R*64)*4),
+										gc.Arg(q), kc, vc, r.kvt(nTot), adI(nH), adI(nKV), adI(run.WinStart), adI(run.NKeys0), adI(run.Per), gc.ArgValue(adScale(hd)),
+										adI(nSplit), adI(run.N), adI(run.Row0), gc.Arg(part), gc.ArgValue(cap))
+									r.launch(adFACap[kvi], "fa_combine_rows", adCfg(nH, run.N, 1, hd, 3*U*4), gc.Arg(part), adI(nH), adI(hd), adI(U), adI(run.Row0), gc.Arg(ctx))
+								}
+								got := r.read(ctx, nRows*nH*hd)
+								for m := range nRows {
+									capCompare(t, id("fa_partial_rows", nRows, "row", m), got[m*nH*hd:(m+1)*nH*hd], wants[m])
+									rows++
+								}
+								cases++
+								r.release()
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if cases < 600 {
+		t.Fatalf("only %d cases ran (%d void): the matrix did not run", cases, void)
+	}
+	if void > 0 {
+		t.Fatalf("%d case(s) void: the inputs did not make the cap act", void)
+	}
+	t.Logf("%d flash-decode cases (%d verify rows) inside the bar against float64, at f32 and f16 KV", cases, rows)
 }

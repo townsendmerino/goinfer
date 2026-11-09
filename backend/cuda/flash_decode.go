@@ -73,7 +73,7 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 		logs.Warnf("[cuda] flash-decode lane unavailable (exact decode attention used): no positive head dim")
 		return
 	}
-	ptx := r.kvPTX8(decodeFAPTX, decodeFAKV16PTX, decodeFAKV8PTX)
+	ptx := r.attnPTX(decodeFAPTX, decodeFAKV16PTX, decodeFAKV8PTX, decodeFACapPTX, decodeFAKV16CapPTX)
 	mod, e := r.compileKV(ptx)
 	if e != nil {
 		logs.Warnf("[cuda] flash-decode lane unavailable (exact decode attention used): %v", e)
@@ -91,7 +91,8 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 		return
 	}
 	r.faPartial = pipes
-	r.faModule = map[*byte]string{&decodeFAPTX[0]: "decode_fa", &decodeFAKV16PTX[0]: "decode_fa_kv16", &decodeFAKV8PTX[0]: "decode_fa_kv8"}[&ptx[0]]
+	r.faModule = map[*byte]string{&decodeFAPTX[0]: "decode_fa", &decodeFAKV16PTX[0]: "decode_fa_kv16", &decodeFAKV8PTX[0]: "decode_fa_kv8",
+		&decodeFACapPTX[0]: "decode_fa_cap", &decodeFAKV16CapPTX[0]: "decode_fa_kv16_cap"}[&ptx[0]]
 	// Multi-row (speculative verify) variant: 24 kernels + the row combine. A load failure leaves them zero, which only disables
 	// the verify lane (speculation then falls back to the exact-attention scope), never the M=1 lane.
 	rowsOK := true
@@ -126,9 +127,11 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 }
 
 // faEligible reports whether layer l can take the lane: a supported head dim, a GQA group of at most 8, and no
-// attention sink (gpt-oss folds the sink into the softmax max and denominator, which fa_combine does not).
+// attention sink (gpt-oss folds the sink into the softmax max and denominator, which fa_combine does not). A model with an attention
+// softcap takes it, in the capped variant (decodeFACapPTX), only when the load asked (faSoftcap): the lane's outputs differ from the
+// exact split-KV lane's, and no fidelity gate has read a capped model on it (docs/measurements/op1o2-fa-softcap-2026-11/README.md).
 func (r *cudaResident) faEligible(l int) bool {
-	if r.faSplit < 1 || r.faCombine == (Pipeline{}) || r.attnCap != 0 { // the lane has no cap: a capped layer takes the exact kernels
+	if r.faSplit < 1 || r.faCombine == (Pipeline{}) || (r.attnCap != 0 && !r.faSoftcap) {
 		return false
 	}
 	Ly := &r.layers[l]
@@ -157,8 +160,8 @@ func (r *cudaResident) flashDecodeLaunch(q, kc, vc, kvt, ctx Buffer, hd, nKV, wi
 	which := map[int]int{64: 0, 128: 1, 256: 2}[hd]
 	shm := uint32((G*hd + faWarps*64) * 4)
 	if e := r.launch(r.faPartial[which], LaunchConfig{GridX: uint32(nKV), GridY: uint32(r.faSplit), GridZ: 1, BlockX: faWarps * 32, BlockY: 1, BlockZ: 1, SharedMemBytes: shm},
-		append([]gpu.KernelArg{Arg(q), Arg(kc), Arg(vc), Arg(kvt), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(winStart)),
-			gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(int32(r.faSplit)), Arg(r.faBuf)}, scales...)...); e != nil {
+		r.withCap(append([]gpu.KernelArg{Arg(q), Arg(kc), Arg(vc), Arg(kvt), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(winStart)),
+			gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(int32(r.faSplit)), Arg(r.faBuf)}, scales...)...)...); e != nil {
 		return e
 	}
 	r.faLaunches++
@@ -183,9 +186,9 @@ func (r *cudaResident) flashDecodeRowsLaunch(q, kc, vc, kvt, ctx Buffer, hd, nKV
 	shm := uint32((R*G*hd + faWarps*R*64) * 4)
 	grid := uint32((run.N + R - 1) / R)
 	if e := r.launch(r.faRows[which][G], LaunchConfig{GridX: uint32(nKV), GridY: uint32(r.faSplit), GridZ: grid, BlockX: faWarps * 32, BlockY: 1, BlockZ: 1, SharedMemBytes: shm},
-		append([]gpu.KernelArg{Arg(q), Arg(kc), Arg(vc), Arg(kvt), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(run.WinStart)),
+		r.withCap(append([]gpu.KernelArg{Arg(q), Arg(kc), Arg(vc), Arg(kvt), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(run.WinStart)),
 			gpu.ArgValue(int32(run.NKeys0)), gpu.ArgValue(int32(run.Per)), gpu.ArgValue(r.attnScale), gpu.ArgValue(int32(r.faSplit)),
-			gpu.ArgValue(int32(run.N)), gpu.ArgValue(int32(run.Row0)), Arg(r.faBuf)}, scales...)...); e != nil {
+			gpu.ArgValue(int32(run.N)), gpu.ArgValue(int32(run.Row0)), Arg(r.faBuf)}, scales...)...)...); e != nil {
 		return e
 	}
 	r.faLaunches++

@@ -117,6 +117,7 @@ type Model struct {
 	disableFit    bool          // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache      bool          // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
 	moeUnpinned   bool          // the expert cache uploads from pageable file pages, not a pinned copy (Options.MoEExpertsUnpinned)
+	faSoftcap     bool          // a capped model may take CUDA's flash-decode lane (Options.FlashDecodeSoftcap)
 
 	loadAbort    <-chan struct{} // Options.LoadAbort, read by a backend's resident build through LoadAbort(); nil off a guarded load
 	loadAbortErr error           // set by withResidency when the build returned ErrLoadAborted; Load turns it into the load's error
@@ -397,6 +398,10 @@ func (m *Model) MoECacheExperts() bool {
 // 0.82x decode at short context and 0.75x at long (docs/measurements/mem10-2026-11/ab-registration.md). Off by default.
 func (m *Model) MoEExpertsUnpinned() bool { return m.moeUnpinned }
 
+// FlashDecodeSoftcap reports Options.FlashDecodeSoftcap: a model with an attention softcap may take CUDA's flash-decode lane, in its capped
+// variant. Off by default.
+func (m *Model) FlashDecodeSoftcap() bool { return m.faSoftcap }
+
 // MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as many as fit"; only meaningful with
 // MoECacheExperts. 0 asks for ALL experts and lets the builder cap to measured free VRAM, deliberately: topK slots is the
 // worst setting for the situation this applies to, since it degenerates to fresh-loading every routed expert every token.
@@ -443,6 +448,11 @@ type Options struct {
 	// is not held, at a measured decode cost of 0.82x at short context and 0.75x at long (docs/measurements/mem10-2026-11/ab-registration.md).
 	// Off by default; the fit guard names it when the pinned copy is what does not fit.
 	MoEExpertsUnpinned bool
+	// FlashDecodeSoftcap lets a model with an attention softcap (Gemma 2) take CUDA's flash-decode lane, in its capped variant, for decode and
+	// verify rows past the lane's key floor. Off by default: such a model decodes on the exact split-KV lane, and the flash-decode lane's
+	// outputs differ from it, with no fidelity gate read yet (docs/measurements/op1o2-fa-softcap-2026-11/README.md). No effect on an uncapped
+	// model, which takes the lane by default, or off CUDA.
+	FlashDecodeSoftcap bool
 	// MoECacheSlots is the per-layer expert-slot count for MoECacheExperts (0 = ask for all and
 	// auto-cap to measured free VRAM). More slots ⇒ higher LRU hit rate ⇒ fewer per-token DMAs,
 	// at VRAM cost. Only meaningful with MoECacheExperts.
@@ -641,7 +651,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
 		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, moeStep: opts.ResidentMoEStep, recurStep: opts.ResidentRecurrentStep, recurStepDef: opts.ResidentRecurrentStepDefault, gemma4StepDef: opts.ResidentGemma4StepDefault, gemma4Step: opts.ResidentGemma4Step, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), kvDemote: opts.KVDemote, disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
-		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, moeUnpinned: opts.MoEExpertsUnpinned,
+		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, moeUnpinned: opts.MoEExpertsUnpinned, faSoftcap: opts.FlashDecodeSoftcap,
 		loadAbort:  opts.LoadAbort,
 		extraBytes: opts.ExtraResidentBytes + recurrentSpecReserve(w.arch, opts.Drafter), extraKVPerPos: opts.ExtraResidentKVPerPosition,
 		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, sidecarFor: opts.SidecarFor, noSelfTest: opts.noSelfTest,

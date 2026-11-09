@@ -176,7 +176,8 @@ func TestResidentDense_countsEveryDeltaNetTensor(t *testing.T) {
 }
 
 // TestResidentDense_mambaProjectionsAsUploaded holds the plan's price for Mamba-2 projections an f32 load holds to decoder's QuantizeInt8 and
-// wmBytes, on each resident backend, and the CPU to f32. It runs no backend's uploader: MM7's gate holds the uploads to the price.
+// wmBytes, on each resident backend (Metal's beside the buffers its build derives), and the CPU to f32. It runs no backend's uploader:
+// MM7's gate holds the uploads to the price.
 func TestResidentDense_mambaProjectionsAsUploaded(t *testing.T) {
 	m, err := Load("../testdata/nemotron-tiny", Options{Backend: "cpu", Quant: "f32", DirectLoad: true})
 	if err != nil {
@@ -200,7 +201,7 @@ func TestResidentDense_mambaProjectionsAsUploaded(t *testing.T) {
 	}
 	base := m.ResidentDenseWeightBytes()
 	structs, _ := m.cpuStructBytes()
-	for be, saved := range map[string]int64{"metal": want, "webgpu": want + m.residentHostSideBytes("webgpu"), "cuda": want + m.residentHostSideBytes("cuda"), "cpu": -structs} {
+	for be, saved := range map[string]int64{"metal": want - m.metalDerivedDenseBytes(), "webgpu": want + m.residentHostSideBytes("webgpu"), "cuda": want + m.residentHostSideBytes("cuda"), "cpu": -structs} {
 		if got := base - m.ResidentDenseWeightBytesFor(be); got != saved {
 			t.Errorf("%s: the dense figure is %d under the tensors' sum, want %d", be, got, saved)
 		}

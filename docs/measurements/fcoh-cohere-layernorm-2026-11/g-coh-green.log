@@ -1,0 +1,208 @@
+=== RUN   TestCUDAStepBatch_matchesForward
+=== RUN   TestCUDAStepBatch_matchesForward/llama-tiny/
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6941 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7041 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:144: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:144: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:144: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/llama-tiny/i8
+cuda: prefill width 2048 rows (6 MiB of scratch; 7069 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:144: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:144: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:144: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/mistral-tiny-window/
+cuda: prefill width 2048 rows (11 MiB of scratch; 7037 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:144: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70])
+    batchstep_test.go:144: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70 200])
+    batchstep_test.go:144: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70 200 33])
+=== RUN   TestCUDAStepBatch_matchesForward/gemma4-dense-twogeom-tiny/
+cuda: prefill width 2048 rows (64 MiB of scratch; 6933 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:144: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:144: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:144: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/granite-dense-tiny/
+cuda: prefill width 2048 rows (5 MiB of scratch; 7059 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:144: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:144: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:144: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/cohere-tiny/
+cuda: prefill width 2048 rows (6 MiB of scratch; 7041 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:144: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:144: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:144: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/cohere2-tiny/
+cuda: prefill width 2048 rows (6 MiB of scratch; 7041 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:144: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:144: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:144: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+--- PASS: TestCUDAStepBatch_matchesForward (3.61s)
+    --- PASS: TestCUDAStepBatch_matchesForward/llama-tiny/ (1.95s)
+    --- PASS: TestCUDAStepBatch_matchesForward/llama-tiny/i8 (0.28s)
+    --- PASS: TestCUDAStepBatch_matchesForward/mistral-tiny-window/ (0.29s)
+    --- PASS: TestCUDAStepBatch_matchesForward/gemma4-dense-twogeom-tiny/ (0.28s)
+    --- PASS: TestCUDAStepBatch_matchesForward/granite-dense-tiny/ (0.27s)
+    --- PASS: TestCUDAStepBatch_matchesForward/cohere-tiny/ (0.27s)
+    --- PASS: TestCUDAStepBatch_matchesForward/cohere2-tiny/ (0.27s)
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone/greedy
+cuda: prefill width 2048 rows (6 MiB of scratch; 7041 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7041 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:247: runs 31, steps 26 (tokens 91), solo tokens 5, straggler runs 0, step sizes [0 0 2 9 15]
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone/sampled
+cuda: prefill width 2048 rows (6 MiB of scratch; 7041 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7041 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:247: runs 28, steps 26 (tokens 94), solo tokens 2, straggler runs 0, step sizes [0 0 2 6 18]
+--- PASS: TestCUDAStepBatch_concurrentMatchesAlone (1.10s)
+    --- PASS: TestCUDAStepBatch_concurrentMatchesAlone/greedy (0.57s)
+    --- PASS: TestCUDAStepBatch_concurrentMatchesAlone/sampled (0.53s)
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes/llama-tiny/
+cuda: prefill width 2048 rows (6 MiB of scratch; 7041 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:379: step 11 seq 2 (slot 2) row 1 at position 49: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 1 at position 28: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 2 at position 29: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 3 at position 30: not bit-identical to its own shape
+    batchstep_test.go:399: plant 1: 4 rows differ (red, as it must be)
+    batchstep_test.go:379: step 12 seq 2 (slot 2) row 1 at position 51: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 1 at position 32: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 2 at position 33: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 3 at position 34: not bit-identical to its own shape
+    batchstep_test.go:399: plant 2: 4 rows differ (red, as it must be)
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes/llama-tiny/i8
+cuda: prefill width 2048 rows (6 MiB of scratch; 7069 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:379: step 11 seq 2 (slot 2) row 1 at position 49: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 1 at position 28: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 2 at position 29: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 3 at position 30: not bit-identical to its own shape
+    batchstep_test.go:399: plant 1: 4 rows differ (red, as it must be)
+    batchstep_test.go:379: step 12 seq 2 (slot 2) row 1 at position 51: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 1 at position 32: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 2 at position 33: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 3 at position 34: not bit-identical to its own shape
+    batchstep_test.go:399: plant 2: 4 rows differ (red, as it must be)
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes/mistral-tiny-window/
+cuda: prefill width 2048 rows (11 MiB of scratch; 7037 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:379: step 11 seq 2 (slot 2) row 1 at position 209: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 1 at position 50: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 2 at position 51: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 3 at position 52: not bit-identical to its own shape
+    batchstep_test.go:399: plant 1: 4 rows differ (red, as it must be)
+    batchstep_test.go:379: step 12 seq 2 (slot 2) row 1 at position 211: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 1 at position 54: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 2 at position 55: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 3 at position 56: not bit-identical to its own shape
+    batchstep_test.go:399: plant 2: 4 rows differ (red, as it must be)
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes/gemma4-dense-twogeom-tiny/
+cuda: prefill width 2048 rows (64 MiB of scratch; 6933 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:379: step 11 seq 2 (slot 2) row 1 at position 49: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 1 at position 28: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 2 at position 29: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 3 at position 30: not bit-identical to its own shape
+    batchstep_test.go:399: plant 1: 4 rows differ (red, as it must be)
+    batchstep_test.go:379: step 12 seq 2 (slot 2) row 1 at position 51: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 1 at position 32: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 2 at position 33: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 3 at position 34: not bit-identical to its own shape
+    batchstep_test.go:399: plant 2: 4 rows differ (red, as it must be)
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes/granite-dense-tiny/
+cuda: prefill width 2048 rows (5 MiB of scratch; 7059 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:379: step 11 seq 2 (slot 2) row 1 at position 49: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 1 at position 28: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 2 at position 29: not bit-identical to its own shape
+    batchstep_test.go:379: step 11 seq 3 (slot 3) row 3 at position 30: not bit-identical to its own shape
+    batchstep_test.go:399: plant 1: 4 rows differ (red, as it must be)
+    batchstep_test.go:379: step 12 seq 2 (slot 2) row 1 at position 51: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 1 at position 32: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 2 at position 33: not bit-identical to its own shape
+    batchstep_test.go:379: step 12 seq 3 (slot 3) row 3 at position 34: not bit-identical to its own shape
+    batchstep_test.go:399: plant 2: 4 rows differ (red, as it must be)
+--- PASS: TestCUDAStepRagged_rowsMatchTheirShapes (1.28s)
+    --- PASS: TestCUDAStepRagged_rowsMatchTheirShapes/llama-tiny/ (0.25s)
+    --- PASS: TestCUDAStepRagged_rowsMatchTheirShapes/llama-tiny/i8 (0.26s)
+    --- PASS: TestCUDAStepRagged_rowsMatchTheirShapes/mistral-tiny-window/ (0.26s)
+    --- PASS: TestCUDAStepRagged_rowsMatchTheirShapes/gemma4-dense-twogeom-tiny/ (0.26s)
+    --- PASS: TestCUDAStepRagged_rowsMatchTheirShapes/granite-dense-tiny/ (0.25s)
+=== RUN   TestCUDAStepRagged_prefillChunkMatchesItsPass
+=== RUN   TestCUDAStepRagged_prefillChunkMatchesItsPass/llama-attnfa-tiny/
+cuda: prefill width 2048 rows (26 MiB of scratch; 6969 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:582: plant 3: the chunk out of its class differs (red, as it must be); fused attention launches: own passes 4
+=== RUN   TestCUDAStepRagged_prefillChunkMatchesItsPass/llama-attnfa-tiny/i8
+cuda: prefill width 2048 rows (26 MiB of scratch; 7039 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:582: plant 3: the chunk out of its class differs (red, as it must be); fused attention launches: own passes 4
+=== RUN   TestCUDAStepRagged_prefillChunkMatchesItsPass/llama-tiny/
+cuda: prefill width 2048 rows (6 MiB of scratch; 7041 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:569: identity only: the stepped passes made 56 fast launches; no fused attention at this head dim
+--- PASS: TestCUDAStepRagged_prefillChunkMatchesItsPass (0.76s)
+    --- PASS: TestCUDAStepRagged_prefillChunkMatchesItsPass/llama-attnfa-tiny/ (0.26s)
+    --- PASS: TestCUDAStepRagged_prefillChunkMatchesItsPass/llama-attnfa-tiny/i8 (0.25s)
+    --- PASS: TestCUDAStepRagged_prefillChunkMatchesItsPass/llama-tiny/ (0.26s)
+=== RUN   TestCUDAStepRagged_prefillChunkDeclines
+=== RUN   TestCUDAStepRagged_prefillChunkDeclines/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6939 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:667: the model offers no step; refused by the step range: cuda ragged step: 2 sequences outside the step range
+=== RUN   TestCUDAStepRagged_prefillChunkDeclines/qwen3moe-tiny
+cuda: prefill width 2048 rows (5 MiB of scratch; 6937 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:667: the model offers no step; refused by the step range: cuda ragged step: 2 sequences outside the step range
+=== RUN   TestCUDAStepRagged_prefillChunkDeclines/mistral-tiny-window/windowed
+cuda: prefill width 2048 rows (11 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestCUDAStepRagged_prefillChunkDeclines (0.74s)
+    --- PASS: TestCUDAStepRagged_prefillChunkDeclines/qwen35-tiny (0.23s)
+    --- PASS: TestCUDAStepRagged_prefillChunkDeclines/qwen3moe-tiny (0.25s)
+    --- PASS: TestCUDAStepRagged_prefillChunkDeclines/mistral-tiny-window/windowed (0.27s)
+=== RUN   TestCohereRealResidentParityCUDA
+    cohere_real_resident_test.go:42: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestCohereRealResidentParityCUDA (0.00s)
+=== RUN   TestCohereResidentParityCUDA
+=== RUN   TestCohereResidentParityCUDA/cohere-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 7069 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    cohere_resident_parity_test.go:88: decode, 12 positions: worst cosine 1.000000000, worst relL2 1.9293e-07
+    cohere_resident_parity_test.go:110: batched prefill last-token logits vs CPU: cosine 1.000000 relL2 0.0000
+=== RUN   TestCohereResidentParityCUDA/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7069 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    cohere_resident_parity_test.go:88: decode, 12 positions: worst cosine 1.000000000, worst relL2 1.6045e-07
+    cohere_resident_parity_test.go:110: batched prefill last-token logits vs CPU: cosine 1.000000 relL2 0.0000
+--- PASS: TestCohereResidentParityCUDA (1.55s)
+    --- PASS: TestCohereResidentParityCUDA/cohere-tiny (1.32s)
+    --- PASS: TestCohereResidentParityCUDA/cohere2-tiny (0.23s)
+=== RUN   TestCohereResidentSmokeCUDA
+cuda: prefill width 2048 rows (6 MiB of scratch; 7069 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    cohere_resident_smoke_test.go:26: resident decode path: cuda-resident (int8int8)
+--- PASS: TestCohereResidentSmokeCUDA (0.24s)
+=== RUN   TestCohere2ResidentSmokeCUDA
+cuda: prefill width 2048 rows (6 MiB of scratch; 7069 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    cohere_resident_smoke_test.go:30: resident decode path: cuda-resident (int8int8)
+--- PASS: TestCohere2ResidentSmokeCUDA (0.24s)
+=== RUN   TestKV16_exactInputIdentity_decodeReaders
+=== RUN   TestKV16_exactInputIdentity_decodeReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (155 MiB of scratch; 6505 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6005 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV16_exactInputIdentity_decodeReaders/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (280 MiB of scratch; 5783 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4603 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestKV16_exactInputIdentity_decodeReaders (11.84s)
+    --- PASS: TestKV16_exactInputIdentity_decodeReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (3.40s)
+    --- PASS: TestKV16_exactInputIdentity_decodeReaders/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (8.45s)
+=== RUN   TestKV16_exactInputIdentity_prefillReaders
+=== RUN   TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (155 MiB of scratch; 6581 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6109 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+=== RUN   TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (280 MiB of scratch; 5911 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4865 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+--- PASS: TestKV16_exactInputIdentity_prefillReaders (12.08s)
+    --- PASS: TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (3.36s)
+    --- PASS: TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (8.72s)
+PASS
+ledger: 42 device(s) released in this run

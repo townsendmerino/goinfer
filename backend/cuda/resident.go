@@ -545,6 +545,7 @@ type cudaResident struct {
 	eps, attnScale float32
 	finalSoftcap   float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
 	attnCap        float32 // Gemma 2 attention-score softcap (50); 0 ⇒ none. The covered kernels' capped variants take it as an argument (withCap).
+	faSoftcap      bool    // a capped layer may take the flash-decode lane's capped variant (decoder.Options.FlashDecodeSoftcap); off, it decodes on split-KV
 	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, docs/tasks/task-gpu-paths-2026-09.md): the raw
 	// params behind the post-RoPE query scale (decoder.Model.AttnTempParams), 0 for every family without it.
 	// Recomputed into qTempScale per decode call (rope_kv's parameter) or passed raw into rope_kv_batched, which
@@ -3104,10 +3105,11 @@ func (r *cudaResident) rms(src, nrm Buffer, qOut Buffer, sOut Buffer) error {
 }
 
 // layerNormQuant is rms's mean-centered twin (Cohere/Command-R, FeatLayerNorm): no addOne
-// selector (bias-free, no Gemma-style (1+w) family uses this norm kind on this backend).
+// selector (bias-free, no Gemma-style (1+w) family uses this norm kind on this backend). Decode runs the batched paths' kernel at one
+// row (bLayerNormQuantB), so a step, PrefillLastN or verify row normalizes exactly as decode does: layernorm_quant rounds in another
+// order and moves an int8 code by a last bit (docs/measurements/fcoh-cohere-layernorm-2026-11/README.md).
 func (r *cudaResident) layerNormQuant(src, nrm Buffer, qOut Buffer, sOut Buffer) error {
-	return r.launch(r.fLN, onecfg(256, (r.hidden+256)*4),
-		Arg(src), Arg(nrm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps), Arg(qOut), Arg(sOut))
+	return r.bLayerNormQuantB(src, nrm, r.hidden, 1, qOut, sOut)
 }
 
 // norm dispatches the family's pre-GEMV norm+quant into qOut/sOut — layerNormQuant (Cohere's
@@ -4266,12 +4268,16 @@ const (
 	armSplitKV                // split-KV
 	armBatched                // attn_batched at M=1
 	armGlue                   // the glue attention
+	armRefused                // none: the span needs split-KV, which is off or not loaded (decodeAttn's error)
 )
 
 // decodeAttnArm is the attention launch decode makes at layer l over nWin attended keys: the one choice decodeAttn and a ragged
-// step's rows (stepAttnRows) share. The flash-decode lane is checked first because it replaces the exact path outright.
+// step's rows (stepAttnRows) share. A span past the single-block shared-memory limit with split-KV off or not loaded is refused
+// before any lane is considered; then the flash-decode lane, because it replaces the exact path outright.
 func (r *cudaResident) decodeAttnArm(Ly *cudaLayer, l, nWin int) attnArm {
 	switch {
+	case splitKVRequired(nWin) && (!r.splitkvAttn || r.skScores == (Pipeline{})):
+		return armRefused
 	case r.faSplit > 0 && r.faExactScope.Load() == 0 && nWin >= r.faMinKeys && r.faEligible(l):
 		return armFlash
 	case r.splitkvAttn && r.skScores != (Pipeline{}) && (splitKVRequired(nWin) || nWin >= r.splitkvMin(Ly.nKV, Ly.hd)):
@@ -4323,15 +4329,15 @@ func (r *cudaResident) decodeAttn(Ly *cudaLayer, l, pos int) error {
 	// neither knows when the alternative cannot run at all. Without this, -ctx 16384 on a geometry where split-KV is
 	// otherwise off (splitkvNever, or GOINFER_SPLITKV_ATTN=0) fails at position 12,160, or silently drops to the
 	// sequential prefill.
-	mustSplit := splitKVRequired(nWin)
-	if mustSplit && (!r.splitkvAttn || r.skScores == (Pipeline{})) {
+	arm := r.decodeAttnArm(Ly, l, nWin)
+	if arm == armRefused {
 		return fmt.Errorf("cuda: attention at %d attended keys needs %d B of shared memory, "+
 			"past this device's %d B limit, and split-KV is unavailable (%s) — lower -ctx or "+
 			"re-enable GOINFER_SPLITKV_ATTN (M-16)", nWin, attnShmemBytes(nWin),
 			singleBlockAttnShmemLimit,
 			map[bool]string{true: "kernel not loaded", false: "disabled by GOINFER_SPLITKV_ATTN"}[r.skScores == (Pipeline{})])
 	}
-	switch r.decodeAttnArm(Ly, l, nWin) {
+	switch arm {
 	case armFlash:
 		// Flash-decode lane (default ON, GOINFER_CUDA_FLASH_DECODE=0 to disable): NOT bit-identical, fidelity-gated.
 		// Checked first because it replaces the exact path's three launches outright when eligible.

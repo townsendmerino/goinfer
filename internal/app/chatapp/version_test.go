@@ -3,10 +3,14 @@ package chatapp
 import (
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
 )
+
+// versionLine is serveapp's: the first line of a --version report, which a client that pins goinfer's version compares.
+var versionLine = regexp.MustCompile(`^\S+ (v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+dirty)?|\(devel\)|\(unknown\))( \([0-9a-f]{7,12}(-dirty)?\))?$`)
 
 // TestIsVersionArg_recognizesAllForms pins the spellings isVersionArg accepts (--version, -version, a bare `version`) and
 // rejects. R6: the two binary-level tests below pin the behaviour behind it; history in
@@ -44,12 +48,15 @@ func TestChatVersionFlag_answersWithoutAModel(t *testing.T) {
 
 	// Both spellings, and both positions (bare first arg, and the registered flag after one that would otherwise require a
 	// model).
-	for _, args := range [][]string{{"--version"}, {"version"}, {"-model", "/nonexistent.gguf", "--version"}} {
+	for _, args := range [][]string{{"--version"}, {"-version"}, {"version"}, {"-model", "/nonexistent.gguf", "--version"}} {
 		out, err := exec.Command(bin, args...).CombinedOutput()
 		if err != nil {
 			t.Fatalf("%s %v: %v\n%s", bin, args, err, out)
 		}
 		s := string(out)
+		if first, _, _ := strings.Cut(s, "\n"); !versionLine.MatchString(first) || !strings.HasPrefix(first, "goinfer-chat ") {
+			t.Errorf("%v: the first line %q is not \"goinfer-chat <version>[ (<revision>)]\"", args, first)
+		}
 		if !strings.Contains(s, "backends:") {
 			t.Errorf("%v output missing a backends: line:\n%s", args, s)
 		}
@@ -93,6 +100,16 @@ func TestChatUnknownPositional_namesTheSubcommands(t *testing.T) {
 	for _, want := range []string{"pull", "models", "--version"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("stderr does not name the known subcommand %q:\n%s", want, s)
+		}
+	}
+}
+
+// TestVersionReport_namesTheBinaryWithoutItsExtension: on Windows os.Args[0] ends in .exe, and the first line a pinning client parses
+// is the binary's name without it.
+func TestVersionReport_namesTheBinaryWithoutItsExtension(t *testing.T) {
+	for _, prog := range []string{"goinfer-chat", "goinfer-chat.exe", "goinfer-chat.EXE"} {
+		if first, _, _ := strings.Cut(versionReport(prog), "\n"); !strings.HasPrefix(first, "goinfer-chat ") || !versionLine.MatchString(first) {
+			t.Errorf("versionReport(%q): the first line %q is not \"goinfer-chat <version>[ (<revision>)]\"", prog, first)
 		}
 	}
 }

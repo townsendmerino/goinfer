@@ -298,14 +298,9 @@ var metalRounding = memgate.PerLease("Metal's 16 KiB sub-allocation", 16<<10)
 
 // metalMemGaps is Metal's table of known reds (MM7). It may only shrink: the fix that removes a row lowers metalMemGapsPin. Each
 // row is bounded by the build's own shape, so a second gap on the same line stays red.
-var metalMemGaps = []memgate.Gap{
-	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums the tensors: rotation tables and other derived buffers are leased on dense and priced nowhere",
-		Item: "MM8 Metal, dense vectors", Bytes: func(f map[string]int64) int64 { return f["tables"] }},
-	{Row: "testdata/gemma4-moe-kv-tiny32 *", Line: mem.LineDense, What: "Gemma 4's MoE leases 19,016 bytes on dense past the row above: not diagnosed",
-		Item: "MM8 Metal, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return 19016 }},
-}
+var metalMemGaps []memgate.Gap
 
-const metalMemGapsPin = 2
+const metalMemGapsPin = 0
 
 // metalGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read, by G-MS2 and the
 // snapshot; what it returns runs after that read, before Close.
@@ -339,9 +334,6 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	}
 	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount()}
 	read.Plan = m.Plan("metal", math.MaxInt64/4, fit.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
-	facts := func() map[string]int64 {
-		return map[string]int64{"tables": max(metalDenseVectorBytes(m, r)-m.PricedDenseVectorBytesForTest("metal")+m.PricedGemma4MoEVectorBytesForTest(), 0)}
-	}
 	// G-MS2 (docs/tasks/task-forward-architecture-2026-10.md §4.9c): the scratch line holds decode's list and the step's to the byte,
 	// both ways. The ledger's requests are read, not its charges, so the allocator's rounding hides nothing.
 	exact := func(at string) {
@@ -350,7 +342,7 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 				row, at, held, want))
 		}
 	}
-	read.Open = append(read.Open, memgate.Snap("built", l, facts()))
+	read.Open = append(read.Open, memgate.Snap("built", l, nil))
 	exact("built")
 	// MM5b: the decoder's price of decode's scratch is the build's list, with the chain's buffers, which the build holds once a chain
 	// opens (none has yet).
@@ -373,7 +365,7 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 		free = metalGatePlantForTest(r)
 	}
 	exact("generated")
-	read.Open = append(read.Open, memgate.Snap("generated", l, facts()))
+	read.Open = append(read.Open, memgate.Snap("generated", l, nil))
 	free()
 	// Scratch has no plan line: it holds decode's list and the step's, which the gate holds it to, before the step price's page
 	// rounding, which would hide what else leases there.
@@ -1097,65 +1089,71 @@ func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
 	}
 }
 
-// metalDenseVectorBytes is what a build leases on the dense line that the plan's dense figure, a sum of weight matrices, does not
-// count: the norms' weights, the biases, the attention sinks, the layer scale, the rotation tables and the m-RoPE axis map. Which of
-// them this build holds is read from its buffers, and each one's size from the model's weights and geometry, so a buffer that grows
-// does not raise its own allowance. Where the build uploads zeros in place of a family's missing bias, the zeros are counted.
-func metalDenseVectorBytes(m *decoder.Model, r *resident) int64 {
-	w := m.Weights()
-	_, _, nH, _, _, _, _ := m.Dims()
-	has := func(b Buffer) bool { return b != (Buffer{}) }
-	var n, maxHd int
-	add := func(b Buffer, floats int) {
-		if has(b) {
-			n += floats
-		}
+// TestMetalDensePrice_isTheBuildsLeases holds the plan's dense line to what a Metal build requests on it, to the byte, on builds whose
+// only other dense term is the token-embedding table an untied model reads from host memory: plain attention, Q/K/V biases, a sliding
+// window, Gemma 2's sandwich norms, and Gemma 4's MoE block with K=V layers. MM7's gate holds the plan only from below, so an
+// over-price passes there and is red here. The last row drops the Q bias from a biased checkpoint, which the build then replaces
+// with zeros for all three projections.
+func TestMetalDensePrice_isTheBuildsLeases(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
 	}
-	for l := range w.Layers {
-		lw, L := &w.Layers[l], &r.layers[l]
-		hd, kvDim := m.HeadDimAtResident(l), m.KVHeadsAtResident(l)*m.HeadDimAtResident(l)
-		maxHd = max(maxHd, hd)
-		add(L.preNorm, len(lw.PreAttnNorm))
-		if L.postNorm != L.preNorm {
-			add(L.postNorm, len(lw.PreMLPNorm))
+	for _, c := range []struct {
+		fx    string
+		plant func(w *decoder.Weights)
+	}{
+		{fx: "llama-tiny"}, {fx: "glm-tiny-bias"}, {fx: "mistral-tiny-window"}, {fx: "gemma2-tiny"}, {fx: "gemma4-moe-kv-tiny32"},
+		{fx: "glm-tiny-bias", plant: func(w *decoder.Weights) {
+			for l := range w.Layers {
+				w.Layers[l].QBias = nil
+			}
+		}},
+	} {
+		name := c.fx
+		if c.plant != nil {
+			name += "/no-q-bias"
 		}
-		add(L.preNormBias, len(lw.PreAttnNormBias))
-		add(L.postNormBias, len(lw.PreMLPNormBias))
-		add(L.postAttnNorm, len(lw.PostAttnNorm))
-		add(L.postMLPNorm, len(lw.PostMLPNorm))
-		add(L.postPLENorm, len(lw.PostPLENorm))
-		qN, kN := lw.QNorm, lw.KNorm
-		if _, _, _, _, gq, gk := m.Qwen35AttnWeights(l); L.qGate {
-			qN, kN = gq, gk
-		}
-		add(L.qNorm, len(qN))
-		if L.kNorm != L.qNorm {
-			add(L.kNorm, len(kN))
-		}
-		add(L.oBias, len(lw.OBias))
-		if r.attnSink {
-			add(L.attnSinks, len(lw.AttnSinks))
-		} else {
-			add(L.attnSinks, 1)
-		}
-		add(L.upBias, max(len(lw.UpBias), lw.UpProj.Rows()))
-		add(L.downBias, max(len(lw.DownBias), lw.DownProj.Rows()))
-		add(L.qkvBias, max(len(lw.QBias)+len(lw.KBias)+len(lw.VBias), nH*hd+2*kvDim))
-		add(L.invf, len(m.RopeInvFreqLayerResident(l)))
-		add(L.mscale, 1)
-		add(L.uLayerScalar, 1)
-		if L.moe != nil {
-			add(L.moe.routerBias, max(len(lw.RouterBias), r.moe.nE))
-		}
+		t.Run(name, func(t *testing.T) {
+			// Laid out as Metal's load lays it out, and not built yet, so a plant lands before the build.
+			m, err := decoder.Load("../../testdata/"+c.fx, decoder.Options{Quant: "int4", SidecarFor: "metal", ResidentContext: 256})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			w := m.Weights()
+			if c.plant != nil {
+				if len(w.Layers[0].QBias) == 0 || len(w.Layers[0].KBias) == 0 {
+					t.Fatalf("VOID: %s holds no Q and K biases to plant on", c.fx)
+				}
+				c.plant(w)
+			}
+			r, err := buildResident(m)
+			if err != nil {
+				t.Fatalf("build: %v", err)
+			}
+			defer r.Close()
+			var requested int64
+			for _, ls := range metalLedgerOf(r.d).OpenLeases() {
+				if ls.Line == mem.LineDense {
+					requested += ls.Requested
+				}
+			}
+			var hostEmbed int64
+			if w.LMHead.Rows() != 0 {
+				if q, sc, _, ok := w.Embed.Int8(); ok {
+					hostEmbed = int64(len(q)) + 4*int64(len(sc))
+				} else if f, ok := w.Embed.F32(); ok {
+					hostEmbed = 4 * int64(len(f))
+				} else {
+					t.Fatalf("VOID: the untied embedding is %s, which this test does not size", w.Embed.Kind())
+				}
+			}
+			plan := m.Plan("metal", math.MaxInt64/4, fit.PlanRequest{Ctx: r.ctxCap, CtxPinned: true})
+			if got, want := memgate.Planned(plan, r.kvSlotCount())[mem.LineDense]-hostEmbed, requested; got != want {
+				t.Errorf("the plan prices %d dense bytes beside the host-read embedding (%d), and the build requests %d (%+d)", got, hostEmbed, want, got-want)
+			}
+		})
 	}
-	add(r.finalNorm, len(w.FinalNorm))
-	add(r.finalNormBias, len(w.FinalNormBias))
-	add(r.invf, len(m.RopeInvFreq()))
-	add(r.vNormUnit, maxHd)
-	if g := r.prefillGeom(); g != nil {
-		add(r.mropeAxis, len(m.MRopeAxisResident(g.half)))
-	}
-	return 4 * int64(n)
 }
 
 // TestMemGate_metal is MM7's gate on Metal (docs/tasks/task-subsystems-2026-10.md): every census fixture at every option cell whose
