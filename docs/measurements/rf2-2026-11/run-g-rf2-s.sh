@@ -3,8 +3,8 @@
 # KV4's G2 instruments (docs/measurements/kv4-cuda-2026-10-21/run-speed.sh, run-ttft.sh, run-mc3.sh), with the addendum's changes:
 # decode includes depth 128, and every cell is A B B A in this one session (A = goinfer_old, the merge base; B = this build).
 #   run-g-rf2-s.sh <out dir> <old serve-cuda> <new serve-cuda> [phases]
-# phases (default all): decode deep gemma ttft mc3. The verify cells (bench_spec_lane.py arm A on each build) need that harness to
-# take the second build's binary for arm B first; they are not run here.
+# phases (default all): decode deep gemma ttft mc3 verify. verify is bench_spec_lane.py's exact attention with -spec ngram on each
+# build (A = OLD, B = NEW via --build-b), cells 1.5B:3900 and 7B:7500, three pairs.
 # Build each binary once from its own worktree:
 #   (cd <wt>/backend/cuda && GOWORK=<wt>/go.work CGO_ENABLED=0 go build -tags cuda -o <bins>/serve-cuda-<rev> ./cmd/serve)
 set -euo pipefail
@@ -20,7 +20,7 @@ if [ "${1:-}" = __cell ]; then
   echo "$(date +%T) cell start load $(cut -d' ' -f1 /proc/loadavg)"
   exec "$@"
 fi
-OUT=$(realpath -m "${1:?out dir}"); OLD=$(realpath -e "${2:?old serve-cuda}"); NEW=$(realpath -e "${3:?new serve-cuda}"); PHASES=${4:-decode deep gemma ttft mc3}
+OUT=$(realpath -m "${1:?out dir}"); OLD=$(realpath -e "${2:?old serve-cuda}"); NEW=$(realpath -e "${3:?new serve-cuda}"); PHASES=${4:-decode deep gemma ttft mc3 verify}
 [ "$OLD" != "$NEW" ] && [ "$(sha256sum < "$OLD")" != "$(sha256sum < "$NEW")" ] || { echo "old and new are the same binary"; exit 2; }
 REPO=$(cd "$(dirname "$SELF")/../../.." && pwd)
 KV4=$REPO/docs/measurements/kv4-cuda-2026-10-21
@@ -49,6 +49,8 @@ for ph in $PHASES; do
           python3 -u scripts/bench_w7_plain.py "$OUT/w7.json" --clients 4 --engines goinfer \
           --backend cuda --key $k --fixed-nonce --server-log "$OUT/w7-servers.log"
       done ;;
+    verify) lock verify env GOINFER_SERVE_CUDA=$OLD python3 scripts/bench_spec_lane.py --out "$OUT/verify.json" --cell 1.5B:3900 --cell 7B:7500 \
+              --pairs 3 --build-b "$NEW" 2>&1 | tee "$OUT/verify.log" ;;
   esac
 done
 echo RUN-G-RF2-S-DONE
