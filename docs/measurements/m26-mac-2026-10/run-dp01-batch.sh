@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: D-P01's speed read, the batched expert phase 2 on M26 (docs/tasks/task-m26-mac-2026-10.md, "D-P01",
+# Night job: D-P01's speed read, the batched expert phase 2 on M26 (docs/completed/task-m26-mac-2026-10.md, "D-P01",
 # pre-registered 2026-10-05 before any graded run). TestG4LayerMajor_M26AB with GOINFER_G4LM_BATCHAB=1: the layer-major
 # pass with the per-row phase 2 against the same pass batched (g4ExpertBatchOn), on one resident, M = 128 and 512, one
 # warm-up then 5 reps per arm alternated, logits and K/V compared every rep; the auto-sizer's slot count. Rule (the
@@ -12,7 +12,7 @@
 #   worktree    ~/goinfer-bench/m26-mac-2026-10/wt-f7497c2c (the binary runs from its metal/ for ../testdata)
 # Queued with:
 #   python3 scripts/night.py add m26-dp01-batch --est 20 --priority 60 --by "Claude (Mac session), M26 D-P01" \
-#     --doc docs/tasks/task-m26-mac-2026-10.md -- bash docs/measurements/m26-mac-2026-10/run-dp01-batch.sh
+#     --doc docs/completed/task-m26-mac-2026-10.md -- bash docs/measurements/m26-mac-2026-10/run-dp01-batch.sh
 # Estimate: about 12 minutes (layer-major at M = 512 is about 29-36 s an arm, 6 reps of both; M = 128 about 2 minutes;
 # the load about 10 s). Priority 60 runs it after the short-prompt TTFT job, which needs no M26 memory. The night runner
 # holds the timing lock; swap_killwatch.sh guards M26's memory.
