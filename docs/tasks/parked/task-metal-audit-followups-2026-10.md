@@ -4,7 +4,7 @@
 > that ran `docs/audit-metal-2026-09-30.md`'s §10 items) was archived. Everything it scoped is done, graded, or listed
 > here with a trigger. The audit itself, [`audit-metal-2026-09-30.md`](../../audit-metal-2026-09-30.md), stays live until
 > every finding in it is closed; this file is the program's remainder, not the audit's. M26 work, D-P01's batched expert
-> phase 2 included, is live in [`task-m26-mac-2026-10.md`](../task-m26-mac-2026-10.md).
+> phase 2 included, is live in [`task-m26-mac-2026-10.md`](../../completed/task-m26-mac-2026-10.md).
 
 | # | item | state | trigger or owner |
 |---|---|---|---|
