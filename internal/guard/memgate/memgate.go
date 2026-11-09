@@ -197,8 +197,6 @@ type Geometry struct {
 	// its mirror). KVScaleUnder is what one scale a head adds over the formula's 1/8 of a byte an element at int8: negative on a wide head. They
 	// can net within one row, so each is its own figure.
 	KVWindowOver, KVScaleUnder int64
-	// MambaTail is what a Mamba-2 CPU window keeps past its rows: a view into the projection's output, whose last NHeads floats follow each row.
-	MambaTail int64
 }
 
 // GeometryOf reads g for m at ctx positions and the KV precision kv, one slot's worth times slots. rings is whether the backend keeps a sliding
@@ -239,19 +237,12 @@ func GeometryOf(m *decoder.Model, ctx, slots int, kv string, rings bool) Geometr
 	n := int64(max(slots, 1))
 	g.KVFormula, g.KVWindowOver, g.KVScaleUnder = int64(f)*n, int64(window)*n, int64(scale)*n
 	g.KVHeld = g.KVFormula - g.KVWindowOver + g.KVScaleUnder
-	if nh, _, _, _, k, _, _, ok := m.NemotronResidentParams(); ok {
-		for l := range layers {
-			if m.NemotronBlockKind(l) == 0 {
-				g.MambaTail += int64((k-1)*nh) * 4
-			}
-		}
-	}
 	return g
 }
 
 // Facts is g as a Snapshot's facts.
 func (g Geometry) Facts() map[string]int64 {
-	return map[string]int64{"tables": g.DenseTables, "kvFormula": g.KVFormula, "kvHeld": g.KVHeld, "mambaTail": g.MambaTail}
+	return map[string]int64{"tables": g.DenseTables, "kvFormula": g.KVFormula, "kvHeld": g.KVHeld}
 }
 
 // HoldRows fails t unless built is exactly the rows path names, one a line: a row that stopped building is as red as one over plan, and a new

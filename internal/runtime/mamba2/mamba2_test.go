@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"slices"
 	"testing"
+	"unsafe"
 )
 
 // refMixer is one Mamba-2 mixer step written out plainly in float64 from the math rather than from Mix: the depthwise causal
@@ -123,6 +125,58 @@ func TestMix_matchesThePlainMixerStep(t *testing.T) {
 					}
 				}
 			})
+		}
+	}
+}
+
+// TestMix_windowOwnsItsRows: after every step, each conv-window row is its own convDim floats (length and capacity) lying
+// outside every proj Mix was given, and once the window is full the same K-1 rows are reused, oldest first.
+func TestMix_windowOwnsItsRows(t *testing.T) {
+	p := Params{NHeads: 2, HeadDim: 4, DState: 8, NGroups: 1, DConv: 4, NormGroups: 1}
+	rng := rand.New(rand.NewPCG(3, 5))
+	vec := func(n int) []float32 {
+		v := make([]float32, n)
+		for i := range v {
+			v[i] = float32(rng.Float64()*2 - 1)
+		}
+		return v
+	}
+	w := Weights{ConvW: vec(p.ConvDim() * p.DConv), ConvB: vec(p.ConvDim()), ALog: vec(p.NHeads), D: vec(p.NHeads),
+		DtBias: vec(p.NHeads), NormW: vec(p.DInner())}
+	st := NewState(p)
+	var projs [][]float32
+	var full [][]float32 // the window's rows once it first fills
+	for step := range 8 {
+		proj := vec(p.DInner() + p.ConvDim() + p.NHeads)
+		projs = append(projs, proj)
+		xBC := slices.Clone(proj[p.DInner() : p.DInner()+p.ConvDim()])
+		Mix(proj, w, p, 1e-5, st, false)
+		if want := min(step+1, p.DConv-1); len(st.ConvWin) != want {
+			t.Fatalf("step %d: the window holds %d rows, want %d", step, len(st.ConvWin), want)
+		}
+		if !slices.Equal(st.ConvWin[len(st.ConvWin)-1], xBC) {
+			t.Fatalf("step %d: the newest row is not this token's xBC", step)
+		}
+		for i, row := range st.ConvWin {
+			if len(row) != p.ConvDim() || cap(row) != p.ConvDim() {
+				t.Fatalf("step %d: row %d has length %d and capacity %d, want %d", step, i, len(row), cap(row), p.ConvDim())
+			}
+			for j, pr := range projs {
+				if lo, hi := unsafe.Pointer(&pr[0]), unsafe.Add(unsafe.Pointer(&pr[0]), 4*len(pr)); uintptr(unsafe.Pointer(&row[0])) >= uintptr(lo) && uintptr(unsafe.Pointer(&row[0])) < uintptr(hi) {
+					t.Fatalf("step %d: window row %d lies inside step %d's proj", step, i, j)
+				}
+			}
+		}
+		if len(st.ConvWin) == p.DConv-1 {
+			if full == nil {
+				full = slices.Clone(st.ConvWin)
+				continue
+			}
+			for _, row := range st.ConvWin {
+				if !slices.ContainsFunc(full, func(f []float32) bool { return &f[0] == &row[0] }) {
+					t.Fatalf("step %d: the full window holds a new row", step)
+				}
+			}
 		}
 	}
 }

@@ -46,8 +46,8 @@ type Weights struct {
 	NormW  []float32 // [dInner] gated RMSNorm weight
 }
 
-// State is one layer's recurrent state: the conv window (the last K-1 xBC vectors, oldest first) and the SSM state
-// [nHeads·P·N].
+// State is one layer's recurrent state: the conv window (the last K-1 xBC vectors, oldest first, each its own convDim floats)
+// and the SSM state [nHeads·P·N].
 type State struct {
 	ConvWin [][]float32
 	SSM     []float32
@@ -59,8 +59,8 @@ func NewState(p Params) *State {
 }
 
 // Mix advances one token through the mixer, reading and updating st, and returns the gated-norm output [dInner], the
-// out_proj's input. proj is the in_proj output [z (dInner) ‖ xBC (convDim) ‖ dt (nHeads)]; st's conv window keeps a
-// reference to its xBC part, so the caller must not reuse proj's backing array. f32 computes exp(dt·A) and the norm's
+// out_proj's input. proj is the in_proj output [z (dInner) ‖ xBC (convDim) ‖ dt (nHeads)]; st's conv window keeps a copy of
+// its xBC part, never a view, so the window holds no part of proj. f32 computes exp(dt·A) and the norm's
 // accumulation in f32, as the GPU kernels do (a precision-localization seam, off in production).
 func Mix(proj []float32, w Weights, p Params, eps float64, st *State, f32 bool) []float32 {
 	dInner, convDim, K := p.DInner(), p.ConvDim(), p.DConv
@@ -85,9 +85,14 @@ func Mix(proj []float32, w Weights, p Params, eps float64, st *State, f32 bool) 
 		}
 		conv[c] = hybridattn.Silu(s)
 	}
-	st.ConvWin = append(st.ConvWin, xBC)
-	if len(st.ConvWin) > K-1 {
-		st.ConvWin = st.ConvWin[len(st.ConvWin)-(K-1):]
+	switch {
+	case len(st.ConvWin) < K-1:
+		st.ConvWin = append(st.ConvWin, append(make([]float32, 0, convDim), xBC...))
+	case K > 1: // full: the oldest row takes this token's xBC and moves to the end
+		oldest := st.ConvWin[0]
+		copy(st.ConvWin, st.ConvWin[1:])
+		st.ConvWin[K-2] = oldest
+		copy(oldest, xBC)
 	}
 
 	// Split conv → x (dInner), B, C (each nGroups·N).
