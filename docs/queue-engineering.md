@@ -1101,7 +1101,9 @@ set for the analysis only, run from inside the module with `GOWORK=off`, gives t
 "Zero findings" and "the tool did not run" are the same output, which is the same class the tracer's
 zero samples belonged to.
 
-**B8 · A sweep must distinguish "could not evaluate" from "failed"** — `linux`, **filed 2026-08-12**
+**B8 · A sweep must distinguish "could not evaluate" from "failed"** *Checked 2026-11-09 (mbp2-fit): STILL LIVE in
+`cmd/gate`. `scripts/parity_sweep.sh` is gone, and `cmd/gate/grade_parity.go:classifyChecks` still labels every unexplained
+skip `SKIP - asset missing (blocker)` whatever the cause, and the verdict is one count, `N BLOCKER(S)`.* — `linux`, **filed 2026-08-12**
 
 `scripts/parity_sweep.sh` reported **27 blockers**, then **15**, then **0**. The tree was fine at all
 three. Every one of the 42 was a **missing asset or an unset env var** — an *inability to evaluate*,
@@ -1125,7 +1127,9 @@ moved".** An absence rendered as a result, and a cause rendered as the wrong kin
 project already has the rule — *a skip is not a pass* — and these are the corollary: **a skip is also
 not a failure, and a gate that cannot say which it had is asking the operator to guess.**
 
-**B7 · `aikit_version` is a hand-maintained input to a computed gate** — `linux`, **found 2026-08-12
+~~**B7 · `aikit_version` is a hand-maintained input to a computed gate**~~ **Done, checked 2026-11-09 (mbp2-fit):** the parity manifest has no aikit field;
+`deps_hash` reads the kernel fingerprint table at hash time (`decoder/parity_manifest_test.go`, the manifest's doc), and
+`decoder/aikit_pin_test.go:TestAikitPinsAgree` holds every module to the root's pin. Kept as written: — `linux`, **found 2026-08-12
 during the v1.17.0 bump; MEASURED AND STILL LIVE 2026-09-06 — see the box immediately below**
 
 > **STATUS 2026-09-06: CONFIRMED LIVE, AND A RELEASE WAS CUT THROUGH IT. ONE ACTION OUTSTANDING.**
@@ -1208,7 +1212,14 @@ Two instances landed the same day, which is what promoted it from a chore to a c
 *Cross-reference:* B6 carries the check/dispatch shapes; this is the constant shape, and the three
 belong to one class.
 
-**B1 · Env-var lint** — either box
+**B1 · Env-var lint** *Checked 2026-11-09 (mbp2-fit): the registry half is DONE: `testdata/env_reads.txt` lists every production
+`GOINFER_*` read and `decoder/envvars_registry_test.go:TestEnvVars_docAndCodeAgree` fails on one missing from it or from
+`docs/env-vars.md`, and operator knobs are snapshotted at `Load` (`decoder.Model.Knob`, `TestKnobDrift_firesOnPostLoadSetenv`).
+The package-initialiser half is GUARDED: `decoder/envvars_pkginit_test.go:TestEnvVars_noNewPackageInitRead` fails
+on a new production package-level `var` initialised from the environment (a direct `os.Getenv`/`os.LookupEnv`, or a
+`GOINFER_*` literal passed to a helper such as `envBoolDefault`). Thirteen such reads remain, listed there
+(`pkgInitEnvReadsKnown`), out of reach of `t.Setenv`; the list only shrinks. OPEN: moving those thirteen to load-time knobs
+or test hooks, one at a time, where a test needs to set one.* — either box
 
 `cc238c6` landed the `GINFER_`→`GOINFER_` rename (31 files, real work) and an env-var
 classification as `docs/env-vars.md`. The classification is the expensive part and it's done. What's
@@ -1231,7 +1242,8 @@ Why it matters: 105 variables, exactly one of which anything has ever set. Six h
 only findable *as a class* if something enumerates `os.Getenv` mechanically. A markdown table
 maintained by intention drifts on the first variable someone adds.
 
-**B2 · Gate reconciliation — one entry point** — `linux`
+~~**B2 · Gate reconciliation — one entry point**~~ **Superseded, checked 2026-11-09 (mbp2-fit):** both scripts are gone; `go run ./cmd/gate gpu` is the one
+entry point, with the heavy main tier and a vacuous cell counted as a failure (`cmd/gate/gpu.go`). Kept as written: — `linux`
 
 Two mechanisms now exist for running the heavy tier: `scripts/gpu_gate.sh` group 2c (linux) and
 `scripts/heavy_gate.sh` (`8fecfad`, mac).
@@ -1490,7 +1502,10 @@ sibling already had — it reproduces the class rather than closing it. Where en
 mechanical, the invariant's own comment carries the full set, so the next fix is written by someone
 who has been told the set exists.
 
-**B17 · CI staticcheck verdicts are toolchain-nondeterministic** — either box. Filed 2026-08-14,
+**B17 · CI staticcheck verdicts are toolchain-nondeterministic** *Checked 2026-11-09 (mbp2-fit): addressed in
+practice. CI builds staticcheck v0.8.1 from `.github/actions/staticcheck`'s own `go.mod` (x/tools pinned), under the Go that
+`go.mod` names (`go-version-file`), and `go run ./cmd/lint` checks a local binary is that build and runs a canary first.
+Francis's decision is left open here, since it was his to make.* — either box. Filed 2026-08-14,
 decider Francis.
 
 `ci.yml` runs `go run honnef.co/go/tools/cmd/staticcheck@2025.1.1` (root and backend jobs). The
