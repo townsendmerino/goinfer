@@ -148,10 +148,11 @@ func TestMoEWorkingSetRefusal(t *testing.T) {
 // pushed absurdly high for this one test to force the refusal branch, proving Load actually reads
 // moeWorkingSetPrediction's real numbers and calls moeWorkingSetRefusal with them — not just that
 // the two functions exist in isolation (TestMoEWorkingSetRefusal above already covers that).
-func TestLoad_moeWorkingSetGateWiring(t *testing.T) {
-	const ckpt = "../testdata/gemma4-moe-tiny"
+// int8GIWFixture serializes the safetensors checkpoint ckpt at int8int8 into a .giw under t.TempDir and returns its path.
+func int8GIWFixture(t *testing.T, ckpt string) string {
+	t.Helper()
 	if _, err := os.Stat(ckpt); err != nil {
-		t.Skipf("no gemma4-moe-tiny fixture: %v", err)
+		t.Skipf("no %s fixture: %v", ckpt, err)
 	}
 	m0, err := Load(ckpt, Options{Quant: "int8int8"})
 	if err != nil {
@@ -162,10 +163,60 @@ func TestLoad_moeWorkingSetGateWiring(t *testing.T) {
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
-	giwPath := filepath.Join(t.TempDir(), "gemma4moe.giw")
+	giwPath := filepath.Join(t.TempDir(), filepath.Base(ckpt)+".giw")
 	if err := os.WriteFile(giwPath, giw.Write(blob, nil), 0o644); err != nil {
 		t.Fatalf("write .giw: %v", err)
 	}
+	return giwPath
+}
+
+// TestLoad_mappedMoEWorkingSetRefusal: a MoE .giw loaded the default way (mapped, no -stream-weights) and decoded on the CPU
+// is held to the same working-set refusal as a paged one: below the floor it refuses and names --accept-slow, AcceptSlowMoE
+// loads it, a prediction above the floor loads it, and a dense .giw is never asked.
+func TestLoad_mappedMoEWorkingSetRefusal(t *testing.T) {
+	moe := int8GIWFixture(t, "../testdata/mixtral-tiny")
+	dense := int8GIWFixture(t, "../testdata/llama-tiny")
+	t.Run("a prediction above the floor loads", func(t *testing.T) {
+		m, err := Load(moe, Options{Backend: "cpu"})
+		if err != nil {
+			t.Fatalf("Load refused at the real floor: %v", err)
+		}
+		m.Close()
+	})
+	orig := moeSlowTokPerSecThreshold
+	moeSlowTokPerSecThreshold = 1e18 // above any prediction: every MoE load is "slow"
+	t.Cleanup(func() { moeSlowTokPerSecThreshold = orig })
+	t.Run("refuses without AcceptSlowMoE", func(t *testing.T) {
+		m, err := Load(moe, Options{Backend: "cpu"})
+		if err == nil {
+			m.Close()
+			t.Fatal("the default mapped MoE load proceeded below the floor")
+		}
+		if !strings.Contains(err.Error(), "tok/s") || !strings.Contains(err.Error(), "--accept-slow") {
+			t.Errorf("refusal does not say why or name --accept-slow: %v", err)
+		}
+	})
+	t.Run("AcceptSlowMoE loads it, mapped and unpaged", func(t *testing.T) {
+		m, err := Load(moe, Options{Backend: "cpu", AcceptSlowMoE: true})
+		if err != nil {
+			t.Fatalf("Load with AcceptSlowMoE refused: %v", err)
+		}
+		defer m.Close()
+		if m.pager != nil || m.mmap == nil {
+			t.Errorf("pager %v, mapping %d bytes: want the mapped load, unpaged", m.pager != nil, len(m.mmap))
+		}
+	})
+	t.Run("a dense .giw is never refused", func(t *testing.T) {
+		m, err := Load(dense, Options{Backend: "cpu"})
+		if err != nil {
+			t.Fatalf("a dense .giw was refused: %v", err)
+		}
+		m.Close()
+	})
+}
+
+func TestLoad_moeWorkingSetGateWiring(t *testing.T) {
+	giwPath := int8GIWFixture(t, "../testdata/mixtral-tiny")
 
 	orig := moeSlowTokPerSecThreshold
 	moeSlowTokPerSecThreshold = 1e18 // absurdly high: even this fixture's fast prediction is "slow"
@@ -190,4 +241,35 @@ func TestLoad_moeWorkingSetGateWiring(t *testing.T) {
 			t.Fatal("Load succeeded but built no pager")
 		}
 	})
+}
+
+// TestMappedMoEWorkingSet_isThePagersArithmetic: at the same requested budget, the mapped load's prediction is the paged
+// load's, input for input (the experts' bytes and count, the budget a pager takes), at a budget under the expert total and
+// at the automatic one.
+func TestMappedMoEWorkingSet_isThePagersArithmetic(t *testing.T) {
+	path := int8GIWFixture(t, "../testdata/mixtral-tiny")
+	mapped, err := Load(path, Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mapped.Close()
+	total, _, n := mappedExpertBytes(mapped.w, mapped.mmap)
+	if total <= 0 || n == 0 {
+		t.Fatalf("VOID: the fixture maps no expert bytes (total %d, %d experts)", total, n)
+	}
+	for _, budget := range []int64{total / 3, 0} {
+		paged, err := Load(path, Options{Backend: "cpu", StreamWeights: true, WeightCacheBytes: budget, AcceptSlowMoE: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if paged.pager == nil || paged.pager.total != total || paged.pager.nExperts != n {
+			t.Fatalf("budget %d: the pager manages %+v; the mapped accounting reads %d bytes over %d experts", budget, paged.pager, total, n)
+		}
+		want, wok := moeWorkingSetPrediction(paged)
+		got, gok := mappedMoEWorkingSetPrediction(mapped, resolveWeightCacheBudget(budget))
+		paged.Close()
+		if !wok || !gok || got != want {
+			t.Errorf("budget %d: mapped predicts %v (ok %v), the pager %v (ok %v)", budget, got, gok, want, wok)
+		}
+	}
 }
