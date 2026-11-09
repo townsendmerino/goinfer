@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Follow-up C2 of docs/tasks/task-mellum21-2026-10.md: is Mellum2.1's expert streaming (C') deterministic, and does it track the resident build?
+"""Follow-up C2 of docs/completed/task-mellum21-2026-10.md: is Mellum2.1's expert streaming (C') deterministic, and does it track the resident build?
 
     python3 cprime_determinism.py <serve-binary> <model-dir> <out-dir>
     python3 cprime_determinism.py --selftest

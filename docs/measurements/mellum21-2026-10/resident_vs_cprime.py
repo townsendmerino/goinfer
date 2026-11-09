@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Follow-up C of docs/tasks/task-mellum21-2026-10.md: what does Mellum2.1's expert streaming (C') cost in decode, against the same model fully resident?
+"""Follow-up C of docs/completed/task-mellum21-2026-10.md: what does Mellum2.1's expert streaming (C') cost in decode, against the same model fully resident?
 
     python3 resident_vs_cprime.py <serve-binary> <model-dir> <out-dir> [--smoke]
 
