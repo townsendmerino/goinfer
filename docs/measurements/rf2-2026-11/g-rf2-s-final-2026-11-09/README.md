@@ -76,7 +76,7 @@ Verify, `bench_spec_lane.py`'s exact-attention arm with `-spec ngram` on each bu
   tuning budget (addendum 1): at most two rounds, each one kernel-side change and a re-run of only the failing cells, within one
   working day. Still under 0.98 after it is the kill: today's decode call stays beside the ragged one, the other shapes ship on
   their own bands, and the reading goes to Francis. The kill is taken without a tuning round (#869, on Francis's word): the cost
-  is the solo shapes' routing, below, not a kernel that one change would close.
+  is the solo shapes' routing (confirmed, below), not a kernel that one change would close.
 - **Verify: AMBIGUOUS** on the 1.5B (0.977, in 0.97–0.98); PASS on the 7B. An ambiguous shape is parked, not shipped on this
   evidence: verify stays on today's `ForwardN` (#869), and the reading goes to Francis. A speed cell is read once on the final
   build, and the tuning budget is decode's only, so there is no re-run.
@@ -85,7 +85,7 @@ Verify, `bench_spec_lane.py`'s exact-attention arm with `-spec ngram` on each bu
 - **Never-swap (KV4's G4): NOT READ.** Peak VmSwap's half holds by the records (swap growth 0 everywhere); the VmHWM half is
   VOID, with no host-memory samples. The post-kill confirmation read carries the sampler.
 
-## Mechanism (strong, not proven)
+## Mechanism (confirmed)
 
 RF2-3b-3 (#826) routes `Forward`, `ForwardArgmax`, `ForwardSample` and `ForwardN` through `cudaResident.soloRagged`, a
 one-sequence `StepRagged`, in place of today's per-token launches. The evidence:
@@ -95,8 +95,18 @@ one-sequence `StepRagged`, in place of today's per-token launches. The evidence:
   rows-mode pass) rather than of attention, which would grow with depth; CUDA graphs are opt-in, so they are not the difference;
 - verify, whose k rows share one step, loses about 2% where a decode token loses 12–27%.
 
-It becomes evidence with a tier-1 in-process timing on nobara: `Forward` on the 1.5B with `soloRaggedOffForTest` on against off
-at a2c276e3d, where the switch exists.
+**Confirmed** by a tier-1 in-process timing on nobara (2026-11-09, by day, the exclusive timing lock, 20.5 s): `TestRF2SoloTiming`
+(branch `rf2-solo-timing-2026-11-09` at 23ece8cc4, a2c276e3d plus the test) times `ForwardArgmax` on the 1.5B (Q4_K_M, `~/models`)
+through the one-sequence ragged step against today's launches (`soloRaggedOffForTest`), A B B A over four blocks of 64 tokens at
+the same positions; both arms picked the same ids.
+
+| depth | ragged ms/token | today ms/token | ragged/today tok/s, per block | median |
+|---|---|---|---|---|
+| 128 | 5.435 | 3.953 | 0.728 0.728 0.727 0.727 | 0.727 |
+| 2,048 | 7.709 | 5.889 | 0.764 0.764 0.763 0.764 | 0.764 |
+
+These match the served decode cells (0.727 at 128, 0.745 at 2,048): the routing accounts for the served loss. The log stays on
+nobara (`goinfer-logs/rf2-solo-timing-2026-11-09.log` under the run's home).
 
 ## Scoring
 
