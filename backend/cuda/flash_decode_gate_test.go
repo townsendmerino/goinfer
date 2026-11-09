@@ -220,7 +220,7 @@ func TestFlashDecodeGateVsReference(t *testing.T) {
 		"S":  {"GOINFER_CUDA_GATE_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", false},
 		// G22B: Gemma 2 on the lane's capped variant, the opt-in's gate (docs/measurements/op1o2-fa-softcap-2026-11/README.md); run as
 		// GOINFER_FA_GATE_CELLS=G22B:3900.
-		"G22B": {"GOINFER_CUDA_GATE_MODEL_G22B", "$HOME/models/gemma-2-2b-it", true},
+		"G22B": {"GOINFER_CUDA_GATE_MODEL_G22B", "$HOME/models/gemma-2-2b-it-Q8_0.gguf", true},
 	}
 	for cell := range strings.SplitSeq(cells, ",") {
 		parts := strings.Split(strings.TrimSpace(cell), ":")

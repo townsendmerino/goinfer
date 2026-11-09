@@ -1,0 +1,4 @@
+stream-weights: transcoding gemma-2-2b-it → gemma-2-2b-it.int4.e4h.cuda.v17.giw (int4, one-time — minutes + ~model-size on disk)…
+prequant: note: /home/francis/models/gemma-2-2b-it/tokenizer.json present but not goinfer-loadable (tokenizer.Load: byte_fallback set but "<0x09>" missing from vocab); bundle carries it, but serve may need the original tokenizer
+stream-weights: cache ready (1420 MB) in 6s: stream 5.1s, self-check 0.0s
+load tokenizer (/home/francis/models/gemma-2-2b-it.int4.e4h.cuda.v17.giw): tokenizer.Load: byte_fallback set but "<0x09>" missing from vocab
