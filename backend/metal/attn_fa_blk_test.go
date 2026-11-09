@@ -9,6 +9,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -18,23 +19,26 @@ import (
 )
 
 // r17Kernels is the shipped attention_fa_blk (kernels.go, allKernels) rebuilt into the standalone library form the R17
-// harnesses compile (the prototype's own macro name, its own #include), so the tests grade exactly what production
-// dispatches. The prototype is R17's step 2 (docs/tasks/red-october.md;
+// harnesses compile (the prototype's own macro name, its own #include), so the tests grade what production dispatches, less
+// the score function, which is the identity without a softcap (TestAttnFABlk_routedScoreIsTheGradedKernel). The prototype is R17's step 2 (docs/tasks/red-october.md;
 // docs/measurements/metal-decode-attn-r17-2026-09-25.md): attention_fa's first pass restructured in the shape of
 // llama.cpp's flash_attn_ext_vec.
 // TestAttnFABlkIsTheGradedKernel pins the rebuilt text to the SHA-256 of the source that was graded.
 var r17Kernels = r17WithoutTable(r17GradedKernelSource())
 
-// r17TableKernels is the same source as it ships, reading the block table, for a test that installs it in a resident.
+// r17TableKernels is the graded source reading the block table, as it ships, for a test that installs it in a resident.
 var r17TableKernels = strings.Replace(r17GradedKernelSource(), "using namespace metal;\n", "using namespace metal;\n"+kernels.KVRowMSL, 1)
 
 // r17GradedKernelSourceSHA256 is the SHA-256 of the prototype source that was graded: r17Kernels as built from the
 // commit the pre-registered decision run used: docs/code-notes/metal.md#r17GradedKernelSourceSHA256
 const r17GradedKernelSourceSHA256 = "ae72a2b060007abee88c940ac60308bb5650edaf8c761a273287ce873520ab4e"
 
-// r17GradedKernelSource rebuilds the graded prototype's standalone source from the shipped attention_fa_blk section
-// of allKernels (between its begin/end markers, minus the header comment).
-func r17GradedKernelSource() string {
+// r17RoutedScore is attention_fa_blk's score as it ships, through the score function (kernels.AttnScoreMSL), and r17GradedScore the
+// same score as the graded kernel formed it. The function is the identity in a library built without a softcap.
+const r17RoutedScore, r17GradedScore = "attn_score(simd_sum(dot(qs[g], k4)))", "simd_sum(dot(qs[g], k4))"
+
+// r17ShippedSection is the shipped attention_fa_blk section of allKernels, between its begin/end markers, minus the header comment.
+func r17ShippedSection() string {
 	const begin, end = "// ---- attention_fa_blk begin", "// ---- attention_fa_blk end ----"
 	b, e := strings.Index(allKernels, begin), strings.Index(allKernels, end)
 	if b < 0 || e < b {
@@ -45,7 +49,13 @@ func r17GradedKernelSource() string {
 	for n < len(lines) && (strings.HasPrefix(lines[n], "//") || lines[n] == "") {
 		n++
 	}
-	body := strings.Join(lines[n:], "\n")
+	return strings.Join(lines[n:], "\n")
+}
+
+// r17GradedKernelSource rebuilds the graded prototype's standalone source from r17ShippedSection, with each score taken back out of
+// the score function. TestAttnFABlk_routedScoreIsTheGradedKernel holds the two forms to the bit.
+func r17GradedKernelSource() string {
+	body := strings.ReplaceAll(r17ShippedSection(), r17RoutedScore, r17GradedScore)
 	return "#include <metal_stdlib>\nusing namespace metal;\n" + strings.ReplaceAll(body, "ATTN_FA_BLK_UNROLL", "R17_UNROLL")
 }
 
@@ -68,6 +78,10 @@ func TestAttnFABlkIsTheGradedKernel(t *testing.T) {
 	// r17WithoutTable would hide a lookup already gone from the shipped text, so the shipped text has no contiguous read left.
 	if src := r17GradedKernelSource(); strings.Contains(src, "(b0 + j)*kvDim") || !strings.Contains(src, "device const uint* kt[[buffer(10)]],") {
 		t.Fatal("shipped attention_fa_blk reads a key or value without the block table, or takes no table")
+	}
+	// The rebuild takes the score function back out, so the shipped text must route both of its scores through it and nothing else.
+	if sec := r17ShippedSection(); strings.Count(sec, r17RoutedScore) != 2 || strings.Count(sec, "attn_score") != 2 {
+		t.Fatalf("shipped attention_fa_blk routes %d of its two scores through attn_score, and names it %d times", strings.Count(sec, r17RoutedScore), strings.Count(sec, "attn_score"))
 	}
 	sum := sha256.Sum256([]byte(r17Kernels))
 	if got := hex.EncodeToString(sum[:]); got != r17GradedKernelSourceSHA256 {
@@ -211,6 +225,60 @@ func TestAttnFABlkMatchesFloat64(t *testing.T) {
 	t.Logf("worst per-head relative L2 error vs float64: %.3g (bound %g)", worst, bound)
 }
 
+// TestAttnFABlk_routedScoreIsTheGradedKernel: attention_fa_blk forms its score through the score function, which the library builds as
+// the identity for a model without a softcap, and that changes no output bit. The production library's kernel and the graded text
+// (r17TableKernels, compiled on its own) run the same inputs at both graded group sizes, at the depth floor and past it, near-uniform
+// and peaked, and every output is bit-identical.
+func TestAttnFABlk_routedScoreIsTheGradedKernel(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	shipped, err := d.CompileLibrary(allKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile allKernels: %v", err)
+	}
+	graded, err := d.CompileLibrary(r17TableKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile the graded source: %v", err)
+	}
+	if strings.Contains(r17TableKernels, "attn_score") {
+		t.Fatal("the graded source still calls the score function: this test would compare a kernel with itself")
+	}
+	comb, err := d.NewComputePipeline(shipped, "attention_fa_combine")
+	if err != nil {
+		t.Fatalf("combine pipeline: %v", err)
+	}
+	cq := d.NewCommandQueue()
+	cases := 0
+	for _, gc := range []struct{ G, nKV int }{{6, 2}, {7, 4}} {
+		name := fmt.Sprintf("attention_fa_blk_g%d", gc.G)
+		pShipped, err := d.NewComputePipeline(shipped, name)
+		if err != nil {
+			t.Fatalf("shipped %s: %v", name, err)
+		}
+		pGraded, err := d.NewComputePipeline(graded, name)
+		if err != nil {
+			t.Fatalf("graded %s: %v", name, err)
+		}
+		for _, nKeys := range []int{attnFADepthFloor, attnFADepthFloor + 1, 3900, 4100} {
+			for _, peaked := range []bool{false, true} {
+				q, kh, vh := blkInputs(int64(nKeys*10+gc.G), gc.G, gc.nKV, nKeys, peaked)
+				a := blkRun(t, d, cq, pShipped, comb, gc.G, gc.nKV, nKeys, attnFABlkSplit, q, kh, vh)
+				b := blkRun(t, d, cq, pGraded, comb, gc.G, gc.nKV, nKeys, attnFABlkSplit, q, kh, vh)
+				d.ReleaseAll()
+				for i := range a {
+					if math.Float32bits(a[i]) != math.Float32bits(b[i]) {
+						t.Fatalf("%s nKV=%d nKeys=%d peaked=%v: output %d is %g shipped and %g graded", name, gc.nKV, nKeys, peaked, i, a[i], b[i])
+					}
+				}
+				cases++
+			}
+		}
+	}
+	t.Logf("%d cases bit-identical between the shipped and the graded attention_fa_blk", cases)
+}
+
 // TestAttnFABlkSelection pins which kernel production dispatches as attention_fa's first pass. On the committed
 // llama-attnfa-tiny fixture (G=2) that is the block kernel exactly when attnFABlkAnyG is on (it is on by default); the G=2
 // instantiation sits outside the graded, hash-pinned region, and
@@ -270,14 +338,16 @@ func TestAttnFABlkSelection(t *testing.T) {
 		}
 		check(t, dir, attnFABlkAnyG)
 	})
-	for _, mm := range []string{"qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw", "qwen2.5-7b-instruct-q4_k_m.int4.metal.giw"} {
-		t.Run(mm, func(t *testing.T) {
+	for _, stem := range []string{"qwen2.5-coder-1.5b-instruct-q4_k_m", "qwen2.5-7b-instruct-q4_k_m"} {
+		t.Run(stem, func(t *testing.T) {
 			requireHeavyModel(t)
-			path := os.ExpandEnv("$HOME/models/" + mm)
-			if _, err := os.Stat(path); err != nil {
-				t.Skipf("checkpoint not present: %s", path)
+			// The Metal int4 sidecar's name carries its format version; the newest one present is the one a load writes today.
+			paths, _ := filepath.Glob(os.ExpandEnv("$HOME/models/" + stem + ".int4.metal*.giw"))
+			if len(paths) == 0 {
+				t.Skipf("no Metal int4 sidecar of %s in ~/models", stem)
 			}
-			check(t, path, true)
+			slices.Sort(paths)
+			check(t, paths[len(paths)-1], true)
 		})
 	}
 }

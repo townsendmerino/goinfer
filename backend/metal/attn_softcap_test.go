@@ -187,6 +187,85 @@ func TestAttnSoftcap_decodeKernels(t *testing.T) {
 	t.Logf("%d cap × kernel × head-dim × key-count × plant cases within the bar, and outside it with the cap dropped", checked)
 }
 
+// TestAttnSoftcap_faBlk covers attention_fa_blk, the split-KV block kernel at head dimension 128, with attention_fa_combine, at both
+// graded group sizes and on both sides of the depth floor where it engages. A capped layer does not take it today
+// (resident.canUseAttnFA); this holds the capped build of it to the reference, and the uncapped build outside the bar.
+func TestAttnSoftcap_faBlk(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	defer d.ReleaseObjects()
+	plain, err := d.CompileLibrary(allKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	comb, err := d.NewComputePipeline(plain, "attention_fa_combine")
+	if err != nil {
+		t.Fatalf("combine pipeline: %v", err)
+	}
+	cq := d.NewCommandQueue()
+	const nKV, hd = 2, 128
+	checked := 0
+	for _, cap := range []float32{50, 5} {
+		src, err := withAttnSoftcap(allKernels, cap)
+		if err != nil {
+			t.Fatal(err)
+		}
+		capped, err := d.CompileLibrary(src, MSL3_1)
+		if err != nil {
+			t.Fatalf("compile with cap %g: %v", cap, err)
+		}
+		for _, G := range []int{6, 7} {
+			kernel := fmt.Sprintf("attention_fa_blk_g%d", G)
+			pCap, err := d.NewComputePipeline(capped, kernel)
+			if err != nil {
+				t.Fatalf("pipeline %s: %v", kernel, err)
+			}
+			pPlain, err := d.NewComputePipeline(plain, kernel)
+			if err != nil {
+				t.Fatalf("pipeline %s: %v", kernel, err)
+			}
+			nH := G * nKV
+			for _, nKeys := range []int{attnFADepthFloor, attnFADepthFloor + 1, 4100} {
+				for plantName, plants := range softcapPlants {
+					name := fmt.Sprintf("cap=%g %s nKeys=%d, %s", cap, kernel, nKeys, plantName)
+					rng := rand.New(rand.NewSource(int64(G*100000 + nKeys*10 + len(plants))))
+					kvDim := nKV * hd
+					qv := randUnit(rng, nH*hd)
+					kf, vf := randUnit(rng, nKeys*kvDim), randUnit(rng, nKeys*kvDim)
+					for i, a := range plants {
+						s := (nKeys - 1) * (i + 1) / len(plants)
+						for kvh := range nKV {
+							h0 := kvh * G
+							for j := range hd {
+								kf[s*kvDim+kvh*hd+j] = a * qv[h0*hd+j]
+							}
+						}
+					}
+					kh, vh := make([]uint16, len(kf)), make([]uint16, len(vf))
+					for i := range kf {
+						kh[i], vh[i] = f32ToF16(kf[i]), f32ToF16(vf[i])
+						kf[i], vf[i] = f16ToF32(kh[i]), f16ToF32(vh[i])
+					}
+					got := blkRun(t, d, cq, pCap, comb, G, nKV, nKeys, attnFABlkSplit, qv, kh, vh)
+					dropped := blkRun(t, d, cq, pPlain, comb, G, nKV, nKeys, attnFABlkSplit, qv, kh, vh)
+					d.ReleaseAll()
+					want := attnRef64Cap(qv, kf, vf, nH, nKV, hd, 0, nKeys, float64(float32(1/math.Sqrt(hd))), float64(cap))
+					if cos, ma := softcapCosMaxAbs(got, want); !(cos >= softcapCosBar && ma <= softcapMaxAbsBar) {
+						t.Errorf("%s: cosine %.7f, max abs error %.3g against the capped float64 reference (want >= %g and <= %g)", name, cos, ma, softcapCosBar, softcapMaxAbsBar)
+					}
+					if cos, ma := softcapCosMaxAbs(dropped, want); cos >= softcapCosBar && ma <= softcapMaxAbsBar {
+						t.Errorf("%s: the kernel built WITHOUT the cap also meets the bar (cosine %.7f, max abs %.3g): this case cannot see a dropped cap", name, cos, ma)
+					}
+					checked++
+				}
+			}
+		}
+	}
+	t.Logf("%d cap × group size × key-count × plant cases within the bar, and outside it with the cap dropped", checked)
+}
+
 // TestAttnSoftcap_prefillKernel covers attention_prefill, the exact prefill kernel: M query rows over a cached prefix,
 // with and without a window. The planted keys are aligned with the last row's query.
 func TestAttnSoftcap_prefillKernel(t *testing.T) {
