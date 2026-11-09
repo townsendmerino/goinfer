@@ -16,8 +16,9 @@
 >   Do not treat `-spec-adaptive` as lossless. The run was queued as: (`mc4-candidate-cuda`, nobara, ~45 min). The build is
 >   `-spec-adaptive` (`6e9fcb99`, opt-in); the gates and the decision rule were registered before the run in
 >   [`mc4-candidate-cuda-2026-10-01.md`](../../measurements/mc4-candidate-cuda-2026-10-01.md). The graded outcome (rerun 2) was a chat hard-gate miss, so PARKED; a copy-only miss was the pre-run guess and was wrong. The Metal run of the same gates (the Mac's night queue, ~60 min) is not queued.
-> - **Owner decisions:** whether `-spec-adaptive` ever becomes a default; "spec inside a batch" (CUDA copy L = 1.54×; needs a
->   ragged-batch kernel, no design); P10 on Metal (projected, not started).
+> - **Owner decisions, 2026-11-09:** `-spec-adaptive` stays opt-in and is not a default (a cost of about 15% under load is
+>   acceptable for whoever wants it; its flag help and `docs/flags.md` state the measured 0.858x). P10 on Metal: KILLED (projected,
+>   never started). Still open: "spec inside a batch" (CUDA copy L = 1.54×; needs a ragged-batch kernel, no design).
 > - **Owed, low priority:** the 413 prefill-share fix's end-to-end re-run (the 2026-09-28 attempt was inconclusive: its memory
 >   ballast was compressible, so the ballast is fixed first; a unit test pins the fix).
 > - **Optional, unqueued:** item 29, the W7 run on Vulkan (reported only; WebGPU's MC1 shipped regardless).
@@ -39,8 +40,8 @@
 > - **MC4 candidate "speculate when alone, batch under load"**: built 2026-09-29 as `-spec-adaptive` (`6e9fcb99`, off by
 >   default). CUDA premise measured 2026-09-29: S 1.253×, L 0.790× on chat. CUDA's copy workload overshot the candidate's own
 >   condition (L 1.540×, spec beats batching under load), a separate, larger "spec inside a batch" question (investigated
->   2026-09-29, parked; the shipped candidate underperforms plain `-spec ngram` on copy traffic). P10 on Metal is projected,
->   not started.
+>   2026-09-29, parked; the shipped candidate underperforms plain `-spec ngram` on copy traffic). P10 on Metal was
+>   killed 2026-11-09.
 > - ~~**Since 9ccf7fb1** (embed-int4 on by default), a default Metal load declines the resident~~ — **fixed 2026-09-30**
 >   (`0ca36756`: `--embed-int4` defaults off on `--backend metal`, so a default Metal load stays on the GPU). The old
 >   `-embed-int4=false` workaround is no longer needed.

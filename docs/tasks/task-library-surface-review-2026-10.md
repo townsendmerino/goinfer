@@ -19,7 +19,7 @@
 | M6 | done | — | 3d50ec1f8; `decoder/lifecycle.go:Model.endGenerations` |
 | M7 | done | — | the contract is `decoder.Model`'s doc comment; `decoder/concurrency_contract_test.go:TestModel_concurrentGenerationsBeyondTheResidentsPlacesRunOnTheCPU` pins the case past the resident's places |
 | M8 | done | — | the comments on `decoder.Model.Generate` and `decoder.Generation.Err`; `decoder/generation_cancel_test.go:TestGeneration_errReportsCancellation` |
-| M9 | open | an `Options` way to make a backend decline an error (the kinds shipped in 275701c0c) | `docs/measurements/error-hygiene-audit-2026-11-04/README.md`, follow-up 4 |
+| M9 | done | — | the kinds shipped in 275701c0c; `decoder.Options.RequireBackend` and `ErrBackendDeclined` (`decoder/residency.go:Model.backendDeclinedErr`); `decoder/require_backend_test.go:TestLoad_requireBackendRefusesADecline` |
 | U1 | done | — (promoting any of them to Hard is a separate call) | `docs/api-tiers.md`, Experimental: structured output, per-field confidence, tool-call wiring, fit and placement reports, embeddings |
 | S1 | done | — | `decoder.Generation.ResidentDeclined` reports it per turn and `decoder/model.go:Model.warnResidentCap` warns once per model; `decoder/resident_declined_test.go:TestGeneration_residentDeclinedSaysWhyItRanOnTheCPU` |
 | S5 | done | — | 3d50ec1f8 (`ErrClosed`) |
