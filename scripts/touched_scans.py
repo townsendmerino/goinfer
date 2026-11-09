@@ -169,6 +169,7 @@ SCANS = [
     Scan("internal/app/fitcmd", "TestRun_closesFirstLoadBeforeMeasuring", F("internal/app/fitcmd/fit.go")),
     Scan("internal/diag/hwcensus", "TestHardwareCensus", TREE_NT + F("docs/hardware-coverage.json")),
     Scan("internal/runtime/mem/probe", "TestOnlyProbeReadsOSMemory", TREE_NT),
+    Scan("internal/testpath", "TestNoStrayRelativePathInInternalTests", TREE_T),
     Scan("internal/runtime/mem", "TestImports", NT("internal/runtime/mem")),
     Scan("backend/cuda", "TestPlanSlack_oneCopy", NT("backend/cuda")),
     Scan("backend/cuda", "TestLedger_everyAllocationNamesALine", NT("backend/cuda")),
