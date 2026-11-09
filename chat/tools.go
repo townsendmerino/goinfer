@@ -110,7 +110,10 @@ func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok 
 
 // ParseToolCalls extracts the tool calls from the model's output for this family,
 // returning them plus any leading natural-language text (the content). Empty
-// calls means the model answered normally.
+// calls means the model answered normally. A call's ID is the "id" the model wrote
+// in the call object, and "" when it wrote none, which is most families: the caller
+// assigns one. The content is everything before the first call, a reasoning block
+// included, so split a thinking model's output with SplitThink first.
 func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {
 	switch t.name {
 	case "chatml", "mellum2":

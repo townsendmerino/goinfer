@@ -14,7 +14,7 @@
 | M1 | decision | Francis: refuse or enforce JSON Schema `format` | `constrain/schema.go:schemaKeywords` still accepts it as annotation-only |
 | M2 | open | a stop-id helper on `chat.Template` | no stop-id helper in the tree; `chat/chat.go:Template.Stops` is strings |
 | M3 | done | — | f02d0b534; `tokenizer/stream.go:Tokenizer.NewStream` |
-| M4 | open | a tool-grammar helper on `chat.Template`; document `ToolCall.ID` and the `<think>` lead on `ParseToolCalls` | the parts exist (`constrain/tools_union.go:ToolCallsGrammar`), no helper |
+| M4 | done | — | `chat/toolgrammar.go:Template.ToolGrammar`, which serve's auto mode now calls; `chat/tools.go:Template.ParseToolCalls` documents `ID` and the reasoning lead; `chat/toolgrammar_test.go:TestTemplate_ToolGrammar` |
 | M5 | done | — | merged 2026-10-11 |
 | M6 | done | — | 3d50ec1f8; `decoder/lifecycle.go:Model.endGenerations` |
 | M7 | open | write the resident concurrency contract on `decoder.Model` | its doc comment is unchanged |
