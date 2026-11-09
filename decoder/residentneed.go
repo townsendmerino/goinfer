@@ -177,46 +177,42 @@ func (m *Model) cudaKVPrec(kvF16, kvI8 bool) string {
 	return kvPrecF32
 }
 
-// cudaKVRowBytes is one position's K (or V) row of layer l in a CUDA pool at prec: kvDim elements of 4, 2 or 1 B, and at int8 one f32 scale per
-// KV head (the scale pools, laid out like the cache).
-func cudaKVRowBytes(a *Architecture, l int, prec string) int64 {
-	kvDim := int64(a.kvDimAt(l))
+// cudaKVRowBytes is one position's row of b in a CUDA pool at prec: a row at the KV precision in int8 codes and one f32 scale per head
+// (the scale pools, laid out like the cache), else 2 B an element at f16 and 4 at f32. A row declared f32 whatever the KV precision (MLA's
+// latent) follows an f16 cache on CUDA, whose MLA kernels have f16 twins, and has no int8 form. The cuda package's kvRowBytes sizes the
+// same row from the layer its build checks against the declaration (kvCheckDeclared).
+func cudaKVRowBytes(b program.Buf, prec string) int64 {
 	switch {
-	case prec == kvPrecI8 && a.mla == nil:
-		return kvDim + 4*int64(a.kvHeadsAt(l))
+	case prec == kvPrecI8 && b.Prec == program.PrecKV:
+		return int64(b.Elems) + 4*int64(b.Heads)
 	case prec == kvPrecF16:
-		return 2 * kvDim
+		return 2 * int64(b.Elems)
 	}
-	return 4 * kvDim
+	return 4 * int64(b.Elems)
 }
 
+// cudaKVParts is one slot's KV on CUDA at the precision its policy delivers (cudaKVPrec), and its pools' null blocks, once per load:
+// every per-position row its layers declare (LayerBuffers) at CUDA's size for it (cudaKVRowBytes), per 64-row block. A row with a
+// window, when the windowed cache is on and the context is past the window plus WindowedKVSlack, takes the blocks of window+slack
+// positions plus one, for a range that starts mid-block (cuda/kvpool.go's kvWindowBlocks); at a shorter context the windowed cache does
+// not engage. Then the slot's two tables, 4 B a block each.
 func (m *Model) cudaKVParts(ctx int, kvF16, kvI8 bool) (slot, null int64) {
-	a := m.w.arch
 	prec := m.cudaKVPrec(kvF16, kvI8)
 	blocks := int64((ctx + KVBlockRows - 1) / KVBlockRows)
-	_, nLayers, _, _, _, _, _ := m.Dims()
 	var perBlock, windowed int64
-	for l := range nLayers {
-		if m.KVSrcAtResident(l) != l {
-			continue // a Gemma 4 E-model KV-shared layer aliases its source's cache (cuda/backend.go)
+	for l := range m.w.arch.NumLayers {
+		for _, b := range m.LayerBuffers(l) {
+			if b.Unit != program.PerPosition {
+				continue
+			}
+			block := KVBlockRows * cudaKVRowBytes(b, prec)
+			null += block
+			if held := b.Window + WindowedKVSlack; b.Window > 0 && m.windowedKV && ctx > held {
+				windowed += block * int64((held+KVBlockRows-1)/KVBlockRows+1)
+				continue
+			}
+			perBlock += block
 		}
-		if a.kvDimAt(l) == 0 { // a no-attention-KV layer
-			continue
-		}
-		row := cudaKVRowBytes(a, l, prec) // the latent width on MLA
-		if a.mla != nil {
-			perBlock += KVBlockRows * row // one latent row per position
-			null += KVBlockRows * row
-			continue
-		}
-		null += 2 * KVBlockRows * row
-		if held := m.SlidingWindowResident() + WindowedKVSlack; m.WindowedKVLayer(l) && ctx > held {
-			// A windowed layer maps window+slack positions however long the context, plus a block for a range that starts mid-block
-			// (cuda/kvpool.go's kvWindowBlocks); at a context no longer than that, the windowed KV does not engage.
-			windowed += 2 * row * KVBlockRows * int64((held+KVBlockRows-1)/KVBlockRows+1)
-			continue
-		}
-		perBlock += 2 * KVBlockRows * row // K and V
 	}
 	return perBlock*blocks + windowed + 2*4*blocks, null
 }
