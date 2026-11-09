@@ -139,6 +139,17 @@ class Rule(unittest.TestCase):
         # exact: 100.4 + round(0.2, 1) is 100.60000000000001, which a rebuilt peak would report
         self.assertEqual(res["swap_peak_mb"], 100.6)
 
+    def test_swapwatch_records_a_single_page_of_growth(self):
+        old = bench_peer.swap_used_mb
+        self.addCleanup(setattr, bench_peer, "swap_used_mb", old)
+        reads = iter([100.0, 100.0 + 4 / 1024, 100.0 + 4 / 1024])
+        bench_peer.swap_used_mb = lambda: next(reads, 100.0 + 4 / 1024)
+        w = bench_peer.SwapWatch()
+        w.poll_once()
+        res = w.stop()
+        self.assertGreater(res["swap_growth_mb"], 0.0, "a 4 KiB page voids the cell and its record must not read 0.0")
+        self.assertIn("grew", res["swap_void"])
+
     def test_swapwatch_reports_no_numeric_peak_when_a_reading_failed(self):
         old = bench_peer.swap_used_mb
         self.addCleanup(setattr, bench_peer, "swap_used_mb", old)
