@@ -1089,6 +1089,73 @@ func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
 	}
 }
 
+// TestMetalDensePrice_isTheBuildsLeases holds the plan's dense line to what a Metal build requests on it, to the byte, on builds whose
+// only other dense term is the token-embedding table an untied model reads from host memory: plain attention, Q/K/V biases, a sliding
+// window, Gemma 2's sandwich norms, and Gemma 4's MoE block with K=V layers. MM7's gate holds the plan only from below, so an
+// over-price passes there and is red here. The last row drops the Q bias from a biased checkpoint, which the build then replaces
+// with zeros for all three projections.
+func TestMetalDensePrice_isTheBuildsLeases(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	for _, c := range []struct {
+		fx    string
+		plant func(w *decoder.Weights)
+	}{
+		{fx: "llama-tiny"}, {fx: "glm-tiny-bias"}, {fx: "mistral-tiny-window"}, {fx: "gemma2-tiny"}, {fx: "gemma4-moe-kv-tiny32"},
+		{fx: "glm-tiny-bias", plant: func(w *decoder.Weights) {
+			for l := range w.Layers {
+				w.Layers[l].QBias = nil
+			}
+		}},
+	} {
+		name := c.fx
+		if c.plant != nil {
+			name += "/no-q-bias"
+		}
+		t.Run(name, func(t *testing.T) {
+			// Laid out as Metal's load lays it out, and not built yet, so a plant lands before the build.
+			m, err := decoder.Load("../../testdata/"+c.fx, decoder.Options{Quant: "int4", SidecarFor: "metal", ResidentContext: 256})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			w := m.Weights()
+			if c.plant != nil {
+				if len(w.Layers[0].QBias) == 0 || len(w.Layers[0].KBias) == 0 {
+					t.Fatalf("VOID: %s holds no Q and K biases to plant on", c.fx)
+				}
+				c.plant(w)
+			}
+			r, err := buildResident(m)
+			if err != nil {
+				t.Fatalf("build: %v", err)
+			}
+			defer r.Close()
+			var requested int64
+			for _, ls := range metalLedgerOf(r.d).OpenLeases() {
+				if ls.Line == mem.LineDense {
+					requested += ls.Requested
+				}
+			}
+			var hostEmbed int64
+			if w.LMHead.Rows() != 0 {
+				if q, sc, _, ok := w.Embed.Int8(); ok {
+					hostEmbed = int64(len(q)) + 4*int64(len(sc))
+				} else if f, ok := w.Embed.F32(); ok {
+					hostEmbed = 4 * int64(len(f))
+				} else {
+					t.Fatalf("VOID: the untied embedding is %s, which this test does not size", w.Embed.Kind())
+				}
+			}
+			plan := m.Plan("metal", math.MaxInt64/4, fit.PlanRequest{Ctx: r.ctxCap, CtxPinned: true})
+			if got, want := memgate.Planned(plan, r.kvSlotCount())[mem.LineDense]-hostEmbed, requested; got != want {
+				t.Errorf("the plan prices %d dense bytes beside the host-read embedding (%d), and the build requests %d (%+d)", got, hostEmbed, want, got-want)
+			}
+		})
+	}
+}
+
 // TestMemGate_metal is MM7's gate on Metal (docs/tasks/task-subsystems-2026-10.md): every census fixture at every option cell whose
 // build goes resident, and each at int4 with two KV slots and the step's blocks on, holds what it leased on each line to the plan
 // for the same load. It runs every row in one test, since a filtered run would see known gaps go quiet.

@@ -3,13 +3,18 @@ package decoder
 import "github.com/townsendmerino/goinfer/internal/runtime/program"
 
 // metalDerivedDenseBytes is what a Metal resident build of m leases on the dense line beyond the tensors the dense sum counts
-// (residentWeightBytesSplit): the buffers the build derives from the weights and the geometry. Per attention layer: a one-float
-// sink where the family has none, the layer's RoPE table and YaRN scale, zero Q|K|V biases where the checkpoint has none (not on
-// a gated layer, whose Q is separate), and on a K=V layer the second copy of k_proj its fused Q|K|K projection holds, at W4A8. Per
-// FFN: zero up and down biases on a non-gated one, a MoE router's zero bias where the checkpoint has none, Gemma 4's layer scalar,
-// and on Gemma 4's MoE block its router scale taken off, since the build folds it into the router. Per model: the RoPE table, the
-// unit v_norm weight at the widest head, and the m-RoPE axis map wherever the family has one (a build that declines the batched
-// prefill leaves it out, so there the price is over). TestMemGate_metal holds the plan's dense line to the build's leases.
+// (residentWeightBytesSplit): the buffers the build derives from the weights and the geometry, by the build's own rules.
+//   - Per attention layer: a one-float sink where the family has none; the layer's RoPE table and YaRN scale; zero Q|K|V biases
+//     where the checkpoint has no Q bias (the build then uploads zeros for all three, not the K and V biases); and on a K=V layer
+//     the second k_proj copy its fused Q|K|K projection holds, at W4A8, the layout that projection takes at every quant.
+//   - Per layer: zero up and down biases on a non-gated FFN; a MoE router's zero bias where the checkpoint has none; Gemma 4's
+//     layer scalar, which a dense layer uploads when it is neither 0 nor 1 and a MoE block always; and on Gemma 4's MoE block its
+//     zero router bias, less the router scale the build folds into the router.
+//   - Per model: the RoPE table, the unit v_norm weight at the widest head, and the m-RoPE axis map at the first attention
+//     layer's table width (the build's prefill geometry), wherever the family has one. A build that declines the batched prefill
+//     leaves the map out, so there the price is over.
+//
+// TestMemGate_metal holds the plan's dense line to the build's leases, and TestMetalDensePrice_isTheBuildsLeases to the byte.
 func (m *Model) metalDerivedDenseBytes() int64 {
 	if m == nil || m.w == nil {
 		return 0
@@ -45,7 +50,7 @@ func (m *Model) metalDerivedDenseBytes() int64 {
 			}
 			if qGate := dnetOK && attnGate; !qGate {
 				if lw.QBias == nil {
-					floats += int64(nH*hd + 2*kvDim)
+					floats += int64(nH*hd+2*kvDim) - int64(len(lw.KBias)+len(lw.VBias))
 				}
 				if m.KVSrcAtResident(l) == l && m.VFromKResident(l) {
 					bytes += metalW4A8Bytes(lw.KProj.Rows(), lw.KProj.Cols())

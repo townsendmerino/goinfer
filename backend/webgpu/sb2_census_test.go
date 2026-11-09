@@ -776,9 +776,11 @@ var webgpuMemGaps = func() []memgate.Gap {
 			Item: "MM8 WebGPU, stacked experts", Bytes: func(map[string]int64) int64 { return over }})
 	}
 	stacked("testdata/qwen3vlmoe-tiny int8int8", 16384)
-	if runtime.GOARCH != "arm64" { // gpu-darwin's run fires none of these rows: not diagnosed, and not shown to be the architecture rather than the adapter
+	if runtime.GOOS != "darwin" { // Vulkan's adapter: darwin's, which is Metal's, reads neither
 		moeDense("testdata/gemma4-moe-kv-tiny int8int8", 1064)
 		moeDense("testdata/gemma4-moe-kv-tiny32 int8int8", 1064)
+	}
+	if runtime.GOARCH != "arm64" { // gpu-darwin's run fires none of these int4 rows: not diagnosed, and not shown to be the architecture rather than the adapter
 		stacked("testdata/gemma4-moe-kv-tiny int4*", 8192)
 		stacked("testdata/qwen3vlmoe-tiny int4*", 8192)
 	}
@@ -790,8 +792,8 @@ const webgpuGateRowsPath = "testdata/memgate_rows.txt"
 
 var webgpuGateRowsUpdate = flag.Bool("memgate.rows.update", false, "have TestMemGate_webgpu rewrite testdata/memgate_rows.txt")
 
-// webgpuMemGapsPin is len(webgpuMemGaps) on this architecture.
-var webgpuMemGapsPin = map[string]int{"arm64": 27}[runtime.GOARCH] + map[bool]int{true: 31}[runtime.GOARCH != "arm64"]
+// webgpuMemGapsPin is len(webgpuMemGaps) on this platform: 27 rows everywhere, two more on Vulkan and two more off arm64.
+var webgpuMemGapsPin = 27 + map[bool]int{true: 2}[runtime.GOOS != "darwin"] + map[bool]int{true: 2}[runtime.GOARCH != "arm64"]
 
 // webgpuGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; the function it returns
 // runs after that read, so the plant is released before Close and the package's own ledger check stays clean.
@@ -907,7 +909,7 @@ func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
 		o             decoder.Options
 		live          bool
 	}{
-		{"dense", "../../testdata/gemma4-moe-kv-tiny", "testdata/gemma4-moe-kv-tiny int8int8", mem.LineDense, decoder.Options{Quant: "int8int8"}, runtime.GOARCH != "arm64"},
+		{"dense", "../../testdata/gemma4-moe-kv-tiny", "testdata/gemma4-moe-kv-tiny int8int8", mem.LineDense, decoder.Options{Quant: "int8int8"}, runtime.GOOS != "darwin"},
 		{"experts", "../../testdata/qwen3vlmoe-tiny", "testdata/qwen3vlmoe-tiny int8int8", mem.LineExperts, decoder.Options{Quant: "int8int8"}, true},
 		{"kv", "../../testdata/llama-tiny", "testdata/llama-tiny int4/kvprecision-i8", mem.LineKV, decoder.Options{Quant: "int4", KVPrecision: "i8"}, true},
 		{"state", "../../testdata/llama-tiny", "testdata/llama-tiny int4", mem.LineState, decoder.Options{Quant: "int4"}, false},
