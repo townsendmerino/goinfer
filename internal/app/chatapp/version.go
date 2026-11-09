@@ -39,7 +39,7 @@ var embeddedTier, embeddedQuant string
 func versionReport(prog string) string {
 	var b strings.Builder
 	version, revision := cliutil.BuildIdent(injectedVersion)
-	fmt.Fprintf(&b, "%s %s", prog, version)
+	fmt.Fprintf(&b, "%s %s", cliutil.BinaryName(prog), version)
 	if revision != "" && !strings.Contains(version, strings.TrimSuffix(revision, "-dirty")) {
 		fmt.Fprintf(&b, " (%s)", revision)
 	}

@@ -103,3 +103,13 @@ func TestChatUnknownPositional_namesTheSubcommands(t *testing.T) {
 		}
 	}
 }
+
+// TestVersionReport_namesTheBinaryWithoutItsExtension: on Windows os.Args[0] ends in .exe, and the first line a pinning client parses
+// is the binary's name without it.
+func TestVersionReport_namesTheBinaryWithoutItsExtension(t *testing.T) {
+	for _, prog := range []string{"goinfer-chat", "goinfer-chat.exe", "goinfer-chat.EXE"} {
+		if first, _, _ := strings.Cut(versionReport(prog), "\n"); !strings.HasPrefix(first, "goinfer-chat ") || !versionLine.MatchString(first) {
+			t.Errorf("versionReport(%q): the first line %q is not \"goinfer-chat <version>[ (<revision>)]\"", prog, first)
+		}
+	}
+}

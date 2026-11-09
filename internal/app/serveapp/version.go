@@ -24,7 +24,7 @@ var injectedVersion string
 func versionReport(prog string) string {
 	var b strings.Builder
 	version, revision := cliutil.BuildIdent(injectedVersion)
-	fmt.Fprintf(&b, "%s %s", prog, version)
+	fmt.Fprintf(&b, "%s %s", cliutil.BinaryName(prog), version)
 	// A pseudo-version already carries the commit ("v0.16.1-0.2026…-e57fef116b97"), so the
 	// parenthetical would just repeat it back.
 	if revision != "" && !strings.Contains(version, strings.TrimSuffix(revision, "-dirty")) {

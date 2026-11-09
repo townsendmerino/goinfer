@@ -196,3 +196,13 @@ func TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered(t *testing.T) {
 		t.Errorf("help claims a flag count that does not match the %d flags it prints", want)
 	}
 }
+
+// TestVersionReport_namesTheBinaryWithoutItsExtension: on Windows os.Args[0] ends in .exe, and the first line a pinning client parses
+// is the binary's name without it.
+func TestVersionReport_namesTheBinaryWithoutItsExtension(t *testing.T) {
+	for _, prog := range []string{"goinfer-serve", "goinfer-serve.exe", "goinfer-serve.EXE"} {
+		if first, _, _ := strings.Cut(versionReport(prog), "\n"); !strings.HasPrefix(first, "goinfer-serve ") || !versionLine.MatchString(first) {
+			t.Errorf("versionReport(%q): the first line %q is not \"goinfer-serve <version>[ (<revision>)]\"", prog, first)
+		}
+	}
+}
