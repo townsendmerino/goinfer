@@ -6,9 +6,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
@@ -16,7 +18,7 @@ import (
 
 // TestSourceFor_opensWhatTheLoadOpens: fit plans each backend on what a load on that backend opens. The quant is the load's own
 // (modelload.Plan: with no -quant, the per-family default, which for a Phi-3 .gguf is not int4), and a Metal line reads through the
-// metal sidecar a Metal load builds, when it is fresh, not the .gguf.
+// fresh metal sidecar where a load reads one (decoder.DefaultToSidecar), the .gguf where it reads that.
 func TestSourceFor_opensWhatTheLoadOpens(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "phi3.gguf")
 	if err := decoder.WritePhi3Q4KTinyGGUFForTest(src); err != nil {
@@ -48,8 +50,12 @@ func TestSourceFor_opensWhatTheLoadOpens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.path != sidecar {
-		t.Fatalf("metal at q4k: fit opens %s, want the fresh metal sidecar %s", s.path, sidecar)
+	want := src // where a load reads a .gguf directly (decoder.DefaultToSidecar: Windows), it opens the .gguf
+	if decoder.DefaultToSidecar(false) {
+		want = sidecar
+	}
+	if s.path != want {
+		t.Fatalf("metal at q4k: fit opens %s, want %s, what a load on %s opens", s.path, want, runtime.GOOS)
 	}
 	m, err := decoder.Load(s.path, fitLoadOptions(s, 0))
 	if err != nil {
@@ -64,6 +70,9 @@ func TestSourceFor_opensWhatTheLoadOpens(t *testing.T) {
 // fitLoadOptions, planFor) before and after its sidecar is built, and the two plans agree to the byte. The sources are qwen35-tiny's
 // directory and a synthetic llama q4_k .gguf (no Qwen3.5 GGUF is committed, and glm-tiny.gguf has no tokenizer to transcode with).
 func TestPlanFor_metalPricesASourceAsItsSidecarRoute(t *testing.T) {
+	if !decoder.DefaultToSidecar(false) {
+		t.Skipf("a load on %s reads its source directly and builds no sidecar (decoder.DefaultToSidecar), so there is no sidecar route to price", runtime.GOOS)
+	}
 	plan := func(t *testing.T, path string) (fit.Plan, string) {
 		t.Helper()
 		s, err := sourceFor(path, "int4", "int4", "metal")
@@ -123,16 +132,18 @@ func TestPlanFor_metalPricesASourceAsItsSidecarRoute(t *testing.T) {
 			if from != src || before.Placement != fit.PlacementResident {
 				t.Fatalf("before the sidecar: fit planned %s (%v, %s), want the source, resident", from, before.Placement, before.Reason)
 			}
-			// The control: opened as the source itself, not as its sidecar's stand-in, it holds the row4 repack and a heap host copy.
+			// The control: opened as the source itself, not as its sidecar's stand-in, it holds a heap host copy, and on a core that builds
+			// the CPU's row4 repack beside canonical int4 (arm64 with its kernels), that repack too.
 			plain, err := decoder.Load(src, decoder.Options{Quant: "int4", DirectLoad: true, ResidentContext: 64})
 			if err != nil {
 				t.Fatal(err)
 			}
 			p := planFor(plain, "metal", 1<<40, fit.PlanRequest{Ctx: 64, CtxPinned: true})
 			plain.Close()
-			if p.DenseBytes <= before.DenseBytes || p.HostCopyBytes <= before.HostCopyBytes {
-				t.Fatalf("the source opened as itself prices dense %d, host copy %d B, no more than its stand-in's %d, %d B: the test cannot see the layout",
-					p.DenseBytes, p.HostCopyBytes, before.DenseBytes, before.HostCopyBytes)
+			row4 := linalg.Int4Row4Usable(256, 256, 32)
+			if p.HostCopyBytes <= before.HostCopyBytes || p.DenseBytes < before.DenseBytes || row4 && p.DenseBytes == before.DenseBytes {
+				t.Fatalf("the source opened as itself prices dense %d, host copy %d B, against its stand-in's %d, %d B (row4 on this core: %v): the test cannot see the layout",
+					p.DenseBytes, p.HostCopyBytes, before.DenseBytes, before.HostCopyBytes, row4)
 			}
 			sidecar := decoder.SidecarPath(src, "int4", "metal", false)
 			if err := decoder.TranscodeGIW(context.Background(), src, sidecar, "int4", false, decoder.GIWTargetForBackend("metal")); err != nil {
