@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // TestSideRequests_ccDiag renders Claude Code requests rebuilt from an agent's own transcripts (cc_rebuild.py beside the e2e record) the way serve does,
@@ -29,7 +30,7 @@ func TestSideRequests_ccDiag(t *testing.T) {
 	if dir == "" {
 		t.Skip("CCDIAG")
 	}
-	tk, err := modelload.Tokenizer(filepath.Join("..", "..", "testdata", "mellum2-tokenizer"))
+	tk, err := modelload.Tokenizer(testpath.Testdata(t, "mellum2-tokenizer"))
 	if err != nil {
 		t.Fatal(err)
 	}
