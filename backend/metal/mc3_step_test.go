@@ -199,8 +199,9 @@ func moeStepResident(t *testing.T, dir string, on bool) *resident {
 // GOINFER_OP4MD3_MODEL, loaded int4 with the step's MoE block on, four slots filled to depth 128, then 64 greedy tokens of all four
 // sequences timed two ways: the batched step (device argmax), against the do-nothing arm, each sequence decoded one token at a
 // time on its own slot as today (ForwardArgmax). A B B A over 10 pairs after one warm run each; both arms' tokens must be
-// equal. The cell records the 1-minute load and the reclaimable memory against the resident's need plus a free-memory margin
-// (the void rule's 2 GiB), read after the load and before the resident allocates. A pair voids the cell when the test process itself pages (its own
+// equal. The cell starts only under the void rule's start terms (stepCellStartVoid), read after the load maps the file and
+// before the resident allocates; the reclaimable reading is recorded beside them. Swap growth over the whole cell is the
+// runner's to judge (scripts/void_rule.py watch and end). A pair voids the cell when the test process itself pages (its own
 // major faults rise during the pair) or system swap in use grows; system-wide pageouts are recorded as context only. A
 // pair whose starting 1-minute load is above half the cores plus GOMAXPROCS voids the cell. Pass: a median rate ratio, step ÷
 // sequential, of at least 1.05 with at least 9 of 10 pairs faster; fail: a median under 1.00; parked otherwise. A fail or a
@@ -216,6 +217,44 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 func TestOP4mD4b_recurrentStepSpeed(t *testing.T) {
 	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MD4B", label: "[OP4m-d4b D4b-4]", recurrent: true,
 		want: func(r *resident) bool { return r.dnet != nil }, wantWhat: "a Qwen3.5-family resident"})
+}
+
+// TestOP4mD6b_mambaStepSpeed is OP4m-d6b's D6b-5, D4b-4's cell on the Nemotron-H checkpoint at GOINFER_OP4MD6B_MODEL with
+// the step's recurrent blocks on (GOINFER_OP4MD6B_TIMING=1, under the timing lock).
+func TestOP4mD6b_mambaStepSpeed(t *testing.T) {
+	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MD6B", label: "[OP4m-d6b D6b-5]", recurrent: true,
+		want: func(r *resident) bool { return r.mamba != nil }, wantWhat: "a Mamba-2 (Nemotron-H) resident"})
+}
+
+// stepCellStartVoid is why a timed cell may not start, or "" when it may: the void rule's start terms
+// (docs/measurements/noise-registry.md §8, scripts/void_rule.py start). The 1-minute load must not be above half of ncpu, and
+// available, the fit guard's reading (probe.Reading.Available), must cover need with no margin.
+func stepCellStartVoid(load1 float64, ncpu int, available, need int64) string {
+	if limit := float64(ncpu) / 2; load1 > limit {
+		return fmt.Sprintf("1-minute load %.2f above %.1f", load1, limit)
+	}
+	if available < need {
+		return fmt.Sprintf("available %.2f GiB under need %.2f GiB", float64(available)/(1<<30), float64(need)/(1<<30))
+	}
+	return ""
+}
+
+func TestStepCellStartVoid(t *testing.T) {
+	const gib = int64(1) << 30
+	for _, c := range []struct {
+		load1           float64
+		available, need int64
+		void            bool
+	}{
+		{4.0, 4 * gib, 4 * gib, false},       // both terms at their bound: starts
+		{4.01, 8 * gib, 4 * gib, true},       // load above half of 8 cores
+		{1.0, 4*gib - 1, 4 * gib, true},      // a byte short of the need
+		{1.0, 4*gib + 1<<20, 4 * gib, false}, // no margin is added to the need
+	} {
+		if why := stepCellStartVoid(c.load1, 8, c.available, c.need); (why != "") != c.void {
+			t.Errorf("load %.2f, available %d, need %d: void %q, want void %v", c.load1, c.available, c.need, why, c.void)
+		}
+	}
 }
 
 // stepSpeedCell is one feature-bar cell's model and arms (op4mStepSpeed).
@@ -303,28 +342,28 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	}
 	defer m.Close()
 	need := m.ResidentNeedBytes("metal", 0, ctx, false, false) + int64(B-1)*metalSlotBytes(m) // every slot's KV and recurrent state
-	const margin = 2048                                                                       // MiB, the void rule's registered margin
 	r0, ok := probe.Read()                                                                    // the fit check: after the load maps the file, before the resident allocates
 	if !ok {
 		t.Fatal("no memory reading")
 	}
 	gib := func(b int64) float64 { return float64(b) / (1 << 30) }
 	bar := float64(runtime.NumCPU())/2 + float64(runtime.GOMAXPROCS(0))
-	memOK := int64(r0.Reclaimable) >= need+margin<<20
+	why := stepCellStartVoid(l0, runtime.NumCPU(), r0.Available, need)
 	name := filepath.Base(path)
-	fmt.Fprintf(os.Stderr, label+" %s: cell start: 1-minute load %.2f; reclaimable %.2f GiB against need %.2f GiB + %d MiB (%s); pair bar %.1f\n",
-		name, l0, gib(int64(r0.Reclaimable)), gib(need), margin, map[bool]string{true: "ok", false: "VOID"}[memOK], bar)
-	if !memOK {
-		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f GiB + %d MiB", gib(int64(r0.Reclaimable)), gib(need), margin)
+	fmt.Fprintf(os.Stderr, label+" %s: cell start: 1-minute load %.2f; available %.2f GiB against need %.2f GiB (%s); reclaimable %.2f GiB (recorded); pair bar %.1f\n",
+		name, l0, gib(r0.Available), gib(need), map[bool]string{true: "ok", false: "VOID"}[why == ""], gib(r0.Reclaimable), bar)
+	if why != "" {
+		t.Fatalf("cell void: %s", why)
 	}
 	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("build the resident: %v", err)
 	}
 	defer r.Close()
-	if scratch := r.stepScratchBytes(); int64(r0.Reclaimable) < need+scratch+margin<<20 {
-		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f GiB, the step's scratch %.1f MiB and %d MiB", gib(int64(r0.Reclaimable)), gib(need),
-			float64(scratch)/(1<<20), margin)
+	scratch := r.stepScratchBytes()
+	fmt.Fprintf(os.Stderr, label+" %s: the step's scratch %.1f MiB\n", name, float64(scratch)/(1<<20))
+	if why := stepCellStartVoid(l0, runtime.NumCPU(), r0.Available, need+scratch); why != "" {
+		t.Fatalf("cell void, with the step's scratch: %s", why)
 	}
 	if !want(r) || r.batch == nil || len(r.kvSlotBufs) < B {
 		t.Fatalf("%s %v, batched step %v, %d KV slots: want %s with the step and %d slots (%s)", wantWhat, want(r), r.batch != nil,
