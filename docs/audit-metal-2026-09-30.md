@@ -1519,7 +1519,7 @@ task doc ("C-P02: built, pending its grade").
 
 | ID | Sep 12 claim | Status | Evidence |
 |---|---|---|---|
-| M-01 | `ResidentPrefillKV` missing on Metal: every sequential prompt token ran the full LM head and 608 KB readback | CLOSED-VERIFIED | `ForwardNoLogits` implemented, pipelined with a `noHead` bit on `execJob`; paged-MoE fell back to the head-bearing path by design until 2026-10-04, when the paged path began skipping the head too (`pagedNoHead`, `docs/tasks/task-m26-mac-2026-10.md` step 4a) (metal/backend.go:651-672; metal/model.go:587,2382,2430-2462) |
+| M-01 | `ResidentPrefillKV` missing on Metal: every sequential prompt token ran the full LM head and 608 KB readback | CLOSED-VERIFIED | `ForwardNoLogits` implemented, pipelined with a `noHead` bit on `execJob`; paged-MoE fell back to the head-bearing path by design until 2026-10-04, when the paged path began skipping the head too (`pagedNoHead`, `docs/completed/task-m26-mac-2026-10.md` step 4a) (metal/backend.go:651-672; metal/model.go:587,2382,2430-2462) |
 | M-07 | Three host copies of every dense int4 projection on a GGUF/safetensors load | CLOSED-VERIFIED for the row4-skip half; host-release half declined as permanent | decoder/weights.go:824-828,769-775,805-808,1244-1249,1558-1562; audit :1753-1756, :396, :432-442 |
 | M-11 | Paged decode pays a ~14 ms command-buffer boundary 61-81x per token | OPEN. The boundary cost fell (9 to 0.44 ms/CB idle, M-14), shared-event re-run not done | audit :1766; metal/model.go:2016,2038 (area D owns it) |
 | M-12 | Serial per-expert staging | CLOSED, cross-expert half only (as recorded) | audit :1763-1766 |
