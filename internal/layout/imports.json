@@ -259,6 +259,7 @@
       "multimodal"
     ],
     "chat": [
+      "constrain",
       "tokenizer"
     ],
     "cmd/gate": [
@@ -658,6 +659,7 @@
       "multimodal"
     ],
     "engine": [
+      "constrain",
       "decoder",
       "internal/cost"
     ],
