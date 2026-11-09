@@ -533,12 +533,14 @@ extern "C" __global__ void fa_partial_rows_256_g8(const float* __restrict__ q, c
     fa_partial_rows_impl<256, 8>(q, kc, vc, kvt, nH, nKV, winStart, nKeys0, per, scale, nSplit, nRows, row0, partial KV_SCALE_ARGS ATTN_CAP_ARG);
 }
 
-// fa_combine_rows: fa_combine for the rows of a run. grid (nH, nRows), block hd, dynamic shared memory 3*U floats. The
-// per-row body is fa_combine's, expression for expression, so a row's context equals the M=1 combine's.
-extern "C" __global__ void fa_combine_rows(const float* __restrict__ partial, int nH, int hd, int U, int row0, float* __restrict__ ctx) {
-    extern __shared__ float cs[];
+// fa_combine_row is fa_combine for head h of one row: the partials of launch slot slot, written to q/ctx row row of the batch. The
+// body is fa_combine's, expression for expression, so a row's context equals the M=1 combine's; fa_combine_rows and
+// fa_combine_ragged share it.
+// cs is the launch's dynamic shared memory, 3*U floats.
+__device__ __forceinline__ void fa_combine_row(float* cs, const float* __restrict__ partial, int nH, int hd, int U, int h, int slot,
+                                               int row, float* __restrict__ ctx) {
     float* sm = cs; float* sw = cs + U; float* sl = cs + 2 * U;
-    const int h = blockIdx.x, slot = blockIdx.y, row = row0 + blockIdx.y, d = threadIdx.x;   // slot: partial row in this launch; row: q/ctx row in the batch
+    const int d = threadIdx.x;
     const int stride = hd + 4;
     const float* base = partial + ((long)slot * nH + h) * U * stride;
     for (int u = threadIdx.x; u < U; u += blockDim.x) { sm[u] = base[(long)u * stride + hd]; sl[u] = base[(long)u * stride + hd + 1]; }
@@ -556,4 +558,60 @@ extern "C" __global__ void fa_combine_rows(const float* __restrict__ partial, in
         den = __fmaf_rn(w, sl[u], den);
     }
     ctx[((long)row * nH + h) * hd + d] = num / den;
+}
+
+// fa_combine_rows: fa_combine for the rows of a run. grid (nH, nRows), block hd, dynamic shared memory 3*U floats.
+extern "C" __global__ void fa_combine_rows(const float* __restrict__ partial, int nH, int hd, int U, int row0, float* __restrict__ ctx) {
+    const int slot = blockIdx.y;   // slot: partial row in this launch; row0 + slot: q/ctx row in the batch
+    const int row = row0 + slot;
+    extern __shared__ float cs[];
+    fa_combine_row(cs, partial, nH, hd, U, blockIdx.x, slot, row, ctx);
+}
+
+// fa_combine_ragged: fa_combine_rows for a ragged step's lane rows. grid (nH, nRows), block hd, dynamic shared memory 3*U floats; launch
+// slot s merges its partials into batch row rowIdx[row0 + s].
+extern "C" __global__ void fa_combine_ragged(const float* __restrict__ partial, int nH, int hd, int U, int row0,
+                                             const int* __restrict__ rowIdx, float* __restrict__ ctx) {
+    const int slot = blockIdx.y;
+    const int row = rowIdx[row0 + slot];
+    extern __shared__ float cs[];
+    fa_combine_row(cs, partial, nH, hd, U, blockIdx.x, slot, row, ctx);
+}
+
+// fa_partial_ragged_<HD>: fa_partial over a ragged step's lane rows, grid (nKV, nSplit, nRows). Launch slot s is batch row
+// m = rowIdx[row0 + s]: its query is row m of q, its keys are positions up to rowPos[m] (and its window) in KV slot rowSlot[m], whose
+// table is tabs + rowSlot[m]*tabStride, and its partials go to slot s of partial, the layout fa_combine_rows and fa_combine_ragged read.
+// Each row runs fa_partial_impl, the M=1 kernel's body, so its partials are the M=1 lane's for that row.
+extern "C" __global__ void fa_partial_ragged_64(const float* __restrict__ q, const KV_T* __restrict__ kc, const KV_T* __restrict__ vc,
+    const int* __restrict__ tabs, int tabStride, const int* __restrict__ rowSlot, const int* __restrict__ rowPos, const int* __restrict__ rowIdx,
+    int row0, int nH, int nKV, int window, float scale, int nSplit, float* __restrict__ partial KV_SCALE_PARAMS ATTN_CAP_PARAM) {
+    const int slot = blockIdx.z;
+    const int m = rowIdx[row0 + slot];
+    const int nKeys = rowPos[m] + 1;
+    const int winStart = (window > 0 && nKeys > window) ? nKeys - window : 0;
+    const long qo = (long)m * nH * 64;
+    const long po = (long)slot * nH * nSplit * FA_WARPS * (64 + 4);
+    fa_partial_impl<64>(q + qo, kc, vc, tabs + (long)rowSlot[m] * tabStride, nH, nKV, winStart, nKeys, scale, nSplit, partial + po KV_SCALE_ARGS ATTN_CAP_ARG);
+}
+extern "C" __global__ void fa_partial_ragged_128(const float* __restrict__ q, const KV_T* __restrict__ kc, const KV_T* __restrict__ vc,
+    const int* __restrict__ tabs, int tabStride, const int* __restrict__ rowSlot, const int* __restrict__ rowPos, const int* __restrict__ rowIdx,
+    int row0, int nH, int nKV, int window, float scale, int nSplit, float* __restrict__ partial KV_SCALE_PARAMS ATTN_CAP_PARAM) {
+    const int slot = blockIdx.z;
+    const int m = rowIdx[row0 + slot];
+    const int nKeys = rowPos[m] + 1;
+    const int winStart = (window > 0 && nKeys > window) ? nKeys - window : 0;
+    const long qo = (long)m * nH * 128;
+    const long po = (long)slot * nH * nSplit * FA_WARPS * (128 + 4);
+    fa_partial_impl<128>(q + qo, kc, vc, tabs + (long)rowSlot[m] * tabStride, nH, nKV, winStart, nKeys, scale, nSplit, partial + po KV_SCALE_ARGS ATTN_CAP_ARG);
+}
+extern "C" __global__ void fa_partial_ragged_256(const float* __restrict__ q, const KV_T* __restrict__ kc, const KV_T* __restrict__ vc,
+    const int* __restrict__ tabs, int tabStride, const int* __restrict__ rowSlot, const int* __restrict__ rowPos, const int* __restrict__ rowIdx,
+    int row0, int nH, int nKV, int window, float scale, int nSplit, float* __restrict__ partial KV_SCALE_PARAMS ATTN_CAP_PARAM) {
+    const int slot = blockIdx.z;
+    const int m = rowIdx[row0 + slot];
+    const int nKeys = rowPos[m] + 1;
+    const int winStart = (window > 0 && nKeys > window) ? nKeys - window : 0;
+    const long qo = (long)m * nH * 256;
+    const long po = (long)slot * nH * nSplit * FA_WARPS * (256 + 4);
+    fa_partial_impl<256>(q + qo, kc, vc, tabs + (long)rowSlot[m] * tabStride, nH, nKV, winStart, nKeys, scale, nSplit, partial + po KV_SCALE_ARGS ATTN_CAP_ARG);
 }
