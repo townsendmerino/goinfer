@@ -15,6 +15,8 @@ var (
 	// ErrUnknownBackend is an Options.Backend that names no backend. A backend this build does not link is not this error: it
 	// falls back to the CPU with a note (NewBackend).
 	ErrUnknownBackend = errors.New("decoder: unknown backend")
+	// ErrBackendDeclined is a load with Options.RequireBackend whose named backend built no resident runner.
+	ErrBackendDeclined = errors.New("decoder: backend declined")
 )
 
 // kindError is an error with its own text that answers errors.Is for a kind. The kind's text stays out of the message, which harnesses

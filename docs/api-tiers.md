@@ -94,7 +94,8 @@ Real, supported, and used in production paths here — but they may change in an
 patch. Pin a version if you depend on them. Each graduates when it settles.
 
 - **The library's logger.** `decoder.SetLogger`.
-- **Load's error kinds.** `decoder.ErrUnsupportedModel`, `ErrUnknownQuant`, `ErrUnknownBackend`, for `errors.Is`.
+- **Load's error kinds.** `decoder.ErrUnsupportedModel`, `ErrUnknownQuant`, `ErrUnknownBackend`, for `errors.Is`, and
+  `ErrBackendDeclined` with the `Options.RequireBackend` that asks for it (a named backend's decline becomes Load's error).
 - **Structured output from JSON Schema.** `constrain.JSONSchema`, which holds a string's `format` for `date`, `time`,
   `date-time`, `uuid`, `ipv4` and `email` (any other format is an annotation). `GrammarFromStruct` and
   `TemplateFromStruct`, its Go-type twins, are Hard (above).
