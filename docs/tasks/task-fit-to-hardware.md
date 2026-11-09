@@ -81,7 +81,7 @@
 | P0 | done | — | `decoder/fitguard.go`; `internal/runtime/mem` |
 | P1 | done | — | `decoder/fitplan.go`; `internal/app/fitcmd/fit.go` |
 | P1-banner | open | print the placement and its reason beside the `fit:` line (the banner's full shape: `task-embed-and-harness-ux.md` §3.3) | `internal/app/serveapp/banner.go:modelBannerFrom` |
-| P2 | done | — | `--fit` (413b3afe); `backend/metal/moe.go:metalMoESlotsRequest` |
+| P2 | done | — | `--fit` (413b3afe); `backend/metal/backend.go:metalMoESlotsRequest` |
 | P3 | done | — | `decoder/fitplan.go` (WebGPU's context ceiling) |
 | P4-measure | done | — | `internal/app/fitcmd/fit.go` (`-measure`) |
 | P4-webui | done | coarse, by file size | `internal/app/serveapp/webui.go:fitEstimate` |
