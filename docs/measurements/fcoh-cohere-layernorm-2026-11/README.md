@@ -36,3 +36,26 @@
 
 **Not gated here:** a real Command-R checkpoint. The change is a reduction-order alignment toward the reference, not a new
 approximation, so tier 0 answers it.
+
+## Readings, 2026-11-08 (nobara, RTX 2070 SUPER, driver 595.112.07; the shared timing lock)
+
+- **G-coh-1: PASS.**
+  - **Red on `main`** (`g-coh-1-red.log`): `cohere-tiny` and `cohere2-tiny` both fail `TestCUDAStepBatch_matchesForward`. For
+    example: "logit 1 = -0.014723363 in the step, -0.014723365 from Forward — not bit-identical".
+  - **With the change** (`g-coh-green.log`): both pass bit for bit. The five other fixtures still pass.
+  - **The plant** ("`layerNormQuant` back on `layernorm_quant`") is `main`'s own code, so the red run above is its reading.
+- **G-coh-2: PASS.** Decode against the CPU over the parity test's 12 positions (`TestCohereResidentParityCUDA`, int8int8). Instrument
+  note: the existing instrument reads 12 positions, not the 16 written above, and its log now prints 9 decimals; no bar changed.
+
+  | fixture | worst cosine before → after | worst relative L2 before → after |
+  |---|---|---|
+  | cohere-tiny | 1.000000000 → 1.000000000 | 1.9293e-07 → 1.9293e-07 |
+  | cohere2-tiny | 1.000000000 → 1.000000000 | 1.9629e-07 → 1.6045e-07 |
+
+  - The cosine bar holds trivially: the tiny fixtures' cosines round to 1 at 9 decimals.
+  - The relative L2 is the reading that moves. It is unchanged on cohere-tiny and closer to the CPU on cohere2-tiny, as the
+    registration expected.
+- **Around it:** the Cohere smoke tests, `TestKV4b_*` (including the pairwise-RoPE group's Cohere fixtures),
+  `TestCUDAStepRagged_*`, `TestCUDAStepBatch_concurrentMatchesAlone` and `TestKV16_exactInput*` all pass.
+  `touched.py` PASS (16); staticcheck clean.
+- **Verdict:** F-coh is closed by matching. A Cohere step, `PrefillLastN` or verify row now normalizes exactly as decode does.

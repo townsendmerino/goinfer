@@ -85,7 +85,7 @@ func cohereResidentParityCUDA(t *testing.T, ckpt string) {
 		worstCos = math.Min(worstCos, cos)
 		worstRel = math.Max(worstRel, relL2(lr, lc))
 	}
-	t.Logf("decode, %d positions: worst cosine %.6f, worst relL2 %.4f", len(prompt), worstCos, worstRel)
+	t.Logf("decode, %d positions: worst cosine %.9f, worst relL2 %.4e", len(prompt), worstCos, worstRel)
 	if worstCos < 0.995 || worstRel > 0.10 {
 		t.Errorf("decode diverges from the CPU forward: worst cosine %.6f (want >= 0.995), worst relL2 %.4f "+
 			"(want <= 0.10) — the final norm is not the family's LayerNorm (audit C-04)", worstCos, worstRel)
