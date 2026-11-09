@@ -298,14 +298,9 @@ var metalRounding = memgate.PerLease("Metal's 16 KiB sub-allocation", 16<<10)
 
 // metalMemGaps is Metal's table of known reds (MM7). It may only shrink: the fix that removes a row lowers metalMemGapsPin. Each
 // row is bounded by the build's own shape, so a second gap on the same line stays red.
-var metalMemGaps = []memgate.Gap{
-	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums the tensors: rotation tables and other derived buffers are leased on dense and priced nowhere",
-		Item: "MM8 Metal, dense vectors", Bytes: func(f map[string]int64) int64 { return f["tables"] }},
-	{Row: "testdata/gemma4-moe-kv-tiny32 *", Line: mem.LineDense, What: "Gemma 4's MoE leases 19,016 bytes on dense past the row above: not diagnosed",
-		Item: "MM8 Metal, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return 19016 }},
-}
+var metalMemGaps []memgate.Gap
 
-const metalMemGapsPin = 2
+const metalMemGapsPin = 0
 
 // metalGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read, by G-MS2 and the
 // snapshot; what it returns runs after that read, before Close.
