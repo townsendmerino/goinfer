@@ -22,7 +22,7 @@
 | id | state | next | evidence |
 |---|---|---|---|
 | RF2 | active | RF2-1 (#787), RF2-2 (#799), RF2-3a (#804), RF2-3b-1 (#811, a step heads only the rows it reads) and RF2-3b-2a (#823, the flash-decode lane's ragged twins; a step's rows split by arm per layer class) merged. G-RF2-S first-working-build read (2026-11-09, nobara): decode PASS at every depth on 1.5B, 7B and gemma3-1b (0.999-1.001), TTFT PASS (worst 0.982), MC3 PASS at 1.217 with identical replies, never-swap PASS as registered (cell medians -24.5 to +25.6 MB, no swap); verify PASS (1.003 and 1.0004). RF2-3b-2b (split-KV's ragged twins, its scores chunked inside the margin's 512-row pass) in #825; RF2-3b-3 (Forward, ForwardArgmax, ForwardSample and ForwardN as one-sequence ragged steps on the bound slot, today's calls kept beside them for the kill) in #826, identity and G-RF2-I PASS on nobara; then the final-build read | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below; `docs/measurements/rf2-2026-11/g-rf2-s-2026-11-09/README.md` |
-| RF3 | blocked | RF2: its code starts after G-RF2-S's final read. Plan and registration written 2026-11-09 (RF3-1 to RF3-3, G-RF3-I, G-RF3-S) | FA §5.4; "RF3: plan and registration" below |
+| RF3 | active | RF3-1 (the coalescer carries a newcomer's chunk in its decode run, tier 0) in its PR; its premise, the multi-sequence ragged step, stands after RF2's kill. Next: RF3-2 (G-RF3-I) and RF3-3 (G-RF3-S) on nobara | FA §5.4; "RF3: plan and registration" below; `decoder/rf3_ride_test.go:TestRF3_newcomerChunksRideTheDecodeRuns` |
 | RF4 | blocked | RF3 and KV5 | FA §7a |
 | RF5 | blocked | RF4; it also takes SB1's op-level interface | FA §7a; SS §8 "SB1" |
 | RF6 | blocked | RF3 or RF4 | FA §7a |
@@ -141,8 +141,8 @@ takes (a decode token, a verify and MC3's step keep today's calls), so the speed
 pass (512 by default) inside `prefillExclusive`, then `tokenCoalescer.yieldToDecode`. Under RF3 the coalescer's run carries the
 chunk itself: one `passRagged` step of the newcomer's chunk (first, a `ResidentRaggedPrefill` with the whole prompt's
 `PromptLen`) beside every pending decode row. FA §5.1's token budget is the chunk plus the decode rows, so no new option is
-added. The cuts stay mc3Prefill's (the floor raise, a tail of at least `prefillTailMinRows`), and the last pass returns the
-newcomer's logits. Each row keeps its own shape's class (RF2-2's identity). Where the resident is not a
+added. The cuts stay mc3Prefill's (the floor raise, a tail of at least `prefillTailMinRows`). The tail, which returns the
+newcomer's logits, stays a prefill pass of its own (`residentPrefillSeed`), so the worst stall is today's tail pass. Each row keeps its own shape's class (RF2-2's identity). Where the resident is not a
 `ResidentRaggedStepper`, or `raggedChunkDecline` refuses the chunk (recurrent, windowed KV, MoE), the alternation stays.
 Metal and WebGPU keep it until RF4.
 
