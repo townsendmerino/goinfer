@@ -4,7 +4,7 @@
 # path, flag on vs off in one process. The rule is P18's own, written before 2.0 ran (docs/queue-performance.md P18): >= 15% FUND, < 8% PARK, between is
 # AMBIGUOUS. The 2.0 record: 1,207 s per-row against 277 s expert-major at K=4096. The 2.1 engagement read at K=600 (one pair) was 3.37x.
 # Timed, so it needs the box to itself (night.py holds the timing lock). Estimate ~80 min expected (warm 1,207 + 2 x (1,207 + 277) s + load), queued at 130.
-#   python3 scripts/night.py add mellum21-fu-b --est 130 --by "nobara session, Mellum2.1 follow-up B" --doc docs/tasks/task-mellum21-2026-10.md -- bash docs/measurements/mellum21-2026-10/run-mellum21-followup-b.sh
+#   python3 scripts/night.py add mellum21-fu-b --est 130 --by "nobara session, Mellum2.1 follow-up B" --doc docs/completed/task-mellum21-2026-10.md -- bash docs/measurements/mellum21-2026-10/run-mellum21-followup-b.sh
 source "$(dirname "$0")/_common.sh"
 OUT=${1:-$HOME/goinfer-logs/mellum21-followup-b-$(date +%F)}
 [ -x "$F/decoder.test" ] || fatal "$F/decoder.test missing"; [ -e "$CK/config.json" ] || fatal "$CK missing"

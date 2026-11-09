@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Follow-up C3: C2's registered fallback. C2 (2026-10-10) found C' deterministic and history-independent at its short history and did not reproduce follow-up C's finding (two
 # cold C' sessions, two different texts per prompt). C3 repeats follow-up C's OWN request shape: after a discarded warm request, each of the three prompts three times in a row,
-# streamed, greedy, 128 tokens, thinking off; sessions R1 (resident), S1a and S1b (C', --moe-cache-experts, identical). Rule: docs/tasks/task-mellum21-2026-10.md, "C3", written before it runs.
+# streamed, greedy, 128 tokens, thinking off; sessions R1 (resident), S1a and S1b (C', --moe-cache-experts, identical). Rule: docs/completed/task-mellum21-2026-10.md, "C3", written before it runs.
 # Same pinned binary as follow-up C. Correctness, not timed; night.py still takes the timing lock. Estimate ~4 min (3 loads of ~25 s, 10 requests each); queue at 15.
-#   python3 scripts/night.py add mellum21-fu-c3 --est 15 --by "nobara session, Mellum2.1 follow-up C3" --doc docs/tasks/task-mellum21-2026-10.md -- bash docs/measurements/mellum21-2026-10/run-mellum21-followup-c3.sh
+#   python3 scripts/night.py add mellum21-fu-c3 --est 15 --by "nobara session, Mellum2.1 follow-up C3" --doc docs/completed/task-mellum21-2026-10.md -- bash docs/measurements/mellum21-2026-10/run-mellum21-followup-c3.sh
 source "$(dirname "$0")/_common.sh"
 OUT=${1:-$HOME/goinfer-logs/mellum21-followup-c3-$(date +%F)}
 [ -x "$F/serve-cuda" ] || fatal "$F/serve-cuda missing"; [ -e "$CK/config.json" ] || fatal "$CK missing"
