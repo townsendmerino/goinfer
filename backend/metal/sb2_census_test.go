@@ -334,9 +334,6 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	}
 	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount()}
 	read.Plan = m.Plan("metal", math.MaxInt64/4, fit.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
-	facts := func() map[string]int64 {
-		return map[string]int64{"tables": max(metalDenseVectorBytes(m, r)-m.PricedDenseVectorBytesForTest("metal")+m.PricedGemma4MoEVectorBytesForTest(), 0)}
-	}
 	// G-MS2 (docs/tasks/task-forward-architecture-2026-10.md §4.9c): the scratch line holds decode's list and the step's to the byte,
 	// both ways. The ledger's requests are read, not its charges, so the allocator's rounding hides nothing.
 	exact := func(at string) {
@@ -345,7 +342,7 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 				row, at, held, want))
 		}
 	}
-	read.Open = append(read.Open, memgate.Snap("built", l, facts()))
+	read.Open = append(read.Open, memgate.Snap("built", l, nil))
 	exact("built")
 	// MM5b: the decoder's price of decode's scratch is the build's list, with the chain's buffers, which the build holds once a chain
 	// opens (none has yet).
@@ -368,7 +365,7 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 		free = metalGatePlantForTest(r)
 	}
 	exact("generated")
-	read.Open = append(read.Open, memgate.Snap("generated", l, facts()))
+	read.Open = append(read.Open, memgate.Snap("generated", l, nil))
 	free()
 	// Scratch has no plan line: it holds decode's list and the step's, which the gate holds it to, before the step price's page
 	// rounding, which would hide what else leases there.
@@ -1090,67 +1087,6 @@ func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
 	}); len(a.r.kvSlotBufs) != 2 || a.r.batch != nil {
 		t.Errorf("unpinned, giving up a slot would not make room for the step: %d slots, step built %v; want two slots and no step", len(a.r.kvSlotBufs), a.r.batch != nil)
 	}
-}
-
-// metalDenseVectorBytes is what a build leases on the dense line that the plan's dense figure, a sum of weight matrices, does not
-// count: the norms' weights, the biases, the attention sinks, the layer scale, the rotation tables and the m-RoPE axis map. Which of
-// them this build holds is read from its buffers, and each one's size from the model's weights and geometry, so a buffer that grows
-// does not raise its own allowance. Where the build uploads zeros in place of a family's missing bias, the zeros are counted.
-func metalDenseVectorBytes(m *decoder.Model, r *resident) int64 {
-	w := m.Weights()
-	_, _, nH, _, _, _, _ := m.Dims()
-	has := func(b Buffer) bool { return b != (Buffer{}) }
-	var n, maxHd int
-	add := func(b Buffer, floats int) {
-		if has(b) {
-			n += floats
-		}
-	}
-	for l := range w.Layers {
-		lw, L := &w.Layers[l], &r.layers[l]
-		hd, kvDim := m.HeadDimAtResident(l), m.KVHeadsAtResident(l)*m.HeadDimAtResident(l)
-		maxHd = max(maxHd, hd)
-		add(L.preNorm, len(lw.PreAttnNorm))
-		if L.postNorm != L.preNorm {
-			add(L.postNorm, len(lw.PreMLPNorm))
-		}
-		add(L.preNormBias, len(lw.PreAttnNormBias))
-		add(L.postNormBias, len(lw.PreMLPNormBias))
-		add(L.postAttnNorm, len(lw.PostAttnNorm))
-		add(L.postMLPNorm, len(lw.PostMLPNorm))
-		add(L.postPLENorm, len(lw.PostPLENorm))
-		qN, kN := lw.QNorm, lw.KNorm
-		if _, _, _, _, gq, gk := m.Qwen35AttnWeights(l); L.qGate {
-			qN, kN = gq, gk
-		}
-		add(L.qNorm, len(qN))
-		if L.kNorm != L.qNorm {
-			add(L.kNorm, len(kN))
-		}
-		add(L.oBias, len(lw.OBias))
-		if r.attnSink {
-			add(L.attnSinks, len(lw.AttnSinks))
-		} else {
-			add(L.attnSinks, 1)
-		}
-		add(L.upBias, max(len(lw.UpBias), lw.UpProj.Rows()))
-		add(L.downBias, max(len(lw.DownBias), lw.DownProj.Rows()))
-		add(L.qkvBias, max(len(lw.QBias)+len(lw.KBias)+len(lw.VBias), nH*hd+2*kvDim))
-		add(L.invf, len(m.RopeInvFreqLayerResident(l)))
-		add(L.mscale, 1)
-		add(L.uLayerScalar, 1)
-		if L.moe != nil {
-			add(L.moe.routerBias, max(len(lw.RouterBias), r.moe.nE))
-		}
-	}
-	add(r.finalNorm, len(w.FinalNorm))
-	add(r.finalNormBias, len(w.FinalNormBias))
-	add(r.invf, len(m.RopeInvFreq()))
-	add(r.vNormUnit, maxHd)
-	if g := r.prefillGeom(); g != nil {
-		add(r.mropeAxis, len(m.MRopeAxisResident(g.half)))
-	}
-	return 4 * int64(n)
 }
 
 // TestMemGate_metal is MM7's gate on Metal (docs/tasks/task-subsystems-2026-10.md): every census fixture at every option cell whose
