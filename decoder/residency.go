@@ -124,26 +124,15 @@ type ResidentRaggedStepper interface {
 }
 
 // ResidentRaggedSeq is one sequence of a ResidentRaggedStepper step: its KV slot, the position of its first row, its rows'
-// embeddings (embedResident's), and, when its last row's token is drawn on-device, that draw. Prefill marks the rows as one
-// chunk of a prompt's prefill instead of decode or verify rows; such a sequence carries no Draw.
+// embeddings (embedResident's), and, when its last row's token is drawn on-device, that draw.
 type ResidentRaggedSeq struct {
 	Slot, Pos int
 	Embs      [][]float32
-	Draw      *ResidentBatchDraw     // nil: every row's logits
-	Prefill   *ResidentRaggedPrefill // nil: decode or verify rows
-}
-
-// ResidentRaggedPrefill makes a ResidentRaggedSeq one pass of a prompt's PrefillLast: its rows take the kernel class that pass
-// takes (the fast kernels where the prompt's length allows them), so its K/V and its last row's logits equal that pass's bit
-// for bit. PromptLen is the whole prompt's length, which decides the class; Last is the prompt's final pass, the only one
-// whose last row's logits are returned. The caller cuts the prompt into passes as PrefillLast does.
-type ResidentRaggedPrefill struct {
-	PromptLen int
-	Last      bool
+	Draw      *ResidentBatchDraw // nil: every row's logits
 }
 
 // ResidentRaggedOut is one sequence of a StepRagged: each row's logits, with the last nil when the sequence carried a Draw,
-// and the drawn id (>= 0), or -1. A prefill sequence's rows are nil but for a Last pass's final row.
+// and the drawn id (>= 0), or -1.
 type ResidentRaggedOut struct {
 	Logits [][]float32
 	ID     int

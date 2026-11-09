@@ -859,8 +859,6 @@ type cudaResident struct {
 	// drafter's own forward (cuda/drafter.go) never touches it: a proposal need not be bit-identical to anything,
 	// only the target's verify of it.
 	forceExactKernels bool
-	// stepChunk is a ragged step's prefill chunk for the duration of its pass (StepRagged); zero otherwise. Executor thread.
-	stepChunk raggedChunk
 	// chunkOrdinary is set by prefillChunked for the duration of a multi-chunk prefill whose FINAL tail is the ordinary tailLastLogits: its non-final passes (tailKVOnly) are part of that
 	// same prompt prefill and must get the same kernels as the final pass. Without it forceExactKernels (tail != tailLastLogits) demoted EVERY non-final chunk to the slow exact path
 	// (docs/measurements/prefill-chunk-demotion-2026-09-21.md). A HiddenLast prefill (tailHiddenLast) leaves it false, so every one of its chunks stays exact.
