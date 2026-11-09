@@ -434,6 +434,7 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 // passes must launch fast kernels, and under a plant that runs the chunk on the exact kernels none, with the logits then
 // differing. The plant is read only where the fused attention runs (head dim 64 or 128): at llama-tiny's head dim 16 the only
 // fast kernel is the MMA GEMM, whose int32 group sums can equal the exact GEMV's bit for bit, so there the case is identity only.
+// Each step's head runs over the rows whose logits are read only: the others' rows and the final pass's last chunk row.
 func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 	for _, c := range []struct {
 		path, kv string
@@ -523,11 +524,24 @@ func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
 					ci := 2 * pass // the chunk's index: first, then third
 					seqs = slices.Insert(seqs, ci, decoder.ResidentRaggedSeq{Slot: 0, Pos: pass * passRows, Embs: prompt[pass*passRows : (pass+1)*passRows],
 						Prefill: &decoder.ResidentRaggedPrefill{PromptLen: promptLen, Last: pass == 1}})
+					head0 := r.headRows
 					out, err := r.StepRagged(seqs)
 					if err != nil {
 						t.Fatalf("step %d pass %d: %v", n, pass, err)
 					}
 					fast = r.fastAttnLaunches + r.fastGemmLaunches - fast0 // the references below are decode and verify: exact
+					wantHead := 0                                          // the other sequences' rows, and the chunk's last on the final pass
+					for b, s := range seqs {
+						if b != ci {
+							wantHead += len(s.Embs)
+						}
+					}
+					if pass == 1 {
+						wantHead++
+					}
+					if got := r.headRows - head0; got != wantHead {
+						t.Fatalf("step %d pass %d: the head ran over %d rows, want %d: a chunk's unread rows are not headed", n, pass, got, wantHead)
+					}
 					for j, l := range out[ci].Logits {
 						if (l != nil) != (pass == 1 && j == passRows-1) {
 							t.Fatalf("step %d pass %d: the chunk's row %d has logits %v; only the final pass's last row has them", n, pass, j, l != nil)
@@ -775,5 +789,86 @@ func TestCUDAStepRagged_scratchIsPriced(t *testing.T) {
 	}
 	if pass := r.PrefillScratchBytes(prefillDefaultChunk); r.StepScratchBytes(rows) > pass {
 		t.Errorf("a %d-row step's %d B of scratch is past the %d B the margin reserves for a %d-row pass (ctxMarginFor)", rows, r.StepScratchBytes(rows), pass, prefillDefaultChunk)
+	}
+}
+
+// TestBatchedHeadFull_noRowsTouchesNothing holds batchedHeadFull's empty case, which needs no device: a step whose only rows are a
+// non-final prefill chunk's heads nothing, so it returns M nil rows without allocating the logits block or launching anything.
+func TestBatchedHeadFull_noRowsTouchesNothing(t *testing.T) {
+	r := &cudaResident{}
+	outs, ids, err := r.batchedHeadFull(Buffer{}, Buffer{}, Buffer{}, 4, make([]stepRow, 4), 4)
+	if err != nil || ids != nil || len(outs) != 4 || r.logitsBCap != 0 || r.headRows != 0 {
+		t.Fatalf("outs %d, ids %v, err %v, logits block %d rows, headed %d: want 4 nil rows and nothing allocated or launched", len(outs), ids, err, r.logitsBCap, r.headRows)
+	}
+	for m, o := range outs {
+		if o != nil {
+			t.Errorf("row %d has logits", m)
+		}
+	}
+}
+
+// TestCUDAStepRagged_soloChunk holds a step whose only rows are a non-final prefill chunk's: it returns no logits, heads no row and
+// leaves the logits block as it was; the prompt's final pass beside one decode row then grows the block to the two rows it heads,
+// not the pass's 33. The prompt's last-row logits must equal its two passes run alone on another slot, bit for bit.
+func TestCUDAStepRagged_soloChunk(t *testing.T) {
+	requireCUDADevice(t)
+	m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 3})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	r, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
+	}
+	_, _, _, _, _, _, vocab := m.Dims()
+	emb := func(id int) []float32 { return m.EmbedResidentForTest(id % vocab) }
+	const passRows, promptLen, refSlot = 32, 64, 2
+	prompt := make([][]float32, promptLen)
+	for i := range prompt {
+		prompt[i] = emb(i*17 + 3)
+	}
+	capBefore, head0 := r.logitsBCap, r.headRows
+	if capBefore > passRows {
+		t.Fatalf("the logits block already holds %d rows: a pass-wide allocation would not show", capBefore)
+	}
+	out, err := r.StepRagged([]decoder.ResidentRaggedSeq{{Slot: 0, Pos: 0, Embs: prompt[:passRows],
+		Prefill: &decoder.ResidentRaggedPrefill{PromptLen: promptLen}}})
+	if err != nil {
+		t.Fatalf("a solo non-final chunk: %v", err)
+	}
+	for j, l := range out[0].Logits {
+		if l != nil {
+			t.Fatalf("the solo chunk's row %d has logits", j)
+		}
+	}
+	if r.headRows != head0 || r.logitsBCap != capBefore {
+		t.Fatalf("the solo chunk headed %d rows and left a %d-row logits block (was %d); want none and unchanged", r.headRows-head0, r.logitsBCap, capBefore)
+	}
+	out, err = r.StepRagged([]decoder.ResidentRaggedSeq{
+		{Slot: 0, Pos: passRows, Embs: prompt[passRows:], Prefill: &decoder.ResidentRaggedPrefill{PromptLen: promptLen, Last: true}},
+		{Slot: 1, Pos: 0, Embs: [][]float32{emb(5)}},
+	})
+	if err != nil {
+		t.Fatalf("the final pass beside a decode row: %v", err)
+	}
+	if want := max(capBefore, 2); r.logitsBCap != want {
+		t.Fatalf("the logits block holds %d rows after a step heading 2, want %d: it is sized by the pass, not the headed rows", r.logitsBCap, want)
+	}
+	got := out[0].Logits[passRows-1]
+	if err := r.UseKVSlot(refSlot); err != nil {
+		t.Fatal(err)
+	}
+	r.chunkOrdinary, r.chunkPromptLen = true, promptLen
+	if _, _, err := r.prefillCore(context.Background(), prompt[:passRows], 0, tailKVOnly, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	outs, _, err := r.prefillCore(context.Background(), prompt[passRows:], passRows, tailLastLogits, nil, nil, nil)
+	r.chunkOrdinary, r.chunkPromptLen = false, 0
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bitsEqual(got, outs[len(outs)-1]) {
+		t.Fatal("the prompt prefilled as a solo chunk and a mixed step is not bit-identical to its own two passes")
 	}
 }
