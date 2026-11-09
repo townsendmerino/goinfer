@@ -197,8 +197,9 @@ def swap_void(start, end, peak_mb=None, env=None, peak_required=False):
 def end_void(start, end, peak_mb=None, peak_required=False, env=None, allow_unreadable_memory=None, say=None):
     """The reason a cell is void at its end, or None: swap (swap_void), then a guard reading the end could not take. The load average
     is part of the record when the start could compute a cap (it had a core count); available memory when the start declared a model
-    load (need_mb). allow_unreadable_memory (None: BENCH_ALLOW_NO_FREE_MEM=1 in the environment) skips the memory term, and say, if
+    load (need_mb). allow_unreadable_memory (None: BENCH_ALLOW_NO_FREE_MEM=1 in env, default the process's environment) skips the memory term, and say, if
     given, is called with the line that tells the run it did. The one function behind `void_rule.py end` and bench_peer's cell check."""
+    env = os.environ if env is None else env
     why = swap_void(start, end, peak_mb, env, peak_required)
     if why:
         return why
@@ -206,7 +207,7 @@ def end_void(start, end, peak_mb=None, peak_required=False, env=None, allow_unre
         return "load average unreadable at the cell's end"
     if start.get("need_mb") and _num(end.get("available_mb")) is None:
         if allow_unreadable_memory is None:
-            allow_unreadable_memory = os.environ.get("BENCH_ALLOW_NO_FREE_MEM") == "1"
+            allow_unreadable_memory = env.get("BENCH_ALLOW_NO_FREE_MEM") == "1"
         if not allow_unreadable_memory:
             return "available memory unreadable at the cell's end"
         if say:
@@ -262,21 +263,22 @@ def read_json_retry(path, tries=None, delay=None, ok=None):
 
 
 def peak_file_is_final(obj, t0):
-    """Whether a watcher's result file is the one for the cell that began at t0: it was written (t_written, stamped at stop) or its
-    last sample taken at or after t0. A file written before t0, readable or not, is an earlier watcher's, not yet overwritten; one
-    that cannot be placed in time is not final either (the caller waits, then voids with the file's own reason). With no usable t0
-    nothing can be placed, so any file is taken."""
+    """Whether a watcher's result file is the one for the cell that began at t0. A readable file is placed by its samples' own times:
+    its last sample was taken at or after t0. An unreadable one has no usable samples, so it is placed by t_written, the time its
+    final read began (SwapSampler.stop). Anything earlier is an earlier watcher's, not yet overwritten; a file that cannot be placed in
+    time is not final either (the caller waits, then voids with the file's own reason). With no usable t0 nothing can be placed, so
+    any file is taken."""
     if _num(t0) is None:
         return True
-    stamps = []
-    samples = obj.get("samples")
-    try:
-        if isinstance(samples, list) and samples:
-            stamps.append(_num(samples[-1][0]))
-    except (TypeError, IndexError, KeyError):
-        pass
-    stamps.append(_num(obj.get("t_written")))
-    return any(t is not None and t >= t0 for t in stamps)
+    if obj.get("unreadable"):
+        t = _num(obj.get("t_written"))
+    else:
+        samples = obj.get("samples")
+        try:
+            t = _num(samples[-1][0]) if isinstance(samples, list) and samples else None
+        except (TypeError, IndexError, KeyError):
+            t = None
+    return t is not None and t >= t0
 
 
 class SwapSampler:
@@ -294,6 +296,7 @@ class SwapSampler:
         self.samples = []        # [epoch, MB], every reading (peak_since)
         self._stop = threading.Event()
         self._thread = None
+        self.t_stop = None       # when stop() began its final read
 
     def sample(self):
         t = time.time()  # stamped BEFORE the read: a slow read must not make a reading older than the cell's start look newer
@@ -335,11 +338,13 @@ class SwapSampler:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=5)
+        self.t_stop = time.time()  # before the final read, as a sample's stamp is: a slow read cannot make the file look newer
         self.sample()
         return self.result()
 
     def result(self):
-        t_written = time.time()  # places the file in time even when a lost reading left no sample to place it by (peak_file_is_final)
+        # places the file in time even when a lost reading left no sample to place it by (peak_file_is_final)
+        t_written = self.t_stop if self.t_stop is not None else time.time()
         if self.base is None or self.n == 0 or self.unreadable:
             # no evidence of a peak, or a reading failed: no numeric peak for a caller to mistake for a clean one
             return {"base_mb": self.base, "peak_mb": None, "peak_growth_mb": None, "unreadable": True, "samples": self.samples,
@@ -421,8 +426,9 @@ def main(argv):
             if pk is None:
                 peak_why = "the watcher's peak file never parsed"
             elif pk.get("unreadable"):
-                peak_why = "the watcher lost a swap reading" if peak_file_is_final(pk, start.get("t_epoch")) else \
-                    "the watcher's peak file is an earlier attempt's"
+                tw, t0 = _num(pk.get("t_written")), _num(start.get("t_epoch"))
+                stale = tw is not None and t0 is not None and tw < t0  # placed before the cell: an earlier attempt's file never overwritten
+                peak_why = "the watcher's peak file is an earlier attempt's (it lost a swap reading)" if stale else "the watcher lost a swap reading"
             else:
                 # against the cell's own start reading: the samples from its time on (a watcher started first saw swap the cell never did).
                 # No fallback to the pre-start peak_mb: samples that cannot be placed against the start are a void, not a clean cell.
