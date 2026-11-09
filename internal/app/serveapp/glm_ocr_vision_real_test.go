@@ -18,6 +18,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // TestServe_glmOcrImage_O3 is gate O3's serve half, on the real GLM-OCR checkpoint at f32 on the CPU backend, through the
@@ -71,7 +72,7 @@ func TestServe_glmOcrImage_O3(t *testing.T) {
 				Grid     [][3]int `json:"grid_thw"`
 			}
 			var g gold
-			f, err := os.Open(filepath.Join("..", "..", "testdata", "glm_ocr", "golden_"+name+".json.gz"))
+			f, err := os.Open(testpath.Testdata(t, "glm_ocr", "golden_"+name+".json.gz"))
 			if err != nil {
 				t.Fatal(err)
 			}

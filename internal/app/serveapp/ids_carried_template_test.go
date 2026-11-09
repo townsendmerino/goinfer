@@ -16,6 +16,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // G-ids-3's three `decode` turns, replayed through the /v1/responses renderer with Mellum2.1's tokenizer and template and no
@@ -32,7 +33,7 @@ import (
 // Fixture: testdata/ids-template/cases.json.gz, built by
 // docs/measurements/integration-harness-2026-10/ids-carried-tier2/build_template_fixture.py from the night's bodies.
 func TestIDsCarried_templateFormat(t *testing.T) {
-	tkDir := filepath.Join("..", "..", "testdata", "mellum2-tokenizer")
+	tkDir := testpath.Testdata(t, "mellum2-tokenizer")
 	if _, err := os.Stat(filepath.Join(tkDir, "tokenizer.json")); err != nil {
 		t.Skipf("needs the Mellum2 tokenizer at %s (a per-machine symlink): %v", tkDir, err)
 	}
