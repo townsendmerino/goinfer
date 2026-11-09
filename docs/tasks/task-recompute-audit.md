@@ -60,14 +60,14 @@
 | R-01 phase 1 | killed | — | `docs/spec/09-mtp-heads.md` ("Pricing the narrow state snapshot") |
 | R-01 phase 2, R-04 resident half | moved | KV7-rest | `docs/tasks/task-kv-architecture-2026-10.md` §10 |
 | L-05 | moved | — | `docs/tasks/task-peer-benchmarks.md` |
-| R-05 | blocked | re-run `TestGemma4EndToEndThroughput` on a box with the bundles and ~75 GB free; no pager code before that | `decoder/moepaging.go:newExpertPager` |
-| R-09 | open | none planned; out of proportionate scope | `docs/completed/audit-2026-09-02.md` P-10 |
-| R-10 | open | contingent on Gemma 4 CPU decode as a target; the head gather is listed under R-17 | `docs/completed/audit-2026-09-02.md` P-09 |
+| R-05 | moved | `docs/queue-performance.md` P43 | `decoder/moepaging.go:newExpertPager` |
+| R-09 | killed | — (Francis, 2026-11-09: out of proportionate scope) | `docs/completed/audit-2026-09-02.md` P-10 |
+| R-10 | killed | — (Francis, 2026-11-09: contingent on a CPU Gemma 4 decode target nobody named) | `docs/completed/audit-2026-09-02.md` P-09 |
 | R-11–R-13, R-15–R-23, R-25 | done | — | §5 "Order" item 1; `decoder/kvdequant_parallel.go:dequantKVRows`; `internal/guard/prezerolint` |
-| R-14 rest | open | aikit-side; as they come up | R-13 and R-14, "Not done" |
+| R-14 rest | moved | `docs/queue-performance.md` P44 | R-13 and R-14, "Not done" |
 | R-15 rest, R-16 dirty flag, R-24 `launchToken` | killed | declined; reopen on new evidence | §5 "Order" item 2 |
-| R-17 rest | open | as they come up | R-17, "Not done" |
-| R-24 drafter trips | blocked | parked: measure the transfer time first | `decoder/blockspec.go:ResidentBlockDrafter` |
+| R-17 rest | moved | `docs/queue-performance.md` P44 | R-17, "Not done" |
+| R-24 drafter trips | moved | `docs/queue-performance.md` P44 | `decoder/blockspec.go:ResidentBlockDrafter` |
 | §5 class | moved | OP4 | `docs/completed/task-forward-architecture-2026-10.md` |
 
 ## 0. What must not change

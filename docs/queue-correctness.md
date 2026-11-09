@@ -100,6 +100,18 @@ file it.** The shape: a kernel with a fixed bound declares it beside the kernel,
 request against the declaration and declines by name, and, if it can be made mechanical, a test fails when a bound-carrying
 kernel has no declaration. Start from the 19 B findings, which name most of the kernels. Either box, M.
 
+**G55 · An explicit `--quant int4` on a safetensors CUDA load was refused by the int4mix `.giw` it built** — `cuda`, **filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions)**
+- `decoder/serialize.go:Model.CheckGiwQuantMatch` refused the bundle the same load had just written; unverified since 2026-10-09.
+- First step: reproduce it on a small safetensors checkpoint; the fix is either the check's int4 / int4mix equivalence or the
+  build writing the kind asked for. From `docs/completed/task-mellum21-2026-10.md`'s status block.
+
+**G54 · `TestSpecDecodeCurve`'s depth-512 lossless violation on CUDA: read the current result before any spec-decode claim** —
+`cuda`, **filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions)**
+- Recorded as red on clean main (depth 512, token 10: spec 6929, sequential 3910) in
+  `docs/completed/task-cuda-deltanet-prefill-2026-09.md`; the last evidence found since is a SKIP.
+- Kept as a pre-claim check: before any published or decided spec-decode number on CUDA, run the test by its name on nobara
+  and read for `--- PASS`. A red is a correctness bug in the speculative path, filed here.
+
 **G53 · Metal and CUDA: admission claims whole-vector QK-norm, and the build refuses it on a GQA model** — `metal`, `cuda`, **filed 2026-11-03 (mac-sb11m, from Gemini's review of #627); not started**
 - `backend/metal/model.go:buildResident` and `backend/cuda/backend.go` decline a layer with `QKNormWhole` at `nH != nKV`, while `residentBackendFeatures` claims `FeatQKNormWhole` for any KV heads. So `Admit` says resident and the load runs on the CPU. The review says real Olmo 3 checkpoints are GQA; no checkpoint here could confirm that, so read one's `num_key_value_heads` first.
 - WebGPU's restriction came off on #627, with a generated GQA tiny case (`olmo3GQAFixture`). The same check for these two needs their QK-norm dispatches to take Q's and K's widths apart: Metal's whole-vector launch sizes its grid from a single head dimension, so it is real work there. Either box, M.

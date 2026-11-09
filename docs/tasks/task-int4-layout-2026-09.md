@@ -31,7 +31,7 @@
 | L2 | done | — | `decoder/w4a8_row4_giwkind5_test.go`; kind 4 retired in v16 (`docs/giw-bundles.md`) |
 | L3 | done | — | §L3 below, 2026-09-11 |
 | L4 | moved | the M-07 half shipped here; "release the CPU copies" is superseded by S6 aliasing and MEM1 | `docs/completed/task-memory-campaign-2026-10.md` §0; `backend/metal/alias.go:newWeightAlias` |
-| L5 | open | measure first: a fresh nobara decode A/B, split-half against canonical, on today's kernels; then split-half-only under `Backend: "cpu"` and a new `.giw` kind for `cpu-amd64` | aikit v1.42.0 (`W4A8Op.SplitHalf`); `decoder/weightmat.go:GIWTargetCPUAmd64` |
+| L5 | open | (Francis, 2026-11-09: keep) one nobara decode A/B by day, split-half against canonical on today's kernels, after the coordinator's (d); kill under +2% at equal RSS; if it wins, split-half-only under `Backend: "cpu"` and a new `.giw` kind for `cpu-amd64` | aikit v1.42.0 (`W4A8Op.SplitHalf`); `decoder/weightmat.go:GIWTargetCPU` |
 
 ## The decision this doc records
 

@@ -20,7 +20,7 @@
 | id | state | next | evidence |
 |---|---|---|---|
 | P0 | done | — | `pull/resolve.go:Resolve` |
-| P1 | decision | Francis: build the facade, or park it until a mode-2 consumer is named | no `llm/` in the tree; `docs/QUEUE.md` "unblocked and undecided" |
+| P1 | blocked | parked (Francis, 2026-11-09): no mode-2 consumer is named. Trigger: an embedder or the bindings work asks for the facade | no `llm/` in the tree; `docs/QUEUE.md` "unblocked and undecided" |
 | G1 | blocked | P1's README example | `.github/workflows/standalone-build.yml` |
 | G2 | blocked | P1; M-28's magnitude bounds still open | `constrain/schema.go:nonNegativeKeyword` |
 | G3 | done | — | `internal/guard/servecheck/check.go` |

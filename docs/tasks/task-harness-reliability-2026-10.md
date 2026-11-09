@@ -17,8 +17,8 @@
 | H-c | done | — (I1, v0.23.0) | 94dcda6ae; `internal/app/serveapp/overflow.go:contextOverflowError.message` |
 | H-d | moved | `docs/tasks/task-embed-and-harness-ux.md`, row F.4 | `docs/completed/task-integration-harness-2026-10.md` §5 |
 | Gate-1 | done | — | `internal/guard/servecheck/check.go:Client.ToolsHarnessMessages` (28b79e28b) |
-| Gate-2 | open | both rows on the four checkpoints, fit-checked first, from `~/models`; also re-run the small Qwen coders and add Mellum2.1 (the amendments moved to `docs/queue-presentation.md`) | opencode.md's tools table: "not yet measured" |
-| Gate-3 | open | after Gate 2: record three traces, then the night-queue cells on nobara | none yet |
+| Gate-2 | open | (Francis, 2026-11-09: keep) both rows on the four checkpoints, fit-checked first, from `~/models`; also re-run the small Qwen coders and add Mellum2.1 (the amendments moved to `docs/queue-presentation.md`) | opencode.md's tools table: "not yet measured" |
+| Gate-3 | open | wanted now for tack's development (Francis, 2026-11-09): size its night cost first, then record three traces and queue the night cells on nobara | none yet |
 | hygiene | done | — | the integration pages carry no "honest" |
 
 ## 1. What already exists, so it is not re-measured

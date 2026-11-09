@@ -9,14 +9,14 @@ before any implementation or timed run.
 | S1 | done | — | `backend/metal/model.go:nativeInt8` on; F1, F2 (hard flips, O4), F3′ |
 | S2 | done | — | P2 SHIPS, Log 2026-10-04 |
 | S3 | done | — | `backend/metal/batch.go:mc3W8RowsOn`; W7-int8 CONFIRMED 1.537× |
-| S3-next | open | optional: B activation rows staged in threadgroup memory, or an MMA form, for the MC3 int8 step | slice 3b, "Still not built" |
+| S3-next | moved | `docs/queue-performance.md` P46 | slice 3b, "Still not built" |
 | S4-mix | done | — | `backend/metal/model.go:nativeInt4Mix` on (O5); M4 SHIPS |
 | S4-moe | done | — | `backend/metal/model.go:nativeInt8MoE` on; X1 to X4 pass |
-| S4-f32 | done | quantizing at build stays an owner option | `backend/metal/f32_decline_test.go:TestBuildResident_f32DeclinesClearly` |
+| S4-f32 | killed | — (Francis, 2026-11-09: quantizing at build is killed; the clear decline names the quant to use) | `backend/metal/f32_decline_test.go:TestBuildResident_f32DeclinesClearly` |
 | S5 | done | — | `decoder/residency.go:autoMetalKeepsPrecision` |
 | F3p-1.5B | done | — | 1.014×, afternoon queue 2026-10-04 |
 | S1-shapes | moved | KS-C3 in `docs/tasks/parked/task-kernel-survey-2026-10.md` (done 2026-10-23) | that doc's ledger |
-| S6 | open | write its gates before code; until then G44's decline holds | `backend/metal/deltanet.go:recurrentInt8Load`; `backend/metal/g44_deltanet_int8_test.go:TestG44_deltaNetInt8Declines` |
+| S6 | moved | `docs/queue-performance.md` P45 | `backend/metal/deltanet.go:recurrentInt8Load`; `backend/metal/g44_deltanet_int8_test.go:TestG44_deltaNetInt8Declines` |
 
 ## Why
 
