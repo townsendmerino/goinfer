@@ -143,10 +143,11 @@ func TestGemma2Softcap_prefillBitIdentical(t *testing.T) {
 	}
 }
 
-// TestGemma2Softcap_lanesCUDA is G2-L: the lane selectors keep a capped layer off every kernel that has no cap. The tiny fixtures have head
-// dimension 32, which flash-decode and the fused kernels never serve, so each selector is asked at a head dimension it does serve, with the
-// resident's own state set up as a served one would be, and each is checked twice: with the cap off it says yes (the control: the test can
-// see the lane), with the cap on it says no.
+// TestGemma2Softcap_lanesCUDA is G2-L: the lane selectors keep a capped layer off every kernel that has no cap, and let it onto the
+// flash-decode lane, whose capped variant the resident loads (decode_fa_cap; OP1-o2). The tiny fixtures have head dimension 32, which
+// flash-decode and the fused kernels never serve, so each selector is asked at a head dimension it does serve, with the resident's own
+// state set up as a served one would be: with the cap off both say yes (the control: the test can see the lanes), with the cap on the
+// flash-decode selector still says yes and the fused-prefill one no.
 func TestGemma2Softcap_lanesCUDA(t *testing.T) {
 	requireCUDADevice(t)
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16") // the test binary turns the lane off by default; this turns it on so the control can see it
@@ -176,8 +177,8 @@ func TestGemma2Softcap_lanesCUDA(t *testing.T) {
 		t.Fatalf("VOID control: with no cap the flash-decode selector says %v and the fused-prefill selector %v; both should say yes at hd 64", fa(), fused())
 	}
 	rf.attnCap = capV
-	if fa() {
-		t.Error("a capped layer is eligible for the flash-decode lane (and its verify rows, which ask the same question)")
+	if !fa() || rf.faModule != "decode_fa_cap" {
+		t.Errorf("a capped layer: flash-decode eligible %v on module %q; want eligible on decode_fa_cap (its verify rows ask the same question)", fa(), rf.faModule)
 	}
 	if fused() {
 		t.Error("a capped layer takes the fused prefill kernels")

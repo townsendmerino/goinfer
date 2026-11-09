@@ -1,0 +1,172 @@
+=== RUN   TestFlashDecode_defaultOnRealResident
+    flash_decode_default_hw_test.go:19: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on the GPU)
+--- SKIP: TestFlashDecode_defaultOnRealResident (0.00s)
+=== RUN   TestFlashDecodeSplit_default
+=== RUN   TestFlashDecodeSplit_default/unset_is_the_registered_S
+=== RUN   TestFlashDecodeSplit_default/empty_is_the_registered_S
+=== RUN   TestFlashDecodeSplit_default/0_is_the_exact_path
+=== RUN   TestFlashDecodeSplit_default/off_is_the_exact_path
+=== RUN   TestFlashDecodeSplit_default/OFF_is_the_exact_path
+=== RUN   TestFlashDecodeSplit_default/false_is_the_exact_path
+=== RUN   TestFlashDecodeSplit_default/a_positive_integer_picks_S
+=== RUN   TestFlashDecodeSplit_default/1_is_a_real_S_(the_S=1_identity_check)
+=== RUN   TestFlashDecodeSplit_default/a_negative_number_is_off
+=== RUN   TestFlashDecodeSplit_default/a_typo_is_off,_not_the_default
+=== RUN   TestFlashDecodeSplit_default/a_float_is_off
+--- PASS: TestFlashDecodeSplit_default (0.00s)
+    --- PASS: TestFlashDecodeSplit_default/unset_is_the_registered_S (0.00s)
+    --- PASS: TestFlashDecodeSplit_default/empty_is_the_registered_S (0.00s)
+    --- PASS: TestFlashDecodeSplit_default/0_is_the_exact_path (0.00s)
+    --- PASS: TestFlashDecodeSplit_default/off_is_the_exact_path (0.00s)
+    --- PASS: TestFlashDecodeSplit_default/OFF_is_the_exact_path (0.00s)
+    --- PASS: TestFlashDecodeSplit_default/false_is_the_exact_path (0.00s)
+    --- PASS: TestFlashDecodeSplit_default/a_positive_integer_picks_S (0.00s)
+    --- PASS: TestFlashDecodeSplit_default/1_is_a_real_S_(the_S=1_identity_check) (0.00s)
+    --- PASS: TestFlashDecodeSplit_default/a_negative_number_is_off (0.00s)
+    --- PASS: TestFlashDecodeSplit_default/a_typo_is_off,_not_the_default (0.00s)
+    --- PASS: TestFlashDecodeSplit_default/a_float_is_off (0.00s)
+=== RUN   TestFlashDecodeOracleRealKV
+    flash_decode_gate_test.go:37: set GOINFER_HEAVY_TESTS=1 (D7 checkpoint, K=8000 prefill)
+--- SKIP: TestFlashDecodeOracleRealKV (0.00s)
+=== RUN   TestFlashDecodeOracleRealKVGemma
+    flash_decode_gate_test.go:53: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestFlashDecodeOracleRealKVGemma (0.00s)
+=== RUN   TestFlashDecodeGateVsReference
+    flash_decode_gate_test.go:199: set GOINFER_HEAVY_TESTS=1 (real checkpoints; needs Phase A's set-B reference files)
+--- SKIP: TestFlashDecodeGateVsReference (0.00s)
+=== RUN   TestFlashDecodeKernelLadder
+    flash_decode_ladder_test.go:29: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestFlashDecodeKernelLadder (0.00s)
+=== RUN   TestFlashDecodeRowsBitIdentical
+    flash_decode_rows_test.go:24: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints for their geometry)
+--- SKIP: TestFlashDecodeRowsBitIdentical (0.00s)
+=== RUN   TestFlashDecodeSpeculativeScope
+    flash_decode_spec_test.go:34: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+--- SKIP: TestFlashDecodeSpeculativeScope (0.00s)
+=== RUN   TestFlashDecodeSpecVerifyLane
+    flash_decode_spec_test.go:159: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+--- SKIP: TestFlashDecodeSpecVerifyLane (0.00s)
+=== RUN   TestFlashDecodeForwardNBitIdentical
+    flash_decode_spec_test.go:269: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+--- SKIP: TestFlashDecodeForwardNBitIdentical (0.00s)
+=== RUN   TestFlashDecodeBlockSpecLane
+    flash_decode_spec_test.go:363: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestFlashDecodeBlockSpecLane (0.00s)
+=== RUN   TestFlashDecodeTwoModelSpecLane
+    flash_decode_spec_test.go:459: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B target and a 0.5B draft)
+--- SKIP: TestFlashDecodeTwoModelSpecLane (0.00s)
+=== RUN   TestFlashDecodeVsF64
+    flash_decode_test.go:58: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints for their geometry)
+--- SKIP: TestFlashDecodeVsF64 (0.00s)
+=== RUN   TestFlashDecodeEndToEnd
+    flash_decode_test.go:175: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints)
+--- SKIP: TestFlashDecodeEndToEnd (0.00s)
+=== RUN   TestGemma2Softcap_flashDecodeVsF64
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7067 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6939 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7055 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma2_softcap_fa_test.go:140: 90 cases, worst 4.64e-07 of max|ref| from the capped oracle; 72 where the cap moves the output by over 1%, 72 of them red with the cap lifted
+    gemma2_softcap_fa_test.go:207: 104 verify rows equal the M=1 capped lane bit for bit
+--- PASS: TestGemma2Softcap_flashDecodeVsF64 (2.12s)
+=== RUN   TestGemma2ResidentParityCUDA
+=== RUN   TestGemma2ResidentParityCUDA/gemma2-tiny/int4
+cuda: prefill width 2048 rows (8 MiB of scratch; 7059 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7059 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma2_softcap_test.go:75: G2-T gemma2-tiny int4: worst logit cosine 0.999650 with the cap (5), 0.999827 with it removed on both sides
+=== RUN   TestGemma2ResidentParityCUDA/gemma2-tiny/int8int8
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7073 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 7059 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7059 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma2_softcap_test.go:75: G2-T gemma2-tiny int8int8: worst logit cosine 1.000000 with the cap (5), 1.000000 with it removed on both sides
+=== RUN   TestGemma2ResidentParityCUDA/gemma2-hd-tiny/int4
+cuda: prefill width 2048 rows (8 MiB of scratch; 7059 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7059 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma2_softcap_test.go:75: G2-T gemma2-hd-tiny int4: worst logit cosine 0.999756 with the cap (5), 1.000000 with it removed on both sides
+=== RUN   TestGemma2ResidentParityCUDA/gemma2-hd-tiny/int8int8
+cuda: prefill width 2048 rows (8 MiB of scratch; 7059 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7059 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma2_softcap_test.go:75: G2-T gemma2-hd-tiny int8int8: worst logit cosine 1.000000 with the cap (5), 1.000000 with it removed on both sides
+--- PASS: TestGemma2ResidentParityCUDA (2.97s)
+    --- PASS: TestGemma2ResidentParityCUDA/gemma2-tiny/int4 (0.49s)
+    --- PASS: TestGemma2ResidentParityCUDA/gemma2-tiny/int8int8 (1.50s)
+    --- PASS: TestGemma2ResidentParityCUDA/gemma2-hd-tiny/int4 (0.49s)
+    --- PASS: TestGemma2ResidentParityCUDA/gemma2-hd-tiny/int8int8 (0.49s)
+=== RUN   TestGemma2Softcap_prefillBitIdentical
+=== RUN   TestGemma2Softcap_prefillBitIdentical/gemma2-tiny
+cuda: prefill width 2048 rows (8 MiB of scratch; 7059 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestGemma2Softcap_prefillBitIdentical/gemma2-hd-tiny
+cuda: prefill width 2048 rows (8 MiB of scratch; 7059 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestGemma2Softcap_prefillBitIdentical (0.49s)
+    --- PASS: TestGemma2Softcap_prefillBitIdentical/gemma2-tiny (0.26s)
+    --- PASS: TestGemma2Softcap_prefillBitIdentical/gemma2-hd-tiny (0.23s)
+=== RUN   TestGemma2Softcap_lanesCUDA
+cuda: prefill width 2048 rows (8 MiB of scratch; 7055 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestGemma2Softcap_lanesCUDA (0.24s)
+=== RUN   TestKernelLocalMemoryCensus
+    kernel_local_memory_test.go:79: device: 40 SMs x 1024 max threads/SM = 40960 resident threads
+    kernel_local_memory_test.go:126: module                 kernel                        local/thr   SMs*maxT*local
+    kernel_local_memory_test.go:133: gptoss_act.ptx         route_gptoss                       4608        188743680  (180.0 MiB)
+    kernel_local_memory_test.go:133: moe.ptx                moe_route                          4416        180879360  (172.5 MiB)
+    kernel_local_memory_test.go:133: deltanet.ptx           delta_rule_rows_128                  96          3932160  (3.8 MiB)
+    kernel_local_memory_test.go:133: deltanet.ptx           delta_rule_rows_128_spec             96          3932160  (3.8 MiB)
+    kernel_local_memory_test.go:133: mamba.ptx              mamba_conv                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: mla.ptx                mla_q_rope                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: prefill_batched_kv16_cap.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: prefill_batched_cap.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: prefill_batched.ptx    rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: prefill_batched_kv16.ptx rope_kv_batched                      32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: gemv_fwd_kv16.ptx      rope_kv                              32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: mla_kv16.ptx           mla_q_rope                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: mla_kv16.ptx           mla_latent_store                     32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_mrope_prefill.ptx rope_kv_mrope_batched                32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: mla.ptx                mla_latent_store                     32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: gemv_fwd.ptx           rope_kv                              32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_pairwise_kv16.ptx rope_kv_pw                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_pairwise_kv16.ptx rope_kv_mrope_batched_pw             32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_pairwise_kv16.ptx rope_kv_batched_pw                   32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_pairwise.ptx      rope_kv_pw                           32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_pairwise.ptx      rope_kv_mrope_batched_pw             32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_pairwise.ptx      rope_kv_batched_pw                   32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:133: rope_mrope_prefill_kv16.ptx rope_kv_mrope_batched                32          1310720  (1.2 MiB)
+    kernel_local_memory_test.go:136: 394 entry points across 67 modules; 23 declare per-thread local memory
+    kernel_local_memory_test.go:146: EXAMINED: 67 module(s) — gemv_fwd.ptx gemv_w8a8_batched.ptx prefill_batched.ptx decode_splitkv.ptx prefill_splitkv.ptx deltanet.ptx gptoss_act.ptx actgroup.ptx gemv_w4a8_rn.ptx glue.ptx argmax.ptx moe_fold.ptx moe_rows.ptx audio_encoder.ptx topk.ptx gumbel.ptx decode_fa.ptx lora.ptx attn_block.ptx attn_img_prefill.ptx attn_img_prefill_kv16.ptx rope_mrope_prefill.ptx rope_mrope_prefill_kv16.ptx rope_pairwise.ptx rope_pairwise_kv16.ptx layernorm_quant.ptx gelu_quant.ptx attn_fused.ptx attn_fused_bm.ptx attn_fused_vit.ptx tower_base.ptx gemm_w4a8_mma.ptx moe.ptx router_f32.ptx gemv_w4f32.ptx fused_qkv.ptx fused_qkv_rows.ptx fused_gu_rows.ptx mla.ptx mla_kv16.ptx gemv_fwd_kv16.ptx glue_kv16.ptx prefill_batched_kv16.ptx decode_splitkv_kv16.ptx prefill_splitkv_kv16.ptx decode_fa_kv16.ptx attn_fused_kv16.ptx attn_fused_bm_kv16.ptx glue_cap.ptx glue_kv16_cap.ptx prefill_batched_cap.ptx prefill_batched_kv16_cap.ptx decode_splitkv_cap.ptx decode_splitkv_kv16_cap.ptx glue_kv8.ptx prefill_batched_kv8.ptx kv8_store.ptx prefill_splitkv_kv8.ptx decode_splitkv_kv8.ptx decode_fa_kv8.ptx decode_fa_cap.ptx decode_fa_kv16_cap.ptx attn_fused_kv8.ptx attn_fused_bm_kv8.ptx gemv_fwd_kv8.ptx mamba.ptx nongated_act.ptx. Derived straight from kernels.go's //go:embed list, so this line names exactly what that list currently contains.
+    kernel_local_memory_test.go:154: SUM of per-kernel backing stores at full occupancy: 402391040 B (383.8 MiB) — an UPPER BOUND on the deferred cost, not a prediction: the driver may share or reuse a backing store across kernels, and nothing here shows that it allocates them all simultaneously
+    kernel_local_memory_test.go:264: moe_route: local 4416 B/thread, naive form predicts 180879360 B, MEASURED 138412032 B (ratio 0.7652)
+    kernel_local_memory_test.go:267:   => the naive multiplier does NOT reproduce the measurement. The occupancy factor is not SMs x maxThreadsPerSM (40 x 1024); proportionality in local-bytes is therefore UNVERIFIED, and any 'halving MOE_MAX_E halves the cost' claim must be measured by building at 256 rather than derived from this form.
+--- PASS: TestKernelLocalMemoryCensus (0.33s)
+=== RUN   TestKV16_exactInputIdentity_decodeReaders
+=== RUN   TestKV16_exactInputIdentity_decodeReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (155 MiB of scratch; 6505 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6005 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV16_exactInputIdentity_decodeReaders/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (280 MiB of scratch; 5783 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4603 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestKV16_exactInputIdentity_decodeReaders (12.60s)
+    --- PASS: TestKV16_exactInputIdentity_decodeReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (3.62s)
+    --- PASS: TestKV16_exactInputIdentity_decodeReaders/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (8.99s)
+=== RUN   TestKV16_exactInputIdentity_prefillReaders
+=== RUN   TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (155 MiB of scratch; 6581 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6109 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+=== RUN   TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+cuda: prefill width 2048 rows (280 MiB of scratch; 5911 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+cuda: prefill width 2048 rows (280 MiB of scratch; 4865 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+--- PASS: TestKV16_exactInputIdentity_prefillReaders (13.12s)
+    --- PASS: TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (3.66s)
+    --- PASS: TestKV16_exactInputIdentity_prefillReaders/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (9.46s)
+=== RUN   TestPTX_matchesSourcesAndBindings
+    ptx_consistency_test.go:101: 67 .cu/.ptx pairs, 394 kernels checked by name and signature; 118 bound kernel names resolved
+--- PASS: TestPTX_matchesSourcesAndBindings (0.10s)
+=== RUN   TestPTXModules_coverEveryEmbed
+    ptx_modules_cover_test.go:53: 67 embedded modules, 67 in ptxModules()
+--- PASS: TestPTXModules_coverEveryEmbed (0.01s)
+PASS
+ledger: 28 device(s) released in this run
