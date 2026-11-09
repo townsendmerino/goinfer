@@ -751,13 +751,9 @@ var webgpuRounding = memgate.PowerOfTwo("Vulkan's power-of-two blocks")
 var webgpuMemGaps = func() []memgate.Gap {
 	var out []memgate.Gap
 	moeDense := func(row string, over int64) {
-		out = append(out, memgate.Gap{Row: row, Line: mem.LineDense, What: "Gemma 4's MoE block leases derived router tables on dense past the tensors the plan sums: not diagnosed, so it names this row's own bytes",
+		out = append(out, memgate.Gap{Row: row, Line: mem.LineDense, What: "Gemma 4's MoE block at int8int8 on Vulkan leases on dense past the router tables the plan prices: not diagnosed, so it names this row's own bytes",
 			Item: "MM8, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return over }})
 	}
-	moeDense("testdata/gemma4-moe-kv-tiny int8int8", 1128)
-	moeDense("testdata/gemma4-moe-kv-tiny32 int8int8", 1128)
-	moeDense("testdata/gemma4-moe-kv-tiny int4*", 64)
-	moeDense("testdata/gemma4-moe-kv-tiny32 int4*", 64)
 	for _, f := range []string{
 		"testdata/olmo3-tiny", "testdata/olmo_hybrid-tiny", "testdata/smollm3-tiny",
 		"internal/vision/testdata/qwen25vl-vision-tiny", "selftestdata/gemma3-vl-tiny", "selftestdata/llama-tiny",
@@ -780,7 +776,9 @@ var webgpuMemGaps = func() []memgate.Gap {
 			Item: "MM8 WebGPU, stacked experts", Bytes: func(map[string]int64) int64 { return over }})
 	}
 	stacked("testdata/qwen3vlmoe-tiny int8int8", 16384)
-	if runtime.GOARCH != "arm64" { // gpu-darwin's run fires none of these int4 rows: not diagnosed, and not shown to be the architecture rather than the adapter
+	if runtime.GOARCH != "arm64" { // gpu-darwin's run fires none of these rows: not diagnosed, and not shown to be the architecture rather than the adapter
+		moeDense("testdata/gemma4-moe-kv-tiny int8int8", 1064)
+		moeDense("testdata/gemma4-moe-kv-tiny32 int8int8", 1064)
 		stacked("testdata/gemma4-moe-kv-tiny int4*", 8192)
 		stacked("testdata/qwen3vlmoe-tiny int4*", 8192)
 	}
@@ -793,7 +791,7 @@ const webgpuGateRowsPath = "testdata/memgate_rows.txt"
 var webgpuGateRowsUpdate = flag.Bool("memgate.rows.update", false, "have TestMemGate_webgpu rewrite testdata/memgate_rows.txt")
 
 // webgpuMemGapsPin is len(webgpuMemGaps) on this architecture.
-var webgpuMemGapsPin = map[string]int{"arm64": 31}[runtime.GOARCH] + map[bool]int{true: 33}[runtime.GOARCH != "arm64"]
+var webgpuMemGapsPin = map[string]int{"arm64": 27}[runtime.GOARCH] + map[bool]int{true: 31}[runtime.GOARCH != "arm64"]
 
 // webgpuGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; the function it returns
 // runs after that read, so the plant is released before Close and the package's own ledger check stays clean.
@@ -897,7 +895,8 @@ func TestMemGate_webgpu(t *testing.T) {
 }
 
 // TestMemGate_webgpuPlantsThroughTheTable: a buffer really allocated over plan after the generation stays red through the table, on a row whose
-// line a live gap forgives part of (each is checked to fire unplanted), and on a line nothing forgives. A lease left open after Close is held by
+// line a live gap forgives part of (each is checked to fire unplanted, and dense's only where its row is in the table), and on a line nothing
+// forgives. A lease left open after Close is held by
 // memgate's own test and the CPU's plant: here it would fail this package's ledger check at exit.
 func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
 	newOrSkip(t).Close()
@@ -908,7 +907,7 @@ func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
 		o             decoder.Options
 		live          bool
 	}{
-		{"dense", "../../testdata/gemma4-moe-kv-tiny", "testdata/gemma4-moe-kv-tiny int8int8", mem.LineDense, decoder.Options{Quant: "int8int8"}, true},
+		{"dense", "../../testdata/gemma4-moe-kv-tiny", "testdata/gemma4-moe-kv-tiny int8int8", mem.LineDense, decoder.Options{Quant: "int8int8"}, runtime.GOARCH != "arm64"},
 		{"experts", "../../testdata/qwen3vlmoe-tiny", "testdata/qwen3vlmoe-tiny int8int8", mem.LineExperts, decoder.Options{Quant: "int8int8"}, true},
 		{"kv", "../../testdata/llama-tiny", "testdata/llama-tiny int4/kvprecision-i8", mem.LineKV, decoder.Options{Quant: "int4", KVPrecision: "i8"}, true},
 		{"state", "../../testdata/llama-tiny", "testdata/llama-tiny int4", mem.LineState, decoder.Options{Quant: "int4"}, false},
