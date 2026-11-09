@@ -68,6 +68,28 @@
 > path does none of this: it prices KV and scratch (plus the pinned copy under `--moe-cache-experts`), and the under-2 tok/s
 > refusal and `--accept-slow` exist only under `-stream-weights` (`decoder/model.go:Load`). It changes what the fit guard
 > does, and this note is the owner's word for it. Not built; either box, S–M.
+>
+> **Correction 2026-11-09:** two claims above are out of date. The banner prints a `fit:` line (context cap, KV, weights,
+> budget; `internal/app/serveapp/banner.go:modelBannerFrom`), though no placement line yet, and the web UI has tagged each
+> file fits / tight / won't fit by size since 49d849de4 (2026-09-16; `internal/app/serveapp/webui.go:fitEstimate`); only
+> `pull`'s verdict waits on header-only reading. Phase 5 is killed, not unstarted: L-01 was killed on 2026-09-21
+> (afbd10416, about 11x slower on the 8 GB card) and its code removed in 806f7c57d; the placement value stays reserved.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| P0 | done | — | `decoder/fitguard.go`; `internal/runtime/mem` |
+| P1 | done | — | `decoder/fitplan.go`; `internal/app/fitcmd/fit.go` |
+| P1-banner | open | print the placement and its reason beside the `fit:` line (the banner's full shape: `task-embed-and-harness-ux.md` §3.3) | `internal/app/serveapp/banner.go:modelBannerFrom` |
+| P2 | done | — | `--fit` (413b3afe); `backend/metal/moe.go:metalMoESlotsRequest` |
+| P3 | done | — | `decoder/fitplan.go` (WebGPU's context ceiling) |
+| P4-measure | done | — | `internal/app/fitcmd/fit.go` (`-measure`) |
+| P4-webui | done | coarse, by file size | `internal/app/serveapp/webui.go:fitEstimate` |
+| P4-pull | open | needs header-only reading; W12 skipped (owner, 2026-09-14) | `internal/app/pullcmd/pull.go` prints no verdict |
+| G1-G3-G5 | open | the reference cells on nobara and the Mac | no record |
+| P5 | killed | — | afbd10416, 806f7c57d; `task-l01-hybrid-moe-cpu-gpu.md` |
+| SLOW | open | the working-set refusal and `--accept-slow` on the default mapped path (owner-decided 2026-10-21) | `decoder/moeworkingset.go:moeWorkingSetRefusal`, called from `decoder/model.go:Load` only when streaming weights |
+| Q-KV | decision | whether a decline may offer `-kv f16`, after G1 | §8 |
 
 **Who this is for.** One person with one consumer machine — an 8 GB RTX card, a 16 GB Apple
 Silicon laptop, a 32 GB desktop with no GPU — who has just pulled a 26B-A4B or 35B-A3B checkpoint
@@ -382,4 +404,4 @@ G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residenc
 `pull/pull.go:File` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the
 priority order borrowed).
 
-<!-- doc-reviewed: 2026-09-13 -->
+<!-- doc-reviewed: 2026-11-09 -->
