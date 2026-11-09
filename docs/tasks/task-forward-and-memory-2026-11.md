@@ -21,7 +21,7 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| RF2 | active | RF2-1 merged (#787); RF2-2 (a prompt's prefill pass as rows of the ragged step) merged (#799); RF2-3a (one rope_kv_ragged and one attn_ragged launch per layer over a step's decode and verify rows, when every row's decode takes attn_batched) in #804, identity and G1-K on nobara before merge; then RF2-3b (the split-KV and flash-decode rows, the solo shapes onto StepRagged) and G-RF2-S ("RF2: steps") | | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below |
+| RF2 | active | RF2-1 merged (#787); RF2-2 (a prompt's prefill pass as rows of the ragged step) merged (#799); RF2-3a (one rope_kv_ragged and one attn_ragged launch per layer over a step's decode and verify rows, when every row's decode takes attn_batched) in #804, identity and G1-K on nobara before merge; then RF2-3b (the split-KV and flash-decode rows, the solo shapes onto StepRagged) and G-RF2-S ("RF2: steps") | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below |
 | RF3 | blocked | RF2 | FA §5.4 |
 | RF4 | blocked | RF3 and KV5 | FA §7a |
 | RF5 | blocked | RF4; it also takes SB1's op-level interface | FA §7a; SS §8 "SB1" |

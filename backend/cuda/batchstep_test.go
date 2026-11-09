@@ -281,7 +281,9 @@ func at(v [][]int, i int) []int {
 // rope_kv rewrites a position before attention reads it. Two plants must each make a row differ: a sequence's second row
 // bound to another sequence's slot, and every row of a sequence given its first row's position. On the fixtures every row's decode
 // takes attn_batched, so each step must make its attention one attn_ragged launch per layer, and a third plant (every ragged row's
-// table read one block entry on) must make a row differ too.
+// table read one block entry on) must make a row differ too: where a fixture's rows sit past the first 64-key block, a row there,
+// so the plant reads a neighbouring block the table holds, not only an entry past its end. llama-tiny's depths put one sequence
+// across the 64-key edge during the steps and another past it from the start (its context is 128).
 // GOINFER_CUDA_STEP_MODEL=<checkpoint> runs it on a real model, one sequence past 2048 keys (the flash-decode lane), where the
 // rows' launches differ and the step takes each row's own.
 func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
@@ -291,11 +293,11 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 		kv     string
 	}
 	cfgs := []cfg{
-		{"../../testdata/llama-tiny", []int{5, 23, 40, 11}, ""},
-		{"../../testdata/llama-tiny", []int{5, 23, 40, 11}, "i8"},
+		{"../../testdata/llama-tiny", []int{5, 60, 40, 90}, ""},
+		{"../../testdata/llama-tiny", []int{5, 60, 40, 90}, "i8"},
 		{"../../testdata/mistral-tiny-window", []int{9, 70, 200, 33}, ""},
 		{"../../testdata/gemma4-dense-twogeom-tiny", []int{5, 23, 40, 11}, ""},
-		{"../../testdata/granite-dense-tiny", []int{5, 23, 40, 11}, ""},
+		{"../../testdata/granite-dense-tiny", []int{5, 23, 40, 11}, ""}, // a 64-position context: every row in the first block
 	}
 	ragged := true
 	if p := os.Getenv("GOINFER_CUDA_STEP_MODEL"); p != "" {
@@ -338,7 +340,9 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 				pos[b] = c.depths[b]
 			}
 			// step runs one ragged step and its references; it returns how many rows differ from their references.
+			deep := 0 // rows past the first KV block that differ, in the last step
 			step := func(n int) int {
+				deep = 0
 				seqs := make([]decoder.ResidentRaggedSeq, 4)
 				for b := range 4 {
 					embs := make([][]float32, nRows[b])
@@ -382,6 +386,9 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 					for j := range want {
 						if !bitsEqual(out[b].Logits[j], want[j]) {
 							differ++
+							if s.Pos+j >= kvBlock {
+								deep++
+							}
 							t.Logf("step %d seq %d (slot %d) row %d at position %d: not bit-identical to its own shape", n, b, b, j, s.Pos+j)
 						}
 					}
@@ -410,7 +417,10 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 				if d == 0 {
 					t.Fatalf("plant %d: every row still matched its shape; the gate cannot see that defect", plant)
 				}
-				t.Logf("plant %d: %d rows differ (red, as it must be)", plant, d)
+				if plant == 4 && slices.Max(c.depths) >= kvBlock && deep == 0 {
+					t.Fatalf("plant 4: no row past the first KV block differs; the plant read only entries past the table's end")
+				}
+				t.Logf("plant %d: %d rows differ, %d past the first KV block (red, as it must be)", plant, d, deep)
 			}
 		})
 	}
@@ -704,4 +714,23 @@ func TestCUDAStepRagged_prefillChunkDeclines(t *testing.T) {
 		_, win, _, mw := loadWindowedPair(t, "mistral-tiny-window", 2)
 		check(t, win, step(t, win, mw))
 	})
+}
+
+// TestDecodeAttnArm_refusesPastTheShmemBound holds decodeAttnArm's refusal: a span whose single-block attention needs more shared
+// memory than the device allows, with split-KV off or not loaded, is no arm at all, so neither decode nor a ragged step launches
+// attn_batched or attn_ragged past the limit. Inside the limit the same resident takes attn_batched.
+func TestDecodeAttnArm_refusesPastTheShmemBound(t *testing.T) {
+	Ly := &cudaLayer{nKV: 2, hd: 64}
+	past := 1
+	for !splitKVRequired(past) {
+		past *= 2
+	}
+	for _, r := range []*cudaResident{{prefillReady: true}, {prefillReady: true, splitkvAttn: true}} {
+		if got := r.decodeAttnArm(Ly, 0, past); got != armRefused {
+			t.Errorf("split-KV %v, no scores kernel: %d keys past the bound took arm %d, want armRefused", r.splitkvAttn, past, got)
+		}
+		if got := r.decodeAttnArm(Ly, 0, 128); got != armBatched {
+			t.Errorf("split-KV %v: 128 keys took arm %d, want armBatched", r.splitkvAttn, got)
+		}
+	}
 }

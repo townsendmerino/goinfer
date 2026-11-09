@@ -4265,12 +4265,16 @@ const (
 	armSplitKV                // split-KV
 	armBatched                // attn_batched at M=1
 	armGlue                   // the glue attention
+	armRefused                // none: the span needs split-KV, which is off or not loaded (decodeAttn's error)
 )
 
 // decodeAttnArm is the attention launch decode makes at layer l over nWin attended keys: the one choice decodeAttn and a ragged
-// step's rows (stepAttnRows) share. The flash-decode lane is checked first because it replaces the exact path outright.
+// step's rows (stepAttnRows) share. A span past the single-block shared-memory limit with split-KV off or not loaded is refused
+// before any lane is considered; then the flash-decode lane, because it replaces the exact path outright.
 func (r *cudaResident) decodeAttnArm(Ly *cudaLayer, l, nWin int) attnArm {
 	switch {
+	case splitKVRequired(nWin) && (!r.splitkvAttn || r.skScores == (Pipeline{})):
+		return armRefused
 	case r.faSplit > 0 && r.faExactScope.Load() == 0 && nWin >= r.faMinKeys && r.faEligible(l):
 		return armFlash
 	case r.splitkvAttn && r.skScores != (Pipeline{}) && (splitKVRequired(nWin) || nWin >= r.splitkvMin(Ly.nKV, Ly.hd)):
@@ -4322,15 +4326,15 @@ func (r *cudaResident) decodeAttn(Ly *cudaLayer, l, pos int) error {
 	// neither knows when the alternative cannot run at all. Without this, -ctx 16384 on a geometry where split-KV is
 	// otherwise off (splitkvNever, or GOINFER_SPLITKV_ATTN=0) fails at position 12,160, or silently drops to the
 	// sequential prefill.
-	mustSplit := splitKVRequired(nWin)
-	if mustSplit && (!r.splitkvAttn || r.skScores == (Pipeline{})) {
+	arm := r.decodeAttnArm(Ly, l, nWin)
+	if arm == armRefused {
 		return fmt.Errorf("cuda: attention at %d attended keys needs %d B of shared memory, "+
 			"past this device's %d B limit, and split-KV is unavailable (%s) — lower -ctx or "+
 			"re-enable GOINFER_SPLITKV_ATTN (M-16)", nWin, attnShmemBytes(nWin),
 			singleBlockAttnShmemLimit,
 			map[bool]string{true: "kernel not loaded", false: "disabled by GOINFER_SPLITKV_ATTN"}[r.skScores == (Pipeline{})])
 	}
-	switch r.decodeAttnArm(Ly, l, nWin) {
+	switch arm {
 	case armFlash:
 		// Flash-decode lane (default ON, GOINFER_CUDA_FLASH_DECODE=0 to disable): NOT bit-identical, fidelity-gated.
 		// Checked first because it replaces the exact path's three launches outright when eligible.
