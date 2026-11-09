@@ -87,7 +87,7 @@
 | P4-webui | done | coarse, by file size | `internal/app/serveapp/webui.go:fitEstimate` |
 | P4-pull | open | needs header-only reading; W12 skipped (owner, 2026-09-14) | `internal/app/pullcmd/pull.go` prints no verdict |
 | G1-G3-G5 | open | the reference cells on nobara and the Mac | no record |
-| P5 | killed | — | afbd10416, 806f7c57d; `task-l01-hybrid-moe-cpu-gpu.md` |
+| P5 | killed | — | afbd10416, 806f7c57d; `../completed/task-l01-hybrid-moe-cpu-gpu.md` |
 | SLOW | done | — | a MoE `.giw` decoded on the CPU from its mapping (no `-stream-weights`, no resident runner) takes the paged load's working-set refusal and `--accept-slow`: `decoder/moeworkingset.go:mappedMoEWorkingSetPrediction`, wired in `decoder/model.go:Load`; `decoder/moeworkingset_test.go:TestLoad_mappedMoEWorkingSetRefusal` |
 | Q-KV | decision | whether a decline may offer `-kv f16`, after G1 | §8 |
 
@@ -342,7 +342,7 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
    which `decoder/gguf.go`'s ~2900 lines of format logic does not separate out today); that is
    its own scoping pass, not attempted here.
 5. **Host-computed experts** as a placement when L-01 lands — the enum slot exists from step 1.
-   L-01's own design pass (`docs/tasks/task-l01-hybrid-moe-cpu-gpu.md`, 2026-09-10) found a first-pass
+   L-01's own design pass (`docs/completed/task-l01-hybrid-moe-cpu-gpu.md`, 2026-09-10) found a first-pass
    estimate suggesting the naive mechanism loses was ~7× too high; a real isolated microbenchmark
    on target hardware shows it beating the shipped path's per-layer cost at every measured miss
    count. **Correction (2026-09-13 doc-review): "still no CUDA code" above was stale the same day

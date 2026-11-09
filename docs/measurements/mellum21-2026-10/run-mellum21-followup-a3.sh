@@ -3,9 +3,9 @@
 # (48.9 GB against a 40.4 GB budget). The Mellum2.1 checkpoint is all BF16 (5,631 tensors), the new Quant "bf16" keeps every matmul weight as the checkpoint's own
 # bits (24.3 GB) and widens a tile of rows to f32 inside the matmul, so the forward is the f32 forward bit for bit (decoder.TestHalf16Weights_bitIdenticalToF32 on
 # three fixtures; Qwen3-1.7B bf16 real checkpoint, 16 tokens sequential and batched, bit-identical). There is NO fallback: a failed load is "no reading". The rule is
-# A2's, unchanged (docs/tasks/task-mellum21-2026-10.md, "A3"): scripts/diff_mellum_layers.py compare: Q / P / M / X. Estimate: dump about 35 min (1.37 s/token measured
+# A2's, unchanged (docs/completed/task-mellum21-2026-10.md, "A3"): scripts/diff_mellum_layers.py compare: Q / P / M / X. Estimate: dump about 35 min (1.37 s/token measured
 # on 8 tokens), HF 2 min; queue at 60.
-#   python3 scripts/night.py add mellum21-fu-a3 --est 60 --by "nobara session, Mellum2.1 follow-up A3" --doc docs/tasks/task-mellum21-2026-10.md -- bash docs/measurements/mellum21-2026-10/run-mellum21-followup-a3.sh
+#   python3 scripts/night.py add mellum21-fu-a3 --est 60 --by "nobara session, Mellum2.1 follow-up A3" --doc docs/completed/task-mellum21-2026-10.md -- bash docs/measurements/mellum21-2026-10/run-mellum21-followup-a3.sh
 # MELLUM_DRY=1 checks preconditions only.
 export F=${F:-$HOME/goinfer-bench/mellum21/a3}      # pinned decoder.test with Quant "bf16" (rev beside it names both local branches' commits)
 source "$(dirname "$0")/_common.sh"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The paired speed check of docs/tasks/task-cuda-f16-kv-2026-10.md as an unattended night job: ONE serve binary built from REV, two arms -- "goinfer" runs it with
+# The paired speed check of docs/completed/task-cuda-f16-kv-2026-10.md as an unattended night job: ONE serve binary built from REV, two arms -- "goinfer" runs it with
 # -kv f16 and "goinfer_old" runs the SAME binary with -kv f32 (BENCH_GOINFER_ARGS / BENCH_GOINFER_OLD_ARGS) -- interleaved per cell by scripts/bench_peer.py, no peer arm.
 # Cells: {0.5B, 1.5B, phi3-mini} x {128, 512, 2048, 3900}, and 7B (the D7 model) at 128 and 8000 with the context pinned to 8448. Five runs per cell. The whole sweep is run
 # twice with the arm order reversed, so a first-in-cell effect cannot read as a speed difference. bench_peer.py holds the timing lock for its whole run.
@@ -7,7 +7,7 @@
 # DRY=1 stops after the worktree, the build and the provenance block (the unattended-script check).
 # Estimated 70 minutes: smoke cell 8 s plus 3 s of server start and teardown on the 0.5B; 24 small cells x about 40 s, the 7B cells (load ~30 s, 8000-key decode ~20 s a run) about
 # 10 minutes a pass, twice. Grade with python3 docs/measurements/cuda-f16-kv-2026-10/grade-speed.py <outdir>.
-#   python3 scripts/night.py add kv16-speed --est 70 --by "<who>, CUDA f16 KV" --doc docs/tasks/task-cuda-f16-kv-2026-10.md -- env REV=<sha> bash docs/measurements/cuda-f16-kv-2026-10/run-kv16-speed.sh
+#   python3 scripts/night.py add kv16-speed --est 70 --by "<who>, CUDA f16 KV" --doc docs/completed/task-cuda-f16-kv-2026-10.md -- env REV=<sha> bash docs/measurements/cuda-f16-kv-2026-10/run-kv16-speed.sh
 set -uo pipefail
 REV=${REV:?REV is required: the commit under test, never a default}
 SRC=$HOME/mycode/goinfer

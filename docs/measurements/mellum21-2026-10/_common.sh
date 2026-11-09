@@ -1,4 +1,4 @@
-# shared by run-mellum21-followup-{a,b,c}.sh (docs/tasks/task-mellum21-2026-10.md, "Night follow-ups"). Sourced, not run.
+# shared by run-mellum21-followup-{a,b,c}.sh (docs/completed/task-mellum21-2026-10.md, "Night follow-ups"). Sourced, not run.
 set -uo pipefail
 SRC=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 F=${F:-$HOME/goinfer-bench/mellum21/followups}      # pinned binaries: decoder.test, serve-cuda, rev
