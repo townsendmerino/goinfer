@@ -58,7 +58,7 @@ func (r *resident) buildLayerSteps(p *program.Program) error {
 		steps, stepOps := make([]layerStep, len(spans)), make([][]program.Op, len(spans))
 		for i, s := range spans {
 			steps[i], stepOps[i] = s.Kind, ops[s.From:s.To]
-			if err := r.checkMixerWalk(s.Kind, stepOps[i]); err != nil {
+			if err := r.checkMixerWalk(L, s.Kind, stepOps[i]); err != nil {
 				return fmt.Errorf("layer %d: %w", l, err)
 			}
 		}

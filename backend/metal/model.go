@@ -3074,7 +3074,7 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 	r.encLayer = l
 	for i, st := range L.steps {
 		if mixerWalks(st) && !mixerWalkBlocksForTest {
-			r.encodeMixerWalk(e, l, L, L.stepOps[i], x, uPos, uNKeys, rp)
+			r.encodeMixerWalk(e, l, L, L.stepOps[i], x, uPos, uNKeys, uQTempScale, rp)
 			continue
 		}
 		r.encodeStep(e, st, l, L, x, uPos, uNKeys, uQTempScale, rp)
@@ -3564,179 +3564,46 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 	if len(uRopePos) > 0 && uRopePos[0] != (Buffer{}) {
 		rp = uRopePos[0]
 	}
-	L := &r.layers[l]
-	g := L.geom
-	nHhd := r.nH * g.hd
-	qkvRows := nHhd + 2*g.kvDim
-	if L.kvShared {
-		qkvRows = nHhd // S1.4: Q only; K/V come from layer L.kvSrc's cache, which r.kc[l]/r.vc[l] alias
-	}
-	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
 	// --- attention block (7 dispatches in the baseline dense case: norm, fused QKV+bias, merged Q+K RoPE, KV
 	// store, attention, o-proj input quant, fused o-proj+residual; 8 at attention_fa depths, whose combine is a
 	// second attention dispatch; qGate, qkNorm, kEqV, sandwich and LoRA each add their own) ---
-	// postOnly (Olmo 3, Olmo Hybrid): no pre-norm at all, so quantize the raw residual (quant_vec, the symmetric
-	// int8 quantizer the ctx-before-o-proj step also uses) instead. encodeAttention is never called for a DeltaNet
-	// layer (encodeLayer routes those to encodeDeltaNetMixer), so the model-level flag is safe here, unlike
-	// encodeLayer's shared FFN half below.
-	f16Lane := r.canUseF16Lane(l)
-	if r.q4kLane {
-		e.Dispatch(r.pRmsF32Out, tgReduceNorm, tgReduceNorm, x, L.preNorm, r.axF32, r.uH, r.uEps, r.uAddOne)
-	} else if r.postOnly {
-		e.Dispatch(r.pQv, 256, 256, x, r.aq, r.aSc, r.uH)
-	} else if f16Lane {
-		// R1: f16 activation, no quantization — bypasses encodeNorm (which always produces the
-		// int8 aq/aSc pair) since preNorm here has no bias on the plain dense path canUseF16Lane
-		// admits (a biased pre-norm would need layernorm_quant's shape, not rmsnorm's).
-		e.Dispatch(r.pRmsF16, tgReduceNorm, tgReduceNorm, x, L.preNorm, r.axF16, r.uH, r.uEps, r.uAddOne)
+	a := r.attnEncOf(l, x, uPos, uNKeys, uQTempScale, rp)
+	form := program.NormRMS
+	switch {
+	case r.postOnly: // Olmo 3, Olmo Hybrid: no pre-norm at all; a DeltaNet layer never reaches this block
+		form = program.NormCopy
+	case r.layerNorm:
+		form = program.NormLayer
+	}
+	r.attnInputNorm(e, &a, form)
+	if a.L.qGate {
+		r.attnGatedQKV(e, &a)
 	} else {
-		r.encodeNorm(e, x, L.preNorm, L.preNormBias, r.aq, r.aSc)
+		r.attnProjQKV(e, &a)
 	}
-	if L.qGate {
-		// This family's softmax layer: q_proj is DOUBLE WIDTH ([query ‖ gate] per head,
-		// interleaved) and bias-free, so it dispatches separately via the no-bias SA kernel
-		// into dnQg, then delta_qsplit extracts Q into r.qkv's normal Q slot (offset 0, same as
-		// every other family) and the gate into dnAGate. K‖V is a 2-way fused (still bias-free)
-		// projection straight into r.qkv's K/V slots (kOff) — same buffer, same layout, just two
-		// dispatches building it instead of one. Both MUST land before qk_norm below runs.
-		e.DispatchTG(r.pSA, 2*nHhd*32, 256, r.H*2, L.dnQw, L.dnQs, r.aq, r.aSc, r.dnQg, r.uH)
-		e.Dispatch(r.pDnQSplit, nHhd, 256, r.dnQg, r.qkv, r.dnAGate, g.uNHhd, g.uHd)
-		e.DispatchTG(r.pSA, 2*g.kvDim*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv.At(kOff), r.uH)
-	} else if r.q4kLane {
-		r.q4kGemv(e, L.qkvSegs, false, L.qkvBias, r.axF32, r.qkv, r.uH) // the combined bias, zeros where absent
-	} else if f16Lane {
-		e.DispatchTG(r.pSAf16Bias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.axF16, L.qkvBias, r.qkv, r.uH)
-	} else {
-		p, n := saRowsPick(r.pSABias, r.pSABiasRows, qkvRows, r.gemvRows.qkv)
-		e.DispatchTG(p, n, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
-		if r.loraLayers != nil {
-			// G3: compute-time LoRA — added on top of the base q/k/v projection, into the SAME
-			// r.qkv slots it just wrote, before anything downstream (qk_norm/RoPE) reads them.
-			// Not reached for the qGate branch above (see lora.go's file comment).
-			LA := &r.loraLayers[l]
-			r.applyResidentLoRA(e, LA.q, r.aq, r.aSc, r.qkv)
-			if !L.kvShared {
-				r.applyResidentLoRA(e, LA.k, r.aq, r.aSc, r.qkv.At(kOff))
-				r.applyResidentLoRA(e, LA.v, r.aq, r.aSc, r.qkv.At(vOff))
-			}
-		}
+	if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE — qGate layers set these at build instead
+		r.attnQKNorm(e, &a, r.qkNormWhole)
 	}
-	if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
-		// QKNormWhole (Olmo 3, Olmo Hybrid): the same kernel with the grid collapsed to one Q block and one K block,
-		// via the constant-1 and whole-width buffers built in buildResident: qk_norm's block h<nH reduces [base, +hd)
-		// with base = head*hd, so nH=1, hd=nH_orig*hd spans the whole contiguous Q vector for h=0 and the whole K
-		// vector for h=nH=1, matching decoder/attention.go's rmsNorm(q,QNorm,1,nH*hd,...). g.uNHhd (the K offset
-		// within the fused qkv buffer) does not depend on the reinterpreted reduction width. Correct only for MHA
-		// (nH==nKV); buildResident declines otherwise.
-		qkNH, qkNKV, qkHD := r.uNH, g.uNKV, g.uHd
-		if r.qkNormWhole {
-			qkNH, qkNKV, qkHD = r.uQKWholeOne, r.uQKWholeOne, r.uQKWholeHD
-		}
-		grid := (r.nH + g.nKV) * tgReduceAttn
-		if r.qkNormWhole {
-			grid = 2 * tgReduceAttn
-		}
-		if L.kvShared {
-			grid = r.nH * tgReduceAttn // Q heads only: the K slot holds nothing on a shared layer
-		}
-		e.Dispatch(r.pQKNorm, grid, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, qkNH, qkNKV, qkHD, g.uNHhd, r.uEps, r.uAddOne)
-	}
-	if !L.kvShared && (g.kEqV || (r.g4VNorm && !g4DropVNormForTest)) {
-		// Gemma 4, every K/V-owning layer (S1.0): scale-less v_norm on the V slot. For K=V (Gemma 4 globals)
-		// the V slot holds the RAW k_proj output ([Q|K|K] fusion); otherwise the v_proj output. Apply
-		// scale-less v_norm to it — qk_norm over the V slot (qkv.At(vOff)) with nH=0 so every
-		// head takes the K branch at base 0+head*hd, a UNIT weight, and addOne=0 → x·rms·1. Runs
-		// AFTER qk_norm (which touched the K slot, not V) and BEFORE RoPE (which never touches V),
-		// so V = v_norm(raw k), un-rotated — exactly the CPU path (copy(v,k) pre-k_norm; then
-		// rmsNormNoWeight(v)). See TestVNorm_scaleless.
-		e.Dispatch(r.pQKNorm, g.nKV*tgReduceAttn, tgReduceAttn, r.qkv.At(vOff), r.vNormUnit, r.vNormUnit, r.uZero, g.uNKV, g.uHd, r.uZero, r.uEps, r.uZero)
+	if r.attnVNormNeeded(&a) {
+		r.attnVNorm(e, &a)
 	}
 	if !r.learnedPos { // GPT-2: no RoPE at all — position rides the learned embedding added at input
-		// One merged dispatch for both Q and K (rope2, kernels.go) instead of two: gid<qTotal
-		// addresses Q at offset 0, gid>=qTotal addresses K at offset g.uNHhd (the fused qkv
-		// buffer's kOff, in elements) — V (at vOff) is untouched either way.
-		ropeN := r.nH*g.half + g.nKV*g.half
-		if L.kvShared {
-			ropeN = r.nH * g.half // Q only: rope2's gid < qTotal branch
-		}
-		e.Dispatch(r.pRope2, ropeN, 64, r.qkv, L.invf, g.uHd, rp, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, uQTempScale)
+		r.attnRope(e, &a)
 	}
-	// S1.4: a shared layer must never write its source's cache. The seam is G2's defect (5): the store not skipped,
-	// so the shared layer writes its (unprojected) K/V slots over its source's row.
-	storeKV := !L.kvShared || g4KeepSharedKVStoreForTest
-	if r.kvI8 {
-		if storeKV {
-			e.Dispatch(r.pKvI8, g.nKV, 1, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l].At(0), r.vc[l].At(0), r.ks[l].At(0), r.vs[l].At(0), g.uNKV, g.uHd, uPos, r.kt)
-		}
-		e.Dispatch(r.pAttnI8, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.ks[l].At(0), r.vs[l].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kt)
-	} else {
-		if storeKV {
-			e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l].At(0), r.vc[l].At(0), g.uKvDim, uPos, r.kt)
-		}
-		if r.canUseAttnFA(l) {
-			// nSplit here sizes the dispatch grid only, which is fixed once a command buffer is encoded. It is not written
-			// into r.uAttnFANSplit here: setPos does that once per decode step, before this buffer commits (see
-			// uAttnFAG/uAttnFANSplit's field comment for the race a per-layer SetU32 was). The two agree by construction:
-			// both are attnFASplitFor of the key count this buffer runs at (planNKeys here, the job's own position in
-			// setPos), and the executor re-encodes a pre-encoded buffer whose plan does not match the arriving job
-			// (execLoop). Reading the key count at encode time instead would give the previous job's: one token late at
-			// the floor, and the previous request's depth on a new request's first step, with a grid sized for the old
-			// depth and a uniform for the new.
-			nSplit := r.attnFASplitFor(r.planNKeys(), g.nKV)
-			if os.Getenv("GOINFER_ATTNFA_DEBUG") == "1" {
-				logs.Infof("[ATTNFA] l=%d nKeys=%d nSplit=%d nKV=%d G=%d hd=%d partialLen=%d",
-					l, r.planNKeys(), nSplit, g.nKV, r.nH/g.nKV, g.hd, r.attnFAPartial.Len())
-			}
-			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
-			e.DispatchTG(r.pAttnFA, g.nKV*nSplit*128, 128, shmBytes, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.attnFAPartial,
-				g.uNKV, r.uAttnFAG, uNKeys, r.uScale, L.uWindow, r.fanSplitBuf(), r.kt)
-			e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, r.ctx, r.uAttnFAG, g.uHd, r.fanSplitBuf())
-		} else {
-			e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kt)
-		}
+	r.attnCore(e, &a)
+	if a.L.qGate {
+		r.attnOutGate(e, &a)
 	}
-	if L.qGate { // ctx *= sigmoid(gate), before o-proj — matches the CPU qwen35Attention
-		e.Dispatch(r.pDnAttnGate, nHhd, 256, r.ctx, r.dnAGate, g.uNHhd)
+	out := attnOutFused
+	switch {
+	case r.sandwich || r.postOnly:
+		out = attnOutScratchNorm
+	case r.parallelBlock:
+		out = attnOutScratch
+	case r.outBias:
+		out = attnOutFusedBias
 	}
-	if r.q4kLane {
-		// o-proj reads r.ctx (f32) directly: no conversion, no quantization.
-	} else if f16Lane {
-		e.Dispatch(r.pF32ToF16, nHhd, 256, r.ctx, r.cxF16)
-	} else {
-		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
-	}
-	if r.sandwich || r.postOnly || r.parallelBlock {
-		// Gemma sandwich / Olmo 3 postOnly: the sublayer OUTPUT is normed BEFORE the residual
-		// add, which the fused _resid epilogue can't express — project into the (otherwise
-		// dead) oO scratch, norm it, then add. Cohere parallelBlock shares the "project into oO,
-		// defer the add" shape but has NO post-attn norm at all (L.postAttnNorm is never built for
-		// it — see the build loop), so it skips the norm dispatch entirely.
-		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
-		if r.loraLayers != nil {
-			// G3: added into the RAW o-proj output, BEFORE the sandwich/postOnly norm below —
-			// matching applyLoRA's CPU order (delta added to `out`, caller norms afterward).
-			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, r.oO)
-		}
-		if r.sandwich || r.postOnly {
-			e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
-		}
-		e.Dispatch(r.pRes, r.H, 256, x, r.oO)
-	} else if r.outBias { // GPT-2/gpt-oss: o-proj carries an additive bias, fused with the residual add
-		e.DispatchTG(r.pSABiasResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, x, L.oBias, g.uNHhd)
-		if r.loraLayers != nil {
-			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, x)
-		}
-	} else if r.q4kLane {
-		r.q4kGemv(e, L.oSegs, true, Buffer{}, r.ctx, x, g.uNHhd) // o-proj + residual
-	} else if f16Lane {
-		e.DispatchTG(r.pSAf16Resid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cxF16, x, g.uNHhd) // o-proj + residual
-	} else {
-		p, n := saRowsPick(r.pSAResid, r.pSAResidRows, r.H, r.gemvRows.o)
-		e.DispatchTG(p, n, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, x, g.uNHhd) // o-proj + residual
-		if r.loraLayers != nil {
-			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, x)
-		}
-	}
+	r.attnOut(e, &a, out)
 }
 
 // ForwardBatch runs N embeddings at consecutive positions starting at startPos,

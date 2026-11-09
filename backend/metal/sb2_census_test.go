@@ -1209,16 +1209,17 @@ func TestMixerWalk_issuesTheBlocksDispatches(t *testing.T) {
 	}
 }
 
-// TestMixerWalk_plantsGoRed: each of P-1's planted defects in the walk differs from the blocks on the recurrent and latent fixtures
-// it can show on. A residual added again after DeltaNet's out_proj is an extra dispatch and moves the logits on the DeltaNet
-// fixtures; the norm emitter ignoring (1 + w) moves the logits wherever a walked step's norm has it, and stays quiet elsewhere.
+// TestMixerWalk_plantsGoRed: each of P-1's planted defects in the walk differs from the blocks on the fixtures it can show on. A
+// residual added again after an output projection that adds it (DeltaNet's out_proj, a fused attention o-proj) is an extra
+// dispatch; the input norm ignoring (1 + w) moves the logits wherever a walked step's RMSNorm has it, Gemma's among them, and
+// stays quiet elsewhere.
 func TestMixerWalk_plantsGoRed(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
 	reds := map[int]int{}
 	for _, f := range []string{"testdata/qwen35-tiny", "decoder/testdata/qwen3_5-tiny-normw", "testdata/qwen3next-tiny", "testdata/olmo_hybrid-tiny",
-		"testdata/nemotron-tiny", "testdata/deepseek-tiny"} {
+		"testdata/nemotron-tiny", "testdata/deepseek-tiny", "testdata/llama-tiny", "testdata/gemma2-tiny", "testdata/gemma1-tiny"} {
 		m, err := decoder.Load("../../"+f, decoder.Options{Backend: "metal", ResidentContext: 256, Quant: "int4"})
 		if err != nil {
 			t.Fatalf("%s: %v", f, err)
@@ -1228,16 +1229,20 @@ func TestMixerWalk_plantsGoRed(t *testing.T) {
 			m.Close()
 			t.Fatalf("%s did not build resident", f)
 		}
-		delta, addOne := false, false
+		fused, addOne := false, false
 		for l := range a.r.layers {
-			for i, st := range a.r.layers[l].steps {
-				if mixerWalks(st) {
-					delta = delta || st == stepDeltaNet
-					addOne = addOne || a.r.layers[l].stepOps[i][0].Norm.AddOne
+			L := &a.r.layers[l]
+			for i, st := range L.steps {
+				if !mixerWalks(st) {
+					continue
 				}
+				ops := L.stepOps[i]
+				fused = fused || st == stepDeltaNet || (st == stepAttention && ops[len(ops)-1].Kind == program.OpResidual &&
+					ops[len(ops)-2].Kind == program.OpProjO)
+				addOne = addOne || (ops[0].Norm.AddOne && ops[0].Norm.Form == program.NormRMS && !a.r.q4kLane && !(st == stepAttention && a.r.canUseF16Lane(l)))
 			}
 		}
-		for plant, wantRed := range map[int]bool{mixerWalkPlantResidual: delta, mixerWalkPlantAddOne: addOne} {
+		for plant, wantRed := range map[int]bool{mixerWalkPlantResidual: fused, mixerWalkPlantAddOne: addOne} {
 			mixerWalkPlantForTest = plant
 			diffs := mixerWalkDiffs(t, m, a)
 			mixerWalkPlantForTest = 0
