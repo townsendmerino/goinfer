@@ -17,10 +17,10 @@
 | M4 | open | a tool-grammar helper on `chat.Template`; document `ToolCall.ID` and the `<think>` lead on `ParseToolCalls` | the parts exist (`constrain/tools_union.go:ToolCallsGrammar`), no helper |
 | M5 | done | — | merged 2026-10-11 |
 | M6 | done | — | 3d50ec1f8; `decoder/lifecycle.go:Model.endGenerations` |
-| M7 | open | write the resident concurrency contract on `decoder.Model` | its doc comment is unchanged |
+| M7 | done | — | the contract is `decoder.Model`'s doc comment; `decoder/concurrency_contract_test.go:TestModel_concurrentGenerationsBeyondTheResidentsPlacesRunOnTheCPU` pins the case past the resident's places |
 | M8 | done | — | the comments on `decoder.Model.Generate` and `decoder.Generation.Err`; `decoder/generation_cancel_test.go:TestGeneration_errReportsCancellation` |
 | M9 | open | an `Options` way to make a backend decline an error (the kinds shipped in 275701c0c) | `docs/measurements/error-hygiene-audit-2026-11-04/README.md`, follow-up 4 |
-| U1 | open | place the unlisted surfaces in `docs/api-tiers.md` | none of them is listed there |
+| U1 | done | — (promoting any of them to Hard is a separate call) | `docs/api-tiers.md`, Experimental: structured output, per-field confidence, tool-call wiring, fit and placement reports, embeddings |
 | S1 | open | warn, or report, when a long prompt leaves the Metal resident path | `decoder/fitplan.go` `MetalCtxDefault` is 4096 |
 | S5 | done | — | 3d50ec1f8 (`ErrClosed`) |
 
