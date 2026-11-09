@@ -1,0 +1,19 @@
+=== RUN   TestFlashDecodeEndToEnd
+=== RUN   TestFlashDecodeEndToEnd/gemma-2-2b-it-Q8_0.gguf
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7067 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6939 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (334 MiB of scratch; 3315 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    flash_decode_test.go:214: gemma-2-2b-it-Q8_0.gguf: 26 layers, 13 sliding-window
+    flash_decode_test.go:285: S= 2: lane worst cos 0.9762181 (24/24 steps differ, argmax agree 20/24) | vsum spike worst cos 0.9760096 (24/24 differ, agree 21/24)
+    flash_decode_test.go:285: S= 4: lane worst cos 0.9737534 (24/24 steps differ, argmax agree 21/24) | vsum spike worst cos 0.9780861 (24/24 differ, agree 21/24)
+    flash_decode_test.go:285: S= 8: lane worst cos 0.9762181 (24/24 steps differ, argmax agree 20/24) | vsum spike worst cos 0.9763875 (24/24 differ, agree 21/24)
+    flash_decode_test.go:285: S=16: lane worst cos 0.9767737 (24/24 steps differ, argmax agree 18/24) | vsum spike worst cos 0.9600320 (24/24 differ, agree 18/24)
+    flash_decode_test.go:287: lane launches (all S)=2496; worst cosine over lane arms 0.9737534, over spike arms 0.9600320
+--- PASS: TestFlashDecodeEndToEnd (28.82s)
+    --- PASS: TestFlashDecodeEndToEnd/gemma-2-2b-it-Q8_0.gguf (28.82s)
+PASS
+ledger: 6 device(s) released in this run

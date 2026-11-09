@@ -377,6 +377,15 @@ var decodeSplitKVKV8PTX []byte
 //go:embed testdata/decode_fa_kv8.ptx
 var decodeFAKV8PTX []byte
 
+// decodeFACapPTX and decodeFAKV16CapPTX: decode_fa.cu built with -DATTN_SOFTCAP (and -DKV_F16), the flash-decode lane for a model with an
+// attention softcap: every fa_partial* kernel takes the cap as its last parameter (withCap). At the ambient NVRTC like decode_fa.ptx.
+//
+//go:embed testdata/decode_fa_cap.ptx
+var decodeFACapPTX []byte
+
+//go:embed testdata/decode_fa_kv16_cap.ptx
+var decodeFAKV16CapPTX []byte
+
 // attnFusedKV8PTX and attnFusedBMKV8PTX: the tensor-core prefill tiles (attn_fused.cu, attn_fused_bm.cu) built with -DKV_I8, at the ambient
 // NVRTC like their f32 and f16 modules: K and V staged as f16 from the int8 cache and its scales (KV_LDHS), the rest of each tile the f16 build's.
 //
