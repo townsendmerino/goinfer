@@ -1,0 +1,4 @@
+=== RUN   TestSB2VK1CudaCtx
+    sb2_vk1_cudactx_test.go:38: C=7602176000
+--- PASS: TestSB2VK1CudaCtx (3.27s)
+PASS

@@ -1,0 +1,1 @@
+model=sb2-heldout6-mellum-4b-ctx4096 ctx=4096 B=5244014968 ledger_list=5248804304 buffers=1366 A=2046820352 fills_MiB=map[16:2 64:2 256:3 1024:1] nvsmi_used_MiB before=430 loaded=5920 full=7714 kv=f32 plan_list=5251653632 plan_list_buffers=483 m1p_plan_list=5754585088 plan=5755334656 plan_ctx=4096 plan_placement=resident

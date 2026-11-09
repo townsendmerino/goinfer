@@ -1,0 +1,4 @@
+Hint: A new version of huggingface_hub (2.4.0) is available! You are using version 1.17.0.
+To update, run: hf update
+Still waiting to acquire lock on /home/francis/models/sb2-heldout5-olmo3-7b-ctx2048/.cache/huggingface/.gitignore.lock (elapsed: 0.1 seconds)
+path=/home/francis/models/sb2-heldout5-olmo3-7b-ctx2048
