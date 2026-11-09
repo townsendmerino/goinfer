@@ -74,14 +74,36 @@ func predictedMoETokPerSec(activeBytesPerToken int64, hitRate float64) float64 {
 	return 1 / ioSeconds
 }
 
-// moeWorkingSetPrediction resolves activeBytesPerToken and the residency fraction from a
-// just-loaded Model and its just-built expert pager, then predicts tok/s via
+// moeWorkingSetPrediction is predictMoEWorkingSet for a just-loaded Model and its just-built expert pager.
+func moeWorkingSetPrediction(m *Model) (tokPerSec float64, ok bool) {
+	if m == nil || m.pager == nil {
+		return 0, false
+	}
+	return predictMoEWorkingSet(m, m.pager.total, m.pager.nExperts, m.pager.budget())
+}
+
+// mappedMoEWorkingSetPrediction is moeWorkingSetPrediction for a MoE load that decodes from its mapping with no pager: the
+// page cache holds the experts, priced at the budget a pager would take for requested on this machine (pagerBudget over
+// mappedExpertBytes), so the same arithmetic and floor apply to both.
+func mappedMoEWorkingSetPrediction(m *Model, requested int64) (tokPerSec float64, ok bool) {
+	if m == nil || m.w == nil {
+		return 0, false
+	}
+	total, maxExpert, n := mappedExpertBytes(m.w, m.mmap)
+	if total <= 0 {
+		return 0, false
+	}
+	return predictMoEWorkingSet(m, total, n, pagerBudget(requested, total, maxExpert))
+}
+
+// predictMoEWorkingSet predicts m's decode rate from its routed experts (total mapped bytes over nExperts experts, budget
+// bytes of them held): it resolves activeBytesPerToken and the residency fraction, then predicts tok/s via
 // moeHitRatePrior + predictedMoETokPerSec. ok is false whenever an input isn't known well enough
 // to predict anything (every unknown proceeds, same discipline as every guard in this file) — the
 // caller must not read tokPerSec when ok is false.
 //
 // activeBytesPerToken = (layers x topK) x average-expert-bytes + denseCoreBytes:
-//   - average-expert-bytes is p.total / p.nExperts — exact for a uniform-shape MoE (every expert
+//   - average-expert-bytes is total / nExperts — exact for a uniform-shape MoE (every expert
 //     in a real architecture has the same Gate/Up/Down shape; ResidentWeightBytesPaged's own doc
 //     comment makes the identical claim for the same reason).
 //   - denseCoreBytes is m.ResidentDenseWeightBytes() — every matrix a routed-expert cap cannot
@@ -89,15 +111,11 @@ func predictedMoETokPerSec(activeBytesPerToken int64, hitRate float64) float64 {
 //     part (only w.arch.MoE != nil triggers expertPager, and the dense weights stay unpaged
 //     alongside it), so the WHOLE dense weight set is read every single token at M=1 decode —
 //     exactly the quantity a per-token byte budget needs.
-func moeWorkingSetPrediction(m *Model) (tokPerSec float64, ok bool) {
-	if m == nil || m.w == nil || m.w.arch == nil || m.w.arch.MoE == nil || m.pager == nil {
+func predictMoEWorkingSet(m *Model, total int64, nExperts int, budget int64) (tokPerSec float64, ok bool) {
+	if m == nil || m.w == nil || m.w.arch == nil || m.w.arch.MoE == nil || nExperts <= 0 || total <= 0 {
 		return 0, false
 	}
-	p := m.pager
-	if p.nExperts <= 0 || p.total <= 0 {
-		return 0, false
-	}
-	avgExpertBytes := p.total / int64(p.nExperts)
+	avgExpertBytes := total / int64(nExperts)
 	if avgExpertBytes <= 0 {
 		return 0, false
 	}
@@ -106,11 +124,10 @@ func moeWorkingSetPrediction(m *Model) (tokPerSec float64, ok bool) {
 		return 0, false
 	}
 	activeBytesPerToken := activeExpertsPerToken*avgExpertBytes + m.ResidentDenseWeightBytes()
-	budget := p.budget()
 	if budget <= 0 {
 		return 0, false
 	}
-	residency := float64(budget) / float64(p.total)
+	residency := float64(budget) / float64(total)
 	predicted := predictedMoETokPerSec(activeBytesPerToken, moeHitRatePrior(residency))
 	if predicted <= 0 {
 		return 0, false

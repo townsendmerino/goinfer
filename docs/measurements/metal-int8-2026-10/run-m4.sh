@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: int4mix gate M4 (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: int4mix"; adapted from run-m4.sh), pre-registered there on
+# Night job: int4mix gate M4 (docs/completed/task-metal-int8-2026-10.md, "Slice 4: int4mix"; adapted from run-m4.sh), pre-registered there on
 # 2026-10-04 before any graded run: the §3.2 pooled fidelity gate (TestPrefillGateVsReference) on the 1.5B, prompt set
 # A, decision set K = 256, 512, 1024, confirmation cells off, both arms on the native int4mix path with precise math,
 # scored against the CPU f32 references in ~/goinfer-logs/prefill-ref (S-K*). A pool that does not ship exits non-zero:
@@ -10,7 +10,7 @@
 #   git worktree add --detach ~/goinfer-bench/metal-int8-2026-10/wt-<REV> <REV>
 # Queued with:
 #   python3 scripts/night.py add metal-int8-m4 --est 20 --by "Claude, Metal int4mix M4" \
-#     --doc docs/tasks/task-metal-int8-2026-10.md -- bash docs/measurements/metal-int8-2026-10/run-m4.sh
+#     --doc docs/completed/task-metal-int8-2026-10.md -- bash docs/measurements/metal-int8-2026-10/run-m4.sh
 # The runner holds the timing lock. Logs: ~/goinfer-logs/metal-int8-2026-10/m4/.
 set -uo pipefail
 REV=e647ac86

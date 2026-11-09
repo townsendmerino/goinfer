@@ -454,6 +454,11 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**B44 · `serve check`'s long-prompt row fails on reasoning models** — filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).
+- It asks for 8 tokens and counts content only (`internal/guard/servecheck/check.go:Client.Chat`), so a model that thinks first
+  spends the budget on reasoning and the row reads a failure. The fix counts reasoning, or gives a reasoning model the room to
+  answer. From `docs/completed/task-mellum21-2026-10.md`'s status block. Tier 0: a stub server that streams reasoning first.
+
 **B43 · On Windows, every `.giw` is on the Go heap, at every quant, and the fit guard prices it as file-backed** — filed 2026-11-02
 (mbp2-sb7, from #597's Windows CI). **Francis chose to map, 2026-11-02 09:00 PST (via the coordinator); no guard change. Built: `decoder/giwmap_windows.go`, with the heap bounds holding on `windows-latest` and `windows-11-arm` in CI. A sidecar's replacement goes through `publishGIW`: the plain rename worked over a mapped file in CI on both, and where a platform refuses it the old file moves aside.** As filed: `aikit`'s `mmap.MapReadOnly` is
 `os.ReadFile` under `//go:build !unix`, and `mapGIW` calls it off darwin, so a Windows `.giw` is a whole-file heap slice, and an aliased

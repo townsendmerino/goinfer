@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: MoE int8's gates X3 and X4 (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: MoE int8"), pre-registered
+# Night job: MoE int8's gates X3 and X4 (docs/completed/task-metal-int8-2026-10.md, "Slice 4: MoE int8"), pre-registered
 # before the run: X3 is TestW8Native_F3amended_closerToF32 on the Qwen1.5-MoE 4-layer slice at int8int8 (native MoE
 # path), the f32 reference read from the file nobara wrote (sha256 edccc9374170749a...); X4 is D-G01's gate
 # (TestDG01_expertMajorMoEPrefill) at GOINFER_DG01_QUANT=int8int8, its bars unchanged. X3 moved here from the day: the
@@ -10,7 +10,7 @@
 #   git worktree add --detach ~/goinfer-bench/metal-int8-2026-10/wt-<REV> <REV>
 # Queued with:
 #   python3 scripts/night.py add metal-int8-moe-x34 --est 20 --by "Claude, Metal MoE int8 X3/X4" \
-#     --doc docs/tasks/task-metal-int8-2026-10.md -- bash docs/measurements/metal-int8-2026-10/run-moe-x34.sh
+#     --doc docs/completed/task-metal-int8-2026-10.md -- bash docs/measurements/metal-int8-2026-10/run-moe-x34.sh
 # Logs: ~/goinfer-logs/metal-int8-2026-10/moe-x34/.
 set -uo pipefail
 REV=ac8622e1

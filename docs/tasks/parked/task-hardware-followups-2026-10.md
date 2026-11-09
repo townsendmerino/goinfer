@@ -12,10 +12,10 @@
 | id | state | next | evidence |
 |---|---|---|---|
 | 1 | open | update the `-spr` census record to the clean 2026-10-05 re-run, then regenerate the matrix | `docs/hardware-coverage.json` still says "re-run is queued" |
-| 2 | decision | Francis picks the SDE cadence (this doc recommends the RELEASING pre-flight item); it was due about 2026-11-04 | RELEASING.md has no SDE item |
-| 3 | blocked | the owner decides to rent, borrow or be given hardware | the owner's park of 2026-10-04 stands |
+| 2 | done | — (Francis, 2026-11-09: the RELEASING pre-flight and aikit-bump item) | `RELEASING.md` pre-flight item 10 |
+| 3 | blocked | parked (Francis, 2026-11-09): the owner decides to rent, borrow or be given hardware | the owner's park of 2026-10-04 stands |
 | 4 | blocked | after two H4 sweeps (item 3) | item 3 |
-| 5 | blocked | start-up latency complaints, or the probe growing past a few seconds | no persistent cache: `decoder/selftest_gpu.go:resetSelfTestCaches` resets only in-process results |
+| 5 | killed | — (Francis, 2026-11-09; reopen on start-up latency complaints, or the probe growing past a few seconds) | no persistent cache: `decoder/selftest_gpu.go:resetSelfTestCaches` resets only in-process results |
 | 6 | blocked | item 3, or a user's `check --hardware` in a bug report | `docs/hardware-matrix.md`, "Verified on" |
 | 7 | open | read before every tag; it shrinks only when a path runs | RELEASING.md pre-flight item 7; the matrix says 10 of 31 |
 

@@ -1551,7 +1551,7 @@ clean.
 - **Gain (est.):** −1.7 to −2.0 ms (12–14%) if the body reaches 160–165 GB/s. This is `-backend auto`'s dense int8int8 path,
   including the goinfer-chat bundles.
 - **Size:** S–M.
-- **Prior art:** `docs/tasks/task-metal-int8-2026-10.md` slice 1, "can follow", never built.
+- **Prior art:** `docs/completed/task-metal-int8-2026-10.md` slice 1, "can follow", never built.
 
 **KS-C3 first measurement, registered 2026-10-23 before the run, on the owner's order of 11:50.** Instrument: `TestMetalGEMVS0`
 gains the native int8 body at the 1.5B's shapes, each the kernel decode dispatches there: qkv (`gemv_w8a8_sa`, 2,048 × 1,536), o

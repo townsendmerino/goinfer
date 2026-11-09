@@ -32,7 +32,7 @@
 | J4 | done | unbuilt: vision and tool lines, non-chat endpoints | `internal/app/serveapp/batches_http_test.go:TestBatches_openAIRoundTrip` |
 | J5 | done | — | `internal/app/chatapp/batch.go:planBatch`; `internal/app/serveapp/batch_cli_parity_test.go:TestBatch_cliAndServeAgree` |
 | J6 | killed | — | `docs/measurements/j6-prefix-scheduling-2026-09-15.md` |
-| J7 | open | classes and deadlines in `internal/runtime/scheduler`; per-class budgets need K4 (`task-halt-2026-09.md`) | `internal/runtime/scheduler/admission.go:Admission` has no priority, class or deadline |
+| J7 | blocked | parked (Francis, 2026-11-09) until K4 (`task-halt-2026-09.md`, itself parked): classes and deadlines in `internal/runtime/scheduler` | `internal/runtime/scheduler/admission.go:Admission` has no priority, class or deadline |
 | J8 | moved | MC2 of `parked/task-concurrency-2026-09.md` | `docs/measurements/concurrency-mc2-2026-09-26.md` |
 | J9 | open | `/admin/queue` on the admin socket, a `-job-dir` banner line, the job routes in `docs/server.md` | the ARCHITECTURE "Jobs and batches" box is done; `internal/app/serveapp/banner.go:bannerFacts` has no job field |
 

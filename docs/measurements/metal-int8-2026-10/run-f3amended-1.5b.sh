@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: F3′ on the 1.5B (docs/tasks/task-metal-int8-2026-10.md, "F3′" and "F3′ amendment"), pre-registered before
+# Night job: F3′ on the 1.5B (docs/completed/task-metal-int8-2026-10.md, "F3′" and "F3′ amendment"), pre-registered before
 # the run: TestW8Native_F3amended_closerToF32 on the 1.5B coder, every arm on the Mac, the CPU f32 reference read from
 # the file nobara wrote (TestW8F3Reference_write, amd64, sha256 ad1df1ef0c383c67...). Bar: pooled mean KL(f32 || Metal
 # int8int8) <= 1.10 x KL(f32 || CPU int8int8, f16 KV).
@@ -9,7 +9,7 @@
 #   git worktree add --detach ~/goinfer-bench/metal-int8-2026-10/wt-<REV> <REV>
 # Queued with:
 #   python3 scripts/night.py add metal-int8-f3-1.5b --est 10 --by "Claude, Metal int8 F3′ 1.5B" \
-#     --doc docs/tasks/task-metal-int8-2026-10.md -- bash docs/measurements/metal-int8-2026-10/run-f3amended-1.5b.sh
+#     --doc docs/completed/task-metal-int8-2026-10.md -- bash docs/measurements/metal-int8-2026-10/run-f3amended-1.5b.sh
 # Logs: ~/goinfer-logs/metal-int8-2026-10/f3-1.5b/.
 set -uo pipefail
 REV=518c360c

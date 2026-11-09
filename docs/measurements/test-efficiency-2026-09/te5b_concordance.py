@@ -345,7 +345,7 @@ CHANGES = {
         "nobara, Ryzen 7 3700X, CPU int4, 1.5B", "outside", 2,
         "TestCPURoofline_w4a8Batch paired ABBA, 5 pairs (plain -> batch)", "e2e", "OFF ms / ON ms",
         M + "cpu-decode-roofline-2026-09-23.md:124",
-        "bench_peer.py goinfer-only cell, GOINFER_W4A8_BATCH toggled, n=10 paired", "docs/tasks/task-recompute-audit.md:532-543",
+        "bench_peer.py goinfer-only cell, GOINFER_W4A8_BATCH toggled, n=10 paired", "docs/completed/task-recompute-audit.md:532-543",
         "19 days and the R9 fixes apart: the in-process tree has fewer barriers per layer than the served one."),
     "splitkv-A2-cuda": C(
         "CUDA split-KV decode attention default-on at nKeys >= 256 (kernel choice + extra launches)",

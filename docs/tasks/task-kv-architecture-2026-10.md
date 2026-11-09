@@ -188,7 +188,7 @@ slot is gone; and every KV feature is built three or four times.
    - An edited message or a second conversation therefore means a full re-prefill or the CPU path. On Qwen3.6-35B-A3B the
      CPU path decodes 5.6× slower (4.19 against 23.5 tok/s;
      `docs/measurements/r01-phase2-cpu-fallback-cost-2026-09-23.md`).
-   - R-01 phase 2 and FreeToken Lead 1 are both open (`docs/tasks/task-recompute-audit.md`,
+   - R-01 phase 2 and FreeToken Lead 1 are both open (`docs/completed/task-recompute-audit.md`,
      `docs/completed/task-freetoken-techniques.md`).
 4. **A conversation that loses its GPU slot is gone.**
    - The CPU path has a RAM → NVMe tier (`internal/app/serveapp/sessions.go:sessionLRU`, `.giw-kv` v3 snapshots,
@@ -485,7 +485,7 @@ is MC4's identity gate extended to shared preambles.
 ### 5.7 Recurrent state
 
 - **A state spec per model.** spec/09 measured 62.8 MiB per sequence for Qwen3.6-35B-A3B and 149.6 MiB for the 27B
-  (`docs/spec/09-mtp-heads.md`, quoted in `task-recompute-audit.md` R-01).
+  (`docs/spec/09-mtp-heads.md`, quoted in `../completed/task-recompute-audit.md` R-01).
 - **Two stores:**
   - a pool of **state slots**, one per running sequence. This lifts `residentSlotCount`'s one-slot rule for hybrids;
   - a **checkpoint store** keyed by `(chain hash at position c, c)`.
@@ -1250,7 +1250,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
   - the fingerprint plus numerics epoch.
 - **Gates (sketch):**
   - **R-04's own rule:** resume against the fallback a lost slot really takes today, not against a cold prefill
-    (`task-recompute-audit.md`, R-01's phase-2 rule);
+    (`../completed/task-recompute-audit.md`, R-01's phase-2 rule);
   - promoted blocks are bit-exact;
   - persistence across a restart;
   - file permissions;
@@ -1657,7 +1657,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
 - **Absorbs:**
   - lever 5 (a shared KV pool);
   - MC5's paged-KV half (`docs/tasks/parked/task-concurrency-2026-09.md`);
-  - R-01 phase 2 and R-04's resident half (`docs/tasks/task-recompute-audit.md`);
+  - R-01 phase 2 and R-04's resident half (`docs/completed/task-recompute-audit.md`);
   - FreeToken Lead 1 (`docs/completed/task-freetoken-techniques.md`);
   - the reopen condition of `docs/tasks/parked/task-kv-cache-streaming.md` (its host-KV idea becomes KV7);
   - lever 4's third step (KV10);
@@ -1947,7 +1947,7 @@ Code, read at `e2ffb953`:
 Docs and records:
 - **Positioning and policy:** `docs/positioning.md`, `docs/roadmap.md`, `docs/api-tiers.md`, `docs/ARCHITECTURE.md`.
 - **Task docs:**
-  - `docs/tasks/parked/task-concurrency-2026-09.md` (MC1, MC3, MC5), `docs/tasks/task-recompute-audit.md` (R-01,
+  - `docs/tasks/parked/task-concurrency-2026-09.md` (MC1, MC3, MC5), `docs/completed/task-recompute-audit.md` (R-01,
     R-04), `docs/completed/task-freetoken-techniques.md` (Lead 1);
   - `docs/completed/task-cuda-windowed-kv-2026-10.md`, `docs/completed/task-memory-accounting-2026-09.md`,
     `docs/completed/task-never-swap-2026-09.md`;
