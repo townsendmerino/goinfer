@@ -41,7 +41,7 @@
 | OP6-C | open | CUDA q4k batched prefill | FA §3.2 |
 | OP6-W | open | optional: per-32 activations or a q4k lane on WebGPU | FA §7a |
 | HL-C | open | register a CUDA greedy chain under a gated processor, as HL-R did on Metal | FA §6; `docs/measurements/hl-2026-11/README.md` |
-| AC | open | map the audit classes' compute share (`docs/measurements/audit-classes-2026-10-08.md` §6) to program paths | FA status block (owner, 2026-10-21); `docs/queue-correctness.md` G47 |
+| AC | done | the 13 compute, fit-guard and speculative family findings mapped to what decides each path now: 8 read the program in whole or in part (one of them the resident's own report), 5 do not, which the map lists as candidates for the owner | FA status block (owner, 2026-10-21); `docs/queue-correctness.md` G47; `docs/measurements/audit-classes-2026-10-08/compute-share-paths-2026-11-08.md` |
 | F-coh | open | CUDA Cohere batched LayerNorm differs by 1 ulp; the CUDA owner's call whether to match the reduction order | FA §4.5 |
 | MM5 | active | the memory planner's CUDA half (nobara-sb01): `cudaKVParts` and the pools from the shared declarations (#739); CPU and WebGPU later | FA §4.9b; #739, #741 |
 | MM5b | active | decode scratch's program-side declaration, PR #772: the operations declare their per-row activations (`program.Buffers`' per-row unit, `program.HeadBuffers`), Metal's decode scratch is priced from them (G-MS4 passes; the family-keyed price kept as the oracle, equal on 368 prices), and Metal's build holds the declared widths to its kernels'. G-MS1: only Olmo Hybrid moved (768 B of unused rows dropped), and the paged-cache boundary in a later fix. G-MS5: 29 IDENTICAL. Both Gemini reviews fixed. Next: #772's merge | FA §4.9c ("MM5b's declaration"); #762, #772 |
