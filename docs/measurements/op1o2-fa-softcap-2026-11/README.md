@@ -85,3 +85,18 @@ built.
   - **Between:** parked.
 - **Wall time:** about 15 min plus idle-gate waits.
 - `bench_peer.py` needs a `gemma2-2b` key.
+
+## Addendum, 2026-11-09 03:18 PST, before the fidelity gate's first run: the cell's checkpoint, not its rule
+
+- **What happened.** The registered checkpoint, the `~/models/gemma-2-2b-it` safetensors directory, cannot run in either step:
+  - `TestFlashDecodeGateVsReference` tokenizes with `tokenizer.LoadGGUF`, which reads a `.gguf` only.
+  - `TestPrefillGateReference` reads the directory's `tokenizer.json`, which goinfer cannot load: "byte_fallback set but \"<0x09>\"
+    missing from vocab".
+  - The fit check by serve's banner on the directory stopped at the same tokenizer error (`g22b-fit-hfdir.log`). It also wrote a
+    1.4 GB int4 sidecar, `gemma-2-2b-it.int4.e4h.cuda.v17.giw`, into `~/models`, which is left there.
+- **The change.** Both steps read `~/models/gemma-2-2b-it-Q8_0.gguf` (local NVMe), whose own tokenizer loads. This is the S cell's
+  pattern: the CPU reference is f32 from the GGUF's weights, and the gate loads it at int4 on CUDA.
+  - Both arms (exact and lane) load the same checkpoint, so the comparison is unchanged in kind.
+  - The fit check on it passes (`g22b-fit.log`): "fit: 4 KV slots at a 4028-token cap hold 3.3 GB KV (weights 1.4 GB, budget
+    41.3 GB …)", and the server reached "serving on".
+- **Unchanged:** K = 3,900, held-out set B, the preconditions, criteria (a)/(b)/(c), the ambiguous band and the outcome rule.
