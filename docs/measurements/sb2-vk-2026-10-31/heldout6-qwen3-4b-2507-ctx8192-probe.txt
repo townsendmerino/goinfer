@@ -1,0 +1,1 @@
+model=sb2-heldout6-qwen3-4b-2507-ctx8192 ctx=8192 B=4850007952 ledger_list=4856204232 buffers=1780 A=2298478592 fills_MiB=map[16:17 64:2 256:3 1024:1] nvsmi_used_MiB before=430 loaded=5746 full=7540 kv=f32 plan_list=4857611776 plan_list_buffers=579 m1p_plan_list=5573115904 plan=5573900288 plan_ctx=8192 plan_placement=resident

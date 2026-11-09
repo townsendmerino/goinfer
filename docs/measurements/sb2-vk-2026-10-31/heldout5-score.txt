@@ -1,0 +1,5 @@
+load                       rise MiB list-ledger  M1p-rise plan-rise
+olmo3-7b-ctx2048               6365        -2.2      -5.3      -3.3
+olmohybrid-7b-ctx4096          5571       +13.2      -3.5    -258.3
+smollm3-3b-ctx8192             3409        +2.1      -1.0      -0.4
+FAILS: a scored load is beyond 96 MiB (worst list-vs-ledger 13.2 MiB, bar 32; M1' 5.3 and plan 258.3 MiB, bar 64; beyond 96 fails)
