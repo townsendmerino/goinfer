@@ -655,7 +655,7 @@ func TestLoadSerialized_neverPanicsOnValidCRC(t *testing.T) {
 	}
 }
 
-// TestSerializeWeights_refuses16BitWeights: the .giw holds no bf16 or f16 weight kind, so every writer entry point refuses a bundle
+// TestSerializeWeights_refuses16BitWeights: the .giw has no bf16 or f16 matmul weight kind, so every writer entry point refuses a bundle
 // loaded at either with a *SerializeError naming it, before writing a byte, rather than emit a CRC-valid blob LoadSerializedWeights
 // then refuses for a reason that names neither. The CLI entry points refuse those modes before they reach the writer
 // (decoder/stream_dir.go, decoder/sidecar.go); this is the exported function itself.
