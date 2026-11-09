@@ -282,8 +282,8 @@ func at(v [][]int, i int) []int {
 // bound to another sequence's slot, and every row of a sequence given its first row's position. On the fixtures every row's decode
 // takes attn_batched, so each step must make its attention one attn_ragged launch per layer, and a third plant (every ragged row's
 // table read one block entry on) must make a row differ too: where a fixture's rows sit past the first 64-key block, a row there,
-// so the plant reads a neighbouring block the table holds, not only an entry past its end. llama-tiny's depths put one sequence
-// across the 64-key edge during the steps and another past it from the start (its context is 128).
+// where its offset table has the row read another block than its own. llama-tiny's depths put the decode sequence at 62, across
+// the 64-key edge within the four steps, and the k = 4 verify past it from the start (its context is 128).
 // GOINFER_CUDA_STEP_MODEL=<checkpoint> runs it on a real model, one sequence past 2048 keys (the flash-decode lane), where the
 // rows' launches differ and the step takes each row's own.
 func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
@@ -293,8 +293,8 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 		kv     string
 	}
 	cfgs := []cfg{
-		{"../../testdata/llama-tiny", []int{5, 60, 40, 90}, ""},
-		{"../../testdata/llama-tiny", []int{5, 60, 40, 90}, "i8"},
+		{"../../testdata/llama-tiny", []int{5, 62, 40, 90}, ""},
+		{"../../testdata/llama-tiny", []int{5, 62, 40, 90}, "i8"},
 		{"../../testdata/mistral-tiny-window", []int{9, 70, 200, 33}, ""},
 		{"../../testdata/gemma4-dense-twogeom-tiny", []int{5, 23, 40, 11}, ""},
 		{"../../testdata/granite-dense-tiny", []int{5, 23, 40, 11}, ""}, // a 64-position context: every row in the first block
@@ -732,5 +732,49 @@ func TestDecodeAttnArm_refusesPastTheShmemBound(t *testing.T) {
 		if got := r.decodeAttnArm(Ly, 0, 128); got != armBatched {
 			t.Errorf("split-KV %v: 128 keys took arm %d, want armBatched", r.splitkvAttn, got)
 		}
+	}
+}
+
+// TestCUDAStepRagged_scratchIsPriced holds StepScratchBytes to a ragged step: a step of 8 decode and verify rows (two drawn and
+// plain decode rows, verifies at k = 2 and 4) allocates exactly StepScratchBytes(8) of scratch (prefillScratchSeenForTest, each
+// allocation after the allocator's rounding), which fits in the 512-row pass the context margin reserves (ctxMarginFor).
+func TestCUDAStepRagged_scratchIsPriced(t *testing.T) {
+	requireCUDADevice(t)
+	m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 4})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	r, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
+	}
+	if r.raggedRowsWords(1) == 0 {
+		t.Fatal("the ragged kernels are not loaded: the step's own buffers are not exercised")
+	}
+	_, _, _, _, _, _, vocab := m.Dims()
+	emb := func(id int) []float32 { return m.EmbedResidentForTest(id % vocab) }
+	var seqs []decoder.ResidentRaggedSeq
+	rows := 0
+	for b, k := range []int{1, 1, 2, 4} {
+		embs := make([][]float32, k)
+		for j := range embs {
+			embs[j] = emb(b*13 + j + 1)
+		}
+		seqs = append(seqs, decoder.ResidentRaggedSeq{Slot: b, Pos: 0, Embs: embs})
+		rows += k
+	}
+	var seen int64
+	prefillScratchSeenForTest = func(n int64) { seen += n + allocRoundSlack(n) }
+	_, err = r.StepRagged(seqs)
+	prefillScratchSeenForTest = nil
+	if err != nil {
+		t.Fatalf("step: %v", err)
+	}
+	if want := r.StepScratchBytes(rows); seen != want {
+		t.Errorf("StepScratchBytes(%d) is %d B, the step allocated %d B", rows, want, seen)
+	}
+	if pass := r.PrefillScratchBytes(prefillDefaultChunk); r.StepScratchBytes(rows) > pass {
+		t.Errorf("a %d-row step's %d B of scratch is past the %d B the margin reserves for a %d-row pass (ctxMarginFor)", rows, r.StepScratchBytes(rows), pass, prefillDefaultChunk)
 	}
 }

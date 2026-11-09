@@ -114,6 +114,17 @@ func scratchBufBytes(n int) int64 {
 	return b + allocRoundSlack(b)
 }
 
+// StepScratchBytes is what a ragged step of rows decode and verify rows (no prefill chunk) allocates on the device beyond the
+// standing buffers: an ordinary pass's M-row buffers at that width and the rows' slots, positions and query scales
+// (raggedRowsWords). TestCUDAStepRagged_scratchIsPriced holds it to a step's allocations and to the pass the margin reserves.
+func (r *cudaResident) StepScratchBytes(rows int) int64 {
+	s := r.PrefillScratchBytes(rows)
+	if w := r.raggedRowsWords(rows); w > 0 {
+		s += scratchBufBytes(w)
+	}
+	return s
+}
+
 // PrefillScratchBytes (decoder.ResidentPrefillChunks) is what one ordinary prefill pass of rows rows allocates on the device beyond
 // the standing buffers: the M-row buffers prefillCore creates, each after the allocator's rounding. It prices a pass whose tail is
 // the last row only (PrefillLast), text only; the all-logits tails of speculative verify add an M x vocab logits block, an image pass

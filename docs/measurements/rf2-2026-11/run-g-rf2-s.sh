@@ -8,6 +8,8 @@
 # Build each binary once from its own worktree:
 #   (cd <wt>/backend/cuda && GOWORK=<wt>/go.work CGO_ENABLED=0 go build -tags cuda -o <bins>/serve-cuda-<rev> ./cmd/serve)
 set -euo pipefail
+# Every path is made absolute here, before any cd: the lock re-enters this script by SELF, and OUT, OLD and NEW are read after cd.
+SELF=$(realpath "$0")
 # idle: the 1-minute load under 0.9 (bench_peer refuses above 1.0), waiting up to 15 minutes.
 idle() { for _ in $(seq 90); do awk '{exit !($1 < 0.9)}' /proc/loadavg && return 0; sleep 10; done; echo "box not idle after 15 min"; return 1; }
 # Inside the lock (lock below re-enters this script): the idle check is re-read once the lock is held, so a cell never starts on
@@ -18,9 +20,9 @@ if [ "${1:-}" = __cell ]; then
   echo "$(date +%T) cell start load $(cut -d' ' -f1 /proc/loadavg)"
   exec "$@"
 fi
-OUT=${1:?out dir}; OLD=${2:?old serve-cuda}; NEW=${3:?new serve-cuda}; PHASES=${4:-decode deep gemma ttft mc3}
+OUT=$(realpath -m "${1:?out dir}"); OLD=$(realpath -e "${2:?old serve-cuda}"); NEW=$(realpath -e "${3:?new serve-cuda}"); PHASES=${4:-decode deep gemma ttft mc3}
 [ "$OLD" != "$NEW" ] && [ "$(sha256sum < "$OLD")" != "$(sha256sum < "$NEW")" ] || { echo "old and new are the same binary"; exit 2; }
-REPO=$(cd "$(dirname "$0")/../../.." && pwd)
+REPO=$(cd "$(dirname "$SELF")/../../.." && pwd)
 KV4=$REPO/docs/measurements/kv4-cuda-2026-10-21
 mkdir -p "$OUT"; cd "$REPO"
 python3 "$KV4/procmem_sampler.py" "$OUT/procmem.jsonl" "$(basename "$OLD")" "$(basename "$NEW")" &
@@ -28,7 +30,6 @@ SAMPLER=$!
 trap 'kill $SAMPLER 2>/dev/null || true' EXIT
 export GOINFER_SERVE_CUDA=$NEW GOINFER_SERVE_CUDA_OLD=$OLD
 export BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=cuda BENCH_ABBA=1 BENCH_REQUIRE_BACKEND=1 BENCH_SERVE_LOG_DIR="$OUT/serve-logs"
-SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
 lock() { python3 scripts/timing_lock.py run --wait 1800 --label "g-rf2-s-$1" -- bash "$SELF" __cell "${@:2}"; }
 for ph in $PHASES; do
   echo "$(date +%T) phase $ph"

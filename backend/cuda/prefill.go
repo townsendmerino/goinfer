@@ -1140,7 +1140,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		var rag *raggedRows // a step's decode and verify rows for the ragged launches
 		if rows != nil {
 			var e error
-			if rag, e = r.raggedRowsFor(rows[r.stepChunk.rows:], ai, af); e != nil {
+			if rag, e = r.raggedRowsFor(rows[r.stepChunk.rows:], ai); e != nil {
 				return e
 			}
 		}

@@ -84,8 +84,8 @@ var _ decoder.ResidentRaggedStepper = (*cudaResident)(nil)
 // raggedPlantForTest plants a defect in StepRagged's rows, for its identity test's controls: 1 binds a sequence's second row
 // to the next sequence's slot (a row reading another sequence's tables), 2 gives each row of a sequence its first row's
 // position (a verify row run as a decode row), 3 runs a prefill chunk on the exact kernels (a chunk out of its pass's class),
-// 4 reads every ragged row's table one block entry on (a row's table offset off by one block). 0 in production. Set by tests
-// only.
+// 4 reads the ragged rows' tables with a stride one entry short, so slot s's row reads its table s entries back: a row's table
+// offset off by blocks, inside the tables the device holds. 0 in production. Set by tests only.
 var raggedPlantForTest int
 
 // raggedChunk is a ragged step's prefill chunk while its pass runs (StepRagged sets it, prefillCore reads it): the pass's
@@ -227,17 +227,32 @@ type raggedRows struct {
 	hostPos          []int
 }
 
-// raggedRowsFor uploads rows into buffers from ai and af (prefillCore's scratch), or returns nil when the ragged kernels are not
-// loaded, so every row takes decode's own gap.
-func (r *cudaResident) raggedRowsFor(rows []stepRow, ai, af func(int) Buffer) (*raggedRows, error) {
-	if len(rows) == 0 || r.bRopeKVRagged == (Pipeline{}) || r.bAttnRagged == (Pipeline{}) {
+// raggedRowsWords is the 4-byte words raggedRowsFor allocates for n rows: one buffer of each row's slot and position, and its
+// query scale when the family has one; 0 when the ragged kernels are not loaded.
+func (r *cudaResident) raggedRowsWords(n int) int {
+	if n == 0 || r.bRopeKVRagged == (Pipeline{}) || r.bAttnRagged == (Pipeline{}) {
+		return 0
+	}
+	if r.attnTempBeta != 0 {
+		return 3 * n
+	}
+	return 2 * n
+}
+
+// raggedRowsFor uploads rows into one buffer from ai (prefillCore's scratch, so StepScratchBytes prices it), or returns nil when
+// the ragged kernels are not loaded, so every row takes decode's own gap.
+func (r *cudaResident) raggedRowsFor(rows []stepRow, ai func(int) Buffer) (*raggedRows, error) {
+	n := len(rows)
+	words := r.raggedRowsWords(n)
+	if words == 0 {
 		return nil, nil
 	}
-	slots, pos := make([]int32, len(rows)), make([]int32, len(rows))
-	rg := &raggedRows{slot: ai(len(rows)), pos: ai(len(rows)), hostPos: make([]int, len(rows))}
+	b := ai(words)
+	slots, pos := make([]int32, n), make([]int32, n)
+	rg := &raggedRows{slot: b, pos: b.At(4 * n), hostPos: make([]int, n)}
 	var qt []float32
-	if r.attnTempBeta != 0 {
-		qt = make([]float32, len(rows))
+	if words == 3*n {
+		qt = make([]float32, n)
 	}
 	for i, rw := range rows {
 		slots[i], pos[i], rg.hostPos[i] = int32(rw.slot), int32(rw.pos), rw.pos
@@ -252,7 +267,7 @@ func (r *cudaResident) raggedRowsFor(rows []stepRow, ai, af func(int) Buffer) (*
 		return nil, e
 	}
 	if qt != nil {
-		rg.qTemp = af(len(rows))
+		rg.qTemp = b.At(8 * n)
 		if e := gpu.Upload(rg.qTemp, qt); e != nil {
 			return nil, e
 		}
@@ -331,12 +346,13 @@ func (r *cudaResident) stepAttnRows(Ly *cudaLayer, l int, rows []stepRow, from i
 		}
 		return nil
 	}
+	attnStride := tabStride
 	if raggedPlantForTest == 4 {
-		tabs = r.kvTabDev.At((g*r.kvMaxBlocks() + 1) * 4)
+		attnStride--
 	}
 	r.raggedAttnLaunches++
 	return r.launch(r.bAttnRagged, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(n), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)},
-		r.kvScaled(l, r.withCap(Arg(q0), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(tabs), gpu.ArgValue(int32(tabStride)), Arg(rag.slot), Arg(rag.pos),
+		r.kvScaled(l, r.withCap(Arg(q0), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(tabs), gpu.ArgValue(int32(attnStride)), Arg(rag.slot), Arg(rag.pos),
 			gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window),
 			gpu.ArgValue(int32(n)), Arg(c0), r.sinkArg(l))...)...)
 }
