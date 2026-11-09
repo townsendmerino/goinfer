@@ -1799,11 +1799,10 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		}
 		outs = make([][]float32, M)
 		if tail == tailAllLogits {
-			// Every row whose logits are read needs the head (PrefillLastN, speculative verify, a step's rows; not a ragged step's
-			// prefill chunk but its final pass's last row, raggedChunk.headFrom): batch it, ONE norm+quant+GEMV over those rows,
-			// bit-identical to the per-row GEMV by construction (bGemvB). batchedHeadFull says what stays per row.
+			// Every row needs the head (PrefillLastN, speculative verify, the multi-sequence step): batch it, ONE norm+quant+GEMV
+			// over all M rows, bit-identical to the per-row GEMV by construction (bGemvB). batchedHeadFull says what stays per row.
 			var e error
-			if outs, ids, e = r.batchedHeadFull(xB, aqB, aScB, M, rows, r.stepChunk.headFrom()); e != nil {
+			if outs, ids, e = r.batchedHeadFull(xB, aqB, aScB, M, rows); e != nil {
 				return e
 			}
 			return r.launchErr
@@ -1932,33 +1931,27 @@ func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int
 // Everything after the GEMV stays per row. A step row with an on-device draw goes through the unmodified
 // stepDraw/gumbelPick kernels, which read r.logits, so that row's slice is copied there first (gpu.CopyDevice). Every
 // other row is downloaded to the pinned host buffer (r.logitsPinned/r.logitsHost) one at a time. The rows it returns are
-// raw head output: prefillCore applies the softcap and logit scale to every logits row after the job. Rows before from (a
-// ragged step's prefill chunk, raggedChunk.headFrom) are not headed and come back nil.
-func (r *cudaResident) batchedHeadFull(xB, aqB, aScB Buffer, M int, rows []stepRow, from int) (outs [][]float32, ids []int, err error) {
-	n := M - from
-	if n <= 0 {
-		return make([][]float32, M), nil, nil // a step of a non-final chunk alone: no row is read
-	}
+// raw head output: prefillCore applies the softcap and logit scale to every logits row after the job.
+func (r *cudaResident) batchedHeadFull(xB, aqB, aScB Buffer, M int, rows []stepRow) (outs [][]float32, ids []int, err error) {
 	defer r.onLine(mem.LineScratch)()
-	if n > r.logitsBCap { // sized by the headed rows, so a chunk's unread rows hold no logits
+	if M > r.logitsBCap {
 		if r.logitsBCap > 0 {
 			r.dev.ReleaseBuf(r.logitsB)
 			r.dev.ReleaseBuf(r.logitsBIdx)
 		}
-		r.logitsB = r.af(n * r.vocab)
-		r.logitsBIdx = r.ai(n)
-		r.logitsBCap = n
+		r.logitsB = r.af(M * r.vocab)
+		r.logitsBIdx = r.ai(M)
+		r.logitsBCap = M
 	}
-	if e := r.bNormB(xB.At(from*r.hidden*4), r.finalNorm, r.hidden, aqB, aScB, n); e != nil {
+	if e := r.bNormB(xB, r.finalNorm, r.hidden, aqB, aScB, M); e != nil {
 		return nil, nil, e
 	}
-	if e := r.bGemvB(r.lmW, aqB, aScB, ArgNull(), r.logitsB, n, 0); e != nil {
+	if e := r.bGemvB(r.lmW, aqB, aScB, ArgNull(), r.logitsB, M, 0); e != nil {
 		return nil, nil, e
 	}
-	r.headRows += n
 	outs = make([][]float32, M)
-	for m := from; m < M; m++ {
-		row := r.logitsB.At((m - from) * r.vocab * 4)
+	for m := range M {
+		row := r.logitsB.At(m * r.vocab * 4)
 		if rows != nil && rows[m].draw != nil {
 			// stepDraw/gumbelPick read r.logits, not a caller-supplied buffer — copy this row's
 			// slice into it rather than changing kernels the per-row path already proved correct.

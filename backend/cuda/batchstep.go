@@ -89,20 +89,11 @@ var _ decoder.ResidentRaggedStepper = (*cudaResident)(nil)
 var raggedPlantForTest int
 
 // raggedChunk is a ragged step's prefill chunk while its pass runs (StepRagged sets it, prefillCore reads it): the pass's
-// first rows rows, at pos in slot, of a prompt promptLen long; last when it is the prompt's final pass, whose last row alone
-// is headed; exact when its own pass takes the exact kernels. split holds while the layer stack runs, when bGemvB and the
-// attention give the chunk's rows its class.
+// first rows rows, at pos in slot, of a prompt promptLen long; exact when its own pass takes the exact kernels. split holds
+// while the layer stack runs, when bGemvB and the attention give the chunk's rows its class.
 type raggedChunk struct {
 	rows, pos, slot, promptLen int
-	last, exact, split         bool
-}
-
-// headFrom is the first row of a step's pass whose logits are read: the chunk's rows are not, but for a final pass's last.
-func (c raggedChunk) headFrom() int {
-	if c.last {
-		return c.rows - 1
-	}
-	return c.rows
+	exact, split               bool
 }
 
 // StepRagged runs one step over seqs (decoder.ResidentRaggedStepper): every sequence's rows in one pass of prefillCore's
@@ -128,7 +119,7 @@ func (r *cudaResident) StepRagged(seqs []decoder.ResidentRaggedSeq) ([]decoder.R
 		}
 	}
 	if s := seqs[order[0]]; s.Prefill != nil {
-		r.stepChunk = raggedChunk{rows: len(s.Embs), pos: s.Pos, slot: s.Slot, promptLen: s.Prefill.PromptLen, last: s.Prefill.Last, exact: raggedPlantForTest == 3}
+		r.stepChunk = raggedChunk{rows: len(s.Embs), pos: s.Pos, slot: s.Slot, promptLen: s.Prefill.PromptLen, exact: raggedPlantForTest == 3}
 		defer func() { r.stepChunk = raggedChunk{} }()
 	}
 	var embs [][]float32
