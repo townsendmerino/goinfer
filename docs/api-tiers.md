@@ -93,7 +93,8 @@ Real, supported, and used in production paths here — but they may change in an
 patch. Pin a version if you depend on them. Each graduates when it settles.
 
 - **The library's logger.** `decoder.SetLogger`.
-- **Load's error kinds.** `decoder.ErrUnsupportedModel`, `ErrUnknownQuant`, `ErrUnknownBackend`, for `errors.Is`.
+- **Load's error kinds.** `decoder.ErrUnsupportedModel`, `ErrUnknownQuant`, `ErrUnknownBackend`, for `errors.Is`, and
+  `ErrBackendDeclined` with the `Options.RequireBackend` that asks for it (a named backend's decline becomes Load's error).
 - **The backend/residency seam.** `decoder.Backend`, `RegisterBackend`, `QuantBackend`,
   `QuantBatchBackend`, `ResidencyBackend`, `Prefiller`, `ResidentForward`, `ResidentGreedy`,
   `ResidentPrefillKV`, `ResidentCapped`, `ResidentDrafterHost`, `ResidentBlockDrafter`,
