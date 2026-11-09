@@ -68,6 +68,40 @@ func TestChat_okWithUsage(t *testing.T) {
 	}
 }
 
+// A reasoning model spends a small max_tokens on its thinking, so a stream of reasoning deltas only is a working stream: the
+// long-prompt row asks for 8 tokens, and counting content alone read every thinking model as "no tokens". Both spellings serve
+// emits are counted, and the row says the tokens were reasoning.
+func TestChat_reasoningOnlyStreamPasses(t *testing.T) {
+	for _, field := range []string{"reasoning_content", "reasoning"} {
+		c := newFake(t, func(w http.ResponseWriter, r *http.Request) {
+			think := func(s string) string {
+				b, _ := json.Marshal(map[string]any{"choices": []map[string]any{{"delta": map[string]string{field: s}}}})
+				return string(b)
+			}
+			u, _ := json.Marshal(map[string]any{"usage": map[string]int{"completion_tokens": 3}})
+			sseFrames(w, think("Let"), think(" me"), think(" think"), string(u), "[DONE]")
+		})
+		res := c.Chat(context.Background(), "m", "hi", 8, "long prompt")
+		if !res.OK {
+			t.Errorf("%s: a stream of reasoning tokens with usage must pass, got %q", field, res.Detail)
+		}
+		if !strings.Contains(res.Detail, "TTFT") || !strings.Contains(res.Detail, "reasoning") {
+			t.Errorf("%s: the row must carry TTFT and say the tokens were reasoning, got %q", field, res.Detail)
+		}
+	}
+}
+
+// A stream with neither content nor reasoning still fails.
+func TestChat_emptyStreamFails(t *testing.T) {
+	c := newFake(t, func(w http.ResponseWriter, r *http.Request) {
+		u, _ := json.Marshal(map[string]any{"usage": map[string]int{"completion_tokens": 0}})
+		sseFrames(w, string(u), "[DONE]")
+	})
+	if res := c.Chat(context.Background(), "m", "hi", 8, "chat"); res.OK || !strings.Contains(res.Detail, "no tokens") {
+		t.Errorf("a stream with no tokens must fail and say so, got OK=%v %q", res.OK, res.Detail)
+	}
+}
+
 // count_tokens disagreeing with billed usage must FAIL: a harness budgets its context with
 // the first number and is charged the second.
 func TestCountTokens_mismatchFails(t *testing.T) {
