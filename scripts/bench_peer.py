@@ -655,7 +655,9 @@ class SwapWatch:
             self.swapin = now_in - self.base_in
         if self.base_out is not None and now_out is not None:
             self.swapout = now_out - self.base_out
-        return {"swap_base_mb": self.base, "swap_growth_mb": round(self.peak, 1), "swap_peak_mb": self.peak_abs, "swap_killed": self.killed,
+        # a failed reading leaves no numeric peak for a caller to mistake for a clean one (void_rule.SwapSampler.result's rule)
+        growth, peak_abs = (None, None) if self.unreadable else (round(self.peak, 1), self.peak_abs)
+        return {"swap_base_mb": self.base, "swap_growth_mb": growth, "swap_peak_mb": peak_abs, "swap_killed": self.killed,
                 "swapin_mb": None if self.swapin is None else round(self.swapin, 1),
                 "swapout_mb": None if self.swapout is None else round(self.swapout, 1), "swap_void": self.void_reason()}
 
@@ -907,22 +909,30 @@ def end_state():
             "swapin_mb": swapin, "swapout_mb": swapout}
 
 
+_END_MEM_SKIP_SAID = False
+
+
+def _say_end_mem_skip(msg):
+    global _END_MEM_SKIP_SAID
+    if not _END_MEM_SKIP_SAID:
+        _END_MEM_SKIP_SAID = True
+        print("# " + msg, flush=True)
+
+
 def cell_end_void(start, end, need_mb, peak_mb=None):
-    """The reason a cell is void from the readings at its start and its end, or None: swap that grew between them (or an unreadable swap
-    reading at either), and an unreadable load or available-memory reading at the end. SwapWatch votes on the peak inside the cell; this
-    couples the cell's own start and end readings to its verdict, so a record whose end readings fail cannot be called clean."""
+    """The reason a cell is void from the readings at its start and its end, or None: void_rule.end_void over this harness's readings
+    (swap that grew between them or an unreadable swap, end load or end available-memory reading). SwapWatch votes on the peak inside
+    the cell; this couples the cell's own start and end readings to its verdict, so a record whose end readings fail cannot be called
+    clean. peak_mb is SwapWatch's peak, in absolute MB, against the cell's own start reading: swap that rose between machine_state and
+    the watch's later baseline and receded before the end is a spike over the cell's start that neither reading alone shows."""
     import void_rule
-    # peak_mb: SwapWatch's peak, in absolute MB, against the cell's own start reading: swap that rose between machine_state and the
-    # watch's later baseline and receded before the end is a spike over the cell's start that neither reading alone shows
-    why = void_rule.swap_void({k: start.get(k) for k in ("swap_mb", "swapin_mb", "swapout_mb")},
-                              {k: end.get(k) for k in ("swap_mb", "swapin_mb", "swapout_mb")}, peak_mb)
-    if why:
-        return why
-    if end.get("loadavg") is None:
-        return "load average unreadable at the cell's end"
-    if need_mb and end.get("available_mb") is None and os.environ.get("BENCH_ALLOW_NO_FREE_MEM") != "1":
-        return "available memory unreadable at the cell's end"
-    return None
+    keys = ("swap_mb", "swapin_mb", "swapout_mb")
+    la = end.get("loadavg")
+    s = {k: start.get(k) for k in keys}
+    s.update(ncores=start.get("ncores"), need_mb=need_mb)
+    e = {k: end.get(k) for k in keys}
+    e.update(load1=la[0] if la else None, available_mb=end.get("available_mb"))
+    return void_rule.end_void(s, e, peak_mb, say=_say_end_mem_skip)
 
 
 def apply_cell_end_check(result, need_mb):
