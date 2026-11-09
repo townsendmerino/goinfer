@@ -85,3 +85,49 @@ built.
   - **Between:** parked.
 - **Wall time:** about 15 min plus idle-gate waits.
 - `bench_peer.py` needs a `gemma2-2b` key.
+
+## Addendum, 2026-11-09 03:18 PST, before the fidelity gate's first run: the cell's checkpoint, not its rule
+
+- **What happened.** The registered checkpoint, the `~/models/gemma-2-2b-it` safetensors directory, cannot run in either step:
+  - `TestFlashDecodeGateVsReference` tokenizes with `tokenizer.LoadGGUF`, which reads a `.gguf` only.
+  - `TestPrefillGateReference` reads the directory's `tokenizer.json`, which goinfer cannot load: "byte_fallback set but \"<0x09>\"
+    missing from vocab".
+  - The fit check by serve's banner on the directory stopped at the same tokenizer error (`g22b-fit-hfdir.log`). It also wrote a
+    1.4 GB int4 sidecar, `gemma-2-2b-it.int4.e4h.cuda.v17.giw`, into `~/models`, which is left there.
+- **The change.** Both steps read `~/models/gemma-2-2b-it-Q8_0.gguf` (local NVMe), whose own tokenizer loads. This is the S cell's
+  pattern: the CPU reference is f32 from the GGUF's weights, and the gate loads it at int4 on CUDA.
+  - Both arms (exact and lane) load the same checkpoint, so the comparison is unchanged in kind.
+  - The fit check on it passes (`g22b-fit.log`): "fit: 4 KV slots at a 4028-token cap hold 3.3 GB KV (weights 1.4 GB, budget
+    41.3 GB …)", and the server reached "serving on".
+- **Unchanged:** K = 3,900, held-out set B, the preconditions, criteria (a)/(b)/(c), the ambiguous band and the outcome rule.
+
+## Reading, 2026-11-09 03:19 to 04:05 PST (nobara, RTX 2070 SUPER, driver 595.112.07): **PASS** by the registered rule
+
+- **Run.** Main `45e3cce50` plus the addendum `123c6e2be`; binaries built once from it. Logs: `g22b-steps.log`, `g22b-refs.log.gz` and
+  `g22b-gate.log`.
+  - **The CPU reference:** 10 prompts at K = 3,900, 37 min, shared lock. A first launch built the decoder binary without its
+    `goinfer_testhooks` tag, ran no test, and stopped at the script's own check; it is kept as `g22b-refs-attempt0-untagged.log`.
+  - **The gate:** 196 s, under the exclusive lock.
+  - **Void rule:** the gate's first try started at a 1-minute load of 12.44, the reference's own tail, and was **void**. The second
+    started at 0.20, with 61 GB available, 5 min later.
+- **Preconditions held.** A/A is bit-identical over 64 rows. The lane arm launched the lane, and the prefill seed row is identical across
+  arms (the gate fails on either otherwise).
+
+| | exact (split-KV) | lane (capped flash-decode) |
+|---|---|---|
+| mean teacher-forced agreement | 87.97% | 87.66% |
+| hard flips | 12 / 640 | 17 / 640 |
+| mean KL(reference ‖ arm) | 0.100507 | 0.097450 |
+
+- **(a) hard flips: PASS.** The lane's 17 is within the amended bar of exact + 2√exact = 18.9. The strict reading (`lane ≤ exact`) fails,
+  17 against 12, and is printed as such.
+- **(b) agreement: PASS.** The lane is −0.31 pt from exact against a −1.0 pt bar, 0.69 pt clear of it and outside the last 0.2 pt
+  (ambiguous) zone. Paired wins are 5/10, exactly the "at least half" line.
+- **(c) KL: PASS.** The ratio is 0.970, under 1.10 and outside the 1.05 to 1.10 ambiguous band.
+- **Verdict: PASSES.** The lane on Gemma 2 2B decodes as well as the exact lane at K = 3,900 by the lane gate's criteria. 617 of 630
+  continuation rows differ from exact's, the change the opt-in exists to gate.
+- **What it decides goes to Francis:** whether capped models may take the lane by default. This reading does not flip
+  `FlashDecodeSoftcap`'s default.
+  - Two points sit at a line, worth weighing: paired wins are exactly 5/10, and hard flips pass only the amended bar.
+  - Gemma 2's window, 4,096, is not crossed at K = 3,900.
+  - The registered timed cell (README above) is the other half of a default decision, and it has not run.

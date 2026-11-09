@@ -30,7 +30,7 @@
 | OP1-o1 | done | Metal `attention_fa_blk` forms its score through `attn_score` (its softcap build held to float64 per score site by `backend/metal/attn_softcap_test.go:TestAttnSoftcap_faBlk`), bit-identical to the graded text without a cap (`backend/metal/attn_fa_blk_test.go:TestAttnFABlk_routedScoreIsTheGradedKernel`, the resident's own pipeline on the 1.5B and 7B, G1-K's digests); R17's speed re-grade PASS (median routed ÷ graded attention 1.0161, bar ≤ 1.02), and the pin moved to the routed text | FA §4.6 "Owed, and not in OP1"; `docs/measurements/op1-o1-r17-regrade-2026-11-09/README.md` |
 | OP1-o2 | active | the CUDA flash-decode lane with the softcap (nobara-sb01): built (`decode_fa_cap`), opt-in only (`Options.FlashDecodeSoftcap`; the exact split-KV lane stays Gemma 2's default), correctness gates pass (G2-K at both KV types, the resident path, a real Gemma 2 2B end to end). Next: the registered fidelity gate by day (G22B at K=3900), then the timed cell; a default change needs Francis | FA §4.6a "Owed, not in OP1"; `docs/measurements/op1o2-fa-softcap-2026-11/README.md` |
 | OP4m-D6b5 | done | read 2026-11-09 by day under the exclusive Mac lock: PASS, median step/sequential 1.2009, 10 of 10 pairs faster, tokens equal in every pair, after the cell's recurrent refill fix; `--recurrent-step` stays off by default | FA §4.9; "OP4m-D6b5: reading" below; `docs/measurements/op4-2026-10/op4m-d6b5-speed-nemotron-h-4b.log` |
-| OP4m-pod | open | register per-operation dispatch inside the mixer steps | FA §4.9 "OP4m-d2", "What remains" |
+| OP4m-pod | active | registered (below, "OP4m-pod: registration"): Metal decode walks each mixer step's operations through an emitter table, with P-1 (the same dispatches), P-2 (identity) and P-3 (speed). Next: the code, red-first | FA §4.9 "OP4m-d2", "What remains"; "OP4m-pod: registration" below |
 | OP4cu-census | done | an arm64 `TestAdmissionCensus` run passes at c2's commit (`c40e79dc6`) and on main, 2,711 lines each: the golden c2 applied per line key is what an arm64 run produces | FA §4.9a "C2-2"; `docs/measurements/op4-cuda-2026-11/op4cu-c2-c22-arm64-census-run.txt` |
 | OP5-S | open | Spark-X2.5, on Metal first | FA §4.7 "OP5" |
 | OP5-L | open | LFM2.5's short conv | FA §4.7; `docs/hardware-matrix.md` |
@@ -166,6 +166,46 @@ takes (a decode token, a verify and MC3's step keep today's calls), so the speed
 - **Also changed in the cell:** a D6b-5 entry (D4b-4's requires a DeltaNet resident), and the start check
   (`stepCellStartVoid`), now the void rule's start terms (`TestStepCellStartVoid`; with the old +2 GiB margin planted back, two
   cases go red).
+
+## OP4m-pod: registration (2026-11-09, before any OP4m-pod code)
+
+- **Question.** Can Metal's per-token decode run each mixer step (attention, Gated DeltaNet, Mamba-2, MLA) as a walk over that
+  step's operations in the program, issuing exactly today's dispatches at today's speed? Today each step is one hand-written block
+  that branches on family flags (`backend/metal/model.go:resident.encodeAttentionResidualWith`,
+  `backend/metal/deltanet.go:resident.encodeDeltaNetMixerOn`, `backend/metal/mamba.go:resident.encodeMambaMixerOn`,
+  `backend/metal/mla.go:resident.encodeMLAMixer`).
+- **Built:**
+  - a table of emitters, one per operation kind, each reading its parameters from the operation (`program.Op`). For example, the
+    norm reads its form, `AddOne` and bias; the QK-norm its form; the output gate its sigmoid; the residual its scale.
+  - Where one dispatch serves two adjacent operations, the pair is one table entry, emitted once: the output projection with the
+    residual add, and a recurrent mixer's out-projection with the residual add.
+  - The decode body walks its steps' operations through the table, and an operation the table does not cover declines the build,
+    naming it.
+  - **Out of scope:** the FFN and own-block steps (MoE, Gemma 4's MoE block, PLE, layer scale), the batched prefill and the
+    multi-sequence step (they keep calling today's blocks), and CUDA (Francis's d2 stop).
+- **Do-nothing arm:** today's blocks, kept behind a test-only switch and deleted when P-3 passes (as OP4m-b2 and OP4m-d2 did).
+- **P-1, the same dispatches (tier 0, hard).**
+  - For every tiny fixture that builds resident at int4 and at int8int8, and at `--kv i8` and `--kv f32` where the family
+    allows: one decode token's pipeline sequence (`Device.SetDispatchHook`, named by `resident.pipelineNames`) under the walk
+    equals today's, dispatch for dispatch, at positions 0 and 5.
+  - Plants, each red and recorded: the residual add emitted on its own after the output projection (an extra dispatch), and the
+    norm emitter ignoring `AddOne` (red on the Gemma fixtures).
+- **P-2, identity (tier 0, hard).** Every logit is bit-identical to today's on the same fixtures over 8 greedy steps, and
+  `go run ./cmd/gate identity -backend metal` is IDENTICAL, with every family's outcome unchanged.
+- **P-3, speed (tier 1, by day, the exclusive Mac timing lock, fit-checked first).**
+  - The metric is decode tokens/s, the walk against today's blocks, in one process.
+  - A B B A, 6 pairs; each run is 64 greedy tokens of one sequence at depth 128, and tokens must be equal in every pair.
+  - Cells, each int4 from `~/models`: Qwen2.5-Coder 1.5B Q4_K_M (attention), Qwen3.5 0.8B (DeltaNet), Nemotron-H 4B (Mamba-2).
+    MLA has no checkpoint that fits this Mac, so it is P-1 and P-2 only.
+  - Since P-1 makes the GPU work identical, the gate reads the walk's encode cost.
+  - **Pass:** every cell's median pair ratio (walk ÷ blocks) is at least 0.99.
+  - **Fail:** a cell resolves slower (every pair under 1) with its median under 0.99.
+  - **Parked:** any other cell under 0.99; the walk stays behind its switch, off, for Francis.
+  - Void terms are the timed-run skill's, and a void cell is re-run in order.
+  - About 10 minutes, start and finish stated first.
+- **Stopping:** P-1 and P-2 on each build; P-3 once, on the final build.
+- **Outcomes:** all pass, the blocks' family branches go and OP4m-pod closes, with the FFN and own-block steps as its own next
+  row. A P-3 fail reverts the walk for the failing step kind. A P-3 park leaves the walk behind its switch, off.
 
 ## Conventions
 
