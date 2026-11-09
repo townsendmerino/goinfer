@@ -200,7 +200,7 @@ slot is gone; and every KV feature is built three or four times.
      the whole context and mask it.
    - Precision: CUDA f16 for five families and f32 for the rest, with no int8; Metal f16 or i8; WebGPU f32, f16 or i8; the CPU f32 or i8.
    - Slots: a pointer swap on CUDA, contiguous views on Metal, whole runners on WebGPU.
-   - Accounting: `docs/tasks/task-memory-accounting-2026-09.md` found five KV byte formulas. Today it is one function,
+   - Accounting: `docs/completed/task-memory-accounting-2026-09.md` found five KV byte formulas. Today it is one function,
      `decoder/residentneed.go:Model.ResidentKVBytes`, with a "cuda" branch.
    - Context ceilings are allocation ceilings: Metal's 32,768 (`decoder/fitplan.go`), WebGPU's 16k/32k/64k by precision
      (`decoder/fitplan.go:WebGPUCtxCeiling`). Under paging they become table length and kernel limits (KV10).
@@ -223,7 +223,7 @@ slot is gone; and every KV feature is built three or four times.
 4. **The cache-state grid stays fail-closed** (`decoder/cachestate.go:cacheStateGrid`: 14 kinds of state × 5 lifecycle
    paths). The new lifecycle paths (publish, share, demote, promote, restore) join it, and every kind gets a declared
    cell for each.
-5. **One memory formula** (`docs/tasks/task-memory-accounting-2026-09.md`). The pool size, admission and the allocator
+5. **One memory formula** (`docs/completed/task-memory-accounting-2026-09.md`). The pool size, admission and the allocator
    compute from one function, and the never-swap rules hold on every gate (`docs/completed/task-never-swap-2026-09.md`).
 6. **The Hard API tier** (`docs/api-tiers.md`):
    - `decoder.KVCache` stays an opaque handle;
@@ -1949,7 +1949,7 @@ Docs and records:
 - **Task docs:**
   - `docs/tasks/parked/task-concurrency-2026-09.md` (MC1, MC3, MC5), `docs/tasks/task-recompute-audit.md` (R-01,
     R-04), `docs/tasks/task-freetoken-techniques.md` (Lead 1);
-  - `docs/completed/task-cuda-windowed-kv-2026-10.md`, `docs/tasks/task-memory-accounting-2026-09.md`,
+  - `docs/completed/task-cuda-windowed-kv-2026-10.md`, `docs/completed/task-memory-accounting-2026-09.md`,
     `docs/completed/task-never-swap-2026-09.md`;
   - `docs/completed/task-integration-harness-2026-10.md` (I4, I7), `docs/completed/task-cpu-kv-f16-2026-10.md`,
     `docs/tasks/parked/task-kv-cache-streaming.md`;
