@@ -181,6 +181,7 @@ func TestFlashDecodeEndToEnd(t *testing.T) {
 		"qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", // hd128, GQA 6
 		"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", // hd64, GQA 7
 		"gemma3-1b-q4_k_m.gguf",                   // hd256, GQA 4, sliding-window layers (512) under a 2048-deep decode
+		"gemma-2-2b-it-Q8_0.gguf",                 // hd256, GQA 2, the attention softcap: the lane's capped variant (OP1-o2)
 	} {
 		t.Run(file, func(t *testing.T) { flashEndToEnd(t, file) })
 	}

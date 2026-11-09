@@ -28,7 +28,7 @@
 | RF6 | blocked | RF3 or RF4 | FA §7a |
 | OP1-W | open | Gemma 2's attention-logit softcap on WebGPU: register the cells on nobara (Vulkan) before code | FA §4.6; `docs/hardware-matrix.md` |
 | OP1-o1 | open | Metal `attention_fa_blk` through attn_score, then the R17 re-grade | FA §4.6 "Owed, and not in OP1" |
-| OP1-o2 | open | the CUDA flash-decode lane with the softcap | FA §4.6a "Owed, not in OP1" |
+| OP1-o2 | active | the CUDA flash-decode lane with the softcap (nobara-sb01): built (`decode_fa_cap`), correctness gates pass (f64 oracle, verify rows bit-identical, a real Gemma 2 2B end to end). Next: the registered depth-128/2048 timed cell by day, before or after its PR's merge as Francis decides | FA §4.6a "Owed, not in OP1"; `docs/measurements/op1o2-fa-softcap-2026-11/README.md` |
 | OP4m-D6b5 | open | the timed cell: the int4 Metal `.giw` of Nemotron-H 4B has been in `~/models` since 2026-11-07; a few minutes by day under the exclusive lock | FA §4.9 |
 | OP4m-pod | open | register per-operation dispatch inside the mixer steps | FA §4.9 "OP4m-d2", "What remains" |
 | OP4cu-census | open | read an arm64 `TestAdmissionCensus` run | FA §4.9a "C2-2" |
