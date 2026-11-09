@@ -265,6 +265,7 @@ var Settings = []Setting{
 	{Name: "SidecarFor", Option: "SidecarFor", Class: Internal, Reason: "goinfer-chat fit sets it to price a load through the sidecar it would build"},
 	{Name: "Knobs", Option: "Knobs", Class: Internal, Reason: "the per-model knob overrides by variable name; each knob is its own setting"},
 	{Name: "KVDemote", Option: "KVDemote", Class: Internal, Reason: "serve sets it when --kv-host-bytes names a budget"},
+	{Name: "RequireBackend", Option: "RequireBackend", Class: Internal, Reason: "a library caller's strict load; serve's -require-backend makes its own check of the loaded model (requireFastPaths)"},
 	{Name: "FlashDecodeSoftcap", Option: "FlashDecodeSoftcap", Class: Internal, Reason: "a library and test opt-in for a capped model on CUDA's flash-decode lane, which has no fidelity gate read yet (docs/measurements/op1o2-fa-softcap-2026-11/README.md)"},
 	{Name: "ResidentKVSlotsDefault", Option: "ResidentKVSlotsDefault", Class: Internal, Reason: "serve sets it when --kv-sessions was not given"},
 	{Name: "ResidentRecurrentStepDefault", Option: "ResidentRecurrentStepDefault", Class: Internal, Reason: "serve sets it when --recurrent-step was not given, so a backend that grants one KV slot leaves the step out"},
