@@ -21,7 +21,7 @@
 | M8 | done | — | the comments on `decoder.Model.Generate` and `decoder.Generation.Err`; `decoder/generation_cancel_test.go:TestGeneration_errReportsCancellation` |
 | M9 | open | an `Options` way to make a backend decline an error (the kinds shipped in 275701c0c) | `docs/measurements/error-hygiene-audit-2026-11-04/README.md`, follow-up 4 |
 | U1 | done | — (promoting any of them to Hard is a separate call) | `docs/api-tiers.md`, Experimental: structured output, per-field confidence, tool-call wiring, fit and placement reports, embeddings |
-| S1 | open | warn, or report, when a long prompt leaves the Metal resident path | `decoder/fitplan.go` `MetalCtxDefault` is 4096 |
+| S1 | done | — | `decoder.Generation.ResidentDeclined` reports it per turn and `decoder/model.go:Model.warnResidentCap` warns once per model; `decoder/resident_declined_test.go:TestGeneration_residentDeclinedSaysWhyItRanOnTheCPU` |
 | S5 | done | — | 3d50ec1f8 (`ErrClosed`) |
 
 ## 1. Why now
