@@ -72,7 +72,7 @@ at `docs/completed/task-demo-refresh.md` and other pages still link the old path
 design record itself, so it is not counted above.
 
 One is a program rather than a single design, and is named without the `task-` prefix:
-[`red-october.md`](tasks/red-october.md) — the backend × area performance gap matrix (CPU / WebGPU /
+[`red-october.md`](completed/red-october.md) — the backend × area performance gap matrix (CPU / WebGPU /
 CUDA / Metal against the peers, as of 2026-09-18), the mechanism behind each cell, the registered
 projection bands, and the twelve briefs R1–R12 that would close them. It is the one place the whole
 chase is on a page; `benchmarks.md` stays the source of every ratio it quotes.

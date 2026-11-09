@@ -2009,7 +2009,7 @@ grammar implementations. Proven able to go red: mis-classifying control bytes as
 > wasn't — deleting the body would lose that lesson. **Do not cite the "72-82%" or "10-17×" figures
 > from anywhere below this notice; they are retracted.**
 
-Investigated 2026-09-21 starting from `docs/tasks/red-october.md` R10's decode-build item ("on-device
+Investigated 2026-09-21 starting from `docs/completed/red-october.md` R10's decode-build item ("on-device
 argmax for the greedy path with a K-entry MapAsync ... so the 608 KB readback goes"). Read first:
 G35/G36 above — both of R10's OTHER named decode items (the K1 rmsQuant fusion, the attention
 occupancy lever) are **already done**: G35 killed K1 on its own arithmetic (5.2%→2.2% of the token,

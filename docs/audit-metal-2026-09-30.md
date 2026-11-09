@@ -5,7 +5,7 @@
 **Tree:** goinfer `844700f8` (2026-09-30) + aikit `v1.51.0` (the `gpu/` Metal bindings goinfer's `metal/` calls through) +
 MLX `9c3d355` (2026-09-30; MLX paths below are relative to `mlx/backend/metal/` unless they start with `mlx/`). The
 working repo is at `cd7eb362` (v0.20.0 and later): seven commits after the audited snapshot, none of them under `metal/`,
-`decoder/model.go`, `decoder/fitguard.go`, `decoder/fitplan.go`, `docs/benchmarks.md` or `docs/tasks/red-october.md`
+`decoder/model.go`, `decoder/fitguard.go`, `decoder/fitplan.go`, `docs/benchmarks.md` or `docs/completed/red-october.md`
 (checked with `git log 844700f8..HEAD -- <those paths>`), so every `path:line` below holds in the working tree for those
 files. Files outside that list were read at the snapshot only.
 
@@ -20,7 +20,7 @@ onto a different quantisation scheme), so the MLX lens here is technique-by-tech
 
 **Method:** six independent reviewers by area (A prefill; B decode kernels; C runtime; D MoE, paging, DeltaNet, gpt-oss;
 E batched decode, speculative verify, multi-slot KV, LoRA, sampling; F correctness, gates and claims). Each read the
-record first (the Sep 12 audit's §0, §5 and §7, `docs/tasks/red-october.md` §2/§6 and R1–R19, the measurement records
+record first (the Sep 12 audit's §0, §5 and §7, `docs/completed/red-october.md` §2/§6 and R1–R19, the measurement records
 and the autoresearch notes inside kernel comments) so that no recorded negative is re-proposed, then the area's Metal
 code in full, then the MLX analog, and each carried forward its share of the Sep 12 IDs. Where a recorded negative's
 premise looks stale the finding is filed as a REVISIT with the premise named and the cheapest probe. The consolidation
@@ -64,7 +64,7 @@ most of `docs/tasks/` were not in the audited snapshot; findings that lean on th
 - The rest are release and dependency bumps, test skips on memory-guard declines (`4223d381`) and R17's `-backend auto`
   (`5946e8f7`). None closes a finding. Every other finding stands as written.
 
-Outside the findings: Metal re-quantizes every int8 body weight to int4 (G10 in `docs/tasks/task-gpu-paths-2026-09.md`,
+Outside the findings: Metal re-quantizes every int8 body weight to int4 (G10 in `docs/completed/task-gpu-paths-2026-09.md`,
 labelled since M-25). Running those weights natively is planned in `docs/tasks/task-metal-int8-2026-10.md`.
 
 The order §10's items run in, under the run-budget rules and this Mac's limits, is `docs/completed/task-metal-audit-2026-10.md`.
@@ -1463,7 +1463,7 @@ task doc ("C-P02: built, pending its grade").
 3. metal/model.go:3220-3225 `attnFACoreCount = 14` against the 16-core M1 Pro target (area B owns the effect; the constant is a runtime-visible stale value).
 4. N-20's premise (an f32 heap copy of the scales exists) no longer holds under v15 (C-P01).
 5. `ForwardArgmax` carries two contradictory comments: "NOT actually production's greedy decode path ... exercised only by tests/gates" (metal/model.go:2664-2669) and "a genuine production entry point (the fast-greedy path)" (:2051-2053). The first is right (no `ResidentGreedy`, decoder/model.go:1947).
-6. docs/tasks/task-metal-runtime-selftest.md specifies a runtime self-test that is not implemented. (2026-10-01: folded into docs/tasks/task-hardware-coverage-2026-10.md §H2; the original is archived in docs/completed/.)
+6. docs/completed/task-metal-runtime-selftest.md specifies a runtime self-test that is not implemented. (2026-10-01: folded into docs/tasks/task-hardware-coverage-2026-10.md §H2; the original is archived in docs/completed/.)
 
 #### C-N01 [N] Fixed-size binding scratch
 
@@ -1584,7 +1584,7 @@ repo for M26 experts (3.19) equal 3.19 MiB by my count (5.95M weights x 4.5 bits
 
 Geometry used for counts (rec): M26 = Gemma-4-26B-A4B, 30 layers all MoE, hidden 2816, 128 experts,
 moe_inter 704 (`docs/measurements/prefill-moe-m26-2026-09-04.md:20`), top_k 8 (N=8 is "top_k itself",
-`docs/tasks/red-october.md:424`), 3.19 MB per expert (`metal/gemma4_26b_paged_test.go:128,168`).
+`docs/completed/red-october.md:424`), 3.19 MB per expert (`metal/gemma4_26b_paged_test.go:128,168`).
 
 ### (a) Summary
 

@@ -10,6 +10,16 @@
 > own trigger is Clairic's weights published under a licence that permits redistribution.** E0 is desk work that can run
 > before the trigger if the owner wants the API on record; nothing from E1 on starts before it.
 
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| E0 | open | desk: Clairic's API on record in a `docs/measurements/` clairic-e0 note; runnable before the trigger | no clairic record in `docs/measurements/` |
+| E1 | blocked | trigger: Clairic's weights under a licence that permits redistribution; then licence, merge check, module read | no release recorded in the tree |
+| E2 | blocked | E1; local disk on the Linux box before any timed run | `docs/measurements/decisions-d10-clef-2026-10-02.md` (`/home` 9 GB free) |
+| E3 | blocked | E1, E2; `internal/clairic` beside `internal/clef` | `internal/clef/encode.go:Encode`; no `internal/clairic` |
+| E4 | blocked | E3; register per-field bars before running | `docs/measurements/decisions-d13-clef-fidelity-2026-10-03.md` |
+| E5 | blocked | E3 passing and the owner wanting the claim (optional) | — |
+
 ## 0. What Clairic is (Cloudflare's post and model reference, read 2026-10-19)
 
 - **What it does.** Typed values from unstructured input: extraction, computation, estimation and forecasting. It
@@ -51,6 +61,11 @@
   `server/routes.go` on 2026-10-12 for `task-integration-harness-2026-10.md`'s research; confirm). The endpoint is no
   longer goinfer's alone. What still is, as far as checked: running Cloudflare's System One models natively, gated
   against Cloudflare's own reference.
+
+  > **Note 2026-11-09:** both halves have moved. Confirmed: Ollama 0.35 (2026-09-29) ships `/v1/systemone` in TypeSafe's
+  > shape (`docs/tasks/parked/task-constrained-confidence.md`, the block added 2026-10-26). And running System One models
+  > natively is no longer goinfer's alone either: ollaya serves `/v1/systemone` and says each runtime is checked against
+  > the authors' code (the same block). Clairic natively would still be new, unless ollaya adds it.
 
 ## 2. Items
 
@@ -135,4 +150,4 @@ uncommitted for review.
 - [Workers AI: extraction models](https://developers.cloudflare.com/workers-ai/concepts/extraction-models/)
 - [Workers AI REST: run a model](https://developers.cloudflare.com/api/resources/ai/methods/run/)
 
-<!-- doc-reviewed: 2026-10-19 -->
+<!-- doc-reviewed: 2026-11-09 -->
