@@ -147,13 +147,16 @@ func TestRF3CUDA_rideIdentity(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture at %s", path)
 	}
-	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentPrefillChunk: 256, ResidentContext: 4096})
+	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentPrefillChunk: 256, ResidentContext: 4096, ResidentKVSlots: 4})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
 	_ = mustResident(t, m)
-	m.EnableResidentConcurrency(4) // the alone replies take the same MC3 path (no decoders, so one whole prefill)
+	if n := m.EnableResidentConcurrency(4); n != 4 {
+		t.Fatalf("EnableResidentConcurrency(4) = %d: no MC3 batcher (the resident needs ResidentKVSlots >= 4)", n)
+	}
+	// the alone replies take the same MC3 path (no decoders, so one whole prefill)
 	gen := func(prompt []int, maxTok int) []int {
 		ch, g := m.Generate(context.Background(), prompt, maxTok, decoder.SamplingParams{})
 		var ids []int
