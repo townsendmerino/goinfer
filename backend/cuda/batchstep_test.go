@@ -278,13 +278,8 @@ func at(v [][]int, i int) []int {
 // for four teacher-forced steps. Every single row must equal its sequence's Forward (or ForwardSample's id) and every
 // sequence's rows its ForwardN at the same positions, bit for bit. The references run after the step at the same positions:
 // rope_kv rewrites a position before attention reads it. Two plants must each make a row differ: a sequence's second row
-// bound to another sequence's slot, and every row of a sequence given its first row's position. On the fixtures every row's decode
-// takes attn_batched, so each step must make its attention one attn_ragged launch per layer, and a third plant (every ragged row's
-// table read one block entry on) must make a row differ too: where a fixture's rows sit past the first 64-key block, a row there,
-// where its offset table has the row read another block than its own. llama-tiny's depths put the decode sequence at 62, across
-// the 64-key edge within the four steps, and the k = 4 verify past it from the start (its context is 128).
-// GOINFER_CUDA_STEP_MODEL=<checkpoint> runs it on a real model, one sequence past 2048 keys (the flash-decode lane), where the
-// rows' launches differ and the step takes each row's own.
+// bound to another sequence's slot, and every row of a sequence given its first row's position.
+// GOINFER_CUDA_STEP_MODEL=<checkpoint> runs it on a real model, one sequence past 2048 keys (the flash-decode lane).
 func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 	type cfg struct {
 		path   string
@@ -292,16 +287,14 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 		kv     string
 	}
 	cfgs := []cfg{
-		{"../../testdata/llama-tiny", []int{5, 62, 40, 90}, ""},
-		{"../../testdata/llama-tiny", []int{5, 62, 40, 90}, "i8"},
+		{"../../testdata/llama-tiny", []int{5, 23, 40, 11}, ""},
+		{"../../testdata/llama-tiny", []int{5, 23, 40, 11}, "i8"},
 		{"../../testdata/mistral-tiny-window", []int{9, 70, 200, 33}, ""},
 		{"../../testdata/gemma4-dense-twogeom-tiny", []int{5, 23, 40, 11}, ""},
-		{"../../testdata/granite-dense-tiny", []int{5, 23, 40, 11}, ""}, // a 64-position context: every row in the first block
+		{"../../testdata/granite-dense-tiny", []int{5, 23, 40, 11}, ""},
 	}
-	ragged := true
 	if p := os.Getenv("GOINFER_CUDA_STEP_MODEL"); p != "" {
 		cfgs = []cfg{{p, []int{120, 2200, 700, 64}, ""}, {p, []int{120, 2200, 700, 64}, "i8"}}
-		ragged = false
 	}
 	nRows := []int{1, 1, 2, 4} // per sequence: a drawn decode row, a decode row, verify k = 2 and 4
 	for _, c := range cfgs {
@@ -339,9 +332,7 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 				pos[b] = c.depths[b]
 			}
 			// step runs one ragged step and its references; it returns how many rows differ from their references.
-			deep := 0 // rows past the first KV block that differ, in the last step
 			step := func(n int) int {
-				deep = 0
 				seqs := make([]decoder.ResidentRaggedSeq, 4)
 				for b := range 4 {
 					embs := make([][]float32, nRows[b])
@@ -385,9 +376,6 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 					for j := range want {
 						if !bitsEqual(out[b].Logits[j], want[j]) {
 							differ++
-							if s.Pos+j >= kvBlock {
-								deep++
-							}
 							t.Logf("step %d seq %d (slot %d) row %d at position %d: not bit-identical to its own shape", n, b, b, j, s.Pos+j)
 						}
 					}
@@ -396,30 +384,19 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 				return differ
 			}
 			for n := range 4 {
-				launches := r.raggedAttnLaunches
 				if d := step(n); d != 0 {
 					t.Fatalf("step %d: %d rows differ from their own shapes", n, d)
 				}
-				if ragged && r.raggedAttnLaunches == launches {
-					t.Fatalf("step %d: no attn_ragged launch; the rows took their own attention", n)
-				}
 			}
 			t.Cleanup(func() { raggedPlantForTest = 0 })
-			plants := []int{1, 2}
-			if ragged {
-				plants = append(plants, 4)
-			}
-			for _, plant := range plants {
+			for _, plant := range []int{1, 2} {
 				raggedPlantForTest = plant
 				d := step(10 + plant)
 				raggedPlantForTest = 0
 				if d == 0 {
 					t.Fatalf("plant %d: every row still matched its shape; the gate cannot see that defect", plant)
 				}
-				if plant == 4 && slices.Max(c.depths) >= kvBlock && deep == 0 {
-					t.Fatalf("plant 4: no row past the first KV block differs; the plant read only entries past the table's end")
-				}
-				t.Logf("plant %d: %d rows differ, %d past the first KV block (red, as it must be)", plant, d, deep)
+				t.Logf("plant %d: %d rows differ (red, as it must be)", plant, d)
 			}
 		})
 	}
@@ -713,67 +690,4 @@ func TestCUDAStepRagged_prefillChunkDeclines(t *testing.T) {
 		_, win, _, mw := loadWindowedPair(t, "mistral-tiny-window", 2)
 		check(t, win, step(t, win, mw))
 	})
-}
-
-// TestDecodeAttnArm_refusesPastTheShmemBound holds decodeAttnArm's refusal: a span whose single-block attention needs more shared
-// memory than the device allows, with split-KV off or not loaded, is no arm at all, so neither decode nor a ragged step launches
-// attn_batched or attn_ragged past the limit. Inside the limit the same resident takes attn_batched.
-func TestDecodeAttnArm_refusesPastTheShmemBound(t *testing.T) {
-	Ly := &cudaLayer{nKV: 2, hd: 64}
-	past := 1
-	for !splitKVRequired(past) {
-		past *= 2
-	}
-	for _, r := range []*cudaResident{{prefillReady: true}, {prefillReady: true, splitkvAttn: true}} {
-		if got := r.decodeAttnArm(Ly, 0, past); got != armRefused {
-			t.Errorf("split-KV %v, no scores kernel: %d keys past the bound took arm %d, want armRefused", r.splitkvAttn, past, got)
-		}
-		if got := r.decodeAttnArm(Ly, 0, 128); got != armBatched {
-			t.Errorf("split-KV %v: 128 keys took arm %d, want armBatched", r.splitkvAttn, got)
-		}
-	}
-}
-
-// TestCUDAStepRagged_scratchIsPriced holds StepScratchBytes to a ragged step: a step of 8 decode and verify rows (two drawn and
-// plain decode rows, verifies at k = 2 and 4) allocates exactly StepScratchBytes(8) of scratch (prefillScratchSeenForTest, each
-// allocation after the allocator's rounding), which fits in the 512-row pass the context margin reserves (ctxMarginFor).
-func TestCUDAStepRagged_scratchIsPriced(t *testing.T) {
-	requireCUDADevice(t)
-	m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 4})
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	defer m.Close()
-	r, ok := m.ResidentForwardForTest().(*cudaResident)
-	if !ok {
-		t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
-	}
-	if r.raggedRowsWords(1) == 0 {
-		t.Fatal("the ragged kernels are not loaded: the step's own buffers are not exercised")
-	}
-	_, _, _, _, _, _, vocab := m.Dims()
-	emb := func(id int) []float32 { return m.EmbedResidentForTest(id % vocab) }
-	var seqs []decoder.ResidentRaggedSeq
-	rows := 0
-	for b, k := range []int{1, 1, 2, 4} {
-		embs := make([][]float32, k)
-		for j := range embs {
-			embs[j] = emb(b*13 + j + 1)
-		}
-		seqs = append(seqs, decoder.ResidentRaggedSeq{Slot: b, Pos: 0, Embs: embs})
-		rows += k
-	}
-	var seen int64
-	prefillScratchSeenForTest = func(n int64) { seen += n + allocRoundSlack(n) }
-	_, err = r.StepRagged(seqs)
-	prefillScratchSeenForTest = nil
-	if err != nil {
-		t.Fatalf("step: %v", err)
-	}
-	if want := r.StepScratchBytes(rows); seen != want {
-		t.Errorf("StepScratchBytes(%d) is %d B, the step allocated %d B", rows, want, seen)
-	}
-	if pass := r.PrefillScratchBytes(prefillDefaultChunk); r.StepScratchBytes(rows) > pass {
-		t.Errorf("a %d-row step's %d B of scratch is past the %d B the margin reserves for a %d-row pass (ctxMarginFor)", rows, r.StepScratchBytes(rows), pass, prefillDefaultChunk)
-	}
 }

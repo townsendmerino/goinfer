@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 
-	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -83,9 +82,8 @@ var _ decoder.ResidentRaggedStepper = (*cudaResident)(nil)
 
 // raggedPlantForTest plants a defect in StepRagged's rows, for its identity test's controls: 1 binds a sequence's second row
 // to the next sequence's slot (a row reading another sequence's tables), 2 gives each row of a sequence its first row's
-// position (a verify row run as a decode row), 3 runs a prefill chunk on the exact kernels (a chunk out of its pass's class),
-// 4 reads the ragged rows' tables with a stride one entry short, so slot s's row reads its table s entries back: a row's table
-// offset off by blocks, inside the tables the device holds. 0 in production. Set by tests only.
+// position (a verify row run as a decode row), 3 runs a prefill chunk on the exact kernels (a chunk out of its pass's class).
+// 0 in production. Set by tests only.
 var raggedPlantForTest int
 
 // raggedChunk is a ragged step's prefill chunk while its pass runs (StepRagged sets it, prefillCore reads it): the pass's
@@ -220,141 +218,24 @@ func (r *cudaResident) raggedChunkDecline() error {
 	return nil
 }
 
-// raggedRows is a step's decode and verify rows on the device for the ragged launches (stepAttnRows): each row's KV slot and
-// position, and its post-RoPE query scale (nil Buffer: 1 on every row). Built once per pass; pos is the host copy.
-type raggedRows struct {
-	slot, pos, qTemp Buffer
-	hostPos          []int
-}
-
-// raggedRowsWords is the 4-byte words raggedRowsFor allocates for n rows: one buffer of each row's slot and position, and its
-// query scale when the family has one; 0 when the ragged kernels are not loaded.
-func (r *cudaResident) raggedRowsWords(n int) int {
-	if n == 0 || r.bRopeKVRagged == (Pipeline{}) || r.bAttnRagged == (Pipeline{}) {
-		return 0
-	}
-	if r.attnTempBeta != 0 {
-		return 3 * n
-	}
-	return 2 * n
-}
-
-// raggedRowsFor uploads rows into one buffer from ai (prefillCore's scratch, so StepScratchBytes prices it), or returns nil when
-// the ragged kernels are not loaded, so every row takes decode's own gap.
-func (r *cudaResident) raggedRowsFor(rows []stepRow, ai func(int) Buffer) (*raggedRows, error) {
-	n := len(rows)
-	words := r.raggedRowsWords(n)
-	if words == 0 {
-		return nil, nil
-	}
-	b := ai(words)
-	slots, pos := make([]int32, n), make([]int32, n)
-	rg := &raggedRows{slot: b, pos: b.At(4 * n), hostPos: make([]int, n)}
-	var qt []float32
-	if words == 3*n {
-		qt = make([]float32, n)
-	}
-	for i, rw := range rows {
-		slots[i], pos[i], rg.hostPos[i] = int32(rw.slot), int32(rw.pos), rw.pos
-		if qt != nil {
-			qt[i] = r.qTempScaleAt(rw.pos)
-		}
-	}
-	if e := gpu.Upload(rg.slot, slots); e != nil {
-		return nil, e
-	}
-	if e := gpu.Upload(rg.pos, pos); e != nil {
-		return nil, e
-	}
-	if qt != nil {
-		rg.qTemp = b.At(8 * n)
-		if e := gpu.Upload(rg.qTemp, qt); e != nil {
-			return nil, e
-		}
-	}
-	return rg, nil
-}
-
-// stepAttnRows is prefillCore's per-sequence gap in a step (executor thread) for the rows from from on (those before are a prefill
-// chunk's, which the pass attends as its own). With rag, rope and the KV store are one rope_kv_ragged launch over the rows, each into
-// its own slot at its own position (an int8 cache's store then per row, as decode's), and when every row's decode would take
-// attn_batched (decodeAttnArm) the attention is one attn_ragged launch: rope_kv_batched's and attn_batched's arithmetic, so each
-// row is its decode's. Otherwise, and without rag, each row runs decode's own launches, decode's single-row buffers pointing at the
-// row's views of the batched ones and the row's slot's tables bound; the previous buffers and binding are restored afterwards. Row
-// strides are this layer's own (qDim for q and the context, kvDim for k and v), as bGemvB wrote them and bQuant reads the context.
-func (r *cudaResident) stepAttnRows(Ly *cudaLayer, l int, rows []stepRow, from int, qBb, kBb, vBb, cctxB Buffer, rag *raggedRows) error {
+// stepAttnRows is prefillCore's per-sequence gap in a step (executor thread): for each row, decode's single-row q/k/v
+// and context buffers point at that row's views of the batched ones, the row's KV slot's tables are the ones read, and decodeAttnGap runs
+// at the row's position — rope_kv into that slot, then decode's attention choice. The previous buffers and binding are
+// restored afterwards. Row strides are this layer's own (qDim for q and the context, kvDim for k and v), as bGemvB wrote
+// them and bQuant reads the context. Rows before from are a prefill chunk's, which the pass attends as its own.
+func (r *cudaResident) stepAttnRows(Ly *cudaLayer, l int, rows []stepRow, from int, qBb, kBb, vBb, cctxB Buffer) error {
 	qB, kB, vB, cctx, tabSlot := r.qB, r.kB, r.vB, r.cctx, r.kvTabSlot
 	defer func() { r.qB, r.kB, r.vB, r.cctx, r.kvTabSlot = qB, kB, vB, cctx, tabSlot }()
-	n := len(rows) - from
-	if n <= 0 {
-		return nil
-	}
-	view := func(m int) {
+	for m := from; m < len(rows); m++ {
+		rw := rows[m]
 		r.qB, r.cctx = qBb.At(m*Ly.qDim*4), cctxB.At(m*Ly.qDim*4)
 		r.kB, r.vB = kBb.At(m*Ly.kvDim*4), vBb.At(m*Ly.kvDim*4)
-	}
-	if rag == nil {
-		for m := from; m < len(rows); m++ {
-			view(m)
-			r.kvTabSlot = rows[m].slot // each row reads and writes through its own slot's tables
-			if e := r.decodeAttnGap(Ly, l, rows[m].pos, rows[m].pos, r.qTempScaleAt(rows[m].pos)); e != nil {
-				return e
-			}
-		}
-		return nil
-	}
-	ropeNKV := Ly.nKV
-	if Ly.kvShared && !g4KeepSharedKVStoreForTest {
-		ropeNKV = 0
-	}
-	g := r.kvGroupOf(l)
-	tabs, tabStride := r.kvTabDev.At(g*r.kvMaxBlocks()*4), kvGroups*r.kvMaxBlocks()
-	qTemp := ArgNull()
-	if rag.qTemp != (Buffer{}) {
-		qTemp = Arg(rag.qTemp)
-	}
-	ropeN := r.nH*Ly.rhalf + ropeNKV*Ly.rhalf + ropeNKV*(Ly.hd-2*Ly.rhalf)
-	q0, k0, v0, c0 := qBb.At(from*Ly.qDim*4), kBb.At(from*Ly.kvDim*4), vBb.At(from*Ly.kvDim*4), cctxB.At(from*Ly.qDim*4)
-	if e := r.launch(r.bRopeKVRagged, LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(n), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-		Arg(q0), Arg(k0), Arg(v0), Arg(Ly.invF), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(tabs), gpu.ArgValue(int32(tabStride)),
-		Arg(rag.slot), Arg(rag.pos), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(ropeNKV)), gpu.ArgValue(int32(Ly.hd)),
-		gpu.ArgValue(int32(Ly.rhalf)), gpu.ArgValue(int32(n)), gpu.ArgValue(Ly.mscale), qTemp); e != nil {
-		return e
-	}
-	if r.kvI8 {
-		for m := from; m < len(rows); m++ {
-			view(m)
-			r.kvTabSlot = rows[m].slot
-			if e := r.kvStore8(l, r.kB, r.vB, ropeNKV, Ly.hd, rows[m].pos, 1); e != nil {
-				return e
-			}
+		r.kvTabSlot = rw.slot // each row reads and writes through its own slot's tables
+		if e := r.decodeAttnGap(Ly, l, rw.pos, rw.pos, r.qTempScaleAt(rw.pos)); e != nil {
+			return e
 		}
 	}
-	maxNWin, ragged := 0, true
-	for _, p := range rag.hostPos {
-		w := decodeNWin(Ly, p)
-		maxNWin = max(maxNWin, w)
-		ragged = ragged && r.decodeAttnArm(Ly, l, w) == armBatched
-	}
-	if !ragged {
-		for m := from; m < len(rows); m++ {
-			view(m)
-			r.kvTabSlot = rows[m].slot
-			if e := r.decodeAttn(Ly, l, rows[m].pos); e != nil {
-				return e
-			}
-		}
-		return nil
-	}
-	attnStride := tabStride
-	if raggedPlantForTest == 4 {
-		attnStride--
-	}
-	r.raggedAttnLaunches++
-	return r.launch(r.bAttnRagged, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(n), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)},
-		r.kvScaled(l, r.withCap(Arg(q0), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(tabs), gpu.ArgValue(int32(attnStride)), Arg(rag.slot), Arg(rag.pos),
-			gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window),
-			gpu.ArgValue(int32(n)), Arg(c0), r.sinkArg(l))...)...)
+	return nil
 }
 
 // stepDraw is ForwardSample's pick over the row's logits in r.logits (executor thread): Gumbel-max for a finite
