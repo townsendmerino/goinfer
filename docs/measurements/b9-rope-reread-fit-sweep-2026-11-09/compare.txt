@@ -1,0 +1,11 @@
+149 entries compared (A = 589c6ebd9, B = 55128eca3)
+same-raw: 49
+same: 96
+rc-differs: 0
+differs: 0
+not-comparable: 4
+  [not-comparable] ~/models/laguna-xs2: MEMKILL on A+B
+  [not-comparable] ~/models/qwen3.6-35b-a3b: MEMKILL on B
+  [not-comparable] ~/models/qwen3.8-27b: MEMKILL on A+B
+  [not-comparable] ~/models/qwen38-gguf_Qwen3.8-27B-UD-Q4_K_M.gguf: MEMKILL on A+B
+exit codes among comparable entries (equal at both heads): {'0': 94, '1': 51}
