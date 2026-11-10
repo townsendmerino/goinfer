@@ -138,23 +138,13 @@ type Person struct {
 
 The constraint is a logit mask. At every step, `Masker.Process` sets every token that would
 break the schema to −∞, so an invalid token cannot be sampled at all; nothing is retried.
-`StopWhenComplete` ends generation at the first complete document. The stop ids are the model's
-end-of-sequence and end-of-turn tokens, which the masker allows only once the document is
-complete:
+`StopWhenComplete` ends generation at the first complete document. The stop ids, from
+`Template.StopIDs`, are the model's end-of-sequence and end-of-turn tokens and the template's own
+stop markers, which the masker allows only once the document is complete:
 
 ```go
 	// The stop ids end generation; the masker allows them only once the document is complete.
-	var stop []int
-	for _, id := range []int{tok.Special().EOS, tok.Special().EndOfTurn} {
-		if id >= 0 {
-			stop = append(stop, id)
-		}
-	}
-	for _, s := range tmpl.Stops().Strings {
-		if id, ok := tok.TokenID(s); ok {
-			stop = append(stop, id)
-		}
-	}
+	stop := tmpl.StopIDs(tok)
 ```
 
 ```go

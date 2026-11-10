@@ -3,6 +3,7 @@
 package kernels
 
 import (
+	"fmt"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
 
@@ -129,7 +130,10 @@ func (c *Context) kernelN(k towerPipe, bufs []*wgpu.Buffer, p []uint32, gx, gy i
 		return err
 	}
 	defer bg.Release()
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return fmt.Errorf("gpu: kernelN: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(k.pl)
@@ -140,7 +144,10 @@ func (c *Context) kernelN(k towerPipe, bufs []*wgpu.Buffer, p []uint32, gx, gy i
 		return err
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return fmt.Errorf("gpu: kernelN: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return nil

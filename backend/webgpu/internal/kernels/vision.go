@@ -3,6 +3,7 @@
 package kernels
 
 import (
+	"fmt"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
 
@@ -187,7 +188,10 @@ func (c *Context) twoBufKernel(pl *wgpu.ComputePipeline, layout *wgpu.BindGroupL
 		return err
 	}
 	defer bg.Release()
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return fmt.Errorf("gpu: twoBufKernel: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(pl)
@@ -198,7 +202,10 @@ func (c *Context) twoBufKernel(pl *wgpu.ComputePipeline, layout *wgpu.BindGroupL
 		return err
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return fmt.Errorf("gpu: twoBufKernel: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return nil
@@ -221,7 +228,10 @@ func (c *Context) inplaceKernel(pl *wgpu.ComputePipeline, layout *wgpu.BindGroup
 		return err
 	}
 	defer bg.Release()
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return fmt.Errorf("gpu: inplaceKernel: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(pl)
@@ -232,7 +242,10 @@ func (c *Context) inplaceKernel(pl *wgpu.ComputePipeline, layout *wgpu.BindGroup
 		return err
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return fmt.Errorf("gpu: inplaceKernel: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return nil
@@ -288,7 +301,10 @@ func (c *Context) layerNormRowsDevice(src *wgpu.Buffer, weight, bias *wgpu.Buffe
 		return err
 	}
 	defer bg.Release()
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return fmt.Errorf("gpu: layerNormRowsDevice: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.lnRowsPipeline)
@@ -299,7 +315,10 @@ func (c *Context) layerNormRowsDevice(src *wgpu.Buffer, weight, bias *wgpu.Buffe
 		return err
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return fmt.Errorf("gpu: layerNormRowsDevice: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return nil
@@ -467,7 +486,10 @@ func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer
 		return nil, err
 	}
 	defer bg.Release()
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: matmulF32Device: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(pl)
@@ -478,7 +500,10 @@ func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer
 		return nil, err
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: matmulF32Device: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	ok = true // dst now owned by the returned DeviceBuffer

@@ -128,7 +128,10 @@ RoPE-locality handling has been read with olmo3's specific defect in mind. Not i
 — filed as a suspicion, not a finding, so it travels with the rest of the open work instead
 of being rediscovered independently later.
 
-**Two decoder tests are RED on main, and neither is from the spec-x-pager work** *(observed
+~~**Two decoder tests are RED on main, and neither is from the spec-x-pager work**~~ **Both green, checked 2026-11-09
+(mbp2-fit).** `TestLoadSession_rejectsCorrupt`'s fixture broke M-04's pos-equals-tokens invariant and was fixed on
+2026-09-03 (`decoder/session_test.go:TestLoadSession_rejectsCorrupt`; the clean blob now loads); `TestParityManifest_fresh` passes on main. The entry is kept as written:
+*(observed
 2026-09-02, both A/B-confirmed pre-existing by stashing the day's changes)*. A full
 `go test ./decoder/ -v -timeout 30m` on nobara-pc ran 451 tests with exactly these two failures:
 
@@ -205,7 +208,10 @@ silently dropped off the resident path onto CPU/staged. That is a **capability r
 test problem**: the tests are correctly reporting it.
 
 **`TestPrefillAttnRowTileInvariance` fails in `./decoder/`** *(found 2026-09-02, unfiled)*. Also
-reproduces on a clean `origin/main` checkout. Not investigated.
+reproduces on a clean `origin/main` checkout. Not investigated. *Checked 2026-11-09 (mbp2-fit): not verifiable on a box without
+the Qwen2.5-Coder-0.5B GGUF (the test skips there); no commit since names the failure. Next: one run where the asset is,
+`go test -count=1 ./decoder -run '^TestPrefillAttnRowTileInvariance$' -v` (a slow test, not `-short`), read for `--- PASS`,
+and strike this entry or file the failure with its output.*
 
 **G5 leftovers** *(the harness-UX gate, `docs/tasks/task-embed-and-harness-ux.md`)*. The Claude Code half
 is done and `docs/integrations/claude-code.md` is published with measured numbers. Still open:
@@ -237,7 +243,9 @@ gate and it passes at 1.21×.
 
 - ~~**Disk-space precheck** before a multi-gigabyte fetch.~~ **Done 2026-11-01** (mbp2-sb7): `pull/pull.go:checkDiskSpace`,
   on both the file-set and the checkpoint path; the free-space reader is `internal/runtime/diskfree`, shared with the sidecar's check.
-- **Split-GGUF checkpoints.** A shard is *detected* and refused by name (`Select`), so nobody
+- ~~**Split-GGUF checkpoints.**~~ **Done 2026-10-03** (checkpoint-fetch P4): `pull` fetches every shard of a
+  split quant and the decoder loads the set as one model (`decoder/gguf_split_test.go`; `docs/server.md`). Kept as written:
+  A shard is *detected* and refused by name (`Select`), so nobody
   gets one useless piece — but assembling a split checkpoint needs loader work beyond the fetch
   command, which is why it stopped at the refusal.
 - **Generate `release-assets.yml`'s matrix from `internal/modelpull/curated.json`.** Optional:

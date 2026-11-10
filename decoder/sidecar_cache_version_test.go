@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
@@ -53,8 +54,14 @@ func TestEnsureCachedGIW_olderFormatIsRebuiltOnce(t *testing.T) {
 	if err := os.Mkdir(src, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// The source is backdated: cacheNewer needs the sidecar strictly newer, and a clock with a coarse tick can stamp the
+	// copy and a tiny fixture's sidecar alike, which would rebuild on mtime and never reach the load check this asserts.
+	old := time.Now().Add(-time.Hour)
 	for _, name := range []string{"config.json", "generation_config.json", "model.safetensors"} {
 		copyFixture(t, filepath.Join(fixture, name), filepath.Join(src, name))
+		if err := os.Chtimes(filepath.Join(src, name), old, old); err != nil {
+			t.Fatal(err)
+		}
 	}
 	ctx := context.Background()
 

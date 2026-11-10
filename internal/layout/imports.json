@@ -277,6 +277,9 @@
     "cmd/serve": [
       "internal/app/serveapp"
     ],
+    "cmd/testcmdtags": [
+      "internal/guard/testcmdtags"
+    ],
     "decoder": [
       "chat",
       "constrain",

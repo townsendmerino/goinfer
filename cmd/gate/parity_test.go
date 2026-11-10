@@ -1011,3 +1011,43 @@ func TestSleepsPastTheBudget(t *testing.T) { time.Sleep(30 * time.Second) }
 		}
 	}
 }
+
+// TestParity_notEvaluatedIsCountedApartFromFailed: a required gate that skipped on an unset env gate names the variable
+// (a one-line fix, not a download), an asset skip keeps its label, and the verdict line splits the blockers into the gates
+// that ran and failed and the ones not evaluated, by cause. Both kinds still block.
+func TestParity_notEvaluatedIsCountedApartFromFailed(t *testing.T) {
+	res := newResults()
+	res.cur = "cell"
+	emit := func(name, act string, lines ...string) {
+		res.add(testEvent{Action: "output", Package: "p", Test: name, Output: "=== RUN   " + name + "\n"})
+		for _, l := range lines {
+			res.add(testEvent{Action: "output", Package: "p", Test: name, Output: l + "\n"})
+		}
+		res.add(testEvent{Action: act, Package: "p", Test: name})
+	}
+	emit("TestFails", "fail")
+	emit("TestHeavy", "skip", "    heavytest_test.go:21: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in")
+	emit("TestAsset", "skip", "    x_test.go:9: no model (GOINFER_PREQUANT_GGUF unset and no candidate usable); set GOINFER_PREQUANT_GGUF")
+	checks := []gateCheck{{"a", "TestFails"}, {"b", "TestHeavy"}, {"c", "TestAsset"}, {"d", "TestNeverRan"}}
+
+	rows, blockers, _, _ := classifyChecks(res, checks, func(string) string { return "CONFIRMED" }, oneUnfilteredCell, liveParityLists())
+	if blockers != 4 {
+		t.Fatalf("blockers = %d, want 4: not evaluated still blocks", blockers)
+	}
+	marks := map[string]string{}
+	for _, r := range rows {
+		marks[r.Test] = r.Mark
+	}
+	if want := "SKIP - not evaluated, GOINFER_HEAVY_TESTS unset (blocker)"; marks["TestHeavy"] != want {
+		t.Errorf("env-gated skip reads %q, want %q", marks["TestHeavy"], want)
+	}
+	if want := "SKIP - asset missing (blocker)"; marks["TestAsset"] != want {
+		t.Errorf("asset skip reads %q, want %q", marks["TestAsset"], want)
+	}
+	if got, want := blockerSplit(rows, blockers), "1 FAILED, 3 NOT EVALUATED (1 asset absent, 1 env gate unset, 1 did not run)"; got != want {
+		t.Errorf("verdict split = %q, want %q", got, want)
+	}
+	if got, want := blockerSplit(rows, blockers+2), "1 FAILED, 3 NOT EVALUATED (1 asset absent, 1 env gate unset, 1 did not run), 2 from the catch-alls"; got != want {
+		t.Errorf("verdict split with catch-all blockers = %q, want %q", got, want)
+	}
+}

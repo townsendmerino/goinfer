@@ -180,14 +180,19 @@ func TestSSEWriter_setsAWriteDeadlineOnARealConnection(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL)
-	if err != nil {
-		t.Fatalf("get: %v", err)
+	// The headers go out with the first frame, so a deadline that fires before that write (a loaded runner) closes the
+	// connection with nothing sent, and the client reads EOF. The handler still returned, which is the claim; it must then
+	// report the write error.
+	resp, getErr := http.Get(srv.URL)
+	if getErr == nil {
+		defer resp.Body.Close()
 	}
-	defer resp.Body.Close()
 	// Deliberately never read the body.
 	select {
 	case err := <-errc:
+		if getErr != nil && err == nil {
+			t.Fatalf("get: %v, yet the handler reports no write error", getErr)
+		}
 		if err == nil {
 			t.Skip("the socket buffer swallowed every frame on this machine — the deadline was " +
 				"never reached, so this run proves nothing about it")

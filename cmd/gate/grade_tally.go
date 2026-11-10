@@ -361,6 +361,20 @@ func (r *results) lookupTop(name string) (string, bool) {
 	return act, found
 }
 
+// topOutput is the output of the top-level run of name that lookupTop reads: the last one with a terminal action.
+func (r *results) topOutput(name string) []string {
+	var out []string
+	for _, k := range r.order {
+		if k.Test != name || isSubtest(k) {
+			continue
+		}
+		if _, ok := r.final[k]; ok {
+			out = r.out[k]
+		}
+	}
+	return out
+}
+
 // gradeCellError is a cell that never produced a stream (go not on PATH, a log that could not be created, a start that
 // failed): one hidden failure. runCell and a replay both call it.
 func gradeCellError(c cell, rc int, err error, logPath string, dur time.Duration) cellResult {

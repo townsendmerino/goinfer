@@ -21,8 +21,8 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| RF2 | active | RF2-1 (#787), RF2-2 (#799), RF2-3a (#804), RF2-3b-1 (#811, a step heads only the rows it reads) and RF2-3b-2a (#823, the flash-decode lane's ragged twins; a step's rows split by arm per layer class) merged. G-RF2-S first-working-build read (2026-11-09, nobara): decode PASS at every depth on 1.5B, 7B and gemma3-1b (0.999-1.001), TTFT PASS (worst 0.982), MC3 PASS at 1.217 with identical replies, never-swap PASS as registered (cell medians -24.5 to +25.6 MB, no swap); verify PASS (1.003 and 1.0004). RF2-3b-2b (split-KV's ragged twins, its scores chunked inside the margin's 512-row pass) in #825; RF2-3b-3 (Forward, ForwardArgmax, ForwardSample and ForwardN as one-sequence ragged steps on the bound slot, today's calls kept beside them for the kill) in #826, identity and G-RF2-I PASS on nobara; then the final-build read | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below; `docs/measurements/rf2-2026-11/g-rf2-s-2026-11-09/README.md` |
-| RF3 | blocked | RF2 | FA §5.4 |
+| RF2 | active | RF2-1 (#787), RF2-2 (#799), RF2-3a (#804), RF2-3b-1 (#811, a step heads only the rows it reads) and RF2-3b-2a (#823, the flash-decode lane's ragged twins; a step's rows split by arm per layer class) merged. G-RF2-S first-working-build read (2026-11-09, nobara): decode PASS at every depth on 1.5B, 7B and gemma3-1b (0.999-1.001), TTFT PASS (worst 0.982), MC3 PASS at 1.217 with identical replies, never-swap PASS as registered (cell medians -24.5 to +25.6 MB, no swap); verify PASS (1.003 and 1.0004). RF2-3b-2b (split-KV's ragged twins, its scores chunked inside the margin's 512-row pass) in #825; RF2-3b-3 (Forward, ForwardArgmax, ForwardSample and ForwardN as one-sequence ragged steps on the bound slot, today's calls kept beside them for the kill) in #826, identity and G-RF2-I PASS on nobara. G-RF2-S final-build read (2026-11-09, nobara, 983282891 against a2c276e3d): decode FAIL at every depth (1.5B 0.726 to 0.779, 7B 0.856 to 0.879, gemma3-1b 0.762 to 0.782), verify 1.5B:3900 AMBIGUOUS at 0.977 (7B 0.992), TTFT PASS (0.997 to 1.013), MC3 PASS at 1.223 with identical replies, never-swap not read (no host-memory samples). By the rule: the decode kill (the solo shapes back on today's calls; MC3 keeps the ragged step) and verify parked on today's ForwardN, in the kill PR, merging on Francis's word; then a confirmation read | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below; `docs/measurements/rf2-2026-11/g-rf2-s-2026-11-09/README.md` |
+| RF3 | active | RF3-1 (the coalescer carries a newcomer's chunk in its decode run, tier 0) in its PR; its premise, the multi-sequence ragged step, stands after RF2's kill. Next: RF3-2 (G-RF3-I) and RF3-3 (G-RF3-S) on nobara | FA §5.4; "RF3: plan and registration" below; `decoder/rf3_ride_test.go:TestRF3_newcomerChunksRideTheDecodeRuns` |
 | RF4 | blocked | RF3 and KV5 | FA §7a |
 | RF5 | blocked | RF4; it also takes SB1's op-level interface | FA §7a; SS §8 "SB1" |
 | RF6 | blocked | RF3 or RF4 | FA §7a |
@@ -134,6 +134,56 @@ takes (a decode token, a verify and MC3's step keep today's calls), so the speed
 | RF2-1 | `ResidentRaggedStepper` (`decoder/residency.go`) and step's `passRagged`; CUDA's `StepRagged`: decode rows and verify rows of several sequences in one pass of prefillCore's multi-sequence mode, each row in the exact class at its own slot and position | `TestCUDAStepRagged_rowsMatchTheirShapes` on nobara (batch invariance for decode, drawn decode and verify at k = 2 and 4; both plants red); decoder's step tests; tier 0 |
 | RF2-2 | a prefill chunk's rows in the same step, in the class its own prefill takes (the fast kernels over its rows, the exact ones over the others) | the full mixed batch of addendum 1, bit-identical to each row's own shape; G-RF2-I's `cmd/gate identity` |
 | RF2-3 | one ragged attention launch over the block tables in place of the per-row decode gap; the solo shapes move onto `StepRagged` | G-RF2-I again; G-RF2-S and never-swap, by day on nobara; the kill |
+
+## RF3: plan and registration (2026-11-09, docs only, before any RF3 code)
+
+**What changes.** Today a newcomer's prefill alternates with decode (`decoder/model.go:Model.mc3Prefill`): one `-prefill-chunk`
+pass (512 by default) inside `prefillExclusive`, then `tokenCoalescer.yieldToDecode`. Under RF3 the coalescer's run carries the
+chunk itself: one `passRagged` step of the newcomer's chunk (first, a `ResidentRaggedPrefill` with the whole prompt's
+`PromptLen`) beside every pending decode row. FA §5.1's token budget is the chunk plus the decode rows, so no new option is
+added. The cuts stay mc3Prefill's (the floor raise, a tail of at least `prefillTailMinRows`). The tail, which returns the
+newcomer's logits, stays a prefill pass of its own (`residentPrefillSeed`), so the worst stall is today's tail pass. Each row keeps its own shape's class (RF2-2's identity). Where the resident is not a
+`ResidentRaggedStepper`, or `raggedChunkDecline` refuses the chunk (recurrent, windowed KV, MoE), the alternation stays.
+Metal and WebGPU keep it until RF4.
+
+| id | what | gate |
+|---|---|---|
+| RF3-1 | the coalescer folds a pending chunk into its run as a `passRagged` step, and mc3Prefill hands it the chunk instead of taking the resident; a decline falls back to the alternation | tier 0: a counting fake `ResidentRaggedStepper` driven through mc3Prefill and the coalescer (not the step alone). With 3 decoders, each of the newcomer's chunk passes holds the 3 decode rows; no exclusive prefill pass runs except on the declined path; a plant that keeps the alternation is red |
+| RF3-2 | the CUDA check, in process and served | G-RF3-I |
+| RF3-3 | the run script under `docs/measurements/rf3-2026-11/`, the A/A and the speed read | G-RF3-S |
+
+**G-RF3-I (tier 1, nobara, exclusive lock).**
+- A CUDA test through the coalescer: each row of a mixed run is bit-identical to the same row under today's alternation.
+- The stall cell below, both arms: every reply's sha identical, the decoders' and the newcomers' (hard).
+
+**G-RF3-S (tier 2, nobara, exclusive lock, by day).**
+- *Instrument:* `scripts/bench_prefill_stall.py --serve-args=-backend cuda`. The run script runs it under `timing_lock.py run`.
+  - Arms: A is the RF3 PR's merge base (the alternation), B is RF3.
+  - A B B A, four pairs a cell; each B is paired with the A next to it, and a band reads the median pair.
+- *Cells:* qwen2.5-coder-1.5b and qwen2.5-7b (q4_k_m, `~/models`).
+  - Stall: 3 decoders, 3 newcomers, `--prompt-words 2400`.
+  - Solo: `--decoders 0`.
+- *A/A first, in the same session:* two pairs of A against A on the 1.5B's stall cell. nobara has no TTFT A/A
+  (`docs/measurements/noise-registry.json`, the served-ttft gap). If either pair's TTFT ratio is off 1.00 by more than
+  0.03, the read is void and goes to the coordinator before B runs.
+- *Metrics and bands:* each is the median pair, B against A.
+  - Newcomer TTFT in the stall cell (A/B, primary): pass at 1.03 or better; ambiguous 0.98 to 1.03; fail below 0.98.
+  - Longest decode stall, `decoder_gap_ms` max (A/B): pass at 0.95 or better; ambiguous 0.90 to 0.95; fail below 0.90.
+    It is a guard: the stall is one chunk pass either way, now with the decode rows in it.
+  - Solo guard, the newcomer's TTFT with no decoders (A/B): 0.95 or better, hard.
+  - The decoders' tokens inside the newcomer windows (B/A): reported, not gated.
+- *Prediction:* the TTFT gain is the decode runs the alternation spends between chunks.
+  - On the 1.5B (six chunks of a 3k-token prompt): about 1.05 (0.6).
+  - The stall guard: 0.97 to 1.00 (0.7).
+  - The solo guard: 1.00 (0.9).
+- *Stopping:* fixed. Each cell is read once, with no tuning round. A cell started under heavy load is void, re-run and listed.
+- *Wall:* about 45 minutes. The A/A takes about 5; the 1.5B's 16 runs about 12; the 7B's 16 about 20, with its loads.
+
+**Outcomes.**
+- Every gate passes on both models: RF3 ships on CUDA by default. The alternation stays for declined models and the other
+  backends, and RF4 and RF6 can start.
+- TTFT ambiguous on either model: parked. The alternation stays the default, and the reading goes to Francis.
+- A failed guard or band: RF3 does not ship. The reading and a mechanism come first.
 
 ## OP4m-D6b5: reading (2026-11-09, mac-fit, the exclusive Mac lock)
 
