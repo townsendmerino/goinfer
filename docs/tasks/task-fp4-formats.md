@@ -1,7 +1,7 @@
 # Task — FP4 microscaling formats: native MXFP4 compute, and NVFP4
 
 **Status:** proposed, gates before code. Filed 2026-09-02. Item C (NVFP4 read support) is replaced by
-`docs/tasks/task-lowbit-formats-2026-11.md` (its §1 and items LB0 to LB2); items A, B and D stay here.
+`docs/tasks/task-lowbit-formats-2026-11.md` (its §1 and items LB0 to LB2); items A, B and D stay here. A kept MXFP4 lane for gpt-oss is decided (LB7) and owned by rows MX0 to MX2 of that doc.
 **Venue:** `mac` and `linux` for the reachable half; a Blackwell-class device for the rest.
 **Relates to:** `docs/completed/task-mxfp4-gptoss.md` (the existing MXFP4 work, archived
 2026-09-13 — every item it scoped shipped; this doc extends it, does not replace it).
@@ -57,12 +57,16 @@ So the work splits cleanly:
 | C. NVFP4 read support | **no** | load checkpoints published in NVFP4 (replaced: `docs/tasks/task-lowbit-formats-2026-11.md`) |
 | D. NVFP4/MXFP4 native tensor-core compute | **yes — Blackwell** | the actual industry win |
 
+**D is unchanged by LB7:** a kept MXFP4 lane (MX1, MX2 in `docs/tasks/task-lowbit-formats-2026-11.md`) is dequant-in-kernel, not FP4 compute.
+
 **Only A, B and C are in scope.** D is recorded here so the reasoning survives, and so that if the
 DGX Spark question ever resolves, this doc is where the follow-on starts. Do not begin D.
 
 ---
 
 ## A — the native MXFP4 kernel (do this first)
+
+**Now owned by `docs/tasks/task-lowbit-formats-2026-11.md` rows MX0 (CPU ceiling check) and MX1/MX2 (kept lane on CUDA, Metal).** The comparison against int4 below stands as their speed gate.
 
 **The question:** does computing directly on MXFP4 blocks beat the current dequant-to-f32 path?
 
@@ -87,6 +91,8 @@ difference is bandwidth or arithmetic.
 ---
 
 ## B — MXFP4 beyond gpt-oss
+
+**Scope the family-specific code as part of MX1:** a kept lane must not hard-wire gpt-oss (`docs/tasks/task-lowbit-formats-2026-11.md`, MX1).
 
 Today MXFP4 handling is entangled with the gpt-oss family (`forward_gptoss.go`,
 `gptoss_safetensors.go`, `stackedExperts` routing in `decoder/gguf.go:buildWeightsFromGGUF`). Establish what is
