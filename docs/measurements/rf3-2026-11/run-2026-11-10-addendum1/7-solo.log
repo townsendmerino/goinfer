@@ -1,0 +1,32 @@
+11:40:36 cell start load 0.81
+[stall] b0-A0: wall 20.218s; no decoders; newcomer TTFT [2.34, 2.332, 2.328, 2.334, 2.317, 2.322]
+11:41:16 cell start load 0.84
+[stall] b0-B1: wall 20.234s; no decoders; newcomer TTFT [2.333, 2.314, 2.333, 2.336, 2.336, 2.336]
+11:42:06 cell start load 0.79
+[stall] b0-B2: wall 20.284s; no decoders; newcomer TTFT [2.362, 2.338, 2.332, 2.334, 2.343, 2.331]
+11:42:36 cell start load 0.80
+[stall] b0-A3: wall 20.232s; no decoders; newcomer TTFT [2.338, 2.334, 2.337, 2.336, 2.334, 2.306]
+11:43:06 cell start load 0.88
+[stall] b1-A0: wall 20.232s; no decoders; newcomer TTFT [2.356, 2.31, 2.335, 2.338, 2.338, 2.31]
+11:43:56 cell start load 0.79
+[stall] b1-B1: wall 20.236s; no decoders; newcomer TTFT [2.369, 2.31, 2.332, 2.334, 2.336, 2.311]
+11:44:45 cell start load 0.79
+[stall] b1-B2: wall 20.159s; no decoders; newcomer TTFT [2.342, 2.316, 2.314, 2.307, 2.306, 2.33]
+11:45:25 cell start load 0.82
+[stall] b1-A3: wall 20.182s; no decoders; newcomer TTFT [2.355, 2.315, 2.308, 2.312, 2.313, 2.334]
+11:46:05 cell start load 0.89
+[stall] b2-A0: wall 20.16s; no decoders; newcomer TTFT [2.334, 2.324, 2.308, 2.305, 2.334, 2.31]
+11:47:05 cell start load 0.77
+[stall] b2-B1: wall 20.209s; no decoders; newcomer TTFT [2.362, 2.31, 2.327, 2.332, 2.31, 2.323]
+11:48:25 cell start load 0.79
+[stall] b2-B2: wall 20.229s; no decoders; newcomer TTFT [2.359, 2.334, 2.31, 2.334, 2.309, 2.337]
+11:49:35 cell start load 0.84
+[stall] b2-A3: wall 20.26s; no decoders; newcomer TTFT [2.363, 2.335, 2.332, 2.337, 2.319, 2.328]
+11:50:45 cell start load 0.88
+[stall] b3-A0: wall 20.192s; no decoders; newcomer TTFT [2.33, 2.336, 2.314, 2.333, 2.307, 2.328]
+11:51:24 cell start load 0.80
+[stall] b3-B1: wall 20.219s; no decoders; newcomer TTFT [2.356, 2.315, 2.318, 2.332, 2.324, 2.33]
+11:52:14 cell start load 0.85
+[stall] b3-B2: wall 20.194s; no decoders; newcomer TTFT [2.33, 2.316, 2.33, 2.33, 2.333, 2.31]
+11:53:34 cell start load 0.86
+[stall] b3-A3: wall 20.217s; no decoders; newcomer TTFT [2.356, 2.336, 2.314, 2.301, 2.331, 2.334]

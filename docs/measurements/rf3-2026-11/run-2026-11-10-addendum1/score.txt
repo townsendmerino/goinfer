@@ -1,0 +1,5 @@
+15-stall: TTFT A/B 1.006 AMBIGUOUS; gap-max A/B 0.994 PASS; decoder tokens in windows B/A 1.0; shas identical True
+15-solo: solo TTFT A/B 1.004 PASS; shas identical True
+7-stall: TTFT A/B 1.002 AMBIGUOUS; gap-max A/B 1.000 PASS; decoder tokens in windows B/A 1.0073529411764706; shas identical True
+7-solo: solo TTFT A/B 0.999 PASS; shas identical True
+VERDICT: NOT a clean pass: read per the registered outcomes (ambiguous = parked; a failed guard = does not ship)

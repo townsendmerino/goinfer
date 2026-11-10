@@ -1,0 +1,8 @@
+10:58:43 cell start load 0.29
+[stall] aa0-A0: wall 5.663s; decoder gap p50 6.5 p99 98.5 max 156.6 ms; newcomer TTFT [0.666, 0.69, 0.575]
+10:58:57 cell start load 0.88
+[stall] aa0-B1: wall 5.605s; decoder gap p50 6.4 p99 91.7 max 161.6 ms; newcomer TTFT [0.676, 0.653, 0.549]
+10:59:09 cell start load 0.83
+[stall] aa0-B2: wall 5.549s; decoder gap p50 6.4 p99 91.1 max 155.2 ms; newcomer TTFT [0.667, 0.604, 0.55]
+11:00:02 cell start load 0.77
+[stall] aa0-A3: wall 5.643s; decoder gap p50 6.4 p99 91.6 max 180.8 ms; newcomer TTFT [0.696, 0.646, 0.576]
