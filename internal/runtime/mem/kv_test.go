@@ -22,7 +22,7 @@ func TestResolveKV_eachBranch(t *testing.T) {
 	}{
 		{"no KV at all", KVQuery{Backend: "cuda", HasArch: true, NoKV: true}, KVNone, "this model keeps no attention KV"},
 		{"cpu f16 allowed", KVQuery{Backend: "", CPURequest: KVF16, HasArch: true, CPUF16OK: true}, KVF16, ""},
-		{"cpu f16 on MoE", KVQuery{Backend: "cpu", CPURequest: KVF16, HasArch: true, MoE: true}, KVF32, "MoE families keep an f32 CPU cache until phase 4"},
+		{"cpu f16, attention not the batched kernel", KVQuery{Backend: "cpu", CPURequest: KVF16, HasArch: true}, KVF32, "this family's attention keeps an f32 CPU cache until phase 4"},
 		{"cpu i8 own loop", KVQuery{Backend: "cpu", CPURequest: KVI8, HasArch: true, OwnLoop: true}, KVF32, "this family's own forward loop keeps an f32 CPU cache until phase 4"},
 		{"cpu i8 no arch", KVQuery{Backend: "cpu", CPURequest: KVI8}, KVF32, "no architecture"},
 		{"cpu auto", KVQuery{Backend: "cpu", CPURequest: KVAuto}, KVF32, "auto is f32 on the CPU"},

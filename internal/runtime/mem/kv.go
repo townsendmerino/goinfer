@@ -30,7 +30,6 @@ type KVQuery struct {
 	HasArch    bool // the architecture resolved; every fact below is false without it
 	NoKV       bool // no layer keeps attention K/V
 	MLA        bool // a latent KV cache
-	MoE        bool
 	OwnLoop    bool // the family runs its own forward loop
 	CPUF16OK   bool // the family's CPU attention reads an f16 cache
 	CPUI8OK    bool // the family's CPU attention reads an int8 cache
@@ -148,8 +147,6 @@ func cpuKVDecline(q KVQuery) string {
 	switch {
 	case !q.HasArch:
 		return "no architecture"
-	case q.MoE:
-		return "MoE families keep an f32 CPU cache until phase 4"
 	case q.OwnLoop:
 		return "this family's own forward loop keeps an f32 CPU cache until phase 4"
 	}
