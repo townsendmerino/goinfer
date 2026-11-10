@@ -3286,7 +3286,7 @@ Small shapes on purpose: the reference is O(M · nH · nKeys · hd) in Go and th
 test, not a benchmark. Seam BREADTH is TestAttnFused_vsExact's job; DEPTH of correctness is this
 one's. Both are needed — neither substitutes for the other.
 
-	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_FAST_PREFILL=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestAttnFused_vsF16Reference -v
+	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_FAST_PREFILL=1 go test -tags 'cuda goinfer_testhooks' ./backend/cuda/ -run TestAttnFused_vsF16Reference -v
 ```
 
 ## TestAttnFused_vsF16Reference.reference
@@ -3612,7 +3612,7 @@ causal-conv ring, and dnState, the recurrent matrix). A snapshot is therefore a 
 copy, not a host memcpy, and the 13.9 GB/s host figure has no bearing on it in either direction.
 
 	GOINFER_QWEN35_08B=~/models/qwen3.5-0.8b \
-	  go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestDeltaNetSnapshotCUDA -v -timeout 30m
+	  go test -tags 'cuda goinfer_testhooks' ./backend/cuda/ -run TestDeltaNetSnapshotCUDA -v -timeout 30m
 ```
 
 ## TestDeltaNetSnapshotCUDA.paths
@@ -5277,7 +5277,7 @@ kernel; L2's f16 K/V operands and online rescale are the only real precision cha
 unit gate already puts the kernel at cosine >= 0.99999707 against exact math on those operands.
 If fast is measurably WORSE, the per-lever env split (=attn / =gemm) exists to say which.
 
-	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestPrefillGateVsReferenceCUDA -v -timeout 4h
+	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./backend/cuda/ -run TestPrefillGateVsReferenceCUDA -v -timeout 4h
 ```
 
 ## TestPrefillGateVsReferenceCUDA.decisionset
@@ -7785,7 +7785,7 @@ the output of EVERY tail mode the resident exposes, for each fixture, and compar
 (testdata/prefill_tails_baseline.json). It is device-specific for the same reason keqv_copy_baseline.json is (the PTX is JIT-compiled to the card's own SASS), so
 the baseline is compared only on the device and driver that recorded it.
 
-	go test -tags 'cuda goinfer_testhooks' -run TestPrefillTails -v ./cuda/
+	go test -tags 'cuda goinfer_testhooks' -run TestPrefillTails -v ./backend/cuda/
 	GOINFER_TAILS_RECORD=1 go test ...   # (re)writes the baseline: only from code whose tails are the reference
 ```
 
@@ -7951,7 +7951,7 @@ at each S in GOINFER_VSUM_MECH_S (default 1,2,4,8,16). S=1 must be BIT-IDENTICAL
 built-in defect detector, because a one-chunk "split" is the same fold in the same order.
 
 	GOINFER_HEAVY_TESTS=1 GOINFER_SPLITKV_VSUM_SPLIT=16 \
-	  go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestVsumMechanism -v -timeout 2h
+	  go test -tags 'cuda goinfer_testhooks' ./backend/cuda/ -run TestVsumMechanism -v -timeout 2h
 
 GOINFER_SPLITKV_VSUM_SPLIT must be >= max(S): it sizes the partials buffer at backend setup.
 ```
