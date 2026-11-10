@@ -7,7 +7,8 @@ its first and last sample times, so a cell is matched to its server by time. Sys
 """
 import json, os, signal, sys, time
 
-out, names = sys.argv[1], set(sys.argv[2:])
+# /proc/<pid>/status's Name is the executable's basename cut to 15 characters (TASK_COMM_LEN), so a name is matched by its first 15.
+out, names = sys.argv[1], {n[:15] for n in sys.argv[2:]}
 seen, stop = {}, False
 
 

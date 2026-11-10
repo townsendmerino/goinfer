@@ -277,6 +277,9 @@
     "cmd/serve": [
       "internal/app/serveapp"
     ],
+    "cmd/testcmdtags": [
+      "internal/guard/testcmdtags"
+    ],
     "decoder": [
       "chat",
       "constrain",
@@ -711,6 +714,7 @@
       "internal/runtime/modelload",
       "internal/runtime/prequant",
       "internal/runtime/whisper",
+      "internal/testpath",
       "internal/vision",
       "multimodal",
       "pull",
@@ -751,6 +755,7 @@
       "decoder",
       "decoder/fit",
       "internal/runtime/prequant",
+      "internal/testpath",
       "tokenizer"
     ],
     "internal/runtime/whisper": [

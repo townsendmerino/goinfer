@@ -1290,7 +1290,25 @@ func (m *Model) withResidencyOrAbort() (*Model, error) {
 		_ = m.Close()
 		return nil, err
 	}
+	if err := m.backendDeclinedErr(); err != nil {
+		_ = m.Close()
+		return nil, err
+	}
 	return m, nil
+}
+
+// backendDeclinedErr is Options.RequireBackend's refusal: an ErrBackendDeclined error naming the backend and the decline when
+// the load asked for a backend other than the CPU and built no resident runner on it, else nil.
+func (m *Model) backendDeclinedErr() error {
+	be := m.kvOpts.Backend
+	if !m.kvOpts.RequireBackend || be == "" || be == "cpu" || m.ResidentActive() {
+		return nil
+	}
+	reason := m.ResidentDecline()
+	if reason == "" {
+		reason = "no reason recorded"
+	}
+	return errorOfKind(ErrBackendDeclined, "decoder: backend %q built no resident runner and RequireBackend refuses the CPU fallback: %s", be, reason)
 }
 
 // LoadAbort is Options.LoadAbort as the load that built this model passed it: a backend's resident build polls it between layers and

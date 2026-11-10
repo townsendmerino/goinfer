@@ -50,7 +50,7 @@ From v1.0 these follow semver: no breaking change before a v2.0.
 ### `chat`
 
 - `chat.Detect`, `chat.Meta`, `chat.ErrUnknownTemplate`
-- `chat.Template`: `Name`, `Render`, `RenderSegments`, `ParseToolCalls`
+- `chat.Template`: `Name`, `Render`, `RenderSegments`, `ParseToolCalls`, `StopIDs`
 - The named constructors: `ChatML`, `Gemma3`, `Gemma4`, `Harmony`, `Llama3`, `Mellum2`, `Mistral`
 - `chat.Turn`, `chat.Tool`, `chat.ToolCall`, `chat.Stops`, `chat.Segment`
 
@@ -94,7 +94,8 @@ Real, supported, and used in production paths here — but they may change in an
 patch. Pin a version if you depend on them. Each graduates when it settles.
 
 - **The library's logger.** `decoder.SetLogger`.
-- **Load's error kinds.** `decoder.ErrUnsupportedModel`, `ErrUnknownQuant`, `ErrUnknownBackend`, for `errors.Is`.
+- **Load's error kinds.** `decoder.ErrUnsupportedModel`, `ErrUnknownQuant`, `ErrUnknownBackend`, for `errors.Is`, and
+  `ErrBackendDeclined` with the `Options.RequireBackend` that asks for it (a named backend's decline becomes Load's error).
 - **Structured output from JSON Schema.** `constrain.JSONSchema`, which holds a string's `format` for `date`, `time`,
   `date-time`, `uuid`, `ipv4` and `email` (any other format is an annotation). `GrammarFromStruct` and
   `TemplateFromStruct`, its Go-type twins, are Hard (above).

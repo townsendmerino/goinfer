@@ -829,7 +829,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		mlaVHead: vHead, mlaQLoRA: qLoRA, mlaInterleave: interleave,
 		mlaRopeScale:    float32(mlaRopeScale),
 		allocSlackBytes: allocSlack,
-		ctxExplicit:     m.ResidentContextRequest() > 0,
+		ctxExplicit:     ctxExplicitFor(m),
 		// One conversation may use the whole KV pool (KV4a-3) unless a context was asked for or pinned by the fit guard, or a companion's
 		// device K/V scales with the context (a --drafter's, priced at the planned one).
 		kvRaise:    m.ResidentContextRequest() <= 0 && m.ExtraResidentKVPerPosition() == 0,
@@ -2296,4 +2296,11 @@ func modelDir(path string) string {
 		return path
 	}
 	return filepath.Dir(path)
+}
+
+// ctxExplicitFor reports whether m's resident context is the caller's own -ctx, which the build never trims and whose VRAM miss
+// is errKVWontFit. A context the load-time fit guard pinned for an unrequested load is a ceiling (decoder.Model's
+// ResidentContextPinned), so the build trims it to what is free, never below cudaCtxCapDefault, as it trims an unpinned one.
+func ctxExplicitFor(m *decoder.Model) bool {
+	return m.ResidentContextRequest() > 0 && m.ResidentContextPinned()
 }

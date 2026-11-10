@@ -32,7 +32,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 | `KVDemote` | n/a | n/a | n/a | n/a | tested: `TestKV7_demoteAndPromote` | n/a | n/a |
 | `KVHostBytes` | n/a | n/a | n/a | n/a | tested: `TestKV7_optionKVHostBytes_resident` | n/a | n/a |
 | `KVPrecision` | n/a | n/a | n/a | tested: `TestOptionPathMetal_kvPrecision`; CUDA f16 tested: `TestKV16_everyAttentionPathStaysCloseToF32`; CUDA i8 tested: `TestKV8_G2exact_readersMatchTheCPUOnOneCache` | tested: `TestPrefill_int8KVOnThePass`; CUDA f16 tested: `TestKV16_everyAttentionPathStaysCloseToF32`; CUDA i8 tested: `TestKV8_G2exact_readersMatchTheCPUOnOneCache` | tested: `TestOptionPathMetal_kvPrecision`; CUDA i8 tested: `TestKV8_verifyIsSequentialDecode` | tested: `TestOptionPathMetal_kvPrecision`; CUDA f16 tested: `TestKV7_restoreFull`; CUDA i8 tested: `TestKV7_restoreFull` |
-| `KVQuant` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | declined at `cpuBatchCacheEligible` (`TestCPUBatch_ineligibleCachesBypass`) | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestKVI8_snapshotRoundtrip` |
+| `KVQuant` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestKVI8_snapshotRoundtrip` |
 | `KVShareOff` | n/a | n/a | n/a | n/a | tested: `TestKV2_optionKVShareOff_resident` | n/a | tested: `TestSessionLRU_sharesAPreamble` |
 | `Knobs` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 | `MoECacheExperts` | n/a | n/a | n/a | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` |
@@ -115,6 +115,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `ExtraResidentKVPerPosition`: prices a companion allocation's K/V when the resident context is chosen
 - `LoRA`: merged into the base weights at load ("merged into the base at load"), so every path runs the merged weights; compute-time adapters are Session state, in the cache-state grid
 - `LoadAbort`: checked between layers during a GGUF weight build, a .giw load and a backend's resident build; nil afterwards in effect
+- `RequireBackend`: turns a backend's decline at load into Load's error; a loaded model runs whatever was built
 - `ResidentGemma4StepDefault`: tells the backend at load that ResidentGemma4Step is the caller's default, not a choice
 - `ResidentKVSlotsDefault`: tells the backend at load that ResidentKVSlots is the caller's default, not a chosen count
 - `ResidentRecurrentStepDefault`: tells the backend at load that ResidentRecurrentStep is the caller's default, not a choice

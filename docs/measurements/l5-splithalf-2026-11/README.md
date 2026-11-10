@@ -29,3 +29,12 @@ five times: ten adjacent pairs. Each visit is its own process; its first sample 
 
 **Run.** `bash docs/measurements/l5-splithalf-2026-11/run-l5.sh` on nobara, by day, under the exclusive timing lock (the
 script takes it). About 15 minutes: the build, the fires check, and twenty visits of about 25 s each.
+
+**Addendum, 2026-11-09 (a mechanism fix; no bar, metric or outcome moved).** The first run, at main f8fb5b883, was VOID by
+the rule above ("more than 4 void visits"): the runner loaded the box itself. Visits of about 8 s of decode back to back
+raised the 1-minute load from 0.35 to about 8 by slot 15, and every re-run started at 8.2 to 8.8 (`run-2026-11-09-void/`
+on branch `l5-data-2026-11-09`; its numbers are not graded). `l5_ab.py` now waits before each visit until the 1-minute
+load is under 4.0, half the void gate, so a visit starts after the last one's own load has decayed. The wait has a cap of
+300 s, and a visit whose wait reaches it is void (re-run at the end, as before). Each visit records `settle_s`. Wall time:
+the 60 s decay from about 5.5 to 4.0 is about 20 s a visit, so twenty visits take about 10 minutes, and the run about 15
+with the build and the first settle.

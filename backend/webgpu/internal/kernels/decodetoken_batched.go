@@ -146,7 +146,9 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		pass.SetPipeline(pl)
 		pass.SetBindGroup(0, bg, nil)
 		pass.DispatchWorkgroups(gx, gy, 1)
-		pass.TryEnd()
+		if e := pass.TryEnd(); e != nil {
+			buildErr = fmt.Errorf("gpu: DecodeTokenFusedBatched: pass: %w", e)
+		}
 		pass.Release()
 		dispCount++
 		if dispCount >= passesPerFlush {
@@ -160,7 +162,9 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		if buildErr != nil || src == nil || dst == nil {
 			return
 		}
-		enc.TryCopyBufferToBuffer(src, so, dst, do, sz)
+		if e := enc.TryCopyBufferToBuffer(src, so, dst, do, sz); e != nil {
+			buildErr = fmt.Errorf("gpu: DecodeTokenFusedBatched: copy: %w", e)
+		}
 	}
 
 	// --- per-row ops (one row's [hidden]/[dim] buffer) ---
@@ -304,7 +308,9 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 			return nil, err
 		}
 		keepBuf(s)
-		enc.TryCopyBufferToBuffer(logits[r], 0, s, 0, uint64(vocab*4))
+		if err := enc.TryCopyBufferToBuffer(logits[r], 0, s, 0, uint64(vocab*4)); err != nil {
+			return nil, fmt.Errorf("gpu: DecodeTokenFusedBatched: logits copy[%d]: %w", r, err)
+		}
 		stag[r] = s
 	}
 	cmd, err := enc.TryFinish(nil)

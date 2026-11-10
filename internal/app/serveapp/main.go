@@ -451,7 +451,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.Int64Var(&cfg.maxBodyBytes, "max-body-bytes", 0, "cap on request body size in bytes; a larger body is rejected 413 before it is read. 0 = derive from the model's context window (a body that could never fit is rejected up front). The vision endpoints get at least 32 MiB on top for base64 image data")
 	fs.DurationVar(&cfg.unloadDrainWait, "unload-drain-wait", 5*time.Second, "how long POST /admin/models/unload waits for in-flight requests to drain before returning 202 (native memory is freed as they finish either way; the model is unroutable immediately). ?wait=false returns 202 at once")
 	fs.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth. Wins on copy-heavy traffic (code edits / RAG / agent loops) on the CPU and Metal backends; output is identical (greedy bit-exact, sampled in-distribution incl. temperature/top-k/p/min-p + repetition penalties + logit bias). On greedy constrained/tool requests (response_format / tool grammar) it switches to grammar-fused drafting — the grammar's forced bytes are drafted for free, fused with the n-gram source. Auto-falls back to plain decode per-request when the sampler isn't yet supported on the spec path (e.g. constrained + temperature>0) goinfer-chat has the same --spec ngram, and additionally --draft (a separate small draft model).")
-	fs.BoolVar(&cfg.specAdaptive, "spec-adaptive", false, "MC4 candidate (docs/tasks/task-concurrency-2026-09.md): with -spec ngram on a resident whose decode can batch (MC3), keep MC3's concurrency instead of forcing one generation at a time — a generation speculates only while it is alone, joining MC3's batched decode at a round boundary when others arrive, and resumes speculating after 8 consecutive rounds alone. Output is unaffected (the same lossless verify either way). No effect without -spec ngram, or on a resident MC3 cannot batch.")
+	fs.BoolVar(&cfg.specAdaptive, "spec-adaptive", false, "Experimental, opt-in: with -spec ngram on a resident whose decode can batch, keep concurrent generations instead of forcing one at a time — a generation speculates only while it is alone, joins the batched decode at a round boundary when others arrive, and resumes speculating after 8 consecutive rounds alone. Measured cost under load (CUDA, 4 clients, docs/measurements/mc4-candidate-cuda-2026-10-01.md): 0.858x batching alone on chat traffic, and 0.80x plain -spec ngram on copy traffic; alone it is faster than batching (copy 2.13x, chat 1.26x). No effect without -spec ngram, or on a resident that cannot batch.")
 	fs.StringVar(&cfg.embedPath, "embed-model", "", "embedding model for /v1/embeddings: a CodeRankEmbed/NomicBert HF dir (config.json + model.safetensors + tokenizer.json), a decoder-as-embedder .gguf, or a HuggingFace reference: hf:<owner>/<repo>:safetensors fetches a NomicBert encoder checkpoint (anything else is refused before the weights), hf:<owner>/<repo>:<quant> a GGUF")
 	fs.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
 	fs.StringVar(&cfg.embedName, "embed-served-model-name", "", "embedding model id reported by /v1/models (default: dir basename)")
@@ -474,6 +474,9 @@ func (srv *server) restoreSessions(cfg config) {
 	}
 }
 
+// sessionNoticeOut is where a session checkpoint that could not be written is said; a test swaps it.
+var sessionNoticeOut io.Writer = os.Stderr
+
 // checkpointSessions saves each model's KV sessions to -session-dir at shutdown. The caller has already cancelled
 // the generations in flight; a model one of them still holds after five seconds is skipped, not waited for.
 func (srv *server) checkpointSessions(cfg config) {
@@ -487,7 +490,9 @@ func (srv *server) checkpointSessions(cfg config) {
 			fmt.Fprintf(os.Stderr, "shutdown: model %q still busy — skipping its session checkpoint\n", lm.name)
 			continue
 		}
-		_ = lm.sessions.save(sessionSubdir(cfg.sessionDir, lm.fp))
+		if err := lm.sessions.save(sessionSubdir(cfg.sessionDir, lm.fp)); err != nil {
+			fmt.Fprintf(sessionNoticeOut, "shutdown: model %q: session checkpoint not written (%v); its sessions will not restore\n", lm.name, err)
+		}
 		lm.sessions.removeColdFiles() // the cold tier is in-process; clear its scratch
 		lm.sessMu.Unlock()
 	}

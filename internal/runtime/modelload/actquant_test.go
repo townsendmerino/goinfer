@@ -23,7 +23,7 @@ func TestActivationSafeQuant(t *testing.T) {
 		{phi3, "int4", "int4", "int4", 0, "warning: --quant int4"},
 		{phi3, "int8", "", "int8", 0, ""},
 		{phi3, "f32", "", "f32", 0, ""},
-		{"../../testdata/nonexistent-model-dir", "int4", "", "int4", 0, ""},
+		{"../../../testdata/nonexistent-model-dir", "int4", "", "int4", 0, ""},
 	} {
 		q, g, msg := activationSafeQuant(c.src, c.quant, 0, c.explicit, "cpu")
 		if q != c.wantQ || g != c.wantG || !strings.HasPrefix(msg, c.msg) || (c.msg == "") != (msg == "") {

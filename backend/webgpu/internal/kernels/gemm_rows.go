@@ -158,19 +158,28 @@ func (c *Context) MatmulW8A8GemmRow(aq []int8, aScales []float32, rm *ResidentW8
 		return nil, err
 	}
 	defer bg.Release()
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MatmulW8A8GemmRow: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.gemmRowPipeline)
 	pass.SetBindGroup(0, bg, nil)
 	gx, gy := GemvGrid(N)
 	pass.DispatchWorkgroups(gx, gy, 1)
-	pass.TryEnd()
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		return nil, fmt.Errorf("gpu: MatmulW8A8GemmRow: pass: %w", err)
+	}
 	pass.Release()
 	if err := enc.TryCopyBufferToBuffer(dstBuf, 0, stage, 0, uint64(M*N*4)); err != nil {
 		return nil, err
 	}
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MatmulW8A8GemmRow: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	status := wgpu.MapAsyncStatus(0)

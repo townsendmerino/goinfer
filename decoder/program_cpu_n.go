@@ -492,11 +492,22 @@ func (m *Model) walkMulti(prog *layerProgram, h []float32, caches []*KVCache) ([
 				if o.Attn.Order != attnBatchedAcc64 {
 					return nil, fmt.Errorf("decoder: layer %d: attention order %d is not implemented on the CPU's multi-sequence walker", l, o.Attn.Order)
 				}
-				for b, c := range caches { // each sequence's f32 append-forever cache, at K=1 with float64 accumulation
-					c.Append(l, row(k, b, kvDim), row(v, b, kvDim))
+				for b, c := range caches { // each sequence's append-forever cache, at K=1 with float64 accumulation, read as attendToken reads it
+					kb, vb := row(k, b, kvDim), row(v, b, kvDim)
+					if kvRoundF16ForTest {
+						roundF16InPlace(kb)
+						roundF16InPlace(vb)
+					}
+					c.Append(l, kb, vb)
+					keys, vals := c.Keys(l), c.Vals(l)
 					nKeys := c.storedRows(l, kvDim)
+					if c.quant.widened() { // f16 or int8: widened into the cache's own scratch
+						lk, lv := c.scr.localBufs(nKeys * kvDim)
+						nKeys = c.dequantGlobalLayer(l, kvDim, lk, lv)
+						keys, vals = lk[:nKeys*kvDim], lv[:nKeys*kvDim]
+					}
 					pool := c.scr.headWorkerPool(nH, 1, nKeys, hd, false, true)
-					attendBatchedHeadsP(row(q, b, qDim), row(ctx, b, qDim), c.Keys(l), c.Vals(l), 0, c, l, pos[b], 1, o.Attn, arch, true, pool)
+					attendBatchedHeadsP(row(q, b, qDim), row(ctx, b, qDim), keys, vals, 0, c, l, pos[b], 1, o.Attn, arch, true, pool)
 				}
 			case opProjO:
 				out := reg(o.Out)
