@@ -2560,6 +2560,12 @@ func (r *cudaResident) Forward(embedding []float32, pos int) ([]float32, error) 
 			return nil, r.resetErr // a failed re-zero would decode from the previous sequence
 		}
 	}
+	if o, ok, e := r.soloRagged([][]float32{embedding}, pos, nil); ok {
+		if e != nil {
+			return nil, e
+		}
+		return o.Logits[0], nil
+	}
 	var out []float32
 	err := r.do(func() error {
 		o, e := r.step(embedding, pos, pos)
@@ -2633,6 +2639,9 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	// tiny. A recurrent (Gated-DeltaNet) family always takes the loop: the weight-stationary pass has no notion of
 	// recurrent state, which must advance one token at a time and in order, and the loop is the same r.step this
 	// family's decode uses, so prefill and decode see the same state evolution.
+	if o, ok, e := r.soloRagged(embeddings, startPos, nil); ok {
+		return o.Logits, e
+	}
 	if r.batchedVerifyOK() {
 		// context.Background(): ForwardN is the spec-decode verify, M<=9 rows, and its own
 		// interface carries no context. Nothing here is long enough to want cancelling.
@@ -4410,6 +4419,10 @@ func (r *cudaResident) step(emb []float32, pos, ropePos int) ([]float32, error) 
 func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) {
 	if e := r.checkCap(pos, 1); e != nil {
 		return 0, e
+	}
+	// A temperature of 0 makes the step's draw the argmax pick (stepDraw), the one this path makes below.
+	if o, ok, e := r.soloRagged([][]float32{embedding}, pos, &decoder.ResidentBatchDraw{Temperature: 0}); ok {
+		return o.ID, e
 	}
 	var id int
 	err := r.do(func() error {
