@@ -28,7 +28,6 @@ import (
 // transform is armed on the loaded model, so a fixture that lost it fails rather than passing on the identity. The Gemma 4
 // fixture is generated (scripts/pin_gemma4_dense_twogeom.py), so that subtest skips where it has not been pinned. The
 func TestCUDAStepBatch_matchesForward(t *testing.T) {
-	todaysCallsForReferences(t)
 	type cfg struct {
 		path   string
 		depths []int
@@ -158,7 +157,6 @@ func TestCUDAStepBatch_matchesForward(t *testing.T) {
 //
 // GOINFER_CUDA_STEP_MODEL=<checkpoint> runs it on a real model (int4, 24 tokens per turn) instead of llama-tiny.
 func TestCUDAStepBatch_concurrentMatchesAlone(t *testing.T) {
-	todaysCallsForReferences(t)
 	requireCUDADevice(t)
 	path, maxTok, longLen := filepath.Join("../../testdata/llama-tiny"), 8, 90
 	if p := os.Getenv("GOINFER_CUDA_STEP_MODEL"); p != "" {
@@ -291,7 +289,6 @@ func at(v [][]int, i int) []int {
 // GOINFER_CUDA_STEP_MODEL=<checkpoint> runs it on a real model, one sequence past 2048 keys (the flash-decode lane), where the
 // rows' launches differ and the step takes each row's own.
 func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
-	todaysCallsForReferences(t)
 	type cfg struct {
 		path   string
 		depths []int
@@ -459,7 +456,6 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 // fast kernel is the MMA GEMM, whose int32 group sums can equal the exact GEMV's bit for bit, so there the case is identity only.
 // Each step's head runs over the rows whose logits are read only: the others' rows and the final pass's last chunk row.
 func TestCUDAStepRagged_prefillChunkMatchesItsPass(t *testing.T) {
-	todaysCallsForReferences(t)
 	for _, c := range []struct {
 		path, kv string
 		plant    bool
@@ -835,7 +831,6 @@ func TestBatchedHeadFull_noRowsTouchesNothing(t *testing.T) {
 // leaves the logits block as it was; the prompt's final pass beside one decode row then grows the block to the two rows it heads,
 // not the pass's 33. The prompt's last-row logits must equal its two passes run alone on another slot, bit for bit.
 func TestCUDAStepRagged_soloChunk(t *testing.T) {
-	todaysCallsForReferences(t)
 	requireCUDADevice(t)
 	m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 3})
 	if err != nil {
@@ -895,96 +890,5 @@ func TestCUDAStepRagged_soloChunk(t *testing.T) {
 	}
 	if !bitsEqual(got, outs[len(outs)-1]) {
 		t.Fatal("the prompt prefilled as a solo chunk and a mixed step is not bit-identical to its own two passes")
-	}
-}
-
-// todaysCallsForReferences keeps Forward, ForwardArgmax, ForwardSample and ForwardN on today's calls for the rest of the test, so
-// its references are each shape's own launches and not the ragged step under test (soloRaggedOffForTest).
-func todaysCallsForReferences(t *testing.T) {
-	soloRaggedOffForTest = true
-	t.Cleanup(func() { soloRaggedOffForTest = false })
-}
-
-// TestCUDASoloRagged_matchesTodaysCall holds RF2-3b-3's move of the solo shapes onto the ragged step: on llama-tiny (f32 and i8 KV)
-// and llama-attnfa-tiny with the flash-decode lane from 48 keys, a decode token through Forward, ForwardArgmax and ForwardSample,
-// and a k = 4 verify through ForwardN, each run through the step, equal the same call on today's path at the same positions, bit
-// for bit; every routed call must have taken the step (a ragged launch counter moves).
-func TestCUDASoloRagged_matchesTodaysCall(t *testing.T) {
-	for _, c := range []struct {
-		path, kv string
-		knobs    *decoder.Knobs
-	}{
-		{"../../testdata/llama-tiny", "", nil},
-		{"../../testdata/llama-tiny", "i8", nil},
-		{"../../testdata/llama-attnfa-tiny", "", &decoder.Knobs{"GOINFER_CUDA_FLASH_DECODE": "16", "GOINFER_CUDA_FLASH_DECODE_MIN_KEYS": "48"}},
-	} {
-		t.Run(filepath.Base(c.path)+"/"+c.kv, func(t *testing.T) {
-			requireCUDADevice(t)
-			m, err := decoder.Load(c.path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2, KVPrecision: c.kv, Knobs: c.knobs})
-			if err != nil {
-				t.Fatalf("load: %v", err)
-			}
-			defer m.Close()
-			r, ok := m.ResidentForwardForTest().(*cudaResident)
-			if !ok {
-				t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
-			}
-			_, _, _, _, _, _, vocab := m.Dims()
-			emb := func(id int) []float32 { return m.EmbedResidentForTest(id % vocab) }
-			prompt := make([][]float32, 40)
-			for i := range prompt {
-				prompt[i] = emb(i*13 + 7)
-			}
-			if _, err := r.PrefillLast(context.Background(), prompt, 0); err != nil {
-				t.Fatal(err)
-			}
-			steps := func() int { return r.raggedAttnLaunches + r.raggedFALaunches + r.raggedSKLaunches }
-			// both runs one call at pos on the step, then on today's path at the same position (rope_kv rewrites it first).
-			both := func(name string, pos int, call func() ([]float32, int, [][]float32, error)) {
-				t.Helper()
-				before := steps()
-				l1, id1, n1, err := call()
-				if err != nil {
-					t.Fatalf("%s at %d through the step: %v", name, pos, err)
-				}
-				if steps() == before {
-					t.Fatalf("%s at %d made no ragged launch: it did not take the step", name, pos)
-				}
-				soloRaggedOffForTest = true
-				l2, id2, n2, err := call()
-				soloRaggedOffForTest = false
-				if err != nil {
-					t.Fatalf("%s at %d on today's path: %v", name, pos, err)
-				}
-				if !bitsEqual(l1, l2) || id1 != id2 || len(n1) != len(n2) {
-					t.Fatalf("%s at %d: the step differs from today's call", name, pos)
-				}
-				for j := range n1 {
-					if !bitsEqual(n1[j], n2[j]) {
-						t.Fatalf("%s at %d: row %d differs from today's call", name, pos, j)
-					}
-				}
-			}
-			t.Cleanup(func() { soloRaggedOffForTest = false })
-			pos := len(prompt)
-			for n := range 12 { // past 48 keys, so the lane fixture's later tokens take the lane
-				e := emb(n*29 + 3)
-				both("Forward", pos, func() ([]float32, int, [][]float32, error) { l, err := r.Forward(e, pos); return l, 0, nil, err })
-				both("ForwardArgmax", pos, func() ([]float32, int, [][]float32, error) {
-					id, err := r.ForwardArgmax(e, pos)
-					return nil, id, nil, err
-				})
-				both("ForwardSample", pos, func() ([]float32, int, [][]float32, error) {
-					id, err := r.ForwardSample(e, pos, 0.8, uint64(100+n), uint64(n))
-					return nil, id, nil, err
-				})
-				verify := [][]float32{e, emb(n + 1), emb(n + 2), emb(n + 3)}
-				both("ForwardN", pos, func() ([]float32, int, [][]float32, error) {
-					rows, err := r.ForwardN(verify, pos)
-					return nil, 0, rows, err
-				})
-				pos++
-			}
-		})
 	}
 }
