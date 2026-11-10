@@ -1,0 +1,8 @@
+{"pid": 652547, "name": "serve-cuda-new", "first": 1794282352.6286504, "hwm_kb": 4244904, "swap_peak_kb": 0, "sys_swap_mb_first": 1358, "last": 1794282374.4099581, "sys_swap_mb_last": 1358}
+{"pid": 652997, "name": "serve-cuda-old", "first": 1794282397.8041818, "hwm_kb": 4248632, "swap_peak_kb": 0, "sys_swap_mb_first": 1358, "last": 1794282419.5742161, "sys_swap_mb_last": 1358}
+{"pid": 653383, "name": "serve-cuda-old", "first": 1794282443.1751397, "hwm_kb": 4247992, "swap_peak_kb": 0, "sys_swap_mb_first": 1358, "last": 1794282464.4941273, "sys_swap_mb_last": 1358}
+{"pid": 653761, "name": "serve-cuda-new", "first": 1794282488.36874, "hwm_kb": 4254864, "swap_peak_kb": 0, "sys_swap_mb_first": 1358, "last": 1794282510.1128247, "sys_swap_mb_last": 1358}
+{"pid": 654146, "name": "serve-cuda-new", "first": 1794282533.7471514, "hwm_kb": 4248024, "swap_peak_kb": 0, "sys_swap_mb_first": 1358, "last": 1794282555.0544524, "sys_swap_mb_last": 1358}
+{"pid": 654466, "name": "serve-cuda-old", "first": 1794282559.1939447, "hwm_kb": 4256376, "swap_peak_kb": 0, "sys_swap_mb_first": 1358, "last": 1794282580.540981, "sys_swap_mb_last": 1358}
+{"pid": 654872, "name": "serve-cuda-old", "first": 1794282604.4598129, "hwm_kb": 4252668, "swap_peak_kb": 0, "sys_swap_mb_first": 1358, "last": 1794282625.8046324, "sys_swap_mb_last": 1358}
+{"pid": 655225, "name": "serve-cuda-new", "first": 1794282649.4054782, "hwm_kb": 4256532, "swap_peak_kb": 0, "sys_swap_mb_first": 1358, "last": 1794282671.336246, "sys_swap_mb_last": 1358}
