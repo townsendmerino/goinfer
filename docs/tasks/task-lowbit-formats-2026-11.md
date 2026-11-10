@@ -5,7 +5,7 @@ to plan and estimate the rest here; #731 (2026-11-07) merged this plan and nothi
 code is on `main` in goinfer or aikit). It is v0.26.0 work (`docs/releases/v0.25.0-plan.md` §7, §8), except that the plan
 pinned for v0.25.0 lists the Bonsai guard (LB0a) as cheap v0.25.0 work: which release takes LB0a is open. This doc replaces item C
 (NVFP4 read support) of `docs/tasks/task-fp4-formats.md`, which links here. Items A (a native MXFP4 CPU kernel), B (MXFP4
-beyond gpt-oss) and D (Blackwell FP4 tensor cores) stay there and are not this doc's subject. A likely first NVFP4 asset is
+beyond gpt-oss) and D (Blackwell FP4 tensor cores) stay there; LB7's MXFP4 half (rows MX0 to MX2) is decided here. A likely first NVFP4 asset is
 the Bolt E4B DFlash drafter (`nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16-DFlash-NVFP4`, named blocked on NVFP4 dequant in
 `docs/measurements/bolt-e4b-g0-2026-10.md`).
 
@@ -33,7 +33,10 @@ the Bolt E4B DFlash drafter (`nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16-DFlash-NV
 | LB6a | open | F1: a per-type source bytes-per-weight table, so fit prices another build's source before download | §3 |
 | LB6b | open | F2: `mem.HostCheck.smallerLoad` never names a smaller file for a read-only format | §3; `internal/runtime/mem/host.go:HostCheck.smallerLoad` |
 | LB6c | open | fit prices `int4mix` (and `q4k` in `measureBytesPerElem`) as all-int4, an underestimate an admission guard must not make: price per tensor through `fit.Rates.Kept`, as `q4k`'s GGUF estimator does; tier 0 | `decoder/fitguard.go:measureBytesPerElem`; found by the 2026-11-08 close-out |
-| LB7 | decision | the owner: whether to build kept lanes (compute in a low-bit format) at all; recommended: decide once LB0b shows demand and LB1-LB4 have shipped; until then a low-bit file fits no better resident than a Q4_K one at the same `--quant` | §3 |
+| LB7 | decided (MXFP4 only) | Francis, 2026-11-09: build a kept MXFP4 lane for gpt-oss, `q4k`'s lane as its pattern (MX0 to MX2 below). NVFP4's kept lanes still wait on LB0b's demand and LB1-LB4, as before. Why: gpt-oss's tool-call loss is the int4 requantize (#542, #549, #555: int8 with f32 activations is within 0.99 nats of llama.cpp, int4 is 7.7-9.4 nats under); gpt-oss stays a target. MXFP4 moves alongside or ahead of NVFP4; the order against LB1-LB2 and the release are Francis's to confirm | §3; `docs/tasks/task-fp4-formats.md` items A, B |
+| MX0 | open | CPU ceiling check, first, about 40 min, no card: gpt-oss with its MXFP4 weights dequantized to f32 and not requantized, on the step-22 tool-name margin of `docs/measurements/gptoss-forced-call-2026-10-30`, against llama.cpp and P8. If it does not close most of the gap to llama.cpp, stop and report before any kernel; registered in the PR that runs it (question, margin and KL metrics, threshold, what each outcome means) | LB7; `docs/measurements/gptoss-forced-call-2026-10-30/README.md` |
+| MX1 | blocked | a kept MXFP4 lane on CUDA (dequant in the kernel, as q4k); needs MX0 to close most of the gap. Registered gates: fidelity (the step-22 margin plus KL against llama.cpp) and speed against today's int4 (A B B A, one box, `~/models`); fit priced at MXFP4's own bytes through `fit.Rates.Kept` | LB7, LB6c |
+| MX2 | blocked | the same lane on Metal, same two gates; needs MX0, and MX1's lane shape | LB7 |
 
 ---
 
