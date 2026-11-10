@@ -623,13 +623,7 @@ func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP
 		cand = topKByLogit(logits, topK)
 	case minP > 0:
 		// e_i ≥ minP·e_max ⟺ logit_i ≥ maxL + T·ln(minP)  (e_max = 1 at the argmax).
-		thr := maxL + texp*math.Log(minP)
-		cand = candScratch[:0]
-		for i, v := range logits {
-			if float64(v) >= thr {
-				cand = append(cand, i)
-			}
-		}
+		cand = minPCandidates(logits, maxL+texp*math.Log(minP), candScratch)
 	case topPActive:
 		cand = topPCandidates(logits, texp, maxL, Z, topP)
 	default:

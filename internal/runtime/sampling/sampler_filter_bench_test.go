@@ -112,6 +112,8 @@ func benchMinPScan(b *testing.B, n int) {
 }
 
 func BenchmarkMinPScan_gemmaVocab(b *testing.B) { benchMinPScan(b, 262144) }
+func BenchmarkMinPScan_152kVocab(b *testing.B)  { benchMinPScan(b, 151936) }
+func BenchmarkMinPScan_32kVocab(b *testing.B)   { benchMinPScan(b, 32064) }
 
 // End to end: the whole topFilterLogits call for each active-filter shape at gemma vocab, to put the per-component
 // numbers above against the per-token cost that reaches a decode token's budget (Z's chunkedZ is already parallel).
