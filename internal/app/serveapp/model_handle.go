@@ -17,7 +17,6 @@ type modelHandle interface {
 	BlockSpecCapable() bool
 	Config() *decoder.Config
 	CPUBatchActive() bool
-	CPUBatchKVBypass() string
 	CPUBatchStats() decoder.ResidentBatchStats
 	CPUConcurrentSafe() bool
 	DecodePath() string
