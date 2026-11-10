@@ -1,0 +1,352 @@
+==== 2026-11-10 11:03:19 /home/francis/goinfer-bench/rf3/bins/serve-cuda-A -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:8098 -quant int4 -backend cuda -require-backend
+swap guard (load): armed for /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6944 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (280 MiB of scratch; 4204 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+loaded "bench": 28-layer model (vocab 151936) in 6.356s [chat: chatml, thinking: unmanaged]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 2048 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested auto: auto is f16 on CUDA for this family)
+  fit: 4 KV slots at a 32768-token cap hold 1.9 GB KV (weights 0.9 GB, budget 41.8 GB, 39.9 GB left for a request's own prefill)
+  KV plan: a 65536-position pool for 4 conversations; each is guaranteed 16384, and one can use up to 32768
+  KV pool: 65,536 tokens in blocks of 64 (f16, 1.9 GB; group: full); a prompt can take another conversation's KV rows; one conversation can use up to 32,768 of them.
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 53.9 ms; 80 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 76.5 ms; 161 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 78.5 ms; 242 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 75.0 ms; 322 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 76.0 ms; 402 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 0 in 58.9 ms; 483 of 6424 MiB held
+
+shutting down…
+resident batch "bench": 742 runs, 721 batched steps (2219 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 9 647 65]
+resident batch "bench" held: 0 tokens in 0 holds
+resident batch "bench" time: runs 4.964 s, exclusive 3.743 s (prefill 35 passes 3.288 s, bookkeeping 0.454 s)
+==== 2026-11-10 11:04:27 /home/francis/goinfer-bench/rf3/bins/serve-cuda-A -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:8098 -quant int4 -backend cuda -require-backend
+swap guard (load): armed for /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6944 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (280 MiB of scratch; 4204 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+loaded "bench": 28-layer model (vocab 151936) in 6.327s [chat: chatml, thinking: unmanaged]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 2048 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested auto: auto is f16 on CUDA for this family)
+  fit: 4 KV slots at a 32768-token cap hold 1.9 GB KV (weights 0.9 GB, budget 41.8 GB, 40.0 GB left for a request's own prefill)
+  KV plan: a 65536-position pool for 4 conversations; each is guaranteed 16384, and one can use up to 32768
+  KV pool: 65,536 tokens in blocks of 64 (f16, 1.9 GB; group: full); a prompt can take another conversation's KV rows; one conversation can use up to 32,768 of them.
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 77.3 ms; 80 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 78.8 ms; 161 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 50.9 ms; 242 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 50.0 ms; 322 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 60.9 ms; 402 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 0 in 81.9 ms; 483 of 6424 MiB held
+
+shutting down…
+resident batch "bench": 742 runs, 721 batched steps (2219 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 9 647 65]
+resident batch "bench" held: 0 tokens in 0 holds
+resident batch "bench" time: runs 4.945 s, exclusive 3.723 s (prefill 35 passes 3.286 s, bookkeeping 0.436 s)
+==== 2026-11-10 11:04:44 /home/francis/goinfer-bench/rf3/bins/serve-cuda-A -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:8098 -quant int4 -backend cuda -require-backend
+swap guard (load): armed for /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6944 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (280 MiB of scratch; 4204 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+loaded "bench": 28-layer model (vocab 151936) in 6.277s [chat: chatml, thinking: unmanaged]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 2048 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested auto: auto is f16 on CUDA for this family)
+  fit: 4 KV slots at a 32768-token cap hold 1.9 GB KV (weights 0.9 GB, budget 41.8 GB, 39.9 GB left for a request's own prefill)
+  KV plan: a 65536-position pool for 4 conversations; each is guaranteed 16384, and one can use up to 32768
+  KV pool: 65,536 tokens in blocks of 64 (f16, 1.9 GB; group: full); a prompt can take another conversation's KV rows; one conversation can use up to 32,768 of them.
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 53.6 ms; 80 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 78.1 ms; 161 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 78.7 ms; 242 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 77.3 ms; 322 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 79.6 ms; 402 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 0 in 83.2 ms; 483 of 6424 MiB held
+
+shutting down…
+resident batch "bench": 742 runs, 721 batched steps (2219 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 9 647 65]
+resident batch "bench" held: 0 tokens in 0 holds
+resident batch "bench" time: runs 4.963 s, exclusive 3.768 s (prefill 35 passes 3.282 s, bookkeeping 0.486 s)
+==== 2026-11-10 11:05:00 /home/francis/goinfer-bench/rf3/bins/serve-cuda-A -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:8098 -quant int4 -backend cuda -require-backend
+swap guard (load): armed for /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6944 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (280 MiB of scratch; 4204 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+loaded "bench": 28-layer model (vocab 151936) in 6.286s [chat: chatml, thinking: unmanaged]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 2048 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested auto: auto is f16 on CUDA for this family)
+  fit: 4 KV slots at a 32768-token cap hold 1.9 GB KV (weights 0.9 GB, budget 41.8 GB, 40.0 GB left for a request's own prefill)
+  KV plan: a 65536-position pool for 4 conversations; each is guaranteed 16384, and one can use up to 32768
+  KV pool: 65,536 tokens in blocks of 64 (f16, 1.9 GB; group: full); a prompt can take another conversation's KV rows; one conversation can use up to 32,768 of them.
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 80.7 ms; 80 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 51.2 ms; 161 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 57.8 ms; 242 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 77.6 ms; 322 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 51.5 ms; 402 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 0 in 85.8 ms; 483 of 6424 MiB held
+
+shutting down…
+resident batch "bench": 742 runs, 721 batched steps (2219 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 9 647 65]
+resident batch "bench" held: 0 tokens in 0 holds
+resident batch "bench" time: runs 4.941 s, exclusive 3.714 s (prefill 35 passes 3.276 s, bookkeeping 0.438 s)
+==== 2026-11-10 11:05:27 /home/francis/goinfer-bench/rf3/bins/serve-cuda-A -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:8098 -quant int4 -backend cuda -require-backend
+swap guard (load): armed for /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6944 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (280 MiB of scratch; 4204 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+loaded "bench": 28-layer model (vocab 151936) in 6.425s [chat: chatml, thinking: unmanaged]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 2048 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested auto: auto is f16 on CUDA for this family)
+  fit: 4 KV slots at a 32768-token cap hold 1.9 GB KV (weights 0.9 GB, budget 41.8 GB, 39.9 GB left for a request's own prefill)
+  KV plan: a 65536-position pool for 4 conversations; each is guaranteed 16384, and one can use up to 32768
+  KV pool: 65,536 tokens in blocks of 64 (f16, 1.9 GB; group: full); a prompt can take another conversation's KV rows; one conversation can use up to 32,768 of them.
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 63.9 ms; 80 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 56.0 ms; 161 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 62.0 ms; 242 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 79.6 ms; 322 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 77.8 ms; 402 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 0 in 87.6 ms; 483 of 6424 MiB held
+
+shutting down…
+resident batch "bench": 742 runs, 721 batched steps (2219 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 9 647 65]
+resident batch "bench" held: 0 tokens in 0 holds
+resident batch "bench" time: runs 4.967 s, exclusive 3.744 s (prefill 35 passes 3.282 s, bookkeeping 0.462 s)
+==== 2026-11-10 11:05:44 /home/francis/goinfer-bench/rf3/bins/serve-cuda-A -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:8098 -quant int4 -backend cuda -require-backend
+swap guard (load): armed for /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6944 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (280 MiB of scratch; 4204 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+loaded "bench": 28-layer model (vocab 151936) in 6.408s [chat: chatml, thinking: unmanaged]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 2048 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested auto: auto is f16 on CUDA for this family)
+  fit: 4 KV slots at a 32768-token cap hold 1.9 GB KV (weights 0.9 GB, budget 41.8 GB, 39.9 GB left for a request's own prefill)
+  KV plan: a 65536-position pool for 4 conversations; each is guaranteed 16384, and one can use up to 32768
+  KV pool: 65,536 tokens in blocks of 64 (f16, 1.9 GB; group: full); a prompt can take another conversation's KV rows; one conversation can use up to 32,768 of them.
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 54.4 ms; 80 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 79.3 ms; 161 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 75.0 ms; 242 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 51.1 ms; 322 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 51.9 ms; 402 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 0 in 87.1 ms; 483 of 6424 MiB held
+
+shutting down…
+resident batch "bench": 742 runs, 721 batched steps (2219 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 9 647 65]
+resident batch "bench" held: 0 tokens in 0 holds
+resident batch "bench" time: runs 4.931 s, exclusive 3.711 s (prefill 35 passes 3.284 s, bookkeeping 0.427 s)
+==== 2026-11-10 11:06:01 /home/francis/goinfer-bench/rf3/bins/serve-cuda-A -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:8098 -quant int4 -backend cuda -require-backend
+swap guard (load): armed for /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6944 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (280 MiB of scratch; 4204 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+loaded "bench": 28-layer model (vocab 151936) in 6.184s [chat: chatml, thinking: unmanaged]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 2048 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested auto: auto is f16 on CUDA for this family)
+  fit: 4 KV slots at a 32768-token cap hold 1.9 GB KV (weights 0.9 GB, budget 41.8 GB, 39.9 GB left for a request's own prefill)
+  KV plan: a 65536-position pool for 4 conversations; each is guaranteed 16384, and one can use up to 32768
+  KV pool: 65,536 tokens in blocks of 64 (f16, 1.9 GB; group: full); a prompt can take another conversation's KV rows; one conversation can use up to 32,768 of them.
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 80.3 ms; 80 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 61.7 ms; 161 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 77.9 ms; 242 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 78.2 ms; 322 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 76.6 ms; 402 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 0 in 58.6 ms; 483 of 6424 MiB held
+
+shutting down…
+resident batch "bench": 742 runs, 721 batched steps (2219 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 9 647 65]
+resident batch "bench" held: 0 tokens in 0 holds
+resident batch "bench" time: runs 4.945 s, exclusive 3.747 s (prefill 35 passes 3.280 s, bookkeeping 0.467 s)
+==== 2026-11-10 11:06:48 /home/francis/goinfer-bench/rf3/bins/serve-cuda-A -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:8098 -quant int4 -backend cuda -require-backend
+swap guard (load): armed for /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6944 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (280 MiB of scratch; 4204 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+loaded "bench": 28-layer model (vocab 151936) in 6.426s [chat: chatml, thinking: unmanaged]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 2048 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested auto: auto is f16 on CUDA for this family)
+  fit: 4 KV slots at a 32768-token cap hold 1.9 GB KV (weights 0.9 GB, budget 41.8 GB, 40.0 GB left for a request's own prefill)
+  KV plan: a 65536-position pool for 4 conversations; each is guaranteed 16384, and one can use up to 32768
+  KV pool: 65,536 tokens in blocks of 64 (f16, 1.9 GB; group: full); a prompt can take another conversation's KV rows; one conversation can use up to 32,768 of them.
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.57 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 80.0 ms; 80 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 79.6 ms; 161 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 51.2 ms; 242 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 78.0 ms; 322 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 3 in 78.0 ms; 402 of 6424 MiB held
+kv snapshot: took 2944 rows (80 MiB host) from slot 0 in 83.8 ms; 483 of 6424 MiB held
+
+shutting down…
+resident batch "bench": 742 runs, 721 batched steps (2219 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 9 647 65]
+resident batch "bench" held: 0 tokens in 0 holds
+resident batch "bench" time: runs 4.934 s, exclusive 3.767 s (prefill 35 passes 3.284 s, bookkeeping 0.483 s)
