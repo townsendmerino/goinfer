@@ -1132,6 +1132,20 @@ gap being **mis-attributed five times**, each refuted by the next measurement, b
 (L1TEX latency from 49.99%-bytes-per-sector uncoalesced loads). Read it before recording a mechanism
 as a bound.*
 
+### B2.1 — CUDA f16 KV against f32, the cost row (nobara, 2026-11-09, PARKED)
+
+Question (`docs/measurements/f16-speed-2026-11/registration.md`): does CUDA's `auto` f16 KV cost served decode speed against f32 on the paged KV. Machine nobara (RTX 2070 SUPER 8 GB, driver 595.112.07, Nobara, 16 cores), CUDA. One serve binary, main `f5f06f4b2` (aikit v1.76.0), arms `-kv f16` and `-kv f32`. Greedy, five runs a cell, both arm orders, exclusive timing lock per pass. Checkpoints from local `~/models`: Qwen2.5-Coder 0.5B and 1.5B Q4_K_M GGUF, Phi-3-mini-4k Q4 GGUF, Qwen2.5-7B-Instruct Q4_K_M GGUF. Night run 23:12 to 00:01 PST. Thermal: no reading; each cell started at a 1-minute load of at most 1.00. Raw data and grade: `measurements/f16-speed-2026-11/run-2026-11-09/`.
+
+| model | keys | f16 tok/s | f32 tok/s | f16 / f32 |
+|---|---|---|---|---|
+| 0.5B | 128 / 512 / 2048 / 3900 | 519.6 / 441.1 / 444.6 / 410.1 | 514.7 / 432.8 / 437.8 / 405.7 | 1.010 to 1.019 |
+| 1.5B | 128 / 512 / 2048 / 3900 | 277.3 / 242.1 / 250.0 / 234.2 | 274.3 / 233.8 / 245.4 / 229.2 | 1.011 to 1.035 |
+| phi3-mini | 128 / 512 / 2048 / 3900 | 114.5 / 105.3 / 77.9 / 59.1 | 113.7 / 103.1 / 73.0 / 53.0 | 1.007 to 1.115 |
+| 7B | 128 | 85.7 | 85.6 | 1.001 |
+| **7B** | **8000** | **68.1** | **70.1** | **0.972** (the cost) |
+
+VERDICT PARKED (worst cell 0.972 in the 0.95-0.98 band). The prediction (7B at 8000 at least 1.10) missed. `auto` stays f16; whether any family's `auto` changes is Francis's.
+
 ### B3. cgo-free Metal (darwin, `--backend metal`) vs Ollama-Metal — 4-bit both sides
 
 > **Superseded 2026-09-25 by the pre-registered peer sweep ([`measurements/peer-claim-2026-09-25.md`](measurements/peer-claim-2026-09-25.md), cell g):** Metal greedy decode against Ollama
