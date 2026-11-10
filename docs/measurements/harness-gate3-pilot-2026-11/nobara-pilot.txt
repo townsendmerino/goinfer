@@ -1,0 +1,33 @@
+request 0: 284.7 s, 18635 in, 5 out
+request 1: 2.4 s, 75 in, 5 out
+request 2: 2.4 s, 75 in, 5 out
+request 3: 2.4 s, 75 in, 5 out
+request 4: 3.9 s, 75 in, 38 out
+request 5: 2.4 s, 75 in, 5 out
+request 6: 2.4 s, 75 in, 5 out
+request 7: 5.7 s, 75 in, 79 out
+request 8: 2.4 s, 75 in, 5 out
+request 9: 2.4 s, 75 in, 5 out
+request 10: 2.4 s, 75 in, 5 out
+request 11: 2.4 s, 75 in, 5 out
+request 12: 2.4 s, 75 in, 5 out
+request 13: 3.4 s, 75 in, 26 out
+request 14: 2.4 s, 75 in, 5 out
+request 15: 2.4 s, 75 in, 5 out
+request 16: 3.4 s, 75 in, 26 out
+request 17: 2.4 s, 75 in, 5 out
+request 18: 2.4 s, 75 in, 5 out
+request 19: 3.3 s, 75 in, 26 out
+request 20: 5.7 s, 75 in, 81 out
+request 21: 2.4 s, 75 in, 5 out
+request 22: 2.4 s, 75 in, 5 out
+request 23: 2.4 s, 75 in, 5 out
+request 24: 2.4 s, 75 in, 5 out
+request 25: 2.4 s, 75 in, 5 out
+request 26: 3.5 s, 75 in, 31 out
+request 27: 2.4 s, 75 in, 5 out
+request 28: 3.4 s, 75 in, 26 out
+request 29: 3.4 s, 75 in, 29 out
+request 30: 2.4 s, 75 in, 5 out
+t_cold 284.7 s (prompt 18635 tokens), t_warm median 2.4 s, mean output 15 tokens
+per M26-class cell: full (30 seeds, 10 sessions) 4.3 h, reduced (10 seeds, 5 sessions) 3.6 h
