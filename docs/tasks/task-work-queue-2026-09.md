@@ -86,7 +86,7 @@ each one spends its first hours untracked.
 - Gate: a mutation test — create an untracked `.md` with a deliberately bogus `path:line`
   citation, confirm exit 0 with the note, `git add` it, confirm exit 1 naming that citation.
 
-Brief for this is at [`../prompts/citation-lint-untracked.md`](../prompts/citation-lint-untracked.md).
+Brief for this is at [`../completed/citation-lint-untracked.md`](../completed/citation-lint-untracked.md).
 
 **Status: DONE 2026-09-14** (`0c74a161`, `main`). `scripts/queue_citation_lint.py`'s `live_docs()`
 now filters on `git ls-files -z`, cached once per process; `untracked_live_docs()` feeds `main()`'s

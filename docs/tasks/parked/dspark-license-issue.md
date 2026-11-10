@@ -1,5 +1,12 @@
 # Upstream issue draft — missing LICENSE on the `dspark_*_block7` drafter checkpoints
 
+> **Parked, 2026-11-10.** Moved here from `docs/prompts/` when that directory was retired. The draft below is unfiled by decision, not by oversight. **Trigger to file:** something that ships or is distributed depends on a `dspark_*_block7` drafter checkpoint.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| DSL-file | blocked | trigger: a shipped or distributed artifact depends on a block7 drafter; then file the issue below | `docs/spec/08-dspark-dflash.md` |
+
 > **STATUS: STILL DRAFTED, STILL NOT FILED — and that is the current decision, not an oversight.**
 > Re-checked 2026-08-21. P15 step (0) re-ran the licence audit and reached the same place: filing
 > matters for eventual distribution/ship, not for local research use, and `license=None` was
@@ -9,7 +16,7 @@
 **Status: DRAFTED, not filed.** Written 2026-08-15 (Claude app, P10 investigation). Filing is
 for eventual **distribution/ship**, not to unblock work: Francis accepted `license=None` for
 exploration the same day, so the block7 drafters are already in scope for the DSpark spike.
-See [`docs/spec/08-dspark-dflash.md`](../spec/08-dspark-dflash.md) §"Performance levers and
+See [`docs/spec/08-dspark-dflash.md`](../../spec/08-dspark-dflash.md) §"Performance levers and
 the DSpark pivot".
 
 **Target:** the DeepSeek / DeepSpec org that publishes the DSpark drafter checkpoints on
@@ -59,4 +66,4 @@ Thanks!
   increment 1 recorded the 8b/14b as MIT on an enumeration pass. Worth carrying into any
   future licence audit here, not just upstream.
 
-<!-- doc-reviewed: 2026-09-13 -->
+<!-- doc-reviewed: 2026-11-10 -->

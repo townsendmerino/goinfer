@@ -1,5 +1,12 @@
 # goinfer task: does `defaultVerifyWidth = 8` hold on a SECOND pairing? (Mac cell)
 
+> **Parked, 2026-11-10.** Moved here from `docs/prompts/` when that directory was retired. The Mac cell below was never run: no record of it exists and `decoder.defaultVerifyWidth` is still 8. The Linux half is `docs/measurements/default-verify-width-2026-08-25.md` (7 beats 8 in all four cells on the one pairing that box can run). **Trigger to reopen:** a second block-drafting pairing that can be timed, on either box.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| VW-pair2 | blocked | trigger: a second block-drafting pairing can be timed; then sweep the width as written below and move the default only if 7 beats 8 there too | `docs/measurements/default-verify-width-2026-08-25.md` |
+
 > Written 2026-08-25 against goinfer `f49c6b1`. **Box: `macbook-arm64`.** This is a
 > measurement task with a one-character outcome — it either clears a default change or kills
 > it. Do not build anything.
@@ -81,4 +88,4 @@ and pairing, and one sentence saying whether the default should move. If it shou
 change in the same commit — `decoder/blockspec.go`, `defaultVerifyWidth`, and update the
 comment above it, which currently justifies 8 from math's then-measured optimum.
 
-<!-- doc-reviewed: 2026-09-13 -->
+<!-- doc-reviewed: 2026-11-10 -->

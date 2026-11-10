@@ -70,11 +70,6 @@ CHECKS = [
         lambda: count_md("docs/completed/*.md"),
     ),
     (
-        "`prompts/` bullet",
-        re.compile(r"`prompts/` \((\d+)\)"),
-        lambda: count_md("docs/prompts/*.md"),
-    ),
-    (
         "`releases/` bullet",
         re.compile(r"`releases/` \((\d+)\)"),
         lambda: count_md("docs/releases/*.md"),

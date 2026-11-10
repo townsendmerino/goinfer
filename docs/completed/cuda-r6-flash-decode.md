@@ -1,9 +1,18 @@
 # goinfer task: R6 — the CUDA flash-decode lane: the spike's mechanism, then the kernel, then f16 KV
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (close-out, 2026-11-10): DELIVERED.** R6 was built and shipped opt-in on 2026-09-20/21 and made the default on 2026-09-23 by the owner's decision; its row in `docs/completed/red-october.md` §5 is the result. Phase 3's f16 KV band was re-based by `docs/measurements/f16kv-baseline-2026-09-26.md`, and KV precision is now owned by `docs/tasks/task-kv-architecture-2026-10.md`. Every instruction below is a record of what was asked, not a task. Archived when `docs/prompts/` was retired; a new brief is a section of its task doc or a file under `docs/tasks/`.
+
 > Written 2026-09-19 against goinfer `894c9a9a` plus the same day's edits to
 > `docs/completed/red-october.md`. **Box: `nobara-pc`.** Three phases with a written record between
 > each; phase 1 builds no kernel.
-> **The brief is R6 in [`../completed/red-october.md`](../completed/red-october.md), and it is the
+> **The brief is R6 in [`../completed/red-october.md`](red-october.md), and it is the
 > authority** — goal, bands, gates, measurement protocol, record. This prompt is the order of work
 > plus the six points of R6's 2026-09-19 amendment, which exist because the brief as first written
 > got three things about the spike wrong.
@@ -178,5 +187,3 @@ measurement record; the `benchmarks.md`, `ollama-chase.md` and `task-decode-spli
 updates R6's **Record** paragraph lists, in the same commit as the measurement they quote; R6's
 status row in `red-october.md` §5. Commit in increments that survive interruption. A negative is
 recorded at full value, in the measurement file and in `ollama-chase.md` §10.
-
-<!-- doc-reviewed: 2026-09-19 -->

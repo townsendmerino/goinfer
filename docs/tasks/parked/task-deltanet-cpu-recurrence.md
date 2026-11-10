@@ -1,6 +1,6 @@
 # Task: the DeltaNet CPU recurrence — Gate D0
 
-> Opened 2026-08-25 from `docs/prompts/deltanet-cpu-recurrence.md`. Prior art: `docs/queue-performance.md`
+> Opened 2026-08-25 from `docs/completed/deltanet-cpu-recurrence.md`. Prior art: `docs/queue-performance.md`
 > already named this lever ("the DeltaNet recurrence is scalar Go"); `docs/deltanet-residency-plan.md`
 > proved the compute parallelizes (WebGPU resident at 11.4-12.2x CPU decode); the 35B diagnostic
 > (`docs/completed/task-zeno-compare.md`) measured DeltaNet at ~19% of the decode token, the largest component

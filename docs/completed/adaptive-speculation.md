@@ -1,5 +1,14 @@
 # goinfer task: adaptive speculation — width controller, grammar prior, MTP spike
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (close-out, 2026-11-10): CLOSED, all three phases at an end state.** Phase 1, the width controller, failed all four ship gates and was removed (`docs/measurements/adaptive-width-shipgates-2026-08-25.md`). Phase 2's premise was tested under a rule written first and is dead (`docs/measurements/phase2-grammar-premise-RESULT.md`). Phase 3, the MTP spike, was never started, by this brief's own ordering; MTP heads are owned by `docs/spec/09-mtp-heads.md` and `docs/roadmap.md`'s speculative-decoding line. Every instruction below is a record of what was asked, not a task. Archived when `docs/prompts/` was retired; a new brief is a section of its task doc or a file under `docs/tasks/`.
+
 > **Box:** `linux` (the drafter path is CUDA-resident; all baselines below were measured there).
 > **Stimulus:** a llama.cpp fork shipping acceptance-driven draft-length adaptation
 > (`LaurentZuijdwijk/llama.cpp`, `--spec-draft-adaptive --spec-draft-n-min/--spec-draft-n-max`,
@@ -121,7 +130,7 @@ controller's failure modes (it measured worse than both endpoints it moved betwe
 dissolves the "no single constant is right" problem the sweep pre-registered and then hit.
 
 **Scoped, not scheduled.** It becomes interesting the moment the Mac pairing
-(`mac-default-verify-width.md`) lands and either confirms the ratio story or breaks it — if a
+(`../tasks/parked/mac-default-verify-width.md`) lands and either confirms the ratio story or breaks it — if a
 second pairing's optimum does NOT track its cost ratio, the mechanism is wrong and this idea
 dies with it. Cheap first probe if it survives: a startup micro-benchmark of one decode step
 against one k-wide batched verify, width chosen from the measured ratio, scored against the best
@@ -146,5 +155,3 @@ gate; the mixed-content suite committed to the harness; accept-rate telemetry; `
 verify-width queue lever closed with the measurements; a `docs/measurements/` note recording
 per-suite adaptive-vs-static, the mixed-suite result, and Phase 3's kill-gate verdicts (whatever
 they are); queue rows filed for anything discovered and deliberately not done.
-
-<!-- doc-reviewed: 2026-09-13 -->

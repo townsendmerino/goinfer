@@ -1,5 +1,14 @@
 # Prompt: MC1 on CUDA — multi-slot resident KV (nobara)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (close-out, 2026-11-10): DELIVERED.** The CUDA resident's KV slots were built from this brief and graded on W7; `docs/tasks/parked/task-concurrency-2026-09.md`, "MC1 on CUDA", holds what was built and the result. Every instruction below is a record of what was asked, not a task. Archived when `docs/prompts/` was retired; a new brief is a section of its task doc or a file under `docs/tasks/`.
+
 For a Claude Code session on `nobara-pc` (RTX 2070 SUPER 8 GB, driver 595.91.07 as of 2026-09-27), repo
 `~/mycode/goinfer`. `git pull` first.
 

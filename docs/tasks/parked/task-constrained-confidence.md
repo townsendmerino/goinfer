@@ -369,7 +369,7 @@ violate" section (one paragraph, the caveat linked), and a worked example in `ap
 every fact read from a primary artifact at a pinned revision). Where it contradicts the text below, the record wins:
 - **autotrust's `jev_judge` server is not published**, and the `{distribution, decision, confidence, latency_ms}`
   fields appear in no source. The reference fixture is the JEV-9B card's `decide()` (transformers 5.16.1 + peft
-  0.21.0), run on the Linux box: `docs/prompts/nobara-decisions-d0-fixture-2026-09.md`.
+  0.21.0), run on the Linux box: `docs/completed/nobara-decisions-d0-fixture-2026-09.md`.
 - **The template is bare-v1**, with no chat template and no BOS. The labels are bare `false`/`true`, `0`–`5` and
   `A`–`P` (no leading space). `slots.template_version` holds the version.
 - **The 9B's numbers:**
@@ -724,7 +724,7 @@ schema was never published (D0).
 **D6a pre-registration (2026-09-28, committed before any graded run; the owner chose chat-v1 as the graded
 template).** The artifacts are in `docs/measurements/decisions-d6a-2026-09-28/`: `select.py`, `analyze.py` and
 `run-d6a.sh`, all written before any graded run.
-- **Machine: nobara-pc, CUDA** (`docs/prompts/nobara-decisions-d6a-2026-09.md`). The Mac cannot run it.
+- **Machine: nobara-pc, CUDA** (`docs/completed/nobara-decisions-d6a-2026-09.md`). The Mac cannot run it.
   - The 9B fell back to the CPU there twice: first because the auto-pinned context exceeded Metal's 32,768
     ceiling (fixed by `--ctx 4096`), then because Metal's memory guard budget (5.4–5.8 GB of live memory against
     the 6.04 GB the resident needs) declined it.

@@ -196,7 +196,7 @@ naming as a side benefit — not a reason to prioritize this model on its own.
 
 ## License — gate zero, per the P15 precedent
 
-The house pattern for a model with a licensing question is `docs/prompts/dspark-license-issue.md`'s:
+The house pattern for a model with a licensing question is `docs/tasks/parked/dspark-license-issue.md`'s:
 step (0) is a licence read, done before anything else, re-run at each pickup rather than trusted
 from the first pass (P15 re-ran it 2026-08-21 and got the same answer twice). This model's case is
 easier in one way — there's a named, readable license rather than an absent one — but the same
@@ -307,7 +307,7 @@ this doesn't sit as an orphaned scoping doc nobody's roadmap points to.
   `decoder/forwardn.go`, `decoder/moepaging.go`, `docs/completed/qwen3_5_moe.md`,
   the completed qwen3.6 real-checkpoint task record (internal, untracked), `docs/queue-correctness.md`,
   `docs/completed/task-moe-streaming.md`, `docs/spec/README.md`, `docs/completed/task-parity-coverage.md`,
-  `docs/parity-coverage-policy.md`, `docs/prompts/dspark-license-issue.md`,
+  `docs/parity-coverage-policy.md`, `docs/tasks/parked/dspark-license-issue.md`,
   `docs/completed/scoping-lfm2.md`, `docs/next-models.md`
 
 Second pass, 2026-09-13 (fable — the dtype resolution, oracle-status and family-status notes above):

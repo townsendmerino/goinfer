@@ -1,5 +1,14 @@
 # Prompt: MC1 on WebGPU — the discrete-GPU clamp on real Vulkan hardware, then slots before context (nobara)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (close-out, 2026-11-10): DELIVERED, with one optional item left.** The discrete-GPU clamp on real Vulkan hardware and the genuine-pin fix (this brief's items 26 and 28) shipped on 2026-09-28. §5's W7 timing on Vulkan (item 29, optional and reported only) was not run; it is the `W7-vulkan` row of the ledger in `docs/tasks/parked/task-concurrency-2026-09.md`, which owns it. Every instruction below is a record of what was asked, not a task. Archived when `docs/prompts/` was retired; a new brief is a section of its task doc or a file under `docs/tasks/`.
+
 For a Claude Code session on `nobara-pc` (RTX 2070 SUPER 8 GB, WebGPU through wgpu-native's **Vulkan** backend), repo
 `~/mycode/goinfer`. `git pull` first. Check that `go.work` lists `./gpu`; it is gitignored, and the `gpu` module's
 tests cannot see the root module's current code without it.

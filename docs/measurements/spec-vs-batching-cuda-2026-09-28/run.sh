@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC4's spec-vs-batching premise measurement on CUDA (docs/prompts/nobara-mc4-spec-alone-cuda-2026-09.md, a copy of
+# MC4's spec-vs-batching premise measurement on CUDA (docs/completed/nobara-mc4-spec-alone-cuda-2026-09.md, a copy of
 # the 2026-09-27 Metal design, docs/measurements/spec-vs-batching-metal-2026-09-27/run.sh): nobara-pc, RTX 2070
 # SUPER, driver 595.91.07, serve-cuda @ 2d052fc4 (item 30 + the MC3-CUDA batched-head lever both already in),
 # arms batch (serve's defaults: MC3 on) vs spec (-spec ngram, one generation at a time); greedy.

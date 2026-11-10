@@ -110,7 +110,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 > llama, mistral, qwen2, qwen3 and phi3 (`decoder/kvresolve.go:CUDAKVF16Decline` lists what keeps f32; owner override,
 > commit 60222412). The text below that says CUDA is f32-only (this note as first written, §1, §4, §5.9, KV4b, D7) described the
 > tree at `e2ffb953`. R6 phase 3 had been parked on 2026-09-26 on a *speed* case: about 1.05× on a GQA 7B at depth 3,900
-> (`docs/prompts/cuda-r6-flash-decode.md`); the case for it was *capacity*, and the override took it on that ground. What
+> (`docs/completed/cuda-r6-flash-decode.md`); the case for it was *capacity*, and the override took it on that ground. What
 > is left for KV4b is f16 *pools* and the families still on f32. Lever 4 is KV-pre plus KV10, lever 5 is this doc, and lever
 > 6 is KV7.
 
@@ -850,7 +850,7 @@ Metal device gate.
 The donor choice (follow-up 2 below) merged the same day (#37).
 
 Branch `kv2-2026-10`. Gates, and the choices made before the code: `docs/measurements/kv2-2026-10-14.md`. The Mac
-builds the decoder, serve, Metal, WebGPU and the CPU; nobara builds CUDA from `docs/prompts/nobara-kv2-cuda-2026-10.md`.
+builds the decoder, serve, Metal, WebGPU and the CPU; nobara builds CUDA from `docs/completed/nobara-kv2-cuda-2026-10.md`.
 KV2 merges when every arm on both boxes is read.
 
 - **Build:**
@@ -1131,7 +1131,7 @@ KV2 merges when every arm on both boxes is read.
 - **KV4b: f16 pools.** This reopens R6 phase 3 (parked 2026-09-26 on speed) on capacity.
   - The fidelity gate takes the registered shape `docs/completed/task-gpu-f16-kv.md` used on WebGPU: argmax agreement and
     cosine on a held-out set.
-  - `docs/prompts/cuda-r6-flash-decode.md` notes that no family is known to need f32 KV: Metal runs f16 for every family.
+  - `docs/completed/cuda-r6-flash-decode.md` notes that no family is known to need f32 KV: Metal runs f16 for every family.
   - The default is D7.
 - **Gates (sketch):**
   - **Identity (hard):** every CUDA fixture and real checkpoint, with `TestWindowedKV_*` kept as oracles.

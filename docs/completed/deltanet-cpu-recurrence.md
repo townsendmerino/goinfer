@@ -1,5 +1,14 @@
 # Task (goinfer + aikit): the DeltaNet recurrence — the last unvisited ~19% of the 35B token
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (close-out, 2026-11-10): SUPERSEDED by its task doc.** Gate D0 ran on 2026-08-25 and the work moved to `docs/tasks/parked/task-deltanet-cpu-recurrence.md`, which owns the result and what is left. Every instruction below is a record of what was asked, not a task. Archived when `docs/prompts/` was retired; a new brief is a section of its task doc or a file under `docs/tasks/`.
+
 > **For:** Claude Code, in `~/tmcode/goinfer` + `~/tmcode/aikit`, on the M1 Pro. Written
 > 2026-08-25. **Prior art (read all three before any code — this section is mandatory now):**
 > `docs/queue-performance.md`'s quantization entry already names this exact lever ("the
@@ -64,5 +73,3 @@ width) before any perf claim — the house bar.
 - The qwen35-family dense GGUF loader gap (separate queue entry), the chunked-scan batched
   prefill (roadmap item), anything MoE/paging/kind-4 (that arc is closed), attention, W4A8.
 - Quantizing the recurrence's activations or state — numerics surface, not this pass.
-
-<!-- doc-reviewed: 2026-09-13 -->

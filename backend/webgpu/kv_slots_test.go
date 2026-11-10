@@ -726,7 +726,7 @@ func captureStderrGPU(t *testing.T, fn func()) string {
 }
 
 // TestWebGPUKVSlots_realClamp exercises the discrete-GPU clamp on real hardware and a real
-// checkpoint (docs/prompts/nobara-mc1-webgpu-2026-09.md, §2, item 26). A slot whose allocation
+// checkpoint (docs/completed/nobara-mc1-webgpu-2026-09.md, §2, item 26). A slot whose allocation
 // fails, or whose headroom probe after it fails, stops buildKVSlots; that path otherwise only
 // runs under an injected failure (TestWebGPUKVSlots_clampedBuild). It loads with 4 slots
 // requested, runs every granted slot, and checks the device comes back clean.
