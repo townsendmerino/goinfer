@@ -454,6 +454,23 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**B45 · CI runs no adapter-gated WebGPU test, so a WebGPU ratchet is checked only on the boxes** — filed 2026-11-09 (mbp2-fit,
+from the `TestMemGate_webgpu` finding). **Not started; a CI change, so it waits on the owner's word.**
+- **The hole.** The webgpu job runs `go test -short -tags 'gpu goinfer_testhooks' ./backend/webgpu/...` on a headless runner with
+  no Vulkan adapter, so every test that opens a device skips there: `TestMemGate_webgpu` (the memory gate and its known-gap table),
+  the slot census, and the kernel parity tests. A known-gap entry that stops firing, or a lease that grows past its plan, goes red
+  only when someone runs the package on nobara, the Mac or mbp2. On 2026-11-09 the "MM8, Gemma 4 MoE dense" entry had stopped
+  firing on mbp2's Vulkan run with nobody having seen it; its fate waits on nobara's run.
+- **What is in reach.** A software Vulkan adapter. mbp2's (Mesa's llvmpipe) ran the kernels package with 52 tests passing
+  and 67 skipping as hardware-dependent, and ran `TestMemGate_webgpu` to its verdict. The binding documents the packages:
+  `apt install -y libegl1-mesa-dev mesa-vulkan-drivers` (`github.com/oliverbestmann/webgpu`'s README). Tests that need real hardware
+  already skip on a software adapter by name ("software adapter …; hardware-dependent test").
+- **Cost, to measure before deciding.** On mbp2: the kernels package about 2 to 7 minutes, `TestMemGate_webgpu` about 3 to 4, the
+  root webgpu package past go test's 10-minute default. A CI job would run a chosen subset (the memory gate, the census, the
+  kernels package) with its own timeout, not the whole module.
+- **Done when:** a CI job opens a software adapter and runs `TestMemGate_webgpu` and the kernels package to a PASS, and its wall
+  time is recorded here. A known-gap entry that stops firing then goes red in CI on the PR that caused it.
+
 **B44 · `serve check`'s long-prompt row fails on reasoning models** — filed 2026-11-09 (mbp2-fit, from Francis's doc-review
 decisions); **FIXED 2026-11-09.** `internal/guard/servecheck/check.go:Client.Chat` counted content deltas only, so a model that
 thinks first spent the row's 8 tokens on reasoning and read "stream produced no tokens". It now counts `reasoning_content` and
