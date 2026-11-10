@@ -68,7 +68,7 @@ func ResolveKV(backend string, arch *Architecture, opts Options) (delivered, rea
 	q := mem.KVQuery{Backend: backend, Request: gpuKVRequested(opts), CPURequest: cpuKVRequested(opts),
 		CPUBatchOn: opts.CPUBatchDecode == CPUBatchOn, Drafter: o.Drafter, HasArch: arch != nil}
 	if arch != nil {
-		q.NoKV, q.MLA, q.MoE, q.OwnLoop = arch.keepsNoKV(), arch.mla != nil, arch.MoE != nil, arch.ownLoopFamily()
+		q.NoKV, q.MLA, q.OwnLoop = arch.keepsNoKV(), arch.mla != nil, arch.ownLoopFamily()
 		q.CPUF16OK, q.CPUI8OK = arch.kvF16OK(), arch.kvInt8OK()
 		p := kvPolicies["cuda"]
 		q.CUDAPolicy = mem.KVPolicy{Decline: func() string { return p.Decline(arch.kvFacts(), o) }, Auto: p.Auto}

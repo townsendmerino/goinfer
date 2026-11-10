@@ -464,7 +464,7 @@ type Options struct {
 	// at VRAM cost. Only meaningful with MoECacheExperts.
 	MoECacheSlots int
 	// KVQuant selects the CPU KV cache storage precision: "" / "f32" (default, bit-exact, the reference), "f16" (each stored row
-	// rounded to binary16, half the bytes; the generic loop without MoE, Architecture.kvF16OK, else f32) or "i8" (per-(position,
+	// rounded to binary16, half the bytes; the generic loop, Architecture.kvF16OK, else f32) or "i8" (per-(position,
 	// KV-head) symmetric int8, 4x smaller; declined where Architecture.kvInt8OK says no). The lossy two are opt-in. See
 	// docs/tasks/task-cpu-kv-f16-2026-10.md and task-cpu-kv-quant.md.
 	KVQuant string
