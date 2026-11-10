@@ -180,6 +180,9 @@ func TestRF3CUDA_rideIdentity(t *testing.T) {
 	long = long[:1200]
 	aloneNew := gen(long, 8)
 
+	// aloneNew left the newcomer's prompt in the bound slot, and a prompt whose prefix the resident holds is prefilled from the
+	// divergent suffix only (prefix reuse): a seed token, so no chunk to ride. Forget it so the concurrent newcomer prefills cold.
+	m.ForgetResidentForTest()
 	before := m.ResidentBatchStats()
 	var got0, got1, gotNew []int
 	var wg sync.WaitGroup
