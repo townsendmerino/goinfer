@@ -167,7 +167,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			// int8 attention branch turns it red. (TestKVI8_genParity sets m.kvI8 itself, not through Options.)
 			pathCPUDecode:        ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
 			pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"), // TestKVI8_batchedPrefill sets m.kvI8 itself
-			pathCPUBatchDecode:   ogDeclinedAt("cpuBatchCacheEligible", "TestCPUBatch_ineligibleCachesBypass"),
+			pathCPUBatchDecode:   ogTestedBy("TestOptionPath_cpuBatchedDecode"),
 			pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 			pathSessionLifecycle: ogTestedBy("TestKVI8_snapshotRoundtrip"),
 		},

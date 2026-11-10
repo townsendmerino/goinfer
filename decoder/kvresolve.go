@@ -66,7 +66,7 @@ func ResolveKV(backend string, arch *Architecture, opts Options) (delivered, rea
 		o.Backend = backend
 	}
 	q := mem.KVQuery{Backend: backend, Request: gpuKVRequested(opts), CPURequest: cpuKVRequested(opts),
-		CPUBatchOn: opts.CPUBatchDecode == CPUBatchOn, Drafter: o.Drafter, HasArch: arch != nil}
+		Drafter: o.Drafter, HasArch: arch != nil}
 	if arch != nil {
 		q.NoKV, q.MLA, q.OwnLoop = arch.keepsNoKV(), arch.mla != nil, arch.ownLoopFamily()
 		q.CPUF16OK, q.CPUI8OK = arch.kvF16OK(), arch.kvInt8OK()
