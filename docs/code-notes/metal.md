@@ -5048,7 +5048,7 @@ Moved from `backend/metal/sa_outlier_test.go` (the comment above `TestSAGemv_Out
 
 ```text
 TestSAGemv_OutlierRegime is the decisive experiment for the Gemma o-proj amplitude bug
-(docs/prompts/gemma-metal-signflip-bisect.md, Fork 2). The CUDA box showed Metal's o-proj
+(docs/completed/gemma-metal-signflip-bisect.md, Fork 2). The CUDA box showed Metal's o-proj
 contribution inflates 2–6× and flips on the secondary channels while CUDA's dp4a stays clean,
 and named it a Metal W4A8 GEMV scale bug. TestSAGemvLargeK already proves the kernel correct at
 K=4096 — but with a BENIGN random activation. This drives the same production kernel in the

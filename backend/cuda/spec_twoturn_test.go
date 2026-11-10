@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// spec_twoturn_test.go is item 30 (docs/prompts/nobara-cuda-spec-trailing-token-2026-09.md §2): the CUDA check of two
+// spec_twoturn_test.go is item 30 (docs/completed/nobara-cuda-spec-trailing-token-2026-09.md §2): the CUDA check of two
 // trailing-token fixes whose real drafter and kernels exist only on CUDA —
 //
 //   - the block drafter (--drafter, CUDA only): at a completed exit (EOS or max_tokens) the resident commit must record the

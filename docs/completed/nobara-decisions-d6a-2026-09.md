@@ -1,5 +1,14 @@
 # Prompt: decisions D6a — Route A on Qwen3.5-9B, graded against JEV-9B (nobara, CUDA)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (close-out, 2026-11-10): DELIVERED, run 2026-09-28 and graded 2026-09-30.** The record is `docs/measurements/decisions-d6a-2026-09-28.md` (decision by the registered rule: build D2-D4, since built). `docs/tasks/parked/task-constrained-confidence.md` owns what follows. Every instruction below is a record of what was asked, not a task. Archived when `docs/prompts/` was retired; a new brief is a section of its task doc or a file under `docs/tasks/`.
+
 For a Claude Code session on `nobara-pc` (RTX 2070 SUPER 8 GB), repo `~/mycode/goinfer`. `git pull` first.
 
 ## The job
@@ -51,7 +60,7 @@ authors' published B0.
      special tokens.
    - Then read the DECISION line.
 7. **Optional, reported only:** if the D0 fixture has landed (`testdata/decisions/`,
-   `docs/prompts/nobara-decisions-d0-fixture-2026-09.md`), run arm A's `decide` on its items too, and report the
+   `docs/completed/nobara-decisions-d0-fixture-2026-09.md`), run arm A's `decide` on its items too, and report the
    mean KL to `jev9b_ref_bf16.jsonl`.
 
 ## Record

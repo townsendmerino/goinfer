@@ -3264,7 +3264,7 @@ all-zero offset is degenerate for every precision.
 Moved from `backend/webgpu/kv_slots_test.go` (the comment above `TestWebGPUKVSlots_realClamp`) on 2026-10-09.
 
 ```text
-TestWebGPUKVSlots_realClamp is item 26 of docs/prompts/nobara-mc1-webgpu-2026-09.md, §2: the discrete-GPU clamp
+TestWebGPUKVSlots_realClamp is item 26 of docs/completed/nobara-mc1-webgpu-2026-09.md, §2: the discrete-GPU clamp
 (a slot whose allocation fails, or whose headroom probe after it fails, stops buildKVSlots) has only run under an
 injected failure (TestWebGPUKVSlots_clampedBuild) — nobody has seen what wgpu-native on Vulkan does when a real
 buffer allocation runs out of VRAM. This is that measurement, on real hardware and a real checkpoint, not a

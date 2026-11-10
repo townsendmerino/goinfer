@@ -71,9 +71,8 @@ correct it in place, then archive and re-point citers to the canonical home.
 `docs/task-*.md` files no longer sit flat in `docs/` root: a COMPLETE/SUPERSEDED verdict archives
 to `docs/completed/<name>.md` exactly as step 3 below always did; a LIVE-STALE or
 verified-accurate-but-open verdict moves to `docs/tasks/<name>.md`; a PARKED verdict moves to
-`docs/tasks/parked/<name>.md`. `docs/prompts/*.md` briefs follow the same three-way split (archive
-delivered/superseded ones, leave genuinely open ones in `docs/prompts/`) but there is no
-`docs/prompts/parked/` — an open prompt just stays in `docs/prompts/`. If the doc is already in the
+`docs/tasks/parked/<name>.md`. There is no `docs/prompts/` any more: a brief written for another session or
+box is a section of its task doc or a file under `docs/tasks/`, and follows the same split. If the doc is already in the
 right place for its verdict, no move is needed. Do not invent a fourth location.
 
 ## 3. Archive procedure (COMPLETE or SUPERSEDED — house conventions, follow exactly)
@@ -119,7 +118,7 @@ doc is not already at the right location for its verdict:
    new path:
    - A same-directory `docs/*.md` markdown link becomes `tasks/task-<name>.md` (or
      `tasks/parked/task-<name>.md`).
-   - A `docs/prompts/*.md` or `docs/measurements/*.md` file, one level down, needs `../tasks/...`.
+   - A `docs/measurements/*.md` file, one level down, needs `../tasks/...`.
    - If the moved doc itself has outbound relative links (to `measurements/`, sibling `task-*.md`
      docs, `examples/`), they need `../` prepended since the doc is now one level deeper — and if a
      link target has ALSO already moved into `docs/tasks/` or `docs/tasks/parked/`, that link
@@ -137,7 +136,7 @@ doc is not already at the right location for its verdict:
 
 ## 3b. Every pass, regardless of verdict — the doc-reviewed footer
 
-`docs/tasks/*.md`, `docs/tasks/parked/*.md`, and `docs/prompts/*.md` each carry a trailing
+`docs/tasks/*.md` and `docs/tasks/parked/*.md` each carry a trailing
 `<!-- doc-reviewed: YYYY-MM-DD -->` footer, checked by `scripts/doc_review_staleness.py` (step 1).
 **Add it if missing, update the date if present, on every pass that verifies the doc — including a
 pass that changes nothing at all.** A doc confirmed accurate today and left untouched still needs

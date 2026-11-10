@@ -1,5 +1,14 @@
 # nobara: before tomorrow's v0.23.0 release rows (written 2026-10-14 on the Mac)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (close-out, 2026-11-10): DELIVERED.** v0.23.0 was tagged on 2026-10-15; `docs/releases/v0.23.0-checklist.md` is the record of its rows. Every instruction below is a record of what was asked, not a task. Archived when `docs/prompts/` was retired; a new brief is a section of its task doc or a file under `docs/tasks/`.
+
 The five owed rows of `go run ./cmd/gate release v0.23.0` run tomorrow, 2026-10-15, on the merged release-candidate
 commit, not tonight (owner, 2026-10-14). Two of them run on nobara: the CUDA GPU gate and the §C1 parity sweep. Both
 of the sweep's asset items below are resolved, and nobara queues the GPU gate, the sweep and `quick -full` on Linux at

@@ -1,5 +1,14 @@
 # nobara, 2026-10-14: KV2's CUDA half (the copy between slots) and the CUDA arm of every KV2 gate
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (close-out, 2026-11-10): DELIVERED.** nobara registered and read the CUDA arm of KV2's gates in `docs/measurements/kv2-cuda-2026-10-15.md`; the Mac's record is `docs/measurements/kv2-2026-10-14.md`. `docs/tasks/task-kv-architecture-2026-10.md` §6 owns KV2. Every instruction below is a record of what was asked, not a task. Archived when `docs/prompts/` was retired; a new brief is a section of its task doc or a file under `docs/tasks/`.
+
 For a session on `nobara-pc`. The task doc is `docs/tasks/task-kv-architecture-2026-10.md`. Read these first:
 - §6 KV2, with KV1's "Left for KV2" list above it;
 - §5.13's paragraph on CUDA's windowed layers;

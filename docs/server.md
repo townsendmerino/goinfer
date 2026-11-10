@@ -725,7 +725,7 @@ recognised by its tokens, not by who sent it. The design is `tasks/task-kv-archi
   load-time fit guard chose for you counts as not set; an explicit `--ctx` is never shrunk. Elsewhere (a discrete
   GPU) a slot that fails to allocate, or that would leave under 384 MiB free, ends the count, and the context is not
   shrunk yet; pass a smaller `--ctx` for more slots. That half waits on a measurement of the clamp on real Vulkan
-  hardware (`docs/prompts/nobara-mc1-webgpu-2026-09.md`).
+  hardware (`docs/completed/nobara-mc1-webgpu-2026-09.md`).
 - **On CUDA, slots come before context** (owner decision 2026-09-27). When `--ctx` is not set, fit by default gives up
   context, down to 4096, until every requested slot fits, and it logs the shrink. Below 4096 the slots are clamped
   instead.

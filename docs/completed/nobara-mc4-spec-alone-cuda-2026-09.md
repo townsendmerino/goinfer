@@ -1,5 +1,14 @@
 # Prompt: does "speculate when alone, batch under load" pay on CUDA? The premise measurement (nobara)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (close-out, 2026-11-10): DELIVERED, run overnight 2026-09-28 and graded 2026-09-29.** The record is `docs/measurements/spec-vs-batching-cuda-2026-09-29.md`. `docs/tasks/parked/task-concurrency-2026-09.md` owns the MC4 candidate. Every instruction below is a record of what was asked, not a task. Archived when `docs/prompts/` was retired; a new brief is a section of its task doc or a file under `docs/tasks/`.
+
 For a Claude Code session on `nobara-pc` (RTX 2070 SUPER 8 GB), repo `~/mycode/goinfer`. `git pull` first.
 
 ## Why

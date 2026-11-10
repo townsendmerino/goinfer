@@ -1,5 +1,14 @@
 # goinfer task: the citation lint must not red on files git does not track
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (close-out, 2026-11-10): DONE 2026-09-14.** `scripts/queue_citation_lint.py` skips files git does not track and prints what it skipped (`untracked_live_docs`); the result is recorded under J0 in `docs/tasks/task-work-queue-2026-09.md`. Every instruction below is a record of what was asked, not a task. Archived when `docs/prompts/` was retired; a new brief is a section of its task doc or a file under `docs/tasks/`.
+
 > **Box:** any. No hardware, no models, no measurement — one Python file, one test.
 > **Priority:** ahead of the queue and web-UI work, because both will produce new task docs and
 > every new task doc spends its first hours untracked.
@@ -116,5 +125,3 @@ dependency for this.
   separately at `docs/tasks/task-work-queue-2026-09.md`.
 - Any change to what counts as a citation, or to the index format.
 - Any attempt to recover the original file. It is gone; the rebuild is the replacement.
-
-<!-- doc-reviewed: 2026-09-13 -->

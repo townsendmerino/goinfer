@@ -20,7 +20,7 @@ Two thresholds, because the pivot's strongest claim is about the confidence head
     ~/.venv-vl/bin/python scripts/ref_dspark_accept.py
 
 Checkpoint: deepseek-ai/dspark_qwen3_4b_block7 (license=None; Francis accepted for
-exploration 2026-08-15 — see docs/prompts/dspark-license-issue.md).
+exploration 2026-08-15 — see docs/tasks/parked/dspark-license-issue.md).
 """
 import os
 import sys

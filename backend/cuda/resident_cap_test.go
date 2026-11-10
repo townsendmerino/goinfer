@@ -89,7 +89,7 @@ func TestResolveCtxCap(t *testing.T) {
 // (decoder.Model.ResidentContextPinned() true) or a bare request value passed to resolveCtxCapFit with an unpinned m. Set
 // it deliberately on every request>0 case: left unset, the cases pass by coincidence (fitDefaultCtx is itself 8192 and
 // llama-tiny is small enough that Plan hands 8192 back unshrunk) instead of taking the "genuine pin, skip fit entirely"
-// branch they claim to test (docs/prompts/nobara-mc1-webgpu-2026-09.md §4, item 28).
+// branch they claim to test (docs/completed/nobara-mc1-webgpu-2026-09.md §4, item 28).
 func TestResolveCtxCapFit_shortcuts(t *testing.T) {
 	for _, c := range []struct {
 		name              string

@@ -1,5 +1,14 @@
 # Prompt: decisions D0 — the JEV-9B reference fixture (nobara)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (close-out, 2026-11-10): DELIVERED.** The JEV-9B reference fixture is committed under `testdata/decisions/` (`jev9b_ref_f32.jsonl`, `jev9b_ref_bf16.jsonl`, `items.jsonl`), written by `scripts/pin_decisions_d0.py`. `docs/tasks/parked/task-constrained-confidence.md` owns D0 and what follows. Every instruction below is a record of what was asked, not a task. Archived when `docs/prompts/` was retired; a new brief is a section of its task doc or a file under `docs/tasks/`.
+
 For a Claude Code session on `nobara-pc`, repo `~/mycode/goinfer`. Run `git pull` first.
 
 ## The job

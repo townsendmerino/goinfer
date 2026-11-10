@@ -3585,7 +3585,7 @@ box that has a viable pairing:
 
 What it still is NOT: a second PAIRING. This box has one viable one (qwen3-4b dense + DFlash);
 the other drafters are absent and their targets are MoE, where batched verify touches ~8x the
-expert weight. The cross-pairing cell belongs on the Mac -- docs/prompts/mac-default-verify-width.md.
+expert weight. The cross-pairing cell belongs on the Mac -- docs/tasks/parked/mac-default-verify-width.md.
 
 	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ \
 	  -run TestDefaultVerifyWidth -v -timeout 4h
@@ -4747,7 +4747,7 @@ Moved from `backend/cuda/kernels/e2e_decode_test.go` (the comment above `TestE2E
 
 ```text
 TestE2EDecodeThroughput_synthetic is the end-to-end cgo-free CUDA decode THROUGHPUT measurement
-(docs/prompts/cuda-measure-e2e-decode.md): the full per-token work — GEMVs PLUS the
+(docs/completed/cuda-measure-e2e-decode.md): the full per-token work — GEMVs PLUS the
 glue the 244 projection omitted (RMSNorm+quant, RoPE, GQA attention, SwiGLU+quant,
 residual, argmax) — so the tok/s is end-to-end, not a streaming ceiling. Shippable
 config: PTX compiled offline (NVRTC) + go:embed'd + DRIVER-JIT'd (no libnvrtc in the
@@ -6750,7 +6750,7 @@ replaced, so a nil *decoder.Model would panic in the request==0 cases where it's
 `pinned` decides whether the case's Options carries ResidentContext: request, i.e. whether m
 itself is a GENUINE pin (decoder.Model.ResidentContextPinned() true) or just a bare request
 value passed straight to resolveCtxCapFit with an unpinned m — item 28
-(docs/prompts/nobara-mc1-webgpu-2026-09.md §4): before this field existed here, every
+(docs/completed/nobara-mc1-webgpu-2026-09.md §4): before this field existed here, every
 request>0 case below loaded m WITHOUT ResidentContext set, so `pinned` was accidentally always
 false and these cases were passing by coincidence (fitDefaultCtx is itself 8192, and llama-tiny
 is small enough that Plan hands 8192 straight back unshrunk) rather than by actually taking the
@@ -7420,7 +7420,7 @@ defect/fixed pair rather than inheriting 0.50.
 Moved from `backend/cuda/spec_twoturn_test.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-spec_twoturn_test.go is item 30 (docs/prompts/nobara-cuda-spec-trailing-token-2026-09.md §2): the CUDA check of
+spec_twoturn_test.go is item 30 (docs/completed/nobara-cuda-spec-trailing-token-2026-09.md §2): the CUDA check of
 two fixes measured and shipped on Metal / against stubs only —
 
   - 0e579400 (the block drafter, --drafter, CUDA only): at a completed exit (EOS or max_tokens) the resident

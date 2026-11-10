@@ -1,5 +1,14 @@
 # Prompt: the CUDA check of the speculation trailing-token fixes (nobara)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (close-out, 2026-11-10): DELIVERED, run 2026-09-28 on nobara.** The result is in `docs/measurements/spec-vs-batching-metal-2026-09-27.md` ("The CUDA check"), and the two-turn test it asked for is `backend/cuda/spec_twoturn_test.go`. Every instruction below is a record of what was asked, not a task. Archived when `docs/prompts/` was retired; a new brief is a section of its task doc or a file under `docs/tasks/`.
+
 For a Claude Code session on `nobara-pc` (RTX 2070 SUPER 8 GB), repo `~/mycode/goinfer`. `git pull` first.
 
 ## What changed, and why it needs CUDA
