@@ -31,7 +31,7 @@
 | L2 | done | — | `decoder/w4a8_row4_giwkind5_test.go`; kind 4 retired in v16 (`docs/giw-bundles.md`) |
 | L3 | done | — | §L3 below, 2026-09-11 |
 | L4 | moved | the M-07 half shipped here; "release the CPU copies" is superseded by S6 aliasing and MEM1 | `docs/completed/task-memory-campaign-2026-10.md` §0; `backend/metal/alias.go:newWeightAlias` |
-| L5 | open | registered 2026-11-09 (`docs/measurements/l5-splithalf-2026-11/README.md`): one nobara decode A/B by day, `run-l5.sh` there, after the coordinator's (d); kill under +2% median gain; at or above, build split-half-only under `Backend: "cpu"` and a new `.giw` kind for `cpu-amd64` | aikit v1.42.0 (`W4A8Op.SplitHalf`); `decoder/weightmat.go:GIWTargetCPUAmd64` |
+| L5 | killed | nobara's re-run (#868, 2026-11-09, branch l5-rerun-data-2026-11-09 at 3a6df4126): median -6.48%, 0/10 pairs positive; Francis's rule was kill under +2% median gain, so no split-half-only build and no new `.giw` kind | `docs/measurements/l5-splithalf-2026-11/README.md`; aikit v1.42.0 (`W4A8Op.SplitHalf`) |
 
 ## The decision this doc records
 
