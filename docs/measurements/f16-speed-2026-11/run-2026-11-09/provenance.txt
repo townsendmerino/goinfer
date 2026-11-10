@@ -1,0 +1,7 @@
+rev:      f5f06f4b2ec67eaeb5f40b6b3febd9d239511f91
+aikit:    v1.76.0
+binary:   /home/francis/goinfer-bench/f16-speed/serve-cuda-f5f06f4b2
+started:  2026-11-09 23:12:22 PST
+driver:   595.112.07
+arms:     goinfer = -kv f16, goinfer_old = -kv f32 (one binary)
+finished: 2026-11-10 00:01:24 PST rc=0
