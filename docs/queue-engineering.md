@@ -742,7 +742,8 @@ correctly and then continues with `<|im_start|>assistant ... What is the currenc
   The 4B is the by-day tier 1 model for it (it loads in 5 s on the card).
 
 **B30 · an auto-picked resident context the fit guard then refuses: the picker must never choose it** — filed 2026-10-16 (owner, from OP2b's tier 1).
-**Not started.** Loading the whole Nemotron-Nano-9B-v2 from its GGUF on the 8 GB card, with the token table at int4 and no `-ctx`, the load-time fit
+**Tier 0 shipped (the guard-pin trim, #879); tier 1 on nobara (2026-11-09) INCONCLUSIVE:** the 9B loaded cuda-resident int4 at 12096, so the trim path was not exercised, and the pre-#879 build behaves the same on this card; the tier-0 tests stand.
+**Original filing, not started:** Loading the whole Nemotron-Nano-9B-v2 from its GGUF on the 8 GB card, with the token table at int4 and no `-ctx`, the load-time fit
 guard pinned a context of **12,353** positions and the CUDA build then refused it: 0.40 GB of KV against 0.80 GB free, with 384 MiB reserved
 (`checkKVFits`), short by about 8 MB, so the model ran on the CPU. With an explicit `ResidentContext: 4096` it ran resident (the same weights, 135 MiB of KV).
 - **Why it is not trimmed (INFERRED from `backend/cuda/resident.go` and `decoder/model.go`; not stepped through):** the guard's pin sets
