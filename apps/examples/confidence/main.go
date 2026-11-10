@@ -45,17 +45,7 @@ func main() {
 	check(err, "encode")
 
 	// The stop ids end generation; the masker allows them only once the document is complete.
-	var stop []int
-	for _, id := range []int{tok.Special().EOS, tok.Special().EndOfTurn} {
-		if id >= 0 {
-			stop = append(stop, id)
-		}
-	}
-	for _, s := range tmpl.Stops().Strings {
-		if id, ok := tok.TokenID(s); ok {
-			stop = append(stop, id)
-		}
-	}
+	stop := tmpl.StopIDs(tok)
 	g, err := constrain.JSONSchema([]byte(schema))
 	check(err, "schema")
 	mask := constrain.NewMasker(g, constrain.TokenBytes(m.Config().VocabSize, tok.TokenText), stop).

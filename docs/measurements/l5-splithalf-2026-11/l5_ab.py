@@ -7,7 +7,9 @@ samples and the process's peak VmHWM. A visit started under heavy load is VOID a
 """
 import argparse, json, os, re, statistics, subprocess, sys, tempfile, time
 
-LOAD_MAX = 8.0           # half of nobara's 16 cores
+LOAD_MAX = 8.0           # half of nobara's 16 cores: the void gate
+SETTLE = 4.0             # a visit starts once the 1-minute load is under this (the runner's own visits raise it)
+SETTLE_CAP = 300         # seconds; a visit whose wait reaches it is void
 MEM_MIN = 5 * 1024**3    # the ON arm's fit (about 3 GB) plus 2 GB
 ORDER = ["on", "off", "off", "on"] * 5
 MAX_RERUNS = 4
@@ -35,6 +37,16 @@ def run(binary, args, env):
             time.sleep(0.2)
         log.seek(0)
         return log.read(), peak, p.returncode
+
+
+def settle():
+    """Waits until the 1-minute load average is under SETTLE; returns the seconds waited and whether it settled."""
+    t0 = time.time()
+    while os.getloadavg()[0] >= SETTLE:
+        if time.time() - t0 >= SETTLE_CAP:
+            return time.time() - t0, False
+        time.sleep(2)
+    return time.time() - t0, True
 
 
 def arm_env(arm):
@@ -68,21 +80,22 @@ def main():
     visits, queue, reruns = [], list(enumerate(ORDER)), 0
     while queue:
         slot, arm = queue.pop(0)
+        waited, settled = settle()
         load1 = os.getloadavg()[0]
         avail = mem_available()
-        void = load1 > LOAD_MAX or avail < MEM_MIN
+        void = not settled or load1 > LOAD_MAX or avail < MEM_MIN
         start = time.strftime("%H:%M:%S")
         text, peak, rc = run(a.bin, ["-test.run", "^$", "-test.bench", "^BenchmarkDecode$", "-test.benchtime", "30x",
                                      "-test.count", "4"], arm_env(arm))
         tps = [float(x) for x in re.findall(r"([\d.]+) tok/s", text)]
         v = {"kind": "visit", "slot": slot, "arm": arm, "start": start, "load1": load1, "mem_available": avail,
-             "void": void, "rc": rc, "tok_s": tps, "vmhwm": peak}
+             "void": void, "rc": rc, "tok_s": tps, "vmhwm": peak, "settle_s": round(waited, 1), "settled": settled}
         if rc != 0 or len(tps) != 4:
             v["void"] = True
             v["log"] = text[-2000:]
         raw.write(json.dumps(v) + "\n")
         raw.flush()
-        print(f"slot {slot} {arm}: {tps} load {load1:.2f} avail {avail / 1e9:.1f} GB{' VOID' if v['void'] else ''}", flush=True)
+        print(f"slot {slot} {arm}: {tps} load {load1:.2f} (waited {waited:.0f} s) avail {avail / 1e9:.1f} GB{' VOID' if v['void'] else ''}", flush=True)
         if v["void"]:
             if reruns >= MAX_RERUNS:
                 open(os.path.join(a.out, "grade.txt"), "w").write(f"VOID: more than {MAX_RERUNS} void visits\n")

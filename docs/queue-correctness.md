@@ -100,17 +100,23 @@ file it.** The shape: a kernel with a fixed bound declares it beside the kernel,
 request against the declaration and declines by name, and, if it can be made mechanical, a test fails when a bound-carrying
 kernel has no declaration. Start from the 19 B findings, which name most of the kernels. Either box, M.
 
-**G55 · An explicit `--quant int4` on a safetensors CUDA load was refused by the int4mix `.giw` it built** — `cuda`, **filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions)**
-- `decoder/serialize.go:Model.CheckGiwQuantMatch` refused the bundle the same load had just written; unverified since 2026-10-09.
-- First step: reproduce it on a small safetensors checkpoint; the fix is either the check's int4 / int4mix equivalence or the
-  build writing the kind asked for. From `docs/completed/task-mellum21-2026-10.md`'s status block.
+**G55 · An explicit `--quant int4` on a safetensors CUDA load was refused by the int4mix `.giw` it built** — `cuda`, **filed
+2026-11-09 (mbp2-fit, from Francis's doc-review decisions); CLOSED 2026-11-09: fixed before it was filed, and now guarded in CI**
+- The cause was `decoder/serialize.go:Weights.quantLabel` counting a MoE's float32 routers beside int4 as a mix, so every int4 MoE
+  bundle read `int4mix` and `Model.CheckGiwQuantMatch` refused the load that built it. It was fixed on 2026-10-10, the day after
+  the Mellum2.1 run; the fix was not target-specific.
+- The caller-level guard, `internal/runtime/modelload/modelload_test.go:TestLoad_safetensorsDirGoesThroughSidecar`, skips
+  everywhere: its fixture is an uncommitted download. `TestLoad_explicitInt4AcceptsItsMoESidecar` runs the same path on the
+  committed `testdata/mixtral-tiny`, and is red with the old rule planted back.
 
-**G54 · `TestSpecDecodeCurve`'s depth-512 lossless violation on CUDA: read the current result before any spec-decode claim** —
-`cuda`, **filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions)**
-- Recorded as red on clean main (depth 512, token 10: spec 6929, sequential 3910) in
-  `docs/completed/task-cuda-deltanet-prefill-2026-09.md`; the last evidence found since is a SKIP.
-- Kept as a pre-claim check: before any published or decided spec-decode number on CUDA, run the test by its name on nobara
-  and read for `--- PASS`. A red is a correctness bug in the speculative path, filed here.
+~~**G54 · `TestSpecDecodeCurve`'s depth-512 lossless violation on CUDA**~~ — `cuda`, filed 2026-11-09 (mbp2-fit, from Francis's
+doc-review decisions, B4-4); **CLOSED 2026-11-09: PASS on nobara** (main f8fb5b883, under the exclusive timing lock, 12 s):
+lossless at every depth, accepting 1.00 at 128, 0.47 at 512 and 0.43 at 2048 tokens per round. The depth-512 violation recorded
+in `docs/completed/task-cuda-deltanet-prefill-2026-09.md` no longer reproduces. The run's tok/s are not quotable: that main
+carries a solo-decode regression.
+- **Kept as the pre-claim check:** before any published or decided spec-decode number on CUDA, run on nobara
+  `GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -count=1 ./backend/cuda/ -run '^TestSpecDecodeCurve$' -v` (it skips
+  without the variable) and read for `--- PASS`. A red is a correctness bug in the speculative path, filed as a new item.
 
 **G53 · Metal and CUDA: admission claims whole-vector QK-norm, and the build refuses it on a GQA model** — `metal`, `cuda`, **filed 2026-11-03 (mac-sb11m, from Gemini's review of #627); not started**
 - `backend/metal/model.go:buildResident` and `backend/cuda/backend.go` decline a layer with `QKNormWhole` at `nH != nKV`, while `residentBackendFeatures` claims `FeatQKNormWhole` for any KV heads. So `Admit` says resident and the load runs on the CPU. The review says real Olmo 3 checkpoints are GQA; no checkpoint here could confirm that, so read one's `num_key_value_heads` first.

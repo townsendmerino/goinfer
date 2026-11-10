@@ -37,8 +37,8 @@ import (
 //	  's/^const int4GroupSize = 32$/const int4GroupSize = 64/' \
 //	  go test ./decoder/ -run TestInt4_forwardParity -count=1
 
-// runMutation returns the process exit code: 0 falsifiable, 1 not, 2 misuse.
-func runMutation(argv []string, w io.Writer) int {
+// runMutation returns the process exit code: 0 falsifiable, 1 not, 2 misuse, or a source file it could not put back.
+func runMutation(argv []string, w io.Writer) (rc int) {
 	if len(argv) < 4 {
 		fmt.Fprintln(os.Stderr, "usage: gate mutation <name> <file> <sed-expr> <verify-cmd...>")
 		return 2
@@ -80,9 +80,15 @@ func runMutation(argv []string, w io.Writer) int {
 		fmt.Fprintf(os.Stderr, "mutation[%s]: cannot stage a backup: %v\n", name, err)
 		return 2
 	}
-	restore := func() {
-		_ = os.WriteFile(file, original, info.Mode().Perm())
+	// restore puts the original back and drops the backup; when the write fails it keeps the backup and says where it is, since
+	// the source tree is then left mutated.
+	restore := func() error {
+		if err := os.WriteFile(file, original, info.Mode().Perm()); err != nil {
+			fmt.Fprintf(w, "  %sFAIL%s: %s NOT restored (%v); the original is at %s\n", red, off, file, err, bak)
+			return err
+		}
 		_ = os.Remove(bak)
+		return nil
 	}
 	// RESTORE ON INTERRUPT, not only on return: this edits a source file in place, so Ctrl-C between the
 	// mutation and the restore would leave a deliberately broken tree behind. A deferred call does not run on
@@ -93,14 +99,19 @@ func runMutation(argv []string, w io.Writer) int {
 	go func() {
 		select {
 		case <-sigs:
-			restore()
-			fmt.Fprintf(w, "\n  interrupted — %s restored\n", file)
+			if restore() == nil {
+				fmt.Fprintf(w, "\n  interrupted — %s restored\n", file)
+			}
 			os.Exit(130)
 		case <-done:
 		}
 	}()
 	defer func() { close(done); signal.Stop(sigs) }()
-	defer restore()
+	defer func() {
+		if restore() != nil {
+			rc = 2
+		}
+	}()
 
 	fmt.Fprintf(w, "%s== mutation[%s] ==%s\n", bold, name, off)
 
@@ -149,7 +160,9 @@ func runMutation(argv []string, w io.Writer) int {
 
 	// 4. RESTORE and confirm green again, so a red is attributable to the mutation and not to drift
 	//    that happened to coincide with it.
-	restore()
+	if restore() != nil {
+		return 2
+	}
 	if rc := runQuiet(verify); rc != 0 {
 		fmt.Fprintf(w, "  %sFAIL%s: still red after restore (exit %d) — the tree did not come back.\n", red, off, rc)
 		return 1

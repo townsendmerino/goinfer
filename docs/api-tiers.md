@@ -50,7 +50,7 @@ From v1.0 these follow semver: no breaking change before a v2.0.
 ### `chat`
 
 - `chat.Detect`, `chat.Meta`, `chat.ErrUnknownTemplate`
-- `chat.Template`: `Name`, `Render`, `RenderSegments`, `ParseToolCalls`
+- `chat.Template`: `Name`, `Render`, `RenderSegments`, `ParseToolCalls`, `StopIDs`
 - The named constructors: `ChatML`, `Gemma3`, `Gemma4`, `Harmony`, `Llama3`, `Mellum2`, `Mistral`
 - `chat.Turn`, `chat.Tool`, `chat.ToolCall`, `chat.Stops`, `chat.Segment`
 
