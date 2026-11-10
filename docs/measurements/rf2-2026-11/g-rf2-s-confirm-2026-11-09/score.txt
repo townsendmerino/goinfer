@@ -1,0 +1,20 @@
+     model  depth           file  blocks new/old                median  verdict
+      1.5B    128    decode-deep  1.000 0.999                    1.000  PASS
+      1.5B    128    decode-qwen  0.998 1.002                    1.000  PASS
+      1.5B   2048    decode-qwen  1.001 1.000                    1.001  PASS
+      1.5B   3900    decode-qwen  1.000 0.999                    0.999  PASS
+      1.5B   8000    decode-deep  1.000 1.000                    1.000  PASS
+        7B    128    decode-deep  1.000 1.000                    1.000  PASS
+        7B    128    decode-qwen  1.000 1.001                    1.000  VOID  (goinfer block 0: swap grew +0.25 MB during the cell (> 0 MB): void)
+        7B   2048    decode-qwen  1.001 1.000                    1.000  PASS
+        7B   3900    decode-qwen  1.000 1.000                    1.000  PASS
+        7B   8000    decode-deep  1.000 0.999                    1.000  PASS
+ gemma3-1b    128  decode-gemma3  1.000 0.999                    1.000  PASS
+ gemma3-1b   2048  decode-gemma3  1.001 1.001                    1.001  PASS
+ gemma3-1b   3900  decode-gemma3  0.999 0.999                    0.999  PASS
+
+G2 verdict: VOID
+
+serve-cuda-old: 32 servers; VmHWM median 1282 MB, max 4679 MB; peak VmSwap max 0.0 MB; system swap 1358-1358 MB (context)
+serve-cuda-new: 32 servers; VmHWM median 1276 MB, max 4636 MB; peak VmSwap max 0.0 MB; system swap 1358-1358 MB (context)
+G4: 32 pairs; new - old VmHWM -45.3 to +27.5 MB, peak VmSwap +0.0 to +0.0 MB -> PASS
