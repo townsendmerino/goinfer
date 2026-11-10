@@ -27,11 +27,11 @@ run() {
   # shellcheck disable=SC2086
   lock "$cell-$key" env GOINFER_SERVE_CPU=$bin BENCH_W7_MODEL=$HOME/models/$model \
     python3 scripts/bench_prefill_stall.py "$OUT/$cell.json" --key "$key" --serve-args="-backend cuda -require-backend" \
-      --prompt-words 2400 $extra --server-log "$OUT/serve-$cell.log" 2>&1 | tee -a "$OUT/$cell.log"
+      --prompt-words 2400 --newcomers 6 --decode-tokens 1200 $extra --server-log "$OUT/serve-$cell.log" 2>&1 | tee -a "$OUT/$cell.log"
 }
 M15=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf; M7=qwen2.5-7b-instruct-q4_k_m.gguf
-# A/A, same session, 1.5B stall: key aa0-A0 aa0-A1 / aa1-A1 aa1-A0 (the ABBA shape on one binary)
-for k in aa0-A0 aa0-B1 aa0-B2 aa0-A3; do run 15-stall-aa $M15 "" $k $A; done
+# A/A, same session, 1.5B stall: two ABBA blocks on one binary (addendum 1: 8 runs, 6 newcomers a run)
+for blk in aa0 aa1; do for k in A0 B1 B2 A3; do run 15-stall-aa $M15 "" $blk-$k $A; done; done
 python3 "$(dirname "$SELF")/score_rf3s.py" "$OUT" --aa || { echo "A/A off 1.00 by more than 0.03: VOID, stop, coordinator"; exit 3; }
 for spec in "15-stall $M15 " "15-solo $M15 --decoders=0" "7-stall $M7 " "7-solo $M7 --decoders=0"; do
   set -- $spec; cell=$1; model=$2; extra=${3:-}

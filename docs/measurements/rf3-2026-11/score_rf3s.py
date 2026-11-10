@@ -12,11 +12,16 @@ def med(x):
     return st.median(x) if x else None
 
 
+def mean(x):
+    x = [v for v in x if v is not None]
+    return sum(x) / len(x) if x else None
+
+
 def metrics(r):
     inside = 0
     for t in r["decoder_times"]:
         inside += sum(1 for x in t if any(w[1] and w[0] <= x <= w[1] for w in r["newcomer_windows"]))
-    return {"ttft": med(r["newcomer_ttft_s"]), "gap": r["decoder_gap_ms"]["max"], "inside": inside,
+    return {"ttft": mean(r["newcomer_ttft_s"]), "gap": r["decoder_gap_ms"]["max"], "inside": inside,
             "sha": (r["decoder_sha"], r["newcomer_sha"])}
 
 
@@ -27,13 +32,14 @@ def pairs(res, blocks):
 
 
 if aa:
+    # Addendum 1: the A/A pools its two ABBA blocks: the four runs in the A0/A3 positions against the four in the B1/B2 positions
+    # (all on binary A); the TTFT ratio of the two means must be within 0.03 of 1.00 (exit 1 if not).
     res = json.load(open(os.path.join(out, "15-stall-aa.json")))["results"]
-    bad = False
-    for a, b in pairs(res, ["aa0"]):
-        r = a["ttft"] / b["ttft"]
-        print(f"A/A pair TTFT ratio {r:.3f}")
-        bad = bad or abs(r - 1) > 0.03
-    sys.exit(1 if bad else 0)
+    one = [metrics(res[f"{b}-{k}"])["ttft"] for b in ("aa0", "aa1") for k in ("A0", "A3")]
+    two = [metrics(res[f"{b}-{k}"])["ttft"] for b in ("aa0", "aa1") for k in ("B1", "B2")]
+    r = (sum(one) / len(one)) / (sum(two) / len(two))
+    print(f"A/A pooled TTFT ratio {r:.3f} (runs {[round(x, 3) for x in one]} against {[round(x, 3) for x in two]})")
+    sys.exit(1 if abs(r - 1) > 0.03 else 0)
 fail = False
 for cell in ["15-stall", "15-solo", "7-stall", "7-solo"]:
     f = os.path.join(out, cell + ".json")

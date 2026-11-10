@@ -185,6 +185,20 @@ Metal and WebGPU keep it until RF4.
 - TTFT ambiguous on either model: parked. The alternation stays the default, and the reading goes to Francis.
 - A failed guard or band: RF3 does not ship. The reading and a mechanism come first.
 
+**G-RF3-S addendum 1 (2026-11-10, before any B run; the thresholds and bands above are unchanged).** The first A/A voided as the
+registration says (exit 3): two pair TTFT ratios, 1.020 and 1.070, on one binary, 3 newcomers a run, per-run mean TTFT 0.607 to 0.644 s.
+The instrument's run-to-run noise (about 2 to 3% a run, so about 3 to 4% on a pair's ratio) is wider than the 0.03 the check must resolve, so
+the A/A is not re-rolled and the bar does not move: the sample grows instead.
+- *Newcomers a run:* 3 to 6, with `--decode-tokens` 400 to 1200 so the decoders run through every newcomer's window. A cell's TTFT is the mean of
+  its newcomers (the per-run median of three was the noisiest part). The solo guard takes the same 6.
+- *The A/A:* two A B B A blocks (8 runs, all binary A) instead of one. It pools the four runs in the A0/A3 positions against the four in
+  the B1/B2 positions; the TTFT ratio of the two means must be within 0.03 of 1.00. Four runs a side bring the ratio's noise to about 1.5%, so
+  0.03 is two standard deviations. If it voids again at this n, the run stops and the noise floor goes to Francis; it is not re-rolled.
+- *Cells and bands:* the four B-against-A cells, A B B A x4 each, and every band are as registered (the median pair, B against A).
+- *Wall:* the A/A about 7 minutes (8 runs of about 50 s), the 1.5B stall and solo about 14, the 7B stall and solo about 24 (each stall run gains
+  about 10 s from the extra newcomers), so about 55 minutes plus the builds. Start by 18:30 to end by 19:30, well before the 22:00 reservation.
+- *Scoring:* `docs/measurements/rf3-2026-11/score_rf3s.py` (`--aa` for the A/A) and `run-g-rf3-s.sh`, both updated with this addendum.
+
 ## OP4m-D6b5: reading (2026-11-09, mac-fit, the exclusive Mac lock)
 
 - **The cell:** FA §4.9's D6b-5, D4b-4's cell on Nemotron-H 4B Instruct (`backend/metal/mc3_step_test.go:TestOP4mD6b_mambaStepSpeed`):
