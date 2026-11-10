@@ -1,0 +1,7 @@
+L5 A/B at f5f06f4b2, /home/francis/models/qwen15/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+repack: 197 tensors, 0 skipped, 624.8 MiB second copy
+pair gains: -6.76%, -6.74%, -5.76%, -6.94%, -6.46%, -7.32%, -6.16%, -6.49%, -6.21%, -6.39%
+median gain -6.48%, 0 of 10 pairs positive
+peak VmHWM (recorded, not graded): ON 2884 MiB, OFF 2259 MiB
+void visits re-run: 0
+VERDICT: KILL L5 (median gain under +2.0%)

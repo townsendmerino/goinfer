@@ -1,0 +1,28 @@
+L5 A/B at f5f06f4b2, model /home/francis/models/qwen15/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, record /home/francis/goinfer-bench/l5/20261110T063445Z-f5f06f4b2; start 22:34 PST, expected finish about 15 min later (visits wait for the load to settle under 4.0)
+slot 0 on: [22.21, 21.79, 21.8, 21.82] load 3.95 (waited 30 s) avail 64.4 GB
+slot 1 off: [23.71, 23.38, 23.41, 23.28] load 3.94 (waited 2 s) avail 64.4 GB
+slot 2 off: [23.74, 23.28, 23.35, 23.13] load 3.89 (waited 6 s) avail 64.4 GB
+slot 3 on: [22.18, 21.83, 21.69, 21.71] load 3.91 (waited 8 s) avail 64.4 GB
+slot 4 on: [22.13, 21.99, 21.92, 21.74] load 3.99 (waited 6 s) avail 64.4 GB
+slot 5 off: [23.68, 23.43, 23.12, 23.26] load 3.89 (waited 2 s) avail 64.4 GB
+slot 6 off: [23.75, 23.36, 23.34, 23.27] load 3.91 (waited 6 s) avail 64.4 GB
+slot 7 on: [22.04, 21.46, 21.72, 21.79] load 3.84 (waited 0 s) avail 64.4 GB
+slot 8 on: [22.21, 21.85, 21.9, 21.77] load 3.97 (waited 18 s) avail 64.4 GB
+slot 9 off: [23.68, 23.36, 23.38, 23.34] load 3.82 (waited 0 s) avail 64.4 GB
+slot 10 off: [23.74, 23.39, 23.37, 23.3] load 3.86 (waited 8 s) avail 64.4 GB
+slot 11 on: [21.88, 21.65, 21.84, 21.66] load 3.72 (waited 0 s) avail 64.4 GB
+slot 12 on: [22.05, 21.8, 21.61, 21.89] load 3.94 (waited 0 s) avail 64.4 GB
+slot 13 off: [23.68, 23.23, 23.32, 23.14] load 3.99 (waited 10 s) avail 64.4 GB
+slot 14 off: [23.71, 23.29, 23.26, 23.21] load 3.85 (waited 6 s) avail 64.4 GB
+slot 15 on: [22.18, 21.92, 21.69, 21.75] load 3.81 (waited 6 s) avail 64.4 GB
+slot 16 on: [21.91, 21.8, 21.72, 21.74] load 3.75 (waited 0 s) avail 64.4 GB
+slot 17 off: [23.78, 23.58, 23.14, 23.18] load 3.73 (waited 24 s) avail 64.4 GB
+slot 18 off: [23.83, 23.33, 23.32, 23.2] load 3.98 (waited 12 s) avail 64.4 GB
+slot 19 on: [21.91, 21.83, 21.95, 21.76] load 3.82 (waited 0 s) avail 64.4 GB
+L5 A/B at f5f06f4b2, /home/francis/models/qwen15/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+repack: 197 tensors, 0 skipped, 624.8 MiB second copy
+pair gains: -6.76%, -6.74%, -5.76%, -6.94%, -6.46%, -7.32%, -6.16%, -6.49%, -6.21%, -6.39%
+median gain -6.48%, 0 of 10 pairs positive
+peak VmHWM (recorded, not graded): ON 2884 MiB, OFF 2259 MiB
+void visits re-run: 0
+VERDICT: KILL L5 (median gain under +2.0%)
