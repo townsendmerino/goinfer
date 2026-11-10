@@ -1144,7 +1144,7 @@ Question (`docs/measurements/f16-speed-2026-11/registration.md`): does CUDA's `a
 | 7B | 128 | 85.7 | 85.6 | 1.001 |
 | **7B** | **8000** | **68.1** | **70.1** | **0.972** (the cost) |
 
-VERDICT PARKED (worst cell 0.972 in the 0.95-0.98 band). The prediction (7B at 8000 at least 1.10) missed. `auto` stays f16; whether any family's `auto` changes is Francis's.
+VERDICT PARKED (worst cell 0.972 in the 0.95-0.98 band); 13 of 14 cells at or above 1.0. The prediction (7B at 8000 at least 1.10) missed. Owner decision, 2026-11-10: the 0.98 bar was too strict for this trade, the cost is accepted for f16's halved KV memory, `auto` stays f16 with no per-family rule, and no follow-up cells run. This is an owner decision, not a pass.
 
 ### B3. cgo-free Metal (darwin, `--backend metal`) vs Ollama-Metal — 4-bit both sides
 
