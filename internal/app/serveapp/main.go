@@ -474,6 +474,9 @@ func (srv *server) restoreSessions(cfg config) {
 	}
 }
 
+// sessionNoticeOut is where a session checkpoint that could not be written is said; a test swaps it.
+var sessionNoticeOut io.Writer = os.Stderr
+
 // checkpointSessions saves each model's KV sessions to -session-dir at shutdown. The caller has already cancelled
 // the generations in flight; a model one of them still holds after five seconds is skipped, not waited for.
 func (srv *server) checkpointSessions(cfg config) {
@@ -487,7 +490,9 @@ func (srv *server) checkpointSessions(cfg config) {
 			fmt.Fprintf(os.Stderr, "shutdown: model %q still busy — skipping its session checkpoint\n", lm.name)
 			continue
 		}
-		_ = lm.sessions.save(sessionSubdir(cfg.sessionDir, lm.fp))
+		if err := lm.sessions.save(sessionSubdir(cfg.sessionDir, lm.fp)); err != nil {
+			fmt.Fprintf(sessionNoticeOut, "shutdown: model %q: session checkpoint not written (%v); its sessions will not restore\n", lm.name, err)
+		}
 		lm.sessions.removeColdFiles() // the cold tier is in-process; clear its scratch
 		lm.sessMu.Unlock()
 	}
