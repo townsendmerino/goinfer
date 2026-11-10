@@ -1,0 +1,5 @@
+kv f16 clients 4: aggregate B/A 1.976 1.969 1.973 1.964 1.973 1.971 1.969 1.964 1.973 1.969 median 1.970; per-client median 1.971; B >= A on 10/10; replies equal True -> PASS
+kv f16 clients 2: aggregate B/A 1.439 1.454 1.441 median 1.441; per-client median 1.448; B >= A on 3/3; replies equal True
+kv i8 clients 4: aggregate B/A 1.967 1.967 1.964 1.967 1.958 1.964 1.958 1.962 1.964 1.964 median 1.964; per-client median 1.966; B >= A on 10/10; replies equal True -> PASS
+kv i8 clients 2: aggregate B/A 1.445 1.426 1.441 median 1.441; per-client median 1.447; B >= A on 3/3; replies equal True
+VERDICT: PASS

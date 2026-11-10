@@ -1,0 +1,424 @@
+rev old 5189172c3 new d3eb2f27e; tree 7cb04cd1c; kernel 7.3.0-202.nobara.fc44.x86_64; governor schedutil; 16 threads
+4343d992111f7d5cd67be76505f5093e274633927a40ef338b40ea3dfac085c7  /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3
+7a87a5be1609ef2293fe1c267a9f15b1c0dd345085608ac03c4d353550799d0a  /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e
+started 2026-11-09 15:29:33 PST
+15:29:33 waiting: load1=5.77 busy=[] (0s)
+15:30:33 waiting: load1=2.20 busy=[] (60s)
+15:31:24 cell A kv=f16 clients=4 pair=1 load 0.95
+[w7-plain] A_f16_4_1 clients=4 starting fresh server
+[w7-plain] A_f16_4_1 clients=4: wall=139.686s aggregate=5.5 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+15:33:49 waiting: load1=14.82 busy=[] (0s)
+15:34:49 waiting: load1=5.51 busy=[] (60s)
+15:35:49 waiting: load1=2.15 busy=[] (120s)
+15:36:39 cell B kv=f16 clients=4 pair=1 load 0.93
+[w7-plain] resuming: 1 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_f16_4_1 clients=4 starting fresh server
+[w7-plain] B_f16_4_1 clients=4: wall=70.648s aggregate=10.87 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+15:37:51 waiting: load1=6.78 busy=[] (0s)
+15:38:51 waiting: load1=2.55 busy=[] (60s)
+15:39:51 cell B kv=f16 clients=4 pair=2 load 0.93
+[w7-plain] resuming: 2 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_f16_4_2 clients=4 starting fresh server
+[w7-plain] B_f16_4_2 clients=4: wall=70.551s aggregate=10.89 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+15:41:02 waiting: load1=10.97 busy=[] (0s)
+15:42:02 waiting: load1=4.03 busy=[] (60s)
+15:43:02 waiting: load1=1.64 busy=[] (120s)
+15:43:32 cell A kv=f16 clients=4 pair=2 load 1.00
+[w7-plain] resuming: 3 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_f16_4_2 clients=4 starting fresh server
+[w7-plain] A_f16_4_2 clients=4: wall=138.893s aggregate=5.53 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+15:45:52 waiting: load1=15.01 busy=[] (0s)
+15:46:52 waiting: load1=5.78 busy=[] (60s)
+15:47:52 waiting: load1=2.28 busy=[] (120s)
+15:48:52 waiting: load1=1.09 busy=[] (180s)
+15:49:02 cell A kv=f16 clients=4 pair=3 load 1.00
+[w7-plain] resuming: 4 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_f16_4_3 clients=4 starting fresh server
+[w7-plain] A_f16_4_3 clients=4: wall=139.085s aggregate=5.52 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+15:51:22 waiting: load1=15.14 busy=[] (0s)
+15:52:22 waiting: load1=5.56 busy=[] (60s)
+15:53:22 waiting: load1=2.11 busy=[] (120s)
+15:54:12 cell B kv=f16 clients=4 pair=3 load 0.91
+[w7-plain] resuming: 5 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_f16_4_3 clients=4 starting fresh server
+[w7-plain] B_f16_4_3 clients=4: wall=70.515s aggregate=10.89 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+15:55:23 waiting: load1=9.79 busy=[] (0s)
+15:56:24 waiting: load1=3.60 busy=[] (60s)
+15:57:24 waiting: load1=1.42 busy=[] (120s)
+15:57:54 cell B kv=f16 clients=4 pair=4 load 0.86
+[w7-plain] resuming: 6 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_f16_4_4 clients=4 starting fresh server
+[w7-plain] B_f16_4_4 clients=4: wall=70.719s aggregate=10.86 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+15:59:05 waiting: load1=9.84 busy=[] (0s)
+16:00:05 waiting: load1=3.61 busy=[] (60s)
+16:01:05 waiting: load1=1.32 busy=[] (120s)
+16:01:25 cell A kv=f16 clients=4 pair=4 load 0.95
+[w7-plain] resuming: 7 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_f16_4_4 clients=4 starting fresh server
+[w7-plain] A_f16_4_4 clients=4: wall=138.955s aggregate=5.53 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+16:03:45 waiting: load1=15.27 busy=[] (0s)
+16:04:45 waiting: load1=5.66 busy=[] (60s)
+16:05:45 waiting: load1=2.08 busy=[] (120s)
+16:06:35 cell A kv=f16 clients=4 pair=5 load 0.97
+[w7-plain] resuming: 8 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_f16_4_5 clients=4 starting fresh server
+[w7-plain] A_f16_4_5 clients=4: wall=139.174s aggregate=5.52 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+16:08:55 waiting: load1=14.89 busy=[] (0s)
+16:09:55 waiting: load1=5.47 busy=[] (60s)
+16:10:55 waiting: load1=2.07 busy=[] (120s)
+16:11:45 cell B kv=f16 clients=4 pair=5 load 0.90
+[w7-plain] resuming: 9 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_f16_4_5 clients=4 starting fresh server
+[w7-plain] B_f16_4_5 clients=4: wall=70.529s aggregate=10.89 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+16:12:57 waiting: load1=9.80 busy=[] (0s)
+16:13:57 waiting: load1=3.60 busy=[] (60s)
+16:14:57 waiting: load1=1.35 busy=[] (120s)
+16:15:17 cell B kv=f16 clients=4 pair=6 load 0.97
+[w7-plain] resuming: 10 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_f16_4_6 clients=4 starting fresh server
+[w7-plain] B_f16_4_6 clients=4: wall=70.605s aggregate=10.88 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+16:16:28 waiting: load1=10.31 busy=[] (0s)
+16:17:28 waiting: load1=3.78 busy=[] (60s)
+16:18:28 waiting: load1=1.51 busy=[] (120s)
+16:18:58 cell A kv=f16 clients=4 pair=6 load 0.92
+[w7-plain] resuming: 11 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_f16_4_6 clients=4 starting fresh server
+[w7-plain] A_f16_4_6 clients=4: wall=139.093s aggregate=5.52 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+16:21:18 waiting: load1=14.95 busy=[] (0s)
+16:22:18 waiting: load1=5.76 busy=[] (60s)
+16:23:18 waiting: load1=2.11 busy=[] (120s)
+16:24:19 waiting: load1=1.02 busy=[] (180s)
+16:24:29 cell A kv=f16 clients=4 pair=7 load 0.86
+[w7-plain] resuming: 12 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_f16_4_7 clients=4 starting fresh server
+[w7-plain] A_f16_4_7 clients=4: wall=138.977s aggregate=5.53 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+16:26:48 waiting: load1=14.91 busy=[] (0s)
+16:27:48 waiting: load1=5.58 busy=[] (60s)
+16:28:48 waiting: load1=2.12 busy=[] (120s)
+16:29:39 cell B kv=f16 clients=4 pair=7 load 0.97
+[w7-plain] resuming: 13 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_f16_4_7 clients=4 starting fresh server
+[w7-plain] B_f16_4_7 clients=4: wall=70.51s aggregate=10.89 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+16:30:50 waiting: load1=10.96 busy=[] (0s)
+16:31:50 waiting: load1=4.02 busy=[] (60s)
+16:32:50 waiting: load1=1.48 busy=[] (120s)
+16:33:20 cell B kv=f16 clients=4 pair=8 load 0.89
+[w7-plain] resuming: 14 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_f16_4_8 clients=4 starting fresh server
+[w7-plain] B_f16_4_8 clients=4: wall=70.572s aggregate=10.88 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+16:34:31 waiting: load1=8.52 busy=[] (0s)
+16:35:31 waiting: load1=3.25 busy=[] (60s)
+16:36:31 waiting: load1=1.19 busy=[] (120s)
+16:36:51 cell A kv=f16 clients=4 pair=8 load 0.85
+[w7-plain] resuming: 15 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_f16_4_8 clients=4 starting fresh server
+[w7-plain] A_f16_4_8 clients=4: wall=138.548s aggregate=5.54 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+16:39:11 waiting: load1=14.71 busy=[] (0s)
+16:40:11 waiting: load1=5.50 busy=[] (60s)
+16:41:11 waiting: load1=2.06 busy=[] (120s)
+16:42:01 cell A kv=f16 clients=4 pair=9 load 0.97
+[w7-plain] resuming: 16 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_f16_4_9 clients=4 starting fresh server
+[w7-plain] A_f16_4_9 clients=4: wall=139.046s aggregate=5.52 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+16:44:21 waiting: load1=14.67 busy=[] (0s)
+16:45:21 waiting: load1=5.54 busy=[] (60s)
+16:46:21 waiting: load1=2.18 busy=[] (120s)
+16:47:11 cell B kv=f16 clients=4 pair=9 load 0.95
+[w7-plain] resuming: 17 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_f16_4_9 clients=4 starting fresh server
+[w7-plain] B_f16_4_9 clients=4: wall=70.552s aggregate=10.89 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+16:48:22 waiting: load1=7.19 busy=[] (0s)
+16:49:22 waiting: load1=2.70 busy=[] (60s)
+16:50:22 cell B kv=f16 clients=4 pair=10 load 0.99
+[w7-plain] resuming: 18 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_f16_4_10 clients=4 starting fresh server
+[w7-plain] B_f16_4_10 clients=4: wall=70.545s aggregate=10.89 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+16:51:33 waiting: load1=9.60 busy=[] (0s)
+16:52:34 waiting: load1=3.53 busy=[] (60s)
+16:53:34 waiting: load1=1.29 busy=[] (120s)
+16:53:54 cell A kv=f16 clients=4 pair=10 load 0.93
+[w7-plain] resuming: 19 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_f16_4_10 clients=4 starting fresh server
+[w7-plain] A_f16_4_10 clients=4: wall=138.862s aggregate=5.53 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+16:56:13 waiting: load1=15.45 busy=[] (0s)
+16:57:13 waiting: load1=5.67 busy=[] (60s)
+16:58:14 waiting: load1=2.28 busy=[] (120s)
+16:59:04 cell A kv=f16 clients=2 pair=1 load 0.99
+[w7-plain] resuming: 20 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_f16_2_1 clients=2 starting fresh server
+[w7-plain] A_f16_2_1 clients=2: wall=71.419s aggregate=5.38 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:00:16 waiting: load1=10.75 busy=[] (0s)
+17:01:16 waiting: load1=4.04 busy=[] (60s)
+17:02:16 waiting: load1=1.58 busy=[] (120s)
+17:02:46 cell B kv=f16 clients=2 pair=1 load 0.96
+[w7-plain] resuming: 21 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_f16_2_1 clients=2 starting fresh server
+[w7-plain] B_f16_2_1 clients=2: wall=49.598s aggregate=7.74 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:03:36 waiting: load1=9.17 busy=[] (0s)
+17:04:36 waiting: load1=3.64 busy=[] (60s)
+17:05:36 waiting: load1=1.42 busy=[] (120s)
+17:06:27 cell B kv=f16 clients=2 pair=2 load 0.86
+[w7-plain] resuming: 22 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_f16_2_2 clients=2 starting fresh server
+[w7-plain] B_f16_2_2 clients=2: wall=49.187s aggregate=7.81 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:07:16 waiting: load1=8.83 busy=[] (0s)
+17:08:16 waiting: load1=3.38 busy=[] (60s)
+17:09:17 waiting: load1=1.24 busy=[] (120s)
+17:09:37 cell A kv=f16 clients=2 pair=2 load 0.89
+[w7-plain] resuming: 23 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_f16_2_2 clients=2 starting fresh server
+[w7-plain] A_f16_2_2 clients=2: wall=71.533s aggregate=5.37 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:10:49 waiting: load1=10.16 busy=[] (0s)
+17:11:49 waiting: load1=3.77 busy=[] (60s)
+17:12:49 waiting: load1=1.38 busy=[] (120s)
+17:13:29 cell A kv=f16 clients=2 pair=3 load 0.96
+[w7-plain] resuming: 24 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_f16_2_3 clients=2 starting fresh server
+[w7-plain] A_f16_2_3 clients=2: wall=71.386s aggregate=5.38 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:14:41 waiting: load1=11.62 busy=[] (0s)
+17:15:41 waiting: load1=4.27 busy=[] (60s)
+17:16:41 waiting: load1=1.80 busy=[] (120s)
+17:17:31 cell B kv=f16 clients=2 pair=3 load 0.94
+[w7-plain] resuming: 25 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_f16_2_3 clients=2 starting fresh server
+[w7-plain] B_f16_2_3 clients=2: wall=49.547s aggregate=7.75 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:18:22 waiting: load1=7.01 busy=[] (0s)
+17:19:22 waiting: load1=2.57 busy=[] (60s)
+17:20:22 waiting: load1=1.08 busy=[] (120s)
+17:20:32 cell A kv=i8 clients=4 pair=1 load 0.99
+[w7-plain] resuming: 26 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_i8_4_1 clients=4 starting fresh server
+[w7-plain] A_i8_4_1 clients=4: wall=139.024s aggregate=5.52 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:22:51 waiting: load1=15.01 busy=[] (0s)
+17:23:52 waiting: load1=5.51 busy=[] (60s)
+17:24:52 waiting: load1=2.08 busy=[] (120s)
+17:25:52 cell B kv=i8 clients=4 pair=1 load 0.86
+[w7-plain] resuming: 27 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_i8_4_1 clients=4 starting fresh server
+[w7-plain] B_i8_4_1 clients=4: wall=70.732s aggregate=10.86 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:27:03 waiting: load1=10.57 busy=[] (0s)
+17:28:03 waiting: load1=4.27 busy=[] (60s)
+17:29:04 waiting: load1=1.66 busy=[] (120s)
+17:29:44 cell B kv=i8 clients=4 pair=2 load 0.96
+[w7-plain] resuming: 28 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_i8_4_2 clients=4 starting fresh server
+[w7-plain] B_i8_4_2 clients=4: wall=70.817s aggregate=10.84 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:30:55 waiting: load1=7.07 busy=[] (0s)
+17:31:55 waiting: load1=2.42 busy=[] (60s)
+17:32:55 waiting: load1=1.03 busy=[] (120s)
+17:33:05 cell A kv=i8 clients=4 pair=2 load 0.87
+[w7-plain] resuming: 29 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_i8_4_2 clients=4 starting fresh server
+[w7-plain] A_i8_4_2 clients=4: wall=139.304s aggregate=5.51 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:35:25 waiting: load1=14.86 busy=[] (0s)
+17:36:25 waiting: load1=5.46 busy=[] (60s)
+17:37:25 waiting: load1=2.06 busy=[] (120s)
+17:38:16 cell A kv=i8 clients=4 pair=3 load 0.99
+[w7-plain] resuming: 30 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_i8_4_3 clients=4 starting fresh server
+[w7-plain] A_i8_4_3 clients=4: wall=138.877s aggregate=5.53 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:40:35 waiting: load1=14.66 busy=[] (0s)
+17:41:35 waiting: load1=5.12 busy=[] (60s)
+17:42:35 waiting: load1=2.03 busy=[] (120s)
+17:43:25 cell B kv=i8 clients=4 pair=3 load 0.88
+[w7-plain] resuming: 31 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_i8_4_3 clients=4 starting fresh server
+[w7-plain] B_i8_4_3 clients=4: wall=70.696s aggregate=10.86 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:44:37 waiting: load1=8.42 busy=[] (0s)
+17:45:37 waiting: load1=3.09 busy=[] (60s)
+17:46:37 waiting: load1=1.22 busy=[] (120s)
+17:46:57 cell B kv=i8 clients=4 pair=4 load 0.88
+[w7-plain] resuming: 32 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_i8_4_4 clients=4 starting fresh server
+[w7-plain] B_i8_4_4 clients=4: wall=70.718s aggregate=10.86 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:48:08 waiting: load1=9.36 busy=[] (0s)
+17:49:08 waiting: load1=3.70 busy=[] (60s)
+17:50:09 waiting: load1=1.44 busy=[] (120s)
+17:50:39 cell A kv=i8 clients=4 pair=4 load 0.92
+[w7-plain] resuming: 33 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_i8_4_4 clients=4 starting fresh server
+[w7-plain] A_i8_4_4 clients=4: wall=139.066s aggregate=5.52 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:52:58 waiting: load1=15.07 busy=[] (0s)
+17:53:58 waiting: load1=5.53 busy=[] (60s)
+17:54:59 waiting: load1=2.15 busy=[] (120s)
+17:55:49 cell A kv=i8 clients=4 pair=5 load 0.93
+[w7-plain] resuming: 34 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_i8_4_5 clients=4 starting fresh server
+[w7-plain] A_i8_4_5 clients=4: wall=138.872s aggregate=5.53 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+17:58:08 waiting: load1=15.16 busy=[] (0s)
+17:59:08 waiting: load1=5.61 busy=[] (60s)
+18:00:08 waiting: load1=2.13 busy=[] (120s)
+18:00:59 cell B kv=i8 clients=4 pair=5 load 0.92
+[w7-plain] resuming: 35 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_i8_4_5 clients=4 starting fresh server
+[w7-plain] B_i8_4_5 clients=4: wall=70.904s aggregate=10.83 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:02:10 waiting: load1=9.25 busy=[] (0s)
+18:03:10 waiting: load1=3.40 busy=[] (60s)
+18:04:10 waiting: load1=1.25 busy=[] (120s)
+18:04:30 cell B kv=i8 clients=4 pair=6 load 0.89
+[w7-plain] resuming: 36 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_i8_4_6 clients=4 starting fresh server
+[w7-plain] B_i8_4_6 clients=4: wall=70.721s aggregate=10.86 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:05:42 waiting: load1=9.61 busy=[] (0s)
+18:06:42 waiting: load1=3.53 busy=[] (60s)
+18:07:42 waiting: load1=1.37 busy=[] (120s)
+18:08:12 cell A kv=i8 clients=4 pair=6 load 0.94
+[w7-plain] resuming: 37 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_i8_4_6 clients=4 starting fresh server
+[w7-plain] A_i8_4_6 clients=4: wall=138.803s aggregate=5.53 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:10:31 waiting: load1=15.02 busy=[] (0s)
+18:11:31 waiting: load1=5.66 busy=[] (60s)
+18:12:32 waiting: load1=2.15 busy=[] (120s)
+18:13:22 cell A kv=i8 clients=4 pair=7 load 0.98
+[w7-plain] resuming: 38 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_i8_4_7 clients=4 starting fresh server
+[w7-plain] A_i8_4_7 clients=4: wall=138.931s aggregate=5.53 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:15:41 waiting: load1=15.15 busy=[] (0s)
+18:16:41 waiting: load1=5.60 busy=[] (60s)
+18:17:42 waiting: load1=2.20 busy=[] (120s)
+18:18:42 cell B kv=i8 clients=4 pair=7 load 0.97
+[w7-plain] resuming: 39 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_i8_4_7 clients=4 starting fresh server
+[w7-plain] B_i8_4_7 clients=4: wall=70.931s aggregate=10.83 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:19:53 waiting: load1=9.67 busy=[] (0s)
+18:20:53 waiting: load1=3.55 busy=[] (60s)
+18:21:54 waiting: load1=1.34 busy=[] (120s)
+18:22:14 cell B kv=i8 clients=4 pair=8 load 0.96
+[w7-plain] resuming: 40 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_i8_4_8 clients=4 starting fresh server
+[w7-plain] B_i8_4_8 clients=4: wall=70.921s aggregate=10.83 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:23:25 waiting: load1=7.24 busy=[] (0s)
+18:24:25 waiting: load1=2.73 busy=[] (60s)
+18:25:25 waiting: load1=1.05 busy=[] (120s)
+18:25:35 cell A kv=i8 clients=4 pair=8 load 0.96
+[w7-plain] resuming: 41 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_i8_4_8 clients=4 starting fresh server
+[w7-plain] A_i8_4_8 clients=4: wall=139.048s aggregate=5.52 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:27:55 waiting: load1=14.92 busy=[] (0s)
+18:28:55 waiting: load1=5.79 busy=[] (60s)
+18:29:55 waiting: load1=2.40 busy=[] (120s)
+18:30:55 cell A kv=i8 clients=4 pair=9 load 0.96
+[w7-plain] resuming: 42 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_i8_4_9 clients=4 starting fresh server
+[w7-plain] A_i8_4_9 clients=4: wall=138.846s aggregate=5.53 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:33:15 waiting: load1=14.79 busy=[] (0s)
+18:34:15 waiting: load1=5.54 busy=[] (60s)
+18:35:15 waiting: load1=2.10 busy=[] (120s)
+18:36:05 cell B kv=i8 clients=4 pair=9 load 0.91
+[w7-plain] resuming: 43 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_i8_4_9 clients=4 starting fresh server
+[w7-plain] B_i8_4_9 clients=4: wall=70.703s aggregate=10.86 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:37:17 waiting: load1=8.57 busy=[] (0s)
+18:38:17 waiting: load1=3.28 busy=[] (60s)
+18:39:17 waiting: load1=1.20 busy=[] (120s)
+18:39:37 cell B kv=i8 clients=4 pair=10 load 0.86
+[w7-plain] resuming: 44 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_i8_4_10 clients=4 starting fresh server
+[w7-plain] B_i8_4_10 clients=4: wall=70.732s aggregate=10.86 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:40:48 waiting: load1=7.54 busy=[] (0s)
+18:41:48 waiting: load1=2.92 busy=[] (60s)
+18:42:48 waiting: load1=1.10 busy=[] (120s)
+18:42:58 cell A kv=i8 clients=4 pair=10 load 0.93
+[w7-plain] resuming: 45 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_i8_4_10 clients=4 starting fresh server
+[w7-plain] A_i8_4_10 clients=4: wall=138.782s aggregate=5.53 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:45:18 waiting: load1=14.94 busy=[] (0s)
+18:46:18 waiting: load1=5.69 busy=[] (60s)
+18:47:18 waiting: load1=2.09 busy=[] (120s)
+18:48:08 cell A kv=i8 clients=2 pair=1 load 0.91
+[w7-plain] resuming: 46 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_i8_2_1 clients=2 starting fresh server
+[w7-plain] A_i8_2_1 clients=2: wall=71.462s aggregate=5.37 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:49:20 waiting: load1=11.69 busy=[] (0s)
+18:50:20 waiting: load1=4.29 busy=[] (60s)
+18:51:21 waiting: load1=1.57 busy=[] (120s)
+18:52:01 cell B kv=i8 clients=2 pair=1 load 0.92
+[w7-plain] resuming: 47 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_i8_2_1 clients=2 starting fresh server
+[w7-plain] B_i8_2_1 clients=2: wall=49.487s aggregate=7.76 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:52:51 waiting: load1=9.17 busy=[] (0s)
+18:53:51 waiting: load1=3.50 busy=[] (60s)
+18:54:51 waiting: load1=1.27 busy=[] (120s)
+18:55:11 cell B kv=i8 clients=2 pair=2 load 0.91
+[w7-plain] resuming: 48 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_i8_2_2 clients=2 starting fresh server
+[w7-plain] B_i8_2_2 clients=2: wall=50.057s aggregate=7.67 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:56:02 waiting: load1=7.92 busy=[] (0s)
+18:57:02 waiting: load1=3.25 busy=[] (60s)
+18:58:02 waiting: load1=1.22 busy=[] (120s)
+18:58:22 cell A kv=i8 clients=2 pair=2 load 0.88
+[w7-plain] resuming: 49 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_i8_2_2 clients=2 starting fresh server
+[w7-plain] A_i8_2_2 clients=2: wall=71.334s aggregate=5.38 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+18:59:34 waiting: load1=11.88 busy=[] (0s)
+19:00:34 waiting: load1=4.36 busy=[] (60s)
+19:01:34 waiting: load1=1.60 busy=[] (120s)
+19:02:14 cell A kv=i8 clients=2 pair=3 load 0.92
+[w7-plain] resuming: 50 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] A_i8_2_3 clients=2 starting fresh server
+[w7-plain] A_i8_2_3 clients=2: wall=71.446s aggregate=5.37 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+19:03:26 waiting: load1=9.84 busy=[] (0s)
+19:04:27 waiting: load1=3.69 busy=[] (60s)
+19:05:27 waiting: load1=1.35 busy=[] (120s)
+19:05:57 cell B kv=i8 clients=2 pair=3 load 0.93
+[w7-plain] resuming: 51 cell(s) already in /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+[w7-plain] B_i8_2_3 clients=2 starting fresh server
+[w7-plain] B_i8_2_3 clients=2: wall=49.626s aggregate=7.74 tok/s; prefill_reused per client per turn [[0, 82, 140, 199, 255, 307], [0, 82, 140, 199, 255, 307]]
+wrote /home/francis/goinfer-logs/p4a-cpu-batch-2026-11-09/w7.json
+finished 2026-11-09 19:06:47 PST
+kv f16 clients 4: aggregate B/A 1.976 1.969 1.973 1.964 1.973 1.971 1.969 1.964 1.973 1.969 median 1.970; per-client median 1.971; B >= A on 10/10; replies equal True -> PASS
+kv f16 clients 2: aggregate B/A 1.439 1.454 1.441 median 1.441; per-client median 1.448; B >= A on 3/3; replies equal True
+kv i8 clients 4: aggregate B/A 1.967 1.967 1.964 1.967 1.958 1.964 1.958 1.962 1.964 1.964 median 1.964; per-client median 1.966; B >= A on 10/10; replies equal True -> PASS
+kv i8 clients 2: aggregate B/A 1.445 1.426 1.441 median 1.441; per-client median 1.447; B >= A on 3/3; replies equal True
+VERDICT: PASS

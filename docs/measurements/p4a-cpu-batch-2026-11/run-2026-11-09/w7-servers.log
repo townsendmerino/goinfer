@@ -1,0 +1,1198 @@
+==== 2026-11-09 15:31:24 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+stream-weights: transcoding qwen2.5-7b-instruct-q4_k_m.gguf → qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw (int4, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (4092 MB) in 5s: stream 5.0s, self-check 0.0s
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 37ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 41.9 GB, 40.1 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.58 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 15:36:40 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 13ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 0.00 GB (server swap)
+swap guard: baseline 1.56 GB (system swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 196 batched steps (751 tokens), 17 solo tokens, 0 straggler runs, steps by size [0 0 5 23 168]
+==== 2026-11-09 15:39:51 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 12ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 192 batched steps (747 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 0 21 171]
+==== 2026-11-09 15:43:32 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 13ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 15:49:02 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.1 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 15:54:12 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 195 batched steps (750 tokens), 18 solo tokens, 0 straggler runs, steps by size [0 0 4 22 169]
+==== 2026-11-09 15:57:54 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 9ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.1 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 214 runs, 195 batched steps (749 tokens), 19 solo tokens, 0 straggler runs, steps by size [0 0 4 23 168]
+==== 2026-11-09 16:01:25 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 16:06:35 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 12ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 16:11:46 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 13ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.1 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 192 batched steps (747 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 0 21 171]
+==== 2026-11-09 16:15:17 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 12ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 194 batched steps (749 tokens), 19 solo tokens, 0 straggler runs, steps by size [0 0 2 23 169]
+==== 2026-11-09 16:18:59 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 13ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.1 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 16:24:29 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 14ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.1 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 16:29:39 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 14ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 194 batched steps (749 tokens), 19 solo tokens, 0 straggler runs, steps by size [0 0 2 23 169]
+==== 2026-11-09 16:33:20 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 12ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.1 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 197 batched steps (752 tokens), 16 solo tokens, 0 straggler runs, steps by size [0 0 7 22 168]
+==== 2026-11-09 16:36:52 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 16:42:01 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 13ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 16:47:11 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 0.00 GB (server swap)
+swap guard: baseline 1.56 GB (system swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 192 batched steps (747 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 0 21 171]
+==== 2026-11-09 16:50:22 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 13ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.1 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 192 batched steps (747 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 0 21 171]
+==== 2026-11-09 16:53:54 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 0.00 GB (server swap)
+swap guard: baseline 1.56 GB (system swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 16:59:04 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 17:02:46 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 12ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 204 runs, 180 batched steps (360 tokens), 24 solo tokens, 0 straggler runs, steps by size [0 0 180 0 0]
+==== 2026-11-09 17:06:27 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 199 runs, 185 batched steps (370 tokens), 14 solo tokens, 0 straggler runs, steps by size [0 0 185 0 0]
+==== 2026-11-09 17:09:37 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 13ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 17:13:29 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 13ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.3 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 17:17:32 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv f16
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 15ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV f16 (requested f16, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.8 GB KV (weights 4.0 GB, budget 42.0 GB, 40.2 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 203 runs, 181 batched steps (362 tokens), 22 solo tokens, 0 straggler runs, steps by size [0 0 181 0 0]
+==== 2026-11-09 17:20:32 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 12ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.1 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 17:25:52 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 196 batched steps (751 tokens), 17 solo tokens, 0 straggler runs, steps by size [0 0 5 23 168]
+==== 2026-11-09 17:29:44 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 11ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.1 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 214 runs, 193 batched steps (747 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 2 21 170]
+==== 2026-11-09 17:33:05 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 13ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.1 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 17:38:16 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 15ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 17:43:26 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 13ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.56 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 194 batched steps (749 tokens), 19 solo tokens, 0 straggler runs, steps by size [0 0 2 23 169]
+==== 2026-11-09 17:46:57 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 10ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.1 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.54 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 192 batched steps (747 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 0 21 171]
+==== 2026-11-09 17:50:39 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 9ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.1 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.54 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 17:55:49 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 14ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.54 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 18:00:59 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 13ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.54 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 214 runs, 197 batched steps (751 tokens), 17 solo tokens, 0 straggler runs, steps by size [0 0 7 23 167]
+==== 2026-11-09 18:04:30 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 17ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.54 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 192 batched steps (747 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 0 21 171]
+==== 2026-11-09 18:08:12 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 15ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.54 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 18:13:22 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.54 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 18:18:42 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 9ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.54 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 214 runs, 198 batched steps (752 tokens), 16 solo tokens, 0 straggler runs, steps by size [0 0 9 22 167]
+==== 2026-11-09 18:22:14 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 9ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.1 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.54 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 214 runs, 192 batched steps (746 tokens), 22 solo tokens, 0 straggler runs, steps by size [0 0 0 22 170]
+==== 2026-11-09 18:25:35 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 13ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.1 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.54 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 18:30:56 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 16ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.48 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 18:36:05 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 11ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.48 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 193 batched steps (748 tokens), 20 solo tokens, 0 straggler runs, steps by size [0 0 2 20 171]
+==== 2026-11-09 18:39:37 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.48 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 213 runs, 192 batched steps (747 tokens), 21 solo tokens, 0 straggler runs, steps by size [0 0 0 21 171]
+==== 2026-11-09 18:42:59 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 9ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.48 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 18:48:08 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.48 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 18:52:01 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 10ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.48 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 202 runs, 182 batched steps (364 tokens), 20 solo tokens, 0 straggler runs, steps by size [0 0 182 0 0]
+==== 2026-11-09 18:55:11 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.48 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 210 runs, 174 batched steps (348 tokens), 36 solo tokens, 0 straggler runs, steps by size [0 0 174 0 0]
+==== 2026-11-09 18:58:22 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 9ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.48 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 19:02:14 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3 -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 13ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.48 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 0 runs, 0 batched steps (0 tokens), 0 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+==== 2026-11-09 19:05:57 /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cpu -addr 127.0.0.1:8098 -quant int4 -kv i8
+swap guard (load): armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cpu-amd64.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+loaded "bench": 28-layer model (vocab 152064) in 14ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (model maximum) · KV i8 (requested i8, lossy) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 32768-token cap needs 1.0 GB KV (weights 4.0 GB, budget 42.0 GB, 41.0 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.48 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+
+shutting down…
+cpu batch "bench": 203 runs, 181 batched steps (362 tokens), 22 solo tokens, 0 straggler runs, steps by size [0 0 181 0 0]

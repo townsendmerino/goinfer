@@ -1,0 +1,5 @@
+rev old 5189172c3 new d3eb2f27e; tree 7cb04cd1c; kernel 7.3.0-202.nobara.fc44.x86_64; governor schedutil; 16 threads
+4343d992111f7d5cd67be76505f5093e274633927a40ef338b40ea3dfac085c7  /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-5189172c3
+7a87a5be1609ef2293fe1c267a9f15b1c0dd345085608ac03c4d353550799d0a  /home/francis/goinfer-bench/p4a-cpu-batch/serve-cpu-d3eb2f27e
+started 2026-11-09 15:29:33 PST
+finished 2026-11-09 19:06:47 PST
