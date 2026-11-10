@@ -871,9 +871,8 @@ type cudaResident struct {
 	chunkPromptLen int
 	// fastAttnLaunches / fastGemmLaunches count attn_fused and gemm_w4a8_mma launches, so a test can prove WHICH kernels a prefill pass used rather than infer it from timing.
 	fastAttnLaunches, fastGemmLaunches int
-	// raggedAttnLaunches counts attn_ragged launches, so a test can prove a step's rows took the one launch; headRows counts the
-	// rows batchedHeadFull heads, so it can prove a prefill chunk's unread rows took none.
-	raggedAttnLaunches, headRows int
+	// raggedAttnLaunches counts attn_ragged launches, so a test can prove a step's rows took the one launch.
+	raggedAttnLaunches int
 	// bRopeKVRagged and bAttnRagged are rope_kv_batched's and attn_batched's ragged twins (prefill_batched.cu); zero when not
 	// loaded, when a step's rows take decode's own gap.
 	bRopeKVRagged, bAttnRagged                              Pipeline
