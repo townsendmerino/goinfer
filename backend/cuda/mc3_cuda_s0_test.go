@@ -153,11 +153,7 @@ func TestRF3CUDA_rideIdentity(t *testing.T) {
 	}
 	defer m.Close()
 	_ = mustResident(t, m)
-	_, _, _, _, _, _, vocab := m.Dims()
-	long := make([]int, 1200)
-	for i := range long {
-		long[i] = (i*7 + 3) % (vocab - 1)
-	}
+	m.EnableResidentConcurrency(4) // the alone replies take the same MC3 path (no decoders, so one whole prefill)
 	gen := func(prompt []int, maxTok int) []int {
 		ch, g := m.Generate(context.Background(), prompt, maxTok, decoder.SamplingParams{})
 		var ids []int
@@ -169,19 +165,27 @@ func TestRF3CUDA_rideIdentity(t *testing.T) {
 		}
 		return ids
 	}
+	const decodeTokens = 400
 	d0, d1 := []int{1, 2, 3, 40}, []int{1, 2, 3, 50}
-	aloneD0, aloneD1, aloneNew := gen(d0, 120), gen(d1, 120), gen(long, 8)
+	aloneD0, aloneD1 := gen(d0, decodeTokens), gen(d1, decodeTokens)
+	// The newcomer's prompt is the model's own greedy text repeated to 1200 tokens: confident, in-distribution continuations,
+	// so a near-tie in an out-of-distribution prompt cannot flip a token between two correct paths.
+	long := make([]int, 0, 1200)
+	for len(long) < 1200 {
+		long = append(long, aloneD0...)
+	}
+	long = long[:1200]
+	aloneNew := gen(long, 8)
 
-	m.EnableResidentConcurrency(4)
 	before := m.ResidentBatchStats()
 	var got0, got1, gotNew []int
 	var wg sync.WaitGroup
 	wg.Add(3)
-	go func() { defer wg.Done(); got0 = gen(d0, 120) }()
-	go func() { defer wg.Done(); got1 = gen(d1, 120) }()
+	go func() { defer wg.Done(); got0 = gen(d0, decodeTokens) }()
+	go func() { defer wg.Done(); got1 = gen(d1, decodeTokens) }()
 	go func() {
 		defer wg.Done()
-		time.Sleep(150 * time.Millisecond) // the two are decoding by now
+		time.Sleep(300 * time.Millisecond) // the two are decoding by now (400 tokens each take about a second)
 		gotNew = gen(long, 8)
 	}()
 	wg.Wait()
@@ -195,7 +199,7 @@ func TestRF3CUDA_rideIdentity(t *testing.T) {
 	}
 	st := m.ResidentBatchStats()
 	rode := st.RidePasses - before.RidePasses
-	t.Logf("ride passes %d, ride rows %d, ride ns %d", rode, st.RideRows-before.RideRows, st.RideNs-before.RideNs)
+	t.Logf("ride passes %d, ride rows %d, ride ns %d; runs %d, prefill passes %d, stats %+v", rode, st.RideRows-before.RideRows, st.RideNs-before.RideNs, st.Runs-before.Runs, st.PrefillPasses-before.PrefillPasses, st)
 	if rode < 1 {
 		t.Errorf("no chunk rode a decode run (RidePasses %d): the check proved nothing about the ride", rode)
 	}
