@@ -12,7 +12,7 @@
 | id | state | next | evidence |
 |---|---|---|---|
 | M1 | done | — (Francis: enforce the common formats) | `constrain/schema_format.go:fmtStep`; `constrain/schema_format_test.go:TestJSONSchema_formatIsEnforced` |
-| M2 | open | a stop-id helper on `chat.Template` | no stop-id helper in the tree; `chat/chat.go:Template.Stops` is strings |
+| M2 | done | — | `chat/chat.go:Template.StopIDs` (Hard); `chat/stopids_test.go:TestTemplate_StopIDs`; the smallest structured program uses it |
 | M3 | done | — | f02d0b534; `tokenizer/stream.go:Tokenizer.NewStream` |
 | M4 | done | — | `chat/toolgrammar.go:Template.ToolGrammar`, which serve's auto mode now calls; `chat/tools.go:Template.ParseToolCalls` documents `ID` and the reasoning lead; `chat/toolgrammar_test.go:TestTemplate_ToolGrammar` |
 | M5 | done | — | merged 2026-10-11 |

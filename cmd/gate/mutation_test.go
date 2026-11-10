@@ -183,3 +183,29 @@ func TestMutation_sedInvocationIsPortable(t *testing.T) {
 		t.Fatalf("sedArgs = %v, want [expr file] so sed writes to stdout", args)
 	}
 }
+
+// A restore that cannot write the original back must say so and leave the backup, never return as if the tree were clean: a
+// mutation run edits a source file in place. The verify command here makes the subject read-only once it sees the mutation and
+// passes, so the run takes the early return the deferred restore covers.
+func TestMutation_failedRestoreIsReportedAndKeepsTheBackup(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes through a read-only mode, so the restore cannot be made to fail")
+	}
+	dir, rel := scratchRepo(t, subjectOK)
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(dir, rel), 0o644) })
+	var buf strings.Builder
+	rc := runMutation([]string{"lockout", rel, "s/STATE=OK/STATE=BROKEN/",
+		"sh", "-c", "if grep -q BROKEN " + rel + "; then chmod 0444 " + rel + "; fi; exit 0"}, &buf)
+	out := buf.String()
+	if rc != 2 {
+		t.Errorf("rc=%d, want 2 for a run that left the tree mutated\n%s", rc, out)
+	}
+	if !strings.Contains(out, "NOT restored") {
+		t.Errorf("the failed restore is not reported:\n%s", out)
+	}
+	bak := filepath.Join(os.TempDir(), "gate_mutation_lockout.bak")
+	t.Cleanup(func() { _ = os.Remove(bak) })
+	if b, err := os.ReadFile(bak); err != nil || string(b) != subjectOK {
+		t.Errorf("the backup is gone or wrong (%v): %q", err, b)
+	}
+}
