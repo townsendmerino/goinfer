@@ -1824,10 +1824,15 @@ func (m *Model) GptOssActResident() (alpha, limit float32, ok bool) {
 	return float32(gp.SwigluAlpha), float32(gp.SwigluLimit), true
 }
 
+// HasAttnSinksResident reports whether the arch carries per-query-head attention sink logits in the softmax denominator on
+// every layer (gpt-oss or Flint). Separate from GptOssActResident so a resident backend can enable sink attention without
+// switching on gpt-oss's clamped interleaved-SwiGLU MoE activation.
+func (m *Model) HasAttnSinksResident() bool { return m.w.arch.hasAttnSinks() }
+
 // GptOssSinksResident returns layer l's per-head attention sink logits ([NumHeads]), or nil
 // when the family has none. A resident backend uploads these once at attach time.
 func (m *Model) GptOssSinksResident(l int) []float32 {
-	if m.w.arch.gptoss == nil || l < 0 || l >= len(m.w.Layers) {
+	if !m.w.arch.hasAttnSinks() || l < 0 || l >= len(m.w.Layers) {
 		return nil
 	}
 	return m.w.Layers[l].AttnSinks

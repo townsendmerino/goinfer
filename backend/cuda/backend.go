@@ -1477,26 +1477,30 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		}
 
 		// gpt-oss per-layer device state: the attention sinks and the per-expert gate‖up
-		// bias table. Uploaded once here rather than per token — they are weights, not
+		// Per-head attention sinks (gpt-oss and Flint) and gpt-oss's per-expert bias
+		// tables. Uploaded once here rather than per token — they are weights, not
 		// activations. Both are nil for every other family, and r.af/r.up32 are not called
 		// at all in that case (Alloc(0) is an error, not a no-op).
-		if _, _, isGptOss := m.GptOssActResident(); isGptOss {
-			// The glue `attention` fallback (taken when !prefillReady) has no sink parameter, so a gpt-oss model whose
+		if m.HasAttnSinksResident() {
+			// The glue `attention` fallback (taken when !prefillReady) has no sink parameter, so a model whose
 			// prefill_batched.ptx fails to JIT would decode through a kernel that silently omits the learned per-head sink. Refuse
 			// that case: decoder/features.go says the sink reaches both paths, and this is what makes that true.
 			if !r.prefillReady {
-				return fmt.Errorf("cuda: gpt-oss needs the batched attention kernel " +
-					"for its learned attention sink, and prefill_batched.ptx did not load — the " +
-					"glue attention fallback has no sink parameter, so decoding here would " +
-					"silently drop it (N-10)")
+				return fmt.Errorf("cuda: attention sinks need the batched attention kernel, " +
+					"and prefill_batched.ptx did not load — the glue attention fallback has no " +
+					"sink parameter, so decoding here would silently drop it (N-10)")
 			}
 			r.gptOssSinks = make([]Buffer, nLayers)
-			r.gptOssExpBias = make([]Buffer, nLayers)
-			r.gptOssDownBias = make([]Buffer, nLayers)
 			for l := range nLayers {
 				if sk := m.GptOssSinksResident(l); len(sk) > 0 {
 					r.gptOssSinks[l] = r.upOn(mem.LineDense, sk)
 				}
+			}
+		}
+		if _, _, isGptOss := m.GptOssActResident(); isGptOss {
+			r.gptOssExpBias = make([]Buffer, nLayers)
+			r.gptOssDownBias = make([]Buffer, nLayers)
+			for l := range nLayers {
 				if gb := m.GptOssExpertBiasResident(l); len(gb) > 0 {
 					r.gptOssExpBias[l] = r.upOn(mem.LineDense, gb)
 				}

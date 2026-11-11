@@ -111,7 +111,7 @@ experts and the shared expert.
   routed scaling factor.
 - **The top k experts** run as gated MLPs.
 - **An optional always-on shared expert** is added on top. It is sigmoid-gated (Qwen-MoE) or
-  ungated (GLM, DeepSeek).
+  ungated (GLM, DeepSeek, Laguna, Flint).
 
 Granite's fused expert tensors are split per expert at load, so `moeMLP` never sees them. Four
 families bring their own MoE FFN inside their own layer loop: gpt-oss, Llama 4, Nemotron 3 Nano and
@@ -127,8 +127,8 @@ primitive is chosen per layer (`isLinearLayer`, `isMambaLayer`, `isConvLayer`, N
 kind). Its state lives in the same `KVCache` (`decoder/kvcache.go`) beside ordinary K/V. The
 capability matrix files each family under one class (its `coverage_axis`).
 
-**softmax-GQA** — 27 families, among them Llama, Qwen 2/2.5/3 and their MoE and VL variants, Mistral,
-Mixtral, Gemma 3 and 4, Phi, GPT-2, gpt-oss and GLM-4.5/4.6.
+**softmax-GQA** — 28 families, among them Llama, Qwen 2/2.5/3 and their MoE and VL variants, Mistral,
+Mixtral, Gemma 3 and 4, Phi, GPT-2, gpt-oss, GLM-4.5/4.6, Laguna and Flint.
 - Cached per layer: K and V.
 - Code: the generic loop (`decoder/model.go`), or an own loop (below).
 

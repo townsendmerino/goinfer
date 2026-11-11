@@ -50,7 +50,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 		fastAttn = false
 	}
 	useAcc64 := !fastAttn
-	wantFusedPool := !useAcc64 && cache.treeMask == nil && !prog.AnySoftcap() // the fused tile never sees a score to cap
+	wantFusedPool := !useAcc64 && cache.treeMask == nil && !prog.AnySoftcap() && !arch.hasAttnSinks() // the fused tile never sees a score to cap or a sink logit
 	poolK, poolKeys := K, maxKeys
 	if ps.poolKeys > maxKeys {
 		poolKeys = ps.poolKeys
@@ -179,16 +179,18 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 						cache.Append(l, ki, vi) // a local layer's write waits until its window is read (commitBatch)
 					}
 				}
+				ap := o.Attn
+				ap.Sinks = lw.AttnSinks
 				switch {
 				case isLocal:
 					base, nRows := cache.batchReadLocal(l, startPos, K, k, v, alk, alv)
-					attendBatchedHeadsP(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, o.Attn, arch, useAcc64, attnPool)
+					attendBatchedHeadsP(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, ap, arch, useAcc64, attnPool)
 					cache.commitBatch(l, startPos, K, k, v)
 				case cache.quant.widened():
 					nKeys := cache.dequantGlobalLayer(l, kvDim, alk, alv)
-					attendBatchedHeadsP(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, o.Attn, arch, useAcc64, attnPool)
+					attendBatchedHeadsP(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, ap, arch, useAcc64, attnPool)
 				default:
-					attendBatchedHeadsP(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, o.Attn, arch, useAcc64, attnPool)
+					attendBatchedHeadsP(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, ap, arch, useAcc64, attnPool)
 				}
 			case opOutGate:
 				gRows := lw.GProj.Rows()
@@ -507,7 +509,9 @@ func (m *Model) walkMulti(prog *layerProgram, h []float32, caches []*KVCache) ([
 						keys, vals = lk[:nKeys*kvDim], lv[:nKeys*kvDim]
 					}
 					pool := c.scr.headWorkerPool(nH, 1, nKeys, hd, false, true)
-					attendBatchedHeadsP(row(q, b, qDim), row(ctx, b, qDim), keys, vals, 0, c, l, pos[b], 1, o.Attn, arch, true, pool)
+					ap := o.Attn
+					ap.Sinks = lw.AttnSinks
+					attendBatchedHeadsP(row(q, b, qDim), row(ctx, b, qDim), keys, vals, 0, c, l, pos[b], 1, ap, arch, true, pool)
 				}
 			case opProjO:
 				out := reg(o.Out)

@@ -58,6 +58,7 @@ var registry = map[string]archAdapter{
 	"qwen3_next":       qwen3NextArchitecture,     // Qwen3-Next: same DeltaNet/softmax/MoE hybrid shape as qwen3_5_moe, but layer_types is COMPUTED (full_attention_interval) and partial_rotary_factor is a top-level field, not nested
 	"glm4_moe":         glm4moeArchitecture,       // GLM-4.5/4.6: DeepSeek-style MoE (sigmoid routing + bias) + dense prefix + QK-norm + partial RoPE
 	"laguna":           lagunaArchitecture,        // Laguna (poolside) XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + shared expert + softplus attention output gating + per-layer query heads
+	"flint":            flintArchitecture,         // Flint (Cognichip): hybrid sliding-window + NoPE full attention with per-head attention sinks + dense prefix + sigmoid-routed MoE + ungated shared expert
 	"spark2_5":         spark25Architecture,       // Spark-X2.5 (XHToken): fused QKV, sigmoid head-wise attention output gate, 1:3 full/sliding (512) with layer-dependent partial RoPE, gated exact-GELU MLP, plain sequential (non-parallel) block
 	"granitemoehybrid": graniteArchitecture,       // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
 	"granite":          graniteDenseArchitecture,  // Granite 4.2 (3B/8B/30B) dense: llama skeleton + Granite's four scalar multipliers

@@ -1,0 +1,28 @@
+{
+  "uses": [
+    "core",
+    "loaders",
+    "quant",
+    "moe"
+  ],
+  "own": [
+    "decoder/arch_flint.go",
+    "decoder/flint_parity_test.go",
+    "scripts/pin_flint_tiny.py"
+  ],
+  "programs": [
+    "testdata/flint-tiny"
+  ],
+  "deps_hash": "sha256:1795bfa5a50891df0a8eb6ebad9029a046f8b07838d061ffdfdd3871d3bb569c",
+  "status": "experimental",
+  "validated_at": "d29d1ba4",
+  "date": "2026-11-11",
+  "reference": "HF f32 (FlintForCausalLM tiny + window-513 boundary golden from transformers PR #49824 @ 0ea108daf169)",
+  "machine": "darwin-arm64",
+  "method": "tiny-golden",
+  "metrics": {
+    "argmax_pct": 100.0,
+    "cosine_min": 1.00000,
+    "cosine_mean": 1.00000
+  }
+}

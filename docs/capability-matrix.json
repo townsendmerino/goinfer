@@ -257,6 +257,31 @@
     "parity": "full-oracle 100.0%/1.00000"
   },
   {
+    "name": "flint",
+    "model_types": [
+      "flint"
+    ],
+    "display_name": "Flint",
+    "description": "Cognichip Flint (36B-A3B): hybrid sliding-window + NoPE full attention with per-head attention sinks, dense prefix + sigmoid-routed MoE + ungated shared expert",
+    "summary": "Cognichip's Flint 36B mixture-of-experts (about 3B active per token), built for chip design and RTL/Verilog.",
+    "tasks": [
+      "chat",
+      "code"
+    ],
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse +shared",
+    "sliding_window": "interleave",
+    "qk_norm": true,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "glm4_moe",
     "model_types": [
       "glm4_moe"

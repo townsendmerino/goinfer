@@ -27,7 +27,7 @@ import "unicode"
 //
 // Written against the published o200k_base pattern above and tested differentially against an
 // independent ordered-alternative matcher (split_o200k_test.go).
-func splitO200k(s string) []string { return splitO200kVariant(s, true, 3) }
+func splitO200k(s string) []string { return splitO200kVariant(s, true, 3, false) }
 
 // splitTekken walks Mistral's Tekken pattern (Voxtral, Mistral Small 3.x): o200k's alternation with the contraction suffixes REMOVED and `\p{N}` for a single digit:
 //
@@ -35,14 +35,87 @@ func splitO200k(s string) []string { return splitO200kVariant(s, true, 3) }
 //
 // Everything else (the case split, marks as word content, the `/` in the punctuation tail, the whitespace alternatives) is o200k's, so this is the same walker with two switches.
 // `don't` is therefore `don` + `'t` here and one pre-token in o200k, and `2026` is four pre-tokens here and two in o200k.
-func splitTekken(s string) []string { return splitO200kVariant(s, false, 1) }
+func splitTekken(s string) []string { return splitO200kVariant(s, false, 1, false) }
 
-// splitO200kVariant is the o200k walker with its two family switches: whether contractions attach to the word they follow, and the digit-run cap.
-func splitO200kVariant(s string, contractions bool, maxDigits int) []string {
+// isFlintCJKKana reports whether r is in Flint's second Split class:
+// [\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff] (Han, Hiragana, Katakana).
+func isFlintCJKKana(r rune) bool {
+	return (r >= 0x4e00 && r <= 0x9fa5) || (r >= 0x3040 && r <= 0x309f) || (r >= 0x30a0 && r <= 0x30ff)
+}
+
+// splitFlint walks RecursiveSI/flint's three-stage Split pre-tokenizer sequence:
+//
+//  1. \p{N}{1,3} (Isolated)
+//  2. [\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+ (Isolated)
+//  3. [^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|
+//     [^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|
+//      ?[\p{P}\p{S}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+ (Isolated)
+//
+// Because stages 1 and 2 isolate digit runs (≤3) and Han/Hiragana/Katakana runs before stage 3 runs,
+// a leading space or punctuation before a digit or CJK/Kana run stays in the preceding span rather
+// than attaching to it, and CJK/Kana runs split out of adjacent Latin words (`hello日本語world` ->
+// `hello` + `日本語` + `world`).
+func splitFlint(s string) []string {
+	if s == "" {
+		return nil
+	}
 	rs, off, s := runeOffsets(s)
 	n := len(rs)
 	out := make([]string, 0, n/3+1)
-	emit := func(a, b int) { out = append(out, s[off[a]:off[b]]) }
+	spanStart := 0
+	flushSpan := func(end int) {
+		if end > spanStart {
+			out = append(out, splitO200kVariant(s[off[spanStart]:off[end]], true, 0, true)...)
+		}
+	}
+	for i := 0; i < n; {
+		r := rs[i]
+		if unicode.IsNumber(r) {
+			flushSpan(i)
+			k := i + 1
+			for k < n && k-i < 3 && unicode.IsNumber(rs[k]) {
+				k++
+			}
+			out = append(out, s[off[i]:off[k]])
+			i = k
+			spanStart = i
+			continue
+		}
+		if isFlintCJKKana(r) {
+			flushSpan(i)
+			k := i + 1
+			for k < n && isFlintCJKKana(rs[k]) {
+				k++
+			}
+			out = append(out, s[off[i]:off[k]])
+			i = k
+			spanStart = i
+			continue
+		}
+		i++
+	}
+	flushSpan(n)
+	return out
+}
+
+// splitO200kVariant is the o200k walker with its family switches: whether contractions attach to the word they follow,
+// the digit-run cap, and whether the punctuation clause is Flint's ` ?[\p{P}\p{S}]+[\r\n]*` instead of o200k's
+// ` ?[^\s\p{L}\p{N}]+[\r\n/]*`.
+func splitO200kVariant(s string, contractions bool, maxDigits int, flintPunct bool) []string {
+	rs, off, s := runeOffsets(s)
+	n := len(rs)
+	out := make([]string, 0, n/3+1)
+	gapStart := -1
+	flushGap := func(pos int) {
+		if gapStart >= 0 {
+			out = append(out, s[off[gapStart]:off[pos]])
+			gapStart = -1
+		}
+	}
+	emit := func(a, b int) {
+		flushGap(a)
+		out = append(out, s[off[a]:off[b]])
+	}
 
 	isNL := func(r rune) bool { return r == '\r' || r == '\n' }
 	// The word classes. Upper covers Lu/Lt/Lm/Lo/M; lower covers Ll/Lm/Lo/M. Lm, Lo and M are in
@@ -56,6 +129,9 @@ func splitO200kVariant(s string, contractions bool, maxDigits int) []string {
 			unicode.Is(unicode.M, r)
 	}
 	isPunct := func(r rune) bool {
+		if flintPunct {
+			return unicode.IsPunct(r) || unicode.IsSymbol(r)
+		}
 		return !unicode.IsSpace(r) && !unicode.IsLetter(r) && !unicode.IsNumber(r)
 	}
 	// contractionLen returns the length of an attached contraction at i, or 0.
@@ -153,7 +229,7 @@ func splitO200kVariant(s string, contractions bool, maxDigits int) []string {
 		}
 
 		// Alt 3: \p{N}{1,3} (o200k) or \p{N} (Tekken): maxDigits
-		if unicode.IsNumber(r) {
+		if maxDigits > 0 && unicode.IsNumber(r) {
 			k := i + 1
 			for k < n && k-i < maxDigits && unicode.IsNumber(rs[k]) {
 				k++
@@ -163,7 +239,7 @@ func splitO200kVariant(s string, contractions bool, maxDigits int) []string {
 			continue
 		}
 
-		// Alt 4: " ?" [^\s\p{L}\p{N}]+ [\r\n/]* — note the '/' in the trailing class.
+		// Alt 4: " ?" [^\s\p{L}\p{N}]+ [\r\n/]* (o200k/Tekken) or " ?" [\p{P}\p{S}]+ [\r\n]* (Flint).
 		{
 			p := i
 			if r == ' ' {
@@ -174,7 +250,7 @@ func splitO200kVariant(s string, contractions bool, maxDigits int) []string {
 				for k < n && isPunct(rs[k]) {
 					k++
 				}
-				for k < n && (isNL(rs[k]) || rs[k] == '/') {
+				for k < n && (isNL(rs[k]) || (!flintPunct && rs[k] == '/')) {
 					k++
 				}
 				emit(i, k)
@@ -213,9 +289,13 @@ func splitO200kVariant(s string, contractions bool, maxDigits int) []string {
 			continue
 		}
 
-		// Nothing matched (a lone CR/LF-adjacent oddity): emit the rune so the walk terminates.
-		emit(i, i+1)
+		// Nothing matched (e.g. a Unicode category C rune under flintPunct's [\p{P}\p{S}] class):
+		// accumulate into the Isolated unmatched gap until the next match or end of span.
+		if gapStart < 0 {
+			gapStart = i
+		}
 		i++
 	}
+	flushGap(n)
 	return out
 }

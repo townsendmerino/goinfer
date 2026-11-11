@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -67,6 +68,8 @@ func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool
 		return t.renderGemma4Tools(system, turns, tools, t.gemma4Think(), t.historyKind() == histGemma4 || t.reason != nil && t.reason.oldGemma4, t.reason != nil && t.reason.oldGemma4, t.reason.offScaffold())
 	case "harmony": // already segment-built: the markers are special, everything a user or tool wrote is hardened content
 		return harmonySegments(t.harmonyEffort(), system, turns, tools)
+	case "flint":
+		return t.renderFlintTools(system, turns, tools)
 	}
 	return t.RenderSegments(system, turns) // gemma3 etc.: no native tool template
 }
@@ -74,7 +77,7 @@ func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool
 // SupportsTools reports whether this family has a tool-calling template.
 func (t *Template) SupportsTools() bool {
 	switch t.name {
-	case "chatml", "mellum2", "mistral", "llama3", "gemma4", "harmony":
+	case "chatml", "mellum2", "mistral", "llama3", "gemma4", "harmony", "flint":
 		return true
 	}
 	return false
@@ -126,6 +129,8 @@ func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {
 		return parseGemma4Tools(out)
 	case "harmony":
 		return parseHarmonyTools(out)
+	case "flint":
+		return parseFlintTools(out, nil)
 	}
 	return nil, out
 }
@@ -147,9 +152,12 @@ func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {
 func (t *Template) ParseToolCallsFor(out string, tools []Tool) ([]ToolCall, string) {
 	var calls []ToolCall
 	var lead string
-	if t != nil && (t.name == "chatml" || t.name == "mellum2") {
+	switch {
+	case t != nil && (t.name == "chatml" || t.name == "mellum2"):
 		calls, lead = parseChatMLTools(out, tools) // tools type an XML call's parameters from the schema
-	} else {
+	case t != nil && t.name == "flint":
+		calls, lead = parseFlintTools(out, tools)
+	default:
 		calls, lead = t.ParseToolCalls(out)
 	}
 	if len(calls) > 0 || !t.AcceptsBareToolCall() {
@@ -496,6 +504,223 @@ func parseLlama3Tools(out string) ([]ToolCall, string) {
 	return nil, strings.TrimSpace(out)
 }
 
+// --- Flint ---
+
+var flintToolMarks = []string{
+	"<|begin_of_text|>", "<|end_of_text|>",
+	"<|system|>", "<|developer|>", "<|user|>", "<|assistant|>", "<|observation|>",
+	"<think>", "</think>",
+	"<tools>", "</tools>",
+	"<tool_call>", "</tool_call>",
+	"<arg_key>", "</arg_key>",
+	"<arg_value>", "</arg_value>",
+	"<tool_response>", "</tool_response>",
+}
+
+var flintSanitizer = strings.NewReplacer(
+	"\x00", "",
+	"<think>", "",
+	"</think>", "",
+	"<|begin_of_text|>", "&lt;|begin_of_text|&gt;",
+	"<|end_of_text|>", "&lt;|end_of_text|&gt;",
+	"<|system|>", "&lt;|system|&gt;",
+	"<|developer|>", "&lt;|developer|&gt;",
+	"<|user|>", "&lt;|user|&gt;",
+	"<|assistant|>", "&lt;|assistant|&gt;",
+	"<|observation|>", "&lt;|observation|&gt;",
+)
+
+func flintText(s string) string {
+	return flintSanitizer.Replace(s)
+}
+
+// flintToolJSON renders `fn | tojson(ensure_ascii=False)` for RecursiveSI/flint's chat_template.jinja, where
+// `fn = tool.function if tool.function is defined else tool` is the unwrapped function object.
+func flintToolJSON(t Tool) string {
+	var b strings.Builder
+	b.WriteString(`{"name": ` + pyQuote(t.Name))
+	if t.Description != "" {
+		b.WriteString(`, "description": ` + pyQuote(t.Description))
+	}
+	if len(bytes.TrimSpace(t.Parameters)) > 0 {
+		b.WriteString(`, "parameters": ` + pyArgs(t.Parameters))
+	}
+	b.WriteString("}")
+	return b.String()
+}
+
+func (t *Template) renderFlintTools(system string, turns []Turn, tools []Tool) []Segment {
+	b := t.newToolBuf(flintToolMarks...)
+	if system != "" {
+		b.lit("<|system|>")
+		b.txt(flintText(system))
+	}
+	toolsEmitted := len(tools) == 0
+	emitTools := func() {
+		if toolsEmitted {
+			return
+		}
+		toolsEmitted = true
+		b.lit("<|system|>\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>")
+		for _, tl := range tools {
+			b.txt("\n" + flintToolJSON(tl))
+		}
+		b.lit("\n</tools>\n\nFor each function call, output the function name and arguments within the following XML format:\n<tool_call>{function-name}<arg_key>{arg-key-1}</arg_key><arg_value>{arg-value-1}</arg_value>...</tool_call>\n")
+	}
+	for _, m := range turns {
+		if !toolsEmitted && m.Role != "system" {
+			emitTools()
+		}
+		switch m.Role {
+		case "system":
+			b.lit("<|system|>")
+			b.txt(flintText(m.Content))
+		case "developer":
+			b.lit("<|developer|>")
+			b.txt(flintText(m.Content))
+		case "assistant":
+			b.lit("<|assistant|>")
+			reasoning, content := m.Reasoning, m.Content
+			if reasoning == "" && strings.HasPrefix(content, "<think>") {
+				if r, rest, ok := strings.Cut(content[len("<think>"):], "</think>"); ok {
+					reasoning, content = r, rest
+				}
+			}
+			if reasoning != "" {
+				b.lit("<think>")
+				b.txt(reasoning)
+				b.lit("</think>")
+			}
+			b.txt(content)
+			for _, c := range m.ToolCalls {
+				b.lit("<tool_call>")
+				b.txt(c.Name)
+				if args, err := parseJV(c.Arguments); err == nil && args.kind == jObj {
+					for _, k := range args.keys {
+						b.lit("<arg_key>")
+						b.txt(k)
+						b.lit("</arg_key><arg_value>")
+						v := args.vals[k]
+						if v.kind == jStr {
+							b.txt(v.s)
+						} else {
+							b.txt(pyDumps(v))
+						}
+						b.lit("</arg_value>")
+					}
+				}
+				b.lit("</tool_call>")
+			}
+		case "tool":
+			b.lit("<|observation|><tool_response>")
+			b.txt(flintText(m.Content))
+			b.lit("</tool_response>")
+		default:
+			b.lit("<|user|>")
+			b.txt(flintText(m.Content))
+		}
+	}
+	if !toolsEmitted {
+		emitTools()
+	}
+	b.lit("<|assistant|>")
+	return b.segs
+}
+
+func parseFlintTools(out string, tools []Tool) ([]ToolCall, string) {
+	lead := out
+	if before, _, ok := strings.Cut(out, "<tool_call>"); ok {
+		lead = before
+	}
+	var calls []ToolCall
+	for rest := out; ; {
+		i := strings.Index(rest, "<tool_call>")
+		if i < 0 {
+			break
+		}
+		rest = rest[i+len("<tool_call>"):]
+		j := strings.Index(rest, "</tool_call>")
+		if j < 0 {
+			break
+		}
+		body := rest[:j]
+		rest = rest[j+len("</tool_call>"):]
+		if c, ok := parseFlintCall(body, tools); ok {
+			calls = append(calls, c)
+		}
+	}
+	return calls, strings.TrimSpace(lead)
+}
+
+func parseFlintCall(body string, tools []Tool) (ToolCall, bool) {
+	var name, rest string
+	if ak := strings.Index(body, "<arg_key>"); ak >= 0 {
+		name = strings.TrimSpace(body[:ak])
+		rest = body[ak:]
+	} else {
+		name = strings.TrimSpace(body)
+	}
+	if name == "" || strings.ContainsAny(name, " \t\r\n<>\"'{}") {
+		return ToolCall{}, false
+	}
+	types := paramTypes(name, tools)
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	n := 0
+	for rest != "" {
+		rest = strings.TrimSpace(rest)
+		if rest == "" {
+			break
+		}
+		if !strings.HasPrefix(rest, "<arg_key>") {
+			return ToolCall{}, false
+		}
+		rest = rest[len("<arg_key>"):]
+		ke := strings.Index(rest, "</arg_key>")
+		if ke <= 0 {
+			return ToolCall{}, false
+		}
+		key := rest[:ke]
+		rest = strings.TrimSpace(rest[ke+len("</arg_key>"):])
+		if !strings.HasPrefix(rest, "<arg_value>") {
+			return ToolCall{}, false
+		}
+		rest = rest[len("<arg_value>"):]
+		ve := closeFlintArgValue(rest)
+		if ve < 0 {
+			return ToolCall{}, false
+		}
+		val := rest[:ve]
+		rest = rest[ve+len("</arg_value>"):]
+		kb, _ := json.Marshal(key)
+		if n > 0 {
+			buf.WriteByte(',')
+		}
+		buf.Write(kb)
+		buf.WriteByte(':')
+		buf.Write(typedParam(val, types[key]))
+		n++
+	}
+	buf.WriteByte('}')
+	return ToolCall{Name: name, Arguments: json.RawMessage(buf.Bytes())}, true
+}
+
+func closeFlintArgValue(s string) int {
+	const tag = "</arg_value>"
+	for from := 0; ; {
+		i := strings.Index(s[from:], tag)
+		if i < 0 {
+			return -1
+		}
+		i += from
+		next := strings.TrimSpace(s[i+len(tag):])
+		if next == "" || strings.HasPrefix(next, "<arg_key>") {
+			return i
+		}
+		from = i + len(tag)
+	}
+}
+
 // --- shared JSON-call parsing ---
 
 // callFromJSON parses {"name":..,"<argsKey>":{...}} into a ToolCall. Decodes the
@@ -572,7 +797,7 @@ func normalizeArgs(raw json.RawMessage) json.RawMessage {
 // A family added here must have its parser checked against this contract, not assumed to match.
 func (t *Template) ToolCallOpener() (string, bool) {
 	switch t.name {
-	case "chatml", "mellum2":
+	case "chatml", "mellum2", "flint":
 		return "<tool_call>", true
 	case "gemma4":
 		return "<|tool_call>", true

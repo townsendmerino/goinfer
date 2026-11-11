@@ -709,13 +709,15 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 			}
 		}
 
-		// The v6 completeness tail. forward_gptoss.go indexes AttnSinks[qh] for every head and addBias iterates every expert bias
-		// with no nil check, so for this family these are required, not optional; a gpt-oss sidecar written before v6 is
-		// sink-free, within giwMinReadV, and judged fresh by mtime.
-		if arch.gptoss != nil {
-			if e := req(fmt.Sprintf("layer %d AttnSinks", i), len(lw.AttnSinks), arch.NumHeads); e != nil {
+		// The v6 completeness tail. forward_gptoss.go and the generic sink attention path index AttnSinks[qh] for every head, and
+		// addBias iterates every expert bias with no nil check, so for these families they are required, not optional; a sidecar
+		// written before v6 is sink-free, within giwMinReadV, and judged fresh by mtime.
+		if arch.hasAttnSinks() {
+			if e := req(fmt.Sprintf("layer %d AttnSinks", i), len(lw.AttnSinks), arch.headsAt(i)); e != nil {
 				return e
 			}
+		}
+		if arch.gptoss != nil {
 			for xe := range lw.Experts {
 				ex := &lw.Experts[xe]
 				if ex.Gate.Rows() == 0 {

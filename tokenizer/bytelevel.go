@@ -241,6 +241,8 @@ func (t *Tokenizer) splitPre(seg string) []string {
 		return splitGPT2Original(seg)
 	case shapeTekken:
 		return splitTekken(seg)
+	case shapeFlint:
+		return splitFlint(seg)
 	}
 	return splitGPT2(seg, t.maxDigits)
 }
@@ -435,8 +437,10 @@ func normalizerForm(raw json.RawMessage) (norm.Form, bool) {
 }
 
 // splitRegex extracts the pretokenizer split pattern from tokenizer.json's
-// pre_tokenizer, which is either a Split node directly or a Sequence whose
-// first Split carries it. Empty when absent.
+// pre_tokenizer, which is either a Split node directly, a Sequence whose
+// first Split carries it, or Flint's three-Split Sequence (\p{N}{1,3},
+// [\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+, then the main alternation).
+// Empty when absent.
 func splitRegex(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -453,10 +457,17 @@ func splitRegex(raw json.RawMessage) string {
 	if node.Pattern.Regex != "" {
 		return node.Pattern.Regex
 	}
+	var splits []string
 	for _, sub := range node.Pretokenizers {
 		if r := splitRegex(sub); r != "" {
-			return r
+			splits = append(splits, r)
 		}
+	}
+	if len(splits) == 3 && splits[0] == `\p{N}{1,3}` && splits[1] == `[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+` && classifySplit(splits[2]) == shapeFlint {
+		return splits[2]
+	}
+	if len(splits) > 0 {
+		return splits[0]
 	}
 	return ""
 }

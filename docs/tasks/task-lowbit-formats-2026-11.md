@@ -14,13 +14,13 @@ the Bolt E4B DFlash drafter (`nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16-DFlash-NV
 |---|---|---|---|
 | LB0a | open | the Bonsai guard: a named decline keyed on the GGUF metadata marking the Hadamard rotation, checked before any tensor read, tier 0 on a synthetic GGUF; settle whether Ollama's `Q2_0` Bonsai files are upstream Q2_0 or relabeled PQ2_0; release slot (v0.25.0 or v0.26.0) open | §2; `docs/next-models.md` "Bonsai-2: the format question changed" |
 | LB0b | open | count real files per format (NVFP4 safetensors and GGUF, IQ types in Unsloth dynamic quants, ModelOpt exports of models goinfer runs) | §1 |
-| LB0c | open | NVFP4 GGUF type id, block size and nibble order from `ggml-common.h` at a pinned llama.cpp build | §1 |
-| LB0d | open | ModelOpt's NVFP4 nibble order from its exporter | §1 |
-| LB1a | open | aikit NVFP4 dequant, safetensors form; tier 0 bit-exact against the ModelOpt formula | §1 |
-| LB1b | blocked | aikit NVFP4 dequant, GGUF type; tier 0 against gguf-py; needs LB0c | §1 |
-| LB2a | blocked | loader admission for ModelOpt safetensors (uint8 `[N,K/2]` + F8_E4M3 `[N,K/16]` + scalar fp32; a named load error otherwise); needs LB0d, LB1a | §1 |
-| LB2b | blocked | loader admission for the NVFP4 GGUF type; needs LB1b | §1 |
-| LB2c | open | fit: a `.weight` with a sibling `.weight_scale` counts N·K; skip `weight_scale`, `weight_scale_2`, `input_scale`; tier 0 on a synthetic index; independent of LB1 | §1; `decoder/fit/weights.go:SafetensorsWeightBytes` |
+| LB0c | done | NVFP4 GGUF type id (`GGML_TYPE_NVFP4 = 40`), 64-element super-block (4 × 16-element sub-blocks, `ue4m3` scales + 32 packed nibble bytes = 36 B/block, split `j`/`j+8` nibble order within each 16-element sub-block), plus companion `<name>.scale` `F32 [1]` tensor in `llama.cpp` PR `#21445` | `docs/measurements/flint-f0-2026-10.md` §4.1 |
+| LB0d | done | ModelOpt's NVFP4 nibble order from its exporter: sequential (`b & 0x0F` = even index `2j`, `b >> 4` = odd index `2j+1`), 16-element micro-blocks with `F8_E4M3` `weight_scale` `[N, K/16]` and scalar `F32` `weight_scale_2` | `docs/measurements/flint-f0-2026-10.md` §4.1; `decoder/nvfp4.go:nvfp4DequantRow` |
+| LB1a | done | NVFP4 safetensors dequant (`decoder/nvfp4.go:nvfp4DequantRow`, `decoder/mlx_safetensors.go:mlxDequantNVFP4Row`); tier 0 bit-exact against all 4,096 `e2m1 × e4m3` pairs and the ModelOpt formula | `decoder/nvfp4_mlx_test.go:TestNVFP4_e2m1TableAndExhaustiveE4M3` |
+| LB1b | open | aikit NVFP4 dequant, GGUF type (`GGML_TYPE_NVFP4 = 40`); tier 0 against gguf-py; companion `<name>.scale` tensor multiplication is already wired in `decoder/gguf.go:buildWeightsFromGGUF` | §1 |
+| LB2a | done | loader admission for ModelOpt NVFP4 safetensors (`uint8 [N,K/2]` + `F8_E4M3 [N,K/16]` + optional scalar fp32 `weight_scale_2`) and MLX quantized safetensors (`affine` 4/8-bit, `nvfp4`, `mxfp4`, plus 3-D `switch_mlp` experts) | `decoder/nvfp4.go:nvfp4Reconstruct`, `decoder/mlx_safetensors.go:mlxReconstruct2D`, `decoder/nvfp4_mlx_test.go` |
+| LB2b | blocked | loader admission for the NVFP4 GGUF type (`type 40` in `aikit`); companion `<name>.scale` tensor multiplication is done in `decoder/gguf.go:buildWeightsFromGGUF`; needs LB1b | §1 |
+| LB2c | done | fit: a `.weight` with a sibling `.weight_scale` counts N·K (pack factor 2) and with `.scales` counts N·K (pack factor 8 at 4-bit, 4 at 8-bit); skip `weight_scale`, `weight_scale_2`, `input_scale`, `.scales`, `.biases`; tier 0 on a synthetic index | `decoder/fit/weights.go:SafetensorsWeightBytes`, `decoder/nvfp4_mlx_test.go:TestFit_nvfp4AndMLXSafetensorsWeightBytes` |
 | LB2d | blocked | tier 1: one small real NVFP4 file loads, and its first greedy tokens and per-layer hidden states match the reference; needs LB2a and the asset LB0b finds | §1 |
 | LB3 | moved | into LB0a: the Bonsai guard ships first, since a rotated file can load today | §2 |
 | LB4a | open | IQ2_XXS dequant (aikit), tier 0 | §2 |

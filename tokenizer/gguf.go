@@ -281,6 +281,11 @@ func byteLevelKnobs(pre string) (maxDigits int, form norm.Form, normOn, ignoreMe
 		// the family's own tokenizer.json. gpt-oss's HF tokenizer.json declares a Split regex byte-identical
 		// to the o200k pattern splitO200k implements. Digits cap at 3, no normalizer.
 		return 3, norm.NFC, false, false, false, shapeO200k, true
+	case "flint":
+		// RecursiveSI/flint (llama.cpp LLAMA_VOCAB_PRE_TYPE_FLINT): three-stage Split sequence
+		// (\p{N}{1,3}, Han/Hiragana/Katakana, then o200k-style case split + attached contractions with
+		// [\p{P}\p{S}]+ punctuation), null normalizer, ignore_merges false.
+		return 3, norm.NFC, false, false, false, shapeFlint, true
 	case "qwen35":
 		// Qwen3.5's GGUFs: the same pipeline as qwen2 (NFC on, one digit). The unknown-pre default differs
 		// only in NFC being off, so omitting this case diverges only on inputs that need normalisation.

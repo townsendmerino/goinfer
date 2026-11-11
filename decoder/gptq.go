@@ -23,11 +23,12 @@ import (
 // safetensors checkpoint (GPTQ or AWQ — both 4-bit group-quant int4, differing
 // only in how the codes are packed; see gptqReconstruct / awqReconstruct).
 type quantConfig struct {
-	method    string // "gptq" | "awq" | "fp8"
+	method    string // "gptq" | "awq" | "fp8" | "nvfp4" | "mlx"
 	bits      int
 	groupSize int
-	descAct   bool // gptq act-order
-	sym       bool // gptq symmetric
+	descAct   bool   // gptq act-order
+	sym       bool   // gptq symmetric
+	mode      string // mlx mode: "affine" | "nvfp4" | "mxfp4"
 	// fp8 only: the 2-D weight block a single scale covers (config.json's
 	// weight_block_size, [128,128] for DeepSeek V3/V4 and Qwen3-FP8). Unlike gptq/awq's
 	// 1-D groupSize this needs both dims, because the scale grid is
@@ -35,17 +36,31 @@ type quantConfig struct {
 	blockR, blockC int
 }
 
-// parseQuantConfig reads config.json's quantization_config. Returns nil for a
-// full-precision checkpoint (absent/null). Only 4-bit GPTQ/AWQ are supported;
-// other methods/bit-widths error.
+// parseCheckpointQuantConfig resolves a safetensors checkpoint's quantization
+// metadata from either `quantization_config` (HF / GPTQ / AWQ / FP8 / NVFP4 / MLX)
+// or top-level `quantization` (MLX).
+func parseCheckpointQuantConfig(cfg *Config) (*quantConfig, error) {
+	if len(cfg.QuantizationConfig) > 0 && string(cfg.QuantizationConfig) != "null" {
+		return parseQuantConfig(cfg.QuantizationConfig)
+	}
+	if len(cfg.Quantization) > 0 && string(cfg.Quantization) != "null" {
+		return parseQuantConfig(cfg.Quantization)
+	}
+	return nil, nil
+}
+
+// parseQuantConfig reads config.json's quantization_config (or MLX's quantization).
+// Returns nil for a full-precision checkpoint (absent/null).
 func parseQuantConfig(raw json.RawMessage) (*quantConfig, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
 	var obj struct {
 		QuantMethod string `json:"quant_method"`
+		QuantAlgo   string `json:"quant_algo"` // NVIDIA ModelOpt: "NVFP4"
 		Bits        int    `json:"bits"`
 		GroupSize   int    `json:"group_size"`
+		Mode        string `json:"mode"` // MLX: "affine" | "nvfp4" | "mxfp4"
 		DescAct     bool   `json:"desc_act"`
 		Sym         *bool  `json:"sym"`
 		// checkpoint_format distinguishes GPTQModel's v2 export (zero-points without the v1 "+1" bias) from v1; parseQuantConfig
@@ -53,6 +68,13 @@ func parseQuantConfig(raw json.RawMessage) (*quantConfig, error) {
 		CheckpointFormat string `json:"checkpoint_format"`
 		Fmt              string `json:"fmt"`               // fp8: "e4m3" | "e5m2"
 		WeightBlock      []int  `json:"weight_block_size"` // fp8: [blockR, blockC]
+		ConfigGroups     map[string]struct {
+			Weights struct {
+				NumBits   int    `json:"num_bits"`
+				Type      string `json:"type"`
+				GroupSize int    `json:"group_size"`
+			} `json:"weights"`
+		} `json:"config_groups"`
 	}
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return nil, fmt.Errorf("quantization_config: %w", err)
@@ -75,8 +97,64 @@ func parseQuantConfig(raw json.RawMessage) (*quantConfig, error) {
 		}
 		return &quantConfig{method: "fp8", blockR: obj.WeightBlock[0], blockC: obj.WeightBlock[1]}, nil
 	}
+	// NVIDIA ModelOpt / compressed-tensors NVFP4.
+	if obj.QuantMethod == "nvfp4" || obj.QuantMethod == "modelopt" {
+		if obj.QuantMethod == "modelopt" && obj.QuantAlgo != "" && obj.QuantAlgo != "NVFP4" && obj.QuantAlgo != "nvfp4" {
+			return nil, fmt.Errorf("quantization_config(modelopt): quant_algo %q unsupported (have: NVFP4)", obj.QuantAlgo)
+		}
+		for gName, cg := range obj.ConfigGroups {
+			if cg.Weights.NumBits != 0 && cg.Weights.NumBits != 4 {
+				return nil, fmt.Errorf("quantization_config(%s): group %q num_bits=%d unsupported (have: 4)", obj.QuantMethod, gName, cg.Weights.NumBits)
+			}
+			if cg.Weights.GroupSize != 0 && cg.Weights.GroupSize != 16 {
+				return nil, fmt.Errorf("quantization_config(%s): group %q group_size=%d unsupported (have: 16)", obj.QuantMethod, gName, cg.Weights.GroupSize)
+			}
+		}
+		return &quantConfig{method: "nvfp4", bits: 4, groupSize: 16}, nil
+	}
+	// MLX quantized safetensors (`quantization` or `quantization_config` with no quant_method or quant_method="mlx").
+	if obj.QuantMethod == "" || obj.QuantMethod == "mlx" {
+		mode := obj.Mode
+		if mode == "" {
+			mode = "affine"
+		}
+		bits := obj.Bits
+		gs := obj.GroupSize
+		switch mode {
+		case "affine":
+			if bits != 4 && bits != 8 {
+				return nil, fmt.Errorf("quantization_config(mlx): %d-bit unsupported for mode %q (have: 4, 8)", bits, mode)
+			}
+			if gs != 32 && gs != 64 && gs != 128 {
+				return nil, fmt.Errorf("quantization_config(mlx): group_size %d unsupported for mode %q (have: 32, 64, 128)", gs, mode)
+			}
+		case "nvfp4":
+			if bits == 0 {
+				bits = 4
+			}
+			if gs == 0 {
+				gs = 16
+			}
+			if bits != 4 || gs != 16 {
+				return nil, fmt.Errorf("quantization_config(mlx): mode=nvfp4 requires bits=4 group_size=16, got bits=%d group_size=%d", bits, gs)
+			}
+		case "mxfp4":
+			if bits == 0 {
+				bits = 4
+			}
+			if gs == 0 {
+				gs = 32
+			}
+			if bits != 4 || gs != 32 {
+				return nil, fmt.Errorf("quantization_config(mlx): mode=mxfp4 requires bits=4 group_size=32, got bits=%d group_size=%d", bits, gs)
+			}
+		default:
+			return nil, fmt.Errorf("quantization_config(mlx): mode %q unsupported (have: affine, nvfp4, mxfp4)", mode)
+		}
+		return &quantConfig{method: "mlx", bits: bits, groupSize: gs, mode: mode}, nil
+	}
 	if obj.QuantMethod != "gptq" && obj.QuantMethod != "awq" {
-		return nil, fmt.Errorf("quantization_config: method %q unsupported (have: gptq, awq, fp8)", obj.QuantMethod)
+		return nil, fmt.Errorf("quantization_config: method %q unsupported (have: gptq, awq, fp8, nvfp4, mlx)", obj.QuantMethod)
 	}
 	if obj.Bits != 4 {
 		return nil, fmt.Errorf("quantization_config(%s): %d-bit unsupported (have: 4-bit)", obj.QuantMethod, obj.Bits)

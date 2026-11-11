@@ -1410,8 +1410,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	r.outBias = shape.OutBias
 	r.learnedPos = shape.LearnedPos
+	r.attnSink = m.HasAttnSinksResident()
 	if alpha, limit, isGptOss := m.GptOssActResident(); isGptOss {
-		r.attnSink = true
 		r.gptossAlpha, r.gptossLimit = float64(alpha), float64(limit)
 	}
 	// The f32 KV path (kv_store_f32, attention_f32) runs when the resolver delivers f32: on an explicit --kv f32, never for auto
