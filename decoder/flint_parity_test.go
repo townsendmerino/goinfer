@@ -533,3 +533,164 @@ func TestFlint_ggufConfig(t *testing.T) {
 		}
 	}
 }
+
+type flintWindowResidentStub struct {
+	base, window int
+}
+
+func (w *flintWindowResidentStub) ReusableKV(prefix int) int {
+	if prefix <= 0 || w.base == 0 || prefix-(w.window-1) >= w.base {
+		return prefix
+	}
+	return 0
+}
+
+// flintKVWindowNextBase mirrors backend/cuda/kvwindow.go:kvWindowNextBase (kept
+// package-local so decoder tests can replay KV0-H traffic without a CUDA device).
+func flintKVWindowNextBase(base, p0, n, window, capN, rollback int) int {
+	if p0 == 0 {
+		base = 0
+	}
+	low := max(0, p0-(window-1))
+	if p0+n-base <= capN {
+		return base
+	}
+	return max(base, min(low, p0+n-(window-1)-rollback))
+}
+
+// TestFlint_kv0hBShapedWindowReuse is F4 (docs/tasks/task-flint-2026-10.md):
+// measures prefix reuse (reused= vs divergence_at) across turns with Flint's
+// 513-token sliding window on KV0-H's 29 B-shaped fixtures
+// (docs/measurements/kv0h-2026-10/study-h20-stats-h.json), across Metal
+// resident (full-context KV block pool), CUDA resident (--windowed-kv with
+// slack=512, step=64, rollback floor=448), and CPU session (modular KVCache
+// ring of 513 slots).
+func TestFlint_kv0hBShapedWindowReuse(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "docs", "measurements", "kv0h-2026-10", "study-h20-stats-h.json"))
+	if err != nil {
+		t.Fatalf("read study-h20-stats-h.json: %v", err)
+	}
+	var study struct {
+		Requests []struct {
+			Session           string `json:"session"`
+			Agent             string `json:"agent"`
+			Seq               int    `json:"seq"`
+			N                 int    `json:"n"`
+			GenLen            int    `json:"gen_len"`
+			Cat               string `json:"cat"`
+			PrevPrompt        int    `json:"prev_prompt"`
+			PrevCommitted     int    `json:"prev_committed"`
+			LCPPrevCommitted  int    `json:"lcp_prev_committed"`
+			DivergenceAt      int    `json:"divergence_at"`
+			DivergenceWhere   string `json:"divergence_where"`
+			ReprocessedOnCkpt int    `json:"reprocessed_under_checkpoint"`
+		} `json:"requests"`
+	}
+	if err := json.Unmarshal(raw, &study); err != nil {
+		t.Fatalf("unmarshal study-h20-stats-h.json: %v", err)
+	}
+
+	const (
+		flintWindow   = 513
+		flintSlack    = WindowedKVSlack // 512
+		flintStep     = 64              // backend/cuda/kvwindow.go:kvWindowStep
+		flintRollback = flintSlack - flintStep // 448
+		flintChunk    = 512
+	)
+
+	replayCUDA := func(rollback int) (bTotal, bFullReuse, bCold int, maxRollback int) {
+		capN := flintWindow + flintSlack
+		base := 0
+		write := func(p0, n int) {
+			base = flintKVWindowNextBase(base, p0, n, flintWindow, capN, rollback)
+		}
+		for _, rq := range study.Requests {
+			reuse := 0
+			switch rq.Cat {
+			case "A", "B":
+				lcp := rq.LCPPrevCommitted
+				if base == 0 || lcp-(flintWindow-1) >= base {
+					reuse = lcp
+				}
+			}
+			if rq.Cat == "B" {
+				bTotal++
+				rb := rq.PrevCommitted - rq.LCPPrevCommitted
+				if rb > maxRollback {
+					maxRollback = rb
+				}
+				if reuse == rq.LCPPrevCommitted {
+					bFullReuse++
+				} else if reuse == 0 {
+					bCold++
+				}
+			}
+			for p := reuse; p < rq.N; p += flintChunk {
+				write(p, min(flintChunk, rq.N-p))
+			}
+			for p := rq.N; p < rq.N+rq.GenLen-1; p++ {
+				write(p, 1)
+			}
+		}
+		return bTotal, bFullReuse, bCold, maxRollback
+	}
+
+	bTotal, cudaWarm, cudaCold, maxRB := replayCUDA(flintRollback)
+	_, oldSawtoothWarm, oldSawtoothCold, _ := replayCUDA(0)
+	if bTotal != 29 {
+		t.Fatalf("KV0-H B-shaped request count = %d, want 29", bTotal)
+	}
+	if maxRB != 271 {
+		t.Fatalf("KV0-H max B rollback = %d, want 271", maxRB)
+	}
+	if cudaWarm != 29 || cudaCold != 0 {
+		t.Fatalf("CUDA windowed-KV (window=%d, slack=%d, rollback=%d): %d/%d warm (%d cold), want 29/29 warm",
+			flintWindow, flintSlack, flintRollback, cudaWarm, bTotal, cudaCold)
+	}
+
+	// Verify CPU ring vs resident reuse floor on a real flint-tiny Model with
+	// SlidingWindow=513 across a representative KV0-H B-shaped turn (prompt 600,
+	// gen 40 -> committed 640; next prompt 680 diverging at 614, rollback=26).
+	m, err := Load(filepath.Join("..", "testdata", "flint-tiny"), Options{Quant: "f32"})
+	if err != nil {
+		t.Fatalf("Load flint-tiny: %v", err)
+	}
+	defer m.Close()
+	if m.hasRecurrentState() {
+		t.Fatal("Flint must not report hasRecurrentState() == true")
+	}
+
+	// 1. CPU KVCache ring: once wrapped past 513 (committed=640 > 513), a rewind of
+	// 26 positions (to 614) is inexact on the sliding layers, so rewind drops to 0.
+	cpuCache := m.NewCache(1024)
+	for l := range m.w.arch.NumLayers {
+		if m.w.arch.ringLayerAt(l) {
+			cpuCache.rings[l].count = 640
+			if exact := cpuCache.rings[l].truncate(614); exact {
+				t.Fatalf("layer %d ring.truncate(614) from wrapped 640 on 513-ring reported exact=true, want false", l)
+			}
+		}
+	}
+
+	// 2. Resident reuse floor (CUDA windowed-KV with rollback=448, and Metal full-KV):
+	// prefill 7314 tokens in 512-row passes + decode 26 tokens -> 7340 committed:
+	base7340 := 0
+	for p := 0; p < 7314; p += flintChunk {
+		base7340 = flintKVWindowNextBase(base7340, p, min(flintChunk, 7314-p), flintWindow, flintWindow+flintSlack, flintRollback)
+	}
+	for p := 7314; p < 7340; p++ {
+		base7340 = flintKVWindowNextBase(base7340, p, 1, flintWindow, flintWindow+flintSlack, flintRollback)
+	}
+	stub := &flintWindowResidentStub{base: base7340, window: flintWindow}
+	if got := stub.ReusableKV(7314); got != 7314 {
+		t.Fatalf("ReusableKV(7314) after 7340 committed (rollback 26, base %d) = %d, want 7314", base7340, got)
+	}
+	// Whereas a divergence 520 tokens before 7340 (past the 448..512 rollback band) drops to 0:
+	if got := stub.ReusableKV(7340 - 520); got != 0 {
+		t.Fatalf("ReusableKV(%d) past rollback floor (base %d) = %d, want 0", 7340-520, base7340, got)
+	}
+
+	t.Logf("F4 KV0-H B-shaped fixtures (n=%d, rollback 9..%d tokens, window=%d): Metal 29/29 full reuse; CUDA windowed-KV (rollback floor %d) %d/29 full reuse (sawtooth rollback=0 would be %d/29 warm, %d/29 cold); CPU wrapped ring 0/29 (rewinds > 1 pos past 513prefill cold)",
+		bTotal, maxRB, flintWindow, flintRollback, cudaWarm, oldSawtoothWarm, oldSawtoothCold)
+}
+
