@@ -739,7 +739,19 @@ func ggufFlintConfig(g *embed.GGUFFile) (*Config, error) {
 			cfg.MlpOnlyLayers[i] = i
 		}
 	}
-	if arr, ok := g.Metadata["flint.rope.scaling.factors"].([]any); ok && len(arr) > 0 {
+	if arr, ok := g.Metadata["flint.attention.sliding_window_pattern"].([]any); ok && len(arr) > 0 {
+		if len(arr) != numLayers {
+			return nil, fmt.Errorf("decoder(gguf-flint): attention.sliding_window_pattern has %d entries, want %d", len(arr), numLayers)
+		}
+		cfg.LayerTypes = make([]string, numLayers)
+		for i, v := range arr {
+			if b, _ := v.(bool); b {
+				cfg.LayerTypes[i] = "sliding_attention"
+			} else {
+				cfg.LayerTypes[i] = "full_attention"
+			}
+		}
+	} else if arr, ok := g.Metadata["flint.rope.scaling.factors"].([]any); ok && len(arr) > 0 {
 		if len(arr) != numLayers {
 			return nil, fmt.Errorf("decoder(gguf-flint): rope.scaling.factors has %d entries, want %d", len(arr), numLayers)
 		}
@@ -755,6 +767,13 @@ func ggufFlintConfig(g *embed.GGUFFile) (*Config, error) {
 				cfg.LayerTypes[i] = "full_attention"
 			} else {
 				cfg.LayerTypes[i] = "sliding_attention"
+			}
+		}
+	}
+	if arr, ok := g.Metadata["flint.attention.rope_pattern"].([]any); ok && len(arr) == numLayers {
+		for i, v := range arr {
+			if b, _ := v.(bool); !b {
+				cfg.NoRopeLayerIndices = append(cfg.NoRopeLayerIndices, i)
 			}
 		}
 	}
