@@ -463,7 +463,7 @@ func TestFlint_realCheckpointParity(t *testing.T) {
 	if dir == "" {
 		t.Skip("GOINFER_FLINT_DIR not set — skipping real-checkpoint Flint parity check")
 	}
-	m, err := Load(dir, Options{})
+	m, err := Load(dir, Options{Backend: "cpu", StreamWeights: true, AcceptSlowMoE: true, ResidentContext: 64})
 	if err != nil {
 		t.Fatalf("Load(%s): %v", dir, err)
 	}
@@ -475,7 +475,7 @@ func TestFlint_realCheckpointParity(t *testing.T) {
 		t.Fatalf("arch = %+v, want AttnSinks=true QKNorm=true SlidingWindow=513", m.w.arch)
 	}
 	cache := m.NewCache(64)
-	logits, err := m.prefillLogits(context.Background(), []int{199999, 9125, 198}, cache)
+	logits, err := m.prefillLogits(context.Background(), []int{150000, 9125, 198}, cache)
 	if err != nil {
 		t.Fatalf("prefillLogits: %v", err)
 	}
