@@ -295,7 +295,7 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 			return e
 		}
 	}
-	if Ly.hasShared {
+	if Ly.walk.FFN.FFN.MoE.SharedIntermediateDim > 0 {
 		for m := range M {
 			if e := ctx.Err(); e != nil {
 				return e

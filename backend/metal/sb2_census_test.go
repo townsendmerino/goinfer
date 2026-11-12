@@ -1260,6 +1260,64 @@ func TestMixerWalk_plantsGoRed(t *testing.T) {
 	}
 }
 
+// TestFFNWalk_plantsGoRed verifies that each planted defect in the FFN walk differs from the FFN blocks on every fixture whose
+// FFN sublayer exercises that path, and stays quiet on fixtures that do not.
+func TestFFNWalk_plantsGoRed(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	reds := map[int]int{}
+	for _, f := range []string{"testdata/llama-tiny", "testdata/gpt2", "testdata/deepseek-tiny", "testdata/gemma2-tiny",
+		"testdata/olmo_hybrid-tiny", "testdata/cohere-tiny", "testdata/nemotron-tiny"} {
+		m, err := decoder.Load("../../"+f, decoder.Options{Backend: "metal", ResidentContext: 256, Quant: "int4"})
+		if err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		a, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok {
+			m.Close()
+			t.Fatalf("%s did not build resident", f)
+		}
+		fused, postNorm, parallel := false, false, false
+		for l := range a.r.layers {
+			L := &a.r.layers[l]
+			if !L.walk.HasFFN {
+				continue
+			}
+			switch L.walk.FFN.OutMode {
+			case program.OutFusedResidual:
+				fused = true
+			case program.OutPostNormResidual:
+				postNorm = postNorm || L.walk.FFN.Kind == stepDenseFFN
+			case program.OutTwoResidual:
+				parallel = true
+			}
+		}
+		for plant, wantRed := range map[int]bool{
+			ffnWalkPlantResidual:          fused,
+			ffnWalkPlantDropPostNorm:      postNorm,
+			ffnWalkPlantFreshParallelNorm: parallel,
+		} {
+			ffnWalkPlantForTest = plant
+			diffs := mixerWalkDiffs(t, m, a)
+			ffnWalkPlantForTest = 0
+			if red := len(diffs) > 0; red != wantRed {
+				t.Errorf("%s, plant %d: red %v, want %v (%v)", f, plant, red, wantRed, diffs)
+			} else if red {
+				reds[plant]++
+			}
+		}
+		m.Close()
+	}
+	t.Logf("FFN fixtures red: extra residual %d, dropped post-MLP norm %d, fresh parallel norm %d",
+		reds[ffnWalkPlantResidual], reds[ffnWalkPlantDropPostNorm], reds[ffnWalkPlantFreshParallelNorm])
+	for _, plant := range []int{ffnWalkPlantResidual, ffnWalkPlantDropPostNorm, ffnWalkPlantFreshParallelNorm} {
+		if reds[plant] == 0 {
+			t.Errorf("FFN walk plant %d is red on no fixture", plant)
+		}
+	}
+}
+
 // mixerWalkDiffs runs eight decode tokens on a under the mixer steps' blocks and then under their walk, and names each token whose
 // pipeline sequence or logits differ.
 func mixerWalkDiffs(t *testing.T, m *decoder.Model, a *metalResident) []string {

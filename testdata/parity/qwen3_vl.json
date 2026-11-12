@@ -8,7 +8,7 @@
     "decoder/arch_qwen3_vl.go",
     "decoder/arch_qwen3.go"
   ],
-  "deps_hash": "sha256:bde865b2b5d9c163906ff1eea485c2fc6fe632b44db0cc36ced0820db1fb6a3f",
+  "deps_hash": "sha256:ee020344fce43f4064842153cba7d90ff2c9fb814a754a95042d8fe502e42bfc",
   "status": "validated",
   "validated_at": "7ee05f0a",
   "date": "2026-10-08",

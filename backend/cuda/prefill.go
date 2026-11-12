@@ -16,6 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // errPrefillDeclined marks an arch or geometry decline from the batched path, which covers the plain dense unfused
@@ -1309,23 +1310,16 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						return e
 					}
 				case pstepAttn:
-					// segA: rmsnorm+quant (glue), then Q/K/V GEMVs. Category timers (r.prof) sync r.stream at
+					// segA: input norm+quant (glue), then Q/K/V GEMVs. Category timers (r.prof) sync r.stream at
 					// each group boundary; nil in production, so the launch sequence is otherwise unchanged.
+					aw := &Ly.walk.Attn
 					t = r.profTic()
-					if r.postOnly {
-						// Olmo 3/Olmo Hybrid: no pre-norm at all — quantize the raw residual
-						if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-							Arg(xB), gpu.ArgValue(int32(hidden)), Arg(aqB), Arg(aScB), gpu.ArgValue(int32(M))); e != nil {
-							return e
-						}
-					} else {
-						if e := r.bNormB(xB, Ly.preNorm, hidden, aqB, aScB, M); e != nil {
-							return e
-						}
+					if e := r.emitInputNormB(aw.InputForm, xB, Ly.preNorm, hidden, aqB, aScB, M); e != nil {
+						return e
 					}
 					r.profToc(glueCat, t)
 					t = r.profTic()
-					if Ly.qGate {
+					if aw.Gated {
 						// attn_output_gate (qwen3_5 softmax layers): q_proj emits [query ‖ gate] per head at double
 						// width. Decode's split, one launch over all M rows: M rows are M·nH contiguous heads.
 						if e := r.bGemvB(Ly.q, aqB, aScB, qb, dnB.qg, M, 0); e != nil {
@@ -1356,14 +1350,14 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					r.profToc(gemvCat, t)
 					// per-head Q/K RMSNorm BEFORE rope (Qwen3): in place on qBb/kBb, one block per (head,token).
 					// Bit-identical to the decode qk_norm applied per token (same f64 reduction, same addOne).
-					if r.qkNorm {
+					if aw.QKNorm {
 						t = r.profTic()
 						addOne := int32(0)
-						if r.rmsAddOne {
+						if aw.QKNormParams.AddOne {
 							addOne = 1
 						}
 						qkNH, qkNKV, qkHD := r.nH, nKV, hd
-						if r.qkNormWhole {
+						if aw.QKNormParams.Whole {
 							qkNH, qkNKV, qkHD = 1, 1, r.nH*hd
 						}
 						kNormW := Ly.kNorm
@@ -1379,7 +1373,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						}
 						r.profToc(glueCat, t)
 					}
-					if Ly.vNorm {
+					if aw.G4VNorm && (Ly.kEqV || !g4DropVNormForTest) {
 						// Scale-less v_norm over vBb (the raw k on a K=V layer, the v_proj output otherwise), BEFORE rope rotates k — segA's
 						// decode launch with an M dimension added. nH=0 makes qk_norm_batched treat every
 						// block as a K-head (base = v + m*kvDim + h*hd), and vNormUnit is a unit weight so
@@ -1572,7 +1566,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					}
 					// segB: ctx-quant (glue), o-proj (gemv, accum into residual), MLP.
 					t = r.profTic()
-					if Ly.qGate { // ctx *= sigmoid(gate), before o_proj — segB's launch over all M rows
+					if aw.Gated { // ctx *= sigmoid(gate), before o_proj — segB's launch over all M rows
 						if e := r.launch(r.dnAttnGate, g1cfg(M*qDim, 256),
 							Arg(cctxB), Arg(dnB.gate), gpu.ArgValue(int32(M*qDim))); e != nil {
 							return e
@@ -1584,14 +1578,15 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					}
 					r.profToc(glueCat, t)
 					t = r.profTic()
-					if r.sandwich || r.postOnly || r.parallelBlock {
-						// o-proj → temp (accum=0), post-attn RMSNorm per row, then add to residual.
-						// For parallelBlock (Cohere), postAttnNorm is unallocated (Len==0), so bNormF32B no-ops.
+					if Ly.attnOutUnfused() {
+						// o-proj → temp (accum=0), optional post-attn RMSNorm per row, then add to residual.
 						if e := r.bGemvB(Ly.o, cqB, cScB, r.oBiasArg(Ly), sbB, M, 0); e != nil {
 							return e
 						}
-						if e := r.bNormF32B(sbB, Ly.postAttnNorm, hidden, M); e != nil {
-							return e
+						if aw.OutMode == program.OutPostNormResidual {
+							if e := r.bNormF32B(sbB, Ly.postAttnNorm, hidden, M); e != nil {
+								return e
+							}
 						}
 						if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 							Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
@@ -1612,14 +1607,15 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				// refuses a model with either armed.
 				case pstepMoE:
 					t = r.profTic()
+					g4moe := Ly.walk.FFN.Kind == program.SublayerGemma4MoE
 					// Expert-major MoE (moe_expert_major.go, moe_expert_major_gemma4.go;
 					// docs/measurements/p20-expert-locality-2026-09-21.md): route, bucket and admit once per distinct expert instead of once
 					// per (row, rank), when eligible. Checked once per layer, so ineligible layers pay one field-and-map read.
-					if !Ly.g4moe && r.prefillMoEExpertMajorEligible(Ly) {
+					if !g4moe && r.prefillMoEExpertMajorEligible(Ly) {
 						if e := r.prefillMoEExpertMajorRun(ctx, Ly, xB, M, hidden); e != nil {
 							return e
 						}
-					} else if Ly.g4moe && r.prefillGemma4ExpertMajorEligible(Ly) {
+					} else if g4moe && r.prefillGemma4ExpertMajorEligible(Ly) {
 						if e := r.prefillGemma4ExpertMajorRun(ctx, Ly, xB, M, hidden); e != nil {
 							return e
 						}
@@ -1641,23 +1637,16 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					}
 					r.profToc(moeCat, t)
 				case pstepDenseFFN:
+					fw := &Ly.walk.FFN
 					t = r.profTic()
-					// segBFFN's postOnlyHere: a Gated-DeltaNet layer in a post-only model (Olmo Hybrid) replaces only the
-					// attention half, so its FFN takes the normal pre-MLP norm and in-place down projection.
-					postOnlyHere := r.postOnly && !Ly.isDeltaNet()
 					gqB, gScB := mqB, mScB
-					if r.parallelBlock {
-						// Cohere/Command-R: reuse segA's shared input norm (aqB/aScB) — MLP consumes the SAME
-						// normed activation already computed, with zero norm dispatch.
+					switch fw.InputMode {
+					case program.FFNInShared:
+						// Parallel block (Cohere/Command-R): reuse segA's shared input norm (aqB/aScB) — the MLP consumes
+						// the same normed activation already computed, with zero norm dispatch.
 						gqB, gScB = aqB, aScB
-					} else if postOnlyHere {
-						// Olmo 3/Olmo Hybrid: no pre-MLP norm — quantize raw residual xB directly.
-						if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-							Arg(xB), gpu.ArgValue(int32(hidden)), Arg(mqB), Arg(mScB), gpu.ArgValue(int32(M))); e != nil {
-							return e
-						}
-					} else {
-						if e := r.bNormB(xB, Ly.postNorm, hidden, mqB, mScB, M); e != nil {
+					default:
+						if e := r.emitInputNormB(fw.InputNorm.Form, xB, Ly.postNorm, hidden, mqB, mScB, M); e != nil {
 							return e
 						}
 					}
@@ -1673,64 +1662,65 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					t = r.profTic()
 					if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
 						Arg(gOb), Arg(uOb), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(ffn)),
-						gpu.ArgValue(r.act), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
+						gpu.ArgValue(int32(fw.FFN.Act)), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
 						return e
 					}
 					r.profToc(glueCat, t)
 					t = r.profTic()
-					if r.sandwich || postOnlyHere || r.parallelBlock {
-						// down → temp (accum=0), Gemma/Olmo post-MLP RMSNorm per row, then add to residual.
-						// For parallelBlock, postMLPNorm is unallocated (Len==0), so bNormF32B no-ops.
+					if fw.OutMode != program.OutFusedResidual {
+						// down → temp (accum=0), optional post-MLP RMSNorm per row, then add to residual.
 						if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {
 							return e
 						}
-						if e := r.bNormF32B(sbB, Ly.postMLPNorm, hidden, M); e != nil {
+						if fw.OutMode == program.OutPostNormResidual {
+							if e := r.bNormF32B(sbB, Ly.postMLPNorm, hidden, M); e != nil {
+								return e
+							}
+						}
+						if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+							Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
+							return e
+						}
+					} else if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), xB, M, 1); e != nil {
+						return e
+					}
+					if Ly.walk.HasPLE && !g4SkipPLEForTest {
+						// Gemma 4 E-model per-layer embedding branch, segBFFN's own order over M rows (cuda/resident.go): quantize the RAW residual, the gate GEMV,
+						// geluTanh(gate) * this layer's slice of the row tails (glu_quant_batched act 0 with pleB's contiguous [M, P] slice as `up`), the projection
+						// GEMV, the post-norm, the residual add. All existing batched kernels. A pleLayerShiftForTest defect reads another layer's slice (modulo
+						// the layer count here: decode reads past the row, which has no batched twin).
+						P, pl := r.pleP, ((l+pleLayerShiftForTest)%r.nLayers+r.nLayers)%r.nLayers
+						if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+							Arg(xB), gpu.ArgValue(int32(hidden)), Arg(mqB), Arg(mScB), gpu.ArgValue(int32(M))); e != nil {
+							return e
+						}
+						if e := r.bGemvB(Ly.pleGate, mqB, mScB, ArgNull(), pleGB, M, 0); e != nil {
+							return e
+						}
+						if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+							Arg(pleGB), Arg(pleB.At(pl*M*P*4)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(P)),
+							gpu.ArgValue(int32(0)), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
+							return e
+						}
+						if e := r.bGemvB(Ly.pleProj, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {
+							return e
+						}
+						if e := r.bNormF32B(sbB, Ly.postPLENorm, hidden, M); e != nil {
 							return e
 						}
 						if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 							Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
 							return e
 						}
-						if r.pleP > 0 && !g4SkipPLEForTest {
-							// Gemma 4 E-model per-layer embedding branch, segBFFN's own order over M rows (cuda/resident.go): quantize the RAW residual, the gate GEMV,
-							// geluTanh(gate) * this layer's slice of the row tails (glu_quant_batched act 0 with pleB's contiguous [M, P] slice as `up`), the projection
-							// GEMV, the post-norm, the residual add. All existing batched kernels. A pleLayerShiftForTest defect reads another layer's slice (modulo
-							// the layer count here: decode reads past the row, which has no batched twin).
-							P, pl := r.pleP, ((l+pleLayerShiftForTest)%r.nLayers+r.nLayers)%r.nLayers
-							if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-								Arg(xB), gpu.ArgValue(int32(hidden)), Arg(mqB), Arg(mScB), gpu.ArgValue(int32(M))); e != nil {
-								return e
-							}
-							if e := r.bGemvB(Ly.pleGate, mqB, mScB, ArgNull(), pleGB, M, 0); e != nil {
-								return e
-							}
-							if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-								Arg(pleGB), Arg(pleB.At(pl*M*P*4)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(P)),
-								gpu.ArgValue(int32(0)), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
-								return e
-							}
-							if e := r.bGemvB(Ly.pleProj, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {
-								return e
-							}
-							if e := r.bNormF32B(sbB, Ly.postPLENorm, hidden, M); e != nil {
-								return e
-							}
-							if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-								Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
-								return e
-							}
+					}
+					// Per-layer output scalar (Gemma 4 dense), segB's decode twin. fScaleVec is a pure elementwise dst[i]*=s, so it batches
+					// over the flattened M*hidden buffer in one launch, like bRes above. TestPrefillNonUniform_bitIdentical exists to catch
+					// batched prefill omitting it while decode has it.
+					if Ly.walk.HasLayerScale && Ly.layerScalar != 0 && !g4DropLayerScalarForTest {
+						if e := r.launch(r.fScaleVec, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+							Arg(xB), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(M*hidden))); e != nil {
+							return e
 						}
-						// Gemma 4 dense per-layer output scalar, segB's decode twin. fScaleVec is a pure elementwise dst[i]*=s, so it batches
-						// over the flattened M*hidden buffer in one launch, like bRes above. TestPrefillNonUniform_bitIdentical exists to catch
-						// batched prefill omitting it while decode has it.
-						if Ly.layerScalar != 0 && !g4DropLayerScalarForTest {
-							if e := r.launch(r.fScaleVec, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-								Arg(xB), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(M*hidden))); e != nil {
-								return e
-							}
-						}
-					} else if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), xB, M, 1); e != nil {
-						return e
 					}
 					r.profToc(gemvCat, t)
 				}

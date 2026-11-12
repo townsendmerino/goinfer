@@ -391,7 +391,7 @@ func (m *Model) residentReuseFloor(reuse int) int {
 	if reuse <= 0 {
 		return reuse
 	}
-	return m.resKV().ReusableKV(reuse)
+	return kvmgr.SafeReuseLen(reuse, reuse+1, m.kvSlots().State(m.kvSlots().Bound()).Floor(), m.resKV().ReusableKV)
 }
 
 // reuseLenOf is how many leading tokens of prompt the sequence in slot holds, the bound slot's or a parked one's,

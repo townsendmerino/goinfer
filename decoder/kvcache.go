@@ -1,11 +1,12 @@
 package decoder
 
 import (
-	"github.com/townsendmerino/goinfer/internal/cost"
 	"slices"
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/cost"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 // kvQuant selects the CPU KV-cache storage precision. kvF32 (default) is
@@ -337,7 +338,7 @@ func (r *ring) truncate(p int) bool {
 	if p >= r.count {
 		return true
 	}
-	exact := r.count <= r.w || p >= r.count-1
+	exact := kvmgr.RingTruncateExact(r.count, r.w, p)
 	r.count = p
 	return exact
 }
@@ -585,7 +586,7 @@ func (c *KVCache) Vals(layer int) []float32 { return c.vals[layer] }
 // prefill's K/V at the GPU cache's correct absolute positions (decoder/generate_vl_resident.go).
 func (c *KVCache) LayerKV(layer int) (k, v []float32, base int) {
 	if r := c.rings[layer]; r != nil {
-		lo := max(0, r.count-r.w)
+		lo := kvmgr.WindowHorizon(r.count, r.w, 0)
 		nLive, st := r.count-lo, r.stride
 		if st == 0 || nLive == 0 {
 			return nil, nil, lo
@@ -864,7 +865,7 @@ func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV 
 	if stride == 0 {
 		stride = len(newK) / K // first prefill: ring not yet sized
 	}
-	base = max(startPos-r.w+1, 0)
+	base = kvmgr.WindowNeedStart(startPos, r.w)
 	hist := startPos - base // resident history rows, ≤ W-1 and ≤ r.count
 	slot0 := base % r.w
 	seg1 := min(hist, r.w-slot0)
@@ -1060,11 +1061,10 @@ func (c *KVCache) storedRows(layer, kvDim int) int {
 // only advances on the last layer's Append, so reading it post-Append would
 // shift the window by one on that layer alone. The query position is stable.
 func (c *KVCache) WindowStart(pos int, global bool) int {
-	if global || c.window <= 0 {
+	if global {
 		return 0
 	}
-	start := max(pos-c.window+1, 0)
-	return start
+	return kvmgr.WindowNeedStart(pos, c.window)
 }
 
 // SetImageBlocks marks position ranges [start,end) (e.g. an image's token block)

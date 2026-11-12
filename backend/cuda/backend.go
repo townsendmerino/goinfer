@@ -1606,7 +1606,8 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				return fmt.Errorf("cuda: resident build aborted before uploading layer %d of %d: %w", l, nLayers, decoder.ErrLoadAborted)
 			}
 			h := &hls[l]
-			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps, prefillSteps: cudaPrefillStepsOf(m.Program().Layers[l])}
+			lw, _ := program.DecodeLayerWalk(m.Program().Layers[l], "CUDA")
+			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps, prefillSteps: cudaPrefillStepsOf(m.Program().Layers[l]), walk: lw}
 			if l == prefillStepsEmptyLayerForTest {
 				L.prefillSteps = nil
 			}
@@ -1774,7 +1775,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			L.kEqV = m.VFromKResident(l) && !L.kvShared
 			// Gemma 4 applies v_norm on every layer that owns its K/V; K=V layers always did. g4DropVNormForTest re-drops it on the
 			// non-K=V layers so a test can reproduce the pre-fix numbers.
-			L.vNorm = !L.kvShared && (L.kEqV || (isGemma4 && !g4DropVNormForTest))
+			L.vNorm = L.walk.Attn.G4VNorm && (L.kEqV || !g4DropVNormForTest)
 			if !L.kEqV && !L.kvShared {
 				L.v = r.upW(h.v) // non-K=V layers have a real v_proj weight; K=V derives V from k; a shared layer has neither
 			}
@@ -1798,6 +1799,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			prog, progParallel, err := cudaSublayersOf(m.Program().Layers[l])
 			if err == nil {
 				err = checkLoadedSublayers(prog, progParallel, loadedSublayers(&r.layers[l]), r.parallelBlock)
+			}
+			if err == nil {
+				err = r.checkCUDALayerWalk(&r.layers[l], m.Program().Layers[l])
 			}
 			// The batched prefill's steps, where it has any, must be the blocks the layer's kind chose before (OP4cu-d1).
 			if ps := r.layers[l].prefillSteps; err == nil && !prefillStepsBuildChecksOffForTest && len(ps) > 0 && !slices.Equal(ps, prefillStepsFromFlags(&r.layers[l])) {
