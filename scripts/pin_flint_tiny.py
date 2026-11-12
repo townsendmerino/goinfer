@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build a tiny-random Flint (FlintForCausalLM) checkpoint + forward and window-boundary
-goldens (F2 of docs/tasks/task-flint-2026-10.md).
+goldens (F2 of docs/completed/task-flint-2026-10.md).
 
 Reference module is the upstream transformers PR #49824 implementation
 (src/transformers/models/flint/{configuration_flint.py,modeling_flint.py},

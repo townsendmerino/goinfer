@@ -57,7 +57,7 @@ func maxAbsLogitDiff(a, b []float32) float64 {
 	return m
 }
 
-// TestFlint_tinyForwardParity is F2.1 (docs/tasks/task-flint-2026-10.md): verifies that
+// TestFlint_tinyForwardParity is F2.1 (docs/completed/task-flint-2026-10.md): verifies that
 // goinfer's flint descriptor and forward match the upstream transformers PR #49824
 // FlintForCausalLM oracle on testdata/flint-tiny (2 dense full/NoPE lead layers + 3 MoE
 // sliding/RoPE layers + 1 MoE full/NoPE final layer, top-2 sigmoid normalized router
@@ -198,7 +198,7 @@ func TestFlint_tinyForwardParity(t *testing.T) {
 	}
 }
 
-// TestFlint_windowBoundaryParity is F2.2 (docs/tasks/task-flint-2026-10.md): verifies
+// TestFlint_windowBoundaryParity is F2.2 (docs/completed/task-flint-2026-10.md): verifies
 // position-by-position parity against transformers FlintForCausalLM across the real
 // sliding_window=513 boundary (prompts of 512, 513, 514, and 1,100 tokens, plus
 // intermediate positions across both the first and second ring wraps).
@@ -321,7 +321,7 @@ func TestFlint_windowBoundaryParity(t *testing.T) {
 	}
 }
 
-// TestFlint_breakItFirst is F2.4 (docs/tasks/task-flint-2026-10.md): perturbs the
+// TestFlint_breakItFirst is F2.4 (docs/completed/task-flint-2026-10.md): perturbs the
 // learned attention sinks, the per-layer NoPE mask, and the sliding-window boundary,
 // confirming that the parity gate catches each perturbation loudly.
 func TestFlint_breakItFirst(t *testing.T) {
@@ -455,7 +455,7 @@ func TestFlint_breakItFirst(t *testing.T) {
 	})
 }
 
-// TestFlint_realCheckpointParity is F2.3 (docs/tasks/task-flint-2026-10.md):
+// TestFlint_realCheckpointParity is F2.3 (docs/completed/task-flint-2026-10.md):
 // env-gated Tier 2 verification on a real RecursiveSI/flint checkpoint (GGUF or
 // safetensors directory pointed to by GOINFER_FLINT_DIR).
 func TestFlint_realCheckpointParity(t *testing.T) {
@@ -558,7 +558,7 @@ func flintKVWindowNextBase(base, p0, n, window, capN, rollback int) int {
 	return max(base, min(low, p0+n-(window-1)-rollback))
 }
 
-// TestFlint_kv0hBShapedWindowReuse is F4 (docs/tasks/task-flint-2026-10.md):
+// TestFlint_kv0hBShapedWindowReuse is F4 (docs/completed/task-flint-2026-10.md):
 // measures prefix reuse (reused= vs divergence_at) across turns with Flint's
 // 513-token sliding window on KV0-H's 29 B-shaped fixtures
 // (docs/measurements/kv0h-2026-10/study-h20-stats-h.json), across Metal

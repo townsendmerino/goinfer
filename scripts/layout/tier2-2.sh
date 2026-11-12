@@ -585,12 +585,12 @@ arch_path.write_text(
 #     Explicitly skip all forbidden historical/audit files and directories:
 #       docs/completed/, docs/measurements/, CHANGELOG.md, changelog.d/,
 #       THIRD_PARTY_LICENSES.md, testdata/gate/goldens/,
-#       docs/audit-security-2026-10-12.md, docs/tasks/task-flint-2026-10.md, .claude/
+#       docs/audit-security-2026-10-12.md, docs/completed/task-flint-2026-10.md, .claude/
 FORBIDDEN_DOC_REL = {
     "CHANGELOG.md",
     "THIRD_PARTY_LICENSES.md",
     "docs/audit-security-2026-10-12.md",
-    "docs/tasks/task-flint-2026-10.md",
+    "docs/completed/task-flint-2026-10.md",
     "docs/layout.md",        # already updated with exact historical + live entries above
     "docs/ARCHITECTURE.md",  # already updated above
     "docs/flags.md",         # already updated above

@@ -1,5 +1,14 @@
 # Task: Recursive's Flint (40B-A2.5B MoE) on goinfer (F0–F5) — 2026-10
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (archived 2026-11-11):** All seven items (`F0`–`F5`, including `F1b` NVFP4/MLX safetensors loaders) shipped and verified on Mac (`m1pro-16g`) and Linux (`nobara`, `rtx2070s-8g`) in `251184470`..`2f6134fe2`.
+
 > **Status 2026-11-11: All items (F0, F1, F1b, F2, F3, F4, F5) complete on Mac (16 GiB M1 Pro) and `nobara` (8 GiB RTX 2070 SUPER, 62.7 GiB RAM).**
 > Flint is Recursive's first model: a 39.8B-total, ~2.5B-active decoder-only MoE for local coding agents, trained from
 > scratch, Apache-2.0, released 2026-10-21 (`RecursiveSI/flint`, pinned at `2a247be0c0aec895ccb0ac7ca92229ec6df37288`).
@@ -179,5 +188,3 @@ paths only, on a branch; readings stay unmerged for the owner's review.
 - [MarkTechPost: Recursive releases Flint](https://www.marktechpost.com/2026/10/21/recursive-flint-local-coding-model/)
 - [TechCrunch: Recursive launches Flint](https://techcrunch.com/2026/10/21/recursive-launches-flint-a-laptop-coding-model-it-says-was-largely-built-by-ai/)
 - [TestingCatalog: Recursive releases Flint](https://www.testingcatalog.com/recursive-releases-flint-40b-model-for-local-coding/)
-
-<!-- doc-reviewed: 2026-11-11 -->

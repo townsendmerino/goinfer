@@ -100,7 +100,7 @@ current tracks.
 
 - **Already handled:**
   - EmbeddingGemma-2: shipped in v0.22.0.
-  - Flint: `tasks/task-flint-2026-10.md`, F0 in progress.
+  - Flint: `completed/task-flint-2026-10.md`, shipped (F0–F5).
   - Clef-flash: route C.
   - Nemotron 3.5 Bolt E4B: NVIDIA's post-training of Gemma 4 E4B (8B total, 4B effective, 64K context, Q4_K_M GGUF of
     6.18 GB). Expected to be a `gemma4` checkpoint swap; its Gate 0 checks the architecture, the license and the chat

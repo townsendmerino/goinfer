@@ -11,7 +11,7 @@ import (
 )
 
 // TestFlintResidentParityCUDA is the CUDA resident + C′ expert-cache parity gate for
-// Recursive's Flint (docs/tasks/task-flint-2026-10.md F2/F3):
+// Recursive's Flint (docs/completed/task-flint-2026-10.md F2/F3):
 //   - testdata/flint-tiny (6 layers: 2 dense full/NoPE + 3 MoE sliding/RoPE + 1 MoE
 //     full/NoPE, sliding_window=8, learned per-head attention sinks, QK-norm, top-2 of 8
 //     sigmoid-normalized router + ungated shared expert) goes resident on CUDA at int4;
