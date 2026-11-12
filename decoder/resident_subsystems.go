@@ -228,9 +228,11 @@ var noopResidentSubsystems = ResidentSubsystems{
 // subsystem wrapper (never on the resident struct itself) and override the capabilities they implement.
 type NoopResidentDecode struct{}
 
-func (NoopResidentDecode) GreedyAvailable() bool                       { return false }
-func (NoopResidentDecode) ForwardArgmax([]float32, int) (int, error)   { return 0, errSubsystemUnavailable }
-func (NoopResidentDecode) TopKAvailable() bool                         { return false }
+func (NoopResidentDecode) GreedyAvailable() bool { return false }
+func (NoopResidentDecode) ForwardArgmax([]float32, int) (int, error) {
+	return 0, errSubsystemUnavailable
+}
+func (NoopResidentDecode) TopKAvailable() bool { return false }
 func (NoopResidentDecode) ForwardTopK([]float32, int, int, float64, bool) (TopKRow, error) {
 	return TopKRow{}, errSubsystemUnavailable
 }
@@ -242,7 +244,7 @@ func (NoopResidentDecode) MRoPEDecodeAvailable() bool { return false }
 func (NoopResidentDecode) ForwardMRoPE([]float32, int, int) ([]float32, error) {
 	return nil, errSubsystemUnavailable
 }
-func (NoopResidentDecode) NoLogitsAvailable() bool             { return false }
+func (NoopResidentDecode) NoLogitsAvailable() bool              { return false }
 func (NoopResidentDecode) ForwardNoLogits([]float32, int) error { return errSubsystemUnavailable }
 func (NoopResidentDecode) GreedyChainAvailable() bool           { return false }
 func (NoopResidentDecode) GreedyChainStart(int, int) error      { return errSubsystemUnavailable }
@@ -255,8 +257,8 @@ func (NoopResidentDecode) SampleChainStart(int, int, float64, uint64, uint64) er
 func (NoopResidentDecode) SampleChainNext(uint64, uint64) (int, error) {
 	return 0, errSubsystemUnavailable
 }
-func (NoopResidentDecode) BatchStepperAvailable() bool    { return false }
-func (NoopResidentDecode) BatchStepRange() (lo, hi int)   { return 0, 0 }
+func (NoopResidentDecode) BatchStepperAvailable() bool  { return false }
+func (NoopResidentDecode) BatchStepRange() (lo, hi int) { return 0, 0 }
 func (NoopResidentDecode) StepBatch([]ResidentBatchSeq) ([]ResidentBatchOut, error) {
 	return nil, errSubsystemUnavailable
 }
@@ -281,15 +283,15 @@ func (NoopResidentPrefill) PrefillMarkAlign() int        { return 0 }
 func (NoopResidentPrefill) PrefillLastMarked(context.Context, [][]float32, int, int, func(int)) ([]float32, error) {
 	return nil, errSubsystemUnavailable
 }
-func (NoopResidentPrefill) PrefillPathInfo() (bool, string, bool) { return false, "", false }
-func (NoopResidentPrefill) PrefillTailExact() bool                { return false }
-func (NoopResidentPrefill) PrefillBlocksAvailable() bool          { return false }
-func (NoopResidentPrefill) PrefillBlockRows() int                 { return 0 }
-func (NoopResidentPrefill) PrefillChunksAvailable() bool          { return false }
-func (NoopResidentPrefill) PrefillChunkRows() int                 { return 0 }
-func (NoopResidentPrefill) PrefillScratchBytes(int) int64         { return 0 }
+func (NoopResidentPrefill) PrefillPathInfo() (bool, string, bool)  { return false, "", false }
+func (NoopResidentPrefill) PrefillTailExact() bool                 { return false }
+func (NoopResidentPrefill) PrefillBlocksAvailable() bool           { return false }
+func (NoopResidentPrefill) PrefillBlockRows() int                  { return 0 }
+func (NoopResidentPrefill) PrefillChunksAvailable() bool           { return false }
+func (NoopResidentPrefill) PrefillChunkRows() int                  { return 0 }
+func (NoopResidentPrefill) PrefillScratchBytes(int) int64          { return 0 }
 func (NoopResidentPrefill) PrefillSpanScratchBytes(int, int) int64 { return 0 }
-func (NoopResidentPrefill) HiddenLastAvailable() bool             { return false }
+func (NoopResidentPrefill) HiddenLastAvailable() bool              { return false }
 func (NoopResidentPrefill) HiddenLast(context.Context, [][]float32, int) ([]float32, error) {
 	return nil, errSubsystemUnavailable
 }
@@ -309,8 +311,8 @@ func (NoopResidentPrefill) SpanPrefillAvailable() bool { return false }
 func (NoopResidentPrefill) PrefillSpansLast(context.Context, [][]float32, int, [][2]int) ([]float32, error) {
 	return nil, errSubsystemUnavailable
 }
-func (NoopResidentPrefill) HybridMRoPEPrefill() bool     { return false }
-func (NoopResidentPrefill) MRoPEPrefillAvailable() bool  { return false }
+func (NoopResidentPrefill) HybridMRoPEPrefill() bool    { return false }
+func (NoopResidentPrefill) MRoPEPrefillAvailable() bool { return false }
 func (NoopResidentPrefill) PrefillMRoPELast(context.Context, [][]float32, int, [][3]int) ([]float32, error) {
 	return nil, errSubsystemUnavailable
 }
@@ -322,20 +324,20 @@ func (NoopResidentPrefill) PrefillMRoPEDeepstackLast(context.Context, [][]float3
 // NoopResidentKV provides safe absent defaults for ResidentKVSubsystem.
 type NoopResidentKV struct{}
 
-func (NoopResidentKV) KVSlotterAvailable() bool                     { return false }
-func (NoopResidentKV) KVSlots() int                                 { return 1 }
-func (NoopResidentKV) UseKVSlot(int) error                          { return nil }
-func (NoopResidentKV) SetKVSlotBusy(int, bool)                      {}
-func (NoopResidentKV) KVPool() KVPoolDetail                         { return KVPoolDetail{} }
-func (NoopResidentKV) ReusableKV(prefix int) int                    { return prefix }
-func (NoopResidentKV) ReusableKVSlotAvailable() bool                { return false }
-func (NoopResidentKV) ReusableKVSlot(_ int, prefix int) int         { return prefix }
-func (NoopResidentKV) KVUploadPassAvailable() bool                  { return false }
-func (NoopResidentKV) BeginKVUpload() error                         { return errSubsystemUnavailable }
-func (NoopResidentKV) EndKVUpload(bool) error                       { return errSubsystemUnavailable }
-func (NoopResidentKV) KVCopierAvailable() bool                      { return false }
-func (NoopResidentKV) CopyKV(int, int, int, int) error              { return errSubsystemUnavailable }
-func (NoopResidentKV) KVSnapshotterAvailable() bool                 { return false }
+func (NoopResidentKV) KVSlotterAvailable() bool             { return false }
+func (NoopResidentKV) KVSlots() int                         { return 1 }
+func (NoopResidentKV) UseKVSlot(int) error                  { return nil }
+func (NoopResidentKV) SetKVSlotBusy(int, bool)              {}
+func (NoopResidentKV) KVPool() KVPoolDetail                 { return KVPoolDetail{} }
+func (NoopResidentKV) ReusableKV(prefix int) int            { return prefix }
+func (NoopResidentKV) ReusableKVSlotAvailable() bool        { return false }
+func (NoopResidentKV) ReusableKVSlot(_ int, prefix int) int { return prefix }
+func (NoopResidentKV) KVUploadPassAvailable() bool          { return false }
+func (NoopResidentKV) BeginKVUpload() error                 { return errSubsystemUnavailable }
+func (NoopResidentKV) EndKVUpload(bool) error               { return errSubsystemUnavailable }
+func (NoopResidentKV) KVCopierAvailable() bool              { return false }
+func (NoopResidentKV) CopyKV(int, int, int, int) error      { return errSubsystemUnavailable }
+func (NoopResidentKV) KVSnapshotterAvailable() bool         { return false }
 func (NoopResidentKV) SnapshotKV(int, int) (ResidentKVSnapshot, error) {
 	return nil, errSubsystemUnavailable
 }
@@ -364,18 +366,22 @@ func (NoopResidentRuntime) CostSpan(_ *cost.Counter, _ cost.Phase, work func() (
 	_, err := work()
 	return err
 }
-func (NoopResidentRuntime) AdapterAvailable() bool                          { return false }
-func (NoopResidentRuntime) SetAdapter([]ResidentAdapterLayer) error         { return errSubsystemUnavailable }
-func (NoopResidentRuntime) ExpertCacheAvailable() bool                      { return false }
-func (NoopResidentRuntime) ExpertCacheStats() (ExpertCacheStats, bool)      { return ExpertCacheStats{}, false }
-func (NoopResidentRuntime) ResizeExpertCache(int64) (int, error)            { return 0, errSubsystemUnavailable }
-func (NoopResidentRuntime) VerifyPathInfo() (bool, string, bool)            { return false, "", false }
-func (NoopResidentRuntime) VerifyCost() []float64                           { return nil }
-func (NoopResidentRuntime) DecodeVerifyDivergence() error                   { return nil }
-func (NoopResidentRuntime) EnterExactAttention() func()                     { return noopLeave }
-func (NoopResidentRuntime) SeedArgmaxAvailable() bool                       { return false }
-func (NoopResidentRuntime) PrefillSeedArgmax([][]float32, int) (int, error) { return 0, errSubsystemUnavailable }
-func (NoopResidentRuntime) LastNArgmaxAvailable() bool                      { return false }
+func (NoopResidentRuntime) AdapterAvailable() bool                  { return false }
+func (NoopResidentRuntime) SetAdapter([]ResidentAdapterLayer) error { return errSubsystemUnavailable }
+func (NoopResidentRuntime) ExpertCacheAvailable() bool              { return false }
+func (NoopResidentRuntime) ExpertCacheStats() (ExpertCacheStats, bool) {
+	return ExpertCacheStats{}, false
+}
+func (NoopResidentRuntime) ResizeExpertCache(int64) (int, error) { return 0, errSubsystemUnavailable }
+func (NoopResidentRuntime) VerifyPathInfo() (bool, string, bool) { return false, "", false }
+func (NoopResidentRuntime) VerifyCost() []float64                { return nil }
+func (NoopResidentRuntime) DecodeVerifyDivergence() error        { return nil }
+func (NoopResidentRuntime) EnterExactAttention() func()          { return noopLeave }
+func (NoopResidentRuntime) SeedArgmaxAvailable() bool            { return false }
+func (NoopResidentRuntime) PrefillSeedArgmax([][]float32, int) (int, error) {
+	return 0, errSubsystemUnavailable
+}
+func (NoopResidentRuntime) LastNArgmaxAvailable() bool { return false }
 func (NoopResidentRuntime) PrefillLastNArgmax([][]float32, int) ([]int, error) {
 	return nil, errSubsystemUnavailable
 }
@@ -384,11 +390,11 @@ func (NoopResidentRuntime) CanStreamDrafterRows() bool { return false }
 func (NoopResidentRuntime) AttachBlockDrafter(BlockDrafterWeights) (ResidentBlockDrafter, error) {
 	return nil, errSubsystemUnavailable
 }
-func (NoopResidentRuntime) SetBatchedCapture([]int) error                   { return errSubsystemUnavailable }
-func (NoopResidentRuntime) BatchedCapture() [][]float32                     { return nil }
-func (NoopResidentRuntime) RecurrentSpecAvailable() bool                    { return false }
-func (NoopResidentRuntime) PrepareRecurrentSpec(int) error                  { return errSubsystemUnavailable }
-func (NoopResidentRuntime) RecurrentSpecRows() int                          { return 0 }
+func (NoopResidentRuntime) SetBatchedCapture([]int) error  { return errSubsystemUnavailable }
+func (NoopResidentRuntime) BatchedCapture() [][]float32    { return nil }
+func (NoopResidentRuntime) RecurrentSpecAvailable() bool   { return false }
+func (NoopResidentRuntime) PrepareRecurrentSpec(int) error { return errSubsystemUnavailable }
+func (NoopResidentRuntime) RecurrentSpecRows() int         { return 0 }
 func (NoopResidentRuntime) VerifyLastNArgmax([][]float32, int) ([]int, error) {
 	return nil, errSubsystemUnavailable
 }
@@ -406,20 +412,22 @@ func SubsystemsOf(r any) ResidentSubsystems {
 	if p, ok := r.(ResidentSubsystemProvider); ok {
 		return p.ResidentSubsystems()
 	}
-	switch s := r.(type) {
-	case ResidentRuntimeSubsystem:
+	if s, ok := r.(ResidentRuntimeSubsystem); ok {
 		out := noopResidentSubsystems
 		out.Runtime = s
 		return out
-	case ResidentDecodeSubsystem:
+	}
+	if s, ok := r.(ResidentDecodeSubsystem); ok {
 		out := noopResidentSubsystems
 		out.Decode = s
 		return out
-	case ResidentPrefillSubsystem:
+	}
+	if s, ok := r.(ResidentPrefillSubsystem); ok {
 		out := noopResidentSubsystems
 		out.Prefill = s
 		return out
-	case ResidentKVSubsystem:
+	}
+	if s, ok := r.(ResidentKVSubsystem); ok {
 		out := noopResidentSubsystems
 		out.KV = s
 		return out

@@ -1401,7 +1401,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
     attention KV to `c`, and prefill from `c`. §2's rule that at least one token is always recomputed holds, since the
     request has tokens past `c`. A strict extension of the whole sequence keeps today's path (continue from the live state).
     A divergence before `c`, an identical re-request, or a request with image spans stays cold, as today.
-  - **Score.** `internal/runtime/kvmgr/slots.go:scoreRecurrent` returns `c` in the restore case, where today it returns 0. Its image
+  - **Score.** `internal/runtime/kvmgr/sequence.go:scoreRecurrentTokens` returns `c` in the restore case, where today it returns 0. Its image
     rules are unchanged.
   - **Where it lives.** Device memory if the load's memory plan admits it, host memory otherwise; the choice is registered
     per backend before building. Its size comes from the state spec (§5.7: 62.8 MiB for Qwen3.6-35B-A3B, 149.6 MiB for the

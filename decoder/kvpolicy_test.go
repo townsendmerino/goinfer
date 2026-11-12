@@ -245,4 +245,3 @@ func TestResidentSpec_matchesLegacyAccessors(t *testing.T) {
 		t.Errorf("ResidentSpec().Qwen35 = %+v, disagrees with Qwen35ResidentParams()", *spec.Qwen35)
 	}
 }
-

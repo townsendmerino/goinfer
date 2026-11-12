@@ -109,6 +109,24 @@
       "value": "PASS"
     },
     {
+      "commit": "90e4d44f8",
+      "date": "2026-11-12",
+      "gate": "TestFlint_tinyForwardParity",
+      "note": "Flint tiny checkpoint against transformers PR #49824 FlintForCausalLM f32 reference: sequential and batched cosine 1.00000000, maxAbs 3.576e-07, argmax 201 and greedy continuation exact match, .giw round-trip maxAbs < 1e-6",
+      "promoted_by": "antigravity",
+      "source_sha256": "6f327824c719c72b",
+      "value": "PASS"
+    },
+    {
+      "commit": "90e4d44f8",
+      "date": "2026-11-12",
+      "gate": "TestFlint_windowBoundaryParity",
+      "note": "Flint sliding_window=513 boundary golden against transformers PR #49824 FlintForCausalLM f32 reference at len=512, 513, 514, 1100: sequential and batched cosine 1.00000000, maxAbs <= 7.600e-07, argmax exact match",
+      "promoted_by": "antigravity",
+      "source_sha256": "717cbe93792e53cb",
+      "value": "PASS"
+    },
+    {
       "commit": "679c9e5",
       "date": "2026-08-14",
       "gate": "TestForward_logitParity",

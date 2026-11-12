@@ -285,9 +285,9 @@ func TestParityLoaders_mapping(t *testing.T) {
 			t.Errorf("%s: GGUF fixture %v, dropped %v", name, hasGGUF, dropped)
 		}
 	}
-	if len(under) != 30 || !slices.Equal(keep, []string{"mellum"}) {
+	if len(under) != 31 || !slices.Equal(keep, []string{"mellum"}) {
 		sort.Strings(keep)
-		t.Errorf("%d under the rule of %d with programs, keeping %v; want 30, keeping [mellum]", len(under), len(withPrograms), keep)
+		t.Errorf("%d under the rule of %d with programs, keeping %v; want 31, keeping [mellum]", len(under), len(withPrograms), keep)
 	}
 	for _, f := range []string{"testdata/gemma1-tiny.gguf", "testdata/gemma2-hd-tiny.gguf", "testdata/glm-tiny.gguf"} {
 		if len(ggufs[f]) != 1 {

@@ -50,10 +50,12 @@ func (s cudaDecodeSub) MRoPEDecodeAvailable() bool { return true }
 func (s cudaDecodeSub) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, error) {
 	return s.r.ForwardMRoPE(embedding, pos, ropePos)
 }
-func (s cudaDecodeSub) NoLogitsAvailable() bool                    { return true }
-func (s cudaDecodeSub) ForwardNoLogits(e []float32, pos int) error { return s.r.ForwardNoLogits(e, pos) }
-func (s cudaDecodeSub) BatchStepperAvailable() bool                { return true }
-func (s cudaDecodeSub) BatchStepRange() (lo, hi int)               { return s.r.BatchStepRange() }
+func (s cudaDecodeSub) NoLogitsAvailable() bool { return true }
+func (s cudaDecodeSub) ForwardNoLogits(e []float32, pos int) error {
+	return s.r.ForwardNoLogits(e, pos)
+}
+func (s cudaDecodeSub) BatchStepperAvailable() bool  { return true }
+func (s cudaDecodeSub) BatchStepRange() (lo, hi int) { return s.r.BatchStepRange() }
 func (s cudaDecodeSub) StepBatch(seqs []decoder.ResidentBatchSeq) ([]decoder.ResidentBatchOut, error) {
 	return s.r.StepBatch(seqs)
 }
@@ -84,11 +86,13 @@ func (s cudaPrefillSub) PrefillPathInfo() (bool, string, bool) {
 	b, reason := s.r.PrefillPath()
 	return b, reason, true
 }
-func (s cudaPrefillSub) PrefillChunksAvailable() bool              { return true }
-func (s cudaPrefillSub) PrefillChunkRows() int                     { return s.r.PrefillChunkRows() }
-func (s cudaPrefillSub) PrefillScratchBytes(rows int) int64        { return s.r.PrefillScratchBytes(rows) }
-func (s cudaPrefillSub) PrefillSpanScratchBytes(rows, k int) int64 { return s.r.PrefillSpanScratchBytes(rows, k) }
-func (s cudaPrefillSub) HiddenLastAvailable() bool                 { return true }
+func (s cudaPrefillSub) PrefillChunksAvailable() bool       { return true }
+func (s cudaPrefillSub) PrefillChunkRows() int              { return s.r.PrefillChunkRows() }
+func (s cudaPrefillSub) PrefillScratchBytes(rows int) int64 { return s.r.PrefillScratchBytes(rows) }
+func (s cudaPrefillSub) PrefillSpanScratchBytes(rows, k int) int64 {
+	return s.r.PrefillSpanScratchBytes(rows, k)
+}
+func (s cudaPrefillSub) HiddenLastAvailable() bool { return true }
 func (s cudaPrefillSub) HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
 	return s.r.HiddenLast(ctx, embeddings, startPos)
 }
@@ -108,8 +112,8 @@ func (s cudaPrefillSub) SpanPrefillAvailable() bool { return true }
 func (s cudaPrefillSub) PrefillSpansLast(ctx context.Context, embeddings [][]float32, startPos int, spans [][2]int) ([]float32, error) {
 	return s.r.PrefillSpansLast(ctx, embeddings, startPos, spans)
 }
-func (s cudaPrefillSub) HybridMRoPEPrefill() bool     { return s.r.HybridMRoPEPrefill() }
-func (s cudaPrefillSub) MRoPEPrefillAvailable() bool  { return true }
+func (s cudaPrefillSub) HybridMRoPEPrefill() bool    { return s.r.HybridMRoPEPrefill() }
+func (s cudaPrefillSub) MRoPEPrefillAvailable() bool { return true }
 func (s cudaPrefillSub) PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) ([]float32, error) {
 	return s.r.PrefillMRoPELast(ctx, embeddings, startPos, mropePos)
 }
@@ -123,18 +127,18 @@ type cudaKVSub struct {
 	r *cudaResident
 }
 
-func (s cudaKVSub) KVSlotterAvailable() bool             { return true }
-func (s cudaKVSub) KVSlots() int                         { return s.r.KVSlots() }
-func (s cudaKVSub) UseKVSlot(i int) error                { return s.r.UseKVSlot(i) }
-func (s cudaKVSub) SetKVSlotBusy(slot int, busy bool)    { s.r.SetKVSlotBusy(slot, busy) }
-func (s cudaKVSub) KVPool() decoder.KVPoolDetail         { return s.r.KVPool() }
-func (s cudaKVSub) ReusableKV(prefix int) int            { return s.r.ReusableKV(prefix) }
-func (s cudaKVSub) ReusableKVSlotAvailable() bool        { return true }
-func (s cudaKVSub) ReusableKVSlot(slot, prefix int) int  { return s.r.ReusableKVSlot(slot, prefix) }
-func (s cudaKVSub) KVUploadPassAvailable() bool          { return true }
-func (s cudaKVSub) BeginKVUpload() error                 { return s.r.BeginKVUpload() }
-func (s cudaKVSub) EndKVUpload(failed bool) error        { return s.r.EndKVUpload(failed) }
-func (s cudaKVSub) KVCopierAvailable() bool              { return true }
+func (s cudaKVSub) KVSlotterAvailable() bool            { return true }
+func (s cudaKVSub) KVSlots() int                        { return s.r.KVSlots() }
+func (s cudaKVSub) UseKVSlot(i int) error               { return s.r.UseKVSlot(i) }
+func (s cudaKVSub) SetKVSlotBusy(slot int, busy bool)   { s.r.SetKVSlotBusy(slot, busy) }
+func (s cudaKVSub) KVPool() decoder.KVPoolDetail        { return s.r.KVPool() }
+func (s cudaKVSub) ReusableKV(prefix int) int           { return s.r.ReusableKV(prefix) }
+func (s cudaKVSub) ReusableKVSlotAvailable() bool       { return true }
+func (s cudaKVSub) ReusableKVSlot(slot, prefix int) int { return s.r.ReusableKVSlot(slot, prefix) }
+func (s cudaKVSub) KVUploadPassAvailable() bool         { return true }
+func (s cudaKVSub) BeginKVUpload() error                { return s.r.BeginKVUpload() }
+func (s cudaKVSub) EndKVUpload(failed bool) error       { return s.r.EndKVUpload(failed) }
+func (s cudaKVSub) KVCopierAvailable() bool             { return true }
 func (s cudaKVSub) CopyKV(src, dst, start, end int) error {
 	return s.r.CopyKV(src, dst, start, end)
 }
@@ -145,10 +149,10 @@ func (s cudaKVSub) SnapshotKV(slot, end int) (decoder.ResidentKVSnapshot, error)
 func (s cudaKVSub) RestoreKV(snap decoder.ResidentKVSnapshot, slot, end int) error {
 	return s.r.RestoreKV(snap, slot, end)
 }
-func (s cudaKVSub) KVSnapshotBytes(end int) int64       { return s.r.KVSnapshotBytes(end) }
-func (s cudaKVSub) KVSnapshotRollback() int             { return s.r.KVSnapshotRollback() }
-func (s cudaKVSub) KVSnapshotRecurrent() bool           { return s.r.KVSnapshotRecurrent() }
-func (s cudaKVSub) KVDemoterAvailable() bool            { return true }
+func (s cudaKVSub) KVSnapshotBytes(end int) int64          { return s.r.KVSnapshotBytes(end) }
+func (s cudaKVSub) KVSnapshotRollback() int                { return s.r.KVSnapshotRollback() }
+func (s cudaKVSub) KVSnapshotRecurrent() bool              { return s.r.KVSnapshotRecurrent() }
+func (s cudaKVSub) KVDemoterAvailable() bool               { return true }
 func (s cudaKVSub) SetKVHostBudget(b decoder.KVHostBudget) { s.r.SetKVHostBudget(b) }
 func (s cudaKVSub) PromoteKV(slot, rows int) (int, error) {
 	return s.r.PromoteKV(slot, rows)
@@ -156,10 +160,10 @@ func (s cudaKVSub) PromoteKV(slot, rows int) (int, error) {
 func (s cudaKVSub) CopyDemotedKV(src, dst, start, end int) (int, bool, error) {
 	return s.r.CopyDemotedKV(src, dst, start, end)
 }
-func (s cudaKVSub) ReserveKVHost(n int64) bool           { return s.r.ReserveKVHost(n) }
-func (s cudaKVSub) RecurrentCheckpointBytes() int64      { return s.r.RecurrentCheckpointBytes() }
-func (s cudaKVSub) SaveRecurrentCheckpoint() error       { return s.r.SaveRecurrentCheckpoint() }
-func (s cudaKVSub) RestoreRecurrentCheckpoint() error    { return s.r.RestoreRecurrentCheckpoint() }
+func (s cudaKVSub) ReserveKVHost(n int64) bool        { return s.r.ReserveKVHost(n) }
+func (s cudaKVSub) RecurrentCheckpointBytes() int64   { return s.r.RecurrentCheckpointBytes() }
+func (s cudaKVSub) SaveRecurrentCheckpoint() error    { return s.r.SaveRecurrentCheckpoint() }
+func (s cudaKVSub) RestoreRecurrentCheckpoint() error { return s.r.RestoreRecurrentCheckpoint() }
 func (s cudaKVSub) RecurrentCheckpointHeld(slot int) bool {
 	return s.r.RecurrentCheckpointHeld(slot)
 }
@@ -178,9 +182,13 @@ func (s cudaRuntimeSub) AdapterAvailable() bool { return true }
 func (s cudaRuntimeSub) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 	return s.r.SetAdapter(layers)
 }
-func (s cudaRuntimeSub) ExpertCacheAvailable() bool                           { return true }
-func (s cudaRuntimeSub) ExpertCacheStats() (decoder.ExpertCacheStats, bool)   { return s.r.ExpertCacheStats() }
-func (s cudaRuntimeSub) ResizeExpertCache(reserve int64) (int, error)         { return s.r.ResizeExpertCache(reserve) }
+func (s cudaRuntimeSub) ExpertCacheAvailable() bool { return true }
+func (s cudaRuntimeSub) ExpertCacheStats() (decoder.ExpertCacheStats, bool) {
+	return s.r.ExpertCacheStats()
+}
+func (s cudaRuntimeSub) ResizeExpertCache(reserve int64) (int, error) {
+	return s.r.ResizeExpertCache(reserve)
+}
 func (s cudaRuntimeSub) VerifyPathInfo() (bool, string, bool) {
 	b, reason := s.r.VerifyPath()
 	return b, reason, true

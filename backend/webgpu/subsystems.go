@@ -40,8 +40,10 @@ func (s webgpuDecodeSub) MRoPEDecodeAvailable() bool { return true }
 func (s webgpuDecodeSub) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, error) {
 	return s.d.ForwardMRoPE(embedding, pos, ropePos)
 }
-func (s webgpuDecodeSub) NoLogitsAvailable() bool                    { return true }
-func (s webgpuDecodeSub) ForwardNoLogits(e []float32, pos int) error { return s.d.ForwardNoLogits(e, pos) }
+func (s webgpuDecodeSub) NoLogitsAvailable() bool { return true }
+func (s webgpuDecodeSub) ForwardNoLogits(e []float32, pos int) error {
+	return s.d.ForwardNoLogits(e, pos)
+}
 
 type webgpuPrefillSub struct {
 	decoder.NoopResidentPrefill

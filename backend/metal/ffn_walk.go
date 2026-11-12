@@ -27,11 +27,6 @@ func ffnWalks(st layerStep) bool {
 	return false
 }
 
-// stepWalks reports whether the decode walk emits step st from its operations.
-func stepWalks(st layerStep) bool {
-	return mixerWalks(st) || ffnWalks(st)
-}
-
 // ffnNormWeights returns layer L's norm weight and LayerNorm bias buffers for slot.
 func (r *resident) ffnNormWeights(L *residLayer, slot program.NormSlot) (Buffer, Buffer) {
 	if slot == program.SlotPreAttn {

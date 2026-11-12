@@ -62,6 +62,14 @@ testdata/deepseek-tiny int4
 testdata/deepseek-tiny int4/g32
 testdata/deepseek-tiny int8int8
 testdata/deepseek-tiny int8int8/g32
+testdata/flint-tiny f32
+testdata/flint-tiny f32/g32
+testdata/flint-tiny int4
+testdata/flint-tiny int4/g32
+testdata/flint-tiny int4/kv-i8
+testdata/flint-tiny int4/kvquant-f16
+testdata/flint-tiny int8int8
+testdata/flint-tiny int8int8/g32
 testdata/gemma1-tiny f32
 testdata/gemma1-tiny f32/g32
 testdata/gemma1-tiny int4

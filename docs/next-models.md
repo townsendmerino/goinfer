@@ -250,7 +250,7 @@ Field check for this doc covering open-weight releases from **2026-10-26 to 2026
   (factor 64, `llama_4_scaling_beta` 0). That is exactly what
   `decoder/arch_mistral3.go:ministral3Architecture` already expresses — a config alias, no new
   forward. Two blockers, neither architectural: the safetensors ship per-tensor static fp8
-  (`weight_block_size` null), which `decoder/fp8.go:fp8Reconstruct` does not read (it needs
+  (`weight_block_size` null), which `decoder/quant/fp8.go:FP8Reconstruct` does not read (it needs
   block-wise `weight_scale_inv`), so GGUF is the load route; and 128B dense fails rule 2 except at
   Q2_K–Q3_K (~45–55 GB) on the Linux box. Parked on hardware, not on code.
 - **Out by rule 2 (released this period, weights posted, far past both rigs):** Meta's Muse

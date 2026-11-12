@@ -751,7 +751,7 @@ var webgpuRounding = memgate.PowerOfTwo("Vulkan's power-of-two blocks")
 var webgpuMemGaps = func() []memgate.Gap {
 	var out []memgate.Gap
 	for _, f := range []string{
-		"testdata/olmo3-tiny", "testdata/olmo_hybrid-tiny", "testdata/smollm3-tiny",
+		"testdata/flint-tiny", "testdata/olmo3-tiny", "testdata/olmo_hybrid-tiny", "testdata/smollm3-tiny",
 		"internal/vision/testdata/qwen25vl-vision-tiny", "selftestdata/gemma3-vl-tiny", "selftestdata/llama-tiny",
 		"testdata/gemma3-vl-tiny", "testdata/gguf-split/glm-tiny-00001-of-00004.gguf", "testdata/glm-tiny",
 		"testdata/glm-tiny-bias", "testdata/glm-tiny.gguf", "testdata/gptoss_tiny.gguf",
@@ -784,8 +784,8 @@ const webgpuGateRowsPath = "testdata/memgate_rows.txt"
 
 var webgpuGateRowsUpdate = flag.Bool("memgate.rows.update", false, "have TestMemGate_webgpu rewrite testdata/memgate_rows.txt")
 
-// webgpuMemGapsPin is len(webgpuMemGaps) on this platform: 27 rows everywhere and two more off arm64.
-var webgpuMemGapsPin = 27 + map[bool]int{true: 2}[runtime.GOARCH != "arm64"]
+// webgpuMemGapsPin is len(webgpuMemGaps) on this platform: 28 rows everywhere and two more off arm64.
+var webgpuMemGapsPin = 28 + map[bool]int{true: 2}[runtime.GOARCH != "arm64"]
 
 // webgpuGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; the function it returns
 // runs after that read, so the plant is released before Close and the package's own ledger check stays clean.

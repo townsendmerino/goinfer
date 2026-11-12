@@ -45,7 +45,9 @@ func KVSlotRow(slot, block int) (s, row int) { return kvmgr.SlotRow(slot, block)
 
 // KVWindowReusable reports whether a forward continuing at position prefix finds its sliding window held by a slot
 // whose oldest resident position is base.
-func KVWindowReusable(base, prefix, window int) bool { return kvmgr.WindowReusable(base, prefix, window) }
+func KVWindowReusable(base, prefix, window int) bool {
+	return kvmgr.WindowReusable(base, prefix, window)
+}
 
 // KVWindowNextBase computes the base before and after writing n rows starting at p0 into a windowed slot of capacity
 // capN with window size window and rollback budget rollback.

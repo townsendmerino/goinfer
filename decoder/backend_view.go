@@ -119,27 +119,27 @@ func (v backendModelView) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int
 	return a.HiddenDim, a.NumLayers, a.NumHeads, a.NumKVHeads, a.HeadDim, a.IntermediateDim, a.VocabSize
 }
 
-func (v backendModelView) NumLayers() int        { return v.m.w.arch.NumLayers }
-func (v backendModelView) Spec() ResidentSpec    { return v.m.ResidentSpec() }
-func (v backendModelView) Weights() *Weights     { return v.m.w }
-func (v backendModelView) NormEps() float32      { return v.m.NormEps() }
-func (v backendModelView) AttnScale() float32    { return v.m.AttnScale() }
-func (v backendModelView) EmbedScale() float64   { return v.m.w.arch.EmbedScale }
-func (v backendModelView) SlidingWindow() int    { return v.m.w.arch.SlidingWindow }
-func (v backendModelView) HasQKNorm() bool       { return v.m.w.arch.QKNorm }
-func (v backendModelView) QKNormWhole() bool     { return v.m.w.arch.QKNormWhole }
-func (v backendModelView) PairwiseRoPE() bool    { return v.m.w.arch.pairwiseRoPE() }
-func (v backendModelView) MRopeSection() []int   { return v.m.w.arch.MRopeSection }
-func (v backendModelView) MRopeInterleaved() bool { return v.m.w.arch.MRopeInterleaved }
-func (v backendModelView) RMSAddOne() bool       { return v.m.w.arch.RMSAddOne }
-func (v backendModelView) LayerNorm() bool       { return v.m.w.arch.Norm == NormLayer }
-func (v backendModelView) SandwichNorm() bool    { return v.m.w.arch.NormPlacement == NormSandwich4 }
-func (v backendModelView) PostOnlyNorm() bool    { return v.m.w.arch.NormPlacement == NormPostOnly }
-func (v backendModelView) ParallelBlock() bool   { return v.m.w.arch.NormPlacement == NormParallel }
-func (v backendModelView) NonGatedMLP() bool     { return v.m.w.arch.NonGatedMLP }
-func (v backendModelView) GatedAct() int         { return int(v.m.w.arch.Act) }
-func (v backendModelView) OutBias() bool         { return v.m.w.arch.OutBias }
-func (v backendModelView) LearnedPos() bool      { return v.m.w.arch.LearnedPosEmbed }
+func (v backendModelView) NumLayers() int              { return v.m.w.arch.NumLayers }
+func (v backendModelView) Spec() ResidentSpec          { return v.m.ResidentSpec() }
+func (v backendModelView) Weights() *Weights           { return v.m.w }
+func (v backendModelView) NormEps() float32            { return v.m.NormEps() }
+func (v backendModelView) AttnScale() float32          { return v.m.AttnScale() }
+func (v backendModelView) EmbedScale() float64         { return v.m.w.arch.EmbedScale }
+func (v backendModelView) SlidingWindow() int          { return v.m.w.arch.SlidingWindow }
+func (v backendModelView) HasQKNorm() bool             { return v.m.w.arch.QKNorm }
+func (v backendModelView) QKNormWhole() bool           { return v.m.w.arch.QKNormWhole }
+func (v backendModelView) PairwiseRoPE() bool          { return v.m.w.arch.pairwiseRoPE() }
+func (v backendModelView) MRopeSection() []int         { return v.m.w.arch.MRopeSection }
+func (v backendModelView) MRopeInterleaved() bool      { return v.m.w.arch.MRopeInterleaved }
+func (v backendModelView) RMSAddOne() bool             { return v.m.w.arch.RMSAddOne }
+func (v backendModelView) LayerNorm() bool             { return v.m.w.arch.Norm == NormLayer }
+func (v backendModelView) SandwichNorm() bool          { return v.m.w.arch.NormPlacement == NormSandwich4 }
+func (v backendModelView) PostOnlyNorm() bool          { return v.m.w.arch.NormPlacement == NormPostOnly }
+func (v backendModelView) ParallelBlock() bool         { return v.m.w.arch.NormPlacement == NormParallel }
+func (v backendModelView) NonGatedMLP() bool           { return v.m.w.arch.NonGatedMLP }
+func (v backendModelView) GatedAct() int               { return int(v.m.w.arch.Act) }
+func (v backendModelView) OutBias() bool               { return v.m.w.arch.OutBias }
+func (v backendModelView) LearnedPos() bool            { return v.m.w.arch.LearnedPosEmbed }
 func (v backendModelView) PosEmbed() *linalg.WeightMat { return &v.m.w.PosEmbed }
 func (v backendModelView) FinalLogitSoftcap() float32  { return float32(v.m.w.arch.FinalLogitSoftcap) }
 func (v backendModelView) AttnLogitSoftcap() float32   { return float32(v.m.w.arch.AttnLogitSoftcap) }
@@ -285,10 +285,10 @@ func (lv residentLayerView) Ops() (mixer ResidentMixer, ffn bool) {
 	return MixerAttention, true
 }
 
-func (lv residentLayerView) HeadDim() int    { return lv.m.w.arch.headDimAt(lv.i) }
-func (lv residentLayerView) KVHeads() int    { return lv.m.w.arch.kvHeadsAt(lv.i) }
-func (lv residentLayerView) KVSrc() int      { return lv.m.w.arch.gemma4KVSrcAt(lv.i) }
-func (lv residentLayerView) RopeGlobal() bool { return lv.m.w.arch.isGlobalLayer(lv.i) }
+func (lv residentLayerView) HeadDim() int        { return lv.m.w.arch.headDimAt(lv.i) }
+func (lv residentLayerView) KVHeads() int        { return lv.m.w.arch.kvHeadsAt(lv.i) }
+func (lv residentLayerView) KVSrc() int          { return lv.m.w.arch.gemma4KVSrcAt(lv.i) }
+func (lv residentLayerView) RopeGlobal() bool    { return lv.m.w.arch.isGlobalLayer(lv.i) }
 func (lv residentLayerView) RopeMscale() float64 { return lv.m.w.arch.ropeMscale(lv.i) }
 
 func (lv residentLayerView) RotaryDim() int {

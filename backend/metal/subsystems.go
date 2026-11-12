@@ -41,13 +41,15 @@ func (s metalDecodeSub) MRoPEDecodeAvailable() bool { return true }
 func (s metalDecodeSub) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, error) {
 	return s.a.ForwardMRoPE(embedding, pos, ropePos)
 }
-func (s metalDecodeSub) NoLogitsAvailable() bool                       { return true }
-func (s metalDecodeSub) ForwardNoLogits(e []float32, pos int) error    { return s.a.ForwardNoLogits(e, pos) }
-func (s metalDecodeSub) GreedyChainAvailable() bool                    { return s.a.GreedyChainAvailable() }
-func (s metalDecodeSub) GreedyChainStart(id, pos int) error            { return s.a.GreedyChainStart(id, pos) }
-func (s metalDecodeSub) GreedyChainNext() (int, error)                 { return s.a.GreedyChainNext() }
-func (s metalDecodeSub) GreedyChainStop()                              { s.a.GreedyChainStop() }
-func (s metalDecodeSub) SampleChainAvailable() bool                    { return s.a.SampleChainAvailable() }
+func (s metalDecodeSub) NoLogitsAvailable() bool { return true }
+func (s metalDecodeSub) ForwardNoLogits(e []float32, pos int) error {
+	return s.a.ForwardNoLogits(e, pos)
+}
+func (s metalDecodeSub) GreedyChainAvailable() bool         { return s.a.GreedyChainAvailable() }
+func (s metalDecodeSub) GreedyChainStart(id, pos int) error { return s.a.GreedyChainStart(id, pos) }
+func (s metalDecodeSub) GreedyChainNext() (int, error)      { return s.a.GreedyChainNext() }
+func (s metalDecodeSub) GreedyChainStop()                   { s.a.GreedyChainStop() }
+func (s metalDecodeSub) SampleChainAvailable() bool         { return s.a.SampleChainAvailable() }
 func (s metalDecodeSub) SampleChainStart(id, pos int, temperature float64, seed, draw uint64) error {
 	return s.a.SampleChainStart(id, pos, temperature, seed, draw)
 }
@@ -77,11 +79,11 @@ func (s metalPrefillSub) PrefillPathInfo() (bool, string, bool) {
 	b, reason := s.a.PrefillPath()
 	return b, reason, true
 }
-func (s metalPrefillSub) PrefillTailExact() bool              { return s.a.PrefillTailExact() }
-func (s metalPrefillSub) PrefillBlocksAvailable() bool        { return true }
-func (s metalPrefillSub) PrefillBlockRows() int               { return s.a.PrefillBlockRows() }
-func (s metalPrefillSub) PrefillScratchBytes(rows int) int64  { return s.a.PrefillScratchBytes(rows) }
-func (s metalPrefillSub) HiddenLastAvailable() bool           { return true }
+func (s metalPrefillSub) PrefillTailExact() bool             { return s.a.PrefillTailExact() }
+func (s metalPrefillSub) PrefillBlocksAvailable() bool       { return true }
+func (s metalPrefillSub) PrefillBlockRows() int              { return s.a.PrefillBlockRows() }
+func (s metalPrefillSub) PrefillScratchBytes(rows int) int64 { return s.a.PrefillScratchBytes(rows) }
+func (s metalPrefillSub) HiddenLastAvailable() bool          { return true }
 func (s metalPrefillSub) HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
 	return s.a.HiddenLast(ctx, embeddings, startPos)
 }
@@ -111,24 +113,24 @@ type metalKVSub struct {
 	a *metalResident
 }
 
-func (s metalKVSub) KVSlotterAvailable() bool             { return true }
-func (s metalKVSub) KVSlots() int                         { return s.a.KVSlots() }
-func (s metalKVSub) UseKVSlot(i int) error                { return s.a.UseKVSlot(i) }
-func (s metalKVSub) SetKVSlotBusy(slot int, busy bool)    { s.a.SetKVSlotBusy(slot, busy) }
-func (s metalKVSub) KVPool() decoder.KVPoolDetail         { return s.a.KVPool() }
-func (s metalKVSub) ReusableKV(prefix int) int            { return s.a.ReusableKV(prefix) }
-func (s metalKVSub) ReusableKVSlotAvailable() bool        { return true }
-func (s metalKVSub) ReusableKVSlot(slot, prefix int) int  { return s.a.ReusableKVSlot(slot, prefix) }
-func (s metalKVSub) KVUploadPassAvailable() bool          { return true }
-func (s metalKVSub) BeginKVUpload() error                 { return s.a.BeginKVUpload() }
-func (s metalKVSub) EndKVUpload(failed bool) error        { return s.a.EndKVUpload(failed) }
-func (s metalKVSub) KVCopierAvailable() bool              { return true }
+func (s metalKVSub) KVSlotterAvailable() bool            { return true }
+func (s metalKVSub) KVSlots() int                        { return s.a.KVSlots() }
+func (s metalKVSub) UseKVSlot(i int) error               { return s.a.UseKVSlot(i) }
+func (s metalKVSub) SetKVSlotBusy(slot int, busy bool)   { s.a.SetKVSlotBusy(slot, busy) }
+func (s metalKVSub) KVPool() decoder.KVPoolDetail        { return s.a.KVPool() }
+func (s metalKVSub) ReusableKV(prefix int) int           { return s.a.ReusableKV(prefix) }
+func (s metalKVSub) ReusableKVSlotAvailable() bool       { return true }
+func (s metalKVSub) ReusableKVSlot(slot, prefix int) int { return s.a.ReusableKVSlot(slot, prefix) }
+func (s metalKVSub) KVUploadPassAvailable() bool         { return true }
+func (s metalKVSub) BeginKVUpload() error                { return s.a.BeginKVUpload() }
+func (s metalKVSub) EndKVUpload(failed bool) error       { return s.a.EndKVUpload(failed) }
+func (s metalKVSub) KVCopierAvailable() bool             { return true }
 func (s metalKVSub) CopyKV(src, dst, start, end int) error {
 	return s.a.CopyKV(src, dst, start, end)
 }
-func (s metalKVSub) RecurrentCheckpointBytes() int64     { return s.a.RecurrentCheckpointBytes() }
-func (s metalKVSub) SaveRecurrentCheckpoint() error      { return s.a.SaveRecurrentCheckpoint() }
-func (s metalKVSub) RestoreRecurrentCheckpoint() error   { return s.a.RestoreRecurrentCheckpoint() }
+func (s metalKVSub) RecurrentCheckpointBytes() int64   { return s.a.RecurrentCheckpointBytes() }
+func (s metalKVSub) SaveRecurrentCheckpoint() error    { return s.a.SaveRecurrentCheckpoint() }
+func (s metalKVSub) RestoreRecurrentCheckpoint() error { return s.a.RestoreRecurrentCheckpoint() }
 func (s metalKVSub) RecurrentCheckpointHeld(slot int) bool {
 	return s.a.RecurrentCheckpointHeld(slot)
 }

@@ -1404,8 +1404,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pLoraDelta = pipe("lora_delta") // G3/P-11: compute-time LoRA, down+up fused into one kernel
 	r.pSABiasResid, r.pCoalBiasResid = pipe("gemv_w4a8_sa_bias_resid"), pipe("gemv_w4a8_resid_bias")
 	r.layerNorm = shape.LayerNorm
-	r.parallelBlock = shape.Parallel   // G5: Cohere/Command-R + Cohere2/Command-R7B
-	r.logitScale, _ = bv.LogitScale()  // ok=false ⇒ 1, already finalizeLogits's no-op value
+	r.parallelBlock = shape.Parallel  // G5: Cohere/Command-R + Cohere2/Command-R7B
+	r.logitScale, _ = bv.LogitScale() // ok=false ⇒ 1, already finalizeLogits's no-op value
 	r.nonGatedMLP = shape.NonGated
 	if r.nonGatedMLP {
 		r.pNgActRows = pipe("nongated_act_rows_f16")

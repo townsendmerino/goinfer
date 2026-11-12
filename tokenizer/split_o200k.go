@@ -49,7 +49,7 @@ func isFlintCJKKana(r rune) bool {
 //  2. [\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+ (Isolated)
 //  3. [^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|
 //     [^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|
-//      ?[\p{P}\p{S}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+ (Isolated)
+//     ?[\p{P}\p{S}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+ (Isolated)
 //
 // Because stages 1 and 2 isolate digit runs (≤3) and Han/Hiragana/Katakana runs before stage 3 runs,
 // a leading space or punctuation before a digit or CJK/Kana run stays in the preceding span rather

@@ -592,8 +592,8 @@ func TestFlint_kv0hBShapedWindowReuse(t *testing.T) {
 
 	const (
 		flintWindow   = 513
-		flintSlack    = WindowedKVSlack // 512
-		flintStep     = 64              // backend/cuda/kvwindow.go:kvWindowStep
+		flintSlack    = WindowedKVSlack        // 512
+		flintStep     = 64                     // backend/cuda/kvwindow.go:kvWindowStep
 		flintRollback = flintSlack - flintStep // 448
 		flintChunk    = 512
 	)
@@ -693,4 +693,3 @@ func TestFlint_kv0hBShapedWindowReuse(t *testing.T) {
 	t.Logf("F4 KV0-H B-shaped fixtures (n=%d, rollback 9..%d tokens, window=%d): Metal 29/29 full reuse; CUDA windowed-KV (rollback floor %d) %d/29 full reuse (sawtooth rollback=0 would be %d/29 warm, %d/29 cold); CPU wrapped ring 0/29 (rewinds > 1 pos past 513prefill cold)",
 		bTotal, maxRB, flintWindow, flintRollback, cudaWarm, oldSawtoothWarm, oldSawtoothCold)
 }
-

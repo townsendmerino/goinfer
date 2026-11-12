@@ -123,7 +123,7 @@ type Request struct {
 //     place: image placeholder ids are the same for every image, so ids alone prove nothing about one;
 //   - a recurrent model continues a strict extension of the whole sequence from where its state stopped. A request that
 //     is not one may restart from the sequence's checkpoint instead, when the caller restores it (Request.Checkpoint):
-//     scoreRecurrent.
+//     scoreRecurrentTokens.
 //
 // The producer class is not compared here: a sequence continuing in its own slot keeps the rows it wrote, as
 // resident reuse always has (the task doc's §5.6, property 3). DeclineShortLead is the one class rule on this path.
@@ -140,11 +140,6 @@ func (a *Slots) score(slot int, req Request, recurrent bool) int {
 		return 0
 	}
 	return scoreSeqTokens(s.tokens, s.images, s.ckpt, req, recurrent)
-}
-
-// scoreRecurrent is Score for a recurrent model.
-func scoreRecurrent(s *Seq, req Request) int {
-	return scoreRecurrentTokens(s.tokens, s.images, s.ckpt, req)
 }
 
 func claimAt(images []ImageSpan, pos int) (ImageSpan, bool) {
